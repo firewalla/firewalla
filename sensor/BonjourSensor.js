@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -301,6 +301,12 @@ class BonjourSensor extends Sensor {
         if (txt) {
           if (txt.vn) detect.brand = txt.vn
           if (txt.mn) detect.model = txt.mn
+        }
+        break
+      case '_http':
+        // ignore _http on comprehensive devices even type is not from bonjour
+        if (['phone', 'tablet', 'desktop', 'laptop'].includes(_.get(hostObj, 'o.detect.type'))) {
+          return
         }
         break
     }

@@ -48,6 +48,7 @@ const SAMPLE_INTERVAL_MIN = 60;
 const SAMPLE_DEFAULT_OPTS = { "manual": false, "saveResult": true }
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
+const fsp = require('fs').promises;
 
 
 class NetworkMonitorSensor extends Sensor {
@@ -153,7 +154,7 @@ class NetworkMonitorSensor extends Sensor {
     log.debug("cachedPolicy: ", this.cachedPolicy);
     try {
       const systemPolicy = this.cachedPolicy.system;
-      if ( systemPolicy && Object.keys(systemPolicy).length > 0 ) {
+      if ( systemPolicy && !_.isEmpty(systemPolicy) ) {
         // always stop ALL existing jobs before apply new policy to avoid leftover jobs of removed targets in old policy
         this.stopMonitorDeviceAll();
         this.applyPolicySystem(systemPolicy);
@@ -190,7 +191,7 @@ class NetworkMonitorSensor extends Sensor {
       try {
         // only need to reapply system policy since MY_GATEWAYS and MY_DNSES may be referred
         const systemPolicy = this.cachedPolicy && this.cachedPolicy.system;
-        if (systemPolicy) {
+        if (systemPolicy && !_.isEmpty(systemPolicy)) {
           // always stop ALL existing jobs before apply new policy to avoid leftover jobs of removed targets in old policy
           this.stopMonitorDeviceAll();
           this.applyPolicySystem(systemPolicy);
@@ -297,8 +298,12 @@ class NetworkMonitorSensor extends Sensor {
       if (opts.intf) {
         const intf = sysManager.getInterface(opts.intf);
         if (!intf || !_.has(intf, "rtid")) {
-          log.error(`Cannot find rtid of interface ${intf.name}, skip ping test on it`);
+          log.error(`Cannot find rtid of interface ${opts.intf}, skip ping test on it`);
           return {status: `ERROR: interface ${opts.intf} is not found`, data: {}};
+        }
+        if (!await this.isCarrierOn(opts.intf)) {
+          log.error(`Carrier of interface ${opts.intf} is not on, skip ping test on it`);
+          return {status: `ERROR: carrier of interface ${opts.intf} is not on`, data: {}};
         }
         rtid = intf.rtid;
       }
@@ -326,9 +331,13 @@ class NetworkMonitorSensor extends Sensor {
       cfg.sampleCount = this.getCfgNumber(cfg,'sampleCount',5,1);
       let bindIP = null;
       if (opts.intf) {
+        if (!await this.isCarrierOn(opts.intf)) {
+          log.error(`Carrier of interface ${opts.intf} is not on, skip ping test on it`);
+          return {status: `ERROR: carrier of interface ${opts.intf} is not on`, data: {}};
+        }
         bindIP = sysManager.myIp(opts.intf);
         if (!bindIP) {
-          log.error(`Cannot find IP address to bind on interface ${intf}, skip dns test on it`);
+          log.error(`Cannot find IP address to bind on interface ${optf.intf}, skip dns test on it`);
           return {status: `ERROR: ip address on interface ${opts.intf} is not found`, data: {}};
         }
       }
@@ -358,9 +367,13 @@ class NetworkMonitorSensor extends Sensor {
       cfg.sampleCount = this.getCfgNumber(cfg,'sampleCount',5,1);
       let bindIP = null;
       if (opts.intf) {
+        if (!await this.isCarrierOn(opts.intf)) {
+          log.error(`Carrier of interface ${opts.intf} is not on, skip ping test on it`);
+          return {status: `ERROR: carrier of interface ${opts.intf} is not on`, data: {}};
+        }
         bindIP = sysManager.myIp(opts.intf);
         if (!bindIP) {
-          log.error(`Cannot find IP address to bind on interface ${intf}, skip http test on it`);
+          log.error(`Cannot find IP address to bind on interface ${opts.intf}, skip http test on it`);
           return {status: `ERROR: ip address on interface ${opts.intf} is not found`, data: {}};
         }
       }
@@ -855,6 +868,9 @@ class NetworkMonitorSensor extends Sensor {
     return scheduledJob;
   }
 
+  async isCarrierOn(intf) {
+    return fsp.readFile(`/sys/class/net/${intf}/carrier`, {encoding: "utf8"}).then(content => content.trim() === "1").catch((err) => false);
+  }
 }
 
 module.exports = NetworkMonitorSensor;

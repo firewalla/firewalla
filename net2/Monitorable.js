@@ -218,6 +218,7 @@ class Monitorable {
       acl: true,
       dnsmasq: { dnsCaching: true },
       device_service_scan: false,
+      weak_password_scan: { state: false },
       adblock: false,
       safeSearch: { state: false },
       family: false,
@@ -253,6 +254,20 @@ class Monitorable {
     }
     this.policy = policyData || {}
     return this.policy;
+  }
+
+  async getPolicyAsync(policyName) {
+    const policyData = await rclient.hgetAsync(this._getPolicyKey(), policyName);
+    try {
+      this.policy[policyName] = JSON.parse(policyData);
+    } catch (err) {
+      log.error(`failed to parse policy ${this.getGUID()} with value "${policyData}"`, err.message);
+    }
+    return this.policy[policyName];
+  }
+
+  async hasPolicyAsync(policyName) {
+    return await rclient.hexistsAsync(this._getPolicyKey(), policyName) == "1";
   }
 
   loadPolicy(callback) {

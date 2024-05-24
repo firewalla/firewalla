@@ -33,7 +33,7 @@ const Constants = require('../net2/Constants.js');
 const dnsTool = new DNSTool();
 const bone = require("../lib/Bone.js");
 const SysManager = require('../net2/SysManager.js');
-const CLOUD_CONFIG_KEY = "app_time_usage_cloud_config";
+const CLOUD_CONFIG_KEY = Constants.REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG;
 
 class AppTimeUsageSensor extends Sensor {
   
@@ -110,6 +110,7 @@ class AppTimeUsageSensor extends Sensor {
     if (!_.isEmpty(data) && _.isObject(data)) {
       await rclient.setAsync(CLOUD_CONFIG_KEY, JSON.stringify(data));
       this.cloudConfig = data;
+      sem.sendEventToAll({type: Message.MSG_APP_INTEL_CONFIG_UPDATED});
     }
   }
 

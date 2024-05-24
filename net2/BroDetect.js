@@ -44,6 +44,8 @@ const IdentityManager = require('./IdentityManager.js');
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
+const IntelTool = require('./IntelTool.js')
+const intelTool = new IntelTool()
 
 const Accounting = require('../control/Accounting.js');
 const accounting = new Accounting();
@@ -67,6 +69,7 @@ const fc = require('../net2/config.js')
 const config = fc.getConfig().bro
 
 const APP_MAP_SIZE = 1000;
+const PROXY_CONN_SIZE = 100;
 const FLOWSTASH_EXPIRES = config.conn.flowstashExpires;
 
 const httpFlow = require('../extension/flow/HttpFlow.js');
@@ -145,6 +148,7 @@ class BroDetect {
     if (!firewalla.isMain())
       return;
     this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 10800 * 1000});
+    this.proxyConn = new LRU({max: PROXY_CONN_SIZE, maxAge: 60 * 1000});
     this.outportarray = [];
 
     let c = require('./MessageBus.js');
@@ -260,23 +264,58 @@ class BroDetect {
       if (obj.host && obj.host.match(/^\[?[0-9a-e]{1,4}$/)) {
         obj.host = obj['id.resp_h']
       }
-      if (obj.host.endsWith(':')) {
-        obj.host = obj.host.slice(0, -1)
+      // since zeek 5.0, the host will contain port number if it is not a well-known port
+      // http connect might contain target port (not the same as id.resp_p which is proxy port
+      // and sometimes there's a single trailing ':', probably a zeek bug
+      if (obj.host.includes(':')) {
+        obj.host = obj.host.substring(0, obj.host.indexOf(':'))
       }
+
+      let host = obj.host
+      if (host && host.startsWith("[") && host.endsWith("]"))
+        // strip [] from an ipv6 address
+        host = host.substring(1, appCacheObj.host.length - 1);
+
+      // HTTP proxy, drop host info
+      if (obj.method == 'CONNECT' || obj.proxied) {
+        this.proxyConn.set(obj.uid, true)
+        log.verbose('Drop HTTP CONNECT', host, obj)
+
+        // in case SSL record processed already
+
+        // HTTP & SSL functions might still run into racing condition
+        // adding a lock doesn't really worth the performance penalty, simply adds a delay here
+        await delay(10 * 1000)
+
+        // remove af data from flowstash
+        // won't be querying redis for written flows here as the cost is probably too much for this feature
+        for (const key in this.flowstash) {
+          if (this.flowstash[key].uids.includes(obj.uid)) {
+            const af = this.flowstash[key].af
+            if (af[host] && af[host].ip == obj['id.resp_h'])
+              delete af[host]
+            break // one uid could only appear in one flow
+          }
+        }
+
+        this.withdrawAppMap(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p']);
+        await conntrack.delConnEntries(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], 'tcp');
+
+        await rclient.unlinkAsync(intelTool.getSSLCertKey(obj['id.resp_h']))
+
+        await dnsTool.removeReverseDns(host, obj['id.resp_h']);
+        await dnsTool.removeDns(obj['id.resp_h'], host);
+
+        return
+      }
+
       httpFlow.process(obj);
       const appCacheObj = {
         uid: obj.uid,
-        host: obj.host,
+        host: host,
         proto: "http",
         ip: obj["id.resp_h"]
       };
-      if (obj.host && obj["id.resp_p"] && obj.host.endsWith(`:${obj["id.resp_p"]}`)) {
-        // since zeek 5.0, the host will contain port number if it is not a well-known port
-        appCacheObj.host = obj.host.substring(0, obj.host.length - `:${obj["id.resp_p"]}`.length);
-      }
-      if (appCacheObj.host && appCacheObj.host.startsWith("[") && appCacheObj.host.endsWith("]"))
-        // strip [] from an ipv6 address
-        appCacheObj.host = appCacheObj.host.substring(1, appCacheObj.host.length - 1);
       // this data can be used across processes, e.g., live flows in FireAPI
       if (appCacheObj.host && obj["id.orig_h"] && obj["id.resp_h"] && obj["id.orig_p"] && obj["id.resp_p"]) {
         const data = {};
@@ -286,7 +325,9 @@ class BroDetect {
         await conntrack.setConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], "tcp", data, 600);
         this.depositeAppMap(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], appCacheObj);
       }
-    } catch (err) {}
+    } catch (err) {
+      log.error("Processing HTTP data", err, data);
+    }
   }
 
   /*
@@ -430,12 +471,11 @@ class BroDetect {
       this.pingedIp = new LRU({max: 10000, maxAge: 1000 * 60 * 60 * 24, updateAgeOnGet: false})
     }
     if (!this.pingedIp.has(ip)) {
-      //log.info("Conn:Learned:Ip",ip,flowspec);
       // probably issue ping here for ARP cache and later used in IPv6DiscoverySensor
       if (!iptool.isV4Format(ip)) {
         // ip -6 neighbor may expire the ping pretty quickly, need to ping a few times to have sensors
         // pick up the new data
-        log.info("Conn:Learned:Ip", "ping ", ip, flowspec);
+        log.verbose("Conn:Learned:Ip", "ping ", ip, flowspec);
         linux.ping6(ip)
         setTimeout(() => {
           linux.ping6(ip)
@@ -547,6 +587,8 @@ class BroDetect {
     const orig_bytes = obj.orig_bytes;
     const orig_ip_bytes = obj.orig_ip_bytes;
     const resp_ip_bytes = obj.resp_ip_bytes;
+    const orig_pkts = obj.orig_pkts;
+    const resp_pkts = obj.resp_pkts;
 
     if (missed_bytes / (resp_bytes + orig_bytes) > threshold.missedBytesRatio) {
         log.debug("Conn:Drop:MissedBytes:RatioTooLarge", obj.conn_state, obj);
@@ -555,6 +597,7 @@ class BroDetect {
 
     if (orig_ip_bytes && orig_bytes &&
       (orig_ip_bytes > 1000 || orig_bytes > 1000) &&
+      orig_pkts > 0 && (orig_ip_bytes / orig_pkts < 1400) && // if multiple packets are assembled into one packet, orig(resp)_ip_bytes may be much less than orig(resp)_bytes
       (orig_ip_bytes / orig_bytes) < iptcpRatio) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Orig", obj.conn_state, obj);
       return false;
@@ -562,6 +605,7 @@ class BroDetect {
 
     if (resp_ip_bytes && resp_bytes &&
       (resp_ip_bytes > 1000 || resp_bytes > 1000) &&
+      resp_pkts > 0 && (resp_ip_bytes / resp_pkts < 1400) &&
       (resp_ip_bytes / resp_bytes) < iptcpRatio) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Resp", obj.conn_state, obj);
       return false;
@@ -1119,7 +1163,7 @@ class BroDetect {
           flowspec.ets = tmpspec.ets;
         }
         // update last time updated
-        flowspec._ts = await getUniqueTs(now);
+        flowspec._ts = Math.max(flowspec._ts, tmpspec._ts);
         // TBD: How to define and calculate the duration of flow?
         //      The total time of network transfer?
         //      Or the length of period from the beginning of the first to the end of last flow?
@@ -1262,6 +1306,13 @@ class BroDetect {
         log.error("SSL:Drop", obj);
         return;
       }
+
+      if (this.proxyConn.get(obj.uid)) {
+        log.verbose('Drop SSL because HTTP CONNECT recorded', obj.uid, obj.server_name)
+        this.proxyConn.del(obj.uid)
+        return
+      }
+
       // do not process ssl log that does not pass the certificate validation
       if (obj["validation_status"] && obj["validation_status"] !== "ok")
         return;
@@ -1273,7 +1324,7 @@ class BroDetect {
       }
       let dsthost = obj['server_name'];
       let subject = obj['subject'];
-      let key = "host:ext.x509:" + dst;
+      let key = intelTool.getSSLCertKey(dst)
       let cert_chain_fuids = obj['cert_chain_fuids']; // present in zeek 3.x
       let cert_chain_fps = obj['cert_chain_fps']; // present in zeek 4.x
       let cert_id = null;
@@ -1368,7 +1419,7 @@ class BroDetect {
         await dnsTool.addDns(dst, obj.server_name, config.dns.expires);
       }
     } catch (e) {
-      log.error("SSL:Error Unable to save", e, e.stack, data);
+      log.error("SSL:Error Unable to save", e, data);
     }
   }
 
