@@ -47,10 +47,12 @@ module.exports = {
   REDIS_KEY_POLICY_STATE: 'policy:state',
   REDIS_KEY_EXT_SCAN_RESULT: "sys:scan:external",
   REDIS_KEY_WEAK_PWD_RESULT: "sys:scan:weak_password",
+  REDIS_KEY_NSE_RESULT: "sys:scan:nse",
   REDIS_KEY_NTP_SERVER_STATUS: "sys:ntp:status", // updated only when ntp_redirect is enabled
   REDIS_KEY_VPN_WG_PEER: 'vpn:wg:peer:', // vpn:wg:peer:{intf}:{pubkey}
   REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG: "app_time_usage_cloud_config",
 
+  REDIS_HKEY_NSE_DHCP: "dhcp",
   REDIS_HKEY_CONN_OINTF: "oIntf",
   REDIS_HKEY_CONN_HOST: "host",
   REDIS_HKEY_CONN_APID: "apid", // allow rule id
