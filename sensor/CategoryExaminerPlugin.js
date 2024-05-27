@@ -15,6 +15,7 @@
 
 const log = require('../net2/logger.js')(__filename);
 
+const _ = require('lodash');
 const LRU = require('lru-cache');
 const sl = require('./SensorLoader.js');
 const fc = require('../net2/config.js');
@@ -31,6 +32,8 @@ const categoryFastFilterFeature = "category_filter";
 
 const scheduler = require('../util/scheduler');
 const firewalla = require('../net2/Firewalla.js');
+const IntelTool = require('../net2/IntelTool.js');
+const intelTool = new IntelTool();
 
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Hashes = require('../util/Hashes');
@@ -67,6 +70,7 @@ class CategoryExaminerPlugin extends Sensor {
       sclient.on("message", async (channel, message) => {
         switch (channel) {
           case BF_SERVER_MATCH: {
+            log.debug("receive message from", channel, message)
             let msgObj;
             try {
               msgObj = JSON.parse(message);
@@ -240,7 +244,7 @@ class CategoryExaminerPlugin extends Sensor {
     try {
       response = await this.matchDomain(origDomain);
     } catch (e) {
-      log.debug(`Fail to get match result from category filter: ${origDomain}`);
+      log.warn(`Fail to get match result from category filter: ${origDomain}`);
       return;
     }
 
@@ -250,6 +254,7 @@ class CategoryExaminerPlugin extends Sensor {
       const matchedDomain = result.item;
       if (!categoryUpdater.isActivated(category)) {
         // do not check if category is not activated
+        log.info("skip update domain of disabled category", category);
         continue;
       }
       if (status === "Match") {
@@ -271,7 +276,19 @@ class CategoryExaminerPlugin extends Sensor {
     }
   }
 
+  async _findCategory(domain) {
+    const resp = await intelTool.checkIntelFromCloud(null, domain);
+    if (!_.isArray(resp) || resp.length == 0) {
+      return null;
+    }
+    return _.uniq(resp.map((i) => {if (i.c == 'ad') {return 'adblock_strict';} else return i.c}));
+  }
+
   async confirmJob() {
+    if (this.confirmSet.size == 0) {
+      return;
+    }
+    log.info("category examiner run comfirm job", JSON.stringify(JSON.stringify([...this.confirmSet])));
     const categoryDomainMap = new Map();
     for (const item of this.confirmSet) {
       const [category, matchedDomain, origDomain] = item.split(":");
@@ -283,32 +300,29 @@ class CategoryExaminerPlugin extends Sensor {
     }
 
     this.confirmSet = new Set();
-
     for (const [category, domainList] of categoryDomainMap) {
       const strategy = await categoryUpdater.getStrategy(category);
-      const matchedDomainList = domainList.map(item => item[0]); // send matched domains from local bf to cloud for confirmation, original domain can be a subdomain of matched domain
-
       // update hit set using matched domain list
       if (strategy.updateConfirmSet) {
         let score = Date.now();
-        let results = await this.confirmDomains(category, strategy, matchedDomainList);
-        if (results === null) {
-          log.debug("Fail to confirm domains of category", category);
-          return;
-        }
-        const positiveSet = new Set(results);
-        const unmatchedOrigDomainSet = new Set(domainList.map(item => item[1]));
-        for (const [matchedDomain, origDomain] of domainList) {
-          if (positiveSet.has(matchedDomain)) {
-            log.info(`Add domain ${matchedDomain} to hit set of ${category} `);
-            await this.addDomainToHitSet(category, matchedDomain, score);
+        let originCategory = category.split("_bf")[0];
+        const origDomainList = domainList.map(item => item[1]);
+        const unmatchedOrigDomainSet = new Set(origDomainList);
+        for (const origDomain of origDomainList) {
+          const categories = await this._findCategory(origDomain);
+          log.verbose("categories", category, categories, origDomain);
+          if (categories.includes(category) || categories.includes(originCategory)) { // matched with cloud data
+            log.info(`Add domain ${origDomain} to hit set of ${category} `);
+            await this.addDomainToHitSet(category, origDomain, score);
             unmatchedOrigDomainSet.delete(origDomain);
           }
         }
+
         for (const origDomain of unmatchedOrigDomainSet) {
           log.info(`Add domain ${origDomain} to passthrough set of ${category} `);
           await this.addDomainToPassthroughSet(category, origDomain, score);
         }
+
         await this.limitHitSet(category, MAX_CONFIRM_SET_SIZE);
         await this.limitPassthroughSet(category, MAX_CONFIRM_SET_SIZE);
 
