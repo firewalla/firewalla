@@ -1,4 +1,4 @@
-/*    Copyright 2021-2023 Firewalla Inc.
+/*    Copyright 2021-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -130,15 +130,16 @@ class Monitorable {
       const config = Constants.TAG_TYPE_MAP[type];
       const policyKey = config.policyKey;
       const tags = policy[policyKey];
-      policy[policyKey] = [];
+      const validTags = [];
       if (_.isArray(tags)) {
         const TagManager = require('./TagManager.js');
         for (const uid of tags) {
           const tag = TagManager.getTagByUid(uid);
           if (tag)
-            policy[policyKey].push(uid);
+            validTags.push(uid);
         }
       }
+      if (validTags.length) policy[policyKey] = validTags
     }
     return Object.assign(JSON.parse(JSON.stringify(this.o)), {policy})
   }
@@ -214,6 +215,7 @@ class Monitorable {
     return {
       tags: [],
       userTags: [],
+      deviceTags: [],
       vpnClient: { state: false },
       acl: true,
       dnsmasq: { dnsCaching: true },

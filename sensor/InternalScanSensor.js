@@ -42,6 +42,7 @@ const bruteConfig = require('../extension/nmap/bruteConfig.json');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_TASK_QUEUE = "LOCK_TASK_QUEUE";
+const LOCK_APPLY_INTERNAL_SCAN_POLICY = "LOCK_APPLY_INTERNAL_SCAN_POLICY";
 const MAX_CONCURRENT_TASKS = 3;
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const moment = require('moment-timezone/moment-timezone.js');
@@ -457,8 +458,16 @@ class InternalScanSensor extends Sensor {
     return {key: key, hosts: scanHosts}
   }
 
-  // policy = { state: true, defaultOn: true, cron: '0 0 * * *', ts: 1494931469}
   async applyPolicy(host, ip, policy) {
+    await lock.acquire(LOCK_APPLY_INTERNAL_SCAN_POLICY, async () => {
+      this.applyScanPolicy(host, ip, policy);
+    }).catch((err) => {
+      log.error(`failed to get lock to apply ${featureName} policy`, err.message);
+    });
+  }
+
+  // policy = { state: true, defaultOn: true, cron: '0 0 * * *', ts: 1494931469}
+  async applyScanPolicy(host, ip, policy) {
     if (host.constructor.name != hostManager.constructor.name) { // only need to handle system-level
       return;
     }
