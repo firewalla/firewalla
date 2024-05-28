@@ -72,7 +72,7 @@ const extraConfig = {
   'http-form-brute': [{},{path: '/oauth', passvar: 'token', uservar: 'username'}, {uservar: 'name'}],
 };
 
-describe.skip('Test InternalScanSensor', function() {
+describe('Test InternalScanSensor', function() {
   this.timeout(1200000);
   this.plugin = new InternalScanSensor({});
   this.plugin.subTaskMap = {};
@@ -275,7 +275,6 @@ describe.skip('Test InternalScanSensor', function() {
     await this.plugin.checkDictionary();
   });
 
-
   // A connected device is expected to run a http-server with basic-auth enabled
   // e.g. tiny-http-server --authfile userpass.txt --port 80 --bind 0.0.0.0 --directory html
   it.skip('should nmap guess passwords with weak password enviroment', async() => {
@@ -335,7 +334,7 @@ async function _setTargetPolicy(type, target, state) {
 const cronPolicy = {cron:"10 10 * * *",state:true,defaultOn:true,includeVPNNetworks:false};
 
 
-describe.skip('Test applyPolicy', function(){
+describe('Test applyPolicy', function(){
   this.timeout(10000);
   process.title = "FireMain"
   this.plugin = new InternalScanSensor({});
@@ -379,6 +378,8 @@ describe.skip('Test applyPolicy', function(){
       await rclient.delAsync('host:mac:20:6D:31:01:2B:88');
       await rclient.delAsync('host:mac:20:6D:31:01:2B:89');
       await rclient.hdelAsync('policy:system', 'weak_password_scan');
+      await rclient.delAsync('policy:network:88888888-4881-4881-4881-488148812888');
+      await rclient.delAsync('policy:network:99999999-4881-4881-4881-488148812999');
       done();
     })();
   });
@@ -435,6 +436,8 @@ describe.skip('Test applyPolicy', function(){
 
     cronPolicy.ts = now;
     await this.plugin.applyPolicy(this.hm, '0.0.0.0', cronPolicy);
+
+    await this.plugin.applyPolicy(this.hm, '0.0.0.0', {state: false});
   });
 
   it('should prepare run', async() => {

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -1148,7 +1148,6 @@ class Host extends Monitorable {
         policy[policyKey] = [];
         json[policyKey] = policy[policyKey];
         if (_.isArray(tags)) {
-          const TagManager = require('./TagManager.js');
           for (const uid of tags) {
             const tag = TagManager.getTagByUid(uid);
             if (tag)
