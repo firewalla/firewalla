@@ -264,14 +264,22 @@ class BroDetect {
       if (obj.host && obj.host.match(/^\[?[0-9a-e]{1,4}$/)) {
         obj.host = obj['id.resp_h']
       }
-      if (obj.host.endsWith(':')) {
-        obj.host = obj.host.slice(0, -1)
+      // since zeek 5.0, the host will contain port number if it is not a well-known port
+      // http connect might contain target port (not the same as id.resp_p which is proxy port
+      // and sometimes there's a single trailing ':', probably a zeek bug
+      if (obj.host.includes(':')) {
+        obj.host = obj.host.substring(0, obj.host.indexOf(':'))
       }
+
+      let host = obj.host
+      if (host && host.startsWith("[") && host.endsWith("]"))
+        // strip [] from an ipv6 address
+        host = host.substring(1, appCacheObj.host.length - 1);
 
       // HTTP proxy, drop host info
       if (obj.method == 'CONNECT' || obj.proxied) {
         this.proxyConn.set(obj.uid, true)
-        log.verbose('Drop HTTP CONNECT', obj)
+        log.verbose('Drop HTTP CONNECT', host, obj)
 
         // in case SSL record processed already
 
@@ -284,8 +292,8 @@ class BroDetect {
         for (const key in this.flowstash) {
           if (this.flowstash[key].uids.includes(obj.uid)) {
             const af = this.flowstash[key].af
-            if (af[obj.server_name] && af[obj.server_name].ip == obj['id.resp_h'])
-              delete af[obj.server_name]
+            if (af[host] && af[host].ip == obj['id.resp_h'])
+              delete af[host]
             break // one uid could only appear in one flow
           }
         }
@@ -295,8 +303,8 @@ class BroDetect {
 
         await rclient.unlinkAsync(intelTool.getSSLCertKey(obj['id.resp_h']))
 
-        await dnsTool.removeReverseDns(obj.server_name, dst);
-        await dnsTool.removeDns(dst, obj.server_name);
+        await dnsTool.removeReverseDns(host, obj['id.resp_h']);
+        await dnsTool.removeDns(obj['id.resp_h'], host);
 
         return
       }
@@ -304,17 +312,10 @@ class BroDetect {
       httpFlow.process(obj);
       const appCacheObj = {
         uid: obj.uid,
-        host: obj.host,
+        host: host,
         proto: "http",
         ip: obj["id.resp_h"]
       };
-      if (obj.host && obj["id.resp_p"] && obj.host.endsWith(`:${obj["id.resp_p"]}`)) {
-        // since zeek 5.0, the host will contain port number if it is not a well-known port
-        appCacheObj.host = obj.host.substring(0, obj.host.length - `:${obj["id.resp_p"]}`.length);
-      }
-      if (appCacheObj.host && appCacheObj.host.startsWith("[") && appCacheObj.host.endsWith("]"))
-        // strip [] from an ipv6 address
-        appCacheObj.host = appCacheObj.host.substring(1, appCacheObj.host.length - 1);
       // this data can be used across processes, e.g., live flows in FireAPI
       if (appCacheObj.host && obj["id.orig_h"] && obj["id.resp_h"] && obj["id.orig_p"] && obj["id.resp_p"]) {
         const data = {};
@@ -324,7 +325,9 @@ class BroDetect {
         await conntrack.setConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], "tcp", data, 600);
         this.depositeAppMap(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], appCacheObj);
       }
-    } catch (err) {}
+    } catch (err) {
+      log.error("Processing HTTP data", err, data);
+    }
   }
 
   /*
@@ -1305,7 +1308,7 @@ class BroDetect {
       }
 
       if (this.proxyConn.get(obj.uid)) {
-        log.verbose('Drop SSL because HTTP CONNECT recorded', obj.uid)
+        log.verbose('Drop SSL because HTTP CONNECT recorded', obj.uid, obj.server_name)
         this.proxyConn.del(obj.uid)
         return
       }
@@ -1416,7 +1419,7 @@ class BroDetect {
         await dnsTool.addDns(dst, obj.server_name, config.dns.expires);
       }
     } catch (e) {
-      log.error("SSL:Error Unable to save", e, e.stack, data);
+      log.error("SSL:Error Unable to save", e, data);
     }
   }
 
