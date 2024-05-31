@@ -233,6 +233,7 @@ class InternetSpeedtestPlugin extends Sensor {
             log.error(`Last cronjob was scheduled at ${new Date(lastRunTs * 1000).toTimeString()}, ${new Date(lastRunTs * 1000).toDateString()}, less than ${MIN_CRON_INTERVAL} seconds till now`);
             return;
           }
+          this.lastRunTs = now;
           const wanInterfaces = sysManager.getWanInterfaces();
           const wanType = sysManager.getWanType();
           const primaryWanIntf = sysManager.getPrimaryWanInterface();
