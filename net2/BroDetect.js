@@ -285,7 +285,7 @@ class BroDetect {
 
         // HTTP & SSL functions might still run into racing condition
         // adding a lock doesn't really worth the performance penalty, simply adds a delay here
-        await delay(10 * 1000)
+        await delay((config.http.proxyIntelRemoveDelay || 30) * 1000)
 
         // remove af data from flowstash
         // won't be querying redis for written flows here as the cost is probably too much for this feature
