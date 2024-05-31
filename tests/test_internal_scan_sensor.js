@@ -16,10 +16,23 @@
 
 let chai = require('chai');
 let expect = chai.expect;
-
-let InternalScanSensor = require('../sensor/InternalScanSensor.js');
-const rclient = require('../util/redis_manager.js').getRedisClient();
 const execAsync = require('child-process-promise').exec;
+
+const fireRouter = require('../net2/FireRouter.js');
+const Host = require('../net2/Host.js');
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
+const log = require('../net2/logger.js')(__filename);
+const NetworkProfile = require('../net2/NetworkProfile.js');
+const networkProfileManager = require('../net2/NetworkProfileManager.js');
+const npm = require('../net2/NetworkProfileManager.js');
+const sysManager = require('../net2/SysManager.js');
+const Tag = require('../net2/Tag.js');
+const tagManager = require('../net2/TagManager.js');
+const InternalScanSensor = require('../sensor/InternalScanSensor.js');
+const rclient = require('../util/redis_manager.js').getRedisClient();
+
+const policyKeyName = 'weak_password_scan';
 
 const bruteConfig =  {
   "tcp_23": {
@@ -262,7 +275,6 @@ describe('Test InternalScanSensor', function() {
     await this.plugin.checkDictionary();
   });
 
-
   // A connected device is expected to run a http-server with basic-auth enabled
   // e.g. tiny-http-server --authfile userpass.txt --port 80 --bind 0.0.0.0 --directory html
   it.skip('should nmap guess passwords with weak password enviroment', async() => {
@@ -275,4 +287,181 @@ describe('Test InternalScanSensor', function() {
     weakPasswords = await this.plugin.nmapGuessPassword('192.168.196.105', bruteConfig['tcp_80'], 'hostId');
     expect(weakPasswords).to.be.eql([{username: 'admin', password: '123456'}]);
   });
+});
+
+
+function delay(t) {
+  return new Promise(function(resolve) {
+    setTimeout(resolve, t)
+  });
+}
+
+async function _setTargetPolicy(type, target, state) {
+  const policyState = state != null ? {state: state} : undefined;
+  switch (type) {
+    case 'host': {
+      const hostObj = await hostManager.getHostAsync(target, true);
+      if (hostObj && hostObj.getUniqueId()) {
+        await hostObj.setPolicyAsync(policyKeyName, policyState);
+        return;
+      }
+      break;
+    }
+    case 'network': {
+      const intfObj = networkProfileManager.getNetworkProfile(target);
+      if (intfObj && intfObj.getUniqueId()) {
+        await intfObj.setPolicyAsync(policyKeyName, policyState);
+        return;
+      }
+      break;
+    }
+    case 'tag': {
+      const tagObj = tagManager.getTag(target);
+      if (tagObj && tagObj.getUniqueId()) {
+        await tagObj.setPolicyAsync(policyKeyName, policyState);
+        return;
+      }
+      break;
+    }
+    default:
+      log.warn(`fail to set policy, unknown target type ${type}`);
+      return;
+  }
+  log.warn(`fail to set policy, ${type} ${target} is not found`);
+}
+
+
+const cronPolicy = {cron:"10 10 * * *",state:true,defaultOn:true,includeVPNNetworks:false};
+
+
+describe('Test applyPolicy', function(){
+  this.timeout(10000);
+  process.title = "FireMain"
+  this.plugin = new InternalScanSensor({});
+  this.plugin.subTaskMap = {};
+  this.plugin.subTaskRunning = {};
+  this.plugin.scheduledScanTasks = {};
+  this.plugin.subTaskWaitingQueue = [];
+
+  sysManager.uuidMap = {};
+  sysManager.uuidMap["88888888-4881-4881-4881-488148812888"] = {"name": "eth0.288", "uuid": "88888888-4881-4881-4881-488148812888", "mac_address":"20:6D:31:01:2B:88"};
+  sysManager.uuidMap["99999999-4881-4881-4881-488148812999"] = {"name": "eth0.289", "uuid": "99999999-4881-4881-4881-488148812999", "mac_address":"20:6D:31:01:2B:89"};
+
+  this.hm = new HostManager();
+  this.hm.hosts = {all:[]};
+
+  beforeEach((done) => {
+    (async() =>{
+      fireRouter.scheduleReload();
+      await delay(2000)
+      await sysManager.updateAsync();
+      const currentTs = Date.now() / 1000;
+      npm.networkProfiles["88888888-4881-4881-4881-488148812888"] = new NetworkProfile({uuid: "88888888-4881-4881-4881-488148812888"});
+      npm.networkProfiles["99999999-4881-4881-4881-488148812999"] = new NetworkProfile({uuid: "99999999-4881-4881-4881-488148812999"});
+      tagManager.tags['88']= new Tag({uid: 88, name: '', createTs: currentTs});
+      await rclient.hsetAsync('host:mac:20:6D:31:01:2B:88', 'mac', '20:6D:31:01:2B:88', 'intf', '88888888-4881-4881-4881-488148812888', 'lastActiveTimestamp', currentTs);
+      await rclient.hsetAsync('policy:mac:20:6D:31:01:2B:88', 'tags', '["88"]', 'monitor', false);
+      await rclient.hsetAsync('host:mac:20:6D:31:01:2B:89', 'mac', '20:6D:31:01:2B:89', 'intf', '99999999-4881-4881-4881-488148812999', 'lastActiveTimestamp', currentTs);
+      await rclient.hsetAsync('policy:mac:20:6D:31:01:2B:89', 'monitor', false);
+      this.hm.hostsdb['host:mac:20:6D:31:01:2B:88'] = new Host({mac: '20:6D:31:01:2B:88', ipv4Addr: '10.88.1.8', intf:'88888888-4881-4881-4881-488148812888', lastActiveTimestamp: currentTs}, true);
+      this.hm.hostsdb['host:mac:20:6D:31:01:2B:88'].policy = {tags:["88"],monitor: false};
+      this.hm.hostsdb['host:mac:20:6D:31:01:2B:89'] = new Host({mac: '20:6D:31:01:2B:89', ipv4Addr: '10.88.1.9', intf:'99999999-4881-4881-4881-488148812999', lastActiveTimestamp: currentTs}, true);
+      this.hm.hostsdb['host:mac:20:6D:31:01:2B:89'].policy = {monitor: false};
+      this.hm.hosts.all.push(this.hm.hostsdb['host:mac:20:6D:31:01:2B:88']);
+      this.hm.hosts.all.push(this.hm.hostsdb['host:mac:20:6D:31:01:2B:89']);
+      done();
+    })();
+  });
+
+  afterEach((done) => {
+    (async() => {
+      await rclient.delAsync('host:mac:20:6D:31:01:2B:88');
+      await rclient.delAsync('host:mac:20:6D:31:01:2B:89');
+      await rclient.hdelAsync('policy:system', 'weak_password_scan');
+      await rclient.delAsync('policy:network:88888888-4881-4881-4881-488148812888');
+      await rclient.delAsync('policy:network:99999999-4881-4881-4881-488148812999');
+      done();
+    })();
+  });
+
+  it('should get scan hosts', async() => {
+    let data;
+    await _setTargetPolicy('network', '99999999-4881-4881-4881-488148812999', null);
+    await _setTargetPolicy('tag', 88, null);
+    await _setTargetPolicy('host', '20:6D:31:01:2B:88', null);
+    await _setTargetPolicy('host', '20:6D:31:01:2B:89', null);
+
+    // network state true
+    await _setTargetPolicy('network', '88888888-4881-4881-4881-488148812888', true);
+
+    data = await this.plugin.getScanHosts({defaultOn: false, ts:9999});
+    expect(data.hosts).to.be.eql(['20:6D:31:01:2B:88']);
+
+    data = await this.plugin.getScanHosts({defaultOn: true, ts:9999});
+    expect(data.hosts).to.be.eql(['20:6D:31:01:2B:88','20:6D:31:01:2B:89']);
+
+    // tag state false
+    await _setTargetPolicy('tag', 88, false);
+    data = await this.plugin.getScanHosts({defaultOn: false, ts:9999});
+    expect(data.hosts.length).to.be.equal(0);
+
+    data = await this.plugin.getScanHosts({defaultOn: true, ts:9999});
+    expect(data.hosts).to.be.eql(['20:6D:31:01:2B:89']);
+
+    // device state true
+    await _setTargetPolicy('host', '20:6D:31:01:2B:88', true);
+    data = await this.plugin.getScanHosts({defaultOn: false, ts:9999});
+    expect(data.hosts).to.be.eql(['20:6D:31:01:2B:88']);
+
+    data = await this.plugin.getScanHosts({defaultOn: true, ts:9999});
+    expect(data.hosts).to.be.eql(['20:6D:31:01:2B:88','20:6D:31:01:2B:89']);
+
+    // device state true, default off
+    await _setTargetPolicy('host', '20:6D:31:01:2B:89', true);
+    data = await this.plugin.getScanHosts({defaultOn: false, ts:9999});
+    expect(data.hosts).to.be.eql(['20:6D:31:01:2B:88','20:6D:31:01:2B:89']);
+
+    // device state false, default on
+    await _setTargetPolicy('host', '20:6D:31:01:2B:89', false );
+    data = await this.plugin.getScanHosts({defaultOn: true, ts:9999});
+    expect(data.hosts).to.be.eql(['20:6D:31:01:2B:88']);
+  });
+
+  it('should apply policy', async() => {
+    const now = Date.now() / 1000;
+    await this.plugin.applyPolicy(this.hm, '0.0.0.0', {});
+    await this.plugin.applyPolicy(this.hm, '0.0.0.0', {cron: '1 * * * *', ts:now});
+
+    await this.plugin.applyPolicy(this.hm, '0.0.0.0', {state: true, defaultOn: true, cron: '1 2 * * *', ts:now});
+
+    cronPolicy.ts = now;
+    await this.plugin.applyPolicy(this.hm, '0.0.0.0', cronPolicy);
+
+    await this.plugin.applyPolicy(this.hm, '0.0.0.0', {state: false});
+  });
+
+  it('should prepare run', async() => {
+    let p = null;
+    await rclient.hdelAsync('policy:system', 'weak_password_scan');
+    p = await this.plugin.loadPolicyAsync();
+    expect(p).to.be.undefined;
+
+    await rclient.hsetAsync('policy:system', 'weak_password_scan', '{"state": true, "cron": "1 1 * * *"}');
+    p = await this.plugin.loadPolicyAsync();
+    expect(p.cron).to.be.equal('1 1 * * *');
+  });
+});
+
+describe('Test scheduledScanTasks', function(){
+  this.plugin = new InternalScanSensor({});
+
+  it('should clean task results', () =>  {
+    this.plugin.scheduledScanTasks = {"a": {},"cron_4": {ets:4}, "cron_1": {ets:1}, "bbb":1, "cron_2": {ets:2}, "cron_3": {ets:3}};
+    this.plugin._cleanTasks(2);
+    expect(this.plugin.scheduledScanTasks).to.eql({"cron_4": {ets:4},"cron_3": {ets:3}});
+
+    this.plugin._cleanTasks(3);
+    expect(this.plugin.scheduledScanTasks).to.eql({"cron_4": {ets:4},"cron_3": {ets:3}});
+  });
+
 });

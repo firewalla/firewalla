@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -1998,7 +1998,12 @@ class netBot extends ControllerBot {
         else {
           const {name, obj, affiliated} = value;
           const tag = await this.tagManager.createTag(name, obj, _.get(affiliated, "name"), _.get(affiliated, "obj"));
-          return tag
+          const result = tag.toJson();
+          if (result.affiliatedTag) {
+            const afTag = this.tagManager.getTagByUid(result.affiliatedTag)
+            if (afTag) result.affiliatedTag = afTag.toJson()
+          }
+          return result;
         }
       }
       case "tag:remove": {
