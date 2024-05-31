@@ -1,4 +1,4 @@
-/*    Copyright 2021-2023 Firewalla Inc.
+/*    Copyright 2021-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -130,15 +130,16 @@ class Monitorable {
       const config = Constants.TAG_TYPE_MAP[type];
       const policyKey = config.policyKey;
       const tags = policy[policyKey];
-      policy[policyKey] = [];
+      const validTags = [];
       if (_.isArray(tags)) {
         const TagManager = require('./TagManager.js');
         for (const uid of tags) {
           const tag = TagManager.getTagByUid(uid);
           if (tag)
-            policy[policyKey].push(uid);
+            validTags.push(uid);
         }
       }
+      if (validTags.length) policy[policyKey] = validTags
     }
     return Object.assign(JSON.parse(JSON.stringify(this.o)), {policy})
   }
@@ -214,10 +215,12 @@ class Monitorable {
     return {
       tags: [],
       userTags: [],
+      deviceTags: [],
       vpnClient: { state: false },
       acl: true,
       dnsmasq: { dnsCaching: true },
       device_service_scan: false,
+      weak_password_scan: { state: false },
       adblock: false,
       safeSearch: { state: false },
       family: false,
@@ -253,6 +256,20 @@ class Monitorable {
     }
     this.policy = policyData || {}
     return this.policy;
+  }
+
+  async getPolicyAsync(policyName) {
+    const policyData = await rclient.hgetAsync(this._getPolicyKey(), policyName);
+    try {
+      this.policy[policyName] = JSON.parse(policyData);
+    } catch (err) {
+      log.error(`failed to parse policy ${this.getGUID()} with value "${policyData}"`, err.message);
+    }
+    return this.policy[policyName];
+  }
+
+  async hasPolicyAsync(policyName) {
+    return await rclient.hexistsAsync(this._getPolicyKey(), policyName) == "1";
   }
 
   loadPolicy(callback) {
