@@ -950,7 +950,7 @@ class OutboundAlarm extends Alarm {
     if (alarm2.isAppSupported() && alarm2.getAppName())
       destName2 = alarm2.getAppName();
     else
-      destName = alarm2[destNameKey];
+      destName2 = alarm2[destNameKey];
 
     return destName == destName2;
   }
