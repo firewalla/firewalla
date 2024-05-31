@@ -117,7 +117,7 @@ class TagManager {
 
     const newUid = await this._getNextTagUid();
     const now = Math.floor(Date.now() / 1000);
-    const newTag = new Tag({}, obj, {uid: newUid, name: name, createTs: now})
+    const newTag = new Tag(Object.assign({}, obj, {uid: newUid, name: name, createTs: now}))
     await newTag.save()
 
     this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, newTag);
