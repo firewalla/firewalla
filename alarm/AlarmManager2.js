@@ -98,38 +98,40 @@ module.exports = class {
 
       this.setupAlarmQueue();
 
-      // clean timeout pending alarms every 900s
-      setInterval(() => {
-        this.cleanPendingQueue();
-      }, 900000);
+      if (f.isMain()) {
+        // clean timeout pending alarms every 900s
+        setInterval(() => {
+          this.cleanPendingQueue();
+        }, 900000);
 
-      sclient.subscribe("config:feature:dynamic:disable");
-      sclient.subscribe("alarm:create");
-      sclient.subscribe("alarm:mspsync");
+        sclient.subscribe("config:feature:dynamic:disable");
+        sclient.subscribe("alarm:create");
+        sclient.subscribe("alarm:mspsync");
 
-      sclient.on("message", (channel, message) => {
-        switch (channel) {
-          case "config:feature:dynamic:disable": {
-            log.info('received event config:feature:dynamic:disable')
-            if (message === featureName) {
-              this.cleanPendingQueue();
+        sclient.on("message", (channel, message) => {
+          switch (channel) {
+            case "config:feature:dynamic:disable": {
+              log.info('received event config:feature:dynamic:disable')
+              if (message === featureName) {
+                this.cleanPendingQueue();
+              }
+              break;
             }
-            break;
+            case "alarm:create": {
+              log.info('received event alarm:create')
+              this.createAlarm(JSON.parse(message));
+              break;
+            }
+            case "alarm:mspsync": {
+              log.info('received event alarm:mspsync')
+              this._mspSyncAlarm(JSON.parse(message));
+              break;
+            }
           }
-          case "alarm:create": {
-            log.info('received event alarm:create')
-            this.createAlarm(JSON.parse(message));
-            break;
-          }
-          case "alarm:mspsync": {
-            log.info('received event alarm:mspsync')
-            this._mspSyncAlarm(JSON.parse(message));
-            break;
-          }
-        }
-      });
-      return instance;
+        });
+      }
     }
+    return instance;
   }
 
   async _mspSyncAlarm(data) {
@@ -149,7 +151,7 @@ module.exports = class {
     const alarm = this._genAlarm(data);
     log.info('alarm:create', alarm);
     await this.enrichDeviceInfo(alarm);
-    this.enqueueAlarm(alarm); // use enqeueue to ensure no dup alarms
+    this.enqueueAlarm(alarm); // use enqueue to ensure no dup alarms
   }
 
   async cleanPendingQueue() {
