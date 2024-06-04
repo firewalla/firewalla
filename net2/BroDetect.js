@@ -260,21 +260,27 @@ class BroDetect {
   async processHttpData(data) {
     try {
       const obj = JSON.parse(data);
+
+      let host = obj.host
       // workaround for https://github.com/zeek/zeek/issues/1844
-      if (obj.host && obj.host.match(/^\[?[0-9a-e]{1,4}$/)) {
-        obj.host = obj['id.resp_h']
+      if (host && host.match(/^\[?[0-9a-e]{1,4}$/)) {
+        host = obj['id.resp_h']
       }
       // since zeek 5.0, the host will contain port number if it is not a well-known port
       // http connect might contain target port (not the same as id.resp_p which is proxy port
       // and sometimes there's a single trailing ':', probably a zeek bug
-      if (obj.host.includes(':')) {
-        obj.host = obj.host.substring(0, obj.host.indexOf(':'))
+      // v6 ip address is wrapped with []
+      if (host.includes(']:')) {
+        host = host.substring(0, host.indexOf(']:') + 1)
+      }
+      if (host && host.startsWith("[") && host.endsWith("]")) {
+        // strip [] from an ipv6 address
+        host = host.substring(1, host.length - 1);
+      } else if (host.includes(':')) {
+        host = host.substring(0, host.indexOf(':'))
       }
 
-      let host = obj.host
-      if (host && host.startsWith("[") && host.endsWith("]"))
-        // strip [] from an ipv6 address
-        host = host.substring(1, appCacheObj.host.length - 1);
+      obj.host = host
 
       // HTTP proxy, drop host info
       if (obj.method == 'CONNECT' || obj.proxied) {
