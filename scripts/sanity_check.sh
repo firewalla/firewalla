@@ -513,8 +513,8 @@ check_hosts() {
     fi
 
     local DEVICES=$(redis-cli keys 'host:mac:*')
-    printf "%35s %15s %28s %15s %18s %3s %2s %2s %11s %7s %6s %3s %2s %3s %3s %3s %3s %3s\n" \
-      "Host" "Network" "Name" "IP" "MAC" "Mon" "B7" "Ol" "vpnClient" "FlowOut" "FlowIn" "Grp" "EA" "DNS" "AdB" "Fam" "DoH" "ubn"
+    printf "%35s %15s %28s %15s %18s %3s %2s %2s %11s %7s %6s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s\n" \
+      "Host" "Network" "Name" "IP" "MAC" "Mon" "B7" "Ol" "vpnClient" "FlowOut" "FlowIn" "Grp" "Usr" "DvT" "EA" "DNS" "AdB" "Fam" "SS" "DoH" "ubn"
     NOW=$(date +%s)
     frcc
 
@@ -602,10 +602,13 @@ check_hosts() {
         local FAMILY_PROTECT=""
         if [[ "${p[family]}" == "true" ]]; then FAMILY_PROTECT="T"; fi
 
+        local SS=$(if [[ ${p[safeSearch]} == *"true"* ]]; then echo "T"; fi)
         local DOH=$(if [[ ${p[doh]} == *"true"* ]]; then echo "T"; fi)
         local UNBOUND=$(if [[ ${p[unbound]} == *"true"* ]]; then echo "T"; fi)
 
         local TAGS=${p[tags]//[\][\" ]/}
+        local USER_TAGS=${p[userTags]//[\][\" ]/}
+        local DEVICE_TAGS=${p[deviceTags]//[\][\" ]/}
         # TAGNAMES=""
         # for tag in $TAGS; do
         #     TAGNAMES="$(redis-cli hget tag:uid:$tag name | tr -d '\n')[$tag],"
@@ -641,9 +644,9 @@ check_hosts() {
             COLOR=$COLOR"\e[2m" #dim
         fi
 
-        printf "$BGCOLOR$COLOR%35s %15s %28s %15s $MAC_COLOR%18s$COLOR %3s %2s %2s %11s %7s %6s $TAG_COLOR%3s$COLOR %2s %3s %3s %3s %3s %3s$UNCOLOR$BGUNCOLOR\n" \
+        printf "$BGCOLOR$COLOR%35s %15s %28s %15s $MAC_COLOR%18s$COLOR %3s %2s %2s %11s %7s %6s $TAG_COLOR%3s$COLOR %2s %3s %3s %3s %3s %3s %3s %3s %3s$UNCOLOR$BGUNCOLOR\n" \
           "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$(align::right 28 "${h[name]}")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$VPN" "$FLOWINCOUNT" \
-          "$FLOWOUTCOUNT" "$TAGS" "$EMERGENCY_ACCESS" "$DNS_BOOST" "$ADBLOCK" "$FAMILY_PROTECT" "$DOH" "$UNBOUND"
+          "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "$EMERGENCY_ACCESS" "$DNS_BOOST" "$ADBLOCK" "$FAMILY_PROTECT" "$SS" "$DOH" "$UNBOUND"
 
         unset h
         unset p
@@ -656,7 +659,7 @@ check_hosts() {
 check_ipset() {
     echo "---------------------- Active IPset ------------------"
     printf "%25s %10s\n" "IPSET" "NUM"
-    local IPSETS=$(sudo iptables -w -L -n | egrep -o "match-set [^ ]*" | sed 's=match-set ==' | sort | uniq)
+    local IPSETS=$(sudo iptables -w -L -n | grep -E -o "match-set [^ ]*" | sed 's=match-set ==' | sort | uniq)
     for IPSET in $IPSETS $(sudo ipset list -name | grep bd_default_c); do
         local NUM=$(($(sudo ipset -S $IPSET | wc -l)-1))
         local COLOR=""
@@ -906,11 +909,12 @@ check_network() {
 
 check_tag() {
     echo "---------------------- Tag ------------------"
-    local TAGS=$(redis-cli --scan --pattern 'tag:uid:*' | sort)
-    NOW=$(date +%s)
+    mapfile -t TAGS < <(redis-cli --scan --pattern 'tag:uid:*' | sort --version-sort)
+    mapfile -t -O "${#TAGS[@]}" TAGS < <(redis-cli --scan --pattern 'userTag:uid:*' | sort --version-sort)
+    mapfile -t -O "${#TAGS[@]}" TAGS < <(redis-cli --scan --pattern 'deviceTag:uid:*' | sort --version-sort)
 
-    printf "ID\tName\tvpnClient\tAdB\tFam\tDoH\tubn\n" >/tmp/tag_csv
-    for TAG in $TAGS; do
+    printf "ID\tType\tName\taffiliated\tvpnClient\tAdB\tFam\tDoH\tubn\n" >/tmp/tag_csv
+    for TAG in "${TAGS[@]}"; do
       declare -A t p
       read_hash t "$TAG"
       read_hash p "policy:tag:${t[uid]}"
@@ -924,8 +928,8 @@ check_tag() {
       local DOH=$(if [[ ${p[doh]} == *"true"* ]]; then echo "T"; fi)
       local UNBOUND=$(if [[ ${p[unbound]} == *"true"* ]]; then echo "T"; fi)
 
-      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-        "${t[uid]}" "${t[name]}" "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$DOH" "$UNBOUND" >>/tmp/tag_csv
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+        "${t[uid]}" "${t[type]}" "${t[name]}" "${t[affiliatedTag]}" "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$DOH" "$UNBOUND" >>/tmp/tag_csv
       unset t p
     done
 
@@ -1014,7 +1018,7 @@ check_eth_count() {
 check_events() {
   redis-cli zrange event:log 0 -1 | jq -c '.ts |= (. / 1000 | strftime("%Y-%m-%d %H:%M")) | del(.event_type, .ts0, .labels.wan_intf_uuid) | del(.labels|..|select(type=="object")|.wan_intf_uuid)'
   # hint on stderr so won't impact stuff being piped
-  >&2 echo '  >> Keep in mind the timestamps above are all UTC <<'
+  >&2 echo "  >> Keep in mind the timestamps above are all UTC, local timezone is: $(date +'%:::z %Z') <<"
 }
 
 usage() {
