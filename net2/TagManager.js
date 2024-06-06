@@ -121,8 +121,10 @@ class TagManager {
     await newTag.save()
 
     this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, newTag);
-    if (afTag)
+    if (afTag) {
       await afTag.setPolicyAsync(Constants.TAG_TYPE_MAP[type].policyKey, [ String(newUid) ]);
+      newTag.afTag = afTag
+    }
 
     return newTag
   }
@@ -290,6 +292,14 @@ class TagManager {
       }
       delete this.tags[uid];
     }
+
+    for (const uid in this.tags) {
+      const tag = this.tags[uid]
+      if (this.tags[tag.o.affiliatedTag]) {
+        tag.afTag = this.tags[tag.o.affiliatedTag]
+      }
+    }
+
     return this.tags;
   }
 
