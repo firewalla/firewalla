@@ -2011,9 +2011,8 @@ class netBot extends ControllerBot {
           const {name, obj, affiliated} = value;
           const tag = await this.tagManager.createTag(name, obj, _.get(affiliated, "name"), _.get(affiliated, "obj"));
           const result = tag.toJson();
-          if (result.affiliatedTag) {
-            const afTag = this.tagManager.getTagByUid(result.affiliatedTag)
-            if (afTag) result.affiliatedTag = afTag.toJson()
+          if (tag.afTag) {
+            result.affiliatedTag = tag.afTag.toJson()
           }
           return result;
         }
