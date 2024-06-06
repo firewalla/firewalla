@@ -40,6 +40,7 @@ let versionConfig = null
 let cloudConfig = null
 let userConfig = null
 let testConfig = null
+let mspConfig = null;
 let config = null;
 
 let dynamicFeatures = null
@@ -194,7 +195,7 @@ async function reloadConfig() {
     await pclient.publishAsync("config:updated", JSON.stringify(config))
 }
 
-function aggregateConfig(configArray = [defaultConfig, platformConfig, versionConfig, cloudConfig, userConfig, testConfig]) {
+function aggregateConfig(configArray = [defaultConfig, platformConfig, versionConfig, cloudConfig, userConfig, testConfig, mspConfig]) {
   const newConfig = {}
   // later in this array higher the priority
   const prioritized = configArray.filter(Boolean)
@@ -241,6 +242,37 @@ function getConfig(reload = false) {
   return config
 }
 
+async function getMspConfig(field = '', reload = false) {
+  if (reload) {
+    const mspdata = JSON.parse(await rclient.getAsync('ext.guardian.data'));
+    let data;
+    if (_.isArray(mspdata)) {
+      const cfgs = mspdata.filter( i => i.config == true );
+      data = Object.assign({}, ...cfgs);
+    } else {
+      data = mspdata && mspdata.config;
+    }
+    if (!data) {
+      mspConfig = {};
+      return mspConfig;
+    }
+    if (!mspConfig && Object.keys(data)) {
+      mspConfig = {};
+    }
+    for (const k in data) {
+      try {
+        mspConfig[k] = JSON.parse(data[k]);
+      } catch (err) {
+        mspConfig[k] = data[k];
+      }
+    }
+  }
+  if (field) {
+    return mspConfig && mspConfig[field];
+  }
+  return mspConfig;
+}
+
 async function getCloudConfig(reload = false) {
   if (reload) await syncCloudConfig()
   return cloudConfig
@@ -252,7 +284,6 @@ function isFeatureOn(featureName, defaultValue = false) {
   else
     return defaultValue
 }
-
 
 async function syncDynamicFeatures() {
   let configs = await rclient.hgetallAsync(dynamicConfigKey);
@@ -386,6 +417,7 @@ reloadConfig() // starts reading userConfig & testConfig as this module loads
 config = aggregateConfig() // non-async call, garantees getConfig() will be returned with something
 
 syncCloudConfig()
+getMspConfig()
 
 if (f.isMain()) {
   initVersionConfig()
@@ -463,6 +495,7 @@ module.exports = {
   getSimpleVersion: getSimpleVersion,
   isMajorVersion: isMajorVersion,
   getUserConfig,
+  getMspConfig,
   getTimingConfig: getTimingConfig,
   isFeatureOn: isFeatureOn,
   getFeatures,
