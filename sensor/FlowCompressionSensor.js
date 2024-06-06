@@ -85,7 +85,9 @@ class FlowCompressionSensor extends Sensor {
         queueObj.destroy();
         streamObj.destroyStreams(); // destory and re-create
         this.setupStreams(type);
-        this.setupFlowsQueue(type);
+        queueObj.close(() => {
+          this.setupFlowsQueue(type);
+        });
         this.dumpingMap[type] = false;
       } catch (e) {
         log.warn("re-build wanBlock compressed flows error", e)

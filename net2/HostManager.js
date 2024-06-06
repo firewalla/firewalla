@@ -589,6 +589,12 @@ module.exports = class HostManager extends Monitorable {
     json.newAlarms = await alarmManager2.loadActiveAlarmsAsync();
   }
 
+  async pendingAlarmNumberForInit(json) {
+    const count = await alarmManager2.getPendingAlarmCount();
+    json.pendingAlarmCount = count;
+    return json;
+  }
+
   async archivedAlarmNumberForInit(json) {
     log.debug("Reading total number of archived alarms");
     const count = await alarmManager2.numberOfArchivedAlarms();
@@ -1308,6 +1314,7 @@ module.exports = class HostManager extends Monitorable {
       this.policyRulesForInit(json),
       this.exceptionRulesForInit(json),
       this.newAlarmDataForInit(json),
+      this.pendingAlarmNumberForInit(json),
       this.archivedAlarmNumberForInit(json),
       this.natDataForInit(json),
       this.externalScanDataForInit(json),
