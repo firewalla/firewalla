@@ -58,6 +58,11 @@ module.exports = {
   REDIS_HKEY_CONN_APID: "apid", // allow rule id
   REDIS_HKEY_CONN_RPID: "rpid", // route rule id
 
+  ST_INIT: 'init',
+  ST_PENDING: 'pending',
+  ST_READY: 'ready',
+  ST_ACTIVATED: 'active',
+  ST_IGNORE: 'ignore',
 
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
 

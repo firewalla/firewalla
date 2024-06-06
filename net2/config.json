@@ -993,6 +993,13 @@
       }
     }
   },
+  "alarms": {
+    "apply": {
+      "default": {"state": "pending"},
+      "new_device": {"state": "ready"},
+      "video": {"state": "pending"}
+    }
+  },
   "cloudcache": {
     "expirationDays": 30
   },
