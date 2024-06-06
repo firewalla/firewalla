@@ -201,7 +201,7 @@ class TagManager {
     if (!name)
       return null;
     for (const tag of Object.values(this.tags)) {
-      if (tag.o && tag.o.type == type && tag.o.name === name)
+      if (tag.getTagType() == type && tag.o.name === name)
         return tag;
     }
     return null;
