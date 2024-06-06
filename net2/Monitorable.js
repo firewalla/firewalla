@@ -70,6 +70,7 @@ class Monitorable {
     this.policy = {};
 
     if (!this.getUniqueId()) {
+      log.warn('cannot new monitorable (no uniqId)', this.o);
       throw new Error('No UID provided')
     }
 

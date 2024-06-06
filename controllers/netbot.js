@@ -1223,6 +1223,18 @@ class netBot extends ControllerBot {
           throw new Error("Missing device MAC or destination IP")
         }
       }
+      case "pendingAlarms": {
+        const offset = value && value.offset;
+        const limit = value && value.limit;
+        const pendingAlarms = await am2.loadPendingAlarms({
+          offset: offset,
+          limit: limit
+        })
+        return {
+          alarms: pendingAlarms,
+          count: pendingAlarms.length
+        }
+      }
       case "archivedAlarms": {
         const offset = value && value.offset;
         const limit = value && value.limit;
