@@ -2011,10 +2011,6 @@ class netBot extends ControllerBot {
           const {name, obj, affiliated} = value;
           const tag = await this.tagManager.createTag(name, obj, _.get(affiliated, "name"), _.get(affiliated, "obj"));
           const result = tag.toJson();
-          if (result.affiliatedTag) {
-            const afTag = this.tagManager.getTagByUid(result.affiliatedTag)
-            if (afTag) result.affiliatedTag = afTag.toJson()
-          }
           return result;
         }
       }
@@ -3650,9 +3646,13 @@ class netBot extends ControllerBot {
         log.error(err)
         if (err instanceof RateLimiterRes) {
           throw {
-            "Retry-After": err.msBeforeNext / 1000,
-            "X-RateLimit-Limit": this.rateLimiter[from].points,
-            "X-RateLimit-Reset": new Date(Date.now() + err.msBeforeNext)
+            status: 429,
+            // headers are not really used in response, and we return 200 in general
+            // headers: {
+            //   "Retry-After": err.msBeforeNext / 1000,
+            //   "X-RateLimit-Limit": this.rateLimiter[from].points,
+            //   "X-RateLimit-Reset": new Date(Date.now() + err.msBeforeNext)
+            // }
           }
         } else
         throw err
