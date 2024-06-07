@@ -3649,9 +3649,13 @@ class netBot extends ControllerBot {
         log.error(err)
         if (err instanceof RateLimiterRes) {
           throw {
-            "Retry-After": err.msBeforeNext / 1000,
-            "X-RateLimit-Limit": this.rateLimiter[from].points,
-            "X-RateLimit-Reset": new Date(Date.now() + err.msBeforeNext)
+            status: 429,
+            // headers are not really used in response, and we return 200 in general
+            // headers: {
+            //   "Retry-After": err.msBeforeNext / 1000,
+            //   "X-RateLimit-Limit": this.rateLimiter[from].points,
+            //   "X-RateLimit-Reset": new Date(Date.now() + err.msBeforeNext)
+            // }
           }
         } else
         throw err
