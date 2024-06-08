@@ -1566,6 +1566,8 @@ class netBot extends ControllerBot {
         }
         return result
       }
+      case "mspConfig":
+        return fc.getMspConfig();
       case "userConfig":
         return fc.getUserConfig();
       case "dhcpLease": {

@@ -148,10 +148,15 @@ module.exports = class {
       log.warn('cannot create alarm, invalid parameters');
       return;
     }
-    const alarm = this._genAlarm(data);
-    log.info('alarm:create', alarm);
-    await this.enrichDeviceInfo(alarm);
-    this.enqueueAlarm(alarm); // use enqueue to ensure no dup alarms
+
+    try {
+      const alarm = this._genAlarm(data);
+      log.info('alarm:create', alarm);
+      await this.enrichDeviceInfo(alarm);
+      this.enqueueAlarm(alarm); // use enqueue to ensure no dup alarms
+    } catch (err) {
+      log.warn('cannot create alarm', err.message);
+    }
   }
 
   async cleanPendingQueue() {
