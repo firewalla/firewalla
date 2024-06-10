@@ -329,6 +329,30 @@ class LiveStatsPlugin extends Sensor {
     return {target, tx: cache.rx, rx: cache.tx}
   }
 
+  getPcapNet(intf, family) {
+    let subnet = family == 4 ? intf.subnetAddress4 : (intf.subnetAddress6 && intf.subnetAddress6[0])
+    if (!subnet) return null
+
+    // TODO: only 1 subnet is supported now, assume v6 addresses are in the same subnet
+    if (family == 6 && intf.subnetAddress6.length > 1) {
+      log.verbose(`${intf.name} has more than 1 v6 subnet`, intf.subnetAddress6.map(s => s.address))
+      if (subnet.subnetMask == 128) { // static IP, trying to find one with dynamic range
+        subnet = intf.subnetAddress6.find(n => n.subnetMask < 128) || subnet
+      }
+    }
+    // v6, if only /128 address is found, set it to /64
+    if (subnet.subnetMask == 128) {
+      log.warn(`${intf.name} have only static v6 IP, using /64 for traffic capture`)
+      subnet = new Address6(subnet.addressMinusSuffix + '/64')
+    }
+    // pcap filter `net` requires using the starting address
+    const pcapNet = subnet.startAddress().address + subnet.subnet
+
+    log.debug(`pcapNet for ${intf.name} is ${pcapNet}`)
+
+    return pcapNet
+  }
+
   async getIntfDeviceThroughput(intfUUID) {
     let cache = this.streamingCache[intfUUID] || {}
     if (!cache.iftop || !cache.rl) try {
@@ -357,31 +381,24 @@ class LiveStatsPlugin extends Sensor {
           pcapFilter.push(... IPs.map(ip => `not host ${ip}`))
         }
 
-        let subnet = v == 4 ? intf.subnetAddress4 : (intf.subnetAddress6 && intf.subnetAddress6[0])
-        if (subnet) {
-          // TODO: only 1 subnet is supported now, assume v6 addresses are in the same subnet
-          if (v == 6 && intf.subnetAddress6.length > 1) {
-            log.verbose(`${intf.name} has more than 1 v6 subnet`, intf.subnetAddress6.map(s => s.address))
-            if (subnet.subnetMask == 128) { // static IP, trying to find one with dynamic range
-              subnet = intf.subnetAddress6.find(n => n.subnetMask < 128) || subnet
-            }
-          }
-          // v6, if only /128 address is found, set it to /64
-          if (subnet.subnetMask == 128) {
-            log.warn(`${intf.name} have only static v6 IP, using /64 for traffic capture`)
-            subnet = new Address6(subnet.addressMinusSuffix + '/64')
-          }
-          log.debug(`subnet for ${intf.name} is ${subnet.address}`)
+        const pcapNet = this.getPcapNet(intf, v)
+        if (!pcapNet) continue
 
-          // use -F/-G to get traffic direction, but only one subnet each family is allowed
-          // https://code.blinkace.com/pdw/iftop/-/blob/master/iftop.c#L285-351
-          iftopCmd.push(v == 4 ? '-F' : '-G', subnet.address)
+        // use -F/-G to get traffic direction, but only one subnet each family is allowed
+        // https://code.blinkace.com/pdw/iftop/-/blob/master/iftop.c#L285-351
+        iftopCmd.push(v == 4 ? '-F' : '-G', pcapNet)
 
-          // pcap filter `net` requires using the starting address
-          const pcapNet = subnet.startAddress().address + subnet.subnet
-          pcapSubnets.push(pcapNet)
-          pcapFilter.push(`not src and dst net ${pcapNet}`)
+        pcapSubnets.push(pcapNet)
+        pcapFilter.push(`not src and dst net ${pcapNet}`)
+
+        const pcapNetsLan = []
+        for (const lan of sysManager.getInterfaces().filter(i => i.uuid != intfUUID)) {
+          const pcapNetLan = this.getPcapNet(lan, v)
+          if (!pcapNetLan) continue
+          pcapNetsLan.push(pcapNetLan)
         }
+        if (pcapNetsLan.length)
+          pcapFilter.push(`not (net ${pcapNet} and (net ${pcapNetsLan.join(' or ')}))`)
       }
 
       if (await Mode.isSpoofModeOn()) {
@@ -400,7 +417,7 @@ class LiveStatsPlugin extends Sensor {
 
       // sudo has to be the first command otherwise stdbuf won't work for privileged command
       const iftop = spawn('sudo', iftopCmd);
-      log.debug(iftop.spawnargs)
+      log.verbose(iftop.spawnargs)
       iftop.on('error', err => {
         log.error(`iftop error for ${intf.name}`, err.toString());
       });
