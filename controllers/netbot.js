@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -1225,6 +1225,18 @@ class netBot extends ControllerBot {
           throw new Error("Missing device MAC or destination IP")
         }
       }
+      case "pendingAlarms": {
+        const offset = value && value.offset;
+        const limit = value && value.limit;
+        const pendingAlarms = await am2.loadPendingAlarms({
+          offset: offset,
+          limit: limit
+        })
+        return {
+          alarms: pendingAlarms,
+          count: pendingAlarms.length
+        }
+      }
       case "archivedAlarms": {
         const offset = value && value.offset;
         const limit = value && value.limit;
@@ -1560,6 +1572,8 @@ class netBot extends ControllerBot {
         }
         return result
       }
+      case "mspConfig":
+        return fc.getMspConfig();
       case "userConfig":
         return fc.getUserConfig();
       case "dhcpLease": {
@@ -2004,7 +2018,11 @@ class netBot extends ControllerBot {
         else {
           const {name, obj, affiliated} = value;
           const tag = await this.tagManager.createTag(name, obj, _.get(affiliated, "name"), _.get(affiliated, "obj"));
-          return tag
+          const result = tag.toJson();
+          if (tag.afTag) {
+            result.affiliatedTag = tag.afTag.toJson()
+          }
+          return result;
         }
       }
       case "tag:remove": {
@@ -3649,9 +3667,13 @@ class netBot extends ControllerBot {
         log.error(err)
         if (err instanceof RateLimiterRes) {
           throw {
-            "Retry-After": err.msBeforeNext / 1000,
-            "X-RateLimit-Limit": this.rateLimiter[from].points,
-            "X-RateLimit-Reset": new Date(Date.now() + err.msBeforeNext)
+            status: 429,
+            // headers are not really used in response, and we return 200 in general
+            // headers: {
+            //   "Retry-After": err.msBeforeNext / 1000,
+            //   "X-RateLimit-Limit": this.rateLimiter[from].points,
+            //   "X-RateLimit-Reset": new Date(Date.now() + err.msBeforeNext)
+            // }
           }
         } else
         throw err

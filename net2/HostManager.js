@@ -437,6 +437,7 @@ module.exports = class HostManager extends Monitorable {
   async enrichWeakPasswordScanResult(hosts) {
     await Promise.all(hosts.map(async host => {
       await this.enrichWeakPasswordScanResult(host, "mac");
+      await this.enrichNseScanResult(host, "mac", "suspect");
     }));
   }
 
@@ -447,6 +448,26 @@ module.exports = class HostManager extends Monitorable {
       const result = await rclient.getAsync(key).then((data) => JSON.parse(data)).catch((err) => null);
       if (result)
         host.weakPasswordScanResult = result;
+    }
+  }
+
+  async enrichNseScanResult(host, uidKey, prefix='') {
+    const uid = host[uidKey];
+    if (uid) {
+      let rkey = `nse_scan`;
+      rkey = prefix ? `${rkey}:${prefix}:${uid}`: `${rkey}:${uidKey}:${uid}`;
+      const result = await rclient.hgetallAsync(rkey);
+      if (result) {
+        for (const key in result) {
+          try {
+            const keyobj = JSON.parse(result[key]);
+            result[key] = keyobj;
+          } catch (err) {
+            log.warn('fail to parse nse scan result', key, err.message);
+          }
+        }
+        host.nseScanResult = result;
+      }
     }
   }
 
@@ -614,6 +635,12 @@ module.exports = class HostManager extends Monitorable {
   async newAlarmDataForInit(json) {
     json.activeAlarmCount = await alarmManager2.getActiveAlarmCount();
     json.newAlarms = await alarmManager2.loadActiveAlarmsAsync();
+  }
+
+  async pendingAlarmNumberForInit(json) {
+    const count = await alarmManager2.getPendingAlarmCount();
+    json.pendingAlarmCount = count;
+    return json;
   }
 
   async archivedAlarmNumberForInit(json) {
@@ -1337,6 +1364,7 @@ module.exports = class HostManager extends Monitorable {
       this.policyRulesForInit(json),
       this.exceptionRulesForInit(json),
       this.newAlarmDataForInit(json),
+      this.pendingAlarmNumberForInit(json),
       this.archivedAlarmNumberForInit(json),
       this.natDataForInit(json),
       this.externalScanDataForInit(json),
@@ -2136,6 +2164,10 @@ module.exports = class HostManager extends Monitorable {
     return this.hosts.all.filter(host => host.o && host.o.lastActiveTimestamp > activeTimestampThreshold)
   }
 
+  getAllMonitorables() {
+    return this.getActiveHosts().concat(IdentityManager.getAllIdentitiesFlat())
+  }
+
   // return a list of mac addresses that's active in last xx days
   getActiveMACs() {
     return this.getActiveHosts().map(host => host.o.mac);
@@ -2184,25 +2216,16 @@ module.exports = class HostManager extends Monitorable {
   async getActiveTags() {
     let tagMap = {};
     await this.loadHostsPolicyRules()
-    this.getActiveHosts().filter(host => host && host.policy && !_.isEmpty(Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => host.policy[Constants.TAG_TYPE_MAP[type].policyKey])))
-      .forEach(host => {
-        const tags = Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => host.policy[Constants.TAG_TYPE_MAP[type].policyKey]);
-        for (const tag of tags) {
-          if (tagMap[tag]) {
-            tagMap[tag].push(host.o.mac);
-          } else {
-            tagMap[tag] = [host.o.mac];
-          }
-        }
-      });
-    IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => identity.policy[Constants.TAG_TYPE_MAP[type].policyKey])))
-      .forEach(identity => {
-        const tags = Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => identity.policy[Constants.TAG_TYPE_MAP[type].policyKey])
+    const types = Object.keys(Constants.TAG_TYPE_MAP)
+    this.getAllMonitorables()
+      .forEach(m => {
+        const tags = m && m.policy && types.flatMap(type => m.policy[Constants.TAG_TYPE_MAP[type].policyKey]);
+        if (!tags) return
         for (const tag of tags) {
           if (tagMap[tag])
-            tagMap[tag].push(identity.getGUID());
+            tagMap[tag].push(m.getGUID());
           else
-            tagMap[tag] = [identity.getGUID()];
+            tagMap[tag] = [m.getGUID()];
         }
       });
 
