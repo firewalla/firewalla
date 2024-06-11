@@ -279,7 +279,7 @@ class CategoryExaminerPlugin extends Sensor {
   async _findCategory(domain) {
     const resp = await intelTool.checkIntelFromCloud(null, domain);
     if (!_.isArray(resp) || resp.length == 0) {
-      return null;
+      return [];
     }
     return _.uniq(resp.map((i) => {if (i.c == 'ad') {return 'adblock_strict';} else return i.c}));
   }
@@ -307,17 +307,21 @@ class CategoryExaminerPlugin extends Sensor {
         let score = Date.now();
         let originCategory = category.split("_bf")[0];
         const origDomainList = domainList.map(item => item[1]);
+        const matchedDomainList = [];
         const unmatchedOrigDomainSet = new Set(origDomainList);
-        for (const origDomain of origDomainList) {
+        for (let i = 0; i < origDomainList.length; i++) {
+          const origDomain = origDomainList[i];
           const categories = await this._findCategory(origDomain);
           log.verbose("categories", category, categories, origDomain);
           if (categories.includes(category) || categories.includes(originCategory)) { // matched with cloud data
             log.info(`Add domain ${origDomain} to hit set of ${category} `);
             await this.addDomainToHitSet(category, origDomain, score);
             unmatchedOrigDomainSet.delete(origDomain);
+            matchedDomainList.push(domainList[i][0]);
           }
         }
 
+        await categoryUpdater.addDomainIntels(originCategory, matchedDomainList);
         for (const origDomain of unmatchedOrigDomainSet) {
           log.info(`Add domain ${origDomain} to passthrough set of ${category} `);
           await this.addDomainToPassthroughSet(category, origDomain, score);
