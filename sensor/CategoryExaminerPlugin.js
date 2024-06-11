@@ -254,7 +254,6 @@ class CategoryExaminerPlugin extends Sensor {
       const matchedDomain = result.item;
       if (!categoryUpdater.isActivated(category)) {
         // do not check if category is not activated
-        log.info("skip update domain of disabled category", category);
         continue;
       }
       if (status === "Match") {
