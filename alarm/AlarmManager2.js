@@ -532,13 +532,20 @@ module.exports = class {
 
   applyConfig(alarm) {
     const cfg = fc.getConfig().alarms;
-    const alias = Alarm.alarmType2alias(alarm.type);
+    const defaultCfg = fc.getDefaultConfig().alarms;
+    const alarmConfig = {};
+    if (defaultCfg && defaultCfg.apply) {
+      Object.assign(alarmConfig, defaultCfg.apply);
+    }
     if (cfg && cfg.apply) {
-      if (cfg.apply.hasOwnProperty(alias)) {
-        alarm.apply(cfg.apply[alias]);
-      } else if (cfg && cfg.apply.default){ // default
-        alarm.apply(cfg.apply.default);
-      }
+      Object.assign(alarmConfig, cfg.apply);
+    }
+    log.debug("alarm config apply", alarmConfig, alarm.type);
+    const alias = Alarm.alarmType2alias(alarm.type);
+    if (alarmConfig.hasOwnProperty(alias)) {
+      alarm.apply(alarmConfig[alias]);
+    } else if (alarmConfig.default){ // default
+      alarm.apply(alarmConfig.default);
     }
   }
 
