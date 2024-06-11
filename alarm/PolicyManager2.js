@@ -1541,7 +1541,7 @@ class PolicyManager2 {
 
         await categoryUpdater.activateCategory(target);
         if (policy.useBf) {
-          await categoryUpdater.activateCategory(target+'_bf', true);
+          await categoryUpdater.activateCategory(target+'_bf');
         }
         if (action === "allow") {
           remoteSet4 = categoryUpdater.getAllowIPSetName(target);
