@@ -309,13 +309,17 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return this.customizedCategories;
   }
 
-  async activateCategory(category) {
-    if (this.isActivated(category)) return;
-    if (firewalla.isMain()) // do not create ipset unless in FireMain
+  async activateCategory(category, reloadFromCloud=false) {
+    log.debug("invoke activate category", category, ", reloadFromCloud", reloadFromCloud)
+    if (this.isActivated(category) && !reloadFromCloud) return;
+    if (firewalla.isMain() && !reloadFromCloud) // do not create ipset unless in FireMain
       await super.activateCategory(category, this.isCustomizedCategory(category) ? this._getCustomizedCategoryIpsetType(category) : "hash:net");
+    else
+      this.activeCategories[category] = 1
     sem.emitEvent({
       type: "Policy:CategoryActivated",
       toProcess: "FireMain",
+      reloadFromCloud: reloadFromCloud,
       message: "Category activated: " + category,
       category: category
     });
@@ -1245,7 +1249,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   // system target list using cloudcache, mainly for large target list to reduce bandwidth usage of polling hashset
   isManagedTargetList(category) {
-    return !this.isUserTargetList(category) && !this.isSmallExtendedTargetList(category) && !this.excludeListBundleIds.has(category);
+    return !this.isUserTargetList(category) && !this.isSmallExtendedTargetList(category) && !this.excludeListBundleIds.has(category) && !category.endsWith('_bf');
   }
 }
 
