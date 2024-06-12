@@ -217,10 +217,16 @@ class NseScanPlugin extends Sensor {
     let dhcpResults = {};
     const startTs = Date.now()/1000;
     for (const scriptName of scripts){
-      const nseResults = await this.execNse(scriptName);
+      let nseResults;
+      try {
+        nseResults = await this.execNse(scriptName);
+      } catch (err) {
+        log.error("fail to run", scriptName, err.message);
+        continue
+      }
       for (const result of nseResults) {
         if (result && result.err) {
-          log.error();
+          log.error("fail to run", scriptName, result.err);
           continue
         }
         if (result.interface) {
@@ -254,7 +260,13 @@ class NseScanPlugin extends Sensor {
             log.debug('skip network', scriptName, intf.name);
             continue;
           }
-          const result = await dhcp.broadcastDhcpDiscover(intf.name, intf.mac_address, nseConfig[scriptName]);
+          let result;
+          try {
+            await dhcp.broadcastDhcpDiscover(intf.name, intf.ip_address, intf.mac_address, nseConfig[scriptName]);
+          } catch (err) {
+            log.warn("fail to run nse script", scriptName, err.message);
+            continue
+          }
           log.debug("nse result", scriptName, result);
           if (result && result.ok) {
             results.push({
@@ -274,8 +286,14 @@ class NseScanPlugin extends Sensor {
         const hosts = hostManager.getActiveHosts();
         log.debug("exec nse on devices", hosts.map((i) => { return {ipv4: i.o.ipv4, mac: i.o.mac} }));
         for (const h of hosts) {
-          if (h.o.ipv4 && h.o.intf && this._checkNsePolicy(h.policy, Constants.REDIS_HKEY_NSE_DHCP)) {
-            const result = await dhcp.dhcpDiscover(h.o.ipv4, h.o.mac, nseConfig[scriptName]);
+          if (h.o.ipv4 && h.o.intf && this._checkDeviceNsePolicy(h.o.intf, h.policy, Constants.REDIS_HKEY_NSE_DHCP)) {
+            let result;
+            try {
+              result = await dhcp.dhcpDiscover(h.o.ipv4, h.o.mac, nseConfig[scriptName]);
+            } catch (err) {
+              log.warn("fail to run nse script", scriptName, err.message);
+              continue
+            }
             log.debug("nse result", scriptName, result);
             if (result && result.ok) {
               const devIntf = sysManager.getInterfaceViaUUID(h.o.intf);
@@ -432,6 +450,17 @@ class NseScanPlugin extends Sensor {
         delete results[key];
       }
     }
+  }
+
+  _checkDeviceNsePolicy(uuid, policy, fieldName='default') {
+    if (policy && policy[policyKeyName]) {
+      return this._checkNsePolicy(policy, fieldName);
+    }
+    const networkProfile = networkProfileManager.getNetworkProfile(uuid);
+    if (networkProfile && networkProfile.policy && networkProfile.policy[policyKeyName]) {
+      return this._checkNetworkNsePolicy(networkProfile.policy, fieldName);
+    }
+    return true;
   }
 
   _checkNetworkNsePolicy(uuid, fieldName) {

@@ -148,10 +148,15 @@ module.exports = class {
       log.warn('cannot create alarm, invalid parameters');
       return;
     }
-    const alarm = this._genAlarm(data);
-    log.info('alarm:create', alarm);
-    await this.enrichDeviceInfo(alarm);
-    this.enqueueAlarm(alarm); // use enqueue to ensure no dup alarms
+
+    try {
+      const alarm = this._genAlarm(data);
+      log.info('alarm:create', alarm);
+      await this.enrichDeviceInfo(alarm);
+      this.enqueueAlarm(alarm); // use enqueue to ensure no dup alarms
+    } catch (err) {
+      log.warn('cannot create alarm', err.message);
+    }
   }
 
   async cleanPendingQueue() {
@@ -527,13 +532,20 @@ module.exports = class {
 
   applyConfig(alarm) {
     const cfg = fc.getConfig().alarms;
-    const alias = Alarm.alarmType2alias(alarm.type);
+    const defaultCfg = fc.getDefaultConfig().alarms;
+    const alarmConfig = {};
+    if (defaultCfg && defaultCfg.apply) {
+      Object.assign(alarmConfig, defaultCfg.apply);
+    }
     if (cfg && cfg.apply) {
-      if (cfg.apply.hasOwnProperty(alias)) {
-        alarm.apply(cfg.apply[alias]);
-      } else if (cfg && cfg.apply.default){ // default
-        alarm.apply(cfg.apply.default);
-      }
+      Object.assign(alarmConfig, cfg.apply);
+    }
+    log.debug("alarm config apply", alarmConfig, alarm.type);
+    const alias = Alarm.alarmType2alias(alarm.type);
+    if (alarmConfig.hasOwnProperty(alias)) {
+      alarm.apply(alarmConfig[alias]);
+    } else if (alarmConfig.default){ // default
+      alarm.apply(alarmConfig.default);
     }
   }
 
@@ -969,26 +981,8 @@ module.exports = class {
     return alarms;
   }
 
-  loadRecentAlarmsAsync(duration) {
+  async loadRecentAlarmsAsync(duration) {
     duration = duration || 10 * 60;
-    return new Promise((resolve, reject) => {
-      this.loadRecentAlarms(duration, (err, results) => {
-        if (err) {
-          reject(err)
-        } else {
-          resolve(results)
-        }
-      })
-    })
-  }
-
-  loadRecentAlarms(duration, callback) {
-    if (typeof (duration) == 'function') {
-      callback = duration;
-      duration = 10 * 60; // 10 minutes
-    }
-
-    callback = callback || function () { }
 
     let scoreMax = new Date() / 1000 + 1;
     let scoreMin;
@@ -998,39 +992,31 @@ module.exports = class {
       scoreMin = scoreMax - duration;
     }
 
-    rclient.zrevrangebyscore(alarmPendingKey, scoreMax, scoreMin, (err, alarmIDs) => {
-      if (err) {
-        log.error("Failed to load pending alarms: " + err);
-        callback(err);
-        return;
-      }
-      this.idsToAlarms(alarmIDs, (err, results) => {
-        if (err) {
-          callback(err);
-          return;
-        }
+    let recentResults = [];
+    let alarmIDs, results;
 
+    try {
+      alarmIDs = await rclient.zrevrangebyscoreAsync(alarmPendingKey, scoreMax, scoreMin);
+      results = await this.idsToAlarmsAsync(alarmIDs);
+      if (results) {
         results = results.filter((a) => a != null);
-        callback(err, results);
-      })
-    });
-
-    rclient.zrevrangebyscore(alarmActiveKey, scoreMax, scoreMin, (err, alarmIDs) => {
-      if (err) {
-        log.error("Failed to load active alarms: " + err);
-        callback(err);
-        return;
+        recentResults = recentResults.concat(results);
       }
-      this.idsToAlarms(alarmIDs, (err, results) => {
-        if (err) {
-          callback(err);
-          return;
-        }
+    } catch (err) {
+      log.warn("cannot get pending alarms", err.message);
+    }
 
+    try {
+      alarmIDs = await rclient.zrevrangebyscoreAsync(alarmActiveKey, scoreMax, scoreMin);
+      results = await this.idsToAlarmsAsync(alarmIDs);
+      if (results) {
         results = results.filter((a) => a != null);
-        callback(err, results);
-      });
-    });
+        recentResults = recentResults.concat(results);
+      }
+    } catch (err) {
+      log.warn("cannot get active alarms", err.message);
+    }
+    return recentResults;
   }
 
   async loadPendingAlarms(options) {

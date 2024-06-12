@@ -4,4 +4,4 @@
 /home/pi/.firewalla/run/assets/http-brute.nse /all/http-brute.nse 644
 /home/pi/.firewalla/run/assets/broadcast-dhcp-discover.nse /all/broadcast-dhcp-discover.nse 644
 /home/pi/.firewalla/run/assets/dhcp-discover.nse /all/dhcp-discover.nse 644
-/home/pi/.firewalla/run/assets/outlib.lua /all/outlib.lua 644 'SLNAME="/usr/share/nmap/nselib/outlib.lua"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/outlib.lua ${SLNAME}; fi'
+/home/pi/.firewalla/run/assets/outlib.lua /all/outlib.lua 644 ':' 'SLNAME="/usr/share/nmap/nselib/outlib.lua"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/outlib.lua ${SLNAME}; fi'
