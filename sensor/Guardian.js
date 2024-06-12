@@ -462,14 +462,14 @@ module.exports = class {
           await FireRouter.setConfig(networkConfig);
         }
       }
+
+      // disable msp features
+      const features = Object.keys(fc.getFeatures()).filter(i => i.startsWith('msp_'));
+      for ( const f of features) {
+        await fc.disableDynamicFeature(f);
+      }
     } catch (e) {
       log.warn('Clean msp rules failed', e);
-    }
-
-    // disable msp features
-    const features = fc.getFeatures().filter(i => i.startsWith('msp_'));
-    for ( const f of features) {
-      await fc.disableDynamicFeature(f);
     }
 
     await rclient.unlinkAsync(this.configServerKey);

@@ -1530,9 +1530,19 @@ class PolicyManager2 {
               wanUUID,
               routeType
             });
+            if (policy.useBf) {
+              await domainBlock.blockCategory(target + "_bf", {pid,
+                scope: scope, category: target + "_bf", intfs, guids,
+                action: action, tags, parentRgId, seq, wanUUID, routeType, append: true
+              });
+            }
           }
         }
+
         await categoryUpdater.activateCategory(target);
+        if (policy.useBf) {
+          await categoryUpdater.activateCategory(target+'_bf');
+        }
         if (action === "allow") {
           remoteSet4 = categoryUpdater.getAllowIPSetName(target);
           remoteSet6 = categoryUpdater.getAllowIPSetNameForIPV6(target);
