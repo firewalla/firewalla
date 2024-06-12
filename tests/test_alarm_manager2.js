@@ -252,4 +252,9 @@ describe('Test AlarmManager2', function(){
     am2.applyConfig(alarm2);
     expect(alarm2.state).to.be.equal('pending');
   })
+
+  it.skip('should load recent alarms', async() => {
+    const results = await am2.loadRecentAlarmsAsync(3600);
+    expect(results.length).to.be.equal(3);
+  })
 });
