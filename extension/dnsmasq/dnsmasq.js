@@ -704,7 +704,7 @@ module.exports = class DNSMASQ {
             }
           }
           const filePath = `${FILTER_DIR}/${name}.conf`;
-          await fs.writeFileAsync(filePath, entries.join('\n'));
+          await this.writeFileAsync(filePath, entries.join('\n'), options && options.append);
         }
 
         if (!_.isEmpty(options.intfs)) {
@@ -727,7 +727,7 @@ module.exports = class DNSMASQ {
               }
             }
             const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/${name}.conf`;
-            await fs.writeFileAsync(filePath, entries.join('\n'));
+            await this.writeFileAsync(filePath, entries.join('\n'), options && options.append);
           }
         }
 
@@ -750,7 +750,7 @@ module.exports = class DNSMASQ {
               }
             }
             const filePath = `${FILTER_DIR}/tag_${tag}_${name}.conf`;
-            await fs.writeFileAsync(filePath, entries.join('\n'));
+            await this.writeFileAsync(filePath, entries.join('\n'), options && options.append);
           }
         }
 
@@ -777,7 +777,7 @@ module.exports = class DNSMASQ {
                   break;
                 }
               }
-              await fs.writeFileAsync(filePath, entries.join('\n'));
+              await this.writeFileAsync(filePath, entries.join('\n'), options && options.append);
             }
           }
         }
@@ -808,11 +808,18 @@ module.exports = class DNSMASQ {
           }
         }
         const filePath = `${FILTER_DIR}/${name}.conf`;
-        await fs.writeFileAsync(filePath, entries.join('\n'));
+        await this.writeFileAsync(filePath, entries.join('\n'), options && options.append);
       }
     }).catch((err) => {
       log.error("Failed to add category mac set entry into file:", err);
     });
+  }
+
+  async writeFileAsync(filePath, content, append=false) {
+    if (append) {
+      return await fs.appendFileAsync(filePath, "\n" + content);
+    }
+    return await fs.writeFileAsync(filePath, content);
   }
 
   async writeAllocationOption(tagName, policy, known = false) {
