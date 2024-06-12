@@ -3,8 +3,8 @@ server: __HY_SERVER__
 auth: __HY_PASSWORD__
 
 bandwidth:
-  up: 10 mbps
-  down: 80 mbps
+  up: __HY_UP__ mbps
+  down: __HY_DOWN__ mbps
 
 socks5:
   listen: :1080

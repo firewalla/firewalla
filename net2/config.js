@@ -178,7 +178,7 @@ async function reloadConfig() {
     let testConfigFile = f.getUserConfigFolder() + "/config.test.json";
     // will throw error if not exist
     await fs.promises.access(testConfigFile, fs.constants.F_OK | fs.constants.R_OK)
-    testConfig = JSON.parse(await fs.promises.readFile(userConfigFile, 'utf8'))
+    testConfig = JSON.parse(await fs.promises.readFile(testConfigFile, 'utf8'))
     log.warn("Test config is being used", testConfig);
   } catch(err) {
     // clears config on any error
