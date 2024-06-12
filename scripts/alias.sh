@@ -155,6 +155,7 @@ alias las='/home/pi/firewalla/scripts/list_ap_stations.sh'
 alias lss='/home/pi/firewalla/scripts/list_ap_ssids.sh'
 alias tvpn='~/scripts/test_vpn.sh'
 alias twan='curl -fsSL https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/test_wan.sh | sudo bash -s --'
+alias ttwan='sudo /home/pi/firewalla/scripts/test_wan.sh'
 
 # view redis hash
 function vh {
