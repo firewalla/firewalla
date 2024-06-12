@@ -981,26 +981,8 @@ module.exports = class {
     return alarms;
   }
 
-  loadRecentAlarmsAsync(duration) {
+  async loadRecentAlarmsAsync(duration) {
     duration = duration || 10 * 60;
-    return new Promise((resolve, reject) => {
-      this.loadRecentAlarms(duration, (err, results) => {
-        if (err) {
-          reject(err)
-        } else {
-          resolve(results)
-        }
-      })
-    })
-  }
-
-  loadRecentAlarms(duration, callback) {
-    if (typeof (duration) == 'function') {
-      callback = duration;
-      duration = 10 * 60; // 10 minutes
-    }
-
-    callback = callback || function () { }
 
     let scoreMax = new Date() / 1000 + 1;
     let scoreMin;
@@ -1010,39 +992,31 @@ module.exports = class {
       scoreMin = scoreMax - duration;
     }
 
-    rclient.zrevrangebyscore(alarmPendingKey, scoreMax, scoreMin, (err, alarmIDs) => {
-      if (err) {
-        log.error("Failed to load pending alarms: " + err);
-        callback(err);
-        return;
-      }
-      this.idsToAlarms(alarmIDs, (err, results) => {
-        if (err) {
-          callback(err);
-          return;
-        }
+    let recentResults = [];
+    let alarmIDs, results;
 
+    try {
+      alarmIDs = await rclient.zrevrangebyscoreAsync(alarmPendingKey, scoreMax, scoreMin);
+      results = await this.idsToAlarmsAsync(alarmIDs);
+      if (results) {
         results = results.filter((a) => a != null);
-        callback(err, results);
-      })
-    });
-
-    rclient.zrevrangebyscore(alarmActiveKey, scoreMax, scoreMin, (err, alarmIDs) => {
-      if (err) {
-        log.error("Failed to load active alarms: " + err);
-        callback(err);
-        return;
+        recentResults = recentResults.concat(results);
       }
-      this.idsToAlarms(alarmIDs, (err, results) => {
-        if (err) {
-          callback(err);
-          return;
-        }
+    } catch (err) {
+      log.warn("cannot get pending alarms", err.message);
+    }
 
+    try {
+      alarmIDs = await rclient.zrevrangebyscoreAsync(alarmActiveKey, scoreMax, scoreMin);
+      results = await this.idsToAlarmsAsync(alarmIDs);
+      if (results) {
         results = results.filter((a) => a != null);
-        callback(err, results);
-      });
-    });
+        recentResults = recentResults.concat(results);
+      }
+    } catch (err) {
+      log.warn("cannot get active alarms", err.message);
+    }
+    return recentResults;
   }
 
   async loadPendingAlarms(options) {
