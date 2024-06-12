@@ -29,7 +29,7 @@ const log = require("../../net2/logger.js")(__filename);
 
 const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + Firewalla.getPlatform();
 
-async function broadcastDhcpDiscover(intf, macAddr=null, options=null) {
+async function broadcastDhcpDiscover(intf, ipv4=null, macAddr=null, options=null) {
   if (!intf) {
     const config = await Config.getConfig(true);
     intf = config.monitoringInterface;
@@ -37,10 +37,15 @@ async function broadcastDhcpDiscover(intf, macAddr=null, options=null) {
   if (!macAddr) {
     macAddr = 'rand';
   }
-  log.debug("Broadcasting DHCP discover on ", intf, macAddr);
+  let cmdArgs = [];
+  if (ipv4) {
+    cmdArgs.push(`-S ${ipv4}`)
+  }
+  log.debug("Broadcasting DHCP discover on ", intf, ipv4, macAddr);
   let scriptName = await getScriptName("broadcast-dhcp-discover", options);
   let scriptArgs = getScriptArgs(["broadcast-dhcp-discover.mac="+macAddr], options);
-  let cmd = util.format('sudo timeout 1200s nmap --script %s %s -e %s -oX - | %s', scriptName, scriptArgs, intf, xml2jsonBinary);
+
+  let cmd = util.format('sudo timeout 1200s nmap --script %s %s -e %s %s -oX - | %s', scriptName, scriptArgs, intf, cmdArgs.join(' '), xml2jsonBinary);
   log.info("Running command:", cmd);
 
   return new Promise((resolve, reject) => {

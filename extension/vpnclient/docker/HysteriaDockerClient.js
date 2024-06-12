@@ -47,6 +47,15 @@ class HysteriaDockerClient extends DockerBaseVPNClient {
       yamlObj.auth = config.password;
     }
 
+    // configure bandwidth
+    yamlObj.bandwidth = config.bandwidth || {};
+
+    config.down = config.down || 80;
+    config.up = config.up || 50;
+
+    yamlObj.bandwidth.down = `${config.down} mbps`;
+    yamlObj.bandwidth.up = `${config.up} mbps`;
+
     log.info("Writing config file", dst);
     await fs.writeFileAsync(dst, YAML.stringify(yamlObj));
   }

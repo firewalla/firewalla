@@ -46,7 +46,7 @@ describe('Test dhcp', function() {
   });
 
   it.skip('should run dhcp discover', async() => {
-    const result = await dhcp.broadcastDhcpDiscover('eth0', '20:6d:31:01:2b:43', broadcastOptions);
+    const result = await dhcp.broadcastDhcpDiscover('eth0', '', '20:6d:31:01:2b:43', broadcastOptions);
     log.debug('broadcast-dhcp-discover', JSON.stringify(result));
     expect(result.Interface).to.be.equal('eth0');
   });
