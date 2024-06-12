@@ -16,6 +16,7 @@
 
 const log = require('../net2/logger.js')(__filename)
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const pclient = require('../util/redis_manager.js').getPublishClient()
 const Sensor = require('./Sensor.js').Sensor
 const Promise = require('bluebird')
 const extensionManager = require('./ExtensionManager.js')
@@ -140,6 +141,7 @@ class GuardianSensor extends Sensor {
   }
 
   async setMspData(data = {}) {
+    await pclient.publishAsync('config:msp:updated', JSON.stringify(data.list))
     const guardian = await this.getGuardianByAlias(data.alias);
     return guardian.setMspData(data.list);
   }

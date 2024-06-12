@@ -211,6 +211,7 @@ class GoldProPlatform extends Platform {
     return {
       "appMax": 240,
       "webMax": 480,
+      "streamingMax": 480,
       "duration": 60
     }
   }

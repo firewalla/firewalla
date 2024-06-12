@@ -21,6 +21,13 @@ let expect = chai.expect;
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const Policy = require('../alarm/Policy.js');
 
+const domainBlock = require('../control/DomainBlock.js');
+const cloudcache = require('../extension/cloudcache/cloudcache');
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
+
+const log = require('../net2/logger.js')(__filename);
+
 describe('Test policy filter', function(){
     this.timeout(30000);
     let policyRules = [];
@@ -159,6 +166,34 @@ describe('Test policy filter', function(){
       expect(rules.length).to.not.empty;
     })
 
+});
 
+describe('Test policy filter', function(){
+  this.timeout(30000);
+
+  beforeEach((done) => {
+    (async() =>{
+        done();
+    })();
   });
-  
+
+  afterEach((done) => {
+    done();
+  });
+
+  it('should get category domains', async () => {
+    const domains = await domainBlock.getCategoryDomains('adblock_strict', true);
+    log.debug('getCategoryDomains adblock_strict', domains);
+    log.debug('getCategoryDomains porn_bf', await domainBlock.getCategoryDomains('porn_bf', true))
+    expect(domains).to.be.not.empty;
+  });
+
+  it('should get cloudcache', async() => {
+    await cloudcache.enableCache('bf:app.porn_bf');
+    let cacheItem = cloudcache.getCacheItem('bf:app.porn_bf');
+    await cacheItem.download(false);
+    log.debug('cloudcache content', cacheItem.localCachePath);
+    const content = await cacheItem.getLocalCacheContent()
+    expect(content).to.be.not.empty;
+  });
+});
