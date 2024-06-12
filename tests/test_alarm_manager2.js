@@ -240,4 +240,21 @@ describe('Test AlarmManager2', function(){
   it('test load pending alarms', async() => {
     am2.loadPendingAlarms();
   });
+
+  it('should apply alarm config', async() =>{
+    const alarm1 = am2.jsonToAlarm({ type: 'ALARM_VULNERABILITY', device: 'Device 1', state: 'init', 'p.vid': 'p.vid'});
+    expect(alarm1.type).to.be.equal("ALARM_VULNERABILITY");
+    am2.applyConfig(alarm1);
+    expect(alarm1.state).to.be.equal('pending');
+
+    const alarm2 = am2.jsonToAlarm({ type: 'ALARM_SUBNET', device: 'Device 1', state: 'init'});
+    expect(alarm2.type).to.be.equal("ALARM_SUBNET");
+    am2.applyConfig(alarm2);
+    expect(alarm2.state).to.be.equal('pending');
+  })
+
+  it.skip('should load recent alarms', async() => {
+    const results = await am2.loadRecentAlarmsAsync(3600);
+    expect(results.length).to.be.equal(3);
+  })
 });
