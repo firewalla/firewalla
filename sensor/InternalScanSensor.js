@@ -100,7 +100,7 @@ class InternalScanSensor extends Sensor {
 
       sem.on("SubmitWeakPasswordScanTask", async(event) => {
         const {hosts, key} = event;
-        await this.submitTask(key || "" + Date.now() / 1000, hosts);
+        await this.submitTask(key || ("" + Date.now() / 1000), hosts);
         this.scheduleTask();
         await this.saveScanTasks();
       });
@@ -113,9 +113,7 @@ class InternalScanSensor extends Sensor {
           return;
         }
         for (const key in result.tasks) {
-          if (result.tasks[key].state == STATE_SCANNING) {
-            await this._stopScanTask(key, '0.0.0.0');
-          }
+          await this._stopScanTask(key, '0.0.0.0');
         }
       })
     }
@@ -219,8 +217,7 @@ class InternalScanSensor extends Sensor {
           if (!result.tasks) {
             return false;
           }
-          const pendingHosts = Object.values(result.tasks).filter(i => i.pendingHosts && Object.keys(i.pendingHosts).length > 0);
-          return pendingHosts.length > 0;
+          return result.tasks[key] && (result.tasks[key].state == STATE_SCANNING || result.tasks[key].state == STATE_QUEUED);
       })} catch (err) {
         log.info('timeout waiting for task to start');
       }
@@ -243,7 +240,7 @@ class InternalScanSensor extends Sensor {
           if (!result.tasks) {
             return true;
           }
-          const pendingHosts = Object.values(result.tasks).filter(i => i.pendingHosts && (Object.keys(i.pendingHosts).length > 0));
+          const pendingHosts = Object.values(result.tasks).filter(i => (i.state == STATE_SCANNING || i.state == STATE_QUEUED) );
           return pendingHosts.length == 0;
         })
       } catch (err) {
