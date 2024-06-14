@@ -115,4 +115,6 @@ module.exports = {
   },
 
   IPTABLES_LOG_PREFIX_AUDIT: '[FW_ADT]',
+
+  HOST_MAC_KEY_EXPIRE_SECS: 86400 * 365,
 };
