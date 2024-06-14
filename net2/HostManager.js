@@ -1593,6 +1593,12 @@ module.exports = class HostManager extends Monitorable {
         const isPrivateMac = o.mac && hostTool.isPrivateMacAddress(o.mac);
         // device might be created during migration with only found ts but no active ts
         const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
+        if (f.isMain()) {
+          const expireatTS = parseInt(activeTS || (Date.now() / 1000)) + Constants.HOST_MAC_KEY_EXPIRE_SECS;
+          await rclient.expireatAsync(`host:mac:${o.mac.toUpperCase()}`, expireatTS);
+          if (expireatTS < Date.now() / 1000)
+            return;
+        }
         const active = (activeTS - o.firstFoundTimestamp > 600 ? activeTS && activeTS >= inactiveTS : activeTS && activeTS >= rapidInactiveTS); // expire transient devices in a short time
         const inUse = (activeTS && activeTS >= inactiveTS) || hasDHCPReservation || hasPortforward || pinned || false;
         // always return devices that has DHCP reservation or port forwards
