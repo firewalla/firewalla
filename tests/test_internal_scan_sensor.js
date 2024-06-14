@@ -470,6 +470,10 @@ describe('Test scheduledScanTasks', function(){
     expect(this.plugin.scheduledScanTasks).to.eql({"cron_4": {ets:4},"cron_3": {ets:3}});
   });
 
+  it('should get last n task keys', () => {
+    expect(this.plugin._getLatestNumTaskKeys({"a": {},"cron_4": {ts:4}, "cron_1": {ts:1}, "bbb":1, "cron_2": {ts:2}, "cron_3": {ts:3}}, 2)).to.eql(["cron_3", "cron_4"]);
+    expect(this.plugin._getLatestNumTaskKeys({"a": {},"cron_4": {ts:4}, "cron_1": {ts:1}, "bbb":1, "cron_2": {ts:2}, "cron_3": {ts:3}}, 0)).to.eql([]);
+  });
 });
 
 describe('Test scan hosts', function(){
@@ -557,5 +561,25 @@ describe('Test scan hosts', function(){
       const result = await this.plugin.getScanResult();
       return result.lastCompletedScanTs >= ts;
     });
+  });
+
+  it('should global on', async() => {
+    process.title = "FireMain"
+    this.plugin.hookFeature('weak_password_scan');
+    await fc.enableDynamicFeatureDynamicFeature('weak_password_scan');
+    await delay(500);
+    expect(fc.isFeatureOn('weak_password_scan')).to.be.true;
+    await this.plugin.globalOn();
+    expect(this.plugin.featureOn).to.be.true;
+  });
+
+  it('should global off', async() => {
+    process.title = "FireMain"
+    this.plugin.hookFeature('weak_password_scan');
+    await fc.disableDynamicFeature('weak_password_scan');
+    await delay(500);
+    expect(fc.isFeatureOn('weak_password_scan')).to.be.false;
+    await this.plugin.globalOff();
+    expect(this.plugin.featureOn).to.be.false;
   });
 });

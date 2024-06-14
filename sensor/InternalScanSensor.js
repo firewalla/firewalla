@@ -27,7 +27,6 @@ const fsp = require('fs').promises;
 const util = require('util');
 const bone = require("../lib/Bone.js");
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 const scanConfigPath = `${firewalla.getHiddenFolder()}/run/scan_config`;
@@ -69,7 +68,7 @@ const MIN_CRON_INTERVAL = 86400; // at most one job every 24 hours, to avoid job
 class InternalScanSensor extends Sensor {
   constructor(config) {
     super(config)
-    this.running = false;
+    this.featureOn = false;
     this.supportPorts = ["tcp_23", "tcp_80", "tcp_21", "tcp_3306", "tcp_6379"]; // default support: telnet http ftp mysql redis
 
     this.scheduledScanTasks = {};
@@ -85,19 +84,6 @@ class InternalScanSensor extends Sensor {
     }
 
     if (f.isMain()) {
-      sclient.subscribe("config:feature:dynamic:disable");
-      sclient.on("message", (channel, message) => {
-        switch (channel) {
-          case "config:feature:dynamic:disable": {
-            log.info('received event config:feature:dynamic:disable');
-            if (message === featureName) {
-              this.applyPolicy(hostManager, "0.0.0.0", {})
-            }
-            break;
-          }
-        }
-      });
-
       sem.on("SubmitWeakPasswordScanTask", async(event) => {
         const {hosts, key} = event;
         await this.submitTask(key || ("" + Date.now() / 1000), hosts);
@@ -113,10 +99,27 @@ class InternalScanSensor extends Sensor {
           return;
         }
         for (const key in result.tasks) {
-          await this._stopScanTask(key, '0.0.0.0');
+          if (result.tasks[key].state == STATE_SCANNING || result.tasks[key].state == STATE_QUEUED) {
+            try {
+              await this._stopScanTask(key, '0.0.0.0');
+            } catch(err){
+              log.warn('cannot stop scan task key', key, err.message);
+              continue
+            };
+          }
         }
       })
     }
+  }
+
+  async globalOn() {
+    log.info(`feature ${featureName} global on`);
+    this.featureOn = true;
+  }
+
+  async globalOff() {
+    log.info(`feature ${featureName} global off`);
+    this.featureOn = false;
   }
 
   async loadPolicyAsync() {
@@ -136,6 +139,7 @@ class InternalScanSensor extends Sensor {
     extensionManager.registerExtension(featureName, this, {
       applyPolicy: this.applyPolicy
     })
+    this.hookFeature(featureName);
     const previousScanResult = await this.getScanResult();
     if (_.has(previousScanResult, "tasks"))
       this.scheduledScanTasks = previousScanResult.tasks;
@@ -149,6 +153,7 @@ class InternalScanSensor extends Sensor {
     }
     await execAsync(`sudo cp ../extension/nmap/scripts/mysql.lua /usr/share/nmap/nselib/`).catch((err) => {});
     setInterval(() => {
+      this._cleanTasks();
       this.checkRunningStatus();
     }, 60 * 1000);
   }
@@ -178,7 +183,11 @@ class InternalScanSensor extends Sensor {
         case "host": {
           key = target
           if (target === "0.0.0.0") {
-            const result = await this.getScanHosts({state: true});
+            let scanPolicy = await this.loadPolicyAsync();
+            if (!scanPolicy) {
+              scanPolicy = {state: true};
+            }
+            const result = await this.getScanHosts(scanPolicy);
             hosts = result && result.hosts || [];
             // for now, only VPN devices use identities, so it's okay to consider identities identical to VPN devices
             // hosts = data.includeVPNNetworks ? hostManager.getActiveMACs().concat(IdentityManager.getAllIdentitiesGUID()) : hostManager.getActiveMACs();
@@ -225,7 +234,7 @@ class InternalScanSensor extends Sensor {
     });
 
     extensionManager.onGet("weakPasswordScanTasks", async (msg, data) => {
-      return this.getScanResult();
+      return this.getScanResult(true);
     });
 
     extensionManager.onCmd("stopWeakPasswordScanTask", async (msg, data) => {
@@ -276,6 +285,10 @@ class InternalScanSensor extends Sensor {
         }
         for (const hostId of Object.keys(task.pendingHosts)) {
           const subTask = this.subTaskMap[hostId];
+          if (!subTask) {
+            log.info('stop scan task skipped, ignore dangling pending hosts', key, hostId, task.pendingHosts);
+            continue
+          }
           delete subTask.subscribers[key];
           if (_.isEmpty(subTask.subscribers)) {
             delete this.subTaskMap[hostId];
@@ -412,7 +425,6 @@ class InternalScanSensor extends Sensor {
               await this.sendNotification(key, ets, task.results);
               task.state = STATE_COMPLETE;
               task.ets = ets;
-              //delete this.scheduledScanTasks[key];
             }
           }
         }
@@ -441,23 +453,35 @@ class InternalScanSensor extends Sensor {
     });
   }
 
-  _cleanTasks(maxNum=10) {
-    const len = Object.keys(this.scheduledScanTasks).length;
-    if ( len > maxNum) { // only keep recent maxNum results
-      const keys = Object.entries(this.scheduledScanTasks).sort((a,b) => {return (a[1].ets || 0) - (b[1].ets || 0)}).splice(0,len-maxNum).map(i=>i[0]);
-      for (const key of keys) {
-        delete this.scheduledScanTasks[key];
+  _getLatestNumTaskKeys(tasks, maxNum) {
+    return Object.entries(tasks).sort((a,b) => {return (a[1].ts || 0) - (b[1].ts || 0)}).splice(Object.keys(tasks).length-maxNum, maxNum).map(i=>i[0]);
+  }
+
+  async _cleanTasks(maxNum=10) {
+    await lock.acquire(LOCK_TASK_QUEUE, async () => {
+      let deleted = false;
+      const len = Object.keys(this.scheduledScanTasks).length;
+      if ( len > maxNum) { // only keep recent maxNum results
+        const keys = Object.entries(this.scheduledScanTasks).sort((a,b) => {return (a[1].ets || 0) - (b[1].ets || 0)}).splice(0,len-maxNum).map(i=>i[0]);
+        for (const key of keys) {
+          delete this.scheduledScanTasks[key];
+          deleted = true;
+        }
       }
-    }
+      for (const key of Object.keys(this.scheduledScanTasks)) {
+        const ets = this.scheduledScanTasks[key].ets;
+        if (ets && ets < Date.now() / 1000 - 86400) {
+          delete this.scheduledScanTasks[key];
+          deleted = true;
+        }
+      }
+      if (deleted) {
+        await this.saveScanTasks();
+      }
+    });
   }
 
   getTasks() {
-    for (const key of Object.keys(this.scheduledScanTasks)) {
-      const ets = this.scheduledScanTasks[key].ets;
-      if (ets && ets < Date.now() / 1000 - 86400)
-        delete this.scheduledScanTasks[key];
-      this._cleanTasks();
-    }
     return this.scheduledScanTasks;
   }
 
@@ -474,7 +498,16 @@ class InternalScanSensor extends Sensor {
     await rclient.hsetAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT, "lastCompletedScanTs", Math.floor(Date.now() / 1000));
   }
 
-  async getScanResult() {
+  getLatestNumTasks(tasks, maxNum) {
+    let lastTasks = {};
+    const lastKeys = this._getLatestNumTaskKeys(tasks, maxNum);
+    for (const key of lastKeys) {
+      lastTasks[key] = tasks[key]
+    }
+    return lastTasks
+  }
+
+  async getScanResult(compatible=false) {
     const result = await rclient.hgetallAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT);
     if (!result)
       return {};
@@ -482,11 +515,17 @@ class InternalScanSensor extends Sensor {
       result.tasks = JSON.parse(result.tasks);
     if (_.has(result, "lastCompletedScanTs"))
       result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
+    if (compatible) {
+      const lastTasks = this.getLatestNumTasks(result.tasks, 1);
+      if (Object.keys(lastTasks).length > 0) {
+        result.tasks = lastTasks;
+      }
+    }
     return result;
   }
 
   async getScanHosts(policy) {
-    const key = 'cron_'+ (policy.ts ? policy.ts : Date()/1000);
+    const key = 'cron_'+ (policy.ts ? policy.ts : Date.now()/1000);
     let hosts = {};
 
     // 1. get network policy
@@ -519,7 +558,7 @@ class InternalScanSensor extends Sensor {
     const devices = await hostManager.getActiveHosts() || [];
     for (const h of devices) {
       const devPolicy = await h.getPolicyAsync(policyKeyName);
-      if (devPolicy || !hosts.hasOwnProperty(h.o.mac)) {
+      if ((devPolicy && devPolicy.state !== false) || !hosts.hasOwnProperty(h.o.mac) ) {
         hosts[h.o.mac] = devPolicy && (devPolicy.state + '');
       }
     }
@@ -581,14 +620,6 @@ class InternalScanSensor extends Sensor {
   }
 
   async _applyPolicy(host, ip, policy) {
-    if (!fc.isFeatureOn(featureName)) {
-      log.info(`disable cron weak_password_scan job, ${JSON.stringify(policy)}`);
-      if (this.scanJob) {
-        this.scanJob.stop();
-      }
-      await rclient.hdelAsync(hostManager._getPolicyKey(), policyKeyName);
-      return;
-    }
     if (!policy) {
       return {err: 'policy must be specified'};
     }
@@ -612,6 +643,11 @@ class InternalScanSensor extends Sensor {
     }
 
     this.scanJob = new CronJob(cron, async() => {
+      if (!this.featureOn) {
+        log.info(`feature ${featureName} is off`);
+        return;
+      }
+
       const result = await this._updateRunningStatus(STATE_SCANNING);
       if (result != 1) {
         log.info('scan task is running, skip');
@@ -621,8 +657,6 @@ class InternalScanSensor extends Sensor {
       const {key, hosts} = await this.getScanHosts(policy);
       if (!hosts || hosts.length == 0) {
         log.info('cron task finished, no target hosts found');
-        await this.checkRunningStatus()
-        return;
       }
       log.info(`start cron weak_password_scan job ${policy.cron}: ${hosts}`);
       await this.submitTask(key, hosts);
