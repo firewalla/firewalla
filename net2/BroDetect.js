@@ -68,6 +68,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
 const config = fc.getConfig().bro
 
+const { Address6 } = require('ip-address')
+
 const APP_MAP_SIZE = 1000;
 const PROXY_CONN_SIZE = 100;
 const FLOWSTASH_EXPIRES = config.conn.flowstashExpires;
@@ -265,7 +267,7 @@ class BroDetect {
       if (host) {
         // workaround for https://github.com/zeek/zeek/issues/1844
         if (host.match(/^\[?[0-9a-e]{1,4}$/)) {
-          host = obj['id.resp_h']
+          host = obj['id.resp_h'] || ''
         }
         // since zeek 5.0, the host will contain port number if it is not a well-known port
         // http connect might contain target port (not the same as id.resp_p which is proxy port
@@ -277,7 +279,10 @@ class BroDetect {
         if (host.startsWith("[") && host.endsWith("]")) {
           // strip [] from an ipv6 address
           host = host.substring(1, host.length - 1);
-        } else if (host.includes(':')) {
+        }
+
+        // remove tailing port of v4 addresses
+        if (host.includes(':') && !new Address6(host).isValid()) {
           host = host.substring(0, host.indexOf(':'))
         }
 
