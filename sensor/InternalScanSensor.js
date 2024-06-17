@@ -174,7 +174,7 @@ class InternalScanSensor extends Sensor {
       log.info('scan task status update result', result);
       if (result != 1) {
         log.info('scan task is running, skip', result);
-        return this.getScanResult(); 
+        return this.getScanResult(1);
       }
       const {type, target} = data;
       let key = null;
@@ -230,11 +230,11 @@ class InternalScanSensor extends Sensor {
       })} catch (err) {
         log.info('timeout waiting for task to start');
       }
-      return this.getScanResult();
+      return this.getScanResult(1);
     });
 
     extensionManager.onGet("weakPasswordScanTasks", async (msg, data) => {
-      return this.getScanResult(true);
+      return this.getScanResult(1);
     });
 
     extensionManager.onCmd("stopWeakPasswordScanTask", async (msg, data) => {
@@ -255,7 +255,7 @@ class InternalScanSensor extends Sensor {
       } catch (err) {
         log.info('timeout waiting for task to stop');
       }
-      return this.getScanResult();
+      return this.getScanResult(1);
     });
   }
 
@@ -507,7 +507,7 @@ class InternalScanSensor extends Sensor {
     return lastTasks
   }
 
-  async getScanResult(compatible=false) {
+  async getScanResult(latestNum=-1) { // -1 for all
     const result = await rclient.hgetallAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT);
     if (!result)
       return {};
@@ -515,8 +515,8 @@ class InternalScanSensor extends Sensor {
       result.tasks = JSON.parse(result.tasks);
     if (_.has(result, "lastCompletedScanTs"))
       result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
-    if (compatible) {
-      const lastTasks = this.getLatestNumTasks(result.tasks, 1);
+    if (latestNum > 0 && result.tasks && Object.keys(result.tasks).length > 0) {
+      const lastTasks = this.getLatestNumTasks(result.tasks, latestNum);
       if (Object.keys(lastTasks).length > 0) {
         result.tasks = lastTasks;
       }
