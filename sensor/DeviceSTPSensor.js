@@ -49,7 +49,7 @@ class DeviceSTPSensor extends Sensor {
     const macNicMap = {};
     for (const intf of intfs) {
       if (intf.name.startsWith('br')) {
-        const result = await this.discoverMacViaSTP(intf.name).catch((err) => {
+        const result = await this.discoverMacViaSTP(intf.name, intf.uuid).catch((err) => {
           log.error(`Failed to discover MAC via STP on ${intf.name}`, err.message);
           return {};
         });
@@ -72,7 +72,7 @@ class DeviceSTPSensor extends Sensor {
     }
   }
 
-  async discoverMacViaSTP(bridge) {
+  async discoverMacViaSTP(bridge, uuid) {
     let results = await exec(`brctl showstp ${bridge} | grep -v "^ " | grep -v "${bridge}"`).then(result => result.stdout.trim().split('\n').filter(line => line.length !== 0));
     const numberNicMap = {};
     for (const result of results) {
@@ -83,8 +83,12 @@ class DeviceSTPSensor extends Sensor {
     const macNicMap = {};
     for (const result of results) {
       const [number, mac] = result.split(' ', 2);
-      if (numberNicMap[number])
+      if (numberNicMap[number]) {
+        const {intf} = await hostTool.getKeysInMAC(mac.toUpperCase(), ["intf"]);
+        if (intf && intf !== uuid) // do not record stp port if mac address does not belong to this bridge network
+            continue;
         macNicMap[mac.toUpperCase()] = numberNicMap[number];
+      }
     }
     return macNicMap;
   }

@@ -47,15 +47,22 @@ module.exports = {
   REDIS_KEY_POLICY_STATE: 'policy:state',
   REDIS_KEY_EXT_SCAN_RESULT: "sys:scan:external",
   REDIS_KEY_WEAK_PWD_RESULT: "sys:scan:weak_password",
+  REDIS_KEY_NSE_RESULT: "sys:scan:nse",
   REDIS_KEY_NTP_SERVER_STATUS: "sys:ntp:status", // updated only when ntp_redirect is enabled
   REDIS_KEY_VPN_WG_PEER: 'vpn:wg:peer:', // vpn:wg:peer:{intf}:{pubkey}
   REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG: "app_time_usage_cloud_config",
 
+  REDIS_HKEY_NSE_DHCP: "dhcp",
   REDIS_HKEY_CONN_OINTF: "oIntf",
   REDIS_HKEY_CONN_HOST: "host",
   REDIS_HKEY_CONN_APID: "apid", // allow rule id
   REDIS_HKEY_CONN_RPID: "rpid", // route rule id
 
+  ST_INIT: 'init',
+  ST_PENDING: 'pending',
+  ST_READY: 'ready',
+  ST_ACTIVATED: 'active',
+  ST_IGNORE: 'ignore',
 
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
 
@@ -70,10 +77,21 @@ module.exports = {
 
   VC_INTF_PREFIX: "vpn_",
 
+  TAG_TYPE_DEVICE: "device",
   TAG_TYPE_USER: "user",
   TAG_TYPE_GROUP: "group",
 
   TAG_TYPE_MAP: {
+    device: {
+      redisKeyPrefix: "deviceTag:uid:",
+      initDataKey: "deviceTags",
+      policyKey: "deviceTags",
+      flowKey: "dTags",
+      alarmIdKey: "p.dtag.ids",
+      alarmNameKey: "p.dtag.names",
+      ruleTagPrefix: "deviceTag:",
+      needAppTimeInInitData: false,
+    },
     user: {
       redisKeyPrefix: "userTag:uid:",
       initDataKey: "userTags",
@@ -97,4 +115,6 @@ module.exports = {
   },
 
   IPTABLES_LOG_PREFIX_AUDIT: '[FW_ADT]',
+
+  HOST_MAC_KEY_EXPIRE_SECS: 86400 * 365,
 };

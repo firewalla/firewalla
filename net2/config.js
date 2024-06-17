@@ -40,6 +40,7 @@ let versionConfig = null
 let cloudConfig = null
 let userConfig = null
 let testConfig = null
+let mspConfig = null;
 let config = null;
 
 let dynamicFeatures = null
@@ -177,7 +178,7 @@ async function reloadConfig() {
     let testConfigFile = f.getUserConfigFolder() + "/config.test.json";
     // will throw error if not exist
     await fs.promises.access(testConfigFile, fs.constants.F_OK | fs.constants.R_OK)
-    testConfig = JSON.parse(await fs.promises.readFile(userConfigFile, 'utf8'))
+    testConfig = JSON.parse(await fs.promises.readFile(testConfigFile, 'utf8'))
     log.warn("Test config is being used", testConfig);
   } catch(err) {
     // clears config on any error
@@ -194,7 +195,7 @@ async function reloadConfig() {
     await pclient.publishAsync("config:updated", JSON.stringify(config))
 }
 
-function aggregateConfig(configArray = [defaultConfig, platformConfig, versionConfig, cloudConfig, userConfig, testConfig]) {
+function aggregateConfig(configArray = [defaultConfig, platformConfig, versionConfig, cloudConfig, userConfig, testConfig, mspConfig]) {
   const newConfig = {}
   // later in this array higher the priority
   const prioritized = configArray.filter(Boolean)
@@ -241,6 +242,41 @@ function getConfig(reload = false) {
   return config
 }
 
+function _parseMspConfig(mspdata) {
+    let data;
+    if (_.isArray(mspdata)) {
+      const cfgs = mspdata.filter( i => i.config == true );
+      data = Object.assign({}, ...cfgs);
+    } else {
+      data = mspdata && mspdata.config;
+    }
+    if (!data) {
+      mspConfig = {};
+      return mspConfig;
+    }
+    if (!mspConfig && Object.keys(data)) {
+      mspConfig = {};
+    }
+    for (const k in data) {
+      try {
+        mspConfig[k] = JSON.parse(data[k]);
+      } catch (err) {
+        mspConfig[k] = data[k];
+      }
+    }
+}
+
+async function getMspConfig(field = '', reload = false) {
+  if (reload) {
+    const mspdata = JSON.parse(await rclient.getAsync('ext.guardian.data'));
+    _parseMspConfig(mspdata);
+  }
+  if (field) {
+    return mspConfig && mspConfig[field];
+  }
+  return mspConfig;
+}
+
 async function getCloudConfig(reload = false) {
   if (reload) await syncCloudConfig()
   return cloudConfig
@@ -252,7 +288,6 @@ function isFeatureOn(featureName, defaultValue = false) {
   else
     return defaultValue
 }
-
 
 async function syncDynamicFeatures() {
   let configs = await rclient.hgetallAsync(dynamicConfigKey);
@@ -276,6 +311,10 @@ async function syncCloudConfig() {
   }
 }
 
+async function syncMspConfig() {
+  getMspConfig('', true);
+  await reloadConfig()
+}
 
 async function enableDynamicFeature(featureName) {
   log.info('Enabling feature:', featureName)
@@ -346,6 +385,7 @@ sclient.subscribe("config:feature:dynamic:enable")
 sclient.subscribe("config:feature:dynamic:disable")
 sclient.subscribe("config:feature:dynamic:clear")
 sclient.subscribe("config:cloud:updated")
+sclient.subscribe("config:msp:updated")
 sclient.subscribe("config:user:updated")
 sclient.subscribe("config:version:updated")
 
@@ -375,6 +415,10 @@ sclient.on("message", (channel, message) => {
       cloudConfig = JSON.parse(message)
       reloadConfig()
       break
+    case "config:msp:updated":
+      _parseMspConfig(JSON.parse(message))
+      reloadConfig()
+      break
     case "config:user:updated":
       userConfig = JSON.parse(message)
       reloadConfig()
@@ -386,6 +430,7 @@ reloadConfig() // starts reading userConfig & testConfig as this module loads
 config = aggregateConfig() // non-async call, garantees getConfig() will be returned with something
 
 syncCloudConfig()
+syncMspConfig()
 
 if (f.isMain()) {
   initVersionConfig()
@@ -398,6 +443,7 @@ if (f.isMain()) {
 syncDynamicFeatures()
 setInterval(() => {
   syncDynamicFeatures()
+  syncMspConfig()
 }, 60 * 1000) // every minute
 
 function onFeature(feature, callback) {
@@ -463,6 +509,7 @@ module.exports = {
   getSimpleVersion: getSimpleVersion,
   isMajorVersion: isMajorVersion,
   getUserConfig,
+  getMspConfig,
   getTimingConfig: getTimingConfig,
   isFeatureOn: isFeatureOn,
   getFeatures,
@@ -470,7 +517,7 @@ module.exports = {
   enableDynamicFeature: enableDynamicFeature,
   disableDynamicFeature: disableDynamicFeature,
   clearDynamicFeature: clearDynamicFeature,
-  syncDynamicFeatures,
+  syncDynamicFeatures, syncMspConfig,
   onFeature: onFeature,
   removeUserNetworkConfig: removeUserNetworkConfig,
   ConfigError,

@@ -113,6 +113,7 @@
     "ExternalScanSensor": {
       "scanCooldown": 300
     },
+    "NseScanPlugin": {},
     "InternetSpeedtestPlugin": {
       "vendorCandidates": [
         "ookla"
@@ -684,6 +685,7 @@
       "fireResetBluetooth": true,
       "bonelogInterval": 900
     },
+    "NseScanPlugin": {},
     "ACLAuditLogPlugin": {
       "buffer": 2,
       "interval": 300,
@@ -744,6 +746,7 @@
     "FanSensor": {},
     "LEDSensor": {},
     "SyslogSensor": {},
+    "InternalScanSensor": { "skip_verify": false, "strict_http": true},
     "InternetSpeedtestPlugin": {
       "vendorCandidates": [
         "ookla"
@@ -988,6 +991,13 @@
         "large_upload": { "txInMin": 1000000, "txOutMin": 500000, "sdMin": 8, "ratioMin": 1, "ratioSingleDestMin": 1.5, "rankedMax": 3, "cooldown": 14400 },
         "large_upload_2": { "txMin": 100000000, "cooldown": 14400 }
       }
+    }
+  },
+  "alarms": {
+    "apply": {
+      "default": {"state": "pending"},
+      "new_device": {"state": "ready"},
+      "video": {"state": "pending"}
     }
   },
   "cloudcache": {

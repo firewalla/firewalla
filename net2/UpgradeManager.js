@@ -79,13 +79,12 @@ async function getHashAndVersion() {
   try {
     const remoteHash = await f.getRemoteCommitHash()
     const remoteTS = await getCommitTS(remoteHash)
-    const remoteVersion = localHash == remoteHash ? localVersion :
-      _.get(await rrWithErrHandling({
-        uri: `https://raw.githubusercontent.com/firewalla/firewalla/${remoteHash}/net2/config.json`,
-        json: true,
-        maxAttempts: 3,
-        retryDelay: 1000,
-      }), 'body.version', null)
+    let remoteVersion = localVersion
+    if (localHash != remoteHash) {
+      await exec(`timeout 20s git fetch origin ${remoteHash}`)
+      const cmd = await exec(`git show ${remoteHash}:net2/config.json`)
+      remoteVersion = JSON.parse(cmd.stdout).version
+    }
 
     return { localHash, localTS, localVersion, remoteHash, remoteTS, remoteVersion }
   } catch(err) {
