@@ -280,7 +280,12 @@ class CategoryExaminerPlugin extends Sensor {
     if (!_.isArray(resp) || resp.length == 0) {
       return [];
     }
-    return _.uniq(resp.map((i) => {if (i.c == 'ad') {return 'adblock_strict';} else return i.c}));
+    return _.uniqWith(resp.map((i) => {
+      if (i.c == 'ad')
+        return {c: 'adblock_strict', originIP: i.originIP};
+      else
+        return {c: i.c, originIP: i.originIP};
+      }), (v1, v2) => _.isEqual(v1, v2));
   }
 
   async confirmJob() {
@@ -312,15 +317,22 @@ class CategoryExaminerPlugin extends Sensor {
           const origDomain = origDomainList[i];
           const categories = await this._findCategory(origDomain);
           log.verbose("categories", category, categories, origDomain);
-          if (categories.includes(category) || categories.includes(originCategory)) { // matched with cloud data
-            log.info(`Add domain ${origDomain} to hit set of ${category} `);
-            await this.addDomainToHitSet(category, origDomain, score);
+          const longestMatchCat = _.maxBy(categories, (cat) => {
+            return (cat.originIP || "").length;
+          })
+          if (longestMatchCat.c === category || longestMatchCat.c === originCategory) { // matched with cloud data
+            // add domain/pattern matched from cloud to hit set
+            const domain = longestMatchCat.originIP || origDomain;
+            log.info(`Add domain ${domainList[i][0]} to hit set of ${category} `);
+            await this.addDomainToHitSet(category, domainList[i][0], score);
+            // incremental update original category with the matched domain from cloud, including ipset and tls host set
+            await categoryUpdater.updateDomain(originCategory, domain, domain !== origDomain);
             unmatchedOrigDomainSet.delete(origDomain);
-            matchedDomainList.push(domainList[i][0]);
+            matchedDomainList.push(domain);
           }
         }
 
-        await categoryUpdater.addDomainIntels(originCategory, matchedDomainList);
+        await categoryUpdater.addDomainIntels(originCategory, matchedDomainList, 86400);
         for (const origDomain of unmatchedOrigDomainSet) {
           log.info(`Add domain ${origDomain} to passthrough set of ${category} `);
           await this.addDomainToPassthroughSet(category, origDomain, score);
@@ -328,8 +340,6 @@ class CategoryExaminerPlugin extends Sensor {
 
         await this.limitHitSet(category, MAX_CONFIRM_SET_SIZE);
         await this.limitPassthroughSet(category, MAX_CONFIRM_SET_SIZE);
-
-        this.sendUpdateNotification(category);
       }
     }
   }
