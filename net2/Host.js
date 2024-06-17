@@ -297,7 +297,7 @@ class Host extends Monitorable {
     return "host:mac:" + this.o.mac
   }
 
-  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect', 'openports', 'screenTime', 'recentActivity' ]
+  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect', 'openports', 'screenTime' ]
   static metaFieldsNumber = [ 'firstFoundTimestamp', 'lastActiveTimestamp', 'bnameCheckTime', 'spoofingTime', '_identifyExpiration' ]
 
   redisfy() {
