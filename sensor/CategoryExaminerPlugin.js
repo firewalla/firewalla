@@ -328,7 +328,7 @@ class CategoryExaminerPlugin extends Sensor {
             // incremental update original category with the matched domain from cloud, including ipset and tls host set
             await categoryUpdater.updateDomain(originCategory, domain, domain !== origDomain);
             unmatchedOrigDomainSet.delete(origDomain);
-            matchedDomainList.push(domain);
+            matchedDomainList.push(domainList[i][0]);
           }
         }
 

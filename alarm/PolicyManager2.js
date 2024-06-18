@@ -2049,8 +2049,10 @@ class PolicyManager2 {
         });
       }
       // refresh activated tls category after rule is removed from iptables, hostset in /proc filesystem will be removed after last reference in iptables rule is removed
-      if (tlsHostSet)
+      if (tlsHostSet) {
+        await delay(200); // wait for 200 ms so that hostset file can be purged from proc fs
         await categoryUpdater.refreshTLSCategoryActivated();
+      }
     }
 
     if (localPortSet) {
