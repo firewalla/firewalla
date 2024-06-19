@@ -2024,17 +2024,19 @@ class PolicyManager2 {
     const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass]; // tlsHostSet and tlsHost always null for commonArgs
 
     await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, commonArgs).catch((err) => {
-      log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
+      log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
     });
 
     if (tlsHostSet || tlsHost) {
       const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass];
       await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs).catch((err) => {
-        log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
+        log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
       });
       // refresh activated tls category after rule is removed from iptables, hostset in /proc filesystem will be removed after last reference in iptables rule is removed
-      if (tlsHostSet)
+      if (tlsHostSet) {
+        await delay(200); // wait for 200 ms so that hostset file can be purged from proc fs
         await categoryUpdater.refreshTLSCategoryActivated();
+      }
     }
 
     if (localPortSet) {
