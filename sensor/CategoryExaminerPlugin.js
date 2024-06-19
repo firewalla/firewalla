@@ -275,17 +275,12 @@ class CategoryExaminerPlugin extends Sensor {
     }
   }
 
-  async _findCategory(domain) {
+  async _getCloudIntels(domain) {
     const resp = await intelTool.checkIntelFromCloud(null, domain);
     if (!_.isArray(resp) || resp.length == 0) {
       return [];
     }
-    return _.uniqWith(resp.map((i) => {
-      if (i.c == 'ad')
-        return {c: 'adblock_strict', originIP: i.originIP};
-      else
-        return {c: i.c, originIP: i.originIP};
-      }), (v1, v2) => _.isEqual(v1, v2));
+    return resp;
   }
 
   async confirmJob() {
@@ -310,29 +305,32 @@ class CategoryExaminerPlugin extends Sensor {
       if (strategy.updateConfirmSet) {
         let score = Date.now();
         let originCategory = category.split("_bf")[0];
+        if (originCategory === "adblock_strict")
+          originCategory = "ad";
         const origDomainList = domainList.map(item => item[1]);
-        const matchedDomainList = [];
         const unmatchedOrigDomainSet = new Set(origDomainList);
         for (let i = 0; i < origDomainList.length; i++) {
           const origDomain = origDomainList[i];
-          const categories = await this._findCategory(origDomain);
-          log.verbose("categories", category, categories, origDomain);
-          const longestMatchCat = _.maxBy(categories, (cat) => {
+          const intels = await this._getCloudIntels(origDomain).catch((err) => null);
+          if (!intels) { // likely error occurs while calling cloud API, do not block or passthrough this domain
+              unmatchedOrigDomainSet.delete(origDomain);
+              continue;
+          }
+          log.verbose("categories", category, intels, origDomain);
+          const longestMatchIntel = _.maxBy(intels, (cat) => {
             return (cat.originIP || "").length;
           })
-          if (longestMatchCat.c === category || longestMatchCat.c === originCategory) { // matched with cloud data
+          if (longestMatchIntel.c === category || longestMatchIntel.c === originCategory) { // matched with cloud data
             // add domain/pattern matched from cloud to hit set
-            const domain = longestMatchCat.originIP || origDomain;
+            const domain = longestMatchIntel.originIP || origDomain;
             log.info(`Add domain ${domainList[i][0]} to hit set of ${category} `);
             await this.addDomainToHitSet(category, domainList[i][0], score);
             // incremental update original category with the matched domain from cloud, including ipset and tls host set
             await categoryUpdater.updateDomain(originCategory, domain, domain !== origDomain);
             unmatchedOrigDomainSet.delete(origDomain);
-            matchedDomainList.push(domainList[i][0]);
+            await intelTool.addDomainIntel(domain, longestMatchIntel, longestMatchIntel.e);
           }
         }
-
-        await categoryUpdater.addDomainIntels(originCategory, matchedDomainList, 86400);
         for (const origDomain of unmatchedOrigDomainSet) {
           log.info(`Add domain ${origDomain} to passthrough set of ${category} `);
           await this.addDomainToPassthroughSet(category, origDomain, score);
