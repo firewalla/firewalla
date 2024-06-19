@@ -462,8 +462,9 @@ class InternalScanSensor extends Sensor {
       let deleted = false;
       const len = Object.keys(this.scheduledScanTasks).length;
       if ( len > maxNum) { // only keep recent maxNum results
-        const keys = Object.entries(this.scheduledScanTasks).sort((a,b) => {return (a[1].ets || 0) - (b[1].ets || 0)}).splice(0,len-maxNum).map(i=>i[0]);
+        const keys = Object.entries(this.scheduledScanTasks).filter(item => item.state[1] != STATE_SCANNING && item.state[1] != STATE_QUEUED).sort((a,b) => {return (a[1].ts || 0) - (b[1].ts || 0)}).splice(0,len-maxNum).map(i=>i[0]);
         for (const key of keys) {
+          log.debug("delete scan task", key);
           delete this.scheduledScanTasks[key];
           deleted = true;
         }
@@ -471,6 +472,7 @@ class InternalScanSensor extends Sensor {
       for (const key of Object.keys(this.scheduledScanTasks)) {
         const ets = this.scheduledScanTasks[key].ets;
         if (ets && ets < Date.now() / 1000 - 86400) {
+          log.debug("delete scan task", key);
           delete this.scheduledScanTasks[key];
           deleted = true;
         }
