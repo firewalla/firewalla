@@ -182,7 +182,7 @@ module.exports = class {
                 await this.activateAlarm({state: Constants.ST_READY, aid: aid, alarmTimestamp: data[1]}, {origin:{state: data[0]}});
             } else if (outdated) {
                 // ignore and delete from pending queue
-                await rclient.zremAsync(alarmPendingKey, aid);
+                await this.timeoutAlarm(aid);
                 log.warn('ignore pending alarm out of date', aid);
             }
             break;
@@ -339,6 +339,18 @@ module.exports = class {
     await rclient.hmsetAsync(alarmKey, alarm.redisfy())
 
     return alarm
+  }
+
+  async timeoutAlarm(alarmID) {
+    const alarmKey = alarmPrefix + alarmID;
+    await rclient.hmsetAsync(alarmKey, 'state', Constants.ST_TIMEOUT, 'applyTimestamp', Date.now()/1000);
+    await this.archiveAlarm(alarmID);
+    await rclient.zremAsync(alarmPendingKey, alarmID);
+  }
+
+  async mspIgnoreAlarm(alarmID, options={}) {
+    await this.archiveAlarm(alarmID);
+    await rclient.zremAsync(alarmPendingKey, alarmID);
   }
 
   async ignoreAlarm(alarmID, info) {
@@ -565,10 +577,18 @@ module.exports = class {
     let attrs = {}; // origin attrs
     for (const k in alarm) {
       if (alarm[k] != orig_alarm[k]) {
+        if (k == "state" && alarm[k] != Constants.ST_READY && alarm[k] != Constants.ST_IGNORE) {
+          log.warn('apply alarm invalid state, skip', alarm);
+          continue;
+        }
         attrs[k] = orig_alarm[k];
       }
     }
     const props = Object.entries(alarm).filter(i => i[0] != 'aid').flat()
+    if (props.length == 0) {
+      return;
+    }
+    props.push('applyTimestamp', Date.now()/1000);
     await rclient.hsetAsync(alarmKey, ...props);
     return attrs;
   }
@@ -580,7 +600,7 @@ module.exports = class {
         break;
       }
       case Constants.ST_IGNORE: {
-        await this.removeAlarmAsync(alarm.aid)
+        await this.mspIgnoreAlarm(alarm.aid, options)
         break;
       }
       default: {
