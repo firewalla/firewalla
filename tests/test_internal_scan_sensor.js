@@ -597,4 +597,46 @@ describe('Test scan hosts', function(){
     expect(Object.keys(result.tasks).length).to.be.equal(1);
 
   });
+
+  it('should limit scan result', async() => {
+    let tasks = {"key1": {results: [{"result": [{"k":1},{"k":2},{"k3":3}]}]}};
+    let limitTasks = this.plugin._limitResult(tasks, 2);
+    expect(limitTasks).to.eql({"key1": {results: [{"result": [{"k":1},{"k":2}]}], overlimit:true}});
+
+    tasks = {
+      "key1": {results: [{"result": [{"k":11},{"k":12},{"k3":13}]}]},
+      "key2": {results: [{"result": [{"k":21},{"k":22},{"k3":23}]}]},
+      "key3": {results: [{"result": [{"k":31},{"k":32},{"k3":33}]}]},
+    };
+    limitTasks = this.plugin._limitResult(tasks, 4);
+    expect(limitTasks).to.eql({
+      "key1": {results: [{"result": [{"k":11},{"k":12},{"k3":13}]}]},
+      "key2": {results: [{"result": [{"k":21}]}], overlimit:true},
+    });
+
+    tasks = {"key1": {results: [{"result": [{"k":11},{"k":12},{"k3":13}]}]}};
+    limitTasks = this.plugin._limitResult(tasks, 10);
+    expect(limitTasks).to.eql(tasks);
+
+    tasks = {
+      "key1": {results: [{"result": [{"k":11},{"k":12},{"k3":13}]}]},
+      "key2": {results: [{"result": [{"k":21},{"k":22},{"k3":23}]}]},
+      "key3": {results: [{"result": [{"k":31},{"k":32},{"k3":33}]}]},
+    };
+    limitTasks = this.plugin._limitResult(tasks, 9);
+    expect(limitTasks).to.eql(tasks);
+
+    tasks = {"key1": {results: [
+      {"result": [{"k":11},{"k":12},{"k3":13}]},
+      {"result": [{"k":21},{"k":22},{"k3":23}]},
+      {"result": [{"k":31},{"k":32},{"k3":33}]},
+    ]}};
+    limitTasks = this.plugin._limitResult(tasks, 4);
+    expect(limitTasks).to.eql({"key1": {results: [
+        {"result": [{"k":11},{"k":12},{"k3":13}]},
+        {"result": [{"k":21}]},
+      ], overlimit:true},
+    });
+
+  });
 });
