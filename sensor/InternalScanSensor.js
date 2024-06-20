@@ -31,7 +31,7 @@ const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 const scanConfigPath = `${firewalla.getHiddenFolder()}/run/scan_config`;
 const f = require('../net2/Firewalla.js');
-const fc = require('../net2/config.js');
+const Ranges = require('../util/Ranges.js');
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const IdentityManager = require('../net2/IdentityManager.js');
@@ -462,7 +462,7 @@ class InternalScanSensor extends Sensor {
       let deleted = false;
       const len = Object.keys(this.scheduledScanTasks).length;
       if ( len > maxNum) { // only keep recent maxNum results
-        const keys = Object.entries(this.scheduledScanTasks).filter(item => item.state[1] != STATE_SCANNING && item.state[1] != STATE_QUEUED).sort((a,b) => {return (a[1].ts || 0) - (b[1].ts || 0)}).splice(0,len-maxNum).map(i=>i[0]);
+        const keys = Object.entries(this.scheduledScanTasks).filter(item => item[1].state != STATE_SCANNING && item[1].state != STATE_QUEUED).sort((a,b) => {return (a[1].ts || 0) - (b[1].ts || 0)}).splice(0,len-maxNum).map(i=>i[0]);
         for (const key of keys) {
           log.debug("delete scan task", key);
           delete this.scheduledScanTasks[key];
@@ -509,7 +509,7 @@ class InternalScanSensor extends Sensor {
     return lastTasks
   }
 
-  async getScanResult(latestNum=-1) { // -1 for all
+  async getScanResult(latestNum=-1, maxResult=-1) { // -1 for all
     const result = await rclient.hgetallAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT);
     if (!result)
       return {};
@@ -517,13 +517,21 @@ class InternalScanSensor extends Sensor {
       result.tasks = JSON.parse(result.tasks);
     if (_.has(result, "lastCompletedScanTs"))
       result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
+
     if (latestNum > 0 && result.tasks && Object.keys(result.tasks).length > 0) {
       const lastTasks = this.getLatestNumTasks(result.tasks, latestNum);
       if (Object.keys(lastTasks).length > 0) {
         result.tasks = lastTasks;
       }
     }
+    if (maxResult > 0) {
+      result.tasks = this._limitResult(result.tasks, maxResult);
+    }
     return result;
+  }
+
+  _limitResult(tasks, maxResult) {
+    return Ranges.limitInternalScanResult(tasks, maxResult);
   }
 
   async getScanHosts(policy) {

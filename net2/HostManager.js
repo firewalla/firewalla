@@ -72,6 +72,7 @@ const fConfig = require('./config.js').getConfig();
 const fc = require('./config.js')
 
 const asyncNative = require('../util/asyncNative.js');
+const Ranges = require('../util/Ranges.js');
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
@@ -653,14 +654,33 @@ module.exports = class HostManager extends Monitorable {
       result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
     if (result.tasks) {
       const latestKeys = Object.entries(result.tasks).sort((a,b) => {return (a[1].ts || 0) - (b[1].ts || 0)}).splice(Object.keys(result.tasks).length-1, 1).map(i=>i[0]);
-      log.info("weakPasswordDataForInit latest keys", latestKeys);
       if (latestKeys.length > 0) {
         const latestTasks = {};
         latestTasks[latestKeys[0]] = result.tasks[latestKeys[0]];
         result.tasks = latestTasks;
       }
+      result.tasks = Ranges.limitInternalScanResult(result.tasks);
     }
     json.weakPasswordScanResult = result;
+  }
+
+  async nseScanDataForInit(json) {
+    const result = await rclient.hgetallAsync(Constants.REDIS_KEY_NSE_RESULT);
+    if (!result)
+      return {};
+    if (_.has(result, "dhcp"))
+      result.dhcp = JSON.parse(result.dhcp);
+    if (_.has(result, "lastCompletedScanTs"))
+      result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
+    if (result.dhcp) {
+      const latestKeys = Object.entries(result.dhcp).sort((a,b) => {return (a[1].ts || 0) - (b[1].ts || 0)}).splice(Object.keys(result.dhcp).length-1, 1).map(i=>i[0]);
+      if (latestKeys.length > 0) {
+        const latestTasks = {};
+        latestTasks[latestKeys[0]] = result.dhcp[latestKeys[0]];
+        result.dhcp = latestTasks;
+      }
+    }
+    json.nseScanResult = result;
   }
 
   async hostsInfoForInit(json, options) {
@@ -1328,6 +1348,7 @@ module.exports = class HostManager extends Monitorable {
       this.natDataForInit(json),
       this.externalScanDataForInit(json),
       this.weakPasswordDataForInit(json),
+      this.nseScanDataForInit(json),
       this.encipherMembersForInit(json),
       this.jwtTokenForInit(json),
       this.groupNameForInit(json),
