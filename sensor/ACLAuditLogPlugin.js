@@ -261,7 +261,7 @@ class ACLAuditLogPlugin extends Sensor {
         if (dir == "O" && (record.pr == "udp" || (record.pr == "tcp" && dport != 443 && dport != 80))) {
           // try to resolve hostname shortly after the connection is established in an effort to improve IP-DNS mapping timeliness
           let t = 3;
-          if (inIntf && inIntfName && inIntfName.startsWith("br") && !_.get(FireRouter.getConfig(), ["dhcp", inIntfName, "nameservers"], []).includes(inIntf.ip_address)) {
+          if (platform.isFireRouterManaged() && inIntf && inIntfName && inIntfName.startsWith("br") && !_.get(FireRouter.getConfig(), ["dhcp", inIntfName, "nameservers"], []).includes(inIntf.ip_address)) {
             // dns on bridge interface is not the LAN IP, zeek will see different src/dst IP in DNS packets due to br_netfilter,
             // and an additional 10 seconds timeout is introduced before it is recorded in zeek's dns log
             const pcapZeekPlugin = sl.getSensor("PcapZeekPlugin");
