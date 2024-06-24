@@ -401,8 +401,10 @@ class InternalScanSensor extends Sensor {
           log.info(`Scan host ${hostId} ${ip} on port ${portId} ...`);
           const results = await this.nmapGuessPassword(ip, config, hostId);
           if (_.isArray(results)) {
-            for (const r of results)
+            for (const r of results) {
+              for (const key in r) if (r[key] == '<empty>') r[key] = '';
               weakPasswords.push(Object.assign({}, r, { protocol: config.protocol, port: config.port, serviceName: config.serviceName }));
+            }
           }
         }
       }
@@ -471,7 +473,7 @@ class InternalScanSensor extends Sensor {
       }
       for (const key of Object.keys(this.scheduledScanTasks)) {
         const ets = this.scheduledScanTasks[key].ets;
-        if (ets && ets < Date.now() / 1000 - 86400) {
+        if (ets && ets < Date.now() / 1000 - 86400 * 30) {
           log.debug("delete scan task", key);
           delete this.scheduledScanTasks[key];
           deleted = true;
