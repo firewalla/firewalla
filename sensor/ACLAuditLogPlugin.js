@@ -268,7 +268,7 @@ class ACLAuditLogPlugin extends Sensor {
             if (pcapZeekPlugin && pcapZeekPlugin.getListenInterfaces().includes(inIntfName))
               t = 13;
           }
-          await delay(t);
+          await delay(t * 1000);
           let host = await conntrack.getConnEntry(src, sport, dst, dport, record.pr, "host", 600);
           if (!host) {
             host = await conntrack.getConnEntry(srcMac, "", dst, "", "dns", "host", 600);
