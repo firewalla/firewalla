@@ -471,7 +471,7 @@ class InternalScanSensor extends Sensor {
       }
       for (const key of Object.keys(this.scheduledScanTasks)) {
         const ets = this.scheduledScanTasks[key].ets;
-        if (ets && ets < Date.now() / 1000 - 86400) {
+        if (ets && ets < Date.now() / 1000 - 86400*30) {
           log.debug("delete scan task", key);
           delete this.scheduledScanTasks[key];
           deleted = true;
