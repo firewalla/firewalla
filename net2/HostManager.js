@@ -2071,7 +2071,7 @@ module.exports = class HostManager extends Monitorable {
 
     // just shallow copy as only policy.state is going to be altered
     const updatedClients = (_.isArray(policy.multiClients) ? policy.multiClients : [ policy ])
-      .map(p => Object.assing({}, p))
+      .map(p => Object.assign({}, p))
 
     // reads every profile into memory
     await VPNClient.getVPNProfilesForInit()
