@@ -162,7 +162,7 @@ module.exports = class {
   async cleanPendingQueue() {
     const alarmIds = await rclient.zrangeAsync(alarmPendingKey, 0, -1);
     const deadline = new Date() / 1000 - 1800; // 1800s timeout
-    const defaultState = _.get(fc.getConfig(), 'alarms.apply.default.state') || Constants.ST_PENDING;
+    const defaultState = _.get(fc.getConfig(), 'alarms.apply.default.state') || Constants.ST_READY;
     for (const aid of alarmIds) {
       try {
         const alarmKey = alarmPrefix + aid;
