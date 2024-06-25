@@ -145,7 +145,7 @@ describe('Test AlarmManager2', function(){
     expect(alm0.type).to.be.equal('ALARM_WEAK_PASSWORD');
     expect(alm0.state).to.be.undefined;
     am2.applyConfig(alm0);
-    expect(alm0.state).to.be.equal(Constants.ST_PENDING);
+    expect(alm0.state).to.be.equal(Constants.ST_READY);
 
     const alm1 = am2.jsonToAlarm({type: 'ALARM_WEAK_PASSWORD', state: 'active'});
     expect(alm1.type).to.be.equal('ALARM_WEAK_PASSWORD');
@@ -162,7 +162,7 @@ describe('Test AlarmManager2', function(){
     expect(alm3.state).to.be.equal('init');
     expect(alm3['p.category']).to.be.equal('av');
     am2.applyConfig(alm3);
-    expect(alm3.state).to.be.equal(Constants.ST_PENDING);
+    expect(alm3.state).to.be.equal(Constants.ST_READY);
   });
 
   it('should activate alarm', async() => {
@@ -170,13 +170,11 @@ describe('Test AlarmManager2', function(){
 
     const alarm = new Alarm.WeakPasswordAlarm(Date.now()/1000, 'eth0.288', {});
     am2.applyConfig(alarm);
-    expect(alarm.state).to.be.equal(Constants.ST_PENDING);
+    expect(alarm.state).to.be.equal(Constants.ST_READY);
     const aid = await am2.saveAlarm(alarm);
-    const paids = await rclient.zrevrangeAsync('alarm_pending', '0', '0');
-    expect(paids).to.eql([aid]);
 
     const attrs = await am2._applyAlarm({aid: aid, state: 'ready'});
-    expect(attrs).to.eql({state: 'pending'});
+    expect(attrs).to.eql({});
 
     const alm = await am2.getAlarm(aid);
     await am2.activateAlarm(alm, {origin:{state: 'init'}});
@@ -245,12 +243,12 @@ describe('Test AlarmManager2', function(){
     const alarm1 = am2.jsonToAlarm({ type: 'ALARM_VULNERABILITY', device: 'Device 1', state: 'init', 'p.vid': 'p.vid'});
     expect(alarm1.type).to.be.equal("ALARM_VULNERABILITY");
     am2.applyConfig(alarm1);
-    expect(alarm1.state).to.be.equal('pending');
+    expect(alarm1.state).to.be.equal('ready');
 
     const alarm2 = am2.jsonToAlarm({ type: 'ALARM_SUBNET', device: 'Device 1', state: 'init'});
     expect(alarm2.type).to.be.equal("ALARM_SUBNET");
     am2.applyConfig(alarm2);
-    expect(alarm2.state).to.be.equal('pending');
+    expect(alarm2.state).to.be.equal('ready');
   })
 
   it.skip('should load recent alarms', async() => {
@@ -261,10 +259,8 @@ describe('Test AlarmManager2', function(){
   it('should timeout pending alarm', async() => {
     const alarm1 = am2._genAlarm({type: 'subnet', device: 'Device 1', info: {}})
     am2.applyConfig(alarm1);
-    expect(alarm1.state).to.be.equal(Constants.ST_PENDING);
+    expect(alarm1.state).to.be.equal(Constants.ST_READY);
     const aid = await am2.saveAlarm(alarm1);
-    const paids = await rclient.zrevrangeAsync('alarm_pending', '0', '0');
-    expect(paids).to.eql([aid]);
 
     await am2.timeoutAlarm(aid);
 
@@ -282,10 +278,8 @@ describe('Test AlarmManager2', function(){
   it('should msp ignore pending alarm', async() => {
     const alarm1 = am2._genAlarm({type: 'subnet', device: 'Device 1', info: {}})
     am2.applyConfig(alarm1);
-    expect(alarm1.state).to.be.equal(Constants.ST_PENDING);
+    expect(alarm1.state).to.be.equal(Constants.ST_READY);
     const aid = await am2.saveAlarm(alarm1);
-    const paids = await rclient.zrevrangeAsync('alarm_pending', 0, 0);
-    expect(paids).to.eql([aid]);
 
     await am2.mspSyncAlarm('apply', [{aid: aid, state: 'ignore'}]);
 
