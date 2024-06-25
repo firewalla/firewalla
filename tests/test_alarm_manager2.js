@@ -106,6 +106,7 @@ describe('Test alarm event', function(){
 
     alarm = await am2.getAlarm(aid);
     expect(alarm.state).to.be.equal('ignore');
+    await am2.removeAlarmAsync(aid);
   });
 
   it('should get alarm type', () => {
