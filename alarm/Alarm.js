@@ -386,7 +386,7 @@ class DeviceBackOnlineAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    const result = [this["p.device.name"], this["p.device.ip"], this.timestamp];
+    const result = [this["p.device.name"], this["p.device.ip"], moment(this.timestamp * 1000).tz(sysManager.getTimezone()).format('LT')];
     const username = this.getUserName();
     if (username)
       result.push(username);
@@ -407,7 +407,7 @@ class DeviceOfflineAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    const result = [this["p.device.name"], this["p.device.ip"], this.timestamp];
+    const result = [this["p.device.name"], this["p.device.ip"], this["p.device.lastSeenTimezone"]];
     const username = this.getUserName();
     if (username)
       result.push(username);
