@@ -95,7 +95,7 @@ frcc() {
 declare -A TAG_UID_NAME
 get_tag_name() {
     if [ ! -v "TAG_UID_NAME[$1]" ]; then
-        TAG_UID_NAME["$1"]=$(redis-cli hget tag:uid:$1 name)
+        TAG_UID_NAME["$1"]=$(redis-cli hget ${1/:/:uid:} name)
     fi
     echo "${TAG_UID_NAME["$1"]}"
 }
@@ -421,7 +421,7 @@ check_policies() {
             if [[ "$TAG" == "intf:"* ]]; then
                 SCOPE="net:${NETWORK_UUID_NAME[${TAG:5}]}"
             else
-                SCOPE="tag:$(get_tag_name "${TAG:4}")"
+                SCOPE="${TAG%%:*}:$(get_tag_name "$TAG")"
             fi
         elif [[ ! -n $SCOPE ]]; then
             SCOPE="All Devices"
