@@ -162,7 +162,7 @@ module.exports = class {
   async cleanPendingQueue() {
     const alarmIds = await rclient.zrangeAsync(alarmPendingKey, 0, -1);
     const deadline = new Date() / 1000 - 1800; // 1800s timeout
-    const defaultState = _.get(fc.getConfig(), 'alarms.apply.default.state') || Constants.ST_PENDING;
+    const defaultState = _.get(fc.getConfig(), 'alarms.apply.default.state') || Constants.ST_READY;
     for (const aid of alarmIds) {
       try {
         const alarmKey = alarmPrefix + aid;
@@ -349,6 +349,9 @@ module.exports = class {
   }
 
   async mspIgnoreAlarm(alarmID, options={}) {
+    if (options.origin && options.origin.state == Constants.ST_IGNORE){
+      return
+    }
     await this.archiveAlarm(alarmID);
     await rclient.zremAsync(alarmPendingKey, alarmID);
   }
@@ -574,14 +577,20 @@ module.exports = class {
       return;
     }
     log.debug('apply alarm attrs', alarm, 'to', orig_alarm);
-    let attrs = {}; // origin attrs
+    let attrs = {state: orig_alarm.state}; // origin attrs
     for (const k in alarm) {
       if (alarm[k] != orig_alarm[k]) {
-        if (k == "state" && alarm[k] != Constants.ST_READY && alarm[k] != Constants.ST_IGNORE) {
-          log.warn('apply alarm invalid state, skip', alarm);
-          continue;
-        }
         attrs[k] = orig_alarm[k];
+      }
+      if (k == "state" && alarm[k] != Constants.ST_READY && alarm[k] != Constants.ST_IGNORE) {
+        log.warn('apply alarm invalid state, skip change state', alarm);
+        delete alarm[k];
+        continue;
+      }
+      if (k == "state" && alarm[k] != orig_alarm.state && (orig_alarm.state == Constants.ST_ACTIVATED || orig_alarm.state == Constants.ST_IGNORE)) {
+        log.warn('alarm already activated or ignored, skip change state', alarm);
+        delete alarm[k];
+        continue
       }
     }
     const props = Object.entries(alarm).filter(i => i[0] != 'aid').flat()
@@ -604,7 +613,7 @@ module.exports = class {
         break;
       }
       default: {
-        log.warn('cannot handle state change of alarm', alarm, options);
+        log.info('skip handle state change of alarm', alarm, options);
       }
     }
   }
