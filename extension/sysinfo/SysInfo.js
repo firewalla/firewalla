@@ -76,6 +76,8 @@ let intelQueueSize = 0;
 
 let multiProfileSupport = false;
 
+let kernelVersion = null;
+
 let no_auto_upgrade = false;
 
 let uptimeInfo = {};
@@ -212,6 +214,16 @@ async function getAutoUpgrade() {
     log.error('Failed to get upgrade flag', err);
     return false
   })
+}
+
+async function getKernelVersion() {
+  if (!kernelVersion) {
+    kernelVersion = await exec("uname -r").then(result => result.stdout.trim()).catch((err) => {
+      log.error("Failed to get kernel version via uname -r", err.message);
+      return null;
+    });
+  }
+  return kernelVersion;
 }
 
 async function getMultiProfileSupportFlag() {
@@ -390,6 +402,7 @@ async function getSysInfo() {
     threadInfo: threadInfo,
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
+    kernelVersion: await getKernelVersion(),
     diskInfo: diskInfo || [],
     //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
