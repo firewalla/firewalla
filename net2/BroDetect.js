@@ -263,11 +263,13 @@ class BroDetect {
     try {
       const obj = JSON.parse(data);
 
+      const ip = obj['id.resp_h']
+
       let host = obj.host
       if (host) {
         // workaround for https://github.com/zeek/zeek/issues/1844
         if (host.match(/^\[?[0-9a-e]{1,4}$/)) {
-          host = obj['id.resp_h'] || ''
+          host = ip || ''
         }
         // since zeek 5.0, the host will contain port number if it is not a well-known port
         // http connect might contain target port (not the same as id.resp_p which is proxy port
@@ -305,19 +307,31 @@ class BroDetect {
         for (const key in this.flowstash) {
           if (this.flowstash[key].uids.includes(obj.uid)) {
             const af = this.flowstash[key].af
-            if (af[host] && af[host].ip == obj['id.resp_h'])
+            if (af[host] && af[host].ip == ip)
               delete af[host]
             break // one uid could only appear in one flow
           }
         }
 
-        this.withdrawAppMap(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p']);
-        await conntrack.delConnEntries(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], 'tcp');
+        this.withdrawAppMap(obj['id.orig_h'], obj['id.orig_p'], ip, obj['id.resp_p']);
+        await conntrack.delConnEntries(obj['id.orig_h'], obj['id.orig_p'], ip, obj['id.resp_p'], 'tcp');
 
-        await rclient.unlinkAsync(intelTool.getSSLCertKey(obj['id.resp_h']))
+        await rclient.unlinkAsync(intelTool.getSSLCertKey(ip))
 
-        await dnsTool.removeReverseDns(host, obj['id.resp_h']);
-        await dnsTool.removeDns(obj['id.resp_h'], host);
+        await dnsTool.removeReverseDns(host, ip);
+        await dnsTool.removeDns(ip, host);
+
+        // DestIPFoundHook might have added intel:ip before everything get reversed
+        const intel = await intelTool.getIntel(ip)
+        if (intel.host == host || intel.sslHost == host || intel.dnsHost == host) {
+          delete intel.host
+          delete intel.sslHost
+          delete intel.dnsHost
+          delete intel.category
+
+          // remove domain related info and but keep the stub data to prevent rapid cloud fetch
+          await intelTool.addIntel(ip, intel)
+        }
 
         return
       }
