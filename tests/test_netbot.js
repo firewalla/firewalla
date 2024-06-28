@@ -24,6 +24,8 @@ const execAsync = require('child-process-promise').exec;
 const netBot = require("../controllers/netbot.js");
 const cloud = require('../encipher');
 const networkProfile = require('../net2/NetworkProfileManager.js');
+const rclient = require('../util/redis_manager.js').getRedisClient();
+const log = require('../net2/logger.js')(__filename);
 
 describe('test get flows', function(){
   this.timeout(3000);
@@ -87,4 +89,21 @@ describe('test get flows', function(){
     expect(returnData.count).to.equal(2);
   });
 
+});
+
+describe('test acl', function(){
+  before((done) => (
+    async() => {
+      this.gid = "3d0a201e-0b2f-**";
+      this.netbot = new netBot({name:"testbot", main:"netbot.js", controller:{type: "netbot", id:0}}, {service:"test", controllers:[]}, new cloud("netbot"), [], this.gid, true, true);
+      await rclient.saddAsync('sys:eid:blacklist', 'test-eid1');
+      done();
+    })()
+  );
+
+  it('should test eid acl', async() => {
+    const rawmsg = {"mtype":"msg","message":{"type":"jsondata","appInfo":{"eid":"test-eid1"},"obj":{"mtype":"cmd","data":{},"type":"jsonmsg"}},"target":"1f97bb38-7592-4be0"};
+    const response = await this.netbot.msgHandler(this.gid, rawmsg);
+    log.debug("eid acl response", response);
+  });
 });
