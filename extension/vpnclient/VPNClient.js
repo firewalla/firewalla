@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -91,17 +91,19 @@ class VPNClient {
       return null;
   }
 
-  static async getVPNProfilesForInit(json) {
+  static async getVPNProfilesForInit() {
     const types = ["openvpn", "wireguard", "ssl", "zerotier", "nebula", "trojan", "clash", "hysteria", "ipsec", "ts"];
+    const results = {}
     await Promise.all(types.map(async (type) => {
       const c = this.getClass(type);
       if (c) {
         let profiles = [];
         const profileIds = await c.listProfileIds();
         Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
-        json[c.getKeyNameForInit()] = profiles;
+        results[c.getKeyNameForInit()] = profiles;
       }
     }));
+    return results
   }
 
   static getClass(type) {
@@ -170,7 +172,7 @@ class VPNClient {
         break;
       }
       default:
-        log.error(`Unrecognized VPN client type: ${type}`);
+        throw new Error(`Unrecognized VPN client type: ${type}`);
         return null;
     }
   }

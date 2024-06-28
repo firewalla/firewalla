@@ -87,8 +87,7 @@ class Conntrack {
     }
     // VPN clients
     const VPNClient = require('../extension/vpnclient/VPNClient.js');
-    const allProfiles = {};
-    await VPNClient.getVPNProfilesForInit(allProfiles);
+    const allProfiles = await VPNClient.getVPNProfilesForInit();
     for (const type of Object.keys(allProfiles)) {
       const profiles = allProfiles[type];
       for (const profile of profiles) {

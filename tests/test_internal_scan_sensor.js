@@ -15,6 +15,7 @@
 'use strict'
 
 let chai = require('chai');
+const _ = require('lodash');
 let expect = chai.expect;
 const execAsync = require('child-process-promise').exec;
 
@@ -31,6 +32,7 @@ const Tag = require('../net2/Tag.js');
 const tagManager = require('../net2/TagManager.js');
 const InternalScanSensor = require('../sensor/InternalScanSensor.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const fc = require('../net2/config.js');
 
 const policyKeyName = 'weak_password_scan';
 
@@ -71,6 +73,7 @@ const bruteConfig =  {
 const extraConfig = {
   'http-form-brute': [{},{path: '/oauth', passvar: 'token', uservar: 'username'}, {uservar: 'name'}],
 };
+fc.enableDynamicFeature("weak_password_scan");
 
 describe('Test InternalScanSensor', function() {
   this.timeout(1200000);
@@ -109,9 +112,7 @@ describe('Test InternalScanSensor', function() {
     expect(passcount.stdout.trim()).to.be.equal('5');
     const credcount = await execAsync('grep -c "" ~/.firewalla/run/scan_config/ssh_creds.lst');
     expect(credcount.stdout.trim()).to.be.equal('1');
-
   });
-
 
   it('should process dictionary extras', async()=> {
     await this.plugin._process_dict_extras(null);
@@ -297,7 +298,7 @@ function delay(t) {
 }
 
 async function _setTargetPolicy(type, target, state) {
-  const policyState = state != null ? {state: state} : undefined;
+  const policyState = state !== false ? {state: state} : undefined;
   switch (type) {
     case 'host': {
       const hostObj = await hostManager.getHostAsync(target, true);
@@ -331,7 +332,7 @@ async function _setTargetPolicy(type, target, state) {
 }
 
 
-const cronPolicy = {cron:"10 10 * * *",state:true,defaultOn:true,includeVPNNetworks:false};
+const cronPolicy = {cron:"10 10 * * *",state:true,includeVPNNetworks:false};
 
 
 describe('Test applyPolicy', function(){
@@ -369,6 +370,7 @@ describe('Test applyPolicy', function(){
       this.hm.hostsdb['host:mac:20:6D:31:01:2B:89'].policy = {monitor: false};
       this.hm.hosts.all.push(this.hm.hostsdb['host:mac:20:6D:31:01:2B:88']);
       this.hm.hosts.all.push(this.hm.hostsdb['host:mac:20:6D:31:01:2B:89']);
+      this.policy = await rclient.hgetAsync('policy:system', 'weak_password_scan');
       done();
     })();
   });
@@ -377,53 +379,55 @@ describe('Test applyPolicy', function(){
     (async() => {
       await rclient.delAsync('host:mac:20:6D:31:01:2B:88');
       await rclient.delAsync('host:mac:20:6D:31:01:2B:89');
-      await rclient.hdelAsync('policy:system', 'weak_password_scan');
+      await rclient.delAsync('policy:mac:20:6D:31:01:2B:88');
+      await rclient.delAsync('policy:mac:20:6D:31:01:2B:89');
       await rclient.delAsync('policy:network:88888888-4881-4881-4881-488148812888');
       await rclient.delAsync('policy:network:99999999-4881-4881-4881-488148812999');
+      await rclient.hsetAsync('policy:system', 'weak_password_scan', this.policy);
       done();
     })();
   });
 
   it('should get scan hosts', async() => {
     let data;
-    await _setTargetPolicy('network', '99999999-4881-4881-4881-488148812999', null);
-    await _setTargetPolicy('tag', 88, null);
-    await _setTargetPolicy('host', '20:6D:31:01:2B:88', null);
-    await _setTargetPolicy('host', '20:6D:31:01:2B:89', null);
+    await _setTargetPolicy('network', '99999999-4881-4881-4881-488148812999', false);
+    await _setTargetPolicy('tag', 88, false);
+    await _setTargetPolicy('host', '20:6D:31:01:2B:88', false);
+    await _setTargetPolicy('host', '20:6D:31:01:2B:89', false);
 
     // network state true
     await _setTargetPolicy('network', '88888888-4881-4881-4881-488148812888', true);
 
-    data = await this.plugin.getScanHosts({defaultOn: false, ts:9999});
+    data = await this.plugin.getScanHosts({state: false, ts:9999});
     expect(data.hosts).to.be.eql(['20:6D:31:01:2B:88']);
 
-    data = await this.plugin.getScanHosts({defaultOn: true, ts:9999});
+    data = await this.plugin.getScanHosts({state: true, ts:9999});
     expect(data.hosts).to.be.eql(['20:6D:31:01:2B:88','20:6D:31:01:2B:89']);
 
-    // tag state false
-    await _setTargetPolicy('tag', 88, false);
-    data = await this.plugin.getScanHosts({defaultOn: false, ts:9999});
+    // tag state null
+    await _setTargetPolicy('tag', 88, null);
+    data = await this.plugin.getScanHosts({state: false, ts:9999});
     expect(data.hosts.length).to.be.equal(0);
 
-    data = await this.plugin.getScanHosts({defaultOn: true, ts:9999});
+    data = await this.plugin.getScanHosts({state: true, ts:9999});
     expect(data.hosts).to.be.eql(['20:6D:31:01:2B:89']);
 
     // device state true
     await _setTargetPolicy('host', '20:6D:31:01:2B:88', true);
-    data = await this.plugin.getScanHosts({defaultOn: false, ts:9999});
+    data = await this.plugin.getScanHosts({state: false, ts:9999});
     expect(data.hosts).to.be.eql(['20:6D:31:01:2B:88']);
 
-    data = await this.plugin.getScanHosts({defaultOn: true, ts:9999});
+    data = await this.plugin.getScanHosts({state: true, ts:9999});
     expect(data.hosts).to.be.eql(['20:6D:31:01:2B:88','20:6D:31:01:2B:89']);
 
-    // device state true, default off
+    // device state true, specified
     await _setTargetPolicy('host', '20:6D:31:01:2B:89', true);
-    data = await this.plugin.getScanHosts({defaultOn: false, ts:9999});
+    data = await this.plugin.getScanHosts({state: false, ts:9999});
     expect(data.hosts).to.be.eql(['20:6D:31:01:2B:88','20:6D:31:01:2B:89']);
 
-    // device state false, default on
-    await _setTargetPolicy('host', '20:6D:31:01:2B:89', false );
-    data = await this.plugin.getScanHosts({defaultOn: true, ts:9999});
+    // device state null, all devices
+    await _setTargetPolicy('host', '20:6D:31:01:2B:89', null);
+    data = await this.plugin.getScanHosts({state: true, ts:9999});
     expect(data.hosts).to.be.eql(['20:6D:31:01:2B:88']);
   });
 
@@ -432,7 +436,7 @@ describe('Test applyPolicy', function(){
     await this.plugin.applyPolicy(this.hm, '0.0.0.0', {});
     await this.plugin.applyPolicy(this.hm, '0.0.0.0', {cron: '1 * * * *', ts:now});
 
-    await this.plugin.applyPolicy(this.hm, '0.0.0.0', {state: true, defaultOn: true, cron: '1 2 * * *', ts:now});
+    await this.plugin.applyPolicy(this.hm, '0.0.0.0', {state: true, cron: '1 2 * * *', ts:now});
 
     cronPolicy.ts = now;
     await this.plugin.applyPolicy(this.hm, '0.0.0.0', cronPolicy);
@@ -455,13 +459,184 @@ describe('Test applyPolicy', function(){
 describe('Test scheduledScanTasks', function(){
   this.plugin = new InternalScanSensor({});
 
-  it('should clean task results', () =>  {
-    this.plugin.scheduledScanTasks = {"a": {},"cron_4": {ets:4}, "cron_1": {ets:1}, "bbb":1, "cron_2": {ets:2}, "cron_3": {ets:3}};
-    this.plugin._cleanTasks(2);
-    expect(this.plugin.scheduledScanTasks).to.eql({"cron_4": {ets:4},"cron_3": {ets:3}});
+  it('should clean task results', async() =>  {
+    const originTasks = await this.plugin.getScanResult();
 
-    this.plugin._cleanTasks(3);
-    expect(this.plugin.scheduledScanTasks).to.eql({"cron_4": {ets:4},"cron_3": {ets:3}});
+    const now = Date.now()/1000;
+    this.plugin.scheduledScanTasks = {"a": {},"cron_4": {ets:now+4}, "cron_1": {ets:now+1}, "bbb":1, "cron_2": {ets:now+2}, "cron_3": {ets:now+3}};
+    await this.plugin._cleanTasks(2, false);
+    expect(this.plugin.scheduledScanTasks).to.eql({"cron_4": {ets:now+4},"cron_3": {ets:now+3}});
+
+    await this.plugin._cleanTasks(3, false);
+    expect(this.plugin.scheduledScanTasks).to.eql({"cron_4": {ets:now+4},"cron_3": {ets:now+3}});
+
+    this.plugin.scheduledScanTasks = originTasks.tasks;
+    this.plugin.saveScanTasks();
   });
 
+  it('should get last n task keys', () => {
+    expect(this.plugin._getLatestNumTaskKeys({"a": {},"cron_4": {ts:4}, "cron_1": {ts:1}, "bbb":1, "cron_2": {ts:2}, "cron_3": {ts:3}}, 2)).to.eql(["cron_3", "cron_4"]);
+    expect(this.plugin._getLatestNumTaskKeys({"a": {},"cron_4": {ts:4}, "cron_1": {ts:1}, "bbb":1, "cron_2": {ts:2}, "cron_3": {ts:3}}, 0)).to.eql([]);
+  });
+});
+
+describe('Test scan hosts', function(){
+  this.timeout(10000);
+  process.title = "FireMain"
+  this.plugin = new InternalScanSensor({});
+  this.plugin.subTaskMap = {};
+  this.plugin.subTaskRunning = {};
+  this.plugin.scheduledScanTasks = {tasks:{}};
+  this.plugin.subTaskWaitingQueue = [];
+
+  beforeEach((done) => (
+    async() => {
+      this.policy = await rclient.hgetAsync('policy:system', 'weak_password_scan');
+      fireRouter.scheduleReload();
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      await sysManager.updateAsync();
+      const keys = await rclient.keysAsync("network:uuid:*");
+      for (let key of keys) {
+        const profile = await rclient.hgetallAsync(key);
+        if (!profile) // just in case
+          continue;
+        const o = NetworkProfile.parse(profile);
+        const uuid = key.substring(13);
+        if (!uuid) {
+          continue;
+        }
+        o.uuid = uuid;
+        npm.networkProfiles[uuid] = new NetworkProfile(o)
+      }
+
+      const hostkeys = await rclient.keysAsync("host:mac:*");
+      const currentTs = Date.now() / 1000;
+      for (let key of hostkeys) {
+        const hostinfo = await rclient.hgetallAsync(key);
+        const host = new Host(hostinfo, true);
+        host.lastActiveTimestamp = currentTs;
+        hostManager.hostsdb[`host:mac:${host.mac}`] = host
+        hostManager.hosts.all.push(host);
+      }
+      hostManager.hosts.all = _.uniqWith(hostManager.hosts.all, (a,b) => a.o.ipv4 == b.o.ipv4 && a.o.mac == b.o.mac)
+      done();
+    })()
+  );
+
+  afterEach((done) => (
+    async() => {
+      await rclient.hsetAsync('policy:system', 'weak_password_scan', this.policy);
+      done();
+    })()
+  );
+
+  it.skip('should get scan hosts', async() => {
+    let data = await this.plugin.getScanHosts({state: false, ts:9999});
+    expect(data.hosts).to.be.eql([]);
+  });
+
+  it('should get running status', async() => {
+    await this.plugin._updateRunningStatus('complete');
+    let data = await this.plugin._updateRunningStatus('scanning');
+    expect(data).to.be.eql(1);
+    data = await this.plugin._updateRunningStatus('scanning');
+    expect(data).to.be.eql(0);
+    data = await this.plugin._updateRunningStatus('complete');
+    expect(data).to.be.eql(1);
+  });
+
+  it('should check running status', async() => {
+    await this.plugin._updateRunningStatus('scanning');
+    expect(await rclient.getAsync('weak_password_scan:status')).to.be.equal('scanning')
+    await this.plugin.checkRunningStatus();
+    expect(await this.plugin._updateRunningStatus('complete')).to.be.equal(0);
+  });
+
+  it.skip('should stop scan task', async() => {
+    await this.plugin._stopScanTask('0.0.0.0', '0.0.0.0')
+  });
+
+  it('should wait condition', async() => {
+    const ts = Date.now()/1000;
+    setTimeout(() => {
+      this.plugin.setLastCompletedScanTs();
+    }, 1000);
+    await this.plugin._waitCondition(ts+3, async() => {
+      const result = await this.plugin.getScanResult();
+      return result.lastCompletedScanTs >= ts;
+    });
+  });
+
+  it('should global on', async() => {
+    process.title = "FireMain"
+    this.plugin.hookFeature('weak_password_scan');
+    await fc.enableDynamicFeature('weak_password_scan');
+    await delay(500);
+    expect(fc.isFeatureOn('weak_password_scan')).to.be.true;
+    await this.plugin.globalOn();
+    expect(this.plugin.featureOn).to.be.true;
+  });
+
+  it('should global off', async() => {
+    process.title = "FireMain"
+    this.plugin.hookFeature('weak_password_scan');
+    await fc.disableDynamicFeature('weak_password_scan');
+    await delay(500);
+    expect(fc.isFeatureOn('weak_password_scan')).to.be.false;
+    await this.plugin.globalOff();
+    expect(this.plugin.featureOn).to.be.false;
+  });
+
+  it('should get scan results', async() => {
+    let result = await this.plugin.getScanResult();
+    log.debug('get scan result', result);
+    expect(Object.keys(result.tasks).length).to.be.greaterThan(1);
+
+    result = await this.plugin.getScanResult(1);
+    log.debug('get scan result latest one', result);
+    expect(Object.keys(result.tasks).length).to.be.equal(1);
+
+  });
+
+  it('should limit scan result', async() => {
+    let tasks = {"key1": {results: [{"result": [{"k":1},{"k":2},{"k3":3}]}]}};
+    let limitTasks = this.plugin._limitResult(tasks, 2);
+    expect(limitTasks).to.eql({"key1": {results: [{"result": [{"k":1},{"k":2}]}], overlimit:true}});
+
+    tasks = {
+      "key1": {results: [{"result": [{"k":11},{"k":12},{"k3":13}]}]},
+      "key2": {results: [{"result": [{"k":21},{"k":22},{"k3":23}]}]},
+      "key3": {results: [{"result": [{"k":31},{"k":32},{"k3":33}]}]},
+    };
+    limitTasks = this.plugin._limitResult(tasks, 4);
+    expect(limitTasks).to.eql({
+      "key1": {results: [{"result": [{"k":11},{"k":12},{"k3":13}]}]},
+      "key2": {results: [{"result": [{"k":21}]}], overlimit:true},
+    });
+
+    tasks = {"key1": {results: [{"result": [{"k":11},{"k":12},{"k3":13}]}]}};
+    limitTasks = this.plugin._limitResult(tasks, 10);
+    expect(limitTasks).to.eql(tasks);
+
+    tasks = {
+      "key1": {results: [{"result": [{"k":11},{"k":12},{"k3":13}]}]},
+      "key2": {results: [{"result": [{"k":21},{"k":22},{"k3":23}]}]},
+      "key3": {results: [{"result": [{"k":31},{"k":32},{"k3":33}]}]},
+    };
+    limitTasks = this.plugin._limitResult(tasks, 9);
+    expect(limitTasks).to.eql(tasks);
+
+    tasks = {"key1": {results: [
+      {"result": [{"k":11},{"k":12},{"k3":13}]},
+      {"result": [{"k":21},{"k":22},{"k3":23}]},
+      {"result": [{"k":31},{"k":32},{"k3":33}]},
+    ]}};
+    limitTasks = this.plugin._limitResult(tasks, 4);
+    expect(limitTasks).to.eql({"key1": {results: [
+        {"result": [{"k":11},{"k":12},{"k3":13}]},
+        {"result": [{"k":21}]},
+      ], overlimit:true},
+    });
+
+  });
 });

@@ -1,4 +1,4 @@
-/*    Copyright 2021-2022 Firewalla Inc.
+/*    Copyright 2021-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -30,6 +30,7 @@ const sem = require('./SensorEventManager.js').getInstance();
 const Mode = require('../net2/Mode.js');
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const fwapc = require('../net2/fwapc.js');
+const VPNClient = require('../extension/vpnclient/VPNClient.js')
 
 const fsp = require('fs').promises;
 const exec = require('child-process-promise').exec;
@@ -192,22 +193,45 @@ class LiveStatsPlugin extends Sensor {
             response.throughput = result ? [ result ] : []
             break;
           }
-          case 'intf':
+          case 'vpnClient': {
+            const vpnClient = VPNClient.getInstance(target)
+            if (!vpnClient) {
+              throw new Error(`Invalid VPN client ${target}`)
+            }
+            const name = vpnClient.getInterfaceName()
+            response.throughput = [ Object.assign( {name, target, type}, this.getIntfThroughput(vpnClient.name) ) ]
+            break
+          }
+          case 'intf': {
+            const intf = sysManager.getInterfaceViaUUID(target)
+            if (!intf) {
+              throw new Error(`Invalid Interface ${target}`)
+            }
+            const name = intf.name
+            response.throughput = [ Object.assign( {name, target, type}, this.getIntfThroughput(vpnClient.name) ) ]
+            break
+          }
           case 'system': {
-            if (type == 'intf') {
-              const intf = sysManager.getInterfaceViaUUID(target)
-              if (!intf) {
-                throw new Error(`Invalid Interface ${target}`)
-              }
-              response.throughput = [ { name: intf.name, target } ]
-            } else {
-              const interfaces = _.union(platform.getAllNicNames(), fireRouter.getLogicIntfNames())
-              _.remove(interfaces, name => name.endsWith(':0') || !sysManager.getInterface(name))
-              response.throughput = interfaces
-                .map(name => ({ name, target: sysManager.getInterface(name).uuid }))
+            const interfaces = _.union(platform.getAllNicNames(), fireRouter.getLogicIntfNames())
+            _.remove(interfaces, name => name.endsWith(':0') || !sysManager.getInterface(name))
+            response.throughput = interfaces
+            .map(name => ({ name, target: sysManager.getInterface(name).uuid, type: 'intf' }))
+
+            if (queries.throughput.vpnClient) {
+              const policy = await hostManager.getPolicyAsync('vpnClient')
+              const vpnClients = await Promise.all(
+                // policy:system should have all enabled VPN clients
+                (policy.multiClients || [ policy ])
+                  .map( vc => vc && vc.state && hostManager.getVPNClientInstance(vc).catch(err => log.error(err.message)) )
+              )
+              response.throughput.push(... vpnClients
+                .filter(Boolean)
+                .map(c => ({name: c.getInterfaceName(), target: c.profileId, type: 'vpnClient'}) )
+              )
             }
 
             response.throughput.forEach(intf => Object.assign(intf, this.getIntfThroughput(intf.name)))
+
             if (queries.throughput.devices) {
               for (const intf of sysManager.getMonitoringInterfaces()) {
                 // exclude primary network in DHCP mode, this is mainly for old models that have different subnets

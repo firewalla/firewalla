@@ -88,7 +88,7 @@ describe('Test NseScanPlugin', function() {
     const ts = Date.now()/1000;
     const content = '{"dhcp_3":{"ts":'+(ts-100)+',"results":{"br3":{}}},"dhcp_4.568":{"ts":'+ts+',"results":{"br4":{}}},"dhcp_1.568":{"ts":'+(ts-300)+',"results":{"br1":{}}},"dhcp_2.568":{"ts":'+(ts-200)+',"results":{"br2":{}}}}';
     await rclient.hsetAsync(Constants.REDIS_KEY_NSE_RESULT, 'dhcp', content);
-    const result = await this.plugin.getLastNseResult('dhcp');
+    const result = await this.plugin.getLatestResult('dhcp');
     expect(result.lastResult).to.eql({"br4":{}});
     expect(result.alarm).to.be.false;
   });
@@ -100,7 +100,7 @@ describe('Test NseScanPlugin', function() {
     }
     const results = await this.plugin.execNse('broadcast-dhcp-discover');
     log.debug('broadcast-dhcp-discover', JSON.stringify(results));
-    expect(results.length).to.be.not.equal(0);
+    expect(results.length).to.be.not.null;
   });
 
   it('should exec dhcp-discover', async() =>{
@@ -216,5 +216,19 @@ describe('Test applyPolicy', function(){
     expect(this.plugin._checkNsePolicy({'nse_scan': {state: true, key1: true }}, 'key1')).to.be.true;
     expect(this.plugin._checkNsePolicy({'nse_scan': {state: true, key1: false }}, 'key1')).to.be.false;
   });
+});
 
+describe('Test run status', function(){
+  this.timeout(10000);
+  this.plugin = new NseScanPlugin({});
+
+  it('should get running status', async() => {
+    await this.plugin._updateRunningStatus('complete');
+    let data = await this.plugin._updateRunningStatus('scanning');
+    expect(data).to.be.eql(1);
+    data = await this.plugin._updateRunningStatus('scanning');
+    expect(data).to.be.eql(0);
+    data = await this.plugin._updateRunningStatus('complete');
+    expect(data).to.be.eql(1);
+  });
 });

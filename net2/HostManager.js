@@ -73,6 +73,7 @@ const fConfig = require('./config.js').getConfig();
 const fc = require('./config.js')
 
 const asyncNative = require('../util/asyncNative.js');
+const Ranges = require('../util/Ranges.js');
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
@@ -370,6 +371,7 @@ module.exports = class HostManager extends Monitorable {
     json.distCodename = sysInfo.distCodename;
     json.osUptime = sysInfo.osUptime;
     json.fanSpeed = await platform.getFanSpeed();
+    json.kernelVersion = sysInfo.kernelVersion;
     const cpuUsageRecords = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_CPU_USAGE, Date.now() / 1000 - 60, Date.now() / 1000).map(r => JSON.parse(r));
     json.sysMetrics = {
       memUsage: sysInfo.realMem,
@@ -699,7 +701,35 @@ module.exports = class HostManager extends Monitorable {
       result.tasks = JSON.parse(result.tasks);
     if (_.has(result, "lastCompletedScanTs"))
       result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
+    if (result.tasks) {
+      const latestKeys = Object.entries(result.tasks).sort((a,b) => {return (a[1].ts || 0) - (b[1].ts || 0)}).splice(Object.keys(result.tasks).length-1, 1).map(i=>i[0]);
+      if (latestKeys.length > 0) {
+        const latestTasks = {};
+        latestTasks[latestKeys[0]] = result.tasks[latestKeys[0]];
+        result.tasks = latestTasks;
+      }
+      result.tasks = Ranges.limitInternalScanResult(result.tasks);
+    }
     json.weakPasswordScanResult = result;
+  }
+
+  async nseScanDataForInit(json) {
+    const result = await rclient.hgetallAsync(Constants.REDIS_KEY_NSE_RESULT);
+    if (!result)
+      return {};
+    if (_.has(result, "dhcp"))
+      result.dhcp = JSON.parse(result.dhcp);
+    if (_.has(result, "lastCompletedScanTs"))
+      result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
+    if (result.dhcp) {
+      const latestKeys = Object.entries(result.dhcp).sort((a,b) => {return (a[1].ts || 0) - (b[1].ts || 0)}).splice(Object.keys(result.dhcp).length-1, 1).map(i=>i[0]);
+      if (latestKeys.length > 0) {
+        const latestTasks = {};
+        latestTasks[latestKeys[0]] = result.dhcp[latestKeys[0]];
+        result.dhcp = latestTasks;
+      }
+    }
+    json.nseScanResult = result;
   }
 
   async hostsInfoForInit(json, options) {
@@ -1036,7 +1066,7 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async vpnClientProfilesForInit(json) {
-    await VPNClient.getVPNProfilesForInit(json);
+    Object.assign(json, await VPNClient.getVPNProfilesForInit())
   }
 
   async jwtTokenForInit(json) {
@@ -1369,6 +1399,7 @@ module.exports = class HostManager extends Monitorable {
       this.natDataForInit(json),
       this.externalScanDataForInit(json),
       this.weakPasswordDataForInit(json),
+      this.nseScanDataForInit(json),
       this.encipherMembersForInit(json),
       this.jwtTokenForInit(json),
       this.groupNameForInit(json),
@@ -1645,6 +1676,12 @@ module.exports = class HostManager extends Monitorable {
         const isPrivateMac = o.mac && hostTool.isPrivateMacAddress(o.mac);
         // device might be created during migration with only found ts but no active ts
         const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
+        if (f.isMain()) {
+          const expireatTS = parseInt(activeTS || (Date.now() / 1000)) + Constants.HOST_MAC_KEY_EXPIRE_SECS;
+          await rclient.expireatAsync(`host:mac:${o.mac.toUpperCase()}`, expireatTS);
+          if (expireatTS < Date.now() / 1000)
+            return;
+        }
         const active = (activeTS - o.firstFoundTimestamp > 600 ? activeTS && activeTS >= inactiveTS : activeTS && activeTS >= rapidInactiveTS); // expire transient devices in a short time
         const inUse = (activeTS && activeTS >= inactiveTS) || hasDHCPReservation || hasPortforward || pinned || false;
         // always return devices that has DHCP reservation or port forwards
@@ -2009,28 +2046,36 @@ module.exports = class HostManager extends Monitorable {
     return iCount;
   }
 
-  async _isStrictVPN(policy) {
-    const type = policy.type;
-    const state = policy.state;
-    const profileId = policy[type] && policy[type].profileId;
+  async getVPNClientInstance(profile, fast = true) {
+    const type = profile.type
+    const profileId = profile[type] && profile[type].profileId;
     if (!profileId) {
-      state && log.error("VPNClient profileId is not specified", policy);
-      return false;
+      throw new Error("VPN client profileId is not specified");
     }
+    const instance = VPNClient.getInstance(profileId)
+    if (instance) return instance
+    else if (fast) throw new Error(`VPN client ${profileId} not found`)
+
     const c = VPNClient.getClass(type);
     if (!c) {
-      log.error(`Unsupported VPN client type: ${type}`);
-      return false;
+      throw new Error(`Unsupported VPN client type: ${type}`);
     }
     const exists = await c.profileExists(profileId);
     if (!exists) {
-      log.error(`VPN client ${profileId} does not exist`);
-      return false;
+      throw new Error(`VPN client ${profileId} does not exist`)
     }
+    return new c({ profileId });
+  }
 
-    const vpnClient = new c({ profileId });
-    const settings = await vpnClient.loadSettings();
-    return settings.strictVPN;
+  async _isStrictVPN(policy) {
+    try {
+      const vpnClient = await this.getVPNClientInstance(policy)
+      const settings = await vpnClient.loadSettings();
+      return settings.strictVPN;
+    } catch(err) {
+      log.error(err.message)
+      return false
+    }
   }
 
   /// return a list of profile id
@@ -2076,47 +2121,34 @@ module.exports = class HostManager extends Monitorable {
         ]
       }
     */
-    const multiClients = policy.multiClients;
-    if (_.isArray(multiClients)) {
-      const updatedClients = [];
-      for (const client of multiClients) {
-        const result = await this.vpnClient(client);
-        updatedClients.push(Object.assign({}, client, result));
-      }
 
-      // only send for multicilents
-      sem.sendEventToFireMain({
-        type: Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE,
-        message: ""
-      });
-      return {multiClients: updatedClients};
-    } else {
-      const type = policy.type;
-      const state = policy.state;
+    // just shallow copy as only policy.state is going to be altered
+    const updatedClients = (_.isArray(policy.multiClients) ? policy.multiClients : [ policy ])
+      .map(p => Object.assign({}, p))
+
+    // reads every profile into memory
+    await VPNClient.getVPNProfilesForInit()
+
+    for (const policy of updatedClients) {
+      const { type, state } = policy
       const profileId = policy[type] && policy[type].profileId;
-      if (!profileId) {
-        state && log.error("VPNClient profileId is not specified", policy);
-        return { state: false };
-      }
       let settings = policy[type] && policy[type].settings || {};
-      const c = VPNClient.getClass(type);
-      if (!c) {
-        log.error(`Unsupported VPN client type: ${type}`);
-        return { state: false };
+      let vpnClient = VPNClient.getInstance(profileId)
+      try {
+        vpnClient = await this.getVPNClientInstance(policy);
+      } catch(err) {
+        log.error(err)
+        policy.state = false
+        continue
       }
-      const exists = await c.profileExists(profileId);
-      if (!exists) {
-        log.error(`VPN client ${profileId} does not exist`);
-        return { state: false }
-      }
-      const vpnClient = new c({ profileId });
       if (Object.keys(settings).length > 0)
         await vpnClient.saveSettings(settings);
       settings = await vpnClient.loadSettings(); // settings is merged with default settings
       const rtId = await vpnClientEnforcer.getRtId(vpnClient.getInterfaceName());
       if (!rtId) {
         log.error(`Routing table id is not found for ${profileId}`);
-        return { state: false };
+        policy.state = false
+        continue
       }
       if (state === true) {
         let setupResult = true;
@@ -2125,8 +2157,10 @@ module.exports = class HostManager extends Monitorable {
           log.error(`Failed to setup ${type} client for ${profileId}`, err);
           setupResult = false;
         });
-        if (!setupResult)
-          return { state: false };
+        if (!setupResult) {
+          policy.state = false
+          continue
+        }
         await vpnClient.start();
       } else {
         // proceed to stop anyway even if setup is failed
@@ -2137,8 +2171,17 @@ module.exports = class HostManager extends Monitorable {
       }
 
       // do not change anything by default
-      return {};
     }
+
+    sem.sendEventToFireMain({
+      type: Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE,
+      message: ""
+    });
+
+    if (_.isArray(policy.multiClients)) {
+      return {multiClients: updatedClients};
+    } else
+      return updatedClients[0]
   }
 
   async tags() { /* not supported */ }

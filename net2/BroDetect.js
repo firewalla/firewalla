@@ -68,6 +68,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
 const config = fc.getConfig().bro
 
+const { Address6 } = require('ip-address')
+
 const APP_MAP_SIZE = 1000;
 const PROXY_CONN_SIZE = 100;
 const FLOWSTASH_EXPIRES = config.conn.flowstashExpires;
@@ -261,11 +263,13 @@ class BroDetect {
     try {
       const obj = JSON.parse(data);
 
+      const ip = obj['id.resp_h']
+
       let host = obj.host
       if (host) {
         // workaround for https://github.com/zeek/zeek/issues/1844
         if (host.match(/^\[?[0-9a-e]{1,4}$/)) {
-          host = obj['id.resp_h']
+          host = ip || ''
         }
         // since zeek 5.0, the host will contain port number if it is not a well-known port
         // http connect might contain target port (not the same as id.resp_p which is proxy port
@@ -277,7 +281,10 @@ class BroDetect {
         if (host.startsWith("[") && host.endsWith("]")) {
           // strip [] from an ipv6 address
           host = host.substring(1, host.length - 1);
-        } else if (host.includes(':')) {
+        }
+
+        // remove tailing port of v4 addresses
+        if (host.includes(':') && !new Address6(host).isValid()) {
           host = host.substring(0, host.indexOf(':'))
         }
 
@@ -300,19 +307,31 @@ class BroDetect {
         for (const key in this.flowstash) {
           if (this.flowstash[key].uids.includes(obj.uid)) {
             const af = this.flowstash[key].af
-            if (af[host] && af[host].ip == obj['id.resp_h'])
+            if (af[host] && af[host].ip == ip)
               delete af[host]
             break // one uid could only appear in one flow
           }
         }
 
-        this.withdrawAppMap(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p']);
-        await conntrack.delConnEntries(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], 'tcp');
+        this.withdrawAppMap(obj['id.orig_h'], obj['id.orig_p'], ip, obj['id.resp_p']);
+        await conntrack.delConnEntries(obj['id.orig_h'], obj['id.orig_p'], ip, obj['id.resp_p'], 'tcp');
 
-        await rclient.unlinkAsync(intelTool.getSSLCertKey(obj['id.resp_h']))
+        await rclient.unlinkAsync(intelTool.getSSLCertKey(ip))
 
-        await dnsTool.removeReverseDns(host, obj['id.resp_h']);
-        await dnsTool.removeDns(obj['id.resp_h'], host);
+        await dnsTool.removeReverseDns(host, ip);
+        await dnsTool.removeDns(ip, host);
+
+        // DestIPFoundHook might have added intel:ip before everything get reversed
+        const intel = await intelTool.getIntel(ip)
+        if (intel.host == host || intel.sslHost == host || intel.dnsHost == host) {
+          delete intel.host
+          delete intel.sslHost
+          delete intel.dnsHost
+          delete intel.category
+
+          // remove domain related info and but keep the stub data to prevent rapid cloud fetch
+          await intelTool.addIntel(ip, intel)
+        }
 
         return
       }
@@ -756,11 +775,13 @@ class BroDetect {
           return;
         }
 
-        if ((obj.conn_state == "RSTR" || obj.conn_state == "RSTO") && obj.orig_pkts <= 10 && obj.resp_bytes == 0) {
+        if ((["RSTR", "RSTO", "S1", "S3", "SF"].includes(obj.conn_state) && obj.orig_pkts <= 10 && obj.resp_bytes == 0)) {
           log.debug("Conn:Drop:TLS", obj.conn_state, data);
           // Likely blocked by TLS. In normal cases, the first packet is SYN, the second packet is ACK, the third packet is SSL client hello. conn_state will be "RSTR"
-          // However, if zeek is listening on bridge interface, it will not capture tcp-reset from iptables. In this case, the remote server will send a FIN after 60 seconds and will be rejected by local device. The orig_pkts will be 4. conn_state will be "RSTO"
+          // However, if zeek is listening on bridge interface, it will not capture tcp-reset from iptables due to br_netfilter kernel module.
+          // In this case, the remote server will send a FIN after 60 seconds and may be rejected by local device. The orig_pkts will be 4. conn_state may be "RSTO", "S3", or "SF".
           // In rare cases, the originator will re-transmit data packets if the tcp-reset from iptables is not received. The orig_pkts will be more than 3 (or 4 if zeek listens on bridge). conn_state will be "RSTO" or "RSTR"
+          // Another possible corner case is, after RST is sent to the originator without being seen by zeek, zeek will still record the conn_state as "S1" if there is no subsequent packets from both sides
           return;
         }
       }
