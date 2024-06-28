@@ -302,7 +302,7 @@ module.exports = class {
 
   async addToPendingQueue(alarm) {
     let score = parseFloat(alarm.alarmTimestamp);
-    return await rclient.zaddAsync(alarmPendingKey, score, alarm.aid);
+    return await rclient.zaddAsync(alarmPendingKey, 'NX', score, alarm.aid);
   }
 
   removeFromActiveQueueAsync(alarmID) {
@@ -416,7 +416,8 @@ module.exports = class {
   }
 
   async saveAlarm(alarm) {
-    if (!alarm instanceof Alarm.Alarm) alarm = this.jsonToAlarm(alarm)
+    if (!(alarm instanceof Alarm.Alarm)) alarm = this.jsonToAlarm(alarm)
+    if (!alarm) return
     // covnert to string to make it consistent
     if (!alarm.aid) alarm.aid = await this.getNextID() + ""
 
@@ -450,7 +451,6 @@ module.exports = class {
     // add extended info, extended info are optional
     (async () => {
       const extendedAlarmKey = `${alarmDetailPrefix}:${alarm.aid}`;
-
       // if there is any extended info
       if (Object.keys(extended).length !== 0 && extended.constructor === Object) {
         await rclient.hmsetAsync(extendedAlarmKey, extended);
@@ -485,7 +485,7 @@ module.exports = class {
 
     if (related.length) {
       await rclient.zremAsync(alarmActiveKey, related);
-      await rclient.unlinkAsync(related.map(id => alarmDetailPrefix + id));
+      await rclient.unlinkAsync(related.map(id => alarmDetailPrefix + ':' + id));
       await rclient.unlinkAsync(related.map(id => alarmPrefix + id));
     }
   }
@@ -593,12 +593,14 @@ module.exports = class {
         continue
       }
     }
-    const props = Object.entries(alarm).filter(i => i[0] != 'aid').flat()
-    if (props.length == 0) {
-      return;
+
+    try {
+      alarm['applyTimestamp'] = Date.now()/1000;
+      alarm['type'] = orig_alarm.type;
+      await this.saveAlarm(alarm);
+    } catch (err) {
+      log.warn('fail to save alarm changes', alarm, err.message);
     }
-    props.push('applyTimestamp', Date.now()/1000);
-    await rclient.hsetAsync(alarmKey, ...props);
     return attrs;
   }
 
@@ -928,7 +930,7 @@ module.exports = class {
               delete obj[key];
             else
               obj[key] = JSON.parse(value);
-          } catch (err) { }
+          } catch (err) { log.warn("fail to convert to alarm, key", key, err.message) }
         }
       }
       return obj;
