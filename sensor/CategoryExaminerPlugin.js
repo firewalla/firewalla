@@ -320,7 +320,7 @@ class CategoryExaminerPlugin extends Sensor {
           const longestMatchIntel = _.maxBy(intels, (cat) => {
             return (cat.originIP || "").length;
           })
-          if (longestMatchIntel.c === category || longestMatchIntel.c === originCategory) { // matched with cloud data
+          if (_.isObject(longestMatchIntel) && (longestMatchIntel.c === category || longestMatchIntel.c === originCategory)) { // matched with cloud data
             // add domain/pattern matched from cloud to hit set
             const domain = longestMatchIntel.originIP || origDomain;
             log.info(`Add domain ${domainList[i][0]} to hit set of ${category} `);
@@ -344,7 +344,9 @@ class CategoryExaminerPlugin extends Sensor {
 
   async runConfirmJob() {
     while (true) {
-      await this.confirmJob();
+      await this.confirmJob().catch((err) => {
+        log.error("Confirm job failed", err);
+      });
       await scheduler.delay(2000);
     }
   }
