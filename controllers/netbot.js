@@ -3704,6 +3704,12 @@ class netBot extends ControllerBot {
 
         msg.appInfo = rawmsg.message.appInfo;
         if (rawmsg.message.obj.type === "jsonmsg") {
+          // check blacklist, only for dev
+          if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && (await rclient.sismemberAsync('sys:eid:blacklist', eid))){
+            log.warn('deny access from eid', eid);
+            return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
+          }
+
           switch(rawmsg.message.obj.mtype) {
             case "init": {
               if (rawmsg.message.appInfo) {
