@@ -275,12 +275,12 @@ class CategoryExaminerPlugin extends Sensor {
     }
   }
 
-  async _findCategory(domain) {
+  async _getCloudIntels(domain) {
     const resp = await intelTool.checkIntelFromCloud(null, domain);
     if (!_.isArray(resp) || resp.length == 0) {
       return [];
     }
-    return _.uniq(resp.map((i) => {if (i.c == 'ad') {return 'adblock_strict';} else return i.c}));
+    return resp;
   }
 
   async confirmJob() {
@@ -305,22 +305,32 @@ class CategoryExaminerPlugin extends Sensor {
       if (strategy.updateConfirmSet) {
         let score = Date.now();
         let originCategory = category.split("_bf")[0];
+        if (originCategory === "adblock_strict")
+          originCategory = "ad";
         const origDomainList = domainList.map(item => item[1]);
-        const matchedDomainList = [];
         const unmatchedOrigDomainSet = new Set(origDomainList);
         for (let i = 0; i < origDomainList.length; i++) {
           const origDomain = origDomainList[i];
-          const categories = await this._findCategory(origDomain);
-          log.verbose("categories", category, categories, origDomain);
-          if (categories.includes(category) || categories.includes(originCategory)) { // matched with cloud data
-            log.info(`Add domain ${origDomain} to hit set of ${category} `);
-            await this.addDomainToHitSet(category, origDomain, score);
+          const intels = await this._getCloudIntels(origDomain).catch((err) => null);
+          if (!intels) { // likely error occurs while calling cloud API, do not block or passthrough this domain
+              unmatchedOrigDomainSet.delete(origDomain);
+              continue;
+          }
+          log.verbose("categories", category, intels, origDomain);
+          const longestMatchIntel = _.maxBy(intels, (cat) => {
+            return (cat.originIP || "").length;
+          })
+          if (_.isObject(longestMatchIntel) && (longestMatchIntel.c === category || longestMatchIntel.c === originCategory)) { // matched with cloud data
+            // add domain/pattern matched from cloud to hit set
+            const domain = longestMatchIntel.originIP || origDomain;
+            log.info(`Add domain ${domainList[i][0]} to hit set of ${category} `);
+            await this.addDomainToHitSet(category, domainList[i][0], score);
+            // incremental update original category with the matched domain from cloud, including ipset and tls host set
+            await categoryUpdater.updateDomain(originCategory, domain, domain !== origDomain);
             unmatchedOrigDomainSet.delete(origDomain);
-            matchedDomainList.push(domainList[i][0]);
+            await intelTool.addDomainIntel(domain, longestMatchIntel, longestMatchIntel.e);
           }
         }
-
-        await categoryUpdater.addDomainIntels(originCategory, matchedDomainList);
         for (const origDomain of unmatchedOrigDomainSet) {
           log.info(`Add domain ${origDomain} to passthrough set of ${category} `);
           await this.addDomainToPassthroughSet(category, origDomain, score);
@@ -328,15 +338,15 @@ class CategoryExaminerPlugin extends Sensor {
 
         await this.limitHitSet(category, MAX_CONFIRM_SET_SIZE);
         await this.limitPassthroughSet(category, MAX_CONFIRM_SET_SIZE);
-
-        this.sendUpdateNotification(category);
       }
     }
   }
 
   async runConfirmJob() {
     while (true) {
-      await this.confirmJob();
+      await this.confirmJob().catch((err) => {
+        log.error("Confirm job failed", err);
+      });
       await scheduler.delay(2000);
     }
   }

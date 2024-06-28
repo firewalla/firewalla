@@ -68,6 +68,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
 const config = fc.getConfig().bro
 
+const { Address6 } = require('ip-address')
+
 const APP_MAP_SIZE = 1000;
 const PROXY_CONN_SIZE = 100;
 const FLOWSTASH_EXPIRES = config.conn.flowstashExpires;
@@ -265,7 +267,7 @@ class BroDetect {
       if (host) {
         // workaround for https://github.com/zeek/zeek/issues/1844
         if (host.match(/^\[?[0-9a-e]{1,4}$/)) {
-          host = obj['id.resp_h']
+          host = obj['id.resp_h'] || ''
         }
         // since zeek 5.0, the host will contain port number if it is not a well-known port
         // http connect might contain target port (not the same as id.resp_p which is proxy port
@@ -277,7 +279,10 @@ class BroDetect {
         if (host.startsWith("[") && host.endsWith("]")) {
           // strip [] from an ipv6 address
           host = host.substring(1, host.length - 1);
-        } else if (host.includes(':')) {
+        }
+
+        // remove tailing port of v4 addresses
+        if (host.includes(':') && !new Address6(host).isValid()) {
           host = host.substring(0, host.indexOf(':'))
         }
 
@@ -756,11 +761,13 @@ class BroDetect {
           return;
         }
 
-        if ((obj.conn_state == "RSTR" || obj.conn_state == "RSTO") && obj.orig_pkts <= 10 && obj.resp_bytes == 0) {
+        if ((["RSTR", "RSTO", "S1", "S3", "SF"].includes(obj.conn_state) && obj.orig_pkts <= 10 && obj.resp_bytes == 0)) {
           log.debug("Conn:Drop:TLS", obj.conn_state, data);
           // Likely blocked by TLS. In normal cases, the first packet is SYN, the second packet is ACK, the third packet is SSL client hello. conn_state will be "RSTR"
-          // However, if zeek is listening on bridge interface, it will not capture tcp-reset from iptables. In this case, the remote server will send a FIN after 60 seconds and will be rejected by local device. The orig_pkts will be 4. conn_state will be "RSTO"
+          // However, if zeek is listening on bridge interface, it will not capture tcp-reset from iptables due to br_netfilter kernel module.
+          // In this case, the remote server will send a FIN after 60 seconds and may be rejected by local device. The orig_pkts will be 4. conn_state may be "RSTO", "S3", or "SF".
           // In rare cases, the originator will re-transmit data packets if the tcp-reset from iptables is not received. The orig_pkts will be more than 3 (or 4 if zeek listens on bridge). conn_state will be "RSTO" or "RSTR"
+          // Another possible corner case is, after RST is sent to the originator without being seen by zeek, zeek will still record the conn_state as "S1" if there is no subsequent packets from both sides
           return;
         }
       }

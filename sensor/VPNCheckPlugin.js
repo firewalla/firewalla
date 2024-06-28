@@ -228,7 +228,7 @@ class VPNCheckPlugin extends Sensor {
           const wanIntfName = Object.keys(sysManager.publicIps).find(i => sysManager.publicIps[i] === sysManager.publicIp);
           if (wanIntfName) {
             const intf = sysManager.getInterface(wanIntfName);
-            if (intf.type === "wan" && intf.ip_address)
+            if (intf.ip_address)
               return intf.ip_address;
           }
         }
