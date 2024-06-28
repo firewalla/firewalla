@@ -83,14 +83,18 @@ describe('Test alarm event', function(){
     const aid = await am2.saveAlarm(a);
     expect(a.state).to.be.equal('init');
 
-    const alarms = [{aid: aid, state: 'ready'}];
+    const alarms = [{aid: aid, state: 'ready', 'r.test':'deleteme', 'e.analytics': {'result': 'something'}, 'non': ''}];
     await am2.mspSyncAlarm('apply', alarms);
     const alarm = await am2.getAlarm(aid);
+    const alarmDetail = await am2.getAlarmDetail(aid);
+    log.debug('apply alarm', alarm);
+    log.debug('apply alarmDetail', alarmDetail);
 
     expect(Alarm.isSecurityAlarm(alarm.type)).to.be.false;
     expect(alarm.aid).to.be.equal(aid);
     expect(alarm.state).to.be.equal(Constants.ST_ACTIVATED);
     expect(alarm.type).to.be.equal('ALARM_WEAK_PASSWORD');
+    expect(alarmDetail['e.analytics']).to.be.equal('{"result":"something"}');
 
     await am2.removeAlarmAsync(aid);
   });
