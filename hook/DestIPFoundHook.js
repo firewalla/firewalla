@@ -340,7 +340,7 @@ class DestIPFoundHook extends Hook {
       }
     
       let intel;
-      if (!skipReadLocalCache) {
+      if (!skipReadLocalCache && ip) {
         intel = await intelTool.getIntel(ip);
 
         if (intel && !intel.cloudFailed) {
@@ -411,7 +411,7 @@ class DestIPFoundHook extends Hook {
       // update category pool if necessary
       await this.updateCategoryDomain(aggrIntelInfo);
 
-      if (skipReadLocalCache) {
+      if (skipReadLocalCache && ip) {
         intel = await intelTool.getIntel(ip);
 
         if (!aggrIntelInfo.action &&
@@ -424,7 +424,7 @@ class DestIPFoundHook extends Hook {
         }
       }
 
-      if (!skipWriteLocalCache) {
+      if (!skipWriteLocalCache && ip) {
         // remove intel in case some keys in old intel doesn't exist in new one
         await intelTool.removeIntel(ip);
         await intelTool.addIntel(ip, aggrIntelInfo);
@@ -444,7 +444,7 @@ class DestIPFoundHook extends Hook {
       return aggrIntelInfo;
 
     } catch (err) {
-      log.error(`Failed to process IP ${ip}, error:`, err);
+      log.error(`Failed to process${ip ? ` IP : ${ip}` : ""}${host ? ` host: ${host}` : ""}, error:`, err);
       return null;
     } finally {
       if (enrichedFlow && enrichedFlow.from === "flow" && !requeued) {
