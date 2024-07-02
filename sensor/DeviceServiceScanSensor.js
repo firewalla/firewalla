@@ -1,4 +1,4 @@
-/*    Copyright 2020-2021 Firewalla Inc.
+/*    Copyright 2020-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -193,7 +193,7 @@ class DeviceServiceScanSensor extends Sensor {
   _scan(ipAddr) {
     let cmd = util.format('sudo timeout 1200s nmap -Pn --top-ports 3000 %s -oX - | %s', ipAddr, xml2jsonBinary);
 
-    log.info("Running command:", cmd);
+    log.verbose("Running command:", cmd);
     return new Promise((resolve, reject) => {
       cp.exec(cmd, (err, stdout, stderr) => {
         if (err || stderr) {
