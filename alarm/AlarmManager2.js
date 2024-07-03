@@ -789,6 +789,8 @@ module.exports = class {
     const alarmKey = alarmPrefix + alarm.aid;
     await rclient.hsetAsync(alarmKey, 'state', Constants.ST_ACTIVATED);
 
+    const orig_alarm = await rclient.hgetallAsync(alarmKey);
+    alarm = Object.assign({}, orig_alarm, alarm);
     const result  = await this._activateAlarm(alarm);
 
     // check alarm state change results
