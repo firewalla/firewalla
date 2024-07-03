@@ -995,9 +995,7 @@
   },
   "alarms": {
     "apply": {
-      "default": {"state": "pending"},
-      "new_device": {"state": "ready"},
-      "video": {"state": "pending"}
+      "default": {"state": "ready"}
     }
   },
   "cloudcache": {
