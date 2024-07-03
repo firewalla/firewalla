@@ -121,7 +121,7 @@ class AppTimeUsageSensor extends Sensor {
 
   async updateSupportedApps() {
     const appConfs = this.appConfs;
-    const apps = Object.keys(appConfs);
+    const apps = Object.keys(appConfs).filter(app => !_.isEmpty(_.get(appConfs, [app, "includedDomains"])));
     await rclient.delAsync(Constants.REDIS_KEY_APP_TIME_USAGE_APPS);
     await rclient.saddAsync(Constants.REDIS_KEY_APP_TIME_USAGE_APPS, apps);
     for (const app of apps) {
