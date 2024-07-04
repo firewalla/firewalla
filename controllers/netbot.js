@@ -1421,14 +1421,13 @@ class netBot extends ControllerBot {
           throw { code: 400, msg: "'types' should be an array." }
         }
         let profiles = [];
-        for (let type of types) {
+        for (let type of types) try {
           const c = VPNClient.getClass(type);
-          if (!c) {
-            log.error(`Unsupported VPN client type: ${type}`);
-            continue;
-          }
           const profileIds = await c.listProfileIds();
           Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({ profileId }).getAttributes())));
+        } catch(err) {
+          log.error(err);
+          continue;
         }
         return { profiles }
       }
