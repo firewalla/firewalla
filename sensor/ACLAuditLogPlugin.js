@@ -134,7 +134,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1 };
     record.ac = "block";
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanUUID, inIntfName, outIntfName;
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanUUID, inIntfName, outIntfName, isolationTagId;
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -230,7 +230,15 @@ class ACLAuditLogPlugin extends Sensor {
               break
             case "RD":
               record.ac = "redirect";
+              break;
+            case "I":
+              record.ac = "isolation";
+              break;
           }
+          break;
+        }
+        case 'G': {
+          isolationTagId = v;
           break;
         }
         default:
@@ -283,6 +291,12 @@ class ACLAuditLogPlugin extends Sensor {
     if (record.ac === 'redirect') {
       if (dport == '123') record.type = 'ntp'
       await conntrack.setConnEntry(src, sport, dst, dport, record.pr, 'redirect', 1);
+    }
+
+    if (record.ac === "isolation") {
+      record.group = isolationTagId;
+      dir = "L";
+      ctdir = "O";
     }
 
     if (security)
@@ -459,7 +473,7 @@ class ACLAuditLogPlugin extends Sensor {
       await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid, 600);
     }
 
-    if (record.ac === "block" || record.ac === 'redirect') {
+    if (record.ac === "block" || record.ac === 'redirect' || record.ac === "isolation") {
       this.writeBuffer(mac, record);
     }
   }
@@ -628,7 +642,7 @@ class ACLAuditLogPlugin extends Sensor {
             (record.qt == 1 /*A*/ || record.qt == 28 /*AAAA*/) &&
             record.dp == 53
             :
-            record.ac === "block";
+            record.ac === "block" || record.ac === "isolation";
 
           let transitiveTags = {};
           if (!IdentityManager.isGUID(mac)) {
