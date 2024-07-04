@@ -791,6 +791,7 @@
         }
       }
     },
+    "IsolationPlugin": {},
     "NicCalibrationSensor": {},
     "NicStateSensor": {}
   },
