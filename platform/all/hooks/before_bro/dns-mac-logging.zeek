@@ -13,6 +13,8 @@ redef record Info += {
 
 event dns_end(c: connection, msg: dns_msg) &priority=10
 {
+  if ( ! c?$dns )
+    return;
   if ( c$orig?$l2_addr )
     c$dns$orig_l2_addr = c$orig$l2_addr;
 
