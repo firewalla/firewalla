@@ -23,8 +23,7 @@ const extensionManager = require('./ExtensionManager.js');
 const Tag = require('../net2/Tag.js');
 const { Rule } = require('../net2/Iptables.js');
 const ipset = require('../net2/Ipset.js');
-const Constants = require('../net2/Constants.js');
-const exec = require('child-process-promise').exec;
+const fwapc = require('../net2/fwapc.js');
 
 class IsolationSensor extends Sensor {
   async run() {
@@ -34,7 +33,7 @@ class IsolationSensor extends Sensor {
   }
 
   async applyPolicy(obj, ip, policy) {
-    if (obj.constructor.name !== "Tag") {
+    if (!obj instanceof Tag) {
       log.error(`${policyKeyName} is not supported on ${obj.constructor.name} object`);
       return;
     }
@@ -62,8 +61,10 @@ class IsolationSensor extends Sensor {
     let op;
     if (policy && policy.state === true) {
       op = "-A";
+      Tag.scheduleFwapcSetGroupACL(tagUid, tag.getTagType()).catch((err) => {});
     } else {
       op = "-D";
+      await obj.fwapcDeleteGroupACL().catch((err) => {})
     }
     // add LOG rule before DROP rule
     await ruleTxLog.exec(op).catch((err) => { });
