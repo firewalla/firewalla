@@ -213,6 +213,29 @@ class FWAPC {
       return {code: 500, msg: e.message};
     }
   }
+
+  async setGroupACL(groupId, macs) {
+    if (!groupId)
+      throw new Error("groupId is not defined in setGroupACL");
+    if (!_.isArray(macs))
+      throw new Error("macs should be an array in setGroupACL");
+    const payload = {id: groupId, macs};
+    const {code, body, msg} = await this.apiCall("POST", "/config/set_group_acl", payload);
+    if (!isNaN(code) && Number(code) > 299) {
+      throw new Error(msg || "Failed to set group ACL in fwapc");
+    }
+    return;
+  }
+
+  async deleteGroupACL(groupId) {
+    if (!groupId)
+      throw new Error("groupId is not defined in setGroupACL");
+    const {code, body, msg} = await this.apiCall("DELETE", `/config/group_acl/${groupId}`);
+    if (!isNaN(code) && Number(code) > 299) {
+      throw new Error(msg || "Failed to set group ACL in fwapc");
+    }
+    return;
+  }
 }
 
 const instance = new FWAPC();
