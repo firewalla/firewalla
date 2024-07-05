@@ -141,7 +141,7 @@ class GuardianSensor extends Sensor {
   }
 
   async setMspData(data = {}) {
-    await pclient.publishAsync('config:msp:updated', JSON.stringify(data.list))
+    await pclient.publishAsync('config:msp:updated', JSON.stringify(data.list)) // for compatible purpose, keep it there, be careful when set msp.data, the value should be {list:data}
     const guardian = await this.getGuardianByAlias(data.alias);
     return guardian.setMspData(data.list);
   }
