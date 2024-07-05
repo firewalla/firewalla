@@ -795,7 +795,7 @@ module.exports = class {
 
     // check alarm state change results
     if (this.isAlarmSyncMspEnabled() && result.length >= 2) {
-      if (result[0] != 0 && ! (options.origin && options.origin.state == Constants.ST_INIT)) {
+      if (result[0] != 1 && !(options.origin && options.origin.state == Constants.ST_INIT)) {
         log.warn('error remove alarm from pending queue', alarm.aid, result[0]);
       }
       if (result[1] != 1) {
@@ -858,23 +858,23 @@ module.exports = class {
     let ts = a.timestamp || Date.now()/1000;
     // Outbound constructors
     if (proto instanceof Alarm.OutboundAlarm) {
-      alarm = new proto.constructor(ts, a.device, a['p.dest.id'], a.info);
+      alarm = new proto.constructor(ts, a.device, a['p.dest.id'], _.omit(a, ['type', 'device', 'p.dest.id']));
     } else {
       switch (proto.constructor.name) {
         case 'VulnerabilityAlarm':{
-          alarm = new proto.constructor(ts, a.device, a['p.vid'], a.info);
+          alarm = new proto.constructor(ts, a.device, a['p.vid'], _.omit(a, ['type', 'device', 'p.vid']));
           break;
         }
         case 'BroNoticeAlarm': {
-          alarm = new proto.constructor(ts, a.device, a['p.noticeType'], a['p.message'], a.info);
+          alarm = new proto.constructor(ts, a.device, a['p.noticeType'], a['p.message'], _.omit(a, ['type', 'device', 'p.noticeType', 'p.message']));
           break;
         }
         case 'IntelAlarm': {
-          alarm = new proto.constructor(ts, a.device, a['p.severity'], a.info);
+          alarm = new proto.constructor(ts, a.device, a['p.severity'],  _.omit(a, ['type', 'device', 'p.severity']));
           break;
         }
         default: {
-          alarm = new proto.constructor(ts, a.device, a.info);
+          alarm = new proto.constructor(ts, a.device, _.omit(a, ['type', 'device']));
           break;
         }
       }
