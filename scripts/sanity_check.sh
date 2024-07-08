@@ -624,15 +624,26 @@ check_hosts() {
 
     local FIREWALLA_MAC="$(ip link list | awk '/ether/ {print $2}' | sort | uniq)"
 
-    local hierarchicalFeatures=("adblock" "family" "doh" "unbound")
-    for feature in ${hierarchicalFeatures[@]}; do
-      if [ -z ${SF[$feature]+x} ] || [[ "${SF[$feature]}" == "0" ]] || [[ "${SF[$feature]}" == "false" ]]; then
-        hierarchicalFeatures=("${hierarchicalFeatures[@]/$feature}")
+    local hierarchicalPolicies=()
+    local policyNames=("adblock" "safeSearch" "doh" "unbound")
+    local featureNames=("adblock" "safe_search" "doh" "unbound")
+
+    # family native mode doesn't have 'family_protect' enabled but are all standalone app controlled rules
+    if [[ "$(jq -r ".family | select(.state == true) | .mode" <<< "${SP[app]}")" == "native" ]]; then
+      hierarchicalPolicies+=("family")
+    else
+      policyNames+=("family")
+      featureNames+=("family_protect")
+    fi
+    for index in "${!policyNames[@]}"; do
+      local policy=${policyNames[$index]}
+      local feature=${featureNames[$index]}
+      if [[ "${SF[$feature]}" == "1" ]] || [[ "${SF[$feature]}" == "true" ]]; then
+        hierarchicalPolicies+=("$policy")
       fi
     done
-    if [[ "${SF[safe_search]}" == "1" ]] || [[ "${SF[safe_search]}" == "true" ]]; then
-      hierarchicalFeatures+=( "safeSearch" )
-    fi
+
+    typeset -p hierarchicalPolicies
 
     for DEVICE in $DEVICES; do
         local MAC=${DEVICE/host:mac:/""}
@@ -668,10 +679,10 @@ check_hosts() {
 
         declare -A fcv # feature color value
 
-        for feature in ${hierarchicalFeatures[@]}; do
-          if [[ -n ${SP[$feature]+x} ]]; then
-            [[ ${SP[$feature]} == *"true"* ]] && set_color_value $feature "T"
-            [[ ${SP[$feature]} == *"null"* ]] && set_color_value $feature "F"
+        for policy in "${hierarchicalPolicies[@]}"; do
+          if [[ -n ${SP[$policy]+x} ]]; then
+            [[ ${SP[$policy]} == *"true"* ]] && set_color_value "$policy" "T"
+            [[ ${SP[$policy]} == *"null"* ]] && set_color_value "$policy" "F"
           fi
         done
 
@@ -679,10 +690,10 @@ check_hosts() {
         local NETWORK_NAME=
         if [[ -n ${h[intf]+x} ]]; then
           NETWORK_NAME=${NETWORK_UUID_NAME[${h[intf]}]}
-          for feature in ${hierarchicalFeatures[@]}; do
-            if [[ -n ${NP[$nid,$feature]+x} ]]; then
-              [[ ${NP[$nid,$feature]} == *"true"* ]] && set_color_value $feature "T"
-              [[ ${NP[$nid,$feature]} == *"null"* ]] && set_color_value $feature "F"
+          for policy in "${hierarchicalPolicies[@]}"; do
+            if [[ -n ${NP[$nid,$policy]+x} ]]; then
+              [[ ${NP[$nid,$policy]} == *"true"* ]] && set_color_value "$policy" "T"
+              [[ ${NP[$nid,$policy]} == *"null"* ]] && set_color_value "$policy" "F"
             fi
           done
         fi
@@ -700,10 +711,10 @@ check_hosts() {
 
         for tag in $TAGS; do
           get_tag_policy "$tag"
-          for feature in ${hierarchicalFeatures[@]}; do
-            if [[ -n ${TP[$tag,$feature]+x} ]]; then
-              [[ ${TP[$tag,$feature]} == *"true"* ]] && set_color_value $feature "T"
-              [[ ${TP[$tag,$feature]} == *"null"* ]] && set_color_value $feature "F"
+          for policy in "${hierarchicalPolicies[@]}"; do
+            if [[ -n ${TP[$tag,$policy]+x} ]]; then
+              [[ ${TP[$tag,$policy]} == *"true"* ]] && set_color_value "$policy" "T"
+              [[ ${TP[$tag,$policy]} == *"null"* ]] && set_color_value "$policy" "F"
             fi
           done
         done
@@ -751,11 +762,11 @@ check_hosts() {
         local SS=$(if [[ ${p[safeSearch]} == *"true"* ]]; then echo "T"; fi)
         local DOH=$(if [[ ${p[doh]} == *"true"* ]]; then echo "T"; fi)
 
-        for feature in ${hierarchicalFeatures[@]}; do
+        for policy in ${hierarchicalPolicies[@]}; do
           # echo "$feature | ${p[$feature]} | ${fcv[$feature,v]}"
-          if [ -n "${p[$feature]+x}" ] && [[ "${p[$feature]}" != "${!feature[v]}" ]]; then
-            [[ "${p[$feature]}" == *"true"* ]] && set_color_value $feature "T" 1
-            [[ "${p[$feature]}" == *"null"* ]] && set_color_value $feature "F" 1
+          if [ -n "${p[$policy]+x}" ] && [[ "${p[$policy]}" != "${!policy[v]}" ]]; then
+            [[ "${p[$policy]}" == *"true"* ]] && set_color_value $policy "T" 1
+            [[ "${p[$policy]}" == *"null"* ]] && set_color_value $policy "F" 1
           fi
         done
 
