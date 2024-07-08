@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc.
+/*    Copyright 2021-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,6 +15,7 @@
 
 const log = require('../net2/logger.js')(__filename);
 
+const _ = require('lodash');
 const LRU = require('lru-cache');
 const sl = require('./SensorLoader.js');
 const fc = require('../net2/config.js');
@@ -31,6 +32,8 @@ const categoryFastFilterFeature = "category_filter";
 
 const scheduler = require('../util/scheduler');
 const firewalla = require('../net2/Firewalla.js');
+const IntelTool = require('../net2/IntelTool.js');
+const intelTool = new IntelTool();
 
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Hashes = require('../util/Hashes');
@@ -67,6 +70,7 @@ class CategoryExaminerPlugin extends Sensor {
       sclient.on("message", async (channel, message) => {
         switch (channel) {
           case BF_SERVER_MATCH: {
+            log.debug("receive message from", channel, message)
             let msgObj;
             try {
               msgObj = JSON.parse(message);
@@ -240,7 +244,7 @@ class CategoryExaminerPlugin extends Sensor {
     try {
       response = await this.matchDomain(origDomain);
     } catch (e) {
-      log.debug(`Fail to get match result from category filter: ${origDomain}`);
+      log.warn(`Fail to get match result from category filter: ${origDomain}`);
       return;
     }
 
@@ -271,7 +275,19 @@ class CategoryExaminerPlugin extends Sensor {
     }
   }
 
+  async _getCloudIntels(domain) {
+    const resp = await intelTool.checkIntelFromCloud(null, domain);
+    if (!_.isArray(resp) || resp.length == 0) {
+      return [];
+    }
+    return resp;
+  }
+
   async confirmJob() {
+    if (this.confirmSet.size == 0) {
+      return;
+    }
+    log.info("category examiner run comfirm job", JSON.stringify(JSON.stringify([...this.confirmSet])));
     const categoryDomainMap = new Map();
     for (const item of this.confirmSet) {
       const [category, matchedDomain, origDomain] = item.split(":");
@@ -283,40 +299,54 @@ class CategoryExaminerPlugin extends Sensor {
     }
 
     this.confirmSet = new Set();
-
     for (const [category, domainList] of categoryDomainMap) {
       const strategy = await categoryUpdater.getStrategy(category);
-      const origDomainList = domainList.map(item => item[1]);
-
       // update hit set using matched domain list
       if (strategy.updateConfirmSet) {
         let score = Date.now();
-        let results = await this.confirmDomains(category, strategy, origDomainList);
-        if (results === null) {
-          log.debug("Fail to confirm domains of category", category);
-          return;
-        }
-        const positiveSet = new Set(results);
-        for (const [matchedDomain, origDomain] of domainList) {
-          if (positiveSet.has(origDomain)) {
-            log.info(`Add domain ${matchedDomain} to hit set of ${category} `);
-            await this.addDomainToHitSet(category, matchedDomain, score);
-          } else {
-            log.info(`Add domain ${origDomain} to passthrough set of ${category} `);
-            await this.addDomainToPassthroughSet(category, origDomain, score);
+        let originCategory = category.split("_bf")[0];
+        if (originCategory === "adblock_strict")
+          originCategory = "ad";
+        const origDomainList = domainList.map(item => item[1]);
+        const unmatchedOrigDomainSet = new Set(origDomainList);
+        for (let i = 0; i < origDomainList.length; i++) {
+          const origDomain = origDomainList[i];
+          const intels = await this._getCloudIntels(origDomain).catch((err) => null);
+          if (!intels) { // likely error occurs while calling cloud API, do not block or passthrough this domain
+              unmatchedOrigDomainSet.delete(origDomain);
+              continue;
+          }
+          log.verbose("categories", category, intels, origDomain);
+          const longestMatchIntel = _.maxBy(intels, (cat) => {
+            return (cat.originIP || "").length;
+          })
+          if (_.isObject(longestMatchIntel) && (longestMatchIntel.c === category || longestMatchIntel.c === originCategory)) { // matched with cloud data
+            // add domain/pattern matched from cloud to hit set
+            const domain = longestMatchIntel.originIP || origDomain;
+            log.info(`Add domain ${domainList[i][0]} to hit set of ${category} `);
+            await this.addDomainToHitSet(category, domainList[i][0], score);
+            // incremental update original category with the matched domain from cloud, including ipset and tls host set
+            await categoryUpdater.updateDomain(originCategory, domain, domain !== origDomain);
+            unmatchedOrigDomainSet.delete(origDomain);
+            await intelTool.addDomainIntel(domain, longestMatchIntel, longestMatchIntel.e);
           }
         }
+        for (const origDomain of unmatchedOrigDomainSet) {
+          log.info(`Add domain ${origDomain} to passthrough set of ${category} `);
+          await this.addDomainToPassthroughSet(category, origDomain, score);
+        }
+
         await this.limitHitSet(category, MAX_CONFIRM_SET_SIZE);
         await this.limitPassthroughSet(category, MAX_CONFIRM_SET_SIZE);
-
-        this.sendUpdateNotification(category);
       }
     }
   }
 
   async runConfirmJob() {
     while (true) {
-      await this.confirmJob();
+      await this.confirmJob().catch((err) => {
+        log.error("Confirm job failed", err);
+      });
       await scheduler.delay(2000);
     }
   }
@@ -442,7 +472,6 @@ class CategoryExaminerPlugin extends Sensor {
       category: category
     };
     sem.sendEventToAll(event);
-    sem.emitLocalEvent(event);
   }
 }
 

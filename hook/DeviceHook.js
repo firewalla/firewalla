@@ -726,10 +726,6 @@ class DeviceHook extends Hook {
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : ""
           });
-        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-          const config = Constants.TAG_TYPE_MAP[type];
-          alarm[config.alarmIdKey] = hostInstance && await hostInstance.getTags(type) || [];
-        }
         am2.enqueueAlarm(alarm);
         break;
       case "device_online":
@@ -743,10 +739,6 @@ class DeviceHook extends Hook {
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : "",
           });
-        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-          const config = Constants.TAG_TYPE_MAP[type];
-          alarm[config.alarmIdKey] = hostInstance && await hostInstance.getTags(type) || [];
-        }
         am2.enqueueAlarm(alarm);
         break;
       case "device_offline":
@@ -761,10 +753,6 @@ class DeviceHook extends Hook {
             "p.device.lastSeen": host.lastActiveTimestamp,
             "p.intf.id": host.intf ? host.intf : ""
           });
-        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-          const config = Constants.TAG_TYPE_MAP[type];
-          alarm[config.alarmIdKey] = hostInstance && await hostInstance.getTags(type) || [];
-        }
         am2.enqueueAlarm(alarm);
         break;
       case "spoofing_device":
@@ -778,10 +766,6 @@ class DeviceHook extends Hook {
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : ""
           });
-        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-          const config = Constants.TAG_TYPE_MAP[type];
-          alarm[config.alarmIdKey] = hostInstance && await hostInstance.getTags(type) || [];
-        }
         am2.enqueueAlarm(alarm);
         break;
       default:

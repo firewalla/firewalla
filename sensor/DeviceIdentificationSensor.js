@@ -1,4 +1,4 @@
-/*    Copyright 2023 Firewalla Inc.
+/*    Copyright 2023-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,6 +19,8 @@ const Sensor = require('./Sensor.js').Sensor;
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
+const TagManager = require('../net2/TagManager.js');
+const Constants = require('../net2/Constants.js');
 const config = require('../net2/config.js')
 const sm = require('../net2/SysManager.js')
 const Host = require('../net2/Host.js')
@@ -142,10 +144,21 @@ class DeviceIdentificationSensor extends Sensor {
 
   async mergeAndSave(host) {
     const detect = host.o.detect
-    if (Object.keys(detect)) {
-      Object.assign(detect, detect.bonjour, detect.cloud)
-      log.debug('Saving', host.o.mac, detect)
-      await host.save('detect')
+    if (!Object.keys(detect)) return
+
+    Object.assign(detect, detect.bonjour, detect.cloud)
+    log.debug('Saving', host.o.mac, detect)
+    await host.save('detect')
+
+    const type = detect.feedback && detect.feedback.type || detect.type
+    if (type) {
+      log.verbose(`Applying ${type} tag to ${host.getUniqueId()}`)
+      const tag = TagManager.getTagByName(type, Constants.TAG_TYPE_DEVICE)
+        || await TagManager.createTag(type, { type: Constants.TAG_TYPE_DEVICE })
+      // policy should be loaded at this point
+      const policyKey = Constants.TAG_TYPE_MAP[Constants.TAG_TYPE_DEVICE].policyKey
+      // overwrites previous tags
+      await host.setPolicyAsync(policyKey, [tag.getUniqueId()])
     }
   }
 

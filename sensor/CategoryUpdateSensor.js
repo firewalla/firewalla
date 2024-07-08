@@ -84,13 +84,21 @@ class CategoryUpdateSensor extends Sensor {
   resetCategoryHashsetMapping() {
     this.categoryHashsetMapping = {
       "games": "app.gaming",
+      "games_bf": "app.gaming_bf",
       "social": "app.social",
+      "social_bf": "app.social_bf",
       "av": "app.video",
+      "av_bf": "app.video_bf",
       "porn": "app.porn",  // dnsmasq redirect to blue hole if porn
+      "porn_bf": "app.porn_bf",
       "gamble": "app.gamble",
+      "gamble_bf": "app.gamble_bf",
       "shopping": "app.shopping",
+      "shopping_bf": "app.shopping_bf",
       "p2p": "app.p2p",
-      "vpn": "app.vpn"
+      "p2p_bf": "app.p2p_bf",
+      "vpn": "app.vpn",
+      "vpn_bf": "app.vpn_bf"
     }
   }
 
@@ -145,13 +153,13 @@ class CategoryUpdateSensor extends Sensor {
       const info = await this.getManagedTargetListInfo(category);
       log.debug(category, info);
 
-      if (info && _.isObject(info) && info.domain_count > 20000) {
+      if (info && _.isObject(info) && (info.domain_count > 20000 || info.use_bf)) {
         await categoryUpdater.updateStrategy(category, "filter");
       } else {
         await categoryUpdater.updateStrategy(category, "default");
       }
     } else {
-      await categoryUpdater.updateStrategy(category, "default");
+      await categoryUpdater.updateStrategy(category, !category.endsWith('_bf') ? "default": "filter");
     }
 
     let categoryStrategy = await categoryUpdater.getStrategy(category);
@@ -279,7 +287,6 @@ class CategoryUpdateSensor extends Sensor {
       message: category,
     };
     sem.sendEventToAll(event);
-    sem.emitLocalEvent(event);
   }
 
   // return true on successful update.
@@ -401,7 +408,6 @@ class CategoryUpdateSensor extends Sensor {
       message: category,
     };
     sem.sendEventToAll(event);
-    sem.emitLocalEvent(event);
   }
 
   async updateCountryAllocation(country) {
@@ -466,7 +472,6 @@ class CategoryUpdateSensor extends Sensor {
             message: category,
           };
           sem.sendEventToAll(event);
-          sem.emitLocalEvent(event);
         }
       });
 
@@ -516,7 +521,7 @@ class CategoryUpdateSensor extends Sensor {
           await dnsmasq.flushCategoryFilters()
 
           log.info('Category:Flush done')
-        } catch(err) {
+        } catch (err) {
           log.error('Failed flushing', err)
         }
       })

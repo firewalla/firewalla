@@ -300,7 +300,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
             message: 'remove category' + c,
           };
           sem.sendEventToAll(event);
-          sem.emitLocalEvent(event);
         }
         delete this.customizedCategories[c];
       }
@@ -311,6 +310,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async activateCategory(category) {
+    log.debug("invoke activate category", category)
     if (this.isActivated(category)) return;
     if (firewalla.isMain()) // do not create ipset unless in FireMain
       await super.activateCategory(category, this.isCustomizedCategory(category) ? this._getCustomizedCategoryIpsetType(category) : "hash:net");
@@ -966,7 +966,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
       updateOptions.comment = "persistent";
     }
 
-    await this.updatePersistentIPSets(category, updateOptions);
+    await this.updatePersistentIPSets(category, false, updateOptions);
+    await this.updatePersistentIPSets(category, true, updateOptions);
 
     const strategy = await this.getStrategy(category);
     const domains = await this.getDomains(category);
@@ -1228,7 +1229,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         exception: {
           useHitSet: true
         }
-        };      
+      };
       default:
       return defaultStrategyConfig;
     }
@@ -1245,7 +1246,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   // system target list using cloudcache, mainly for large target list to reduce bandwidth usage of polling hashset
   isManagedTargetList(category) {
-    return !this.isUserTargetList(category) && !this.isSmallExtendedTargetList(category) && !this.excludeListBundleIds.has(category);
+    return !this.isUserTargetList(category) && !this.isSmallExtendedTargetList(category) && !this.excludeListBundleIds.has(category) && !category.endsWith('_bf');
   }
 }
 
