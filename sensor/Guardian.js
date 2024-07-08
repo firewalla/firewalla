@@ -235,8 +235,8 @@ module.exports = class {
     return false;
   }
 
-  async setMspData(list = []) {
-    return rclient.setAsync(this.mspDataKey, JSON.stringify(list));
+  async setMspData(data = {}) {
+    return rclient.setAsync(this.mspDataKey, JSON.stringify(data));
   }
 
   async getMspData() {
@@ -465,7 +465,7 @@ module.exports = class {
 
       // disable msp features
       const features = Object.keys(fc.getFeatures()).filter(i => i.startsWith('msp_'));
-      for ( const f of features) {
+      for (const f of features) {
         await fc.disableDynamicFeature(f);
       }
     } catch (e) {
