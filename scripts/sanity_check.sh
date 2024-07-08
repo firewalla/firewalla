@@ -94,10 +94,94 @@ frcc() {
 
 declare -A TAG_UID_NAME
 get_tag_name() {
-    if [ ! -v "TAG_UID_NAME[$1]" ]; then
-        TAG_UID_NAME["$1"]=$(redis-cli hget ${1/:/:uid:} name)
+    if [ -z "${TAG_UID_NAME[$1]+x}" ]; then
+        TAG_UID_NAME["$1"]=$(redis-cli hget "${1/:/:uid:}" name)
     fi
     echo "${TAG_UID_NAME["$1"]}"
+}
+
+declare -A SF
+system_features_done=0
+get_system_features() {
+  if [ "$system_features_done" -eq "0" ]; then
+    local FILE="$FIREWALLA_HOME/net2/config.json"
+    local USERFILE="$HOME/.firewalla/config/config.json"
+
+    # use jq where available
+    if [[ "$PLATFORM" != 'red' && "$PLATFORM" != 'blue' ]]; then
+      if [[ -f "$FILE" ]]; then
+        jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' "$FILE" |
+          while read key value; do
+            SF["$key"]="$value"
+          done
+      fi
+
+      if [[ -f "$USERFILE" ]]; then
+        jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' "$USERFILE" |
+          while read key value; do
+            SF["$key"]="$value"
+          done
+      fi
+    else
+      # lagacy python 2.7 solution
+      if [[ -f "$FILE" ]]; then
+        local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]); print obj2;")
+        while IFS="=" read -r key value; do
+          SF["$key"]="$value"
+        done <<<"$JSON"
+      fi
+
+      if [[ -f "$USERFILE" ]]; then
+        local JSON=$(python -c "import json; obj=json.load(open('$USERFILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]) if obj.has_key('userFeatures') else ''; print obj2;")
+        if [[ "$JSON" != "" ]]; then
+          while IFS="=" read -r key value; do
+            SF["$key"]="$value"
+          done <<<"$JSON"
+        fi
+      fi
+    fi
+
+    read_hash SF sys:features
+
+    system_features_done=1
+  fi
+}
+
+declare -A SP
+system_policy_done=0
+get_system_policy() {
+  if [ "$system_policy_done" -eq "0" ]; then
+    read_hash SP policy:system
+    system_policy_done=1
+  fi
+}
+
+declare -A NP
+declare -A network_policy_done
+get_network_policy() {
+  if [ -z "${network_policy_done[$1]+x}" ]; then
+    declare -A network_policy
+    read_hash network_policy "policy:network:$1"
+    for key in "${!network_policy[@]}"; do
+      NP[$1,${key}]=${network_policy[$key]}
+    done
+    unset network_policy
+    network_policy_done[$1]=1
+  fi
+}
+
+declare -A TP
+declare -A tag_policy_done
+get_tag_policy() {
+  if [ -z "${tag_policy_done[$1]+x}" ]; then
+    declare -A tag_policy
+    read_hash tag_policy "policy:tag:$1"
+    for key in "${!tag_policy[@]}"; do
+      TP[$1,${key}]=${tag_policy[$key]}
+    done
+    unset tag_policy
+    tag_policy_done[$1]=1
+  fi
 }
 
 check_wan_conn_log() {
@@ -194,7 +278,8 @@ check_systemctl_services() {
     check_each_system_service fireupgrade "dead"
     check_each_system_service fireboot "dead"
 
-    if redis-cli hget policy:system vpn | fgrep -q '"state":true'
+    get_system_policy
+    if fgrep -q '"state":true' <<< $SP[vpn]
     then
       vpn_run_state='running'
     else
@@ -276,7 +361,8 @@ get_redis_key_with_no_ttl() {
 get_mode() {
     MODE=$(redis-cli get mode)
     frcc
-    if [ "$MODE" = "spoof" ] && [ "$(redis-cli hget policy:system enhancedSpoof)" = "true" ]; then
+    get_system_policy
+    if [ "$MODE" = "spoof" ] && [ "${SP[enhancedSpoof]}" = "true" ]; then
         echo "enhancedSpoof"
     elif [ "$MODE" = "dhcp" ] && [ $ROUTER_MANAGED = "yes" ] && \
         [[ $(jq -c '.interface.bridge[] | select(.meta.type=="wan")' /tmp/scc_config | wc -c ) -ne 0 ]]; then
@@ -312,16 +398,17 @@ check_system_config() {
 
     echo ""
 
-    declare -A p
-    read_hash p policy:system
+    get_system_policy
 
     print_config "Mode" "$(get_mode)"
-    print_config "Adblock" "${p[adblock]}"
-    print_config "Family" "${p[family]}"
-    print_config "Monitor" "${p[monitor]}"
-    print_config "Emergency Access" "${p[acl]}"
-    print_config "vpnAvailable" "${p[vpnAvailable]}"
-    print_config "vpn" "${p[vpn]}"
+    print_config "Adblock" "${SP[adblock]}"
+    print_config "Family" "${SP[family]}"
+    print_config "DoH" "${SP[doh]}"
+    print_config "Unbound" "${SP[unbound]}"
+    print_config "Monitor" "${SP[monitor]}"
+    print_config "Emergency Access" "${SP[acl]}"
+    print_config "vpnAvailable" "${SP[vpnAvailable]}"
+    print_config "vpn" "${SP[vpn]}"
     print_config "Redis Usage" "$(redis-cli info | grep used_memory_human | awk -F: '{print $2}')"
     print_config "Redis Total Key" "$(redis-cli dbsize)"
     print_config "Redis key without ttl" "$(get_redis_key_with_no_ttl)"
@@ -497,16 +584,32 @@ is_simple_mode() {
     echo F
 }
 
+set_color_value() {
+  # make an alias of $1, https://unix.stackexchange.com/a/462089
+  fcv[$1,v]=$2
+  if [ -z ${3+x} ]; then
+    fcv[$1,c]="\e[2m" #dim
+  else
+    fcv[$1,c]="\e[39m"
+  fi
+}
+
 check_hosts() {
     echo "----------------------- Devices ------------------------------"
 
     local SIMPLE_MODE=$(is_simple_mode)
     # read all enabled newDeviceTag tags
     declare -a NEW_DEVICE_TAGS
-    if [[ "$(redis-cli hget sys:features new_device_tag)" == "1" ]]; then
-      NEW_DEVICE_TAGS=( $(redis-cli hget policy:system newDeviceTag | jq "select(.state == true) | .tag") )
+    get_system_policy
+    get_system_features
+    if [[ "${SF[new_device_tag]}" == "1" ]]; then
+      NEW_DEVICE_TAGS=( $(jq "select(.state == true) | .tag" <<< ${SP[newDeviceTag]}) )
       while read -r POLICY_KEY; do
-        test -n "$POLICY_KEY" && NEW_DEVICE_TAGS+=( $(redis-cli hget $POLICY_KEY newDeviceTag | jq "select(.state == true) | .tag") );
+        if [ -n "$POLICY_KEY" ]; then
+          local nid=${POLICY_KEY/policy:network:/""}
+          get_network_policy "$nid"
+          NEW_DEVICE_TAGS+=( $(jq "select(.state == true) | .tag" <<< ${NP[$nid,newDeviceTag]}) );
+        fi
       done < <(redis-cli keys 'policy:network:*')
     else
       NEW_DEVICE_TAGS=( )
@@ -520,6 +623,16 @@ check_hosts() {
 
 
     local FIREWALLA_MAC="$(ip link list | awk '/ether/ {print $2}' | sort | uniq)"
+
+    local hierarchicalFeatures=("adblock" "family" "doh" "unbound")
+    for feature in ${hierarchicalFeatures[@]}; do
+      if [ -z ${SF[$feature]+x} ] || [[ "${SF[$feature]}" == "0" ]] || [[ "${SF[$feature]}" == "false" ]]; then
+        hierarchicalFeatures=("${hierarchicalFeatures[@]/$feature}")
+      fi
+    done
+    if [[ "${SF[safe_search]}" == "1" ]] || [[ "${SF[safe_search]}" == "true" ]]; then
+      hierarchicalFeatures+=( "safeSearch" )
+    fi
 
     for DEVICE in $DEVICES; do
         local MAC=${DEVICE/host:mac:/""}
@@ -536,16 +649,16 @@ check_hosts() {
         fi
 
         declare -A h
-        read_hash h $DEVICE
+        read_hash h "$DEVICE"
 
         local ONLINE_TS=${h[lastActiveTimestamp]}
         ONLINE_TS=${ONLINE_TS%.*}
-        if [[ ! -n $ONLINE_TS ]]; then
+        if [[ -z $ONLINE_TS ]]; then
             local ONLINE="NA"
-        elif (($ONLINE_TS < $NOW - 2592000)); then # 30days ago, hide entry
+        elif ((ONLINE_TS < NOW - 2592000)); then # 30days ago, hide entry
             unset h
             continue
-        elif (($ONLINE_TS > $NOW - 600)); then
+        elif ((ONLINE_TS > NOW - 600)); then
             local ONLINE="T"
         else
             local ONLINE=
@@ -553,8 +666,27 @@ check_hosts() {
 
         local NAME=$( ((${#h[detect]} > 2)) && jq -re 'select(has("name")) | .name' <<< "${h[detect]}" || echo -n "${h[bname]}")
 
+        declare -A fcv # feature color value
+
+        for feature in ${hierarchicalFeatures[@]}; do
+          if [[ -n ${SP[$feature]+x} ]]; then
+            [[ ${SP[$feature]} == *"true"* ]] && set_color_value $feature "T"
+            [[ ${SP[$feature]} == *"null"* ]] && set_color_value $feature "F"
+          fi
+        done
+
+        local nid=${h[intf]}
         local NETWORK_NAME=
-        if [[ -n ${h[intf]} ]]; then NETWORK_NAME=${NETWORK_UUID_NAME[${h[intf]}]}; fi
+        if [[ -n ${h[intf]+x} ]]; then
+          NETWORK_NAME=${NETWORK_UUID_NAME[${h[intf]}]}
+          for feature in ${hierarchicalFeatures[@]}; do
+            if [[ -n ${NP[$nid,$feature]+x} ]]; then
+              [[ ${NP[$nid,$feature]} == *"true"* ]] && set_color_value $feature "T"
+              [[ ${NP[$nid,$feature]} == *"null"* ]] && set_color_value $feature "F"
+            fi
+          done
+        fi
+
         local IP=${h[ipv4Addr]}
         local MAC_VENDOR=${h[macVendor]}
         local POLICY_MAC="policy:mac:${MAC}"
@@ -562,10 +694,24 @@ check_hosts() {
         declare -A p
         read_hash p $POLICY_MAC
 
+        local TAGS=${p[tags]//[\][\" ]/}
+        local USER_TAGS=${p[userTags]//[\][\" ]/}
+        local DEVICE_TAGS=${p[deviceTags]//[\][\" ]/}
+
+        for tag in $TAGS; do
+          get_tag_policy "$tag"
+          for feature in ${hierarchicalFeatures[@]}; do
+            if [[ -n ${TP[$tag,$feature]+x} ]]; then
+              [[ ${TP[$tag,$feature]} == *"true"* ]] && set_color_value $feature "T"
+              [[ ${TP[$tag,$feature]} == *"null"* ]] && set_color_value $feature "F"
+            fi
+          done
+        done
+
         local MONITORING=
         if ((IS_FIREWALLA)) || is_router $IP; then
             MONITORING="NA"
-        elif [[ -z ${p[monitor]} ]] || [[ ${p[monitor]} == "true" ]]; then
+        elif [ -z ${p[monitor]+x} ] || [[ ${p[monitor]} == "true" ]]; then
             MONITORING=""
         else
             MONITORING="F"
@@ -604,52 +750,55 @@ check_hosts() {
 
         local SS=$(if [[ ${p[safeSearch]} == *"true"* ]]; then echo "T"; fi)
         local DOH=$(if [[ ${p[doh]} == *"true"* ]]; then echo "T"; fi)
-        local UNBOUND=$(if [[ ${p[unbound]} == *"true"* ]]; then echo "T"; fi)
 
-        local TAGS=${p[tags]//[\][\" ]/}
-        local USER_TAGS=${p[userTags]//[\][\" ]/}
-        local DEVICE_TAGS=${p[deviceTags]//[\][\" ]/}
-        # TAGNAMES=""
-        # for tag in $TAGS; do
-        #     TAGNAMES="$(redis-cli hget tag:uid:$tag name | tr -d '\n')[$tag],"
-        # done
-        # TAGNAMES=$(echo $TAGNAMES | sed 's=,$==')
+        for feature in ${hierarchicalFeatures[@]}; do
+          # echo "$feature | ${p[$feature]} | ${fcv[$feature,v]}"
+          if [ -n "${p[$feature]+x}" ] && [[ "${p[$feature]}" != "${!feature[v]}" ]]; then
+            [[ "${p[$feature]}" == *"true"* ]] && set_color_value $feature "T" 1
+            [[ "${p[$feature]}" == *"null"* ]] && set_color_value $feature "F" 1
+          fi
+        done
 
         # === COLOURING ===
-        local COLOR="\e[39m"
-        local UNCOLOR="\e[0m"
-        local BGCOLOR="\e[49m"
-        local BGUNCOLOR="\e[49m"
+        local FC="\e[39m"   # front color
+        local UC="\e[0m"    # uncolor
+        local BGC="\e[49m"  # background color
+        local BGUC="\e[49m" # background uncolor
         if [[ $SIMPLE_MODE == "T" && -n $ONLINE && -z $MONITORING && $B7_MONITORING == "F" ]] &&
           ((! IS_FIREWALLA)) && ! is_router $IP; then
-            COLOR="\e[91m"
+            FC="\e[91m"
         elif [ $FLOWINCOUNT -gt 2000 ] || [ $FLOWOUTCOUNT -gt 2000 ]; then
-            COLOR="\e[33m" #yellow
+            FC="\e[33m" #yellow
         fi
         if [[ ${NAME,,} == "circle"* || ${MAC_VENDOR,,} == "circle"* ]]; then
-            BGCOLOR="\e[41m"
+            BGC="\e[41m"
         fi
 
-        local MAC_COLOR="$COLOR"
+        local MAC_COLOR="$FC"
         if [[ $MAC =~ ^.[26AEae].*$ ]] && ((! IS_FIREWALLA)); then
           MAC_COLOR="\e[35m"
         fi
 
-        TAG_COLOR="$COLOR"
+        TAG_COLOR="$FC"
         if [[ " ${NEW_DEVICE_TAGS[*]} " =~ " ${TAGS} " ]]; then
           TAG_COLOR="\e[31m"
         fi
 
         if [ -z "$ONLINE" ] || [ "$ONLINE" == "NA" ]; then
-            COLOR=$COLOR"\e[2m" #dim
+            FC=$FC"\e[2m" #dim
         fi
 
-        printf "$BGCOLOR$COLOR%35s %15s %28s %15s $MAC_COLOR%18s$COLOR %3s %2s %2s %11s %7s %6s $TAG_COLOR%3s$COLOR %2s %3s %3s %3s %3s %3s %3s %3s %3s$UNCOLOR$BGUNCOLOR\n" \
-          "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$(align::right 28 "${h[name]}")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$VPN" "$FLOWINCOUNT" \
-          "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "$EMERGENCY_ACCESS" "$DNS_BOOST" "$ADBLOCK" "$FAMILY_PROTECT" "$SS" "$DOH" "$UNBOUND"
+        printf "$BGC$FC%35s %15s %28s %15s $MAC_COLOR%18s$FC %3s %2s %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s %3s %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC$BGUC\n" \
+          "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$(align::right 28 "${h[name]}")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$(align::right 11 $VPN)" "$FLOWINCOUNT" \
+          "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "$EMERGENCY_ACCESS" "$DNS_BOOST" "${fcv[adblock,v]}" "${fcv[family,v]}" "${fcv[safeSearch,v]}" "${fcv[doh,v]}" "${fcv[unbound,v]}"
 
         unset h
         unset p
+        unset fcv
+
+        # for feature in ${hierarchicalFeatures[@]}; do
+        #   unset $feature
+        # done
     done
 
     echo ""
@@ -676,45 +825,8 @@ check_ipset() {
 
 check_sys_features() {
     echo "---------------------- System Features ------------------"
-    declare -A FEATURES
-    local FILE="$FIREWALLA_HOME/net2/config.json"
-    local USERFILE="$HOME/.firewalla/config/config.json"
 
-    # use jq where available
-    if [[ "$PLATFORM" != 'red' && "$PLATFORM" != 'blue' ]]; then
-      if [[ -f "$FILE" ]]; then
-        jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' "$FILE" |
-        while read key value; do
-          FEATURES["$key"]="$value"
-        done
-      fi
-
-      if [[ -f "$USERFILE" ]]; then
-        jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' "$USERFILE" |
-        while read key value; do
-          FEATURES["$key"]="$value"
-        done
-      fi
-    else
-      # lagacy python 2.7 solution
-      if [[ -f "$FILE" ]]; then
-        local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]); print obj2;")
-        while IFS="=" read -r key value; do
-          FEATURES["$key"]="$value"
-        done <<<"$JSON"
-      fi
-
-      if [[ -f "$USERFILE" ]]; then
-        local JSON=$(python -c "import json; obj=json.load(open('$USERFILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]) if obj.has_key('userFeatures') else ''; print obj2;")
-        if [[ "$JSON" != "" ]]; then
-          while IFS="=" read -r key value; do
-            FEATURES["$key"]="$value"
-          done <<<"$JSON"
-        fi
-      fi
-    fi
-
-    read_hash FEATURES sys:features
+    get_system_features
 
     keyList=( "ipv6" "local_domain" "family_protect" "adblock" "doh" "unbound" "dns_proxy" "safe_search" "external_scan" "device_online" "device_offline" "dual_wan" "single_wan_conn_check" "video" "porn" "game" "vpn" "cyber_security" "cyber_security.autoBlock" "cyber_security.autoUnblock" "large_upload" "large_upload_2" "abnormal_bandwidth_usage" "vulnerability" "new_device" "new_device_tag" "new_device_block" "alarm_subnet" "alarm_upnp" "alarm_openport" "acl_alarm" "vpn_client_connection" "vpn_disconnect" "vpn_restore" "spoofing_device" "sys_patch" "device_service_scan" "acl_audit" "dnsmasq_log_allow" "data_plan" "data_plan_alarm" "country" "category_filter" "fast_intel" "network_monitor" "network_monitor_alarm" "network_stats" "network_status" "network_speed_test" "network_metrics" "link_stats" "rekey" "rule_stats" "internal_scan" "accounting" "wireguard" "pcap_zeek" "pcap_suricata" "compress_flows" "event_collect" "mesh_vpn" "redirect_httpd" "upstream_dns" )
 
@@ -784,14 +896,13 @@ check_sys_features() {
     nameMap[upstream_dns]="Legacy DNS -should be off-"
 
     for key in "${keyList[@]}"; do
-        if [ -v "nameMap[$key]" ] && [ -v "FEATURES[$key]" ]; then
-            print_config "${nameMap[$key]}" "${FEATURES[$key]}" "$key"
-            unset "FEATURES[$key]"
+        if [[ -n "${nameMap[$key]+x}" ]] && [[ -n "${SF[$key]+x}" ]]; then
+            print_config "${nameMap[$key]}" "${SF[$key]}" "$key"
         fi
     done
 
-    for key in ${!FEATURES[*]}; do
-        print_config "" "${FEATURES[$key]}" "$key"
+    for key in ${!SF[@]}; do
+        [ -z "${nameMap[$key]+x}" ] && print_config "" "${SF[$key]}" "$key"
     done
 
     echo ""
@@ -855,18 +966,18 @@ check_network() {
       # echo ${IP6[@]}
       # echo ${DNS[@]}
 
-      declare -A p
-      read_hash p "policy:network:${COL[2]}"
+      local id=${COL[2]}
+      get_network_policy "$id"
 
-      local VPN=$( ((${#p[vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${p[vpnClient]}" || echo -n "")
+      local VPN=$( ((${#NP[$id,vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${NP[$id,vpnClient]}" || echo -n "")
 
       local ADBLOCK=
-      if [[ "${p[adblock]}" == "true" ]]; then ADBLOCK="T"; fi
+      if [[ "${NP[$id,adblock]}" == "true" ]]; then ADBLOCK="T"; fi
       local FAMILY_PROTECT=
-      if [[ "${p[family]}" == "true" ]]; then FAMILY_PROTECT="T"; fi
+      if [[ "${NP[$id,family]}" == "true" ]]; then FAMILY_PROTECT="T"; fi
 
-      local DOH=$(if [[ ${p[doh]} == *"true"* ]]; then echo "T"; fi)
-      local UNBOUND=$(if [[ ${p[unbound]} == *"true"* ]]; then echo "T"; fi)
+      local DOH=$(if [[ ${NP[$id,doh]} == *"true"* ]]; then echo "T"; fi)
+      local UNBOUND=$(if [[ ${NP[$id,unbound]} == *"true"* ]]; then echo "T"; fi)
 
 
       local LINE_COUNT=$(( "${#IP6[@]}" > "${#DNS[@]}" ? "${#IP6[@]}" : "${#DNS[@]}" ));
@@ -887,7 +998,6 @@ check_network() {
         fi
       done
 
-      unset p
     done < /tmp/scc_csv
     $COLUMN_OPT -t -s$'\t' /tmp/scc_csv_multline
     echo ""
@@ -917,20 +1027,19 @@ check_tag() {
     for TAG in "${TAGS[@]}"; do
       declare -A t p
       read_hash t "$TAG"
-      read_hash p "policy:tag:${t[uid]}"
-      local VPN=$( ((${#p[vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${p[vpnClient]}" || echo -n "")
+      local id=${t[uid]}
+      local VPN=$( ((${#TP[$id,vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${TP[$id,vpnClient]}" || echo -n "")
 
       local ADBLOCK=""
-      if [[ "${p[adblock]}" == "true" ]]; then ADBLOCK="T"; fi
+      if [[ "${TP[$id,adblock]}" == "true" ]]; then ADBLOCK="T"; fi
       local FAMILY_PROTECT=""
-      if [[ "${p[family]}" == "true" ]]; then FAMILY_PROTECT="T"; fi
+      if [[ "${TP[$id,family]}" == "true" ]]; then FAMILY_PROTECT="T"; fi
 
-      local DOH=$(if [[ ${p[doh]} == *"true"* ]]; then echo "T"; fi)
-      local UNBOUND=$(if [[ ${p[unbound]} == *"true"* ]]; then echo "T"; fi)
+      local DOH=$(if [[ ${TP[$id,doh]} == *"true"* ]]; then echo "T"; fi)
+      local UNBOUND=$(if [[ ${TP[$id,unbound]} == *"true"* ]]; then echo "T"; fi)
 
       printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
         "${t[uid]}" "${t[type]}" "${t[name]}" "${t[affiliatedTag]}" "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$DOH" "$UNBOUND" >>/tmp/tag_csv
-      unset t p
     done
 
     $COLUMN_OPT -t -s$'\t' /tmp/tag_csv
