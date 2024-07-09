@@ -615,9 +615,14 @@ check_hosts() {
       NEW_DEVICE_TAGS=( )
     fi
 
-    local DEVICES=$(redis-cli keys 'host:mac:*')
-    printf "%35s %15s %28s %15s %18s %3s %2s %2s %11s %7s %6s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s\n" \
-      "Host" "Network" "Name" "IP" "MAC" "Mon" "B7" "Ol" "vpnClient" "FlowOut" "FlowIn" "Grp" "Usr" "DvT" "EA" "DNS" "AdB" "Fam" "SS" "DoH" "ubn"
+    local B7_Placeholder=
+    if [[ $SIMPLE_MODE == "T" ]]; then
+      B7_Placeholder=' %2s'
+    else
+      B7_Placeholder='%.s'
+    fi
+    printf "%35s %15s %28s %15s %18s %3s$B7_Placeholder %2s %11s %7s %6s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s\n" \
+      "Host" "Network" "Name" "IP" "MAC" "Mon" "B7" "Ol" "VPNClient" "FlowOut" "FlowIn" "Grp" "Usr" "DvT" "EA" "DNS" "AdB" "Fam" "SS" "DoH" "Ubd"
     NOW=$(date +%s)
     frcc
 
@@ -643,8 +648,9 @@ check_hosts() {
       fi
     done
 
-    typeset -p hierarchicalPolicies
+    # typeset -p hierarchicalPolicies
 
+    local DEVICES=$(redis-cli keys 'host:mac:*')
     for DEVICE in $DEVICES; do
         local MAC=${DEVICE/host:mac:/""}
         # hide vpn_profile:*
@@ -799,7 +805,7 @@ check_hosts() {
             FC=$FC"\e[2m" #dim
         fi
 
-        printf "$BGC$FC%35s %15s %28s %15s $MAC_COLOR%18s$FC %3s %2s %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s %3s %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC$BGUC\n" \
+        printf "$BGC$FC%35s %15s %28s %15s $MAC_COLOR%18s$FC %3s$B7_Placeholder %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s %3s %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC$BGUC\n" \
           "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$(align::right 28 "${h[name]}")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$(align::right 11 $VPN)" "$FLOWINCOUNT" \
           "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "$EMERGENCY_ACCESS" "$DNS_BOOST" "${fcv[adblock,v]}" "${fcv[family,v]}" "${fcv[safeSearch,v]}" "${fcv[doh,v]}" "${fcv[unbound,v]}"
 
@@ -813,6 +819,7 @@ check_hosts() {
     done
 
     echo ""
+    echo "* Abbr.: B7(Spoofing Flag) Ol(Online) DvT(Device Type/Tag) EA(Emergency Access) SS(Safe Search) DoH(DNS over HTTP) Ubd(Unbound)"
     echo ""
 }
 
