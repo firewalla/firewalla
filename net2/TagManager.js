@@ -19,7 +19,6 @@ const _ = require('lodash');
 const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('./Firewalla.js');
-const sem = require('../sensor/SensorEventManager.js').getInstance();
 const sysManager = require('./SysManager.js');
 const asyncNative = require('../util/asyncNative.js');
 const Tag = require('./Tag.js');
@@ -36,13 +35,6 @@ class TagManager {
     this.tags = {};
 
     this.scheduleRefresh();
-
-    if (f.isMain()) {
-      sem.once('IPTABLES_READY', async () => {
-        log.info("Iptable is ready, apply tag policies ...");
-        this.scheduleRefresh();
-      });
-    }
 
     this.subscriber.subscribeOnce("DiscoveryEvent", "Tags:Updated", null, async (channel, type, id, obj) => {
       log.info(`Tags are updated`);
@@ -270,13 +262,6 @@ class TagManager {
           await this.tags[uid].update(o);
         } else {
           this.tags[uid] = new Tag(o);
-          if (f.isMain()) {
-            (async () => {
-              await sysManager.waitTillIptablesReady()
-              log.info(`Creating environment for tag ${uid} ${o.name} ...`);
-              await this.tags[uid].createEnv();
-            })()
-          }
         }
         markMap[uid] = true;
       }
