@@ -99,10 +99,10 @@ module.exports = class {
       this.setupAlarmQueue();
 
       if (f.isMain()) {
-        // clean timeout pending alarms every 900s
+        // clean timeout pending alarms every 60s
         setInterval(() => {
           this.cleanPendingQueue();
-        }, 900000);
+        }, 60000);
 
         sclient.subscribe("config:feature:dynamic:disable");
         sclient.subscribe("alarm:create");
@@ -161,8 +161,8 @@ module.exports = class {
 
   async cleanPendingQueue() {
     const alarmIds = await rclient.zrangeAsync(alarmPendingKey, 0, -1);
-    const deadline = new Date() / 1000 - 1800; // 1800s timeout
-    const defaultState = _.get(fc.getConfig(), 'alarms.apply.default.state') || Constants.ST_READY;
+    const timeout = parseFloat(_.get(fc.getConfig(), 'alarms.apply.default.timeout')) || 600;  // default 600s timeout, at least 60s
+    const deadline = new Date() / 1000 - Math.max(timeout, 60);
     for (const aid of alarmIds) {
       try {
         const alarmKey = alarmPrefix + aid;
@@ -177,18 +177,14 @@ module.exports = class {
         switch (data[0]) {
           case Constants.ST_INIT:
           case Constants.ST_PENDING: {
-            if (!this.isAlarmSyncMspEnabled() || (outdated && defaultState == Constants.ST_READY)) {
-                log.info('pending alarm fallback to active', aid);
-                await this.activateAlarm({state: Constants.ST_READY, aid: aid, alarmTimestamp: data[1]}, {origin:{state: data[0]}});
-            } else if (outdated) {
-                // ignore and delete from pending queue
-                await this.timeoutAlarm(aid);
-                log.warn('ignore pending alarm out of date', aid);
+            if (!this.isAlarmSyncMspEnabled() || outdated ) {
+              log.info('pending alarm fallback to active', aid);
+              await this.activateAlarm({state: Constants.ST_READY, aid: aid, alarmTimestamp: data[1]}, {origin:{state: data[0]}, 'p.msp.decision':'timeout'});
             }
             break;
           }
           case Constants.ST_READY: {
-            // activate immediately
+            // activate immediately, normally active alarms should not in pending queue
             await this.activateAlarm({state: Constants.ST_READY, aid: aid, alarmTimestamp: data[1]}, {origin:{state: data[0]}});
             break;
           }
@@ -341,17 +337,11 @@ module.exports = class {
     return alarm
   }
 
-  async timeoutAlarm(alarmID) {
-    const alarmKey = alarmPrefix + alarmID;
-    await rclient.hmsetAsync(alarmKey, 'state', Constants.ST_TIMEOUT, 'applyTimestamp', Date.now()/1000);
-    await this.archiveAlarm(alarmID);
-    await rclient.zremAsync(alarmPendingKey, alarmID);
-  }
-
   async mspIgnoreAlarm(alarmID, options={}) {
     if (options.origin && options.origin.state == Constants.ST_IGNORE){
       return
     }
+    await rclient.hsetAsync(alarmPrefix + alarmID, 'p.msp.decision', 'ignore');
     await this.archiveAlarm(alarmID);
     await rclient.zremAsync(alarmPendingKey, alarmID);
   }
@@ -607,6 +597,7 @@ module.exports = class {
   async _onState(alarm, options={}) {
     switch (alarm.state) {
       case Constants.ST_READY: {
+        options['p.msp.decision'] = 'active';
         await this.activateAlarm(alarm, options);
         break;
       }
@@ -787,7 +778,11 @@ module.exports = class {
 
     alarm.state = Constants.ST_ACTIVATED;
     const alarmKey = alarmPrefix + alarm.aid;
-    await rclient.hsetAsync(alarmKey, 'state', Constants.ST_ACTIVATED);
+    let updateAttrs = ['state', Constants.ST_ACTIVATED];
+    if (options['p.msp.decision']) {
+      updateAttrs.push('p.msp.decision', options['p.msp.decision']);
+    }
+    await rclient.hmsetAsync(alarmKey, updateAttrs);
 
     const orig_alarm = await rclient.hgetallAsync(alarmKey);
     alarm = Object.assign({}, orig_alarm, alarm);
