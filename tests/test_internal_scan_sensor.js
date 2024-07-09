@@ -489,7 +489,7 @@ describe('Test scan hosts', function(){
   this.plugin.scheduledScanTasks = {tasks:{}};
   this.plugin.subTaskWaitingQueue = [];
 
-  beforeEach((done) => (
+  before((done) => (
     async() => {
       this.policy = await rclient.hgetAsync('policy:system', 'weak_password_scan');
       fireRouter.scheduleReload();
@@ -515,7 +515,7 @@ describe('Test scan hosts', function(){
         const hostinfo = await rclient.hgetallAsync(key);
         const host = new Host(hostinfo, true);
         host.lastActiveTimestamp = currentTs;
-        hostManager.hostsdb[`host:mac:${host.mac}`] = host
+        hostManager.hostsdb[`host:mac:${host.o.mac}`] = host
         hostManager.hosts.all.push(host);
       }
       hostManager.hosts.all = _.uniqWith(hostManager.hosts.all, (a,b) => a.o.ipv4 == b.o.ipv4 && a.o.mac == b.o.mac)
@@ -523,7 +523,7 @@ describe('Test scan hosts', function(){
     })()
   );
 
-  afterEach((done) => (
+  after((done) => (
     async() => {
       await rclient.hsetAsync('policy:system', 'weak_password_scan', this.policy);
       done();
