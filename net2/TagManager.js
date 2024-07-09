@@ -258,15 +258,18 @@ class TagManager {
       for (let key of keys) {
         const o = await rclient.hgetallAsync(key);
         const uid = key.substring(keyPrefix.length);
-        // remove duplicate name tags, mainly for deviceTag bug
-        if (nameMap[o.name]) {
-          if (f.isMain()) {
-            await rclient.unlinkAsync(key);
-            this.subscriber.publish("DiscoveryEvent", "Tags:Updated");
+        // remove duplicate deviceTag
+        if (o.type == Constants.TAG_TYPE_DEVICE) {
+          if (nameMap[o.name]) {
+            if (f.isMain()) {
+              log.info('Remove duplicated deviceTag', uid)
+              await rclient.unlinkAsync(key);
+              this.subscriber.publish("DiscoveryEvent", "Tags:Updated");
+            }
+            continue
+          } else {
+            nameMap[o.name] = true
           }
-          continue
-        } else {
-          nameMap[o.name] = true
         }
         if (this.tags[uid]) {
           await this.tags[uid].update(o);
