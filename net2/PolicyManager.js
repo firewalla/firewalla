@@ -388,7 +388,7 @@ class PolicyManager {
       target.oper['ipAllocation'] = {};
       return;
     }
-    log.debug("Execute:", target.constructor.name, ip, policy);
+    log.verbose("Execute:", target.constructor.name, ip, policy);
 
     if (ip === '0.0.0.0' && target.constructor.name === "HostManager" && !policy.hasOwnProperty('qos')) {
       policy['qos'] = false;
