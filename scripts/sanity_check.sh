@@ -689,6 +689,7 @@ check_hosts() {
           if [[ -n ${SP[$policy]+x} ]]; then
             [[ ${SP[$policy]} == *"true"* ]] && set_color_value "$policy" "T"
             [[ ${SP[$policy]} == *"null"* ]] && set_color_value "$policy" "F"
+            # echo $policy ${SP[$policy]} ${fcv[$policy,v]}
           fi
         done
 
@@ -701,6 +702,7 @@ check_hosts() {
               [[ ${NP[$nid,$policy]} == *"true"* ]] && set_color_value "$policy" "T"
               [[ ${NP[$nid,$policy]} == *"null"* ]] && set_color_value "$policy" "F"
             fi
+            # echo $policy $uid ${NP[$uid,$policy]} ${fcv[$policy,v]}
           done
         fi
 
@@ -721,6 +723,7 @@ check_hosts() {
             if [[ -n ${TP[$tag,$policy]+x} ]]; then
               [[ ${TP[$tag,$policy]} == *"true"* ]] && set_color_value "$policy" "T"
               [[ ${TP[$tag,$policy]} == *"null"* ]] && set_color_value "$policy" "F"
+              # echo $policy $tag ${TP[$tag,$policy]} ${fcv[$policy,v]}
             fi
           done
         done
@@ -760,19 +763,12 @@ check_hosts() {
 
         # local DNS_BOOST=$(jq -r 'select(.dnsCaching == false) | "F"' <<< "${p[dnsmasq]}")
         local DNS_BOOST=$(if [[ ${p[dnsmasq]} == *"false"* ]]; then echo "F"; fi)
-        local ADBLOCK=""
-        if [[ "${p[adblock]}" == "true" ]]; then ADBLOCK="T"; fi
-        local FAMILY_PROTECT=""
-        if [[ "${p[family]}" == "true" ]]; then FAMILY_PROTECT="T"; fi
-
-        local SS=$(if [[ ${p[safeSearch]} == *"true"* ]]; then echo "T"; fi)
-        local DOH=$(if [[ ${p[doh]} == *"true"* ]]; then echo "T"; fi)
 
         for policy in ${hierarchicalPolicies[@]}; do
-          # echo "$feature | ${p[$feature]} | ${fcv[$feature,v]}"
           if [ -n "${p[$policy]+x}" ] && [[ "${p[$policy]}" != "${!policy[v]}" ]]; then
             [[ "${p[$policy]}" == *"true"* ]] && set_color_value $policy "T" 1
             [[ "${p[$policy]}" == *"null"* ]] && set_color_value $policy "F" 1
+            # echo "$policy | ${p[$policy]} | ${fcv[$policy,v]}"
           fi
         done
 
@@ -819,7 +815,7 @@ check_hosts() {
     done
 
     echo ""
-    echo "* Abbr.: B7(Spoofing Flag) Ol(Online) DvT(Device Type/Tag) EA(Emergency Access) SS(Safe Search) DoH(DNS over HTTP) Ubd(Unbound)"
+    echo "* Abbr.: Mon(Monitoring) B7(Spoofing Flag) Ol(Online) DvT(Device Type/Tag) EA(Emergency Access) SS(Safe Search) DoH(DNS over HTTP) Ubd(Unbound)"
     echo ""
 }
 
@@ -1058,6 +1054,8 @@ check_tag() {
 
       printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
         "${t[uid]}" "${t[type]}" "${t[name]}" "${t[affiliatedTag]}" "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$DOH" "$UNBOUND" >>/tmp/tag_csv
+
+      unset t
     done
 
     $COLUMN_OPT -t -s$'\t' /tmp/tag_csv
