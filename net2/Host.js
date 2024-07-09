@@ -1230,6 +1230,7 @@ class Host extends Monitorable {
       } else {
         log.warn(`Tag ${removedTag} not found`);
       }
+      Tag.scheduleFwapcSetGroupACL(removedTag, type);
     }
     // filter updated tags in case some tag is already deleted from system
     const updatedTags = [];
@@ -1263,6 +1264,7 @@ class Host extends Monitorable {
           log.error(`Failed to write dnsmasq tag ${uid} on mac ${this.o.mac}`, err);
         })
         updatedTags.push(uid);
+        Tag.scheduleFwapcSetGroupACL(uid, type);
       } else {
         log.warn(`Tag ${uid} not found`);
       }

@@ -32,6 +32,11 @@ const Monitorable = require('./Monitorable');
 const Constants = require('./Constants.js');
 const _ = require('lodash');
 Promise.promisifyAll(fs);
+const scheduler = require('../util/scheduler.js');
+const HostTool = require('./HostTool.js');
+const hostTool = new HostTool();
+const fwapc = require('./fwapc.js');
+const {delay} = require('../util/util.js');
 
 const envCreatedMap = {};
 
@@ -53,6 +58,9 @@ class Tag extends Monitorable {
       })
 
       log.info(`Created new ${this.getTagType()} Tag: ${this.getUniqueId()}`)
+    }
+    if (f.isMain()) {
+      this.fwapcSetGroupACLJob = new scheduler.UpdateJob(this.fwapcSetGroupACL.bind(this), 5000);
     }
     return Monitorable.instances[o.uid]
   }
@@ -189,6 +197,8 @@ class Tag extends Monitorable {
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in global effective directory
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/*/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in network-wise effective directories
     dnsmasq.scheduleRestartDNSService();
+    if (this.isIsolationEnabled())
+      await this.fwapcDeleteGroupACL().catch((err) => {});
   }
 
   async ipAllocation(policy) {
@@ -460,6 +470,41 @@ class Tag extends Monitorable {
     dnsmasq.scheduleRestartDNSService();
     this[`_${policyKey}`] = updatedTags;
     await this.setPolicyAsync(policyKey, this[`_${policyKey}`]); // keep tags in policy data up-to-date
+  }
+
+  isIsolationEnabled() {
+    return _.get(this.policy, ["isolation", "state"], false);
+  }
+
+  static async scheduleFwapcSetGroupACL(uid, type) {
+    const TagManager = require('./TagManager.js');
+    // in case tag is stored in redis but not synced into firemain, wait for it to become available in TagManager
+    let retryCount = 5;
+    while (await TagManager.tagUidExists(uid, type) && retryCount-- > 0) {
+      const tag = await TagManager.getTagByUid(uid);
+      if (tag) {
+        tag.fwapcSetGroupACLJob.exec().catch((err) => {});
+        break;
+      }
+      await delay(3000);
+    }
+  }
+
+  async fwapcSetGroupACL() {
+    if (!this.isIsolationEnabled())
+        return;
+    const HostManager = require('./HostManager.js');
+    const hostManager = new HostManager();
+    const macs = await hostManager.getTagMacs(this.o.uid).then(results => results.filter(m => hostTool.isMacAddress(m)));
+    await fwapc.setGroupACL(this.o.uid, macs).catch((err) => {
+      log.error(`Failed to set group ACL in fwapc for ${this.getTagType()} ${this.o.uid}`, err.message);
+    });
+  }
+
+  async fwapcDeleteGroupACL() {
+    await fwapc.deleteGroupACL(this.o.uid).catch((err) => {
+      log.error(`Failed to delete group ACL in fwapc for ${this.getTagType()} ${this.o.uid}`, err.message);
+    });
   }
 }
 
