@@ -37,7 +37,6 @@ class TagManager {
     this.scheduleRefresh();
 
     this.subscriber.subscribeOnce("DiscoveryEvent", "Tags:Updated", null, async (channel, type, id, obj) => {
-      log.info(`Tags are updated`);
       this.scheduleRefresh();
     });
 
@@ -255,9 +254,20 @@ class TagManager {
     }
     for (const keyPrefix of keyPrefixes) {
       const keys = await rclient.scanResults(`${keyPrefix}*`);
+      const nameMap = {}
       for (let key of keys) {
         const o = await rclient.hgetallAsync(key);
         const uid = key.substring(keyPrefix.length);
+        // remove duplicate name tags, mainly for deviceTag bug
+        if (nameMap[o.name]) {
+          if (f.isMain()) {
+            await rclient.unlinkAsync(key);
+            this.subscriber.publish("DiscoveryEvent", "Tags:Updated");
+          }
+          continue
+        } else {
+          nameMap[o.name] = true
+        }
         if (this.tags[uid]) {
           await this.tags[uid].update(o);
         } else {

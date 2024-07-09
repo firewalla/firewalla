@@ -47,6 +47,7 @@ class Tag extends Monitorable {
       if (f.isMain()) (async () => {
         await sysManager.waitTillIptablesReady()
         await this.createEnv();
+        await this.applyPolicy();
       })().catch(err => {
         log.error(`Error initializing Host ${this.o.mac}`, err);
       })
