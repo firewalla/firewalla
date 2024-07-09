@@ -162,9 +162,9 @@
       "ignoreServices": ["_airdrop", "_continuity", "_googlezone", "_matter"],
       "nonReadableNameServices": [
         "_raop", "_sleep-proxy", "_remotepairing", "_remotepairing-tunnel", "_apple-mobdev2",
-        "_asquic", "_dacp", "_spotify-connect", "_trel"
+        "_asquic", "_dacp", "_spotify-connect", "_spotify-social-listening", "_trel"
       ],
-      "ignoreNames": ["Spotify Group Session"]
+      "ignoreNames": []
     },
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
@@ -796,6 +796,7 @@
         }
       }
     },
+    "IsolationPlugin": {},
     "NicCalibrationSensor": {},
     "NicStateSensor": {},
     "DeviceMonitorSensor": {}
