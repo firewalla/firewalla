@@ -383,12 +383,16 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  async hostsToJson(json) {
+  async hostsToJson(json, options) {
     let _hosts = [];
     for (let i in this.hosts.all) {
       _hosts.push(this.hosts.all[i].toJson());
     }
     json.hosts = _hosts;
+    // Reduce json size of init response
+    if (!options.includeScanResults) {
+      return;
+    }
     await Promise.all(_hosts.map(async host => {
       await this.enrichWeakPasswordScanResult(host, "mac");
       await this.enrichNseScanResult(host, "mac", "suspect");
@@ -712,7 +716,7 @@ module.exports = class HostManager extends Monitorable {
       }),
       this.loadHostsPolicyRules(),
     ])
-    await this.hostsToJson(json);
+    await this.hostsToJson(json, options);
 
     // _totalHosts and _totalPrivateMacHosts will be updated in getHostsAsync
     json.totalHosts = this._totalHosts;
