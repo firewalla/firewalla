@@ -288,6 +288,7 @@ class Monitorable {
 
   async applyPolicy() {
     await lock.acquire(`LOCK_APPLY_POLICY_${this.getGUID()}`, async () => {
+      log.verbose(`Applying policy for ${this.constructor.getClassName()} ${this.getUniqueId()}`)
       // policies should be in sync with messageBus, still read here to make sure everything is in sync
       await this.loadPolicyAsync();
       const policy = JSON.parse(JSON.stringify(this.policy));
