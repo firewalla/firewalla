@@ -17,14 +17,14 @@
 
 const log = require('../net2/logger.js')(__filename);
 
-const sem = require('./SensorEventManager.js').getInstance();
-
 const extensionManager = require('./ExtensionManager.js')
 const Sensor = require('./Sensor.js').Sensor;
 
-const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js')
+const pclient = require('../util/redis_manager.js').getPublishClient();
+
 const am2 = new AlarmManager2();
+
 
 class AlarmSensor extends Sensor {
   constructor(config) {
@@ -32,33 +32,33 @@ class AlarmSensor extends Sensor {
   }
 
   async apiRun() {
+    // data: {type: ALARM_XX, timestamp: optional, device: optional, info:{}}
     extensionManager.onCmd("alarm:create", async (msg, data) => {
-      await this._genAlarm(data);
+      if (!am2.isAlarmSyncMspEnabled()) {
+        return {err: "alarm sync msp disabled"};
+      }
+
+      if (!data || !data.type) {
+        return {err: "must specify alarm type"};
+      }
+
+      if (!data.info) {
+        data.info = {}
+      }
+      data.info['p.createFrom'] = 1; // 1 for msp
+      await pclient.publishAsync("alarm:create", JSON.stringify(data));
+        
+      return {ok: true};
     });
-  }
 
-  async _genAlarm(options = {}) {
-    const type = options.type;
-    const ip = options["p.device.ip"];
-
-    if(!type || !ip) {
-      log.info("require type and ip");
-      return;
-    }
-
-    let alarm = null;
-
-    switch (type) {
-      case "ALARM_INTEL":
-        alarm = new Alarm.IntelAlarm(new Date() / 1000, ip, "major", options);
-        break;
-      case "ALARM_VIDEO":
-        alarm = new Alarm.VideoAlarm(new Date() / 1000, ip, "major", options);
-        break;
-    }
-
-    await am2.enrichDeviceInfo(alarm);
-    am2.enqueueAlarm(alarm); // use enqueue to ensure no dup alarms
+    // data: {'apply':[ alarm: {aid: XX, state: 0} ]};
+    extensionManager.onCmd('alarm:mspsync', async(msg, data) => {
+      if (!am2.isAlarmSyncMspEnabled()) {
+        return {err: "feature disabled"};
+      }
+      await pclient.publishAsync("alarm:mspsync", JSON.stringify(data));
+      return {ok: true};
+    });
   }
 }
 

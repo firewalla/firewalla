@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,7 +19,7 @@ const log = require('../net2/logger.js')(__filename);
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Sensor = require('./Sensor.js').Sensor;
-const cp = require('child_process');
+const { exec } = require('child-process-promise')
 
 const Firewalla = require('../net2/Firewalla');
 
@@ -182,6 +182,9 @@ class NmapSensor extends Sensor {
   }
 
   run() {
+    // patch script for error "Failed to scan: Error: next_template: parse error (cpe delimiter not '/') on line 11594 of nmap-service-probes"
+    exec(String.raw`sudo sed -i 's/cpe:|h:siemens:315-2pn\/dp|/cpe:\/h:siemens:315-2pn%2Fdp\//' /usr/share/nmap/nmap-service-probes`).catch(()=>{})
+
     this.scheduleReload();
     setInterval(() => {
       this.checkAndRunOnce(false);
@@ -228,7 +231,7 @@ class NmapSensor extends Sensor {
 
       try {
         const hosts = await NmapSensor.scan(cmd)
-        log.info("Analyzing scan result...");
+        log.verbose("Analyzing scan result...", range);
 
         if (hosts.length === 0) {
           log.info("No device is found for network", range);
@@ -247,17 +250,7 @@ class NmapSensor extends Sensor {
     setTimeout(() => {
       log.info("publish Scan:Done after scan is finished")
       this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
-    }, 3 * 1000)
-
-    Firewalla.isBootingComplete()
-      .then((result) => {
-        if (!result) {
-          setTimeout(() => {
-            log.info("publish Scan:Done after scan is finished")
-            this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
-          }, 7 * 1000)
-        }
-      })
+    }, await Firewalla.isBootingComplete() ? 3000 : 7000)
   }
 
   async _processHost(host, intf) {
@@ -318,46 +311,23 @@ class NmapSensor extends Sensor {
     return this.enabled;
   }
 
-  static scan(cmd) {
+  static async scan(cmd) {
     log.debug("Running command:", cmd);
 
-    return new Promise((resolve, reject) => {
-      cp.exec(cmd, (err, stdout, stderr) => {
+    const result = await exec(cmd)
+    const findings = JSON.parse(result.stdout);
+    if (!findings)
+      throw new Error("Invalid nmap scan result, " + cmd)
 
-        if (err || stderr) {
-          reject(err || new Error(stderr));
-          return;
-        }
+    let hostsJSON = findings.nmaprun && findings.nmaprun.host;
+    if (!hostsJSON)
+      throw new Error("Invalid nmap scan result, " + cmd)
 
-        let findings = null;
-        try {
-          findings = JSON.parse(stdout);
-        } catch (err) {
-          reject(err);
-        }
+    if (hostsJSON.constructor !== Array) {
+      hostsJSON = [hostsJSON];
+    }
 
-        if (!findings) {
-          reject(new Error("Invalid nmap scan result,", cmd));
-          return;
-        }
-
-        let hostsJSON = findings.nmaprun && findings.nmaprun.host;
-
-        if (!hostsJSON) {
-          reject(new Error("Invalid nmap scan result,", cmd));
-          return;
-        }
-
-        if (hostsJSON.constructor !== Array) {
-          hostsJSON = [hostsJSON];
-        }
-
-        let hosts = hostsJSON.map(NmapSensor.parseNmapHostResult);
-
-        resolve(hosts);
-      })
-    });
-
+    return hostsJSON.map(NmapSensor.parseNmapHostResult);
   }
 }
 

@@ -27,6 +27,7 @@ const fc = require('../net2/config.js');
 const Constants = require('../net2/Constants.js');
 const Message = require('../net2/Message.js');
 const IdentityManager = require('../net2/IdentityManager.js');
+const sysManager = require('../net2/SysManager.js');
 
 class VPNHook extends Hook {
   constructor() {
@@ -47,12 +48,13 @@ class VPNHook extends Hook {
     const peerIP4 = event.client.peerIP4;
     const peerIP6 = event.client.peerIP6;
     const profile = event.client.profile;
+    const intf = event.client.intf;
     const vpnType = event.client.vpnType || Constants.VPN_TYPE_OVPN;
-    log.info(util.format("A new VPN client is connected, remote: %s, vpn type: %s, peer ipv4: %s, peer ipv6: %s, profile: %s", remoteIP, vpnType, peerIP4, peerIP6, profile));
-    this.createAlarm(remoteIP, peerIP4, peerIP6, profile, vpnType, "vpn_client_connection");
+    log.info(util.format("A new VPN client is connected, remote: %s, vpn type: %s, peer ipv4: %s, peer ipv6: %s, profile: %s, intf: %s", remoteIP, vpnType, peerIP4, peerIP6, profile, intf));
+    this.createAlarm(remoteIP, peerIP4, peerIP6, profile, vpnType, "vpn_client_connection", intf);
   }
 
-  createAlarm(remoteIP, peerIP4, peerIP6, profile, vpnType = Constants.VPN_TYPE_OVPN, type) {
+  createAlarm(remoteIP, peerIP4, peerIP6, profile, vpnType = Constants.VPN_TYPE_OVPN, type, intf) {
     type = type || "vpn_client_connection";
 
     if (!fc.isFeatureOn(type)) {
@@ -63,12 +65,16 @@ class VPNHook extends Hook {
     const Alarm = require('../alarm/Alarm.js');
     const AM2 = require('../alarm/AlarmManager2.js');
     const am2 = new AM2();
+    const intfObj = sysManager.getInterface(intf);
 
     const alarmPayload = {
       "p.dest.id": remoteIP,
       "p.dest.ip": remoteIP,
       "p.vpnType": vpnType
     };
+
+    if (intfObj && intfObj.uuid)
+      alarmPayload["p.intf.id"] = intfObj.uuid;
 
     switch (vpnType) {
       case Constants.VPN_TYPE_OVPN:
