@@ -42,10 +42,7 @@ class AlarmSensor extends Sensor {
         return {err: "must specify alarm type"};
       }
 
-      if (!data.info) {
-        data.info = {}
-      }
-      data.info['p.createFrom'] = 1; // 1 for msp
+      data['p.createFrom'] = 1; // 1 for msp
       await pclient.publishAsync("alarm:create", JSON.stringify(data));
         
       return {ok: true};
