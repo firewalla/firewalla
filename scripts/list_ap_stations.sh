@@ -150,7 +150,7 @@ do
     timeit read
     ap_name=$(echo "$ap_mac_name"| awk -F'\t' "/$ap_mac/ {print \$2}")
     timeit ap_name
-    sta_timestamp=$(date -d @$sta_ts 2>/dev/null || echo $NO_VALUE)
+    sta_timestamp=$(date -d @$sta_ts -Iseconds 2>/dev/null || echo $NO_VALUE)
     timeit timestamp
 
     for stacp in $STA_COLS
