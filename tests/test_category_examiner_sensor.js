@@ -25,6 +25,8 @@ const bone = require('../lib/Bone.js');
 const log = require('../net2/logger.js')(__filename);
 const CategoryExaminerPlugin = require('../sensor/CategoryExaminerPlugin.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const CategoryUpdater = require('../control/CategoryUpdater.js');
+const categoryUpdater = new CategoryUpdater();
 
 const plugin = new CategoryExaminerPlugin();
 
@@ -40,30 +42,78 @@ plugin.cache = new LRU({
 describe('Test category examiner', function(){
   this.timeout(30000);
 
-  beforeEach((done) => {
+  before((done) => {
     (async() =>{
+        process.title="FireMain";
         bone.setEndpoint(await rclient.getAsync('sys:bone:url'));
         const jwt = await rclient.getAsync('sys:bone:jwt');
         bone.setToken(jwt);
+        await categoryUpdater.activateCategory('av');
+        await categoryUpdater.activateCategory('av_bf');
+        await categoryUpdater.activateCategory('porn');
+        await categoryUpdater.activateCategory('porn_bf');
+        await categoryUpdater.activateCategory('games');
+        await categoryUpdater.activateCategory('games_bf');
+        await fc.syncDynamicFeatures();
         done();
     })();
   });
 
-  afterEach((done) => {
+  after((done) => {
     done();
   });
 
-  it('should find category', async() => {
-    log.error("test find category")
-    expect(await plugin._findCategory("www.onlyfans.com")).to.be.eql(['porn']);
-    expect(await plugin._findCategory("static2.onlyfans.com")).to.be.eql(['porn']);
-    expect(await plugin._findCategory("stats.zotabox.com")).to.be.eql(['adblock_strict']);
+  it('should get category intels', async() => {
+    expect((await plugin._getCloudIntels("www.onlyfans.com")).map(i => i.c)).to.be.eql(['porn']);
+    expect((await plugin._getCloudIntels("static2.onlyfans.com")).map(i => i.c)).to.be.eql(['porn']);
+    expect((await plugin._getCloudIntels("clienttoken.spotify.com")).map(i => i.c)).to.be.eql([]);
+    expect((await plugin._getCloudIntels("www.spotify.com")).map(i => i.c)).to.be.eql([]);
+    expect((await plugin._getCloudIntels("accounts.nintendo.com")).map(i => i.c)).to.be.eql(['games']);
+    expect((await plugin._getCloudIntels("cdn.accounts.nintendo.com")).map(i => i.c)).to.be.eql(['games']);
+    expect((await plugin._getCloudIntels("store.steampowered.com")).map(i => i.c)).to.be.eql(['games']);
+    expect((await plugin._getCloudIntels("stats.zotabox.com")).map(i => i.c)).to.be.eql(['ad']);
+  });
+
+  it('should get exclude domains', async() => {
+    const results = await plugin._getCategoryExcludeDomains(['av_bf', 'porn_bf', 'games']);
+    expect(results.games.length).to.be.equal(await rclient.scardAsync('category:games:exclude:domain'));
+    expect(results.porn_bf.length).to.be.equal(await rclient.scardAsync('category:porn:exclude:domain'));
+    expect(results.av_bf.length).to.be.equal(await rclient.scardAsync('category:av:exclude:domain'));
   });
 
   it('should confirm set', async() => {
     plugin.confirmSet.add("porn_bf:*.onlyfans.com:www.onlyfans.com");
     plugin.confirmSet.add("porn_bf:*.static.onlyfans.com:static2.onlyfans.com");
     await plugin.confirmJob();
+  });
+
+  it('should detect domain', async() => {
+    await plugin.detectDomain("global.poe.live-video.net");
+    expect(plugin.confirmSet.size).to.be.equal(0);
+
+    await plugin.detectDomain("youtu.be");
+    expect(plugin.confirmSet.size).to.be.equal(0);
+
+    await plugin.detectDomain("cdn.accounts.nintendo.com");
+    expect(plugin.confirmSet.size).to.be.equal(1);
+
+    await plugin.detectDomain("accounts.nintendo.com");
+    expect(plugin.confirmSet.size).to.be.not.empty;
+
+    await plugin.detectDomain("store.steampowered.com");
+    expect(plugin.confirmSet.size).to.be.not.empty;
+
+    await plugin.detectDomain("www.onlyfans.com");
+    expect(plugin.confirmSet.size).to.be.not.empty;
+
+    await plugin.detectDomain("www.pornhub.com");
+    expect(plugin.confirmSet.size).to.be.not.empty;
+  });
+
+  it("should refresh category filter", async() => {
+    await plugin.refreshCategoryFilter("av_bf");
+    await plugin.refreshCategoryFilter("porn_bf");
+    await plugin.refreshCategoryFilter("games_bf");
   });
 
 });
@@ -89,7 +139,7 @@ describe('Test match domain', function(){
     log.debug("match result", resp)
     expect(resp.results.length).to.be.not.empty;
     expect(resp.results.map(i => i.status)).to.be.include('Match');
-    expect(resp.results.map(i => i.item)).to.be.include('*.static.onlyfans.com');
+    expect(resp.results.filter(i => i.status=='Match').map(i => i.item)).to.be.include('*.onlyfans.com');
   });
 
   it('should match domain', async() => {
