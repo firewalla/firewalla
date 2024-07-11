@@ -1389,7 +1389,7 @@ class netBot extends ControllerBot {
       case "hosts": {
         const json = {};
         const includeVPNDevices = (value && value.includeVPNDevices) || false;
-        await this.hostManager.hostsInfoForInit(json)
+        await this.hostManager.hostsInfoForInit(json, {includeScanResults:true});
         if (includeVPNDevices)
           await this.hostManager.identitiesForInit(json)
         return json

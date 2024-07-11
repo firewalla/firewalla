@@ -64,6 +64,7 @@ const STATE_QUEUED = "queued";
 const featureName = 'weak_password_scan';
 const policyKeyName = 'weak_password_scan';
 const MIN_CRON_INTERVAL = 86400; // at most one job every 24 hours, to avoid job queue congestion
+const TTL_SEC = 2678400; // expire in 86400 * 31 seconds
 
 class InternalScanSensor extends Sensor {
   constructor(config) {
@@ -489,6 +490,7 @@ class InternalScanSensor extends Sensor {
 
   async saveToRedis(hostId, result) {
     await rclient.setAsync(`weak_password_scan:${hostId}`, JSON.stringify(result));
+    await rclient.expireAsync(`weak_password_scan:${hostId}`, TTL_SEC);
   }
 
   async saveScanTasks() {

@@ -384,7 +384,7 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  async hostsToJson(json) {
+  async hostsToJson(json, options) {
     let _hosts = [];
     for (let i in this.hosts.all) {
       _hosts.push(this.hosts.all[i].toJson());
@@ -392,7 +392,14 @@ module.exports = class HostManager extends Monitorable {
     json.hosts = _hosts;
     if (platform.isFireRouterManaged())
       await this.enrichSTAInfo(_hosts);
-    await this.enrichWeakPasswordScanResult(_hosts);
+    // Reduce json size of init response
+    if (!options.includeScanResults) {
+      return;
+    }
+    await Promise.all(_hosts.map(async host => {
+      await this.enrichWeakPasswordScanResult(host, "mac");
+      await this.enrichNseScanResult(host, "mac", "suspect");
+    }));
   }
 
   async enrichSTAInfo(hosts) {
@@ -434,13 +441,6 @@ module.exports = class HostManager extends Monitorable {
         json.pairingAssets = pairingAssets;
       }
     }
-  }
-
-  async enrichWeakPasswordScanResult(hosts) {
-    await Promise.all(hosts.map(async host => {
-      await this.enrichWeakPasswordScanResult(host, "mac");
-      await this.enrichNseScanResult(host, "mac", "suspect");
-    }));
   }
 
   async enrichWeakPasswordScanResult(host, uidKey) {
@@ -555,7 +555,8 @@ module.exports = class HostManager extends Monitorable {
         if (!_.isEmpty(appCloudConfig.appConfs[app].features))
             appConfs[app] = _.pick(appCloudConfig.appConfs[app], "features");
       }
-      json.appConfs = appConfs;
+      if (!_.isEmpty(appConfs))
+        json.appConfs = appConfs;
     }
   }
 
@@ -760,7 +761,7 @@ module.exports = class HostManager extends Monitorable {
       }),
       this.loadHostsPolicyRules(),
     ])
-    await this.hostsToJson(json);
+    await this.hostsToJson(json, options);
 
     // _totalHosts and _totalPrivateMacHosts will be updated in getHostsAsync
     json.totalHosts = this._totalHosts;
