@@ -110,6 +110,18 @@ class CategoryUpdater extends CategoryUpdaterBase {
                   log.error(`Failed to update category domain ${event.category}`, err.message);
                 }
               }
+
+              // check if category filter exists to update
+              const bf_strategy = await this.getStrategy(event.category + '_bf');
+              if (bf_strategy && this.isActivated(event.category + '_bf')) {
+                if (bf_strategy.dnsmasq.enabled && bf_strategy.dnsmasq.useFilter)
+                  sem.emitEvent({
+                    type: "REFRESH_CATEGORY_FILTER",
+                    message: "Refresh category fitler " + event.category + '_bf',
+                    category: event.category + '_bf',
+                    toProcess: "FireMain"
+                  });
+              };
             }
           }
         });
