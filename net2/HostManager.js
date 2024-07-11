@@ -507,7 +507,8 @@ module.exports = class HostManager extends Monitorable {
         if (!_.isEmpty(appCloudConfig.appConfs[app].features))
             appConfs[app] = _.pick(appCloudConfig.appConfs[app], "features");
       }
-      json.appConfs = appConfs;
+      if (!_.isEmpty(appConfs))
+        json.appConfs = appConfs;
     }
   }
 
