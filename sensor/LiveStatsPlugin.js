@@ -196,7 +196,7 @@ class LiveStatsPlugin extends Sensor {
               throw new Error(`Invalid Interface ${target}`)
             }
             const name = intf.name
-            response.throughput = [ Object.assign( {name, target, type}, this.getIntfThroughput(vpnClient.name) ) ]
+            response.throughput = [ Object.assign( {name, target, type}, this.getIntfThroughput(name) ) ]
             break
           }
           case 'system': {
@@ -245,7 +245,7 @@ class LiveStatsPlugin extends Sensor {
         const intfs = fireRouter.getLogicIntfNames();
         const intfStats = [];
         const promises = intfs.map( async (intf) => {
-          const rate = await this.getRate(intf);
+          const rate = this.getIntfThroughput(intf);
           intfStats.push(rate);
         });
         promises.push(delay(1000)); // at least wait for 1 sec
@@ -518,14 +518,25 @@ class LiveStatsPlugin extends Sensor {
 
   getIntfThroughput(intf) {
     let intfCache = this.streamingCache[intf]
+    const interval = 2 // get nic stats every 2 sec to align with iftop
     if (!intfCache) {
       intfCache = this.streamingCache[intf] = {}
-      intfCache.interval = setInterval(() => {
-        this.getRate(intf)
-          .then(res => Object.assign(intfCache, res))
-      }, 1000)
+      intfCache.interval = setInterval(async () => {
+        try {
+          const c = await this.getIntfStats(intf)
+          const p = intfCache.prev || { tx: 0, rx: 0 }
+          Object.assign(intfCache, {
+            name: intf,
+            rx: c.rx > p.rx ? (c.rx - p.rx) / interval : 0,
+            tx: c.tx > p.tx ? (c.tx - p.tx) / interval : 0,
+            prev: c
+          })
+        } catch (err) {
+          log.error('failed to fetch stats for', intf, err.message)
+        }
+      }, interval * 1000)
     }
-    intfCache.ts = Math.floor(new Date() / 1000)
+    intfCache.ts = Math.floor(Date.now() / 1000)
 
     return { name: intf, rx: intfCache.rx || 0, tx: intfCache.tx || 0 }
   }
@@ -533,22 +544,7 @@ class LiveStatsPlugin extends Sensor {
   async getIntfStats(intf) {
     const rx = await fsp.readFile(`/sys/class/net/${intf}/statistics/rx_bytes`, 'utf8').catch(() => 0);
     const tx = await fsp.readFile(`/sys/class/net/${intf}/statistics/tx_bytes`, 'utf8').catch(() => 0);
-    return {rx, tx};
-  }
-
-  async getRate(intf) {
-    try {
-      const s1 = await this.getIntfStats(intf);
-      await delay(1000);
-      const s2 = await this.getIntfStats(intf);
-      return {
-        name: intf,
-        rx: s2.rx > s1.rx ? s2.rx - s1.rx : 0,
-        tx: s2.tx > s1.tx ? s2.tx - s1.tx : 0
-      }
-    } catch(err) {
-      log.error('failed to fetch stats for', intf, err.message)
-    }
+    return {rx: Number(rx), tx: Number(tx)};
   }
 
   async getFlows(type, target, ts, opts) {
