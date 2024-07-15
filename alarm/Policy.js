@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -156,16 +156,20 @@ class Policy {
     return this.expire || this.cronTime;
   }
 
-  isEqual(val1, val2) {
+  static fieldEqual(val1, val2, name) {
+    if (name == 'seq')
+      return (val1 || Constants.RULE_SEQ_REG) == (val2 || Constants.RULE_SEQ_REG)
     if (val1 === val2) return true;
     // undefined and "" should be consider as equal for compatible purpose
     // "" will be undefined when get it from redis
     if (val1 === undefined && val2 === "") return true;
     if (val2 === undefined && val1 === "") return true;
+    if (_.isObject(val1) && _.isObject(val2))
+      return _.isEqual(val1, val2);
     return false;
   }
 
-  isEqualToPolicy(policy) {
+  isEqual(policy) {
     if (!policy) {
       return false
     }
@@ -175,10 +179,10 @@ class Policy {
     const compareFields = ["type", "target", "expire", "cronTime", "remotePort",
       "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
       "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
-      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", "snatIP", "flowIsolation", "dscpClass"];
+      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", "snatIP", "flowIsolation", "dscpClass", "appTimeUsage"];
 
     for (const field of compareFields) {
-      if (!this.isEqual(this[field], policy[field])) {
+      if (!Policy.fieldEqual(this[field], policy[field], field)) {
         return false;
       }
     }
@@ -194,6 +198,40 @@ class Policy {
 
     return false
   }
+
+  getSeq() {
+    return this.seq
+      || (this.isSecurityBlockPolicy() || this.isActiveProtectRule()) && Constants.RULE_SEQ_HI
+      || (this.isInboundAllowRule() || this.isInboundFirewallRule()) && Constants.RULE_SEQ_LO
+      || Constants.RULE_SEQ_REG
+  }
+
+  priorityCompare(policy) {
+    if ((this.seq || Constants.RULE_SEQ_REG) != (policy.seq || Constants.RULE_SEQ_REG)) {
+      return (this.seq || Constants.RULE_SEQ_REG) - (policy.seq || Constants.RULE_SEQ_REG)
+    }
+
+    const scopeLevel = (policy) => {
+      if (!_.isEmpty(policy.scope) || !_.isEmpty(policy.guids)) return 1
+      if (!_.isEmpty(policy.tags)) {
+        if (policy.tags.some(tag => tag.startsWith(Policy.TAG_PREFIX))) return 2
+        if (policy.tags.some(tag => tag.startsWith(Policy.INTF_PREFIX))) return 3
+      }
+      return 4
+    }
+
+    const levelThis = scopeLevel(this)
+    const levelThat = scopeLevel(policy)
+    if (levelThis != levelThat)
+      return levelThis - levelThat
+
+    if (this.action == policy.action) return 0
+    if (this.action == 'allow' && ['block', 'app_block'].includes(policy.action)) return -1
+    if (['block', 'app_block'].includes(this.action) && policy.action == 'allow') return 1
+
+    return NaN
+  }
+
   getIdleInfo() {
     if (this.idleTs) {
       const idleTs = Number(this.idleTs);
@@ -242,6 +280,76 @@ class Policy {
     return isSecurityPolicy || isAutoBlockPolicy;
   }
 
+  // x is the rule being checked
+  isRouteRuleToVPN() {
+    return this.action === "route" &&
+      this.routeType === "hard" &&
+      this.wanUUID;
+  }
+
+  isBlockingInternetRule() {
+    return this.action == "block" &&
+      this.type === "mac" &&
+      ["outbound", "bidirection"].includes(this.direction);
+  }
+
+  isBlockingIntranetRule() {
+    return this.action == "block" &&
+      this.type === "intranet" &&
+      ["outbound", "bidirection"].includes(this.direction);
+  }
+
+  isInboundInternetBlockRule() {
+    return this.action == "block" &&
+      this.direction === "inbound" &&
+      this.type == "mac";
+  }
+
+  isInboundInternetAllowRule() {
+    return this.action == "allow" &&
+      this.direction === "inbound" &&
+      this.type == "mac";
+  }
+
+  isInboundIntranetBlockRule() {
+    return this.action == "block" &&
+      this.direction === "inbound" &&
+      this.type == "intranet";
+  }
+
+  isInboundIntranetAllowRule() {
+    return this.action == "allow" &&
+      this.direction === "inbound" &&
+      this.type == "intranet";
+  }
+
+  isOutboundAllowRule() {
+    return this.action == "allow" &&
+      ["outbound", "bidirection"].includes(this.direction) &&
+      ["mac", "intranet"].includes(this.type);
+  }
+
+  isActiveProtectRule() {
+    return this.target == "default_c" && this.type === "category" && this.action == "block";
+  }
+
+  isInboundAllowRule() {
+    return this && this.direction === "inbound"
+      && this.action === "allow"
+      // exclude local rules
+      && this.type !== "intranet" && this.type !== "network" && this.type !== "tag" && this.type !== "device";
+  }
+
+  isInboundFirewallRule() {
+    return this && this.direction === "inbound"
+      && this.action === "block"
+      && (_.isEmpty(this.target) || this.target === 'TAG') // TAG was used as a placeholder for internet block
+      && _.isEmpty(this.scope)
+      && _.isEmpty(this.tag)
+      && _.isEmpty(this.guids)
+      && (this.type === 'mac' || this.type === 'internet')
+  }
+
   isDisabled() {
     return this.disabled && this.disabled == '1'
   }
@@ -270,11 +378,6 @@ class Policy {
 
     if (!alarm.needPolicyMatch()) {
       log.debug(`mismatch, invalid alarm type ${alarm.constructor.name}`)
-      return false;
-    }
-
-    if ((this.action || "block") != "block") {
-      log.debug(`mismatch, non block policy`)
       return false;
     }
 
