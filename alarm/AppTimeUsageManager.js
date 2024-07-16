@@ -246,6 +246,12 @@ class AppTimeUsageManager {
     this.registeredPolicies[pid] = policy;
     const periodJob = new CronJob(period, async () => {
       await lock.acquire(LOCK_RW, async () => {
+        if (this.jobs[pid] !== periodJob) {
+          log.warn(`This period job on policy ${pid} should already be stopped, stop it anyway ...`);
+          periodJob.stop();
+          return;
+        }
+        log.info(`Running period job on policy ${pid}`);
         await this.refreshPolicy(policy);
       }).catch((err) => {
         log.error(`Failed to refresh policy period`, policy, err.message);
