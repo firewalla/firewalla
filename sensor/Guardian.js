@@ -393,7 +393,7 @@ module.exports = class {
     this._stop();
   }
 
-  async isMspRelatedRule(rule, mspData) {
+  async isMspRelatedRule(rule, { mspData }) {
     const mspId = await this.getMspId();
     if (rule.msp_id == mspId && (p.msp_rid || p.purpose == 'mesh')) return true; // msp global rule or vpn mesh rule
     if (mspData && mspData.targetlists) {
