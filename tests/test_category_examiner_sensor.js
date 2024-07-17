@@ -54,6 +54,7 @@ describe('Test category examiner', function(){
         await categoryUpdater.activateCategory('porn_bf');
         await categoryUpdater.activateCategory('games');
         await categoryUpdater.activateCategory('games_bf');
+        await categoryUpdater.activateCategory('oisd');
         await fc.syncDynamicFeatures();
         done();
     })();
@@ -84,6 +85,7 @@ describe('Test category examiner', function(){
   it('should confirm set', async() => {
     plugin.confirmSet.add("porn_bf:*.onlyfans.com:www.onlyfans.com");
     plugin.confirmSet.add("porn_bf:*.static.onlyfans.com:static2.onlyfans.com");
+    plugin.confirmSet.add("oisd:*.zztube.com:www.zztube.com");
     await plugin.confirmJob();
   });
 
@@ -108,6 +110,10 @@ describe('Test category examiner', function(){
 
     await plugin.detectDomain("www.pornhub.com");
     expect(plugin.confirmSet.size).to.be.not.empty;
+
+    await plugin.detectDomain("s-odx.oleads.com");
+    log.debug("confirmSet", plugin.confirmSet);
+    expect(plugin.confirmSet.size).to.be.not.empty;
   });
 
   it("should refresh category filter", async() => {
@@ -121,7 +127,7 @@ describe('Test category examiner', function(){
 describe('Test match domain', function(){
   this.timeout(30000);
 
-  beforeEach((done) => {
+  before((done) => {
     (async() =>{
       bone.setEndpoint(await rclient.getAsync('sys:bone:url'));
       const jwt = await rclient.getAsync('sys:bone:jwt');
@@ -130,7 +136,7 @@ describe('Test match domain', function(){
     })();
   });
 
-  afterEach((done) => {
+  after((done) => {
     done();
   });
 
@@ -154,5 +160,11 @@ describe('Test match domain', function(){
     const domainList = ['*.onlyfans.com'];
     const result = await plugin.confirmDomainsFromCloud('porn_bf', domainList)
     expect(result).to.be.eql(['*.onlyfans.com']);
+  });
+
+  it('should confirm domains', async() => {
+    const domainList = ['s-odx.oleads.com'];
+    const result = await plugin.confirmDomainsFromCloud('oisd', domainList)
+    expect(result).to.be.eql(['s-odx.oleads.com']);
   });
 });
