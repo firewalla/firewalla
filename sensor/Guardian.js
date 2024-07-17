@@ -393,6 +393,10 @@ module.exports = class {
     this._stop();
   }
 
+  // need find a better way to identify the msp related rules
+  // a simple flag to identify the msp rules
+  // mspData can't consistent with msp real time data if box is offline
+  // in this case, once box remove from msp, box should use the flag to clean up msp related rules
   async isMspRelatedRule(rule, { mspData }) {
     const mspId = await this.getMspId();
     if (rule.msp_id == mspId && (p.msp_rid || p.purpose == 'mesh')) return true; // msp global rule or vpn mesh rule
