@@ -33,7 +33,7 @@
   "INFO_ALARM_DEVICE_BACK_ONLINE": "{{{p.device.name}}} is back to your network",
   "NOTIF_TITLE_ALARM_DEVICE_OFFLINE": "Device Offline",
   "NOTIF_ALARM_DEVICE_OFFLINE": "{{{p.device.name}}} has left your network at {{{p.device.lastSeenTimezone}}}",
-  "INFO_ALARM_DEVICE_OFFLINE": "{{{p.device.name}}} is back to your network",
+  "INFO_ALARM_DEVICE_OFFLINE": "{{{p.device.name}}} has left your network at {{{p.device.lastSeenTimezone}}}",
   "NOTIF_TITLE_ALARM_SPOOFING_DEVICE": "Suspicious Spoofing Device Detected",
   "NOTIF_ALARM_SPOOFING_DEVICE": "Suspicious spoofing device found: {{{p.device.name}}} ({{{p.device.ip}}})",
   "INFO_ALARM_SPOOFING_DEVICE": "Found suspicious device {{{p.device.name}}} in your network",
