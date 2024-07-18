@@ -332,6 +332,10 @@ class CategoryExaminerPlugin extends Sensor {
       // update hit set using matched domain list
       if (strategy.updateConfirmSet) {
         let score = Date.now();
+        if (!category.endsWith('_bf') && category != "adblock_strict") {
+          await this._confirmCloudCategoryDomains(category, strategy, domainList, score);
+          continue;
+        }
         let originCategory = category.split("_bf")[0];
         if (originCategory === "adblock_strict")
           originCategory = "ad";
@@ -369,6 +373,7 @@ class CategoryExaminerPlugin extends Sensor {
             await intelTool.addDomainIntel(domain, longestMatchIntel, longestMatchIntel.e);
           }
         }
+
         for (const origDomain of unmatchedOrigDomainSet) {
           log.info(`Add domain ${origDomain} to passthrough set of ${category} `);
           await this.addDomainToPassthroughSet(category, origDomain, score);
@@ -378,6 +383,33 @@ class CategoryExaminerPlugin extends Sensor {
         await this.limitPassthroughSet(category, MAX_CONFIRM_SET_SIZE);
       }
     }
+  }
+
+  // category: oisd
+  async _confirmCloudCategoryDomains(category, strategy, domainList, score) {
+    const matchedDomainList = domainList.map(item => item[0]); // send matched domains from local bf to cloud for confirmation, original domain can be a subdomain of matched domain
+    let results = await this.confirmDomains(category, strategy, matchedDomainList);
+    if (results === null) {
+      log.debug("Fail to confirm domains of category", category);
+      return;
+    }
+    const positiveSet = new Set(results);
+    const unmatchedOrigDomainSet = new Set(domainList.map(item => item[1]));
+    for (const [matchedDomain, origDomain] of domainList) {
+      if (positiveSet.has(matchedDomain)) {
+        log.info(`Add domain ${matchedDomain} to hit set of ${category} `);
+        await this.addDomainToHitSet(category, matchedDomain, score);
+        unmatchedOrigDomainSet.delete(origDomain);
+      }
+    }
+    for (const origDomain of unmatchedOrigDomainSet) {
+      log.info(`Add domain ${origDomain} to passthrough set of ${category} `);
+      await this.addDomainToPassthroughSet(category, origDomain, score);
+    }
+    await this.limitHitSet(category, MAX_CONFIRM_SET_SIZE);
+    await this.limitPassthroughSet(category, MAX_CONFIRM_SET_SIZE);
+
+    this.sendUpdateNotification(category);
   }
 
   async runConfirmJob() {
@@ -412,7 +444,7 @@ class CategoryExaminerPlugin extends Sensor {
   }
 
   async confirmDomainsFromCloud(category, domainList) {
-    log.debug("Try to confirm domains from cloud:", category);
+    log.debug("Try to confirm domains from cloud:", category, domainList);
     const hashedDomainList = domainList.map(domain => Hashes.getHashObject(domain).hash.toString('base64'));
     const requestObj = {
       id: `app.${category}`,
