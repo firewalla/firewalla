@@ -691,6 +691,9 @@ check_hosts() {
             [[ ${SP[$policy]} == *"null"* ]] && set_color_value "$policy" "F"
             # echo $policy ${SP[$policy]} ${fcv[$policy,v]}
           fi
+          if [[ -n ${SP[acl]+x} ]]; then
+            [[ ${SP[acl]} == "false" ]] && set_color_value "acl" "T"
+          fi
         done
 
         local nid=${h[intf]}
@@ -704,6 +707,9 @@ check_hosts() {
             fi
             # echo $policy $uid ${NP[$uid,$policy]} ${fcv[$policy,v]}
           done
+          if [[ -n ${NP[$nid,acl]+x} ]]; then
+            [[ ${NP[$nid,acl]} == "false" ]] && set_color_value "acl" "T"
+          fi
         fi
 
         local IP=${h[ipv4Addr]}
@@ -751,10 +757,6 @@ check_hosts() {
         # readarray -d $'\3' -t policy < <(echo -n "$output")
 
         local VPN=$( ((${#p[vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${p[vpnClient]}" || echo -n "")
-        local EMERGENCY_ACCESS=""
-        if [[ "${p[acl]}" == "false" ]]; then
-            EMERGENCY_ACCESS="T"
-        fi
 
         local FLOWINCOUNT=$(redis-cli zcount flow:conn:in:$MAC -inf +inf)
         # if [[ $FLOWINCOUNT == "0" ]]; then FLOWINCOUNT=""; fi
@@ -765,12 +767,15 @@ check_hosts() {
         local DNS_BOOST=$(if [[ ${p[dnsmasq]} == *"false"* ]]; then echo "F"; fi)
 
         for policy in ${hierarchicalPolicies[@]}; do
-          if [ -n "${p[$policy]+x}" ] && [[ "${p[$policy]}" != "${!policy[v]}" ]]; then
+          if [ -n "${p[$policy]+x}" ]; then
             [[ "${p[$policy]}" == *"true"* ]] && set_color_value $policy "T" 1
             [[ "${p[$policy]}" == *"null"* ]] && set_color_value $policy "F" 1
             # echo "$policy | ${p[$policy]} | ${fcv[$policy,v]}"
           fi
         done
+        if [[ -n ${p[acl]+x} ]]; then
+          [[ "${p[acl]}" == "false" ]] && set_color_value "acl" "T" 1
+        fi
 
         # === COLOURING ===
         local FC="\e[39m"   # front color
@@ -801,9 +806,9 @@ check_hosts() {
             FC=$FC"\e[2m" #dim
         fi
 
-        printf "$BGC$FC%35s %15s %28s %15s $MAC_COLOR%18s$FC %3s$B7_Placeholder %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s %3s %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC$BGUC\n" \
+        printf "$BGC$FC%35s %15s %28s %15s $MAC_COLOR%18s$FC %3s$B7_Placeholder %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s ${fcv[acl,c]}%3s$UC %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC$BGUC\n" \
           "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$(align::right 28 "${h[name]}")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$(align::right 11 $VPN)" "$FLOWINCOUNT" \
-          "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "$EMERGENCY_ACCESS" "$DNS_BOOST" "${fcv[adblock,v]}" "${fcv[family,v]}" "${fcv[safeSearch,v]}" "${fcv[doh,v]}" "${fcv[unbound,v]}"
+          "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "${fcv[acl,v]}" "$DNS_BOOST" "${fcv[adblock,v]}" "${fcv[family,v]}" "${fcv[safeSearch,v]}" "${fcv[doh,v]}" "${fcv[unbound,v]}"
 
         unset h
         unset p
@@ -963,7 +968,7 @@ check_network() {
       echo "" >> /tmp/scc_csv
     done
 
-    printf "Interface\tName\tUUID\tIPv4\tGateway\tIPv6\tGateway6\tDNS\tvpnClient\tAdB\tFam\tDoH\tubn\n" >/tmp/scc_csv_multline
+    printf "Interface\tName\tUUID\tIPv4\tGateway\tIPv6\tGateway6\tDNS\tvpnClient\tAdB\tFam\tSS\tDoH\tubn\n" >/tmp/scc_csv_multline
     while read -r LINE; do
       mapfile -td $'\t' COL < <(printf "$LINE")
       # read multi line fields into array
@@ -990,6 +995,7 @@ check_network() {
       local FAMILY_PROTECT=
       if [[ "${NP[$id,family]}" == "true" ]]; then FAMILY_PROTECT="T"; fi
 
+      local SAFE_SEARCH=$(if [[ ${NP[$id,safeSearch]} == *"true"* ]]; then echo "T"; fi)
       local DOH=$(if [[ ${NP[$id,doh]} == *"true"* ]]; then echo "T"; fi)
       local UNBOUND=$(if [[ ${NP[$id,unbound]} == *"true"* ]]; then echo "T"; fi)
 
@@ -1004,9 +1010,9 @@ check_network() {
         fi
 
         if [[ $IDX -eq 0 ]]; then
-          printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+          printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
             "${COL[0]}" "${COL[1]}" "${COL[2]:0:7}" "${COL[3]}" "${COL[4]}" "$IP" "${COL[6]}" "${DNS[$IDX]}" \
-            "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$DOH" "$UNBOUND" >> /tmp/scc_csv_multline
+            "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$SAFE_SEARCH" "$DOH" "$UNBOUND" >> /tmp/scc_csv_multline
         else
           printf "\t\t\t\t\t%s\t\t%s\n" "$IP" "${DNS[$IDX]}" >> /tmp/scc_csv_multline
         fi
@@ -1037,11 +1043,13 @@ check_tag() {
     mapfile -t -O "${#TAGS[@]}" TAGS < <(redis-cli --scan --pattern 'userTag:uid:*' | sort --version-sort)
     mapfile -t -O "${#TAGS[@]}" TAGS < <(redis-cli --scan --pattern 'deviceTag:uid:*' | sort --version-sort)
 
-    printf "ID\tType\tName\taffiliated\tvpnClient\tAdB\tFam\tDoH\tubn\n" >/tmp/tag_csv
+    printf "ID\tType\tName\taffiliated\tvpnClient\tAdB\tFam\tSS\tDoH\tubn\n" >/tmp/tag_csv
     for TAG in "${TAGS[@]}"; do
       declare -A t p
       read_hash t "$TAG"
       local id=${t[uid]}
+      get_tag_policy "$id"
+
       local VPN=$( ((${#TP[$id,vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${TP[$id,vpnClient]}" || echo -n "")
 
       local ADBLOCK=""
@@ -1050,10 +1058,11 @@ check_tag() {
       if [[ "${TP[$id,family]}" == "true" ]]; then FAMILY_PROTECT="T"; fi
 
       local DOH=$(if [[ ${TP[$id,doh]} == *"true"* ]]; then echo "T"; fi)
+      local SAFE_SEARCH=$(if [[ ${TP[$id,safeSearch]} == *"true"* ]]; then echo "T"; fi)
       local UNBOUND=$(if [[ ${TP[$id,unbound]} == *"true"* ]]; then echo "T"; fi)
 
-      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-        "${t[uid]}" "${t[type]}" "${t[name]}" "${t[affiliatedTag]}" "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$DOH" "$UNBOUND" >>/tmp/tag_csv
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+        "${t[uid]}" "${t[type]}" "${t[name]}" "${t[affiliatedTag]}" "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$SAFE_SEARCH" "$DOH" "$UNBOUND" >>/tmp/tag_csv
 
       unset t
     done
