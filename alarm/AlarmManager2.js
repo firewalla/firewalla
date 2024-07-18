@@ -150,7 +150,7 @@ module.exports = class {
     }
 
     try {
-      const alarm = this._genAlarm(data);
+      const alarm = this._genAlarm(await this._alignAlarmInfo(data));
       log.info('alarm:create', alarm);
       await this.enrichDeviceInfo(alarm);
       this.enqueueAlarm(alarm); // use enqueue to ensure no dup alarms
@@ -230,7 +230,11 @@ module.exports = class {
       const event = job.data;
       const alarm = this.jsonToAlarm(event.alarm);
       if (this.isAlarmSyncMspEnabled()) {
-        this.applyConfig(alarm);
+        if (alarm["p.msp.ready"]) {
+          this.applyConfig(alarm, ['state']);
+        } else {
+          this.applyConfig(alarm, []);
+        }
       }
 
       log.debug('processing job', JSON.stringify(event))
@@ -538,7 +542,8 @@ module.exports = class {
     }
   }
 
-  applyConfig(alarm) {
+  applyConfig(alarm, excludes=[]) {
+    excludes.push('timeout');
     const cfg = fc.getConfig().alarms;
     const defaultCfg = fc.getDefaultConfig().alarms;
     const alarmConfig = {};
@@ -551,9 +556,9 @@ module.exports = class {
     log.debug("alarm config apply", alarmConfig, alarm.type);
     const alias = Alarm.alarmType2alias(alarm.type);
     if (alarmConfig.hasOwnProperty(alias)) {
-      alarm.apply(alarmConfig[alias]);
+      alarm.apply(_.omit(alarmConfig[alias], excludes));
     } else if (alarmConfig.default){ // default
-      alarm.apply(_.omit(alarmConfig.default, ['timeout']));
+      alarm.apply(_.omit(alarmConfig.default, excludes));
     }
   }
 
@@ -893,6 +898,10 @@ module.exports = class {
           break;
         }
       }
+    }
+    if (alarm["p.msp.ready"]) {
+      alarm.state = Constants.ST_READY;
+      alarm["p.msp.decision"] = "create"
     }
     log.debug('alarm generated', alarm);
     return alarm;
@@ -1721,6 +1730,17 @@ module.exports = class {
     alarm.result = "";
     alarm.result_policy = "";
     await this.updateAlarm(alarm);
+  }
+
+  async _alignAlarmInfo(alarm) { // alarm object
+    if (!alarm.hasOwnProperty("p.device.ip") && alarm["p.device.mac"]) {
+      const device = await dnsManager.resolveMac(alarm['p.device.mac'].toUpperCase());
+      alarm["p.device.ip"] = device.ipv4 || device.ipv4Addr || JSON.parse(device.ipv6Addr || '[]').pop() || '';
+    }
+    if (!alarm.hasOwnProperty("p.dest.name") && alarm["p.dest.ip"]) {
+      alarm["p.dest.name"] = await dnsTool.getDns(alarm["p.dest.ip"]);
+    }
+    return alarm
   }
 
   async enrichDeviceInfo(alarm) {

@@ -466,6 +466,10 @@ class CustomizedAlarm extends Alarm {
 class CustomizedSecurityAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_CUSTOMIZED_SECURITY", timestamp, device, info);
+    if (this['p.event.ts']) {
+      this["p.event.timestampTimezone"] = moment(this['p.event.ts'] * 1000).tz(sysManager.getTimezone()).format("LT")
+    }
+    this["p.showMap"] = false;
   }
 
   keysToCompareForDedup() {
@@ -473,11 +477,12 @@ class CustomizedSecurityAlarm extends Alarm {
   }
 
   requiredKeys() {
-    return ["p.device.ip", "p.dest.ip", "p.description"];
+    return ["p.device.ip", "p.dest.name", "p.description"];
   }
 
   localizedNotificationContentArray() {
-    return [this["p.description"], this["p.device.ip"], this["p.device.name"], this["p.device.port"], this["p.dest.ip"], this["p.dest.name"], this["p.dest.port"], this["p.protocol"], this["p.app.protocol"]];
+    return [this["p.description"], this["p.device.ip"], this["p.device.name"], this["p.device.port"], this["p.dest.ip"], this["p.dest.name"], this["p.dest.port"], this["p.protocol"], this["p.app.protocol"],
+            this["p.device.type"], this["p.event.timestampTimezone"]];
   }
 }
 
