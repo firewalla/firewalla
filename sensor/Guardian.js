@@ -490,8 +490,9 @@ module.exports = class {
     await delay(10 * 1000);
     const gid = await et.getGID();
     await fc.enableDynamicFeature("rekey");
-    this._scheduleRedisBackgroundSave();
     await cw.getCloud().reKeyForAll(gid);
+    // make sure the rekey config is saved to local storage
+    this._scheduleRedisBackgroundSave();
   }
 
   isRealtimeValid() {
