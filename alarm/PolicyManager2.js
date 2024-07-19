@@ -1372,6 +1372,7 @@ class PolicyManager2 {
         remotePositive = false;
         remoteTupleCount = 2;
         // legacy data format
+        // target: "TAG" is a placeholder for various rules from App
         if (target && ht.isMacAddress(target)) {
           scope = [target];
         }

@@ -30,9 +30,7 @@ const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const Constants = require('../net2/Constants.js');
 const l2 = require('../util/Layer2.js');
 const fc = require('../net2/config.js')
-const features = require('../net2/features.js')
-const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
-  require('../net2/Conntrack.js') : { has: () => { } }
+const conntrack = require('../net2/Conntrack.js')
 const LogReader = require('../util/LogReader.js');
 const {getUniqueTs, delay} = require('../util/util.js');
 const FireRouter = require('../net2/FireRouter.js');
@@ -451,17 +449,7 @@ class ACLAuditLogPlugin extends Sensor {
       }
     }
 
-    if (this.ruleStatsPlugin) {
-      this.ruleStatsPlugin.accountRule(_.clone(record));
-    }
-
-    // map global pid
-    if((record.ac === "block" || record.ac === 'allow') && !record.pid) {
-      let matchPids = await this.ruleStatsPlugin.getMatchedPids(record);
-      if (matchPids && matchPids.length > 0){
-        record.pid = matchPids[0];
-      }
-    }
+    // blank pid backtrace is delayed to writeLogs() to make sure conntrack has updated
 
     // record route rule id
     if (record.pid && record.ac === "route") {
@@ -526,10 +514,7 @@ class ACLAuditLogPlugin extends Sensor {
 
     record.ct = record.ct || 1;
 
-    // we dont analyze allow rules for rule account because allow flow will appear in iptables log anyway.
-    if (record.ac === "block" && this.ruleStatsPlugin) {
-      this.ruleStatsPlugin.accountRule(_.clone(record));
-    }
+    // blank pid backtrace is delayed to writeLogs() to make sure conntrack has updated
 
     this.writeBuffer(mac, record);
   }
@@ -631,10 +616,13 @@ class ACLAuditLogPlugin extends Sensor {
       this.buffer = {}
       log.debug(buffer)
 
+      // zeek ssl log has a 20+s delay, this delay ensures we have ssl host data
+      await delay((this.config.bufferDelay || 30) * 1000)
+
       for (const mac in buffer) {
         for (const descriptor in buffer[mac]) {
           const record = buffer[mac][descriptor];
-          const { type, ts, ets, ct, intf } = record
+          const { type, ac, ts, ets, ct, intf } = record
           const _ts = await getUniqueTs(ets || ts) // make it unique to avoid missing flows in time-based query
           record._ts = _ts;
           const block = type == 'dns' ?
@@ -643,6 +631,20 @@ class ACLAuditLogPlugin extends Sensor {
             record.dp == 53
             :
             record.ac === "block" || record.ac === "isolation";
+
+          if (type != 'ntp') { // ntp has nothing to do with rules
+            if (!record.pid && (type == 'dns' || ac == 'block' || ac == 'allow')) {
+              const matchedPIDs = await this.ruleStatsPlugin.getMatchedPids(record);
+              if (ac == "block" && record.dir != 'W' && !matchedPIDs.length)
+                log.verbose(record, matchedPIDs, await conntrack.getConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr))
+              if (matchedPIDs && matchedPIDs.length > 0){
+                record.pid = matchedPIDs[0];
+              }
+            }
+
+            if (type == 'ip' || record.ac == 'block')
+              this.ruleStatsPlugin.accountRule(record);
+          }
 
           let transitiveTags = {};
           if (!IdentityManager.isGUID(mac)) {

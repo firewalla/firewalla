@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,7 +28,7 @@ const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const {Address4, Address6} = require('ip-address');
 const features = require('../net2/features.js')
-const conntrack = features.isOn('conntrack') ? require('../net2/Conntrack.js') : null;
+const conntrack = require('../net2/Conntrack.js')
 const uuid = require('uuid');
 
 class PcapZeekPlugin extends PcapPlugin {

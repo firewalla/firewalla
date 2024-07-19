@@ -20,7 +20,6 @@ const log = require('./logger.js')(__filename);
 const LogReader = require('../util/LogReader.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const iptool = require("ip");
 
@@ -31,9 +30,7 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 
-const features = require('../net2/features.js')
-const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
-  require('../net2/Conntrack.js') : { has: () => {}, set: () => {} }
+const conntrack = require('../net2/Conntrack.js')
 
 const broNotice = require('../extension/bro/BroNotice.js');
 
@@ -327,7 +324,7 @@ class BroDetect {
 
         // DestIPFoundHook might have added intel:ip before everything get reversed
         const intel = await intelTool.getIntel(ip)
-        if (intel.host == host || intel.sslHost == host || intel.dnsHost == host) {
+        if (intel && (intel.host == host || intel.sslHost == host || intel.dnsHost == host)) {
           delete intel.host
           delete intel.sslHost
           delete intel.dnsHost
@@ -1099,7 +1096,7 @@ class BroDetect {
       if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0)) {
         try {
           if (!outIntfId) {
-            log.verbose('Dropping blocked UDP', tmpspec)
+            log.debug('Dropping blocked UDP', tmpspec)
             return
           }
         } catch (err) {
@@ -1384,11 +1381,13 @@ class BroDetect {
         this.cleanUpSanDNS(xobj);
 
         try {
-          await rclient.unlinkAsync(key) // delete before hmset in case number of keys is not same in old and new data
-          await rclient.hmsetAsync(key, xobj)
+          const multi = rclient.multi()
+          multi.unlink(key) // delete before hmset in case number of keys is not same in old and new data
+          multi.hmset(key, xobj)
           if (config.ssl.expires) {
-            await rclient.expireatAsync(key, parseInt(Date.now() / 1000) + config.ssl.expires);
+            multi.expireat(key, parseInt(Date.now() / 1000) + config.ssl.expires);
           }
+          await multi.execAsync()
         } catch(err) {
           log.error("host:ext:x509:save:Error", key, subject);
         }
@@ -1416,11 +1415,13 @@ class BroDetect {
 
           this.cleanUpSanDNS(xobj);
 
-          await rclient.unlinkAsync(key) // delete before hmset in case number of keys is not same in old and new data
-          await rclient.hmsetAsync(key, xobj)
+          const multi = rclient.multi()
+          multi.unlink(key) // delete before hmset in case number of keys is not same in old and new data
+          multi.hmset(key, xobj)
           if (config.ssl.expires) {
-            await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + config.ssl.expires);
+            multi.expireat(key, parseInt(Date.now() / 1000) + config.ssl.expires);
           }
+          await multi.execAsync()
           log.debug("SSL:CERT_ID Saved", key, xobj);
         } else {
           log.debug("SSL:CERT_ID flow.x509:notfound" + cert_id);
