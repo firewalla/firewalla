@@ -162,6 +162,7 @@ class BroDetect {
       this._activeMacHeartbeat();
     }, 60000);
 
+    this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 } }
     this.tsWriteInterval = config.conn.tsWriteInterval || 10000
     this.recordTrafficTask = setInterval(() => {
       this.writeTrafficCache().catch(err => {
@@ -227,10 +228,9 @@ class BroDetect {
   }
 
   async start() {
-    this.initWatchers();
     if (firewalla.isMain()) {
+      this.initWatchers();
       this.wanNicStatsCache = await this.getWanNicStats();
-      this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 } }
       sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
         this.wanNicStatsCache = await this.getWanNicStats();
       });

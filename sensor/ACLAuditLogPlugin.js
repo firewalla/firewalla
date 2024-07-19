@@ -119,6 +119,19 @@ class ACLAuditLogPlugin extends Sensor {
     }
   }
 
+  // dns on bridge interface is not the LAN IP, zeek will see different src/dst IP in DNS packets due to br_netfilter,
+  // and an additional 10 seconds timeout is introduced before it is recorded in zeek's dns log
+  isDNATedOnBridge(inIntf) {
+    const pcapZeekPlugin = sl.getSensor("PcapZeekPlugin");
+
+    if (!inIntf || !inIntf.name || !pcapZeekPlugin) return false
+
+    return platform.isFireRouterManaged()
+      && inIntf.name.startsWith("br")
+      && !_.get(FireRouter.getConfig(), ["dhcp", inIntf.name, "nameservers"], []).includes(inIntf.ip_address)
+      && pcapZeekPlugin && pcapZeekPlugin.getListenInterfaces().includes(inIntf.name)
+  }
+
   // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ADT]D=O CD=O IN=br0 OUT=eth0 PHYSIN=eth1.999 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
   async _processIptablesLog(line) {
     if (_.isEmpty(line)) return
@@ -267,12 +280,8 @@ class ACLAuditLogPlugin extends Sensor {
         if (dir == "O" && (record.pr == "udp" || (record.pr == "tcp" && dport != 443 && dport != 80))) {
           // try to resolve hostname shortly after the connection is established in an effort to improve IP-DNS mapping timeliness
           let t = 3;
-          if (platform.isFireRouterManaged() && inIntf && inIntfName && inIntfName.startsWith("br") && !_.get(FireRouter.getConfig(), ["dhcp", inIntfName, "nameservers"], []).includes(inIntf.ip_address)) {
-            // dns on bridge interface is not the LAN IP, zeek will see different src/dst IP in DNS packets due to br_netfilter,
-            // and an additional 10 seconds timeout is introduced before it is recorded in zeek's dns log
-            const pcapZeekPlugin = sl.getSensor("PcapZeekPlugin");
-            if (pcapZeekPlugin && pcapZeekPlugin.getListenInterfaces().includes(inIntfName))
-              t = 13;
+          if (this.isDNATedOnBridge(inIntf)) {
+            t = 13;
           }
           await delay(t * 1000);
           let host = await conntrack.getConnEntry(src, sport, dst, dport, record.pr, "host", 600);
@@ -439,17 +448,29 @@ class ACLAuditLogPlugin extends Sensor {
     // try to get host name from conn entries for better timeliness and accuracy
     if (dir === "O" && record.ac === "block") {
       // delay 5 seconds to process outbound block flow, in case ssl/http host is available in zeek's ssl log and will be saved into conn entries
+      let t = 5
       await delay(5000);
       let connEntries = await conntrack.getConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr, 600);
-      if (!connEntries || !connEntries.host)
+
+      if (!connEntries || !connEntries.host) {
+        if (this.isDNATedOnBridge(inIntf)) {
+          t += 10
+          await delay(10000)
+        }
         connEntries = await conntrack.getConnEntries(mac, "", record.dh, "", "dns", 600);
+      }
+
+      // zeek ssl log has a 20+s delay
+      if (record.dp == 443 && (!connEntries || !connEntries.host)) {
+        await delay((25-t)*1000)
+        connEntries = await conntrack.getConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr, 600);
+      }
+
       if (connEntries && connEntries.host) {
         record.af = {};
         record.af[connEntries.host] = _.pick(connEntries, ["proto", "ip"])
       }
     }
-
-    // blank pid backtrace is delayed to writeLogs() to make sure conntrack has updated
 
     // record route rule id
     if (record.pid && record.ac === "route") {
@@ -513,8 +534,6 @@ class ACLAuditLogPlugin extends Sensor {
     }
 
     record.ct = record.ct || 1;
-
-    // blank pid backtrace is delayed to writeLogs() to make sure conntrack has updated
 
     this.writeBuffer(mac, record);
   }
@@ -614,10 +633,7 @@ class ACLAuditLogPlugin extends Sensor {
 
       const buffer = this.buffer
       this.buffer = {}
-      log.debug(buffer)
-
-      // zeek ssl log has a 20+s delay, this delay ensures we have ssl host data
-      await delay((this.config.bufferDelay || 30) * 1000)
+      // log.debug(buffer)
 
       for (const mac in buffer) {
         for (const descriptor in buffer[mac]) {
@@ -632,6 +648,7 @@ class ACLAuditLogPlugin extends Sensor {
             :
             record.ac === "block" || record.ac === "isolation";
 
+          // pid backtrace
           if (type != 'ntp') { // ntp has nothing to do with rules
             if (!record.pid && (type == 'dns' || ac == 'block' || ac == 'allow')) {
               const matchedPIDs = await this.ruleStatsPlugin.getMatchedPids(record);

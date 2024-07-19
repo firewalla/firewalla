@@ -688,8 +688,7 @@
     },
     "NseScanPlugin": {},
     "ACLAuditLogPlugin": {
-      "buffer": 10,
-      "bufferDelay": 20,
+      "buffer": 2,
       "interval": 300,
       "expires": 86400
     },
