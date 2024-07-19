@@ -495,6 +495,8 @@ module.exports = class {
     const gid = await et.getGID();
     await fc.enableDynamicFeature("rekey");
     await cw.getCloud().reKeyForAll(gid);
+    // make sure the rekey config is saved to local storage
+    this._scheduleRedisBackgroundSave();
   }
 
   isRealtimeValid() {
@@ -507,6 +509,34 @@ module.exports = class {
 
   resetRealtimeExpirationDate() {
     this.realtimeExpireDate = 0;
+  }
+
+  // copy from netbot.js
+  _scheduleRedisBackgroundSave() {
+    if (this.bgsaveTask)
+      clearTimeout(this.bgsaveTask);
+
+    this.bgsaveTask = setTimeout(async () => {
+      try {
+        await platform.ledSaving().catch(() => undefined);
+        const ts = Math.floor(Date.now() / 1000);
+        await rclient.bgsaveAsync();
+        const maxCount = 15;
+        let count = 0;
+        while (count < maxCount) {
+          count++;
+          await delay(1000);
+          const syncTS = await rclient.lastsaveAsync();
+          if (syncTS >= ts) {
+            break;
+          }
+        }
+        await execAsync("sync");
+      } catch (err) {
+        log.error("Redis background save returns error", err.message);
+      }
+      await platform.ledDoneSaving().catch(() => undefined);
+    }, 5000);
   }
 
   async onRealTimeMessage(gid, message) {
