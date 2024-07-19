@@ -1394,7 +1394,7 @@ class PolicyManager2 {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
 
-        if (platform.isTLSBlockSupport() && !localPort && !remotePort && protocol != 'udp') { // default on
+        if (platform.isTLSBlockSupport() && protocol != 'udp') { // default on
           if (!policy.domainExactMatch && !target.startsWith("*."))
             tlsHost = `*.${target}`;
           else
@@ -1830,7 +1830,7 @@ class PolicyManager2 {
         break;
       case "domain":
       case "dns":
-        if (platform.isTLSBlockSupport() && !localPort && !remotePort && protocol != 'udp') { // default on
+        if (platform.isTLSBlockSupport() && protocol != 'udp') { // default on
           if (!policy.domainExactMatch && !target.startsWith("*."))
             tlsHost = `*.${target}`;
           else
