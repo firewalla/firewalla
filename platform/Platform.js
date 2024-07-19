@@ -260,10 +260,56 @@ class Platform {
     return [];
   }
 
-  async installTLSModule() {}
+  async installTLSModule() {
+    const installed = await this.isTLSModuleInstalled();
+    if (installed) return;
+    const codename = await exec(`lsb_release -cs`).then((result) => result.stdout.trim()).catch((err) => {
+      log.error("Failed to get codename of OS distribution", err.message);
+      return null;
+    });
+    if (!codename)
+      return;
+
+    const koPath = `${await this.getKernelModulesPath()}/xt_tls.ko`;
+    const koExists = await fsp.access(koPath, fs.constants.F_OK).then(() => true).catch((err) => false);
+    if (koExists)
+      await exec(`sudo insmod ${koPath} max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`).catch((err) => {
+        log.error(`Failed to install tls.ko`, err.message);
+      });
+
+    const soPath = `${await this.getSharedObjectsPath()}/libxt_tls.so`;
+    const soExists = await fsp.access(soPath, fs.constants.F_OK).then(() => true).catch((err) => false);
+    if (soExists)
+      await exec(`sudo install -D -v -m 644 ${soPath} /usr/lib/$(uname -m)-linux-gnu/xtables`).catch((err) => {
+        log.error(`Failed to install libxt_tls.so`, err.message);
+      });
+  }
+
+  async isTLSModuleInstalled() {
+    if (this.tlsInstalled) return true;
+    const cmdResult = await exec(`lsmod | grep xt_tls | awk '{print $1}'`);
+    const results = cmdResult.stdout.toString().trim().split('\n');
+    for (const result of results) {
+      if (result == 'xt_tls') {
+        this.tlsInstalled = true;
+        break;
+      }
+    }
+    return this.tlsInstalled;
+  }
 
   isTLSBlockSupport() {
     return false;
+  }
+
+  async getKernelModulesPath() {
+    const kernelRelease = await exec("uname -r").then(result => result.stdout.trim());
+    return `${this.getPlatformFilesPath()}/kernel_modules/${kernelRelease}`;
+  }
+
+  async getSharedObjectsPath() {
+    const codename = await exec(`lsb_release -cs`).then((result) => result.stdout.trim());
+    return `${this.__dirname}/files/shared_objects/${codename}`;
   }
 
   getDnsmasqBinaryPath() {
