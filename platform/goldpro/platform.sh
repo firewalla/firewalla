@@ -92,17 +92,6 @@ function map_target_branch {
   esac
 }
 
-function installTLSModule {
-  uid=$(id -u pi)
-  gid=$(id -g pi)
-  if ! lsmod | grep -wq "xt_tls"; then
-    if [[ $(lsb_release -cs) == "jammy" ]]; then
-      sudo insmod ${FW_PLATFORM_CUR_DIR}/files/$(uname -r)/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
-      sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/TLS/u22/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables
-    fi
-  fi
-}
-
 function beep {
   flock /dev/shm/gpio.lock -c 'echo "92 1" | sudo tee -a /sys/class/misc/gpio-nuvoton/select'
   flock /dev/shm/gpio.lock -c 'echo "92 0" | sudo tee -a /sys/class/misc/gpio-nuvoton/direction'

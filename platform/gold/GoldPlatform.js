@@ -256,34 +256,6 @@ class GoldPlatform extends Platform {
     }]
   }
 
-  async installTLSModule() {
-    const installed = await this.isTLSModuleInstalled();
-    if (installed) return;
-    let TLSmodulePathPrefix = null;
-    if (this.isUbuntu20()) {
-      TLSmodulePathPrefix = __dirname+"/files/TLS/u20";
-    } else if (this.isUbuntu22()) {
-      TLSmodulePathPrefix = __dirname+"/files/TLS/u22";
-    } else {
-      TLSmodulePathPrefix = __dirname+"/files/TLS/u18";
-    }
-    await exec(`sudo insmod ${TLSmodulePathPrefix}/xt_tls.ko max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`);
-    await exec(`sudo install -D -v -m 644 ${TLSmodulePathPrefix}/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables`);
-  }
-
-  async isTLSModuleInstalled() {
-    if (this.tlsInstalled) return true;
-    const cmdResult = await exec(`lsmod| grep xt_tls| awk '{print $1}'`);
-    const results = cmdResult.stdout.toString().trim().split('\n');
-    for(const result of results) {
-      if (result == 'xt_tls') {
-        this.tlsInstalled = true;
-        break;
-      }
-    }
-    return this.tlsInstalled;
-  }
-
   isTLSBlockSupport() {
     return true;
   }
