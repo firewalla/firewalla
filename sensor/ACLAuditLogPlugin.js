@@ -635,8 +635,6 @@ class ACLAuditLogPlugin extends Sensor {
           if (type != 'ntp') { // ntp has nothing to do with rules
             if (!record.pid && (type == 'dns' || ac == 'block' || ac == 'allow')) {
               const matchedPIDs = await this.ruleStatsPlugin.getMatchedPids(record);
-              if (ac == "block" && record.dir != 'W' && !matchedPIDs.length)
-                log.verbose(record, matchedPIDs, await conntrack.getConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr))
               if (matchedPIDs && matchedPIDs.length > 0){
                 record.pid = matchedPIDs[0];
               }
