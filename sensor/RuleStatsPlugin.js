@@ -154,6 +154,34 @@ class RuleStatsPlugin extends Sensor {
     }
   }
 
+  static cachekeyRecord(record) {
+     // use cache to reduce computation and redis operation.
+     const hash = crypto.createHash("md5");
+     hash.update(String(record.ac));
+     hash.update(String(record.type));
+     hash.update(String(record.fd));
+     hash.update(String(record.sec));
+     hash.update(String(record.dn));
+     hash.update(String(record.dh));
+     hash.update(String(record.qmark));
+     return hash.digest("hex");
+  }
+
+  async getMatchedPids(record){
+    // use cache to reduce computation and redis operation.
+    const key = RuleStatsPlugin.cachekeyRecord(record);
+    const v = this.cache.get(key);
+    let matchedPids;
+    if (v) {
+      log.debug("Hit rule stat cache");
+      matchedPids = v;
+    } else {
+      matchedPids = await this.getPolicyIds(record);
+      this.cache.set(key, matchedPids);
+    }
+    return matchedPids;
+  }
+
   async updateRuleStats() {
     const recordBuffer = this.recordBuffer;
     this.recordBuffer = [];
@@ -171,24 +199,7 @@ class RuleStatsPlugin extends Sensor {
       if (record.pid) {
         matchedPids = [record.pid];
       } else {
-        // use cache to reduce computation and redis operation.
-        const hash = crypto.createHash("md5");
-        hash.update(String(record.ac));
-        hash.update(String(record.type));
-        hash.update(String(record.fd));
-        hash.update(String(record.sec));
-        hash.update(String(record.dn));
-        hash.update(String(record.dh));
-        hash.update(String(record.qmark));
-        const key = hash.digest("hex");
-        const v = this.cache.get(key);
-        if (v) {
-          log.debug("Hit rule stat cache");
-          matchedPids = v;
-        } else {
-          matchedPids = await this.getPolicyIds(record);
-          this.cache.set(key, matchedPids);
-        }
+        matchedPids = await this.getMatchedPids(record);
       }
 
       for (const pid of matchedPids) {
@@ -199,7 +210,11 @@ class RuleStatsPlugin extends Sensor {
         } else {
           stat = new RuleStat();
         }
-        stat.count++;
+        if (record.ct > 1) {
+          stat.count += record.ct;
+        } else {
+          stat.count++;
+        }
         if (record.ts > stat.lastHitTs) {
           stat.lastHitTs = record.ts;
         }

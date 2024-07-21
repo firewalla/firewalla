@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -305,9 +305,24 @@ class netBot extends ControllerBot {
         body: notifMsg
       }
 
+      const alarmData = {};
+      const appUsedKeys = ["type", "timestamp", "p.device.name", "p.device.ip", "p.device.id", "p.dest.country", "p.device.lastSeen",
+        "p.transfer.outbound.size", "p.transfer.inbound.size", // abnormal/large upload
+        "p.noticeType", "p.dest.name", "p.dest.ip", "p.device.real.ip", "p.vpnType", "p.device.mac", "p.tag.names", "p.utag.names", "p.dest.app",
+        "p.dest.isLocal", "p.transfer.duration", "p.security.primaryReason", "p.local_is_client", "result_method", "result", "p.intf.desc",
+        "p.active.wans", "p.iface.name", "p.wan.type", "p.ready", "p.wan.switched", // dual wan alarm
+        "p.upnp.ttl", "p.upnp.description", "p.upnp.protocol", "p.upnp.public.port", "p.upnp.private.port", // upnp open port
+        "p.file.type", "p.subnet.length", "p.dest.url",
+        "p.begin.ts", "p.end.ts", "p.totalUsage", "p.percentage", "p.planUsage", // bandwidth usage
+        "p.vpn.strictvpn", "p.vpn.subtype", "p.vpn.displayname", "p.vpn.devicecount", "p.vpn.protocol" // VPN disconnect/restore alarm
+      ];
+      Object.assign(alarmData, _.pick(alarm, appUsedKeys));
+
       let data = {
         gid: this.primarygid,
-        notifType: "ALARM"
+        notifType: "ALARM",
+        alarm: alarmData,
+        mutableContent: 1
       };
 
       if (alarm.aid) {
@@ -345,6 +360,7 @@ class netBot extends ControllerBot {
         const newArray = alarm.localizedNotificationTitleArray().slice(0);
         if (includeNameInNotification === "1") {
           newArray.push(`[${this.getDeviceName()}] `);
+          data.boxName = this.getDeviceName();
         } else {
           newArray.push("");
         }
@@ -1084,7 +1100,7 @@ class netBot extends ControllerBot {
         //  target: mac address || intf:uuid || tag:tagId
         const value = msg.data.value;
         const count = value && value.count || 50;
-        await this.hostManager.loadStats({}, msg.target, count);
+        const flows = await this.hostManager.loadStats({}, msg.target, count);
         return { flows: flows };
       }
 
@@ -1111,7 +1127,8 @@ class netBot extends ControllerBot {
         const protocol = vpnConfig && vpnConfig.protocol;
         const ddnsConfig = data.ddns || {};
         const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
-        await VpnManager.configureClient("fishboneVPN1", null)
+        if (msg.data.item === "vpnreset" || !await VpnManager.getSettings("fishboneVPN1")) // do not reconfigure if fishboneVPN1 already exists in get vpn API
+          await VpnManager.configureClient("fishboneVPN1", null)
 
         const { ovpnfile, password, timestamp } = await VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, protocol, ddnsEnabled)
         const datamodel = {
@@ -1206,6 +1223,18 @@ class netBot extends ControllerBot {
           return flowTool.getTransferTrend(deviceMac, destIP);
         } else {
           throw new Error("Missing device MAC or destination IP")
+        }
+      }
+      case "pendingAlarms": {
+        const offset = value && value.offset;
+        const limit = value && value.limit;
+        const pendingAlarms = await am2.loadPendingAlarms({
+          offset: offset,
+          limit: limit
+        })
+        return {
+          alarms: pendingAlarms,
+          count: pendingAlarms.length
         }
       }
       case "archivedAlarms": {
@@ -1360,7 +1389,7 @@ class netBot extends ControllerBot {
       case "hosts": {
         const json = {};
         const includeVPNDevices = (value && value.includeVPNDevices) || false;
-        await this.hostManager.hostsInfoForInit(json)
+        await this.hostManager.hostsInfoForInit(json, {includeScanResults:true});
         if (includeVPNDevices)
           await this.hostManager.identitiesForInit(json)
         return json
@@ -1394,14 +1423,13 @@ class netBot extends ControllerBot {
           throw { code: 400, msg: "'types' should be an array." }
         }
         let profiles = [];
-        for (let type of types) {
+        for (let type of types) try {
           const c = VPNClient.getClass(type);
-          if (!c) {
-            log.error(`Unsupported VPN client type: ${type}`);
-            continue;
-          }
           const profileIds = await c.listProfileIds();
           Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({ profileId }).getAttributes())));
+        } catch(err) {
+          log.error(err);
+          continue;
         }
         return { profiles }
       }
@@ -1543,6 +1571,8 @@ class netBot extends ControllerBot {
         }
         return result
       }
+      case "mspConfig":
+        return fc.getMspConfig();
       case "userConfig":
         return fc.getUserConfig();
       case "dhcpLease": {
@@ -1987,7 +2017,11 @@ class netBot extends ControllerBot {
         else {
           const {name, obj, affiliated} = value;
           const tag = await this.tagManager.createTag(name, obj, _.get(affiliated, "name"), _.get(affiliated, "obj"));
-          return tag
+          const result = tag.toJson();
+          if (tag.afTag) {
+            result.affiliatedTag = tag.afTag.toJson()
+          }
+          return result;
         }
       }
       case "tag:remove": {
@@ -2668,6 +2702,11 @@ class netBot extends ControllerBot {
           message: 'addIncludeDomain: ' + category,
         }
         sem.sendEventToOthers(event);
+        await bone.intelAdvice({
+          target: domain,
+          key: 'noip',
+          value: { category, notes: 'add inclusion' },
+        });
         return
       }
       case "removeIncludeDomain": {
@@ -2682,6 +2721,11 @@ class netBot extends ControllerBot {
           message: 'removeIncludeDomain: ' + category,
         };
         sem.sendEventToOthers(event);
+        await bone.intelAdvice({
+          target: domain,
+          key: 'noip',
+          value: { category: 'not_' + category, notes: 'remove inclusion' },
+        });
         return
       }
       case "addExcludeDomain": {
@@ -2697,6 +2741,11 @@ class netBot extends ControllerBot {
           message: 'addExcludeDomain: ' + category,
         };
         sem.sendEventToOthers(event);
+        await bone.intelAdvice({
+          target: domain,
+          key: 'noip',
+          value: { category: 'not_' + category, notes: 'add exclusion' },
+        });
         return
       }
       case "removeExcludeDomain": {
@@ -2711,6 +2760,11 @@ class netBot extends ControllerBot {
           message: 'removeExcludeDomain: ' + category,
         };
         sem.sendEventToOthers(event);
+        await bone.intelAdvice({
+          target: domain,
+          key: 'noip',
+          value: { category, notes: 'remove exclusion' },
+        });
         return
       }
       case "updateIncludedElements": {
@@ -3017,7 +3071,7 @@ class netBot extends ControllerBot {
           const results = [];
           const gid = await rclient.hgetAsync("sys:ept", "gid");
           await asyncNative.eachLimit(peers, 5, async (peer) => {
-            const {type, name, eid} = peer;
+            const {type, name, dName, eid} = peer;
             if (!eid)
               return;
             const success = await this.eptcloud.eptInviteGroup(gid, eid).then(() => true).catch((err) => {
@@ -3028,7 +3082,7 @@ class netBot extends ControllerBot {
             results.push(result);
             if (!success)
               return;
-            await this.processAppInfo({eid: eid, deviceName: name || eid});
+            await this.processAppInfo({eid: eid, deviceName: dName || name || eid});
             switch (type) {
               case "user":
                 await clientMgmt.registerUser({eid});
@@ -3612,9 +3666,13 @@ class netBot extends ControllerBot {
         log.error(err)
         if (err instanceof RateLimiterRes) {
           throw {
-            "Retry-After": err.msBeforeNext / 1000,
-            "X-RateLimit-Limit": this.rateLimiter[from].points,
-            "X-RateLimit-Reset": new Date(Date.now() + err.msBeforeNext)
+            status: 429,
+            // headers are not really used in response, and we return 200 in general
+            // headers: {
+            //   "Retry-After": err.msBeforeNext / 1000,
+            //   "X-RateLimit-Limit": this.rateLimiter[from].points,
+            //   "X-RateLimit-Reset": new Date(Date.now() + err.msBeforeNext)
+            // }
           }
         } else
         throw err
@@ -3645,6 +3703,12 @@ class netBot extends ControllerBot {
 
         msg.appInfo = rawmsg.message.appInfo;
         if (rawmsg.message.obj.type === "jsonmsg") {
+          // check blacklist, only for dev
+          if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && (await rclient.sismemberAsync('sys:eid:blacklist', eid))){
+            log.warn('deny access from eid', eid);
+            return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
+          }
+
           switch(rawmsg.message.obj.mtype) {
             case "init": {
               if (rawmsg.message.appInfo) {
@@ -3660,6 +3724,8 @@ class netBot extends ControllerBot {
                 includePinnedHosts: true,
                 includePrivateMac: true,
                 includeInactiveHosts: false,
+                includeAppTimeSlots: true,
+                includeAppTimeIntervals: true,
                 appInfo: rawmsg.message.appInfo
               }
 
@@ -3671,6 +3737,10 @@ class netBot extends ControllerBot {
                 options.includeInactiveHosts = true;
               if (rawmsg.message.obj.data && rawmsg.message.obj.data.hasOwnProperty("includePrivateMac"))
                 options.includePrivateMac = rawmsg.message.obj.data.includePrivateMac;
+              if (rawmsg.message.obj.data && rawmsg.message.obj.data.hasOwnProperty("includeAppTimeSlots"))
+                options.includeAppTimeSlots = rawmsg.message.obj.data.includeAppTimeSlots;
+              if (rawmsg.message.obj.data && rawmsg.message.obj.data.hasOwnProperty("includeAppTimeIntervals"))
+                options.includeAppTimeIntervals = rawmsg.message.obj.data.includeAppTimeIntervals;
               if (rawmsg.message.obj.data && rawmsg.message.obj.data.timeUsageApps)
                 options.timeUsageApps = rawmsg.message.obj.data.timeUsageApps;
 
@@ -3752,7 +3822,11 @@ class netBot extends ControllerBot {
                 }
 
                 const result = await fwapc.apiCall(value.method || "GET", value.path, value.body);
-                return this.simpleTxData(msg, result, null, cloudOptions);
+                if (result.code == 200) {
+                  return this.simpleTxData(msg, result.body, null, cloudOptions);
+                } else {
+                  return this.simpleTxData(msg, null, {code: result.code, data: result.body, msg: result.msg}, cloudOptions);
+                }
 
               } else if (msg.data.item == 'batchAction') {
                 const result = await this.batchHandler(gid, rawmsg);
@@ -3805,11 +3879,15 @@ class netBot extends ControllerBot {
   */
   async batchHandler(gid, rawmsg) {
     const batchActionObjArr = rawmsg.message.obj.data.value;
+    const id = rawmsg.message.obj.id;
     const copyRawmsg = JSON.parse(JSON.stringify(rawmsg));
     const results = [];
     for (const obj of batchActionObjArr) {
       obj.type = "jsonmsg"
       obj.data.ignoreRate = true;
+      if(id) {
+        obj.id = id;
+      }
       copyRawmsg.message.obj = obj;
       let result, error;
       try {

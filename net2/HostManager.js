@@ -73,6 +73,7 @@ const fConfig = require('./config.js').getConfig();
 const fc = require('./config.js')
 
 const asyncNative = require('../util/asyncNative.js');
+const Ranges = require('../util/Ranges.js');
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
@@ -370,6 +371,7 @@ module.exports = class HostManager extends Monitorable {
     json.distCodename = sysInfo.distCodename;
     json.osUptime = sysInfo.osUptime;
     json.fanSpeed = await platform.getFanSpeed();
+    json.kernelVersion = sysInfo.kernelVersion;
     const cpuUsageRecords = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_CPU_USAGE, Date.now() / 1000 - 60, Date.now() / 1000).map(r => JSON.parse(r));
     json.sysMetrics = {
       memUsage: sysInfo.realMem,
@@ -382,7 +384,7 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  async hostsToJson(json) {
+  async hostsToJson(json, options) {
     let _hosts = [];
     for (let i in this.hosts.all) {
       _hosts.push(this.hosts.all[i].toJson());
@@ -390,7 +392,14 @@ module.exports = class HostManager extends Monitorable {
     json.hosts = _hosts;
     if (platform.isFireRouterManaged())
       await this.enrichSTAInfo(_hosts);
-    await this.enrichWeakPasswordScanResult(_hosts);
+    // Reduce json size of init response
+    if (!options.includeScanResults) {
+      return;
+    }
+    await Promise.all(_hosts.map(async host => {
+      await this.enrichWeakPasswordScanResult(host, "mac");
+      await this.enrichNseScanResult(host, "mac", "suspect");
+    }));
   }
 
   async enrichSTAInfo(hosts) {
@@ -422,10 +431,16 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  async enrichWeakPasswordScanResult(hosts) {
-    await Promise.all(hosts.map(async host => {
-      await this.enrichWeakPasswordScanResult(host, "mac");
-    }));
+  async pairingAssetsForInit(json) {
+    if (platform.isFireRouterManaged()) {
+      const pairingAssets = await fwapc.getPairingStatus().catch((err) => {
+        log.error(`Failed to get pairing assets from firerouter`, err.message);
+        return null;
+      });
+      if (pairingAssets) {
+        json.pairingAssets = pairingAssets;
+      }
+    }
   }
 
   async enrichWeakPasswordScanResult(host, uidKey) {
@@ -435,6 +450,26 @@ module.exports = class HostManager extends Monitorable {
       const result = await rclient.getAsync(key).then((data) => JSON.parse(data)).catch((err) => null);
       if (result)
         host.weakPasswordScanResult = result;
+    }
+  }
+
+  async enrichNseScanResult(host, uidKey, prefix='') {
+    const uid = host[uidKey];
+    if (uid) {
+      let rkey = `nse_scan`;
+      rkey = prefix ? `${rkey}:${prefix}:${uid}`: `${rkey}:${uidKey}:${uid}`;
+      const result = await rclient.hgetallAsync(rkey);
+      if (result) {
+        for (const key in result) {
+          try {
+            const keyobj = JSON.parse(result[key]);
+            result[key] = keyobj;
+          } catch (err) {
+            log.warn('fail to parse nse scan result', key, err.message);
+          }
+        }
+        host.nseScanResult = result;
+      }
     }
   }
 
@@ -510,6 +545,19 @@ module.exports = class HostManager extends Monitorable {
       monthlyBeginTs,
       monthlyEndTs
     }, this.generateStats({ download, upload }))
+  }
+
+  async appConfsForInit(json) {
+    const appCloudConfig = await rclient.getAsync(Constants.REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG).then(result => result && JSON.parse(result)).catch(err => null);
+    if (_.isObject(appCloudConfig) && !_.isEmpty(_.get(appCloudConfig, "appConfs"))) {
+      const appConfs = {};
+      for (const app of Object.keys(appCloudConfig.appConfs)) {
+        if (!_.isEmpty(appCloudConfig.appConfs[app].features))
+            appConfs[app] = _.pick(appCloudConfig.appConfs[app], "features");
+      }
+      if (!_.isEmpty(appConfs))
+        json.appConfs = appConfs;
+    }
   }
 
   utcOffsetBetweenTimezone(tz) {
@@ -604,6 +652,12 @@ module.exports = class HostManager extends Monitorable {
     json.newAlarms = await alarmManager2.loadActiveAlarmsAsync();
   }
 
+  async pendingAlarmNumberForInit(json) {
+    const count = await alarmManager2.getPendingAlarmCount();
+    json.pendingAlarmCount = count;
+    return json;
+  }
+
   async archivedAlarmNumberForInit(json) {
     log.debug("Reading total number of archived alarms");
     const count = await alarmManager2.numberOfArchivedAlarms();
@@ -660,7 +714,35 @@ module.exports = class HostManager extends Monitorable {
       result.tasks = JSON.parse(result.tasks);
     if (_.has(result, "lastCompletedScanTs"))
       result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
+    if (result.tasks) {
+      const latestKeys = Object.entries(result.tasks).sort((a,b) => {return (a[1].ts || 0) - (b[1].ts || 0)}).splice(Object.keys(result.tasks).length-1, 1).map(i=>i[0]);
+      if (latestKeys.length > 0) {
+        const latestTasks = {};
+        latestTasks[latestKeys[0]] = result.tasks[latestKeys[0]];
+        result.tasks = latestTasks;
+      }
+      result.tasks = Ranges.limitInternalScanResult(result.tasks);
+    }
     json.weakPasswordScanResult = result;
+  }
+
+  async nseScanDataForInit(json) {
+    const result = await rclient.hgetallAsync(Constants.REDIS_KEY_NSE_RESULT);
+    if (!result)
+      return {};
+    if (_.has(result, "dhcp"))
+      result.dhcp = JSON.parse(result.dhcp);
+    if (_.has(result, "lastCompletedScanTs"))
+      result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
+    if (result.dhcp) {
+      const latestKeys = Object.entries(result.dhcp).sort((a,b) => {return (a[1].ts || 0) - (b[1].ts || 0)}).splice(Object.keys(result.dhcp).length-1, 1).map(i=>i[0]);
+      if (latestKeys.length > 0) {
+        const latestTasks = {};
+        latestTasks[latestKeys[0]] = result.dhcp[latestKeys[0]];
+        result.dhcp = latestTasks;
+      }
+    }
+    json.nseScanResult = result;
   }
 
   async hostsInfoForInit(json, options) {
@@ -679,7 +761,7 @@ module.exports = class HostManager extends Monitorable {
       }),
       this.loadHostsPolicyRules(),
     ])
-    await this.hostsToJson(json);
+    await this.hostsToJson(json, options);
 
     // _totalHosts and _totalPrivateMacHosts will be updated in getHostsAsync
     json.totalHosts = this._totalHosts;
@@ -970,7 +1052,8 @@ module.exports = class HostManager extends Monitorable {
       this.systemdRestartMetrics(json),
       this.boxMetrics(json),
       this.getSysInfo(json),
-      this.assetsInfoForInit(json)
+      this.assetsInfoForInit(json),
+      this.pairingAssetsForInit(json)
     ]
 
     await this.basicDataForInit(json, {});
@@ -996,7 +1079,7 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async vpnClientProfilesForInit(json) {
-    await VPNClient.getVPNProfilesForInit(json);
+    Object.assign(json, await VPNClient.getVPNProfilesForInit())
   }
 
   async jwtTokenForInit(json) {
@@ -1055,6 +1138,23 @@ module.exports = class HostManager extends Monitorable {
       const result = JSON.parse(data);
       if(result) {
         json.guardianBiz = result;
+      }
+    } catch(err) {
+      log.error(`Failed to parse data, err: ${err}`);
+      return;
+    }
+  }
+
+  async getMspData(json) {
+    const data = await rclient.getAsync("ext.guardian.data");
+    if(!data) {
+      return;
+    }
+    try {
+      const result = JSON.parse(data);
+      if(result) {
+        json.mspData = result;
+        return result;
       }
     } catch(err) {
       log.error(`Failed to parse data, err: ${err}`);
@@ -1161,7 +1261,7 @@ module.exports = class HostManager extends Monitorable {
     json.networkConfig = config;
   }
 
-  async tagsForInit(json, timeUsageApps) {
+  async tagsForInit(json, timeUsageApps, includeAppTimeSlots, includeAppTimeIntervals) {
     await TagManager.refreshTags();
     const tags = await TagManager.toJson();
     const timezone = sysManager.getTimezone();
@@ -1184,7 +1284,7 @@ module.exports = class HostManager extends Monitorable {
           // today's app time usage on this tag
           const begin = (timezone ? moment().tz(timezone) : moment()).startOf("day").unix();
           const end = begin + 86400;
-          const {appTimeUsage, appTimeUsageTotal, categoryTimeUsage} = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, null, timeUsageApps, begin, end, "hour", false);
+          const {appTimeUsage, appTimeUsageTotal, categoryTimeUsage} = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, null, timeUsageApps, begin, end, "hour", false, includeAppTimeSlots, includeAppTimeIntervals);
 
           json[initDataKey][uid].appTimeUsageToday = appTimeUsage;
           json[initDataKey][uid].appTimeUsageTotalToday = appTimeUsageTotal;
@@ -1307,10 +1407,12 @@ module.exports = class HostManager extends Monitorable {
       this.policyRulesForInit(json),
       this.exceptionRulesForInit(json),
       this.newAlarmDataForInit(json),
+      this.pendingAlarmNumberForInit(json),
       this.archivedAlarmNumberForInit(json),
       this.natDataForInit(json),
       this.externalScanDataForInit(json),
       this.weakPasswordDataForInit(json),
+      this.nseScanDataForInit(json),
       this.encipherMembersForInit(json),
       this.jwtTokenForInit(json),
       this.groupNameForInit(json),
@@ -1318,13 +1420,14 @@ module.exports = class HostManager extends Monitorable {
       this.getGuessedRouters(json),
       this.getGuardian(json),
       this.getGuardians(json),
+      this.getMspData(json),
       this.getDataUsagePlan(json),
       this.monthlyDataUsageForInit(json),
       this.networkConfig(json),
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.identitiesForInit(json),
-      this.tagsForInit(json, options.timeUsageApps),
+      this.tagsForInit(json, options.timeUsageApps, options.includeAppTimeSlots, options.includeAppTimeIntervals),
       this.btMacForInit(json),
       this.loadStats(json),
       this.vpnClientProfilesForInit(json),
@@ -1339,8 +1442,10 @@ module.exports = class HostManager extends Monitorable {
       this.networkMonitorEventsForInit(json),
       this.dhcpPoolUsageForInit(json),
       this.assetsInfoForInit(json),
+      this.pairingAssetsForInit(json),
       this.getConfigForInit(json),
       this.miscForInit(json),
+      this.appConfsForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
     // 2021.11.17 not gonna be used in the near future, disabled
@@ -1585,6 +1690,12 @@ module.exports = class HostManager extends Monitorable {
         const isPrivateMac = o.mac && hostTool.isPrivateMacAddress(o.mac);
         // device might be created during migration with only found ts but no active ts
         const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
+        if (f.isMain()) {
+          const expireatTS = parseInt(activeTS || (Date.now() / 1000)) + Constants.HOST_MAC_KEY_EXPIRE_SECS;
+          await rclient.expireatAsync(`host:mac:${o.mac.toUpperCase()}`, expireatTS);
+          if (expireatTS < Date.now() / 1000)
+            return;
+        }
         const active = (activeTS - o.firstFoundTimestamp > 600 ? activeTS && activeTS >= inactiveTS : activeTS && activeTS >= rapidInactiveTS); // expire transient devices in a short time
         const inUse = (activeTS && activeTS >= inactiveTS) || hasDHCPReservation || hasPortforward || pinned || false;
         // always return devices that has DHCP reservation or port forwards
@@ -1664,6 +1775,9 @@ module.exports = class HostManager extends Monitorable {
         await hostbymac.cleanV6()
         if (f.isMain()) {
           await this.syncHost(hostbymac, ipv6AddrOld)
+          hostbymac.updateHostsFile().catch((err) => {
+            log.error(`Failed to update hosts file of ${hostbymac.o.mac}`, err.message);
+          });
         }
       })
   
@@ -1946,28 +2060,36 @@ module.exports = class HostManager extends Monitorable {
     return iCount;
   }
 
-  async _isStrictVPN(policy) {
-    const type = policy.type;
-    const state = policy.state;
-    const profileId = policy[type] && policy[type].profileId;
+  async getVPNClientInstance(profile, fast = true) {
+    const type = profile.type
+    const profileId = profile[type] && profile[type].profileId;
     if (!profileId) {
-      state && log.error("VPNClient profileId is not specified", policy);
-      return false;
+      throw new Error("VPN client profileId is not specified");
     }
+    const instance = VPNClient.getInstance(profileId)
+    if (instance) return instance
+    else if (fast) throw new Error(`VPN client ${profileId} not found`)
+
     const c = VPNClient.getClass(type);
     if (!c) {
-      log.error(`Unsupported VPN client type: ${type}`);
-      return false;
+      throw new Error(`Unsupported VPN client type: ${type}`);
     }
     const exists = await c.profileExists(profileId);
     if (!exists) {
-      log.error(`VPN client ${profileId} does not exist`);
-      return false;
+      throw new Error(`VPN client ${profileId} does not exist`)
     }
+    return new c({ profileId });
+  }
 
-    const vpnClient = new c({ profileId });
-    const settings = await vpnClient.loadSettings();
-    return settings.strictVPN;
+  async _isStrictVPN(policy) {
+    try {
+      const vpnClient = await this.getVPNClientInstance(policy)
+      const settings = await vpnClient.loadSettings();
+      return settings.strictVPN;
+    } catch(err) {
+      log.error(err.message)
+      return false
+    }
   }
 
   /// return a list of profile id
@@ -2013,47 +2135,34 @@ module.exports = class HostManager extends Monitorable {
         ]
       }
     */
-    const multiClients = policy.multiClients;
-    if (_.isArray(multiClients)) {
-      const updatedClients = [];
-      for (const client of multiClients) {
-        const result = await this.vpnClient(client);
-        updatedClients.push(Object.assign({}, client, result));
-      }
 
-      // only send for multicilents
-      sem.sendEventToFireMain({
-        type: Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE,
-        message: ""
-      });
-      return {multiClients: updatedClients};
-    } else {
-      const type = policy.type;
-      const state = policy.state;
+    // just shallow copy as only policy.state is going to be altered
+    const updatedClients = (_.isArray(policy.multiClients) ? policy.multiClients : [ policy ])
+      .map(p => Object.assign({}, p))
+
+    // reads every profile into memory
+    await VPNClient.getVPNProfilesForInit()
+
+    for (const policy of updatedClients) {
+      const { type, state } = policy
       const profileId = policy[type] && policy[type].profileId;
-      if (!profileId) {
-        state && log.error("VPNClient profileId is not specified", policy);
-        return { state: false };
-      }
       let settings = policy[type] && policy[type].settings || {};
-      const c = VPNClient.getClass(type);
-      if (!c) {
-        log.error(`Unsupported VPN client type: ${type}`);
-        return { state: false };
+      let vpnClient = VPNClient.getInstance(profileId)
+      try {
+        vpnClient = await this.getVPNClientInstance(policy);
+      } catch(err) {
+        log.error(err)
+        policy.state = false
+        continue
       }
-      const exists = await c.profileExists(profileId);
-      if (!exists) {
-        log.error(`VPN client ${profileId} does not exist`);
-        return { state: false }
-      }
-      const vpnClient = new c({ profileId });
       if (Object.keys(settings).length > 0)
         await vpnClient.saveSettings(settings);
       settings = await vpnClient.loadSettings(); // settings is merged with default settings
       const rtId = await vpnClientEnforcer.getRtId(vpnClient.getInterfaceName());
       if (!rtId) {
         log.error(`Routing table id is not found for ${profileId}`);
-        return { state: false };
+        policy.state = false
+        continue
       }
       if (state === true) {
         let setupResult = true;
@@ -2062,8 +2171,10 @@ module.exports = class HostManager extends Monitorable {
           log.error(`Failed to setup ${type} client for ${profileId}`, err);
           setupResult = false;
         });
-        if (!setupResult)
-          return { state: false };
+        if (!setupResult) {
+          policy.state = false
+          continue
+        }
         await vpnClient.start();
       } else {
         // proceed to stop anyway even if setup is failed
@@ -2074,8 +2185,17 @@ module.exports = class HostManager extends Monitorable {
       }
 
       // do not change anything by default
-      return {};
     }
+
+    sem.sendEventToFireMain({
+      type: Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE,
+      message: ""
+    });
+
+    if (_.isArray(policy.multiClients)) {
+      return {multiClients: updatedClients};
+    } else
+      return updatedClients[0]
   }
 
   async tags() { /* not supported */ }
@@ -2099,6 +2219,10 @@ module.exports = class HostManager extends Monitorable {
   getActiveHosts() {
     const activeTimestampThreshold = Date.now() / 1000 - 7 * 86400;
     return this.hosts.all.filter(host => host.o && host.o.lastActiveTimestamp > activeTimestampThreshold)
+  }
+
+  getAllMonitorables() {
+    return this.getActiveHosts().concat(IdentityManager.getAllIdentitiesFlat())
   }
 
   // return a list of mac addresses that's active in last xx days
@@ -2149,25 +2273,16 @@ module.exports = class HostManager extends Monitorable {
   async getActiveTags() {
     let tagMap = {};
     await this.loadHostsPolicyRules()
-    this.getActiveHosts().filter(host => host && host.policy && !_.isEmpty(Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => host.policy[Constants.TAG_TYPE_MAP[type].policyKey])))
-      .forEach(host => {
-        const tags = Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => host.policy[Constants.TAG_TYPE_MAP[type].policyKey]);
-        for (const tag of tags) {
-          if (tagMap[tag]) {
-            tagMap[tag].push(host.o.mac);
-          } else {
-            tagMap[tag] = [host.o.mac];
-          }
-        }
-      });
-    IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => identity.policy[Constants.TAG_TYPE_MAP[type].policyKey])))
-      .forEach(identity => {
-        const tags = Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => identity.policy[Constants.TAG_TYPE_MAP[type].policyKey])
+    const types = Object.keys(Constants.TAG_TYPE_MAP)
+    this.getAllMonitorables()
+      .forEach(m => {
+        const tags = m && m.policy && types.flatMap(type => m.policy[Constants.TAG_TYPE_MAP[type].policyKey]);
+        if (!tags) return
         for (const tag of tags) {
           if (tagMap[tag])
-            tagMap[tag].push(identity.getGUID());
+            tagMap[tag].push(m.getGUID());
           else
-            tagMap[tag] = [identity.getGUID()];
+            tagMap[tag] = [m.getGUID()];
         }
       });
 

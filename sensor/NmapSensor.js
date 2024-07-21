@@ -185,6 +185,9 @@ class NmapSensor extends Sensor {
     // patch script for error "Failed to scan: Error: next_template: parse error (cpe delimiter not '/') on line 11594 of nmap-service-probes"
     exec(String.raw`sudo sed -i 's/cpe:|h:siemens:315-2pn\/dp|/cpe:\/h:siemens:315-2pn%2Fdp\//' /usr/share/nmap/nmap-service-probes`).catch(()=>{})
 
+    // uses the latest OUI DB if possible
+    exec(String.raw`sudo cp -f /home/pi/.firewalla/run/assets/nmap-mac-prefixes /usr/share/nmap/nmap-mac-prefixes`).catch(()=>{})
+
     this.scheduleReload();
     setInterval(() => {
       this.checkAndRunOnce(false);

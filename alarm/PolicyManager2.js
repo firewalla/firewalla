@@ -31,6 +31,10 @@ const policyIDKey = "policy:id";
 const policyPrefix = "policy:";
 const policyDisableAllKey = "policy:disable:all";
 const initID = 1;
+const POLICY_MAX_ID = 65535; // iptables log use last 16 bit MARK as rule id
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const LOCK_POLICY_ID = "LOCK_POLICY_ID";
 const { Address4, Address6 } = require('ip-address');
 const Host = require('../net2/Host.js');
 const Constants = require('../net2/Constants.js');
@@ -173,7 +177,7 @@ class PolicyManager2 {
             log.verbose("START ENFORCING POLICY", policy.pid, action);
             await this.enforce(policy)
           } catch (err) {
-            log.error("enforce policy failed:" + err, policy)
+            log.error("enforce policy failed", err, policy)
           } finally {
             log.verbose("COMPLETE ENFORCING POLICY", policy.pid, action);
           }
@@ -327,54 +331,38 @@ class PolicyManager2 {
     }
   }
 
-  createPolicyIDKey(callback) {
-    rclient.set(policyIDKey, initID, callback);
+  async createPolicyIDKey() {
+    await rclient.setAsync(policyIDKey, initID);
   }
 
-  getNextID(callback) {
-    rclient.get(policyIDKey, (err, result) => {
-      if (err) {
-        log.error("Failed to get policyIDKey: " + err);
-        callback(err);
-        return;
-      }
-
-      if (result) {
-        rclient.incr(policyIDKey, (err, newID) => {
-          if (err) {
-            log.error("Failed to incr policyIDKey: " + err);
+  async getNextID() {
+    return lock.acquire(LOCK_POLICY_ID, async () => {
+      const prev = await rclient.getAsync(policyIDKey);
+      if (prev) {
+        while (true) {
+          let next = await rclient.incrAsync(policyIDKey);
+          if (next > POLICY_MAX_ID) {
+            // wrap around
+            await this.createPolicyIDKey();
+            next = 1;
           }
-          callback(null, newID);
-        });
+          if (next === prev)
+            throw new Error(`No free pid is available`);
+          if (await rclient.existsAsync(`policy:${next}`))
+            continue;
+          return next;
+        }
       } else {
-        this.createPolicyIDKey((err) => {
-          if (err) {
-            log.error("Failed to create policyIDKey: " + err);
-            callback(err);
-            return;
-          }
-
-          rclient.incr(policyIDKey, (err) => {
-            if (err) {
-              log.error("Failed to incr policyIDKey: " + err);
-            }
-            callback(null, initID);
-          });
-        });
+        await this.createPolicyIDKey();
+        return initID;
       }
     });
   }
 
-  addToActiveQueue(policy, callback) {
-    //TODO
-    let score = parseFloat(policy.timestamp);
-    let id = policy.pid;
-    rclient.zadd(policyActiveKey, score, id, (err) => {
-      if (err) {
-        log.error("Failed to add policy to active queue: " + err);
-      }
-      callback(err);
-    });
+  async addToActiveQueue(policy) {
+    const score = parseFloat(policy.timestamp);
+    const id = policy.pid;
+    await rclient.zaddAsync(policyActiveKey, score, id);
   }
 
   // TODO: A better solution will be we always provide full policy data on calling this (requires mobile app update)
@@ -434,50 +422,19 @@ class PolicyManager2 {
     }
   }
 
-  savePolicyAsync(policy) {
-    return new Promise((resolve, reject) => {
-      this.savePolicy(policy, (err) => {
-        if (err)
-          reject(err);
-
-        resolve();
-      })
-    })
-  }
-
-  savePolicy(policy, callback) {
-    callback = callback || function () { }
-
+  async savePolicyAsync(policy) {
     log.info("In save policy:", policy);
+    const id = await this.getNextID();
+    policy.pid = id + ""; // convert to string
 
-    this.getNextID((err, id) => {
-      if (err) {
-        log.error("Failed to get next ID: " + err);
-        callback(err);
-        return;
-      }
-
-      policy.pid = id + ""; // convert to string
-
-      let policyKey = policyPrefix + id;
-
-      rclient.hmset(policyKey, policy.redisfy(), (err) => {
-        if (err) {
-          log.error("Failed to set policy: " + err);
-          callback(err);
-          return;
-        }
-
-        this.addToActiveQueue(policy, (err) => {
-          if (!err) {
-          }
-          this.tryPolicyEnforcement(policy)
-          callback(null, policy)
-        });
-
-        Bone.submitIntelFeedback('block', policy);
-      });
+    let policyKey = policyPrefix + id;
+    await rclient.hmsetAsync(policyKey, policy.redisfy());
+    await this.addToActiveQueue(policy);
+    this.tryPolicyEnforcement(policy);
+    Bone.submitIntelFeedback('block', policy).catch((err) => {
+      log.error(`Failed to submit intel feedback`, policy, err);
     });
+    return policy;
   }
 
   async checkAndSave(policy, callback) {
@@ -501,7 +458,8 @@ class PolicyManager2 {
           callback(null, samePolicy, "duplicated")
         }
       } else {
-        this.savePolicy(policy, callback);
+        const data = await this.savePolicyAsync(policy);
+        callback(null, data);
       }
     } catch (err) {
       log.error("failed to save policy:" + err)
@@ -832,7 +790,7 @@ class PolicyManager2 {
 
     // recent first
     rr.sort((a, b) => {
-      return b.timestamp > a.timestamp
+      return b.timestamp - a.timestamp
     })
 
     return rr
@@ -887,61 +845,71 @@ class PolicyManager2 {
     await tm.reset();
   }
 
-  // x is the rule being checked
-  isRouteRuleToVPN(x) {
-    return x.action === "route" &&
-      x.routeType === "hard" &&
-      x.wanUUID;
-  }
-
-  isBlockingInternetRule(x) {
-    return x.action == "block" &&
-      x.type === "mac" &&
-      ["outbound", "bidirection"].includes(x.direction);
-  }
-
-  isBlockingIntranetRule(x) {
-    return x.action == "block" &&
-      x.type === "intranet" &&
-      ["outbound", "bidirection"].includes(x.direction);
-  }
-
-  // split rules to routing rules, internet blocking rules, intranet blocking rules & others
+  // split rules to routing rules, inbound rules, internet blocking rules, intranet blocking rules & others
   // these three are high impactful rules
   splitRules(rules) {
     let routeRules = [];
+    // inbound block internet rules
+    let inboundBlockInternetRules = [];
+    // inbound allow internet rules
+    let inboundAllowInternetRules = [];
+    // inbound block intranet rules
+    let inboundBlockIntranetRules = [];
+    // inbound allow intranet rules
+    let inboundAllowIntranetRules = [];
+    // outbound/bidirection internet block rules
     let internetRules = [];
+    // outbound/bidirection intranet block rules
     let intranetRules = [];
+    // oubound/bidirection allow rules
+    let outboundAllowRules = [];
     let otherRules = [];
 
     rules.forEach((rule) => {
-      if (this.isRouteRuleToVPN(rule)) {
+      if (rule.isRouteRuleToVPN()) {
         routeRules.push(rule);
-      } else if (this.isBlockingInternetRule(rule)) {
+      } else if (rule.isInboundInternetBlockRule()) {
+        inboundBlockInternetRules.push(rule);
+      } else if (rule.isInboundInternetAllowRule()){
+        inboundAllowInternetRules.push(rule);
+      } else if (rule.isInboundIntranetBlockRule()) {
+        inboundBlockIntranetRules.push(rule);
+      } else if (rule.isInboundIntranetAllowRule()){
+        inboundAllowIntranetRules.push(rule);
+      } else if (rule.isBlockingInternetRule()) {
         internetRules.push(rule);
-      } else if (this.isBlockingIntranetRule(rule)) {
+      } else if (rule.isBlockingIntranetRule()) {
         intranetRules.push(rule);
+      } else if (rule.isOutboundAllowRule()) {
+        outboundAllowRules.push(rule);
       } else {
         otherRules.push(rule);
       }
     });
 
-    return [routeRules, internetRules, intranetRules, otherRules];
+    return [
+      routeRules, 
+      inboundBlockInternetRules, inboundAllowInternetRules,
+      inboundBlockIntranetRules, inboundAllowIntranetRules,
+      internetRules, intranetRules, 
+      outboundAllowRules, otherRules,
+    ];
   }
 
   async getHighImpactfulRules() {
     const policies = await this.loadActivePoliciesAsync();
     return policies.filter((x) => {
-      return this.isRouteRuleToVPN(x) || 
-      this.isBlockingInternetRule(x) ||
-      this.isBlockingIntranetRule(x);
+      return x.isRouteRuleToVPN() ||
+      x.isBlockingInternetRule() ||
+      x.isBlockingIntranetRule();
     });
   }
 
   async enforceAllPolicies() {
     const rules = await this.loadActivePoliciesAsync({includingDisabled : 1});
 
-    const [routeRules, internetRules, intranetRules, otherRules] = this.splitRules(rules);
+    const [routeRules, inboundBlockInternetRules, inboundAllowInternetRules, inboundBlockIntranetRules, inboundAllowIntranetRules,
+      internetRules, intranetRules, outboundAllowRules, otherRules] = this.splitRules(rules);
 
     let initialRuleJob = (rule) => {
       return new Promise((resolve, reject) => {
@@ -967,13 +935,39 @@ class PolicyManager2 {
 
     log.info(">>>>>==== All Hard ROUTING policy rules are enforced ====<<<<<", routeRules.length);
 
+    // enforce policy rules in priority order:
+    // inbound block (internet > intranet) > inbound allow (internet > intranet) > outbound/bidirection block (internet > intranet) > outbound allow > others
+
+    // enforce inbound block internet rules
+    await Promise.all(inboundBlockInternetRules.map((rule) => initialRuleJob(rule)));
+    log.info(">>>>>==== All inbound blocking internet rules are enforced ====<<<<<", inboundBlockInternetRules.length);
+
+    // enforce inbound allow internet rules
+    await Promise.all(inboundAllowInternetRules.map((rule) => initialRuleJob(rule)));
+    log.info(">>>>>==== All inbound allow internet rules are enforced ====<<<<<", inboundAllowInternetRules.length);
+
+    // enforce inbound block intranet rules
+    await Promise.all(inboundBlockIntranetRules.map((rule) => initialRuleJob(rule)));
+    log.info(">>>>>==== All inbound blocking intranet rules are enforced ====<<<<<", inboundBlockIntranetRules.length);
+
+    // enforce inbound allow intranet rules
+    await Promise.all(inboundAllowIntranetRules.map((rule) => initialRuleJob(rule)));
+    log.info(">>>>>==== All inbound allow intranet rules are enforced ====<<<<<", inboundAllowIntranetRules.length);
+
+
+    // enforce outbound block internet rules
     await Promise.all(internetRules.map((rule) => initialRuleJob(rule)));
 
     log.info(">>>>>==== All internet blocking rules are enforced ====<<<<<", internetRules.length);
 
+    // enforce outbound block intranet rules
     await Promise.all(intranetRules.map((rule) => initialRuleJob(rule)));
 
     log.info(">>>>>==== All intranet blocking rules are enforced ====<<<<<", intranetRules.length);
+
+    // enforce outbound allow intranet rules
+    await Promise.all(outboundAllowRules.map((rule) => initialRuleJob(rule)));
+    log.info(">>>>>==== All outbound allow rules are enforced ====<<<<<", outboundAllowRules.length);
 
     sem.sendEventToFireMain({
       type: Message.MSG_OSI_RULES_DONE,
@@ -1324,8 +1318,8 @@ class PolicyManager2 {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
         if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || action === "snat" || (seq !== Constants.RULE_SEQ_REG && !security)) {
-          await ipset.create(remoteSet4, ruleSetTypeMap[type], true);
-          await ipset.create(remoteSet6, ruleSetTypeMap[type], false);
+          await ipset.create(remoteSet4, ruleSetTypeMap[type]);
+          await ipset.create(remoteSet6, ruleSetTypeMap[type], true);
           await Block.block(target, Block.getDstSet(pid));
         } else {
           if (["allow", "block"].includes(action)) {
@@ -1351,14 +1345,14 @@ class PolicyManager2 {
           if (type === "remoteIpPort") {
             remoteSet4 = Block.getDstSet(pid);
             remoteSet6 = Block.getDstSet6(pid);
-            await ipset.create(remoteSet4, "hash:ip", true);
-            await ipset.create(remoteSet6, "hash:ip", false);
+            await ipset.create(remoteSet4, "hash:ip");
+            await ipset.create(remoteSet6, "hash:ip", true);
           }
           if (type === "remoteNetPort") {
             remoteSet4 = Block.getDstSet(pid);
             remoteSet6 = Block.getDstSet6(pid);
-            await ipset.create(remoteSet4, "hash:net", true);
-            await ipset.create(remoteSet6, "hash:net", false);
+            await ipset.create(remoteSet4, "hash:net");
+            await ipset.create(remoteSet6, "hash:net", true);
           }
           await Block.block(values[0], Block.getDstSet(pid));
           remotePort = values[1];
@@ -1429,8 +1423,8 @@ class PolicyManager2 {
 
         if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || action === "snat" || Number.isInteger(ipttl) || (seq !== Constants.RULE_SEQ_REG && !security)) {
           if (!policy.dnsmasq_only) {
-            await ipset.create(remoteSet4, "hash:ip", true, ipttl);
-            await ipset.create(remoteSet6, "hash:ip", false, ipttl);
+            await ipset.create(remoteSet4, "hash:ip", false, { timeout: ipttl });
+            await ipset.create(remoteSet6, "hash:ip", true, { timeout: ipttl });
             // register ipset update in dnsmasq config so that it will immediately take effect in ip level
             await dnsmasq.addIpsetUpdateEntry([target], [remoteSet4, remoteSet6], pid);
             dnsmasq.scheduleRestartDNSService();
@@ -1536,9 +1530,19 @@ class PolicyManager2 {
               wanUUID,
               routeType
             });
+            if (policy.useBf) {
+              await domainBlock.blockCategory(target + "_bf", {pid,
+                scope: scope, category: target + "_bf", intfs, guids,
+                action: action, tags, parentRgId, seq, wanUUID, routeType, append: true
+              });
+            }
           }
         }
+
         await categoryUpdater.activateCategory(target);
+        if (policy.useBf) {
+          await categoryUpdater.activateCategory(target+'_bf');
+        }
         if (action === "allow") {
           remoteSet4 = categoryUpdater.getAllowIPSetName(target);
           remoteSet6 = categoryUpdater.getAllowIPSetNameForIPV6(target);
@@ -1783,14 +1787,14 @@ class PolicyManager2 {
           if (type === "remoteIpPort") {
             remoteSet4 = Block.getDstSet(pid);
             remoteSet6 = Block.getDstSet6(pid);
-            await ipset.create(remoteSet4, "hash:ip", true);
-            await ipset.create(remoteSet6, "hash:ip", false);
+            await ipset.create(remoteSet4, "hash:ip");
+            await ipset.create(remoteSet6, "hash:ip", true);
           }
           if (type === "remoteNetPort") {
             remoteSet4 = Block.getDstSet(pid);
             remoteSet6 = Block.getDstSet6(pid);
-            await ipset.create(remoteSet4, "hash:net", true);
-            await ipset.create(remoteSet6, "hash:net", false);
+            await ipset.create(remoteSet4, "hash:net");
+            await ipset.create(remoteSet6, "hash:net", true);
           }
           await Block.block(values[0], Block.getDstSet(pid));
           remotePort = values[1];
@@ -2020,17 +2024,19 @@ class PolicyManager2 {
     const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass]; // tlsHostSet and tlsHost always null for commonArgs
 
     await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, commonArgs).catch((err) => {
-      log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
+      log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
     });
 
     if (tlsHostSet || tlsHost) {
       const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass];
       await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs).catch((err) => {
-        log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
+        log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
       });
       // refresh activated tls category after rule is removed from iptables, hostset in /proc filesystem will be removed after last reference in iptables rule is removed
-      if (tlsHostSet)
+      if (tlsHostSet) {
+        await delay(200); // wait for 200 ms so that hostset file can be purged from proc fs
         await categoryUpdater.refreshTLSCategoryActivated();
+      }
     }
 
     if (localPortSet) {
@@ -3014,10 +3020,10 @@ class PolicyManager2 {
     this._refreshConnmarkTimeout = setTimeout(async () => {
       // use conntrack to clear the first bit of connmark on existing connections
       await exec(`sudo conntrack -U -m 0x00000000/0x80000000`).catch((err) => {
-        log.error(`Failed to clear first bit of connmark on existing IPv4 connections`, err.message);
+        log.warn(`Failed to clear first bit of connmark on existing IPv4 connections`, err.message);
       });
       await exec(`sudo conntrack -U -f ipv6 -m 0x00000000/0x80000000`).catch((err) => {
-        log.error(`Failed to clear first bit of connmark on existing IPv6 connections`, err.message);
+        log.warn(`Failed to clear first bit of connmark on existing IPv6 connections`, err.message);
       });
     }, 5000);
   }

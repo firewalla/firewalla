@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -90,24 +90,43 @@ class RedisManager {
         log.error("Redis metrics client got error:", err);
       })
       this.mclientHincrbyBuffer = {};
+      this.mclientHincrbyMultiBuffer = {};
       // a helper function to merge multiple hincrby operations on the same key
-      this.mclient.hincrbyAndExpireatBulk = async (key, hkey, incr, expr) => {
+      this.mclient.hincrbyAndExpireatBulk = async (key, hkey, incr, expr, multi = false) => {
         const bufferKey = `${key}::${hkey}`;
+        const buffer = multi ? this.mclientHincrbyMultiBuffer : this.mclientHincrbyBuffer
         await lock.acquire(bufferKey, async () => {// fine-grained mutually-exclusive lock
-          if (!this.mclientHincrbyBuffer.hasOwnProperty(bufferKey)) {
-            this.mclientHincrbyBuffer[bufferKey] = {key, hkey, incr, expr, bulk: 1};
+          if (!buffer.hasOwnProperty(bufferKey)) {
+            buffer[bufferKey] = {key, hkey, incr, expr, bulk: 1};
           } else {
-            this.mclientHincrbyBuffer[bufferKey].incr += incr;
-            this.mclientHincrbyBuffer[bufferKey].expr = expr;
-            this.mclientHincrbyBuffer[bufferKey].bulk++;
+            buffer[bufferKey].incr += incr;
+            buffer[bufferKey].expr = expr;
+            buffer[bufferKey].bulk++;
           }
-          if (this.mclientHincrbyBuffer[bufferKey].bulk >= 20) {
-            await this.mclient.hincrbyAsync(key, hkey, this.mclientHincrbyBuffer[bufferKey].incr);
+          if (!multi && buffer[bufferKey].bulk >= 20) {
+            await this.mclient.hincrbyAsync(key, hkey, buffer[bufferKey].incr);
             await this.mclient.expireatAsync(key, expr);
-            delete this.mclientHincrbyBuffer[bufferKey];
+            delete buffer[bufferKey];
           }
-        }).catch((err) => {});
+        }).catch((err) => {
+          log.error('Error writing buffer', err)
+        });
       };
+      this.mclient.execBatch = async () => {
+        try {
+          const batch = this.mclient.batch()
+          for (const k in this.mclientHincrbyMultiBuffer) {
+            const {key, hkey, incr, expr} = this.mclientHincrbyMultiBuffer[k];
+            batch.hincrby(key, hkey, incr);
+            batch.expireat(key, expr);
+            delete this.mclientHincrbyMultiBuffer[k];
+          }
+          await batch.execAsync()
+        } catch(err) {
+          log.error('Error writing batch', err)
+        }
+      }
+
       setInterval(async () => {
         for (const k of Object.keys(this.mclientHincrbyBuffer)) {
           await lock.acquire(k, async () => {

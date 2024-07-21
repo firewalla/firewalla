@@ -35,7 +35,6 @@ async function rrWithErrHandling(options, usePool) {
   const msg = `HTTP failed after ${options.maxAttempts || 5} attempt(s) ${options.method || 'GET'} ${options.uri}`
   const uid = uuid.v4()
   log.verbose(uid, options.method || 'GET', options.uri)
-  log.debug(new Error().stack)
 
   options.fullResponse = true
 

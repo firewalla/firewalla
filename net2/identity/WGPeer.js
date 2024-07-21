@@ -96,6 +96,12 @@ class WGPeer extends Identity {
                 const obj = hashCopy[pubKey];
                 obj.uid = pubKey;
                 obj.lastActiveTimestamp = !isNaN(latestHandshake) && Number(latestHandshake) || null;
+                if (!obj.lastActiveTimestamp || obj.lastActiveTimestamp == 0) {
+                  const lastActiveTs = await rclient.hgetAsync(`${Constants.REDIS_KEY_VPN_WG_PEER}${intf}:${pubKey}`, "lastActiveTimestamp");
+                  if (lastActiveTs && Number(lastActiveTs)) {
+                    obj.lastActiveTimestamp = Number(lastActiveTs);
+                  }
+                }
                 if (endpoint !== "(none)")
                   obj.endpoint = endpoint;
                 obj.rxBytes = !isNaN(rxBytes) && Number(rxBytes) || 0;
@@ -276,7 +282,7 @@ class WGPeer extends Identity {
         const pubKey = endpointResult[0];
         const endpoint = endpointResult[1];
         if (pubKey && endpoint)
-          pubKeyEndpointMap[pubKey] = endpoint;
+          pubKeyEndpointMap[pubKey] = (endpoint !== "(none)" ? endpoint : null);
       }
     }
 
@@ -289,7 +295,7 @@ class WGPeer extends Identity {
           const pubKey = peer.publicKey;
           const allowedIPs = peer.allowedIPs || [];
           for (const ip of allowedIPs) {
-            if (pubKeyEndpointMap[pubKey])
+            if (_.has(pubKeyEndpointMap, pubKey))
               result[ip] = pubKeyEndpointMap[pubKey];
           }
         }
@@ -301,7 +307,7 @@ class WGPeer extends Identity {
         const pubKey = peer.publicKey;
         const allowedIPs = peer.allowedIPs || [];
         for (const ip of allowedIPs) {
-          if (pubKeyEndpointMap[pubKey])
+          if (_.has(pubKeyEndpointMap, pubKey))
             result[ip] = pubKeyEndpointMap[pubKey];
         }
       }
@@ -318,7 +324,8 @@ class WGPeer extends Identity {
   }
 
   getLocalizedNotificationKeySuffix() {
-    return ".wgvpn";
+    const obj = this.toJson();
+    return `.vpn.${_.isArray(obj.allowedIPs) && obj.allowedIPs.length > 1 ? "s2s" : "cs"}.wgvpn`;
   }
 
   getReadableName() {

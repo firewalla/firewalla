@@ -25,8 +25,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const f = require("../net2/Firewalla.js");
 const fc = require('../net2/config.js');
 
-const Promise = require('bluebird');
-
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
@@ -40,8 +38,6 @@ const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
 const CountryUpdater = require('../control/CountryUpdater.js')
 const countryUpdater = new CountryUpdater()
-
-const country = require('../extension/country/country.js');
 
 const _ = require('lodash')
 
@@ -197,8 +193,10 @@ class DestIPFoundHook extends Hook {
   }
 
   async updateCountryIP(intel) {
-    if (intel.ip && intel.country) {
-      await countryUpdater.updateIP(intel.country, intel.ip)
+    if (intel.ip) try {
+      await countryUpdater.updateIP(intel.ip, intel.country)
+    } catch(err) {
+      log.error('Error updating country IP', intel, err)
     }
   }
 
@@ -310,8 +308,8 @@ class DestIPFoundHook extends Hook {
     }
     if (_.isEmpty(enrichedFlow))
       return;
-    
-    let {ip, fd, host, mac, retryCount} = enrichedFlow;
+
+    const {ip, fd, host, mac, retryCount} = enrichedFlow;
     options = options || {};
 
     try {
@@ -342,7 +340,7 @@ class DestIPFoundHook extends Hook {
       }
     
       let intel;
-      if (!skipReadLocalCache) {
+      if (!skipReadLocalCache && ip) {
         intel = await intelTool.getIntel(ip);
 
         if (intel && !intel.cloudFailed) {
@@ -413,7 +411,7 @@ class DestIPFoundHook extends Hook {
       // update category pool if necessary
       await this.updateCategoryDomain(aggrIntelInfo);
 
-      if (skipReadLocalCache) {
+      if (skipReadLocalCache && ip) {
         intel = await intelTool.getIntel(ip);
 
         if (!aggrIntelInfo.action &&
@@ -421,19 +419,18 @@ class DestIPFoundHook extends Hook {
           !aggrIntelInfo.cloudFailed &&
           intel && intel.category === 'intel'
         ) {
-          log.info("Reset local intel action since it's not intel categary anymore.");
+          log.info("Reset local intel action since it's not intel categary anymore.", ip);
           aggrIntelInfo.action = "none";
         }
       }
 
-      if (!skipWriteLocalCache) {
+      if (!skipWriteLocalCache && ip) {
         // remove intel in case some keys in old intel doesn't exist in new one
         await intelTool.removeIntel(ip);
         await intelTool.addIntel(ip, aggrIntelInfo);
       }
 
       // update country with geoip-lite after writting to intel:ip so geoip data doesn't go there
-      aggrIntelInfo.country = aggrIntelInfo.country || country.getCountry(ip)
       await this.updateCountryIP(aggrIntelInfo);
 
       // check if detection should be triggered on this flow/mac immediately to speed up detection
@@ -447,7 +444,7 @@ class DestIPFoundHook extends Hook {
       return aggrIntelInfo;
 
     } catch (err) {
-      log.error(`Failed to process IP ${ip}, error:`, err);
+      log.error(`Failed to process${ip ? ` IP : ${ip}` : ""}${host ? ` host: ${host}` : ""}, error:`, err);
       return null;
     } finally {
       if (enrichedFlow && enrichedFlow.from === "flow" && !requeued) {

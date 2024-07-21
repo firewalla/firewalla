@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -201,7 +201,7 @@ class IntelTool {
   }
 
   async getCustomIntel(type, target) {
-    try {
+    if (target) try {
       const key = this.getCustomIntelKey(type, target)
       const intel = await rclient.getAsync(key)
       if (intel)
@@ -383,6 +383,9 @@ class IntelTool {
   }
 
   async addIntel(ip, intel, expire) {
+    if (!ip || ip == 'undefined')
+      throw new Error('Invalid intel', ip, intel, expire)
+
     intel = intel || {}
     expire = intel.e || this.getIntelExpiration()
 
@@ -393,7 +396,7 @@ class IntelTool {
     intel.updateTime = `${new Date() / 1000}`
 
     await rclient.hmsetAsync(key, this.redisfy('ip', intel));
-    if(intel.host && intel.ip) {
+    if(intel.host && ip) {
       // sync reverse dns info when adding intel
       await dnsTool.addReverseDns(intel.host, [intel.ip])
     }

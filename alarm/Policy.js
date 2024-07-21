@@ -164,6 +164,8 @@ class Policy {
     // "" will be undefined when get it from redis
     if (val1 === undefined && val2 === "") return true;
     if (val2 === undefined && val1 === "") return true;
+    if (_.isObject(val1) && _.isObject(val2))
+      return _.isEqual(val1, val2);
     return false;
   }
 
@@ -276,6 +278,55 @@ class Policy {
     const isSecurityPolicy = alarm_type && (["ALARM_INTEL", "ALARM_BRO_NOTICE", "ALARM_LARGE_UPLOAD"].includes(alarm_type));
     const isAutoBlockPolicy = this.method == 'auto' && this.category == 'intel';
     return isSecurityPolicy || isAutoBlockPolicy;
+  }
+
+  // x is the rule being checked
+  isRouteRuleToVPN() {
+    return this.action === "route" &&
+      this.routeType === "hard" &&
+      this.wanUUID;
+  }
+
+  isBlockingInternetRule() {
+    return this.action == "block" &&
+      this.type === "mac" &&
+      ["outbound", "bidirection"].includes(this.direction);
+  }
+
+  isBlockingIntranetRule() {
+    return this.action == "block" &&
+      this.type === "intranet" &&
+      ["outbound", "bidirection"].includes(this.direction);
+  }
+
+  isInboundInternetBlockRule() {
+    return this.action == "block" &&
+      this.direction === "inbound" &&
+      this.type == "mac";
+  }
+
+  isInboundInternetAllowRule() {
+    return this.action == "allow" &&
+      this.direction === "inbound" &&
+      this.type == "mac";
+  }
+
+  isInboundIntranetBlockRule() {
+    return this.action == "block" &&
+      this.direction === "inbound" &&
+      this.type == "intranet";
+  }
+
+  isInboundIntranetAllowRule() {
+    return this.action == "allow" &&
+      this.direction === "inbound" &&
+      this.type == "intranet";
+  }
+
+  isOutboundAllowRule() {
+    return this.action == "allow" &&
+      ["outbound", "bidirection"].includes(this.direction) &&
+      ["mac", "intranet"].includes(this.type);
   }
 
   isActiveProtectRule() {

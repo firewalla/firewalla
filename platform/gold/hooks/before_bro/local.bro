@@ -3,7 +3,7 @@
 ##! This file will not be overwritten when upgrading or reinstalling!
 
 redef ignore_checksums = T;
-redef SSL::disable_analyzer_after_detection = F;
+redef SSL::disable_analyzer_after_detection = T;
 
 #@load site/sqlite.bro
 
@@ -55,7 +55,7 @@ redef SSL::disable_analyzer_after_detection = F;
 @load protocols/ftp/detect
 
 # Scripts that do asset tracking.
-@load protocols/conn/known-hosts
+#@load protocols/conn/known-hosts
 @load protocols/conn/known-services
 @load protocols/ssl/known-certs
 
@@ -96,8 +96,10 @@ redef SSL::disable_analyzer_after_detection = F;
 @load policy/protocols/conn/mac-logging
 
 redef restrict_filters += [["not-mdns"] = "not port 5353"];
+# randomly drop ssl packets without SYN/FIN/RST based on the first bit of the most significant byte of TCP checksum(tcp header offset +16), this can reduce 50% traffic, also check first byte of tcp payload to inspect ssl handshake
+redef restrict_filters += [["random-pick-ssl"] = "not (ip and tcp and port 443 and tcp[13] & 0x7 == 0 and (len >= 1000 || tcp[13] == 0x10) and (tcp[((tcp[12] & 0xf0) >> 4) * 4] != 0x16) and tcp[16] & 0x8 != 0)"];
+redef restrict_filters += [["random-pick-ssl-ipv6"] = "not (ip6 and tcp and port 443 and ip6[40 + 13] & 0x7 == 0 && (len >= 1000 || ip6[40 + 13] == 0x10) and (ip6[40 + ((ip6[40 + 12] & 0xf0) >> 4) * 4] != 0x16) and ip6[40 + 16] & 0x8 != 0)"];
 
-redef SSL::disable_analyzer_after_detection = F;
 #redef Communication::listen_interface = 127.0.0.1;
 
 @load base/protocols/dhcp

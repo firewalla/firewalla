@@ -162,11 +162,15 @@ class FWAPC {
   }
 
   async getSTAStatus(mac) {
-    return await localGet(`/ap/sta_status/${mac}`, 1).then(resp => resp && resp.status);
+    return localGet(`/status/station/${mac}`, 1).then(resp => resp && resp.info);
   }
 
   async getAssetsStatus() {
     return localGet("/status/ap", 1).then(resp => resp.info);
+  }
+
+  async getPairingStatus() {
+    return localGet("/runtime/pairing_stat", 1);
   }
 
   async getConfig() {
@@ -202,9 +206,39 @@ class FWAPC {
     if(body) {
       options.body = body;
     }
+    try {
+      const resp = await rp(options);
+      let r =  {code: resp.statusCode, body: resp.body};
+      if (resp.statusCode === 500) {
+        r.msg = resp.body;
+      }
+      return r;
+    } catch (e) {
+      return {code: 500, msg: e.message};
+    }
+  }
 
-    const resp = await rp(options);
-    return {code: resp.statusCode, body: resp.body};
+  async setGroupACL(groupId, macs) {
+    if (!groupId)
+      throw new Error("groupId is not defined in setGroupACL");
+    if (!_.isArray(macs))
+      throw new Error("macs should be an array in setGroupACL");
+    const payload = {id: groupId, macs};
+    const {code, body, msg} = await this.apiCall("POST", "/config/set_group_acl", payload);
+    if (!isNaN(code) && Number(code) > 299) {
+      throw new Error(msg || "Failed to set group ACL in fwapc");
+    }
+    return;
+  }
+
+  async deleteGroupACL(groupId) {
+    if (!groupId)
+      throw new Error("groupId is not defined in setGroupACL");
+    const {code, body, msg} = await this.apiCall("DELETE", `/config/group_acl/${groupId}`);
+    if (!isNaN(code) && Number(code) > 299) {
+      throw new Error(msg || "Failed to set group ACL in fwapc");
+    }
+    return;
   }
 }
 

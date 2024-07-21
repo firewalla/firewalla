@@ -44,6 +44,8 @@ const IdentityManager = require('./IdentityManager.js');
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
+const IntelTool = require('./IntelTool.js')
+const intelTool = new IntelTool()
 
 const Accounting = require('../control/Accounting.js');
 const accounting = new Accounting();
@@ -66,7 +68,10 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
 const config = fc.getConfig().bro
 
+const { Address6 } = require('ip-address')
+
 const APP_MAP_SIZE = 1000;
+const PROXY_CONN_SIZE = 100;
 const FLOWSTASH_EXPIRES = config.conn.flowstashExpires;
 
 const httpFlow = require('../extension/flow/HttpFlow.js');
@@ -74,7 +79,7 @@ const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
 const fsp = require('fs').promises;
 
-const {formulateHostname, isDomainValid, delay} = require('../util/util.js');
+const {formulateHostname, isDomainValid, delay, getUniqueTs} = require('../util/util.js');
 
 const LRU = require('lru-cache');
 const FlowAggrTool = require('./FlowAggrTool.js');
@@ -145,6 +150,7 @@ class BroDetect {
     if (!firewalla.isMain())
       return;
     this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 10800 * 1000});
+    this.proxyConn = new LRU({max: PROXY_CONN_SIZE, maxAge: 60 * 1000});
     this.outportarray = [];
 
     let c = require('./MessageBus.js');
@@ -152,14 +158,19 @@ class BroDetect {
     this.flowstash = {};
     this.flowstashExpires = Date.now() / 1000 + FLOWSTASH_EXPIRES;
 
-    this.enableRecording = true
     this.activeMac = {};
+    this.incTs = 0;
 
     setInterval(() => {
       this._activeMacHeartbeat();
     }, 60000);
 
-    this.lastNTS = null;
+    this.tsWriteInterval = config.conn.tsWriteInterval || 10000
+    this.recordTrafficTask = setInterval(() => {
+      this.writeTrafficCache().catch(err => {
+        log.error('Error writing timeseries', err)
+      })
+    }, this.tsWriteInterval)
 
     this.activeLongConns = new Map();
     setInterval(() => {
@@ -255,27 +266,87 @@ class BroDetect {
   async processHttpData(data) {
     try {
       const obj = JSON.parse(data);
-      // workaround for https://github.com/zeek/zeek/issues/1844
-      if (obj.host && obj.host.match(/^\[?[0-9a-e]{1,4}$/)) {
-        obj.host = obj['id.resp_h']
+
+      const ip = obj['id.resp_h']
+
+      let host = obj.host
+      if (host) {
+        // workaround for https://github.com/zeek/zeek/issues/1844
+        if (host.match(/^\[?[0-9a-e]{1,4}$/)) {
+          host = ip || ''
+        }
+        // since zeek 5.0, the host will contain port number if it is not a well-known port
+        // http connect might contain target port (not the same as id.resp_p which is proxy port
+        // and sometimes there's a single trailing ':', probably a zeek bug
+        // v6 ip address is wrapped with []
+        if (host.includes(']:')) {
+          host = host.substring(0, host.indexOf(']:') + 1)
+        }
+        if (host.startsWith("[") && host.endsWith("]")) {
+          // strip [] from an ipv6 address
+          host = host.substring(1, host.length - 1);
+        }
+
+        // remove tailing port of v4 addresses
+        if (host.includes(':') && !new Address6(host).isValid()) {
+          host = host.substring(0, host.indexOf(':'))
+        }
+
+        obj.host = host
       }
-      if (obj.host.endsWith(':')) {
-        obj.host = obj.host.slice(0, -1)
+
+      // HTTP proxy, drop host info
+      if (obj.method == 'CONNECT' || obj.proxied) {
+        this.proxyConn.set(obj.uid, true)
+        log.verbose('Drop HTTP CONNECT', host, obj)
+
+        // in case SSL record processed already
+
+        // HTTP & SSL functions might still run into racing condition
+        // adding a lock doesn't really worth the performance penalty, simply adds a delay here
+        await delay((config.http.proxyIntelRemoveDelay || 30) * 1000)
+
+        // remove af data from flowstash
+        // won't be querying redis for written flows here as the cost is probably too much for this feature
+        for (const key in this.flowstash) {
+          if (this.flowstash[key].uids.includes(obj.uid)) {
+            const af = this.flowstash[key].af
+            if (af[host] && af[host].ip == ip)
+              delete af[host]
+            break // one uid could only appear in one flow
+          }
+        }
+
+        this.withdrawAppMap(obj['id.orig_h'], obj['id.orig_p'], ip, obj['id.resp_p']);
+        await conntrack.delConnEntries(obj['id.orig_h'], obj['id.orig_p'], ip, obj['id.resp_p'], 'tcp');
+
+        await rclient.unlinkAsync(intelTool.getSSLCertKey(ip))
+
+        await dnsTool.removeReverseDns(host, ip);
+        await dnsTool.removeDns(ip, host);
+
+        // DestIPFoundHook might have added intel:ip before everything get reversed
+        const intel = await intelTool.getIntel(ip)
+        if (intel.host == host || intel.sslHost == host || intel.dnsHost == host) {
+          delete intel.host
+          delete intel.sslHost
+          delete intel.dnsHost
+          delete intel.category
+
+          // remove domain related info and but keep the stub data to prevent rapid cloud fetch
+          await intelTool.addIntel(ip, intel)
+        }
+
+        return
       }
+
       httpFlow.process(obj);
       const appCacheObj = {
         uid: obj.uid,
-        host: obj.host,
+        host: host,
         proto: "http",
         ip: obj["id.resp_h"]
       };
-      if (obj.host && obj["id.resp_p"] && obj.host.endsWith(`:${obj["id.resp_p"]}`)) {
-        // since zeek 5.0, the host will contain port number if it is not a well-known port
-        appCacheObj.host = obj.host.substring(0, obj.host.length - `:${obj["id.resp_p"]}`.length);
-      }
-      if (appCacheObj.host && appCacheObj.host.startsWith("[") && appCacheObj.host.endsWith("]"))
-        // strip [] from an ipv6 address
-        appCacheObj.host = appCacheObj.host.substring(1, appCacheObj.host.length - 1);
       // this data can be used across processes, e.g., live flows in FireAPI
       if (appCacheObj.host && obj["id.orig_h"] && obj["id.resp_h"] && obj["id.orig_p"] && obj["id.resp_p"]) {
         const data = {};
@@ -285,7 +356,9 @@ class BroDetect {
         await conntrack.setConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], "tcp", data, 600);
         this.depositeAppMap(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], appCacheObj);
       }
-    } catch (err) {}
+    } catch (err) {
+      log.error("Processing HTTP data", err, data);
+    }
   }
 
   /*
@@ -389,6 +462,7 @@ class BroDetect {
             for (const cname of cnames) {
               await dnsTool.addDns(answer, cname, config.dns.expires);
             }
+            /* No need to emit DestIPFound from dns log as it is preciser in processConnData, this can reduce unnecessary overhead in DestIPFoundHook
             sem.emitEvent({
               type: 'DestIPFound',
               ip: answer,
@@ -396,6 +470,7 @@ class BroDetect {
               from: "dns",
               suppressEventLogging: true
             });
+            */
           }
         }
       } else if (obj['id.orig_p'] == 5353 && obj['id.resp_p'] == 5353 && obj['answers'].length > 0) {
@@ -427,12 +502,11 @@ class BroDetect {
       this.pingedIp = new LRU({max: 10000, maxAge: 1000 * 60 * 60 * 24, updateAgeOnGet: false})
     }
     if (!this.pingedIp.has(ip)) {
-      //log.info("Conn:Learned:Ip",ip,flowspec);
       // probably issue ping here for ARP cache and later used in IPv6DiscoverySensor
       if (!iptool.isV4Format(ip)) {
         // ip -6 neighbor may expire the ping pretty quickly, need to ping a few times to have sensors
         // pick up the new data
-        log.info("Conn:Learned:Ip", "ping ", ip, flowspec);
+        log.verbose("Conn:Learned:Ip", "ping ", ip, flowspec);
         linux.ping6(ip)
         setTimeout(() => {
           linux.ping6(ip)
@@ -452,7 +526,7 @@ class BroDetect {
   */
 
   // assuming identity is pre-checked and result is passed
-  isMonitoring(ip, intf, identity) {
+  isMonitoring(ip, intf, hostObject, identity) {
     if (!hostManager.isMonitoring())
       return false;
 
@@ -460,13 +534,13 @@ class BroDetect {
       if (!identity.isMonitoring()) return false
     }
     else {
-      let hostObject = null;
-
-      if (iptool.isV4Format(ip)) {
-        hostObject = hostManager.getHostFast(ip);
-      } else {
-        if (iptool.isV6Format(ip)) {
-          hostObject = hostManager.getHostFast6(ip);
+      if (!hostObject) {
+        if (iptool.isV4Format(ip)) {
+          hostObject = hostManager.getHostFast(ip);
+        } else {
+          if (iptool.isV6Format(ip)) {
+            hostObject = hostManager.getHostFast6(ip);
+          }
         }
       }
 
@@ -487,7 +561,7 @@ class BroDetect {
     return true;
   }
 
-  isConnFlowValid(data, intf, lhost, identity) {
+  isConnFlowValid(data, intf, lhost, hostObject, identity) {
     let m = mode.getSetupModeSync()
     if (!m) {
       return true               // by default, always consider as valid
@@ -505,7 +579,7 @@ class BroDetect {
     }
 
     // ignore any devices' traffic who is set to monitoring off
-    return this.isMonitoring(lhost, intf, identity)
+    return this.isMonitoring(lhost, intf, hostObject, identity)
   }
 
   isUDPtrafficAccountable(obj) {
@@ -544,6 +618,8 @@ class BroDetect {
     const orig_bytes = obj.orig_bytes;
     const orig_ip_bytes = obj.orig_ip_bytes;
     const resp_ip_bytes = obj.resp_ip_bytes;
+    const orig_pkts = obj.orig_pkts;
+    const resp_pkts = obj.resp_pkts;
 
     if (missed_bytes / (resp_bytes + orig_bytes) > threshold.missedBytesRatio) {
         log.debug("Conn:Drop:MissedBytes:RatioTooLarge", obj.conn_state, obj);
@@ -552,6 +628,7 @@ class BroDetect {
 
     if (orig_ip_bytes && orig_bytes &&
       (orig_ip_bytes > 1000 || orig_bytes > 1000) &&
+      orig_pkts > 0 && (orig_ip_bytes / orig_pkts < 1400) && // if multiple packets are assembled into one packet, orig(resp)_ip_bytes may be much less than orig(resp)_bytes
       (orig_ip_bytes / orig_bytes) < iptcpRatio) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Orig", obj.conn_state, obj);
       return false;
@@ -559,6 +636,7 @@ class BroDetect {
 
     if (resp_ip_bytes && resp_bytes &&
       (resp_ip_bytes > 1000 || resp_bytes > 1000) &&
+      resp_pkts > 0 && (resp_ip_bytes / resp_pkts < 1400) &&
       (resp_ip_bytes / resp_bytes) < iptcpRatio) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Resp", obj.conn_state, obj);
       return false;
@@ -701,11 +779,13 @@ class BroDetect {
           return;
         }
 
-        if ((obj.conn_state == "RSTR" || obj.conn_state == "RSTO") && obj.orig_pkts <= 10 && obj.resp_bytes == 0) {
+        if ((["RSTR", "RSTO", "S1", "S3", "SF"].includes(obj.conn_state) && obj.orig_pkts <= 10 && obj.resp_bytes == 0)) {
           log.debug("Conn:Drop:TLS", obj.conn_state, data);
           // Likely blocked by TLS. In normal cases, the first packet is SYN, the second packet is ACK, the third packet is SSL client hello. conn_state will be "RSTR"
-          // However, if zeek is listening on bridge interface, it will not capture tcp-reset from iptables. In this case, the remote server will send a FIN after 60 seconds and will be rejected by local device. The orig_pkts will be 4. conn_state will be "RSTO"
+          // However, if zeek is listening on bridge interface, it will not capture tcp-reset from iptables due to br_netfilter kernel module.
+          // In this case, the remote server will send a FIN after 60 seconds and may be rejected by local device. The orig_pkts will be 4. conn_state may be "RSTO", "S3", or "SF".
           // In rare cases, the originator will re-transmit data packets if the tcp-reset from iptables is not received. The orig_pkts will be more than 3 (or 4 if zeek listens on bridge). conn_state will be "RSTO" or "RSTR"
+          // Another possible corner case is, after RST is sent to the originator without being seen by zeek, zeek will still record the conn_state as "S1" if there is no subsequent packets from both sides
           return;
         }
       }
@@ -772,6 +852,7 @@ class BroDetect {
       let localType = TYPE_MAC;
       let realLocal = null;
       let identity = null;
+      let hostInfo = null;
       if (!localMac && lhost) {
         identity = IdentityManager.getIdentityByIP(lhost);
         let retry = 2
@@ -800,6 +881,8 @@ class BroDetect {
       // as flows with invalid conn_state are removed, all flows here could be considered as valid
       // this should be done before device monitoring check, we still want heartbeat update from unmonitored devices
       if (localMac && localType === TYPE_MAC) {
+        localMac = localMac.toUpperCase();
+        hostInfo = hostManager.getHostFastByMAC(localMac);
         const ets = Math.round((obj.ts + obj.duration) * 100) / 100;
         // do not record into activeMac if it is earlier than 5 minutes ago, in case the IP address has changed in the last 5 minutes
         if (ets > Date.now() / 1000 - 300) {
@@ -816,7 +899,7 @@ class BroDetect {
       }
 
       // ip address subnet mask calculation is cpu-intensive, move it after other light weight calculations
-      if (!this.isConnFlowValid(obj, intfInfo && intfInfo.name, lhost, identity)) {
+      if (!this.isConnFlowValid(obj, intfInfo && intfInfo.name, lhost, hostInfo, identity)) {
         return;
       }
 
@@ -928,8 +1011,7 @@ class BroDetect {
         return
       }
 
-      let hostInfo = null;
-      if (localMac && localType === TYPE_MAC) {
+      if (!hostInfo && localMac && localType === TYPE_MAC) {
         localMac = localMac.toUpperCase();
         hostInfo = hostManager.getHostFastByMAC(localMac);
       }
@@ -948,7 +1030,7 @@ class BroDetect {
       const tmpspec = {
         ts: obj.ts, // ts stands for start timestamp
         ets: Math.round((obj.ts + obj.duration) * 100) / 100 , // ets stands for end timestamp
-        _ts: now, // _ts is the last time updated
+        _ts: await getUniqueTs(now), // _ts is the last time updated, make it unique to avoid missing flows in time-based query
         sh: host, // source
         dh: dst, // dstination
         ob: Number(obj.orig_bytes), // transfer bytes
@@ -965,6 +1047,14 @@ class BroDetect {
         uids: [obj.uid],
         ltype: localType
       };
+
+      if (connEntry && connEntry.apid && Number(connEntry.apid)) {
+        tmpspec.apid = Number(connEntry.apid); // allow rule id
+      }
+
+      if (connEntry && connEntry.rpid && Number(connEntry.rpid)) {
+        tmpspec.rpid = Number(connEntry.rpid); // route rule id
+      }
 
       let transitiveTags = {};
       if (localMac) {
@@ -1050,15 +1140,15 @@ class BroDetect {
       if (tmpspec.fd == 'in') traffic.reverse()
 
       // use now instead of the start time of this flow
-      await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, localMac);
+      await this.recordTraffic(...traffic, tmpspec.ct, localMac);
       if (intfId) {
-        await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'intf:' + intfId, true);
+        await this.recordTraffic(...traffic, tmpspec.ct, 'intf:' + intfId, true);
       }
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const config = Constants.TAG_TYPE_MAP[type];
         const flowKey = config.flowKey;
         for (const tag of tmpspec[flowKey]) {
-          await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
+          await this.recordTraffic(...traffic, tmpspec.ct, 'tag:' + tag, true);
         }
       }
 
@@ -1067,8 +1157,8 @@ class BroDetect {
       let key = "flow:conn:" + tmpspec.fd + ":" + localMac;
       let strdata = JSON.stringify(tmpspec);
 
-      // beware that now/_ts is used as score in flow:conn:* zset, since now is always monotonically increasing
-      let redisObj = [key, now, strdata];
+      // beware that _ts is used as score in flow:conn:* zset, since _ts is always monotonically increasing
+      let redisObj = [key, tmpspec._ts, strdata];
       log.debug("Conn:Save:Temp", redisObj);
 
       // add mac to flowstash (but not redis)
@@ -1106,7 +1196,7 @@ class BroDetect {
           flowspec.ets = tmpspec.ets;
         }
         // update last time updated
-        flowspec._ts = now;
+        flowspec._ts = Math.max(flowspec._ts, tmpspec._ts);
         // TBD: How to define and calculate the duration of flow?
         //      The total time of network transfer?
         //      Or the length of period from the beginning of the first to the end of last flow?
@@ -1249,6 +1339,13 @@ class BroDetect {
         log.error("SSL:Drop", obj);
         return;
       }
+
+      if (this.proxyConn.get(obj.uid)) {
+        log.verbose('Drop SSL because HTTP CONNECT recorded', obj.uid, obj.server_name)
+        this.proxyConn.del(obj.uid)
+        return
+      }
+
       // do not process ssl log that does not pass the certificate validation
       if (obj["validation_status"] && obj["validation_status"] !== "ok")
         return;
@@ -1260,7 +1357,7 @@ class BroDetect {
       }
       let dsthost = obj['server_name'];
       let subject = obj['subject'];
-      let key = "host:ext.x509:" + dst;
+      let key = intelTool.getSSLCertKey(dst)
       let cert_chain_fuids = obj['cert_chain_fuids']; // present in zeek 3.x
       let cert_chain_fps = obj['cert_chain_fps']; // present in zeek 4.x
       let cert_id = null;
@@ -1355,7 +1452,7 @@ class BroDetect {
         await dnsTool.addDns(dst, obj.server_name, config.dns.expires);
       }
     } catch (e) {
-      log.error("SSL:Error Unable to save", e, e.stack, data);
+      log.error("SSL:Error Unable to save", e, data);
     }
   }
 
@@ -1542,67 +1639,60 @@ class BroDetect {
     return result;
   }
 
-  async recordTraffic(ts, inBytes, outBytes, conn, mac, ignoreGlobal = false) {
-    if (this.enableRecording) {
+  async writeTrafficCache() {
+    const toRecord = this.timeSeriesCache
+    this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 }, ts: Date.now() / 1000 }
+    const duration = this.timeSeriesCache.ts - toRecord.ts
+    const lastTS = Math.floor(toRecord.ts)
 
-
-      const normalizedTS = Math.floor(Math.floor(Number(ts)) / 10) // only record every 10 seconds
-
-      // lastNTS starts with null and assigned with normalizedTS every 10s
-      if (this.lastNTS != normalizedTS) {
-        const toRecord = this.timeSeriesCache
-
-        const duration = (normalizedTS - this.lastNTS) * 10;
-        this.lastNTS = normalizedTS
-        this.fullLastNTS = Math.floor(ts)
-        this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 } }
-
-        const wanNicStats = await this.getWanNicStats();
-        let wanNicRxBytes = 0;
-        let wanNicTxBytes = 0;
-        const wanTraffic = {};
-        for (const iface of Object.keys(wanNicStats)) {
-          if (this.wanNicStatsCache && this.wanNicStatsCache[iface]) {
-            const uuid = wanNicStats[iface].uuid;
-            const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicStats[iface].rxBytes;
-            const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicStats[iface].txBytes;
-            if (uuid) {
-              wanTraffic[uuid] = {rxBytes, txBytes};
-            }
-            wanNicRxBytes += rxBytes;
-            wanNicTxBytes += txBytes;
-          }
+    const wanNicStats = await this.getWanNicStats();
+    let wanNicRxBytes = 0;
+    let wanNicTxBytes = 0;
+    const wanTraffic = {};
+    for (const iface of Object.keys(wanNicStats)) {
+      if (this.wanNicStatsCache && this.wanNicStatsCache[iface]) {
+        const uuid = wanNicStats[iface].uuid;
+        const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicStats[iface].rxBytes;
+        const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicStats[iface].txBytes;
+        if (uuid) {
+          wanTraffic[uuid] = {rxBytes, txBytes};
         }
-        // a safe-check to filter abnormal rx/tx bytes spikes that may be caused by hardware bugs
-        const threshold = config.threshold;
-        if (wanNicRxBytes >= threshold.maxSpeed / 8 * duration)
-          wanNicRxBytes = 0;
-        if (wanNicTxBytes >= threshold.maxSpeed / 8 * duration)
-          wanNicTxBytes = 0;
-        this.wanNicStatsCache = wanNicStats;
-
-        const isRouterMode = await mode.isRouterModeOn();
-        if (isRouterMode) {
-          for (const uuid of Object.keys(wanTraffic)) {
-            timeSeries
-              .recordHit(`download:wan:${uuid}`, this.fullLastNTS, wanTraffic[uuid].rxBytes)
-              .recordHit(`upload:wan:${uuid}`, this.fullLastNTS, wanTraffic[uuid].txBytes)
-          }
-        }
-
-        for (const key in toRecord) {
-          const subKey = key == 'global' ? '' : ':' + key
-          const download = isRouterMode && key == 'global' ? wanNicRxBytes : toRecord[key].download;
-          const upload = isRouterMode && key == 'global' ? wanNicTxBytes : toRecord[key].upload;
-          log.debug("Store timeseries", this.fullLastNTS, key, download, upload, toRecord[key].conn)
-          timeSeries
-            .recordHit('download' + subKey, this.fullLastNTS, download)
-            .recordHit('upload' + subKey, this.fullLastNTS, upload)
-            .recordHit('conn' + subKey, this.fullLastNTS, toRecord[key].conn)
-        }
-        timeSeries.exec()
+        wanNicRxBytes += rxBytes;
+        wanNicTxBytes += txBytes;
       }
+    }
+    // a safe-check to filter abnormal rx/tx bytes spikes that may be caused by hardware bugs
+    const threshold = config.threshold;
+    if (wanNicRxBytes >= threshold.maxSpeed / 8 * duration)
+      wanNicRxBytes = 0;
+    if (wanNicTxBytes >= threshold.maxSpeed / 8 * duration)
+      wanNicTxBytes = 0;
+    this.wanNicStatsCache = wanNicStats;
 
+    const isRouterMode = await mode.isRouterModeOn();
+    if (isRouterMode) {
+      for (const uuid of Object.keys(wanTraffic)) {
+        if (wanTraffic[uuid].rxBytes)
+          timeSeries.recordHit(`download:wan:${uuid}`, lastTS, wanTraffic[uuid].rxBytes)
+        if (wanTraffic[uuid].txBytes)
+          timeSeries.recordHit(`upload:wan:${uuid}`, lastTS, wanTraffic[uuid].txBytes)
+      }
+    }
+
+    for (const key in toRecord) {
+      const subKey = key == 'global' ? '' : ':' + key
+      const download = isRouterMode && key == 'global' ? wanNicRxBytes : toRecord[key].download;
+      const upload = isRouterMode && key == 'global' ? wanNicTxBytes : toRecord[key].upload;
+      log.debug("Store timeseries", lastTS, key, download, upload, toRecord[key].conn)
+      download && timeSeries.recordHit('download' + subKey, lastTS, download)
+      upload && timeSeries.recordHit('upload' + subKey, lastTS, upload)
+      toRecord[key].conn && timeSeries.recordHit('conn' + subKey, lastTS, toRecord[key].conn)
+    }
+
+    timeSeries.exec()
+  }
+
+  async recordTraffic(inBytes, outBytes, conn, mac, ignoreGlobal = false) {
       // append current status
       if (!ignoreGlobal) {
         this.timeSeriesCache.global.download += Number(inBytes)
@@ -1616,7 +1706,6 @@ class BroDetect {
       this.timeSeriesCache[mac].download += Number(inBytes)
       this.timeSeriesCache[mac].upload += Number(outBytes)
       this.timeSeriesCache[mac].conn += Number(conn)
-    }
   }
 
   recordOutPort(mac, tmpspec) {

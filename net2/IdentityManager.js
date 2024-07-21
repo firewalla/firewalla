@@ -321,16 +321,19 @@ class IdentityManager {
     // Quick path. In most cases, key in this.ipEndpointMap is bare IP address and can be directly compared with argument ip
     for (const ns of Object.keys(this.ipEndpointMap)) {
       const ipEndpointMap = this.ipEndpointMap[ns];
-      const endpoint = ipEndpointMap && (ipEndpointMap[ip] || ipEndpointMap[`${ip}/32`] || ipEndpointMap[`${ip}/128`]);
-      if (endpoint)
-        return endpoint;
+      if (_.has(ipEndpointMap, ip))
+        return ipEndpointMap[ip];
+      if (_.has(ipEndpointMap, `${ip}/32`))
+        return ipEndpointMap[`${ip}/32`];
+      if (_.has(ipEndpointMap, `${ip}/128`))
+        return ipEndpointMap[`${ip}/128`];
     }
     // Slow path. Match argument ip using CIDRTrie
     if (new Address4(ip).isValid()) {
       for (const ns of Object.keys(this.cidr4TrieMap)) {
         const cidr4Trie = this.cidr4TrieMap[ns];
         const val = cidr4Trie.find(ip);
-        if (val && val.endpoint) {
+        if (val && _.has(val, "endpoint")) {
           return val.endpoint;
         }
       }
@@ -339,7 +342,7 @@ class IdentityManager {
         for (const ns of Object.keys(this.cidr6TrieMap)) {
           const cidr6Trie = this.cidr6TrieMap[ns];
           const val = cidr6Trie.find(ip);
-          if (val && val.endpoint) {
+          if (val && _.has(val, "endpoint")) {
             return val.endpoint;
           }
         }

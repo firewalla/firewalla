@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -91,17 +91,19 @@ class VPNClient {
       return null;
   }
 
-  static async getVPNProfilesForInit(json) {
+  static async getVPNProfilesForInit() {
     const types = ["openvpn", "wireguard", "ssl", "zerotier", "nebula", "trojan", "clash", "hysteria", "ipsec", "ts"];
+    const results = {}
     await Promise.all(types.map(async (type) => {
       const c = this.getClass(type);
       if (c) {
         let profiles = [];
         const profileIds = await c.listProfileIds();
         Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
-        json[c.getKeyNameForInit()] = profiles;
+        results[c.getKeyNameForInit()] = profiles;
       }
     }));
+    return results
   }
 
   static getClass(type) {
@@ -170,7 +172,7 @@ class VPNClient {
         break;
       }
       default:
-        log.error(`Unrecognized VPN client type: ${type}`);
+        throw new Error(`Unrecognized VPN client type: ${type}`);
         return null;
     }
   }
@@ -410,8 +412,8 @@ class VPNClient {
     }
   }
 
-  async _checkConnectivity() {
-    if (!this._started || (this._lastStartTime && Date.now() - this._lastStartTime < 60000)) {
+  async _checkConnectivity(force = false) {
+    if (!this._started || this._restarting || (this._lastStartTime && Date.now() - this._lastStartTime < 60000 && !force)) {
       return;
     }
     let result = await this._isLinkUp();
@@ -427,6 +429,8 @@ class VPNClient {
           log.debug(`Internet is available via VPN client ${this.profileId}`);
       }
     }
+    if (this._restarting)
+      return;
     if (result) {
       sem.emitEvent({
         type: "link_established",
@@ -565,8 +569,11 @@ class VPNClient {
       if (!this._started)
         return;
       // use _stop instead of stop() here, this will only re-establish connection, but will not remove other settings, e.g., kill-switch
+      this._restarting = true;
       this.setup().then(() => this._stop()).then(() => this.start()).catch((err) => {
         log.error(`Failed to restart ${this.constructor.getProtocol()} vpn client ${this.profileId}`, err.message);
+      }).finally(() => {
+        this._restarting = false;
       });
     }, 5000);
   }
@@ -876,11 +883,12 @@ class VPNClient {
             this._scheduleRefreshRoutes();
             await this.addRemoteEndpointRoutes().catch((err) => {});
             if (f.isMain()) {
-              sem.emitEvent({
-                type: "link_established",
-                profileId: this.profileId,
-                suppressEventLogging: true,
-              });
+              // check connectivity and emit link_established or link_broken later, before which routes are already added and ping test using fwmark will work properly
+              setTimeout(() => {
+                this._checkConnectivity(true).catch((err) => {
+                  log.error(`Failed to check connectivity on VPN client ${this.profileId}`, err.message);
+                });
+              }, 20000);
             }
             resolve({result: true});
           } else {
@@ -1089,33 +1097,60 @@ class VPNClient {
   }
 
   async getAttributes(includeContent = false) {
-    const settings = await this.loadSettings();
-    const status = await this.status();
-    const stats = await this.getStatistics();
-    const message = await this.getMessage();
-    const profileId = this.profileId;
-    let routedSubnets = settings.serverSubnets || [];
-    // add vpn client specific routes
-    try {
-      const vpnSubnets = await this.getRoutedSubnets();
-      if (vpnSubnets && _.isArray(vpnSubnets))
-        routedSubnets = routedSubnets.concat(vpnSubnets);
-    } catch (err) {
-      log.error('Failed to parse VPN subnet', err.message);
-    }
-    routedSubnets = this.getSubnetsWithoutConflict(_.uniq(routedSubnets));
-
-    const config = await this.loadJSONConfig() || {};
-    const remoteIP = await this._getRemoteIP();
-    const remoteIP6 = await this._getRemoteIP6();
-    const localIP = await this._getLocalIP();
-    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
-    const type = await this.constructor.getProtocol();
-    let sessionLog = null;
-    if (includeContent) {
-      sessionLog = await this.getLatestSessionLog();
-    }
-    return {profileId, settings, status, stats, message, routedSubnets, type, config, remoteIP, remoteIP6, localIP, rtId, sessionLog};
+    const promises = [];
+    const result = {profileId: this.profileId};
+    promises.push((async () => {
+      const settings = await this.loadSettings();
+      result.settings = settings;
+      let routedSubnets = settings.serverSubnets || [];
+      // add vpn client specific routes
+      try {
+        const vpnSubnets = await this.getRoutedSubnets();
+        if (vpnSubnets && _.isArray(vpnSubnets))
+          routedSubnets = routedSubnets.concat(vpnSubnets);
+      } catch (err) {
+        log.error('Failed to parse VPN subnet', err.message);
+      }
+      routedSubnets = this.getSubnetsWithoutConflict(_.uniq(routedSubnets));
+      result.routedSubnets = routedSubnets;
+    })());
+    promises.push((async () => {
+      result.status = await this.status();
+    })());
+    promises.push((async () => {
+      result.stats = await this.getStatistics();
+    })());
+    promises.push((async () => {
+      result.message = await this.getMessage();
+    })());
+    promises.push((async () => {
+      result.type = await this.constructor.getProtocol();
+    })());
+    promises.push((async () => {
+      result.config = await this.loadJSONConfig() || {};
+    })());
+    promises.push((async () => {
+      result.remoteIP = await this._getRemoteIP();
+    })());
+    promises.push((async () => {
+      result.remoteIP6 = await this._getRemoteIP6();
+    })());
+    promises.push((async () => {
+      result.localIP = await this._getLocalIP();
+    })());
+    promises.push((async () => {
+      result.rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
+    })());
+    promises.push((async () => {
+      result.dnsServers = await this._getDNSServers() || [];
+    })());
+    promises.push((async () => {
+      result.sessionLog = includeContent ? await this.getLatestSessionLog() : null;
+    })());
+    await Promise.all(promises).catch((err) => {
+      log.error(`Failed to get attributes of VPN Client ${this.profileId}`, err.message);
+    });
+    return result;
   }
 
   async resolveFirewallaDDNS(domain) {

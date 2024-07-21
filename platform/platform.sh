@@ -83,10 +83,6 @@ function led_boot_state() {
   return 0
 }
 
-function installTLSModule {
-  return
-}
-
 function installSchCakeModule {
   return
 }
@@ -99,14 +95,32 @@ function get_profile_default_name {
   echo "profile_default"
 }
 
+function beep {
+  return
+}
+
 case "$UNAME" in
   "x86_64")
-    source $FW_PLATFORM_DIR/gold/platform.sh
-    FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/gold
+    if [[ -e /etc/firewalla-release ]]; then
+      BOARD=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
+    else
+      BOARD='unknown'
+    fi
+    case $BOARD in
+      gold-pro)
+        source $FW_PLATFORM_DIR/goldpro/platform.sh
+        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/goldpro
+        export FIREWALLA_PLATFORM=goldpro
+        ;;
+      *)
+        source $FW_PLATFORM_DIR/gold/platform.sh
+        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/gold
+        export FIREWALLA_PLATFORM=gold
+        ;;
+    esac
     BRO_PROC_NAME="zeek"
     BRO_PROC_COUNT=6
     export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
-    export FIREWALLA_PLATFORM=gold
     ;;
   "aarch64")
     if [[ -e /etc/firewalla-release ]]; then
@@ -181,6 +195,21 @@ case "$UNAME" in
     ;;
 esac
 
+function installTLSModule {
+  uid=$(id -u pi)
+  gid=$(id -g pi)
+  if ! lsmod | grep -wq "xt_tls"; then
+    ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/xt_tls.ko
+    if [[ -f $ko_path ]]; then
+      sudo insmod ${ko_path} max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
+    fi
+    so_path=${FW_PLATFORM_CUR_DIR}/files/shared_objects/$(lsb_release -cs)/libxt_tls.so
+    if [[ -f $so_path ]]; then
+      sudo install -D -v -m 644 ${so_path} /usr/lib/$(uname -m)-linux-gnu/xtables
+    fi
+  fi
+  return
+}
 
 function before_bro {
   if [[ -d ${FW_PLATFORM_DIR}/all/hooks/before_bro ]]; then

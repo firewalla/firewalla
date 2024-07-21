@@ -22,6 +22,8 @@ const firewalla = require("../net2/Firewalla.js");
 
 const Block = require('./Block.js');
 const CategoryUpdaterBase = require('./CategoryUpdaterBase.js');
+const country = require('../extension/country/country.js')
+const geoipUtils = require('../vendor_lib/geoip-lite/utils.js')
 
 const exec = require('child-process-promise').exec
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -30,11 +32,10 @@ let instance = null
 
 const EXPIRE_TIME = 60 * 60 * 48 // 2 days
 
-const iptool = require("ip");
+const _ = require('lodash')
 
-const util = require('util')
-const fs = require('fs');
-const writeFileAsync = util.promisify(fs.writeFile);
+const fsp = require('fs').promises
+const net = require("net");
 
 const Ipset = require('../net2/Ipset.js')
 
@@ -71,6 +72,10 @@ class CountryUpdater extends CategoryUpdaterBase {
 
   getCountry(category) {
     return category.substring(8);
+  }
+
+  getDynamicKey(category, ip6 = false) {
+    return `dynamicCategory:${category}:ip${ip6?6:4}:net`
   }
 
   getDynamicIPv4Key(category) {
@@ -136,45 +141,42 @@ class CountryUpdater extends CategoryUpdaterBase {
   }
 
   async addDynamicEntries(category, options) {
-    const getKey    = [this.getDynamicIPv4Key, this.getDynamicIPv6Key]
-    const getSet    = [this.getIPSetName, this.getIPSetNameForIPV6]
-    const getTmpSet = [this.getTempIPSetName, this.getTempIPSetNameForIPV6]
+    for (let ip6 of [false, true]) try {
+      const key = this.getDynamicKey(category, ip6)
 
-    for (let i = 0; i < 2; i++) {
-      const key = getKey[i](category)
-      const exists = await rclient.zcountAsync(key, '-inf', '+inf')
+      const ipsetName = this.getIPSetName(category, false, ip6, options.useTemp)
+      const entries = await rclient.zrangeAsync(key, 0, -1)
 
-      const ipsetName = options && options.useTemp ?
-        getTmpSet[i](category) :
-        getSet[i](category)
-      const cmd = `redis-cli zrange ${key} 0 -1 | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-      log.debug('addDynamicEntries:', cmd)
-
-      if (exists) try {
-        await exec(cmd)
-      } catch(err) {
-        log.error(`Failed to update ipset for ${category}, cmd: ${cmd}`, err)
-      }
+      // individual IPs will still be adding to the set until rotated out by CIDRs in updateIP()
+      await Ipset.testAndAdd(entries, ipsetName, 60)
+    } catch(err) {
+      log.error(`Failed adding v${ip6?6:4} dynamic entries to ${category}`, err)
     }
   }
 
   async updateIpset(category, ip6 = false, options) {
-
-    let ipsetName = ip6 ? this.getIPSetNameForIPV6(category) : this.getIPSetName(category)
-
-    if(options && options.useTemp) {
-      ipsetName = ip6 ? this.getTempIPSetNameForIPV6(category) : this.getTempIPSetName(category)
-    }
+    const ipsetName = this.getIPSetName(category, false, ip6, options.useTemp)
 
     const country = this.getCountry(category);
     const file = DISK_CACHE_FOLDER + `/${country}.ip${ip6?6:4}`;
+
+    if (options.useTemp && !ip6) try {
+      const countFile = file + '.count'
+      const entriesCount = Number(await fsp.readFile(countFile))
+      const setMeta = await Ipset.read(ipsetName, true)
+      if (entriesCount > Number(_.get(setMeta, 'header.maxelem'))) {
+        await this.rebuildIpset(category, ip6, options)
+      }
+    } catch(err) {
+      log.error('Failed to rebuild temp ipset', err)
+    }
 
     try {
       await exec(`sudo ipset flush ${ipsetName}`)
       let cmd4 = `cat ${file} | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
       await exec(cmd4)
     } catch(err) {
-      log.error(`Failed to update ipset by category ${category} with ipv${ip6?6:4} addresses`, err)
+      log.error(`Failed to update ipset by category ${category} with ipv${ip6?6:4} addresses`, err.message)
     }
   }
 
@@ -185,7 +187,9 @@ class CountryUpdater extends CategoryUpdaterBase {
     }
 
     const file = DISK_CACHE_FOLDER + `/${country}.ip${ip6?6:4}`;
-    await writeFileAsync(file, addresses.join('\n') + '\n');
+    await fsp.writeFile(file, addresses.join('\n') + '\n');
+    const countFile = file + '.count'
+    await fsp.writeFile(countFile, addresses.length);
   }
 
   async checkActivationStatus(category) {
@@ -207,7 +211,8 @@ class CountryUpdater extends CategoryUpdaterBase {
       }
     }
 
-    await this.updatePersistentIPSets(category, {useTemp: true});
+    // only update v4 persistent set, v6 space is too big for this approach
+    await this.updatePersistentIPSets(category, false, {useTemp: true});
 
     await this.addDynamicEntries(category, {useTemp: true});
 
@@ -216,10 +221,23 @@ class CountryUpdater extends CategoryUpdaterBase {
     log.info(`Successfully recycled ipset for category ${category}`)
   }
 
-  async updateIP(code, ip, add = true) {
-    if(!code || !ip) {
-      return;
+  async updateIP(ip, code, add = true) {
+    if (!ip || ip == 'undefined') {
+      return
     }
+    const fam = net.isIP(ip)
+    if (fam == 0) {
+      throw new Error(`updateIP: invalid input: ${JSON.stringify(ip)} / ${code}`)
+    }
+
+    let CIDRs = [ ip ]
+    const geoip = country.geoip.lookup(ip)
+    if (geoip && (!code || geoip.country == code)) {
+      code = geoip.country
+      CIDRs = geoipUtils.numberToCIDRs(geoip.range[0], geoip.range[1], fam)
+    }
+    if (!code) return
+    log.debug('updateIP', ip, code, CIDRs)
 
     const category = this.getCategory(code)
 
@@ -231,24 +249,24 @@ class CountryUpdater extends CategoryUpdaterBase {
 
     let ipset, key;
 
-    if (iptool.isV4Format(ip)) {
+    if (fam == 4) {
       ipset = this.getIPSetName(category)
       key = this.getDynamicIPv4Key(category)
-    } else if (iptool.isV6Format(ip)) {
+    } else if (fam == 6) {
       ipset = this.getIPSetNameForIPV6(category)
       key = this.getDynamicIPv6Key(category)
-    } else {
-      log.error('Invalid IP', ip)
-      return
     }
-
-    this.batchOps.push(`${add ? 'add' : 'del'} ${ipset} ${ip}`);
 
     if (add) {
       const now = Math.floor(Date.now() / 1000)
-      await rclient.zaddAsync(key, now, ip)
+      await rclient.zaddAsync(key, _.flatMap(CIDRs, v=> [now, v]))
+
+      // test and add ipset right away to enforce policies
+      await Ipset.testAndAdd(CIDRs, ipset)
     } else
       await rclient.zremAsync(key, ip)
+
+      this.batchOps.push(`del ${ipset} ${ip}`);
   }
 }
 

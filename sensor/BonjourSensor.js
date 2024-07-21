@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -211,6 +211,12 @@ class BonjourSensor extends Sensor {
       //   detect.brand = 'Apple'
       //   break
       case '_airplay':
+        // airplay almost always has a good readable name, let's use it
+        if (name) detect.name = name
+        // falls through
+      case '_rfb':        // apple-screen-share
+      case '_sftp-ssh':   // apple-remote-login
+      case '_eppc':       // apple-remote-events 
       case '_mediaremotetv': {
         const result = await modelToType(txt && txt.model)
         if (result) {
@@ -218,21 +224,23 @@ class BonjourSensor extends Sensor {
           detect.brand = 'Apple'
           detect.model = txt.model
         } else if (type == '_airplay' && txt) {
-          // airplay only https://openairplay.github.io/airplay-spec/service_discovery.html
+          // none apple device airplay https://openairplay.github.io/airplay-spec/service_discovery.html
           if (txt.manufacturer) detect.brand = txt.manufacturer
           if (txt.model) detect.model = txt.model
         }
 
-        // airplay almost always has a good readable name, let's use it
-        detect.name = name
         break
       }
       case '_raop': { // Remote Audio Output Protocol
-        const result = await modelToType(txt && txt.am)
+        const result = await modelToType(txt && txt.am) || await modelToType(txt && txt.model)
         if (result) {
           detect.type = result
           detect.brand = 'Apple'
-        }
+          const indexAt = name.indexOf('@')
+          if (indexAt != -1)
+            detect.name = name.substring(indexAt + 1)
+        } else
+          service.name = this.getHostName(service.hostName)
         break
       }
       case '_sleep-proxy':
@@ -277,10 +285,15 @@ class BonjourSensor extends Sensor {
       case '_amzn-wplay':
         if (txt && txt.sn == 'DeviceManager') break
 
+        // this is not accurate, TBD: amazon play model to type mapping
         detect.type = 'tv'
         if (txt && txt.n) {
           detect.name = txt.n
         }
+        break
+      case '_sonos':
+        detect.type = 'smart speaker'
+        detect.name = name.includes('@') ? name.substring(name.indexOf('@')+1) : name
         break
       case '_mi-connect':
         try {
@@ -303,6 +316,19 @@ class BonjourSensor extends Sensor {
           if (txt.mn) detect.model = txt.mn
         }
         break
+      case '_http':
+        // ignore _http on comprehensive devices even type is not from bonjour
+        if (['phone', 'tablet', 'desktop', 'laptop'].includes(_.get(hostObj, 'o.detect.type'))) {
+          return
+        }
+        break
+      // case '_psia': // Physical Security Interoperability Alliance
+      // case '_CGI':
+      //   detect.type = 'camera'
+      //   break
+      // case '_amzn-alexa':
+      //   // detect.type = 'smart speaker'
+      //   break
     }
 
     if (Object.keys(detect).length) {
@@ -321,7 +347,7 @@ class BonjourSensor extends Sensor {
       from: "bonjour"
     };
 
-    if (name && name.length && type != '_mi-connect')
+    if (name && name.length && !this.config.ignoreNames.some(n => name.includes(n)) && type != '_mi-connect')
       host.bname = name
 
     if (ipv4Addr) {
@@ -340,9 +366,8 @@ class BonjourSensor extends Sensor {
     })
   }
 
-  getHostName(service) {
-    let name = service.host.replace(".local", "");
-    return name;
+  getHostName(host) {
+    return host.replace(".local", "")
   }
 
   getFriendlyDeviceName(service) {
@@ -355,7 +380,7 @@ class BonjourSensor extends Sensor {
       service.fqdn && bypassList.some((x) => service.fqdn.match(x)) ||
       this.config.nonReadableNameServices.includes(service.type)
     ) {
-      name = this.getHostName(service)
+      name = this.getHostName(service.host)
     } else {
       name = service.name
     }
@@ -369,21 +394,20 @@ class BonjourSensor extends Sensor {
     if (service == null) {
       return;
     }
-    if (service.addresses == null ||
-      service.addresses.length == 0 ||
-      service.referer.address == null) {
+
+    const addresses = service.addresses && service.addresses.length ? service.addresses : [ service.referer.address ]
+    if (!addresses.length)
       return;
-    }
 
     // not really helpful on recognizing name & type
-    if (this.config.ignoredServices.includes(service.type)) {
+    if (this.config.ignoreServices.includes(service.type)) {
       return
     }
 
     let ipv4addr = null;
     let ipv6addr = [];
 
-    for (const addr of service.addresses) {
+    for (const addr of addresses) {
       if (new Address4(addr).isValid()) {
         if (sysManager.isLocalIP(addr)) {
           ipv4addr = addr;
@@ -393,6 +417,10 @@ class BonjourSensor extends Sensor {
       } else if (new Address6(addr).isValid()) {
         ipv6addr.push(addr);
       }
+    }
+
+    if (!ipv4addr && !ipv6addr.length) {
+      return
     }
 
     let s = {

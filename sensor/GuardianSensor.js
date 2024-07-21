@@ -16,6 +16,7 @@
 
 const log = require('../net2/logger.js')(__filename)
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const pclient = require('../util/redis_manager.js').getPublishClient()
 const Sensor = require('./Sensor.js').Sensor
 const Promise = require('bluebird')
 const extensionManager = require('./ExtensionManager.js')
@@ -44,6 +45,14 @@ class GuardianSensor extends Sensor {
 
     extensionManager.onSet("guardian.business", async (msg, data) => {
       return this.setBusiness(data);
+    });
+
+    extensionManager.onSet("msp.data", async (msg, data) => {
+      return this.setMspData(data);
+    });
+
+    extensionManager.onGet("msp.data", async (msg, data) => {
+      return this.getMspData(data);
     });
 
     extensionManager.onGet("guardianSocketioRegion", (msg, data) => {
@@ -129,6 +138,17 @@ class GuardianSensor extends Sensor {
   async setBusiness(data = {}) {
     const guardian = await this.getGuardianByAlias(data.alias);
     return guardian.setBusiness(data);
+  }
+
+  async setMspData(data = {}) {
+    await pclient.publishAsync('config:msp:updated', JSON.stringify(data.list)) // for compatible purpose, keep it there, be careful when set msp.data, the value should be {list:data}
+    const guardian = await this.getGuardianByAlias(data.alias);
+    return guardian.setMspData(data.list);
+  }
+
+  async getMspData(data = {}) {
+    const guardian = await this.getGuardianByAlias(data.alias);
+    return guardian.getMspData();
   }
 
   async getRegion(data = {}) {

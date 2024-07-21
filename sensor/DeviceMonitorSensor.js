@@ -136,9 +136,14 @@ class DeviceMonitorSensor extends Sensor {
     });
 
     extensionManager.onGet("staStatus", async (msg,data) => {
-      const mac = data && data.mac;
-      const status = await fwapc.getSTAStatus(mac);
-      return status;
+      try {
+        const mac = data && data.mac;
+        const status = await fwapc.getSTAStatus(mac)
+        return status;
+      } catch(err) {
+        log.error('Error getting staStatus', err.message)
+        return null
+      }
     });
   }
 

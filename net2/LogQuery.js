@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -210,7 +210,7 @@ class LogQuery {
     results = _.flatten(await Promise.all(feeds.map(async feed => {
       const logs = await feed.query(feed.options)
       if (logs.length) {
-        feed.options.ts = logs[logs.length - 1].ts
+        feed.options.ts = logs[logs.length - 1]._ts
       } else {
         // no more elements, remove feed from feeds
         toRemove.push(feed)
@@ -234,7 +234,7 @@ class LogQuery {
 
       let logs = await feed.query(feed.options)
       if (logs.length) {
-        feed.options.ts = logs[logs.length - 1].ts
+        feed.options.ts = logs[logs.length - 1]._ts || logs[logs.length - 1].ts // _ts is newly added into block flows, in case it does not exist, use ts as a fallback
 
         logs = logs.filter(log => feed.filter(log))
         if (logs.length) {
@@ -477,11 +477,9 @@ class LogQuery {
       if (f.rl) {
         const rlIp = f.rl.startsWith("[") && f.rl.includes("]:") ? f.rl.substring(1, f.rl.indexOf("]:")) : f.rl.split(":")[0];
         const rlIntel = await intelTool.getIntel(rlIp);
-        if (rlIntel) {
-          if (rlIntel.country)
-            f.rlCountry = rlIntel.country;
-        }
-        if (!f.rlCountry) {
+        if (rlIntel && rlIntel.country) {
+          f.rlCountry = rlIntel.country;
+        } else {
           const c = country.getCountry(rlIp);
           if (c)
             f.rlCountry = c;

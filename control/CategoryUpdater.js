@@ -110,6 +110,18 @@ class CategoryUpdater extends CategoryUpdaterBase {
                   log.error(`Failed to update category domain ${event.category}`, err.message);
                 }
               }
+
+              // check if category filter exists to update
+              const bf_strategy = await this.getStrategy(event.category + '_bf');
+              if (bf_strategy && this.isActivated(event.category + '_bf')) {
+                if (bf_strategy.dnsmasq.enabled && bf_strategy.dnsmasq.useFilter)
+                  sem.emitEvent({
+                    type: "REFRESH_CATEGORY_FILTER",
+                    message: "Refresh category fitler " + event.category + '_bf',
+                    category: event.category + '_bf',
+                    toProcess: "FireMain"
+                  });
+              };
             }
           }
         });
@@ -310,6 +322,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async activateCategory(category) {
+    log.debug("invoke activate category", category)
     if (this.isActivated(category)) return;
     if (firewalla.isMain()) // do not create ipset unless in FireMain
       await super.activateCategory(category, this.isCustomizedCategory(category) ? this._getCustomizedCategoryIpsetType(category) : "hash:net");
@@ -965,7 +978,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
       updateOptions.comment = "persistent";
     }
 
-    await this.updatePersistentIPSets(category, updateOptions);
+    await this.updatePersistentIPSets(category, false, updateOptions);
+    await this.updatePersistentIPSets(category, true, updateOptions);
 
     const strategy = await this.getStrategy(category);
     const domains = await this.getDomains(category);
@@ -1227,7 +1241,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         exception: {
           useHitSet: true
         }
-        };      
+      };
       default:
       return defaultStrategyConfig;
     }
@@ -1244,7 +1258,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   // system target list using cloudcache, mainly for large target list to reduce bandwidth usage of polling hashset
   isManagedTargetList(category) {
-    return !this.isUserTargetList(category) && !this.isSmallExtendedTargetList(category) && !this.excludeListBundleIds.has(category);
+    return !this.isUserTargetList(category) && !this.isSmallExtendedTargetList(category) && !this.excludeListBundleIds.has(category) && !category.endsWith('_bf');
   }
 }
 

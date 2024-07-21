@@ -143,7 +143,7 @@ ${CONNECT_AP} && AP_COLS="idx:-3 $AP_COLS"
 print_header >&2; hl >&2
 lines=0
 timeit begin
-ap_data=$(ap_config | jq -r ".assets|to_entries[]|[.key, .value.sysConfig.name//\"${NO_VALUE}\", .value.sysConfig.meshMode//\"default\", .value.publicKey]|@tsv")
+ap_data=$(ap_config | jq -r ".assets|to_entries|sort_by(.key)[]|[.key, .value.sysConfig.name//\"${NO_VALUE}\", .value.sysConfig.meshMode//\"default\", .value.publicKey]|@tsv")
 timeit ap_data
 ap_status=$(local_api status/ap | jq -r ".info|to_entries[]|[.key,.value.version//\"${NO_VALUE}\",.value.sysUptime, (.value.eths//{}|.[]|(.connected,.linkSpeed))]|@tsv")
 timeit ap_status
@@ -225,6 +225,7 @@ tty_rows=$(stty size | awk '{print $1}')
 ${CONNECT_AP} && {
     while read -p "Select index to SSH to:" si
     do
+        test -n "$si" || continue
         if (( $si < $lines && $si >=0 )) ; then  break; fi
     done
     echo ">>ssh to '${ap_names[$si]}' at ${ap_ips[$si]} ..."

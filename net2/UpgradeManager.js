@@ -18,7 +18,6 @@ const fs = require("fs");
 
 const log = require('./logger.js')(__filename);
 
-const sysManager = require('./SysManager.js');
 const f = require('./Firewalla.js')
 const config = require('./config.js')
 const platform = require('../platform/PlatformLoader.js').getPlatform();
@@ -51,6 +50,7 @@ function finishUpgrade() {
 }
 
 async function getUpgradeInfo() {
+  const sysManager = require('./SysManager.js');
   let sysInfo = await sysManager.getSysInfoAsync();
 
   let tagBeforeUpgrade = fs.existsSync('/home/pi/.firewalla/run/upgrade-pre-tag')
@@ -79,13 +79,12 @@ async function getHashAndVersion() {
   try {
     const remoteHash = await f.getRemoteCommitHash()
     const remoteTS = await getCommitTS(remoteHash)
-    const remoteVersion = localHash == remoteHash ? localVersion :
-      _.get(await rrWithErrHandling({
-        uri: `https://raw.githubusercontent.com/firewalla/firewalla/${remoteHash}/net2/config.json`,
-        json: true,
-        maxAttempts: 3,
-        retryDelay: 1000,
-      }), 'body.version', null)
+    let remoteVersion = localVersion
+    if (localHash != remoteHash) {
+      await exec(`timeout 20s git fetch origin ${remoteHash}`)
+      const cmd = await exec(`git show ${remoteHash}:net2/config.json`)
+      remoteVersion = JSON.parse(cmd.stdout).version
+    }
 
     return { localHash, localTS, localVersion, remoteHash, remoteTS, remoteVersion }
   } catch(err) {
@@ -119,6 +118,7 @@ async function getRouterHash() {
 }
 
 async function updateVersionTag() {
+  const sysManager = require('./SysManager.js');
   let sysInfo = await sysManager.getSysInfoAsync()
   fs.writeFileSync('/home/pi/.firewalla/run/upgrade-pre-tag', sysInfo.repoTag, 'utf8');
 }

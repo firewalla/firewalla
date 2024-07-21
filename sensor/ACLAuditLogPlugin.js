@@ -34,6 +34,8 @@ const features = require('../net2/features.js')
 const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
   require('../net2/Conntrack.js') : { has: () => { } }
 const LogReader = require('../util/LogReader.js');
+const {getUniqueTs, delay} = require('../util/util.js');
+const FireRouter = require('../net2/FireRouter.js');
 
 const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
@@ -66,6 +68,7 @@ class ACLAuditLogPlugin extends Sensor {
     this.buffer = {}
     this.bufferTs = Date.now() / 1000
     this.touchedKeys = {};
+    this.incTs = 0;
   }
 
   hookFeature() {
@@ -78,7 +81,6 @@ class ACLAuditLogPlugin extends Sensor {
     this.dnsmasqLogReader = null
     this.aggregator = null
     this.ruleStatsPlugin = sl.getSensor("RuleStatsPlugin");
-    this.noiseDomainsSensor = sl.getSensor("NoiseDomainsSensor");
   }
 
   async job() {
@@ -132,7 +134,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1 };
     record.ac = "block";
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanUUID, inIntfName, outIntfName;
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanUUID, inIntfName, outIntfName, isolationTagId;
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -142,10 +144,14 @@ class ACLAuditLogPlugin extends Sensor {
       switch (k) {
         case "SRC": {
           src = v;
+          if (src && src.includes(":")) // convert ipv6 address to correct form
+            src = new Address6(src).correctForm();
           break;
         }
         case "DST": {
           dst = v;
+          if (dst && dst.includes(":"))
+            dst = new Address6(dst).correctForm();
           break;
         }
         case "PROTO": {
@@ -215,13 +221,24 @@ class ACLAuditLogPlugin extends Sensor {
               break;
             case "R":
               record.ac = "route";
+              // direction is always outbound and ctdir is always original for route logs
+              dir = "O";
+              ctdir = "O";
               break;
             case "C":
               record.ac = "conn";
               break
             case "RD":
               record.ac = "redirect";
+              break;
+            case "I":
+              record.ac = "isolation";
+              break;
           }
+          break;
+        }
+        case 'G': {
+          isolationTagId = v;
           break;
         }
         default:
@@ -249,6 +266,24 @@ class ACLAuditLogPlugin extends Sensor {
       if (record.ac === "conn") {
         if (wanUUID)
           await conntrack.setConnEntry(src, sport, dst, dport, record.pr, Constants.REDIS_HKEY_CONN_OINTF, wanUUID);
+        if (dir == "O" && (record.pr == "udp" || (record.pr == "tcp" && dport != 443 && dport != 80))) {
+          // try to resolve hostname shortly after the connection is established in an effort to improve IP-DNS mapping timeliness
+          let t = 3;
+          if (platform.isFireRouterManaged() && inIntf && inIntfName && inIntfName.startsWith("br") && !_.get(FireRouter.getConfig(), ["dhcp", inIntfName, "nameservers"], []).includes(inIntf.ip_address)) {
+            // dns on bridge interface is not the LAN IP, zeek will see different src/dst IP in DNS packets due to br_netfilter,
+            // and an additional 10 seconds timeout is introduced before it is recorded in zeek's dns log
+            const pcapZeekPlugin = sl.getSensor("PcapZeekPlugin");
+            if (pcapZeekPlugin && pcapZeekPlugin.getListenInterfaces().includes(inIntfName))
+              t = 13;
+          }
+          await delay(t * 1000);
+          let host = await conntrack.getConnEntry(src, sport, dst, dport, record.pr, "host", 600);
+          if (!host) {
+            host = await conntrack.getConnEntry(srcMac, "", dst, "", "dns", "host", 600);
+            if (host)
+              await conntrack.setConnEntries(src, sport, dst, dport, record.pr, {proto: "dns", ip: dst, host}, 600);
+          }
+        }
         return;
       }
     }
@@ -256,6 +291,12 @@ class ACLAuditLogPlugin extends Sensor {
     if (record.ac === 'redirect') {
       if (dport == '123') record.type = 'ntp'
       await conntrack.setConnEntry(src, sport, dst, dport, record.pr, 'redirect', 1);
+    }
+
+    if (record.ac === "isolation") {
+      record.group = isolationTagId;
+      dir = "L";
+      ctdir = "O";
     }
 
     if (security)
@@ -267,7 +308,7 @@ class ACLAuditLogPlugin extends Sensor {
       record.pid = Number(mark) & 0xffff;
     }
     if (record.ac === "route") {
-      record.pid = Number(routeMark) & 0xffff;
+      record.pid = Number(routeMark) & 0xffff; // route rule id
     }
 
     if (record.ac === "qos") {
@@ -302,11 +343,7 @@ class ACLAuditLogPlugin extends Sensor {
         return;
     }
 
-    // v6 address in iptables log is full representation, e.g. 2001:0db8:85a3:0000:0000:8a2e:0370:7334
-    const srcIsV4 = new Address4(record.sh).isValid()
-    if (!srcIsV4) record.sh = new Address6(record.sh).correctForm()
     const dstIsV4 = new Address4(record.dh).isValid()
-    if (!dstIsV4) record.dh = new Address6(record.dh).correctForm()
 
     // check direction, keep it same as flow.fd
     // in, initiated from inside
@@ -402,7 +439,9 @@ class ACLAuditLogPlugin extends Sensor {
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
 
     // try to get host name from conn entries for better timeliness and accuracy
-    if (dir === "O") {
+    if (dir === "O" && record.ac === "block") {
+      // delay 5 seconds to process outbound block flow, in case ssl/http host is available in zeek's ssl log and will be saved into conn entries
+      await delay(5000);
       let connEntries = await conntrack.getConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr, 600);
       if (!connEntries || !connEntries.host)
         connEntries = await conntrack.getConnEntries(mac, "", record.dh, "", "dns", 600);
@@ -412,11 +451,30 @@ class ACLAuditLogPlugin extends Sensor {
       }
     }
 
-    if (record.ac === "block" || record.ac === 'redirect') {
-      this.writeBuffer(mac, record);
-    }
     if (this.ruleStatsPlugin) {
-      this.ruleStatsPlugin.accountRule(record);
+      this.ruleStatsPlugin.accountRule(_.clone(record));
+    }
+
+    // map global pid
+    if((record.ac === "block" || record.ac === 'allow') && !record.pid) {
+      let matchPids = await this.ruleStatsPlugin.getMatchedPids(record);
+      if (matchPids && matchPids.length > 0){
+        record.pid = matchPids[0];
+      }
+    }
+
+    // record route rule id
+    if (record.pid && record.ac === "route") {
+      await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_RPID, record.pid, 600);
+    }
+
+    // record allow rule id
+    if (record.pid && record.ac === "allow") {
+      await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid, 600);
+    }
+
+    if (record.ac === "block" || record.ac === 'redirect' || record.ac === "isolation") {
+      this.writeBuffer(mac, record);
     }
   }
 
@@ -468,12 +526,12 @@ class ACLAuditLogPlugin extends Sensor {
 
     record.ct = record.ct || 1;
 
-    this.writeBuffer(mac, record);
-
     // we dont analyze allow rules for rule account because allow flow will appear in iptables log anyway.
     if (record.ac === "block" && this.ruleStatsPlugin) {
-      this.ruleStatsPlugin.accountRule(record);
+      this.ruleStatsPlugin.accountRule(_.clone(record));
     }
+
+    this.writeBuffer(mac, record);
   }
 
   // line example
@@ -577,13 +635,14 @@ class ACLAuditLogPlugin extends Sensor {
         for (const descriptor in buffer[mac]) {
           const record = buffer[mac][descriptor];
           const { type, ts, ets, ct, intf } = record
-          const _ts = ets || ts
+          const _ts = await getUniqueTs(ets || ts) // make it unique to avoid missing flows in time-based query
+          record._ts = _ts;
           const block = type == 'dns' ?
             record.rc == 3 /*NXDOMAIN*/ &&
             (record.qt == 1 /*A*/ || record.qt == 28 /*AAAA*/) &&
             record.dp == 53
             :
-            record.ac === "block";
+            record.ac === "block" || record.ac === "isolation";
 
           let transitiveTags = {};
           if (!IdentityManager.isGUID(mac)) {
@@ -687,7 +746,8 @@ class ACLAuditLogPlugin extends Sensor {
         transaction.push(['zremrangebyscore', key, start, end]);
         for (const descriptor in stash) {
           const record = stash[descriptor]
-          transaction.push(['zadd', key, record.ets || record.ts, JSON.stringify(record)])
+          record._ts = await getUniqueTs(record.ets || record.ts);
+          transaction.push(['zadd', key, record._ts, JSON.stringify(record)])
         }
         const expires = this.config.expires || 86400
         await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)

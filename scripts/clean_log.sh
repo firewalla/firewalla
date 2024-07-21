@@ -12,12 +12,13 @@
 # /log/blog//files.gz
 # /log/forever/main.log
 # /log/forever/main_last.log
+# /log/apt/cache/*
 # any files under /log/firewalla that is older than one day
 # hard (/log is over 95%)
 # remove
 # all files under soft
 # /var/log/syslog
-# /log/apt/cache/*
+# /log/apt/lib/*
 # /log/forever/*
 # /log/firewalla/*
 
@@ -48,6 +49,7 @@ soft_clean() {
     : > /log/forever/main.log
     # any files under /log/firewalla that is older than one day
     find /log/firewalla -mtime +1 -exec truncate -s 0 {} \;
+    sudo \apt clean
 }
 
 hard_clean() {
