@@ -223,58 +223,79 @@ class AppTimeUsageManager {
   async registerPolicy(policy) {
     await lock.acquire(LOCK_RW, async () => {
       const pid = String(policy.pid);
-      log.info(`Registering policy ${pid} ...`);
-      const { period } = policy.appTimeUsage;
-      const tz = sysManager.getTimezone();
-
-      this.enforcedPolicies[pid] = {};
-      this.policyTimeoutTasks[pid] = {};
-      this.registeredPolicies[pid] = policy;
-      const periodJob = new CronJob(period, async () => {
-        await lock.acquire(LOCK_RW, async () => {
-          await this.refreshPolicy(policy);
-        }).catch((err) => {
-          log.error(`Failed to refresh policy period`, policy, err.message);
+      if (pid && _.has(this.registeredPolicies, pid)) {
+        log.warn(`Policy ${pid} is registered again before being deregistered, suspected cron/timeout execution sequence problem, deregister the policy anyway before register ...`)
+        await this._deregisterPolicy(policy).catch((err) => {
+          log.error(`Failed to deregister policy before register`, policy, err.message);
         });
-      }, () => { }, true, tz);
-      this.jobs[pid] = periodJob;
-
-      await this.refreshPolicy(policy);
+      }
+      await this._registerPolicy(policy);
     }).catch((err) => {
       log.error(`Failed to register policy`, policy, err.message);
     });
   }
 
+  async _registerPolicy(policy) {
+    const pid = String(policy.pid);
+    log.info(`Registering policy ${pid} ...`);
+    const { period } = policy.appTimeUsage;
+    const tz = sysManager.getTimezone();
+
+    this.enforcedPolicies[pid] = {};
+    this.policyTimeoutTasks[pid] = {};
+    this.registeredPolicies[pid] = policy;
+    const periodJob = new CronJob(period, async () => {
+      await lock.acquire(LOCK_RW, async () => {
+        if (this.jobs[pid] !== periodJob) {
+          log.warn(`This period job on policy ${pid} should already be stopped, stop it anyway ...`);
+          periodJob.stop();
+          return;
+        }
+        log.info(`Running period job on policy ${pid}`);
+        await this.refreshPolicy(policy);
+      }).catch((err) => {
+        log.error(`Failed to refresh policy period`, policy, err.message);
+      });
+    }, () => { }, true, tz);
+    this.jobs[pid] = periodJob;
+
+    await this.refreshPolicy(policy);
+  }
+
   async deregisterPolicy(policy) {
     await lock.acquire(LOCK_RW, async () => {
-      const pid = String(policy.pid);
-      log.info(`Deregistering policy ${pid} ...`);
-      const job = this.jobs[pid];
-      if (job) {
-        job.stop();
-        delete this.jobs[pid];
-      }
-      const { app, category } = policy.appTimeUsage;
-      const key = app || category;
-      const uids = this.getUIDs(policy);
-      for (const uid of uids) {
-        if (this.watchList[key] && this.watchList[key][uid])
-          delete this.watchList[key][uid][pid];
-      }
-      if (_.isObject(this.enforcedPolicies[pid])) {
-        for (const uid of Object.keys(this.enforcedPolicies[pid]))
-          await this.unenforcePolicy(policy, uid, this.enforcedPolicies[pid][uid] === POLICY_STATE_DOMAIN_ONLY);
-        delete this.enforcedPolicies[pid];
-      }
-      if (_.isObject(this.policyTimeoutTasks[pid])) {
-        for (const uid of Object.keys(this.policyTimeoutTasks[pid]))
-          clearTimeout(this.policyTimeoutTasks[pid][uid]);
-        delete this.policyTimeoutTasks[pid];
-      }
-      delete this.registeredPolicies[pid];
+      await this._deregisterPolicy(policy);
     }).catch((err) => {
       log.error(`Failed to deregister policy`, policy, err.message);
     });
+  }
+
+  async _deregisterPolicy(policy) {
+    const pid = String(policy.pid);
+    log.info(`Deregistering policy ${pid} ...`);
+    const job = this.jobs[pid];
+    if (job) {
+      job.stop();
+      delete this.jobs[pid];
+    }
+    const { app, category } = policy.appTimeUsage;
+    const key = app || category;
+    const uids = this.getUIDs(policy);
+    for (const uid of uids) {
+      if (this.watchList[key] && this.watchList[key][uid])
+        delete this.watchList[key][uid][pid];
+    }
+    if (_.isObject(this.enforcedPolicies[pid])) {
+      for (const uid of Object.keys(this.enforcedPolicies[pid]))
+        await this.unenforcePolicy(policy, uid, this.enforcedPolicies[pid][uid] === POLICY_STATE_DOMAIN_ONLY);
+      delete this.enforcedPolicies[pid];
+    }
+    if (_.isObject(this.policyTimeoutTasks[pid])) {
+      for (const uid of Object.keys(this.policyTimeoutTasks[pid]))
+        clearTimeout(this.policyTimeoutTasks[pid][uid]);
+      delete this.policyTimeoutTasks[pid];
+    }
+    delete this.registeredPolicies[pid];
   }
 
   async enforcePolicy(policy, uid, domainOnly = true) {

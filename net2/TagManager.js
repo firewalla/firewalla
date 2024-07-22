@@ -19,13 +19,14 @@ const _ = require('lodash');
 const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('./Firewalla.js');
-const sem = require('../sensor/SensorEventManager.js').getInstance();
 const sysManager = require('./SysManager.js');
 const asyncNative = require('../util/asyncNative.js');
 const Tag = require('./Tag.js');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const Constants = require('./Constants.js');
 const dnsmasq = new DNSMASQ();
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock()
 
 class TagManager {
   constructor() {
@@ -35,15 +36,7 @@ class TagManager {
 
     this.scheduleRefresh();
 
-    if (f.isMain()) {
-      sem.once('IPTABLES_READY', async () => {
-        log.info("Iptable is ready, apply tag policies ...");
-        this.scheduleRefresh();
-      });
-    }
-
     this.subscriber.subscribeOnce("DiscoveryEvent", "Tags:Updated", null, async (channel, type, id, obj) => {
-      log.info(`Tags are updated`);
       this.scheduleRefresh();
     });
 
@@ -94,39 +87,42 @@ class TagManager {
       return null
     }
 
-    let afTag = null;
-    // create a native affiliated device group for this tag, usually affiliated to a user group
-    if (affiliatedName && affiliatedObj) {
-      afTag = await this.createTag(affiliatedName, affiliatedObj);
+    return lock.acquire(`createTag_${name}_${type}`, async() => {
+      let afTag = null;
+      // create a native affiliated device group for this tag, usually affiliated to a user group
+      if (affiliatedName && affiliatedObj) {
+        afTag = await this.createTag(affiliatedName, affiliatedObj);
+        if (afTag) {
+          obj.affiliatedTag = afTag.getUniqueId();
+        }
+      }
+
+      const existingTag = this.getTagByName(name, type)
+      if (existingTag) {
+        if (obj) {
+          existingTag.o = Object.assign({}, obj, {uid: existingTag.getUniqueId(), name});
+          existingTag.save()
+          this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, existingTag.o);
+        }
+        if (afTag)
+          await afTag.setPolicyAsync(Constants.TAG_TYPE_MAP[type].policyKey, [ existingTag.getUniqueId() ]);
+        return existingTag
+      }
+
+      const newUid = await this._getNextTagUid();
+      const now = Math.floor(Date.now() / 1000);
+      const newTag = new Tag(Object.assign({}, obj, {uid: newUid, name: name, createTs: now}))
+      await newTag.save()
+      this.tags[newUid] = newTag
+
+      this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, newTag);
       if (afTag) {
-        obj.affiliatedTag = afTag.getUniqueId();
+        await afTag.setPolicyAsync(Constants.TAG_TYPE_MAP[type].policyKey, [ String(newUid) ]);
+        newTag.afTag = afTag
       }
-    }
 
-    const existingTag = this.getTagByName(name, type)
-    if (existingTag) {
-      if (obj) {
-        existingTag.o = Object.assign({}, obj, {uid: existingTag.getUniqueId(), name});
-        existingTag.save()
-        this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, existingTag.o);
-      }
-      if (afTag)
-        await afTag.setPolicyAsync(Constants.TAG_TYPE_MAP[type].policyKey, [ existingTag.getUniqueId() ]);
-      return existingTag
-    }
-
-    const newUid = await this._getNextTagUid();
-    const now = Math.floor(Date.now() / 1000);
-    const newTag = new Tag(Object.assign({}, obj, {uid: newUid, name: name, createTs: now}))
-    await newTag.save()
-
-    this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, newTag);
-    if (afTag) {
-      await afTag.setPolicyAsync(Constants.TAG_TYPE_MAP[type].policyKey, [ String(newUid) ]);
-      newTag.afTag = afTag
-    }
-
-    return newTag
+      return newTag
+    })
   }
 
   // This function should only be invoked in FireAPI. Please follow this rule!
@@ -244,6 +240,7 @@ class TagManager {
   }
 
   async refreshTags() {
+    log.verbose('refreshTags')
     const markMap = {};
     for (let uid in this.tags) {
       markMap[uid] = false;
@@ -257,20 +254,27 @@ class TagManager {
     }
     for (const keyPrefix of keyPrefixes) {
       const keys = await rclient.scanResults(`${keyPrefix}*`);
+      const nameMap = {}
       for (let key of keys) {
         const o = await rclient.hgetallAsync(key);
         const uid = key.substring(keyPrefix.length);
+        // remove duplicate deviceTag
+        if (o.type == Constants.TAG_TYPE_DEVICE) {
+          if (nameMap[o.name]) {
+            if (f.isMain()) {
+              log.info('Remove duplicated deviceTag', uid)
+              await rclient.unlinkAsync(key);
+              this.subscriber.publish("DiscoveryEvent", "Tags:Updated");
+            }
+            continue
+          } else {
+            nameMap[o.name] = true
+          }
+        }
         if (this.tags[uid]) {
           await this.tags[uid].update(o);
         } else {
           this.tags[uid] = new Tag(o);
-          if (f.isMain()) {
-            (async () => {
-              await sysManager.waitTillIptablesReady()
-              log.info(`Creating environment for tag ${uid} ${o.name} ...`);
-              await this.tags[uid].createEnv();
-            })()
-          }
         }
         markMap[uid] = true;
       }
