@@ -35,9 +35,16 @@ const FEATURE_NAME = 'conntrack'
 class Conntrack {
   constructor() {
     this.config = features.getConfig(FEATURE_NAME)
-    if (!this.config.enabled || !platform.isAuditLogSupported()) return
+    if (!this.config.enabled || !platform.isAuditLogSupported()) {
+      log.warn(FEATURE_NAME, 'disabled!')
+      const stub = {}
+      for (const method of Object.getOwnPropertyNames(Conntrack.prototype))
+        stub[method] = () => {}
+      return stub
+    }
+
     if (!f.isMain())
-      return;
+      return this
 
     this.scheduledJob = {}
     this.connHooks = {};

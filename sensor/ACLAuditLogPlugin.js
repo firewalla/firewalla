@@ -30,9 +30,7 @@ const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const Constants = require('../net2/Constants.js');
 const l2 = require('../util/Layer2.js');
 const fc = require('../net2/config.js')
-const features = require('../net2/features.js')
-const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
-  require('../net2/Conntrack.js') : { has: () => { } }
+const conntrack = require('../net2/Conntrack.js')
 const LogReader = require('../util/LogReader.js');
 const {getUniqueTs, delay} = require('../util/util.js');
 const FireRouter = require('../net2/FireRouter.js');
@@ -119,6 +117,19 @@ class ACLAuditLogPlugin extends Sensor {
     } else {
       this.buffer[mac][descriptor] = record
     }
+  }
+
+  // dns on bridge interface is not the LAN IP, zeek will see different src/dst IP in DNS packets due to br_netfilter,
+  // and an additional 10 seconds timeout is introduced before it is recorded in zeek's dns log
+  isDNATedOnBridge(inIntf) {
+    const pcapZeekPlugin = sl.getSensor("PcapZeekPlugin");
+
+    if (!inIntf || !inIntf.name || !pcapZeekPlugin) return false
+
+    return platform.isFireRouterManaged()
+      && inIntf.name.startsWith("br")
+      && !_.get(FireRouter.getConfig(), ["dhcp", inIntf.name, "nameservers"], []).includes(inIntf.ip_address)
+      && pcapZeekPlugin && pcapZeekPlugin.getListenInterfaces().includes(inIntf.name)
   }
 
   // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ADT]D=O CD=O IN=br0 OUT=eth0 PHYSIN=eth1.999 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
@@ -269,12 +280,8 @@ class ACLAuditLogPlugin extends Sensor {
         if (dir == "O" && (record.pr == "udp" || (record.pr == "tcp" && dport != 443 && dport != 80))) {
           // try to resolve hostname shortly after the connection is established in an effort to improve IP-DNS mapping timeliness
           let t = 3;
-          if (platform.isFireRouterManaged() && inIntf && inIntfName && inIntfName.startsWith("br") && !_.get(FireRouter.getConfig(), ["dhcp", inIntfName, "nameservers"], []).includes(inIntf.ip_address)) {
-            // dns on bridge interface is not the LAN IP, zeek will see different src/dst IP in DNS packets due to br_netfilter,
-            // and an additional 10 seconds timeout is introduced before it is recorded in zeek's dns log
-            const pcapZeekPlugin = sl.getSensor("PcapZeekPlugin");
-            if (pcapZeekPlugin && pcapZeekPlugin.getListenInterfaces().includes(inIntfName))
-              t = 13;
+          if (this.isDNATedOnBridge(inIntf)) {
+            t = 13;
           }
           await delay(t * 1000);
           let host = await conntrack.getConnEntry(src, sport, dst, dport, record.pr, "host", 600);
@@ -441,25 +448,27 @@ class ACLAuditLogPlugin extends Sensor {
     // try to get host name from conn entries for better timeliness and accuracy
     if (dir === "O" && record.ac === "block") {
       // delay 5 seconds to process outbound block flow, in case ssl/http host is available in zeek's ssl log and will be saved into conn entries
+      let t = 5
       await delay(5000);
       let connEntries = await conntrack.getConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr, 600);
-      if (!connEntries || !connEntries.host)
+
+      if (!connEntries || !connEntries.host) {
+        if (this.isDNATedOnBridge(inIntf)) {
+          t += 10
+          await delay(10000)
+        }
         connEntries = await conntrack.getConnEntries(mac, "", record.dh, "", "dns", 600);
+      }
+
+      // zeek ssl log has a 20+s delay
+      if (record.dp == 443 && (!connEntries || !connEntries.host)) {
+        await delay((25-t)*1000)
+        connEntries = await conntrack.getConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr, 600);
+      }
+
       if (connEntries && connEntries.host) {
         record.af = {};
         record.af[connEntries.host] = _.pick(connEntries, ["proto", "ip"])
-      }
-    }
-
-    if (this.ruleStatsPlugin) {
-      this.ruleStatsPlugin.accountRule(_.clone(record));
-    }
-
-    // map global pid
-    if((record.ac === "block" || record.ac === 'allow') && !record.pid) {
-      let matchPids = await this.ruleStatsPlugin.getMatchedPids(record);
-      if (matchPids && matchPids.length > 0){
-        record.pid = matchPids[0];
       }
     }
 
@@ -525,11 +534,6 @@ class ACLAuditLogPlugin extends Sensor {
     }
 
     record.ct = record.ct || 1;
-
-    // we dont analyze allow rules for rule account because allow flow will appear in iptables log anyway.
-    if (record.ac === "block" && this.ruleStatsPlugin) {
-      this.ruleStatsPlugin.accountRule(_.clone(record));
-    }
 
     this.writeBuffer(mac, record);
   }
@@ -629,12 +633,12 @@ class ACLAuditLogPlugin extends Sensor {
 
       const buffer = this.buffer
       this.buffer = {}
-      log.debug(buffer)
+      // log.debug(buffer)
 
       for (const mac in buffer) {
         for (const descriptor in buffer[mac]) {
           const record = buffer[mac][descriptor];
-          const { type, ts, ets, ct, intf } = record
+          const { type, ac, ts, ets, ct, intf } = record
           const _ts = await getUniqueTs(ets || ts) // make it unique to avoid missing flows in time-based query
           record._ts = _ts;
           const block = type == 'dns' ?
@@ -643,6 +647,19 @@ class ACLAuditLogPlugin extends Sensor {
             record.dp == 53
             :
             record.ac === "block" || record.ac === "isolation";
+
+          // pid backtrace
+          if (type != 'ntp') { // ntp has nothing to do with rules
+            if (!record.pid && (type == 'dns' || ac == 'block' || ac == 'allow')) {
+              const matchedPIDs = await this.ruleStatsPlugin.getMatchedPids(record);
+              if (matchedPIDs && matchedPIDs.length > 0){
+                record.pid = matchedPIDs[0];
+              }
+            }
+
+            if (type == 'ip' || record.ac == 'block')
+              this.ruleStatsPlugin.accountRule(record);
+          }
 
           let transitiveTags = {};
           if (!IdentityManager.isGUID(mac)) {
