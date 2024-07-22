@@ -480,6 +480,10 @@ class CustomizedSecurityAlarm extends Alarm {
     return ["p.device.ip", "p.dest.name", "p.description"];
   }
 
+  getExpirationTime() {
+    return this["p.cooldown"] || 900;
+  }
+
   localizedNotificationContentArray() {
     return [this["p.description"], this["p.device.ip"], this["p.device.name"], this["p.device.port"], this["p.dest.ip"], this["p.dest.name"], this["p.dest.port"], this["p.protocol"], this["p.app.protocol"],
             this["p.device.type"], this["p.event.timestampTimezone"]];
