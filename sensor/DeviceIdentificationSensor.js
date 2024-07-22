@@ -153,8 +153,7 @@ class DeviceIdentificationSensor extends Sensor {
     const type = detect.feedback && detect.feedback.type || detect.type
     if (type) {
       log.verbose(`Applying ${type} tag to ${host.getUniqueId()}`)
-      const tag = TagManager.getTagByName(type, Constants.TAG_TYPE_DEVICE)
-        || await TagManager.createTag(type, { type: Constants.TAG_TYPE_DEVICE })
+      const tag = await TagManager.createTag(type, { type: Constants.TAG_TYPE_DEVICE })
       // policy should be loaded at this point
       const policyKey = Constants.TAG_TYPE_MAP[Constants.TAG_TYPE_DEVICE].policyKey
       // overwrites previous tags
