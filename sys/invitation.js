@@ -150,9 +150,6 @@ class FWInvitation {
 
       log.forceInfo("Processing local payload with payload timestamp:", invite.ts);
 
-      const backupKey = "firekick:local:payload:backup";
-      await rclient.renameAsync(key, backupKey); // this should always be used only once, use backup key for backup
-
       if(invite.eid && invite.license) {
         const isValid = await this.isLocalLicenseValid(invite.license);
 
