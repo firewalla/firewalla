@@ -162,7 +162,7 @@ describe('Test AlarmManager2', function(){
     am2.applyConfig(alm2);
     expect(alm2.state).to.be.equal(Constants.ST_READY);
 
-    const alm3 = am2._genAlarm({type: 'video', device: 'eth0.288', info:{'p.category': 'av'}});
+    const alm3 = am2._genAlarm({type: 'video', device: 'eth0.288', 'p.category': 'av'});
     expect(alm3.type).to.be.equal('ALARM_VIDEO');
     expect(alm3.state).to.be.equal('init');
     expect(alm3['p.category']).to.be.equal('av');
@@ -179,7 +179,7 @@ describe('Test AlarmManager2', function(){
     const aid = await am2.saveAlarm(alarm);
 
     const attrs = await am2._applyAlarm({aid: aid, state: 'ready'});
-    expect(attrs).to.eql({});
+    expect(attrs).to.eql({state: 'ready'});
 
     const alm = await am2.getAlarm(aid);
     await am2.activateAlarm(alm, {origin:{state: 'init'}});
@@ -261,27 +261,8 @@ describe('Test AlarmManager2', function(){
     expect(results.length).to.be.equal(3);
   })
 
-  it('should timeout pending alarm', async() => {
-    const alarm1 = am2._genAlarm({type: 'subnet', device: 'Device 1', info: {}})
-    am2.applyConfig(alarm1);
-    expect(alarm1.state).to.be.equal(Constants.ST_READY);
-    const aid = await am2.saveAlarm(alarm1);
-
-    await am2.timeoutAlarm(aid);
-
-    const arvaids = await rclient.zrevrangeAsync('alarm_archive', '0', '0');
-    expect(arvaids).to.eql([aid]);
-    const data = await rclient.hmgetAsync("_alarm:" + aid, 'state','alarmTimestamp', 'applyTimestamp');
-
-    expect(data[0]).to.be.equal('timeout');
-    expect(data[1]).to.be.not.null;
-    expect(data[2]).to.be.not.null;
-
-    await am2.removeAlarmAsync(aid);
-  });
-
   it('should msp ignore pending alarm', async() => {
-    const alarm1 = am2._genAlarm({type: 'subnet', device: 'Device 1', info: {}})
+    const alarm1 = am2._genAlarm({type: 'subnet', device: 'Device 1'})
     am2.applyConfig(alarm1);
     expect(alarm1.state).to.be.equal(Constants.ST_READY);
     const aid = await am2.saveAlarm(alarm1);

@@ -243,13 +243,7 @@ function getConfig(reload = false) {
 }
 
 function _parseMspConfig(mspdata) {
-    let data;
-    if (_.isArray(mspdata)) {
-      const cfgs = mspdata.filter( i => i.config == true );
-      data = Object.assign({}, ...cfgs);
-    } else {
-      data = mspdata && mspdata.config;
-    }
+    let data = mspdata && mspdata.config;
     if (!data) {
       mspConfig = {};
       return mspConfig;
