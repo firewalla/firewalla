@@ -150,6 +150,8 @@ class FWInvitation {
       }
 
       log.forceInfo("Processing local payload with payload timestamp:", invite.ts);
+      // when flag is set, should clean after processing
+      await rclient.setAsync("firereset:local:payload:flag", 1, "EX", 7200);
 
       if(invite.eid && invite.license) {
         const isValid = await this.isLocalLicenseValid(invite.license);
