@@ -48,6 +48,7 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
 const tokenManager = require('../util/FWTokenManager.js');
+const execAsync = require('child-process-promise').exec;
 
 module.exports = class {
   constructor(name, config = {}) {
@@ -467,10 +468,12 @@ module.exports = class {
         }
       }
 
-      // disable msp features
-      const features = Object.keys(fc.getFeatures()).filter(i => i.startsWith('msp_'));
-      for (const f of features) {
-        await fc.disableDynamicFeature(f);
+      // disable msp features if not support msp
+      if (this.name != "support"){
+        const features = Object.keys(fc.getFeatures()).filter(i => i.startsWith('msp_'));
+        for (const f of features) {
+          await fc.disableDynamicFeature(f);
+        }
       }
     } catch (e) {
       log.warn('Clean msp rules failed', e);
