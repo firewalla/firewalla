@@ -416,7 +416,19 @@ class Platform {
   }
 
   async reloadActMirredKernelModule() {
-    // do nothing by default
+    const koPath = `${await this.getKernelModulesPath()}/act_mirred.ko`;
+    const koExists = await fsp.access(koPath, fs.constants.F_OK).then(() => true).catch(() => false);
+    if (koExists) {
+      log.info("Reloading act_mirred.ko...");
+      try {
+        const loaded = await exec(`sudo lsmod | grep act_mirred`).then(() => true).catch(() => false);
+        if (loaded)
+          await exec(`sudo rmmod act_mirred`);
+        await exec(`sudo insmod ${koPath}`);
+      } catch (err) {
+        log.error("Failed to reload act_mirred.ko", err.message);
+      }
+    }
   }
 
   isNicCalibrationApplicable() {
