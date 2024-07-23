@@ -145,7 +145,7 @@ lines=0
 timeit begin
 ap_data=$(ap_config | jq -r ".assets|to_entries|sort_by(.key)[]|[.key, .value.sysConfig.name//\"${NO_VALUE}\", .value.sysConfig.meshMode//\"default\", .value.publicKey]|@tsv")
 timeit ap_data
-ap_status=$(local_api status/ap | jq -r ".info|to_entries[]|[.key,.value.version//\"${NO_VALUE}\",.value.sysUptime, (.value.eths//{}|.[]|(.connected,.linkSpeed))]|@tsv")
+ap_status=$(local_api status/ap | jq -r ".info|to_entries[]|[.key,.value.ts,.value.version//\"${NO_VALUE}\",.value.sysUptime, (.value.eths//{}|.[]|select((.intf|test(\"^eth[01]\$\")) and .linkState!=\"disabled\")|(.intf,.connected,.linkSpeed))]|@tsv")
 timeit ap_status
 wg_dump=$(sudo wg show wg_ap dump)
 timeit wg_dump
@@ -156,7 +156,7 @@ now_ts=$(date +%s)
 declare -a ap_names ap_ips
 test -n "$ap_data" && while read ap_mac ap_name ap_meshmode ap_pubkey
 do
-    read ap_version ap_uptime ap_eth_connected ap_eth_speed < <( echo "$ap_status" | awk "\$1==\"$ap_mac\" {print \$2\" \"\$3\" \"\$4\" \"\$5}")
+    read ap_last_handshake_ts ap_version ap_uptime ap_eth_intf ap_eth_connected ap_eth_speed < <( echo "$ap_status" | awk "\$1==\"$ap_mac\" {print \$2\" \"\$3\" \"\$4\" \"\$5\" \"\$6\" \"\$7}")
     timeit read
     if [[ -n "$ap_pubkey" ]]; then
       echo "$wg_ap_peers_pubkeys" | fgrep -q $ap_pubkey && ap_adopted=adopted || ap_adopted=pending
@@ -164,7 +164,7 @@ do
       ap_adopted=pending
     fi
     test -n "$ap_pubkey" || continue
-    read ap_endpoint ap_vpn_ip ap_last_handshake_ts < <(echo "$wg_dump"| awk "\$1==\"$ap_pubkey\" {print \$3\" \"\$4\" \"\$5}")
+    read ap_endpoint ap_vpn_ip < <(echo "$wg_dump"| awk "\$1==\"$ap_pubkey\" {print \$3\" \"\$4}")
     timeit read
     ap_ip=${ap_endpoint%:*}
     ${CONNECT_AP} && {
@@ -189,15 +189,21 @@ do
             device_ip) apd=$ap_ip ;;
             device_vpn_ip) apd=$ap_vpn_ip ;;
             uptime) apd=$(displaytime $ap_uptime) ;;
-	    adoption) apd="$ap_adopted" ;;
+            adoption) apd="$ap_adopted" ;;
             last_handshake) apd="$ap_last_handshake" ;;
             sta) apd="$ap_stations_per_ap" ;;
             mesh_mode) apd=$ap_meshmode ;;
             eth_speed)
                 case $ap_eth_connected in
-                  true) apd=$ap_eth_speed ;;
-                  false) apd='disconnected' ;;
-                  *) apd=$NO_VALUE ;;
+                    true)
+                        if [[ $ap_eth_speed -ge 1000 ]]; then
+                            ap_eth_speed_display=$(echo "scale=1;$ap_eth_speed/1000"|bc|sed 's/\.0//')G
+                        else
+                            ap_eth_speed_display=${ap_eth_speed}M
+                        fi
+                        apd="${ap_eth_intf}:$ap_eth_speed_display" ;;
+                    false) apd="${ap_eth_intf}:disconnected" ;;
+                    *) apd=$NO_VALUE ;;
                 esac
                 ;;
             *) apd=$NO_VALUE ;;
