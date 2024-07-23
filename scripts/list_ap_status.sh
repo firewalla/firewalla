@@ -202,8 +202,8 @@ do
                             ap_eth_speed_display=${ap_eth_speed}M
                         fi
                         apd="${ap_eth_intf}:$ap_eth_speed_display" ;;
-                  false) apd="${ap_eth_intf}:disconnected" ;;
-                  *) apd=$NO_VALUE ;;
+                    false) apd="${ap_eth_intf}:disconnected" ;;
+                    *) apd=$NO_VALUE ;;
                 esac
                 ;;
             *) apd=$NO_VALUE ;;
