@@ -301,24 +301,6 @@ class GoldProPlatform extends Platform {
   getDnsmasqLeaseFilePath() {
     return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
   }
-
-  async reloadActMirredKernelModule() {
-    log.info("Reloading act_mirred.ko...");
-    const kernelRelease = await exec(`uname -r`).then(result => result.stdout.trim()).catch((err) => null);
-    if (kernelRelease) {
-      const koExists = await fsp.access(`${__dirname}/files/${kernelRelease}/act_mirred.ko`, fs.constants.F_OK).then(() => true).catch((err) => false);
-      if (koExists) {
-        try {
-          const loaded = await exec(`sudo lsmod | grep act_mirred`).then(result => true).catch(err => false);
-          if (loaded)
-            await exec(`sudo rmmod act_mirred`);
-          await exec(`sudo insmod ${__dirname}/files/${kernelRelease}/act_mirred.ko`);
-        } catch (err) {
-          log.error("Failed to unload act_mirred, err:", err.message);
-        }
-      }
-    }
-  }
 }
 
 module.exports = GoldProPlatform;
