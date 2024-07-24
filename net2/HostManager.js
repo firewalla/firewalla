@@ -499,6 +499,19 @@ module.exports = class HostManager extends Monitorable {
     }, this.generateStats({ download, upload }))
   }
 
+  async appConfsForInit(json) {
+    const appCloudConfig = await rclient.getAsync(Constants.REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG).then(result => result && JSON.parse(result)).catch(err => null);
+    if (_.isObject(appCloudConfig) && !_.isEmpty(_.get(appCloudConfig, "appConfs"))) {
+      const appConfs = {};
+      for (const app of Object.keys(appCloudConfig.appConfs)) {
+        if (!_.isEmpty(appCloudConfig.appConfs[app].features))
+            appConfs[app] = _.pick(appCloudConfig.appConfs[app], "features");
+      }
+      if (!_.isEmpty(appConfs))
+        json.appConfs = appConfs;
+    }
+  }
+
   utcOffsetBetweenTimezone(tz) {
     if (!tz) return 0;
     const offset1 = moment().utcOffset() * 60 * 1000;
@@ -1380,6 +1393,7 @@ module.exports = class HostManager extends Monitorable {
       this.dhcpPoolUsageForInit(json),
       this.getConfigForInit(json),
       this.miscForInit(json),
+      this.appConfsForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
     // 2021.11.17 not gonna be used in the near future, disabled

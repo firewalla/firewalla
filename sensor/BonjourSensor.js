@@ -282,6 +282,10 @@ class BonjourSensor extends Sensor {
           detect.name = txt.n
         }
         break
+      case '_sonos':
+        detect.type = 'smart speaker'
+        detect.name = name.includes('@') ? name.substring(name.indexOf('@')+1) : name
+        break
       case '_mi-connect':
         try {
           const parsed = JSON.parse(name)
@@ -399,6 +403,10 @@ class BonjourSensor extends Sensor {
       } else if (new Address6(addr).isValid()) {
         ipv6addr.push(addr);
       }
+    }
+
+    if (!ipv4addr && !ipv6addr.length) {
+      return
     }
 
     let s = {

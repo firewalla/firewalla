@@ -34,6 +34,8 @@ const dnsTool = new DNSTool();
 const bone = require("../lib/Bone.js");
 const SysManager = require('../net2/SysManager.js');
 const CLOUD_CONFIG_KEY = Constants.REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG;
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
 
 class AppTimeUsageSensor extends Sensor {
   
@@ -41,6 +43,7 @@ class AppTimeUsageSensor extends Sensor {
     this.hookFeature(featureName);
     this.enabled = fc.isFeatureOn(featureName);
     this.cloudConfig = null;
+    this.appConfs = {};
     await this.loadConfig();
 
     await this.scheduleUpdateConfigCronJob();
@@ -83,6 +86,7 @@ class AppTimeUsageSensor extends Sensor {
     await this.loadCloudConfig(forceReload).catch((err) => {
       log.error(`Failed to load app time usage config from cloud`, err.message);
     });
+    this.appConfs = Object.assign({}, _.get(this.config, "appConfs", {}), _.get(this.cloudConfig, "appConfs", {}));
     await this.updateSupportedApps();
     this.rebuildTrie();
   }
@@ -98,6 +102,7 @@ class AppTimeUsageSensor extends Sensor {
   }
 
   async onConfigChange(oldConfig) {
+    this.appConfs = Object.assign({}, _.get(this.config, "appConfs", {}), _.get(this.cloudConfig, "appConfs", {}));
     await this.updateSupportedApps();
     this.rebuildTrie();
   }
@@ -115,8 +120,8 @@ class AppTimeUsageSensor extends Sensor {
   }
 
   async updateSupportedApps() {
-    const appConfs = Object.assign({}, _.get(this.config, "appConfs", {}), _.get(this.cloudConfig, "appConfs", {}));
-    const apps = Object.keys(appConfs);
+    const appConfs = this.appConfs;
+    const apps = Object.keys(appConfs).filter(app => !_.isEmpty(_.get(appConfs, [app, "includedDomains"])));
     await rclient.delAsync(Constants.REDIS_KEY_APP_TIME_USAGE_APPS);
     await rclient.saddAsync(Constants.REDIS_KEY_APP_TIME_USAGE_APPS, apps);
     for (const app of apps) {
@@ -129,7 +134,7 @@ class AppTimeUsageSensor extends Sensor {
   }
 
   rebuildTrie() {
-    const appConfs = Object.assign({}, _.get(this.config, "appConfs", {}), _.get(this.cloudConfig, "appConfs", {}));
+    const appConfs = this.appConfs;
     const domainTrie = new DomainTrie();
     for (const key of Object.keys(appConfs)) {
       const includedDomains = appConfs[key].includedDomains || [];
@@ -319,6 +324,16 @@ class AppTimeUsageSensor extends Sensor {
               await TimeUsageTool.setBucketVal(mac, app, hour, minOfHour, "0");
             }
           }
+        }
+      }
+      if (effective) {
+        const displayName = _.get(this.appConfs, [app, "displayName"]);
+        if (displayName) {
+          const recentActivity = {
+            ts: begin,
+            app: displayName
+          };
+          await hostTool.updateRecentActivity(mac, recentActivity);
         }
       }
     }).catch((err) => {
