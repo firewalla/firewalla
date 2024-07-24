@@ -12,7 +12,7 @@ installedVer=$(apt-cache policy $pkgName | grep Installed: | cut -d':' -f2-)
 if (dpkg --compare-versions "$installedVer" lt "$patchVer"); then
   logger "FIREWALLA:PATCH_OPENSSH:START"
   sudo dpkg --configure -a --force-confdef
-  sudo apt update
-  sudo apt install -o Dpkg::Options::="--force-confold" -y $pkgName=$patchVer
+  sudo timeout 60 apt update
+  sudo timeout 60 apt install -o Dpkg::Options::="--force-confold" -y $pkgName=$patchVer
   logger "FIREWALLA:PATCH_OPENSSH:DONE"
 fi
