@@ -63,6 +63,9 @@ class AuditTool extends LogQuery {
       intf: entry.intf
     };
 
+    if (_.isObject(entry.af) && !_.isEmpty(entry.af))
+      f.appHosts = Object.keys(entry.af);
+
     for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
       const config = Constants.TAG_TYPE_MAP[type];
       f[config.flowKey] = entry[config.flowKey];
