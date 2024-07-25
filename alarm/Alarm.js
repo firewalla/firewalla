@@ -246,8 +246,6 @@ class Alarm {
     return ["p.device.name", "p.device.id", "p.device.mac"];
   }
 
-
-
   // check schema, minimal required key/value pairs in payloads
   validate(type) {
 
@@ -480,9 +478,27 @@ class CustomizedSecurityAlarm extends Alarm {
     return ["p.device.ip", "p.dest.name", "p.description"];
   }
 
+  getExpirationTime() {
+    return this["p.cooldown"] || 900;
+  }
+  
+  localizedNotificationContentKey() {
+    let key = `notif.content.${this.getNotifKeyPrefix()}`;
+    const username = this.getUserName();
+    if (username)
+      key = `${key}.user`;
+    const suffix = this.getIdentitySuffix();
+    if (suffix)
+      key = `${key}${suffix}`;
+    return key;
+  }
+
   localizedNotificationContentArray() {
-    return [this["p.description"], this["p.device.ip"], this["p.device.name"], this["p.device.port"], this["p.dest.ip"], this["p.dest.name"], this["p.dest.port"], this["p.protocol"], this["p.app.protocol"],
-            this["p.device.type"], this["p.event.timestampTimezone"]];
+    const result = [ this["p.device.name"],  this["p.dest.name"], this["p.event.timestampTimezone"]];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
