@@ -132,6 +132,13 @@ class ACLAuditLogPlugin extends Sensor {
       && pcapZeekPlugin && pcapZeekPlugin.getListenInterfaces().includes(inIntf.name)
   }
 
+  isPcapOnBridge(inIntf) {
+    const pcapZeekPlugin = sl.getSensor("PcapZeekPlugin");
+
+    if (!inIntf || !inIntf.name || !pcapZeekPlugin) return false
+    return platform.isFireRouterManaged() && inIntf.name.startsWith("br") && pcapZeekPlugin.getListenInterfaces().includes(inIntf.name);
+  }
+
   // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ADT]D=O CD=O IN=br0 OUT=eth0 PHYSIN=eth1.999 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
   async _processIptablesLog(line) {
     if (_.isEmpty(line)) return
@@ -449,21 +456,17 @@ class ACLAuditLogPlugin extends Sensor {
     if (dir === "O" && record.ac === "block") {
       // delay 5 seconds to process outbound block flow, in case ssl/http host is available in zeek's ssl log and will be saved into conn entries
       let t = 5
-      await delay(5000);
+      // if flow is blocked by tls kernel module and zeek listens on bridge, zeek won't see the tcp RST packet due to br_netfilter. This introduces another 20 seconds before ssl/http log is generated
+      if (record.pr == "tcp" && (record.dp === 443 || record.dp === 80) && this.isPcapOnBridge(inIntf))
+        t += 20;
+      await delay(t * 1000);
       let connEntries = await conntrack.getConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr, 600);
 
       if (!connEntries || !connEntries.host) {
         if (this.isDNATedOnBridge(inIntf)) {
-          t += 10
           await delay(10000)
         }
         connEntries = await conntrack.getConnEntries(mac, "", record.dh, "", "dns", 600);
-      }
-
-      // zeek ssl log has a 20+s delay
-      if (record.dp == 443 && (!connEntries || !connEntries.host)) {
-        await delay((25-t)*1000)
-        connEntries = await conntrack.getConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr, 600);
       }
 
       if (connEntries && connEntries.host) {
