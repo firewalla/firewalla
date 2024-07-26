@@ -138,8 +138,6 @@ STA_COLS='sta_mac sta_ip:-17 sta_name:30 ap_mac ap_name ssid:-15 chan:5 rssi:5 s
 (print_header; hl) >&2
 lines=0
 timeit begin
-ap_mac_name=$(frcc | jq -r ".assets|to_entries[]|[.key, .value.sysConfig.name//\"${NO_VALUE}\"]|@tsv")
-timeit ap_mac_name
 sta_data=$(local_api status/station| jq -r '.info|to_entries[]|[.key, .value.assetUID, .value.ssid, .value.channel, .value.rssi, .value.snr, .value.txRate, .value.rxRate, .value.assocTime, .value.ts]|@tsv')
 test -n "$sta_data" && echo "$sta_data" | while read sta_mac ap_mac sta_ssid sta_channel sta_rssi sta_snr sta_tx_rate sta_rx_rate sta_assoc_time sta_ts
 do
@@ -148,7 +146,7 @@ do
     sta_ip=$(redis-cli --raw hget host:mac:$sta_mac ipv4Addr)
     timeit sta_ip
     timeit read
-    ap_name=$(echo "$ap_mac_name"| awk -F'\t' "/$ap_mac/ {print \$2}")
+    ap_name=$(redis-cli --raw hget host:mac:$ap_mac name || echo $NO_VALUE)
     timeit ap_name
     sta_timestamp=$(date -d @$sta_ts -Iseconds 2>/dev/null || echo $NO_VALUE)
     timeit timestamp
