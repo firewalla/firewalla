@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,7 +22,6 @@ const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager('info');
 const bone = require("../lib/Bone.js");
 
-const flowUtil = require('../net2/FlowUtil.js');
 var instance = null;
 
 const QUERY_MAX_FLOW = 10000;
@@ -318,42 +317,62 @@ module.exports = class FlowManager {
       // ignore zero length flows
       return false;
     }
-    if (o.f === "s") {
-      // short packet flag, maybe caused by arp spoof leaking, ignore these packets
-      return false;
-    }
 
     return true;
   }
 
+  // Following check was originally implemented in DNSManager.js
+  // moves here as it's way less misleading
+  // removes tcp check as BroDetect checks zeek conn_state now
+  isAggregatedFlowValid(flow) {
+    const o = flow;
+
+    // valid if the category is intel
+    if (o.category === 'intel') {
+      return true
+    }
+    if (o.intel && o.intel.category === 'intel') {
+      return true
+    }
+
+    if (o.fd == "in") {
+      if (o.du < 0.0001) {
+        return false
+      }
+      if (o.ob == 0 && o.rb < 1000) {
+        return false
+      }
+      if (o.rb && o.rb < 1500) { // used to be 2500
+        return false
+      }
+    }
+
+    return true
+  }
+
   // aggregates traffic between the same hosts together
   // also summarizes app/activities
-  async summarizeConnections(mac, direction, from, to, sortby, resolve) {
+  async summarizeConnections(mac, direction, end, start) {
     let sorted = [];
     try {
-      let key = "flow:conn:" + direction + ":" + mac;
-      const result = await rclient.zrevrangebyscoreAsync([key, from, to, "LIMIT", 0, QUERY_MAX_FLOW]);
+      const key = "flow:conn:" + direction + ":" + mac;
+      const result = await rclient.zrevrangebyscoreAsync([key, end, start, "LIMIT", 0, QUERY_MAX_FLOW]);
       let conndb = {};
 
       if (result != null && result.length > 0)
-        log.debug("### Flow:Summarize", key, direction, from, to, sortby, resolve, result.length);
+        log.debug("### Flow:Summarize", key, direction, end, start, result.length);
       for (let i in result) {
-        let o = JSON.parse(result[i]);
+        const o = JSON.parse(result[i]);
 
         if (!this.isFlowValid(o))
           continue;
 
         o.mac = mac
 
-        let key = "";
-        // No longer needs to take care of portflow, as flow:conn now sums only 1 dest port
-        if (o.sh == o.lh) {
-          key = `${o.dh}:${o.fd}`;
-        } else {
-          key = `${o.sh}:${o.fd}`;
-        }
-        let flow = conndb[key];
-        if (flow == null) {
+        const key = o.sh == o.lh ? o.dh : o.sh
+
+        const flow = conndb[key];
+        if (!flow) {
           conndb[key] = o;
           if (_.isObject(o.af) && !_.isEmpty(o.af)) {
             conndb[key].appHosts = Object.keys(o.af);
@@ -402,33 +421,17 @@ module.exports = class FlowManager {
       };
     }
     log.debug("============ Host:Flows:Sorted", mac, sorted.length);
-    if (sortby == "time") {
-      sorted.sort(function (a, b) {
-        return Number(b.ts) - Number(a.ts);
-      })
-    } else if (sortby == "rxdata") {
-      sorted.sort(function (a, b) {
-        return Number(b.rb) - Number(a.rb);
-      })
-    } else if (sortby == "txdata") {
-      sorted.sort(function (a, b) {
-        return Number(b.ob) - Number(a.ob);
-      })
-    }
+    sorted.sort(function (a, b) {
+      return Number(b.ts) - Number(a.ts);
+    })
 
     await this.enrichHttpFlowsInfo(sorted);
-
-    if (!resolve)
-      return {
-        connections: sorted,
-        activities: null
-      };
 
     await dnsManager.query(sorted, "sh", "dh", "mac", "appHosts")
       .catch(err => log.error("flow:conn unable to map dns", err))
     const activities = await this.summarizeActivityFromConnections(sorted);
 
-    const _sorted = sorted.filter((flow) => !flowUtil.checkFlag(flow, 'x'));
+    const _sorted = sorted.filter(this.isAggregatedFlowValid)
 
     return {
       connections: _sorted,

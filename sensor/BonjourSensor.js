@@ -14,6 +14,8 @@
  */
 'use strict';
 
+const net = require('net')
+
 const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
@@ -26,7 +28,6 @@ const sysManager = require('../net2/SysManager.js')
 const Nmap = require('../net2/Nmap.js');
 const nmap = new Nmap();
 const l2 = require('../util/Layer2.js');
-const { Address4, Address6 } = require('ip-address')
 const Message = require('../net2/Message.js');
 const { modelToType, boardToModel, hapCiToType } = require('../extension/detect/appleModel.js')
 const HostManager = require("../net2/HostManager.js");
@@ -128,7 +129,8 @@ class BonjourSensor extends Sensor {
         delete ipMacCache[ipAddr];
       }
     }
-    if (new Address4(ipAddr).isValid()) {
+    const fam = net.isIP(addr)
+    if (fam == 4) {
       return new Promise((resolve, reject) => {
         l2.getMAC(ipAddr, (err, mac) => {
           if (err) {
@@ -147,7 +149,7 @@ class BonjourSensor extends Sensor {
           }
         })
       })
-    } else if (new Address6(ipAddr).isValid() && !ipAddr.startsWith("fe80:")) { // nmap neighbor solicit is not accurate for link-local addresses
+    } else if (fam == 6 && !ipAddr.startsWith("fe80:")) { // nmap neighbor solicit is not accurate for link-local addresses
       let mac = await nmap.neighborSolicit(ipAddr).catch((err) => {
         log.warn("Not able to find mac address for host:", ipAddr, err);
         return null;
@@ -289,7 +291,16 @@ class BonjourSensor extends Sensor {
         detect.type = 'tv'
         if (txt && txt.n) {
           detect.name = txt.n
+          if (txt.n.includes('Echo') || txt.n.includes('echo'))
+            detect.type = 'smart speaker'
         }
+        break
+      case '_tivo-videos':
+      case '_tivo-videostream':
+        detect.type = 'tv'
+        detect.brand = 'TiVo'
+        detect.name = name
+        if (txt.platform) detect.model = txt.platform
         break
       case '_sonos':
         detect.type = 'smart speaker'
@@ -314,6 +325,15 @@ class BonjourSensor extends Sensor {
         if (txt) {
           if (txt.vn) detect.brand = txt.vn
           if (txt.mn) detect.model = txt.mn
+        }
+        break
+      case '_mqtt':
+        if (txt && txt.irobotmcs) {
+          const irobotmcs = JSON.parse(txt.irobotmcs)
+          detect.brand = 'iRobot'
+          detect.type = 'appliance'
+          detect.name = irobotmcs.robotname
+          if (irobotmcs.mac) mac = irobotmcs.mac.toUpperCase()
         }
         break
       case '_http':
@@ -408,13 +428,14 @@ class BonjourSensor extends Sensor {
     let ipv6addr = [];
 
     for (const addr of addresses) {
-      if (new Address4(addr).isValid()) {
+      const fam = net.isIP(addr)
+      if (fam == 4) {
         if (sysManager.isLocalIP(addr)) {
           ipv4addr = addr;
         } else {
           log.debug("Discover:Bonjour:Parsing:NotLocalV4Adress", addr);
         }
-      } else if (new Address6(addr).isValid()) {
+      } else if (fam == 6) {
         ipv6addr.push(addr);
       }
     }
