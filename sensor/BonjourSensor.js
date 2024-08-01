@@ -129,7 +129,7 @@ class BonjourSensor extends Sensor {
         delete ipMacCache[ipAddr];
       }
     }
-    const fam = net.isIP(addr)
+    const fam = net.isIP(ipAddr)
     if (fam == 4) {
       return new Promise((resolve, reject) => {
         l2.getMAC(ipAddr, (err, mac) => {
