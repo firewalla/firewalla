@@ -1,4 +1,4 @@
-/*    Copyright 2022 Firewalla LLC
+/*    Copyright 2022-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -55,10 +55,7 @@ class RuleStatsPlugin extends Sensor {
     if (result === 0) {
       // this code will only run once on each box to reset rule stats.
       log.info("Clear all hit count data when this feature is first enabled");
-      const policies = await pm2.loadActivePoliciesAsync({ includingDisabled: true });
-      for (const policy of policies) {
-        pm2.resetStats(policy.pid);
-      }
+      await pm2.resetStats();
       const currentTs = new Date().getTime() / 1000;
       // a flag to indicate that the box has inited rule stats
       await rclient.setAsync(KEY_RULE_STATS_INIT_TS, currentTs);
@@ -157,6 +154,34 @@ class RuleStatsPlugin extends Sensor {
     }
   }
 
+  static cachekeyRecord(record) {
+     // use cache to reduce computation and redis operation.
+     const hash = crypto.createHash("md5");
+     hash.update(String(record.ac));
+     hash.update(String(record.type));
+     hash.update(String(record.fd));
+     hash.update(String(record.sec));
+     hash.update(String(record.dn));
+     hash.update(String(record.dh));
+     hash.update(String(record.qmark));
+     return hash.digest("hex");
+  }
+
+  async getMatchedPids(record){
+    // use cache to reduce computation and redis operation.
+    const key = RuleStatsPlugin.cachekeyRecord(record);
+    const v = this.cache.get(key);
+    let matchedPids;
+    if (v) {
+      log.debug("Hit rule stat cache");
+      matchedPids = v;
+    } else {
+      matchedPids = await this.getPolicyIds(record);
+      this.cache.set(key, matchedPids);
+    }
+    return matchedPids;
+  }
+
   async updateRuleStats() {
     const recordBuffer = this.recordBuffer;
     this.recordBuffer = [];
@@ -174,24 +199,7 @@ class RuleStatsPlugin extends Sensor {
       if (record.pid) {
         matchedPids = [record.pid];
       } else {
-        // use cache to reduce computation and redis operation.
-        const hash = crypto.createHash("md5");
-        hash.update(String(record.ac));
-        hash.update(String(record.type));
-        hash.update(String(record.fd));
-        hash.update(String(record.sec));
-        hash.update(String(record.dn));
-        hash.update(String(record.dh));
-        hash.update(String(record.qmark));
-        const key = hash.digest("hex");
-        const v = this.cache.get(key);
-        if (v) {
-          log.debug("Hit rule stat cache");
-          matchedPids = v;
-        } else {
-          matchedPids = await this.getPolicyIds(record);
-          this.cache.set(key, matchedPids);
-        }
+        matchedPids = await this.getMatchedPids(record);
       }
 
       for (const pid of matchedPids) {
@@ -202,7 +210,11 @@ class RuleStatsPlugin extends Sensor {
         } else {
           stat = new RuleStat();
         }
-        stat.count++;
+        if (record.ct > 1) {
+          stat.count += record.ct;
+        } else {
+          stat.count++;
+        }
         if (record.ts > stat.lastHitTs) {
           stat.lastHitTs = record.ts;
         }

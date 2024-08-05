@@ -30,6 +30,7 @@ cat << EOF
 # ensure it is inserted at the beginning of POSTROUTING, so that snat rules in firewalla will take effect ahead of firerouter snat rules
 -I POSTROUTING -j FW_POSTROUTING
 
+
 # create POSTROUTING VPN chain
 -N FW_POSTROUTING_OPENVPN
 -A FW_POSTROUTING -j FW_POSTROUTING_OPENVPN

@@ -69,8 +69,9 @@ align::right() {
   else
     length=${#str}
   fi
+  local -i offset=$((${#str} - length))
   local -i pad_left=$((width - length))
-  printf '%*s%s' $pad_left '' "$str"
+  printf '%*s%s' $pad_left '' "${str:offset:length}"
 }
 
 declare -A NETWORK_UUID_NAME
@@ -241,7 +242,7 @@ check_reboot() {
     echo ""
 }
 
-check_each_system_config() {
+print_config() {
     local VALUE=${2%$'\r'} # remove tailing \r
     if [[ $VALUE == "" ]]; then
         VALUE="false"
@@ -289,7 +290,7 @@ get_auto_upgrade() {
     local UPGRADE=
     local COLOR=
     local UNCOLOR="\e[0m"
-    if [ -f $1 ]; then
+    if [ -f "$1" ] || [ -f "$2" ]; then
       COLOR="\e[91m"
       UPGRADE="false"
     else
@@ -305,35 +306,37 @@ check_system_config() {
     read_hash c sys:config
 
     for hkey in "${!c[@]}"; do
-        check_each_system_config "$hkey" "${c[$hkey]}"
+        print_config "$hkey" "${c[$hkey]}"
     done
-    check_each_system_config 'version' "$(jq -c .version /home/pi/firewalla/net2/config.json)"
+    print_config 'version' "$(jq -c .version /home/pi/firewalla/net2/config.json)"
 
     echo ""
 
     declare -A p
     read_hash p policy:system
 
-    check_each_system_config "Mode" "$(get_mode)"
-    check_each_system_config "Adblock" "${p[adblock]}"
-    check_each_system_config "Family" "${p[family]}"
-    check_each_system_config "Monitor" "${p[monitor]}"
-    check_each_system_config "Emergency Access" "${p[acl]}"
-    check_each_system_config "vpnAvailable" "${p[vpnAvailable]}"
-    check_each_system_config "vpn" "${p[vpn]}"
-    check_each_system_config "Redis Usage" "$(redis-cli info | grep used_memory_human | awk -F: '{print $2}')"
-    check_each_system_config "Redis Total Key" "$(redis-cli dbsize)"
-    check_each_system_config "Redis key without ttl" "$(get_redis_key_with_no_ttl)"
+    print_config "Mode" "$(get_mode)"
+    print_config "Adblock" "${p[adblock]}"
+    print_config "Family" "${p[family]}"
+    print_config "Monitor" "${p[monitor]}"
+    print_config "Emergency Access" "${p[acl]}"
+    print_config "vpnAvailable" "${p[vpnAvailable]}"
+    print_config "vpn" "${p[vpn]}"
+    print_config "Redis Usage" "$(redis-cli info | grep used_memory_human | awk -F: '{print $2}')"
+    print_config "Redis Total Key" "$(redis-cli dbsize)"
+    print_config "Redis key without ttl" "$(get_redis_key_with_no_ttl)"
 
     echo ""
 
-    check_each_system_config 'Firewalla Autoupgrade' "$(get_auto_upgrade "/home/pi/.firewalla/config/.no_auto_upgrade")"
-    check_each_system_config 'Firerouter Autoupgrade' "$(get_auto_upgrade "/home/pi/.router/config/.no_auto_upgrade")"
-    check_each_system_config 'License Prefix' "$(jq -r .DATA.SUUID ~/.firewalla/license)"
+    print_config 'Firewalla Autoupgrade' \
+      "$(get_auto_upgrade "/home/pi/.firewalla/config/.no_auto_upgrade" "/home/pi/.firewalla/config/.no_upgrade_check")"
+    print_config 'Firerouter Autoupgrade' \
+      "$(get_auto_upgrade "/home/pi/.router/config/.no_auto_upgrade" "/home/pi/.router/config/.no_upgrade_check")"
+    print_config 'License Prefix' "$(jq -r .DATA.SUUID ~/.firewalla/license)"
 
     echo ""
 
-    check_each_system_config 'default MSP' "$(redis-cli get ext.guardian.socketio.server)"
+    print_config 'default MSP' "$(redis-cli get ext.guardian.socketio.server)"
     redis-cli zrange guardian:alias:list 0 -1 | while read -r alias; do printf '%30s  %s\n' "$alias" "$(redis-cli get "ext.guardian.socketio.server.$alias")"; done
 
     echo ""
@@ -364,12 +367,14 @@ check_tc_classes() {
 
 check_policies() {
     echo "--------------------------- Rules ----------------------------------"
-    local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" | sort -t: -n -k 2)
+    local RULES=$(redis-cli keys 'policy:*' | grep -E "policy:[0-9]+$" | sort -t: -n -k 2)
     frcc
 
-    echo "Rule|Target|Type|Scope|Expire|Scheduler|Proto|TosDir|RateLmt|Pri|Dis">/tmp/qos_csv
-    echo "Rule|Target|Type|Scope|Expire|Scheduler|Proto|Dir|wanUUID|Type|Dis">/tmp/route_csv
-    printf "%7s %52s %11s %18s %10s %25s %5s %8s %5s %9s %9s %3s %8s\n" "Rule" "Target" "Type" "Scope" "Expire" "Scheduler" "Dir" "Action" "Proto" "LPort" "RPort" "Dis" "Hit"
+    echo "No.|Target|Type|Scope|Expire|Scheduler|Proto|TosDir|RateLmt|Pri|Dis|Purpose">/tmp/qos_csv
+    echo "No.|Target|Type|Scope|Expire|Scheduler|Proto|Dir|wanUUID|Type|Dis|Purpose">/tmp/route_csv
+    echo "No.|Target|Action|Scope|Expire|Scheduler|Resolver|Dis|Purpose">/tmp/dns_csv
+    printf "%7s %52s %11s %25s %10s %25s %5s %8s %5s %9s %9s %3s %8s %20s\n" \
+      "No." "Target" "Type" "Scope" "Expire" "Scheduler" "Dir" "Action" "Proto" "LPort" "RPort" "Dis" "Hit" "Purpose"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
         declare -A p
@@ -437,15 +442,19 @@ check_policies() {
             RULE_ID="** $RULE_ID"
         fi
         if [[ $ACTION == 'qos' ]]; then
-          echo -e "$RULE_ID|$TARGET|$TYPE|$SCOPE|$EXPIRE|$CRONTIME|${p[protocol]}|$TRAFFIC_DIRECTION|${p[rateLimit]}|${p[priority]}|$DISABLED">>/tmp/qos_csv
+          echo -e "$RULE_ID|$TARGET|$TYPE|$SCOPE|$EXPIRE|$CRONTIME|${p[protocol]}|$TRAFFIC_DIRECTION|${p[rateLimit]}|${p[priority]}|$DISABLED|${p[purpose]}">>/tmp/qos_csv
         elif [[ $ACTION == 'route' ]]; then
           local WAN="${NETWORK_UUID_NAME[${p[wanUUID]}]}"
           if [ -z "$WAN" ]; then
               WAN=${p[wanUUID]}
           fi
-          echo -e "$RULE_ID|$TARGET|$TYPE|$SCOPE|$EXPIRE|$CRONTIME|${p[protocol]}|$DIRECTION|$WAN|${p[routeType]}|$DISABLED">>/tmp/route_csv
+          echo -e "$RULE_ID|$TARGET|$TYPE|$SCOPE|$EXPIRE|$CRONTIME|${p[protocol]}|$DIRECTION|$WAN|${p[routeType]}|$DISABLED|${p[purpose]}">>/tmp/route_csv
+        elif [[ $ACTION == 'address' ]] || [[ $ACTION == 'resolve' ]]; then
+          echo -e "$RULE_ID|$TARGET|$ACTION|$SCOPE|$EXPIRE|$CRONTIME|${p[resolver]}|$DISABLED|${p[purpose]}">>/tmp/dns_csv
         else
-          printf "$COLOR%7s %52s %11s %18s %10s %25s %5s %8s %5s %9s %9s %3s %8s$UNCOLOR\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$DIRECTION" "$ACTION" "${p[protocol]}" "${p[localPort]}" "${p[remotePort]}" "$DISABLED" "${p[hitCount]}"
+          printf "$COLOR%7s %52s %11s %25s %10s %25s %5s %8s %5s %9s %9s %3s %8s %20s$UNCOLOR\n" \
+            "$RULE_ID" "$(align::right 52 "$TARGET")" "$TYPE" "$(align::right 25 "$SCOPE")" "$EXPIRE" "$CRONTIME" \
+            "$DIRECTION" "$ACTION" "${p[protocol]}" "${p[localPort]}" "${p[remotePort]}" "$DISABLED" "${p[hitCount]}" "${p[purpose]}"
         fi;
 
         unset p
@@ -456,11 +465,15 @@ check_policies() {
 
     echo ""
     echo "QoS Rules:"
-    $COLUMN_OPT -t -s'|' /tmp/qos_csv | sed 's=\ "\([^"]*\)\"= \1  =g'
+    $COLUMN_OPT -t -s'|' /tmp/qos_csv
 
     echo ""
     echo "Route Rules:"
-    $COLUMN_OPT -t -s'|' /tmp/route_csv | sed 's=\ "\([^"]*\)\"= \1  =g'
+    $COLUMN_OPT -t -s'|' /tmp/route_csv
+
+    echo ""
+    echo "DNS Rules:"
+    $COLUMN_OPT -t -s'|' /tmp/dns_csv
 
     echo ""
     echo ""
@@ -500,8 +513,8 @@ check_hosts() {
     fi
 
     local DEVICES=$(redis-cli keys 'host:mac:*')
-    printf "%35s %15s %28s %15s %18s %3s %2s %2s %11s %7s %6s %3s %2s %3s %3s %3s %3s %3s\n" \
-      "Host" "Network" "Name" "IP" "MAC" "Mon" "B7" "Ol" "vpnClient" "FlowOut" "FlowIn" "Grp" "EA" "DNS" "AdB" "Fam" "DoH" "ubn"
+    printf "%35s %15s %28s %15s %18s %3s %2s %2s %11s %7s %6s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s\n" \
+      "Host" "Network" "Name" "IP" "MAC" "Mon" "B7" "Ol" "vpnClient" "FlowOut" "FlowIn" "Grp" "Usr" "DvT" "EA" "DNS" "AdB" "Fam" "SS" "DoH" "ubn"
     NOW=$(date +%s)
     frcc
 
@@ -532,13 +545,14 @@ check_hosts() {
         elif (($ONLINE_TS < $NOW - 2592000)); then # 30days ago, hide entry
             unset h
             continue
-        elif (($ONLINE_TS > $NOW - 1800)); then
+        elif (($ONLINE_TS > $NOW - 600)); then
             local ONLINE="T"
         else
             local ONLINE=
         fi
 
-        local NAME=${h[bname]}
+        local NAME=$( ((${#h[detect]} > 2)) && jq -re 'select(has("name")) | .name' <<< "${h[detect]}" || echo -n "${h[bname]}")
+
         local NETWORK_NAME=
         if [[ -n ${h[intf]} ]]; then NETWORK_NAME=${NETWORK_UUID_NAME[${h[intf]}]}; fi
         local IP=${h[ipv4Addr]}
@@ -551,7 +565,7 @@ check_hosts() {
         local MONITORING=
         if ((IS_FIREWALLA)) || is_router $IP; then
             MONITORING="NA"
-        elif [[ ${p[monitor]} == "true" ]]; then
+        elif [[ -z ${p[monitor]} ]] || [[ ${p[monitor]} == "true" ]]; then
             MONITORING=""
         else
             MONITORING="F"
@@ -570,7 +584,7 @@ check_hosts() {
         # local output=$(redis-cli -d $'\3' hmget $POLICY_MAC vpnClient tags acl)
         # readarray -d $'\3' -t policy < <(echo -n "$output")
 
-        local VPN=$(jq -r 'select(.state == true) | .profileId' <<< ${p[vpnClient]})
+        local VPN=$( ((${#p[vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${p[vpnClient]}" || echo -n "")
         local EMERGENCY_ACCESS=""
         if [[ "${p[acl]}" == "false" ]]; then
             EMERGENCY_ACCESS="T"
@@ -588,10 +602,13 @@ check_hosts() {
         local FAMILY_PROTECT=""
         if [[ "${p[family]}" == "true" ]]; then FAMILY_PROTECT="T"; fi
 
+        local SS=$(if [[ ${p[safeSearch]} == *"true"* ]]; then echo "T"; fi)
         local DOH=$(if [[ ${p[doh]} == *"true"* ]]; then echo "T"; fi)
         local UNBOUND=$(if [[ ${p[unbound]} == *"true"* ]]; then echo "T"; fi)
 
-        local TAGS=$( sed "s=[][\" ]==g" <<< ${p[tags]} )
+        local TAGS=${p[tags]//[\][\" ]/}
+        local USER_TAGS=${p[userTags]//[\][\" ]/}
+        local DEVICE_TAGS=${p[deviceTags]//[\][\" ]/}
         # TAGNAMES=""
         # for tag in $TAGS; do
         #     TAGNAMES="$(redis-cli hget tag:uid:$tag name | tr -d '\n')[$tag],"
@@ -623,13 +640,13 @@ check_hosts() {
           TAG_COLOR="\e[31m"
         fi
 
-        if [ -z $ONLINE ]; then
+        if [ -z "$ONLINE" ] || [ "$ONLINE" == "NA" ]; then
             COLOR=$COLOR"\e[2m" #dim
         fi
 
-        printf "$BGCOLOR$COLOR%35s %15s %28s %15s $MAC_COLOR%18s$COLOR %3s %2s %2s %11s %7s %6s $TAG_COLOR%3s$COLOR %2s %3s %3s %3s %3s %3s$UNCOLOR$BGUNCOLOR\n" \
+        printf "$BGCOLOR$COLOR%35s %15s %28s %15s $MAC_COLOR%18s$COLOR %3s %2s %2s %11s %7s %6s $TAG_COLOR%3s$COLOR %2s %3s %3s %3s %3s %3s %3s %3s %3s$UNCOLOR$BGUNCOLOR\n" \
           "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$(align::right 28 "${h[name]}")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$VPN" "$FLOWINCOUNT" \
-          "$FLOWOUTCOUNT" "$TAGS" "$EMERGENCY_ACCESS" "$DNS_BOOST" "$ADBLOCK" "$FAMILY_PROTECT" "$DOH" "$UNBOUND"
+          "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "$EMERGENCY_ACCESS" "$DNS_BOOST" "$ADBLOCK" "$FAMILY_PROTECT" "$SS" "$DOH" "$UNBOUND"
 
         unset h
         unset p
@@ -642,7 +659,7 @@ check_hosts() {
 check_ipset() {
     echo "---------------------- Active IPset ------------------"
     printf "%25s %10s\n" "IPSET" "NUM"
-    local IPSETS=$(sudo iptables -w -L -n | egrep -o "match-set [^ ]*" | sed 's=match-set ==' | sort | uniq)
+    local IPSETS=$(sudo iptables -w -L -n | grep -E -o "match-set [^ ]*" | sed 's=match-set ==' | sort | uniq)
     for IPSET in $IPSETS $(sudo ipset list -name | grep bd_default_c); do
         local NUM=$(($(sudo ipset -S $IPSET | wc -l)-1))
         local COLOR=""
@@ -768,13 +785,13 @@ check_sys_features() {
 
     for key in "${keyList[@]}"; do
         if [ -v "nameMap[$key]" ] && [ -v "FEATURES[$key]" ]; then
-            check_each_system_config "${nameMap[$key]}" "${FEATURES[$key]}" "$key"
+            print_config "${nameMap[$key]}" "${FEATURES[$key]}" "$key"
             unset "FEATURES[$key]"
         fi
     done
 
     for key in ${!FEATURES[*]}; do
-        check_each_system_config "" "${FEATURES[$key]}" "$key"
+        print_config "" "${FEATURES[$key]}" "$key"
     done
 
     echo ""
@@ -841,7 +858,7 @@ check_network() {
       declare -A p
       read_hash p "policy:network:${COL[2]}"
 
-      local VPN=$(jq -r 'select(.state == true) | .profileId' <<< "${p[vpnClient]}")
+      local VPN=$( ((${#p[vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${p[vpnClient]}" || echo -n "")
 
       local ADBLOCK=
       if [[ "${p[adblock]}" == "true" ]]; then ADBLOCK="T"; fi
@@ -892,15 +909,16 @@ check_network() {
 
 check_tag() {
     echo "---------------------- Tag ------------------"
-    local TAGS=$(redis-cli --scan --pattern 'tag:uid:*' | sort)
-    NOW=$(date +%s)
+    mapfile -t TAGS < <(redis-cli --scan --pattern 'tag:uid:*' | sort --version-sort)
+    mapfile -t -O "${#TAGS[@]}" TAGS < <(redis-cli --scan --pattern 'userTag:uid:*' | sort --version-sort)
+    mapfile -t -O "${#TAGS[@]}" TAGS < <(redis-cli --scan --pattern 'deviceTag:uid:*' | sort --version-sort)
 
-    printf "ID\tName\tvpnClient\tAdB\tFam\tDoH\tubn\n" >/tmp/tag_csv
-    for TAG in $TAGS; do
+    printf "ID\tType\tName\taffiliated\tvpnClient\tAdB\tFam\tDoH\tubn\n" >/tmp/tag_csv
+    for TAG in "${TAGS[@]}"; do
       declare -A t p
       read_hash t "$TAG"
       read_hash p "policy:tag:${t[uid]}"
-      local VPN=$(jq -r 'select(.state == true) | .profileId' <<< "${p[vpnClient]}")
+      local VPN=$( ((${#p[vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${p[vpnClient]}" || echo -n "")
 
       local ADBLOCK=""
       if [[ "${p[adblock]}" == "true" ]]; then ADBLOCK="T"; fi
@@ -910,8 +928,8 @@ check_tag() {
       local DOH=$(if [[ ${p[doh]} == *"true"* ]]; then echo "T"; fi)
       local UNBOUND=$(if [[ ${p[unbound]} == *"true"* ]]; then echo "T"; fi)
 
-      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-        "${t[uid]}" "${t[name]}" "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$DOH" "$UNBOUND" >>/tmp/tag_csv
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+        "${t[uid]}" "${t[type]}" "${t[name]}" "${t[affiliatedTag]}" "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$DOH" "$UNBOUND" >>/tmp/tag_csv
       unset t p
     done
 
@@ -925,13 +943,13 @@ check_portmapping() {
   echo "------------------ Port Forwarding ------------------"
 
   (
-    echo "type,active,Proto,ExtPort,toIP,toPort,toMac,fw,description"
+    printf "type\tactive\tProto\tExtPort\ttoIP\ttoPort\ttoMac\tdescription\n"
     redis-cli get extension.portforward.config |
-      jq -r '.maps[] | select(.state == true) | "\"\(._type // "Forward")\",\"\(.active)\",\"\(.protocol)\",\"\(.dport)\",\"\(.toIP)\",\"\(.toPort)\",\"\(.toMac)\",\"\(.autoFirewall)\",\"\(.description)\""'
+      jq -r '.maps[] | select(.state == true) | [ ._type // "Forward", .active, .protocol, .dport, .toIP, .toPort, .toMac, .description ] | @tsv'
     redis-cli hget sys:scan:nat upnp |
-      jq -r '.[] | "\"UPnP\",\"\(.expire)\",\"\(.protocol)\",\"\(.public.port)\",\"\(.private.host)\",\"\(.private.port)\",\"N\/A\",\"N\/A\",\"\(.description)\""'
+      jq -r '.[] | [ "UPnP", .expire, .protocol, .public.port, .private.host, .private.port, "N\/A", .description ] | @tsv'
   ) |
-    $COLUMN_OPT -t -s, | sed 's=\"\([^"]*\)\"=\1  =g'
+    $COLUMN_OPT -t -s$'\t'
   echo ""
   echo ""
 }
@@ -1000,7 +1018,7 @@ check_eth_count() {
 check_events() {
   redis-cli zrange event:log 0 -1 | jq -c '.ts |= (. / 1000 | strftime("%Y-%m-%d %H:%M")) | del(.event_type, .ts0, .labels.wan_intf_uuid) | del(.labels|..|select(type=="object")|.wan_intf_uuid)'
   # hint on stderr so won't impact stuff being piped
-  >&2 echo '  >> Keep in mind the timestamps above are all UTC <<'
+  >&2 echo "  >> Keep in mind the timestamps above are all UTC, local timezone is: $(date +'%:::z %Z') <<"
 }
 
 usage() {
@@ -1014,6 +1032,7 @@ usage() {
     echo "  -re | --redis"
     echo "        --docker"
     echo "  -n  | --network"
+    echo "  -p  | --port"
     echo "  -t  | --tag"
     echo "  -e  | --events"
     echo "  -f  | --fast | --host"
