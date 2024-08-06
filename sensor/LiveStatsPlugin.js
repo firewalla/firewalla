@@ -382,7 +382,7 @@ class LiveStatsPlugin extends Sensor {
     if (!cache.iftop || !cache.rl) try {
       const intf = sysManager.getInterfaceViaUUID(intfUUID)
       if (!intf) {
-        throw new Error(`Invalid interface`, intfUUID)
+        throw new Error(`Invalid interface ${intfUUID}`)
       }
 
       log.verbose('(Re)Creating interface device throughput cache ...', intfUUID, intf.name)
@@ -560,7 +560,7 @@ class LiveStatsPlugin extends Sensor {
   }
 
   async getFlows(type, target, ts, opts) {
-    const now = Math.floor(new Date() / 1000);
+    const now = Math.floor(Date.now() / 1000);
     const ets = ts ? now - 2 : now
     ts = ts || now - 60
     const options = {
