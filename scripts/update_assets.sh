@@ -30,7 +30,11 @@ trap 'rm -fr "$TEMP_DIR"' EXIT
 cd $ASSETSD_PATH
 # unify lists under assets.d/, keeps one entry for each file only
 # list with lower prefix number got fetched earlier but list with bigger prefix number has higher priority
-cat -n * | sort -r | sort -ub --key=2,2 | sort -n | cut -f2- |
+#
+# use awk instead of cat to prevent bug when any file doesn't end with newline
+# if using cat, the file not ending with newline will be concatenated with the next file
+# so two lines becomes one line
+awk '{print $0}' * |
 while IFS= read -r line; do
   line=$(eval 'for param in '$line'; do echo $param; done')
   IFS=$'\n' read -rd '' -a params <<< "$line"

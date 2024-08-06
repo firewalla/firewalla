@@ -189,7 +189,7 @@ check_wan_conn_log() {
     return 0
   fi
   echo "---------------------------- WAN Connectivity Check Failures ----------------------------"
-  cat ~/.forever/router*.log  | grep "WanConnCheckSensor" | grep -e "all ping test \| DNS \| Wan connectivity test failed" | sort | tail -n 50
+  cat ~/.forever/router*.log  | grep -a "WanConnCheckSensor" | grep -e "all ping test \| DNS \| Wan connectivity test failed" | sort | tail -n 50
   echo ""
   echo ""
 }
@@ -820,7 +820,7 @@ check_hosts() {
     done
 
     echo ""
-    echo "* Abbr.: Mon(Monitoring) B7(Spoofing Flag) Ol(Online) DvT(Device Type/Tag) EA(Emergency Access) SS(Safe Search) DoH(DNS over HTTP) Ubd(Unbound)"
+    echo "* Abbr.: Mon(Monitoring) B7(Spoofing Flag) Ol(Online) DvT(Device Type/Tag) EA(Emergency Access) SS(Safe Search) DoH(DNS over HTTPS) Ubd(Unbound)"
     echo ""
 }
 
