@@ -240,6 +240,7 @@ module.exports = class FlowManager {
     return flowspec;
   }
 
+  // this function is no longer used
   async summarizeActivityFromConnections(flows) {
     let appdb = {};
     let activitydb = {};
@@ -351,7 +352,6 @@ module.exports = class FlowManager {
   }
 
   // aggregates traffic between the same hosts together
-  // also summarizes app/activities
   async summarizeConnections(mac, direction, end, start) {
     let sorted = [];
     try {
@@ -416,8 +416,7 @@ module.exports = class FlowManager {
     } catch (err) {
       log.error("Error summarizing connections", err);
       return {
-        connections: sorted,
-        activities: null
+        connections: sorted
       };
     }
     log.debug("============ Host:Flows:Sorted", mac, sorted.length);
@@ -429,13 +428,11 @@ module.exports = class FlowManager {
 
     await dnsManager.query(sorted, "sh", "dh", "mac", "appHosts")
       .catch(err => log.error("flow:conn unable to map dns", err))
-    const activities = await this.summarizeActivityFromConnections(sorted);
 
     const _sorted = sorted.filter(this.isAggregatedFlowValid)
 
     return {
-      connections: _sorted,
-      activities: activities
+      connections: _sorted
     };
   }
 
