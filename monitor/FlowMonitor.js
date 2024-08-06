@@ -454,10 +454,6 @@ module.exports = class FlowMonitor {
 
     this.checkFlowIntel(result.connections, host, profile);
     await this.summarizeNeighbors(host, result.connections);
-    if (result.activities != null) {
-      host.o.activities = result.activities;
-      await host.save("activities")
-    }
     result = await flowManager.summarizeConnections(mac, "out", end, start);
 
     this.checkFlowIntel(result.connections, host, profile);
@@ -473,11 +469,6 @@ module.exports = class FlowMonitor {
     let result = await flowManager.summarizeConnections(mac, "in", end, start);
     await this.checkForLargeUpload(result.connections, profile)
     let inSpec = flowManager.getFlowCharacteristics(result.connections, "in", profile.large_upload);
-    if (result.activities != null) {
-      // TODO: inbound(out) activities should also be taken into account
-      host.o.activities = result.activities;
-      await host.save("activities")
-    }
 
     result = await flowManager.summarizeConnections(mac, "out", end, start);
     await this.checkForLargeUpload(result.connections, profile)
