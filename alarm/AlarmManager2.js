@@ -212,6 +212,19 @@ module.exports = class {
     return fc.isFeatureOn(featureName);
   }
 
+  isCyberSecurityEnabled() {
+    return fc.isFeatureOn("cyber_security")
+  }
+
+  isMuteAlarm(alarm) {
+    // TODO: specify p.msp.type value if needed
+    if (alarm.type == "ALARM_CUSTOMIZED_SECURITY" && alarm["p.msp.type"] && !this.isCyberSecurityEnabled() ) {
+      log.info("Alarm category cyber_security is disabled", alarm);
+      return true
+    }
+    return false
+  }
+
   async setupAlarmQueue() {
     this.queue = new Queue(`alarm-${f.getProcessName()}`, {
       removeOnFailure: true,
@@ -239,6 +252,10 @@ module.exports = class {
         } else {
           this.applyConfig(alarm, []);
         }
+      }
+
+      if (this.isMuteAlarm(alarm)) {
+        return;
       }
 
       log.debug('processing job', JSON.stringify(event))

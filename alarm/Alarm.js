@@ -481,7 +481,12 @@ class CustomizedSecurityAlarm extends Alarm {
   getExpirationTime() {
     return this["p.cooldown"] || 900;
   }
-  
+
+  isSecurityAlarm() {
+    if (this["p.msp.type"]) return true; // created by msp
+    return false;
+  }
+
   localizedNotificationContentKey() {
     let key = `notif.content.${this.getNotifKeyPrefix()}`;
     const username = this.getUserName();
@@ -1556,7 +1561,7 @@ function alias2alarmType(alias) {
 }
 
 function isSecurityAlarm(alarmType) {
-  return ['ALARM_SPOOFING_DEVICE', 'ALARM_VULNERABILITY', 'ALARM_BRO_NOTICE', 'ALARM_INTEL'].includes(alarmType);
+  return ['ALARM_SPOOFING_DEVICE', 'ALARM_VULNERABILITY', 'ALARM_BRO_NOTICE', 'ALARM_INTEL', 'ALARM_CUSTOMIZED_SECURITY'].includes(alarmType);
 }
 
 const classMapping = {
