@@ -52,6 +52,9 @@ class Policy {
 
     this.parseRedisfyArray(raw);
     this.parseRedisfyObj(raw);
+    for (const key of Policy.NUM_VALUE_KEYS) {
+      if (raw[key]) this[key] = Number(raw[key])
+    }
 
     if (this.scope) {
       // convert guids in "scope" field to "guids" field
@@ -69,25 +72,6 @@ class Policy {
     this.upnp = false;
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
-
-    if (raw.seq) {
-      this.seq = Number(raw.seq);
-    }
-
-    if (raw.appTimeUsed)
-      this.appTimeUsed = Number(raw.appTimeUsed);
-
-    if (raw.priority)
-      this.priority = Number(raw.priority);
-
-    if (raw.transferredBytes)
-      this.transferredBytes = Number(raw.transferredBytes);
-
-    if (raw.transferredPackets)
-      this.transferredPackets = Number(raw.transferredPackets);
-
-    if (raw.avgPacketBytes)
-      this.avgPacketBytes = Number(raw.avgPacketBytes);
 
     if (!_.isEmpty(raw.ipttl))
       this.ipttl = Number(raw.ipttl);
@@ -660,6 +644,9 @@ class Policy {
 
 Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules"];
 Policy.OBJ_VALUE_KEYS = ["appTimeUsage"];
+Policy.NUM_VALUE_KEYS = [
+  'seq', 'appTimeUsed', 'priority', 'transferredBytes', 'transferredPackets', 'avgPacketBytes',
+]
 Policy.INTF_PREFIX = "intf:";
 Policy.TAG_PREFIX = "tag:";
 
