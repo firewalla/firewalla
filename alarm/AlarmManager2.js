@@ -151,6 +151,10 @@ module.exports = class {
 
     try {
       const alarm = this._genAlarm(await this._alignAlarmInfo(data));
+      if (!alarm) {
+        log.warn('cannot create alarm, invalid parameter type', data.type)
+        return;
+      }
       log.info('alarm:create', alarm);
       await this.enrichDeviceInfo(alarm);
       this.enqueueAlarm(alarm); // use enqueue to ensure no dup alarms
@@ -1735,7 +1739,9 @@ module.exports = class {
   async _alignAlarmInfo(alarm) { // alarm object
     if (!alarm.hasOwnProperty("p.device.ip") && alarm["p.device.mac"]) {
       const device = await dnsManager.resolveMac(alarm['p.device.mac'].toUpperCase());
-      alarm["p.device.ip"] = device.ipv4 || device.ipv4Addr || JSON.parse(device.ipv6Addr || '[]').pop() || '';
+      if (device) {
+        alarm["p.device.ip"] = device.ipv4 || device.ipv4Addr || JSON.parse(device.ipv6Addr || '[]').pop() || '';
+      }
     }
     if (!alarm.hasOwnProperty("p.dest.name") && alarm["p.dest.ip"]) {
       alarm["p.dest.name"] = await dnsTool.getDns(alarm["p.dest.ip"]);
