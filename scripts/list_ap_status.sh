@@ -143,7 +143,7 @@ ${CONNECT_AP} && AP_COLS="idx:-3 $AP_COLS"
 print_header >&2; hl >&2
 lines=0
 timeit begin
-ap_data=$(ap_config | jq -r ".assets|to_entries|sort_by(.key)[]|[.key, .value.sysConfig.name//\"${NO_VALUE}\", .value.sysConfig.meshMode//\"default\", .value.publicKey]|@tsv")
+ap_data=$(ap_config | jq -r ".assets|to_entries|sort_by(.key)[]|[.key, .value.sysConfig.meshMode//\"default\", .value.publicKey]|@tsv")
 timeit ap_data
 ap_status=$(local_api status/ap | jq -r ".info|to_entries[]|[.key,.value.branch,.value.ts,.value.version//\"${NO_VALUE}\",.value.sysUptime, (.value.eths//{}|.[]|select((.intf|test(\"^eth[01]\$\")) and .linkState!=\"disabled\")|(.intf,.connected,.linkSpeed))]|@tsv")
 timeit ap_status
@@ -154,7 +154,7 @@ ap_sta_counts=$(local_api status/station | jq -r '.info|to_entries[]|[.key, .val
 timeit ap_sta_counts
 now_ts=$(date +%s)
 declare -a ap_names ap_ips
-test -n "$ap_data" && while read ap_mac ap_name ap_meshmode ap_pubkey
+test -n "$ap_data" && while read ap_mac ap_meshmode ap_pubkey
 do
     read ap_branch ap_last_handshake_ts ap_version ap_uptime ap_eth_intf ap_eth_connected ap_eth_speed < <( echo "$ap_status" | awk "\$1==\"$ap_mac\" {print \$2\" \"\$3\" \"\$4\" \"\$5\" \"\$6\" \"\$7\" \"\$8}")
     timeit read
@@ -171,6 +171,7 @@ do
         if [[ -z "$ap_ip" || "$ap_ip" == '(none)' ]]; then continue; fi
     }
     ap_ips+=($ap_ip)
+    ap_name=$(redis-cli --raw hget host:mac:$ap_mac name || echo $NO_VALUE)
     ap_names+=($ap_name)
 
     ap_last_handshake=$(test ${ap_last_handshake_ts:-0} -gt 0 && displaytime $((now_ts-ap_last_handshake_ts)) 2>/dev/null || echo "$NO_VALUE")
@@ -203,7 +204,7 @@ do
                             ap_eth_speed_display=${ap_eth_speed}M
                         fi
                         apd="${ap_eth_intf}:$ap_eth_speed_display" ;;
-                    false) apd="${ap_eth_intf}:disconnected" ;;
+                    false) apd="${ap_eth_intf}:-1" ;;
                     *) apd=$NO_VALUE ;;
                 esac
                 ;;
