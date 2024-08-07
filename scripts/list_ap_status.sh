@@ -138,7 +138,7 @@ displaytime() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-AP_COLS='name:-30 version:-10 device_mac:-18 device_ip:-16 device_vpn_ip:-17 pub_key:10 uptime:13 adoption:9 last_handshake:15 sta:4 mesh_mode:10 eth_speed:12 branch:5'
+AP_COLS='name:-30 version:-10 device_mac:-18 device_ip:-16 device_vpn_ip:-17 pub_key:10 uptime:13 adoption:9 last_handshake:15 sta:4 mesh_mode:10 eth_speed:12 branch:6'
 ${CONNECT_AP} && AP_COLS="idx:-3 $AP_COLS"
 print_header >&2; hl >&2
 lines=0
