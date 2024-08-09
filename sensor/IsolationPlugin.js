@@ -54,17 +54,19 @@ class IsolationSensor extends Sensor {
     const ruleRx = rule.clone().set(tagDevSetName, "dst,dst").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src").set(tagDevSetName, "src,src", true);
     const ruleRxLog = ruleLog.clone().set(tagDevSetName, "dst,dst").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src").set(tagDevSetName, "src,src", true);
 
+    const ruleInternal = rule.clone().set(tagDevSetName, "src,src").set(tagDevSetName, "dst,dst");
+    const ruleInternalLog = ruleLog.clone().set(tagDevSetName, "src,src").set(tagDevSetName, "dst,dst");
+
     const ruleTx6 = ruleTx.clone().fam(6);
     const ruleTxLog6 = ruleTxLog.clone().fam(6);
     const ruleRx6 = ruleRx.clone().fam(6);
     const ruleRxLog6 = ruleRxLog.clone().fam(6);
+    const ruleInternal6 = ruleInternal.clone().fam(6);
+    const ruleInternalLog6 = ruleInternalLog.clone().fam(6);
 
-    let op;
-    if (policy && policy.state === true) {
-      op = "-A";
-    } else {
-      op = "-D";
-    }
+    const op = policy.external ? "-A" : "-D";
+    const opInternal = policy.internal ? "-A" : "-D";
+    
     // add LOG rule before DROP rule
     await ruleTxLog.exec(op).catch((err) => { });
     await ruleTx.exec(op).catch((err) => { });
@@ -74,6 +76,10 @@ class IsolationSensor extends Sensor {
     await ruleRx.exec(op).catch((err) => { });
     await ruleRxLog6.exec(op).catch((err) => { });
     await ruleRx6.exec(op).catch((err) => { });
+    await ruleInternalLog.exec(opInternal).catch((err) => { });
+    await ruleInternal.exec(opInternal).catch((err) => { });
+    await ruleInternalLog6.exec(opInternal).catch((err) => { });
+    await ruleInternal6.exec(opInternal).catch((err) => { });
   }
 }
 
