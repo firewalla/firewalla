@@ -534,6 +534,11 @@ class VPNClientConnectionAlarm extends Alarm {
   }
 }
 
+const VPN_PROTOCOL_SUFFIX_MAPPING = {
+  "openvpn": "ovpn",
+  "wireguard": "wgvpn"
+};
+
 class VPNRestoreAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_VPN_RESTORE", timestamp, device, info);
@@ -561,7 +566,15 @@ class VPNRestoreAlarm extends Alarm {
   localizedNotificationContentKey() {
     let key = super.localizedNotificationContentKey();
 
+    const protocol = this["p.vpn.protocol"];
+    let suffix = null;
+    if (protocol && VPN_PROTOCOL_SUFFIX_MAPPING[protocol]) {
+      key += ".vpn"
+      suffix = VPN_PROTOCOL_SUFFIX_MAPPING[protocol];
+    }
     key += "." + this["p.vpn.subtype"];
+    if (suffix)
+      key += "." + suffix;
 
     return key;
   }
@@ -614,10 +627,18 @@ class VPNDisconnectAlarm extends Alarm {
   localizedNotificationContentKey() {
     let key = super.localizedNotificationContentKey();
 
+    const protocol = this["p.vpn.protocol"];
+    let suffix = null;
+    if (protocol && VPN_PROTOCOL_SUFFIX_MAPPING[protocol]) {
+      key += ".vpn"
+      suffix = VPN_PROTOCOL_SUFFIX_MAPPING[protocol];
+    }
     key += "." + this["p.vpn.subtype"];
     if (this["p.vpn.strictvpn"] == false || this["p.vpn.strictvpn"] == "false") {
       key += ".FALLBACK";
     }
+    if (suffix)
+      key += "." + suffix;
 
     return key;
   }
