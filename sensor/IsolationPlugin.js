@@ -79,6 +79,8 @@ class IsolationSensor extends Sensor {
     await ruleInternal.exec(opInternal).catch((err) => { });
     await ruleInternalLog6.exec(opInternal).catch((err) => { });
     await ruleInternal6.exec(opInternal).catch((err) => { });
+
+    await fwapc.setGroup(tagUid, {config: {isolation: {internal: policy.internal || false, external: policy.external || false}}}).catch((err) => {});
   }
 }
 

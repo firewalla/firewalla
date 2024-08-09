@@ -219,25 +219,25 @@ class FWAPC {
     }
   }
 
-  async setGroupACL(groupId, macs) {
+  async setGroup(groupId, data) {
     if (!groupId)
-      throw new Error("groupId is not defined in setGroupACL");
-    if (!_.isArray(macs))
-      throw new Error("macs should be an array in setGroupACL");
-    const payload = {id: groupId, macs};
-    const {code, body, msg} = await this.apiCall("POST", "/config/set_group_acl", payload);
+      throw new Error("groupId is not defined in setGroup");
+    if (!_.isObject(data))
+      throw new Error("data should be an object in setGroup");
+    const payload = _.pick(data, ["macs", "config"]);
+    const {code, body, msg} = await this.apiCall("POST", `/config/group/${groupId}`, payload);
     if (!isNaN(code) && Number(code) > 299) {
-      throw new Error(msg || "Failed to set group ACL in fwapc");
+      throw new Error(msg || "Failed to set group in fwapc");
     }
     return;
   }
 
-  async deleteGroupACL(groupId) {
+  async deleteGroup(groupId) {
     if (!groupId)
-      throw new Error("groupId is not defined in setGroupACL");
-    const {code, body, msg} = await this.apiCall("DELETE", `/config/group_acl/${groupId}`);
+      throw new Error("groupId is not defined in deletGroup");
+    const {code, body, msg} = await this.apiCall("DELETE", `/config/group/${groupId}`);
     if (!isNaN(code) && Number(code) > 299) {
-      throw new Error(msg || "Failed to set group ACL in fwapc");
+      throw new Error(msg || "Failed to delete group in fwapc");
     }
     return;
   }
