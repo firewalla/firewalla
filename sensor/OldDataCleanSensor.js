@@ -55,6 +55,7 @@ const { REDIS_KEY_REDIS_KEY_COUNT, REDIS_KEY_CPU_USAGE } = require('../net2/Cons
 const fsp = require('fs').promises;
 const f = require('../net2/Firewalla.js');
 const sysManager = require('../net2/SysManager.js');
+const Policy = require('../alarm/Policy.js');
 
 function arrayDiff(a, b) {
   return a.filter(function(i) {return b.indexOf(i) < 0;});
@@ -437,7 +438,7 @@ class OldDataCleanSensor extends Sensor {
       await this.countIntelData()
 
       if (fullClean)
-        await this.cleanupDnsmasqNetworkConfs();
+        await this.cleanupLegacyNetworkUUIDs();
 
       // await this.cleanBlueRecords()
       log.info("scheduledJob is executed successfully");
@@ -514,7 +515,7 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
-  async cleanupDnsmasqNetworkConfs() {
+  async cleanupLegacyNetworkUUIDs() {
     const networkConfigs = (await rclient.zrangeAsync("history:networkConfig", 0, -1) || []).map(data => {
       try {
         const json = JSON.parse(data);
@@ -540,6 +541,15 @@ class OldDataCleanSensor extends Sensor {
     for (const intf of currentIntfs) {
       if (intf.uuid)
         uuids.add(intf.uuid);
+    }
+
+    // remove rules that use a legacy network uuid
+    const rules = await pm2.loadActivePoliciesAsync({includingDisabled: true});
+    for (const rule of rules) {
+      if (rule.pid && _.isArray(rule.tag) && rule.tag.every(s => s.startsWith(Policy.INTF_PREFIX) && !uuids.has(s.substring(Policy.INTF_PREFIX.length)))) {
+        log.info(`Rule ${rule.pid} is applied to a legacy network, will be deleted`, rule);
+        await pm2.disableAndDeletePolicy(rule.pid).catch((err) => {});
+      }
     }
 
     // remove leftover network uuid directory that are no longer used in historical network config data from dnsmasq config directory
