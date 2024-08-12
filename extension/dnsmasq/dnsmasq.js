@@ -1,4 +1,4 @@
-/*    Copyright 2019-2023 Firewalla Inc.
+/*    Copyright 2019-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -704,7 +704,7 @@ module.exports = class DNSMASQ {
             }
           }
           const filePath = `${FILTER_DIR}/${name}.conf`;
-          await fs.writeFileAsync(filePath, entries.join('\n'));
+          await this.writeFileAsync(filePath, entries.join('\n'), options && options.append);
         }
 
         if (!_.isEmpty(options.intfs)) {
@@ -727,7 +727,7 @@ module.exports = class DNSMASQ {
               }
             }
             const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/${name}.conf`;
-            await fs.writeFileAsync(filePath, entries.join('\n'));
+            await this.writeFileAsync(filePath, entries.join('\n'), options && options.append);
           }
         }
 
@@ -750,7 +750,7 @@ module.exports = class DNSMASQ {
               }
             }
             const filePath = `${FILTER_DIR}/tag_${tag}_${name}.conf`;
-            await fs.writeFileAsync(filePath, entries.join('\n'));
+            await this.writeFileAsync(filePath, entries.join('\n'), options && options.append);
           }
         }
 
@@ -777,7 +777,7 @@ module.exports = class DNSMASQ {
                   break;
                 }
               }
-              await fs.writeFileAsync(filePath, entries.join('\n'));
+              await this.writeFileAsync(filePath, entries.join('\n'), options && options.append);
             }
           }
         }
@@ -808,11 +808,18 @@ module.exports = class DNSMASQ {
           }
         }
         const filePath = `${FILTER_DIR}/${name}.conf`;
-        await fs.writeFileAsync(filePath, entries.join('\n'));
+        await this.writeFileAsync(filePath, entries.join('\n'), options && options.append);
       }
     }).catch((err) => {
       log.error("Failed to add category mac set entry into file:", err);
     });
+  }
+
+  async writeFileAsync(filePath, content, append=false) {
+    if (append) {
+      return await fs.appendFileAsync(filePath, "\n" + content);
+    }
+    return await fs.writeFileAsync(filePath, content);
   }
 
   async writeAllocationOption(tagName, policy, known = false) {
@@ -1474,27 +1481,22 @@ module.exports = class DNSMASQ {
       if (myIp4 && resolver4 && resolver4.length > 0) {
         // redirect dns request that is originally sent to box itself to the upstream resolver
         for (const i in resolver4) {
-          const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
-            .mdl("set", `--match-set ${netSet} src,src`)
-            .mth(myIp4, null, "dst")
-            .mth(53, null, 'dport')
+          const redirectRule = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK')
+            .set(netSet, 'src,src').dst(myIp4).dport(53)
             .mdl("statistic", `--mode nth --every ${resolver4.length - i} --packet 0`)
             .jmp(`DNAT --to-destination ${resolver4[i]}:53`);
-          const redirectUDP = redirectTCP.clone().pro('udp');
-          await execAsync(redirectTCP.toCmd('-A'));
-          await execAsync(redirectUDP.toCmd('-A'));
+          await redirectRule.clone().pro('tcp').exec('-A');
+          await redirectRule.clone().pro('udp').exec('-A');
         }
       }
       if (resolver6 && resolver6.length > 0) {
         for (const i in resolver6) {
-          const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
-            .mdl("set", `--match-set ${netSet} src,src`)
-            .mth(53, null, 'dport')
+          const redirectRule = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK')
+            .set(netSet, 'src,src').dport(53)
             .mdl("statistic", `--mode nth --every ${resolver6.length - i} --packet 0`)
             .jmp(`DNAT --to-destination ${resolver6[i]}:53`);
-          const redirectUDP = redirectTCP.clone().pro('udp');
-          await execAsync(redirectTCP.toCmd('-A'));
-          await execAsync(redirectUDP.toCmd('-A'));
+          await redirectRule.clone().pro('tcp').exec('-A');
+          await redirectRule.clone().pro('udp').exec('-A');
         }
       }
     }
@@ -1549,14 +1551,13 @@ module.exports = class DNSMASQ {
     }
     await NetworkProfile.ensureCreateEnforcementEnv(uuid);
     const netSet = NetworkProfile.getNetIpsetName(uuid);
-    const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
-      .mdl("set", `--match-set ${netSet} src,src`)
-      .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`)
-      .mth(53, null, 'dport')
+    const redirectRule = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT')
+      .set(netSet, 'src,src')
+      .set(ipset.CONSTANTS.IPSET_NO_DNS_BOOST, 'src,src', true)
+      .dport(53)
       .jmp(`DNAT --to-destination ${intf.ip_address}:${MASQ_PORT}`)
-    const redirectUDP = redirectTCP.clone().pro('udp');
-    await execAsync(redirectTCP.toCmd(action));
-    await execAsync(redirectUDP.toCmd(action));
+    await redirectRule.clone().pro('tcp').exec(action);
+    await redirectRule.clone().pro('udp').exec(action);
   }
 
   async _manipulate_ipv6_iptables_rule(intf, action) {
@@ -1570,14 +1571,13 @@ module.exports = class DNSMASQ {
     await NetworkProfile.ensureCreateEnforcementEnv(uuid);
     const netSet = NetworkProfile.getNetIpsetName(uuid, 6);
     const ip6 = ip6Addrs.find(i => i.startsWith("fe80")) || ip6Addrs[0]; // prefer to use link local address as DNAT address
-    const redirectTCP = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
-      .mdl("set", `--match-set ${netSet} src,src`)
-      .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`)
-      .mth(53, null, 'dport')
+    const redirectRule = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT')
+      .set(netSet, 'src,src')
+      .set(ipset.CONSTANTS.IPSET_NO_DNS_BOOST, 'src,src', true)
+      .dport(53)
       .jmp(`DNAT --to-destination [${ip6}]:${MASQ_PORT}`);
-    const redirectUDP = redirectTCP.clone().pro('udp');
-    await execAsync(redirectTCP.toCmd(action));
-    await execAsync(redirectUDP.toCmd(action));
+    await redirectRule.clone().pro('tcp').exec(action);
+    await redirectRule.clone().pro('udp').exec(action);
   }
 
   async _remove_all_iptables_rules() {
@@ -2057,33 +2057,75 @@ module.exports = class DNSMASQ {
     return result;
   }
 
+  // check upstream dns connectivity, up status returns true, down returns false.
+  async dnsUpstreamConnectivity(intf) {
+    for (const domain of VERIFICATION_DOMAINS) {
+      const resolver4 = sysManager.myResolver(intf.name);
+      // check all ipv4 dns servers, if any works normal, return up status
+      for (const dnsServer of resolver4) {
+        let cmd = `dig -4 A +short +time=3 +tries=2 @${dnsServer} ${domain}`;
+        log.debug(`DNS upstream check, verifying DNS resolution to ${domain} on ${dnsServer} ...`);
+        try {
+          let { stdout, stderr } = await execAsync(cmd);
+          if (!stdout || !stdout.trim().split('\n').some(line => new Address4(line).isValid())) {
+            log.warn(`DNS upstream check, error verifying dns resolution to ${domain} on ${dnsServer}`, stderr, stdout);
+          } else {
+            // normal dns answer, quick return
+            log.info(`DNS upstream check, succeeded to resolve ${domain} on ${dnsServer} to`, stdout);
+            return true;
+          }
+        } catch (err) {
+          // usually fall into catch clause if dns resolution is failed
+          log.error(`DNS upstream check, failed to resolve ${domain} on ${dnsServer}`, err.stdout, err.stderr);
+        }
+      }
+    }
+    // no domain resolved, return upstream dns down
+    return false;
+  }
+
+
   async dnsStatusCheck() {
     log.debug("Keep-alive checking dnsmasq status")
     let checkResult = await this.verifyDNSConnectivity() || {};
     let needRestart = false;
 
     for (const uuid in checkResult) {
-      const intf = sysManager.getInterfaceViaUUID(uuid);
-      if (this.networkFailCountMap[uuid] === undefined || !intf) {
-        log.warn(`Network uuid ${uuid} in dns status check result is not found`);
-        continue;
-      }
-      if (checkResult[uuid] === true) {
-        if (this.networkFailCountMap[uuid] > 2) {
-          log.info(`DNS of network ${intf.name} is restored, add back DNS redirect rules ...`);
-          await this._manipulate_ipv4_iptables_rule(intf, '-A');
-          await this._manipulate_ipv6_iptables_rule(intf, '-A');
+      // use lock to prevent concurrent changes to neworkFailCountMap and iptables operations on the same network
+      await lock.acquire(`LOCK_DNS_CHECK_${uuid}`, async () => {
+        const intf = sysManager.getInterfaceViaUUID(uuid);
+        if (this.networkFailCountMap[uuid] === undefined || !intf) {
+          log.warn(`Network uuid ${uuid} in dns status check result is not found`);
+          return;
         }
-        this.networkFailCountMap[uuid] = 0;
-      } else {
-        this.networkFailCountMap[uuid]++;
-        needRestart = true;
-        if (this.networkFailCountMap[uuid] > 2) {
-          log.info(`DNS of network ${intf.name} is unreachable, remove DNS redirect rules ...`);
-          await this._manipulate_ipv4_iptables_rule(intf, '-D');
-          await this._manipulate_ipv6_iptables_rule(intf, '-D');
+        if (checkResult[uuid] === true) {
+          if (this.networkFailCountMap[uuid] > 2) {
+            log.info(`DNS of network ${intf.name} is restored, add back DNS redirect rules ...`);
+            await this._manipulate_ipv4_iptables_rule(intf, '-A');
+            await this._manipulate_ipv6_iptables_rule(intf, '-A');
+          }
+          this.networkFailCountMap[uuid] = 0;
+        } else {
+          // check upstream dns status, if down then DO NOT restart dnsmasq
+          const upstreamDNSUP = await this.dnsUpstreamConnectivity(intf);
+          if (!upstreamDNSUP){
+            log.info(`Upstream DNS status down(status up=${upstreamDNSUP}). DO NOT remove redirect rules` );
+            return;
+          } else {
+            log.warn(`Upstream DNS status up (status up=${upstreamDNSUP}). Remove redirect rules` );
+          }
+
+          this.networkFailCountMap[uuid]++;
+          needRestart = true;
+          if (this.networkFailCountMap[uuid] > 2) {
+            log.info(`DNS of network ${intf.name} is unreachable, remove DNS redirect rules ...`);
+            await this._manipulate_ipv4_iptables_rule(intf, '-D');
+            await this._manipulate_ipv6_iptables_rule(intf, '-D');
+          }
         }
-      }
+      }).catch((err) => {
+        log.error(`Failed to apply DNS redirect rules based on status check result on network ${uuid}`, err.message);
+      });
     }
 
     if (needRestart) {
@@ -2328,7 +2370,7 @@ module.exports = class DNSMASQ {
     const leaseFilePath = platform.getDnsmasqLeaseFilePath();
     const lines = await fs.readFileAsync(leaseFilePath, {encoding: "utf8"}).then(content => content.trim().split('\n')).catch((err) => {
       log.error(`Failed to read DHCP lease file ${leaseFilePath}`, err.message);
-      return {}
+      return []
     });
     for (const line of lines) {
       const phrases = line.split(' ');

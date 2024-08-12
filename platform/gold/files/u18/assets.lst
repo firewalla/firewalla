@@ -1,2 +1,4 @@
 /home/pi/.firewalla/run/unbound.tar.gz /gold/assets/u18/unbound.tar.gz 644 "/home/pi/firewalla/scripts/check_service_on_assets_update.sh stop unbound" "cd /home/pi/.firewalla/run/; tar -zxf unbound.tar.gz; /home/pi/firewalla/scripts/check_service_on_assets_update.sh start unbound"
 /home/pi/.firewalla/run/assets/nmap /gold/assets/u18/nmap 755 ":" "sudo cp -f /home/pi/.firewalla/run/assets/nmap $(which nmap)"
+/home/pi/.firewalla/run/assets/rand.lua /gold/assets/u18/rand.lua 644 ':' 'SLNAME="/usr/share/nmap/nselib/rand.lua"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/rand.lua ${SLNAME}; fi'
+/home/pi/.firewalla/run/assets/tableaux.lua /gold/assets/u18/tableaux.lua 644 ':' 'SLNAME="/usr/share/nmap/nselib/tableaux.lua"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/tableaux.lua ${SLNAME}; fi'
