@@ -831,6 +831,7 @@
     },
     "dns": {
       "path": "/blog/current/dns.log",
+      "flowstashExpires": 900,
       "expires": 86400
     },
     "http": {
@@ -956,7 +957,8 @@
     "dns_proxy": false,
     "fast_intel": true,
     "country": true,
-    "dnsmasq_log_allow": true,
+    "dnsmasq_log_allow": false,
+    "dns_flow": true,
     "digitalfence": false,
     "compress_flows": false,
     "rekey": false,

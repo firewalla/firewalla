@@ -695,15 +695,19 @@ class ACLAuditLogPlugin extends Sensor {
           const expires = this.config.expires || 86400
           await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
 
-          const hitType = type + (block ? 'B' : '')
-          timeSeries.recordHit(`${hitType}`, _ts, ct)
-          timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct)
-          timeSeries.recordHit(`${hitType}:intf:${intf}`, _ts, ct)
-          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-            const config = Constants.TAG_TYPE_MAP[type];
-            const flowKey = config.flowKey;
-            for (const tag of record[flowKey]) {
-              timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
+          // these 2 features should not be on at the same time, but if they do,
+          // use dns_flow as a prioirty for statistics
+          if (!fc.isFeatureOn('dns_flow')) {
+            const hitType = type + (block ? 'B' : '')
+            timeSeries.recordHit(`${hitType}`, _ts, ct)
+            timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct)
+            timeSeries.recordHit(`${hitType}:intf:${intf}`, _ts, ct)
+            for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+              const config = Constants.TAG_TYPE_MAP[type];
+              const flowKey = config.flowKey;
+              for (const tag of record[flowKey]) {
+                timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
+              }
             }
           }
           block && sem.emitLocalEvent({
