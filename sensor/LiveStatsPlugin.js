@@ -206,7 +206,7 @@ class LiveStatsPlugin extends Sensor {
             .map(name => ({ name, target: sysManager.getInterface(name).uuid, type: 'intf' }))
 
             if (queries.throughput.vpnClient) {
-              const policy = await hostManager.getPolicyAsync('vpnClient')
+              const policy = await hostManager.getPolicyAsync('vpnClient') || {}
               const vpnClients = await Promise.all(
                 // policy:system should have all enabled VPN clients
                 (policy.multiClients || [ policy ])
