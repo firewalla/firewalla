@@ -3192,29 +3192,32 @@ class netBot extends ControllerBot {
         log.info('host:delete', hostMac);
         const macExists = await hostTool.macExists(hostMac);
         if (macExists) {
+          (async () => {
+            await pm2.deleteMacRelatedPolicies(hostMac);
+            await em.deleteMacRelatedExceptions(hostMac);
+            await am2.deleteMacRelatedAlarms(hostMac);
+            await dnsmasq.deleteLeaseRecord(hostMac);
 
-          await pm2.deleteMacRelatedPolicies(hostMac);
-          await em.deleteMacRelatedExceptions(hostMac);
-          await am2.deleteMacRelatedAlarms(hostMac);
-          await dnsmasq.deleteLeaseRecord(hostMac);
+            await categoryFlowTool.delAllTypes(hostMac);
+            await flowAggrTool.removeAggrFlowsAll(hostMac);
+            await flowManager.removeFlowsAll(hostMac);
 
-          await categoryFlowTool.delAllTypes(hostMac);
-          await flowAggrTool.removeAggrFlowsAll(hostMac);
-          await flowManager.removeFlowsAll(hostMac);
+            let ips = await hostTool.getIPsByMac(hostMac);
+            for (const ip of ips) {
+              const latestMac = await hostTool.getMacByIP(ip);
+              if (latestMac && latestMac === hostMac) {
+                // double check to ensure ip address is not taken over by other device
 
-          let ips = await hostTool.getIPsByMac(hostMac);
-          for (const ip of ips) {
-            const latestMac = await hostTool.getMacByIP(ip);
-            if (latestMac && latestMac === hostMac) {
-              // double check to ensure ip address is not taken over by other device
-
-              // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
-              await rclient.unlinkAsync([
-                "monitor:flow:" + hostMac,
-                "monitor:large:" + hostMac,
-              ]);
+                // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
+                await rclient.unlinkAsync([
+                  "monitor:flow:" + hostMac,
+                  "monitor:large:" + hostMac,
+                ]);
+              }
             }
-          }
+          })().catch((err) => {
+            log.error(`Failed to delete information of host ${hostMac}`, err);
+          });
           // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
           this.messageBus.publish("DiscoveryEvent", "Device:Delete", hostMac, {});
 

@@ -481,7 +481,12 @@ class CustomizedSecurityAlarm extends Alarm {
   getExpirationTime() {
     return this["p.cooldown"] || 900;
   }
-  
+
+  isSecurityAlarm() {
+    if (this["p.msp.type"]) return true; // created by msp
+    return false;
+  }
+
   localizedNotificationContentKey() {
     let key = `notif.content.${this.getNotifKeyPrefix()}`;
     const username = this.getUserName();
@@ -529,6 +534,11 @@ class VPNClientConnectionAlarm extends Alarm {
   }
 }
 
+const VPN_PROTOCOL_SUFFIX_MAPPING = {
+  "openvpn": "ovpn",
+  "wireguard": "wgvpn"
+};
+
 class VPNRestoreAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_VPN_RESTORE", timestamp, device, info);
@@ -556,7 +566,15 @@ class VPNRestoreAlarm extends Alarm {
   localizedNotificationContentKey() {
     let key = super.localizedNotificationContentKey();
 
+    const protocol = this["p.vpn.protocol"];
+    let suffix = null;
+    if (protocol && VPN_PROTOCOL_SUFFIX_MAPPING[protocol]) {
+      key += ".vpn"
+      suffix = VPN_PROTOCOL_SUFFIX_MAPPING[protocol];
+    }
     key += "." + this["p.vpn.subtype"];
+    if (suffix)
+      key += "." + suffix;
 
     return key;
   }
@@ -609,10 +627,18 @@ class VPNDisconnectAlarm extends Alarm {
   localizedNotificationContentKey() {
     let key = super.localizedNotificationContentKey();
 
+    const protocol = this["p.vpn.protocol"];
+    let suffix = null;
+    if (protocol && VPN_PROTOCOL_SUFFIX_MAPPING[protocol]) {
+      key += ".vpn"
+      suffix = VPN_PROTOCOL_SUFFIX_MAPPING[protocol];
+    }
     key += "." + this["p.vpn.subtype"];
     if (this["p.vpn.strictvpn"] == false || this["p.vpn.strictvpn"] == "false") {
       key += ".FALLBACK";
     }
+    if (suffix)
+      key += "." + suffix;
 
     return key;
   }
@@ -1530,7 +1556,7 @@ function alias2alarmType(alias) {
 }
 
 function isSecurityAlarm(alarmType) {
-  return ['ALARM_SPOOFING_DEVICE', 'ALARM_VULNERABILITY', 'ALARM_BRO_NOTICE', 'ALARM_INTEL'].includes(alarmType);
+  return ['ALARM_SPOOFING_DEVICE', 'ALARM_VULNERABILITY', 'ALARM_BRO_NOTICE', 'ALARM_INTEL', 'ALARM_CUSTOMIZED_SECURITY'].includes(alarmType);
 }
 
 const classMapping = {
