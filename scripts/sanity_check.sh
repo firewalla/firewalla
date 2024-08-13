@@ -423,7 +423,7 @@ check_system_config() {
 
     echo ""
 
-    print_config 'default MSP' "$(redis-cli get ext.guardian.socketio.server)"
+    print_config 'default MSP' "$(redis-cli get ext.guardian.business | jq -c .name) $(redis-cli get ext.guardian.socketio.server)"
     redis-cli zrange guardian:alias:list 0 -1 | while read -r alias; do printf '%30s  %s\n' "$alias" "$(redis-cli get "ext.guardian.socketio.server.$alias")"; done
 
     echo ""
@@ -541,7 +541,7 @@ check_policies() {
         else
           printf "$COLOR%7s %52s %11s %25s %10s %25s %5s %8s %5s %9s %9s %3s %8s %20s$UNCOLOR\n" \
             "$RULE_ID" "$(align::right 52 "$TARGET")" "$TYPE" "$(align::right 25 "$SCOPE")" "$EXPIRE" "$CRONTIME" \
-            "$DIRECTION" "$ACTION" "${p[protocol]}" "${p[localPort]}" "${p[remotePort]}" "$DISABLED" "${p[hitCount]}" "${p[purpose]}"
+            "$DIRECTION" "$ACTION" "${p[protocol]}" "${p[localPort]}" "${p[remotePort]}" "$DISABLED" "${p[hitCount]}" "${p[purpose]:-${p[app_name]}}"
         fi;
 
         unset p

@@ -977,7 +977,7 @@ class PolicyManager2 {
     const initialOtherEnforcement = otherRules.map((rule) => initialRuleJob(rule));
     await Promise.all(initialOtherEnforcement);
 
-    log.info(">>>>>==== All policy rules are enforced ====<<<<<", otherRules.length);
+    log.forceInfo(">>>>>==== All policy rules are enforced ====<<<<<", otherRules.length);
 
     await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'done')
 
