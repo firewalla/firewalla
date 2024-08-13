@@ -154,6 +154,11 @@ class FWAPC {
     return this.ready
   }
 
+  async getAllSSIDStatus() {
+    const ssidStatus = await localGet("/status/ssid").then(resp => resp.info);
+    return ssidStatus;
+  }
+
   async getAllSTAStatus(live = false) {
     if (live || Date.now() / 1000 - staStatusTs > 15) {
       staStatus = await localGet("/status/station", 1).then(resp => resp.info);
