@@ -83,6 +83,7 @@ module.exports = {
   TAG_TYPE_DEVICE: "device",
   TAG_TYPE_USER: "user",
   TAG_TYPE_GROUP: "group",
+  TAG_TYPE_SSID: "ssid",
 
   TAG_TYPE_MAP: {
     device: {
@@ -113,6 +114,16 @@ module.exports = {
       alarmIdKey: "p.tag.ids",
       alarmNameKey: "p.tag.names",
       ruleTagPrefix: "tag:",
+      needAppTimeInInitData: false
+    },
+    ssid: {
+      redisKeyPrefix: "ssidTag:uid:",
+      initDataKey: "ssidTags",
+      policyKey: "ssidTags",
+      flowKey: "ssidTags",
+      alarmIdKey: "p.ssidtag.ids",
+      alarmNameKey: "p.ssidtag.names",
+      ruleTagPrefix: "ssidTag:",
       needAppTimeInInitData: false
     }
   },
