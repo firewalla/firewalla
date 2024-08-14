@@ -141,7 +141,6 @@ timeit begin
 ssids=$(frcc | jq -r '.profile[], .assets_template.ap_default.mesh|.ssid')
 timeit ssids
 ssid_data=$(local_api status/ap | jq -r ".info|to_entries[]|.key as \$mac|.value.aps |to_entries[] |.value|[.ssid, \$mac, .bssid,.channel,.band,.maxRate//\"$NO_VALUE\"]|@tsv" )
-ap_data=$(frcc | jq -r ".assets|to_entries[]|[.key, .value.sysConfig.name//\"${NO_VALUE}\"]|@tsv")
 ssid_sta_bssid=$(local_api status/station | jq -r '.info|to_entries|map(select(.value.bssid != null)|[.value.ssid, .key, .value.bssid])[]|@tsv')
 while read ssid
 do
@@ -156,7 +155,7 @@ do
             test $ssidcl == $ssidc && ssidcl=-20
             case $ssidc in
                 idx) let ssidd=lines ;;
-                ap_name) ssidd=$(echo "$ap_data"|awk -F'\t' "/$ap_mac/ {print \$2}") ;;
+                ap_name) ssidd=$(redis-cli --raw hget host:mac:$ap_mac name || echo $NO_VALUE) ;;
                 ap_mac) ssidd=$ap_mac ;;
                 ssid) ssidd=$ssid ;;
                 bssid) ssidd=$bssid ;;
