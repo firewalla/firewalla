@@ -610,7 +610,7 @@ class SysManager {
 
   getInterfaceViaIP6(ip6, monitoringOnly = true) {
     if (!ip6) return null;
-    let intfObj = this.ipIntfCache.get(ip);
+    let intfObj = this.ipIntfCache.get(ip6);
     if (intfObj)
       return intfObj;
 
@@ -621,7 +621,7 @@ class SysManager {
       intf = this.cidr6Trie.find(ip6);
 
     if (intf) intfObj = this.getInterface(intf);
-    if (intfObj) this.ipIntfCache.set(ip, intfObj);
+    if (intfObj) this.ipIntfCache.set(ip6, intfObj);
 
     return intfObj
   }
@@ -1068,10 +1068,9 @@ class SysManager {
       const intfObj = intf ? this.getInterface(intf) : this.getInterfaceViaIP(ip, monitoringOnly)
 
       if (intfObj && intfObj.subnet) {
-        const subnet = new Address4(intfObj.subnet)
-        if (subnet.subnetMask < 32 &&
-          (ip == subnet.startAddress().address || ip == subnet.endAddress().address)
-        ) return true
+        const subnet = intfObj.subnetAddress4 || new Address4(intfObj.subnet)
+        if (subnet.subnetMask < 32 && ip == subnet.endAddress().address)
+          return true
       }
 
       return (iptool.toLong(ip) >= this.multicastlow && iptool.toLong(ip) <= this.multicasthigh)

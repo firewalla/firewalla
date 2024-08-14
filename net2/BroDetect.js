@@ -480,6 +480,10 @@ class BroDetect {
     if (obj == null || obj["id.resp_p"] != 53) {
       return;
     }
+    if (obj.answers && obj.answers.length)
+      obj.answers = obj.answers.filter(a => !a.startsWith('<unknown type'))
+
+    // only logs request with answers at this moment
     if (!(obj["id.orig_h"] && obj["answers"] && obj["answers"].length && obj["query"] && obj["query"].length))
       return
 
@@ -562,8 +566,6 @@ class BroDetect {
       }
 
       const tags = await this.getTags(monitorable, intfInfo)
-      Object.assign(dnsFlow, tags)
-
 
       await this.recordTraffic({ dns: 1 }, localMac);
       if (intfInfo) {
@@ -571,7 +573,7 @@ class BroDetect {
       }
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
-        for (const tag of dnsFlow[flowKey] || []) {
+        for (const tag of tags[flowKey] || []) {
           await this.recordTraffic({ dns: 1 }, 'tag:' + tag, true);
         }
       }
@@ -582,8 +584,9 @@ class BroDetect {
       )
 
       const flowspecKey = `${localMac}:${dnsFlow.qt}:${dnsFlow.dn}:${intfInfo ? intfInfo.uuid : ''}`;
-      // add mac to flowstash (but not redis)
+      // add keys to flowstash (but not redis)
       dnsFlow.mac = localMac
+      Object.assign(dnsFlow, tags)
 
       let flowspec = this.flowstash.dns[flowspecKey];
       if (flowspec == null) {
@@ -1211,7 +1214,6 @@ class BroDetect {
       }
 
       const tags = await this.getTags(monitorable, intfInfo)
-      Object.assign(tmpspec, tags)
 
       if (monitorable instanceof Identity)
         tmpspec.guid = IdentityManager.getGUID(monitorable);
@@ -1255,7 +1257,7 @@ class BroDetect {
       }
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
-        for (const tag of tmpspec[flowKey] || []) {
+        for (const tag of tags[flowKey] || []) {
           await this.recordTraffic(tuple, 'tag:' + tag, true);
         }
       }
@@ -1269,8 +1271,9 @@ class BroDetect {
       let redisObj = [key, tmpspec._ts, strdata];
       // log.debug("Conn:Save:Temp", redisObj);
 
-      // add mac to flowstash (but not redis)
+      // adding keys to flowstash (but not redis)
       tmpspec.mac = localMac
+      Object.assign(tmpspec, tags)
 
       if (tmpspec.fd == 'out') {
         this.recordOutPort(localMac, tmpspec);
@@ -1787,7 +1790,7 @@ class BroDetect {
 
   async writeTrafficCache() {
     const toRecord = this.timeSeriesCache
-    this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 }, ts: Date.now() / 1000 }
+    this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0, dns: 0 }, ts: Date.now() / 1000 }
     const duration = this.timeSeriesCache.ts - toRecord.ts
     const lastTS = Math.floor(toRecord.ts)
 

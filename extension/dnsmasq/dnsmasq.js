@@ -824,7 +824,7 @@ module.exports = class DNSMASQ {
 
   async writeAllocationOption(tagName, policy, known = false) {
     await lock.acquire(LOCK_OPS, async () => {
-      log.info('Writting allocation file for', tagName)
+      log.verbose('Writting allocation file for tag', tagName)
       const filePath = `${DHCP_CONFIG_PATH}/${tagName}_ignore.conf`;
       if (policy.dhcpIgnore) {
         const tags = []

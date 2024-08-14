@@ -684,20 +684,12 @@ class ACLAuditLogPlugin extends Sensor {
               const networkProfile = networkProfileManager.getNetworkProfile(intf);
               if (networkProfile) tags.push(...await networkProfile.getTags(type));
             }
-            record[flowKey] = _.uniq(tags);
+            if (tags.length)
+              record[flowKey] = _.uniq(tags);
           }
-          const key = this._getAuditKey(mac, block)
-          await rclient.zaddAsync(key, _ts, JSON.stringify(record));
-          if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
-            await flowAggrTool.recordDeviceLastFlowTs(mac, _ts);
-          this.touchedKeys[key] = 1;
 
-          const expires = this.config.expires || 86400
-          await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
-
-          // these 2 features should not be on at the same time, but if they do,
           // use dns_flow as a prioirty for statistics
-          if (!fc.isFeatureOn('dns_flow')) {
+          if (!platform.isDNSFlowSupported() || !fc.isFeatureOn('dns_flow')) {
             const hitType = type + (block ? 'B' : '')
             timeSeries.recordHit(`${hitType}`, _ts, ct)
             timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct)
@@ -710,6 +702,19 @@ class ACLAuditLogPlugin extends Sensor {
               }
             }
           }
+
+          // use a dedicated switch for saving to audit:accpet as we still want rule stats
+          if (type == 'dns' && !block && !fc.isFeatureOn('dnsmasq_log_allow_redis')) return
+
+          const key = this._getAuditKey(mac, block)
+          await rclient.zaddAsync(key, _ts, JSON.stringify(record));
+          if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
+            await flowAggrTool.recordDeviceLastFlowTs(mac, _ts);
+          this.touchedKeys[key] = 1;
+
+          const expires = this.config.expires || 86400
+          await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
+
           block && sem.emitLocalEvent({
             type: "Flow2Stream",
             suppressEventLogging: true,
