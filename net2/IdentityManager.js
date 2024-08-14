@@ -258,6 +258,7 @@ class IdentityManager {
     for (const cidr of allCidrs) {
       const uid = ipUidMap[cidr];
       const endpoint = ipEndpointMap[cidr];
+      if (endpoint == '(none)') continue
       if (new Address4(cidr).isValid()) {
         cidr4Trie.add(cidr, {uid, endpoint});
       } else {
