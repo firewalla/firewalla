@@ -134,18 +134,18 @@ displaytime() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-SSID_COLS='ssid ap_name:-30 ap_mac:-18 bssid:-18 channel:9 band:4 maxrate:20 sta_count:10'
+SSID_COLS='ssid ap_name:-30 ap_mac:-18 bssid:-18 channel:9 band:4 maxrate:20 sta_count:10 intf:10'
 { print_header >&2; hl >&2; } 
 lines=0
 timeit begin
 ssids=$(frcc | jq -r '.profile[], .assets_template.ap_default.mesh|.ssid')
 timeit ssids
-ssid_data=$(local_api status/ap | jq -r ".info|to_entries[]|.key as \$mac|.value.aps |to_entries[] |.value|[.ssid, \$mac, .bssid,.channel,.band,.maxRate//\"$NO_VALUE\"]|@tsv" )
+ssid_data=$(local_api status/ap | jq -r ".info|to_entries[]|.key as \$mac|.value.aps |to_entries[] |.value|[.ssid, \$mac, .bssid,.channel,.band,.maxRate//\"$NO_VALUE\", .intf//\"$NO_VALUE\"]|@tsv" )
 ssid_sta_bssid=$(local_api status/station | jq -r '.info|to_entries|map(select(.value.bssid != null)|[.value.ssid, .key, .value.bssid])[]|@tsv')
 while read ssid
 do
     timeit $ssid
-    while read ssid ap_mac bssid channel band maxrate
+    while IFS=$'\t' read ssid ap_mac bssid channel band maxrate intf
     do
         sta_count=$(echo "$ssid_sta_bssid" | awk "\$1==\"$ssid\" && \$3==\"$bssid\"" |wc -l)
         timeit sta_count
@@ -155,9 +155,10 @@ do
             test $ssidcl == $ssidc && ssidcl=-20
             case $ssidc in
                 idx) let ssidd=lines ;;
-                ap_name) ssidd=$(redis-cli --raw hget host:mac:$ap_mac name || echo $NO_VALUE) ;;
+                ap_name) ssidd=$(redis-cli --raw hget host:mac:$ap_mac name || echo "$NO_VALUE") ;;
                 ap_mac) ssidd=$ap_mac ;;
                 ssid) ssidd=$ssid ;;
+                intf) ssidd=$intf ;;
                 bssid) ssidd=$bssid ;;
                 channel) ssidd=$channel ;;
                 band) ssidd=$band ;;
