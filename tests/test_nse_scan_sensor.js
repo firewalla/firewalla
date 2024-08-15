@@ -42,7 +42,7 @@ describe('Test NseScanPlugin', function() {
   this.timeout(1200000);
   this.plugin = new NseScanPlugin({});
 
-  beforeEach((done) => (
+  before((done) => (
     async() => {
       this.policy = await rclient.hgetAsync('policy:system', 'nse_scan');
       fireRouter.scheduleReload();
@@ -68,7 +68,7 @@ describe('Test NseScanPlugin', function() {
         const hostinfo = await rclient.hgetallAsync(key);
         const host = new Host(hostinfo, true);
         host.lastActiveTimestamp = currentTs;
-        hostManager.hostsdb[`host:mac:${host.mac}`] = host
+        hostManager.hostsdb[`host:mac:${host.o.mac}`] = host
         hostManager.hosts.all.push(host);
       }
       hostManager.hosts.all = _.uniqWith(hostManager.hosts.all, (a,b) => a.o.ipv4 == b.o.ipv4 && a.o.mac == b.o.mac)
@@ -77,7 +77,7 @@ describe('Test NseScanPlugin', function() {
     })()
   );
 
-  afterEach((done) => (
+  after((done) => (
     async() => {
       await rclient.hsetAsync('policy:system', 'nse_scan', this.policy);
       done();

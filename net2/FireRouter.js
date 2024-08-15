@@ -1043,7 +1043,7 @@ class FireRouter {
 
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error("Error setting firerouter config: " + resp.body);
+      throw new Error("Error setting firerouter config: " + JSON.stringify(resp.body));
     }
 
     const impact = this.checkConfig(config)

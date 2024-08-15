@@ -1,5 +1,5 @@
 {
-  "version": 1.979,
+  "version": 1.980,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -158,11 +158,12 @@
       "expireInterval": 1800
     },
     "BonjourSensor": {
-      "ignoredServices": ["_airdrop", "_continuity", "_googlezone", "_matter"],
+      "ignoreServices": ["_airdrop", "_continuity", "_googlezone", "_matter"],
       "nonReadableNameServices": [
         "_raop", "_sleep-proxy", "_remotepairing", "_remotepairing-tunnel", "_apple-mobdev2",
-        "_asquic", "_dacp", "_spotify-connect", "_trel"
-      ]
+        "_asquic", "_dacp", "_spotify-connect", "_spotify-social-listening", "_trel"
+      ],
+      "ignoreNames": []
     },
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
@@ -790,6 +791,7 @@
         }
       }
     },
+    "IsolationPlugin": {},
     "NicCalibrationSensor": {},
     "NicStateSensor": {}
   },

@@ -141,6 +141,7 @@ class SuricataDetect {
     log.info("alert message", message);
     const alarmPayload = {
       "p.device.ip": localIP,
+      "p.dest.name": dstName,
       "p.dest.ip": remoteIP,
       "p.local_is_client": localOrig ? "1" : "0",
       "p.protocol": proto,

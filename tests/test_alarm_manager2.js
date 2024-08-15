@@ -31,16 +31,17 @@ const am2 = new AlarmManager2();
 describe('Test alarm event', function(){
   this.timeout(30000);
 
-  beforeEach((done) => {
+  before((done) => {
     (
       async() => {
         await fc.syncDynamicFeatures();
+        await fc.getConfig(true);
       }
     )();
     done();
   });
 
-  afterEach((done) => {
+  after((done) => {
     done();
   });
 
@@ -123,16 +124,24 @@ describe('Test alarm event', function(){
 describe('Test AlarmManager2', function(){
   this.timeout(30000);
 
-  beforeEach((done) => {
+  before((done) => {
     (
       async() => {
         await fc.syncDynamicFeatures();
+        this.extdata = await rclient.getAsync("ext.guardian.data");
+        await rclient.setAsync("ext.guardian.data", "{\"config\":{\"alarms\":{\"apply\":{\"default\":{\"state\":\"ready\",\"timeout\":1800},\"large_upload\":{\"state\":\"pending\"},\"large_upload_2\":{\"state\":\"pending\"}}}}}");
+        log.debug("fc.getConfig", await fc.getConfig(true));
       }
     )();
     done();
   });
 
-  afterEach((done) => {
+  after((done) => {
+    (
+      async() => {
+        await rclient.setAsync("ext.guardian.data", this.extdata);
+      }
+    )();
     done();
   });
 
@@ -277,5 +286,11 @@ describe('Test AlarmManager2', function(){
     expect(data[2]).to.be.not.null;
 
     await am2.removeAlarmAsync(aid);
+  });
+
+  it('should mute alarm', async() => {
+    const alarm1 = am2._genAlarm({"type":"customized_security","device":"Unknown","p.description":"01:2B:40",
+      "p.dest.name":"cnn.com","p.device.ip":"192.168.196.105","p.event.ts":1721353562.99956,"p.msp.type":"1"})
+    expect (am2.isMuteAlarm(alarm1)).to.be.true;
   });
 });

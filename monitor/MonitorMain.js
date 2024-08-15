@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -260,8 +260,8 @@ function run() {
 
   scheduleRunDetect();
 
-  process.on('SIGUSR1', () => {
-    log.info('Received SIGUSR1. Trigger DLP check.');
+  sem.on("DLP", (event) => {
+    log.info('Received SEM message. Trigger DLP check.');
     const type = 'dlp';
     const _status = status[type];
 
@@ -277,8 +277,8 @@ function run() {
     });
   });
 
-  process.on('SIGUSR2', () => {
-    log.info('Received SIGUSR2. Trigger Detect check.');
+  sem.on("Detect", (event) => {
+    log.info('Received SEM message. Trigger Detect check.');
     const type = 'detect';
     const _status = status[type];
 

@@ -20,7 +20,6 @@ const log = require('./logger.js')(__filename);
 const LogReader = require('../util/LogReader.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const iptool = require("ip");
 
@@ -31,9 +30,7 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 
-const features = require('../net2/features.js')
-const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
-  require('../net2/Conntrack.js') : { has: () => {}, set: () => {} }
+const conntrack = require('../net2/Conntrack.js')
 
 const broNotice = require('../extension/bro/BroNotice.js');
 
@@ -158,7 +155,6 @@ class BroDetect {
     this.flowstash = {};
     this.flowstashExpires = Date.now() / 1000 + FLOWSTASH_EXPIRES;
 
-    this.enableRecording = true
     this.activeMac = {};
     this.incTs = 0;
 
@@ -166,7 +162,13 @@ class BroDetect {
       this._activeMacHeartbeat();
     }, 60000);
 
-    this.lastNTS = null;
+    this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 } }
+    this.tsWriteInterval = config.conn.tsWriteInterval || 10000
+    this.recordTrafficTask = setInterval(() => {
+      this.writeTrafficCache().catch(err => {
+        log.error('Error writing timeseries', err)
+      })
+    }, this.tsWriteInterval)
 
     this.activeLongConns = new Map();
     setInterval(() => {
@@ -226,10 +228,9 @@ class BroDetect {
   }
 
   async start() {
-    this.initWatchers();
     if (firewalla.isMain()) {
+      this.initWatchers();
       this.wanNicStatsCache = await this.getWanNicStats();
-      this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 } }
       sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
         this.wanNicStatsCache = await this.getWanNicStats();
       });
@@ -323,7 +324,7 @@ class BroDetect {
 
         // DestIPFoundHook might have added intel:ip before everything get reversed
         const intel = await intelTool.getIntel(ip)
-        if (intel.host == host || intel.sslHost == host || intel.dnsHost == host) {
+        if (intel && (intel.host == host || intel.sslHost == host || intel.dnsHost == host)) {
           delete intel.host
           delete intel.sslHost
           delete intel.dnsHost
@@ -1093,13 +1094,9 @@ class BroDetect {
       // might be blocked UDP packets, checking conntrack
       // blocked connections don't leave a trace in conntrack
       if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0)) {
-        try {
-          if (!outIntfId) {
-            log.verbose('Dropping blocked UDP', tmpspec)
-            return
-          }
-        } catch (err) {
-          log.error('Failed to fetch audit logs', err)
+        if (!outIntfId) {
+          log.debug('Dropping blocked UDP', tmpspec)
+          return
         }
       }
 
@@ -1136,15 +1133,15 @@ class BroDetect {
       if (tmpspec.fd == 'in') traffic.reverse()
 
       // use now instead of the start time of this flow
-      await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, localMac);
+      await this.recordTraffic(...traffic, tmpspec.ct, localMac);
       if (intfId) {
-        await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'intf:' + intfId, true);
+        await this.recordTraffic(...traffic, tmpspec.ct, 'intf:' + intfId, true);
       }
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const config = Constants.TAG_TYPE_MAP[type];
         const flowKey = config.flowKey;
         for (const tag of tmpspec[flowKey]) {
-          await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
+          await this.recordTraffic(...traffic, tmpspec.ct, 'tag:' + tag, true);
         }
       }
 
@@ -1380,11 +1377,13 @@ class BroDetect {
         this.cleanUpSanDNS(xobj);
 
         try {
-          await rclient.unlinkAsync(key) // delete before hmset in case number of keys is not same in old and new data
-          await rclient.hmsetAsync(key, xobj)
+          const multi = rclient.multi()
+          multi.unlink(key) // delete before hmset in case number of keys is not same in old and new data
+          multi.hmset(key, xobj)
           if (config.ssl.expires) {
-            await rclient.expireatAsync(key, parseInt(Date.now() / 1000) + config.ssl.expires);
+            multi.expireat(key, parseInt(Date.now() / 1000) + config.ssl.expires);
           }
+          await multi.execAsync()
         } catch(err) {
           log.error("host:ext:x509:save:Error", key, subject);
         }
@@ -1412,11 +1411,13 @@ class BroDetect {
 
           this.cleanUpSanDNS(xobj);
 
-          await rclient.unlinkAsync(key) // delete before hmset in case number of keys is not same in old and new data
-          await rclient.hmsetAsync(key, xobj)
+          const multi = rclient.multi()
+          multi.unlink(key) // delete before hmset in case number of keys is not same in old and new data
+          multi.hmset(key, xobj)
           if (config.ssl.expires) {
-            await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + config.ssl.expires);
+            multi.expireat(key, parseInt(Date.now() / 1000) + config.ssl.expires);
           }
+          await multi.execAsync()
           log.debug("SSL:CERT_ID Saved", key, xobj);
         } else {
           log.debug("SSL:CERT_ID flow.x509:notfound" + cert_id);
@@ -1635,67 +1636,60 @@ class BroDetect {
     return result;
   }
 
-  async recordTraffic(ts, inBytes, outBytes, conn, mac, ignoreGlobal = false) {
-    if (this.enableRecording) {
+  async writeTrafficCache() {
+    const toRecord = this.timeSeriesCache
+    this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 }, ts: Date.now() / 1000 }
+    const duration = this.timeSeriesCache.ts - toRecord.ts
+    const lastTS = Math.floor(toRecord.ts)
 
-
-      const normalizedTS = Math.floor(Math.floor(Number(ts)) / 10) // only record every 10 seconds
-
-      // lastNTS starts with null and assigned with normalizedTS every 10s
-      if (this.lastNTS != normalizedTS) {
-        const toRecord = this.timeSeriesCache
-
-        const duration = (normalizedTS - this.lastNTS) * 10;
-        this.lastNTS = normalizedTS
-        this.fullLastNTS = Math.floor(ts)
-        this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 } }
-
-        const wanNicStats = await this.getWanNicStats();
-        let wanNicRxBytes = 0;
-        let wanNicTxBytes = 0;
-        const wanTraffic = {};
-        for (const iface of Object.keys(wanNicStats)) {
-          if (this.wanNicStatsCache && this.wanNicStatsCache[iface]) {
-            const uuid = wanNicStats[iface].uuid;
-            const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicStats[iface].rxBytes;
-            const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicStats[iface].txBytes;
-            if (uuid) {
-              wanTraffic[uuid] = {rxBytes, txBytes};
-            }
-            wanNicRxBytes += rxBytes;
-            wanNicTxBytes += txBytes;
-          }
+    const wanNicStats = await this.getWanNicStats();
+    let wanNicRxBytes = 0;
+    let wanNicTxBytes = 0;
+    const wanTraffic = {};
+    for (const iface of Object.keys(wanNicStats)) {
+      if (this.wanNicStatsCache && this.wanNicStatsCache[iface]) {
+        const uuid = wanNicStats[iface].uuid;
+        const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicStats[iface].rxBytes;
+        const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicStats[iface].txBytes;
+        if (uuid) {
+          wanTraffic[uuid] = {rxBytes, txBytes};
         }
-        // a safe-check to filter abnormal rx/tx bytes spikes that may be caused by hardware bugs
-        const threshold = config.threshold;
-        if (wanNicRxBytes >= threshold.maxSpeed / 8 * duration)
-          wanNicRxBytes = 0;
-        if (wanNicTxBytes >= threshold.maxSpeed / 8 * duration)
-          wanNicTxBytes = 0;
-        this.wanNicStatsCache = wanNicStats;
-
-        const isRouterMode = await mode.isRouterModeOn();
-        if (isRouterMode) {
-          for (const uuid of Object.keys(wanTraffic)) {
-            timeSeries
-              .recordHit(`download:wan:${uuid}`, this.fullLastNTS, wanTraffic[uuid].rxBytes)
-              .recordHit(`upload:wan:${uuid}`, this.fullLastNTS, wanTraffic[uuid].txBytes)
-          }
-        }
-
-        for (const key in toRecord) {
-          const subKey = key == 'global' ? '' : ':' + key
-          const download = isRouterMode && key == 'global' ? wanNicRxBytes : toRecord[key].download;
-          const upload = isRouterMode && key == 'global' ? wanNicTxBytes : toRecord[key].upload;
-          log.debug("Store timeseries", this.fullLastNTS, key, download, upload, toRecord[key].conn)
-          timeSeries
-            .recordHit('download' + subKey, this.fullLastNTS, download)
-            .recordHit('upload' + subKey, this.fullLastNTS, upload)
-            .recordHit('conn' + subKey, this.fullLastNTS, toRecord[key].conn)
-        }
-        timeSeries.exec()
+        wanNicRxBytes += rxBytes;
+        wanNicTxBytes += txBytes;
       }
+    }
+    // a safe-check to filter abnormal rx/tx bytes spikes that may be caused by hardware bugs
+    const threshold = config.threshold;
+    if (wanNicRxBytes >= threshold.maxSpeed / 8 * duration)
+      wanNicRxBytes = 0;
+    if (wanNicTxBytes >= threshold.maxSpeed / 8 * duration)
+      wanNicTxBytes = 0;
+    this.wanNicStatsCache = wanNicStats;
 
+    const isRouterMode = await mode.isRouterModeOn();
+    if (isRouterMode) {
+      for (const uuid of Object.keys(wanTraffic)) {
+        if (wanTraffic[uuid].rxBytes)
+          timeSeries.recordHit(`download:wan:${uuid}`, lastTS, wanTraffic[uuid].rxBytes)
+        if (wanTraffic[uuid].txBytes)
+          timeSeries.recordHit(`upload:wan:${uuid}`, lastTS, wanTraffic[uuid].txBytes)
+      }
+    }
+
+    for (const key in toRecord) {
+      const subKey = key == 'global' ? '' : ':' + key
+      const download = isRouterMode && key == 'global' ? wanNicRxBytes : toRecord[key].download;
+      const upload = isRouterMode && key == 'global' ? wanNicTxBytes : toRecord[key].upload;
+      log.debug("Store timeseries", lastTS, key, download, upload, toRecord[key].conn)
+      download && timeSeries.recordHit('download' + subKey, lastTS, download)
+      upload && timeSeries.recordHit('upload' + subKey, lastTS, upload)
+      toRecord[key].conn && timeSeries.recordHit('conn' + subKey, lastTS, toRecord[key].conn)
+    }
+
+    timeSeries.exec()
+  }
+
+  async recordTraffic(inBytes, outBytes, conn, mac, ignoreGlobal = false) {
       // append current status
       if (!ignoreGlobal) {
         this.timeSeriesCache.global.download += Number(inBytes)
@@ -1709,7 +1703,6 @@ class BroDetect {
       this.timeSeriesCache[mac].download += Number(inBytes)
       this.timeSeriesCache[mac].upload += Number(outBytes)
       this.timeSeriesCache[mac].conn += Number(conn)
-    }
   }
 
   recordOutPort(mac, tmpspec) {

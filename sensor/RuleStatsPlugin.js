@@ -1,4 +1,4 @@
-/*    Copyright 2022-2023 Firewalla Inc.
+/*    Copyright 2022-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,7 +20,7 @@ const pm2 = new PolicyManager2();
 const DomainIPTool = require('../control/DomainIPTool');
 const domainIpTool = new DomainIPTool();
 const Sensor = require('./Sensor.js').Sensor;
-
+const conntrack = require('../net2/Conntrack.js')
 
 const sem = require('../sensor/SensorEventManager').getInstance();
 const _ = require('lodash');
@@ -138,7 +138,7 @@ class RuleStatsPlugin extends Sensor {
     if (!this.on) {
       return;
     }
-    // ignore 
+    // TBD: we should add WAN block count to ingress firewall rule to reflect WAN blocks on the rule hit
     if (record.dir === "W") {
       return;
     }
@@ -155,16 +155,19 @@ class RuleStatsPlugin extends Sensor {
   }
 
   static cachekeyRecord(record) {
-     // use cache to reduce computation and redis operation.
-     const hash = crypto.createHash("md5");
-     hash.update(String(record.ac));
-     hash.update(String(record.type));
-     hash.update(String(record.fd));
-     hash.update(String(record.sec));
-     hash.update(String(record.dn));
-     hash.update(String(record.dh));
-     hash.update(String(record.qmark));
-     return hash.digest("hex");
+    // use cache to reduce computation and redis operation.
+    const hash = crypto.createHash("md5");
+    hash.update(String(record.ac));
+    hash.update(String(record.type));
+    hash.update(String(record.fd));
+    hash.update(String(record.sec));
+    if (record.type == 'dns') {
+      hash.update(String(record.dn));
+    } else {
+      hash.update(String(record.dh));
+    }
+    hash.update(String(record.qmark));
+    return hash.digest("hex");
   }
 
   async getMatchedPids(record){
@@ -223,18 +226,18 @@ class RuleStatsPlugin extends Sensor {
     }
 
     // update rule status to redis
+    const batch = rclient.batch();
     for (const [pid, stat] of ruleStatMap) {
       if (! await rclient.existsAsync(`policy:${pid}`)) {
         return;
       }
-      const multi = rclient.multi();
-      multi.hincrby(`policy:${pid}`, "hitCount", stat.count);
+      batch.hincrby(`policy:${pid}`, "hitCount", stat.count);
       const lastHitTs = Number(await rclient.hgetAsync(`policy:${pid}`, "lastHitTs") || "0");
       if (stat.lastHitTs > lastHitTs) {
-        multi.hset(`policy:${pid}`, "lastHitTs", String(stat.lastHitTs));
+        batch.hset(`policy:${pid}`, "lastHitTs", String(stat.lastHitTs));
       }
-      await multi.execAsync();
     }
+    await batch.execAsync();
   }
 
   async getPolicyIds(record) {
@@ -242,7 +245,7 @@ class RuleStatsPlugin extends Sensor {
       case "allow":
       case "block": {
         log.debug("Match policy id for allow/block record", record);
-        let recordIp, recordDomain;
+        let recordIp, addr4, addr6, connHost, recordDomain;
         const action = record.ac;
         let lookupSets = [];
 
@@ -258,52 +261,58 @@ class RuleStatsPlugin extends Sensor {
           }
         }
 
-        if (record.type === "dns") {
-          recordDomain = record.dn;
-        } else {
-          recordIp = record.dh;
-        }
-
         if (!this.policyRulesMap.has(action)) {
           return [];
         }
 
-        for (const policy of this.policyRulesMap.get(action)) {
-          if (record.sec && !policy.isSecurityBlockPolicy()) {
-            continue;
-          }
-          if (!record.sec && policy.isSecurityBlockPolicy()) {
-            continue;
-          }
+        if (record.type === "dns") {
+          recordDomain = record.dn;
+        } else {
+          recordIp = record.dh;
+          addr4 = new Address4(recordIp);
+          addr6 = new Address6(recordIp);
+          connHost = await conntrack.getConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, 'host')
+        }
 
-          const needToMatchDomainIpset = (action === "allow" || !policy.dnsmasq_only) && policy.type == "dns";
+
+        for (const policy of this.policyRulesMap.get(action)) {
+          if (record.sec ^ policy.isSecurityBlockPolicy()) {
+            continue;
+          }
 
           const target = policy.target;
 
-          // domain match
-          if (recordDomain && this.matchWildcardDomain(recordDomain, target)) {
-            return [policy.pid];
+          switch (policy.type) {
+            case 'dns':
+            case 'domain':
+              if (recordDomain && this.matchWildcardDomain(recordDomain, target)
+                || record.af && this.matchWildcardDomain(Object.keys(record.af)[0], target)
+                || connHost && this.matchWildcardDomain(connHost, target))
+              {
+                return [policy.pid];
+              }
+              break
+            case 'ip':
+              if (recordIp && recordIp === target) {
+                return [policy.pid];
+              }
+              break
+            case 'net':
+              if (!recordIp) break
+              if (addr4.isValid()) {
+                const targetNet4 = new Address4(target);
+                if (targetNet4.isValid() && addr4.isInSubnet(targetNet4))
+                  return [policy.pid];
+              } else if (addr6.isValid()) {
+                const targetNet6 = new Address6(target);
+                if (targetNet6.isValid() && addr6.isInSubnet(targetNet6))
+                  return [policy.pid];
+              }
+              break
           }
 
-          if (recordIp) {
-            // exact ip match
-            if (recordIp === target) {
-              return [policy.pid];
-            }
-            // ip subnet match
-            const addr4 = new Address4(recordIp);
-            const targetNet4 = new Address4(target);
-            if (addr4.isValid() && targetNet4.isValid() && addr4.isInSubnet(targetNet4)) {
-              return [policy.pid];
-            }
-            const addr6 = new Address6(recordIp);
-            const targetNet6 = new Address6(target);
-            if (addr6.isValid() && targetNet6.isValid() && addr6.isInSubnet(targetNet6)) {
-              return [policy.pid];
-            }
-          }
-
-          // domain ipset match
+          const needToMatchDomainIpset = (action === "allow" || !policy.dnsmasq_only)
+            && ['dns', 'domain'].includes(policy.type) && record.type == 'ip';
           if (needToMatchDomainIpset) {
             for (const lookupSet of lookupSets) {
               log.debug(`Match ${recordIp} to domain ipset ${lookupSet}`);

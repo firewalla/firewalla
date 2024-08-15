@@ -19,6 +19,7 @@ const log = require('./logger.js')(__filename);
 
 const util = require('util');
 const fs = require('fs')
+const fsp = fs.promises;
 
 const iptool = require('ip');
 var instance = null;
@@ -849,7 +850,15 @@ class SysManager {
 
   async myGatewayMac(intf = this.config.monitoringInterface) {
     const ip = this.myGateway(intf);
-    return rclient.hget(`host:ip4:${ip}`, 'mac')
+    let mac = await rclient.hgetAsync(`host:ip4:${ip}`, 'mac');
+    if (mac)
+      return mac;
+    const wanIfType = await fsp.readFile(`/sys/class/net/${intf}/type`, {encoding: "utf8"}).then(result => result.trim()).catch((err) => null);
+    // arp is only applicable to interfaces with type ethernet (1)
+    if (wanIfType === "1") {
+      mac = await exec(`arp -a -n -i ${intf} ${ip}`).then(result => result.stdout.trim().split(" ")[3].toUpperCase()).catch((err) => null);
+    }
+    return mac;
   }
 
   myGateway6(intf = this.config.monitoringInterface) {

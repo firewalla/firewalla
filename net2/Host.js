@@ -103,7 +103,6 @@ class Host extends Monitorable {
 
         messageBus.subscribeOnce(this.constructor.getUpdateCh(), this.getGUID(), this.onUpdate.bind(this))
 
-        await this.loadPolicyAsync();
         await this.applyPolicy()
         await this.identifyDevice()
       })().catch(err => {
@@ -202,7 +201,7 @@ class Host extends Monitorable {
       }
     }
 
-    await super.setPolicyAsync(name, policy)
+    return super.setPolicyAsync(name, policy)
   }
 
   keepalive() {

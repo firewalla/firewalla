@@ -269,28 +269,6 @@ class GoldProPlatform extends Platform {
     }]
   }
 
-  async installTLSModule() {
-    const installed = await this.isTLSModuleInstalled();
-    if (installed) return;
-    let TLSmodulePathPrefix = __dirname+"/files/TLS/u22";
-    
-    await exec(`sudo insmod ${__dirname}/files/$(uname -r)/xt_tls.ko max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`);
-    await exec(`sudo install -D -v -m 644 ${TLSmodulePathPrefix}/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables`);
-  }
-
-  async isTLSModuleInstalled() {
-    if (this.tlsInstalled) return true;
-    const cmdResult = await exec(`lsmod| grep xt_tls| awk '{print $1}'`);
-    const results = cmdResult.stdout.toString().trim().split('\n');
-    for(const result of results) {
-      if (result == 'xt_tls') {
-        this.tlsInstalled = true;
-        break;
-      }
-    }
-    return this.tlsInstalled;
-  }
-
   isTLSBlockSupport() {
     return true;
   }
@@ -322,24 +300,6 @@ class GoldProPlatform extends Platform {
 
   getDnsmasqLeaseFilePath() {
     return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
-  }
-
-  async reloadActMirredKernelModule() {
-    log.info("Reloading act_mirred.ko...");
-    const kernelRelease = await exec(`uname -r`).then(result => result.stdout.trim()).catch((err) => null);
-    if (kernelRelease) {
-      const koExists = await fsp.access(`${__dirname}/files/${kernelRelease}/act_mirred.ko`, fs.constants.F_OK).then(() => true).catch((err) => false);
-      if (koExists) {
-        try {
-          const loaded = await exec(`sudo lsmod | grep act_mirred`).then(result => true).catch(err => false);
-          if (loaded)
-            await exec(`sudo rmmod act_mirred`);
-          await exec(`sudo insmod ${__dirname}/files/${kernelRelease}/act_mirred.ko`);
-        } catch (err) {
-          log.error("Failed to unload act_mirred, err:", err.message);
-        }
-      }
-    }
   }
 }
 
