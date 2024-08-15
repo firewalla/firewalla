@@ -495,11 +495,12 @@ class BroDetect {
         sh: obj["id.orig_h"],
         dh: obj["id.resp_h"],
         dp: obj["id.resp_p"],
-        qt: obj.qtype,
         dn: obj.query,
         as: obj.answers,
         ct: 1,
       }
+      // qtype is actually an optional field. Zeek builds query queue to match request/response, it fails
+      if (obj.qtype) dnsFlow.qt = obj.qtype
 
       const localFam = net.isIP(dnsFlow.sh)
       if (!localFam) {
@@ -612,17 +613,21 @@ class BroDetect {
 
     try {
       this.dnsCount ++
-      // we don't want the popular searches always cached and never update redis
-      const cached = this.dnsCache.peek(obj.query+':'+obj.qtype)
+      // include device mac/ip here so conntrack could be updated
+      const cacheKey = `${obj.query}:${obj.qtype}`
+      // use peek, we don't want the popular searches always cached and never update redis
+      const cached = this.dnsCache.peek(cacheKey)
       if (cached) this.dnsHit ++
-      if (cached && obj.answers.every(as => cached.has(as))) {
+      const cacheHit = cached && obj.answers.every(as => cached.has(as))
+      if (cacheHit) {
         if (this.dnsMatch++ % 10 == 0) log.verbose(`Duplicated DNS ${this.dnsMatch} / ${this.dnsHit} / ${this.dnsCount} `)
         log.debug("processDnsData:DNS:Duplicated:", obj['query'], JSON.stringify(obj['answers']));
-        return;
       } else {
-        this.dnsCache.set(obj.query+':'+obj.qtype, new Set(obj.answers))
+        this.dnsCache.set(cacheKey, new Set(obj.answers))
       }
       if (obj["qtype_name"] === "PTR") {
+        if (cacheHit) return
+
         // reverse DNS query, the IP address is in the query parameter, the domain is in the answers
         if (obj["query"].endsWith(".in-addr.arpa")) {
           // ipv4 reverse DNS query
@@ -650,10 +655,21 @@ class BroDetect {
         if (!isDomainValid(obj["query"]))
           return;
 
+        // always sets conntrack so we keep the latest domain ip mapping
         const answers = obj['answers'].filter(answer => !firewalla.isReservedBlockingIP(answer) && net.isIP(answer));
+        const query = formulateHostname(obj['query']);
+        for (const answer of answers) {
+          // l2 addr is added to dns.log in dns-mac-logging.zeek
+          await conntrack.setConnEntries(
+            obj["orig_l2_addr"] ? obj["orig_l2_addr"].toUpperCase() : obj["id.orig_h"], "", answer, "", "dns",
+            {proto: "dns", ip: answer, host: query.toLowerCase()}, 600
+          );
+        }
+
+        if (cacheHit) return
+
         const cnames = obj['answers']
           .filter(answer => !net.isIP(answer) && isDomainValid(answer)).map(answer => formulateHostname(answer));
-        const query = formulateHostname(obj['query']);
 
         if (sysManager.isSearchDomain(query) || sysManager.isLocalDomain(query))
           return;
@@ -664,11 +680,6 @@ class BroDetect {
 
         for (const answer of answers) {
           await dnsTool.addDns(answer, query, config.dns.expires);
-          // l2 addr is added to dns.log in dns-mac-logging.zeek
-          await conntrack.setConnEntries(
-            obj["orig_l2_addr"] ? obj["orig_l2_addr"].toUpperCase() : obj["id.orig_h"], "", answer, "", "dns",
-            {proto: "dns", ip: answer, host: query.toLowerCase()}, 600
-          );
           for (const cname of cnames) {
             await dnsTool.addDns(answer, cname, config.dns.expires);
           }

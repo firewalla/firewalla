@@ -676,8 +676,7 @@ class ACLAuditLogPlugin extends Sensor {
               transitiveTags = await identity.getTransitiveTags();
           }
           for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-            const config = Constants.TAG_TYPE_MAP[type];
-            const flowKey = config.flowKey;
+            const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
             const tags = [];
             if (_.has(transitiveTags, type)) {
               tags.push(...Object.keys(transitiveTags[type]));
@@ -695,9 +694,8 @@ class ACLAuditLogPlugin extends Sensor {
             timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct)
             timeSeries.recordHit(`${hitType}:intf:${intf}`, _ts, ct)
             for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-              const config = Constants.TAG_TYPE_MAP[type];
-              const flowKey = config.flowKey;
-              for (const tag of record[flowKey]) {
+              const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
+              for (const tag of record[flowKey] || []) {
                 timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
               }
             }
