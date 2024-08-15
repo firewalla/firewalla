@@ -111,9 +111,8 @@ class RedisManager {
       setInterval(async () => {
         for (const k of Object.keys(this.mclientHincrbyBuffer)) {
           if (this.mclientHincrbyBuffer.hasOwnProperty(k)) {
-            const tempBuff = this.mclientHincrbyBuffer[k];
+            const {key, hkey, incr, expr} = this.mclientHincrbyBuffer[k];
             delete this.mclientHincrbyBuffer[k];
-            const {key, hkey, incr, expr} = tempBuff
             await this.mclient.hincrbyAsync(key, hkey, incr);
             await this.mclient.expireatAsync(key, expr);
           }
