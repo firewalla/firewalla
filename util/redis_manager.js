@@ -21,8 +21,6 @@ const Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 const _ = require('lodash');
-const AsyncLock = require('../vendor_lib/async-lock');
-const lock = new AsyncLock();
 
 class RedisManager {
   constructor() {
@@ -95,22 +93,19 @@ class RedisManager {
       this.mclient.hincrbyAndExpireatBulk = async (key, hkey, incr, expr, multi = false) => {
         const bufferKey = `${key}::${hkey}`;
         const buffer = multi ? this.mclientHincrbyMultiBuffer : this.mclientHincrbyBuffer
-        await lock.acquire(bufferKey, async () => {// fine-grained mutually-exclusive lock
-          if (!buffer.hasOwnProperty(bufferKey)) {
-            buffer[bufferKey] = {key, hkey, incr, expr, bulk: 1};
-          } else {
-            buffer[bufferKey].incr += incr;
-            buffer[bufferKey].expr = expr;
-            buffer[bufferKey].bulk++;
-          }
-          if (!multi && buffer[bufferKey].bulk >= 20) {
-            await this.mclient.hincrbyAsync(key, hkey, buffer[bufferKey].incr);
-            await this.mclient.expireatAsync(key, expr);
-            delete buffer[bufferKey];
-          }
-        }).catch((err) => {
-          log.error('Error writing buffer', err)
-        });
+        if (!buffer.hasOwnProperty(bufferKey)) {
+          buffer[bufferKey] = {key, hkey, incr, expr, bulk: 1};
+        } else {
+          buffer[bufferKey].incr += incr;
+          buffer[bufferKey].expr = expr;
+          buffer[bufferKey].bulk++;
+        }
+        if (!multi && buffer[bufferKey].bulk >= 20) {
+          const tempBuf = buffer[bufferKey];
+          delete buffer[bufferKey];
+          await this.mclient.hincrbyAsync(key, hkey, tempBuf.incr);
+          await this.mclient.expireatAsync(key, expr);
+        }
       };
       this.mclient.execBatch = async () => {
         try {
@@ -129,14 +124,12 @@ class RedisManager {
 
       setInterval(async () => {
         for (const k of Object.keys(this.mclientHincrbyBuffer)) {
-          await lock.acquire(k, async () => {
-            if (this.mclientHincrbyBuffer.hasOwnProperty(k)) {
-              const {key, hkey, incr, expr} = this.mclientHincrbyBuffer[k];
-              await this.mclient.hincrbyAsync(key, hkey, incr);
-              await this.mclient.expireatAsync(key, expr);
-              delete this.mclientHincrbyBuffer[k];
-            }
-          }).catch((err) => {});
+          if (this.mclientHincrbyBuffer.hasOwnProperty(k)) {
+            const {key, hkey, incr, expr} = this.mclientHincrbyBuffer[k];
+            delete this.mclientHincrbyBuffer[k];
+            await this.mclient.hincrbyAsync(key, hkey, incr);
+            await this.mclient.expireatAsync(key, expr);
+          }
         }
       }, 60000);
     }

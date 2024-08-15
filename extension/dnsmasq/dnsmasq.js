@@ -823,6 +823,7 @@ module.exports = class DNSMASQ {
   }
 
   async writeAllocationOption(tagName, policy, known = false) {
+    let restartNeeded = false;
     await lock.acquire(LOCK_OPS, async () => {
       log.info('Writting allocation file for', tagName)
       const filePath = `${DHCP_CONFIG_PATH}/${tagName}_ignore.conf`;
@@ -831,12 +832,14 @@ module.exports = class DNSMASQ {
         if (tagName) tags.push(tagName)
         if (!known) tags.push('!known')
         if (tags.length) {
-        const entry = `dhcp-ignore=${tags.map(t=>'tag:'+t).join(',')}`
-        await fsp.writeFile(filePath, entry)
+          const entry = `dhcp-ignore=${tags.map(t=>'tag:'+t).join(',')}`
+          await fsp.writeFile(filePath, entry)
+          restartNeeded = true;
         }
       } else {
         try {
           await fsp.unlink(filePath)
+          restartNeeded = true;
         } catch(err) {
           // file not exist, ignore
           if (err.code == 'ENOENT') return
@@ -846,7 +849,8 @@ module.exports = class DNSMASQ {
     }).catch(err => {
       log.error("Failed to write allocation file:", err);
     });
-    this.scheduleRestartDHCPService();
+    if (restartNeeded)
+      this.scheduleRestartDHCPService();
   }
 
   getGlobalRedisMatchKey(options) {
