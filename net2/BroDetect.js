@@ -571,10 +571,12 @@ class BroDetect {
       if (intfInfo) {
         await this.recordTraffic({ dns: 1 }, 'intf:' + intfInfo.uuid, true);
       }
-      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-        const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
-        for (const tag of tags[flowKey] || []) {
-          await this.recordTraffic({ dns: 1 }, 'tag:' + tag, true);
+      for (const key in tags) {
+        if (tags[key] && tags[key].length) {
+          dnsFlow[key] = tags[key]
+          for (const tag of tags[key]) {
+            await this.recordTraffic({ dns: 1 }, 'tag:' + tag, true);
+          }
         }
       }
 
@@ -1255,10 +1257,12 @@ class BroDetect {
       if (intfId) {
         await this.recordTraffic(tuple, 'intf:' + intfId, true);
       }
-      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-        const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
-        for (const tag of tags[flowKey] || []) {
-          await this.recordTraffic(tuple, 'tag:' + tag, true);
+      for (const key in tags) {
+        if (tags[key] && tags[key].length) {
+          tmpspec[key] = tags[key]
+          for (const tag of tags[key]) {
+            await this.recordTraffic(tuple, 'tag:' + tag, true);
+          }
         }
       }
 
@@ -1386,8 +1390,9 @@ class BroDetect {
         } catch (e) {
           log.error("Conn:Save:AFMAP:EXCEPTION", e);
         }
-        // during firemain start and device join quarantine, there's a small window that host object is
-        // not created in memory thus no tag info. flow with hostInfo always creates an empty tags array
+        // during firemain start and new device discovery, there's a small window that host object is
+        // not created in memory thus no tag info. trying to find host obj again here
+        // flow with hostInfo always creates an empty tags array, which was saved to flowstash
         if (!spec.tags) {
           const monitorable = hostManager.getHostFastByMAC(spec.mac);
           const intfInfo = sysManager.getInterfaceViaUUID(monitorable.o.intf);
