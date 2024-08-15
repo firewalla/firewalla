@@ -19,7 +19,7 @@ const log = require('../net2/logger.js')(__filename)
 const Sensor = require('./Sensor.js').Sensor
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-
+const sysManager = require('../net2/SysManager.js');
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PolicyManager2();
 
@@ -69,6 +69,7 @@ class ActiveProtectSensor extends Sensor {
       // new box
       if(flag !== "1") {
         try {
+          await sysManager.waitTillIptablesReady()
           const { policy } = await pm2.createActiveProtectRule()
 
           log.info("default_c policy is created successfully, pid:", policy.pid);
