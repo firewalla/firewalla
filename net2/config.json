@@ -559,6 +559,10 @@
         "expires": 86400,
         "count": 10000
       },
+      "flowDNS": {
+        "expires": 86400,
+        "count": 10000
+      },
       "auditDrop": {
         "expires": 86400,
         "count": 10000

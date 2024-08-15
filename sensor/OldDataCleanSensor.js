@@ -66,7 +66,9 @@ class OldDataCleanSensor extends Sensor {
     let platformRetentionTimeMultiplier = 1;
     switch (type) {
       case "conn":
-      case "audit":
+      case "flowDNS":
+      case "auditDrop":
+      case "auditAccept":
       case "categoryflow":
       case "appflow":
         platformRetentionTimeMultiplier = platform.getRetentionTimeMultiplier();
@@ -87,6 +89,9 @@ class OldDataCleanSensor extends Sensor {
     let platformRetentionCountMultiplier = 1;
     switch (type) {
       case "conn":
+      case "flowDNS":
+      case "auditDrop":
+      case "auditAccept":
       case "categoryflow":
       case "appflow":
         platformRetentionCountMultiplier = platform.getRetentionCountMultiplier();
@@ -120,7 +125,6 @@ class OldDataCleanSensor extends Sensor {
   }
 
   async regularClean(fullClean = false) {
-    const counts = {}
     let wanAuditDropCleaned = false;
     await rclient.scanAll(null, async (keys) => {
       for (const key of keys) {
@@ -586,6 +590,7 @@ class OldDataCleanSensor extends Sensor {
   registerFilterFunctions() {
     // need to take into consideration the time complexity of the filter function, it will be applied on all keys
     this._registerFilterFunction("conn", (key) => key.startsWith("flow:conn:"));
+    this._registerFilterFunction("flowDNS", (key) => key.startsWith("flow:dns:"));
     this._registerFilterFunction("auditDrop", (key) => key.startsWith("audit:drop:"));
     this._registerFilterFunction("auditAccept", (key) => key.startsWith("audit:accept:"));
     this._registerFilterFunction("http", (key) => key.startsWith("flow:http:"));
@@ -614,6 +619,9 @@ class OldDataCleanSensor extends Sensor {
     let platformRetentionTimeMultiplier = 1;
     switch (type) {
       case "conn":
+      case "flowDNS":
+      case "auditDrop":
+      case "auditAccept":
       case "categoryflow":
       case "appflow":
         platformRetentionCountMultiplier = platform.getRetentionCountMultiplier();
