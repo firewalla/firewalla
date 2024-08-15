@@ -32,17 +32,15 @@ const NetBotTool = require('../../net2/NetBotTool');
 const netBotTool = new NetBotTool();
 
 router.get('/all',
-           (req, res, next) => {
-             let json = {};
-             hostManager.getHosts(() => {
-               hostManager.legacyHostsStats(json)
-                 .then(() => {
-                   res.json(json);
-                 }).catch((err) => {
-                   res.status(500).send('');
-                 });
-             });
-           });
+  (req, res, next) => {
+    let json = {};
+    hostManager.hostsInfoForInit(json)
+      .then(() => {
+        res.json(json);
+      }).catch((err) => {
+        res.status(500).send('');
+      });
+  });
 
 router.get('/:host',
            (req, res, next) => {
@@ -57,7 +55,6 @@ router.get('/:host',
                })
              } else {
                hostManager.getHostAsync(host).then(h => {
-                 h.flowsummary = flowsummary
                  h.loadPolicy((err) => {
                    if(err) {
                      res.status(500).send("");
@@ -75,22 +72,18 @@ router.get('/:host',
                      netBotTool.prepareDetailedFlows(jsonObj, 'category', options),
                    ]).then(() => {
                      res.json(jsonObj);
-                   });
+                   }).catch(err => {
+                     log.error(err)
+                     res.status(500).send()
+                   })
                  })
                }).catch((err) => {
+                 log.error(err)
                  res.status(404);
                  res.send("");
                });
              }
            });
-
-router.get('/:host',
-  (req, res, next) => {
-    let host = req.params.host;
-
-
-  }
-)
 
 router.post('/:host/manualSpoofOn',
            (req, res, next) => {

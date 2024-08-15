@@ -36,6 +36,7 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 const fc = require('../net2/config.js');
 const sysManager = require('../net2/SysManager.js');
 const Constants = require('../net2/Constants.js');
+const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 
 class FlowCompressionSensor extends Sensor {
   constructor() {
@@ -84,7 +85,9 @@ class FlowCompressionSensor extends Sensor {
         queueObj.destroy();
         streamObj.destroyStreams(); // destory and re-create
         this.setupStreams(type);
-        this.setupFlowsQueue(type);
+        queueObj.close(() => {
+          this.setupFlowsQueue(type);
+        });
         this.dumpingMap[type] = false;
       } catch (e) {
         log.warn("re-build wanBlock compressed flows error", e)
@@ -125,12 +128,11 @@ class FlowCompressionSensor extends Sensor {
       try {
         if (job && job.data) { // raw flow string
           const flow = await this.raw2Flow(job.data);
-          const streamObj = this.streamMap[type];
-          while (this.dumpingMap[type] || !streamObj) {
+          while (this.dumpingMap[type] || !this.streamMap[type]) {
             log.debug("deferred due to readableStream might be destoryed and re-create");
             await delay(3000)
           }
-          streamObj.readableStream.push(JSON.stringify(flow) + SPLIT_STRING)
+          this.streamMap[type].readableStream.push(JSON.stringify(flow) + SPLIT_STRING)
         }
       } catch (e) {
         log.info("process job error", e);
@@ -175,10 +177,10 @@ class FlowCompressionSensor extends Sensor {
 
   async dumpStreamFlows(ts, type) {
     log.info(`Start dump ${type} stream data to redis`)
-    const streamObj = this.streamMap[type];
-    while (this.dumpingMap[type] || !streamObj) {
+    while (this.dumpingMap[type] || !this.streamMap[type]) {
       await delay(1000)
     }
+    const streamObj = this.streamMap[type];
     this.dumpingMap[type] = true;
     try {
       if (streamObj.readableStream) {
@@ -229,6 +231,8 @@ class FlowCompressionSensor extends Sensor {
       await this.checkAndCleanMem();
     }, null, true)
     await rclient.setAsync(this.buildingKey, 1)
+    while (!NetworkProfileManager.isInitialized())
+      await delay(1000);
     await Promise.all([this.build(now), this.buildWanBlockCompressedFlows()])
     await rclient.setAsync(this.buildingKey, 0)
     log.info("Flows compression building done");

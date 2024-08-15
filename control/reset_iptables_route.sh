@@ -32,7 +32,7 @@ sudo ip6tables-restore "$ip6tables_file"
   for set in $(sudo ipset list -name | grep "^c_rt_"); do
     echo "destroy -! $set"
   done
-} > "${ipset_file}"
+} > "${ipset_destroy_file}"
 
-sudo ipset restore -! --file "${ipset_file}"
+sudo ipset restore -! --file "${ipset_destroy_file}"
 

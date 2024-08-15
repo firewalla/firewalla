@@ -9,31 +9,33 @@ show_reboot() {
 
 ==> $1 <==
 EOT
-    sudo zgrep -anP '(\x00+|Booting (Linux|paravirtualized kernel)|FIREONBOOT.UPGRADE.DATE.SYNC.DONE)' $1 | tac | grep -B1  -aP '(\x00+|Booting)' | tac | reformat
+    sudo zgrep -anP '(\x00+|Booting (Linux|paravirtualized kernel)|FIREONBOOT.UPGRADE.DATE.SYNC.DONE)' $1 | grep -A1  -aP '(\x00+|Booting)' | sed 's/\x0\x0*/NULLS/g' | reformat
 }
 
 reformat() {
     printf "\nLINENO\tTIMESTAMP\tNOTE\n"
     echo '-------------------------------------'
-    lno= ; ts= ;boot=reboot
+    lno= ; ts= ;boot=
     while read line
     do
     #echo ">>line<<"; echo "$line"
         case "$line" in
+          *NULLS*)
+              lno=$(echo "$line" | awk -F: '{print $1}')
+              boot='power cycle'
+              ;;
           *Booting*)
               lno=$(echo "$line" | awk -F: '{print $1}')
-              ;;
-          *Inserted*)
-              boot='power cycle'
+              : ${boot:=reboot}
               ;;
           *FIREONBOOT.UPGRADE.DATE.SYNC.DONE*)
               ts=$(echo "$line" | sed 's/[0-9]*:\(.*\([ :][0-9][0-9]\)\{3\}\).*/\1/')
               ;;
         esac
-        if [[ -n "$ts" ]]
+        if [[ -n "$ts" && -n "$boot" ]]
         then
             printf "%d\t%s\t%s\n" "$lno" "$ts" "$boot"
-            lno= ; ts= ; boot=reboot
+            lno= ; boot= ; ts=
         fi
     done | tail -$NUM_REBOOTS
 }

@@ -1,4 +1,4 @@
-/*    Copyright 2021-2023 Firewalla Inc.
+/*    Copyright 2021-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -34,6 +34,12 @@ class Monitorable {
   static metaFieldsJson = []
   static metaFieldsNumber = []
 
+  static instances = {};  // this instances cache can ensure that Host object for each mac will be created only once.
+                          // it is necessary because each object will subscribe Host:PolicyChanged message.
+                          // this can guarantee the event handler function is run on the correct and unique object.
+
+  static getInstance(guid) { return this.instances[guid] }
+
   // TODO: mitigate confusion between this.x and this.o.x across devided classes
   static parse(obj) {
     for (const key in obj) {
@@ -64,6 +70,7 @@ class Monitorable {
     this.policy = {};
 
     if (!this.getUniqueId()) {
+      log.warn('cannot new monitorable (no uniqId)', this.o);
       throw new Error('No UID provided')
     }
 
@@ -75,6 +82,9 @@ class Monitorable {
 
   async destroy() {
     messageBus.unsubscribe(this.constructor.getPolicyChangeCh(), this.getGUID())
+    if (this.applyPolicyTask)
+      clearTimeout(this.applyPolicyTask);
+    delete this.constructor.instances[this.getGUID()]
   }
 
   static getPolicyChangeCh() {
@@ -83,7 +93,7 @@ class Monitorable {
 
   async onPolicyChange(channel, id, name, obj) {
     this.policy[name] = obj[name]
-    log.info(channel, id, name, obj);
+    log.info(channel, id, obj);
     if (f.isMain()) {
       await sysManager.waitTillIptablesReady()
       this.scheduleApplyPolicy()
@@ -121,15 +131,16 @@ class Monitorable {
       const config = Constants.TAG_TYPE_MAP[type];
       const policyKey = config.policyKey;
       const tags = policy[policyKey];
-      policy[policyKey] = [];
+      const validTags = [];
       if (_.isArray(tags)) {
         const TagManager = require('./TagManager.js');
         for (const uid of tags) {
           const tag = TagManager.getTagByUid(uid);
           if (tag)
-            policy[policyKey].push(uid);
+            validTags.push(uid);
         }
       }
+      if (validTags.length) policy[policyKey] = validTags
     }
     return Object.assign(JSON.parse(JSON.stringify(this.o)), {policy})
   }
@@ -174,18 +185,10 @@ class Monitorable {
   async saveSinglePolicy(name, policy) {
     this.policy[name] = policy
     const key = this._getPolicyKey()
-    await rclient.hmsetAsync(key, name, JSON.stringify(policy))
-  }
-
-  async savePolicy() {
-    const key = this._getPolicyKey();
-    const policyObj = {};
-    for (let k in this.policy) {
-      policyObj[k] = JSON.stringify(this.policy[k]);
-    }
-    await rclient.hmsetAsync(key, policyObj).catch((err) => {
-      log.error(`Failed to save policy to ${key}`, err);
-    })
+    if (policy === undefined)
+      await rclient.hdelAsync(key, name)
+    else
+      await rclient.hmsetAsync(key, name, JSON.stringify(policy))
   }
 
   setPolicy(name, data, callback = ()=>{}) {
@@ -196,7 +199,7 @@ class Monitorable {
     // policy should be in sync once object is initialized
     if (!this.policy) await this.loadPolicyAsync();
 
-    if (this.policy[name] != null && JSON.stringify(this.policy[name]) == JSON.stringify(data)) {
+    if (JSON.stringify(this.policy[name]) == JSON.stringify(data)) {
       log.debug(`${this.constructor.name}:setPolicy:Nochange`, this.getGUID(), name, data);
       return;
     }
@@ -207,6 +210,39 @@ class Monitorable {
 
     messageBus.publish(this.constructor.getPolicyChangeCh(), this.getGUID(), name, obj)
     return obj
+  }
+
+  static defaultPolicy() {
+    return {
+      tags: [],
+      userTags: [],
+      deviceTags: [],
+      vpnClient: { state: false },
+      acl: true,
+      dnsmasq: { dnsCaching: true },
+      device_service_scan: false,
+      weak_password_scan: { state: false },
+      adblock: false,
+      safeSearch: { state: false },
+      family: false,
+      unbound: { state: false },
+      doh: { state: false },
+      monitor: true
+    }
+  }
+
+  // this is not covering all policies, add/extend as necessary
+  async resetPolicy(name) {
+    await this.loadPolicyAsync();
+    const defaultPolicy = this.constructor.defaultPolicy()
+
+    if (name) {
+      if (name in defaultPolicy)
+        await this.setPolicyAsync(name, defaultPolicy[name])
+    } else {
+      for (name in defaultPolicy)
+        await this.setPolicyAsync(name, defaultPolicy[name])
+    }
   }
 
   async loadPolicyAsync() {
@@ -221,6 +257,20 @@ class Monitorable {
     }
     this.policy = policyData || {}
     return this.policy;
+  }
+
+  async getPolicyAsync(policyName) {
+    const policyData = await rclient.hgetAsync(this._getPolicyKey(), policyName);
+    try {
+      this.policy[policyName] = JSON.parse(policyData);
+    } catch (err) {
+      log.error(`failed to parse policy ${this.getGUID()} with value "${policyData}"`, err.message);
+    }
+    return this.policy[policyName];
+  }
+
+  async hasPolicyAsync(policyName) {
+    return await rclient.hexistsAsync(this._getPolicyKey(), policyName) == "1";
   }
 
   loadPolicy(callback) {
@@ -238,6 +288,7 @@ class Monitorable {
 
   async applyPolicy() {
     await lock.acquire(`LOCK_APPLY_POLICY_${this.getGUID()}`, async () => {
+      log.verbose(`Applying policy for ${this.constructor.getClassName()} ${this.getUniqueId()}`)
       // policies should be in sync with messageBus, still read here to make sure everything is in sync
       await this.loadPolicyAsync();
       const policy = JSON.parse(JSON.stringify(this.policy));
@@ -307,6 +358,43 @@ class Monitorable {
         this.setPolicy("qosTimer", {});
       }
     }
+  }
+
+  async getTags(type = Constants.TAG_TYPE_GROUP) {
+    if (!this.policy) await this.loadPolicyAsync()
+
+    const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
+    return policyKey && this.policy[policyKey] && this.policy[policyKey].map(String) || [];
+  }
+
+  async _extractAllTags(tagUid, tagType, result) {
+    const TagManager = require('./TagManager.js');
+    const tag = TagManager.getTagByUid(tagUid);
+    if (!tag)
+      return;
+    if (!_.has(result, tagType))
+      result[tagType] = {};
+    result[tagType][tagUid] = 1;
+    if (tag) {
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const tags = await tag.getTags(type);
+        if (_.isArray(tags)) {
+          for (const uid of tags) {
+            await this._extractAllTags(uid, type, result);
+          }
+        }
+      }
+    }
+  }
+
+  async getTransitiveTags() {
+    const transitiveTags = {};
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const tags = await this.getTags(type);
+      for (const uid of tags)
+        await this._extractAllTags(uid, type, transitiveTags);
+    }
+    return transitiveTags;
   }
 }
 

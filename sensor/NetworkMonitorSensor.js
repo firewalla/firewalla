@@ -47,6 +47,8 @@ const DEFAULT_SYSTEM_POLICY_STATE = true;
 const SAMPLE_INTERVAL_MIN = 60;
 const SAMPLE_DEFAULT_OPTS = { "manual": false, "saveResult": true }
 const _ = require('lodash');
+const Constants = require('../net2/Constants.js');
+const fsp = require('fs').promises;
 
 
 class NetworkMonitorSensor extends Sensor {
@@ -64,13 +66,53 @@ class NetworkMonitorSensor extends Sensor {
   Default config in config.json might have following supported PLACEHOLDERS
   ---------------------------------------------------------------------------
     "NetworkMonitorSensor": {
-        "MY_GATEWAYS": {
-          "ping": {
-              "sampleCount": 20,
-              "sampleInterval": 30
-          }
-        },
-        ...
+      "GLOBAL": {
+        "clean": {
+          "processInterval": 300,
+          "expirePeriod": 86400
+        }
+      },
+      "MY_GATEWAYS": {
+        "ping": {
+          "sampleTick": 1,
+          "sampleCount": 20,
+          "sampleInterval": 300,
+          "minSampleRounds": 30,
+          "alarmDelayRTT": 600,
+          "alarmDelayLossrate": 60,
+          "lossrateLimit": 0.5,
+          "tValue": 2.576,
+          "processInterval": 3600,
+          "expirePeriod": 86400
+        }
+      },
+      "MY_DNSES": {
+        "dns": {
+          "lookupName": "check.firewalla.com",
+          "sampleCount": 5,
+          "sampleInterval": 180,
+          "minSampleRounds": 30,
+          "alarmDelayRTT": 360,
+          "alarmDelayLossrate": 30,
+          "lossrateLimit": 0.5,
+          "tValue": 2.576,
+          "processInterval": 3600,
+          "expirePeriod": 86400
+        }
+      },
+      "https://check.firewalla.com": {
+        "http": {
+          "sampleCount": 5,
+          "sampleInterval": 180,
+          "minSampleRounds": 30,
+          "alarmDelayRTT": 360,
+          "alarmDelayLossrate": 30,
+          "lossrateLimit": 0.5,
+          "tValue": 2.576,
+          "processInterval": 3600,
+          "expirePeriod": 86400
+        }
+      }
     }
   ----------------------------------------------------------------------------
    */
@@ -112,7 +154,7 @@ class NetworkMonitorSensor extends Sensor {
     log.debug("cachedPolicy: ", this.cachedPolicy);
     try {
       const systemPolicy = this.cachedPolicy.system;
-      if ( systemPolicy && Object.keys(systemPolicy).length > 0 ) {
+      if ( systemPolicy && !_.isEmpty(systemPolicy) ) {
         // always stop ALL existing jobs before apply new policy to avoid leftover jobs of removed targets in old policy
         this.stopMonitorDeviceAll();
         this.applyPolicySystem(systemPolicy);
@@ -149,7 +191,7 @@ class NetworkMonitorSensor extends Sensor {
       try {
         // only need to reapply system policy since MY_GATEWAYS and MY_DNSES may be referred
         const systemPolicy = this.cachedPolicy && this.cachedPolicy.system;
-        if (systemPolicy) {
+        if (systemPolicy && !_.isEmpty(systemPolicy)) {
           // always stop ALL existing jobs before apply new policy to avoid leftover jobs of removed targets in old policy
           this.stopMonitorDeviceAll();
           this.applyPolicySystem(systemPolicy);
@@ -173,46 +215,48 @@ class NetworkMonitorSensor extends Sensor {
   applyPolicySystem(policy, intfUUID) {
     const state = policy.state;
     const config = policy.config;
-    let intf = null;
-    // for consistency between single WAN and multi-WAN configurations in the app, always run the global test on primary WAN
-    if (!intfUUID) {
-      const primaryIntf = sysManager.getPrimaryWanInterface();
-      intfUUID = primaryIntf && primaryIntf.uuid || null;
-    }
     if (intfUUID) {
       const iface = sysManager.getInterfaceViaUUID(intfUUID);
       if (!iface) {
         log.warn(`intferface with uuid ${intfUUID} is not found, will not apply policy on it`);
         return;
       }
-      intf = iface.name;
-    }
-    log.info(`Apply monitoring policy change with state(${state})${intf ? ` on ${intf}` : ""} and config`, config);
+      const intf = iface.name;
+      log.info(`Apply monitoring policy change with state(${state})${intf ? ` on ${intf}` : ""} and config`, config);
 
-    try {
-      const runtimeState = (typeof state === 'undefined' || state === null) ? DEFAULT_SYSTEM_POLICY_STATE : state;
-      const runtimeConfig = this.loadRuntimeConfig(config || this.config, intf);
-      log.debug("runtimeState: ",runtimeState);
-      log.debug("runtimeConfig: ",runtimeConfig);
-      Object.keys(runtimeConfig).forEach( async targetIP => {
-        if (targetIP == "GLOBAL") // GLOBAL job was previously used for cleaning legacy data, it is deprecated as clean job is CPU intensive and legacy data will be automatically cleaned by redis ttl
-          return;
-        if ( runtimeState && this.adminSwitch ) {
-          this.startMonitorDevice(targetIP, targetIP, runtimeConfig[targetIP], intf);
-        } else {
-          this.stopMonitorDevice(targetIP, intf);
-        }
-      });
-
-      const wanConfs = policy.wanConfs;
+      try {
+        const runtimeState = (typeof state === 'undefined' || state === null) ? DEFAULT_SYSTEM_POLICY_STATE : state;
+        const runtimeConfig = this.loadRuntimeConfig(config || this.config, intf);
+        log.debug("runtimeState: ", runtimeState);
+        log.debug("runtimeConfig: ", runtimeConfig);
+        Object.keys(runtimeConfig).forEach(async targetIP => {
+          if (targetIP == "GLOBAL") // GLOBAL job was previously used for cleaning legacy data, it is deprecated as clean job is CPU intensive and legacy data will be automatically cleaned by redis ttl
+            return;
+          if (runtimeState && this.adminSwitch) {
+            this.startMonitorDevice(targetIP, targetIP, runtimeConfig[targetIP], intf);
+          } else {
+            this.stopMonitorDevice(targetIP, intf);
+          }
+        });
+      } catch (err) {
+        log.error("failed to apply monitoring policy change: ", err);
+      }
+    } else {
+      const wanConfs = policy.wanConfs || {};
+      const wanType = sysManager.getWanType();
+      const primaryWanIntf = sysManager.getPrimaryWanInterface();
+      const primaryWanUUID = primaryWanIntf && primaryWanIntf.uuid;
       // apply wan specific jobs embedded in wanConfs
-      if (_.isObject(wanConfs)) {
-        for (const uuid of Object.keys(wanConfs)) {
+      for (const wanIntf of sysManager.getWanInterfaces()) {
+        const uuid = wanIntf.uuid;
+        if (_.has(wanConfs, uuid))
           this.applyPolicySystem(wanConfs[uuid], uuid);
+        else {
+          // use global config as a fallback for primary WAN or all wans in load balance mode
+          if (uuid === primaryWanUUID || wanType === Constants.WAN_TYPE_LB)
+            this.applyPolicySystem(policy, uuid);
         }
       }
-    } catch (err) {
-      log.error("failed to apply monitoring policy change: ", err);
     }
     return;
   }
@@ -253,9 +297,13 @@ class NetworkMonitorSensor extends Sensor {
       let rtid = 0;
       if (opts.intf) {
         const intf = sysManager.getInterface(opts.intf);
-        if (!intf || !intf.rtid) {
-          log.error(`Cannot find rtid of interface ${intf}, skip ping test on it`);
+        if (!intf || !_.has(intf, "rtid")) {
+          log.error(`Cannot find rtid of interface ${opts.intf}, skip ping test on it`);
           return {status: `ERROR: interface ${opts.intf} is not found`, data: {}};
+        }
+        if (!await this.isCarrierOn(opts.intf)) {
+          log.error(`Carrier of interface ${opts.intf} is not on, skip ping test on it`);
+          return {status: `ERROR: carrier of interface ${opts.intf} is not on`, data: {}};
         }
         rtid = intf.rtid;
       }
@@ -283,9 +331,13 @@ class NetworkMonitorSensor extends Sensor {
       cfg.sampleCount = this.getCfgNumber(cfg,'sampleCount',5,1);
       let bindIP = null;
       if (opts.intf) {
+        if (!await this.isCarrierOn(opts.intf)) {
+          log.error(`Carrier of interface ${opts.intf} is not on, skip ping test on it`);
+          return {status: `ERROR: carrier of interface ${opts.intf} is not on`, data: {}};
+        }
         bindIP = sysManager.myIp(opts.intf);
         if (!bindIP) {
-          log.error(`Cannot find IP address to bind on interface ${intf}, skip dns test on it`);
+          log.error(`Cannot find IP address to bind on interface ${optf.intf}, skip dns test on it`);
           return {status: `ERROR: ip address on interface ${opts.intf} is not found`, data: {}};
         }
       }
@@ -315,9 +367,13 @@ class NetworkMonitorSensor extends Sensor {
       cfg.sampleCount = this.getCfgNumber(cfg,'sampleCount',5,1);
       let bindIP = null;
       if (opts.intf) {
+        if (!await this.isCarrierOn(opts.intf)) {
+          log.error(`Carrier of interface ${opts.intf} is not on, skip ping test on it`);
+          return {status: `ERROR: carrier of interface ${opts.intf} is not on`, data: {}};
+        }
         bindIP = sysManager.myIp(opts.intf);
         if (!bindIP) {
-          log.error(`Cannot find IP address to bind on interface ${intf}, skip http test on it`);
+          log.error(`Cannot find IP address to bind on interface ${opts.intf}, skip http test on it`);
           return {status: `ERROR: ip address on interface ${opts.intf} is not found`, data: {}};
         }
       }
@@ -686,7 +742,8 @@ class NetworkMonitorSensor extends Sensor {
       const l = dataSorted.length;
       if (l === 0) {
         // no data, 100% loss
-        this.checkLossrate(monitorType,target,cfg,1);
+        if (!opts || opts.saveResult !== false)
+          this.checkLossrate(monitorType,target,cfg,1, intfObj);
         result = {
           "data": data,
           "manual": (opts && opts.manual) ? opts.manual : false,
@@ -696,9 +753,11 @@ class NetworkMonitorSensor extends Sensor {
         }
       } else {
         const [mean,mdev] = this.getMeanMdev(data);
-        this.checkRTT(monitorType, target, cfg, mean, intfObj);
+        if (!opts || opts.saveResult !== false)
+          this.checkRTT(monitorType, target, cfg, mean, intfObj);
         const lossrate = parseFloat(Number((count-data.length)/count).toFixed(4));
-        this.checkLossrate(monitorType, target, cfg, lossrate, intfObj);
+        if (!opts || opts.saveResult !== false)
+          this.checkLossrate(monitorType, target, cfg, lossrate, intfObj);
         result = {
           "data": data,
           "manual": (opts && opts.manual) ? opts.manual : false,
@@ -809,6 +868,9 @@ class NetworkMonitorSensor extends Sensor {
     return scheduledJob;
   }
 
+  async isCarrierOn(intf) {
+    return fsp.readFile(`/sys/class/net/${intf}/carrier`, {encoding: "utf8"}).then(content => content.trim() === "1").catch((err) => false);
+  }
 }
 
 module.exports = NetworkMonitorSensor;

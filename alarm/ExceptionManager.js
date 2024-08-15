@@ -327,7 +327,7 @@ module.exports = class {
     });
 
     // ignore is set for backward compatibility, it's actually should be called "allow"
-    Bone.submitIntelFeedback('ignore', exception, 'exception');
+    Bone.submitIntelFeedback('ignore', exception);
   }
 
   exceptionExists(exceptionID) {
@@ -363,7 +363,7 @@ module.exports = class {
     }
 
     // unignore is set for backward compatibility, it's actually should be called "unallow"
-    Bone.submitIntelFeedback('unignore', exception, "exception");
+    Bone.submitIntelFeedback('unignore', exception);
   }
 
   async deleteExceptions(idList) {
