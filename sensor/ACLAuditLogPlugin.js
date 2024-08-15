@@ -689,7 +689,7 @@ class ACLAuditLogPlugin extends Sensor {
           }
 
           // use dns_flow as a prioirty for statistics
-          if (!platform.isDNSFlowSupported() || !fc.isFeatureOn('dns_flow')) {
+          if (type != 'dns' || block || !platform.isDNSFlowSupported() || !fc.isFeatureOn('dns_flow')) {
             const hitType = type + (block ? 'B' : '')
             timeSeries.recordHit(`${hitType}`, _ts, ct)
             timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct)
