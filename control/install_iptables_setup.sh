@@ -30,6 +30,7 @@ cat << EOF
 # ensure it is inserted at the beginning of POSTROUTING, so that snat rules in firewalla will take effect ahead of firerouter snat rules
 -I POSTROUTING -j FW_POSTROUTING
 
+
 # create POSTROUTING VPN chain
 -N FW_POSTROUTING_OPENVPN
 -A FW_POSTROUTING -j FW_POSTROUTING_OPENVPN
@@ -300,9 +301,9 @@ sudo ip6tables-restore "$ip6tables_file"
   for set in $(sudo ipset list -name | grep "^c_"); do
     echo "destroy -! $set"
   done
-} > "${FIREWALLA_HIDDEN}/run/iptables/ipset_destroy"
+} > "${ipset_destroy_file}"
 
-sudo ipset restore -! --file "${FIREWALLA_HIDDEN}/run/iptables/ipset_destroy"
+sudo ipset restore -! --file "${ipset_destroy_file}"
 
 if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
   sudo iptables -w -N DOCKER-USER &>/dev/null

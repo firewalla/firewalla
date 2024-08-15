@@ -43,6 +43,7 @@ const readdirAsync = util.promisify(fs.readdir);
 const statAsync = util.promisify(fs.stat);
 const {Address4} = require('ip-address');
 const {BigInteger} = require('jsbn');
+const {fileExist} = require('../util/util.js');
 
 const pclient = require('../util/redis_manager.js').getPublishClient();
 
@@ -362,6 +363,9 @@ class VpnManager {
     if (mydns == null || mydns === "127.0.0.1") {
       mydns = "8.8.8.8"; // use google DNS as default
     }
+    if (this.mydns !== mydns)
+      this.needRestart = true;
+    this.mydns = mydns;
     const confGenLockFile = "/dev/shm/vpn_confgen_lock_file";
     // sysManager.myIp() is not used in the below command
     const cmd = `cd ${fHome}/vpn; flock -n ${confGenLockFile} -c 'ENCRYPT=${platform.getDHKeySize()} sudo -E ./confgen.sh ${this.instanceName} ${this.listenIp} ${mydns} ${this.serverNetwork} ${this.netmask} ${this.localPort} ${this.protocol}'; sync`
@@ -671,8 +675,10 @@ class VpnManager {
     settings = settings || {};
     const configRC = [];
     const configCCD = [];
+    /* comp-lzo is deprecated
     configCCD.push("comp-lzo no"); // disable compression in client-config-dir
     configCCD.push("push \"comp-lzo no\"");
+    */
     const clientSubnets = [];
     for (let key in settings) {
       const value = settings[key];
@@ -743,26 +749,23 @@ class VpnManager {
 
   static async getAllSettings() {
     const settingsDirectory = `${process.env.HOME}/ovpns`;
-    await execAsync(`mkdir -p ${settingsDirectory}`);
     const allSettings = {};
     const filenames = await readdirAsync(settingsDirectory, 'utf8');
-    for (let filename of filenames) {
+    await Promise.all(filenames.map(async (filename) => {
       const fileEntry = await statAsync(`${settingsDirectory}/${filename}`);
       if (fileEntry.isDirectory()) {
         // directory contains .json and .rc file
         const settingsFilePath = `${VpnManager.getSettingsDirectoryPath(filename)}/${filename}.json`;
-        if (fs.existsSync(settingsFilePath)) {
-          const settings = await readFileAsync(settingsFilePath, 'utf8').then((content) => {
-            return JSON.parse(content)
-          }).catch((err) => {
-            log.error("Failed to read settings from " + settingsFilePath, err);
-            return null;
-          });
-          if (settings)
-            allSettings[filename] = settings;
-        }
+        const settings = await readFileAsync(settingsFilePath, 'utf8').then((content) => {
+          return JSON.parse(content)
+        }).catch((err) => {
+          log.error("Failed to read settings from " + settingsFilePath, err);
+          return null;
+        });
+        if (settings)
+          allSettings[filename] = settings;
       }
-    }
+    }));
     return allSettings;
   }
 
@@ -780,7 +783,6 @@ class VpnManager {
       cn: commonName
     };
     sem.sendEventToAll(event);
-    sem.emitLocalEvent(event);
   }
 
   static async getOvpnFile(commonName, password, regenerate, externalPort, protocol = null, ddnsEnabled) {
@@ -821,7 +823,6 @@ class VpnManager {
       cn: commonName
     };
     sem.sendEventToAll(event);
-    sem.emitLocalEvent(event);
     const ovpnfile = await fsp.readFile(ovpn_file, 'utf8')
     const timestamp = await VpnManager.getVpnConfigureTimestamp(commonName);
     return { ovpnfile, password, timestamp}

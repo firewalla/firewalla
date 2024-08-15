@@ -76,7 +76,8 @@ class AuthLogPlugin extends Sensor {
       if (!intf || intf.type == 'wan') {
         if (intf) {
           alarmPayload["p.device.ip"] = v4 ? intf.ip_address : intf.ip6_addresses && intf.ip6_addresses[0]
-          alarmPayload["p.device.mac"] = intf.mac_address
+          if (_.isString(alarmPayload["p.device.mac"]))
+            alarmPayload["p.device.mac"] = intf.mac_address.toUpperCase()
         }
 
         alarmPayload["p.dest.ip"] = ip;

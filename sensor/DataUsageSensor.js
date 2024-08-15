@@ -45,7 +45,8 @@ const lock = new AsyncLock();
 
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
-const moment = require('moment-timezone');
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const Constants = require('../net2/Constants.js');
 
 class DataUsageSensor extends Sensor {
@@ -265,11 +266,6 @@ class DataUsageSensor extends Sensor {
             "p.duration": this.smWindow,
             "p.percentage": percentage.toFixed(2) + '%',
         });
-
-        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-          const config = Constants.TAG_TYPE_MAP[type];
-          alarm[config.alarmIdKey] = await host.getTags(type) || [];
-        }
         alarmManager2.enqueueAlarm(alarm);
     }
     async getSumFlows(mac, begin, end) {
@@ -410,7 +406,7 @@ class DataUsageSensor extends Sensor {
     }
 
     async generateLast12MonthDataUsage(planDay, wanUUID) {
-        const lastTs = await rclient.getAsync(`monthly:data:usage:${wanUUID ? `${wanUUID}:` : ""}lastTs`);
+        const lastTs = await rclient.getAsync(`monthly:${wanUUID ? "wan:" : ""}data:usage:${wanUUID ? `${wanUUID}:` : ""}lastTs`);
         log.info(`Going to generate monthly data usage, plan day ${planDay}, lastTs ${lastTs}, ${wanUUID ? `wanUUID ${wanUUID}` : ""}`);
         const periodTsList = this.getPeriodTsList(planDay, 12); // in descending order
         const timezone = sysManager.getTimezone();
@@ -433,7 +429,7 @@ class DataUsageSensor extends Sensor {
         }
         records.shift();
         await this.dumpToRedis(records, wanUUID);
-        records.length > 0 && await rclient.setAsync(`monthly:data:usage:${wanUUID ? `${wanUUID}:` : ""}lastTs`, records[0].ts);
+        records.length > 0 && await rclient.setAsync(`monthly:${wanUUID ? "wan:" : ""}data:usage:${wanUUID ? `${wanUUID}:` : ""}lastTs`, records[0].ts);
     }
 
     getPeriodTsList(planDay, months = 12) {
@@ -463,8 +459,13 @@ class DataUsageSensor extends Sensor {
             const periodTsList = this.getPeriodTsList(planDay);
             const multi = rclient.multi();
             for (const ts of periodTsList) {
+              // per-wan data usage also uses monthly:data:usage prefix at the first wave of 1.978 alpha
+              // need to remove keys of both prefixes to guarantee backward compatibility with 1.977
+              // 1.977 uses redis scan for keys starting with monthly:data:usage in getLast12monthlyDataUsage
+              multi.del(`monthly:${wanUUID ? "wan:" : ""}data:usage:${wanUUID ? `${wanUUID}:` : ""}${ts}`);
               multi.del(`monthly:data:usage:${wanUUID ? `${wanUUID}:` : ""}${ts}`);
             }
+            multi.del(`monthly:${wanUUID ? "wan:" : ""}data:usage:${wanUUID ? `${wanUUID}:` : ""}lastTs`);
             multi.del(`monthly:data:usage:${wanUUID ? `${wanUUID}:` : ""}lastTs`);
             await multi.execAsync();
         } catch (e) {
@@ -476,7 +477,9 @@ class DataUsageSensor extends Sensor {
       const multi = rclient.multi();
       const expiring = 60 * 60 * 24 * 365; // one year
       for (const record of records) {
-        const key = `monthly:data:usage:${wanUUID ? `${wanUUID}:` : ""}${record.ts}`;
+        // 1.977 uses redis scan for keys starting with monthly:data:usage in getLast12monthlyDataUsage
+        // so need to use a different key prefix pattern for per-wan data usage
+        const key = `monthly:${wanUUID ? "wan:" : ""}data:usage:${wanUUID ? `${wanUUID}:` : ""}${record.ts}`;
         multi.set(key, JSON.stringify(record));
         multi.expireat(key, record.ts + expiring);
       }
@@ -511,7 +514,7 @@ class DataUsageSensor extends Sensor {
         periodTsList.shift(); // remove current cycle
         const records = [];
         for (const ts of periodTsList) {
-          const record = await rclient.getAsync(`monthly:data:usage:${wanUUID ? `${wanUUID}:` : ""}${ts}`);
+          const record = await rclient.getAsync(`monthly:${wanUUID ? "wan:" : ""}data:usage:${wanUUID ? `${wanUUID}:` : ""}${ts}`);
           record && records.push(JSON.parse(record));
         }
         return records.reverse();

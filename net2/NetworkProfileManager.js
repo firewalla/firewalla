@@ -263,6 +263,7 @@ class NetworkProfileManager {
         await sysManager.waitTillIptablesReady()
         log.info(`Destroying environment for network ${uuid} ${removedNetworkProfiles[uuid].o.intf} ...`);
         await removedNetworkProfiles[uuid].destroyEnv();
+        await removedNetworkProfiles[uuid].destroy();
         await dnsmasq.writeAllocationOption(removedNetworkProfiles[uuid].o.intf, {})
       })()
       delete this.networkProfiles[uuid];
@@ -279,7 +280,12 @@ class NetworkProfileManager {
         await rclient.hmsetAsync(key, newObj);
       }
     }
+    this.initialized = true;
     return this.networkProfiles;
+  }
+
+  isInitialized() {
+    return this.initialized === true;
   }
 
   async loadPolicyRules() {

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -434,14 +434,18 @@ class SysManager {
 
     try {
       const results = await rclient.hgetallAsync("sys:network:info")
+      const nicinfo = {};
       for (const key of Object.keys(results)) {
         results[key] = JSON.parse(results[key]);
+        if (platform.getAllNicNames().includes(key))
+          nicinfo[key] = results[key];
         if (_.isObject(results[key]) && results[key].hasOwnProperty("ip_address")) {
           // exclude legacy interfaces in sys:network:info
           if (!fireRouter.getLogicIntfNames().includes(key))
             delete results[key];
         }
       }
+      this.nicinfo = nicinfo;
       this.sysinfo = results;
 
       if (this.sysinfo === null) {
@@ -787,7 +791,9 @@ class SysManager {
     if (!mac) return false
 
     let interfaces = this.getLogicInterfaces();
-    return interfaces.map(i => i.mac_address && i.mac_address.toUpperCase() === mac.toUpperCase()).some(Boolean);
+    const nics = Object.keys(this.nicinfo);
+    return interfaces.some(i => i.mac_address && i.mac_address.toUpperCase() === mac.toUpperCase()) 
+      || nics.some(nic => this.nicinfo[nic] && this.nicinfo[nic].mac_address && this.nicinfo[nic].mac_address.toUpperCase() === mac.toUpperCase());
   }
 
   myMAC(intf = this.config.monitoringInterface) {
@@ -1000,7 +1006,7 @@ class SysManager {
       memory,
       cpuTemperature,
       cpuTemperatureList,
-      sss: sss.getSysInfo(),
+      sss: await sss.getSysInfo(),
       publicWanIps,
       publicWanIp6s,
       publicIp: this.publicIp,
@@ -1101,6 +1107,18 @@ class SysManager {
       // TODO: we should throw error here
       return false;
     }
+  }
+
+  isDefaultRoute(cidr) {
+    let addr = new Address4(cidr);
+    if (addr.isValid() && addr.subnetMask == 0) {
+      return true;
+    } else {
+      addr = new Address6(cidr);
+      if (addr.isValid() && addr.subnetMask == 0)
+        return true;
+    }
+    return false;
   }
 
   isSystemDomain(ipOrDomain) {

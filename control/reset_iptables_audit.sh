@@ -7,6 +7,15 @@ reset_ipset
 
 create_filter_table
 
+# remove entries that related to blocking set as well, so we could remove those sets later
+{
+  sudo iptables-save -t mangle | grep -v "set c_b._"
+} >> "$iptables_file"
+{
+  sudo ip6tables-save -t mangle | grep -v "set c_b._"
+} >> "$ip6tables_file"
+
+
 sudo iptables-restore "$iptables_file"
 sudo ip6tables-restore "$ip6tables_file"
 
@@ -21,6 +30,6 @@ sudo ip6tables-restore "$ip6tables_file"
   for set in $(sudo ipset list -name | grep "^c_b._"); do
     echo "destroy -! $set"
   done
-} > "${ipset_file}"
+} > "${ipset_destroy_file}"
 
-sudo ipset restore -! --file "${ipset_file}"
+sudo ipset restore -! --file "${ipset_destroy_file}"

@@ -77,6 +77,8 @@ class DomainBlock {
   }
 
   async unblockDomain(domain, options) {
+    domainUpdater.unregisterUpdate(domain, options);
+
     if (!options.skipUnapply) {
       await this.unapplyBlock(domain, options);
     }
@@ -84,8 +86,6 @@ class DomainBlock {
     if (!this.externalMapping) {
       await domainIPTool.removeDomainIPMapping(domain, options);
     }
-
-    domainUpdater.unregisterUpdate(domain, options);
   }
 
   async applyBlock(domain, options) {
