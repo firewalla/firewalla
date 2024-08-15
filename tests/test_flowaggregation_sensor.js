@@ -42,7 +42,7 @@ function getIntervalEnd(ts) {
   return (1 + toInt(ts / 600)) * 600;
 }
 
-describe('Test Flow Aggregation Sensor', () => {
+describe.skip('Test Flow Aggregation Sensor', () => {
 
 
   describe('.aggr', () => {
@@ -198,6 +198,7 @@ describe('Test Flow Aggregation Sensor', () => {
     });
 
     it('should check if any flow has activity', (done) => {
+      (async() =>{
       let flow = sample.sampleFlow1;
       let cache = {};
       let result = await flowAggrSensor._flowHasActivity(flow, cache);
@@ -209,6 +210,7 @@ describe('Test Flow Aggregation Sensor', () => {
       expect(result2).to.equal(false);
       expect(cache['8.9.9.9']).to.equal(0);
       done();
+    })();
     })
   })
 

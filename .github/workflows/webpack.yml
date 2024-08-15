@@ -10,7 +10,7 @@ on:
       - master
       - eslint
   pull_request:
-    branches: [ master ]
+    branches: [master]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -21,6 +21,9 @@ jobs:
   build:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -35,7 +38,7 @@ jobs:
 
       - uses: actions/setup-node@v2
         with:
-          node-version: '16'
+          node-version: "16"
 
       - run: npm i -g yarn
       - run: yarn global add webpack-cli
@@ -44,3 +47,20 @@ jobs:
       - run: $(yarn global bin)/webpack-cli -c .webpack/config_firekick.js
       - run: $(yarn global bin)/webpack-cli -c .webpack/config_api.js
       - run: $(yarn global bin)/webpack-cli -c .webpack/config_mon.js
+      - run: bash .webpack/prep-env.sh
+      - run: npm test | tee coverage/summary.txt
+      - run: echo "TEST_COVERAGE=$(grep Lines coverage/summary.txt | awk -F " " '{print $3}')" >> $GITHUB_ENV
+      - run: echo coverage $TEST_COVERAGE
+      - name: Archive code coverage results
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-coverage-report
+          path: ./coverage/
+      ## The following workflow needs git action write permission to post a PR comment
+      # - name: Check coverage
+      #   uses: romeovs/lcov-reporter-action@v0.3.1
+      #   with:
+      #     github-token: ${{ secrets.GITHUB_TOKEN }}
+      #     lcov-file: ./coverage/lcov.info
+      #     filter-changed-files: false
+      #     delete-old-comments: true

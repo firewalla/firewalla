@@ -1,0 +1,4 @@
+BOARD=gold
+BOARD_NAME=gold
+BOARD_VENDOR=Firewalla
+ARCH=x86_64

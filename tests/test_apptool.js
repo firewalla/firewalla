@@ -32,13 +32,13 @@ describe('AppTool', () => {
   }
 
   it('should support isAppReadyToDiscardLegacyFlowInfo', (done) => {
-    expect(appTool.isAppReadyToDiscardLegacyFlowInfo(appTool)).to.be.true;
+    expect(appTool.isAppReadyToDiscardLegacyFlowInfo(appInfo)).to.be.true;
     expect(appTool.isAppReadyToDiscardLegacyFlowInfo(undefined)).to.be.false;
     done();
   })
 
   it('should support isAppReadyToDiscardLegacyAlarm', (done) => {
-    expect(appTool.isAppReadyToDiscardLegacyAlarm(appTool)).to.be.true;
+    expect(appTool.isAppReadyToDiscardLegacyAlarm(appInfo)).to.be.true;
     expect(appTool.isAppReadyToDiscardLegacyAlarm(undefined)).to.be.false;
     done();
   })
