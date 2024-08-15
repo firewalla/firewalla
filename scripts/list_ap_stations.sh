@@ -130,6 +130,23 @@ displaytime() {
     printf '%02ds\n' $S
 }
 
+get_sta_name() {
+  m=$1
+  result=$(redis-cli --raw hget host:mac:$m name)
+  test -n "$result" && {
+    echo "$result"
+    return 0
+  }
+
+  result=$(redis-cli --raw hget host:mac:$m detect|jq -r .name)
+  test "$result" == null || {
+    echo "$result"
+    return 0
+  }
+
+  redis-cli --raw hget host:mac:$m bname
+}
+
 # ----------------------------------------------------------------------------
 # MAIN goes here
 # ----------------------------------------------------------------------------
@@ -159,7 +176,8 @@ do
         case $stac in
             sta_mac) stad=$sta_mac ;;
             sta_ip) stad=$sta_ip ;;
-            sta_name) stad=$(redis-cli hget host:mac:${sta_mac^^} bname) ;;
+            #sta_name) stad=$(redis-cli hget host:mac:${sta_mac^^} bname) ;;
+	    sta_name) stad=$(get_sta_name ${sta_mac^^}) ;;
             ap_mac) stad=$ap_mac ;;
             ap_name) stad=$ap_name ;;
             ssid) stad=$sta_ssid ;;
