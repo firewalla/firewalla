@@ -113,8 +113,7 @@ class HysteriaDockerClient extends DockerBaseVPNClient {
   }
 
   isIPv6Enabled() {
-    // only enable in dev, may change in the future
-    return f.isDevelopmentVersion();
+    return true
   }
 }
 
