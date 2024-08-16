@@ -144,7 +144,7 @@ class ACLAuditLogPlugin extends Sensor {
     if (_.isEmpty(line)) return
 
     // log.debug(line)
-    const ts = new Date() / 1000;
+    const ts = Date.now() / 1000;
     // extract content after log prefix
     const content = line.substring(line.indexOf(LOG_PREFIX) + LOG_PREFIX.length);
     if (!content || content.length == 0)
@@ -676,16 +676,34 @@ class ACLAuditLogPlugin extends Sensor {
               transitiveTags = await identity.getTransitiveTags();
           }
           for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-            const config = Constants.TAG_TYPE_MAP[type];
-            const flowKey = config.flowKey;
+            const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
             const tags = [];
             if (_.has(transitiveTags, type)) {
               tags.push(...Object.keys(transitiveTags[type]));
               const networkProfile = networkProfileManager.getNetworkProfile(intf);
               if (networkProfile) tags.push(...await networkProfile.getTags(type));
             }
-            record[flowKey] = _.uniq(tags);
+            if (tags.length)
+              record[flowKey] = _.uniq(tags);
           }
+
+          // use dns_flow as a prioirty for statistics
+          if (type != 'dns' || block || !platform.isDNSFlowSupported() || !fc.isFeatureOn('dns_flow')) {
+            const hitType = type + (block ? 'B' : '')
+            timeSeries.recordHit(`${hitType}`, _ts, ct)
+            timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct)
+            timeSeries.recordHit(`${hitType}:intf:${intf}`, _ts, ct)
+            for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+              const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
+              for (const tag of record[flowKey] || []) {
+                timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
+              }
+            }
+          }
+
+          // use a dedicated switch for saving to audit:accpet as we still want rule stats
+          if (type == 'dns' && !block && !fc.isFeatureOn('dnsmasq_log_allow_redis')) return
+
           const key = this._getAuditKey(mac, block)
           await rclient.zaddAsync(key, _ts, JSON.stringify(record));
           if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
@@ -693,19 +711,8 @@ class ACLAuditLogPlugin extends Sensor {
           this.touchedKeys[key] = 1;
 
           const expires = this.config.expires || 86400
-          await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
+          await rclient.expireatAsync(key, parseInt(Date.now() / 1000) + expires)
 
-          const hitType = type + (block ? 'B' : '')
-          timeSeries.recordHit(`${hitType}`, _ts, ct)
-          timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct)
-          timeSeries.recordHit(`${hitType}:intf:${intf}`, _ts, ct)
-          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-            const config = Constants.TAG_TYPE_MAP[type];
-            const flowKey = config.flowKey;
-            for (const tag of record[flowKey]) {
-              timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
-            }
-          }
           block && sem.emitLocalEvent({
             type: "Flow2Stream",
             suppressEventLogging: true,
@@ -731,7 +738,7 @@ class ACLAuditLogPlugin extends Sensor {
   async mergeLogs(startOpt, endOpt) {
     try {
       // merge 1 interval (default 5min) before to make sure it doesn't affect FlowAggregationSensor
-      const end = endOpt || Math.floor(new Date() / 1000 / this.config.interval - 1) * this.config.interval
+      const end = endOpt || Math.floor(Date.now() / 1000 / this.config.interval - 1) * this.config.interval
       const start = startOpt || end - this.config.interval
       log.debug('Start merging', start, end)
       const auditKeys = Object.keys(this.touchedKeys);
@@ -769,9 +776,8 @@ class ACLAuditLogPlugin extends Sensor {
           record._ts = await getUniqueTs(record.ets || record.ts);
           transaction.push(['zadd', key, record._ts, JSON.stringify(record)])
         }
-        const expires = this.config.expires || 86400
-        await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
-        transaction.push(['expireat', key, parseInt(new Date / 1000) + this.config.expires])
+        const expires = parseInt(Date.now() / 1000) + (this.config.expires || 86400)
+        transaction.push(['expireat', key, expires])
 
         // catch this to proceed onto the next iteration
         try {

@@ -110,10 +110,14 @@ class FlowTool extends LogQuery {
     if (options.audit) {
       feeds.push(... auditTool.expendFeeds({macs, block: true}))
     }
+    if (options.dnsFlow) {
+      feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'dnsFlow'}))
+    }
     if (options.auditDNSSuccess) {
       feeds.push(... auditTool.expendFeeds({macs, block: false}))
     }
     delete options.audit
+    delete options.dnsFlow
     delete options.auditDNSSuccess
     let recentFlows = await this.logFeeder(options, feeds)
 
