@@ -144,7 +144,7 @@ class ACLAuditLogPlugin extends Sensor {
     if (_.isEmpty(line)) return
 
     // log.debug(line)
-    const ts = new Date() / 1000;
+    const ts = Date.now() / 1000;
     // extract content after log prefix
     const content = line.substring(line.indexOf(LOG_PREFIX) + LOG_PREFIX.length);
     if (!content || content.length == 0)
@@ -711,7 +711,7 @@ class ACLAuditLogPlugin extends Sensor {
           this.touchedKeys[key] = 1;
 
           const expires = this.config.expires || 86400
-          await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
+          await rclient.expireatAsync(key, parseInt(Date.now() / 1000) + expires)
 
           block && sem.emitLocalEvent({
             type: "Flow2Stream",
@@ -738,7 +738,7 @@ class ACLAuditLogPlugin extends Sensor {
   async mergeLogs(startOpt, endOpt) {
     try {
       // merge 1 interval (default 5min) before to make sure it doesn't affect FlowAggregationSensor
-      const end = endOpt || Math.floor(new Date() / 1000 / this.config.interval - 1) * this.config.interval
+      const end = endOpt || Math.floor(Date.now() / 1000 / this.config.interval - 1) * this.config.interval
       const start = startOpt || end - this.config.interval
       log.debug('Start merging', start, end)
       const auditKeys = Object.keys(this.touchedKeys);
@@ -776,9 +776,8 @@ class ACLAuditLogPlugin extends Sensor {
           record._ts = await getUniqueTs(record.ets || record.ts);
           transaction.push(['zadd', key, record._ts, JSON.stringify(record)])
         }
-        const expires = this.config.expires || 86400
-        await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
-        transaction.push(['expireat', key, parseInt(new Date / 1000) + this.config.expires])
+        const expires = parseInt(Date.now() / 1000) + (this.config.expires || 86400)
+        transaction.push(['expireat', key, expires])
 
         // catch this to proceed onto the next iteration
         try {
