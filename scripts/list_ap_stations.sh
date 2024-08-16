@@ -156,7 +156,7 @@ STA_COLS='sta_mac sta_ip:-17 sta_name:30 ap_mac ap_name ssid:-15 chan:5 rssi:5 s
 lines=0
 timeit begin
 sta_data=$(local_api status/station| jq -r '.info|to_entries[]|[.key, .value.assetUID, .value.ssid, .value.channel, .value.rssi, .value.snr, .value.txRate, .value.rxRate, .value.assocTime, .value.ts]|@tsv')
-test -n "$sta_data" && echo "$sta_data" | while read sta_mac ap_mac sta_ssid sta_channel sta_rssi sta_snr sta_tx_rate sta_rx_rate sta_assoc_time sta_ts
+test -n "$sta_data" && echo "$sta_data" | while IFS=$'\t' read sta_mac ap_mac sta_ssid sta_channel sta_rssi sta_snr sta_tx_rate sta_rx_rate sta_assoc_time sta_ts
 do
     test -n "$sta_mac" || continue
     timeit $sta_mac
