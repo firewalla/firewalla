@@ -17,6 +17,7 @@
 
 const log = require('./logger.js')(__filename);
 const { exec } = require('child-process-promise');
+const { spawn } = require('child_process');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 
@@ -89,7 +90,7 @@ function enqueue(ipsetCmd) {
     ipsetProcessing = true;
     let _ipsetQueue = JSON.parse(JSON.stringify(ipsetQueue));
     ipsetQueue = [];
-    let child = require('child_process').spawn('sudo', ['ipset', 'restore', '-!']);
+    let child = spawn('sudo', ['ipset', 'restore', '-!']);
     child.stdin.setEncoding('utf-8');
     child.on('exit', (code, signal) => {
       ipsetProcessing = false;
@@ -209,7 +210,6 @@ async function list(name) {
   }
 }
 
-const spawn = require('child_process').spawn;
 let interactiveIpset = null;
 let interactiveIpsetStartTs = null;
 
@@ -237,6 +237,7 @@ async function batchOp(operations) {
       interactiveIpset.stdin.write("quit\n");
       initInteractiveIpset();
     }
+    log.verbose('batchOp:', operations)
     interactiveIpset.stdin.write(operations.join('\n') + '\n');
   } catch (err) {
     log.error("Failed to write to ipset stream, will restart ipset stream process", err.message);

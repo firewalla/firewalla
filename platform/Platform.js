@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -459,6 +459,8 @@ class Platform {
   supportOSI() {
     return true;
   }
+
+  isDNSFlowSupported() { return false }
 }
 
 module.exports = Platform;

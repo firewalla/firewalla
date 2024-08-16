@@ -301,6 +301,8 @@ class GoldProPlatform extends Platform {
   getDnsmasqLeaseFilePath() {
     return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
   }
+
+  isDNSFlowSupported() { return true }
 }
 
 module.exports = GoldProPlatform;
