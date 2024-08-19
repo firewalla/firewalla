@@ -392,7 +392,7 @@ get_auto_upgrade() {
 check_firerouter_hash() {
   pushd "$FIREROUTER_HOME" &>/dev/null
 
-  if git merge-base --is-ancestor 97a43b9faf0492b3a4a96628ea6c23246524fb90 HEAD; then
+  if git merge-base --is-ancestor 97a43b9faf0492b3a4a96628ea6c23246524fb90 HEAD &>/dev/null; then
     git rev-parse @
   else
     printf "\e[41m >>>>>> version too old <<<<<< \e[0m"
