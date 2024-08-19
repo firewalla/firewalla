@@ -151,12 +151,12 @@ get_sta_name() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-STA_COLS='sta_mac sta_ip:-17 sta_name:30 ap_mac ap_name ssid:-15 chan:5 rssi:5 snr:5 tx:5 rx:5 assoc_time:16 timestamp:28'
+STA_COLS='sta_mac sta_ip:-17 ap_uid:9 band:4 chan:5 mimo:5 rssi:5 snr:5 tx:5 rx:5 intf:-8 assoc_time:12 hb_time:9 ssid:-15 ap_name sta_name:-30'
 (print_header; hl) >&2
 lines=0
 timeit begin
-sta_data=$(local_api status/station| jq -r '.info|to_entries[]|[.key, .value.assetUID, .value.ssid, .value.channel, .value.rssi, .value.snr, .value.txRate, .value.rxRate, .value.assocTime, .value.ts]|@tsv')
-test -n "$sta_data" && echo "$sta_data" | while IFS=$'\t' read sta_mac ap_mac sta_ssid sta_channel sta_rssi sta_snr sta_tx_rate sta_rx_rate sta_assoc_time sta_ts
+sta_data=$(local_api status/station| jq -r '.info|to_entries[]|[.key, .value.assetUID, .value.ssid, .value.band, .value.channel, .value.txnss, .value.rxnss, .value.rssi, .value.snr, .value.txRate, .value.rxRate, .value.intf, .value.assocTime, .value.ts]|@tsv')
+test -n "$sta_data" && echo "$sta_data" | while IFS=$'\t' read sta_mac ap_mac sta_ssid sta_band sta_channel sta_txnss sta_rxnss sta_rssi sta_snr sta_tx_rate sta_rx_rate sta_intf sta_assoc_time sta_ts
 do
     test -n "$sta_mac" || continue
     timeit $sta_mac
@@ -165,7 +165,7 @@ do
     timeit read
     ap_name=$(redis-cli --raw hget host:mac:$ap_mac name || echo $NO_VALUE)
     timeit ap_name
-    sta_timestamp=$(date -d @$sta_ts -Iseconds 2>/dev/null || echo $NO_VALUE)
+    time_now=$(date +%s)
     timeit timestamp
 
     for stacp in $STA_COLS
@@ -176,18 +176,20 @@ do
         case $stac in
             sta_mac) stad=$sta_mac ;;
             sta_ip) stad=$sta_ip ;;
-            #sta_name) stad=$(redis-cli hget host:mac:${sta_mac^^} bname) ;;
 	    sta_name) stad=$(get_sta_name ${sta_mac^^}) ;;
-            ap_mac) stad=$ap_mac ;;
+            ap_uid) stad=${ap_mac:9} ;;
             ap_name) stad=$ap_name ;;
             ssid) stad=$sta_ssid ;;
+            band) stad=$sta_band ;;
             chan) stad=$sta_channel ;;
+            mimo) stad="${sta_txnss}x${sta_rxnss}" ;;
             rssi) stad=$sta_rssi ;;
             snr) stad=$sta_snr ;;
             tx) stad=$sta_tx_rate ;;
             rx) stad=$sta_rx_rate ;;
+            intf) stad=$sta_intf ;;
             assoc_time) stad=$(displaytime $sta_assoc_time) ;;
-            timestamp) stad=$sta_timestamp ;;
+	    hb_time) stad=$( displaytime $((time_now - sta_ts)) );;
             *) stad=$NO_VALUE ;;
         esac
         stacla=${stacl#-}
