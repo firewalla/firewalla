@@ -28,6 +28,8 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 const { getPreferredBName } = require('../util/util.js')
+const _ = require('lodash');
+const Constants = require('../net2/Constants.js');
 
 // const PM2 = require('../alarm/PolicyManager2.js');
 // const pm2 = new PM2();
@@ -104,7 +106,9 @@ class NewDeviceTagSensor extends Sensor {
 
       log.debug(networkPolicy)
 
-      if (policy) {
+      const isFWAP = this.isFirewallaAP(hostObj);
+
+      if (!isFWAP && policy) {
         await hostObj.setPolicyAsync('tags', [ policy.tag ])
         log.info(`Added new device ${host.ipv4Addr} - ${host.mac} to group ${policy.tag} per ${policy.key}`)
       }
@@ -119,7 +123,7 @@ class NewDeviceTagSensor extends Sensor {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": policy && [ policy.tag ].map(String) || []
+            "p.tag.ids": !isFWAP && policy && [ policy.tag ].map(String) || []
           });
         am2.enqueueAlarm(alarm);
       }
@@ -130,6 +134,17 @@ class NewDeviceTagSensor extends Sensor {
 
   enqueueEvent(event) {
     this.queue.push(event)
+  }
+
+  isFirewallaAP(hostObj) {
+    const mac = _.get(hostObj, ["o", "mac"]);
+    if (_.isString(mac) && mac.toUpperCase().startsWith(Constants.FW_AP_MAC_PREFIX))
+      return true;
+    const dhcpName = _.get(hostObj, ["o", "dhcpName"]);
+    const dhcpLeaseName = _.get(hostObj, ["o", "dnsmasq.dhcp.leaseName"]);
+    if (dhcpName === Constants.FW_AP_DEFAULT_DHCP_HOSTNAME || dhcpLeaseName === Constants.FW_AP_DEFAULT_DHCP_HOSTNAME)
+      return true;
+    return false;
   }
 
   run() {

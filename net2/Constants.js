@@ -67,6 +67,9 @@ module.exports = {
   ST_IGNORE: 'ignore',
   ST_TIMEOUT: 'timeout',
 
+  FW_AP_MAC_PREFIX: "20:6D:31:61",
+  FW_AP_DEFAULT_DHCP_HOSTNAME: "FirewallaAP",
+
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
 
   STATE_EVENT_NIC_SPEED: "nic_speed",
