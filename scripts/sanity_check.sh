@@ -2,6 +2,9 @@
 
 shopt -s lastpipe
 
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREROUTER_HOME:=/home/pi/firerouter}
+
 UNAME=$(uname -m)
 ROUTER_MANAGED='yes'
 case "$UNAME" in
@@ -386,6 +389,19 @@ get_auto_upgrade() {
     echo -e "$COLOR$UPGRADE$UNCOLOR"
 }
 
+check_firerouter_hash() {
+  pushd "$FIREROUTER_HOME" &>/dev/null
+
+  if git merge-base --is-ancestor 97a43b9faf0492b3a4a96628ea6c23246524fb90 HEAD &>/dev/null; then
+    git rev-parse @
+  else
+    printf "\e[41m >>>>>> version too old <<<<<< \e[0m"
+  fi
+
+  popd &>/dev/null
+}
+
+
 check_system_config() {
     echo "----------------------- System Config ------------------------------"
     declare -A c
@@ -419,6 +435,7 @@ check_system_config() {
       "$(get_auto_upgrade "/home/pi/.firewalla/config/.no_auto_upgrade" "/home/pi/.firewalla/config/.no_upgrade_check")"
     print_config 'Firerouter Autoupgrade' \
       "$(get_auto_upgrade "/home/pi/.router/config/.no_auto_upgrade" "/home/pi/.router/config/.no_upgrade_check")"
+    print_config 'Firerouter Hash' "$(check_firerouter_hash)"
     print_config 'License Prefix' "$(jq -r .DATA.SUUID ~/.firewalla/license)"
 
     echo ""
