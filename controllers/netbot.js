@@ -304,10 +304,10 @@ class netBot extends ControllerBot {
       }
 
       const alarmData = {};
-      const appUsedKeys = ["type", "timestamp", "p.device.name", "p.device.ip", "p.device.id", "p.dest.country", "p.device.lastseen",
+      const appUsedKeys = ["type", "timestamp", "p.device.name", "p.device.ip", "p.device.id", "p.dest.country", "p.device.lastSeen",
         "p.transfer.outbound.size", "p.transfer.inbound.size", // abnormal/large upload
         "p.noticeType", "p.dest.name", "p.dest.ip", "p.device.real.ip", "p.vpnType", "p.device.mac", "p.tag.names", "p.utag.names", "p.dest.app",
-        "p.dest.isLocal", "p.transfer.duration", "p.security.primaryReason", "p.local_is_client", "p.result_method", "p.result", "p.intf.desc",
+        "p.dest.isLocal", "p.transfer.duration", "p.security.primaryReason", "p.local_is_client", "result_method", "result", "p.intf.desc",
         "p.active.wans", "p.iface.name", "p.wan.type", "p.ready", "p.wan.switched", // dual wan alarm
         "p.upnp.ttl", "p.upnp.description", "p.upnp.protocol", "p.upnp.public.port", "p.upnp.private.port", // upnp open port
         "p.file.type", "p.subnet.length", "p.dest.url",

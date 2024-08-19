@@ -31,3 +31,14 @@ fi
 if [ -f "${FIREWALLA_HIDDEN}/run/assets/nmap" ]; then
   sudo cp -f "${FIREWALLA_HIDDEN}/run/assets/nmap" $(which nmap)
 fi
+
+NSE_FILES="outlib.lua rand.lua tableaux.lua"
+
+for NFILE in $NSE_FILES
+do
+  if [ -f "${FIREWALLA_HIDDEN}/run/assets/${NFILE}" ]; then
+    if  [ ! -f "/usr/share/nmap/nselib/${NFILE}" ]; then
+      sudo ln -s "${FIREWALLA_HIDDEN}/run/assets/${NFILE}" /usr/share/nmap/nselib/${NFILE}
+   fi
+  fi
+done

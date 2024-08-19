@@ -137,6 +137,18 @@ class CategoryExaminerPlugin extends Sensor {
     const redisPassthroughSetKey = categoryUpdater.getPassthroughCategoryKey(category);
     const passthroughDomains = new Set(await rclient.zrangeAsync(redisPassthroughSetKey, 0, -1));
 
+    // hitDomains - excludeDomain
+    const excludeDomains = await categoryUpdater.getExcludedDomains(category.split("_bf")[0]);
+    for (const domain of hitDomains) {
+      if (excludeDomains.includes(domain)) {
+        log.info(`Add domain ${domain} to passthrough set of ${category}`);
+        await this.addDomainToPassthroughSet(category, domain, Date.now())
+        log.info(`Remove ${domain} from hit set of ${category}`);
+        await this.removeDomainFromHitSet(category, domain);
+        hitDomains.delete(domain);
+      }
+    }
+
     const allDomains = new Set();
     for (const domain of hitDomains) {
       allDomains.add(domain);
@@ -172,7 +184,6 @@ class CategoryExaminerPlugin extends Sensor {
         }
       }
     }
-
 
     log.info(`Refresh ${confirmMatchList.length} domains in category hit/passthrough: ${category}`);
     const results = await this.confirmDomains(category, strategy, confirmMatchList);
@@ -247,6 +258,8 @@ class CategoryExaminerPlugin extends Sensor {
       log.warn(`Fail to get match result from category filter: ${origDomain}`);
       return;
     }
+    const categories = response.results.filter(result => result.status == 'Match').map((result) => {const [, c] = result.uid.split(':'); return c});
+    const excludeDomains = await this._getCategoryExcludeDomains(_.uniq(categories));
 
     for (const result of response.results) {
       const status = result.status;
@@ -260,7 +273,10 @@ class CategoryExaminerPlugin extends Sensor {
         // Check if the <domain, category> pair is already in hit set. If so, skip confirmation.
         if (await this.isInHitSet(category, matchedDomain)) {
           log.debug(`${origDomain} already in hit set of ${category}`);
-          await this.addDomainToHitSet(category, matchedDomain, Date.now());
+          // check if exclude domain
+          if (!excludeDomains[category].includes(matchedDomain)) {
+            await this.addDomainToHitSet(category, matchedDomain, Date.now());
+          }
           continue;
         }
         if (await this.isInPassthroughSet(category, origDomain)) {
@@ -275,12 +291,21 @@ class CategoryExaminerPlugin extends Sensor {
     }
   }
 
-  async _findCategory(domain) {
+  async _getCloudIntels(domain) {
     const resp = await intelTool.checkIntelFromCloud(null, domain);
     if (!_.isArray(resp) || resp.length == 0) {
       return [];
     }
-    return _.uniq(resp.map((i) => {if (i.c == 'ad') {return 'adblock_strict';} else return i.c}));
+    return resp;
+  }
+
+  async _getCategoryExcludeDomains(categories) {
+    let excludeDomains = {};
+    for (const c of categories) {
+      const domains = await categoryUpdater.getExcludedDomains(c.split("_bf")[0]);
+      excludeDomains[c] = domains;
+    }
+    return excludeDomains;
   }
 
   async confirmJob() {
@@ -298,29 +323,57 @@ class CategoryExaminerPlugin extends Sensor {
       }
     }
 
+    const categories = categoryDomainMap.keys()
+    const excludeDomains = await this._getCategoryExcludeDomains(categories);
+
     this.confirmSet = new Set();
     for (const [category, domainList] of categoryDomainMap) {
       const strategy = await categoryUpdater.getStrategy(category);
       // update hit set using matched domain list
       if (strategy.updateConfirmSet) {
         let score = Date.now();
+        if (!category.endsWith('_bf') && category != "adblock_strict") {
+          await this._confirmCloudCategoryDomains(category, strategy, domainList, score);
+          continue;
+        }
         let originCategory = category.split("_bf")[0];
+        if (originCategory === "adblock_strict")
+          originCategory = "ad";
         const origDomainList = domainList.map(item => item[1]);
-        const matchedDomainList = [];
         const unmatchedOrigDomainSet = new Set(origDomainList);
         for (let i = 0; i < origDomainList.length; i++) {
           const origDomain = origDomainList[i];
-          const categories = await this._findCategory(origDomain);
-          log.verbose("categories", category, categories, origDomain);
-          if (categories.includes(category) || categories.includes(originCategory)) { // matched with cloud data
-            log.info(`Add domain ${origDomain} to hit set of ${category} `);
-            await this.addDomainToHitSet(category, origDomain, score);
+          const intels = await this._getCloudIntels(origDomain).catch((err) => null);
+          if (!intels) { // likely error occurs while calling cloud API, do not block or passthrough this domain
+              unmatchedOrigDomainSet.delete(origDomain);
+              continue;
+          }
+          log.verbose("categories", category, intels, origDomain);
+          const longestMatchIntel = _.maxBy(intels, (cat) => {
+            return (cat.originIP || "").length;
+          })
+          if (_.isObject(longestMatchIntel) && (longestMatchIntel.c === category || longestMatchIntel.c === originCategory)) { // matched with cloud data
+            // add domain/pattern matched from cloud to hit set
+            const domain = longestMatchIntel.originIP || origDomain;
+            log.info(`Add domain ${domainList[i][0]} to hit set of ${category} `);
+
+            // check excludeDomains
+            if (!excludeDomains[category] || !excludeDomains[category].includes(domainList[i][0])) {
+              await this.addDomainToHitSet(category, domainList[i][0], score);
+            } else {
+              await this.addDomainToPassthroughSet(category, origDomain, score);
+            }
+            // incremental update original category with the matched domain from cloud, including ipset and tls host set
+            if (domainList[i][0] == "*." + domain) {
+              await categoryUpdater.updateDomain(originCategory, domainList[i][0], false);
+            } else {
+              await categoryUpdater.updateDomain(originCategory, domain, domain !== origDomain);
+            }
             unmatchedOrigDomainSet.delete(origDomain);
-            matchedDomainList.push(domainList[i][0]);
+            await intelTool.addDomainIntel(domain, longestMatchIntel, longestMatchIntel.e);
           }
         }
 
-        await categoryUpdater.addDomainIntels(originCategory, matchedDomainList);
         for (const origDomain of unmatchedOrigDomainSet) {
           log.info(`Add domain ${origDomain} to passthrough set of ${category} `);
           await this.addDomainToPassthroughSet(category, origDomain, score);
@@ -328,15 +381,42 @@ class CategoryExaminerPlugin extends Sensor {
 
         await this.limitHitSet(category, MAX_CONFIRM_SET_SIZE);
         await this.limitPassthroughSet(category, MAX_CONFIRM_SET_SIZE);
-
-        this.sendUpdateNotification(category);
       }
     }
   }
 
+  // category: oisd
+  async _confirmCloudCategoryDomains(category, strategy, domainList, score) {
+    const matchedDomainList = domainList.map(item => item[0]); // send matched domains from local bf to cloud for confirmation, original domain can be a subdomain of matched domain
+    let results = await this.confirmDomains(category, strategy, matchedDomainList);
+    if (results === null) {
+      log.debug("Fail to confirm domains of category", category);
+      return;
+    }
+    const positiveSet = new Set(results);
+    const unmatchedOrigDomainSet = new Set(domainList.map(item => item[1]));
+    for (const [matchedDomain, origDomain] of domainList) {
+      if (positiveSet.has(matchedDomain)) {
+        log.info(`Add domain ${matchedDomain} to hit set of ${category} `);
+        await this.addDomainToHitSet(category, matchedDomain, score);
+        unmatchedOrigDomainSet.delete(origDomain);
+      }
+    }
+    for (const origDomain of unmatchedOrigDomainSet) {
+      log.info(`Add domain ${origDomain} to passthrough set of ${category} `);
+      await this.addDomainToPassthroughSet(category, origDomain, score);
+    }
+    await this.limitHitSet(category, MAX_CONFIRM_SET_SIZE);
+    await this.limitPassthroughSet(category, MAX_CONFIRM_SET_SIZE);
+
+    this.sendUpdateNotification(category);
+  }
+
   async runConfirmJob() {
     while (true) {
-      await this.confirmJob();
+      await this.confirmJob().catch((err) => {
+        log.error("Confirm job failed", err);
+      });
       await scheduler.delay(2000);
     }
   }
@@ -356,7 +436,7 @@ class CategoryExaminerPlugin extends Sensor {
         const result = await this.confirmDomainsFromCloud(category, domainList);
         return result;
       } catch (e) {
-        log.error("Check cloud target set error:", category);
+        log.error("Check cloud target set error:", category, domainList, e.message);
       }
     }
     log.debug("All confirmation failed for domain:", category);
@@ -364,7 +444,7 @@ class CategoryExaminerPlugin extends Sensor {
   }
 
   async confirmDomainsFromCloud(category, domainList) {
-    log.debug("Try to confirm domains from cloud:", category);
+    log.debug("Try to confirm domains from cloud:", category, domainList);
     const hashedDomainList = domainList.map(domain => Hashes.getHashObject(domain).hash.toString('base64'));
     const requestObj = {
       id: `app.${category}`,

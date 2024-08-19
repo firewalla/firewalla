@@ -99,10 +99,10 @@ module.exports = class {
       this.setupAlarmQueue();
 
       if (f.isMain()) {
-        // clean timeout pending alarms every 900s
+        // clean timeout pending alarms every 60s
         setInterval(() => {
           this.cleanPendingQueue();
-        }, 900000);
+        }, 60000);
 
         sclient.subscribe("config:feature:dynamic:disable");
         sclient.subscribe("alarm:create");
@@ -161,8 +161,8 @@ module.exports = class {
 
   async cleanPendingQueue() {
     const alarmIds = await rclient.zrangeAsync(alarmPendingKey, 0, -1);
-    const deadline = new Date() / 1000 - 1800; // 1800s timeout
-    const defaultState = _.get(fc.getConfig(), 'alarms.apply.default.state') || Constants.ST_PENDING;
+    const timeout = parseFloat(_.get(fc.getConfig(), 'alarms.apply.default.timeout')) || 600;  // default 600s timeout, at least 60s
+    const deadline = new Date() / 1000 - Math.max(timeout, 60);
     for (const aid of alarmIds) {
       try {
         const alarmKey = alarmPrefix + aid;
@@ -177,18 +177,14 @@ module.exports = class {
         switch (data[0]) {
           case Constants.ST_INIT:
           case Constants.ST_PENDING: {
-            if (!this.isAlarmSyncMspEnabled() || (outdated && defaultState == Constants.ST_READY)) {
-                log.info('pending alarm fallback to active', aid);
-                await this.activateAlarm({state: Constants.ST_READY, aid: aid, alarmTimestamp: data[1]}, {origin:{state: data[0]}});
-            } else if (outdated) {
-                // ignore and delete from pending queue
-                await rclient.zremAsync(alarmPendingKey, aid);
-                log.warn('ignore pending alarm out of date', aid);
+            if (!this.isAlarmSyncMspEnabled() || outdated ) {
+              log.info('pending alarm fallback to active', aid);
+              await this.activateAlarm({state: Constants.ST_READY, aid: aid, alarmTimestamp: data[1]}, {origin:{state: data[0]}, 'p.msp.decision':'timeout'});
             }
             break;
           }
           case Constants.ST_READY: {
-            // activate immediately
+            // activate immediately, normally active alarms should not in pending queue
             await this.activateAlarm({state: Constants.ST_READY, aid: aid, alarmTimestamp: data[1]}, {origin:{state: data[0]}});
             break;
           }
@@ -302,7 +298,7 @@ module.exports = class {
 
   async addToPendingQueue(alarm) {
     let score = parseFloat(alarm.alarmTimestamp);
-    return await rclient.zaddAsync(alarmPendingKey, score, alarm.aid);
+    return await rclient.zaddAsync(alarmPendingKey, 'NX', score, alarm.aid);
   }
 
   removeFromActiveQueueAsync(alarmID) {
@@ -339,6 +335,15 @@ module.exports = class {
     await rclient.hmsetAsync(alarmKey, alarm.redisfy())
 
     return alarm
+  }
+
+  async mspIgnoreAlarm(alarmID, options={}) {
+    if (options.origin && options.origin.state == Constants.ST_IGNORE){
+      return
+    }
+    await rclient.hsetAsync(alarmPrefix + alarmID, 'p.msp.decision', 'ignore');
+    await this.archiveAlarm(alarmID);
+    await rclient.zremAsync(alarmPendingKey, alarmID);
   }
 
   async ignoreAlarm(alarmID, info) {
@@ -401,7 +406,8 @@ module.exports = class {
   }
 
   async saveAlarm(alarm) {
-    if (!alarm instanceof Alarm.Alarm) alarm = this.jsonToAlarm(alarm)
+    if (!(alarm instanceof Alarm.Alarm)) alarm = this.jsonToAlarm(alarm)
+    if (!alarm) return
     // covnert to string to make it consistent
     if (!alarm.aid) alarm.aid = await this.getNextID() + ""
 
@@ -435,7 +441,6 @@ module.exports = class {
     // add extended info, extended info are optional
     (async () => {
       const extendedAlarmKey = `${alarmDetailPrefix}:${alarm.aid}`;
-
       // if there is any extended info
       if (Object.keys(extended).length !== 0 && extended.constructor === Object) {
         await rclient.hmsetAsync(extendedAlarmKey, extended);
@@ -470,7 +475,7 @@ module.exports = class {
 
     if (related.length) {
       await rclient.zremAsync(alarmActiveKey, related);
-      await rclient.unlinkAsync(related.map(id => alarmDetailPrefix + id));
+      await rclient.unlinkAsync(related.map(id => alarmDetailPrefix + ':' + id));
       await rclient.unlinkAsync(related.map(id => alarmPrefix + id));
     }
   }
@@ -562,29 +567,46 @@ module.exports = class {
       return;
     }
     log.debug('apply alarm attrs', alarm, 'to', orig_alarm);
-    let attrs = {}; // origin attrs
+    let attrs = {state: orig_alarm.state}; // origin attrs
     for (const k in alarm) {
       if (alarm[k] != orig_alarm[k]) {
         attrs[k] = orig_alarm[k];
       }
+      if (k == "state" && alarm[k] != Constants.ST_READY && alarm[k] != Constants.ST_IGNORE) {
+        log.warn('apply alarm invalid state, skip change state', alarm);
+        delete alarm[k];
+        continue;
+      }
+      if (k == "state" && alarm[k] != orig_alarm.state && (orig_alarm.state == Constants.ST_ACTIVATED || orig_alarm.state == Constants.ST_IGNORE)) {
+        log.warn('alarm already activated or ignored, skip change state', alarm);
+        delete alarm[k];
+        continue
+      }
     }
-    const props = Object.entries(alarm).filter(i => i[0] != 'aid').flat()
-    await rclient.hsetAsync(alarmKey, ...props);
+
+    try {
+      alarm['applyTimestamp'] = Date.now()/1000;
+      alarm['type'] = orig_alarm.type;
+      await this.saveAlarm(alarm);
+    } catch (err) {
+      log.warn('fail to save alarm changes', alarm, err.message);
+    }
     return attrs;
   }
 
   async _onState(alarm, options={}) {
     switch (alarm.state) {
       case Constants.ST_READY: {
+        options['p.msp.decision'] = 'active';
         await this.activateAlarm(alarm, options);
         break;
       }
       case Constants.ST_IGNORE: {
-        await this.removeAlarmAsync(alarm.aid)
+        await this.mspIgnoreAlarm(alarm.aid, options)
         break;
       }
       default: {
-        log.warn('cannot handle state change of alarm', alarm, options);
+        log.info('skip handle state change of alarm', alarm, options);
       }
     }
   }
@@ -756,13 +778,19 @@ module.exports = class {
 
     alarm.state = Constants.ST_ACTIVATED;
     const alarmKey = alarmPrefix + alarm.aid;
-    await rclient.hsetAsync(alarmKey, 'state', Constants.ST_ACTIVATED);
+    let updateAttrs = ['state', Constants.ST_ACTIVATED];
+    if (options['p.msp.decision']) {
+      updateAttrs.push('p.msp.decision', options['p.msp.decision']);
+    }
+    await rclient.hmsetAsync(alarmKey, updateAttrs);
 
+    const orig_alarm = await rclient.hgetallAsync(alarmKey);
+    alarm = Object.assign({}, orig_alarm, alarm);
     const result  = await this._activateAlarm(alarm);
 
     // check alarm state change results
     if (this.isAlarmSyncMspEnabled() && result.length >= 2) {
-      if (result[0] != 0 && ! (options.origin && options.origin.state == Constants.ST_INIT)) {
+      if (result[0] != 1 && !(options.origin && options.origin.state == Constants.ST_INIT)) {
         log.warn('error remove alarm from pending queue', alarm.aid, result[0]);
       }
       if (result[1] != 1) {
@@ -825,23 +853,23 @@ module.exports = class {
     let ts = a.timestamp || Date.now()/1000;
     // Outbound constructors
     if (proto instanceof Alarm.OutboundAlarm) {
-      alarm = new proto.constructor(ts, a.device, a['p.dest.id'], a.info);
+      alarm = new proto.constructor(ts, a.device, a['p.dest.id'], _.omit(a, ['type', 'device', 'p.dest.id']));
     } else {
       switch (proto.constructor.name) {
         case 'VulnerabilityAlarm':{
-          alarm = new proto.constructor(ts, a.device, a['p.vid'], a.info);
+          alarm = new proto.constructor(ts, a.device, a['p.vid'], _.omit(a, ['type', 'device', 'p.vid']));
           break;
         }
         case 'BroNoticeAlarm': {
-          alarm = new proto.constructor(ts, a.device, a['p.noticeType'], a['p.message'], a.info);
+          alarm = new proto.constructor(ts, a.device, a['p.noticeType'], a['p.message'], _.omit(a, ['type', 'device', 'p.noticeType', 'p.message']));
           break;
         }
         case 'IntelAlarm': {
-          alarm = new proto.constructor(ts, a.device, a['p.severity'], a.info);
+          alarm = new proto.constructor(ts, a.device, a['p.severity'],  _.omit(a, ['type', 'device', 'p.severity']));
           break;
         }
         default: {
-          alarm = new proto.constructor(ts, a.device, a.info);
+          alarm = new proto.constructor(ts, a.device, _.omit(a, ['type', 'device']));
           break;
         }
       }
@@ -899,7 +927,7 @@ module.exports = class {
               delete obj[key];
             else
               obj[key] = JSON.parse(value);
-          } catch (err) { }
+          } catch (err) { log.warn("fail to convert to alarm, key", key, err.message) }
         }
       }
       return obj;

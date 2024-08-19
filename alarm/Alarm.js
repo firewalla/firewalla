@@ -281,7 +281,7 @@ class Alarm {
         if (!_.isEqual(idsA, idsB)) {
           return false;
         }
-      } else if (alarm[k] && alarm2[k] && _.isEqual(alarm[k], alarm2[k])) {
+      } else if (alarm[k] && alarm2[k] && _.isEqual(alarm[k], alarm2[k]) || !_.has(alarm, k) && !_.has(alarm2, k)) {
 
       } else {
         return false;
@@ -386,7 +386,7 @@ class DeviceBackOnlineAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    const result = [this["p.device.name"], this["p.device.ip"], this.timestamp];
+    const result = [this["p.device.name"], this["p.device.ip"], moment(this.timestamp * 1000).tz(sysManager.getTimezone()).format('LT')];
     const username = this.getUserName();
     if (username)
       result.push(username);
@@ -407,7 +407,7 @@ class DeviceOfflineAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    const result = [this["p.device.name"], this["p.device.ip"], this.timestamp];
+    const result = [this["p.device.name"], this["p.device.ip"], this["p.device.lastSeenTimezone"]];
     const username = this.getUserName();
     if (username)
       result.push(username);
