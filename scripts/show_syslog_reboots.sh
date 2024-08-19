@@ -2,7 +2,7 @@
 
 CMD=$(basename $0)
 : ${NUM_REBOOTS:=10}
-: ${THRESHOLD_HANG:=100}
+: ${THRESHOLD_HANG:=3600}
 
 show_reboot() {
     cat <<EOT
