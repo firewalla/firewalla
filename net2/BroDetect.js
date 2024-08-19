@@ -508,7 +508,7 @@ class BroDetect {
         return
       }
 
-      let localMac = obj.orig_l2_addr.toUpperCase()
+      let localMac = obj.orig_l2_addr && obj.orig_l2_addr.toUpperCase()
       let monitorable
 
       let intfInfo = sysManager.getInterfaceViaIP(dnsFlow.sh);
