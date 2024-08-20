@@ -260,12 +260,14 @@ module.exports = class DNSMASQ {
   scheduleRestartDNSService(ignoreFileCheck = false) {
     if (this.restartDNSTask)
       clearTimeout(this.restartDNSTask);
+    this.restartDNSIgnoreFileCheck = this.restartDNSIgnoreFileCheck || ignoreFileCheck
     this.restartDNSTask = setTimeout(async () => {
-      if (!ignoreFileCheck) {
+      if (!this.restartDNSIgnoreFileCheck) {
         const confChanged = await this.checkConfsChange();
         if (!confChanged)
           return;
       }
+      delete this.restartDNSIgnoreFileCheck
       await execAsync(`sudo systemctl stop ${SERVICE_NAME}`).catch((err) => { });
       this.counter.restart++;
       log.info(`Restarting ${SERVICE_NAME}`, this.counter.restart);
@@ -300,9 +302,13 @@ module.exports = class DNSMASQ {
       clearTimeout(this.restartDHCPTask);
     this.restartDHCPIgnoreFileCheck = this.restartDHCPIgnoreFileCheck || ignoreFileCheck
     this.restartDHCPTask = setTimeout(async () => {
-      const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH])
-      if (!this.restartDHCPIgnoreFileCheck && !confChanged)
-        return;
+      if (!this.restartDHCPIgnoreFileCheck) {
+        const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH])
+        if (!confChanged) {
+          return;
+        }
+      }
+      delete this.restartDHCPIgnoreFileCheck
       await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => { });
       this.counter.restartDHCP++;
       log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.restartDHCP);
@@ -823,20 +829,23 @@ module.exports = class DNSMASQ {
   }
 
   async writeAllocationOption(tagName, policy, known = false) {
+    let restartNeeded = false;
     await lock.acquire(LOCK_OPS, async () => {
-      log.info('Writting allocation file for', tagName)
+      log.verbose('Writting allocation file for tag', tagName)
       const filePath = `${DHCP_CONFIG_PATH}/${tagName}_ignore.conf`;
       if (policy.dhcpIgnore) {
         const tags = []
         if (tagName) tags.push(tagName)
         if (!known) tags.push('!known')
         if (tags.length) {
-        const entry = `dhcp-ignore=${tags.map(t=>'tag:'+t).join(',')}`
-        await fsp.writeFile(filePath, entry)
+          const entry = `dhcp-ignore=${tags.map(t=>'tag:'+t).join(',')}`
+          await fsp.writeFile(filePath, entry)
+          restartNeeded = true;
         }
       } else {
         try {
           await fsp.unlink(filePath)
+          restartNeeded = true;
         } catch(err) {
           // file not exist, ignore
           if (err.code == 'ENOENT') return
@@ -846,7 +855,8 @@ module.exports = class DNSMASQ {
     }).catch(err => {
       log.error("Failed to write allocation file:", err);
     });
-    this.scheduleRestartDHCPService();
+    if (restartNeeded)
+      this.scheduleRestartDHCPService();
   }
 
   getGlobalRedisMatchKey(options) {
@@ -2206,7 +2216,7 @@ module.exports = class DNSMASQ {
     }, cooldown)
   }
 
-  async checkConfsChange(dnsmasqConfKey = "dnsmasq:conf", paths = [`${FILTER_DIR}*`, resolvFile, startScriptFile, configFile, HOSTFILE_PATH]) {
+  async checkConfsChange(dnsmasqConfKey = "dnsmasq:conf", paths = [`${FILTER_DIR}*`, resolvFile, startScriptFile, configFile]) {
     try {
       let md5sumNow = '';
       for (const confs of paths) {

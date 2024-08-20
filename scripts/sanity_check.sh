@@ -2,6 +2,9 @@
 
 shopt -s lastpipe
 
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREROUTER_HOME:=/home/pi/firerouter}
+
 UNAME=$(uname -m)
 ROUTER_MANAGED='yes'
 case "$UNAME" in
@@ -386,6 +389,19 @@ get_auto_upgrade() {
     echo -e "$COLOR$UPGRADE$UNCOLOR"
 }
 
+check_firerouter_hash() {
+  pushd "$FIREROUTER_HOME" &>/dev/null
+
+  if git merge-base --is-ancestor 97a43b9faf0492b3a4a96628ea6c23246524fb90 HEAD &>/dev/null; then
+    git rev-parse @
+  else
+    printf "\e[41m >>>>>> version too old <<<<<< \e[0m"
+  fi
+
+  popd &>/dev/null
+}
+
+
 check_system_config() {
     echo "----------------------- System Config ------------------------------"
     declare -A c
@@ -419,6 +435,7 @@ check_system_config() {
       "$(get_auto_upgrade "/home/pi/.firewalla/config/.no_auto_upgrade" "/home/pi/.firewalla/config/.no_upgrade_check")"
     print_config 'Firerouter Autoupgrade' \
       "$(get_auto_upgrade "/home/pi/.router/config/.no_auto_upgrade" "/home/pi/.router/config/.no_upgrade_check")"
+    print_config 'Firerouter Hash' "$(check_firerouter_hash)"
     print_config 'License Prefix' "$(jq -r .DATA.SUUID ~/.firewalla/license)"
 
     echo ""
@@ -621,8 +638,8 @@ check_hosts() {
     else
       B7_Placeholder='%.s'
     fi
-    printf "%35s %15s %28s %15s %18s %3s$B7_Placeholder %2s %11s %7s %6s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s\n" \
-      "Host" "Network" "Name" "IP" "MAC" "Mon" "B7" "Ol" "VPNClient" "FlowOut" "FlowIn" "Grp" "Usr" "DvT" "EA" "DNS" "AdB" "Fam" "SS" "DoH" "Ubd"
+    printf "%35s %15s %15s %18s %3s$B7_Placeholder %2s %11s %7s %6s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s\n" \
+      "Host" "Network" "IP" "MAC" "Mon" "B7" "Ol" "VPNClient" "FlowOut" "FlowIn" "Grp" "Usr" "DvT" "EA" "DNS" "AdB" "Fam" "SS" "DoH" "Ubd"
     NOW=$(date +%s)
     frcc
 
@@ -681,7 +698,13 @@ check_hosts() {
             local ONLINE=
         fi
 
-        local NAME=$( ((${#h[detect]} > 2)) && jq -re 'select(has("name")) | .name' <<< "${h[detect]}" || echo -n "${h[bname]}")
+        local NAME="${h[name]}"
+        if [[ -z $NAME ]]; then
+          NAME="$( jq -re 'select(has("name")) | .name' <<< "${h[detect]}" )"
+        fi
+        if [[ -z $NAME ]]; then
+          NAME="${h[bname]}"
+        fi
 
         declare -A fcv # feature color value
 
@@ -806,8 +829,8 @@ check_hosts() {
             FC=$FC"\e[2m" #dim
         fi
 
-        printf "$BGC$FC%35s %15s %28s %15s $MAC_COLOR%18s$FC %3s$B7_Placeholder %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s ${fcv[acl,c]}%3s$UC %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC$BGUC\n" \
-          "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$(align::right 28 "${h[name]}")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$(align::right 11 $VPN)" "$FLOWINCOUNT" \
+        printf "$BGC$FC%35s %15s %15s $MAC_COLOR%18s$FC %3s$B7_Placeholder %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s ${fcv[acl,c]}%3s$UC %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC$BGUC\n" \
+          "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$(align::right 11 $VPN)" "$FLOWINCOUNT" \
           "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "${fcv[acl,v]}" "$DNS_BOOST" "${fcv[adblock,v]}" "${fcv[family,v]}" "${fcv[safeSearch,v]}" "${fcv[doh,v]}" "${fcv[unbound,v]}"
 
         unset h

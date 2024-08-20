@@ -559,6 +559,10 @@
         "expires": 86400,
         "count": 10000
       },
+      "flowDNS": {
+        "expires": 86400,
+        "count": 10000
+      },
       "auditDrop": {
         "expires": 86400,
         "count": 10000
@@ -831,6 +835,7 @@
     },
     "dns": {
       "path": "/blog/current/dns.log",
+      "flowstashExpires": 900,
       "expires": 86400
     },
     "http": {
@@ -957,6 +962,8 @@
     "fast_intel": true,
     "country": true,
     "dnsmasq_log_allow": true,
+    "dnsmasq_log_allow_redis": false,
+    "dns_flow": true,
     "digitalfence": false,
     "compress_flows": false,
     "rekey": false,

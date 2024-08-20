@@ -365,7 +365,6 @@ class VPNClient {
         await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => { });
       if (dnsServers.length > 0)
         await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, dnsRedirectChain);
-      await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
       await this._disableDNSRoute("hard");
       await this._disableDNSRoute("soft");
       dnsmasq.scheduleRestartDNSService();
