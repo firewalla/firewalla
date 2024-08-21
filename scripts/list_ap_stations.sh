@@ -73,11 +73,16 @@ env:
 
 examples:
 
-  # List AP status
+  # List AP station status
   $0
+
+  # List a specific station status
+  $0 <station_mac>
 
 EOU
 }
+
+STATION_MAC=$1
 
 print_header() {
     HDR_LENGTH=0
@@ -155,57 +160,67 @@ STA_COLS='sta_mac sta_ip:-17 ap_uid:9 band:4 chan:5 mimo:5 rssi:5 snr:5 tx:5 rx:
 (print_header; hl) >&2
 lines=0
 timeit begin
-sta_data=$(local_api status/station| jq -r '.info|to_entries[]|[.key, .value.assetUID, .value.ssid, .value.band, .value.channel, .value.txnss, .value.rxnss, .value.rssi, .value.snr, .value.txRate, .value.rxRate, .value.intf, .value.assocTime, .value.ts]|@tsv')
-test -n "$sta_data" && echo "$sta_data" | while IFS=$'\t' read sta_mac ap_mac sta_ssid sta_band sta_channel sta_txnss sta_rxnss sta_rssi sta_snr sta_tx_rate sta_rx_rate sta_intf sta_assoc_time sta_ts
-do
-    test -n "$sta_mac" || continue
-    timeit $sta_mac
-    sta_ip=$(redis-cli --raw hget host:mac:$sta_mac ipv4Addr)
-    timeit sta_ip
-    timeit read
-    ap_name=$(redis-cli --raw hget host:mac:$ap_mac name || echo $NO_VALUE)
-    timeit ap_name
-    time_now=$(date +%s)
-    timeit timestamp
+while true; do 
+	if [[ -z "$STATION_MAC" ]]; then
+		sta_data=$(local_api status/station| jq -r '.info|to_entries[]|[.key, .value.assetUID, .value.ssid, .value.band, .value.channel, .value.txnss, .value.rxnss, .value.rssi, .value.snr, .value.txRate, .value.rxRate, .value.intf, .value.assocTime, .value.ts]|@tsv')
+	else 
+		sta_data=$(local_api status/station/$STATION_MAC| jq -r '.info|[.macAddr, .assetUID, .ssid, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .intf, .assocTime, .ts]|@tsv')
+	fi
+	test -n "$sta_data" && echo "$sta_data" | while IFS=$'\t' read sta_mac ap_mac sta_ssid sta_band sta_channel sta_txnss sta_rxnss sta_rssi sta_snr sta_tx_rate sta_rx_rate sta_intf sta_assoc_time sta_ts
+	do
+		test -n "$sta_mac" || continue
+		timeit $sta_mac
+		sta_ip=$(redis-cli --raw hget host:mac:$sta_mac ipv4Addr)
+		timeit sta_ip
+		timeit read
+		ap_name=$(redis-cli --raw hget host:mac:$ap_mac name || echo $NO_VALUE)
+		timeit ap_name
+		time_now=$(date +%s)
+		timeit timestamp
 
-    for stacp in $STA_COLS
-    do
-        stac=${stacp%:*}; stacl=${stacp#*:}
-        timeit $stac
-        test $stacl == $stac && stacl=-20
-        case $stac in
-            sta_mac) stad=$sta_mac ;;
-            sta_ip) stad=$sta_ip ;;
-	    sta_name) stad=$(get_sta_name ${sta_mac^^}) ;;
-            ap_uid) stad=${ap_mac:9} ;;
-            ap_name) stad=$ap_name ;;
-            ssid) stad=$sta_ssid ;;
-            band) stad=$sta_band ;;
-            chan) stad=$sta_channel ;;
-            mimo) stad="${sta_txnss}x${sta_rxnss}" ;;
-            rssi) stad=$sta_rssi ;;
-            snr) stad=$sta_snr ;;
-            tx) stad=$sta_tx_rate ;;
-            rx) stad=$sta_rx_rate ;;
-            intf) stad=$sta_intf ;;
-            assoc_time) stad=$(displaytime $sta_assoc_time) ;;
-	    hb_time) stad=$( displaytime $((time_now - sta_ts)) );;
-            *) stad=$NO_VALUE ;;
-        esac
-        stacla=${stacl#-}
-        test -t 1 || stad=$(echo "$stad" | sed -e "s/ /_/g")
-        stad=$(echo "$stad" | sed -e "s/[‘’]/'/g")
-        stadl=${#stad}
-        if [[ $stadl -gt $stacla ]]
-        then
-            stad="${stad:0:$(((stacla-2)/2))}..${stad:$((stadl-(stacla-2)/2))}"
-        fi
-        timeit 'case'
-        printf "%${stacl}s " "${stad:-$NO_VALUE}"
-        timeit 'printf'
-    done
-    let lines++
-    echo
+		for stacp in $STA_COLS
+		do
+			stac=${stacp%:*}; stacl=${stacp#*:}
+			timeit $stac
+			test $stacl == $stac && stacl=-20
+			case $stac in
+				sta_mac) stad=$sta_mac ;;
+				sta_ip) stad=$sta_ip ;;
+				sta_name) stad=$(get_sta_name ${sta_mac^^}) ;;
+				ap_uid) stad=${ap_mac:9} ;;
+				ap_name) stad=$ap_name ;;
+				ssid) stad=$sta_ssid ;;
+				band) stad=$sta_band ;;
+				chan) stad=$sta_channel ;;
+				mimo) stad="${sta_txnss}x${sta_rxnss}" ;;
+				rssi) stad=$sta_rssi ;;
+				snr) stad=$sta_snr ;;
+				tx) stad=$sta_tx_rate ;;
+				rx) stad=$sta_rx_rate ;;
+				intf) stad=$sta_intf ;;
+				assoc_time) stad=$(displaytime $sta_assoc_time) ;;
+				hb_time) stad=$( displaytime $((time_now - sta_ts)) );;
+				*) stad=$NO_VALUE ;;
+			esac
+			stacla=${stacl#-}
+			test -t 1 || stad=$(echo "$stad" | sed -e "s/ /_/g")
+			stad=$(echo "$stad" | sed -e "s/[‘’]/'/g")
+			stadl=${#stad}
+			if [[ $stadl -gt $stacla ]]
+			then
+				stad="${stad:0:$(((stacla-2)/2))}..${stad:$((stadl-(stacla-2)/2))}"
+			fi
+			timeit 'case'
+			printf "%${stacl}s " "${stad:-$NO_VALUE}"
+			timeit 'printf'
+		done
+		let lines++
+		echo
+	done
+	if [[ -z "$STATION_MAC" ]]; then
+		break # no endlessly query when station mac is not specified
+	fi
+	sleep 2
 done
 timeit 'done'
 tty_rows=$(stty size | awk '{print $1}')
