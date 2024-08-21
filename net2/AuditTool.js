@@ -56,22 +56,29 @@ class AuditTool extends LogQuery {
   toSimpleFormat(entry, options = {}) {
     const f = {
       ltype: options.block == undefined || options.block ? 'audit' : 'flow',
-      type: entry.type,
+      type: options.type == 'dnsFlow' ? 'dnsFlow' : entry.type,
       ts: entry._ts || entry.ets || entry.ts,
       count: entry.ct,
-      protocol: entry.pr,
-      intf: entry.intf
     };
+    if (entry.pr) f.protocol = entry.pr
+    if (entry.intf) f.intf = entry.intf
+
+    if (_.isObject(entry.af) && !_.isEmpty(entry.af))
+      f.appHosts = Object.keys(entry.af);
 
     for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
       const config = Constants.TAG_TYPE_MAP[type];
-      f[config.flowKey] = entry[config.flowKey];
+      if (entry[config.flowKey] && entry[config.flowKey].length)
+        f[config.flowKey] = entry[config.flowKey];
     }
 
     if (entry.rl) {
       // real IP:port of the client in VPN network
       f.rl = entry.rl;
     }
+
+    if (entry.ac === "isolation" && entry.group)
+      f.isoGID = entry.group;
 
     if (entry.dmac) {
       f.dstMac = entry.dmac
@@ -90,14 +97,20 @@ class AuditTool extends LogQuery {
     }
 
 
-    if (entry.type == 'dns') {
+    if (options.type == 'dnsFlow') {
+      Object.assign(f, {
+        qType: entry.qt,
+        domain: entry.dn,
+        answers: entry.as,
+      })
+    } else if (entry.type == 'dns') {
+      // these keys except domain are probably not used anywhere, but keeping them just to be safe
       Object.assign(f, {
         rrClass: entry.qc,
         rrType: entry.qt,
         rcode: entry.rc,
         domain: entry.dn
       })
-      if (entry.ans) f.answers = entry.ans
     } else {
       if (entry.tls) f.type = 'tls'
       f.fd = entry.fd
@@ -132,7 +145,9 @@ class AuditTool extends LogQuery {
 
   getLogKey(mac, options) {
     // options.block == null is also counted here
-    return options.block == undefined || options.block ? `audit:drop:${mac}` : `audit:accept:${mac}`
+    return options.block == undefined || options.block
+      ? `audit:drop:${mac}`
+      : options.type == 'dnsFlow' ? `flow:dns:${mac}` : `audit:accept:${mac}`
   }
 }
 

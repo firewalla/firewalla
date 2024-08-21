@@ -1387,7 +1387,7 @@ class netBot extends ControllerBot {
       case "hosts": {
         const json = {};
         const includeVPNDevices = (value && value.includeVPNDevices) || false;
-        await this.hostManager.hostsInfoForInit(json)
+        await this.hostManager.hostsInfoForInit(json, {includeScanResults:true});
         if (includeVPNDevices)
           await this.hostManager.identitiesForInit(json)
         return json
@@ -1421,14 +1421,13 @@ class netBot extends ControllerBot {
           throw { code: 400, msg: "'types' should be an array." }
         }
         let profiles = [];
-        for (let type of types) {
+        for (let type of types) try {
           const c = VPNClient.getClass(type);
-          if (!c) {
-            log.error(`Unsupported VPN client type: ${type}`);
-            continue;
-          }
           const profileIds = await c.listProfileIds();
           Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({ profileId }).getAttributes())));
+        } catch(err) {
+          log.error(err);
+          continue;
         }
         return { profiles }
       }
@@ -3193,29 +3192,32 @@ class netBot extends ControllerBot {
         log.info('host:delete', hostMac);
         const macExists = await hostTool.macExists(hostMac);
         if (macExists) {
+          (async () => {
+            await pm2.deleteMacRelatedPolicies(hostMac);
+            await em.deleteMacRelatedExceptions(hostMac);
+            await am2.deleteMacRelatedAlarms(hostMac);
+            await dnsmasq.deleteLeaseRecord(hostMac);
 
-          await pm2.deleteMacRelatedPolicies(hostMac);
-          await em.deleteMacRelatedExceptions(hostMac);
-          await am2.deleteMacRelatedAlarms(hostMac);
-          await dnsmasq.deleteLeaseRecord(hostMac);
+            await categoryFlowTool.delAllTypes(hostMac);
+            await flowAggrTool.removeAggrFlowsAll(hostMac);
+            await flowManager.removeFlowsAll(hostMac);
 
-          await categoryFlowTool.delAllTypes(hostMac);
-          await flowAggrTool.removeAggrFlowsAll(hostMac);
-          await flowManager.removeFlowsAll(hostMac);
+            let ips = await hostTool.getIPsByMac(hostMac);
+            for (const ip of ips) {
+              const latestMac = await hostTool.getMacByIP(ip);
+              if (latestMac && latestMac === hostMac) {
+                // double check to ensure ip address is not taken over by other device
 
-          let ips = await hostTool.getIPsByMac(hostMac);
-          for (const ip of ips) {
-            const latestMac = await hostTool.getMacByIP(ip);
-            if (latestMac && latestMac === hostMac) {
-              // double check to ensure ip address is not taken over by other device
-
-              // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
-              await rclient.unlinkAsync([
-                "monitor:flow:" + hostMac,
-                "monitor:large:" + hostMac,
-              ]);
+                // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
+                await rclient.unlinkAsync([
+                  "monitor:flow:" + hostMac,
+                  "monitor:large:" + hostMac,
+                ]);
+              }
             }
-          }
+          })().catch((err) => {
+            log.error(`Failed to delete information of host ${hostMac}`, err);
+          });
           // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
           this.messageBus.publish("DiscoveryEvent", "Device:Delete", hostMac, {});
 
@@ -3688,6 +3690,12 @@ class netBot extends ControllerBot {
 
         msg.appInfo = rawmsg.message.appInfo;
         if (rawmsg.message.obj.type === "jsonmsg") {
+          // check blacklist, only for dev
+          if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && (await rclient.sismemberAsync('sys:eid:blacklist', eid))){
+            log.warn('deny access from eid', eid);
+            return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
+          }
+
           switch(rawmsg.message.obj.mtype) {
             case "init": {
               if (rawmsg.message.appInfo) {

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,7 +18,7 @@ const log = require("../net2/logger.js")(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const FlowManager = require('../net2/FlowManager.js');
-const flowManager = new FlowManager('info');
+const flowManager = new FlowManager();
 
 const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
@@ -450,15 +450,11 @@ module.exports = class FlowMonitor {
     let end = Date.now() / 1000;
     let start = end - period; // in seconds
     //log.info("Detect",listip);
-    let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", true);
+    let result = await flowManager.summarizeConnections(mac, "in", end, start);
 
     this.checkFlowIntel(result.connections, host, profile);
     await this.summarizeNeighbors(host, result.connections);
-    if (result.activities != null) {
-      host.o.activities = result.activities;
-      await host.save("activities")
-    }
-    result = await flowManager.summarizeConnections(mac, "out", end, start, "time", true);
+    result = await flowManager.summarizeConnections(mac, "out", end, start);
 
     this.checkFlowIntel(result.connections, host, profile);
     await this.summarizeNeighbors(host, result.connections);
@@ -470,16 +466,11 @@ module.exports = class FlowMonitor {
     let end = Date.now() / 1000;
     let start = end - this.monitorTime; // in seconds
 
-    let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", true);
+    let result = await flowManager.summarizeConnections(mac, "in", end, start);
     await this.checkForLargeUpload(result.connections, profile)
     let inSpec = flowManager.getFlowCharacteristics(result.connections, "in", profile.large_upload);
-    if (result.activities != null) {
-      // TODO: inbound(out) activities should also be taken into account
-      host.o.activities = result.activities;
-      await host.save("activities")
-    }
 
-    result = await flowManager.summarizeConnections(mac, "out", end, start, "time", true);
+    result = await flowManager.summarizeConnections(mac, "out", end, start);
     await this.checkForLargeUpload(result.connections, profile)
     let outSpec = flowManager.getFlowCharacteristics(result.connections, "out", profile.large_upload);
 

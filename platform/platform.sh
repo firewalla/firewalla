@@ -82,14 +82,6 @@ function led_boot_state() {
   return 0
 }
 
-function installTLSModule {
-  return
-}
-
-function installSchCakeModule {
-  return
-}
-
 function get_dynamic_assets_list {
   echo ""
 }
@@ -198,6 +190,40 @@ case "$UNAME" in
     ;;
 esac
 
+function installTLSModule {
+  uid=$(id -u pi)
+  gid=$(id -g pi)
+  if ! lsmod | grep -wq "xt_tls"; then
+    ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/xt_tls.ko
+    if [[ -f $ko_path ]]; then
+      sudo insmod ${ko_path} max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
+    fi
+    so_path=${FW_PLATFORM_CUR_DIR}/files/shared_objects/$(lsb_release -cs)/libxt_tls.so
+    if [[ -f $so_path ]]; then
+      sudo install -D -v -m 644 ${so_path} /usr/lib/$(uname -m)-linux-gnu/xtables
+    fi
+  fi
+  return
+}
+
+function installSchCakeModule {
+  ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/sch_cake.ko
+  if [[ -f $ko_path ]]; then
+    if ! modinfo sch_cake > /dev/null || [[ $(sha256sum /lib/modules/$(uname -r)/kernel/net/sched/sch_cake.ko | awk '{print $1}') != $(sha256sum $ko_path | awk '{print $1}') ]]; then
+      sudo cp ${ko_path} /lib/modules/$(uname -r)/kernel/net/sched/
+      sudo depmod -a
+    fi
+  fi
+
+  tc_path=${FW_PLATFORM_CUR_DIR}/files/executables/$(lsb_release -cs)/tc
+  tc_dst_path=$(which tc || echo "/sbin/tc")
+  if [[ -f $tc_path ]]; then
+    if [[ $(sha256sum $tc_dst_path | awk '{print $1}') != $(sha256sum $tc_path | awk '{print $1}') ]]; then
+      sudo cp $tc_path $tc_dst_path
+    fi
+  fi
+  return
+}
 
 function before_bro {
   if [[ -d ${FW_PLATFORM_DIR}/all/hooks/before_bro ]]; then
