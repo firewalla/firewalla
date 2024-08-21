@@ -186,14 +186,14 @@ describe('Test applyPolicy', function(){
   this.timeout(10000);
   this.plugin = new NseScanPlugin({});
 
-  beforeEach((done) => {
+  before((done) => {
     (async() =>{
       await rclient.hsetAsync('policy:system', 'nse_scan', '{"state": false}');
       done();
     })();
   });
 
-  afterEach((done) => {
+  after((done) => {
     (async() => {
       done();
     })();
