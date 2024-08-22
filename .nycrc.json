@@ -1,7 +1,7 @@
 {
-    "reporter":["lcov", "text-summary"],
+    "reporter":["json-summary", "text-summary"],
     "extension": [".js"],
     "check-coverage": true,
-    "lines": 10,
+    "lines": 15,
     "exclude":["**/vendor_lib/*", "**/tests/**"]
 }

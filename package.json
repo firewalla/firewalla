@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "start": "node ./bin/www",
-    "test": "NODE_ENV=test nyc mocha --exit tests/test_*.js"
+    "test": "NODE_ENV=test nyc mocha --exit tests/test_*.js",
+    "coverage": "NODE_ENV=test nyc mocha --exit tests/test_*.js"
   },
   "devDependencies": {
     "chai": "^3.5.0",

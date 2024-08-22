@@ -1,5 +1,5 @@
 # This is a basic workflow to help you get started with Actions
-
+## workflow badge link: https://github.com/firewalla/firewalla/actions/workflows/webpack.yml/badge.svg
 name: webpack
 
 # Controls when the workflow will run
@@ -21,9 +21,6 @@ jobs:
   build:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -48,19 +45,12 @@ jobs:
       - run: $(yarn global bin)/webpack-cli -c .webpack/config_api.js
       - run: $(yarn global bin)/webpack-cli -c .webpack/config_mon.js
       - run: bash .webpack/prep-env.sh
-      - run: npm test | tee coverage/summary.txt
-      - run: echo "TEST_COVERAGE=$(grep Lines coverage/summary.txt | awk -F " " '{print $3}')" >> $GITHUB_ENV
-      - run: echo coverage $TEST_COVERAGE
+      - run: npm run coverage | tee coverage/summary.txt
       - name: Archive code coverage results
         uses: actions/upload-artifact@v4
         with:
           name: code-coverage-report
           path: ./coverage/
-      ## The following workflow needs git action write permission to post a PR comment
-      # - name: Check coverage
-      #   uses: romeovs/lcov-reporter-action@v0.3.1
-      #   with:
-      #     github-token: ${{ secrets.GITHUB_TOKEN }}
-      #     lcov-file: ./coverage/lcov.info
-      #     filter-changed-files: false
-      #     delete-old-comments: true
+      - run: echo "TEST_COVERAGE=$(grep Lines coverage/summary.txt | awk -F " " '{print $3}')" >> $GITHUB_ENV
+      - run: echo coverage $TEST_COVERAGE
+      - run: bash .webpack/post-check.sh $TEST_COVERAGE 10
