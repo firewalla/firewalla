@@ -100,6 +100,10 @@ local_api() {
     curl -s "http://localhost:8841/v1/$1"
 }
 
+local_simple_post_api() {
+    curl -XPOST -s "http://localhost:8841/v1/$1"
+}
+
 frcc() {
     local_api config/active
 }
@@ -156,17 +160,20 @@ get_sta_name() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-STA_COLS='sta_mac sta_ip:-17 ap_uid:9 band:4 chan:5 mimo:5 rssi:5 snr:5 tx:5 rx:5 intf:-8 assoc_time:12 idle:3 hb_time:9 ssid:-15 ap_name sta_name:-30'
+STA_COLS='sta_mac sta_ip:-17 ap_uid:9 band:4 chan:5 mimo:5 rssi:5 snr:5 tx:5 rx:5 intf:-8 vlan:4 dvlan:4 assoc_time:12 idle:3 hb_time:9 ssid:-15 ap_name sta_name:-30'
 (print_header; hl) >&2
 lines=0
 timeit begin
-while true; do 
+
+test -z "$STATION_MAC" || local_simple_post_api "control/monitor/$STATION_MAC"
+
+while true; do
 	if [[ -z "$STATION_MAC" ]]; then
-		sta_data=$(local_api status/station| jq -r '.info|to_entries[]|[.key, .value.assetUID, .value.ssid, .value.band, .value.channel, .value.txnss, .value.rxnss, .value.rssi, .value.snr, .value.txRate, .value.rxRate, .value.intf, .value.assocTime, .value.ts, .value.idle]|@tsv')
+		sta_data=$(local_api status/station| jq -r '.info|to_entries[]|[.key, .value.assetUID, .value.ssid, .value.band, .value.channel, .value.txnss, .value.rxnss, .value.rssi, .value.snr, .value.txRate, .value.rxRate, .value.intf, .value.assocTime, .value.ts, .value.idle, .value.dvlanVlanId, .value.vlanId]|@tsv')
 	else 
-		sta_data=$(local_api status/station/$STATION_MAC| jq -r '.info|[.macAddr, .assetUID, .ssid, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .intf, .assocTime, .ts, .idle]|@tsv')
+		sta_data=$(local_api status/station/$STATION_MAC| jq -r '.info|[.macAddr, .assetUID, .ssid, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .intf, .assocTime, .ts, .idle, .dvlanVlanId, .vlanId]|@tsv')
 	fi
-	test -n "$sta_data" && echo "$sta_data" | while IFS=$'\t' read sta_mac ap_mac sta_ssid sta_band sta_channel sta_txnss sta_rxnss sta_rssi sta_snr sta_tx_rate sta_rx_rate sta_intf sta_assoc_time sta_ts sta_idle
+	test -n "$sta_data" && echo "$sta_data" | while IFS=$'\t' read sta_mac ap_mac sta_ssid sta_band sta_channel sta_txnss sta_rxnss sta_rssi sta_snr sta_tx_rate sta_rx_rate sta_intf sta_assoc_time sta_ts sta_idle sta_dvlan sta_vlan
 	do
 		test -n "$sta_mac" || continue
 		timeit $sta_mac
@@ -195,6 +202,8 @@ while true; do
 				mimo) stad="${sta_txnss}x${sta_rxnss}" ;;
 				rssi) stad=$sta_rssi ;;
 				snr) stad=$sta_snr ;;
+				vlan) stad=$sta_vlan ;;
+				dvlan) stad=$sta_dvlan ;;
 				idle) stad=$sta_idle ;;
 				tx) stad=$sta_tx_rate ;;
 				rx) stad=$sta_rx_rate ;;
