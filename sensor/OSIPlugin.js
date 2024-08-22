@@ -59,6 +59,7 @@ class OSIPlugin extends Sensor {
     })
 
     extensionManager.onSet("osiStop", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: {state: await this.isAdminStop()}})} catch(err) {};
       if(data.state === true) {
         await this.adminStopOn();
       } else {

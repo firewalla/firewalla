@@ -195,9 +195,7 @@ class netBot extends ControllerBot {
   }
 
   async _precedeRecord(msgid, data) {
-    log.info("[_precedeRecord] msgid", msgid, data);
-    await rclient.setAsync(Constants.REDIS_KEY_HISTORY_MSG_PREFIX + msgid, JSON.stringify(data))
-    rclient.expireAsync(Constants.REDIS_KEY_HISTORY_MSG_PREFIX + msgid, 120); // expire in 2 min
+    await extMgr._precedeRecord(msgid, data);
   }
 
   setupRateLimit() {
@@ -658,7 +656,7 @@ class netBot extends ControllerBot {
         if (!monitorable) throw new Error(`Unknow target ${target}`)
 
         const orig = await monitorable.loadPolicyAsync();
-        await this._precedeRecord(msg.id, {origin: orig, diff: difference(value, orig)});
+        try{await this._precedeRecord(msg.id, {origin: orig, diff: difference(value, orig)})} catch(err){};
 
         for (const o of Object.keys(value)) {
           if (processorMap[o]) {
@@ -2640,7 +2638,7 @@ class netBot extends ControllerBot {
       case "enableFeature": {
         const featureName = value.featureName;
         if (featureName) {
-          await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)});
+          try{await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)})} catch(err){};
           await fc.enableDynamicFeature(featureName)
         }
         return
@@ -2648,7 +2646,7 @@ class netBot extends ControllerBot {
       case "disableFeature": {
         const featureName = value.featureName;
         if (featureName) {
-          await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)});
+          try{await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)})} catch(err){};
           await fc.disableDynamicFeature(featureName)
         }
         return
@@ -2656,7 +2654,7 @@ class netBot extends ControllerBot {
       case "clearFeatureDynamicFlag": {
         const featureName = value.featureName;
         if (featureName) {
-          await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)});
+          try{await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)})} catch(err){};
           await fc.clearDynamicFeature(featureName)
         }
         return
