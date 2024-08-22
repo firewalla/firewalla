@@ -266,11 +266,6 @@ class DataUsageSensor extends Sensor {
             "p.duration": this.smWindow,
             "p.percentage": percentage.toFixed(2) + '%',
         });
-
-        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-          const config = Constants.TAG_TYPE_MAP[type];
-          alarm[config.alarmIdKey] = await host.getTags(type) || [];
-        }
         alarmManager2.enqueueAlarm(alarm);
     }
     async getSumFlows(mac, begin, end) {

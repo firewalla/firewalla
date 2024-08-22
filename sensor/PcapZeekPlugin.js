@@ -130,10 +130,12 @@ class PcapZeekPlugin extends PcapPlugin {
       restrictFilters["not-self-tx-syn-ip4"] = `not (ip and (${selfIp4.map(ip => `src host ${ip}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or tcp[13] & 0x12 == 2))`;
       restrictFilters["not-self-rx-nosyn-ip4"] = `not (ip and (${selfIp4.map(ip => `dst host ${ip}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or tcp[13] & 0x12 != 2))`;
     }
+    /* box won't do IPv6 port scan in practice, remove them from restrictFilters to reduce pcap filter expression length in zeek. Zeek may not work properly with an excessively long pcap filter expression
     if (!_.isEmpty(selfIp6)) {
       restrictFilters["not-self-tx-syn-ip6"] = `not (ip6 and (${selfIp6.map(ip => `src host ${ip}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or ip6[40+13] & 0x12 == 2))`;
       restrictFilters["not-self-rx-nosyn-ip6"] = `not (ip6 and (${selfIp6.map(ip => `src host ${ip}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or ip6[40+13] & 0x12 != 2))`;
     }
+    */
     if (features.isOn("fast_speedtest") && conntrack) {
       restrictFilters["not-tcp-port-8080"] = `not (tcp and port 8080)`;
       conntrack.registerConnHook({dport: 8080, protocol: "tcp"}, (connInfo) => {

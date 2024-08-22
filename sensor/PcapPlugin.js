@@ -50,6 +50,7 @@ class PcapPlugin extends Sensor {
       return;
     }
     this.enabled = false;
+    this.listenInterfaces = [];
     this.hookFeature(this.getFeatureName());
     const restartJob = new scheduler.UpdateJob(this.restart.bind(this), 5000);
     await this.initLogProcessing();
@@ -130,17 +131,25 @@ class PcapPlugin extends Sensor {
           monitoringIntfOptions[intfName] = { pcapBufsize: maxPcapBufsize };
         }
       }
-      if (monitoringInterfaces.length <= Object.keys(parentIntfOptions).length)
+      if (monitoringInterfaces.length <= Object.keys(parentIntfOptions).length) {
+        this.listenInterfaces = Object.keys(monitoringIntfOptions);
         return monitoringIntfOptions;
-      else
+      } else {
+        this.listenInterfaces = Object.keys(parentIntfOptions);
         return parentIntfOptions;
+      }
     } else {
       const fConfig = await Config.getConfig(true);
       const intf = fConfig.monitoringInterface || "eth0";
       const listenInterfaces = {};
       listenInterfaces[intf] = {pcapBufsize: this.getPcapBufsize(intf)};
+      this.listenInterfaces = [intf];
       return listenInterfaces;
     }
+  }
+
+  getListenInterfaces() {
+    return this.listenInterfaces;
   }
 
   getPcapBufsize(intfName) {

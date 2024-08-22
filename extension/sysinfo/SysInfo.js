@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,6 +23,8 @@ const f = require('../../net2/Firewalla.js');
 const logFolder = f.getLogFolder();
 
 const config = require("../../net2/config.js").getConfig();
+const upgradeManager = require('../../net2/UpgradeManager.js')
+const { fileExist }  = require('../../util/util.js')
 
 const df = util.promisify(require('node-df'))
 
@@ -38,10 +40,7 @@ const platform = platformLoader.getPlatform();
 
 const rateLimit = require('../../extension/ratelimit/RateLimit.js');
 
-const fs = require('fs');
-const Promise = require('bluebird');
 const Constants = require("../../net2/Constants.js");
-Promise.promisifyAll(fs);
 
 const ethInfoKey = "ethInfo";
 
@@ -76,6 +75,8 @@ let slabInfo = {};
 let intelQueueSize = 0;
 
 let multiProfileSupport = false;
+
+let kernelVersion = null;
 
 let no_auto_upgrade = false;
 
@@ -129,9 +130,9 @@ async function update() {
 
 
 
-function startUpdating() {
+async function startUpdating() {
   updateFlag = 1;
-  update();
+  await update();
 }
 
 function stopUpdating() {
@@ -208,13 +209,21 @@ async function getDiskInfo() {
   }
 }
 
-function getAutoUpgrade() {
-  return new Promise((resolve, reject) => {
-    fs.exists("/home/pi/.firewalla/config/.no_auto_upgrade", function(exists) {
-      no_auto_upgrade = exists;
-      resolve(no_auto_upgrade);
-    });
+async function getAutoUpgrade() {
+  return fileExist('/home/pi/.firewalla/config/.no_auto_upgrade').catch(err => {
+    log.error('Failed to get upgrade flag', err);
+    return false
   })
+}
+
+async function getKernelVersion() {
+  if (!kernelVersion) {
+    kernelVersion = await exec("uname -r").then(result => result.stdout.trim()).catch((err) => {
+      log.error("Failed to get kernel version via uname -r", err.message);
+      return null;
+    });
+  }
+  return kernelVersion;
 }
 
 async function getMultiProfileSupportFlag() {
@@ -370,7 +379,7 @@ async function getActiveContainers() {
   }
 }
 
-function getSysInfo() {
+async function getSysInfo() {
   let sysinfo = {
     cpu: cpuUsage,
     cpuModel: cpuModel,
@@ -393,10 +402,12 @@ function getSysInfo() {
     threadInfo: threadInfo,
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
+    kernelVersion: await getKernelVersion(),
     diskInfo: diskInfo || [],
     //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
-    no_auto_upgrade: no_auto_upgrade,
+    no_auto_upgrade: await getAutoUpgrade(),
+    autoupgrade: await upgradeManager.getAutoUpgradeFlags(),
     maxPid: maxPid,
     ethInfo,
     wlanInfo,
@@ -462,7 +473,7 @@ async function getTop5Flows() {
 async function getPerfStats() {
   return {
     top: getTopStats(),
-    sys: getSysInfo(),
+    sys: await getSysInfo(),
     perf: await getTop5Flows()
   }
 }

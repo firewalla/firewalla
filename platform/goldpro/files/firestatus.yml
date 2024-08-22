@@ -1,0 +1,37 @@
+init_state: normal
+booting_threshold: 120
+booted_duration: 60
+leds:
+  - color: red
+    pin: 52
+  - color: green
+    pin: 56
+  - color: blue
+    pin: 57
+states:
+  - state: force_blue_on
+    leds: ["none", "none", "default-on"]
+  - state: force_red_on
+    leds: ["default-on", "none", "none"]
+  - state: force_off
+    leds: ["none", "none", "none"]
+  - state: critical_error
+    leds: ["default-on", "none", "none"]
+  - state: reset
+    leds: ["timer", "none", "none"]
+  - state: network_down
+    leds: ["timer", "none", "none"]
+  - state: bluetooth_connected
+    leds: ["none", "none", "heartbeat"]
+  - state: writing_disk
+    leds: ["none", "none", "heartbeat"]
+  - state: booted
+    leds: ["none", "none", "default-on"]
+  - state: booting
+    leds: ["none", "none", "timer"]
+  - state: normal_visible
+    leds: ["none", "none", "default-on"]
+  - state: ready_for_pairing
+    leds: ["none", "none", "none"]
+  - state: normal
+    leds: ["none", "none", "none"]

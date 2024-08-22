@@ -154,7 +154,10 @@ class BoneSensor extends Sensor {
     return {
       totalAlarms: await rclient.getAsync("alarm:id"),
       totalRules: await rclient.getAsync("policy:id"),
-      totalExceptions: await rclient.getAsync("exception:id")
+      totalExceptions: await rclient.getAsync("exception:id"),
+      activeAlarms: await rclient.zcountAsync("alarm_active", '-inf', '+inf'),
+      activeRules: await rclient.zcountAsync("policy_active", '-inf', '+inf'),
+      activeExceptions: await rclient.scardAsync("exception_queue")
     }
   }
 
@@ -186,6 +189,9 @@ class BoneSensor extends Sensor {
         let HostManager = require("../net2/HostManager.js");
         let hostManager = new HostManager();
         sysInfo.hostInfo = await hostManager.getCheckInAsync();
+        if (sysInfo.hostInfo.model) {
+          rclient.setAsync("model", sysInfo.hostInfo.model); // no need to await, this info is used by other processes, e.g. firerouter
+        }
       }
     } catch (e) {
       log.error("BoneCheckIn Error fetching hostInfo", e);

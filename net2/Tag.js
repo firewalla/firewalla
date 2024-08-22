@@ -1,4 +1,4 @@
-/*    Copyright 2020-2023 Firewalla Inc.
+/*    Copyright 2020-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,6 +18,7 @@
 const log = require('./logger.js')(__filename);
 
 const f = require('./Firewalla.js');
+const sysManager = require('./SysManager.js');
 const exec = require('child-process-promise').exec;
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const VirtWanGroup = require('./VirtWanGroup.js');
@@ -36,13 +37,22 @@ const envCreatedMap = {};
 
 
 class Tag extends Monitorable {
-  static metaFieldsJson = ["createTs"];
-  
+  static metaFieldsNumber = ["createTs"];
+
   constructor(o) {
     if (!Monitorable.instances[o.uid]) {
       super(o)
       Monitorable.instances[o.uid] = this
-      log.info('Created new Tag:', this.getUniqueId())
+
+      if (f.isMain()) (async () => {
+        await sysManager.waitTillIptablesReady()
+        await this.createEnv();
+        await this.applyPolicy();
+      })().catch(err => {
+        log.error(`Error initializing Host ${this.o.mac}`, err);
+      })
+
+      log.info(`Created new ${this.getTagType()} Tag: ${this.getUniqueId()}`)
     }
     return Monitorable.instances[o.uid]
   }
@@ -72,7 +82,7 @@ class Tag extends Monitorable {
   }
 
   getMetaKey() {
-    return "tag:uid:" + this.getGUID()
+    return Constants.TAG_TYPE_MAP[this.getTagType()].redisKeyPrefix + this.getUniqueId()
   }
 
   _getPolicyKey() {
@@ -107,6 +117,7 @@ class Tag extends Monitorable {
   static async ensureCreateEnforcementEnv(uid) {
     if (envCreatedMap[uid])
       return;
+    log.verbose(`Creating env for Tag: ${uid}`)
     // create related ipsets
     await exec(`sudo ipset create -! ${Tag.getTagSetName(uid)} list:set`).catch((err) => {
       log.error(`Failed to create tag ipset ${Tag.getTagSetName(uid)}`, err.message);

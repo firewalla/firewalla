@@ -1,0 +1,32 @@
+{
+  "cpufreqs": {
+    "default": [
+      [ 0, 800000, 1800000, "powersave" ],
+      [ 1, 800000, 1800000, "powersave" ],
+      [ 2, 800000, 1800000, "powersave" ],
+      [ 3, 800000, 1800000, "powersave" ]
+    ],
+    "GenuineIntel:190": [
+      [ 0, 800000, 3600000, "powersave" ],
+      [ 1, 800000, 3600000, "powersave" ],
+      [ 2, 800000, 3600000, "powersave" ],
+      [ 3, 800000, 3600000, "powersave" ]
+    ]
+  },
+  "rps_cpus": [
+    [ "eth0", "rx-0", "3" ],
+    [ "eth0", "rx-1", "6" ],
+    [ "eth0", "rx-2", "c" ],
+    [ "eth0", "rx-3", "9" ],
+    [ "eth3", "rx-0", "3" ],
+    [ "eth3", "rx-1", "6" ],
+    [ "eth3", "rx-2", "c" ],
+    [ "eth3", "rx-3", "9" ]
+  ],
+  "nic_feature": [
+    [ "eth0", "rx-udp-gro-forwarding", "on"],
+    [ "eth1", "rx-udp-gro-forwarding", "on"],
+    [ "eth2", "rx-udp-gro-forwarding", "on"],
+    [ "eth3", "rx-udp-gro-forwarding", "on"]
+  ]
+}
