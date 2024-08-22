@@ -27,6 +27,11 @@ const flowTool = require('./FlowTool.js');
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const identityManager = require('../net2/IdentityManager.js');
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
+const sysManager = require('./SysManager.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+const Message = require('./Message.js');
 
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
 
@@ -251,24 +256,101 @@ class NetBotTool {
   }
 
   async prepareAppTimeUsage(json, options) {
-    const result = {};
     const begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     const end = options.end || (begin + 3600);
 
     const supportedApps = await TimeUsageTool.getSupportedApps();
+    const apps = _.intersection(_.has(options, "apps") && _.isArray(options.apps) ? options.apps : supportedApps, supportedApps);
     let uid = null;
-    if (options.mac)
+    let containerUid = null;
+    if (options.mac) {
       uid = options.mac;
-    else if (options.tag)
+      // only retrieve time usage stats of a device in a specific group/network
+      if (options.tag)
+        containerUid = `tag:${options.tag}`;
+      else if (options.intf)
+        containerUid = `intf:${options.intf}`;
+    } else if (options.tag)
       uid = `tag:${options.tag}`;
     else if (options.intf)
       uid = `intf:${options.intf}`;
     else
       uid = "global";
-    for (const app of supportedApps)
-      result[app] = await TimeUsageTool.getAppTimeUsageStats(uid, app, begin, end, options.granularity, options.mac ? true : false);
+    const {appTimeUsage, appTimeUsageTotal, categoryTimeUsage} = await TimeUsageTool.getAppTimeUsageStats(uid, containerUid, apps, begin, end, options.granularity, options.mac ? true : false);
 
-    json.appTimeUsage = result;
+    json.appTimeUsage = appTimeUsage;
+    json.appTimeUsageTotal = appTimeUsageTotal;
+    json.categoryTimeUsage = categoryTimeUsage;
+  }
+
+  async syncHostAppTimeUsageToTags(uid, options) {
+    const tags = [];
+    let hostInfo = hostManager.getHostFastByMAC(uid);
+    if (!hostInfo)
+      hostInfo = identityManager.getIdentityByGUID(uid);
+    if (!hostInfo) {
+      log.error(`Device with uid ${uid} is not found, cannot sync host app time usage to tags`);
+      return;
+    }
+    const transitiveTags = await hostInfo.getTransitiveTags();
+    for (const tagType of Object.keys(transitiveTags))
+      tags.push(...Object.keys(transitiveTags[tagType]));
+    if (_.isEmpty(tags))
+      return;
+    
+    const timezone = sysManager.getTimezone();
+    // default value of begin is start of today
+    let begin = (timezone ? moment().tz(timezone) : moment()).startOf("day").unix();
+    if (options.begin) // align to hour
+      begin = (timezone ? moment(options.begin * 1000).tz(timezone) : moment(options.begin * 1000)).startOf("hour").unix();
+    let end = (timezone ? moment().tz(timezone) : moment()).startOf("hour").unix() + 3600;
+    if (options.end) // align to next hour because end is excluded
+      end = (timezone ? moment(options.end * 1000).tz(timezone) : moment(options.end * 1000)).startOf("hour").unix() + 3600;
+    log.info(`Going to sync app time usage of ${uid} from ${begin} to ${end} into tags: `, tags);
+    const apps = await TimeUsageTool.getSupportedApps();
+    const stats = await TimeUsageTool.getAppTimeUsageStats(uid, null, apps, begin, end, null, true);
+    
+    await Promise.all(apps.map(async (app) => {
+      const uids = {};
+      const intervals = _.get(stats, ["appTimeUsage", app, "devices", uid, "intervals"]);
+      if (!_.isArray(intervals))
+        return;
+      await Promise.all(intervals.map(async (interval) => {
+        const {begin, end} = interval;
+        let hour = 0;
+        for (let t = begin; t <= end; t += 60) {
+          const h = Math.floor(t / 3600);
+          const minOfHour = Math.floor((t - h * 3600) / 60);
+          for (const tag of tags) {
+            if (h !== hour)
+              await TimeUsageTool.recordUIDAssociation(`tag:${tag}`, uid, h);
+            const assocUid = `${uid}@tag:${tag}`;
+            const oldVal = await TimeUsageTool.getBucketVal(assocUid, app, h, minOfHour);
+            // do not set and incr minute bucket value on tag and uid-tag association if the minute is already set, keep this function idempotent
+            if (isNaN(oldVal) || Number(oldVal) == 0) {
+              await TimeUsageTool.setBucketVal(assocUid, app, h, minOfHour, "1");
+              await TimeUsageTool.incrBucketVal(`tag:${tag}`, app, h, minOfHour);
+              uids[`tag:${tag}`] = 1;
+            }
+            const category = await TimeUsageTool.getAppCategory(app);
+            if (category) {
+              const categoryOldVal = await TimeUsageTool.getBucketVal(assocUid, category, h, minOfHour);
+              if (isNaN(categoryOldVal) || Number(categoryOldVal) == 0) {
+                await TimeUsageTool.setBucketVal(assocUid, category, h, minOfHour, "1");
+                await TimeUsageTool.incrBucketVal(`tag:${tag}`, category, h, minOfHour);
+                uids[`tag:${tag}`] = 1;
+              }
+            }
+          }
+          hour = h;
+        }
+      })).catch((err) => {
+        log.error(`Failed to sync intervals of app ${app} from ${uid}`, err.message);
+      });
+      sem.sendEventToFireMain({type: Message.MSG_APP_TIME_USAGE_BUCKET_INCR, app, uids: Object.keys(uids), suppressEventLogging: true});
+    })).catch((err) => {
+      log.error(`Failed to sync app time usage data from ${uid}`, err);
+    });
   }
 }
 

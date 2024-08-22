@@ -1,4 +1,4 @@
-/*    Copyright 2019-2023 Firewalla Inc.
+/*    Copyright 2019-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -40,16 +40,17 @@ let versionConfig = null
 let cloudConfig = null
 let userConfig = null
 let testConfig = null
+let mspConfig = null;
 let config = null;
 
 let dynamicFeatures = null
-let features = null
+let features = {}
+let firstFeaturesLoad = false
 
 let callbacks = {}
 
 
 const writeFileAsync = fs.promises.writeFile
-const readFileAsync = fs.promises.readFile
 
 const { rrWithErrHandling } = require('../util/requestWrapper.js')
 
@@ -134,11 +135,20 @@ async function getUserConfig(reload) {
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
     userConfig = {};
     await lock.acquire(LOCK_USER_CONFIG, async () => {
-      const content = await readFileAsync(userConfigFile, 'utf8')
-      userConfig = JSON.parse(content);
-    }).catch((err) => {
-      if (err.code !== 'ENOENT')
-        log.error("Failed to read user config", err);
+      // will throw error if not exist
+      await fs.promises.access(userConfigFile, fs.constants.F_OK | fs.constants.R_OK)
+      for (let i = 0; i !== 3; i++) try {
+        const data = await fs.promises.readFile(userConfigFile, 'utf8')
+        if (data) userConfig = JSON.parse(data)
+        break // break on empty file as well
+      } catch (err) {
+        log.error(`Error parsing user config, retry count ${i}`, err);
+        await delay(1000)
+      }
+    }).catch(err => {
+      // clear config if file not exist, while empty or invalid file doesn't
+      if (err.code !== 'ENOENT') log.error("Failed to read user config", err);
+      userConfig = {};
     });
     log.debug('userConfig reloaded')
   }
@@ -162,35 +172,13 @@ function getDefaultConfig() {
 }
 
 async function reloadConfig() {
-  const userConfigFile = f.getUserConfigFolder() + "/config.json";
-  await lock.acquire(LOCK_USER_CONFIG, async () => {
-    try {
-      // will throw error if not exist
-      await fs.promises.access(userConfigFile, fs.constants.F_OK | fs.constants.R_OK)
-      for (let i = 0; i !== 3; i++) {
-        try {
-          const data = await fs.promises.readFile(userConfigFile, 'utf8')
-          if (data) userConfig = JSON.parse(data)
-          break // break on empty file as well
-        } catch (err) {
-          log.error(`Error parsing user config, retry count ${i}`, err);
-          await delay(1000)
-        }
-      }
-    } catch(err) {
-      // clear config if file not exist, while empty or invalid file doesn't
-      userConfig = {};
-      log.info('userConfig:', err.message)
-    }
-  }).catch((err) => {
-    log.error("Failed to reload user config", err);
-  });
+  await getUserConfig(true)
 
   if (process.env.NODE_ENV === 'test') try {
     let testConfigFile = f.getUserConfigFolder() + "/config.test.json";
     // will throw error if not exist
     await fs.promises.access(testConfigFile, fs.constants.F_OK | fs.constants.R_OK)
-    testConfig = JSON.parse(await fs.promises.readFile(userConfigFile, 'utf8'))
+    testConfig = JSON.parse(await fs.promises.readFile(testConfigFile, 'utf8'))
     log.warn("Test config is being used", testConfig);
   } catch(err) {
     // clears config on any error
@@ -207,7 +195,7 @@ async function reloadConfig() {
     await pclient.publishAsync("config:updated", JSON.stringify(config))
 }
 
-function aggregateConfig(configArray = [defaultConfig, platformConfig, versionConfig, cloudConfig, userConfig, testConfig]) {
+function aggregateConfig(configArray = [defaultConfig, platformConfig, versionConfig, cloudConfig, userConfig, testConfig, mspConfig]) {
   const newConfig = {}
   // later in this array higher the priority
   const prioritized = configArray.filter(Boolean)
@@ -226,8 +214,14 @@ function aggregateConfig(configArray = [defaultConfig, platformConfig, versionCo
 
   // every property in profile got assigned individually, e.g. profiles.alarm.default.video
   for (const category in defaultConfig.profiles) {
+    // exclude default here so no one could change it
     const allProfileNames = _.flatten(prioritized.map(c => Object.keys(_.get(c, ['profiles', category], {}))))
-    if (allProfileNames.length) profiles[category] = {}
+      .filter(name => name != 'default')
+    if (allProfileNames.length) {
+      profiles[category] = {
+        default: defaultConfig.profiles[category].default
+      }
+    }
 
     for (const profile of allProfileNames) {
       const resultProfile = {}
@@ -248,6 +242,35 @@ function getConfig(reload = false) {
   return config
 }
 
+function _parseMspConfig(mspdata) {
+    let data = mspdata && mspdata.config;
+    if (!data) {
+      mspConfig = {};
+      return mspConfig;
+    }
+    if (!mspConfig && Object.keys(data)) {
+      mspConfig = {};
+    }
+    for (const k in data) {
+      try {
+        mspConfig[k] = JSON.parse(data[k]);
+      } catch (err) {
+        mspConfig[k] = data[k];
+      }
+    }
+}
+
+async function getMspConfig(field = '', reload = false) {
+  if (reload) {
+    const mspdata = JSON.parse(await rclient.getAsync('ext.guardian.data'));
+    _parseMspConfig(mspdata);
+  }
+  if (field) {
+    return mspConfig && mspConfig[field];
+  }
+  return mspConfig;
+}
+
 async function getCloudConfig(reload = false) {
   if (reload) await syncCloudConfig()
   return cloudConfig
@@ -259,7 +282,6 @@ function isFeatureOn(featureName, defaultValue = false) {
   else
     return defaultValue
 }
-
 
 async function syncDynamicFeatures() {
   let configs = await rclient.hgetallAsync(dynamicConfigKey);
@@ -283,20 +305,27 @@ async function syncCloudConfig() {
   }
 }
 
+async function syncMspConfig() {
+  getMspConfig('', true);
+  await reloadConfig()
+}
 
 async function enableDynamicFeature(featureName) {
+  log.info('Enabling feature:', featureName)
   await rclient.hsetAsync(dynamicConfigKey, featureName, '1');
   await pclient.publishAsync("config:feature:dynamic:enable", featureName)
   dynamicFeatures[featureName] = '1'
 }
 
 async function disableDynamicFeature(featureName) {
+  log.info('Disabling feature:', featureName)
   await rclient.hsetAsync(dynamicConfigKey, featureName, '0');
   await pclient.publishAsync("config:feature:dynamic:disable", featureName)
   dynamicFeatures[featureName] = '0'
 }
 
 async function clearDynamicFeature(featureName) {
+  log.info('Reset feature:', featureName)
   await rclient.hdelAsync(dynamicConfigKey, featureName);
   await pclient.publishAsync("config:feature:dynamic:clear", featureName)
   delete dynamicFeatures[featureName]
@@ -317,15 +346,9 @@ function reloadFeatures() {
     delete featuresNew[f]
   }
 
-  let firstLoad;
-  if (!features) {
-    firstLoad = true;
-    features = {};
-  } else {
-    firstLoad = false;
-  }
+  firstFeaturesLoad = false;
   for (const f in callbacks) {
-    if (firstLoad && featuresNew[f] !== undefined) {
+    if (firstFeaturesLoad && featuresNew[f] !== undefined) {
       features[f] = featuresNew[f];
       callbacks[f].forEach(c => {
         c(f, featuresNew[f])
@@ -356,6 +379,7 @@ sclient.subscribe("config:feature:dynamic:enable")
 sclient.subscribe("config:feature:dynamic:disable")
 sclient.subscribe("config:feature:dynamic:clear")
 sclient.subscribe("config:cloud:updated")
+sclient.subscribe("config:msp:updated")
 sclient.subscribe("config:user:updated")
 sclient.subscribe("config:version:updated")
 
@@ -385,6 +409,10 @@ sclient.on("message", (channel, message) => {
       cloudConfig = JSON.parse(message)
       reloadConfig()
       break
+    case "config:msp:updated":
+      _parseMspConfig(JSON.parse(message))
+      reloadConfig()
+      break
     case "config:user:updated":
       userConfig = JSON.parse(message)
       reloadConfig()
@@ -396,6 +424,7 @@ reloadConfig() // starts reading userConfig & testConfig as this module loads
 config = aggregateConfig() // non-async call, garantees getConfig() will be returned with something
 
 syncCloudConfig()
+syncMspConfig()
 
 if (f.isMain()) {
   initVersionConfig()
@@ -408,6 +437,7 @@ if (f.isMain()) {
 syncDynamicFeatures()
 setInterval(() => {
   syncDynamicFeatures()
+  syncMspConfig()
 }, 60 * 1000) // every minute
 
 function onFeature(feature, callback) {
@@ -473,6 +503,7 @@ module.exports = {
   getSimpleVersion: getSimpleVersion,
   isMajorVersion: isMajorVersion,
   getUserConfig,
+  getMspConfig,
   getTimingConfig: getTimingConfig,
   isFeatureOn: isFeatureOn,
   getFeatures,
@@ -480,7 +511,7 @@ module.exports = {
   enableDynamicFeature: enableDynamicFeature,
   disableDynamicFeature: disableDynamicFeature,
   clearDynamicFeature: clearDynamicFeature,
-  syncDynamicFeatures,
+  syncDynamicFeatures, syncMspConfig,
   onFeature: onFeature,
   removeUserNetworkConfig: removeUserNetworkConfig,
   ConfigError,

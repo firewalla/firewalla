@@ -10,7 +10,6 @@ var async = require('async');
 
 var watcherName = 'dataWatcher';
 
-
 var geodatadir;
 
 if (typeof global.geodatadir === 'undefined') {
@@ -30,7 +29,14 @@ var dataFiles = {
 var privateRange4 = [
     [utils.aton4('10.0.0.0'), utils.aton4('10.255.255.255')],
     [utils.aton4('172.16.0.0'), utils.aton4('172.31.255.255')],
-    [utils.aton4('192.168.0.0'), utils.aton4('192.168.255.255')]
+    [utils.aton4('192.168.0.0'), utils.aton4('192.168.255.255')],
+    [utils.aton4('169.254.0.0'), utils.aton4('169.254.255.255')],
+    [utils.aton4('127.0.0.0'), utils.aton4('127.255.255.255')],
+];
+
+var privateRange6 = [
+    [utils.aton6('fd00::'), utils.aton6('fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff')],
+    [utils.aton6('fe80::'), utils.aton6('febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff')],
 ];
 
 var conf4 = {
@@ -75,7 +81,7 @@ function lookup4(ip) {
     var i;
 
     var geodata = {
-        range: '',
+        range: [],
         country: '',
         region: '',
         eu: '',
@@ -137,6 +143,16 @@ function lookup4(ip) {
     } while (1);
 }
 
+function readip6(line, offset) {
+  const ip = [];
+
+  for (let ii = 0; ii < 4; ii++) {
+    ip.push(cache6.mainBuffer.readUInt32BE((line * cache6.recordSize) + (offset * 16) + (ii * 4)));
+  }
+
+  return ip;
+}
+
 function lookup6(ip) {
     var buffer = cache6.mainBuffer;
     var recordSize = cache6.recordSize;
@@ -144,25 +160,12 @@ function lookup6(ip) {
     var locRecordSize = cache4.locationRecordSize;
 
     var geodata = {
-        range: '',
+        range: [],
         country: '',
         region: '',
         city: '',
         ll: [0, 0]
     };
-    function readip(line, offset) {
-        var ii = 0;
-        var ip = [];
-
-        for (ii = 0; ii < 2; ii++) {
-            ip.push(buffer.readUInt32BE((line * recordSize) + (offset * 16) + (ii * 4)));
-        }
-
-        return ip;
-    }
-
-    cache6.lastIP = readip(cache6.lastLine, 1);
-    cache6.firstIP = readip(0, 0);
 
     var fline = 0;
     var floor = cache6.lastIP;
@@ -175,12 +178,20 @@ function lookup6(ip) {
         return null;
     }
 
+    for (let i = 0; i < privateRange6.length; i++) {
+      if (utils.cmp6(ip, privateRange6[i][0]) >= 0 && utils.cmp6(ip, privateRange6[i][1]) <= 0) {
+        return null;
+      }
+    }
+
     do {
         line = Math.round((cline - fline) / 2) + fline;
-        floor = readip(line, 0);
-        ceil = readip(line, 1);
+        floor = readip6(line, 0);
+        ceil = readip6(line, 1);
 
         if (utils.cmp6(floor, ip) <= 0 && utils.cmp6(ceil, ip) >= 0) {
+            geodata.range = [floor, ceil]
+
             if (recordSize === RECORD_SIZE6) {
                 geodata.country = buffer.toString('utf8', (line * recordSize) + 32, (line * recordSize) + 34).replace(/\u0000.*/, '');
             } else {
@@ -415,6 +426,8 @@ function preload6(callback) {
                     } else {
                         asyncCache6.lastLine = (datSize / asyncCache6.recordSize) - 1;
                         cache6 = asyncCache6;
+                        cache6.lastIP = readip6(cache6.lastLine, 1);
+                        cache6.firstIP = readip6(0, 0);
                     }
                     callback(err);
                 });
@@ -446,6 +459,8 @@ function preload6(callback) {
         fs.closeSync(datFile);
 
         cache6.lastLine = (datSize / cache6.recordSize) - 1;
+        cache6.lastIP = readip6(cache6.lastLine, 1);
+        cache6.firstIP = readip6(0, 0);
     }
 }
 
@@ -549,7 +564,3 @@ try {
 } catch (e) {
     console.log("preload geo data error", e)
 }
-
-
-//lookup4 = gen_lookup('geoip-country.dat', 4);
-//lookup6 = gen_lookup('geoip-country6.dat', 16);

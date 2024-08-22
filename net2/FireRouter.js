@@ -49,6 +49,7 @@ const Message = require('./Message.js');
 const Mode = require('./Mode.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const QoS = require('../control/QoS.js');
+const { rrWithErrHandling } = require('../util/requestWrapper.js')
 
 const util = require('util')
 const rp = util.promisify(require('request'))
@@ -62,42 +63,44 @@ const lock = new AsyncLock();
 const LOCK_INIT = "LOCK_INIT";
 
 // not exposing these methods/properties
-async function localGet(endpoint, retry = 10) {
+async function localGet(endpoint, retry = 5) {
   if (!platform.isFireRouterManaged())
     throw new Error('Forbidden')
 
-  while (retry > 0) {
-    try {
-      const options = {
-        method: "GET",
-        headers: {
-          "Accept": "application/json"
-        },
-        url: routerInterface + endpoint,
-        json: true
-      };
+  const response = await rrWithErrHandling({
+    uri: routerInterface + endpoint,
+    method: "GET",
+    maxAttempts: retry,   // (default) try 5 times
+    retryDelay: 1000,  // (default) wait for 1s before trying again
+    json: true,
+  })
 
-      const resp = await rp(options)
-      if (resp.statusCode !== 200) {
-        throw new Error(`Error getting ${endpoint}, code: ${resp.statusCode}`);
-      }
+  return response.body
+}
 
-      return resp.body
-    } catch (err) {
-      if (--retry > 0) {
-        log.warn(`${err.message}, try again in 2s...`)
-        await delay(2000);
-      } else {
-        log.error(`${err.message}, out of retries`)
-        throw err
-      }
-    }
-  }
+async function localSet(endpoint, body, retry = 5) {
+  if (!platform.isFireRouterManaged())
+    throw new Error('Forbidden')
+
+  const response = await rrWithErrHandling({
+    uri: routerInterface + endpoint,
+    method: "POST",
+    maxAttempts: retry,   // (default) try 5 times
+    retryDelay: 1000,  // (default) wait for 1s before trying again
+    json: body,
+  })
+
+  return response.body
 }
 
 async function getConfig() {
   return localGet("/config/active")
 }
+
+async function setConfig(config) {
+  return localSet("/config/set", config)
+}
+
 
 async function getWANInterfaces() {
   return localGet("/config/wans")
@@ -235,6 +238,7 @@ async function generateNetworkInfo() {
 
     const redisIntf = {
       name:         intfName,
+      desc:         intf.config.meta.name,
       uuid:         intf.config.meta.uuid,
       mac_address:  intf.state.mac,
       ip_address:   ip4 ? ip4.addressMinusSuffix : null,
@@ -785,10 +789,6 @@ class FireRouter {
     return this.ready
   }
 
-  isBroReady() {
-    return this.broReady
-  }
-
   async waitTillReady() {
     if (this.ready) return
 
@@ -1333,6 +1333,17 @@ class FireRouter {
 
     // intf doesn't matter for now in this api
     return localGet(`/config/wlan/${intf}/channels`, 1)
+  }
+
+  async removeStaticRoutes() {
+    log.debug('current routing', routerConfig.routing.global)
+    if (_.get(routerConfig, 'routing.global.static')) {
+      log.info('Removing static routes')
+      delete routerConfig.routing.global.static
+      delete routerConfig.routing.global.extra.staticRouteNotes
+      delete routerConfig.routing.global.extra.staticRouteCreateDates
+      await setConfig(routerConfig)
+    }
   }
 }
 

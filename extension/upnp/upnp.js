@@ -66,7 +66,7 @@ module.exports = class {
         this.upnpIntervalHandler = setInterval(
           async () => {
             log.info("UPnP periodical check starts")
-            if (registeredUpnpMappings.isEmpty) {
+            if (!registeredUpnpMappings.length) {
               log.info("No mapping registered.")
               return;
             }
@@ -75,7 +75,7 @@ module.exports = class {
               return null;
             });
             if (results) {
-              log.info("Current mappings: ", results);
+              results.forEach(r => r.enabled && log.info(r.protocol, r.public.host, r.public.port, r.private.host, r.private.port, ', ttl', r.ttl, r.description))
               registeredUpnpMappings.forEach((check) => {
                 log.info("Checking registered mapping:", check);
                 if (_.isEmpty(
