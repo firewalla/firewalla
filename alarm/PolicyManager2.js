@@ -942,6 +942,11 @@ class PolicyManager2 {
     await Promise.all(inboundBlockInternetRules.map((rule) => initialRuleJob(rule)));
     log.info(">>>>>==== All inbound blocking internet rules are enforced ====<<<<<", inboundBlockInternetRules.length);
 
+    sem.sendEventToFireMain({
+      type: Message.MSG_OSI_INBOUND_BLOCK_RULES_DONE,
+      message: ""
+    });
+
     // enforce inbound allow internet rules
     await Promise.all(inboundAllowInternetRules.map((rule) => initialRuleJob(rule)));
     log.info(">>>>>==== All inbound allow internet rules are enforced ====<<<<<", inboundAllowInternetRules.length);
