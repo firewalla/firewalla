@@ -36,6 +36,7 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onSet("guardianSocketioServer", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await this.getServer({alias: data.alias})})} catch(err) {};
       return this.setServer(data);
     });
 
@@ -44,10 +45,12 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onSet("guardian.business", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await this.getBusiness({alias: data.alias})})} catch(err) {};
       return this.setBusiness(data);
     });
 
     extensionManager.onSet("msp.data", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await this.getMspData({alias: data.alias})})} catch(err) {};
       return this.setMspData(data);
     });
 
@@ -72,6 +75,7 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onCmd("setAndStartGuardianService", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await this.getGuardianByAlias(data.alias)})} catch(err) {};
       return this.setAndStartGuardianService(data);
     });
 
