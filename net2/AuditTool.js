@@ -99,7 +99,7 @@ class AuditTool extends LogQuery {
 
     if (options.type == 'dnsFlow') {
       Object.assign(f, {
-        qType: entry.qt,
+        rrType: entry.qt,
         domain: entry.dn,
         answers: entry.as,
       })
