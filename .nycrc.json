@@ -2,6 +2,6 @@
     "reporter":["json-summary", "text-summary"],
     "extension": [".js"],
     "check-coverage": true,
-    "lines": 15,
-    "exclude":["**/vendor_lib/*", "**/tests/**"]
+    "lines": 20,
+    "exclude":["**/vendor_lib/*", "**/tests/*"]
 }
