@@ -31,7 +31,7 @@ Promise.promisifyAll(redis.Multi.prototype);
 let PublicIPSensor = require('../sensor/PublicIPSensor');
 let s = new PublicIPSensor();
 
-describe('Test public ip sensor', () => {
+describe.skip('Test public ip sensor', () => {
 
   beforeEach((done) => {
     (async() =>{

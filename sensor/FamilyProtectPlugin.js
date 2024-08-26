@@ -111,6 +111,7 @@ class FamilyProtectPlugin extends Sensor {
       });
 
       extensionManager.onSet(configName, async (msg, data) => {
+        try {await extensionManager._precedeRecord(msg.id, {origin: await this.getFamilyConfig()})} catch(err) {};
         if (data) {
           await this.setFamilyConfig(data)
           sem.sendEventToFireMain({

@@ -104,6 +104,8 @@ class SafeSearchPlugin extends Sensor {
 
   async apiRun() {
     extensionManager.onSet("safeSearchConfig", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await this.getSafeSearchConfig()})} catch(err) {};
+
       await rclient.setAsync(configKey, JSON.stringify(data));
       sem.sendEventToFireMain({
         type: 'SAFESEARCH_REFRESH'
@@ -115,6 +117,7 @@ class SafeSearchPlugin extends Sensor {
     });
 
     extensionManager.onCmd("safeSearchReset", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin:{ config: await this.getSafeSearchConfig(), enabled: fc.isFeatureOn(featureName)}})} catch(err) {};
       sem.sendEventToFireMain({
         type: 'SAFESEARCH_RESET'
       });

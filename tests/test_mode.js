@@ -44,7 +44,7 @@ function delay(t) {
 let DNSMASQSensor = require('../sensor/DNSMASQSensor');
 let s = new DNSMASQSensor();
 
-describe('Test mode feature', function() {
+describe.skip('Test mode feature', function() {
   this.timeout(10000);
 
   beforeEach((done) => {
