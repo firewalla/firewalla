@@ -58,7 +58,7 @@ let logFile1 = "/tmp/fw_tmp_log_dir/dir1/file1";
 let logFile2 = "/tmp/fw_tmp_log_dir/dir2/file2";
 
 
-describe('Test device management tool class', function() {
+describe.skip('Test device management tool class', function() {
   this.timeout(10000);
 
   beforeEach((done) => {

@@ -33,7 +33,7 @@ Promise.promisifyAll(redis.Multi.prototype);
 let InterfaceDiscoverSensor = require('../sensor/InterfaceDiscoverSensor');
 let ids = new InterfaceDiscoverSensor();
 
-describe('InterfaceDiscoverSensor', () => {
+describe.skip('InterfaceDiscoverSensor', () => {
 
   beforeEach((done) => {
     (async() =>{

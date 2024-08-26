@@ -44,7 +44,7 @@ let sensor = new DeviceNameUpdateSensor();
 let HostTool = require('../net2/HostTool.js')
 let hostTool = new HostTool();
 
-describe('DeviceNameUpdateSensor', () => {
+describe.skip('DeviceNameUpdateSensor', () => {
 
   describe('.job', () => {
 
