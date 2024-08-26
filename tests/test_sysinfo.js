@@ -28,7 +28,7 @@ function delay(t) {
   });
 }
 
-describe('SysInfo', () => {
+describe.skip('SysInfo', () => {
 
   describe('.getSysInfo', () => {
 

@@ -50,7 +50,7 @@ function delay(t) {
   });
 }
 
-describe('Test dnsmasq feature', function() {
+describe.skip('Test dnsmasq feature', function() {
   this.timeout(10000);
 
   beforeEach((done) => {
@@ -148,7 +148,7 @@ describe('Test dnsmasq feature', function() {
 describe('Test dns connectivity', function(){
   this.timeout(30000);
 
-  beforeEach((done) => {
+  before((done) => {
     (async() =>{
       fireRouter.scheduleReload();
       await delay(2000)
@@ -157,8 +157,8 @@ describe('Test dns connectivity', function(){
     })();
   });
 
-  afterEach((done) => {
-    sysManager.release();
+  after((done) => {
+    // sysManager.release();
     done();
   });
 

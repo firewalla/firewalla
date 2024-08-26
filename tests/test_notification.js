@@ -14,7 +14,7 @@
  */
 'use strict'
 
-describe('Test notification feature', () => {
+describe.skip('Test notification feature', () => {
   it('should be able to notify app when alarm is generated');
   it('should be able to block user activity when block button on alarm app page is tapped')
   it('should be able to allow user activity when allow button on alarm app page is tapped')

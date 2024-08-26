@@ -142,7 +142,7 @@ const fwapc = require('../net2/fwapc.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
-const { delay } = require('../util/util.js');
+const { delay, difference } = require('../util/util.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -194,6 +194,10 @@ class netBot extends ControllerBot {
   async _portforward(target, msg) {
     log.info("_portforward", msg);
     this.messageBus.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
+  }
+
+  async _precedeRecord(msgid, data) {
+    await extMgr._precedeRecord(msgid, data);
   }
 
   setupRateLimit() {
@@ -308,7 +312,7 @@ class netBot extends ControllerBot {
       const alarmData = {};
       const appUsedKeys = ["type", "timestamp", "p.device.name", "p.device.ip", "p.device.id", "p.dest.country", "p.device.lastSeen",
         "p.transfer.outbound.size", "p.transfer.inbound.size", // abnormal/large upload
-        "p.noticeType", "p.dest.name", "p.dest.ip", "p.device.real.ip", "p.vpnType", "p.device.mac", "p.tag.names", "p.utag.names", "p.dest.app",
+        "p.noticeType", "p.dest.name", "p.dest.ip", "p.device.real.ip", "p.vpnType", "p.device.mac", "p.tag.names", "p.utag.names", "p.dest.app", "p.dest.app.id",
         "p.dest.isLocal", "p.transfer.duration", "p.security.primaryReason", "p.local_is_client", "result_method", "result", "p.intf.desc",
         "p.active.wans", "p.iface.name", "p.wan.type", "p.ready", "p.wan.switched", // dual wan alarm
         "p.upnp.ttl", "p.upnp.description", "p.upnp.protocol", "p.upnp.public.port", "p.upnp.private.port", // upnp open port
@@ -653,7 +657,8 @@ class netBot extends ControllerBot {
         }
         if (!monitorable) throw new Error(`Unknow target ${target}`)
 
-        await monitorable.loadPolicyAsync();
+        const orig = await monitorable.loadPolicyAsync();
+        try{await this._precedeRecord(msg.id, {origin: orig, diff: difference(value, orig)})} catch(err){};
 
         for (const o of Object.keys(value)) {
           if (processorMap[o]) {
@@ -675,7 +680,6 @@ class netBot extends ControllerBot {
             if (o === config.policyKey && _.isArray(policyData))
               policyData = policyData.map(String);
           }
-
           await monitorable.setPolicyAsync(o, policyData);
         }
         this._scheduleRedisBackgroundSave();
@@ -2146,6 +2150,7 @@ class netBot extends ControllerBot {
         if (_.isArray(samePolicies) && samePolicies.filter(p => p.pid != pid).length > 0) {
           throw { code: 409, msg: "policy already exists", data: samePolicies[0] }
         } else {
+          await this._precedeRecord(msg.id, {origin: oldPolicy, diff: difference(policy, oldPolicy)});
           policy.updatedTime = Date.now() / 1000;
           await pm2.updatePolicyAsync(policy)
           const newPolicy = await pm2.getPolicy(pid)
@@ -2163,9 +2168,11 @@ class netBot extends ControllerBot {
         const policyIDs = value.policyIDs;
         if (policyIDs && _.isArray(policyIDs)) {
           let results = {};
+          let orig = [];
           for (const policyID of policyIDs) {
             let policy = await pm2.getPolicy(policyID);
             if (policy) {
+              orig.push(policy);
               await pm2.disableAndDeletePolicy(policyID)
               policy.deleted = true;
               results[policyID] = policy;
@@ -2173,10 +2180,12 @@ class netBot extends ControllerBot {
               results[policyID] = "invalid policy";
             }
           }
+          await this._precedeRecord(msg.id, {origin: orig});
           this._scheduleRedisBackgroundSave();
           return results
         } else {
           let policy = await pm2.getPolicy(value.policyID)
+          await this._precedeRecord(msg.id, {origin: policy});
           if (policy) {
             await pm2.disableAndDeletePolicy(value.policyID)
             policy.deleted = true // policy is marked ask deleted
@@ -2635,6 +2644,7 @@ class netBot extends ControllerBot {
       case "enableFeature": {
         const featureName = value.featureName;
         if (featureName) {
+          try{await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)})} catch(err){};
           await fc.enableDynamicFeature(featureName)
         }
         return
@@ -2642,6 +2652,7 @@ class netBot extends ControllerBot {
       case "disableFeature": {
         const featureName = value.featureName;
         if (featureName) {
+          try{await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)})} catch(err){};
           await fc.disableDynamicFeature(featureName)
         }
         return
@@ -2649,6 +2660,7 @@ class netBot extends ControllerBot {
       case "clearFeatureDynamicFlag": {
         const featureName = value.featureName;
         if (featureName) {
+          try{await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)})} catch(err){};
           await fc.clearDynamicFeature(featureName)
         }
         return

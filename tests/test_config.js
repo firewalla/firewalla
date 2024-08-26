@@ -27,7 +27,7 @@ const delay = require('../util/util.js').delay;
 describe('Test AlarmManager2', function(){
     this.timeout(30000);
   
-    beforeEach((done) => {
+    before((done) => {
       (async() => {
         this.config = await fc.getMspConfig('', true);
         log.debug('mspConfig', JSON.stringify(this.config));
@@ -35,7 +35,7 @@ describe('Test AlarmManager2', function(){
       })();
     });
   
-    afterEach((done) => {
+    after((done) => {
       done();
     });
 

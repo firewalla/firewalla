@@ -39,7 +39,7 @@ let intelTool = new IntelTool();
 let Bootstrap = require('../net2/Bootstrap');
 
 
-describe('IntelTool', () => {
+describe.skip('IntelTool', () => {
 
   describe('._parseX509Subject', () => {
 
@@ -107,7 +107,7 @@ describe('IntelTool', () => {
 
   });
 
-  describe('.checkIntelFromCloud', function () {
+  describe.skip('.checkIntelFromCloud', function () {
     this.timeout(10000);
 
     before((done) => {

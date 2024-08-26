@@ -291,6 +291,10 @@ describe('Test AlarmManager2', function(){
   it('should mute alarm', async() => {
     const alarm1 = am2._genAlarm({"type":"customized_security","device":"Unknown","p.description":"01:2B:40",
       "p.dest.name":"cnn.com","p.device.ip":"192.168.196.105","p.event.ts":1721353562.99956,"p.msp.type":"1"})
-    expect (am2.isMuteAlarm(alarm1)).to.be.true;
+    if (!fc.isFeatureOn("cyber_security")) {
+      expect (am2.isMuteAlarm(alarm1)).to.be.true;
+    } else {
+      expect (am2.isMuteAlarm(alarm1)).to.be.false;
+    }
   });
 });

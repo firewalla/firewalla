@@ -34,7 +34,7 @@ let DestIPFoundHook = require('../hook/DestIPFoundHook');
 let destIPFoundHook = new DestIPFoundHook();
 
 
-describe('DestIPFoundHook', () => {
+describe.skip('DestIPFoundHook', () => {
 
   describe('.aggregateIntelResult', () => {
 

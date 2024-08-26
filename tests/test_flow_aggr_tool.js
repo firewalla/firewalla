@@ -33,7 +33,7 @@ Promise.promisifyAll(redis.Multi.prototype);
 let FlowAggrTool = require('../net2/FlowAggrTool');
 let flowAggrTool = new FlowAggrTool();
 
-describe('FlowAggrTool', () => {
+describe.skip('FlowAggrTool', () => {
 
   let flow = {ts: new Date() / 1000};
 

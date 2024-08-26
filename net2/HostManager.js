@@ -334,7 +334,13 @@ module.exports = class HostManager extends Monitorable {
     }
     json.systemDebug = sysManager.isSystemDebugOn();
     json.version = sysManager.config.version;
-    json.longVersion = f.getLongVersion(json.version);
+    if (_.isNumber(json.version)) {
+      let exp = 0;
+      while (!Number.isInteger(json.version * Math.pow(10, exp)) && exp < 10)
+        exp++;
+      json.versionStr = sysManager.config.versionStr || json.version.toFixed(Math.max(exp, 3));
+    }
+    json.longVersion = f.getLongVersion(json.versionStr || json.version);
     json.lastCommitDate = f.getLastCommitDate()
     json.device = "Firewalla (beta)"
     json.publicIp = sysManager.publicIp;

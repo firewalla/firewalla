@@ -487,10 +487,13 @@ class Policy {
         }
 
       case "category":
-        if (alarm['p.dest.category']) {
+        if (alarm['p.dest.category'] && !this.matchAppId) {
           return alarm['p.dest.category'] === this.target;
         } else {
-          return false;
+          if (this.matchAppId && (alarm['p.dest.app.id'] || alarm['p.dest.app'])) {
+            return alarm['p.dest.app.id'] === this.matchAppId || alarm['p.dest.app'].toLowerCase() === this.matchAppId;
+          } else
+            return false;
         }
 
       case "devicePort":

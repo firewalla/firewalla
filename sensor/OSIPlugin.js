@@ -59,6 +59,7 @@ class OSIPlugin extends Sensor {
     })
 
     extensionManager.onSet("osiStop", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: {state: await this.isAdminStop()}})} catch(err) {};
       if(data.state === true) {
         await this.adminStopOn();
       } else {
@@ -93,6 +94,7 @@ class OSIPlugin extends Sensor {
 
     this.vpnClientDone = false;
     this.rulesDone = false;
+    this.inboundRulesDone = false;
     this.networkInitialized = false;
 
     this.knob1Lifted = false;
@@ -106,6 +108,16 @@ class OSIPlugin extends Sensor {
       // once this message is received, c_lan_set and monitored_net_set is fully populated, VPN client, PBR and intranet/internet rules can work properly
       await lock.acquire(LOCK_INIT_STATE, async () => {
         this.networkInitialized = true;
+        await this.checkInitState();
+      }).catch((err) => {
+        log.error(`Failed to process ${Message.MSG_OSI_NETWORK_PROFILE_INITIALIZED}`, err.message);
+      });
+    });
+
+    sem.once(Message.MSG_OSI_INBOUND_BLOCK_RULES_DONE, async () => {
+      // once this message is received, all inbound block rules are enforced
+      await lock.acquire(LOCK_INIT_STATE, async () => {
+        this.inboundRulesDone = true;
         await this.checkInitState();
       }).catch((err) => {
         log.error(`Failed to process ${Message.MSG_OSI_NETWORK_PROFILE_INITIALIZED}`, err.message);
@@ -282,6 +294,11 @@ class OSIPlugin extends Sensor {
   async checkInitState() {
     if (!this.networkInitialized)
       return;
+    if (this.inboundRulesDone) {
+      log.info("Flushing osi_wan_inbound_set & osi_wan_inbound_set6");
+      await exec("sudo ipset flush -! osi_wan_inbound_set").catch((err) => {});
+      await exec("sudo ipset flush -! osi_wan_inbound_set6").catch((err) => {});
+    }
     if (this.vpnClientDone) {
       if (!this.knob1Lifted) {
         log.info("Flushing osi_match_all_knob & osi_match_all_knob6");
