@@ -96,11 +96,11 @@ class ACLAuditLogPlugin extends Sensor {
   getDescriptor(r) {
     switch (r.type) {
       case 'dns':
-        return `dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}`
-      case 'ntp':
+        return `${r.ac}:dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}`
+      case 'ntp': // action always redirect
         return `ntp:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
       default:
-        return `${r.tls ? 'tls' : 'ip'}:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
+        return `${r.ac}:${r.tls ? 'tls' : 'ip'}:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
     }
   }
 
@@ -485,9 +485,7 @@ class ACLAuditLogPlugin extends Sensor {
       await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid, 600);
     }
 
-    if (record.ac === "block" || record.ac === 'redirect' || record.ac === "isolation") {
-      this.writeBuffer(mac, record);
-    }
+    this.writeBuffer(mac, record);
   }
 
   async _processDnsRecord(record) {
@@ -663,6 +661,9 @@ class ACLAuditLogPlugin extends Sensor {
             if (type == 'ip' || record.ac == 'block')
               this.ruleStatsPlugin.accountRule(record);
           }
+
+          if (type == 'ip' && record.ac != "block" && record.ac != 'redirect' && record.ac != "isolation")
+            continue
 
           let transitiveTags = {};
           if (!IdentityManager.isGUID(mac)) {
