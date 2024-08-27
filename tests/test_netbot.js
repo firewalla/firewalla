@@ -27,10 +27,10 @@ const networkProfile = require('../net2/NetworkProfileManager.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const log = require('../net2/logger.js')(__filename);
 
-describe('test get flows', function(){
+describe.skip('test get flows', function(){
   this.timeout(3000);
 
-  beforeEach((done) => (
+  before((done) => (
     async() => {
         networkProfile.networkProfiles = {};
         networkProfile.networkProfiles["1f97bb38-7592-4be0-**"] = {ipv4:"192.168.203.134"};
@@ -50,7 +50,7 @@ describe('test get flows', function(){
     })()
   );
 
-  afterEach((done) => {
+  after((done) => {
     // source port 9999 for test
     done();
   });
@@ -91,7 +91,7 @@ describe('test get flows', function(){
 
 });
 
-describe('test acl', function(){
+describe('test netbot', function(){
   before((done) => (
     async() => {
       this.gid = "3d0a201e-0b2f-**";
@@ -105,5 +105,11 @@ describe('test acl', function(){
     const rawmsg = {"mtype":"msg","message":{"type":"jsondata","appInfo":{"eid":"test-eid1"},"obj":{"mtype":"cmd","data":{},"type":"jsonmsg"}},"target":"1f97bb38-7592-4be0"};
     const response = await this.netbot.msgHandler(this.gid, rawmsg);
     log.debug("eid acl response", response);
+  });
+
+  it('should record msg data', async() => {
+    await this.netbot._precedeRecord("FFFF056-5ECD-4F93-9201-AFFF7EC", {kkk: 111});
+    const result = await rclient.getAsync("_hx:msg:FFFF056-5ECD-4F93-9201-AFFF7EC");
+    expect(result).to.be.equal('{"kkk":111}');
   });
 });

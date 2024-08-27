@@ -91,6 +91,7 @@ class DNSCryptPlugin extends Sensor {
 
   async apiRun() {
     extensionManager.onSet("dohConfig", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin:{servers: await dc.getServers()}})} catch(err) {};
       if (data && data.servers) {
         await dc.setServers(data.servers, false)
         sem.sendEventToFireMain({
@@ -100,6 +101,7 @@ class DNSCryptPlugin extends Sensor {
     });
 
     extensionManager.onSet("customizedDohServers", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin:{customizedServers: await dc.getCustomizedServers()}})} catch(err) {};
       if (data && data.servers) {
         await dc.setServers(data.servers, true);
       }
@@ -115,6 +117,10 @@ class DNSCryptPlugin extends Sensor {
     });
 
     extensionManager.onCmd("dohReset", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: {
+        servers: await dc.getServers(), customizedServers: await dc.getCustomizedServers(), allServers: await dc.getAllServerNames(),
+        enabled: fc.isFeatureOn(featureName)}})
+      } catch(err) {};
       sem.sendEventToFireMain({
         type: 'DOH_RESET'
       });
