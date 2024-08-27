@@ -3209,6 +3209,7 @@ class netBot extends ControllerBot {
             await em.deleteMacRelatedExceptions(hostMac);
             await am2.deleteMacRelatedAlarms(hostMac);
             await dnsmasq.deleteLeaseRecord(hostMac);
+            dnsmasq.scheduleRestartDHCPService();
 
             await categoryFlowTool.delAllTypes(hostMac);
             await flowAggrTool.removeAggrFlowsAll(hostMac);
