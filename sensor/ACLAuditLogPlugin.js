@@ -500,7 +500,10 @@ class ACLAuditLogPlugin extends Sensor {
 
     let intfUUID = null;
     const intf = sysManager.getInterfaceViaIP(record.sh);
-    intfUUID = intf && intf.uuid;
+    if (intf) {
+      intfUUID = intf.uuid;
+      if (record.sh == intf.ip_address) return
+    }
 
     let mac = record.mac;
     delete record.mac
@@ -509,6 +512,7 @@ class ACLAuditLogPlugin extends Sensor {
       if (record.sh)
         mac = await hostTool.getMacByIPWithCache(record.sh);
     }
+    if (sysManager.isMyMac(mac)) return
     // then try to get guid from IdentityManager, because it is more CPU intensive
     if (!mac) {
       const identity = IdentityManager.getIdentityByIP(record.sh);
