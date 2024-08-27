@@ -6,3 +6,5 @@
 /home/pi/.firewalla/run/assets/dhcp-discover.nse /all/dhcp-discover.nse 644
 /home/pi/.firewalla/run/assets/outlib.lua /all/outlib.lua 644 ':' 'SLNAME="/usr/share/nmap/nselib/outlib.lua"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/outlib.lua ${SLNAME}; fi'
 /home/pi/.firewalla/run/assets/nmap-mac-prefixes /all/nmap-mac-prefixes 644 ':' 'sudo cp -f /home/pi/.firewalla/run/assets/nmap-mac-prefixes /usr/share/nmap/nmap-mac-prefixes'
+/home/pi/.firewalla/run/scripts/post_initial_pairing.sh /all/post_initial_pairing.sh 644 'mkdir -p /home/pi/.firewalla/run/scripts'
+/home/pi/.firewalla/run/scripts/post_first_full_checkin.sh /all/post_first_full_checkin.sh 644 'mkdir -p /home/pi/.firewalla/run/scripts'

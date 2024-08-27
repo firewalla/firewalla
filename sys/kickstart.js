@@ -47,6 +47,7 @@ log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 log.forceInfo("FireKick Starting ");
 log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
+const Constants = require('../net2/Constants.js');
 const fireRouter = require('../net2/FireRouter.js')
 
 const fs = require('fs');
@@ -57,6 +58,7 @@ const program = require('commander');
 const storage = require('node-persist');
 const mathuuid = require('../lib/Math.uuid.js');
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const SysPatchSensor = require('../sensor/SysPatchSensor.js');
 const SSH = require('../extension/ssh/ssh.js');
 const ssh = new SSH('info');
 
@@ -162,6 +164,9 @@ storage.initSync({
 
   await eptcloud.loadKeys()
   await login()
+
+  await SysPatchSensor.cmdCallhome(Constants.SCRIPT_POST_INIT_PAIRING);
+
 })();
 
 function generateEncryptionKey(license) {

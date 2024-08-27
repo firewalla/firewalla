@@ -66,6 +66,9 @@ module.exports = {
   ST_IGNORE: 'ignore',
   ST_TIMEOUT: 'timeout',
 
+  SCRIPT_POST_INIT_PAIRING: "postInitPairing",
+  SCRIPT_POST_FIRST_CHECKIN: "postFirstCheckin",
+
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
 
   STATE_EVENT_NIC_SPEED: "nic_speed",

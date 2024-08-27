@@ -91,6 +91,8 @@ if [[ -d $PRE_MAIN_D ]]; then
   done
 fi
 
+timeout 90 $FIREWALLA_HOME/scripts/update_assets.sh "/run/scripts/.*\.sh" &>/dev/null
+
 logger "FIREWALLA:MAIN-RUN:MAIN-START"
 redis-cli del sys:upgrade >/dev/null
 redis-cli publish FIREWALLA:HEARTBEAT:UPDATE '{"invoked-by":"firewalla"}' >/dev/null

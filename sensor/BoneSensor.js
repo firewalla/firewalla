@@ -192,6 +192,10 @@ class BoneSensor extends Sensor {
         if (sysInfo.hostInfo.model) {
           rclient.setAsync("model", sysInfo.hostInfo.model); // no need to await, this info is used by other processes, e.g. firerouter
         }
+        // post checkin cloud
+        log.info("Full checked in, start to run post scripts");
+        const SysPatchSensor = require('./SysPatchSensor.js');
+        await SysPatchSensor.cmdCallhome(Constants.SCRIPT_POST_FIRST_CHECKIN);
       }
     } catch (e) {
       log.error("BoneCheckIn Error fetching hostInfo", e);
