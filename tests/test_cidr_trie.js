@@ -51,7 +51,7 @@ describe('CIDRTrie', () => {
 
   describe('IPv6 match', () => {
     it('return value if cidr matches', (done) => {
-      const trie = new CIDRTrie(4);
+      const trie = new CIDRTrie(6);
       trie.add("2000::/60", 100);
       const result = trie.find("2000::1");
       expect(result).to.equal(100);
@@ -67,7 +67,7 @@ describe('CIDRTrie', () => {
     });
 
     it('return value of longest matching cidr', (done) => {
-      const trie = new CIDRTrie(4);
+      const trie = new CIDRTrie(6);
       trie.add("2000::/60", 100);
       trie.add("2000:0:0:1::/64", 200);
       const result = trie.find("2000:0:0:1::1");

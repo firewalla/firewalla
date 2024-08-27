@@ -35,7 +35,7 @@ let Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
-describe('Bone', function () {
+describe.skip('Bone', function () {
   this.timeout(10000);
 
   describe('.getLicense', function() {

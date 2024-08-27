@@ -32,6 +32,7 @@ class PcapPlugin extends Sensor {
   async apiRun() {
     extensionManager.onCmd(`${this.getFeatureName()}:restart`, async (msg, data) => {
       const enabled = Config.isFeatureOn(this.getFeatureName());
+      try {await extensionManager._precedeRecord(msg.id, {origin: {enabled: enabled}})} catch(err) {};
       if (enabled) {
         await this.restart().catch((err) => {
           log.error(`Failed to restart ${this.getFeatureName()}`, err.message);

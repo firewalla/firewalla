@@ -119,6 +119,7 @@ const globalAllowHighKey = "redis_zset_match:global_allow_high";
 const AsyncLock = require('../../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_OPS = "LOCK_DNSMASQ_OPS";
+const LOCK_LEASE_FILE = "LOCK_DNSMASQ_LEASE";
 
 const extractPid = /[^\/]*policy_([0-9]+)[^\/]*.conf$/
 
@@ -1720,14 +1721,18 @@ module.exports = class DNSMASQ {
     )
 
     const lines = []
+    const reservedIPs = []
+    const previousIPs = []
 
     lines.push(mac + ',' + tags.map(t => 'set:'+t).join(','))
 
     if (p.dhcpIgnore === true) {
       lines.push(`${mac},ignore`);
       for (const ip of Object.keys(this.reservedIPHost)) {
-        if (this.reservedIPHost[ip] === host)
+        if (this.reservedIPHost[ip] === host) {
+          previousIPs.push(ip)
           delete this.reservedIPHost[ip];
+        }
       }
     } else for (const intf of sysManager.getMonitoringInterfaces()) {
       let reservedIp = null;
@@ -1749,14 +1754,17 @@ module.exports = class DNSMASQ {
       if (!reservedIp || !sysManager.inMySubnets4(reservedIp, intf.name)) {
         // no reserved IP on this network, remove ip host mapping in this.reservedIPHost
         for (const ip of Object.keys(this.reservedIPHost)) {
-          if (this.reservedIPHost[ip] === host && sysManager.inMySubnets4(ip, intf.name))
+          if (this.reservedIPHost[ip] === host && sysManager.inMySubnets4(ip, intf.name)) {
+            previousIPs.push(ip)
             delete this.reservedIPHost[ip];
+          }
         }
         continue
       }
 
       // app will take care of reserved IP conflict since 1.60. Box will no longer take care of reserved IP conflict
       this.reservedIPHost[reservedIp] = host;
+      reservedIPs.push(reservedIp)
       lines.push(`${mac},tag:${intf.name.endsWith(":0") ? intf.name.substring(0, intf.name.length - 2) : intf.name},${reservedIp}`)
     }
 
@@ -1774,6 +1782,10 @@ module.exports = class DNSMASQ {
     log.debug("HostsFile:", util.inspect(lines));
 
     await fsp.writeFile(HOSTFILE_PATH + mac, content);
+    // delete lesase entry in case other device occupies the IP, also deletes for itself but that's fine
+    // dnsmasq seems to be able to handle conflict if misconfigured, so we are good here
+    await this.deleteLeaseRecord(null, reservedIPs, true)
+    await this.deleteLeaseRecord(null, previousIPs)
     if (!this.counter.writeHostsFile[mac]) this.counter.writeHostsFile[mac] = 0
     log.info("Hosts file has been updated:", mac, ++this.counter.writeHostsFile[mac], 'times')
 
@@ -2236,14 +2248,25 @@ module.exports = class DNSMASQ {
     }
   }
 
-  async deleteLeaseRecord(mac) {
-    if (!mac)
+  // ip could be a string of single IP or an array of IPs
+  async deleteLeaseRecord(mac, ip, logInfo = false) {
+    if (!mac && (!ip || !ip.length))
       return;
     const leaseFile = platform.getDnsmasqLeaseFilePath();
-    await execAsync(`sudo sed -i -r '/^[0-9]+ ${mac.toLowerCase()} /d' ${leaseFile}`).catch((err) => {
-      log.error(`Failed to remove lease record of ${mac} from ${leaseFile}`, err.message);
-    });
-    this.scheduleRestartDHCPService();
+    const regex = `^[0-9]+ ${mac ? mac.toLowerCase() : '[0-9a-f:]{17}'} ${ip ? Array.isArray(ip) ? `(${ip.join('\|')})` : ip : ''}`
+    await lock.acquire(LOCK_LEASE_FILE, async () => {
+      // https://unix.stackexchange.com/questions/108335/printing-and-deleting-the-first-line-of-a-file-using-sed#comment1121396_442370
+      // delete and write to stdout at the same time
+      const result = await execAsync(`sudo sed -i -r -e '/${regex}/{w /dev/stdout' -e 'd}' ${leaseFile}`).catch(err => {
+        log.error(`Failed to remove lease record of ${mac} from ${leaseFile}`, err.message);
+      })
+      if (result.stdout.length) {
+        if (logInfo)
+          log.info('removed from lease file:', result.stdout.trim())
+        else
+          log.verbose('removed from lease file:', result.stdout.trim())
+      }
+    })
   }
 
   async getCounterInfo() {
@@ -2256,11 +2279,10 @@ module.exports = class DNSMASQ {
     const domain = addrPort[0];
     let waitSearch = [];
     const splited = domain.split(".");
-    for (const currentTxt of splited) {
+    for (let i = splited.length; i--; i > 0) {
       waitSearch.push(splited.join("."));
       splited.shift();
     }
-    waitSearch.push(splited.join("."));
     const hashedDomains = flowUtil.hashHost(target, { keepOriginal: true });
 
     const dirs = [FILTER_DIR, LOCAL_FILTER_DIR];
@@ -2378,10 +2400,15 @@ module.exports = class DNSMASQ {
     }
     // then extract dynamic IPs, and put them together with reserved IPs in stats
     const leaseFilePath = platform.getDnsmasqLeaseFilePath();
-    const lines = await fs.readFileAsync(leaseFilePath, {encoding: "utf8"}).then(content => content.trim().split('\n')).catch((err) => {
-      log.error(`Failed to read DHCP lease file ${leaseFilePath}`, err.message);
-      return []
-    });
+
+    const lines = await lock.acquire(LOCK_LEASE_FILE, async () => {
+      return fsp.readFile(leaseFilePath, {encoding: "utf8"})
+        .then(content => content.trim().split('\n'))
+        .catch((err) => {
+          log.error(`Failed to read DHCP lease file ${leaseFilePath}`, err.message);
+          return []
+        })
+    })
     for (const line of lines) {
       const phrases = line.split(' ');
       if (!_.isEmpty(phrases)) {
