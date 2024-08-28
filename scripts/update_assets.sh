@@ -34,8 +34,12 @@ cd $ASSETSD_PATH
 # use awk instead of cat to prevent bug when any file doesn't end with newline
 # if using cat, the file not ending with newline will be concatenated with the next file
 # so two lines becomes one line
-awk '{print $0}' * |
-while IFS= read -r line; do
+
+function check_asset() {
+  if [[ "$1" == "" ]];then
+    return
+  fi
+  line=$1
   line=$(eval 'for param in '$line'; do echo $param; done')
   IFS=$'\n' read -rd '' -a params <<< "$line"
   file_path=${params[0]}
@@ -49,16 +53,16 @@ while IFS= read -r line; do
   lock_file="$(dirname $file_path)/.$(basename $file_path).lock"
   if [[ -f $lock_file ]]; then
     echo "$file_path is locked, skip check update"
-    continue
+    return
   fi
   expected_hash=$(curl $hash_url -s)
   if [[ $? -ne 0 ]]; then
     echo "Failed to get hash of $file_path from $hash_url"
-    continue
+    return
   fi
   if [ ${#expected_hash} != 64 ]; then
     echo "Invalid hash from $hash_url"
-    continue
+    return
   fi
 
   # verify signature
@@ -67,13 +71,13 @@ while IFS= read -r line; do
     wget -qO "$signature_file" "$signature_url"
     if [ "$?" != 0 ]; then
       echo "No signature file found: $signature_url"
-      continue
+      return
     fi
     SIGNED_TEXT="$expected_hash,${s3_path}"
     echo -n "$SIGNED_TEXT" | openssl dgst -verify "$ASSETS_PUBLIC_KEY" -keyform PEM -sha256 -signature "$signature_file" > /dev/null
     if [ "$?" != 0 ]; then
       echo "Error signature: ${s3_path}"
-      continue
+      return
     fi
   fi
 
@@ -91,7 +95,7 @@ while IFS= read -r line; do
     verify_hash=$(sha256sum $temp_file | awk '{print $1}')
     if [[ "$verify_hash" != "$expected_hash" ]]; then
       echo "Incomplete file downloaded"
-      continue
+      return
     fi
 
     if [[ -n $exec_pre ]]; then
@@ -114,6 +118,27 @@ while IFS= read -r line; do
   if [[ -n $exec_post && $changed == "1" ]]; then
     eval "$exec_post"
   fi
+}
+
+if [[ "$1" != "" ]];then
+  egrep -h -e $1 * |
+  while IFS= read -r line; do
+    if [[ "$line" == "" ]];then
+      continue
+    fi
+    echo "checking" $line
+    check_asset "$line"
+  done
+  logger "FIREWALLA:UPDATE_ASSETS:DONE $1"
+  exit 0
+fi
+
+awk '{print $0}' * |
+while IFS= read -r line; do
+  if [[ "$line" == "" ]];then
+    continue
+  fi
+  check_asset "$line"
 done
 
 $FIREWALLA_HOME/scripts/patch_system.sh 2>&1 | tee -a /home/pi/.forever/patch_system.log
