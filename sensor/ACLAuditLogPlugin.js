@@ -96,7 +96,7 @@ class ACLAuditLogPlugin extends Sensor {
   getDescriptor(r) {
     switch (r.type) {
       case 'dns':
-        return `${r.ac}:dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}`
+        return `${r.ac}:dns:${r.sh}:${r.dn}`
       case 'ntp': // action always redirect
         return `ntp:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
       default:
@@ -492,6 +492,11 @@ class ACLAuditLogPlugin extends Sensor {
     record.type = 'dns'
     record.pr = 'dns'
 
+    if (!record.dn ||
+      record.ac == 'allow' &&
+        (record.dn.endsWith('.arpa') || sysManager.isLocalDomain(record.dn) || sysManager.isSearchDomain(record.dn))
+    ) return
+
     // in dnsmasq log, policy id of -1 means global domain or ip rules that we need to analyze further.
     if (record.pid === -1) {
       record.global = true;
@@ -600,7 +605,7 @@ class ACLAuditLogPlugin extends Sensor {
               record.qt = 28;
               break;
             case "dn":
-              record.dn = v;
+              record.dn = v.toLowerCase();
               break;
             case "lbl":
               if (v && v.startsWith("policy_") && !isNaN(v.substring(7))) {
