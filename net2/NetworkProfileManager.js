@@ -262,7 +262,7 @@ class NetworkProfileManager {
         await rclient.unlinkAsync(`network:uuid:${uuid}`);
         await sysManager.waitTillIptablesReady()
         log.info(`Destroying environment for network ${uuid} ${removedNetworkProfiles[uuid].o.intf} ...`);
-        await removedNetworkProfiles[uuid].destroyEnv();
+        await removedNetworkProfiles[uuid].destroyEnv({cleanup: true});
         await removedNetworkProfiles[uuid].destroy();
         await dnsmasq.writeAllocationOption(removedNetworkProfiles[uuid].o.intf, {})
       })()
