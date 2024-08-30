@@ -800,7 +800,7 @@
         }
       }
     },
-    "IsolationPlugin": {},
+    "APFeaturesPlugin": {},
     "APCMsgSensor": {},
     "NicCalibrationSensor": {},
     "NicStateSensor": {},

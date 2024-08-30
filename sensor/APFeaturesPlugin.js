@@ -25,14 +25,19 @@ const { Rule } = require('../net2/Iptables.js');
 const ipset = require('../net2/Ipset.js');
 const fwapc = require('../net2/fwapc.js');
 
-class IsolationSensor extends Sensor {
+class APFeaturesPlugin extends Sensor {
   async run() {
-    extensionManager.registerExtension(policyKeyName, this, {
-      applyPolicy: this.applyPolicy
-    });
+    const policyHandlers = {
+      "isolation": this.applyIsolation,
+      "ssidPSK": this.applySSIDPSK,
+    };
+    for (const key of Object.keys(policyHandlers))
+      extensionManager.registerExtension(key, this, {
+        applyPolicy: policyHandlers[key]
+      });
   }
 
-  async applyPolicy(obj, ip, policy) {
+  async applyIsolation(obj, ip, policy) {
     if (!obj instanceof Tag) {
       log.error(`${policyKeyName} is not supported on ${obj.constructor.name} object`);
       return;
@@ -82,6 +87,33 @@ class IsolationSensor extends Sensor {
 
     await fwapc.setGroup(tagUid, {config: {isolation: {internal: policy.internal || false, external: policy.external || false}}}).catch((err) => {});
   }
+
+  async applySSIDPSK(obj, ip, policy) {
+    if (!obj instanceof Tag) {
+      log.error(`${policyKeyName} is not supported on ${obj.constructor.name} object`);
+      return;
+    }
+    const tag = obj;
+    const tagUid = _.get(tag, ["o", "uid"]);
+    if (!tagUid) {
+      log.error(`uid is not found on Tag object`, obj);
+      return;
+    }
+    // filter non-existent profile uuid
+    
+    const psks = policy.psks;
+    if (_.isObject(psks)) {
+      const apcConfig = await fwapc.getConfig();
+      for (const uuid of Object.keys(psks)) {
+        if (!_.has(apcConfig, ["profile", uuid])) {
+          log.error(`${uuid} is not found in apc active config, ignore it`);
+          delete psks[uuid];
+        }
+      }
+    }
+    const ssidConfig = {vlan: policy.vlan, psks};
+    await fwapc.setGroup(tagUid, {config: {ssid: ssidConfig}}).catch((err) => {});
+  }
 }
 
-module.exports = IsolationSensor;
+module.exports = APFeaturesPlugin;
