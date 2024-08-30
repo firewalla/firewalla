@@ -373,4 +373,4 @@ exports.removeSampleIntelInfo = () => {
   })();
 }
 
-exports.sampleLicense = require('./sample_license.json');
+// exports.sampleLicense = require('./sample_license.json');

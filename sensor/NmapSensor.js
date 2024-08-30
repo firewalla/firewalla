@@ -185,6 +185,9 @@ class NmapSensor extends Sensor {
     // patch script for error "Failed to scan: Error: next_template: parse error (cpe delimiter not '/') on line 11594 of nmap-service-probes"
     exec(String.raw`sudo sed -i 's/cpe:|h:siemens:315-2pn\/dp|/cpe:\/h:siemens:315-2pn%2Fdp\//' /usr/share/nmap/nmap-service-probes`).catch(()=>{})
 
+    // uses the latest OUI DB if possible
+    exec(String.raw`sudo cp -f /home/pi/.firewalla/run/assets/nmap-mac-prefixes /usr/share/nmap/nmap-mac-prefixes`).catch(()=>{})
+
     this.scheduleReload();
     setInterval(() => {
       this.checkAndRunOnce(false);
@@ -226,8 +229,8 @@ class NmapSensor extends Sensor {
 
 
       const cmd = fastMode
-        ? `sudo timeout 1200s nmap -sn -PO1,6 ${intf.type === "wan" ? '--send-ip': ''} --host-timeout 30s  ${range} -oX - | ${xml2jsonBinary}` // protocol id 1, 6 corresponds to ICMP and TCP
-        : `sudo timeout 1200s nmap -sU --host-timeout 200s --script nbstat.nse -p 137 ${range} -oX - | ${xml2jsonBinary}`;
+        ? `sudo timeout 1200s nmap -sn -n -PO1,6 ${intf.type === "wan" ? '--send-ip': ''} --host-timeout 30s  ${range} -oX - | ${xml2jsonBinary}` // protocol id 1, 6 corresponds to ICMP and TCP
+        : `sudo timeout 1200s nmap -sU -n --host-timeout 200s --script nbstat.nse -p 137 ${range} -oX - | ${xml2jsonBinary}`;
 
       try {
         const hosts = await NmapSensor.scan(cmd)

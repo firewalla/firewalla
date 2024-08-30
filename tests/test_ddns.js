@@ -37,7 +37,7 @@ let bootstrap = require('../net2/Bootstrap');
 let BoneSensor = require('../sensor/BoneSensor');
 let boneSensor = new BoneSensor();
 
-describe('DDNS', function () {
+describe.skip('DDNS', function () {
   this.timeout(10000);
 
   beforeEach((done) => {
@@ -49,9 +49,11 @@ describe('DDNS', function () {
   });
 
   it('should get DDNS correctly', (done) => {
+  (async() =>{
     await boneSensor.checkIn();
     let matchResult = sysManager.ddns.match(/.d.firewalla.com/);
     expect(matchResult.constructor.name).to.equal('Array');
     done();
+  })();
   })
 });

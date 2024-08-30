@@ -529,7 +529,8 @@ class LogQuery {
     const enrich = 'enrich' in options ? options.enrich : true
     delete options.enrich
 
-    log.debug(this.constructor.name, 'getDeviceLogs', options.direction || (options.block ? 'block':'accept'), target, options.ts)
+    log.debug(this.constructor.name, 'getDeviceLogs',
+      options.direction || (options.block ? 'block': options.type || 'accept'), target, options.ts)
 
     let logObjects = results
       .map(str => {
