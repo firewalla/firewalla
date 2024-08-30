@@ -111,14 +111,15 @@ const Constants = require('../../net2/Constants.js');
 const VirtWanGroup = require("../../net2/VirtWanGroup.js");
 const VPNClient = require("../vpnclient/VPNClient.js");
 
-const globalBlockKey = "redis_match:global_block";
-const globalBlockHighKey = "redis_match:global_block_high";
-const globalAllowKey = "redis_match:global_allow";
-const globalAllowHighKey = "redis_match:global_allow_high";
+const globalBlockKey = "redis_zset_match:global_block";
+const globalBlockHighKey = "redis_zset_match:global_block_high";
+const globalAllowKey = "redis_zset_match:global_allow";
+const globalAllowHighKey = "redis_zset_match:global_allow_high";
 
 const AsyncLock = require('../../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_OPS = "LOCK_DNSMASQ_OPS";
+const LOCK_LEASE_FILE = "LOCK_DNSMASQ_LEASE";
 
 const extractPid = /[^\/]*policy_([0-9]+)[^\/]*.conf$/
 
@@ -260,12 +261,14 @@ module.exports = class DNSMASQ {
   scheduleRestartDNSService(ignoreFileCheck = false) {
     if (this.restartDNSTask)
       clearTimeout(this.restartDNSTask);
+    this.restartDNSIgnoreFileCheck = this.restartDNSIgnoreFileCheck || ignoreFileCheck
     this.restartDNSTask = setTimeout(async () => {
-      if (!ignoreFileCheck) {
+      if (!this.restartDNSIgnoreFileCheck) {
         const confChanged = await this.checkConfsChange();
         if (!confChanged)
           return;
       }
+      delete this.restartDNSIgnoreFileCheck
       await execAsync(`sudo systemctl stop ${SERVICE_NAME}`).catch((err) => { });
       this.counter.restart++;
       log.info(`Restarting ${SERVICE_NAME}`, this.counter.restart);
@@ -300,9 +303,13 @@ module.exports = class DNSMASQ {
       clearTimeout(this.restartDHCPTask);
     this.restartDHCPIgnoreFileCheck = this.restartDHCPIgnoreFileCheck || ignoreFileCheck
     this.restartDHCPTask = setTimeout(async () => {
-      const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH])
-      if (!this.restartDHCPIgnoreFileCheck && !confChanged)
-        return;
+      if (!this.restartDHCPIgnoreFileCheck) {
+        const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH])
+        if (!confChanged) {
+          return;
+        }
+      }
+      delete this.restartDHCPIgnoreFileCheck
       await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => { });
       this.counter.restartDHCP++;
       log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.restartDHCP);
@@ -825,7 +832,7 @@ module.exports = class DNSMASQ {
   async writeAllocationOption(tagName, policy, known = false) {
     let restartNeeded = false;
     await lock.acquire(LOCK_OPS, async () => {
-      log.info('Writting allocation file for', tagName)
+      log.verbose('Writting allocation file for tag', tagName)
       const filePath = `${DHCP_CONFIG_PATH}/${tagName}_ignore.conf`;
       if (policy.dhcpIgnore) {
         const tags = []
@@ -863,14 +870,14 @@ module.exports = class DNSMASQ {
   // only for dns block/allow for global scope
   async addGlobalPolicyFilterEntry(domain, options) {
     const redisKey = this.getGlobalRedisMatchKey(options);
-    await rclient.saddAsync(redisKey, !options.exactMatch && !domain.startsWith("*.") ? `*.${domain}` : domain);
+    await rclient.zaddAsync(redisKey, options.pid, !options.exactMatch && !domain.startsWith("*.") ? `*.${domain}` : domain);
   }
 
   // only for dns block/allow for global scope
   async removeGlobalPolicyFilterEntry(domains, options) {
     const redisKey = this.getGlobalRedisMatchKey(options);
     domains = domains.map(domain => !options.exactMatch && !domain.startsWith("*.") ? `*.${domain}` : domain);
-    await rclient.sremAsync(redisKey, domains);
+    await rclient.zremAsync(redisKey, domains);
   }
 
   async removePolicyCategoryFilterEntry(options) {
@@ -980,10 +987,10 @@ module.exports = class DNSMASQ {
     await fs.writeFileAsync(globalConf, [
       "mac-address-tag=%FF:FF:FF:FF:FF:FF$global_acl&-1",
       "mac-address-tag=%FF:FF:FF:FF:FF:FF$global_acl_high&-1",
-      `redis-match=/${globalBlockKey}/${BLACK_HOLE_IP}$global_acl`,
-      `redis-match-high=/${globalBlockHighKey}/${BLACK_HOLE_IP}$global_acl_high`,
-      `redis-match=/${globalAllowKey}/#$global_acl`,
-      `redis-match-high=/${globalAllowHighKey}/#$global_acl_high`
+      `redis-zset-match=/${globalBlockKey}/${BLACK_HOLE_IP}$global_acl`,
+      `redis-zset-match-high=/${globalBlockHighKey}/${BLACK_HOLE_IP}$global_acl_high`,
+      `redis-zset-match=/${globalAllowKey}/#$global_acl`,
+      `redis-zset-match-high=/${globalAllowHighKey}/#$global_acl_high`
     ].join("\n"));
     await rclient.unlinkAsync(globalBlockKey);
     await rclient.unlinkAsync(globalBlockHighKey);
@@ -1714,14 +1721,18 @@ module.exports = class DNSMASQ {
     )
 
     const lines = []
+    const reservedIPs = []
+    const previousIPs = []
 
     lines.push(mac + ',' + tags.map(t => 'set:'+t).join(','))
 
     if (p.dhcpIgnore === true) {
       lines.push(`${mac},ignore`);
       for (const ip of Object.keys(this.reservedIPHost)) {
-        if (this.reservedIPHost[ip] === host)
+        if (this.reservedIPHost[ip] === host) {
+          previousIPs.push(ip)
           delete this.reservedIPHost[ip];
+        }
       }
     } else for (const intf of sysManager.getMonitoringInterfaces()) {
       let reservedIp = null;
@@ -1743,14 +1754,17 @@ module.exports = class DNSMASQ {
       if (!reservedIp || !sysManager.inMySubnets4(reservedIp, intf.name)) {
         // no reserved IP on this network, remove ip host mapping in this.reservedIPHost
         for (const ip of Object.keys(this.reservedIPHost)) {
-          if (this.reservedIPHost[ip] === host && sysManager.inMySubnets4(ip, intf.name))
+          if (this.reservedIPHost[ip] === host && sysManager.inMySubnets4(ip, intf.name)) {
+            previousIPs.push(ip)
             delete this.reservedIPHost[ip];
+          }
         }
         continue
       }
 
       // app will take care of reserved IP conflict since 1.60. Box will no longer take care of reserved IP conflict
       this.reservedIPHost[reservedIp] = host;
+      reservedIPs.push(reservedIp)
       lines.push(`${mac},tag:${intf.name.endsWith(":0") ? intf.name.substring(0, intf.name.length - 2) : intf.name},${reservedIp}`)
     }
 
@@ -1768,6 +1782,10 @@ module.exports = class DNSMASQ {
     log.debug("HostsFile:", util.inspect(lines));
 
     await fsp.writeFile(HOSTFILE_PATH + mac, content);
+    // delete lesase entry in case other device occupies the IP, also deletes for itself but that's fine
+    // dnsmasq seems to be able to handle conflict if misconfigured, so we are good here
+    await this.deleteLeaseRecord(null, reservedIPs, true)
+    await this.deleteLeaseRecord(null, previousIPs)
     if (!this.counter.writeHostsFile[mac]) this.counter.writeHostsFile[mac] = 0
     log.info("Hosts file has been updated:", mac, ++this.counter.writeHostsFile[mac], 'times')
 
@@ -2210,7 +2228,7 @@ module.exports = class DNSMASQ {
     }, cooldown)
   }
 
-  async checkConfsChange(dnsmasqConfKey = "dnsmasq:conf", paths = [`${FILTER_DIR}*`, resolvFile, startScriptFile, configFile, HOSTFILE_PATH]) {
+  async checkConfsChange(dnsmasqConfKey = "dnsmasq:conf", paths = [`${FILTER_DIR}*`, resolvFile, startScriptFile, configFile]) {
     try {
       let md5sumNow = '';
       for (const confs of paths) {
@@ -2230,14 +2248,25 @@ module.exports = class DNSMASQ {
     }
   }
 
-  async deleteLeaseRecord(mac) {
-    if (!mac)
+  // ip could be a string of single IP or an array of IPs
+  async deleteLeaseRecord(mac, ip, logInfo = false) {
+    if (!mac && (!ip || !ip.length))
       return;
     const leaseFile = platform.getDnsmasqLeaseFilePath();
-    await execAsync(`sudo sed -i -r '/^[0-9]+ ${mac.toLowerCase()} /d' ${leaseFile}`).catch((err) => {
-      log.error(`Failed to remove lease record of ${mac} from ${leaseFile}`, err.message);
-    });
-    this.scheduleRestartDHCPService();
+    const regex = `^[0-9]+ ${mac ? mac.toLowerCase() : '[0-9a-f:]{17}'} ${ip ? Array.isArray(ip) ? `(${ip.join('\|')})` : ip : ''}`
+    await lock.acquire(LOCK_LEASE_FILE, async () => {
+      // https://unix.stackexchange.com/questions/108335/printing-and-deleting-the-first-line-of-a-file-using-sed#comment1121396_442370
+      // delete and write to stdout at the same time
+      const result = await execAsync(`sudo sed -i -r -e '/${regex}/{w /dev/stdout' -e 'd}' ${leaseFile}`).catch(err => {
+        log.error(`Failed to remove lease record of ${mac} from ${leaseFile}`, err.message);
+      })
+      if (result.stdout.length) {
+        if (logInfo)
+          log.info('removed from lease file:', result.stdout.trim())
+        else
+          log.verbose('removed from lease file:', result.stdout.trim())
+      }
+    })
   }
 
   async getCounterInfo() {
@@ -2250,11 +2279,10 @@ module.exports = class DNSMASQ {
     const domain = addrPort[0];
     let waitSearch = [];
     const splited = domain.split(".");
-    for (const currentTxt of splited) {
+    for (let i = splited.length; i--; i > 0) {
       waitSearch.push(splited.join("."));
       splited.shift();
     }
-    waitSearch.push(splited.join("."));
     const hashedDomains = flowUtil.hashHost(target, { keepOriginal: true });
 
     const dirs = [FILTER_DIR, LOCAL_FILTER_DIR];
@@ -2372,10 +2400,15 @@ module.exports = class DNSMASQ {
     }
     // then extract dynamic IPs, and put them together with reserved IPs in stats
     const leaseFilePath = platform.getDnsmasqLeaseFilePath();
-    const lines = await fs.readFileAsync(leaseFilePath, {encoding: "utf8"}).then(content => content.trim().split('\n')).catch((err) => {
-      log.error(`Failed to read DHCP lease file ${leaseFilePath}`, err.message);
-      return []
-    });
+
+    const lines = await lock.acquire(LOCK_LEASE_FILE, async () => {
+      return fsp.readFile(leaseFilePath, {encoding: "utf8"})
+        .then(content => content.trim().split('\n'))
+        .catch((err) => {
+          log.error(`Failed to read DHCP lease file ${leaseFilePath}`, err.message);
+          return []
+        })
+    })
     for (const line of lines) {
       const phrases = line.split(' ');
       if (!_.isEmpty(phrases)) {

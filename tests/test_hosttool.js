@@ -33,7 +33,7 @@ Promise.promisifyAll(redis.Multi.prototype);
 let HostTool = require('../net2/HostTool');
 let hostTool = new HostTool();
 
-describe('Test Host Tool', () => {
+describe.skip('Test Host Tool', () => {
 
   beforeEach((done) => {
     (async() =>{

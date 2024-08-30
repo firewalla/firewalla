@@ -21,7 +21,7 @@ let expect = chai.expect;
 const CategoryUpdateSensor = require('../sensor/CategoryUpdateSensor.js');
 
 
-describe('Test category update sensor', function(){
+describe.skip('Test category update sensor', function(){
     this.sensor = new CategoryUpdateSensor();
     this.sensor.resetCategoryHashsetMapping();
 

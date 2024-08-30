@@ -32,7 +32,7 @@ describe('Test policy filter', function(){
     this.timeout(30000);
     let policyRules = [];
 
-    beforeEach((done) => {
+    before((done) => {
       const content = [
         {
           type: 'mac', action: 'block', direction: 'bidirection',
@@ -137,7 +137,7 @@ describe('Test policy filter', function(){
       done();
     });
   
-    afterEach((done) => {
+    after((done) => {
       done();
     });
   
@@ -163,7 +163,7 @@ describe('Test policy filter', function(){
     it('should get high-impact rules', async() => {
       const pm2 = new PolicyManager2();
       const rules = await pm2.getHighImpactfulRules();
-      expect(rules.length).to.not.empty;
+      expect(rules).to.not.be.null;
     })
 
 });

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,7 +28,7 @@ const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const {Address4, Address6} = require('ip-address');
 const features = require('../net2/features.js')
-const conntrack = features.isOn('conntrack') ? require('../net2/Conntrack.js') : null;
+const conntrack = require('../net2/Conntrack.js')
 const uuid = require('uuid');
 
 class PcapZeekPlugin extends PcapPlugin {
@@ -139,13 +139,14 @@ class PcapZeekPlugin extends PcapPlugin {
     if (features.isOn("fast_speedtest") && conntrack) {
       restrictFilters["not-tcp-port-8080"] = `not (tcp and port 8080)`;
       conntrack.registerConnHook({dport: 8080, protocol: "tcp"}, (connInfo) => {
-        const {src, sport, dst, dport, protocol, origPackets, respPackets, origBytes, respBytes, duration} = connInfo;
+        const {src, replysrc, sport, replysport, dst, dport, protocol, origPackets, respPackets, origBytes, respBytes, duration} = connInfo;
+        const local_orig = Boolean(sysManager.getInterfaceViaIP(src));
         bro.processConnData(JSON.stringify(
           {
             "id.orig_h": src,
-            "id.resp_h": dst,
+            "id.resp_h": local_orig ? dst : replysrc, // use replysrc for DNATed connection
             "id.orig_p": sport,
-            "id.resp_p": dport,
+            "id.resp_p": local_orig ? dport : replysport,
             "proto": protocol,
             "orig_bytes": origBytes,
             "orig_pkts": origPackets,
@@ -154,8 +155,8 @@ class PcapZeekPlugin extends PcapPlugin {
             "orig_ip_bytes": origBytes + origPackets * 20,
             "resp_ip_bytes": respBytes + respPackets * 20,
             "missed_bytes": 0,
-            "local_orig": sysManager.getInterfaceViaIP(src) ? true : false,
-            "local_resp": sysManager.getInterfaceViaIP(dst) ? true : false,
+            "local_orig": local_orig,
+            "local_resp": local_orig ? Boolean(sysManager.getInterfaceViaIP(dst)) : Boolean(sysManager.getInterfaceViaIP(replysrc)),
             "conn_state": "SF",
             "duration": duration,
             "ts": Date.now() / 1000 - duration,

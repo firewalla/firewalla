@@ -35,9 +35,16 @@ const FEATURE_NAME = 'conntrack'
 class Conntrack {
   constructor() {
     this.config = features.getConfig(FEATURE_NAME)
-    if (!this.config.enabled || !platform.isAuditLogSupported()) return
+    if (!this.config.enabled || !platform.isAuditLogSupported()) {
+      log.warn(FEATURE_NAME, 'disabled!')
+      const stub = {}
+      for (const method of Object.getOwnPropertyNames(Conntrack.prototype))
+        stub[method] = () => {}
+      return stub
+    }
+
     if (!f.isMain())
-      return;
+      return this
 
     this.scheduledJob = {}
     this.connHooks = {};
@@ -87,8 +94,7 @@ class Conntrack {
     }
     // VPN clients
     const VPNClient = require('../extension/vpnclient/VPNClient.js');
-    const allProfiles = {};
-    await VPNClient.getVPNProfilesForInit(allProfiles);
+    const allProfiles = await VPNClient.getVPNProfilesForInit();
     for (const type of Object.keys(allProfiles)) {
       const profiles = allProfiles[type];
       for (const profile of profiles) {

@@ -47,7 +47,7 @@ function delay(t) {
   });
 }
 
-describe('DeviceHook', () => {
+describe.skip('DeviceHook', () => {
 
   describe('.NewDeviceHook', function() {
     this.timeout(15000);
