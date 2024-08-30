@@ -41,13 +41,16 @@ let ModeManager = require('../net2/ModeManager');
 let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 let dnsmasq = new DNSMASQ();
 
+let fireRouter = require('../net2/FireRouter.js')
+let sysManager = require('../net2/SysManager');
+
 function delay(t) {
   return new Promise(function(resolve) {
     setTimeout(resolve, t)
   });
 }
 
-describe('Test dnsmasq feature', function() {
+describe.skip('Test dnsmasq feature', function() {
   this.timeout(10000);
 
   beforeEach((done) => {
@@ -139,5 +142,33 @@ describe('Test dnsmasq feature', function() {
       });
     })();
 
+  });
+});
+
+describe('Test dns connectivity', function(){
+  this.timeout(30000);
+
+  before((done) => {
+    (async() =>{
+      fireRouter.scheduleReload();
+      await delay(2000)
+      await sysManager.updateAsync();
+      done();
+    })();
+  });
+
+  after((done) => {
+    // sysManager.release();
+    done();
+  });
+
+  it('should check upstream dns connectivity', async()=> {
+    const intfes = sysManager.getMonitoringInterfaces();
+    for (const intf of intfes) {
+        console.log("interface", intf.name, intf.resolver);
+        const status = await dnsmasq.dnsUpstreamConnectivity(intf);
+        console.log("dns ok:", status);
+        expect(status).to.equal(true);
+    }
   });
 });

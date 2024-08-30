@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc
+/*    Copyright 2021-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -170,7 +170,7 @@ class WireGuardPlugin extends Sensor {
     extensionManager.onGet("wireguard.getAllConfig", async () => {
       const policy = await hostManager.loadPolicyAsync();
       if (policy && policy[featureName])
-        wireguard.setConfig(JSON.parse(policy[featureName]));
+        wireguard.setConfig(policy[featureName]);
       const config = wireguard.getConfig();
       const configCopy = JSON.parse(JSON.stringify(config));
       delete configCopy.privateKey; // no need to keep private key
@@ -185,27 +185,25 @@ class WireGuardPlugin extends Sensor {
     extensionManager.onCmd("wireguard.createPeer", async (msg, data) => {
       const policy = await hostManager.loadPolicyAsync();
       if (policy && policy[featureName])
-        wireguard.setConfig(JSON.parse(policy[featureName]));
+        wireguard.setConfig(policy[featureName]);
       await wireguard.createPeer(data);
       const event = {
         type: Message.MSG_WG_PEER_REFRESHED,
         message: "Wireguard peers are refreshed"
       };
       sem.sendEventToAll(event);
-      sem.emitLocalEvent(event);
     });
 
     extensionManager.onCmd("wireguard.setPeers", async (msg, data) => {
       const policy = await hostManager.loadPolicyAsync();
       if (policy && policy[featureName])
-        wireguard.setConfig(JSON.parse(policy[featureName]));
+        wireguard.setConfig(policy[featureName]);
       await wireguard.setPeers(data.peerConfig || []);
       const event = {
         type: Message.MSG_WG_PEER_REFRESHED,
         message: "Wireguard peers are refreshed"
       };
       sem.sendEventToAll(event);
-      sem.emitLocalEvent(event);
     })
   }
 }

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,7 +32,8 @@ sclient.on("message", async (channel, message) => {
 });
 sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
 
-const moment = require('moment-timezone');
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 
 // Get current timestamp in seconds
 var getCurrentTime = function() {
@@ -40,12 +41,12 @@ var getCurrentTime = function() {
 };
 
 // Round timestamp to the 'precision' interval (in seconds)
-var getRoundedTime = function (precision, time, flag) {
+var getRoundedTime = function (precision, time, skipTzCheck) {
   time = time || getCurrentTime();
   let ts = Math.floor(time / precision) * precision;
   // if it is keyTimestamp, return ts directly
   // only 1day and 1month granularity need check timezone
-  if (flag || precision < oneDay) return ts;
+  if (skipTzCheck || precision < oneDay) return ts;
   let timeDate, tsDate;
   if (!timezone) {
     timeDate = moment(time * 1000).get('date');
@@ -66,7 +67,7 @@ var getRoundedTime = function (precision, time, flag) {
   }
 };
 
-// override getHits function
+// override recordHit function
 /**
  * Record a hit for the specified stats key
  * This method is chainable:
@@ -80,7 +81,7 @@ var getRoundedTime = function (precision, time, flag) {
  * `timestamp` should be in seconds, and defaults to current time.
  * `increment` should be an integer, and defaults to 1
  */
- TimeSeries.prototype.recordHit = function(key, timestamp, increment, callback) {
+TimeSeries.prototype.recordHit = function(key, timestamp, increment, callback=()=>{}) {
   var self = this;
 
   Object.keys(this.granularities).forEach(function(gran) {
@@ -90,23 +91,18 @@ var getRoundedTime = function (precision, time, flag) {
       hitTimestamp = getRoundedTime(properties.duration, timestamp);
 
     if (typeof self.redis.hincrbyAndExpireatBulk === "function") {
-      self.redis.hincrbyAndExpireatBulk(tmpKey, hitTimestamp, Math.floor(increment || 1), keyTimestamp + 2 * properties.ttl).catch((err) => {
-        if (callback)
-          callback(err);
-      });
+      self.redis.hincrbyAndExpireatBulk(tmpKey, hitTimestamp, Math.floor(increment || 1), keyTimestamp + 2 * properties.ttl, !self.noMulti)
+        .catch(err => callback(err))
+        .then(() => callback())
     } else {
       if (self.noMulti) {
         self.redis.hincrby(tmpKey, hitTimestamp, Math.floor(increment || 1), (err) => {
           if(err) {
-            if(callback) {
-              callback(err)
-            }
+            callback(err)
             return
           }
           self.redis.expireat(tmpKey, keyTimestamp + 2 * properties.ttl, (err2) => {
-            if(callback) {
-              callback(err2)
-            }
+            callback(err2)
           });
         });
       } else {
@@ -118,6 +114,28 @@ var getRoundedTime = function (precision, time, flag) {
 
   return this;
 };
+
+/**
+ * Execute the current pending redis multi
+ */
+TimeSeries.prototype.exec = function(callback = ()=>{}) {
+  if(this.noMulti) {
+    callback()
+    return
+  }
+
+  if (typeof this.redis.execBatch === "function") {
+    this.redis.execBatch().then(() => callback())
+    return
+  }
+  // Reset pendingMulti before proceeding to
+  // avoid concurrent modifications
+  var current = this.pendingMulti;
+  this.pendingMulti = this.redis.batch();
+  current.exec(callback);
+  current = null
+};
+
 
 // override getHits function
 TimeSeries.prototype.getHits = function(key, gran, count, callback) {
@@ -170,6 +188,7 @@ boneAPITimeSeries.granularities = {
   '1hour'    : { ttl: boneAPITimeSeries.days(7)   , duration: boneAPITimeSeries.hours(1) },
   '1day'     : { ttl: boneAPITimeSeries.days(30) , duration: boneAPITimeSeries.days(1) },
 }
+boneAPITimeSeries.noMulti = true
 
 // set flag
 const timeSeriesWithTzBeginingTs = "time_series_with_tz_ts";

@@ -29,6 +29,7 @@ function get_node_modules_url {
 }
 
 CURRENT_DIR=$(dirname $BASH_SOURCE)
+CGROUP_SOCK_MARK=${CURRENT_DIR}/files/cgroup_sock_mark
 FIRESTATUS_CONFIG=${CURRENT_DIR}/files/firestatus.yml
 FIRESTATUS_BIN=${CURRENT_DIR}/files/firestatus
 NEED_FIRESTATUS=true
@@ -99,22 +100,6 @@ rcvbuf 0
 EOS
   }
 
-}
-
-function installTLSModule {
-  uid=$(id -u pi)
-  gid=$(id -g pi)
-  if ! lsmod | grep -wq "xt_tls"; then
-    sudo insmod ${FW_PLATFORM_CUR_DIR}/files/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
-    sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/libxt_tls.so /usr/lib/aarch64-linux-gnu/xtables
-  fi
-}
-
-function installSchCakeModule {
-  if ! modinfo sch_cake > /dev/null || [[ $(sha256sum /lib/modules/$(uname -r)/kernel/net/sched/sch_cake.ko | awk '{print $1}') != $(sha256sum ${FW_PLATFORM_CUR_DIR}/files/sch_cake.ko | awk '{print $1}') ]]; then
-    sudo cp ${FW_PLATFORM_CUR_DIR}/files/sch_cake.ko /lib/modules/$(uname -r)/kernel/net/sched/
-    sudo depmod -a
-  fi
 }
 
 function led() {

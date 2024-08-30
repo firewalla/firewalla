@@ -9,7 +9,7 @@ MAX_NUM_OF_THREADS=20000
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab.gold
 REAL_PLATFORM='real.pse'
 MANAGED_BY_FIREBOOT=yes
-FW_PROBABILITY="0.99"
+FW_PROBABILITY="0.999"
 FW_QOS_PROBABILITY="0.999"
 ALOG_SUPPORTED=yes
 FW_SCHEDULE_BRO=false
@@ -24,19 +24,12 @@ function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
 }
 
-function heartbeatLED {
-  sudo sh -c 'echo heartbeat > /sys/class/leds/sys_led/trigger'
-}
-
-function turnOffLED {
-  sudo sh -c 'echo none > /sys/class/leds/sys_led/trigger'
-}
-
 function get_node_modules_url {
   echo "https://github.com/firewalla/fnm.node12.aarch64"
 }
 
 CURRENT_DIR=$(dirname $BASH_SOURCE)
+CGROUP_SOCK_MARK=${CURRENT_DIR}/files/cgroup_sock_mark
 FIRESTATUS_CONFIG=${CURRENT_DIR}/files/firestatus.yml
 FIRESTATUS_BIN=${CURRENT_DIR}/files/firestatus
 NEED_FIRESTATUS=true
@@ -66,7 +59,7 @@ function get_node_bin_path {
 }
 
 function get_zeek_log_dir {
-  echo "/blog/"
+  echo "/log/blog/"
 }
 
 function map_target_branch {
@@ -102,13 +95,4 @@ rcvbuf 0
 EOS
   }
 
-}
-
-function installTLSModule {
-  uid=$(id -u pi)
-  gid=$(id -g pi)
-  if ! lsmod | grep -wq "xt_tls"; then
-    sudo insmod ${FW_PLATFORM_CUR_DIR}/files/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
-    sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/libxt_tls.so /usr/lib/aarch64-linux-gnu/xtables
-  fi
 }

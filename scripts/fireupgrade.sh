@@ -93,7 +93,7 @@ LOGGER=logger
 ERR=logger
 [ -s $SCRIPTS_DIR/network_settings.sh ] && source $SCRIPTS_DIR/network_settings.sh || source $FIREWALLA_HOME/scripts/network_settings.sh
 
-if [[ $FIREWALLA_PLATFORM != "gold" ]] && [[ $FIREWALLA_PLATFORM != "purple" ]]; then
+if [[ $MANAGED_BY_FIREROUTER == "no" ]]; then
   await_ip_assigned || restore_values
 fi
 
@@ -169,6 +169,24 @@ function map_target_branch {
       ;;
     "pse:beta_7_0")
       echo "beta_15_0"
+      ;;
+    "gse:release_6_0")
+      echo "release_11_0"
+      ;;
+    "gse:beta_6_0")
+      echo "beta_16_0"
+      ;;
+    "gse:beta_7_0")
+      echo "beta_17_0"
+      ;;
+    "goldpro:release_6_0")
+      echo "release_12_0"
+      ;;
+    "goldpro:beta_6_0")
+      echo "beta_18_0"
+      ;;
+    "goldpro:beta_7_0")
+      echo "beta_19_0"
       ;;
     "*:master")
       echo "master"

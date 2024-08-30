@@ -23,7 +23,7 @@ function _isValid(target) {
 
 function _parseWhois(info) {
   if (!info) {
-    return;
+    return {};
   }
 
   const lines = info.split('\n');

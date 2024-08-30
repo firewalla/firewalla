@@ -1,3 +1,18 @@
+/*    Copyright 2016-2023 Firewalla Inc.
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 var StringCursor = require('./StringCursor');
 
 var HOSTNAME_IP_PATTERN = /\d+\.\d+\.\d+\.\d+/;
@@ -12,16 +27,13 @@ function getHostnameExpressions(hostname) {
     return [hostname];
   }
 
-  var baseExpression = hostname
-    .split(HOSTNAME_SEPARATOR)
-    .reverse()
-    .slice(0, MAX_HOSTNAME_SEGMENTS)
-    .reverse();
+  var segmentsArrary = hostname.split(HOSTNAME_SEPARATOR)
+  const sliceStart = (segmentsArrary.length > MAX_HOSTNAME_SEGMENTS) ? segmentsArrary.length - MAX_HOSTNAME_SEGMENTS : 0
+  var baseExpression = segmentsArrary.slice(sliceStart)
 
-  var numExpressions = Math.min(MAX_HOSTNAME_SEGMENTS, baseExpression.length) - 1;
-  var expressions = [hostname];
+  var expressions = (segmentsArrary.length == baseExpression.length) ? [] : [hostname];
 
-  for (var i = 0; i < numExpressions; i++) {
+  for (let i = 0; i < baseExpression.length - 1; i++) {
     expressions.push(baseExpression.slice(i).join('.'));
   }
 
@@ -55,7 +67,6 @@ function getLookupExpressions(canonicalized) {
   var hostname = cursor.chompUntil('/');
   var pathname = cursor.chompUntil('?');
   var search = cursor.chompRemaining();
-
 
   if (pathname || search) {
     // url

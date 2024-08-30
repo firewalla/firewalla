@@ -29,6 +29,8 @@ let MODE_MANUAL_SPOOF = "manualSpoof"
 let MODE_DHCP = "dhcp"
 let MODE_DHCP_SPOOF = "dhcpSpoof"
 let MODE_ROUTER = "router"
+const PlatformLoader = require('../platform/PlatformLoader.js')
+const platform = PlatformLoader.getPlatform()
 
 let DEFAULT_MODE = MODE_NONE
 
@@ -51,8 +53,11 @@ async function reloadSetupMode() {
     return mode;
   } else {
     // no mode set in redis, use default one
-    _setupMode = DEFAULT_MODE;
-    rclient.setAsync(REDIS_KEY_MODE, DEFAULT_MODE); // async no need to check return result, failure of this action is acceptable
+    let defaultMode = MODE_NONE;
+    if (platform.isFireRouterManaged()) {
+      defaultMode = MODE_ROUTER;
+    }
+    await rclient.setAsync(REDIS_KEY_MODE, defaultMode);
     return _setupMode;
   }
 }

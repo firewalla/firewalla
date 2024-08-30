@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -57,7 +57,6 @@ const program = require('commander');
 const storage = require('node-persist');
 const mathuuid = require('../lib/Math.uuid.js');
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const pclient = require('../util/redis_manager.js').getPublishClient()
 const SSH = require('../extension/ssh/ssh.js');
 const ssh = new SSH('info');
 
@@ -153,8 +152,9 @@ storage.initSync({
   await fireRouter.waitTillReady();
   await sysManager.waitTillInitialized();
   await rclient.delAsync("firekick:pairing:message");
+  await rclient.delAsync("firereset:local:payload:flag");
   if (!platform.isFireRouterManaged()) {
-    await interfaceDiscoverSensor.run()
+    interfaceDiscoverSensor.run()
   }
 
   // start a diagnostic page for people to access during first binding process
@@ -489,8 +489,8 @@ process.on('uncaughtException',(err)=>{
 });
 
 process.on('unhandledRejection', (reason, p)=>{
-  let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
-  log.warn('###### Unhandled Rejection',msg,reason.stack);
+  const msg = 'Unhandled Rejection: ' + reason;
+  log.error('###### Unhandled Rejection:', reason);
   if (msg.includes("Redis connection"))
     return;
   bone.logAsync("error", {

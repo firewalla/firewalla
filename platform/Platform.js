@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -38,9 +38,13 @@ class Platform {
       if (!dirExists)
         continue;
       const address = await fsp.readFile(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch(() => "");
-      const speed = await fsp.readFile(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
+      let speed = await fsp.readFile(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
       const carrier = await fsp.readFile(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
-      const duplex = await fsp.readFile(`/sys/class/net/${nic}/duplex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
+      let duplex = await fsp.readFile(`/sys/class/net/${nic}/duplex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
+      if (carrier == "0") {
+        duplex = "unknown";
+        speed = "-1";
+      }
       result[nic] = {address, speed, carrier, duplex};
     }
     return result;
@@ -51,7 +55,7 @@ class Platform {
     await exec(`ethtool ${iface} | tr -d '\\n' | sed -e 's/.*Supported link modes:\\(.*\\)Supported pause.*/\\1/' | xargs`).then((result) => {
       const modes = result.stdout.split(' ');
       for (const mode of modes) {
-        const speed = mode.split("base")[0];
+        const speed = Number(mode.split("base")[0]);
         if (speed > max)
           max = speed;
       }
@@ -256,10 +260,56 @@ class Platform {
     return [];
   }
 
-  async installTLSModule() {}
+  async installTLSModule() {
+    const installed = await this.isTLSModuleInstalled();
+    if (installed) return;
+    const codename = await exec(`lsb_release -cs`).then((result) => result.stdout.trim()).catch((err) => {
+      log.error("Failed to get codename of OS distribution", err.message);
+      return null;
+    });
+    if (!codename)
+      return;
+
+    const koPath = `${await this.getKernelModulesPath()}/xt_tls.ko`;
+    const koExists = await fsp.access(koPath, fs.constants.F_OK).then(() => true).catch((err) => false);
+    if (koExists)
+      await exec(`sudo insmod ${koPath} max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`).catch((err) => {
+        log.error(`Failed to install tls.ko`, err.message);
+      });
+
+    const soPath = `${await this.getSharedObjectsPath()}/libxt_tls.so`;
+    const soExists = await fsp.access(soPath, fs.constants.F_OK).then(() => true).catch((err) => false);
+    if (soExists)
+      await exec(`sudo install -D -v -m 644 ${soPath} /usr/lib/$(uname -m)-linux-gnu/xtables`).catch((err) => {
+        log.error(`Failed to install libxt_tls.so`, err.message);
+      });
+  }
+
+  async isTLSModuleInstalled() {
+    if (this.tlsInstalled) return true;
+    const cmdResult = await exec(`lsmod | grep xt_tls | awk '{print $1}'`);
+    const results = cmdResult.stdout.toString().trim().split('\n');
+    for (const result of results) {
+      if (result == 'xt_tls') {
+        this.tlsInstalled = true;
+        break;
+      }
+    }
+    return this.tlsInstalled;
+  }
 
   isTLSBlockSupport() {
     return false;
+  }
+
+  async getKernelModulesPath() {
+    const kernelRelease = await exec("uname -r").then(result => result.stdout.trim());
+    return `${this.getPlatformFilesPath()}/kernel_modules/${kernelRelease}`;
+  }
+
+  async getSharedObjectsPath() {
+    const codename = await exec(`lsb_release -cs`).then((result) => result.stdout.trim());
+    return `${this.__dirname}/files/shared_objects/${codename}`;
   }
 
   getDnsmasqBinaryPath() {
@@ -366,7 +416,19 @@ class Platform {
   }
 
   async reloadActMirredKernelModule() {
-    // do nothing by default
+    const koPath = `${await this.getKernelModulesPath()}/act_mirred.ko`;
+    const koExists = await fsp.access(koPath, fs.constants.F_OK).then(() => true).catch(() => false);
+    if (koExists) {
+      log.info("Reloading act_mirred.ko...");
+      try {
+        const loaded = await exec(`sudo lsmod | grep act_mirred`).then(() => true).catch(() => false);
+        if (loaded)
+          await exec(`sudo rmmod act_mirred`);
+        await exec(`sudo insmod ${koPath}`);
+      } catch (err) {
+        log.error("Failed to reload act_mirred.ko", err.message);
+      }
+    }
   }
 
   isNicCalibrationApplicable() {
@@ -393,6 +455,12 @@ class Platform {
     const result = await exec('cat /etc/firewalla_release | grep HASH | cut -d: -f2 | xargs echo -n')
     return result.stdout
   }
+
+  supportOSI() {
+    return true;
+  }
+
+  isDNSFlowSupported() { return false }
 }
 
 module.exports = Platform;

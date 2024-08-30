@@ -33,6 +33,14 @@ exports.ping6= function(ipv6addr,cb) {
   });
 };
 
+exports.ping4 = function(ipv4Addr, cb) {
+  const cmd = `ping -c 1 -W 1 ${ipv4Addr}`;
+  require('child_process').exec(cmd, (err) => {
+    if (cb)
+      cb(err);
+  });
+}
+
 function trim_exec_sync(cmd) {
   let r;
   try {

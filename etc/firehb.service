@@ -3,6 +3,7 @@ Description=Firewalla HB
 After=network.target
 
 [Service]
+User=pi
 Restart=always
 WorkingDirectory=/home/pi/firewalla/
 ExecStart=/home/pi/firewalla/scripts/firehb.sh

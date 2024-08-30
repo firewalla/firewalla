@@ -26,7 +26,6 @@ const {Address4, Address6} = require('ip-address');
 const _ = require('lodash');
 
 class WGVPNClient extends VPNClient {
-
   static convertPlainTextToJson(content) {
     let addresses = [];
     let dns = []
@@ -136,6 +135,9 @@ class WGVPNClient extends VPNClient {
     entries.push(`[Interface]`);
     const privateKey = config.privateKey;
     entries.push(`PrivateKey = ${privateKey}`);
+    const fwmark = this.getFwMark();
+    if (fwmark)
+      entries.push(`FwMark = ${fwmark}`);
     const peers = config.peers || [];
     for (const peer of peers) {
       entries.push(`[Peer]`);
@@ -193,6 +195,7 @@ class WGVPNClient extends VPNClient {
     await exec(`sudo wg setconf ${intf} ${this._getConfigPath()}`).catch((err) => {
       log.error(`Failed to set interface config ${this._getConfigPath()} on ${intf}`, err.message);
     });
+    await exec(`sudo bash -c 'echo f > /sys/class/net/${intf}/queues/rx-0/rps_cpus'`).catch((err) => {});
     let config = null;
     try {
       config = await this.loadJSONConfig();
@@ -270,6 +273,54 @@ class WGVPNClient extends VPNClient {
 
   static getConfigDirectory() {
     return `${f.getHiddenFolder()}/run/wg_profile`;
+  }
+
+  async getRemoteEndpoints() {
+    const results = await exec(`sudo wg show ${this.getInterfaceName()} endpoints | awk '{print $2}' | grep -v none`).then(result => result.stdout.trim().split('\n')).catch((err) => []);
+    const endpoints = [];
+    for (const result of results) {
+      if (result.startsWith("[") && result.includes("]:")) {
+        const ip = result.substring(1, result.indexOf("]:"));
+        const port = result.substring(result.indexOf("]:") + 2);
+        endpoints.push({ip, port});
+      } else {
+        const [ip, port] = result.split(':', 2);
+        endpoints.push({ip, port});
+      }
+    }
+    return endpoints;
+  }
+
+  // return at most last N_SESS sessions
+  async getLatestSessionLog() {
+    const N_SESS = 3; // retrieve last 3 sessions
+
+    // TODO: make VPNClient.logDir configurable, NEVER defined here
+    const logPath = `${this.logDir || "/var/log/wg"}/vpn_${this.profileId}.log`;
+    const content = await exec(`sudo tail -n 100 ${logPath}`).then(result => result.stdout.trim()).catch((err) => null);
+    if (content) {
+      return WGVPNClient._getLastNSession(content, "Interface created", N_SESS);
+    }
+    return null;
+  }
+
+  static _getLastNSession(content, pattern, count) {
+    const lines = content.split('\n');
+    let beginIdx = -1;
+    let hit = 0;
+    for (let i=lines.length-1; i >= 0 && hit < count;  i--){
+      if (lines[i].includes(pattern)) {
+        hit++
+        beginIdx = i;
+      }
+    }
+    if (beginIdx >= 0) {
+      return lines.slice(beginIdx).join("\n");
+    }
+
+    // no pattern found, return last 30 lines of log
+    // maybe pattern line failed to sync at startup.
+    return lines.slice(Math.max(lines.length-30, 0)).join("\n");
   }
 }
 

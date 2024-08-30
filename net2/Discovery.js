@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -93,7 +93,6 @@ module.exports = class {
 
   async discoverMac(mac) {
     const list = sysManager.getMonitoringInterfaces();
-    log.info("Discovery::DiscoverMAC", list);
     let found = null;
     for (const intf of list) {
       if (intf == null) {
@@ -241,7 +240,7 @@ module.exports = class {
         "type": "wan"
       }
       */
-      if (intf.conn_type == "Wired" && !intf.name.endsWith(':0')) {
+      if (intf.conn_type == "Wired" && !intf.name.endsWith(':0') && intf.mac_address) {
         sem.emitEvent({
           type: "DeviceUpdate",
           message: "Firewalla self discovery",

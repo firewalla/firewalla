@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,16 +27,15 @@ const platform = pl.getPlatform();
 const fHome = firewalla.getFirewallaHome();
 const ip = require('ip');
 const mode = require('../net2/Mode.js');
-const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const fireRouter = require('../net2/FireRouter.js')
 const _ = require('lodash');
 
 const fs = require('fs');
+const fsp = fs.promises
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const util = require('util');
-const Promise = require('bluebird');
 const execAsync = util.promisify(cp.exec);
 const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
@@ -44,6 +43,7 @@ const readdirAsync = util.promisify(fs.readdir);
 const statAsync = util.promisify(fs.stat);
 const {Address4} = require('ip-address');
 const {BigInteger} = require('jsbn');
+const {fileExist} = require('../util/util.js');
 
 const pclient = require('../util/redis_manager.js').getPublishClient();
 
@@ -363,6 +363,9 @@ class VpnManager {
     if (mydns == null || mydns === "127.0.0.1") {
       mydns = "8.8.8.8"; // use google DNS as default
     }
+    if (this.mydns !== mydns)
+      this.needRestart = true;
+    this.mydns = mydns;
     const confGenLockFile = "/dev/shm/vpn_confgen_lock_file";
     // sysManager.myIp() is not used in the below command
     const cmd = `cd ${fHome}/vpn; flock -n ${confGenLockFile} -c 'ENCRYPT=${platform.getDHKeySize()} sudo -E ./confgen.sh ${this.instanceName} ${this.listenIp} ${mydns} ${this.serverNetwork} ${this.netmask} ${this.localPort} ${this.protocol}'; sync`
@@ -672,8 +675,10 @@ class VpnManager {
     settings = settings || {};
     const configRC = [];
     const configCCD = [];
+    /* comp-lzo is deprecated
     configCCD.push("comp-lzo no"); // disable compression in client-config-dir
     configCCD.push("push \"comp-lzo no\"");
+    */
     const clientSubnets = [];
     for (let key in settings) {
       const value = settings[key];
@@ -744,26 +749,23 @@ class VpnManager {
 
   static async getAllSettings() {
     const settingsDirectory = `${process.env.HOME}/ovpns`;
-    await execAsync(`mkdir -p ${settingsDirectory}`);
     const allSettings = {};
     const filenames = await readdirAsync(settingsDirectory, 'utf8');
-    for (let filename of filenames) {
+    await Promise.all(filenames.map(async (filename) => {
       const fileEntry = await statAsync(`${settingsDirectory}/${filename}`);
       if (fileEntry.isDirectory()) {
         // directory contains .json and .rc file
         const settingsFilePath = `${VpnManager.getSettingsDirectoryPath(filename)}/${filename}.json`;
-        if (fs.existsSync(settingsFilePath)) {
-          const settings = await readFileAsync(settingsFilePath, 'utf8').then((content) => {
-            return JSON.parse(content)
-          }).catch((err) => {
-            log.error("Failed to read settings from " + settingsFilePath, err);
-            return null;
-          });
-          if (settings)
-            allSettings[filename] = settings;
-        }
+        const settings = await readFileAsync(settingsFilePath, 'utf8').then((content) => {
+          return JSON.parse(content)
+        }).catch((err) => {
+          log.error("Failed to read settings from " + settingsFilePath, err);
+          return null;
+        });
+        if (settings)
+          allSettings[filename] = settings;
       }
-    }
+    }));
     return allSettings;
   }
 
@@ -781,10 +783,9 @@ class VpnManager {
       cn: commonName
     };
     sem.sendEventToAll(event);
-    sem.emitLocalEvent(event);
   }
 
-  static getOvpnFile(commonName, password, regenerate, externalPort, protocol = null, ddnsEnabled, callback) {
+  static async getOvpnFile(commonName, password, regenerate, externalPort, protocol = null, ddnsEnabled) {
     let ovpn_file = util.format("%s/ovpns/%s.ovpn", process.env.HOME, commonName);
     let ovpn_password = util.format("%s/ovpns/%s.ovpn.password", process.env.HOME, commonName);
     protocol = protocol || platform.getVPNServerDefaultProtocol();
@@ -796,47 +797,35 @@ class VpnManager {
 
     log.info("Reading ovpn file", ovpn_file, ovpn_password, regenerate);
 
-    fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
-      if (ovpn != null && regenerate == false) {
-        let password = fs.readFileSync(ovpn_password, 'utf8').trim();
-        log.info("VPNManager:Found older ovpn file: " + ovpn_file);
-        let profile = ovpn.replace(/remote\s+[\S]+\s+\d+/g, `remote ${ip} ${externalPort}`);
-        profile = profile.replace(/proto\s+\w+/g, `proto ${protocol}`);
-        (async () => {
-          const timestamp = await VpnManager.getVpnConfigureTimestamp(commonName);
-          callback(null, profile, password, timestamp);
-        })();
-        return;
-      }
+    const ovpn = await fsp.readFile(ovpn_file, 'utf8').catch(() => null)
+    if (ovpn != null && regenerate == false) {
+      let password = (await fsp.readFile(ovpn_password, 'utf8').catch(()=> "")).trim();
+      log.info("VPNManager:Found older ovpn file: " + ovpn_file);
+      let profile = ovpn.replace(/remote\s+[\S]+\s+\d+/g, `remote ${ip} ${externalPort}`);
+      profile = profile.replace(/proto\s+\w+/g, `proto ${protocol}`);
+      const timestamp = await VpnManager.getVpnConfigureTimestamp(commonName);
+      return { ovpnfile: profile, password, timestamp }
+    }
 
-      if (password == null) {
-        password = VpnManager.generatePassword(5);
-      }
+    if (password == null) {
+      password = VpnManager.generatePassword(5);
+    }
 
-      const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
+    const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
 
-      let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s %s'; sync",
-        fHome, vpnLockFile, commonName, password, ip, externalPort, protocol);
-      exec(cmd, (err, stdout, stderr) => {
-        if (err) {
-          log.error("VPNManager:GEN:Error", "Unable to ovpngen.sh", err);
-        }
-        const event = {
-          type: Message.MSG_OVPN_PROFILES_UPDATED,
-          cn: commonName
-        };
-        sem.sendEventToAll(event);
-        sem.emitLocalEvent(event);
-        fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
-          if (callback) {
-            (async () => {
-              const timestamp = await VpnManager.getVpnConfigureTimestamp(commonName);
-              callback(err, ovpn, password, timestamp);
-            })();
-          }
-        });
-      });
-    });
+    let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s %s'; sync",
+      fHome, vpnLockFile, commonName, password, ip, externalPort, protocol);
+    await execAsync(cmd).catch(err => {
+      log.error("VPNManager:GEN:Error", "Unable to ovpngen.sh", err);
+    })
+    const event = {
+      type: Message.MSG_OVPN_PROFILES_UPDATED,
+      cn: commonName
+    };
+    sem.sendEventToAll(event);
+    const ovpnfile = await fsp.readFile(ovpn_file, 'utf8')
+    const timestamp = await VpnManager.getVpnConfigureTimestamp(commonName);
+    return { ovpnfile, password, timestamp}
   }
 
   static async getVpnConfigureTimestamp(commonName) {

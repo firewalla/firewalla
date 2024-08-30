@@ -277,7 +277,7 @@ async function addMultiPathRouteToTable(dest, tableName, af = 4, ...multipathDes
     const weight = desc.weight;
     if (!dev || !weight)
       continue;
-    cmd = `${cmd} nexthop via ${nextHop}`;
+    cmd = `${cmd} nexthop ${nextHop ? `via ${nextHop}` : ""}`;
     if (dev)
       cmd = `${cmd} dev ${dev}`;
     cmd = `${cmd} weight ${weight}`;

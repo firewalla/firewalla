@@ -1,4 +1,4 @@
-/*    Copyright 2021-2022 Firewalla Inc.
+/*    Copyright 2021-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -29,6 +29,7 @@ const identityManager = require('../net2/IdentityManager');
 const sem = require('./SensorEventManager.js').getInstance();
 const Mode = require('../net2/Mode.js');
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const VPNClient = require('../extension/vpnclient/VPNClient.js')
 
 const fsp = require('fs').promises;
 const exec = require('child-process-promise').exec;
@@ -68,6 +69,18 @@ class LiveStatsPlugin extends Sensor {
       clearTimeout(cache.timeout)
   }
 
+  resetLatencyCache(cache) {
+    if (!cache) return
+    if (cache.ping) {
+      cache.ping.proc && cache.ping.proc.stdout && cache.ping.proc.stdout.unpipe()
+      exec(`kill ${cache.ping.proc.pid}`).catch((err) => {})
+      if (cache.ping.rl) {
+        cache.ping.rl.close();
+      }
+      delete cache.ping
+    }
+  }
+
   cleanupStreaming() {
     for (const id in this.streamingCache) {
       const cache = this.streamingCache[id];
@@ -75,6 +88,7 @@ class LiveStatsPlugin extends Sensor {
       if (cache.ts < Math.floor(new Date() / 1000) - (this.config.cacheTimeout || 30)) {
         log.verbose('Cleaning cache for', cache.target || id)
         this.resetThroughputCache(cache)
+        this.resetLatencyCache(cache)
         if (cache.interval) clearInterval(cache.interval)
         delete this.streamingCache[id]
       }
@@ -128,6 +142,14 @@ class LiveStatsPlugin extends Sensor {
       const { type, target, queries } = data
       const response = {}
 
+      if (queries && queries.latency) {
+        // only support device ping latency
+        if (type === "host") {
+          const result = await this.getDeviceLatency(target);
+          response.latency = result ? [ result ] : [];
+        }
+      }
+
       if (queries && queries.flows) {
         let lastTS = cache.flowTs;
 
@@ -159,22 +181,45 @@ class LiveStatsPlugin extends Sensor {
             response.throughput = result ? [ result ] : []
             break;
           }
-          case 'intf':
+          case 'vpnClient': {
+            const vpnClient = VPNClient.getInstance(target)
+            if (!vpnClient) {
+              throw new Error(`Invalid VPN client ${target}`)
+            }
+            const name = vpnClient.getInterfaceName()
+            response.throughput = [ Object.assign( {name, target, type}, this.getIntfThroughput(vpnClient.name) ) ]
+            break
+          }
+          case 'intf': {
+            const intf = sysManager.getInterfaceViaUUID(target)
+            if (!intf) {
+              throw new Error(`Invalid Interface ${target}`)
+            }
+            const name = intf.name
+            response.throughput = [ Object.assign( {name, target, type}, this.getIntfThroughput(name) ) ]
+            break
+          }
           case 'system': {
-            if (type == 'intf') {
-              const intf = sysManager.getInterfaceViaUUID(target)
-              if (!intf) {
-                throw new Error(`Invalid Interface ${target}`)
-              }
-              response.throughput = [ { name: intf.name, target } ]
-            } else {
-              const interfaces = _.union(platform.getAllNicNames(), fireRouter.getLogicIntfNames())
-              _.remove(interfaces, name => name.endsWith(':0') || !sysManager.getInterface(name))
-              response.throughput = interfaces
-                .map(name => ({ name, target: sysManager.getInterface(name).uuid }))
+            const interfaces = _.union(platform.getAllNicNames(), fireRouter.getLogicIntfNames())
+            _.remove(interfaces, name => name.endsWith(':0') || !sysManager.getInterface(name))
+            response.throughput = interfaces
+            .map(name => ({ name, target: sysManager.getInterface(name).uuid, type: 'intf' }))
+
+            if (queries.throughput.vpnClient) {
+              const policy = await hostManager.getPolicyAsync('vpnClient') || {}
+              const vpnClients = await Promise.all(
+                // policy:system should have all enabled VPN clients
+                (policy.multiClients || [ policy ])
+                  .map( vc => vc && vc.state && hostManager.getVPNClientInstance(vc).catch(err => log.error(err.message)) )
+              )
+              response.throughput.push(... vpnClients
+                .filter(Boolean)
+                .map(c => ({name: c.getInterfaceName(), target: c.profileId, type: 'vpnClient'}) )
+              )
             }
 
             response.throughput.forEach(intf => Object.assign(intf, this.getIntfThroughput(intf.name)))
+
             if (queries.throughput.devices) {
               for (const intf of sysManager.getMonitoringInterfaces()) {
                 // exclude primary network in DHCP mode, this is mainly for old models that have different subnets
@@ -200,7 +245,7 @@ class LiveStatsPlugin extends Sensor {
         const intfs = fireRouter.getLogicIntfNames();
         const intfStats = [];
         const promises = intfs.map( async (intf) => {
-          const rate = await this.getRate(intf);
+          const rate = this.getIntfThroughput(intf);
           intfStats.push(rate);
         });
         promises.push(delay(1000)); // at least wait for 1 sec
@@ -235,6 +280,54 @@ class LiveStatsPlugin extends Sensor {
     await hostManager.getHostsAsync();
   }
 
+  async getDeviceLatency(target) {
+    const host = hostManager.getHostFastByMAC(target) || identityManager.getIdentityByGUID(target);
+    if (!host) {
+      throw new Error(`Invalid host ${target}`);
+    }
+    const ip = host.constructor.name === "Host" ? host.o.ipv4Addr : host.getIPs()[0];
+    if (!ip) {
+      log.error(`Host ${target} does not have an IP address`);
+      return {target, latency: -1};
+    }
+    let cache = this.streamingCache[target] || {};
+    if (!cache.ping) {
+      try {
+        this.resetLatencyCache(cache);
+        cache.ping = {};
+        this.streamingCache[target] = cache;
+        const pingArgs = ['-W', '1', '-O', ip];
+        const ping = spawn('ping', pingArgs);
+        ping.on('error', (err) => {
+          log.error(`ping error for ${target}`, err.message);
+        });
+        const rl = createInterface(ping.stdout);
+        rl.on('line', (line) => {
+          if (line.startsWith("no answer yet")) {
+            cache.ping.latency = -1;
+          } else {
+            const timeStr = line.split(' ').find(seg => seg.startsWith("time="));
+            if (timeStr) {
+              const latency = timeStr.split('=')[1];
+              if (isNaN(latency))
+                cache.ping.latency = -1;
+              else
+                cache.ping.latency = Number(latency);
+            }
+          }
+        });
+        rl.on('error', (err) => {
+          log.error(`error parsing ping output for ${target}`, err.message)
+        });
+        cache.ping = {proc: ping, rl}
+      } catch (err) {
+        log.error(`Failed to get device latency of ${target}`, err.message);
+      }
+    }
+    cache.ts = Date.now() / 1000
+    return { target: target, latency: cache.ping.latency};
+  }
+
   async getDeviceThroughput(target) {
     const host = hostManager.getHostFastByMAC(target) || identityManager.getIdentityByGUID(target);
     if (!host) {
@@ -248,12 +341,36 @@ class LiveStatsPlugin extends Sensor {
     return {target, tx: cache.rx, rx: cache.tx}
   }
 
+  getPcapNet(intf, family) {
+    let subnet = family == 4 ? intf.subnetAddress4 : (intf.subnetAddress6 && intf.subnetAddress6[0])
+    if (!subnet) return null
+
+    // TODO: only 1 subnet is supported now, assume v6 addresses are in the same subnet
+    if (family == 6 && intf.subnetAddress6.length > 1) {
+      log.verbose(`${intf.name} has more than 1 v6 subnet`, intf.subnetAddress6.map(s => s.address))
+      if (subnet.subnetMask == 128) { // static IP, trying to find one with dynamic range
+        subnet = intf.subnetAddress6.find(n => n.subnetMask < 128) || subnet
+      }
+    }
+    // v6, if only /128 address is found, set it to /64
+    if (subnet.subnetMask == 128) {
+      log.warn(`${intf.name} have only static v6 IP, using /64 for traffic capture`)
+      subnet = new Address6(subnet.addressMinusSuffix + '/64')
+    }
+    // pcap filter `net` requires using the starting address
+    const pcapNet = subnet.startAddress().address + subnet.subnet
+
+    log.debug(`pcapNet for ${intf.name} is ${pcapNet}`)
+
+    return pcapNet
+  }
+
   async getIntfDeviceThroughput(intfUUID) {
     let cache = this.streamingCache[intfUUID] || {}
     if (!cache.iftop || !cache.rl) try {
       const intf = sysManager.getInterfaceViaUUID(intfUUID)
       if (!intf) {
-        throw new Error(`Invalid interface`, intfUUID)
+        throw new Error(`Invalid interface ${intfUUID}`)
       }
 
       log.verbose('(Re)Creating interface device throughput cache ...', intfUUID, intf.name)
@@ -276,31 +393,24 @@ class LiveStatsPlugin extends Sensor {
           pcapFilter.push(... IPs.map(ip => `not host ${ip}`))
         }
 
-        let subnet = v == 4 ? intf.subnetAddress4 : (intf.subnetAddress6 && intf.subnetAddress6[0])
-        if (subnet) {
-          // TODO: only 1 subnet is supported now, assume v6 addresses are in the same subnet
-          if (v == 6 && intf.subnetAddress6.length > 1) {
-            log.verbose(`${intf.name} has more than 1 v6 subnet`, intf.subnetAddress6.map(s => s.address))
-            if (subnet.subnetMask == 128) { // static IP, trying to find one with dynamic range
-              subnet = intf.subnetAddress6.find(n => n.subnetMask < 128) || subnet
-            }
-          }
-          // v6, if only /128 address is found, set it to /64
-          if (subnet.subnetMask == 128) {
-            log.warn(`${intf.name} have only static v6 IP, using /64 for traffic capture`)
-            subnet = new Address6(subnet.addressMinusSuffix + '/64')
-          }
-          log.debug(`subnet for ${intf.name} is ${subnet.address}`)
+        const pcapNet = this.getPcapNet(intf, v)
+        if (!pcapNet) continue
 
-          // use -F/-G to get traffic direction, but only one subnet each family is allowed
-          // https://code.blinkace.com/pdw/iftop/-/blob/master/iftop.c#L285-351
-          iftopCmd.push(v == 4 ? '-F' : '-G', subnet.address)
+        // use -F/-G to get traffic direction, but only one subnet each family is allowed
+        // https://code.blinkace.com/pdw/iftop/-/blob/master/iftop.c#L285-351
+        iftopCmd.push(v == 4 ? '-F' : '-G', pcapNet)
 
-          // pcap filter `net` requires using the starting address
-          const pcapNet = subnet.startAddress().address + subnet.subnet
-          pcapSubnets.push(pcapNet)
-          pcapFilter.push(`not src and dst net ${pcapNet}`)
+        pcapSubnets.push(pcapNet)
+        pcapFilter.push(`not src and dst net ${pcapNet}`)
+
+        const pcapNetsLan = []
+        for (const lan of sysManager.getInterfaces().filter(i => i.uuid != intfUUID)) {
+          const pcapNetLan = this.getPcapNet(lan, v)
+          if (!pcapNetLan) continue
+          pcapNetsLan.push(pcapNetLan)
         }
+        if (pcapNetsLan.length)
+          pcapFilter.push(`not (net ${pcapNet} and (net ${pcapNetsLan.join(' or ')}))`)
       }
 
       if (await Mode.isSpoofModeOn()) {
@@ -310,11 +420,16 @@ class LiveStatsPlugin extends Sensor {
         ))
       }
 
+      // exclude multicast traffic
+      pcapFilter.push("(not net 224.0.0.0/4)");
+      // only include L4 protocols and exclude TCP packets with SYN/FIN/RST flags
+      pcapFilter.push("(udp or icmp or (tcp[13] & 0x7 == 0) or (ip6[6] == 6 && ip6[53] & 0x7 == 0))")
+
       iftopCmd.push('-f', pcapFilter.join(' and '))
 
       // sudo has to be the first command otherwise stdbuf won't work for privileged command
       const iftop = spawn('sudo', iftopCmd);
-      log.debug(iftop.spawnargs)
+      log.verbose(iftop.spawnargs)
       iftop.on('error', err => {
         log.error(`iftop error for ${intf.name}`, err.toString());
       });
@@ -364,6 +479,10 @@ class LiveStatsPlugin extends Sensor {
         }
 
         const parseUnits = segments[numSlot].match(/([\d.]+)(\w+)/)
+        if (!parseUnits || parseUnits.length < 3) {
+          log.error('Error parsing:', line)
+          return
+        }
         let throughput = Number(parseUnits[1]) // 26.6
         if (parseUnits[2] in unitConvention) // KB, MB, GB
           throughput = throughput * unitConvention[parseUnits[2]]
@@ -399,14 +518,25 @@ class LiveStatsPlugin extends Sensor {
 
   getIntfThroughput(intf) {
     let intfCache = this.streamingCache[intf]
+    const interval = 2 // get nic stats every 2 sec to align with iftop
     if (!intfCache) {
       intfCache = this.streamingCache[intf] = {}
-      intfCache.interval = setInterval(() => {
-        this.getRate(intf)
-          .then(res => Object.assign(intfCache, res))
-      }, 1000)
+      intfCache.interval = setInterval(async () => {
+        try {
+          const c = await this.getIntfStats(intf)
+          const p = intfCache.prev || { tx: 0, rx: 0 }
+          Object.assign(intfCache, {
+            name: intf,
+            rx: c.rx > p.rx ? (c.rx - p.rx) / interval : 0,
+            tx: c.tx > p.tx ? (c.tx - p.tx) / interval : 0,
+            prev: c
+          })
+        } catch (err) {
+          log.error('failed to fetch stats for', intf, err.message)
+        }
+      }, interval * 1000)
     }
-    intfCache.ts = Math.floor(new Date() / 1000)
+    intfCache.ts = Math.floor(Date.now() / 1000)
 
     return { name: intf, rx: intfCache.rx || 0, tx: intfCache.tx || 0 }
   }
@@ -414,26 +544,11 @@ class LiveStatsPlugin extends Sensor {
   async getIntfStats(intf) {
     const rx = await fsp.readFile(`/sys/class/net/${intf}/statistics/rx_bytes`, 'utf8').catch(() => 0);
     const tx = await fsp.readFile(`/sys/class/net/${intf}/statistics/tx_bytes`, 'utf8').catch(() => 0);
-    return {rx, tx};
-  }
-
-  async getRate(intf) {
-    try {
-      const s1 = await this.getIntfStats(intf);
-      await delay(1000);
-      const s2 = await this.getIntfStats(intf);
-      return {
-        name: intf,
-        rx: s2.rx > s1.rx ? s2.rx - s1.rx : 0,
-        tx: s2.tx > s1.tx ? s2.tx - s1.tx : 0
-      }
-    } catch(err) {
-      log.error('failed to fetch stats for', intf, err.message)
-    }
+    return {rx: Number(rx), tx: Number(tx)};
   }
 
   async getFlows(type, target, ts, opts) {
-    const now = Math.floor(new Date() / 1000);
+    const now = Math.floor(Date.now() / 1000);
     const ets = ts ? now - 2 : now
     ts = ts || now - 60
     const options = {

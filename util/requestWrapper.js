@@ -14,19 +14,37 @@
  */
 'use strict';
 const log = require('../net2/logger.js')(__filename);
-const rr = require('requestretry').defaults({ timeout: 30000 });
+const https = require('https');
+const requestretry = require('requestretry');
+
+const agent = new https.Agent({ keepAlive: true, keepAliveMsecs: 20000, maxSockets: 1, timeout: 55000, });
+const rrPooled = requestretry.defaults({ agent: agent });
+const rr = requestretry.defaults({ timeout: 30000 });
+
 const uuid = require('uuid')
 
-async function rrWithErrHandling(options) {
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+const Message = require('../net2/Message.js');
+
+sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+  log.info("Network change, reset pooled agent");
+  agent.destroy();
+})
+
+async function rrWithErrHandling(options, usePool) {
   const msg = `HTTP failed after ${options.maxAttempts || 5} attempt(s) ${options.method || 'GET'} ${options.uri}`
   const uid = uuid.v4()
-  log.debug(msg, uid, new Error().stack)
+  log.verbose(uid, options.method || 'GET', options.uri)
 
   options.fullResponse = true
 
   let response
   try {
-    response = await rr(options)
+    if (usePool === true) {
+      response = await rrPooled(options);
+    } else {
+      response = await rr(options)
+    }
   } catch(err) {
     log.debug(uid, err)
     const error = new Error(msg + `\n` + err.message)
@@ -39,9 +57,9 @@ async function rrWithErrHandling(options) {
     error.statusCode = response.statusCode
     error.body = response.body
 
-    log.debug(uid, msg)
+    log.verbose(uid, msg)
     log.debug(JSON.stringify(options.body || options.json))
-    log.debug(respSummary)
+    log.verbose(respSummary)
 
     throw error
   }

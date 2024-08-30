@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,13 +32,11 @@ if(!mac) {
 }
 
 (async() =>{
-  let conns = await flowTool.getAllLogs({
+  let conns = await flowTool.prepareRecentFlows({}, {
     mac,
     end: new Date() / 1000,
     begin: new Date() / 1000 - 86400,
     direction: "in",
-    no_merge: true,
-    maxRecentFlow: 999999999
   })
 
   conns = conns.sort((a, b) => a.ts - b.ts)

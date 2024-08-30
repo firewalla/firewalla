@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,9 +14,14 @@
  */
 'use strict';
 
+const fsp = require('fs').promises
+
 const _ = require('lodash');
 const stream = require('stream');
-const moment = require('moment')
+const moment = require('moment');
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+let incTs = 0;
 
 const validDomainRegex = /^[a-zA-Z0-9-_.]+$/
 
@@ -53,9 +58,17 @@ function getPreferredBName(hostObject) {
     return hostObject.cloudName
   }
 
-  if (hostObject.spoofMeName) {
-    return hostObject.spoofMeName
+  if (hostObject.detect) {
+    let detect = hostObject.detect
+    if (_.isString(detect)) try {
+      detect = JSON.parse(detect)
+    } catch(err) { }
+
+    if (_.get(detect, 'bonjour.name')) {
+      return detect.bonjour.name
+    }
   }
+
 
   if (hostObject.dhcpName) {
     return hostObject.dhcpName
@@ -73,9 +86,11 @@ function getPreferredBName(hostObject) {
     return hostObject.bname
   }
 
+  /* predict name is inaccurate, not suitable to use it at the moment
   if (hostObject.pname) {
     return hostObject.pname
   }
+  */
   if (hostObject.hostname) {
     return hostObject.hostname
   }
@@ -123,15 +138,29 @@ function argumentsToString(v) {
 function isSimilarHost(h1, h2) {
   if (!h1 || !h2)
     return false;
-  const h1Sections = h1.split('.').reverse();
-  const h2Sections = h2.split('.').reverse();
-  // compare at most last three sections
+  const h1Sections = h1.toLowerCase().split('.').reverse();
+  const h2Sections = h2.toLowerCase().split('.').reverse();
+  // compare at most three sections from root
   const limit = Math.min(h1Sections.length - 1, h2Sections.length - 1, 2);
   for (let i = 0; i <= limit; i++) {
     if (h1Sections[i] !== h2Sections[i])
       return false;
   }
   return true;
+}
+
+function isSameOrSubDomain(a, b) {
+  if (!_.isString(a) || !_.isString(b)) return false
+  const dnA = a.toLowerCase().split('.').reverse().filter(Boolean)
+  const dnB = b.toLowerCase().split('.').reverse().filter(Boolean)
+
+  if (dnA.length > dnB.length) return false
+
+  for (const i in dnA) {
+    if (dnA[i] != dnB[i]) return false
+  }
+
+  return true
 }
 
 function formulateHostname(domain, stripWildcardPrefix = true) {
@@ -204,17 +233,84 @@ function compactTime(ts) {
   return moment(ts * 1000).local().format('MMMDD HH:mm') + ' (' + ts + ')'
 }
 
+async function fileExist(path) {
+  try {
+    return (await fsp.stat(path)).isFile()
+  } catch(err) {
+    if (err.code !== 'ENOENT') throw err;
+    return false;
+  }
+}
+
+async function fileTouch(path) {
+  try {
+    const time = Date.now() / 1000
+    await fsp.utimes(path, time, time)
+  } catch(err) {
+    if (err.code !== 'ENOENT') throw err;
+    const fh = await fsp.open(path, 'a');
+    await fh.close();
+  }
+}
+
+async function fileRemove(path) {
+  try {
+    await fsp.unlink(path);
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+}
+
+async function batchKeyExists(keys, batchSize) {
+  const rclient = require('./redis_manager.js').getRedisClient()
+  const validChunks = []
+  for (const chunk of _.chunk(keys, batchSize)) {
+    const batch = rclient.batch()
+    chunk.forEach(key => batch.exists(key))
+    const results = await batch.execAsync()
+    validChunks.push(chunk.filter((ele, i) => results[i] && !(results[i] instanceof Error)))
+  }
+  return _.flatten(validChunks)
+}
+
+async function getUniqueTs(ts) {
+  return lock.acquire("unique_ts_lock", async () => {
+    incTs = (incTs + 1) % 100;
+    return Math.round(ts * 100 + incTs) / 100;
+  });
+}
+
+function difference(obj1, obj2) {
+  return _.reduce(obj1, function(result, value, key) {
+    if (obj2[key] && value.constructor.name == "Object" && obj2[key].constructor.name == "Object") {
+      if (difference(value, obj2[key]).length > 0) {
+        return result.concat(key);
+      }
+      return result;
+    }
+    return _.isEqual(value, obj2[key]) ?
+        result : result.concat(key);
+}, []);
+}
+
 module.exports = {
   extend,
   getPreferredBName,
   getPreferredName,
   delay,
+  difference,
   argumentsToString,
   isSimilarHost,
+  isSameOrSubDomain,
   formulateHostname,
   isDomainValid,
   generateStrictDateTs,
   isHashDomain,
   LineSplitter,
   compactTime,
+  fileExist,
+  fileTouch,
+  fileRemove,
+  batchKeyExists,
+  getUniqueTs
 };

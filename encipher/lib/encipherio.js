@@ -415,6 +415,41 @@ let legoEptCloud = class {
     return resp.body
   }
 
+  async reloadGroupInfoFromRedis(options = {}) {
+    try {
+      let gid = options.gid;
+
+      if (!gid) {
+        log.info("Reading gid from redis sys:ept ...");
+        gid = await rclient.hgetAsync("sys:ept", "gid");
+      }
+
+      if (!gid) {
+        log.warn("GID not found");
+        return;
+      }
+
+      if(options.onlyWhenEmpty && this.groupCache[gid]) {
+        log.info("Skip reloading group from redis because group cache is already there for gid", gid);
+        return;
+      }
+
+      let groupString = await rclient.hgetAsync('sys:ept:me', 'group');
+      if (!groupString) {
+        log.warn("sys:ept:me Group info not found in redis");
+        return;
+      }
+
+      const redisCache = JSON.parse(groupString);
+      const group = this.parseGroup(redisCache);
+
+      log.info("Using group info cache from sys:ept:me", gid);
+      this.groupCache[gid] = group;
+    } catch(err) {
+      log.error("Got error when reloading group info from redis", err);
+    }
+  }
+
   async eptGroupList() {
     if (!this.eid) throw new Error('Invalid Instance Eid')
 
@@ -650,10 +685,7 @@ let legoEptCloud = class {
       }
 
       if (!group && !forceCloudCheck) {
-        // box is aware of every single key change, it's safe to use cache here
-        const redisCache = JSON.parse(await rclient.hgetAsync('sys:ept:me', 'group'))
-        group = this.parseGroup(redisCache)
-        this.groupCache[gid] = group
+        await this.reloadGroupInfoFromRedis({gid});
       }
 
       if(config.isFeatureOn("rekey") &&

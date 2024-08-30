@@ -97,7 +97,21 @@ UNAME=$(uname -m)
 
 case "$UNAME" in
   "x86_64")
-    export FIREWALLA_PLATFORM=gold
+    if [[ -e /etc/firewalla-release ]]; then
+      BOARD=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
+    else
+      BOARD='gold'
+    fi
+    case $BOARD in
+      gold)
+        export FIREWALLA_PLATFORM=gold
+        export MANAGED_BY_FIREROUTER=yes
+        ;;
+      gold-pro)
+        export FIREWALLA_PLATFORM=goldpro
+        export MANAGED_BY_FIREROUTER=yes
+        ;;
+    esac
     ;;
   "aarch64")
     if [[ -e /etc/firewalla-release ]]; then
@@ -108,18 +122,27 @@ case "$UNAME" in
     case $BOARD in
       navy)
         export FIREWALLA_PLATFORM=navy
+        export MANAGED_BY_FIREROUTER=no
         ;;
       blue)
         export FIREWALLA_PLATFORM=blue
+        export MANAGED_BY_FIREROUTER=no
         ;;
       ubt)
         export FIREWALLA_PLATFORM=ubt
+        export MANAGED_BY_FIREROUTER=no
         ;;
       purple)
         export FIREWALLA_PLATFORM=purple
+        export MANAGED_BY_FIREROUTER=yes
         ;;
       purple-se)
         export FIREWALLA_PLATFORM=pse
+        export MANAGED_BY_FIREROUTER=yes
+        ;;
+      gold-se)
+        export FIREWALLA_PLATFORM=gse
+        export MANAGED_BY_FIREROUTER=yes
         ;;
       *)
         ;;
@@ -127,6 +150,7 @@ case "$UNAME" in
     ;;
   "armv7l")
     export FIREWALLA_PLATFORM=red
+    export MANAGED_BY_FIREROUTER=no
     ;;
   *)
     ;;

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,6 +26,10 @@ const dnsTool = new DNSTool()
 const CategoryUpdaterBase = require('./CategoryUpdaterBase.js');
 const domainBlock = require('../control/DomainBlock.js');
 const Block = require('../control/Block.js');
+const IntelTool = require('../net2/IntelTool.js')
+const intelTool = new IntelTool()
+const { eachLimit } = require('../util/asyncNative.js')
+
 const exec = require('child-process-promise').exec
 const { Address4, Address6 } = require('ip-address');
 
@@ -55,26 +59,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       this.inited = false;
       instance = this
 
-      this.effectiveCategoryDomains = {};
-
-      this.activeCategories = {
-        "default_c": 1
-        // categories below should be activated on demand
-        /*
-        "games": 1,
-        "social": 1,
-        "porn": 1,
-        "shopping": 1,
-        "av": 1,
-        "p2p": 1,
-        "gamble": 1,
-        "vpn": 1
-        */
-      };
-
-      this.activeTLSCategories = {}; // default_c is not preset here because hostset file is generated only if iptables rule is created.
-
-      this.customizedCategories = {};
+      this.resetUpdaterState()
 
       this.recycleTasks = {};
 
@@ -88,7 +73,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ]
       };
 
-      this.excludeListBundleIds = new Set(["default_c", "adblock_strict", "games", "social", "av", "porn", "gamble", "p2p", "vpn"]);
+      this.excludeListBundleIds = new Set(["default_c", "adblock_strict", "games", "social", "av", "porn", "gamble", "p2p", "vpn", "shopping"]);
 
       this.refreshCustomizedCategories();
 
@@ -125,6 +110,18 @@ class CategoryUpdater extends CategoryUpdaterBase {
                   log.error(`Failed to update category domain ${event.category}`, err.message);
                 }
               }
+
+              // check if category filter exists to update
+              const bf_strategy = await this.getStrategy(event.category + '_bf');
+              if (bf_strategy && this.isActivated(event.category + '_bf')) {
+                if (bf_strategy.dnsmasq.enabled && bf_strategy.dnsmasq.useFilter)
+                  sem.emitEvent({
+                    type: "REFRESH_CATEGORY_FILTER",
+                    message: "Refresh category fitler " + event.category + '_bf',
+                    category: event.category + '_bf',
+                    toProcess: "FireMain"
+                  });
+              };
             }
           }
         });
@@ -173,6 +170,27 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
 
     return instance
+  }
+
+  resetUpdaterState() {
+    this.effectiveCategoryDomains = {};
+
+    this.activeCategories = {
+      // "default_c": 1
+      // categories below should be activated on demand
+      // "games": 1,
+      // "social": 1,
+      // "porn": 1,
+      // "shopping": 1,
+      // "av": 1,
+      // "p2p": 1,
+      // "gamble": 1,
+      // "vpn": 1
+    };
+
+    this.activeTLSCategories = {}; // default_c is not preset here because hostset file is generated only if iptables rule is created.
+
+    this.customizedCategories = {};
   }
 
   async refreshTLSCategoryActivated() {
@@ -234,7 +252,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async createOrUpdateCustomizedCategory(category, obj) {
-    let c = null;
     if (!obj || !obj.name)
       throw new Error(`name is not specified`);
 
@@ -265,42 +282,47 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async refreshCustomizedCategories() {
-    for (const c in this.customizedCategories)
-      this.customizedCategories[c].exists = false;
+    try {
+      for (const c in this.customizedCategories)
+        this.customizedCategories[c].exists = false;
 
-    const keys = await rclient.scanResults(`${CUSTOMIZED_CATEGORY_KEY_PREFIX}*`);
-    for (const key of keys) {
-      const o = await rclient.hgetallAsync(key);
-      const category = key.substring(CUSTOMIZED_CATEGORY_KEY_PREFIX.length);
-      log.info(`Found customized category ${category}`);
-      this.customizedCategories[category] = o;
-      this.customizedCategories[category].exists = true;
-    }
-
-    const removedCategories = {};
-    Object.keys(this.customizedCategories).filter(c => this.customizedCategories[c].exists === false).map((c) => {
-      removedCategories[c] = this.customizedCategories[c];
-    });
-    for (const c in removedCategories) {
-      log.info(`Customized category ${c} is removed, will cleanup enforcement env ...`);
-      if (firewalla.isMain()) {
-        await this.flushIPv4Addresses(c);
-        await this.flushIPv6Addresses(c);
-        await this.flushIncludedDomains(c);
-        // this will trigger ipset recycle and dnsmasq config change
-        const event = {
-          type: "UPDATE_CATEGORY_DOMAIN",
-          category: c
-        };
-        sem.sendEventToAll(event);
-        sem.emitLocalEvent(event);
+      const keys = await rclient.scanResults(`${CUSTOMIZED_CATEGORY_KEY_PREFIX}*`);
+      for (const key of keys) {
+        const o = await rclient.hgetallAsync(key);
+        const category = key.substring(CUSTOMIZED_CATEGORY_KEY_PREFIX.length);
+        log.info(`Found customized category ${category}`);
+        this.customizedCategories[category] = o;
+        this.customizedCategories[category].exists = true;
       }
-      delete this.customizedCategories[c];
+
+      const removedCategories = {};
+      Object.keys(this.customizedCategories).filter(c => this.customizedCategories[c].exists === false).map((c) => {
+        removedCategories[c] = this.customizedCategories[c];
+      });
+      for (const c in removedCategories) {
+        log.info(`Customized category ${c} is removed, will cleanup enforcement env ...`);
+        if (firewalla.isMain()) {
+          await this.flushIPv4Addresses(c);
+          await this.flushIPv6Addresses(c);
+          await this.flushIncludedDomains(c);
+          // this will trigger ipset recycle and dnsmasq config change
+          const event = {
+            type: "UPDATE_CATEGORY_DOMAIN",
+            category: c,
+            message: 'remove category' + c,
+          };
+          sem.sendEventToAll(event);
+        }
+        delete this.customizedCategories[c];
+      }
+    } catch(err) {
+      log.error('Failed to refresh customized categories', err)
     }
     return this.customizedCategories;
   }
 
   async activateCategory(category) {
+    log.debug("invoke activate category", category)
     if (this.isActivated(category)) return;
     if (firewalla.isMain()) // do not create ipset unless in FireMain
       await super.activateCategory(category, this.isCustomizedCategory(category) ? this._getCustomizedCategoryIpsetType(category) : "hash:net");
@@ -385,12 +407,25 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await this.addSetMembers(this.getCategoryDataListKey(category), domainObjStrs);
   }
 
-  async addDefaultDomains(category, domains) {
-    await this.addSetMembers(this.getDefaultCategoryKey(category), domains);
+  async addDomainIntels(category, domains, intelExpire = 12 * 3600) {
+    if (!['games', 'social', 'av', 'porn', 'gamble', 'p2p', 'vpn', 'default_c' ].includes(category)) return
+
+    const intel = {
+      category: category == 'default_c' ? 'intel' : category
+    }
+    await eachLimit(domains, 30, async domain => {
+      await intelTool.addDomainIntel(domain.startsWith('*.') ? domain.substring(2) : domain, intel, intelExpire);
+    })
   }
 
-  async addDefaultDomainsOnly(category, domains) {
+  async addDefaultDomains(category, domains, intelExpire) {
+    await this.addSetMembers(this.getDefaultCategoryKey(category), domains);
+    await this.addDomainIntels(category, domains, intelExpire)
+  }
+
+  async addDefaultDomainsOnly(category, domains, intelExpire) {
     await this.addSetMembers(this.getDefaultCategoryKeyOnly(category), domains);
+    await this.addDomainIntels(category, domains, intelExpire)
   }
 
   async addDefaultHashedDomains(category, domains) {
@@ -629,7 +664,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async getDomainMappingsByDomainPattern(domainPattern) {
-    const keys = await rclient.scanResults(this.getDomainMapping(domainPattern))
+    const keys = (await dnsTool.getSubDomains(domainPattern.substring(2))).map(d => this.getDomainMapping(d));
     keys.push(this.getDomainMapping(domainPattern.substring(2)))
     return keys
   }
@@ -943,7 +978,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
       updateOptions.comment = "persistent";
     }
 
-    await this.updatePersistentIPSets(category, updateOptions);
+    await this.updatePersistentIPSets(category, false, updateOptions);
+    await this.updatePersistentIPSets(category, true, updateOptions);
 
     const strategy = await this.getStrategy(category);
     const domains = await this.getDomains(category);
@@ -1021,7 +1057,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
     }
 
-    // do not execute full update on ipset if ondemand is set   
+    // do not execute full update on ipset if ondemand is set
     if (!ondemand) {
       for (const [k, v] of domainMap) {
         const domain = v.id;
@@ -1032,7 +1068,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
         const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
         if (!existing) { // a new domain
-          log.info(`Found a new domain with new rdns: ${domainSuffix}`)
+          log.verbose(`Found a new domain for ${category} with rdns: ${domainSuffix}`)
           await domainBlock.resolveDomain(domainSuffix)
         }
         // regenerate ipmapping set in redis
@@ -1205,7 +1241,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         exception: {
           useHitSet: true
         }
-        };      
+      };
       default:
       return defaultStrategyConfig;
     }
@@ -1220,8 +1256,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return;
   }
 
+  // system target list using cloudcache, mainly for large target list to reduce bandwidth usage of polling hashset
   isManagedTargetList(category) {
-    return !category.startsWith("TL-") && !this.excludeListBundleIds.has(category);
+    return !this.isUserTargetList(category) && !this.isSmallExtendedTargetList(category) && !this.excludeListBundleIds.has(category) && !category.endsWith('_bf');
   }
 }
 

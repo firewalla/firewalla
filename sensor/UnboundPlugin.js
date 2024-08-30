@@ -1,4 +1,4 @@
-/*    Copyright 2022 Firewalla Inc
+/*    Copyright 2022-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,6 +22,7 @@ const extensionManager = require('./ExtensionManager.js')
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const f = require('../net2/Firewalla.js');
+const fc = require('../net2/config.js');
 
 const userConfigFolder = f.getUserConfigFolder();
 const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
@@ -44,6 +45,7 @@ const exec = require('child-process-promise').exec;
 const featureName = "unbound";
 const scheduler = require('../util/scheduler');
 const unbound = require('../extension/unbound/unbound');
+const Constants = require('../net2/Constants.js');
 
 class UnboundPlugin extends Sensor {
   async run() {
@@ -57,8 +59,8 @@ class UnboundPlugin extends Sensor {
 
     extensionManager.registerExtension(featureName, this, {
       applyPolicy: this.applyPolicy,
-      start: this.start,
-      stop: this.stop
+      start: this.globalOn,
+      stop: this.globalOff,
     });
 
     await exec(`mkdir -p ${dnsmasqConfigFolder}`);
@@ -69,10 +71,25 @@ class UnboundPlugin extends Sensor {
     sem.on('UNBOUND_REFRESH', (event) => {
       void this.applyUnboundSync.exec(true);
     });
+
+    sem.on('UNBOUND_RESET', async (event) => {
+      try {
+        await fc.disableDynamicFeature(featureName)
+        for (const tag in this.tagSettings) this.tagSettings[tag] = 0
+        for (const uuid in this.networkSettings) this.networkSettings[uuid] = 0
+        for (const mac in this.macAddressSettings) this.macAddressSettings[mac] = 0
+        for (const guid in this.identitySettings) this.identitySettings[guid] = 0
+        await this.applyUnboundSync.exec(true)
+        await unbound.reset();
+      } catch(err) {
+        log.error('Error reseting unbound', err)
+      }
+    });
   }
 
   async apiRun() {
     extensionManager.onSet("unboundConfig", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await unbound.getUserConfig()})} catch(err) {};
       if (data) {
         await unbound.updateUserConfig(data);
         sem.sendEventToFireMain({
@@ -84,6 +101,13 @@ class UnboundPlugin extends Sensor {
     extensionManager.onGet("unboundConfig", async (msg, data) => {
       const config = await unbound.getUserConfig();
       return config;
+    });
+
+    extensionManager.onCmd("unboundReset", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: {config: await unbound.getUserConfig(), enabled: fc.isFeatureOn(featureName)}})} catch(err) {};
+      sem.sendEventToFireMain({
+        type: 'UNBOUND_RESET'
+      });
     });
   }
 
@@ -176,7 +200,7 @@ class UnboundPlugin extends Sensor {
     }
     const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
     if (this.featureSwitch) {
-      const dnsmasqEntry = `server=${unbound.getLocalServer()}$${featureName}`;
+      const dnsmasqEntry = `server=${unbound.getLocalServer()}$${featureName}$*${Constants.DNS_DEFAULT_WAN_TAG}`;
       await fs.writeFileAsync(configFilePath, dnsmasqEntry);
     } else {
       await fs.unlinkAsync(configFilePath).catch((err) => { });
@@ -189,12 +213,12 @@ class UnboundPlugin extends Sensor {
     }
 
     for (const tagUid in this.tagSettings) {
-      const tag = TagManager.getTagByUid(tagUid);
-      if (!tag)
+      const tagExists = await TagManager.tagUidExists(tagUid);
+      if (!tagExists)
         // reset tag if it is already deleted
         this.tagSettings[tagUid] = 0;
       await this.applyTagUnbound(tagUid);
-      if (!tag)
+      if (!tagExists)
         delete this.tagSettings[tagUid];
     }
 

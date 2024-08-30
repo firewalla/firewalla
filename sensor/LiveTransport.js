@@ -47,7 +47,7 @@ class LiveTransport {
 
   setLivetimeExpirationDate() {
     const now = Date.now() / 1000;
-    log.info(`Extend live time for ${this.expire} seconds`);
+    log.debug(`Extend live time for ${this.expire} seconds`);
     this.livetimeExpireDate = Math.floor(now) + this.expire; // extend expire date
   }
 
@@ -90,7 +90,7 @@ class LiveTransport {
                   replyid: replyid
                 });
               }
-              log.info("response sent to back web cloud via live transport, req id:", this.replyid, this.guardianAlias);
+              log.debug("response sent to back web cloud via live transport, req id:", this.replyid, this.guardianAlias);
             } catch (err) {
               log.error('Socket IO connection error', err);
             }

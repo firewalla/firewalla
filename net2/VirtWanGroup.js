@@ -1,4 +1,4 @@
-/*    Copyright 2020-2022 Firewalla Inc.
+/*    Copyright 2020-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,7 +32,9 @@ const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_REFRESH = "LOCK_REFRESH_RT";
 const ipTool = require('ip');
+const Constants = require('./Constants.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const envCreatedMap = {};
 
 const instances = {};
 
@@ -71,7 +73,8 @@ class VirtWanGroup {
         sem.on("VPNClient:Stopped", this._refreshRTListener);
         sem.on("VPNClient:SettingsChanged", this._refreshRTListener);
       }
-    }
+    } else
+      instances[uuid].update(o);
     return instances[uuid];
   }
 
@@ -97,7 +100,7 @@ class VirtWanGroup {
 
   static getRouteIpsetName(uid, hard = true) {
     if (uid) {
-      return `c_vwg_${hard ? "hard" : "soft"}_${uid.substring(0, 13)}_set`;
+      return `c_rt_vwg_${hard ? "hard" : "soft"}_${uid.substring(0, 13)}_set`;
     } else
       return null;
   }
@@ -107,24 +110,34 @@ class VirtWanGroup {
   }
 
   static async ensureCreateEnforcementEnv(uid) {
-    if (!uid)
-      return;
-    const hardRouteIpsetName = VirtWanGroup.getRouteIpsetName(uid);
-    await exec(`sudo ipset create -! ${hardRouteIpsetName} list:set skbinfo`).catch((err) => {
-      log.error(`Failed to create virtual wan group routing ipset ${hardRouteIpsetName}`, err.message);
-    });
+    await lock.acquire(`VWG_ENFORCE_${uid}`, async () => {
+      if (!uid)
+        return;
+      if (envCreatedMap[uid])
+        return;
+      const hardRouteIpsetName = VirtWanGroup.getRouteIpsetName(uid);
+      await exec(`sudo ipset create -! ${hardRouteIpsetName} list:set skbinfo`).catch((err) => {
+        log.error(`Failed to create virtual wan group routing ipset ${hardRouteIpsetName}`, err.message);
+      });
 
-    const softRouteIpsetName = VirtWanGroup.getRouteIpsetName(uid, false);
-    await exec(`sudo ipset create -! ${softRouteIpsetName} list:set skbinfo`).catch((err) => {
-      log.error(`Failed to create virtual wan group routing ipset ${softRouteIpsetName}`, err.message);
-    });
+      const softRouteIpsetName = VirtWanGroup.getRouteIpsetName(uid, false);
+      await exec(`sudo ipset create -! ${softRouteIpsetName} list:set skbinfo`).catch((err) => {
+        log.error(`Failed to create virtual wan group routing ipset ${softRouteIpsetName}`, err.message);
+      });
 
-    const dnsRedirectChain = VirtWanGroup.getDNSRedirectChainName(uid);
-    await exec(`sudo iptables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
-      log.error(`Failed to create virtual wan group DNS redirect chain ${dnsRedirectChain}`, err.message);
-    });
-    await exec(`sudo ip6tables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
-      log.error(`Failed to create ipv6 virtual wan group DNS redirect chain ${dnsRedirectChain}`, err.message);
+      const dnsRedirectChain = VirtWanGroup.getDNSRedirectChainName(uid);
+      await exec(`sudo iptables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
+        log.error(`Failed to create virtual wan group DNS redirect chain ${dnsRedirectChain}`, err.message);
+      });
+      await exec(`sudo ip6tables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
+        log.error(`Failed to create ipv6 virtual wan group DNS redirect chain ${dnsRedirectChain}`, err.message);
+      });
+
+      await fs.promises.mkdir(VirtWanGroup.getDNSRouteConfDir(uid, "hard")).catch((err) => { });
+      await fs.promises.mkdir(VirtWanGroup.getDNSRouteConfDir(uid, "soft")).catch((err) => { });
+      envCreatedMap[uid] = 1;
+    }).catch((err) => {
+      log.error(`Failed to create enforcement env for VWG ${uid}`, err.message);
     });
   }
 
@@ -163,14 +176,23 @@ class VirtWanGroup {
               wan.active = false;
             const metric = wan.seq + 1 + (wan.ready ? 0 : 100);
             const gw = await c._getRemoteIP();
+            const gw6 = await c._getRemoteIP6();
+            const localIP6 = await c._getLocalIP6();
             await routing.addRouteToTable("default", gw, c.getInterfaceName(), this._getRTName(), metric, 4).catch((err) => {});
+            if (localIP6)
+              await routing.addRouteToTable("default", gw6, c.getInterfaceName(), this._getRTName(), metric, 6).catch((err) => {});
             const dnsServers = await c._getDNSServers() || [];
             for (const dnsServer of dnsServers) {
               let af = 4;
               if (!ipTool.isV4Format(dnsServer) && ipTool.isV6Format(dnsServer)) {
                 af = 6;
               }
-              await routing.addRouteToTable(dnsServer, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+              if (af == 4)
+                await routing.addRouteToTable(dnsServer, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+              else {
+                if (localIP6)
+                  await routing.addRouteToTable(dnsServer, gw6, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+              }
             }
             const vpnSubnets = await c.getRoutedSubnets();
             if (_.isArray(vpnSubnets)) {
@@ -178,7 +200,13 @@ class VirtWanGroup {
                 let af = 4;
                 if (!ipTool.isV4Format(vpnSubnet) && ipTool.isV6Format(vpnSubnet))
                   af = 6;
-                await routing.addRouteToTable(vpnSubnet, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+                if (af == 4)
+                  await routing.addRouteToTable(vpnSubnet, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+                else {
+                  if (localIP6) {
+                    await routing.addRouteToTable(vpnSubnet, gw6, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+                  }
+                }
               }
             }
             const settings = await c.loadSettings();
@@ -191,6 +219,7 @@ class VirtWanGroup {
           let seq = 0;
           const wans = Object.values(this.connState);
           const multiPathDesc = [];
+          const multiPathDesc6 = [];
           for (const wan of wans) {
             const profileId = wan.profileId
             const c = VPNClient.getInstance(profileId);
@@ -208,11 +237,17 @@ class VirtWanGroup {
             wan.active = wan.ready;
             let metric = seq + 1;
             const gw = await c._getRemoteIP();
+            const gw6 = await c._getRemoteIP6();
+            const localIP6 = await c._getLocalIP6();
             if (wan.ready) {
               multiPathDesc.push({nextHop: gw, dev: c.getInterfaceName(), weight: wan.weight});
+              if (localIP6)
+                multiPathDesc6.push({nextHop: gw6, dev: c.getInterfaceName(), weight: wan.weight});
             } else {
               metric = seq + 1 + 100;
               await routing.addRouteToTable("default", gw, c.getInterfaceName(), this._getRTName(), metric, 4).catch((err) => {});
+              if (localIP6)
+                await routing.addRouteToTable("default", gw6, c.getInterfaceName(), this._getRTName(), metric, 6).catch((err) => {});
             }
             const dnsServers = await c._getDNSServers() || [];
             for (const dnsServer of dnsServers) {
@@ -220,7 +255,12 @@ class VirtWanGroup {
               if (!ipTool.isV4Format(dnsServer) && ipTool.isV6Format(dnsServer)) {
                 af = 6;
               }
-              await routing.addRouteToTable(dnsServer, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+              if (af == 4)
+                await routing.addRouteToTable(dnsServer, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+              else {
+                if (localIP6)
+                  await routing.addRouteToTable(dnsServer, gw6, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+              }
             }
             const vpnSubnets = await c.getRoutedSubnets();
             if (_.isArray(vpnSubnets)) {
@@ -228,7 +268,12 @@ class VirtWanGroup {
                 let af = 4;
                 if (!ipTool.isV4Format(vpnSubnet) && ipTool.isV6Format(vpnSubnet))
                   af = 6;
-                await routing.addRouteToTable(vpnSubnet, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => { });
+                if (af == 4)
+                  await routing.addRouteToTable(vpnSubnet, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => { });
+                else {
+                  if (localIP6)
+                    await routing.addRouteToTable(vpnSubnet, gw6, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => { });
+                }
               }
             }
             const settings = await c.loadSettings();
@@ -238,6 +283,8 @@ class VirtWanGroup {
           }
           if (multiPathDesc.length > 0)
             await routing.addMultiPathRouteToTable("default", this._getRTName(), 4, ...multiPathDesc).catch((err) => {});
+          if (multiPathDesc6.length > 0)
+            await routing.addMultiPathRouteToTable("default", this._getRTName(), 6, ...multiPathDesc6).catch((err) => {});
           break;
         }
         default:
@@ -253,28 +300,36 @@ class VirtWanGroup {
         // populate hard route ipset with skbmark
         await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
         await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
-        if (!_.isEmpty(routedDnsServers))
+        if (!_.isEmpty(routedDnsServers)) {
           await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
-        else
+          await this._enableDNSRoute("hard");
+        } else {
           await exec(`sudo ipset del -! ${VirtWanGroup.getRouteIpsetName(this.uuid)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
+          await this._disableDNSRoute("hard");
+        }
       } else {
         await exec(`sudo ipset flush -! ${VirtWanGroup.getRouteIpsetName(this.uuid)}`).catch((err) => {});
+        await this._disableDNSRoute("hard");
       }
       if (anyWanReady) {
         // populate soft route ipset with skbmark
         await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
         await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
-        if (!_.isEmpty(routedDnsServers))
+        if (!_.isEmpty(routedDnsServers)) {
           await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
-        else
-          await exec(`sudo ipset del -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { }); 
+          await this._enableDNSRoute("soft");
+        } else {
+          await exec(`sudo ipset del -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+          await this._disableDNSRoute("soft");
+        }
       } else {
         await exec(`sudo ipset flush -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)}`).catch((err) => {});
+        await this._disableDNSRoute("soft");
       }
       if (!_.isEmpty(routedDnsServers)) {
-        await fs.promises.writeFile(`${f.getUserConfigFolder()}/dnsmasq/vwg_${this.uuid}.conf`, `mark=${rtId}$${VirtWanGroup.getDnsMarkTag(this.uuid)}\nserver=${routedDnsServers[0]}$${VirtWanGroup.getDnsMarkTag(this.uuid)}`).catch((err) => {});
+        await fs.promises.writeFile(this._getDnsmasqConfigPath(), `mark=${rtId}$${VirtWanGroup.getDnsMarkTag(this.uuid)}$*!${Constants.DNS_DEFAULT_WAN_TAG}\nserver=${routedDnsServers[0]}$${VirtWanGroup.getDnsMarkTag(this.uuid)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
       } else {
-        await fs.promises.unlink(`${f.getUserConfigFolder()}/dnsmasq/vwg_${this.uuid}.conf`);
+        await fs.promises.unlink(this._getDnsmasqConfigPath()).catch((err)=> {});
       }
       const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
       const dnsmasq = new DNSMASQ();
@@ -366,6 +421,32 @@ class VirtWanGroup {
     return `vwg_${this.uuid.substring(0, 13)}`;
   }
 
+  _getDnsmasqConfigPath() {
+    return `${f.getUserConfigFolder()}/dnsmasq/vwg_${this.uuid}.conf`;
+  }
+
+  _getDnsmasqRouteConfigPath(routeType = "hard") {
+    return `${f.getUserConfigFolder()}/dnsmasq/vwg_${this.uuid}_${routeType}.conf`;
+  }
+
+  static getDNSRouteConfDir(uuid, routeType = "hard") {
+    return `${f.getUserConfigFolder()}/dnsmasq/VWG:${uuid}_${routeType}`;
+  }
+
+  async _enableDNSRoute(routeType = "hard") {
+    const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
+    await fs.promises.writeFile(this._getDnsmasqRouteConfigPath(routeType), `conf-dir=${VirtWanGroup.getDNSRouteConfDir(this.uuid, routeType)}`).catch((err) => {});
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async _disableDNSRoute(routeType = "hard") {
+    const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
+    await fs.promises.unlink(this._getDnsmasqRouteConfigPath(routeType)).catch((err) => {});
+    dnsmasq.scheduleRestartDNSService();
+  }
+
   applyConfig() {
     const previousState = JSON.parse(JSON.stringify(this.connState));
     this.connState = {};
@@ -442,6 +523,11 @@ class VirtWanGroup {
       sem.removeListener("VPNClient:SettingsChanged", this._refreshRTListener);
       this._refreshRTListener = null;
     }
+    await this._disableDNSRoute("hard");
+    await this._disableDNSRoute("soft");
+    await fs.promises.unlink(this._getDnsmasqConfigPath()).catch((err) => {});
+    await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "hard")}`).catch((err) => {});
+    await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "soft")}`).catch((err) => {});
   }
 
   async toJson() {

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,10 +19,9 @@ const log = require('../net2/logger.js')(__filename, 'info');
 const Alarm = require('./Alarm.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const bone = require("../lib/Bone.js");
-
-const flat = require('flat');
 
 const util = require('util');
 
@@ -31,8 +30,6 @@ const moment = require('moment');
 const fc = require('../net2/config.js')
 
 const f = require('../net2/Firewalla.js');
-
-const Promise = require('bluebird');
 
 const DNSManager = require('../net2/DNSManager.js');
 const dnsManager = new DNSManager('info');
@@ -52,6 +49,7 @@ const validator = require('validator');
 
 let instance = null;
 
+const alarmPendingKey = "alarm_pending";
 const alarmActiveKey = "alarm_active";
 const alarmArchiveKey = "alarm_archive";
 const ExceptionManager = require('./ExceptionManager.js');
@@ -86,6 +84,9 @@ const _ = require('lodash');
 const IntelManager = require('../net2/IntelManager.js')
 const intelManager = new IntelManager('info');
 const IdentityManager = require('../net2/IdentityManager.js');
+const Constants = require('../net2/Constants.js');
+
+const featureName = 'msp_sync_alarm';
 
 // TODO: Support suppress alarm for a while
 
@@ -96,12 +97,131 @@ module.exports = class {
       this.publisher = new c('info');
 
       this.setupAlarmQueue();
+
+      if (f.isMain()) {
+        // clean timeout pending alarms every 60s
+        setInterval(() => {
+          this.cleanPendingQueue();
+        }, 60000);
+
+        sclient.subscribe("config:feature:dynamic:disable");
+        sclient.subscribe("alarm:create");
+        sclient.subscribe("alarm:mspsync");
+
+        sclient.on("message", (channel, message) => {
+          switch (channel) {
+            case "config:feature:dynamic:disable": {
+              log.info('received event config:feature:dynamic:disable')
+              if (message === featureName) {
+                this.cleanPendingQueue();
+              }
+              break;
+            }
+            case "alarm:create": {
+              log.info('received event alarm:create')
+              this.createAlarm(JSON.parse(message));
+              break;
+            }
+            case "alarm:mspsync": {
+              log.info('received event alarm:mspsync')
+              this._mspSyncAlarm(JSON.parse(message));
+              break;
+            }
+          }
+        });
+      }
     }
     return instance;
   }
 
-  async setupAlarmQueue() {
+  async _mspSyncAlarm(data) {
+    for (const cmd in data ) {
+      await this.mspSyncAlarm(cmd, data[cmd]);
+    }
+  }
 
+  async createAlarm(data) {
+    if (!f.isMain()) {
+      return;
+    }
+    if (!data) {
+      log.warn('cannot create alarm, invalid parameters');
+      return;
+    }
+
+    try {
+      const alarm = this._genAlarm(await this._alignAlarmInfo(data));
+      log.info('alarm:create', alarm);
+      await this.enrichDeviceInfo(alarm);
+      this.enqueueAlarm(alarm); // use enqueue to ensure no dup alarms
+    } catch (err) {
+      log.warn('cannot create alarm', err.message);
+    }
+  }
+
+  async cleanPendingQueue() {
+    const alarmIds = await rclient.zrangeAsync(alarmPendingKey, 0, -1);
+    const timeout = parseFloat(_.get(fc.getConfig(), 'alarms.apply.default.timeout')) || 600;  // default 600s timeout, at least 60s
+    const deadline = new Date() / 1000 - Math.max(timeout, 60);
+    for (const aid of alarmIds) {
+      try {
+        const alarmKey = alarmPrefix + aid;
+        const data = await rclient.hmgetAsync(alarmKey, 'state', 'alarmTimestamp');
+        if (data.length < 2) {
+          log.warn('cannot get pending alarm detail', aid);
+          continue
+        }
+        // check timestamp
+        const outdated = parseFloat(data[1]) < deadline;
+
+        switch (data[0]) {
+          case Constants.ST_INIT:
+          case Constants.ST_PENDING: {
+            if (!this.isAlarmSyncMspEnabled() || outdated ) {
+              log.info('pending alarm fallback to active', aid);
+              await this.activateAlarm({state: Constants.ST_READY, aid: aid, alarmTimestamp: data[1]}, {origin:{state: data[0]}, 'p.msp.decision':'timeout'});
+            }
+            break;
+          }
+          case Constants.ST_READY: {
+            // activate immediately, normally active alarms should not in pending queue
+            await this.activateAlarm({state: Constants.ST_READY, aid: aid, alarmTimestamp: data[1]}, {origin:{state: data[0]}});
+            break;
+          }
+          case Constants.ST_ACTIVATED:
+          case Constants.ST_IGNORE: {
+            await rclient.zremAsync(alarmPendingKey, aid);
+            break;
+          }
+          default: {
+            log.warn('cannot handle pending alarms', data)
+            break;
+          }
+        }
+      } catch (err) {
+        log.error('fail to scan pending alarms', err.message);
+      }
+    }
+  }
+
+  isAlarmSyncMspEnabled() {
+    return fc.isFeatureOn(featureName);
+  }
+
+  isCyberSecurityEnabled() {
+    return fc.isFeatureOn("cyber_security")
+  }
+
+  isMuteAlarm(alarm) {
+    // TODO: specify p.msp.type value if needed
+    if (alarm.type == "ALARM_CUSTOMIZED_SECURITY" && alarm["p.msp.type"] && !this.isCyberSecurityEnabled() ) {
+      log.info("Alarm category cyber_security is disabled", alarm);
+      return true
+    }
+    return false
+  }
+
+  async setupAlarmQueue() {
     this.queue = new Queue(`alarm-${f.getProcessName()}`, {
       removeOnFailure: true,
       removeOnSuccess: true
@@ -122,6 +242,18 @@ module.exports = class {
     this.queue.process(async (job, done) => {
       const event = job.data;
       const alarm = this.jsonToAlarm(event.alarm);
+      if (this.isAlarmSyncMspEnabled()) {
+        if (alarm["p.msp.ready"]) {
+          this.applyConfig(alarm, ['state']);
+        } else {
+          this.applyConfig(alarm, []);
+        }
+      }
+
+      if (this.isMuteAlarm(alarm)) {
+        return;
+      }
+
       log.debug('processing job', JSON.stringify(event))
 
       if (alarm["p.local.decision"] === "ignore") {
@@ -134,7 +266,7 @@ module.exports = class {
       switch (action) {
         case "create": {
           try {
-            log.info("Try to create alarm:", event.alarm);
+            log.verbose("Try to create alarm:", event.alarm);
             let aid = await this.checkAndSaveAsync(alarm, event.profile);
             log.info(`Alarm ${aid} is created successfully`);
           } catch (err) {
@@ -154,7 +286,7 @@ module.exports = class {
         }
 
         default:
-          log.error("unrecoganized policy enforcement action:" + action)
+          log.error("unrecoganized alarm enforcement action:" + action)
           done()
           break
       }
@@ -182,6 +314,11 @@ module.exports = class {
     let score = parseFloat(alarm.alarmTimestamp);
     let id = alarm.aid;
     await rclient.zaddAsync(alarmActiveKey, score, id);
+  }
+
+  async addToPendingQueue(alarm) {
+    let score = parseFloat(alarm.alarmTimestamp);
+    return await rclient.zaddAsync(alarmPendingKey, 'NX', score, alarm.aid);
   }
 
   removeFromActiveQueueAsync(alarmID) {
@@ -220,6 +357,19 @@ module.exports = class {
     return alarm
   }
 
+  async mspIgnoreAlarm(alarmID, options={}) {
+    if (options.origin && options.origin.state == Constants.ST_IGNORE){
+      return
+    }
+    let mspDec = 'ignore';
+    if (options.origin && options.origin['p.msp.decision']) {
+      mspDec = options.origin['p.msp.decision'] + ',' + mspDec;
+    }
+    await rclient.hsetAsync(alarmPrefix + alarmID, 'p.msp.decision', mspDec);
+    await this.archiveAlarm(alarmID);
+    await rclient.zremAsync(alarmPendingKey, alarmID);
+  }
+
   async ignoreAlarm(alarmID, info) {
     log.info("Going to ignore alarm " + alarmID);
     const userInput = info.info;
@@ -251,7 +401,7 @@ module.exports = class {
     let alarm = await this.getAlarm(alarmID);
     if (!alarm) {
       log.error(`Invalid Alarm (id: ${alarmID})`)
-      return
+      return;
     }
 
     // publish to others
@@ -280,7 +430,8 @@ module.exports = class {
   }
 
   async saveAlarm(alarm) {
-    if (!alarm instanceof Alarm.Alarm) alarm = this.jsonToAlarm(alarm)
+    if (!(alarm instanceof Alarm.Alarm)) alarm = this.jsonToAlarm(alarm)
+    if (!alarm) return
     // covnert to string to make it consistent
     if (!alarm.aid) alarm.aid = await this.getNextID() + ""
 
@@ -311,12 +462,9 @@ module.exports = class {
     let expiring = fConfig.sensors.OldDataCleanSensor.alarm.expires || 24 * 60 * 60 * 30;  // a month
     await rclient.expireatAsync(alarmKey, parseInt((+new Date) / 1000) + expiring);
 
-    await this.addToActiveQueue(alarm);
-
     // add extended info, extended info are optional
     (async () => {
       const extendedAlarmKey = `${alarmDetailPrefix}:${alarm.aid}`;
-
       // if there is any extended info
       if (Object.keys(extended).length !== 0 && extended.constructor === Object) {
         await rclient.hmsetAsync(extendedAlarmKey, extended);
@@ -327,26 +475,15 @@ module.exports = class {
       log.error(`Failed to store extended data for alarm ${alarm.aid}, err: ${err}`);
     })
 
-    // record security alarm count on hostInfo
-    if (alarm['p.device.mac'] && alarm.isSecurityAlarm()) {
-      const mac = alarm['p.device.mac'].toUpperCase();
-      if (hostTool.isMacAddress(mac)) {
-        const macKey = hostTool.getMacKey(mac);
-        try {
-          const keyExists = await rclient.existsAsync(macKey);
-          if (keyExists == 1)
-            await rclient.hincrbyAsync(macKey, 'security_alarm', 1)
-        } catch (err) {
-          log.warn(`Failed to count security alarm ${alarm['p.device.mac']}`, err);
-        }
-      }
+    // save pending
+    if (this.isAlarmSyncMspEnabled() && alarm.state == Constants.ST_PENDING) {
+      await this.addToPendingQueue(alarm);
     }
-
-
     return alarm.aid;
   }
 
   async removeAlarmAsync(alarmID) {
+    await rclient.zremAsync(alarmPendingKey, alarmID);
     await rclient.zremAsync(alarmArchiveKey, alarmID);
     await this.removeFromActiveQueueAsync(alarmID);
     await this.deleteExtendedAlarm(alarmID);
@@ -362,7 +499,7 @@ module.exports = class {
 
     if (related.length) {
       await rclient.zremAsync(alarmActiveKey, related);
-      await rclient.unlinkAsync(related.map(id => alarmDetailPrefix + id));
+      await rclient.unlinkAsync(related.map(id => alarmDetailPrefix + ':' + id));
       await rclient.unlinkAsync(related.map(id => alarmPrefix + id));
     }
   }
@@ -383,14 +520,10 @@ module.exports = class {
       let cooldown = duration - (Date.now() / 1000 - latest);
 
       log.info(util.format(
-        ':dedup: Dup Found! ExpirationTime: %s (%s)',
-        moment.duration(duration * 1000).humanize(), duration,
-      ));
-      log.info(util.format(
-        ':dedup: Latest alarm %s happened on %s, cooldown: %s (%s)',
+        ':dedup: Latest alarm %s happened at %s, cooldown: %s / %s',
         dupAlarmID,
         new Date(latest * 1000).toLocaleString(),
-        moment.duration(cooldown * 1000).humanize(), cooldown.toFixed(2)
+        moment.duration(cooldown * 1000).humanize(), moment.duration(duration * 1000).humanize()
       ));
 
       return true
@@ -426,6 +559,125 @@ module.exports = class {
     }
   }
 
+  applyConfig(alarm, excludes=[]) {
+    excludes.push('timeout');
+    const cfg = fc.getConfig().alarms;
+    const defaultCfg = fc.getDefaultConfig().alarms;
+    const alarmConfig = {};
+    if (defaultCfg && defaultCfg.apply) {
+      Object.assign(alarmConfig, defaultCfg.apply);
+    }
+    if (cfg && cfg.apply) {
+      Object.assign(alarmConfig, cfg.apply);
+    }
+    log.debug("alarm config apply", alarmConfig, alarm.type);
+    const alias = Alarm.alarmType2alias(alarm.type);
+    if (alarmConfig.hasOwnProperty(alias)) {
+      alarm.apply(_.omit(alarmConfig[alias], excludes));
+    } else if (alarmConfig.default){ // default
+      alarm.apply(_.omit(alarmConfig.default, excludes));
+    }
+  }
+
+  // a lite update alarm version, return modified attrs with origin value
+  async _applyAlarm(alarm) {
+    if (!alarm || !alarm.aid) {
+      log.warn('alarm must have aid to apply changes', alarm);
+      return;
+    }
+    const alarmKey = alarmPrefix + alarm.aid;
+    const orig_alarm = await rclient.hgetallAsync(alarmKey);
+    if (!orig_alarm) {
+      log.warn('cannot apply alarm change, alarm not found', alarm.aid);
+      return;
+    }
+    log.debug('apply alarm attrs', alarm, 'to', orig_alarm);
+    let attrs = {state: orig_alarm.state}; // origin attrs
+    if (orig_alarm.hasOwnProperty('p.msp.decision')) {
+      attrs['p.msp.decision'] = orig_alarm['p.msp.decision'];
+    }
+
+    // only allow reapply state: ignore -> ready or active -> ignore
+    let redecision = (orig_alarm.state == Constants.ST_ACTIVATED && alarm.state == Constants.ST_IGNORE) || ( orig_alarm.state == Constants.ST_IGNORE && alarm.state == Constants.ST_READY);
+    for (const k in alarm) {
+      if (alarm[k] != orig_alarm[k]) {
+        attrs[k] = orig_alarm[k];
+      }
+      if (k == "state" && alarm[k] != Constants.ST_READY && alarm[k] != Constants.ST_IGNORE) {
+        log.warn('apply alarm invalid state, skip change state', alarm);
+        delete alarm[k];
+        continue;
+      }
+      if (k == "state" && alarm[k] != orig_alarm.state && (orig_alarm.state == Constants.ST_ACTIVATED || orig_alarm.state == Constants.ST_IGNORE) && !redecision) {
+        log.warn('alarm already activated or ignored, skip change state', alarm);
+        delete alarm[k];
+        continue
+      }
+    }
+
+    try {
+      alarm['applyTimestamp'] = Date.now()/1000;
+      alarm['type'] = orig_alarm.type;
+      await this.saveAlarm(alarm);
+    } catch (err) {
+      log.warn('fail to save alarm changes', alarm, err.message);
+    }
+    return attrs;
+  }
+
+  async _onState(alarm, options={}) {
+    switch (alarm.state) {
+      case Constants.ST_READY: {
+        if (options.origin['p.msp.decision']) {
+          options['p.msp.decision'] = options.origin['p.msp.decision'] + ',active';
+        } else {
+          options['p.msp.decision'] = 'active';
+        }
+        await this.activateAlarm(alarm, options);
+        break;
+      }
+      case Constants.ST_IGNORE: {
+        await this.mspIgnoreAlarm(alarm.aid, options)
+        break;
+      }
+      default: {
+        log.info('skip handle state change of alarm', alarm, options);
+      }
+    }
+  }
+
+  async onAlarmSyncEvent(alarm, attrs, options = {}) {
+    if (!attrs) {
+      return
+    }
+    for (const attr in attrs) {
+      switch (attr) {
+        case 'state': {
+          const opt = Object.assign({}, options, {origin:attrs});
+          await this._onState(alarm, opt);
+          break;
+        }
+      }
+    }
+  }
+
+  async mspSyncAlarm(cmd, alarms) {
+    switch (cmd) {
+      case 'apply': {
+        if (_.isArray(alarms)){
+          for (const alarm of alarms) {
+            // update alarm simple attrs, too heavy to use updateAlarm
+            const attrs = await this._applyAlarm(alarm);
+            await this.onAlarmSyncEvent(alarm, attrs);
+          }
+        }
+        break;
+      }
+      default:
+        log.warn('cannot handle msp sync alarm command', cmd, alarms);
+    }
+  }
+
   async checkAndSave(alarm, callback) {
     callback = callback || function () { };
 
@@ -452,9 +704,8 @@ module.exports = class {
     const hasDup = await this.dedup(alarm, profile);
 
     if (hasDup) {
-      log.warn("Same alarm is already generated, skipped this time", alarm.type);
-      log.warn("destination: " + alarm["p.dest.name"] + ":" + alarm["p.dest.ip"]);
-      log.warn("source: " + alarm["p.device.name"] + ":" + alarm["p.device.ip"]);
+      log.warn("Skipped dup alarm", alarm.type, "dest:", alarm["p.dest.name"], alarm["p.dest.ip"],
+        "src:", alarm["p.device.name"], alarm["p.device.ip"]);
       let err = new Error("duplicated with existing alarms");
       err.code = 'ERR_DUP_ALARM';
       throw err;
@@ -472,14 +723,22 @@ module.exports = class {
       throw err3;
     }
 
-    const policyMatch = alarm.type === "ALARM_CUSTOMIZED" ? false : await pm2.match(alarm) // do not match alarm against rules for customized alarms
 
-    if (policyMatch) {
-      // already matched some policy
+    const devicePolicy = _.get(await alarm.getDevice(), 'policy', {})
 
-      const err2 = new Error("alarm is covered by policies");
-      err2.code = 'ERR_BLOCKED_BY_POLICY_ALREADY';
-      throw err2;
+    // don't do policy match for emergency access and customized alarm
+    if ((!devicePolicy.hasOwnProperty('acl') || devicePolicy.acl === true)
+      && alarm.type !== "ALARM_CUSTOMIZED"
+    ) {
+      const policyMatch = await pm2.match(alarm)
+
+      if (policyMatch) {
+        // already matched some policy
+
+        const err2 = new Error("alarm is covered by policies");
+        err2.code = 'ERR_BLOCKED_BY_POLICY_ALREADY';
+        throw err2;
+      }
     }
 
     const trustMatch = await tm.matchAlarm(alarm);
@@ -518,6 +777,82 @@ module.exports = class {
     }
 
     const alarmID = await this.saveAlarm(alarm)
+    await this.activateAlarm(alarm, {origin:{state: Constants.ST_INIT}});
+
+    // invoke post alarm generated hook logic
+    if (alarm.onGenerated instanceof Function) {
+      alarm.onGenerated().catch((err) => {
+        log.error(`Failed to invoke onGenerated hook on alarm ${alarmID}`);
+      })
+    }
+    return alarmID
+  }
+
+  async _activateAlarm(alarm, unarchive = false) {
+    let score = parseFloat(alarm.alarmTimestamp) || new Date() / 1000;
+    if (unarchive) {
+      await rclient.zremAsync(alarmArchiveKey, alarm.aid);
+    }
+    return await rclient.multi()
+      .zrem(alarmPendingKey, alarm.aid)
+      .zadd(alarmActiveKey, 'NX', score, alarm.aid)
+      .execAsync();
+  }
+
+  async activateAlarm(alarm, options={}) {
+    log.info('activate alarm', alarm, options);
+    let unarchive = false;
+
+    if (this.isAlarmSyncMspEnabled()) {
+      if ((alarm.state && alarm.state == Constants.ST_ACTIVATED) || (options.origin && options.origin.state == Constants.ST_ACTIVATED)) {
+        log.warn(`alarm ${alarm.aid} already activated`)
+        return;
+      }
+      // check state
+      if (alarm.state && alarm.state == Constants.ST_PENDING) {
+        log.debug(`alarm ${alarm.aid} still pending`)
+        return;
+      }
+      if (alarm.state && alarm.state == Constants.ST_READY && options.origin && options.origin.state == Constants.ST_IGNORE) {
+        unarchive = true
+      }
+    }
+
+    alarm.state = Constants.ST_ACTIVATED;
+    const alarmKey = alarmPrefix + alarm.aid;
+    let updateAttrs = ['state', Constants.ST_ACTIVATED];
+    if (options['p.msp.decision']) {
+      updateAttrs.push('p.msp.decision', options['p.msp.decision']);
+    }
+    await rclient.hmsetAsync(alarmKey, updateAttrs);
+
+    const orig_alarm = await rclient.hgetallAsync(alarmKey);
+    alarm = Object.assign({}, orig_alarm, alarm);
+    const result  = await this._activateAlarm(alarm, unarchive);
+
+    // check alarm state change results
+    if (this.isAlarmSyncMspEnabled() && result.length >= 2) {
+      if (result[0] != 1 && !(options.origin && options.origin.state == Constants.ST_INIT)) {
+        log.warn('error remove alarm from pending queue', alarm.aid, result[0]);
+      }
+      if (result[1] != 1) {
+        log.warn('error add alarm to active queue', alarm.aid, result[1]);
+      }
+    }
+    // record security alarm count on hostInfo
+    if (alarm['p.device.mac'] && Alarm.isSecurityAlarm(alarm.type)) {
+      const mac = alarm['p.device.mac'].toUpperCase();
+      if (hostTool.isMacAddress(mac)) {
+        const macKey = hostTool.getMacKey(mac);
+        try {
+          const keyExists = await rclient.existsAsync(macKey);
+          if (keyExists == 1)
+            await rclient.hincrbyAsync(macKey, 'security_alarm', 1)
+        } catch (err) {
+          log.warn(`Failed to count security alarm ${alarm['p.device.mac']}`, err);
+        }
+      }
+    }
 
     try {
       log.info("AlarmManager:Check:AutoBlock", alarm.aid);
@@ -540,7 +875,7 @@ module.exports = class {
         if (alarm['p.dest.ip']) {
           alarm["if.target"] = alarm['p.dest.ip'];
           alarm["if.type"] = "ip";
-          bone.submitIntelFeedback("autoblock", alarm, "alarm");
+          bone.submitIntelFeedback("autoblock", alarm);
         }
       }
 
@@ -549,8 +884,44 @@ module.exports = class {
     } finally {
       this.notifAlarm(alarm.aid);
     }
+  }
 
-    return alarmID
+  _genAlarm(a = {}) {
+    let proto = Alarm.mapping[Alarm.alias2alarmType(a.type)];
+    if (!proto) {
+      return null
+    }
+    let alarm;
+    let ts = a.timestamp || Date.now()/1000;
+    // Outbound constructors
+    if (proto instanceof Alarm.OutboundAlarm) {
+      alarm = new proto.constructor(ts, a.device, a['p.dest.id'], _.omit(a, ['type', 'device', 'p.dest.id']));
+    } else {
+      switch (proto.constructor.name) {
+        case 'VulnerabilityAlarm':{
+          alarm = new proto.constructor(ts, a.device, a['p.vid'], _.omit(a, ['type', 'device', 'p.vid']));
+          break;
+        }
+        case 'BroNoticeAlarm': {
+          alarm = new proto.constructor(ts, a.device, a['p.noticeType'], a['p.message'], _.omit(a, ['type', 'device', 'p.noticeType', 'p.message']));
+          break;
+        }
+        case 'IntelAlarm': {
+          alarm = new proto.constructor(ts, a.device, a['p.severity'],  _.omit(a, ['type', 'device', 'p.severity']));
+          break;
+        }
+        default: {
+          alarm = new proto.constructor(ts, a.device, _.omit(a, ['type', 'device']));
+          break;
+        }
+      }
+    }
+    if (alarm["p.msp.ready"]) {
+      alarm.state = Constants.ST_READY;
+      alarm["p.msp.decision"] = "create"
+    }
+    log.debug('alarm generated', alarm);
+    return alarm;
   }
 
   async shouldAutoBlock(alarm) {
@@ -562,6 +933,10 @@ module.exports = class {
     const ip = alarm["p.dest.ip"];
     let ret;
     if (ip) ret = await intelTool.unblockExists(ip);
+    if (ret) return false;
+    
+    const domain = alarm["p.dest.name"];
+    ret = domain && await intelTool.unblockExists(domain);
     if (ret) return false;
 
     if (alarm && alarm.type === 'ALARM_NEW_DEVICE' &&
@@ -592,15 +967,18 @@ module.exports = class {
       for (const key of Object.keys(obj)) {
         const value = obj[key];
         // try to convert string of JSON object/array to JSON format
-        if (_.isString(value) && validator.isJSON(value)) {
+        if (_.isString(value) && (validator.isJSON(value) || value === "undefined")) {
           try {
-            obj[key] = JSON.parse(value);
-          } catch (err) { }
+            if (value === "undefined")
+              delete obj[key];
+            else
+              obj[key] = JSON.parse(value);
+          } catch (err) { log.warn("fail to convert to alarm, key", key, err.message) }
         }
       }
       return obj;
     } else {
-      log.error("Unsupported alarm type: " + json.type);
+      log.error(`Unsupported alarm type ${json.type} alarm ${json.aid}`);
       return null;
     }
   }
@@ -624,7 +1002,9 @@ module.exports = class {
     });
 
     const results = await multi.execAsync()
-    return results.map((r) => this.jsonToAlarm(r)).filter(Boolean)
+
+    // don't filter result and keep the original id to alarm mapping
+    return results.map((r) => this.jsonToAlarm(r))
   }
 
   idsToAlarms(ids, callback = function () { }) {
@@ -675,26 +1055,8 @@ module.exports = class {
     return alarms;
   }
 
-  loadRecentAlarmsAsync(duration) {
+  async loadRecentAlarmsAsync(duration) {
     duration = duration || 10 * 60;
-    return new Promise((resolve, reject) => {
-      this.loadRecentAlarms(duration, (err, results) => {
-        if (err) {
-          reject(err)
-        } else {
-          resolve(results)
-        }
-      })
-    })
-  }
-
-  loadRecentAlarms(duration, callback) {
-    if (typeof (duration) == 'function') {
-      callback = duration;
-      duration = 10 * 60; // 10 minutes
-    }
-
-    callback = callback || function () { }
 
     let scoreMax = new Date() / 1000 + 1;
     let scoreMin;
@@ -704,22 +1066,40 @@ module.exports = class {
       scoreMin = scoreMax - duration;
     }
 
-    rclient.zrevrangebyscore(alarmActiveKey, scoreMax, scoreMin, (err, alarmIDs) => {
-      if (err) {
-        log.error("Failed to load active alarms: " + err);
-        callback(err);
-        return;
-      }
-      this.idsToAlarms(alarmIDs, (err, results) => {
-        if (err) {
-          callback(err);
-          return;
-        }
+    let recentResults = [];
+    let alarmIDs, results;
 
+    try {
+      alarmIDs = await rclient.zrevrangebyscoreAsync(alarmPendingKey, scoreMax, scoreMin);
+      results = await this.idsToAlarmsAsync(alarmIDs);
+      if (results) {
         results = results.filter((a) => a != null);
-        callback(err, results);
-      });
-    });
+        recentResults = recentResults.concat(results);
+      }
+    } catch (err) {
+      log.warn("cannot get pending alarms", err.message);
+    }
+
+    try {
+      alarmIDs = await rclient.zrevrangebyscoreAsync(alarmActiveKey, scoreMax, scoreMin);
+      results = await this.idsToAlarmsAsync(alarmIDs);
+      if (results) {
+        results = results.filter((a) => a != null);
+        recentResults = recentResults.concat(results);
+      }
+    } catch (err) {
+      log.warn("cannot get active alarms", err.message);
+    }
+    return recentResults;
+  }
+
+  async loadPendingAlarms(options) {
+    const offset = options && options.offset || 0 // default starts from 0
+    const limit = options && options.limit || 50 // default load 50 alarms
+    let alarmIDs = await rclient.zrevrangebyscoreAsync(alarmPendingKey,
+        "+inf", "-inf", "limit", offset, limit);
+    let alarms = await this.idsToAlarmsAsync(alarmIDs);
+    return alarms.filter((a) => a != null)
   }
 
   async loadArchivedAlarms(options) {
@@ -800,6 +1180,19 @@ module.exports = class {
     return rclient.zcountAsync(alarmActiveKey, '-inf', '+inf');
   }
 
+  async getPendingAlarmCount() {
+    return await rclient.zcountAsync(alarmPendingKey, '-inf', '+inf');
+  }
+
+  async loadAlarmIDs() {
+    const activeAlarmIDs = await rclient.zrangeAsync(alarmActiveKey, 0, -1);
+    const archivedAlarmIDs = await rclient.zrangeAsync(alarmArchiveKey, 0, -1);
+    const pendingAlarmIDs = await rclient.zrangeAsync(alarmPendingKey, 0, -1);
+    return {
+      activeAlarmIDs, archivedAlarmIDs, pendingAlarmIDs
+    }
+  }
+
   // ** lagacy prototype loadActiveAlarms(count, callback)
   //
   // options:
@@ -876,7 +1269,7 @@ module.exports = class {
 
     let alarms = await this.idsToAlarmsAsync(ids)
 
-    return alarms
+    return alarms.filter(Boolean)
   }
 
   async getAlarmDetail(aid) {
@@ -907,13 +1300,9 @@ module.exports = class {
 
   // }
 
-  async findSimilarAlarmsByPolicy(policy, curAlarmID) {
+  async findSimilarAlarmsByPolicy(policy) {
     let alarms = await this.loadActiveAlarmsAsync(200); // load 200 alarms for comparison
     return alarms.filter((alarm) => {
-      if (alarm.aid === curAlarmID) {
-        return false // ignore current alarm id, since it's already blocked
-      }
-
       if (alarm.result && alarm.result !== "") {
         return false
       }
@@ -1159,11 +1548,14 @@ module.exports = class {
           delete p.target;
       }
 
-      //@TODO need support array?
-      if (info.tag) {
-        p.tag.push(Policy.TAG_PREFIX + info.tag);
-        if (p.scope && !info.device)
-          delete p.scope;
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const config = Constants.TAG_TYPE_MAP[type];
+        const prefix = config.ruleTagPrefix.substring(0, config.ruleTagPrefix.length - 1); // strip last colon, e.g., tag:
+        if (_.has(info, prefix)) {
+          p.tag.push(`${config.ruleTagPrefix}${info[prefix]}`);
+          if (p.scope && !info.device)
+            delete p.scope;
+        }
       }
 
       if (info.matchAllDevice) {
@@ -1177,6 +1569,15 @@ module.exports = class {
         p.category = info.category
       } else {
         p.category = ""
+      }
+
+      if (info.app) {
+        p.matchAppId = info.app;
+      }
+
+      if (_.isObject(info.customizedKeys)) {
+        for (const key of Object.keys(info.customizedKeys))
+          p[key] = info.customizedKeys[key];
       }
 
     } else {
@@ -1239,74 +1640,63 @@ module.exports = class {
     }
 
     log.info("Trying to find if any other active alarms are covered by this new policy")
-    const alarms = await this.findSimilarAlarmsByPolicy(p, alarm.aid)
+    const alarms = await this.findSimilarAlarmsByPolicy(p)
     const blockedAlarms = []
-    for (const alarm of alarms) {
+    for (const a of alarms) {
+      if (a.aid == alarm.aid) continue
       try {
-        await this.blockAlarmByPolicy(alarm, policy, info)
-        blockedAlarms.push(alarm)
+        await this.blockAlarmByPolicy(a, policy, info)
+        blockedAlarms.push(a)
       } catch (err) {
-        log.error(`Failed to block alarm ${alarm.aid} with policy ${policy.pid}: ${err}`)
+        log.error(`Failed to block alarm ${a.aid} with policy ${policy.pid}: ${err}`)
       }
     }
     return { policy, blockedAlarms, alreadyExists }
   }
 
-  allowFromAlarm(alarmID, info, callback) {
+  async allowFromAlarm(alarmID, info) {
     log.info("Going to allow alarm " + alarmID);
-    log.info("info: ", info);
 
     let userInput = info.info;
 
-    this.getAlarm(alarmID)
-      .then((alarm) => {
+    const alarm = await this.getAlarm(alarmID)
 
-        log.info("Alarm to allow: ", alarm);
+    log.info("Alarm to allow: ", alarm);
 
-        if (!alarm) {
-          log.error("Invalid alarm ID:", alarmID);
-          callback(new Error("Invalid alarm ID: " + alarmID));
-          return;
+    if (!alarm) {
+      log.error("Invalid alarm ID:", alarmID);
+      throw new Error("Invalid alarm ID: " + alarmID)
+    }
+
+    const e = this.createException(alarm, userInput);
+
+    // FIXME: make it transactional
+    // set alarm handle result + add policy
+
+    const { exception, alreadyExists } = await exceptionManager.checkAndSave(e)
+
+    alarm.result_exception = exception.eid;
+    alarm.result = "allow";
+
+    await this.updateAlarm(alarm)
+    await this.archiveAlarm(alarm.aid)
+    log.info("Trying to find if any other active alarms are covered by this new exception")
+    let alarms = await this.findSimilarAlarmsByException(exception, alarm.aid)
+    if (alarms && alarms.length > 0) {
+      let allowedAlarms = []
+      for (const alarm of alarms) {
+        try {
+          await this.allowAlarmByException(alarm, exception, info, true);
+          allowedAlarms.push(alarm)
+        } catch (err) {
+          log.error(`Failed to allow alarm ${alarm.aid} with exception ${exception.eid}: ${err}`)
         }
-
-        const e = this.createException(alarm, userInput);
-
-        // FIXME: make it transactional
-        // set alarm handle result + add policy
-
-        exceptionManager.checkAndSave(e, async (err, exception, alreadyExists) => {
-          if (err) {
-            log.error("Failed to save exception: " + err);
-            callback(err);
-            return;
-          }
-
-          alarm.result_exception = exception.eid;
-          alarm.result = "allow";
-
-          await this.updateAlarm(alarm)
-          await this.archiveAlarm(alarm.aid)
-          log.info("Trying to find if any other active alarms are covered by this new exception")
-          let alarms = await this.findSimilarAlarmsByException(exception, alarm.aid)
-          if (alarms && alarms.length > 0) {
-            let allowedAlarms = []
-            for (const alarm of alarms) {
-              try {
-                await this.allowAlarmByException(alarm, exception, info, true);
-                allowedAlarms.push(alarm)
-              } catch (err) {
-                log.error(`Failed to allow alarm ${alarm.aid} with exception ${exception.eid}: ${err}`)
-              }
-            }
-            callback(null, exception, allowedAlarms, alreadyExists)
-          } else {
-            log.info("No similar alarms are found")
-            callback(null, exception, undefined, alreadyExists)
-          }
-        })
-      }).catch((err) => {
-        callback(err);
-      })
+      }
+      return { exception, allowedAlarms, alreadyExists }
+    } else {
+      log.info("No similar alarms are found")
+      return { exception, alreadyExists }
+    }
   }
 
   unblockFromAlarm(alarmID, info, callback) {
@@ -1371,6 +1761,17 @@ module.exports = class {
     await this.updateAlarm(alarm);
   }
 
+  async _alignAlarmInfo(alarm) { // alarm object
+    if (!alarm.hasOwnProperty("p.device.ip") && alarm["p.device.mac"]) {
+      const device = await dnsManager.resolveMac(alarm['p.device.mac'].toUpperCase());
+      alarm["p.device.ip"] = device.ipv4 || device.ipv4Addr || JSON.parse(device.ipv6Addr || '[]').pop() || '';
+    }
+    if (!alarm.hasOwnProperty("p.dest.name") && alarm["p.dest.ip"]) {
+      alarm["p.dest.name"] = await dnsTool.getDns(alarm["p.dest.ip"]);
+    }
+    return alarm
+  }
+
   async enrichDeviceInfo(alarm) {
     const ignoreAlarmTypes = ['ALARM_SCREEN_TIME', 'ALARM_DUAL_WAN'];
     if (ignoreAlarmTypes.includes(alarm.type)) return alarm;
@@ -1392,21 +1793,21 @@ module.exports = class {
     }
 
     // resolveLocalHost gets all info from redis, doesn't really use DNS on the fly
-    const result = await dnsManager.resolveLocalHostAsync(deviceIP)
+    const host = await dnsManager.resolveLocalHostAsync(deviceIP)
 
-    if (result == null) {
+    if (host == null) {
       log.error("Failed to find host " + deviceIP + " in database");
       throw new Error("host " + deviceIP + " not found");
     }
 
-    let deviceName = getPreferredName(result);
-    let deviceID = result.mac;
+    let deviceName = getPreferredName(host);
+    let deviceID = host.mac;
 
     Object.assign(alarm, {
       "p.device.name": deviceName,
       "p.device.id": deviceID,
       "p.device.mac": deviceID,
-      "p.device.macVendor": result.macVendor || "Unknown"
+      "p.device.macVendor": host.macVendor || "Unknown",
     });
 
     if (!alarm["p.device.real.ip"] && !hostTool.isMacAddress(deviceID)) {
@@ -1732,9 +2133,14 @@ module.exports = class {
         if (tagStr.startsWith(Policy.INTF_PREFIX)) {
           let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
           e["p.intf.id"] = intfUuid;
-        } else if (tagStr.startsWith(Policy.TAG_PREFIX)) {
-          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);
-          e["p.tag.ids"] = [tagUid];
+        } else {
+          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+            const config = Constants.TAG_TYPE_MAP[type];
+            if (tagStr.startsWith(config.ruleTagPrefix)) {
+              const tagUid = tagStr.substring(config.ruleTagPrefix.length);
+              e[config.alarmIdKey] = [tagUid];
+            }
+          }
         }
       }
     }

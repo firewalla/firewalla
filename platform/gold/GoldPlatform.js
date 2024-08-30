@@ -1,4 +1,4 @@
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -132,12 +132,13 @@ class GoldPlatform extends Platform {
       log.error(`qdisc ${qdisc} is not supported`);
       return;
     }
-    // replace the default root qdisc
-    await exec(`sudo tc qdisc replace dev ifb0 parent 1:1 ${qdisc}`).catch((err) => {
-      log.error(`Failed to update root qdisc on ifb0`, err.message);
+    // replace the default tc filter
+    const QoS = require('../../control/QoS.js');
+    await exec (`sudo tc filter replace dev ifb0 parent 1: handle 800::0x1 prio 1 u32 match mark 0x800000 0x${QoS.QOS_UPLOAD_MASK.toString(16)} flowid 1:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
+      log.error(`Failed to update tc filter on ifb0`, err.message);
     });
-    await exec(`sudo tc qdisc replace dev ifb1 parent 1:1 ${qdisc}`).catch((err) => {
-      log.error(`Failed to update root qdisc on ifb1`, err.message);
+    await exec (`sudo tc filter replace dev ifb1 parent 1: handle 800::0x1 prio 1 u32 match mark 0x10000 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)} flowid 1:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
+      log.error(`Failed to update tc filter on ifb1`, err.message);
     });
   }
 
@@ -197,6 +198,7 @@ class GoldPlatform extends Platform {
     return {
       "appMax": 240,
       "webMax": 480,
+      "streamingMax": 480,
       "duration": 60
     }
   }
@@ -254,34 +256,6 @@ class GoldPlatform extends Platform {
     }]
   }
 
-  async installTLSModule() {
-    const installed = await this.isTLSModuleInstalled();
-    if (installed) return;
-    let TLSmodulePathPrefix = null;
-    if (this.isUbuntu20()) {
-      TLSmodulePathPrefix = __dirname+"/files/TLS/u20";
-    } else if (this.isUbuntu22()) {
-      TLSmodulePathPrefix = __dirname+"/files/TLS/u22";
-    } else {
-      TLSmodulePathPrefix = __dirname+"/files/TLS/u18";
-    }
-    await exec(`sudo insmod ${TLSmodulePathPrefix}/xt_tls.ko max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`);
-    await exec(`sudo install -D -v -m 644 ${TLSmodulePathPrefix}/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables`);
-  }
-
-  async isTLSModuleInstalled() {
-    if (this.tlsInstalled) return true;
-    const cmdResult = await exec(`lsmod| grep xt_tls| awk '{print $1}'`);
-    const results = cmdResult.stdout.toString().trim().split('\n');
-    for(const result of results) {
-      if (result == 'xt_tls') {
-        this.tlsInstalled = true;
-        break;
-      }
-    }
-    return this.tlsInstalled;
-  }
-
   isTLSBlockSupport() {
     return true;
   }
@@ -315,22 +289,7 @@ class GoldPlatform extends Platform {
     return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
   }
 
-  async reloadActMirredKernelModule() {
-
-    // To test this new kernel module, only enable in dev branch
-    // To enable it for all branches, need to change both here and the way how br_netfilter is loaded
-    if (this.isUbuntu22() && f.isDevelopmentVersion() ) {
-      log.info("Reloading act_mirred.ko...");
-      try {
-        const loaded = await exec(`sudo lsmod | grep act_mirred`).then(result => true).catch(err => false);
-        if (loaded)
-          await exec(`sudo rmmod act_mirred`);
-        await exec(`sudo insmod ${__dirname}/files/$(uname -r)/act_mirred.ko`);
-      } catch(err) {
-        log.error("Failed to unload act_mirred, err:", err.message);
-      }
-    }
-  }
+  isDNSFlowSupported() { return true }
 }
 
 module.exports = GoldPlatform;

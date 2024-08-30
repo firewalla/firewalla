@@ -1,4 +1,4 @@
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,6 +16,7 @@
 
 const log = require('../net2/logger.js')(__filename)
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const pclient = require('../util/redis_manager.js').getPublishClient()
 const Sensor = require('./Sensor.js').Sensor
 const Promise = require('bluebird')
 const extensionManager = require('./ExtensionManager.js')
@@ -30,13 +31,12 @@ class GuardianSensor extends Sensor {
   }
 
   async apiRun() {
-    await this.startGuardians();
-
     extensionManager.onGet("guardianSocketioServer", (msg, data) => {
       return this.getServer(data);
     });
 
     extensionManager.onSet("guardianSocketioServer", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await this.getServer({alias: data.alias})})} catch(err) {};
       return this.setServer(data);
     });
 
@@ -45,7 +45,17 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onSet("guardian.business", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await this.getBusiness({alias: data.alias})})} catch(err) {};
       return this.setBusiness(data);
+    });
+
+    extensionManager.onSet("msp.data", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await this.getMspData({alias: data.alias})})} catch(err) {};
+      return this.setMspData(data);
+    });
+
+    extensionManager.onGet("msp.data", async (msg, data) => {
+      return this.getMspData(data);
     });
 
     extensionManager.onGet("guardianSocketioRegion", (msg, data) => {
@@ -65,6 +75,7 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onCmd("setAndStartGuardianService", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await this.getGuardianByAlias(data.alias)})} catch(err) {};
       return this.setAndStartGuardianService(data);
     });
 
@@ -75,6 +86,8 @@ class GuardianSensor extends Sensor {
     extensionManager.onGet("guardian", async (msg, data) => {
       return this.getGuardian(data);
     })
+
+    await this.startGuardians();
   }
 
   async startGuardians() {
@@ -95,7 +108,7 @@ class GuardianSensor extends Sensor {
     if (!guardian) {
       guardian = new Guardian(alias, this.config);
       this.guardianMap[alias] = guardian;
-      await rclient.zadd(guardianListKey, Date.now() / 1000, alias);
+      await rclient.zaddAsync(guardianListKey, Date.now() / 1000, alias);
     }
     return guardian;
   }
@@ -129,6 +142,17 @@ class GuardianSensor extends Sensor {
   async setBusiness(data = {}) {
     const guardian = await this.getGuardianByAlias(data.alias);
     return guardian.setBusiness(data);
+  }
+
+  async setMspData(data = {}) {
+    await pclient.publishAsync('config:msp:updated', JSON.stringify(data.list)) // for compatible purpose, keep it there, be careful when set msp.data, the value should be {list:data}
+    const guardian = await this.getGuardianByAlias(data.alias);
+    return guardian.setMspData(data.list);
+  }
+
+  async getMspData(data = {}) {
+    const guardian = await this.getGuardianByAlias(data.alias);
+    return guardian.getMspData();
   }
 
   async getRegion(data = {}) {

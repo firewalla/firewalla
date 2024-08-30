@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -162,8 +162,11 @@ function getMacSet(tag) {
   return `c_bm_${tag}_set`
 }
 
-function getDstSet(tag) {
-  return `c_bd_${tag}_set`
+function getDstSet(tag, ip6 = false) {
+  if (!ip6)
+    return `c_bd_${tag}_set`
+  else
+    return `c_bd_${tag}_set6`
 }
 
 function getTLSHostSet(tag) {
@@ -372,7 +375,7 @@ function batchBlockNetPort(elements, portObj, ipset, options = {}) {
     return;
   const v4Set = ipset;
   const v6Set = ipset + '6';
-  const gateway6 = sysManager.myGateway6();
+  const gateway6 = sysManager.myDefaultGateway6();
   const gateway = sysManager.myDefaultGateway();
   const cmds = [];
   const op = 'add';
@@ -411,7 +414,7 @@ async function batchSetupIpset(elements, ipset, remove = false, options = {}) {
     return;
   const v4Set = ipset;
   const v6Set = ipset + '6';
-  const gateway6 = sysManager.myGateway6();
+  const gateway6 = sysManager.myDefaultGateway6();
   const gateway = sysManager.myDefaultGateway();
   const cmds = [];
   const op = remove ? 'del' : 'add';
@@ -467,7 +470,7 @@ function setupIpset(element, ipset, remove = false) {
       return
     }
   }
-  const gateway6 = sysManager.myGateway6()
+  const gateway6 = sysManager.myDefaultGateway6()
   const gateway = sysManager.myDefaultGateway()
   //Prevent gateway IP from being added into blocking IP set dynamically
   if (!remove && (gateway == ipAddr || gateway6 == ipAddr)) {
@@ -480,8 +483,8 @@ function setupIpset(element, ipset, remove = false) {
   return action(ipset, element)
 }
 
-async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation) {
-  log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}`);
+async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass) {
+  log.verbose(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
   const filterPrio = 1;
@@ -505,12 +508,42 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
       }
       const fwmark = Number(qosHandler) << (trafficDirection === "upload" ? 23 : 16); // 23-29 bit is reserved for upload mark filter, 16-22 bit is reserved for download mark filter
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
-      if (createOrDestroy === "create") {
-        await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
-        await qos.createTCFilter(qosHandler, qosHandler, trafficDirection, filterPrio, fwmark);
+      priority = priority || qos.DEFAULT_PRIO;
+      qdisc = qdisc || "fq_codel";
+      if (ratelimit) {
+        let parentHTBQdisc = "3";
+        let subclassId = "4";
+        if (priority <= qos.PRIO_HIGH) {
+          parentHTBQdisc = "2";
+          subclassId = "1";
+        } else {
+          if (priority > qos.PRIO_REG) {
+            parentHTBQdisc = "4";
+            subclassId = "7";
+          }
+        }
+        if (createOrDestroy === "create") {
+          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
+          await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
+        } else {
+          await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
+          await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, ratelimit);
+          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+        }
       } else {
-        await qos.destroyTCFilter(qosHandler, trafficDirection, filterPrio, fwmark);
-        await qos.destroyQoSClass(qosHandler, trafficDirection);
+        let subclassId = qdisc == "fq_codel" ? "5" : "6";
+        if (priority <= qos.PRIO_HIGH) {
+          subclassId = qdisc == "fq_codel" ? "2" : "3";
+        } else {
+          if (priority > qos.PRIO_REG) {
+            subclassId = qdisc == "fq_codel" ? "8" : "9";
+          }
+        }
+        if (createOrDestroy === "create")
+          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+        else
+          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
       }
       parameters.push({ table: "mangle", chain: `FW_QOS_GLOBAL_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       break;
@@ -524,20 +557,19 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
         await VPNClient.ensureCreateEnforcementEnv(profileId);
-        // tentatively disable route rule iptables log as it is not used now
-        // parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
         parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_GLOBAL_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
           const VirtWanGroup = require('../net2/VirtWanGroup.js');
           await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
-          // parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_GLOBAL_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
         } else {
           const NetworkProfile = require('../net2/NetworkProfile.js');
           await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-          // parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_GLOBAL_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
         }
       }
@@ -623,36 +655,36 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
         // filter rules
         if (trafficDirection && (transferredBytes || transferredPackets || avgPacketBytes)) {
           // need to use different rules for different combination of connection direction and traffic direction
-          await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null), origDst, origDport;
-          await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+          (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
         } else {
-          await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
         }
         break;
       }
       case "inbound": {
         // inbound filter rules
-        await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+        (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
         break;
       }
       case "outbound": {
         // outbound filter rules
-        await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+        (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
         break;
       }
       default:
@@ -660,8 +692,8 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
   }
 }
 
-async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation) {
-  log.info(`${createOrDestroy} generic identity rule, guids ${JSON.stringify(guids)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}`);
+async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass) {
+  log.verbose(`${createOrDestroy} generic identity rule, guids ${JSON.stringify(guids)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}`);
   // generic identity has the same priority level as device
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
@@ -686,12 +718,42 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
       }
       const fwmark = Number(qosHandler) << (trafficDirection === "upload" ? 23 : 16); // 23-29 bit is reserved for upload mark filter, 16-22 bit is reserved for download mark filter
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
-      if (createOrDestroy === "create") {
-        await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
-        await qos.createTCFilter(qosHandler, qosHandler, trafficDirection, filterPrio, fwmark);
+      priority = priority || qos.DEFAULT_PRIO;
+      qdisc = qdisc || "fq_codel";
+      if (ratelimit) {
+        let parentHTBQdisc = "3";
+        let subclassId = "4";
+        if (priority <= qos.PRIO_HIGH) {
+          parentHTBQdisc = "2";
+          subclassId = "1";
+        } else {
+          if (priority > qos.PRIO_REG) {
+            parentHTBQdisc = "4";
+            subclassId = "7";
+          }
+        }
+        if (createOrDestroy === "create") {
+          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
+          await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
+        } else {
+          await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
+          await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, ratelimit);
+          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+        }
       } else {
-        await qos.destroyTCFilter(qosHandler, trafficDirection, filterPrio, fwmark);
-        await qos.destroyQoSClass(qosHandler, trafficDirection);
+        let subclassId = qdisc == "fq_codel" ? "5" : "6";
+        if (priority <= qos.PRIO_HIGH) {
+          subclassId = qdisc == "fq_codel" ? "2" : "3";
+        } else {
+          if (priority > qos.PRIO_REG) {
+            subclassId = qdisc == "fq_codel" ? "8" : "9";
+          }
+        }
+        if (createOrDestroy === "create")
+          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+        else
+          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
       }
       parameters.push({ table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       break;
@@ -705,20 +767,19 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
         await VPNClient.ensureCreateEnforcementEnv(profileId);
-        // tentatively disable route rule iptables log as it is not used now
-        // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
         parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
           const VirtWanGroup = require('../net2/VirtWanGroup.js');
           await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
-          // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
         } else {
           const NetworkProfile = require('../net2/NetworkProfile.js');
           await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-          // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
         }
       }
@@ -817,36 +878,36 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
           // filter rules
           if (trafficDirection && (transferredBytes || transferredPackets || avgPacketBytes)) {
             // need to use different rules for different combination of connection direction and traffic direction
-            await this.manipulateFiveTupleRule(op, localSet4, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, localSet4, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, localSet6, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, localSet6, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+            (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet4, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet4, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet6, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet6, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
           } else {
-            await this.manipulateFiveTupleRule(op, localSet4, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst", true, localPortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, localSet6, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst", true, localPortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+            (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet4, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst", true, localPortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+            (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet6, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst", true, localPortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
           }
           break;
         }
         case "inbound": {
           // inbound filter rules
-          await this.manipulateFiveTupleRule(op, localSet4, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, localSet6, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet4, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet6, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
           break;
         }
         case "outbound": {
           // outbound filter rules
-          await this.manipulateFiveTupleRule(op, localSet4, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, localSet6, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet4, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet6, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
           break;
         }
       }
@@ -855,8 +916,8 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
 }
 
 // device-wise rules
-async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation) {
-  log.info(`${createOrDestroy} device rule, MAC address ${JSON.stringify(macAddresses)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}`);
+async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass) {
+  log.verbose(`${createOrDestroy} device rule, MAC address ${JSON.stringify(macAddresses)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
   const filterPrio = 1;
@@ -880,12 +941,42 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
       }
       const fwmark = Number(qosHandler) << (trafficDirection === "upload" ? 23 : 16); // 23-29 bit is reserved for upload mark filter, 16-22 bit is reserved for download mark filter
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
-      if (createOrDestroy === "create") {
-        await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
-        await qos.createTCFilter(qosHandler, qosHandler, trafficDirection, filterPrio, fwmark);
+      priority = priority || qos.DEFAULT_PRIO;
+      qdisc = qdisc || "fq_codel";
+      if (ratelimit) {
+        let parentHTBQdisc = "3";
+        let subclassId = "4";
+        if (priority <= qos.PRIO_HIGH) {
+          parentHTBQdisc = "2";
+          subclassId = "1";
+        } else {
+          if (priority > qos.PRIO_REG) {
+            parentHTBQdisc = "4";
+            subclassId = "7";
+          }
+        }
+        if (createOrDestroy === "create") {
+          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
+          await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
+        } else {
+          await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
+          await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, ratelimit);
+          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+        }
       } else {
-        await qos.destroyTCFilter(qosHandler, trafficDirection, filterPrio, fwmark);
-        await qos.destroyQoSClass(qosHandler, trafficDirection);
+        let subclassId = qdisc == "fq_codel" ? "5" : "6";
+        if (priority <= qos.PRIO_HIGH) {
+          subclassId = qdisc == "fq_codel" ? "2" : "3";
+        } else {
+          if (priority > qos.PRIO_REG) {
+            subclassId = qdisc == "fq_codel" ? "8" : "9";
+          }
+        }
+        if (createOrDestroy === "create")
+          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+        else
+          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
       }
       parameters.push({ table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       break;
@@ -899,22 +990,19 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
         await VPNClient.ensureCreateEnforcementEnv(profileId);
-        // tentatively disable route rule iptables log as it is not used now
-        // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
         parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
           const VirtWanGroup = require('../net2/VirtWanGroup.js');
           await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
-          // tentatively disable route rule iptables log as it is not used now
-          // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
         } else {
           const NetworkProfile = require('../net2/NetworkProfile.js');
           await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-          // tentatively disable route rule iptables log as it is not used now
-          // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
         }
       }
@@ -993,7 +1081,7 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
 
   const Host = require('../net2/Host.js');
   for (const mac of macAddresses) {
-    await Host.ensureCreateDeviceIpset(mac);
+    await Host.ensureCreateEnforcementEnv(mac);
     const localSet = Host.getDeviceSetName(mac);
     for (const parameter of parameters) {
       const { table, chain, target, limit } = parameter;
@@ -1002,36 +1090,36 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
           // filter rules
           if (trafficDirection && (transferredBytes || transferredPackets || avgPacketBytes)) {
             // need to use different rules for different combination of connection direction and traffic direction
-            await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+            (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
           } else {
-            await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+            (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+            (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
           }
           break;
         }
         case "inbound": {
           // inbound filter rules
-          await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
           break;
         }
         case "outbound": {
           // outbound filter rules
-          await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, "src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, "dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
           break;
         }
       }
@@ -1039,8 +1127,8 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
   }
 }
 
-async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation) {
-  log.info(`${createOrDestroy} group rule, policy id ${pid}, group uid ${JSON.stringify(uids)}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}`);
+async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass) {
+  log.verbose(`${createOrDestroy} group rule, policy id ${pid}, group uid ${JSON.stringify(uids)}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
   const filterPrio = 1;
@@ -1069,12 +1157,42 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
         }
         const fwmark = Number(qosHandler) << (trafficDirection === "upload" ? 23 : 16); // 23-29 bit is reserved for upload mark filter, 16-22 bit is reserved for download mark filter
         const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
-        if (createOrDestroy === "create") {
-          await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
-          await qos.createTCFilter(qosHandler, qosHandler, trafficDirection, filterPrio, fwmark);
+        priority = priority || qos.DEFAULT_PRIO;
+        qdisc = qdisc || "fq_codel";
+        if (ratelimit) {
+          let parentHTBQdisc = "3";
+          let subclassId = "4";
+          if (priority <= qos.PRIO_HIGH) {
+            parentHTBQdisc = "2";
+            subclassId = "1";
+          } else {
+            if (priority > qos.PRIO_REG) {
+              parentHTBQdisc = "4";
+              subclassId = "7";
+            }
+          }
+          if (createOrDestroy === "create") {
+            await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+            await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
+            await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
+          } else {
+            await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
+            await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, ratelimit);
+            await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          }
         } else {
-          await qos.destroyTCFilter(qosHandler, trafficDirection, filterPrio, fwmark);
-          await qos.destroyQoSClass(qosHandler, trafficDirection);
+          let subclassId = qdisc == "fq_codel" ? "5" : "6";
+          if (priority <= qos.PRIO_HIGH) {
+            subclassId = qdisc == "fq_codel" ? "2" : "3";
+          } else {
+            if (priority > qos.PRIO_REG) {
+              subclassId = qdisc == "fq_codel" ? "8" : "9";
+            }
+          }
+          if (createOrDestroy === "create")
+            await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          else
+            await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
         }
         parameters.push({ table: "mangle", chain: `FW_QOS_DEV_G_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: devSet, localFlagCount: 1 });
         parameters.push({ table: "mangle", chain: `FW_QOS_NET_G_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: netSet, localFlagCount: 2 });
@@ -1089,9 +1207,8 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
         if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
           const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
           await VPNClient.ensureCreateEnforcementEnv(profileId);
-          // tentatively disable route rule iptables log as it is not used now
-          // parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: devSet, localFlagCount: 1 });
-          // parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: netSet, localFlagCount: 2});
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: devSet, localFlagCount: 1 });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: netSet, localFlagCount: 2 });
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
         } else {
@@ -1099,17 +1216,15 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
             const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
             const VirtWanGroup = require('../net2/VirtWanGroup.js');
             await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
-            // tentatively disable route rule iptables log as it is not used now
-            // parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: devSet, localFlagCount: 1 });
-            // parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: netSet, localFlagCount: 2 });
+            parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: netSet, localFlagCount: 2 });
             parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
             parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
           } else {
             const NetworkProfile = require('../net2/NetworkProfile.js');
             await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-            // tentatively disable route rule iptables log as it is not used now
-            // parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: devSet, localFlagCount: 1 });
-            // parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: netSet, localFlagCount: 2 });
+            parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: netSet, localFlagCount: 2 });
             parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
             parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
           }
@@ -1228,44 +1343,44 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
       case "bidirection": {
         // filter rules
         if (trafficDirection && (transferredBytes || transferredPackets || avgPacketBytes)) {
-          await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+          (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
         } else {
-          await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
         }
         break;
       }
       case "inbound": {
         // filter rules
-        await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+        (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
         break;
       }
       case "outbound": {
         // filter rules
-        await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+        (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, Array(localFlagCount).fill("src").join(","), true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, Array(localFlagCount).fill("dst").join(","), true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
         break;
       }
     }
   }
 }
 
-async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation) {
-  log.info(`${createOrDestroy} network rule, policy id ${pid}, uuid ${JSON.stringify(uuids)}, local port ${localPortSet}, remote set ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}`);
+async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass) {
+  log.verbose(`${createOrDestroy} network rule, policy id ${pid}, uuid ${JSON.stringify(uuids)}, local port ${localPortSet}, remote set ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}`);
   if (_.isEmpty(uuids))
     return;
   const op = createOrDestroy === "create" ? "-A" : "-D";
@@ -1291,12 +1406,42 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
       }
       const fwmark = Number(qosHandler) << (trafficDirection === "upload" ? 23 : 16); // 23-29 bit is reserved for upload mark filter, 16-22 bit is reserved for download mark filter
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
-      if (createOrDestroy === "create") {
-        await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
-        await qos.createTCFilter(qosHandler, qosHandler, trafficDirection, filterPrio, fwmark);
+      priority = priority || qos.DEFAULT_PRIO;
+      qdisc = qdisc || "fq_codel";
+      if (ratelimit) {
+        let parentHTBQdisc = "3";
+        let subclassId = "4";
+        if (priority <= qos.PRIO_HIGH) {
+          parentHTBQdisc = "2";
+          subclassId = "1";
+        } else {
+          if (priority > qos.PRIO_REG) {
+            parentHTBQdisc = "4";
+            subclassId = "7";
+          }
+        }
+        if (createOrDestroy === "create") {
+          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
+          await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
+        } else {
+          await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
+          await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, ratelimit);
+          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+        }
       } else {
-        await qos.destroyTCFilter(qosHandler, trafficDirection, filterPrio, fwmark);
-        await qos.destroyQoSClass(qosHandler, trafficDirection);
+        let subclassId = qdisc == "fq_codel" ? "5" : "6";
+        if (priority <= qos.PRIO_HIGH) {
+          subclassId = qdisc == "fq_codel" ? "2" : "3";
+        } else {
+          if (priority > qos.PRIO_REG) {
+            subclassId = qdisc == "fq_codel" ? "8" : "9";
+          }
+        }
+        if (createOrDestroy === "create")
+          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+        else
+          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
       }
       parameters.push({ table: "mangle", chain: `FW_QOS_NET_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       break;
@@ -1310,22 +1455,19 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
         await VPNClient.ensureCreateEnforcementEnv(profileId);
-        // tentatively disable route rule iptables log as it is not used now
-        // parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
         parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
           const VirtWanGroup = require('../net2/VirtWanGroup.js');
           await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
-          // tentatively disable route rule iptables log as it is not used now
-          // parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
         } else {
           const NetworkProfile = require('../net2/NetworkProfile.js');
           await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-          // tentatively disable route rule iptables log as it is not used now
-          // parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
         }
       }
@@ -1414,36 +1556,36 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
           // filter rules
           if (trafficDirection && (transferredBytes || transferredPackets || avgPacketBytes)) {
             // need to use different rules for different combination of connection direction and traffic direction
-            await this.manipulateFiveTupleRule(op, localSet4, "src,src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst,dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, localSet4, "src,src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst,dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, localSet6, "src,src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst,dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, localSet6, "src,src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst,dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+            (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet4, "src,src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst,dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet4, "src,src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst,dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet6, "src,src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst,dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet6, "src,src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst,dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
           } else {
-            await this.manipulateFiveTupleRule(op, localSet4, "src,src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst,dst", true, localPortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, localSet6, "src,src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-            await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst,dst", true, localPortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+            (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet4, "src,src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst,dst", true, localPortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+            (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet6, "src,src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+            (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst,dst", true, localPortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
           }
           break;
         }
         case "inbound": {
           // inbound filter rules
-          await this.manipulateFiveTupleRule(op, localSet4, "src,src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst,dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, localSet6, "src,src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst,dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet4, "src,src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst,dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet6, "src,src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst,dst", true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
           break;
         }
         case "outbound": {
           // outbound filter rules
-          await this.manipulateFiveTupleRule(op, localSet4, "src,src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst,dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, localSet6, "src,src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst,dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet4, "src,src", true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet4, "dst,dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet6, "src,src", true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet6, "dst,dst", true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
           break;
         }
       }
@@ -1451,8 +1593,8 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
   }
 }
 
-async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, reverse1, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation) {
-  log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, parent rule group UUID ${ruleGroupUUID}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}`);
+async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, reverse1, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass) {
+  log.verbose(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, parent rule group UUID ${ruleGroupUUID}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const filterPrio = 1;
   const parameters = [];
@@ -1477,12 +1619,42 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
       }
       const fwmark = Number(qosHandler) << (trafficDirection === "upload" ? 23 : 16); // 23-29 bit is reserved for upload mark filter, 16-22 bit is reserved for download mark filter
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
-      if (createOrDestroy === "create") {
-        await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
-        await qos.createTCFilter(qosHandler, qosHandler, trafficDirection, filterPrio, fwmark);
+      priority = priority || qos.DEFAULT_PRIO;
+      qdisc = qdisc || "fq_codel";
+      if (ratelimit) {
+        let parentHTBQdisc = "3";
+        let subclassId = "4";
+        if (priority <= qos.PRIO_HIGH) {
+          parentHTBQdisc = "2";
+          subclassId = "1";
+        } else {
+          if (priority > qos.PRIO_REG) {
+            parentHTBQdisc = "4";
+            subclassId = "7";
+          }
+        }
+        if (createOrDestroy === "create") {
+          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
+          await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
+        } else {
+          await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
+          await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, ratelimit);
+          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+        }
       } else {
-        await qos.destroyTCFilter(qosHandler, trafficDirection, filterPrio, fwmark);
-        await qos.destroyQoSClass(qosHandler, trafficDirection);
+        let subclassId = qdisc == "fq_codel" ? "5" : "6";
+        if (priority <= qos.PRIO_HIGH) {
+          subclassId = qdisc == "fq_codel" ? "2" : "3";
+        } else {
+          if (priority > qos.PRIO_REG) {
+            subclassId = qdisc == "fq_codel" ? "8" : "9";
+          }
+        }
+        if (createOrDestroy === "create")
+          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+        else
+          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
       }
       parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "qos")}_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       break;
@@ -1496,22 +1668,19 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
         await VPNClient.ensureCreateEnforcementEnv(profileId);
-        // tentatively disable route rule iptables log as it is not used now
-        // parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+        parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, hardRoute ? "route" : "soft_route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
         parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, hardRoute ? "route" : "soft_route")}_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
           const VirtWanGroup = require('../net2/VirtWanGroup.js');
           await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
-          // tentatively disable route rule iptables log as it is not used now
-          // parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, hardRoute ? "route" : "soft_route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
           parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, hardRoute ? "route" : "soft_route")}_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
         } else {
           const NetworkProfile = require('../net2/NetworkProfile.js');
           await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-          // tentatively disable route rule iptables log as it is not used now
-          // parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, hardRoute ? "route" : "soft_route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
           parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, hardRoute ? "route" : "soft_route")}_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
         }
       }
@@ -1568,36 +1737,36 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
         // filter rules
         if (trafficDirection && (transferredBytes || transferredPackets || avgPacketBytes)) {
           // need to use different rules for different combination of connection direction and traffic direction
-          await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+          (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "reply" : "original", tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection === "upload" ? "original" : "reply", tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
         } else {
-          await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-          await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, null, target, chain, table, limit, 4, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+          (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, null, target, chain, table, limit, 6, `rule_${pid}`, ctstate, undefined, undefined, undefined, undefined, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
         }
         break;
       }
       case "inbound": {
         // inbound filter rules
-        await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+        (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "reply" : "original") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
         break;
       }
       case "outbound": {
         // outbound filter rules
-        await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport);
-        await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport);
+        (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet4, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet4, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "REPLY", target, chain, table, limit, 4, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "upload") && await this.manipulateFiveTupleRule(op, localSet, localSrcSpec, true, localPortSet, remoteSet6, remoteDstSpec, remotePositive, remotePortSet, proto, "ORIGINAL", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, null, owanSet, origDst, origDport, dscpClass);
+        (!dscpClass || !trafficDirection || trafficDirection === "download") && await this.manipulateFiveTupleRule(op, remoteSet6, remoteSrcSpec, remotePositive, remotePortSet, localSet, localDstSpec, true, localPortSet, proto, "REPLY", target, chain, table, limit, 6, `rule_${pid}`, ctstate, transferredBytes, transferredPackets, avgPacketBytes, trafficDirection ? (trafficDirection === "upload" ? "original" : "reply") : null, tlsHostSet, tlsHost, owanSet, null, origDst, origDport, dscpClass);
         break;
       }
       default:
@@ -1605,7 +1774,7 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
   }
 }
 
-async function manipulateFiveTupleRule(action, srcMatchingSet, srcSpec, srcPositive = true, srcPortSet, dstMatchingSet, dstSpec, dstPositive = true, dstPortSet, proto, ctDir, target, chain, table, limit, af = 4, comment, ctstate, transferredBytes, transferredPackets, avgPacketBytes, transferDirection, tlsHostSet, tlsHost, iifSet, oifSet, origDst, origDport) {
+async function manipulateFiveTupleRule(action, srcMatchingSet, srcSpec, srcPositive = true, srcPortSet, dstMatchingSet, dstSpec, dstPositive = true, dstPortSet, proto, ctDir, target, chain, table, limit, af = 4, comment, ctstate, transferredBytes, transferredPackets, avgPacketBytes, transferDirection, tlsHostSet, tlsHost, iifSet, oifSet, origDst, origDport, dscpClass) {
   // sport and dport can be range string, e.g., 10000-20000
   const rule = new Rule(table).fam(af).chn(chain);
   if (srcMatchingSet)
@@ -1651,6 +1820,9 @@ async function manipulateFiveTupleRule(action, srcMatchingSet, srcSpec, srcPosit
     const burstRatio = 2;
     const burstCount = parseInt(count) * burstRatio;
     rule.mdl("hashlimit", `--hashlimit-upto ${limit} --hashlimit-mode srcip --hashlimit-burst ${burstCount} --hashlimit-name fw_route`)
+  }
+  if (dscpClass) {
+    rule.mdl("dscp", `--dscp-class ${dscpClass}`);
   }
   rule.jmp(target);
   await exec(rule.toCmd(action));

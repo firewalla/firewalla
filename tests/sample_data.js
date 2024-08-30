@@ -30,7 +30,7 @@ let Promise = require('bluebird');
 let redis = require('redis');
 let rclient = redis.createClient();
 
-let flowTool = require('../net2/FlowTool')();
+let flowTool = require('../net2/FlowTool');
 
 let FlowAggrTool = require('../net2/FlowAggrTool');
 let flowAggrTool = new FlowAggrTool();
@@ -307,9 +307,9 @@ exports.removeSampleAggrFlows = () => {
 exports.removeAllSampleAggrFlows = () => {
   return (async() =>{
     let keys = await rclient.keysAsync("aggrflow:F4:0F:24:00:00:01:*");
-    keys.forEach((key) => {
+    await Promise.all(keys.map(async (key) => {
       await rclient.delAsync(key);
-    })
+    }));
   })();
 };
 
@@ -349,8 +349,7 @@ exports.removeSampleDNSInfo = () => {
 exports.addSampleIntelInfo = () => {
   return (async() =>{
     let ips = [destIP, destIP2];
-
-    ips.forEach((ip) => {
+    await Promise.all(ips.map(async (ip) => {
       let key = "intel:ip:" + ip;
       await rclient.hmsetAsync(key, {
         ip: ip,
@@ -359,7 +358,7 @@ exports.addSampleIntelInfo = () => {
         app: "search",
         apps: '{"search": "100"}'
       });
-    });
+    }));
   })();
 }
 
@@ -367,11 +366,11 @@ exports.removeSampleIntelInfo = () => {
   let ips = [destIP, destIP2];
 
   return (async() =>{
-    ips.forEach((ip) => {
+    await Promise.all(ips.map(async (ip) => {
       let key = "intel:ip:" + ip;
       await rclient.delAsync(key);
-    });
+    }));
   })();
 }
 
-exports.sampleLicense = require('./sample_license.json');
+// exports.sampleLicense = require('./sample_license.json');

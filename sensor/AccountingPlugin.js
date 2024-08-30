@@ -61,7 +61,8 @@ class AccountingPlugin extends Sensor {
         for (const app of activeApps) {
           screenTime.apps[app] = await accounting.count(mac, app, beginTs, endTs)
         }
-        host.setScreenTime(screenTime);
+        host.o.screenTime = screenTime
+        await host.save("screenTime");
       }
     }
 

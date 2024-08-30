@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,6 +23,8 @@ const f = require('../../net2/Firewalla.js');
 const logFolder = f.getLogFolder();
 
 const config = require("../../net2/config.js").getConfig();
+const upgradeManager = require('../../net2/UpgradeManager.js')
+const { fileExist }  = require('../../util/util.js')
 
 const df = util.promisify(require('node-df'))
 
@@ -38,10 +40,13 @@ const platform = platformLoader.getPlatform();
 
 const rateLimit = require('../../extension/ratelimit/RateLimit.js');
 
-const fs = require('fs');
+const Constants = require("../../net2/Constants.js");
+
+const ethInfoKey = "ethInfo";
 
 let cpuUsage = 0;
 let cpuModel = 'Not Available';
+let distCodename = null;
 let realMemUsage = 0;
 let usedMem = 0;
 let allMem = 0;
@@ -70,6 +75,8 @@ let slabInfo = {};
 let intelQueueSize = 0;
 
 let multiProfileSupport = false;
+
+let kernelVersion = null;
 
 let no_auto_upgrade = false;
 
@@ -113,6 +120,7 @@ async function update() {
       .then(getDiskUsage)
       .then(getReleaseInfo)
       .then(getCPUModel)
+      .then(getDistributionCodename)
   ]);
 
   if(updateFlag) {
@@ -122,9 +130,9 @@ async function update() {
 
 
 
-function startUpdating() {
+async function startUpdating() {
   updateFlag = 1;
-  update();
+  await update();
 }
 
 function stopUpdating() {
@@ -201,13 +209,21 @@ async function getDiskInfo() {
   }
 }
 
-function getAutoUpgrade() {
-  return new Promise((resolve, reject) => {
-    fs.exists("/home/pi/.firewalla/config/.no_auto_upgrade", function(exists) {
-      no_auto_upgrade = exists;
-      resolve(no_auto_upgrade);
-    });
+async function getAutoUpgrade() {
+  return fileExist('/home/pi/.firewalla/config/.no_auto_upgrade').catch(err => {
+    log.error('Failed to get upgrade flag', err);
+    return false
   })
+}
+
+async function getKernelVersion() {
+  if (!kernelVersion) {
+    kernelVersion = await exec("uname -r").then(result => result.stdout.trim()).catch((err) => {
+      log.error("Failed to get kernel version via uname -r", err.message);
+      return null;
+    });
+  }
+  return kernelVersion;
 }
 
 async function getMultiProfileSupportFlag() {
@@ -296,6 +312,14 @@ async function getCPUModel() {
   }
 }
 
+async function getDistributionCodename() {
+  const cmd = `lsb_release -cs`;
+  distCodename = await exec(cmd).then(result => result.stdout.trim()).catch((err) => {
+    log.error(`Cannot get distribution codename`, err.message);
+    return null;
+  });
+}
+
 async function getRedisMemoryUsage() {
   const cmd = "redis-cli info | grep used_memory: | awk -F: '{print $2}'";
   try {
@@ -355,10 +379,11 @@ async function getActiveContainers() {
   }
 }
 
-function getSysInfo() {
+async function getSysInfo() {
   let sysinfo = {
     cpu: cpuUsage,
     cpuModel: cpuModel,
+    distCodename: distCodename,
     mem: 1 - os.freememPercentage(),
     realMem: realMemUsage,
     totalMem: os.totalmem(),
@@ -377,10 +402,12 @@ function getSysInfo() {
     threadInfo: threadInfo,
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
+    kernelVersion: await getKernelVersion(),
     diskInfo: diskInfo || [],
     //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
-    no_auto_upgrade: no_auto_upgrade,
+    no_auto_upgrade: await getAutoUpgrade(),
+    autoupgrade: await upgradeManager.getAutoUpgradeFlags(),
     maxPid: maxPid,
     ethInfo,
     wlanInfo,
@@ -446,7 +473,7 @@ async function getTop5Flows() {
 async function getPerfStats() {
   return {
     top: getTopStats(),
-    sys: getSysInfo(),
+    sys: await getSysInfo(),
     perf: await getTop5Flows()
   }
 }
@@ -459,11 +486,23 @@ function getHeapDump(file, callback) {
 
 async function getEthernetInfo() {
   const localEthInfo = {};
-  if(platform.getName() == "purple") {
-    const eth0_crc = await exec("ethtool -S eth0 | fgrep mmc_rx_crc_error: | awk '{print $2}'").then((output) => output.stdout && output.stdout.trim()).catch((err) => -1); // return -1 when err
-    localEthInfo.eth0_crc = Number(eth0_crc);
+  switch (platform.getName()) {
+    case "purple": {
+      const eth0_crc = await exec("ethtool -S eth0 | fgrep mmc_rx_crc_error: | awk '{print $2}'").then((output) => output.stdout && output.stdout.trim()).catch((err) => -1); // return -1 when err
+      localEthInfo.eth0_crc = Number(eth0_crc);
+      break;
+    }
+    case "gse": {
+      const eth1_crc = await exec("ethtool -S eth1 | fgrep mmc_rx_crc_error: | awk '{print $2}'" ).then((output) => output.stdout && output.stdout.trim()).catch((err) => -1);
+      const eth2_crc = await exec("ethtool -S eth2 | fgrep mmc_rx_crc_error: | awk '{print $2}'" ).then((output) => output.stdout && output.stdout.trim()).catch((err) => -1);
+      localEthInfo.eth1_crc = Number(eth1_crc);
+      localEthInfo.eth2_crc = Number(eth2_crc);
+      break;
+    }
+    default:
   }
-  ethInfo = localEthInfo;
+  const info = await rclient.hgetallAsync(Constants.REDIS_KEY_ETH_INFO);
+  ethInfo = Object.assign(localEthInfo, info);
 
   const netdevWatchdog = await rclient.hgetallAsync('sys:log:netdev_watchdog')
   if (netdevWatchdog) localEthInfo.netdevWatchdog = netdevWatchdog
@@ -506,7 +545,7 @@ async function getWlanInfo() {
 }
 
 async function getSlabInfo() {
-  return exec('sudo cat /proc/slabinfo | tail +2 | grep "^#\\|^kmalloc"').then(result => result.stdout.trim().split("\n")).then(lines => {
+  return exec('sudo cat /proc/slabinfo | tail +2 | grep "^#\\|^kmalloc\\|^task_struct"').then(result => result.stdout.trim().split("\n")).then(lines => {
     const head = lines[0];
     const columns = head.substring(2).split(/\s+/);
     slabInfo = {};
@@ -573,5 +612,6 @@ module.exports = {
   getRealMemoryUsage:getRealMemoryUsage,
   getRecentLogs: getRecentLogs,
   getPerfStats: getPerfStats,
-  getHeapDump: getHeapDump
+  getHeapDump: getHeapDump,
+  getAutoUpgrade
 };

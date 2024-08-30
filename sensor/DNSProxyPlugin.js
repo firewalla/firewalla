@@ -196,7 +196,7 @@ class DNSProxyPlugin extends Sensor {
               log.error("Failed to process data file, err:", err);
             });
           } else {
-            log.error(`no dns_proxy data ${hashKeyName}. delete data file ${outputFilePath}`);
+            log.info(`no dns_proxy data ${hashKeyName}. delete data file ${outputFilePath}`);
             await bf.deleteBFData(outputFilePath);
           }
           // always reschedule dnsmasq restarts when bf data is updated
@@ -319,7 +319,7 @@ class DNSProxyPlugin extends Sensor {
     const cache = await this.checkCache(domain);
     if (cache) {
       log.info(`inteldns:${domain} is already cached locally, updating redis cache keys directly...`);
-      if (cache.c === "intel") {
+      if ((cache.c || cache.category) === "intel") {
 
         const isTrusted = await tm.matchDomain(domain);
 

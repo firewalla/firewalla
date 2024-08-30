@@ -1,5 +1,4 @@
-
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,7 +18,7 @@ const log = require('../net2/logger.js')(__filename)
 
 const fc = require('../net2/config.js')
 
-const Promise = require('bluebird')
+const util = require('util')
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const license = require('../util/license.js')
@@ -28,19 +27,28 @@ const io = require('socket.io-client');
 
 const EncipherTool = require('../net2/EncipherTool.js');
 const et = new EncipherTool();
-
+const upgradeManager = require('../net2/UpgradeManager.js');
 const CloudWrapper = require('../api/lib/CloudWrapper.js');
 const cw = new CloudWrapper();
-const receicveMessageAsync = Promise.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
-const encryptMessageAsync = Promise.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
+const receicveMessageAsync = util.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
+const encryptMessageAsync = util.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
 
 const zlib = require('zlib');
-const deflateAsync = Promise.promisify(zlib.deflate);
+const deflateAsync = util.promisify(zlib.deflate);
 const rp = require('request-promise');
 
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const LiveTransport = require('./LiveTransport.js');
 const pm2 = new PolicyManager2();
+
+const FireRouter = require('../net2/FireRouter');
+const _ = require('lodash');
+
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+
+const tokenManager = require('../util/FWTokenManager.js');
+const execAsync = require('child-process-promise').exec;
 
 module.exports = class {
   constructor(name, config = {}) {
@@ -48,8 +56,9 @@ module.exports = class {
     const suffix = this.getKeySuffix(name);
     this.configServerKey = `ext.guardian.socketio.server${suffix}`;
     this.configRegionKey = `ext.guardian.socketio.region${suffix}`;
-    this.configBizModeKey = `ext.guardian.business${suffix}`;
+    this.configBizModeKey = `ext.guardian.business${suffix}`; // this key save msp instance basic info, e.g. id/name/plan
     this.configAdminStatusKey = `ext.guardian.socketio.adminStatus${suffix}`;
+    this.mspDataKey = `ext.guardian.data${suffix}`; // this key save msp user's info, e.g. targetlists
     this.liveTransportCache = {};
     setInterval(() => {
       this.cleanupLiveTransport()
@@ -90,17 +99,35 @@ module.exports = class {
 
   scheduleCheck() {
     if (this.checkId) {
-      clearTimeout(this.checkId);
+      clearInterval(this.checkId);
     }
-    this.checkId = setTimeout(async () => {
+    this.checkId = setInterval(async () => {
       await this.handlLegacy();
     }, 15 * 60 * 1000) // check every 15 mins
   }
 
   async handlLegacy() {
+    // box might be removed from msp but it was offline before
+    // remove legacy settings to avoid the box been locked forever
+    const mspResult = await this.checkBoxWithMsp();
+    log.info("Check box msp relationship with msp server result", mspResult);
+    if (mspResult.is_member === true) return; // belong to msp, return
+    if (mspResult.is_member === false) { // not belong to msp, reset
+      await this.reset();
+      return;
+    }
+    // fallback to check with cloud when msp is inactivated
+    const cloudResult = await this.checkBoxWithCloud();
+    log.info("Check box msp relationship with cloud result", cloudResult);
+    if (!cloudResult) return;
+    if (mspResult.check_license_failed === true && cloudResult.status === 'inactive') {
+      await this.reset();
+    }
+  }
+
+  async checkBoxWithMsp() {
+    const result = {};
     try {
-      // box might be removed from msp but it was offline before
-      // remove legacy settings to avoid the box been locked forever
       const region = await this.getRegion();
       const server = await this.getServer();
       const business = await this.getBusiness();
@@ -118,20 +145,74 @@ module.exports = class {
           },
           json: true
         }
-        const result = await rp(options)
-        if (!result || result.id != business.id) {
-          log.forceInfo(`The box had removed from the ${business.name}-${business.id}, reset guardian ${this.name}`);
-          await this.reset();
+        const checkResult = await rp(options)
+        if (checkResult.id == business.id) {
+          result.is_member = true;
+        } else {
+          log.forceInfo("The box doesn't belong to the msp anymore. From MSP", business.id);
+          result.is_member = false;
         }
       }
     } catch (e) {
       log.warn("Check license from msp error", e && e.message, this.name);
+      result.check_license_failed = true;
     }
+    return result;
+  }
+
+  async checkBoxWithCloud() {
+    let result;
+    try {
+      const server = await this.getServer();
+      const business = await this.getBusiness();
+      if (business && server) {
+        const url = await rclient.getAsync("sys:bone:url");
+        const token = await tokenManager.getToken();
+        const gid = await et.getGID();
+        const options = {
+          method: 'POST',
+          family: 4,
+          uri: `${url}/msp/check_box`,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            ContentType: 'application/json'
+          },
+          json: {
+            gid: gid,
+            msps: [{ id: business.id, domain: server }]
+          }
+        }
+        const checkResult = await rp(options);
+        /*
+          {
+            "result": [
+              {
+                "id": "mspid1",
+                "status": 'active' | 'inactive' | 'not_found',
+                "is_member": true,
+                "update": 1685065043122
+              },
+              {
+                "id": "mspid2",
+                "status": 'active' | 'inactive' | 'not_found',
+                "update": 1685065058521
+              }
+            ]
+          }
+        */
+        if (checkResult && checkResult.result) {
+          result = _.find(checkResult.result, (m) => m.id == business.id);
+        }
+      }
+    } catch (e) {
+      log.warn("Check box msp relationship error", e && e.message, this.name);
+    }
+    return result;
   }
 
   async setServer(data) {
     if (await this.locked(data.id, data.force)) {
-      throw new Error("Box had been locked");
+      throw { code: 423, msg: "Box had been locked" }
     }
     const { server, region } = data;
     if (server) {
@@ -155,6 +236,18 @@ module.exports = class {
     return false;
   }
 
+  async setMspData(data = {}) {
+    return rclient.setAsync(this.mspDataKey, JSON.stringify(data));
+  }
+
+  async getMspData() {
+    try {
+      return JSON.parse(await rclient.getAsync(this.mspDataKey))
+    } catch (e) {
+      return [];
+    }
+  }
+
   async getBusiness() {
     const data = await rclient.getAsync(this.configBizModeKey);
     if (!data) {
@@ -170,7 +263,7 @@ module.exports = class {
 
   async setBusiness(data) {
     if (await this.locked(data.id, data.force)) {
-      throw new Error("Box had been locked");
+      throw { code: 423, msg: "Box had been locked" }
     }
     await rclient.setAsync(this.configBizModeKey, JSON.stringify(data));
   }
@@ -229,7 +322,7 @@ module.exports = class {
       throw new Error("socketio server not set");
     }
 
-    await this._stop();
+    this._stop();
 
     await this.adminStatusOn();
 
@@ -248,7 +341,7 @@ module.exports = class {
     }
 
     this.socket.on('connect', () => {
-      log.forceInfo(`Socket IO connection to ${this.name} ${server}, ${region} is connected.`);
+      log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", " + region : ""} is connected.`);
       this.socket.emit("box_registration", {
         gid: gid,
         eid: eid,
@@ -257,7 +350,7 @@ module.exports = class {
     });
 
     this.socket.on('disconnect', (reason) => {
-      log.forceInfo(`Socket IO connection to ${this.name} ${server}, ${region} is disconnected. reason:`, reason);
+      log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", " + region : ""} is disconnected. reason:`, reason);
     });
 
     const key = `send_to_box_${gid}`;
@@ -301,20 +394,87 @@ module.exports = class {
     this._stop();
   }
 
+  // need find a better way to identify the msp related rules
+  // a simple flag to identify the msp rules
+  // mspData can't consistent with msp real time data if box is offline
+  // in this case, once box remove from msp, box should use the flag to clean up msp related rules
+  async isMspRelatedRule(rule, { mspData }) {
+    const mspId = await this.getMspId();
+    if (rule.msp_id == mspId && (p.msp_rid || p.purpose == 'mesh')) return true; // msp global rule or vpn mesh rule
+    if (mspData && mspData.targetlists) {
+      if (_.find(mspData.targetlists, { id: rule.target })) { // if it is msp target list rule
+        return true;
+      }
+    }
+    return false
+  }
+
   async reset() {
     log.info("Reset guardian settings", this.name);
-
+    const mspId = await this.getMspId();
     try {
       // remove all msp related rules
-      const mspId = await this.getMspId();
       const policies = await pm2.loadActivePoliciesAsync();
+      const mspData = await this.getMspData();
       await Promise.all(policies.map(async p => {
-        if (p.msp_rid && (p.msp_id == mspId ||
-          !p.msp_id // legacy data
-        )) {
+        if (await this.isMspRelatedRule(p, { mspData })) {
           await pm2.disableAndDeletePolicy(p.pid);
         }
       }))
+
+      // reset no_auto_upgrade flags
+      await upgradeManager.setAutoUpgradeState()
+
+      if (platform.isFireRouterManaged()) {
+        // delete related mesh settings
+        const networkConfig = await FireRouter.getConfig(true);
+
+        const wireguard = networkConfig.interface.wireguard || {};
+        let updateNetworkConfig = false;
+        Object.keys(wireguard).map(intf => {
+          if (wireguard[intf] && wireguard[intf].mspId == mspId) {
+            networkConfig.interface.wireguard = _.omit(wireguard, intf);
+
+            // delete dns config
+            const dns = networkConfig.dns || {};
+            networkConfig.dns = _.omit(dns, intf);
+
+            // delete icmp config
+            const icmp = networkConfig.icmp || {};
+            networkConfig.icmp = _.omit(icmp, intf);
+
+            // delete mdns_reflector config
+            const mdns_reflector = networkConfig.mdns_reflector || {};
+            networkConfig.mdns_reflector = _.omit(mdns_reflector, intf);
+
+            // delete sshd config
+            const sshd = networkConfig.sshd || {};
+            networkConfig.sshd = _.omit(sshd, intf);
+
+            // delete nat config
+            const nat = networkConfig.nat || {};
+            for (const key in nat) {
+              if (key.startsWith(`${intf}-`)) {
+                delete nat[key];
+              }
+            }
+            networkConfig.nat = nat;
+            updateNetworkConfig = true;
+          }
+        })
+        if (updateNetworkConfig) {
+          networkConfig.ts = Date.now();
+          await FireRouter.setConfig(networkConfig);
+        }
+      }
+
+      // disable msp features if not support msp
+      if (this.name != "support"){
+        const features = Object.keys(fc.getFeatures()).filter(i => i.startsWith('msp_'));
+        for (const f of features) {
+          await fc.disableDynamicFeature(f);
+        }
+      }
     } catch (e) {
       log.warn('Clean msp rules failed', e);
     }
@@ -323,10 +483,14 @@ module.exports = class {
     await rclient.unlinkAsync(this.configRegionKey);
     await rclient.unlinkAsync(this.configBizModeKey);
     await rclient.unlinkAsync(this.configAdminStatusKey);
+    await rclient.unlinkAsync(this.mspDataKey);
     this._stop();
 
     // no need to wait on this so that app/web can get the api response before key becomes invalid
     this.enable_key_rotation();
+
+    // stop schedule check
+    clearInterval(this.checkId);
   }
 
   async enable_key_rotation() {
@@ -334,6 +498,8 @@ module.exports = class {
     const gid = await et.getGID();
     await fc.enableDynamicFeature("rekey");
     await cw.getCloud().reKeyForAll(gid);
+    // make sure the rekey config is saved to local storage
+    this._scheduleRedisBackgroundSave();
   }
 
   isRealtimeValid() {
@@ -346,6 +512,34 @@ module.exports = class {
 
   resetRealtimeExpirationDate() {
     this.realtimeExpireDate = 0;
+  }
+
+  // copy from netbot.js
+  _scheduleRedisBackgroundSave() {
+    if (this.bgsaveTask)
+      clearTimeout(this.bgsaveTask);
+
+    this.bgsaveTask = setTimeout(async () => {
+      try {
+        await platform.ledSaving().catch(() => undefined);
+        const ts = Math.floor(Date.now() / 1000);
+        await rclient.bgsaveAsync();
+        const maxCount = 15;
+        let count = 0;
+        while (count < maxCount) {
+          count++;
+          await delay(1000);
+          const syncTS = await rclient.lastsaveAsync();
+          if (syncTS >= ts) {
+            break;
+          }
+        }
+        await execAsync("sync");
+      } catch (err) {
+        log.error("Redis background save returns error", err.message);
+      }
+      await platform.ledDoneSaving().catch(() => undefined);
+    }, 5000);
   }
 
   async onRealTimeMessage(gid, message) {
@@ -398,7 +592,7 @@ module.exports = class {
                 mspId: mspId
               });
             }
-            log.info("response sent back to web cloud via realtime, req id:", decryptedMessage.message.obj.id, this.name);
+            log.debug("response sent back to web cloud via realtime, req id:", decryptedMessage.message.obj.id, this.name);
           } catch (err) {
             log.error('Socket IO connection error', err);
           }
@@ -476,7 +670,7 @@ module.exports = class {
             code: code
           });
         }
-        log.info("response sent to back web cloud, req id:", decryptedMessage ? decryptedMessage.message.obj.id : "decryption error", this.name);
+        log.debug("response sent to back web cloud, req id:", decryptedMessage ? decryptedMessage.message.obj.id : "decryption error", this.name);
       } catch (err) {
         log.error('Socket IO connection error', err);
       }

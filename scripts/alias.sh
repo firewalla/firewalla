@@ -36,7 +36,7 @@ alias sr2='sudo systemctl restart firemon'
 alias sr3='touch /home/pi/.firewalla/managed_reboot; sudo systemctl restart fireapi'
 alias sr4='sudo systemctl restart firehttpd'
 alias sr5='sudo systemctl restart firereset'
-alias sr6='sudo systemctl restart firerouter'
+alias sr6='sudo systemctl restart firerouter; source /home/pi/firerouter/bin/common; init_network_config'
 alias srb4='sudo systemctl restart bitbridge4'
 alias srb6='sudo systemctl restart bitbridge6'
 alias ss7='sudo systemctl stop frpc.support.service'
@@ -57,19 +57,19 @@ alias noautofr='touch /home/pi/.router/config/.no_auto_upgrade'
 alias noautofw='touch /home/pi/.firewalla/config/.no_auto_upgrade'
 
 function ll0 {
-  redis-cli publish "TO.FireMain" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireMain\", \"level\":\"${2:-info}\"}"
+  redis-cli publish "TO.FireMain" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "toProcess":"FireMain", "level":"'${2:-info}'"}'
 }
 function ll1 {
-  redis-cli publish "TO.FireKick" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireKick\", \"level\":\"${2:-info}\"}"
+  redis-cli publish "TO.FireKick" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "toProcess":"FireKick", "level":"'${2:-info}'"}'
 }
 function ll2 {
-  redis-cli publish "TO.FireMon" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireMon\", \"level\":\"${2:-info}\"}"
+  redis-cli publish "TO.FireMon" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "toProcess":"FireMon", "level":"'${2:-info}'"}'
 }
 function ll3 {
-  redis-cli publish "TO.FireApi" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireApi\", \"level\":\"${2:-info}\"}"
+  redis-cli publish "TO.FireApi" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "toProcess":"FireApi", "level":"'${2:-info}'"}'
 }
 function ll6 {
-  redis-cli publish "TO.FireRouter" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"level\":\"${2:-info}\"}"
+  redis-cli publish "TO.FireRouter" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "level":"'${2:-info}'"}'
 }
 alias rrci='redis-cli publish "TO.FireMain" "{\"type\":\"CloudReCheckin\", \"toProcess\":\"FireMain\"}"'
 alias frcc='curl "http://localhost:8837/v1/config/active" 2>/dev/null | jq'
@@ -81,6 +81,8 @@ alias sccf='curl https://raw.githubusercontent.com/firewalla/firewalla/master/sc
 alias remote_speed_test='curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python -'
 alias rst='curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python -'
 alias frset='curl -X POST http://localhost:8837/v1/config/set -H "Content-Type:application/json"'
+alias dusage='curl -s https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/dataUsage.js | node -'
+alias idresult='curl -s https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/identificationResult.sh | bash -s --'
 
 alias less='less -r'
 alias ls='ls --color=auto'
@@ -135,3 +137,24 @@ function nd {
 
 alias dc='sudo docker-compose'
 alias jdc='sudo journalctl -fu docker-compose@$(basename $(pwd))'
+alias ssrb='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/show_syslog_reboots.sh 2>/dev/null | sudo bash -s --'
+alias ssud='bash <(curl -fsSL https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/sud.sh)'
+alias twan='curl -fsSL https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/test_wan.sh | sudo bash -s --'
+alias ttwan='sudo /home/pi/firewalla/scripts/test_wan.sh'
+
+
+# view redis hash
+function vh {
+  echo | column -n 2>/dev/null && COLUMN_OPT='column -n' || COLUMN_OPT='column'
+
+  local i=0
+  (redis-cli -d $'\3' hgetall "$1"; printf $'\3') | while read -r -d $'\3' entry; do
+    ((i++))
+    echo -n "$entry"
+    if ((i % 2)); then
+      echo -en "\t"
+    else
+      echo ""
+    fi
+  done | $COLUMN_OPT -t
+}

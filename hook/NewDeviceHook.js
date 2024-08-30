@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,13 +14,12 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename, 'info');
 
-let Hook = require('./Hook.js');
+const Hook = require('./Hook.js');
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
-
-let util = require('util');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+const { delay } = require('../util/util')
 
 const MessageBus = require('../net2/MessageBus.js');
 
@@ -32,48 +31,20 @@ class NewDeviceHook extends Hook {
     this.messageBus = new MessageBus('info');
   }
 
-  async findMac(name, mac, from, retry) {
-
-    retry = retry || 0;
-
-    let Discovery = require("../net2/Discovery.js");
-    let d = new Discovery("nmap", null, "info", false);
+  async findMac(name, mac, from) {
+    const Discovery = require("../net2/Discovery.js");
+    const d = new Discovery("nmap", null, "info", false);
 
     // get ip address and mac vendor
     try {
-      let result = await d.discoverMac(mac)
-
-      if(!result) {
-        // not found... kinda strange, hack??
-        let logString = util.format("New device %s (%s) is not found in the network", name, mac);
-        log.warn(logString);
-
-        // if first time, try again in another 10 seconds
-        if(retry === 0) {
-          setTimeout(() => this.findMac(name, mac, from, retry + 1),
-            10 * 1000);
-        }
-        return;
-      }
+      const result = await d.discoverMac(mac) || {}
 
       log.info("Found a new device: " + name + "(" + mac + ")");
 
-      result.bname = name;
-      result.mac = mac;
-      result.from = from
-
-      sem.emitEvent({
-        type: "DeviceUpdate",
-        message: `A new device found @ NewDeviceHook ${result.mac} ${name}`,
-        host: result
-      });
-      // d.processHost(result, (err, host, newHost) => {
-      //   // alarm will be handled and created by "NewDevice" event
-      //
-      // });
+      return result
     } catch(err) {
       log.error("Failed to discover mac address", mac, ": " + err);
-      return;
+      return {}
     }
   }
 
@@ -102,30 +73,43 @@ class NewDeviceHook extends Hook {
         }
   
         const result = await hostTool.macExists(mac)
-  
+
         if(result) {
-          if(!name) {
-            return // hostname is not provided by dhcp request, can't update name
-          }
-          
-          log.info("MAC Address", mac, ` already exists, updating ${from}Name`);
+          log.verbose("MAC Address", mac, ` already exists, updating ${from}Name`);
           let hostObj = {
             mac: mac
+            /* do not update lastActiveTimestamp here, otherwise device online alarm will not be created in DeviceHook
+            lastActiveTimestamp: new Date() / 1000
+            */
           }
           const skey = `${from}Name`;
-          hostObj[skey] = name;
+          if (name) hostObj[skey] = name;
           await hostTool.updateMACKey(hostObj);
           await hostTool.generateLocalDomain(mac);
-          this.messageBus.publish("DiscoveryEvent", "Device:Updated", mac, hostObj);
+          this.messageBus.publish("Host:Updated", mac, hostObj);
           return;
         }
-  
+
         // delay discover, this is to ensure ip address is already allocated
         // to this new device
-        setTimeout(() => {
-          log.info(require('util').format("Trying to inspect more info on host %s (%s)", name, mac))
-          this.findMac(name, mac, event.from);
-        }, 5000);
+        await delay(5000)
+        log.info("Trying to inspect more info on host", name, mac)
+        const nmapResult = await this.findMac(name, mac, event.from);
+
+        if (name) nmapResult.bname = name;
+
+        sem.emitEvent({
+          type: "DeviceUpdate",
+          message: `A new device found @ NewDeviceHook ${mac} ${name}`,
+          host: Object.assign(nmapResult, {
+            mac,
+            from,
+            firstFoundTimestamp: new Date() / 1000,
+            lastActiveTimestamp: new Date() / 1000,
+            intf_mac: event.intf_mac,
+            intf_uuid: event.intf_uuid,
+          })
+        });
       });
     })
   }

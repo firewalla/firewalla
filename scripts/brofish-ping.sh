@@ -91,21 +91,40 @@ brofish_rss() {
   fi
 }
 
+brofish_worker_alive() {
+  output=$(sudo /usr/local/${BRO_PROC_NAME}/bin/${BRO_PROC_NAME}ctl top 2>/dev/null | grep -w worker)
+  while IFS= read -r line; do
+    pid=$(echo "$line" | awk '{print $4}')
+    if ! [[ $pid =~ ^[0-9]+$ ]]; then
+      id=$(echo "$line" | awk '{print $1}')
+      intf=$(cat /usr/local/${BRO_PROC_NAME}/etc/node.cfg | grep -F "[${id}]" -A 4 | awk '/interface=/' | awk -F= '{print $2}')
+      if [[ -n "$intf" && -e /sys/class/net/${intf} ]]; then
+        /home/pi/firewalla/scripts/firelog -t cloud -m "${BRO_PROC_NAME} worker on ${intf} is not running, will restart brofish ..."
+        return 1
+      fi
+    fi
+  done <<< "$output"
+  return 0
+}
+
 ping_ok=true
 result_hb="OK"
 result_cpu="OK"
 result_rss="OK"
+result_worker="OK"
 for ((retry=0; retry<$TOTAL_RETRIES; retry++)); do
   ping_ok=true
   brofish_hb && result_hb="OK" || { ping_ok=false; result_hb="fail"; }
   brofish_cpu && result_cpu="OK" || { ping_ok=false; result_cpu="fail"; }
   brofish_rss && result_rss="OK" || { ping_ok=false; result_rss="fail"; }
+  brofish_worker_alive && result_worker="OK" || { ping_ok=false; result_worker="fail"; }
   $ping_ok && break
+  [[ $result_worker == "OK" ]] || break
   sleep $SLEEP_TIMEOUT
 done
 
 $ping_ok || {
-  /home/pi/firewalla/scripts/firelog -t cloud -m "brofish ping failed(HB:$result_hb, CPU:$result_cpu, RSS:$result_rss), restart brofish now"
+  /home/pi/firewalla/scripts/firelog -t cloud -m "brofish ping failed(HB:$result_hb, CPU:$result_cpu, RSS:$result_rss, Worker:$result_worker), restart brofish now"
 #  sudo pkill -x ${BRO_PROC_NAME} # directly kill bro to speed up the process, also for memory saving
   sudo systemctl restart brofish
 }

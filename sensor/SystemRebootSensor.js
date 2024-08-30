@@ -33,15 +33,14 @@ class SystemRebootSensor extends Sensor {
     } else {
       log.debug("system reboot not processed yet, sending action event");
       const last = await this.getLastHeartbeatTime();
-      if (last)
+      if (last && Date.now() - Number(last) > 300000) // do not generate event if the box has been offline for less than 5 minutes
         era.addActionEvent("system_reboot", 1, {last: last});
-      await fs.writeFileAsync(REBOOT_FLAG_FILE, '');
     }
-  }
-
-  async updateHeartbeat() {
-    const now = Date.now();
-    await this.setLastHeartbeatTime(now);
+    // use sudo to generate file in /dev/shm, IPC objects of system users will not be removed even if RemoveIPC=yes in /etc/systemd/logind.conf
+    await exec(`sudo rm -f ${REBOOT_FLAG_FILE}`).catch((err) => {}); // regenerate the file to make sure it is owned by root
+    await exec(`sudo touch ${REBOOT_FLAG_FILE}`).catch((err) => {
+      log.error(`Failed to touch ${REBOOT_FLAG_FILE}`, err.message);
+    });
   }
 
   async getLastHeartbeatTime() {

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,8 +25,6 @@ const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
 const ipTool = require('ip');
 
-const Promise = require('bluebird');
-
 const extend = require('../util/util.js').extend;
 const util = require('util');
 const bone = require("../lib/Bone.js");
@@ -49,6 +47,9 @@ const MAX_IPV6_ADDRESSES = 10
 const MAX_LINKLOCAL_IPV6_ADDRESSES = 3
 const MessageBus = require('../net2/MessageBus.js');
 const VipManager = require('../net2/VipManager.js');
+const Constants = require('../net2/Constants.js');
+
+const HOST_UPDATED = 'Host:Updated'
 
 const INVALID_MAC = '00:00:00:00:00:00';
 class DeviceHook extends Hook {
@@ -98,7 +99,7 @@ class DeviceHook extends Hook {
         log.info(`Update ip info for vip address ${ipv4Addr}`);
         sem.emitEvent({
           type: "VipDeviceUpdate",
-          message: "Refresh virtual ip status @ DeviceHook",
+          message: `Refresh virtual ip ${ipv4Addr} status @ DeviceHook`,
           host: host,
           suppressAlarm: event.suppressAlarm
         });
@@ -114,7 +115,7 @@ class DeviceHook extends Hook {
         log.info(`A new device is found: '${mac}' '${ipv4Addr}'`, ipv6Addr);
         sem.emitEvent({
           type: "NewDeviceFound",
-          message: "A new device (mac address) found @ DeviceHook",
+          message: `A new device mac found ${mac} @ DeviceHook`,
           host: host,
           suppressAlarm: event.suppressAlarm
         })
@@ -128,7 +129,7 @@ class DeviceHook extends Hook {
         if (ip4Entry && ip4Entry.mac === mac) {
           sem.emitEvent({
             type: "RegularDeviceInfoUpdate",
-            message: "Refresh device status @ DeviceHook",
+            message: `Refresh device status ${mac} @ DeviceHook`,
             suppressEventLogging: true,
             suppressAlarm: event.suppressAlarm,
             host: host
@@ -141,7 +142,7 @@ class DeviceHook extends Hook {
         if (!ip4Entry) {
           sem.emitEvent({
             type: "OldDeviceChangedToNewIP",
-            message: "An old device used a new IP @ DeviceHook",
+            message: `An old device used a new IP ${ipv4Addr} @ DeviceHook`,
             suppressAlarm: event.suppressAlarm,
             host: host
           })
@@ -153,7 +154,7 @@ class DeviceHook extends Hook {
         if (ip4Entry && ip4Entry.mac !== mac) {
           sem.emitEvent({
             type: "OldDeviceTakenOverOtherDeviceIP",
-            message: "An old device used IP used to be other device @ DeviceHook",
+            message: `An old device ${mac} used IP ${ipv4Addr} used to be other device ${ip4Entry.mac} @ DeviceHook`,
             suppressAlarm: event.suppressAlarm,
             host: host,
             oldMac: ip4Entry.mac
@@ -172,6 +173,8 @@ class DeviceHook extends Hook {
 
           log.debug("DeviceHook:IPv6Update:", JSON.stringify(newIPv6Addr));
           await hostTool.updateMACKey(newHost) // mac
+
+          this.messageBus.publish(HOST_UPDATED, host.mac, newHost);
         }
       }
 
@@ -258,7 +261,7 @@ class DeviceHook extends Hook {
             await hostTool.linkMacWithIPv6(v6, host.mac)
               .catch(log.error)
           }
-          this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, host);
+          this.messageBus.publish(HOST_UPDATED, host.mac, host);
         }
       });
 
@@ -336,19 +339,15 @@ class DeviceHook extends Hook {
             log.info("Alarm is suppressed for new device", hostTool.getHostname(enrichedHost));
           }
           const hostManager = new HostManager();
-          hostManager.getHost(host.mac, (err, h) => {
-            // directly start spoofing
-            if (err) {
-              log.error("Failed to get host after it is detected.");
-            } else {
-              if (!sysManager.isMyMac(mac)) {
-                h.spoof(true);
-              }
-            }
-          });
-          await this.setupLocalDeviceDomain(host.mac, 'new_device');
+          const h = await hostManager.getHostAsync(mac).catch(err => {
+            log.error("Failed to get host after it is detected.");
+          })
+          if (!sysManager.isMyMac(mac)) {
+            h.spoof(true);
+          }
+          await this.setupLocalDeviceDomain(mac, 'new_device');
 
-          this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
+          this.messageBus.publish("DiscoveryEvent", "Device:Create", mac, enrichedHost);
         } catch (err) {
           log.error("Failed to handle NewDeviceFound event:", err);
         }
@@ -387,7 +386,7 @@ class DeviceHook extends Hook {
           if (!lastActiveTimestamp || lastActiveTimestamp < currentTimestamp - this.config.hostExpirationSecs) {
             // Become active again after a while, create a DeviceBackOnlineAlarm
             log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
-            if (!event.suppressAlarm) {
+           if (!event.suppressAlarm) {
               try {
                 const enabled = await this.isFeatureEnabled(host.mac, "devicePresence");
                 if (enabled) {
@@ -415,7 +414,7 @@ class DeviceHook extends Hook {
           });
           await this.setupLocalDeviceDomain(host.mac, 'ip_change');
 
-          this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
+          this.messageBus.publish(HOST_UPDATED, host.mac, enrichedHost);
         } catch (err) {
           log.error("Failed to process OldDeviceChangedToNewIP event:", err);
         }
@@ -492,7 +491,7 @@ class DeviceHook extends Hook {
           });
           await this.setupLocalDeviceDomain(host.mac, 'ip_change');
 
-          this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
+          this.messageBus.publish(HOST_UPDATED, host.mac, enrichedHost);
         } catch (err) {
           log.error("Failed to process OldDeviceTakenOverOtherDeviceIP event:", err);
         }
@@ -568,7 +567,7 @@ class DeviceHook extends Hook {
           });
           // publish device updated event to trigger
           await this.setupLocalDeviceDomain(host.mac, 'info_change');
-          this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
+          this.messageBus.publish(HOST_UPDATED, host.mac, enrichedHost);
           // log.info("RegularDeviceInfoUpdate MAC entry is updated, checking V6",host.ipv6Addr,enrichedHost.ipv6Addr);
           // if (host.ipv6Addr == null || host.ipv6Addr.length == 0) {
           //         return;
@@ -702,7 +701,6 @@ class DeviceHook extends Hook {
     const name = getPreferredBName(host) || "Unknown"
     const hostManager = new HostManager();
     const hostInstance = hostManager.getHostFastByMAC(host.mac);
-    const tags = hostInstance && await hostInstance.getTags() || []
 
     let alarm = null;
     switch (type) {
@@ -726,8 +724,7 @@ class DeviceHook extends Hook {
             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
-            "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": tags
+            "p.intf.id": host.intf ? host.intf : ""
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -741,7 +738,6 @@ class DeviceHook extends Hook {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": tags
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -755,8 +751,7 @@ class DeviceHook extends Hook {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.device.lastSeen": host.lastActiveTimestamp,
-            "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": tags
+            "p.intf.id": host.intf ? host.intf : ""
           });
         am2.enqueueAlarm(alarm);
         break;
@@ -769,8 +764,7 @@ class DeviceHook extends Hook {
             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
-            "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": tags
+            "p.intf.id": host.intf ? host.intf : ""
           });
         am2.enqueueAlarm(alarm);
         break;

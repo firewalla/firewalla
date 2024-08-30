@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc
+/*    Copyright 2021-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,12 +19,9 @@ const Sensor = require('./Sensor.js').Sensor;
 const cc = require('../extension/cloudcache/cloudcache.js');
 const sem = require('./SensorEventManager.js').getInstance();
 const zlib = require('zlib');
-const fs = require('fs');
-const f = require('../net2/Firewalla.js');
-const countryDataFolder = `${f.getRuntimeInfoFolder()}/countryData`;
-const Promise = require('bluebird');
-const inflateAsync = Promise.promisify(zlib.inflate);
-Promise.promisifyAll(fs);
+const fsp = require('fs').promises
+const countryDataFolder = require('../extension/country/country.js').countryDataFolder
+const inflateAsync = require('util').promisify(zlib.inflate);
 const Buffer = require('buffer').Buffer;
 
 const hashData = [{
@@ -69,7 +66,7 @@ class CountryIntelPlugin extends Sensor {
             }
             const buf = Buffer.from(content, 'base64');
             const data = await inflateAsync(buf);
-            await fs.writeFileAsync(item.dataPath, data);
+            await fsp.writeFile(item.dataPath, data);
             log.info(`Loaded Country Data ${item.hashKey} successfully.`);
             const geoRefreshEvent = {
                 type: 'GEO_REFRESH',

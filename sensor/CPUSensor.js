@@ -27,7 +27,7 @@ class CPUSensor extends Sensor {
   }
 
   async startUsageCheck() {
-    const vmstatPromise = cp.spawn("vmstat", ["-n", "-w", `${this.config.checkInterval || 15}`]);
+    const vmstatPromise = cp.spawn("vmstat", ["-n", "-w", `${this.config.checkInterval || 5}`]);
     const vmstat =  vmstatPromise.childProcess;
     /*
     --procs-- -----------------------memory---------------------- ---swap-- -----io---- -system-- --------cpu--------

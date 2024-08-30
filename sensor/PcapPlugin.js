@@ -25,12 +25,14 @@ const Message = require('../net2/Message.js');
 const FireRouter = require('../net2/FireRouter.js');
 const Config = require('../net2/config.js');
 const extensionManager = require('./ExtensionManager.js');
+const _ = require('lodash');
 
 class PcapPlugin extends Sensor {
 
   async apiRun() {
     extensionManager.onCmd(`${this.getFeatureName()}:restart`, async (msg, data) => {
       const enabled = Config.isFeatureOn(this.getFeatureName());
+      try {await extensionManager._precedeRecord(msg.id, {origin: {enabled: enabled}})} catch(err) {};
       if (enabled) {
         await this.restart().catch((err) => {
           log.error(`Failed to restart ${this.getFeatureName()}`, err.message);
@@ -49,6 +51,7 @@ class PcapPlugin extends Sensor {
       return;
     }
     this.enabled = false;
+    this.listenInterfaces = [];
     this.hookFeature(this.getFeatureName());
     const restartJob = new scheduler.UpdateJob(this.restart.bind(this), 5000);
     await this.initLogProcessing();
@@ -102,6 +105,8 @@ class PcapPlugin extends Sensor {
         if (!monitoringInterfaces.includes(intfName))
           continue;
         const intf = intfNameMap[intfName];
+        if (intf && intf.config && intf.config.assetsController) // bypass assets controller wireguard interface
+          continue;
         const isBond = intfName && intfName.startsWith("bond") && !intfName.includes(".");
         const subIntfs = !isBond && intf.config && intf.config.intf;
         if (!subIntfs) {
@@ -127,17 +132,25 @@ class PcapPlugin extends Sensor {
           monitoringIntfOptions[intfName] = { pcapBufsize: maxPcapBufsize };
         }
       }
-      if (monitoringInterfaces.length <= Object.keys(parentIntfOptions).length)
+      if (monitoringInterfaces.length <= Object.keys(parentIntfOptions).length) {
+        this.listenInterfaces = Object.keys(monitoringIntfOptions);
         return monitoringIntfOptions;
-      else
+      } else {
+        this.listenInterfaces = Object.keys(parentIntfOptions);
         return parentIntfOptions;
+      }
     } else {
       const fConfig = await Config.getConfig(true);
       const intf = fConfig.monitoringInterface || "eth0";
       const listenInterfaces = {};
       listenInterfaces[intf] = {pcapBufsize: this.getPcapBufsize(intf)};
+      this.listenInterfaces = [intf];
       return listenInterfaces;
     }
+  }
+
+  getListenInterfaces() {
+    return this.listenInterfaces;
   }
 
   getPcapBufsize(intfName) {

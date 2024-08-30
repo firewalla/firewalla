@@ -76,7 +76,7 @@ function log(message) {
 async function getShellOutput(cmd) {
   try {
     const result = await exec(cmd, { encoding: 'utf8' });
-    return result && result.stdout && result.stdout.replace(/\n$/,'');
+    return result && result.stdout && result.stdout.trim()
   } catch(err) {
     log("ERROR: "+err);
     return "";
@@ -122,7 +122,7 @@ async function getEthernetSpeed() {
 async function getGatewayMacPrefix() {
   const gwIP = await getShellOutput("route -n | awk '$1 == \"0.0.0.0\" {print $2}'");
   if ( gwIP ) {
-    const gwMacPrefix = await getShellOutput(`arp -a -n | grep ${gwIP} -w | awk '{print $4}' | cut -d: -f1-3`);
+    const gwMacPrefix = await getShellOutput(`arp -a -n | grep "${gwIP}" -w | awk '{print $4}' | cut -d: -f1-3`);
     return gwMacPrefix;
   } else {
     return '';

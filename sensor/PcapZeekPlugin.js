@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,7 +26,10 @@ const _ = require('lodash');
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const {Address4, Address6} = require('ip-address');
+const features = require('../net2/features.js')
+const conntrack = require('../net2/Conntrack.js')
+const uuid = require('uuid');
 
 class PcapZeekPlugin extends PcapPlugin {
 
@@ -63,13 +66,12 @@ class PcapZeekPlugin extends PcapPlugin {
     const monitoringIntfs = sysManager.getMonitoringInterfaces();
     for (const intf of monitoringIntfs) {
       const intfName = intf.name;
-      if (intf.ip4_subnets && _.isArray(intf.ip4_subnets)) {
-        for (const ip of intf.ip4_subnets) {
-          if (localNetworks[ip])
-            localNetworks[ip].push(intfName);
-          else
-            localNetworks[ip] = [intfName];
-        }
+      const subnets4 = (_.isArray(intf.ip4_subnets) ? intf.ip4_subnets : []).concat(_.isArray(intf.rt4_subnets) ? intf.rt4_subnets : []).filter(cidr => cidr.includes('/') && !cidr.endsWith('/32') && !sysManager.isDefaultRoute(cidr)); // exclude single IP cidr, mainly for peer IP in mesh VPN that should be covered by another /24 cidr
+      for (const ip of subnets4) {
+        if (localNetworks[ip])
+          localNetworks[ip].push(intfName);
+        else
+          localNetworks[ip] = [intfName];
       }
       if (localNetworks[multicastV4])
         localNetworks[multicastV4].push(intfName);
@@ -93,10 +95,78 @@ class PcapZeekPlugin extends PcapPlugin {
 
   async calculateZeekOptions() {
     const listenInterfaces = await this.calculateListenInterfaces();
-    return {
-      listenInterfaces,
-      restrictFilters: {}
-    };
+    const monitoredNetworks4 = [];
+    const monitoredNetworks6 = [];
+    const selfIp4 = [];
+    const selfIp6 = [];
+    for (const intf of sysManager.getMonitoringInterfaces()) {
+      const ip4Subnets = intf.ip4_subnets;
+      const ip6Subnets = intf.ip6_subnets;
+      if (_.isArray(ip4Subnets)) {
+        for (const ip4 of ip4Subnets) {
+          const addr4 = new Address4(ip4);
+          if (addr4.isValid())
+            monitoredNetworks4.push(`${addr4.startAddress().correctForm()}/${addr4.subnetMask}`);
+            selfIp4.push(addr4.correctForm());
+        }
+      }
+      if (_.isArray(ip6Subnets)) {
+        for (const ip6 of ip6Subnets) {
+          const addr6 = new Address6(ip6);
+          if (addr6.isValid())
+            monitoredNetworks6.push(`${addr6.startAddress().correctForm()}/${addr6.subnetMask}`);
+            selfIp6.push(addr6.correctForm());
+        }
+      }
+    }
+    // do not capture intranet traffic, but still keep tcp SYN/FIN/RST for port scan detection
+    const restrictFilters = {};
+    if (!_.isEmpty(monitoredNetworks4))
+      restrictFilters["not-intranet-ip4"] = `not (ip and (${monitoredNetworks4.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks4.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or tcp[13] & 0x7 == 0))`;
+    if (!_.isEmpty(monitoredNetworks6))
+      restrictFilters["not-intranet-ip6"] = `not (ip6 and (${monitoredNetworks6.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks6.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or ip6[40+13] & 0x7 == 0))`;
+    // do not record TCP SYN originated from box, which is device port scan packets
+    if (!_.isEmpty(selfIp4)) {
+      restrictFilters["not-self-tx-syn-ip4"] = `not (ip and (${selfIp4.map(ip => `src host ${ip}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or tcp[13] & 0x12 == 2))`;
+      restrictFilters["not-self-rx-nosyn-ip4"] = `not (ip and (${selfIp4.map(ip => `dst host ${ip}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or tcp[13] & 0x12 != 2))`;
+    }
+    /* box won't do IPv6 port scan in practice, remove them from restrictFilters to reduce pcap filter expression length in zeek. Zeek may not work properly with an excessively long pcap filter expression
+    if (!_.isEmpty(selfIp6)) {
+      restrictFilters["not-self-tx-syn-ip6"] = `not (ip6 and (${selfIp6.map(ip => `src host ${ip}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or ip6[40+13] & 0x12 == 2))`;
+      restrictFilters["not-self-rx-nosyn-ip6"] = `not (ip6 and (${selfIp6.map(ip => `src host ${ip}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or ip6[40+13] & 0x12 != 2))`;
+    }
+    */
+    if (features.isOn("fast_speedtest") && conntrack) {
+      restrictFilters["not-tcp-port-8080"] = `not (tcp and port 8080)`;
+      conntrack.registerConnHook({dport: 8080, protocol: "tcp"}, (connInfo) => {
+        const {src, replysrc, sport, replysport, dst, dport, protocol, origPackets, respPackets, origBytes, respBytes, duration} = connInfo;
+        const local_orig = Boolean(sysManager.getInterfaceViaIP(src));
+        bro.processConnData(JSON.stringify(
+          {
+            "id.orig_h": src,
+            "id.resp_h": local_orig ? dst : replysrc, // use replysrc for DNATed connection
+            "id.orig_p": sport,
+            "id.resp_p": local_orig ? dport : replysport,
+            "proto": protocol,
+            "orig_bytes": origBytes,
+            "orig_pkts": origPackets,
+            "resp_bytes": respBytes,
+            "resp_pkts": respPackets,
+            "orig_ip_bytes": origBytes + origPackets * 20,
+            "resp_ip_bytes": respBytes + respPackets * 20,
+            "missed_bytes": 0,
+            "local_orig": local_orig,
+            "local_resp": local_orig ? Boolean(sysManager.getInterfaceViaIP(dst)) : Boolean(sysManager.getInterfaceViaIP(replysrc)),
+            "conn_state": "SF",
+            "duration": duration,
+            "ts": Date.now() / 1000 - duration,
+            "uid": uuid.v4().substring(0, 8)
+          }
+        ))
+      })
+    }
+
+    return {listenInterfaces, restrictFilters};
   }
 
   getPcapBufsize(intfName) {

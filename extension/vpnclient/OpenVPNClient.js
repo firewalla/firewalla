@@ -1,4 +1,4 @@
-/*    Copyright 2016 - 2021 Firewalla Inc 
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,6 +19,7 @@ const log = require('../../net2/logger.js')(__filename);
 const fs = require('fs');
 const util = require('util');
 const f = require('../../net2/Firewalla.js');
+const _ = require('lodash');
 
 const Message = require('../../net2/Message.js');
 const VPNClient = require('./VPNClient.js');
@@ -220,6 +221,11 @@ class OpenVPNClient extends VPNClient {
         revisedContent = revisedContent.replace(/^management\s+.*/gm, `management /dev/${this.getInterfaceName()} unix`);
       }
     }
+
+    const fwMark = this.getFwMark();
+    if (fwMark) {
+      revisedContent = revisedContent + `\nmark ${fwMark}`;
+    }
     
     const runtimeOvpnPath = this._getRuntimeProfilePath();
     await fs.writeFileAsync(runtimeOvpnPath, revisedContent, {encoding: 'utf8'});
@@ -268,6 +274,8 @@ class OpenVPNClient extends VPNClient {
     cmd = util.format("sudo systemctl disable \"%s@%s\"", SERVICE_NAME, this.profileId);
     await exec(cmd).catch((err) => {});
   }
+
+  async loadJSONConfig() { return {} }
 
   async checkAndSaveProfile(value) {
     const content = value.content;
@@ -407,15 +415,27 @@ class OpenVPNClient extends VPNClient {
     if (content) {
       const pattern = "the current --script-security setting may allow this configuration to call user-defined scripts";
       const lines = content.split('\n');
+      const patternLines = [];
       let beginLine = 0;
       for (let i = 0; i != lines.length; i++) {
         const line = lines[i];
         if (line.includes(pattern))
-          beginLine = i;
+          patternLines.push(i);
       }
+      // return at most last 3 sessions
+      if (patternLines.length > 0)
+        beginLine = patternLines[Math.max(0, patternLines.length - 3)];
       return lines.slice(beginLine).join("\n");
     }
     return null;
+  }
+
+  async getRemoteEndpoints() {
+    const endpoints = [];
+    const result = await exec(`echo "state" | nc -U /dev/${this.getInterfaceName()} -q 0 -w 5 | tail -n +2 | head -n 1 | awk -F, '{print $5","$6}'`).then((result) => result.stdout.trim().split(",")).catch((err) => null);
+    if (_.isArray(result) && result.length == 2)
+      endpoints.push({ip: result[0], port: result[1]});
+    return endpoints;
   }
 }
 

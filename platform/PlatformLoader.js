@@ -82,6 +82,11 @@ class PlatformLoader {
             this.platform = new PSEPlatform();
             break;
           }
+          case "gold-se": {
+            const GSEPlatform = require('./gse/GSEPlatform.js');
+            this.platform = new GSEPlatform();
+            break;
+          }
           default: {
             const BluePlatform = require('./blue/BluePlatform.js');
             this.platform = new BluePlatform();
@@ -96,8 +101,19 @@ class PlatformLoader {
         break;
       }
       case "x86_64": {
-        const GoldPlatform = require('./gold/GoldPlatform.js');
-        this.platform = new GoldPlatform();
+        const boardName = this.getBoardName();
+        switch (boardName) {
+          case "gold-pro": {
+            const GoldProPlatform = require('./goldpro/GoldProPlatform.js');
+            this.platform = new GoldProPlatform();
+            break;
+          }
+          default: {
+            const GoldPlatform = require('./gold/GoldPlatform.js');
+            this.platform = new GoldPlatform();
+            break;
+          }
+        }
         break;
       }
       default:
