@@ -40,7 +40,7 @@ const HostManager = require('../net2/HostManager')
 const hostManager = new HostManager();
 const Identity = require('./Identity.js')
 const IdentityManager = require('./IdentityManager.js');
-
+const Monitorable = require('./Monitorable')
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 const IntelTool = require('./IntelTool.js')
@@ -479,10 +479,10 @@ class BroDetect {
       const dnsFlow = {
         ts: Math.round((obj.ts) * 100) / 100,
         _ts: await getUniqueTs(now), // _ts is the last time updated, make it unique to avoid missing flows in time-based query
+        dn: obj.query,
         sh: obj["id.orig_h"],
         dh: obj["id.resp_h"],
         dp: obj["id.resp_p"],
-        dn: obj.query,
         as: obj.answers,
         ct: 1,
       }
@@ -552,7 +552,7 @@ class BroDetect {
       }
 
       if (!localMac || localMac.constructor.name !== "String") {
-        log.warn('NO LOCAL MAC! Drop DNS', data)
+        log.warn('NO LOCAL MAC! Drop DNS', JSON.stringify(obj))
         return
       }
 
@@ -599,7 +599,7 @@ class BroDetect {
       }
 
     } catch(err) {
-      log.error('Error saving DNS flow', data, err)
+      log.error('Error saving DNS flow', JSON.stringify(obj), err)
     }
   }
 
@@ -766,7 +766,7 @@ class BroDetect {
         return policy
     }
 
-    return monitorable.constructor.defaultPolicy.dnsmasq.dnsCaching;
+    return (monitorable && monitorable.constructor || Monitorable).defaultPolicy().dnsmasq.dnsCaching;
   }
 
   isConnFlowValid(data, intf, lhost, localFam, monitorable) {
