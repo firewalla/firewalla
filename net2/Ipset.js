@@ -19,7 +19,7 @@ const log = require('./logger.js')(__filename);
 const { exec } = require('child-process-promise');
 const { spawn } = require('child_process');
 const AsyncLock = require('../vendor_lib/async-lock');
-const lock = new AsyncLock();
+const lock = new AsyncLock({maxPending: 3000});
 
 const maxIpsetQueue = 158;
 const ipsetInterval = 3000;
@@ -292,8 +292,11 @@ async function batchTest(targets, setName, timeout = 10) {
   return lock.acquire("LOCK_IPSET_BATCH_TEST", async () => {
     if (Date.now() - testProcessStartTs > 600000 && testProcess) {
       log.info(`Interactive test ipset is living for more than 600 seconds, restart it to avoid potential memory leak`)
-      testProcess.stdin.write("quit\n");
-      initTestProcess();
+      try {
+        testProcess.stdin.write("quit\n");
+      } finally {
+        initTestProcess();
+      }
     }
     log.verbose(`Testing ${targets.length} entries, ${setName} ...`)
     testResults = []
@@ -307,16 +310,28 @@ async function batchTest(targets, setName, timeout = 10) {
       }, timeout * 1000)
     })
 
-    testProcess.stdin.write(targets.map(t => `test ${setName} ${t}`).join('\n') + '\n')
+    let success = false;
+    let retry = 3;
+    while (!success && retry-- > 0) {
+      try {
+        testProcess.stdin.write(targets.map(t => `test ${setName} ${t}`).join('\n') + '\n');
+        success = true;
+      } catch (err) {
+        log.error("Failed to write to ipset stream, will restart ipset stream process", err.message);
+        testResults = []
+        testCount = targets.length
+        remainingBuffer = ""
+        initTestProcess();
+      }
+    }
 
     await testDone
 
     log.verbose(`Done, ${testResults.filter(Boolean).length} / ${testResults.length} in set`)
     return testResults
   }).catch((err) => {
-    log.error("Failed to write to ipset stream, will restart ipset stream process", err.message);
-    initTestProcess();
-    return batchTest(targets, setName, timeout);
+    log.error(`Error occurred in lock area of ipset batchTest on ${setName}`, err);
+    return testResults;
   })
 }
 

@@ -32,4 +32,10 @@ describe('Test difference', () => {
         const obj2 = {"newDeviceTag":{"state":false,"tag":0, "test":[2,3]},"app":{"family":{"state":false,"mode":"native","setting":{"gamble":true,"apple_privacy_relay":true,"porn":true,"vpn":true,"doh":true}}},"device_service_scan":true,"ipv6in4":false,"safeSearch":{"state":false},"vulScan":false,"qos":{"state":true,"qdisc":"fq_codel"},"adblock":false,"vpn":{"netmask":"255.255.255.0","state":false,"externalPort":1194,"localPort":1194,"protocol":"udp","serverNetwork":"10.34.191.0"},"vpnClient":{"state":false},"doh":{"state":false},"unbound":{"state":false},"adblock_ext":{"userconfig":{"ads":"on"},"fastmode":true},"monitor":true,"ntp_redirect":{"state":false},"dnsmasq":{"state":true},"family":false,"acl":true,"notify":{"state":1},"enhancedSpoof":false,"vpnClientInited":false,"shadowsocks":{"state":false},"scisurf":{"state":false},"externalAccess":{"state":false}}
         expect(difference(obj2, obj1)).to.be.eql(['newDeviceTag', 'qos', 'adblock_ext', 'dnsmasq']);
     })
+
+    it('should compare deleted keys', () => {
+        const obj1 = {"newDeviceTag":{"state":false,"tag":0, "test":[1,2,3]},"shadowsocks":{"state":false},"scisurf":{"state":false},"externalAccess":{"state":false}};
+        const obj2 = {"newDeviceTag":{"state":false,"tag":0},"shadowsocks":{"state":false},"scisurf":1,"externalAccess":{"state":false}};
+        expect(difference(obj2, obj1)).to.be.eql(['newDeviceTag', 'scisurf']);
+    })
 });
