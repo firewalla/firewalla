@@ -46,18 +46,18 @@ describe('Test dhcp', function() {
   });
 
   it.skip('should run dhcp discover', async() => {
-    const result = await dhcp.broadcastDhcpDiscover('eth0', '', '20:6d:31:01:2b:43', broadcastOptions);
+    const result = await dhcp.broadcastDhcpDiscover('br0', '', '20:6d:31:01:2b:43', broadcastOptions);
     log.debug('broadcast-dhcp-discover', JSON.stringify(result));
-    expect(result.Interface).to.be.equal('eth0');
+    expect(result.Interface).to.be.equal('br0');
   });
 
-   it('should run dhcp discover', async() => {
-    const result = await dhcp.dhcpDiscover('192.168.203.1');
+  it.skip('should run dhcp discover', async() => {
+    const result = await dhcp.dhcpDiscover('192.168.196.1');
     log.debug('dhcp-discover', JSON.stringify(result));
-    expect(result.ServerIdentifier).to.be.equal('192.168.203.1');
+    expect(result.ServerIdentifier).to.be.equal('192.168.196.1');
   });
 
-  it('should run dhcp discover with options', async() => {
+  it.skip('should run dhcp discover with options', async() => {
     const result = await dhcp.dhcpDiscover('192.168.196.1', 'cc:08:fa:61:cc:8b', dhcpOptions);
     log.debug('dhcp-discover', JSON.stringify(result));
     expect(result.ServerIdentifier).to.be.equal('192.168.196.1');

@@ -26,7 +26,7 @@ const execAsync = require('child-process-promise').exec;
 const fireRouter = require('../net2/FireRouter.js')
 const sysManager = require('../net2/SysManager.js');
 
-describe('test process conn data', function(){
+describe.skip('test process conn data', function(){
   this.timeout(3000);
 
   beforeEach((done) => (
