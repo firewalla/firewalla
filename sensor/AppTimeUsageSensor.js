@@ -198,11 +198,11 @@ class AppTimeUsageSensor extends Sensor {
       const {app, category, updateCategory, domain, occupyMins, lingerMins, bytesThreshold, minsThreshold} = match;
       if (host && domain)
         await dnsTool.addSubDomains(domain, [host]);
-      if (enrichedFlow.ob + enrichedFlow.rb < bytesThreshold)
-        continue;
       // dynamically add domains into target list for wildcard match domains
       if (updateCategory)
         await categoryUpdater.updateDomain(updateCategory, host, false);
+      if (enrichedFlow.ob + enrichedFlow.rb < bytesThreshold)
+        continue;
       let tags = []
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const config = Constants.TAG_TYPE_MAP[type];

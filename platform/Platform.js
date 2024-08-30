@@ -212,6 +212,14 @@ class Platform {
     return 1;
   }
 
+  getDNSFlowRetentionTimeMultiplier() {
+    return 1;
+  }
+
+  getDNSFlowRetentionCountMultiplier() {
+    return 1;
+  }
+
   getCompresseCountMultiplier(){
     return 1;
   }
