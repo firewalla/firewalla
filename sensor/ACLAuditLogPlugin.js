@@ -96,11 +96,11 @@ class ACLAuditLogPlugin extends Sensor {
   getDescriptor(r) {
     switch (r.type) {
       case 'dns':
-        return `dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}`
-      case 'ntp':
+        return `${r.ac}:dns:${r.sh}:${r.dn}`
+      case 'ntp': // action always redirect
         return `ntp:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
       default:
-        return `${r.tls ? 'tls' : 'ip'}:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
+        return `${r.ac}:${r.tls ? 'tls' : 'ip'}:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
     }
   }
 
@@ -485,14 +485,17 @@ class ACLAuditLogPlugin extends Sensor {
       await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid, 600);
     }
 
-    if (record.ac === "block" || record.ac === 'redirect' || record.ac === "isolation") {
-      this.writeBuffer(mac, record);
-    }
+    this.writeBuffer(mac, record);
   }
 
   async _processDnsRecord(record) {
     record.type = 'dns'
     record.pr = 'dns'
+
+    if (!record.dn ||
+      record.ac == 'allow' &&
+        (record.dn.endsWith('.arpa') || sysManager.isLocalDomain(record.dn) || sysManager.isSearchDomain(record.dn))
+    ) return
 
     // in dnsmasq log, policy id of -1 means global domain or ip rules that we need to analyze further.
     if (record.pid === -1) {
@@ -502,7 +505,10 @@ class ACLAuditLogPlugin extends Sensor {
 
     let intfUUID = null;
     const intf = sysManager.getInterfaceViaIP(record.sh);
-    intfUUID = intf && intf.uuid;
+    if (intf) {
+      intfUUID = intf.uuid;
+      if (record.sh == intf.ip_address) return
+    }
 
     let mac = record.mac;
     delete record.mac
@@ -511,6 +517,7 @@ class ACLAuditLogPlugin extends Sensor {
       if (record.sh)
         mac = await hostTool.getMacByIPWithCache(record.sh);
     }
+    if (sysManager.isMyMac(mac)) return
     // then try to get guid from IdentityManager, because it is more CPU intensive
     if (!mac) {
       const identity = IdentityManager.getIdentityByIP(record.sh);
@@ -598,7 +605,7 @@ class ACLAuditLogPlugin extends Sensor {
               record.qt = 28;
               break;
             case "dn":
-              record.dn = v;
+              record.dn = v.toLowerCase();
               break;
             case "lbl":
               if (v && v.startsWith("policy_") && !isNaN(v.substring(7))) {
@@ -663,6 +670,9 @@ class ACLAuditLogPlugin extends Sensor {
             if (type == 'ip' || record.ac == 'block')
               this.ruleStatsPlugin.accountRule(record);
           }
+
+          if (type == 'ip' && record.ac != "block" && record.ac != 'redirect' && record.ac != "isolation")
+            continue
 
           let transitiveTags = {};
           if (!IdentityManager.isGUID(mac)) {

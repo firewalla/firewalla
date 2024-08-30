@@ -68,10 +68,12 @@ class OldDataCleanSensor extends Sensor {
       case "conn":
       case "flowDNS":
       case "auditDrop":
-      case "auditAccept":
       case "categoryflow":
       case "appflow":
         platformRetentionTimeMultiplier = platform.getRetentionTimeMultiplier();
+        break;
+      case "auditAccept":
+        platformRetentionTimeMultiplier = platform.getDNSFlowRetentionTimeMultiplier();
         break;
     }
     let expireInterval = (this.config[type] && this.config[type].expires * platformRetentionTimeMultiplier) || 0;
@@ -91,10 +93,12 @@ class OldDataCleanSensor extends Sensor {
       case "conn":
       case "flowDNS":
       case "auditDrop":
-      case "auditAccept":
       case "categoryflow":
       case "appflow":
         platformRetentionCountMultiplier = platform.getRetentionCountMultiplier();
+        break;
+      case "auditAccept":
+        platformRetentionCountMultiplier = platform.getDNSFlowRetentionCountMultiplier();
         break;
     }
     let count = (this.config[type] && this.config[type].count * platformRetentionCountMultiplier) || 10000;
