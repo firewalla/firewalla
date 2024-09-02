@@ -572,7 +572,7 @@ class LiveStatsPlugin extends Sensor {
     if (Object.keys(opts).length) {
       Object.assign(options, opts)
     } else {
-      options.auditDNSSuccess = true
+      options.dnsFlow = true
       options.audit = true
     }
 

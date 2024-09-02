@@ -40,7 +40,7 @@ const HostManager = require('../net2/HostManager')
 const hostManager = new HostManager();
 const Identity = require('./Identity.js')
 const IdentityManager = require('./IdentityManager.js');
-
+const Monitorable = require('./Monitorable')
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 const IntelTool = require('./IntelTool.js')
@@ -473,34 +473,24 @@ class BroDetect {
     return mac
   }
 
-  //{"ts":1482189510.68758,"uid":"Cl7FVE1EnC0fBhL8l7","id.orig_h":"2601:646:9100:74e0:e43e:adc7:6d48:76da","id.orig_p":53559,"id.resp_h":"2001:558:feed::1","id.resp_p":53,"proto":"udp","trans_id":12231,"query":"log-rts01-iad01.devices.nest.com","rcode":0,"rcode_name":"NOERROR","AA":false,"TC":false,"RD":false,"RA":true,"Z":0,"answers":["devices-rts01-production-331095621.us-east-1.elb.amazonaws.com","107.22.178.96","50.16.214.117","184.73.190.206","23.21.51.61"],"TTLs":[2.0,30.0,30.0,30.0,30.0],"rejected":false}
-
-  async processDnsData(data) {
-    let obj = JSON.parse(data);
-    if (obj == null || obj["id.resp_p"] != 53) {
-      return;
-    }
-    if (obj.answers && obj.answers.length)
-      obj.answers = obj.answers.filter(a => !a.startsWith('<unknown type'))
-
-    // only logs request with answers at this moment
-    if (!(obj["id.orig_h"] && obj["answers"] && obj["answers"].length && obj["query"] && obj["query"].length))
-      return
-
+  async saveDNSFlow(obj) {
     if (platform.isDNSFlowSupported() && fc.isFeatureOn('dns_flow')) try {
       const now = Date.now() / 1000
       const dnsFlow = {
         ts: Math.round((obj.ts) * 100) / 100,
         _ts: await getUniqueTs(now), // _ts is the last time updated, make it unique to avoid missing flows in time-based query
+        dn: obj.query,
         sh: obj["id.orig_h"],
         dh: obj["id.resp_h"],
         dp: obj["id.resp_p"],
-        dn: obj.query,
         as: obj.answers,
         ct: 1,
       }
-      // qtype is actually an optional field. Zeek builds query queue to match request/response, it fails
-      if (obj.qtype) dnsFlow.qt = obj.qtype
+
+      // save only A & AAAA requests for now
+      if (obj.qtype != 1 && obj.qtype != 28) return
+
+      if (obj.query.endsWith('.arpa')) return
 
       const localFam = net.isIP(dnsFlow.sh)
       if (!localFam) {
@@ -553,7 +543,7 @@ class BroDetect {
         return
       }
 
-      if (!this.isMonitoring(intfInfo, monitorable)) {
+      if (!this.isMonitoring(intfInfo, monitorable) || !this.isDNSCacheOn(intfInfo, monitorable)) {
         return;
       }
 
@@ -562,7 +552,7 @@ class BroDetect {
       }
 
       if (!localMac || localMac.constructor.name !== "String") {
-        log.warn('NO LOCAL MAC! Drop DNS', data)
+        log.warn('NO LOCAL MAC! Drop DNS', JSON.stringify(obj))
         return
       }
 
@@ -587,7 +577,7 @@ class BroDetect {
       )
       if (config.dns.expires) rclient.expireat(key, Date.now() / 1000 + config.dns.expires, ()=>{})
 
-      const flowspecKey = `${localMac}:${dnsFlow.qt}:${dnsFlow.dn}:${intfInfo ? intfInfo.uuid : ''}`;
+      const flowspecKey = `${localMac}:${dnsFlow.dn}:${intfInfo ? intfInfo.uuid : ''}`;
       // add keys to flowstash (but not redis)
       dnsFlow.mac = localMac
       Object.assign(dnsFlow, tags)
@@ -609,8 +599,25 @@ class BroDetect {
       }
 
     } catch(err) {
-      log.error('Error saving DNS flow', data, err)
+      log.error('Error saving DNS flow', JSON.stringify(obj), err)
     }
+  }
+
+  async processDnsData(data) {
+    let obj = JSON.parse(data);
+    if (obj == null || obj["id.resp_p"] != 53) {
+      return;
+    }
+    if (obj.answers && obj.answers.length)
+      obj.answers = obj.answers.filter(a => !a.startsWith('<unknown type'))
+
+    // only logs request with answers at this moment
+    if (!(obj["id.orig_h"] && obj.answers && obj.answers.length && obj.query && obj.query.length))
+      return
+
+    if (sysManager.isSearchDomain(obj.query) || sysManager.isLocalDomain(obj.query)) return
+
+    await this.saveDNSFlow(obj)
 
     try {
       this.dnsCount ++
@@ -744,6 +751,22 @@ class BroDetect {
     }
 
     return true;
+  }
+
+  isDNSCacheOn(intf, monitorable) {
+    let policy = _.get(monitorable, 'policy.dnsmasq.dnsCaching', undefined)
+    if (policy !== undefined)
+      return policy
+
+    if (intf) {
+      const uuid = intf && intf.uuid;
+      const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+      policy = _.get(networkProfile, 'policy.dnsmasq.dnsCaching', undefined)
+      if (policy !== undefined)
+        return policy
+    }
+
+    return (monitorable && monitorable.constructor || Monitorable).defaultPolicy().dnsmasq.dnsCaching;
   }
 
   isConnFlowValid(data, intf, lhost, localFam, monitorable) {
