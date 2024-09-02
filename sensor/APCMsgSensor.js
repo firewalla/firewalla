@@ -106,7 +106,8 @@ class APCMsgSensor extends Sensor {
     /*
       {
         "action": "join",
-        "id": "539dd9d7-acaf-477c-a0ad-ed5784dd18b6",
+        "id": "539dd9d7-acaf-477c-a0ad-ed5784dd18b6", // ssid profile uuid
+        "groupId": 5, // psk group id
         "station": {
           "assetUID": "20:6D:31:AA:BC:10",
           "assocTime": 3,
@@ -130,19 +131,20 @@ class APCMsgSensor extends Sensor {
     await lock.acquire(LOCK_SSID_UPDATE, async () => {
       if (msg.action === "join") {
         const uuid = msg.id;
+        const groupId = msg.groupId
         if (!uuid)
           return;
         const mac = _.get(msg, ["station", "macAddr"]);
         if (!mac)
           return;
-        await this.updateHostSSID(mac, uuid);
+        await this.updateHostSSID(mac, uuid, groupId);
       }
     }).catch((err) => {
       log.error(`Failed to process STA update message: ${msg}`, err.message);
     });
   }
 
-  async updateHostSSID(mac, uuid) {
+  async updateHostSSID(mac, uuid, groupId) {
     const profile = this.ssidProfiles[uuid];
     if (!profile) {
       log.warn(`Cannot find ssid profile with uuid ${uuid}`);
@@ -159,9 +161,15 @@ class APCMsgSensor extends Sensor {
     const ssidUserTags = await profile.getTags(Constants.TAG_TYPE_USER);
     const ssidUserTag = ssidUserTags.map(uid => TagManager.getTagByUid(uid)).find(o => _.isObject(o));
     const hostTags = await host.getTags();
+    let newTagId = null;
     // overwrite device group with ssid user's affiliated device group
     if (ssidUserTag && ssidUserTag.afTag && !hostTags.includes(ssidUserTag.afTag.getUniqueId()))
-      await host.setPolicyAsync(_.get(Constants.TAG_TYPE_MAP, [Constants.TAG_TYPE_GROUP, "policyKey"]), [ssidUserTag.afTag.getUniqueId()]);
+      newTagId = ssidUserTag.afTag.getUniqueId()
+    // psk group supersedes ssid's device group above
+    if (groupId && await TagManager.tagUidExists(groupId, Constants.TAG_TYPE_GROUP))
+      newTagId = groupId;
+    if (!_.isEmpty(newTagId))
+      await host.setPolicyAsync(_.get(Constants.TAG_TYPE_MAP, [Constants.TAG_TYPE_GROUP, "policyKey"]), [newTagId]);
   }
 
   async loadCachedSSIDProfiles() {
