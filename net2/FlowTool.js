@@ -111,7 +111,7 @@ class FlowTool extends LogQuery {
       feeds.push(... auditTool.expendFeeds({macs, block: true}))
     }
     if (options.dnsFlow) {
-      feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'dnsFlow'}))
+      feeds.push(... auditTool.expendFeeds({macs, block: false, dnsFlow: true}))
     }
     if (options.auditDNSSuccess && options.ntpFlow)
       feeds.push(... auditTool.expendFeeds({macs, block: false}))
