@@ -942,6 +942,11 @@ class PolicyManager2 {
     await Promise.all(inboundBlockInternetRules.map((rule) => initialRuleJob(rule)));
     log.info(">>>>>==== All inbound blocking internet rules are enforced ====<<<<<", inboundBlockInternetRules.length);
 
+    sem.sendEventToFireMain({
+      type: Message.MSG_OSI_INBOUND_BLOCK_RULES_DONE,
+      message: ""
+    });
+
     // enforce inbound allow internet rules
     await Promise.all(inboundAllowInternetRules.map((rule) => initialRuleJob(rule)));
     log.info(">>>>>==== All inbound allow internet rules are enforced ====<<<<<", inboundAllowInternetRules.length);
@@ -977,7 +982,7 @@ class PolicyManager2 {
     const initialOtherEnforcement = otherRules.map((rule) => initialRuleJob(rule));
     await Promise.all(initialOtherEnforcement);
 
-    log.info(">>>>>==== All policy rules are enforced ====<<<<<", otherRules.length);
+    log.forceInfo(">>>>>==== All policy rules are enforced ====<<<<<", otherRules.length);
 
     await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'done')
 

@@ -138,8 +138,10 @@ class DestInfoIntel extends Intel {
     }
 
     const app = this.lookupApp(destName);
-    if (app)
+    if (app) {
       alarm["p.dest.app"] = _.get(this.appConfig, ["appConfs", app, "displayName"]);
+      alarm["p.dest.app.id"] = app;
+    }
 
     // intel
     const intel = await intelTool.getIntel(destIP, (destName && destName !== destIP) ? [destName] : []);

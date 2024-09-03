@@ -1502,11 +1502,14 @@ module.exports = class {
           delete p.target;
       }
 
-      //@TODO need support array?
-      if (info.tag) {
-        p.tag.push(Policy.TAG_PREFIX + info.tag);
-        if (p.scope && !info.device)
-          delete p.scope;
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const config = Constants.TAG_TYPE_MAP[type];
+        const prefix = config.ruleTagPrefix.substring(0, config.ruleTagPrefix.length - 1); // strip last colon, e.g., tag:
+        if (_.has(info, prefix)) {
+          p.tag.push(`${config.ruleTagPrefix}${info[prefix]}`);
+          if (p.scope && !info.device)
+            delete p.scope;
+        }
       }
 
       if (info.matchAllDevice) {
@@ -1520,6 +1523,15 @@ module.exports = class {
         p.category = info.category
       } else {
         p.category = ""
+      }
+
+      if (info.app) {
+        p.matchAppId = info.app;
+      }
+
+      if (_.isObject(info.customizedKeys)) {
+        for (const key of Object.keys(info.customizedKeys))
+          p[key] = info.customizedKeys[key];
       }
 
     } else {
