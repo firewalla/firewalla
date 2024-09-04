@@ -83,18 +83,29 @@ class APCMsgSensor extends Sensor {
 
   async refreshSSIDSTAMapping() {
     await lock.acquire(LOCK_SSID_UPDATE, async () => {
-      const status = await fwapc.getAllSSIDStatus().catch((err) => {
+      const ssidStatus = await fwapc.getAllSSIDStatus().catch((err) => {
         log.error(`Failed to get ssid status from fwapc`, err.message);
         return null;
       });
-      if (_.isEmpty(status))
+      if (_.isEmpty(ssidStatus))
         return;
-      for (const uuid of Object.keys(status)) {
-        const macs = status[uuid];
+
+      const macPskMap = {};
+      const tags = await TagManager.getPolicyTags("ssidPSK");
+      for (const tag of tags) {
+        const groupStatus = await fwapc.getGroupStatus(tag.getUniqueId());
+        if (_.isArray(groupStatus)) {
+          for (const mac of groupStatus)
+            macPskMap[mac] = tag.getUniqueId();
+        }
+      }
+
+      for (const uuid of Object.keys(ssidStatus)) {
+        const macs = ssidStatus[uuid];
         if (!_.isArray(macs))
           continue;
         for (const mac of macs)
-          await this.updateHostSSID(mac, uuid);
+          await this.updateHostSSID(mac, uuid, macPskMap[mac]);
       }
     }).catch((err) => {
       log.error(`Failed to refresh ssid sta mapping`, err.message);
