@@ -414,7 +414,9 @@ class ACLAuditLogPlugin extends Sensor {
         return;
     }
 
-    record.intf = intf.uuid;
+    if (intf) {
+      record.intf = intf.uuid;
+    }
     if (wanUUID)
       record.wanIntf = wanUUID;
 
@@ -448,9 +450,14 @@ class ACLAuditLogPlugin extends Sensor {
         || await hostTool.getMacByIPWithCache(localIP).catch(err => {
           log.error("Failed to get MAC address from SysManager for", localIP, err);
         })
-        || `${Constants.NS_INTERFACE}:${intf.uuid}`
+        || intf && `${Constants.NS_INTERFACE}:${intf.uuid}`
     }
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
+
+    if (!mac) {
+      log.warn('MAC address not found for', line)
+      return
+    }
 
     // try to get host name from conn entries for better timeliness and accuracy
     if (dir === "O" && record.ac === "block") {
@@ -539,7 +546,7 @@ class ACLAuditLogPlugin extends Sensor {
     record.intf = intfUUID;
 
     if (!mac) {
-      log.debug('MAC address not found for', record.sh)
+      log.warn('MAC address not found for', JSON.stringify(record))
       return
     }
 
