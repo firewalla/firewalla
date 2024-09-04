@@ -18,9 +18,10 @@
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 const fs = require('fs');
+const os = require('os');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const era = require('../event/EventRequestApi.js');
+const eventApi = require('../event/EventApi.js');
 const exec = require('child-process-promise').exec;
 const f = require('../net2/Firewalla.js');
 const HB_FILE = `${f.getRuntimeInfoFolder()}/heartbeat`;
@@ -33,8 +34,10 @@ class SystemRebootSensor extends Sensor {
     } else {
       log.debug("system reboot not processed yet, sending action event");
       const last = await this.getLastHeartbeatTime();
-      if (last && Date.now() - Number(last) > 300000) // do not generate event if the box has been offline for less than 5 minutes
-        era.addActionEvent("system_reboot", 1, {last: last});
+      if (last && Date.now() - os.uptime()*1000 - Number(last) > 300000){ // do not generate event if the box has been offline for less than 5 minutes
+        const e = {"action_type": "system_reboot", "labels": {last: last}, ts: Date.now(), event_type: "action", action_value: 1}
+        eventApi.addEvent(e, e.ts)
+      }
     }
     // use sudo to generate file in /dev/shm, IPC objects of system users will not be removed even if RemoveIPC=yes in /etc/systemd/logind.conf
     await exec(`sudo rm -f ${REBOOT_FLAG_FILE}`).catch((err) => {}); // regenerate the file to make sure it is owned by root
@@ -53,7 +56,7 @@ class SystemRebootSensor extends Sensor {
     });
   }
 
-  async run() {
+  async apiRun() {
     await this.checkReboot().catch((err) => {
       log.error(`Failed to check reboot`, err.message);
     });

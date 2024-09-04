@@ -283,6 +283,9 @@ async function getUniqueTs(ts) {
 function difference(obj1, obj2) {
   return _.reduce(obj1, function(result, value, key) {
     if (obj2[key] && value.constructor.name == "Object" && obj2[key].constructor.name == "Object") {
+      if (Object.keys(value).length != Object.keys(obj2[key]).length) {
+        return result.concat(key);
+      }
       if (difference(value, obj2[key]).length > 0) {
         return result.concat(key);
       }
