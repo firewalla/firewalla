@@ -487,8 +487,8 @@ class BroDetect {
         ct: 1,
       }
 
-      // save only A & AAAA requests for now
-      if (obj.qtype != 1 && obj.qtype != 28) return
+      // save only A & AAAA requests for now, qtype might be missing
+      if (obj.qtype && obj.qtype && obj.qtype != 1 && obj.qtype != 28) return
 
       if (obj.query.endsWith('.arpa')) return
 
