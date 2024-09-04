@@ -154,6 +154,14 @@ class FWAPC {
     return this.ready
   }
 
+  async getGroupStatus(groupId) {
+    const groupStatus = await localGet(`/status/group/${groupId}`).catch((err) => {
+      log.error(`Failed to get group status of ${groupId}`, err.message);
+      return null;
+    });
+    return groupStatus;
+  }
+
   async getAllSSIDStatus() {
     const ssidStatus = await localGet("/status/ssid").then(resp => resp.info);
     return ssidStatus;
