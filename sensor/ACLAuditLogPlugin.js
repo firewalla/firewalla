@@ -96,7 +96,7 @@ class ACLAuditLogPlugin extends Sensor {
   getDescriptor(r) {
     switch (r.type) {
       case 'dns':
-        return `${r.ac}:dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}`
+        return `${r.ac}:dns:${r.sh}:${r.dn}`
       case 'ntp': // action always redirect
         return `ntp:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
       default:
@@ -414,7 +414,9 @@ class ACLAuditLogPlugin extends Sensor {
         return;
     }
 
-    record.intf = intf.uuid;
+    if (intf) {
+      record.intf = intf.uuid;
+    }
     if (wanUUID)
       record.wanIntf = wanUUID;
 
@@ -448,9 +450,14 @@ class ACLAuditLogPlugin extends Sensor {
         || await hostTool.getMacByIPWithCache(localIP).catch(err => {
           log.error("Failed to get MAC address from SysManager for", localIP, err);
         })
-        || `${Constants.NS_INTERFACE}:${intf.uuid}`
+        || intf && `${Constants.NS_INTERFACE}:${intf.uuid}`
     }
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
+
+    if (!mac) {
+      log.warn('MAC address not found for', line)
+      return
+    }
 
     // try to get host name from conn entries for better timeliness and accuracy
     if (dir === "O" && record.ac === "block") {
@@ -491,6 +498,11 @@ class ACLAuditLogPlugin extends Sensor {
   async _processDnsRecord(record) {
     record.type = 'dns'
     record.pr = 'dns'
+
+    if (!record.dn ||
+      record.ac == 'allow' &&
+        (record.dn.endsWith('.arpa') || sysManager.isLocalDomain(record.dn) || sysManager.isSearchDomain(record.dn))
+    ) return
 
     // in dnsmasq log, policy id of -1 means global domain or ip rules that we need to analyze further.
     if (record.pid === -1) {
@@ -534,7 +546,7 @@ class ACLAuditLogPlugin extends Sensor {
     record.intf = intfUUID;
 
     if (!mac) {
-      log.debug('MAC address not found for', record.sh)
+      log.warn('MAC address not found for', JSON.stringify(record))
       return
     }
 
@@ -600,7 +612,7 @@ class ACLAuditLogPlugin extends Sensor {
               record.qt = 28;
               break;
             case "dn":
-              record.dn = v;
+              record.dn = v.toLowerCase();
               break;
             case "lbl":
               if (v && v.startsWith("policy_") && !isNaN(v.substring(7))) {

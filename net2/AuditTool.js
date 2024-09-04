@@ -40,6 +40,7 @@ class AuditTool extends LogQuery {
   optionsToFilter(options) {
     const filter = super.optionsToFilter(options)
     if (options.direction) filter.fd = options.direction;
+    delete filter.dnsFlow
     return filter
   }
 
@@ -97,20 +98,9 @@ class AuditTool extends LogQuery {
     }
 
 
-    if (options.type == 'dnsFlow') {
-      Object.assign(f, {
-        rrType: entry.qt,
-        domain: entry.dn,
-        answers: entry.as,
-      })
-    } else if (entry.type == 'dns') {
-      // these keys except domain are probably not used anywhere, but keeping them just to be safe
-      Object.assign(f, {
-        rrClass: entry.qc,
-        rrType: entry.qt,
-        rcode: entry.rc,
-        domain: entry.dn
-      })
+    if (options.type == 'dnsFlow' || entry.type == 'dns') {
+      f.domain = entry.dn
+      if (entry.as) f.answers = entry.as
     } else {
       if (entry.tls) f.type = 'tls'
       f.fd = entry.fd
@@ -147,7 +137,7 @@ class AuditTool extends LogQuery {
     // options.block == null is also counted here
     return options.block == undefined || options.block
       ? `audit:drop:${mac}`
-      : options.type == 'dnsFlow' ? `flow:dns:${mac}` : `audit:accept:${mac}`
+      : options.dnsFlow ? `flow:dns:${mac}` : `audit:accept:${mac}`
   }
 }
 
