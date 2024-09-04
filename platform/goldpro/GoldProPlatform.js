@@ -240,6 +240,14 @@ class GoldProPlatform extends Platform {
     return 1;
   }
 
+  getDNSFlowRetentionTimeMultiplier() {
+    return 24;
+  }
+
+  getDNSFlowRetentionCountMultiplier() {
+    return 10;
+  }
+
   getCompresseCountMultiplier(){
     return 1;
   }
