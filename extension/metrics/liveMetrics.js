@@ -87,7 +87,7 @@ class LiveMetrics {
     metrics.memUsage = parseFloat(sysInfo.realMem.toFixed(4));
 
     // flows 
-    const flowStats = await hostManager.getStats({ granularities: '1hour', hits: 24 }, "0.0.0.0", ['conn', 'ipB', 'dns', 'dnsB']);
+    const flowStats = await hostManager.getStats({ granularities: '1hour', hits: 24 }, "0.0.0.0", ['conn', 'ipB', 'dns', 'dnsB', 'ntp']);
     metrics.flows = {
       total: flowStats.totalConn + flowStats.totalDns + flowStats.totalDnsB + flowStats.totalIpB,
       blocked: flowStats.totalDnsB + flowStats.totalIpB
