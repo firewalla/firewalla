@@ -129,6 +129,7 @@
     "ActionPlugin":{},
     "OSIPlugin": {},
     "STUNSensor": {},
+    "SystemRebootSensor": {},
     "NoiseDomainsSensor": {},
     "Iperf3Sensor": {}
   },
@@ -569,7 +570,7 @@
       },
       "auditAccept": {
         "expires": 3600,
-        "count": 10000
+        "count": 1000
       },
       "ssh": {
         "expires": 86400,
@@ -693,7 +694,7 @@
     "NseScanPlugin": {},
     "ACLAuditLogPlugin": {
       "buffer": 2,
-      "interval": 300,
+      "interval": 900,
       "expires": 86400
     },
     "ACLAlarmLogPlugin": {},
@@ -762,7 +763,6 @@
     "PcapSuricataPlugin": {},
     "CategoryExaminerPlugin": {},
     "RuleStatsPlugin": {},
-    "SystemRebootSensor": {},
     "ClashDNSPlugin": {},
     "AppTimeUsageSensor": {
       "appConfs": {
