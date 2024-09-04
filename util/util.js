@@ -18,7 +18,7 @@ const fsp = require('fs').promises
 
 const _ = require('lodash');
 const stream = require('stream');
-const moment = require('moment')
+const moment = require('moment');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 let incTs = 0;
@@ -275,9 +275,25 @@ async function batchKeyExists(keys, batchSize) {
 
 async function getUniqueTs(ts) {
   return lock.acquire("unique_ts_lock", async () => {
-    incTs = (incTs + 1) % 1000;
-    return Math.round(ts * 100) / 100 + (incTs / 100000);
+    incTs = (incTs + 1) % 100;
+    return Math.round(ts * 100 + incTs) / 100;
   });
+}
+
+function difference(obj1, obj2) {
+  return _.reduce(obj1, function(result, value, key) {
+    if (obj2[key] && value.constructor.name == "Object" && obj2[key].constructor.name == "Object") {
+      if (Object.keys(value).length != Object.keys(obj2[key]).length) {
+        return result.concat(key);
+      }
+      if (difference(value, obj2[key]).length > 0) {
+        return result.concat(key);
+      }
+      return result;
+    }
+    return _.isEqual(value, obj2[key]) ?
+        result : result.concat(key);
+}, []);
 }
 
 module.exports = {
@@ -285,6 +301,7 @@ module.exports = {
   getPreferredBName,
   getPreferredName,
   delay,
+  difference,
   argumentsToString,
   isSimilarHost,
   isSameOrSubDomain,

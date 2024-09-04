@@ -22,9 +22,6 @@ const util = require('util');
 
 const LogQuery = require('./LogQuery.js')
 
-const IntelTool = require('../net2/IntelTool');
-const intelTool = new IntelTool();
-
 const TypeFlowTool = require('../flow/TypeFlowTool.js')
 const typeFlowTool = {
   app: new TypeFlowTool('app'),
@@ -113,10 +110,19 @@ class FlowTool extends LogQuery {
     if (options.audit) {
       feeds.push(... auditTool.expendFeeds({macs, block: true}))
     }
-    if (options.auditDNSSuccess) {
-      feeds.push(... auditTool.expendFeeds({macs, block: false}))
+    if (options.dnsFlow) {
+      feeds.push(... auditTool.expendFeeds({macs, block: false, dnsFlow: true}))
     }
+    if (options.auditDNSSuccess && options.ntpFlow)
+      feeds.push(... auditTool.expendFeeds({macs, block: false}))
+    else if (options.auditDNSSuccess)
+      feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'dns'}))
+    else if (options.ntpFlow)
+      feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'ntp'}))
+
     delete options.audit
+    delete options.dnsFlow
+    delete options.ntpFlow
     delete options.auditDNSSuccess
     let recentFlows = await this.logFeeder(options, feeds)
 
@@ -203,11 +209,8 @@ class FlowTool extends LogQuery {
         }
       } else {
         const old = aggrResults[tenminTS];
-        aggrResults[tenminTS] = {
-          ts: tenminTS,
-          ob: x.ob + old.ob,
-          rb: x.rb + old.rb
-        }
+        old.ob += x.ob
+        old.rb += x.rb
       }
     })
     return Object.values(aggrResults).sort((x,y) => {
@@ -223,11 +226,9 @@ class FlowTool extends LogQuery {
 
   async _getTransferTrend(target, destinationIP, options) {
     options = options || {};
-    const end = options.end || Math.floor(new Date() / 1000);
+    const end = options.end || Math.floor(Date.now() / 1000);
     const begin = options.begin || end - 3600 * 6; // 6 hours
-    const direction = options.direction || 'in';
-
-    const key = util.format("flow:conn:%s:%s", direction, target);
+    const key = this.getLogKey(target, options);
 
     const results = await rclient.zrangebyscoreAsync([key, begin, end]);
 
@@ -263,23 +264,19 @@ class FlowTool extends LogQuery {
     const transfers = [];
 
     if (!options.direction || options.direction === "in") {
-      const optionsCopy = JSON.parse(JSON.stringify(options));
-      optionsCopy.direction = "in";
-      const t_in = await this._getTransferTrend(deviceMAC, destinationIP, optionsCopy);
+      const t_in = await this._getTransferTrend(deviceMAC, destinationIP, Object.assign({direction: 'in'}, options));
       transfers.push.apply(transfers, t_in);
     }
 
     if (!options.direction || options.direction === "out") {
-      const optionsCopy = JSON.parse(JSON.stringify(options));
-      optionsCopy.direction = "out";
-      const t_out = await this._getTransferTrend(deviceMAC, destinationIP, optionsCopy);
+      const t_out = await this._getTransferTrend(deviceMAC, destinationIP, Object.assign({direction: 'out'}, options));
       transfers.push.apply(transfers, t_out);
     }
     return this._aggregateTransferBy10Min(transfers);
   }
 
   getLogKey(mac, options) {
-    return util.format("flow:conn:%s:%s", options.direction, mac);
+    return util.format("flow:conn:%s:%s", options.direction || 'in', mac);
   }
 
   addFlow(mac, type, flow) {

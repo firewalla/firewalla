@@ -192,10 +192,10 @@ class LogQuery {
    * @param {Object} feeds[].options - unique options for the query
    */
   async logFeeder(options, feeds) {
-    log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(_.omit(options, 'macs')))
     options = this.checkArguments(options)
     // filter calculation is not related to options in each feed, only need to call optionsToFilter once here
     const filter = this.optionsToFilter(options);
+    log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(_.omit(options, 'macs')), JSON.stringify(filter))
     feeds.forEach(f => {
       f.options = f.options || {};
       Object.assign(f.options, options)
@@ -529,7 +529,7 @@ class LogQuery {
     const enrich = 'enrich' in options ? options.enrich : true
     delete options.enrich
 
-    log.debug(this.constructor.name, 'getDeviceLogs', options.direction || (options.block ? 'block':'accept'), target, options.ts)
+    log.debug(this.constructor.name, 'getDeviceLogs', key, options.type || '', options.ts)
 
     let logObjects = results
       .map(str => {

@@ -246,8 +246,6 @@ class Alarm {
     return ["p.device.name", "p.device.id", "p.device.mac"];
   }
 
-
-
   // check schema, minimal required key/value pairs in payloads
   validate(type) {
 
@@ -466,6 +464,10 @@ class CustomizedAlarm extends Alarm {
 class CustomizedSecurityAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_CUSTOMIZED_SECURITY", timestamp, device, info);
+    if (this['p.event.ts']) {
+      this["p.event.timestampTimezone"] = moment(this['p.event.ts'] * 1000).tz(sysManager.getTimezone()).format("LT")
+    }
+    this["p.showMap"] = false;
   }
 
   keysToCompareForDedup() {
@@ -473,11 +475,35 @@ class CustomizedSecurityAlarm extends Alarm {
   }
 
   requiredKeys() {
-    return ["p.device.ip", "p.dest.ip", "p.description"];
+    return ["p.device.ip", "p.dest.name", "p.description"];
+  }
+
+  getExpirationTime() {
+    return this["p.cooldown"] || 900;
+  }
+
+  isSecurityAlarm() {
+    if (this["p.msp.type"]) return true; // created by msp
+    return false;
+  }
+
+  localizedNotificationContentKey() {
+    let key = `notif.content.${this.getNotifKeyPrefix()}`;
+    const username = this.getUserName();
+    if (username)
+      key = `${key}.user`;
+    const suffix = this.getIdentitySuffix();
+    if (suffix)
+      key = `${key}${suffix}`;
+    return key;
   }
 
   localizedNotificationContentArray() {
-    return [this["p.description"], this["p.device.ip"], this["p.device.name"], this["p.device.port"], this["p.dest.ip"], this["p.dest.name"], this["p.dest.port"], this["p.protocol"], this["p.app.protocol"]];
+    const result = [ this["p.device.name"],  this["p.dest.name"], this["p.event.timestampTimezone"]];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
@@ -508,6 +534,11 @@ class VPNClientConnectionAlarm extends Alarm {
   }
 }
 
+const VPN_PROTOCOL_SUFFIX_MAPPING = {
+  "openvpn": "ovpn",
+  "wireguard": "wgvpn"
+};
+
 class VPNRestoreAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_VPN_RESTORE", timestamp, device, info);
@@ -535,7 +566,15 @@ class VPNRestoreAlarm extends Alarm {
   localizedNotificationContentKey() {
     let key = super.localizedNotificationContentKey();
 
+    const protocol = this["p.vpn.protocol"];
+    let suffix = null;
+    if (protocol && VPN_PROTOCOL_SUFFIX_MAPPING[protocol]) {
+      key += ".vpn"
+      suffix = VPN_PROTOCOL_SUFFIX_MAPPING[protocol];
+    }
     key += "." + this["p.vpn.subtype"];
+    if (suffix)
+      key += "." + suffix;
 
     return key;
   }
@@ -588,10 +627,18 @@ class VPNDisconnectAlarm extends Alarm {
   localizedNotificationContentKey() {
     let key = super.localizedNotificationContentKey();
 
+    const protocol = this["p.vpn.protocol"];
+    let suffix = null;
+    if (protocol && VPN_PROTOCOL_SUFFIX_MAPPING[protocol]) {
+      key += ".vpn"
+      suffix = VPN_PROTOCOL_SUFFIX_MAPPING[protocol];
+    }
     key += "." + this["p.vpn.subtype"];
     if (this["p.vpn.strictvpn"] == false || this["p.vpn.strictvpn"] == "false") {
       key += ".FALLBACK";
     }
+    if (suffix)
+      key += "." + suffix;
 
     return key;
   }
@@ -1509,7 +1556,7 @@ function alias2alarmType(alias) {
 }
 
 function isSecurityAlarm(alarmType) {
-  return ['ALARM_SPOOFING_DEVICE', 'ALARM_VULNERABILITY', 'ALARM_BRO_NOTICE', 'ALARM_INTEL'].includes(alarmType);
+  return ['ALARM_SPOOFING_DEVICE', 'ALARM_VULNERABILITY', 'ALARM_BRO_NOTICE', 'ALARM_INTEL', 'ALARM_CUSTOMIZED_SECURITY'].includes(alarmType);
 }
 
 const classMapping = {

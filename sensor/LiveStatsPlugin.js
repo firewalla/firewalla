@@ -1,4 +1,4 @@
-/*    Copyright 2021-2022 Firewalla Inc.
+/*    Copyright 2021-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -29,6 +29,7 @@ const identityManager = require('../net2/IdentityManager');
 const sem = require('./SensorEventManager.js').getInstance();
 const Mode = require('../net2/Mode.js');
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const VPNClient = require('../extension/vpnclient/VPNClient.js')
 
 const fsp = require('fs').promises;
 const exec = require('child-process-promise').exec;
@@ -180,22 +181,45 @@ class LiveStatsPlugin extends Sensor {
             response.throughput = result ? [ result ] : []
             break;
           }
-          case 'intf':
+          case 'vpnClient': {
+            const vpnClient = VPNClient.getInstance(target)
+            if (!vpnClient) {
+              throw new Error(`Invalid VPN client ${target}`)
+            }
+            const name = vpnClient.getInterfaceName()
+            response.throughput = [ Object.assign( {name, target, type}, this.getIntfThroughput(vpnClient.name) ) ]
+            break
+          }
+          case 'intf': {
+            const intf = sysManager.getInterfaceViaUUID(target)
+            if (!intf) {
+              throw new Error(`Invalid Interface ${target}`)
+            }
+            const name = intf.name
+            response.throughput = [ Object.assign( {name, target, type}, this.getIntfThroughput(name) ) ]
+            break
+          }
           case 'system': {
-            if (type == 'intf') {
-              const intf = sysManager.getInterfaceViaUUID(target)
-              if (!intf) {
-                throw new Error(`Invalid Interface ${target}`)
-              }
-              response.throughput = [ { name: intf.name, target } ]
-            } else {
-              const interfaces = _.union(platform.getAllNicNames(), fireRouter.getLogicIntfNames())
-              _.remove(interfaces, name => name.endsWith(':0') || !sysManager.getInterface(name))
-              response.throughput = interfaces
-                .map(name => ({ name, target: sysManager.getInterface(name).uuid }))
+            const interfaces = _.union(platform.getAllNicNames(), fireRouter.getLogicIntfNames())
+            _.remove(interfaces, name => name.endsWith(':0') || !sysManager.getInterface(name))
+            response.throughput = interfaces
+            .map(name => ({ name, target: sysManager.getInterface(name).uuid, type: 'intf' }))
+
+            if (queries.throughput.vpnClient) {
+              const policy = await hostManager.getPolicyAsync('vpnClient') || {}
+              const vpnClients = await Promise.all(
+                // policy:system should have all enabled VPN clients
+                (policy.multiClients || [ policy ])
+                  .map( vc => vc && vc.state && hostManager.getVPNClientInstance(vc).catch(err => log.error(err.message)) )
+              )
+              response.throughput.push(... vpnClients
+                .filter(Boolean)
+                .map(c => ({name: c.getInterfaceName(), target: c.profileId, type: 'vpnClient'}) )
+              )
             }
 
             response.throughput.forEach(intf => Object.assign(intf, this.getIntfThroughput(intf.name)))
+
             if (queries.throughput.devices) {
               for (const intf of sysManager.getMonitoringInterfaces()) {
                 // exclude primary network in DHCP mode, this is mainly for old models that have different subnets
@@ -221,7 +245,7 @@ class LiveStatsPlugin extends Sensor {
         const intfs = fireRouter.getLogicIntfNames();
         const intfStats = [];
         const promises = intfs.map( async (intf) => {
-          const rate = await this.getRate(intf);
+          const rate = this.getIntfThroughput(intf);
           intfStats.push(rate);
         });
         promises.push(delay(1000)); // at least wait for 1 sec
@@ -346,7 +370,7 @@ class LiveStatsPlugin extends Sensor {
     if (!cache.iftop || !cache.rl) try {
       const intf = sysManager.getInterfaceViaUUID(intfUUID)
       if (!intf) {
-        throw new Error(`Invalid interface`, intfUUID)
+        throw new Error(`Invalid interface ${intfUUID}`)
       }
 
       log.verbose('(Re)Creating interface device throughput cache ...', intfUUID, intf.name)
@@ -494,14 +518,25 @@ class LiveStatsPlugin extends Sensor {
 
   getIntfThroughput(intf) {
     let intfCache = this.streamingCache[intf]
+    const interval = 2 // get nic stats every 2 sec to align with iftop
     if (!intfCache) {
       intfCache = this.streamingCache[intf] = {}
-      intfCache.interval = setInterval(() => {
-        this.getRate(intf)
-          .then(res => Object.assign(intfCache, res))
-      }, 1000)
+      intfCache.interval = setInterval(async () => {
+        try {
+          const c = await this.getIntfStats(intf)
+          const p = intfCache.prev || { tx: 0, rx: 0 }
+          Object.assign(intfCache, {
+            name: intf,
+            rx: c.rx > p.rx ? (c.rx - p.rx) / interval : 0,
+            tx: c.tx > p.tx ? (c.tx - p.tx) / interval : 0,
+            prev: c
+          })
+        } catch (err) {
+          log.error('failed to fetch stats for', intf, err.message)
+        }
+      }, interval * 1000)
     }
-    intfCache.ts = Math.floor(new Date() / 1000)
+    intfCache.ts = Math.floor(Date.now() / 1000)
 
     return { name: intf, rx: intfCache.rx || 0, tx: intfCache.tx || 0 }
   }
@@ -509,26 +544,11 @@ class LiveStatsPlugin extends Sensor {
   async getIntfStats(intf) {
     const rx = await fsp.readFile(`/sys/class/net/${intf}/statistics/rx_bytes`, 'utf8').catch(() => 0);
     const tx = await fsp.readFile(`/sys/class/net/${intf}/statistics/tx_bytes`, 'utf8').catch(() => 0);
-    return {rx, tx};
-  }
-
-  async getRate(intf) {
-    try {
-      const s1 = await this.getIntfStats(intf);
-      await delay(1000);
-      const s2 = await this.getIntfStats(intf);
-      return {
-        name: intf,
-        rx: s2.rx > s1.rx ? s2.rx - s1.rx : 0,
-        tx: s2.tx > s1.tx ? s2.tx - s1.tx : 0
-      }
-    } catch(err) {
-      log.error('failed to fetch stats for', intf, err.message)
-    }
+    return {rx: Number(rx), tx: Number(tx)};
   }
 
   async getFlows(type, target, ts, opts) {
-    const now = Math.floor(new Date() / 1000);
+    const now = Math.floor(Date.now() / 1000);
     const ets = ts ? now - 2 : now
     ts = ts || now - 60
     const options = {
@@ -540,7 +560,7 @@ class LiveStatsPlugin extends Sensor {
     if (Object.keys(opts).length) {
       Object.assign(options, opts)
     } else {
-      options.auditDNSSuccess = true
+      options.dnsFlow = true
       options.audit = true
     }
 

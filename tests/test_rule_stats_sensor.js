@@ -30,13 +30,13 @@ const RuleStatsPlugin = require('../sensor/RuleStatsPlugin.js');
 describe('test rule stats policy cache', function(){
   this.timeout(3000);
 
-  beforeEach((done) => {
+  before((done) => {
     this.plugin = new RuleStatsPlugin({})
     this.plugin.cache = new LRU({max: 10, maxAge: 15 * 1000, updateAgeOnGet: false});
     done();
   });
 
-  afterEach((done) => {
+  after((done) => {
     // source port 9999 for test
     done();
   });

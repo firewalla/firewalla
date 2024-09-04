@@ -36,6 +36,8 @@ const SysManager = require('../net2/SysManager.js');
 const CLOUD_CONFIG_KEY = Constants.REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG;
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
+const CategoryUpdater = require('../control/CategoryUpdater.js');
+const categoryUpdater = new CategoryUpdater();
 
 class AppTimeUsageSensor extends Sensor {
   
@@ -140,7 +142,7 @@ class AppTimeUsageSensor extends Sensor {
       const includedDomains = appConfs[key].includedDomains || [];
       const category = appConfs[key].category;
       for (const value of includedDomains) {
-        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold"]);
+        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold", "updateCategory"]);
         obj.app = key;
         if (category)
           obj.category = category;
@@ -193,9 +195,12 @@ class AppTimeUsageSensor extends Sensor {
     if (_.isEmpty(appMatches))
       return;
     for (const match of appMatches) {
-      const {app, category, domain, occupyMins, lingerMins, bytesThreshold, minsThreshold} = match;
+      const {app, category, updateCategory, domain, occupyMins, lingerMins, bytesThreshold, minsThreshold} = match;
       if (host && domain)
         await dnsTool.addSubDomains(domain, [host]);
+      // dynamically add domains into target list for wildcard match domains
+      if (updateCategory)
+        await categoryUpdater.updateDomain(updateCategory, host, false);
       if (enrichedFlow.ob + enrichedFlow.rb < bytesThreshold)
         continue;
       let tags = []

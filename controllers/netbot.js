@@ -141,7 +141,7 @@ const FireRouter = require('../net2/FireRouter.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
-const { delay } = require('../util/util.js');
+const { delay, difference } = require('../util/util.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -192,6 +192,10 @@ class netBot extends ControllerBot {
   async _portforward(target, msg) {
     log.info("_portforward", msg);
     this.messageBus.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
+  }
+
+  async _precedeRecord(msgid, data) {
+    await extMgr._precedeRecord(msgid, data);
   }
 
   setupRateLimit() {
@@ -651,7 +655,8 @@ class netBot extends ControllerBot {
         }
         if (!monitorable) throw new Error(`Unknow target ${target}`)
 
-        await monitorable.loadPolicyAsync();
+        const orig = await monitorable.loadPolicyAsync();
+        try{await this._precedeRecord(msg.id, {origin: orig, diff: difference(value, orig)})} catch(err){};
 
         for (const o of Object.keys(value)) {
           if (processorMap[o]) {
@@ -673,7 +678,6 @@ class netBot extends ControllerBot {
             if (o === config.policyKey && _.isArray(policyData))
               policyData = policyData.map(String);
           }
-
           await monitorable.setPolicyAsync(o, policyData);
         }
         this._scheduleRedisBackgroundSave();
@@ -1387,7 +1391,7 @@ class netBot extends ControllerBot {
       case "hosts": {
         const json = {};
         const includeVPNDevices = (value && value.includeVPNDevices) || false;
-        await this.hostManager.hostsInfoForInit(json)
+        await this.hostManager.hostsInfoForInit(json, {includeScanResults:true});
         if (includeVPNDevices)
           await this.hostManager.identitiesForInit(json)
         return json
@@ -1421,14 +1425,13 @@ class netBot extends ControllerBot {
           throw { code: 400, msg: "'types' should be an array." }
         }
         let profiles = [];
-        for (let type of types) {
+        for (let type of types) try {
           const c = VPNClient.getClass(type);
-          if (!c) {
-            log.error(`Unsupported VPN client type: ${type}`);
-            continue;
-          }
           const profileIds = await c.listProfileIds();
           Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({ profileId }).getAttributes())));
+        } catch(err) {
+          log.error(err);
+          continue;
         }
         return { profiles }
       }
@@ -2141,6 +2144,7 @@ class netBot extends ControllerBot {
         if (_.isArray(samePolicies) && samePolicies.filter(p => p.pid != pid).length > 0) {
           throw { code: 409, msg: "policy already exists", data: samePolicies[0] }
         } else {
+          await this._precedeRecord(msg.id, {origin: oldPolicy, diff: difference(policy, oldPolicy)});
           policy.updatedTime = Date.now() / 1000;
           await pm2.updatePolicyAsync(policy)
           const newPolicy = await pm2.getPolicy(pid)
@@ -2158,9 +2162,11 @@ class netBot extends ControllerBot {
         const policyIDs = value.policyIDs;
         if (policyIDs && _.isArray(policyIDs)) {
           let results = {};
+          let orig = [];
           for (const policyID of policyIDs) {
             let policy = await pm2.getPolicy(policyID);
             if (policy) {
+              orig.push(policy);
               await pm2.disableAndDeletePolicy(policyID)
               policy.deleted = true;
               results[policyID] = policy;
@@ -2168,10 +2174,12 @@ class netBot extends ControllerBot {
               results[policyID] = "invalid policy";
             }
           }
+          await this._precedeRecord(msg.id, {origin: orig});
           this._scheduleRedisBackgroundSave();
           return results
         } else {
           let policy = await pm2.getPolicy(value.policyID)
+          await this._precedeRecord(msg.id, {origin: policy});
           if (policy) {
             await pm2.disableAndDeletePolicy(value.policyID)
             policy.deleted = true // policy is marked ask deleted
@@ -2630,6 +2638,7 @@ class netBot extends ControllerBot {
       case "enableFeature": {
         const featureName = value.featureName;
         if (featureName) {
+          try{await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)})} catch(err){};
           await fc.enableDynamicFeature(featureName)
         }
         return
@@ -2637,6 +2646,7 @@ class netBot extends ControllerBot {
       case "disableFeature": {
         const featureName = value.featureName;
         if (featureName) {
+          try{await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)})} catch(err){};
           await fc.disableDynamicFeature(featureName)
         }
         return
@@ -2644,6 +2654,7 @@ class netBot extends ControllerBot {
       case "clearFeatureDynamicFlag": {
         const featureName = value.featureName;
         if (featureName) {
+          try{await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)})} catch(err){};
           await fc.clearDynamicFeature(featureName)
         }
         return
@@ -3193,29 +3204,33 @@ class netBot extends ControllerBot {
         log.info('host:delete', hostMac);
         const macExists = await hostTool.macExists(hostMac);
         if (macExists) {
+          (async () => {
+            await pm2.deleteMacRelatedPolicies(hostMac);
+            await em.deleteMacRelatedExceptions(hostMac);
+            await am2.deleteMacRelatedAlarms(hostMac);
+            await dnsmasq.deleteLeaseRecord(hostMac);
+            dnsmasq.scheduleRestartDHCPService();
 
-          await pm2.deleteMacRelatedPolicies(hostMac);
-          await em.deleteMacRelatedExceptions(hostMac);
-          await am2.deleteMacRelatedAlarms(hostMac);
-          await dnsmasq.deleteLeaseRecord(hostMac);
+            await categoryFlowTool.delAllTypes(hostMac);
+            await flowAggrTool.removeAggrFlowsAll(hostMac);
+            await flowManager.removeFlowsAll(hostMac);
 
-          await categoryFlowTool.delAllTypes(hostMac);
-          await flowAggrTool.removeAggrFlowsAll(hostMac);
-          await flowManager.removeFlowsAll(hostMac);
+            let ips = await hostTool.getIPsByMac(hostMac);
+            for (const ip of ips) {
+              const latestMac = await hostTool.getMacByIP(ip);
+              if (latestMac && latestMac === hostMac) {
+                // double check to ensure ip address is not taken over by other device
 
-          let ips = await hostTool.getIPsByMac(hostMac);
-          for (const ip of ips) {
-            const latestMac = await hostTool.getMacByIP(ip);
-            if (latestMac && latestMac === hostMac) {
-              // double check to ensure ip address is not taken over by other device
-
-              // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
-              await rclient.unlinkAsync([
-                "monitor:flow:" + hostMac,
-                "monitor:large:" + hostMac,
-              ]);
+                // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
+                await rclient.unlinkAsync([
+                  "monitor:flow:" + hostMac,
+                  "monitor:large:" + hostMac,
+                ]);
+              }
             }
-          }
+          })().catch((err) => {
+            log.error(`Failed to delete information of host ${hostMac}`, err);
+          });
           // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
           this.messageBus.publish("DiscoveryEvent", "Device:Delete", hostMac, {});
 
@@ -3688,6 +3703,12 @@ class netBot extends ControllerBot {
 
         msg.appInfo = rawmsg.message.appInfo;
         if (rawmsg.message.obj.type === "jsonmsg") {
+          // check blacklist, only for dev
+          if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && (await rclient.sismemberAsync('sys:eid:blacklist', eid))){
+            log.warn('deny access from eid', eid);
+            return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
+          }
+
           switch(rawmsg.message.obj.mtype) {
             case "init": {
               if (rawmsg.message.appInfo) {

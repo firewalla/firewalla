@@ -75,12 +75,12 @@ const ssconfig = {
 describe('Test safe search', function(){
     this.timeout(30000);
 
-    beforeEach((done) => {
+    before((done) => {
       this.plugin = new SafeSearchPlugin(ssconfig);
       done();
     });
 
-    afterEach((done) => {
+    after((done) => {
       done();
     });
 
