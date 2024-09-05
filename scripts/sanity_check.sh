@@ -638,7 +638,7 @@ check_hosts() {
     else
       B7_Placeholder='%.s'
     fi
-    printf "%35s %15s %15s %18s %3s$B7_Placeholder %2s %11s %7s %6s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s\n" \
+    printf "%35s %15s %16s %18s %3s$B7_Placeholder %2s %11s %7s %6s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s\n" \
       "Host" "Network" "IP" "MAC" "Mon" "B7" "Ol" "VPNClient" "FlowOut" "FlowIn" "Grp" "Usr" "DvT" "EA" "DNS" "AdB" "Fam" "SS" "DoH" "Ubd"
     NOW=$(date +%s)
     frcc
@@ -735,12 +735,16 @@ check_hosts() {
           fi
         fi
 
-        local IP=${h[ipv4Addr]}
         local MAC_VENDOR=${h[macVendor]}
         local POLICY_MAC="policy:mac:${MAC}"
 
         declare -A p
         read_hash p $POLICY_MAC
+
+        local IP=${h[ipv4Addr]}
+        if [[ -n $IP ]] && [[ "$(jq -r '.allocations[] | select(.type=="static") | .ipv4' <<< "${p[ipAllocation]}")" == $IP ]]; then
+          IP="*$IP"
+        fi
 
         local TAGS=${p[tags]//[\][\" ]/}
         local USER_TAGS=${p[userTags]//[\][\" ]/}
@@ -758,7 +762,7 @@ check_hosts() {
         done
 
         local MONITORING=
-        if ((IS_FIREWALLA)) || is_router $IP; then
+        if ((IS_FIREWALLA)) || is_router ${h[ipv4Addr]}; then
             MONITORING="NA"
         elif [ -z ${p[monitor]+x} ] || [[ ${p[monitor]} == "true" ]]; then
             MONITORING=""
@@ -766,7 +770,7 @@ check_hosts() {
             MONITORING="F"
         fi
         if [[ $SIMPLE_MODE == "T" ]]; then
-          local B7_MONITORING_FLAG=$(redis-cli sismember monitored_hosts "$IP")
+          local B7_MONITORING_FLAG=$(redis-cli sismember monitored_hosts "${h[ipv4Addr]}")
           local B7_MONITORING=""
           if [[ $B7_MONITORING_FLAG == "1" ]]; then
             B7_MONITORING="T"
@@ -806,7 +810,7 @@ check_hosts() {
         local BGC="\e[49m"  # background color
         local BGUC="\e[49m" # background uncolor
         if [[ $SIMPLE_MODE == "T" && -n $ONLINE && -z $MONITORING && $B7_MONITORING == "F" ]] &&
-          ((! IS_FIREWALLA)) && ! is_router $IP; then
+          ((! IS_FIREWALLA)) && ! is_router ${h[ipv4Addr]}; then
             FC="\e[91m"
         elif [ $FLOWINCOUNT -gt 2000 ] || [ $FLOWOUTCOUNT -gt 2000 ]; then
             FC="\e[33m" #yellow
@@ -829,7 +833,7 @@ check_hosts() {
             FC=$FC"\e[2m" #dim
         fi
 
-        printf "$BGC$FC%35s %15s %15s $MAC_COLOR%18s$FC %3s$B7_Placeholder %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s ${fcv[acl,c]}%3s$UC %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC$BGUC\n" \
+        printf "$BGC$FC%35s %15s %16s $MAC_COLOR%18s$FC %3s$B7_Placeholder %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s ${fcv[acl,c]}%3s$UC %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC$BGUC\n" \
           "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$(align::right 11 $VPN)" "$FLOWINCOUNT" \
           "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "${fcv[acl,v]}" "$DNS_BOOST" "${fcv[adblock,v]}" "${fcv[family,v]}" "${fcv[safeSearch,v]}" "${fcv[doh,v]}" "${fcv[unbound,v]}"
 
@@ -843,7 +847,8 @@ check_hosts() {
     done
 
     echo ""
-    echo "* Abbr.: Mon(Monitoring) B7(Spoofing Flag) Ol(Online) DvT(Device Type/Tag) EA(Emergency Access) SS(Safe Search) DoH(DNS over HTTPS) Ubd(Unbound)"
+    echo "    *: Reserved IP"
+    echo "Abbr.: Mon(Monitoring) B7(Spoofing Flag) Ol(Online) DvT(Device Type/Tag) EA(Emergency Access) SS(Safe Search) DoH(DNS over HTTPS) Ubd(Unbound)"
     echo ""
 }
 
