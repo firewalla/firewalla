@@ -29,6 +29,7 @@ const Block = require('../control/Block.js');
 const IntelTool = require('../net2/IntelTool.js')
 const intelTool = new IntelTool()
 const { eachLimit } = require('../util/asyncNative.js')
+const DomainTrie = require('../util/DomainTrie.js');
 
 const exec = require('child-process-promise').exec
 const { Address4, Address6 } = require('ip-address');
@@ -84,6 +85,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
       });
 
       if (firewalla.isMain()) {
+        this.domainPatternTrie = new DomainTrie();
+        this.categoryWithPattern = new Set();
         sem.on('UPDATE_CATEGORY_DOMAIN', async (event) => {
           if (!this.inited) {
             log.info("Category updater is not ready yet, will retry in 5 seconds", event.category);
@@ -102,6 +105,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
                   await this.refreshCategoryRecord(event.category);
                   if (strategy.dnsmasq.enabled) {
                     await domainBlock.updateCategoryBlock(event.category);
+                  }
+                  const patterns = _.union(await this.getDefaultDomainPatterns(event.category), await this.getIncludedDomainPatterns(event.category));
+                  if (!_.isEmpty(patterns) || this.categoryWithPattern.has(event.category)) {
+                    await this.rebuildDomainPatternTrie();
+                    if (_.isEmpty(patterns))
+                      this.categoryWithPattern.delete(event.category);
+                    else
+                      this.categoryWithPattern.add(event.category);
                   }
                   if (strategy.ipset.enabled) {
                     await this.recycleIPSet(event.category);
@@ -170,6 +181,33 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
 
     return instance
+  }
+
+  async rebuildDomainPatternTrie() {
+    const trie = new DomainTrie();
+    await Promise.all(Object.keys(this.activeCategories).map(async c => {
+      try {
+        const patterns = _.union(await this.getDefaultDomainPatterns(c), await this.getIncludedDomainPatterns(c));
+        const patternsWithPort = await this.getDefaultDomainPatternsWithPort(c);
+        for (const p of patterns) {
+          const obj = {category: c, isStatic: false, pattern: p};
+          trie.add(p, obj);
+          const domains = await this.getPatternDomains(p);
+          for (const d of domains)
+            trie.add(d, obj);
+        }
+        for (const p of patternsWithPort) {
+          const obj = { category: c, isStatic: true, port: p.port, pattern: p.id };
+          trie.add(p.id, obj);
+          const domains = await this.getPatternDomains(p.id);
+          for (const d of domains)
+            trie.add(d, obj);
+        }
+      } catch (err) {
+        log.error(`Failed to add pattern matched domains of ${c} to trie`, err.message);
+      }
+    }));
+    this.domainPatternTrie = trie;
   }
 
   resetUpdaterState() {
@@ -367,6 +405,23 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await domainBlock.refreshTLSCategory(category);
   }
 
+  async addPatternDomains(pattern, domain) {
+    await rclient.saddAsync(this.getPatternDomainsKey(pattern), domain);
+    await rclient.expireAsync(this.getPatternDomainsKey(pattern), EXPIRE_TIME);
+  }
+
+  async getPatternDomains(pattern) {
+    const domains = await rclient.smembersAsync(this.getPatternDomainsKey(pattern));
+    await rclient.expireAsync(this.getPatternDomainsKey(pattern), EXPIRE_TIME);
+    return domains;
+  }
+
+  async getPatternMatchedDomains(category) {
+    const patterns = _.union(await this.getDefaultDomainPatterns(category), await this.getIncludedDomainPatterns(category));
+    const patternDomains = await Promise.all(patterns.map(pattern => this.getPatternDomains(pattern)));
+    return _.uniq(patternDomains.flatMap(p => p));
+  }
+
   async getDomains(category) {
     return rclient.zrangeAsync(this.getCategoryKey(category), 0, -1)
   }
@@ -375,27 +430,47 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return rclient.existsAsync(this.getCategoryDataListKey(category));
   }
 
+  async getDefaultDomainPatterns(category) {
+    if (await this.categoryDataListExists(category)) {
+      return (await this.getCategoryData(category)).filter(v => (!v.tags && v.type === "domain" && !v.port && this.isDomainPattern(v.id))).map(v => v.id);
+    }
+    return rclient.smembersAsync(this.getDefaultCategoryKey(category)).then(results => results.filter(d => this.isDomainPattern(d)));
+  }
+
   async getDefaultDomains(category) {
     if (await this.categoryDataListExists(category)) {
-      return (await this.getCategoryData(category)).filter(v => (!v.tags && v.type === "domain" && !v.port)).map(v => v.id);
+      return (await this.getCategoryData(category)).filter(v => (!v.tags && v.type === "domain" && !v.port && !this.isDomainPattern(v.id))).map(v => v.id);
     }
-    return rclient.smembersAsync(this.getDefaultCategoryKey(category))
+    return rclient.smembersAsync(this.getDefaultCategoryKey(category)).then(results => results.filter(d => !this.isDomainPattern(d)));
   }
 
   async getDefaultDomainsOnly(category) {
     return rclient.smembersAsync(this.getDefaultCategoryKeyOnly(category))
   }
 
+  async getDefaultDomainPatternsWithPort(category) {
+    return (await this.getCategoryData(category)).filter(v => (v.type === "domain" && v.port && !v.domainOnly && this.isDomainPattern(v.id)));
+  }
+
   async getDefaultDomainsWithPort(category) {
-    return (await this.getCategoryData(category)).filter(v => (v.type === "domain" && v.port && !v.domainOnly));
+    return (await this.getCategoryData(category)).filter(v => (v.type === "domain" && v.port && !v.domainOnly && !this.isDomainPattern(v.id)));
   }
 
   async getDefaultDomainsOnlyWithPort(category) {
     return (await this.getCategoryData(category)).filter(v => (v.type === "domain" && v.port && v.domainOnly));
   }
 
+  async getPatternMatchedDomainsWithPort(category) {
+    const patternsWithPort = (await this.getCategoryData(category)).filter(v => (v.type === "domain" && v.port && this.isDomainPattern(v.id)));
+    const patternDomainsWithPort = await Promise.all(patternsWithPort.map(async p => {
+      const domains = await this.getPatternDomains(p.id);
+      return domains.map(d => Object.assign({}, p, {id: d}));
+    }));
+    return _.uniq(patternDomainsWithPort.flatMap(p => p));
+  }
+
   async getAllDomainsWithPort(category) {
-    return (await this.getCategoryData(category)).filter(v => (v.type === "domain" && v.port));
+    return (await this.getCategoryData(category)).filter(v => (v.type === "domain" && v.port && !this.isDomainPattern(v.id)));
   }
 
   async getDefaultHashedDomains(category) {
@@ -457,8 +532,12 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return rclient.unlinkAsync(this.getDefaultCategoryKeyHashed(category));
   }
 
+  async getIncludedDomainPatterns(category) {
+    return rclient.smembersAsync(this.getIncludeCategoryKey(category)).then(results => results.filter(d => this.isDomainPattern(d)));
+  }
+
   async getIncludedDomains(category) {
-    return rclient.smembersAsync(this.getIncludeCategoryKey(category))
+    return rclient.smembersAsync(this.getIncludeCategoryKey(category)).then(results => results.filter(d => !this.isDomainPattern(d)));
   }
 
   async addIncludedDomain(category, domain) {
@@ -585,6 +664,36 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
 
     return results
+  }
+
+  async updateDomainPattern(domain) {
+    const matches = this.domainPatternTrie.find(domain);
+    if (!_.isSet(matches))
+      return;
+    for (const match of matches) {
+      const {pattern, category, isStatic, port} = match;
+      if (!this.isActivated(category))
+        return;
+      
+      const domainObj = {id: domain, isStatic};
+      if (port)
+        domainObj.port = port;
+      const key = hashFunc(domainObj);
+      if (!this.effectiveCategoryDomains[category])
+        this.effectiveCategoryDomains[category] = new Map();
+      if (!this.effectiveCategoryDomains[category].has(key)) {
+        this.effectiveCategoryDomains[category].set(key, domainObj);
+        const options = { exactMatch: true, blockSet: _.isEmpty(port) ? this.getIPSetName(category, isStatic) : this.getDomainPortIPSetName(category, isStatic) };
+        if (this.isTLSActivated(category))
+          options.tlsHostSet = Block.getTLSHostSet(category);
+        if (!_.isEmpty(port))
+          options.port = port;
+        await domainBlock.blockDomain(domain, options);
+        // add to redis set before calling updateCategoryBlock, pattern matched domains will be fetched from redis set in updateCategoryBlock
+        await this.addPatternDomains(pattern, domain);
+        await domainBlock.updateCategoryBlock(category);
+      }
+    }
   }
 
   async updateDomain(category, domain, isPattern, add = true) {
@@ -991,13 +1100,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
       defaultDomains = await this.getDefaultDomains(category);
     }
 
+    const patternMatchedDomains = await this.getPatternMatchedDomains(category);
+
     const excludeDomains = await this.getExcludedDomains(category);
     const domainOnlyDefaultDomains = await this.getDefaultDomainsOnly(category);
 
     let domainMap = new Map();
 
-    // dynamic + default - exclude + include - defaultDomainOnly
-    let dd = _.union(domains, defaultDomains)
+    // dynamic + default + pattern match - exclude + include - defaultDomainOnly
+    let dd = _.union(domains, defaultDomains, patternMatchedDomains)
     dd = _.difference(dd, excludeDomains)
     dd = _.union(dd, includedDomains)
     dd = dd.map(d => d.toLowerCase());
@@ -1016,6 +1127,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
 
     for (const item of await this.getDefaultDomainsWithPort(category)) {
+      const domainObj = { id: item.id, port: item.port, isStatic: true };
+      domainMap.set(hashFunc(domainObj), domainObj);
+    }
+
+    for (const item of await this.getPatternMatchedDomainsWithPort(category)) {
       const domainObj = { id: item.id, port: item.port, isStatic: true };
       domainMap.set(hashFunc(domainObj), domainObj);
     }

@@ -57,7 +57,7 @@ class AuditTool extends LogQuery {
   toSimpleFormat(entry, options = {}) {
     const f = {
       ltype: options.block == undefined || options.block ? 'audit' : 'flow',
-      type: options.type == 'dnsFlow' ? 'dnsFlow' : entry.type,
+      type: options.dnsFlow ? 'dnsFlow' : entry.type,
       ts: entry._ts || entry.ets || entry.ts,
       count: entry.ct,
     };
@@ -98,7 +98,7 @@ class AuditTool extends LogQuery {
     }
 
 
-    if (options.type == 'dnsFlow' || entry.type == 'dns') {
+    if (options.dnsFlow || entry.type == 'dns') {
       f.domain = entry.dn
       if (entry.as) f.answers = entry.as
     } else {
