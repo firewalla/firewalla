@@ -92,6 +92,14 @@ class CategoryUpdaterBase {
     return `category:${category}:ip6:domain`
   }
 
+  getPatternDomainsKey(pattern) {
+    return `domain:pattern:${pattern}`;
+  }
+
+  isDomainPattern(domain) {
+    return (domain.startsWith("*.") ? domain.substring(2) : domain).includes("*");
+  }
+
   async getIPv4Addresses(category) {
 
     return rclient.smembersAsync(this.getIPv4CategoryKey(category))
