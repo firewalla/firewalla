@@ -90,22 +90,31 @@ class APCMsgSensor extends Sensor {
       if (_.isEmpty(ssidStatus))
         return;
 
-      const macPskMap = {};
       const tags = await TagManager.getPolicyTags("ssidPSK");
+      const vlanGroupIdMap = {};
       for (const tag of tags) {
-        const groupStatus = await fwapc.getGroupStatus(tag.getUniqueId());
-        if (_.isArray(groupStatus)) {
-          for (const mac of groupStatus)
-            macPskMap[mac] = tag.getUniqueId();
-        }
+        const ssidPSK = await tag.getPolicyAsync("ssidPSK");
+        if (_.isObject(ssidPSK) && _.has(ssidPSK, "vlan"))
+          vlanGroupIdMap[String(ssidPSK.vlan)] = tag;
       }
 
       for (const uuid of Object.keys(ssidStatus)) {
-        const macs = ssidStatus[uuid];
-        if (!_.isArray(macs))
+        const status = ssidStatus[uuid];
+        if (!_.isObject(status))
           continue;
-        for (const mac of macs)
-          await this.updateHostSSID(mac, uuid, macPskMap[mac]);
+        for (const key of Object.keys(status)) {
+          if (!_.isArray(status[key]))
+            continue;
+          if (key === "phy") { // STA MACs that do not belong to a PSK group
+            for (const mac of status[key])
+              await this.updateHostSSID(mac.toUpperCase(), uuid);
+          } else {
+            if (key.startsWith("vlan:")) { // STA MACs that belong to a PSK group
+              const vid = key.substring("vlan:".length);
+              await this.updateHostSSID(mac.toUpperCase(), uuid, vlanGroupIdMap[vid] && vlanGroupIdMap[vid].getUniqueId());
+            }
+          }
+        }
       }
     }).catch((err) => {
       log.error(`Failed to refresh ssid sta mapping`, err.message);
