@@ -132,6 +132,8 @@ class DeviceHook extends Hook {
           return
         }
 
+        log.verbose(event.message, host)
+
         // 4. if this is an existing mac address, and it has a different ipv4 address, (the ipv4 is owned by nobody in redis) => OldDeviceChangedToNewIP
         // it may update redis ip6 keys if additional ip addresses are added
         if (!ip4Entry) {
@@ -359,6 +361,14 @@ class DeviceHook extends Hook {
           const firstFoundTimestamp = macData.firstFoundTimestamp || currentTimestamp;
           const lastActiveTimestamp = macData.lastActiveTimestamp;
 
+          sem.emitEvent({
+            type: Message.MSG_MAPPING_IP_MAC_DELETED,
+            suppressEventLogging: true,
+            mac: macData.mac,
+            fam: 4,
+            ip: macData.ipv4Addr,
+          })
+
           const enrichedHost = extend({}, host, {
             uid: host.ipv4Addr,
             firstFoundTimestamp: firstFoundTimestamp,
@@ -424,6 +434,21 @@ class DeviceHook extends Hook {
 
           const firstFoundTimestamp = macData.firstFoundTimestamp || currentTimestamp;
           const lastActiveTimestamp = macData.lastActiveTimestamp;
+
+          sem.emitEvent({
+            type: Message.MSG_MAPPING_IP_MAC_DELETED,
+            suppressEventLogging: true,
+            mac: macData.mac,
+            fam: 4,
+            ip: macData.ipv4Addr,
+          })
+          sem.emitEvent({
+            type: Message.MSG_MAPPING_IP_MAC_DELETED,
+            suppressEventLogging: true,
+            mac: event.oldMac,
+            fam: 4,
+            ip: host.ipv4Addr,
+          })
 
           const enrichedHost = extend({}, host, {
             uid: host.ipv4Addr,
@@ -608,17 +633,6 @@ class DeviceHook extends Hook {
           log.error("Failed to process DeviceOffline event:", err);
         });
       });
-
-      sem.on(Message.MSG_MAPPING_IP_MAC_DELETED, async (event) => {
-        const { ip, mac, fam } = event
-        if (ip && mac && fam) try {
-          const host = fam == 4 ? await hostTool.getIPv4Entry(ip) : await hostTool.getIPv6Entry(ip)
-          if (host.mac == mac)
-            await hostTool.deleteHost(ip)
-        } catch(err) {
-          log.error('Error deleting IP entry for', ip, mac, err)
-        }
-      })
     });
   }
 

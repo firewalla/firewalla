@@ -33,11 +33,11 @@ const maxV6Addr = 8;
 
 const asyncNative = require('../util/asyncNative.js');
 
-const iptool = require('ip');
-
 const {getPreferredBName,getPreferredName} = require('../util/util.js')
 const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
 const firewalla = require('./Firewalla.js');
+
+const LRU = require('lru-cache')
 const _ = require('lodash');
 
 class HostTool {
@@ -45,15 +45,12 @@ class HostTool {
     if(!instance) {
       instance = this;
 
-      this.ipMacMapping = {};
-      setInterval(() => {
-        this._flushIPMacMapping();
-      }, 600000); // reset all ip mac mapping once every 10 minutes in case of ip change
+      this.ipMacMapping = new LRU({max: 500, maxAge: 600 * 1000});
       sem.on(Message.MSG_MAPPING_IP_MAC_DELETED, (event) => {
         const { ip, mac } = event
         if (ip && mac) {
-          if (this.ipMacMapping[ip] == mac)
-            delete this.ipMacMapping[ip]
+          if (this.ipMacMapping.peek(ip) == mac)
+            this.ipMacMapping.del(ip)
         }
       })
     }
@@ -187,7 +184,7 @@ class HostTool {
   }
 
   deleteHost(ip) {
-    if (iptool.isV4Format(ip)) {
+    if (net.isIPv4(ip)) {
       return rclient.unlinkAsync(this.getHostKey(ip));
     } else {
       return rclient.unlinkAsync(this.getIPv6HostKey(ip));
@@ -239,6 +236,7 @@ class HostTool {
     return ips;
   }
 
+  // not reading host:ip here as it's used DeviceHook for IP change check
   async getMacByIP(ip) {
     const fam = net.isIP(ip)
     if (!fam) return null
@@ -247,9 +245,6 @@ class HostTool {
       // shortcut for Firewalla's self IP
       const myMac = fam == 4 ? sysManager.myMACViaIP4(ip) : sysManager.myMACViaIP6(ip);
       if (myMac) return myMac;
-
-      const host = fam == 4 ? await this.getIPv4Entry(ip) : await this.getIPv6Entry(ip)
-      if (host) return host.mac;
 
       if (fam == 4) {
         return l2.getMACAsync(ip)
@@ -268,21 +263,18 @@ class HostTool {
   }
 
   async getMacByIPWithCache(ip) {
-    if (this.ipMacMapping[ip]) {
-      return this.ipMacMapping[ip];
+    const cached = this.ipMacMapping.peek(ip)
+    if (cached) {
+      return cached
     } else {
       const mac = await this.getMacByIP(ip);
       if (mac) {
-        this.ipMacMapping[ip] = mac;
+        this.ipMacMapping.set(ip, mac);
         return mac;
       } else {
         return null;
       }
     }
-  }
-
-  _flushIPMacMapping() {
-    this.ipMacMapping = {};
   }
 
   async getMacEntryByIP(ip) {
