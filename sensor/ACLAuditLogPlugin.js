@@ -719,7 +719,7 @@ class ACLAuditLogPlugin extends Sensor {
           }
 
           // use a dedicated switch for saving to audit:accpet as we still want rule stats
-          if (type == 'dns' && !block && !fc.isFeatureOn('dnsmasq_log_allow_redis')) return
+          if (type == 'dns' && !block && !fc.isFeatureOn('dnsmasq_log_allow_redis')) continue
 
           const key = this._getAuditKey(mac, block)
           await rclient.zaddAsync(key, _ts, JSON.stringify(record));
