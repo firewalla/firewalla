@@ -23,11 +23,9 @@ const Sensor = require('./Sensor.js').Sensor;
 const sem = require('./SensorEventManager.js').getInstance();
 
 const Bonjour = require('../vendor_lib/bonjour');
-
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
 const sysManager = require('../net2/SysManager.js')
-const Nmap = require('../net2/Nmap.js');
-const nmap = new Nmap();
-const l2 = require('../util/Layer2.js');
 const Message = require('../net2/Message.js');
 const { modelToType, boardToModel, hapCiToType } = require('../extension/detect/appleModel.js')
 const HostManager = require("../net2/HostManager.js");
@@ -35,7 +33,6 @@ const hostManager = new HostManager();
 
 const _ = require('lodash')
 
-const ipMacCache = {};
 const lastProcessTimeMap = {};
 
 // BonjourSensor is used to two purposes:
@@ -118,70 +115,18 @@ class BonjourSensor extends Sensor {
     });
   }
 
-  async _getMacFromIP(ipAddr) {
-    if (!ipAddr)
-      return null;
-    if (ipMacCache[ipAddr]) {
-      const entry = ipMacCache[ipAddr];
-      if (entry.lastSeen > Date.now() / 1000 - 1800) { // cache is valid for 1800 seconds
-        return entry.mac;
-      } else {
-        delete ipMacCache[ipAddr];
-      }
-    }
-    const fam = net.isIP(ipAddr)
-    if (fam == 4) {
-      return new Promise((resolve, reject) => {
-        l2.getMAC(ipAddr, (err, mac) => {
-          if (err) {
-            log.warn("Not able to find mac address for host:", ipAddr, mac);
-            resolve(null);
-          } else {
-            if (!mac) {
-              const myMac = sysManager.myMACViaIP4(ipAddr) || null;
-              if (!myMac)
-                log.warn("Not able to find mac address for host:", ipAddr, mac);
-              resolve(myMac);
-            } else {
-              ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };
-              resolve(mac);
-            }
-          }
-        })
-      })
-    } else if (fam == 6 && !ipAddr.startsWith("fe80:")) { // nmap neighbor solicit is not accurate for link-local addresses
-      let mac = await nmap.neighborSolicit(ipAddr).catch((err) => {
-        log.warn("Not able to find mac address for host:", ipAddr, err);
-        return null;
-      })
-      if (mac && sysManager.isMyMac(mac))
-      // should not get neighbor advertisement of Firewalla itself, this is mainly caused by IPv6 spoof
-        mac = null;
-      if (!mac) {
-        const myMac = sysManager.myMACViaIP6(ipAddr) || null;
-        if (!myMac)
-          log.warn("Not able to find mac address for host:", ipAddr, mac);
-        return myMac
-      } else {
-        ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };
-        return mac;
-      }
-    }
-    return null;
-  }
-
   async processService(service) {
     const ipv4Addr = service.ipv4Addr;
     const ipv6Addrs = service.ipv6Addrs;
 
     let mac = null
     if (!mac && ipv4Addr) {
-      mac = await this._getMacFromIP(ipv4Addr);
+      mac = await hostTool.getMacByIPWithCache(ipv4Addr);
     }
     if (!mac && ipv6Addrs && ipv6Addrs.length !== 0) {
       for (let i in ipv6Addrs) {
         const ipv6Addr = ipv6Addrs[i];
-        mac = await this._getMacFromIP(ipv6Addr);
+        mac = await hostTool.getMacByIPWithCache(ipv6Addr);
         if (mac)
           break;
       }
