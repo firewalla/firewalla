@@ -28,7 +28,6 @@ const networkProfileManager = require('../net2/NetworkProfileManager')
 const IdentityManager = require('../net2/IdentityManager.js');
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const Constants = require('../net2/Constants.js');
-const l2 = require('../util/Layer2.js');
 const fc = require('../net2/config.js')
 const conntrack = require('../net2/Conntrack.js')
 const LogReader = require('../util/LogReader.js');
@@ -152,7 +151,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1 };
     record.ac = "block";
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanUUID, inIntfName, outIntfName, isolationTagId;
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanUUID, inIntfName, outIntfName, isolationTagId;
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -443,13 +442,7 @@ class ACLAuditLogPlugin extends Sensor {
     }
     // maybe from a non-ethernet network, or dst mac is self mac address
     if (!mac || sysManager.isMyMac(mac)) {
-      localIPisV4 = new Address4(localIP).isValid();
-      mac = localIPisV4 && await l2.getMACAsync(localIP).catch(err => {
-        log.error("Failed to get MAC address from link layer for", localIP, err);
-      })
-        || await hostTool.getMacByIPWithCache(localIP).catch(err => {
-          log.error("Failed to get MAC address from SysManager for", localIP, err);
-        })
+      mac = await hostTool.getMacByIPWithCache(localIP)
         || intf && `${Constants.NS_INTERFACE}:${intf.uuid}`
     }
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
@@ -520,7 +513,7 @@ class ACLAuditLogPlugin extends Sensor {
     let mac = record.mac;
     delete record.mac
     // first try to get mac from device database
-    if (!mac || mac === "FF:FF:FF:FF:FF:FF" || !(await hostTool.getMACEntry(mac))) {
+    if (!mac || mac === "FF:FF:FF:FF:FF:FF" || !hostManager.getHostFastByMAC(mac)) {
       if (record.sh)
         mac = await hostTool.getMacByIPWithCache(record.sh);
     }

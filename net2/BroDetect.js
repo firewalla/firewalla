@@ -455,24 +455,6 @@ class BroDetect {
     return result
   }
 
-  async lookupMac(ip, fam) {
-    let mac = null
-
-    if (fam == 4) {
-      mac = await l2.getMACAsync(ip).catch((err) => {
-        log.error("Failed to get MAC address from link layer for " + ip, err);
-        return;
-      }); // Don't worry about performance issue, this function has internal cache
-    }
-    if (!mac) {
-      mac = await hostTool.getMacByIPWithCache(ip).catch((err) => {
-        log.error("Failed to get MAC address from cache for " + ip, err);
-      });
-    }
-
-    return mac
-  }
-
   async saveDNSFlow(obj) {
     if (platform.isDNSFlowSupported() && fc.isFeatureOn('dns_flow')) try {
       const now = Date.now() / 1000
@@ -548,7 +530,7 @@ class BroDetect {
       }
 
       if (!localMac && !isIdentityIntf) {
-        localMac = await this.lookupMac(dnsFlow.sh, localFam)
+        localMac = await hostTool.getMacByIPWithCache(dnsFlow.sh)
       }
 
       if (!localMac || localMac.constructor.name !== "String") {
@@ -1202,7 +1184,7 @@ class BroDetect {
       // Don't query MAC for IP from VPN interface, otherwise it will spawn many 'cat' processes in Layer2.js
       if (!localMac && !isIdentityIntf) {
         // this can also happen on older bro which does not support mac logging
-        localMac = await this.lookupMac(lhost, localFam)
+        localMac = await hostTool.getMacByIPWithCache(lhost)
       }
 
       if (!localMac || localMac.constructor.name !== "String") {
