@@ -532,8 +532,16 @@ class ACLAuditLogPlugin extends Sensor {
     }
 
     if (!intfUUID) {
-      log.debug('Interface not found for', record.sh);
-      return null
+      if (mac && hostTool.isMacAddress(mac)) {
+        // if device is using link-local IPv6 address to query box's DNS server on link-local address, getInterfaceViaIP won't work
+        const host = hostManager.getHostFastByMAC(mac);
+        if (host && host.o.intf)
+          intfUUID = host.o.intf;
+      }
+      if (!intfUUID) {
+        log.debug('Interface not found for', record.sh);
+        return null
+      }
     }
 
     record.intf = intfUUID;
