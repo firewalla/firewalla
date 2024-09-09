@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,6 +22,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 
+const Message = require('../net2/Message.js')
+
 const _ = require('lodash');
 
 
@@ -29,7 +31,7 @@ let FWEvent = class {
   constructor(eid, type) {
     this.eid = eid;
     this.type = type;
-    this.timestamp = new Date()/1000;
+    this.timestamp = Date.now()/1000;
     this.message = "";
   }
 }
@@ -37,6 +39,12 @@ let FWEvent = class {
 let Sensor = class {
   constructor(config) {
     this.config = config ? JSON.parse(JSON.stringify(config)) : {};
+
+    sem.on(Message.MSG_DEBUG, event => {
+      if (event.name == this.constructor.name && event.data == 'config') {
+        log.info('Current config', this.config)
+      }
+    })
   }
 
   getName() {
@@ -85,7 +93,7 @@ let Sensor = class {
       await lock.acquire(`${this.featureName}`, async () => {
         if (fc.isFeatureOn(featureName)) try {
           log.info("Enabling feature", featureName);
-          await this.globalOn({booting: true});
+          await this.globalOn();
         } catch(err) {
           log.error(`Failed to enable ${featureName}, reverting...`, err)
           try {
