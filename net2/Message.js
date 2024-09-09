@@ -50,6 +50,7 @@ const MSG_LICENSE_UPDATED = 'System:LicenceUpdated';
 
 const MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE = 'osi:global_vpn_client_policy_done';
 const MSG_OSI_RULES_DONE = 'osi:rules_done';
+const MSG_OSI_INBOUND_BLOCK_RULES_DONE = 'osi:inbound_block_rules_done';
 const MSG_OSI_NETWORK_PROFILE_INITIALIZED = 'osi:network_profile_initialized';
 const MSG_OSI_VERIFIED= 'osi:verified';
 const MSG_OSI_UPDATE_NOW = 'osi:update_now';
@@ -98,6 +99,7 @@ module.exports = {
   MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE,
   MSG_OSI_NETWORK_PROFILE_INITIALIZED,
   MSG_OSI_RULES_DONE,
+  MSG_OSI_INBOUND_BLOCK_RULES_DONE,
   MSG_OSI_TARGET_TAGS_APPLIED,
   MSG_ASSETS_UPDATED_CHANNEL,
   MSG_FLOW_ENRICHED,
