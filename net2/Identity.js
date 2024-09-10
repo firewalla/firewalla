@@ -317,10 +317,10 @@ class Identity extends Monitorable {
         await Tag.ensureCreateEnforcementEnv(tagUid);
         for (const ip of ips) {
           if (new Address4(ip).isValid()) {
-            await exec(`sudo ipset add -! ${Tag.getTagDeviceIPSetName(tagUid, 4)} ${ip}`).catch((err) => {});
+            await exec(`sudo ipset add -! ${Tag.getTagDeviceIPSetName(tagUid, 4)} ${ip} timeout 0`).catch((err) => {});
           } else {
             if (new Address6(ip).isValid()) {
-              await exec(`sudo ipset add -! ${Tag.getTagDeviceIPSetName(tagUid, 6)} ${ip}`).catch((err) => {});
+              await exec(`sudo ipset add -! ${Tag.getTagDeviceIPSetName(tagUid, 6)} ${ip} timeout 0`).catch((err) => {});
             }
           }
         }
