@@ -121,6 +121,7 @@
       "switchRatioThreshold": 0.88
     },
     "FlowCompressionSensor": {},
+    "FreeRadiusSensor": {},
     "AlarmSensor": {},
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
@@ -218,6 +219,7 @@
       "sumFlowMaxFlow": 200,
       "sumAuditFlowMaxFlow": 400
     },
+    "FreeRadiusSensor": {},
     "IntelRevalidationSensor": {},
     "BoxAliasSensor": {},
     "SafeSearchPlugin": {
