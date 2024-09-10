@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,14 +15,16 @@
 'use strict';
 
 const log = require('./logger.js')(__filename);
-
+const net = require('net')
 const rclient = require('../util/redis_manager.js').getRedisClient()
-
+const Message = require('../net2/Message.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 const sysManager = require('./SysManager.js');
-
+const Nmap = require('../net2/Nmap.js');
+const nmap = new Nmap();
+const l2 = require('../util/Layer2.js');
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
-
 const Hashes = require('../util/Hashes.js');
 
 let instance = null;
@@ -31,11 +33,11 @@ const maxV6Addr = 8;
 
 const asyncNative = require('../util/asyncNative.js');
 
-const iptool = require('ip');
-
 const {getPreferredBName,getPreferredName} = require('../util/util.js')
 const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
 const firewalla = require('./Firewalla.js');
+
+const LRU = require('lru-cache')
 const _ = require('lodash');
 
 class HostTool {
@@ -43,10 +45,14 @@ class HostTool {
     if(!instance) {
       instance = this;
 
-      this.ipMacMapping = {};
-      setInterval(() => {
-        this._flushIPMacMapping();
-      }, 600000); // reset all ip mac mapping once every 10 minutes in case of ip change
+      this.ipMacMapping = new LRU({max: 500, maxAge: 600 * 1000});
+      sem.on(Message.MSG_MAPPING_IP_MAC_DELETED, (event) => {
+        const { ip, mac } = event
+        if (ip && mac) {
+          if (this.ipMacMapping.peek(ip) == mac)
+            this.ipMacMapping.del(ip)
+        }
+      })
     }
     return instance;
   }
@@ -65,7 +71,7 @@ class HostTool {
     if(!ip)
       return Promise.reject("invalid ip addr");
 
-    let key = "host:ip4:" + ip;
+    const key = this.getHostKey(ip)
     return rclient.hgetallAsync(key);
   }
 
@@ -102,7 +108,7 @@ class HostTool {
   }
 
   async updateIPv4Host(host) {
-    let uid = host.uid;
+    let uid = host.ipv4Addr;
     let key = this.getHostKey(uid);
 
     let hostCopy = JSON.parse(JSON.stringify(host))
@@ -178,7 +184,7 @@ class HostTool {
   }
 
   deleteHost(ip) {
-    if (iptool.isV4Format(ip)) {
+    if (net.isIPv4(ip)) {
       return rclient.unlinkAsync(this.getHostKey(ip));
     } else {
       return rclient.unlinkAsync(this.getIPv6HostKey(ip));
@@ -230,42 +236,45 @@ class HostTool {
     return ips;
   }
 
-  async getMacByIP(ip, monitoringOnly = true) {
-    let host = null
-    if (sysManager.isMyIP(ip, monitoringOnly) || sysManager.isMyIP6(ip, monitoringOnly)) {
-      // shortcut for Firewalla's self IP
-      const myMac = sysManager.myMACViaIP4(ip) || sysManager.myMACViaIP6(ip);
-      if (myMac)
-        return myMac;
-    }
+  // not reading host:ip here as it's used DeviceHook for IP change check
+  async getMacByIP(ip) {
+    const fam = net.isIP(ip)
+    if (!fam) return null
 
-    if (iptool.isV4Format(ip)) {
-      host = await this.getIPv4Entry(ip);
-    } else if(iptool.isV6Format(ip)) {
-      host = await this.getIPv6Entry(ip);
-    } else {
+    try {
+      // shortcut for Firewalla's self IP
+      const myMac = fam == 4 ? sysManager.myMACViaIP4(ip) : sysManager.myMACViaIP6(ip);
+      if (myMac) return myMac;
+
+      if (fam == 4) {
+        return l2.getMACAsync(ip)
+      } else if (fam == 6 && !sysManager.isLinkLocal(ip, 6)) { // nmap neighbor solicit is not accurate for link-local addresses
+        let mac = await nmap.neighborSolicit(ip)
+        if (mac && sysManager.isMyMac(mac))
+          // should not get neighbor advertisement of Firewalla itself, this is mainly caused by IPv6 spoof
+          return null;
+        else
+          return mac
+      }
+    } catch(err) {
+      log.warn("Not able to find mac address for host:", ip, err);
       return null
     }
-
-    return host && host.mac;
   }
 
-  async getMacByIPWithCache(ip, monitoringOnly = true) {
-    if (this.ipMacMapping[ip]) {
-      return this.ipMacMapping[ip];
+  async getMacByIPWithCache(ip) {
+    const cached = this.ipMacMapping.peek(ip)
+    if (cached) {
+      return cached
     } else {
-      const mac = await this.getMacByIP(ip, monitoringOnly);
+      const mac = await this.getMacByIP(ip);
       if (mac) {
-        this.ipMacMapping[ip] = mac;
+        this.ipMacMapping.set(ip, mac);
         return mac;
       } else {
         return null;
       }
     }
-  }
-
-  _flushIPMacMapping() {
-    this.ipMacMapping = {};
   }
 
   async getMacEntryByIP(ip) {

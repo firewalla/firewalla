@@ -129,7 +129,6 @@
     "ActionPlugin":{},
     "OSIPlugin": {},
     "STUNSensor": {},
-    "SystemRebootSensor": {},
     "NoiseDomainsSensor": {},
     "Iperf3Sensor": {},
     "DeviceMonitorSensor": {}
@@ -768,6 +767,7 @@
     "PcapSuricataPlugin": {},
     "CategoryExaminerPlugin": {},
     "RuleStatsPlugin": {},
+    "SystemRebootSensor": {},
     "ClashDNSPlugin": {},
     "AppTimeUsageSensor": {
       "appConfs": {
