@@ -1151,6 +1151,9 @@ class BroDetect {
       // Long connection aggregation
       const uid = obj.uid
       if (long || this.activeLongConns.has(uid)) {
+        // zeek has a bug that stales connection and keeps popping them in conn_long.log
+        if (obj.ts + obj.duration < Date.now() / 1000 - config.connLong.expires) return
+
         const previous = this.activeLongConns.get(uid) || { ts: obj.ts, orig_bytes:0, resp_bytes: 0, duration: 0, lastTick: obj.ts}
 
         // already aggregated
@@ -1388,98 +1391,96 @@ class BroDetect {
     const start = this.lastRotate[type]
     this.lastRotate[type] = end
 
-    try {
-      // Every FLOWSTASH_EXPIRES seconds, save aggregated flowstash into redis and empties flowstash
-      let stashed = {};
-      log.info("Processing Flow Stash:", start, end, type);
+    // Every FLOWSTASH_EXPIRES seconds, save aggregated flowstash into redis and empties flowstash
+    let stashed = {};
+    log.info("Processing Flow Stash:", start, end, type);
 
-      for (const specKey in flowstash) {
-        const spec = flowstash[specKey];
-        if (!spec.mac)
-          continue;
-        if (type == 'conn') try {
-          // try resolve host info for previous flows again here
-          for (const uid of spec.uids) {
-            const afobj = this.withdrawAppMap(spec.sh, spec.sp[0] || 0, spec.dh, spec.dp, this.activeLongConns.has(uid)) || await conntrack.getConnEntries(spec.sh, spec.sp[0] || 0, spec.dh, spec.dp, spec.pr, 600);;
-            if (spec.fd === "in" && afobj && afobj.host && !spec.af[afobj.host]) {
-              spec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
-            }
-          }
-        } catch (e) {
-          log.error("Conn:Save:AFMAP:EXCEPTION", e);
-        }
-        // during firemain start and new device discovery, there's a small window that host object is
-        // not created in memory thus no tag info. trying to find host obj again here
-        // flow with hostInfo always creates an empty tags array, which was saved to flowstash
-        if (!spec.tags) {
-          const monitorable = hostManager.getHostFastByMAC(spec.mac);
-          const intfInfo = sysManager.getInterfaceViaUUID(monitorable.o.intf);
-          const tags = await this.getTags(monitorable, intfInfo)
-          Object.assign(spec, tags)
-
-          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-            const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
-            for (const tag of spec[flowKey] || []) {
-              if (type == 'conn') {
-                timeSeries.recordHit(`download:tag:${tag}`, spec._ts, spec.fd == 'in' ? spec.rb : spec.ob);
-                timeSeries.recordHit(`upload:tag:${tag}`, spec._ts, spec.fd == 'in' ? spec.ob : spec.rb);
-              }
-              timeSeries.recordHit(`${type}:tag:${tag}`, spec._ts, spec.ct);
-            }
+    for (const specKey in flowstash) try {
+      const spec = flowstash[specKey];
+      if (!spec.mac)
+        continue;
+      if (type == 'conn') try {
+        // try resolve host info for previous flows again here
+        for (const uid of spec.uids) {
+          const afobj = this.withdrawAppMap(spec.sh, spec.sp[0] || 0, spec.dh, spec.dp, this.activeLongConns.has(uid)) || await conntrack.getConnEntries(spec.sh, spec.sp[0] || 0, spec.dh, spec.dp, spec.pr, 600);;
+          if (spec.fd === "in" && afobj && afobj.host && !spec.af[afobj.host]) {
+            spec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
           }
         }
+      } catch (e) {
+        log.error("Conn:Save:AFMAP:EXCEPTION", e);
+      }
+      // during firemain start and new device discovery, there's a small window that host object is
+      // not created in memory thus no tag info. trying to find host obj again here
+      // flow with hostInfo always creates an empty tags array, which was saved to flowstash
+      if (!spec.tags) {
+        const monitorable = hostManager.getHostFastByMAC(spec.mac);
+        const intfInfo = sysManager.getInterfaceViaUUID(monitorable && monitorable.o.intf);
+        const tags = await this.getTags(monitorable, intfInfo)
+        Object.assign(spec, tags)
 
-        // remove empty tag key to save memory, this cuts 4%+ for flow:conn
         for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
           const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
-          if (!spec[flowKey].length) {
-            delete spec[flowKey]
+          for (const tag of spec[flowKey] || []) {
+            if (type == 'conn') {
+              timeSeries.recordHit(`download:tag:${tag}`, spec._ts, spec.fd == 'in' ? spec.rb : spec.ob);
+              timeSeries.recordHit(`upload:tag:${tag}`, spec._ts, spec.fd == 'in' ? spec.ob : spec.rb);
+            }
+            timeSeries.recordHit(`${type}:tag:${tag}`, spec._ts, spec.ct);
           }
         }
-
-        const key = type == 'conn'
-          ? "flow:conn:" + spec.fd + ":" + spec.mac
-          : `flow:dns:${spec.mac}`
-        // not storing mac (as it's in key) to squeeze memory
-        delete spec.mac
-        const strdata = JSON.stringify(spec);
-        // _ts is the last time this flowspec is updated
-        const redisObj = [key, spec._ts, strdata];
-        if (stashed[key]) {
-          stashed[key].push(redisObj);
-        } else {
-          stashed[key] = [redisObj];
-        }
-
       }
 
-      setTimeout(async () => {
-        log.info(`${type}:Save:Summary ${start} ${end}`);
-        for (let key in stashed) {
-          let stash = stashed[key];
-          log.debug(`${type}:Save:Summary:Wipe ${key} Resolved To: ${stash.length}`);
-
-          let transaction = [];
-          transaction.push(['zremrangebyscore', key, start, end]);
-          stash.forEach(robj => {
-            if (robj._ts < start || robj._ts > end) log.warn('Stashed flow out of range', start, end, robj)
-            transaction.push(['zadd', robj])
-          })
-          if (config[type].expires) {
-            transaction.push(['expireat', key, Date.now() / 1000 + config[type].expires])
-          }
-
-          try {
-            await rclient.multi(transaction).execAsync();
-            log.debug(`${type}:Save:Removed`, key, start, end);
-          } catch (err) {
-            log.error(`${type}:Save:Error`, err);
-          }
+      // remove empty tag key to save memory, this cuts 4%+ for flow:conn
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
+        if (!spec[flowKey].length) {
+          delete spec[flowKey]
         }
-      }, config[type].flowstashExpires * 1000);
+      }
+
+      const key = type == 'conn'
+        ? "flow:conn:" + spec.fd + ":" + spec.mac
+        : `flow:dns:${spec.mac}`
+      // not storing mac (as it's in key) to squeeze memory
+      delete spec.mac
+      const strdata = JSON.stringify(spec);
+      // _ts is the last time this flowspec is updated
+      const redisObj = [key, spec._ts, strdata];
+      if (stashed[key]) {
+        stashed[key].push(redisObj);
+      } else {
+        stashed[key] = [redisObj];
+      }
+
     } catch (e) {
-      log.error("Error rotating flowstash", start, end, e);
+      log.error("Error rotating flowstash", specKey, start, end, e);
     }
+
+    setTimeout(async () => {
+      log.info(`${type}:Save:Summary ${start} ${end}`);
+      for (let key in stashed) {
+        let stash = stashed[key];
+        log.debug(`${type}:Save:Summary:Wipe ${key} Resolved To: ${stash.length}`);
+
+        let transaction = [];
+        transaction.push(['zremrangebyscore', key, start, end]);
+        stash.forEach(robj => {
+          if (robj._ts < start || robj._ts > end) log.warn('Stashed flow out of range', start, end, robj)
+          transaction.push(['zadd', robj])
+        })
+        if (config[type].expires) {
+          transaction.push(['expireat', key, Date.now() / 1000 + config[type].expires])
+        }
+
+        try {
+          await rclient.multi(transaction).execAsync();
+          log.debug(`${type}:Save:Removed`, key, start, end);
+        } catch (err) {
+          log.error(`${type}:Save:Error`, err);
+        }
+      }
+    }, config[type].flowstashExpires * 1000);
   }
 
   cleanUpSanDNS(obj) {
