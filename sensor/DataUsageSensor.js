@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -152,8 +152,10 @@ class DataUsageSensor extends Sensor {
     globalOff() {
     }
     async checkDataUsage() {
+      try {
         log.info("Start check data usage")
-        let hosts = await hostManager.getHostsAsync();
+        // hosts are probably not created on initial run but that should be fine, we just skip it
+        let hosts = hostManager.getAllMonitorables()
         const systemDataUsage = await this.getTimewindowDataUsage(0, '');
         const systemRecentlyTotalUsage = this.getRecentlyDataUsage(systemDataUsage, this.smWindow * this.slot)
         hosts = hosts.filter(x => x)
@@ -187,6 +189,9 @@ class DataUsageSensor extends Sensor {
                 }
             }
         }
+      } catch(err) {
+        log.error('Error checking device bandwidth', err)
+      }
     }
     async getTimewindowDataUsage(timeWindow, mac) {
         const downloadKey = `download${mac ? ':' + mac : ''}`;
