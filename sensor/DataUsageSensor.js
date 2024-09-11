@@ -209,7 +209,7 @@ class DataUsageSensor extends Sensor {
 
         let result = 0
         for (let i = 0; i < slots; i++) {
-          const weight = weightedAverage ? i / sumSlots : 1
+          const weight = weightedAverage ? (i+1) / sumSlots : 1
           result += (downloads[i][1] + uploads[i][1]) * weight;
         }
         return { begin: downloads[0][0], end: downloads[downloads.length-1][0], count: result }
