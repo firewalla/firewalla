@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,15 +16,25 @@
 'use strict'
 
 const fs = require('fs');
+const fsp = fs.promises
 const spawn = require('child_process').spawn;
 const log = require('../net2/logger.js')(__filename);
-const Promise = require('bluebird');
-Promise.promisifyAll(fs);
 const f = require('../net2/Firewalla.js');
+const Message = require('../net2/Message.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const _SimpleCache = require('../util/SimpleCache.js')
 const SimpleCache = new _SimpleCache("macCache",60*10);
 const notFoundCache = new _SimpleCache("notFoundCache", 60); // do not repeatedly invoke cat /proc/net/arp for the same IP address
+sem.on(Message.MSG_MAPPING_IP_MAC_DELETED, (event) => {
+  const { ip, mac, fam } = event
+  if (mac && ip && fam == 4) {
+    if (SimpleCache.lookup(ip) == mac)
+      delete SimpleCache.cache[ip]
+    if (notFoundCache.lookup(ip) == mac)
+      delete notFoundCache.cache[ip]
+  }
+})
 
 const permanentArpCache = {};
 const exec = require('child-process-promise').exec;
@@ -34,7 +44,7 @@ const util = require('util')
 // activeMacs is a hash. The key is MAC address and the value is an Object
 // {"xx:xx:xx:xx:xx:xx": {ipv4Addr: "xx.xx.xx.xx", ipv6Addr: ["xx::xx", "yy::yy"]}}
 async function updatePermanentArpEntries(activeMacs) {
-  const entries = await fs.readFileAsync("/proc/net/arp", {encoding: "utf8"}).then((data) => data.trim().split("\n").map(line => {
+  const entries = await fsp.readFile("/proc/net/arp", {encoding: "utf8"}).then((data) => data.trim().split("\n").map(line => {
     const [ ip, /* type */, flags, mac, /* mask */, /* intf */ ] = line.replace(/ [ ]*/g, ' ').split(' ');
     return {ip, flags, mac}
   })).catch((err) => {
@@ -72,7 +82,7 @@ async function updatePermanentArpEntries(activeMacs) {
   }
   const fileEntries = Object.keys(permanentArpCache).map(ipv4 => `${ipv4} ${permanentArpCache[ipv4].mac}`);
   log.info("Update arp cache with the following permanent entries", fileEntries);
-  await fs.writeFileAsync(`${f.getHiddenFolder()}/run/permanent_arp_entries`, fileEntries.join("\n")).then(() => {
+  await fsp.writeFile(`${f.getHiddenFolder()}/run/permanent_arp_entries`, fileEntries.join("\n")).then(() => {
     exec(`sudo arp -f ${f.getHiddenFolder()}/run/permanent_arp_entries`);
   }).catch((err) => {
     log.error("Failed to update arp cache", err.message);
