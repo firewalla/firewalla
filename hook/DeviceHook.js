@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,15 +15,14 @@
 'use strict';
 const _ = require('lodash');
 
-const log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename);
 
 const Hook = require('./Hook.js');
-
+const Message = require('../net2/Message.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
-const ipTool = require('ip');
 
 const extend = require('../util/util.js').extend;
 const util = require('util');
@@ -72,13 +71,9 @@ class DeviceHook extends Hook {
     /*
      * Filter out IPv4 broadcast address for any monitoring interface
      */
-    if (ipv4Addr) {
-      let monInterfaces = sysManager.getMonitoringInterfaces();
-      let foundInterface = monInterfaces.find(e => e.subnet && ipTool.cidrSubnet(e.subnet).broadcastAddress === ipv4Addr)
-      if (foundInterface) {
-        log.warn(`Ignore IP address ${ipv4Addr} as broadcast address of interface ${foundInterface.name}:`, event);
-        return;
-      }
+    if (ipv4Addr && sysManager.isMulticastIP4(ipv4Addr)) {
+      log.warn(`Ignore IP address ${ipv4Addr} as broadcast/multicast address`, event);
+      return
     }
 
     mac = mac.toUpperCase()
@@ -137,6 +132,8 @@ class DeviceHook extends Hook {
           return
         }
 
+        log.verbose(event.message, host)
+
         // 4. if this is an existing mac address, and it has a different ipv4 address, (the ipv4 is owned by nobody in redis) => OldDeviceChangedToNewIP
         // it may update redis ip6 keys if additional ip addresses are added
         if (!ip4Entry) {
@@ -194,7 +191,7 @@ class DeviceHook extends Hook {
 
       // DeviceUpdate may be triggered by nmap scan, bonjour monitor,
       // dhcp monitor and etc...
-      sem.on("DeviceUpdate", (event) => {
+      sem.on("DeviceUpdate", async (event) => {
         let host = event.host
         let mac = host.mac;
         let ip = host.ipv4 || host.ipv4Addr;
@@ -232,22 +229,20 @@ class DeviceHook extends Hook {
           }
         }
 
-        if (mac != null) {
-          this.processDeviceUpdate(event);
-        } else {
+        if (!mac) {
           let ip = host.ipv4 || host.ipv4Addr
-          if (ip) {
+          if (ip) try {
             // need to get mac address first
-            (async () => {
-              let theMac = await l2.getMACAsync(ip)
-              host.mac = theMac
-              this.processDeviceUpdate(event)
-            })().catch((err) => {
-              log.error(`Failed to get mac address for ip ${ip}`, err)
-            })
+            let theMac = await l2.getMACAsync(ip)
+            host.mac = theMac
+          } catch(err) {
+            log.error(`Failed to get mac address for ip ${ip}`, err)
           }
         }
 
+        if (host.mac) {
+          this.processDeviceUpdate(event);
+        }
       });
 
       sem.on("IPv6DeviceInfoUpdate", async (event) => {
@@ -366,6 +361,14 @@ class DeviceHook extends Hook {
           const firstFoundTimestamp = macData.firstFoundTimestamp || currentTimestamp;
           const lastActiveTimestamp = macData.lastActiveTimestamp;
 
+          sem.emitEvent({
+            type: Message.MSG_MAPPING_IP_MAC_DELETED,
+            suppressEventLogging: true,
+            mac: macData.mac,
+            fam: 4,
+            ip: macData.ipv4Addr,
+          })
+
           const enrichedHost = extend({}, host, {
             uid: host.ipv4Addr,
             firstFoundTimestamp: firstFoundTimestamp,
@@ -431,6 +434,21 @@ class DeviceHook extends Hook {
 
           const firstFoundTimestamp = macData.firstFoundTimestamp || currentTimestamp;
           const lastActiveTimestamp = macData.lastActiveTimestamp;
+
+          sem.emitEvent({
+            type: Message.MSG_MAPPING_IP_MAC_DELETED,
+            suppressEventLogging: true,
+            mac: macData.mac,
+            fam: 4,
+            ip: macData.ipv4Addr,
+          })
+          sem.emitEvent({
+            type: Message.MSG_MAPPING_IP_MAC_DELETED,
+            suppressEventLogging: true,
+            mac: event.oldMac,
+            fam: 4,
+            ip: host.ipv4Addr,
+          })
 
           const enrichedHost = extend({}, host, {
             uid: host.ipv4Addr,
