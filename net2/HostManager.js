@@ -2104,8 +2104,9 @@ module.exports = class HostManager extends Monitorable {
     for (const policy of updatedClients) {
       const { type, state } = policy
       const profileId = policy[type] && policy[type].profileId;
+      if (!profileId) continue
       let settings = policy[type] && policy[type].settings || {};
-      let vpnClient = VPNClient.getInstance(profileId)
+      let vpnClient
       try {
         vpnClient = await this.getVPNClientInstance(policy);
       } catch(err) {

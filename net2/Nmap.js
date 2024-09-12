@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -13,13 +13,28 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-var ip = require('ip');
+const log = require('./logger.js')(__filename);
 
+const net = require('net')
 const util = require('util');
 
 const Firewalla = require('./Firewalla.js');
 const networkTool = require('./NetworkTool.js')();
-const Promise = require('bluebird');
+const Message = require('../net2/Message.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+const SimpleCache = require('../util/SimpleCache.js')
+
+const foundCache = new SimpleCache("foundCache", 60*10);
+const notFoundCache = new SimpleCache("notFoundCache", 60);
+sem.on(Message.MSG_MAPPING_IP_MAC_DELETED, event => {
+  const { ip, mac, fam } = event
+  if (mac && ip && fam == 6) {
+    if (foundCache.lookup(ip) == mac)
+      delete foundCache.cache[ip]
+    if (notFoundCache.lookup(ip) == mac)
+      delete notFoundCache.cache[ip]
+  }
+})
 
 var debugging = false;
 // var log = function () {
@@ -27,8 +42,6 @@ var debugging = false;
 //         log.info(Array.prototype.slice.call(arguments));
 //     }
 // };
-
-let log = require('./logger.js')(__filename, 'info');
 
 let xml2jsonBinary =
   Firewalla.getFirewallaHome() +
@@ -40,6 +53,7 @@ module.exports = class {
   constructor(range, debug) {
     this.range = range;
     this.scanQ = [];
+    this.scanning = false;
     debugging = debug;
   }
 
@@ -60,19 +74,33 @@ module.exports = class {
     return port;
   }
 
-  scanQueue(obj) {
+  scanQueue() {
+    if (this.scanning || !this.scanQ.length) return
+
+    this.scanning = true
+    const obj = this.scanQ.pop()
     if (obj) {
       this.nmapScan(obj.cmdline, true, (err, hosts, ports) => {
+        this.scanning = false
         obj.callback(err, hosts, ports);
         if (this.scanQ.length) log.info('NMAP:ScanQUEUE', this.scanQ);
-        this.scanQueue(this.scanQ.pop());
+        this.scanQueue();
       });
     }
   }
 
   async neighborSolicit(ipv6Addr) {
+    let _mac = foundCache.lookup(ipv6Addr);
+    if (_mac != null) {
+      return _mac
+    }
+    const notFoundRecently = notFoundCache.lookup(ipaddress);
+    if (notFoundRecently) {
+      return null
+    }
+
     return new Promise((resolve, reject) => {
-      if (ip.isV4Format(ipv6Addr) || !ip.isV6Format(ipv6Addr)) {
+      if (!net.isIPv6(ipv6Addr)) {
         resolve(null);
       }
   
@@ -86,21 +114,22 @@ module.exports = class {
           for (let i in hosts) {
             const host = hosts[i];
             if (host.mac) {
+              foundCache.insert(ipv6Addr, host.mac)
               resolve(host.mac);
               return;
             }
           }
+          notFoundCache.insert(ipv6Addr, true)
           resolve(null);
         }
       }});
-  
-      let obj = this.scanQ.pop();
-      this.scanQueue(obj);
+
+      this.scanQueue();
     })
   }
 
   scan(range /*Must be v4 CIDR*/, fast, callback) {
-    if (!range || !ip.isV4Format(range.split('/')[0])) {
+    if (!range || !net.isIPv4(range.split('/')[0])) {
       callback(null, [], []);
       return;
     }
@@ -133,10 +162,9 @@ module.exports = class {
       return;
     }
 
-    this.scanQ.push({cmdline: cmdline, fast: fast, callback: callback});
+    this.scanQ.push({cmdline, fast, callback});
 
-    let obj = this.scanQ.pop();
-    this.scanQueue(obj);
+    this.scanQueue();
   }
 
   // ports are not returned
@@ -201,13 +229,12 @@ module.exports = class {
                     */
 
             let ipaddr = '';
-            for (let h in hostjson['address']) {
-              let addr = hostjson['address'][h];
+            for (const addr of hostjson['address']) {
               if (addr['addrtype'] == 'ipv4') {
                 host.ipv4Addr = addr.addr;
                 ipaddr = addr.addr;
               } else if (addr['addrtype'] == 'mac') {
-                host.mac = addr.addr;
+                host.mac = addr.addr && addr.addr.toUpperCase();
                 if (addr.vendor != null) {
                   host.macVendor = addr.vendor;
                 } else {
