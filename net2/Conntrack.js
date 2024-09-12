@@ -76,7 +76,7 @@ class Conntrack {
               log.info(`Found ${lines.length} IPv4 ${protocol} outbound connections from ${subnet} through ${wanIP} on wan ${wanIntf.name}`);
               for (const line of lines) {
                 const conn = this.parseLine(protocol, line);
-                await this.setConnEntry(conn.src, conn.sport, conn.dst, conn.dport, protocol, Constants.REDIS_HKEY_CONN_OINTF, wanIntf.uuid, 600);
+                conn && await this.setConnEntry(conn.src, conn.sport, conn.dst, conn.dport, protocol, Constants.REDIS_HKEY_CONN_OINTF, wanIntf.uuid, 600);
               }
             }
           }
@@ -86,7 +86,7 @@ class Conntrack {
           log.info(`Found ${lines.length} IPv4 ${protocol} inbound connections on wan ${wanIntf.name} ${wanIP}`);
           for (const line of lines) {
             const conn = this.parseLine(protocol, line);
-            if (conn.dst !== conn.replysrc) // DNAT-ed IPv4 connection
+            if (conn && conn.dst !== conn.replysrc) // DNAT-ed IPv4 connection
               await this.setConnEntry(conn.src, conn.sport, conn.replysrc, conn.replysport, protocol, Constants.REDIS_HKEY_CONN_OINTF, wanIntf.uuid, 600);
           }
         }
@@ -111,7 +111,7 @@ class Conntrack {
               log.info(`Found ${lines.length} established IPv4 ${protocol} outbound connections from ${subnet} through ${localIP} on ${profile.type} VPN client ${profileId}`);
               for (const line of lines) {
                 const conn = this.parseLine(protocol, line);
-                await this.setConnEntry(conn.src, conn.sport, conn.dst, conn.dport, protocol, Constants.REDIS_HKEY_CONN_OINTF, `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`, 600);
+                conn && await this.setConnEntry(conn.src, conn.sport, conn.dst, conn.dport, protocol, Constants.REDIS_HKEY_CONN_OINTF, `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`, 600);
               }
             }
           }
@@ -121,7 +121,7 @@ class Conntrack {
           log.info(`Found ${lines.length} IPv4 ${protocol} inbound connections on VPN client ${profileId}`);
           for (const line of lines) {
             const conn = this.parseLine(protocol, line);
-            if (conn.dst !== conn.replysrc) // DNAT-ed IPv4 connection
+            if (conn && conn.dst !== conn.replysrc) // DNAT-ed IPv4 connection
               await this.setConnEntry(conn.src, conn.sport, conn.replysrc, conn.replysport, protocol, Constants.REDIS_HKEY_CONN_OINTF, `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`, 600);
           }
         }
