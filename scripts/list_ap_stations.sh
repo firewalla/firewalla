@@ -86,10 +86,10 @@ STATION_MAC=$1
 
 print_header() {
     HDR_LENGTH=0
-    for stacp in $STA_COLS
+    for stact in $STA_COLS
     do
-        stac=${stacp%:*}; stacl=${stacp#*:}
-        test $stacl == $stac && stacl=-20
+        IFS=: read stac stacl stacu <<<$(echo $stact)
+        test -n "$stacl" || stacl=-20
         printf "%${stacl}s " ${stac^^}
         let HDR_LENGTH+=${stacl#-}+1
     done
@@ -160,7 +160,7 @@ get_sta_name() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-STA_COLS='sta_mac sta_ip:-17 ap_uid:9 band:4 chan:5 mimo:5 rssi:5 snr:5 tx:5 rx:5 intf:-8 vlan:4 dvlan:4 assoc_time:12 idle:3 hb_time:9 ssid:-15 ap_name sta_name:-30'
+STA_COLS='sta_mac sta_ip:-17 ap_uid:9 band:4 chan:5 mimo:5 rssi:5 snr:5 tx:5 rx:5 intf:-8 vlan:5 dvlan:5 assoc_time:14 idle:6 hb_time:9 ssid:-15 ap_name:-20:u sta_name:-30:u'
 (print_header; hl) >&2
 lines=0
 timeit begin
@@ -168,69 +168,84 @@ timeit begin
 test -z "$STATION_MAC" || local_simple_post_api "control/monitor/$STATION_MAC"
 
 while true; do
-	if [[ -z "$STATION_MAC" ]]; then
-		sta_data=$(local_api status/station| jq -r '.info|to_entries[]|[.key, .value.assetUID, .value.ssid, .value.band, .value.channel, .value.txnss, .value.rxnss, .value.rssi, .value.snr, .value.txRate, .value.rxRate, .value.intf, .value.assocTime, .value.ts, .value.idle, .value.dvlanVlanId, .value.vlanId]|@tsv')
-	else 
-		sta_data=$(local_api status/station/$STATION_MAC| jq -r '.info|[.macAddr, .assetUID, .ssid, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .intf, .assocTime, .ts, .idle, .dvlanVlanId, .vlanId]|@tsv')
-	fi
-	test -n "$sta_data" && echo "$sta_data" | while IFS=$'\t' read sta_mac ap_mac sta_ssid sta_band sta_channel sta_txnss sta_rxnss sta_rssi sta_snr sta_tx_rate sta_rx_rate sta_intf sta_assoc_time sta_ts sta_idle sta_dvlan sta_vlan
-	do
-		test -n "$sta_mac" || continue
-		timeit $sta_mac
-		sta_ip=$(redis-cli --raw hget host:mac:$sta_mac ipv4Addr)
-		timeit sta_ip
-		timeit read
-		ap_name=$(redis-cli --raw hget host:mac:$ap_mac name || echo $NO_VALUE)
-		timeit ap_name
-		time_now=$(date +%s)
-		timeit timestamp
+    if [[ -z "$STATION_MAC" ]]; then
+        sta_data=$(local_api status/station| jq -r '.info|to_entries[]|[.key, .value.assetUID, .value.ssid, .value.band, .value.channel, .value.txnss, .value.rxnss, .value.rssi, .value.snr, .value.txRate, .value.rxRate, .value.intf, .value.assocTime, .value.ts, .value.idle, .value.dvlanVlanId, .value.vlanId]|@tsv')
+    else 
+        sta_data=$(local_api status/station/$STATION_MAC| jq -r '.info|[.macAddr, .assetUID, .ssid, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .intf, .assocTime, .ts, .idle, .dvlanVlanId, .vlanId]|@tsv')
+    fi
+    test -n "$sta_data" && echo "$sta_data" | while IFS=$'\t' read sta_mac ap_mac sta_ssid sta_band sta_channel sta_txnss sta_rxnss sta_rssi sta_snr sta_tx_rate sta_rx_rate sta_intf sta_assoc_time sta_ts sta_idle sta_dvlan sta_vlan
+    do
+        test -n "$sta_mac" || continue
+        timeit $sta_mac
+        sta_ip=$(redis-cli --raw hget host:mac:$sta_mac ipv4Addr)
+        timeit sta_ip
+        timeit read
+        ap_name=$(redis-cli --raw hget host:mac:$ap_mac name || echo $NO_VALUE)
+        timeit ap_name
+        time_now=$(date +%s)
+        timeit timestamp
 
-		for stacp in $STA_COLS
-		do
-			stac=${stacp%:*}; stacl=${stacp#*:}
-			timeit $stac
-			test $stacl == $stac && stacl=-20
-			case $stac in
-				sta_mac) stad=$sta_mac ;;
-				sta_ip) stad=$sta_ip ;;
-				sta_name) stad=$(get_sta_name ${sta_mac^^}) ;;
-				ap_uid) stad=${ap_mac:9} ;;
-				ap_name) stad=$ap_name ;;
-				ssid) stad=$sta_ssid ;;
-				band) stad=$sta_band ;;
-				chan) stad=$sta_channel ;;
-				mimo) stad="${sta_txnss}x${sta_rxnss}" ;;
-				rssi) stad=$sta_rssi ;;
-				snr) stad=$sta_snr ;;
-				vlan) stad=$sta_vlan ;;
-				dvlan) stad=$sta_dvlan ;;
-				idle) stad=$sta_idle ;;
-				tx) stad=$sta_tx_rate ;;
-				rx) stad=$sta_rx_rate ;;
-				intf) stad=$sta_intf ;;
-				assoc_time) stad=$(displaytime $sta_assoc_time) ;;
-				hb_time) stad=$( displaytime $((time_now - sta_ts)) );;
-				*) stad=$NO_VALUE ;;
-			esac
-			stacla=${stacl#-}
-			test -t 1 || stad=$(echo "$stad" | sed -e "s/ /_/g")
-			stad=$(echo "$stad" | sed -e "s/[‘’]/'/g")
-			stadl=${#stad}
-			if [[ $stadl -gt $stacla ]]
-			then
-				stad="${stad:0:$(((stacla-2)/2))}..${stad:$((stadl-(stacla-2)/2))}"
-			fi
-			timeit 'case'
-			printf "%${stacl}s " "${stad:-$NO_VALUE}"
-			timeit 'printf'
-		done
-		let lines++
-		echo
-	done
-	if [[ -z "$STATION_MAC" ]]; then
-		break # no endlessly query when station mac is not specified
-	fi
-	sleep 2
+        for stact in $STA_COLS
+        do
+            IFS=: read stac stacl stacu <<<$(echo $stact)
+            timeit "process col $stac"
+            test -n "$stacl" || stacl=-20
+            case $stac in
+                sta_mac) stad=$sta_mac ;;
+                sta_ip) stad=$sta_ip ;;
+                sta_name) stad=$(get_sta_name ${sta_mac^^}) ;;
+                ap_uid) stad=${ap_mac:9} ;;
+                ap_name) stad=$ap_name ;;
+                ssid) stad=$sta_ssid ;;
+                band) stad=$sta_band ;;
+                chan) stad=$sta_channel ;;
+                mimo) stad="${sta_txnss}x${sta_rxnss}" ;;
+                rssi) stad=$sta_rssi ;;
+                snr) stad=$sta_snr ;;
+                vlan) stad=$sta_vlan ;;
+                dvlan) stad=$sta_dvlan ;;
+                idle) stad=$sta_idle ;;
+                tx) stad=$sta_tx_rate ;;
+                rx) stad=$sta_rx_rate ;;
+                intf) stad=$sta_intf ;;
+                assoc_time) stad=$(displaytime $sta_assoc_time) ;;
+                hb_time) stad=$( displaytime $((time_now - sta_ts)) );;
+                *) stad=$NO_VALUE ;;
+            esac
+            timeit 'case'
+            test -t 1 || stad=$(echo "$stad" | sed -e "s/ /_/g")
+            stad=$(echo "$stad" | sed -e "s/[‘’]/'/g")
+            stadl=${#stad}
+            # process unicode string
+            test "$stacu" == 'u' && {
+                stadlu=$(perl -CSAD -E 'say length($ARGV[0])' -- "$stad")
+                #stadlu=$(echo "$stad"|python3 -c 'v=input();print(len(v))')
+                stadlL=$(echo "$stad" | wc -L)
+                let stacld=stadl-stadlu*2+stadlL
+                test $stadl -eq $stadlu || {
+                    if [[ ${stacl:0:1} == '-' ]]; then
+                        let stacl=stacl-stacld
+                    else
+                        let stacl=stacl+stacld
+                    fi
+                }
+            }
+            timeit 'stadcl adjust'
+            stacla=${stacl#-}
+            if [[ $stadl -gt $stacla ]]
+            then
+                stad="${stad:0:$(((stacla-2)/2))}..${stad:$((stadl-(stacla-2)/2))}"
+            fi
+            printf "%${stacl}s " "${stad:-$NO_VALUE}"
+            timeit 'printf'
+        done
+        let lines++
+        echo
+    done
+    if [[ -z "$STATION_MAC" ]]; then
+        break # no endlessly query when station mac is not specified
+    fi
+    sleep 2
 done
 timeit 'done'
 tty_rows=$(stty size | awk '{print $1}')
