@@ -77,6 +77,13 @@ align::right() {
   printf '%*s%s' $pad_left '' "${str:offset:length}"
 }
 
+element_in() {
+  local e match="$1"
+  shift
+  for e; do [[ "$e" == "$match" ]] && return 0; done
+  return 1
+}
+
 declare -A NETWORK_UUID_NAME
 frcc_done=0
 frcc() {
@@ -151,11 +158,13 @@ get_system_features() {
 }
 
 declare -A SP
+declare -a VPNClients
 system_policy_done=0
 get_system_policy() {
   if [ "$system_policy_done" -eq "0" ]; then
     read_hash SP policy:system
     system_policy_done=1
+    VPNClients=($(jq -r 'if .multiClients then .multiClients[]|.[.type].profileId else .[.type//empty].profileId end' <<< "${SP[vpnClient]}"))
   fi
 }
 
@@ -699,12 +708,11 @@ check_hosts() {
         fi
 
         local NAME="${h[name]}"
-        if [[ -z $NAME ]]; then
-          NAME="$( jq -re 'select(has("name")) | .name' <<< "${h[detect]}" )"
-        fi
-        if [[ -z $NAME ]]; then
-          NAME="${h[bname]}"
-        fi
+        if [[ -z "$NAME" ]]; then NAME="$( jq -re 'select(has("name")) | .name' <<< "${h[detect]}" )"; fi
+        if [[ -z "$NAME" ]]; then NAME="${h[bname]}"; fi
+        if [[ -z "$NAME" ]]; then NAME="${h[dhcpName]}"; fi
+        if [[ -z "$NAME" ]]; then NAME="${h[bonjourName]}"; fi
+        if [[ -z "$NAME" ]]; then NAME="${h[ssdpName]}"; fi
 
         declare -A fcv # feature color value
 
@@ -784,6 +792,7 @@ check_hosts() {
         # readarray -d $'\3' -t policy < <(echo -n "$output")
 
         local VPN=$( ((${#p[vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${p[vpnClient]}" || echo -n "")
+        if ! element_in "$VPN" "${VPNClients[@]}" && [[ "$VPN" != VWG:* ]]; then VPN=""; fi
 
         local FLOWINCOUNT=$(redis-cli zcount flow:conn:in:$MAC -inf +inf)
         # if [[ $FLOWINCOUNT == "0" ]]; then FLOWINCOUNT=""; fi
@@ -996,6 +1005,8 @@ check_network() {
       echo "" >> /tmp/scc_csv
     done
 
+    get_system_policy
+
     printf "Interface\tName\tUUID\tIPv4\tGateway\tIPv6\tGateway6\tDNS\tvpnClient\tAdB\tFam\tSS\tDoH\tubn\n" >/tmp/scc_csv_multline
     while read -r LINE; do
       mapfile -td $'\t' COL < <(printf "$LINE")
@@ -1017,6 +1028,7 @@ check_network() {
       get_network_policy "$id"
 
       local VPN=$( ((${#NP[$id,vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${NP[$id,vpnClient]}" || echo -n "")
+      if ! element_in "$VPN" "${VPNClients[@]}" && [[ "$VPN" != VWG:* ]]; then VPN=""; fi
 
       local ADBLOCK=
       if [[ "${NP[$id,adblock]}" == "true" ]]; then ADBLOCK="T"; fi
@@ -1070,6 +1082,7 @@ check_tag() {
     mapfile -t TAGS < <(redis-cli --scan --pattern 'tag:uid:*' | sort --version-sort)
     mapfile -t -O "${#TAGS[@]}" TAGS < <(redis-cli --scan --pattern 'userTag:uid:*' | sort --version-sort)
     mapfile -t -O "${#TAGS[@]}" TAGS < <(redis-cli --scan --pattern 'deviceTag:uid:*' | sort --version-sort)
+    get_system_policy
 
     printf "ID\tType\tName\taffiliated\tvpnClient\tAdB\tFam\tSS\tDoH\tubn\n" >/tmp/tag_csv
     for TAG in "${TAGS[@]}"; do
@@ -1079,6 +1092,7 @@ check_tag() {
       get_tag_policy "$id"
 
       local VPN=$( ((${#TP[$id,vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${TP[$id,vpnClient]}" || echo -n "")
+      if ! element_in "$VPN" "${VPNClients[@]}" && [[ "$VPN" != VWG:* ]]; then VPN=""; fi
 
       local ADBLOCK=""
       if [[ "${TP[$id,adblock]}" == "true" ]]; then ADBLOCK="T"; fi

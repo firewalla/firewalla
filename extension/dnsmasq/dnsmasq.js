@@ -20,6 +20,7 @@ const log = require("../../net2/logger.js")(__filename);
 
 const _ = require('lodash');
 const util = require('util');
+const net = require('net');
 const f = require('../../net2/Firewalla.js');
 const userID = f.getUserID();
 const childProcess = require('child_process');
@@ -1751,14 +1752,15 @@ module.exports = class DNSMASQ {
         reservedIp = p.secondaryIp
       }
 
-      if (!reservedIp || !sysManager.inMySubnets4(reservedIp, intf.name)) {
-        // no reserved IP on this network, remove ip host mapping in this.reservedIPHost
-        for (const ip of Object.keys(this.reservedIPHost)) {
-          if (this.reservedIPHost[ip] === host && sysManager.inMySubnets4(ip, intf.name)) {
-            previousIPs.push(ip)
-            delete this.reservedIPHost[ip];
-          }
+      for (const ip of Object.keys(this.reservedIPHost)) {
+        if (ip != reservedIp && this.reservedIPHost[ip] === host && sysManager.inMySubnets4(ip, intf.name)) {
+          previousIPs.push(ip)
+          delete this.reservedIPHost[ip];
         }
+      }
+
+      if (!reservedIp || !sysManager.inMySubnets4(reservedIp, intf.name)) {
+        // no reserved IP on this network
         continue
       }
 
@@ -1783,9 +1785,21 @@ module.exports = class DNSMASQ {
 
     await fsp.writeFile(HOSTFILE_PATH + mac, content);
     // delete lesase entry in case other device occupies the IP, also deletes for itself but that's fine
-    // dnsmasq seems to be able to handle conflict if misconfigured, so we are good here
-    await this.deleteLeaseRecord(null, reservedIPs, true)
-    await this.deleteLeaseRecord(null, previousIPs)
+    // dnsmasq seems to be able to handle IP conflict if misconfigured, so we are good here
+    const deleted = []
+    if (reservedIPs.length)
+      deleted.push(... await this.deleteLeaseRecord(null, reservedIPs))
+    if (previousIPs.length)
+      deleted.push(... await this.deleteLeaseRecord(mac, previousIPs))
+    for (const entry of deleted) {
+      sem.emitEvent({
+        type: Message.MSG_MAPPING_IP_MAC_DELETED,
+        message: `Deleted DHCP lease record of ${entry.mac} - ${entry.ip}`,
+        mac: entry.mac,
+        fam: net.isIP(entry.ip),
+        ip: entry.ip,
+      })
+    }
     if (!this.counter.writeHostsFile[mac]) this.counter.writeHostsFile[mac] = 0
     log.info("Hosts file has been updated:", mac, ++this.counter.writeHostsFile[mac], 'times')
 
@@ -2249,23 +2263,28 @@ module.exports = class DNSMASQ {
   }
 
   // ip could be a string of single IP or an array of IPs
-  async deleteLeaseRecord(mac, ip, logInfo = false) {
+  // return deleted lines
+  async deleteLeaseRecord(mac, ip) {
     if (!mac && (!ip || !ip.length))
-      return;
+      return [];
     const leaseFile = platform.getDnsmasqLeaseFilePath();
     const regex = `^[0-9]+ ${mac ? mac.toLowerCase() : '[0-9a-f:]{17}'} ${ip ? Array.isArray(ip) ? `(${ip.join('\|')})` : ip : ''}`
-    await lock.acquire(LOCK_LEASE_FILE, async () => {
+    log.debug('lease file sed regex', regex)
+    return await lock.acquire(LOCK_LEASE_FILE, async () => {
       // https://unix.stackexchange.com/questions/108335/printing-and-deleting-the-first-line-of-a-file-using-sed#comment1121396_442370
       // delete and write to stdout at the same time
       const result = await execAsync(`sudo sed -i -r -e '/${regex}/{w /dev/stdout' -e 'd}' ${leaseFile}`).catch(err => {
         log.error(`Failed to remove lease record of ${mac} from ${leaseFile}`, err.message);
       })
-      if (result.stdout.length) {
-        if (logInfo)
-          log.info('removed from lease file:', result.stdout.trim())
-        else
-          log.verbose('removed from lease file:', result.stdout.trim())
-      }
+      return _.get(result, 'stdout', '').split('\n').filter(line => line.length).map(line => {
+        const column = line.split(' ')
+        return {
+          ts: Number(column[0]),
+          mac: column[1].toUpperCase(),
+          ip: column[2],
+          name: column.slice(3, -1).join(' ')
+        }
+      })
     })
   }
 
