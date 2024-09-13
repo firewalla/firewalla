@@ -161,68 +161,69 @@ class CategoryUpdaterBase {
     return Block.getTLSHostSet(category);
   }
 
+  // combine prefix and suffix to form the ipset name, some ipsets may have same prefix, e.g., xxx and xxx_bf
   getAllowIPSetName(category) {
-    return Block.getDstSet(category.substring(0, 13) + "_alw");
+    return Block.getDstSet((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + "_alw");
   }
 
   getAllowIPSetNameForIPV6(category) {
-    return Block.getDstSet6(category.substring(0, 13) + "_alw");
+    return Block.getDstSet6((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + "_alw");
   }
 
   getAggrIPSetName(category, isStatic = false) {
-    return Block.getDstSet(category.substring(0, 13) + (isStatic ? "_sag" : "_ag"));
+    return Block.getDstSet((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + (isStatic ? "_sag" : "_ag"));
   }
 
   getAggrIPSetNameForIPV6(category, isStatic = false) {
-    return Block.getDstSet6(category.substring(0, 13) + (isStatic ? "_sag" : "_ag"));
+    return Block.getDstSet6((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + (isStatic ? "_sag" : "_ag"));
   }
 
   getNetPortIPSetName(category) {
-    return Block.getDstSet(category.substring(0, 13) + "_np"); // bare net:port
+    return Block.getDstSet((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + "_np"); // bare net:port
   }
 
   getNetPortIPSetNameForIPV6(category) {
-    return Block.getDstSet6(category.substring(0, 13) + "_np");
+    return Block.getDstSet6((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + "_np");
   }
 
   getDomainPortIPSetName(category, isStatic = false) {
-    return Block.getDstSet(category.substring(0, 13) + (isStatic ? "_sdp" : "_ddp")); // domain-mapped ip:port, static or dynamic
+    return Block.getDstSet((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + (isStatic ? "_sdp" : "_ddp")); // domain-mapped ip:port, static or dynamic
   }
 
   getDomainPortIPSetNameForIPV6(category, isStatic = false) {
-    return Block.getDstSet6(category.substring(0, 13) + (isStatic ? "_sdp" : "_ddp"));
+    return Block.getDstSet6((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + (isStatic ? "_sdp" : "_ddp"));
   }
 
   getIPSetName(category, isStatic = false, isIP6 = false, isTmp = false) {
-    return Block.getDstSet((isTmp ? 'tmp_' : '') + category.substring(0, 13) + (isStatic ? "_ip" : "_dm"), isIP6);
+    return Block.getDstSet((isTmp ? 'tmp_' : '') + (category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + (isStatic ? "_ip" : "_dm"), isIP6);
   }
 
   getIPSetNameForIPV6(category, isStatic = false) {
-    return Block.getDstSet6(category.substring(0, 13) + (isStatic ? "_ip" : "_dm"));
+    return Block.getDstSet6((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + (isStatic ? "_ip" : "_dm"));
   }
 
   getTempIPSetName(category, isStatic = false) {
-    return Block.getDstSet(`tmp_${category.substring(0, 13)}` + (isStatic ? "_ip" : "_dm"));
+    return Block.getDstSet(`tmp_${(category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category)}` + (isStatic ? "_ip" : "_dm"));
   }
 
   getTempIPSetNameForIPV6(category, isStatic = false) {
-    return Block.getDstSet6(`tmp_${category.substring(0, 13)}` + (isStatic ? "_ip" : "_dm"));
+    return Block.getDstSet6(`tmp_${(category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category)}` + (isStatic ? "_ip" : "_dm"));
   }
 
   getTempNetPortIPSetName(category) {
-    return Block.getDstSet(`tmp_${category.substring(0, 13)}` + "_np");
+    return Block.getDstSet(`tmp_${(category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category)}` + "_np");
   }
 
   getTempNetPortIPSetNameForIPV6(category) {
-    return Block.getDstSet6(`tmp_${category.substring(0, 13)}` + "_np");
+    return Block.getDstSet6(`tmp_${(category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category)}` + "_np");
   }
 
   getTempDomainPortIPSetName(category, isStatic = false) {
-    return Block.getDstSet(`tmp_${category.substring(0, 13)}` + (isStatic ? "_sdp" : "_ddp"));
+    return Block.getDstSet(`tmp_${(category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category)}` + (isStatic ? "_sdp" : "_ddp"));
   }
 
   getTempDomainPortIPSetNameForIPV6(category, isStatic = false) {
-    return Block.getDstSet6(`tmp_${category.substring(0, 13)}` + (isStatic ? "_sdp" : "_ddp"));
+    return Block.getDstSet6(`tmp_${(category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category)}` + (isStatic ? "_sdp" : "_ddp"));
   }
 
   // add entries from category:{category}:ip:domain to ipset

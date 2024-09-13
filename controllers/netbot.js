@@ -922,10 +922,13 @@ class netBot extends ControllerBot {
       }
       case "feedback": {
         if (value.key == 'device.detect') {
-          const host = await this.hostManager.getHostAsync(value.target)
-          if (!host.o.detect) host.o.detect = {}
-          host.o.detect.feedback = Object.assign({}, host.o.detect.feedback, value.value)
-          await host.save('detect')
+          sem.sendEventToFireMain({
+            type: 'DetectUpdate',
+            from: 'feedback',
+            mac: value.target,
+            detect: value.value,
+            suppressEventLogging: true,
+          })
         } else
           await bone.intelAdvice(value);
         return

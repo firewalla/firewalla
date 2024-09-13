@@ -164,7 +164,7 @@ get_system_policy() {
   if [ "$system_policy_done" -eq "0" ]; then
     read_hash SP policy:system
     system_policy_done=1
-    VPNClients=($(jq -r 'if .multiClients then .multiClients[]|.[.type].profileId else .[.type].profileId end' <<< "${SP[vpnClient]}"))
+    VPNClients=($(jq -r 'if .multiClients then .multiClients[]|.[.type].profileId else .[.type//empty].profileId end' <<< "${SP[vpnClient]}"))
   fi
 }
 
