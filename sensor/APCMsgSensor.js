@@ -29,7 +29,13 @@ const LOCK_SSID_UPDATE = "LOCK_SSID_UPDATE";
 const HostManager = require('../net2/HostManager.js')
 const hostManager = new HostManager();
 const sysManager = require('../net2/SysManager.js');
+const HostTool = require("../net2/HostTool.js");
+const hostTool = new HostTool();
 const sem = require('./SensorEventManager.js').getInstance();
+const rclient = require('../util/redis_manager.js').getRedisClient();
+const {getUniqueTs} = require('../util/util.js');
+const uuid = require('uuid');
+
 
 const Sensor = require('./Sensor.js').Sensor;
 
@@ -51,14 +57,32 @@ class APCMsgSensor extends Sensor {
           break;
         }
         case Message.MSG_FWAPC_SSID_STA_UPDATE: {
-          // wait for 5 seconds in case ssid tag is not synced to TagManaget yet
+          // wait for 5 seconds in case ssid tag is not synced to TagManager yet
           setTimeout(() => {
+            let msg = null;
             try {
-              this.processSTAUpdateMessage(JSON.parse(message));
+              msg = JSON.parse(message);
             } catch (err) {
-              log.error(`Failed to process ssid STA update message: ${message}`, err.message);
+              log.error(`Malformed JSON in ${Message.MSG_FWAPC_SSID_STA_UPDATE} message: ${message}`, err.message);
             }
+            if (msg)
+              this.processSTAUpdateMessage(msg).catch((err) => {
+                log.error(`Failed to process ${Message.MSG_FWAPC_SSID_STA_UPDATE} message: ${message}`, err.message);
+              });
           }, 5000);
+          break;
+        }
+        case Message.MSG_FWAPC_CONNTRACK_UPDATE: {
+          let msg = null;
+          try {
+            msg = JSON.parse(message);
+          } catch (err) {
+            log.error(`Malformed JSON in ${Message.MSG_FWAPC_CONNTRACK_UPDATE} message: ${message}`, err.message);
+          }
+          if (msg)
+            this.processConntrackUpdateMessage(msg).catch((err) => {
+              log.error(`Failed to process ${Message.MSG_FWAPC_CONNTRACK_UPDATE} message: ${message}`, err.message);
+            })
           break;
         }
         default:
@@ -66,6 +90,7 @@ class APCMsgSensor extends Sensor {
     });
 
     sclient.subscribe(Message.MSG_FR_CHANGE_APPLIED);
+    sclient.subscribe(Message.MSG_FWAPC_CONNTRACK_UPDATE);
     // wait for iptables ready in case Host object and its ipsets are created in HostManager.getHostAsync
     await sysManager.waitTillIptablesReady();
     sclient.subscribe(Message.MSG_FWAPC_SSID_STA_UPDATE);
@@ -226,6 +251,94 @@ class APCMsgSensor extends Sensor {
     }).catch((err) => {
       log.error(`Failed to reload ssid profiles`, err.message);
     });
+  }
+
+  async processConntrackUpdateMessage(msg) {
+    /*
+      [
+        {
+          "ts": 1726199969,
+          "af": 4,
+          "sh": "192.168.77.73",
+          "dh": "192.168.77.158",
+          "sp": [41312,41316],
+          "dp": 5201,
+          "ob": 351585454,
+          "rb": 1224460,
+          "pr": "tcp"
+        }
+      ] 
+    */
+    if (!_.isArray(msg) || _.isEmpty(msg))
+      return;
+    const transactions = [];
+    const touchedKeys = {};
+    for (const log of msg) {
+      const {ts, af, sh, dh, sp, dp, ob, rb, pr, cnt} = log;
+      if (sh === dh)
+        continue;
+      if (af === 4 && (sysManager.isMyIP(sh) || sysManager.isMyIP(dh)))
+        continue;
+      if (af === 6 && (sysManager.isMyIP6(sh) || sysManager.isMyIP6(df)))
+        continue;
+      // FIXME: duration is to be added in conntrack events from fwapc
+      const du = log.du || 1;
+      const ct = _.isArray(sp) ? sp.length : 1;
+      const intf = sysManager.getInterfaceViaIP(sh);
+      const intfUUID = intf && intf.uuid;
+      const uid = uuid.v4().substring(0, 8);
+      const smac = await hostTool.getMacByIPWithCache(sh);
+      const dmac = await hostTool.getMacByIPWithCache(dh);
+      const shost = smac && hostManager.getHostFastByMAC(smac);
+      const dhost = dmac && hostManager.getHostFastByMAC(dmac);
+      const shTags = shost && await shost.getTransitiveTags();
+      const dhTags = dhost && await dhost.getTransitiveTags();
+      const shFlow = {ets: ts, ts: ts - du, sh, dh, du, sp, dp, ob, rb, pr, ct, intf: intfUUID, ltype: "mac", uid, ct: cnt};
+      const dhFlow = _.clone(shFlow);
+      const now = Date.now() / 1000;
+      shFlow._ts = await getUniqueTs(now);
+      dhFlow._ts = await getUniqueTs(now);
+      shFlow.fd = "in";
+      dhFlow.fd = "out";
+      shFlow.lh = sh;
+      dhFlow.lh = dh;
+      shFlow.peer = dmac;
+      dhFlow.peer = smac;
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
+        const stags = [];
+        const dtags = [];
+        if (_.has(shTags, type))
+          stags.push(...Object.keys(shTags[type]));
+        if (_.has(dhTags, type))
+          dtags.push(...Object.keys(dhTags[type]));
+        shFlow[flowKey] = _.uniq(stags);
+        dhFlow[flowKey] = _.uniq(dtags);
+      }
+      if (shost) {
+        const key = this.getLocalFlowKey(smac, "in");
+        transactions.push(["zadd", key, shFlow._ts, JSON.stringify(shFlow)]);
+        if (!_.has(touchedKeys, key)) {
+          transactions.push(["expire", key, 86400]);
+          touchedKeys[key] = 1;
+        }
+      }
+      if (dhost) {
+        const key = this.getLocalFlowKey(dmac, "out");
+        transactions.push(["zadd", key, dhFlow._ts, JSON.stringify(dhFlow)]);
+        if (!_.has(touchedKeys, key)) {
+          transactions.push(["expire", key, 86400]);
+          touchedKeys[key] = 1;
+        }
+      }
+    }
+    await rclient.multi(transactions).execAsync().catch((err) => {
+      log.error(`Failed to save local flows to redis`, err.message);
+    });
+  }
+
+  getLocalFlowKey(mac, dir) {
+    return `flow_lo:conn:${dir}:${mac}`;
   }
 }
 

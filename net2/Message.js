@@ -69,6 +69,7 @@ const MSG_TRACE = "sys:trace";
 const MSG_DEBUG = 'DEBUG'
 
 const MSG_FWAPC_SSID_STA_UPDATE = "fwapc:ssid_station_update";
+const MSG_FWAPC_CONNTRACK_UPDATE = "fwapc:conntrack_update";
 
 module.exports = {
   MSG_TRACE,
@@ -113,4 +114,5 @@ module.exports = {
   MSG_APP_INTEL_CONFIG_UPDATED,
   MSG_DEBUG,
   MSG_FWAPC_SSID_STA_UPDATE,
+  MSG_FWAPC_CONNTRACK_UPDATE,
 }

@@ -103,9 +103,17 @@ class FlowTool extends LogQuery {
     const feeds = []
     if (options.direction) {
       feeds.push(... this.expendFeeds({macs, direction: options.direction}))
+      if (options.localFlow)
+        feeds.push(... this.expendFeeds({macs, direction: options.direction, localFlow: true}))
     } else {
       feeds.push(... this.expendFeeds({macs, direction: 'in'}))
       feeds.push(... this.expendFeeds({macs, direction: 'out'}))
+      if (options.localFlow) {
+        // a local flow will be recorded in both src and dst host key, need to deduplicate flows on the two hosts
+        options.exclude = [{peer: macs, fd: "out"}];
+        feeds.push(... this.expendFeeds({macs, direction: 'in', localFlow: true}))
+        feeds.push(... this.expendFeeds({macs, direction: 'out', localFlow: true}))
+      }
     }
     if (options.audit) {
       feeds.push(... auditTool.expendFeeds({macs, block: true}))
@@ -124,6 +132,7 @@ class FlowTool extends LogQuery {
     delete options.dnsFlow
     delete options.ntpFlow
     delete options.auditDNSSuccess
+    delete options.localFlow
     let recentFlows = await this.logFeeder(options, feeds)
 
     json.flows.recent = recentFlows;
@@ -131,8 +140,14 @@ class FlowTool extends LogQuery {
     return recentFlows
   }
 
+  optionsToFilter(options) {
+    const filter = super.optionsToFilter(options)
+    delete filter.localFlow
+    return filter
+  }
+
   // convert flow json to a simplified json format that's more readable by app
-  toSimpleFormat(flow) {
+  toSimpleFormat(flow, options) {
     let f = {
       ltype: 'flow',
       type: 'ip'
@@ -191,6 +206,11 @@ class FlowTool extends LogQuery {
       f.deviceIP = flow.dh;
       f.upload = flow.rb;
       f.download = flow.ob;
+    }
+
+    if (options.localFlow) {
+      f.local = 1;
+      f.peer = flow.peer;
     }
 
     return f;
@@ -276,7 +296,7 @@ class FlowTool extends LogQuery {
   }
 
   getLogKey(mac, options) {
-    return util.format("flow:conn:%s:%s", options.direction || 'in', mac);
+    return `flow${options.localFlow ? "_lo" : ""}:conn:${options.direction || "in"}:${mac}`;
   }
 
   addFlow(mac, type, flow) {
