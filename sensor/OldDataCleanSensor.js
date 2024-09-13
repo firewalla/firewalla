@@ -593,7 +593,7 @@ class OldDataCleanSensor extends Sensor {
 
   registerFilterFunctions() {
     // need to take into consideration the time complexity of the filter function, it will be applied on all keys
-    this._registerFilterFunction("conn", (key) => key.startsWith("flow:conn:"));
+    this._registerFilterFunction("conn", (key) => key.startsWith("flow:conn:") || key.startsWith("flow_lo:conn:"));
     this._registerFilterFunction("flowDNS", (key) => key.startsWith("flow:dns:"));
     this._registerFilterFunction("auditDrop", (key) => key.startsWith("audit:drop:"));
     this._registerFilterFunction("auditAccept", (key) => key.startsWith("audit:accept:"));
