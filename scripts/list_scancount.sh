@@ -182,9 +182,9 @@ if true; then
 
         for connct in $CONN_COLS
         do
-                        IFS=: read connc conncl conncu <<<$(echo $connct)
-                        timeit $connc
-                        test -n "$conncl" || conncl=-20
+            IFS=: read connc conncl conncu <<<$(echo $connct)
+            timeit $connc
+            test -n "$conncl" || conncl=-20
             case $connc in
                 conn_mac) connd=$conn_mac ;;
                 src_name) connd=$src_name ;;
