@@ -207,7 +207,6 @@ if true; then
             test -t 1 || connd=$(echo "$connd" | sed -e "s/ /_/g")
             connd=$(echo "$connd" | sed -e "s/[‘’]/'/g")
             connd=$(echo "$connd" | sed -e "s/'''/'/g")
-            #connd=$(echo "$connd" | sed -e "s/[‘’]/'/g")
             conndl=${#connd}
             test "$conncu" == 'u' && {
                 conndlu=$(perl -CSAD -E 'say length($ARGV[0])' -- "$connd")
