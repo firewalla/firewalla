@@ -1,0 +1,12 @@
+version: '3'
+
+services:
+  freeradius:
+    image: public.ecr.aws/a0j1s2e9/freeradius:v3.2.x
+    ports:
+      - "1812:1812/udp"
+      - "1813:1813/udp"
+    volumes:
+      - /home/pi/.forever/radius.log:/var/log/freeradius/radius.log
+      - /home/pi/.firewalla/run/docker/freeradius/clients.conf:/etc/freeradius/clients.conf
+      - /home/pi/.firewalla/run/docker/freeradius/users:/etc/freeradius/users

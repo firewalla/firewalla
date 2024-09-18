@@ -296,6 +296,17 @@ function difference(obj1, obj2) {
 }, []);
 }
 
+// wait for condition till timeout
+function waitFor(condition, timeout=3000) {
+  const deadline = Date.now() + timeout;
+  const poll = (resolve, reject) => {
+    if(condition()) resolve();
+    else if (Date.now() >= deadline) reject(`exceeded timeout of ${timeout} ms`); // timeout reject
+    else setTimeout( _ => poll(resolve, reject), 800);
+  }
+  return new Promise(poll);
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -315,5 +326,6 @@ module.exports = {
   fileTouch,
   fileRemove,
   batchKeyExists,
+  waitFor,
   getUniqueTs
 };
