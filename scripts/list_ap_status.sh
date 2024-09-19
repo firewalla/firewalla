@@ -138,14 +138,14 @@ displaytime() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-AP_COLS='version:-10 device_mac:-18 device_ip:-16 device_vpn_ip:-17 pub_key:10 uptime:13 adoption:9 last_handshake:15 sta:4 mesh_mode:10 eth_speed:12 branch:6 name:-30'
+AP_COLS='version:-10 device_mac:-18 device_ip:-16 device_vpn_ip:-16 pub_key:10 uptime:13 adoption:9 handshake:10 sta:4 mesh:5 backhaul:20 latency:6 eth_speed:12 branch:6 name:-30'
 ${CONNECT_AP} && AP_COLS="idx:-3 $AP_COLS"
 print_header >&2; hl >&2
 lines=0
 timeit begin
 ap_data=$(ap_config | jq -r ".assets|to_entries|sort_by(.key)[]|[.key, .value.sysConfig.meshMode//\"default\", .value.publicKey]|@tsv")
 timeit ap_data
-ap_status=$(local_api status/ap | jq -r ".info|to_entries[]|[.key,.value.branch,.value.ts,.value.version//\"${NO_VALUE}\",.value.sysUptime, (.value.eths//{}|.[]|select((.intf|test(\"^eth[01]\$\")) and .linkState!=\"disabled\")|(.intf,.connected,.linkSpeed))]|@tsv")
+ap_status=$(local_api status/ap | jq -r ".info|to_entries[]|[.key,.value.branch,.value.ts,.value.version//\"${NO_VALUE}\",.value.sysUptime,.value.backhaulState,.value.latencyToController, .value.upstreamAPs[0]//\"x\", (.value.eths//{}|.[]|select((.intf|test(\"^eth[01]\$\")) and .linkState!=\"disabled\")|(.intf,.connected,.linkSpeed))]|@tsv")
 timeit ap_status
 wg_dump=$(sudo wg show wg_ap dump)
 timeit wg_dump
@@ -156,7 +156,7 @@ now_ts=$(date +%s)
 declare -a ap_names ap_ips
 test -n "$ap_data" && while read ap_mac ap_meshmode ap_pubkey
 do
-    read ap_branch ap_last_handshake_ts ap_version ap_uptime ap_eth_intf ap_eth_connected ap_eth_speed < <( echo "$ap_status" | awk "\$1==\"$ap_mac\" {print \$2\" \"\$3\" \"\$4\" \"\$5\" \"\$6\" \"\$7\" \"\$8}")
+    read ap_branch ap_last_handshake_ts ap_version ap_uptime ap_backhaul ap_latency ap_uplink ap_eth_intf ap_eth_connected ap_eth_speed < <( echo "$ap_status" | awk "\$1==\"$ap_mac\" {print \$2\" \"\$3\" \"\$4\" \"\$5\" \"\$6\" \"\$7\" \"\$8\" \"\$9\" \"\$10\" \"\$11}")
     timeit read
     if [[ -n "$ap_pubkey" ]]; then
       echo "$wg_ap_peers_pubkeys" | fgrep -q $ap_pubkey && ap_adopted=adopted || ap_adopted=pending
@@ -188,13 +188,22 @@ do
             device_mac) apd=$ap_mac ;;
             pub_key) apd=$ap_pubkey ;;
             device_ip) apd=$ap_ip ;;
-            device_vpn_ip) apd=$ap_vpn_ip ;;
+            device_vpn_ip) apd=${ap_vpn_ip/\/32/} ;;
             uptime) apd=$(displaytime $ap_uptime) ;;
             adoption) apd="$ap_adopted" ;;
             branch) apd="$ap_branch" ;;
-            last_handshake) apd="$ap_last_handshake" ;;
+            handshake) apd="$ap_last_handshake" ;;
             sta) apd="$ap_stations_per_ap" ;;
-            mesh_mode) apd=$ap_meshmode ;;
+            mesh) apd=$ap_meshmode ;;
+            backhaul)
+                case $ap_backhaul in
+                    Wireless)
+                        apd="${ap_backhaul}:${ap_uplink: -8}" ;;
+                    *)
+                        apd="${ap_backhaul}" ;;
+                esac
+                ;;
+            latency) apd=$ap_latency ;;
             eth_speed)
                 case $ap_eth_connected in
                     true)
