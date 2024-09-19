@@ -469,6 +469,7 @@
     "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
     "DeviceIdentificationSensor": {
+      "intervalListCheck": 86400,
       "interval": 3600
     },
     "IPv6DiscoverySensor": {},
