@@ -36,6 +36,7 @@ const iptool = require('ip');
 const {getPreferredBName,getPreferredName} = require('../util/util.js')
 const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
 const firewalla = require('./Firewalla.js');
+const _ = require('lodash');
 
 class HostTool {
   constructor() {
@@ -145,6 +146,12 @@ class HostTool {
     } else {
       return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 365); // auto expire after 365 days
     }
+  }
+
+  async getKeysInMAC(mac, keys) {
+    const key = this.getMacKey(mac);
+    const data = await rclient.hgetallAsync(key) || {};
+    return _.pick(data, keys);
   }
 
   updateKeysInMAC(mac, hash) {

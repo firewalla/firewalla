@@ -1,4 +1,4 @@
-/*    Copyright 2020-2022 Firewalla Inc.
+/*    Copyright 2020-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,8 +22,6 @@ const pm2 = new PM2();
 const execAsync = require('child-process-promise').exec;
 const scheduler = require('../extension/scheduler/scheduler.js');
 const f = require('../net2/Firewalla.js');
-const DNSTool = require('../net2/DNSTool.js');
-const dnsTool = new DNSTool();
 const DomainIPTool = require('../control/DomainIPTool');
 const domainIpTool = new DomainIPTool();
 const {Address4, Address6} = require('ip-address');
@@ -153,17 +151,7 @@ class RuleCheckSensor extends Sensor {
         return false;
       }
       // non-regular rule has separate rule in iptables
-      let seq = policy.seq;
-      if (!seq) {
-        seq = Constants.RULE_SEQ_REG;
-        if (pm2._isActiveProtectRule(policy))
-          seq = Constants.RULE_SEQ_HI;
-        if (pm2._isInboundAllowRule(policy))
-          seq = Constants.RULE_SEQ_LO;
-        if (pm2._isInboundFirewallRule(policy))
-          seq = Constants.RULE_SEQ_LO;
-      }
-      if (seq !== Constants.RULE_SEQ_REG)
+      if (policy.getSeq() !== Constants.RULE_SEQ_REG)
         return false;
       // do not check expired rules
       if (policy.expire) {
