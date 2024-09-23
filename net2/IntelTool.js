@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -201,7 +201,7 @@ class IntelTool {
   }
 
   async getCustomIntel(type, target) {
-    try {
+    if (target) try {
       const key = this.getCustomIntelKey(type, target)
       const intel = await rclient.getAsync(key)
       if (intel)
@@ -383,6 +383,9 @@ class IntelTool {
   }
 
   async addIntel(ip, intel, expire) {
+    if (!ip || ip == 'undefined')
+      throw new Error('Invalid intel', ip, intel, expire)
+
     intel = intel || {}
     expire = intel.e || this.getIntelExpiration()
 
@@ -393,7 +396,7 @@ class IntelTool {
     intel.updateTime = `${new Date() / 1000}`
 
     await rclient.hmsetAsync(key, this.redisfy('ip', intel));
-    if(intel.host && intel.ip) {
+    if(intel.host && ip) {
       // sync reverse dns info when adding intel
       await dnsTool.addReverseDns(intel.host, [intel.ip])
     }
@@ -490,7 +493,7 @@ class IntelTool {
   }
 
   async checkIntelFromCloud(ip, domain, options = {}) {
-    let {fd, lucky} = options;
+    let {fd, lucky, match} = options;
 
     log.debug("Checking intel for", ip, domain, ', dir:', fd);
     if (fd == null) {
@@ -502,11 +505,16 @@ class IntelTool {
     const hashCache = {}
 
     const hds = flowUtil.hashHost(domain, { keepOriginal: true }) || [];
-    _ipList.push.apply(_ipList, hds);
 
-    _ipList.forEach((hash) => {
-      this.updateHashMapping(hashCache, hash)
-    })
+    // tell the cloud which hashed domain triggers the intel check
+    let hashedMatch = null;
+    for (const list of [_ipList, hds]) {
+      list.forEach((hash) => {
+        this.updateHashMapping(hashCache, hash)
+        if (match && hash[0] === match)
+          hashedMatch = hash[2];
+      })
+    }
 
     const _ips = _ipList.map((x) => x.slice(1, 3)); // remove the origin domains
     const _hList = hds.map((x) => x.slice(1, 3));
@@ -531,6 +539,9 @@ class IntelTool {
     const data = { flowlist: flowList, hashed: 1 };
     if(lucky) {
       data.lucky = 1;
+    }
+    if (hashedMatch) {
+      data.hashedMatch = hashedMatch;
     }
     log.debug(require('util').inspect(data, { depth: null }));
 

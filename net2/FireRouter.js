@@ -238,6 +238,7 @@ async function generateNetworkInfo() {
 
     const redisIntf = {
       name:         intfName,
+      desc:         intf.config.meta.name,
       uuid:         intf.config.meta.uuid,
       mac_address:  intf.state.mac,
       ip_address:   ip4 ? ip4.addressMinusSuffix : null,

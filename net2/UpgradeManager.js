@@ -1,4 +1,4 @@
-/*    Copyright 2019-2023 Firewalla Inc.
+/*    Copyright 2019-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,7 +18,6 @@ const fs = require("fs");
 
 const log = require('./logger.js')(__filename);
 
-const sysManager = require('./SysManager.js');
 const f = require('./Firewalla.js')
 const config = require('./config.js')
 const platform = require('../platform/PlatformLoader.js').getPlatform();
@@ -31,6 +30,8 @@ const { exec } = require('child-process-promise')
 
 const NOAUTO_FLAG_PATH_FW = f.getUserConfigFolder() + '/.no_auto_upgrade'
 const NOAUTO_FLAG_PATH_FR = f.getFireRouterConfigFolder() + '/.no_auto_upgrade'
+const NOCHECK_FLAG_PATH_FW = f.getUserConfigFolder() + '/.no_upgrade_check'
+const NOCHECK_FLAG_PATH_FR = f.getFireRouterConfigFolder() + '/.no_upgrade_check'
 
 /*
  * If the system is upgrading ...
@@ -49,6 +50,7 @@ function finishUpgrade() {
 }
 
 async function getUpgradeInfo() {
+  const sysManager = require('./SysManager.js');
   let sysInfo = await sysManager.getSysInfoAsync();
 
   let tagBeforeUpgrade = fs.existsSync('/home/pi/.firewalla/run/upgrade-pre-tag')
@@ -77,13 +79,12 @@ async function getHashAndVersion() {
   try {
     const remoteHash = await f.getRemoteCommitHash()
     const remoteTS = await getCommitTS(remoteHash)
-    const remoteVersion = localHash == remoteHash ? localVersion :
-      _.get(await rrWithErrHandling({
-        uri: `https://raw.githubusercontent.com/firewalla/firewalla/${remoteHash}/net2/config.json`,
-        json: true,
-        maxAttempts: 3,
-        retryDelay: 1000,
-      }), 'body.version', null)
+    let remoteVersion = localVersion
+    if (localHash != remoteHash) {
+      await exec(`timeout 20s git fetch origin ${remoteHash}`)
+      const cmd = await exec(`git show ${remoteHash}:net2/config.json`)
+      remoteVersion = JSON.parse(cmd.stdout).version
+    }
 
     return { localHash, localTS, localVersion, remoteHash, remoteTS, remoteVersion }
   } catch(err) {
@@ -117,35 +118,57 @@ async function getRouterHash() {
 }
 
 async function updateVersionTag() {
+  const sysManager = require('./SysManager.js');
   let sysInfo = await sysManager.getSysInfoAsync()
   fs.writeFileSync('/home/pi/.firewalla/run/upgrade-pre-tag', sysInfo.repoTag, 'utf8');
 }
 
-async function getAutoUpgradeState() {
-  const firewalla = !(await fileExist(NOAUTO_FLAG_PATH_FW))
+async function getAutoUpgradeFlags() {
+  const result = {}
+  result.noAutoFW = await fileExist(NOAUTO_FLAG_PATH_FW)
+  result.noCheckFW = await fileExist(NOCHECK_FLAG_PATH_FW)
 
   if (platform.isFireRouterManaged()) {
-    const firerouter = !(await fileExist(NOAUTO_FLAG_PATH_FR))
+    result.noAutoFR = await fileExist(NOAUTO_FLAG_PATH_FR)
+    result.noCheckFR = await fileExist(NOCHECK_FLAG_PATH_FR)
+  }
+
+  return result
+}
+
+async function getAutoUpgradeState() {
+  const flags = await getAutoUpgradeFlags()
+  const firewalla = !(flags.noAutoFW || flags.noCheckFW)
+
+  if (platform.isFireRouterManaged()) {
+    const firerouter = !(flags.noAutoFR || flags.noCheckFR)
     return { firewalla, firerouter }
   } else
     return { firewalla }
 }
 
+
 // defaults to true, note that setting FireRouter to no auto upgrade stops Firewalla from upgrading as well
 async function setAutoUpgradeState(state) {
   const firewalla = _.get(state, 'firewalla', true)
 
-  if (firewalla)
+  if (firewalla) {
     await fileRemove(NOAUTO_FLAG_PATH_FW)
-  else
-    await fileTouch(NOAUTO_FLAG_PATH_FW)
+    await fileRemove(NOCHECK_FLAG_PATH_FW)
+  } else {
+    await fileRemove(NOAUTO_FLAG_PATH_FW)
+    await fileTouch(NOCHECK_FLAG_PATH_FW)
+  }
 
   if (platform.isFireRouterManaged()) {
     const firerouter = _.get(state, 'firerouter', true)
-    if (firerouter)
+    if (firerouter) {
       await fileRemove(NOAUTO_FLAG_PATH_FR)
-    else
-      await fileTouch(NOAUTO_FLAG_PATH_FR)
+      await fileRemove(NOCHECK_FLAG_PATH_FR)
+    } else {
+      await fileRemove(NOAUTO_FLAG_PATH_FR)
+      await fileTouch(NOCHECK_FLAG_PATH_FR)
+    }
   }
 }
 
@@ -159,6 +182,7 @@ module.exports = {
   getUpgradeInfo: getUpgradeInfo,
   updateVersionTag: updateVersionTag,
 
+  getAutoUpgradeFlags,
   getAutoUpgradeState,
   setAutoUpgradeState,
   getHashAndVersion,

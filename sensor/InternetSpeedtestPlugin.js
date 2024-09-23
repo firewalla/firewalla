@@ -36,6 +36,9 @@ const SPEEDTEST_RUNTIME_KEY = "internet_speedtest_runtime";
 const CACHED_VENDOR_HKEY_PREFIX = "cached_vendor";
 const LAST_EVAL_TIME_HKEY_PREFIX = "last_eval_time";
 
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const LOCK_APPLY_SPEEDTEST_POLICY = "LOCK_APPLY_SPEEDTEST_POLICY";
 const cliBinaryPath = platform.getSpeedtestCliBinPath();
 
 const featureName = "internet_speedtest";
@@ -44,21 +47,25 @@ class InternetSpeedtestPlugin extends Sensor {
   async apiRun() {
     this.running = false;
     this.manualRunTsCache = new LRU({maxAge: 86400 * 1000, max: MAX_DAILY_MANUAL_TESTS});
+    this.runningCache = new LRU({max: 10, maxAge: 3600 * 1000});
 
     extensionManager.onGet("internetSpeedtestServers", async (msg, data) => {
       const uuid = data.wanUUID;
       let bindIP = null;
+      let dnsServers = null;
       const vendor = data.vendor || "ookla"; // mlab does not support selecting server, no need to list it
       if (uuid) {
         const wanIntf = sysManager.getInterfaceViaUUID(uuid);
         if (wanIntf) {
           if (wanIntf.ip_address)
             bindIP = wanIntf.ip_address;
+          if (wanIntf.dns)
+            dnsServers=wanIntf.dns
           else
             throw {msg: `WAN interface ${wanIntf.name} does not have IP address, cannot get speed test servers from it`, code: 400};
         }
       }
-      const results = await this.listAvailableServers(bindIP, vendor);
+      const results = await this.listAvailableServers(bindIP, dnsServers, vendor);
       return {servers: results};
     });
 
@@ -70,14 +77,22 @@ class InternetSpeedtestPlugin extends Sensor {
     });
 
     extensionManager.onCmd("runInternetSpeedtest", async (msg, data) => {
-      if (this.running)
+      const msgid = msg.id;
+      if (this.running) {
+        // check running job
+        const result = await this.waitRunningResult(msgid);
+        if (result) {
+          return {result};
+        }
         throw {msg: "Another speed test is still running", code: 429};
+      }
       else {
         this.manualRunTsCache.prune();
         if (this.manualRunTsCache.keys().length >= MAX_DAILY_MANUAL_TESTS) {
           throw {msg: `Manual tests has exceeded ${MAX_DAILY_MANUAL_TESTS} times in the last 24 hours`, code: 429};
         }
         try {
+          this.runningCache.set(msgid, {state: 0}); // mark 0 for init
           this.running = true;
           let uuid = data.wanUUID;
           if (!uuid) {
@@ -87,6 +102,7 @@ class InternetSpeedtestPlugin extends Sensor {
           const serverId = data.serverId || undefined;
           const extraOpts = data.extraOpts || {};
           let bindIP = null;
+          let dnsServers = null;
           if (uuid) {
             const wanIntf = sysManager.getInterfaceViaUUID(uuid);
             if (wanIntf) {
@@ -94,16 +110,19 @@ class InternetSpeedtestPlugin extends Sensor {
                 bindIP = wanIntf.ip_address;
               else
                 throw {msg: `WAN interface ${wanIntf.name} does not have IP address, cannot run speedtest on it`, code: 400};
+              if (wanIntf.dns)
+                dnsServers = wanIntf.dns;
             }
           }
+
           let vendor = data.vendor || undefined;
           let result;
           if (!vendor) {
-            result = await this.evaluateAndRunSpeedTest(bindIP, uuid, serverId, data.noUpload, data.noDownload, extraOpts);
+            result = await this.evaluateAndRunSpeedTest(bindIP, dnsServers, uuid, serverId, data.noUpload, data.noDownload, extraOpts);
             if (uuid)
               result.uuid = uuid;
           } else {
-            result = await this.runSpeedTest(bindIP, serverId, data.noUpload, data.noDownload, vendor, extraOpts);
+            result = await this.runSpeedTest(bindIP, dnsServers, serverId, data.noUpload, data.noDownload, vendor, extraOpts);
             if (uuid)
               result.uuid = uuid;
           }
@@ -112,14 +131,55 @@ class InternetSpeedtestPlugin extends Sensor {
           await this.saveResult(result);
           if (result.success)
             await this.saveMetrics(this._getMetricsKey(uuid || "overall"), result);
+          this.setJobResult(msgid, result); // cache recent result;
           return {result};
         } catch (err) {
-          throw {msg: err.message, code: 500};
+          throw {msg: err.msg || err.message, code: err.code || 500};
         } finally {
           this.running = false;
         }
       }
     });
+  }
+
+  async waitRunningResult(msgid, timeout=90000) {
+    const runningJob = this.runningCache.get(msgid);
+    if (runningJob) {
+      let result = runningJob.result;
+      if (result) {
+        return result;
+      }
+
+      // wait for result
+      result = await this.getJobResult(msgid, timeout);
+      if (result) {
+        return result;
+      }
+    }
+    return null
+  }
+
+  getJobState(msgid) {
+    const runningJob = this.runningCache.get(msgid);
+    if (runningJob) {
+      return runningJob.state;
+    }
+    return -1;
+  }
+
+  setJobResult(msgid, result) {
+    this.runningCache.set(msgid, {state: 3, result: result});
+  }
+
+  async getJobResult(msgid, timeout=90000) {
+    await InternetSpeedtestPlugin.waitFor( _ => this.getJobState(msgid) === 3, timeout).catch((err) => {});
+    const jobState = this.runningCache.get(msgid);
+    if (jobState) {
+      log.debug(`getJobResult msgid ${msgid}`, jobState.result);
+      return jobState.result;
+    }
+    log.warn(`getJobResult timeout msgid ${msgid}`);
+    return null;
   }
 
   async run() {
@@ -143,86 +203,93 @@ class InternetSpeedtestPlugin extends Sensor {
   }
 
   async applyPolicy(host, ip, policy) {
-    log.info("Applying internet speedtest policy", ip, policy);
-    if (ip === "0.0.0.0") {
-      this._policy = policy;
-      if (this.speedtestJob)
-        this.speedtestJob.stop();
-      const wanConfs = policy.wanConfs || {};
-      const tz = sysManager.getTimezone();
-      const cron = policy.cron;
-      const noUpload = policy.noUpload || false;
-      const noDownload = policy.noDownload || false;
-      const vendor = policy.vendor || undefined;
-      const serverId = policy.serverId;
-      const extraOpts = policy.extraOpts || {};
-      const state = policy.state || false;
-      if (!cron)
-        return;
-      try {
-        cronParser.parseExpression(cron, {tz});
-      } catch (err) {
-        log.error(`Invalid cron expression: ${cron}`);
-        return;
-      }
-      this.speedtestJob = new CronJob(cron, async () => {
-        const lastRunTs = this.lastRunTs || 0;
-        const now = Date.now() / 1000;
-        if (now - lastRunTs < MIN_CRON_INTERVAL) {
-          log.error(`Last cronjob was scheduled at ${new Date(lastRunTs * 1000).toTimeString()}, ${new Date(lastRunTs * 1000).toDateString()}, less than ${MIN_CRON_INTERVAL} seconds till now`);
+    await lock.acquire(LOCK_APPLY_SPEEDTEST_POLICY, async () => {
+      log.info("Applying internet speedtest policy", ip, policy);
+      if (ip === "0.0.0.0") {
+        this._policy = policy;
+        if (this.speedtestJob)
+          this.speedtestJob.stop();
+        const wanConfs = policy.wanConfs || {};
+        const tz = sysManager.getTimezone();
+        const cron = policy.cron;
+        const noUpload = policy.noUpload || false;
+        const noDownload = policy.noDownload || false;
+        const vendor = policy.vendor || undefined;
+        const serverId = policy.serverId;
+        const extraOpts = policy.extraOpts || {};
+        const state = policy.state || false;
+        if (!cron)
+          return;
+        try {
+          cronParser.parseExpression(cron, {tz});
+        } catch (err) {
+          log.error(`Invalid cron expression: ${cron}`);
           return;
         }
-        const wanInterfaces = sysManager.getWanInterfaces();
-        const wanType = sysManager.getWanType();
-        const primaryWanIntf = sysManager.getPrimaryWanInterface();
-        const primaryWanUUID = primaryWanIntf && primaryWanIntf.uuid;
-        for (const iface of wanInterfaces) {
-          const uuid = iface.uuid;
-          const bindIP = iface.ip_address;
-          let wanServerId = serverId;
-          let wanNoUpload = noUpload;
-          let wanNoDownload = noDownload;
-          let wanVendor = vendor;
-          let wanExtraOpts = extraOpts;
-          let wanState = state;
-          if (!bindIP) {
-            log.error(`WAN interface ${iface.name} does not have IP address, cannot run speed test on it`);
-            continue;
+        this.speedtestJob = new CronJob(cron, async () => {
+          const lastRunTs = this.lastRunTs || 0;
+          const now = Date.now() / 1000;
+          if (now - lastRunTs < MIN_CRON_INTERVAL) {
+            log.error(`Last cronjob was scheduled at ${new Date(lastRunTs * 1000).toTimeString()}, ${new Date(lastRunTs * 1000).toDateString()}, less than ${MIN_CRON_INTERVAL} seconds till now`);
+            return;
           }
-          // use global config as a fallback for primary WAN or all wans in load balance mode
-          if (!_.has(wanConfs, uuid) && wanType !== Constants.WAN_TYPE_LB && uuid !== primaryWanUUID) {
-            log.info(`Speed test on ${iface.name} is not enabled`);
-            continue;
+          this.lastRunTs = now;
+          const wanInterfaces = sysManager.getWanInterfaces();
+          const wanType = sysManager.getWanType();
+          const primaryWanIntf = sysManager.getPrimaryWanInterface();
+          const primaryWanUUID = primaryWanIntf && primaryWanIntf.uuid;
+          for (const iface of wanInterfaces) {
+            const uuid = iface.uuid;
+            const bindIP = iface.ip_address;
+            let wanDNS = iface.dns;
+            let wanServerId = serverId;
+            let wanNoUpload = noUpload;
+            let wanNoDownload = noDownload;
+            let wanVendor = vendor;
+            let wanExtraOpts = extraOpts;
+            let wanState = state;
+            if (!bindIP) {
+              log.error(`WAN interface ${iface.name} does not have IP address, cannot run speed test on it`);
+              continue;
+            }
+            // use global config as a fallback for primary WAN or all wans in load balance mode
+            if (!_.has(wanConfs, uuid) && wanType !== Constants.WAN_TYPE_LB && uuid !== primaryWanUUID) {
+              log.info(`Speed test on ${iface.name} is not enabled`);
+              continue;
+            }
+            if (wanConfs[uuid]) {
+              wanServerId = wanConfs[uuid].serverId; // each WAN can use specific speed test server
+              wanNoUpload = wanConfs[uuid].noUpload; // each WAN can specify if upload/download test is enabled
+              wanNoDownload = wanConfs[uuid].noDownload;
+              wanVendor = wanConfs[uuid].vendor;
+              wanExtraOpts = wanConfs[uuid].extraOpts;
+              wanState = wanConfs[uuid].state;
+              wanDNS = wanConfs[uuid].dns;
+            }
+            if (wanState !== true) // speed test can be enabled/disabled on each WAN
+              continue;
+            log.info(`Start scheduled speed test on WAN ${uuid}`);
+            let wanResult;
+            // if vendor is not specified in policy, re-evaluate periodically and cache the selected vendor
+            if (!wanVendor) {
+              wanResult = await this.evaluateAndRunSpeedTest(bindIP, wanDNS, uuid, wanServerId, wanNoUpload, wanNoDownload, wanExtraOpts);
+            } else {
+              wanResult = await this.runSpeedTest(bindIP, wanDNS, wanServerId, wanNoUpload, wanNoDownload, wanVendor, wanExtraOpts);
+            }
+            wanResult.uuid = uuid;
+            await this.saveResult(wanResult);
+            if (wanResult.success && uuid)
+              await this.saveMetrics(this._getMetricsKey(uuid), wanResult);
           }
-          if (wanConfs[uuid]) {
-            wanServerId = wanConfs[uuid].serverId; // each WAN can use specific speed test server
-            wanNoUpload = wanConfs[uuid].noUpload; // each WAN can specify if upload/download test is enabled
-            wanNoDownload = wanConfs[uuid].noDownload;
-            wanVendor = wanConfs[uuid].vendor;
-            wanExtraOpts = wanConfs[uuid].extraOpts;
-            wanState = wanConfs[uuid].state
-          }
-          if (wanState !== true) // speed test can be enabled/disabled on each WAN
-            continue;
-          log.info(`Start scheduled speed test on WAN ${uuid}`);
-          let wanResult;
-          // if vendor is not specified in policy, re-evaluate periodically and cache the selected vendor
-          if (!wanVendor) {
-            wanResult = await this.evaluateAndRunSpeedTest(bindIP, uuid, wanServerId, wanNoUpload, wanNoDownload, wanExtraOpts);
-          } else {
-            wanResult = await this.runSpeedTest(bindIP, wanServerId, wanNoUpload, wanNoDownload, wanVendor, wanExtraOpts);
-          }
-          wanResult.uuid = uuid;
-          await this.saveResult(wanResult);
-          if (wanResult.success && uuid)
-            await this.saveMetrics(this._getMetricsKey(uuid), wanResult);
-        }
-      }, () => {}, true, tz);
-    }
+        }, () => {}, true, tz);
+      }
+    }).catch((err) => {
+      log.error(`Failed to apply ${featureName} policy`, err.message);
+    });
   }
 
-  async listAvailableServers(bindIP, vendor) {
-    const servers = await exec(`${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} ${vendor ? `--vendor ${vendor}` : ""} -l --json`).then((result) => {
+  async listAvailableServers(bindIP, dnsServers, vendor) {
+    const servers = await exec(`${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} ${dnsServers ? `--nameserver ${dnsServers.join(",")}` : ""} ${vendor ? `--vendor ${vendor}` : ""} -l --json`).then((result) => {
       const r = JSON.parse(result.stdout.trim());
       return (r && r.servers || []).map(server => this._convertServer(server));
     }).catch((err) => {
@@ -293,7 +360,7 @@ class InternetSpeedtestPlugin extends Sensor {
     return !_.isEmpty(this.config.vendorCandidates) ? this.config.vendorCandidates : ["mlab", "ookla"];
   }
 
-  async evaluateAndRunSpeedTest(bindIP, uuid, serverId, noUpload = false, noDownload = false, extraOpts = {}) {
+  async evaluateAndRunSpeedTest(bindIP, dnsServers, uuid, serverId, noUpload = false, noDownload = false, extraOpts = {}) {
     uuid = uuid || "overall";
     const reevalPeriod = this.config.reevalPeriod || 86400 * 30;
     const lastEvalTime = await this.getLastEvalTime(uuid);
@@ -302,7 +369,7 @@ class InternetSpeedtestPlugin extends Sensor {
     if (!lastEvalTime || Date.now() / 1000 - lastEvalTime > reevalPeriod || !cachedVendor || !vendorCandidates.includes(cachedVendor)) {
       log.info(`Re-evaluating speedtest vendors on WAN ${uuid} ...`, vendorCandidates);
       // serverId is just a preference, it does not take effect on an irrelevant vendor
-      const {vendor, result} = await this.evaluateVendors(bindIP, serverId, noUpload, vendorCandidates, this.config.switchRatioThreshold, extraOpts).catch((err) => {
+      const {vendor, result} = await this.evaluateVendors(bindIP, dnsServers, serverId, noUpload, vendorCandidates, this.config.switchRatioThreshold, extraOpts).catch((err) => {
         log.error(`Failed to re-evaluate speedtest vendor on WAN ${uuid}`, err.message);
         return null;
       });
@@ -325,15 +392,15 @@ class InternetSpeedtestPlugin extends Sensor {
       cachedVendor = vendorCandidates[0]; // use the first vendor candidate if vendor evaluation failed
       
     log.info(`Using speedtest vendor ${cachedVendor} on WAN ${uuid}`);
-    return this.runSpeedTest(bindIP, serverId, noUpload, noDownload, cachedVendor, extraOpts);
+    return this.runSpeedTest(bindIP, dnsServers, serverId, noUpload, noDownload, cachedVendor, extraOpts);
   }
 
-  async evaluateVendors(bindIP, serverId = null, noUpload = false, vendorCandidates = [], switchRatioThreshold = 0.9, extraOpts = {}) {
+  async evaluateVendors(bindIP, dnsServers, serverId = null, noUpload = false, vendorCandidates = [], switchRatioThreshold = 0.9, extraOpts = {}) {
     const vendorDownloadRateMap = {};
     const vendorResultMap = {};
     let highestRate = 0;
     for (const vendor of vendorCandidates) {
-      const result = await this.runSpeedTest(bindIP, serverId, noUpload, false, vendor, extraOpts).catch((err) => null);
+      const result = await this.runSpeedTest(bindIP, dnsServers, serverId, noUpload, false, vendor, extraOpts).catch((err) => null);
       if (result && result["result"] && result["result"]["download"]) {
         log.info(`Download rate on vendor ${vendor} is ${result["result"]["download"]}`);
         vendorDownloadRateMap[vendor] = result["result"]["download"];
@@ -350,8 +417,8 @@ class InternetSpeedtestPlugin extends Sensor {
     return {};
   }
 
-  async runSpeedTest(bindIP, serverId, noUpload = false, noDownload = false, vendor = "mlab", extraOpts = {}) {
-    const result = await exec(`timeout 90 ${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} ${serverId ? `-s ${serverId}` : ""} ${noUpload ? "--no-upload" : ""} ${noDownload ? "--no-download" : ""} ${vendor ? `--vendor ${vendor}` : ""} --json ${Object.keys(extraOpts).map(k => `--${k} ${extraOpts[k]}`).join(" ")}`)
+  async runSpeedTest(bindIP, dnsServers, serverId, noUpload = false, noDownload = false, vendor = "mlab", extraOpts = {}) {
+    const result = await exec(`timeout 90 ${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} ${dnsServers ? `--nameserver ${dnsServers.join(",")}` : ""} ${serverId ? `-s ${serverId}` : ""} ${noUpload ? "--no-upload" : ""} ${noDownload ? "--no-download" : ""} ${vendor ? `--vendor ${vendor}` : ""} --json ${Object.keys(extraOpts).map(k => `--${k} ${extraOpts[k]}`).join(" ")}`)
       .then(result => JSON.parse(result.stdout.trim()))
       .then((result) => {
         const r = this._convertTestResult(result);
@@ -388,6 +455,17 @@ class InternetSpeedtestPlugin extends Sensor {
 
   async saveMetrics(mkey, result) {
     await Metrics.set(mkey, result);
+  }
+
+  // wait for condition till timeout
+  static waitFor(condition, timeout=3000) {
+    const deadline = Date.now() + timeout;
+    const poll = (resolve, reject) => {
+      if(condition()) resolve();
+      else if (Date.now() >= deadline) reject(`exceeded timeout of ${timeout} ms`); // timeout reject
+      else setTimeout( _ => poll(resolve, reject), 800);
+    }
+    return new Promise(poll);
   }
 }
 
