@@ -38,8 +38,17 @@ const blackHoleHttpsPort = 8884;
 
 // this allows biggest v4 regional set (US) being fully added,
 // for v6, we need a dynamic approach for ipset management
-const IPSET_HASH_HASHSIZE = 65536
-const IPSET_HASH_MAXELEM = 100000
+//
+// takes up to 30M memory
+//
+// Name: test
+// Type: hash:net
+// Revision: 6
+// Header: family inet hashsize 524288 maxelem 1048576
+// Size in memory: 30811224
+// References: 0
+// Number of entries: 1048576
+const IPSET_HASH_MAXELEM = 1048576 // 2^20
 
 class CategoryUpdaterBase {
 
@@ -285,11 +294,24 @@ class CategoryUpdaterBase {
   // make sure ipset is not referenced before calling this
   async rebuildIpset(category, ip6 = false, options) {
     const ipsetName = this.getIPSetName(category, false, ip6, options.useTemp)
-    log.info('Rebuild ipset with max size', ipsetName)
+    log.info(`Rebuild ipset for ${ipsetName}, size: ${options.count}`)
     await Ipset.destroy(ipsetName)
+    let maxelem = options.count
+    if (maxelem > IPSET_HASH_MAXELEM) {
+      log.error('ipset too large:', ipsetName, maxelem, 'trunc to', IPSET_HASH_MAXELEM)
+      maxelem = IPSET_HASH_MAXELEM
+    } else {
+      // lowest power of 2 but bigger or equal to count
+      maxelem = 2 ** Math.ceil(Math.log2(maxelem))
+    }
     await Ipset.create(ipsetName, 'hash:net', ip6, {
-      hashsize: IPSET_HASH_HASHSIZE,
-      maxelem: IPSET_HASH_MAXELEM,
+      // From ipset manual:
+      // The hash size must be a power of two, the kernel automatically rounds up
+      // non power of two hash sizes to the first correct value
+      //
+      // seems that the kernel is keeping hashsize bigger than a quarter of element count
+      hashsize: maxelem / 4,
+      maxelem,
     });
   }
 
