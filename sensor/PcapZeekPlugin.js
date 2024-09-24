@@ -99,6 +99,8 @@ class PcapZeekPlugin extends PcapPlugin {
     const monitoredNetworks6 = [];
     const selfIp4 = [];
     const selfIp6 = [];
+    const wanIp4 = [];
+    const wanIp6 = [];
     for (const intf of sysManager.getMonitoringInterfaces()) {
       const ip4Subnets = intf.ip4_subnets;
       const ip6Subnets = intf.ip6_subnets;
@@ -119,6 +121,12 @@ class PcapZeekPlugin extends PcapPlugin {
         }
       }
     }
+    for (const intf of sysManager.getWanInterfaces()) {
+      if (_.isArray(intf.ip4_addresses))
+        wanIp4.push(...intf.ip4_addresses);
+      if (_.isArray(intf.ip6_addresses))
+        wanIp6.push(...(intf.ip6_addresses.filter(addr => !addr.startsWith("fe80"))));
+    }
     // do not capture intranet traffic, but still keep tcp SYN/FIN/RST for port scan detection
     const restrictFilters = {};
     if (!_.isEmpty(monitoredNetworks4))
@@ -136,6 +144,12 @@ class PcapZeekPlugin extends PcapPlugin {
       restrictFilters["not-self-rx-nosyn-ip6"] = `not (ip6 and (${selfIp6.map(ip => `src host ${ip}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or ip6[40+13] & 0x12 != 2))`;
     }
     */
+    if (!_.isEmpty(wanIp4)) {
+      restrictFilters["not-self-wan-ip4"] = `not (${wanIp4.map(ip => `host ${ip}`).join(' or ')})`;
+    }
+    if (!_.isEmpty(wanIp6)) {
+      restrictFilters["not-self-wan-ip6"] = `not (${wanIp6.map(ip => `host ${ip}`).join(' or ')})`;
+    }
     if (features.isOn("fast_speedtest") && conntrack) {
       restrictFilters["not-tcp-port-8080"] = `not (tcp and port 8080)`;
       conntrack.registerConnHook({dport: 8080, protocol: "tcp"}, (connInfo) => {
