@@ -40,6 +40,7 @@ function get_node_modules_url {
 }
 
 CURRENT_DIR=$(dirname $BASH_SOURCE)
+CGROUP_SOCK_MARK=${CURRENT_DIR}/files/cgroup_sock_mark
 
 function get_brofish_service {
   echo "${CURRENT_DIR}/files/brofish.service"
@@ -124,4 +125,10 @@ function installSchCakeModule {
       sudo cp ${FW_PLATFORM_CUR_DIR}/files/sch_cake/u18/tc /sbin/tc
     fi
   fi
+}
+
+function beep {
+  sudo modprobe pcspkr
+  sudo su -l root -c "beep -r $1"
+  sudo rmmod pcspkr
 }

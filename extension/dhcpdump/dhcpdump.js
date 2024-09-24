@@ -155,6 +155,7 @@ module.exports = class {
       if (!intf.name) continue;
       if (intf.name.endsWith(":0")) continue; // do not listen on interface alias since it is not a real interface
       if (intf.name.includes("vpn")) continue; // do not listen on vpn interface
+      if (intf.name.startsWith("wg")) continue; // do not listen on wireguard VPN interface
       let spawn = require('child_process').spawn;
       let dhcpdumpSpawn = spawn('sudo', ['dhcpdump', '-i', intf.name]);
       let pid = dhcpdumpSpawn.pid;

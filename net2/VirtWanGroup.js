@@ -176,14 +176,23 @@ class VirtWanGroup {
               wan.active = false;
             const metric = wan.seq + 1 + (wan.ready ? 0 : 100);
             const gw = await c._getRemoteIP();
+            const gw6 = await c._getRemoteIP6();
+            const localIP6 = await c._getLocalIP6();
             await routing.addRouteToTable("default", gw, c.getInterfaceName(), this._getRTName(), metric, 4).catch((err) => {});
+            if (localIP6)
+              await routing.addRouteToTable("default", gw6, c.getInterfaceName(), this._getRTName(), metric, 6).catch((err) => {});
             const dnsServers = await c._getDNSServers() || [];
             for (const dnsServer of dnsServers) {
               let af = 4;
               if (!ipTool.isV4Format(dnsServer) && ipTool.isV6Format(dnsServer)) {
                 af = 6;
               }
-              await routing.addRouteToTable(dnsServer, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+              if (af == 4)
+                await routing.addRouteToTable(dnsServer, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+              else {
+                if (localIP6)
+                  await routing.addRouteToTable(dnsServer, gw6, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+              }
             }
             const vpnSubnets = await c.getRoutedSubnets();
             if (_.isArray(vpnSubnets)) {
@@ -191,7 +200,13 @@ class VirtWanGroup {
                 let af = 4;
                 if (!ipTool.isV4Format(vpnSubnet) && ipTool.isV6Format(vpnSubnet))
                   af = 6;
-                await routing.addRouteToTable(vpnSubnet, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+                if (af == 4)
+                  await routing.addRouteToTable(vpnSubnet, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+                else {
+                  if (localIP6) {
+                    await routing.addRouteToTable(vpnSubnet, gw6, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+                  }
+                }
               }
             }
             const settings = await c.loadSettings();
@@ -204,6 +219,7 @@ class VirtWanGroup {
           let seq = 0;
           const wans = Object.values(this.connState);
           const multiPathDesc = [];
+          const multiPathDesc6 = [];
           for (const wan of wans) {
             const profileId = wan.profileId
             const c = VPNClient.getInstance(profileId);
@@ -221,11 +237,17 @@ class VirtWanGroup {
             wan.active = wan.ready;
             let metric = seq + 1;
             const gw = await c._getRemoteIP();
+            const gw6 = await c._getRemoteIP6();
+            const localIP6 = await c._getLocalIP6();
             if (wan.ready) {
               multiPathDesc.push({nextHop: gw, dev: c.getInterfaceName(), weight: wan.weight});
+              if (localIP6)
+                multiPathDesc6.push({nextHop: gw6, dev: c.getInterfaceName(), weight: wan.weight});
             } else {
               metric = seq + 1 + 100;
               await routing.addRouteToTable("default", gw, c.getInterfaceName(), this._getRTName(), metric, 4).catch((err) => {});
+              if (localIP6)
+                await routing.addRouteToTable("default", gw6, c.getInterfaceName(), this._getRTName(), metric, 6).catch((err) => {});
             }
             const dnsServers = await c._getDNSServers() || [];
             for (const dnsServer of dnsServers) {
@@ -233,7 +255,12 @@ class VirtWanGroup {
               if (!ipTool.isV4Format(dnsServer) && ipTool.isV6Format(dnsServer)) {
                 af = 6;
               }
-              await routing.addRouteToTable(dnsServer, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+              if (af == 4)
+                await routing.addRouteToTable(dnsServer, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+              else {
+                if (localIP6)
+                  await routing.addRouteToTable(dnsServer, gw6, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+              }
             }
             const vpnSubnets = await c.getRoutedSubnets();
             if (_.isArray(vpnSubnets)) {
@@ -241,7 +268,12 @@ class VirtWanGroup {
                 let af = 4;
                 if (!ipTool.isV4Format(vpnSubnet) && ipTool.isV6Format(vpnSubnet))
                   af = 6;
-                await routing.addRouteToTable(vpnSubnet, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => { });
+                if (af == 4)
+                  await routing.addRouteToTable(vpnSubnet, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => { });
+                else {
+                  if (localIP6)
+                    await routing.addRouteToTable(vpnSubnet, gw6, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => { });
+                }
               }
             }
             const settings = await c.loadSettings();
@@ -251,6 +283,8 @@ class VirtWanGroup {
           }
           if (multiPathDesc.length > 0)
             await routing.addMultiPathRouteToTable("default", this._getRTName(), 4, ...multiPathDesc).catch((err) => {});
+          if (multiPathDesc6.length > 0)
+            await routing.addMultiPathRouteToTable("default", this._getRTName(), 6, ...multiPathDesc6).catch((err) => {});
           break;
         }
         default:
