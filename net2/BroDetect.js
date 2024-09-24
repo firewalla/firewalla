@@ -1825,8 +1825,9 @@ class BroDetect {
     for (const iface of Object.keys(wanNicStats)) {
       if (this.wanNicStatsCache && this.wanNicStatsCache[iface]) {
         const uuid = wanNicStats[iface].uuid;
-        const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicStats[iface].rxBytes;
-        const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicStats[iface].txBytes;
+        // 1 mega bytes buffer in case there are multiple VLANs on a physical WAN port and bytes deduction may result in a negative result because statistics on different interfaces are not read at the same time
+        const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes - 1000000 ? Math.max(0, wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes) : wanNicStats[iface].rxBytes;
+        const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes - 1000000 ? Math.max(0, wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes) : wanNicStats[iface].txBytes;
         if (uuid) {
           wanTraffic[uuid] = {rxBytes, txBytes};
         }
