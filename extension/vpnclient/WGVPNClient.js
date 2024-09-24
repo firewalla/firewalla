@@ -187,7 +187,7 @@ class WGVPNClient extends VPNClient {
     await this._generateConfig();
     const intf = this.getInterfaceName();
     await exec(`sudo ip link add dev ${intf} type wireguard`).catch((err) => {
-      log.error(`Failed to create wireguard interface ${intf}`, err.message);
+      log.warn(`Failed to create wireguard interface ${intf}`, err.message);
     });
     await exec(`sudo ip link set ${intf} up`).catch((err) => {});
     await exec(`sudo ip addr flush dev ${intf}`).catch((err) => {});
