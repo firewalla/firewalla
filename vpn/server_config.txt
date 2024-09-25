@@ -29,7 +29,7 @@ tls-auth /etc/openvpn/easy-rsa/keys/ta.key 0
 crl-verify /etc/openvpn/crl.pem
 client-config-dir /etc/openvpn/client_conf
 cipher AES-128-CBC
-comp-lzo
+#comp-lzo
 persist-key
 
 persist-tun

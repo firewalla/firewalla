@@ -1,5 +1,5 @@
 {
-  "version": 1.978,
+  "version": 1.979,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -11,6 +11,7 @@
   "firewallaLicenseServerURL": "https://firewalla.encipher.io/license/api/v1",
   "firewallaDiagServerURL": "https://api.firewalla.com/diag/api/v1/device/",
   "firewallaVPNCheckURL": "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping",
+  "firewallaVPNCheckDevURL": "https://fwdev.encipher.io/diag/api/v1/vpn/check_portmapping",
   "firewallaSocketIOURL": "https://connect.firewalla.com",
   "SocketIOPath": "/socket",
   "SocketIOAlphaPath": "/socket.v0",
@@ -108,10 +109,11 @@
     },
     "AdblockPlugin": {},
     "WireGuardPlugin": {},
-    "InternalScanSensor": {},
+    "InternalScanSensor": { "skip_verify": false, "strict_http": true},
     "ExternalScanSensor": {
       "scanCooldown": 300
     },
+    "NseScanPlugin": {},
     "InternetSpeedtestPlugin": {
       "vendorCandidates": [
         "ookla"
@@ -155,7 +157,13 @@
       "interval": 600,
       "expireInterval": 1800
     },
-    "BonjourSensor": {},
+    "BonjourSensor": {
+      "ignoredServices": ["_airdrop", "_continuity", "_googlezone", "_matter"],
+      "nonReadableNameServices": [
+        "_raop", "_sleep-proxy", "_remotepairing", "_remotepairing-tunnel", "_apple-mobdev2",
+        "_asquic", "_dacp", "_spotify-connect", "_trel"
+      ]
+    },
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
     "DeviceServiceScanSensor": {
@@ -439,6 +447,9 @@
           ]
         }
       },
+      "mappingConfig": {
+        "safe.duckduckgo.com": 5
+      },
       "defaultConfig": {
         "youtube": "off",
         "google": "on",
@@ -503,7 +514,6 @@
       "processInterval": 900,
       "expirePeriod": 604800
     },
-    "NoiseDomainsSensor": {},
     "ICMP6Sensor": {},
     "ARPSensor": {},
     "CPUSensor": {
@@ -675,6 +685,7 @@
       "fireResetBluetooth": true,
       "bonelogInterval": 900
     },
+    "NseScanPlugin": {},
     "ACLAuditLogPlugin": {
       "buffer": 2,
       "interval": 300,
@@ -735,6 +746,7 @@
     "FanSensor": {},
     "LEDSensor": {},
     "SyslogSensor": {},
+    "InternalScanSensor": { "skip_verify": false, "strict_http": true},
     "InternetSpeedtestPlugin": {
       "vendorCandidates": [
         "ookla"
@@ -750,6 +762,7 @@
     "AppTimeUsageSensor": {
       "appConfs": {
         "youtube": {
+          "category": "av",
           "includedDomains": [
             {
               "domain": "*.googlevideo.com",
@@ -764,6 +777,7 @@
           ]
         },
         "netflix": {
+          "category": "av",
           "includedDomains": [
             {
               "domain": "*.nflxvideo.net",
@@ -771,31 +785,6 @@
               "lingerMins": 1,
               "minsThreshold": 3,
               "bytesThreshold": 1000000
-            }
-          ]
-        },
-        "meta": {
-          "includedDomains": [
-            {
-              "domain": "*.fbcdn.net",
-              "occupyMins": 1,
-              "lingerMins": 1,
-              "minsThreshold": 2,
-              "bytesThreshold": 131072
-            },
-            {
-              "domain": "*.cdninstagram.com",
-              "occupyMins": 1,
-              "lingerMins": 1,
-              "minsThreshold": 2,
-              "bytesThreshold": 131072
-            },
-            {
-              "domain": "*.instagram.com",
-              "occupyMins": 1,
-              "lingerMins": 1,
-              "minsThreshold": 2,
-              "bytesThreshold": 131072
             }
           ]
         }
@@ -811,7 +800,7 @@
       "hostExpirationSecs": 2700
     },
     "DestIPFoundHook": {
-      "maxLucky": 100
+      "maxLucky": 250
     },
     "DestURLFoundHook": {},
     "VPNHook": {}
@@ -1002,6 +991,11 @@
         "large_upload": { "txInMin": 1000000, "txOutMin": 500000, "sdMin": 8, "ratioMin": 1, "ratioSingleDestMin": 1.5, "rankedMax": 3, "cooldown": 14400 },
         "large_upload_2": { "txMin": 100000000, "cooldown": 14400 }
       }
+    }
+  },
+  "alarms": {
+    "apply": {
+      "default": {"state": "ready"}
     }
   },
   "cloudcache": {

@@ -72,7 +72,10 @@ router.get('/:host',
                      netBotTool.prepareDetailedFlows(jsonObj, 'category', options),
                    ]).then(() => {
                      res.json(jsonObj);
-                   });
+                   }).catch(err => {
+                     log.error(err)
+                     res.status(500).send()
+                   })
                  })
                }).catch((err) => {
                  log.error(err)

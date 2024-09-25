@@ -6,6 +6,6 @@ module Conn;
 hook Conn::log_policy(rec: Conn::Info, id: Log::ID, filter: Log::Filter)
 {
   # no need to log dns traffic in conn.log. DNS payload will be captured in dns.log
-  if (rec$service == "dns")
+  if (rec?$service && rec$service == "dns")
     break;
 }

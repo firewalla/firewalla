@@ -20,14 +20,23 @@ const log = require('../net2/logger.js')(__filename);
 const Intel = require('./Intel.js');
 const tagManager = require('../net2/TagManager.js');
 const Constants = require('../net2/Constants.js');
+const Monitorable = require('../net2/Monitorable.js');
 
 class TagsInfoIntel extends Intel {
     async enrichAlarm(alarm) {
+      const guid = alarm["p.device.mac"] || alarm["p.device.guid"];
+      const device = Monitorable.getInstance(guid);
+      const allTags = device && await device.getTransitiveTags() || {};
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const config = Constants.TAG_TYPE_MAP[type];
         const idKey = config.alarmIdKey;
         const nameKey = config.alarmNameKey;
-        if (_.has(alarm, idKey)) {
+        if (!_.has(alarm, idKey)) {
+          const tags = Object.keys(_.get(allTags, type, {}));
+          if (!_.isEmpty(tags))
+            alarm[idKey] = tags;
+        }
+        if (!_.isEmpty(alarm[idKey])) {
           let names = [];
           for (let index = 0; index < alarm[idKey].length; index++) {
             const tagUid = alarm[idKey][index];

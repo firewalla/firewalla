@@ -61,9 +61,9 @@ class IPv6DiscoverySensor extends Sensor {
   }
 
   async ping6ForDiscovery(intf, obj) {
-    await execAsync(`ping6 -c2 -I ${intf} ff02::1`).catch((err) => { });
+    await execAsync(`ping6 -c2 -I ${intf} ff02::1%${intf}`).catch((err) => { });
     return asyncNative.eachLimit(obj.ip6_addresses, 5, async (o) => {
-      let pcmd = `ping6 -B -c 2 -I ${intf} -I ${o} ff02::1`;
+      let pcmd = `ping6 -B -c 2 -I ${intf} -I ${o} ff02::1%${intf}`;
       log.debug("Discovery:v6Neighbor:Ping6", pcmd);
       return execAsync(pcmd).catch((err) => { });
     })

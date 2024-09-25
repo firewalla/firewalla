@@ -9,7 +9,7 @@ MAX_NUM_OF_THREADS=40000
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab.gold
 REAL_PLATFORM='real.gse'
 MANAGED_BY_FIREBOOT=yes
-FW_PROBABILITY="0.99"
+FW_PROBABILITY="0.999"
 FW_QOS_PROBABILITY="0.999"
 ALOG_SUPPORTED=yes
 FW_SCHEDULE_BRO=false
@@ -35,6 +35,7 @@ FIRESTATUS_CONFIG=${CURRENT_DIR}/files/firestatus.yml
 FIRESTATUS_BIN=${CURRENT_DIR}/files/firestatus
 NEED_FIRESTATUS=true
 OVERLAY_RESET_ON_BOOT=true
+CGROUP_SOCK_MARK=${CURRENT_DIR}/files/cgroup_sock_mark
 
 function get_brofish_service {
   echo "${CURRENT_DIR}/files/brofish.service"
@@ -126,7 +127,7 @@ function installTLSModule {
   uid=$(id -u pi)
   gid=$(id -g pi)
   if ! lsmod | grep -wq "xt_tls"; then
-    sudo insmod ${FW_PLATFORM_CUR_DIR}/files/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
+    sudo insmod ${FW_PLATFORM_CUR_DIR}/files/$(uname -r)/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
     sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/libxt_tls.so /usr/lib/aarch64-linux-gnu/xtables
   fi
 }
