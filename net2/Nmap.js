@@ -94,7 +94,7 @@ module.exports = class {
     if (_mac != null) {
       return _mac
     }
-    const notFoundRecently = notFoundCache.lookup(ipaddress);
+    const notFoundRecently = notFoundCache.lookup(ipv6Addr);
     if (notFoundRecently) {
       return null
     }
