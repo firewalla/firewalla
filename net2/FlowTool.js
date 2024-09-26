@@ -18,8 +18,6 @@ const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const util = require('util');
-
 const LogQuery = require('./LogQuery.js')
 
 const TypeFlowTool = require('../flow/TypeFlowTool.js')
@@ -208,7 +206,7 @@ class FlowTool extends LogQuery {
       f.download = flow.ob;
     }
 
-    if (options.localFlow) {
+    if (_.isObject(options) && options.localFlow) {
       f.local = 1;
       f.peer = flow.peer;
     }
