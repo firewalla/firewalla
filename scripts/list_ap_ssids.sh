@@ -134,18 +134,18 @@ displaytime() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-SSID_COLS='ap_mac:-18 bssid:-18 channel:9 band:4 maxrate:10 sta_count:10 intf:-10 ssid ap_name:-30'
-{ print_header >&2; hl >&2; } 
+SSID_COLS='ap_mac:-18 bssid:-18 channel:9 band:4 maxrate:10 tx_pwr:6 sta_count:10 intf:-10 ssid ap_name:-30'
+{ print_header >&2; hl >&2; }
 lines=0
 timeit begin
 ssids=$(frcc | jq -r '.profile[], .assets_template.ap_default.mesh|.ssid')
 timeit ssids
-ssid_data=$(local_api status/ap | jq -r ".info|to_entries[]|.key as \$mac|.value.aps |to_entries[] |.value|[.ssid, \$mac, .bssid,.channel,.band,.maxRate//\"$NO_VALUE\", .intf//\"$NO_VALUE\"]|@tsv" )
+ssid_data=$(local_api status/ap | jq -r ".info|to_entries[]|.key as \$mac|.value.aps |to_entries[] |.value|[.ssid, \$mac, .bssid,.channel,.band,.txPower,.maxRate//\"$NO_VALUE\", .intf//\"$NO_VALUE\"]|@tsv" )
 ssid_sta_bssid=$(local_api status/station | jq -r '.info|to_entries|map(select(.value.bssid != null)|[.value.ssid, .key, .value.bssid])[]|@tsv')
 while read ssid
 do
     timeit $ssid
-    while IFS=$'\t' read ssid ap_mac bssid channel band maxrate intf
+    while IFS=$'\t' read ssid ap_mac bssid channel band tx_power maxrate intf
     do
         sta_count=$(echo "$ssid_sta_bssid" | awk "\$1==\"$ssid\" && \$3==\"$bssid\"" |wc -l)
         timeit sta_count
@@ -163,6 +163,7 @@ do
                 channel) ssidd=$channel ;;
                 band) ssidd=$band ;;
                 maxrate) ssidd=$maxrate ;;
+                tx_pwr) ssidd=$tx_power ;;
                 sta_count) ssidd=$sta_count ;;
                 *) ssidd=$NO_VALUE ;;
             esac
