@@ -992,6 +992,7 @@ class BroDetect {
       const origMac = obj["orig_l2_addr"] && obj["orig_l2_addr"].toUpperCase();
       const respMac = obj["resp_l2_addr"] && obj["resp_l2_addr"].toUpperCase();
       let localMac = null;
+      let dstMac = null;
       let intfId = null;
       const localOrig = obj["local_orig"];
       const localResp = obj["local_resp"];
@@ -1005,9 +1006,17 @@ class BroDetect {
       if (localOrig == true && localResp == true) {
         if (!fc.isFeatureOn('local_flow')) return;
 
-        flowdir = reverseLocal ? 'out' : 'in';
-        lhost = host;
-        localMac = origMac;
+        if (reverseLocal) {
+          flowdir = 'out'
+          lhost = dst
+          localMac = respMac
+          dstMac = origMac
+        } else {
+          flowdir = 'in';
+          lhost = host;
+          localMac = origMac;
+          dstMac = respMac
+        }
         localFlow = true
       } else if (localOrig == true && localResp == false) {
         flowdir = "in";
@@ -1187,7 +1196,6 @@ class BroDetect {
       if (localFlow && !reverseLocal) {
         // flat object, safe to shallow copy
         const copy = Object.assign({}, obj)
-        this.reverseConnFlow(copy);
         this.processConnData(JSON.stringify(copy), false, true);
       }
 
@@ -1233,7 +1241,7 @@ class BroDetect {
       };
 
       if (localFlow) {
-        tmpspec.dmac = respMac
+        tmpspec.dmac = dstMac
       } else {
         tmpspec.oIntf = outIntfId // egress intf id
         tmpspec.af = {} //application flows
@@ -1313,6 +1321,7 @@ class BroDetect {
 
       // adding keys to flowstash (but not redis)
       tmpspec.mac = localMac
+      if (localFlow) tmpspec.local = true
       Object.assign(tmpspec, tags)
 
       if (tmpspec.fd == 'out' && !localFlow) {
@@ -1324,8 +1333,6 @@ class BroDetect {
       )
       if (config.conn.expires) rclient.expireat(key, Date.now() / 1000 + config.conn.expires, ()=>{})
       await flowAggrTool.recordDeviceLastFlowTs(localMac, now);
-      tmpspec.mac = localMac; // record the mac address
-      if (localFlow) tmpspec.local = true
       const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
       let remoteHost = null;
       if (afhost && _.isObject(afobj) && afobj.ip === remoteIPAddress) {
@@ -1362,7 +1369,15 @@ class BroDetect {
         }
       }
 
-      if (localFlow) return
+      if (localFlow) {
+        // no need to go through DestIPFoundHook
+        sem.emitLocalEvent({
+          type: Message.MSG_FLOW_ENRICHED,
+          suppressEventLogging: true,
+          flow: Object.assign({}, tmpspec, {intf: intfInfo && intfInfo.uuid}),
+        });
+        return
+      }
 
       setTimeout(() => {
         sem.emitEvent({
@@ -1370,7 +1385,7 @@ class BroDetect {
           ip: remoteIPAddress,
           host: remoteHost,
           fd: tmpspec.fd,
-          flow: Object.assign({}, tmpspec, {ip: remoteIPAddress, host: remoteHost, mac: localMac, intf: intfInfo && intfInfo.uuid}),
+          flow: Object.assign({}, tmpspec, {ip: remoteIPAddress, host: remoteHost, intf: intfInfo && intfInfo.uuid}),
           from: "flow",
           suppressEventLogging: true,
           mac: localMac
