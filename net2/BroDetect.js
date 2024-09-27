@@ -1127,7 +1127,7 @@ class BroDetect {
         connEntry = await conntrack.getConnEntries(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], 600);
       }
       if (connEntry) {
-        if (connEntry.oIntf) outIntfId = connEntry.oIntf
+        if (connEntry.oIntf) outIntfId = connEntry.oIntf.substring(0, 8)
         if (connEntry.redirect) return
       } else {
         if (obj.conn_state === "OTH" || obj.conn_state === "SF" || (obj.proto === "tcp" && !_.get(obj, "history", "").startsWith("S"))) {
@@ -1178,7 +1178,7 @@ class BroDetect {
       }
 
       if (intfInfo && intfInfo.uuid) {
-        intfId = intfInfo.uuid;
+        intfId = intfInfo.uuid.substring(0, 8); // use only first potion to save memory
       } else {
         log.error(`Conn: Unable to find nif uuid, ${lhost}`);
         intfId = '';
@@ -1208,7 +1208,6 @@ class BroDetect {
 
       const tmpspec = {
         ts: obj.ts, // ts stands for start timestamp
-        ets: Math.round((obj.ts + obj.duration) * 100) / 100 , // ets stands for end timestamp
         _ts: await getUniqueTs(now), // _ts is the last time updated, make it unique to avoid missing flows in time-based query
         sh: host, // source
         dh: dst, // dstination
@@ -1274,8 +1273,8 @@ class BroDetect {
 
       const tuple = { download: traffic[0], upload: traffic[1], conn: tmpspec.ct }
       await this.recordTraffic(tuple, localMac);
-      if (intfId) {
-        await this.recordTraffic(tuple, 'intf:' + intfId, true);
+      if (intfInfo) {
+        await this.recordTraffic(tuple, 'intf:' + intfInfo.uuid, true);
       }
       for (const key in tags) {
         if (tags[key] && tags[key].length) {
@@ -1327,17 +1326,14 @@ class BroDetect {
           // update start timestamp
           flowspec.ts = tmpspec.ts;
         }
-        if (flowspec.ets < tmpspec.ets) {
-          // update end timestamp
-          flowspec.ets = tmpspec.ets;
-        }
+        const ets = Math.max(flowspec.ts + flowspec.du, tmpspec.ts + tmpspec.du)
         // update last time updated
         flowspec._ts = Math.max(flowspec._ts, tmpspec._ts);
         // TBD: How to define and calculate the duration of flow?
         //      The total time of network transfer?
         //      Or the length of period from the beginning of the first to the end of last flow?
         // Fow now, we use the length of period from to keep it consistent with app time usage calculation
-        flowspec.du = Math.round((flowspec.ets - flowspec.ts) * 100) / 100;
+        flowspec.du = Math.round((ets - flowspec.ts) * 100) / 100;
         if (flag) {
           flowspec.f = flag;
         }
@@ -1358,7 +1354,7 @@ class BroDetect {
           ip: remoteIPAddress,
           host: remoteHost,
           fd: tmpspec.fd,
-          flow: Object.assign({}, tmpspec, {ip: remoteIPAddress, host: remoteHost, mac: localMac}),
+          flow: Object.assign({}, tmpspec, {ip: remoteIPAddress, host: remoteHost, mac: localMac, intf: intfInfo && intfInfo.uuid}),
           from: "flow",
           suppressEventLogging: true,
           mac: localMac
@@ -1825,8 +1821,9 @@ class BroDetect {
     for (const iface of Object.keys(wanNicStats)) {
       if (this.wanNicStatsCache && this.wanNicStatsCache[iface]) {
         const uuid = wanNicStats[iface].uuid;
-        const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicStats[iface].rxBytes;
-        const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicStats[iface].txBytes;
+        // 1 mega bytes buffer in case there are multiple VLANs on a physical WAN port and bytes deduction may result in a negative result because statistics on different interfaces are not read at the same time
+        const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes - 1000000 ? Math.max(0, wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes) : wanNicStats[iface].rxBytes;
+        const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes - 1000000 ? Math.max(0, wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes) : wanNicStats[iface].txBytes;
         if (uuid) {
           wanTraffic[uuid] = {rxBytes, txBytes};
         }

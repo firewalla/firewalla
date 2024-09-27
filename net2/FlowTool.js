@@ -18,6 +18,7 @@ const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
+const networkProfileManager = require('../net2/NetworkProfileManager.js');
 const LogQuery = require('./LogQuery.js')
 
 const TypeFlowTool = require('../flow/TypeFlowTool.js')
@@ -154,7 +155,7 @@ class FlowTool extends LogQuery {
     f.fd = flow.fd;
     f.count = flow.ct || 1,
     f.duration = flow.du
-    f.intf = flow.intf;
+    if (flow.intf) f.intf = networkProfileManager.prefixMap[flow.intf] || flow.intf
     for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
       const config = Constants.TAG_TYPE_MAP[type];
       f[config.flowKey] = flow[config.flowKey];
@@ -169,7 +170,7 @@ class FlowTool extends LogQuery {
     }
 
     if (flow.oIntf)
-      f.oIntf = flow.oIntf;
+      f.oIntf = networkProfileManager.prefixMap[flow.oIntf] || f.oIntf
 
     // allow rule id
     if (flow.apid && Number(flow.apid)) {

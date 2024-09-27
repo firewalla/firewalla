@@ -15,7 +15,7 @@
 'use strict';
 
 const log = require('./logger.js')(__filename);
-
+const networkProfileManager = require('../net2/NetworkProfileManager.js');
 const Constants = require('./Constants.js');
 const LogQuery = require('./LogQuery.js')
 
@@ -58,11 +58,11 @@ class AuditTool extends LogQuery {
     const f = {
       ltype: options.block == undefined || options.block ? 'audit' : 'flow',
       type: options.dnsFlow ? 'dnsFlow' : entry.type,
-      ts: entry._ts || entry.ets || entry.ts,
+      ts: entry._ts || entry.ts + (entry.du || 0),
       count: entry.ct,
     };
     if (entry.pr) f.protocol = entry.pr
-    if (entry.intf) f.intf = entry.intf
+    if (entry.intf) f.intf = networkProfileManager.prefixMap[entry.intf] || entry.intf
 
     if (_.isObject(entry.af) && !_.isEmpty(entry.af))
       f.appHosts = Object.keys(entry.af);
@@ -94,7 +94,7 @@ class AuditTool extends LogQuery {
       f.reason = entry.reason
     }
     if (entry.wanIntf) {
-      f.wanIntf = entry.wanIntf;
+      f.wanIntf = networkProfileManager.prefixMap[entry.wanIntf] || entry.wanIntf
     }
 
 

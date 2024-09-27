@@ -400,7 +400,7 @@ module.exports = class {
   // in this case, once box remove from msp, box should use the flag to clean up msp related rules
   async isMspRelatedRule(rule, { mspData }) {
     const mspId = await this.getMspId();
-    if (rule.msp_id == mspId && (p.msp_rid || p.purpose == 'mesh')) return true; // msp global rule or vpn mesh rule
+    if (rule.msp_id == mspId && (rule.msp_rid || rule.purpose == 'mesh')) return true; // msp global rule or vpn mesh rule
     if (mspData && mspData.targetlists) {
       if (_.find(mspData.targetlists, { id: rule.target })) { // if it is msp target list rule
         return true;
