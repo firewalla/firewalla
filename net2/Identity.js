@@ -193,7 +193,7 @@ class Identity extends Monitorable {
     } else {
       const content = ips.map((ip) => `src-address-group=%${ip.endsWith('/32') || ip.endsWith('/128') ? ip.split('/')[0] : ip}@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}`).join('\n');
       await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, content, { encoding: "utf8" }).catch((err) => {
-        log.error(`Failed to update dnsmasq config for identity ${uid}`, err.message);
+        log.error(`Failed to update dnsmasq config for identity ${this.getUniqueId()}`, err.message);
       });
       dnsmasq.scheduleRestartDNSService();
     }

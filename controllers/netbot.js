@@ -318,7 +318,8 @@ class netBot extends ControllerBot {
         "p.upnp.ttl", "p.upnp.description", "p.upnp.protocol", "p.upnp.public.port", "p.upnp.private.port", // upnp open port
         "p.file.type", "p.subnet.length", "p.dest.url",
         "p.begin.ts", "p.end.ts", "p.totalUsage", "p.percentage", "p.planUsage", // bandwidth usage
-        "p.vpn.strictvpn", "p.vpn.subtype", "p.vpn.displayname", "p.vpn.devicecount", "p.vpn.protocol" // VPN disconnect/restore alarm
+        "p.vpn.strictvpn", "p.vpn.subtype", "p.vpn.displayname", "p.vpn.devicecount", "p.vpn.protocol", // VPN disconnect/restore alarm
+        "p.vwg.name", "p.vwg.uuid", "p.vwg.strictvpn", "p.vwg.devicecount", // VPN group connectivity change alarm
       ];
       Object.assign(alarmData, _.pick(alarm, appUsedKeys));
 
