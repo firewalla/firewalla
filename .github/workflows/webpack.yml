@@ -39,7 +39,7 @@ jobs:
           node-version: "16"
 
       - run: npm install -g eslint@8.57.1
-      - run: eslint ./ # todo, only eslint for diff files
+      - run: eslint --quiet ./ # todo, only eslint for diff files
       - run: npm i -g yarn
       - run: yarn global add webpack-cli
       - run: mkdir -p webpack; cd webpack; yarn add webpack webpack-cli || true
