@@ -339,7 +339,7 @@ class LogQuery {
         }
       }
     }
-    const includedMacs = null;
+    let includedMacs = null;
     if (_.isArray(options.include) && options.include.every(f => f.device)) { // only consider included devices before redis query to reduce unnecessary IO overhead
       includedMacs = new Set();
       for (const inFilter of options.include) {

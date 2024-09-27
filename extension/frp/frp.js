@@ -235,7 +235,7 @@ module.exports = class {
 
   async _prepareConfiguration(config) {
     let templateFile = configTemplateFile // default is the support config template file
-    const userToken = null;
+    let userToken = null;
     if (config) {
       userToken = config.userToken;
     }

@@ -337,7 +337,7 @@ class NetworkMonitorSensor extends Sensor {
         }
         bindIP = sysManager.myIp(opts.intf);
         if (!bindIP) {
-          log.error(`Cannot find IP address to bind on interface ${optf.intf}, skip dns test on it`);
+          log.error(`Cannot find IP address to bind on interface ${opts.intf}, skip dns test on it`);
           return {status: `ERROR: ip address on interface ${opts.intf} is not found`, data: {}};
         }
       }
