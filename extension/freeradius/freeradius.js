@@ -41,7 +41,7 @@ client %NAME% {
 `
 
 const TEMP_USER = `
-%USERNAME%	SHA2-Password := "%PASSWD%"
+%USERNAME%	NT-Password := "%PASSWD%"
 	Reply-Message := "Hello, %{User-Name}"
 `
 
@@ -102,9 +102,9 @@ class FreeRadius {
       await exec(`mkdir -p ${dockerDir}`);
       await exec(`touch ${f.getUserHome()}/.forever/radius.log`).catch(err=>null); // systemd permission required
       await exec(`cp ${__dirname}/docker-compose${options.ssl ? '.ssl' : ''}.yml ${dockerDir}/docker-compose.yml`);
+      await exec(`cp ${__dirname}/raddb/eap ${dockerDir}/`);
       if (options.ssl) {
         await exec(`cp ${__dirname}/raddb/ca.cnf ${dockerDir}/`);
-        await exec(`cp ${__dirname}/raddb/eap ${dockerDir}/`);
         await exec(`bash ${__dirname}/genssl.sh`);
       }
       return true;
@@ -129,7 +129,7 @@ class FreeRadius {
     return content;
   }
 
-  _replaceUserConfig(userConfig) {
+  async _replaceUserConfig(userConfig) {
     if (!userConfig.username) {
       log.warn("invalid freeradius config username", userConfig);
       return "";
@@ -145,10 +145,19 @@ class FreeRadius {
       }
     }
 
-    userConfig.hash = crypto.createHash('sha256').update(userConfig.passwd).digest('hex');
+    const sslver = await exec(`openssl version | awk -F" " '{print $2}'`).then(r=>r.stdout.trim()).catch( (err) => {
+      log.error("Failed to get openssl version", err.message);
+      return "";
+    });
+    const legacy = sslver.match(/^1\./) ? "" : "-provider legacy";
+    userConfig.hash = await exec(`echo -n "${userConfig.passwd}" | iconv -f ASCII -t utf16le | openssl md4 ${legacy} | cut -d ' ' -f2`).then(r=>r.stdout.trim()).catch( (err) => {
+      log.error("Failed to generate ntlm hash", err.message);
+      return "";
+    });
     this._passwd[userConfig.username] = userConfig.passwd;
-    this._savePasswd();
+    await this._savePasswd();
     content = content.replace(/%PASSWD%/g, userConfig.hash);
+
     return content;
   }
 
@@ -169,7 +178,7 @@ class FreeRadius {
     const userConf = [];
     this._passwd = {};
     for (const user of usersConfig) {
-      userConf.push(this._replaceUserConfig(user));
+      userConf.push(await this._replaceUserConfig(user));
     }
     const usersConfStr = userConf.join("\n");
     const content = await fs.readFileAsync(`${__dirname}/raddb/users.tmplt`, {encoding: "utf8"}).catch((err) => null);

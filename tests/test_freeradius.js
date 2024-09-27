@@ -37,7 +37,7 @@ client test1 {
 }
 `
 const result2 = `
-jack	SHA2-Password := "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+jack	NT-Password := "e0fba38268d0ec66ef1cb452d5885e53"
 	Reply-Message := "Hello, %{User-Name}"
 `
 
@@ -106,9 +106,9 @@ describe('Test freeradius prepare radius config files', function(){
       })();
     });
 
-    it('should replace template', () => {
+    it('should replace template', async() => {
         expect(freeradius._replaceClientConfig({name:"test1", ipaddr:"172.16.0.0/12", secret:"123", require_msg_auth:"yes"})).to.equal(result1);
-        expect(freeradius._replaceUserConfig({username:"jack", passwd:"abc"})).to.equal(result2);
+        expect(await freeradius._replaceUserConfig({username:"jack", passwd:"abc"})).to.equal(result2);
     });
 
     it('should generate config file', async () => {
@@ -172,7 +172,7 @@ describe.skip('Test freeradius service', function(){
     });
 });
 
-describe.skip('Test freeradius sensor', function(){
+describe('Test freeradius sensor', function(){
     this.timeout(1200000);
     this.plugin = new FreeRadiusSensor({});
     before((done) => {
