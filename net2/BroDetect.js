@@ -1248,7 +1248,7 @@ class BroDetect {
         obj["orig_l2_addr"] = localMac
         obj["resp_l2_addr"] = dstMac
 
-        this.processConnData(obj, false, true)
+        this.processConnData(JSON.stringify(obj), false, true)
       }
 
       // flowstash is the aggregation of flows within FLOWSTASH_EXPIRES seconds
