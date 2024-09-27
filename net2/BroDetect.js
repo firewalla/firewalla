@@ -1221,8 +1221,8 @@ class BroDetect {
       // do this after we get real bytes in long connection
       if (localFlow && !reverseLocal) {
         // dst == resp && dstMac == respMac
+        const isDstIdentityIntf = this.isIdentityLAN(dstIntfInfo)
         if (!dstMac) {
-          const isDstIdentityIntf = this.isIdentityLAN(dstIntfInfo)
           if (isDstIdentityIntf && resp && dstFam == 4) {
             const dstMonitorable = await this.waitAndGetIdentity(resp)
             if (dstMonitorable) {
@@ -1234,11 +1234,12 @@ class BroDetect {
             // double check dest mac for spoof leak
             if (dstFam == 4 && !sysManager.isMyIP(resp) || dstFam == 6 && !sysManager.isMyIP6(resp)) {
               log.info("Discard incorrect dest MAC address from bro log: ", dstMac, resp);
-              dstMac = await hostTool.getMacByIPWithCache(resp)
+              dstMac = null
             }
           }
         }
-
+        if (!dstMac && !isDstIdentityIntf)
+          dstMac = await hostTool.getMacByIPWithCache(resp)
         if (!dstMac) {
           log.warn('NO Dest MAC! Drop flow', data)
           return
