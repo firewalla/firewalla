@@ -487,12 +487,8 @@ class BroDetect {
       const isIdentityIntf = this.isIdentityLAN(intfInfo)
 
       if (!localMac) {
-        monitorable = IdentityManager.getIdentityByIP(dnsFlow.sh);
-        let retry = 2
-        while (!monitorable && isIdentityIntf && !IdentityManager.isInitialized() && retry--) {
-          await delay(10 * 1000)
-          monitorable = IdentityManager.getIdentityByIP(dnsFlow.sh);
-        }
+        if (isIdentityIntf)
+          monitorable = await this.waitAndGetIdentity(dnsFlow.sh)
         if (monitorable) {
           localMac = IdentityManager.getGUID(monitorable);
           dnsFlow.rl = IdentityManager.getEndpointByIP(dnsFlow.sh);
@@ -898,6 +894,16 @@ class BroDetect {
     }
   }
 
+  async waitAndGetIdentity(ip) {
+    let identity = IdentityManager.getIdentityByIP(ip);
+    let retry = 2
+    while (!identity && !IdentityManager.isInitialized() && retry--) {
+      await delay(10 * 1000)
+      identity = IdentityManager.getIdentityByIP(ip);
+    }
+    return identity
+  }
+
   async processConnData(data, long = false, reverseLocal = false) {
     try {
       let obj = JSON.parse(data);
@@ -918,7 +924,7 @@ class BroDetect {
         return;
       }
 
-      if (obj.service && obj.service == "dns") {
+      if (obj.service && obj.service == "dns" || obj["id.resp_p"] == 53 || obj["id.orig_p"] == 53) {
         return;
       }
 
@@ -985,8 +991,8 @@ class BroDetect {
         }
       }
 
-      const host = obj["id.orig_h"];
-      const dst = obj["id.resp_h"];
+      const orig = obj["id.orig_h"];
+      const resp = obj["id.resp_h"];
       let flowdir = "in";
       let lhost = null;
       const origMac = obj["orig_l2_addr"] && obj["orig_l2_addr"].toUpperCase();
@@ -998,7 +1004,7 @@ class BroDetect {
       const localResp = obj["local_resp"];
       let localFlow = false
 
-      log.debug("ProcessingConection:", obj.uid, host, dst, obj['id.resp_p']);
+      log.debug("ProcessingConection:", obj.uid, orig, resp, obj['id.resp_p']);
 
       // fd: in, this flow initiated from inside
       // fd: out, this flow initated from outside, it is more dangerous
@@ -1008,26 +1014,26 @@ class BroDetect {
 
         if (reverseLocal) {
           flowdir = 'out'
-          lhost = dst
+          lhost = resp
           localMac = respMac
           dstMac = origMac
         } else {
           flowdir = 'in';
-          lhost = host;
+          lhost = orig;
           localMac = origMac;
           dstMac = respMac
         }
         localFlow = true
       } else if (localOrig == true && localResp == false) {
         flowdir = "in";
-        lhost = host;
+        lhost = orig;
         localMac = origMac;
       } else if (localOrig == false && localResp == true) {
         flowdir = "out";
-        lhost = dst;
+        lhost = resp;
         localMac = respMac;
       } else {
-        log.debug("Conn:Error:Drop", data, host, dst, localOrig, localResp);
+        log.debug("Conn:Error:Drop", data, orig, resp, localOrig, localResp);
         return;
       }
 
@@ -1039,18 +1045,22 @@ class BroDetect {
         log.error('Conn:Error:Drop Invalid local IP', lhost)
         return
       }
+      const dstFam = lhost == resp ? localFam : net.isIP(resp)
+      if (!dstFam) {
+        log.error('Conn:Error:Drop Invalid local IP', resp)
+        return
+      }
 
-      let intfInfo = sysManager.getInterfaceViaIP(lhost);
+      let intfInfo = sysManager.getInterfaceViaIP(lhost, localFam);
+      let dstIntfInfo = sysManager.getInterfaceViaIP(resp, dstFam);
       // ignore multicast IP
       try {
-        if (sysManager.isMulticastIP4(dst, intfInfo && intfInfo.name) || sysManager.isMulticastIP6(dst)) {
+        if (dstFam == 4 && sysManager.isMulticastIP4(resp, dstIntfInfo && dstIntfInfo.name)
+          || dstFam == 6 && sysManager.isMulticastIP6(resp)
+        ) {
           return;
         }
-        if (obj["id.resp_p"] == 53 || obj["id.orig_p"] == 53) {
-          return;
-        }
-
-        if (sysManager.isMyServer(dst) || sysManager.isMyServer(host)) {
+        if (sysManager.isMyServer(resp) || sysManager.isMyServer(orig)) {
           return;
         }
       } catch (e) {
@@ -1064,12 +1074,8 @@ class BroDetect {
       let realLocal = null;
       let monitorable = null;
       if (!localMac && lhost && localFam == 4) {
-        monitorable = IdentityManager.getIdentityByIP(lhost);
-        let retry = 2
-        while (!monitorable && isIdentityIntf && !IdentityManager.isInitialized() && retry--) {
-          await delay(10 * 1000)
-          monitorable = IdentityManager.getIdentityByIP(lhost);
-        }
+        if (isIdentityIntf)
+          monitorable = await this.waitAndGetIdentity(lhost)
         if (monitorable) {
           localMac = IdentityManager.getGUID(monitorable);
           realLocal = IdentityManager.getEndpointByIP(lhost);
@@ -1191,14 +1197,6 @@ class BroDetect {
         }
       }
 
-      // save flow under the destination host key for per device indexing
-      // do this after we get real bytes in long connection
-      if (localFlow && !reverseLocal) {
-        // flat object, safe to shallow copy
-        const copy = Object.assign({}, obj)
-        this.processConnData(JSON.stringify(copy), false, true);
-      }
-
       if (intfInfo && intfInfo.uuid) {
         intfId = intfInfo.uuid.substring(0, 8); // use only first potion to save memory
       } else {
@@ -1219,15 +1217,49 @@ class BroDetect {
         return
       }
 
+      // save flow under the destination host key for per device indexing
+      // do this after we get real bytes in long connection
+      if (localFlow && !reverseLocal) {
+        // dst == resp && dstMac == respMac
+        if (!dstMac) {
+          const isDstIdentityIntf = this.isIdentityLAN(dstIntfInfo)
+          if (isDstIdentityIntf && resp && dstFam == 4) {
+            const dstMonitorable = await this.waitAndGetIdentity(resp)
+            if (dstMonitorable) {
+              dstMac = IdentityManager.getGUID(dstMonitorable);
+            }
+          }
+        } else {
+          if (sysManager.isMyMac(dstMac)) {
+            // double check dest mac for spoof leak
+            if (dstFam == 4 && !sysManager.isMyIP(resp) || dstFam == 6 && !sysManager.isMyIP6(resp)) {
+              log.info("Discard incorrect dest MAC address from bro log: ", dstMac, resp);
+              dstMac = await hostTool.getMacByIPWithCache(resp)
+            }
+          }
+        }
+
+        if (!dstMac) {
+          log.warn('NO Dest MAC! Drop flow', data)
+          return
+        }
+
+        // writes obj so reverse processing doesn't have to do this
+        obj["orig_l2_addr"] = localMac
+        obj["resp_l2_addr"] = dstMac
+
+        this.processConnData(obj, false, true)
+      }
+
       // flowstash is the aggregation of flows within FLOWSTASH_EXPIRES seconds
       let now = Date.now() / 1000; // keep it as float, reduce the same score flows
-      let flowspecKey = `${host}:${dst}:${intfId}:${outIntfId || ""}:${obj['id.resp_p'] || ""}:${flowdir}`;
+      let flowspecKey = `${orig}:${resp}:${intfId}:${outIntfId || ""}:${obj['id.resp_p'] || ""}:${flowdir}`;
 
       const tmpspec = {
         ts: obj.ts, // ts stands for start timestamp
         _ts: await getUniqueTs(now), // _ts is the last time updated, make it unique to avoid missing flows in time-based query
-        sh: host, // source
-        dh: dst, // dstination
+        sh: orig, // source
+        dh: resp, // dstination
         ob: Number(obj.orig_bytes), // transfer bytes
         rb: Number(obj.resp_bytes),
         ct: 1, // count
@@ -1276,11 +1308,11 @@ class BroDetect {
 
       let afobj, afhost
       if (!localFlow) {
-        afobj = this.withdrawAppMap(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], long || this.activeLongConns.has(obj.uid)) || connEntry;
+        afobj = this.withdrawAppMap(orig, obj['id.orig_p'], resp, obj['id.resp_p'], long || this.activeLongConns.has(obj.uid)) || connEntry;
         if (!afobj || !afobj.host) {
-          afobj = await conntrack.getConnEntries(obj["orig_l2_addr"] ? obj["orig_l2_addr"].toUpperCase() : obj["id.orig_h"], "", obj["id.resp_h"], "", "dns", 600); // use recent DNS lookup records from this IP as a fallback to parse application level info
+          afobj = await conntrack.getConnEntries(origMac ? origMac : orig, "", resp, "", "dns", 600); // use recent DNS lookup records from this IP as a fallback to parse application level info
           if (afobj && afobj.host)
-            await conntrack.setConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], obj.proto, afobj, 600); // sync application level info from recent DNS lookup to five-tuple key of this connection
+            await conntrack.setConnEntries(orig, obj["id.orig_p"], resp, obj["id.resp_p"], obj.proto, afobj, 600); // sync application level info from recent DNS lookup to five-tuple key of this connection
         }
 
         if (afobj && afobj.host && flowdir === "in") { // only use information in app map for outbound flow, af describes remote site
