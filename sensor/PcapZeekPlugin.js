@@ -27,9 +27,10 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const {Address4, Address6} = require('ip-address');
-const features = require('../net2/features.js')
+const fc = require('../net2/config.js');
 const conntrack = require('../net2/Conntrack.js')
 const uuid = require('uuid');
+const Constants = require('../net2/Constants.js');
 
 class PcapZeekPlugin extends PcapPlugin {
 
@@ -129,10 +130,18 @@ class PcapZeekPlugin extends PcapPlugin {
     }
     // do not capture intranet traffic, but still keep tcp SYN/FIN/RST for port scan detection
     const restrictFilters = {};
-    if (!_.isEmpty(monitoredNetworks4))
-      restrictFilters["not-intranet-ip4"] = `not (ip and (${monitoredNetworks4.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks4.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or tcp[13] & 0x7 == 0))`;
-    if (!_.isEmpty(monitoredNetworks6))
-      restrictFilters["not-intranet-ip6"] = `not (ip6 and (${monitoredNetworks6.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks6.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or ip6[40+13] & 0x7 == 0))`;
+    if (!fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW)) {
+      if (!_.isEmpty(monitoredNetworks4))
+        restrictFilters["not-intranet-ip4"] = `not (ip and (${monitoredNetworks4.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks4.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or tcp[13] & 0x7 == 0))`;
+      if (!_.isEmpty(monitoredNetworks6))
+        restrictFilters["not-intranet-ip6"] = `not (ip6 and (${monitoredNetworks6.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks6.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or ip6[40+13] & 0x7 == 0))`;
+    } else {
+      // randomly drop local traffic packets without SYN/FIN/RST based on the first bit of the most significant byte of TCP checksum(tcp header offset +16), this can reduce 50% traffic
+      if (!_.isEmpty(monitoredNetworks4))
+        restrictFilters["not-intranet-ip4"] = `not (ip and (${monitoredNetworks4.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks4.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (tcp and tcp[13] & 0x7 == 0 and (len >= 1000 || tcp[13] == 0x10) and tcp[16] & 0x8 != 0))`;
+      if (!_.isEmpty(monitoredNetworks6))
+        restrictFilters["not-intranet-ip6"] = `not (ip6 and (${monitoredNetworks6.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks6.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (tcp and ip6[40+13] & 0x7 == 0 and (len >= 1000 || ip6[40 + 13] == 0x10) and ip6[40 + 16] & 0x8 != 0))`;
+    }
     // do not record TCP SYN originated from box, which is device port scan packets
     if (!_.isEmpty(selfIp4)) {
       restrictFilters["not-self-tx-syn-ip4"] = `not (ip and (${selfIp4.map(ip => `src host ${ip}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or tcp[13] & 0x12 == 2))`;
@@ -150,7 +159,7 @@ class PcapZeekPlugin extends PcapPlugin {
     if (!_.isEmpty(wanIp6)) {
       restrictFilters["not-self-wan-ip6"] = `not (${wanIp6.map(ip => `host ${ip}`).join(' or ')})`;
     }
-    if (features.isOn("fast_speedtest") && conntrack) {
+    if (fc.isFeatureOn("fast_speedtest") && conntrack) {
       restrictFilters["not-tcp-port-8080"] = `not (tcp and port 8080)`;
       conntrack.registerConnHook({dport: 8080, protocol: "tcp"}, (connInfo) => {
         const {src, replysrc, sport, replysport, dst, dport, protocol, origPackets, respPackets, origBytes, respBytes, duration} = connInfo;
