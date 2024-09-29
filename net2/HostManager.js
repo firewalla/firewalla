@@ -2232,7 +2232,7 @@ module.exports = class HostManager extends Monitorable {
     const types = Object.keys(Constants.TAG_TYPE_MAP)
     this.getAllMonitorables()
       .forEach(m => {
-        const tags = m && m.policy && types.flatMap(type => m.policy[Constants.TAG_TYPE_MAP[type].policyKey]);
+        const tags = m && m.policy && types.flatMap(type => m.policy[Constants.TAG_TYPE_MAP[type].policyKey]).filter(t => !_.isEmpty(t));
         if (!tags) return
         for (const tag of tags) {
           if (tagMap[tag])

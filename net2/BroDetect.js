@@ -1010,7 +1010,7 @@ class BroDetect {
       // fd: out, this flow initated from outside, it is more dangerous
 
       if (localOrig == true && localResp == true) {
-        if (!fc.isFeatureOn('local_flow')) return;
+        if (!fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW)) return;
 
         if (reverseLocal) {
           flowdir = 'out'
@@ -1070,37 +1070,43 @@ class BroDetect {
 
       const isIdentityIntf = this.isIdentityLAN(intfInfo)
 
+      // local flow will be recorded twice on two different interfaces by zeek, only count the ingress flow on one interface
+      // TODO: this condition check does not cover the case if both ends are VPN devices, but this rarely happens
+      if (!reverseLocal && (respMac && !sysManager.isMyMac(respMac) || isIdentityIntf && respMac))
+        return;
+
       let localType = TYPE_MAC;
       let realLocal = null;
       let monitorable = null;
-      if (!localMac && lhost && localFam == 4) {
-        if (isIdentityIntf)
-          monitorable = await this.waitAndGetIdentity(lhost)
+      if (isIdentityIntf) {
+        monitorable = await this.waitAndGetIdentity(lhost);
         if (monitorable) {
-          localMac = IdentityManager.getGUID(monitorable);
-          realLocal = IdentityManager.getEndpointByIP(lhost);
+          if (!localMac)
+            localMac = IdentityManager.getGUID(monitorable);
+          if (lhost && localFam == 4)
+            realLocal = IdentityManager.getEndpointByIP(lhost);
           localType = TYPE_VPN;
           if (!intfInfo) // might be in mesh network
             intfInfo = monitorable.getNicName() && sysManager.getInterface(monitorable.getNicName());
         }
       } else {
-
-        if (sysManager.isMyMac(localMac)) {
+        if (localMac && sysManager.isMyMac(localMac)) {
           // double confirm local mac is correct since bro may record Firewalla's MAC as local mac
           // if packets are not fully captured due to ARP spoof leak
           if (localFam == 4 && !sysManager.isMyIP(lhost) || localFam == 6 && !sysManager.isMyIP6(lhost)) {
             log.info("Discard incorrect local MAC address from bro log: ", localMac, lhost);
             localMac = null; // discard local mac from bro log since it is not correct
-          }
+          } else
+            return;
         }
 
-        monitorable = hostManager.getHostFastByMAC(localMac);
-        if (!monitorable) {
-          if (localFam == 4) {
-            monitorable = hostManager.getHostFast(lhost);
-          } else if (localFam == 6) {
-            monitorable = hostManager.getHostFast6(lhost);
-          }
+        if (!localMac)
+          localMac = await hostTool.getMacByIPWithCache(lhost)
+        if (localMac)
+          monitorable = hostManager.getHostFastByMAC(localMac);
+        else {
+          log.warn('NO LOCAL MAC! Drop flow', data)
+          return
         }
 
         // recored device heartbeat
@@ -1204,52 +1210,49 @@ class BroDetect {
         // no interface doesn't really makes sense here
         log.error('Conn: Unable to find nif uuid', lhost, localMac);
         return
-      }
-
-      // Don't query MAC for IP from VPN interface, otherwise it will spawn many 'cat' processes in Layer2.js
-      if (!localMac && !isIdentityIntf) {
-        // this can also happen on older bro which does not support mac logging
-        localMac = await hostTool.getMacByIPWithCache(lhost)
-      }
-
-      if (!localMac || localMac.constructor.name !== "String") {
-        log.warn('NO LOCAL MAC! Drop flow', data)
-        return
-      }
+      }    
 
       // save flow under the destination host key for per device indexing
       // do this after we get real bytes in long connection
-      if (localFlow && !reverseLocal) {
-        // dst == resp && dstMac == respMac
+      let dstMonitorable = null;
+      if (localFlow) {
         const isDstIdentityIntf = this.isIdentityLAN(dstIntfInfo)
-        if (!dstMac) {
-          if (isDstIdentityIntf && resp && dstFam == 4) {
-            const dstMonitorable = await this.waitAndGetIdentity(resp)
-            if (dstMonitorable) {
+        if (isDstIdentityIntf) {
+          dstMonitorable = await this.waitAndGetIdentity(resp);
+          if (dstMonitorable) {
+            if (!dstMac)
               dstMac = IdentityManager.getGUID(dstMonitorable);
-            }
+            if (!dstIntfInfo)
+              dstIntfInfo = dstMonitorable.getNicName() && sysManager.getInterface(dstMonitorable.getNicName());
           }
         } else {
-          if (sysManager.isMyMac(dstMac)) {
+          if (dstMac && sysManager.isMyMac(dstMac)) {
             // double check dest mac for spoof leak
             if (dstFam == 4 && !sysManager.isMyIP(resp) || dstFam == 6 && !sysManager.isMyIP6(resp)) {
               log.info("Discard incorrect dest MAC address from bro log: ", dstMac, resp);
               dstMac = null
-            }
+            } else 
+              return;
+          }
+
+          if (!dstMac)
+            dstMac = await hostTool.getMacByIPWithCache(resp)
+          if (dstMac)
+            dstMonitorable = hostManager.getHostFastByMAC(dstMac);
+          else {
+            log.warn('NO DST MAC! Drop flow', data);
+            return;
           }
         }
-        if (!dstMac && !isDstIdentityIntf)
-          dstMac = await hostTool.getMacByIPWithCache(resp)
-        if (!dstMac) {
-          log.warn('NO Dest MAC! Drop flow', data)
-          return
+
+        if (!reverseLocal) {
+          // dst == resp && dstMac == respMac
+          // writes obj so reverse processing doesn't have to do this
+          obj["orig_l2_addr"] = localMac
+          obj["resp_l2_addr"] = dstMac
+
+          this.processConnData(JSON.stringify(obj), false, true)
         }
-
-        // writes obj so reverse processing doesn't have to do this
-        obj["orig_l2_addr"] = localMac
-        obj["resp_l2_addr"] = dstMac
-
-        this.processConnData(JSON.stringify(obj), false, true)
       }
 
       // flowstash is the aggregation of flows within FLOWSTASH_EXPIRES seconds
@@ -1289,6 +1292,10 @@ class BroDetect {
       }
 
       const tags = await this.getTags(monitorable, intfInfo)
+      let dstTags = null;
+      if (dstMonitorable) {
+        dstTags = await this.getTags(dstMonitorable, dstIntfInfo)
+      }
 
       if (monitorable instanceof Identity)
         tmpspec.guid = IdentityManager.getGUID(monitorable);
@@ -1304,6 +1311,20 @@ class BroDetect {
         if (!outIntfId && !localFlow) {
           log.debug('Dropping blocked UDP', tmpspec)
           return
+        }
+      }
+
+      for (const key in tags) {
+        if (_.isArray(tags[key]) && !_.isEmpty(tags[key])) {
+          tmpspec[key] = tags[key]
+        }
+      }
+      if (dstTags) {
+        tmpspec.dstTags = {};
+        for (const key in dstTags) {
+          if (_.isArray(dstTags[key]) && !_.isEmpty(dstTags[key])) {
+            tmpspec.dstTags[key] = dstTags[key];
+          }
         }
       }
 
@@ -1334,8 +1355,7 @@ class BroDetect {
         await this.recordTraffic(tuple, localMac);
         await this.recordTraffic(tuple, 'intf:' + intfInfo.uuid, true);
         for (const key in tags) {
-          if (tags[key] && tags[key].length) {
-            tmpspec[key] = tags[key]
+          if (_.isArray(tags[key]) && !_.isEmpty(tags[key])) {
             for (const tag of tags[key]) {
               await this.recordTraffic(tuple, 'tag:' + tag, true);
             }
