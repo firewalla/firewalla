@@ -317,7 +317,7 @@ function preload(callback) {
                     if (err) {
                         //keep old cache
                     } else {
-                        asyncCache.lastLine = (datSize / asyncCache.recordSize) - 1;
+                        asyncCache.lastLine = Math.trunc(datSize / asyncCache.recordSize) - 1;
                         asyncCache.lastIP = asyncCache.mainBuffer.readUInt32BE((asyncCache.lastLine * asyncCache.recordSize) + 4);
                         asyncCache.firstIP = asyncCache.mainBuffer.readUInt32BE(0);
                         cache4 = asyncCache;
@@ -358,7 +358,7 @@ function preload(callback) {
 
         fs.closeSync(datFile);
 
-        cache4.lastLine = (datSize / cache4.recordSize) - 1;
+        cache4.lastLine = Math.trunc(datSize / cache4.recordSize) - 1;
         cache4.lastIP = cache4.mainBuffer.readUInt32BE((cache4.lastLine * cache4.recordSize) + 4);
         cache4.firstIP = cache4.mainBuffer.readUInt32BE(0);
     }
@@ -424,7 +424,7 @@ function preload6(callback) {
                     if (err) {
                         //keep old cache
                     } else {
-                        asyncCache6.lastLine = (datSize / asyncCache6.recordSize) - 1;
+                        asyncCache6.lastLine = Math.trunc(datSize / asyncCache6.recordSize) - 1;
                         cache6 = asyncCache6;
                         cache6.lastIP = readip6(cache6.lastLine, 1);
                         cache6.firstIP = readip6(0, 0);
@@ -458,7 +458,7 @@ function preload6(callback) {
 
         fs.closeSync(datFile);
 
-        cache6.lastLine = (datSize / cache6.recordSize) - 1;
+        cache6.lastLine = Math.trunc(datSize / cache6.recordSize) - 1;
         cache6.lastIP = readip6(cache6.lastLine, 1);
         cache6.firstIP = readip6(0, 0);
     }
