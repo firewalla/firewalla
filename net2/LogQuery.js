@@ -437,7 +437,7 @@ class LogQuery {
   async enrichWithIntel(logs) {
     return mapLimit(logs, 50, async f => {
       // ignore dns and ntp here as ip intel doesn't make sense for intercepted flows
-      if (f.ip && f.type == 'ip' && f.local) {
+      if (f.ip && f.type == 'ip' && !f.local) {
         const intel = await intelTool.getIntel(f.ip, f.appHosts)
 
         // lodash/assign appears to be x4 times less efficient
