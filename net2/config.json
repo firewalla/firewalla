@@ -567,6 +567,10 @@
         "expires": 86400,
         "count": 10000
       },
+      "flowLocal": {
+        "expires": 86400,
+        "count": 5000
+      },
       "auditDrop": {
         "expires": 86400,
         "count": 10000

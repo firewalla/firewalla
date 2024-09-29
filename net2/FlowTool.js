@@ -100,38 +100,40 @@ class FlowTool extends LogQuery {
     }
 
     const feeds = []
-    if (options.direction) {
-      feeds.push(... this.expendFeeds({macs, direction: options.direction}))
-      if (options.localFlow)
-        feeds.push(... this.expendFeeds({macs, direction: options.direction, localFlow: true}))
-    } else {
-      feeds.push(... this.expendFeeds({macs, direction: 'in'}))
-      feeds.push(... this.expendFeeds({macs, direction: 'out'}))
-      if (options.localFlow) {
-        // a local flow will be recorded in both src and dst host key, need to deduplicate flows on the two hosts
-        options.exclude = [{peer: macs, fd: "out"}];
-        feeds.push(... this.expendFeeds({macs, direction: 'in', localFlow: true}))
-        feeds.push(... this.expendFeeds({macs, direction: 'out', localFlow: true}))
+    // use some filters to cut feed number here
+    if (options.block !== true) {
+      if (options.local !== true) {
+        if (options.direction) {
+          feeds.push(... this.expendFeeds({macs, direction: options.direction}))
+        } else {
+          feeds.push(... this.expendFeeds({macs, direction: 'in'}))
+          feeds.push(... this.expendFeeds({macs, direction: 'out'}))
+        }
+        if (options.dnsFlow) {
+          feeds.push(... auditTool.expendFeeds({macs, block: false, dnsFlow: true}))
+        }
+        if (options.auditDNSSuccess && options.ntpFlow)
+          feeds.push(... auditTool.expendFeeds({macs, block: false}))
+        else if (options.auditDNSSuccess && (!options.type || options.type == 'dns'))
+          feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'dns'}))
+        else if (options.ntpFlow && (!options.type || options.type == 'ntp'))
+          feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'ntp'}))
+      } else
+        if (options.localFlow) {
+          feeds.push(... this.expendFeeds({macs, localFlow: true}))
       }
     }
-    if (options.audit) {
-      feeds.push(... auditTool.expendFeeds({macs, block: true}))
+    if (options.block !== false) {
+      if (options.audit) {
+        feeds.push(... auditTool.expendFeeds({macs, block: true}))
+      }
     }
-    if (options.dnsFlow) {
-      feeds.push(... auditTool.expendFeeds({macs, block: false, dnsFlow: true}))
-    }
-    if (options.auditDNSSuccess && options.ntpFlow)
-      feeds.push(... auditTool.expendFeeds({macs, block: false}))
-    else if (options.auditDNSSuccess)
-      feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'dns'}))
-    else if (options.ntpFlow)
-      feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'ntp'}))
 
     delete options.audit
     delete options.dnsFlow
     delete options.ntpFlow
-    delete options.auditDNSSuccess
     delete options.localFlow
+    delete options.auditDNSSuccess
     let recentFlows = await this.logFeeder(options, feeds)
 
     json.flows.recent = recentFlows;
@@ -146,7 +148,7 @@ class FlowTool extends LogQuery {
   }
 
   // convert flow json to a simplified json format that's more readable by app
-  toSimpleFormat(flow, options) {
+  toSimpleFormat(flow, options = {}) {
     let f = {
       ltype: 'flow',
       type: 'ip'
@@ -207,9 +209,9 @@ class FlowTool extends LogQuery {
       f.download = flow.ob;
     }
 
-    if (_.isObject(options) && options.localFlow) {
-      f.local = 1;
-      f.peer = flow.peer;
+    if (options.localFlow) {
+      f.destDevice = flow.dmac
+      f.local = true
     }
 
     return f;
@@ -295,7 +297,10 @@ class FlowTool extends LogQuery {
   }
 
   getLogKey(mac, options) {
-    return `flow${options.localFlow ? "_lo" : ""}:conn:${options.direction || "in"}:${mac}`;
+    if (options.localFlow)
+      return `flow:local:${mac}`
+    else
+      return util.format("flow:conn:%s:%s", options.direction || 'in', mac);
   }
 
   addFlow(mac, type, flow) {
