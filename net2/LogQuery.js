@@ -436,7 +436,8 @@ class LogQuery {
 
   async enrichWithIntel(logs) {
     return mapLimit(logs, 50, async f => {
-      if (f.ip) {
+      // ignore dns and ntp here as ip intel doesn't make sense for intercepted flows
+      if (f.ip && f.type == 'ip' && !f.local) {
         const intel = await intelTool.getIntel(f.ip, f.appHosts)
 
         // lodash/assign appears to be x4 times less efficient
@@ -476,14 +477,9 @@ class LogQuery {
 
       if (f.rl) {
         const rlIp = f.rl.startsWith("[") && f.rl.includes("]:") ? f.rl.substring(1, f.rl.indexOf("]:")) : f.rl.split(":")[0];
-        const rlIntel = await intelTool.getIntel(rlIp);
-        if (rlIntel && rlIntel.country) {
-          f.rlCountry = rlIntel.country;
-        } else {
-          const c = country.getCountry(rlIp);
-          if (c)
-            f.rlCountry = c;
-        }
+        const c = country.getCountry(rlIp);
+        if (c)
+          f.rlCountry = c;
       }
 
       // special handling of flows blocked by adblock, ensure category is ad,
