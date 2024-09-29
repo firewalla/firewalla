@@ -8,6 +8,8 @@ var utils = require('./utils');
 var fsWatcher = require('./fsWatcher');
 var async = require('async');
 
+const log = require('../../net2/logger.js')(__filename)
+
 var watcherName = 'dataWatcher';
 
 var geodatadir;
@@ -327,6 +329,7 @@ function preload(callback) {
             }
         ]);
     } else {
+        let filePath
         try {
             datFile = fs.openSync(dataFiles.cityNames, 'r');
             datSize = fs.fstatSync(datFile).size;
@@ -343,6 +346,7 @@ function preload(callback) {
 
             datFile = fs.openSync(dataFiles.city, 'r');
             datSize = fs.fstatSync(datFile).size;
+            filePath = dataFiles.city
         } catch (err) {
             if (err.code !== 'ENOENT' && err.code !== 'EBADF' && err.code !== 'EMPTY_FILE') {
                 throw err;
@@ -351,6 +355,7 @@ function preload(callback) {
             datFile = fs.openSync(dataFiles.country, 'r');
             datSize = fs.fstatSync(datFile).size;
             cache4.recordSize = RECORD_SIZE;
+            filePath = dataFiles.country
         }
 
         cache4.mainBuffer = Buffer.alloc(datSize);
@@ -358,6 +363,7 @@ function preload(callback) {
 
         fs.closeSync(datFile);
 
+        log.info('loaded v4', filePath)
         cache4.lastLine = Math.trunc(datSize / cache4.recordSize) - 1;
         cache4.lastIP = cache4.mainBuffer.readUInt32BE((cache4.lastLine * cache4.recordSize) + 4);
         cache4.firstIP = cache4.mainBuffer.readUInt32BE(0);
@@ -434,6 +440,7 @@ function preload6(callback) {
             }
         ]);
     } else {
+        let filePath
         try {
             datFile = fs.openSync(dataFiles.city6, 'r');
             datSize = fs.fstatSync(datFile).size;
@@ -443,6 +450,7 @@ function preload6(callback) {
                     code: 'EMPTY_FILE'
                 };
             }
+            filePath = dataFiles.city6
         } catch (err) {
             if (err.code !== 'ENOENT' && err.code !== 'EBADF' && err.code !== 'EMPTY_FILE') {
                 throw err;
@@ -451,6 +459,7 @@ function preload6(callback) {
             datFile = fs.openSync(dataFiles.country6, 'r');
             datSize = fs.fstatSync(datFile).size;
             cache6.recordSize = RECORD_SIZE6;
+            filePath = dataFiles.country6
         }
 
         cache6.mainBuffer = Buffer.alloc(datSize);
@@ -458,6 +467,7 @@ function preload6(callback) {
 
         fs.closeSync(datFile);
 
+        log.info('loaded v6', filePath)
         cache6.lastLine = Math.trunc(datSize / cache6.recordSize) - 1;
         cache6.lastIP = readip6(cache6.lastLine, 1);
         cache6.firstIP = readip6(0, 0);
