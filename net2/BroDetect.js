@@ -995,8 +995,9 @@ class BroDetect {
       const resp = obj["id.resp_h"];
       let flowdir = "in";
       let lhost = null;
-      const origMac = obj["orig_l2_addr"] && obj["orig_l2_addr"].toUpperCase();
-      const respMac = obj["resp_l2_addr"] && obj["resp_l2_addr"].toUpperCase();
+      let dhost = null;
+      const origMac = obj["orig_l2_addr"] && (obj["orig_l2_addr"].length == 17 ? obj["orig_l2_addr"].toUpperCase() : obj["orig_l2_addr"]);
+      const respMac = obj["resp_l2_addr"] && (obj["resp_l2_addr"].length == 17 ? obj["resp_l2_addr"].toUpperCase() : obj["resp_l2_addr"]);
       let localMac = null;
       let dstMac = null;
       let intfId = null;
@@ -1015,22 +1016,26 @@ class BroDetect {
         if (reverseLocal) {
           flowdir = 'out'
           lhost = resp
+          dhost = orig
           localMac = respMac
           dstMac = origMac
         } else {
           flowdir = 'in';
           lhost = orig;
+          dhost = resp;
           localMac = origMac;
-          dstMac = respMac
+          dstMac = respMac;
         }
         localFlow = true
       } else if (localOrig == true && localResp == false) {
         flowdir = "in";
         lhost = orig;
+        dhost = resp;
         localMac = origMac;
       } else if (localOrig == false && localResp == true) {
         flowdir = "out";
         lhost = resp;
+        dhost = orig;
         localMac = respMac;
       } else {
         log.debug("Conn:Error:Drop", data, orig, resp, localOrig, localResp);
@@ -1040,23 +1045,18 @@ class BroDetect {
       if (localMac == "FF:FF:FF:FF:FF:FF" || localFlow && respMac == 'FF:FF:FF:FF:FF:FF')
         return;
 
-      const localFam = net.isIP(lhost)
-      if (!localFam) {
+      const fam = net.isIP(lhost)
+      if (!fam) {
         log.error('Conn:Error:Drop Invalid local IP', lhost)
         return
       }
-      const dstFam = lhost == resp ? localFam : net.isIP(resp)
-      if (!dstFam) {
-        log.error('Conn:Error:Drop Invalid local IP', resp)
-        return
-      }
 
-      let intfInfo = sysManager.getInterfaceViaIP(lhost, localFam);
-      let dstIntfInfo = sysManager.getInterfaceViaIP(resp, dstFam);
+      let intfInfo = sysManager.getInterfaceViaIP(lhost, fam);
+      let dstIntfInfo = localFlow && sysManager.getInterfaceViaIP(dhost, fam);
       // ignore multicast IP
       try {
-        if (dstFam == 4 && sysManager.isMulticastIP4(resp, dstIntfInfo && dstIntfInfo.name)
-          || dstFam == 6 && sysManager.isMulticastIP6(resp)
+        if (fam == 4 && sysManager.isMulticastIP4(dhost, intfInfo && intfInfo.name)
+          || fam == 6 && sysManager.isMulticastIP6(dhost)
         ) {
           return;
         }
@@ -1083,7 +1083,7 @@ class BroDetect {
         if (monitorable) {
           if (!localMac)
             localMac = IdentityManager.getGUID(monitorable);
-          if (lhost && localFam == 4)
+          if (lhost && fam == 4)
             realLocal = IdentityManager.getEndpointByIP(lhost);
           localType = TYPE_VPN;
           if (!intfInfo) // might be in mesh network
@@ -1093,7 +1093,7 @@ class BroDetect {
         if (localMac && sysManager.isMyMac(localMac)) {
           // double confirm local mac is correct since bro may record Firewalla's MAC as local mac
           // if packets are not fully captured due to ARP spoof leak
-          if (localFam == 4 && !sysManager.isMyIP(lhost) || localFam == 6 && !sysManager.isMyIP6(lhost)) {
+          if (fam == 4 && !sysManager.isMyIP(lhost) || fam == 6 && !sysManager.isMyIP6(lhost)) {
             log.info("Discard incorrect local MAC address from bro log: ", localMac, lhost);
             localMac = null; // discard local mac from bro log since it is not correct
           } else
@@ -1112,14 +1112,14 @@ class BroDetect {
         // recored device heartbeat
         // as flows with invalid conn_state are removed, all flows here could be considered as valid
         // this should be done before device monitoring check, we still want heartbeat update from unmonitored devices
-        this.recordDeviceHeartbeat(localMac, Math.round((obj.ts + obj.duration) * 100) / 100, lhost, localFam)
+        this.recordDeviceHeartbeat(localMac, Math.round((obj.ts + obj.duration) * 100) / 100, lhost, fam)
       }
 
       if (!intfInfo && monitorable) {
         intfInfo = sysManager.getInterfaceViaUUID(monitorable && monitorable.o.intf);
       }
 
-      if (!this.isConnFlowValid(obj, intfInfo, localFam, monitorable)) {
+      if (!this.isConnFlowValid(obj, intfInfo, fam, monitorable)) {
         return;
       }
 
@@ -1218,7 +1218,7 @@ class BroDetect {
       if (localFlow) {
         const isDstIdentityIntf = this.isIdentityLAN(dstIntfInfo)
         if (isDstIdentityIntf) {
-          dstMonitorable = await this.waitAndGetIdentity(resp);
+          dstMonitorable = await this.waitAndGetIdentity(dhost);
           if (dstMonitorable) {
             if (!dstMac)
               dstMac = IdentityManager.getGUID(dstMonitorable);
@@ -1228,15 +1228,15 @@ class BroDetect {
         } else {
           if (dstMac && sysManager.isMyMac(dstMac)) {
             // double check dest mac for spoof leak
-            if (dstFam == 4 && !sysManager.isMyIP(resp) || dstFam == 6 && !sysManager.isMyIP6(resp)) {
-              log.info("Discard incorrect dest MAC address from bro log: ", dstMac, resp);
+            if (fam == 4 && !sysManager.isMyIP(dhost) || fam == 6 && !sysManager.isMyIP6(dhost)) {
+              log.info("Discard incorrect dest MAC address from bro log: ", dstMac, dhost);
               dstMac = null
             } else 
               return;
           }
 
           if (!dstMac)
-            dstMac = await hostTool.getMacByIPWithCache(resp)
+            dstMac = await hostTool.getMacByIPWithCache(dhost)
           if (dstMac)
             dstMonitorable = hostManager.getHostFastByMAC(dstMac);
           else {
