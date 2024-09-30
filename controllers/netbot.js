@@ -1022,6 +1022,8 @@ class netBot extends ControllerBot {
     } else if (msg.target != '0.0.0.0') {
       options.mac = msg.target
     }
+    if (_.has(options, "local"))
+      options.local = Boolean(options.local);
 
     return options
   }
