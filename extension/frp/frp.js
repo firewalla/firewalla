@@ -203,15 +203,6 @@ module.exports = class {
     return `${frpDirectory}/frpc.${this.name}.ini`;
   }
 
-  _getPidPath() {
-    if (this.name !== "support") {
-      return `${frpDirectory}/frpc.customized.${this.name}.pid`;
-    } else {
-      // use default pid file
-      return pidFile;
-    }
-  }
-
   _getServiceName() {
     return `frpc.${this.name}`;
   }
