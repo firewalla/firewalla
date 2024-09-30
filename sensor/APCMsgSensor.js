@@ -31,10 +31,8 @@ const hostManager = new HostManager();
 const sysManager = require('../net2/SysManager.js');
 const HostTool = require("../net2/HostTool.js");
 const hostTool = new HostTool();
-const sem = require('./SensorEventManager.js').getInstance();
-const rclient = require('../util/redis_manager.js').getRedisClient();
-const {getUniqueTs} = require('../util/util.js');
 const uuid = require('uuid');
+const bro = require('../net2/BroDetect.js');
 
 
 const Sensor = require('./Sensor.js').Sensor;
@@ -271,8 +269,6 @@ class APCMsgSensor extends Sensor {
     */
     if (!_.isArray(msg) || _.isEmpty(msg))
       return;
-    const transactions = [];
-    const touchedKeys = {};
     for (const log of msg) {
       const {ts, af, sh, dh, sp, dp, ob, rb, pr, cnt} = log;
       if (sh === dh)
@@ -283,62 +279,38 @@ class APCMsgSensor extends Sensor {
         continue;
       // FIXME: duration is to be added in conntrack events from fwapc
       const du = log.du || 1;
-      const ct = _.isArray(sp) ? sp.length : 1;
-      const intf = sysManager.getInterfaceViaIP(sh);
-      const intfUUID = intf && intf.uuid;
-      const uid = uuid.v4().substring(0, 8);
       const smac = await hostTool.getMacByIPWithCache(sh);
       const dmac = await hostTool.getMacByIPWithCache(dh);
-      const shost = smac && hostManager.getHostFastByMAC(smac);
-      const dhost = dmac && hostManager.getHostFastByMAC(dmac);
-      const shTags = shost && await shost.getTransitiveTags();
-      const dhTags = dhost && await dhost.getTransitiveTags();
-      const shFlow = {ets: ts, ts: ts - du, sh, dh, du, sp, dp, ob, rb, pr, ct, intf: intfUUID, ltype: "mac", uid, ct: cnt};
-      const dhFlow = _.clone(shFlow);
-      const now = Date.now() / 1000;
-      shFlow._ts = await getUniqueTs(now);
-      dhFlow._ts = await getUniqueTs(now);
-      shFlow.fd = "in";
-      dhFlow.fd = "out";
-      shFlow.lh = sh;
-      dhFlow.lh = dh;
-      shFlow.peer = dmac;
-      dhFlow.peer = smac;
-      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-        const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
-        const stags = [];
-        const dtags = [];
-        if (_.has(shTags, type))
-          stags.push(...Object.keys(shTags[type]));
-        if (_.has(dhTags, type))
-          dtags.push(...Object.keys(dhTags[type]));
-        shFlow[flowKey] = _.uniq(stags);
-        dhFlow[flowKey] = _.uniq(dtags);
-      }
-      if (shost) {
-        const key = this.getLocalFlowKey(smac, "in");
-        transactions.push(["zadd", key, shFlow._ts, JSON.stringify(shFlow)]);
-        if (!_.has(touchedKeys, key)) {
-          transactions.push(["expire", key, 86400]);
-          touchedKeys[key] = 1;
-        }
-      }
-      if (dhost) {
-        const key = this.getLocalFlowKey(dmac, "out");
-        transactions.push(["zadd", key, dhFlow._ts, JSON.stringify(dhFlow)]);
-        if (!_.has(touchedKeys, key)) {
-          transactions.push(["expire", key, 86400]);
-          touchedKeys[key] = 1;
-        }
-      }
-    }
-    await rclient.multi(transactions).execAsync().catch((err) => {
-      log.error(`Failed to save local flows to redis`, err.message);
-    });
-  }
+      const origPackets = Math.max(Math.floor(ob / 1000), 1);
+      const respPackets = Math.max(Math.floor(rb / 1000), 1);
 
-  getLocalFlowKey(mac, dir) {
-    return `flow_lo:conn:${dir}:${mac}`;
+      const connLog = {
+        "id.orig_h": sh,
+        "id.resp_h": dh,
+        "id.orig_p": sp,
+        "id.resp_p": dp,
+        "proto": pr,
+        "orig_bytes": ob,
+        "resp_bytes": rb,
+        "orig_pkts": origPackets,
+        "resp_pkts": respPackets,
+        "orig_ip_bytes": ob + origPackets * 20,
+        "resp_ip_bytes": rb + respPackets * 20,
+        "missed_bytes": 0,
+        "local_orig": true,
+        "local_resp": true,
+        "orig_l2_addr": smac,
+        "resp_l2_addr": dmac,
+        "conn_state": "SF",
+        "duration": du,
+        "ts": ts - du,
+        "uid": uuid.v4().substring(0, 8),
+        "bridge": true
+      }
+      bro.processConnData(JSON.stringify(connLog)).catch((err) => {
+        log.error(`Failed to process local conn log in zeek`, connLog, err.message);
+      });
+    }
   }
 }
 

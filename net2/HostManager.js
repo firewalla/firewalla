@@ -483,9 +483,19 @@ module.exports = class HostManager extends Monitorable {
     const subKey = target && target != '0.0.0.0' ? ':' + target : '';
     const { granularities, hits} = statSettings;
     const stats = {}
-    const metricArray = metrics || [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB', 'ntp' ]
+    const metricArray = metrics || [
+      'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB', 'ntp',
+      'upload:lo', 'download:lo', 'conn:lo',
+    ]
     for (const metric of metricArray) {
-      stats[metric] = await getHitsAsync(metric + subKey, granularities, hits)
+      const s = await getHitsAsync(metric + subKey, granularities, hits)
+      if (granularities == '1minute') {
+        if (s[s.length - 1] && s[s.length - 1][1] == 0)
+          s.pop()
+        else if (s.length > 60)
+          s.shift()
+      }
+      stats[metric] = s
     }
     return this.generateStats(stats);
   }
@@ -575,20 +585,7 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async last60MinStatsForInit(json, target) {
-    const subKey = target && target != '0.0.0.0' ? ':' + target : ''
-
-    const stats = {}
-    const metrics = [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB', 'ntp' ]
-    for (const metric of metrics) {
-      const s = await getHitsAsync(metric + subKey, "1minute", 61)
-      if (s[s.length - 1] && s[s.length - 1][1] == 0) {
-        s.pop()
-      } else {
-        s.shift()
-      }
-      stats[metric] = s
-    }
-    json.last60 = this.generateStats(stats)
+    json.last60 = await this.getStats({granularities: '1minute', hits: 61}, target);
   }
 
   async last30daysStatsForInit(json, target) {
@@ -2283,7 +2280,7 @@ module.exports = class HostManager extends Monitorable {
     const types = Object.keys(Constants.TAG_TYPE_MAP)
     this.getAllMonitorables()
       .forEach(m => {
-        const tags = m && m.policy && types.flatMap(type => m.policy[Constants.TAG_TYPE_MAP[type].policyKey]);
+        const tags = m && m.policy && types.flatMap(type => m.policy[Constants.TAG_TYPE_MAP[type].policyKey]).filter(t => !_.isEmpty(t));
         if (!tags) return
         for (const tag of tags) {
           if (tagMap[tag])
