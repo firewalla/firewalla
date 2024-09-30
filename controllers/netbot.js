@@ -899,6 +899,7 @@ class netBot extends ControllerBot {
         const latestConfig = await FireRouter.getConfig();
         await FireRouter.saveConfigHistory(latestConfig);
         this._scheduleRedisBackgroundSave();
+        if (latestConfig.ncid) return {ncid: latestConfig.ncid};
         return
       }
       case "eptGroupName": {

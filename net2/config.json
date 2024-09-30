@@ -984,6 +984,7 @@
     "rekey": false,
     "pcap_zeek": true,
     "pcap_suricata": false,
+    "local_flow": false,
     "category_filter": true,
     "rule_stats": true,
     "unbound": false,
