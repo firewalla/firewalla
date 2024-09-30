@@ -1004,6 +1004,7 @@ class BroDetect {
       const localOrig = obj["local_orig"];
       const localResp = obj["local_resp"];
       let localFlow = false
+      let bridge = obj["bridge"] || false;
 
       log.debug("ProcessingConection:", obj.uid, orig, resp, obj['id.resp_p']);
 
@@ -1011,7 +1012,7 @@ class BroDetect {
       // fd: out, this flow initated from outside, it is more dangerous
 
       if (localOrig == true && localResp == true) {
-        if (!fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW)) return;
+        if (!fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW) || !await mode.isRouterModeOn()) return;
 
         if (reverseLocal) {
           flowdir = 'out'
@@ -1053,6 +1054,9 @@ class BroDetect {
 
       let intfInfo = sysManager.getInterfaceViaIP(lhost, fam);
       let dstIntfInfo = localFlow && sysManager.getInterfaceViaIP(dhost, fam);
+      // do not process traffic between devices in the same network unless bridge flag is set in log
+      if (intfInfo === dstIntfInfo && !bridge)
+        return;
       // ignore multicast IP
       try {
         if (fam == 4 && sysManager.isMulticastIP4(dhost, intfInfo && intfInfo.name)
@@ -1072,7 +1076,7 @@ class BroDetect {
 
       // local flow will be recorded twice on two different interfaces by zeek, only count the ingress flow on one interface
       // TODO: this condition check does not cover the case if both ends are VPN devices, but this rarely happens
-      if (!reverseLocal && (respMac && !sysManager.isMyMac(respMac) || isIdentityIntf && respMac))
+      if (localFlow && !reverseLocal && (origMac && sysManager.isMyMac(origMac) || isIdentityIntf && respMac))
         return;
 
       let localType = TYPE_MAC;
@@ -1302,7 +1306,8 @@ class BroDetect {
       if (realLocal)
         tmpspec.rl = realLocal;
 
-      if (obj['id.orig_p']) tmpspec.sp = [obj['id.orig_p']];
+      // id.orig_p can be an array in local flow
+      if (obj['id.orig_p']) tmpspec.sp = _.isArray(obj['id.orig_p']) ? obj['id.orig_p'] : [obj['id.orig_p']];
       if (obj['id.resp_p']) tmpspec.dp = obj['id.resp_p'];
 
       // might be blocked UDP packets, checking conntrack
@@ -1414,8 +1419,13 @@ class BroDetect {
         flowspec.du = Math.round((ets - flowspec.ts) * 100) / 100;
         flowspec.uids.includes(obj.uid) || flowspec.uids.push(obj.uid)
 
-        if (obj['id.orig_p'] && !flowspec.sp.includes(obj['id.orig_p'])) {
-          flowspec.sp.push(obj['id.orig_p']);
+        if (obj['id.orig_p']) {
+          if (_.isArray(obj['id.orig_p']))
+            flowspec.sp.push(...(obj['id.orig_p'].filter(p => !flowspec.sp.includes(p))));
+          else {
+            if (!flowspec.sp.includes(obj['id.orig_p']))
+              flowspec.sp.push(obj['id.orig_p']);
+          }
         }
         if (afhost && !flowspec.af[afhost]) {
           flowspec.af[afhost] = _.pick(afobj, ["proto", "ip"]);
@@ -1479,7 +1489,7 @@ class BroDetect {
       const spec = flowstash[specKey];
       if (!spec.mac)
         continue;
-      if (type == 'conn') try {
+      if (type == 'conn' && !spec.local) try {
         // try resolve host info for previous flows again here
         for (const uid of spec.uids) {
           const afobj = this.withdrawAppMap(spec.sh, spec.sp[0] || 0, spec.dh, spec.dp, this.activeLongConns.has(uid)) || await conntrack.getConnEntries(spec.sh, spec.sp[0] || 0, spec.dh, spec.dp, spec.pr, 600);;
