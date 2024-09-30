@@ -18,6 +18,7 @@ const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
+const util = require('util');
 const networkProfileManager = require('../net2/NetworkProfileManager.js');
 const LogQuery = require('./LogQuery.js')
 
