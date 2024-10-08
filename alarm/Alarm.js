@@ -1098,8 +1098,15 @@ class AbnormalUploadAlarm extends OutboundAlarm {
   }
 
   localizedNotificationContentArray() {
+    let deviceName = this["p.device.name"];
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      if (identity) {
+        deviceName = identity.getDeviceNameInNotificationContent(this);
+      }
+    }
     const result = [
-      this["p.device.name"],
+      deviceName,
       this["p.transfer.outbound.humansize"],
       this["p.dest.name"],
       this["p.timestampTimezone"],
@@ -1159,8 +1166,15 @@ class LargeUploadAlarm extends OutboundAlarm {
   }
 
   localizedNotificationContentArray() {
+    let deviceName = this["p.device.name"];
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      if (identity) {
+        deviceName = identity.getDeviceNameInNotificationContent(this);
+      }
+    }
     const result = [
-      this["p.device.name"],
+      deviceName,
       this["p.transfer.outbound.humansize"],
       this["p.dest.name"],
       this["p.timestampTimezone"],
