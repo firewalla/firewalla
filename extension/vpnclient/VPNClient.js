@@ -227,11 +227,11 @@ class VPNClient {
     for(const bin of bins) {
       const tcpCmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p tcp --dport 53 -j ACCEPT`);
       await exec(tcpCmd).catch((err) => {
-        log.error(`Failed to bypass DNS tcp53 redirect: ${cmd}, err:`, err.message);
+        log.error(`Failed to bypass DNS tcp53 redirect: ${tcpCmd}, err:`, err.message);
       });
       const udpCmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p udp --dport 53 -j ACCEPT`);
       await exec(udpCmd).catch((err) => {
-        log.error(`Failed to bypass DNS udp53 redirect: ${cmd}, err:`, err.message);
+        log.error(`Failed to bypass DNS udp53 redirect: ${tcpCmd}, err:`, err.message);
       });
     }
   }
