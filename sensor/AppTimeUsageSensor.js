@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -51,7 +51,7 @@ class AppTimeUsageSensor extends Sensor {
     await this.scheduleUpdateConfigCronJob();
 
     sem.on(Message.MSG_FLOW_ENRICHED, async (event) => {
-      if (event && !_.isEmpty(event.flow))
+      if (event && !_.isEmpty(event.flow) && !event.flow.local)
         await this.processEnrichedFlow(event.flow).catch((err) => {
           log.error(`Failed to process enriched flow`, event.flow, err.message);
         });

@@ -95,8 +95,6 @@ describe('Test safe search', function(){
     });
 
   });
-  
-
 
   describe('generate domain entries', function(){
     this.timeout(30000);
@@ -115,9 +113,18 @@ describe('Test safe search', function(){
       expect(entries[0]).to.equal('cname=duckduckgo.com,safe.duckduckgo.com$safe_search');
     });
 
+    it('should patch host-record entry', async() => {
+      let result = await execAsync(`redis-cli zrevrange rdns:domain:safe.duckduckgo.com 0 0`).then(r=>r.stdout.trim()).catch(error => null);
+      if (!result) {
+        await execAsyncAsync(`redis-cli zadd rdns:domain:safe.duckduckgo.com ${Date.now()/1000} 52.250.41.2`);
+        result = "52.250.41.2";
+      }
+      const entries = await this.plugin.patchHostRecordEntry("safe.duckduckgo.com");
+      expect(entries[0]).to.be.eql(`host-record=safe.duckduckgo.com,${result}`);
+    });
+
     it('should generate address entries', async()=> {
       const entries = await this.plugin.generateDomainEntries("forcesafesearch.google.com", ["www.google.com"]);
-
       const result = await execAsync(`redis-cli zrevrange rdns:domain:forcesafesearch.google.com 0 0`);
       const match = result.stdout.trim();
       expect(entries[0]).to.include(`/www.google.com/${match}$safe_search`);
