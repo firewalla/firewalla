@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -164,7 +164,7 @@ class NetBotTool {
   }
 
   // Top X on the entire network
-  async prepareTopFlows(json, trafficDirection, fd, options) {
+  async prepareTopFlows(json, dimension, fd, options) {
     if (!("flows" in json)) {
       json.flows = {};
     }
@@ -173,16 +173,16 @@ class NetBotTool {
     let end = options.end || (begin + 3600);
     const target = options.intf && ('intf:' + options.intf) || options.tag && ('tag:' + options.tag) || options.mac || undefined;
 
-    log.verbose('prepareTopFlows', trafficDirection, fd, target || 'system', options.queryall ? 'last24' : [ begin, end ])
+    log.verbose('prepareTopFlows', dimension, fd, target || 'system', options.queryall ? 'last24' : [ begin, end ])
     log.debug(options)
 
     let sumFlowKey = null
 
     if(options.queryall) {
-      sumFlowKey = await flowAggrTool.getLastSumFlow(target, trafficDirection, fd);
+      sumFlowKey = await flowAggrTool.getLastSumFlow(target, dimension, fd);
 
       if (!sumFlowKey) {
-        log.warn('Aggregation not found', target || 'system', trafficDirection, fd)
+        log.warn('Aggregation not found', target || 'system', dimension, fd)
         return []
       }
 
@@ -192,7 +192,7 @@ class NetBotTool {
         end = ts.end
       }
     } else {
-      sumFlowKey = flowAggrTool.getSumFlowKey(target, trafficDirection, begin, end, fd);
+      sumFlowKey = flowAggrTool.getSumFlowKey(target, dimension, begin, end, fd);
     }
 
     const traffic = await flowAggrTool.getTopSumFlowByKey(sumFlowKey, options.limit || 50);
@@ -204,11 +204,11 @@ class NetBotTool {
 
     const enriched = await flowTool.enrichWithIntel(traffic);
 
-    json.flows[`${trafficDirection}${fd ? `:${fd}` : ""}`] = enriched.sort((a, b) => {
+    json.flows[`${dimension}${fd ? `:${fd}` : ""}`] = enriched.sort((a, b) => {
       return b.count - a.count;
     });
-    log.verbose('prepareTopFlows ends', trafficDirection, fd, target, options.queryall ? 'last24' : [ begin, end ])
-    return json.flows[`${trafficDirection}${fd ? `:${fd}` : ""}`]
+    log.verbose('prepareTopFlows ends', dimension, fd, target, options.queryall ? 'last24' : [ begin, end ])
+    return json.flows[`${dimension}${fd ? `:${fd}` : ""}`]
   }
 
   // "sumflow:8C:29:37:BF:4A:86:upload:1505073000:1505159400"
