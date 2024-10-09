@@ -564,6 +564,10 @@
         "expires": 86400,
         "count": 10000
       },
+      "flowLocal": {
+        "expires": 86400,
+        "count": 5000
+      },
       "auditDrop": {
         "expires": 86400,
         "count": 10000
@@ -953,6 +957,7 @@
     "acl_alarm": true,
     "new_device_tag": false,
     "dual_wan": true,
+    "vwg_conn_alarm": true,
     "clash": false,
     "single_wan_conn_check": false,
     "accounting": false,
@@ -970,6 +975,7 @@
     "rekey": false,
     "pcap_zeek": true,
     "pcap_suricata": false,
+    "local_flow": false,
     "category_filter": true,
     "rule_stats": true,
     "unbound": false,

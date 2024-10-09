@@ -46,7 +46,7 @@ describe('Test AlarmManager2', function(){
 
     it('should sync msp config', async() => {
       const origin = await rclient.getAsync("ext.guardian.data");
-      const data = `{"config": {"alarm": {"apply":{"test":{"state": "111"}}}}}`
+      const data = `{"config": {"alarms": {"apply":{"test":{"state": "111"}}}}}`
       rclient.setAsync("ext.guardian.data", data);
       await fc.syncMspConfig();
       const config = await fc.getMspConfig();
@@ -56,7 +56,7 @@ describe('Test AlarmManager2', function(){
     });
 
     it('should subscribe msp update', async() => {
-      const data = `{"config":{"alarm": {"apply":{"vpn_restore":{"state": "ready"}}}}}`
+      const data = `{"config":{"alarms": {"apply":{"vpn_restore":{"state": "ready"}}}}}`
       await pclient.publishAsync('config:msp:updated', data);
       await delay(500);
       const config = await fc.getMspConfig();

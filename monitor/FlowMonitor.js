@@ -658,7 +658,7 @@ module.exports = class FlowMonitor {
       log.debug("monitor:flow:found", results.length);
       const dupExist = results.some(str => {
         const _flow = JSON.parse(str)
-        return _flow.rh == copy.rh && (_flow.ets > copy.ts || now - _flow.nts < profile[type].cooldown)
+        return _flow.rh == copy.rh && (_flow.ts + _flow.du > copy.ts || now - _flow.nts < profile[type].cooldown)
       })
       if (dupExist) {
         log.info("monitor:flow:duplicated", key, copy.rh);
@@ -680,7 +680,7 @@ module.exports = class FlowMonitor {
     // flow in means connection initiated from inside
     // flow out means connection initiated from outside (more dangerous)
 
-    if (copy.ets < Date.now() / 1000 - this.monitorTime * 2) {
+    if (copy.ts + copy.du < Date.now() / 1000 - this.monitorTime * 2) {
       log.warn('Traffic out of scope, drop', JSON.stringify(copy))
       return
     }

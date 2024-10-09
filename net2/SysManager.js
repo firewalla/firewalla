@@ -579,8 +579,8 @@ class SysManager {
     return Object.assign({}, active ? this.getInterface(intf.name) : intf, { active })
   }
 
-  getInterfaceViaIP(ip, monitoringOnly = true) {
-    switch (net.isIP(ip)) {
+  getInterfaceViaIP(ip, fam, monitoringOnly = true) {
+    switch (fam == undefined ? net.isIP(ip) : fam) {
       case 4:
         return this.getInterfaceViaIP4(ip, monitoringOnly);
       case 6:
@@ -1065,7 +1065,7 @@ class SysManager {
 
       if (ip == "255.255.255.255") return true
 
-      const intfObj = intf ? this.getInterface(intf) : this.getInterfaceViaIP(ip, monitoringOnly)
+      const intfObj = intf ? this.getInterface(intf) : this.getInterfaceViaIP(ip, 4, monitoringOnly)
 
       if (intfObj && intfObj.subnet) {
         const subnet = intfObj.subnetAddress4 || new Address4(intfObj.subnet)
