@@ -33,6 +33,11 @@ const HostTool = require("../net2/HostTool.js");
 const hostTool = new HostTool();
 const uuid = require('uuid');
 const bro = require('../net2/BroDetect.js');
+const sem = require('./SensorEventManager.js').getInstance();
+const PolicyManager2 = require('../alarm/PolicyManager2.js');
+const Policy = require("../alarm/Policy.js");
+const pm2 = new PolicyManager2();
+const SUPPORTED_RULE_TYPES = ["device", "tag", "intranet"];
 
 
 const Sensor = require('./Sensor.js').Sensor;
@@ -102,6 +107,48 @@ class APCMsgSensor extends Sensor {
         log.error(`Failed to refresh ssid sta mapping`, err.message);
       });
     }, 60000);
+
+    sem.on("PolicyEnforcement", async (event) => {
+      const {policy, action} = event;
+      if (!policy || !action || !policy.pid)
+        return;
+      if (!this.isAPCSupportedRule(policy))
+        return;
+      switch (action) {
+        case "enforce":
+        case "reenforce": {
+          if (policy.disabled == "1") {
+            await fwapc.deleteRule(policy.pid);
+          } else {
+            await fwapc.updateRule(policy);
+          }
+          break;
+        }
+        case "unenforce": {
+          await fwapc.deleteRule(policy.pid);
+          break;
+        }
+        default:
+      }
+    });
+
+    sem.on("Policy:AllInitialized", async () => {
+      const rules = (await pm2.loadActivePoliciesAsync() || []).filter(rule => this.isAPCSupportedRule(rule));
+      await fwapc.updateRules(rules, true);
+    });
+  }
+
+  isAPCSupportedRule(rule) {
+    const {type, guids, scope, tag} = rule;
+    if (!SUPPORTED_RULE_TYPES.includes(type))
+      return false;
+    if (!_.isEmpty(guids))
+      return false;
+    if (_.isArray(scope) && scope.some(h => !hostTool.isMacAddress(h)))
+      return false;
+    if (_.isArray(tag) && tag.some(t => !t.startsWith(Policy.TAG_PREFIX)))
+      return false;
+    return true;
   }
 
   async refreshSSIDSTAMapping() {
