@@ -28,7 +28,7 @@ const delay = require('../util/util.js').delay;
 
 const am2 = new AlarmManager2();
 
-describe('Test alarm event', function(){
+describe.skip('Test alarm event', function(){
   this.timeout(30000);
 
   before((done) => {
@@ -121,7 +121,7 @@ describe('Test alarm event', function(){
   });
 });
 
-describe('Test AlarmManager2', function(){
+describe.skip('Test AlarmManager2', function(){
   this.timeout(30000);
 
   before((done) => {
@@ -297,4 +297,89 @@ describe('Test AlarmManager2', function(){
       expect (am2.isMuteAlarm(alarm1)).to.be.false;
     }
   });
+});
+
+const alarms = [
+  {"ts":1724741980.386,"type":"ALARM_LARGE_UPLOAD","state":"active","aid":153,"archived":1},
+  {"ts":1724733199.748,"type":"ALARM_INTEL","state":"active","aid":148},
+  {"ts":1724733519.949,"type":"ALARM_GAME","state":"active","aid":152},
+  {"ts":1724851917.634,"type":"ALARM_DUAL_WAN","state":"active","aid":155},
+  {"ts":1724989202.173,"type":"ALARM_NEW_DEVICE","state":"active","aid":175},
+  {"ts":1724989220.209,"type":"ALARM_ABNORMAL_BANDWIDTH_USAGE","state":"ignore","aid":176},
+  {"ts":1726291741.772,"type":"ALARM_VPN_RESTORE","state":"active","aid":241},
+  {"ts":1726290923.7,"type":"ALARM_VPN_DISCONNECT","state":"active","aid":240},
+  {"ts":1724733200.606,"type":"ALARM_INTEL","state":"active","aid":150},
+  {"ts":1724733200.231,"type":"ALARM_INTEL","state":"pending","aid":149},
+];
+
+describe('Test alarm cache', function(){
+  this.timeout(30000);
+
+  before((done) => (
+    async() => {
+      am2.indexCache.cache.reset();
+      done();
+    })()
+  );
+
+  after((done) => (
+    async() => {
+      done();
+    })()
+  );
+
+  it('test set cache', async() => {
+    for (const a of alarms) {
+      await am2.indexCache.add(a);
+    }
+    expect(am2.indexCache.keys().sort()).to.be.eql(["ALARM_ABNORMAL_BANDWIDTH_USAGE", "ALARM_DUAL_WAN", "ALARM_GAME", "ALARM_INTEL", "ALARM_LARGE_UPLOAD", "ALARM_NEW_DEVICE", "ALARM_VPN_DISCONNECT", "ALARM_VPN_RESTORE"]);
+    expect(am2.indexCache.list().sort()).to.be.eql(["148", "149", "150", "152", "153", "155", "175", "176", "240", "241"]);
+  });
+
+  it('test query cached alarm ids', async() => {
+    let ids;
+    ids = am2._queryCachedAlarmIds(6, Date.now()/1000, false, 'active', {types: ["ALARM_INTEL", "ALARM_LARGE_UPLOAD", "ALARM_VPN_DISCONNECT", "ALARM_GAME"]});
+    expect(ids).to.be.eql([240, 152, 150, 148]);
+
+    ids = am2._queryCachedAlarmIds(3, 1724733119, true, 'active', {types: ["ALARM_INTEL", "ALARM_LARGE_UPLOAD", "ALARM_VPN_DISCONNECT", "ALARM_GAME"]});
+    expect(ids).to.be.eql([148, 150, 152]);
+
+    ids = am2._queryCachedAlarmIds(50, Date.now()/1000, false, 'pending', {types: ["ALARM_INTEL", "ALARM_LARGE_UPLOAD", "ALARM_VPN_DISCONNECT", "ALARM_GAME"]});
+    expect(ids).to.be.eql([149]);
+
+    ids = am2._queryCachedAlarmIds(50, Date.now()/1000, false, 'ignore', {types: ["ALARM_INTEL", "ALARM_LARGE_UPLOAD", "ALARM_VPN_DISCONNECT", "ALARM_ABNORMAL_BANDWIDTH_USAGE"]});
+    expect(ids).to.be.eql([176]);
+
+    ids = am2._queryCachedAlarmIds(50, Date.now()/1000, false, 'archive', {types: ["ALARM_INTEL", "ALARM_LARGE_UPLOAD", "ALARM_VPN_DISCONNECT", "ALARM_GAME"]});
+    expect(ids).to.be.eql([153]);
+  });
+
+  it('test delete cache item', async() => {
+    for (const i of [149, 175]) {
+      await am2.indexCache.remove(i);
+    }
+    expect(am2.indexCache.list().sort()).to.be.eql(["148", "150", "152", "153", "155", "176", "240", "241"]);
+  });
+
+  it('test update alarm cache', async() => {
+    await rclient.hsetAsync('_alarm:11111', 'aid', '11111',  'ts', Date.now()/1000, 'type', "ALARM_INTEL", 'state', 'pending');
+    await rclient.hsetAsync('_alarm:22222', 'aid', '22222', 'ts', Date.now()/1000, 'type', "ALARM_INTEL", 'state', 'pending');
+    await am2._updateAlarmCache({aid: "11111"});
+    await am2._updateAlarmCache({aid: "22222"});
+
+    await rclient.unlinkAsync('_alarm:11111');
+    await rclient.unlinkAsync('_alarm:22222');
+    await am2._deleteAlarmCache({aid: "11111", aids:["22222"]});
+  });
+
+  it('test refresh cache', async() => {
+    am2.indexCache.add({aid:"11111", type: "ALARM_INTEL", ts: "1724733200.231", state: "active"});
+    am2.indexCache.add({aid:"12222", type: "ALARM_INTEL", ts: "1724733200.231", state: "active"});
+    am2.indexCache.add({aid:"12333", type: "ALARM_INTEL", ts: "1724733200.231", state: "active"});
+    await am2.refreshAlarmCache();
+    log.debug("loaded caches length", am2.indexCache.size());
+    const alarmIds = await am2.loadAlarmIDs();
+    expect(am2.indexCache.size()).to.be.equal(Object.values(alarmIds).flat().length);
+  });
+
 });

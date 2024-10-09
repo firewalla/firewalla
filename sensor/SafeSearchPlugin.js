@@ -302,10 +302,16 @@ class SafeSearchPlugin extends Sensor {
     return [`cname=${targetDomains.join(',')},${safeDomain}$${featureName}`];
   }
 
+  async patchHostRecordEntry(safeDomain) {
+    const ips = await this.loadDomainCache(safeDomain);
+    return ips.map(ip => `host-record=${safeDomain},${ip}`);
+  }
+
   // redirect targetDomain to the ip address of safe domain
   async generateDomainEntries(safeDomain, targetDomains) {
     if (this.config.mappingConfig && this.config.mappingConfig[safeDomain] === T_CNAME) {
-      return this.generateCnameEntry(safeDomain, targetDomains)
+      const hostrecords = await this.patchHostRecordEntry(safeDomain);
+      return this.generateCnameEntry(safeDomain, targetDomains).concat(hostrecords);
     }
 
     const ips = await this.loadDomainCache(safeDomain);
