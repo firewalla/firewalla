@@ -91,7 +91,9 @@ describe('Test freeradius prepare radius config files', function(){
     beforeEach((done) => {
       (async() =>{
         await exec(`rm -rf ${f.getRuntimeInfoFolder()}/docker/freeradius.bak`).catch(e=>{});
+        await exec(`rm -rf ${f.getRuntimeInfoFolder()}/.freeradius.pass.bak`).catch(e=>{});
         await exec(`mv ${f.getRuntimeInfoFolder()}/docker/freeradius ${f.getRuntimeInfoFolder()}/docker/freeradius.bak`).catch(e=>{});
+        await exec(`mv ${f.getRuntimeInfoFolder()}/.freeradius.pass ${f.getRuntimeInfoFolder()}/.freeradius.pass.bak`).catch(e=>{});
         await freeradius.prepareContainer({ssl: true});
         log.debug('freeradius files:', await exec(`ls -lh ${f.getRuntimeInfoFolder()}/docker/freeradius`).then(r => r.stdout.trim()).catch(e=>{}));
         done();
@@ -102,6 +104,7 @@ describe('Test freeradius prepare radius config files', function(){
       (async() => {
         await exec(`rm -rf ${f.getRuntimeInfoFolder()}/docker/freeradius`).catch(e=>{});
         await exec(`mv ${f.getRuntimeInfoFolder()}/docker/freeradius.bak ${f.getRuntimeInfoFolder()}/docker/freeradius`).catch(e=>{});
+        await exec(`mv ${f.getRuntimeInfoFolder()}/.freeradius.pass.bak ${f.getRuntimeInfoFolder()}/.freeradius.pass`).catch(e=>{});
         done();
       })();
     });
@@ -127,9 +130,20 @@ describe('Test freeradius prepare radius config files', function(){
     it('should save/load passwd', async() => {
       await freeradius._genUsersConfFile([{username:"jack", passwd:"hello"}, {username:"tom", passwd:"pass123"}, {username: "test35"}]);
       await freeradius._loadPasswd();
+      const autogened = freeradius._passwd["test35"];
       expect(freeradius._passwd["jack"]).to.be.equal("hello");
-    });
+      expect(freeradius._passwd["tom"]).to.be.equal("pass123");
 
+      await freeradius._genUsersConfFile([{username:"jack", passwd:"hello"}, {username:"tom", passwd:"pass123"}, {username: "test35"}]);
+      expect(freeradius._passwd["test35"]).to.be.equal(autogened);
+      expect(freeradius._passwd["jack"]).to.be.equal("hello");
+      expect(freeradius._passwd["tom"]).to.be.equal("pass123");
+
+      await freeradius._genUsersConfFile([{username:"jack", passwd:"hello"}, {username: "test35"}]);
+      expect(freeradius._passwd["test35"]).to.be.equal(autogened);
+      expect(freeradius._passwd["jack"]).to.be.equal("hello");
+      expect(freeradius._passwd["tom"]).to.be.undefined;
+    });
 });
 
 describe.skip('Test freeradius service', function(){

@@ -76,6 +76,12 @@ class FreeRadius {
     }
   }
 
+  async _cleanPasswd(users) {
+    for (const key in this._passwd) {
+      if (users.indexOf(key) == -1 ) delete this._passwd[key];
+    }
+  }
+
   getPass(username) {
     return this._passwd[username];
   }
@@ -176,7 +182,7 @@ class FreeRadius {
 
   async _genUsersConfFile(usersConfig) {
     const userConf = [];
-    this._passwd = {};
+    this._cleanPasswd(usersConfig.map(i => i.username));
     for (const user of usersConfig) {
       userConf.push(await this._replaceUserConfig(user));
     }
@@ -190,6 +196,7 @@ class FreeRadius {
 
   async prepareRadiusConfig(config) {
     try {
+      await this._loadPasswd();
       await this._genClientsConfFile(config.clients);
       if (!await fs.accessAsync(`${dockerDir}/clients.conf`, fs.constants.F_OK).then(() => true).catch((err) => false)){
         log.warn("Failed to generate clients.conf");
