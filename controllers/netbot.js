@@ -316,7 +316,8 @@ class netBot extends ControllerBot {
         "p.upnp.ttl", "p.upnp.description", "p.upnp.protocol", "p.upnp.public.port", "p.upnp.private.port", // upnp open port
         "p.file.type", "p.subnet.length", "p.dest.url",
         "p.begin.ts", "p.end.ts", "p.totalUsage", "p.percentage", "p.planUsage", // bandwidth usage
-        "p.vpn.strictvpn", "p.vpn.subtype", "p.vpn.displayname", "p.vpn.devicecount", "p.vpn.protocol" // VPN disconnect/restore alarm
+        "p.vpn.strictvpn", "p.vpn.subtype", "p.vpn.displayname", "p.vpn.devicecount", "p.vpn.protocol", // VPN disconnect/restore alarm
+        "p.vwg.name", "p.vwg.uuid", "p.vwg.strictvpn", "p.vwg.devicecount", // VPN group connectivity change alarm
       ];
       Object.assign(alarmData, _.pick(alarm, appUsedKeys));
 
@@ -896,6 +897,7 @@ class netBot extends ControllerBot {
         const latestConfig = await FireRouter.getConfig();
         await FireRouter.saveConfigHistory(latestConfig);
         this._scheduleRedisBackgroundSave();
+        if (latestConfig.ncid) return {ncid: latestConfig.ncid};
         return
       }
       case "eptGroupName": {
@@ -1018,6 +1020,8 @@ class netBot extends ControllerBot {
     } else if (msg.target != '0.0.0.0') {
       options.mac = msg.target
     }
+    if (_.has(options, "local"))
+      options.local = Boolean(options.local);
 
     return options
   }
@@ -1777,11 +1781,6 @@ class netBot extends ControllerBot {
     const promises = [
       netBotTool.prepareTopUploadFlows(jsonobj, options),
       netBotTool.prepareTopDownloadFlows(jsonobj, options),
-      // return more top flows for block statistics
-      netBotTool.prepareTopFlows(jsonobj, 'dnsB', null, Object.assign({}, options, {limit: 400})),
-      netBotTool.prepareTopFlows(jsonobj, 'ipB', "in", Object.assign({}, options, {limit: 400})),
-      netBotTool.prepareTopFlows(jsonobj, 'ipB', "out", Object.assign({}, options, {limit: 400})),
-      netBotTool.prepareTopFlows(jsonobj, 'ifB', "out", Object.assign({}, options, {limit: 400})),
 
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'app', options),
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
@@ -1791,6 +1790,20 @@ class netBot extends ControllerBot {
       this.hostManager.newLast24StatsForInit(jsonobj, target),
       this.hostManager.last12MonthsStatsForInit(jsonobj, target),
     ]
+    if (platform.isAuditLogSupported()) {
+      promises.push(
+        netBotTool.prepareTopFlows(jsonobj, 'dnsB', null, Object.assign({}, options, {limit: 400})),
+        netBotTool.prepareTopFlows(jsonobj, 'ipB', "in", Object.assign({}, options, {limit: 400})),
+        netBotTool.prepareTopFlows(jsonobj, 'ipB', "out", Object.assign({}, options, {limit: 400})),
+        netBotTool.prepareTopFlows(jsonobj, 'ifB', "out", Object.assign({}, options, {limit: 400})),
+      )
+    }
+    if (fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW) && type == 'host') {
+      promises.push(
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'upload', Object.assign({}, options, {limit: 400})),
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'download', Object.assign({}, options, {limit: 400})),
+      )
+    }
 
     jsonobj.hosts = {}
     promises.push(asyncNative.eachLimit(options.macs, 20, async (t) => {
