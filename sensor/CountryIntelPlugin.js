@@ -42,7 +42,7 @@ class CountryIntelPlugin extends Sensor {
         const geoDatChangeEvent = {
             type: 'GEO_DAT_CHANGE',
             dir: countryDataFolder,
-            suppressEventLogging: false
+            message: countryDataFolder,
         }
         sem.emitLocalEvent(geoDatChangeEvent);
         sem.sendEventToFireApi(geoDatChangeEvent);
@@ -71,7 +71,7 @@ class CountryIntelPlugin extends Sensor {
             const geoRefreshEvent = {
                 type: 'GEO_REFRESH',
                 dataType: item.type,
-                suppressEventLogging: false
+                message: item.type,
             }
             sem.emitLocalEvent(geoRefreshEvent);
             sem.sendEventToFireApi(geoRefreshEvent);
@@ -86,14 +86,14 @@ class CountryIntelPlugin extends Sensor {
         const geoDatChangeEvent = {
             type: 'GEO_DAT_CHANGE',
             dir: null,
-            suppressEventLogging: false
+            message: 'repo default',
         }
         sem.emitLocalEvent(geoDatChangeEvent);
         sem.sendEventToFireApi(geoDatChangeEvent);
         const geoRefreshEvent = {
             type: 'GEO_REFRESH',
             dataType: null,
-            suppressEventLogging: false
+            message: 'all',
         }
         sem.emitLocalEvent(geoRefreshEvent);
         sem.sendEventToFireApi(geoRefreshEvent);

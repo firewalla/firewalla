@@ -365,7 +365,7 @@ class App {
       try {
         const values = await this.getPairingStatus();
         if(values.error) {
-          log.error("Failed to process request", err);
+          log.error("Failed to process request", values.error);
           res.status(500).send({})
         } else {
           res.render('raw', values)
@@ -382,7 +382,7 @@ class App {
       try {
         const values = await this.getPairingStatus();
         if(values.error) {
-          log.error("Failed to process request", err);
+          log.error("Failed to process request", values.error);
           res.status(500).send({})
         } else {
           res.render('welcome', values)

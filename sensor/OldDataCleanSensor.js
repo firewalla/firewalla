@@ -67,6 +67,7 @@ class OldDataCleanSensor extends Sensor {
     switch (type) {
       case "conn":
       case "flowDNS":
+      case "flowLocal":
       case "auditDrop":
       case "categoryflow":
       case "appflow":
@@ -92,6 +93,7 @@ class OldDataCleanSensor extends Sensor {
     switch (type) {
       case "conn":
       case "flowDNS":
+      case "flowLocal":
       case "auditDrop":
       case "categoryflow":
       case "appflow":
@@ -595,6 +597,7 @@ class OldDataCleanSensor extends Sensor {
     // need to take into consideration the time complexity of the filter function, it will be applied on all keys
     this._registerFilterFunction("conn", (key) => key.startsWith("flow:conn:"));
     this._registerFilterFunction("flowDNS", (key) => key.startsWith("flow:dns:"));
+    this._registerFilterFunction("flowLocal", (key) => key.startsWith("flow:local:"));
     this._registerFilterFunction("auditDrop", (key) => key.startsWith("audit:drop:"));
     this._registerFilterFunction("auditAccept", (key) => key.startsWith("audit:accept:"));
     this._registerFilterFunction("http", (key) => key.startsWith("flow:http:"));
@@ -624,6 +627,7 @@ class OldDataCleanSensor extends Sensor {
     switch (type) {
       case "conn":
       case "flowDNS":
+      case "flowLocal":
       case "auditDrop":
       case "auditAccept":
       case "categoryflow":

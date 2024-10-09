@@ -1098,8 +1098,15 @@ class AbnormalUploadAlarm extends OutboundAlarm {
   }
 
   localizedNotificationContentArray() {
+    let deviceName = this["p.device.name"];
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      if (identity) {
+        deviceName = identity.getDeviceNameInNotificationContent(this);
+      }
+    }
     const result = [
-      this["p.device.name"],
+      deviceName,
       this["p.transfer.outbound.humansize"],
       this["p.dest.name"],
       this["p.timestampTimezone"],
@@ -1159,8 +1166,15 @@ class LargeUploadAlarm extends OutboundAlarm {
   }
 
   localizedNotificationContentArray() {
+    let deviceName = this["p.device.name"];
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      if (identity) {
+        deviceName = identity.getDeviceNameInNotificationContent(this);
+      }
+    }
     const result = [
-      this["p.device.name"],
+      deviceName,
       this["p.transfer.outbound.humansize"],
       this["p.dest.name"],
       this["p.timestampTimezone"],
@@ -1463,7 +1477,7 @@ class DualWanAlarm extends Alarm {
         key += ".lost.remain";
       }
     } else {
-      if (wan && wan.length > 1) {
+      if (wan && (!this["p.wan.total"] && wan.length > 1 || this["p.wan.total"] && wan.length === this["p.wan.total"])) {
         key += ".restore.all";
       } else {
         if (this["p.wan.switched"] == "true") {
@@ -1481,6 +1495,71 @@ class DualWanAlarm extends Alarm {
     return false;
   }
 }
+
+class VWGConnAlarm extends DualWanAlarm {
+  constructor(timestamp, device, info) {
+    super(timestamp, device, info);
+    this.type = "ALARM_VWG_CONN";
+    this['p.showMap'] = false;
+    if (info && info["p.vpn.subtype"]) {
+      let subtype = (['s2s', 'cs', 'openvpn'].indexOf(info["p.vpn.subtype"]) !== -1) ? info["p.vpn.subtype"] : 'openvpn';
+      this['p.vpn.subtypename'] = i18n.__(`VPN_SUBTYPE_${subtype}`);
+    }
+    if (this.timestamp) {
+      this["p.timestampTimezone"] = moment(this.timestamp * 1000).tz(sysManager.getTimezone()).format("LT")
+    }
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig('alarm.vwg_conn.cooldown') || super.getExpirationTime();
+  }
+
+  getI18NCategory() {
+    let category = super.getI18NCategory();
+    if (this["p.vwg.strictvpn"] == true || this["p.vwg.strictvpn"] == "true") {
+      category = category + "_KILLSWITCH";
+    }
+    return category;
+  }
+
+  getNotifType() {
+    let notify_type = super.getNotifType();
+    if (this["p.vwg.strictvpn"] == true || this["p.vwg.strictvpn"] == "true") {
+      notify_type = notify_type + "_KILLSWITCH";
+    }
+    return notify_type;
+  }
+
+  localizedNotificationContentKey() {
+    let key = super.localizedNotificationContentKey();
+
+    const protocol = this["p.vpn.protocol"];
+    let suffix = null;
+    if (protocol && VPN_PROTOCOL_SUFFIX_MAPPING[protocol]) {
+      key += ".vpn"
+      suffix = VPN_PROTOCOL_SUFFIX_MAPPING[protocol];
+    }
+    key += "." + this["p.vpn.subtype"];
+
+    let wan = this["p.active.wans"];
+    if (_.isString(wan) && validator.isJSON(wan))
+      wan = JSON.parse(this["p.active.wans"]);
+    if (wan.length == 0 && (this["p.vwg.strictvpn"] == false || this["p.vwg.strictvpn"] == "false")) {
+      key += ".FALLBACK";
+    }
+    if (suffix)
+      key += "." + suffix;
+
+    return key;
+  }
+
+  localizedNotificationContentArray() {
+    const result = super.localizedNotificationContentArray();
+    result.push(...[this["p.timestampTimezone"], this["p.vwg.devicecount"]], this["p.vwg.name"]);
+    return result;
+  }
+}
+
 class ScreenTimeAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super('ALARM_SCREEN_TIME', timestamp, device, info);
@@ -1584,6 +1663,7 @@ const classMapping = {
   ALARM_OPENPORT: OpenPortAlarm.prototype,
   ALARM_UPNP: UpnpAlarm.prototype,
   ALARM_DUAL_WAN: DualWanAlarm.prototype,
+  ALARM_VWG_CONN: VWGConnAlarm.prototype,
   ALARM_SCREEN_TIME: ScreenTimeAlarm.prototype,
   ALARM_NETWORK_MONITOR_RTT: NetworkMonitorRTTAlarm.prototype,
   ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype,
@@ -1620,6 +1700,7 @@ module.exports = {
   OpenPortAlarm,
   UpnpAlarm,
   DualWanAlarm,
+  VWGConnAlarm,
   ScreenTimeAlarm,
   NetworkMonitorRTTAlarm,
   NetworkMonitorLossrateAlarm,

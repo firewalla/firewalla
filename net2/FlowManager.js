@@ -62,7 +62,7 @@ class FlowGraph {
 
   addFlow(flow) {
     if (flow.flows == null) {
-      this.addRawFlow(Number(flow.ts), Number(flow.ets), Number(flow.ob), Number(flow.rb), flow.ct);
+      this.addRawFlow(Number(flow.ts), Number(flow.ts+flow.du), Number(flow.ob), Number(flow.rb), flow.ct);
     } else {
       //log.info("$$$ before ",flow.flows);
       for (let i in flow.flows) {
@@ -383,13 +383,12 @@ module.exports = class FlowManager {
           flow.ob += o.ob;
 
           // flow.ts and flow.du should present the time span of all flows
-          if (flow.ets < o.ets) {
-            flow.ets = o.ets;
-            flow.du = o.ets - flow.ts;
+          if (flow.ts + flow.du < o.ts + o.du) {
+            flow.du = o.ts + o.du - flow.ts;
           }
           if (flow.ts > o.ts) {
             flow.ts = o.ts;
-            flow.du = flow.ets - o.ts;
+            flow.du = flow.ts + flow.du - o.ts;
           }
 
           flow.sp = _.union(flow.sp, o.sp)
