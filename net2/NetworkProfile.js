@@ -1,4 +1,4 @@
-/*    Copyright 2019-2023 Firewalla Inc.
+/*    Copyright 2019-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -549,11 +549,11 @@ class NetworkProfile extends Monitorable {
     let realIntf = this.o.intf;
     if (realIntf && realIntf.endsWith(":0"))
       realIntf = realIntf.substring(0, realIntf.length - 2);
-    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
-    const inputRuleSec = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_WAN_IN_DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRule = new Rule().chn("FW_INPUT_DROP").iif(realIntf).mdl("conntrack", "--ctstate INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").comment(this.o.uuid);
+    const inputRuleSec = new Rule().chn("FW_INPUT_DROP").iif(realIntf).mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_WAN_IN_DROP").comment(this.o.uuid);
     const inputRule6 = inputRule.clone().fam(6);
     const inputRule6Sec = inputRuleSec.clone().fam(6);
-    const invalidDropRule = new Rule().chn("FW_WAN_INVALID_DROP").mth(realIntf, null, "oif").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const invalidDropRule = new Rule().chn("FW_WAN_INVALID_DROP").oif(realIntf).jmp("DROP").comment(this.o.uuid);
     const invalidDropRule6 = invalidDropRule.clone().fam(6);
     if (this.o.type === "wan" && await Mode.isRouterModeOn()) {
       // add DROP rule on WAN interface in router mode
@@ -589,41 +589,39 @@ class NetworkProfile extends Monitorable {
     if (!netIpsetName || !netIpsetName6) {
       log.error(`Failed to get ipset name for ${this.o.uuid}`);
     } else {
-      await exec(`sudo ipset flush -! ${netIpsetName}`).then(async () => {
-        if (this.o && this.o.monitoring === true) {
-          if (_.isArray(this.o.ipv4Subnets)) {
-            for (const subnet of this.o.ipv4Subnets)
-              await exec(`sudo ipset add -! ${netIpsetName} ${subnet},${realIntf}`);
-          }
-          if (_.isArray(this.o.rt4Subnets)) {
-            for (const subnet of this.o.rt4Subnets) {
-              if (!sysManager.isDefaultRoute(subnet))
-                await exec(`sudo ipset add -! ${netIpsetName} ${subnet},${realIntf}`);
-              else
-                hasDefaultRTSubnets = true;
-            }
+      const commands = [`flush ${netIpsetName}`];
+      if (this.o && this.o.monitoring === true) {
+        if (_.isArray(this.o.ipv4Subnets)) {
+          for (const subnet of this.o.ipv4Subnets)
+            commands.push(`add ${netIpsetName} ${subnet},${realIntf}`);
+        }
+        if (_.isArray(this.o.rt4Subnets)) {
+          for (const subnet of this.o.rt4Subnets) {
+            if (!sysManager.isDefaultRoute(subnet))
+              commands.push(`add ${netIpsetName} ${subnet},${realIntf}`);
+            else
+              hasDefaultRTSubnets = true;
           }
         }
-      }).catch((err) => {
-        log.error(`Failed to populate network profile ipset ${netIpsetName}`, err.message);
-      });
-      await exec(`sudo ipset flush -! ${netIpsetName6}`).then(async () => {
-        if (this.o && this.o.monitoring === true) {
-          if (_.isArray(this.o.ipv6Subnets)) {
-            for (const subnet6 of this.o.ipv6Subnets)
-              await exec(`sudo ipset add -! ${netIpsetName6} ${subnet6},${realIntf}`).catch((err) => {});
-          }
-          if (_.isArray(this.o.rt6Subnets)) {
-            for (const subnet6 of this.o.rt6Subnets) {
-              if (!sysManager.isDefaultRoute(subnet6))
-                await exec(`sudo ipset add -! ${netIpsetName6} ${subnet6},${realIntf}`).catch((err) => {});
-              else
-                hasDefaultRTSubnets = true;
-            }
+      }
+      
+      commands.push(`flush ${netIpsetName6}`);
+      if (this.o && this.o.monitoring === true) {
+        if (_.isArray(this.o.ipv6Subnets)) {
+          for (const subnet6 of this.o.ipv6Subnets)
+            commands.push(`add ${netIpsetName6} ${subnet6},${realIntf}`);
+        }
+        if (_.isArray(this.o.rt6Subnets)) {
+          for (const subnet6 of this.o.rt6Subnets) {
+            if (!sysManager.isDefaultRoute(subnet6))
+              commands.push(`add ${netIpsetName6} ${subnet6},${realIntf}`);
+            else
+              hasDefaultRTSubnets = true;
           }
         }
-      }).catch((err) => {
-        log.error(`Failed to populate network profile ipset ${netIpsetName6}`, err.message);
+      }
+      await exec(`echo "${commands.join("\n")}" | sudo ipset restore -!`).catch((err) => {
+        log.error(`Failed to populate ipsets of network profile ${this.o.uuid}`, err.message);
       });
       // add to c_lan_set accordingly, some feature has mandatory to be enabled on lan only, e.g., vpn client
       let op = "del"
@@ -637,7 +635,7 @@ class NetworkProfile extends Monitorable {
       // add to NAT hairpin chain if it is LAN network
       if (this.o.ipv4Subnets && this.o.ipv4Subnets.length != 0) {
         for (const subnet of this.o.ipv4Subnets) {
-          const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").mth(`${subnet}`, null, "src").jmp("MASQUERADE");
+          const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").src(subnet).jmp("MASQUERADE");
           if (this.o.type === "lan" && this.o.monitoring === true) {
             await exec(rule.toCmd('-A')).catch((err) => {
               log.error(`Failed to add NAT hairpin rule for ${this.o.intf}, ${this.o.uuid}`);
@@ -786,16 +784,16 @@ class NetworkProfile extends Monitorable {
     }
   }
 
-  async destroyEnv() {
+  async destroyEnv(options = {cleanup: false}) {
     let realIntf = this.o.intf;
     if (realIntf && realIntf.endsWith(":0"))
       realIntf = realIntf.substring(0, realIntf.length - 2);
     // remove WAN INPUT protection rules
-    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
-    const inputRuleSec = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_WAN_IN_DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRule = new Rule().chn("FW_INPUT_DROP").iif(realIntf).mdl("conntrack", "--ctstate INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").comment(this.o.uuid);
+    const inputRuleSec = new Rule().chn("FW_INPUT_DROP").iif(realIntf).mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_WAN_IN_DROP").comment(this.o.uuid);
     const inputRule6 = inputRule.clone().fam(6);
     const inputRule6Sec = inputRule.clone().fam(6);
-    const invalidDropRule = new Rule().chn("FW_WAN_INVALID_DROP").mth(realIntf, null, "oif").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const invalidDropRule = new Rule().chn("FW_WAN_INVALID_DROP").oif(realIntf).jmp("DROP").comment(this.o.uuid);
     const invalidDropRule6 = invalidDropRule.clone().fam(6);
     await exec(inputRule.toCmd("-D")).catch((err) => {});
     await exec(inputRuleSec.toCmd("-D")).catch((err) => {});
@@ -809,33 +807,37 @@ class NetworkProfile extends Monitorable {
     if (!netIpsetName || !netIpsetName6) {
       log.error(`Failed to get ipset name for ${this.o.uuid}`);
     } else {
-      await exec(`sudo ipset flush -! ${netIpsetName}`).catch((err) => {
-        log.debug(`Failed to flush network profile ipset ${netIpsetName}`, err.message);
-      });
-      await exec(`sudo ipset flush -! ${netIpsetName6}`).catch((err) => {
-        log.debug(`Failed to flush network profile ipset ${netIpsetName6}`, err.message);
-      });
-      // although net ipset is already flushed, still remove it from c_lan_set anyway to keep consistency
-      await exec(`sudo ipset del -! c_lan_set ${netIpsetName}`).catch((err) => {
-        log.debug(`Failed to remove ${netIpsetName} from c_lan_set`, err.message);
-      });
-      await exec(`sudo ipset del -! c_lan_set ${netIpsetName6}`).catch((err) => {
-        log.debug(`Failed to remove ${netIpsetName6} from c_lan_set`, err.message);
-      });
+      if (options.cleanup) {
+        await exec(`sudo ipset flush -! ${netIpsetName}`).catch((err) => {
+          log.debug(`Failed to flush network profile ipset ${netIpsetName}`, err.message);
+        });
+        await exec(`sudo ipset flush -! ${netIpsetName6}`).catch((err) => {
+          log.debug(`Failed to flush network profile ipset ${netIpsetName6}`, err.message);
+        });
+        // although net ipset is already flushed, still remove it from c_lan_set anyway to keep consistency
+        await exec(`sudo ipset del -! c_lan_set ${netIpsetName}`).catch((err) => {
+          log.debug(`Failed to remove ${netIpsetName} from c_lan_set`, err.message);
+        });
+        await exec(`sudo ipset del -! c_lan_set ${netIpsetName6}`).catch((err) => {
+          log.debug(`Failed to remove ${netIpsetName6} from c_lan_set`, err.message);
+        });
+      }
       // remove from NAT hairpin chain anyway
       if (this.o.ipv4Subnets && this.o.ipv4Subnets.length != 0) {
         for (const subnet of this.o.ipv4Subnets) {
-          const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").mth(`${subnet}`, null, "src").jmp("MASQUERADE");
+          const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").src(subnet).jmp("MASQUERADE");
           await exec(rule.toCmd('-D')).catch((err) => {});
         }
       }
-      // still remove it from monitored net set anyway to keep consistency
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORED_NET} ${netIpsetName}`).catch((err) => {
-        log.debug(`Failed to remove ${netIpsetName} from ${ipset.CONSTANTS.IPSET_MONITORED_NET}`, err.message);
-      });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORED_NET} ${netIpsetName6}`).catch((err) => {
-        log.debug(`Failed to remove ${netIpsetName6} from ${ipset.CONSTANTS.IPSET_MONITORED_NET}`, err.message);
-      });
+      if (options.cleanup) {
+        // still remove it from monitored net set anyway to keep consistency
+        await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORED_NET} ${netIpsetName}`).catch((err) => {
+          log.debug(`Failed to remove ${netIpsetName} from ${ipset.CONSTANTS.IPSET_MONITORED_NET}`, err.message);
+        });
+        await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORED_NET} ${netIpsetName6}`).catch((err) => {
+          log.debug(`Failed to remove ${netIpsetName6} from ${ipset.CONSTANTS.IPSET_MONITORED_NET}`, err.message);
+        });
+      }
       // do not touch dnsmasq network config directory here, it should only be updated by rule enforcement modules
     }
 

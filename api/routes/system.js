@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -36,8 +36,8 @@ const flowTool = require('../../net2/FlowTool');
 
 /* system api */
 router.get('/info',
-//    passport.authenticate('bearer', { session: false }),
-           function(req, res, next) {
+  function(req, res, next) {
+    (async() =>{
              res.json({
                ip_address: sysManager.myDefaultWanIp(),
                mac_address: sysManager.mySignatureMac(),
@@ -45,9 +45,13 @@ router.get('/info',
                subnet: sysManager.getDefaultWanInterface() && sysManager.mySubnet(sysManager.getDefaultWanInterface().name),
                dns: sysManager.myDefaultDns(),
                ddns: sysManager.myDDNS(),
-               info: sysInfo.getSysInfo()
+               info: await sysInfo.getSysInfo()
              });
-           });
+    })().catch(err => {
+      log.error("Failed to process /info: ", err);
+      res.status(500).send({error: err});
+    })
+  });
 
 router.get('/status',
            (req, res, next) => {
