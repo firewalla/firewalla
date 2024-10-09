@@ -55,7 +55,7 @@ class WGVPNClient extends VPNClient {
           if (key === "PrivateKey")
             config.privateKey = value;
           if (key === "DNS")
-            dns = dns.concat(value.split(',').map(v => v.trim()));
+            dns = dns.concat(value.split(',').map(v => v.trim())).filter(v => v != '');
           if (key === "MTU")
             config.mtu = value;
           break;
@@ -90,6 +90,16 @@ class WGVPNClient extends VPNClient {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
     return (config && config.addresses || []).filter(ip => new Address4(ip).isValid());
+  }
+
+  async getVpnIP6s() {
+    let config = null;
+    try {
+      config = await this.loadJSONConfig();
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
+    return (config && config.addresses || []).filter(ip => new Address6(ip).isValid());
   }
 
   async getRoutedSubnets() {
