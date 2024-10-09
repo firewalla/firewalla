@@ -991,6 +991,7 @@ class PolicyManager2 {
       message: 'All policies are enforced'
     }
     sem.sendEventToFireApi(event)
+    sem.emitLocalEvent(event)
   }
 
 

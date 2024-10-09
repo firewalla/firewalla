@@ -33,6 +33,9 @@ const Constants = require("./Constants.js");
 const fsp = require('fs').promises;
 const exec = require('child-process-promise').exec;
 const {fileExist, fileRemove} = require('../util/util.js');
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const LOCK_FWAPC_RULE = "LOCK_FWAPC_RULE";
 
 // not exposing these methods/properties
 async function localGet(endpoint, retry = 5) {
@@ -253,6 +256,43 @@ class FWAPC {
       throw new Error(msg || "Failed to delete group in fwapc");
     }
     return;
+  }
+
+  async updateRules(rules, fullSync = false) {
+    await lock.acquire(LOCK_FWAPC_RULE, async () => {
+      const {code, body, msg} = await this.apiCall("POST", "/config/rules", {rules, full_sync: fullSync});
+      if (!isNaN(code) && Number(code) > 299) {
+        throw new Error(msg || "Failed to delete group in fwapc");
+      }
+    }).catch((err) => {
+      log.error(`Failed to update rules, fullSync: ${fullSync}`, err.message);
+    });
+  }
+
+  async updateRule(rule) {
+    if (!rule.pid) {
+      log.error(`pid is not defined in rule`, rule);
+      return;
+    }
+    await lock.acquire(LOCK_FWAPC_RULE, async () => {
+      const {code, body, msg} = await this.apiCall("PUT", `/config/rules/${rule.pid}`, rule);
+      if (!isNaN(code) && Number(code) > 299) {
+        throw new Error(msg || "Failed to delete group in fwapc");
+      }
+    }).catch((err) => {
+      log.error(`Failed to update rule`, rule, err.message);
+    });
+  }
+
+  async deleteRule(pid) {
+    await lock.acquire(LOCK_FWAPC_RULE, async () => {
+      const {code, body, msg} = await this.apiCall("DELETE", `/config/rules/${pid}`);
+      if (!isNaN(code) && Number(code) > 299) {
+        throw new Error(msg || "Failed to delete group in fwapc");
+      }
+    }).catch((err) => {
+      log.error(`Failed to delete rule, pid: ${pid}`, err.message);
+    });
   }
 }
 
