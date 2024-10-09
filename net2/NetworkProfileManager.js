@@ -37,6 +37,7 @@ class NetworkProfileManager {
     const c = require('./MessageBus.js');
     this.subscriber = new c("info");
     this.networkProfiles = {};
+    this.prefixMap = {}
 
     this.scheduleRefresh();
 
@@ -89,6 +90,7 @@ class NetworkProfileManager {
       clearTimeout(this.refreshTask);
     this.refreshTask = setTimeout(() => {
       lock.acquire(LOCK_REFRESH, async () => {
+        await this.updatePrefixMap()
         await this.refreshNetworkProfiles();
         if (f.isMain()) {
           if (sysManager.isIptablesReady()) {
@@ -154,6 +156,18 @@ class NetworkProfileManager {
         delete nowCopy[excludedKey];
     }
     return !_.isEqual(thenCopy, nowCopy);
+  }
+
+  async updatePrefixMap() {
+    try {
+      const UUIDs = await rclient.hkeysAsync('sys:network:uuid')
+      for (const uuid of UUIDs) {
+        if (uuid.length >= 32)
+          this.prefixMap[uuid.substring(0, 8)] = uuid
+      }
+    } catch(err) {
+      log.error('Failed to update UUID prefix map', err)
+    }
   }
 
   async refreshNetworkProfiles(readOnly = false) {

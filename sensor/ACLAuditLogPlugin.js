@@ -110,7 +110,7 @@ class ACLAuditLogPlugin extends Sensor {
       const s = this.buffer[mac][descriptor]
       // _.min() and _.max() will ignore non-number values
       s.ts = _.min([s.ts, record.ts])
-      s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
+      s.du = Math.round((_.max([s.ts + (s.du || 0), record.ts + (record.du || 0)]) - s.ts) * 100) / 100
       s.ct += record.ct
       if (s.sp) s.sp = _.uniq(s.sp, record.sp)
     } else {
@@ -413,11 +413,9 @@ class ACLAuditLogPlugin extends Sensor {
         return;
     }
 
-    if (intf) {
-      record.intf = intf.uuid;
-    }
-    if (wanUUID)
-      record.wanIntf = wanUUID;
+    // use prefix to save memory
+    if (intf) record.intf = intf.uuid.substring(0, 8);
+    if (wanUUID) record.wanIntf = wanUUID.substring(0, 8);
 
     // ignores WAN block if there's recent connection to the same remote host & port
     // this solves issue when packets come after local conntrack times out
@@ -544,7 +542,7 @@ class ACLAuditLogPlugin extends Sensor {
       }
     }
 
-    record.intf = intfUUID;
+    record.intf = intfUUID.substring(0, 8);
 
     if (!mac) {
       log.warn('MAC address not found for', JSON.stringify(record))
@@ -656,8 +654,9 @@ class ACLAuditLogPlugin extends Sensor {
       for (const mac in buffer) {
         for (const descriptor in buffer[mac]) {
           const record = buffer[mac][descriptor];
-          const { type, ac, ts, ets, ct, intf } = record
-          const _ts = await getUniqueTs(ets || ts) // make it unique to avoid missing flows in time-based query
+          const { type, ac, ts, du, ct } = record
+          const intf = record.intf && networkProfileManager.prefixMap[record.intf]
+          const _ts = await getUniqueTs(ts + (du || 0)) // make it unique to avoid missing flows in time-based query
           record._ts = _ts;
           const block = type == 'dns' ?
             record.rc == 3 /*NXDOMAIN*/ &&
@@ -710,7 +709,7 @@ class ACLAuditLogPlugin extends Sensor {
             const hitType = type + (block ? 'B' : '')
             timeSeries.recordHit(`${hitType}`, _ts, ct)
             timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct)
-            timeSeries.recordHit(`${hitType}:intf:${intf}`, _ts, ct)
+            if (intf) timeSeries.recordHit(`${hitType}:intf:${intf}`, _ts, ct)
             for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
               const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
               for (const tag of record[flowKey] || []) {
@@ -742,7 +741,7 @@ class ACLAuditLogPlugin extends Sensor {
           block && sem.emitLocalEvent({
             type: Message.MSG_FLOW_ACL_AUDIT_BLOCKED,
             suppressEventLogging: true,
-            flow: Object.assign({}, record, {mac, _ts})
+            flow: Object.assign({}, record, {mac, _ts, intf})
           });
         }
       }
@@ -776,7 +775,7 @@ class ACLAuditLogPlugin extends Sensor {
               const s = stash[descriptor]
               // _.min() and _.max() will ignore non-number values
               s.ts = _.min([s.ts, record.ts])
-              s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
+              s.du = Math.round((_.max([s.ts + (s.du || 0), record.ts + (record.du || 0)]) - s.ts) * 100) / 100
               s.ct += record.ct
               if (s.sp) s.sp = _.uniq(s.sp, record.sp)
             } else {
@@ -791,7 +790,7 @@ class ACLAuditLogPlugin extends Sensor {
         transaction.push(['zremrangebyscore', key, start, end]);
         for (const descriptor in stash) {
           const record = stash[descriptor]
-          record._ts = await getUniqueTs(record.ets || record.ts);
+          record._ts = await getUniqueTs(record.ts + (record.du || 0));
           transaction.push(['zadd', key, record._ts, JSON.stringify(record)])
         }
         const expires = parseInt(Date.now() / 1000) + (this.config.expires || 86400)
