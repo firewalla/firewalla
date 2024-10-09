@@ -17,7 +17,7 @@ const _ = require('lodash');
 const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
-
+const fc = require('../net2/config.js')
 const FlowAggrTool = require('../net2/FlowAggrTool');
 const flowAggrTool = new FlowAggrTool();
 const TypeFlowTool = require('../flow/TypeFlowTool.js')
@@ -168,7 +168,7 @@ class FlowAggregationSensor extends Sensor {
     const tick = flowAggrTool.getIntervalTick(_ts, this.config.keySpan) + this.config.keySpan;
     const uidTickKeys = [];
     if (local) {
-      uidTickKeys.push(`local:${mac}@${tick}`);
+      uidTickKeys.push(`${mac}:local@${tick}`);
     } else {
       uidTickKeys.push(`${mac}@${tick}`);
       if (intf)
@@ -455,6 +455,10 @@ class FlowAggregationSensor extends Sensor {
       await flowAggrTool.addSumFlow("dnsB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}));
       await flowAggrTool.addSumFlow("ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}), "in");
       await flowAggrTool.addSumFlow("ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}), "out");
+    }
+    if (fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW) && options.mac && !options.macs) {
+      await flowAggrTool.addSumFlow('local', options, 'download');
+      await flowAggrTool.addSumFlow('local', options, 'upload');
     }
   }
 

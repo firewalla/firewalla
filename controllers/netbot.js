@@ -1787,11 +1787,6 @@ class netBot extends ControllerBot {
     const promises = [
       netBotTool.prepareTopUploadFlows(jsonobj, options),
       netBotTool.prepareTopDownloadFlows(jsonobj, options),
-      // return more top flows for block statistics
-      netBotTool.prepareTopFlows(jsonobj, 'dnsB', null, Object.assign({}, options, {limit: 400})),
-      netBotTool.prepareTopFlows(jsonobj, 'ipB', "in", Object.assign({}, options, {limit: 400})),
-      netBotTool.prepareTopFlows(jsonobj, 'ipB', "out", Object.assign({}, options, {limit: 400})),
-      netBotTool.prepareTopFlows(jsonobj, 'ifB', "out", Object.assign({}, options, {limit: 400})),
 
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'app', options),
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
@@ -1801,6 +1796,20 @@ class netBot extends ControllerBot {
       this.hostManager.newLast24StatsForInit(jsonobj, target),
       this.hostManager.last12MonthsStatsForInit(jsonobj, target),
     ]
+    if (platform.isAuditLogSupported()) {
+      promises.push(
+        netBotTool.prepareTopFlows(jsonobj, 'dnsB', null, Object.assign({}, options, {limit: 400})),
+        netBotTool.prepareTopFlows(jsonobj, 'ipB', "in", Object.assign({}, options, {limit: 400})),
+        netBotTool.prepareTopFlows(jsonobj, 'ipB', "out", Object.assign({}, options, {limit: 400})),
+        netBotTool.prepareTopFlows(jsonobj, 'ifB', "out", Object.assign({}, options, {limit: 400})),
+      )
+    }
+    if (fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW) && type == 'host') {
+      promises.push(
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'upload', Object.assign({}, options, {limit: 400})),
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'download', Object.assign({}, options, {limit: 400})),
+      )
+    }
 
     jsonobj.hosts = {}
     promises.push(asyncNative.eachLimit(options.macs, 20, async (t) => {
