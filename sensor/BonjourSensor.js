@@ -170,6 +170,7 @@ class BonjourSensor extends Sensor {
           detect.type = result
           detect.brand = 'Apple'
           detect.model = txt.model
+          detect.name = name
         } else if (type == '_airplay' && txt) {
           // none apple device airplay https://openairplay.github.io/airplay-spec/service_discovery.html
           if (txt.manufacturer) detect.brand = txt.manufacturer
