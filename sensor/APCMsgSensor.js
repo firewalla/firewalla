@@ -139,7 +139,7 @@ class APCMsgSensor extends Sensor {
   }
 
   isAPCSupportedRule(rule) {
-    const {type, guids, scope, tag} = rule;
+    const {type, guids, scope, tag, target} = rule;
     if (!SUPPORTED_RULE_TYPES.includes(type))
       return false;
     if (!_.isEmpty(guids))
@@ -147,6 +147,8 @@ class APCMsgSensor extends Sensor {
     if (_.isArray(scope) && scope.some(h => !hostTool.isMacAddress(h)))
       return false;
     if (_.isArray(tag) && tag.some(t => !t.startsWith(Policy.TAG_PREFIX)))
+      return false;
+    if (type === "device" && !hostTool.isMacAddress(target))
       return false;
     return true;
   }
