@@ -46,7 +46,7 @@ class AppTimeUsageSensor extends Sensor {
     this.enabled = fc.isFeatureOn(featureName);
     this.cloudConfig = null;
     this.appConfs = {};
-    await this.loadConfig();
+    await this.loadConfig(true);
 
     await this.scheduleUpdateConfigCronJob();
 
