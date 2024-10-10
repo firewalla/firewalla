@@ -166,11 +166,12 @@ do
     test -n "$ap_pubkey" || continue
     read ap_endpoint ap_vpn_ip < <(echo "$wg_dump"| awk "\$1==\"$ap_pubkey\" {print \$3\" \"\$4}")
     timeit read
+    device_vpn_ip=${ap_vpn_ip/\/32/}
     ap_ip=${ap_endpoint%:*}
     ${CONNECT_AP} && {
         if [[ -z "$ap_ip" || "$ap_ip" == '(none)' ]]; then continue; fi
     }
-    ap_ips+=($ap_ip)
+    ap_ips+=($device_vpn_ip)
     ap_name=$(redis-cli --raw hget host:mac:$ap_mac name || echo $NO_VALUE)
     ap_names+=("$ap_name")
 
@@ -188,7 +189,7 @@ do
             device_mac) apd=$ap_mac ;;
             pub_key) apd=$ap_pubkey ;;
             device_ip) apd=$ap_ip ;;
-            device_vpn_ip) apd=${ap_vpn_ip/\/32/} ;;
+            device_vpn_ip) apd=$device_vpn_ip ;;
             uptime) apd=$(displaytime $ap_uptime) ;;
             adoption) apd="$ap_adopted" ;;
             branch) apd="$ap_branch" ;;
