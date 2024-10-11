@@ -72,6 +72,7 @@ class VPNClient {
                 sem.emitEvent({
                   type: "link_established",
                   profileId: this.profileId,
+                  routeUpdated: true,
                   suppressEventLogging: true,
                 });
               }
