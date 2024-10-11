@@ -394,6 +394,11 @@ class VirtWanGroup {
               generateAlarmNeeded = true;
             this.connState[profileId].ready = true;
           }
+          // routeUpdated will be set if link_established event is trigger by route update message from underlying vpn client
+          // this may imply the VPN client has been reset and reconnected immediately and is not detected by periodical connectivity test, this usually happens on openvpn
+          // so always refresh routing table in this case as previous routes may be removed when openvpn is reset
+          if (e.routeUpdated === true)
+            refreshRTNeeded = true;
           break;
         }
         case "link_broken": {
