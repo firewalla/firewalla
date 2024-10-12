@@ -28,7 +28,7 @@ const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 const vpnClientEnforcer = require('./VPNClientEnforcer.js');
 const routing = require('../routing/routing.js');
 const iptables = require('../../net2/Iptables.js');
-const {Address4} = require('ip-address');
+const {Address4, Address6} = require('ip-address');
 const sysManager = require('../../net2/SysManager');
 const ipTool = require('ip');
 const ipset = require('../../net2/Ipset.js');
@@ -72,6 +72,7 @@ class VPNClient {
                 sem.emitEvent({
                   type: "link_established",
                   profileId: this.profileId,
+                  routeUpdated: true,
                   suppressEventLogging: true,
                 });
               }
@@ -197,6 +198,10 @@ class VPNClient {
     return null;
   }
 
+  async getVpnIP6s() {
+    return null;
+  }
+
   _getDnsmasqConfigPath() {
     return `${f.getUserConfigFolder()}/dnsmasq/vc_${this.profileId}.conf`;
   }
@@ -227,11 +232,11 @@ class VPNClient {
     for(const bin of bins) {
       const tcpCmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p tcp --dport 53 -j ACCEPT`);
       await exec(tcpCmd).catch((err) => {
-        log.error(`Failed to bypass DNS tcp53 redirect: ${cmd}, err:`, err.message);
+        log.error(`Failed to bypass DNS tcp53 redirect: ${tcpCmd}, err:`, err.message);
       });
       const udpCmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p udp --dport 53 -j ACCEPT`);
       await exec(udpCmd).catch((err) => {
-        log.error(`Failed to bypass DNS udp53 redirect: ${cmd}, err:`, err.message);
+        log.error(`Failed to bypass DNS udp53 redirect: ${tcpCmd}, err:`, err.message);
       });
     }
   }
@@ -247,6 +252,9 @@ class VPNClient {
     await exec(`sudo ip6tables -w -t nat -F ${chain}`).catch((err) => {});
     for (let i in dnsServers) {
       const dnsServer = dnsServers[i];
+      if (dnsServer == '') {
+        continue
+      }
       let bin = "iptables";
       if (!ipTool.isV4Format(dnsServer) && ipTool.isV6Format(dnsServer)) {
         bin = "ip6tables";
@@ -434,6 +442,7 @@ class VPNClient {
       sem.emitEvent({
         type: "link_established",
         profileId: this.profileId,
+        routeUpdated: force,
         suppressEventLogging: true,
       });
     } else {
@@ -473,7 +482,7 @@ class VPNClient {
             await this._disableDNSRoute("hard");
             await this._resetRouteMarkInRedis();
           }
-          if (fc.isFeatureOn("vpn_disconnect")) {
+          if (fc.isFeatureOn(Constants.FEATURE_VPN_DISCONNECT)) {
             const Alarm = require('../../alarm/Alarm.js');
             const AlarmManager2 = require('../../alarm/AlarmManager2.js');
             const alarmManager2 = new AlarmManager2();
@@ -502,7 +511,7 @@ class VPNClient {
       if (this._started === true && this._currentState === false && this.profileId === event.profileId) {
         // populate soft route ipset
         this._scheduleRefreshRoutes();
-        if (fc.isFeatureOn("vpn_restore")) {
+        if (fc.isFeatureOn(Constants.FEATURE_VPN_RESTORE)) {
           const Alarm = require('../../alarm/Alarm.js');
           const AlarmManager2 = require('../../alarm/AlarmManager2.js');
           const alarmManager2 = new AlarmManager2();
@@ -1208,13 +1217,23 @@ class VPNClient {
     const results = await Promise.all(targets.map(target => this._runPingTest(target, count)));
     // TODO: evaluate ping test results and return false if it is lower than the threshold
 
+    const ratio = results.reduce((total, item) => total + item.successCount, 0) * 100/(results.length*count);
+    log.info(`VPN ${this.profileId} tests [${targets}] success ratio ${ratio}%`);
     return await this._checkInternetAvailability();
   }
 
   async _runPingTest(target, count = 8) {
     const result = {target, totalCount: count};
+    const af = new Address4(target).isValid() ? 4 : 6;
+    const ping = af == 4 ? "ping" : "ping6";
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName()); // rt id will be used as mark of ping packets
-    const cmd = `sudo ping -n -q -m ${rtId} -c ${count} -W 1 -i 1 ${target} | grep "received" | awk '{print $4}'`;
+    const ips = af == 4 ? await this.getVpnIP4s() : await this.getVpnIP6s();
+    let optI = "";
+    if (_.isArray(ips) && ips.length > 0) {
+      const srcIp = af == 4 ? new Address4(ips[0]) : new Address6(ips[0]);
+      optI = `-I ${srcIp.addressMinusSuffix}`;
+    }
+    const cmd = `sudo ${ping} -n -q -m ${rtId} -c ${count} ${optI} -W 1 -i 1 ${target} | grep "received" | awk '{print $4}'`;
     await exec(cmd).then((output) => {
       result.successCount = Number(output.stdout.trim());
     }).catch((err) => {

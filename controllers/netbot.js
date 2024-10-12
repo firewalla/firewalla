@@ -287,7 +287,7 @@ class netBot extends ControllerBot {
           return;
         }
         if (alarm.type) {
-          let alarmType = alarm.type;
+          let alarmType = alarm.getNotifPolicyKey();
           if (alarmType === "ALARM_LARGE_UPLOAD") {
             alarmType = "ALARM_BEHAVIOR";
           }
