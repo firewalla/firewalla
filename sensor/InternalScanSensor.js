@@ -859,7 +859,7 @@ class InternalScanSensor extends Sensor {
       cmdArg.push(util.format('--script-args %s', scriptArgs.join(',')));
     }
     // a bit longer than unpwdb.timelimit in script args
-    return util.format('sudo timeout 5430s nmap -p %s %s %s -oX - | %s', port, cmdArg.join(' '), ipAddr, xml2jsonBinary);
+    return util.format('sudo timeout 5430s nmap -n -p %s %s %s -oX - | %s', port, cmdArg.join(' '), ipAddr, xml2jsonBinary);
   }
 
   async _genNmapCmd_default(ipAddr, port, scripts) {
@@ -1143,7 +1143,7 @@ class InternalScanSensor extends Sensor {
       }
     }
 
-    const cmd = `sudo nmap -p ${port} --script ${scriptName} --script-args unpwdb.timelimit=10s,brute.mode=creds,brute.credfile=${credfile} ${ipAddr} | grep "Valid credentials" | wc -l`
+    const cmd = `sudo nmap -n -p ${port} --script ${scriptName} --script-args unpwdb.timelimit=10s,brute.mode=creds,brute.credfile=${credfile} ${ipAddr} | grep "Valid credentials" | wc -l`
     const result = await execAsync(cmd);
     if (result.stderr) {
       log.warn(`fail to running command: ${cmd} (user/pass=${username}/${password}), err: ${result.stderr}`);
