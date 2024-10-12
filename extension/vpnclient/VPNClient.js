@@ -435,6 +435,7 @@ class VPNClient {
       sem.emitEvent({
         type: "link_established",
         profileId: this.profileId,
+        routeUpdated: force,
         suppressEventLogging: true,
       });
     } else {
@@ -474,7 +475,7 @@ class VPNClient {
             await this._disableDNSRoute("hard");
             await this._resetRouteMarkInRedis();
           }
-          if (fc.isFeatureOn("vpn_disconnect")) {
+          if (fc.isFeatureOn(Constants.FEATURE_VPN_DISCONNECT)) {
             const Alarm = require('../../alarm/Alarm.js');
             const AlarmManager2 = require('../../alarm/AlarmManager2.js');
             const alarmManager2 = new AlarmManager2();
@@ -503,7 +504,7 @@ class VPNClient {
       if (this._started === true && this._currentState === false && this.profileId === event.profileId) {
         // populate soft route ipset
         this._scheduleRefreshRoutes();
-        if (fc.isFeatureOn("vpn_restore")) {
+        if (fc.isFeatureOn(Constants.FEATURE_VPN_RESTORE)) {
           const Alarm = require('../../alarm/Alarm.js');
           const AlarmManager2 = require('../../alarm/AlarmManager2.js');
           const alarmManager2 = new AlarmManager2();
