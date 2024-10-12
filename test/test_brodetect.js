@@ -18,8 +18,6 @@
 let chai = require('chai');
 let expect = chai.expect;
 
-process.title = "FireMain";
-
 const log = require('../net2/logger.js')(__filename);
 const bro = require("../net2/BroDetect.js");
 const conntrack = require('../net2/Conntrack.js');
@@ -32,11 +30,19 @@ const intelTool = new IntelTool()
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const CategoryUpdater = require('../control/CategoryUpdater.js');
+const categoryUpdater = new CategoryUpdater();
+const DomainTrie = require('../util/DomainTrie.js');
 
 describe('test process conn data', function(){
   this.timeout(35000);
 
   before(async() => {
+    process.title = "FireMain";
+
+    categoryUpdater.domainPatternTrie = new DomainTrie();
+    categoryUpdater.categoryWithPattern = new Set();
+
     fireRouter.scheduleReload();
     await sysManager.updateAsync();
     await delay(2000)
@@ -82,6 +88,7 @@ describe('test process conn data', function(){
   });
 
   it('extractIP should currectly parse IP string', async() => {
+    expect(bro.extractIP('fe80::')).to.equal('fe80::')
     expect(bro.extractIP('[fe80::]')).to.equal('fe80::')
     expect(bro.extractIP('[fe80::]:123')).to.equal('fe80::')
     expect(bro.extractIP('192.168.0.1:123')).to.equal('192.168.0.1')

@@ -25,35 +25,31 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const WGPeer = require('../net2/identity/WGPeer.js');
 
 describe('Test WgvpnConnSensor check peer activity', function(){
-    this.timeout(3000);
+  this.timeout(3000);
 
-    beforeEach((done) => {
-    (async() => {
-        this.todelete = [];
-        const results = await exec(`sudo wg show all latest-handshakes`).then(i => i.stdout.trim().split('\n')).catch((err) => {log.error(err.stderr)});
-        for (let result of results) {
-            const [intf, pubKey, latestHandshake] = result.split(/\s+/g);
-            if (!isNaN(latestHandshake) || latestHandshake == '0') {
-                const rpeerkey = `vpn:wg:peer:${intf}:${pubKey}`;
-                this.todelete.push(rpeerkey);
-                await rclient.hsetAsync(rpeerkey, "lastActiveTimestamp", 9999); // 9999 for test, delete at the after stage
-            }
-        }
-        done();
-      })();
-    });
-
-    afterEach((done) => {(async() => {
-      for (let delkey of this.todelete) {
-        await rclient.delAsync(delkey);
+  beforeEach(async() => {
+    this.todelete = [];
+    const results = await exec(`sudo wg show all latest-handshakes`).then(i => i.stdout.trim().split('\n')).catch((err) => {log.error(err.stderr)});
+    for (let result of results) {
+      const [intf, pubKey, latestHandshake] = result.split(/\s+/g);
+      if (!isNaN(latestHandshake) || latestHandshake == '0') {
+        const rpeerkey = `vpn:wg:peer:${intf}:${pubKey}`;
+        this.todelete.push(rpeerkey);
+        await rclient.hsetAsync(rpeerkey, "lastActiveTimestamp", 9999); // 9999 for test, delete at the after stage
       }
-      done();
-    })()});
-
-    it('should getInitData', async() => {
-       const data = await WGPeer.getInitData();
-       for (let item of data) {
-        expect(item.lastActiveTimestamp).not.to.be.null;
-       }
-    })
+    }
   });
+
+  afterEach(async() => {
+    for (let delkey of this.todelete) {
+      await rclient.delAsync(delkey);
+    }
+  });
+
+  it('should getInitData', async() => {
+    const data = await WGPeer.getInitData();
+    for (let item of data) {
+      expect(item.lastActiveTimestamp).not.to.be.null;
+    }
+  })
+});
