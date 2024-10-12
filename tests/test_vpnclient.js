@@ -35,7 +35,7 @@ describe('Test vpnClient getAttributes', function(){
     afterEach((done) => {
       done();
     });
-  
+
     it('should get openvpn attrs', async()=> {
         const profileIds = await OpenVPNClient.listProfileIds();
         for (const profileId of profileIds) {
@@ -62,5 +62,37 @@ describe('Test vpnClient getAttributes', function(){
           expect(attrs.dnsServers).to.not.be.null;
         }
     });
+
   });
-  
+
+  describe('Test vpnClient getAttributes', function(){
+    this.timeout(30000);
+
+    it('should run ping test', async()=> {
+      const profileIds = await WGVPNClient.listProfileIds();
+      for (const profileId of profileIds) {
+        const client = new WGVPNClient({ profileId });
+        const attrs = await client.getAttributes();
+        if (!attrs.status) {
+          continue
+        }
+        for (const target of attrs.dnsServers){
+          log.debug("pingTest", await client._runPingTest(target));
+        }
+      }
+    });
+
+    it('should run _isInternetAvailable', async() => {
+      const profileIds = await WGVPNClient.listProfileIds();
+      for (const profileId of profileIds) {
+        const client = new WGVPNClient({ profileId });
+        const attrs = await client.getAttributes();
+        if (!attrs.status) {
+          continue
+        }
+        client._started = true;
+        await client._isInternetAvailable();
+      }
+
+    })
+  });
