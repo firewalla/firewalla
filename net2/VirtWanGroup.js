@@ -449,7 +449,8 @@ class VirtWanGroup {
     const HostManager = require('./HostManager.js');
     const hostManager = new HostManager();
     const deviceCount = await hostManager.getVpnActiveDeviceCount(`${Constants.ACL_VIRT_WAN_GROUP_PREFIX}${this.uuid}`);
-    if (Config.isFeatureOn('vwg_conn_alarm')) {
+    const alarmFeatureName = _.get(this.connState, [e.profileId, "ready"]) ? Constants.FEATURE_VPN_RESTORE : Constants.FEATURE_VPN_DISCONNECT;
+    if (Config.isFeatureOn(alarmFeatureName)) {
       const Alarm = require('../alarm/Alarm.js');
       const AM2 = require('../alarm/AlarmManager2.js');
       const am2 = new AM2();
@@ -469,7 +470,7 @@ class VirtWanGroup {
           "p.vwg.devicecount": deviceCount,
           "p.vpn.protocol": protocol,
           "p.vpn.subtype": subtype,
-          "p.vpn.profileId": e.profileId,
+          "p.vpn.profileid": e.profileId,
           "p.vpn.displayname": vpnClient.getDisplayName(),
         }
       );
