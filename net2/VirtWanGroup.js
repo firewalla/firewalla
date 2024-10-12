@@ -381,6 +381,7 @@ class VirtWanGroup {
   async processLinkStateEvent(e) {
     let refreshRTNeeded = false;
     let generateAlarmNeeded = false;
+    let wanSwitched = false;
     await lock.acquire(`${LOCK_REFRESH}_${this.uuid}`, async () => {
       const profileId = e.profileId;
       switch (e.type) {
@@ -388,8 +389,10 @@ class VirtWanGroup {
           if (this.connState[profileId] && this.connState[profileId].ready !== true) {
             if (this.type === "primary_standby" && (this.connState[profileId].seq < _.get(Object.values(this.connState).find(o => o.active), "seq", 100) && this.failback === true || !Object.values(this.connState).some(wan => wan.ready === true))
               || this.type === "load_balance"
-              || this.connState[profileId].enabled === false)
+              || this.connState[profileId].enabled === false) {
+              wanSwitched = true;
               refreshRTNeeded = true;
+            }
             if (this.connState[profileId].enabled && this.connState[profileId].ready === false)
               generateAlarmNeeded = true;
             this.connState[profileId].ready = true;
@@ -403,11 +406,12 @@ class VirtWanGroup {
         }
         case "link_broken": {
           if (this.connState[profileId] && this.connState[profileId].ready !== false) {
-            if (this.connState[profileId].active === true && this.type !== "single")
+            if (this.connState[profileId].active === true && this.type !== "single") {
+              wanSwitched = true;
               refreshRTNeeded = true;
+            }
             this.connState[profileId].ready = false;
-            if (this.connState[profileId].enabled)
-              generateAlarmNeeded = true;
+            generateAlarmNeeded = true;
           }
           break;
         }
@@ -421,7 +425,7 @@ class VirtWanGroup {
       // save connState to redis
       await rclient.hsetAsync(VirtWanGroup.getRedisKeyName(this.uuid), "connState", JSON.stringify(this.connState));
       if (generateAlarmNeeded) {
-        await this.generateConnChangeAlarm(e, refreshRTNeeded).catch((err) => {
+        await this.generateConnChangeAlarm(e, wanSwitched).catch((err) => {
           log.error(`Failed to generate connectivity change alarm`, err.message);
         });
       }
@@ -465,6 +469,8 @@ class VirtWanGroup {
           "p.vwg.devicecount": deviceCount,
           "p.vpn.protocol": protocol,
           "p.vpn.subtype": subtype,
+          "p.vpn.profileId": e.profileId,
+          "p.vpn.displayname": vpnClient.getDisplayName(),
         }
       );
       am2.enqueueAlarm(alarm);
