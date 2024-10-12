@@ -129,3 +129,32 @@ Mar  6 11:33:38 localhost kernel: [89380.233192] wireguard: vpn_88f0_D4A50: Inte
     done();
   });
 });
+
+
+const plainText =  '[Interface]\n' +
+'Address=192.168.22.3/24,fc20:6d31:6536:1::3/64\n' +
+'PrivateKey=6D/gmlV8FrPuzFQlL3VLtD6vtmT0Pa9rcKCCtJzAqFU=\n' +
+'[Peer]\n' +
+'PublicKey=dVrX2hHXMFr2bD+qPATFUwXqVG+cN4sjDXlZIEU3cQU=\n' +
+'Endpoint=154.21.86.58:61817\n' +
+'PersistentKeepalive=20\n' +
+'AllowedIPs=192.168.0.0/16,fc20:6d31:6536:1::/64,9.9.9.9,2607:f8b0:4007:80e::200e,2606:4700:4700::1111\n';
+
+describe('Test vpn client profile', function(){
+  this.timeout(30000);
+
+  before((done) => {
+    done();
+  });
+
+  after((done) => {
+    done();
+  });
+
+  it('should convert plain profile', async() => {
+    const config = WGVPNClient.convertPlainTextToJson(plainText);
+    expect(config.addresses).to.be.eql(["192.168.22.3/24","fc20:6d31:6536:1::3/64"]);
+    expect(config.peers.length).to.be.equal(1);
+  })
+
+});
