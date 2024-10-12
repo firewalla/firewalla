@@ -353,6 +353,10 @@ class Alarm {
     } else
       return null
   }
+
+  getNotifPolicyKey() {
+    return this.type;
+  }
 }
 
 
@@ -1557,6 +1561,15 @@ class VWGConnAlarm extends DualWanAlarm {
     const result = super.localizedNotificationContentArray();
     result.push(...[this["p.timestampTimezone"], this["p.vwg.devicecount"]], this["p.vwg.name"]);
     return result;
+  }
+
+  getNotifPolicyKey() {
+    // use the same key as vpn client disconnect/restore alarm to control whether notification should be sent
+    if (this["p.ready"] == "true") {
+      return "ALARM_VPN_RESTORE";
+    } else {
+      return "ALARM_VPN_DISCONNECT";
+    }
   }
 }
 
