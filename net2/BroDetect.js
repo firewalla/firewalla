@@ -276,7 +276,27 @@ class BroDetect {
     return obj;
   }
 
+  extractIP(str) {
+    // since zeek 5.0, the host will contain port number if it is not a well-known port
+    // http connect might contain target port (not the same as id.resp_p which is proxy port
+    // and sometimes there's a single trailing ':', probably a zeek bug
+    // v6 ip address is wrapped with []
+    if (str.includes(']:')) {
+      // only removes port and trailing : here
+      str = str.substring(0, str.indexOf(']:') + 1)
+    }
+    if (str.startsWith("[") && str.endsWith("]")) {
+      // strip [] from an ipv6 address
+      str = str.substring(1, str.length - 1);
+    }
 
+    // remove tailing port of v4 addresses
+    if (str.includes(':') && net.isIP(str) != 6) {
+      str = str.substring(0, str.indexOf(':'))
+    }
+
+    return str
+  }
 
   async processHttpData(data) {
     try {
@@ -290,24 +310,8 @@ class BroDetect {
         if (host.match(/^\[?[0-9a-e]{1,4}$/)) {
           host = ip || ''
         }
-        // since zeek 5.0, the host will contain port number if it is not a well-known port
-        // http connect might contain target port (not the same as id.resp_p which is proxy port
-        // and sometimes there's a single trailing ':', probably a zeek bug
-        // v6 ip address is wrapped with []
-        if (host.includes(']:')) {
-          host = host.substring(0, host.indexOf(']:') + 1)
-        }
-        if (host.startsWith("[") && host.endsWith("]")) {
-          // strip [] from an ipv6 address
-          host = host.substring(1, host.length - 1);
-        }
 
-        // remove tailing port of v4 addresses
-        if (host.includes(':') && !new Address6(host).isValid()) {
-          host = host.substring(0, host.indexOf(':'))
-        }
-
-        obj.host = host
+        obj.host = this.extractIP(host)
       }
 
       // HTTP proxy, drop host info
@@ -349,6 +353,7 @@ class BroDetect {
           delete intel.category
 
           // remove domain related info and but keep the stub data to prevent rapid cloud fetch
+          await intelTool.removeIntel(ip)
           await intelTool.addIntel(ip, intel)
         }
 
@@ -1457,7 +1462,7 @@ class BroDetect {
           sem.emitEvent({
             type: 'DestIPFound',
             from: "VPN_endpoint",
-            ip: realLocal.startsWith("[") && realLocal.includes("]:") ? realLocal.substring(1, realLocal.indexOf("]:")) : realLocal.split(":")[0],
+            ip: this.extractIP(realLocal),
             suppressEventLogging: true
           });
         }

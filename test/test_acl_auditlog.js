@@ -32,18 +32,12 @@ const RuleStatsPlugin = require('../sensor/RuleStatsPlugin.js');
 describe('Test process iptables log', function(){
   this.timeout(3000);
 
-  before((done) => {
+  before(() => {
     this.plugin = new ACLAuditLogPlugin({})
     sysManager.sysinfo = {};
     sysManager.sysinfo["eth0"] = {"name":"eth0","uuid":"1f97bb38-7592-4be0-8ea4-b53d353a2d01","mac_address":"20:6d:31:01:2b:43","ip_address":"192.168.203.134","subnet":"192.168.203.134/24","netmask":"255.255.255.0","gateway_ip":"192.168.203.1","gateway":"192.168.203.1","ip4_addresses":["192.168.203.134"],"ip4_subnets":["192.168.203.134/24"],"ip4_masks":["255.255.255.0"],"ip6_addresses":null,"ip6_subnets":null,"ip6_masks":null,"gateway6":"","dns":["192.168.203.1","8.8.8.8"],"resolver":null,"resolverFromWan":false,"conn_type":"Wired","type":"wan","rtid":11,"searchDomains":[],"localDomains":[],"rt4_subnets":null,"rt6_subnets":null,"ready":true,"active":true,"pendingTest":false,"origDns":["10.8.8.8"],"pds":null};
     sysManager.sysinfo["br0"] = {"name":"br0","uuid":"75da8a81-4881-4fcd-964f-7cb935355acc","mac_address":"20:6d:31:01:2b:40","ip_address":"192.168.196.1","subnet":"192.168.196.1/24","netmask":"255.255.255.0","gateway_ip":null,"gateway":null,"ip4_addresses":["192.168.196.1"],"ip4_subnets":["192.168.196.1/24"],"ip4_masks":["255.255.255.0"],"ip6_addresses":null,"ip6_subnets":null,"ip6_masks":null,"gateway6":null,"dns":null,"resolver":["192.168.203.1","8.8.8.8"],"resolverFromWan":true,"conn_type":"Wired","type":"lan","rtid":8,"searchDomains":["lan"],"localDomains":[],"rt4_subnets":null,"rt6_subnets":null,"origDns":null,"pds":null};
     sysManager.nicinfo = sysManager.sysinfo;
-    done();
-  });
-
-  after((done) => {
-    // source port 9999 for test
-    done();
   });
 
   it('should process allow device rule', async() => {

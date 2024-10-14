@@ -30,25 +30,22 @@ const log = require('../net2/logger.js')(__filename);
 describe.skip('test get flows', function(){
   this.timeout(3000);
 
-  before((done) => (
-    async() => {
-        networkProfile.networkProfiles = {};
-        networkProfile.networkProfiles["1f97bb38-7592-4be0-**"] = {ipv4:"192.168.203.134"};
-        this.gid = "3d0a201e-0b2f-**";
-        this.netbot = new netBot({name:"testbot", main:"netbot.js", controller:{type: "netbot", id:0}}, {service:"test", controllers:[]}, new cloud("netbot"), [], this.gid, true, true);
-        this.appInfo = {
-            deviceName: 'iPhone',
-            appID: 'com.rottiesoft.circle',
-            platform: 'ios',
-            timezone: 'Asia/Shanghai',
-            language: 'en',
-            version: '1.60-71',
-            eid: 'pWNKy3S6fKzDMdqV-b2t2A',
-            ios: '17.3-1'
-          };
-        done();
-    })()
-  );
+  before(async() => {
+    networkProfile.networkProfiles = {};
+    networkProfile.networkProfiles["1f97bb38-7592-4be0-**"] = {ipv4:"192.168.203.134"};
+    this.gid = "3d0a201e-0b2f-**";
+    this.netbot = new netBot({name:"testbot", main:"netbot.js", controller:{type: "netbot", id:0}}, {service:"test", controllers:[]}, new cloud("netbot"), [], this.gid, true, true);
+    this.appInfo = {
+      deviceName: 'iPhone',
+      appID: 'com.rottiesoft.circle',
+      platform: 'ios',
+      timezone: 'Asia/Shanghai',
+      language: 'en',
+      version: '1.60-71',
+      eid: 'pWNKy3S6fKzDMdqV-b2t2A',
+      ios: '17.3-1'
+    };
+  });
 
   after((done) => {
     // source port 9999 for test
@@ -92,14 +89,11 @@ describe.skip('test get flows', function(){
 });
 
 describe('test netbot', function(){
-  before((done) => (
-    async() => {
-      this.gid = "3d0a201e-0b2f-**";
-      this.netbot = new netBot({name:"testbot", main:"netbot.js", controller:{type: "netbot", id:0}}, {service:"test", controllers:[]}, new cloud("netbot"), [], this.gid, true, true);
-      await rclient.saddAsync('sys:eid:blacklist', 'test-eid1');
-      done();
-    })()
-  );
+  before( async() => {
+    this.gid = "3d0a201e-0b2f-**";
+    this.netbot = new netBot({name:"testbot", main:"netbot.js", controller:{type: "netbot", id:0}}, {service:"test", controllers:[]}, new cloud("netbot"), [], this.gid, true, true);
+    await rclient.saddAsync('sys:eid:blacklist', 'test-eid1');
+  });
 
   it('should test eid acl', async() => {
     const rawmsg = {"mtype":"msg","message":{"type":"jsondata","appInfo":{"eid":"test-eid1"},"obj":{"mtype":"cmd","data":{},"type":"jsonmsg"}},"target":"1f97bb38-7592-4be0"};
