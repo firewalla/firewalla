@@ -42,50 +42,44 @@ describe('Test NseScanPlugin', function() {
   this.timeout(1200000);
   this.plugin = new NseScanPlugin({});
 
-  before((done) => (
-    async() => {
-      this.policy = await rclient.hgetAsync('policy:system', 'nse_scan');
-      this.scanResult = await rclient.hgetAsync(Constants.REDIS_KEY_NSE_RESULT, 'dhcp');
-      fireRouter.scheduleReload();
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      await sysManager.updateAsync();
-      const keys = await rclient.keysAsync("network:uuid:*");
-      for (let key of keys) {
-        const profile = await rclient.hgetallAsync(key);
-        if (!profile) // just in case
-          continue;
-        const o = NetworkProfile.parse(profile);
-        const uuid = key.substring(13);
-        if (!uuid) {
-          continue;
-        }
-        o.uuid = uuid;
-        npm.networkProfiles[uuid] = new NetworkProfile(o)
+  before( async() => {
+    this.policy = await rclient.hgetAsync('policy:system', 'nse_scan');
+    this.scanResult = await rclient.hgetAsync(Constants.REDIS_KEY_NSE_RESULT, 'dhcp');
+    fireRouter.scheduleReload();
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    await sysManager.updateAsync();
+    const keys = await rclient.keysAsync("network:uuid:*");
+    for (let key of keys) {
+      const profile = await rclient.hgetallAsync(key);
+      if (!profile) // just in case
+        continue;
+      const o = NetworkProfile.parse(profile);
+      const uuid = key.substring(13);
+      if (!uuid) {
+        continue;
       }
+      o.uuid = uuid;
+      npm.networkProfiles[uuid] = new NetworkProfile(o)
+    }
 
-      const hostkeys = await rclient.keysAsync("host:mac:*");
-      const currentTs = Date.now() / 1000;
-      for (let key of hostkeys) {
-        const hostinfo = await rclient.hgetallAsync(key);
-        const host = new Host(hostinfo, true);
-        host.lastActiveTimestamp = currentTs;
-        hostManager.hostsdb[`host:mac:${host.o.mac}`] = host
-        hostManager.hosts.all.push(host);
-      }
-      hostManager.hosts.all = _.uniqWith(hostManager.hosts.all, (a,b) => a.o.ipv4 == b.o.ipv4 && a.o.mac == b.o.mac)
-      await rclient.hdelAsync(Constants.REDIS_KEY_NSE_RESULT, 'key1');
-      done();
-    })()
-  );
+    const hostkeys = await rclient.keysAsync("host:mac:*");
+    const currentTs = Date.now() / 1000;
+    for (let key of hostkeys) {
+      const hostinfo = await rclient.hgetallAsync(key);
+      const host = new Host(hostinfo, true);
+      host.lastActiveTimestamp = currentTs;
+      hostManager.hostsdb[`host:mac:${host.o.mac}`] = host
+      hostManager.hosts.all.push(host);
+    }
+    hostManager.hosts.all = _.uniqWith(hostManager.hosts.all, (a,b) => a.o.ipv4 == b.o.ipv4 && a.o.mac == b.o.mac)
+    await rclient.hdelAsync(Constants.REDIS_KEY_NSE_RESULT, 'key1');
+  });
 
-  after((done) => (
-    async() => {
-      await rclient.hsetAsync('policy:system', 'nse_scan', this.policy);
-      await rclient.hsetAsync(Constants.REDIS_KEY_NSE_RESULT, 'dhcp', this.scanResult);
-      await rclient.delAsync("host:mac:123456");
-      done();
-    })()
-  );
+  after( async() => {
+    await rclient.hsetAsync('policy:system', 'nse_scan', this.policy);
+    await rclient.hsetAsync(Constants.REDIS_KEY_NSE_RESULT, 'dhcp', this.scanResult);
+    await rclient.delAsync("host:mac:123456");
+  });
 
   it('should get last result', async() => {
     const ts = Date.now()/1000;
@@ -189,19 +183,13 @@ describe('Test applyPolicy', function(){
   this.timeout(10000);
   this.plugin = new NseScanPlugin({});
 
-  before((done) => {
-    (async() =>{
-      this.policy = await rclient.hgetAsync('policy:system', 'nse_scan');
-      await rclient.hsetAsync('policy:system', 'nse_scan', '{"state": false}');
-      done();
-    })();
+  before( async() =>{
+    this.policy = await rclient.hgetAsync('policy:system', 'nse_scan');
+    await rclient.hsetAsync('policy:system', 'nse_scan', '{"state": false}');
   });
 
-  after((done) => {
-    (async() => {
-      await rclient.hsetAsync('policy:system', 'nse_scan', this.policy);
-      done();
-    })();
+  after( async() => {
+    await rclient.hsetAsync('policy:system', 'nse_scan', this.policy);
   });
 
   it('should apply policy', async() => {
