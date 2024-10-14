@@ -56,7 +56,7 @@ setTimeout(()=>{
         let license = License.getLicense();
         console.log(license);
         if(err) {
-          reject(err);
+          console.error(err);
           return;
         }
 

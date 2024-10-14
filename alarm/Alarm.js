@@ -1526,6 +1526,16 @@ class VWGConnAlarm extends DualWanAlarm {
     return category;
   }
 
+  localizedNotificationTitleKey() {
+    let key = super.localizedNotificationTitleKey() + (this["p.ready"] == "true" ? "_RESTORE" : "_DISCONNECT");
+
+    if (this["p.vwg.strictvpn"] == false || this["p.vwg.strictvpn"] == "false") {
+      key += ".FALLBACK";
+    }
+
+    return key;
+  }
+
   getNotifType() {
     let notify_type = super.getNotifType();
     if (this["p.vwg.strictvpn"] == true || this["p.vwg.strictvpn"] == "true") {

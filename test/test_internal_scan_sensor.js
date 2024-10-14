@@ -351,41 +351,35 @@ describe('Test applyPolicy', function(){
   this.hm = new HostManager();
   this.hm.hosts = {all:[]};
 
-  before((done) => {
-    (async() =>{
-      fireRouter.scheduleReload();
-      await delay(2000)
-      await sysManager.updateAsync();
-      const currentTs = Date.now() / 1000;
-      npm.networkProfiles["88888888-4881-4881-4881-488148812888"] = new NetworkProfile({uuid: "88888888-4881-4881-4881-488148812888"});
-      npm.networkProfiles["99999999-4881-4881-4881-488148812999"] = new NetworkProfile({uuid: "99999999-4881-4881-4881-488148812999"});
-      tagManager.tags['88']= new Tag({uid: 88, name: '', createTs: currentTs});
-      await rclient.hsetAsync('host:mac:20:6D:31:01:2B:88', 'mac', '20:6D:31:01:2B:88', 'intf', '88888888-4881-4881-4881-488148812888', 'lastActiveTimestamp', currentTs);
-      await rclient.hsetAsync('policy:mac:20:6D:31:01:2B:88', 'tags', '["88"]', 'monitor', false);
-      await rclient.hsetAsync('host:mac:20:6D:31:01:2B:89', 'mac', '20:6D:31:01:2B:89', 'intf', '99999999-4881-4881-4881-488148812999', 'lastActiveTimestamp', currentTs);
-      await rclient.hsetAsync('policy:mac:20:6D:31:01:2B:89', 'monitor', false);
-      this.hm.hostsdb['host:mac:20:6D:31:01:2B:88'] = new Host({mac: '20:6D:31:01:2B:88', ipv4Addr: '10.88.1.8', intf:'88888888-4881-4881-4881-488148812888', lastActiveTimestamp: currentTs}, true);
-      this.hm.hostsdb['host:mac:20:6D:31:01:2B:88'].policy = {tags:["88"],monitor: false};
-      this.hm.hostsdb['host:mac:20:6D:31:01:2B:89'] = new Host({mac: '20:6D:31:01:2B:89', ipv4Addr: '10.88.1.9', intf:'99999999-4881-4881-4881-488148812999', lastActiveTimestamp: currentTs}, true);
-      this.hm.hostsdb['host:mac:20:6D:31:01:2B:89'].policy = {monitor: false};
-      this.hm.hosts.all.push(this.hm.hostsdb['host:mac:20:6D:31:01:2B:88']);
-      this.hm.hosts.all.push(this.hm.hostsdb['host:mac:20:6D:31:01:2B:89']);
-      this.policy = await rclient.hgetAsync('policy:system', 'weak_password_scan');
-      done();
-    })();
+  before( async() =>{
+    fireRouter.scheduleReload();
+    await delay(2000)
+    await sysManager.updateAsync();
+    const currentTs = Date.now() / 1000;
+    npm.networkProfiles["88888888-4881-4881-4881-488148812888"] = new NetworkProfile({uuid: "88888888-4881-4881-4881-488148812888"});
+    npm.networkProfiles["99999999-4881-4881-4881-488148812999"] = new NetworkProfile({uuid: "99999999-4881-4881-4881-488148812999"});
+    tagManager.tags['88']= new Tag({uid: 88, name: '', createTs: currentTs});
+    await rclient.hsetAsync('host:mac:20:6D:31:01:2B:88', 'mac', '20:6D:31:01:2B:88', 'intf', '88888888-4881-4881-4881-488148812888', 'lastActiveTimestamp', currentTs);
+    await rclient.hsetAsync('policy:mac:20:6D:31:01:2B:88', 'tags', '["88"]', 'monitor', false);
+    await rclient.hsetAsync('host:mac:20:6D:31:01:2B:89', 'mac', '20:6D:31:01:2B:89', 'intf', '99999999-4881-4881-4881-488148812999', 'lastActiveTimestamp', currentTs);
+    await rclient.hsetAsync('policy:mac:20:6D:31:01:2B:89', 'monitor', false);
+    this.hm.hostsdb['host:mac:20:6D:31:01:2B:88'] = new Host({mac: '20:6D:31:01:2B:88', ipv4Addr: '10.88.1.8', intf:'88888888-4881-4881-4881-488148812888', lastActiveTimestamp: currentTs}, true);
+    this.hm.hostsdb['host:mac:20:6D:31:01:2B:88'].policy = {tags:["88"],monitor: false};
+    this.hm.hostsdb['host:mac:20:6D:31:01:2B:89'] = new Host({mac: '20:6D:31:01:2B:89', ipv4Addr: '10.88.1.9', intf:'99999999-4881-4881-4881-488148812999', lastActiveTimestamp: currentTs}, true);
+    this.hm.hostsdb['host:mac:20:6D:31:01:2B:89'].policy = {monitor: false};
+    this.hm.hosts.all.push(this.hm.hostsdb['host:mac:20:6D:31:01:2B:88']);
+    this.hm.hosts.all.push(this.hm.hostsdb['host:mac:20:6D:31:01:2B:89']);
+    this.policy = await rclient.hgetAsync('policy:system', 'weak_password_scan');
   });
 
-  after((done) => {
-    (async() => {
-      await rclient.delAsync('host:mac:20:6D:31:01:2B:88');
-      await rclient.delAsync('host:mac:20:6D:31:01:2B:89');
-      await rclient.delAsync('policy:mac:20:6D:31:01:2B:88');
-      await rclient.delAsync('policy:mac:20:6D:31:01:2B:89');
-      await rclient.delAsync('policy:network:88888888-4881-4881-4881-488148812888');
-      await rclient.delAsync('policy:network:99999999-4881-4881-4881-488148812999');
-      await rclient.hsetAsync('policy:system', 'weak_password_scan', this.policy);
-      done();
-    })();
+  after(async () => {
+    await rclient.delAsync('host:mac:20:6D:31:01:2B:88');
+    await rclient.delAsync('host:mac:20:6D:31:01:2B:89');
+    await rclient.delAsync('policy:mac:20:6D:31:01:2B:88');
+    await rclient.delAsync('policy:mac:20:6D:31:01:2B:89');
+    await rclient.delAsync('policy:network:88888888-4881-4881-4881-488148812888');
+    await rclient.delAsync('policy:network:99999999-4881-4881-4881-488148812999');
+    await rclient.hsetAsync('policy:system', 'weak_password_scan', this.policy);
   });
 
   it('should get scan hosts', async() => {
@@ -489,46 +483,40 @@ describe('Test scan hosts', function(){
   this.plugin.scheduledScanTasks = {tasks:{}};
   this.plugin.subTaskWaitingQueue = [];
 
-  before((done) => (
-    async() => {
-      this.policy = await rclient.hgetAsync('policy:system', 'weak_password_scan');
-      fireRouter.scheduleReload();
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      await sysManager.updateAsync();
-      const keys = await rclient.keysAsync("network:uuid:*");
-      for (let key of keys) {
-        const profile = await rclient.hgetallAsync(key);
-        if (!profile) // just in case
-          continue;
-        const o = NetworkProfile.parse(profile);
-        const uuid = key.substring(13);
-        if (!uuid) {
-          continue;
-        }
-        o.uuid = uuid;
-        npm.networkProfiles[uuid] = new NetworkProfile(o)
+  before( async() => {
+    this.policy = await rclient.hgetAsync('policy:system', 'weak_password_scan');
+    fireRouter.scheduleReload();
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    await sysManager.updateAsync();
+    const keys = await rclient.keysAsync("network:uuid:*");
+    for (let key of keys) {
+      const profile = await rclient.hgetallAsync(key);
+      if (!profile) // just in case
+        continue;
+      const o = NetworkProfile.parse(profile);
+      const uuid = key.substring(13);
+      if (!uuid) {
+        continue;
       }
+      o.uuid = uuid;
+      npm.networkProfiles[uuid] = new NetworkProfile(o)
+    }
 
-      const hostkeys = await rclient.keysAsync("host:mac:*");
-      const currentTs = Date.now() / 1000;
-      for (let key of hostkeys) {
-        const hostinfo = await rclient.hgetallAsync(key);
-        const host = new Host(hostinfo, true);
-        host.lastActiveTimestamp = currentTs;
-        hostManager.hostsdb[`host:mac:${host.o.mac}`] = host
-        hostManager.hosts.all.push(host);
-      }
-      hostManager.hosts.all = _.uniqWith(hostManager.hosts.all, (a,b) => a.o.ipv4 == b.o.ipv4 && a.o.mac == b.o.mac)
-      done();
-    })()
-  );
+    const hostkeys = await rclient.keysAsync("host:mac:*");
+    const currentTs = Date.now() / 1000;
+    for (let key of hostkeys) {
+      const hostinfo = await rclient.hgetallAsync(key);
+      const host = new Host(hostinfo, true);
+      host.lastActiveTimestamp = currentTs;
+      hostManager.hostsdb[`host:mac:${host.o.mac}`] = host
+      hostManager.hosts.all.push(host);
+    }
+    hostManager.hosts.all = _.uniqWith(hostManager.hosts.all, (a,b) => a.o.ipv4 == b.o.ipv4 && a.o.mac == b.o.mac)
+  });
 
-  after((done) => (
-    async() => {
-      await rclient.hsetAsync('policy:system', 'weak_password_scan', this.policy);
-      done();
-    })()
-  );
+  after(async () => {
+    await rclient.hsetAsync('policy:system', 'weak_password_scan', this.policy);
+  });
 
   it.skip('should get scan hosts', async() => {
     let data = await this.plugin.getScanHosts({state: false, ts:9999});
