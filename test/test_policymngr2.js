@@ -171,16 +171,6 @@ describe('Test policy filter', function(){
 describe('Test policy filter', function(){
   this.timeout(30000);
 
-  beforeEach((done) => {
-    (async() =>{
-        done();
-    })();
-  });
-
-  afterEach((done) => {
-    done();
-  });
-
   it('should get category domains', async () => {
     const domains = await domainBlock.getCategoryDomains('adblock_strict', true);
     log.debug('getCategoryDomains adblock_strict', domains);
