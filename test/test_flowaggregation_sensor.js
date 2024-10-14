@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -130,8 +130,8 @@ describe.skip('Test Flow Aggregation Sensor', () => {
         let result = await flowAggrTool.flowExists(sample.hostMac, "app", "600", getIntervalEnd(sample.ts));
         expect(result).to.be.true;
 
-        let appKey = flowAggrTool.getFlowKey(mac, "app", '600', getIntervalEnd(sample.ts));
-        let traffic = await rclient.zscoreAsync(appKeykey, JSON.stringify({device:mac, app: 'search'}));
+        let appKey = flowAggrTool.getFlowKey(sample.hostMac, "app", '600', getIntervalEnd(sample.ts));
+        let traffic = await rclient.zscoreAsync(appKey, JSON.stringify({device:sample.hostMac, app: 'search'}));
         expect(traffic).to.equal('300');
 
         let key = flowAggrTool.getFlowKey(sample.hostMac, "app", "600", getIntervalEnd(sample.ts));

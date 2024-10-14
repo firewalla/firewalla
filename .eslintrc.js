@@ -2,6 +2,7 @@ module.exports = {
   "env": {
     "commonjs": true,
     "es6": true,
+    "mocha": true,
     "node": true
   },
   "extends": "eslint:recommended",
@@ -16,7 +17,6 @@ module.exports = {
     '/vendor_lib/**',
     '/api/**',
     '/ui/**',
-    '/tests/**',
     '/testLegacy/**',
     '/encipher/lib/Math.uuid.js',
     '/httpd/**',
