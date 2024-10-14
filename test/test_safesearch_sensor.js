@@ -116,7 +116,7 @@ describe('Test safe search', function(){
     it('should patch host-record entry', async() => {
       let result = await execAsync(`redis-cli zrevrange rdns:domain:safe.duckduckgo.com 0 0`).then(r=>r.stdout.trim()).catch(error => null);
       if (!result) {
-        await execAsyncAsync(`redis-cli zadd rdns:domain:safe.duckduckgo.com ${Date.now()/1000} 52.250.41.2`);
+        await execAsync(`redis-cli zadd rdns:domain:safe.duckduckgo.com ${Date.now()/1000} 52.250.41.2`);
         result = "52.250.41.2";
       }
       const entries = await this.plugin.patchHostRecordEntry("safe.duckduckgo.com");
