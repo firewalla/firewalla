@@ -43,9 +43,8 @@ describe('test process conn data', function(){
     categoryUpdater.domainPatternTrie = new DomainTrie();
     categoryUpdater.categoryWithPattern = new Set();
 
-    fireRouter.scheduleReload();
+    await fireRouter.waitTillReady()
     await sysManager.updateAsync();
-    await delay(2000)
   })
 
   afterEach(() => {
