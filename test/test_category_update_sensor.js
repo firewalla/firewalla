@@ -17,15 +17,36 @@
 
 let chai = require('chai');
 let expect = chai.expect;
+const bone = require('../lib/Bone.js');
+const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const CategoryUpdateSensor = require('../sensor/CategoryUpdateSensor.js');
 
+describe('Test category update sensor', function(){
+    this.timeout(30000);
+    before(async () => {
+      this.sensor = new CategoryUpdateSensor();
+      bone.setEndpoint(await rclient.getAsync('sys:bone:url'));
+      const jwt = await rclient.getAsync('sys:bone:jwt');
+      bone.setToken(jwt);
+    })
 
-describe.skip('Test category update sensor', function(){
-    this.sensor = new CategoryUpdateSensor();
-    this.sensor.resetCategoryHashsetMapping();
+    it('should get category hashset', async () => {
+      expect(this.sensor.getCategoryHashset('porn_bf')).to.be.equal("app.porn_bf");
+      expect(this.sensor.getCategoryHashset('games')).to.be.equal("app.gaming");
+      expect(this.sensor.getCategoryHashset('games_bf')).to.be.equal("app.games_bf");
+      expect(this.sensor.getCategoryHashset('av')).to.be.equal("app.video");
+      expect(this.sensor.getCategoryHashset('av_bf')).to.be.equal("app.av_bf");
+    });
 
     it('should update category', async () => {
       await this.sensor.updateCategory('porn_bf');
-    })
+      await this.sensor.updateCategory('porn');
+      await this.sensor.updateCategory('av_bf');
+      await this.sensor.updateCategory('av');
+      await this.sensor.updateCategory('games_bf');
+      await this.sensor.updateCategory('games');
+    });
+
+
   });

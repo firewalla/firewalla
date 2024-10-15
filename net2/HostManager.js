@@ -1246,6 +1246,9 @@ module.exports = class HostManager extends Monitorable {
           json[initDataKey][uid].appTimeUsageToday = appTimeUsage;
           json[initDataKey][uid].appTimeUsageTotalToday = appTimeUsageTotal;
           json[initDataKey][uid].categoryTimeUsageToday = categoryTimeUsage;
+
+          const stats = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, null, ["internet"], begin, end, "hour", false, includeAppTimeSlots, includeAppTimeIntervals);
+          json[initDataKey][uid].internetTimeUsageToday = _.get(stats, ["appTimeUsage", "internet"]);
         }
       }
     }

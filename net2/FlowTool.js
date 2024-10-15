@@ -169,7 +169,7 @@ class FlowTool extends LogQuery {
     }
 
     if (flow.oIntf)
-      f.oIntf = networkProfileManager.prefixMap[flow.oIntf] || f.oIntf
+      f.oIntf = networkProfileManager.prefixMap[flow.oIntf] || flow.oIntf
 
     // allow rule id
     if (flow.apid && Number(flow.apid)) {
