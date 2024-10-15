@@ -521,6 +521,27 @@ class CategoryUpdaterBase {
     const release = firewalla.getReleaseType();
     return this.isUserTargetList(category) && ["dev", "unknown"].includes(release);
   }
+
+  static getCategoryHashsetMapping() {
+    return {
+      "games": "app.gaming",
+      "games_bf": "app.games_bf",
+      "social": "app.social",
+      "social_bf": "app.social_bf",
+      "av": "app.video",
+      "av_bf": "app.av_bf",
+      "porn": "app.porn",  // dnsmasq redirect to blue hole if porn
+      "porn_bf": "app.porn_bf",
+      "gamble": "app.gamble",
+      "gamble_bf": "app.gamble_bf",
+      "shopping": "app.shopping",
+      "shopping_bf": "app.shopping_bf",
+      "p2p": "app.p2p",
+      "p2p_bf": "app.p2p_bf",
+      "vpn": "app.vpn",
+      "vpn_bf": "app.vpn_bf"
+    }
+  }
 }
 
 module.exports = CategoryUpdaterBase
