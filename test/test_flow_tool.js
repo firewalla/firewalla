@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,29 +14,15 @@
  */
 'use strict'
 
-let chai = require('chai');
-let should = chai.should;
-let expect = chai.expect;
-let assert = chai.assert;
+const chai = require('chai');
+const expect = chai.expect;
 
-let redis = require('redis');
-let rclient = redis.createClient();
-
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const fireRouter = require('../net2/FireRouter.js')
+const networkProfileManager = require('../net2/NetworkProfileManager.js');
+const sysManager = require('../net2/SysManager.js');
+const flowTool = require('../net2/FlowTool');
 
 let sample = require('./sample_data');
-
-let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
-
-let flowTool = require('../net2/FlowTool');
-
-function delay(t) {
-  return new Promise(function(resolve) {
-    setTimeout(resolve, t)
-  });
-}
 
 // Need to modify after refactor
 describe.skip('FlowTool', () => {
@@ -180,7 +166,13 @@ describe.skip('FlowTool', () => {
 });
 
 
-describe('should format simple format', ()=>{
+describe('should format simple format', function() {
+  before( async() => {
+    await fireRouter.waitTillReady()
+    await sysManager.updateAsync()
+    await networkProfileManager.updatePrefixMap()
+  })
+
   it('should assign apid/rpid', () => {
     const flow = {ts:1710300917.62,ets:1710300947.06,"_ts":1710300977.65034,sh:"192.168.196.105",dh:"140.82.113.25",ob:29,rb:25,ct:1,fd:"in",lh:"192.168.196.105",intf:"75da8a81-4881-4fcd-964f-7cb935355acc",du:29.44,
       af:{"alive.github.com":{"proto":"ssl","ip":"140.82.113.25"}},pr:"tcp",uids:["CVisnh3UdTVurR370j"],ltype:"mac",userTags:["1"],tags:["2"],sp:[51899],dp:443, apid:88,rpid:99};
@@ -189,4 +181,15 @@ describe('should format simple format', ()=>{
     expect(formatted.rpid).to.equal(99);
   })
 
+  it('should deal with both full and prefixed oIntf', () => {
+    const fullID = sysManager.getDefaultWanInterface().uuid
+
+    const flow = {ts:1710300917.62, sh:"192.168.1.1", dh:"192.168.2.1", ob:29,rb:25,ct:1,fd:"in", lh:"192.168.1.1", intf:"00000000-0000-0000-0000-000000000000", du:29,pr:"tcp", ltype:"mac", sp:[51000],dp:443};
+
+    flow.oIntf = fullID
+    expect(flowTool.toSimpleFormat(flow).oIntf).to.equal(fullID)
+
+    flow.oIntf = fullID.substring(0, 8)
+    expect(flowTool.toSimpleFormat(flow).oIntf).to.equal(fullID)
+  })
 });
