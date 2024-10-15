@@ -43,6 +43,7 @@
     "moment": "^2.15.0",
     "moment-timezone": "^0.3.0",
     "morgan": "^1.9.1",
+    "mustache": "^3.2.1",
     "mustache-express": "^1.2.5",
     "network": "git+https://git@github.com/melvinto/network.git",
     "node-df": "^0.1.4",
