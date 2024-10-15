@@ -1292,6 +1292,9 @@ module.exports = class HostManager extends Monitorable {
           json[initDataKey][uid].appTimeUsageToday = appTimeUsage;
           json[initDataKey][uid].appTimeUsageTotalToday = appTimeUsageTotal;
           json[initDataKey][uid].categoryTimeUsageToday = categoryTimeUsage;
+
+          const stats = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, null, ["internet"], begin, end, "hour", false, includeAppTimeSlots, includeAppTimeIntervals);
+          json[initDataKey][uid].internetTimeUsageToday = _.get(stats, ["appTimeUsage", "internet"]);
         }
       }
     }
@@ -2139,7 +2142,6 @@ module.exports = class HostManager extends Monitorable {
       }
     */
 
-    // just shallow copy as only policy.state is going to be altered
     const updatedClients = (_.isArray(policy.multiClients) ? policy.multiClients : [ policy ])
       .map(p => Object.assign({}, p))
 
@@ -2156,7 +2158,6 @@ module.exports = class HostManager extends Monitorable {
         vpnClient = await this.getVPNClientInstance(policy);
       } catch(err) {
         log.error(err)
-        policy.state = false
         continue
       }
       if (Object.keys(settings).length > 0)
@@ -2165,7 +2166,6 @@ module.exports = class HostManager extends Monitorable {
       const rtId = await vpnClientEnforcer.getRtId(vpnClient.getInterfaceName());
       if (!rtId) {
         log.error(`Routing table id is not found for ${profileId}`);
-        policy.state = false
         continue
       }
       if (state === true) {
@@ -2176,7 +2176,6 @@ module.exports = class HostManager extends Monitorable {
           setupResult = false;
         });
         if (!setupResult) {
-          policy.state = false
           continue
         }
         await vpnClient.start();
@@ -2187,19 +2186,12 @@ module.exports = class HostManager extends Monitorable {
         });
         await vpnClient.stop();
       }
-
-      // do not change anything by default
     }
 
     sem.sendEventToFireMain({
       type: Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE,
       message: ""
     });
-
-    if (_.isArray(policy.multiClients)) {
-      return {multiClients: updatedClients};
-    } else
-      return updatedClients[0]
   }
 
   async tags() { /* not supported */ }

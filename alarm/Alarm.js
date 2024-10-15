@@ -353,6 +353,10 @@ class Alarm {
     } else
       return null
   }
+
+  getNotifPolicyKey() {
+    return this.type;
+  }
 }
 
 
@@ -1522,6 +1526,16 @@ class VWGConnAlarm extends DualWanAlarm {
     return category;
   }
 
+  localizedNotificationTitleKey() {
+    let key = super.localizedNotificationTitleKey() + (this["p.ready"] == "true" ? "_RESTORE" : "_DISCONNECT");
+
+    if (this["p.vwg.strictvpn"] == false || this["p.vwg.strictvpn"] == "false") {
+      key += ".FALLBACK";
+    }
+
+    return key;
+  }
+
   getNotifType() {
     let notify_type = super.getNotifType();
     if (this["p.vwg.strictvpn"] == true || this["p.vwg.strictvpn"] == "true") {
@@ -1557,6 +1571,15 @@ class VWGConnAlarm extends DualWanAlarm {
     const result = super.localizedNotificationContentArray();
     result.push(...[this["p.timestampTimezone"], this["p.vwg.devicecount"]], this["p.vwg.name"]);
     return result;
+  }
+
+  getNotifPolicyKey() {
+    // use the same key as vpn client disconnect/restore alarm to control whether notification should be sent
+    if (this["p.ready"] == "true") {
+      return "ALARM_VPN_RESTORE";
+    } else {
+      return "ALARM_VPN_DISCONNECT";
+    }
   }
 }
 
