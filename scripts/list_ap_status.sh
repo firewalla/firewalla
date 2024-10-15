@@ -156,7 +156,7 @@ now_ts=$(date +%s)
 declare -a ap_names ap_ips
 test -n "$ap_data" && while read ap_mac ap_meshmode ap_pubkey
 do
-    read ap_branch ap_last_handshake_ts ap_version ap_iversion ap_uptime ap_backhaul ap_latency ap_uplink ap_eth_intf ap_eth_connected ap_eth_speed < <( echo "$ap_status" | awk "\$1==\"$ap_mac\" {print \$2\" \"\$3\" \"\$4\" \"\$5\" \"\$6\" \"\$7\" \"\$8\" \"\$9\" \"\$10\" \"\$11}")
+    read ap_branch ap_last_handshake_ts ap_version ap_iversion ap_uptime ap_backhaul ap_latency ap_uplink ap_eth_intf ap_eth_connected ap_eth_speed < <( echo "$ap_status" | awk "\$1==\"$ap_mac\" {print \$2\" \"\$3\" \"\$4\" \"\$5\" \"\$6\" \"\$7\" \"\$8\" \"\$9\" \"\$10\" \"\$11\" \"\$12}")
     timeit read
     if [[ -n "$ap_pubkey" ]]; then
       echo "$wg_ap_peers_pubkeys" | fgrep -q $ap_pubkey && ap_adopted=adopted || ap_adopted=pending
