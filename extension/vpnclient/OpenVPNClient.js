@@ -283,7 +283,8 @@ class OpenVPNClient extends VPNClient {
     const user = value.user;
     const pass = value.pass;
     if (!content) {
-      throw new Error("'content' should be specidied");
+      log.error("'content' should be specified");
+      return;
     }
     if (content.match(/^auth-user-pass\s*/gm)) {
       // username password is required for this profile
