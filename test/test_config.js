@@ -24,7 +24,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 const delay = require('../util/util.js').delay;
 
-describe('Test AlarmManager2', function(){
+describe('Test Config', function(){
     this.timeout(30000);
   
     before((done) => {
@@ -41,7 +41,7 @@ describe('Test AlarmManager2', function(){
 
     it('should get msp config', async() => {
         const mspc = await fc.getMspConfig('', false);
-        expect(mspc.alarm).to.eql(this.config.alarm)
+        expect(mspc.alarms).to.eql(this.config.alarms)
     });
 
     it('should sync msp config', async() => {
@@ -50,7 +50,7 @@ describe('Test AlarmManager2', function(){
       rclient.setAsync("ext.guardian.data", data);
       await fc.syncMspConfig();
       const config = await fc.getMspConfig();
-      expect(config.alarm.apply.test.state).to.be.equal('111');
+      expect(config.alarms.apply.test.state).to.be.equal('111');
 
       await rclient.setAsync("ext.guardian.data", origin);
     });
@@ -60,6 +60,6 @@ describe('Test AlarmManager2', function(){
       await pclient.publishAsync('config:msp:updated', data);
       await delay(500);
       const config = await fc.getMspConfig();
-      expect(config.alarm.apply.vpn_restore.state).to.be.equal('ready');
+      expect(config.alarms.apply.vpn_restore.state).to.be.equal('ready');
     });
   });

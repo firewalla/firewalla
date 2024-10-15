@@ -966,7 +966,6 @@
     "acl_alarm": true,
     "new_device_tag": false,
     "dual_wan": true,
-    "vwg_conn_alarm": true,
     "clash": false,
     "single_wan_conn_check": false,
     "accounting": false,

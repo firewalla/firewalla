@@ -46,7 +46,7 @@ class AppTimeUsageSensor extends Sensor {
     this.enabled = fc.isFeatureOn(featureName);
     this.cloudConfig = null;
     this.appConfs = {};
-    await this.loadConfig();
+    await this.loadConfig(true);
 
     await this.scheduleUpdateConfigCronJob();
 
@@ -142,7 +142,7 @@ class AppTimeUsageSensor extends Sensor {
       const includedDomains = appConfs[key].includedDomains || [];
       const category = appConfs[key].category;
       for (const value of includedDomains) {
-        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold", "updateCategory"]);
+        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold"]);
         obj.app = key;
         if (category)
           obj.category = category;
@@ -180,10 +180,22 @@ class AppTimeUsageSensor extends Sensor {
     const values = this._domainTrie.find(host);
     if (_.isSet(values)) {
       for (const value of values) {
-        if (_.isObject(value) && value.app && !values.has(`!${value.app}`))
-          result.push(value);
+        if (_.isObject(value) && value.app && !values.has(`!${value.app}`)) {
+          if (!value.bytesThreshold || flow.ob + flow.rb >= value.bytesThreshold)
+            result.push(value);
+        }
       }
     }
+    // match internet activity on flow
+    const category = _.get(flow, ["intel", "category"]);
+    let bytesThreshold = category ? 1024 * 1024 : 1024 * 1024 * 5;
+    let minsThreshold = category ? 1 : 2;
+    if (host && host.startsWith("www.")) {
+      bytesThreshold = 256 * 1024;
+      minsThreshold = 2;
+    }
+    if (flow.ob + flow.rb >= bytesThreshold || !_.isEmpty(result))
+      result.push({"app": "internet", "occupyMins": 2, "lingerMins": 3, minsThreshold});
     return result;
   }
 
@@ -195,14 +207,9 @@ class AppTimeUsageSensor extends Sensor {
     if (_.isEmpty(appMatches))
       return;
     for (const match of appMatches) {
-      const {app, category, updateCategory, domain, occupyMins, lingerMins, bytesThreshold, minsThreshold} = match;
+      const {app, category, domain, occupyMins, lingerMins, minsThreshold} = match;
       if (host && domain)
         await dnsTool.addSubDomains(domain, [host]);
-      // dynamically add domains into target list for wildcard match domains
-      if (updateCategory)
-        await categoryUpdater.updateDomain(updateCategory, host, false);
-      if (enrichedFlow.ob + enrichedFlow.rb < bytesThreshold)
-        continue;
       let tags = []
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const config = Constants.TAG_TYPE_MAP[type];
