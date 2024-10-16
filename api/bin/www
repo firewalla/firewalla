@@ -89,7 +89,8 @@ rclient.hget("sys:config", "language", (err, result) => {
 
   i18n.configure({
     directory: __dirname + "/../../locales",
-    defaultLocale: language
+    defaultLocale: language,
+    updateFiles: false,
   });
 });
 
