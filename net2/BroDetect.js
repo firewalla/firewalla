@@ -1309,7 +1309,7 @@ class BroDetect {
       if (monitorable instanceof Identity)
         tmpspec.guid = IdentityManager.getGUID(monitorable);
       if (realLocal)
-        tmpspec.rl = realLocal;
+        tmpspec.rl = this.extractIP(realLocal);
 
       // id.orig_p can be an array in local flow
       if (obj['id.orig_p']) tmpspec.sp = _.isArray(obj['id.orig_p']) ? obj['id.orig_p'] : [obj['id.orig_p']];
@@ -1462,7 +1462,7 @@ class BroDetect {
           sem.emitEvent({
             type: 'DestIPFound',
             from: "VPN_endpoint",
-            ip: this.extractIP(realLocal),
+            ip: tmpspec.rl,
             suppressEventLogging: true
           });
         }
