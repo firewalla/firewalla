@@ -23,6 +23,9 @@
 
 FWFLAG="/home/pi/.firewalla/config/.no_upgrade_check"
 FRFLAG="/home/pi/.router/config/.no_upgrade_check"
+FRCANARY_FORCE="/home/pi/.router/config/.force_upgrade_canary"
+
+touch $FRCANARY_FORCE # DO not delete here, deleted by canary upgrade script.
 
 [[ -e $FWFLAG ]]
 NOAUTOFW=$?
