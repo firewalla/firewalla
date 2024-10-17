@@ -728,6 +728,12 @@ class SysManager {
     return [];
   }
 
+  myDefaultDns6() {
+    const wanIntf = fireRouter.getDefaultWanIntfName();
+    if (wanIntf) return this.myDNS6(wanIntf);
+    return [];
+  }
+
   myIp(intf = this.config.monitoringInterface) {
     return this.getInterface(intf) && this.getInterface(intf).ip_address;
   }
@@ -854,6 +860,11 @@ class SysManager {
       }
     }
     return v4dns;
+  }
+
+  myDNS6(intf = this.config.monitoringInterface) {
+    let _dns = (this.getInterface(intf) && this.getInterface(intf).dns6) || [];
+    return _dns.filter( i => net.isIPv6(i));
   }
 
   myGateway(intf = this.config.monitoringInterface) {
