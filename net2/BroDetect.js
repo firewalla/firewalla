@@ -311,7 +311,8 @@ class BroDetect {
           host = ip || ''
         }
 
-        obj.host = this.extractIP(host)
+        host = this.extractIP(host)
+        obj.host = host
       }
 
       // HTTP proxy, drop host info
