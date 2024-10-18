@@ -202,7 +202,7 @@ class NetBotTool {
       f.end = end;
     })
 
-    const enriched = await flowTool.enrichWithIntel(traffic);
+    const enriched = await flowTool.enrichWithIntel(traffic, ['upload', 'download'].includes(dimension));
 
     json.flows[`${dimension}${fd ? `:${fd}` : ""}`] = enriched.sort((a, b) => {
       return b.count - a.count;
