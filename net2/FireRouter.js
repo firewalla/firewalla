@@ -197,6 +197,7 @@ async function generateNetworkInfo() {
     let gateway = null;
     let gateway6 = null;
     let dns = null;
+    let dns6 = null;
     let resolver = null;
     let resolverFromWan = false;
     const resolverConfig = (routerConfig && routerConfig.dns && routerConfig.dns[intfName]) || null;
@@ -211,14 +212,20 @@ async function generateNetworkInfo() {
             viaIntf = defaultWanIntfName;
           if (intfNameMap[viaIntf]) {
             resolver = intfNameMap[viaIntf].config.nameservers || intfNameMap[viaIntf].state.dns;
+            const resolv6 = intfNameMap[viaIntf].config.dns6Servers || intfNameMap[viaIntf].state.dns6;
+            if (resolv6)
+              resolver = resolver == null ? resolv6 : resolver.concat(resolv6);
           }
         }
       } else {
         if (resolverConfig.nameservers)
           resolver = resolverConfig.nameservers;
+        if (resolverConfig.dns6Servers)
+          resolver = resolver == null ? resolverConfig.dns6Servers : resolver.concat(resolverConfig.dns6Servers)
       }
     }
     dns = intf.config.nameservers || intf.state.dns;
+    dns6 = intf.config.dns6Servers || intf.state.dns6;
     switch (intf.config.meta.type) {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
@@ -254,6 +261,7 @@ async function generateNetworkInfo() {
       ip6_masks:    ip6Masks.length > 0 ? ip6Masks : null,
       gateway6:     gateway6,
       dns:          dns,
+      dns6:         dns6,
       resolver:     resolver,
       resolverFromWan: resolverFromWan,
       // carrier:      intf.state && intf.state.carrier == 1, // need to find a better place to put this
@@ -282,6 +290,10 @@ async function generateNetworkInfo() {
 
     if (intf.state && intf.state.hasOwnProperty("origDns")) {
       redisIntf.origDns = intf.state.origDns;
+    }
+
+    if (intf.state && intf.state.hasOwnProperty("origDns6")) {
+      redisIntf.origDns6 = intf.state.origDns6;
     }
 
     if (intf.state && intf.state.hasOwnProperty("pds")) {

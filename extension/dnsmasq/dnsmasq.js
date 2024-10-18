@@ -1490,6 +1490,7 @@ module.exports = class DNSMASQ {
       const myIp4 = sysManager.myIp(intf.name);
       await NetworkProfile.ensureCreateEnforcementEnv(uuid);
       const netSet = NetworkProfile.getNetIpsetName(uuid);
+      const netSet6 = NetworkProfile.getNetIpsetName(uuid, 6);
       if (myIp4 && resolver4 && resolver4.length > 0) {
         // redirect dns request that is originally sent to box itself to the upstream resolver
         for (const i in resolver4) {
@@ -1503,10 +1504,10 @@ module.exports = class DNSMASQ {
       }
       if (resolver6 && resolver6.length > 0) {
         for (const i in resolver6) {
-          const redirectRule = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK')
-            .set(netSet, 'src,src').dport(53)
+          const redirectRule = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_FALLBACK')
+            .set(netSet6, 'src,src').dport(53)
             .mdl("statistic", `--mode nth --every ${resolver6.length - i} --packet 0`)
-            .jmp(`DNAT --to-destination ${resolver6[i]}:53`);
+            .jmp(`DNAT --to-destination [${resolver6[i]}]:53`);
           await redirectRule.clone().pro('tcp').exec('-A');
           await redirectRule.clone().pro('udp').exec('-A');
         }
@@ -2216,7 +2217,7 @@ module.exports = class DNSMASQ {
           else log.error(err)
         })
       }
-      
+
       log.info("clean up cleanUpLeftoverConfig");
       await rclient.unlinkAsync('dnsmasq:conf');
       // always allow verification domains in case they are accidentally blocked and cause self check failure
