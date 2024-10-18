@@ -230,7 +230,7 @@ class DataUsageSensor extends Sensor {
         //get top flows from begin to end
         const name = host.o.name || host.o.bname;
         const flows = await this.getSumFlows(mac, begin, end);
-        const destNames = flows.map((flow) => flow.aggregationHost).join(',')
+        const destNames = flows.map((flow) => flow.host).join(',')
         percentage = percentage * 100;
         const last24HoursDownloadStats = await getHitsAsync(`download:${mac}`, "15minutes", 4 * 24 + 1)
         const last24HoursUploadStats = await getHitsAsync(`upload:${mac}`, "15minutes", 4 * 24 + 1)
@@ -273,29 +273,28 @@ class DataUsageSensor extends Sensor {
         let flows = [];
         for (const rawFlow of rawFlows) {
             flows.push({
-                count: flowTool.getUploadTraffic(rawFlow) * 1 + flowTool.getDownloadTraffic(rawFlow) * 1,
+                count: rawFlow.ob + rawFlow.rb,
                 ip: flowTool.getDestIP(rawFlow),
                 device: mac
             })
         }
-        flows = await flowTool.enrichWithIntel(flows);
+        flows = await flowTool.enrichWithIntel(flows, true);
         let flowsCache = {};
         for (const flow of flows) {
             const destHost = (flow.host && validator.isFQDN(flow.host)) ? suffixList.getDomain(flow.host) : flow.ip;
             if (flowsCache[destHost]) {
-                flowsCache[destHost].count = flowsCache[destHost].count * 1 + flow.count * 1;
+                flowsCache[destHost].count += flow.count
             } else {
                 flowsCache[destHost] = flow
             }
         }
         let flowsGroupByDestHost = [];
         for (const destHost in flowsCache) {
-            flowsCache[destHost].aggregationHost = destHost;
+            flowsCache[destHost].host = destHost;
             flowsGroupByDestHost.push(flowsCache[destHost]);
         }
-        return flowsGroupByDestHost.sort((a, b) => b.count * 1 - a.count * 1).splice(0, this.topXflows).filter((flow) => {
-            return flow.count * 1 > 10 * 1000 * 1000;//return flows bigger than 10MB
-        })
+        return flowsGroupByDestHost.sort((a, b) => b.count - a.count).slice(0, this.topXflows)
+          .filter(flow => flow.count > 10 * 1000 * 1000) //return flows bigger than 10MB
     }
     async checkMonthlyDataUsage(date, total, wanUUID) {
         log.info(`Start check monthly data usage ${wanUUID ? `on wan ${wanUUID}` : ""}`);
