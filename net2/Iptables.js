@@ -536,7 +536,7 @@ class Rule {
   async exec(operation) {
     const cmd = this.toCmd(operation)
     log.debug('excuting', cmd)
-    await execAsync(cmd).catch(err => { log.debug('ERROR:', cmd, err) })
+    await execAsync(cmd).catch(err => { log.warn('ERROR:', cmd, err) })
   }
 }
 exports.Rule = Rule

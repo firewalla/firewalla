@@ -209,6 +209,8 @@ class FlowTool extends LogQuery {
     if (options.localFlow) {
       f.dstMac = flow.dmac
       f.local = true
+      if (flow.dstTags)
+        f.dstTags = flow.dstTags;
     }
 
     return f;
