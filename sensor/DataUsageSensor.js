@@ -19,6 +19,7 @@ const Sensor = require('./Sensor.js').Sensor;
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
+const Identity = require('../net2/Identity.js')
 const util = require('util');
 const getHitsAsync = util.promisify(timeSeries.getHits).bind(timeSeries);
 const flowTool = require('../net2/FlowTool');
@@ -163,7 +164,10 @@ class DataUsageSensor extends Sensor {
           const hostTotal = (await this.getDataUsage15min(this.smWindow * 4, mac)).count
           const hostTotalPct = systemTotal ? hostTotal / systemTotal : 0;
           log.verbose('host total', mac, hostTotal, systemTotal)
-          if (hostTotal < this.smWindow * 4 * this.minsize || hostTotalPct < this.percentage) continue;
+          if (hostTotal < this.smWindow * 4 * this.minsize ||
+            // vpn client generates double banwidth on WAN
+            hostTotalPct < (host instanceof Identity ? this.percentage / 2 : this.percentage)
+          ) continue;
 
           // 2 sliding windows with differet window size to get weighted moving average here
           // https://en.wikipedia.org/wiki/Moving_average#Weighted_moving_average
@@ -199,13 +203,16 @@ class DataUsageSensor extends Sensor {
     async getDataUsage15min(slots, mac, weightedAverage = false) {
         const downloadKey = `download${mac ? ':' + mac : ''}`;
         const uploadKey = `upload${mac ? ':' + mac : ''}`;
-        const sumSlots = (slots + 1) * (slots / 2); // total weights, sum from 1 to slots
         // latest solt is under accumulation, skip that
         const downloads = await getHitsAsync(downloadKey, "15minutes", slots + 1);
         const uploads = await getHitsAsync(uploadKey, "15minutes", slots + 1);
         downloads.pop()
         uploads.pop()
-        if (downloads.length < slots || uploads.length < slots) return;
+
+        // return usage even there's less data than the observation window
+        // so device don't have to be in network for 8hr+ to generate the alarm
+        slots = Math.min(downloads.length, uploads.length)
+        const sumSlots = (slots + 1) * (slots / 2); // total weights, sum from 1 to slots
 
         let result = 0
         for (let i = 0; i < slots; i++) {
@@ -217,7 +224,7 @@ class DataUsageSensor extends Sensor {
 
     async genAbnormalBandwidthUsageAlarm(host, begin, end, totalUsage, percentage) {
         log.info("genAbnormalBandwidthUsageAlarm", host.o.mac, begin, end)
-        const mac = host.o.mac;
+        const mac = host.getGUID();
         const dedupKey = `abnormal:bandwidth:usage:${mac}`;
         if (await this.isDedup(dedupKey, abnormalBandwidthUsageCooldown)) return;
         //get top flows from begin to end
@@ -241,12 +248,8 @@ class DataUsageSensor extends Sensor {
             download: recentlyDownloadStats,
             upload: recentlyUploadStats
         }
-        let intfId = null;
-        if (host.o.ipv4Addr) {
-            const intf = sysManager.getInterfaceViaIP(host.o.ipv4Addr);
-            intfId = intf && intf.uuid;
-        }
-        let alarm = new Alarm.AbnormalBandwidthUsageAlarm(new Date() / 1000, name, {
+        const intfId = host.getNicUUID()
+        const alarm = new Alarm.AbnormalBandwidthUsageAlarm(new Date() / 1000, name, {
             "p.device.mac": mac,
             "p.device.id": name,
             "p.device.name": name,
@@ -262,6 +265,7 @@ class DataUsageSensor extends Sensor {
             "p.duration": this.smWindow,
             "p.percentage": percentage.toFixed(2) + '%',
         });
+        if (host instanceof Identity) alarm['p.device.guid'] = mac
         alarmManager2.enqueueAlarm(alarm);
     }
     async getSumFlows(mac, begin, end) {
