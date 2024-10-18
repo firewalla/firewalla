@@ -230,7 +230,7 @@ class DataUsageSensor extends Sensor {
         //get top flows from begin to end
         const name = host.o.name || host.o.bname;
         const flows = await this.getSumFlows(mac, begin, end);
-        const destNames = flows.map((flow) => flow.host).join(',')
+        const destNames = flows.map((flow) => flow.aggregationHost).join(',')
         percentage = percentage * 100;
         const last24HoursDownloadStats = await getHitsAsync(`download:${mac}`, "15minutes", 4 * 24 + 1)
         const last24HoursUploadStats = await getHitsAsync(`upload:${mac}`, "15minutes", 4 * 24 + 1)
@@ -290,7 +290,7 @@ class DataUsageSensor extends Sensor {
         }
         let flowsGroupByDestHost = [];
         for (const destHost in flowsCache) {
-            flowsCache[destHost].host = destHost;
+            flowsCache[destHost].aggregationHost = destHost;
             flowsGroupByDestHost.push(flowsCache[destHost]);
         }
         return flowsGroupByDestHost.sort((a, b) => b.count - a.count).slice(0, this.topXflows)
