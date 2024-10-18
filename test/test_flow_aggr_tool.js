@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,23 +19,14 @@ let should = chai.should;
 let expect = chai.expect;
 let assert = chai.assert;
 
-let redis = require('redis');
-let rclient = redis.createClient();
-
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let sample = require('./sample_data');
 
-let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
-
 let FlowAggrTool = require('../net2/FlowAggrTool');
 let flowAggrTool = new FlowAggrTool();
 
-describe.skip('FlowAggrTool', () => {
-
-  let flow = {ts: new Date() / 1000};
+describe('FlowAggrTool', () => {
 
   describe('.getIntervalTick', () => {
     it('the tick of 301 (with interval 30) should be 300', (done) => {
@@ -123,7 +114,7 @@ describe.skip('FlowAggrTool', () => {
     it('should be able to get the same value that was set to database', (done) => {
       (async() =>{
         let testData = "XXXXXXXXXXX";
-        await flowAggrTool.setLastSumFlow(sample.hostMac, "download", testData);
+        await flowAggrTool.setLastSumFlow(sample.hostMac, "download", null, testData);
         let key = await flowAggrTool.getLastSumFlow(sample.hostMac, "download");
         expect(key).to.equal(testData);
         done();
