@@ -2394,7 +2394,7 @@ module.exports = class HostManager extends Monitorable {
 
       const traffic = await flowAggrTool.getTopSumFlowByKeyAndDestination(realSumKey, key, count);
 
-      const enriched = (await flowTool.enrichWithIntel(traffic)).sort((a, b) => {
+      const enriched = (await flowTool.enrichWithIntel(traffic, ['upload', 'download'].includes(key))).sort((a, b) => {
         return b.count - a.count;
       });
 

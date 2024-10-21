@@ -418,7 +418,7 @@ module.exports = class {
           try {
             log.verbose("Try to create alarm:", event.alarm);
             let aid = await this.checkAndSaveAsync(alarm, event.profile);
-            log.info(`Alarm ${aid} is created successfully`);
+            if (aid > 0) log.info(`Alarm ${aid} is created successfully`);
           } catch (err) {
             if (err.code === 'ERR_DUP_ALARM' ||
                 err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY' ||
@@ -918,7 +918,7 @@ module.exports = class {
       return 0;
     } else {
       if (alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'block') {
-        log.info(`Decison from cloud is auto-block`, alarm.type, alarm["p.device.ip"], alarm["p.dest.ip"]);
+        log.info(`Decision from cloud is auto-block`, alarm.type, alarm["p.device.ip"], alarm["p.dest.ip"]);
       }
     }
 

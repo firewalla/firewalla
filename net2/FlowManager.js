@@ -174,9 +174,6 @@ module.exports = class FlowManager {
       flow.tx = inbound ? flow.rb : flow.ob
       flow.rx = inbound ? flow.ob : flow.rb
 
-      if (flow.tx < (inbound ? profile.txInMin : profile.txOutMin)) {
-        continue;
-      }
       flows.push(flow);
 
       values.tx.push(flow.tx)
@@ -189,13 +186,12 @@ module.exports = class FlowManager {
 
     if (flows.length <= 1) {
       // Need to take care of this condition
-      if (flows.length == 1) {
+      if (flows.length == 1
+        && flows[0].tx > (inbound ? profile.txInMin : profile.txOutMin)
+        && flows[0].ratio > profile.ratioSingleDestMin
+      ) {
         log.debug("FlowManager:FlowSummary single destination", flows[0]);
-        // flowspec.rxRanked.push(flows[0]);
-        // flowspec.txRanked.push(flows[0]);
-        if (flows[0].ratio > profile.ratioSingleDestMin) {
-          flowspec.ratioRanked.push(flows[0]);
-        }
+        flowspec.ratioRanked.push(flows[0]);
       }
       return flowspec;
     }
@@ -223,12 +219,15 @@ module.exports = class FlowManager {
       flows.sort(function (a, b) {
         return Number(b[cStdScore]) - Number(a[cStdScore]);
       })
-      log.debug(category);
+      log.debug(category, flows.map(f=>f[cStdScore]));
 
       // negative scores (values < standard deviation) are ignored here
       flowspec[cRanked] = flows
-        .filter(f => f[cStdScore] > profile.sdMin && f.ratio > profile.ratioMin)
+        .filter(f => category == 'tx' && f[cStdScore] > profile.sdMin || category == 'ratio' && f.ratio > profile.ratioMin)
         .slice(0, profile.rankedMax)
+        .filter(f => f.tx > (inbound ? profile.txInMin : profile.txOutMin))
+
+      flowspec[cRanked].length && log.debug(category, flowspec[cRanked]);
 
       // for debug
       flowspec[cRanked].forEach(f => {
@@ -418,7 +417,7 @@ module.exports = class FlowManager {
         connections: sorted
       };
     }
-    log.debug("============ Host:Flows:Sorted", mac, sorted.length);
+    // log.debug("============ Host:Flows:Sorted", mac, sorted.length);
     sorted.sort(function (a, b) {
       return Number(b.ts) - Number(a.ts);
     })
