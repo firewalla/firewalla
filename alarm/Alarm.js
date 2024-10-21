@@ -423,7 +423,7 @@ class SpoofingDeviceAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.device.name", "p.device.ip", "p.intf.id", ...Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].alarmIdKey)];
+    return ["p.device.mac", "p.device.name", "p.device.ip", "p.intf.id", Constants.TAG_TYPE_MAP.user.alarmIdKey];
   }
 
   localizedNotificationContentArray() {
@@ -874,11 +874,11 @@ class IntelAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
+    const keys = ["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", Constants.TAG_TYPE_MAP.user.alarmIdKey];
     const url = this["p.dest.url"];
-    if (url) {
-      return ["p.device.mac", "p.dest.name", "p.dest.url", "p.dest.port", "p.intf.id", ...Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].alarmIdKey)];
-    }
-    return ["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", ...Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].alarmIdKey)];
+    if (url) keys.push(url)
+
+    return keys
   }
 
   getNotifKeyPrefix() {
@@ -969,46 +969,8 @@ class OutboundAlarm extends Alarm {
 
 
   keysToCompareForDedup() {
-    return ["p.device.mac", this.isAppSupported() && this.getAppName() ? "p.dest.app" : "p.dest.name", "p.intf.id", ...Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].alarmIdKey)];
-  }
-
-  isDup(alarm) {
-    let alarm2 = this;
-
-    if (alarm.type !== alarm2.type) {
-      return false;
-    }
-
-    const macKey = "p.device.mac";
-    const destNameKey = "p.dest.name";
-    let destName = null;
-    let destName2 = null;
-
-    // Mac
-    if (!alarm[macKey] ||
-      !alarm2[macKey] ||
-      alarm[macKey] !== alarm2[macKey]) {
-      return false;
-    }
-
-    // Interface
-    const intfKey = "p.intf.id";
-    if (!_.has(alarm, intfKey) || !_.has(alarm2, intfKey) || alarm[intfKey] !== alarm2[intfKey]) {
-      return false;
-    }
-
-    // now these two alarms have same device MAC
-    if (alarm.isAppSupported() && alarm.getAppName())
-      destName = alarm.getAppName();
-    else
-      destName = alarm[destNameKey];
-
-    if (alarm2.isAppSupported() && alarm2.getAppName())
-      destName2 = alarm2.getAppName();
-    else
-      destName2 = alarm2[destNameKey];
-
-    return destName == destName2;
+    return ["p.device.mac", this.isAppSupported() && this.getAppName() ? "p.dest.app" : "p.dest.name",
+            "p.intf.id", Constants.TAG_TYPE_MAP.user.alarmIdKey];
   }
 }
 
@@ -1017,10 +979,11 @@ class AbnormalBandwidthUsageAlarm extends Alarm {
     super("ALARM_ABNORMAL_BANDWIDTH_USAGE", timestamp, device, info);
   }
   localizedNotificationContentArray() {
-    const result = [this["p.device.name"],
-    this["p.totalUsage.humansize"],
-    this["p.duration"],
-    this["p.percentage"]
+    const result = [
+      this["p.device.name"],
+      this["p.totalUsage.humansize"],
+      this["p.duration"],
+      this["p.percentage"]
     ];
     const username = this.getUserName();
     if (username)

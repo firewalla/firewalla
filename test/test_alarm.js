@@ -22,27 +22,12 @@ const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const delay = require('../util/util.js').delay;
 const am2 = new AlarmManager2();
+const Alarm = require('../alarm/Alarm.js')
 
 
 describe('Test localization', function(){
     this.timeout(30000);
-  
-    before((done) => {
-      (
-        async() => {
-        }
-      )();
-      done();
-    });
-  
-    after((done) => {
-      (
-        async() => {
-        }
-      )();
-      done();
-    });
-  
+
     it('test customized security by msp', async() => {
         const alarm = am2._genAlarm({"p.event.ts":"1721710424.77783","p.device.ip":"192.168.3.124","p.msp.decision":"create","device":"20:6D:31:61:CC:24","type":"customized_security","p.dest.ip":"52.88.2.1","p.device.name":"Janie AP",
             "p.utag.names":[{"uid":"6","name":"Janie"}],"p.utag.ids":["6"],"p.dtag.names":[{"uid":"44","name":"desktop"}],"p.dtag.ids":["44"],"p.tag.ids":["7"],"alarmTimestamp":"1721710545.902","p.showMap":"false","timestamp":"1721710545.901",
@@ -58,3 +43,44 @@ describe('Test localization', function(){
       expect(alarm.localizedNotificationContentArray()).to.be.eql(['Firewalla AP', '60 minutes'])
     });
 });
+
+describe('Test generation', () => {
+   it('tests alarm dedup', () => {
+     const payload = {
+       'p.intf.id': '00000000',
+       'p.dest.category': 'av',
+       'p.dest.ip': '74.125.160.38',
+       'p.device.ip': '192.168.1.144',
+       'p.dest.port': '443',
+       'p.device.mac': 'AA:BB:CC:DD:EE:FF',
+       message: 'Reinhard MBP is watching video on googlevideo.com',
+       'p.protocol': 'tcp',
+       'p.dest.app.id': 'youtube',
+       'p.dest.domain': 'googlevideo.com',
+       'p.device.name': 'Reinhard MBP',
+       'p.dest.id': 'googlevideo.com',
+       'p.dest.app': 'YouTube',
+       'p.dest.name': 'googlevideo.com',
+       'p.device.id': 'AA:BB:CC:DD:EE:FF',
+       'p.tag.ids': [ '4' ],
+       'p.tag.names': [ { uid: '4', name: 'Reinhard’s Devices' } ],
+       'p.utag.ids': [ '3' ],
+       'p.utag.names': [ { uid: '3', name: 'Reinhard' } ],
+       'p.dtag.ids': [ '8' ],
+       'p.dtag.names': [ { uid: '8', name: 'desktop' } ],
+     }
+     const alarm1 = new Alarm.VideoAlarm(Date.now()/1000, 'Reinhard MBP', 'googlevideo.com', payload)
+
+     payload['p.tag.ids'] = [ '5' ]
+     const alarm2 = new Alarm.VideoAlarm(Date.now()/1000, 'Reinhard MBP', 'googlevideo.com', payload)
+
+     expect(alarm1.isDup(alarm2)).to.be.true
+
+     payload['p.utag.ids'] = [ '6' ]
+     const alarm3 = new Alarm.VideoAlarm(Date.now()/1000, 'Reinhard MBP', 'googlevideo.com', payload)
+
+     console.log(alarm1['p.utag.ids'])
+     console.log(alarm3['p.utag.ids'])
+     expect(alarm1.isDup(alarm3)).to.be.false
+   })
+})
