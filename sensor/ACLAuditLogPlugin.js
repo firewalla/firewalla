@@ -415,7 +415,7 @@ class ACLAuditLogPlugin extends Sensor {
 
     // use prefix to save memory
     if (intf) record.intf = intf.uuid.substring(0, 8);
-    if (wanUUID) record.wanIntf = wanUUID.substring(0, 8);
+    if (wanUUID) record.wanIntf = wanUUID.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX) ? wanUUID : wanUUID.substring(0, 8);
 
     // ignores WAN block if there's recent connection to the same remote host & port
     // this solves issue when packets come after local conntrack times out
