@@ -19,8 +19,6 @@ let chai = require('chai');
 let expect = chai.expect;
 
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
-const rclient = require('../util/redis_manager.js').getRedisClient()
-const delay = require('../util/util.js').delay;
 const am2 = new AlarmManager2();
 const Alarm = require('../alarm/Alarm.js')
 
@@ -42,6 +40,21 @@ describe('Test localization', function(){
         "p.connection.begin":1721969965,"p.connection.end":1721973565,"p.connection.threshold":5,"p.connection.details":"[{\"from\":1721973407,\"to\":1721973422,\"ap\":\"30:60:0A:9E:4D:ED\",\"channel\":128,\"duration\":4}]"});
       expect(alarm.localizedNotificationContentArray()).to.be.eql(['Firewalla AP', '60 minutes'])
     });
+});
+
+const data = {"p.device.id":"A:BB:CC:DD:EE:FF","p.device.ip":"172.16.1.144","p.protocol":"tcp","p.dest.name":"www.nintendo.co.jp","p.dest.ip":"23.5.1.243","p.dest.id":"www.nintendo.co.jp",
+  "p.dest.port":443,"p.intf.id":"0000000","p.dtag.ids":["1"],"p.device.mac":"A:BB:CC:DD:EE:FF", "p.dest.category":"games","p.dest.name.suffix":"nintendo.co.jp"}
+
+describe('Test dedup keys', () => {
+    it('test outbound domain suffix key', async() => {
+        const gameAlarm = new Alarm.GameAlarm(Date.now()/1000, 'MacBook Air', 'support.nintendo.com', data);
+        expect(gameAlarm.getDomainSuffixKey()).to.be.eql("p.dest.name.suffix")
+    });
+
+    it('test compare dedup keys', async() => {
+      const gameAlarm = new Alarm.GameAlarm(Date.now()/1000, 'MacBook Air', 'support.nintendo.com', data);
+      expect(gameAlarm.keysToCompareForDedup()).to.be.eql(["p.device.mac", "p.dest.name.suffix",  "p.intf.id", "p.utag.ids"]);
+  });
 });
 
 describe('Test generation', () => {

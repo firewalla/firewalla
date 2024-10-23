@@ -1164,8 +1164,9 @@ class BroDetect {
       if (!localFlow && obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto']) {
         connEntry = await conntrack.getConnEntries(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], 600);
         if (connEntry) {
-          if (connEntry.oIntf) outIntfId = connEntry.oIntf.substring(0, 8)
-          if (connEntry.redirect) return
+          const { oIntf, redirect } = connEntry
+          if (oIntf) outIntfId = oIntf.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX) ? oIntf : oIntf.substring(0, 8)
+          if (redirect) return
         } else if (obj.conn_state === "OTH" || obj.conn_state === "SF" || (obj.proto === "tcp" && !_.get(obj, "history", "").startsWith("S"))) {
           connEntry = await conntrack.getConnEntries(obj['id.resp_h'], obj['id.resp_p'], obj['id.orig_h'], obj['id.orig_p'], obj['proto'], 600);
           // if reverse flow is found in conntrack, likely flow direction from zeek is wrong after zeek is restarted halfway
