@@ -35,6 +35,7 @@ const Constants = require('../net2/Constants.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const DomainTrie = require('../util/DomainTrie.js');
 const _ = require('lodash');
+const suffixList = require('../vendor_lib/publicsuffixlist/suffixList');
 
 function formatBytes(bytes, decimals) {
   if (bytes == 0) return '0 Bytes';
@@ -109,6 +110,11 @@ class DestInfoIntel extends Intel {
 
     let destIP = alarm["p.dest.ip"];
     const destName = alarm["p.dest.name"];
+    if (destName) {
+      const domainSuffix = suffixList.getDomain(destName);
+      if (domainSuffix)
+        alarm["p.dest.name.suffix"] = domainSuffix;
+    }
 
     if (!destIP) {
       return alarm;
