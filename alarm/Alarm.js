@@ -967,9 +967,14 @@ class OutboundAlarm extends Alarm {
     return this["p.dest.ip"];
   }
 
+  getDomainSuffixKey() {
+    if (this["p.dest.name.suffix"]) return "p.dest.name.suffix";
+    if (this["p.dest.domain"]) return "p.dest.domain";
+    return "p.dest.name";
+  }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", this.isAppSupported() && this.getAppName() ? "p.dest.app" : "p.dest.name",
+    return ["p.device.mac", this.isAppSupported() && this.getAppName() ? "p.dest.app" : this.getDomainSuffixKey(),
             "p.intf.id", Constants.TAG_TYPE_MAP.user.alarmIdKey];
   }
 }
