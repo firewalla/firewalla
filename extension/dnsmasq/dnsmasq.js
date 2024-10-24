@@ -2098,9 +2098,18 @@ module.exports = class DNSMASQ {
   async dnsUpstreamConnectivity(intf) {
     for (const domain of VERIFICATION_DOMAINS) {
       const resolver4 = sysManager.myResolver(intf.name);
-      // check all ipv4 dns servers, if any works normal, return up status
+      const resolver6 = sysManager.myResolver6(intf.name);
+      let cmds = [];
+      // check all dns servers, if any works normal, return up status
       for (const dnsServer of resolver4) {
         let cmd = `dig -4 A +short +time=3 +tries=2 @${dnsServer} ${domain}`;
+        cmds.push({dnsServer, cmd});
+      }
+      for (const dnsServer of resolver6) {
+        cmds.push({dnsServer:dnsServer, cmd:`dig -6 A +short +time=3 +tries=2 @${dnsServer} ${domain}`});
+      }
+
+      for (const {dnsServer, cmd} of cmds) {
         log.debug(`DNS upstream check, verifying DNS resolution to ${domain} on ${dnsServer} ...`);
         try {
           let { stdout, stderr } = await execAsync(cmd);
@@ -2113,7 +2122,7 @@ module.exports = class DNSMASQ {
           }
         } catch (err) {
           // usually fall into catch clause if dns resolution is failed
-          log.error(`DNS upstream check, failed to resolve ${domain} on ${dnsServer}`, err.stdout, err.stderr);
+          log.error(`DNS upstream check, failed to resolve ${domain} on ${dnsServer}`, err.message);
         }
       }
     }
