@@ -54,8 +54,6 @@ function get_cloud_endpoint {
   RELEASE_TYPE=$(get_release_type)
   if [ "$RELEASE_TYPE" = "dev" -o "$RELEASE_TYPE" = "unknown" ]; then
     echo "https://ota.firewalla.com/dev"
-  elif [ "$RELEASE_TYPE" = "alpha" ]; then
-    echo "https://ota.firewalla.com/alpha"
   else
     echo "https://ota.firewalla.com"
   fi
