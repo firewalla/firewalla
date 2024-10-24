@@ -44,7 +44,8 @@ class DnsLoopAvoidanceSensor extends Sensor {
     const monitoringInterfaces = sysManager.getMonitoringInterfaces();
     for (const i of monitoringInterfaces) {
       const dns = (i.name && sysManager.myDNS(i.name) || []).concat(i.name && sysManager.myResolver(i.name) || []);
-      for (let n of dns) {
+      const dns6 = (i.name && sysManager.myDNS6(i.name) || []).concat(i.name && sysManager.myResolver6(i.name) || []);
+      for (let n of dns.concat(dns6)) {
         if (!dnsServers.includes(n))
           dnsServers.push(n);
       }
