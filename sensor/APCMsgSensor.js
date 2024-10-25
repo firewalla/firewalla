@@ -47,6 +47,7 @@ class APCMsgSensor extends Sensor {
   constructor(config) {
     super(config);
     this.ssidProfiles = {};
+    this.ssidGroupMap = {};
   }
 
   async run() {
@@ -163,12 +164,20 @@ class APCMsgSensor extends Sensor {
         return;
 
       const tags = await TagManager.getPolicyTags("ssidPSK");
-      const vlanGroupIdMap = {};
+      const vlanGroupMap = {};
+      const ssidGroupMap = {};
       for (const tag of tags) {
         const ssidPSK = await tag.getPolicyAsync("ssidPSK");
-        if (_.isObject(ssidPSK) && _.has(ssidPSK, "vlan"))
-          vlanGroupIdMap[String(ssidPSK.vlan)] = tag;
+        if (_.isObject(ssidPSK)) {
+          if (_.has(ssidPSK, "vlan"))
+            vlanGroupMap[String(ssidPSK.vlan)] = tag;
+          if (_.isArray(ssidPSK.defaultSSIDs)) {
+            for (const uuid of ssidPSK.defaultSSIDs)
+              ssidGroupMap[uuid] = tag;
+          }
+        }
       }
+      this.ssidGroupMap = ssidGroupMap;
 
       for (const uuid of Object.keys(ssidStatus)) {
         const status = ssidStatus[uuid];
@@ -179,11 +188,12 @@ class APCMsgSensor extends Sensor {
             continue;
           if (key === "phy") { // STA MACs that do not belong to a PSK group
             for (const mac of status[key])
-              await this.updateHostSSID(mac.toUpperCase(), uuid);
+              await this.updateHostSSID(mac.toUpperCase(), uuid, ssidGroupMap[uuid] && ssidGroupMap[uuid].getUniqueId());
           } else {
             if (key.startsWith("vlan:")) { // STA MACs that belong to a PSK group
               const vid = key.substring("vlan:".length);
-              await this.updateHostSSID(mac.toUpperCase(), uuid, vlanGroupIdMap[vid] && vlanGroupIdMap[vid].getUniqueId());
+              for (const mac of status[key])
+                await this.updateHostSSID(mac.toUpperCase(), uuid, vlanGroupMap[vid] && vlanGroupMap[vid].getUniqueId());
             }
           }
         }
@@ -223,12 +233,14 @@ class APCMsgSensor extends Sensor {
     await lock.acquire(LOCK_SSID_UPDATE, async () => {
       if (msg.action === "join") {
         const uuid = msg.id;
-        const groupId = msg.groupId
+        let groupId = msg.groupId
         if (!uuid)
           return;
         const mac = _.get(msg, ["station", "macAddr"]);
         if (!mac)
           return;
+        if (!groupId)
+          groupId = this.ssidGroupMap[uuid] && this.ssidGroupMap[uuid].getUniqueId();
         await this.updateHostSSID(mac, uuid, groupId);
       }
     }).catch((err) => {
@@ -250,14 +262,7 @@ class APCMsgSensor extends Sensor {
     }
     await host.setPolicyAsync(_.get(Constants.TAG_TYPE_MAP, [Constants.TAG_TYPE_SSID, "policyKey"]), [profile.getUniqueId()]);
 
-    const ssidUserTags = await profile.getTags(Constants.TAG_TYPE_USER);
-    const ssidUserTag = ssidUserTags.map(uid => TagManager.getTagByUid(uid)).find(o => _.isObject(o));
-    const hostTags = await host.getTags();
     let newTagId = null;
-    // overwrite device group with ssid user's affiliated device group
-    if (ssidUserTag && ssidUserTag.afTag && !hostTags.includes(ssidUserTag.afTag.getUniqueId()))
-      newTagId = ssidUserTag.afTag.getUniqueId()
-    // psk group supersedes ssid's device group above
     if (groupId && await TagManager.tagUidExists(groupId, Constants.TAG_TYPE_GROUP))
       newTagId = groupId;
     if (!_.isEmpty(newTagId))
