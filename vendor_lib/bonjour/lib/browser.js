@@ -84,8 +84,10 @@ Browser.prototype.start = function () {
       if (matches.length === 0) return
 
       matches.forEach(function (service) {
-        if (self._serviceMap[service.fqdn]) return // ignore already registered services
-        self._addService(service)
+        if (self._serviceMap[service.fqdn])
+          self._updateService(service)
+        else
+          self._addService(service)
       })
     })
   }
@@ -103,6 +105,34 @@ Browser.prototype.stop = function () {
 
 Browser.prototype.update = function () {
   this._mdns.query(this._name, 'PTR')
+}
+
+function equalTxt(a, b) {
+  if (!a && !b) return true
+  if (!a || !b) return false
+  const aKeys = Object.keys(a)
+  const bKeys = Object.keys(b)
+  if(aKeys.length != bKeys.length) return false
+  for(let key of aKeys) {
+    if(a[key] != b[key]) return false
+  }
+  return true
+}
+
+Browser.prototype._updateService = function (service) {
+  const sIndex = this.services.findIndex(s => dnsEqual(s.fqdn, service.fqdn))
+  if (sIndex == -1) return
+
+  let shouldUpdate = false
+  if (!equalTxt(service.txt, this.services[sIndex].txt))
+    shouldUpdate = true
+  if (JSON.stringify(service.addresses) != JSON.stringify(service.addresses))
+    shouldUpdate = true
+
+  if (shouldUpdate) {
+    this.services[sIndex] = service
+    this.emit('up', service);
+  }
 }
 
 Browser.prototype._addService = function (service) {
@@ -188,6 +218,7 @@ function buildServicesFor (name, packet, txt, referer) {
           service.addresses.push(rr.data)
         })
 
+      service.addresses.sort()
       return service
     })
     .filter(function (rr) {
