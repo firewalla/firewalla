@@ -361,7 +361,7 @@ class BonjourSensor extends Sensor {
       return;
     }
 
-    const addresses = service.addresses && service.addresses.length ? service.addresses : [ service.referer.address ]
+    const addresses = service.addresses
     if (!addresses.length)
       return;
 
