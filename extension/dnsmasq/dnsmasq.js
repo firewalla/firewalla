@@ -648,7 +648,7 @@ module.exports = class DNSMASQ {
             await fs.writeFileAsync(filePath, entries.join('\n'));
           } else { // a new way to block without restarting dnsmasq, only for non-scheduling
             await this.addGlobalPolicyFilterEntry(domain, options);
-            return "skip_restart"; // tell function caller that no need to restart dnsmasq to take effect            
+            return "skip_restart"; // tell function caller that no need to restart dnsmasq to take effect
           }
         }
       }
@@ -1507,7 +1507,7 @@ module.exports = class DNSMASQ {
           const redirectRule = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_FALLBACK')
             .set(netSet6, 'src,src').dport(53)
             .mdl("statistic", `--mode nth --every ${resolver6.length - i} --packet 0`)
-            .jmp(`DNAT --to-destination [${resolver6[i]}]:53`);
+            .jmp(`DNAT --to-destination [${resolver6[i].split('%')[0]}]:53`);
           await redirectRule.clone().pro('tcp').exec('-A');
           await redirectRule.clone().pro('udp').exec('-A');
         }
