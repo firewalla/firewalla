@@ -21,6 +21,7 @@ const util = require('util');
 const fs = require('fs')
 const net = require('net')
 const fsp = fs.promises;
+const scheduler = require('../util/scheduler.js');
 
 const iptool = require('ip');
 var instance = null;
@@ -108,6 +109,12 @@ class SysManager {
         log.info("Iptables is ready");
         this.iptablesReady = true;
       })
+
+      this.restartRsyslogJob = new scheduler.UpdateJob(async () => {
+        exec(`sudo systemctl restart rsyslog`).catch((err) => {
+          log.error(`Failed to restart rsyslog`, err.message);
+        });
+      }, 3000);
 
       this.ts = Date.now() / 1000;
       log.info("Init", this.ts);
@@ -267,6 +274,10 @@ class SysManager {
       return;
     await delay(1000);
     return this.waitTillInitialized();
+  }
+
+  async restartRsyslog() {
+    await this.restartRsyslogJob.exec();
   }
 
   version() {
