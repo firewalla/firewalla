@@ -298,12 +298,12 @@ if $programname == 'docker_vpn_${this.profileId}' then {
     await fs.writeFileAsync(tempConfPath, content, {encoding: "utf8"});
     await exec(`sudo cp ${tempConfPath} /etc/rsyslog.d/`).catch((err) => {});
     await fs.unlinkAsync(tempConfPath).catch((err) => {});
-    await exec(`sudo systemctl restart rsyslog`).catch((err) => {});
+    await sysManager.restartRsyslog().catch((err) => {});
   }
 
   async _removeRsyslogConf() {
     await exec(`sudo rm /etc/rsyslog.d/40-docker_vpn_${this.profileId}.conf`).catch((err) => {});
-    await exec(`sudo systemctl restart rsyslog`).catch((err) => {});
+    await sysManager.restartRsyslog().catch((err) => {});
   }
 
   async _testAndStartDocker() {
