@@ -118,7 +118,7 @@ class APCMsgSensor extends Sensor {
       switch (action) {
         case "enforce":
         case "reenforce": {
-          if (policy.disabled == "1") {
+          if (policy.disabled == "1" || !this.isAPCSupportedRule(policy)) {
             await fwapc.deleteRule(policy.pid);
           } else {
             await fwapc.updateRule(policy);
