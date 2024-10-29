@@ -235,10 +235,8 @@ module.exports = class {
                 ipaddr = addr.addr;
               } else if (addr['addrtype'] == 'mac') {
                 host.mac = addr.addr && addr.addr.toUpperCase();
-                if (addr.vendor != null) {
+                if (addr.vendor) {
                   host.macVendor = addr.vendor;
-                } else {
-                  host.macVendor = 'Unknown';
                 }
               }
             }
