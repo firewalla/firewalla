@@ -41,6 +41,7 @@ const SUPPORTED_RULE_TYPES = ["device", "tag", "intranet"];
 
 
 const Sensor = require('./Sensor.js').Sensor;
+const sl = require('./SensorLoader.js');
 
 class APCMsgSensor extends Sensor {
 
@@ -48,6 +49,9 @@ class APCMsgSensor extends Sensor {
     super(config);
     this.ssidProfiles = {};
     this.ssidGroupMap = {};
+    sl.initSingleSensor("ACLAuditLogPlugin").then((r) => {this.aclAuditLogPlugin = r}).catch((err) => {
+      log.error("Failed to init ACLAuditLogPlugin", this.aclAuditLogPlugin);
+    });
   }
 
   async run() {
@@ -89,12 +93,21 @@ class APCMsgSensor extends Sensor {
             })
           break;
         }
+        case Message.MSG_FWAPC_BLOCK_FLOW: {
+          try {
+            this.processApcBlockFlowMessage(message);
+          } catch(err) {
+            log.error(`Failed to process ${Message.MSG_FWAPC_BLOCK_FLOW} message: ${message}`, err.message);
+          };
+          break;
+        }
         default:
       }
     });
 
     sclient.subscribe(Message.MSG_FR_CHANGE_APPLIED);
     sclient.subscribe(Message.MSG_FWAPC_CONNTRACK_UPDATE);
+    sclient.subscribe(Message.MSG_FWAPC_BLOCK_FLOW);
     // wait for iptables ready in case Host object and its ipsets are created in HostManager.getHostAsync
     await sysManager.waitTillIptablesReady();
     sclient.subscribe(Message.MSG_FWAPC_SSID_STA_UPDATE);
@@ -365,6 +378,27 @@ class APCMsgSensor extends Sensor {
         log.error(`Failed to process local conn log in zeek`, connLog, err.message);
       });
     }
+  }
+
+  processApcBlockFlowMessage(msg) {
+    try { msg = JSON.parse(msg)} catch (err) {
+      log.error(`Malformed JSON in ${Message.MSG_FWAPC_BLOCK_FLOW} message: ${msg}`);
+      return
+    }
+    const record = {
+      type: 'ip', ac: 'block', ts: msg.ts, ct: msg.ct,
+      sh: msg.src, dh: msg.dst,
+      sp: [msg.sport], dp: msg.dport,
+      mac: msg.smac, dmac: msg.dmac,
+      fd: 'lo', dir: 'L',
+    };
+    if (msg.pid) record.pid = msg.pid
+
+    const intf = sysManager.getInterfaceViaIP(msg.src || msg.dst);
+    record.intf = intf && intf.name;
+
+    if (this.aclAuditLogPlugin) // in case AclAuditLogPlugin not loaded
+      this.aclAuditLogPlugin.writeBuffer(msg.smac, record);
   }
 }
 
