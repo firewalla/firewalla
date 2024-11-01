@@ -3,3 +3,5 @@
 /home/pi/.firewalla/run/unbound.tar.gz /pse/unbound.tar.gz 644 "/home/pi/firewalla/scripts/check_service_on_assets_update.sh stop unbound" "cd /home/pi/.firewalla/run/; tar -zxf unbound.tar.gz; /home/pi/firewalla/scripts/check_service_on_assets_update.sh start unbound"
 /home/pi/.firewalla/run/assets/firehb /pse/firehb 755 "sudo systemctl stop firehb" "sudo systemctl start firehb"
 /home/pi/.firewalla/run/assets/nmap /pse/nmap 755 ":" "sudo cp -f /home/pi/.firewalla/run/assets/nmap $(which nmap)"
+/home/pi/.firewalla/run/assets/libmysqlclient.so.21 /pse/libmysqlclient.so.21 644 ":" 'SLNAME="/usr/lib/aarch64-linux-gnu/libmysqlclient.so.21"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/libmysqlclient.so.21 ${SLNAME}; fi'
+/home/pi/.firewalla/run/assets/liblua5.4-sql-mysql.so /pse/liblua5.4-sql-mysql.so 644 "" 'sudo mkdir -p /usr/local/lib/lua/5.4/luasql/; SLNAME="/usr/local/lib/lua/5.4/luasql/mysql.so"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/liblua5.4-sql-mysql.so ${SLNAME}; fi'
