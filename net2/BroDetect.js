@@ -1369,12 +1369,12 @@ class BroDetect {
         await this.recordTraffic(tuple, 'lo:' + localMac)
         await this.recordTraffic(tupleConn, `lo:${flowdir}:${localMac}`)
         await this.recordTraffic(tuple, 'lo:intf:' + intfInfo.uuid, true)
-        await this.recordTraffic(tupleConn, `lo:intf:${flowdir}:${intfInfo.uuid}`, true)
+        await this.recordTraffic(tupleConn, `lo:${flowdir}:intf:${intfInfo.uuid}`, true)
         for (const key in tags) {
           if (_.isArray(tags[key]) && !_.isEmpty(tags[key])) {
             for (const tag of tags[key]) {
               await this.recordTraffic(tuple, 'lo:tag:' + tag, true)
-              await this.recordTraffic(tupleConn, `lo:tag:${flowdir}:${intfInfo.uuid}`, true)
+              await this.recordTraffic(tupleConn, `lo:${flowdir}:tag:${intfInfo.uuid}`, true)
             }
           }
         }
