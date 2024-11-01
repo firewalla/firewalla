@@ -180,7 +180,9 @@ class BroDetect {
       this._activeMacHeartbeat();
     }, 60000);
 
-    this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 } }
+    this.timeSeriesCache = {
+      global: { upload: 0, download: 0, conn: 0, dns:0, 'bandwidth:lo': 0, 'conn:lo': 0 }
+    }
     this.tsWriteInterval = config.conn.tsWriteInterval || 10000
     this.recordTrafficTask = setInterval(() => {
       this.writeTrafficCache().catch(err => {
@@ -939,7 +941,7 @@ class BroDetect {
 
       // drop layer 3
       if (obj.orig_ip_bytes == 0 && obj.resp_ip_bytes == 0) {
-        log.debug("Conn:Drop:ZeroLength", obj.conn_state, obj);
+        // log.debug("Conn:Drop:ZeroLength", obj.conn_state, obj);
         return;
       }
 
@@ -950,13 +952,13 @@ class BroDetect {
       }
 
       if (obj.orig_bytes == undefined || obj.resp_bytes == undefined) {
-        log.debug("Conn:Drop:NullBytes", obj);
+        // log.debug("Conn:Drop:NullBytes", obj);
         return;
       }
 
       // drop layer 4
       if (obj.orig_bytes == 0 && obj.resp_bytes == 0) {
-        log.debug("Conn:Drop:ZeroLength2", obj.conn_state, obj);
+        // log.debug("Conn:Drop:ZeroLength2", obj.conn_state, obj);
         return;
       }
 
@@ -1012,7 +1014,8 @@ class BroDetect {
       let localFlow = false
       let bridge = obj["bridge"] || false;
 
-      log.debug("ProcessingConection:", obj.uid, orig, resp, obj['id.resp_p']);
+      log.debug("ProcessingConection:", obj.uid, orig, resp, obj['id.resp_p'],
+        long ? 'long' : '', reverseLocal ? 'reverseLocal' : '');
 
       // fd: in, this flow initiated from inside
       // fd: out, this flow initated from outside, it is more dangerous
@@ -1221,7 +1224,7 @@ class BroDetect {
         // no interface doesn't really makes sense here
         log.error('Conn: Unable to find nif uuid', lhost, localMac);
         return
-      }    
+      }
 
       // save flow under the destination host key for per device indexing
       // do this after we get real bytes in long connection
@@ -1360,10 +1363,23 @@ class BroDetect {
       const traffic = [tmpspec.ob, tmpspec.rb]
       if (tmpspec.fd == 'in') traffic.reverse()
 
-      const tuple = { download: traffic[0], upload: traffic[1], conn: tmpspec.ct }
+      const tuple = { download: traffic[0], upload: traffic[1] }
       if (localFlow) {
-        await this.recordTraffic(tuple, 'lo:' + localMac, true)
+        const tupleConn = {conn: tmpspec.ct}
+        await this.recordTraffic(tuple, 'lo:' + localMac)
+        await this.recordTraffic(tupleConn, `lo:${flowdir}:${localMac}`)
+        await this.recordTraffic(tuple, 'lo:intf:' + intfInfo.uuid, true)
+        await this.recordTraffic(tupleConn, `lo:intf:${flowdir}:${intfInfo.uuid}`, true)
+        for (const key in tags) {
+          if (_.isArray(tags[key]) && !_.isEmpty(tags[key])) {
+            for (const tag of tags[key]) {
+              await this.recordTraffic(tuple, 'lo:tag:' + tag, true)
+              await this.recordTraffic(tupleConn, `lo:tag:${flowdir}:${intfInfo.uuid}`, true)
+            }
+          }
+        }
       } else {
+        tuple.conn = tmpspec.ct
         await this.recordTraffic(tuple, localMac);
         await this.recordTraffic(tuple, 'intf:' + intfInfo.uuid, true);
         for (const key in tags) {
@@ -1913,7 +1929,10 @@ class BroDetect {
 
   async writeTrafficCache() {
     const toRecord = this.timeSeriesCache
-    this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0, dns: 0 }, ts: Date.now() / 1000 }
+    this.timeSeriesCache = {
+      global: { upload: 0, download: 0, conn: 0, dns: 0, 'bandwidth:lo': 0, 'conn:lo': 0 },
+      ts: Date.now() / 1000
+    }
     const duration = this.timeSeriesCache.ts - toRecord.ts
     const lastTS = Math.floor(toRecord.ts)
 
@@ -1952,6 +1971,7 @@ class BroDetect {
       }
     }
 
+    log.verbose('toRecord', toRecord)
     for (const key in toRecord) {
       const subKey = key == 'global' ? '' : ':' + key
       const download = isRouterMode && key == 'global' ? wanNicRxBytes : toRecord[key].download;
@@ -1961,6 +1981,12 @@ class BroDetect {
       upload && timeSeries.recordHit('upload' + subKey, lastTS, upload)
       toRecord[key].conn && timeSeries.recordHit('conn' + subKey, lastTS, toRecord[key].conn)
       toRecord[key].dns && timeSeries.recordHit('dns' + subKey, lastTS, toRecord[key].dns)
+      if (key == 'global') {
+        if (toRecord.global['bandwidth:lo'])
+          timeSeries.recordHit('bandwidth:lo', lastTS, toRecord.global['bandwidth:lo'])
+        if (toRecord.global['conn:lo'])
+          timeSeries.recordHit('conn:lo', lastTS, toRecord.global['conn:lo'])
+      }
     }
 
     timeSeries.exec()
@@ -1969,8 +1995,15 @@ class BroDetect {
   async recordTraffic(tuple, key, ignoreGlobal = false) {
     // append current status
     if (!ignoreGlobal) {
-      for (const measure in tuple)
-        this.timeSeriesCache.global[measure] += tuple[measure]
+      for (const measure in tuple) {
+        if (key.startsWith('lo:')) {
+          if (['upload', 'download'].includes(measure))
+            this.timeSeriesCache.global['bandwidth:lo'] += tuple[measure]
+          else if (measure == 'conn')
+            this.timeSeriesCache.global['conn:lo'] += tuple[measure]
+        } else
+          this.timeSeriesCache.global[measure] += tuple[measure]
+      }
     }
 
     if (!this.timeSeriesCache[key]) {

@@ -50,7 +50,11 @@ class FlowAggrTool {
   }
 
   getSumFlowKey(target, dimension, begin, end, fd) {
-    return `${target ? `sumflow:${target}` : "syssumflow"}:${dimension}:${fd ? `${fd}:` : ""}${begin}:${end}`;
+    return ( !target ? 'syssumflow' :
+      target.startsWith('global') ? 'syssumflow'+target.substring(6) : 'sumflow:'+target )
+      + (dimension ? ':'+dimension : '')
+      + (fd ? ':'+fd : '')
+      + ((begin && end) ? `:${begin}:${end}` : '');
   }
 
   // aggrflow:<device_mac>:download:10m:<ts>
@@ -286,13 +290,13 @@ class FlowAggrTool {
   }
 
   async setLastSumFlow(target, dimension, fd, keyName) {
-    const key = `lastsumflow:${target ? target + ':' : ''}${dimension}${fd ? `:${fd}` : ""}`
+    const key = 'last' + this.getSumFlowKey(target, dimension, null, null, fd)
     await rclient.setAsync(key, keyName);
     await rclient.expireAsync(key, 24 * 60 * 60);
   }
 
   getLastSumFlow(target, dimension, fd) {
-    const key = `lastsumflow:${target ? target + ':' : ''}${dimension}${fd ? `:${fd}` : ""}`
+    const key = 'last' + this.getSumFlowKey(target, dimension, null, null, fd)
     return rclient.getAsync(key);
   }
 
