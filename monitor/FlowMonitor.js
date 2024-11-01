@@ -85,7 +85,7 @@ function alarmBootstrap(flow, mac, typedAlarm) {
     "p.dest.name": flowUtil.dhnameFlow(flow),
     "p.dest.ip": flow.dh,
     "p.dest.port": flow.dp,
-    "p.intf.id": flow.intf
+    "p.intf.id": npm.prefixMap[flow.intf] || flow.intf,
   }
 
   for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
@@ -699,7 +699,7 @@ module.exports = class FlowMonitor {
       "p.transfer.duration": copy.du,
       "p.local_is_client": flow.fd == 'in' ? "1" : "0", // connection is initiated from local
       "p.flow": JSON.stringify(flow),
-      "p.intf.id": flow.intf
+      "p.intf.id": npm.prefixMap[flow.intf] || flow.intf,
     });
 
     for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
@@ -896,7 +896,7 @@ module.exports = class FlowMonitor {
       "e.device.ports": this.getDevicePorts(flowObj),
       "e.dest.ports": this.getRemotePorts(flowObj),
       "p.from": intelObj.from,
-      "p.intf.id": flowObj.intf
+      "p.intf.id": npm.prefixMap[flowObj.intf] || flowObj.intf,
     };
 
     for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
@@ -992,7 +992,7 @@ module.exports = class FlowMonitor {
       "p.from": iobj.from,
       "e.device.ports": this.getDevicePorts(flowObj),
       "e.dest.ports": this.getRemotePorts(flowObj),
-      "p.intf.id": flowObj.intf,
+      "p.intf.id": npm.prefixMap[flowObj.intf] || flowObj.intf,
     };
 
     for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
