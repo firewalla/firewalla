@@ -39,6 +39,8 @@ const networkProfileManager = require('../net2/NetworkProfileManager.js');
 const tagManager = require('../net2/TagManager.js');
 const xml2jsonBinary = firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + firewalla.getPlatform();
 const httpBruteScript = firewalla.getHiddenFolder() + "/run/assets/http-brute.nse";
+const mysqlBruteScript = firewalla.getHiddenFolder() + "/run/assets/mysql-brute.nse";
+const libmysqlclientSO = firewalla.getHiddenFolder() + "/run/assets/libmysqlclient.so.21"
 const _ = require('lodash');
 const bruteConfig = require('../extension/nmap/bruteConfig.json');
 const AsyncLock = require('../vendor_lib/async-lock');
@@ -868,13 +870,24 @@ class InternalScanSensor extends Sensor {
       let cmdArg = [];
       // customized http-brute
       let customHttpBrute = false;
+      let customMysqlBrute = false;
       if (this.config.strict_http === true && bruteScript.scriptName == 'http-brute') {
         if (await fsp.access(httpBruteScript, fs.constants.F_OK).then(() => true).catch((err) => false)) {
           customHttpBrute = true;
         }
       }
+      if (this.config.mysql8 === true && bruteScript.scriptName == 'mysql-brute') {
+        if (await fsp.access(libmysqlclientSO, fs.constants.F_OK).then(() => true).catch((err) => false)) {
+          if (await fsp.access(mysqlBruteScript, fs.constants.F_OK).then(() => true).catch((err) => false)) {
+            customMysqlBrute = true;
+          }
+        }
+      }
+
       if (customHttpBrute === true) {
         cmdArg.push(util.format('--script %s', httpBruteScript));
+      } else if (customMysqlBrute === true) {
+        cmdArg.push(util.format('--script %s', mysqlBruteScript));
       } else {
         cmdArg.push(util.format('--script %s', bruteScript.scriptName));
       }

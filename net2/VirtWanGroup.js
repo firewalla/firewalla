@@ -423,11 +423,13 @@ class VirtWanGroup {
         });
       }
       // save connState to redis
-      await rclient.hsetAsync(VirtWanGroup.getRedisKeyName(this.uuid), "connState", JSON.stringify(this.connState));
-      if (generateAlarmNeeded) {
-        await this.generateConnChangeAlarm(e, wanSwitched).catch((err) => {
-          log.error(`Failed to generate connectivity change alarm`, err.message);
-        });
+      if (await rclient.existsAsync(VirtWanGroup.getRedisKeyName(this.uuid))) { // in case the group is deleted concurrently in fireapi
+        await rclient.hsetAsync(VirtWanGroup.getRedisKeyName(this.uuid), "connState", JSON.stringify(this.connState));
+        if (generateAlarmNeeded) {
+          await this.generateConnChangeAlarm(e, wanSwitched).catch((err) => {
+            log.error(`Failed to generate connectivity change alarm`, err.message);
+          });
+        }
       }
     }).catch((err) => {
       log.error(`Failed to process link state event of virtual wan group ${this.uuid}`, e, err.message);

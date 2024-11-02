@@ -109,7 +109,7 @@
     },
     "AdblockPlugin": {},
     "WireGuardPlugin": {},
-    "InternalScanSensor": { "skip_verify": false, "strict_http": true},
+    "InternalScanSensor": { "skip_verify": false, "strict_http": true, "mysql8": true},
     "ExternalScanSensor": {
       "scanCooldown": 300
     },
@@ -763,7 +763,7 @@
     "FanSensor": {},
     "LEDSensor": {},
     "SyslogSensor": {},
-    "InternalScanSensor": { "skip_verify": false, "strict_http": true},
+    "InternalScanSensor": { "skip_verify": false, "strict_http": true,  "mysql8": true},
     "InternetSpeedtestPlugin": {
       "vendorCandidates": [
         "ookla"

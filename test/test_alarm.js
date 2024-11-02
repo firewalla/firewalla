@@ -43,7 +43,7 @@ describe('Test localization', function(){
 });
 
 const data = {"p.device.id":"A:BB:CC:DD:EE:FF","p.device.ip":"172.16.1.144","p.protocol":"tcp","p.dest.name":"www.nintendo.co.jp","p.dest.ip":"23.5.1.243","p.dest.id":"www.nintendo.co.jp",
-  "p.dest.port":443,"p.intf.id":"0000000","p.dtag.ids":["1"],"p.device.mac":"A:BB:CC:DD:EE:FF", "p.dest.category":"games","p.dest.name.suffix":"nintendo.co.jp"}
+  "p.dest.port":443,"p.intf.id":"0000000-0000-0000-0000-00000000000","p.dtag.ids":["1"],"p.device.mac":"A:BB:CC:DD:EE:FF", "p.dest.category":"games","p.dest.name.suffix":"nintendo.co.jp"}
 
 describe('Test dedup keys', () => {
     it('test outbound domain suffix key', async() => {
@@ -60,7 +60,7 @@ describe('Test dedup keys', () => {
 describe('Test generation', () => {
    it('tests alarm dedup', () => {
      const payload = {
-       'p.intf.id': '00000000',
+       'p.intf.id': '0000000-0000-0000-0000-00000000000',
        'p.dest.category': 'av',
        'p.dest.ip': '74.125.160.38',
        'p.device.ip': '192.168.1.144',
