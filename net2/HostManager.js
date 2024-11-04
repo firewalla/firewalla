@@ -483,11 +483,15 @@ module.exports = class HostManager extends Monitorable {
     const subKey = target && target != '0.0.0.0' ? ':' + target : '';
     const { granularities, hits} = statSettings;
     const stats = {}
-    const metricArray = metrics || [
-      'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB', 'ntp',
-      'upload:lo', 'download:lo', 'conn:lo',
-    ]
-    for (const metric of metricArray) {
+    if (!metrics) { // default (full) metrics
+      metrics = [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB', 'ntp' ]
+      if (target && target != '0.0.0.0') {
+        metrics.push('upload:lo', 'download:lo', 'conn:lo:in', 'conn:lo:out')
+      } else {
+        metrics.push('bandwidth:lo', 'conn:lo')
+      }
+    }
+    for (const metric of metrics) {
       const s = await getHitsAsync(metric + subKey, granularities, hits)
       if (granularities == '1minute') {
         if (s[s.length - 1] && s[s.length - 1][1] == 0)
@@ -495,17 +499,22 @@ module.exports = class HostManager extends Monitorable {
         else if (s.length > 60)
           s.shift()
       }
+      if (['bandwidth:lo', 'conn:lo'].includes(metric)) {
+        // global local bandwidth and connection are being counted twice
+        // the result should always be interger, but use Math.floor as a safe guard
+        s.forEach((h, i) => s[i][1] = Math.floor(h[1]/2))
+      }
       stats[metric] = s
     }
     return this.generateStats(stats);
   }
 
-  async newLast24StatsForInit(json, target) {
-    json.newLast24 = await this.getStats({granularities: '1hour', hits: 24}, target);
+  async newLast24StatsForInit(json, target, metrics) {
+    json.newLast24 = await this.getStats({granularities: '1hour', hits: 24}, target, metrics);
   }
 
-  async last12MonthsStatsForInit(json, target) {
-    json.last12Months = await this.getStats({granularities: '1month', hits: 12}, target);
+  async last12MonthsStatsForInit(json, target, metrics) {
+    json.last12Months = await this.getStats({granularities: '1month', hits: 12}, target, metrics);
   }
 
   async monthlyDataUsageForInit(json) {
@@ -584,12 +593,12 @@ module.exports = class HostManager extends Monitorable {
     return offset;
   }
 
-  async last60MinStatsForInit(json, target) {
-    json.last60 = await this.getStats({granularities: '1minute', hits: 61}, target);
+  async last60MinStatsForInit(json, target, metrics) {
+    json.last60 = await this.getStats({granularities: '1minute', hits: 61}, target, metrics);
   }
 
-  async last30daysStatsForInit(json, target) {
-    json.last30 = await this.getStats({granularities: '1day', hits: 30}, target);
+  async last30daysStatsForInit(json, target, metrics) {
+    json.last30 = await this.getStats({granularities: '1day', hits: 30}, target, metrics);
   }
 
   async policyDataForInit(json) {
