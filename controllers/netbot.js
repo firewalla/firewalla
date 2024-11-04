@@ -1713,8 +1713,6 @@ class netBot extends ControllerBot {
       options.queryall = true
     }
 
-    if (msg.data.audit) options.audit = true
-
     log.info(type, "FlowHandler FROM: ", new Date(begin * 1000).toLocaleTimeString());
     log.info(type, "FlowHandler TO: ", new Date(end * 1000).toLocaleTimeString());
 
@@ -1795,33 +1793,49 @@ class netBot extends ControllerBot {
         throw new Error('Invalid target type: ' + type)
     }
 
-    // target: 'uuid'
-    const promises = [
-      netBotTool.prepareTopUploadFlows(jsonobj, options),
-      netBotTool.prepareTopDownloadFlows(jsonobj, options),
+    const { audit, nonLocal, local } = msg.data
 
-      netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'app', options),
-      netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
+    const promises = []
+    const tsMetrics = []
 
-      this.hostManager.last60MinStatsForInit(jsonobj, target),
-      this.hostManager.last30daysStatsForInit(jsonobj, target),
-      this.hostManager.newLast24StatsForInit(jsonobj, target),
-      this.hostManager.last12MonthsStatsForInit(jsonobj, target),
-    ]
-    if (platform.isAuditLogSupported()) {
+    // defaults to true
+    if (nonLocal != false) {
+      promises.push(
+        netBotTool.prepareTopUploadFlows(jsonobj, options),
+        netBotTool.prepareTopDownloadFlows(jsonobj, options),
+
+        netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'app', options),
+        netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
+      )
+      tsMetrics.push('upload', 'download', 'conn', 'dns')
+    }
+    if (platform.isAuditLogSupported() && audit != false) {
       promises.push(
         netBotTool.prepareTopFlows(jsonobj, 'dnsB', null, Object.assign({}, options, {limit: 400})),
         netBotTool.prepareTopFlows(jsonobj, 'ipB', "in", Object.assign({}, options, {limit: 400})),
         netBotTool.prepareTopFlows(jsonobj, 'ipB', "out", Object.assign({}, options, {limit: 400})),
         netBotTool.prepareTopFlows(jsonobj, 'ifB', "out", Object.assign({}, options, {limit: 400})),
       )
+      tsMetrics.push('ipB', 'dnsB', 'ntp')
     }
-    if (fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW) && type == 'host') {
+    if (fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW) && local == true) {
       promises.push(
         netBotTool.prepareTopFlows(jsonobj, 'local', 'upload', Object.assign({}, options, {limit: 400})),
         netBotTool.prepareTopFlows(jsonobj, 'local', 'download', Object.assign({}, options, {limit: 400})),
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'in', Object.assign({}, options, {limit: 400})),
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'out', Object.assign({}, options, {limit: 400})),
       )
+      if (target == '0.0.0.0')
+        tsMetrics.push('bandwidth:lo', 'conn:lo')
+      else
+        tsMetrics.push('upload:lo', 'download:lo', 'conn:lo:in', 'conn:lo:out')
     }
+    promises.push(
+      this.hostManager.last60MinStatsForInit(jsonobj, target, tsMetrics),
+      this.hostManager.last30daysStatsForInit(jsonobj, target, tsMetrics),
+      this.hostManager.newLast24StatsForInit(jsonobj, target, tsMetrics),
+      this.hostManager.last12MonthsStatsForInit(jsonobj, target, tsMetrics)
+    )
 
     jsonobj.hosts = {}
     promises.push(asyncNative.eachLimit(options.macs, 20, async (t) => {
@@ -1841,6 +1855,7 @@ class netBot extends ControllerBot {
     }))
 
     if (!msg.data.apiVer || msg.data.apiVer == 1) {
+      if (audit) options.audit = true
       promises.push(flowTool.prepareRecentFlows(jsonobj, _.omit(options, ['queryall'])))
     }
 
@@ -1853,18 +1868,19 @@ class netBot extends ControllerBot {
     // }
     await Promise.all(promises)
 
-    if (!msg.data.apiVer || msg.data.apiVer == 1) jsonobj.flows.recent.forEach(f => {
-      if (f.ltype == 'flow') delete f.type
-    })
+    if (!msg.data.apiVer || msg.data.apiVer == 1) {
+      jsonobj.flows.recent.forEach(f => {
+        if (f.ltype == 'flow') delete f.type
+      })
 
-    if (!jsonobj.flows['appDetails']) { // fallback to old way
-      await netBotTool.prepareDetailedFlows(jsonobj, 'app', options)
-      await this.validateFlowAppIntel(jsonobj)
-    }
-
-    if (!jsonobj.flows['categoryDetails']) { // fallback to old model
-      await netBotTool.prepareDetailedFlows(jsonobj, 'category', options)
-      await this.validateFlowCategoryIntel(jsonobj)
+      if (!jsonobj.flows['appDetails']) { // fallback to old way
+        await netBotTool.prepareDetailedFlows(jsonobj, 'app', options)
+        await this.validateFlowAppIntel(jsonobj)
+      }
+      if (!jsonobj.flows['categoryDetails']) { // fallback to old model
+        await netBotTool.prepareDetailedFlows(jsonobj, 'category', options)
+        await this.validateFlowCategoryIntel(jsonobj)
+      }
     }
 
     return jsonobj;
