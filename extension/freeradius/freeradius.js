@@ -15,7 +15,6 @@
 
 'use strict';
 
-const crypto = require('crypto');
 const exec = require('child-process-promise').exec;
 const _ = require('lodash');
 const fs = require('fs');
