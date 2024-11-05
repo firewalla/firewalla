@@ -42,7 +42,6 @@ const envCreatedMap = {};
 
 const instances = {};
 
-const VPN_ROUTE_MARK_KEY_PREFIX = "fwmark:vpn";
 class VPNClient {
   constructor(options) {
     const profileId = options.profileId;
@@ -1253,7 +1252,7 @@ class VPNClient {
   }
 
   static getRouteMarkKey(profileId) {
-    return `${VPN_ROUTE_MARK_KEY_PREFIX}:${profileId}`;
+    return `${Constants.VPN_ROUTE_MARK_KEY_PREFIX}:${profileId}`;
   }
 
   async getLatestSessionLog() {
