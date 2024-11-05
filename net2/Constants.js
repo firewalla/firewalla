@@ -70,6 +70,7 @@ module.exports = {
 
   FW_AP_MAC_PREFIX: "20:6D:31:61",
   FW_AP_DEFAULT_DHCP_HOSTNAME: "FirewallaAP",
+  VPN_ROUTE_MARK_KEY_PREFIX: "fwmark:vpn",
 
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
 
