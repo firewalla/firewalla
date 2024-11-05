@@ -1374,7 +1374,7 @@ class BroDetect {
           if (_.isArray(tags[key]) && !_.isEmpty(tags[key])) {
             for (const tag of tags[key]) {
               await this.recordTraffic(tuple, 'lo:tag:' + tag, true)
-              await this.recordTraffic(tupleConn, `lo:${flowdir}:tag:${intfInfo.uuid}`, true)
+              await this.recordTraffic(tupleConn, `lo:${flowdir}:tag:${tag}`, true)
             }
           }
         }
