@@ -306,9 +306,11 @@ class VirtWanGroup {
         await exec(`sudo ipset del -! ${VirtWanGroup.getRouteIpsetName(this.uuid)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
         await this._disableDNSRoute("hard");
       }
+      await this._setRouteMarkInRedis(rtId);
     } else {
       await exec(`sudo ipset flush -! ${VirtWanGroup.getRouteIpsetName(this.uuid)}`).catch((err) => { });
       await this._disableDNSRoute("hard");
+      await this._resetRouteMarkInRedis(rtId);
     }
     if (anyWanReady) {
       // populate soft route ipset with skbmark
@@ -588,6 +590,7 @@ class VirtWanGroup {
     }
     await this._disableDNSRoute("hard");
     await this._disableDNSRoute("soft");
+    await this._resetRouteMarkInRedis(rtId);
     await fs.promises.unlink(this._getDnsmasqConfigPath()).catch((err) => {});
     await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "hard")}`).catch((err) => {});
     await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "soft")}`).catch((err) => {});
@@ -607,6 +610,18 @@ class VirtWanGroup {
     if (connState)
       json.connState = connState;
     return json;
+  }
+
+  async _setRouteMarkInRedis(rtId) {
+    await rclient.setAsync(VirtWanGroup.getRouteMarkKey(this.uuid), rtId);
+  }
+
+  async _resetRouteMarkInRedis() {
+    await rclient.unlinkAsync(VirtWanGroup.getRouteMarkKey(this.uuid));
+  }
+
+  static getRouteMarkKey(uuid) {
+    return `${Constants.VPN_ROUTE_MARK_KEY_PREFIX}:${uuid}`;
   }
 }
 
