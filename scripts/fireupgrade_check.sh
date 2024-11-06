@@ -51,7 +51,7 @@ if [[ -e $FRFLAG ]]; then
   echo "======= SKIP UPGRADING CHECK BECAUSE OF FLAG $FRFLAG ======="
   exit 0
 elif [[ -e "$FIREROUTER_SCRIPT" ]]; then
-  $FIREROUTER_SCRIPT &> /tmp/firerouter_upgrade.log || {
+  bash $FIREROUTER_SCRIPT &> /tmp/firerouter_upgrade.log || {
     err "ERROR: failed to upgrade firerouter"
     exit 1
   }
@@ -70,7 +70,7 @@ if [[ -e $FRCANARY_FLAG ]]; then
 fi
 
 if [[ -e $FIREWALLA_CANARY_SCRIPT ]];then
-  $FIREWALLA_CANARY_SCRIPT &> /tmp/fireupgrade_canary.log
+  bash $FIREWALLA_CANARY_SCRIPT &> /tmp/fireupgrade_canary.log
 fi
 
 if [[ -e $FWCANARY_FLAG ]]; then
