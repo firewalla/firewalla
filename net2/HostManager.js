@@ -441,7 +441,7 @@ module.exports = class HostManager extends Monitorable {
     const stats = {}
     if (!metrics) { // default (full) metrics
       metrics = [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB', 'ntp',
-        'upload:lo', 'download:lo', 'intra:lo', 'conn:lo:in', 'conn:lo:out', 'conn:lo', ]
+        'upload:lo', 'download:lo', 'intra:lo', 'conn:lo:in', 'conn:lo:out', 'conn:lo:intra', ]
     }
     for (const metric of metrics) {
       const s = await getHitsAsync(metric + subKey, granularities, hits)

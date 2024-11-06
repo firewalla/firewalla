@@ -1062,9 +1062,6 @@ class BroDetect {
 
       let intfInfo = sysManager.getInterfaceViaIP(lhost, fam);
       let dstIntfInfo = localFlow && sysManager.getInterfaceViaIP(dhost, fam);
-      // do not process traffic between devices in the same network unless bridge flag is set in log
-      if (intfInfo === dstIntfInfo && !bridge)
-        return;
       // ignore multicast IP
       try {
         if (fam == 4 && sysManager.isMulticastIP4(dhost, intfInfo && intfInfo.name)
@@ -1368,14 +1365,14 @@ class BroDetect {
         const tupleIntra = { intra: tmpspec.ob + tmpspec.rb }
 
         await this.recordTraffic(tupleIntra, 'lo:global')
-        await this.recordTraffic(tupleConn, 'lo:global')
+        await this.recordTraffic(tupleConn, 'lo:intra:global')
 
         await this.recordTraffic(tuple, 'lo:' + localMac)
         await this.recordTraffic(tupleConn, `lo:${flowdir}:${localMac}`)
 
         if (dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid) {
           await this.recordTraffic(tupleIntra, 'lo:intf:' + intfInfo.uuid)
-          await this.recordTraffic(tupleConn, 'lo:intf:' + intfInfo.uuid)
+          await this.recordTraffic(tupleConn, 'lo:intra:intf:' + intfInfo.uuid)
         } else {
           await this.recordTraffic(tuple, 'lo:intf:' + intfInfo.uuid)
           await this.recordTraffic(tupleConn, `lo:${flowdir}:intf:${intfInfo.uuid}`)
@@ -1386,7 +1383,7 @@ class BroDetect {
             for (const tag of tags[key]) {
               if (dstTags && dstTags[key] && dstTags[key].includes(tag)) {
                 await this.recordTraffic(tupleIntra, 'lo:tag:' + tag)
-                await this.recordTraffic(tupleConn, 'lo:tag:' + tag)
+                await this.recordTraffic(tupleConn, 'lo:intra:tag:' + tag)
               } else {
                 await this.recordTraffic(tuple, 'lo:tag:' + tag)
                 await this.recordTraffic(tupleConn, `lo:${flowdir}:tag:${tag}`)
