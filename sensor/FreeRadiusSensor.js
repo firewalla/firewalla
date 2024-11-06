@@ -14,11 +14,13 @@
  */
 'use strict';
 
+const _ = require('lodash');
 let freeradius = require("../extension/freeradius/freeradius.js");
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const f = require('../net2/Firewalla.js');
 const log = require('../net2/logger.js')(__filename);
+const tagManager = require('../net2/TagManager.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const rclient = require('../util/redis_manager.js').getRedisClient();
@@ -46,17 +48,6 @@ class FreeRadiusSensor extends Sensor {
         if (!this.featureOn) return;
         const policy = await this.loadPolicyAsync();
         await freeradius.stopServer(policy.options);
-      });
-
-      sem.on("ApplyPolicyFreeRadiusServer", async(event) => {
-        log.info("Receive event", event.type, JSON.stringify(event));
-        if (!this.featureOn) return;
-        if (!event.policy) return;
-        await this._applyPolicy(event.policy);
-        // refresh freeradius state
-        sem.sendEventToFireApi({
-          type: "_refreshFreeRadius",
-        });
       });
     }
   }
@@ -89,6 +80,7 @@ class FreeRadiusSensor extends Sensor {
 
   async run() {
     this.featureOn = false;
+    this._policy = null
     this.policy = null;
 
     extensionManager.registerExtension(featureName, this, {
@@ -112,7 +104,7 @@ class FreeRadiusSensor extends Sensor {
   // global on/off
   async globalOn() {
     this.featureOn = true;
-    this.policy = await this.loadPolicyAsync();
+    this._policy = await this.loadPolicyAsync();
     freeradius.prepare(); // prepare in background
   }
 
@@ -124,11 +116,19 @@ class FreeRadiusSensor extends Sensor {
   }
 
   // apply global policy changes, policy={radius:{}, options:{}}
-  async _apply(policy){
+  async _apply(policy, userpass=null){
     if (!policy) {
       return {err: 'policy must be specified'};
     }
-    // compare policy
+    const _policy = JSON.stringify(policy);
+    if (userpass) {
+      if (!policy.radius) policy.radius = {};
+      if (!policy.radius.users) policy.radius.users = [];
+      policy.radius.users.push(...userpass);
+    }
+    const _aggPolicy = JSON.stringify(policy);
+
+    // compare to previous policy applied
     const diff = util.difference(this.policy, policy);
     if ((!diff || diff.length == 0) && await freeradius.isListening()) {
       log.info(`policy ${policyKeyName} is not changed.`);
@@ -139,40 +139,65 @@ class FreeRadiusSensor extends Sensor {
     await freeradius.reconfigServer(radius, options);
 
     // 2. if radius-server fails, reset to previous policy
-    if (!await freeradius.isListening() && this.policy) {
+    if (!await freeradius.isListening() && this._policy) {
         log.error("cannot apply freeradius policy, try to recover previous config");
-        await freeradius.reconfigServer(this.policy.radius, this.policy.options);
+        await freeradius.reconfigServer(this._policy.radius, this._policy.options);
         return {err: 'failed to reconfigure freeradius server.'};
     }
 
     // 3. save current policy
-    this.policy = policy;
+    this.policy = JSON.parse(_aggPolicy);
+    this._policy = JSON.parse(_policy);
   }
 
   // policy: {options:{},radius:{clients:[{"name":"","ipaddr":"","require_msg_auth":"yes|no|auto"}], users:[{username:""}]}}
   async applyPolicy(host, ip, policy) {
-    sem.sendEventToFireMain({
-      type: "ApplyPolicyFreeRadiusServer",
-      policy: policy,
+    if (!this.featureOn) return;
+    if (!policy) return;
+    log.debug("start to apply policy freeradius", host.constructor.name, ip, policy);
+    await this._applyPolicy(policy, ip);
+    // refresh freeradius state
+    sem.sendEventToFireApi({
+      type: "_refreshFreeRadius",
     });
   }
 
-  async _applyPolicy(policy){
+  // policy: {radius:{users:[{username:""}]}}
+  async _getTagUserPass() {
+    const userpass = []
+    const tags = await tagManager.getPolicyTags(policyKeyName);
+    for (const tag of tags) {
+      const p = await tag.getPolicyAsync(policyKeyName);
+      if (p.radius && p.radius.users && _.isArray(p.radius.users)) {
+        userpass.push(...p.radius.users);
+      }
+    }
+    return _.uniqWith(userpass, _.isEqual);
+  }
+
+  async _applyPolicy(policy, target="0.0.0.0"){
     await lock.acquire(LOCK_APPLY_FREERADIUS_SERVER_POLICY, async() => {
       if (!this.featureOn) {
         log.error(`feature ${featureName} is disabled`);
         return;
       }
-      const result = await this._apply(policy);
+      let hostPolicy = policy;
+      // get tagged policy
+      if (target != "0.0.0.0") {
+        hostPolicy = await this.loadPolicyAsync();
+      }
+      const userpass = await this._getTagUserPass();
+      const result = await this._apply(hostPolicy, userpass);
       if (result && result.err) {
          // if apply error, reset to previous saved policy
         log.error('fail to apply policy,', result.err);
-        if (this.policy) {
-          await rclient.hsetAsync('policy:system', policyKeyName, JSON.stringify(this.policy));
+        if (this._policy) {
+          this.policy = this._policy;
+          await rclient.hsetAsync('policy:system', policyKeyName, JSON.stringify(this._policy));
         }
         return;
       }
-      log.info("apply freeradius status", freeradius.getStatus());
+      log.info("freeradius policy applied, freeradius server status", freeradius.getStatus());
     }).catch((err) => {
       log.error(`failed to get lock to apply ${featureName} policy`, err.message);
     });
