@@ -157,11 +157,14 @@ class FlowAggregationSensor extends Sensor {
   }
 
   processEnrichedFlow(flow) {
-    const {fd, ip, _ts, intf, mac, ob, rb, dp, du, ts, local, dmac} = flow;
+    const {fd, ip, _ts, intf, mac, ob, rb, dp, du, ts, local, dmac, dIntf, dstTags} = flow;
     const tags = [];
+    const dTags = []
     for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
       const config = Constants.TAG_TYPE_MAP[type];
       tags.push(...(flow[config.flowKey] || []));
+      if (local && dstTags)
+        dTags.push(...(dstTags[config.flowKey] || []))
     }
     if (!dp || !ip && !local || !mac || !_ts || (fd !== "in" && fd !== "out"))
       return;
@@ -191,6 +194,16 @@ class FlowAggregationSensor extends Sensor {
         t = {device: mac, upload: 0, download: 0, count: 0, fd};
         if (local) {
           t.dstMac = dmac
+          if (uidTickKey.startsWith('intf:') && intf == dIntf) {
+            t.intra = 1
+          } else if (uidTickKey.startsWith('tag:')) {
+            const tagID = uidTickKey.split(':')[1]
+            if (dTags.includes(tagID)) {
+              t.intra = 1
+            }
+          } else if (uidTickKey.startsWith('global')) {
+            t.intra = 1
+          }
         } else {
           t.destIP = ip
           if (domain)
@@ -201,7 +214,7 @@ class FlowAggregationSensor extends Sensor {
           t.devicePort = [ String(dp) ];
         else
           t.port = [ String(dp) ];
-  
+
         this.trafficCache[uidTickKey][key] = t;
       }
       t.upload += (fd === "out" ? rb : ob);

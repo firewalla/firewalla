@@ -180,9 +180,7 @@ class BroDetect {
       this._activeMacHeartbeat();
     }, 60000);
 
-    this.timeSeriesCache = {
-      global: { upload: 0, download: 0, conn: 0, dns:0, 'bandwidth:lo': 0, 'conn:lo': 0 }
-    }
+    this.timeSeriesCache = { }
     this.tsWriteInterval = config.conn.tsWriteInterval || 10000
     this.recordTrafficTask = setInterval(() => {
       this.writeTrafficCache().catch(err => {
@@ -545,14 +543,15 @@ class BroDetect {
       const tags = await this.getTags(monitorable, intfInfo)
 
       await this.recordTraffic({ dns: 1 }, localMac);
+      await this.recordTraffic({ dns: 1 }, 'global');
       if (intfInfo) {
-        await this.recordTraffic({ dns: 1 }, 'intf:' + intfInfo.uuid, true);
+        await this.recordTraffic({ dns: 1 }, 'intf:' + intfInfo.uuid);
       }
       for (const key in tags) {
         if (tags[key] && tags[key].length) {
           dnsFlow[key] = tags[key]
           for (const tag of tags[key]) {
-            await this.recordTraffic({ dns: 1 }, 'tag:' + tag, true);
+            await this.recordTraffic({ dns: 1 }, 'tag:' + tag);
           }
         }
       }
@@ -1259,6 +1258,11 @@ class BroDetect {
           }
         }
 
+        if (!dstIntfInfo || !dstIntfInfo.uuid) {
+          log.error('Conn: Unable to find dst intf', dhost, dstMac);
+          return
+        }
+
         if (!reverseLocal) {
           // dst == resp && dstMac == respMac
           // writes obj so reverse processing doesn't have to do this
@@ -1292,6 +1296,7 @@ class BroDetect {
 
       if (localFlow) {
         tmpspec.dmac = dstMac
+        tmpspec.dIntf = dstIntfInfo.uuid.substring(0, 8)
       } else {
         tmpspec.oIntf = outIntfId // egress intf id
         tmpspec.af = {} //application flows
@@ -1366,26 +1371,44 @@ class BroDetect {
       const tuple = { download: traffic[0], upload: traffic[1] }
       if (localFlow) {
         const tupleConn = {conn: tmpspec.ct}
+        const tupleIntra = { intra: tmpspec.ob + tmpspec.rb }
+
+        await this.recordTraffic(tupleIntra, 'lo:global')
+        await this.recordTraffic(tupleConn, 'lo:intra:global')
+
         await this.recordTraffic(tuple, 'lo:' + localMac)
         await this.recordTraffic(tupleConn, `lo:${flowdir}:${localMac}`)
-        await this.recordTraffic(tuple, 'lo:intf:' + intfInfo.uuid, true)
-        await this.recordTraffic(tupleConn, `lo:${flowdir}:intf:${intfInfo.uuid}`, true)
+
+        if (dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid) {
+          await this.recordTraffic(tupleIntra, 'lo:intf:' + intfInfo.uuid)
+          await this.recordTraffic(tupleConn, 'lo:intra:intf:' + intfInfo.uuid)
+        } else {
+          await this.recordTraffic(tuple, 'lo:intf:' + intfInfo.uuid)
+          await this.recordTraffic(tupleConn, `lo:${flowdir}:intf:${intfInfo.uuid}`)
+        }
+
         for (const key in tags) {
           if (_.isArray(tags[key]) && !_.isEmpty(tags[key])) {
             for (const tag of tags[key]) {
-              await this.recordTraffic(tuple, 'lo:tag:' + tag, true)
-              await this.recordTraffic(tupleConn, `lo:${flowdir}:tag:${tag}`, true)
+              if (dstTags && dstTags[key] && dstTags[key].includes(tag)) {
+                await this.recordTraffic(tupleIntra, 'lo:tag:' + tag)
+                await this.recordTraffic(tupleConn, 'lo:intra:tag:' + tag)
+              } else {
+                await this.recordTraffic(tuple, 'lo:tag:' + tag)
+                await this.recordTraffic(tupleConn, `lo:${flowdir}:tag:${tag}`)
+              }
             }
           }
         }
       } else {
         tuple.conn = tmpspec.ct
         await this.recordTraffic(tuple, localMac);
-        await this.recordTraffic(tuple, 'intf:' + intfInfo.uuid, true);
+        await this.recordTraffic(tuple, 'global');
+        await this.recordTraffic(tuple, 'intf:' + intfInfo.uuid);
         for (const key in tags) {
           if (_.isArray(tags[key]) && !_.isEmpty(tags[key])) {
             for (const tag of tags[key]) {
-              await this.recordTraffic(tuple, 'tag:' + tag, true);
+              await this.recordTraffic(tuple, 'tag:' + tag);
             }
           }
         }
@@ -1460,7 +1483,7 @@ class BroDetect {
         sem.emitLocalEvent({
           type: Message.MSG_FLOW_ENRICHED,
           suppressEventLogging: true,
-          flow: Object.assign({}, tmpspec, {intf: intfInfo && intfInfo.uuid}),
+          flow: Object.assign({}, tmpspec, {intf: intfInfo.uuid, dIntf: dstIntfInfo.uuid}),
         });
         return
       }
@@ -1471,7 +1494,7 @@ class BroDetect {
           ip: remoteIPAddress,
           host: remoteHost,
           fd: tmpspec.fd,
-          flow: Object.assign({}, tmpspec, {ip: remoteIPAddress, host: remoteHost, intf: intfInfo && intfInfo.uuid}),
+          flow: Object.assign({}, tmpspec, {ip: remoteIPAddress, host: remoteHost, intf: intfInfo.uuid}),
           from: "flow",
           suppressEventLogging: true,
           mac: localMac
@@ -1929,10 +1952,7 @@ class BroDetect {
 
   async writeTrafficCache() {
     const toRecord = this.timeSeriesCache
-    this.timeSeriesCache = {
-      global: { upload: 0, download: 0, conn: 0, dns: 0, 'bandwidth:lo': 0, 'conn:lo': 0 },
-      ts: Date.now() / 1000
-    }
+    this.timeSeriesCache = { ts: Date.now() / 1000 }
     const duration = this.timeSeriesCache.ts - toRecord.ts
     const lastTS = Math.floor(toRecord.ts)
 
@@ -1973,41 +1993,23 @@ class BroDetect {
 
     log.verbose('toRecord', toRecord)
     for (const key in toRecord) {
-      const subKey = key == 'global' ? '' : ':' + key
+      const subKey = key == 'global' ? '' : key == 'lo:global' ? ':lo' : ':' + key
       const download = isRouterMode && key == 'global' ? wanNicRxBytes : toRecord[key].download;
       const upload = isRouterMode && key == 'global' ? wanNicTxBytes : toRecord[key].upload;
       log.debug("Store timeseries", lastTS, key, download, upload, toRecord[key].conn)
       download && timeSeries.recordHit('download' + subKey, lastTS, download)
       upload && timeSeries.recordHit('upload' + subKey, lastTS, upload)
+      toRecord[key].intra && timeSeries.recordHit('intra' + subKey, lastTS, toRecord[key].intra)
       toRecord[key].conn && timeSeries.recordHit('conn' + subKey, lastTS, toRecord[key].conn)
       toRecord[key].dns && timeSeries.recordHit('dns' + subKey, lastTS, toRecord[key].dns)
-      if (key == 'global') {
-        if (toRecord.global['bandwidth:lo'])
-          timeSeries.recordHit('bandwidth:lo', lastTS, toRecord.global['bandwidth:lo'])
-        if (toRecord.global['conn:lo'])
-          timeSeries.recordHit('conn:lo', lastTS, toRecord.global['conn:lo'])
-      }
     }
 
     timeSeries.exec()
   }
 
-  async recordTraffic(tuple, key, ignoreGlobal = false) {
-    // append current status
-    if (!ignoreGlobal) {
-      for (const measure in tuple) {
-        if (key.startsWith('lo:')) {
-          if (['upload', 'download'].includes(measure))
-            this.timeSeriesCache.global['bandwidth:lo'] += tuple[measure]
-          else if (measure == 'conn')
-            this.timeSeriesCache.global['conn:lo'] += tuple[measure]
-        } else
-          this.timeSeriesCache.global[measure] += tuple[measure]
-      }
-    }
-
+  async recordTraffic(tuple, key) {
     if (!this.timeSeriesCache[key]) {
-      this.timeSeriesCache[key] = { upload: 0, download: 0, conn: 0, dns: 0 }
+      this.timeSeriesCache[key] = { upload: 0, download: 0, intra: 0, conn: 0, dns: 0 }
     }
     for (const measure in tuple)
       this.timeSeriesCache[key][measure] += tuple[measure]

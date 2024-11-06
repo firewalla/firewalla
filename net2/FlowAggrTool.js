@@ -74,7 +74,7 @@ class FlowAggrTool {
 
   getFlowStr(mac, entry) {
     const flow = {device: mac};
-    [ 'destIP', 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason' ].forEach(f => {
+    [ 'destIP', 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason', 'intra' ].forEach(f => {
       if (entry[f]) flow[f] = entry[f]
     })
     return JSON.stringify(flow);
@@ -377,7 +377,7 @@ class FlowAggrTool {
         if(payload !== '_' && count !== 0) {
           try {
             const json = JSON.parse(payload);
-            const flow = _.pick(json, 'domain', 'type', 'device', 'port', 'devicePort', 'fd', 'dstMac', 'reason');
+            const flow = _.pick(json, 'domain', 'type', 'device', 'port', 'devicePort', 'fd', 'dstMac', 'reason', 'intra');
             flow.count = count
             if (json.destIP) {
               // this is added as a counter for trimmed flows, check FlowAggrTool.addFlow()
