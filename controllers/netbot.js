@@ -1819,9 +1819,9 @@ class netBot extends ControllerBot {
         netBotTool.prepareTopFlows(jsonobj, 'local', 'in', Object.assign({}, options, {limit: 400})),
         netBotTool.prepareTopFlows(jsonobj, 'local', 'out', Object.assign({}, options, {limit: 400})),
       )
-      if (target == '0.0.0.0')
-        tsMetrics.push('bandwidth:lo', 'conn:lo')
-      else
+      if (type != 'host' || target == '0.0.0.0')
+        tsMetrics.push('intra:lo', 'conn:lo')
+      if (type != 'host' || target != '0.0.0.0')
         tsMetrics.push('upload:lo', 'download:lo', 'conn:lo:in', 'conn:lo:out')
     }
     promises.push(

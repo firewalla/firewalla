@@ -440,12 +440,8 @@ module.exports = class HostManager extends Monitorable {
     const { granularities, hits} = statSettings;
     const stats = {}
     if (!metrics) { // default (full) metrics
-      metrics = [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB', 'ntp' ]
-      if (target && target != '0.0.0.0') {
-        metrics.push('upload:lo', 'download:lo', 'conn:lo:in', 'conn:lo:out')
-      } else {
-        metrics.push('bandwidth:lo', 'conn:lo')
-      }
+      metrics = [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB', 'ntp',
+        'upload:lo', 'download:lo', 'intra:lo', 'conn:lo:in', 'conn:lo:out', 'conn:lo', ]
     }
     for (const metric of metrics) {
       const s = await getHitsAsync(metric + subKey, granularities, hits)
@@ -455,7 +451,7 @@ module.exports = class HostManager extends Monitorable {
         else if (s.length > 60)
           s.shift()
       }
-      if (['bandwidth:lo', 'conn:lo'].includes(metric)) {
+      if (['intra:lo', 'conn:lo'].includes(metric)) {
         // global local bandwidth and connection are being counted twice
         // the result should always be interger, but use Math.floor as a safe guard
         s.forEach((h, i) => s[i][1] = Math.floor(h[1]/2))
