@@ -1062,6 +1062,9 @@ class BroDetect {
 
       let intfInfo = sysManager.getInterfaceViaIP(lhost, fam);
       let dstIntfInfo = localFlow && sysManager.getInterfaceViaIP(dhost, fam);
+      // do not process traffic between devices in the same network unless bridge flag is set in log
+      if (intfInfo === dstIntfInfo && !bridge)
+        return;
       // ignore multicast IP
       try {
         if (fam == 4 && sysManager.isMulticastIP4(dhost, intfInfo && intfInfo.name)
@@ -1255,6 +1258,11 @@ class BroDetect {
           }
         }
 
+        if (!dstIntfInfo || !dstIntfInfo.uuid) {
+          log.error('Conn: Unable to find dst intf', dhost, dstMac);
+          return
+        }
+
         if (!reverseLocal) {
           // dst == resp && dstMac == respMac
           // writes obj so reverse processing doesn't have to do this
@@ -1288,6 +1296,7 @@ class BroDetect {
 
       if (localFlow) {
         tmpspec.dmac = dstMac
+        tmpspec.dIntf = dstIntfInfo.uuid.substring(0, 8)
       } else {
         tmpspec.oIntf = outIntfId // egress intf id
         tmpspec.af = {} //application flows
@@ -1474,7 +1483,7 @@ class BroDetect {
         sem.emitLocalEvent({
           type: Message.MSG_FLOW_ENRICHED,
           suppressEventLogging: true,
-          flow: Object.assign({}, tmpspec, {intf: intfInfo && intfInfo.uuid}),
+          flow: Object.assign({}, tmpspec, {intf: intfInfo.uuid, dIntf: dstIntfInfo.uuid}),
         });
         return
       }
@@ -1485,7 +1494,7 @@ class BroDetect {
           ip: remoteIPAddress,
           host: remoteHost,
           fd: tmpspec.fd,
-          flow: Object.assign({}, tmpspec, {ip: remoteIPAddress, host: remoteHost, intf: intfInfo && intfInfo.uuid}),
+          flow: Object.assign({}, tmpspec, {ip: remoteIPAddress, host: remoteHost, intf: intfInfo.uuid}),
           from: "flow",
           suppressEventLogging: true,
           mac: localMac
