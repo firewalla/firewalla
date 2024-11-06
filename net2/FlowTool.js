@@ -176,6 +176,8 @@ class FlowTool extends LogQuery {
 
     if (flow.oIntf)
       f.oIntf = networkProfileManager.prefixMap[flow.oIntf] || flow.oIntf
+    if (flow.dIntf)
+      f.dIntf = networkProfileManager.prefixMap[flow.dIntf] || flow.dIntf
 
     // allow rule id
     if (flow.apid && Number(flow.apid)) {
