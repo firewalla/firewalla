@@ -1503,7 +1503,7 @@ module.exports = class DNSMASQ {
           await redirectRule.clone().pro('udp').exec('-A');
         }
       }
-      if (resolver6 && resolver6.length > 0) {
+      if (!_.isEmpty(myIp6) && resolver6 && resolver6.length > 0) {
         for (const i in resolver6) {
           const redirectRule = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_FALLBACK')
             .set(netSet6, 'src,src').dst(myIp6.join(",")).dport(53)
