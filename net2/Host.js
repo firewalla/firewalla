@@ -940,7 +940,10 @@ class Host extends Monitorable {
     for (let i in _neighbors) {
       let neighbor = _neighbors[i];
       if (neighbor.ip) neighbor._neighbor = flowUtil.hashIp(neighbor.ip);
-      if (neighbor.name) neighbor._name = flowUtil.hashIp(neighbor.name);
+      if (neighbor.name) {
+        neighbor._name = flowUtil.hashIp(neighbor.name);
+        neighbor._nameFull = flowUtil.hashHost(neighbor.name).slice(-1)[0][1]
+      }
       if (debug == false) {
         delete neighbor.neighbor;
         delete neighbor.name;
