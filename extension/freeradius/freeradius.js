@@ -70,7 +70,7 @@ class FreeRadius {
       try {
         this._passwd = JSON.parse(plain);
       } catch (err) {
-        log.warn("parse passwd error, invalid format");
+        log.warn("Parse passwd error, invalid format");
       }
     }
   }
@@ -114,7 +114,7 @@ class FreeRadius {
       }
       return true;
     } catch(err) {
-      log.warn("cannot prepare freeradius-server environment,", err.message);
+      log.warn("Cannot prepare freeradius-server environment,", err.message);
     }
   }
 
@@ -136,7 +136,7 @@ class FreeRadius {
 
   async _replaceUserConfig(userConfig) {
     if (!userConfig.username) {
-      log.warn("invalid freeradius config username", userConfig);
+      log.warn("Invalid freeradius config username", userConfig);
       return "";
     }
     let content = TEMP_USER.replace(/%USERNAME%/g, userConfig.username);
@@ -196,19 +196,19 @@ class FreeRadius {
   async prepareRadiusConfig(config) {
     try {
       await this._loadPasswd();
-      await this._genClientsConfFile(config.clients);
+      await this._genClientsConfFile(config.clients || []);
       if (!await fs.accessAsync(`${dockerDir}/clients.conf`, fs.constants.F_OK).then(() => true).catch((err) => false)){
         log.warn("Failed to generate clients.conf");
         return;
       }
-      await this._genUsersConfFile(config.users);
+      await this._genUsersConfFile(config.users || []);
       if (!await fs.accessAsync(`${dockerDir}/users`, fs.constants.F_OK).then(() => true).catch((err) => false)){
         log.warn("Failed to generate users");
         return;
       }
       return true;
     } catch(err) {
-      log.warn("cannot prepare freeradius-server config", err.message);
+      log.warn("Cannot prepare freeradius-server config", err.message);
     }
     return
   }
@@ -244,14 +244,14 @@ class FreeRadius {
       log.warn("Abort starting radius-server, server is already running.")
       return;
     }
-    log.info("Starting container freeradius-server...");
+    log.info("Starting container freeradius-server...", radiusConfig);
     try {
       if (!await this.prepareContainer(options)) {
-        log.warn("abort starting radius-server, fail to prepare environment");
+        log.warn("Abort starting radius-server, fail to prepare environment");
         return;
       }
       if (!await this.prepareRadiusConfig(radiusConfig)) {
-        log.warn("abort starting radius-server, configuration not ready");
+        log.warn("Abort starting radius-server, configuration not ready", radiusConfig);
         return;
       }
       await this._start();
@@ -270,7 +270,7 @@ class FreeRadius {
       return;
     }
     await exec("sudo systemctl start docker-compose@freeradius").catch((e) => {
-      log.warn("cannot start freeradius,", e.message)
+      log.warn("Cannot start freeradius,", e.message)
     });
   }
 
@@ -284,7 +284,7 @@ class FreeRadius {
     try {
       log.info("Stopping container freeradius-server...");
       await exec("sudo systemctl stop docker-compose@freeradius").catch((e) => {
-        log.warn("cannot stop freeradius,", e.message)
+        log.warn("Cannot stop freeradius,", e.message)
       });
       await util.waitFor(  _ => this.running === false, options.timeout*1000 || 30000).catch((err) => {});
       if (this.running) {
