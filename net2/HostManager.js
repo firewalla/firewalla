@@ -440,8 +440,12 @@ module.exports = class HostManager extends Monitorable {
     const { granularities, hits} = statSettings;
     const stats = {}
     if (!metrics) { // default (full) metrics
-      metrics = [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB', 'ntp',
-        'upload:lo', 'download:lo', 'intra:lo', 'conn:lo:in', 'conn:lo:out', 'conn:lo:intra', ]
+      metrics = [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB', 'ntp' ]
+      if (fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW)) {
+        metrics.push('intra:lo', 'conn:lo:intra')
+        if (target && target != '0.0.0.0') // remove irrelevant matrics from init
+          metrics.push('upload:lo', 'download:lo', 'conn:lo:in', 'conn:lo:out')
+      }
     }
     for (const metric of metrics) {
       const s = await getHitsAsync(metric + subKey, granularities, hits)

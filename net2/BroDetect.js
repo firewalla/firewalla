@@ -1993,7 +1993,7 @@ class BroDetect {
 
     log.verbose('toRecord', toRecord)
     for (const key in toRecord) {
-      const subKey = key == 'global' ? '' : key == 'lo:global' ? ':lo' : ':' + key
+      const subKey = key == 'global' ? '' : ':' + (key.endsWith('global') ? key.slice(0, -7) : key)
       const download = isRouterMode && key == 'global' ? wanNicRxBytes : toRecord[key].download;
       const upload = isRouterMode && key == 'global' ? wanNicTxBytes : toRecord[key].upload;
       log.debug("Store timeseries", lastTS, key, download, upload, toRecord[key].conn)
