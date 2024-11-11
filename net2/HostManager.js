@@ -499,7 +499,7 @@ module.exports = class HostManager extends Monitorable {
         else if (s.length > 60)
           s.shift()
       }
-      if (['intra:lo', 'conn:lo'].includes(metric)) {
+      if (['intra:lo', 'conn:lo:intra'].includes(metric)) {
         // global local bandwidth and connection are being counted twice
         // the result should always be interger, but use Math.floor as a safe guard
         s.forEach((h, i) => s[i][1] = Math.floor(h[1]/2))
