@@ -186,6 +186,10 @@ class FWAPC {
     return localGet("/status/ap", 1).then(resp => resp.info);
   }
 
+  async getControllerInfo() {
+    return localGet("/info", 1).then(resp => resp.info);
+  }
+
   async getPairingStatus() {
     return localGet("/runtime/pairing_stat", 1);
   }

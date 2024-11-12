@@ -410,7 +410,7 @@ module.exports = class HostManager extends Monitorable {
 
   async enrichSTAInfo(hosts) {
     const staStatus = await fwapc.getAllSTAStatus().catch((err) => {
-      log.error(`Failed to get STA status from firerouter`, err.message);
+      log.error(`Failed to get STA status from fwapc`, err.message);
       return null;
     });
     if (_.isObject(staStatus)) {
@@ -425,7 +425,7 @@ module.exports = class HostManager extends Monitorable {
   async assetsInfoForInit(json) {
     if (platform.isFireRouterManaged()) {
       const assetsStatus = await fwapc.getAssetsStatus().catch((err) => {
-        log.error(`Failed to get assets status from firerouter`, err.message);
+        log.error(`Failed to get assets status from fwapc`, err.message);
         return null;
       });
       if (assetsStatus) {
@@ -433,6 +433,14 @@ module.exports = class HostManager extends Monitorable {
         for (const key of Object.keys(assetsStatus)) {
           json.assets[key] = assetsStatus[key];
         }
+      }
+
+      const apControllerStatus = await fwapc.getControllerInfo().catch((err) => {
+        log.error(`Failed to get controller info from fwapc`, err.message);
+        return null;
+      });
+      if (apControllerStatus) {
+        json.apController = apControllerStatus;
       }
     }
   }
