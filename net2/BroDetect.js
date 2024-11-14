@@ -502,10 +502,9 @@ class BroDetect {
             intfInfo = monitorable.getNicName() && sysManager.getInterface(monitorable.getNicName());
         }
       } else {
-
         if (sysManager.isMyMac(localMac)) {
           if (localFam == 4 && !sysManager.isMyIP(dnsFlow.sh) || localFam == 6 && !sysManager.isMyIP6(dnsFlow.sh)) {
-            log.info("Discard incorrect local MAC address from bro log: ", localMac, dnsFlow.sh);
+            log.verbose("Discard incorrect local MAC address from bro log: ", localMac, dnsFlow.sh);
             localMac = null
           }
         }
@@ -1104,9 +1103,8 @@ class BroDetect {
       } else {
         if (localMac && sysManager.isMyMac(localMac)) {
           // double confirm local mac is correct since bro may record Firewalla's MAC as local mac
-          // if packets are not fully captured due to ARP spoof leak
           if (fam == 4 && !sysManager.isMyIP(lhost) || fam == 6 && !sysManager.isMyIP6(lhost)) {
-            log.info("Discard incorrect local MAC address from bro log: ", localMac, lhost);
+            log.verbose("Discard incorrect local MAC address from bro log: ", localMac, lhost);
             localMac = null; // discard local mac from bro log since it is not correct
           } else
             return;
@@ -1242,7 +1240,7 @@ class BroDetect {
           if (dstMac && sysManager.isMyMac(dstMac)) {
             // double check dest mac for spoof leak
             if (fam == 4 && !sysManager.isMyIP(dhost) || fam == 6 && !sysManager.isMyIP6(dhost)) {
-              log.info("Discard incorrect dest MAC address from bro log: ", dstMac, dhost);
+              log.verbose("Discard incorrect dest MAC address from bro log: ", dstMac, dhost);
               dstMac = null
             } else 
               return;
@@ -1975,10 +1973,14 @@ class BroDetect {
     }
     // a safe-check to filter abnormal rx/tx bytes spikes that may be caused by hardware bugs
     const threshold = config.threshold;
-    if (wanNicRxBytes >= threshold.maxSpeed / 8 * duration)
+    if (wanNicRxBytes >= threshold.maxSpeed / 8 * duration) {
+      log.warn('WAN rx exceeded', wanNicRxBytes, '>', threshold.maxSpeed, '/', duration)
       wanNicRxBytes = 0;
-    if (wanNicTxBytes >= threshold.maxSpeed / 8 * duration)
+    }
+    if (wanNicTxBytes >= threshold.maxSpeed / 8 * duration) {
+      log.warn('WAN tx exceeded', wanNicRxBytes, '>', threshold.maxSpeed, '/', duration)
       wanNicTxBytes = 0;
+    }
     this.wanNicStatsCache = wanNicStats;
 
     const isRouterMode = await mode.isRouterModeOn();
