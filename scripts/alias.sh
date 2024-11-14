@@ -165,5 +165,5 @@ function get_network_config() {
 
 function ncdiff() {
   i=${1:-1}
-  vimdiff <(get_network_config $i) <(get_network_config $(($i+1)) ) || rc=1
+  vimdiff <(get_network_config $i) <(get_network_config $(($i+1)) )
 }
