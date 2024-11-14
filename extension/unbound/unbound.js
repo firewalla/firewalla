@@ -107,6 +107,7 @@ class Unbound {
     // update unbound conf file
     const view = {
       useTcpUpstream: (unboundConfig.upstream === "tcp" ? true : false),
+      useVpnClient: (vpnClientConfig && vpnClientConfig.state && vpnClientConfig.profileId),
       useDnssec: unboundConfig.dnssec
     };
     const configFileContent = mustache.render(configFileTemplate, view);

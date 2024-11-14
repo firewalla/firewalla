@@ -475,9 +475,12 @@ class SysManager {
         if (item && _.isObject(item)) {
           if (item.subnet) {
             this.sysinfo[r].subnetAddress4 = new Address4(item.subnet)
-            cidr4Trie.add(item.subnet, r);
+          }
+          for (const subnet of [].concat(item.subnet, item.rt4_subnets)) {
+            if (!subnet || this.isDefaultRoute(subnet)) continue
+            cidr4Trie.add(subnet, r);
             if (monitoringInterfaces.includes(r))
-              monitoringCidr4Trie.add(item.subnet, r);
+              monitoringCidr4Trie.add(subnet, r);
           }
 
           if (item.ip6_subnets && item.ip6_subnets.length) {
