@@ -158,3 +158,12 @@ function vh {
     fi
   done | $COLUMN_OPT -t
 }
+
+function get_network_config() {
+  redis-cli zrange history:networkConfig -$(( $1+1 )) -$1 | jq -S .
+}
+
+function ncdiff() {
+  i=${1:-1}
+  vimdiff <(get_network_config $i) <(get_network_config $(($i+1)) )
+}
