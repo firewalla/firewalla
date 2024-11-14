@@ -80,7 +80,6 @@ module.exports = class {
 
       const hosts = await util.promisify(this.nmapScan).bind(this)(obj.cmd, true)
       log.verbose(`job ${job.id} done`, hosts)
-      if (obj.callback) obj.callback(err, hosts);
       return hosts
     })
 
@@ -207,20 +206,9 @@ module.exports = class {
         log.verbose(`job ${jobID} already scheduled`)
       }
 
-      job.on('succeeded', hosts => {
-        for (let i in hosts) {
-          const host = hosts[i];
-          if (host.mac) {
-            foundCache.insert(ipv6Addr, host.mac)
-            callback(null, host.mac);
-            return;
-          }
-        }
-        notFoundCache.insert(ipv6Addr, true)
-        callback(null, null);
-      })
+      job.on('succeeded', result => callback(null, result))
 
-      job.on('failed', err => callback(err) );
+      job.on('failed', callback);
     })
   }
 
@@ -230,7 +218,7 @@ module.exports = class {
   }
 
   nmapScan(cmdline, requiremac, callback = ()=>{}) {
-    log.info('Running commandline: ', cmdline);
+    log.info('Running commandline:', cmdline);
     this.process = require('child_process').exec(
       cmdline,
       (err, stdout, stderr) => {
