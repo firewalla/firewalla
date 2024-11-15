@@ -241,13 +241,13 @@ class PortForward {
         }
         if (ipv4Addr !== map.toIP) {
           // remove old port forwarding rule with legacy IP address
-          log.info("IP address has changed, remove old rule: ", map);
+          log.info("IP changed, remove old rule:", map.dport, map.toMac, map.toIP, map.toPort);
           await this.removePort(map);
           if (ipv4Addr) {
             // add new port forwarding rule with updated IP address
             map.toIP = ipv4Addr;
             map.active = true;
-            log.info("IP address has changed, add new rule: ", map);
+            log.info("IP changed, add new rule:", map.dport, map.toMac, map.toIP, map.toPort);
             await this.addPort(map);
           } else {
             map.toIP = null;

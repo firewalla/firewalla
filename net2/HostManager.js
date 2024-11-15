@@ -244,7 +244,10 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  validateSpoofs() {
+  async validateSpoofs() {
+    const flag = await Mode.isSpoofModeOn();
+    if (!flag) return
+
     const allIPv6Addrs = [];
     const allIPv4Addrs = [];
     for (let h in this.hostsdb) {
