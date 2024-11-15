@@ -3748,9 +3748,10 @@ class netBot extends ControllerBot {
         msg.appInfo = rawmsg.message.appInfo;
         if (rawmsg.message.obj.type === "jsonmsg") {
           // check whitelist, empty set allows all, only for dev
+          let wltargets = await rclient.smembersAsync("sys:eid:whitelist:item") || [];
           const notAllow = (await rclient.typeAsync('sys:eid:whitelist')) == "set" && !await rclient.sismemberAsync('sys:eid:whitelist', eid);
-          if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && notAllow){
-            log.warn('deny access from eid', eid);
+          if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && notAllow){
+            log.warn('deny access from eid', eid, "with", msg.data.item);
             return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
           }
 
