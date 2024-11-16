@@ -187,3 +187,12 @@ function nearby() {
         fi
         local_fwapc_get "v1/status/nearby/$1" | jq .
 }
+
+function get_network_config() {
+  redis-cli zrange history:networkConfig -$1 -$1 | jq -S .
+}
+
+function ncdiff() {
+  i=${1:-1}
+  vimdiff <(get_network_config $(($i+1))) <(get_network_config $i)
+}
