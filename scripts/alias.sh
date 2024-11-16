@@ -175,3 +175,15 @@ function vh {
     fi
   done | $COLUMN_OPT -t
 }
+
+function local_fwapc_get() {
+        curl -s -H 'Content-Type: application/json' -XGET http://127.0.0.1:8841/$1
+}
+
+function nearby() {
+        if [[ "x$1" == "x" ]]; then
+                echo usage: 'nearby <mac>'
+                return 1
+        fi
+        local_fwapc_get "v1/status/nearby/$1" | jq .
+}
