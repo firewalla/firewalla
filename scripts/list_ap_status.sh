@@ -168,9 +168,9 @@ do
     timeit read
     device_vpn_ip=${ap_vpn_ip/\/32/}
     ap_ip=${ap_endpoint%:*}
-    ${CONNECT_AP} && {
-        if [[ -z "$ap_ip" || "$ap_ip" == '(none)' ]]; then continue; fi
-    }
+    if [[ -z "$ap_ip" || "$ap_ip" == '(none)' ]]; then
+      ap_ip=$(redis-cli hget host:mac:$ap_mac ipv4Addr)
+    fi
     ap_ips+=($device_vpn_ip)
     ap_name=$(redis-cli --raw hget host:mac:$ap_mac name || echo $NO_VALUE)
     ap_names+=("$ap_name")
