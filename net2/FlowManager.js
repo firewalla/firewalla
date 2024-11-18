@@ -392,6 +392,7 @@ module.exports = class FlowManager {
 
           flow.sp = _.union(flow.sp, o.sp)
           flow.uids = _.union(flow.uids, o.uids)
+          flow.sigs = _.union(flow.sigs, o.sigs);
 
           if (_.isObject(o.af) && !_.isEmpty(o.af)) {
             if (flow.appHosts) {

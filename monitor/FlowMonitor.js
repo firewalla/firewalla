@@ -699,6 +699,7 @@ module.exports = class FlowMonitor {
       "p.transfer.duration": copy.du,
       "p.local_is_client": flow.fd == 'in' ? "1" : "0", // connection is initiated from local
       "p.flow": JSON.stringify(flow),
+      "p.flow.sigs": flow.sigs,
       "p.intf.id": npm.prefixMap[flow.intf] || flow.intf,
     });
 
