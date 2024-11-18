@@ -27,6 +27,7 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const {Address4, Address6} = require('ip-address');
+const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js');
 const conntrack = require('../net2/Conntrack.js')
 const uuid = require('uuid');
@@ -189,7 +190,15 @@ class PcapZeekPlugin extends PcapPlugin {
       })
     }
 
-    return {listenInterfaces, restrictFilters};
+    const sigFiles = [];
+    const sigDir = `${f.getRuntimeInfoFolder()}/zeek_signatures`;
+    const files = await fs.readdirAsync(sigDir).catch((err) => []);
+    for (const file of files) {
+      if (file.endsWith(".sig"))
+        sigFiles.push(`${sigDir}/${file}`);
+    }
+
+    return {listenInterfaces, restrictFilters, sigFiles};
   }
 
   getPcapBufsize(intfName) {
