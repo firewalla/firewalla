@@ -22,6 +22,7 @@ const fs = require('fs');
 const scheduler = require('../util/scheduler.js');
 const f = require('../net2/Firewalla.js');
 const _ = require('lodash');
+const crypto = require('crypto');
 const Message = require('../net2/Message.js');
 
 const sem = require('./SensorEventManager.js').getInstance();
@@ -31,16 +32,23 @@ const ZEEK_SIG_FILE = `${f.getRuntimeInfoFolder()}/zeek_signatures/dpi.sig`;
 class ZeekDPISensor extends Sensor {
   async run() {
     this.sigFileWatcher = null;
+    this.sigSha256 = null;
     const reloadJob = new scheduler.UpdateJob(this.initFileWatcher.bind(this), 5000);
     this.reloadJob = reloadJob;
+
     await reloadJob.exec();
   }
 
-  initFileWatcher() {
+  async initFileWatcher() {
     if (this.sigFileWatcher)
       this.sigFileWatcher.close();
-    const watcher = fs.watch(ZEEK_SIG_FILE, (eventType, filename) => {
-      sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
+    const watcher = fs.watch(ZEEK_SIG_FILE, async (eventType, filename) => {
+      const sha256 = await this.loadSigFileHash();
+      if (sha256 !== this.sigSha256) {
+        log.info(`zeek sig file is updated, will restart zeek ...`);
+        sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
+      }
+      this.sigSha256 = sha256;
       if (eventType === "rename")
         this.reloadJob.exec();
     });
@@ -48,7 +56,20 @@ class ZeekDPISensor extends Sensor {
       log.error("Error occured in signature file watcher", err);
       this.reloadJob.exec();
     });
+    this.sigSha256 = await this.loadSigFileHash();
     this.sigFileWatcher = watcher;
+  }
+
+  async loadSigFileHash() {
+    const content = await fs.readFileAsync(ZEEK_SIG_FILE, "utf8").catch((err) => {
+      log.error(`Failed to zeek sig file`, err.message);
+      return null;
+    });
+    if (content) {
+      const sha256 = crypto.createHash('sha256').update(content).digest('hex');
+      return sha256;
+    }
+    return null;
   }
 }
 
