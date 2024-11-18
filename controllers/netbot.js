@@ -141,7 +141,7 @@ const FireRouter = require('../net2/FireRouter.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
-const { delay, difference } = require('../util/util.js');
+const { delay, difference, versionCompare } = require('../util/util.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -3735,6 +3735,7 @@ class netBot extends ControllerBot {
       let msg = rawmsg.message.obj;
       try {
         const eid = _.get(rawmsg, 'message.appInfo.eid')
+        const version = _.get(rawmsg, 'message.appInfo.version');
         if (eid) {
           const revoked = await rclient.sismemberAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
           if (revoked) {
@@ -3747,8 +3748,18 @@ class netBot extends ControllerBot {
 
         msg.appInfo = rawmsg.message.appInfo;
         if (rawmsg.message.obj.type === "jsonmsg") {
-          // check whitelist, empty set allows all, only for dev
           let wltargets = await rclient.smembersAsync("sys:eid:whitelist:item") || [];
+
+          // check app version, block requests if too old (<1.63)
+          let minAppVer = await rclient.getAsync("sys:version:app:min") || "1.63";
+          if (rawmsg.message.from != "iRocoX" && msg.data.item != "ping" && (msg.appInfo.platform.toLowerCase() == "ios" || msg.appInfo.platform == "android" )){
+            if (["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && versionCompare(version, minAppVer)) {
+              log.warn('deny access from eid', eid, "with", version, JSON.stringify(rawmsg));
+              return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Please update the App to the latest version." }, cloudOptions);
+            }
+          }
+
+          // check whitelist, empty set allows all, only for dev
           const notAllow = (await rclient.typeAsync('sys:eid:whitelist')) == "set" && !await rclient.sismemberAsync('sys:eid:whitelist', eid);
           if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && notAllow){
             log.warn('deny access from eid', eid, "with", msg.data.item);
@@ -3756,7 +3767,8 @@ class netBot extends ControllerBot {
           }
 
           // check blacklist, only for dev
-          if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && (await rclient.sismemberAsync('sys:eid:blacklist', eid))){
+          const forbid = (await rclient.typeAsync('sys:eid:blacklist')) == "set" && await rclient.sismemberAsync('sys:eid:blacklist', eid);
+          if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && forbid){
             log.warn('deny access from eid', eid);
             return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
           }
