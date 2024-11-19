@@ -1455,6 +1455,8 @@ class BroDetect {
               flowspec.sp.push(obj['id.orig_p']);
           }
         }
+        if (!_.isEmpty(sigs))
+          flowspec.sigs = _.union(flowspec.sigs, sigs);
         if (afhost && !flowspec.af[afhost]) {
           flowspec.af[afhost] = _.pick(afobj, ["proto", "ip"]);
         }
