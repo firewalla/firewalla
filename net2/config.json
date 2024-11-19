@@ -772,6 +772,7 @@
     },
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
+    "ZeekDPISensor": {},
     "CategoryExaminerPlugin": {},
     "RuleStatsPlugin": {},
     "SystemRebootSensor": {},
@@ -881,6 +882,9 @@
     "knownHosts": {
       "path": "/blog/current/known_hosts.log",
       "expires": 3600
+    },
+    "signature": {
+      "path": "/blog/current/signatures.log"
     },
     "userAgent": {
       "expires": 2592000
