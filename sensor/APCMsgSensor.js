@@ -299,6 +299,15 @@ class APCMsgSensor extends Sensor {
   // create, update or remove ssid tag object
   async reloadSSIDProfiles() {
     await lock.acquire(LOCK_SSID_UPDATE, async () => {
+      // sync ssid tags from TagManager and remove non-existing ones according to latest ssid profiles in apc config
+      if (!this._profilesInitialized) {
+        const ssidTags = _.pickBy(await TagManager.refreshTags(), t => t.getTagType() == Constants.TAG_TYPE_SSID);
+        for (const uid of Object.keys(ssidTags)) {
+          if (ssidTags[uid].uuid)
+            this.ssidProfiles[ssidTags[uid].uuid] = ssidTags[uid];
+        }
+        this._profilesInitialized = true;
+      }
       const config = await fwapc.getConfig();
       const ssidProfiles = _.get(config, "profile");
       const removedProfiles = _.pick(this.ssidProfiles, Object.keys(this.ssidProfiles).filter(ssid => !_.has(ssidProfiles, ssid)));
@@ -342,7 +351,7 @@ class APCMsgSensor extends Sensor {
         continue;
       if (af === 4 && (sysManager.isMyIP(sh) || sysManager.isMyIP(dh)))
         continue;
-      if (af === 6 && (sysManager.isMyIP6(sh) || sysManager.isMyIP6(df)))
+      if (af === 6 && (sysManager.isMyIP6(sh) || sysManager.isMyIP6(dh)))
         continue;
       // FIXME: duration is to be added in conntrack events from fwapc
       const du = log.du || 1;
