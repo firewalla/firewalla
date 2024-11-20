@@ -28,6 +28,7 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 const { getPreferredBName } = require('../util/util.js')
+const TagManager = require('../net2/TagManager.js');
 
 // const PM2 = require('../alarm/PolicyManager2.js');
 // const pm2 = new PM2();
@@ -104,9 +105,14 @@ class NewDeviceTagSensor extends Sensor {
 
       log.debug(networkPolicy)
 
+      let isQuarantine = 0
       if (policy) {
         await hostObj.setPolicyAsync('tags', [ policy.tag ])
         log.info(`Added new device ${host.ipv4Addr} - ${host.mac} to group ${policy.tag} per ${policy.key}`)
+        const tagExists = await TagManager.tagUidExists(policy.tag);
+        if (tagExists) {
+          isQuarantine = 1
+        }
       }
       if (fc.isFeatureOn(ALARM_FEATURE_KEY)) {
         const name = getPreferredBName(host) || "Unknown"
@@ -119,7 +125,8 @@ class NewDeviceTagSensor extends Sensor {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": policy && [ policy.tag ].map(String) || []
+            "p.tag.ids": policy && [ policy.tag ].map(String) || [],
+            "p.quarantine": isQuarantine
           });
         am2.enqueueAlarm(alarm);
       }
