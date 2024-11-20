@@ -24,6 +24,7 @@ const lock = new AsyncLock();
 let incTs = 0;
 
 const validDomainRegex = /^[a-zA-Z0-9-_.]+$/
+const validVersionRegex = /^[0-9.]+/
 
 function extend(target) {
   var sources = [].slice.call(arguments, 1);
@@ -293,7 +294,26 @@ function difference(obj1, obj2) {
     }
     return _.isEqual(value, obj2[key]) ?
         result : result.concat(key);
-}, []);
+  }, []);
+}
+
+function _extractVersion(ver) {
+  let v = ver.match(validVersionRegex);
+  if (!v) return "";
+  return v[0];
+}
+
+// check if ver1 < ver2
+function versionCompare(ver1, ver2) {
+  const v1 = _extractVersion(ver1).split('.');
+  const v2 = _extractVersion(ver2).split('.');
+
+  for (let i = 0; i < v1.length && i < v2.length; i++){
+    if (parseInt(v1[i]) > parseInt(v2[i])) return false;
+    if (parseInt(v1[i]) < parseInt(v2[i])) return true;
+  }
+  if (v1.length >= v2.length) return false;
+  return true;
 }
 
 module.exports = {
@@ -302,6 +322,7 @@ module.exports = {
   getPreferredName,
   delay,
   difference,
+  versionCompare,
   argumentsToString,
   isSimilarHost,
   isSameOrSubDomain,

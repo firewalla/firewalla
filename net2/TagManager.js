@@ -257,6 +257,7 @@ class TagManager {
       const nameMap = {}
       for (let key of keys) {
         const o = await rclient.hgetallAsync(key);
+        if (!o) continue
         const uid = key.substring(keyPrefix.length);
         // remove duplicate deviceTag
         if (o.type == Constants.TAG_TYPE_DEVICE) {

@@ -70,6 +70,7 @@ const config = fc.getConfig().bro
 const { Address6 } = require('ip-address')
 
 const APP_MAP_SIZE = 1000;
+const SIG_MAP_SIZE = 1000;
 const PROXY_CONN_SIZE = 100;
 const DNS_CACHE_SIZE = 100;
 
@@ -133,7 +134,8 @@ class BroDetect {
       "connLongLog": [config.connLong.path, this.processLongConnData],
       "connLogDev": [config.conn.pathdev, this.processConnData],
       "x509Log": [config.x509.path, this.processX509Data],
-      "knownHostsLog": [config.knownHosts.path, this.processknownHostsData]
+      "knownHostsLog": [config.knownHosts.path, this.processknownHostsData],
+      "signatureLog": [config.signature.path, this.processSignatureData],
     };
 
     for(const watcher in watchers) {
@@ -149,6 +151,7 @@ class BroDetect {
     if (!firewalla.isMain())
       return;
     this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 10800 * 1000});
+    this.sigmap = new LRU({max: SIG_MAP_SIZE, maxAge: 10800 * 1000});
     this.proxyConn = new LRU({max: PROXY_CONN_SIZE, maxAge: 60 * 1000});
     this.dnsCache = new LRU({max: DNS_CACHE_SIZE, maxAge: 3600 * 1000});
     this.dnsCount = 0
@@ -274,6 +277,18 @@ class BroDetect {
       this.appmap.del(key);
     }
     return obj;
+  }
+
+  addConnSignature(uid, sigId) {
+    if (!this.sigmap.has(uid))
+      this.sigmap.set(uid, {});
+    this.sigmap.get(uid)[sigId] = 1;
+  }
+
+  getConnSignatures(uid) {
+    if (!this.sigmap.has(uid) || !_.isObject(this.sigmap.get(uid)))
+      return null;
+    return Object.keys(this.sigmap.get(uid));
   }
 
   extractIP(str) {
@@ -1293,6 +1308,10 @@ class BroDetect {
         }
       }
 
+      const sigs = this.getConnSignatures(uid);
+      if (!_.isEmpty(sigs))
+        tmpspec.sigs = sigs;
+
       let afobj, afhost
       if (!localFlow) {
         afobj = this.withdrawAppMap(orig, obj['id.orig_p'], resp, obj['id.resp_p'], long || this.activeLongConns.has(obj.uid)) || connEntry;
@@ -1414,6 +1433,8 @@ class BroDetect {
               flowspec.sp.push(obj['id.orig_p']);
           }
         }
+        if (!_.isEmpty(sigs))
+          flowspec.sigs = _.union(flowspec.sigs, sigs);
         if (afhost && !flowspec.af[afhost]) {
           flowspec.af[afhost] = _.pick(afobj, ["proto", "ip"]);
         }
@@ -1826,6 +1847,14 @@ class BroDetect {
     } catch (e) {
       log.error("Notice:Error Unable to save", e, data);
     }
+  }
+
+  async processSignatureData(data) {
+    const obj = JSON.parse(data);
+    const {uid, sig_id} = obj;
+    if (!uid || !sig_id)
+      return;
+    this.addConnSignature(uid, sig_id);
   }
 
   async getWanNicStats() {
