@@ -29,6 +29,8 @@ const validator = require('validator');
 const Constants = require('../net2/Constants.js');
 const exec = require('child-process-promise').exec;
 const f = require('../net2/Firewalla.js');
+const HostTool = require('../net2/HostTool.js')
+const hostTool = new HostTool()
 
 // Alarm structure
 //   type (alarm type, each type has corresponding alarm template, one2one mapping)
@@ -368,9 +370,28 @@ class NewDeviceAlarm extends Alarm {
   keysToCompareForDedup() {
     return ["p.device.mac"];
   }
+  
+  localizedNotificationContentKey() {
+    //default key: newalarm.message.ALARM_NEW_DEVICE
+    //in case added to the Quarantine Group: newalarm.message.ALARM_NEW_DEVICE.block
+    //in case the device is using Private Address: newalarm.message.ALARM_NEW_DEVICE.private
+    //in case the device is using Private address and added into the Quarantine Group: newalarm.message.ALARM_NEW_DEVICE.block.private
+    let key = super.localizedNotificationContentKey();
+    const isPrivateMac = this["p.device.mac"] && hostTool.isPrivateMacAddress(this["p.device.mac"]);
+
+    if (this["p.quarantine"]) {
+      key += ".block";
+      if (isPrivateMac) {
+        key += ".private"
+      }
+    } else if(isPrivateMac) {
+      key += ".private";
+    }
+    return key
+  }
 
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.device.ip"]];
+    return [this["p.device.name"], this["p.device.ip"], this["p.intf.desc"] || "" ];
   }
 }
 

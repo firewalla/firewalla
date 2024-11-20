@@ -88,6 +88,19 @@ module.exports = class {
         log.debug("Policy queue status:", counts);
       })
     }, 60 * 1000)
+
+    sem.on('nmap:queue:reset', async () => {
+      try {
+        const counts = await this.scanQ.checkHealth()
+        log.info('Reseting queue', counts)
+        await this.scanQ.destroy()
+        if (this.process) {
+          this.process.kill()
+        }
+      } catch(err) {
+        log.error('Failed to reset queue', err)
+      }
+    })
   }
 
   parsePort(hostuid, portjson) {
@@ -122,7 +135,7 @@ module.exports = class {
 
     if (!net.isIPv6(ipv6Addr)) return
 
-    const cmd = util.format('sudo timeout 1200s nmap -6 -PR -sn -n %s -oX - | %s', ipv6Addr, xml2jsonBinary);
+    const cmd = util.format('sudo timeout 5s nmap -6 -PR -sn -n %s -oX - | %s', ipv6Addr, xml2jsonBinary);
 
     const jobID = 'solicit-' + ipv6Addr
 
@@ -132,7 +145,7 @@ module.exports = class {
         log.verbose(`creating job ${jobID}`)
         job = await this.scanQ.createJob({cmd})
           .setId(jobID)
-          .timeout(1200 * 1000)
+          .timeout(10 * 1000)
           .save(err =>
             err && log.error("Failed to create nmap job", err.message)
           )
@@ -356,8 +369,8 @@ module.exports = class {
         callback(null, hosts, ports);
       }
     );
-    this.process.on('close', (code, signal) => {
-      log.debug('NMAP Closed');
+    this.process.on('exit', (code, signal) => {
+      log.debug('NMAP exited with', code, signal);
       this.process = null;
     });
   }
