@@ -391,7 +391,7 @@ class NewDeviceAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.device.ip"], this["p.intf.desc"]];
+    return [this["p.device.name"], this["p.device.ip"], this["p.intf.desc"] || "" ];
   }
 }
 
