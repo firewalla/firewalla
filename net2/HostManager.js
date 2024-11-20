@@ -2398,7 +2398,7 @@ module.exports = class HostManager extends Monitorable {
     const keys = ['upload', 'download', 'ipB', 'dnsB'];
 
     for (const key of keys) {
-      const lastSumKey = target ? `lastsumflow:${target}:${key}` : `lastsumflow:${key}`;
+      const lastSumKey = target ? `lastsumflow:${target}:${key}` : `lastsyssumflow:${key}`;
       const realSumKey = await rclient.getAsync(lastSumKey);
       if (!realSumKey) {
         continue;
@@ -2414,7 +2414,7 @@ module.exports = class HostManager extends Monitorable {
 
       const traffic = await flowAggrTool.getTopSumFlowByKeyAndDestination(realSumKey, key, count);
 
-      const enriched = (await flowTool.enrichWithIntel(traffic, ['upload', 'download'].includes(key))).sort((a, b) => {
+      const enriched = (await flowTool.enrichWithIntel(traffic, key != 'dnsB')).sort((a, b) => {
         return b.count - a.count;
       });
 
