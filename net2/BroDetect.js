@@ -452,6 +452,8 @@ class BroDetect {
     }
   }
 
+  // during firemain start and new device discovery, there's a small window that host object is
+  // not created in memory thus no tag info.
   async getTags(monitorable, intfInfo) {
     if (!monitorable) return {}
     const intfId = intfInfo && intfInfo.uuid
@@ -471,6 +473,8 @@ class BroDetect {
         }
       }
       result[flowKey] = _.uniq(tags);
+      // remove empty tag key to save memory, this cuts 4%+ from flow:conn
+      if (!result[flowKey].length) delete result[flowKey]
     }
 
     return result
@@ -507,6 +511,11 @@ class BroDetect {
       let intfInfo = sysManager.getInterfaceViaIP(dnsFlow.sh);
       const isIdentityIntf = this.isIdentityLAN(intfInfo)
 
+      if (localFam == 4 && sysManager.isMyIP(dnsFlow.sh) ||
+        localFam == 6 && sysManager.isMyIP6(dnsFlow.sh)) {
+        return
+      }
+
       if (!localMac) {
         if (isIdentityIntf)
           monitorable = await this.waitAndGetIdentity(dnsFlow.sh)
@@ -518,10 +527,8 @@ class BroDetect {
         }
       } else {
         if (sysManager.isMyMac(localMac)) {
-          if (localFam == 4 && !sysManager.isMyIP(dnsFlow.sh) || localFam == 6 && !sysManager.isMyIP6(dnsFlow.sh)) {
-            log.verbose("Discard incorrect local MAC address from bro log: ", localMac, dnsFlow.sh);
-            localMac = null
-          }
+          log.verbose("Discard incorrect local MAC from DNS log: ", localMac, dnsFlow.sh);
+          localMac = null
         }
 
         monitorable = hostManager.getHostFastByMAC(localMac);
@@ -534,11 +541,6 @@ class BroDetect {
         }
 
         this.recordDeviceHeartbeat(localMac, dnsFlow.ts, dnsFlow.sh, localFam)
-      }
-
-      if (localFam == 4 && sysManager.isMyIP(dnsFlow.sh) ||
-        localFam == 6 && sysManager.isMyIP6(dnsFlow.sh)) {
-        return
       }
 
       if (!this.isMonitoring(intfInfo, monitorable) || !this.isDNSCacheOn(intfInfo, monitorable)) {
@@ -562,11 +564,9 @@ class BroDetect {
         this.recordTraffic({ dns: 1 }, 'intf:' + intfInfo.uuid);
       }
       for (const key in tags) {
-        if (tags[key] && tags[key].length) {
-          dnsFlow[key] = tags[key]
-          for (const tag of tags[key]) {
-            this.recordTraffic({ dns: 1 }, 'tag:' + tag);
-          }
+        dnsFlow[key] = tags[key]
+        for (const tag of tags[key]) {
+          this.recordTraffic({ dns: 1 }, 'tag:' + tag);
         }
       }
 
@@ -1216,11 +1216,8 @@ class BroDetect {
         } else {
           if (dstMac && sysManager.isMyMac(dstMac)) {
             // double check dest mac for spoof leak
-            if (fam == 4 && !sysManager.isMyIP(dhost) || fam == 6 && !sysManager.isMyIP6(dhost)) {
-              log.verbose("Discard incorrect dest MAC address from bro log: ", dstMac, dhost);
-              dstMac = null
-            } else 
-              return;
+            log.verbose("Discard incorrect dest MAC address from bro log: ", dstMac, dhost);
+            dstMac = null
           }
 
           if (!dstMac)
@@ -1289,10 +1286,9 @@ class BroDetect {
       }
 
       const tags = await this.getTags(monitorable, intfInfo)
-      let dstTags = null;
-      if (dstMonitorable) {
-        dstTags = await this.getTags(dstMonitorable, dstIntfInfo)
-      }
+      const dstTags = await this.getTags(dstMonitorable, dstIntfInfo)
+      Object.assign(tmpspec, tags)
+      tmpspec.dstTags = dstTags
 
       if (monitorable instanceof Identity)
         tmpspec.guid = IdentityManager.getGUID(monitorable);
@@ -1315,20 +1311,6 @@ class BroDetect {
       const sigs = this.getConnSignatures(uid);
       if (!_.isEmpty(sigs))
         tmpspec.sigs = sigs;
-
-      for (const key in tags) {
-        if (_.isArray(tags[key]) && !_.isEmpty(tags[key])) {
-          tmpspec[key] = tags[key]
-        }
-      }
-      if (dstTags) {
-        tmpspec.dstTags = {};
-        for (const key in dstTags) {
-          if (_.isArray(dstTags[key]) && !_.isEmpty(dstTags[key])) {
-            tmpspec.dstTags[key] = dstTags[key];
-          }
-        }
-      }
 
       let afobj, afhost
       if (!localFlow) {
@@ -1370,15 +1352,13 @@ class BroDetect {
         }
 
         for (const key in tags) {
-          if (_.isArray(tags[key]) && !_.isEmpty(tags[key])) {
-            for (const tag of tags[key]) {
-              if (dstTags && dstTags[key] && dstTags[key].includes(tag)) {
-                this.recordTraffic(tupleIntra, 'lo:tag:' + tag)
-                this.recordTraffic(tupleConn, 'lo:intra:tag:' + tag)
-              } else {
-                this.recordTraffic(tuple, 'lo:tag:' + tag)
-                this.recordTraffic(tupleConn, `lo:${flowdir}:tag:${tag}`)
-              }
+          for (const tag of tags[key]) {
+            if (dstTags[key] && dstTags[key].includes(tag)) {
+              this.recordTraffic(tupleIntra, 'lo:tag:' + tag)
+              this.recordTraffic(tupleConn, 'lo:intra:tag:' + tag)
+            } else {
+              this.recordTraffic(tuple, 'lo:tag:' + tag)
+              this.recordTraffic(tupleConn, `lo:${flowdir}:tag:${tag}`)
             }
           }
         }
@@ -1388,10 +1368,8 @@ class BroDetect {
         this.recordTraffic(tuple, 'global');
         this.recordTraffic(tuple, 'intf:' + intfInfo.uuid);
         for (const key in tags) {
-          if (_.isArray(tags[key]) && !_.isEmpty(tags[key])) {
-            for (const tag of tags[key]) {
-              this.recordTraffic(tuple, 'tag:' + tag);
-            }
+          for (const tag of tags[key]) {
+            this.recordTraffic(tuple, 'tag:' + tag);
           }
         }
       }
@@ -1529,34 +1507,6 @@ class BroDetect {
         }
       } catch (e) {
         log.error("Conn:Save:AFMAP:EXCEPTION", e);
-      }
-      // during firemain start and new device discovery, there's a small window that host object is
-      // not created in memory thus no tag info. trying to find host obj again here
-      // flow with hostInfo always creates an empty tags array, which was saved to flowstash
-      if (!spec.tags) {
-        const monitorable = hostManager.getHostFastByMAC(spec.mac);
-        const intfInfo = sysManager.getInterfaceViaUUID(monitorable && monitorable.o.intf);
-        const tags = await this.getTags(monitorable, intfInfo)
-        Object.assign(spec, tags)
-
-        if (!spec.local)
-          for (const flowKey in tags) {
-            for (const tag of spec[flowKey] || []) {
-              if (type == 'conn') {
-                timeSeries.recordHit(`download:tag:${tag}`, spec._ts, spec.fd == 'in' ? spec.rb : spec.ob);
-                timeSeries.recordHit(`upload:tag:${tag}`, spec._ts, spec.fd == 'in' ? spec.ob : spec.rb);
-              }
-              timeSeries.recordHit(`${type}:tag:${tag}`, spec._ts, spec.ct);
-            }
-          }
-      }
-
-      // remove empty tag key to save memory, this cuts 4%+ from flow:conn
-      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-        const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
-        if (!spec[flowKey].length) {
-          delete spec[flowKey]
-        }
       }
 
       const key = type == 'conn'

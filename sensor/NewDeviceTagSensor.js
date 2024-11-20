@@ -30,6 +30,7 @@ const am2 = new AM2();
 const { getPreferredBName } = require('../util/util.js')
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
+const TagManager = require('../net2/TagManager.js');
 
 // const PM2 = require('../alarm/PolicyManager2.js');
 // const pm2 = new PM2();
@@ -109,23 +110,31 @@ class NewDeviceTagSensor extends Sensor {
       const isFWAP = this.isFirewallaAP(hostObj);
 
       if (!isFWAP && policy) {
-        await hostObj.setPolicyAsync('tags', [ policy.tag ])
-        log.info(`Added new device ${host.ipv4Addr} - ${host.mac} to group ${policy.tag} per ${policy.key}`)
-      }
-      if (fc.isFeatureOn(ALARM_FEATURE_KEY)) {
-        const name = getPreferredBName(host) || "Unknown"
-        const alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
-          name,
-          {
-            "p.device.id": name,
-            "p.device.name": name,
-            "p.device.ip": host.ipv4Addr || host.ipv6Addr && host.ipv6Addr[0] || "",
-            "p.device.mac": host.mac,
-            "p.device.vendor": host.macVendor,
-            "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": !isFWAP && policy && [ policy.tag ].map(String) || []
-          });
-        am2.enqueueAlarm(alarm);
+        let isQuarantine = 0
+        if (policy) {
+          await hostObj.setPolicyAsync('tags', [policy.tag])
+          log.info(`Added new device ${host.ipv4Addr} - ${host.mac} to group ${policy.tag} per ${policy.key}`)
+          const tagExists = await TagManager.tagUidExists(policy.tag);
+          if (tagExists) {
+            isQuarantine = 1
+          }
+        }
+        if (fc.isFeatureOn(ALARM_FEATURE_KEY)) {
+          const name = getPreferredBName(host) || "Unknown"
+          const alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
+            name,
+            {
+              "p.device.id": name,
+              "p.device.name": name,
+              "p.device.ip": host.ipv4Addr || host.ipv6Addr && host.ipv6Addr[0] || "",
+              "p.device.mac": host.mac,
+              "p.device.vendor": host.macVendor,
+              "p.intf.id": host.intf ? host.intf : "",
+              "p.tag.ids": !isFWAP && policy && [policy.tag].map(String) || [],
+              "p.quarantine": isQuarantine
+            });
+          am2.enqueueAlarm(alarm);
+        }
       }
     } catch(err) {
       log.error("Error adding new device", err)
