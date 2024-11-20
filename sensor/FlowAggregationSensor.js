@@ -180,7 +180,7 @@ class FlowAggregationSensor extends Sensor {
 
     // adds :local to uid before @
     if (local)
-      uidTickKeys.push(... uidTickKeys.map(key => `${key}:local`))
+      uidTickKeys.forEach((key, i) => uidTickKeys[i] = `${key}:local`)
     uidTickKeys.forEach((key, i) => uidTickKeys[i] = `${key}@${tick}`)
 
     const domain = flow.host || flow.intel && flow.intel.host;

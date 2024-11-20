@@ -3766,9 +3766,9 @@ class netBot extends ControllerBot {
         if (rawmsg.message.obj.type === "jsonmsg") {
           let wltargets = await rclient.smembersAsync("sys:eid:whitelist:item") || [];
 
-          // check app version, block requests if too old (<1.63)
-          let minAppVer = await rclient.getAsync("sys:version:app:min") || "1.63";
-          if (rawmsg.message.from != "iRocoX" && msg.data.item != "ping" && (msg.appInfo.platform.toLowerCase() == "ios" || msg.appInfo.platform == "android" )){
+          // check app version, block requests if too old
+          let minAppVer = await rclient.getAsync("sys:version:app:min");
+          if (minAppVer && rawmsg.message.from != "iRocoX" && msg.data.item != "ping" && (msg.appInfo.platform.toLowerCase() == "ios" || msg.appInfo.platform == "android" )){
             if (["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && versionCompare(version, minAppVer)) {
               log.warn('deny access from eid', eid, "with", version, JSON.stringify(rawmsg));
               return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Please update the App to the latest version." }, cloudOptions);
