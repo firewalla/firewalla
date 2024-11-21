@@ -1217,7 +1217,7 @@ class VPNClient {
     // TODO: evaluate ping test results and return false if it is lower than the threshold
 
     const ratio = results.reduce((total, item) => total + item.successCount, 0) * 100/(results.length*count);
-    log.info(`VPN ${this.profileId} tests [${targets}] success ratio ${ratio}%`);
+    log.verbose(`VPN ${this.profileId} tests [${targets}] success ratio ${ratio}%`);
     return await this._checkInternetAvailability();
   }
 

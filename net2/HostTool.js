@@ -336,7 +336,8 @@ class HostTool {
       log.error('removeDupIPv4FromMacEntry:', mac, 'not found')
       return Promise.resolve();
     }
-    log.info('removeDupIPv4FromMacEntry:', ip, 'old:', mac, 'new:', newMac, macEntry);
+    log.info('removeDupIPv4FromMacEntry:', ip, 'old:', mac, 'new:', newMac)
+    log.verbose(macEntry)
 
     let trans = rclient.multi()
 
