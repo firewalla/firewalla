@@ -3265,19 +3265,11 @@ class netBot extends ControllerBot {
             await flowAggrTool.removeAggrFlowsAll(hostMac);
             await flowManager.removeFlowsAll(hostMac);
 
-            let ips = await hostTool.getIPsByMac(hostMac);
-            for (const ip of ips) {
-              const latestMac = await hostTool.getMacByIP(ip);
-              if (latestMac && latestMac === hostMac) {
-                // double check to ensure ip address is not taken over by other device
-
-                // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
-                await rclient.unlinkAsync([
-                  "monitor:flow:" + hostMac,
-                  "monitor:large:" + hostMac,
-                ]);
-              }
-            }
+            // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
+            await rclient.unlinkAsync([
+              "monitor:flow:" + hostMac,
+              "monitor:large:" + hostMac,
+            ]);
           })().catch((err) => {
             log.error(`Failed to delete information of host ${hostMac}`, err);
           });

@@ -329,7 +329,7 @@ class PortForward {
         let old = this.find(map);
         if (old >= 0) {
           if (this.config.maps[old].enabled === map.enabled) {
-            log.info("PORTMAP:addPort Duplicated MAP", map);
+            log.verbose("PORTMAP:addPort Duplicated MAP", map);
             return;
           } else {
             this.config.maps[old] = map;
