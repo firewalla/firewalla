@@ -148,7 +148,7 @@ class DockerBaseVPNClient extends VPNClient {
   async _createNetwork() {
     // sudo docker network create -o "com.docker.network.bridge.name"="vpn_sslx" --subnet 10.53.204.108/30 vpn_sslx
     try {
-      log.info(`Creating network ${this._getDockerNetworkName()} for vpn ${this.profileId} ...`);
+      log.verbose(`Creating network ${this._getDockerNetworkName()} for vpn ${this.profileId} ...`);
       const subnet = await this._getOrGenerateSubnet();
       const ipv6 = this.isIPv6Enabled();
 
@@ -470,7 +470,7 @@ if $programname == 'docker_vpn_${this.profileId}' then {
   }
 
   async _prepareDockerCompose(obj) {
-    log.info("Preparing docker compose file...");
+    log.verbose("Preparing docker compose file...");
     let content = null;
     if (!_.isEmpty(obj)) {
       content = YAML.stringify(obj);

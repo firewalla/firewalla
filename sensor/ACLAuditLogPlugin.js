@@ -446,7 +446,7 @@ class ACLAuditLogPlugin extends Sensor {
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
 
     if (!mac) {
-      log.warn('MAC address not found for', line)
+      log.warn('MAC address not found for', localIP)
       return
     }
 
@@ -545,7 +545,7 @@ class ACLAuditLogPlugin extends Sensor {
     record.intf = intfUUID.substring(0, 8);
 
     if (!mac) {
-      log.warn('MAC address not found for', JSON.stringify(record))
+      log.verbose('MAC address not found for', record.sh || JSON.stringify(record))
       return
     }
 
