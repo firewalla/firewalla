@@ -20,12 +20,11 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const Message = require('../net2/Message.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const sysManager = require('./SysManager.js');
-const Nmap = require('../net2/Nmap.js');
-const nmap = new Nmap();
 const l2 = require('../util/Layer2.js');
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 const Hashes = require('../util/Hashes.js');
+const f = require('./Firewalla.js');
 
 let instance = null;
 
@@ -53,6 +52,11 @@ class HostTool {
             this.ipMacMapping.del(ip)
         }
       })
+
+      if (f.isMain()) {
+        const Nmap = require('../net2/Nmap.js');
+        this.nmap = new Nmap();
+      }
     }
     return instance;
   }
@@ -249,7 +253,7 @@ class HostTool {
       if (fam == 4) {
         return l2.getMACAsync(ip)
       } else if (fam == 6 && !sysManager.isLinkLocal(ip, 6)) { // nmap neighbor solicit is not accurate for link-local addresses
-        let mac = await nmap.neighborSolicit(ip)
+        let mac = await this.nmap.neighborSolicit(ip)
         if (mac && sysManager.isMyMac(mac))
           // should not get neighbor advertisement of Firewalla itself, this is mainly caused by IPv6 spoof
           return null;
