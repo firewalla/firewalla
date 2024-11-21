@@ -27,12 +27,12 @@ const Message = require('../net2/Message.js');
 
 const sem = require('./SensorEventManager.js').getInstance();
 
-const ZEEK_SIG_FILE = `${f.getRuntimeInfoFolder()}/zeek_signatures/dpi.sig`;
+const ZEEK_SIG_DIR = `${f.getRuntimeInfoFolder()}/zeek_signatures`;
 
 class ZeekDPISensor extends Sensor {
   async run() {
     this.sigFileWatcher = null;
-    this.sigSha256 = null;
+    this.sigSha256s = {};
     const reloadJob = new scheduler.UpdateJob(this.initFileWatcher.bind(this), 5000);
     this.reloadJob = reloadJob;
 
@@ -42,27 +42,27 @@ class ZeekDPISensor extends Sensor {
   async initFileWatcher() {
     if (this.sigFileWatcher)
       this.sigFileWatcher.close();
-    const watcher = fs.watch(ZEEK_SIG_FILE, async (eventType, filename) => {
-      const sha256 = await this.loadSigFileHash();
-      if (sha256 !== this.sigSha256) {
-        log.info(`zeek sig file is updated, will restart zeek ...`);
+    const watcher = fs.watch(ZEEK_SIG_DIR, async (eventType, filename) => {
+      const sha256 = await this.loadSigFileHash(filename);
+      if (sha256 !== this.sigSha256s[filename]) {
+        log.info(`zeek sig file ${filename} is updated, will restart zeek ...`);
         sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
       }
-      this.sigSha256 = sha256;
-      if (eventType === "rename")
-        this.reloadJob.exec();
+      this.sigSha256s[filename] = sha256;
     });
     watcher.on('error', (err) => {
       log.error("Error occured in signature file watcher", err);
       this.reloadJob.exec();
     });
-    this.sigSha256 = await this.loadSigFileHash();
+    const files = await fs.readdirAsync(ZEEK_SIG_DIR).catch((err) => []);
+    for (const file of files)
+      this.sigSha256s[file] = await this.loadSigFileHash(file);
     this.sigFileWatcher = watcher;
   }
 
-  async loadSigFileHash() {
-    const content = await fs.readFileAsync(ZEEK_SIG_FILE, "utf8").catch((err) => {
-      log.error(`Failed to zeek sig file`, err.message);
+  async loadSigFileHash(filename) {
+    const content = await fs.readFileAsync(`${ZEEK_SIG_DIR}/${filename}`, "utf8").catch((err) => {
+      log.error(`Failed to read zeek sig file`, err.message);
       return null;
     });
     if (content) {
