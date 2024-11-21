@@ -424,6 +424,7 @@ class APCMsgSensor extends Sensor {
       fd: 'lo', dir: 'L',
     };
     if (msg.pid) record.pid = msg.pid
+    if (msg.proto) record.pr = msg.proto
 
     const intf = sysManager.getInterfaceViaIP(msg.src || msg.dst);
     record.intf = intf && intf.name;
