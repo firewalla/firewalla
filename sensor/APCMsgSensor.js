@@ -191,8 +191,30 @@ class APCMsgSensor extends Sensor {
         }
       }
       this.ssidGroupMap = ssidGroupMap;
+      const usedSSIDProfiles = {};
+      const config = await fwapc.getConfig();
+      const assets = _.get(config, "assets");
+      const templates = _.get(config, "assets_template");
+      for (const uid of Object.keys(assets)) {
+        const templateId = _.get(assets, [uid, "templateId"]);
+        const template = _.get(templates, templateId);
+        if (template) {
+          const networks = _.get(template, "wifiNetworks");
+          if (_.isArray(networks)) {
+            for (const network of networks) {
+              const ssidProfiles = _.get(network, "ssidProfiles") || [];
+              const aliasSSIDs = _.get(network, "aliasSSIDs") || [];
+              for (const uuid of ssidProfiles.concat(aliasSSIDs)) {
+                usedSSIDProfiles[uuid] = 1;
+              }
+            }
+          }
+        }
+      }
 
       for (const uuid of Object.keys(ssidStatus)) {
+        if (!_.has(usedSSIDProfiles, uuid))
+          continue;
         const status = ssidStatus[uuid];
         if (!_.isObject(status))
           continue;
