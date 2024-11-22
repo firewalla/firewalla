@@ -298,6 +298,28 @@ class FWAPC {
       log.error(`Failed to delete rule, pid: ${pid}`, err.message);
     });
   }
+
+  async setDeviceAcl(mac, data) {
+    if (!mac)
+      throw new Error("mac is not defined in setDeviceAcl");
+    if (!_.isObject(data))
+      throw new Error("data should be an object in setDeviceAcl");
+    const payload = _.pick(data, ["isolation"]);
+    const {code, body, msg} = await this.apiCall("POST", `/config/device_acl/${mac.toUpperCase()}`, data);
+    if (!isNaN(code) && Number(code) > 299)
+      throw new Error(msg || "Failed to set DeviceAcl")
+    return;
+  }
+
+  async deleteDeviceAcl(mac) {
+    if (!mac)
+      throw new Error("mac is not defined in deleteDeviceAcl");
+    const {code, body, msg} = await this.apiCall("DELETE", `/config/device_acl/${mac.toUpperCase()}`);
+    if (!isNaN(code) && Number(code) > 299) {
+      throw new Error(msg || "Failed to delete device acl in fwapc");
+    }
+    return;
+  }
 }
 
 const instance = new FWAPC();

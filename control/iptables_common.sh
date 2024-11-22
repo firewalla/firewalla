@@ -506,6 +506,10 @@ cat << EOF > "$filter_file"
 -A FW_FIREWALL_LO -j FW_FIREWALL_GLOBAL_BLOCK_LO
 -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_DROP
 
+# initialize device isolation chain
+-N FW_FIREWALL_DEV_ISOLATION
+-A FW_FIREWALL_DEV_BLOCK -j FW_FIREWALL_DEV_ISOLATION
+
 # initialize group isolation chain
 -N FW_FIREWALL_DEV_G_ISOLATION
 -A FW_FIREWALL_DEV_G_BLOCK -j FW_FIREWALL_DEV_G_ISOLATION

@@ -19,6 +19,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const MessageBus = require('./MessageBus.js');
 const messageBus = new MessageBus('info')
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const fwapc = require('./fwapc.js');
 
 const exec = require('child-process-promise').exec
 
@@ -699,6 +700,7 @@ class Host extends Monitorable {
 
     this.ipCache.reset();
     delete envCreatedMap[this.o.mac];
+    await fwapc.deleteDeviceAcl(this.o.mac);
     delete Monitorable.instances[this.o.mac]
   }
 
