@@ -40,8 +40,8 @@ describe('Test apc block message', function(){
 
   it('should process apc block message', async() => {
     this.plugin.processApcBlockFlowMessage(JSON.stringify({
-        "src":"192.168.1.100","dst":"192.168.1.200",
-        "sport":12345,"dport":54321, "smac":"00:11:22:33:44:55",
+        "src":"192.168.1.100","dst":"192.168.1.200", "pid":9, "action":"block",
+        "sport":12345,"dport":54321, "smac":"00:11:22:33:44:55", "proto": "udp",
         "dmac":"00:22:44:66:88:11","ct":3,"ts":Date.now()/1000}));
   });
 
