@@ -417,13 +417,15 @@ class APCMsgSensor extends Sensor {
       return
     }
     const record = {
-      type: 'ip', ac: 'block', ts: msg.ts, ct: msg.ct,
+      type: 'ip', ts: msg.ts, ct: msg.ct,
       sh: msg.src, dh: msg.dst,
       sp: [msg.sport], dp: msg.dport,
       mac: msg.smac, dmac: msg.dmac,
       fd: 'lo', dir: 'L',
     };
+    record.ac = msg.action
     if (msg.pid) record.pid = msg.pid
+    if (msg.proto) record.pr = msg.proto
 
     const intf = sysManager.getInterfaceViaIP(msg.src || msg.dst);
     record.intf = intf && intf.name;
