@@ -734,12 +734,8 @@ class BroDetect {
     if (!hostManager.isMonitoring())
       return false;
 
-    try{
     if (monitorable && !monitorable.isMonitoring())
       return false
-    } catch(err) {
-      log.error(monitorable, err)
-    }
 
     if (intf) {
       const uuid = intf && intf.uuid;
@@ -1074,13 +1070,10 @@ class BroDetect {
       if (isIdentityIntf) {
         monitorable = await this.waitAndGetIdentity(lhost);
         if (monitorable) {
-          if (!localMac)
-            localMac = IdentityManager.getGUID(monitorable);
-          if (lhost && fam == 4)
+          localMac = IdentityManager.getGUID(monitorable);
+          if (fam == 4)
             realLocal = IdentityManager.getEndpointByIP(lhost);
           localType = TYPE_VPN;
-          if (!intfInfo) // might be in mesh network
-            intfInfo = monitorable.getNicName() && sysManager.getInterface(monitorable.getNicName());
         }
       } else {
         if (localMac && sysManager.isMyMac(localMac)) {
@@ -1208,10 +1201,7 @@ class BroDetect {
         if (isDstIdentityIntf) {
           dstMonitorable = await this.waitAndGetIdentity(dhost);
           if (dstMonitorable) {
-            if (!dstMac)
-              dstMac = IdentityManager.getGUID(dstMonitorable);
-            if (!dstIntfInfo)
-              dstIntfInfo = dstMonitorable.getNicName() && sysManager.getInterface(dstMonitorable.getNicName());
+            dstMac = IdentityManager.getGUID(dstMonitorable);
           }
         } else {
           if (dstMac && sysManager.isMyMac(dstMac)) {
