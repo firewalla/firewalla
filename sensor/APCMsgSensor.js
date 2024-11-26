@@ -26,6 +26,7 @@ const _ = require('lodash');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_SSID_UPDATE = "LOCK_SSID_UPDATE";
+const LOCK_RULE_UPDATE = "LOCK_RULE_UPDATE";
 const HostManager = require('../net2/HostManager.js')
 const hostManager = new HostManager();
 const sysManager = require('../net2/SysManager.js');
@@ -49,6 +50,7 @@ class APCMsgSensor extends Sensor {
     super(config);
     this.ssidProfiles = {};
     this.ssidGroupMap = {};
+    this.enforcedRules = {};
     sl.initSingleSensor("ACLAuditLogPlugin").then((r) => {this.aclAuditLogPlugin = r}).catch((err) => {
       log.error("Failed to init ACLAuditLogPlugin", this.aclAuditLogPlugin);
     });
@@ -123,32 +125,47 @@ class APCMsgSensor extends Sensor {
     }, 60000);
 
     sem.on("PolicyEnforcement", async (event) => {
-      const {policy, action} = event;
-      if (!policy || !action || !policy.pid)
-        return;
-      if (!this.isAPCSupportedRule(policy))
-        return;
-      switch (action) {
-        case "enforce":
-        case "reenforce": {
-          if (policy.disabled == "1" || !this.isAPCSupportedRule(policy)) {
-            await fwapc.deleteRule(policy.pid);
-          } else {
-            await fwapc.updateRule(policy);
+      await lock.acquire(LOCK_RULE_UPDATE, async () => {
+        const {policy, action} = event;
+        if (!policy || !action || !policy.pid)
+          return;
+        const pid = String(policy.pid);
+        switch (action) {
+          case "enforce":
+          case "reenforce": {
+            if (policy.disabled == "1" || !this.isAPCSupportedRule(policy)) {
+              if (_.has(this.enforcedRules, pid))
+                await fwapc.deleteRule(pid);
+              delete this.enforcedRules[pid];
+            } else {
+              await fwapc.updateRule(policy);
+              this.enforcedRules[pid] = 1;
+            }
+            break;
           }
-          break;
+          case "unenforce": {
+            await fwapc.deleteRule(policy.pid);
+            delete this.enforcedRules[pid];
+            break;
+          }
+          default:
         }
-        case "unenforce": {
-          await fwapc.deleteRule(policy.pid);
-          break;
-        }
-        default:
-      }
+      }).catch((err) => {
+        log.error(`Failed to update rule in fwapc ${event}`, err.message);
+      });
     });
 
     sem.on("Policy:AllInitialized", async () => {
-      const rules = (await pm2.loadActivePoliciesAsync() || []).filter(rule => this.isAPCSupportedRule(rule));
-      await fwapc.updateRules(rules, true);
+      await lock.acquire(LOCK_RULE_UPDATE, async () => {
+        const rules = (await pm2.loadActivePoliciesAsync() || []).filter(rule => this.isAPCSupportedRule(rule));
+        for (const rule of rules) {
+          if (rule.pid)
+            this.enforcedRules[String(rule.pid)] = 1;
+        }
+        await fwapc.updateRules(rules, true);
+      }).catch((err) => {
+        log.error(`Failed to sync all rules to fwapc`, err.message);
+      });
     });
   }
 
