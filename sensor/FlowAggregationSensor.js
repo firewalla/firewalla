@@ -184,7 +184,7 @@ class FlowAggregationSensor extends Sensor {
     uidTickKeys.forEach((key, i) => uidTickKeys[i] = `${key}@${tick}`)
 
     const domain = flow.host || flow.intel && flow.intel.host;
-    const key = `${local ? dmac : ip}:${dp}${domain ? `:${domain}` : ""}`;
+    const key = `${mac}:${local ? dmac : ip}:${dp}${domain ? `:${domain}` : ""}`;
     for (const uidTickKey of uidTickKeys) {
       if (!this.trafficCache[uidTickKey])
         this.trafficCache[uidTickKey] = {};
