@@ -184,7 +184,7 @@ class FlowAggregationSensor extends Sensor {
     uidTickKeys.forEach((key, i) => uidTickKeys[i] = `${key}@${tick}`)
 
     const domain = flow.host || flow.intel && flow.intel.host;
-    const key = `${local ? dmac : ip}:${dp}${domain ? `:${domain}` : ""}`;
+    const key = `${mac}:${local ? dmac : ip}:${fd}:${dp}${domain ? `:${domain}` : ""}`;
     for (const uidTickKey of uidTickKeys) {
       if (!this.trafficCache[uidTickKey])
         this.trafficCache[uidTickKey] = {};
@@ -274,7 +274,7 @@ class FlowAggregationSensor extends Sensor {
     switch (flow.type) {
       case "ip": {
         if (mac.startsWith(Constants.NS_INTERFACE + ":")) {
-          const key = flow.sh;
+          const key = `${mac}:${flow.sh}`;
           for (const uidTickKey of uidTickKeys) {
             if (!this.ifBlockCache[uidTickKey])
               this.ifBlockCache[uidTickKey] = {};
@@ -288,7 +288,7 @@ class FlowAggregationSensor extends Sensor {
         } else {
           if (!dp)
             return;
-          const key = (fd === "out" ? `${flow.sh}:${dp}:inbound` : `${flow.dh}:${dp}:outbound`);
+          const key = `${mac}:${fd=="out"?flow.sh:flow.dh}:${fd}:${dp}`
           for (const uidTickKey of uidTickKeys) {
             if (!this.ipBlockCache[uidTickKey])
               this.ipBlockCache[uidTickKey] = {};
@@ -316,7 +316,7 @@ class FlowAggregationSensor extends Sensor {
         const reason = flow.reason;
         if (!domain)
           return;
-        const key = `${domain}${reason ? `:${reason}` : ""}`;
+        const key = `${mac}:${domain}${reason ? `:${reason}` : ""}`;
         for (const uidTickKey of uidTickKeys) {
           if (!this.dnsBlockCache[uidTickKey])
             this.dnsBlockCache[uidTickKey] = {};
