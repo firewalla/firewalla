@@ -1791,6 +1791,7 @@ class netBot extends ControllerBot {
 
     const promises = []
     const tsMetrics = []
+    const hostMetrics = []
 
     // defaults to true
     if (nonLocal != false) {
@@ -1802,6 +1803,7 @@ class netBot extends ControllerBot {
         netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
       )
       tsMetrics.push('upload', 'download', 'conn', 'dns')
+      hostMetrics.push('upload', 'download', 'conn', 'dns')
     }
     if (platform.isAuditLogSupported() && audit != false) {
       promises.push(
@@ -1811,6 +1813,7 @@ class netBot extends ControllerBot {
         netBotTool.prepareTopFlows(jsonobj, 'ifB', "out", Object.assign({}, options, {limit: 400})),
       )
       tsMetrics.push('ipB', 'dnsB', 'ntp')
+      hostMetrics.push('ipB', 'dnsB', 'ntp')
     }
     if (fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW) && local == true) {
       promises.push(
@@ -1823,6 +1826,7 @@ class netBot extends ControllerBot {
         tsMetrics.push('intra:lo', 'conn:lo:intra')
       if (type != 'host' || target != '0.0.0.0')
         tsMetrics.push('upload:lo', 'download:lo', 'conn:lo:in', 'conn:lo:out')
+      hostMetrics.push('upload:lo', 'download:lo', 'conn:lo:in', 'conn:lo:out')
     }
     promises.push(
       this.hostManager.last60MinStatsForInit(jsonobj, target, tsMetrics),
@@ -1832,19 +1836,14 @@ class netBot extends ControllerBot {
     )
 
     jsonobj.hosts = {}
+    const hits = msg.data.hourblock == 24 ? 24 : Math.ceil((Date.now()/1000 - options.begin) / 3600)
     promises.push(asyncNative.eachLimit(options.macs, 20, async (t) => {
-      if (msg.data.hourblock == 24) {
-        const stats = await this.hostManager.getStats({ granularities: '1hour', hits: 24 }, t, ['upload','download'])
-        jsonobj.hosts[t] = { upload: stats.totalUpload, download: stats.totalDownload }
-      } else {
-        const stats = await this.hostManager.getStats(
-          { granularities: '1hour', hits: Math.ceil((Date.now()/1000 - options.begin) / 3600) },
-          t, ['upload','download'])
-        jsonobj.hosts[t] = {}
-        for (const m of ['upload', 'download']) {
-          const hit = stats[m] && stats[m].find(s => s[0] == options.begin)
-          jsonobj.hosts[t][m] = hit && hit[1] || 0
-        }
+      const stats = await this.hostManager.getStats({ granularities: '1hour', hits }, t, hostMetrics)
+      jsonobj.hosts[t] = {}
+      for (const m of hostMetrics) {
+        jsonobj.hosts[t][m] = msg.data.hourblock == 24
+          ? _.get(stats, 'total' + m[0].toUpperCase() + m.slice(1), 0)
+          : _.get(stats[m] && stats[m].find(s => s[0] == options.begin), 1, 0)
       }
     }))
 
@@ -1853,13 +1852,6 @@ class netBot extends ControllerBot {
       promises.push(flowTool.prepareRecentFlows(jsonobj, _.omit(options, ['queryall'])))
     }
 
-    // const platformSpecificStats = platform.getStatsSpecs();
-    // jsonobj.stats = {};
-    // for (const statSettings of platformSpecificStats) {
-    //   promises.push(this.hostManager.getStats(statSettings, target)
-    //     .then(s => jsonobj.stats[statSettings.stat] = s)
-    //   );
-    // }
     await Promise.all(promises)
 
     if (!msg.data.apiVer || msg.data.apiVer == 1) {
