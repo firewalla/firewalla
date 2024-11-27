@@ -35,9 +35,19 @@ describe('Test difference', () => {
 
     it('should compare deleted keys', () => {
         const obj1 = {"newDeviceTag":{"state":false,"tag":0, "test":[1,2,3]},"shadowsocks":{"state":false},"scisurf":{"state":false},"externalAccess":{"state":false}};
-        const obj2 = {"newDeviceTag":{"state":false,"tag":0},"shadowsocks":{"state":false},"scisurf":1,"externalAccess":{"state":false}};
-        expect(difference(obj2, obj1)).to.be.eql(['newDeviceTag', 'scisurf']);
+        const obj2 = {"newDeviceTag":{"state":false,"tag":0},"shadowsocks":{"state":false},"scisurf":1,"externalAccess":{"state":false}, "options": {"ssl": true}, "monitor": true};
+        expect(difference(obj2, obj1)).to.be.eql(['newDeviceTag', 'scisurf', 'options', 'monitor']);
     })
+
+    it('should compare null', () => {
+        const obj1 = {"newDeviceTag":{"state":false,"tag":0, "test":[1,2,3]},"shadowsocks":{"state":false},"scisurf":{"state":false},"externalAccess":{"state":false}};
+        expect(difference(null, obj1)).to.be.eql(['newDeviceTag', 'shadowsocks', 'scisurf', 'externalAccess']);
+        expect(difference({}, obj1)).to.be.eql(['newDeviceTag', 'shadowsocks', 'scisurf', 'externalAccess']);
+        expect(difference({}, [])).to.be.eql([]);
+        expect(difference(null, null)).to.be.eql([]);
+        expect(difference(obj1, null)).to.be.eql(['newDeviceTag', 'shadowsocks', 'scisurf', 'externalAccess']);
+    })
+
 });
 
 describe('Test versionCompare', () => {
