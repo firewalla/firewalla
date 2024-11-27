@@ -24,7 +24,6 @@ const tagManager = require('../net2/TagManager.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const util = require('../util/util.js');
 const Sensor = require('./Sensor.js').Sensor;
 const sem = require('./SensorEventManager.js').getInstance();
 
@@ -129,8 +128,7 @@ class FreeRadiusSensor extends Sensor {
     const _aggPolicy = JSON.stringify(policy);
 
     // compare to previous policy applied
-    const diff = util.difference(this.policy, policy);
-    if ((!diff || diff.length == 0) && await freeradius.isListening()) {
+    if (_.isEqual(this.policy, policy) && await freeradius.isListening()) {
       log.info(`policy ${policyKeyName} is not changed.`);
       return;
     }
