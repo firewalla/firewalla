@@ -3742,8 +3742,13 @@ class netBot extends ControllerBot {
             return this.simpleTxData(msg, null, { code: 401, msg: "Unauthorized eid" }, cloudOptions);
           }
         }
-        if (_.get(rawmsg, 'message.obj.data.item') !== 'ping') {
-          rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app", rawmsg.message);
+        const item = _.get(rawmsg, 'message.obj.data.item')
+        if (item !== 'ping') {
+          rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app",
+            item == 'batchAction'
+              ? _.get(rawmsg, 'message.obj.data.value', []).map(c => [c.mtype, c.data && c.data.item, c.target])
+              : rawmsg.message
+          );
         }
 
         msg.appInfo = rawmsg.message.appInfo;
