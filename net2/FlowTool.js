@@ -119,11 +119,11 @@ class FlowTool extends LogQuery {
           feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'dns'}))
         else if (options.ntpFlow && (!options.type || options.type == 'ntp'))
           feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'ntp'}))
-      } else
-        if (options.localFlow) {
-          // a local flow will be recorded in both src and dst host key, need to deduplicate flows on the two hosts if both hosts are included in macs
-          options.exclude = [{dstMac: macs, fd: "out"}]
-          feeds.push(... this.expendFeeds({macs, localFlow: true}))
+      }
+      if (options.localFlow && options.local !== false) {
+        // a local flow will be recorded in both src and dst host key, need to deduplicate flows on the two hosts if both hosts are included in macs
+        options.exclude = [{dstMac: macs, fd: "out"}]
+        feeds.push(... this.expendFeeds({macs, localFlow: true}))
       }
     }
     if (options.block !== false) {
