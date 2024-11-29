@@ -431,6 +431,7 @@ class FlowCompressionSensor extends Sensor {
       begin: begin,
       end: end,
       audit: true,
+      localFlow: true,
       count: 2000,
       asc: true
     }
