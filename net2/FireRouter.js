@@ -1178,8 +1178,10 @@ class FireRouter {
       const wanIntfs = Object.keys(currentStatus);
       // calcuate state value based on active/ready status of both WANs
       let dualWANStateValue = 0;
+      let activeBitMask = 0;
       for (let i = 0; i != wanIntfs.length; i++) {
         const wanIntf = wanIntfs[i];
+        activeBitMask += (1 << (i * 2));
         if (!currentStatus[wanIntf].active)
           dualWANStateValue += (1 << (i * 2));
         if (!currentStatus[wanIntf].ready)
@@ -1205,11 +1207,11 @@ class FireRouter {
         labels.primaryInterface = primaryInterface;
         if (failback) {
           const primaryIntfIndex = wanIntfs.indexOf(primaryInterface);
-          if (primaryIntfIndex >= 0 && dualWANStateValue === (1 << (primaryIntfIndex * 2)))
+          if (primaryIntfIndex >= 0 && (dualWANStateValue ^ activeBitMask) === (1 << (primaryIntfIndex * 2)))
             dualWANStateValue = 0;
         } else {
           const activeIntfIndex = wanIntfs.findIndex(intf => currentStatus[intf].active === true);
-          if (activeIntfIndex >= 0 && dualWANStateValue === (1 << (activeIntfIndex * 2)))
+          if (activeIntfIndex >= 0 && (dualWANStateValue ^ activeBitMask) === (1 << (activeIntfIndex * 2)))
             dualWANStateValue = 0;
         }
       }
