@@ -1437,27 +1437,29 @@ class BroDetect {
           suppressEventLogging: true,
           flow: Object.assign({}, tmpspec, {intf: intfInfo.uuid, dIntf: dstIntfInfo.uuid}),
         });
-        return
       }
 
       setTimeout(() => {
-        sem.emitEvent({
-          type: 'DestIPFound',
-          ip: remoteIPAddress,
-          host: remoteHost,
-          fd: tmpspec.fd,
-          flow: Object.assign({}, tmpspec, {ip: remoteIPAddress, host: remoteHost, intf: intfInfo.uuid}),
-          from: "flow",
-          suppressEventLogging: true,
-          mac: localMac
-        });
-        if (realLocal) {
+        // no need to go through DestIPFoundHook for localFlow
+        if (!localFlow) {
           sem.emitEvent({
             type: 'DestIPFound',
-            from: "VPN_endpoint",
-            ip: tmpspec.rl,
-            suppressEventLogging: true
+            ip: remoteIPAddress,
+            host: remoteHost,
+            fd: tmpspec.fd,
+            flow: Object.assign({}, tmpspec, { ip: remoteIPAddress, host: remoteHost, intf: intfInfo.uuid }),
+            from: "flow",
+            suppressEventLogging: true,
+            mac: localMac
           });
+          if (realLocal) {
+            sem.emitEvent({
+              type: 'DestIPFound',
+              from: "VPN_endpoint",
+              ip: tmpspec.rl,
+              suppressEventLogging: true
+            });
+          }
         }
         sem.emitLocalEvent({
           type: "Flow2Stream",
