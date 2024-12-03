@@ -224,7 +224,7 @@ class PortForward {
           ipv4Addr = macEntry.ipv4Addr;
         } else {
           // update IP from identity
-          log.info("Find identity to port forward", map.toGuid);
+          log.debug("Find identity to port forward", map.toGuid);
           const identity = IdentityManager.getIdentityByGUID(map.toGuid);
           if (!identity) {
             log.error("Port forwarding entry is not found in host or identity: ", map);

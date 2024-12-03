@@ -242,7 +242,7 @@ class VPNClient {
 
   async _updateDNSRedirectChain() {
     const dnsServers = await this._getDNSServers() || [];
-    log.info("Updating dns redirect chain on servers:", dnsServers);
+    log.verbose("Updating dns redirect chain on servers:", dnsServers);
 
     const chain = VPNClient.getDNSRedirectChainName(this.profileId);
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
@@ -307,7 +307,7 @@ class VPNClient {
       await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
       await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
     }
-    log.info(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
+    log.verbose(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
     // remove routes from main table which is inserted by VPN client automatically,
     // otherwise tunnel will be enabled globally
     await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove 0.0.0.0/1 for " + this.profileId) });
@@ -327,7 +327,8 @@ class VPNClient {
     routedSubnets = this.getSubnetsWithoutConflict(_.uniq(routedSubnets));
     const dnsServers = await this._getDNSServers() || [];
 
-    log.info(`Adding routes for vpn ${this.profileId}`, routedSubnets);
+    if (routedSubnets.length)
+      log.info(`Adding routes for vpn ${this.profileId}`, routedSubnets);
     // always add default route into VPN client's routing table, the switch is implemented in ipset, so no need to implement it in routing tables
     await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, remoteIP6, intf, routedSubnets, dnsServers, true, Boolean(localIP6));
     // loosen reverse path filter
