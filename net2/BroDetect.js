@@ -67,8 +67,6 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
 const config = fc.getConfig().bro
 
-const { Address6 } = require('ip-address')
-
 const APP_MAP_SIZE = 1000;
 const SIG_MAP_SIZE = 1000;
 const PROXY_CONN_SIZE = 100;
@@ -485,7 +483,7 @@ class BroDetect {
       const now = Date.now() / 1000
       const dnsFlow = {
         ts: Math.round((obj.ts) * 100) / 100,
-        _ts: await getUniqueTs(now), // _ts is the last time updated, make it unique to avoid missing flows in time-based query
+        _ts: getUniqueTs(now), // _ts is the last time updated, make it unique to avoid missing flows in time-based query
         dn: obj.query,
         sh: obj["id.orig_h"],
         dh: obj["id.resp_h"],
@@ -552,7 +550,7 @@ class BroDetect {
       }
 
       if (!localMac || localMac.constructor.name !== "String") {
-        log.warn('NO LOCAL MAC! Drop DNS', JSON.stringify(obj))
+        log.verbose('NO LOCAL MAC! Drop DNS', JSON.stringify(obj))
         return
       }
 
@@ -1086,7 +1084,7 @@ class BroDetect {
         if (localMac)
           monitorable = hostManager.getHostFastByMAC(localMac);
         else {
-          log.warn('NO LOCAL MAC! Drop flow', data)
+          log.verbose('NO LOCAL MAC! Drop flow', data)
           return
         }
 
@@ -1215,7 +1213,7 @@ class BroDetect {
           if (dstMac)
             dstMonitorable = hostManager.getHostFastByMAC(dstMac);
           else {
-            log.warn('NO DST MAC! Drop flow', data);
+            log.verbose('NO DST MAC! Drop flow', data);
             return;
           }
         }
@@ -1244,7 +1242,7 @@ class BroDetect {
 
       const tmpspec = {
         ts: obj.ts, // ts stands for start timestamp
-        _ts: await getUniqueTs(now), // _ts is the last time updated, make it unique to avoid missing flows in time-based query
+        _ts: getUniqueTs(now), // _ts is the last time updated, make it unique to avoid missing flows in time-based query
         sh: orig, // source
         dh: resp, // dstination
         ob: Number(obj.orig_bytes), // transfer bytes

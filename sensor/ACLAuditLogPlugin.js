@@ -656,7 +656,7 @@ class ACLAuditLogPlugin extends Sensor {
           const record = buffer[mac][descriptor];
           const { type, ac, ts, du, ct } = record
           const intf = record.intf && networkProfileManager.prefixMap[record.intf]
-          const _ts = await getUniqueTs(ts + (du || 0)) // make it unique to avoid missing flows in time-based query
+          const _ts = getUniqueTs(ts + (du || 0)) // make it unique to avoid missing flows in time-based query
           record._ts = _ts;
           const block = type == 'dns' ?
             record.rc == 3 /*NXDOMAIN*/ &&
@@ -790,7 +790,7 @@ class ACLAuditLogPlugin extends Sensor {
         transaction.push(['zremrangebyscore', key, start, end]);
         for (const descriptor in stash) {
           const record = stash[descriptor]
-          record._ts = await getUniqueTs(record.ts + (record.du || 0));
+          record._ts = getUniqueTs(record.ts + (record.du || 0));
           transaction.push(['zadd', key, record._ts, JSON.stringify(record)])
         }
         const expires = parseInt(Date.now() / 1000) + (this.config.expires || 86400)
