@@ -274,11 +274,9 @@ async function batchKeyExists(keys, batchSize) {
   return _.flatten(validChunks)
 }
 
-async function getUniqueTs(ts) {
-  return lock.acquire("unique_ts_lock", async () => {
-    incTs = (incTs + 1) % 100;
-    return Math.round(ts * 100 + incTs) / 100;
-  });
+function getUniqueTs(ts) {
+  incTs = (incTs + 1) % 100;
+  return Math.round(ts * 100 + incTs) / 100;
 }
 
 function difference(obj1, obj2) {
