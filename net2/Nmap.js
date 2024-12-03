@@ -18,15 +18,12 @@ const log = require('./logger.js')(__filename);
 const net = require('net')
 const util = require('util');
 
+const { buildDeferred } = require('../util/asyncNative.js')
 const Firewalla = require('./Firewalla.js');
 const networkTool = require('./NetworkTool.js')();
 const Message = require('../net2/Message.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const SimpleCache = require('../util/SimpleCache.js')
-const AsyncLock = require('../vendor_lib/async-lock');
-const lock = new AsyncLock();
-
-const Queue = require('bee-queue')
 
 const foundCache = new SimpleCache("foundCache", 60*10);
 const notFoundCache = new SimpleCache("notFoundCache", 60);
@@ -57,43 +54,13 @@ module.exports = class {
   constructor(range, debug) {
     this.range = range;
     debugging = debug;
-    this.setupQueue()
-  }
-
-  setupQueue() {
-    this.scanQ = new Queue('nmap', {
-      removeOnFailure: true,
-      removeOnSuccess: true,
-    });
-    this.scanQ.on('error', (err) => {
-      log.error("Queue Error:", err)
-    })
-
-    this.scanQ.on('failed', (job, err) => {
-      log.error(`Job ${job.id} ${JSON.stringify(job.data)} failed`, err);
-    });
-
-    this.scanQ.destroy()
-
-    this.scanQ.process(async (job) => {
-      const obj = job.data;
-
-      const hosts = await util.promisify(this.nmapScan).bind(this)(obj.cmd, true)
-      log.verbose(`job ${job.id} done`, hosts)
-      return hosts
-    })
-
-    setInterval(() => {
-      this.scanQ.checkHealth((error, counts) => {
-        log.debug("Policy queue status:", counts);
-      })
-    }, 60 * 1000)
+    this.scanQ = [];
+    this.scanning = false;
 
     sem.on('nmap:queue:reset', async () => {
       try {
-        const counts = await this.scanQ.checkHealth()
-        log.info('Reseting queue', counts)
-        await this.scanQ.destroy()
+        log.info('Reseting queue', this.scanQ.length)
+        this.scanQ = []
         if (this.process) {
           this.process.kill()
         }
@@ -120,16 +87,48 @@ module.exports = class {
     return port;
   }
 
-  async neighborSolicit(ipv6Addr) {
-    await this.scanQ.ready()
+  async scanQueue() {
+    if (this.scanning || !this.scanQ.length) return
 
+    const job = this.scanQ[0]
+    if (job) {
+      this.scanning = true
+      try {
+        const hosts = await util.promisify(this.nmapScan).bind(this)(job.cmd, true)
+        log.verbose(`job ${job.id} done`, hosts)
+        job.deferred.resolve(hosts)
+      } catch(err) {
+        log.error(`Job ${job.id} failed`, err);
+        job.deferred.resolve([])
+      } finally {
+        this.scanQ.shift()
+        this.scanning = false
+        this.scanQueue()
+      }
+    }
+  }
+
+  createJob(obj) {
+    const job = this.scanQ.find(j => j.id == obj.id)
+    if (job)
+      return job
+    else {
+      log.verbose(`creating job ${obj.id}`)
+      this.scanQ.push(obj)
+      obj.deferred = buildDeferred()
+      this.scanQueue()
+      return obj
+    }
+  }
+
+  async neighborSolicit(ipv6Addr) {
     let _mac = foundCache.lookup(ipv6Addr);
     if (_mac != null) {
       return _mac
     }
     const notFoundRecently = notFoundCache.lookup(ipv6Addr);
     if (notFoundRecently) {
-      log.verbose('not found, skip')
+      log.verbose(ipv6Addr, 'not found, skip')
       return null
     }
 
@@ -139,51 +138,30 @@ module.exports = class {
 
     const jobID = 'solicit-' + ipv6Addr
 
-    return lock.acquire('NMAP_QUEUE', async () => {
-      let job = await this.scanQ.getJob(jobID)
-      if (!job) {
-        log.verbose(`creating job ${jobID}`)
-        job = await this.scanQ.createJob({cmd})
-          .setId(jobID)
-          .timeout(10 * 1000)
-          .save(err =>
-            err && log.error("Failed to create nmap job", err.message)
-          )
-      } else {
-        log.verbose(`job ${jobID} already scheduled`)
+    const job = this.createJob({ id: jobID, cmd, })
+    const hosts = await job.deferred.promise
+
+    for (let i in hosts) {
+      const host = hosts[i];
+      if (host.mac) {
+        foundCache.insert(ipv6Addr, host.mac)
+        return host.mac
       }
-
-      return new Promise((resolve, reject) => {
-        job.on('succeeded', hosts => {
-          for (let i in hosts) {
-            const host = hosts[i];
-            if (host.mac) {
-              foundCache.insert(ipv6Addr, host.mac)
-              resolve(host.mac);
-              return;
-            }
-          }
-          notFoundCache.insert(ipv6Addr, true)
-          resolve(null);
-        })
-
-        job.on('failed', err => reject(err) )
-      })
-    })
+    }
+    notFoundCache.insert(ipv6Addr, true)
+    return null
   }
 
-  scan(range /*Must be v4 CIDR*/, fast, callback) {
+  async scanAsync(range /*Must be v4 CIDR*/, fast) {
     if (!range || !net.isIPv4(range.split('/')[0])) {
-      callback(null, [], []);
-      return;
+      return []
     }
 
     try {
       range = networkTool.capSubnet(range)
     } catch (e) {
       log.error('Nmap:Scan:Error', range, fast, e);
-      callback(e);
-      return;
+      throw e
     }
 
     const cmd = fast
@@ -198,36 +176,16 @@ module.exports = class {
           xml2jsonBinary
         );
 
-    if (this.scanQ.jobs.size > 3) {
-      callback('Queuefull', null, null);
+    if (this.scanQ.length > 3) {
       log.info('======================= Warning Previous instance running====');
-      return;
+      throw new Error('Queue full')
     }
 
     const jobID = (fast ? 'fast-' : 'slow-') + range
-    lock.acquire('NMAP_QUEUE', async () => {
-      let job = await this.scanQ.getJob(jobID)
-      if (!job) {
-        log.verbose(`creating job ${jobID}`)
-        job = await this.scanQ.createJob({cmd})
-          .setId(jobID)
-          .timeout(1200 * 1000)
-          .save(err => {
-            err && log.error("Failed to create nmap job", err.message);
-          })
-      } else {
-        log.verbose(`job ${jobID} already scheduled`)
-      }
+    const job = this.createJob({ id: jobID, cmd })
+    const hosts = await job.deferred.promise
 
-      job.on('succeeded', result => callback(null, result))
-
-      job.on('failed', callback);
-    })
-  }
-
-  // ports are not returned
-  scanAsync(range, fast) {
-    return util.promisify(this.scan).bind(this)(range, fast)
+    return hosts
   }
 
   nmapScan(cmdline, requiremac, callback = ()=>{}) {
