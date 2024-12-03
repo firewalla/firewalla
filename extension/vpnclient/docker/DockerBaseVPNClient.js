@@ -1,4 +1,4 @@
-/*    Copyright 2016 - 2021 Firewalla Inc 
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -479,7 +479,7 @@ if $programname == 'docker_vpn_${this.profileId}' then {
       content = await fs.readFileAsync(src, {encoding: 'utf8'});
     }
     const dst = `${this._getDockerConfigDirectory()}/docker-compose.yaml`;
-    log.info("Writing config file", dst);
+    log.verbose("Writing config file", dst);
     await fs.writeFileAsync(dst, content);
   }
 
