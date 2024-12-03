@@ -252,13 +252,17 @@ class HostTool {
 
       if (fam == 4) {
         return l2.getMACAsync(ip)
-      } else if (fam == 6 && !sysManager.isLinkLocal(ip, 6)) { // nmap neighbor solicit is not accurate for link-local addresses
-        let mac = await this.nmap.neighborSolicit(ip)
-        if (mac && sysManager.isMyMac(mac))
-          // should not get neighbor advertisement of Firewalla itself, this is mainly caused by IPv6 spoof
-          return null;
-        else
-          return mac
+      } else if (fam == 6) {
+        if (sysManager.isLinkLocal(ip, 6)) { // nmap neighbor solicit is not accurate for link-local addresses
+          return rclient.hgetAsync(this.getIPv6HostKey(ip), 'mac')
+        } else {
+          let mac = await this.nmap.neighborSolicit(ip)
+          if (mac && sysManager.isMyMac(mac))
+            // should not get neighbor advertisement of Firewalla itself, this is mainly caused by IPv6 spoof
+            return null;
+          else
+            return mac
+        }
       }
     } catch(err) {
       log.warn("Not able to find mac address for host:", ip, err);
