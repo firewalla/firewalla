@@ -14,6 +14,7 @@
  */
 'use strict';
 const TimeSeries = require('redis-timeseries')
+const _ = require('lodash')
 
 const log = require('../net2/logger.js')(__filename, 'info');
 const rclient = require('../util/redis_manager.js').getMetricsRedisClient();
@@ -153,20 +154,31 @@ TimeSeries.prototype.getHits = function(key, gran, count, callback) {
   var from = getRoundedTime(properties.duration, currentTime - count*properties.duration),
       to = getRoundedTime(properties.duration, currentTime);
 
-  for(var ts=from, multi=this.redis.multi(); ts<=to; ts+=properties.duration) {
+  const hget = {}
+  const orderedKeys = []
+  for(var ts=from; ts<=to; ts+=properties.duration) {
     var keyTimestamp = getRoundedTime(properties.precision || properties.ttl, ts,true), // high prority: precision
         tmpKey = [this.keyBase, key, gran, keyTimestamp].join(':');
 
-    multi.hget(tmpKey, ts);
+    if (!hget[tmpKey]) {
+      hget[tmpKey] = [ts]
+      orderedKeys.push(tmpKey)
+    } else
+      hget[tmpKey].push(ts)
+  }
+
+  const multi=this.redis.multi()
+  for (const key of orderedKeys) {
+    multi.hmget(key, hget[key])
   }
 
   multi.exec(function(err, results) {
     if (err) {
       return callback(err);
     }
-
+    const flatten = _.flatten(results)
     for(var ts=from, i=0, data=[]; ts<=to; ts+=properties.duration, i+=1) {
-      data.push([ts, results[i] ? parseInt(results[i], 10) : 0]);
+      data.push([ts, flatten[i] ? parseInt(flatten[i], 10) : 0]);
     }
 
     return callback(null, data.slice(Math.max(data.length - count, 0)));

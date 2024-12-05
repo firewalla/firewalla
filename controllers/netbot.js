@@ -3257,6 +3257,8 @@ class netBot extends ControllerBot {
             await flowAggrTool.removeAggrFlowsAll(hostMac);
             await flowManager.removeFlowsAll(hostMac);
 
+            // TODO: delete and substract timeseries data from global/intf/tag
+
             // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
             await rclient.unlinkAsync([
               "monitor:flow:" + hostMac,
