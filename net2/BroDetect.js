@@ -1374,7 +1374,6 @@ class BroDetect {
       // adding keys to flowstash (but not redis)
       tmpspec.mac = localMac
       if (localFlow) tmpspec.local = true
-      Object.assign(tmpspec, tags)
 
       if (tmpspec.fd == 'out' && !localFlow) {
         this.recordOutPort(localMac, tmpspec);
