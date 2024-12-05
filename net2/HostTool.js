@@ -253,10 +253,11 @@ class HostTool {
       if (fam == 4) {
         return l2.getMACAsync(ip)
       } else if (fam == 6) {
-        if (sysManager.isLinkLocal(ip, 6)) { // nmap neighbor solicit is not accurate for link-local addresses
-          return rclient.hgetAsync(this.getIPv6HostKey(ip), 'mac')
+        let mac = await rclient.hgetAsync(this.getIPv6HostKey(ip), 'mac');
+        if (mac || sysManager.isLinkLocal(ip, 6)) { // nmap neighbor solicit is not accurate for link-local addresses
+          return mac;
         } else {
-          let mac = await this.nmap.neighborSolicit(ip)
+          mac = await this.nmap.neighborSolicit(ip)
           if (mac && sysManager.isMyMac(mac))
             // should not get neighbor advertisement of Firewalla itself, this is mainly caused by IPv6 spoof
             return null;
