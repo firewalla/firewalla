@@ -1239,8 +1239,8 @@ module.exports = class HostManager extends Monitorable {
       timeUsageApps = supportedApps;
     else
       timeUsageApps = _.intersection(timeUsageApps, supportedApps);
-    
-    for (const uid of Object.keys(tags)) {
+
+    await asyncNative.eachLimit(Object.keys(tags), 50, async uid => {
       const tag = tags[uid];
       const type = tag.type || Constants.TAG_TYPE_GROUP;
       const initDataKey = _.get(Constants.TAG_TYPE_MAP, [type, "initDataKey"]);
@@ -1263,7 +1263,7 @@ module.exports = class HostManager extends Monitorable {
           json[initDataKey][uid].internetTimeUsageToday = _.get(stats, ["appTimeUsage", "internet"]);
         }
       }
-    }
+    })
   }
 
   async btMacForInit(json) {
@@ -1418,14 +1418,10 @@ module.exports = class HostManager extends Monitorable {
       this.appConfsForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
-    // 2021.11.17 not gonna be used in the near future, disabled
-    // const platformSpecificStats = platform.getStatsSpecs();
-    // json.stats = {};
-    // for (const statSettings of platformSpecificStats) {
-    //   requiredPromises.push(this.getStats(statSettings)
-    //     .then(s => json.stats[statSettings.stat] = s)
-    //   )
-    // }
+
+    for (const i in requiredPromises) {
+      requiredPromises[i].then(()=> {log.debug(`promise ${i} finished`)})
+    }
     await Promise.all(requiredPromises.map(p => p.catch(log.error)))
 
     log.debug("Promise array finished")
