@@ -151,7 +151,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1 };
     record.ac = "block";
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanUUID, inIntfName, outIntfName, isolationTagId;
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanUUID, inIntfName, outIntfName, isolationTagId, isolationNetworkIdPrefix;
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -258,6 +258,9 @@ class ACLAuditLogPlugin extends Sensor {
           isolationTagId = v;
           break;
         }
+        case 'N': {
+          isolationNetworkIdPrefix = v;
+        }
         default:
       }
     }
@@ -307,9 +310,17 @@ class ACLAuditLogPlugin extends Sensor {
     }
 
     if (record.ac === "isolation") {
-      record.group = isolationTagId;
+      record.isoGID = isolationTagId;
       dir = "L";
       ctdir = "O";
+      if (isolationNetworkIdPrefix) {
+        if (inIntf && _.isString(inIntf.uuid) && inIntf.uuid.startsWith(isolationNetworkIdPrefix))
+          record.isoNID = inIntf.uuid;
+        else {
+          if (outIntf && _.isString(outIntf.uuid) && outIntf.uuid.startsWith(isolationNetworkIdPrefix))
+            record.isoNID = outIntf.uuid;
+        }
+      }
     }
 
     if (security)

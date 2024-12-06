@@ -26,6 +26,7 @@ const ipset = require('../net2/Ipset.js');
 const fwapc = require('../net2/fwapc.js');
 const Identity = require('../net2/Identity.js');
 const Host = require('../net2/Host.js');
+const NetworkProfile = require('../net2/NetworkProfile.js');
 
 class APFeaturesPlugin extends Sensor {
   async run() {
@@ -40,10 +41,6 @@ class APFeaturesPlugin extends Sensor {
   }
 
   async applyIsolation(obj, ip, policy) {
-    if (!obj instanceof Tag || !obj instanceof Host || !obj instanceof Identity) {
-      log.error(`${policyKeyName} is not supported on ${obj.constructor.name} object`);
-      return;
-    }
     if (obj instanceof Tag) {
       const tag = obj;
       const tagUid = _.get(tag, ["o", "uid"]);
@@ -90,6 +87,35 @@ class APFeaturesPlugin extends Sensor {
       await ruleInternal6.exec(opInternal).catch((err) => { });
   
       await fwapc.setGroup(tagUid, {config: {isolation: {internal: policy.internal || false, external: policy.external || false}}}).catch((err) => {});
+    }
+
+    if (obj instanceof NetworkProfile) {
+      const uuid = obj.getUniqueId();
+      await obj.constructor.ensureCreateEnforcementEnv(uuid);
+      const set4Name = NetworkProfile.getNetIpsetName(uuid, 4);
+      const set6Name = NetworkProfile.getNetIpsetName(uuid, 6);
+      const rule = new Rule("filter").chn("FW_FIREWALL_NET_ISOLATION").mdl("conntrack", "--ctdir ORIGINAL").jmp("FW_PLAIN_DROP");
+      const ruleLog = new Rule("filter").chn("FW_FIREWALL_NET_ISOLATION").mdl("conntrack", "--ctdir ORIGINAL").jmp(`LOG --log-prefix "[FW_ADT]A=I N=${uuid.substring(0, 8)} "`);
+
+      const op = policy.external ? "-A" : "-D";
+      const opInternal = policy.internal ? "-A" : "-D";
+
+      for (const {fam, setName} of [{fam: 4, setName: set4Name}, {fam: 6, setName: set6Name}]) {
+        const ruleTx = rule.clone().fam(fam).set(setName, "src,src").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst").set(setName, "dst,dst", true);
+        const ruleTxLog = ruleLog.clone().fam(fam).set(setName, "src,src").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst").set(setName, "dst,dst", true);
+        const ruleRx = rule.clone().fam(fam).set(setName, "dst,dst").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src").set(setName, "src,src", true);
+        const ruleRxLog = ruleLog.clone().fam(fam).set(setName, "dst,dst").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src").set(setName, "src,src", true);
+        const ruleInternal = rule.clone().fam(fam).set(setName, "src,src").set(setName, "dst,dst");
+        const ruleInternalLog = ruleLog.clone().fam(fam).set(setName, "src,src").set(setName, "dst,dst");
+
+        await ruleTxLog.exec(op).catch((err) => {});
+        await ruleTx.exec(op).catch((err) => {});
+        await ruleRxLog.exec(op).catch((err) => {});
+        await ruleRx.exec(op).catch((err) => {});
+        await ruleInternalLog.exec(opInternal).catch((err) => {});
+        await ruleInternal.exec(opInternal).catch((err) => {});
+      }
+      // there is no ap level API for network isolation, directly set isolation in wifiNetworks in apc config instead
     }
 
     if (obj instanceof Host || obj instanceof Identity) {
