@@ -58,9 +58,9 @@ class Tag extends Monitorable {
       })
 
       log.info(`Created new ${this.getTagType()} Tag: ${this.getUniqueId()}`)
-    }
-    if (f.isMain()) {
-      this.fwapcSetGroupMACsJob = new scheduler.UpdateJob(this.fwapcSetGroupMACs.bind(this), 5000);
+      if (f.isMain()) {
+        this.fwapcSetGroupMACsJob = new scheduler.UpdateJob(this.fwapcSetGroupMACs.bind(this), 5000);
+      }
     }
     return Monitorable.instances[o.uid]
   }
