@@ -144,6 +144,12 @@ class FlowTool extends LogQuery {
     return recentFlows
   }
 
+  optionsToFilter(options) {
+    const filter = super.optionsToFilter(options)
+    delete filter.localFlow
+    return filter
+  }
+
   // convert flow json to a simplified json format that's more readable by app
   toSimpleFormat(flow, options = {}) {
     let f = {

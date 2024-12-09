@@ -176,7 +176,6 @@ class RuleStatsPlugin extends Sensor {
     const v = this.cache.get(key);
     let matchedPids;
     if (v) {
-      log.debug("Hit rule stat cache");
       matchedPids = v;
     } else {
       matchedPids = await this.getPolicyIds(record);

@@ -28,7 +28,10 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 const { getPreferredBName } = require('../util/util.js')
+const _ = require('lodash');
+const Constants = require('../net2/Constants.js');
 const TagManager = require('../net2/TagManager.js');
+const delay = require('../util/util.js').delay;
 
 // const PM2 = require('../alarm/PolicyManager2.js');
 // const pm2 = new PM2();
@@ -101,34 +104,50 @@ class NewDeviceTagSensor extends Sensor {
         networkPolicy.key = networkProfile._getPolicyKey()
       }
 
-      const policy = networkPolicy.state && networkPolicy || systemPolicy.state && systemPolicy || null
+      let policy = networkPolicy.state && networkPolicy || systemPolicy.state && systemPolicy || null
 
       log.debug(networkPolicy)
 
-      let isQuarantine = 0
-      if (policy) {
-        await hostObj.setPolicyAsync('tags', [ policy.tag ])
-        log.info(`Added new device ${host.ipv4Addr} - ${host.mac} to group ${policy.tag} per ${policy.key}`)
-        const tagExists = await TagManager.tagUidExists(policy.tag);
-        if (tagExists) {
-          isQuarantine = 1
+      const isFWAP = this.isFirewallaAP(hostObj);
+
+      if (!isFWAP && policy) {
+        const ssidPSKTags = await TagManager.getPolicyTags("ssidPSK");
+        let isQuarantine = 0
+        if (policy) {
+          if (!_.isEmpty(ssidPSKTags))
+            // there is ssid/PSK group mapping configured, hold for a while and see if the device is already assigned to another group, ssid STA status is updated once every 20 seconds in fwapc, so 20 seconds should be enough.
+            await delay(20000);
+          const tags = await hostObj.getTags();
+          if (!_.isEmpty(tags)) {
+            log.warn(`Device ${mac} is already added to another group, new device tag will not be enforced`, tags);
+            policy = null;
+          }
+          // check again and see if the new device needs to be put into quarantine group
+          if (policy) {
+            await hostObj.setPolicyAsync('tags', [policy.tag])
+            log.info(`Added new device ${host.ipv4Addr} - ${host.mac} to group ${policy.tag} per ${policy.key}`)
+            const tagExists = await TagManager.tagUidExists(policy.tag);
+            if (tagExists) {
+              isQuarantine = 1
+            }
+          }
         }
-      }
-      if (fc.isFeatureOn(ALARM_FEATURE_KEY)) {
-        const name = getPreferredBName(host) || "Unknown"
-        const alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
-          name,
-          {
-            "p.device.id": name,
-            "p.device.name": name,
-            "p.device.ip": host.ipv4Addr || host.ipv6Addr && host.ipv6Addr[0] || "",
-            "p.device.mac": host.mac,
-            "p.device.vendor": host.macVendor,
-            "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": policy && [ policy.tag ].map(String) || [],
-            "p.quarantine": isQuarantine
-          });
-        am2.enqueueAlarm(alarm);
+        if (fc.isFeatureOn(ALARM_FEATURE_KEY)) {
+          const name = getPreferredBName(host) || "Unknown"
+          const alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
+            name,
+            {
+              "p.device.id": name,
+              "p.device.name": name,
+              "p.device.ip": host.ipv4Addr || host.ipv6Addr && host.ipv6Addr[0] || "",
+              "p.device.mac": host.mac,
+              "p.device.vendor": host.macVendor,
+              "p.intf.id": host.intf ? host.intf : "",
+              "p.tag.ids": !isFWAP && policy && [policy.tag].map(String) || [],
+              "p.quarantine": isQuarantine
+            });
+          am2.enqueueAlarm(alarm);
+        }
       }
     } catch(err) {
       log.error("Error adding new device", err)
@@ -137,6 +156,17 @@ class NewDeviceTagSensor extends Sensor {
 
   enqueueEvent(event) {
     this.queue.push(event)
+  }
+
+  isFirewallaAP(hostObj) {
+    const mac = _.get(hostObj, ["o", "mac"]);
+    if (_.isString(mac) && mac.toUpperCase().startsWith(Constants.FW_AP_MAC_PREFIX))
+      return true;
+    const dhcpName = _.get(hostObj, ["o", "dhcpName"]);
+    const dhcpLeaseName = _.get(hostObj, ["o", "dnsmasq.dhcp.leaseName"]);
+    if (dhcpName === Constants.FW_AP_DEFAULT_DHCP_HOSTNAME || dhcpLeaseName === Constants.FW_AP_DEFAULT_DHCP_HOSTNAME)
+      return true;
+    return false;
   }
 
   run() {

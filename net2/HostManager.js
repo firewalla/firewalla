@@ -39,6 +39,7 @@ const FlowAggrTool = require('./FlowAggrTool');
 const flowAggrTool = new FlowAggrTool();
 
 const FireRouter = require('./FireRouter.js');
+const fwapc = require('./fwapc.js');
 
 const Host = require('./Host.js');
 
@@ -398,6 +399,8 @@ module.exports = class HostManager extends Monitorable {
       _hosts.push(this.hosts.all[i].toJson());
     }
     json.hosts = _hosts;
+    if (platform.isFireRouterManaged())
+      await this.enrichSTAInfo(_hosts);
     // Reduce json size of init response
     if (!options.includeScanResults) {
       return;
@@ -406,6 +409,55 @@ module.exports = class HostManager extends Monitorable {
       await this.enrichWeakPasswordScanResult(host, "mac");
       await this.enrichNseScanResult(host, "mac", "suspect");
     }));
+  }
+
+  async enrichSTAInfo(hosts) {
+    const staStatus = await fwapc.getAllSTAStatus().catch((err) => {
+      log.error(`Failed to get STA status from fwapc`, err.message);
+      return null;
+    });
+    if (_.isObject(staStatus)) {
+      for (const host of hosts) {
+        const mac = host.mac;
+        if (mac && staStatus[mac])
+          host.staInfo = staStatus[mac];
+      }
+    }
+  }
+
+  async assetsInfoForInit(json) {
+    if (platform.isFireRouterManaged()) {
+      const assetsStatus = await fwapc.getAssetsStatus().catch((err) => {
+        log.error(`Failed to get assets status from fwapc`, err.message);
+        return null;
+      });
+      if (assetsStatus) {
+        json.assets = {};
+        for (const key of Object.keys(assetsStatus)) {
+          json.assets[key] = assetsStatus[key];
+        }
+      }
+
+      const apControllerStatus = await fwapc.getControllerInfo().catch((err) => {
+        log.error(`Failed to get controller info from fwapc`, err.message);
+        return null;
+      });
+      if (apControllerStatus) {
+        json.apController = apControllerStatus;
+      }
+    }
+  }
+
+  async pairingAssetsForInit(json) {
+    if (platform.isFireRouterManaged()) {
+      const pairingAssets = await fwapc.getPairingStatus().catch((err) => {
+        log.error(`Failed to get pairing assets from firerouter`, err.message);
+        return null;
+      });
+      if (pairingAssets) {
+        json.pairingAssets = pairingAssets;
+      }
+    }
   }
 
   async enrichWeakPasswordScanResult(host, uidKey) {
@@ -1022,7 +1074,9 @@ module.exports = class HostManager extends Monitorable {
       this.internetSpeedtestResultsForInit(json, 5),
       this.systemdRestartMetrics(json),
       this.boxMetrics(json),
-      this.getSysInfo(json)
+      this.getSysInfo(json),
+      this.assetsInfoForInit(json),
+      this.pairingAssetsForInit(json)
     ]
 
     await this.basicDataForInit(json, {});
@@ -1413,6 +1467,8 @@ module.exports = class HostManager extends Monitorable {
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
       this.dhcpPoolUsageForInit(json),
+      this.assetsInfoForInit(json),
+      this.pairingAssetsForInit(json),
       this.getConfigForInit(json),
       this.miscForInit(json),
       this.appConfsForInit(json),

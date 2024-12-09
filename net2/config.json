@@ -121,6 +121,7 @@
       "switchRatioThreshold": 0.88
     },
     "FlowCompressionSensor": {},
+    "FreeRadiusSensor": {},
     "AlarmSensor": {},
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
@@ -130,7 +131,8 @@
     "OSIPlugin": {},
     "STUNSensor": {},
     "NoiseDomainsSensor": {},
-    "Iperf3Sensor": {}
+    "Iperf3Sensor": {},
+    "DeviceMonitorSensor": {}
   },
   "intels": [
     "DeviceInfoIntel",
@@ -217,6 +219,7 @@
       "sumFlowMaxFlow": 200,
       "sumAuditFlowMaxFlow": 400
     },
+    "FreeRadiusSensor": {},
     "IntelRevalidationSensor": {},
     "BoxAliasSensor": {},
     "SafeSearchPlugin": {
@@ -653,6 +656,10 @@
       "user_agent2": {
         "expires": 2592000,
         "count": 100
+      },
+      "dm": {
+        "expires": 86400,
+        "count": 3600
       }
     },
     "DeviceOfflineSensor": {
@@ -801,9 +808,11 @@
         }
       }
     },
-    "IsolationPlugin": {},
+    "APFeaturesPlugin": {},
+    "APCMsgSensor": {},
     "NicCalibrationSensor": {},
-    "NicStateSensor": {}
+    "NicStateSensor": {},
+    "DeviceMonitorSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -999,6 +1008,13 @@
     },
     "homeFolder": "/firerouter",
     "hiddenFolder": "/.router"
+  },
+  "fwapc": {
+    "interface": {
+      "host": "127.0.0.1",
+      "port": 8841,
+      "version": "v1"
+    }
   },
   "profiles": {
     "alarm": {

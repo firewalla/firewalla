@@ -324,7 +324,6 @@ let wanType = null
 let intfNameMap = {}
 let intfUuidMap = {}
 
-
 class FireRouter {
   constructor() {
     log.info(`platform is: ${platform.constructor.name}`);

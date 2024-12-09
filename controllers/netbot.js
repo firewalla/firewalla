@@ -137,6 +137,7 @@ const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 const migration = require('../migration/migration.js');
 
 const FireRouter = require('../net2/FireRouter.js');
+const fwapc = require('../net2/fwapc.js');
 
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
@@ -156,6 +157,7 @@ const Message = require('../net2/Message')
 const util = require('util')
 
 const restartUPnPTask = {};
+const rp = util.promisify(require('request'));
 
 class netBot extends ControllerBot {
 
@@ -1538,6 +1540,10 @@ class netBot extends ControllerBot {
       }
       case "networkConfig": {
         return FireRouter.getConfig();
+      }
+      case "assetsConfig": {
+        const networkConfig = await FireRouter.getConfig();
+        return networkConfig && networkConfig.apc;
       }
       case "networkConfigHistory": {
         const count = value.count || 10;
@@ -3531,6 +3537,16 @@ class netBot extends ControllerBot {
           }
         }
       }
+      case "staBssSteer": {
+        const {staMAC, targetAP, targetSSID, targetBand} = value;
+        if (!staMAC || !targetAP)
+          throw { code: 400, msg: `staMAC and targetAP should be specified` };
+        const {code, body} = await FireRouter.staBssSteer(staMAC, targetAP, targetSSID, targetBand);
+        if (body.errors && !_.isEmpty(body.errors))
+          throw { code, msg: body.errors[0] }
+        else
+          return;
+      }
       default:
         // unsupported action
         throw new Error("Unsupported cmd action: " + msg.data.item)
@@ -3869,7 +3885,21 @@ class netBot extends ControllerBot {
               return this.simpleTxData(msg, result, null, cloudOptions);
             }
             case "cmd": {
-              if (msg.data.item == 'batchAction') {
+              if (msg.data.item == 'fwapc') {
+                const value = msg.data.value;
+
+                if (!value.path) {
+                  throw new Error("invalid input");
+                }
+
+                const result = await fwapc.apiCall(value.method || "GET", value.path, value.body);
+                if (result.code == 200) {
+                  return this.simpleTxData(msg, result.body, null, cloudOptions);
+                } else {
+                  return this.simpleTxData(msg, null, {code: result.code, data: result.body, msg: result.msg}, cloudOptions);
+                }
+
+              } else if (msg.data.item == 'batchAction') {
                 const result = await this.batchHandler(gid, rawmsg);
                 return this.simpleTxData(msg, result, null, cloudOptions);
               } else {

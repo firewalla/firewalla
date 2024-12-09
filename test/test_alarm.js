@@ -34,6 +34,12 @@ describe('Test localization', function(){
         expect(alarm.localizedNotificationContentKey()).to.be.equal("notif.content.ALARM_CUSTOMIZED_SECURITY.user");
         expect(alarm.localizedNotificationContentArray()).to.be.eql(['Janie AP','fwdev.fake.io','12:53 PM','Janie']);
     });
+
+    it('test fwapc', async() => {
+      const alarm = am2._genAlarm({"type":"fw_apc","p.subtype":"connection:frequent","p.description":"80:04:5F:72:FB:8E","p.device.name":"Firewalla AP", "p.cooldown":3600,"device":"80:04:5F:72:FB:8E","p.device.mac":"80:04:5F:72:FB:8E","p.connection.count":6,
+        "p.connection.begin":1721969965,"p.connection.end":1721973565,"p.connection.threshold":5,"p.connection.details":"[{\"from\":1721973407,\"to\":1721973422,\"ap\":\"30:60:0A:9E:4D:ED\",\"channel\":128,\"duration\":4}]"});
+      expect(alarm.localizedNotificationContentArray()).to.be.eql(['Firewalla AP', '60 minutes'])
+    });
 });
 
 const data = {"p.device.id":"A:BB:CC:DD:EE:FF","p.device.ip":"172.16.1.144","p.protocol":"tcp","p.dest.name":"www.nintendo.co.jp","p.dest.ip":"23.5.1.243","p.dest.id":"www.nintendo.co.jp",

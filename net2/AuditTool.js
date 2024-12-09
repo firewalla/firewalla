@@ -78,8 +78,12 @@ class AuditTool extends LogQuery {
       f.rl = entry.rl;
     }
 
-    if (entry.ac === "isolation" && entry.group)
-      f.isoGID = entry.group;
+    if (entry.ac === "isolation") {
+      if (entry.isoGID)
+        f.isoGID = entry.isoGID;
+      if (entry.isoNID)
+        f.isoNID = entry.isoNID;
+    }
 
     if (entry.dmac) {
       f.dstMac = entry.dmac
