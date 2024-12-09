@@ -23,6 +23,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const extend = require('../util/util.js').extend;
 const util = require('util');
@@ -31,6 +32,7 @@ const bone = require("../lib/Bone.js");
 const flowUtil = require("../net2/FlowUtil.js");
 
 const fc = require('../net2/config.js')
+const FireRouter = require('../net2/FireRouter.js');
 
 const Samba = require('../extension/samba/samba.js');
 const samba = new Samba();
@@ -325,6 +327,12 @@ class DeviceHook extends Hook {
           }
 
           enrichedHost.bnameCheckTime = Math.floor(new Date() / 1000);
+
+          if (platform.isFireRouterManaged()) {
+            const networkConfig = await FireRouter.getConfig();
+            if (_.has(networkConfig, ["apc", "assets", mac, "sysConfig", "name"]))
+              enrichedHost.name = _.get(networkConfig, ["apc", "assets", mac, "sysConfig", "name"]);
+          }
 
           await hostTool.updateMACKey(enrichedHost);
 

@@ -26,6 +26,8 @@ const log = require('../../net2/logger.js')(__filename);
 
 const sc = require('../lib/SystemCheck.js');
 
+const _ = require('lodash')
+
 /* IMPORTANT
  * -- NO AUTHENTICATION IS NEEDED FOR URL /message
  * -- message is encrypted already
@@ -37,7 +39,8 @@ const postMsgHandler = (req, res, next) => {
     const time = process.hrtime();
     const controller = await cloudWrapper.getNetBotController(gid);
     const response = await controller.msgHandlerAsync(gid, req.body);
-    log.info(`${req.body.message.obj.id} API Cost Time: ${process.hrtime(time)[1] / 1e6} ms`);
+    if (_.get(req, 'body.message.obj.data.item') != 'ping')
+      log.info(`${req.body.message.obj.id} API Cost Time: ${process.hrtime(time)[1] / 1e6} ms`);
     res.body = JSON.stringify(response);
     next();
   })()

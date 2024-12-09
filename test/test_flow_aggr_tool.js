@@ -76,6 +76,17 @@ describe('FlowAggrTool', () => {
     })
   });
 
+  describe('.getSumFlowKey', () => {
+    it('should return correct sumflow key', ()=> {
+      expect(flowAggrTool.getSumFlowKey('mac:local', 'upload', 100, 200)).to.equal('sumflow:mac:local:upload:100:200')
+      expect(flowAggrTool.getSumFlowKey('mac', 'ipB', 100, 200, 'in')).to.equal('sumflow:mac:ipB:in:100:200')
+      expect(flowAggrTool.getSumFlowKey(null, 'download', 100, 200)).to.equal('syssumflow:download:100:200')
+      expect(flowAggrTool.getSumFlowKey('global', 'ifB', 100, 200, 'out')).to.equal('syssumflow:ifB:out:100:200')
+      expect(flowAggrTool.getSumFlowKey('global:local', null, 100, 200, 'in')).to.equal('syssumflow:local:in:100:200')
+      expect('last' + flowAggrTool.getSumFlowKey('', 'local', null, 200, 'download')).to.equal('lastsyssumflow:local:download')
+    })
+  })
+
   describe('.addSumFlow', () => {
 
     afterEach((done) => {

@@ -42,7 +42,6 @@ const envCreatedMap = {};
 
 const instances = {};
 
-const VPN_ROUTE_MARK_KEY_PREFIX = "fwmark:vpn";
 class VPNClient {
   constructor(options) {
     const profileId = options.profileId;
@@ -243,7 +242,7 @@ class VPNClient {
 
   async _updateDNSRedirectChain() {
     const dnsServers = await this._getDNSServers() || [];
-    log.info("Updating dns redirect chain on servers:", dnsServers);
+    log.verbose("Updating dns redirect chain on servers:", dnsServers);
 
     const chain = VPNClient.getDNSRedirectChainName(this.profileId);
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
@@ -308,14 +307,14 @@ class VPNClient {
       await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
       await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
     }
-    log.info(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
+    log.verbose(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
     // remove routes from main table which is inserted by VPN client automatically,
     // otherwise tunnel will be enabled globally
-    await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.info("No need to remove 0.0.0.0/1 for " + this.profileId) });
-    await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.info("No need to remove 128.0.0.0/1 for " + this.profileId) });
-    await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => { log.info("No need to remove default route for " + this.profileId) });
+    await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove 0.0.0.0/1 for " + this.profileId) });
+    await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove 128.0.0.0/1 for " + this.profileId) });
+    await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove default route for " + this.profileId) });
     if (localIP6)
-      await routing.removeRouteFromTable("default", remoteIP, intf, "main", null, 6).catch((err) => { log.info("No need to remove IPv6 default route for " + this.profileId) });
+      await routing.removeRouteFromTable("default", remoteIP, intf, "main", null, 6).catch((err) => { log.verbose("No need to remove IPv6 default route for " + this.profileId) });
     let routedSubnets = settings.serverSubnets || [];
     // add vpn client specific routes
     try {
@@ -328,7 +327,8 @@ class VPNClient {
     routedSubnets = this.getSubnetsWithoutConflict(_.uniq(routedSubnets));
     const dnsServers = await this._getDNSServers() || [];
 
-    log.info(`Adding routes for vpn ${this.profileId}`, routedSubnets);
+    if (routedSubnets.length)
+      log.info(`Adding routes for vpn ${this.profileId}`, routedSubnets);
     // always add default route into VPN client's routing table, the switch is implemented in ipset, so no need to implement it in routing tables
     await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, remoteIP6, intf, routedSubnets, dnsServers, true, Boolean(localIP6));
     // loosen reverse path filter
@@ -1218,7 +1218,7 @@ class VPNClient {
     // TODO: evaluate ping test results and return false if it is lower than the threshold
 
     const ratio = results.reduce((total, item) => total + item.successCount, 0) * 100/(results.length*count);
-    log.info(`VPN ${this.profileId} tests [${targets}] success ratio ${ratio}%`);
+    log.verbose(`VPN ${this.profileId} tests [${targets}] success ratio ${ratio}%`);
     return await this._checkInternetAvailability();
   }
 
@@ -1253,7 +1253,7 @@ class VPNClient {
   }
 
   static getRouteMarkKey(profileId) {
-    return `${VPN_ROUTE_MARK_KEY_PREFIX}:${profileId}`;
+    return `${Constants.VPN_ROUTE_MARK_KEY_PREFIX}:${profileId}`;
   }
 
   async getLatestSessionLog() {
