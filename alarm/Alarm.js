@@ -1073,10 +1073,14 @@ class AbnormalUploadAlarm extends OutboundAlarm {
     return category
   }
 
-  // profile.cooldown takes higher priority
   getExpirationTime() {
     // for upload activity, only generate one alarm every 4 hours.
     return fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4
+  }
+
+  // dedup implemented before generation @ FlowMonitor
+  isDup() {
+    return false;
   }
 
   getNotifKeyPrefix() {
@@ -1140,6 +1144,11 @@ class LargeUploadAlarm extends OutboundAlarm {
   getExpirationTime() {
     // for upload activity, only generate one alarm every 4 hours.
     return fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4
+  }
+
+  // dedup implemented before generation @ FlowMonitor
+  isDup() {
+    return false;
   }
 
   getNotifKeyPrefix() {

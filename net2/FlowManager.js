@@ -223,11 +223,9 @@ module.exports = class FlowManager {
 
       // negative scores (values < standard deviation) are ignored here
       flowspec[cRanked] = flows
-        .filter(f => f[cStdScore] > profile.sdMin
-          && f.ratio > (category == 'tx' ? profile.ratioTxMin : profile.ratioMin)
-          && f.tx > (inbound ? profile.txInMin : profile.txOutMin)
-        )
+        .filter(f => category == 'tx' && f[cStdScore] > profile.sdMin || category == 'ratio' && f.ratio > profile.ratioMin)
         .slice(0, profile.rankedMax)
+        .filter(f => f.tx > (inbound ? profile.txInMin : profile.txOutMin))
 
       flowspec[cRanked].length && log.debug(category, flowspec[cRanked]);
 
