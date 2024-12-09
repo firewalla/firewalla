@@ -39,7 +39,7 @@ then
     echo "======= FIREWALLA CANARY NO UPGRADING FOR CLOUD DECISION (pause=$pause)======="
     echo $(date +%s) > ${FWCANARY_FLAG}
 else
-    echo "======= FIREWALLA CANARY UPGRADING (ratio=$pause)======="
+    echo "======= FIREWALLA CANARY UPGRADING (pause=$pause)======="
 fi
 
 logger "FIREWALLA:UPGRADE_CANARY:END"

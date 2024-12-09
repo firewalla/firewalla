@@ -89,6 +89,7 @@ class BroControl {
     }
     await exec(`echo "${workerCfg.join('')}" | sudo tee -a ${PATH_NODE_CFG}`)
 
+    const lines = [];
     const restrictFilters = options.restrictFilters || {};
     const filterEntries = [];
     for (const key in restrictFilters) {
@@ -97,6 +98,19 @@ class BroControl {
     }
     if (filterEntries.length > 0) {
       const content = `redef restrict_filters += [${filterEntries.join(",")}];\n`;
+      lines.push(content)
+      await fs.writeFileAsync(PATH_ADDITIONAL_OPTIONS, content, {encoding: 'utf8'});
+    } else {
+
+      await fs.writeFileAsync(PATH_ADDITIONAL_OPTIONS, "", {encoding: 'utf8'});
+    }
+
+    const sigFiles = options.sigFiles || [];
+    for (const sigFile of sigFiles)
+      lines.push(`@load-sigs ${sigFile}`);
+
+    if (!_.isEmpty(lines)) {
+      const content = lines.join("\n") + "\n";
       await fs.writeFileAsync(PATH_ADDITIONAL_OPTIONS, content, {encoding: 'utf8'});
     } else {
       await fs.writeFileAsync(PATH_ADDITIONAL_OPTIONS, "", {encoding: 'utf8'});

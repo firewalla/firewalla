@@ -18,6 +18,7 @@ const log = require('./logger.js')(__filename);
 const net = require('net')
 const util = require('util');
 
+const { buildDeferred } = require('../util/asyncNative.js')
 const Firewalla = require('./Firewalla.js');
 const networkTool = require('./NetworkTool.js')();
 const Message = require('../net2/Message.js');
@@ -52,9 +53,21 @@ module.exports = class {
   // ID can be port
   constructor(range, debug) {
     this.range = range;
+    debugging = debug;
     this.scanQ = [];
     this.scanning = false;
-    debugging = debug;
+
+    sem.on('nmap:queue:reset', async () => {
+      try {
+        log.info('Reseting queue', this.scanQ.length)
+        this.scanQ = []
+        if (this.process) {
+          this.process.kill()
+        }
+      } catch(err) {
+        log.error('Failed to reset queue', err)
+      }
+    })
   }
 
   parsePort(hostuid, portjson) {
@@ -74,18 +87,37 @@ module.exports = class {
     return port;
   }
 
-  scanQueue() {
+  async scanQueue() {
     if (this.scanning || !this.scanQ.length) return
 
-    this.scanning = true
-    const obj = this.scanQ.pop()
-    if (obj) {
-      this.nmapScan(obj.cmdline, true, (err, hosts, ports) => {
+    const job = this.scanQ[0]
+    if (job) {
+      this.scanning = true
+      try {
+        const hosts = await util.promisify(this.nmapScan).bind(this)(job.cmd, true)
+        log.verbose(`job ${job.id} done`, hosts)
+        job.deferred.resolve(hosts)
+      } catch(err) {
+        log.error(`Job ${job.id} failed`, err);
+        job.deferred.resolve([])
+      } finally {
+        this.scanQ.shift()
         this.scanning = false
-        obj.callback(err, hosts, ports);
-        if (this.scanQ.length) log.info('NMAP:ScanQUEUE', this.scanQ);
-        this.scanQueue();
-      });
+        this.scanQueue()
+      }
+    }
+  }
+
+  createJob(obj) {
+    const job = this.scanQ.find(j => j.id == obj.id)
+    if (job)
+      return job
+    else {
+      log.verbose(`creating job ${obj.id}`)
+      this.scanQ.push(obj)
+      obj.deferred = buildDeferred()
+      this.scanQueue()
+      return obj
     }
   }
 
@@ -96,53 +128,43 @@ module.exports = class {
     }
     const notFoundRecently = notFoundCache.lookup(ipv6Addr);
     if (notFoundRecently) {
+      log.verbose(ipv6Addr, 'not found, skip')
       return null
     }
 
-    return new Promise((resolve, reject) => {
-      if (!net.isIPv6(ipv6Addr)) {
-        resolve(null);
-      }
-  
-      const cmd = util.format('sudo timeout 1200s nmap -6 -PR -sn -n %s -oX - | %s', ipv6Addr, xml2jsonBinary);
-      log.info('Running neighbor solicitation: ', cmd);
-  
-      this.scanQ.push({cmdline: cmd, fast: true, callback: (err, hosts, ports) => {
-        if (err) {
-          reject(err);
-        } else {
-          for (let i in hosts) {
-            const host = hosts[i];
-            if (host.mac) {
-              foundCache.insert(ipv6Addr, host.mac)
-              resolve(host.mac);
-              return;
-            }
-          }
-          notFoundCache.insert(ipv6Addr, true)
-          resolve(null);
-        }
-      }});
+    if (!net.isIPv6(ipv6Addr)) return
 
-      this.scanQueue();
-    })
+    const cmd = util.format('sudo timeout 5s nmap -6 -PR -sn -n %s -oX - | %s', ipv6Addr, xml2jsonBinary);
+
+    const jobID = 'solicit-' + ipv6Addr
+
+    const job = this.createJob({ id: jobID, cmd, })
+    const hosts = await job.deferred.promise
+
+    for (let i in hosts) {
+      const host = hosts[i];
+      if (host.mac) {
+        foundCache.insert(ipv6Addr, host.mac)
+        return host.mac
+      }
+    }
+    notFoundCache.insert(ipv6Addr, true)
+    return null
   }
 
-  scan(range /*Must be v4 CIDR*/, fast, callback) {
+  async scanAsync(range /*Must be v4 CIDR*/, fast) {
     if (!range || !net.isIPv4(range.split('/')[0])) {
-      callback(null, [], []);
-      return;
+      return []
     }
 
     try {
       range = networkTool.capSubnet(range)
     } catch (e) {
       log.error('Nmap:Scan:Error', range, fast, e);
-      callback(e);
-      return;
+      throw e
     }
 
-    let cmdline = fast
+    const cmd = fast
       ? util.format(
           'sudo timeout 1200s nmap -sn -n -PO --host-timeout 30s  %s -oX - | %s',
           range,
@@ -154,25 +176,20 @@ module.exports = class {
           xml2jsonBinary
         );
 
-    log.info('Running commandline: ', cmdline);
-
     if (this.scanQ.length > 3) {
-      callback('Queuefull', null, null);
       log.info('======================= Warning Previous instance running====');
-      return;
+      throw new Error('Queue full')
     }
 
-    this.scanQ.push({cmdline, fast, callback});
+    const jobID = (fast ? 'fast-' : 'slow-') + range
+    const job = this.createJob({ id: jobID, cmd })
+    const hosts = await job.deferred.promise
 
-    this.scanQueue();
+    return hosts
   }
 
-  // ports are not returned
-  scanAsync(range, fast) {
-    return util.promisify(this.scan).bind(this)(range, fast)
-  }
-
-  nmapScan(cmdline, requiremac, callback) {
+  nmapScan(cmdline, requiremac, callback = ()=>{}) {
+    log.info('Running commandline:', cmdline);
     this.process = require('child_process').exec(
       cmdline,
       (err, stdout, stderr) => {
@@ -235,10 +252,8 @@ module.exports = class {
                 ipaddr = addr.addr;
               } else if (addr['addrtype'] == 'mac') {
                 host.mac = addr.addr && addr.addr.toUpperCase();
-                if (addr.vendor != null) {
+                if (addr.vendor) {
                   host.macVendor = addr.vendor;
-                } else {
-                  host.macVendor = 'Unknown';
                 }
               }
             }
@@ -312,8 +327,8 @@ module.exports = class {
         callback(null, hosts, ports);
       }
     );
-    this.process.on('close', (code, signal) => {
-      log.debug('NMAP Closed');
+    this.process.on('exit', (code, signal) => {
+      log.debug('NMAP exited with', code, signal);
       this.process = null;
     });
   }

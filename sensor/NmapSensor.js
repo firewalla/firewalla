@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -52,7 +52,7 @@ class NmapSensor extends Sensor {
         break;
       case "mac":
         host.mac = address.addr;
-        host.macVendor = address.vendor || "Unknown";
+        host.macVendor = address.vendor
         break;
       default:
         break;
@@ -296,7 +296,7 @@ class NmapSensor extends Sensor {
         from: "nmap"
       };
 
-      if (host.macVendor === 'Unknown') {
+      if (!host.macVendor || host.macVendor === 'Unknown') {
         delete hostInfo.macVendor;
       }
 

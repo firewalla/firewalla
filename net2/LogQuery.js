@@ -210,7 +210,7 @@ class LogQuery {
     results = _.flatten(await Promise.all(feeds.map(async feed => {
       const logs = await feed.query(feed.options)
       if (logs.length) {
-        feed.options.ts = logs[logs.length - 1]._ts
+        feed.options.ts = logs[logs.length - 1].ts
       } else {
         // no more elements, remove feed from feeds
         toRemove.push(feed)
@@ -234,7 +234,7 @@ class LogQuery {
 
       let logs = await feed.query(feed.options)
       if (logs.length) {
-        feed.options.ts = logs[logs.length - 1]._ts || logs[logs.length - 1].ts // _ts is newly added into block flows, in case it does not exist, use ts as a fallback
+        feed.options.ts = logs[logs.length - 1].ts // this is simple formatted data
 
         logs = logs.filter(log => feed.filter(log))
         if (logs.length) {

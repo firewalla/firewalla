@@ -63,6 +63,8 @@
   "INFO_FW_INTEL_ALARM_INTEL_OUTBOUND_AUTOBLOCK": "Auto blocked device {{{p.device.name}}} from accessing {{{p.security.primaryReason}}} site {{{p.dest.readableName}}}",
   "INFO_NOTIF_ALARM_INTEL_REPORT": "Firewalla blocked {{{p.attempts}}} attack attempts to your network yesterday",
   "INFO_NOTIF_ALARM_INTEL_REPORT_N": "In last 24 hours, auto prevented {{{p.firstDomain}}} and {{{num_of_domains}}} sites from attacking {{{p.device.name}}}",
+  "NOTIF_TITLE_ALARM_FW_APC": "Firewall AP Report",
+  "INFO_ALARM_FW_APC": "{{p.device.name}} attempted to access Firewalla AP {{p.connection.count}} times within the last {{p.connection.durationTime}}.",
   "NOTIF_TITLE_ALARM_VULNERABILITY": "Vulnerability Found",
   "NOTIF_ALARM_VULNERABILITY_CVE-2017-0143": "{{{p.device.name}}} is vulnerable to WannaCry ransomware",
   "INFO_ALARM_VULNERABILITY_CVE-2017-0143": "{{{p.device.name}}} is vulnerable to WannaCry ransomware",

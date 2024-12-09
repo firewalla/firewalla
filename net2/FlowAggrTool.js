@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -50,7 +50,11 @@ class FlowAggrTool {
   }
 
   getSumFlowKey(target, dimension, begin, end, fd) {
-    return `${target ? `sumflow:${target}` : "syssumflow"}:${dimension}:${fd ? `${fd}:` : ""}${begin}:${end}`;
+    return ( !target ? 'syssumflow' :
+      target.startsWith('global') ? 'syssumflow'+target.substring(6) : 'sumflow:'+target )
+      + (dimension ? ':'+dimension : '')
+      + (fd ? ':'+fd : '')
+      + ((begin && end) ? `:${begin}:${end}` : '');
   }
 
   // aggrflow:<device_mac>:download:10m:<ts>
@@ -70,72 +74,10 @@ class FlowAggrTool {
 
   getFlowStr(mac, entry) {
     const flow = {device: mac};
-    [ 'destIP', 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason' ].forEach(f => {
+    [ 'destIP', 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason', 'intra' ].forEach(f => {
       if (entry[f]) flow[f] = entry[f]
     })
     return JSON.stringify(flow);
-  }
-
-  async addFlows(mac, dimension, interval, ts, traffic, expire, fd) {
-    expire = expire || 24 * 3600; // by default keep 24 hours
-
-    const key = this.getFlowKey(mac, dimension, interval, ts, fd);
-    log.debug(`Aggregating ${key}`)
-
-    // this key is capped at MAX_FLOW_PER_AGGR, no big deal here
-    const prevAggrFlows = await rclient.zrangeAsync(key, 0, -1, 'withscores')
-
-    const result = {}
-
-    let flowStr
-    while (flowStr = prevAggrFlows.shift()) {
-      const score = prevAggrFlows.shift()
-      if (score) result[flowStr] = Number(score)
-    }
-
-    log.debug(result)
-    for (const target in traffic) {
-      const entry = traffic[target]
-      if (!entry) continue
-      if (fd && entry.fd != fd)
-        continue;
-
-      let t = entry && (entry[dimension] || entry.count) || 0;
-
-      if (['upload', 'download'].includes(dimension) && t < MIN_AGGR_TRAFFIC) {
-        continue                // skip very small traffic
-      }
-
-      flowStr = this.getFlowStr(mac, entry);
-      if (!(flowStr in result))
-        result[flowStr] = t
-      else
-        result[flowStr] += t
-    }
-
-    // sort&trim within node is probably better than doing it in redis
-    const sortedResult = Object.entries(result).sort((a,b) => b[1] - a[1])
-    log.debug(sortedResult)
-    if (!sortedResult.length) return
-
-    const trimmed = sortedResult.length - MAX_FLOW_PER_AGGR
-    if (trimmed > 0) {
-      log.debug(`${trimmed} flows are trimmed from ${key}`)
-
-      await rclient.zincrbyAsync(key, trimmed, JSON.stringify({
-        device: mac,
-        destIP: "0.0.0.0"       // special ip address to indicate some flows were skipped due to overflow protection
-      }))
-    }
-
-    const args = [key]
-    // only keep the MAX_FLOW_PER_AGGR highest flows
-    for (const ss of sortedResult.slice(0, MAX_FLOW_PER_AGGR)) {
-      args.push(ss[1], ss[0])
-    }
-
-    await rclient.zaddAsync(args)
-    await rclient.expireAsync(key, expire)
   }
 
   removeFlow(mac, dimension, interval, ts, destIP) {
@@ -286,13 +228,13 @@ class FlowAggrTool {
   }
 
   async setLastSumFlow(target, dimension, fd, keyName) {
-    const key = `lastsumflow:${target ? target + ':' : ''}${dimension}${fd ? `:${fd}` : ""}`
+    const key = 'last' + this.getSumFlowKey(target, dimension, null, null, fd)
     await rclient.setAsync(key, keyName);
     await rclient.expireAsync(key, 24 * 60 * 60);
   }
 
   getLastSumFlow(target, dimension, fd) {
-    const key = `lastsumflow:${target ? target + ':' : ''}${dimension}${fd ? `:${fd}` : ""}`
+    const key = 'last' + this.getSumFlowKey(target, dimension, null, null, fd)
     return rclient.getAsync(key);
   }
 
@@ -373,7 +315,7 @@ class FlowAggrTool {
         if(payload !== '_' && count !== 0) {
           try {
             const json = JSON.parse(payload);
-            const flow = _.pick(json, 'domain', 'type', 'device', 'port', 'devicePort', 'fd', 'dstMac', 'reason');
+            const flow = _.pick(json, 'domain', 'type', 'device', 'port', 'devicePort', 'fd', 'dstMac', 'reason', 'intra');
             flow.count = count
             if (json.destIP) {
               // this is added as a counter for trimmed flows, check FlowAggrTool.addFlow()
