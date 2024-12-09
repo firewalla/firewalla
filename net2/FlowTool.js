@@ -119,11 +119,11 @@ class FlowTool extends LogQuery {
           feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'dns'}))
         else if (options.ntpFlow && (!options.type || options.type == 'ntp'))
           feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'ntp'}))
-      } else
-        if (options.localFlow) {
-          // a local flow will be recorded in both src and dst host key, need to deduplicate flows on the two hosts if both hosts are included in macs
-          options.exclude = [{dstMac: macs, fd: "out"}]
-          feeds.push(... this.expendFeeds({macs, localFlow: true}))
+      }
+      if (options.localFlow && options.local !== false) {
+        // a local flow will be recorded in both src and dst host key, need to deduplicate flows on the two hosts if both hosts are included in macs
+        options.exclude = [{dstMac: macs, fd: "out"}]
+        feeds.push(... this.expendFeeds({macs, localFlow: true}))
       }
     }
     if (options.block !== false) {
@@ -142,6 +142,12 @@ class FlowTool extends LogQuery {
     json.flows.recent = recentFlows;
     log.verbose('prepareRecentFlows ends', JSON.stringify(options))
     return recentFlows
+  }
+
+  optionsToFilter(options) {
+    const filter = super.optionsToFilter(options)
+    delete filter.localFlow
+    return filter
   }
 
   // convert flow json to a simplified json format that's more readable by app
@@ -170,6 +176,11 @@ class FlowTool extends LogQuery {
 
     if (flow.oIntf)
       f.oIntf = networkProfileManager.prefixMap[flow.oIntf] || flow.oIntf
+    if (flow.dIntf)
+      f.dIntf = networkProfileManager.prefixMap[flow.dIntf] || flow.dIntf
+
+    if (flow.sigs)
+      f.sigs = flow.sigs;
 
     // allow rule id
     if (flow.apid && Number(flow.apid)) {

@@ -109,7 +109,7 @@
     },
     "AdblockPlugin": {},
     "WireGuardPlugin": {},
-    "InternalScanSensor": { "skip_verify": false, "strict_http": true},
+    "InternalScanSensor": { "skip_verify": false, "strict_http": true, "mysql8": true},
     "ExternalScanSensor": {
       "scanCooldown": 300
     },
@@ -121,6 +121,7 @@
       "switchRatioThreshold": 0.88
     },
     "FlowCompressionSensor": {},
+    "FreeRadiusSensor": {},
     "AlarmSensor": {},
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
@@ -130,7 +131,8 @@
     "OSIPlugin": {},
     "STUNSensor": {},
     "NoiseDomainsSensor": {},
-    "Iperf3Sensor": {}
+    "Iperf3Sensor": {},
+    "DeviceMonitorSensor": {}
   },
   "intels": [
     "DeviceInfoIntel",
@@ -217,6 +219,7 @@
       "sumFlowMaxFlow": 200,
       "sumAuditFlowMaxFlow": 400
     },
+    "FreeRadiusSensor": {},
     "IntelRevalidationSensor": {},
     "BoxAliasSensor": {},
     "SafeSearchPlugin": {
@@ -653,6 +656,10 @@
       "user_agent2": {
         "expires": 2592000,
         "count": 100
+      },
+      "dm": {
+        "expires": 86400,
+        "count": 3600
       }
     },
     "DeviceOfflineSensor": {
@@ -756,7 +763,7 @@
     "FanSensor": {},
     "LEDSensor": {},
     "SyslogSensor": {},
-    "InternalScanSensor": { "skip_verify": false, "strict_http": true},
+    "InternalScanSensor": { "skip_verify": false, "strict_http": true,  "mysql8": true},
     "InternetSpeedtestPlugin": {
       "vendorCandidates": [
         "ookla"
@@ -765,6 +772,7 @@
     },
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
+    "ZeekDPISensor": {},
     "CategoryExaminerPlugin": {},
     "RuleStatsPlugin": {},
     "SystemRebootSensor": {},
@@ -800,9 +808,11 @@
         }
       }
     },
-    "IsolationPlugin": {},
+    "APFeaturesPlugin": {},
+    "APCMsgSensor": {},
     "NicCalibrationSensor": {},
-    "NicStateSensor": {}
+    "NicStateSensor": {},
+    "DeviceMonitorSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -872,6 +882,9 @@
     "knownHosts": {
       "path": "/blog/current/known_hosts.log",
       "expires": 3600
+    },
+    "signature": {
+      "path": "/blog/current/signatures.log"
     },
     "userAgent": {
       "expires": 2592000
@@ -996,6 +1009,13 @@
     "homeFolder": "/firerouter",
     "hiddenFolder": "/.router"
   },
+  "fwapc": {
+    "interface": {
+      "host": "127.0.0.1",
+      "port": 8841,
+      "version": "v1"
+    }
+  },
   "profiles": {
     "alarm": {
       "default":{
@@ -1003,7 +1023,7 @@
         "porn": { "duMin": 20, "rbMin": 1000000, "ctMin": 3, "cooldown": 900 },
         "game": { "duMin": 3, "rbMin": 30000, "ctMin": 5, "cooldown": 900 },
         "vpn": { "duMin": 120, "rbMin": 10000, "ctMin": 3, "cooldown": 900 },
-        "large_upload": { "txInMin": 1000000, "txOutMin": 2000000, "sdMin": 10, "ratioMin": 1, "ratioSingleDestMin": 5, "rankedMax": 3, "cooldown": 14400 },
+        "large_upload": { "txInMin": 1000000, "txOutMin": 500000, "sdMin": 8, "ratioMin": 1, "ratioSingleDestMin": 1.5, "rankedMax": 3, "cooldown": 14400 },
         "large_upload_2": { "txMin": 100000000, "cooldown": 14400 }
       }
     }

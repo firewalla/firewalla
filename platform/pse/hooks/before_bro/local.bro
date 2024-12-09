@@ -112,3 +112,5 @@ redef SSL::disable_analyzer_after_detection = F;
 
 # make udp inactivity timeout consistent with net.netfilter.nf_conntrack_udp_timeout_stream
 redef udp_inactivity_timeout = 3 min;
+
+redef dpd_buffer_size = 65536;

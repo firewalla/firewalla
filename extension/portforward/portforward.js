@@ -224,7 +224,7 @@ class PortForward {
           ipv4Addr = macEntry.ipv4Addr;
         } else {
           // update IP from identity
-          log.info("Find identity to port forward", map.toGuid);
+          log.debug("Find identity to port forward", map.toGuid);
           const identity = IdentityManager.getIdentityByGUID(map.toGuid);
           if (!identity) {
             log.error("Port forwarding entry is not found in host or identity: ", map);
@@ -241,13 +241,13 @@ class PortForward {
         }
         if (ipv4Addr !== map.toIP) {
           // remove old port forwarding rule with legacy IP address
-          log.info("IP address has changed, remove old rule: ", map);
+          log.info("IP changed, remove old rule:", map.dport, map.toMac, map.toIP, map.toPort);
           await this.removePort(map);
           if (ipv4Addr) {
             // add new port forwarding rule with updated IP address
             map.toIP = ipv4Addr;
             map.active = true;
-            log.info("IP address has changed, add new rule: ", map);
+            log.info("IP changed, add new rule:", map.dport, map.toMac, map.toIP, map.toPort);
             await this.addPort(map);
           } else {
             map.toIP = null;
@@ -329,7 +329,7 @@ class PortForward {
         let old = this.find(map);
         if (old >= 0) {
           if (this.config.maps[old].enabled === map.enabled) {
-            log.info("PORTMAP:addPort Duplicated MAP", map);
+            log.verbose("PORTMAP:addPort Duplicated MAP", map);
             return;
           } else {
             this.config.maps[old] = map;
