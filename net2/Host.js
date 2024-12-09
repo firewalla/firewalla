@@ -19,6 +19,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const MessageBus = require('./MessageBus.js');
 const messageBus = new MessageBus('info')
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const fwapc = require('./fwapc.js');
 
 const exec = require('child-process-promise').exec
 
@@ -34,7 +35,7 @@ const f = require('./Firewalla.js');
 const { getPreferredName, getPreferredBName } = require('../util/util.js')
 
 const bone = require("../lib/Bone.js");
-
+const urlHash = require('../util/UrlHash.js')
 const flowUtil = require('../net2/FlowUtil.js');
 
 const linux = require('../util/linux.js');
@@ -699,6 +700,7 @@ class Host extends Monitorable {
 
     this.ipCache.reset();
     delete envCreatedMap[this.o.mac];
+    await fwapc.deleteDeviceAcl(this.o.mac);
     delete Monitorable.instances[this.o.mac]
   }
 
@@ -940,7 +942,12 @@ class Host extends Monitorable {
     for (let i in _neighbors) {
       let neighbor = _neighbors[i];
       if (neighbor.ip) neighbor._neighbor = flowUtil.hashIp(neighbor.ip);
-      if (neighbor.name) neighbor._name = flowUtil.hashIp(neighbor.name);
+      if (neighbor.name) {
+        const hashes = urlHash.canonicalizeAndHashExpressions(neighbor.name)
+        neighbor._name = hashes.length ? hashes[0][2] : null
+        if (hashes.length)
+          neighbor._nameFull = hashes[hashes.length-1][2]
+      }
       if (debug == false) {
         delete neighbor.neighbor;
         delete neighbor.name;
@@ -1231,6 +1238,7 @@ class Host extends Monitorable {
       } else {
         log.warn(`Tag ${removedTag} not found`);
       }
+      Tag.scheduleFwapcSetGroupMACs(removedTag, type);
     }
     // filter updated tags in case some tag is already deleted from system
     const updatedTags = [];
@@ -1264,6 +1272,7 @@ class Host extends Monitorable {
           log.error(`Failed to write dnsmasq tag ${uid} on mac ${this.o.mac}`, err);
         })
         updatedTags.push(uid);
+        Tag.scheduleFwapcSetGroupMACs(uid, type);
       } else {
         log.warn(`Tag ${uid} not found`);
       }

@@ -67,9 +67,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
 const config = fc.getConfig().bro
 
-const { Address6 } = require('ip-address')
-
 const APP_MAP_SIZE = 1000;
+const SIG_MAP_SIZE = 1000;
 const PROXY_CONN_SIZE = 100;
 const DNS_CACHE_SIZE = 100;
 
@@ -133,7 +132,8 @@ class BroDetect {
       "connLongLog": [config.connLong.path, this.processLongConnData],
       "connLogDev": [config.conn.pathdev, this.processConnData],
       "x509Log": [config.x509.path, this.processX509Data],
-      "knownHostsLog": [config.knownHosts.path, this.processknownHostsData]
+      "knownHostsLog": [config.knownHosts.path, this.processknownHostsData],
+      "signatureLog": [config.signature.path, this.processSignatureData],
     };
 
     for(const watcher in watchers) {
@@ -149,6 +149,7 @@ class BroDetect {
     if (!firewalla.isMain())
       return;
     this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 10800 * 1000});
+    this.sigmap = new LRU({max: SIG_MAP_SIZE, maxAge: 10800 * 1000});
     this.proxyConn = new LRU({max: PROXY_CONN_SIZE, maxAge: 60 * 1000});
     this.dnsCache = new LRU({max: DNS_CACHE_SIZE, maxAge: 3600 * 1000});
     this.dnsCount = 0
@@ -180,7 +181,7 @@ class BroDetect {
       this._activeMacHeartbeat();
     }, 60000);
 
-    this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 } }
+    this.timeSeriesCache = { }
     this.tsWriteInterval = config.conn.tsWriteInterval || 10000
     this.recordTrafficTask = setInterval(() => {
       this.writeTrafficCache().catch(err => {
@@ -274,6 +275,18 @@ class BroDetect {
       this.appmap.del(key);
     }
     return obj;
+  }
+
+  addConnSignature(uid, sigId) {
+    if (!this.sigmap.has(uid))
+      this.sigmap.set(uid, {});
+    this.sigmap.get(uid)[sigId] = 1;
+  }
+
+  getConnSignatures(uid) {
+    if (!this.sigmap.has(uid) || !_.isObject(this.sigmap.get(uid)))
+      return null;
+    return Object.keys(this.sigmap.get(uid));
   }
 
   extractIP(str) {
@@ -437,6 +450,8 @@ class BroDetect {
     }
   }
 
+  // during firemain start and new device discovery, there's a small window that host object is
+  // not created in memory thus no tag info.
   async getTags(monitorable, intfInfo) {
     if (!monitorable) return {}
     const intfId = intfInfo && intfInfo.uuid
@@ -456,6 +471,8 @@ class BroDetect {
         }
       }
       result[flowKey] = _.uniq(tags);
+      // remove empty tag key to save memory, this cuts 4%+ from flow:conn
+      if (!result[flowKey].length) delete result[flowKey]
     }
 
     return result
@@ -466,7 +483,7 @@ class BroDetect {
       const now = Date.now() / 1000
       const dnsFlow = {
         ts: Math.round((obj.ts) * 100) / 100,
-        _ts: await getUniqueTs(now), // _ts is the last time updated, make it unique to avoid missing flows in time-based query
+        _ts: getUniqueTs(now), // _ts is the last time updated, make it unique to avoid missing flows in time-based query
         dn: obj.query,
         sh: obj["id.orig_h"],
         dh: obj["id.resp_h"],
@@ -492,6 +509,11 @@ class BroDetect {
       let intfInfo = sysManager.getInterfaceViaIP(dnsFlow.sh);
       const isIdentityIntf = this.isIdentityLAN(intfInfo)
 
+      if (localFam == 4 && sysManager.isMyIP(dnsFlow.sh) ||
+        localFam == 6 && sysManager.isMyIP6(dnsFlow.sh)) {
+        return
+      }
+
       if (!localMac) {
         if (isIdentityIntf)
           monitorable = await this.waitAndGetIdentity(dnsFlow.sh)
@@ -502,12 +524,9 @@ class BroDetect {
             intfInfo = monitorable.getNicName() && sysManager.getInterface(monitorable.getNicName());
         }
       } else {
-
         if (sysManager.isMyMac(localMac)) {
-          if (localFam == 4 && !sysManager.isMyIP(dnsFlow.sh) || localFam == 6 && !sysManager.isMyIP6(dnsFlow.sh)) {
-            log.info("Discard incorrect local MAC address from bro log: ", localMac, dnsFlow.sh);
-            localMac = null
-          }
+          log.verbose("Discard incorrect local MAC from DNS log: ", localMac, dnsFlow.sh);
+          localMac = null
         }
 
         monitorable = hostManager.getHostFastByMAC(localMac);
@@ -522,11 +541,6 @@ class BroDetect {
         this.recordDeviceHeartbeat(localMac, dnsFlow.ts, dnsFlow.sh, localFam)
       }
 
-      if (localFam == 4 && sysManager.isMyIP(dnsFlow.sh) ||
-        localFam == 6 && sysManager.isMyIP6(dnsFlow.sh)) {
-        return
-      }
-
       if (!this.isMonitoring(intfInfo, monitorable) || !this.isDNSCacheOn(intfInfo, monitorable)) {
         return;
       }
@@ -536,22 +550,21 @@ class BroDetect {
       }
 
       if (!localMac || localMac.constructor.name !== "String") {
-        log.warn('NO LOCAL MAC! Drop DNS', JSON.stringify(obj))
+        log.verbose('NO LOCAL MAC! Drop DNS', JSON.stringify(obj))
         return
       }
 
       const tags = await this.getTags(monitorable, intfInfo)
 
-      await this.recordTraffic({ dns: 1 }, localMac);
+      this.recordTraffic({ dns: 1 }, localMac);
+      this.recordTraffic({ dns: 1 }, 'global');
       if (intfInfo) {
-        await this.recordTraffic({ dns: 1 }, 'intf:' + intfInfo.uuid, true);
+        this.recordTraffic({ dns: 1 }, 'intf:' + intfInfo.uuid);
       }
       for (const key in tags) {
-        if (tags[key] && tags[key].length) {
-          dnsFlow[key] = tags[key]
-          for (const tag of tags[key]) {
-            await this.recordTraffic({ dns: 1 }, 'tag:' + tag, true);
-          }
+        dnsFlow[key] = tags[key]
+        for (const tag of tags[key]) {
+          this.recordTraffic({ dns: 1 }, 'tag:' + tag);
         }
       }
 
@@ -719,12 +732,8 @@ class BroDetect {
     if (!hostManager.isMonitoring())
       return false;
 
-    try{
     if (monitorable && !monitorable.isMonitoring())
       return false
-    } catch(err) {
-      log.error(monitorable, err)
-    }
 
     if (intf) {
       const uuid = intf && intf.uuid;
@@ -753,54 +762,14 @@ class BroDetect {
     return (monitorable && monitorable.constructor || Monitorable).defaultPolicy().dnsmasq.dnsCaching;
   }
 
-  isConnFlowValid(data, intf, localFam, monitorable) {
+  isConnFlowValid(intf, monitorable) {
     let m = mode.getSetupModeSync()
     if (!m) {
       return true               // by default, always consider as valid
     }
 
-    // ignore any traffic originated from walla itself, (walla is acting like router with NAT)
-    if (localFam == 4 &&
-      (sysManager.isMyIP(data["id.orig_h"]) || sysManager.isMyIP(data["id.resp_h"]))
-    ) {
-      return false
-    }
-
-    if (localFam == 6 &&
-      (sysManager.isMyIP6(data["id.orig_h"]) || sysManager.isMyIP6(data["id.resp_h"]))
-    ) {
-      return false;
-    }
-
     // ignore any devices' traffic who is set to monitoring off
     return this.isMonitoring(intf, monitorable)
-  }
-
-  isUDPtrafficAccountable(obj) {
-    const host = obj["id.orig_h"];
-    const dst = obj["id.resp_h"];
-    const localOrig = obj["local_orig"];
-    const localResp = obj["local_resp"];
-
-    let deviceIP = null;
-
-    if (localOrig) {
-      deviceIP = host;
-    } else {
-      deviceIP = dst;
-    }
-
-    let device = null;
-
-    if (iptool.isV4Format(deviceIP)) {
-      device = hostManager.getHostFast(deviceIP);
-    } else {
-      device = hostManager.getHostFast6(deviceIP);
-    }
-
-    let mac = device && device.o && device.o.mac;
-
-    return !accounting.isBlockedDevice(mac);
   }
 
   validateConnData(obj) {
@@ -939,7 +908,7 @@ class BroDetect {
 
       // drop layer 3
       if (obj.orig_ip_bytes == 0 && obj.resp_ip_bytes == 0) {
-        log.debug("Conn:Drop:ZeroLength", obj.conn_state, obj);
+        // log.debug("Conn:Drop:ZeroLength", obj.conn_state, obj);
         return;
       }
 
@@ -950,17 +919,18 @@ class BroDetect {
       }
 
       if (obj.orig_bytes == undefined || obj.resp_bytes == undefined) {
-        log.debug("Conn:Drop:NullBytes", obj);
+        // log.debug("Conn:Drop:NullBytes", obj);
         return;
       }
 
       // drop layer 4
       if (obj.orig_bytes == 0 && obj.resp_bytes == 0) {
-        log.debug("Conn:Drop:ZeroLength2", obj.conn_state, obj);
+        // log.debug("Conn:Drop:ZeroLength2", obj.conn_state, obj);
         return;
       }
 
-      if(!this.validateConnData(obj)) {
+      // when reversed, number on long conn is substraced and might fail here
+      if (!reverseLocal && !this.validateConnData(obj)) {
         return;
       }
 
@@ -1012,7 +982,8 @@ class BroDetect {
       let localFlow = false
       let bridge = obj["bridge"] || false;
 
-      log.debug("ProcessingConection:", obj.uid, orig, resp, obj['id.resp_p']);
+      log.debug("ProcessingConection:", obj.uid, orig, resp, obj['id.resp_p'],
+        long ? 'long' : '', reverseLocal ? 'reverseLocal' : '');
 
       // fd: in, this flow initiated from inside
       // fd: out, this flow initated from outside, it is more dangerous
@@ -1085,29 +1056,27 @@ class BroDetect {
       if (localFlow && !reverseLocal && (origMac && sysManager.isMyMac(origMac) || isIdentityIntf && respMac))
         return;
 
+      // ignore any traffic originated or to walla itself
+      if (fam == 4 && (sysManager.isMyIP(orig) || sysManager.isMyIP(resp))
+       || fam == 6 && (sysManager.isMyIP6(orig) || sysManager.isMyIP6(resp))) {
+        return
+      }
+
       let localType = TYPE_MAC;
       let realLocal = null;
       let monitorable = null;
       if (isIdentityIntf) {
         monitorable = await this.waitAndGetIdentity(lhost);
         if (monitorable) {
-          if (!localMac)
-            localMac = IdentityManager.getGUID(monitorable);
-          if (lhost && fam == 4)
+          localMac = IdentityManager.getGUID(monitorable);
+          if (fam == 4)
             realLocal = IdentityManager.getEndpointByIP(lhost);
           localType = TYPE_VPN;
-          if (!intfInfo) // might be in mesh network
-            intfInfo = monitorable.getNicName() && sysManager.getInterface(monitorable.getNicName());
         }
       } else {
         if (localMac && sysManager.isMyMac(localMac)) {
-          // double confirm local mac is correct since bro may record Firewalla's MAC as local mac
-          // if packets are not fully captured due to ARP spoof leak
-          if (fam == 4 && !sysManager.isMyIP(lhost) || fam == 6 && !sysManager.isMyIP6(lhost)) {
-            log.info("Discard incorrect local MAC address from bro log: ", localMac, lhost);
-            localMac = null; // discard local mac from bro log since it is not correct
-          } else
-            return;
+          log.verbose("Discard incorrect local MAC address from bro log: ", localMac, lhost);
+          localMac = null; // discard local mac from bro log since it is not correct
         }
 
         if (!localMac)
@@ -1115,7 +1084,7 @@ class BroDetect {
         if (localMac)
           monitorable = hostManager.getHostFastByMAC(localMac);
         else {
-          log.warn('NO LOCAL MAC! Drop flow', data)
+          log.verbose('NO LOCAL MAC! Drop flow', data)
           return
         }
 
@@ -1129,11 +1098,10 @@ class BroDetect {
         intfInfo = sysManager.getInterfaceViaUUID(monitorable && monitorable.o.intf);
       }
 
-      if (!this.isConnFlowValid(obj, intfInfo, fam, monitorable)) {
+      if (!this.isConnFlowValid(intfInfo, monitorable))
         return;
-      }
 
-      if (obj.proto === "udp" && !this.isUDPtrafficAccountable(obj)) {
+      if (obj.proto === "udp" && accounting.isBlockedDevice(localMac)) {
         return; // ignore udp traffic if they are not valid
       }
 
@@ -1221,7 +1189,7 @@ class BroDetect {
         // no interface doesn't really makes sense here
         log.error('Conn: Unable to find nif uuid', lhost, localMac);
         return
-      }    
+      }
 
       // save flow under the destination host key for per device indexing
       // do this after we get real bytes in long connection
@@ -1231,19 +1199,13 @@ class BroDetect {
         if (isDstIdentityIntf) {
           dstMonitorable = await this.waitAndGetIdentity(dhost);
           if (dstMonitorable) {
-            if (!dstMac)
-              dstMac = IdentityManager.getGUID(dstMonitorable);
-            if (!dstIntfInfo)
-              dstIntfInfo = dstMonitorable.getNicName() && sysManager.getInterface(dstMonitorable.getNicName());
+            dstMac = IdentityManager.getGUID(dstMonitorable);
           }
         } else {
           if (dstMac && sysManager.isMyMac(dstMac)) {
             // double check dest mac for spoof leak
-            if (fam == 4 && !sysManager.isMyIP(dhost) || fam == 6 && !sysManager.isMyIP6(dhost)) {
-              log.info("Discard incorrect dest MAC address from bro log: ", dstMac, dhost);
-              dstMac = null
-            } else 
-              return;
+            log.verbose("Discard incorrect dest MAC address from bro log: ", dstMac, dhost);
+            dstMac = null
           }
 
           if (!dstMac)
@@ -1251,9 +1213,17 @@ class BroDetect {
           if (dstMac)
             dstMonitorable = hostManager.getHostFastByMAC(dstMac);
           else {
-            log.warn('NO DST MAC! Drop flow', data);
+            log.verbose('NO DST MAC! Drop flow', data);
             return;
           }
+        }
+
+        if (!dstIntfInfo || !dstIntfInfo.uuid) {
+          log.error('Conn: Unable to find dst intf', dhost, dstMac);
+          return
+        }
+        if (obj.proto === "udp" && accounting.isBlockedDevice(dstMac)) {
+          return
         }
 
         if (!reverseLocal) {
@@ -1267,12 +1237,12 @@ class BroDetect {
       }
 
       // flowstash is the aggregation of flows within FLOWSTASH_EXPIRES seconds
-      let now = Date.now() / 1000; // keep it as float, reduce the same score flows
-      let flowspecKey = `${orig}:${resp}:${intfId}:${outIntfId || ""}:${obj['id.resp_p'] || ""}:${flowdir}`;
+      const now = Date.now() / 1000; // keep it as float, reduce the same score flows
+      const flowspecKey = `${localMac}:${orig}:${resp}:${outIntfId || ""}:${obj['id.resp_p'] || ""}`;
 
       const tmpspec = {
         ts: obj.ts, // ts stands for start timestamp
-        _ts: await getUniqueTs(now), // _ts is the last time updated, make it unique to avoid missing flows in time-based query
+        _ts: getUniqueTs(now), // _ts is the last time updated, make it unique to avoid missing flows in time-based query
         sh: orig, // source
         dh: resp, // dstination
         ob: Number(obj.orig_bytes), // transfer bytes
@@ -1289,6 +1259,7 @@ class BroDetect {
 
       if (localFlow) {
         tmpspec.dmac = dstMac
+        tmpspec.dIntf = dstIntfInfo.uuid.substring(0, 8)
       } else {
         tmpspec.oIntf = outIntfId // egress intf id
         tmpspec.af = {} //application flows
@@ -1303,10 +1274,9 @@ class BroDetect {
       }
 
       const tags = await this.getTags(monitorable, intfInfo)
-      let dstTags = null;
-      if (dstMonitorable) {
-        dstTags = await this.getTags(dstMonitorable, dstIntfInfo)
-      }
+      const dstTags = await this.getTags(dstMonitorable, dstIntfInfo)
+      Object.assign(tmpspec, tags)
+      tmpspec.dstTags = dstTags
 
       if (monitorable instanceof Identity)
         tmpspec.guid = IdentityManager.getGUID(monitorable);
@@ -1320,25 +1290,15 @@ class BroDetect {
       // might be blocked UDP packets, checking conntrack
       // blocked connections don't leave a trace in conntrack
       if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0)) {
-        if (!outIntfId && !localFlow) {
+        if (!outIntfId) {
           log.debug('Dropping blocked UDP', tmpspec)
           return
         }
       }
 
-      for (const key in tags) {
-        if (_.isArray(tags[key]) && !_.isEmpty(tags[key])) {
-          tmpspec[key] = tags[key]
-        }
-      }
-      if (dstTags) {
-        tmpspec.dstTags = {};
-        for (const key in dstTags) {
-          if (_.isArray(dstTags[key]) && !_.isEmpty(dstTags[key])) {
-            tmpspec.dstTags[key] = dstTags[key];
-          }
-        }
-      }
+      const sigs = this.getConnSignatures(uid);
+      if (!_.isEmpty(sigs))
+        tmpspec.sigs = sigs;
 
       let afobj, afhost
       if (!localFlow) {
@@ -1360,17 +1320,44 @@ class BroDetect {
       const traffic = [tmpspec.ob, tmpspec.rb]
       if (tmpspec.fd == 'in') traffic.reverse()
 
-      const tuple = { download: traffic[0], upload: traffic[1], conn: tmpspec.ct }
+      const tuple = { download: traffic[0], upload: traffic[1] }
       if (localFlow) {
-        await this.recordTraffic(tuple, 'lo:' + localMac, true)
-      } else {
-        await this.recordTraffic(tuple, localMac);
-        await this.recordTraffic(tuple, 'intf:' + intfInfo.uuid, true);
+        const tupleConn = {conn: tmpspec.ct}
+        const tupleIntra = { intra: tmpspec.ob + tmpspec.rb }
+
+        this.recordTraffic(tupleIntra, 'lo:global')
+        this.recordTraffic(tupleConn, 'lo:intra:global')
+
+        this.recordTraffic(tuple, 'lo:' + localMac)
+        this.recordTraffic(tupleConn, `lo:${flowdir}:${localMac}`)
+
+        if (dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid) {
+          this.recordTraffic(tupleIntra, 'lo:intf:' + intfInfo.uuid)
+          this.recordTraffic(tupleConn, 'lo:intra:intf:' + intfInfo.uuid)
+        } else {
+          this.recordTraffic(tuple, 'lo:intf:' + intfInfo.uuid)
+          this.recordTraffic(tupleConn, `lo:${flowdir}:intf:${intfInfo.uuid}`)
+        }
+
         for (const key in tags) {
-          if (_.isArray(tags[key]) && !_.isEmpty(tags[key])) {
-            for (const tag of tags[key]) {
-              await this.recordTraffic(tuple, 'tag:' + tag, true);
+          for (const tag of tags[key]) {
+            if (dstTags[key] && dstTags[key].includes(tag)) {
+              this.recordTraffic(tupleIntra, 'lo:tag:' + tag)
+              this.recordTraffic(tupleConn, 'lo:intra:tag:' + tag)
+            } else {
+              this.recordTraffic(tuple, 'lo:tag:' + tag)
+              this.recordTraffic(tupleConn, `lo:${flowdir}:tag:${tag}`)
             }
+          }
+        }
+      } else {
+        tuple.conn = tmpspec.ct
+        this.recordTraffic(tuple, localMac);
+        this.recordTraffic(tuple, 'global');
+        this.recordTraffic(tuple, 'intf:' + intfInfo.uuid);
+        for (const key in tags) {
+          for (const tag of tags[key]) {
+            this.recordTraffic(tuple, 'tag:' + tag);
           }
         }
       }
@@ -1387,7 +1374,6 @@ class BroDetect {
       // adding keys to flowstash (but not redis)
       tmpspec.mac = localMac
       if (localFlow) tmpspec.local = true
-      Object.assign(tmpspec, tags)
 
       if (tmpspec.fd == 'out' && !localFlow) {
         this.recordOutPort(localMac, tmpspec);
@@ -1396,7 +1382,7 @@ class BroDetect {
       await rclient.zaddAsync(redisObj).catch(
         err => log.error("Failed to save tmpspec: ", tmpspec, err)
       )
-      if (config.conn.expires) rclient.expireat(key, Date.now() / 1000 + config.conn.expires, ()=>{})
+      if (config.conn.expires) rclient.expireat(key, now + config.conn.expires, ()=>{})
       await flowAggrTool.recordDeviceLastFlowTs(localMac, now);
       const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
       let remoteHost = null;
@@ -1434,6 +1420,8 @@ class BroDetect {
               flowspec.sp.push(obj['id.orig_p']);
           }
         }
+        if (!_.isEmpty(sigs))
+          flowspec.sigs = _.union(flowspec.sigs, sigs);
         if (afhost && !flowspec.af[afhost]) {
           flowspec.af[afhost] = _.pick(afobj, ["proto", "ip"]);
         }
@@ -1444,29 +1432,31 @@ class BroDetect {
         sem.emitLocalEvent({
           type: Message.MSG_FLOW_ENRICHED,
           suppressEventLogging: true,
-          flow: Object.assign({}, tmpspec, {intf: intfInfo && intfInfo.uuid}),
+          flow: Object.assign({}, tmpspec, {intf: intfInfo.uuid, dIntf: dstIntfInfo.uuid}),
         });
-        return
       }
 
       setTimeout(() => {
-        sem.emitEvent({
-          type: 'DestIPFound',
-          ip: remoteIPAddress,
-          host: remoteHost,
-          fd: tmpspec.fd,
-          flow: Object.assign({}, tmpspec, {ip: remoteIPAddress, host: remoteHost, intf: intfInfo && intfInfo.uuid}),
-          from: "flow",
-          suppressEventLogging: true,
-          mac: localMac
-        });
-        if (realLocal) {
+        // no need to go through DestIPFoundHook for localFlow
+        if (!localFlow) {
           sem.emitEvent({
             type: 'DestIPFound',
-            from: "VPN_endpoint",
-            ip: tmpspec.rl,
-            suppressEventLogging: true
+            ip: remoteIPAddress,
+            host: remoteHost,
+            fd: tmpspec.fd,
+            flow: Object.assign({}, tmpspec, { ip: remoteIPAddress, host: remoteHost, intf: intfInfo.uuid }),
+            from: "flow",
+            suppressEventLogging: true,
+            mac: localMac
           });
+          if (realLocal) {
+            sem.emitEvent({
+              type: 'DestIPFound',
+              from: "VPN_endpoint",
+              ip: tmpspec.rl,
+              suppressEventLogging: true
+            });
+          }
         }
         sem.emitLocalEvent({
           type: "Flow2Stream",
@@ -1506,35 +1496,6 @@ class BroDetect {
         }
       } catch (e) {
         log.error("Conn:Save:AFMAP:EXCEPTION", e);
-      }
-      // during firemain start and new device discovery, there's a small window that host object is
-      // not created in memory thus no tag info. trying to find host obj again here
-      // flow with hostInfo always creates an empty tags array, which was saved to flowstash
-      if (!spec.tags) {
-        const monitorable = hostManager.getHostFastByMAC(spec.mac);
-        const intfInfo = sysManager.getInterfaceViaUUID(monitorable && monitorable.o.intf);
-        const tags = await this.getTags(monitorable, intfInfo)
-        Object.assign(spec, tags)
-
-        if (!spec.local)
-          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-            const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
-            for (const tag of spec[flowKey] || []) {
-              if (type == 'conn') {
-                timeSeries.recordHit(`download:tag:${tag}`, spec._ts, spec.fd == 'in' ? spec.rb : spec.ob);
-                timeSeries.recordHit(`upload:tag:${tag}`, spec._ts, spec.fd == 'in' ? spec.ob : spec.rb);
-              }
-              timeSeries.recordHit(`${type}:tag:${tag}`, spec._ts, spec.ct);
-            }
-          }
-      }
-
-      // remove empty tag key to save memory, this cuts 4%+ for flow:conn
-      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-        const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
-        if (!spec[flowKey].length) {
-          delete spec[flowKey]
-        }
       }
 
       const key = type == 'conn'
@@ -1877,6 +1838,14 @@ class BroDetect {
     }
   }
 
+  async processSignatureData(data) {
+    const obj = JSON.parse(data);
+    const {uid, sig_id} = obj;
+    if (!uid || !sig_id)
+      return;
+    this.addConnSignature(uid, sig_id);
+  }
+
   async getWanNicStats() {
     const wanIntfs = sysManager.getWanInterfaces();
     const result = {};
@@ -1913,7 +1882,7 @@ class BroDetect {
 
   async writeTrafficCache() {
     const toRecord = this.timeSeriesCache
-    this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0, dns: 0 }, ts: Date.now() / 1000 }
+    this.timeSeriesCache = { ts: Date.now() / 1000 }
     const duration = this.timeSeriesCache.ts - toRecord.ts
     const lastTS = Math.floor(toRecord.ts)
 
@@ -1936,10 +1905,14 @@ class BroDetect {
     }
     // a safe-check to filter abnormal rx/tx bytes spikes that may be caused by hardware bugs
     const threshold = config.threshold;
-    if (wanNicRxBytes >= threshold.maxSpeed / 8 * duration)
+    if (wanNicRxBytes >= threshold.maxSpeed / 8 * duration) {
+      log.warn('WAN rx exceeded', wanNicRxBytes, '>', threshold.maxSpeed, '/', duration)
       wanNicRxBytes = 0;
-    if (wanNicTxBytes >= threshold.maxSpeed / 8 * duration)
+    }
+    if (wanNicTxBytes >= threshold.maxSpeed / 8 * duration) {
+      log.warn('WAN tx exceeded', wanNicRxBytes, '>', threshold.maxSpeed, '/', duration)
       wanNicTxBytes = 0;
+    }
     this.wanNicStatsCache = wanNicStats;
 
     const isRouterMode = await mode.isRouterModeOn();
@@ -1952,13 +1925,15 @@ class BroDetect {
       }
     }
 
+    log.verbose('toRecord', toRecord)
     for (const key in toRecord) {
-      const subKey = key == 'global' ? '' : ':' + key
+      const subKey = key == 'global' ? '' : ':' + (key.endsWith('global') ? key.slice(0, -7) : key)
       const download = isRouterMode && key == 'global' ? wanNicRxBytes : toRecord[key].download;
       const upload = isRouterMode && key == 'global' ? wanNicTxBytes : toRecord[key].upload;
       log.debug("Store timeseries", lastTS, key, download, upload, toRecord[key].conn)
       download && timeSeries.recordHit('download' + subKey, lastTS, download)
       upload && timeSeries.recordHit('upload' + subKey, lastTS, upload)
+      toRecord[key].intra && timeSeries.recordHit('intra' + subKey, lastTS, toRecord[key].intra)
       toRecord[key].conn && timeSeries.recordHit('conn' + subKey, lastTS, toRecord[key].conn)
       toRecord[key].dns && timeSeries.recordHit('dns' + subKey, lastTS, toRecord[key].dns)
     }
@@ -1966,15 +1941,9 @@ class BroDetect {
     timeSeries.exec()
   }
 
-  async recordTraffic(tuple, key, ignoreGlobal = false) {
-    // append current status
-    if (!ignoreGlobal) {
-      for (const measure in tuple)
-        this.timeSeriesCache.global[measure] += tuple[measure]
-    }
-
+  recordTraffic(tuple, key) {
     if (!this.timeSeriesCache[key]) {
-      this.timeSeriesCache[key] = { upload: 0, download: 0, conn: 0, dns: 0 }
+      this.timeSeriesCache[key] = { upload: 0, download: 0, intra: 0, conn: 0, dns: 0 }
     }
     for (const measure in tuple)
       this.timeSeriesCache[key][measure] += tuple[measure]

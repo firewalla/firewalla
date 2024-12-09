@@ -31,6 +31,8 @@ module.exports = {
   VPN_TYPE_OVPN: "ovpn",
   VPN_TYPE_WG: "wg",
 
+  INTF_AP_CTRL: "wg_ap",
+
   TRUST_IP_SET: "trust:ip",
   TRUST_DOMAIN_SET: "trust:domain",
 
@@ -66,6 +68,10 @@ module.exports = {
   ST_IGNORE: 'ignore',
   ST_TIMEOUT: 'timeout',
 
+  FW_AP_MAC_PREFIX: "20:6D:31:61",
+  FW_AP_DEFAULT_DHCP_HOSTNAME: "FirewallaAP",
+  VPN_ROUTE_MARK_KEY_PREFIX: "fwmark:vpn",
+
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
 
   STATE_EVENT_NIC_SPEED: "nic_speed",
@@ -82,6 +88,7 @@ module.exports = {
   TAG_TYPE_DEVICE: "device",
   TAG_TYPE_USER: "user",
   TAG_TYPE_GROUP: "group",
+  TAG_TYPE_SSID: "ssid",
 
   TAG_TYPE_MAP: {
     device: {
@@ -112,6 +119,16 @@ module.exports = {
       alarmIdKey: "p.tag.ids",
       alarmNameKey: "p.tag.names",
       ruleTagPrefix: "tag:",
+      needAppTimeInInitData: false
+    },
+    ssid: {
+      redisKeyPrefix: "ssidTag:uid:",
+      initDataKey: "ssidTags",
+      policyKey: "ssidTags",
+      flowKey: "ssidTags",
+      alarmIdKey: "p.ssidtag.ids",
+      alarmNameKey: "p.ssidtag.names",
+      ruleTagPrefix: "ssidTag:",
       needAppTimeInInitData: false
     }
   },
