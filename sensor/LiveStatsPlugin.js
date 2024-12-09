@@ -29,6 +29,7 @@ const identityManager = require('../net2/IdentityManager');
 const sem = require('./SensorEventManager.js').getInstance();
 const Mode = require('../net2/Mode.js');
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const fwapc = require('../net2/fwapc.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js')
 
 const fsp = require('fs').promises;
@@ -145,8 +146,19 @@ class LiveStatsPlugin extends Sensor {
       if (queries && queries.latency) {
         // only support device ping latency
         if (type === "host") {
-          const result = await this.getDeviceLatency(target);
-          response.latency = result ? [ result ] : [];
+          const latency = await this.getDeviceLatency(target);
+          response.latency = latency ? [ latency ] : [];
+        }
+      }
+
+      if (queries && queries.staInfo) {
+        // only support device sta information
+        if (type === "host") {
+          const staStatus = await fwapc.getAllSTAStatus(true);
+          if (staStatus && staStatus[target])
+            response.staInfo = [Object.assign({ target }, staStatus[target])];
+          else
+            response.staInfo = [];
         }
       }
 

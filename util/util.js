@@ -24,6 +24,7 @@ const lock = new AsyncLock();
 let incTs = 0;
 
 const validDomainRegex = /^[a-zA-Z0-9-_.]+$/
+const validVersionRegex = /^[0-9.]+/
 
 function extend(target) {
   var sources = [].slice.call(arguments, 1);
@@ -273,27 +274,56 @@ async function batchKeyExists(keys, batchSize) {
   return _.flatten(validChunks)
 }
 
-async function getUniqueTs(ts) {
-  return lock.acquire("unique_ts_lock", async () => {
-    incTs = (incTs + 1) % 100;
-    return Math.round(ts * 100 + incTs) / 100;
-  });
+function getUniqueTs(ts) {
+  incTs = (incTs + 1) % 100;
+  return Math.round(ts * 100 + incTs) / 100;
 }
 
 function difference(obj1, obj2) {
+  return _.uniq(_diff(obj1, obj2).concat(_diff(obj2, obj1)));
+}
+
+function _diff(obj1, obj2) {
+  if (!obj1 || !_.isObject(obj1)) {
+    return [];
+  }
+  if (!obj2 || !_.isObject(obj2)) {
+    return Object.keys(obj1);
+  }
   return _.reduce(obj1, function(result, value, key) {
-    if (obj2[key] && value.constructor.name == "Object" && obj2[key].constructor.name == "Object") {
-      if (Object.keys(value).length != Object.keys(obj2[key]).length) {
-        return result.concat(key);
-      }
-      if (difference(value, obj2[key]).length > 0) {
-        return result.concat(key);
-      }
-      return result;
-    }
     return _.isEqual(value, obj2[key]) ?
         result : result.concat(key);
-}, []);
+  }, []);
+}
+
+function _extractVersion(ver) {
+  let v = ver.match(validVersionRegex);
+  if (!v) return "";
+  return v[0];
+}
+
+// check if ver1 < ver2
+function versionCompare(ver1, ver2) {
+  const v1 = _extractVersion(ver1).split('.');
+  const v2 = _extractVersion(ver2).split('.');
+
+  for (let i = 0; i < v1.length && i < v2.length; i++){
+    if (parseInt(v1[i]) > parseInt(v2[i])) return false;
+    if (parseInt(v1[i]) < parseInt(v2[i])) return true;
+  }
+  if (v1.length >= v2.length) return false;
+  return true;
+}
+
+// wait for condition till timeout
+function waitFor(condition, timeout=3000) {
+  const deadline = Date.now() + timeout;
+  const poll = (resolve, reject) => {
+    if(condition()) resolve();
+    else if (Date.now() >= deadline) reject(`exceeded timeout of ${timeout} ms`); // timeout reject
+    else setTimeout( _ => poll(resolve, reject), 800);
+  }
+  return new Promise(poll);
 }
 
 module.exports = {
@@ -302,6 +332,7 @@ module.exports = {
   getPreferredName,
   delay,
   difference,
+  versionCompare,
   argumentsToString,
   isSimilarHost,
   isSameOrSubDomain,
@@ -315,5 +346,6 @@ module.exports = {
   fileTouch,
   fileRemove,
   batchKeyExists,
+  waitFor,
   getUniqueTs
 };

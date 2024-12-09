@@ -26,7 +26,7 @@ const bodyParser = require('body-parser');
 
 const log = require('../net2/logger.js')(__filename, 'info')
 
-var encipher = require('./routes/fastencipher2').router;
+const encipher = require('./routes/fastencipher2').router;
 
 // periodically update cpu usage, so that latest info can be pulled at any time
 let si = require('../extension/sysinfo/SysInfo.js');

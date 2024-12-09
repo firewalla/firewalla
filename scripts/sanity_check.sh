@@ -855,9 +855,12 @@ check_hosts() {
         # done
     done
 
+    D="\e[2m"
+    U="\e[0m"
+
     echo ""
-    echo "    *: Reserved IP"
-    echo "Abbr.: Mon(Monitoring) B7(Spoofing Flag) Ol(Online) DvT(Device Type/Tag) EA(Emergency Access) SS(Safe Search) DoH(DNS over HTTPS) Ubd(Unbound)"
+    echo    "    *: Reserved IP"
+    echo -e "Abbr.: Mon${D}(Monitoring)$U B7${D}(Spoofing Flag)$U Ol${D}(Online)$U DvT${D}(Device Type)$U EA${D}(Emergency Access)$U SS${D}(Safe Search)$U DoH${D}(DNS over HTTPS)$U Ubd${D}(Unbound)$U"
     echo ""
 }
 
@@ -994,7 +997,7 @@ check_network() {
     DNS=$(jq '.dns' /tmp/scc_config)
     # read LAN DNS as '|' seperated string into associative array DNS_CONFIG
     declare -A DNS_CONFIG
-    jq '.dns | to_entries | map(select(.value.nameservers))[] | .key, (.value.nameservers | join("|"))' /tmp/scc_config |
+    jq -r '.dns | to_entries | map(select(.value.nameservers))[] | .key, (.value.nameservers | join("|"))' /tmp/scc_config |
       while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
         DNS_CONFIG[${ARY[0]}]=${ARY[1]}
       done
@@ -1009,18 +1012,18 @@ check_network() {
 
     printf "Interface\tName\tUUID\tIPv4\tGateway\tIPv6\tGateway6\tDNS\tvpnClient\tAdB\tFam\tSS\tDoH\tubn\n" >/tmp/scc_csv_multline
     while read -r LINE; do
-      mapfile -td $'\t' COL < <(printf "$LINE")
+      mapfile -td $'\t' COL < <(printf "%s" "$LINE")
       # read multi line fields into array
-      mapfile -td '|' IP6 < <(printf "${COL[5]}")
+      mapfile -td '|' IP6 < <(printf "%s" "${COL[5]}")
       # column 7 is the last column, which carries a line feed
       if [[ ${#COL[7]} -gt 1 ]]; then
+        # echo "7 ${COL[7]}"
         mapfile -td ';' DNS < <(printf "%s" "${COL[7]}")
       else
+        # echo "c,${COL[0]},${DNS_CONFIG["${COL[0]}"]}"
         mapfile -td '|' DNS < <(printf "%s" "${DNS_CONFIG["${COL[0]}"]}")
       fi
-      # echo ${COL[0]}
       # echo "ip${#IP6[@]} dns${#DNS[@]}"
-      # echo ${DNS_CONFIG["${COL[0]}"]}
       # echo ${IP6[@]}
       # echo ${DNS[@]}
 
