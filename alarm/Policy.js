@@ -346,7 +346,7 @@ class Policy {
     const duration = parseFloat(this.duration); // in seconds
     const interval = cronParser.parseExpression(cronTime, { tz: sysManager.getTimezone() });
     const lastDate = interval.prev().getTime() / 1000;
-    log.info(`lastDate: ${lastDate}, duration: ${duration}, alarmTimestamp:${alarmTimestamp}`);
+    log.debug(`lastDate: ${lastDate}, duration: ${duration}, alarmTimestamp:${alarmTimestamp}`);
 
     if (alarmTimestamp > lastDate && alarmTimestamp < lastDate + duration) {
       return true

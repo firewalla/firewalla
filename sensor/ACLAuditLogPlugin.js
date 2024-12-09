@@ -151,7 +151,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1 };
     record.ac = "block";
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanUUID, inIntfName, outIntfName, isolationTagId;
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanUUID, inIntfName, outIntfName, isolationTagId, isolationNetworkIdPrefix;
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -258,6 +258,9 @@ class ACLAuditLogPlugin extends Sensor {
           isolationTagId = v;
           break;
         }
+        case 'N': {
+          isolationNetworkIdPrefix = v;
+        }
         default:
       }
     }
@@ -307,9 +310,17 @@ class ACLAuditLogPlugin extends Sensor {
     }
 
     if (record.ac === "isolation") {
-      record.group = isolationTagId;
+      record.isoGID = isolationTagId;
       dir = "L";
       ctdir = "O";
+      if (isolationNetworkIdPrefix) {
+        if (inIntf && _.isString(inIntf.uuid) && inIntf.uuid.startsWith(isolationNetworkIdPrefix))
+          record.isoNID = inIntf.uuid;
+        else {
+          if (outIntf && _.isString(outIntf.uuid) && outIntf.uuid.startsWith(isolationNetworkIdPrefix))
+            record.isoNID = outIntf.uuid;
+        }
+      }
     }
 
     if (security)
@@ -446,7 +457,7 @@ class ACLAuditLogPlugin extends Sensor {
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
 
     if (!mac) {
-      log.warn('MAC address not found for', line)
+      log.warn('MAC address not found for', localIP)
       return
     }
 
@@ -545,7 +556,7 @@ class ACLAuditLogPlugin extends Sensor {
     record.intf = intfUUID.substring(0, 8);
 
     if (!mac) {
-      log.warn('MAC address not found for', JSON.stringify(record))
+      log.verbose('MAC address not found for', record.sh || JSON.stringify(record))
       return
     }
 
@@ -656,7 +667,7 @@ class ACLAuditLogPlugin extends Sensor {
           const record = buffer[mac][descriptor];
           const { type, ac, ts, du, ct } = record
           const intf = record.intf && networkProfileManager.prefixMap[record.intf]
-          const _ts = await getUniqueTs(ts + (du || 0)) // make it unique to avoid missing flows in time-based query
+          const _ts = getUniqueTs(ts + (du || 0)) // make it unique to avoid missing flows in time-based query
           record._ts = _ts;
           const block = type == 'dns' ?
             record.rc == 3 /*NXDOMAIN*/ &&
@@ -790,7 +801,7 @@ class ACLAuditLogPlugin extends Sensor {
         transaction.push(['zremrangebyscore', key, start, end]);
         for (const descriptor in stash) {
           const record = stash[descriptor]
-          record._ts = await getUniqueTs(record.ts + (record.du || 0));
+          record._ts = getUniqueTs(record.ts + (record.du || 0));
           transaction.push(['zadd', key, record._ts, JSON.stringify(record)])
         }
         const expires = parseInt(Date.now() / 1000) + (this.config.expires || 86400)

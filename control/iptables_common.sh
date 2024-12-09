@@ -376,6 +376,9 @@ cat << EOF > "$filter_file"
 -N FW_FIREWALL_DEV_BLOCK
 -A FW_FIREWALL -j FW_FIREWALL_DEV_BLOCK
 -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
+# initialize device isolation chain
+-N FW_FIREWALL_DEV_ISOLATION
+-A FW_FIREWALL -j FW_FIREWALL_DEV_ISOLATION
 # device group block/allow chains
 -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 -N FW_FIREWALL_DEV_G_ALLOW
@@ -385,6 +388,9 @@ cat << EOF > "$filter_file"
 -N FW_FIREWALL_DEV_G_BLOCK
 -A FW_FIREWALL -j FW_FIREWALL_DEV_G_BLOCK
 -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
+# initialize group isolation chain
+-N FW_FIREWALL_DEV_G_ISOLATION
+-A FW_FIREWALL -j FW_FIREWALL_DEV_G_ISOLATION
 # network block/allow chains
 -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 -N FW_FIREWALL_NET_ALLOW
@@ -394,6 +400,9 @@ cat << EOF > "$filter_file"
 -N FW_FIREWALL_NET_BLOCK
 -A FW_FIREWALL -j FW_FIREWALL_NET_BLOCK
 -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
+# initialize network isolation chain
+-N FW_FIREWALL_NET_ISOLATION
+-A FW_FIREWALL -j FW_FIREWALL_NET_ISOLATION
 # network group block/allow chains
 -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 -N FW_FIREWALL_NET_G_ALLOW
@@ -506,9 +515,6 @@ cat << EOF > "$filter_file"
 -A FW_FIREWALL_LO -j FW_FIREWALL_GLOBAL_BLOCK_LO
 -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_DROP
 
-# initialize group isolation chain
--N FW_FIREWALL_DEV_G_ISOLATION
--A FW_FIREWALL_DEV_G_BLOCK -j FW_FIREWALL_DEV_G_ISOLATION
 EOF
 
 if [[ -e /.dockerenv ]]; then

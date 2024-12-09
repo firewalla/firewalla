@@ -39,6 +39,7 @@ const FlowAggrTool = require('./FlowAggrTool');
 const flowAggrTool = new FlowAggrTool();
 
 const FireRouter = require('./FireRouter.js');
+const fwapc = require('./fwapc.js');
 
 const Host = require('./Host.js');
 
@@ -244,7 +245,10 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  validateSpoofs() {
+  async validateSpoofs() {
+    const flag = await Mode.isSpoofModeOn();
+    if (!flag) return
+
     const allIPv6Addrs = [];
     const allIPv4Addrs = [];
     for (let h in this.hostsdb) {
@@ -395,6 +399,8 @@ module.exports = class HostManager extends Monitorable {
       _hosts.push(this.hosts.all[i].toJson());
     }
     json.hosts = _hosts;
+    if (platform.isFireRouterManaged())
+      await this.enrichSTAInfo(_hosts);
     // Reduce json size of init response
     if (!options.includeScanResults) {
       return;
@@ -403,6 +409,55 @@ module.exports = class HostManager extends Monitorable {
       await this.enrichWeakPasswordScanResult(host, "mac");
       await this.enrichNseScanResult(host, "mac", "suspect");
     }));
+  }
+
+  async enrichSTAInfo(hosts) {
+    const staStatus = await fwapc.getAllSTAStatus().catch((err) => {
+      log.error(`Failed to get STA status from fwapc`, err.message);
+      return null;
+    });
+    if (_.isObject(staStatus)) {
+      for (const host of hosts) {
+        const mac = host.mac;
+        if (mac && staStatus[mac])
+          host.staInfo = staStatus[mac];
+      }
+    }
+  }
+
+  async assetsInfoForInit(json) {
+    if (platform.isFireRouterManaged()) {
+      const assetsStatus = await fwapc.getAssetsStatus().catch((err) => {
+        log.error(`Failed to get assets status from fwapc`, err.message);
+        return null;
+      });
+      if (assetsStatus) {
+        json.assets = {};
+        for (const key of Object.keys(assetsStatus)) {
+          json.assets[key] = assetsStatus[key];
+        }
+      }
+
+      const apControllerStatus = await fwapc.getControllerInfo().catch((err) => {
+        log.error(`Failed to get controller info from fwapc`, err.message);
+        return null;
+      });
+      if (apControllerStatus) {
+        json.apController = apControllerStatus;
+      }
+    }
+  }
+
+  async pairingAssetsForInit(json) {
+    if (platform.isFireRouterManaged()) {
+      const pairingAssets = await fwapc.getPairingStatus().catch((err) => {
+        log.error(`Failed to get pairing assets from firerouter`, err.message);
+        return null;
+      });
+      if (pairingAssets) {
+        json.pairingAssets = pairingAssets;
+      }
+    }
   }
 
   async enrichWeakPasswordScanResult(host, uidKey) {
@@ -439,11 +494,15 @@ module.exports = class HostManager extends Monitorable {
     const subKey = target && target != '0.0.0.0' ? ':' + target : '';
     const { granularities, hits} = statSettings;
     const stats = {}
-    const metricArray = metrics || [
-      'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB', 'ntp',
-      'upload:lo', 'download:lo', 'conn:lo',
-    ]
-    for (const metric of metricArray) {
+    if (!metrics) { // default (full) metrics
+      metrics = [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB', 'ntp' ]
+      if (fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW)) {
+        metrics.push('intra:lo', 'conn:lo:intra')
+        if (target && target != '0.0.0.0') // remove irrelevant matrics from init
+          metrics.push('upload:lo', 'download:lo', 'conn:lo:in', 'conn:lo:out')
+      }
+    }
+    for (const metric of metrics) {
       const s = await getHitsAsync(metric + subKey, granularities, hits)
       if (granularities == '1minute') {
         if (s[s.length - 1] && s[s.length - 1][1] == 0)
@@ -451,17 +510,22 @@ module.exports = class HostManager extends Monitorable {
         else if (s.length > 60)
           s.shift()
       }
+      if (['intra:lo', 'conn:lo:intra'].includes(metric)) {
+        // global local bandwidth and connection are being counted twice
+        // the result should always be interger, but use Math.floor as a safe guard
+        s.forEach((h, i) => s[i][1] = Math.floor(h[1]/2))
+      }
       stats[metric] = s
     }
     return this.generateStats(stats);
   }
 
-  async newLast24StatsForInit(json, target) {
-    json.newLast24 = await this.getStats({granularities: '1hour', hits: 24}, target);
+  async newLast24StatsForInit(json, target, metrics) {
+    json.newLast24 = await this.getStats({granularities: '1hour', hits: 24}, target, metrics);
   }
 
-  async last12MonthsStatsForInit(json, target) {
-    json.last12Months = await this.getStats({granularities: '1month', hits: 12}, target);
+  async last12MonthsStatsForInit(json, target, metrics) {
+    json.last12Months = await this.getStats({granularities: '1month', hits: 12}, target, metrics);
   }
 
   async monthlyDataUsageForInit(json) {
@@ -540,12 +604,12 @@ module.exports = class HostManager extends Monitorable {
     return offset;
   }
 
-  async last60MinStatsForInit(json, target) {
-    json.last60 = await this.getStats({granularities: '1minute', hits: 61}, target);
+  async last60MinStatsForInit(json, target, metrics) {
+    json.last60 = await this.getStats({granularities: '1minute', hits: 61}, target, metrics);
   }
 
-  async last30daysStatsForInit(json, target) {
-    json.last30 = await this.getStats({granularities: '1day', hits: 30}, target);
+  async last30daysStatsForInit(json, target, metrics) {
+    json.last30 = await this.getStats({granularities: '1day', hits: 30}, target, metrics);
   }
 
   async policyDataForInit(json) {
@@ -1010,7 +1074,9 @@ module.exports = class HostManager extends Monitorable {
       this.internetSpeedtestResultsForInit(json, 5),
       this.systemdRestartMetrics(json),
       this.boxMetrics(json),
-      this.getSysInfo(json)
+      this.getSysInfo(json),
+      this.assetsInfoForInit(json),
+      this.pairingAssetsForInit(json)
     ]
 
     await this.basicDataForInit(json, {});
@@ -1227,8 +1293,8 @@ module.exports = class HostManager extends Monitorable {
       timeUsageApps = supportedApps;
     else
       timeUsageApps = _.intersection(timeUsageApps, supportedApps);
-    
-    for (const uid of Object.keys(tags)) {
+
+    await asyncNative.eachLimit(Object.keys(tags), 50, async uid => {
       const tag = tags[uid];
       const type = tag.type || Constants.TAG_TYPE_GROUP;
       const initDataKey = _.get(Constants.TAG_TYPE_MAP, [type, "initDataKey"]);
@@ -1251,7 +1317,7 @@ module.exports = class HostManager extends Monitorable {
           json[initDataKey][uid].internetTimeUsageToday = _.get(stats, ["appTimeUsage", "internet"]);
         }
       }
-    }
+    })
   }
 
   async btMacForInit(json) {
@@ -1401,19 +1467,17 @@ module.exports = class HostManager extends Monitorable {
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
       this.dhcpPoolUsageForInit(json),
+      this.assetsInfoForInit(json),
+      this.pairingAssetsForInit(json),
       this.getConfigForInit(json),
       this.miscForInit(json),
       this.appConfsForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
-    // 2021.11.17 not gonna be used in the near future, disabled
-    // const platformSpecificStats = platform.getStatsSpecs();
-    // json.stats = {};
-    // for (const statSettings of platformSpecificStats) {
-    //   requiredPromises.push(this.getStats(statSettings)
-    //     .then(s => json.stats[statSettings.stat] = s)
-    //   )
-    // }
+
+    for (const i in requiredPromises) {
+      requiredPromises[i].then(()=> {log.debug(`promise ${i} finished`)})
+    }
     await Promise.all(requiredPromises.map(p => p.catch(log.error)))
 
     log.debug("Promise array finished")
@@ -2330,7 +2394,7 @@ module.exports = class HostManager extends Monitorable {
     const keys = ['upload', 'download', 'ipB', 'dnsB'];
 
     for (const key of keys) {
-      const lastSumKey = target ? `lastsumflow:${target}:${key}` : `lastsumflow:${key}`;
+      const lastSumKey = target ? `lastsumflow:${target}:${key}` : `lastsyssumflow:${key}`;
       const realSumKey = await rclient.getAsync(lastSumKey);
       if (!realSumKey) {
         continue;
@@ -2346,7 +2410,7 @@ module.exports = class HostManager extends Monitorable {
 
       const traffic = await flowAggrTool.getTopSumFlowByKeyAndDestination(realSumKey, key, count);
 
-      const enriched = (await flowTool.enrichWithIntel(traffic, ['upload', 'download'].includes(key))).sort((a, b) => {
+      const enriched = (await flowTool.enrichWithIntel(traffic, key != 'dnsB')).sort((a, b) => {
         return b.count - a.count;
       });
 

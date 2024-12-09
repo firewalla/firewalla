@@ -225,7 +225,8 @@ function initInteractiveIpset() {
   });
   interactiveIpset.stdout.on('data', (data) => {});
 }
-initInteractiveIpset();
+// this spawn eats all CR from node cli output for some reason
+if (f.isMain()) initInteractiveIpset();
 
 // with exclusive set to true, the interactive process stalls other requests until the current batch
 async function batchOp(operations) {
@@ -259,7 +260,8 @@ function initTestProcess() {
   });
   testProcess.stdout.on('data', () => { });
 }
-initTestProcess();
+// this spawn eats all CR from node cli output for some reason
+if (f.isMain()) initTestProcess();
 
 function parseTestResult(data) {
   const lines = (remainingBuffer + data.toString()).split('\n')
