@@ -276,10 +276,10 @@ class FWAPC {
     return;
   }
 
-  async deleteGroup(groupId) {
+  async deleteGroup(groupId, optKey = null) {
     if (!groupId)
       throw new Error("groupId is not defined in deletGroup");
-    const {code, body, msg} = await this.apiCall("DELETE", `/config/group/${groupId}`);
+    const {code, body, msg} = await this.apiCall("DELETE", `/config/group/${groupId}${optKey ? `/${optKey}` : ""}`);
     if (!isNaN(code) && Number(code) > 299) {
       throw new Error(msg || "Failed to delete group in fwapc");
     }

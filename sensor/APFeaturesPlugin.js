@@ -166,7 +166,14 @@ class APFeaturesPlugin extends Sensor {
       }
     }
     const ssidConfig = {vlan: policy.vlan, psks};
-    await fwapc.setGroup(tagUid, {config: {ssid: ssidConfig}}).catch((err) => {});
+    if (_.isEmpty(ssidConfig) || !_.has(ssidConfig, "vlan") || _.isEmpty(ssidConfig.psks))
+      await fwapc.deleteGroup(tagUid, "ssid").catch((err) => {
+        log.error(`Failed to delete fwapc ssid config on group ${tagUid}`, err.message);
+      });
+    else
+      await fwapc.setGroup(tagUid, {config: {ssid: ssidConfig}}).catch((err) => {
+        log.error(`Failed to set fwapc ssid config on group ${tagUid}`, err.message);
+      });
   }
 }
 
