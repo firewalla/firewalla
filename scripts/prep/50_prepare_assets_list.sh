@@ -10,6 +10,7 @@ CPU_ARCH=$(uname -m)
 
 mkdir -p $ASSETSD_PATH
 sudo chown pi:pi $ASSETSD_PATH -R
+rm -f $ASSETSD_PATH/*
 
 RELEASE_HASH=$(cat /etc/firewalla_release | grep HASH | cut -d: -f2 | xargs echo -n)
 
