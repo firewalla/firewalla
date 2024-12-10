@@ -7,7 +7,7 @@ source ~/.fwrc
 
 logger "FIREWALLA:UPDATE_ASSETS:START"
 
-ASSETSD_PATH=${FIREWALLA_HIDDEN}/config/assets.d/
+: ${ASSETSD_PATH:=${FIREWALLA_HIDDEN}/config/assets.d/}
 
 if [[ ! -d $ASSETSD_PATH ]]; then
   echo "assets.d folder doesn't exist, exit"
@@ -116,6 +116,8 @@ while IFS= read -r line; do
   fi
 done
 
-$FIREWALLA_HOME/scripts/patch_system.sh 2>&1 | tee -a /home/pi/.forever/patch_system.log
+if [[ "$ASSETSD_PATH" = "${FIREWALLA_HIDDEN}/config/assets.d/" ]]; then
+  $FIREWALLA_HOME/scripts/patch_system.sh 2>&1 | tee -a /home/pi/.forever/patch_system.log
+fi
 
 logger "FIREWALLA:UPDATE_ASSETS:DONE"
