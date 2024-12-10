@@ -111,6 +111,7 @@ class FWAPC {
     fwapcInterface = `http://${intf.host}:${intf.port}/${intf.version}`;
 
     if (f.isMain()) {
+      this.enabled = false;
       this.toggleFWAPC();
       sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async (event) => {
         this.toggleFWAPC();
@@ -121,35 +122,58 @@ class FWAPC {
   async toggleFWAPC() {
     // enable disable fwapc auto update in assets framework based on wg_ap interface presence
     // always enable fwapc service
-    if (true || sysManager.getInterface(Constants.INTF_AP_CTRL)) {
+    if ((true || sysManager.getInterface(Constants.INTF_AP_CTRL)) && !this.enabled) {
       this.enableFWAPC().catch((err) => {
         log.error("Failed to enable fwapc", err.message);
       });
+      this.enabled = true;
     } else {
       this.disableFWAPC().catch((err) => {
         log.error("Failed to disable fwapc", err.message);
       });
+      this.enabled = false;
     }
   }
 
   async enableFWAPC() {
-    await fsp.copyFile(`${platform.getPlatformFilesPath()}/01_assets_fwapc.lst`, `${f.getUserConfigFolder()}/assets.d/01_assets_fwapc.lst`);
+    await fsp.mkdir(`${f.getUserConfigFolder()}/assets.fwapc`, {recursive: true}).catch((err) => {});
+    const fwapcAssetsDir = `${f.getUserConfigFolder()}/assets.fwapc`;
+    await fsp.copyFile(`${platform.getPlatformFilesPath()}/01_assets_fwapc.lst`, `${fwapcAssetsDir}/01_assets_fwapc.lst`);
     if (!await fileExist(`${f.getRuntimeInfoFolder()}/assets/fwapc`)) {
-      await exec(`${f.getFirewallaHome()}/scripts/update_assets.sh`).catch((err) => {
+      await exec(`ASSETSD_PATH=${fwapcAssetsDir} ${f.getFirewallaHome()}/scripts/update_assets.sh`).catch((err) => {
         log.error(`Failed to invoke update_assets.sh`, err.message);
       });
     }
     await exec(`sudo systemctl start fwapc`).catch((err) => {
       log.error(`Failed to start fwapc.service`, err.message);
     });
+    await this.addCronJobs();
   }
 
   async disableFWAPC() {
-    const assetsLstPath = `${f.getUserConfigFolder()}/assets.d/01_assets_fwapc.lst`;
+    const assetsLstPath = `${f.getUserConfigFolder()}/assets.fwapc/01_assets_fwapc.lst`;
     if (await fileExist(assetsLstPath))
       await fileRemove(assetsLstPath);
     await exec(`sudo systemctl stop fwapc`).catch((err) => {
       log.error(`Failed to start fwapc.service`, err.message);
+    });
+    await this.removeCronJobs();
+  }
+
+  async addCronJobs() {
+    log.info("Adding fwapc update cron jobs");
+    await fsp.unlink(`${f.getUserConfigFolder()}/fwapc_crontab`).catch((err) => {});
+    await fsp.symlink(`${f.getFirewallaHome()}/etc/crontab.fwapc`, `${f.getUserConfigFolder()}/fwapc_crontab`).catch((err) => {});
+    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+      log.error(`Failed to invoke update_crontab.sh in addCronJobs`, err.message);
+    });
+  }
+
+  async removeCronJobs() {
+    log.info("Removing fwapc update cron jobs");
+    await fsp.unlink(`${f.getUserConfigFolder()}/fwapc_crontab`).catch((err) => {});
+    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+      log.error(`Failed to invoke update_crontab.sh in removeCronJobs`, err.message);
     });
   }
 
