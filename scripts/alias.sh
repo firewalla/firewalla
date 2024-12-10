@@ -196,3 +196,7 @@ function ncdiff() {
   i=${1:-1}
   vimdiff <(get_network_config $(($i+1))) <(get_network_config $i)
 }
+
+function lase() {
+  local_fwapc_get "v1/event_history/$1?format=text" | jq -r '.[]'
+}
