@@ -116,6 +116,7 @@ class TagManager {
       const now = Math.floor(Date.now() / 1000);
       const newTag = new Tag(Object.assign({}, obj, {uid: newUid, name: name, createTs: now}))
       await newTag.save()
+      await rclient.sadd(Constants.TAG_TYPE_MAP[type].redisIndexKey, newUid)
       this.tags[newUid] = newTag
 
       this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, newTag);
@@ -131,25 +132,28 @@ class TagManager {
   // This function should only be invoked in FireAPI. Please follow this rule!
   async removeTag(uid, name, type = Constants.TAG_TYPE_GROUP) { // remove tag by name is for backward compatibility
     uid = String(uid);
+
     if (_.has(this.tags, uid)) {
-      const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [this.tags[uid].getTagType(), "redisKeyPrefix"]);
-      const key = keyPrefix && `${keyPrefix}${uid}`;
-      key && await rclient.unlinkAsync(key);
+      const tagMap = Constants.TAG_TYPE_MAP[this.tags[uid].getTagType()]
+      if (!tagMap) return
+      const key = `${tagMap.redisKeyPrefix}${uid}`;
+      await rclient.sremAsync(tagMap.redisIndexKey, uid)
+      await rclient.unlinkAsync(key);
       this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, this.tags[uid].o);
       await this.refreshTags();
       return;
     }
     if (name && type) {
-      const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [type, "redisKeyPrefix"]);
-      if (keyPrefix) {
-        for (let uid in this.tags) {
-          if (this.tags[uid].o && this.tags[uid].o.name === name) {
-            const key = `${keyPrefix}${uid}`;
-            await rclient.unlinkAsync(key);
-            this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, this.tags[uid].o);
-            await this.refreshTags();
-            return;
-          }
+      const tagMap = Constants.TAG_TYPE_MAP[type]
+      if (!tagMap) return
+      for (let uid in this.tags) {
+        if (this.tags[uid].o && this.tags[uid].o.name === name) {
+          const key = `${tagMap.redisKeyPrefix}${uid}`;
+          await rclient.sremAsync(tagMap.redisIndexKey, uid)
+          await rclient.unlinkAsync(key);
+          this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, this.tags[uid].o);
+          await this.refreshTags();
+          return;
         }
       }
     }
@@ -169,19 +173,21 @@ class TagManager {
       // different type of tags are saved in different redis hash keys
       if (tag.o.type !== type) {
         const oldType = tag.o.type || Constants.TAG_TYPE_GROUP;
-        const oldPrefix = _.get(Constants.TAG_TYPE_MAP, [oldType, "redisKeyPrefix"]);
-        if (oldPrefix) {
-          const oldKey = `${oldPrefix}${uid}`;
+        const oldTagMap = _.get(Constants.TAG_TYPE_MAP, oldType);
+        if (oldTagMap) {
+          const oldKey = `${oldTagMap.redisKeyPrefix}${uid}`;
+          await rclient.sremAsync(oldTagMap.redisIndexKey, uid)
           await rclient.unlinkAsync(oldKey);
         }
         changed = true;
       }
       if (type) {
-        const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [type, "redisKeyPrefix"]);
-        if (keyPrefix) {
+        const tagMap = _.get(Constants.TAG_TYPE_MAP, type);
+        if (tagMap) {
           const o = Object.assign({}, { uid, name }, tag.o, obj);
-          const key = `${keyPrefix}${uid}`;
+          const key = `${tagMap.redisKeyPrefix}${uid}`;
           await rclient.hmsetAsync(key, o);
+          await rclient.saddAsync(tagMap.redisIndexKey, uid)
           changed = true;
         } else return null;
       }
@@ -281,13 +287,16 @@ class TagManager {
       await asyncNative.eachLimit(IDs, 30, async uid => {
         const key = config.redisKeyPrefix + uid
         const o = await rclient.hgetallAsync(key);
-        if (!o) return
+        if (!o) {
+          await rclient.srem(config.redisIndexKey, uid);
+          return
+        }
         // remove duplicate deviceTag
         if (o.type == Constants.TAG_TYPE_DEVICE) {
           if (nameMap[o.name]) {
             if (f.isMain()) {
               log.info('Remove duplicated deviceTag', uid)
-              await rclient.srem(uid);
+              await rclient.srem(config.redisIndexKey, uid);
               await rclient.unlinkAsync(key);
               this.subscriber.publish("DiscoveryEvent", "Tags:Updated");
             }
