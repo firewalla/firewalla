@@ -827,7 +827,7 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async ruleGroupsForInit(json) {
-    const rgs = policyManager2.getAllRuleGroupMetaData();
+    const rgs = await policyManager2.getAllRuleGroupMetaData();
     json.ruleGroups = rgs;
   }
 
@@ -1466,7 +1466,7 @@ module.exports = class HostManager extends Monitorable {
       this.basicDataForInit(json, options),
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
-      this.dhcpPoolUsageForInit(json),
+      // this.dhcpPoolUsageForInit(json), // should be re-implemented before putting into use
       this.assetsInfoForInit(json),
       this.pairingAssetsForInit(json),
       this.getConfigForInit(json),
@@ -1476,7 +1476,11 @@ module.exports = class HostManager extends Monitorable {
     ];
 
     for (const i in requiredPromises) {
-      requiredPromises[i].then(()=> {log.debug(`promise ${i} finished`)})
+      requiredPromises[i] = (async() => {
+        const ts = Date.now()
+        await requiredPromises[i]
+        log.debug(`promise ${i} finished`, (Date.now() - ts)/1000)
+      })()
     }
     await Promise.all(requiredPromises.map(p => p.catch(log.error)))
 

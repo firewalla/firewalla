@@ -2370,6 +2370,8 @@ module.exports = class DNSMASQ {
     return _.uniqWith(matchedDnsmasqs, _.isEqual);
   }
 
+  // TODO: hosts files are built with host policies, see writeHostsFile()
+  // this should be re-implemented without reading hosts files
   async getDhcpPoolUsage() {
     if (!platform.isFireRouterManaged())
       return null;
@@ -2380,18 +2382,15 @@ module.exports = class DNSMASQ {
     const dhcpConfig = routerConfig && routerConfig.dhcp;
     if (_.isEmpty(dhcpConfig))
       return stats;
-    for (const intf of Object.keys(dhcpConfig)) {
-      if (!sysManager.getMonitoringInterfaces().some(iface => iface.name === intf))
-        continue;
-      if (_.isEmpty(dhcpConfig[intf].range))
-        continue;
-      stats[intf] = {
-        from: dhcpConfig[intf].range.from,
-        to: dhcpConfig[intf].range.to,
-        reservedIPsInRange: 0,
-        reservedIPsOutOfRange: 0,
-        dynamicIPs: 0
-      };
+    for (const intf of sysManager.getMonitoringInterfaces()) {
+      if (dhcpConfig[intf] && !_.isEmpty(dhcpConfig[intf].range))
+        stats[intf] = {
+          from: dhcpConfig[intf].range.from,
+          to: dhcpConfig[intf].range.to,
+          reservedIPsInRange: 0,
+          reservedIPsOutOfRange: 0,
+          dynamicIPs: 0
+        };
     }
     // then extract reserved IPs, they cannot be dynamically allocated to other devices
     const files = await fsp.readdir(HOSTFILE_PATH).catch(err => {
@@ -2443,7 +2442,7 @@ module.exports = class DNSMASQ {
       const phrases = line.split(' ');
       if (!_.isEmpty(phrases)) {
         const ip4 = phrases[2];
-        if (ip4 && new Address4(ip4).isValid()) {
+        if (net.isIPv4(ip4)) {
           const iface = sysManager.getInterfaceViaIP4(ip4);
           if (iface && iface.name) {
             const intf = iface.name;

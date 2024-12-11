@@ -27,6 +27,7 @@ const Constants = require('./Constants.js');
 const dnsmasq = new DNSMASQ();
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock()
+const KEY_TAG_INDEXED = 'tag:indexed'
 
 class TagManager {
   constructor() {
@@ -39,6 +40,8 @@ class TagManager {
     this.subscriber.subscribeOnce("DiscoveryEvent", "Tags:Updated", null, async (channel, type, id, obj) => {
       this.scheduleRefresh();
     });
+
+    if (f.isMain()) this.buildIndex()
 
     return this;
   }
@@ -61,8 +64,8 @@ class TagManager {
 
   async toJson() {
     const json = {};
+    await this.loadPolicyRules()
     for (let uid in this.tags) {
-      await this.tags[uid].loadPolicyAsync();
       json[uid] = this.tags[uid].toJson();
     }
     return json;
@@ -239,6 +242,31 @@ class TagManager {
     return false;
   }
 
+  // this should be run only 1 time
+  async buildIndex() {
+    try {
+      const indexed = await rclient.getAsync(KEY_TAG_INDEXED)
+      if (Number(indexed)) return
+
+      log.info('Building tag indexes ...')
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const config = Constants.TAG_TYPE_MAP[type];
+        const keyPrefix = config.redisKeyPrefix;
+        const keys = await rclient.scanResults(`${keyPrefix}*`);
+        if (keys.length) {
+          await rclient.saddAsync(config.redisIndexKey, keys.map(k => k.substring(keyPrefix.length)))
+        }
+      }
+
+      await rclient.setAsync(KEY_TAG_INDEXED, 1)
+
+      log.info('Tag indexes built')
+    } catch(err) {
+      log.error('Error building Tag indexes', err)
+      await rclient.setAsync(KEY_TAG_INDEXED, 0)
+    }
+  }
+
   async refreshTags() {
     log.verbose('refreshTags')
     const markMap = {};
@@ -246,28 +274,24 @@ class TagManager {
       markMap[uid] = false;
     }
 
-    const keyPrefixes = [];
-    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+    await Promise.all(Object.keys(Constants.TAG_TYPE_MAP).map(async type => {
       const config = Constants.TAG_TYPE_MAP[type];
-      const redisKeyPrefix = config.redisKeyPrefix;
-      keyPrefixes.push(redisKeyPrefix);
-    }
-    for (const keyPrefix of keyPrefixes) {
-      const keys = await rclient.scanResults(`${keyPrefix}*`);
+      const IDs = await rclient.smembersAsync(config.redisIndexKey);
       const nameMap = {}
-      for (let key of keys) {
+      await asyncNative.eachLimit(IDs, 30, async uid => {
+        const key = config.redisKeyPrefix + uid
         const o = await rclient.hgetallAsync(key);
-        if (!o) continue
-        const uid = key.substring(keyPrefix.length);
+        if (!o) return
         // remove duplicate deviceTag
         if (o.type == Constants.TAG_TYPE_DEVICE) {
           if (nameMap[o.name]) {
             if (f.isMain()) {
               log.info('Remove duplicated deviceTag', uid)
+              await rclient.srem(uid);
               await rclient.unlinkAsync(key);
               this.subscriber.publish("DiscoveryEvent", "Tags:Updated");
             }
-            continue
+            return
           } else {
             nameMap[o.name] = true
           }
@@ -278,8 +302,8 @@ class TagManager {
           this.tags[uid] = new Tag(o);
         }
         markMap[uid] = true;
-      }
-    }
+      })
+    }))
 
     const removedTags = {};
     Object.keys(this.tags).filter(uid => markMap[uid] === false).map((uid) => {
