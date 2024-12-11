@@ -1,4 +1,4 @@
-/*    Copyright 2021-2023 Firewalla Inc.
+/*    Copyright 2021-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -406,8 +406,10 @@ class IdentityManager {
     await Promise.all(nss.map(async ns => {
       const c = this.nsClassMap[ns];
       const key = c.getKeyOfInitData();
+      const ts = Date.now()
+      log.debug('init data started', ns, ts)
       const data = await c.getInitData();
-      log.debug('init data finished for', ns)
+      log.debug('init data finished', ns, (Date.now() - ts)/1000)
       if (_.isArray(data)) {
         await asyncNative.eachLimit(data, 30, async e => {
           if (e.uid) {
