@@ -1003,7 +1003,7 @@ module.exports = class HostManager extends Monitorable {
 
   async loadHostsPolicyRules() {
     log.debug("Reading individual host policy rules");
-    await asyncNative.eachLimit(this.hosts.all, 10, host => host.loadPolicyAsync())
+    await asyncNative.eachLimit(this.hosts.all, 50, host => host.loadPolicyAsync())
   }
 
   async loadDDNSForInit(json) {
@@ -1641,17 +1641,20 @@ module.exports = class HostManager extends Monitorable {
     try {
       // if the ip allocation on an old (stale) device is changed in fireapi, firemain will not execute ipAllocation function on the host object, which sets intfIp in host:mac
       // therefore, need to check policy:mac to determine if the device has reserved IP instead of host:mac
-      const policy = await hostTool.loadDevicePolicyByMAC(h.mac);
+      let policy
+      if (_.get(this.hostsdb, ['host:mac:' + h.mac, policy])) {
+        policy = this.hostsdb['host:mac:' + h.mac].policy.ipAllocation
+      } else {
+        policy = JSON.parse(await rclient.hgetAsync('policy:mac:' + h.mac, 'ipAllocation'))
+      }
+      if (!policy) return false
       if (policy.dhcpIgnore) return true
-      if (policy.ipAllocation) {
-        const ipAllocation = JSON.parse(policy.ipAllocation);
-        if (platform.isFireRouterManaged()) {
-          if (ipAllocation.allocations && Object.keys(ipAllocation.allocations).some(uuid => ipAllocation.allocations[uuid].type === "static" && sysManager.getInterfaceViaUUID(uuid)))
-            return true;
-        } else {
-          if (ipAllocation.type === "static")
-            return true;
-        }
+      if (platform.isFireRouterManaged()) {
+        if (policy.allocations && Object.keys(policy.allocations).some(uuid => policy.allocations[uuid].type === "static" && sysManager.getInterfaceViaUUID(uuid)))
+          return true;
+      } else {
+        if (policy.type === "static")
+          return true;
       }
     } catch (err) { }
     return false;
@@ -1687,6 +1690,7 @@ module.exports = class HostManager extends Monitorable {
         }
       }
       const keys = await rclient.keysAsync("host:mac:*");
+      log.debug("getHosts: keys done");
       this._totalHosts = keys.length;
       let multiarray = [];
       for (let i in keys) {
@@ -1695,8 +1699,9 @@ module.exports = class HostManager extends Monitorable {
       const inactiveTS = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
       const rapidInactiveTS = Date.now() / 1000 - RAPID_INACTIVE_TIME_SPAN;
       const replies = await rclient.multi(multiarray).execAsync();
+      log.debug("getHosts: multi hgetall done");
       this._totalPrivateMacHosts = replies.filter(o => _.isObject(o) && o.mac && hostTool.isPrivateMacAddress(o.mac)).length;
-      await asyncNative.eachLimit(replies, 20, async (o) => {
+      await asyncNative.eachLimit(replies, 50, async (o) => {
         if (!o || !o.mac) {
           // defensive programming
           return;
