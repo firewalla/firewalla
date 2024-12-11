@@ -116,7 +116,7 @@ class TagManager {
       const now = Math.floor(Date.now() / 1000);
       const newTag = new Tag(Object.assign({}, obj, {uid: newUid, name: name, createTs: now}))
       await newTag.save()
-      await rclient.sadd(Constants.TAG_TYPE_MAP[type].redisIndexKey, newUid)
+      await rclient.saddAsync(Constants.TAG_TYPE_MAP[type].redisIndexKey, newUid)
       this.tags[newUid] = newTag
 
       this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, newTag);
@@ -288,7 +288,7 @@ class TagManager {
         const key = config.redisKeyPrefix + uid
         const o = await rclient.hgetallAsync(key);
         if (!o) {
-          await rclient.srem(config.redisIndexKey, uid);
+          await rclient.sremAsync(config.redisIndexKey, uid);
           return
         }
         // remove duplicate deviceTag
@@ -296,7 +296,7 @@ class TagManager {
           if (nameMap[o.name]) {
             if (f.isMain()) {
               log.info('Remove duplicated deviceTag', uid)
-              await rclient.srem(config.redisIndexKey, uid);
+              await rclient.sremAsync(config.redisIndexKey, uid);
               await rclient.unlinkAsync(key);
               this.subscriber.publish("DiscoveryEvent", "Tags:Updated");
             }
