@@ -92,6 +92,7 @@ module.exports = {
 
   TAG_TYPE_MAP: {
     device: {
+      redisIndexKey: "tag:device:active",
       redisKeyPrefix: "deviceTag:uid:",
       initDataKey: "deviceTags",
       policyKey: "deviceTags",
@@ -102,6 +103,7 @@ module.exports = {
       needAppTimeInInitData: false,
     },
     user: {
+      redisIndexKey: "tag:user:active",
       redisKeyPrefix: "userTag:uid:",
       initDataKey: "userTags",
       policyKey: "userTags",
@@ -112,6 +114,7 @@ module.exports = {
       needAppTimeInInitData: true,
     },
     group: {
+      redisIndexKey: "tag:group:active",
       redisKeyPrefix: "tag:uid:",
       initDataKey: "tags",
       policyKey: "tags",
@@ -122,6 +125,7 @@ module.exports = {
       needAppTimeInInitData: false
     },
     ssid: {
+      redisIndexKey: "tag:ssid:active",
       redisKeyPrefix: "ssidTag:uid:",
       initDataKey: "ssidTags",
       policyKey: "ssidTags",

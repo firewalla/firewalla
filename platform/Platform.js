@@ -33,10 +33,10 @@ class Platform {
   async getNicStates() {
     const nics = this.getAllNicNames();
     const result = {};
-    for (const nic of nics) {
+    await Promise.all(nics.map(async nic => {
       const dirExists = await fsp.access(`/sys/class/net/${nic}`, fs.constants.F_OK).then(() => true).catch(() => false);
       if (!dirExists)
-        continue;
+        return
       const address = await fsp.readFile(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch(() => "");
       let speed = await fsp.readFile(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
       const carrier = await fsp.readFile(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
@@ -46,7 +46,7 @@ class Platform {
         speed = "-1";
       }
       result[nic] = {address, speed, carrier, duplex};
-    }
+    }))
     return result;
   }
 
