@@ -109,10 +109,10 @@ class NewDeviceTagSensor extends Sensor {
       log.debug(networkPolicy)
 
       const isFWAP = this.isFirewallaAP(hostObj);
+      let isQuarantine = 0
 
       if (!isFWAP && policy) {
-        const ssidPSKTags = await TagManager.getPolicyTags("ssidPSK");
-        let isQuarantine = 0
+        const ssidPSKTags = await TagManager.getPolicyTags("ssidPSK");  
         if (policy) {
           if (!_.isEmpty(ssidPSKTags))
             // there is ssid/PSK group mapping configured, hold for a while and see if the device is already assigned to another group, ssid STA status is updated once every 20 seconds in fwapc, so 20 seconds should be enough.
@@ -132,22 +132,22 @@ class NewDeviceTagSensor extends Sensor {
             }
           }
         }
-        if (fc.isFeatureOn(ALARM_FEATURE_KEY)) {
-          const name = getPreferredBName(host) || "Unknown"
-          const alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
-            name,
-            {
-              "p.device.id": name,
-              "p.device.name": name,
-              "p.device.ip": host.ipv4Addr || host.ipv6Addr && host.ipv6Addr[0] || "",
-              "p.device.mac": host.mac,
-              "p.device.vendor": host.macVendor,
-              "p.intf.id": host.intf ? host.intf : "",
-              "p.tag.ids": !isFWAP && policy && [policy.tag].map(String) || [],
-              "p.quarantine": isQuarantine
-            });
-          am2.enqueueAlarm(alarm);
-        }
+      }
+      if (fc.isFeatureOn(ALARM_FEATURE_KEY)) {
+        const name = getPreferredBName(host) || "Unknown"
+        const alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
+          name,
+          {
+            "p.device.id": name,
+            "p.device.name": name,
+            "p.device.ip": host.ipv4Addr || host.ipv6Addr && host.ipv6Addr[0] || "",
+            "p.device.mac": host.mac,
+            "p.device.vendor": host.macVendor,
+            "p.intf.id": host.intf ? host.intf : "",
+            "p.tag.ids": !isFWAP && policy && [policy.tag].map(String) || [],
+            "p.quarantine": isQuarantine
+          });
+        am2.enqueueAlarm(alarm);
       }
     } catch(err) {
       log.error("Error adding new device", err)
