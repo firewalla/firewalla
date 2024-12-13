@@ -248,7 +248,6 @@ ${CONNECT_AP} && {
         if (( $si < $lines && $si >=0 )) ; then  break; fi
     done
     echo ">>ssh to '${ap_names[$si]}' at ${ap_ips[$si]} ..."
-    img_ver=${ap_img_vers[$si]}
     if nc -zv ${ap_ips[$si]} 22; then
       ssh -o HostKeyAlgorithms=+ssh-rsa root@${ap_ips[$si]}
     else
