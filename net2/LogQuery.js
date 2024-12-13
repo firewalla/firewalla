@@ -195,12 +195,13 @@ class LogQuery {
     options = this.checkArguments(options)
     // filter calculation is not related to options in each feed, only need to call optionsToFilter once here
     const filter = this.optionsToFilter(options);
+    const filterKeyCount = Object.keys(filter).length
     log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(_.omit(options, 'macs')), JSON.stringify(filter))
     feeds.forEach(f => {
       f.options = f.options || {};
       Object.assign(f.options, options)
-      const filterFunc = f.filter // save pointer as var to avoid stackoverflow
-      f.filter = log => filterFunc(log, filter)
+      const filterFunc = f.isValid // save pointer as var to avoid stackoverflow
+      f.isValid = log => filterFunc(log, filter)
     })
     // log.debug( feeds.map(f => JSON.stringify(f) + '\n') )
     let results = []
@@ -208,14 +209,15 @@ class LogQuery {
     const toRemove = []
     // query every feed once concurrentyly to reduce io block
     results = _.flatten(await Promise.all(feeds.map(async feed => {
-      const logs = await feed.query(feed.options)
+      // use half of the desired count to do initial concurrent query to reduce memory consumption
+      const logs = await feed.query(Object.assign({}, feed.options, {count: Math.floor(options.count/2)}))
       if (logs.length) {
         feed.options.ts = logs[logs.length - 1].ts
       } else {
         // no more elements, remove feed from feeds
         toRemove.push(feed)
       }
-      return logs.filter(log => feed.filter(log))
+      return logs.filter(log => feed.isValid(log))
     })))
 
     // the following code could be optimized further by using a heap
@@ -225,18 +227,24 @@ class LogQuery {
 
     // always query the feed moves slowest
     let feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
+    if (!feed) return results
     let prevFeed, prevTS
 
-    while (feed && this.validResultCount(feed.options, results) < options.count) {
+    let validResultCount = this.validResultCount(feed.options, results)
+
+    while (validResultCount < options.count) {
 
       prevFeed = feed
       prevTS = feed.options.ts
 
-      let logs = await feed.query(feed.options)
+      let logs = await feed.query(
+        // cuts query count when there's no filter
+        Object.assign(feed.options, {count: options.count - (filterKeyCount ? 0 : validResultCount)})
+      )
       if (logs.length) {
         feed.options.ts = logs[logs.length - 1].ts // this is simple formatted data
 
-        logs = logs.filter(log => feed.filter(log))
+        logs = logs.filter(log => feed.isValid(log))
         if (logs.length) {
           // a more complicated but faster ordered merging without accessing elements via index.
           // result should be the same as
@@ -266,10 +274,13 @@ class LogQuery {
       }
 
       feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
+      if (!feed) break
       if (feed == prevFeed && feed.options.ts == prevTS) {
         log.error("Looping!!", feed.query.name, feed.options)
         break
       }
+
+      validResultCount = this.validResultCount(feed.options, results)
     }
 
     return results.slice(0, options.count)
@@ -422,7 +433,7 @@ class LogQuery {
     const feeds = allMacs.map(mac => {
       return {
         query: this.getDeviceLogs.bind(this),
-        filter: this.isLogValid.bind(this),
+        isValid: this.isLogValid.bind(this),
         options: Object.assign({mac}, options)
       }
     })
