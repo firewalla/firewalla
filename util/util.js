@@ -122,6 +122,23 @@ function delay(t) {
   });
 }
 
+const keysToRedact = new Set(["password", "passwd", "psk", "key", "psks"]);
+function redactLog(obj, redactRequired = false) {
+  if (!obj)
+    return obj;
+  // obj should be either object or array
+  try {
+    for (const key of Object.keys(obj)) {
+      if (_.isObject(obj[key]) || _.isArray(obj[key]))
+        redactLog(obj[key], redactRequired || keysToRedact.has(key));
+      else {
+        if (redactRequired || keysToRedact.has(key))
+          obj[key] = "*** redacted ***";
+      }
+    }
+  } catch (err) {}
+}
+
 // pass in function arguments object and returns string with whitespaces
 function argumentsToString(v) {
   // convert arguments object to real array
@@ -129,6 +146,8 @@ function argumentsToString(v) {
   for (var k in args) {
     if (typeof args[k] === "object") {
       // args[k] = JSON.stringify(args[k]);
+      args[k] = JSON.parse(JSON.stringify(args[k]));
+      redactLog(args[k]);
       args[k] = require('util').inspect(args[k], false, null, true);
     }
   }
