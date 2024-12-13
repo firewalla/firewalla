@@ -190,7 +190,7 @@ async function reloadConfig() {
 
   reloadFeatures()
 
-  log.info('config:updated')
+  log.verbose('config:updated')
   if (f.isMain())
     await pclient.publishAsync("config:updated", JSON.stringify(config))
 }
