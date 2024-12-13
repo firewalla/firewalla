@@ -160,7 +160,8 @@ class FlowAggregationSensor extends Sensor {
     const {fd, ip, _ts, intf, mac, ob, rb, dp, du, ts, local, dmac, dIntf, dstTags} = flow;
     const tags = [];
     const dTags = []
-    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+    // user and group are the same at this point
+    for (const type of ['group', 'user']) {
       const config = Constants.TAG_TYPE_MAP[type];
       tags.push(...(flow[config.flowKey] || []));
       if (local && dstTags)
