@@ -248,5 +248,9 @@ ${CONNECT_AP} && {
         if (( $si < $lines && $si >=0 )) ; then  break; fi
     done
     echo ">>ssh to '${ap_names[$si]}' at ${ap_ips[$si]} ..."
-    ssh -o HostKeyAlgorithms=+ssh-rsa root@${ap_ips[$si]}
+    if nc -zv ${ap_ips[$si]} 22 &>/dev/null; then
+      ssh -o HostKeyAlgorithms=+ssh-rsa root@${ap_ips[$si]}
+    else
+      ssh -p 8842 -o HostKeyAlgorithms=+ssh-rsa root@${ap_ips[$si]}
+    fi
 }

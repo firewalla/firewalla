@@ -11,5 +11,8 @@
       "logLargeBytesResp": 1000000000,
       "logLargeBytesOrig": 1000000000
     }
+  },
+  "userFeatures": {
+    "local_flow": true
   }
 }
