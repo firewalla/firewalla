@@ -122,8 +122,7 @@ class FlowTool extends LogQuery {
       }
       if (options.localFlow && options.local !== false) {
         // a local flow will be recorded in both src and dst host key, need to deduplicate flows on the two hosts if both hosts are included in macs
-        options.exclude = [{dstMac: macs, fd: "out"}]
-        feeds.push(... this.expendFeeds({macs, localFlow: true}))
+        feeds.push(... this.expendFeeds({macs, localFlow: true, exclude: {dstMac: macs, fd: "out"}}))
       }
     }
     if (options.block !== false) {
