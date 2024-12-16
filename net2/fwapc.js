@@ -122,10 +122,12 @@ class FWAPC {
   async toggleFWAPC() {
     // enable disable fwapc auto update in assets framework based on wg_ap interface presence
     // always enable fwapc service
-    if ((true || sysManager.getInterface(Constants.INTF_AP_CTRL)) && !this.enabled) {
-      this.enableFWAPC().catch((err) => {
-        log.error("Failed to enable fwapc", err.message);
-      });
+    if ((true || sysManager.getInterface(Constants.INTF_AP_CTRL))) {
+      if (!this.enabled) {
+        this.enableFWAPC().catch((err) => {
+          log.error("Failed to enable fwapc", err.message);
+        });
+      }
       this.enabled = true;
     } else {
       this.disableFWAPC().catch((err) => {
