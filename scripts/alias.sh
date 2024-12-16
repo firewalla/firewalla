@@ -12,6 +12,7 @@ alias t3='tail -F ~/.forever/api.log'
 alias t4='tail -F ~/.forever/blue.log'
 alias t5='tail -F ~/.forever/firereset.log'
 alias t6='tail -F ~/.forever/router.log'
+alias t7='tail -F ~/.forever/fwapc.log'
 alias tt0='tail -F ~/logs/FireMain.log'
 alias tt00='tail -F ~/logs/Fire*.log'
 alias tt1='tail -F ~/logs/FireKick.log'
@@ -24,6 +25,7 @@ alias l3='less -R ~/.forever/api.log'
 alias l4='less -R ~/.forever/blue.log'
 alias l5='less -R ~/.forever/firereset.log'
 alias l6='less -R ~/.forever/router.log'
+alias l7='less -R ~/.forever/fwapc.log'
 alias frr='forever restartall'
 alias fr0='forever restart 0'
 alias fr1='forever restart 1'
@@ -37,6 +39,7 @@ alias sr3='touch /home/pi/.firewalla/managed_reboot; sudo systemctl restart fire
 alias sr4='sudo systemctl restart firehttpd'
 alias sr5='sudo systemctl restart firereset'
 alias sr6='sudo systemctl restart firerouter; source /home/pi/firerouter/bin/common; init_network_config'
+alias sr7='sudo systemctl restart fwapc'
 alias srb4='sudo systemctl restart bitbridge4'
 alias srb6='sudo systemctl restart bitbridge6'
 alias ss7='sudo systemctl stop frpc.support.service'
@@ -73,6 +76,8 @@ function ll6 {
 }
 alias rrci='redis-cli publish "TO.FireMain" "{\"type\":\"CloudReCheckin\", \"toProcess\":\"FireMain\"}"'
 alias frcc='curl "http://localhost:8837/v1/config/active" 2>/dev/null | jq'
+alias fapc='curl "http://localhost:8841/v1/config/active" 2>/dev/null | jq'
+alias fapr='curl "http://localhost:8841/v1/config/runtime_info" 2>/dev/null | jq'
 
 alias scc='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/sanity_check.sh 2>/dev/null | bash -s --'
 alias cbd='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/check_ipdomain_block.sh 2>/dev/null | bash /dev/stdin --domain'
@@ -135,13 +140,25 @@ function nd {
   sudo ip netns exec $container "$@"
 }
 
+function sshap {
+  local AP_ADDRESS=$1
+  sudo ssh -i ~/.router/config/sshd/keys/ssh_host_rsa_key root@"${AP_ADDRESS}"
+}
+
 alias dc='sudo docker-compose'
 alias jdc='sudo journalctl -fu docker-compose@$(basename $(pwd))'
-alias ssrb='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/show_syslog_reboots.sh 2>/dev/null | bash -s --'
+alias ssrb='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/show_syslog_reboots.sh 2>/dev/null | sudo bash -s --'
 alias ssud='bash <(curl -fsSL https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/sud.sh)'
+alias sap='sudo wg show wg_ap'
+alias lap='/home/pi/firewalla/scripts/list_ap_status.sh'
+alias cap='CONNECT_AP=true /home/pi/firewalla/scripts/list_ap_status.sh'
+alias las='/home/pi/firewalla/scripts/list_ap_stations.sh'
+alias lss='/home/pi/firewalla/scripts/list_ap_ssids.sh'
+alias ltopo='curl -s localhost:8841/v1/status/topology'
+alias aprun='curl -s localhost:8841/v1/config/runtime_info | jq . | vi -'
+alias tvpn='~/scripts/test_vpn.sh'
 alias twan='curl -fsSL https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/test_wan.sh | sudo bash -s --'
 alias ttwan='sudo /home/pi/firewalla/scripts/test_wan.sh'
-
 
 # view redis hash
 function vh {
@@ -157,4 +174,29 @@ function vh {
       echo ""
     fi
   done | $COLUMN_OPT -t
+}
+
+function local_fwapc_get() {
+        curl -s -H 'Content-Type: application/json' -XGET http://127.0.0.1:8841/$1
+}
+
+function nearby() {
+        if [[ "x$1" == "x" ]]; then
+                echo usage: 'nearby <mac>'
+                return 1
+        fi
+        local_fwapc_get "v1/status/nearby/$1" | jq .
+}
+
+function get_network_config() {
+  redis-cli zrange history:networkConfig -$1 -$1 | jq -S .
+}
+
+function ncdiff() {
+  i=${1:-1}
+  vimdiff <(get_network_config $(($i+1))) <(get_network_config $i)
+}
+
+function lase() {
+  local_fwapc_get "v1/event_history/$1?format=text" | jq -r '.[]'
 }

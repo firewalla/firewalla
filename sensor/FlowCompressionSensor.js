@@ -1,4 +1,4 @@
-/*    Copyright 2021-2022 Firewalla Inc.
+/*    Copyright 2021-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -122,7 +122,7 @@ class FlowCompressionSensor extends Sensor {
       log.error(`Job ${job.id} ${job.action} failed with error ${err.message}`);
     });
     queueObj.destroy(() => {
-      log.info(`${type} flows stream queue is cleaned up`)
+      log.verbose(`${type} flows stream queue is cleaned up`)
     })
     queueObj.process(async (job, done) => {
       try {
@@ -431,6 +431,7 @@ class FlowCompressionSensor extends Sensor {
       begin: begin,
       end: end,
       audit: true,
+      localFlow: true,
       count: 2000,
       asc: true
     }

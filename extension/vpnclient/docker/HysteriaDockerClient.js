@@ -1,4 +1,4 @@
-/*    Copyright 2023 Firewalla Inc
+/*    Copyright 2023-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,26 +17,20 @@
 
 const log = require('../../../net2/logger.js')(__filename);
 const fs = require('fs');
-const Promise = require('bluebird');
-Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
-const dns = require('dns');
 const f = require('../../../net2/Firewalla.js');
-const resolve4 = Promise.promisify(dns.resolve4);
 const _ = require('lodash');
-const sem = require('../../../sensor/SensorEventManager.js').getInstance();
-const vpnClientEnforcer = require('../VPNClientEnforcer.js');
 
 class HysteriaDockerClient extends DockerBaseVPNClient {
 
   async prepareConfig(config) {
-    log.info("Preparing hysteria config file");
+    log.verbose("Preparing hysteria config file");
     const src = `${__dirname}/hysteria/config.template.yml`;
     const dst = `${this._getDockerConfigDirectory()}/config.yml`;
 
-    const content = await fs.readFileAsync(src, {encoding: 'utf8'});
+    const content = await fs.promises.readFile(src, {encoding: 'utf8'});
     const yamlObj = YAML.parse(content);
 
     if(config.server) {
@@ -57,7 +51,7 @@ class HysteriaDockerClient extends DockerBaseVPNClient {
     yamlObj.bandwidth.up = `${config.up} mbps`;
 
     log.info("Writing config file", dst);
-    await fs.writeFileAsync(dst, YAML.stringify(yamlObj));
+    await fs.promises.writeFile(dst, YAML.stringify(yamlObj));
   }
 
   async __prepareAssets() {
@@ -113,8 +107,7 @@ class HysteriaDockerClient extends DockerBaseVPNClient {
   }
 
   isIPv6Enabled() {
-    // only enable in dev, may change in the future
-    return f.isDevelopmentVersion();
+    return true
   }
 }
 

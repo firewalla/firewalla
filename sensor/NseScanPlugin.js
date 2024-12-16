@@ -28,6 +28,7 @@ const log = require('../net2/logger.js')(__filename);
 const networkProfileManager = require('../net2/NetworkProfileManager.js');
 const sysManager = require('../net2/SysManager.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
+
 const AsyncLock = require('../vendor_lib/async-lock');
 
 const extensionManager = require('./ExtensionManager.js');
@@ -39,6 +40,7 @@ const featureName = 'nse_scan';
 const policyKeyName = 'nse_scan';
 const MIN_CRON_INTERVAL = 3600; // at most one job every 24 hours, to avoid job queue congestion
 const MAX_RECODE_NUM = 9; // only keeps last N records
+const TTL_SEC = 2678400; // expire in 86400 * 31 seconds
 
 const lock = new AsyncLock();
 const LOCK_APPLY_NSE_SCAN_POLICY = "LOCK_APPLY_NSE_SCAN_POLICY";
@@ -371,6 +373,7 @@ class NseScanPlugin extends Sensor {
         for (const result of newResult[intf][serverIp]) {
           if (result.target.startsWith('mac:')) {
             await rclient.hsetAsync(`${policyKeyName}:${result.target}`, fieldKey, JSON.stringify(result));
+            await rclient.expireAsync(`${policyKeyName}:${result.target}`, TTL_SEC);
           }
         }
       }
@@ -425,6 +428,7 @@ class NseScanPlugin extends Sensor {
       const macAddr = result.target.split(':').slice(1).join(':');
       const rkey = `${policyKeyName}:suspect:${macAddr}`;
       await rclient.hsetAsync(rkey, fieldKey, JSON.stringify(result));
+      await rclient.expireAsync(rkey, TTL_SEC);
       if (prevKeys[rkey] == 0) {
         prevKeys[rkey] = 1
       }

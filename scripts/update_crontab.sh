@@ -31,6 +31,11 @@ if [[ -f $SURICATA_CRONTAB ]]; then
   cat $SURICATA_CRONTAB >> $TMP_CRONTAB_FILE
 fi
 
+FWAPC_CRONTAB=$FIREWALLA_HIDDEN/config/fwapc_crontab
+if [[ -f $FWAPC_CRONTAB ]]; then
+  cat $FWAPC_CRONTAB >> $TMP_CRONTAB_FILE
+fi
+
 sudo -u pi crontab -r
 sudo -u pi crontab $TMP_CRONTAB_FILE
 

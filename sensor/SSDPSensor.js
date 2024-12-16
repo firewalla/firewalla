@@ -74,6 +74,7 @@ class SSDPSensor extends Sensor {
   notify(ip, ssdpResult) {
     if (sm.isMyIP(ip)) return
 
+    // node-ssdp defaults v4 only
     l2.getMAC(ip, (err, mac) => {
 
       if(err) {
