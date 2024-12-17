@@ -599,29 +599,6 @@ class HostTool {
 
     return Object.values(activeHosts).filter((host, index, array) => array.indexOf(host) == index)
   }
-
-  async generateLocalDomain(mac) {
-    if(!this.isMacAddress(mac)) {
-      return;
-    }
-    const macEntry = await this.getMACEntry(mac);
-    // customizeDomainName actually specifies hostname, domain corresponds to suffix
-    let customizedHostname = macEntry.customizeDomainName;
-    let ipv4Addr = macEntry.ipv4Addr;
-    let name = getPreferredName(macEntry);
-    if (!ipv4Addr || (!name && !customizedHostname)) return;
-    name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."));
-    customizedHostname = customizedHostname && getCanonicalizedDomainname(customizedHostname.replace(/\s+/g, "."));
-    await this.updateMACKey({
-      localDomain: name || "",
-      userLocalDomain: customizedHostname || "",
-      mac: mac
-    }, true);
-    return {
-      localDomain: name,
-      userLocalDomain: customizedHostname
-    }
-  }
 }
 
 module.exports = HostTool;

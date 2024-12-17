@@ -306,9 +306,9 @@ class TagManager {
           }
         }
         if (this.tags[uid]) {
-          await this.tags[uid].update(o);
+          await this.tags[uid].update(Tag.parse(o));
         } else {
-          this.tags[uid] = new Tag(o);
+          this.tags[uid] = new Tag(Tag.parse(o));
         }
         markMap[uid] = true;
       })

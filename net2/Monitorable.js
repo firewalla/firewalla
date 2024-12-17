@@ -55,18 +55,22 @@ class Monitorable {
         } catch (err) {
           log.error('Parsing', key, obj[key])
         }
-      }
-      if (this.metaFieldsNumber.includes(key)) {
+      } else if (this.metaFieldsNumber.includes(key)) {
         obj[key] = Number(obj[key])
-      }
-      if (obj[key] === "null")
+      } else if (obj[key] === "null")
         obj[key] = null;
+      else if (obj[key] === '"null"')
+        obj[key] = 'null'
+      else if (obj[key] === 'undefined')
+        continue
+      else if (obj[key] === '"undefined"')
+        obj[key] = 'undefined'
     }
     return obj
   }
 
   constructor(o) {
-    this.o = this.constructor.parse(o)
+    this.o = o
     this.policy = {};
 
     if (!this.getUniqueId()) {
@@ -112,17 +116,16 @@ class Monitorable {
 
   async onDelete() {}
 
-  async update(raw, quick = false) {
-    const o = this.constructor.parse(raw)
-    Object.keys(o).forEach(key => {
-      if (o[key] === undefined)
-        delete o[key];
+  async update(raw, partial = false) {
+    Object.keys(raw).forEach(key => {
+      if (raw[key] === undefined)
+        delete raw[key];
     })
 
-    if (quick)
-      Object.assign(this.o, o)
+    if (partial)
+      Object.assign(this.o, raw)
     else
-      this.o = o;
+      this.o = raw;
   }
 
   toJson() {
@@ -160,8 +163,13 @@ class Monitorable {
   redisfy() {
     const obj = JSON.parse(JSON.stringify(this.o))
     for (const f in obj) {
-      // some fields in this.o may be set as string and converted to object/array later in constructor() or update(), need to double-check in case this function is called after the field is set and before it is converted to object/array
-      if (this.constructor.metaFieldsJson.includes(f) && !_.isString(this.o[f]) || obj[f] === null || obj[f] === undefined)
+      // some fields in this.o may be set as string and converted to object/array later
+      // in constructor() or update(), need to double-check in case this function is
+      // called after the field is set and before it is converted to object/array
+      if (this.constructor.metaFieldsJson.includes(f) && !_.isString(this.o[f])
+        || obj[f] === null || obj[f] === 'null'
+        || obj[f] === undefined || obj[f] == 'undefined'
+      )
         obj[f] = JSON.stringify(obj[f])
     }
     return obj
