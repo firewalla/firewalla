@@ -1253,9 +1253,13 @@ class BroDetect {
         intf: intfId, // intf id
         du: obj.duration,
         pr: obj.proto,
-        uids: [obj.uid],
+        uids: [],
         ltype: localType
       };
+
+      // uids is only used to correlate with uri in http.log
+      if (obj.service === "http")
+        tmpspec.uids.push(obj.uid);
 
       if (localFlow) {
         tmpspec.dmac = dstMac
