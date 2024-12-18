@@ -231,6 +231,8 @@ class FlowCompressionSensor extends Sensor {
   }
 
   async job() {
+    if (!this.featureOn) return
+
     const now = new Date() / 1000;
     const nowTickTs = now - now % this.step;
     await this.dumpStreamFlows(nowTickTs, "normal");
