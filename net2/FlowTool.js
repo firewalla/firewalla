@@ -161,8 +161,8 @@ class FlowTool extends LogQuery {
     f.duration = flow.du
     if (flow.intf) f.intf = networkProfileManager.prefixMap[flow.intf] || flow.intf
     for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-      const config = Constants.TAG_TYPE_MAP[type];
-      f[config.flowKey] = flow[config.flowKey];
+      const flowKey = Constants.TAG_TYPE_MAP[type].flowKey
+      if (flow[flowKey]) f[flowKey] = flow[flowKey];
     }
     if (_.isObject(flow.af) && !_.isEmpty(flow.af)) {
       f.appHosts = Object.keys(flow.af);
