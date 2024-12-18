@@ -1561,13 +1561,13 @@ module.exports = class HostManager extends Monitorable {
       host = this.hostsdb[`host:ip4:${o.ipv4Addr}`];
     }
     if (host && o) {
-      await host.update(o);
+      await host.update(Host.parse(o));
       return host;
     }
 
     if (o == null) return null;
 
-    host = new Host(o, noEnvCreation);
+    host = new Host(Host.parse(o), noEnvCreation);
 
     this.hostsdb[`host:mac:${o.mac}`] = host
     this.hosts.all.push(host);
@@ -1747,7 +1747,7 @@ module.exports = class HostManager extends Monitorable {
         let hostbyip = o.ipv4Addr ? this.hostsdb["host:ip4:" + o.ipv4Addr] : null;
   
         if (hostbymac == null) {
-          hostbymac = new Host(o);
+          hostbymac = new Host(Host.parse(o));
           this.hosts.all.push(hostbymac);
           this.hostsdb['host:mac:' + o.mac] = hostbymac;
         } else {
@@ -1773,7 +1773,7 @@ module.exports = class HostManager extends Monitorable {
             log.error('Failed to check v6 address of', o.mac, err)
           }
   
-          await hostbymac.update(o);
+          await hostbymac.update(Host.parse(o));
           await hostbymac.identifyDevice(false);
         }
   

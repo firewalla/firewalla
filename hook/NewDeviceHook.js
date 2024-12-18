@@ -20,7 +20,8 @@ const Hook = require('./Hook.js');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const { delay } = require('../util/util')
-
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager()
 const MessageBus = require('../net2/MessageBus.js');
 
 class NewDeviceHook extends Hook {
@@ -71,7 +72,7 @@ class NewDeviceHook extends Hook {
   
           await hostTool.updateDHCPInfo(mac, mtype, dhcpInfo);
         }
-  
+
         const result = await hostTool.macExists(mac)
 
         if(result) {
@@ -84,9 +85,11 @@ class NewDeviceHook extends Hook {
           }
           const skey = `${from}Name`;
           if (name) hostObj[skey] = name;
-          await hostTool.updateMACKey(hostObj);
-          await hostTool.generateLocalDomain(mac);
-          this.messageBus.publish("Host:Updated", mac, hostObj);
+
+          const host = await hostManager.getHostAsync(mac)
+          await host.update(hostObj, true)
+          await host.save('localDomain')
+          this.messageBus.publish("Host:Updated", mac, host.o);
           return;
         }
 

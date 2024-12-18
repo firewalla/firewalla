@@ -124,6 +124,18 @@ class Host extends Monitorable {
     await lock.acquire(`UPDATE_${this.getGUID()}`, async () => {
       await super.update(obj, quick)
 
+      const name = getPreferredName(this.o);
+      const localDomain = getCanonicalizedDomainname(name.replace(/\s+/g, "."))
+      if (localDomain != this.o.localDomain) {
+        log.verbose('localDomain updated', name, localDomain)
+        this.o.localDomain = localDomain
+      }
+      if (this.o.customizeDomainName) {
+        const userLocalDomain = getCanonicalizedDomainname(this.o.customizeDomainName.replace(/\s+/g, "."));
+        if (userLocalDomain != this.o.userLocalDomain)
+          this.o.userLocalDomain = userLocalDomain
+      }
+
       if (this.o.ipv4) {
         this.o.ipv4Addr = this.o.ipv4;
       }
@@ -134,7 +146,7 @@ class Host extends Monitorable {
       }
 
       for (const f of Host.metaFieldsJson) {
-        this[f] = this.o[f]
+        if (this.o[f]) this[f] = this.o[f]
       }
     }).catch((err) => {
       log.error(`Failed to update Host ${this.o.mac}`, err.message);
