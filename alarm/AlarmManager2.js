@@ -197,8 +197,8 @@ module.exports = class {
         sclient.on("message", (channel, message) => {
           switch (channel) {
             case "config:feature:dynamic:disable": {
-              log.info('received event config:feature:dynamic:disable')
               if (message === featureName) {
+                log.info('received event config:feature:dynamic:disable', featureName)
                 this.cleanPendingQueue();
               }
               break;

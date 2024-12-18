@@ -40,6 +40,7 @@ const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 class FlowCompressionSensor extends Sensor {
   constructor() {
     super()
+    this.refreshInterval = _.get(this.config, 'refreshInterval', 5) * 60 * 1000
     this.maxCount = (this.config && this.config.maxCount * platform.getCompresseCountMultiplier()) || 10000
     this.maxMem = (this.config && this.config.maxMem * platform.getCompresseMemMultiplier()) || 20 * 1024 * 1024
     this.lastestTsKey = "compressed:flows:lastest:ts"
@@ -401,7 +402,7 @@ class FlowCompressionSensor extends Sensor {
         if (flows.length < options.count) {
           completed = true
         } else {
-          options.begin = endTs
+          options.ts = endTs
         }
         await this.appendAndSave(endTs, await this.compress(flows), 'wanBlock')
       } catch (e) {
