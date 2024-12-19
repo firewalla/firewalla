@@ -26,12 +26,14 @@ const FireRouter = require('../net2/FireRouter.js');
 const Config = require('../net2/config.js');
 const extensionManager = require('./ExtensionManager.js');
 const _ = require('lodash');
+const Constants = require('../net2/Constants.js');
 
 class PcapPlugin extends Sensor {
 
   async apiRun() {
     extensionManager.onCmd(`${this.getFeatureName()}:restart`, async (msg, data) => {
       const enabled = Config.isFeatureOn(this.getFeatureName());
+      try {await extensionManager._precedeRecord(msg.id, {origin: {enabled: enabled}})} catch(err) {};
       if (enabled) {
         await this.restart().catch((err) => {
           log.error(`Failed to restart ${this.getFeatureName()}`, err.message);
@@ -62,6 +64,17 @@ class PcapPlugin extends Sensor {
         });
       }
     });
+
+    Config.onFeature(Constants.FEATURE_LOCAL_FLOW, (feature, status) => {
+      if (feature !== Constants.FEATURE_LOCAL_FLOW)
+        return;
+      if (this.enabled) {
+        log.info(`Received feature change event ${feature} ${status}, will restart pcap tool ${this.constructor.name}`);
+        restartJob.exec().catch((err) => {
+          log.error(`Failed to restart pcap job ${this.constructor.name}`, err.message);
+        });
+      }
+    })
   }
 
   // this will be invoked only once when the class is loaded

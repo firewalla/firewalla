@@ -104,6 +104,7 @@ class AdblockPlugin extends Sensor {
 
     async apiRun() {
       extensionManager.onCmd("adblockReset", async (msg, data) => {
+        try {await extensionManager._precedeRecord(msg.id, {origin: {config: await this.getAdblockConfig(), enabled: fc.isFeatureOn(featureName)}})} catch(err) {};
         sem.sendEventToFireMain({
           type: 'ADBLOCK_RESET'
         });

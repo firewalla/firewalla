@@ -89,6 +89,7 @@ class UnboundPlugin extends Sensor {
 
   async apiRun() {
     extensionManager.onSet("unboundConfig", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await unbound.getUserConfig()})} catch(err) {};
       if (data) {
         await unbound.updateUserConfig(data);
         sem.sendEventToFireMain({
@@ -103,6 +104,7 @@ class UnboundPlugin extends Sensor {
     });
 
     extensionManager.onCmd("unboundReset", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: {config: await unbound.getUserConfig(), enabled: fc.isFeatureOn(featureName)}})} catch(err) {};
       sem.sendEventToFireMain({
         type: 'UNBOUND_RESET'
       });

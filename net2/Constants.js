@@ -31,6 +31,8 @@ module.exports = {
   VPN_TYPE_OVPN: "ovpn",
   VPN_TYPE_WG: "wg",
 
+  INTF_AP_CTRL: "wg_ap",
+
   TRUST_IP_SET: "trust:ip",
   TRUST_DOMAIN_SET: "trust:domain",
 
@@ -51,6 +53,7 @@ module.exports = {
   REDIS_KEY_NTP_SERVER_STATUS: "sys:ntp:status", // updated only when ntp_redirect is enabled
   REDIS_KEY_VPN_WG_PEER: 'vpn:wg:peer:', // vpn:wg:peer:{intf}:{pubkey}
   REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG: "app_time_usage_cloud_config",
+  REDIS_KEY_HISTORY_MSG_PREFIX: "_hx:msg:",
 
   REDIS_HKEY_NSE_DHCP: "dhcp",
   REDIS_HKEY_CONN_OINTF: "oIntf",
@@ -64,6 +67,10 @@ module.exports = {
   ST_ACTIVATED: 'active',
   ST_IGNORE: 'ignore',
   ST_TIMEOUT: 'timeout',
+
+  FW_AP_MAC_PREFIX: "20:6D:31:61",
+  FW_AP_DEFAULT_DHCP_HOSTNAME: "FirewallaAP",
+  VPN_ROUTE_MARK_KEY_PREFIX: "fwmark:vpn",
 
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
 
@@ -81,6 +88,7 @@ module.exports = {
   TAG_TYPE_DEVICE: "device",
   TAG_TYPE_USER: "user",
   TAG_TYPE_GROUP: "group",
+  TAG_TYPE_SSID: "ssid",
 
   TAG_TYPE_MAP: {
     device: {
@@ -112,10 +120,24 @@ module.exports = {
       alarmNameKey: "p.tag.names",
       ruleTagPrefix: "tag:",
       needAppTimeInInitData: false
+    },
+    ssid: {
+      redisKeyPrefix: "ssidTag:uid:",
+      initDataKey: "ssidTags",
+      policyKey: "ssidTags",
+      flowKey: "ssidTags",
+      alarmIdKey: "p.ssidtag.ids",
+      alarmNameKey: "p.ssidtag.names",
+      ruleTagPrefix: "ssidTag:",
+      needAppTimeInInitData: false
     }
   },
 
   IPTABLES_LOG_PREFIX_AUDIT: '[FW_ADT]',
 
   HOST_MAC_KEY_EXPIRE_SECS: 86400 * 365,
+
+  FEATURE_LOCAL_FLOW: "local_flow",
+  FEATURE_VPN_DISCONNECT: "vpn_disconnect",
+  FEATURE_VPN_RESTORE: "vpn_restore",
 };

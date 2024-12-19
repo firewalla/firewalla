@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,9 +27,11 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const {Address4, Address6} = require('ip-address');
-const features = require('../net2/features.js')
-const conntrack = features.isOn('conntrack') ? require('../net2/Conntrack.js') : null;
+const f = require('../net2/Firewalla.js');
+const fc = require('../net2/config.js');
+const conntrack = require('../net2/Conntrack.js')
 const uuid = require('uuid');
+const Constants = require('../net2/Constants.js');
 
 class PcapZeekPlugin extends PcapPlugin {
 
@@ -99,6 +101,8 @@ class PcapZeekPlugin extends PcapPlugin {
     const monitoredNetworks6 = [];
     const selfIp4 = [];
     const selfIp6 = [];
+    const wanIp4 = [];
+    const wanIp6 = [];
     for (const intf of sysManager.getMonitoringInterfaces()) {
       const ip4Subnets = intf.ip4_subnets;
       const ip6Subnets = intf.ip6_subnets;
@@ -119,12 +123,26 @@ class PcapZeekPlugin extends PcapPlugin {
         }
       }
     }
+    for (const intf of sysManager.getWanInterfaces()) {
+      if (_.isArray(intf.ip4_addresses))
+        wanIp4.push(...intf.ip4_addresses);
+      if (_.isArray(intf.ip6_addresses))
+        wanIp6.push(...(intf.ip6_addresses.filter(addr => !addr.startsWith("fe80"))));
+    }
     // do not capture intranet traffic, but still keep tcp SYN/FIN/RST for port scan detection
     const restrictFilters = {};
-    if (!_.isEmpty(monitoredNetworks4))
-      restrictFilters["not-intranet-ip4"] = `not (ip and (${monitoredNetworks4.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks4.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or tcp[13] & 0x7 == 0))`;
-    if (!_.isEmpty(monitoredNetworks6))
-      restrictFilters["not-intranet-ip6"] = `not (ip6 and (${monitoredNetworks6.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks6.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or ip6[40+13] & 0x7 == 0))`;
+    if (!fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW)) {
+      if (!_.isEmpty(monitoredNetworks4))
+        restrictFilters["not-intranet-ip4"] = `not (ip and (${monitoredNetworks4.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks4.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or tcp[13] & 0x7 == 0))`;
+      if (!_.isEmpty(monitoredNetworks6))
+        restrictFilters["not-intranet-ip6"] = `not (ip6 and (${monitoredNetworks6.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks6.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or ip6[40+13] & 0x7 == 0))`;
+    } else {
+      // randomly drop local traffic packets without SYN/FIN/RST based on the first bit of the most significant byte of TCP checksum(tcp header offset +16), this can reduce 50% traffic
+      if (!_.isEmpty(monitoredNetworks4))
+        restrictFilters["not-intranet-ip4"] = `not (ip and (${monitoredNetworks4.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks4.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (tcp and tcp[13] & 0x7 == 0 and (len >= 1000 || tcp[13] == 0x10) and tcp[16] & 0x8 != 0))`;
+      if (!_.isEmpty(monitoredNetworks6))
+        restrictFilters["not-intranet-ip6"] = `not (ip6 and (${monitoredNetworks6.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks6.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (tcp and ip6[40+13] & 0x7 == 0 and (len >= 1000 || ip6[40 + 13] == 0x10) and ip6[40 + 16] & 0x8 != 0))`;
+    }
     // do not record TCP SYN originated from box, which is device port scan packets
     if (!_.isEmpty(selfIp4)) {
       restrictFilters["not-self-tx-syn-ip4"] = `not (ip and (${selfIp4.map(ip => `src host ${ip}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or tcp[13] & 0x12 == 2))`;
@@ -136,16 +154,23 @@ class PcapZeekPlugin extends PcapPlugin {
       restrictFilters["not-self-rx-nosyn-ip6"] = `not (ip6 and (${selfIp6.map(ip => `src host ${ip}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or ip6[40+13] & 0x12 != 2))`;
     }
     */
-    if (features.isOn("fast_speedtest") && conntrack) {
+    if (!_.isEmpty(wanIp4)) {
+      restrictFilters["not-self-wan-ip4"] = `not (${wanIp4.map(ip => `host ${ip}`).join(' or ')})`;
+    }
+    if (!_.isEmpty(wanIp6)) {
+      restrictFilters["not-self-wan-ip6"] = `not (${wanIp6.map(ip => `host ${ip}`).join(' or ')})`;
+    }
+    if (fc.isFeatureOn("fast_speedtest") && conntrack) {
       restrictFilters["not-tcp-port-8080"] = `not (tcp and port 8080)`;
       conntrack.registerConnHook({dport: 8080, protocol: "tcp"}, (connInfo) => {
-        const {src, sport, dst, dport, protocol, origPackets, respPackets, origBytes, respBytes, duration} = connInfo;
+        const {src, replysrc, sport, replysport, dst, dport, protocol, origPackets, respPackets, origBytes, respBytes, duration} = connInfo;
+        const local_orig = Boolean(sysManager.getInterfaceViaIP(src));
         bro.processConnData(JSON.stringify(
           {
             "id.orig_h": src,
-            "id.resp_h": dst,
+            "id.resp_h": local_orig ? dst : replysrc, // use replysrc for DNATed connection
             "id.orig_p": sport,
-            "id.resp_p": dport,
+            "id.resp_p": local_orig ? dport : replysport,
             "proto": protocol,
             "orig_bytes": origBytes,
             "orig_pkts": origPackets,
@@ -154,8 +179,8 @@ class PcapZeekPlugin extends PcapPlugin {
             "orig_ip_bytes": origBytes + origPackets * 20,
             "resp_ip_bytes": respBytes + respPackets * 20,
             "missed_bytes": 0,
-            "local_orig": sysManager.getInterfaceViaIP(src) ? true : false,
-            "local_resp": sysManager.getInterfaceViaIP(dst) ? true : false,
+            "local_orig": local_orig,
+            "local_resp": local_orig ? Boolean(sysManager.getInterfaceViaIP(dst)) : Boolean(sysManager.getInterfaceViaIP(replysrc)),
             "conn_state": "SF",
             "duration": duration,
             "ts": Date.now() / 1000 - duration,
@@ -165,7 +190,15 @@ class PcapZeekPlugin extends PcapPlugin {
       })
     }
 
-    return {listenInterfaces, restrictFilters};
+    const sigFiles = [];
+    const sigDir = `${f.getRuntimeInfoFolder()}/zeek_signatures`;
+    const files = await fs.readdirAsync(sigDir).catch((err) => []);
+    for (const file of files) {
+      if (file.endsWith(".sig"))
+        sigFiles.push(`${sigDir}/${file}`);
+    }
+
+    return {listenInterfaces, restrictFilters, sigFiles};
   }
 
   getPcapBufsize(intfName) {

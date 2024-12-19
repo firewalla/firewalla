@@ -1,4 +1,4 @@
-/*    Copyright 2020-2021 Firewalla Inc.
+/*    Copyright 2020-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -56,6 +56,8 @@ const MSG_OSI_VERIFIED= 'osi:verified';
 const MSG_OSI_UPDATE_NOW = 'osi:update_now';
 const MSG_OSI_TARGET_TAGS_APPLIED = 'osi:target:tags_applied';
 
+const MSG_MAPPING_IP_MAC_DELETED = 'mapping:ip:mac:deleted'
+
 const MSG_ASSETS_UPDATED_CHANNEL = 'assets:updated';
 
 const MSG_FLOW_ENRICHED = "FLOW_ENRICHED";
@@ -65,6 +67,10 @@ const MSG_APP_INTEL_CONFIG_UPDATED = "APP_INTEL_CONFIG_UPDATED";
 
 const MSG_TRACE = "sys:trace";
 const MSG_DEBUG = 'DEBUG'
+
+const MSG_FWAPC_SSID_STA_UPDATE = "fwapc:ssid_station_update";
+const MSG_FWAPC_CONNTRACK_UPDATE = "fwapc:conntrack_update";
+const MSG_FWAPC_BLOCK_FLOW = "fwapc:block_flow";
 
 module.exports = {
   MSG_TRACE,
@@ -101,10 +107,14 @@ module.exports = {
   MSG_OSI_RULES_DONE,
   MSG_OSI_INBOUND_BLOCK_RULES_DONE,
   MSG_OSI_TARGET_TAGS_APPLIED,
+  MSG_MAPPING_IP_MAC_DELETED,
   MSG_ASSETS_UPDATED_CHANNEL,
   MSG_FLOW_ENRICHED,
   MSG_FLOW_ACL_AUDIT_BLOCKED,
   MSG_APP_TIME_USAGE_BUCKET_INCR,
   MSG_APP_INTEL_CONFIG_UPDATED,
   MSG_DEBUG,
+  MSG_FWAPC_SSID_STA_UPDATE,
+  MSG_FWAPC_CONNTRACK_UPDATE,
+  MSG_FWAPC_BLOCK_FLOW,
 }

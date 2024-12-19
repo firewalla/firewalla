@@ -48,6 +48,7 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
 const tokenManager = require('../util/FWTokenManager.js');
+const execAsync = require('child-process-promise').exec;
 
 module.exports = class {
   constructor(name, config = {}) {
@@ -235,8 +236,8 @@ module.exports = class {
     return false;
   }
 
-  async setMspData(list = []) {
-    return rclient.setAsync(this.mspDataKey, JSON.stringify(list));
+  async setMspData(data = {}) {
+    return rclient.setAsync(this.mspDataKey, JSON.stringify(data));
   }
 
   async getMspData() {
@@ -399,7 +400,7 @@ module.exports = class {
   // in this case, once box remove from msp, box should use the flag to clean up msp related rules
   async isMspRelatedRule(rule, { mspData }) {
     const mspId = await this.getMspId();
-    if (rule.msp_id == mspId && (p.msp_rid || p.purpose == 'mesh')) return true; // msp global rule or vpn mesh rule
+    if (rule.msp_id == mspId && (rule.msp_rid || rule.purpose == 'mesh')) return true; // msp global rule or vpn mesh rule
     if (mspData && mspData.targetlists) {
       if (_.find(mspData.targetlists, { id: rule.target })) { // if it is msp target list rule
         return true;
@@ -467,10 +468,12 @@ module.exports = class {
         }
       }
 
-      // disable msp features
-      const features = Object.keys(fc.getFeatures()).filter(i => i.startsWith('msp_'));
-      for ( const f of features) {
-        await fc.disableDynamicFeature(f);
+      // disable msp features if not support msp
+      if (this.name != "support"){
+        const features = Object.keys(fc.getFeatures()).filter(i => i.startsWith('msp_'));
+        for (const f of features) {
+          await fc.disableDynamicFeature(f);
+        }
       }
     } catch (e) {
       log.warn('Clean msp rules failed', e);
@@ -495,6 +498,8 @@ module.exports = class {
     const gid = await et.getGID();
     await fc.enableDynamicFeature("rekey");
     await cw.getCloud().reKeyForAll(gid);
+    // make sure the rekey config is saved to local storage
+    this._scheduleRedisBackgroundSave();
   }
 
   isRealtimeValid() {
@@ -507,6 +512,34 @@ module.exports = class {
 
   resetRealtimeExpirationDate() {
     this.realtimeExpireDate = 0;
+  }
+
+  // copy from netbot.js
+  _scheduleRedisBackgroundSave() {
+    if (this.bgsaveTask)
+      clearTimeout(this.bgsaveTask);
+
+    this.bgsaveTask = setTimeout(async () => {
+      try {
+        await platform.ledSaving().catch(() => undefined);
+        const ts = Math.floor(Date.now() / 1000);
+        await rclient.bgsaveAsync();
+        const maxCount = 15;
+        let count = 0;
+        while (count < maxCount) {
+          count++;
+          await delay(1000);
+          const syncTS = await rclient.lastsaveAsync();
+          if (syncTS >= ts) {
+            break;
+          }
+        }
+        await execAsync("sync");
+      } catch (err) {
+        log.error("Redis background save returns error", err.message);
+      }
+      await platform.ledDoneSaving().catch(() => undefined);
+    }, 5000);
   }
 
   async onRealTimeMessage(gid, message) {

@@ -33,7 +33,7 @@ class VirtWanGroupManager {
   constructor() {
     this.virtWanGroups = {};
 
-    this.refreshJob = new scheduler.UpdateJob(this.refreshVirtWanGroups.bind(this), 5000);
+    this.refreshJob = new scheduler.UpdateJob(this.refreshVirtWanGroups.bind(this), 3000);
     this.refreshJob.exec().catch((err) => {
       log.error("Failed to refresh virtual wan groups", err.message);
     });
@@ -118,6 +118,9 @@ class VirtWanGroupManager {
     const event = {
       type: Message.MSG_VIRT_WAN_GROUP_UPDATED
     };
+    // make virtual wan group removal take effect immediately in fireapi
+    if (f.isApi())
+      delete this.virtWanGroups[uuid];
     sem.sendEventToAll(event);
   }
 
