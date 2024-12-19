@@ -140,11 +140,6 @@ function nd {
   sudo ip netns exec $container "$@"
 }
 
-function sshap {
-  local AP_ADDRESS=$1
-  sudo ssh -i ~/.router/config/sshd/keys/ssh_host_rsa_key root@"${AP_ADDRESS}"
-}
-
 alias dc='sudo docker-compose'
 alias jdc='sudo journalctl -fu docker-compose@$(basename $(pwd))'
 alias ssrb='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/show_syslog_reboots.sh 2>/dev/null | sudo bash -s --'
@@ -195,4 +190,8 @@ function get_network_config() {
 function ncdiff() {
   i=${1:-1}
   vimdiff <(get_network_config $(($i+1))) <(get_network_config $i)
+}
+
+function lase() {
+  local_fwapc_get "v1/event_history/$1?format=text" | jq -r '.[]'
 }

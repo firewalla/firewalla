@@ -9,7 +9,6 @@ LOG_INFO=3
 LOG_DEBUG=4
 
 : ${LOGLEVEL:=$LOG_INFO}
-: ${CONNECT_AP:=false}
 test -t 1 || NO_VALUE=_
 : ${NO_VALUE:=' '}
 
@@ -139,7 +138,7 @@ displaytime() {
 # ----------------------------------------------------------------------------
 
 AP_COLS='version:-10 iversion:-10 device_mac:-18 device_ip:-16 device_vpn_ip:-16 pub_key:10 uptime:13 adoption:9 handshake:10 sta:4 mesh:5 backhaul:18 latency:7 eth_speed:12 branch:6 name:-30'
-${CONNECT_AP} && AP_COLS="idx:-3 $AP_COLS"
+AP_COLS="idx:-3 $AP_COLS"
 print_header >&2; hl >&2
 lines=0
 timeit begin
@@ -240,13 +239,4 @@ timeit for-ap-data
 tty_rows=$(stty size | awk '{print $1}')
 (( lines > tty_rows-2 )) && {
     hl >&2; print_header >&2
-}
-${CONNECT_AP} && {
-    while read -p "Select index to SSH to:" si
-    do
-        test -n "$si" || continue
-        if (( $si < $lines && $si >=0 )) ; then  break; fi
-    done
-    echo ">>ssh to '${ap_names[$si]}' at ${ap_ips[$si]} ..."
-    ssh -o HostKeyAlgorithms=+ssh-rsa root@${ap_ips[$si]}
 }

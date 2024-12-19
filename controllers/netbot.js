@@ -689,60 +689,41 @@ class netBot extends ControllerBot {
         return result
       }
       case "host": {
-        //data.item = "host" test
-        //data.value = "{ name: " "}"
         let data = msg.data;
         log.info("Setting Host", msg);
-        let reply = {
-          type: 'jsonmsg',
-          mtype: 'init',
-          id: uuid.v4(),
-          expires: Math.floor(Date.now() / 1000) + 60 * 5,
-          replyid: msg.id,
-        };
-        reply.code = 200;
 
-        if (!data.value.name) {
+        const { name } = data.value
+        if (!name) {
           throw new Error("host name required for setting name")
         }
 
-        let ip = null;
-        if (hostTool.isMacAddress(msg.target)) {
-          const macAddress = msg.target
-          log.info("set host name alias by mac address", macAddress);
-          let macObject = {
-            mac: macAddress,
-            name: data.value.name
-          }
-          await hostTool.updateMACKey(macObject);
-          const generateResult = await hostTool.generateLocalDomain(macAddress) || {};
-          const localDomain = generateResult.localDomain;
-          sem.emitEvent({
-            type: "LocalDomainUpdate",
-            message: `Update device:${macAddress} localDomain`,
-            macArr: [macAddress],
-            toProcess: 'FireMain'
-          });
-          return { localDomain }
-
-        } else {
-          ip = msg.target
-        }
-
-        let host = await this.hostManager.getHostAsync(ip)
+        const host = await this.hostManager.getHostAsync(msg.target)
 
         if (!host) {
           throw new Error("invalid host")
         }
 
-        if (data.value.name == host.o.name) {
-          return
+        if (name == host.o.name) {
+          return { name }
         }
+        log.info("Changing name", host.o.name);
 
-        host.o.name = data.value.name
-        log.info("Changing names", host.o.name);
-        await host.save()
-        return
+        await host.update({ name }, true)
+        await host.save(['name', 'localDomain'])
+        this.messageBus.publish(host.constructor.getUpdateCh(), host.getGUID(), { name });
+        sem.emitEvent({
+          type: "LocalDomainUpdate",
+          message: `Update device:${host.getGUID()} localDomain`,
+          macArr: [host.getGUID()],
+          toProcess: 'FireMain'
+        });
+        sem.emitEvent({
+          type: "LocalDomainUpdate",
+          message: `Update device:${host.getGUID()} localDomain`,
+          macArr: [host.getGUID()],
+          toProcess: 'FireMain'
+        });
+        return { name, localDomain: host.o.localDomain }
       }
       case "tag": {
         let data = msg.data;
@@ -775,32 +756,34 @@ class netBot extends ControllerBot {
         let data = msg.data;
         if (hostTool.isMacAddress(msg.target) || msg.target == '0.0.0.0') {
           const macAddress = msg.target
-          let { customizeDomainName, suffix, noForward } = data.value;
-          if (customizeDomainName && hostTool.isMacAddress(macAddress)) {
-            let macObject = {
-              mac: macAddress,
-              customizeDomainName: customizeDomainName
-            }
-            await hostTool.updateMACKey(macObject);
+          const { customizeDomainName, suffix, noForward } = data.value;
+
+          const host = await this.hostManager.getHostAsync(msg.target)
+
+          if (!host) {
+            throw new Error("invalid host")
           }
+
+          if (customizeDomainName != host.o.customizeDomainName) {
+            await host.update({ customizeDomainName }, true)
+            await host.save(['customizeDomainName', 'userLocalDomain'])
+          }
+
           if (suffix && macAddress == '0.0.0.0') {
             await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX, suffix);
           }
           if (_.isBoolean(noForward) && macAddress == '0.0.0.0') {
             await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD, noForward);
           }
-          let userLocalDomain;
-          if (hostTool.isMacAddress(macAddress)) {
-            const generateResult = await hostTool.generateLocalDomain(macAddress) || {};
-            userLocalDomain = generateResult.userLocalDomain;
-          }
+
+          this.messageBus.publish(host.constructor.getUpdateCh(), host.getGUID(), { customizeDomainName });
           sem.emitEvent({
             type: "LocalDomainUpdate",
             message: `Update device:${macAddress} userLocalDomain`,
             macArr: [macAddress],
             toProcess: 'FireMain'
           });
-          return { userLocalDomain }
+          return { customizeDomainName, userLocalDomain: host.o.userLocalDomain }
         } else {
           throw new Error("Invalid mac address")
         }
@@ -1707,6 +1690,7 @@ class netBot extends ControllerBot {
       options.begin = begin
       options.end = end
     }
+    options.limit = msg.data.limit
 
     // 0 => now, 1 => single hour stats, other => overall stats (last 24 hours)
     if (msg.data.hourblock != "1" && msg.data.hourblock != "0") {
@@ -1823,10 +1807,10 @@ class netBot extends ControllerBot {
     }
     if (fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW) && local == true) {
       promises.push(
-        netBotTool.prepareTopFlows(jsonobj, 'local', 'upload', Object.assign({}, options, {limit: 400})),
-        netBotTool.prepareTopFlows(jsonobj, 'local', 'download', Object.assign({}, options, {limit: 400})),
-        netBotTool.prepareTopFlows(jsonobj, 'local', 'in', Object.assign({}, options, {limit: 400})),
-        netBotTool.prepareTopFlows(jsonobj, 'local', 'out', Object.assign({}, options, {limit: 400})),
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'upload', options),
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'download', options),
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'in', options),
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'out', options),
       )
       if (type != 'host' || target == '0.0.0.0')
         tsMetrics.push('intra:lo', 'conn:lo:intra')
@@ -3256,6 +3240,8 @@ class netBot extends ControllerBot {
             await categoryFlowTool.delAllTypes(hostMac);
             await flowAggrTool.removeAggrFlowsAll(hostMac);
             await flowManager.removeFlowsAll(hostMac);
+
+            // TODO: delete and substract timeseries data from global/intf/tag
 
             // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
             await rclient.unlinkAsync([

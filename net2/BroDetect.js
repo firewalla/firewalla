@@ -1253,9 +1253,13 @@ class BroDetect {
         intf: intfId, // intf id
         du: obj.duration,
         pr: obj.proto,
-        uids: [obj.uid],
+        uids: [],
         ltype: localType
       };
+
+      // uids is only used to correlate with uri in http.log
+      if (obj.service === "http")
+        tmpspec.uids.push(obj.uid);
 
       if (localFlow) {
         tmpspec.dmac = dstMac
@@ -1374,7 +1378,6 @@ class BroDetect {
       // adding keys to flowstash (but not redis)
       tmpspec.mac = localMac
       if (localFlow) tmpspec.local = true
-      Object.assign(tmpspec, tags)
 
       if (tmpspec.fd == 'out' && !localFlow) {
         this.recordOutPort(localMac, tmpspec);

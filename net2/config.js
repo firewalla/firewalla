@@ -190,7 +190,7 @@ async function reloadConfig() {
 
   reloadFeatures()
 
-  log.info('config:updated')
+  log.verbose('config:updated')
   if (f.isMain())
     await pclient.publishAsync("config:updated", JSON.stringify(config))
 }
@@ -218,9 +218,9 @@ function aggregateConfig(configArray = [defaultConfig, platformConfig, versionCo
     const allProfileNames = _.flatten(prioritized.map(c => Object.keys(_.get(c, ['profiles', category], {}))))
       .filter(name => name != 'default')
     if (allProfileNames.length) {
-      profiles[category] = {}
-      if (configArray[0] == defaultConfig) // so default profile doesn't show up in aggregated user config
-        profiles[category].default = defaultConfig.profiles[category].default
+      profiles[category] = {
+        default: defaultConfig.profiles[category].default
+      }
     }
 
     for (const profile of allProfileNames) {

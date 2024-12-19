@@ -346,9 +346,10 @@ class DeviceHook extends Hook {
             log.error("Failed to get host after it is detected.");
           })
           if (!sysManager.isMyMac(mac)) {
-            h.spoof(true);
+            await h.spoof(true);
           }
-          await this.setupLocalDeviceDomain(mac, 'new_device');
+          await h.update(enrichedHost, true)
+          await h.save()
 
           this.messageBus.publish("DiscoveryEvent", "Device:Create", mac, enrichedHost);
         } catch (err) {
@@ -417,13 +418,11 @@ class DeviceHook extends Hook {
           log.info("MAC entry is updated with new IP");
 
           log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
-          let hostManager = new HostManager()
-          hostManager.getHost(host.mac, (err, h) => {
-            if (!err && h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
-              h.spoof(true);
-            }
-          });
-          await this.setupLocalDeviceDomain(host.mac, 'ip_change');
+          const hostManager = new HostManager()
+          const h = await hostManager.getHostAsync(host.mac)
+          if (h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
+            await h.spoof(true);
+          }
 
           this.messageBus.publish(HOST_UPDATED, host.mac, enrichedHost);
         } catch (err) {
@@ -509,13 +508,11 @@ class DeviceHook extends Hook {
           log.info("MAC entry is updated with new IP");
 
           log.info(`Reload host info for new ip address ${host.ipv4Addr}`);
-          let hostManager = new HostManager();
-          hostManager.getHost(host.mac, (err, h) => {
-            if (!err && h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
-              h.spoof(true);
-            }
-          });
-          await this.setupLocalDeviceDomain(host.mac, 'ip_change');
+          const hostManager = new HostManager();
+          const h = await hostManager.getHostAsync(host.mac)
+          if (h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
+            await h.spoof(true);
+          }
 
           this.messageBus.publish(HOST_UPDATED, host.mac, enrichedHost);
         } catch (err) {
@@ -565,8 +562,6 @@ class DeviceHook extends Hook {
             enrichedHost.ipv6Addr = await this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, mac);
           }
 
-          log.debug("Host entry is updated for this device");
-
           if (!lastActiveTimestamp || lastActiveTimestamp < currentTimestamp - this.config.hostExpirationSecs) {
             // Become active again after a while, create a DeviceBackOnlineAlarm
             log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
@@ -584,38 +579,15 @@ class DeviceHook extends Hook {
             }
           }
 
-          await hostTool.updateMACKey(enrichedHost); // host:mac:.....
-          let hostManager = new HostManager();
-          hostManager.getHost(mac, (err, h) => {
-            if (!err && h && h.isMonitoring() && !sysManager.isMyMac(mac)) {
-              h.spoof(true);
-            }
-          });
+          const hostManager = new HostManager();
+          const h = await hostManager.getHostAsync(mac)
+          if (h && h.isMonitoring() && !sysManager.isMyMac(mac)) {
+            await h.spoof(true);
+          }
+          await h.update(enrichedHost, true)
+          await h.save()
           // publish device updated event to trigger
-          await this.setupLocalDeviceDomain(host.mac, 'info_change');
-          this.messageBus.publish(HOST_UPDATED, host.mac, enrichedHost);
-          // log.info("RegularDeviceInfoUpdate MAC entry is updated, checking V6",host.ipv6Addr,enrichedHost.ipv6Addr);
-          // if (host.ipv6Addr == null || host.ipv6Addr.length == 0) {
-          //         return;
-          //       }
-          // if (host.ipv6Addr.length == enrichedHost.ipv6Addr.length
-          //     && host.ipv6Addr.every(function(u, i) {
-          //             return u === enrichedHost.ipv6Addr[i];
-          //           })
-          //          ) {
-          //       } else {
-          //         sem.emitEvent({
-          //           type: "IPv6DeviceInfoUpdate",
-          //           message: "IPv6 Device Update @ DeviceHook",
-          //           suppressEventLogging: true,
-          //           host: host
-          //         });
-          //       }
-          //     }).catch((err) => {
-          //       log.error("Failed to create mac entry:", err, err.stack);
-          //     })
-
-          // })
+          this.messageBus.publish(HOST_UPDATED, h.mac, h.o);
         })().catch((err) => {
           log.error("Failed to create host entry:", err, err.stack);
         });
@@ -725,8 +697,6 @@ class DeviceHook extends Hook {
     const am2 = new AM2();
 
     const name = getPreferredBName(host) || "Unknown"
-    const hostManager = new HostManager();
-    const hostInstance = hostManager.getHostFastByMAC(host.mac);
 
     let alarm = null;
     switch (type) {
@@ -833,12 +803,6 @@ class DeviceHook extends Hook {
         callback(null, null);
       }
     });
-  }
-  async setupLocalDeviceDomain(mac, type) {
-    if (!mac) return;
-    if (type == 'new_device' || type == 'info_change') {
-      await hostTool.generateLocalDomain(mac);
-    }
   }
 }
 

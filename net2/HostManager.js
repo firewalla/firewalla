@@ -827,7 +827,7 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async ruleGroupsForInit(json) {
-    const rgs = policyManager2.getAllRuleGroupMetaData();
+    const rgs = await policyManager2.getAllRuleGroupMetaData();
     json.ruleGroups = rgs;
   }
 
@@ -1003,7 +1003,7 @@ module.exports = class HostManager extends Monitorable {
 
   async loadHostsPolicyRules() {
     log.debug("Reading individual host policy rules");
-    await asyncNative.eachLimit(this.hosts.all, 10, host => host.loadPolicyAsync())
+    await asyncNative.eachLimit(this.hosts.all, 50, host => host.loadPolicyAsync())
   }
 
   async loadDDNSForInit(json) {
@@ -1293,8 +1293,8 @@ module.exports = class HostManager extends Monitorable {
       timeUsageApps = supportedApps;
     else
       timeUsageApps = _.intersection(timeUsageApps, supportedApps);
-    
-    for (const uid of Object.keys(tags)) {
+
+    await asyncNative.eachLimit(Object.keys(tags), 50, async uid => {
       const tag = tags[uid];
       const type = tag.type || Constants.TAG_TYPE_GROUP;
       const initDataKey = _.get(Constants.TAG_TYPE_MAP, [type, "initDataKey"]);
@@ -1317,7 +1317,7 @@ module.exports = class HostManager extends Monitorable {
           json[initDataKey][uid].internetTimeUsageToday = _.get(stats, ["appTimeUsage", "internet"]);
         }
       }
-    }
+    })
   }
 
   async btMacForInit(json) {
@@ -1466,7 +1466,7 @@ module.exports = class HostManager extends Monitorable {
       this.basicDataForInit(json, options),
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
-      this.dhcpPoolUsageForInit(json),
+      // this.dhcpPoolUsageForInit(json), // should be re-implemented before putting into use
       this.assetsInfoForInit(json),
       this.pairingAssetsForInit(json),
       this.getConfigForInit(json),
@@ -1474,14 +1474,14 @@ module.exports = class HostManager extends Monitorable {
       this.appConfsForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
-    // 2021.11.17 not gonna be used in the near future, disabled
-    // const platformSpecificStats = platform.getStatsSpecs();
-    // json.stats = {};
-    // for (const statSettings of platformSpecificStats) {
-    //   requiredPromises.push(this.getStats(statSettings)
-    //     .then(s => json.stats[statSettings.stat] = s)
-    //   )
-    // }
+
+    for (const i in requiredPromises) {
+      requiredPromises[i] = (async() => {
+        const ts = Date.now()
+        await requiredPromises[i]
+        log.debug(`promise ${i} finished`, (Date.now() - ts)/1000)
+      })()
+    }
     await Promise.all(requiredPromises.map(p => p.catch(log.error)))
 
     log.debug("Promise array finished")
@@ -1561,13 +1561,13 @@ module.exports = class HostManager extends Monitorable {
       host = this.hostsdb[`host:ip4:${o.ipv4Addr}`];
     }
     if (host && o) {
-      await host.update(o);
+      await host.update(Host.parse(o));
       return host;
     }
 
     if (o == null) return null;
 
-    host = new Host(o, noEnvCreation);
+    host = new Host(Host.parse(o), noEnvCreation);
 
     this.hostsdb[`host:mac:${o.mac}`] = host
     this.hosts.all.push(host);
@@ -1641,17 +1641,20 @@ module.exports = class HostManager extends Monitorable {
     try {
       // if the ip allocation on an old (stale) device is changed in fireapi, firemain will not execute ipAllocation function on the host object, which sets intfIp in host:mac
       // therefore, need to check policy:mac to determine if the device has reserved IP instead of host:mac
-      const policy = await hostTool.loadDevicePolicyByMAC(h.mac);
+      let policy
+      if (_.get(this.hostsdb, ['host:mac:' + h.mac, policy])) {
+        policy = this.hostsdb['host:mac:' + h.mac].policy.ipAllocation
+      } else {
+        policy = JSON.parse(await rclient.hgetAsync('policy:mac:' + h.mac, 'ipAllocation'))
+      }
+      if (!policy) return false
       if (policy.dhcpIgnore) return true
-      if (policy.ipAllocation) {
-        const ipAllocation = JSON.parse(policy.ipAllocation);
-        if (platform.isFireRouterManaged()) {
-          if (ipAllocation.allocations && Object.keys(ipAllocation.allocations).some(uuid => ipAllocation.allocations[uuid].type === "static" && sysManager.getInterfaceViaUUID(uuid)))
-            return true;
-        } else {
-          if (ipAllocation.type === "static")
-            return true;
-        }
+      if (platform.isFireRouterManaged()) {
+        if (policy.allocations && Object.keys(policy.allocations).some(uuid => policy.allocations[uuid].type === "static" && sysManager.getInterfaceViaUUID(uuid)))
+          return true;
+      } else {
+        if (policy.type === "static")
+          return true;
       }
     } catch (err) { }
     return false;
@@ -1687,6 +1690,7 @@ module.exports = class HostManager extends Monitorable {
         }
       }
       const keys = await rclient.keysAsync("host:mac:*");
+      log.debug("getHosts: keys done");
       this._totalHosts = keys.length;
       let multiarray = [];
       for (let i in keys) {
@@ -1695,8 +1699,9 @@ module.exports = class HostManager extends Monitorable {
       const inactiveTS = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
       const rapidInactiveTS = Date.now() / 1000 - RAPID_INACTIVE_TIME_SPAN;
       const replies = await rclient.multi(multiarray).execAsync();
+      log.debug("getHosts: multi hgetall done");
       this._totalPrivateMacHosts = replies.filter(o => _.isObject(o) && o.mac && hostTool.isPrivateMacAddress(o.mac)).length;
-      await asyncNative.eachLimit(replies, 20, async (o) => {
+      await asyncNative.eachLimit(replies, 50, async (o) => {
         if (!o || !o.mac) {
           // defensive programming
           return;
@@ -1742,7 +1747,7 @@ module.exports = class HostManager extends Monitorable {
         let hostbyip = o.ipv4Addr ? this.hostsdb["host:ip4:" + o.ipv4Addr] : null;
   
         if (hostbymac == null) {
-          hostbymac = new Host(o);
+          hostbymac = new Host(Host.parse(o));
           this.hosts.all.push(hostbymac);
           this.hostsdb['host:mac:' + o.mac] = hostbymac;
         } else {
@@ -1768,7 +1773,7 @@ module.exports = class HostManager extends Monitorable {
             log.error('Failed to check v6 address of', o.mac, err)
           }
   
-          await hostbymac.update(o);
+          await hostbymac.update(Host.parse(o));
           await hostbymac.identifyDevice(false);
         }
   

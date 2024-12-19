@@ -327,11 +327,13 @@ async function run() {
   updateTouchFile();
 
   setInterval(()=>{
-    let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
+    const {rss, heapTotal, heapUsed, external, arrayBuffers} = process.memoryUsage();
+    log.info(`Before GC, RSS is ${Math.floor(rss / 1000000)}, heapTotal is ${Math.floor(heapTotal / 1000000)}, heapUsed is ${Math.floor(heapUsed / 1000000)}, external is ${Math.floor(external / 1000000)}, arrayBuffers is ${Math.floor(arrayBuffers / 1000000)}`);
     try {
       if (global.gc) {
         global.gc();
-        log.info("GC executed ",memoryUsage," RSS is now:", Math.floor(process.memoryUsage().rss / 1000000), "MB");
+        const {rss, heapTotal, heapUsed, external, arrayBuffers} = process.memoryUsage();
+        log.info(`After GC, RSS is ${Math.floor(rss / 1000000)}, heapTotal is ${Math.floor(heapTotal / 1000000)}, heapUsed is ${Math.floor(heapUsed / 1000000)}, external is ${Math.floor(external / 1000000)}, arrayBuffers is ${Math.floor(arrayBuffers / 1000000)}`);
       }
     } catch(e) {
     }
@@ -341,12 +343,14 @@ async function run() {
   },1000*60*5);
 
   setInterval(()=>{
-    let memoryUsage = Math.floor(process.memoryUsage().rss / 1000000);
-    if (memoryUsage>= platform.getGCMemoryForMain()) {
+    const {rss, heapTotal, heapUsed, external, arrayBuffers} = process.memoryUsage();
+    log.info(`Before GC, RSS is ${Math.floor(rss / 1000000)}, heapTotal is ${Math.floor(heapTotal / 1000000)}, heapUsed is ${Math.floor(heapUsed / 1000000)}, external is ${Math.floor(external / 1000000)}, arrayBuffers is ${Math.floor(arrayBuffers / 1000000)}`);
+    if (rss / 1000000 >= platform.getGCMemoryForMain()) {
         try {
           if (global.gc) {
             global.gc();
-            log.info("GC executed Protect ",memoryUsage," RSS is now ", Math.floor(process.memoryUsage().rss / 1000000), "MB");
+            const {rss, heapTotal, heapUsed, external, arrayBuffers} = process.memoryUsage();
+            log.info(`After GC protect, RSS is ${Math.floor(rss / 1000000)}, heapTotal is ${Math.floor(heapTotal / 1000000)}, heapUsed is ${Math.floor(heapUsed / 1000000)}, external is ${Math.floor(external / 1000000)}, arrayBuffers is ${Math.floor(arrayBuffers / 1000000)}`);
           }
         } catch(e) {
         }

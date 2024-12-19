@@ -120,8 +120,8 @@ class APFeaturesPlugin extends Sensor {
 
     if (obj instanceof Host || obj instanceof Identity) {
       await obj.constructor.ensureCreateEnforcementEnv(obj.getUniqueId());
-      const set4Name = obj instanceof Host ? Host.getDeviceSetName(obj.getUniqueId()) : obj.getEnforcementIPsetName(o.getUniqueId(), 4);
-      const set6Name = obj instanceof Host ? set4Name : obj.getEnforcementIPsetName(o.getUniqueId(), 6);
+      const set4Name = obj instanceof Host ? Host.getDeviceSetName(obj.getUniqueId()) : obj.getEnforcementIPsetName(obj.getUniqueId(), 4);
+      const set6Name = obj instanceof Host ? set4Name : obj.getEnforcementIPsetName(obj.getUniqueId(), 6);
       const rule = new Rule("filter").chn("FW_FIREWALL_DEV_ISOLATION").mdl("conntrack", "--ctdir ORIGINAL").jmp("FW_PLAIN_DROP");
       const ruleLog = new Rule("filter").chn("FW_FIREWALL_DEV_ISOLATION").mdl("conntrack", "--ctdir ORIGINAL").jmp(`LOG --log-prefix "[FW_ADT]A=I "`);
 
@@ -166,7 +166,14 @@ class APFeaturesPlugin extends Sensor {
       }
     }
     const ssidConfig = {vlan: policy.vlan, psks};
-    await fwapc.setGroup(tagUid, {config: {ssid: ssidConfig}}).catch((err) => {});
+    if (_.isEmpty(ssidConfig) || !_.has(ssidConfig, "vlan") || _.isEmpty(ssidConfig.psks))
+      await fwapc.deleteGroup(tagUid, "ssid").catch((err) => {
+        log.error(`Failed to delete fwapc ssid config on group ${tagUid}`, err.message);
+      });
+    else
+      await fwapc.setGroup(tagUid, {config: {ssid: ssidConfig}}).catch((err) => {
+        log.error(`Failed to set fwapc ssid config on group ${tagUid}`, err.message);
+      });
   }
 }
 
