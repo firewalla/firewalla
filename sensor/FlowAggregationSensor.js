@@ -258,7 +258,7 @@ class FlowAggregationSensor extends Sensor {
     if (!type || !mac || !_ts)
       return;
     const tags = [];
-    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+    for (const type of ['group', 'user']) {
       const config = Constants.TAG_TYPE_MAP[type];
       tags.push(...(flow[config.flowKey] || []));
     }
@@ -508,7 +508,7 @@ class FlowAggregationSensor extends Sensor {
     }
 
     // aggregate tags
-    const tags = await hostManager.getActiveTags();
+    const tags = await hostManager.getActiveTags(['group', 'user']);
 
     for (const tag of tags) {
       if(!tag || _.isEmpty(tag.macs)) {
