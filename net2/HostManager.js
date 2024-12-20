@@ -1525,12 +1525,12 @@ module.exports = class HostManager extends Monitorable {
     return this.hostsdb[`host:mac:${mac.toUpperCase()}`];
   }
 
-  getHostFast(ip) {
+  getHostFast(ip, fam = 4) {
     if (ip == null) {
       return null;
     }
 
-    return this.hostsdb["host:ip4:"+ip];
+    return this.hostsdb[`host:ip${fam}:${ip}`]
   }
 
   getHostFast6(ip6) {

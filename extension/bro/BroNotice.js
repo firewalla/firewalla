@@ -191,7 +191,8 @@ class BroNotice {
 
       default:
         // do nothing
-        log.info(`Unsupported zeek notice type ${noticeType}, ignored`, broObj);
+        log.info(`Unsupported zeek notice type ${noticeType}, ignored`, noticeType);
+        log.verbose(broObj)
         return null;
     }
     return alarm;

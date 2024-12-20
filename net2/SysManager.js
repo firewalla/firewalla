@@ -704,10 +704,12 @@ class SysManager {
     return ip6Array.filter(ip => iptool.isPublic(ip));
   }
 
-  myGateways() {
+  myGateways(fam = 4) {
     const wanIntfs = fireRouter.getWanIntfNames();
     return wanIntfs.reduce((acc,wanIntf) => {
-      const gw = this.myGateway(wanIntf);
+      const gw =
+        fam == 4 ? this.myGateway(wanIntf) :
+        fam == 6 ? this.myGateway6(wanIntf) : null
       if (gw) acc.push(gw);
       return acc;
     },[]);

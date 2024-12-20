@@ -132,7 +132,6 @@ class FlowAggregationSensor extends Sensor {
     this.ipBlockCache = {};
     this.dnsBlockCache = {};
     this.ifBlockCache = {};
-    this.hourlySumFlowKeysToTrim = new Map();
 
     // BroDetect -> DestIPFoundHook -> here
     sem.on(Message.MSG_FLOW_ENRICHED, async (event) => {
@@ -353,27 +352,18 @@ class FlowAggregationSensor extends Sensor {
 
   // this will be periodically called to update the hourly summed flows, it uses cache to incrementally update hourly sum flow
   async updateAllHourlySummedFlows(ts, trafficCache, ipBlockCache, dnsBlockCache, ifBlockCache) {
+    log.debug('updateAllHourlySummedFlows started', ts)
     for (const key in trafficCache) {
       const [uid, aggrTs] = key.split("@");
       const traffic = trafficCache[key];
       const end = Math.ceil(aggrTs / 3600) * 3600;
       const begin = end - 3600;
-      const options = {begin, end};
+      const options = {begin, end, max_flow: this.config.sumFlowMaxFlow};
       options.expireTime = this.config.sumFlowExpireTime;
       await flowAggrTool.incrSumFlow(uid, traffic, "upload", options);
       await flowAggrTool.incrSumFlow(uid, traffic, "download", options);
       await flowAggrTool.incrSumFlow(uid, traffic, null, options, 'in'); // 'local' is embeded in target
       await flowAggrTool.incrSumFlow(uid, traffic, null, options, 'out');
-      if (!this.hourlySumFlowKeysToTrim.has(end))
-        this.hourlySumFlowKeysToTrim.set(end, new Map());
-      this.hourlySumFlowKeysToTrim.get(end).set(
-        flowAggrTool.getSumFlowKey(uid, "upload", begin, end), this.config.sumFlowMaxFlow);
-      this.hourlySumFlowKeysToTrim.get(end).set(
-        flowAggrTool.getSumFlowKey(uid, "download", begin, end), this.config.sumFlowMaxFlow);
-      this.hourlySumFlowKeysToTrim.get(end).set(
-        flowAggrTool.getSumFlowKey(uid, null, begin, end, 'in'), this.config.sumFlowMaxFlow)
-      this.hourlySumFlowKeysToTrim.get(end).set(
-        flowAggrTool.getSumFlowKey(uid, null, begin, end, 'out'), this.config.sumFlowMaxFlow);
     }
 
     for (const key in ipBlockCache) {
@@ -381,14 +371,10 @@ class FlowAggregationSensor extends Sensor {
       const traffic = ipBlockCache[key];
       const end = Math.ceil(aggrTs / 3600) * 3600;
       const begin = end - 3600;
-      const options = {begin, end};
+      const options = {begin, end, max_flow: this.config.sumAuditFlowMaxFlow};
       options.expireTime = this.config.sumFlowExpireTime;
       await flowAggrTool.incrSumFlow(uid, traffic, "ipB", options, "in");
       await flowAggrTool.incrSumFlow(uid, traffic, "ipB", options, "out");
-      if (!this.hourlySumFlowKeysToTrim.has(end))
-        this.hourlySumFlowKeysToTrim.set(end, new Map());
-      this.hourlySumFlowKeysToTrim.get(end).set(flowAggrTool.getSumFlowKey(uid, "ipB", begin, end, "in"), this.config.sumAuditFlowMaxFlow);
-      this.hourlySumFlowKeysToTrim.get(end).set(flowAggrTool.getSumFlowKey(uid, "ipB", begin, end, "out"), this.config.sumAuditFlowMaxFlow);
     }
 
     for (const key in dnsBlockCache) {
@@ -396,12 +382,9 @@ class FlowAggregationSensor extends Sensor {
       const traffic = dnsBlockCache[key];
       const end = Math.ceil(aggrTs / 3600) * 3600;
       const begin = end - 3600;
-      const options = {begin, end};
+      const options = {begin, end, max_flow: this.config.sumAuditFlowMaxFlow};
       options.expireTime = this.config.sumFlowExpireTime;
       await flowAggrTool.incrSumFlow(uid, traffic, "dnsB", options);
-      if (!this.hourlySumFlowKeysToTrim.has(end))
-        this.hourlySumFlowKeysToTrim.set(end, new Map());
-      this.hourlySumFlowKeysToTrim.get(end).set(flowAggrTool.getSumFlowKey(uid, "dnsB", begin, end), this.config.sumAuditFlowMaxFlow);
     }
 
     for (const key in ifBlockCache) {
@@ -409,23 +392,11 @@ class FlowAggregationSensor extends Sensor {
       const traffic = ifBlockCache[key];
       const end = Math.ceil(aggrTs / 3600) * 3600;
       const begin = end - 3600;
-      const options = {begin, end};
+      const options = {begin, end, max_flow: this.config.sumAuditFlowMaxFlow};
       options.expireTime = this.config.sumFlowExpireTime;
       await flowAggrTool.incrSumFlow(uid, traffic, "ifB", options, "out");
-      if (!this.hourlySumFlowKeysToTrim.has(end))
-        this.hourlySumFlowKeysToTrim.set(end, new Map());
-      this.hourlySumFlowKeysToTrim.get(end).set(flowAggrTool.getSumFlowKey(uid, "ifB", begin, end, "out"), this.config.sumAuditFlowMaxFlow);
     }
-
-    for (const end of this.hourlySumFlowKeysToTrim.keys()) {
-      if (ts - end > 900) {
-        const keyCountMap = this.hourlySumFlowKeysToTrim.get(end);
-        for (const key of keyCountMap.keys()) {
-          await flowAggrTool.trimSumFlow(key, {max_flow: keyCountMap.get(key)});
-        }
-        this.hourlySumFlowKeysToTrim.delete(end);
-      }
-    }
+    log.debug('updateAllHourlySummedFlows ended', ts)
   }
 
   async addFlowsForView(options) {
@@ -445,9 +416,9 @@ class FlowAggregationSensor extends Sensor {
     await flowAggrTool.addSumFlow("download", options);
     await flowAggrTool.addSumFlow("upload", options);
     if (platform.isAuditLogSupported()) {
-      await flowAggrTool.addSumFlow("dnsB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}));
-      await flowAggrTool.addSumFlow("ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}), "in");
-      await flowAggrTool.addSumFlow("ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}), "out");
+      await flowAggrTool.addSumFlow("dnsB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow}));
+      await flowAggrTool.addSumFlow("ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow}), "in");
+      await flowAggrTool.addSumFlow("ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow}), "out");
     }
     if (fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW)) {
       await flowAggrTool.addSumFlow('local', options, 'download');
