@@ -54,6 +54,7 @@ module.exports = {
   REDIS_KEY_VPN_WG_PEER: 'vpn:wg:peer:', // vpn:wg:peer:{intf}:{pubkey}
   REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG: "app_time_usage_cloud_config",
   REDIS_KEY_HISTORY_MSG_PREFIX: "_hx:msg:",
+  REDIS_KEY_ALARM_CACHED: "_alarm:cached", // 0 to disable alarm cache, default on
 
   REDIS_HKEY_NSE_DHCP: "dhcp",
   REDIS_HKEY_CONN_OINTF: "oIntf",
