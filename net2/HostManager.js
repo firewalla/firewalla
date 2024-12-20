@@ -2291,10 +2291,9 @@ module.exports = class HostManager extends Monitorable {
   }
 
   // return: Array<{tag: number, macs: Array<string>}>
-  async getActiveTags() {
+  async getActiveTags(types = Object.keys(Constants.TAG_TYPE_MAP)) {
     let tagMap = {};
     await this.loadHostsPolicyRules()
-    const types = Object.keys(Constants.TAG_TYPE_MAP)
     this.getAllMonitorables()
       .forEach(m => {
         const tags = m && m.policy && types.flatMap(type => m.policy[Constants.TAG_TYPE_MAP[type].policyKey]).filter(t => !_.isEmpty(t));
