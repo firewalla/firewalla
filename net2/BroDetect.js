@@ -889,8 +889,10 @@ class BroDetect {
 
       // from zeek script heartbeat-flow
       if (obj.uid == '0' && obj['id.orig_h'] == '0.0.0.0' && obj["id.resp_h"] == '0.0.0.0') {
-        await rclient.zaddAsync('flow:conn:00:00:00:00:00:00', Date.now() / 1000, data)
-        await rclient.expireAsync('flow:conn:00:00:00:00:00:00', config.conn.expires)
+        await rclient.multi()
+          .zadd('flow:conn:00:00:00:00:00:00', Date.now() / 1000, data)
+          .expire('flow:conn:00:00:00:00:00:00', config.conn.expires)
+          .execAsync()
         // return here so it doesn't go to flow stash
         return
       }
@@ -988,6 +990,8 @@ class BroDetect {
       // fd: in, this flow initiated from inside
       // fd: out, this flow initated from outside, it is more dangerous
 
+      // zeek uses networks.cfg (check BroControl.js) determining local_orig and local_resp
+      // so this is IP based and pretty realiable
       if (localOrig == true && localResp == true) {
         if (!fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW) || !await mode.isRouterModeOn()) return;
 
@@ -1074,6 +1078,8 @@ class BroDetect {
           localType = TYPE_VPN;
         }
       } else {
+        // local flow only available in router mode, so gateway is always Firewalla's mac
+        // for non-local flows, this only happens in simple mode
         if (localMac && sysManager.isMyMac(localMac)) {
           log.verbose("Discard incorrect local MAC address from bro log: ", localMac, lhost);
           localMac = null; // discard local mac from bro log since it is not correct
@@ -1383,11 +1389,14 @@ class BroDetect {
         this.recordOutPort(localMac, tmpspec);
       }
 
-      await rclient.zaddAsync(redisObj).catch(
+      const multi = rclient.multi()
+      multi.zadd(redisObj)
+      if (config.conn.expires) multi.expireat(key, now + config.conn.expires, ()=>{})
+      multi.zadd("deviceLastFlowTs", now, localMac);
+      await multi.execAsync().catch(
         err => log.error("Failed to save tmpspec: ", tmpspec, err)
       )
-      if (config.conn.expires) rclient.expireat(key, now + config.conn.expires, ()=>{})
-      await flowAggrTool.recordDeviceLastFlowTs(localMac, now);
+
       const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
       let remoteHost = null;
       if (afhost && _.isObject(afobj) && afobj.ip === remoteIPAddress) {
@@ -1538,7 +1547,7 @@ class BroDetect {
         }
 
         try {
-          await rclient.multi(transaction).execAsync();
+          await rclient.multi(transaction).execAtomicAsync();
           log.debug(`${type}:Save:Removed`, key, start, end);
         } catch (err) {
           log.error(`${type}:Save:Error`, err);

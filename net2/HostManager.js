@@ -1525,12 +1525,12 @@ module.exports = class HostManager extends Monitorable {
     return this.hostsdb[`host:mac:${mac.toUpperCase()}`];
   }
 
-  getHostFast(ip) {
+  getHostFast(ip, fam = 4) {
     if (ip == null) {
       return null;
     }
 
-    return this.hostsdb["host:ip4:"+ip];
+    return this.hostsdb[`host:ip${fam}:${ip}`]
   }
 
   getHostFast6(ip6) {
@@ -2291,10 +2291,9 @@ module.exports = class HostManager extends Monitorable {
   }
 
   // return: Array<{tag: number, macs: Array<string>}>
-  async getActiveTags() {
+  async getActiveTags(types = Object.keys(Constants.TAG_TYPE_MAP)) {
     let tagMap = {};
     await this.loadHostsPolicyRules()
-    const types = Object.keys(Constants.TAG_TYPE_MAP)
     this.getAllMonitorables()
       .forEach(m => {
         const tags = m && m.policy && types.flatMap(type => m.policy[Constants.TAG_TYPE_MAP[type].policyKey]).filter(t => !_.isEmpty(t));

@@ -733,13 +733,14 @@ class ACLAuditLogPlugin extends Sensor {
           if (type == 'dns' && !block && !fc.isFeatureOn('dnsmasq_log_allow_redis')) continue
 
           const key = this._getAuditKey(mac, block)
-          await rclient.zaddAsync(key, _ts, JSON.stringify(record));
+          const multi = rclient.multi()
+          multi.zadd(key, _ts, JSON.stringify(record));
           if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
-            await flowAggrTool.recordDeviceLastFlowTs(mac, _ts);
+            multi.zadd("deviceLastFlowTs", _ts, mac);
           this.touchedKeys[key] = 1;
-
           const expires = this.config.expires || 86400
-          await rclient.expireatAsync(key, parseInt(Date.now() / 1000) + expires)
+          multi.expireat(key, parseInt(Date.now() / 1000) + expires)
+          await multi.execAsync()
 
           block && sem.emitLocalEvent({
             type: "Flow2Stream",
@@ -810,7 +811,7 @@ class ACLAuditLogPlugin extends Sensor {
         // catch this to proceed onto the next iteration
         try {
           log.debug(transaction)
-          await rclient.multi(transaction).execAsync();
+          await rclient.multi(transaction).execAtomicAsync();
           log.debug("Audit:Save:Removed", key);
         } catch (err) {
           log.error("Audit:Save:Error", err);

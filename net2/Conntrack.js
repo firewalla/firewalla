@@ -282,15 +282,19 @@ class Conntrack {
 
   async setConnEntry(src, sport, dst, dport, protocol, subKey, value, expr = 600) {
     const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
-    await rclient.hsetAsync(key, subKey, value);
-    await rclient.expireAsync(key, expr);
+    await rclient.multi()
+      .hset(key, subKey, value)
+      .expire(key, expr)
+      .execAsync()
   }
 
   async setConnEntries(src, sport, dst, dport, protocol, obj, expr = 600) {
     const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
     if (!_.isEmpty(obj)) {
-      await rclient.hmsetAsync(key, obj);
-      await rclient.expireAsync(key, expr);
+      await rclient.multi()
+        .hmset(key, obj)
+        .expire(key, expr)
+        .execAsync()
     }
   }
 
@@ -303,7 +307,7 @@ class Conntrack {
     const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
     const result = await rclient.hgetAsync(key, subKey);
     if (result && expr)
-      await rclient.expireAsync(key, expr);
+      rclient.expireAsync(key, expr).catch(()=>{})
     return result;
   }
 
@@ -311,7 +315,7 @@ class Conntrack {
     const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
     const result = await rclient.hgetallAsync(key);
     if (result && expr)
-      await rclient.expireAsync(key, expr);
+      rclient.expireAsync(key, expr).catch(()=>{})
     return result;
   }
 
