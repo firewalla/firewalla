@@ -95,17 +95,55 @@ const featureName = 'msp_sync_alarm';
 class alarmIndexCache {
   constructor() {
     this.cache = new LRU({max: 1000, maxAge: 3600 * 1000 * 24, updateAgeOnGet: true});
-    this._lock = Promise.resolve();;
+    this._lock = Promise.resolve();
+    this._disabled = 0;
+    this._size = 0;
   }
 
   has(type) {return this.cache.has(type)};
   get(type) {return this.cache.get(type)};
   keys(type) {return this.cache.keys(type)};
   values(type) {return this.cache.values(type)};
-  size() {return this.list().length};
+  length() {return this.list().length};
   // get all cached alarm IDs
   list() {
     return this.cache.values().reduce((r, v) => { return r.concat(Object.keys(v))}, []);
+  }
+  size() {
+    return this._size;
+  }
+  reset() {
+    this._disabled = 1;
+    this._size = 0;
+    return this.cache.reset();
+  }
+  // approximate size in bytes
+  _sizeof(v) {
+    const t = typeof v;
+    switch (t) {
+      case 'string':
+        return 12 + 4 * Math.ceil(v.length / 4);
+      case 'number':
+        return 8;
+      case 'boolean':
+        return 4;
+      case 'object':
+        return this._objsize(v);
+    }
+    log.info("unexpected data type", t, v);
+    return 0;
+  }
+
+  _objsize(v) {
+    let s = 0;
+    if (_.isArray(v)) {
+      return v.reduce((r, v) => {return r + this._sizeof(v)}, 0);
+    }
+    for (const key in v) {
+      s += this._sizeof(key);
+      s += this._sizeof(v[key]);
+    }
+    return s;
   }
 
   // alarm {type: '', aid: '1', state: '', ..}
@@ -115,9 +153,19 @@ class alarmIndexCache {
       const atype = alarm.type;
       delete alarm.type;
       try {
-        if (!this.cache.has(atype)) this.cache.set(atype, {});
+        if (!this.cache.has(atype)) {
+          this.cache.set(atype, {});
+          this._size += this._sizeof(atype);
+        };
         let item = this.cache.get(atype);
+        if (item[alarm.aid]) {
+          this._size -= this._sizeof(item[alarm.aid]);
+        }
         item[alarm.aid] = alarm;
+        this._size += this._sizeof(alarm);
+        if (this._size >= 5000000) { // 5m
+          log.warn(`alarm cache consumes approximate ${this.size} bytes of memory`);
+        }
         return Promise.resolve();
       } catch (err) {
         log.warn(`cannot add alarm ${atype} index cache`, alarm, err.message);
@@ -136,7 +184,13 @@ class alarmIndexCache {
         if (!atypes) return
         for (const atype of atypes) {
           const item = this.cache.get(atype);
+          if (item[aid]) this._size -= this._sizeof(item[aid]);
           delete item[aid];
+          // clear top-level key
+          if (Object.keys(item).length == 0) {
+            delete this.cache[atype];
+            this._size -= this._sizeof(atype);
+          }
         }
         return Promise.resolve();
       } catch (err) {
@@ -250,6 +304,12 @@ module.exports = class {
   }
 
   async refreshAlarmCache() {
+    const disabled = await rclient.getAsync(Constants.REDIS_KEY_ALARM_CACHED) == "0";
+    if (disabled) {
+      log.info("alarm cache disabled");
+      this.indexCache.reset();
+      return;
+    }
     try {
         const start = Date.now();
         const data = await this.loadAlarmIDs();
@@ -269,12 +329,16 @@ module.exports = class {
 
         // add current alarm
         for (const r of results) {
+          if (!r[1]) {
+            continue
+          }
           const a = {type: r[0], aid: r[1], state: r[2] || '', ts: Number(r[3]) || 0};
           // archived alarms need additional mark
           if (data.archivedAlarmIDs.indexOf(r[1]) >= 0) a.archived = 1;
           await this.indexCache.add(a);
         }
-        log.info(`Refresh alarm index ${this.indexCache.size()} items finished in ${Math.floor(Date.now()-start)/1000} seconds`)
+        this.indexCache._disabled = 0;
+        log.info(`Refresh alarm index ${this.indexCache.length()} items finished in ${Math.floor(Date.now()-start)/1000} seconds (approximate size ${this.indexCache.size()} bytes)`)
     } catch (err) {
       log.error('Failed to refresh alarm index', err.message);
     }
@@ -1445,7 +1509,7 @@ module.exports = class {
     type = type || 'active';
 
     let ids;
-    if (filters) {
+    if (filters && this.indexCache._disabled != 1) {
       ids = this._queryCachedAlarmIds(count, ts, asc, type, filters);
     } else {
       let key = type == 'active' ? alarmActiveKey : alarmArchiveKey;
