@@ -132,26 +132,45 @@ class OldDataCleanSensor extends Sensor {
 
   async regularClean(fullClean = false) {
     let wanAuditDropCleaned = false;
+    let multi = rclient.multi()
+    let multiCount = 0
     await rclient.scanAll(null, async (keys) => {
       for (const key of keys) {
         for (const {type, filterFunc, count, expireInterval, fullCleanOnly} of this.filterFunctions) {
           if (fullCleanOnly && !fullClean)
             continue;
           if (filterFunc(key)) {
-            let cntE = 0;
-            let cntC = 0;
-            if (expireInterval != null) {
-              cntE = await this.cleanByExpireDate(key, Date.now() / 1000 - expireInterval);
+            if (type === "auditDrop" && key.startsWith(`audit:drop:${Constants.NS_INTERFACE}:`)) {
+              let cntE = 0;
+              let cntC = 0;
+              if (expireInterval)
+                cntE = await this.cleanByExpireDate(key, Date.now() / 1000 - expireInterval);
+              if (count)
+                cntC = await this.cleanToCount(key, count);
+              if (cntE + cntC > 0)
+                wanAuditDropCleaned = true;
+            } else {
+              if (expireInterval) {
+                multi.zremrangebyscore(key, "-inf", expireInterval);
+                multiCount ++
+              }
+              if (count) {
+                multi.zremrangebyrank(key, 0, -count)
+                multiCount ++
+              }
             }
-            if (count != null) {
-              cntC = await this.cleanToCount(key, count);
-            }
-            if (type === "auditDrop" && key.startsWith(`audit:drop:${Constants.NS_INTERFACE}:`) && cntE + cntC > 0)
-              wanAuditDropCleaned = true;
           }
+        }
+
+        if (multiCount > 200) {
+          await multi.execAsync()
+          multi = rclient.multi()
+          multiCount = 0
         }
       }
     });
+    if (multiCount)
+      await multi.execAsync()
     if (wanAuditDropCleaned) {
       sem.emitLocalEvent({
         type: "AuditFlowsDrop",
