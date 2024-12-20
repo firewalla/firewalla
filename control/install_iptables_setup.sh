@@ -272,17 +272,21 @@ cat "$qos_file"
 } >> "$ip6tables_file"
 
 if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
-  # existence of "-m tls" rules prevents kernel module from being updated, resotre with a tls-clean version first
-  grep -v "\-m tls" "$iptables_file" | sudo iptables-restore
-  grep -v "\-m tls" "$ip6tables_file" | sudo ip6tables-restore
-  if lsmod | grep -w "xt_tls"; then
-    sudo rmmod xt_tls
-    if [[ $? -eq 0 ]]; then
-      installTLSModule
+  # existence of "-m tls" or "-m udp_tls" rules prevents kernel module from being updated, resotre with a tls-clean version first
+  module_names=("xt_tls" "xt_udp_tls")
+  for module_name in "${module_names[@]}"; do
+    grep -v "\-m ${module_name}" "$iptables_file" | sudo iptables-restore
+    grep -v "\-m ${module_name}" "$ip6tables_file" | sudo ip6tables-restore
+    if lsmod | grep -w "${module_name}"; then
+      sudo rmmod ${module_name}
+      if [[ $? -eq 0 ]]; then
+        installTLSModule("${module_name}")
+      fi
+    else
+      installTLSModule("${module_name}")
     fi
-  else
-    installTLSModule
-  fi
+  done
+
 fi
 
 # install out-of-tree sch_cake.ko if applicable

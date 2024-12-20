@@ -15,6 +15,7 @@ MANAGED_BY_FIREROUTER=no
 REDIS_MAXMEMORY=300mb
 RAMFS_ROOT_PARTITION=no
 XT_TLS_SUPPORTED=no
+XT_UDP_TLS_SUPPORTED=no
 MAX_OLD_SPACE_SIZE=256
 HAVE_FWAPC=no
 WAN_INPUT_DROP_RATE_LIMIT=10
@@ -201,15 +202,15 @@ case "$UNAME" in
     ;;
 esac
 
-function installTLSModule {
+function installTLSModule(module_name) {
   uid=$(id -u pi)
   gid=$(id -g pi)
-  if ! lsmod | grep -wq "xt_tls"; then
-    ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/xt_tls.ko
+  if ! lsmod | grep -wq "${module_name}"; then
+    ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/${module_name}.ko
     if [[ -f $ko_path ]]; then
       sudo insmod ${ko_path} max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
     fi
-    so_path=${FW_PLATFORM_CUR_DIR}/files/shared_objects/$(lsb_release -cs)/libxt_tls.so
+    so_path=${FW_PLATFORM_CUR_DIR}/files/shared_objects/$(lsb_release -cs)/lib${module_name}.so
     if [[ -f $so_path ]]; then
       sudo install -D -v -m 644 ${so_path} /usr/lib/$(uname -m)-linux-gnu/xtables
     fi

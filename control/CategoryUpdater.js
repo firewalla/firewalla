@@ -236,7 +236,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   async refreshTLSCategoryActivated() {
     try {
-      const cmdResult = await exec(`ls -l /proc/net/xt_tls/hostset |awk '{print $9}'`);
+      const cmdResult = await exec(`ls -l /proc/net/xt_tls/hostset |awk '{print $9}'`); //either from xt_tls or from xt_udp_tls is fine
       const results = cmdResult.stdout.toString().trim().split('\n');
       const activeCategories = Object.keys(this.activeTLSCategories).filter(c => results.includes(this.getHostSetName(c)));
       Object.keys(this.activeTLSCategories).forEach(key => {

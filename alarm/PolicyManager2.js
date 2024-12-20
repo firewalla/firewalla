@@ -1679,7 +1679,7 @@ class PolicyManager2 {
 
     if (tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets)) {
       let tlsInstalled = true;
-      await platform.installTLSModule().catch((err) => {
+      await platform.installTLSModules().catch((err) => {
         log.error(`Failed to install TLS module, will not apply rule ${pid} based on tls`, err.message);
         tlsInstalled = false;
       })

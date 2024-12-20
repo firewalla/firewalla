@@ -1811,9 +1811,11 @@ async function manipulateFiveTupleRule(action, srcMatchingSet, srcSpec, srcPosit
   }
   if (tlsHostSet) {
     rule.mdl("tls", `--tls-hostset ${tlsHostSet}`)
+    rule.mdl("udp_tls", `--tls-hostset ${tlsHostSet}`)
   }
   if (tlsHost) {
     rule.mdl("tls", `--tls-host ${tlsHost}`)
+    rule.mdl("udp_tls", `--tls-host ${tlsHost}`)
   }
   if (limit) {
     const [count, unit] = limit.split("/");
