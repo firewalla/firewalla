@@ -291,7 +291,8 @@ class APCMsgSensor extends Sensor {
         const mac = _.get(msg, ["station", "macAddr"]);
         if (!mac)
           return;
-        if (!groupId)
+        const dvlanId = _.get(msg, ["station", "dvlanVlanId"]);
+        if (!groupId && !dvlanId) // if dynamic vlan id is set and group id is not set, the station belongs to a microsegment that does not map to a group, do not add to group of the ssid's default segment
           groupId = this.ssidGroupMap[uuid] && this.ssidGroupMap[uuid].getUniqueId();
         await this.updateHostSSID(mac, uuid, groupId);
       }
