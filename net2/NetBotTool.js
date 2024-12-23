@@ -195,7 +195,7 @@ class NetBotTool {
       sumFlowKey = flowAggrTool.getSumFlowKey(target, dimension, begin, end, fd);
     }
 
-    const traffic = await flowAggrTool.getTopSumFlowByKey(sumFlowKey, options.limit || 50);
+    const traffic = await flowAggrTool.getTopSumFlowByKey(sumFlowKey, options.limit || 200);
 
     traffic.forEach(f => {
       f.begin = begin;
