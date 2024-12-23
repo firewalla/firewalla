@@ -194,13 +194,17 @@ class APCMsgSensor extends Sensor {
         return;
 
       const tags = await TagManager.getPolicyTags("ssidPSK");
-      const vlanGroupMap = {};
+      const ssidVlanGroupMap = {};
       const ssidGroupMap = {};
       for (const tag of tags) {
         const ssidPSK = await tag.getPolicyAsync("ssidPSK");
         if (_.isObject(ssidPSK)) {
-          if (_.has(ssidPSK, "vlan"))
-            vlanGroupMap[String(ssidPSK.vlan)] = tag;
+          if (_.has(ssidPSK, "vlan")) {
+            if (_.isObject(ssidPSK.psks)) {
+              for (const uuid of Object.keys(ssidPSK.psks))
+                ssidVlanGroupMap[`${uuid}::${ssidPSK.vlan}`] = tag;
+            }
+          }
           if (_.isArray(ssidPSK.defaultSSIDs)) {
             for (const uuid of ssidPSK.defaultSSIDs)
               ssidGroupMap[uuid] = tag;
@@ -244,8 +248,9 @@ class APCMsgSensor extends Sensor {
           } else {
             if (key.startsWith("vlan:")) { // STA MACs that belong to a PSK group
               const vid = key.substring("vlan:".length);
+              const ssidVlanId = `${uuid}::${vid}`;
               for (const mac of status[key])
-                await this.updateHostSSID(mac.toUpperCase(), uuid, vlanGroupMap[vid] && vlanGroupMap[vid].getUniqueId());
+                await this.updateHostSSID(mac.toUpperCase(), uuid, ssidVlanGroupMap[ssidVlanId] && ssidVlanGroupMap[ssidVlanId].getUniqueId());
             }
           }
         }
