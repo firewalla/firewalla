@@ -25,10 +25,11 @@ const _ = require('lodash')
 
 let instance = null;
 
-const MAX_FLOW_PER_AGGR = 200
-const MAX_FLOW_PER_SUM = 2000
+const MAX_FLOW_PER_SUM = 400
 
-const MIN_AGGR_TRAFFIC = 256
+const COMMON_SUMFLOW_KEYS = [ 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason', 'intra' ]
+const FLOW_STR_KEYS = COMMON_SUMFLOW_KEYS.concat('destIP')
+const TOPFLOW_KEYS = COMMON_SUMFLOW_KEYS.concat('device')
 
 function toInt(n){ return Math.floor(Number(n)) }
 
@@ -74,7 +75,7 @@ class FlowAggrTool {
 
   getFlowStr(mac, entry) {
     const flow = {device: mac};
-    [ 'destIP', 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason', 'intra' ].forEach(f => {
+    FLOW_STR_KEYS.forEach(f => {
       if (entry[f]) flow[f] = entry[f]
     })
     return JSON.stringify(flow);
@@ -315,7 +316,7 @@ class FlowAggrTool {
         if(payload !== '_' && count !== 0) {
           try {
             const json = JSON.parse(payload);
-            const flow = _.pick(json, 'domain', 'type', 'device', 'port', 'devicePort', 'fd', 'dstMac', 'reason', 'intra');
+            const flow = _.pick(json, TOPFLOW_KEYS);
             flow.count = count
             if (json.destIP) {
               // this is added as a counter for trimmed flows, check FlowAggrTool.addFlow()
