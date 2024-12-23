@@ -158,6 +158,12 @@ class CloudCacheItem {
       localMetadata.sha256sum && cloudMetadata.sha256sum &&
       localMetadata.sha256sum === cloudMetadata.sha256sum) {
       if (localMetadata.updated < cloudMetadata.updated) {
+        // localMetadata.updated will be checked later to determine if it is expired
+        // in case local metadata file is updated more than 30 days ago and sha256 is still unchanged
+        // need to update this variable to prevent it from being expired
+        localMetadata.updated = cloudMetadata.updated;
+        if (!localMetadata.sha256sumOrigin && cloudMetadata.sha256sumOrigin)
+          localMetadata.sha256sumOrigin = cloudMetadata.sha256sumOrigin
         await this.writeLocalMetadata(cloudMetadata);
       }
       if (localIntegrity) {
@@ -208,7 +214,7 @@ class CloudCacheItem {
       }
     } else {
       if ((alwaysOnUpdate || hasNewData) && this.onUpdateCallback) {
-        this.onUpdateCallback(localContent);
+        this.onUpdateCallback(localContent, localMetadata);
       }
     }
 

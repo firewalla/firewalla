@@ -43,11 +43,16 @@ class ActionPlugin extends Sensor {
   async getActionHistory(options = {}) {
     try {
       log.info("get action history options", options);
-      let { ts, count, ets } = options;
+      let { ts, count, ets, target, item, mtype, items, reverse } = options;
       if (!ets) ets = Date.now() / 1000;
       if (!count) count = 200;
       ts = ts ? `(${ts}` : '-inf';
-      const results = await rclient.zrangebyscoreAsync(key, ts, ets, "LIMIT", 0, count);
+      let results;
+      if (reverse) {
+        results = await rclient.zrevrangebyscoreAsync(key, ets, ts, "LIMIT", 0, count);
+      } else {
+        results = await rclient.zrangebyscoreAsync(key, ts, ets, "LIMIT", 0, count);
+      }
       if (results === null || results.length === 0) {
         return {
           count: 0,
@@ -61,7 +66,12 @@ class ActionPlugin extends Sensor {
           if (!obj) return null;
           return obj;
         })
-        .filter(x => !!x);
+        .filter(x => !!x).filter( i => {
+          if (item) if (!i.action || !i.action.item || i.action.item != item) return false;
+          if (items) if (!i.action || !i.action.item || !items.includes(i.action.item)) return false;
+          if (target) if (!i.target || i.target != target) return false;
+          if (mtype) if (!i.mtype || i.mtype != mtype) return false;
+          return true } );
 
       const result = {
         count: actionObjects.length,

@@ -20,7 +20,8 @@ event log_heartbeat_flow()
     schedule 30 min { log_heartbeat_flow() };
     }
 
-event network_time_init()
+# network_time_init sometimes cause event not correctly triggerred
+event zeek_init()
     {
     event log_heartbeat_flow();
     }
