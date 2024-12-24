@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,8 +32,6 @@ let MODE_ROUTER = "router"
 const PlatformLoader = require('../platform/PlatformLoader.js')
 const platform = PlatformLoader.getPlatform()
 
-let DEFAULT_MODE = MODE_NONE
-
 function getSetupModeSync() {
   return _setupMode
 }
@@ -58,6 +56,7 @@ async function reloadSetupMode() {
       defaultMode = MODE_ROUTER;
     }
     await rclient.setAsync(REDIS_KEY_MODE, defaultMode);
+    _setupMode = defaultMode;
     return _setupMode;
   }
 }
@@ -126,8 +125,8 @@ function isNoneModeOn() {
 }
 
 async function isXModeOn(x) {
-  if (_setupMode && _setupMode === x) {
-    return true
+  if (_setupMode) {
+    return _setupMode === x
   }
 
   const mode = await getSetupMode()
