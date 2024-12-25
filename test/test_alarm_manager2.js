@@ -394,4 +394,13 @@ describe('Test alarm cache', function(){
     const alarmIds = await am2.loadAlarmIDs();
     expect(am2.indexCache.length()).to.be.equal(Object.values(alarmIds).flat().length);
   });
+
+  it('test fallback alarm cache', async() => {
+    expect(await am2._fallbackAlarmCache()).to.be.true;
+    expect(await am2._fallbackAlarmCache("[]")).to.be.true;
+    expect(await am2._fallbackAlarmCache([])).to.be.false;
+    expect(await am2._fallbackAlarmCache(['test_type'])).to.be.false;
+    let result = am2._queryCachedAlarmIds(10, Date.now()/1000, false, 'active', {types: ["test_type"]});
+    expect(result).to.be.eql([]);
+  });
 });
