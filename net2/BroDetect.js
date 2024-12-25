@@ -772,7 +772,7 @@ class BroDetect {
     return this.isMonitoring(intf, monitorable)
   }
 
-  validateConnData(obj) {
+  async validateConnData(obj) {
     const threshold = config.threshold;
     const iptcpRatio = threshold.IPTCPRatio || 0.1;
 
@@ -827,7 +827,9 @@ class BroDetect {
       }
     }
 
-    if (obj.proto == "tcp") {
+    // this is a very old check, assume it was added for something in spoof mode
+    // FTP data channel would fail this check and never get logged
+    if (obj.proto == "tcp" && await mode.isSpoofModeOn()) {
       if (obj.resp_bytes > threshold.tcpZeroBytesResp && obj.orig_bytes == 0 && obj.conn_state == "SF") {
         log.error("Conn:Adjusted:TCPZero", obj.conn_state, obj);
         return false
@@ -930,7 +932,7 @@ class BroDetect {
       }
 
       // when reversed, number on long conn is substraced and might fail here
-      if (!reverseLocal && !this.validateConnData(obj)) {
+      if (!reverseLocal && !await this.validateConnData(obj)) {
         return;
       }
 
