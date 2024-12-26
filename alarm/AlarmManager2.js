@@ -102,8 +102,8 @@ class alarmIndexCache {
 
   has(type) {return this.cache.has(type)};
   get(type) {return this.cache.get(type)};
-  keys(type) {return this.cache.keys(type)};
-  values(type) {return this.cache.values(type)};
+  keys() {return this.cache.keys()};
+  values() {return this.cache.values()};
   length() {return this.list().length};
   // get all cached alarm IDs
   list() {
@@ -146,6 +146,20 @@ class alarmIndexCache {
     return s;
   }
 
+  async set(type, value, maxAge) {
+    await this._lock;
+    this._lock = (async () => {
+      try {
+        this.cache.set(type, value, maxAge);
+        return Promise.resolve();
+      } catch (err) {
+        log.warn(`cannot set ${type} ${value} to cache`, err.message);
+      } finally {
+        this._lock = Promise.resolve();
+      }
+    })();
+  };
+
   // alarm {type: '', aid: '1', state: '', ..}
   async add(alarm) {
     await this._lock;
@@ -153,6 +167,9 @@ class alarmIndexCache {
       const atype = alarm.type;
       delete alarm.type;
       try {
+        if (this.cache.keys().length == 0) {
+          this._size = 0;
+        }
         if (!this.cache.has(atype)) {
           this.cache.set(atype, {});
           this._size += this._sizeof(atype);
@@ -164,8 +181,9 @@ class alarmIndexCache {
         item[alarm.aid] = alarm;
         this._size += this._sizeof(alarm);
         if (this._size >= 5000000) { // 5m
-          log.warn(`alarm cache consumes approximate ${this.size} bytes of memory`);
+          log.warn(`[high memory usage] alarm cache consumes approximate ${this._size} bytes of memory`);
         }
+        this.cache.set(atype, item);
         return Promise.resolve();
       } catch (err) {
         log.warn(`cannot add alarm ${atype} index cache`, alarm, err.message);
@@ -181,16 +199,20 @@ class alarmIndexCache {
     this._lock = (async () => {
       try {
         let atypes = this.cache.keys();
-        if (!atypes) return
+        if (!atypes || atypes.length == 0) {
+          this._size = 0;
+          return;
+        }
         for (const atype of atypes) {
           const item = this.cache.get(atype);
           if (item[aid]) this._size -= this._sizeof(item[aid]);
           delete item[aid];
           // clear top-level key
           if (Object.keys(item).length == 0) {
-            delete this.cache[atype];
+            this.cache.del(atype);
             this._size -= this._sizeof(atype);
           }
+          this.cache.set(atype, item);
         }
         return Promise.resolve();
       } catch (err) {
@@ -303,6 +325,47 @@ module.exports = class {
     }
   }
 
+  async _fallbackAlarmCache(types) {
+    if (!types || !_.isArray(types)) return true;
+
+    let unseen = false;
+    for (const atype of types) {
+      if (!this.indexCache.has(atype)) {
+        // try to cache alarm type, cache should already be enabled
+        await this.indexCache.set(atype, {});
+        unseen = true;
+      }
+    }
+    if (unseen) await this._syncUnseenAlarmCache();
+
+    for (const atype of types) {
+      if (!this.indexCache.has(atype)) return true;
+    }
+    return false;
+  }
+
+  async _syncUnseenAlarmCache() {
+    // only check alarms not been cached
+    const data = await this.loadAlarmIDs();
+    const alarmIds = Object.values(data).flat();
+    const cachedAids = this.indexCache.list();
+    const unseenAids = alarmIds.filter( i => cachedAids.indexOf(i) == -1);
+    if (unseenAids.length == 0) return;
+    let multi = rclient.multi();
+    unseenAids.map((aid) => {
+      multi.hmget(alarmPrefix + aid, 'type', 'aid', 'state', 'alarmTimestamp');
+    });
+    const results = await multi.execAsync();
+    for (const r of results) {
+      if (!r[1]) {
+        continue
+      }
+      const a = {type: r[0], aid: r[1], state: r[2] || '', ts: Number(r[3]) || 0};
+      if (data.archivedAlarmIDs.indexOf(r[1]) >= 0) a.archived = 1;
+      await this.indexCache.add(a);
+    }
+  }
+
   async refreshAlarmCache() {
     const disabled = await rclient.getAsync(Constants.REDIS_KEY_ALARM_CACHED) == "0";
     if (disabled) {
@@ -316,17 +379,18 @@ module.exports = class {
         const alarmIds = Object.values(data).flat();
         let multi = rclient.multi();
         alarmIds.map((aid) => {
-          multi.hmgetAsync(alarmPrefix + aid, 'type', 'aid', 'state', 'alarmTimestamp');
+          multi.hmget(alarmPrefix + aid, 'type', 'aid', 'state', 'alarmTimestamp');
         });
 
         const results = await multi.execAsync();
+        const rs_rt = Math.floor(Date.now()-start)/1000;
+
         // remove dead cache
         const cachedAids = this.indexCache.list();
         const deadAids = cachedAids.filter( i => alarmIds.indexOf(i) == -1);
         for (const aid of deadAids) {
           await this.indexCache.remove(aid);
         }
-
         // add current alarm
         for (const r of results) {
           if (!r[1]) {
@@ -338,7 +402,7 @@ module.exports = class {
           await this.indexCache.add(a);
         }
         this.indexCache._disabled = 0;
-        log.info(`Refresh alarm index ${this.indexCache.length()} items finished in ${Math.floor(Date.now()-start)/1000} seconds (approximate size ${this.indexCache.size()} bytes)`)
+        log.info(`Refresh alarm index ${this.indexCache.length()} items finished in ${Math.floor(Date.now()-start)/1000} (io ${rs_rt}) seconds (approximate size ${this.indexCache.size()} bytes)`)
     } catch (err) {
       log.error('Failed to refresh alarm index', err.message);
     }
@@ -1485,6 +1549,7 @@ module.exports = class {
       for (const atype of filters.types) {
         if (!this.indexCache.has(atype)) continue;
         const entries = Object.values(this.indexCache.get(atype));
+        if (entries.length == 0) continue;
         let tmp = entries.filter(i => this._filterQueryType(i, type)).filter(i=>{if (asc) return i.ts > ts; return i.ts < ts});
         if (asc) tmp = tmp.reverse();
         ids = ids.concat(tmp.map( (i) => {return {aid: i.aid, ts: i.ts}}));
@@ -1509,9 +1574,11 @@ module.exports = class {
     type = type || 'active';
 
     let ids;
-    if (filters && this.indexCache._disabled != 1) {
+    if (filters && this.indexCache._disabled != 1 && !await this._fallbackAlarmCache(filters.types)) {
+      log.debug("query from cache, cached keys", this.indexCache.keys());
       ids = this._queryCachedAlarmIds(count, ts, asc, type, filters);
     } else {
+      log.debug(`query from redis, cache fallback ${this.indexCache.keys()} disabled ${this.indexCache._disabled}` );
       let key = type == 'active' ? alarmActiveKey : alarmArchiveKey;
       let query = asc ?
         rclient.zrangebyscoreAsync(key, '(' + ts, '+inf', 'limit', 0, count) :
