@@ -151,7 +151,7 @@ class OldDataCleanSensor extends Sensor {
                 wanAuditDropCleaned = true;
             } else {
               if (expireInterval) {
-                multi.zremrangebyscore(key, "-inf", expireInterval);
+                multi.zremrangebyscore(key, "-inf", Date.now() / 1000 - expireInterval);
                 multiCount ++
               }
               if (count) {
