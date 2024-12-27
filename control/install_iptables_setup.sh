@@ -280,10 +280,10 @@ if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
     if lsmod | grep -w "${module_name}"; then
       sudo rmmod ${module_name}
       if [[ $? -eq 0 ]]; then
-        installTLSModule("${module_name}")
+        installTLSModule "${module_name}"
       fi
     else
-      installTLSModule("${module_name}")
+      installTLSModule "${module_name}"
     fi
   done
 
