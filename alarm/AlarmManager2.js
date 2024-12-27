@@ -238,7 +238,7 @@ module.exports = class {
         this.refreshAlarmCache();
         setInterval(() => {
           this.refreshAlarmCache();
-        }, 900000) // update records every 15m
+        }, 3600000) // refresh alarm cache every 60m
 
         sclient.subscribe("alarm:updateCache");
         sclient.subscribe("alarm:removeCache");
