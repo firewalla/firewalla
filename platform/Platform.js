@@ -269,7 +269,7 @@ class Platform {
   }
 
   async installTLSModule(module_name) {
-    const installed = await this.isTLSModuleInstalled();
+    const installed = await this.isTLSModuleInstalled(module_name);
     if (installed) return;
     const codename = await exec(`lsb_release -cs`).then((result) => result.stdout.trim()).catch((err) => {
       log.error("Failed to get codename of OS distribution", err.message);
@@ -291,6 +291,7 @@ class Platform {
       await exec(`sudo install -D -v -m 644 ${soPath} /usr/lib/$(uname -m)-linux-gnu/xtables`).catch((err) => {
         log.error(`Failed to install lib${module_name}}.so`, err.message);
       });
+    this.installedModules[module_name] = true;
   }
   async installTLSModules() {
     await this.installTLSModule("xt_tls");
@@ -298,16 +299,21 @@ class Platform {
   }
 
   async isTLSModuleInstalled(module_name) {
-    if (this.tlsInstalled) return true;
+    if (!this.installedModules) {
+      this.installedModules = {};
+    }
+    if (this.installedModules[module_name]) {
+      return this.installedModules[module_name];
+    }
     const cmdResult = await exec(`lsmod | grep ${module_name} | awk '{print $1}'`);
     const results = cmdResult.stdout.toString().trim().split('\n');
     for (const result of results) {
       if (result == module_name) {
-        this.tlsInstalled = true;
-        break;
+        this.installedModules[module_name] = true;
+        return true;
       }
     }
-    return this.tlsInstalled;
+    return false;
   }
 
   isTLSBlockSupport() {

@@ -1279,6 +1279,7 @@ class PolicyManager2 {
     return { intfs, tags }
   }
 
+
   async _enforce(policy) {
     log.info(`Enforce policy pid:${policy.pid}, type:${policy.type}, target:${policy.target}, scope:${policy.scope}, tag:${policy.tag}, action:${policy.action || "block"}`);
 
@@ -1433,7 +1434,7 @@ class PolicyManager2 {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
 
-        if (platform.isTLSBlockSupport() && protocol != 'udp') { // default on
+        if (platform.isTLSBlockSupport()) { // default on
           if (!policy.domainExactMatch && !target.startsWith("*."))
             tlsHost = `*.${target}`;
           else
@@ -1914,7 +1915,7 @@ class PolicyManager2 {
         break;
       case "domain":
       case "dns":
-        if (platform.isTLSBlockSupport() && protocol != 'udp') { // default on
+        if (platform.isTLSBlockSupport()) { // default on
           if (!policy.domainExactMatch && !target.startsWith("*."))
             tlsHost = `*.${target}`;
           else

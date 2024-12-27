@@ -1810,12 +1810,16 @@ async function manipulateFiveTupleRule(action, srcMatchingSet, srcSpec, srcPosit
       rule.mdl("connbytes", `--connbytes ${avgPacketBytes} --connbytes-dir ${transferDirection} --connbytes-mode avgpkt`);
   }
   if (tlsHostSet) {
-    rule.mdl("tls", `--tls-hostset ${tlsHostSet}`)
-    rule.mdl("udp_tls", `--tls-hostset ${tlsHostSet}`)
+    if (proto === "tcp")
+      rule.mdl("tls", `--tls-hostset ${tlsHostSet}`);
+    else if (proto === "udp")
+      rule.mdl("udp_tls", `--tls-hostset ${tlsHostSet}`);
   }
   if (tlsHost) {
-    rule.mdl("tls", `--tls-host ${tlsHost}`)
-    rule.mdl("udp_tls", `--tls-host ${tlsHost}`)
+    if (proto === "tcp")
+      rule.mdl("tls", `--tls-host ${tlsHost}`)
+    else if (proto === "udp")
+      rule.mdl("udp_tls", `--tls-host ${tlsHost}`)
   }
   if (limit) {
     const [count, unit] = limit.split("/");

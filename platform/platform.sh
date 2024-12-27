@@ -15,7 +15,6 @@ MANAGED_BY_FIREROUTER=no
 REDIS_MAXMEMORY=300mb
 RAMFS_ROOT_PARTITION=no
 XT_TLS_SUPPORTED=no
-XT_UDP_TLS_SUPPORTED=no
 MAX_OLD_SPACE_SIZE=256
 HAVE_FWAPC=no
 WAN_INPUT_DROP_RATE_LIMIT=10
@@ -202,9 +201,10 @@ case "$UNAME" in
     ;;
 esac
 
-function installTLSModule(module_name) {
+function installTLSModule() {
   uid=$(id -u pi)
   gid=$(id -g pi)
+  module_name=$1
   if ! lsmod | grep -wq "${module_name}"; then
     ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/${module_name}.ko
     if [[ -f $ko_path ]]; then
