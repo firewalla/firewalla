@@ -37,6 +37,7 @@ class NetworkProfileManager {
     const c = require('./MessageBus.js');
     this.subscriber = new c("info");
     this.networkProfiles = {};
+    this.prefixMap = {}
 
     this.scheduleRefresh();
 
@@ -89,6 +90,7 @@ class NetworkProfileManager {
       clearTimeout(this.refreshTask);
     this.refreshTask = setTimeout(() => {
       lock.acquire(LOCK_REFRESH, async () => {
+        await this.updatePrefixMap()
         await this.refreshNetworkProfiles();
         if (f.isMain()) {
           if (sysManager.isIptablesReady()) {
@@ -146,7 +148,7 @@ class NetworkProfileManager {
       nowCopy[key] = nowCopy[key].sort();
     }
     // in case there is any key to exclude in future
-    const excludedKeys = ["active", "pendingTest", "origDns", "pds"]; // no need to consider change of original dns
+    const excludedKeys = ["active", "pendingTest", "origDns", "origDns6", "pds"]; // no need to consider change of original dns
     for (const excludedKey of excludedKeys) {
       if (thenCopy.hasOwnProperty(excludedKey))
         delete thenCopy[excludedKey];
@@ -154,6 +156,18 @@ class NetworkProfileManager {
         delete nowCopy[excludedKey];
     }
     return !_.isEqual(thenCopy, nowCopy);
+  }
+
+  async updatePrefixMap() {
+    try {
+      const UUIDs = await rclient.hkeysAsync('sys:network:uuid')
+      for (const uuid of UUIDs) {
+        if (uuid.length >= 32)
+          this.prefixMap[uuid.substring(0, 8)] = uuid
+      }
+    } catch(err) {
+      log.error('Failed to update UUID prefix map', err)
+    }
   }
 
   async refreshNetworkProfiles(readOnly = false) {
@@ -211,6 +225,7 @@ class NetworkProfileManager {
         ipv6: intf.ip6_addresses || [],
         ipv6Subnets: intf.ip6_subnets || [],
         dns: intf.dns || [],
+        dns6: intf.dns6 || [],
         gateway: intf.gateway_ip || "",
         gateway6: intf.gateway6 || "",
         monitoring: monitoring,
@@ -231,6 +246,8 @@ class NetworkProfileManager {
         updatedProfile.essid = intf.essid;
       if (intf.hasOwnProperty("origDns"))
         updatedProfile.origDns = intf.origDns;
+      if (intf.hasOwnProperty("origDns6"))
+        updatedProfile.origDns6 = intf.origDns6;
       if (intf.hasOwnProperty("pds"))
         updatedProfile.pds = intf.pds;
       if (!this.networkProfiles[uuid]) {

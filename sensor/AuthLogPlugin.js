@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,8 +22,8 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 const sysManager = require('../net2/SysManager.js');
-const {Address4} = require('ip-address');
 const util = require('util');
+const net = require('net')
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 
@@ -70,12 +70,12 @@ class AuthLogPlugin extends Sensor {
       const alarmPayload = {
         "p.guessCount": guessCount
       }
-      const v4 = new Address4(ip).isValid()
+      const fam = net.isIP(ip)
       // if non-local IP, use WAN, lastb doesn't have interface info, guess with the active WAN here
-      const intf = sysManager.getInterfaceViaIP(ip, false) || sysManager.getWanInterfaces().find(i => i.active)
+      const intf = sysManager.getInterfaceViaIP(ip, fam, false) || sysManager.getWanInterfaces().find(i => i.active)
       if (!intf || intf.type == 'wan') {
         if (intf) {
-          alarmPayload["p.device.ip"] = v4 ? intf.ip_address : intf.ip6_addresses && intf.ip6_addresses[0]
+          alarmPayload["p.device.ip"] = fam == 4 ? intf.ip_address : intf.ip6_addresses && intf.ip6_addresses[0]
           if (_.isString(alarmPayload["p.device.mac"]))
             alarmPayload["p.device.mac"] = intf.mac_address.toUpperCase()
         }
@@ -85,7 +85,7 @@ class AuthLogPlugin extends Sensor {
         alarmPayload["p.local_is_client"] = "0";
       } else {
         alarmPayload["p.device.ip"] = ip;
-        alarmPayload["p.dest.ip"] = v4 ? intf.ip_address : intf.ip6_addresses && intf.ip6_addresses[0]
+        alarmPayload["p.dest.ip"] = fam == 4 ? intf.ip_address : intf.ip6_addresses && intf.ip6_addresses[0]
         alarmPayload["p.dest.name"] = await f.getBoxName() || "Firewalla";
         alarmPayload["p.dest.mac"] = intf.mac_address
         alarmPayload["p.local_is_client"] = "1";

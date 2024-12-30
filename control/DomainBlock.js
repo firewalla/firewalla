@@ -365,7 +365,7 @@ class DomainBlock {
     }
   }
 
-  // dynamic + default + defaultDomainOnly - exclude + include + hashed
+  // dynamic + default + defaultDomainOnly + pattern match - exclude + include + hashed
   async getCategoryDomains(category, useHitSet = null) {
     const CategoryUpdater = require("./CategoryUpdater.js");
     const categoryUpdater = new CategoryUpdater();
@@ -374,6 +374,7 @@ class DomainBlock {
     }
 
     const domains = await categoryUpdater.getDomains(category);
+    const patternMatchedDomains = await categoryUpdater.getPatternMatchedDomains(category);
     const excludedDomains = await categoryUpdater.getExcludedDomains(category);
     const defaultDomains = useHitSet
       ? await categoryUpdater.getHitDomains(category)
@@ -383,9 +384,7 @@ class DomainBlock {
     const includedDomains = await categoryUpdater.getIncludedDomains(category);
     // exclude domains work as a simple remover for default/dynamic set, it has lower priority than include domain as
     // user could only manage include domains on client now
-    const superSetDomains = domains.concat(defaultDomains, defaultDomainsOnly)
-      .filter(d => !excludedDomains.some(ed => ed === d))
-      .concat(includedDomains)
+    const superSetDomains = _.union(_.union(domains, defaultDomains, defaultDomainsOnly, patternMatchedDomains).filter(d => !excludedDomains.some(ed => ed === d)), includedDomains)
 
     // *.domain and domain has different semantic in category domains, one for suffix match and the other for exact match
     const wildcardDomains = superSetDomains.filter(d => d.startsWith("*."));
@@ -398,7 +397,7 @@ class DomainBlock {
   async getCategoryDomainsWithPort(category) {
     const CategoryUpdater = require("./CategoryUpdater.js");
     const categoryUpdater = new CategoryUpdater();
-    return await categoryUpdater.getAllDomainsWithPort(category);
+    return _.union(await categoryUpdater.getAllDomainsWithPort(category), await categoryUpdater.getPatternMatchedDomainsWithPort(category));
   }
 
   patternDomain(domain) {
