@@ -15,6 +15,7 @@
 
 'use strict'
 
+const log = require('./logger.js')(__filename);
 const urlHash = require('../util/UrlHash.js')
 
 const _ = require('lodash')
