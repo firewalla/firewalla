@@ -61,6 +61,9 @@ const linux = require('../util/linux.js');
 
 const l2 = require('../util/Layer2.js');
 
+const CategoryUpdater = require('../control/CategoryUpdater.js')
+const categoryUpdater = new CategoryUpdater()
+
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -1855,10 +1858,33 @@ class BroDetect {
 
   async processSignatureData(data) {
     const obj = JSON.parse(data);
-    const {uid, sig_id} = obj;
+    const {uid, sig_id, src_addr, src_port} = obj;
     if (!uid || !sig_id)
       return;
     this.addConnSignature(uid, sig_id);
+
+    let isVPNSignature = false;
+
+    if (sig_id == "wireguard-second-msg-sig") {
+      log.info("Wireguard handshake signature detected", uid, sig_id, src_addr, src_port);
+      isVPNSignature = true;
+      
+    } else if (sig_id.startsWith("openvpn-server-")) {
+      log.info("openVPN handshake signature detected", uid, sig_id, src_addr, src_port);
+      isVPNSignature = true;
+    }
+
+    if (isVPNSignature) {
+      if (!src_addr || !src_port) {
+        return;
+      }
+      let portObj = {};
+
+      portObj.proto = "udp";
+      portObj.start = src_port;
+      portObj.end = src_port;
+      categoryUpdater.blockAddress("vpn", src_addr, portObj, true);
+    }
   }
 
   async getWanNicStats() {

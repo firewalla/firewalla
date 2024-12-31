@@ -48,6 +48,8 @@ const CATEGORY_FILTER_DIR = "/home/pi/.firewalla/run/category_data/filters";
 const crypto = require('crypto');
 const { CategoryEntry } = require("./CategoryEntry.js");
 
+const net = require('net')
+
 const hashFunc = function (obj) {
   const str = JSON.stringify(obj);
   return crypto.createHash("md5").update(str).digest("base64");
@@ -212,6 +214,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   resetUpdaterState() {
     this.effectiveCategoryDomains = {};
+    this.effectiveCategoryAdresses = {};
 
     this.activeCategories = {
       // "default_c": 1
@@ -520,6 +523,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return rclient.unlinkAsync(this.getCategoryDataListKey(category));
   }
 
+  async flushCategoryAddresses(category) {
+    return rclient.unlinkAsync(this.getDynamicAddressCategoryKey(category));
+  }
+
   async flushDefaultDomains(category) {
     return rclient.unlinkAsync(this.getDefaultCategoryKey(category));
   }
@@ -694,6 +701,110 @@ class CategoryUpdater extends CategoryUpdaterBase {
         await domainBlock.updateCategoryBlock(category);
       }
     }
+  }
+
+  isValidPort(port) {
+    if (port && _.isNumber(port) && port > 0 && port < 65535)
+      return true
+    return false
+  }
+
+  getDynamicAddressCategoryKey(category) {
+    return `dynamicCategoryAddress:${category}}`
+  }
+
+  isDynamicAddressCategoryExists(category) {
+    return rclient.existsAsync(this.getDynamicAddressCategoryKey(category));
+  }
+
+  async getDynamicAddresses(category) {
+    return  rclient.zrangeAsync(this.getDynamicAddressCategoryKey(category), 0, -1)
+  }
+
+  // entry format follow the same rule as domain's
+  // example:
+  // "{\"type\":\"IP\",\"id\":\"1.1.1.1\",\"port\":{\"proto\":\"udp\",\"start\":443,\"end\":443},\"pcount\":1,\"domainOnly\":true}"
+  composeAddressEntry(address, proto, port) {
+    if (!address || !proto || !port) {
+      return
+    }
+
+    let entry = {}
+    entry.type = "IP"
+    entry.id = address
+
+    let portObj = {}
+    if (proto && port) {
+      portObj.proto = proto
+      portObj.start = port
+      portObj.end = port
+    }
+
+    entry.port = portObj;
+    entry.pcount = 1;
+    entry.domainOnly = true;  // do not need to translate ip address
+
+    entry.isStatic = true;
+
+    return entry;
+  }
+
+
+  // might need support multi-port support or port range in the future?
+  async addDynamicCategoryAddress(category, targetAddress, proto, targetPort, expireTime) {
+    if (!category || !targetAddress || !proto) {
+      return
+    }
+    let ipVersion = "";
+
+    if (!net.isIPv4(targetAddress) && !net.isIPv6(targetAddress)){
+      return
+    }
+    if (proto != "tcp" && proto != "udp") {  //bad proto
+      return
+    }
+    if (!this.isValidPort(targetPort)) {
+      return
+    }
+    const key = this.getDynamicAddressCategoryKey(category)
+
+
+    let addrEntry  = this.composeAddressEntry(targetAddress, proto, targetPort);
+    let data = JSON.stringify(addrEntry)
+
+
+    // use current time as score for zset, it will be used to expire address
+    const now = Math.floor(Date.now() / 1000)
+    await rclient.zaddAsync(key, now, data)
+
+    
+    log.debug(`Add a ${category} targetAddress: ${targetAddress} targetPort: ${targetPort}`)
+
+    // IP address not need to update dnsmasq config
+    // skip ipset config update if category is not activated
+    if (this.isActivated(category)) {
+      if (!this.effectiveCategoryAdresses[category]) {
+        this.effectiveCategoryAdresses[category] = new Map();
+      }
+      // await domainBlock.blockDomain(addrEntry.id, { ondemand: true, blockSet: this.getDomainPortIPSetName(category, addrEntry.isStatic), port: addrEntry.port, needComment: ipsetNeedComment });
+      
+      this.blockAddress(category, addrEntry.id, addrEntry.port, addrEntry.isStatic)
+    }
+
+  }
+
+  async blockAddress(category, address, portObj, isStatic) {
+    let blockSet = this.getDomainPortIPSetName(category, isStatic)
+    await Block.batchBlockNetPort([address], portObj, blockSet).catch((err) => {
+      log.error(`Failed to batch update domain ipset ${blockSet} for ${address}`, err.message);
+    });
+  }
+
+  async unblockAddress(category, address, portObj, isStatic) {
+    let blockSet = this.getDomainPortIPSetName(category, isStatic)
+    await Block.batchUnblock([address], portObj, blockSet).catch((err) => {
+      log.error(`Failed to batch update domain ipset ${blockSet} for ${address}`, err.message);
+      });
   }
 
   async updateDomain(category, domain, isPattern, add = true) {
@@ -1173,6 +1284,28 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
     }
 
+    const previousEffectiveAddresses = this.effectiveCategoryAdresses[category] || new Map()
+
+
+    let addressMap = new Map()
+
+    for (const item of await this.getDynamicAddresses(category)) {
+      const addressObj = { id: item.id, port: item.port, isStatic: true }
+      addressMap.set(hashFunc(addressObj), addressObj);
+    }
+
+    let removedAddresses = []
+    for (const [k, v] of previousEffectiveAddresses) {
+      if (!addressMap.has(k)) {
+        removedAddresses.push(v)
+      }
+    }
+    for (const addressObj of removedAddresses) {
+      log.debug(`Address ${addressObj.id} is removed from category ${category}, remove address from ipset ...`)
+      await this.unblockAddress(category, addressObj.id, addressObj.port, addressObj.isStatic);
+    }
+
+
     // do not execute full update on ipset if ondemand is set
     if (!ondemand) {
       for (const [k, v] of domainMap) {
@@ -1236,14 +1369,29 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
     this.effectiveCategoryDomains[category] = domainMap;
 
+    const newAddresses = [];
+    for (const [k, v] of addressMap) {
+      if (!previousEffectiveAddresses.has(k)) {
+        newAddresses.push(v);
+      }
+    }
+    for (const addressObj of newAddresses) {
+      await this.blockAddress(category, addressObj.id, addressObj.port, addressObj.isStatic)
+    }
+
+    this.effectiveCategoryAdresses[category] = addressMap;
+
     this.recycleTasks[category] = false;
   }
 
   async refreshCategoryRecord(category) {
-    const key = this.getCategoryKey(category)
+    const domainsKey = this.getCategoryKey(category)
     const date = Math.floor(new Date() / 1000) - EXPIRE_TIME
 
-    return rclient.zremrangebyscoreAsync(key, '-inf', date)
+    await rclient.zremrangebyscoreAsync(domainsKey, '-inf', date)
+
+    const addresseskey = this.getDynamicAddressCategoryKey(category)
+    await rclient.zremrangebyscoreAsync(addresseskey, '-inf', date)
   }
 
   getEffectiveDomains(category) {
