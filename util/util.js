@@ -21,7 +21,6 @@ const stream = require('stream');
 const moment = require('moment');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
-let incTs = 0;
 
 const validDomainRegex = /^[a-zA-Z0-9-_.]+$/
 const validVersionRegex = /^[0-9.]+/
@@ -297,11 +296,6 @@ async function batchKeyExists(keys, batchSize) {
   return _.flatten(validChunks)
 }
 
-function getUniqueTs(ts) {
-  incTs = (incTs + 1) % 100;
-  return Math.round(ts * 100 + incTs) / 100;
-}
-
 function difference(obj1, obj2) {
   return _.uniq(_diff(obj1, obj2).concat(_diff(obj2, obj1)));
 }
@@ -370,5 +364,4 @@ module.exports = {
   fileRemove,
   batchKeyExists,
   waitFor,
-  getUniqueTs
 };
