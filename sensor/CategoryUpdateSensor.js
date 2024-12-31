@@ -159,8 +159,6 @@ class CategoryUpdateSensor extends Sensor {
         return;
       }
 
-      // should remove all dynamic detected ip addresses ?
-      await categoryUpdater.flushCategoryAddresses(category);
 
       if (categoryUpdater.isUserTargetList(category) || categoryUpdater.isSmallExtendedTargetList(category)) {
         // with port support

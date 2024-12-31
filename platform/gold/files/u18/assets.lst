@@ -3,5 +3,3 @@
 /home/pi/.firewalla/run/assets/rand.lua /gold/assets/u18/rand.lua 644 ':' 'SLNAME="/usr/share/nmap/nselib/rand.lua"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/rand.lua ${SLNAME}; fi'
 /home/pi/.firewalla/run/assets/tableaux.lua /gold/assets/u18/tableaux.lua 644 ':' 'SLNAME="/usr/share/nmap/nselib/tableaux.lua"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/tableaux.lua ${SLNAME}; fi'
 /home/pi/.firewalla/run/zeek_signatures/dpi.sig /gold/assets/u18/zeek-dpi.fwsig 644
-/home/pi/.firewalla/run/zeek_signatures/wireguard.sig /gold/assets/u18/zeek-wireguard.fwsig 644
-/home/pi/.firewalla/run/zeek_signatures/openvpn.sig /gold/assets/u18/zeek-openvpn.fwsig 644
