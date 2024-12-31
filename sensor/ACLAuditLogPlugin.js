@@ -811,7 +811,7 @@ class ACLAuditLogPlugin extends Sensor {
         // catch this to proceed onto the next iteration
         try {
           log.debug(transaction)
-          await rclient.multi(transaction).execAtomicAsync();
+          await rclient.pipelineAndLog(transaction)
           log.debug("Audit:Save:Removed", key);
         } catch (err) {
           log.error("Audit:Save:Error", err);

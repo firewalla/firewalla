@@ -80,9 +80,7 @@ const fsp = require('fs').promises;
 const {formulateHostname, isDomainValid, delay, getUniqueTs} = require('../util/util.js');
 
 const LRU = require('lru-cache');
-const FlowAggrTool = require('./FlowAggrTool.js');
 const Constants = require('./Constants.js');
-const flowAggrTool = new FlowAggrTool();
 
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
@@ -525,7 +523,7 @@ class BroDetect {
         }
       } else {
         if (sysManager.isMyMac(localMac)) {
-          log.verbose("Discard incorrect local MAC from DNS log: ", localMac, dnsFlow.sh);
+          log.debug("Discard incorrect local MAC from DNS log: ", localMac, dnsFlow.sh);
           localMac = null
         }
 
@@ -572,7 +570,7 @@ class BroDetect {
       await rclient.zaddAsync(key, dnsFlow._ts, JSON.stringify(dnsFlow)).catch(
         err => log.error("Failed to save single DNS flow: ", dnsFlow, err)
       )
-      if (config.dns.expires) rclient.expireat(key, Date.now() / 1000 + config.dns.expires, ()=>{})
+      if (config.dns.expires) rclient.expireat(key, Math.floor(Date.now() / 1000 + config.dns.expires), ()=>{})
 
       const flowspecKey = `${localMac}:${dnsFlow.dn}:${intfInfo ? intfInfo.uuid : ''}`;
       // add keys to flowstash (but not redis)
@@ -625,7 +623,7 @@ class BroDetect {
       if (cached) this.dnsHit ++
       const cacheHit = cached && obj.answers.every(as => cached.has(as))
       if (cacheHit) {
-        if (this.dnsMatch++ % 10 == 0) log.verbose(`Duplicated DNS ${this.dnsMatch} / ${this.dnsHit} / ${this.dnsCount} `)
+        // if (this.dnsMatch++ % 10 == 0) log.verbose(`Duplicated DNS ${this.dnsMatch} / ${this.dnsHit} / ${this.dnsCount} `)
         log.debug("processDnsData:DNS:Duplicated:", obj['query'], JSON.stringify(obj['answers']));
       } else {
         this.dnsCache.set(cacheKey, new Set(obj.answers))
@@ -1083,7 +1081,7 @@ class BroDetect {
         // local flow only available in router mode, so gateway is always Firewalla's mac
         // for non-local flows, this only happens in simple mode
         if (localMac && sysManager.isMyMac(localMac)) {
-          log.verbose("Discard incorrect local MAC address from bro log: ", localMac, lhost);
+          log.debug("Discard incorrect local MAC address from bro log: ", localMac, lhost);
           localMac = null; // discard local mac from bro log since it is not correct
         }
 
@@ -1212,7 +1210,7 @@ class BroDetect {
         } else {
           if (dstMac && sysManager.isMyMac(dstMac)) {
             // double check dest mac for spoof leak
-            log.verbose("Discard incorrect dest MAC address from bro log: ", dstMac, dhost);
+            log.debug("Discard incorrect dest MAC address from bro log: ", dstMac, dhost);
             dstMac = null
           }
 
@@ -1393,7 +1391,7 @@ class BroDetect {
 
       const multi = rclient.multi()
       multi.zadd(redisObj)
-      if (config.conn.expires) multi.expireat(key, now + config.conn.expires, ()=>{})
+      if (config.conn.expires) multi.expireat(key, Math.floor(now + config.conn.expires), ()=>{})
       multi.zadd("deviceLastFlowTs", now, localMac);
       await multi.execAsync().catch(
         err => log.error("Failed to save tmpspec: ", tmpspec, err)
@@ -1535,8 +1533,8 @@ class BroDetect {
     setTimeout(async () => {
       log.info(`${type}:Save:Summary ${start} ${end}`);
       for (let key in stashed) {
-        let stash = stashed[key];
-        log.debug(`${type}:Save:Summary:Wipe ${key} Resolved To: ${stash.length}`);
+        const stash = stashed[key];
+        log.verbose(`${type}:Save:Wipe ${key} Resolved To: ${stash.length}`);
 
         let transaction = [];
         transaction.push(['zremrangebyscore', key, start, end]);
@@ -1545,12 +1543,12 @@ class BroDetect {
           transaction.push(['zadd', robj])
         })
         if (config[type].expires) {
-          transaction.push(['expireat', key, Date.now() / 1000 + config[type].expires])
+          transaction.push(['expireat', key, Math.floor(Date.now() / 1000 + config[type].expires)])
         }
 
         try {
-          await rclient.multi(transaction).execAtomicAsync();
-          log.debug(`${type}:Save:Removed`, key, start, end);
+          await rclient.pipelineAndLog(transaction)
+          log.verbose(`${type}:Save:Done`, key, start, end);
         } catch (err) {
           log.error(`${type}:Save:Error`, err);
         }
@@ -1940,7 +1938,7 @@ class BroDetect {
       }
     }
 
-    log.verbose('toRecord', toRecord)
+    log.debug('toRecord', toRecord)
     for (const key in toRecord) {
       const subKey = key == 'global' ? '' : ':' + (key.endsWith('global') ? key.slice(0, -7) : key)
       const download = isRouterMode && key == 'global' ? wanNicRxBytes : toRecord[key].download;
