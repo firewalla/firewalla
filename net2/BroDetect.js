@@ -77,7 +77,8 @@ const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
 const fsp = require('fs').promises;
 
-const {formulateHostname, isDomainValid, delay, getUniqueTs} = require('../util/util.js');
+const {formulateHostname, isDomainValid, delay} = require('../util/util.js');
+const { getUniqueTs } = require('./FlowUtil.js')
 
 const LRU = require('lru-cache');
 const Constants = require('./Constants.js');
@@ -1487,9 +1488,8 @@ class BroDetect {
   async rotateFlowStash(type) {
     const flowstash = this.flowstash[type]
     this.flowstash[type] = {}
-    const end = Date.now() / 1000
+    let end = Date.now() / 1000
     const start = this.lastRotate[type]
-    this.lastRotate[type] = end
 
     // Every FLOWSTASH_EXPIRES seconds, save aggregated flowstash into redis and empties flowstash
     let stashed = {};
@@ -1517,6 +1517,8 @@ class BroDetect {
       // not storing mac (as it's in key) to squeeze memory
       delete spec.mac
       delete spec.local
+
+      if (spec._ts > end) end = spec._ts
       const strdata = JSON.stringify(spec);
       // _ts is the last time this flowspec is updated
       const redisObj = [key, spec._ts, strdata];
@@ -1529,6 +1531,7 @@ class BroDetect {
     } catch (e) {
       log.error("Error rotating flowstash", specKey, start, end, flowstash[specKey], e);
     }
+    this.lastRotate[type] = end
 
     setTimeout(async () => {
       log.info(`${type}:Save:Summary ${start} ${end}`);
@@ -1537,7 +1540,7 @@ class BroDetect {
         log.verbose(`${type}:Save:Wipe ${key} Resolved To: ${stash.length}`);
 
         let transaction = [];
-        transaction.push(['zremrangebyscore', key, start, end]);
+        transaction.push(['zremrangebyscore', key, '('+start, end]);
         stash.forEach(robj => {
           if (robj._ts < start || robj._ts > end) log.warn('Stashed flow out of range', start, end, robj)
           transaction.push(['zadd', robj])

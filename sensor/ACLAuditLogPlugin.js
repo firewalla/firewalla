@@ -31,15 +31,14 @@ const Constants = require('../net2/Constants.js');
 const fc = require('../net2/config.js')
 const conntrack = require('../net2/Conntrack.js')
 const LogReader = require('../util/LogReader.js');
-const {getUniqueTs, delay} = require('../util/util.js');
+const { delay } = require('../util/util.js');
+const { getUniqueTs } = require('../net2/FlowUtil.js')
 const FireRouter = require('../net2/FireRouter.js');
 
 const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
 const _ = require('lodash');
 const sl = require('./SensorLoader.js');
-const FlowAggrTool = require('../net2/FlowAggrTool.js');
-const flowAggrTool = new FlowAggrTool();
 const Message = require('../net2/Message.js');
 
 const LOG_PREFIX = Constants.IPTABLES_LOG_PREFIX_AUDIT
@@ -774,7 +773,7 @@ class ACLAuditLogPlugin extends Sensor {
       this.touchedKeys = {};
       log.debug('Key(mac) count: ', auditKeys.length)
       for (const key of auditKeys) {
-        const records = await rclient.zrangebyscoreAsync(key, start, end)
+        const records = await rclient.zrangebyscoreAsync(key, '('+start, end)
         // const mac = key.substring(11) // audit:drop:<mac>
 
         const stash = {}
@@ -799,7 +798,7 @@ class ACLAuditLogPlugin extends Sensor {
         }
 
         const transaction = [];
-        transaction.push(['zremrangebyscore', key, start, end]);
+        transaction.push(['zremrangebyscore', key, '('+start, end]);
         for (const descriptor in stash) {
           const record = stash[descriptor]
           record._ts = getUniqueTs(record.ts + (record.du || 0));
