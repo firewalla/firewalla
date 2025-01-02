@@ -747,7 +747,7 @@ class Host extends Monitorable {
         ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
         if (Array.isArray(ipv6Addr)) {
           for (const addr of ipv6Addr) {
-            const recentlyAdded = this.ipCache.get(addr);
+            const recentlyAdded = this.ipCache.peek(addr);
             if (!recentlyAdded) {
               const ops = [`add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`];
               for (const tag of tags)
