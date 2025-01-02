@@ -730,7 +730,7 @@ class Host extends Monitorable {
           Array.prototype.push.apply(tags, typeTags);
         }
         if (ipv4Addr) {
-          const recentlyAdded = this.ipCache.get(ipv4Addr);
+          const recentlyAdded = this.ipCache.peek(ipv4Addr);
           if (!recentlyAdded) {
             const ops = [`add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`];
             // flatten device IP addresses into tag's ipset
@@ -747,7 +747,7 @@ class Host extends Monitorable {
         ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
         if (Array.isArray(ipv6Addr)) {
           for (const addr of ipv6Addr) {
-            const recentlyAdded = this.ipCache.get(addr);
+            const recentlyAdded = this.ipCache.peek(addr);
             if (!recentlyAdded) {
               const ops = [`add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`];
               for (const tag of tags)
