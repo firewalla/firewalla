@@ -587,7 +587,7 @@ class DeviceHook extends Hook {
           await h.update(enrichedHost, true)
           await h.save()
           // publish device updated event to trigger
-          this.messageBus.publish(HOST_UPDATED, h.mac, h.o);
+          this.messageBus.publish(HOST_UPDATED, mac, h.o);
         })().catch((err) => {
           log.error("Failed to create host entry:", err, err.stack);
         });
