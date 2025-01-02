@@ -17,6 +17,7 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const bone = require("../lib/Bone.js");
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const TagManager = require('../net2/TagManager.js');
@@ -186,16 +187,41 @@ class DeviceIdentificationSensor extends Sensor {
     })
   }
 
+  async checkList() {
+    try {
+      log.verbose('checking device type preload list ...')
+      const hashset = await bone.hashsetAsync('device:type:list:preload')
+      const types = JSON.parse(hashset)
+      for (const type of types) {
+        const tag = await TagManager.getTagByName(type, Constants.TAG_TYPE_DEVICE);
+        if (!tag) {
+          const tag = await TagManager.createTag(type, { type: Constants.TAG_TYPE_DEVICE })
+          log.info('created preload device type tag', tag.getUniqueId(), tag.o.name)
+        }
+      }
+    } catch(err) {
+      log.error('Error creating preload device types', err)
+    }
+  }
+
   async globalOn() {
     if (!this.intervalTask)
+      this.job()
       this.intervalTask = setInterval(() => {
         this.job();
       }, (this.config.interval || 60 * 60) * 1000)
+    if (!this.intervalTaskListCheck)
+      this.checkList()
+      this.intervalTaskListCheck = setInterval(() => {
+        this.checkList();
+      }, (this.config.intervalListCheck || 24 * 60 * 60) * 1000)
   }
 
   async globalOff() {
     clearInterval(this.intervalTask)
     delete this.intervalTask
+    clearInterval(this.intervalTaskListCheck)
+    delete this.intervalTaskListCheck
   }
 }
 

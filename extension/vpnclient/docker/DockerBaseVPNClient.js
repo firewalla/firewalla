@@ -1,4 +1,4 @@
-/*    Copyright 2016 - 2021 Firewalla Inc 
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -148,7 +148,7 @@ class DockerBaseVPNClient extends VPNClient {
   async _createNetwork() {
     // sudo docker network create -o "com.docker.network.bridge.name"="vpn_sslx" --subnet 10.53.204.108/30 vpn_sslx
     try {
-      log.info(`Creating network ${this._getDockerNetworkName()} for vpn ${this.profileId} ...`);
+      log.verbose(`Creating network ${this._getDockerNetworkName()} for vpn ${this.profileId} ...`);
       const subnet = await this._getOrGenerateSubnet();
       const ipv6 = this.isIPv6Enabled();
 
@@ -298,12 +298,12 @@ if $programname == 'docker_vpn_${this.profileId}' then {
     await fs.writeFileAsync(tempConfPath, content, {encoding: "utf8"});
     await exec(`sudo cp ${tempConfPath} /etc/rsyslog.d/`).catch((err) => {});
     await fs.unlinkAsync(tempConfPath).catch((err) => {});
-    await exec(`sudo systemctl restart rsyslog`).catch((err) => {});
+    await sysManager.restartRsyslog().catch((err) => {});
   }
 
   async _removeRsyslogConf() {
     await exec(`sudo rm /etc/rsyslog.d/40-docker_vpn_${this.profileId}.conf`).catch((err) => {});
-    await exec(`sudo systemctl restart rsyslog`).catch((err) => {});
+    await sysManager.restartRsyslog().catch((err) => {});
   }
 
   async _testAndStartDocker() {
@@ -470,7 +470,7 @@ if $programname == 'docker_vpn_${this.profileId}' then {
   }
 
   async _prepareDockerCompose(obj) {
-    log.info("Preparing docker compose file...");
+    log.verbose("Preparing docker compose file...");
     let content = null;
     if (!_.isEmpty(obj)) {
       content = YAML.stringify(obj);
@@ -479,7 +479,7 @@ if $programname == 'docker_vpn_${this.profileId}' then {
       content = await fs.readFileAsync(src, {encoding: 'utf8'});
     }
     const dst = `${this._getDockerConfigDirectory()}/docker-compose.yaml`;
-    log.info("Writing config file", dst);
+    log.verbose("Writing config file", dst);
     await fs.writeFileAsync(dst, content);
   }
 
