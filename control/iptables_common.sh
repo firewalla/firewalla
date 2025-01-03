@@ -116,11 +116,14 @@ add match_all_set4 0.0.0.0/1
 add match_all_set4 128.0.0.0/1
 add match_dns_port_set 53
 
-add block_ip_set ${BLUE_HOLE_IP}
+create fw_assets_set list:set
+flush fw_assets_set
 
-# create a list of set which stores net set of lan networks
-create c_lan_set list:set
-flush c_lan_set
+create fw_assets_ip_set4 hash:ip family inet hashsize 128 maxelem 1024
+flush fw_assets_ip_set4
+add fw_assets_set fw_assets_ip_set4
+
+add block_ip_set ${BLUE_HOLE_IP}
 
 # create a list of set which stores net set of lan networks
 create c_lan_set list:set
@@ -136,6 +139,10 @@ sed -E "s/_(ip|domain|net)_set/_\1_set6/" "$ipset4_file" |
 cat << EOF
 create monitored_ip_set6 hash:ip family inet6 hashsize 1024 maxelem 65536
 create match_all_set6 hash:net family inet6 maxelem 16
+
+create fw_assets_ip_set6 hash:ip family inet6 hashsize 128 maxelem 1024
+flush fw_assets_ip_set6
+add fw_assets_set fw_assets_ip_set6
 
 flush match_all_set6
 add match_all_set6 ::/1
@@ -290,6 +297,9 @@ cat << EOF > "$filter_file"
 -A FW_FORWARD -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
 # only set once for NEW connection, for packets that may not fall into FW_ACCEPT_DEFAULT, this rule will set the bit, e.g., rules in FW_UPNP_ACCEPT created by miniupnpd
 -A FW_FORWARD -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x80000000/0x80000000
+# do not block on firewalla APs
+-A FW_FORWARD -m set --match-set fw_assets_set src -j FW_ACCEPT_DEFAULT
+-A FW_FORWARD -m set --match-set fw_assets_set dst -j FW_ACCEPT_DEFAULT
 # do not check reply packets of a inbound connection, this is mainly for upnp allow rule implementation, which only accepts packets in original direction
 -A FW_FORWARD -m conntrack --ctdir REPLY -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j ACCEPT
 
