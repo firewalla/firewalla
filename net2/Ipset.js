@@ -357,6 +357,8 @@ const CONSTANTS = {
   IPSET_MATCH_ALL_SET4: "match_all_set4",
   IPSET_MATCH_ALL_SET6: "match_all_set6",
   IPSET_MATCH_DNS_PORT_SET: "match_dns_port_set",
+  IPSET_ASSETS_IP_SET4: "fw_assets_ip_set4",
+  IPSET_ASSETS_IP_SET6: "fw_assets_ip_set6",
   IPSET_DOCKER_WAN_ROUTABLE: 'docker_wan_routable_net_set',
   IPSET_DOCKER_LAN_ROUTABLE: 'docker_lan_routable_net_set'
 }
