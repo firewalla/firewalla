@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -35,8 +35,6 @@ const hostTool = new HostTool();
 
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const am2 = new AlarmManager2();
-
-const Promise = require('bluebird');
 
 const _ = require('lodash');
 
@@ -115,6 +113,7 @@ class OldDataCleanSensor extends Sensor {
     if(count > 10) {
       log.verbose(util.format("%d entries in %s are cleaned by expired date", count, key));
     }
+    await rclient.persistAsync(key)
     return count;
   }
 
@@ -132,8 +131,8 @@ class OldDataCleanSensor extends Sensor {
 
   async regularClean(fullClean = false) {
     let wanAuditDropCleaned = false;
-    let multi = rclient.multi()
-    let multiCount = 0
+    let batch = []
+    let batchCount = 0
     await rclient.scanAll(null, async (keys) => {
       for (const key of keys) {
         for (const {type, filterFunc, count, expireInterval, fullCleanOnly} of this.filterFunctions) {
@@ -151,26 +150,28 @@ class OldDataCleanSensor extends Sensor {
                 wanAuditDropCleaned = true;
             } else {
               if (expireInterval) {
-                multi.zremrangebyscore(key, "-inf", Date.now() / 1000 - expireInterval);
-                multiCount ++
+                batch.push(['zremrangebyscore', key, "-inf", Date.now() / 1000 - expireInterval]);
+                // remove expire on those keys as they are now managed by OldDataCleanSensor
+                batch.push(['persist', key]);
+                batchCount += 2
               }
               if (count) {
-                multi.zremrangebyrank(key, 0, -count)
-                multiCount ++
+                batch.push(['zremrangebyrank', key, 0, -count])
+                batchCount ++
               }
             }
           }
         }
 
-        if (multiCount > 200) {
-          await multi.execAsync()
-          multi = rclient.multi()
-          multiCount = 0
+        if (batchCount > 200) {
+          await rclient.pipelineAndLog(batch)
+          batch = []
+          batchCount = 0
         }
       }
     });
-    if (multiCount)
-      await multi.execAsync()
+    if (batchCount)
+      await rclient.pipelineAndLog(batch)
     if (wanAuditDropCleaned) {
       sem.emitLocalEvent({
         type: "AuditFlowsDrop",
@@ -199,14 +200,6 @@ class OldDataCleanSensor extends Sensor {
     catch(err) {
       log.error("Error cleaning exceptions", err);
     }
-  }
-
-  cleanSumFlow() {
-
-  }
-
-  cleanHourlyFlow() {
-
   }
 
   async cleanFlowGraph() {
@@ -247,7 +240,7 @@ class OldDataCleanSensor extends Sensor {
     for(const flow of flows) {
       const ttl = await rclient.ttlAsync(flow);
       if(ttl === -1) {
-        await rclient.expireAsync(flow, 600); // 600 is default expire time if expire is not set
+        await rclient.expireAsync(flow, this.config.x509.expires || 600);
       }
     }
   }

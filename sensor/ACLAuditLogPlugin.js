@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -737,8 +737,7 @@ class ACLAuditLogPlugin extends Sensor {
           if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
             multi.zadd("deviceLastFlowTs", _ts, mac);
           this.touchedKeys[key] = 1;
-          const expires = this.config.expires || 86400
-          multi.expireat(key, parseInt(Date.now() / 1000) + expires)
+          // no need to set ttl here, OldDataCleanSensor will take care of it
           await multi.execAsync()
 
           block && sem.emitLocalEvent({
@@ -804,8 +803,7 @@ class ACLAuditLogPlugin extends Sensor {
           record._ts = getUniqueTs(record.ts + (record.du || 0));
           transaction.push(['zadd', key, record._ts, JSON.stringify(record)])
         }
-        const expires = parseInt(Date.now() / 1000) + (this.config.expires || 86400)
-        transaction.push(['expireat', key, expires])
+        // no need to set ttl here, OldDataCleanSensor will take care of it
 
         // catch this to proceed onto the next iteration
         try {

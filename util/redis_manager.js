@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -50,7 +50,9 @@ redis.RedisClient.prototype.scanResults = async function(pattern, count = 1000) 
 // multi() with exec_transaction() actually wraps commands with multi and exec
 // https://redis.io/docs/latest/develop/interact/transactions/
 redis.RedisClient.prototype.pipelineAndLog = async function(commands) {
-  const results = await this.multi(commands).execAsync()
+  const multi = this.multi(commands)
+  // don't use execAsync() here as it's overwritten with logger
+  const results = await util.promisify(multi.exec).bind(multi)()
   for (let i in results) {
     if (results[i] instanceof Error)
       log.error('Error in pipeline', commands[i], results[i])
