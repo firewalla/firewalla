@@ -584,8 +584,7 @@
         "count": 10000
       },
       "x509": {
-        "expires": 600,
-        "count": 10000
+        "expires": 600
       },
       "knownHosts": {
         "expires": 3600,

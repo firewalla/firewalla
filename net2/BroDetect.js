@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -574,7 +574,6 @@ class BroDetect {
       await rclient.zaddAsync(key, dnsFlow._ts, JSON.stringify(dnsFlow)).catch(
         err => log.error("Failed to save single DNS flow: ", dnsFlow, err)
       )
-      if (config.dns.expires) rclient.expireat(key, Math.floor(Date.now() / 1000 + config.dns.expires), ()=>{})
 
       const flowspecKey = `${localMac}:${dnsFlow.dn}:${intfInfo ? intfInfo.uuid : ''}`;
       // add keys to flowstash (but not redis)
@@ -1395,7 +1394,7 @@ class BroDetect {
 
       const multi = rclient.multi()
       multi.zadd(redisObj)
-      if (config.conn.expires) multi.expireat(key, Math.floor(now + config.conn.expires), ()=>{})
+      // no need to set ttl here, OldDataCleanSensor will take care of it
       multi.zadd("deviceLastFlowTs", now, localMac);
       await multi.execAsync().catch(
         err => log.error("Failed to save tmpspec: ", tmpspec, err)
@@ -1548,9 +1547,7 @@ class BroDetect {
           if (robj._ts < start || robj._ts > end) log.warn('Stashed flow out of range', start, end, robj)
           transaction.push(['zadd', robj])
         })
-        if (config[type].expires) {
-          transaction.push(['expireat', key, Math.floor(Date.now() / 1000 + config[type].expires)])
-        }
+        // no need to set ttl here, OldDataCleanSensor will take care of it
 
         try {
           await rclient.pipelineAndLog(transaction)
@@ -1813,9 +1810,6 @@ class BroDetect {
         let redisObj = [key, obj.ts, strdata];
         log.debug("Notice:Save", redisObj);
         await rclient.zaddAsync(redisObj);
-        if (config.notice.expires) {
-          await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + config.notice.expires);
-        }
         let lh = null;
         let dh = null;
 
