@@ -203,15 +203,6 @@ module.exports = class {
     return `${frpDirectory}/frpc.${this.name}.ini`;
   }
 
-  _getPidPath() {
-    if (this.name !== "support") {
-      return `${frpDirectory}/frpc.customized.${this.name}.pid`;
-    } else {
-      // use default pid file
-      return pidFile;
-    }
-  }
-
   _getServiceName() {
     return `frpc.${this.name}`;
   }
@@ -235,7 +226,7 @@ module.exports = class {
 
   async _prepareConfiguration(config) {
     let templateFile = configTemplateFile // default is the support config template file
-    const userToken = null;
+    let userToken = null;
     if (config) {
       userToken = config.userToken;
     }

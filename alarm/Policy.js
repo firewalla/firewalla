@@ -52,6 +52,9 @@ class Policy {
 
     this.parseRedisfyArray(raw);
     this.parseRedisfyObj(raw);
+    for (const key of Policy.NUM_VALUE_KEYS) {
+      if (raw[key]) this[key] = Number(raw[key])
+    }
 
     if (this.scope) {
       // convert guids in "scope" field to "guids" field
@@ -70,25 +73,6 @@ class Policy {
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
 
-    if (raw.seq) {
-      this.seq = Number(raw.seq);
-    }
-
-    if (raw.appTimeUsed)
-      this.appTimeUsed = Number(raw.appTimeUsed);
-
-    if (raw.priority)
-      this.priority = Number(raw.priority);
-
-    if (raw.transferredBytes)
-      this.transferredBytes = Number(raw.transferredBytes);
-
-    if (raw.transferredPackets)
-      this.transferredPackets = Number(raw.transferredPackets);
-
-    if (raw.avgPacketBytes)
-      this.avgPacketBytes = Number(raw.avgPacketBytes);
-
     if (!_.isEmpty(raw.ipttl))
       this.ipttl = Number(raw.ipttl);
 
@@ -99,6 +83,9 @@ class Policy {
     this.trust = false;
     if (raw.trust)
       this.trust = JSON.parse(raw.trust);
+
+    if (raw.useBf)
+      this.useBf = JSON.parse(raw.useBf);
 
     if (!raw.direction)
       this.direction = "bidirection";
@@ -179,7 +166,7 @@ class Policy {
     const compareFields = ["type", "target", "expire", "cronTime", "remotePort",
       "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
       "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
-      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", "snatIP", "flowIsolation", "dscpClass", "appTimeUsage"];
+      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf"];
 
     for (const field of compareFields) {
       if (!Policy.fieldEqual(this[field], policy[field], field)) {
@@ -359,7 +346,7 @@ class Policy {
     const duration = parseFloat(this.duration); // in seconds
     const interval = cronParser.parseExpression(cronTime, { tz: sysManager.getTimezone() });
     const lastDate = interval.prev().getTime() / 1000;
-    log.info(`lastDate: ${lastDate}, duration: ${duration}, alarmTimestamp:${alarmTimestamp}`);
+    log.debug(`lastDate: ${lastDate}, duration: ${duration}, alarmTimestamp:${alarmTimestamp}`);
 
     if (alarmTimestamp > lastDate && alarmTimestamp < lastDate + duration) {
       return true
@@ -663,6 +650,9 @@ class Policy {
 
 Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules"];
 Policy.OBJ_VALUE_KEYS = ["appTimeUsage"];
+Policy.NUM_VALUE_KEYS = [
+  'seq', 'appTimeUsed', 'priority', 'transferredBytes', 'transferredPackets', 'avgPacketBytes',
+]
 Policy.INTF_PREFIX = "intf:";
 Policy.TAG_PREFIX = "tag:";
 

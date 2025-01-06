@@ -197,6 +197,7 @@ async function generateNetworkInfo() {
     let gateway = null;
     let gateway6 = null;
     let dns = null;
+    let dns6 = null;
     let resolver = null;
     let resolverFromWan = false;
     const resolverConfig = (routerConfig && routerConfig.dns && routerConfig.dns[intfName]) || null;
@@ -211,14 +212,20 @@ async function generateNetworkInfo() {
             viaIntf = defaultWanIntfName;
           if (intfNameMap[viaIntf]) {
             resolver = intfNameMap[viaIntf].config.nameservers || intfNameMap[viaIntf].state.dns;
+            const resolv6 = intfNameMap[viaIntf].config.dns6Servers || intfNameMap[viaIntf].state.dns6;
+            if (resolv6)
+              resolver = resolver == null ? resolv6 : resolver.concat(resolv6);
           }
         }
       } else {
         if (resolverConfig.nameservers)
           resolver = resolverConfig.nameservers;
+        if (resolverConfig.dns6Servers)
+          resolver = resolver == null ? resolverConfig.dns6Servers : resolver.concat(resolverConfig.dns6Servers)
       }
     }
     dns = intf.config.nameservers || intf.state.dns;
+    dns6 = intf.config.dns6Servers || intf.state.dns6;
     switch (intf.config.meta.type) {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
@@ -254,6 +261,7 @@ async function generateNetworkInfo() {
       ip6_masks:    ip6Masks.length > 0 ? ip6Masks : null,
       gateway6:     gateway6,
       dns:          dns,
+      dns6:         dns6,
       resolver:     resolver,
       resolverFromWan: resolverFromWan,
       // carrier:      intf.state && intf.state.carrier == 1, // need to find a better place to put this
@@ -284,6 +292,10 @@ async function generateNetworkInfo() {
       redisIntf.origDns = intf.state.origDns;
     }
 
+    if (intf.state && intf.state.hasOwnProperty("origDns6")) {
+      redisIntf.origDns6 = intf.state.origDns6;
+    }
+
     if (intf.state && intf.state.hasOwnProperty("pds")) {
       redisIntf.pds = intf.state.pds;
     }
@@ -311,7 +323,6 @@ let primaryWanIntfName = null
 let wanType = null
 let intfNameMap = {}
 let intfUuidMap = {}
-
 
 class FireRouter {
   constructor() {
@@ -446,19 +457,20 @@ class FireRouter {
           wanType = defaultRoutingConfig.type || Constants.WAN_TYPE_SINGLE;
           switch (defaultRoutingConfig.type) {
             case Constants.WAN_TYPE_FAILOVER: {
-              defaultWanIntfName = defaultRoutingConfig.viaIntf;
-              primaryWanIntfName = defaultWanIntfName; // primary wan is always the viaIntf in failover mode
-              const viaIntf = defaultRoutingConfig.viaIntf;
-              const viaIntf2 = defaultRoutingConfig.viaIntf2;
-              if (viaIntf)
-                routingWans.push(viaIntf);
-              if (viaIntf2)
-                routingWans.push(viaIntf2);
-              if ((intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true)) {
-                defaultWanIntfName = viaIntf;
+              const viaIntfs = [];
+              if (_.isArray(defaultRoutingConfig.viaIntfs)) {
+                defaultWanIntfName = defaultRoutingConfig.viaIntfs[0];
+                viaIntfs.push(...defaultRoutingConfig.viaIntfs);
               } else {
-                if ((intfNameMap[viaIntf2] && intfNameMap[viaIntf2].state && intfNameMap[viaIntf2].state.wanConnState && intfNameMap[viaIntf2].state.wanConnState.active === true))
-                  defaultWanIntfName = viaIntf2;
+                defaultWanIntfName = defaultRoutingConfig.viaIntf;
+                viaIntfs.push(defaultRoutingConfig.viaIntf, defaultRoutingConfig.viaIntf2);
+              }
+              primaryWanIntfName = defaultWanIntfName; // primary wan is always the first wan in failover mode
+              for (const viaIntf of viaIntfs) {
+                routingWans.push(viaIntf);
+                if ((intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true)) {
+                  defaultWanIntfName = viaIntf;
+                }
               }
               break;
             }
@@ -1043,7 +1055,7 @@ class FireRouter {
 
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error("Error setting firerouter config: " + resp.body);
+      throw new Error("Error setting firerouter config: " + JSON.stringify(resp.body));
     }
 
     const impact = this.checkConfig(config)
@@ -1165,15 +1177,20 @@ class FireRouter {
       log.debug("enrichedWanStatus=", currentStatus);
       const wanIntfs = Object.keys(currentStatus);
       // calcuate state value based on active/ready status of both WANs
-      let dualWANStateValue =
-        (currentStatus[wanIntfs[0]].active ? 0 : 1) +
-        (currentStatus[wanIntfs[0]].ready ? 0 : 2) +
-        (currentStatus[wanIntfs[1]].active ? 0 : 4) +
-        (currentStatus[wanIntfs[1]].ready ? 0 : 8);
+      let dualWANStateValue = 0;
+      let activeBitMask = 0;
+      for (let i = 0; i != wanIntfs.length; i++) {
+        const wanIntf = wanIntfs[i];
+        activeBitMask += (1 << (i * 2));
+        if (!currentStatus[wanIntf].active)
+          dualWANStateValue += (1 << (i * 2));
+        if (!currentStatus[wanIntf].ready)
+          dualWANStateValue += (1 << (i * 2 + 1))
+      }
       log.debug("original state value=", dualWANStateValue);
       /*
         * OK state
-        * - Failover   : both ready, and primary active but standby inactive, or either active if failback
+        * - Failover   : both ready, and primary active but standby inactive, or either active if failback is false
         * - LoadBalance: both active and ready
         */
       let labels = {
@@ -1183,22 +1200,19 @@ class FireRouter {
         "wanStatus": currentStatus,
         "failures": failures
       };
-      if (type === Constants.WAN_TYPE_FAILOVER &&
-        routerConfig &&
-        routerConfig.routing &&
-        routerConfig.routing.global &&
-        routerConfig.routing.global.default &&
-        routerConfig.routing.global.default.viaIntf) {
-        const primaryInterface = routerConfig.routing.global.default.viaIntf;
-        const failback = routerConfig.routing.global.default.failback || false;
+      if (type === Constants.WAN_TYPE_FAILOVER && _.has(routerConfig, ["routing", "global", "default"])) {
+        const routingConfig = _.get(routerConfig, ["routing", "global", "default"]);
+        const primaryInterface = wanIntfs.find(intf => currentStatus[intf].seq === 0);
+        const failback = routingConfig.failback || false;
         labels.primaryInterface = primaryInterface;
         if (failback) {
-          if ((primaryInterface === wanIntfs[1] && dualWANStateValue === 1) ||
-            (primaryInterface === wanIntfs[0] && dualWANStateValue === 4)) {
+          const primaryIntfIndex = wanIntfs.indexOf(primaryInterface);
+          if (primaryIntfIndex >= 0 && (dualWANStateValue ^ activeBitMask) === (1 << (primaryIntfIndex * 2)))
             dualWANStateValue = 0;
-          }
-        } else if ((dualWANStateValue === 1) || (dualWANStateValue === 4)) {
-          dualWANStateValue = 0;
+        } else {
+          const activeIntfIndex = wanIntfs.findIndex(intf => currentStatus[intf].active === true);
+          if (activeIntfIndex >= 0 && (dualWANStateValue ^ activeBitMask) === (1 << (activeIntfIndex * 2)))
+            dualWANStateValue = 0;
         }
       }
       log.debug("labels=", labels);

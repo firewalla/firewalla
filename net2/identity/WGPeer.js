@@ -282,7 +282,7 @@ class WGPeer extends Identity {
         const pubKey = endpointResult[0];
         const endpoint = endpointResult[1];
         if (pubKey && endpoint)
-          pubKeyEndpointMap[pubKey] = endpoint;
+          pubKeyEndpointMap[pubKey] = (endpoint !== "(none)" ? endpoint : null);
       }
     }
 
@@ -295,7 +295,7 @@ class WGPeer extends Identity {
           const pubKey = peer.publicKey;
           const allowedIPs = peer.allowedIPs || [];
           for (const ip of allowedIPs) {
-            if (pubKeyEndpointMap[pubKey])
+            if (_.has(pubKeyEndpointMap, pubKey))
               result[ip] = pubKeyEndpointMap[pubKey];
           }
         }
@@ -307,7 +307,7 @@ class WGPeer extends Identity {
         const pubKey = peer.publicKey;
         const allowedIPs = peer.allowedIPs || [];
         for (const ip of allowedIPs) {
-          if (pubKeyEndpointMap[pubKey])
+          if (_.has(pubKeyEndpointMap, pubKey))
             result[ip] = pubKeyEndpointMap[pubKey];
         }
       }

@@ -165,7 +165,7 @@ class CountryUpdater extends CategoryUpdaterBase {
       const entriesCount = Number(await fsp.readFile(countFile))
       const setMeta = await Ipset.read(ipsetName, true)
       if (entriesCount > Number(_.get(setMeta, 'header.maxelem'))) {
-        await this.rebuildIpset(category, ip6, options)
+        await this.rebuildIpset(category, ip6, Object.assign({count: entriesCount}, options))
       }
     } catch(err) {
       log.error('Failed to rebuild temp ipset', err)
@@ -173,7 +173,7 @@ class CountryUpdater extends CategoryUpdaterBase {
 
     try {
       await exec(`sudo ipset flush ${ipsetName}`)
-      let cmd4 = `cat ${file} | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+      const cmd4 = `sed 's=^=add ${ipsetName} = ' ${file} | sudo ipset restore -!`
       await exec(cmd4)
     } catch(err) {
       log.error(`Failed to update ipset by category ${category} with ipv${ip6?6:4} addresses`, err.message)

@@ -14,8 +14,10 @@
  */
 'use strict';
 
+const Constants = require('../net2/Constants.js');
 const log = require('../net2/logger.js')(__filename)
 const Promise = require('bluebird')
+const rclient = require('../util/redis_manager.js').getRedisClient();
 
 let instance = null
 
@@ -109,6 +111,11 @@ class ExtensionManager {
 
   getAllCmdKeys() {
     return Object.keys(this.cmdMap);
+  }
+
+  async _precedeRecord(msgid, data) {
+    await rclient.setAsync(Constants.REDIS_KEY_HISTORY_MSG_PREFIX + msgid, JSON.stringify(data));
+    rclient.expireAsync(Constants.REDIS_KEY_HISTORY_MSG_PREFIX + msgid, 120); // expire in 2 min
   }
 }
 
