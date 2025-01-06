@@ -444,6 +444,12 @@ module.exports = class {
     for (const aid of alarmIds) {
       try {
         const alarmKey = alarmPrefix + aid;
+        if (await rclient.existsAsync(alarmKey) == 0) {
+          log.warn('cannot get pending alarm detail, auto clean', aid);
+          await rclient.zremAsync(alarmPendingKey, aid);
+          pclient.publishAsync("alarm:removeCache", JSON.stringify({aid:aid}));
+          continue;
+        }
         const data = await rclient.hmgetAsync(alarmKey, 'state', 'alarmTimestamp');
         if (data.length < 2) {
           log.warn('cannot get pending alarm detail', aid);
@@ -472,7 +478,7 @@ module.exports = class {
             break;
           }
           default: {
-            log.warn('cannot handle pending alarms', data)
+            log.warn('cannot handle pending alarms', aid, data);
             break;
           }
         }
