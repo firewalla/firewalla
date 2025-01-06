@@ -1012,6 +1012,8 @@ class PolicyManager2 {
   isFirewallaOrCloud(policy) {
     const target = policy.target
     if (!_.isString(target)) return false
+    // target check is only applicable to IP/MAC address or domain
+    if (policy.type && !["ip", "mac", "dns"].includes(policy.type)) return false
     return target && (sysManager.isMyServer(target) ||
       // sysManager.myIp() === target ||
       sysManager.isMyIP(target) ||
