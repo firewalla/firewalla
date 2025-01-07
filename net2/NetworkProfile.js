@@ -46,7 +46,7 @@ const sysManager = require('./SysManager.js');
 const envCreatedMap = {};
 
 class NetworkProfile extends Monitorable {
-  static metaFieldsJson = ['dns', 'ipv4s', 'ipv4Subnets', 'ipv6', 'ipv6Subnets', 'monitoring', 'ready', 'active', 'pendingTest', 'rtid', 'origDns', 'rt4Subnets', 'rt6Subnets', 'pds'];
+  static metaFieldsJson = ['dns', 'dns6', 'ipv4s', 'ipv4Subnets', 'ipv6', 'ipv6Subnets', 'monitoring', 'ready', 'active', 'pendingTest', 'rtid', 'origDns', 'origDns6', 'rt4Subnets', 'rt6Subnets', 'pds'];
 
   constructor(o) {
     if (!Monitorable.instances[o.uuid]) {

@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,6 +19,7 @@ const Sensor = require('./Sensor.js').Sensor;
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
+const Identity = require('../net2/Identity.js')
 const util = require('util');
 const getHitsAsync = util.promisify(timeSeries.getHits).bind(timeSeries);
 const flowTool = require('../net2/FlowTool');
@@ -60,7 +61,6 @@ class DataUsageSensor extends Sensor {
         this.smWindow = this.config.smWindow || 2;
         this.mdWindow = this.config.mdWindow || 8;
         this.dataPlanMinPercentage = this.config.dataPlanMinPercentage || 0.8;
-        this.slot = 4// 1hour 4 slots
         this.hookFeature();
         this.planJobs = {};
         sclient.on("message", async (channel, message) => {
@@ -151,81 +151,80 @@ class DataUsageSensor extends Sensor {
 
     globalOff() {
     }
+
     async checkDataUsage() {
+      try {
         log.info("Start check data usage")
-        let hosts = await hostManager.getHostsAsync();
-        const systemDataUsage = await this.getTimewindowDataUsage(0, '');
-        const systemRecentlyTotalUsage = this.getRecentlyDataUsage(systemDataUsage, this.smWindow * this.slot)
-        hosts = hosts.filter(x => x)
+        // hosts are probably not created on initial run but that should be fine, we just skip it
+        const hosts = hostManager.getAllMonitorables()
+        const systemTotal = (await this.getDataUsage15min(this.smWindow * 4, '')).count
+
         for (const host of hosts) {
-            const mac = host.o.mac;
-            const dataUsage = await this.getTimewindowDataUsage(0, mac);
-            const dataUsageSmHourWindow = await this.getTimewindowDataUsage(this.smWindow, mac);
-            const dataUsageMdHourWindow = await this.getTimewindowDataUsage(this.mdWindow, mac);
-            const hostRecentlyTotalUsage = this.getRecentlyDataUsage(dataUsage, this.smWindow * this.slot)
-            const hostDataUsagePercentage = hostRecentlyTotalUsage / systemRecentlyTotalUsage || 0;
-            const end = dataUsage[dataUsage.length - 1].ts;
-            const begin = end - this.smWindow * 60 * 60;
-            const steps = this.smWindow * this.slot;
-            const length = dataUsageSmHourWindow.length;
-            if (hostRecentlyTotalUsage < steps * this.minsize || hostDataUsagePercentage < this.percentage) continue;
-            for (let i = 1; i <= steps; i++) {
-                const smUsage = dataUsageSmHourWindow[length - i].count,
-                    mdUsage = dataUsageMdHourWindow[length - i].count;
-                if (smUsage > this.minsize && mdUsage > this.minsize && smUsage > mdUsage) {
-                    const ratio = smUsage / mdUsage;
-                    if (ratio > this.ratio) {
+          const mac = host.getGUID()
+          const hostTotal = (await this.getDataUsage15min(this.smWindow * 4, mac)).count
+          const hostTotalPct = systemTotal ? hostTotal / systemTotal : 0;
+          log.verbose('host total', mac, hostTotal, systemTotal)
+          if (hostTotal < this.smWindow * 4 * this.minsize ||
+            // vpn client generates double banwidth on WAN
+            hostTotalPct < (host instanceof Identity ? this.percentage / 2 : this.percentage)
+          ) continue;
 
-                        // getHits return begin time as ts for the bucket from begin-end. 
-                        // e.g. 11:00:00 - 11:30:00
-                        // it will return two buckets(15mins as one bucket) with ts 11:00:00 and 11:15:00
-                        // the begin time is 11:00:00 and the end time should be 11:15:00 + 15 mins
+          // 2 sliding windows with differet window size to get weighted moving average here
+          // https://en.wikipedia.org/wiki/Moving_average#Weighted_moving_average
+          const weightedSm = await this.getDataUsage15min(this.smWindow * 4, mac, true);
+          const weightedMd = await this.getDataUsage15min(this.mdWindow * 4, mac, true);
+          if (!weightedSm || !weightedMd) continue
+          const { begin, end } = weightedSm
+          const smUsage = weightedSm.count,
+                mdUsage = weightedMd.count;
 
-                        this.genAbnormalBandwidthUsageAlarm(host, begin, end + 15 * 60, hostRecentlyTotalUsage, hostDataUsagePercentage);
-                        break;
-                    }
-                }
-            }
+          log.verbose('weighted average', begin, end, mac, smUsage, mdUsage)
+
+          // weighted average over last [mdWindow] hours is greater than [minsize]
+          // and it's increasing at [ratio] over last [smWindow] hours
+          if (smUsage > mdUsage && mdUsage > this.minsize && smUsage / mdUsage > this.ratio) {
+
+            // getHits return begin time as ts for the bucket from begin-end. 
+            // e.g. 11:00:00 - 11:30:00
+            // it will return two buckets(15mins as one bucket) with ts 11:00:00 and 11:15:00
+            // the begin time is 11:00:00 and the end time should be 11:15:00 + 15 mins
+
+            this.genAbnormalBandwidthUsageAlarm(host, begin, end + 15 * 60, hostTotal, hostTotalPct);
+            break;
+          }
         }
+      } catch(err) {
+        log.error('Error checking device bandwidth', err)
+      }
     }
-    async getTimewindowDataUsage(timeWindow, mac) {
+
+    // return sum or weighted average of latest n slots
+    // weights being linear: 1/sumSlots, 2/sumSlots, ... slots/sumSlots
+    async getDataUsage15min(slots, mac, weightedAverage = false) {
         const downloadKey = `download${mac ? ':' + mac : ''}`;
         const uploadKey = `upload${mac ? ':' + mac : ''}`;
-        //[[ts,Bytes]]  [[1574325720, 9396810],[ 1574325780, 3141018 ]]
-        const slot = this.slot;
-        const slots = slot * timeWindow || 1;
-        const sumSlots = (slots + 1) * (slots / 2);
-        const analytics_slots = slot * this.analytics_hours + slots
-        const downloadStats = await getHitsAsync(downloadKey, "15minutes", analytics_slots);
-        const uploadStats = await getHitsAsync(uploadKey, "15minutes", analytics_slots);
-        let dataUsageTimeWindow = [];
-        if (downloadStats.length < slots) return;
-        for (let i = slots; i < downloadStats.length; i++) {
-            let temp = {
-                count: 0,
-                ts: downloadStats[i][0]
-            };
-            for (let j = i - slots + 1; j <= i; j++) {
-                const weight = (slots - (i - j)) / sumSlots;
-                temp.count = temp.count * 1 + (downloadStats[j][1] * 1 + uploadStats[j][1] * 1) * weight;
-            }
-            dataUsageTimeWindow.push(temp);
+        // latest solt is under accumulation, skip that
+        const downloads = await getHitsAsync(downloadKey, "15minutes", slots + 1);
+        const uploads = await getHitsAsync(uploadKey, "15minutes", slots + 1);
+        downloads.pop()
+        uploads.pop()
+
+        // return usage even there's less data than the observation window
+        // so device don't have to be in network for 8hr+ to generate the alarm
+        slots = Math.min(downloads.length, uploads.length)
+        const sumSlots = (slots + 1) * (slots / 2); // total weights, sum from 1 to slots
+
+        let result = 0
+        for (let i = 0; i < slots; i++) {
+          const weight = weightedAverage ? (i+1) / sumSlots : 1
+          result += (downloads[i][1] + uploads[i][1]) * weight;
         }
-        return dataUsageTimeWindow
+        return { begin: downloads[0][0], end: downloads[downloads.length-1][0], count: result }
     }
-    getRecentlyDataUsage(data, steps) {
-        const length = data.length;
-        let total = 0;
-        for (let i = 1; i <= steps; i++) {
-            if (data[length - i] && data[length - i].count) {
-                total = total * 1 + data[length - i].count * 1;
-            }
-        }
-        return total;
-    }
+
     async genAbnormalBandwidthUsageAlarm(host, begin, end, totalUsage, percentage) {
         log.info("genAbnormalBandwidthUsageAlarm", host.o.mac, begin, end)
-        const mac = host.o.mac;
+        const mac = host.getGUID();
         const dedupKey = `abnormal:bandwidth:usage:${mac}`;
         if (await this.isDedup(dedupKey, abnormalBandwidthUsageCooldown)) return;
         //get top flows from begin to end
@@ -233,10 +232,14 @@ class DataUsageSensor extends Sensor {
         const flows = await this.getSumFlows(mac, begin, end);
         const destNames = flows.map((flow) => flow.aggregationHost).join(',')
         percentage = percentage * 100;
-        const last24HoursDownloadStats = await getHitsAsync(`download:${mac}`, "15minutes", this.slot * 24)
-        const last24HoursUploadStats = await getHitsAsync(`upload:${mac}`, "15minutes", this.slot * 24)
-        const recentlyDownloadStats = await getHitsAsync(`download:${mac}`, "15minutes", this.slot * this.smWindow)
-        const recentlyUploadStats = await getHitsAsync(`upload:${mac}`, "15minutes", this.slot * this.smWindow)
+        const last24HoursDownloadStats = await getHitsAsync(`download:${mac}`, "15minutes", 4 * 24 + 1)
+        const last24HoursUploadStats = await getHitsAsync(`upload:${mac}`, "15minutes", 4 * 24 + 1)
+        const recentlyDownloadStats = await getHitsAsync(`download:${mac}`, "15minutes", 4 * this.smWindow + 1)
+        const recentlyUploadStats = await getHitsAsync(`upload:${mac}`, "15minutes", 4 * this.smWindow + 1)
+        last24HoursDownloadStats.pop()
+        last24HoursUploadStats.pop()
+        recentlyDownloadStats.pop()
+        recentlyUploadStats.pop()
         const last24HoursStats = {
             download: last24HoursDownloadStats,
             upload: last24HoursUploadStats
@@ -245,12 +248,8 @@ class DataUsageSensor extends Sensor {
             download: recentlyDownloadStats,
             upload: recentlyUploadStats
         }
-        let intfId = null;
-        if (host.o.ipv4Addr) {
-            const intf = sysManager.getInterfaceViaIP(host.o.ipv4Addr);
-            intfId = intf && intf.uuid;
-        }
-        let alarm = new Alarm.AbnormalBandwidthUsageAlarm(new Date() / 1000, name, {
+        const intfId = host.getNicUUID()
+        const alarm = new Alarm.AbnormalBandwidthUsageAlarm(new Date() / 1000, name, {
             "p.device.mac": mac,
             "p.device.id": name,
             "p.device.name": name,
@@ -266,6 +265,7 @@ class DataUsageSensor extends Sensor {
             "p.duration": this.smWindow,
             "p.percentage": percentage.toFixed(2) + '%',
         });
+        if (host instanceof Identity) alarm['p.device.guid'] = mac
         alarmManager2.enqueueAlarm(alarm);
     }
     async getSumFlows(mac, begin, end) {
@@ -273,17 +273,17 @@ class DataUsageSensor extends Sensor {
         let flows = [];
         for (const rawFlow of rawFlows) {
             flows.push({
-                count: flowTool.getUploadTraffic(rawFlow) * 1 + flowTool.getDownloadTraffic(rawFlow) * 1,
+                count: rawFlow.ob + rawFlow.rb,
                 ip: flowTool.getDestIP(rawFlow),
                 device: mac
             })
         }
-        flows = await flowTool.enrichWithIntel(flows);
+        flows = await flowTool.enrichWithIntel(flows, true);
         let flowsCache = {};
         for (const flow of flows) {
             const destHost = (flow.host && validator.isFQDN(flow.host)) ? suffixList.getDomain(flow.host) : flow.ip;
             if (flowsCache[destHost]) {
-                flowsCache[destHost].count = flowsCache[destHost].count * 1 + flow.count * 1;
+                flowsCache[destHost].count += flow.count
             } else {
                 flowsCache[destHost] = flow
             }
@@ -293,9 +293,8 @@ class DataUsageSensor extends Sensor {
             flowsCache[destHost].aggregationHost = destHost;
             flowsGroupByDestHost.push(flowsCache[destHost]);
         }
-        return flowsGroupByDestHost.sort((a, b) => b.count * 1 - a.count * 1).splice(0, this.topXflows).filter((flow) => {
-            return flow.count * 1 > 10 * 1000 * 1000;//return flows bigger than 10MB
-        })
+        return flowsGroupByDestHost.sort((a, b) => b.count - a.count).slice(0, this.topXflows)
+          .filter(flow => flow.count > 10 * 1000 * 1000) //return flows bigger than 10MB
     }
     async checkMonthlyDataUsage(date, total, wanUUID) {
         log.info(`Start check monthly data usage ${wanUUID ? `on wan ${wanUUID}` : ""}`);

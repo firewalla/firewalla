@@ -66,6 +66,8 @@ class SystemDNSSensor extends Sensor {
 
   async apiRun() {
     extensionManager.onSet("systemDNS", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await this.getSystemDNS()})} catch(err) {};
+
       await this.setSystemDNS(data.content);
       sem.sendEventToFireMain({
         type: 'SystemDNSUpdate'

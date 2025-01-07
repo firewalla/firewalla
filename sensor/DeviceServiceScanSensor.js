@@ -191,7 +191,7 @@ class DeviceServiceScanSensor extends Sensor {
   }
 
   _scan(ipAddr) {
-    let cmd = util.format('sudo timeout 1200s nmap -Pn --top-ports 3000 %s -oX - | %s', ipAddr, xml2jsonBinary);
+    let cmd = util.format('sudo timeout 1200s nmap -Pn -n --top-ports 3000 %s -oX - | %s', ipAddr, xml2jsonBinary);
 
     log.verbose("Running command:", cmd);
     return new Promise((resolve, reject) => {

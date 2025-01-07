@@ -288,6 +288,17 @@ class Monitorable {
 
   async applyPolicy() {
     await lock.acquire(`LOCK_APPLY_POLICY_${this.getGUID()}`, async () => {
+      if (sysManager.isMyMac(this.getUniqueId())) {
+        log.warn(`Skip applying policy on self MAC address`, this.getUniqueId());
+        return;
+      }
+      for (const intf of sysManager.getWanInterfaces()) {
+        const gwMAC = await sysManager.myGatewayMac(intf.name);
+        if (gwMAC && gwMAC === this.getUniqueId()) {
+          log.warn(`Skip applying policy on WAN gateway MAC address`, this.getUniqueId());
+          return;
+        }
+      }
       log.verbose(`Applying policy for ${this.constructor.getClassName()} ${this.getUniqueId()}`)
       // policies should be in sync with messageBus, still read here to make sure everything is in sync
       await this.loadPolicyAsync();
