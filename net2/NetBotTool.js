@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -164,7 +164,7 @@ class NetBotTool {
   }
 
   // Top X on the entire network
-  async prepareTopFlows(json, trafficDirection, fd, options) {
+  async prepareTopFlows(json, dimension, fd, options) {
     if (!("flows" in json)) {
       json.flows = {};
     }
@@ -173,16 +173,16 @@ class NetBotTool {
     let end = options.end || (begin + 3600);
     const target = options.intf && ('intf:' + options.intf) || options.tag && ('tag:' + options.tag) || options.mac || undefined;
 
-    log.verbose('prepareTopFlows', trafficDirection, fd, target || 'system', options.queryall ? 'last24' : [ begin, end ])
+    log.verbose('prepareTopFlows', dimension, fd, target || 'system', options.queryall ? 'last24' : [ begin, end ])
     log.debug(options)
 
     let sumFlowKey = null
 
     if(options.queryall) {
-      sumFlowKey = await flowAggrTool.getLastSumFlow(target, trafficDirection, fd);
+      sumFlowKey = await flowAggrTool.getLastSumFlow(target, dimension, fd);
 
       if (!sumFlowKey) {
-        log.warn('Aggregation not found', target || 'system', trafficDirection, fd)
+        log.warn('Aggregation not found', target || 'system', dimension, fd)
         return []
       }
 
@@ -192,23 +192,23 @@ class NetBotTool {
         end = ts.end
       }
     } else {
-      sumFlowKey = flowAggrTool.getSumFlowKey(target, trafficDirection, begin, end, fd);
+      sumFlowKey = flowAggrTool.getSumFlowKey(target, dimension, begin, end, fd);
     }
 
-    const traffic = await flowAggrTool.getTopSumFlowByKey(sumFlowKey, options.limit || 50);
+    const traffic = await flowAggrTool.getTopSumFlowByKey(sumFlowKey, options.limit || 200);
 
     traffic.forEach(f => {
       f.begin = begin;
       f.end = end;
     })
 
-    const enriched = await flowTool.enrichWithIntel(traffic);
+    const enriched = await flowTool.enrichWithIntel(traffic, !dimension.startsWith('dns') && dimension != 'local');
 
-    json.flows[`${trafficDirection}${fd ? `:${fd}` : ""}`] = enriched.sort((a, b) => {
+    json.flows[`${dimension}${fd ? `:${fd}` : ""}`] = enriched.sort((a, b) => {
       return b.count - a.count;
     });
-    log.verbose('prepareTopFlows ends', trafficDirection, fd, target, options.queryall ? 'last24' : [ begin, end ])
-    return json.flows[`${trafficDirection}${fd ? `:${fd}` : ""}`]
+    log.verbose('prepareTopFlows ends', dimension, fd, target, options.queryall ? 'last24' : [ begin, end ])
+    return json.flows[`${dimension}${fd ? `:${fd}` : ""}`]
   }
 
   // "sumflow:8C:29:37:BF:4A:86:upload:1505073000:1505159400"
@@ -281,6 +281,9 @@ class NetBotTool {
     json.appTimeUsage = appTimeUsage;
     json.appTimeUsageTotal = appTimeUsageTotal;
     json.categoryTimeUsage = categoryTimeUsage;
+
+    const stats = await TimeUsageTool.getAppTimeUsageStats(uid, containerUid, ["internet"], begin, end, options.granularity, options.mac ? true : false);
+    json.internetTimeUsage = _.get(stats, ["appTimeUsage", "internet"]);
   }
 
   async syncHostAppTimeUsageToTags(uid, options) {
@@ -308,6 +311,7 @@ class NetBotTool {
       end = (timezone ? moment(options.end * 1000).tz(timezone) : moment(options.end * 1000)).startOf("hour").unix() + 3600;
     log.info(`Going to sync app time usage of ${uid} from ${begin} to ${end} into tags: `, tags);
     const apps = await TimeUsageTool.getSupportedApps();
+    apps.push("internet");
     const stats = await TimeUsageTool.getAppTimeUsageStats(uid, null, apps, begin, end, null, true);
     
     await Promise.all(apps.map(async (app) => {

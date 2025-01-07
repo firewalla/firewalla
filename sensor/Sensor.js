@@ -41,8 +41,12 @@ let Sensor = class {
     this.config = config ? JSON.parse(JSON.stringify(config)) : {};
 
     sem.on(Message.MSG_DEBUG, event => {
-      if (event.name == this.constructor.name && event.data == 'config') {
-        log.info('Current config', this.config)
+      if (event.name == this.constructor.name) {
+        if (event.data == 'config') {
+          log.info('Current config', this.config)
+        } else if (event.data == 'runJob') {
+          this.job().catch(err => log.error(`Failed to run job`, err))
+        }
       }
     })
   }
