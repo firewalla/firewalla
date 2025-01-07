@@ -906,6 +906,9 @@ class PolicyManager2 {
   }
 
   async enforceAllPolicies() {
+    const start = Date.now();
+    const isReboot = await rclient.getAsync(Constants.REDIS_KEY_RUN_REBOOT) == "1";
+
     const rules = await this.loadActivePoliciesAsync({includingDisabled : 1});
 
     const [routeRules, inboundBlockInternetRules, inboundAllowInternetRules, inboundBlockIntranetRules, inboundAllowIntranetRules,
@@ -985,6 +988,8 @@ class PolicyManager2 {
     log.forceInfo(">>>>>==== All policy rules are enforced ====<<<<<", otherRules.length);
 
     await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'done')
+    const end = Date.now();
+    await rclient.setAsync(Constants.REDIS_KEY_POLICY_ENFORCE_SPENT, JSON.stringify({spend: (end-start)/1000, reboot: isReboot, ts: end/1000}));
 
     const event = {
       type: 'Policy:AllInitialized',
