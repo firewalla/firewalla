@@ -173,6 +173,12 @@ class HostTool {
     return rclient.hmsetAsync(key, hash);
   }
 
+  async getPropertyInMAC(mac, field) {
+    const key = this.getMacKey(mac);
+
+    return rclient.hgetAsync(key, field);
+  }
+
   deleteKeysInMAC(mac, keys) {
     const key = this.getMacKey(mac);
     return rclient.hdelAsync(key, keys);

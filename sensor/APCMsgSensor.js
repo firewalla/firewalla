@@ -42,10 +42,13 @@ const { getUniqueTs } = require('../net2/FlowUtil.js')
 const SUPPORTED_RULE_TYPES = ["device", "tag", "network", "intranet"];
 const Ipset = require('../net2/Ipset.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
+const OUI_FILE_PATH = "/usr/share/nmap/nmap-mac-prefixes";
 
 
 const Sensor = require('./Sensor.js').Sensor;
 const sl = require('./SensorLoader.js');
+const fs = require('fs');
+const readline = require('readline');
 
 class APCMsgSensor extends Sensor {
 
@@ -180,6 +183,64 @@ class APCMsgSensor extends Sensor {
         log.error(`Failed to sync all rules to fwapc`, err.message);
       });
     });
+
+    sem.on("EnrichWlanVendor", async (event) => {
+      let mac = event.mac;
+      let vendor = event.vendor;
+      if (!mac || !vendor)
+        return;
+      mac = mac.toUpperCase();
+      log.info(`Enriching wlanVendor info for host ${mac} with vendor ${vendor}`);
+      
+      let wlanVendor = await hostTool.getPropertyInMAC(mac, "wlanVendor");
+      if (wlanVendor) {
+        log.info(`Host ${mac} already has wlanVendor info ${wlanVendor}`)
+        return;
+      }
+      const ouiMap = await this.parseOUIFileStream(OUI_FILE_PATH);
+      const vendorName = await this.lookupVendorInfo(ouiMap, vendor);
+      if (vendorName) {
+        log.info(`Host ${mac} has wlanVendor info ${vendorName}`);
+        await hostTool.updateKeysInMAC(mac, {wlanVendor: vendorName});
+      }
+    });
+
+    await this.enrichWlanVendorForAllHosts();
+
+    setInterval(this.enrichWlanVendorForAllHosts.bind(this), 3600 * 1000); // every hour
+  }
+
+  async enrichWlanVendorForAllHosts() {
+    log.info("Enriching wlanVendor info for all hosts");
+    const ouiMap = await this.parseOUIFileStream(OUI_FILE_PATH);
+    const staStatus = await fwapc.getAllSTAStatus().catch((err) => {
+      log.error(`Failed to get STA status from fwapc`, err.message);
+      return null;
+    });
+    if (_.isObject(staStatus)) {
+      for (const [mac, staInfo] of Object.entries(staStatus)) {
+        const upcaseMac = mac.toUpperCase();
+        if (!staInfo.vendor)
+          continue;
+        let isMacExists = await hostTool.macExists(upcaseMac);
+        if (!isMacExists) {
+          log.info(`Host ${upcaseMac} does not exist in HostManager, skip enriching wlanVendor info`);
+          continue;
+        }
+        log.info(`Host ${upcaseMac} exists in HostManager, enriching wlanVendor info ${staInfo.vendor}`);
+        let wlanVendor = await hostTool.getPropertyInMAC(upcaseMac, "wlanVendor");
+        if (wlanVendor) {
+          continue;
+        }
+
+        const vendorName = await this.lookupVendorInfo(ouiMap, staInfo.vendor);
+        if (vendorName) {
+          log.info(`Host ${upcaseMac} has wlanVendor info ${vendorName}`);
+          await hostTool.updateKeysInMAC(upcaseMac, {wlanVendor: vendorName});
+        }
+      }
+    }
+
   }
 
   isAPCSupportedRule(rule) {
@@ -327,7 +388,8 @@ class APCMsgSensor extends Sensor {
           "ssid": "MelvinWifi",
           "ts": 1723433071,
           "txRate": 309,
-          "txnss": 2
+          "txnss": 2,
+          "vendor": "0x0017F20A 0x00904C04 0x00101802 0x0050F202"
         }
       }
     */
@@ -344,10 +406,71 @@ class APCMsgSensor extends Sensor {
         if (!groupId && !dvlanId) // if dynamic vlan id is set and group id is not set, the station belongs to a microsegment that does not map to a group, do not add to group of the ssid's default segment
           groupId = this.ssidGroupMap[uuid] && this.ssidGroupMap[uuid].getUniqueId();
         await this.updateHostSSID(mac, uuid, groupId);
+
+        const vendor = _.get(msg, ["station", "vendor"]);
+        if (vendor) {
+          sem.emitEvent({
+            type: 'EnrichWlanVendor',
+            toProcess: 'FireMain',
+            mac: mac.toUpperCase(),
+            vendor: vendor
+          });
+        }
       }
     }).catch((err) => {
       log.error(`Failed to process STA update message: ${msg}`, err.message);
     });
+  }
+
+  async parseOUIFileStream(filePath) {
+    const ouiMap = new Map();
+  
+    try {
+      const fileStream = fs.createReadStream(filePath);
+  
+      const rl = readline.createInterface({
+        input: fileStream,
+        crlfDelay: Infinity,
+      });
+  
+      for await (const line of rl) {
+        const index = line.indexOf(' ');
+        if (index === -1) {
+          continue;
+        }
+        const oui = line.substring(0, index);
+        const vendorStr = line.substring(index + 1).trim();
+        if (oui && vendorStr) {
+          const ouiKey = parseInt(oui, 16); // covert OUI to integer key
+          ouiMap.set(ouiKey, vendorStr);
+        }
+      }
+  
+      console.log(`Parsed ${ouiMap.size} OUI entries successfully.`);
+      return ouiMap;
+    } catch (err) {
+      console.error('Error reading or parsing the OUI file:', err);
+      return null;
+    }
+  }
+
+  async lookupVendorInfo(ouiMap, vendor) {
+
+    if (!ouiMap || !vendor)
+      return null;
+    const hexVendorInfo = vendor.split(' ');
+
+    if (hexVendorInfo.length >= 1) {
+      const hexVendor = hexVendorInfo[0].substring(0, 8); // the first vendor info is the most significant, consider the 0x prefix
+      const ouiKey = parseInt(hexVendor, 16); // covert OUI to integer key
+      if (ouiKey) {
+        const vendorStr = ouiMap.get(ouiKey);
+        if (vendorStr) {
+          return vendorStr;
+        }
+      }
+    }
+    return null;
   }
 
   async updateHostSSID(mac, uuid, groupId) {
