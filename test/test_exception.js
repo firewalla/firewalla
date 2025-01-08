@@ -20,16 +20,6 @@ let assert = chai.assert;
 
 let sample = require('./sample_data');
 
-// let Spoof = require('../net2/Spoofer');
-// let spoof = new Spoof("eth0", true, true);
-
-let redis = require('redis');
-let rclient = redis.createClient();
-
-let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
-
 let AlarmManager2 = require('../alarm/AlarmManager2.js')
 let alarmManager2 = new AlarmManager2();
 

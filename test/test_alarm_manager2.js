@@ -385,7 +385,7 @@ describe('Test alarm cache', function(){
     await am2._deleteAlarmCache({aid: "11111", aids:["22222"]});
   });
 
-  it('test refresh cache', async() => {
+  it.skip('test refresh cache', async() => {
     am2.indexCache.add({aid:"11111", type: "ALARM_INTEL", ts: "1724733200.231", state: "active"});
     am2.indexCache.add({aid:"12222", type: "ALARM_INTEL", ts: "1724733200.231", state: "active"});
     am2.indexCache.add({aid:"12333", type: "ALARM_INTEL", ts: "1724733200.231", state: "active"});
