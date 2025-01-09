@@ -26,12 +26,14 @@ const FireRouter = require('../net2/FireRouter.js');
 const Config = require('../net2/config.js');
 const extensionManager = require('./ExtensionManager.js');
 const _ = require('lodash');
+const Constants = require('../net2/Constants.js');
 
 class PcapPlugin extends Sensor {
 
   async apiRun() {
     extensionManager.onCmd(`${this.getFeatureName()}:restart`, async (msg, data) => {
       const enabled = Config.isFeatureOn(this.getFeatureName());
+      try {await extensionManager._precedeRecord(msg.id, {origin: {enabled: enabled}})} catch(err) {};
       if (enabled) {
         await this.restart().catch((err) => {
           log.error(`Failed to restart ${this.getFeatureName()}`, err.message);
@@ -52,16 +54,27 @@ class PcapPlugin extends Sensor {
     this.enabled = false;
     this.listenInterfaces = [];
     this.hookFeature(this.getFeatureName());
-    const restartJob = new scheduler.UpdateJob(this.restart.bind(this), 5000);
+    this.restartJob = new scheduler.UpdateJob(this.restart.bind(this), 5000);
     await this.initLogProcessing();
     sem.on(Message.MSG_PCAP_RESTART_NEEDED, (event) => {
       if (this.enabled) {
         log.info(`Received event ${Message.MSG_PCAP_RESTART_NEEDED}, will restart pcap tool ${this.constructor.name}`);
-        restartJob.exec().catch((err) => {
+        this.restartJob.exec().catch((err) => {
           log.error(`Failed to restart pcap job ${this.constructor.name}`, err.message);
         });
       }
     });
+
+    Config.onFeature(Constants.FEATURE_LOCAL_FLOW, (feature, status) => {
+      if (feature !== Constants.FEATURE_LOCAL_FLOW)
+        return;
+      if (this.enabled) {
+        log.info(`Received feature change event ${feature} ${status}, will restart pcap tool ${this.constructor.name}`);
+        this.restartJob.exec().catch((err) => {
+          log.error(`Failed to restart pcap job ${this.constructor.name}`, err.message);
+        });
+      }
+    })
   }
 
   // this will be invoked only once when the class is loaded
@@ -73,7 +86,7 @@ class PcapPlugin extends Sensor {
   async globalOn() {
     this.enabled = true;
     log.info(`Pcap plugin ${this.getFeatureName()} is enabled`);
-    await this.restart().catch((err) => {
+    await this.restartJob.exec().catch((err) => {
       log.error(`Failed to start ${this.constructor.name}`, err.message);
     });
   }

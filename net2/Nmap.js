@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -13,13 +13,29 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-var ip = require('ip');
+const log = require('./logger.js')(__filename);
 
+const net = require('net')
 const util = require('util');
 
+const { buildDeferred } = require('../util/asyncNative.js')
 const Firewalla = require('./Firewalla.js');
 const networkTool = require('./NetworkTool.js')();
-const Promise = require('bluebird');
+const Message = require('../net2/Message.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+const SimpleCache = require('../util/SimpleCache.js')
+
+const foundCache = new SimpleCache("foundCache", 60*10);
+const notFoundCache = new SimpleCache("notFoundCache", 60);
+sem.on(Message.MSG_MAPPING_IP_MAC_DELETED, event => {
+  const { ip, mac, fam } = event
+  if (mac && ip && fam == 6) {
+    if (foundCache.lookup(ip) == mac)
+      delete foundCache.cache[ip]
+    if (notFoundCache.lookup(ip) == mac)
+      delete notFoundCache.cache[ip]
+  }
+})
 
 var debugging = false;
 // var log = function () {
@@ -27,8 +43,6 @@ var debugging = false;
 //         log.info(Array.prototype.slice.call(arguments));
 //     }
 // };
-
-let log = require('./logger.js')(__filename, 'info');
 
 let xml2jsonBinary =
   Firewalla.getFirewallaHome() +
@@ -39,8 +53,21 @@ module.exports = class {
   // ID can be port
   constructor(range, debug) {
     this.range = range;
-    this.scanQ = [];
     debugging = debug;
+    this.scanQ = [];
+    this.scanning = false;
+
+    sem.on('nmap:queue:reset', async () => {
+      try {
+        log.info('Reseting queue', this.scanQ.length)
+        this.scanQ = []
+        if (this.process) {
+          this.process.kill()
+        }
+      } catch(err) {
+        log.error('Failed to reset queue', err)
+      }
+    })
   }
 
   parsePort(hostuid, portjson) {
@@ -60,91 +87,109 @@ module.exports = class {
     return port;
   }
 
-  scanQueue(obj) {
-    if (obj) {
-      this.nmapScan(obj.cmdline, true, (err, hosts, ports) => {
-        obj.callback(err, hosts, ports);
-        if (this.scanQ.length) log.info('NMAP:ScanQUEUE', this.scanQ);
-        this.scanQueue(this.scanQ.pop());
-      });
+  async scanQueue() {
+    if (this.scanning || !this.scanQ.length) return
+
+    const job = this.scanQ[0]
+    if (job) {
+      this.scanning = true
+      try {
+        const hosts = await util.promisify(this.nmapScan).bind(this)(job.cmd, true)
+        log.verbose(`job ${job.id} done`, hosts)
+        job.deferred.resolve(hosts)
+      } catch(err) {
+        log.error(`Job ${job.id} failed`, err);
+        job.deferred.resolve([])
+      } finally {
+        this.scanQ.shift()
+        this.scanning = false
+        this.scanQueue()
+      }
+    }
+  }
+
+  createJob(obj) {
+    const job = this.scanQ.find(j => j.id == obj.id)
+    if (job)
+      return job
+    else {
+      log.verbose(`creating job ${obj.id}`)
+      this.scanQ.push(obj)
+      obj.deferred = buildDeferred()
+      this.scanQueue()
+      return obj
     }
   }
 
   async neighborSolicit(ipv6Addr) {
-    return new Promise((resolve, reject) => {
-      if (ip.isV4Format(ipv6Addr) || !ip.isV6Format(ipv6Addr)) {
-        resolve(null);
+    let _mac = foundCache.lookup(ipv6Addr);
+    if (_mac != null) {
+      return _mac
+    }
+    const notFoundRecently = notFoundCache.lookup(ipv6Addr);
+    if (notFoundRecently) {
+      log.verbose(ipv6Addr, 'not found, skip')
+      return null
+    }
+
+    if (!net.isIPv6(ipv6Addr)) return
+
+    const cmd = util.format('sudo timeout 5s nmap -6 -PR -sn -n %s -oX - | %s', ipv6Addr, xml2jsonBinary);
+
+    const jobID = 'solicit-' + ipv6Addr
+
+    const job = this.createJob({ id: jobID, cmd, })
+    const hosts = await job.deferred.promise
+
+    for (let i in hosts) {
+      const host = hosts[i];
+      if (host.mac) {
+        foundCache.insert(ipv6Addr, host.mac)
+        return host.mac
       }
-  
-      const cmd = util.format('sudo timeout 1200s nmap -6 -PR -sn %s -oX - | %s', ipv6Addr, xml2jsonBinary);
-      log.info('Running neighbor solicitation: ', cmd);
-  
-      this.scanQ.push({cmdline: cmd, fast: true, callback: (err, hosts, ports) => {
-        if (err) {
-          reject(err);
-        } else {
-          for (let i in hosts) {
-            const host = hosts[i];
-            if (host.mac) {
-              resolve(host.mac);
-              return;
-            }
-          }
-          resolve(null);
-        }
-      }});
-  
-      let obj = this.scanQ.pop();
-      this.scanQueue(obj);
-    })
+    }
+    notFoundCache.insert(ipv6Addr, true)
+    return null
   }
 
-  scan(range /*Must be v4 CIDR*/, fast, callback) {
-    if (!range || !ip.isV4Format(range.split('/')[0])) {
-      callback(null, [], []);
-      return;
+  async scanAsync(range /*Must be v4 CIDR*/, fast) {
+    if (!range || !net.isIPv4(range.split('/')[0])) {
+      return []
     }
 
     try {
       range = networkTool.capSubnet(range)
     } catch (e) {
       log.error('Nmap:Scan:Error', range, fast, e);
-      callback(e);
-      return;
+      throw e
     }
 
-    let cmdline = fast
+    const cmd = fast
       ? util.format(
-          'sudo timeout 1200s nmap -sn -PO --host-timeout 30s  %s -oX - | %s',
+          'sudo timeout 1200s nmap -sn -n -PO --host-timeout 30s  %s -oX - | %s',
           range,
           xml2jsonBinary
         )
       : util.format(
-          'sudo timeout 1200s nmap -sU --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s',
+          'sudo timeout 1200s nmap -sU -n --host-timeout 200s --script nbstat.nse -p 137 %s -oX - | %s',
           range,
           xml2jsonBinary
         );
 
-    log.info('Running commandline: ', cmdline);
-
     if (this.scanQ.length > 3) {
-      callback('Queuefull', null, null);
       log.info('======================= Warning Previous instance running====');
-      return;
+      throw new Error('Queue full')
     }
 
-    this.scanQ.push({cmdline: cmdline, fast: fast, callback: callback});
+    const jobID = (fast ? 'fast-' : 'slow-') + range
+    const job = this.createJob({ id: jobID, cmd })
+    const hosts = await job.deferred.promise
 
-    let obj = this.scanQ.pop();
-    this.scanQueue(obj);
+    return hosts
   }
 
-  // ports are not returned
-  scanAsync(range, fast) {
-    return util.promisify(this.scan).bind(this)(range, fast)
-  }
-
-  nmapScan(cmdline, requiremac, callback) {
+  nmapScan(cmdline, requiremac, callback = ()=>{}) {
+    log.info('Running commandline:', cmdline);
     this.process = require('child_process').exec(
       cmdline,
       (err, stdout, stderr) => {
@@ -201,17 +246,14 @@ module.exports = class {
                     */
 
             let ipaddr = '';
-            for (let h in hostjson['address']) {
-              let addr = hostjson['address'][h];
+            for (const addr of hostjson['address']) {
               if (addr['addrtype'] == 'ipv4') {
                 host.ipv4Addr = addr.addr;
                 ipaddr = addr.addr;
               } else if (addr['addrtype'] == 'mac') {
-                host.mac = addr.addr;
-                if (addr.vendor != null) {
+                host.mac = addr.addr && addr.addr.toUpperCase();
+                if (addr.vendor) {
                   host.macVendor = addr.vendor;
-                } else {
-                  host.macVendor = 'Unknown';
                 }
               }
             }
@@ -285,8 +327,8 @@ module.exports = class {
         callback(null, hosts, ports);
       }
     );
-    this.process.on('close', (code, signal) => {
-      log.debug('NMAP Closed');
+    this.process.on('exit', (code, signal) => {
+      log.debug('NMAP exited with', code, signal);
       this.process = null;
     });
   }
