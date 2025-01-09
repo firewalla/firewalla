@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -87,8 +87,7 @@ class NewDeviceHook extends Hook {
           if (name) hostObj[skey] = name;
 
           const host = await hostManager.getHostAsync(mac)
-          await host.update(hostObj, true)
-          await host.save('localDomain')
+          await host.update(hostObj, true, true)
           this.messageBus.publish("Host:Updated", mac, host.o);
           return;
         }

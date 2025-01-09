@@ -359,10 +359,10 @@ describe('Test applyPolicy', function(){
     npm.networkProfiles["88888888-4881-4881-4881-488148812888"] = new NetworkProfile({uuid: "88888888-4881-4881-4881-488148812888"});
     npm.networkProfiles["99999999-4881-4881-4881-488148812999"] = new NetworkProfile({uuid: "99999999-4881-4881-4881-488148812999"});
     tagManager.tags['88']= new Tag({uid: 88, name: '', createTs: currentTs});
-    await rclient.hsetAsync('host:mac:20:6D:31:01:2B:88', 'mac', '20:6D:31:01:2B:88', 'intf', '88888888-4881-4881-4881-488148812888', 'lastActiveTimestamp', currentTs);
-    await rclient.hsetAsync('policy:mac:20:6D:31:01:2B:88', 'tags', '["88"]', 'monitor', false);
-    await rclient.hsetAsync('host:mac:20:6D:31:01:2B:89', 'mac', '20:6D:31:01:2B:89', 'intf', '99999999-4881-4881-4881-488148812999', 'lastActiveTimestamp', currentTs);
-    await rclient.hsetAsync('policy:mac:20:6D:31:01:2B:89', 'monitor', false);
+    await rclient.hmsetAsync('host:mac:20:6D:31:01:2B:88', 'mac', '20:6D:31:01:2B:88', 'intf', '88888888-4881-4881-4881-488148812888', 'lastActiveTimestamp', currentTs);
+    await rclient.hmsetAsync('policy:mac:20:6D:31:01:2B:88', 'tags', '["88"]', 'monitor', false);
+    await rclient.hmsetAsync('host:mac:20:6D:31:01:2B:89', 'mac', '20:6D:31:01:2B:89', 'intf', '99999999-4881-4881-4881-488148812999', 'lastActiveTimestamp', currentTs);
+    await rclient.hmsetAsync('policy:mac:20:6D:31:01:2B:89', 'monitor', false);
     this.hm.hostsdb['host:mac:20:6D:31:01:2B:88'] = new Host({mac: '20:6D:31:01:2B:88', ipv4Addr: '10.88.1.8', intf:'88888888-4881-4881-4881-488148812888', lastActiveTimestamp: currentTs}, true);
     this.hm.hostsdb['host:mac:20:6D:31:01:2B:88'].policy = {tags:["88"],monitor: false};
     this.hm.hostsdb['host:mac:20:6D:31:01:2B:89'] = new Host({mac: '20:6D:31:01:2B:89', ipv4Addr: '10.88.1.9', intf:'99999999-4881-4881-4881-488148812999', lastActiveTimestamp: currentTs}, true);

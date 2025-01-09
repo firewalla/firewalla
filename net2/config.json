@@ -638,6 +638,9 @@
         "expires": 3600,
         "count": 10000
       },
+      "host:ip4": { "expires": 2592000 },
+      "host:ip6": { "expires": 2592000 },
+      "host:mac": { "expires": 31536000 },
       "digitalfence": {
         "expires": 3600
       },
