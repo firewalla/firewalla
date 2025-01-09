@@ -501,14 +501,16 @@ class OldDataCleanSensor extends Sensor {
   }
 
   async deleteObsoletedData() {
-    await rclient.unlinkAsync('flow:global:recent');
+    const patterns = [/^flow:tag:.*:recent$/, /^flow:intf:.*:recent$/, /^stats:hour:/]
 
-    const patterns = ['flow:tag:*:recent', 'flow:intf:*:recent', 'stats:hour:*']
-    for (const pattern of patterns) {
-      const keys = await rclient.scanResults(pattern)
-      if (keys.length)
-        await rclient.unlinkAsync(keys)
-    }
+    const batch = [ ['unlink', 'flow:global:recent'] ]
+    await rclient.scanAll(null, async (keys) => {
+      for (const key of keys) {
+        if (patterns.some(p => key.match(p)))
+          batch.push(['unlink', key])
+      }
+    })
+    await rclient.pipelineAndLog(batch)
   }
 
   async cleanupRedisSetCache(key, maxCount) {
