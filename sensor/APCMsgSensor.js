@@ -47,8 +47,7 @@ const OUI_FILE_PATH = "/usr/share/nmap/nmap-mac-prefixes";
 
 const Sensor = require('./Sensor.js').Sensor;
 const sl = require('./SensorLoader.js');
-const fs = require('fs');
-const readline = require('readline');
+const execAsync = require('child-process-promise').exec;
 
 class APCMsgSensor extends Sensor {
 
@@ -197,8 +196,7 @@ class APCMsgSensor extends Sensor {
         log.info(`Host ${mac} already has wlanVendor info ${wlanVendor}`)
         return;
       }
-      const ouiMap = await this.parseOUIFileStream(OUI_FILE_PATH);
-      const vendorName = await this.lookupVendorInfo(ouiMap, vendor);
+      const vendorName = await this.lookupVendorInfo(vendor);
       if (vendorName) {
         log.info(`Host ${mac} has wlanVendor info ${vendorName}`);
         await hostTool.updateKeysInMAC(mac, {wlanVendor: vendorName});
@@ -212,7 +210,6 @@ class APCMsgSensor extends Sensor {
 
   async enrichWlanVendorForAllHosts() {
     log.info("Enriching wlanVendor info for all hosts");
-    const ouiMap = await this.parseOUIFileStream(OUI_FILE_PATH);
     const staStatus = await fwapc.getAllSTAStatus().catch((err) => {
       log.error(`Failed to get STA status from fwapc`, err.message);
       return null;
@@ -233,7 +230,7 @@ class APCMsgSensor extends Sensor {
           continue;
         }
 
-        const vendorName = await this.lookupVendorInfo(ouiMap, staInfo.vendor);
+        const vendorName = await this.lookupVendorInfo(staInfo.vendor);
         if (vendorName) {
           log.info(`Host ${upcaseMac} has wlanVendor info ${vendorName}`);
           await hostTool.updateKeysInMAC(upcaseMac, {wlanVendor: vendorName});
@@ -422,54 +419,91 @@ class APCMsgSensor extends Sensor {
     });
   }
 
-  async parseOUIFileStream(filePath) {
-    const ouiMap = new Map();
-  
-    try {
-      const fileStream = fs.createReadStream(filePath);
-  
-      const rl = readline.createInterface({
-        input: fileStream,
-        crlfDelay: Infinity,
-      });
-  
-      for await (const line of rl) {
-        const index = line.indexOf(' ');
-        if (index === -1) {
-          continue;
-        }
-        const oui = line.substring(0, index);
-        const vendorStr = line.substring(index + 1).trim();
-        if (oui && vendorStr) {
-          const ouiKey = parseInt(oui, 16); // covert OUI to integer key
-          ouiMap.set(ouiKey, vendorStr);
-        }
-      }
-  
-      console.log(`Parsed ${ouiMap.size} OUI entries successfully.`);
-      return ouiMap;
-    } catch (err) {
-      console.error('Error reading or parsing the OUI file:', err);
+  async lookupVendorInfo(vendor) {
+    if (!vendor)
+      return null;
+
+    let vendorStr = vendor.trim();
+    const miniVendorLen = 6; // minimum vendor length to match vendor info in OUI file
+    if (vendorStr.length < miniVendorLen) {
+      log.info(`Vendor info ${vendor} is too short, skip lookup`);
       return null;
     }
-  }
-
-  async lookupVendorInfo(ouiMap, vendor) {
-
-    if (!ouiMap || !vendor)
-      return null;
     const hexVendorInfo = vendor.split(' ');
 
-    if (hexVendorInfo.length >= 1) {
-      const hexVendor = hexVendorInfo[0].substring(0, 8); // the first vendor info is the most significant, consider the 0x prefix
-      const ouiKey = parseInt(hexVendor, 16); // covert OUI to integer key
-      if (ouiKey) {
-        const vendorStr = ouiMap.get(ouiKey);
-        if (vendorStr) {
-          return vendorStr;
+    let firstHexVendor = hexVendorInfo[0].trim().toUpperCase(); // the first vendor info is the most significant, omit the 0x prefix
+    if (firstHexVendor.length < miniVendorLen) {
+      log.info(`The first vendor id ${firstHexVendor} is too short, skip lookup`);
+      return null;
+    }
+    firstHexVendor = firstHexVendor.startsWith('0X') ? firstHexVendor.substring(2) : firstHexVendor;
+    if (firstHexVendor.length < miniVendorLen) {
+      log.info(`The first vendor id ${firstHexVendor} is too short after removing 0x prefix, skip lookup`);
+      return null;
+    }
+    const baseVendor = firstHexVendor.substring(0, miniVendorLen);
+    const vendorBuff = Buffer.from(firstHexVendor); // used for best match
+    const cmd = `grep -e "^${baseVendor}" ${OUI_FILE_PATH}`;
+    log.info(`Looking up vendor info for ${vendor} with command ${cmd}`);
+
+    let outputLines = await execAsync(cmd).then((result) => result.stdout && result.stdout.split("\n").filter(l => l && l.length > 0) || []).catch((err) => {
+      if (err) {
+        log.error(`Failed to lookup vendor info for ${vendor}`, err.message);
+        return null;
+      }
+    });
+    if (outputLines.length == 0) {
+        log.info(`No vendor info found for ${baseVendor}`);
+        return null;
+    }
+
+    let fistMatchLine = outputLines[0].trim();
+    let index = fistMatchLine.indexOf(' ');
+    let maxMatch = baseVendor.length;
+    let vendorName = fistMatchLine.substring(index + 1).trim();
+
+    if (outputLines.length == 1) {
+      log.info(`The only vendor info for ${baseVendor} is ${vendorName}`);
+       return vendorName;
+    } else if (outputLines.length > 1) {
+      log.info(`Multiple vendor info found for ${baseVendor}, try to find the best match`);
+
+      for (let line of outputLines) {
+        log.info(`Checking vendor info ${line}`);
+        line = line.trim();
+        if (line.length == 0) {
+          log.info('Skipping empty line');
+          continue;
+        }
+        index = line.indexOf(' ');
+        if (index > 0) {
+          const ouiBuff = Buffer.from(line.substring(0, index));
+          const num = Math.min(ouiBuff.length, vendorBuff.length)
+          for (let i=maxMatch-1; i<num; i++) {
+            if (vendorBuff[i] != ouiBuff[i]) {
+              const match = i;
+              log.info(`current max match ${maxMatch}, new match ${match}`);
+              if (maxMatch < match) {
+                maxMatch = match;
+                vendorName = line.substring(index + 1).trim();
+              }
+              break;
+            }
+            if (i == num-1) {
+              const match = num;
+              log.info(`current max match ${maxMatch}, new match ${match}`);
+              if (maxMatch < match) {
+                maxMatch = match;
+                vendorName = line.substring(index + 1).trim();
+              }
+            }
+          }
         }
       }
+      log.info(`The best match vendor info for ${vendorBuff} is ${vendorName}`);
+      return vendorName;
     }
+
     return null;
   }
 
