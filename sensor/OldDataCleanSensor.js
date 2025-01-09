@@ -125,10 +125,6 @@ class OldDataCleanSensor extends Sensor {
     return count;
   }
 
-  getKeys(keyPattern) {
-    return rclient.scanResults(keyPattern);
-  }
-
   async regularClean(fullClean = false) {
     let wanAuditDropCleaned = false;
     let batch = []
@@ -139,7 +135,11 @@ class OldDataCleanSensor extends Sensor {
             continue;
           if (filterFunc(key)) {
             if (customCleanerFunc) {
-              await customCleanerFunc(type, key, batch)
+              try {
+                await customCleanerFunc(type, key, batch)
+              } catch(err) {
+                log.error('Error executing customized clean', type, key, err)
+              }
             } else if (type === "auditDrop" && key.startsWith(`audit:drop:${Constants.NS_INTERFACE}:`)) {
               let cntE = 0;
               let cntC = 0;
@@ -338,33 +338,32 @@ class OldDataCleanSensor extends Sensor {
     try {
       let activeIndex = await rclient.zrangebyscoreAsync(activeKey, '-inf', '+inf');
       let archiveIndex = await rclient.zrangebyscoreAsync(archiveKey, '-inf', '+inf');
-      let aliveAlarms = await rclient.scanResults("_alarm:*");
-      let aliveIdSet = new Set(aliveAlarms.map(key => key.substring(7))); // remove "_alarm:" prefix
+      const batch = []
 
-      let activeToRemove = activeIndex.filter(i => !aliveIdSet.has(i));
-      if (activeToRemove.length) await rclient.zremAsync(activeKey, activeToRemove);
-      let archiveToRemove = archiveIndex.filter(i => !aliveIdSet.has(i));
-      if (archiveToRemove.length) await rclient.zremAsync(archiveKey, archiveToRemove);
-    }
-    catch(err) {
+      // exists returns a numbers of all existing with provided list, so this has to be done separately
+      const activeData = await rclient.pipelineAndLog(activeIndex.map(id => ['exists', '_alarm:'+id]))
+      for (let i in activeIndex) {
+        if (!activeData[i]) batch.push(['zrem', activeKey, activeIndex[i]])
+      }
+      const archiveData = await rclient.pipelineAndLog(archiveIndex.map(id => ['exists', '_alarm:'+id]))
+      for (let i in archiveIndex) {
+        if (!archiveData[i]) batch.push(['zrem', archiveKey, archiveIndex[i]])
+      }
+      await rclient.pipelineAndLog(batch)
+    } catch(err) {
       log.error("Error cleaning alarm indexes", err);
     }
   }
 
-  async cleanBrokenPolicies() {
-    try {
-      let keys = await rclient.scanResults("policy:[0-9]*");
-      for (const key of keys) {
-        let policy = await rclient.hgetallAsync(key);
-        let policyKeys = Object.keys(policy);
-        if (policyKeys.length == 1 && policyKeys[0] == 'pid') {
-          await rclient.zremAsync("policy_active", policy.pid);
-          await rclient.unlinkAsync(key);
-          log.info("Remove broken policy:", policy.pid);
-        }
-      }
-    } catch(err) {
-      log.error("Failed to clean broken policies", err);
+  async cleanBrokenPolicy(type, key, batch) {
+    let policy = await rclient.hgetallAsync(key);
+    let policyKeys = Object.keys(policy);
+    if (policyKeys.length == 1 && policyKeys[0] == 'pid') {
+      batch.push(
+        ['zrem', "policy_active", policy.pid],
+        ['unlink', key],
+      )
+      log.info("Remove broken policy:", policy.pid);
     }
   }
 
@@ -436,7 +435,6 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanAlarmIndex();
       await this.cleanExceptions();
       await this.cleanSecurityIntelTracking();
-      await this.cleanBrokenPolicies();
 
       await this.countIntelData()
 
@@ -621,6 +619,7 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("host:ip6", key => key.startsWith('host:ip6:'), false, this.cleanHostData.bind(this))
     this._registerFilterFunction("host:mac", key => key.startsWith('host:mac:'), false, this.cleanHostData.bind(this))
     this._registerFilterFunction("digitalfence", key => key.startsWith('digitalfence:'), false, this.cleanHostData.bind(this))
+    this._registerFilterFunction("policy", key => key.match(/^policy:[0-9]+/), false, this.cleanBrokenPolicy.bind(this))
   }
 
   _registerFilterFunction(type, filterFunc, fullCleanOnly = false, customCleanerFunc) {
