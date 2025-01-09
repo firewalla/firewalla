@@ -501,7 +501,7 @@ class OSIPlugin extends Sensor {
     try {
       const policy = hostManager.getPolicyFast();
       
-      const profileIds = await hostManager.getAllActiveStrictVPNClients(policy.vpnClient);
+      const profileIds = policy.vpnClient ? await hostManager.getAllActiveStrictVPNClients(policy.vpnClient) : [];
 
       const rules = await pm2.getHighImpactfulRules();
 
