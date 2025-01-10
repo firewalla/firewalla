@@ -1055,11 +1055,23 @@ class SysManager {
       cpuTemperature,
       cpuTemperatureList,
       sss: await sss.getSysInfo(),
+      stats: await this.getStats(),
       publicWanIps,
       publicWanIp6s,
       publicIp: this.publicIp,
       publicIp6s: this.publicIp6s
     }
+  }
+
+  async getStats() {
+    const data = {};
+    try {
+      data.policyEnforceSpent = JSON.parse(await rclient.getAsync(Constants.REDIS_KEY_POLICY_ENFORCE_SPENT));
+    } catch (err) {
+      log.error("Failed to get policy:enforce time", err)
+    }
+
+    return data
   }
 
   isLinkLocal(ip, family) {
