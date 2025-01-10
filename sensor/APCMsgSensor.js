@@ -41,13 +41,16 @@ const pm2 = new PolicyManager2();
 const { getUniqueTs } = require('../net2/FlowUtil.js')
 const SUPPORTED_RULE_TYPES = ["device", "tag", "network", "intranet"];
 const Ipset = require('../net2/Ipset.js');
+
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const OUI_FILE_PATH = "/usr/share/nmap/nmap-mac-prefixes";
 
 
+
 const Sensor = require('./Sensor.js').Sensor;
 const sl = require('./SensorLoader.js');
-const execAsync = require('child-process-promise').exec;
+const WlanVendorInfo = require('../util/WlanVendorInfo.js');
+
 
 class APCMsgSensor extends Sensor {
 
@@ -196,10 +199,15 @@ class APCMsgSensor extends Sensor {
         log.info(`Host ${mac} already has wlanVendor info ${wlanVendor}`)
         return;
       }
-      const vendorName = await this.lookupVendorInfo(vendor);
-      if (vendorName) {
-        log.info(`Host ${mac} has wlanVendor info ${vendorName}`);
-        await hostTool.updateKeysInMAC(mac, {wlanVendor: vendorName});
+      const result = await WlanVendorInfo.lookupWlanVendors([{mac: mac, vendor: vendor}]);
+      if (result && result.length > 0) {
+        const wlanVendorInfo = result.get(mac);
+        if (wlanVendorInfo && wlanVendorInfo.vendorName) {
+          log.info(`Host ${mac} has wlanVendor info ${wlanVendorInfo.vendorName}`);
+          await hostTool.updateKeysInMAC(mac, {wlanVendor: wlanVendorInfo.vendorName});
+        }
+      } else {
+        log.info(`Did not find a valid vendor name for mac ${mac} with vendor ${vendor}`);
       }
     });
 
@@ -214,6 +222,8 @@ class APCMsgSensor extends Sensor {
       log.error(`Failed to get STA status from fwapc`, err.message);
       return null;
     });
+    let needEnrichMacVendorPairs = [];
+
     if (_.isObject(staStatus)) {
       for (const [mac, staInfo] of Object.entries(staStatus)) {
         const upcaseMac = mac.toUpperCase();
@@ -230,10 +240,19 @@ class APCMsgSensor extends Sensor {
           continue;
         }
 
-        const vendorName = await this.lookupVendorInfo(staInfo.vendor);
-        if (vendorName) {
-          log.info(`Host ${upcaseMac} has wlanVendor info ${vendorName}`);
-          await hostTool.updateKeysInMAC(upcaseMac, {wlanVendor: vendorName});
+        needEnrichMacVendorPairs.push({mac: upcaseMac, vendor: staInfo.vendor});
+      }
+    }
+    if (!_.isEmpty(needEnrichMacVendorPairs)) {
+      const result = await WlanVendorInfo.lookupWlanVendors(needEnrichMacVendorPairs);
+      if (result && result.size > 0) {
+        for (const [mac, wlanVendorInfo] of result) {
+          if (wlanVendorInfo && wlanVendorInfo.vendorName) {
+            log.info(`Host ${mac} has wlanVendor info ${wlanVendorInfo.vendorName}`);
+            await hostTool.updateKeysInMAC(mac, {wlanVendor: wlanVendorInfo.vendorName});
+          } else {
+            log.info(`Did not find a valid vendor name for mac ${mac} with vendor ${staInfo.vendor}`);
+          }
         }
       }
     }
@@ -419,93 +438,7 @@ class APCMsgSensor extends Sensor {
     });
   }
 
-  async lookupVendorInfo(vendor) {
-    if (!vendor)
-      return null;
 
-    let vendorStr = vendor.trim();
-    const miniVendorLen = 6; // minimum vendor length to match vendor info in OUI file
-    if (vendorStr.length < miniVendorLen) {
-      log.info(`Vendor info ${vendor} is too short, skip lookup`);
-      return null;
-    }
-    const hexVendorInfo = vendor.split(' ');
-
-    let firstHexVendor = hexVendorInfo[0].trim().toUpperCase(); // the first vendor info is the most significant, omit the 0x prefix
-    if (firstHexVendor.length < miniVendorLen) {
-      log.info(`The first vendor id ${firstHexVendor} is too short, skip lookup`);
-      return null;
-    }
-    firstHexVendor = firstHexVendor.startsWith('0X') ? firstHexVendor.substring(2) : firstHexVendor;
-    if (firstHexVendor.length < miniVendorLen) {
-      log.info(`The first vendor id ${firstHexVendor} is too short after removing 0x prefix, skip lookup`);
-      return null;
-    }
-    const baseVendor = firstHexVendor.substring(0, miniVendorLen);
-    const vendorBuff = Buffer.from(firstHexVendor); // used for best match
-    const cmd = `grep -e "^${baseVendor}" ${OUI_FILE_PATH}`;
-    log.info(`Looking up vendor info for ${vendor} with command ${cmd}`);
-
-    let outputLines = await execAsync(cmd).then((result) => result.stdout && result.stdout.split("\n").filter(l => l && l.length > 0) || []).catch((err) => {
-      if (err) {
-        log.error(`Failed to lookup vendor info for ${vendor}`, err.message);
-        return null;
-      }
-    });
-    if (outputLines.length == 0) {
-        log.info(`No vendor info found for ${baseVendor}`);
-        return null;
-    }
-
-    let fistMatchLine = outputLines[0].trim();
-    let index = fistMatchLine.indexOf(' ');
-    let maxMatch = baseVendor.length;
-    let vendorName = fistMatchLine.substring(index + 1).trim();
-
-    if (outputLines.length == 1) {
-      log.info(`The only vendor info for ${baseVendor} is ${vendorName}`);
-       return vendorName;
-    } else if (outputLines.length > 1) {
-      log.info(`Multiple vendor info found for ${baseVendor}, try to find the best match`);
-
-      for (let line of outputLines) {
-        log.info(`Checking vendor info ${line}`);
-        line = line.trim();
-        if (line.length == 0) {
-          log.info('Skipping empty line');
-          continue;
-        }
-        index = line.indexOf(' ');
-        if (index > 0) {
-          const ouiBuff = Buffer.from(line.substring(0, index));
-          const num = Math.min(ouiBuff.length, vendorBuff.length)
-          for (let i=maxMatch-1; i<num; i++) {
-            if (vendorBuff[i] != ouiBuff[i]) {
-              const match = i;
-              log.info(`current max match ${maxMatch}, new match ${match}`);
-              if (maxMatch < match) {
-                maxMatch = match;
-                vendorName = line.substring(index + 1).trim();
-              }
-              break;
-            }
-            if (i == num-1) {
-              const match = num;
-              log.info(`current max match ${maxMatch}, new match ${match}`);
-              if (maxMatch < match) {
-                maxMatch = match;
-                vendorName = line.substring(index + 1).trim();
-              }
-            }
-          }
-        }
-      }
-      log.info(`The best match vendor info for ${vendorBuff} is ${vendorName}`);
-      return vendorName;
-    }
-
-    return null;
-  }
 
   async updateHostSSID(mac, uuid, groupId) {
     const profile = this.ssidProfiles[uuid];
