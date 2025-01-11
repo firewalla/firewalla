@@ -171,7 +171,9 @@ class DeviceHook extends Hook {
           let newHost = extend({}, host, { ipv6Addr: newIPv6Addr, lastActiveTimestamp: new Date() / 1000 })
 
           log.debug("DeviceHook:IPv6Update:", JSON.stringify(newIPv6Addr));
-          await hostTool.updateMACKey(newHost) // mac
+          const hostManager = new HostManager();
+          const h = await hostManager.getHostAsync(newHost.mac)
+          await h.update(newHost, true, true)
 
           this.messageBus.publish(HOST_UPDATED, host.mac, newHost);
         }
@@ -329,22 +331,17 @@ class DeviceHook extends Hook {
               enrichedHost.name = _.get(networkConfig, ["apc", "assets", mac, "sysConfig", "name"]);
           }
 
-          await hostTool.updateMACKey(enrichedHost);
+          const hostManager = new HostManager();
+          const h = await hostManager.createHost(enrichedHost)
+          if (!sysManager.isMyMac(mac)) {
+            await h.spoof(true);
+          }
 
           if (!event.suppressAlarm) {
             await this.createAlarm(enrichedHost);
           } else {
             log.info("Alarm is suppressed for new device", hostTool.getHostname(enrichedHost));
           }
-          const hostManager = new HostManager();
-          const h = await hostManager.getHostAsync(mac).catch(err => {
-            log.error("Failed to get host after it is detected.");
-          })
-          if (!sysManager.isMyMac(mac)) {
-            await h.spoof(true);
-          }
-          await h.update(enrichedHost, true)
-          await h.save()
 
           this.messageBus.publish("DiscoveryEvent", "Device:Create", mac, enrichedHost);
         } catch (err) {
@@ -407,14 +404,11 @@ class DeviceHook extends Hook {
             }
           }
 
-          await hostTool.updateMACKey(enrichedHost); // mac
-
-
-          log.info("MAC entry is updated with new IP");
-
-          log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
           const hostManager = new HostManager()
           const h = await hostManager.getHostAsync(host.mac)
+          await h.update(enrichedHost, true, true)
+          log.info("MAC entry is updated with new IP", host.ipv4Addr);
+
           if (h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
             await h.spoof(true);
           }
@@ -489,8 +483,6 @@ class DeviceHook extends Hook {
             }
           }
 
-          await hostTool.updateMACKey(enrichedHost);
-
           // Fix to firewalla/firewalla.ios#991
           //
           // This might cause one device disappear from app as the flow/host list on app is
@@ -500,14 +492,13 @@ class DeviceHook extends Hook {
           // which could only be fix once flow is associated with mac address
           await hostTool.removeDupIPv4FromMacEntry(event.oldMac, host.ipv4Addr, host.mac);
 
-          log.info("MAC entry is updated with new IP");
-
-          log.info(`Reload host info for new ip address ${host.ipv4Addr}`);
           const hostManager = new HostManager();
           const h = await hostManager.getHostAsync(host.mac)
+          await h.update(enrichedHost, true, true)
           if (h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
             await h.spoof(true);
           }
+          log.info("MAC entry is updated with new IP", host.ipv4Addr);
 
           this.messageBus.publish(HOST_UPDATED, host.mac, enrichedHost);
         } catch (err) {
@@ -576,11 +567,10 @@ class DeviceHook extends Hook {
 
           const hostManager = new HostManager();
           const h = await hostManager.getHostAsync(mac)
+          await h.update(enrichedHost, true, true)
           if (h && h.isMonitoring() && !sysManager.isMyMac(mac)) {
             await h.spoof(true);
           }
-          await h.update(enrichedHost, true)
-          await h.save()
           // publish device updated event to trigger
           this.messageBus.publish(HOST_UPDATED, mac, h.o);
         })().catch((err) => {

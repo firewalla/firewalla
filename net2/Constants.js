@@ -1,4 +1,4 @@
-/*    Copyright 2020-2024 Firewalla Inc.
+/*    Copyright 2020-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -57,6 +57,7 @@ module.exports = {
   REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG: "app_time_usage_cloud_config",
   REDIS_KEY_HISTORY_MSG_PREFIX: "_hx:msg:",
   REDIS_KEY_ALARM_CACHED: "_alarm:cached", // 0 to disable alarm cache, default on
+  REDIS_KEY_HOST_ACTIVE: 'host:active:mac',
 
   REDIS_HKEY_NSE_DHCP: "dhcp",
   REDIS_HKEY_CONN_OINTF: "oIntf",

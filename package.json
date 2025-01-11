@@ -9,9 +9,9 @@
   },
   "devDependencies": {
     "chai": "^3.5.0",
+    "muk": "^0.5.3",
     "node-pty": "^0.9.0",
-    "nyc": "^15.1.0",
-    "muk": "^0.5.3"
+    "nyc": "^15.1.0"
   },
   "dependencies": {
     "async": "^2.1.1",
@@ -28,7 +28,7 @@
     "debug": "~2.2.0",
     "express": "^4.14.0",
     "flat": "^4.0.0",
-    "heapdump": "^0.3.14",
+    "heapdump": "^0.3.15",
     "i18n": "^0.8.3",
     "ip": "^1.1.2",
     "ip-address": "^6.2.0",

@@ -1,4 +1,4 @@
-/*    Copyright 2021-2024 Firewalla Inc.
+/*    Copyright 2021-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -126,6 +126,8 @@ class Monitorable {
       Object.assign(this.o, raw)
     else
       this.o = raw;
+
+    return Object.keys(raw)
   }
 
   toJson() {
@@ -145,7 +147,7 @@ class Monitorable {
       }
       if (validTags.length) policy[policyKey] = validTags
     }
-    return Object.assign(JSON.parse(JSON.stringify(this.o)), {policy})
+    return JSON.parse(JSON.stringify(Object.assign({}, this.o, {policy})))
   }
 
   getUniqueId() { throw new Error('Not Implemented') }

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -98,7 +98,8 @@ class Host extends Monitorable {
       if (f.isMain() && !noEnvCreation) (async () => {
         this.spoofing = false;
 
-        await this.predictHostNameUsingUserAgent();
+        const nameKeys = await this.predictHostNameUsingUserAgent();
+        await this.save(nameKeys)
 
         await Host.ensureCreateEnforcementEnv(this.o.mac)
 
@@ -120,36 +121,46 @@ class Host extends Monitorable {
     return this.o.mac
   }
 
-  async update(obj, quick = false) {
+  async update(obj, partial = false, save = false) {
     await lock.acquire(`UPDATE_${this.getGUID()}`, async () => {
-      await super.update(obj, quick)
+      const updatedKeys = await super.update(obj, partial)
 
       const name = getPreferredName(this.o);
-      const localDomain = getCanonicalizedDomainname(name.replace(/\s+/g, "."))
-      if (localDomain != this.o.localDomain) {
-        log.verbose('localDomain updated', name, localDomain)
-        this.o.localDomain = localDomain
+      if (name) {
+        const localDomain = getCanonicalizedDomainname(name.replace(/\s+/g, "."))
+        if (localDomain != this.o.localDomain) {
+          log.verbose('localDomain updated', name, localDomain)
+          this.o.localDomain = localDomain
+          updatedKeys.push('localDomain')
+        }
       }
       if (this.o.customizeDomainName) {
         const userLocalDomain = getCanonicalizedDomainname(this.o.customizeDomainName.replace(/\s+/g, "."));
-        if (userLocalDomain != this.o.userLocalDomain)
+        if (userLocalDomain != this.o.userLocalDomain) {
           this.o.userLocalDomain = userLocalDomain
+          updatedKeys.push('userLocalDomain')
+        }
       }
 
-      if (this.o.ipv4) {
+      if (this.o.ipv4 && this.o.ipv4Addr != this.o.ipv4 ) {
         this.o.ipv4Addr = this.o.ipv4;
+        updatedKeys.push('ipv4Addr')
       }
 
       if (f.isMain()) {
-        await this.predictHostNameUsingUserAgent();
-        if (!quick) await this.loadPolicyAsync();
+        const nameKeys = await this.predictHostNameUsingUserAgent();
+        updatedKeys.push(... nameKeys)
       }
 
       for (const f of Host.metaFieldsJson) {
         if (this.o[f]) this[f] = this.o[f]
       }
+
+      if (save) await this.save(updatedKeys)
+
+      return updatedKeys
     }).catch((err) => {
-      log.error(`Failed to update Host ${this.o.mac}`, err.message);
+      log.error(`Failed to update Host ${this.o.mac}`, err.message, obj);
     });
   }
 
@@ -279,7 +290,7 @@ class Host extends Monitorable {
   }
 
   async predictHostNameUsingUserAgent() {
-    if (this.hasBeenGivenName()) return
+    if (this.hasBeenGivenName()) return []
 
     const detect = this.o.detect
     const toSave = []
@@ -292,11 +303,11 @@ class Host extends Monitorable {
       }
     }
 
-    await this.save(toSave)
+    return toSave
   }
 
   hasBeenGivenName() {
-    if (this.o.name == null) {
+    if (!this.o.name) {
       return false;
     }
     if (this.o.name == this.o.ipv4Addr || this.o.name.indexOf("(?)") != -1 || this.o.name == "undefined") {
@@ -311,6 +322,7 @@ class Host extends Monitorable {
 
   static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect', 'openports', 'screenTime' ]
   static metaFieldsNumber = [ 'firstFoundTimestamp', 'lastActiveTimestamp', 'bnameCheckTime', 'spoofingTime', '_identifyExpiration' ]
+  static metaFieldsActiveTS = ['lastActiveTimestamp', 'firstFoundTimestamp']
 
   redisfy() {
     const obj = super.redisfy()
@@ -322,17 +334,16 @@ class Host extends Monitorable {
     return obj
   }
 
-  touch(date) {
-    if (date != null || date <= this.o.lastActiveTimestamp) {
-      return;
+  async save(fields) {
+    await super.save(fields)
+
+    if (!fields
+      || Array.isArray(fields) && _.intersection(fields, Host.metaFieldsActiveTS)
+      || Host.metaFieldsActiveTS.includes(fields) // if string as single key
+    ) {
+      const ts = this.o.lastActiveTimestamp || this.o.firstFoundTimestamp
+      if (ts) await rclient.zaddAsync(Constants.REDIS_KEY_HOST_ACTIVE, ts, this.getGUID())
     }
-    if (date == null) {
-      date = Date.now() / 1000;
-    }
-    this.o.lastActiveTimestamp = date;
-    rclient.hmset("host:mac:" + this.o.mac, {
-      'lastActiveTimestamp': this.o.lastActiveTimestamp
-    });
   }
 
   getAllIPs() {
@@ -494,10 +505,7 @@ class Host extends Monitorable {
 
   async ipAllocation(policy) {
     // those fields should not be used anymore
-    await rclient.hdelAsync("host:mac:" + this.o.mac, "intfIp");
-    await rclient.hdelAsync("host:mac:" + this.o.mac, "staticAltIp");
-    await rclient.hdelAsync("host:mac:" + this.o.mac, "staticSecIp");
-    await rclient.hdelAsync("host:mac:" + this.o.mac, "dhcpIgnore");
+    await rclient.hdelAsync(this.getMetaKey(), "intfIp", "staticAltIp", "staticSecIp", "dhcpIgnore")
 
     dnsmasq.onDHCPReservationChanged(this)
   }
@@ -708,6 +716,7 @@ class Host extends Monitorable {
       await rclient.unlinkAsync(`host:mac:${this.o.mac}`)
       await rclient.unlinkAsync(`neighbor:${this.getGUID()}`);
       await rclient.unlinkAsync(`host:user_agent2:${this.getGUID()}`);
+      await rclient.zremAsync(Constants.REDIS_KEY_HOST_ACTIVE, this.getGUID())
     }
 
     this.ipCache.reset();

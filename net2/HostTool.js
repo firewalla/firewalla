@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,6 +25,7 @@ const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 const Hashes = require('../util/Hashes.js');
 const f = require('./Firewalla.js');
+const Constants = require('./Constants.js');
 
 let instance = null;
 
@@ -150,6 +151,8 @@ class HostTool {
 
     let key = this.getMacKey(hostCopy.mac);
     await rclient.hmsetAsync(key, hostCopy)
+    const ts = hostCopy.lastActiveTimestamp || hostCopy.firstFoundTimestamp
+    if (ts) await rclient.zaddAsync(Constants.REDIS_KEY_hostCopy_ACTIVE, ts, hostCopy.mac)
 
     if(skipUpdatingExpireTime) {
       return;
@@ -199,8 +202,10 @@ class HostTool {
     return "host:mac:" + mac;
   }
 
-  deleteMac(mac) {
-    return rclient.unlinkAsync(this.getMacKey(mac));
+  async deleteMac(mac) {
+    await rclient.unlinkAsync(this.getMacKey(mac));
+    await rclient.zremAsync(Constants.REDIS_KEY_HOST_ACTIVE, mac)
+    return
   }
 
   mergeHosts(oldhost, newhost) {
@@ -292,8 +297,14 @@ class HostTool {
   }
 
   async getAllMACs() {
-    const keys = await rclient.scanResults("host:mac:*");
-    return keys.map(key => key.substring(9)).filter(Boolean);
+    const MACs = await rclient.zrangeAsync(Constants.REDIS_KEY_HOST_ACTIVE, 0, -1);
+    if (MACs.length)
+      return MACs.filter(Boolean);
+    else {
+      // fallback to scan when index is not available yet
+      const keys = await rclient.scanResults("host:mac:*");
+      return keys.map(key => key.substring(9)).filter(Boolean);
+    }
   }
 
   async getAllMACEntries() {
@@ -495,6 +506,7 @@ class HostTool {
       macHost.lastActiveTimestamp = Date.now() / 1000;
       log.info("HostTool:Writing macHost:", mackey, macHost);
       await rclient.hmsetAsync(mackey, macHost)
+      await rclient.zaddAsync(Constants.REDIS_KEY_HOST_ACTIVE, macHost.lastActiveTimestamp, macHost.mac)
       //v6 at times will discver neighbors that not there ...
       //so we don't update last active here
       //macHost.lastActiveTimestamp = Date.now() / 1000;
@@ -506,6 +518,7 @@ class HostTool {
       macHost.firstFoundTimestamp = macHost.lastActiveTimestamp;
       log.info("HostTool:Writing macHost:", mackey, macHost);
       await rclient.hmsetAsync(mackey, macHost)
+      await rclient.zaddAsync(Constants.REDIS_KEY_HOST_ACTIVE, macHost.lastActiveTimestamp, macHost.mac)
     }
 
   }
