@@ -1194,8 +1194,13 @@ class Host extends Monitorable {
 
     json.wifiSD = this.wifiSD
 
-    if (this.o.wlanVendor)
-      json.wlanVendor = this.o.wlanVendor;
+    if (this.o.wlanVendor) {
+      try {
+        json.wlanVendor = JSON.parse(this.o.wlanVendor);
+      } catch (e) {
+        json.wlanVendor = this.o.wlanVendor;
+      }
+    }
 
     return json;
   }

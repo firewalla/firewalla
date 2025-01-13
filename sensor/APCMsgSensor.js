@@ -194,17 +194,18 @@ class APCMsgSensor extends Sensor {
       mac = mac.toUpperCase();
       log.info(`Enriching wlanVendor info for host ${mac} with vendor ${vendor}`);
       
-      let wlanVendor = await hostTool.getPropertyInMAC(mac, "wlanVendor");
+      let wlanVendor = await hostTool.getFieldInMacAsync(mac, "wlanVendor");
       if (wlanVendor) {
         log.info(`Host ${mac} already has wlanVendor info ${wlanVendor}`)
         return;
       }
       const result = await WlanVendorInfo.lookupWlanVendors([{mac: mac, vendor: vendor}]);
-      if (result && result.length > 0) {
-        const wlanVendorInfo = result.get(mac);
-        if (wlanVendorInfo && wlanVendorInfo.vendorName) {
-          log.info(`Host ${mac} has wlanVendor info ${wlanVendorInfo.vendorName}`);
-          await hostTool.updateKeysInMAC(mac, {wlanVendor: wlanVendorInfo.vendorName});
+      if (result && result.size == 1) {
+        const wlanVendorInfoList = result.get(mac);
+        if (wlanVendorInfoList && wlanVendorInfoList.length > 0) {
+          const wlanVendors = wlanVendorInfoList.map(v => v.vendorName);
+          log.info(`Host ${mac} has wlanVendor info ${wlanVendors}`);
+          await hostTool.updateFieldInMacAsync(mac, "wlanVendor", wlanVendors);
         }
       } else {
         log.info(`Did not find a valid vendor name for mac ${mac} with vendor ${vendor}`);
@@ -234,24 +235,26 @@ class APCMsgSensor extends Sensor {
           log.info(`Host ${upcaseMac} does not exist in HostManager, skip enriching wlanVendor info`);
           continue;
         }
-        log.info(`Host ${upcaseMac} exists in HostManager, enriching wlanVendor info ${staInfo.vendor}`);
-        let wlanVendor = await hostTool.getPropertyInMAC(upcaseMac, "wlanVendor");
+        
+        let wlanVendor = await hostTool.getFieldInMacAsync(upcaseMac, "wlanVendor");
         if (wlanVendor) {
+          log.info(`Host ${upcaseMac} already has wlanVendor info ${wlanVendor}`)
           continue;
         }
-
+        log.info(`Host ${upcaseMac} exists in HostManager, enriching wlanVendor info ${staInfo.vendor}`);  
         needEnrichMacVendorPairs.push({mac: upcaseMac, vendor: staInfo.vendor});
       }
     }
-    if (!_.isEmpty(needEnrichMacVendorPairs)) {
+    if (needEnrichMacVendorPairs.length > 0) {
       const result = await WlanVendorInfo.lookupWlanVendors(needEnrichMacVendorPairs);
       if (result && result.size > 0) {
-        for (const [mac, wlanVendorInfo] of result) {
-          if (wlanVendorInfo && wlanVendorInfo.vendorName) {
-            log.info(`Host ${mac} has wlanVendor info ${wlanVendorInfo.vendorName}`);
-            await hostTool.updateKeysInMAC(mac, {wlanVendor: wlanVendorInfo.vendorName});
+        for (const [mac, wlanVendorInfoList] of result) {
+          if (wlanVendorInfoList && wlanVendorInfoList.length > 0) {
+            const wlanVendors = wlanVendorInfoList.map(v => v.vendorName);
+            log.info(`Host ${mac} has wlanVendor info ${wlanVendors}`);
+            await hostTool.updateFieldInMacAsync(mac, "wlanVendor", wlanVendors);
           } else {
-            log.info(`Did not find a valid vendor name for mac ${mac} with vendor ${staInfo.vendor}`);
+            log.info(`Did not find a valid vendor name for mac ${mac}`);
           }
         }
       }

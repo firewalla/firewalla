@@ -6,14 +6,26 @@ const readline = require('readline');
 const OUI_FILE_PATH = "/usr/share/nmap/nmap-mac-prefixes";
 
 class WlanVendorInfo {
-  constructor(fullHexVendor, sigVendorIdBuff) {
-    this.fullHexVendor = fullHexVendor;
-    this.sigVendorIdBuff = sigVendorIdBuff; // take first vendor id as the significant vendor id
-    this.vendorName = null;
+  constructor(hexVendorId) {
+    this.hexVendorId = hexVendorId;
+    this.vendorIdBuff = Buffer.from(hexVendorId);
     this.maxMatchLen = 0;
+    this.vendorName = "Unknown Vendor";
   }
 
-  static async lookupWlanVendorInfos(wlanVendorInfoMap, minimalMatchLen, ouiFile = OUI_FILE_PATH) {
+  static parseOuiLine(line, minimalMatchLen) {
+    const trimmedLine = line.trim();
+    if (trimmedLine.length === 0) return null;
+  
+    const index = trimmedLine.indexOf(' ');
+    if (index < minimalMatchLen) return null;
+  
+    const oui = trimmedLine.substring(0, index);
+    const vendorName = trimmedLine.substring(index + 1).trim();
+    return { oui: Buffer.from(oui), vendorName };
+  }
+
+  static async lookupWlanVendorInfos(macVendorMap, minimalMatchLen, ouiFile = OUI_FILE_PATH) {
 
     try {
       const fileStream = fs.createReadStream(ouiFile);
@@ -21,44 +33,31 @@ class WlanVendorInfo {
         input: fileStream,
         crlfDelay: Infinity
       });
-      for await (let line of rl) {
-        line = line.trim();
-        if (line.length == 0) {
-          continue; // skip empty line
-        }
-        const index = line.indexOf(' ');
-        if (index < minimalMatchLen) {
-          continue; // less than minimal match length, skip invalid line
-        }
-        const ouiBuff = Buffer.from(line.substring(0, index));
-        for (let [vendorKey, vendorInfo] of wlanVendorInfoMap) {
-          const sigVendorIdBuff = vendorInfo.sigVendorIdBuff;
-          const num = Math.min(ouiBuff.length, sigVendorIdBuff.length);
-  
-          for (let i=0; i<num; i++) {
-            if (sigVendorIdBuff[i] != ouiBuff[i]) {
-              const match = i;
-              if (vendorInfo.maxMatchLen < match && match >= minimalMatchLen) {
-                vendorInfo.maxMatchLen = match;
-                vendorInfo.vendorName = line.substring(index + 1).trim();
-                wlanVendorInfoMap.set(vendorKey, vendorInfo);
-              }
-              break;
+      for await (const line of rl) {
+        const parsed = WlanVendorInfo.parseOuiLine(line, minimalMatchLen);
+        if (!parsed) continue;
+
+        for (let [_mac, wlanVendorList] of macVendorMap) {
+
+          for (let i = 0; i < wlanVendorList.length; i++) {
+            let wlanVendorInfo = wlanVendorList[i];
+            const num = Math.min(parsed.oui.length, wlanVendorInfo.vendorIdBuff.length);
+            let matchLen = 0;
+            while (matchLen < num && parsed.oui[matchLen] === wlanVendorInfo.vendorIdBuff[matchLen]) {
+              matchLen++;
             }
-            if (i == num-1) { // all bytes match
-              const match = num;
-              if (vendorInfo.maxMatchLen < match && match >= minimalMatchLen) {
-                vendorInfo.maxMatchLen = match;
-                vendorInfo.vendorName = line.substring(index + 1).trim();
-                wlanVendorInfoMap.set(vendorKey, vendorInfo);
-              }
-              break;
+
+            if (matchLen >= minimalMatchLen && matchLen > wlanVendorInfo.maxMatchLen) {
+              wlanVendorInfo.maxMatchLen = matchLen;
+              wlanVendorInfo.vendorName = parsed.vendorName;
+              wlanVendorList[i] = wlanVendorInfo;
             }
           }
         }
       }
     } catch (err) {
       console.error(`Failed to read OUI file ${ouiFile}`, err.message);
+      console.error(err.stack);
     }
   }
   
@@ -68,7 +67,7 @@ class WlanVendorInfo {
       //macVendorPairs is empty, return empty map
       return {};
     }
-    let wlanVendorInfoMap = new Map();
+    let macVendorMap = new Map();
     const miniVendorLen = 6; // minimum vendor length to match vendor info in OUI file
   
     // initialize vendor info map
@@ -79,27 +78,26 @@ class WlanVendorInfo {
       if (fullHexVendor.length < miniVendorLen) {
         continue;
       }
-      const hexVendorInfoStrs = fullHexVendor.split(' ');
-  
-      let firstHexVendor = hexVendorInfoStrs[0].trim(); // the first vendor info is the most significant, omit the 0x prefix
-      if (firstHexVendor.length < miniVendorLen) {
-        // The first vendor id is too short, skip
-        continue;
+      let hexVendorIds = fullHexVendor.split(' ');
+      let wlanVendorList = [];
+      for (let hexVendorId of hexVendorIds) {
+        hexVendorId = hexVendorId.trim();
+        if (hexVendorId.length < miniVendorLen) {
+          continue;
+        }
+        hexVendorId = hexVendorId.startsWith('0X') ? hexVendorId.substring(2) : hexVendorId;
+        if (hexVendorId.length < miniVendorLen) {
+          continue;
+        }
+        let wlanVendorInfo = new WlanVendorInfo(hexVendorId);
+        wlanVendorList.push(wlanVendorInfo);
       }
-      firstHexVendor = firstHexVendor.startsWith('0X') ? firstHexVendor.substring(2) : firstHexVendor;
-
-      if (firstHexVendor.length < miniVendorLen) {
-        // The first vendor id is too short after removing 0x prefix, skip lookup
-        continue;
-      }
-      const sigVendorIdBuff = Buffer.from(firstHexVendor); // used for best match
-  
-      let wlanVendorInfo = new WlanVendorInfo(fullHexVendor, sigVendorIdBuff);
-      wlanVendorInfoMap.set(mac, wlanVendorInfo);
+      macVendorMap.set(mac, wlanVendorList);
     }
-    await WlanVendorInfo.lookupWlanVendorInfos(wlanVendorInfoMap, miniVendorLen, ouiFile);
-  
-    return wlanVendorInfoMap;
+    await WlanVendorInfo.lookupWlanVendorInfos(macVendorMap, miniVendorLen, ouiFile);
+
+    return macVendorMap;
+
   }
 
 
