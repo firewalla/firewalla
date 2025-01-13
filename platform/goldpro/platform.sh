@@ -22,6 +22,7 @@ REDIS_MAXMEMORY=600mb
 RAMFS_ROOT_PARTITION=yes
 FW_ZEEK_RSS_THRESHOLD=800000
 MAX_OLD_SPACE_SIZE=512
+HAVE_FWAPC=yes
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
@@ -89,17 +90,6 @@ function map_target_branch {
     echo $1
     ;;
   esac
-}
-
-function installTLSModule {
-  uid=$(id -u pi)
-  gid=$(id -g pi)
-  if ! lsmod | grep -wq "xt_tls"; then
-    if [[ $(lsb_release -cs) == "jammy" ]]; then
-      sudo insmod ${FW_PLATFORM_CUR_DIR}/files/$(uname -r)/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
-      sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/TLS/u22/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables
-    fi
-  fi
 }
 
 function beep {

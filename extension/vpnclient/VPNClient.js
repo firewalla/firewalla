@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,7 +28,7 @@ const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 const vpnClientEnforcer = require('./VPNClientEnforcer.js');
 const routing = require('../routing/routing.js');
 const iptables = require('../../net2/Iptables.js');
-const {Address4} = require('ip-address');
+const {Address4, Address6} = require('ip-address');
 const sysManager = require('../../net2/SysManager');
 const ipTool = require('ip');
 const ipset = require('../../net2/Ipset.js');
@@ -42,7 +42,6 @@ const envCreatedMap = {};
 
 const instances = {};
 
-const VPN_ROUTE_MARK_KEY_PREFIX = "fwmark:vpn";
 class VPNClient {
   constructor(options) {
     const profileId = options.profileId;
@@ -72,6 +71,7 @@ class VPNClient {
                 sem.emitEvent({
                   type: "link_established",
                   profileId: this.profileId,
+                  routeUpdated: true,
                   suppressEventLogging: true,
                 });
               }
@@ -91,17 +91,19 @@ class VPNClient {
       return null;
   }
 
-  static async getVPNProfilesForInit(json) {
+  static async getVPNProfilesForInit() {
     const types = ["openvpn", "wireguard", "ssl", "zerotier", "nebula", "trojan", "clash", "hysteria", "ipsec", "ts"];
+    const results = {}
     await Promise.all(types.map(async (type) => {
       const c = this.getClass(type);
       if (c) {
         let profiles = [];
         const profileIds = await c.listProfileIds();
         Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
-        json[c.getKeyNameForInit()] = profiles;
+        results[c.getKeyNameForInit()] = profiles;
       }
     }));
+    return results
   }
 
   static getClass(type) {
@@ -170,7 +172,7 @@ class VPNClient {
         break;
       }
       default:
-        log.error(`Unrecognized VPN client type: ${type}`);
+        throw new Error(`Unrecognized VPN client type: ${type}`);
         return null;
     }
   }
@@ -192,6 +194,10 @@ class VPNClient {
   }
 
   async getVpnIP4s() {
+    return null;
+  }
+
+  async getVpnIP6s() {
     return null;
   }
 
@@ -225,18 +231,18 @@ class VPNClient {
     for(const bin of bins) {
       const tcpCmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p tcp --dport 53 -j ACCEPT`);
       await exec(tcpCmd).catch((err) => {
-        log.error(`Failed to bypass DNS tcp53 redirect: ${cmd}, err:`, err.message);
+        log.error(`Failed to bypass DNS tcp53 redirect: ${tcpCmd}, err:`, err.message);
       });
       const udpCmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p udp --dport 53 -j ACCEPT`);
       await exec(udpCmd).catch((err) => {
-        log.error(`Failed to bypass DNS udp53 redirect: ${cmd}, err:`, err.message);
+        log.error(`Failed to bypass DNS udp53 redirect: ${tcpCmd}, err:`, err.message);
       });
     }
   }
 
   async _updateDNSRedirectChain() {
     const dnsServers = await this._getDNSServers() || [];
-    log.info("Updating dns redirect chain on servers:", dnsServers);
+    log.verbose("Updating dns redirect chain on servers:", dnsServers);
 
     const chain = VPNClient.getDNSRedirectChainName(this.profileId);
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
@@ -245,6 +251,9 @@ class VPNClient {
     await exec(`sudo ip6tables -w -t nat -F ${chain}`).catch((err) => {});
     for (let i in dnsServers) {
       const dnsServer = dnsServers[i];
+      if (dnsServer == '') {
+        continue
+      }
       let bin = "iptables";
       if (!ipTool.isV4Format(dnsServer) && ipTool.isV6Format(dnsServer)) {
         bin = "ip6tables";
@@ -298,14 +307,14 @@ class VPNClient {
       await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
       await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
     }
-    log.info(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
+    log.verbose(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
     // remove routes from main table which is inserted by VPN client automatically,
     // otherwise tunnel will be enabled globally
-    await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.info("No need to remove 0.0.0.0/1 for " + this.profileId) });
-    await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.info("No need to remove 128.0.0.0/1 for " + this.profileId) });
-    await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => { log.info("No need to remove default route for " + this.profileId) });
+    await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove 0.0.0.0/1 for " + this.profileId) });
+    await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove 128.0.0.0/1 for " + this.profileId) });
+    await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove default route for " + this.profileId) });
     if (localIP6)
-      await routing.removeRouteFromTable("default", remoteIP, intf, "main", null, 6).catch((err) => { log.info("No need to remove IPv6 default route for " + this.profileId) });
+      await routing.removeRouteFromTable("default", remoteIP, intf, "main", null, 6).catch((err) => { log.verbose("No need to remove IPv6 default route for " + this.profileId) });
     let routedSubnets = settings.serverSubnets || [];
     // add vpn client specific routes
     try {
@@ -318,7 +327,8 @@ class VPNClient {
     routedSubnets = this.getSubnetsWithoutConflict(_.uniq(routedSubnets));
     const dnsServers = await this._getDNSServers() || [];
 
-    log.info(`Adding routes for vpn ${this.profileId}`, routedSubnets);
+    if (routedSubnets.length)
+      log.info(`Adding routes for vpn ${this.profileId}`, routedSubnets);
     // always add default route into VPN client's routing table, the switch is implemented in ipset, so no need to implement it in routing tables
     await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, remoteIP6, intf, routedSubnets, dnsServers, true, Boolean(localIP6));
     // loosen reverse path filter
@@ -363,7 +373,6 @@ class VPNClient {
         await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => { });
       if (dnsServers.length > 0)
         await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, dnsRedirectChain);
-      await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
       await this._disableDNSRoute("hard");
       await this._disableDNSRoute("soft");
       dnsmasq.scheduleRestartDNSService();
@@ -433,6 +442,7 @@ class VPNClient {
       sem.emitEvent({
         type: "link_established",
         profileId: this.profileId,
+        routeUpdated: force,
         suppressEventLogging: true,
       });
     } else {
@@ -472,7 +482,7 @@ class VPNClient {
             await this._disableDNSRoute("hard");
             await this._resetRouteMarkInRedis();
           }
-          if (fc.isFeatureOn("vpn_disconnect")) {
+          if (fc.isFeatureOn(Constants.FEATURE_VPN_DISCONNECT)) {
             const Alarm = require('../../alarm/Alarm.js');
             const AlarmManager2 = require('../../alarm/AlarmManager2.js');
             const alarmManager2 = new AlarmManager2();
@@ -501,7 +511,7 @@ class VPNClient {
       if (this._started === true && this._currentState === false && this.profileId === event.profileId) {
         // populate soft route ipset
         this._scheduleRefreshRoutes();
-        if (fc.isFeatureOn("vpn_restore")) {
+        if (fc.isFeatureOn(Constants.FEATURE_VPN_RESTORE)) {
           const Alarm = require('../../alarm/Alarm.js');
           const AlarmManager2 = require('../../alarm/AlarmManager2.js');
           const alarmManager2 = new AlarmManager2();
@@ -1207,13 +1217,23 @@ class VPNClient {
     const results = await Promise.all(targets.map(target => this._runPingTest(target, count)));
     // TODO: evaluate ping test results and return false if it is lower than the threshold
 
+    const ratio = results.reduce((total, item) => total + item.successCount, 0) * 100/(results.length*count);
+    log.verbose(`VPN ${this.profileId} tests [${targets}] success ratio ${ratio}%`);
     return await this._checkInternetAvailability();
   }
 
   async _runPingTest(target, count = 8) {
     const result = {target, totalCount: count};
+    const af = new Address4(target).isValid() ? 4 : 6;
+    const ping = af == 4 ? "ping" : "ping6";
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName()); // rt id will be used as mark of ping packets
-    const cmd = `sudo ping -n -q -m ${rtId} -c ${count} -W 1 -i 1 ${target} | grep "received" | awk '{print $4}'`;
+    const ips = af == 4 ? await this.getVpnIP4s() : await this.getVpnIP6s();
+    let optI = "";
+    if (_.isArray(ips) && ips.length > 0) {
+      const srcIp = af == 4 ? new Address4(ips[0]) : new Address6(ips[0]);
+      optI = `-I ${srcIp.addressMinusSuffix}`;
+    }
+    const cmd = `sudo ${ping} -n -q -m ${rtId} -c ${count} ${optI} -W 1 -i 1 ${target} | grep "received" | awk '{print $4}'`;
     await exec(cmd).then((output) => {
       result.successCount = Number(output.stdout.trim());
     }).catch((err) => {
@@ -1233,7 +1253,7 @@ class VPNClient {
   }
 
   static getRouteMarkKey(profileId) {
-    return `${VPN_ROUTE_MARK_KEY_PREFIX}:${profileId}`;
+    return `${Constants.VPN_ROUTE_MARK_KEY_PREFIX}:${profileId}`;
   }
 
   async getLatestSessionLog() {

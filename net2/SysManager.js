@@ -19,6 +19,9 @@ const log = require('./logger.js')(__filename);
 
 const util = require('util');
 const fs = require('fs')
+const net = require('net')
+const fsp = fs.promises;
+const scheduler = require('../util/scheduler.js');
 
 const iptool = require('ip');
 var instance = null;
@@ -106,6 +109,12 @@ class SysManager {
         log.info("Iptables is ready");
         this.iptablesReady = true;
       })
+
+      this.restartRsyslogJob = new scheduler.UpdateJob(async () => {
+        exec(`sudo systemctl restart rsyslog`).catch((err) => {
+          log.error(`Failed to restart rsyslog`, err.message);
+        });
+      }, 3000);
 
       this.ts = Date.now() / 1000;
       log.info("Init", this.ts);
@@ -265,6 +274,10 @@ class SysManager {
       return;
     await delay(1000);
     return this.waitTillInitialized();
+  }
+
+  async restartRsyslog() {
+    await this.restartRsyslogJob.exec();
   }
 
   version() {
@@ -462,9 +475,12 @@ class SysManager {
         if (item && _.isObject(item)) {
           if (item.subnet) {
             this.sysinfo[r].subnetAddress4 = new Address4(item.subnet)
-            cidr4Trie.add(item.subnet, r);
+          }
+          for (const subnet of [].concat(item.subnet, item.rt4_subnets)) {
+            if (!subnet || this.isDefaultRoute(subnet)) continue
+            cidr4Trie.add(subnet, r);
             if (monitoringInterfaces.includes(r))
-              monitoringCidr4Trie.add(item.subnet, r);
+              monitoringCidr4Trie.add(subnet, r);
           }
 
           if (item.ip6_subnets && item.ip6_subnets.length) {
@@ -577,41 +593,51 @@ class SysManager {
     return Object.assign({}, active ? this.getInterface(intf.name) : intf, { active })
   }
 
-  getInterfaceViaIP(ip, monitoringOnly = true) {
-    if (!ip)
-      return null;
-    let intf = this.ipIntfCache.get(ip);
-    if (intf)
-      return intf;
-    if (new Address4(ip).isValid()) {
-      intf = this.getInterfaceViaIP4(ip, monitoringOnly);
-    } else {
-      intf = this.getInterfaceViaIP6(ip, monitoringOnly);
+  getInterfaceViaIP(ip, fam, monitoringOnly = true) {
+    switch (fam == undefined ? net.isIP(ip) : fam) {
+      case 4:
+        return this.getInterfaceViaIP4(ip, monitoringOnly);
+      case 6:
+        return this.getInterfaceViaIP6(ip, monitoringOnly);
+      case 0:
+        return null
     }
-    if (intf)
-      this.ipIntfCache.set(ip, intf);
-    return intf;
   }
 
   getInterfaceViaIP4(ip, monitoringOnly = true) {
     if (!ip) return null;
+    let intfObj = this.ipIntfCache.get(ip);
+    if (intfObj)
+      return intfObj;
+
     let intf = null;
     if (monitoringOnly)
       intf = this.monitoringCidr4Trie.find(ip);
     else
       intf = this.cidr4Trie.find(ip);
-    return intf && this.getInterface(intf);
 
+    if (intf) intfObj = this.getInterface(intf);
+    if (intfObj) this.ipIntfCache.set(ip, intfObj);
+
+    return intfObj
   }
 
   getInterfaceViaIP6(ip6, monitoringOnly = true) {
     if (!ip6) return null;
+    let intfObj = this.ipIntfCache.get(ip6);
+    if (intfObj)
+      return intfObj;
+
     let intf = null;
     if (monitoringOnly)
       intf = this.monitoringCidr6Trie.find(ip6);
     else
       intf = this.cidr6Trie.find(ip6);
-    return intf && this.getInterface(intf);
+
+    if (intf) intfObj = this.getInterface(intf);
+    if (intfObj) this.ipIntfCache.set(ip6, intfObj);
+
+    return intfObj
   }
 
   mySignatureMac() {
@@ -716,6 +742,12 @@ class SysManager {
     return [];
   }
 
+  myDefaultDns6() {
+    const wanIntf = fireRouter.getDefaultWanIntfName();
+    if (wanIntf) return this.myDNS6(wanIntf);
+    return [];
+  }
+
   myIp(intf = this.config.monitoringInterface) {
     return this.getInterface(intf) && this.getInterface(intf).ip_address;
   }
@@ -790,10 +822,11 @@ class SysManager {
   isMyMac(mac) {
     if (!mac) return false
 
-    let interfaces = this.getLogicInterfaces();
+    const interfaces = this.getLogicInterfaces();
+    const macUpper = mac.toUpperCase()
     const nics = Object.keys(this.nicinfo);
-    return interfaces.some(i => i.mac_address && i.mac_address.toUpperCase() === mac.toUpperCase()) 
-      || nics.some(nic => this.nicinfo[nic] && this.nicinfo[nic].mac_address && this.nicinfo[nic].mac_address.toUpperCase() === mac.toUpperCase());
+    return interfaces.some(i => i.mac_address && i.mac_address.toUpperCase() === macUpper)
+      || nics.some(nic => this.nicinfo[nic] && this.nicinfo[nic].mac_address && this.nicinfo[nic].mac_address.toUpperCase() === macUpper);
   }
 
   myMAC(intf = this.config.monitoringInterface) {
@@ -820,7 +853,7 @@ class SysManager {
     if (!intf)
       return [];
     const resolver = (this.getInterface(intf) && this.getInterface(intf).resolver) || [];
-    const resolver4 = resolver.filter(r => new Address4(r).isValid())
+    const resolver4 = resolver.filter(r => net.isIPv4(r))
     return resolver4;
   }
 
@@ -828,7 +861,7 @@ class SysManager {
     if (!intf)
       return [];
     const resolver = (this.getInterface(intf) && this.getInterface(intf).resolver) || [];
-    const resolver6 = resolver.filter(r => new Address6(r).isValid())
+    const resolver6 = resolver.filter(r => net.isIPv6(r))
     return resolver6;
   }
 
@@ -836,11 +869,16 @@ class SysManager {
     let _dns = (this.getInterface(intf) && this.getInterface(intf).dns) || [];
     let v4dns = [];
     for (let i in _dns) {
-      if (new Address4(_dns[i]).isValid()) {
+      if (net.isIPv4(_dns[i])) {
         v4dns.push(_dns[i]);
       }
     }
     return v4dns;
+  }
+
+  myDNS6(intf = this.config.monitoringInterface) {
+    let _dns = (this.getInterface(intf) && this.getInterface(intf).dns6) || [];
+    return _dns.filter( i => net.isIPv6(i));
   }
 
   myGateway(intf = this.config.monitoringInterface) {
@@ -849,7 +887,15 @@ class SysManager {
 
   async myGatewayMac(intf = this.config.monitoringInterface) {
     const ip = this.myGateway(intf);
-    return rclient.hget(`host:ip4:${ip}`, 'mac')
+    let mac = await rclient.hgetAsync(`host:ip4:${ip}`, 'mac');
+    if (mac)
+      return mac;
+    const wanIfType = await fsp.readFile(`/sys/class/net/${intf}/type`, {encoding: "utf8"}).then(result => result.trim()).catch((err) => null);
+    // arp is only applicable to interfaces with type ethernet (1)
+    if (wanIfType === "1") {
+      mac = await exec(`arp -a -n -i ${intf} ${ip}`).then(result => result.stdout.trim().split(" ")[3].toUpperCase()).catch((err) => null);
+    }
+    return mac;
   }
 
   myGateway6(intf = this.config.monitoringInterface) {
@@ -1040,17 +1086,16 @@ class SysManager {
 
   isMulticastIP4(ip, intf, monitoringOnly = true) {
     try {
-      if (!new Address4(ip).isValid()) return false
+      if (!net.isIPv4(ip)) return false
 
       if (ip == "255.255.255.255") return true
 
-      const intfObj = intf ? this.getInterface(intf) : this.getInterfaceViaIP(ip, monitoringOnly)
+      const intfObj = intf ? this.getInterface(intf) : this.getInterfaceViaIP(ip, 4, monitoringOnly)
 
       if (intfObj && intfObj.subnet) {
-        const subnet = new Address4(intfObj.subnet)
-        if (subnet.subnetMask < 32 &&
-          (ip == subnet.startAddress().address || ip == subnet.endAddress().address)
-        ) return true
+        const subnet = intfObj.subnetAddress4 || new Address4(intfObj.subnet)
+        if (subnet.subnetMask < 32 && ip == subnet.endAddress().address)
+          return true
       }
 
       return (iptool.toLong(ip) >= this.multicastlow && iptool.toLong(ip) <= this.multicasthigh)
@@ -1066,10 +1111,13 @@ class SysManager {
 
   isMulticastIP(ip, intf, monitoringOnly = true) {
     try {
-      if (new Address4(ip).isValid()) {
-        return this.isMulticastIP4(ip, intf, monitoringOnly);
-      } else {
-        return this.isMulticastIP6(ip);
+      switch (net.isIP(ip)) {
+        case 4:
+          return this.isMulticastIP4(ip, intf, monitoringOnly);
+        case 6:
+          return this.isMulticastIP6(ip);
+        case 0:
+          return false
       }
     } catch (e) {
       log.error("SysManager:isMulticastIP", ip, intf, monitoringOnly, e);
@@ -1085,27 +1133,27 @@ class SysManager {
       return false;
     }
 
-    if (new Address4(ip).isValid()) {
-      if (this.isMulticastIP4(ip, intf) || ip == '127.0.0.1') {
-        return true;
-      }
-      return this.inMySubnets4(ip, intf)
-
-    } else if (new Address6(ip).isValid()) {
-      if (ip.startsWith('::')) {
-        return true;
-      }
-      if (this.isMulticastIP6(ip)) {
-        return true;
-      }
-      if (ip.startsWith('fe80')) {
-        return true;
-      }
-      return this.inMySubnet6(ip, intf);
-    } else {
-      log.error(new Error("isLocalIP, not valid ip: " + ip));
-      // TODO: we should throw error here
-      return false;
+    switch (net.isIP(ip)) {
+      case 4:
+        if (this.isMulticastIP4(ip, intf) || ip == '127.0.0.1') {
+          return true;
+        }
+        return this.inMySubnets4(ip, intf)
+      case 6:
+        if (ip.startsWith('::')) {
+          return true;
+        }
+        if (this.isMulticastIP6(ip)) {
+          return true;
+        }
+        if (ip.startsWith('fe80')) {
+          return true;
+        }
+        return this.inMySubnet6(ip, intf);
+      case 0:
+        log.error(new Error("isLocalIP, not valid ip: " + ip));
+        // TODO: we should throw error here
+        return false;
     }
   }
 
