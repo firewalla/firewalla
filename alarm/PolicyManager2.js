@@ -991,6 +991,7 @@ class PolicyManager2 {
       message: 'All policies are enforced'
     }
     sem.sendEventToFireApi(event)
+    sem.emitLocalEvent(event)
   }
 
 
@@ -1377,6 +1378,7 @@ class PolicyManager2 {
         remotePositive = false;
         remoteTupleCount = 2;
         // legacy data format
+        // target: "TAG" is a placeholder for various rules from App
         if (target && ht.isMacAddress(target)) {
           scope = [target];
         }
@@ -1398,7 +1400,7 @@ class PolicyManager2 {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
 
-        if (platform.isTLSBlockSupport()) { // default on
+        if (platform.isTLSBlockSupport() && protocol != 'udp') { // default on
           if (!policy.domainExactMatch && !target.startsWith("*."))
             tlsHost = `*.${target}`;
           else
@@ -1834,7 +1836,7 @@ class PolicyManager2 {
         break;
       case "domain":
       case "dns":
-        if (platform.isTLSBlockSupport()) { // default on
+        if (platform.isTLSBlockSupport() && protocol != 'udp') { // default on
           if (!policy.domainExactMatch && !target.startsWith("*."))
             tlsHost = `*.${target}`;
           else

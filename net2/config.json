@@ -1,5 +1,5 @@
 {
-  "version": 1.979,
+  "version": 1.980,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -109,7 +109,7 @@
     },
     "AdblockPlugin": {},
     "WireGuardPlugin": {},
-    "InternalScanSensor": { "skip_verify": false, "strict_http": true},
+    "InternalScanSensor": { "skip_verify": false, "strict_http": true, "mysql8": true},
     "ExternalScanSensor": {
       "scanCooldown": 300
     },
@@ -121,6 +121,7 @@
       "switchRatioThreshold": 0.88
     },
     "FlowCompressionSensor": {},
+    "FreeRadiusSensor": {},
     "AlarmSensor": {},
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
@@ -130,7 +131,8 @@
     "OSIPlugin": {},
     "STUNSensor": {},
     "NoiseDomainsSensor": {},
-    "Iperf3Sensor": {}
+    "Iperf3Sensor": {},
+    "DeviceMonitorSensor": {}
   },
   "intels": [
     "DeviceInfoIntel",
@@ -158,11 +160,12 @@
       "expireInterval": 1800
     },
     "BonjourSensor": {
-      "ignoredServices": ["_airdrop", "_continuity", "_googlezone", "_matter"],
+      "ignoreServices": ["_airdrop", "_continuity", "_googlezone", "_matter"],
       "nonReadableNameServices": [
         "_raop", "_sleep-proxy", "_remotepairing", "_remotepairing-tunnel", "_apple-mobdev2",
-        "_asquic", "_dacp", "_spotify-connect", "_trel"
-      ]
+        "_asquic", "_dacp", "_spotify-connect", "_spotify-social-listening", "_trel"
+      ],
+      "ignoreNames": []
     },
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
@@ -216,6 +219,7 @@
       "sumFlowMaxFlow": 200,
       "sumAuditFlowMaxFlow": 400
     },
+    "FreeRadiusSensor": {},
     "IntelRevalidationSensor": {},
     "BoxAliasSensor": {},
     "SafeSearchPlugin": {
@@ -465,6 +469,7 @@
     "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
     "DeviceIdentificationSensor": {
+      "intervalListCheck": 86400,
       "interval": 3600
     },
     "IPv6DiscoverySensor": {},
@@ -558,13 +563,21 @@
         "expires": 86400,
         "count": 10000
       },
+      "flowDNS": {
+        "expires": 86400,
+        "count": 10000
+      },
+      "flowLocal": {
+        "expires": 86400,
+        "count": 5000
+      },
       "auditDrop": {
         "expires": 86400,
         "count": 10000
       },
       "auditAccept": {
         "expires": 3600,
-        "count": 10000
+        "count": 1000
       },
       "ssh": {
         "expires": 86400,
@@ -643,6 +656,10 @@
       "user_agent2": {
         "expires": 2592000,
         "count": 100
+      },
+      "dm": {
+        "expires": 86400,
+        "count": 3600
       }
     },
     "DeviceOfflineSensor": {
@@ -688,7 +705,7 @@
     "NseScanPlugin": {},
     "ACLAuditLogPlugin": {
       "buffer": 2,
-      "interval": 300,
+      "interval": 900,
       "expires": 86400
     },
     "ACLAlarmLogPlugin": {},
@@ -746,7 +763,7 @@
     "FanSensor": {},
     "LEDSensor": {},
     "SyslogSensor": {},
-    "InternalScanSensor": { "skip_verify": false, "strict_http": true},
+    "InternalScanSensor": { "skip_verify": false, "strict_http": true,  "mysql8": true},
     "InternetSpeedtestPlugin": {
       "vendorCandidates": [
         "ookla"
@@ -755,6 +772,7 @@
     },
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
+    "ZeekDPISensor": {},
     "CategoryExaminerPlugin": {},
     "RuleStatsPlugin": {},
     "SystemRebootSensor": {},
@@ -790,8 +808,11 @@
         }
       }
     },
+    "APFeaturesPlugin": {},
+    "APCMsgSensor": {},
     "NicCalibrationSensor": {},
-    "NicStateSensor": {}
+    "NicStateSensor": {},
+    "DeviceMonitorSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -829,6 +850,7 @@
     },
     "dns": {
       "path": "/blog/current/dns.log",
+      "flowstashExpires": 900,
       "expires": 86400
     },
     "http": {
@@ -860,6 +882,9 @@
     "knownHosts": {
       "path": "/blog/current/known_hosts.log",
       "expires": 3600
+    },
+    "signature": {
+      "path": "/blog/current/signatures.log"
     },
     "userAgent": {
       "expires": 2592000
@@ -955,11 +980,14 @@
     "fast_intel": true,
     "country": true,
     "dnsmasq_log_allow": true,
+    "dnsmasq_log_allow_redis": false,
+    "dns_flow": true,
     "digitalfence": false,
     "compress_flows": false,
     "rekey": false,
     "pcap_zeek": true,
     "pcap_suricata": false,
+    "local_flow": false,
     "category_filter": true,
     "rule_stats": true,
     "unbound": false,
@@ -980,6 +1008,13 @@
     },
     "homeFolder": "/firerouter",
     "hiddenFolder": "/.router"
+  },
+  "fwapc": {
+    "interface": {
+      "host": "127.0.0.1",
+      "port": 8841,
+      "version": "v1"
+    }
   },
   "profiles": {
     "alarm": {

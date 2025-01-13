@@ -1,0 +1,14 @@
+version: '3'
+
+services:
+  freeradius:
+    image: public.ecr.aws/a0j1s2e9/freeradius:v3.2.x
+    network_mode: "host"
+    volumes:
+      - /home/pi/.forever/radius.log:/var/log/freeradius/radius.log
+      - /home/pi/.firewalla/run/docker/freeradius/clients.conf:/etc/freeradius/clients.conf
+      - /home/pi/.firewalla/run/docker/freeradius/users:/etc/freeradius/users
+      - /home/pi/.firewalla/run/docker/freeradius/eap:/etc/freeradius/mods-available/eap
+      - /home/pi/.firewalla/run/docker/freeradius/ca.cnf:/etc/freeradius/certs/ca.cnf
+      - /home/pi/.firewalla/run/docker/freeradius/ca.key:/etc/freeradius/certs/ca.key
+      - /home/pi/.firewalla/run/docker/freeradius/ca.pem:/etc/freeradius/certs/ca.pem

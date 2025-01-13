@@ -20,6 +20,7 @@ const log = require("../../net2/logger.js")(__filename);
 
 const _ = require('lodash');
 const util = require('util');
+const net = require('net');
 const f = require('../../net2/Firewalla.js');
 const userID = f.getUserID();
 const childProcess = require('child_process');
@@ -111,14 +112,15 @@ const Constants = require('../../net2/Constants.js');
 const VirtWanGroup = require("../../net2/VirtWanGroup.js");
 const VPNClient = require("../vpnclient/VPNClient.js");
 
-const globalBlockKey = "redis_match:global_block";
-const globalBlockHighKey = "redis_match:global_block_high";
-const globalAllowKey = "redis_match:global_allow";
-const globalAllowHighKey = "redis_match:global_allow_high";
+const globalBlockKey = "redis_zset_match:global_block";
+const globalBlockHighKey = "redis_zset_match:global_block_high";
+const globalAllowKey = "redis_zset_match:global_allow";
+const globalAllowHighKey = "redis_zset_match:global_allow_high";
 
 const AsyncLock = require('../../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_OPS = "LOCK_DNSMASQ_OPS";
+const LOCK_LEASE_FILE = "LOCK_DNSMASQ_LEASE";
 
 const extractPid = /[^\/]*policy_([0-9]+)[^\/]*.conf$/
 
@@ -260,12 +262,14 @@ module.exports = class DNSMASQ {
   scheduleRestartDNSService(ignoreFileCheck = false) {
     if (this.restartDNSTask)
       clearTimeout(this.restartDNSTask);
+    this.restartDNSIgnoreFileCheck = this.restartDNSIgnoreFileCheck || ignoreFileCheck
     this.restartDNSTask = setTimeout(async () => {
-      if (!ignoreFileCheck) {
+      if (!this.restartDNSIgnoreFileCheck) {
         const confChanged = await this.checkConfsChange();
         if (!confChanged)
           return;
       }
+      delete this.restartDNSIgnoreFileCheck
       await execAsync(`sudo systemctl stop ${SERVICE_NAME}`).catch((err) => { });
       this.counter.restart++;
       log.info(`Restarting ${SERVICE_NAME}`, this.counter.restart);
@@ -300,9 +304,13 @@ module.exports = class DNSMASQ {
       clearTimeout(this.restartDHCPTask);
     this.restartDHCPIgnoreFileCheck = this.restartDHCPIgnoreFileCheck || ignoreFileCheck
     this.restartDHCPTask = setTimeout(async () => {
-      const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH])
-      if (!this.restartDHCPIgnoreFileCheck && !confChanged)
-        return;
+      if (!this.restartDHCPIgnoreFileCheck) {
+        const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH])
+        if (!confChanged) {
+          return;
+        }
+      }
+      delete this.restartDHCPIgnoreFileCheck
       await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => { });
       this.counter.restartDHCP++;
       log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.restartDHCP);
@@ -640,7 +648,7 @@ module.exports = class DNSMASQ {
             await fs.writeFileAsync(filePath, entries.join('\n'));
           } else { // a new way to block without restarting dnsmasq, only for non-scheduling
             await this.addGlobalPolicyFilterEntry(domain, options);
-            return "skip_restart"; // tell function caller that no need to restart dnsmasq to take effect            
+            return "skip_restart"; // tell function caller that no need to restart dnsmasq to take effect
           }
         }
       }
@@ -825,7 +833,7 @@ module.exports = class DNSMASQ {
   async writeAllocationOption(tagName, policy, known = false) {
     let restartNeeded = false;
     await lock.acquire(LOCK_OPS, async () => {
-      log.info('Writting allocation file for', tagName)
+      log.verbose('Writting allocation file for tag', tagName)
       const filePath = `${DHCP_CONFIG_PATH}/${tagName}_ignore.conf`;
       if (policy.dhcpIgnore) {
         const tags = []
@@ -863,14 +871,14 @@ module.exports = class DNSMASQ {
   // only for dns block/allow for global scope
   async addGlobalPolicyFilterEntry(domain, options) {
     const redisKey = this.getGlobalRedisMatchKey(options);
-    await rclient.saddAsync(redisKey, !options.exactMatch && !domain.startsWith("*.") ? `*.${domain}` : domain);
+    await rclient.zaddAsync(redisKey, options.pid, !options.exactMatch && !domain.startsWith("*.") ? `*.${domain}` : domain);
   }
 
   // only for dns block/allow for global scope
   async removeGlobalPolicyFilterEntry(domains, options) {
     const redisKey = this.getGlobalRedisMatchKey(options);
     domains = domains.map(domain => !options.exactMatch && !domain.startsWith("*.") ? `*.${domain}` : domain);
-    await rclient.sremAsync(redisKey, domains);
+    await rclient.zremAsync(redisKey, domains);
   }
 
   async removePolicyCategoryFilterEntry(options) {
@@ -980,10 +988,10 @@ module.exports = class DNSMASQ {
     await fs.writeFileAsync(globalConf, [
       "mac-address-tag=%FF:FF:FF:FF:FF:FF$global_acl&-1",
       "mac-address-tag=%FF:FF:FF:FF:FF:FF$global_acl_high&-1",
-      `redis-match=/${globalBlockKey}/${BLACK_HOLE_IP}$global_acl`,
-      `redis-match-high=/${globalBlockHighKey}/${BLACK_HOLE_IP}$global_acl_high`,
-      `redis-match=/${globalAllowKey}/#$global_acl`,
-      `redis-match-high=/${globalAllowHighKey}/#$global_acl_high`
+      `redis-zset-match=/${globalBlockKey}/${BLACK_HOLE_IP}$global_acl`,
+      `redis-zset-match-high=/${globalBlockHighKey}/${BLACK_HOLE_IP}$global_acl_high`,
+      `redis-zset-match=/${globalAllowKey}/#$global_acl`,
+      `redis-zset-match-high=/${globalAllowHighKey}/#$global_acl_high`
     ].join("\n"));
     await rclient.unlinkAsync(globalBlockKey);
     await rclient.unlinkAsync(globalBlockHighKey);
@@ -1480,8 +1488,10 @@ module.exports = class DNSMASQ {
       const resolver4 = sysManager.myResolver(intf.name);
       const resolver6 = sysManager.myResolver6(intf.name);
       const myIp4 = sysManager.myIp(intf.name);
+      const myIp6 = sysManager.myIp6(intf.name);
       await NetworkProfile.ensureCreateEnforcementEnv(uuid);
       const netSet = NetworkProfile.getNetIpsetName(uuid);
+      const netSet6 = NetworkProfile.getNetIpsetName(uuid, 6);
       if (myIp4 && resolver4 && resolver4.length > 0) {
         // redirect dns request that is originally sent to box itself to the upstream resolver
         for (const i in resolver4) {
@@ -1493,12 +1503,12 @@ module.exports = class DNSMASQ {
           await redirectRule.clone().pro('udp').exec('-A');
         }
       }
-      if (resolver6 && resolver6.length > 0) {
+      if (!_.isEmpty(myIp6) && resolver6 && resolver6.length > 0) {
         for (const i in resolver6) {
-          const redirectRule = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK')
-            .set(netSet, 'src,src').dport(53)
+          const redirectRule = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_FALLBACK')
+            .set(netSet6, 'src,src').dst(myIp6.join(",")).dport(53)
             .mdl("statistic", `--mode nth --every ${resolver6.length - i} --packet 0`)
-            .jmp(`DNAT --to-destination ${resolver6[i]}:53`);
+            .jmp(`DNAT --to-destination [${resolver6[i].split('%')[0]}]:53`);
           await redirectRule.clone().pro('tcp').exec('-A');
           await redirectRule.clone().pro('udp').exec('-A');
         }
@@ -1714,14 +1724,18 @@ module.exports = class DNSMASQ {
     )
 
     const lines = []
+    const reservedIPs = []
+    const previousIPs = []
 
     lines.push(mac + ',' + tags.map(t => 'set:'+t).join(','))
 
     if (p.dhcpIgnore === true) {
       lines.push(`${mac},ignore`);
       for (const ip of Object.keys(this.reservedIPHost)) {
-        if (this.reservedIPHost[ip] === host)
+        if (this.reservedIPHost[ip] === host) {
+          previousIPs.push(ip)
           delete this.reservedIPHost[ip];
+        }
       }
     } else for (const intf of sysManager.getMonitoringInterfaces()) {
       let reservedIp = null;
@@ -1740,17 +1754,21 @@ module.exports = class DNSMASQ {
         reservedIp = p.secondaryIp
       }
 
-      if (!reservedIp || !sysManager.inMySubnets4(reservedIp, intf.name)) {
-        // no reserved IP on this network, remove ip host mapping in this.reservedIPHost
-        for (const ip of Object.keys(this.reservedIPHost)) {
-          if (this.reservedIPHost[ip] === host && sysManager.inMySubnets4(ip, intf.name))
-            delete this.reservedIPHost[ip];
+      for (const ip of Object.keys(this.reservedIPHost)) {
+        if (ip != reservedIp && this.reservedIPHost[ip] === host && sysManager.inMySubnets4(ip, intf.name)) {
+          previousIPs.push(ip)
+          delete this.reservedIPHost[ip];
         }
+      }
+
+      if (!reservedIp || !sysManager.inMySubnets4(reservedIp, intf.name)) {
+        // no reserved IP on this network
         continue
       }
 
       // app will take care of reserved IP conflict since 1.60. Box will no longer take care of reserved IP conflict
       this.reservedIPHost[reservedIp] = host;
+      reservedIPs.push(reservedIp)
       lines.push(`${mac},tag:${intf.name.endsWith(":0") ? intf.name.substring(0, intf.name.length - 2) : intf.name},${reservedIp}`)
     }
 
@@ -1768,6 +1786,22 @@ module.exports = class DNSMASQ {
     log.debug("HostsFile:", util.inspect(lines));
 
     await fsp.writeFile(HOSTFILE_PATH + mac, content);
+    // delete lesase entry in case other device occupies the IP, also deletes for itself but that's fine
+    // dnsmasq seems to be able to handle IP conflict if misconfigured, so we are good here
+    const deleted = []
+    if (reservedIPs.length)
+      deleted.push(... await this.deleteLeaseRecord(null, reservedIPs))
+    if (previousIPs.length)
+      deleted.push(... await this.deleteLeaseRecord(mac, previousIPs))
+    for (const entry of deleted) {
+      sem.emitEvent({
+        type: Message.MSG_MAPPING_IP_MAC_DELETED,
+        message: `Deleted DHCP lease record of ${entry.mac} - ${entry.ip}`,
+        mac: entry.mac,
+        fam: net.isIP(entry.ip),
+        ip: entry.ip,
+      })
+    }
     if (!this.counter.writeHostsFile[mac]) this.counter.writeHostsFile[mac] = 0
     log.info("Hosts file has been updated:", mac, ++this.counter.writeHostsFile[mac], 'times')
 
@@ -2065,9 +2099,18 @@ module.exports = class DNSMASQ {
   async dnsUpstreamConnectivity(intf) {
     for (const domain of VERIFICATION_DOMAINS) {
       const resolver4 = sysManager.myResolver(intf.name);
-      // check all ipv4 dns servers, if any works normal, return up status
+      const resolver6 = sysManager.myResolver6(intf.name);
+      let cmds = [];
+      // check all dns servers, if any works normal, return up status
       for (const dnsServer of resolver4) {
         let cmd = `dig -4 A +short +time=3 +tries=2 @${dnsServer} ${domain}`;
+        cmds.push({dnsServer, cmd});
+      }
+      for (const dnsServer of resolver6) {
+        cmds.push({dnsServer:dnsServer, cmd:`dig -6 A +short +time=3 +tries=2 @${dnsServer} ${domain}`});
+      }
+
+      for (const {dnsServer, cmd} of cmds) {
         log.debug(`DNS upstream check, verifying DNS resolution to ${domain} on ${dnsServer} ...`);
         try {
           let { stdout, stderr } = await execAsync(cmd);
@@ -2080,7 +2123,7 @@ module.exports = class DNSMASQ {
           }
         } catch (err) {
           // usually fall into catch clause if dns resolution is failed
-          log.error(`DNS upstream check, failed to resolve ${domain} on ${dnsServer}`, err.stdout, err.stderr);
+          log.error(`DNS upstream check, failed to resolve ${domain} on ${dnsServer}`, err.message);
         }
       }
     }
@@ -2184,7 +2227,7 @@ module.exports = class DNSMASQ {
           else log.error(err)
         })
       }
-      
+
       log.info("clean up cleanUpLeftoverConfig");
       await rclient.unlinkAsync('dnsmasq:conf');
       // always allow verification domains in case they are accidentally blocked and cause self check failure
@@ -2210,7 +2253,7 @@ module.exports = class DNSMASQ {
     }, cooldown)
   }
 
-  async checkConfsChange(dnsmasqConfKey = "dnsmasq:conf", paths = [`${FILTER_DIR}*`, resolvFile, startScriptFile, configFile, HOSTFILE_PATH]) {
+  async checkConfsChange(dnsmasqConfKey = "dnsmasq:conf", paths = [`${FILTER_DIR}*`, resolvFile, startScriptFile, configFile]) {
     try {
       let md5sumNow = '';
       for (const confs of paths) {
@@ -2230,14 +2273,30 @@ module.exports = class DNSMASQ {
     }
   }
 
-  async deleteLeaseRecord(mac) {
-    if (!mac)
-      return;
+  // ip could be a string of single IP or an array of IPs
+  // return deleted lines
+  async deleteLeaseRecord(mac, ip) {
+    if (!mac && (!ip || !ip.length))
+      return [];
     const leaseFile = platform.getDnsmasqLeaseFilePath();
-    await execAsync(`sudo sed -i -r '/^[0-9]+ ${mac.toLowerCase()} /d' ${leaseFile}`).catch((err) => {
-      log.error(`Failed to remove lease record of ${mac} from ${leaseFile}`, err.message);
-    });
-    this.scheduleRestartDHCPService();
+    const regex = `^[0-9]+ ${mac ? mac.toLowerCase() : '[0-9a-f:]{17}'} ${ip ? Array.isArray(ip) ? `(${ip.join('\|')})` : ip : ''}`
+    log.debug('lease file sed regex', regex)
+    return await lock.acquire(LOCK_LEASE_FILE, async () => {
+      // https://unix.stackexchange.com/questions/108335/printing-and-deleting-the-first-line-of-a-file-using-sed#comment1121396_442370
+      // delete and write to stdout at the same time
+      const result = await execAsync(`sudo sed -i -r -e '/${regex}/{w /dev/stdout' -e 'd}' ${leaseFile}`).catch(err => {
+        log.error(`Failed to remove lease record of ${mac} from ${leaseFile}`, err.message);
+      })
+      return _.get(result, 'stdout', '').split('\n').filter(line => line.length).map(line => {
+        const column = line.split(' ')
+        return {
+          ts: Number(column[0]),
+          mac: column[1].toUpperCase(),
+          ip: column[2],
+          name: column.slice(3, -1).join(' ')
+        }
+      })
+    })
   }
 
   async getCounterInfo() {
@@ -2250,11 +2309,10 @@ module.exports = class DNSMASQ {
     const domain = addrPort[0];
     let waitSearch = [];
     const splited = domain.split(".");
-    for (const currentTxt of splited) {
+    for (let i = splited.length; i--; i > 0) {
       waitSearch.push(splited.join("."));
       splited.shift();
     }
-    waitSearch.push(splited.join("."));
     const hashedDomains = flowUtil.hashHost(target, { keepOriginal: true });
 
     const dirs = [FILTER_DIR, LOCAL_FILTER_DIR];
@@ -2372,10 +2430,15 @@ module.exports = class DNSMASQ {
     }
     // then extract dynamic IPs, and put them together with reserved IPs in stats
     const leaseFilePath = platform.getDnsmasqLeaseFilePath();
-    const lines = await fs.readFileAsync(leaseFilePath, {encoding: "utf8"}).then(content => content.trim().split('\n')).catch((err) => {
-      log.error(`Failed to read DHCP lease file ${leaseFilePath}`, err.message);
-      return []
-    });
+
+    const lines = await lock.acquire(LOCK_LEASE_FILE, async () => {
+      return fsp.readFile(leaseFilePath, {encoding: "utf8"})
+        .then(content => content.trim().split('\n'))
+        .catch((err) => {
+          log.error(`Failed to read DHCP lease file ${leaseFilePath}`, err.message);
+          return []
+        })
+    })
     for (const line of lines) {
       const phrases = line.split(' ');
       if (!_.isEmpty(phrases)) {

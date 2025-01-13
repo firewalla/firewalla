@@ -20,6 +20,7 @@ const Alarm = require('./Alarm.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const pclient = require('../util/redis_manager.js').getPublishClient();
 
 const bone = require("../lib/Bone.js");
 
@@ -74,6 +75,7 @@ const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
 
 const Queue = require('bee-queue')
+const LRU = require('lru-cache');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -90,13 +92,97 @@ const featureName = 'msp_sync_alarm';
 
 // TODO: Support suppress alarm for a while
 
+class alarmIndexCache {
+  constructor() {
+    this.cache = new LRU({max: 1000, maxAge: 3600 * 1000 * 24, updateAgeOnGet: true});
+    this._lock = Promise.resolve();;
+  }
+
+  has(type) {return this.cache.has(type)};
+  get(type) {return this.cache.get(type)};
+  keys(type) {return this.cache.keys(type)};
+  values(type) {return this.cache.values(type)};
+  size() {return this.list().length};
+  // get all cached alarm IDs
+  list() {
+    return this.cache.values().reduce((r, v) => { return r.concat(Object.keys(v))}, []);
+  }
+
+  // alarm {type: '', aid: '1', state: '', ..}
+  async add(alarm) {
+    await this._lock;
+    this._lock = (async () => {
+      const atype = alarm.type;
+      delete alarm.type;
+      try {
+        if (!this.cache.has(atype)) this.cache.set(atype, {});
+        let item = this.cache.get(atype);
+        item[alarm.aid] = alarm;
+        return Promise.resolve();
+      } catch (err) {
+        log.warn(`cannot add alarm ${atype} index cache`, alarm, err.message);
+      } finally {
+        this._lock = Promise.resolve();
+      }
+    })();
+  }
+
+  // alarm {type: '', aid: '1'}
+  async remove(aid) {
+    await this._lock;
+    this._lock = (async () => {
+      try {
+        let atypes = this.cache.keys();
+        if (!atypes) return
+        for (const atype of atypes) {
+          const item = this.cache.get(atype);
+          delete item[aid];
+        }
+        return Promise.resolve();
+      } catch (err) {
+        log.warn(`cannot remove alarm ${aid} from cache`, err.message);
+      } finally {
+        // Ensure the mutex is released even if an error occurs
+        this._lock = Promise.resolve();
+      }
+    })();
+  }
+}
+
 module.exports = class {
   constructor() {
     if (instance == null) {
       instance = this;
       this.publisher = new c('info');
+      this.indexCache = new alarmIndexCache();
 
       this.setupAlarmQueue();
+
+      if (f.isApi()) {
+        this.refreshAlarmCache();
+        setInterval(() => {
+          this.refreshAlarmCache();
+        }, 900000) // update records every 15m
+
+        sclient.subscribe("alarm:updateCache");
+        sclient.subscribe("alarm:removeCache");
+        sclient.on("message", (channel, message) => {
+          switch (channel) {
+            case "alarm:updateCache": {
+              log.info('received event alarm:updateCache', message);
+              const data = JSON.parse(message);
+              this._updateAlarmCache(data);
+              break;
+            }
+            case "alarm:removeCache": {
+              log.info('received event alarm:removeCache', message);
+              const data = JSON.parse(message);
+              this._deleteAlarmCache(data);
+              break;
+            }
+          }
+        });
+      }
 
       if (f.isMain()) {
         // clean timeout pending alarms every 60s
@@ -134,6 +220,66 @@ module.exports = class {
     return instance;
   }
 
+  async __updateCache(aid) {
+    const r = await rclient.hmgetAsync(alarmPrefix + aid, 'type', 'aid', 'state', 'alarmTimestamp');
+    const a = {type: r[0], aid: r[1], state: r[2] || '', ts: Number(r[3]) || 0};
+    if (await rclient.zscoreAsync(alarmArchiveKey, aid) !== null) a.archived = 1;
+    await this.indexCache.add(a);
+  }
+
+  async _updateAlarmCache(data) {
+    if (data.aids) {
+      for (const aid of data.aids) {
+        await this.__updateCache(aid);
+      }
+    }
+    if (data.aid) {
+      await this.__updateCache(data.aid);
+    }
+  }
+
+  async _deleteAlarmCache(data) {
+    if (data.aid) {
+      await this.indexCache.remove(data.aid);
+    }
+    if (data.aids) {
+      for (const aid of data.aids) {
+       await this.indexCache.remove(aid);
+      }
+    }
+  }
+
+  async refreshAlarmCache() {
+    try {
+        const start = Date.now();
+        const data = await this.loadAlarmIDs();
+        const alarmIds = Object.values(data).flat();
+        let multi = rclient.multi();
+        alarmIds.map((aid) => {
+          multi.hmgetAsync(alarmPrefix + aid, 'type', 'aid', 'state', 'alarmTimestamp');
+        });
+
+        const results = await multi.execAsync();
+        // remove dead cache
+        const cachedAids = this.indexCache.list();
+        const deadAids = cachedAids.filter( i => alarmIds.indexOf(i) == -1);
+        for (const aid of deadAids) {
+          await this.indexCache.remove(aid);
+        }
+
+        // add current alarm
+        for (const r of results) {
+          const a = {type: r[0], aid: r[1], state: r[2] || '', ts: Number(r[3]) || 0};
+          // archived alarms need additional mark
+          if (data.archivedAlarmIDs.indexOf(r[1]) >= 0) a.archived = 1;
+          await this.indexCache.add(a);
+        }
+        log.info(`Refresh alarm index ${this.indexCache.size()} items finished in ${Math.floor(Date.now()-start)/1000} seconds`)
+    } catch (err) {
+      log.error('Failed to refresh alarm index', err.message);
+    }
+  }
+
   async _mspSyncAlarm(data) {
     for (const cmd in data ) {
       await this.mspSyncAlarm(cmd, data[cmd]);
@@ -150,7 +296,11 @@ module.exports = class {
     }
 
     try {
-      const alarm = this._genAlarm(data);
+      const alarm = this._genAlarm(await this._alignAlarmInfo(data));
+      if (!alarm) {
+        log.warn('cannot create alarm, invalid parameter type', data.type)
+        return;
+      }
       log.info('alarm:create', alarm);
       await this.enrichDeviceInfo(alarm);
       this.enqueueAlarm(alarm); // use enqueue to ensure no dup alarms
@@ -190,7 +340,6 @@ module.exports = class {
           }
           case Constants.ST_ACTIVATED:
           case Constants.ST_IGNORE: {
-            // delete immediately
             await rclient.zremAsync(alarmPendingKey, aid);
             break;
           }
@@ -207,6 +356,19 @@ module.exports = class {
 
   isAlarmSyncMspEnabled() {
     return fc.isFeatureOn(featureName);
+  }
+
+  isCyberSecurityEnabled() {
+    return fc.isFeatureOn("cyber_security")
+  }
+
+  isMuteAlarm(alarm) {
+    // TODO: specify p.msp.type value if needed
+    if (alarm.type == "ALARM_CUSTOMIZED_SECURITY" && alarm["p.msp.type"] && !this.isCyberSecurityEnabled() ) {
+      log.info("Alarm category cyber_security is disabled", alarm);
+      return true
+    }
+    return false
   }
 
   async setupAlarmQueue() {
@@ -231,7 +393,15 @@ module.exports = class {
       const event = job.data;
       const alarm = this.jsonToAlarm(event.alarm);
       if (this.isAlarmSyncMspEnabled()) {
-        this.applyConfig(alarm);
+        if (alarm["p.msp.ready"]) {
+          this.applyConfig(alarm, ['state']);
+        } else {
+          this.applyConfig(alarm, []);
+        }
+      }
+
+      if (this.isMuteAlarm(alarm)) {
+        return;
       }
 
       log.debug('processing job', JSON.stringify(event))
@@ -248,7 +418,7 @@ module.exports = class {
           try {
             log.verbose("Try to create alarm:", event.alarm);
             let aid = await this.checkAndSaveAsync(alarm, event.profile);
-            log.info(`Alarm ${aid} is created successfully`);
+            if (aid > 0) log.info(`Alarm ${aid} is created successfully`);
           } catch (err) {
             if (err.code === 'ERR_DUP_ALARM' ||
                 err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY' ||
@@ -333,7 +503,7 @@ module.exports = class {
 
     const alarmKey = alarmPrefix + alarm.aid;
     await rclient.hmsetAsync(alarmKey, alarm.redisfy())
-
+    pclient.publishAsync("alarm:updateCache", JSON.stringify({aid:alarm.aid}));
     return alarm
   }
 
@@ -341,7 +511,11 @@ module.exports = class {
     if (options.origin && options.origin.state == Constants.ST_IGNORE){
       return
     }
-    await rclient.hsetAsync(alarmPrefix + alarmID, 'p.msp.decision', 'ignore');
+    let mspDec = 'ignore';
+    if (options.origin && options.origin['p.msp.decision']) {
+      mspDec = options.origin['p.msp.decision'] + ',' + mspDec;
+    }
+    await rclient.hsetAsync(alarmPrefix + alarmID, 'p.msp.decision', mspDec);
     await this.archiveAlarm(alarmID);
     await rclient.zremAsync(alarmPendingKey, alarmID);
   }
@@ -455,6 +629,7 @@ module.exports = class {
     if (this.isAlarmSyncMspEnabled() && alarm.state == Constants.ST_PENDING) {
       await this.addToPendingQueue(alarm);
     }
+    pclient.publishAsync("alarm:updateCache", JSON.stringify({aid:alarm.aid}));
     return alarm.aid;
   }
 
@@ -464,6 +639,7 @@ module.exports = class {
     await this.removeFromActiveQueueAsync(alarmID);
     await this.deleteExtendedAlarm(alarmID);
     await rclient.unlinkAsync(alarmPrefix + alarmID);
+    pclient.publishAsync("alarm:removeCache", JSON.stringify({aid:alarmID}));
   }
 
   async deleteMacRelatedAlarms(mac) {
@@ -477,6 +653,7 @@ module.exports = class {
       await rclient.zremAsync(alarmActiveKey, related);
       await rclient.unlinkAsync(related.map(id => alarmDetailPrefix + ':' + id));
       await rclient.unlinkAsync(related.map(id => alarmPrefix + id));
+      pclient.publishAsync("alarm:removeCache", JSON.stringify({aids:related}));
     }
   }
 
@@ -535,7 +712,8 @@ module.exports = class {
     }
   }
 
-  applyConfig(alarm) {
+  applyConfig(alarm, excludes=[]) {
+    excludes.push('timeout');
     const cfg = fc.getConfig().alarms;
     const defaultCfg = fc.getDefaultConfig().alarms;
     const alarmConfig = {};
@@ -548,9 +726,9 @@ module.exports = class {
     log.debug("alarm config apply", alarmConfig, alarm.type);
     const alias = Alarm.alarmType2alias(alarm.type);
     if (alarmConfig.hasOwnProperty(alias)) {
-      alarm.apply(alarmConfig[alias]);
+      alarm.apply(_.omit(alarmConfig[alias], excludes));
     } else if (alarmConfig.default){ // default
-      alarm.apply(alarmConfig.default);
+      alarm.apply(_.omit(alarmConfig.default, excludes));
     }
   }
 
@@ -568,6 +746,12 @@ module.exports = class {
     }
     log.debug('apply alarm attrs', alarm, 'to', orig_alarm);
     let attrs = {state: orig_alarm.state}; // origin attrs
+    if (orig_alarm.hasOwnProperty('p.msp.decision')) {
+      attrs['p.msp.decision'] = orig_alarm['p.msp.decision'];
+    }
+
+    // only allow reapply state: ignore -> ready or active -> ignore
+    let redecision = (orig_alarm.state == Constants.ST_ACTIVATED && alarm.state == Constants.ST_IGNORE) || ( orig_alarm.state == Constants.ST_IGNORE && alarm.state == Constants.ST_READY);
     for (const k in alarm) {
       if (alarm[k] != orig_alarm[k]) {
         attrs[k] = orig_alarm[k];
@@ -577,7 +761,7 @@ module.exports = class {
         delete alarm[k];
         continue;
       }
-      if (k == "state" && alarm[k] != orig_alarm.state && (orig_alarm.state == Constants.ST_ACTIVATED || orig_alarm.state == Constants.ST_IGNORE)) {
+      if (k == "state" && alarm[k] != orig_alarm.state && (orig_alarm.state == Constants.ST_ACTIVATED || orig_alarm.state == Constants.ST_IGNORE) && !redecision) {
         log.warn('alarm already activated or ignored, skip change state', alarm);
         delete alarm[k];
         continue
@@ -597,7 +781,11 @@ module.exports = class {
   async _onState(alarm, options={}) {
     switch (alarm.state) {
       case Constants.ST_READY: {
-        options['p.msp.decision'] = 'active';
+        if (options.origin['p.msp.decision']) {
+          options['p.msp.decision'] = options.origin['p.msp.decision'] + ',active';
+        } else {
+          options['p.msp.decision'] = 'active';
+        }
         await this.activateAlarm(alarm, options);
         break;
       }
@@ -618,7 +806,7 @@ module.exports = class {
     for (const attr in attrs) {
       switch (attr) {
         case 'state': {
-          const opt = Object.assign({}, options, {state: attrs.state});
+          const opt = Object.assign({}, options, {origin:attrs});
           await this._onState(alarm, opt);
           break;
         }
@@ -730,7 +918,7 @@ module.exports = class {
       return 0;
     } else {
       if (alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'block') {
-        log.info(`Decison from cloud is auto-block`, alarm.type, alarm["p.device.ip"], alarm["p.dest.ip"]);
+        log.info(`Decision from cloud is auto-block`, alarm.type, alarm["p.device.ip"], alarm["p.dest.ip"]);
       }
     }
 
@@ -753,8 +941,11 @@ module.exports = class {
     return alarmID
   }
 
-  async _activateAlarm(alarm) {
+  async _activateAlarm(alarm, unarchive = false) {
     let score = parseFloat(alarm.alarmTimestamp) || new Date() / 1000;
+    if (unarchive) {
+      await rclient.zremAsync(alarmArchiveKey, alarm.aid);
+    }
     return await rclient.multi()
       .zrem(alarmPendingKey, alarm.aid)
       .zadd(alarmActiveKey, 'NX', score, alarm.aid)
@@ -763,6 +954,7 @@ module.exports = class {
 
   async activateAlarm(alarm, options={}) {
     log.info('activate alarm', alarm, options);
+    let unarchive = false;
 
     if (this.isAlarmSyncMspEnabled()) {
       if ((alarm.state && alarm.state == Constants.ST_ACTIVATED) || (options.origin && options.origin.state == Constants.ST_ACTIVATED)) {
@@ -773,6 +965,9 @@ module.exports = class {
       if (alarm.state && alarm.state == Constants.ST_PENDING) {
         log.debug(`alarm ${alarm.aid} still pending`)
         return;
+      }
+      if (alarm.state && alarm.state == Constants.ST_READY && options.origin && options.origin.state == Constants.ST_IGNORE) {
+        unarchive = true
       }
     }
 
@@ -786,7 +981,8 @@ module.exports = class {
 
     const orig_alarm = await rclient.hgetallAsync(alarmKey);
     alarm = Object.assign({}, orig_alarm, alarm);
-    const result  = await this._activateAlarm(alarm);
+    const result  = await this._activateAlarm(alarm, unarchive);
+    pclient.publishAsync("alarm:updateCache", JSON.stringify({aid:alarm.aid}));
 
     // check alarm state change results
     if (this.isAlarmSyncMspEnabled() && result.length >= 2) {
@@ -873,6 +1069,10 @@ module.exports = class {
           break;
         }
       }
+    }
+    if (alarm["p.msp.ready"]) {
+      alarm.state = Constants.ST_READY;
+      alarm["p.msp.decision"] = "create"
     }
     log.debug('alarm generated', alarm);
     return alarm;
@@ -1078,11 +1278,14 @@ module.exports = class {
   }
 
   async archiveAlarm(alarmID) {
-    return rclient.multi()
+    const result = await rclient.multi()
       .zrem(alarmActiveKey, alarmID)
       .zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID)
       .execAsync();
+    pclient.publishAsync("alarm:updateCache", JSON.stringify({aid:alarmID}));
+    return result;
   }
+
   async archiveAlarmByExceptionAsync(exceptionID) {
     const exception = await exceptionManager.getException(exceptionID);
     const alarms = await this.findSimilarAlarmsByException(exception);
@@ -1200,26 +1403,57 @@ module.exports = class {
     return { activeAlarms: activeAlarms, archivedAlarms: archivedAlarms }
   }
 
+  _filterQueryType(alarm, type) {
+    switch (type) {
+      case 'active':
+        return alarm.state == type && alarm.archived != 1;
+      case 'pending':
+      case 'ignore':
+        return alarm.state == type;
+      default:
+        return alarm.state == 'active' && alarm.archived == 1;
+    }
+  }
+
+  _queryCachedAlarmIds(count, ts, asc, type, filters) {
+    let ids = [];
+    if (filters && filters.types && _.isArray(filters.types)) {
+      for (const atype of filters.types) {
+        if (!this.indexCache.has(atype)) continue;
+        const entries = Object.values(this.indexCache.get(atype));
+        let tmp = entries.filter(i => this._filterQueryType(i, type)).filter(i=>{if (asc) return i.ts > ts; return i.ts < ts});
+        if (asc) tmp = tmp.reverse();
+        ids = ids.concat(tmp.map( (i) => {return {aid: i.aid, ts: i.ts}}));
+      }
+    }
+    ids.sort( (x,y) => {if (asc) return x.ts - y.ts; return y.ts - x.ts});
+    return ids.map(i => i.aid).slice(0, count);
+  }
+
   async loadActiveAlarmsAsync(options) {
-    let count, ts, asc, type;
+    let count, ts, asc, type, filters;
 
     if (_.isNumber(options)) {
       count = options;
     } else if (options) {
-      ({ count, ts, asc, type } = options);
+      ({ count, ts, asc, type, filters } = options);
     }
 
     count = count || 50;
     ts = ts || Date.now() / 1000;
     asc = asc || false;
     type = type || 'active';
-    let key = type == 'active' ? alarmActiveKey : alarmArchiveKey;
 
-    let query = asc ?
-      rclient.zrangebyscoreAsync(key, '(' + ts, '+inf', 'limit', 0, count) :
-      rclient.zrevrangebyscoreAsync(key, '(' + ts, '-inf', 'limit', 0, count);
-
-    let ids = await query;
+    let ids;
+    if (filters) {
+      ids = this._queryCachedAlarmIds(count, ts, asc, type, filters);
+    } else {
+      let key = type == 'active' ? alarmActiveKey : alarmArchiveKey;
+      let query = asc ?
+        rclient.zrangebyscoreAsync(key, '(' + ts, '+inf', 'limit', 0, count) :
+        rclient.zrevrangebyscoreAsync(key, '(' + ts, '-inf', 'limit', 0, count);
+      ids = await query;
+    }
 
     let alarms = await this.idsToAlarmsAsync(ids)
 
@@ -1715,6 +1949,19 @@ module.exports = class {
     await this.updateAlarm(alarm);
   }
 
+  async _alignAlarmInfo(alarm) { // alarm object
+    if (!alarm.hasOwnProperty("p.device.ip") && alarm["p.device.mac"]) {
+      const device = await dnsManager.resolveMac(alarm['p.device.mac'].toUpperCase());
+      if (device) {
+        alarm["p.device.ip"] = device.ipv4 || device.ipv4Addr || JSON.parse(device.ipv6Addr || '[]').pop() || '';
+      }
+    }
+    if (!alarm.hasOwnProperty("p.dest.name") && alarm["p.dest.ip"]) {
+      alarm["p.dest.name"] = await dnsTool.getDns(alarm["p.dest.ip"]);
+    }
+    return alarm
+  }
+
   async enrichDeviceInfo(alarm) {
     const ignoreAlarmTypes = ['ALARM_SCREEN_TIME', 'ALARM_DUAL_WAN'];
     if (ignoreAlarmTypes.includes(alarm.type)) return alarm;
@@ -1848,7 +2095,7 @@ module.exports = class {
       multi.zadd(alarmArchiveKey, 'nx', new Date() / 1000, alarmID);
     }
     await multi.execAsync();
-
+    pclient.publishAsync("alarm:updateCache", JSON.stringify({aids:alarmIDs}));
     return alarmIDs;
   }
 
@@ -1862,7 +2109,7 @@ module.exports = class {
       multi.unlink(alarmPrefix + alarmID);
     }
     await multi.execAsync();
-
+    pclient.publishAsync("alarm:removeCache", JSON.stringify({aids:alarmIDs}));
     return alarmIDs;
   }
 
@@ -1877,6 +2124,7 @@ module.exports = class {
     }
     await multi.execAsync();
 
+    pclient.publishAsync("alarm:removeCache", JSON.stringify({aids:alarmIDs}));
     return alarmIDs;
   }
 

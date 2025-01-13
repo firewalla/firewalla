@@ -654,7 +654,8 @@ class VpnManager {
       "192.168.0.0/16": 8
     };
     let index = 0;
-    while (true) {
+    let stop = false;
+    while (!stop) {
       index = index % 3;
       const startAddress = Object.keys(ipRangeRandomMap)[index]
       const randomBits = ipRangeRandomMap[startAddress];
