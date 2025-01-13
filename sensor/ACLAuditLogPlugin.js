@@ -62,7 +62,6 @@ class ACLAuditLogPlugin extends Sensor {
 
     this.featureName = "acl_audit";
     this.buffer = {}
-    this.bufferTs = Date.now() / 1000
     this.touchedKeys = {};
     this.incTs = 0;
   }
@@ -107,8 +106,9 @@ class ACLAuditLogPlugin extends Sensor {
     const descriptor = this.getDescriptor(record)
     if (this.buffer[mac][descriptor]) {
       const s = this.buffer[mac][descriptor]
-      // _.min() and _.max() will ignore non-number values
+      // _.min() and _.max() ignore non-number values
       s.ts = _.min([s.ts, record.ts])
+      s._ts = _.max([s._ts, record._ts])
       s.du = Math.round((_.max([s.ts + (s.du || 0), record.ts + (record.du || 0)]) - s.ts) * 100) / 100
       s.ct += record.ct
       if (s.sp) s.sp = _.uniq(s.sp, record.sp)
@@ -148,7 +148,7 @@ class ACLAuditLogPlugin extends Sensor {
     if (!content || content.length == 0)
       return;
     const params = content.split(' ');
-    const record = { ts, type: 'ip', ct: 1 };
+    const record = { ts, type: 'ip', ct: 1, _ts: getUniqueTs(ts) };
     record.ac = "block";
     let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanUUID, inIntfName, outIntfName, isolationTagId, isolationNetworkIdPrefix;
     for (const param of params) {
@@ -644,6 +644,7 @@ class ACLAuditLogPlugin extends Sensor {
           }
         }
       }
+      record._ts = getUniqueTs(record.ts || Date.now()/1000)
       this._processDnsRecord(record);
     }
   }
@@ -654,7 +655,7 @@ class ACLAuditLogPlugin extends Sensor {
 
   async writeLogs() {
     try {
-      log.debug('Start writing logs', this.bufferTs)
+      // log.debug('Start writing logs')
       // log.debug(JSON.stringify(this.buffer))
 
       const buffer = this.buffer
@@ -664,10 +665,8 @@ class ACLAuditLogPlugin extends Sensor {
       for (const mac in buffer) {
         for (const descriptor in buffer[mac]) {
           const record = buffer[mac][descriptor];
-          const { type, ac, ts, du, ct } = record
+          const { type, ac, _ts, ct } = record
           const intf = record.intf && networkProfileManager.prefixMap[record.intf]
-          const _ts = getUniqueTs(ts + (du || 0)) // make it unique to avoid missing flows in time-based query
-          record._ts = _ts;
           const block = type == 'dns' ?
             record.rc == 3 /*NXDOMAIN*/ &&
             (record.qt == 1 /*A*/ || record.qt == 28 /*AAAA*/) &&
@@ -785,6 +784,7 @@ class ACLAuditLogPlugin extends Sensor {
               const s = stash[descriptor]
               // _.min() and _.max() will ignore non-number values
               s.ts = _.min([s.ts, record.ts])
+              s._ts = _.max([s._ts, record._ts])
               s.du = Math.round((_.max([s.ts + (s.du || 0), record.ts + (record.du || 0)]) - s.ts) * 100) / 100
               s.ct += record.ct
               if (s.sp) s.sp = _.uniq(s.sp, record.sp)
@@ -800,7 +800,6 @@ class ACLAuditLogPlugin extends Sensor {
         transaction.push(['zremrangebyscore', key, '('+start, end]);
         for (const descriptor in stash) {
           const record = stash[descriptor]
-          record._ts = getUniqueTs(record.ts + (record.du || 0));
           transaction.push(['zadd', key, record._ts, JSON.stringify(record)])
         }
         // no need to set ttl here, OldDataCleanSensor will take care of it
@@ -809,7 +808,7 @@ class ACLAuditLogPlugin extends Sensor {
         try {
           log.debug(transaction)
           await rclient.pipelineAndLog(transaction)
-          log.debug("Audit:Save:Removed", key);
+          log.debug("Audit:Save:Aggregated", key);
         } catch (err) {
           log.error("Audit:Save:Error", err);
         }
