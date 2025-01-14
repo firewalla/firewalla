@@ -1582,7 +1582,7 @@ module.exports = class HostManager extends Monitorable {
     if (host) {
       log.info('createHost: already exist', o.mac)
       await host.update(o, false, true)
-      return
+      return host
     }
 
     host = new Host(o)
@@ -1592,6 +1592,8 @@ module.exports = class HostManager extends Monitorable {
     this.hosts.all.push(host);
 
     this.syncV6DB(host)
+
+    return host
   }
 
   syncV6DB(host) {
