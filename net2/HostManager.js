@@ -839,7 +839,7 @@ module.exports = class HostManager extends Monitorable {
   async internetSpeedtestResultsForInit(json, limit = 50) {
     const end = Date.now() / 1000;
     const begin = Date.now() / 1000 - 86400 * 30;
-    const results = (await rclient.zrevrangebyscoreAsync("internet_speedtest_results", end, begin) || []).map(e => {
+    const results = (await rclient.zrevrangebyscoreAsync("internet_speedtest_results", end, begin, 'limit', 0, limit) || []).map(e => {
       try {
         const r = JSON.parse(e);
         r.manual = r.manual || false;

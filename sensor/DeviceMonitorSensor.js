@@ -132,7 +132,6 @@ class DeviceMonitorSensor extends Sensor {
 
   async apiRun(){
     extensionManager.onGet("deviceMonitorData", async (msg,data) => {
-      // return await this.getNetworkMonitorData();
     });
 
     extensionManager.onGet("staStatus", async (msg,data) => {
