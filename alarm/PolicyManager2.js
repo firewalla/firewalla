@@ -734,7 +734,7 @@ class PolicyManager2 {
     let policyKeys = [];
 
     for (let rule of rules) {
-      if (_.isEmpty(rule.tag)) continue;
+      if (_.isEmpty(rule.tag) || rule.type !== "tag") continue;
 
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const tagUid = Constants.TAG_TYPE_MAP[type].ruleTagPrefix + tag;
@@ -753,6 +753,9 @@ class PolicyManager2 {
   
             log.info('remove scope from policy:' + rule.pid, tag);
           }
+        }
+        if (rule.type === "tag" && rule.target == tag) {
+          this.tryPolicyEnforcement(rule, 'unenforce');
         }
       }      
     }
