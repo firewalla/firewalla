@@ -145,6 +145,13 @@ class DNSTool {
       }
     }
     await domainUpdater.updateDomainMapping(domain, validAddresses);
+    const CategoryUpdater = require('../control/CategoryUpdater.js');
+    const categoryUpdater = new CategoryUpdater();
+    // no need to wait domain pattern update in category
+    if (firewalla.isMain())
+      categoryUpdater.updateDomainPattern(domain).catch((err) => {
+        log.error(`Failed to update category domain pattern on domain ${domain}`, err.message);
+      });
 
     if (updated === false && existing === false) {
       await rclient.zaddAsync(key, new Date() / 1000, firewalla.getRedHoleIP()); // red hole is a placeholder ip for non-existing domain

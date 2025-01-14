@@ -115,13 +115,13 @@ async function broadcastDhcp6Discover(intf) {
     let kvs = _.get(output, `nmaprun.prescript.script.table.elem`, []); // TODO: fix broadcast-dhcp6-discover path
     if (_.isArray(kvs)) {
       for (const item of kvs) {
-        result[item.key.replace(/\s/g, '')] = elem['#content'];
+        result[item.key.replace(/\s/g, '')] = item['#content'];
       }
       result['ok'] = true;
     }
   } catch(err) {
     log.error("Failed to nmap scan:", err);
-    result['err'] = `fail to run nmap broadcast-dhcp6-discover ${serverIp}` + err.message;
+    result['err'] = `fail to run nmap broadcast-dhcp6-discover ${intf}` + err.message;
   }
 }
 

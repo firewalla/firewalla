@@ -76,17 +76,31 @@ async function getHashAndVersion() {
   const localHash = await f.getLocalCommitHash()
   const localTS = await getCommitTS(localHash)
   const localVersion = config.getConfig().version
+  let localVersionStr = String(localVersion)
+  if (_.isNumber(localVersion)) {
+    let exp = 0;
+    while (!Number.isInteger(localVersion * Math.pow(10, exp)) && exp < 10)
+      exp++;
+    localVersionStr = config.getConfig().versionStr || localVersion.toFixed(Math.max(exp, 3))
+  }
   try {
     const remoteHash = await f.getRemoteCommitHash()
     const remoteTS = await getCommitTS(remoteHash)
     let remoteVersion = localVersion
+    let remoteVersionStr = localVersionStr
     if (localHash != remoteHash) {
       await exec(`timeout 20s git fetch origin ${remoteHash}`)
       const cmd = await exec(`git show ${remoteHash}:net2/config.json`)
       remoteVersion = JSON.parse(cmd.stdout).version
+      if (_.isNumber(remoteVersion)) {
+        let exp = 0;
+        while (!Number.isInteger(remoteVersion * Math.pow(10, exp)) && exp < 10)
+          exp++;
+        remoteVersionStr = JSON.parse(cmd.stdout).versionStr || remoteVersion.toFixed(Math.max(exp, 3))
+      }
     }
 
-    return { localHash, localTS, localVersion, remoteHash, remoteTS, remoteVersion }
+    return { localHash, localTS, localVersion, localVersionStr, remoteHash, remoteTS, remoteVersion, remoteVersionStr }
   } catch(err) {
     log.error('Error getting remote hash, local repo might be detached', err.message)
     return { localHash, localTS, localVersion }
