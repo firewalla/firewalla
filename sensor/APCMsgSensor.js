@@ -40,6 +40,7 @@ const Policy = require("../alarm/Policy.js");
 const pm2 = new PolicyManager2();
 const SUPPORTED_RULE_TYPES = ["device", "tag", "network", "intranet"];
 const Ipset = require('../net2/Ipset.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 
 const Sensor = require('./Sensor.js').Sensor;
@@ -59,6 +60,8 @@ class APCMsgSensor extends Sensor {
   }
 
   async run() {
+    if (!platform.isFireRouterManaged())
+      return;
     await this.loadCachedSSIDProfiles();
     await this.reloadSSIDProfiles();
 
