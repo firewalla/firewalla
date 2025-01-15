@@ -199,3 +199,9 @@ function lase() {
 function llap() {
   local_fwapc_get "v1/status/ap" | jq '.info[] | [.mac, .licenseUuid] | @tsv' -r
 }
+
+function useq() {
+  local mac="$1"
+  local seq="$2"
+  frcc . | jq --arg mac "$mac" --arg seq "$seq" 'if .apc.assets | has($mac) then .apc.assets[$mac].sysConfig.seq = $seq else . end' | frset -d @-
+}
