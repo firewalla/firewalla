@@ -195,3 +195,7 @@ function ncdiff() {
 function lase() {
   local_fwapc_get "v1/event_history/$1?format=text" | jq -r '.[]'
 }
+
+function llap() {
+  local_fwapc_get "v1/status/ap" | jq '.info[] | [.mac, .licenseUuid] | @tsv' -r
+}
