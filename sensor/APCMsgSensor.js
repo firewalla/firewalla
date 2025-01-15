@@ -50,7 +50,7 @@ const OUI_FILE_PATH = "/usr/share/nmap/nmap-mac-prefixes";
 const Sensor = require('./Sensor.js').Sensor;
 const sl = require('./SensorLoader.js');
 const WlanVendorInfo = require('../util/WlanVendorInfo.js');
-
+const rclient = require('../util/redis_manager.js').getRedisClient();
 
 class APCMsgSensor extends Sensor {
 
@@ -78,19 +78,28 @@ class APCMsgSensor extends Sensor {
           break;
         }
         case Message.MSG_FWAPC_SSID_STA_UPDATE: {
-          // wait for 5 seconds in case ssid tag is not synced to TagManager yet
-          setTimeout(() => {
-            let msg = null;
-            try {
-              msg = JSON.parse(message);
-            } catch (err) {
-              log.error(`Malformed JSON in ${Message.MSG_FWAPC_SSID_STA_UPDATE} message: ${message}`, err.message);
+          let msg = null;
+          try {
+            msg = JSON.parse(message);
+          } catch (err) {
+            log.error(`Malformed JSON in ${Message.MSG_FWAPC_SSID_STA_UPDATE} message: ${message}`, err.message);
+          }
+
+          if (msg) {
+            const mac = _.get(msg, ["station", "macAddr"]);
+            const vendor = _.get(msg, ["station", "vendor"]);
+
+            if (vendor && mac) {
+              await this.updateWlanVendorInfo(mac, vendor);
             }
-            if (msg)
+
+            // wait for 5 seconds in case ssid tag is not synced to TagManager yet
+            setTimeout(() => {
               this.processSTAUpdateMessage(msg).catch((err) => {
                 log.error(`Failed to process ${Message.MSG_FWAPC_SSID_STA_UPDATE} message: ${message}`, err.message);
               });
-          }, 5000);
+            }, 5000);
+          }
           break;
         }
         case Message.MSG_FWAPC_CONNTRACK_UPDATE: {
@@ -186,39 +195,13 @@ class APCMsgSensor extends Sensor {
       });
     });
 
-    sem.on("EnrichWlanVendor", async (event) => {
-      let mac = event.mac;
-      let vendor = event.vendor;
-      if (!mac || !vendor)
-        return;
-      mac = mac.toUpperCase();
-      log.info(`Enriching wlanVendor info for host ${mac} with vendor ${vendor}`);
-      
-      let wlanVendor = await hostTool.getFieldInMacAsync(mac, "wlanVendor");
-      if (wlanVendor) {
-        log.info(`Host ${mac} already has wlanVendor info ${wlanVendor}`)
-        return;
-      }
-      const result = await WlanVendorInfo.lookupWlanVendors([{mac: mac, vendor: vendor}]);
-      if (result && result.size == 1) {
-        const wlanVendorInfoList = result.get(mac);
-        if (wlanVendorInfoList && wlanVendorInfoList.length > 0) {
-          const wlanVendors = wlanVendorInfoList.map(v => v.vendorName);
-          log.info(`Host ${mac} has wlanVendor info ${wlanVendors}`);
-          await hostTool.updateFieldInMacAsync(mac, "wlanVendor", wlanVendors);
-        }
-      } else {
-        log.info(`Did not find a valid vendor name for mac ${mac} with vendor ${vendor}`);
-      }
-    });
+    await this.updateWlanVendorInfoForAllStations();
 
-    await this.enrichWlanVendorForAllHosts();
-
-    setInterval(this.enrichWlanVendorForAllHosts.bind(this), 3600 * 1000); // every hour
+    setInterval(this.updateWlanVendorInfoForAllStations.bind(this), 3600 * 1000); // every hour
   }
 
-  async enrichWlanVendorForAllHosts() {
-    log.info("Enriching wlanVendor info for all hosts");
+  async updateWlanVendorInfoForAllStations() {
+    log.info("Update wlanVendor info for all stations");
     const staStatus = await fwapc.getAllSTAStatus().catch((err) => {
       log.error(`Failed to get STA status from fwapc`, err.message);
       return null;
@@ -227,21 +210,17 @@ class APCMsgSensor extends Sensor {
 
     if (_.isObject(staStatus)) {
       for (const [mac, staInfo] of Object.entries(staStatus)) {
+        log.info(`Processing STA status for host ${mac} with vendor ${staInfo.vendor}`);
         const upcaseMac = mac.toUpperCase();
         if (!staInfo.vendor)
           continue;
-        let isMacExists = await hostTool.macExists(upcaseMac);
-        if (!isMacExists) {
-          log.info(`Host ${upcaseMac} does not exist in HostManager, skip enriching wlanVendor info`);
-          continue;
-        }
         
-        let wlanVendor = await hostTool.getFieldInMacAsync(upcaseMac, "wlanVendor");
-        if (wlanVendor) {
-          log.info(`Host ${upcaseMac} already has wlanVendor info ${wlanVendor}`)
+        let wlanVendors = await APCMsgSensor.getWlanVendorFromCache(upcaseMac);
+        if (wlanVendors) {
+          log.info(`Host ${upcaseMac} already has wlanVendor info ${wlanVendors} in cache`)
           continue;
         }
-        log.info(`Host ${upcaseMac} exists in HostManager, enriching wlanVendor info ${staInfo.vendor}`);  
+        log.info(`Add mac:${upcaseMac} and vendor:${staInfo.vendor} pair to update list`);  
         needEnrichMacVendorPairs.push({mac: upcaseMac, vendor: staInfo.vendor});
       }
     }
@@ -249,17 +228,44 @@ class APCMsgSensor extends Sensor {
       const result = await WlanVendorInfo.lookupWlanVendors(needEnrichMacVendorPairs);
       if (result && result.size > 0) {
         for (const [mac, wlanVendorInfoList] of result) {
-          if (wlanVendorInfoList && wlanVendorInfoList.length > 0) {
-            const wlanVendors = wlanVendorInfoList.map(v => v.vendorName);
-            log.info(`Host ${mac} has wlanVendor info ${wlanVendors}`);
-            await hostTool.updateFieldInMacAsync(mac, "wlanVendor", wlanVendors);
+          const wlanVendors = wlanVendorInfoList.filter(v => v.vendorName !== "Unknown").map(v => v.vendorName);
+          if (wlanVendors && wlanVendors.length > 0) {
+            log.info(`set wlanVendor info to cache for host ${mac} with wlanVendor ${wlanVendors}`);
+            await APCMsgSensor.setWlanVendorToCache(mac, wlanVendors);
           } else {
             log.info(`Did not find a valid vendor name for mac ${mac}`);
           }
         }
       }
     }
+  }
 
+  async updateWlanVendorInfo(mac, vendor) {
+    if (!mac || !vendor)
+      return;
+    mac = mac.toUpperCase();
+    log.info(`update wlanVendor info, mac:${mac}; vendor:${vendor}`);
+    
+    let wlanVendors = await APCMsgSensor.getWlanVendorFromCache(mac);
+    if (wlanVendors) {
+      log.info(`${mac} already has wlanVendor info ${wlanVendors} stored in cache`)
+      return;
+    }
+
+    const result = await WlanVendorInfo.lookupWlanVendors([{mac: mac, vendor: vendor}]);
+    if (result && result.size == 1) {
+      wlanVendors = WlanVendorInfo.getVendorFromVendorMap(result, mac);
+      if (wlanVendors.length > 0) {
+        log.info(`Host ${mac} has wlanVendor info ${wlanVendors}, store in cache`);
+        await APCMsgSensor.setWlanVendorToCache(mac, wlanVendors);
+      } else {
+        log.info(`Did not find a valid vendor name for mac ${mac} with vendor ${vendor}`);
+        return;
+      }
+    } else {
+      log.info(`Failed to lookup wlanVendor info for mac ${mac} with vendor ${vendor}`);
+      return;
+    }
   }
 
   isAPCSupportedRule(rule) {
@@ -425,23 +431,11 @@ class APCMsgSensor extends Sensor {
         if (!groupId && !dvlanId) // if dynamic vlan id is set and group id is not set, the station belongs to a microsegment that does not map to a group, do not add to group of the ssid's default segment
           groupId = this.ssidGroupMap[uuid] && this.ssidGroupMap[uuid].getUniqueId();
         await this.updateHostSSID(mac, uuid, groupId);
-
-        const vendor = _.get(msg, ["station", "vendor"]);
-        if (vendor) {
-          sem.emitEvent({
-            type: 'EnrichWlanVendor',
-            toProcess: 'FireMain',
-            mac: mac.toUpperCase(),
-            vendor: vendor
-          });
-        }
       }
     }).catch((err) => {
       log.error(`Failed to process STA update message: ${msg}`, err.message);
     });
   }
-
-
 
   async updateHostSSID(mac, uuid, groupId) {
     const profile = this.ssidProfiles[uuid];
@@ -593,6 +587,75 @@ class APCMsgSensor extends Sensor {
     if (this.aclAuditLogPlugin) // in case AclAuditLogPlugin not loaded
       this.aclAuditLogPlugin.writeBuffer(msg.smac, record);
   }
+
+
+  static async setWlanVendorToCache(mac, wlanVendors) {
+    const key = `wlanVendor:${mac.toUpperCase()}`;
+    let value = wlanVendors;
+    if (!_.isString(value)) {
+      value = JSON.stringify(wlanVendors);
+    }
+    await rclient.setAsync(key, value);
+  }
+
+  /**
+   * get wlan vendor from cache and refresh expire time
+   * @param {string} mac 
+   * @returns [vendor_string, ...] or null if not found
+   */
+  static async getWlanVendorFromCache(mac) {
+    const key = `wlanVendor:${mac.toUpperCase()}`;
+    const value = await rclient.getAsync(key);
+    if (value) {
+      try {
+        const wlanVendors = JSON.parse(value);
+        return wlanVendors;
+      } catch (err) {
+        log.error(`Failed to parse wlan vendor for ${mac}`, err.message);
+        return null;
+      }
+      
+    } else {
+      return null;
+    }
+  }
+
+  /**
+   * first try to get wlan vendor from cache, if not found, get from fwapc and store in cache
+   * @param {string} mac 
+   * @returns [vendor_string, ...] or null if not found
+   */
+  async getWlanVendor(mac) {
+    let wlanVendors = null;
+    mac = mac.toUpperCase();
+    wlanVendors = APCMsgSensor.getWlanVendorFromCache(mac);
+    if (wlanVendors) {
+      log.info(`Get wlan vendor for ${mac} from cache`, wlanVendors);
+      return wlanVendors;
+    }
+
+    const staStatus = await fwapc.getSTAStatus(mac);
+    log.info(`Get wlan vendor for ${mac} from fwapc`, staStatus);
+    if (_.isObject(staStatus)) {
+      log.info('staStatus is an object');
+      const vendorInfo = _.get(staStatus, "vendor");
+      if (vendorInfo) {
+        const result = await WlanVendorInfo.lookupWlanVendors([{mac: mac, vendor: vendorInfo}]);
+        if (result && result.length == 1) {
+          log.info(`Get wlan vendor for ${mac} from vendor map`, result);
+          wlanVendors = WlanVendorInfo.getVendorFromVendorMap(result, mac);
+        }
+      }
+    }
+
+    if (wlanVendors && wlanVendors.length > 0) {
+      log.info(`Get wlan vendor for ${mac} wlanVendors:${wlanVendors}`);
+      APCMsgSensor.setWlanVendorToCache(mac, wlanVendors);
+      return wlanVendors;
+    }
+    return null;  
+  }
+
 }
 
 module.exports = APCMsgSensor;

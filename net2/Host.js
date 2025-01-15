@@ -320,7 +320,7 @@ class Host extends Monitorable {
     return "host:mac:" + this.o.mac
   }
 
-  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect', 'openports', 'screenTime' ]
+  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect', 'openports', 'screenTime', 'wlanVendor' ]
   static metaFieldsNumber = [ 'firstFoundTimestamp', 'lastActiveTimestamp', 'bnameCheckTime', 'spoofingTime', '_identifyExpiration' ]
   static metaFieldsActiveTS = ['lastActiveTimestamp', 'firstFoundTimestamp']
 
@@ -1198,7 +1198,7 @@ class Host extends Monitorable {
       try {
         json.wlanVendor = JSON.parse(this.o.wlanVendor);
       } catch (e) {
-        json.wlanVendor = this.o.wlanVendor;
+        json.wlanVendor = [this.o.wlanVendor];
       }
     }
 

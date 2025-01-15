@@ -42,13 +42,18 @@ const HostManager = require('../net2/HostManager.js');
 const sysManager = require('../net2/SysManager.js');
 
 const l2 = require('../util/Layer2.js');
-const { getPreferredBName } = require('../util/util.js')
+const { getPreferredBName, withTimeout } = require('../util/util.js')
 
 const MAX_IPV6_ADDRESSES = 10
 const MAX_LINKLOCAL_IPV6_ADDRESSES = 3
 const MessageBus = require('../net2/MessageBus.js');
 const VipManager = require('../net2/VipManager.js');
 const Constants = require('../net2/Constants.js');
+
+const WlanVendorInfo = require('../util/WlanVendorInfo.js');
+// const sensorLoader = require('../sensor/SensorLoader.js');
+const APCMsgSensor = require('../sensor/APCMsgSensor.js');
+
 
 const HOST_UPDATED = 'Host:Updated'
 
@@ -298,17 +303,17 @@ class DeviceHook extends Hook {
 
           if (!mac)
             return; // ignore if mac is undefined
-
           let vendor = null;
 
-          vendor = await this.getVendorInfo(mac);
+          await withTimeout(this.getVendorInfo(mac), 3000)
+            .then(result => vendor = result)
+            .catch(err => log.error("Failed to get vendor info for " + mac, err));
 
           let v = vendor || host.macVendor || "Unknown";
 
           if (host.macVendor && host.macVendor != "Unknown") {
             enrichedHost.defaultMacVendor = host.macVendor
           }
-
           enrichedHost.macVendor = v;
 
           if (!enrichedHost.bname && host.ipv4Addr) {
@@ -331,12 +336,24 @@ class DeviceHook extends Hook {
               enrichedHost.name = _.get(networkConfig, ["apc", "assets", mac, "sysConfig", "name"]);
           }
 
+          if (!enrichedHost.wlanVendor) {
+            let wlanVendors = null ;
+            log.info(`Try to get vlanVendor info for ${mac}`);
+            await withTimeout(APCMsgSensor.getWlanVendorFromCache(mac), 1000)
+              .then(result => wlanVendors = result)
+              .catch(err => log.error("Failed to get vendor info for " + mac, err));
+            
+            if (wlanVendors && wlanVendors.length > 0) {
+              log.info(`Got wlanVendor info for ${mac}: ${wlanVendors}`);
+              enrichedHost.wlanVendor = wlanVendors;
+            }
+          }
+
           const hostManager = new HostManager();
           const h = await hostManager.createHost(enrichedHost)
           if (!sysManager.isMyMac(mac)) {
             await h.spoof(true);
           }
-
           if (!event.suppressAlarm) {
             await this.createAlarm(enrichedHost);
           } else {
@@ -346,6 +363,7 @@ class DeviceHook extends Hook {
           this.messageBus.publish("DiscoveryEvent", "Device:Create", mac, enrichedHost);
         } catch (err) {
           log.error("Failed to handle NewDeviceFound event:", err);
+          log.error(err.stack);
         }
       });
 
@@ -406,6 +424,20 @@ class DeviceHook extends Hook {
 
           const hostManager = new HostManager()
           const h = await hostManager.getHostAsync(host.mac)
+
+          if (!h.wlanVendor && !enrichedHost.wlanVendor) {
+            let wlanVendors = null ;
+            log.info(`Try to get vlanVendor info for ${host.mac}`);
+            await withTimeout(APCMsgSensor.getWlanVendorFromCache(host.mac), 1000)
+              .then(result => wlanVendors = result)
+              .catch(err => log.error("Failed to get vendor info for " + host.mac, err));
+            
+            if (wlanVendors && wlanVendors.length > 0) {
+              log.info(`Got wlanVendor info for ${host.mac}: ${wlanVendors}`);
+              enrichedHost.wlanVendor = wlanVendors;
+            }
+          }
+
           await h.update(enrichedHost, true, true)
           log.info("MAC entry is updated with new IP", host.ipv4Addr);
 
@@ -494,6 +526,20 @@ class DeviceHook extends Hook {
 
           const hostManager = new HostManager();
           const h = await hostManager.getHostAsync(host.mac)
+
+          if (!h.wlanVendor && !enrichedHost.wlanVendor) {
+            let wlanVendors = null ;
+            log.info(`Try to get vlanVendor info for ${host.mac}`);
+            await withTimeout(APCMsgSensor.getWlanVendorFromCache(host.mac), 1000)
+              .then(result => wlanVendors = result)
+              .catch(err => log.error("Failed to get vendor info for " + host.mac, err));
+            
+            if (wlanVendors && wlanVendors.length > 0) {
+              log.info(`Got wlanVendor info for ${host.mac}: ${wlanVendors}`);
+              enrichedHost.wlanVendor = wlanVendors;
+            }
+          }
+
           await h.update(enrichedHost, true, true)
           if (h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
             await h.spoof(true);
@@ -567,6 +613,20 @@ class DeviceHook extends Hook {
 
           const hostManager = new HostManager();
           const h = await hostManager.getHostAsync(mac)
+
+          if (!h.wlanVendor && !enrichedHost.wlanVendor) {
+            let wlanVendors = null ;
+            log.info(`Try to get vlanVendor info for ${mac}`);
+            await withTimeout(APCMsgSensor.getWlanVendorFromCache(mac), 1000)
+              .then(result => wlanVendors = result)
+              .catch(err => log.error("Failed to get vendor info for " + mac, err));
+            
+            if (wlanVendors && wlanVendors.length > 0) {
+              log.info(`Got wlanVendor info for ${mac}: ${wlanVendors}`);
+              enrichedHost.wlanVendor = wlanVendors;
+            }
+          }
+
           await h.update(enrichedHost, true, true)
           if (h && h.isMonitoring() && !sysManager.isMyMac(mac)) {
             await h.spoof(true);
@@ -772,8 +832,7 @@ class DeviceHook extends Hook {
     } catch (err) {
       log.error("Failed to get vendor info from cloud", err);
     }
-
-    return require('../sensor/NmapSensor.js').getOUI(mac)
+    return WlanVendorInfo.lookupMacVendor(mac); // fallback to local lookup
   }
 }
 
