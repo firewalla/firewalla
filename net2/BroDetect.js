@@ -1919,6 +1919,7 @@ class BroDetect {
   async writeTrafficCache() {
     const toRecord = this.timeSeriesCache
     this.timeSeriesCache = { ts: Date.now() / 1000 }
+    this.recordTraffic({}, 'global') // initialize global key, so wan traffic always get recoreded
     const duration = this.timeSeriesCache.ts - toRecord.ts
     const lastTS = Math.floor(toRecord.ts)
 
