@@ -45,6 +45,7 @@ const Ipset = require('../net2/Ipset.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const OUI_FILE_PATH = "/usr/share/nmap/nmap-mac-prefixes";
 
+const scheduler = require('../extension/scheduler/scheduler.js');
 
 
 const Sensor = require('./Sensor.js').Sensor;
@@ -60,6 +61,7 @@ class APCMsgSensor extends Sensor {
     this.ssidGroupMap = {};
     this.enforcedRules = {};
     this.assetsIP4s = {};
+    this.policyInitialized = false;
     sl.initSingleSensor("ACLAuditLogPlugin").then((r) => {this.aclAuditLogPlugin = r}).catch((err) => {
       log.error("Failed to init ACLAuditLogPlugin", this.aclAuditLogPlugin);
     });
@@ -151,44 +153,48 @@ class APCMsgSensor extends Sensor {
       });
     }, 60000);
 
-    sem.on("PolicyEnforcement", async (event) => {
+    // scheduled rule activated
+    sem.on("Policy:Activated", async (event) => {
       await lock.acquire(LOCK_RULE_UPDATE, async () => {
-        const {policy, action} = event;
-        if (!policy || !action || !policy.pid)
+        if (!this.policyInitialized)
+          return;
+        const policy = event.policy;
+        if (!policy || !policy.pid)
           return;
         const pid = String(policy.pid);
-        switch (action) {
-          case "enforce":
-          case "reenforce": {
-            if (policy.disabled == "1" || !this.isAPCSupportedRule(policy)) {
-              if (_.has(this.enforcedRules, pid))
-                await fwapc.deleteRule(pid);
-              delete this.enforcedRules[pid];
-            } else {
-              await fwapc.updateRule(policy);
-              this.enforcedRules[pid] = 1;
-            }
-            break;
-          }
-          case "unenforce": {
-            await fwapc.deleteRule(policy.pid);
-            delete this.enforcedRules[pid];
-            break;
-          }
-          default:
+        if (!this.isAPCSupportedRule(policy)) {
+          if (_.has(this.enforcedRules, pid))
+            await fwapc.deleteRule(pid);
+          delete this.enforcedRules[pid];
+        } else {
+          await fwapc.updateRule(policy);
+          this.enforcedRules[pid] = 1;
         }
-      }).catch((err) => {
-        log.error(`Failed to update rule in fwapc ${event}`, err.message);
+      });
+    });
+    // scheduled rule deactivated
+    sem.on("Policy:Deactivated", async (event) => {
+      await lock.acquire(LOCK_RULE_UPDATE, async () => {
+        if (!this.policyInitialized)
+          return;
+        const policy = event.policy;
+        if (!policy || !policy.pid)
+          return;
+        const pid = String(policy.pid);
+        if (_.has(this.enforcedRules, pid))
+          await fwapc.deleteRule(pid);
+        delete this.enforcedRules[pid];
       });
     });
 
     sem.on("Policy:AllInitialized", async () => {
       await lock.acquire(LOCK_RULE_UPDATE, async () => {
-        const rules = (await pm2.loadActivePoliciesAsync() || []).filter(rule => this.isAPCSupportedRule(rule));
+        const rules = (await pm2.loadActivePoliciesAsync() || []).filter(rule => this.isAPCSupportedRule(rule) && (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
         for (const rule of rules) {
           if (rule.pid)
             this.enforcedRules[String(rule.pid)] = 1;
         }
+        this.policyInitialized = true;
         await fwapc.updateRules(rules, true);
       }).catch((err) => {
         log.error(`Failed to sync all rules to fwapc`, err.message);

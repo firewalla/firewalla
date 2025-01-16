@@ -1098,6 +1098,7 @@ class PolicyManager2 {
           }
           log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
         } else {
+          this.notifyPolicyActivated(policy);
           await this._enforce(policy);
           log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
           const pid = policy.pid;
@@ -1129,6 +1130,7 @@ class PolicyManager2 {
         // this is an app time usage policy, use AppTimeUsageManager to manage it
         return AppTimeUsageManager.registerPolicy(policy);
       } else {
+        this.notifyPolicyActivated(policy);
         return this._enforce(policy); // regular enforce
       }
     } finally {
@@ -1136,6 +1138,22 @@ class PolicyManager2 {
       if (action === "block" || action === "app_block")
         this.scheduleRefreshConnmark();
     }
+  }
+
+  // should be invoked right before the policy is effectively enforced, e.g., regular enforcement, schedule/pause until triggered
+  notifyPolicyActivated(policy) {
+    sem.emitLocalEvent({
+      type: "Policy:Activated",
+      policy
+    });
+  }
+
+  // should be invoked right before the policy is effectively unenforced, e.g., regular unenforcement, end of schedule, one time only
+  notifyPolicyDeactivated(policy) {
+    sem.emitLocalEvent({
+      type: "Policy:Deactivated",
+      policy
+    });
   }
 
   // this is the real execution of enable and disable policy
@@ -1706,6 +1724,7 @@ class PolicyManager2 {
         // this is an app time usage policy, use AppTimeUsageManager to manage it
         return AppTimeUsageManager.deregisterPolicy(policy);
       } else {
+        this.notifyPolicyDeactivated(policy);
         return this._unenforce(policy) // regular unenforce
       }
     } finally {
