@@ -1592,7 +1592,6 @@ module.exports = class HostManager extends Monitorable {
     this.hosts.all.push(host);
 
     this.syncV6DB(host)
-
     return host
   }
 

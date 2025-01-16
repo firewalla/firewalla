@@ -79,6 +79,7 @@ function enableSubPath(path, lib) {
 
 // encipher api is enabled even for production enviornment
 enableSubPath('encipher');
+subpath_v1.use('/host', host);
 
 if(!firewalla.isProductionOrBeta()) {
   // apis for development purpose only, do NOT enable them in production
@@ -87,7 +88,6 @@ if(!firewalla.isProductionOrBeta()) {
   subpath_v1.use('/dns', dnsmasq);
   subpath_v1.use('/alarm', alarm);
   subpath_v1.use('/flow', flow);
-  subpath_v1.use('/host', host);
   subpath_v1.use('/mode', mode);
   subpath_v1.use('/test', test);
 
