@@ -521,23 +521,26 @@ class ACLAuditLogPlugin extends Sensor {
     let mac = record.mac;
     delete record.mac
     // first try to get mac from device database
-    if (!mac || mac === "FF:FF:FF:FF:FF:FF" || !hostManager.getHostFastByMAC(mac)) {
-      if (record.sh)
-        mac = await hostTool.getMacByIPWithCache(record.sh);
-    }
-    if (sysManager.isMyMac(mac)) return
-    // then try to get guid from IdentityManager, because it is more CPU intensive
-    if (!mac) {
-      const identity = IdentityManager.getIdentityByIP(record.sh);
-      if (identity) {
-        if (!platform.isFireRouterManaged())
-          return;
-        mac = IdentityManager.getGUID(identity);
-        record.rl = IdentityManager.getEndpointByIP(record.sh);
-        if (!intfUUID) // in rare cases, client is from another box's local network in the same VPN mesh, source IP is not SNATed
-          intfUUID = identity.getNicUUID();
+    if (!mac || mac === "FF:FF:FF:FF:FF:FF") {
+      mac = null;
+      if (record.sh) {
+        if (new Address4(record.sh).isValid()) {
+          // very likely this is a VPN device
+          const identity = IdentityManager.getIdentityByIP(record.sh);
+          if (identity) {
+            if (!platform.isFireRouterManaged())
+              return;
+            mac = IdentityManager.getGUID(identity);
+            record.rl = IdentityManager.getEndpointByIP(record.sh);
+            if (!intfUUID) // in rare cases, client is from another box's local network in the same VPN mesh, source IP is not SNATed
+              intfUUID = identity.getNicUUID();
+          }
+        }
+        if (!mac)
+          mac = await hostTool.getMacByIPWithCache(record.sh);
       }
     }
+    if (mac && sysManager.isMyMac(mac)) return
 
     if (!intfUUID) {
       if (mac && hostTool.isMacAddress(mac)) {
