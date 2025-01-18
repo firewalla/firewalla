@@ -621,7 +621,7 @@ class Host extends Monitorable {
       return;
     }
     if(state === true) {
-      hostTool.getMacByIP(gateway).then((gatewayMac) => {
+      hostTool.getMacByIPWithCache(gateway).then((gatewayMac) => {
         if (gatewayMac && gatewayMac === this.o.mac) {
           // ignore devices that has same mac address as gateway
           log.info(this.o.ipv4Addr + " has same mac address as gateway. Skip spoofing...");
