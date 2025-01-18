@@ -276,6 +276,10 @@ class HostTool {
     }
   }
 
+  setIPMacCache(ip, mac) {
+    this.ipMacMapping.set(ip, mac);
+  }
+
   async getMacByIPWithCache(ip) {
     const cached = this.ipMacMapping.peek(ip)
     if (cached) {

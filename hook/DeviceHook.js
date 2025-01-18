@@ -86,6 +86,15 @@ class DeviceHook extends Hook {
     mac = mac.toUpperCase()
     host.mac = mac // make sure the MAC is upper case
 
+    if (mac) {
+      if (ipv4Addr)
+        hostTool.setIPMacCache(ipv4Addr, mac);
+      if (_.isArray(ipv6Addr)) {
+        for (const ip6 of ipv6Addr)
+          hostTool.setIPMacCache(ip6, mac);
+      }
+    }
+
     try {
 
       // 0. update a special name key for source
