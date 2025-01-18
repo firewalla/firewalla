@@ -337,10 +337,8 @@ class DeviceHook extends Hook {
           }
 
           if (!enrichedHost.wlanVendor) {
-            let wlanVendors = null ;
-            log.info(`Try to get vlanVendor info for ${mac}`);
-            await withTimeout(APCMsgSensor.getWlanVendorFromCache(mac), 1000)
-              .then(result => wlanVendors = result)
+            log.debug(`Try to get vlanVendor info for ${mac}`);
+            const wlanVendors = await APCMsgSensor.getWlanVendorFromCache(host.mac)
               .catch(err => log.error("Failed to get vendor info for " + mac, err));
             
             if (wlanVendors && wlanVendors.length > 0) {
@@ -426,10 +424,8 @@ class DeviceHook extends Hook {
           const h = await hostManager.getHostAsync(host.mac)
 
           if (!h.wlanVendor && !enrichedHost.wlanVendor) {
-            let wlanVendors = null ;
-            log.info(`Try to get vlanVendor info for ${host.mac}`);
-            await withTimeout(APCMsgSensor.getWlanVendorFromCache(host.mac), 1000)
-              .then(result => wlanVendors = result)
+            log.debug(`Try to get vlanVendor info for ${host.mac}`);
+            const wlanVendors = await APCMsgSensor.getWlanVendorFromCache(host.mac)
               .catch(err => log.error("Failed to get vendor info for " + host.mac, err));
             
             if (wlanVendors && wlanVendors.length > 0) {
@@ -528,10 +524,8 @@ class DeviceHook extends Hook {
           const h = await hostManager.getHostAsync(host.mac)
 
           if (!h.wlanVendor && !enrichedHost.wlanVendor) {
-            let wlanVendors = null ;
-            log.info(`Try to get vlanVendor info for ${host.mac}`);
-            await withTimeout(APCMsgSensor.getWlanVendorFromCache(host.mac), 1000)
-              .then(result => wlanVendors = result)
+            log.debug(`Try to get vlanVendor info for ${host.mac}`);
+            const wlanVendors = await APCMsgSensor.getWlanVendorFromCache(host.mac)
               .catch(err => log.error("Failed to get vendor info for " + host.mac, err));
             
             if (wlanVendors && wlanVendors.length > 0) {
@@ -615,10 +609,8 @@ class DeviceHook extends Hook {
           const h = await hostManager.getHostAsync(mac)
 
           if (!h.wlanVendor && !enrichedHost.wlanVendor) {
-            let wlanVendors = null ;
-            log.info(`Try to get vlanVendor info for ${mac}`);
-            await withTimeout(APCMsgSensor.getWlanVendorFromCache(mac), 1000)
-              .then(result => wlanVendors = result)
+            log.debug(`Try to get vlanVendor info for ${mac}`);
+            const wlanVendors = await APCMsgSensor.getWlanVendorFromCache(mac)
               .catch(err => log.error("Failed to get vendor info for " + mac, err));
             
             if (wlanVendors && wlanVendors.length > 0) {
