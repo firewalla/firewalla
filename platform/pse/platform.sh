@@ -20,6 +20,7 @@ MANAGED_BY_FIREROUTER=yes
 RAMFS_ROOT_PARTITION=yes
 MAX_OLD_SPACE_SIZE=384
 HAVE_FWAPC=yes
+WAN_INPUT_DROP_RATE_LIMIT=4
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
