@@ -142,5 +142,6 @@ fi
 
 sudo $FIREWALLA_HOME/scripts/apply_profile.sh -f &> /tmp/apply_profile-main-run.log
 timeout 1200 $FIREWALLA_HOME/scripts/update_assets.sh &>/dev/null
+timeout 1200 ASSETSD_PATH=$FIREWALLA_HIDDEN/config/assets.fwapc $FIREWALLA_HOME/scripts/update_assets.sh &>/dev/null
 
 logger "FIREWALLA:MAIN-RUN:DONE"
