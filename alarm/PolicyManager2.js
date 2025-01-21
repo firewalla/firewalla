@@ -754,12 +754,12 @@ class PolicyManager2 {
             log.info('remove scope from policy:' + rule.pid, tag);
           }
         }
-        if (rule.type === "tag" && rule.target == tag) {
-          this.tryPolicyEnforcement(rule, 'unenforce');
-          policyIds.push(rule.pid);
-          policyKeys.push(`policy:${rule.pid}`);
-        }
-      }      
+      }
+      if (rule.type === "tag" && rule.target == tag) {
+        this.tryPolicyEnforcement(rule, 'unenforce');
+        policyIds.push(rule.pid);
+        policyKeys.push(`policy:${rule.pid}`);
+      }  
     }
 
     if (policyIds.length) {
