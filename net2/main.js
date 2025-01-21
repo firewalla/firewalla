@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -196,24 +196,6 @@ async function resetModeInInitStage() {
   }
 }
 
-function enableFireBlue() {
-  // start firemain process only in v2 mode
-  cp.exec("sudo systemctl restart firehttpd", (err, stdout, stderr) => {
-    if(err) {
-        log.error("Failed to start firehttpd:", err);
-    }
-  })
-}
-
-function disableFireBlue() {
-  // stop firehttpd in v1
-  cp.exec("sudo systemctl stop firehttpd", (err, stdout, stderr) => {
-    if(err) {
-        log.error("Failed to stop firehttpd:", err);
-    }
-  })
-}
-
 async function run() {
   // periodically update cpu usage, so that latest info can be pulled at any time
   const si = require('../extension/sysinfo/SysInfo.js');
@@ -356,27 +338,6 @@ async function run() {
         }
     }
   },1000*60);
-
-
-  // finally need to check if firehttpd should be started
-
-  if(fc.isFeatureOn("redirect_httpd")) {
-    enableFireBlue()
-  } else {
-    disableFireBlue()
-  }
-
-  fc.onFeature("redirect_httpd", (feature, status) => {
-    if(feature !== "redirect_httpd") {
-      return
-    }
-
-    if(status) {
-      enableFireBlue()
-    } else {
-      disableFireBlue()
-    }
-  })
 
   process.on('SIGUSR1', () => {
     log.info('Received SIGUSR1. Trigger check.');
