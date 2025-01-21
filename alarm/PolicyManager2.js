@@ -756,6 +756,8 @@ class PolicyManager2 {
         }
         if (rule.type === "tag" && rule.target == tag) {
           this.tryPolicyEnforcement(rule, 'unenforce');
+          policyIds.push(rule.pid);
+          policyKeys.push(`policy:${rule.pid}`);
         }
       }      
     }
