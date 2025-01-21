@@ -94,6 +94,7 @@ fi
 logger "FIREWALLA:MAIN-RUN:MAIN-START"
 redis-cli del sys:upgrade >/dev/null
 redis-cli publish FIREWALLA:HEARTBEAT:UPDATE '{"invoked-by":"firewalla"}' >/dev/null
+ASSETSD_PATH=$FIREWALLA_HIDDEN/config/assets.fwapc timeout 90 $FIREWALLA_HOME/scripts/update_assets.sh > /tmp/fwapcupgrade.log
 $FIREWALLA_HOME/scripts/main-start
 
 # cleanup overlay backups from a previous reset
@@ -142,6 +143,5 @@ fi
 
 sudo $FIREWALLA_HOME/scripts/apply_profile.sh -f &> /tmp/apply_profile-main-run.log
 timeout 1200 $FIREWALLA_HOME/scripts/update_assets.sh &>/dev/null
-ASSETSD_PATH=$FIREWALLA_HIDDEN/config/assets.fwapc timeout 120 $FIREWALLA_HOME/scripts/update_assets.sh &>/dev/null
 
 logger "FIREWALLA:MAIN-RUN:DONE"
