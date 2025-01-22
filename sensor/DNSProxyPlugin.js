@@ -58,6 +58,7 @@ const extensionManager = require('./ExtensionManager.js')
 const tm = require('../alarm/TrustManager.js');
 
 const bf = require('../extension/bf/bf.js');
+const LRU = require('lru-cache');
 
 // slices a single byte into bits
 // assuming only single bytes
@@ -99,25 +100,12 @@ class DNSProxyPlugin extends Sensor {
     await rclient.unlinkAsync(allowKey);
     await rclient.unlinkAsync(blockKey);
     await rclient.unlinkAsync(passthroughKey);
+    this.processedDomainCache = new LRU({maxAge: 15000, max: 300});
 
     extensionManager.registerExtension(featureName, this, {
       applyPolicy: this.applyDnsProxy
     });
     this.hookFeature(featureName);
-  }
-
-  getHashKeyName(item = {}, level = "default") {
-    if (!item.count || !item.error || !item.prefix) {
-      log.error("Invalid item:", item);
-      return null;
-    }
-
-    const { count, error, prefix } = item;
-
-    if (level) {
-      return `bf:${level}_${prefix}:${count}:${error}`;
-    }
-    return `bf:${prefix}:${count}:${error}`;
   }
 
   getFilePath(item = {}) {
@@ -231,8 +219,11 @@ class DNSProxyPlugin extends Sensor {
             if (msgObj.bf_path.startsWith("/home/pi/.firewalla/run/category_data/filters")) {
               return;
             }
-
-            await this.processRequest(msgObj.domain, ip, MAC);
+            // do not repeatedly process the same domain in a short time
+            if (!this.processedDomainCache.peek(msgObj.domain)) {
+              this.processedDomainCache.set(msgObj.domain, true);
+              await this.processRequest(msgObj.domain, ip, MAC);
+            }
           }
 
           await m.incr("dns_proxy_request_cnt");
@@ -257,7 +248,7 @@ class DNSProxyPlugin extends Sensor {
         const levelData = this.dnsProxyData[level];
         for (const item of levelData) {
           item.level = level;
-          const hashKeyName = this.getHashKeyName(item);
+          const hashKeyName = bf.getHashKeyName(item);
           if (!hashKeyName) continue;
           await cc.disableCache(hashKeyName).catch((err) => {
             log.error("Failed to disable cache, err:", err);
@@ -317,10 +308,11 @@ class DNSProxyPlugin extends Sensor {
     log.info("dns request is", domain);
     const begin = new Date() / 1;
     const cache = await this.checkCache(domain);
+    let isIntel = false;
     if (cache) {
       log.info(`inteldns:${domain} is already cached locally, updating redis cache keys directly...`);
       if ((cache.c || cache.category) === "intel") {
-
+        isIntel = true;
         const isTrusted = await tm.matchDomain(domain);
 
         if(isTrusted) {
@@ -332,15 +324,15 @@ class DNSProxyPlugin extends Sensor {
       } else {
         await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), domain);
       }
-      return; // do need to do anything
+    } else {
+      // if no cache, will trigger cloud inquiry and store the result in cache
+      // assume client will send dns query again when cache is ready
+      const result = await intelTool.checkIntelFromCloud(undefined, domain); // parameter ip is undefined since it's a dns request only
+      isIntel = await this.updateCache(domain, result, ip, mac);
+      const end = new Date() / 1;
+      log.info("dns intel result is", result, "took", Math.floor(end - begin), "ms");
     }
-
-    // if no cache, will trigger cloud inquiry and store the result in cache
-    // assume client will send dns query again when cache is ready
-    const result = await intelTool.checkIntelFromCloud(undefined, domain); // parameter ip is undefined since it's a dns request only
-    await this.updateCache(domain, result, ip, mac);
-    const end = new Date() / 1;
-    log.info("dns intel result is", result, "took", Math.floor(end - begin), "ms");
+    await m.incr(isIntel ? "dns_proxy_true_positive" : "dns_proxy_false_positive");
   }
 
   redisfy(item) {
@@ -379,11 +371,12 @@ class DNSProxyPlugin extends Sensor {
   }
 
   async updateCache(domain, result, ip, mac) {
+    let isIntel = false;
     if (_.isEmpty(result)) { // empty intel, means the domain is good
       const domains = flowUtil.getSubDomains(domain);
       if (!domains) {
         log.warn("Invalid Domain", domain, "skipped.");
-        return;
+        return false;
       }
 
       // since result is empty, it means all sub domains of this domain are good
@@ -406,7 +399,7 @@ class DNSProxyPlugin extends Sensor {
       const sortedItems = this.getSortedItems(validItems);
 
       if (_.isEmpty(sortedItems)) {
-        return;
+        return false;
       }
 
       for (const item of sortedItems) {
@@ -420,12 +413,14 @@ class DNSProxyPlugin extends Sensor {
 
       for (const item of sortedItems) {
         if (item.c === "intel") {
+          isIntel = true;
           const dn = item.originIP; // originIP is the domain
           await this._genSecurityAlarm(ip, mac, dn, item);
           break;
         }
       }
     }
+    return isIntel;
   }
 
 }
