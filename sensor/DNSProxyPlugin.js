@@ -137,7 +137,7 @@ class DNSProxyPlugin extends Sensor {
         if (!fp) {
           continue;
         }
-        const entry = `server-bf-uhigh=<${fp},${item.count},${item.error}><${allowKey}><${blockKey}><${passthroughKey}>127.0.0.153#59953$dns_proxy\n`;
+        const entry = `server-bf-exact-uhigh=<${fp},${item.count},${item.error}><${allowKey}><${blockKey}><${passthroughKey}>127.0.0.153#59953$dns_proxy\n`;
         dnsmasqEntry += entry;
       }
     }
