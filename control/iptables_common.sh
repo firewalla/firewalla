@@ -10,6 +10,7 @@ BLUE_HOLE_IP="198.51.100.100"
 
 : "${FW_PROBABILITY:=0.9}"
 : "${FW_QOS_PROBABILITY:=0.999}"
+: "${WAN_INPUT_DROP_RATE_LIMIT:=10}"
 
 sudo which ipset &>/dev/null || sudo apt-get install -y ipset
 
@@ -257,7 +258,7 @@ cat << EOF > "$filter_file"
 -N FW_WAN_IN_DROP
 # if it is not a TCP-SYN packet, simply drop it without logging, this may match packets that belong to a already terminated TCP connection
 -A FW_WAN_IN_DROP -p tcp -m tcp ! --tcp-flags SYN,ACK SYN -j DROP
--A FW_WAN_IN_DROP -m limit --limit 1000/second -j FW_WAN_IN_DROP_LOG
+-A FW_WAN_IN_DROP -m limit --limit ${WAN_INPUT_DROP_RATE_LIMIT}/second -j FW_WAN_IN_DROP_LOG
 -A FW_WAN_IN_DROP -j DROP
 
 # log allow rule
