@@ -1,4 +1,4 @@
-/*    Copyright 2018-2022 Firewalla Inc.
+/*    Copyright 2018-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,7 +23,6 @@ const path = require('path');
 const logger = require('morgan');
 const cookieParser = require('cookie-parser');
 const bodyParser = require('body-parser');
-const argv = require('minimist')(process.argv.slice(2));
 const swagger = require("swagger-node-express");
 
 const firewalla = require('../net2/Firewalla.js');
@@ -110,8 +109,6 @@ if(!firewalla.isProductionOrBeta()) {
   });
 
   let domain = require('ip').address;
-  if(argv.domain !== undefined)
-    domain = argv.domain;
 
   if(firewalla.isDocker()) {
     domain = "127.0.0.1"

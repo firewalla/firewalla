@@ -951,7 +951,7 @@ check_sys_features() {
     nameMap[compress_flows]="Compress Flow"
     nameMap[event_collect]="Events"
     nameMap[mesh_vpn]="Mesh VPN"
-    nameMap[redirect_httpd]="Legacy API service"
+    nameMap[redirect_httpd]="Legacy block service"
     nameMap[upstream_dns]="Legacy DNS -should be off-"
 
     for key in "${keyList[@]}"; do
