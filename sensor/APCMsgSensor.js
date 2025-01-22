@@ -38,7 +38,7 @@ const sem = require('./SensorEventManager.js').getInstance();
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const Policy = require("../alarm/Policy.js");
 const pm2 = new PolicyManager2();
-const SUPPORTED_RULE_TYPES = ["device", "tag", "intranet"];
+const SUPPORTED_RULE_TYPES = ["device", "tag", "network", "intranet"];
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 
@@ -180,7 +180,7 @@ class APCMsgSensor extends Sensor {
       return false;
     if (_.isArray(scope) && scope.some(h => !hostTool.isMacAddress(h)))
       return false;
-    if (_.isArray(tag) && tag.some(t => !t.startsWith(Policy.TAG_PREFIX)))
+    if (_.isArray(tag) && tag.some(t => !t.startsWith(Policy.TAG_PREFIX) && !t.startsWith(Policy.INTF_PREFIX)))
       return false;
     if (type === "device" && !hostTool.isMacAddress(target))
       return false;
