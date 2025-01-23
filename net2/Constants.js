@@ -148,4 +148,7 @@ module.exports = {
   FEATURE_LOCAL_FLOW: "local_flow",
   FEATURE_VPN_DISCONNECT: "vpn_disconnect",
   FEATURE_VPN_RESTORE: "vpn_restore",
+
+  POLICY_KEY_ISOLATION: "isolation",
+  POLICY_KEY_SSID_PSK: "ssidPSK",
 };

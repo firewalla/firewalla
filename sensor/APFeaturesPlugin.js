@@ -18,15 +18,18 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 const _ = require('lodash');
-const policyKeyName = "isolation";
 const extensionManager = require('./ExtensionManager.js');
 const Tag = require('../net2/Tag.js');
+const TagManager = require('../net2/TagManager.js');
 const { Rule } = require('../net2/Iptables.js');
 const ipset = require('../net2/Ipset.js');
 const fwapc = require('../net2/fwapc.js');
 const Identity = require('../net2/Identity.js');
 const Host = require('../net2/Host.js');
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
 const NetworkProfile = require('../net2/NetworkProfile.js');
+const Constants = require('../net2/Constants.js');
 
 class APFeaturesPlugin extends Sensor {
   async run() {
@@ -38,6 +41,16 @@ class APFeaturesPlugin extends Sensor {
       extensionManager.registerExtension(key, this, {
         applyPolicy: policyHandlers[key]
       });
+
+    // periodically sync isolation and ssidPSK to fwapc in case of inconsistency
+    setInterval(async () => {
+      await this.syncIsolation().catch((err) => {
+        log.error(`Failed to run periodic sync isolation to fwapc`, err.message);
+      });
+      await this.syncSSIDPSK().catch((err) => {
+        log.error(`Failed to run periodic sync ssidPSK to fwapc`, err.message);
+      });
+    }, 900 * 1000);
   }
 
   async applyIsolation(obj, ip, policy) {
@@ -144,7 +157,7 @@ class APFeaturesPlugin extends Sensor {
 
   async applySSIDPSK(obj, ip, policy) {
     if (!obj instanceof Tag) {
-      log.error(`${policyKeyName} is not supported on ${obj.constructor.name} object`);
+      log.error(`${Constants.POLICY_KEY_SSID_PSK} is not supported on ${obj.constructor.name} object`);
       return;
     }
     const tag = obj;
@@ -174,6 +187,32 @@ class APFeaturesPlugin extends Sensor {
       await fwapc.setGroup(tagUid, {config: {ssid: ssidConfig}}).catch((err) => {
         log.error(`Failed to set fwapc ssid config on group ${tagUid}`, err.message);
       });
+  }
+
+  async syncIsolation() {
+    const hosts = hostManager.getHostsFast();
+    for (const host of hosts) {
+      const p = await host.getPolicyAsync(Constants.POLICY_KEY_ISOLATION);
+      if (!_.isEmpty(p) && _.isObject(p))
+        await fwapc.setDeviceAcl(host.getUniqueId(), {isolation: p.external ? true : false}).catch((err) => {});
+    }
+    const tags = await TagManager.getPolicyTags(Constants.POLICY_KEY_ISOLATION).catch((err) => {
+      log.error(`Failed to load tags with policy ${Constants.POLICY_KEY_SSID_PSK}`, err.message);
+      return [];
+    });
+    for (const tag of tags) {
+      const p = await tag.getPolicyAsync(Constants.POLICY_KEY_ISOLATION);
+      if (!_.isEmpty(p) && _.isObject(p))
+        await fwapc.setGroup(tag.getUniqueId(), {config: {isolation: {internal: p.internal || false, external: p.external || false}}}).catch((err) => {});
+    }
+  }
+
+  async syncSSIDPSK() {
+    const tags = await TagManager.getPolicyTags(Constants.POLICY_KEY_SSID_PSK);
+    for (const tag of tags) {
+      const p = await tag.getPolicyAsync(Constants.POLICY_KEY_SSID_PSK);
+      await this.applySSIDPSK(tag, null, p); // second argument is not used in function
+    }
   }
 }
 
