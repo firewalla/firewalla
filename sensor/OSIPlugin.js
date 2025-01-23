@@ -500,69 +500,67 @@ class OSIPlugin extends Sensor {
 
     try {
       const policy = hostManager.getPolicyFast();
-      if (policy.vpnClient) {
-        const profileIds = await hostManager.getAllActiveStrictVPNClients(policy.vpnClient);
+      
+      const profileIds = policy.vpnClient ? await hostManager.getAllActiveStrictVPNClients(policy.vpnClient) : [];
 
-        const rules = await pm2.getHighImpactfulRules();
+      const rules = await pm2.getHighImpactfulRules();
 
-        await rclient.delAsync(OSI_RULES_KEY);
-        await rclient.delAsync(OSI_KEY);
+      await rclient.delAsync(OSI_RULES_KEY);
+      await rclient.delAsync(OSI_KEY);
 
-        for (const rule of rules) {
-          if (rule.action === 'route') {
-            const profileId = rule.wanUUID.replace(Constants.ACL_VPN_CLIENT_WAN_PREFIX, "");
-            if(!profileIds.includes(profileId)) {
-              continue; // if PBR rule's VPN doesn't have kill switch on, no need to OSI it.
-            }
-          }
-
-          await this.processRule(rule);
-        }
-
-        // GROUP
-        const tagJson = await tagManager.toJson();
-        for (const tag of Object.values(tagJson)) {
-          if (this.hasValidProfileId(tag)) {
-            const hostProfileId = tag.policy.vpnClient.profileId;
-            if (profileIds.includes(hostProfileId)) {
-              await this.processTagId(tag.uid, OSI_KEY);
-            }
+      for (const rule of rules) {
+        if (rule.action === 'route') {
+          const profileId = rule.wanUUID.replace(Constants.ACL_VPN_CLIENT_WAN_PREFIX, "");
+          if (!policy.vpnClient || !profileIds.includes(profileId)) {
+            continue; // if PBR rule's VPN doesn't have kill switch on, no need to OSI it.
           }
         }
 
-        // HOST
-        for (const host of hostManager.getHostsFast()) {
-          if (this.hasValidProfileId(host)) {
-            const hostProfileId = host.policy.vpnClient.profileId;
-            if (profileIds.includes(hostProfileId)) {
-              // mac,20:6D:31:00:00:01
-              await rclient.saddAsync(OSI_KEY, `mac,${host.o.mac}`);
+        await this.processRule(rule);
+      }
+
+      // GROUP
+      const tagJson = await tagManager.toJson();
+      for (const tag of Object.values(tagJson)) {
+        if (this.hasValidProfileId(tag)) {
+          const hostProfileId = tag.policy.vpnClient.profileId;
+          if (profileIds.includes(hostProfileId)) {
+            await this.processTagId(tag.uid, OSI_KEY);
+          }
+        }
+      }
+
+      // HOST
+      for (const host of hostManager.getHostsFast()) {
+        if (this.hasValidProfileId(host)) {
+          const hostProfileId = host.policy.vpnClient.profileId;
+          if (profileIds.includes(hostProfileId)) {
+            // mac,20:6D:31:00:00:01
+            await rclient.saddAsync(OSI_KEY, `mac,${host.o.mac}`);
+          }
+        }
+      }
+
+      // NETWORK
+      for (const network of Object.values(networkProfileManager.networkProfiles)) {
+        if (this.hasValidProfileId(network)) {
+          const networkVPNProfileId = network.policy.vpnClient.profileId;
+          if (profileIds.includes(networkVPNProfileId)) {
+            await this.processNetwork(network, OSI_KEY);
+          }
+        }
+      }
+
+      // Identity: WireGuard, VPN
+      for (const identities of Object.values(identityManager.getAllIdentities())) {
+        for (const identity of Object.values(identities)) {
+          if (this.hasValidProfileId(identity)) {
+            const profileId = identity.policy.vpnClient.profileId;
+            if (profileIds.includes(profileId)) {
+              await this.processIdentity(identity, OSI_KEY);
             }
           }
         }
-
-        // NETWORK
-        for (const network of Object.values(networkProfileManager.networkProfiles)) {
-          if (this.hasValidProfileId(network)) {
-            const networkVPNProfileId = network.policy.vpnClient.profileId;
-            if (profileIds.includes(networkVPNProfileId)) {
-              await this.processNetwork(network, OSI_KEY);
-            }
-          }
-        }
-
-        // Identity: WireGuard, VPN
-        for (const identities of Object.values(identityManager.getAllIdentities())) {
-          for(const identity of Object.values(identities)) {
-            if (this.hasValidProfileId(identity)) {
-              const profileId = identity.policy.vpnClient.profileId;
-              if (profileIds.includes(profileId)) {
-                await this.processIdentity(identity, OSI_KEY);
-              }
-            }
-          }
-        }
-
       }
 
     } catch (err) {
