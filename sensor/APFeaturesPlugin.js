@@ -30,9 +30,12 @@ const HostManager = require('../net2/HostManager.js');
 const hostManager = new HostManager();
 const NetworkProfile = require('../net2/NetworkProfile.js');
 const Constants = require('../net2/Constants.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 class APFeaturesPlugin extends Sensor {
   async run() {
+    if (!platform.isFireRouterManaged())
+      return;
     const policyHandlers = {
       "isolation": this.applyIsolation,
       "ssidPSK": this.applySSIDPSK,
