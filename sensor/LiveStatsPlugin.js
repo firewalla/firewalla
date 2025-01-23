@@ -199,7 +199,7 @@ class LiveStatsPlugin extends Sensor {
               throw new Error(`Invalid VPN client ${target}`)
             }
             const name = vpnClient.getInterfaceName()
-            response.throughput = [ Object.assign( {name, target, type}, this.getIntfThroughput(vpnClient.name) ) ]
+            response.throughput = [ Object.assign( {name, target, type}, await this.getIntfThroughput(vpnClient.name) ) ]
             break
           }
           case 'intf': {
@@ -208,7 +208,7 @@ class LiveStatsPlugin extends Sensor {
               throw new Error(`Invalid Interface ${target}`)
             }
             const name = intf.name
-            response.throughput = [ Object.assign( {name, target, type}, this.getIntfThroughput(name) ) ]
+            response.throughput = [ Object.assign( {name, target, type}, await this.getIntfThroughput(name) ) ]
             break
           }
           case 'system': {
@@ -230,7 +230,9 @@ class LiveStatsPlugin extends Sensor {
               )
             }
 
-            response.throughput.forEach(intf => Object.assign(intf, this.getIntfThroughput(intf.name)))
+            for (const intf of response.throughput) {
+              Object.assign(intf, await this.getIntfThroughput(intf.name))
+            }
 
             if (queries.throughput.devices) {
               for (const intf of sysManager.getMonitoringInterfaces()) {
@@ -257,7 +259,7 @@ class LiveStatsPlugin extends Sensor {
         const intfs = fireRouter.getLogicIntfNames();
         const intfStats = [];
         const promises = intfs.map( async (intf) => {
-          const rate = this.getIntfThroughput(intf);
+          const rate = await this.getIntfThroughput(intf);
           intfStats.push(rate);
         });
         promises.push(delay(1000)); // at least wait for 1 sec
@@ -528,11 +530,12 @@ class LiveStatsPlugin extends Sensor {
     return { intf: intfUUID, devices: _.mapValues(cache.devices, d => { return { tx: d.tx, rx: d.rx } } ) }
   }
 
-  getIntfThroughput(intf) {
+  async getIntfThroughput(intf) {
     let intfCache = this.streamingCache[intf]
     const interval = 2 // get nic stats every 2 sec to align with iftop
     if (!intfCache) {
       intfCache = this.streamingCache[intf] = {}
+      intfCache.prev = await this.getIntfStats(intf)
       intfCache.interval = setInterval(async () => {
         try {
           const c = await this.getIntfStats(intf)
