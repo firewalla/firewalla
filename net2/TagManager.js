@@ -41,7 +41,22 @@ class TagManager {
       this.scheduleRefresh();
     });
 
-    if (f.isMain()) this.buildIndex()
+    if (f.isMain()) {
+      this.buildIndex();
+      // periodically sync group macs to fwapc in case of inconsistency
+      setInterval(async () => {
+        if (sysManager.isIptablesReady()) {
+          for (const uid of Object.keys(this.tags)) {
+            const tag = this.tags[uid];
+            if (await this.tagUidExists(uid)) {
+              await Tag.scheduleFwapcSetGroupMACs(uid, tag.getTagType()).catch((err) => {
+                log.error(`Failed to sync macs to tag ${uid}`);
+              });
+            }
+          }
+        }
+      }, 900 * 1000);
+    }
 
     return this;
   }

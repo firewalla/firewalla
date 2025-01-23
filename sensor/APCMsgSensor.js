@@ -188,22 +188,28 @@ class APCMsgSensor extends Sensor {
     });
 
     sem.on("Policy:AllInitialized", async () => {
-      await lock.acquire(LOCK_RULE_UPDATE, async () => {
-        const rules = (await pm2.loadActivePoliciesAsync() || []).filter(rule => this.isAPCSupportedRule(rule) && (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
-        for (const rule of rules) {
-          if (rule.pid)
-            this.enforcedRules[String(rule.pid)] = 1;
-        }
-        this.policyInitialized = true;
-        await fwapc.updateRules(rules, true);
-      }).catch((err) => {
-        log.error(`Failed to sync all rules to fwapc`, err.message);
-      });
+      await this.syncRules();
     });
 
     await this.updateWlanVendorInfoForAllStations();
 
     setInterval(this.updateWlanVendorInfoForAllStations.bind(this), 3600 * 1000); // every hour
+
+    setInterval(this.syncRules.bind(this), 900 * 1000); // periodically sync rules to fwapc in case of inconsistency
+  }
+
+  async syncRules() {
+    await lock.acquire(LOCK_RULE_UPDATE, async () => {
+      const rules = (await pm2.loadActivePoliciesAsync() || []).filter(rule => this.isAPCSupportedRule(rule) && (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
+      for (const rule of rules) {
+        if (rule.pid)
+          this.enforcedRules[String(rule.pid)] = 1;
+      }
+      this.policyInitialized = true;
+      await fwapc.updateRules(rules, true);
+    }).catch((err) => {
+      log.error(`Failed to sync all rules to fwapc`, err.message);
+    });
   }
 
   async updateWlanVendorInfoForAllStations() {
