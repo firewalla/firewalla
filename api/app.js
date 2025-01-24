@@ -40,6 +40,7 @@ app.set('title', 'FireAPI')
 app.set('views', path.join(__dirname, 'views'));
 app.engine('mustache', require('mustache-express')());
 app.set('view engine', 'mustache');
+app.set('query parser', 'simple')
 
 // uncomment after placing your favicon in /public
 //app.use(favicon(path.join(__dirname, 'public', 'favicon.ico')));
@@ -63,6 +64,7 @@ app.use(function(req, res, next) {
   // var err = new Error('Not Found');
   // err.status = 404;
   // next(err);
+  log.error('Not Found', req.url)
   res.status(400).send('');
   next();
 });
