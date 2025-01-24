@@ -536,8 +536,12 @@ class ACLAuditLogPlugin extends Sensor {
               intfUUID = identity.getNicUUID();
           }
         }
-        if (!mac)
-          mac = await hostTool.getMacByIPWithCache(record.sh);
+        if (!mac) {
+          if (intfUUID || record.sh.startsWith("fe80"))
+            mac = await hostTool.getMacByIPWithCache(record.sh);
+          else // ignore src IP out of local networks
+            return;
+        }
       }
     }
     if (mac && sysManager.isMyMac(mac)) return
