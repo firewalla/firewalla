@@ -12,6 +12,7 @@
 rc=0
 service=$1
 extra_opts=''
+debug_opts=''
 
 case $service in
     FireMain)
@@ -36,6 +37,12 @@ case $service in
         ;;
 esac
 
+cd $FIREWALLA_HOME
+branch=$(git branch --show-current)
+if [[ $branch == "master" && -f /home/pi/.firewalla/config/inspect_${service} ]]; then
+  debug_opts="--inspect=0.0.0.0:$dport"
+fi
+
 # Only update firewalla and node_modules if service has been up for more than a
 # given period of time in seconds
 service_elapsed_seconds=$(ps axo cmd,etimes | awk "/^${service}/ {print \$2}")
@@ -53,6 +60,7 @@ redis-cli HINCRBY "stats:systemd:restart" $service 1
 
 UV_THREADPOOL_SIZE=16 $FIREWALLA_HOME/bin/node \
     --expose-gc \
+    $debug_opts \
     -max-old-space-size=$MAX_OLD_SPACE_SIZE \
     $service_run $extra_opts
 )
