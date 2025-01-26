@@ -588,18 +588,24 @@ class APCMsgSensor extends Sensor {
       sp: [msg.sport], dp: msg.dport,
       mac: msg.smac, dmac: msg.dmac,
       fd: 'lo', dir: 'L',
+      isoLVL: msg.iso_lvl,
+      orig: 'ap',
     };
     record.ac = msg.action
     if (msg.pid) record.pid = msg.pid
     if (msg.proto) record.pr = msg.proto
+    if (msg.iso_lvl && msg.action == "block") record.ac = "isolation"
+    if (msg.gid) record.isoGID = msg.gid
+    if (msg.hasOwnProperty('iso_ext')) record.isoExt = msg.iso_ext
+    if (msg.hasOwnProperty('iso_int')) record.isoInt = msg.iso_int
 
     const intf = sysManager.getInterfaceViaIP(msg.src || msg.dst);
     record.intf = intf && intf.name;
+    if (msg.iso_lvl == 2 && intf) record.isoNID = intf.uuid; // network isolate
 
     if (this.aclAuditLogPlugin) // in case AclAuditLogPlugin not loaded
       this.aclAuditLogPlugin.writeBuffer(msg.smac, record);
   }
-
 
   static async setWlanVendorToCache(mac, wlanVendors) {
     const key = `wlanVendor:${mac.toUpperCase()}`;
