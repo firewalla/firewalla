@@ -1,7 +1,7 @@
 var nat = require('../nat-upnp'),
     request = require('request'),
     url = require('url'),
-    xml2js = require('xml2js'),
+    xml2json = require('../../xml2json/xml2json.js'),
     Buffer = require('buffer').Buffer;
 
 var device = exports;
@@ -36,12 +36,9 @@ Device.prototype._getXml = function _getXml(url, callback) {
       return;
     }
 
-    var parser = new xml2js.Parser(xml2js.defaults["0.1"]);
-    parser.parseString(body, function(err, body) {
-      if (err) return respond(err);
-
-      respond(null, body);
-    });
+    xml2json.parse(body)
+      .then(json => respond(null, json))
+      .catch(err => respond(err))
   });
 };
 
@@ -147,18 +144,19 @@ Device.prototype.run = function run(action, args, callback) {
     }, function(err, res, body) {
       if (err) return callback(err);
 
-      var parser = new xml2js.Parser(xml2js.defaults["0.1"]);
-      parser.parseString(body, function(err, body) {
-        if (res.statusCode !== 200 || body == null) {
-          return callback(Error('Request failed: ' + res.statusCode));
-        }
+      xml2json.parse(body)
+        .then(json => {
+          if (res.statusCode !== 200 || json == null) {
+            return callback(Error('Request failed: ' + res.statusCode));
+          }
 
-        var soapns = nat.utils.getNamespace(
-          body,
-          'http://schemas.xmlsoap.org/soap/envelope/');
+          var soapns = nat.utils.getNamespace(
+            json,
+            'http://schemas.xmlsoap.org/soap/envelope/');
 
-        callback(null, body[soapns + 'Body']);
+          callback(null, json[soapns + 'Body']);
+        })
+        .catch(err => callback(err))
       });
-    });
   });
 };
