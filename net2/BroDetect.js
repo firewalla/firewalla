@@ -1228,8 +1228,17 @@ class BroDetect {
         }
 
         if (!dstIntfInfo || !dstIntfInfo.uuid) {
-          log.error('Conn: Unable to find dst intf', dhost, dstMac);
-          return
+          // this usually happens on ipv6 link local address
+          if (dhost && dhost.startsWith("fe80")) {
+            const uuid = dstMonitorable && dstMonitorable.getNicUUID();
+            if (uuid) {
+              dstIntfInfo = sysManager.getInterfaceViaUUID(uuid);
+            }
+          }
+          if (!dstIntfInfo || !dstIntfInfo.uuid) {
+            log.error('Conn: Unable to find dst intf', dhost, dstMac);
+            return;
+          }
         }
         if (obj.proto === "udp" && accounting.isBlockedDevice(dstMac)) {
           return
