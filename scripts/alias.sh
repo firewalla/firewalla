@@ -205,3 +205,27 @@ function useq() {
   local seq="$2"
   frcc . | jq --arg mac "$mac" --arg seq "$seq" 'if .apc.assets | has($mac) then .apc.assets[$mac].sysConfig.seq = $seq else . end' | frset -d @-
 }
+
+function lmove() {
+  local mac="$1"
+  local dst_bssid="$2"
+  local payload=""
+  if [[ "x$dst_bssid" == "x" ]]; then
+    payload=$(jq -n --arg mac "$mac" '{"staMac": $mac}')
+  else
+    payload=$(jq -n --arg mac "$mac" --arg dst_bssid "$dst_bssid" '{"staMac": $mac, "dstBSSID": $dst_bssid}')
+  fi
+  echo $payload | curl -X POST --url http://127.0.0.1:8841/v1/control/steer_station --header 'content-type: application/json' --data @-
+}
+
+function lfmove() {
+  local mac="$1"
+  local dst_bssid="$2"
+  local payload=""
+  if [[ "x$dst_bssid" == "x" ]]; then
+    payload=$(jq -n --arg mac "$mac" '{"staMac": $mac, "kickAsAlternative": true}')
+  else
+    payload=$(jq -n --arg mac "$mac" --arg dst_bssid "$dst_bssid" '{"staMac": $mac, "dstBSSID": $dst_bssid, "kickAsAlternative": true}')
+  fi
+  echo $payload | curl -X POST --url http://127.0.0.1:8841/v1/control/steer_station --header 'content-type: application/json' --data @-
+}
