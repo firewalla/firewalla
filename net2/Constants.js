@@ -1,4 +1,4 @@
-/*    Copyright 2020-2024 Firewalla Inc.
+/*    Copyright 2020-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -46,6 +46,8 @@ module.exports = {
   REDIS_KEY_ETH_INFO: "sys:ethInfo",
   REDIS_KEY_APP_TIME_USAGE_APPS: "app_time_usage_apps",
   REDIS_KEY_APP_TIME_USAGE_CATEGORY: "app_time_usage_category",
+  REDIS_KEY_RUN_REBOOT: "run:reboot",
+  REDIS_KEY_POLICY_ENFORCE_SPENT: 'policy:enforce:spend',
   REDIS_KEY_POLICY_STATE: 'policy:state',
   REDIS_KEY_EXT_SCAN_RESULT: "sys:scan:external",
   REDIS_KEY_WEAK_PWD_RESULT: "sys:scan:weak_password",
@@ -55,6 +57,7 @@ module.exports = {
   REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG: "app_time_usage_cloud_config",
   REDIS_KEY_HISTORY_MSG_PREFIX: "_hx:msg:",
   REDIS_KEY_ALARM_CACHED: "_alarm:cached", // 0 to disable alarm cache, default on
+  REDIS_KEY_HOST_ACTIVE: 'host:active:mac',
 
   REDIS_HKEY_NSE_DHCP: "dhcp",
   REDIS_HKEY_CONN_OINTF: "oIntf",
@@ -145,4 +148,7 @@ module.exports = {
   FEATURE_LOCAL_FLOW: "local_flow",
   FEATURE_VPN_DISCONNECT: "vpn_disconnect",
   FEATURE_VPN_RESTORE: "vpn_restore",
+
+  POLICY_KEY_ISOLATION: "isolation",
+  POLICY_KEY_SSID_PSK: "ssidPSK",
 };

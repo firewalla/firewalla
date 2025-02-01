@@ -1,4 +1,4 @@
-/*    Copyright 2020-2024 Firewalla Inc.
+/*    Copyright 2020-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -38,12 +38,20 @@ const sem = require('./SensorEventManager.js').getInstance();
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const Policy = require("../alarm/Policy.js");
 const pm2 = new PolicyManager2();
+const { getUniqueTs } = require('../net2/FlowUtil.js')
 const SUPPORTED_RULE_TYPES = ["device", "tag", "network", "intranet"];
 const Ipset = require('../net2/Ipset.js');
+
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+const OUI_FILE_PATH = "/usr/share/nmap/nmap-mac-prefixes";
+
+const scheduler = require('../extension/scheduler/scheduler.js');
 
 
 const Sensor = require('./Sensor.js').Sensor;
 const sl = require('./SensorLoader.js');
+const WlanVendorInfo = require('../util/WlanVendorInfo.js');
+const rclient = require('../util/redis_manager.js').getRedisClient();
 
 class APCMsgSensor extends Sensor {
 
@@ -53,12 +61,15 @@ class APCMsgSensor extends Sensor {
     this.ssidGroupMap = {};
     this.enforcedRules = {};
     this.assetsIP4s = {};
+    this.policyInitialized = false;
     sl.initSingleSensor("ACLAuditLogPlugin").then((r) => {this.aclAuditLogPlugin = r}).catch((err) => {
       log.error("Failed to init ACLAuditLogPlugin", this.aclAuditLogPlugin);
     });
   }
 
   async run() {
+    if (!platform.isFireRouterManaged())
+      return;
     await this.loadCachedSSIDProfiles();
     await this.reloadSSIDProfiles();
 
@@ -69,19 +80,28 @@ class APCMsgSensor extends Sensor {
           break;
         }
         case Message.MSG_FWAPC_SSID_STA_UPDATE: {
-          // wait for 5 seconds in case ssid tag is not synced to TagManager yet
-          setTimeout(() => {
-            let msg = null;
-            try {
-              msg = JSON.parse(message);
-            } catch (err) {
-              log.error(`Malformed JSON in ${Message.MSG_FWAPC_SSID_STA_UPDATE} message: ${message}`, err.message);
+          let msg = null;
+          try {
+            msg = JSON.parse(message);
+          } catch (err) {
+            log.error(`Malformed JSON in ${Message.MSG_FWAPC_SSID_STA_UPDATE} message: ${message}`, err.message);
+          }
+
+          if (msg) {
+            const mac = _.get(msg, ["station", "macAddr"]);
+            const vendor = _.get(msg, ["station", "vendor"]);
+
+            if (vendor && mac) {
+              await this.updateWlanVendorInfo(mac, vendor);
             }
-            if (msg)
+
+            // wait for 5 seconds in case ssid tag is not synced to TagManager yet
+            setTimeout(() => {
               this.processSTAUpdateMessage(msg).catch((err) => {
                 log.error(`Failed to process ${Message.MSG_FWAPC_SSID_STA_UPDATE} message: ${message}`, err.message);
               });
-          }, 5000);
+            }, 5000);
+          }
           break;
         }
         case Message.MSG_FWAPC_CONNTRACK_UPDATE: {
@@ -133,49 +153,131 @@ class APCMsgSensor extends Sensor {
       });
     }, 60000);
 
-    sem.on("PolicyEnforcement", async (event) => {
+    // scheduled rule activated
+    sem.on("Policy:Activated", async (event) => {
       await lock.acquire(LOCK_RULE_UPDATE, async () => {
-        const {policy, action} = event;
-        if (!policy || !action || !policy.pid)
+        if (!this.policyInitialized)
+          return;
+        const policy = event.policy;
+        if (!policy || !policy.pid)
           return;
         const pid = String(policy.pid);
-        switch (action) {
-          case "enforce":
-          case "reenforce": {
-            if (policy.disabled == "1" || !this.isAPCSupportedRule(policy)) {
-              if (_.has(this.enforcedRules, pid))
-                await fwapc.deleteRule(pid);
-              delete this.enforcedRules[pid];
-            } else {
-              await fwapc.updateRule(policy);
-              this.enforcedRules[pid] = 1;
-            }
-            break;
-          }
-          case "unenforce": {
-            await fwapc.deleteRule(policy.pid);
-            delete this.enforcedRules[pid];
-            break;
-          }
-          default:
+        if (!this.isAPCSupportedRule(policy)) {
+          if (_.has(this.enforcedRules, pid))
+            await fwapc.deleteRule(pid);
+          delete this.enforcedRules[pid];
+        } else {
+          await fwapc.updateRule(policy);
+          this.enforcedRules[pid] = 1;
         }
-      }).catch((err) => {
-        log.error(`Failed to update rule in fwapc ${event}`, err.message);
+      });
+    });
+    // scheduled rule deactivated
+    sem.on("Policy:Deactivated", async (event) => {
+      await lock.acquire(LOCK_RULE_UPDATE, async () => {
+        if (!this.policyInitialized)
+          return;
+        const policy = event.policy;
+        if (!policy || !policy.pid)
+          return;
+        const pid = String(policy.pid);
+        if (_.has(this.enforcedRules, pid))
+          await fwapc.deleteRule(pid);
+        delete this.enforcedRules[pid];
       });
     });
 
     sem.on("Policy:AllInitialized", async () => {
-      await lock.acquire(LOCK_RULE_UPDATE, async () => {
-        const rules = (await pm2.loadActivePoliciesAsync() || []).filter(rule => this.isAPCSupportedRule(rule));
-        for (const rule of rules) {
-          if (rule.pid)
-            this.enforcedRules[String(rule.pid)] = 1;
-        }
-        await fwapc.updateRules(rules, true);
-      }).catch((err) => {
-        log.error(`Failed to sync all rules to fwapc`, err.message);
-      });
+      await this.syncRules();
     });
+
+    await this.updateWlanVendorInfoForAllStations();
+
+    setInterval(this.updateWlanVendorInfoForAllStations.bind(this), 3600 * 1000); // every hour
+
+    setInterval(this.syncRules.bind(this), 900 * 1000); // periodically sync rules to fwapc in case of inconsistency
+  }
+
+  async syncRules() {
+    await lock.acquire(LOCK_RULE_UPDATE, async () => {
+      const rules = (await pm2.loadActivePoliciesAsync() || []).filter(rule => this.isAPCSupportedRule(rule) && (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
+      for (const rule of rules) {
+        if (rule.pid)
+          this.enforcedRules[String(rule.pid)] = 1;
+      }
+      this.policyInitialized = true;
+      await fwapc.updateRules(rules, true);
+    }).catch((err) => {
+      log.error(`Failed to sync all rules to fwapc`, err.message);
+    });
+  }
+
+  async updateWlanVendorInfoForAllStations() {
+    log.info("Update wlanVendor info for all stations");
+    const staStatus = await fwapc.getAllSTAStatus().catch((err) => {
+      log.error(`Failed to get STA status from fwapc`, err.message);
+      return null;
+    });
+    let needEnrichMacVendorPairs = [];
+
+    if (_.isObject(staStatus)) {
+      for (const [mac, staInfo] of Object.entries(staStatus)) {
+        log.info(`Processing STA status for host ${mac} with vendor ${staInfo.vendor}`);
+        const upcaseMac = mac.toUpperCase();
+        if (!staInfo.vendor)
+          continue;
+        
+        let wlanVendors = await APCMsgSensor.getWlanVendorFromCache(upcaseMac);
+        if (wlanVendors) {
+          log.info(`Host ${upcaseMac} already has wlanVendor info ${wlanVendors} in cache`)
+          continue;
+        }
+        log.info(`Add mac:${upcaseMac} and vendor:${staInfo.vendor} pair to update list`);  
+        needEnrichMacVendorPairs.push({mac: upcaseMac, vendor: staInfo.vendor});
+      }
+    }
+    if (needEnrichMacVendorPairs.length > 0) {
+      const result = await WlanVendorInfo.lookupWlanVendors(needEnrichMacVendorPairs);
+      if (result && result.size > 0) {
+        for (const [mac, wlanVendorInfoList] of result) {
+          const wlanVendors = wlanVendorInfoList.filter(v => v.vendorName !== "Unknown").map(v => v.vendorName);
+          if (wlanVendors && wlanVendors.length > 0) {
+            log.info(`set wlanVendor info to cache for host ${mac} with wlanVendor ${wlanVendors}`);
+            await APCMsgSensor.setWlanVendorToCache(mac, wlanVendors);
+          } else {
+            log.info(`Did not find a valid vendor name for mac ${mac}`);
+          }
+        }
+      }
+    }
+  }
+
+  async updateWlanVendorInfo(mac, vendor) {
+    if (!mac || !vendor)
+      return;
+    mac = mac.toUpperCase();
+    log.info(`update wlanVendor info, mac:${mac}; vendor:${vendor}`);
+    
+    let wlanVendors = await APCMsgSensor.getWlanVendorFromCache(mac);
+    if (wlanVendors) {
+      log.info(`${mac} already has wlanVendor info ${wlanVendors} stored in cache`)
+      return;
+    }
+
+    const result = await WlanVendorInfo.lookupWlanVendors([{mac: mac, vendor: vendor}]);
+    if (result && result.size == 1) {
+      wlanVendors = WlanVendorInfo.getVendorFromVendorMap(result, mac);
+      if (wlanVendors.length > 0) {
+        log.info(`Host ${mac} has wlanVendor info ${wlanVendors}, store in cache`);
+        await APCMsgSensor.setWlanVendorToCache(mac, wlanVendors);
+      } else {
+        log.info(`Did not find a valid vendor name for mac ${mac} with vendor ${vendor}`);
+        return;
+      }
+    } else {
+      log.info(`Failed to lookup wlanVendor info for mac ${mac} with vendor ${vendor}`);
+      return;
+    }
   }
 
   isAPCSupportedRule(rule) {
@@ -323,7 +425,8 @@ class APCMsgSensor extends Sensor {
           "ssid": "MelvinWifi",
           "ts": 1723433071,
           "txRate": 309,
-          "txnss": 2
+          "txnss": 2,
+          "vendor": "0x0017F20A 0x00904C04 0x00101802 0x0050F202"
         }
       }
     */
@@ -480,22 +583,97 @@ class APCMsgSensor extends Sensor {
       return
     }
     const record = {
-      type: 'ip', ts: msg.ts, ct: msg.ct,
+      type: 'ip', ts: msg.ts, _ts: getUniqueTs(msg.ts), ct: msg.ct,
       sh: msg.src, dh: msg.dst,
       sp: [msg.sport], dp: msg.dport,
       mac: msg.smac, dmac: msg.dmac,
       fd: 'lo', dir: 'L',
+      isoLVL: msg.iso_lvl,
+      orig: 'ap',
     };
     record.ac = msg.action
     if (msg.pid) record.pid = msg.pid
     if (msg.proto) record.pr = msg.proto
+    if (msg.iso_lvl && msg.action == "block") record.ac = "isolation"
+    if (msg.gid) record.isoGID = msg.gid
+    if (msg.hasOwnProperty('iso_ext')) record.isoExt = msg.iso_ext
+    if (msg.hasOwnProperty('iso_int')) record.isoInt = msg.iso_int
 
     const intf = sysManager.getInterfaceViaIP(msg.src || msg.dst);
     record.intf = intf && intf.name;
+    if (msg.iso_lvl == 2 && intf) record.isoNID = intf.uuid; // network isolate
 
     if (this.aclAuditLogPlugin) // in case AclAuditLogPlugin not loaded
       this.aclAuditLogPlugin.writeBuffer(msg.smac, record);
   }
+
+  static async setWlanVendorToCache(mac, wlanVendors) {
+    const key = `wlanVendor:${mac.toUpperCase()}`;
+    let value = wlanVendors;
+    if (!_.isString(value)) {
+      value = JSON.stringify(wlanVendors);
+    }
+    await rclient.setAsync(key, value);
+  }
+
+  /**
+   * get wlan vendor from cache and refresh expire time
+   * @param {string} mac 
+   * @returns [vendor_string, ...] or null if not found
+   */
+  static async getWlanVendorFromCache(mac) {
+    const key = `wlanVendor:${mac.toUpperCase()}`;
+    const value = await rclient.getAsync(key);
+    if (value) {
+      try {
+        const wlanVendors = JSON.parse(value);
+        return wlanVendors;
+      } catch (err) {
+        log.error(`Failed to parse wlan vendor for ${mac}`, err.message);
+        return null;
+      }
+      
+    } else {
+      return null;
+    }
+  }
+
+  /**
+   * first try to get wlan vendor from cache, if not found, get from fwapc and store in cache
+   * @param {string} mac 
+   * @returns [vendor_string, ...] or null if not found
+   */
+  async getWlanVendor(mac) {
+    let wlanVendors = null;
+    mac = mac.toUpperCase();
+    wlanVendors = APCMsgSensor.getWlanVendorFromCache(mac);
+    if (wlanVendors) {
+      log.info(`Get wlan vendor for ${mac} from cache`, wlanVendors);
+      return wlanVendors;
+    }
+
+    const staStatus = await fwapc.getSTAStatus(mac);
+    log.info(`Get wlan vendor for ${mac} from fwapc`, staStatus);
+    if (_.isObject(staStatus)) {
+      log.info('staStatus is an object');
+      const vendorInfo = _.get(staStatus, "vendor");
+      if (vendorInfo) {
+        const result = await WlanVendorInfo.lookupWlanVendors([{mac: mac, vendor: vendorInfo}]);
+        if (result && result.length == 1) {
+          log.info(`Get wlan vendor for ${mac} from vendor map`, result);
+          wlanVendors = WlanVendorInfo.getVendorFromVendorMap(result, mac);
+        }
+      }
+    }
+
+    if (wlanVendors && wlanVendors.length > 0) {
+      log.info(`Get wlan vendor for ${mac} wlanVendors:${wlanVendors}`);
+      APCMsgSensor.setWlanVendorToCache(mac, wlanVendors);
+      return wlanVendors;
+    }
+    return null;  
+  }
+
 }
 
 module.exports = APCMsgSensor;

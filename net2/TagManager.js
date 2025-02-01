@@ -1,4 +1,4 @@
-/*    Copyright 2020-2024 Firewalla Inc.
+/*    Copyright 2020-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -41,7 +41,22 @@ class TagManager {
       this.scheduleRefresh();
     });
 
-    if (f.isMain()) this.buildIndex()
+    if (f.isMain()) {
+      this.buildIndex();
+      // periodically sync group macs to fwapc in case of inconsistency
+      setInterval(async () => {
+        if (sysManager.isIptablesReady()) {
+          for (const uid of Object.keys(this.tags)) {
+            const tag = this.tags[uid];
+            if (await this.tagUidExists(uid)) {
+              await Tag.scheduleFwapcSetGroupMACs(uid, tag.getTagType()).catch((err) => {
+                log.error(`Failed to sync macs to tag ${uid}`);
+              });
+            }
+          }
+        }
+      }, 900 * 1000);
+    }
 
     return this;
   }
@@ -342,7 +357,7 @@ class TagManager {
   }
 
   async loadPolicyRules() {
-    await asyncNative.eachLimit(Object.values(this.tags), 10, id => id.loadPolicyAsync())
+    await asyncNative.eachLimit(Object.values(this.tags), 50, id => id.loadPolicyAsync())
   }
 }
 

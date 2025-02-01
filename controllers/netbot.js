@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -157,7 +157,6 @@ const Message = require('../net2/Message')
 const util = require('util')
 
 const restartUPnPTask = {};
-const rp = util.promisify(require('request'));
 
 class netBot extends ControllerBot {
 
@@ -708,8 +707,7 @@ class netBot extends ControllerBot {
         }
         log.info("Changing name", host.o.name);
 
-        await host.update({ name }, true)
-        await host.save(['name', 'localDomain'])
+        await host.update({ name }, true, true)
         this.messageBus.publish(host.constructor.getUpdateCh(), host.getGUID(), { name });
         sem.emitEvent({
           type: "LocalDomainUpdate",
@@ -765,8 +763,7 @@ class netBot extends ControllerBot {
           }
 
           if (customizeDomainName != host.o.customizeDomainName) {
-            await host.update({ customizeDomainName }, true)
-            await host.save(['customizeDomainName', 'userLocalDomain'])
+            await host.update({ customizeDomainName }, true, true)
           }
 
           if (suffix && macAddress == '0.0.0.0') {
@@ -3751,14 +3748,14 @@ class netBot extends ControllerBot {
           }
 
           // check whitelist, empty set allows all, only for dev
-          const notAllow = (await rclient.typeAsync('sys:eid:whitelist')) == "set" && !await rclient.sismemberAsync('sys:eid:whitelist', eid || "");
+          const notAllow = (await rclient.typeAsync('sys:eid:whitelist')) == "set" && !await rclient.sismemberAsync('sys:eid:whitelist', eid || "") && msg.appInfo.platform.toLowerCase() != "web";
           if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && notAllow){
             log.warn('deny access from eid', eid, "with", msg.data.item);
             return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
           }
 
           // check blacklist, only for dev
-          const forbid = (await rclient.typeAsync('sys:eid:blacklist')) == "set" && await rclient.sismemberAsync('sys:eid:blacklist', eid || "");
+          const forbid = (await rclient.typeAsync('sys:eid:blacklist')) == "set" && await rclient.sismemberAsync('sys:eid:blacklist', eid || "") && msg.appInfo.platform.toLowerCase() != "web";
           if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && forbid){
             log.warn('deny access from eid', eid);
             return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);

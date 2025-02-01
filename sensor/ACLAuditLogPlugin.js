@@ -62,7 +62,6 @@ class ACLAuditLogPlugin extends Sensor {
 
     this.featureName = "acl_audit";
     this.buffer = {}
-    this.bufferTs = Date.now() / 1000
     this.touchedKeys = {};
     this.incTs = 0;
   }
@@ -107,8 +106,9 @@ class ACLAuditLogPlugin extends Sensor {
     const descriptor = this.getDescriptor(record)
     if (this.buffer[mac][descriptor]) {
       const s = this.buffer[mac][descriptor]
-      // _.min() and _.max() will ignore non-number values
+      // _.min() and _.max() ignore non-number values
       s.ts = _.min([s.ts, record.ts])
+      s._ts = _.max([s._ts, record._ts])
       s.du = Math.round((_.max([s.ts + (s.du || 0), record.ts + (record.du || 0)]) - s.ts) * 100) / 100
       s.ct += record.ct
       if (s.sp) s.sp = _.uniq(s.sp, record.sp)
@@ -148,9 +148,9 @@ class ACLAuditLogPlugin extends Sensor {
     if (!content || content.length == 0)
       return;
     const params = content.split(' ');
-    const record = { ts, type: 'ip', ct: 1 };
+    const record = { ts, type: 'ip', ct: 1, _ts: getUniqueTs(ts) };
     record.ac = "block";
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanUUID, inIntfName, outIntfName, isolationTagId, isolationNetworkIdPrefix;
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanUUID, inIntfName, outIntfName, isolationTagId, isolationNetworkIdPrefix, isoLvl;
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -249,16 +249,19 @@ class ACLAuditLogPlugin extends Sensor {
               break;
             case "I":
               record.ac = "isolation";
+              isoLvl = 1;
               break;
           }
           break;
         }
         case 'G': {
           isolationTagId = v;
+          isoLvl = 3;
           break;
         }
         case 'N': {
           isolationNetworkIdPrefix = v;
+          isoLvl = 2;
         }
         default:
       }
@@ -310,6 +313,7 @@ class ACLAuditLogPlugin extends Sensor {
 
     if (record.ac === "isolation") {
       record.isoGID = isolationTagId;
+      record.isoLVL = isoLvl;
       dir = "L";
       ctdir = "O";
       if (isolationNetworkIdPrefix) {
@@ -521,23 +525,30 @@ class ACLAuditLogPlugin extends Sensor {
     let mac = record.mac;
     delete record.mac
     // first try to get mac from device database
-    if (!mac || mac === "FF:FF:FF:FF:FF:FF" || !hostManager.getHostFastByMAC(mac)) {
-      if (record.sh)
-        mac = await hostTool.getMacByIPWithCache(record.sh);
-    }
-    if (sysManager.isMyMac(mac)) return
-    // then try to get guid from IdentityManager, because it is more CPU intensive
-    if (!mac) {
-      const identity = IdentityManager.getIdentityByIP(record.sh);
-      if (identity) {
-        if (!platform.isFireRouterManaged())
-          return;
-        mac = IdentityManager.getGUID(identity);
-        record.rl = IdentityManager.getEndpointByIP(record.sh);
-        if (!intfUUID) // in rare cases, client is from another box's local network in the same VPN mesh, source IP is not SNATed
-          intfUUID = identity.getNicUUID();
+    if (!mac || mac === "FF:FF:FF:FF:FF:FF") {
+      mac = null;
+      if (record.sh) {
+        if (new Address4(record.sh).isValid()) {
+          // very likely this is a VPN device
+          const identity = IdentityManager.getIdentityByIP(record.sh);
+          if (identity) {
+            if (!platform.isFireRouterManaged())
+              return;
+            mac = IdentityManager.getGUID(identity);
+            record.rl = IdentityManager.getEndpointByIP(record.sh);
+            if (!intfUUID) // in rare cases, client is from another box's local network in the same VPN mesh, source IP is not SNATed
+              intfUUID = identity.getNicUUID();
+          }
+        }
+        if (!mac) {
+          if (intfUUID || record.sh.startsWith("fe80"))
+            mac = await hostTool.getMacByIPWithCache(record.sh);
+          else // ignore src IP out of local networks
+            return;
+        }
       }
     }
+    if (mac && sysManager.isMyMac(mac)) return
 
     if (!intfUUID) {
       if (mac && hostTool.isMacAddress(mac)) {
@@ -644,6 +655,7 @@ class ACLAuditLogPlugin extends Sensor {
           }
         }
       }
+      record._ts = getUniqueTs(record.ts || Date.now()/1000)
       this._processDnsRecord(record);
     }
   }
@@ -654,7 +666,7 @@ class ACLAuditLogPlugin extends Sensor {
 
   async writeLogs() {
     try {
-      log.debug('Start writing logs', this.bufferTs)
+      // log.debug('Start writing logs')
       // log.debug(JSON.stringify(this.buffer))
 
       const buffer = this.buffer
@@ -664,10 +676,8 @@ class ACLAuditLogPlugin extends Sensor {
       for (const mac in buffer) {
         for (const descriptor in buffer[mac]) {
           const record = buffer[mac][descriptor];
-          const { type, ac, ts, du, ct } = record
+          const { type, ac, _ts, ct } = record
           const intf = record.intf && networkProfileManager.prefixMap[record.intf]
-          const _ts = getUniqueTs(ts + (du || 0)) // make it unique to avoid missing flows in time-based query
-          record._ts = _ts;
           const block = type == 'dns' ?
             record.rc == 3 /*NXDOMAIN*/ &&
             (record.qt == 1 /*A*/ || record.qt == 28 /*AAAA*/) &&
@@ -785,6 +795,7 @@ class ACLAuditLogPlugin extends Sensor {
               const s = stash[descriptor]
               // _.min() and _.max() will ignore non-number values
               s.ts = _.min([s.ts, record.ts])
+              s._ts = _.max([s._ts, record._ts])
               s.du = Math.round((_.max([s.ts + (s.du || 0), record.ts + (record.du || 0)]) - s.ts) * 100) / 100
               s.ct += record.ct
               if (s.sp) s.sp = _.uniq(s.sp, record.sp)
@@ -800,7 +811,6 @@ class ACLAuditLogPlugin extends Sensor {
         transaction.push(['zremrangebyscore', key, '('+start, end]);
         for (const descriptor in stash) {
           const record = stash[descriptor]
-          record._ts = getUniqueTs(record.ts + (record.du || 0));
           transaction.push(['zadd', key, record._ts, JSON.stringify(record)])
         }
         // no need to set ttl here, OldDataCleanSensor will take care of it
@@ -809,7 +819,7 @@ class ACLAuditLogPlugin extends Sensor {
         try {
           log.debug(transaction)
           await rclient.pipelineAndLog(transaction)
-          log.debug("Audit:Save:Removed", key);
+          log.debug("Audit:Save:Aggregated", key);
         } catch (err) {
           log.error("Audit:Save:Error", err);
         }

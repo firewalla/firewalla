@@ -734,11 +734,11 @@ class PolicyManager2 {
     let policyKeys = [];
 
     for (let rule of rules) {
-      if (_.isEmpty(rule.tag)) continue;
+      if (_.isEmpty(rule.tag) && rule.type !== "tag") continue;
 
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const tagUid = Constants.TAG_TYPE_MAP[type].ruleTagPrefix + tag;
-        if (rule.tag.some(m => m == tagUid)) {
+        if (_.isArray(rule.tag) && rule.tag.some(m => m == tagUid)) {
           if (rule.tag.length <= 1) {
             policyIds.push(rule.pid);
             policyKeys.push('policy:' + rule.pid);
@@ -754,7 +754,12 @@ class PolicyManager2 {
             log.info('remove scope from policy:' + rule.pid, tag);
           }
         }
-      }      
+      }
+      if (rule.type === "tag" && rule.target == tag) {
+        this.tryPolicyEnforcement(rule, 'unenforce');
+        policyIds.push(rule.pid);
+        policyKeys.push(`policy:${rule.pid}`);
+      }  
     }
 
     if (policyIds.length) {
@@ -906,6 +911,9 @@ class PolicyManager2 {
   }
 
   async enforceAllPolicies() {
+    const start = Date.now();
+    const isReboot = await rclient.getAsync(Constants.REDIS_KEY_RUN_REBOOT) == "1";
+
     const rules = await this.loadActivePoliciesAsync({includingDisabled : 1});
 
     const [routeRules, inboundBlockInternetRules, inboundAllowInternetRules, inboundBlockIntranetRules, inboundAllowIntranetRules,
@@ -985,6 +993,8 @@ class PolicyManager2 {
     log.forceInfo(">>>>>==== All policy rules are enforced ====<<<<<", otherRules.length);
 
     await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'done')
+    const end = Date.now();
+    await rclient.setAsync(Constants.REDIS_KEY_POLICY_ENFORCE_SPENT, JSON.stringify({spend: (end-start)/1000, reboot: isReboot, ts: end/1000}));
 
     const event = {
       type: 'Policy:AllInitialized',
@@ -1090,6 +1100,7 @@ class PolicyManager2 {
           }
           log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
         } else {
+          this.notifyPolicyActivated(policy);
           await this._enforce(policy);
           log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
           const pid = policy.pid;
@@ -1121,6 +1132,7 @@ class PolicyManager2 {
         // this is an app time usage policy, use AppTimeUsageManager to manage it
         return AppTimeUsageManager.registerPolicy(policy);
       } else {
+        this.notifyPolicyActivated(policy);
         return this._enforce(policy); // regular enforce
       }
     } finally {
@@ -1128,6 +1140,22 @@ class PolicyManager2 {
       if (action === "block" || action === "app_block")
         this.scheduleRefreshConnmark();
     }
+  }
+
+  // should be invoked right before the policy is effectively enforced, e.g., regular enforcement, schedule/pause until triggered
+  notifyPolicyActivated(policy) {
+    sem.emitLocalEvent({
+      type: "Policy:Activated",
+      policy
+    });
+  }
+
+  // should be invoked right before the policy is effectively unenforced, e.g., regular unenforcement, end of schedule, one time only
+  notifyPolicyDeactivated(policy) {
+    sem.emitLocalEvent({
+      type: "Policy:Deactivated",
+      policy
+    });
   }
 
   // this is the real execution of enable and disable policy
@@ -1698,6 +1726,7 @@ class PolicyManager2 {
         // this is an app time usage policy, use AppTimeUsageManager to manage it
         return AppTimeUsageManager.deregisterPolicy(policy);
       } else {
+        this.notifyPolicyDeactivated(policy);
         return this._unenforce(policy) // regular unenforce
       }
     } finally {

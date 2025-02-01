@@ -112,6 +112,10 @@ function getPreferredBName(hostObject) {
     return v6Addrs[0]
   }
 
+  if (hostObject.wlanVendor && hostObject.wlanVendor.length > 0) {
+    return hostObject.wlanVendor[0]
+  }
+
   return undefined;
 }
 
@@ -343,6 +347,24 @@ function waitFor(condition, timeout=3000) {
   return new Promise(poll);
 }
 
+/* wrap a promise with timeout
+ * reject with error if timeout
+ * example:
+ *   withTimeout(exampleAsyncFunction(), 2000).then(result => {
+ *     console.log(result);
+ *   }).catch(err => {
+ *     console.error(err);
+ *   });
+ */
+async function withTimeout(promise, timeout) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Operation timed out')), timeout)
+    ),
+  ]);
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -364,4 +386,5 @@ module.exports = {
   fileRemove,
   batchKeyExists,
   waitFor,
+  withTimeout,
 };

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -839,7 +839,7 @@ module.exports = class HostManager extends Monitorable {
   async internetSpeedtestResultsForInit(json, limit = 50) {
     const end = Date.now() / 1000;
     const begin = Date.now() / 1000 - 86400 * 30;
-    const results = (await rclient.zrevrangebyscoreAsync("internet_speedtest_results", end, begin) || []).map(e => {
+    const results = (await rclient.zrevrangebyscoreAsync("internet_speedtest_results", end, begin, 'limit', 0, limit) || []).map(e => {
       try {
         const r = JSON.parse(e);
         r.manual = r.manual || false;
@@ -1581,9 +1581,8 @@ module.exports = class HostManager extends Monitorable {
     let host = await this.getHostAsync(o.mac)
     if (host) {
       log.info('createHost: already exist', o.mac)
-      await host.update(o)
-      await host.save()
-      return
+      await host.update(o, false, true)
+      return host
     }
 
     host = new Host(o)
@@ -1593,6 +1592,7 @@ module.exports = class HostManager extends Monitorable {
     this.hosts.all.push(host);
 
     this.syncV6DB(host)
+    return host
   }
 
   syncV6DB(host) {
@@ -1683,18 +1683,17 @@ module.exports = class HostManager extends Monitorable {
       this.getHostsLastOptions = options;
       // end of mutx check
       const portforwardConfig = await this.getPortforwardConfig();
-  
+
       for (let h in this.hostsdb) {
         if (this.hostsdb[h]) {
           this.hostsdb[h]._mark = false;
         }
       }
-      const keys = await rclient.keysAsync("host:mac:*");
-      log.debug("getHosts: keys done");
-      this._totalHosts = keys.length;
+      const MACs = await hostTool.getAllMACs()
+      this._totalHosts = MACs.length;
       let multiarray = [];
-      for (let i in keys) {
-        multiarray.push(['hgetall', keys[i]]);
+      for (let i in MACs) {
+        multiarray.push(['hgetall', hostTool.getMacKey(MACs[i])])
       }
       const inactiveTS = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
       const rapidInactiveTS = Date.now() / 1000 - RAPID_INACTIVE_TIME_SPAN;
