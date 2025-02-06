@@ -784,6 +784,10 @@ class BroDetect {
     const resp_ip_bytes = obj.resp_ip_bytes;
     const orig_pkts = obj.orig_pkts;
     const resp_pkts = obj.resp_pkts;
+    const resp_port = obj["id.resp_p"];
+    // missed bytes that are randomly skipped on ssl traffic may lead to inaccurate ip tcp ratio
+    if (resp_port == 443)
+      return true;
 
     if (missed_bytes / (resp_bytes + orig_bytes) > threshold.missedBytesRatio) {
         log.debug("Conn:Drop:MissedBytes:RatioTooLarge", obj.conn_state, obj);
