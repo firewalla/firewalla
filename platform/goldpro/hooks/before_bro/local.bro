@@ -114,5 +114,7 @@ redef restrict_filters += [["random-pick-ssl-ipv6"] = "not (ip6 and tcp and port
 # make udp inactivity timeout consistent with net.netfilter.nf_conntrack_udp_timeout_stream
 redef udp_inactivity_timeout = 3 min;
 
+redef dpd_buffer_size = 65536;
+
 # this variable is introduced in zeek 6.0 and default value is T, indicating whether Zeek should automatically consider private address ranges "local".
 redef Site::private_address_space_is_local = F;

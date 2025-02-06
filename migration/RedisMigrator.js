@@ -31,6 +31,7 @@
     "alarm:id",
     "_alarm:*",
     "_alarmDetail:*",
+    "alarm_pending",
     "alarm_active",
     "alarm_archive"
   ],

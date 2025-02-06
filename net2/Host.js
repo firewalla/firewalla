@@ -19,12 +19,13 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const MessageBus = require('./MessageBus.js');
 const messageBus = new MessageBus('info')
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const fwapc = require('./fwapc.js');
 
 const exec = require('child-process-promise').exec
 
 const spoofer = require('./Spoofer.js');
 const sysManager = require('./SysManager.js');
-
+const Mode = require('./Mode.js')
 const routing = require('../extension/routing/routing.js');
 
 const util = require('util')
@@ -34,7 +35,7 @@ const f = require('./Firewalla.js');
 const { getPreferredName, getPreferredBName } = require('../util/util.js')
 
 const bone = require("../lib/Bone.js");
-
+const urlHash = require('../util/UrlHash.js')
 const flowUtil = require('../net2/FlowUtil.js');
 
 const linux = require('../util/linux.js');
@@ -103,7 +104,6 @@ class Host extends Monitorable {
 
         messageBus.subscribeOnce(this.constructor.getUpdateCh(), this.getGUID(), this.onUpdate.bind(this))
 
-        await this.loadPolicyAsync();
         await this.applyPolicy()
         await this.identifyDevice()
       })().catch(err => {
@@ -202,7 +202,7 @@ class Host extends Monitorable {
       }
     }
 
-    await super.setPolicyAsync(name, policy)
+    return super.setPolicyAsync(name, policy)
   }
 
   keepalive() {
@@ -570,6 +570,8 @@ class Host extends Monitorable {
       this.spoofing = false;
     }
 
+    if (!await Mode.isSpoofModeOn()) return
+
     if (this.o.ipv4Addr == null) {
       log.info("Host:Spoof:NoIP", this.o);
       return;
@@ -698,6 +700,7 @@ class Host extends Monitorable {
 
     this.ipCache.reset();
     delete envCreatedMap[this.o.mac];
+    await fwapc.deleteDeviceAcl(this.o.mac);
     delete Monitorable.instances[this.o.mac]
   }
 
@@ -717,11 +720,11 @@ class Host extends Monitorable {
         if (ipv4Addr) {
           const recentlyAdded = this.ipCache.get(ipv4Addr);
           if (!recentlyAdded) {
-            const ops = [`-exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`];
+            const ops = [`add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`];
             // flatten device IP addresses into tag's ipset
             // in practice, this ipset will be added to another tag's list:set if the device group belongs to a user group
             for (const tag of tags)
-              ops.push(`-exist add -! ${Tag.getTagDeviceIPSetName(tag, 4)} ${ipv4Addr}`);
+              ops.push(`add -! ${Tag.getTagDeviceIPSetName(tag, 4)} ${ipv4Addr}`);
             await Ipset.batchOp(ops).catch((err) => {
               log.error(`Failed to add ${ipv4Addr} to ${Host.getIpSetName(this.o.mac, 4)}`, err.message);
             });
@@ -734,9 +737,9 @@ class Host extends Monitorable {
           for (const addr of ipv6Addr) {
             const recentlyAdded = this.ipCache.get(addr);
             if (!recentlyAdded) {
-              const ops = [`-exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`];
+              const ops = [`add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`];
               for (const tag of tags)
-                ops.push(`-exist add -! ${Tag.getTagDeviceIPSetName(tag, 6)} ${addr}`);
+                ops.push(`add -! ${Tag.getTagDeviceIPSetName(tag, 6)} ${addr}`);
               await Ipset.batchOp(ops).catch((err) => {
                 log.error(`Failed to add ${addr} to ${Host.getIpSetName(this.o.mac, 6)}`, err.message);
               });
@@ -939,7 +942,12 @@ class Host extends Monitorable {
     for (let i in _neighbors) {
       let neighbor = _neighbors[i];
       if (neighbor.ip) neighbor._neighbor = flowUtil.hashIp(neighbor.ip);
-      if (neighbor.name) neighbor._name = flowUtil.hashIp(neighbor.name);
+      if (neighbor.name) {
+        const hashes = urlHash.canonicalizeAndHashExpressions(neighbor.name)
+        neighbor._name = hashes.length ? hashes[0][2] : null
+        if (hashes.length)
+          neighbor._nameFull = hashes[hashes.length-1][2]
+      }
       if (debug == false) {
         delete neighbor.neighbor;
         delete neighbor.name;
@@ -1230,6 +1238,7 @@ class Host extends Monitorable {
       } else {
         log.warn(`Tag ${removedTag} not found`);
       }
+      Tag.scheduleFwapcSetGroupMACs(removedTag, type);
     }
     // filter updated tags in case some tag is already deleted from system
     const updatedTags = [];
@@ -1263,6 +1272,7 @@ class Host extends Monitorable {
           log.error(`Failed to write dnsmasq tag ${uid} on mac ${this.o.mac}`, err);
         })
         updatedTags.push(uid);
+        Tag.scheduleFwapcSetGroupMACs(uid, type);
       } else {
         log.warn(`Tag ${uid} not found`);
       }

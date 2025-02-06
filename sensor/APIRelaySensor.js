@@ -62,7 +62,8 @@ class APIRelaySensor extends Sensor {
       return this.getRelayConfig()
     })
 
-    extensionManager.onSet("apiRelayService", (msg, data) => {
+    extensionManager.onSet("apiRelayService", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await this.getRelayConfig()})} catch(err) {};
       return this.setRelayConfig(data)
     })
   }
