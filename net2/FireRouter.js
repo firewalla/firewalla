@@ -62,6 +62,8 @@ const Constants = require("./Constants.js");
 const lock = new AsyncLock();
 const LOCK_INIT = "LOCK_INIT";
 
+const ERR_NCID_NOT_MATCH = "ERR_NCID_NOT_MATCH";
+
 // not exposing these methods/properties
 async function localGet(endpoint, retry = 5) {
   if (!platform.isFireRouterManaged())
@@ -1055,6 +1057,12 @@ class FireRouter {
 
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
+      const errors = _.get(resp.body, "errors");
+      if (_.isArray(errors) && errors.includes("ncid not match")) {
+        const error = new Error("ncid not match");
+        error.errID = ERR_NCID_NOT_MATCH;
+        throw error;
+      }
       throw new Error("Error setting firerouter config: " + JSON.stringify(resp.body));
     }
 
