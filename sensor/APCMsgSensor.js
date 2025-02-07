@@ -59,6 +59,7 @@ class APCMsgSensor extends Sensor {
     super(config);
     this.ssidProfiles = {};
     this.ssidGroupMap = {};
+    this.ssidVlanGroupMap = {};
     this.enforcedRules = {};
     this.assetsIP4s = {};
     this.policyInitialized = false;
@@ -146,12 +147,12 @@ class APCMsgSensor extends Sensor {
       });
     }, 60000);
 
-    // sync ssid sta mapping once every minute to ensure consistency in case sta update message is missing somehow
+    // sync ssid sta mapping once every 20 seconds to ensure consistency in case sta update message is missing somehow
     setInterval(async () => {
       this.refreshSSIDSTAMapping().catch((err) => {
         log.error(`Failed to refresh ssid sta mapping`, err.message);
       });
-    }, 60000);
+    }, 20000);
 
     // scheduled rule activated
     sem.on("Policy:Activated", async (event) => {
@@ -354,6 +355,7 @@ class APCMsgSensor extends Sensor {
         }
       }
       this.ssidGroupMap = ssidGroupMap;
+      this.ssidVlanGroupMap = ssidVlanGroupMap;
       const usedSSIDProfiles = {};
       const config = await fwapc.getConfig();
       const assets = _.get(config, "assets");
@@ -415,6 +417,8 @@ class APCMsgSensor extends Sensor {
           "band": "5g",
           "bssid": "20:6D:31:AA:BC:13",
           "channel": 44,
+          "dvlanVlanId": 100,
+          "idle": 0,
           "intf": "ath1",
           "macAddr": "4E:2F:3B:44:AD:AA",
           "phymode": "IEEE80211_MODE_11BEA_EHT80",
@@ -433,14 +437,17 @@ class APCMsgSensor extends Sensor {
     await lock.acquire(LOCK_SSID_UPDATE, async () => {
       if (msg.action === "join") {
         const uuid = msg.id;
-        let groupId = msg.groupId
+        const dvlanId = _.get(msg, ["station", "dvlanVlanId"]);
+        // map to a group of a microsegment first
+        const tag = this.ssidVlanGroupMap[`${uuid}::${dvlanId}`]
+        let groupId = tag && tag.getUniqueId();
         if (!uuid)
           return;
         const mac = _.get(msg, ["station", "macAddr"]);
         if (!mac)
           return;
-        const dvlanId = _.get(msg, ["station", "dvlanVlanId"]);
-        if (!groupId && !dvlanId) // if dynamic vlan id is set and group id is not set, the station belongs to a microsegment that does not map to a group, do not add to group of the ssid's default segment
+        // map to a group of a default segment if sta does not belong to a dynamic vlan
+        if (!groupId && !dvlanId)
           groupId = this.ssidGroupMap[uuid] && this.ssidGroupMap[uuid].getUniqueId();
         await this.updateHostSSID(mac, uuid, groupId);
       }
