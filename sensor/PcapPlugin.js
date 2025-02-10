@@ -116,6 +116,8 @@ class PcapPlugin extends Sensor {
       for (const intfName in intfNameMap) {
         if (!monitoringInterfaces.includes(intfName))
           continue;
+        if (intfName === Constants.INTF_AP_CTRL)
+          continue;
         const intf = intfNameMap[intfName];
         if (intf && intf.config && intf.config.assetsController) // bypass assets controller wireguard interface
           continue;
