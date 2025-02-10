@@ -22,6 +22,7 @@ RAMFS_ROOT_PARTITION=yes
 FW_ZEEK_RSS_THRESHOLD=800000
 MAX_OLD_SPACE_SIZE=512
 HAVE_FWAPC=yes
+WAN_INPUT_DROP_RATE_LIMIT=8
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'

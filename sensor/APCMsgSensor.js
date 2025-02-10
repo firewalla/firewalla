@@ -38,7 +38,8 @@ const sem = require('./SensorEventManager.js').getInstance();
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const Policy = require("../alarm/Policy.js");
 const pm2 = new PolicyManager2();
-const SUPPORTED_RULE_TYPES = ["device", "tag", "intranet"];
+const SUPPORTED_RULE_TYPES = ["device", "tag", "network", "intranet"];
+const scheduler = require('../extension/scheduler/scheduler.js');
 
 
 const Sensor = require('./Sensor.js').Sensor;
@@ -51,6 +52,7 @@ class APCMsgSensor extends Sensor {
     this.ssidProfiles = {};
     this.ssidGroupMap = {};
     this.enforcedRules = {};
+    this.policyInitialized = false;
     sl.initSingleSensor("ACLAuditLogPlugin").then((r) => {this.aclAuditLogPlugin = r}).catch((err) => {
       log.error("Failed to init ACLAuditLogPlugin", this.aclAuditLogPlugin);
     });
@@ -124,44 +126,48 @@ class APCMsgSensor extends Sensor {
       });
     }, 60000);
 
-    sem.on("PolicyEnforcement", async (event) => {
+    // scheduled rule activated
+    sem.on("Policy:Activated", async (event) => {
       await lock.acquire(LOCK_RULE_UPDATE, async () => {
-        const {policy, action} = event;
-        if (!policy || !action || !policy.pid)
+        if (!this.policyInitialized)
+          return;
+        const policy = event.policy;
+        if (!policy || !policy.pid)
           return;
         const pid = String(policy.pid);
-        switch (action) {
-          case "enforce":
-          case "reenforce": {
-            if (policy.disabled == "1" || !this.isAPCSupportedRule(policy)) {
-              if (_.has(this.enforcedRules, pid))
-                await fwapc.deleteRule(pid);
-              delete this.enforcedRules[pid];
-            } else {
-              await fwapc.updateRule(policy);
-              this.enforcedRules[pid] = 1;
-            }
-            break;
-          }
-          case "unenforce": {
-            await fwapc.deleteRule(policy.pid);
-            delete this.enforcedRules[pid];
-            break;
-          }
-          default:
+        if (!this.isAPCSupportedRule(policy)) {
+          if (_.has(this.enforcedRules, pid))
+            await fwapc.deleteRule(pid);
+          delete this.enforcedRules[pid];
+        } else {
+          await fwapc.updateRule(policy);
+          this.enforcedRules[pid] = 1;
         }
-      }).catch((err) => {
-        log.error(`Failed to update rule in fwapc ${event}`, err.message);
+      });
+    });
+    // scheduled rule deactivated
+    sem.on("Policy:Deactivated", async (event) => {
+      await lock.acquire(LOCK_RULE_UPDATE, async () => {
+        if (!this.policyInitialized)
+          return;
+        const policy = event.policy;
+        if (!policy || !policy.pid)
+          return;
+        const pid = String(policy.pid);
+        if (_.has(this.enforcedRules, pid))
+          await fwapc.deleteRule(pid);
+        delete this.enforcedRules[pid];
       });
     });
 
     sem.on("Policy:AllInitialized", async () => {
       await lock.acquire(LOCK_RULE_UPDATE, async () => {
-        const rules = (await pm2.loadActivePoliciesAsync() || []).filter(rule => this.isAPCSupportedRule(rule));
+        const rules = (await pm2.loadActivePoliciesAsync() || []).filter(rule => this.isAPCSupportedRule(rule) && (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
         for (const rule of rules) {
           if (rule.pid)
             this.enforcedRules[String(rule.pid)] = 1;
         }
+        this.policyInitialized = true;
         await fwapc.updateRules(rules, true);
       }).catch((err) => {
         log.error(`Failed to sync all rules to fwapc`, err.message);
@@ -177,7 +183,7 @@ class APCMsgSensor extends Sensor {
       return false;
     if (_.isArray(scope) && scope.some(h => !hostTool.isMacAddress(h)))
       return false;
-    if (_.isArray(tag) && tag.some(t => !t.startsWith(Policy.TAG_PREFIX)))
+    if (_.isArray(tag) && tag.some(t => !t.startsWith(Policy.TAG_PREFIX) && !t.startsWith(Policy.INTF_PREFIX)))
       return false;
     if (type === "device" && !hostTool.isMacAddress(target))
       return false;

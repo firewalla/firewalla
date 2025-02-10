@@ -572,7 +572,7 @@ class BroDetect {
       await rclient.zaddAsync(key, dnsFlow._ts, JSON.stringify(dnsFlow)).catch(
         err => log.error("Failed to save single DNS flow: ", dnsFlow, err)
       )
-      if (config.dns.expires) rclient.expireat(key, Date.now() / 1000 + config.dns.expires, ()=>{})
+      if (config.dns.expires) rclient.expireat(key, Math.floor(Date.now() / 1000 + config.dns.expires), ()=>{})
 
       const flowspecKey = `${localMac}:${dnsFlow.dn}:${intfInfo ? intfInfo.uuid : ''}`;
       // add keys to flowstash (but not redis)
@@ -772,7 +772,7 @@ class BroDetect {
     return this.isMonitoring(intf, monitorable)
   }
 
-  validateConnData(obj) {
+  async validateConnData(obj) {
     const threshold = config.threshold;
     const iptcpRatio = threshold.IPTCPRatio || 0.1;
 
@@ -827,7 +827,9 @@ class BroDetect {
       }
     }
 
-    if (obj.proto == "tcp") {
+    // this is a very old check, assume it was added for something in spoof mode
+    // FTP data channel would fail this check and never get logged
+    if (obj.proto == "tcp" && await mode.isSpoofModeOn()) {
       if (obj.resp_bytes > threshold.tcpZeroBytesResp && obj.orig_bytes == 0 && obj.conn_state == "SF") {
         log.error("Conn:Adjusted:TCPZero", obj.conn_state, obj);
         return false
@@ -930,7 +932,7 @@ class BroDetect {
       }
 
       // when reversed, number on long conn is substraced and might fail here
-      if (!reverseLocal && !this.validateConnData(obj)) {
+      if (!reverseLocal && !await this.validateConnData(obj)) {
         return;
       }
 
@@ -1382,7 +1384,7 @@ class BroDetect {
       await rclient.zaddAsync(redisObj).catch(
         err => log.error("Failed to save tmpspec: ", tmpspec, err)
       )
-      if (config.conn.expires) rclient.expireat(key, now + config.conn.expires, ()=>{})
+      if (config.conn.expires) rclient.expireat(key, Math.floor(now + config.conn.expires), ()=>{})
       await flowAggrTool.recordDeviceLastFlowTs(localMac, now);
       const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
       let remoteHost = null;
@@ -1530,7 +1532,7 @@ class BroDetect {
           transaction.push(['zadd', robj])
         })
         if (config[type].expires) {
-          transaction.push(['expireat', key, Date.now() / 1000 + config[type].expires])
+          transaction.push(['expireat', key, Math.floor(Date.now() / 1000 + config[type].expires)])
         }
 
         try {
