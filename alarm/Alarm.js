@@ -379,7 +379,8 @@ class NewDeviceAlarm extends Alarm {
     let key = super.localizedNotificationContentKey();
     const isPrivateMac = this["p.device.mac"] && hostTool.isPrivateMacAddress(this["p.device.mac"]);
 
-    if (this["p.quarantine"]) {
+    // it should be a number, but converted to a string after retrieved from redis
+    if (this["p.quarantine"] == "1") {
       key += ".block";
       if (isPrivateMac) {
         key += ".private"
