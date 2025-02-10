@@ -59,10 +59,8 @@ class AppTimeUsageSensor extends Sensor {
 
     sclient.on("message", async (channel, message) => {
       if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
-        if (this._policy) {
-          log.info("System timezone is reloaded, will reschedule update config cron job ...");
-          await this.scheduleUpdateConfigCronJob();
-        }
+        log.info("System timezone is reloaded, will reschedule update config cron job ...");
+        await this.scheduleUpdateConfigCronJob();
       }
     });
     sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
