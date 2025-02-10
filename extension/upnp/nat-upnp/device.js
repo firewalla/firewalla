@@ -1,3 +1,4 @@
+
 var nat = require('../nat-upnp'),
     request = require('request'),
     url = require('url'),
@@ -36,7 +37,7 @@ Device.prototype._getXml = function _getXml(url, callback) {
       return;
     }
 
-    xml2json.parse(body)
+    xml2json.parse(body, { root: false })
       .then(json => respond(null, json))
       .catch(err => respond(err))
   });
@@ -141,20 +142,16 @@ Device.prototype.run = function run(action, args, callback) {
         'SOAPAction': JSON.stringify(info.service + '#' + action)
       },
       body: body
-    }, function(err, res, body) {
+    }, function(err, res, respBody) {
       if (err) return callback(err);
 
-      xml2json.parse(body)
+      xml2json.parse(respBody, { root: false })
         .then(json => {
           if (res.statusCode !== 200 || json == null) {
             return callback(Error('Request failed: ' + res.statusCode));
           }
 
-          var soapns = nat.utils.getNamespace(
-            json,
-            'http://schemas.xmlsoap.org/soap/envelope/');
-
-          callback(null, json[soapns + 'Body']);
+          callback(null, json['Body']);
         })
         .catch(err => callback(err))
       });

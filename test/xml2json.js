@@ -31,6 +31,15 @@ const xmlString = String.raw`<?xml version="1.0" encoding="UTF-8" standalone="ye
   </nested>
 </root>`
 
+const soapString = String.raw`<?xml version="1.0"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:AddPortMapping xmlns:u="urn:schemas-upnp-org:service:WANIPConnection:1">
+      <NewExternalPort>2049</NewExternalPort>
+    </u:AddPortMapping>
+  </s:Body>
+</s:Envelope>`
+
 const malXML = String.raw`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <root>
   <key>foo</key>
@@ -48,6 +57,21 @@ describe('xml2json binary wrapper', () => {
     expect(result.root.nested.item[0]).to.be.equal('a')
     expect(result.root.nested.item[2].subitem).to.equal('c')
     expect(result.root.nested.notitem).to.equal('d')
+  });
+
+  it('should output without root if set root to false', async() => {
+    const result = await xml2json.parse(xmlString, {root: false})
+    expect(result.root).to.be.empty
+    expect(result.key).to.equal('foo')
+    expect(result.value).to.equal('bar')
+  });
+
+  it('should strip namespace away from key', async() => {
+    const result = await xml2json.parse(soapString)
+    expect(result.Envelope).to.be.an('object')
+    expect(result.Envelope.Body).to.be.an('object')
+    expect(result.Envelope.Body.AddPortMapping).to.be.an('object')
+    expect(result.Envelope.Body.AddPortMapping.NewExternalPort).to.equal('2049')
   });
 
   it('should throw on malformat XML', async() => {

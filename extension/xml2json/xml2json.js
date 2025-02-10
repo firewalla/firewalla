@@ -19,11 +19,13 @@
 'use strict';
 
 const cp = require('child_process');
+const log = require('../../net2/logger')(__filename)
 const Firewalla = require('../../net2/Firewalla.js');
 const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + Firewalla.getPlatform();
 const { buildDeferred } = require('../../util/asyncNative.js')
 
-async function parse(str) {
+async function parse(str, options = {}) {
+  log.verbose('parse', options)
   const xml2json = cp.spawn(xml2jsonBinary)
   const buffers = []
   const deferred = buildDeferred()
@@ -37,7 +39,16 @@ async function parse(str) {
   xml2json.stdout.on('close', () => {
     xml2json.kill()
     try {
-      deferred.resolve( JSON.parse(Buffer.concat(buffers).toString()) )
+      const result = JSON.parse(Buffer.concat(buffers).toString())
+      if (!result instanceof Object) {
+        deferred.reject(new Error('Invalid Result'))
+      }
+
+      if (options.root === false && Object.keys(result)) {
+        deferred.resolve(result[Object.keys(result)[0]])
+      } else {
+        deferred.resolve(result)
+      }
     } catch(err) {
       deferred.reject(err)
     }
