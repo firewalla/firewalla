@@ -297,16 +297,12 @@ class DomainBlock {
     }
   }
 
-  async blockCategory(category, options) {
-    if (!options.category)
-      options.category = category;
+  async blockCategory(options) {
     await dnsmasq.addPolicyCategoryFilterEntry(options).catch((err) => undefined);
     dnsmasq.scheduleRestartDNSService();
   }
 
-  async unblockCategory(category, options) {
-    if (!options.category)
-      options.category = category;
+  async unblockCategory(options) {
     await dnsmasq.removePolicyCategoryFilterEntry(options).catch((err) => undefined);
     dnsmasq.scheduleRestartDNSService();
   }

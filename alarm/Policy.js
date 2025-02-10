@@ -178,6 +178,7 @@ class Policy {
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&
+      arraysEqual(this.targets, policy.targets) && 
       arraysEqual(this.guids, policy.guids)
     ) {
       return true
@@ -648,7 +649,7 @@ class Policy {
   }
 }
 
-Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules"];
+Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules", "targets"];
 Policy.OBJ_VALUE_KEYS = ["appTimeUsage"];
 Policy.NUM_VALUE_KEYS = [
   'seq', 'appTimeUsed', 'priority', 'transferredBytes', 'transferredPackets', 'avgPacketBytes',

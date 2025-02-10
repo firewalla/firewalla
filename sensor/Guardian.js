@@ -103,6 +103,7 @@ module.exports = class {
     }
     this.checkId = setInterval(async () => {
       await this.handlLegacy();
+      await this.start(); // try to reconnect sio if no message coming from msp in 15mins
     }, 15 * 60 * 1000) // check every 15 mins
   }
 
@@ -316,12 +317,13 @@ module.exports = class {
   }
 
   async start() {
-    this.scheduleCheck();
     const server = await this.getServer();
     if (!server) {
-      throw new Error("socketio server not set");
+      log.forceInfo("socketio server not set", this.name);
+      return;
     }
 
+    this.scheduleCheck();
     this._stop();
 
     await this.adminStatusOn();
@@ -469,7 +471,7 @@ module.exports = class {
       }
 
       // disable msp features if not support msp
-      if (this.name != "support"){
+      if (this.name != "support") {
         const features = Object.keys(fc.getFeatures()).filter(i => i.startsWith('msp_'));
         for (const f of features) {
           await fc.disableDynamicFeature(f);

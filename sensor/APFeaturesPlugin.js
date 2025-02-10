@@ -50,9 +50,6 @@ class APFeaturesPlugin extends Sensor {
       await this.syncIsolation().catch((err) => {
         log.error(`Failed to run periodic sync isolation to fwapc`, err.message);
       });
-      await this.syncSSIDPSK().catch((err) => {
-        log.error(`Failed to run periodic sync ssidPSK to fwapc`, err.message);
-      });
     }, 900 * 1000);
   }
 
@@ -169,27 +166,10 @@ class APFeaturesPlugin extends Sensor {
       log.error(`uid is not found on Tag object`, obj);
       return;
     }
-    // filter non-existent profile uuid
-    
-    const psks = policy.psks;
-    if (_.isObject(psks)) {
-      const apcConfig = await fwapc.getConfig();
-      for (const uuid of Object.keys(psks)) {
-        if (!_.has(apcConfig, ["profile", uuid])) {
-          log.error(`${uuid} is not found in apc active config, ignore it`);
-          delete psks[uuid];
-        }
-      }
-    }
-    const ssidConfig = {vlan: policy.vlan, psks};
-    if (_.isEmpty(ssidConfig) || !_.has(ssidConfig, "vlan") || _.isEmpty(ssidConfig.psks))
-      await fwapc.deleteGroup(tagUid, "ssid").catch((err) => {
-        log.error(`Failed to delete fwapc ssid config on group ${tagUid}`, err.message);
-      });
-    else
-      await fwapc.setGroup(tagUid, {config: {ssid: ssidConfig}}).catch((err) => {
-        log.error(`Failed to set fwapc ssid config on group ${tagUid}`, err.message);
-      });
+    // no need to sync ssid PSK config to AP controller, group will be set in APCMsgSensor according to dynamic VLAN of each station
+    await fwapc.deleteGroup(tagUid, "ssid").catch((err) => {
+      log.error(`Failed to delete fwapc ssid config on group ${tagUid}`, err.message);
+    });
   }
 
   async syncIsolation() {
@@ -207,14 +187,6 @@ class APFeaturesPlugin extends Sensor {
       const p = await tag.getPolicyAsync(Constants.POLICY_KEY_ISOLATION);
       if (!_.isEmpty(p) && _.isObject(p))
         await fwapc.setGroup(tag.getUniqueId(), {config: {isolation: {internal: p.internal || false, external: p.external || false}}}).catch((err) => {});
-    }
-  }
-
-  async syncSSIDPSK() {
-    const tags = await TagManager.getPolicyTags(Constants.POLICY_KEY_SSID_PSK);
-    for (const tag of tags) {
-      const p = await tag.getPolicyAsync(Constants.POLICY_KEY_SSID_PSK);
-      await this.applySSIDPSK(tag, null, p); // second argument is not used in function
     }
   }
 }

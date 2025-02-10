@@ -93,8 +93,16 @@ const allowKey = "dns_proxy:allow_list"; //unused at this moment
 const passthroughKey = "dns_proxy:passthrough_list";
 const blockKey = "dns_proxy:block_list";
 const featureName = "dns_proxy";
+const boneBfKey = "bf:app.intel_bf";
 
 class DNSProxyPlugin extends Sensor {
+  constructor(config, bfInfo = { count: 0, error: 0, perfix: "data", level: "strict" }) {
+    super(config);
+    this.bfInfo = bfInfo;
+    this.dnsProxyData = null;
+    this.state = false;
+    this.processedDomainCache = null;
+  }
   async run() {
     // invalidate cache keys when starting up
     await rclient.unlinkAsync(allowKey);
@@ -108,48 +116,36 @@ class DNSProxyPlugin extends Sensor {
     this.hookFeature(featureName);
   }
 
-  getFilePath(item = {}) {
-    if (!item.count || !item.error || !item.prefix) {
-      log.error("Invalid item:", item);
-      return null;
-    }
-
-    const { count, error, prefix, level } = item;
-
-    if (level) {
-      return `${f.getRuntimeInfoFolder()}/${featureName}.${level}_${prefix}.bf.data`;
-    }
-    return `${f.getRuntimeInfoFolder()}/${featureName}.${prefix}.bf.data`;
+  getFilePath() {
+    return `${f.getRuntimeInfoFolder()}/${featureName}.strict_${this.bfInfo.perfix}.bf.data`;
   }
 
   getDnsmasqConfigFile() {
     return `${dnsmasqConfigFolder}/${featureName}.conf`;
   }
 
-  async enableDnsmasqConfig(data) {
+  async enableDnsmasqConfig() {
     log.info("Enabling dnsmasq config file for dnsproxy...");
-    let dnsmasqEntry = "mac-address-tag=%FF:FF:FF:FF:FF:FF$dns_proxy&1\n";
-    for (const level in data) {
-      const levelData = data[level];
-      for (const item of levelData) {
-        item.level = level;
-        const fp = this.getFilePath(item);
-        if (!fp) {
-          continue;
-        }
-        const entry = `server-bf-exact-uhigh=<${fp},${item.count},${item.error}><${allowKey}><${blockKey}><${passthroughKey}>127.0.0.153#59953$dns_proxy\n`;
-        dnsmasqEntry += entry;
-      }
+    if (!this.bfInfo.count || !this.bfInfo.error) {
+      log.error("No bloom filter data, skip enabling dnsmasq config");
+      return;
+    }
+    if (this.bfInfo.level !== "strict") {
+      log.error("Bloom filter level is not strict, skip enabling dnsmasq config");
+      return;
     }
 
+    let dnsmasqEntry = "mac-address-tag=%FF:FF:FF:FF:FF:FF$dns_proxy&1\n";
+    const fp = this.getFilePath();
+    const entry = `server-bf-exact-uhigh=<${fp},${this.bfInfo.count},${this.bfInfo.error}><${allowKey}><${blockKey}><${passthroughKey}>127.0.0.153#59953$dns_proxy\n`;
+    dnsmasqEntry += entry;
+
     await fs.writeFileAsync(this.getDnsmasqConfigFile(), dnsmasqEntry);
-    dnsmasq.scheduleRestartDNSService();
   }
 
   async disableDnsmasqConfig() {
     log.info("Disabling dnsmasq config file for dnsproxy...");
     await fs.unlinkAsync(this.getDnsmasqConfigFile()).catch(() => undefined); // ignore error
-    dnsmasq.scheduleRestartDNSService();
   }
 
   async applyDnsProxy(host, ip, policy) {
@@ -163,39 +159,47 @@ class DNSProxyPlugin extends Sensor {
     }
 
     if (!this.state) {
-      log.info("dns_proxy feature is disabled, skip applying policy");
+      log.info("dns_proxy is disabled, skip applying policy");
       return;
     }
 
-    // level: strict, default... usually just one level at the same time, but the code supports multiple anyway
-    for (const level in this.dnsProxyData) {
-      const levelData = this.dnsProxyData[level];
-      // item: data, new... each one is a bloom data
-      for (const item of levelData) {
-        item.level = level;
-        const hashKeyName = bf.getHashKeyName(item);
-        if (!hashKeyName) continue;
+    /* currently, only strict mode is used and only one dns_proxy BF profile 
+     * and confirmed no likely to support multiple dns_proxy profiles in the future
+     */ 
+    const outputFilePath = this.getFilePath();
 
-        log.info("Processing data file:", hashKeyName);
-        const outputFilePath = this.getFilePath(item);
-        await cc.enableCache(hashKeyName, async (data) => {
-          if (data) {
-            await bf.updateBFData(item, data, outputFilePath).catch((err) => {
-              log.error("Failed to process data file, err:", err);
-            });
-          } else {
-            log.info(`no dns_proxy data ${hashKeyName}. delete data file ${outputFilePath}`);
-            await bf.deleteBFData(outputFilePath);
+    if ("strict" in this.dnsProxyData && this.dnsProxyData["strict"]) {
+      this.bfInfo.level = "strict";
+
+      await cc.enableCache(boneBfKey, async (jsonString) => {
+        if (jsonString) {
+          const bloomData = JSON.parse(jsonString);
+          if (!bloomData.data || !bloomData.info || !bloomData.info.s || !bloomData.info.e) {
+            log.error("Invalid bloom data, skip update bloom filter data.", bloomData);
+            return;
           }
-          // always reschedule dnsmasq restarts when bf data is updated
-          dnsmasq.scheduleRestartDNSService();
-        });
-      }
-    }
+          this.bfInfo.count = bloomData.info.s;
+          this.bfInfo.error = bloomData.info.e;
+          log.info(`dns_proxy bloom filter data loaded, count:${this.bfInfo.count}, error:${this.bfInfo.error}`);
 
-    await this.enableDnsmasqConfig(this.dnsProxyData).catch((err) => {
-      log.error("Failed to enable dnsmasq config, err", err);
-    });
+          const need_decompress = false;
+          await bf.updateBFData(this.bfInfo, bloomData.data, outputFilePath, need_decompress).catch((err) => {
+            log.error("Failed to process data file, err:", err);
+          });
+          await this.enableDnsmasqConfig().catch((err) => {
+            log.error("Failed to enable dnsmasq config, err", err);
+          });
+        } else {
+          log.info(`failed to fetch dns_proxy data from bone with key: ${boneBfKey}, keep original bloom filter data`);
+        }
+      });
+
+    } else {
+      log.info('not strict mode, disable dnsmasq config');
+      this.disableDnsmasqConfig();
+    }
+    // always reschedule dnsmasq restarts when bf data is updated
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async globalOn() {
@@ -243,21 +247,12 @@ class DNSProxyPlugin extends Sensor {
     // this channel is also used by CategoryExaminerPlugin.js, unsubscribe here will break functions there
     // sclient.unsubscribe(BF_SERVER_MATCH);
 
-    if (!_.isEmpty(this.dnsProxyData)) {
-      for (const level in this.dnsProxyData) {
-        const levelData = this.dnsProxyData[level];
-        for (const item of levelData) {
-          item.level = level;
-          const hashKeyName = bf.getHashKeyName(item);
-          if (!hashKeyName) continue;
-          await cc.disableCache(hashKeyName).catch((err) => {
-            log.error("Failed to disable cache, err:", err);
-          });
-        }
-      }
-    }
+    await cc.disableCache(boneBfKey).catch((err) => {
+      log.error("Failed to disable cache, err:", err);
+    });
 
     await this.disableDnsmasqConfig();
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async checkCache(domain) { // only return if there is exact-match intel in redis

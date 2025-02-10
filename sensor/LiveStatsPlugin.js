@@ -108,17 +108,21 @@ class LiveStatsPlugin extends Sensor {
     this.streamingCache = {};
 
     sem.on('LiveStatsPlugin', message => {
-      if (!message.id)
-        log.verbose(Object.keys(this.streamingCache))
-      else {
-        const logObject = this.streamingCache[message.id]
-        for (const key in logObject) {
-          if (logObject[key] instanceof ChildProcess)
-            logObject[key] = _.pick(logObject[key], ['pid', 'spawnargs'])
-          if (logObject[key] instanceof Interface)
-            logObject[key] = 'readline.Interface { ... }'
+      try {
+        if (!message.id)
+          log.verbose(Object.keys(this.streamingCache))
+        else {
+          const logObject = this.streamingCache[message.id]
+          for (const key in logObject || {}) {
+            if (logObject[key] instanceof ChildProcess)
+              logObject[key] = _.pick(logObject[key], ['pid', 'spawnargs'])
+            if (logObject[key] instanceof Interface)
+              logObject[key] = 'readline.Interface { ... }'
+          }
+          log.verbose(message.id, logObject)
         }
-        log.verbose(message.id, logObject)
+      } catch(err) {
+        log.error('Error logging', message, err)
       }
     })
 
@@ -222,7 +226,7 @@ class LiveStatsPlugin extends Sensor {
               const vpnClients = await Promise.all(
                 // policy:system should have all enabled VPN clients
                 (policy.multiClients || [ policy ])
-                  .map( vc => vc && vc.state && hostManager.getVPNClientInstance(vc).catch(err => log.error(err.message)) )
+                  .map( vc => vc && vc.state && hostManager.getVPNClientInstance(vc).catch(err => log.debug(err.message)) )
               )
               response.throughput.push(... vpnClients
                 .filter(Boolean)
@@ -523,7 +527,7 @@ class LiveStatsPlugin extends Sensor {
       cache.iftop = iftop
       cache.rl = rl
     } catch(err) {
-      log.error('Failed to get device throughput', err)
+      log.error('Failed to get device throughput for', intfUUID, err)
     }
 
     cache.ts = Date.now() / 1000

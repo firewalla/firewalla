@@ -3591,6 +3591,7 @@ class netBot extends ControllerBot {
   getDefaultResponseDataModel(msg, data, err) {
     let code = 200;
     let message = "";
+    let errID = "";
     if (err) {
       if (_.isEmpty(data) && !_.isEmpty(err.data))
         data = err.data;
@@ -3602,6 +3603,8 @@ class netBot extends ControllerBot {
       if (err && err.msg) {
         message = err.msg;
       }
+      if (err && err.errID)
+        errID = err.errID;
     }
 
     let datamodel = {
@@ -3615,6 +3618,8 @@ class netBot extends ControllerBot {
       data: data,
       message: message
     };
+    if (errID)
+      datamodel.error = errID;
     return datamodel;
   }
 
