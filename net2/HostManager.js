@@ -1076,7 +1076,8 @@ module.exports = class HostManager extends Monitorable {
       this.boxMetrics(json),
       this.getSysInfo(json),
       this.assetsInfoForInit(json),
-      this.pairingAssetsForInit(json)
+      this.pairingAssetsForInit(json),
+      this.addMsp2CheckIn(json)
     ]
 
     await this.basicDataForInit(json, {});
@@ -1151,6 +1152,13 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
+  async addMsp2CheckIn(json) {
+    const msp = await this.getGuardian({});
+    if (msp) {
+      json.msp = _.pick(msp, ['id', 'name', 'plan', 'channel']);
+    }
+  }
+
   async getGuardian(json) {
     const data = await rclient.getAsync("ext.guardian.business");
     if(!data) {
@@ -1161,6 +1169,7 @@ module.exports = class HostManager extends Monitorable {
       const result = JSON.parse(data);
       if(result) {
         json.guardianBiz = result;
+        return result;
       }
     } catch(err) {
       log.error(`Failed to parse data, err: ${err}`);
