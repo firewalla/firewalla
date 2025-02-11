@@ -164,7 +164,7 @@ get_system_policy() {
   if [ "$system_policy_done" -eq "0" ]; then
     read_hash SP policy:system
     system_policy_done=1
-    VPNClients=($(jq -r 'if .multiClients then .multiClients[]|.[.type].profileId else .[.type//empty].profileId end' <<< "${SP[vpnClient]}"))
+    mapfile -t VPNClients < <(jq -r 'if .multiClients then .multiClients[]|.[.type].profileId else .[.type//empty].profileId end' <<< "${SP[vpnClient]}")
   fi
 }
 
@@ -291,7 +291,7 @@ check_systemctl_services() {
     check_each_system_service fireboot "dead"
 
     get_system_policy
-    if fgrep -q '"state":true' <<< $SP[vpn]
+    if grep -F -q '"state":true' <<< "${SP[vpn]}"
     then
       vpn_run_state='running'
     else
@@ -315,7 +315,7 @@ check_systemctl_services() {
 check_rejection() {
     echo "----------------------- Node Rejections ----------------------------"
 
-    find /home/pi/logs/ -type f -mtime -2 -exec bash -c 'grep -a "Possibly Unhandled Rejection" -A 10 -B 2 {} | tail -n 300' \;
+    find /home/pi/logs/ -type f -mtime -2 -exec bash -c 'grep -a "Possibly Unhandled Rejection" -A 10 -B 2 $1 | tail -n 300' shell {} \;
 
     echo ""
     echo ""
@@ -324,7 +324,7 @@ check_rejection() {
 check_exception() {
     echo "----------------------- Node Exceptions ----------------------------"
 
-    find /home/pi/logs/ -type f -mtime -2 -exec bash -c "egrep -a -H -i '##### CRASH #####' -A 20 {} | tail -n 300" \;
+    find /home/pi/logs/ -type f -mtime -2 -exec bash -c 'grep -a -H -i "##### CRASH #####" -A 20 $1 | tail -n 300' shell {} \;
 
     echo ""
     echo ""
@@ -420,6 +420,26 @@ check_system_config() {
         print_config "$hkey" "${c[$hkey]}"
     done
     print_config 'version' "$(jq -c .version /home/pi/firewalla/net2/config.json)"
+
+    pushd "$FIREWALLA_HOME" &>/dev/null
+    branch="$(git branch --show-current)"
+    release=branch
+    case "$branch" in
+      "release_6_0")
+        release="prod"
+        ;;
+      "beta_6_0")
+        release="beta"
+        ;;
+      "beta_7_0")
+        release="alpha"
+        ;;
+      "master")
+        release="dev"
+        ;;
+    esac
+    print_config 'release' "$release"
+    popd &>/dev/null
 
     echo ""
 
@@ -536,7 +556,7 @@ check_policies() {
             else
                 SCOPE="${TAG%%:*}:$(get_tag_name "$TAG")"
             fi
-        elif [[ ! -n $SCOPE ]]; then
+        elif [[ -z $SCOPE ]]; then
             SCOPE="All Devices"
         fi
 
@@ -594,7 +614,7 @@ check_policies() {
 
 is_router() {
     local GW=$(/sbin/ip route show | awk '/default via/ {print $3}')
-    if [[ $GW == $1 ]]; then
+    if [[ $GW == "$1" ]]; then
         return 0
     else
         return 1
@@ -747,16 +767,16 @@ check_hosts() {
         local POLICY_MAC="policy:mac:${MAC}"
 
         declare -A p
-        read_hash p $POLICY_MAC
+        read_hash p "$POLICY_MAC"
 
         local IP=${h[ipv4Addr]}
         if [[ -n $IP ]] && [[ "$(jq -r '.allocations[] | select(.type=="static") | .ipv4' <<< "${p[ipAllocation]}")" == $IP ]]; then
           IP="*$IP"
         fi
 
-        local TAGS=${p[tags]//[\][\" ]/}
-        local USER_TAGS=${p[userTags]//[\][\" ]/}
-        local DEVICE_TAGS=${p[deviceTags]//[\][\" ]/}
+        local TAGS=${p[tags]//[\]\[\" ]/}
+        local USER_TAGS=${p[userTags]//[\]\[\" ]/}
+        local DEVICE_TAGS=${p[deviceTags]//[\]\[\" ]/}
 
         for tag in $TAGS; do
           get_tag_policy "$tag"
@@ -770,7 +790,7 @@ check_hosts() {
         done
 
         local MONITORING=
-        if ((IS_FIREWALLA)) || is_router ${h[ipv4Addr]}; then
+        if ((IS_FIREWALLA)) || is_router "${h[ipv4Addr]}"; then
             MONITORING="NA"
         elif [ -z ${p[monitor]+x} ] || [[ ${p[monitor]} == "true" ]]; then
             MONITORING=""
@@ -802,7 +822,7 @@ check_hosts() {
         # local DNS_BOOST=$(jq -r 'select(.dnsCaching == false) | "F"' <<< "${p[dnsmasq]}")
         local DNS_BOOST=$(if [[ ${p[dnsmasq]} == *"false"* ]]; then echo "F"; fi)
 
-        for policy in ${hierarchicalPolicies[@]}; do
+        for policy in "${hierarchicalPolicies[@]}"; do
           if [ -n "${p[$policy]+x}" ]; then
             [[ "${p[$policy]}" == *"true"* ]] && set_color_value $policy "T" 1
             [[ "${p[$policy]}" == *"null"* ]] && set_color_value $policy "F" 1
@@ -960,7 +980,7 @@ check_sys_features() {
         fi
     done
 
-    for key in ${!SF[@]}; do
+    for key in "${!SF[@]}"; do
         [ -z "${nameMap[$key]+x}" ] && print_config "" "${SF[$key]}" "$key"
     done
 
@@ -1002,7 +1022,7 @@ check_network() {
         DNS_CONFIG[${ARY[0]}]=${ARY[1]}
       done
 
-    >/tmp/scc_csv
+    :>/tmp/scc_csv
     for INTF in $INTFS; do
       jq -rj ".[\"$INTF\"] | if (.state.ip6 | length) == 0 then .state.ip6 |= [] else . end | [\"$INTF\", .config.meta.name, .config.meta.uuid, .state.ip4, .state.gateway, (.state.ip6 | join(\"|\")), .state.gateway6, (.state.dns // [] | join(\";\"))] | @tsv" /tmp/scc_interfaces >>/tmp/scc_csv
       echo "" >> /tmp/scc_csv
@@ -1181,7 +1201,7 @@ run_lsusb() {
 }
 
 check_eth_count() {
-  ports=$(ls -l /sys/class/net | grep -c "eth[0-3] ")
+  ports=$(find /sys/class/net/ | grep -c "\\eth[0-3]$")
 
   if [[ ("$PLATFORM" == 'gold' || "$PLATFORM" == 'gold-se') && $ports -ne 4 ||
     ("$PLATFORM" == 'purple' || "$PLATFORM" == 'purple-se') && $ports -ne 2 ||
