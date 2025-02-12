@@ -1707,6 +1707,7 @@ class netBot extends ControllerBot {
       options.begin = begin
       options.end = end
     }
+    options.limit = msg.data.limit
 
     // 0 => now, 1 => single hour stats, other => overall stats (last 24 hours)
     if (msg.data.hourblock != "1" && msg.data.hourblock != "0") {
@@ -1823,10 +1824,10 @@ class netBot extends ControllerBot {
     }
     if (fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW) && local == true) {
       promises.push(
-        netBotTool.prepareTopFlows(jsonobj, 'local', 'upload', Object.assign({}, options, {limit: 400})),
-        netBotTool.prepareTopFlows(jsonobj, 'local', 'download', Object.assign({}, options, {limit: 400})),
-        netBotTool.prepareTopFlows(jsonobj, 'local', 'in', Object.assign({}, options, {limit: 400})),
-        netBotTool.prepareTopFlows(jsonobj, 'local', 'out', Object.assign({}, options, {limit: 400})),
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'upload', options),
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'download', options),
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'in', options),
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'out', options),
       )
       if (type != 'host' || target == '0.0.0.0')
         tsMetrics.push('intra:lo', 'conn:lo:intra')
