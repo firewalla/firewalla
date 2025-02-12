@@ -236,7 +236,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   async refreshTLSCategoryActivated() {
     try {
-      const cmdResult = await exec(`ls -l /proc/net/xt_tls/hostset |awk '{print $9}'`);
+      const cmdResult = await exec(`ls -l /proc/net/xt_tls/hostset |awk '{print $9}'`); //either from xt_tls or from xt_udp_tls is fine
       const results = cmdResult.stdout.toString().trim().split('\n');
       const activeCategories = Object.keys(this.activeTLSCategories).filter(c => results.includes(this.getHostSetName(c)));
       Object.keys(this.activeTLSCategories).forEach(key => {
@@ -1182,6 +1182,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
   }
 
+  isDomainContainWildcardInMiddle(domain) {
+    if ((!domain.startsWith("*.") && domain.includes("*")) 
+      || (domain.startsWith("*.") && domain.substring(2).includes("*")))
+      return true;
+    return false;
+  }
+
   // rebuild category ipset
   async recycleIPSet(category) {
     if (this.recycleTasks[category]) {
@@ -1228,21 +1235,29 @@ class CategoryUpdater extends CategoryUpdaterBase {
     // const dd = domainBlock.getCategoryDomains(category, strategy.ipset.useHitSet, false, false)
 
     for (const d of dd) {
+      if (this.isDomainContainWildcardInMiddle(d)) // skip domain pattern
+        continue;
       const domainObj = { id: d, isStatic: false };
       domainMap.set(hashFunc(domainObj), domainObj);
     }
 
     for (const item of await this.getDefaultDomainsOnlyWithPort(category)) {
+      if (this.isDomainContainWildcardInMiddle(item.id)) // skip domain pattern
+        continue;
       const domainObj = { id: item.id, port: item.port, isStatic: false };
       domainMap.set(hashFunc(domainObj), domainObj);
     }
 
     for (const item of await this.getDefaultDomainsWithPort(category)) {
+      if (this.isDomainContainWildcardInMiddle(item.id)) // skip domain pattern
+        continue;
       const domainObj = { id: item.id, port: item.port, isStatic: true };
       domainMap.set(hashFunc(domainObj), domainObj);
     }
 
     for (const item of await this.getPatternMatchedDomainsWithPort(category)) {
+      if (this.isDomainContainWildcardInMiddle(item.id)) // skip domain pattern
+        continue;
       const domainObj = { id: item.id, port: item.port, isStatic: true };
       domainMap.set(hashFunc(domainObj), domainObj);
     }

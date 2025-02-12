@@ -399,7 +399,10 @@ get_auto_upgrade() {
 }
 
 check_firerouter_hash() {
-  pushd "$FIREROUTER_HOME" &>/dev/null
+  if ! pushd "$FIREROUTER_HOME" &>/dev/null; then
+      printf "no firerouter"
+      return
+  fi
 
   if git merge-base --is-ancestor 97a43b9faf0492b3a4a96628ea6c23246524fb90 HEAD &>/dev/null; then
     git rev-parse @
@@ -422,7 +425,7 @@ check_system_config() {
     print_config 'version' "$(jq -c .version /home/pi/firewalla/net2/config.json)"
 
     pushd "$FIREWALLA_HOME" &>/dev/null
-    branch="$(git branch --show-current)"
+    branch="$(git rev-parse --abbrev-ref HEAD)"
     release=branch
     case "$branch" in
       "release_6_0")

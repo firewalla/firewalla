@@ -268,8 +268,8 @@ class Platform {
     return [];
   }
 
-  async installTLSModule() {
-    const installed = await this.isTLSModuleInstalled();
+  async installTLSModule(module_name) {
+    const installed = await this.isTLSModuleInstalled(module_name);
     if (installed) return;
     const codename = await exec(`lsb_release -cs`).then((result) => result.stdout.trim()).catch((err) => {
       log.error("Failed to get codename of OS distribution", err.message);
@@ -278,32 +278,42 @@ class Platform {
     if (!codename)
       return;
 
-    const koPath = `${await this.getKernelModulesPath()}/xt_tls.ko`;
+    const koPath = `${await this.getKernelModulesPath()}/${module_name}.ko`;
     const koExists = await fsp.access(koPath, fs.constants.F_OK).then(() => true).catch((err) => false);
     if (koExists)
       await exec(`sudo insmod ${koPath} max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`).catch((err) => {
         log.error(`Failed to install tls.ko`, err.message);
       });
 
-    const soPath = `${await this.getSharedObjectsPath()}/libxt_tls.so`;
+    const soPath = `${await this.getSharedObjectsPath()}/lib${module_name}.so`;
     const soExists = await fsp.access(soPath, fs.constants.F_OK).then(() => true).catch((err) => false);
     if (soExists)
       await exec(`sudo install -D -v -m 644 ${soPath} /usr/lib/$(uname -m)-linux-gnu/xtables`).catch((err) => {
-        log.error(`Failed to install libxt_tls.so`, err.message);
+        log.error(`Failed to install lib${module_name}}.so`, err.message);
       });
+    this.installedModules[module_name] = true;
+  }
+  async installTLSModules() {
+    await this.installTLSModule("xt_tls");
+    await this.installTLSModule("xt_udp_tls");
   }
 
-  async isTLSModuleInstalled() {
-    if (this.tlsInstalled) return true;
-    const cmdResult = await exec(`lsmod | grep xt_tls | awk '{print $1}'`);
+  async isTLSModuleInstalled(module_name) {
+    if (!this.installedModules) {
+      this.installedModules = {};
+    }
+    if (this.installedModules[module_name]) {
+      return this.installedModules[module_name];
+    }
+    const cmdResult = await exec(`lsmod | grep ${module_name} | awk '{print $1}'`);
     const results = cmdResult.stdout.toString().trim().split('\n');
     for (const result of results) {
-      if (result == 'xt_tls') {
-        this.tlsInstalled = true;
-        break;
+      if (result == module_name) {
+        this.installedModules[module_name] = true;
+        return true;
       }
     }
-    return this.tlsInstalled;
+    return false;
   }
 
   isTLSBlockSupport() {
