@@ -229,3 +229,5 @@ function lfmove() {
   fi
   echo $payload | curl -X POST --url http://127.0.0.1:8841/v1/control/steer_station --header 'content-type: application/json' --data @-
 }
+
+alias lpair='curl localhost:8841/v1/runtime/pairing_stat -s | jq .'
