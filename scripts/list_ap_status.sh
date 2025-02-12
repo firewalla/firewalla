@@ -146,7 +146,7 @@ ap_data=$(ap_config | jq -r ".assets|to_entries|sort_by(.key)[]|[.key, .value.sy
 timeit ap_data
 ap_status=$(local_api status/ap|jq -r ".info")
 ap_status_mac=$(echo "$ap_status" |  jq -r  'to_entries[]|.key as $mac| .value.aps|map($mac, .bssid)|@tsv')
-ap_status2=$(echo "$ap_status" | jq -r "to_entries[]|[.key,.value.branch,.value.ts,.value.version//\"${NO_VALUE}\",.value.imageVersion//\"${NO_VALUE}\",.value.sysUptime,.value.backhaulState,.value.aps[\"ath2\"].upRssi,.value.latencyToController, .value.upstreamAPs[0]//\"x\", (.value.eths//{}|.[]|select((.intf|test(\"^eth[01]\$\")) and .linkState!=\"disabled\")|(.intf,.connected,.linkSpeed))]|@tsv")
+ap_status2=$(echo "$ap_status" | jq -r "to_entries[]|[.key,.value.branch,.value.ts,.value.version//\"${NO_VALUE}\",.value.imageVersion//\"${NO_VALUE}\",.value.sysUptime,.value.backhaulState,.value.aps[\"ath2\"].upRssi,.value.latencyToController, .value.aps[\"ath2\"].upBssid//\"x\", (.value.eths//{}|.[]|select((.intf|test(\"^eth[01]\$\")) and .linkState!=\"disabled\")|(.intf,.connected,.linkSpeed))]|@tsv")
 timeit ap_status
 wg_dump=$(sudo wg show wg_ap dump)
 timeit wg_dump
@@ -157,7 +157,7 @@ now_ts=$(date +%s)
 declare -a ap_names ap_ips
 test -n "$ap_data" && while read ap_mac ap_meshmode ap_pubkey
 do
-    read ap_branch ap_last_handshake_ts ap_version ap_iversion ap_uptime ap_backhaul_state ap_backhaul_up_rssi ap_latency ap_uplink ap_eth_intf ap_eth_connected ap_eth_speed < <( echo "$ap_status2" | awk "\$1==\"$ap_mac\" {print \$2\" \"\$3\" \"\$4\" \"\$5\" \"\$6\" \"\$7\" \"\$8\" \"\$9\" \"\$10\" \"\$11\" \"\$12\" \"\$13}")
+    read ap_branch ap_last_handshake_ts ap_version ap_iversion ap_uptime ap_backhaul_state ap_backhaul_up_rssi ap_latency ap_backhaul_up_bssid ap_eth_intf ap_eth_connected ap_eth_speed < <( echo "$ap_status2" | awk "\$1==\"$ap_mac\" {print \$2\" \"\$3\" \"\$4\" \"\$5\" \"\$6\" \"\$7\" \"\$8\" \"\$9\" \"\$10\" \"\$11\" \"\$12\" \"\$13}")
     timeit read
     if [[ -n "$ap_pubkey" ]]; then
       echo "$wg_ap_peers_pubkeys" | fgrep -q $ap_pubkey && ap_adopted=adopted || ap_adopted=pending
@@ -196,22 +196,12 @@ do
             branch) apd="$ap_branch" ;;
             hshake) apd="$ap_last_handshake" ;;
             sta) apd="$ap_stations_per_ap" ;;
-            bh_state)
-                case $ap_backhaul_state in
-                    Wireless)
-                         #ap_uplink_mac=$(echo "$ap_status_mac" | awk "/$ap_uplink/ {print \$1}")
-                         #ap_uplink_name="$(redis-cli --raw hget host:mac:$ap_uplink_mac name || echo $NO_VALUE)"
-                         #apd="${ap_backhaul_state}:${ap_uplink_name}" ;;
-                         #apd="${ap_backhaul_state}:${ap_uplink_mac: -8}" ;;
-                        apd="${ap_backhaul_state}" ;;
-                    *)
-                        apd="${ap_backhaul_state}" ;;
-                esac
-                ;;
+            bh_state) apd="${ap_backhaul_state}" ;;
             bh_up_mac_rssi)
-              if [[ $ap_backhaul_state == 'Wireless' ]]; then
-                bh_up_mac=$(echo "$ap_status_mac" | awk "/$ap_uplink/ {print \$1}")
-                apd="${bh_up_mac: -8}:$ap_backhaul_up_rssi"
+              if [[ "${ap_backhaul_up_bssid:0:9}" == '20:6D:31:' ]]; then
+                echo "ap_backhaul_up_bssid='$ap_backhaul_up_bssid'" > /tmp/debug-$ap_mac
+                bh_up_mac=$(echo "$ap_status_mac" | awk "/$ap_backhaul_up_bssid/ {print \$1}")
+                apd="${bh_up_mac: -8}@$ap_backhaul_up_rssi"
               else
                 apd=$NO_VALUE
               fi
