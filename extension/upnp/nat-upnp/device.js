@@ -29,7 +29,7 @@ Device.prototype._getXml = function _getXml(url, callback) {
     callback(err, body);
   }
 
-  request(url, function(err, res, body) {
+  request({ url, followRedirect: false }, function(err, res, body) {
     if (err) return callback(err);
 
     if (res.statusCode !== 200) {
@@ -135,6 +135,7 @@ Device.prototype.run = function run(action, args, callback) {
     request({
       method: 'POST',
       url: info.controlURL,
+      followRedirect: false,
       headers: {
         'Content-Type': 'text/xml; charset="utf-8"',
         'Content-Length': Buffer.byteLength(body),

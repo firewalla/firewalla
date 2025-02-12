@@ -253,6 +253,7 @@ class MeshVPNPlugin extends Sensor {
       uri: url,
       family: 4,
       method: "GET",
+      followRedirect: false,
       auth: {
         bearer: Bone.getToken()
       },

@@ -1567,6 +1567,7 @@ class netBot extends ControllerBot {
         return resp
       }
       case "branchUpdateTime": {
+        // DO NOT USE: returns branch update time for Red all the time
         const branches = (value && value.branches) || ['beta_6_0', 'release_6_0', 'release_7_0'];
         const result = {};
         for (const branch of branches) {

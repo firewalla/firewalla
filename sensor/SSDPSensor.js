@@ -107,7 +107,8 @@ class SSDPSensor extends Sensor {
   parseURL(ip, location, callback) {
     let options = {
       uri: location,
-      method: 'GET'
+      method: 'GET',
+      followRedirect: false,
     }
     request(options, (err, response, body) => {
       if(err) {

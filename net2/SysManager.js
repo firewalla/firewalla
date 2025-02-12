@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -1194,6 +1194,7 @@ class SysManager {
     try {
       const result = await rp({
         uri: `https://api.github.com/repos/firewalla/firewalla/commits/${branch}`,
+        followRedirect: false,
         headers: {
           "User-Agent": "curl/7.64.1",
         },
