@@ -572,7 +572,7 @@ class BroDetect {
       await rclient.zaddAsync(key, dnsFlow._ts, JSON.stringify(dnsFlow)).catch(
         err => log.error("Failed to save single DNS flow: ", dnsFlow, err)
       )
-      if (config.dns.expires) rclient.expireat(key, Date.now() / 1000 + config.dns.expires, ()=>{})
+      if (config.dns.expires) rclient.expireat(key, Math.floor(Date.now() / 1000 + config.dns.expires), ()=>{})
 
       const flowspecKey = `${localMac}:${dnsFlow.dn}:${intfInfo ? intfInfo.uuid : ''}`;
       // add keys to flowstash (but not redis)
@@ -1384,7 +1384,7 @@ class BroDetect {
       await rclient.zaddAsync(redisObj).catch(
         err => log.error("Failed to save tmpspec: ", tmpspec, err)
       )
-      if (config.conn.expires) rclient.expireat(key, now + config.conn.expires, ()=>{})
+      if (config.conn.expires) rclient.expireat(key, Math.floor(now + config.conn.expires), ()=>{})
       await flowAggrTool.recordDeviceLastFlowTs(localMac, now);
       const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
       let remoteHost = null;
@@ -1532,7 +1532,7 @@ class BroDetect {
           transaction.push(['zadd', robj])
         })
         if (config[type].expires) {
-          transaction.push(['expireat', key, Date.now() / 1000 + config[type].expires])
+          transaction.push(['expireat', key, Math.floor(Date.now() / 1000 + config[type].expires)])
         }
 
         try {
