@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,6 +26,8 @@ const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 const fHome = firewalla.getFirewallaHome();
 const ip = require('ip');
+const net = require('net')
+const ipUtil = require('../util/IPUtil.js')
 const mode = require('../net2/Mode.js');
 
 const fireRouter = require('../net2/FireRouter.js')
@@ -225,7 +227,7 @@ class VpnManager {
   }
 
   async removeUpnpPortMapping() {
-    if (!sysManager.myDefaultWanIp() || !ip.isPrivate(sysManager.myDefaultWanIp())) {
+    if (!sysManager.myDefaultWanIp() || !ipUtil.isPrivate(sysManager.myDefaultWanIp())) {
       log.info(`Defautl WAN IP ${sysManager.myDefaultWanIp()} is not a private IP, no need to remove upnp port mapping`);
       return false;
     }
@@ -257,7 +259,7 @@ class VpnManager {
   }
 
   async addUpnpPortMapping(protocol, localPort, externalPort, description) {
-    if (!sysManager.myDefaultWanIp() || !ip.isPrivate(sysManager.myDefaultWanIp())) {
+    if (!sysManager.myDefaultWanIp() || !ipUtil.isPrivate(sysManager.myDefaultWanIp())) {
       log.info(`Defautl WAN IP ${sysManager.myDefaultWanIp()} is not a private IP, no need to add upnp port mapping`);
       return false;
     }
@@ -692,7 +694,7 @@ class VpnManager {
               throw `${clientSubnet} is not a valid CIDR subnet`;
             const ipAddr = ipSubnets[0];
             const maskLength = ipSubnets[1];
-            if (!ip.isV4Format(ipAddr))
+            if (!net.isIPv4(ipAddr))
               throw `${clientSubnet} is not a valid CIDR subnet`;
             if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0)
               throw `${clientSubnet} is not a valid CIDR subnet`;

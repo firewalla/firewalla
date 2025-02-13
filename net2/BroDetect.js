@@ -23,7 +23,7 @@ const LogReader = require('../util/LogReader.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const iptool = require("ip");
+const ipUtil = require("../util/IPUtil.js");
 
 const sysManager = require('./SysManager.js');
 const platformLoader = require('../platform/PlatformLoader.js');
@@ -216,7 +216,7 @@ class BroDetect {
         mac: mac,
         from: "macHeartbeat"
       };
-      if (entry.ipv4Addr && iptool.isV4Format(entry.ipv4Addr)) {
+      if (entry.ipv4Addr && net.isIPv4(entry.ipv4Addr)) {
         host.ipv4 = entry.ipv4Addr;
         host.ipv4Addr = entry.ipv4Addr;
       }
@@ -638,7 +638,7 @@ class BroDetect {
         if (obj["query"].endsWith(".in-addr.arpa")) {
           // ipv4 reverse DNS query
           const address = obj["query"].substring(0, obj["query"].length - ".in-addr.arpa".length).split('.').reverse().join('.');
-          if (!address || !iptool.isV4Format(address) || iptool.isPrivate(address))
+          if (!address || !net.isIPv4(address) || ipUtil.isPrivate(address))
             return;
           const domains = obj["answers"]
             .filter(answer => !net.isIP(answer) && isDomainValid(answer)).map(answer => formulateHostname(answer));
@@ -706,7 +706,7 @@ class BroDetect {
     }
     if (!this.pingedIp.has(ip)) {
       // probably issue ping here for ARP cache and later used in IPv6DiscoverySensor
-      if (!iptool.isV4Format(ip)) {
+      if (net.isIPv6(ip)) {
         // ip -6 neighbor may expire the ping pretty quickly, need to ping a few times to have sensors
         // pick up the new data
         log.debug("Conn:Learned:Ip", "ping ", ip, flowspec.uid);

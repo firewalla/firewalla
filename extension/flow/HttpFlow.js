@@ -1,4 +1,4 @@
-/*    Copyright 2019-2023 Firewalla Inc.
+/*    Copyright 2019-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,7 +25,7 @@ const hostTool = new HostTool();
 const IdentityManager = require('../../net2/IdentityManager.js');
 const DNSTool = require('../../net2/DNSTool.js');
 const dnsTool = new DNSTool();
-const iptool = require('ip');
+const ipUtil = require('../../util/IPUtil.js');
 const {formulateHostname, isDomainValid} = require('../../util/util.js');
 
 const sysManager = require('../../net2/SysManager.js');
@@ -169,7 +169,7 @@ class HttpFlow {
       return;
     }
 
-    if ((iptool.isV4Format(destIP) || iptool.isV6Format(destIP)) && isDomainValid(host)) {
+    if ((ipUtil.isV4Format(destIP) || ipUtil.isV6Format(destIP)) && isDomainValid(host)) {
       const domain = formulateHostname(host);
       await dnsTool.addDns(destIP, domain, config.get('dns.expires'));
       await dnsTool.addReverseDns(domain, [destIP], config.get('dns.expires'));
@@ -189,7 +189,7 @@ class HttpFlow {
       const uri = obj.uri;
       let localIP, remoteIP, remotePort, flowDirection
 
-      if (iptool.isPrivate(srcIP) && iptool.isPrivate(destIP))
+      if (ipUtil.isPrivate(srcIP) && ipUtil.isPrivate(destIP))
         return;
 
       let intf = sysManager.getInterfaceViaIP(srcIP);
