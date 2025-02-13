@@ -137,7 +137,7 @@ displaytime() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-AP_COLS='version:-10 iversion:-10 dev_mac:-8 device_ip:-16 device_vpn_ip:-16 pub_key:10 uptime:13 hshake:8 sta:4 latency:7 eth_speed:12 branch:-8 bh_state:8 bh_up_mac_rssi:-15 name:-30'
+AP_COLS='version:-10 iversion:-10 device_ip:-16 device_vpn_ip:-16 pub_key:10 uptime:13 hshake:8 sta:4 latency:7 eth_speed:12 branch:-8 bh_state:8 bh_up_mac_rssi:-15 dev_mac:-8 name:-30'
 AP_COLS="idx:-3 $AP_COLS"
 print_header >&2; hl >&2
 lines=0
