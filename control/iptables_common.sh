@@ -217,7 +217,8 @@ cat << EOF > "$filter_file"
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 -A FW_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 -A FW_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
--A FW_DROP -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_drop -j FW_RATE_LIMITED_DROP
+# do not generate too many logs for flows from same (srcip, dstip, dstport)
+-A FW_DROP -m hashlimit --hashlimit-upto 1/second --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_drop_htable -j FW_RATE_LIMITED_DROP
 -A FW_DROP -j FW_RATE_EXCEEDED_DROP
 
 # security drop log chain
@@ -230,7 +231,7 @@ cat << EOF > "$filter_file"
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 -A FW_SEC_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 -A FW_SEC_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
--A FW_SEC_DROP -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_drop -j FW_SEC_RATE_LIMITED_DROP
+-A FW_SEC_DROP -m hashlimit --hashlimit-upto 1/second --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_drop_htable -j FW_SEC_RATE_LIMITED_DROP
 -A FW_SEC_DROP -j FW_RATE_EXCEEDED_DROP
 
 # tls drop log chain
@@ -243,7 +244,7 @@ cat << EOF > "$filter_file"
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 -A FW_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 -A FW_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
--A FW_TLS_DROP -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_drop -j FW_TLS_RATE_LIMITED_DROP
+-A FW_TLS_DROP -m hashlimit --hashlimit-upto 1/second --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_drop_htable -j FW_TLS_RATE_LIMITED_DROP
 -A FW_TLS_DROP -j FW_RATE_EXCEEDED_DROP
 
 # security tls drop log chain
@@ -256,7 +257,7 @@ cat << EOF > "$filter_file"
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 -A FW_SEC_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 -A FW_SEC_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
--A FW_SEC_TLS_DROP -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_drop -j FW_SEC_TLS_RATE_LIMITED_DROP
+-A FW_SEC_TLS_DROP -m hashlimit --hashlimit-upto 1/second --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_drop_htable -j FW_SEC_TLS_RATE_LIMITED_DROP
 -A FW_SEC_TLS_DROP -j FW_RATE_EXCEEDED_DROP
 
 # WAN inbound drop log chain
@@ -285,7 +286,7 @@ cat << EOF > "$filter_file"
 
 # accept allow rules
 -N FW_ACCEPT
--A FW_ACCEPT -m conntrack --ctstate NEW -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_accept -j FW_ACCEPT_LOG
+-A FW_ACCEPT -m conntrack --ctstate NEW -m hashlimit --hashlimit-upto 100/second --hashlimit-mode srcip --hashlimit-name fw_accept -j FW_ACCEPT_LOG
 -A FW_ACCEPT -j FW_ACCEPT_DEFAULT
 
 # WAN outgoing INVALID state check
@@ -679,7 +680,7 @@ cat << EOF
 # look into the first reply packet, it should contain both upload and download QoS conntrack mark.
 -N FW_QOS_LOG
 # tentatively disable qos iptables log as it is not used for now
-# -A FW_FORWARD -m connmark ! --mark 0x00000000/0x3fff0000 -m conntrack --ctdir REPLY -m connbytes --connbytes 1:1 --connbytes-dir reply --connbytes-mode packets -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_qos -j FW_QOS_LOG
+# -A FW_FORWARD -m connmark ! --mark 0x00000000/0x3fff0000 -m conntrack --ctdir REPLY -m connbytes --connbytes 1:1 --connbytes-dir reply --connbytes-mode packets -m hashlimit --hashlimit-upto 100/second --hashlimit-mode srcip --hashlimit-name fw_qos -j FW_QOS_LOG
 
 EOF
 
