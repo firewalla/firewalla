@@ -146,7 +146,7 @@ ap_data=$(ap_config | jq -r ".assets|to_entries|sort_by(.key)[]|[.key, .value.sy
 timeit ap_data
 ap_status=$(local_api status/ap|jq -r ".info")
 ap_status_mac=$(echo "$ap_status" |  jq -r  'to_entries[]|.key as $mac| .value.aps|map($mac, .bssid)|@tsv')
-ap_status2=$(echo "$ap_status" | jq -r "to_entries[]|[.key,.value.branch,.value.ts,.value.version//\"${NO_VALUE}\",.value.imageVersion//\"${NO_VALUE}\",.value.sysUptime,.value.backhaulState,.value.aps[\"ath2\"].upRssi,.value.latencyToController, .value.aps[\"ath2\"].upBssid//\"x\", (.value.eths//{}|.[]|select((.intf|test(\"^eth[01]\$\")) and .linkState!=\"disabled\")|(.intf,.connected,.linkSpeed))]|@tsv")
+ap_status2=$(echo "$ap_status" | jq -r "to_entries[]|[.key,.value.branch,.value.ts,.value.version//\"${NO_VALUE}\",.value.imageVersion//\"${NO_VALUE}\",.value.sysUptime,.value.backhaulState,.value.aps[\"ath2\"].upRssi//\"x\",.value.latencyToController, .value.aps[\"ath2\"].upBssid//\"x\", (.value.eths//{}|.[]|select((.intf|test(\"^eth[01]\$\")) and .linkState!=\"disabled\")|(.intf,.connected,.linkSpeed))]|@tsv")
 timeit ap_status
 wg_dump=$(sudo wg show wg_ap dump)
 timeit wg_dump
