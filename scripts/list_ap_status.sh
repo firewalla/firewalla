@@ -133,11 +133,20 @@ displaytime() {
     printf '%02ds\n' $S
 }
 
+convert_eth_speed() {
+  if [[ $1 -ge 1000 ]]; then
+    output=$(echo "scale=1;${1}/1000"|bc|sed 's/\.0//')G
+  else
+    output=${1}M
+  fi
+  echo "$output"
+}
+
 # ----------------------------------------------------------------------------
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-AP_COLS='version:-10 iversion:-10 device_ip:-16 device_vpn_ip:-16 pub_key:10 uptime:13 hshake:8 sta:4 latency:7 eth_speed:12 branch:-8 bh_state:8 bh_up_mac_rssi:-15 dev_mac:-8 name:-30'
+AP_COLS='version:-10 iversion:-10 device_ip:-16 device_vpn_ip:-16 uptime:13 hshake:8 sta:4 latency:7 branch:-8 eth0:6 eth1:6 bh_up:6 bh_up_mac_rssi:-15 dev_mac:-8 name:-30'
 AP_COLS="idx:-3 $AP_COLS"
 print_header >&2; hl >&2
 lines=0
@@ -146,7 +155,7 @@ ap_data=$(ap_config | jq -r ".assets|to_entries|sort_by(.key)[]|[.key, .value.sy
 timeit ap_data
 ap_status=$(local_api status/ap|jq -r ".info")
 ap_status_mac=$(echo "$ap_status" |  jq -r  'to_entries[]|.key as $mac| .value.aps|map($mac, .bssid)|@tsv')
-ap_status2=$(echo "$ap_status" | jq -r "to_entries[]|[.key,.value.branch,.value.ts,.value.version//\"${NO_VALUE}\",.value.imageVersion//\"${NO_VALUE}\",.value.sysUptime,.value.backhaulState,.value.aps[\"ath2\"].upRssi//\"x\",.value.latencyToController, .value.aps[\"ath2\"].upBssid//\"x\", (.value.eths//{}|.[]|select((.intf|test(\"^eth[01]\$\")) and .linkState!=\"disabled\")|(.intf,.connected,.linkSpeed))]|@tsv")
+ap_status2=$(echo "$ap_status" | jq -r "to_entries[]|[.key,.value.branch,.value.ts,.value.version//\"${NO_VALUE}\",.value.imageVersion//\"${NO_VALUE}\",.value.sysUptime,(.value.eths|.eth0.linkSpeed//0,.eth1.linkSpeed//0),.value.activeUplink,.value.aps[\"ath2\"].upRssi//\"x\",.value.latencyToController, .value.aps[\"ath2\"].upBssid//\"x\"]|@tsv")
 timeit ap_status
 wg_dump=$(sudo wg show wg_ap dump)
 timeit wg_dump
@@ -157,7 +166,7 @@ now_ts=$(date +%s)
 declare -a ap_names ap_ips
 test -n "$ap_data" && while read ap_mac ap_meshmode ap_pubkey
 do
-    read ap_branch ap_last_handshake_ts ap_version ap_iversion ap_uptime ap_backhaul_state ap_backhaul_up_rssi ap_latency ap_backhaul_up_bssid ap_eth_intf ap_eth_connected ap_eth_speed < <( echo "$ap_status2" | awk "\$1==\"$ap_mac\" {print \$2\" \"\$3\" \"\$4\" \"\$5\" \"\$6\" \"\$7\" \"\$8\" \"\$9\" \"\$10\" \"\$11\" \"\$12\" \"\$13}")
+    read ap_branch ap_last_handshake_ts ap_version ap_iversion ap_uptime eth0_speed eth1_speed ap_active_uplink ap_backhaul_up_rssi ap_latency ap_backhaul_up_bssid < <( echo "$ap_status2" | awk "\$1==\"$ap_mac\" {print \$2\" \"\$3\" \"\$4\" \"\$5\" \"\$6\" \"\$7\" \"\$8\" \"\$9\" \"\$10\" \"\$11\" \"\$12}")
     timeit read
     if [[ -n "$ap_pubkey" ]]; then
       echo "$wg_ap_peers_pubkeys" | fgrep -q $ap_pubkey && ap_adopted=adopted || ap_adopted=pending
@@ -189,17 +198,15 @@ do
             version) apd=$ap_version ;;
             iversion) apd=$ap_iversion ;;
             dev_mac) apd=${ap_mac: -8} ;;
-            pub_key) apd=$ap_pubkey ;;
             device_ip) apd=$ap_ip ;;
             device_vpn_ip) apd=$device_vpn_ip ;;
             uptime) apd=$(displaytime $ap_uptime) ;;
             branch) apd="$ap_branch" ;;
             hshake) apd="$ap_last_handshake" ;;
             sta) apd="$ap_stations_per_ap" ;;
-            bh_state) apd="${ap_backhaul_state}" ;;
+            bh_up) apd="${ap_active_uplink}" ;;
             bh_up_mac_rssi)
               if [[ "${ap_backhaul_up_bssid:0:9}" == '20:6D:31:' ]]; then
-                echo "ap_backhaul_up_bssid='$ap_backhaul_up_bssid'" > /tmp/debug-$ap_mac
                 bh_up_mac=$(echo "$ap_status_mac" | awk "/$ap_backhaul_up_bssid/ {print \$1}")
                 apd="${bh_up_mac: -8}@$ap_backhaul_up_rssi"
               else
@@ -207,19 +214,8 @@ do
               fi
               ;;
             latency) apd=$ap_latency ;;
-            eth_speed)
-                case $ap_eth_connected in
-                    true)
-                        if [[ $ap_eth_speed -ge 1000 ]]; then
-                            ap_eth_speed_display=$(echo "scale=1;$ap_eth_speed/1000"|bc|sed 's/\.0//')G
-                        else
-                            ap_eth_speed_display=${ap_eth_speed}M
-                        fi
-                        apd="${ap_eth_intf}:$ap_eth_speed_display" ;;
-                    false) apd="${ap_eth_intf}:-1" ;;
-                    *) apd=$NO_VALUE ;;
-                esac
-                ;;
+            eth0) apd=$(convert_eth_speed $eth0_speed) ;;
+            eth1) apd=$(convert_eth_speed $eth1_speed) ;;
             *) apd=$NO_VALUE ;;
         esac
         apcla=${apcl#-}
