@@ -17,7 +17,9 @@
 'use strict'
 
 process.title = "FireApi";
+const net = require('net')
 const _ = require('lodash');
+
 const log = require('../net2/logger.js')(__filename);
 
 const asyncNative = require('../util/asyncNative.js');
@@ -63,6 +65,7 @@ const Constants = require('../net2/Constants.js');
 const flowUtil = require('../net2/FlowUtil');
 
 const iptool = require('ip');
+const ipUtil = require('../util/IPUtil.js');
 const traceroute = require('../vendor/traceroute/traceroute.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
@@ -1447,7 +1450,7 @@ class netBot extends ControllerBot {
               reject(err)
             } else {
               let secondStepIp = hops[1] ? hops[1].ip : "";
-              let isPublic = iptool.isPublic(secondStepIp);
+              let isPublic = ipUtil.isPublic(secondStepIp);
               resolve({ hops: hops, secondStepIp: secondStepIp, isPublic: isPublic, destination: destination })
             }
           })
@@ -2586,7 +2589,7 @@ class netBot extends ControllerBot {
         let ip = value.ip
         let name = value.name
 
-        if (iptool.isV4Format(ip)) {
+        if (net.isIPv4(ip)) {
           sem.emitEvent({
             type: "DeviceUpdate",
             message: `Manual submit a new device via API ${ip} ${name}`,
@@ -2939,7 +2942,7 @@ class netBot extends ControllerBot {
         }
         const addr = addrPort[0];
         const port = addrPort[1];
-        if (!iptool.isV4Format(addr) || Number.isNaN(port) || !Number.isInteger(Number(port)) || Number(port) < 0 || Number(port) > 65535) {
+        if (!net.isIPv4(addr) || Number.isNaN(port) || !Number.isInteger(Number(port)) || Number(port) < 0 || Number(port) > 65535) {
           throw { code: 400, msg: "IP address should be IPv4 format and port should be in [0, 65535]" }
         }
         await new VpnManager().killClient(value.addr);
