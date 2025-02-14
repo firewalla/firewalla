@@ -199,6 +199,8 @@ cat << EOF > "$filter_file"
 -A FW_PLAIN_DROP -j CONNMARK --set-xmark 0x0/0x80000000
 -A FW_PLAIN_DROP -p tcp -m set ! --match-set monitored_net_set src,src -j DROP
 -A FW_PLAIN_DROP -p tcp -m set --match-set monitored_net_set src,src -j REJECT --reject-with tcp-reset
+-A FW_PLAIN_DROP -p udp -m set ! --match-set monitored_net_set src,src -j DROP
+-A FW_PLAIN_DROP -p udp -m set --match-set monitored_net_set src,src -j REJECT --reject-with icmp-port-unreachable
 -A FW_PLAIN_DROP -j DROP
 
 # alarm and drop, this should only be hit when rate limit is exceeded
@@ -569,6 +571,9 @@ cat << EOF
 
 EOF
 } > "$ip6tables_file"
+
+# replace icmp-port-unreachable with icmp6-port-unreachable
+sed -i 's/icmp-port-unreachable/icmp6-port-unreachable/g' "$ip6tables_file"
 
 if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
 # these sets are not ipset and contain only domain names, use same set for both v4 & v6
