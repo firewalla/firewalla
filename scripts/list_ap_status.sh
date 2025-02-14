@@ -146,7 +146,7 @@ convert_eth_speed() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-AP_COLS='version:-10 iversion:-10 device_ip:-16 device_vpn_ip:-16 uptime:13 hshake:8 sta:4 latency:7 branch:-8 eth0:6 eth1:6 bh_up:6 bh_up_mac_rssi:-15 dev_mac:-8 name:-30'
+AP_COLS='version:-10 iversion:-10 device_ip:-16 device_vpn_ip:-16 uptime:13 hshake:8 sta:4 latency:7 branch:-8 eth0:6 eth1:6 act_up:6 bh_up_mac_rssi:-15 dev_mac:-8 name:-30'
 AP_COLS="idx:-3 $AP_COLS"
 print_header >&2; hl >&2
 lines=0
@@ -204,7 +204,7 @@ do
             branch) apd="$ap_branch" ;;
             hshake) apd="$ap_last_handshake" ;;
             sta) apd="$ap_stations_per_ap" ;;
-            bh_up) apd="${ap_active_uplink}" ;;
+            act_up) apd="${ap_active_uplink}" ;;
             bh_up_mac_rssi)
               if [[ "${ap_backhaul_up_bssid:0:9}" == '20:6D:31:' ]]; then
                 bh_up_mac=$(echo "$ap_status_mac" | awk "/$ap_backhaul_up_bssid/ {print \$1}")
