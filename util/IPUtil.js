@@ -15,6 +15,7 @@
 
 "use strict";
 
+const net = require('net')
 const log = require('../net2/logger.js')(__filename);
 const { Address6 } = require('ip-address')
 
@@ -40,9 +41,9 @@ class IPUtil {
       byteSize: 16,
       maskLen: 128n,
       privateNetworks: [
-        [                     1n,                          1n ], // ::1
-        [ 0xfc00n * (2n ** 112n), 0xfe00n * (2n ** 112n) - 1n ], // fc00::/7    ULAs
-        [ 0xfe80n * (2n ** 112n), 0xfec0n * (2n ** 112n) - 1n ], // fe80::/10   link local
+        [              1n,                     1n ], // ::1
+        [ 0xfc00n << 112n, (0xfe00n << 112n) - 1n ], // fc00::/7    ULAs
+        [ 0xfe80n << 112n, (0xfec0n << 112n) - 1n ], // fe80::/10   link local
       ]
     }
   }
@@ -57,6 +58,21 @@ class IPUtil {
   }
 
   ntoaBigInt(n, fam) {
+    if (typeof value !== 'bigint')
+      n = this.toBigInt(n)
+
+    if (n < (1n << 32n)) {
+      if (n < 0n)
+        return null
+      else if (!fam)
+        fam = 4
+    } else if (n > (1n << 128n) - 1n)
+      return null
+    else if (fam == 4)
+      return null
+    else
+      fam = 6
+
     const sections = fam == 4 ? 4 : 8
     const sectionMask = fam == 4 ? 0xFFn : 0xFFFFn
     const sectionBits = fam == 4 ? 8n : 16n
@@ -84,7 +100,7 @@ class IPUtil {
 
     const sectionBits = fam == 4 ? 8n : 16n
     // ip-address does come with bigint lib jsbn, but that's too complicated
-    const parts = fam == 4 ? str.split('.') : new Address6(str).parsedAddress
+    const parts = fam == 4 ? str.split('.') : new Address6(str).parsedAddress.map(hex => '0x'+hex)
 
     return parts.reduce( (prev, curr) => (prev << sectionBits) + BigInt(curr), 0n )
   }
