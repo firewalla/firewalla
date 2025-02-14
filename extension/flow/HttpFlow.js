@@ -15,6 +15,7 @@
 
 'use strict';
 
+const net = require('net')
 const log = require('../../net2/logger.js')(__filename);
 const rclient = require('../../util/redis_manager.js').getRedisClient();
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
@@ -169,7 +170,7 @@ class HttpFlow {
       return;
     }
 
-    if ((ipUtil.isV4Format(destIP) || ipUtil.isV6Format(destIP)) && isDomainValid(host)) {
+    if ((net.isIPv4(destIP) || net.isIPv6(destIP)) && isDomainValid(host)) {
       const domain = formulateHostname(host);
       await dnsTool.addDns(destIP, domain, config.get('dns.expires'));
       await dnsTool.addReverseDns(domain, [destIP], config.get('dns.expires'));
