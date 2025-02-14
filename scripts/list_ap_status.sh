@@ -129,12 +129,16 @@ displaytime() {
     local S=$((T%60))
     (( D > 0 )) && printf '%02dd' $D
     (( H > 0 )) && printf '%02dh' $H
-    (( M > 0 )) && printf '%02dm' $M
-    printf '%02ds\n' $S
+    (( D == 0 )) && (( H == 0 )) && {
+      (( M > 0 )) && printf '%02dm' $M
+      printf '%02ds\n' $S
+    }
 }
 
 convert_eth_speed() {
-  if [[ $1 -ge 1000 ]]; then
+  if [[ $1 == '-1' ]]; then
+    output=$NO_VALUE
+  elif [[ $1 -ge 1000 ]]; then
     output=$(echo "scale=1;${1}/1000"|bc|sed 's/\.0//')G
   else
     output=${1}M
@@ -146,7 +150,7 @@ convert_eth_speed() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-AP_COLS='version:-10 iversion:-10 device_ip:-16 device_vpn_ip:-16 uptime:13 hshake:8 sta:4 latency:7 branch:-8 eth0:6 eth1:6 act_up:6 bh_up_mac_rssi:-15 dev_mac:-8 name:-30'
+AP_COLS='version:-10 iversion:-10 device_ip:-16 device_vpn_ip:-16 uptime:7 hshake:8 sta:4 latency:7 branch:-8 eth0:6 eth1:6 act_up:6 bh_up_mac_rssi:-15 dev_mac:-8 name:-30'
 AP_COLS="idx:-3 $AP_COLS"
 print_header >&2; hl >&2
 lines=0
@@ -155,7 +159,7 @@ ap_data=$(ap_config | jq -r ".assets|to_entries|sort_by(.key)[]|[.key, .value.sy
 timeit ap_data
 ap_status=$(local_api status/ap|jq -r ".info")
 ap_status_mac=$(echo "$ap_status" |  jq -r  'to_entries[]|.key as $mac| .value.aps|map($mac, .bssid)|@tsv')
-ap_status2=$(echo "$ap_status" | jq -r "to_entries[]|[.key,.value.branch,.value.ts,.value.version//\"${NO_VALUE}\",.value.imageVersion//\"${NO_VALUE}\",.value.sysUptime,(.value.eths|.eth0.linkSpeed//0,.eth1.linkSpeed//0),.value.activeUplink,.value.aps[\"ath2\"].upRssi//\"x\",.value.latencyToController, .value.aps[\"ath2\"].upBssid//\"x\"]|@tsv")
+ap_status2=$(echo "$ap_status" | jq -r "to_entries[]|[.key,.value.branch,.value.ts,.value.version//\"${NO_VALUE}\",.value.imageVersion//\"${NO_VALUE}\",.value.sysUptime,(.value.eths|.eth0.linkSpeed//-1,.eth1.linkSpeed//-1),.value.activeUplink,.value.aps[\"ath2\"].upRssi//\"-\",.value.latencyToController, .value.aps[\"ath2\"].upBssid//\"-\"]|@tsv")
 timeit ap_status
 wg_dump=$(sudo wg show wg_ap dump)
 timeit wg_dump
