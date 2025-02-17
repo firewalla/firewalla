@@ -49,21 +49,6 @@ module.exports = class {
     // TODO
   }
 
-  checkStatus(callback) {
-    callback = callback || function () { }
-
-    let cmd = util.format("ps aux | grep %s | grep -v grep", dnsmasqBinary);
-    log.info("Command to check dnsmasq: ", cmd);
-
-    require('child_process').exec(cmd, (err, stdout, stderr) => {
-      if (stdout !== "") {
-        callback(true);
-      } else {
-        callback(false);
-      }
-    });
-  }
-
   processData(data, callback) {
     callback = callback || function () { }
 

@@ -38,8 +38,17 @@ const blackHoleHttpsPort = 8884;
 
 // this allows biggest v4 regional set (US) being fully added,
 // for v6, we need a dynamic approach for ipset management
-const IPSET_HASH_HASHSIZE = 65536
-const IPSET_HASH_MAXELEM = 100000
+//
+// takes up to 30M memory
+//
+// Name: test
+// Type: hash:net
+// Revision: 6
+// Header: family inet hashsize 524288 maxelem 1048576
+// Size in memory: 30811224
+// References: 0
+// Number of entries: 1048576
+const IPSET_HASH_MAXELEM = 1048576 // 2^20
 
 class CategoryUpdaterBase {
 
@@ -90,6 +99,14 @@ class CategoryUpdaterBase {
 
   getIPv6CategoryKey(category) {
     return `category:${category}:ip6:domain`
+  }
+
+  getPatternDomainsKey(pattern) {
+    return `domain:pattern:${pattern}`;
+  }
+
+  isDomainPattern(domain) {
+    return (domain.startsWith("*.") ? domain.substring(2) : domain).includes("*");
   }
 
   async getIPv4Addresses(category) {
@@ -153,68 +170,69 @@ class CategoryUpdaterBase {
     return Block.getTLSHostSet(category);
   }
 
+  // combine prefix and suffix to form the ipset name, some ipsets may have same prefix, e.g., xxx and xxx_bf
   getAllowIPSetName(category) {
-    return Block.getDstSet(category.substring(0, 13) + "_alw");
+    return Block.getDstSet((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + "_alw");
   }
 
   getAllowIPSetNameForIPV6(category) {
-    return Block.getDstSet6(category.substring(0, 13) + "_alw");
+    return Block.getDstSet6((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + "_alw");
   }
 
   getAggrIPSetName(category, isStatic = false) {
-    return Block.getDstSet(category.substring(0, 13) + (isStatic ? "_sag" : "_ag"));
+    return Block.getDstSet((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + (isStatic ? "_sag" : "_ag"));
   }
 
   getAggrIPSetNameForIPV6(category, isStatic = false) {
-    return Block.getDstSet6(category.substring(0, 13) + (isStatic ? "_sag" : "_ag"));
+    return Block.getDstSet6((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + (isStatic ? "_sag" : "_ag"));
   }
 
   getNetPortIPSetName(category) {
-    return Block.getDstSet(category.substring(0, 13) + "_np"); // bare net:port
+    return Block.getDstSet((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + "_np"); // bare net:port
   }
 
   getNetPortIPSetNameForIPV6(category) {
-    return Block.getDstSet6(category.substring(0, 13) + "_np");
+    return Block.getDstSet6((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + "_np");
   }
 
   getDomainPortIPSetName(category, isStatic = false) {
-    return Block.getDstSet(category.substring(0, 13) + (isStatic ? "_sdp" : "_ddp")); // domain-mapped ip:port, static or dynamic
+    return Block.getDstSet((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + (isStatic ? "_sdp" : "_ddp")); // domain-mapped ip:port, static or dynamic
   }
 
   getDomainPortIPSetNameForIPV6(category, isStatic = false) {
-    return Block.getDstSet6(category.substring(0, 13) + (isStatic ? "_sdp" : "_ddp"));
+    return Block.getDstSet6((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + (isStatic ? "_sdp" : "_ddp"));
   }
 
   getIPSetName(category, isStatic = false, isIP6 = false, isTmp = false) {
-    return Block.getDstSet((isTmp ? 'tmp_' : '') + category.substring(0, 13) + (isStatic ? "_ip" : "_dm"), isIP6);
+    return Block.getDstSet((isTmp ? 'tmp_' : '') + (category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + (isStatic ? "_ip" : "_dm"), isIP6);
   }
 
   getIPSetNameForIPV6(category, isStatic = false) {
-    return Block.getDstSet6(category.substring(0, 13) + (isStatic ? "_ip" : "_dm"));
+    return Block.getDstSet6((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + (isStatic ? "_ip" : "_dm"));
   }
 
   getTempIPSetName(category, isStatic = false) {
-    return Block.getDstSet(`tmp_${category.substring(0, 13)}` + (isStatic ? "_ip" : "_dm"));
+    return Block.getDstSet(`tmp_${(category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category)}` + (isStatic ? "_ip" : "_dm"));
   }
 
   getTempIPSetNameForIPV6(category, isStatic = false) {
-    return Block.getDstSet6(`tmp_${category.substring(0, 13)}` + (isStatic ? "_ip" : "_dm"));
+    return Block.getDstSet6(`tmp_${(category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category)}` + (isStatic ? "_ip" : "_dm"));
   }
 
   getTempNetPortIPSetName(category) {
-    return Block.getDstSet(`tmp_${category.substring(0, 13)}` + "_np");
+    return Block.getDstSet(`tmp_${(category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category)}` + "_np");
   }
 
   getTempNetPortIPSetNameForIPV6(category) {
-    return Block.getDstSet6(`tmp_${category.substring(0, 13)}` + "_np");
+    return Block.getDstSet6(`tmp_${(category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category)}` + "_np");
   }
 
   getTempDomainPortIPSetName(category, isStatic = false) {
-    return Block.getDstSet(`tmp_${category.substring(0, 13)}` + (isStatic ? "_sdp" : "_ddp"));
+    return Block.getDstSet(`tmp_${(category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category)}` + (isStatic ? "_sdp" : "_ddp"));
   }
 
   getTempDomainPortIPSetNameForIPV6(category, isStatic = false) {
-    return Block.getDstSet6(`tmp_${category.substring(0, 13)}` + (isStatic ? "_sdp" : "_ddp"));
+    return Block.getDstSet6(`tmp_${(category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category)}` + (isStatic ? "_sdp" : "_ddp"));
   }
 
   // add entries from category:{category}:ip:domain to ipset
@@ -276,11 +294,24 @@ class CategoryUpdaterBase {
   // make sure ipset is not referenced before calling this
   async rebuildIpset(category, ip6 = false, options) {
     const ipsetName = this.getIPSetName(category, false, ip6, options.useTemp)
-    log.info('Rebuild ipset with max size', ipsetName)
+    log.info(`Rebuild ipset for ${ipsetName}, size: ${options.count}`)
     await Ipset.destroy(ipsetName)
+    let maxelem = options.count
+    if (maxelem > IPSET_HASH_MAXELEM) {
+      log.error('ipset too large:', ipsetName, maxelem, 'trunc to', IPSET_HASH_MAXELEM)
+      maxelem = IPSET_HASH_MAXELEM
+    } else {
+      // lowest power of 2 but bigger or equal to count
+      maxelem = 2 ** Math.ceil(Math.log2(maxelem))
+    }
     await Ipset.create(ipsetName, 'hash:net', ip6, {
-      hashsize: IPSET_HASH_HASHSIZE,
-      maxelem: IPSET_HASH_MAXELEM,
+      // From ipset manual:
+      // The hash size must be a power of two, the kernel automatically rounds up
+      // non power of two hash sizes to the first correct value
+      //
+      // seems that the kernel is keeping hashsize bigger than a quarter of element count
+      hashsize: maxelem / 4,
+      maxelem,
     });
   }
 
@@ -489,6 +520,27 @@ class CategoryUpdaterBase {
   needIpSetComment(category) {
     const release = firewalla.getReleaseType();
     return this.isUserTargetList(category) && ["dev", "unknown"].includes(release);
+  }
+
+  static getCategoryHashsetMapping() {
+    return {
+      "games": "app.gaming",
+      "games_bf": "app.games_bf",
+      "social": "app.social",
+      "social_bf": "app.social_bf",
+      "av": "app.video",
+      "av_bf": "app.av_bf",
+      "porn": "app.porn",  // dnsmasq redirect to blue hole if porn
+      "porn_bf": "app.porn_bf",
+      "gamble": "app.gamble",
+      "gamble_bf": "app.gamble_bf",
+      "shopping": "app.shopping",
+      "shopping_bf": "app.shopping_bf",
+      "p2p": "app.p2p",
+      "p2p_bf": "app.p2p_bf",
+      "vpn": "app.vpn",
+      "vpn_bf": "app.vpn_bf"
+    }
   }
 }
 

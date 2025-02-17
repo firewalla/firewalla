@@ -137,11 +137,12 @@ const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 const migration = require('../migration/migration.js');
 
 const FireRouter = require('../net2/FireRouter.js');
+const fwapc = require('../net2/fwapc.js');
 
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
-const { delay } = require('../util/util.js');
+const { delay, difference, versionCompare } = require('../util/util.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -156,6 +157,7 @@ const Message = require('../net2/Message')
 const util = require('util')
 
 const restartUPnPTask = {};
+const rp = util.promisify(require('request'));
 
 class netBot extends ControllerBot {
 
@@ -192,6 +194,10 @@ class netBot extends ControllerBot {
   async _portforward(target, msg) {
     log.info("_portforward", msg);
     this.messageBus.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
+  }
+
+  async _precedeRecord(msgid, data) {
+    await extMgr._precedeRecord(msgid, data);
   }
 
   setupRateLimit() {
@@ -283,7 +289,7 @@ class netBot extends ControllerBot {
           return;
         }
         if (alarm.type) {
-          let alarmType = alarm.type;
+          let alarmType = alarm.getNotifPolicyKey();
           if (alarmType === "ALARM_LARGE_UPLOAD") {
             alarmType = "ALARM_BEHAVIOR";
           }
@@ -312,7 +318,8 @@ class netBot extends ControllerBot {
         "p.upnp.ttl", "p.upnp.description", "p.upnp.protocol", "p.upnp.public.port", "p.upnp.private.port", // upnp open port
         "p.file.type", "p.subnet.length", "p.dest.url",
         "p.begin.ts", "p.end.ts", "p.totalUsage", "p.percentage", "p.planUsage", // bandwidth usage
-        "p.vpn.strictvpn", "p.vpn.subtype", "p.vpn.displayname", "p.vpn.devicecount", "p.vpn.protocol" // VPN disconnect/restore alarm
+        "p.vpn.strictvpn", "p.vpn.subtype", "p.vpn.displayname", "p.vpn.devicecount", "p.vpn.protocol", // VPN disconnect/restore alarm
+        "p.vwg.name", "p.vwg.uuid", "p.vwg.strictvpn", "p.vwg.devicecount", // VPN group connectivity change alarm
       ];
       Object.assign(alarmData, _.pick(alarm, appUsedKeys));
 
@@ -651,7 +658,8 @@ class netBot extends ControllerBot {
         }
         if (!monitorable) throw new Error(`Unknow target ${target}`)
 
-        await monitorable.loadPolicyAsync();
+        const orig = await monitorable.loadPolicyAsync();
+        try{await this._precedeRecord(msg.id, {origin: orig, diff: difference(value, orig)})} catch(err){};
 
         for (const o of Object.keys(value)) {
           if (processorMap[o]) {
@@ -673,7 +681,6 @@ class netBot extends ControllerBot {
             if (o === config.policyKey && _.isArray(policyData))
               policyData = policyData.map(String);
           }
-
           await monitorable.setPolicyAsync(o, policyData);
         }
         this._scheduleRedisBackgroundSave();
@@ -892,6 +899,7 @@ class netBot extends ControllerBot {
         const latestConfig = await FireRouter.getConfig();
         await FireRouter.saveConfigHistory(latestConfig);
         this._scheduleRedisBackgroundSave();
+        if (latestConfig.ncid) return {ncid: latestConfig.ncid};
         return
       }
       case "eptGroupName": {
@@ -916,10 +924,13 @@ class netBot extends ControllerBot {
       }
       case "feedback": {
         if (value.key == 'device.detect') {
-          const host = await this.hostManager.getHostAsync(value.target)
-          if (!host.o.detect) host.o.detect = {}
-          host.o.detect.feedback = Object.assign({}, host.o.detect.feedback, value.value)
-          await host.save('detect')
+          sem.sendEventToFireMain({
+            type: 'DetectUpdate',
+            from: 'feedback',
+            mac: value.target,
+            detect: value.value,
+            suppressEventLogging: true,
+          })
         } else
           await bone.intelAdvice(value);
         return
@@ -1011,6 +1022,8 @@ class netBot extends ControllerBot {
     } else if (msg.target != '0.0.0.0') {
       options.mac = msg.target
     }
+    if (_.has(options, "local"))
+      options.local = Boolean(options.local);
 
     return options
   }
@@ -1101,7 +1114,19 @@ class netBot extends ControllerBot {
         const flows = await this.hostManager.loadStats({}, msg.target, count);
         return { flows: flows };
       }
-
+      case "neighbors": {
+        if (!msg.target) {
+          throw new Error('Invalid target')
+        }
+        const neighbors = await rclient.hgetallAsync(`neighbor:${msg.target}`)
+        for (const ip in neighbors) try {
+          neighbors[ip] = JSON.parse(neighbors[ip])
+        } catch(err) {
+          delete neighbors[ip]
+          continue
+        }
+        return neighbors
+      }
       case "appTimeUsage": {
         const options = await this.checkLogQueryArgs(msg);
         const result = {};
@@ -1387,7 +1412,7 @@ class netBot extends ControllerBot {
       case "hosts": {
         const json = {};
         const includeVPNDevices = (value && value.includeVPNDevices) || false;
-        await this.hostManager.hostsInfoForInit(json)
+        await this.hostManager.hostsInfoForInit(json, {includeScanResults:true});
         if (includeVPNDevices)
           await this.hostManager.identitiesForInit(json)
         return json
@@ -1421,14 +1446,13 @@ class netBot extends ControllerBot {
           throw { code: 400, msg: "'types' should be an array." }
         }
         let profiles = [];
-        for (let type of types) {
+        for (let type of types) try {
           const c = VPNClient.getClass(type);
-          if (!c) {
-            log.error(`Unsupported VPN client type: ${type}`);
-            continue;
-          }
           const profileIds = await c.listProfileIds();
           Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({ profileId }).getAttributes())));
+        } catch(err) {
+          log.error(err);
+          continue;
         }
         return { profiles }
       }
@@ -1516,6 +1540,10 @@ class netBot extends ControllerBot {
       }
       case "networkConfig": {
         return FireRouter.getConfig();
+      }
+      case "assetsConfig": {
+        const networkConfig = await FireRouter.getConfig();
+        return networkConfig && networkConfig.apc;
       }
       case "networkConfigHistory": {
         const count = value.count || 10;
@@ -1679,13 +1707,12 @@ class netBot extends ControllerBot {
       options.begin = begin
       options.end = end
     }
+    options.limit = msg.data.limit
 
     // 0 => now, 1 => single hour stats, other => overall stats (last 24 hours)
     if (msg.data.hourblock != "1" && msg.data.hourblock != "0") {
       options.queryall = true
     }
-
-    if (msg.data.audit) options.audit = true
 
     log.info(type, "FlowHandler FROM: ", new Date(begin * 1000).toLocaleTimeString());
     log.info(type, "FlowHandler TO: ", new Date(end * 1000).toLocaleTimeString());
@@ -1767,67 +1794,86 @@ class netBot extends ControllerBot {
         throw new Error('Invalid target type: ' + type)
     }
 
-    // target: 'uuid'
-    const promises = [
-      netBotTool.prepareTopUploadFlows(jsonobj, options),
-      netBotTool.prepareTopDownloadFlows(jsonobj, options),
-      // return more top flows for block statistics
-      netBotTool.prepareTopFlows(jsonobj, 'dnsB', null, Object.assign({}, options, {limit: 400})),
-      netBotTool.prepareTopFlows(jsonobj, 'ipB', "in", Object.assign({}, options, {limit: 400})),
-      netBotTool.prepareTopFlows(jsonobj, 'ipB', "out", Object.assign({}, options, {limit: 400})),
-      netBotTool.prepareTopFlows(jsonobj, 'ifB', "out", Object.assign({}, options, {limit: 400})),
+    const { audit, nonLocal, local } = msg.data
 
-      netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'app', options),
-      netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
+    const promises = []
+    const tsMetrics = []
+    const hostMetrics = []
 
-      this.hostManager.last60MinStatsForInit(jsonobj, target),
-      this.hostManager.last30daysStatsForInit(jsonobj, target),
-      this.hostManager.newLast24StatsForInit(jsonobj, target),
-      this.hostManager.last12MonthsStatsForInit(jsonobj, target),
-    ]
+    // defaults to true
+    if (nonLocal != false) {
+      promises.push(
+        netBotTool.prepareTopUploadFlows(jsonobj, options),
+        netBotTool.prepareTopDownloadFlows(jsonobj, options),
+
+        netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'app', options),
+        netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
+      )
+      tsMetrics.push('upload', 'download', 'conn', 'dns')
+      hostMetrics.push('upload', 'download', 'conn', 'dns')
+    }
+    if (platform.isAuditLogSupported() && audit != false) {
+      promises.push(
+        netBotTool.prepareTopFlows(jsonobj, 'dnsB', null, Object.assign({}, options, {limit: 400})),
+        netBotTool.prepareTopFlows(jsonobj, 'ipB', "in", Object.assign({}, options, {limit: 400})),
+        netBotTool.prepareTopFlows(jsonobj, 'ipB', "out", Object.assign({}, options, {limit: 400})),
+        netBotTool.prepareTopFlows(jsonobj, 'ifB', "out", Object.assign({}, options, {limit: 400})),
+      )
+      tsMetrics.push('ipB', 'dnsB', 'ntp')
+      hostMetrics.push('ipB', 'dnsB', 'ntp')
+    }
+    if (fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW) && local == true) {
+      promises.push(
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'upload', options),
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'download', options),
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'in', options),
+        netBotTool.prepareTopFlows(jsonobj, 'local', 'out', options),
+      )
+      if (type != 'host' || target == '0.0.0.0')
+        tsMetrics.push('intra:lo', 'conn:lo:intra')
+      if (type != 'host' || target != '0.0.0.0')
+        tsMetrics.push('upload:lo', 'download:lo', 'conn:lo:in', 'conn:lo:out')
+      hostMetrics.push('upload:lo', 'download:lo', 'conn:lo:in', 'conn:lo:out')
+    }
+    promises.push(
+      this.hostManager.last60MinStatsForInit(jsonobj, target, tsMetrics),
+      this.hostManager.last30daysStatsForInit(jsonobj, target, tsMetrics),
+      this.hostManager.newLast24StatsForInit(jsonobj, target, tsMetrics),
+      this.hostManager.last12MonthsStatsForInit(jsonobj, target, tsMetrics)
+    )
 
     jsonobj.hosts = {}
+    const hits = msg.data.hourblock == 24 ? 24 : Math.ceil((Date.now()/1000 - options.begin) / 3600)
     promises.push(asyncNative.eachLimit(options.macs, 20, async (t) => {
-      if (msg.data.hourblock == 24) {
-        const stats = await this.hostManager.getStats({ granularities: '1hour', hits: 24 }, t, ['upload','download'])
-        jsonobj.hosts[t] = { upload: stats.totalUpload, download: stats.totalDownload }
-      } else {
-        const stats = await this.hostManager.getStats(
-          { granularities: '1hour', hits: Math.ceil((Date.now()/1000 - options.begin) / 3600) },
-          t, ['upload','download'])
-        jsonobj.hosts[t] = {}
-        for (const m of ['upload', 'download']) {
-          const hit = stats[m] && stats[m].find(s => s[0] == options.begin)
-          jsonobj.hosts[t][m] = hit && hit[1] || 0
-        }
+      const stats = await this.hostManager.getStats({ granularities: '1hour', hits }, t, hostMetrics)
+      jsonobj.hosts[t] = {}
+      for (const m of hostMetrics) {
+        jsonobj.hosts[t][m] = msg.data.hourblock == 24
+          ? _.get(stats, 'total' + m[0].toUpperCase() + m.slice(1), 0)
+          : _.get(stats[m] && stats[m].find(s => s[0] == options.begin), 1, 0)
       }
     }))
 
     if (!msg.data.apiVer || msg.data.apiVer == 1) {
+      if (audit) options.audit = true
       promises.push(flowTool.prepareRecentFlows(jsonobj, _.omit(options, ['queryall'])))
     }
 
-    // const platformSpecificStats = platform.getStatsSpecs();
-    // jsonobj.stats = {};
-    // for (const statSettings of platformSpecificStats) {
-    //   promises.push(this.hostManager.getStats(statSettings, target)
-    //     .then(s => jsonobj.stats[statSettings.stat] = s)
-    //   );
-    // }
     await Promise.all(promises)
 
-    if (!msg.data.apiVer || msg.data.apiVer == 1) jsonobj.flows.recent.forEach(f => {
-      if (f.ltype == 'flow') delete f.type
-    })
+    if (!msg.data.apiVer || msg.data.apiVer == 1) {
+      jsonobj.flows.recent.forEach(f => {
+        if (f.ltype == 'flow') delete f.type
+      })
 
-    if (!jsonobj.flows['appDetails']) { // fallback to old way
-      await netBotTool.prepareDetailedFlows(jsonobj, 'app', options)
-      await this.validateFlowAppIntel(jsonobj)
-    }
-
-    if (!jsonobj.flows['categoryDetails']) { // fallback to old model
-      await netBotTool.prepareDetailedFlows(jsonobj, 'category', options)
-      await this.validateFlowCategoryIntel(jsonobj)
+      if (!jsonobj.flows['appDetails']) { // fallback to old way
+        await netBotTool.prepareDetailedFlows(jsonobj, 'app', options)
+        await this.validateFlowAppIntel(jsonobj)
+      }
+      if (!jsonobj.flows['categoryDetails']) { // fallback to old model
+        await netBotTool.prepareDetailedFlows(jsonobj, 'category', options)
+        await this.validateFlowCategoryIntel(jsonobj)
+      }
     }
 
     return jsonobj;
@@ -2141,6 +2187,7 @@ class netBot extends ControllerBot {
         if (_.isArray(samePolicies) && samePolicies.filter(p => p.pid != pid).length > 0) {
           throw { code: 409, msg: "policy already exists", data: samePolicies[0] }
         } else {
+          await this._precedeRecord(msg.id, {origin: oldPolicy, diff: difference(policy, oldPolicy)});
           policy.updatedTime = Date.now() / 1000;
           await pm2.updatePolicyAsync(policy)
           const newPolicy = await pm2.getPolicy(pid)
@@ -2158,9 +2205,11 @@ class netBot extends ControllerBot {
         const policyIDs = value.policyIDs;
         if (policyIDs && _.isArray(policyIDs)) {
           let results = {};
+          let orig = [];
           for (const policyID of policyIDs) {
             let policy = await pm2.getPolicy(policyID);
             if (policy) {
+              orig.push(policy);
               await pm2.disableAndDeletePolicy(policyID)
               policy.deleted = true;
               results[policyID] = policy;
@@ -2168,10 +2217,12 @@ class netBot extends ControllerBot {
               results[policyID] = "invalid policy";
             }
           }
+          await this._precedeRecord(msg.id, {origin: orig});
           this._scheduleRedisBackgroundSave();
           return results
         } else {
           let policy = await pm2.getPolicy(value.policyID)
+          await this._precedeRecord(msg.id, {origin: policy});
           if (policy) {
             await pm2.disableAndDeletePolicy(value.policyID)
             policy.deleted = true // policy is marked ask deleted
@@ -2630,6 +2681,7 @@ class netBot extends ControllerBot {
       case "enableFeature": {
         const featureName = value.featureName;
         if (featureName) {
+          try{await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)})} catch(err){};
           await fc.enableDynamicFeature(featureName)
         }
         return
@@ -2637,6 +2689,7 @@ class netBot extends ControllerBot {
       case "disableFeature": {
         const featureName = value.featureName;
         if (featureName) {
+          try{await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)})} catch(err){};
           await fc.disableDynamicFeature(featureName)
         }
         return
@@ -2644,6 +2697,7 @@ class netBot extends ControllerBot {
       case "clearFeatureDynamicFlag": {
         const featureName = value.featureName;
         if (featureName) {
+          try{await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)})} catch(err){};
           await fc.clearDynamicFeature(featureName)
         }
         return
@@ -3193,29 +3247,27 @@ class netBot extends ControllerBot {
         log.info('host:delete', hostMac);
         const macExists = await hostTool.macExists(hostMac);
         if (macExists) {
+          (async () => {
+            await pm2.deleteMacRelatedPolicies(hostMac);
+            await em.deleteMacRelatedExceptions(hostMac);
+            await am2.deleteMacRelatedAlarms(hostMac);
+            await dnsmasq.deleteLeaseRecord(hostMac);
+            dnsmasq.scheduleRestartDHCPService();
 
-          await pm2.deleteMacRelatedPolicies(hostMac);
-          await em.deleteMacRelatedExceptions(hostMac);
-          await am2.deleteMacRelatedAlarms(hostMac);
-          await dnsmasq.deleteLeaseRecord(hostMac);
+            await categoryFlowTool.delAllTypes(hostMac);
+            await flowAggrTool.removeAggrFlowsAll(hostMac);
+            await flowManager.removeFlowsAll(hostMac);
 
-          await categoryFlowTool.delAllTypes(hostMac);
-          await flowAggrTool.removeAggrFlowsAll(hostMac);
-          await flowManager.removeFlowsAll(hostMac);
+            // TODO: delete and substract timeseries data from global/intf/tag
 
-          let ips = await hostTool.getIPsByMac(hostMac);
-          for (const ip of ips) {
-            const latestMac = await hostTool.getMacByIP(ip);
-            if (latestMac && latestMac === hostMac) {
-              // double check to ensure ip address is not taken over by other device
-
-              // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
-              await rclient.unlinkAsync([
-                "monitor:flow:" + hostMac,
-                "monitor:large:" + hostMac,
-              ]);
-            }
-          }
+            // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
+            await rclient.unlinkAsync([
+              "monitor:flow:" + hostMac,
+              "monitor:large:" + hostMac,
+            ]);
+          })().catch((err) => {
+            log.error(`Failed to delete information of host ${hostMac}`, err);
+          });
           // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
           this.messageBus.publish("DiscoveryEvent", "Device:Delete", hostMac, {});
 
@@ -3486,6 +3538,16 @@ class netBot extends ControllerBot {
           }
         }
       }
+      case "staBssSteer": {
+        const {staMAC, targetAP, targetSSID, targetBand} = value;
+        if (!staMAC || !targetAP)
+          throw { code: 400, msg: `staMAC and targetAP should be specified` };
+        const {code, body} = await FireRouter.staBssSteer(staMAC, targetAP, targetSSID, targetBand);
+        if (body.errors && !_.isEmpty(body.errors))
+          throw { code, msg: body.errors[0] }
+        else
+          return;
+      }
       default:
         // unsupported action
         throw new Error("Unsupported cmd action: " + msg.data.item)
@@ -3676,18 +3738,49 @@ class netBot extends ControllerBot {
       let msg = rawmsg.message.obj;
       try {
         const eid = _.get(rawmsg, 'message.appInfo.eid')
+        const version = _.get(rawmsg, 'message.appInfo.version');
         if (eid) {
           const revoked = await rclient.sismemberAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
           if (revoked) {
             return this.simpleTxData(msg, null, { code: 401, msg: "Unauthorized eid" }, cloudOptions);
           }
         }
-        if (_.get(rawmsg, 'message.obj.data.item') !== 'ping') {
-          rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app", rawmsg.message);
+        const item = _.get(rawmsg, 'message.obj.data.item')
+        if (item !== 'ping') {
+          rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app",
+            item == 'batchAction'
+              ? _.get(rawmsg, 'message.obj.data.value', []).map(c => [c.mtype, c.data && c.data.item, c.target])
+              : rawmsg.message
+          );
         }
 
         msg.appInfo = rawmsg.message.appInfo;
         if (rawmsg.message.obj.type === "jsonmsg") {
+          let wltargets = await rclient.smembersAsync("sys:eid:whitelist:item") || [];
+
+          // check app version, block requests if too old
+          let minAppVer = await rclient.getAsync("sys:version:app:min");
+          if (minAppVer && rawmsg.message.from != "iRocoX" && msg.data.item != "ping" && (msg.appInfo.platform.toLowerCase() == "ios" || msg.appInfo.platform == "android" )){
+            if (["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && versionCompare(version, minAppVer)) {
+              log.warn('deny access from eid', eid, "with", version, JSON.stringify(rawmsg));
+              return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Please update the App to the latest version." }, cloudOptions);
+            }
+          }
+
+          // check whitelist, empty set allows all, only for dev
+          const notAllow = (await rclient.typeAsync('sys:eid:whitelist')) == "set" && !await rclient.sismemberAsync('sys:eid:whitelist', eid || "");
+          if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && notAllow){
+            log.warn('deny access from eid', eid, "with", msg.data.item);
+            return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
+          }
+
+          // check blacklist, only for dev
+          const forbid = (await rclient.typeAsync('sys:eid:blacklist')) == "set" && await rclient.sismemberAsync('sys:eid:blacklist', eid || "");
+          if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && forbid){
+            log.warn('deny access from eid', eid);
+            return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
+          }
+
           switch(rawmsg.message.obj.mtype) {
             case "init": {
               if (rawmsg.message.appInfo) {
@@ -3793,7 +3886,21 @@ class netBot extends ControllerBot {
               return this.simpleTxData(msg, result, null, cloudOptions);
             }
             case "cmd": {
-              if (msg.data.item == 'batchAction') {
+              if (msg.data.item == 'fwapc') {
+                const value = msg.data.value;
+
+                if (!value.path) {
+                  throw new Error("invalid input");
+                }
+
+                const result = await fwapc.apiCall(value.method || "GET", value.path, value.body);
+                if (result.code == 200) {
+                  return this.simpleTxData(msg, result.body, null, cloudOptions);
+                } else {
+                  return this.simpleTxData(msg, null, {code: result.code, data: result.body, msg: result.msg}, cloudOptions);
+                }
+
+              } else if (msg.data.item == 'batchAction') {
                 const result = await this.batchHandler(gid, rawmsg);
                 return this.simpleTxData(msg, result, null, cloudOptions);
               } else {

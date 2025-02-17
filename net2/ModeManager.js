@@ -221,8 +221,8 @@ async function apply() {
       await _enforceSpoofMode();
       // reset oper history for each device, so that we can re-apply spoof commands
       hostManager.cleanHostOperationHistory()
-      // getHosts will trigger populating ip addresses to redis set
       await hostManager.getHostsAsync()
+      hostManager.getHostsFast().forEach(h => h.scheduleApplyPolicy()) // re-enforce spoof immediately
       if (mode === Mode.MODE_DHCP_SPOOF) {
         // enhanced spoof is necessary for dhcp spoof
         await hostManager.setPolicyAsync("enhancedSpoof", true);
