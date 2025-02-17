@@ -24,7 +24,7 @@ const fs = require('fs');
 Promise.promisifyAll(fs);
 const _ = require('lodash');
 const YAML = require('../vendor_lib/yaml');
-
+const delay = require('../util/util.js').delay;
 class SuricataControl {
   constructor() {
     this.restarting = false;

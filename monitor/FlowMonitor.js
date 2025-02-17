@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,7 +18,7 @@ const log = require("../net2/logger.js")(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const FlowManager = require('../net2/FlowManager.js');
-const flowManager = new FlowManager('info');
+const flowManager = new FlowManager();
 
 const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
@@ -85,7 +85,7 @@ function alarmBootstrap(flow, mac, typedAlarm) {
     "p.dest.name": flowUtil.dhnameFlow(flow),
     "p.dest.ip": flow.dh,
     "p.dest.port": flow.dp,
-    "p.intf.id": flow.intf
+    "p.intf.id": npm.prefixMap[flow.intf] || flow.intf,
   }
 
   for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
@@ -450,15 +450,11 @@ module.exports = class FlowMonitor {
     let end = Date.now() / 1000;
     let start = end - period; // in seconds
     //log.info("Detect",listip);
-    let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", true);
+    let result = await flowManager.summarizeConnections(mac, "in", end, start);
 
     this.checkFlowIntel(result.connections, host, profile);
     await this.summarizeNeighbors(host, result.connections);
-    if (result.activities != null) {
-      host.o.activities = result.activities;
-      await host.save("activities")
-    }
-    result = await flowManager.summarizeConnections(mac, "out", end, start, "time", true);
+    result = await flowManager.summarizeConnections(mac, "out", end, start);
 
     this.checkFlowIntel(result.connections, host, profile);
     await this.summarizeNeighbors(host, result.connections);
@@ -470,16 +466,11 @@ module.exports = class FlowMonitor {
     let end = Date.now() / 1000;
     let start = end - this.monitorTime; // in seconds
 
-    let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", true);
+    let result = await flowManager.summarizeConnections(mac, "in", end, start);
     await this.checkForLargeUpload(result.connections, profile)
     let inSpec = flowManager.getFlowCharacteristics(result.connections, "in", profile.large_upload);
-    if (result.activities != null) {
-      // TODO: inbound(out) activities should also be taken into account
-      host.o.activities = result.activities;
-      await host.save("activities")
-    }
 
-    result = await flowManager.summarizeConnections(mac, "out", end, start, "time", true);
+    result = await flowManager.summarizeConnections(mac, "out", end, start);
     await this.checkForLargeUpload(result.connections, profile)
     let outSpec = flowManager.getFlowCharacteristics(result.connections, "out", profile.large_upload);
 
@@ -667,7 +658,7 @@ module.exports = class FlowMonitor {
       log.debug("monitor:flow:found", results.length);
       const dupExist = results.some(str => {
         const _flow = JSON.parse(str)
-        return _flow.rh == copy.rh && (_flow.ets > copy.ts || now - _flow.nts < profile[type].cooldown)
+        return _flow.rh == copy.rh && (_flow.ts + _flow.du > copy.ts || now - _flow.nts < profile[type].cooldown)
       })
       if (dupExist) {
         log.info("monitor:flow:duplicated", key, copy.rh);
@@ -689,7 +680,7 @@ module.exports = class FlowMonitor {
     // flow in means connection initiated from inside
     // flow out means connection initiated from outside (more dangerous)
 
-    if (copy.ets < Date.now() / 1000 - this.monitorTime * 2) {
+    if (copy.ts + copy.du < Date.now() / 1000 - this.monitorTime * 2) {
       log.warn('Traffic out of scope, drop', JSON.stringify(copy))
       return
     }
@@ -708,7 +699,8 @@ module.exports = class FlowMonitor {
       "p.transfer.duration": copy.du,
       "p.local_is_client": flow.fd == 'in' ? "1" : "0", // connection is initiated from local
       "p.flow": JSON.stringify(flow),
-      "p.intf.id": flow.intf
+      "p.flow.sigs": flow.sigs,
+      "p.intf.id": npm.prefixMap[flow.intf] || flow.intf,
     });
 
     for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
@@ -905,7 +897,7 @@ module.exports = class FlowMonitor {
       "e.device.ports": this.getDevicePorts(flowObj),
       "e.dest.ports": this.getRemotePorts(flowObj),
       "p.from": intelObj.from,
-      "p.intf.id": flowObj.intf
+      "p.intf.id": npm.prefixMap[flowObj.intf] || flowObj.intf,
     };
 
     for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
@@ -1001,7 +993,7 @@ module.exports = class FlowMonitor {
       "p.from": iobj.from,
       "e.device.ports": this.getDevicePorts(flowObj),
       "e.dest.ports": this.getRemotePorts(flowObj),
-      "p.intf.id": flowObj.intf,
+      "p.intf.id": npm.prefixMap[flowObj.intf] || flowObj.intf,
     };
 
     for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {

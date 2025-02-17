@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -36,6 +36,8 @@ const SysManager = require('../net2/SysManager.js');
 const CLOUD_CONFIG_KEY = Constants.REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG;
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
+const CategoryUpdater = require('../control/CategoryUpdater.js');
+const categoryUpdater = new CategoryUpdater();
 
 class AppTimeUsageSensor extends Sensor {
   
@@ -44,12 +46,12 @@ class AppTimeUsageSensor extends Sensor {
     this.enabled = fc.isFeatureOn(featureName);
     this.cloudConfig = null;
     this.appConfs = {};
-    await this.loadConfig();
+    await this.loadConfig(true);
 
     await this.scheduleUpdateConfigCronJob();
 
     sem.on(Message.MSG_FLOW_ENRICHED, async (event) => {
-      if (event && !_.isEmpty(event.flow))
+      if (event && !_.isEmpty(event.flow) && !event.flow.local)
         await this.processEnrichedFlow(event.flow).catch((err) => {
           log.error(`Failed to process enriched flow`, event.flow, err.message);
         });
@@ -178,10 +180,22 @@ class AppTimeUsageSensor extends Sensor {
     const values = this._domainTrie.find(host);
     if (_.isSet(values)) {
       for (const value of values) {
-        if (_.isObject(value) && value.app && !values.has(`!${value.app}`))
-          result.push(value);
+        if (_.isObject(value) && value.app && !values.has(`!${value.app}`)) {
+          if (!value.bytesThreshold || flow.ob + flow.rb >= value.bytesThreshold)
+            result.push(value);
+        }
       }
     }
+    // match internet activity on flow
+    const category = _.get(flow, ["intel", "category"]);
+    let bytesThreshold = category ? 1024 * 1024 : 1024 * 1024 * 5;
+    let minsThreshold = category ? 1 : 2;
+    if (host && host.startsWith("www.")) {
+      bytesThreshold = 256 * 1024;
+      minsThreshold = 2;
+    }
+    if (flow.ob + flow.rb >= bytesThreshold || !_.isEmpty(result))
+      result.push({"app": "internet", "occupyMins": 2, "lingerMins": 3, minsThreshold});
     return result;
   }
 
@@ -193,11 +207,9 @@ class AppTimeUsageSensor extends Sensor {
     if (_.isEmpty(appMatches))
       return;
     for (const match of appMatches) {
-      const {app, category, domain, occupyMins, lingerMins, bytesThreshold, minsThreshold} = match;
+      const {app, category, domain, occupyMins, lingerMins, minsThreshold} = match;
       if (host && domain)
         await dnsTool.addSubDomains(domain, [host]);
-      if (enrichedFlow.ob + enrichedFlow.rb < bytesThreshold)
-        continue;
       let tags = []
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const config = Constants.TAG_TYPE_MAP[type];

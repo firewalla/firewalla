@@ -70,6 +70,11 @@ class BroControl {
       if (pcapBufsize) {
         workerScript.push(`redef Pcap::bufsize = ${pcapBufsize};\n`)
       }
+      const intfType = await fs.readFileAsync(`/sys/class/net/${intf}/type`, {encoding: "utf8"}).then(result => result.trim()).catch((err) => null);
+      // shift the vlan packet offset by 4 bytes if applicable, capture_filters will be prepended to the beginning of the pcap filter expression string in zeek, 
+      // subsequent filters in restrict_filters will be applied properly
+      if (intfType === "1")
+        workerScript.push(`redef capture_filters += [["shift-vlan-offset"] = "(not ether proto 0x8100) or (ether proto 0x8100 and vlan)"];`);
       workerCfg.push(
         `\n`,
         `[worker-${index++}]\n`,
@@ -79,11 +84,12 @@ class BroControl {
       )
       if (workerScript.length) {
         workerCfg.push(`aux_scripts=${workerScriptPath}\n`)
-        await exec(`echo "${workerScript.join('')}" | sudo tee ${workerScriptPath}`)
+        await exec(`echo '${workerScript.join('')}' | sudo tee ${workerScriptPath}`)
       }
     }
     await exec(`echo "${workerCfg.join('')}" | sudo tee -a ${PATH_NODE_CFG}`)
 
+    const lines = [];
     const restrictFilters = options.restrictFilters || {};
     const filterEntries = [];
     for (const key in restrictFilters) {
@@ -92,6 +98,19 @@ class BroControl {
     }
     if (filterEntries.length > 0) {
       const content = `redef restrict_filters += [${filterEntries.join(",")}];\n`;
+      lines.push(content)
+      await fs.writeFileAsync(PATH_ADDITIONAL_OPTIONS, content, {encoding: 'utf8'});
+    } else {
+
+      await fs.writeFileAsync(PATH_ADDITIONAL_OPTIONS, "", {encoding: 'utf8'});
+    }
+
+    const sigFiles = options.sigFiles || [];
+    for (const sigFile of sigFiles)
+      lines.push(`@load-sigs ${sigFile}`);
+
+    if (!_.isEmpty(lines)) {
+      const content = lines.join("\n") + "\n";
       await fs.writeFileAsync(PATH_ADDITIONAL_OPTIONS, content, {encoding: 'utf8'});
     } else {
       await fs.writeFileAsync(PATH_ADDITIONAL_OPTIONS, "", {encoding: 'utf8'});

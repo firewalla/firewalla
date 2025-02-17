@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,7 +31,6 @@ const hostTool = new HostTool();
 
 const IdentityManager = require('../net2/IdentityManager.js');
 
-const flowUtil = require('../net2/FlowUtil.js');
 const _ = require('lodash');
 
 const getPreferredBName = require('../util/util.js').getPreferredBName
@@ -123,16 +122,6 @@ module.exports = class DNSManager {
 
   // Need to write code to drop the noise before calling this function.
   // this is a bit expensive due to the lookup part
-
-  // will place an x over flag or f if the flow is not really valid ...
-  // such as half tcp session
-  //
-  // incase packets leaked via bitbridge, need to see how much they are and
-  // consult the blocked list ...
-  //
-  // if x is there, the flow should not be used or presented.  It only be used
-  // for purpose of accounting
-
   async query(list, ipsrc, ipdst, deviceMac, hostIndicatorsKeyName) {
 
     // use this as cache to calculate how much intel expires
@@ -188,44 +177,6 @@ module.exports = class DNSManager {
 
       } catch(err) {
         log.error(`Failed to enrich ip: ${_ipsrc}, ${_ipdst}`, err);
-      }
-
-      if (o.category === 'intel') {
-        return;
-      }
-
-      if (o.intel && o.intel.category === 'intel') {
-        return;
-      }
-
-      // don't run this if the category is intel
-      if (o.fd == "in") {
-        if (o.du && o.du < 0.0001) {
-          //log.info("### NOT LOOKUP 1:",o);
-          flowUtil.addFlag(o, 'x');
-          return;
-        }
-        if (o.ob && o.ob == 0 && o.rb && o.rb < 1000) {
-          //log.info("### NOT LOOKUP 2:",o);
-          flowUtil.addFlag(o, 'x');
-          return;
-        }
-        if (o.rb && o.rb < 1500) { // used to be 2500
-          //log.info("### NOT LOOKUP 3:",o);
-          flowUtil.addFlag(o, 'x');
-          return;
-        }
-        if (o.pr && o.pr == 'tcp' && (o.rb == 0 || o.ob == 0) && o.ct && o.ct <= 1) {
-          flowUtil.addFlag(o, 'x');
-          log.debug("### NOT LOOKUP 4:", o);
-          return;
-        }
-      } else {
-        if (o.pr && o.pr == 'tcp' && (o.rb == 0 || o.ob == 0)) {
-          flowUtil.addFlag(o, 'x');
-          log.debug("### NOT LOOKUP 5:", o);
-          return;
-        }
       }
     })
   }
