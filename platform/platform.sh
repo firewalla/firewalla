@@ -16,6 +16,8 @@ REDIS_MAXMEMORY=300mb
 RAMFS_ROOT_PARTITION=no
 XT_TLS_SUPPORTED=no
 MAX_OLD_SPACE_SIZE=256
+HAVE_FWAPC=no
+WAN_INPUT_DROP_RATE_LIMIT=10
 
 hook_server_route_up() {
   echo nothing > /dev/null
@@ -50,6 +52,15 @@ function get_assets_prefix {
   fi
 }
 
+function get_cloud_endpoint {
+  RELEASE_TYPE=$(get_release_type)
+  if [ "$RELEASE_TYPE" = "dev" -o "$RELEASE_TYPE" = "unknown" ]; then
+    echo "https://ota.firewalla.com/dev"
+  else
+    echo "https://ota.firewalla.com"
+  fi
+}
+
 function get_node_bin_path {
   if [[ -e /home/pi/.nvm/versions/node/v12.18.3/bin/node ]] && fgrep -qi navy /etc/firewalla-release; then
     echo "/home/pi/.nvm/versions/node/v12.18.3/bin/node"
@@ -80,14 +91,6 @@ function turnOffLED {
 
 function led_boot_state() {
   return 0
-}
-
-function installTLSModule {
-  return
-}
-
-function installSchCakeModule {
-  return
 }
 
 function get_dynamic_assets_list {
@@ -198,6 +201,40 @@ case "$UNAME" in
     ;;
 esac
 
+function installTLSModule {
+  uid=$(id -u pi)
+  gid=$(id -g pi)
+  if ! lsmod | grep -wq "xt_tls"; then
+    ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/xt_tls.ko
+    if [[ -f $ko_path ]]; then
+      sudo insmod ${ko_path} max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
+    fi
+    so_path=${FW_PLATFORM_CUR_DIR}/files/shared_objects/$(lsb_release -cs)/libxt_tls.so
+    if [[ -f $so_path ]]; then
+      sudo install -D -v -m 644 ${so_path} /usr/lib/$(uname -m)-linux-gnu/xtables
+    fi
+  fi
+  return
+}
+
+function installSchCakeModule {
+  ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/sch_cake.ko
+  if [[ -f $ko_path ]]; then
+    if ! modinfo sch_cake > /dev/null || [[ $(sha256sum /lib/modules/$(uname -r)/kernel/net/sched/sch_cake.ko | awk '{print $1}') != $(sha256sum $ko_path | awk '{print $1}') ]]; then
+      sudo cp ${ko_path} /lib/modules/$(uname -r)/kernel/net/sched/
+      sudo depmod -a
+    fi
+  fi
+
+  tc_path=${FW_PLATFORM_CUR_DIR}/files/executables/$(lsb_release -cs)/tc
+  tc_dst_path=$(which tc || echo "/sbin/tc")
+  if [[ -f $tc_path ]]; then
+    if [[ $(sha256sum $tc_dst_path | awk '{print $1}') != $(sha256sum $tc_path | awk '{print $1}') ]]; then
+      sudo cp $tc_path $tc_dst_path
+    fi
+  fi
+  return
+}
 
 function before_bro {
   if [[ -d ${FW_PLATFORM_DIR}/all/hooks/before_bro ]]; then

@@ -19,11 +19,8 @@ const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const util = require('util');
-
+const networkProfileManager = require('../net2/NetworkProfileManager.js');
 const LogQuery = require('./LogQuery.js')
-
-const IntelTool = require('../net2/IntelTool');
-const intelTool = new IntelTool();
 
 const TypeFlowTool = require('../flow/TypeFlowTool.js')
 const typeFlowTool = {
@@ -104,19 +101,41 @@ class FlowTool extends LogQuery {
     }
 
     const feeds = []
-    if (options.direction) {
-      feeds.push(... this.expendFeeds({macs, direction: options.direction}))
-    } else {
-      feeds.push(... this.expendFeeds({macs, direction: 'in'}))
-      feeds.push(... this.expendFeeds({macs, direction: 'out'}))
+    // use some filters to cut feed number here
+    if (options.block !== true) {
+      if (options.local !== true) {
+        if (options.direction) {
+          feeds.push(... this.expendFeeds({macs, direction: options.direction}))
+        } else {
+          feeds.push(... this.expendFeeds({macs, direction: 'in'}))
+          feeds.push(... this.expendFeeds({macs, direction: 'out'}))
+        }
+        if (options.dnsFlow) {
+          feeds.push(... auditTool.expendFeeds({macs, block: false, dnsFlow: true}))
+        }
+        if (options.auditDNSSuccess && options.ntpFlow)
+          feeds.push(... auditTool.expendFeeds({macs, block: false}))
+        else if (options.auditDNSSuccess && (!options.type || options.type == 'dns'))
+          feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'dns'}))
+        else if (options.ntpFlow && (!options.type || options.type == 'ntp'))
+          feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'ntp'}))
+      }
+      if (options.localFlow && options.local !== false) {
+        // a local flow will be recorded in both src and dst host key, need to deduplicate flows on the two hosts if both hosts are included in macs
+        options.exclude = [{dstMac: macs, fd: "out"}]
+        feeds.push(... this.expendFeeds({macs, localFlow: true}))
+      }
     }
-    if (options.audit) {
-      feeds.push(... auditTool.expendFeeds({macs, block: true}))
+    if (options.block !== false) {
+      if (options.audit) {
+        feeds.push(... auditTool.expendFeeds({macs, block: true}))
+      }
     }
-    if (options.auditDNSSuccess) {
-      feeds.push(... auditTool.expendFeeds({macs, block: false}))
-    }
+
     delete options.audit
+    delete options.dnsFlow
+    delete options.ntpFlow
+    delete options.localFlow
     delete options.auditDNSSuccess
     let recentFlows = await this.logFeeder(options, feeds)
 
@@ -125,8 +144,14 @@ class FlowTool extends LogQuery {
     return recentFlows
   }
 
+  optionsToFilter(options) {
+    const filter = super.optionsToFilter(options)
+    delete filter.localFlow
+    return filter
+  }
+
   // convert flow json to a simplified json format that's more readable by app
-  toSimpleFormat(flow) {
+  toSimpleFormat(flow, options = {}) {
     let f = {
       ltype: 'flow',
       type: 'ip'
@@ -135,7 +160,7 @@ class FlowTool extends LogQuery {
     f.fd = flow.fd;
     f.count = flow.ct || 1,
     f.duration = flow.du
-    f.intf = flow.intf;
+    if (flow.intf) f.intf = networkProfileManager.prefixMap[flow.intf] || flow.intf
     for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
       const config = Constants.TAG_TYPE_MAP[type];
       f[config.flowKey] = flow[config.flowKey];
@@ -150,7 +175,12 @@ class FlowTool extends LogQuery {
     }
 
     if (flow.oIntf)
-      f.oIntf = flow.oIntf;
+      f.oIntf = networkProfileManager.prefixMap[flow.oIntf] || flow.oIntf
+    if (flow.dIntf)
+      f.dIntf = networkProfileManager.prefixMap[flow.dIntf] || flow.dIntf
+
+    if (flow.sigs)
+      f.sigs = flow.sigs;
 
     // allow rule id
     if (flow.apid && Number(flow.apid)) {
@@ -187,6 +217,13 @@ class FlowTool extends LogQuery {
       f.download = flow.ob;
     }
 
+    if (options.localFlow) {
+      f.dstMac = flow.dmac
+      f.local = true
+      if (flow.dstTags)
+        f.dstTags = flow.dstTags;
+    }
+
     return f;
   }
 
@@ -203,11 +240,8 @@ class FlowTool extends LogQuery {
         }
       } else {
         const old = aggrResults[tenminTS];
-        aggrResults[tenminTS] = {
-          ts: tenminTS,
-          ob: x.ob + old.ob,
-          rb: x.rb + old.rb
-        }
+        old.ob += x.ob
+        old.rb += x.rb
       }
     })
     return Object.values(aggrResults).sort((x,y) => {
@@ -223,11 +257,9 @@ class FlowTool extends LogQuery {
 
   async _getTransferTrend(target, destinationIP, options) {
     options = options || {};
-    const end = options.end || Math.floor(new Date() / 1000);
+    const end = options.end || Math.floor(Date.now() / 1000);
     const begin = options.begin || end - 3600 * 6; // 6 hours
-    const direction = options.direction || 'in';
-
-    const key = util.format("flow:conn:%s:%s", direction, target);
+    const key = this.getLogKey(target, options);
 
     const results = await rclient.zrangebyscoreAsync([key, begin, end]);
 
@@ -263,23 +295,22 @@ class FlowTool extends LogQuery {
     const transfers = [];
 
     if (!options.direction || options.direction === "in") {
-      const optionsCopy = JSON.parse(JSON.stringify(options));
-      optionsCopy.direction = "in";
-      const t_in = await this._getTransferTrend(deviceMAC, destinationIP, optionsCopy);
+      const t_in = await this._getTransferTrend(deviceMAC, destinationIP, Object.assign({direction: 'in'}, options));
       transfers.push.apply(transfers, t_in);
     }
 
     if (!options.direction || options.direction === "out") {
-      const optionsCopy = JSON.parse(JSON.stringify(options));
-      optionsCopy.direction = "out";
-      const t_out = await this._getTransferTrend(deviceMAC, destinationIP, optionsCopy);
+      const t_out = await this._getTransferTrend(deviceMAC, destinationIP, Object.assign({direction: 'out'}, options));
       transfers.push.apply(transfers, t_out);
     }
     return this._aggregateTransferBy10Min(transfers);
   }
 
   getLogKey(mac, options) {
-    return util.format("flow:conn:%s:%s", options.direction, mac);
+    if (options.localFlow)
+      return `flow:local:${mac}`
+    else
+      return util.format("flow:conn:%s:%s", options.direction || 'in', mac);
   }
 
   addFlow(mac, type, flow) {
