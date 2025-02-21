@@ -181,7 +181,7 @@ do
         timeit for-ssidcp
         let lines++
         echo
-    done < <( echo "$ssid_data" | awk "\$1 == \"$ssid\"" )
+    done < <( echo "$ssid_data" | awk -F'\t' "\$1 == \"$ssid\"" )
 done < <(echo "$ssids")
 timeit while-ssid
 tty_rows=$(stty size | awk '{print $1}')
