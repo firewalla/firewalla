@@ -1,4 +1,4 @@
-/*    Copyright 2022-2024 Firewalla Inc.
+/*    Copyright 2022-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -103,6 +103,7 @@ class RuleStatsPlugin extends Sensor {
     }
     log.debug("Load policy rules for stats");
     const newPolicyRulesMap = new Map();
+    let ingressFirewallRule = undefined
     const policyRules = await pm2.loadActivePoliciesAsync();
     log.debug(`${policyRules.length} rules active`);
     for (const policy of policyRules) {
@@ -117,12 +118,16 @@ class RuleStatsPlugin extends Sensor {
           if (policy.disabled === "1") {
             continue;
           }
-          // skip non global rules because they will already have their rule id logged.
-          if (!_.isEmpty(policy.tags) || !_.isEmpty(policy.intfs) || !_.isEmpty(policy.scope) || !_.isEmpty(policy.guids) || policy.localPort || policy.remotePort) {
-            continue;
-          }
 
-          if (!["dns", "domain", "ip", "net"].includes(policy.type)) {
+          if (policy.isInboundFirewallRule()) {
+            ingressFirewallRule = policy
+          } else if (
+            // skip non global rules because they will already have their rule id logged.
+            !_.isEmpty(policy.tags) || !_.isEmpty(policy.intfs) || !_.isEmpty(policy.scope) ||
+            !_.isEmpty(policy.guids) || policy.localPort || policy.remotePort
+          ) {
+            continue;
+          } else if (!["dns", "domain", "ip", "net"].includes(policy.type)) {
             continue;
           }
 
@@ -132,14 +137,12 @@ class RuleStatsPlugin extends Sensor {
       }
     }
     this.policyRulesMap = newPolicyRulesMap;
+    // if not found, this will be set to undefined
+    this.ingressFirewallRule = ingressFirewallRule
   }
 
   accountRule(record) {
     if (!this.on) {
-      return;
-    }
-    // TBD: we should add WAN block count to ingress firewall rule to reflect WAN blocks on the rule hit
-    if (record.dir === "W") {
       return;
     }
 
@@ -171,6 +174,11 @@ class RuleStatsPlugin extends Sensor {
   }
 
   async getMatchedPids(record){
+    // this doesn't have to be cached
+    if (record.dir == 'W' && record.ac == 'block' && this.ingressFirewallRule) {
+      return [ Number(this.ingressFirewallRule.pid) ]
+    }
+
     // use cache to reduce computation and redis operation.
     const key = RuleStatsPlugin.cachekeyRecord(record);
     const v = this.cache.get(key);
@@ -178,7 +186,7 @@ class RuleStatsPlugin extends Sensor {
     if (v) {
       matchedPids = v;
     } else {
-      matchedPids = await this.getPolicyIds(record);
+      matchedPids = (await this.getPolicyIds(record)).map(Number)
       this.cache.set(key, matchedPids);
     }
     return matchedPids;
