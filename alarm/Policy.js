@@ -651,11 +651,15 @@ class Policy {
   static getMathcedTarget(policy) {
     let target = "";
     if (policy.scope) {
-      target = policy.scope[0]
+      target = policy.scope[0];
     }
+    if (policy.guids) {
+      target = policy.guids[0];
+    }
+
     if (policy.tag && _.isArray(policy.tag) && !_.isEmpty(policy.tag)) {
       if (policy.tag[0].startsWith(Policy.TAG_PREFIX)) {
-        target = policy.tag[0]
+        target = policy.tag[0];
       }
 
       if (policy.tag[0].startsWith(Policy.INTF_PREFIX)) {

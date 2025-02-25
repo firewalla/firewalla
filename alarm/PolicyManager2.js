@@ -2874,7 +2874,7 @@ class PolicyManager2 {
       if (tags && tags.length > 0)
         rule.rank = 2;
       if (guids && guids.length > 0)
-        rule.rank = 2;
+        rule.rank = 0;
       if (intfs && intfs.length > 0)
         rule.rank = 4;
       if (rule.parentRgId)
@@ -2928,7 +2928,7 @@ class PolicyManager2 {
         // a trick that makes match_group rule be checked after allow rule and before block rule
         rule.rank += 0.5;
       // high priority rule has a smaller base rank
-      if (rule.rank >= 0) {
+      if (rule.rank >= 0 && rule.action != "route") {
         switch (seq) {
           case Constants.RULE_SEQ_REG:
             // security block still has high priority and low rank
@@ -3067,36 +3067,41 @@ class PolicyManager2 {
     return false;
   }
 
-  async checkVPN(allVpnClients, resultMap, vpnClientId) {
-
-    let vpnClient = VPNClient.getInstance(vpnClientId);
-    if (!vpnClient) {
-      return false;
-    }
+  async checkVPN(allVpnClients, resultMap, vpnClientId, routeType = "hard") {
+    let isEnabled = false;
+    let isConnected = false;
+    let isStrictVPN = false;
 
     if (resultMap.has(vpnClientId)) { // found in resultMap, retrun result directly
-      return resultMap[vpnClientId];
+      isEnabled = resultMap[vpnClientId].isEnabled;
+      isConnected = resultMap[vpnClientId].isConnected;
+      isStrictVPN = resultMap[vpnClientId].isStrictVPN;
+    } else {
+      let vpnClient = VPNClient.getInstance(vpnClientId);
+      if (!vpnClient) {
+        return false;
+      }
+      isEnabled = this.isVpnClientEnabled(allVpnClients, vpnClientId);
+      isConnected = await vpnClient.status();
+      const settings = await vpnClient.loadSettings();
+      if (settings && settings.strictVPN) {
+        isStrictVPN = true;
+      }
+      resultMap[vpnClientId] = {isEnabled:isEnabled, isConnected:isConnected, isStrictVPN:isStrictVPN};
     }
 
-    if (this.isVpnClientEnabled(allVpnClients, vpnClientId)) { // the VPN client is mannually disabled
-      const status = await vpnClient.status();
-      if (!status) { // the VPN is disconnected at the moment
-        const settings = await vpnClient.loadSettings();
-        if (!settings || !settings.strictVPN) {
-          resultMap[vpnClient] = false;
-          return false;
-        }
-        if (rule.routeType == "soft") {
-          resultMap[vpnClient] = false;
-          return false;
-        }
-      }
-    } else {
-      resultMap[vpnClient] = false;
+    if (!isEnabled) {
       return false;
     }
+    if (!isConnected) {
+      if (!isStrictVPN) {
+        return false;
+      }
+      if (routeType == "soft") {
+        return false;
+      }
+    }
 
-    resultMap[vpnClient] = true;
     return true;
   }
 
@@ -3114,7 +3119,7 @@ class PolicyManager2 {
       }
       device = await hostManager.getHostAsync(localMac);
     } else {
-      device = IdentityManager.getIdentityClassByGUID(target);
+      device = IdentityManager.getIdentityByGUID(localMac);
     }
 
     if (!device) {
@@ -3123,7 +3128,7 @@ class PolicyManager2 {
 
     const devicePolicy = await device.loadPolicyAsync();
     if (devicePolicy) {
-      devicePolicy.rank = 1;
+      devicePolicy.rank = 0;
       devicePolicy.matchedTarget = localMac;
       policies.push(devicePolicy);
     }
@@ -3140,7 +3145,7 @@ class PolicyManager2 {
       const tag = tagManager.getTagByUid(tagId);
       const groupPolicy = await tag.loadPolicyAsync();
       if (groupPolicy && Object.keys(groupPolicy).length !== 0){
-        groupPolicy.rank = 3;
+        groupPolicy.rank = 2;
         groupPolicy.matchedTarget = "tag:" + tag.getTagUid();
         policies.push(groupPolicy);
       }
@@ -3151,7 +3156,7 @@ class PolicyManager2 {
     const networkProfile = NetworkProfileManager.getNetworkProfile(nicUUID);
     const networkPolicy = await networkProfile.loadPolicyAsync();
     if (networkPolicy && Object.keys(networkPolicy).length !== 0) {
-      networkPolicy.rank = 5;
+      networkPolicy.rank = 4;
       networkPolicy.matchedTarget = "network:" + nicUUID;
       policies.push(networkPolicy);
     }
@@ -3172,6 +3177,13 @@ class PolicyManager2 {
     return null;
   }
 
+  async initIpsetCache() {
+    if (!this.ipsetCache || (this.ipsetCacheUpdateTime && Date.now() / 1000 - this.ipsetCacheUpdateTime > 60)) { // ipset cache becomes invalid after 60 seconds
+      this.ipsetCache = await ipset.readAllIpsets() || {};
+      this.ipsetCacheUpdateTime = Date.now() / 1000
+    }
+  }
+
   /**
    * 
    * @returns
@@ -3184,10 +3196,7 @@ class PolicyManager2 {
    */
   async checkRoute(localMac, localPort, remoteType, remoteVal = "", remotePort, protocol, direction = "outbound") {
 
-    if (!this.ipsetCache || (this.ipsetCacheUpdateTime && Date.now() / 1000 - this.ipsetCacheUpdateTime > 60)) { // ipset cache becomes invalid after 60 seconds
-      this.ipsetCache = await ipset.readAllIpsets() || {};
-      this.ipsetCacheUpdateTime = Date.now() / 1000
-    }
+    await this.initIpsetCache();
 
     if (!this.sortedRoutesCache) {
       let routes = await this.loadActivePoliciesAsync() || [];
@@ -3205,8 +3214,10 @@ class PolicyManager2 {
     for (const rule of this.sortedRoutesCache) {
       if (rule.wanUUID.startsWith(Block.VPN_CLIENT_WAN_PREFIX)) {
         const vpnID = rule.wanUUID.substring(Block.VPN_CLIENT_WAN_PREFIX.length);
-        if (!this.checkVPN(allVpnClients, checkedVpnMap, vpnID))
+        const vpnCheckRsult = await this.checkVPN(allVpnClients, checkedVpnMap, vpnID, rule.routeType);
+        if (!vpnCheckRsult) {
           continue;
+        }
       } else if (rule.routeType == "soft") {
         // check if the wan interface is up
         const wanUUID = rule.wanUUID;
@@ -3221,7 +3232,6 @@ class PolicyManager2 {
     const bestMatchRoute = await this.getBestMatchRule(activeRules, localMac, localPort, remoteType, remoteVal, remotePort, protocol, direction);
     if (bestMatchRoute) {
       const matchedTarget = Policy.getMathcedTarget(bestMatchRoute);
-
       result = {
         "wanUUID": bestMatchRoute.wanUUID,
         "reason": "rule",
@@ -3230,9 +3240,10 @@ class PolicyManager2 {
       }
     }
 
+
     const bestMatchVpnPolicy = await this.getBestMatchVpnPolicie(localMac, allVpnClients);
     if (bestMatchVpnPolicy) {
-      if (!result || bestMatchRoute.rank < bestMatchRoute.rank) {
+      if (!result || bestMatchVpnPolicy.rank < bestMatchRoute.rank) {
         result = {
           "wanUUId": bestMatchVpnPolicy.wanUUID,
           "reason": "policy",
@@ -3244,10 +3255,8 @@ class PolicyManager2 {
   }
 
   async checkACL(localMac, localPort, remoteType, remoteVal = "", remotePort, protocol, direction = "outbound") {
-    if (!this.ipsetCache || (this.ipsetCacheUpdateTime && Date.now() / 1000 - this.ipsetCacheUpdateTime > 60)) { // ipset cache becomes invalid after 60 seconds
-      this.ipsetCache = await ipset.readAllIpsets() || {};
-      this.ipsetCacheUpdateTime = Date.now() / 1000
-    }
+    await this.initIpsetCache();
+
     if (!this.sortedActiveRulesCache) {
       let activeRules = await this.loadActivePoliciesAsync() || [];
       activeRules = activeRules.filter(rule => !rule.action || ["allow", "block", "match_group", "app_block"].includes(rule.action) || rule.type === "match_group").filter(rule => (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
