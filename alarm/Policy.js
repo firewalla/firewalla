@@ -647,6 +647,24 @@ class Policy {
       return portRange[0] * 1 <= port && port <= portRange[1] * 1;
     }
   }
+
+  static getMathcedTarget(policy) {
+    let target = "";
+    if (policy.scope) {
+      target = policy.scope[0]
+    }
+    if (policy.tag && _.isArray(policy.tag) && !_.isEmpty(policy.tag)) {
+      if (policy.tag[0].startsWith(Policy.TAG_PREFIX)) {
+        target = policy.tag[0]
+      }
+
+      if (policy.tag[0].startsWith(Policy.INTF_PREFIX)) {
+        target = "network:" + policy.tag[0].substring(Policy.INTF_PREFIX.length);
+      }
+    }
+    return target;
+  }
+
 }
 
 Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules", "targets"];
