@@ -78,7 +78,6 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/audit
 -A FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R TLS=1 SEC=1 "
 
 -A FW_WAN_IN_DROP_LOG -j LOG --log-prefix "[FW_ADT]D=W CD=O SEC=1 "
--A FW_WAN_IN_DROP_LOG -j LOG --log-prefix "[FW_ADT]D=W CD=O SEC=1 "
 
 -A FW_ACCEPT_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]A=A D=O CD=O "
 -A FW_ACCEPT_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]A=A D=I CD=O "
