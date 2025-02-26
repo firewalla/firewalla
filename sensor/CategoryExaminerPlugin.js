@@ -447,7 +447,7 @@ class CategoryExaminerPlugin extends Sensor {
     log.debug("Try to confirm domains from cloud:", category, domainList);
     const hashedDomainList = domainList.map(domain => Hashes.getHashObject(domain).hash.toString('base64'));
     const requestObj = {
-      id: `app.${category}`,
+      id: CategoryUpdater.getCategoryHashsetMapping()[category] || `app.${category}`,
       domains: hashedDomainList
     };
     const response = await bone.checkTargetSetMembership(requestObj);

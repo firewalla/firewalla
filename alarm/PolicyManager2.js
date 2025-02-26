@@ -734,11 +734,11 @@ class PolicyManager2 {
     let policyKeys = [];
 
     for (let rule of rules) {
-      if (_.isEmpty(rule.tag)) continue;
+      if (_.isEmpty(rule.tag) && rule.type !== "tag") continue;
 
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const tagUid = Constants.TAG_TYPE_MAP[type].ruleTagPrefix + tag;
-        if (rule.tag.some(m => m == tagUid)) {
+        if (_.isArray(rule.tag) && rule.tag.some(m => m == tagUid)) {
           if (rule.tag.length <= 1) {
             policyIds.push(rule.pid);
             policyKeys.push('policy:' + rule.pid);
@@ -754,7 +754,12 @@ class PolicyManager2 {
             log.info('remove scope from policy:' + rule.pid, tag);
           }
         }
-      }      
+      }
+      if (rule.type === "tag" && rule.target == tag) {
+        this.tryPolicyEnforcement(rule, 'unenforce');
+        policyIds.push(rule.pid);
+        policyKeys.push(`policy:${rule.pid}`);
+      }  
     }
 
     if (policyIds.length) {
@@ -991,6 +996,7 @@ class PolicyManager2 {
       message: 'All policies are enforced'
     }
     sem.sendEventToFireApi(event)
+    sem.emitLocalEvent(event)
   }
 
 
@@ -1087,6 +1093,7 @@ class PolicyManager2 {
           }
           log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
         } else {
+          this.notifyPolicyActivated(policy);
           await this._enforce(policy);
           log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
           const pid = policy.pid;
@@ -1118,6 +1125,7 @@ class PolicyManager2 {
         // this is an app time usage policy, use AppTimeUsageManager to manage it
         return AppTimeUsageManager.registerPolicy(policy);
       } else {
+        this.notifyPolicyActivated(policy);
         return this._enforce(policy); // regular enforce
       }
     } finally {
@@ -1125,6 +1133,22 @@ class PolicyManager2 {
       if (action === "block" || action === "app_block")
         this.scheduleRefreshConnmark();
     }
+  }
+
+  // should be invoked right before the policy is effectively enforced, e.g., regular enforcement, schedule/pause until triggered
+  notifyPolicyActivated(policy) {
+    sem.emitLocalEvent({
+      type: "Policy:Activated",
+      policy
+    });
+  }
+
+  // should be invoked right before the policy is effectively unenforced, e.g., regular unenforcement, end of schedule, one time only
+  notifyPolicyDeactivated(policy) {
+    sem.emitLocalEvent({
+      type: "Policy:Deactivated",
+      policy
+    });
   }
 
   // this is the real execution of enable and disable policy
@@ -1377,6 +1401,7 @@ class PolicyManager2 {
         remotePositive = false;
         remoteTupleCount = 2;
         // legacy data format
+        // target: "TAG" is a placeholder for various rules from App
         if (target && ht.isMacAddress(target)) {
           scope = [target];
         }
@@ -1398,7 +1423,7 @@ class PolicyManager2 {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
 
-        if (platform.isTLSBlockSupport()) { // default on
+        if (platform.isTLSBlockSupport() && protocol != 'udp') { // default on
           if (!policy.domainExactMatch && !target.startsWith("*."))
             tlsHost = `*.${target}`;
           else
@@ -1694,6 +1719,7 @@ class PolicyManager2 {
         // this is an app time usage policy, use AppTimeUsageManager to manage it
         return AppTimeUsageManager.deregisterPolicy(policy);
       } else {
+        this.notifyPolicyDeactivated(policy);
         return this._unenforce(policy) // regular unenforce
       }
     } finally {
@@ -1834,7 +1860,7 @@ class PolicyManager2 {
         break;
       case "domain":
       case "dns":
-        if (platform.isTLSBlockSupport()) { // default on
+        if (platform.isTLSBlockSupport() && protocol != 'udp') { // default on
           if (!policy.domainExactMatch && !target.startsWith("*."))
             tlsHost = `*.${target}`;
           else

@@ -78,6 +78,10 @@ class ICMP6Sensor extends Sensor {
       log.info("Schedule reload ICMP6Sensor since network info is reloaded");
       reloadJob.exec();
     })
+    // ping known public IPv6 addresses to keep OS ipv6 neighbor cache up-to-date
+    setInterval(() => {
+      this.pingKnownIPv6s().catch((err) => {});
+    }, 20000);
   }
 
   processNeighborAdvertisement(line, intf) {
@@ -108,9 +112,15 @@ class ICMP6Sensor extends Sensor {
       tgtIp = tgtIp.substring(0, tgtIp.length - 1);
       log.verbose("Neighbor advertisement detected: " + dstMac + ", " + tgtIp);
       if (dstMac && ip.isV6Format(tgtIp)) {
+        let newlyFound = true;
         if (this.cache.get(tgtIp) === dstMac)
-          return;
+          newlyFound = false;
         this.cache.set(tgtIp, dstMac);
+        if (!newlyFound)
+          return;
+        // ping newly found public ipv6 to refresh neighbor cache on the box
+        if (ip.isPublic(tgtIp))
+          this.pingIPv6(tgtIp);
         sem.emitEvent({
           type: "DeviceUpdate",
           message: `A new ipv6 is found @ ICMP6Sensor ${tgtIp} ${dstMac}`,
@@ -126,6 +136,18 @@ class ICMP6Sensor extends Sensor {
     } catch (err) {
       log.error("Failed to parse output: " + line + '\n', err);
     }
+  }
+
+  async pingKnownIPv6s() {
+    this.cache.prune();
+    await Promise.all(this.cache.keys().map(async (ipv6) => {
+      if (ip.isPublic(ipv6))
+        await this.pingIPv6(ipv6).catch((err) => {});
+    }));
+  }
+
+  async pingIPv6(ipv6) {
+    await execAsync(`ping6 -c 1 ${ipv6}`).catch((err) => {});
   }
 }
 

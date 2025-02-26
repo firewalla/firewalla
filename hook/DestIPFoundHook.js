@@ -70,11 +70,6 @@ class DestIPFoundHook extends Hook {
     });
   }
 
-  appendNewIP(ip) {
-    log.debug("Enqueue new ip for intels", ip);
-    return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, ip);
-  }
-
   appendNewFlow(flow) {
     if (!flow.retryCount)
       flow.retryCount = 0;

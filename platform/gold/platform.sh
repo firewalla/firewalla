@@ -22,6 +22,8 @@ REDIS_MAXMEMORY=400mb
 RAMFS_ROOT_PARTITION=yes
 FW_ZEEK_RSS_THRESHOLD=800000
 MAX_OLD_SPACE_SIZE=512
+HAVE_FWAPC=yes
+WAN_INPUT_DROP_RATE_LIMIT=12
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
@@ -96,35 +98,6 @@ function fw_blink {
 
 function fw_unblink {
   sudo pkill -9 ethtool
-}
-
-function installTLSModule {
-  uid=$(id -u pi)
-  gid=$(id -g pi)
-  if ! lsmod | grep -wq "xt_tls"; then
-    if [[ $(lsb_release -cs) == "focal" ]]; then
-      sudo insmod ${FW_PLATFORM_CUR_DIR}/files/TLS/u20/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
-      sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/TLS/u20/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables
-    elif [[ $(lsb_release -cs) == "jammy" ]]; then
-      sudo insmod ${FW_PLATFORM_CUR_DIR}/files/TLS/u22/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
-      sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/TLS/u22/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables
-    else
-      sudo insmod ${FW_PLATFORM_CUR_DIR}/files/TLS/u18/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
-      sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/TLS/u18/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables
-    fi
-  fi
-}
-
-function installSchCakeModule {
-  if [[ $(lsb_release -cs) == "bionic" ]]; then
-    if ! modinfo sch_cake > /dev/null || [[ $(sha256sum /lib/modules/$(uname -r)/kernel/net/sched/sch_cake.ko | awk '{print $1}') != $(sha256sum ${FW_PLATFORM_CUR_DIR}/files/sch_cake/u18/sch_cake.ko | awk '{print $1}') ]]; then
-      sudo cp ${FW_PLATFORM_CUR_DIR}/files/sch_cake/u18/sch_cake.ko /lib/modules/$(uname -r)/kernel/net/sched/
-      sudo depmod -a
-    fi
-    if [[ $(sha256sum /sbin/tc | awk '{print $1}') != $(sha256sum ${FW_PLATFORM_CUR_DIR}/files/sch_cake/u18/tc | awk '{print $1}') ]]; then
-      sudo cp ${FW_PLATFORM_CUR_DIR}/files/sch_cake/u18/tc /sbin/tc
-    fi
-  fi
 }
 
 function beep {

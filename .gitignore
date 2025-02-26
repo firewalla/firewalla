@@ -106,13 +106,10 @@ tsconfig.json
 .tern-port
 .tern-project
 
-/test
 /.gitmodules
 
 api/db/token.json
 /test/sample_license.json
-#/test
-/tests/sample_license.json
 
 /etc/shadowsocks.config.json
 /extension/shadowsocks/ss.config.json

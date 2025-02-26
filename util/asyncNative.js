@@ -61,9 +61,19 @@ function asyncUtilWrap(...args) {
   return Promise.resolve(fnReturn).catch(next)
 }
 
+function buildDeferred() {
+  const deferred = {};
+  deferred.promise = new Promise((resolve, reject) => {
+    deferred.resolve = resolve;
+    deferred.reject = reject;
+  });
+  return deferred;
+}
+
 module.exports = {
   eachLimit,
   mapLimit,
   timeout,
   expressAsyncHandler,
+  buildDeferred,
 }

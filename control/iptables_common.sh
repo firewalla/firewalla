@@ -10,6 +10,7 @@ BLUE_HOLE_IP="198.51.100.100"
 
 : "${FW_PROBABILITY:=0.9}"
 : "${FW_QOS_PROBABILITY:=0.999}"
+: "${WAN_INPUT_DROP_RATE_LIMIT:=10}"
 
 sudo which ipset &>/dev/null || sudo apt-get install -y ipset
 
@@ -257,7 +258,7 @@ cat << EOF > "$filter_file"
 -N FW_WAN_IN_DROP
 # if it is not a TCP-SYN packet, simply drop it without logging, this may match packets that belong to a already terminated TCP connection
 -A FW_WAN_IN_DROP -p tcp -m tcp ! --tcp-flags SYN,ACK SYN -j DROP
--A FW_WAN_IN_DROP -m limit --limit 1000/second -j FW_WAN_IN_DROP_LOG
+-A FW_WAN_IN_DROP -m limit --limit ${WAN_INPUT_DROP_RATE_LIMIT}/second -j FW_WAN_IN_DROP_LOG
 -A FW_WAN_IN_DROP -j DROP
 
 # log allow rule
@@ -376,6 +377,9 @@ cat << EOF > "$filter_file"
 -N FW_FIREWALL_DEV_BLOCK
 -A FW_FIREWALL -j FW_FIREWALL_DEV_BLOCK
 -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
+# initialize device isolation chain
+-N FW_FIREWALL_DEV_ISOLATION
+-A FW_FIREWALL -j FW_FIREWALL_DEV_ISOLATION
 # device group block/allow chains
 -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 -N FW_FIREWALL_DEV_G_ALLOW
@@ -385,6 +389,9 @@ cat << EOF > "$filter_file"
 -N FW_FIREWALL_DEV_G_BLOCK
 -A FW_FIREWALL -j FW_FIREWALL_DEV_G_BLOCK
 -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
+# initialize group isolation chain
+-N FW_FIREWALL_DEV_G_ISOLATION
+-A FW_FIREWALL -j FW_FIREWALL_DEV_G_ISOLATION
 # network block/allow chains
 -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 -N FW_FIREWALL_NET_ALLOW
@@ -394,6 +401,9 @@ cat << EOF > "$filter_file"
 -N FW_FIREWALL_NET_BLOCK
 -A FW_FIREWALL -j FW_FIREWALL_NET_BLOCK
 -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
+# initialize network isolation chain
+-N FW_FIREWALL_NET_ISOLATION
+-A FW_FIREWALL -j FW_FIREWALL_NET_ISOLATION
 # network group block/allow chains
 -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 -N FW_FIREWALL_NET_G_ALLOW
@@ -505,6 +515,7 @@ cat << EOF > "$filter_file"
 -N FW_FIREWALL_GLOBAL_BLOCK_LO
 -A FW_FIREWALL_LO -j FW_FIREWALL_GLOBAL_BLOCK_LO
 -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_DROP
+
 EOF
 
 if [[ -e /.dockerenv ]]; then

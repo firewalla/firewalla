@@ -18,12 +18,13 @@ const fsp = require('fs').promises
 
 const _ = require('lodash');
 const stream = require('stream');
-const moment = require('moment')
+const moment = require('moment');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 let incTs = 0;
 
 const validDomainRegex = /^[a-zA-Z0-9-_.]+$/
+const validVersionRegex = /^[0-9.]+/
 
 function extend(target) {
   var sources = [].slice.call(arguments, 1);
@@ -121,6 +122,27 @@ function delay(t) {
   });
 }
 
+const keysToRedact = new Set(["password", "passwd", "psk", "key", "psks"]);
+function redactLog(obj, redactRequired = false) {
+  if (!obj)
+    return obj;
+  // obj should be either object or array
+  const objCopy = _.isArray(obj) ? [] : Object.create(obj);
+  try {
+    for (const key of Object.keys(obj)) {
+      if (_.isObject(obj[key]) || _.isArray(obj[key]))
+        objCopy[key] = redactLog(obj[key], redactRequired || keysToRedact.has(key));
+      else {
+        if (redactRequired || keysToRedact.has(key))
+          objCopy[key] = "*** redacted ***";
+        else
+          objCopy[key] = obj[key];
+      }
+    }
+  } catch (err) {}
+  return objCopy;
+}
+
 // pass in function arguments object and returns string with whitespaces
 function argumentsToString(v) {
   // convert arguments object to real array
@@ -128,6 +150,8 @@ function argumentsToString(v) {
   for (var k in args) {
     if (typeof args[k] === "object") {
       // args[k] = JSON.stringify(args[k]);
+      if (_.isArray(args[k]) || _.isObject(args[k]))
+        args[k] = redactLog(args[k]);
       args[k] = require('util').inspect(args[k], false, null, true);
     }
   }
@@ -273,11 +297,56 @@ async function batchKeyExists(keys, batchSize) {
   return _.flatten(validChunks)
 }
 
-async function getUniqueTs(ts) {
-  return lock.acquire("unique_ts_lock", async () => {
-    incTs = (incTs + 1) % 1000;
-    return Math.round(ts * 100) / 100 + (incTs / 100000);
-  });
+function getUniqueTs(ts) {
+  incTs = (incTs + 1) % 100;
+  return Math.round(ts * 100 + incTs) / 100;
+}
+
+function difference(obj1, obj2) {
+  return _.uniq(_diff(obj1, obj2).concat(_diff(obj2, obj1)));
+}
+
+function _diff(obj1, obj2) {
+  if (!obj1 || !_.isObject(obj1)) {
+    return [];
+  }
+  if (!obj2 || !_.isObject(obj2)) {
+    return Object.keys(obj1);
+  }
+  return _.reduce(obj1, function(result, value, key) {
+    return _.isEqual(value, obj2[key]) ?
+        result : result.concat(key);
+  }, []);
+}
+
+function _extractVersion(ver) {
+  let v = ver.match(validVersionRegex);
+  if (!v) return "";
+  return v[0];
+}
+
+// check if ver1 < ver2
+function versionCompare(ver1, ver2) {
+  const v1 = _extractVersion(ver1).split('.');
+  const v2 = _extractVersion(ver2).split('.');
+
+  for (let i = 0; i < v1.length && i < v2.length; i++){
+    if (parseInt(v1[i]) > parseInt(v2[i])) return false;
+    if (parseInt(v1[i]) < parseInt(v2[i])) return true;
+  }
+  if (v1.length >= v2.length) return false;
+  return true;
+}
+
+// wait for condition till timeout
+function waitFor(condition, timeout=3000) {
+  const deadline = Date.now() + timeout;
+  const poll = (resolve, reject) => {
+    if(condition()) resolve();
+    else if (Date.now() >= deadline) reject(`exceeded timeout of ${timeout} ms`); // timeout reject
+    else setTimeout( _ => poll(resolve, reject), 800);
+  }
+  return new Promise(poll);
 }
 
 module.exports = {
@@ -285,6 +354,8 @@ module.exports = {
   getPreferredBName,
   getPreferredName,
   delay,
+  difference,
+  versionCompare,
   argumentsToString,
   isSimilarHost,
   isSameOrSubDomain,
@@ -298,5 +369,6 @@ module.exports = {
   fileTouch,
   fileRemove,
   batchKeyExists,
+  waitFor,
   getUniqueTs
 };

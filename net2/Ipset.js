@@ -17,8 +17,9 @@
 
 const log = require('./logger.js')(__filename);
 const { exec } = require('child-process-promise');
+const { spawn } = require('child_process');
 const AsyncLock = require('../vendor_lib/async-lock');
-const lock = new AsyncLock();
+const lock = new AsyncLock({maxPending: 3000});
 
 const maxIpsetQueue = 158;
 const ipsetInterval = 3000;
@@ -89,7 +90,7 @@ function enqueue(ipsetCmd) {
     ipsetProcessing = true;
     let _ipsetQueue = JSON.parse(JSON.stringify(ipsetQueue));
     ipsetQueue = [];
-    let child = require('child_process').spawn('sudo', ['ipset', 'restore', '-!']);
+    let child = spawn('sudo', ['ipset', 'restore', '-!']);
     child.stdin.setEncoding('utf-8');
     child.on('exit', (code, signal) => {
       ipsetProcessing = false;
@@ -209,7 +210,6 @@ async function list(name) {
   }
 }
 
-const spawn = require('child_process').spawn;
 let interactiveIpset = null;
 let interactiveIpsetStartTs = null;
 
@@ -225,7 +225,8 @@ function initInteractiveIpset() {
   });
   interactiveIpset.stdout.on('data', (data) => {});
 }
-initInteractiveIpset();
+// this spawn eats all CR from node cli output for some reason
+if (f.isMain()) initInteractiveIpset();
 
 // with exclusive set to true, the interactive process stalls other requests until the current batch
 async function batchOp(operations) {
@@ -237,6 +238,7 @@ async function batchOp(operations) {
       interactiveIpset.stdin.write("quit\n");
       initInteractiveIpset();
     }
+    log.verbose('batchOp:', operations)
     interactiveIpset.stdin.write(operations.join('\n') + '\n');
   } catch (err) {
     log.error("Failed to write to ipset stream, will restart ipset stream process", err.message);
@@ -258,7 +260,8 @@ function initTestProcess() {
   });
   testProcess.stdout.on('data', () => { });
 }
-initTestProcess();
+// this spawn eats all CR from node cli output for some reason
+if (f.isMain()) initTestProcess();
 
 function parseTestResult(data) {
   const lines = (remainingBuffer + data.toString()).split('\n')
@@ -291,8 +294,11 @@ async function batchTest(targets, setName, timeout = 10) {
   return lock.acquire("LOCK_IPSET_BATCH_TEST", async () => {
     if (Date.now() - testProcessStartTs > 600000 && testProcess) {
       log.info(`Interactive test ipset is living for more than 600 seconds, restart it to avoid potential memory leak`)
-      testProcess.stdin.write("quit\n");
-      initTestProcess();
+      try {
+        testProcess.stdin.write("quit\n");
+      } finally {
+        initTestProcess();
+      }
     }
     log.verbose(`Testing ${targets.length} entries, ${setName} ...`)
     testResults = []
@@ -306,16 +312,28 @@ async function batchTest(targets, setName, timeout = 10) {
       }, timeout * 1000)
     })
 
-    testProcess.stdin.write(targets.map(t => `test ${setName} ${t}`).join('\n') + '\n')
+    let success = false;
+    let retry = 3;
+    while (!success && retry-- > 0) {
+      try {
+        testProcess.stdin.write(targets.map(t => `test ${setName} ${t}`).join('\n') + '\n');
+        success = true;
+      } catch (err) {
+        log.error("Failed to write to ipset stream, will restart ipset stream process", err.message);
+        testResults = []
+        testCount = targets.length
+        remainingBuffer = ""
+        initTestProcess();
+      }
+    }
 
     await testDone
 
     log.verbose(`Done, ${testResults.filter(Boolean).length} / ${testResults.length} in set`)
     return testResults
   }).catch((err) => {
-    log.error("Failed to write to ipset stream, will restart ipset stream process", err.message);
-    initTestProcess();
-    return batchTest(targets, setName, timeout);
+    log.error(`Error occurred in lock area of ipset batchTest on ${setName}`, err);
+    return testResults;
   })
 }
 
