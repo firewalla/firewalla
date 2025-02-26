@@ -2608,6 +2608,23 @@ class PolicyManager2 {
     }
   }
 
+  async getDeviceByIdentity(identity) {
+    let device = null;
+
+    //check if there is a device policy that matches the criteria
+    if (ht.isMacAddress(identity)) {
+      if (!hostManager) {
+        const HostManager = require('../net2/HostManager.js');
+        hostManager = new HostManager()
+      }
+      device = await hostManager.getHostAsync(identity);
+    } else if (IdentityManager.isGUID(identity)) {
+      device = IdentityManager.getIdentityByGUID(identity);
+    }
+
+    return device;
+  }
+
   async _matchLocal(rule, localMac) {
     if (!localMac)
       return false;
@@ -2617,9 +2634,19 @@ class PolicyManager2 {
     }
     // matching local device group if applicable
     if (rule.tags && rule.tags.length > 0) {
-      if (!rule.tags.some(uid => this.ipsetCache[Tag.getTagDeviceMacSetName(uid)] && this.ipsetCache[Tag.getTagDeviceMacSetName(uid)].includes(localMac) 
-      || this.ipsetCache[Tag.getTagSetName(uid)] && this.ipsetCache[Tag.getTagSetName(uid)].flatMap(e => this.ipsetCache[e] || []).includes(localMac)))
+      // const tagId = rule.tags[0].substring(Policy.TAG_PREFIX.length);
+      const tagId = rule.tags[0];
+      // check if the localMac has this tag
+      const device = await this.getDeviceByIdentity(localMac);
+      if (!device)
         return false;
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const uids = await device.getTags(type) || [];
+        if (uids.includes(tagId)) {
+          return true;
+        }
+      }
+      return false;
     }
     // matching local network if applicable
     if (rule.intfs && rule.intfs.length > 0) {
@@ -3108,23 +3135,11 @@ class PolicyManager2 {
   // check the rule created by VPN client
   async getBestMatchVpnPolicie(localMac, allVpnClients) {
     let policies = [];
-    let device = null;
-
 
     //check if there is a device policy that matches the criteria
-    if (ht.isMacAddress(localMac)) {
-      if (!hostManager) {
-        const HostManager = require('../net2/HostManager.js');
-        hostManager = new HostManager()
-      }
-      device = await hostManager.getHostAsync(localMac);
-    } else {
-      device = IdentityManager.getIdentityByGUID(localMac);
-    }
-
-    if (!device) {
+    const device = await this.getDeviceByIdentity(localMac);
+    if (!device)
       return null;
-    }
 
     const devicePolicy = await device.loadPolicyAsync();
     if (devicePolicy) {
