@@ -40,15 +40,18 @@ echo $$ > $LOCK_FILE
 
 FWFLAG="/home/pi/.firewalla/config/.no_upgrade_check"
 FRFLAG="/home/pi/.router/config/.no_upgrade_check"
+FWCANARY_FLAG="/home/pi/.firewalla/config/.no_upgrade_canary"
+FRCANARY_FLAG="/home/pi/.router/config/.no_upgrade_canary"
 
 FIREROUTER_SCRIPT='/home/pi/firerouter/scripts/firerouter_upgrade_check.sh'
+FIREWALLA_CANARY_SCRIPT='/home/pi/firewalla/scripts/fireupgrade_canary.sh'
 
 if [[ -e $FRFLAG ]]; then
   $FIRELOG -t debug -m "FIREROUTER.UPGRADE NO UPGRADE"
   echo "======= SKIP UPGRADING CHECK BECAUSE OF FLAG $FRFLAG ======="
   exit 0
 elif [[ -e "$FIREROUTER_SCRIPT" ]]; then
-  $FIREROUTER_SCRIPT &> /tmp/firerouter_upgrade.log || {
+  bash $FIREROUTER_SCRIPT &> /tmp/firerouter_upgrade.log || {
     err "ERROR: failed to upgrade firerouter"
     exit 1
   }
@@ -60,10 +63,25 @@ if [[ -e $FWFLAG ]]; then
   exit 0
 fi
 
+if [[ -e $FRCANARY_FLAG ]]; then
+  $FIRELOG -t debug -m "FIREWALLA.UPGRADE NO FIREROUTER CANARY UPGRADE"
+  echo "======= SKIP FIREWALLA UPGRADING CHECK BECAUSE OF FLAG FIREROUTER $FRCANARY_FLAG ======="
+  exit 0
+fi
+
+if [[ -e $FIREWALLA_CANARY_SCRIPT ]];then
+  bash $FIREWALLA_CANARY_SCRIPT &> /tmp/fireupgrade_canary.log
+fi
+
+if [[ -e $FWCANARY_FLAG ]]; then
+  $FIRELOG -t debug -m "FIREWALLA.UPGRADE NO CANARY UPGRADE"
+  echo "======= SKIP FIREWALLA UPGRADING CHECK BECAUSE OF FLAG $FWCANARY_FLAG ======="
+  exit 0
+fi
+
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 source ${FIREWALLA_HOME}/platform/platform.sh
-
 cd /home/pi/firewalla
 branch=$(git rev-parse --abbrev-ref HEAD)
 remote_branch=$(map_target_branch $branch)

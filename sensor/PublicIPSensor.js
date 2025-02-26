@@ -144,21 +144,40 @@ class PublicIPSensor extends Sensor {
     let publicIP = await exec(`timeout -s 9 10 dig +short +time=3 +tries=2 ${localIP ? `-b ${localIP}` : ""} @resolver1.opendns.com myip.opendns.com`).then(result => result.stdout.trim()).catch((err) => null);
     if (publicIP && new Address4(publicIP).isValid())
       return publicIP;
-    try {
-      const options = {
-        uri: this.config.publicIPAPI || "https://api.ipify.org?format=json",
-        json: true,
-        maxAttempts: 2
-      };
-      if (localIP)
-        options["localAddress"] = localIP;
-      const result = await rrWithErrHandling(options);
-      if (result.body && result.body.ip) {
-        publicIP = result.body.ip;
-        return publicIP;
+    const publicIPApis = [
+      {
+        url: "https://api.ipify.org?format=json",
+        cb: (result) => {
+          if (result.body && result.body.ip)
+            return result.body.ip;
+          return null;
+        }
+      },
+      {
+        url: "https://ipinfo.io",
+        cb: (result) => {
+          if (result.body && result.body.ip)
+            return result.body.ip;
+          return null;
+        }
       }
-    } catch (err) {
-      log.error("Failed to discover public ip, err:", err);
+    ];
+    for (const api of publicIPApis) {
+      try {
+        const options = {
+          uri: api.url,
+          json: true,
+          maxAttempts: 2
+        };
+        if (localIP)
+          options["localAddress"] = localIP;
+        const result = await rrWithErrHandling(options);
+        publicIP = api.cb(result);
+        if (publicIP)
+          return publicIP;
+      } catch (err) {
+        log.error("Failed to discover public ip, err:", err);
+      }
     }
     return null;
   }

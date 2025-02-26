@@ -92,7 +92,7 @@ class DockerSensor extends Sensor {
         }
       }
     } catch(err) {
-      log.error('Error obtaining network meta', err)
+      log.error('Error obtaining network meta', err.message)
     }
   }
 
