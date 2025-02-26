@@ -537,7 +537,8 @@ fi
 
 {
 # save entries doesn't start with "FW_" first
-sudo iptables-save -t filter | grep -vE "^:FW_| FW_|^COMMIT"
+# flushing UPNP_<intf> chains as iptables is not able to recognize the port thus not restoring it correctly
+sudo iptables-save -t filter | grep -vE "^:FW_| FW_|^COMMIT|-A UPNP_"
 cat "$filter_file"
 
 cat << EOF
@@ -550,6 +551,11 @@ cat << EOF
 
 EOF
 } > "$iptables_file"
+
+# as allow rules are removed, we remove registered upnp services as well.
+# firerouter_upnp@* services are always running, restart is fine
+sudo rm /var/run/upnp.*.leases
+sudo systemctl restart firerouter_upnp*
 
 {
 sudo ip6tables-save -t filter | grep -vE "^:FW_| FW_|^COMMIT"
