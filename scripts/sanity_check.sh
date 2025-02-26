@@ -670,15 +670,15 @@ check_hosts() {
     else
       B7_Placeholder='%.s'
     fi
-    printf "%35s %15s %16s %18s %3s$B7_Placeholder %2s %11s %7s %6s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s\n" \
-      "Host" "Network" "IP" "MAC" "Mon" "B7" "Ol" "VPNClient" "FlowOut" "FlowIn" "Grp" "Usr" "DvT" "EA" "DNS" "AdB" "Fam" "SS" "DoH" "Ubd"
+    printf "%35s %15s %16s %18s %3s$B7_Placeholder %2s %11s %7s %6s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s\n" \
+      "Host" "Network" "IP" "MAC" "Mon" "B7" "Ol" "VPNClient" "FlowOut" "FlowIn" "Grp" "Usr" "DvT" "VqL" "Iso" "EA" "DNS" "AdB" "Fam" "SS" "DoH" "Ubd"
     NOW=$(date +%s)
     frcc
 
 
     local FIREWALLA_MAC="$(ip link list | awk '/ether/ {print $2}' | sort | uniq)"
 
-    local hierarchicalPolicies=()
+    local hierarchicalPolicies=('isolation')
     local policyNames=("adblock" "safeSearch" "doh" "unbound")
     local featureNames=("adblock" "safe_search" "doh" "unbound")
 
@@ -756,8 +756,15 @@ check_hosts() {
           NETWORK_NAME=${NETWORK_UUID_NAME[${h[intf]}]}
           for policy in "${hierarchicalPolicies[@]}"; do
             if [[ -n ${NP[$nid,$policy]+x} ]]; then
-              [[ ${NP[$nid,$policy]} == *"true"* ]] && set_color_value "$policy" "T"
-              [[ ${NP[$nid,$policy]} == *"null"* ]] && set_color_value "$policy" "F"
+              if [ "$policy" == "isolation" ]; then
+                if [[ "${NP[$nid,isolation]}" == *'"external":true'* ]]; then
+                  set_color_value vql "T"
+                  [[ "${NP[$nid,isolation]}" == *'"internal":true'* ]] && set_color_value iso "T"
+                fi
+              else
+                [[ ${NP[$nid,$policy]} == *"true"* ]] && set_color_value "$policy" "T"
+                [[ ${NP[$nid,$policy]} == *"null"* ]] && set_color_value "$policy" "F"
+              fi
             fi
             # echo $policy $uid ${NP[$uid,$policy]} ${fcv[$policy,v]}
           done
@@ -785,9 +792,16 @@ check_hosts() {
           get_tag_policy "$tag"
           for policy in "${hierarchicalPolicies[@]}"; do
             if [[ -n ${TP[$tag,$policy]+x} ]]; then
-              [[ ${TP[$tag,$policy]} == *"true"* ]] && set_color_value "$policy" "T"
-              [[ ${TP[$tag,$policy]} == *"null"* ]] && set_color_value "$policy" "F"
-              # echo $policy $tag ${TP[$tag,$policy]} ${fcv[$policy,v]}
+              if [ "$policy" == "isolation" ]; then
+                if [[ "${TP[$tag,isolation]}" == *'"external":true'* ]]; then
+                  set_color_value vql "T"
+                  [[ "${TP[$tag,isolation]}" == *'"internal":true'* ]] && set_color_value iso "T"
+                fi
+              else
+                [[ ${TP[$tag,$policy]} == *"true"* ]] && set_color_value "$policy" "T"
+                [[ ${TP[$tag,$policy]} == *"null"* ]] && set_color_value "$policy" "F"
+                # echo $policy $tag ${TP[$tag,$policy]} ${fcv[$policy,v]}
+              fi
             fi
           done
         done
@@ -827,8 +841,15 @@ check_hosts() {
 
         for policy in "${hierarchicalPolicies[@]}"; do
           if [ -n "${p[$policy]+x}" ]; then
-            [[ "${p[$policy]}" == *"true"* ]] && set_color_value $policy "T" 1
-            [[ "${p[$policy]}" == *"null"* ]] && set_color_value $policy "F" 1
+            if [ "$policy" == "isolation" ]; then
+              if [[ "${p[isolation]}" == *'"external":true'* ]]; then
+                set_color_value vql "T" 1
+                [[ "${p[isolation]}" == *'"internal":true'* ]] && set_color_value iso "T" 1
+              fi
+            else
+              [[ "${p[$policy]}" == *"true"* ]] && set_color_value $policy "T" 1
+              [[ "${p[$policy]}" == *"null"* ]] && set_color_value $policy "F" 1
+            fi
             # echo "$policy | ${p[$policy]} | ${fcv[$policy,v]}"
           fi
         done
@@ -865,9 +886,9 @@ check_hosts() {
             FC=$FC"\e[2m" #dim
         fi
 
-        printf "$BGC$FC%35s %15s %16s $MAC_COLOR%18s$FC %3s$B7_Placeholder %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s ${fcv[acl,c]}%3s$UC %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC$BGUC\n" \
+        printf "$BGC$FC%35s %15s %16s $MAC_COLOR%18s$FC %3s$B7_Placeholder %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s ${fcv[vql,c]}%3s$UC ${fcv[iso,c]}%3s$UC ${fcv[acl,c]}%3s$UC %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC$BGUC\n" \
           "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$(align::right 11 $VPN)" "$FLOWINCOUNT" \
-          "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "${fcv[acl,v]}" "$DNS_BOOST" "${fcv[adblock,v]}" "${fcv[family,v]}" "${fcv[safeSearch,v]}" "${fcv[doh,v]}" "${fcv[unbound,v]}"
+          "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "${fcv[vql,v]}" "${fcv[iso,v]}" "${fcv[acl,v]}" "$DNS_BOOST" "${fcv[adblock,v]}" "${fcv[family,v]}" "${fcv[safeSearch,v]}" "${fcv[doh,v]}" "${fcv[unbound,v]}"
 
         unset h
         unset p
@@ -883,7 +904,7 @@ check_hosts() {
 
     echo ""
     echo    "    *: Reserved IP"
-    echo -e "Abbr.: Mon${D}(Monitoring)$U B7${D}(Spoofing Flag)$U Ol${D}(Online)$U DvT${D}(Device Type)$U EA${D}(Emergency Access)$U SS${D}(Safe Search)$U DoH${D}(DNS over HTTPS)$U Ubd${D}(Unbound)$U"
+    echo -e "Abbr.: Mon${D}itoring$U B7${D}(Spoofing Flag)$U Ol${D}(Online)$U DvT${D}(Device Type)$U VqL${D}an$U Iso${D}lation$U EA${D}(Emergency Access)$U SS${D}(Safe Search)$U DoH${D}(DNS over HTTPS)$U Ubd${D}(Unbound)$U"
     echo ""
 }
 
@@ -1110,7 +1131,7 @@ check_tag() {
     mapfile -t -O "${#TAGS[@]}" TAGS < <(redis-cli --scan --pattern 'deviceTag:uid:*' | sort --version-sort)
     get_system_policy
 
-    printf "ID\tType\tName\taffiliated\tvpnClient\tAdB\tFam\tSS\tDoH\tubn\n" >/tmp/tag_csv
+    printf "ID\tType\tName\taffiliated\tvpnClient\tVqL\tIso\tAdB\tFam\tSS\tDoH\tubn\n" >/tmp/tag_csv
     for TAG in "${TAGS[@]}"; do
       declare -A t p
       read_hash t "$TAG"
@@ -1119,6 +1140,13 @@ check_tag() {
 
       local VPN=$( ((${#TP[$id,vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${TP[$id,vpnClient]}" || echo -n "")
       if ! element_in "$VPN" "${VPNClients[@]}" && [[ "$VPN" != VWG:* ]]; then VPN=""; fi
+
+      local VQLAN=""
+      local ISOLATION=""
+      if [[ "${TP[$id,isolation]}" == *'"external":true'* ]]; then
+        VQLAN="T";
+        if [[ "${TP[$id,isolation]}" == *'"internal":true'* ]]; then ISOLATION="T"; fi
+      fi
 
       local ADBLOCK=""
       if [[ "${TP[$id,adblock]}" == "true" ]]; then ADBLOCK="T"; fi
@@ -1129,8 +1157,8 @@ check_tag() {
       local SAFE_SEARCH=$(if [[ ${TP[$id,safeSearch]} == *"true"* ]]; then echo "T"; fi)
       local UNBOUND=$(if [[ ${TP[$id,unbound]} == *"true"* ]]; then echo "T"; fi)
 
-      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-        "${t[uid]}" "${t[type]}" "${t[name]}" "${t[affiliatedTag]}" "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$SAFE_SEARCH" "$DOH" "$UNBOUND" >>/tmp/tag_csv
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+        "${t[uid]}" "${t[type]}" "${t[name]}" "${t[affiliatedTag]}" "$VPN" "$VQLAN" "$ISOLATION" "$ADBLOCK" "$FAMILY_PROTECT" "$SAFE_SEARCH" "$DOH" "$UNBOUND" >>/tmp/tag_csv
 
       unset t
     done
@@ -1145,11 +1173,11 @@ check_portmapping() {
   echo "------------------ Port Forwarding ------------------"
 
   (
-    printf "type\tactive\tProto\tExtPort\ttoIP\ttoPort\ttoMac\tdescription\n"
+    printf "type\tactive\tProto\tExtIP\tExtPort\ttoIP\ttoPort\ttoMac\tdescription\n"
     redis-cli get extension.portforward.config |
-      jq -r '.maps[] | select(.state == true) | [ ._type // "Forward", .active, .protocol, .dport, .toIP, .toPort, .toMac, .description ] | @tsv'
+      jq -r '.maps[] | select(.state == true) | [ ._type // "Forward", .active, .protocol, .extIP // "", .dport, .toIP, .toPort, .toMac, .description ] | @tsv'
     redis-cli hget sys:scan:nat upnp |
-      jq -r '.[] | [ "UPnP", .expire, .protocol, .public.port, .private.host, .private.port, "N\/A", .description ] | @tsv'
+      jq -r '.[] | [ "UPnP", .expire, .protocol, .public.host, .public.port, .private.host, .private.port, "N\/A", .description ] | @tsv'
   ) |
     $COLUMN_OPT -t -s$'\t'
   echo ""
