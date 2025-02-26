@@ -3260,6 +3260,23 @@ class netBot extends ControllerBot {
         }
         return
       }
+      case "host:identify": {
+        const { mac } = value;
+        let hosts
+        if (mac) {
+          const host = await this.hostManager.getHostAsync(mac)
+          if (!host) throw new Error('Invalid Host')
+          hosts = [ host ]
+        } else {
+          hosts = await this.hostManager.getHostsAsync()
+        }
+
+        await asyncNative.eachLimit(hosts, 30, async host => {
+          await host.identifyDevice(true)
+        })
+        return (await this.hostManager.hostsToJson({}))
+          .filter(j => hosts.some(h => h.getGUID() == j.mac))
+      }
       case "host:syncAppTimeUsageToTags": {
         const {mac, begin, end} = value;
         await netBotTool.syncHostAppTimeUsageToTags(mac, {begin, end});
