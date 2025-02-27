@@ -2430,6 +2430,10 @@ class netBot extends ControllerBot {
         const matchedRule = await pm2.checkACL(value.localMac, value.localPort, value.remoteType, value.remoteVal, value.remotePort, value.protocol, value.direction || "outbound");
         return { matchedRule: matchedRule }
       }
+      case "route:check": {
+        const matchedRoute = await pm2.checkRoute(value.localMac, value.localPort, value.remoteType, value.remoteVal, value.remotePort, value.protocol, value.direction || "outbound");
+        return { matchedRoute: matchedRoute }
+      }
       case "wifi:switch": {
         if (!value.ssid || !value.intf) {
           throw { code: 400, msg: "both 'ssid' and 'intf' should be specified" }
