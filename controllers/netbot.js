@@ -3266,20 +3266,34 @@ class netBot extends ControllerBot {
       }
       case "host:identify": {
         const { mac } = value;
-        let hosts
+        let hosts = this.hostManager.getHostsFast()
+
         if (mac) {
-          const host = await this.hostManager.getHostAsync(mac)
-          if (!host) throw new Error('Invalid Host')
-          hosts = [ host ]
-        } else {
-          hosts = await this.hostManager.getHostsAsync()
+          if (Array.isArray(mac)) {
+            hosts = hosts.filter(h => mac.includes(h.getGUID()))
+            if (hosts.length != mac.length) {
+              throw new Error('Some devices not found')
+            }
+          } else {
+            hosts = [ hosts.find(h => h.getGUID() == mac) ]
+            if (!hosts.length) {
+              throw new Error('Device not found')
+            }
+          }
         }
 
         await asyncNative.eachLimit(hosts, 30, async host => {
           await host.identifyDevice(true)
         })
-        return (await this.hostManager.hostsToJson({}))
+
+        hosts = (await this.hostManager.hostsToJson({}))
           .filter(j => hosts.some(h => h.getGUID() == j.mac))
+
+        if (!mac || Array.isArray(mac)) {
+          return hosts
+        } else {
+          return hosts[0]
+        }
       }
       case "host:syncAppTimeUsageToTags": {
         const {mac, begin, end} = value;
