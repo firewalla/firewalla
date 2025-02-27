@@ -443,20 +443,33 @@ cat << EOF > "$filter_file"
 -A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_domain_set dst -j FW_ACCEPT
 -A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_net_set src -j FW_ACCEPT
 -A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_net_set dst -j FW_ACCEPT
+
+-N FW_FW_GLOBAL_ALLOW_OR
+-N FW_FW_GLOBAL_ALLOW_OR_OB
+-N FW_FW_GLOBAL_ALLOW_OR_IB
+-A FW_FIREWALL_GLOBAL_ALLOW -m conntrack --ctdir ORIGINAL -j FW_FW_GLOBAL_ALLOW_OR
+-A FW_FW_GLOBAL_ALLOW_OR -m set --match-set monitored_net_set src,src -j FW_FW_GLOBAL_ALLOW_OR_OB
+-A FW_FW_GLOBAL_ALLOW_OR -m set --match-set monitored_net_set dst,dst -j FW_FW_GLOBAL_ALLOW_OR_IB
+-N FW_FW_GLOBAL_ALLOW_RE
+-N FW_FW_GLOBAL_ALLOW_RE_OB
+-N FW_FW_GLOBAL_ALLOW_RE_IB
+-A FW_FIREWALL_GLOBAL_ALLOW -m conntrack --ctdir REPLY -j FW_FW_GLOBAL_ALLOW_RE
+-A FW_FW_GLOBAL_ALLOW_RE -m set --match-set monitored_net_set src,src -j FW_FW_GLOBAL_ALLOW_RE_IB
+-A FW_FW_GLOBAL_ALLOW_RE -m set --match-set monitored_net_set dst,dst -j FW_FW_GLOBAL_ALLOW_RE_OB
 # inbound
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_ip_set src -m conntrack --ctdir ORIGINAL -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_ip_set dst -m conntrack --ctdir REPLY -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_domain_set src -m conntrack --ctdir ORIGINAL -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_domain_set dst -m conntrack --ctdir REPLY -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_net_set src -m conntrack --ctdir ORIGINAL -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_net_set dst -m conntrack --ctdir REPLY -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_OR_IB -m set --match-set allow_ib_ip_set src -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_RE_IB -m set --match-set allow_ib_ip_set dst -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_OR_IB -m set --match-set allow_ib_domain_set src -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_RE_IB -m set --match-set allow_ib_domain_set dst -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_OR_IB -m set --match-set allow_ib_net_set src -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_RE_IB -m set --match-set allow_ib_net_set dst -j FW_ACCEPT
 # outbound
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_ip_set src -m conntrack --ctdir REPLY -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_ip_set dst -m conntrack --ctdir ORIGINAL -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_domain_set src -m conntrack --ctdir REPLY -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_domain_set dst -m conntrack --ctdir ORIGINAL -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_net_set src -m conntrack --ctdir REPLY -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_net_set dst -m conntrack --ctdir ORIGINAL -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_RE_OB -m set --match-set allow_ob_ip_set src -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_OR_OB -m set --match-set allow_ob_ip_set dst -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_RE_OB -m set --match-set allow_ob_domain_set src -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_OR_OB -m set --match-set allow_ob_domain_set dst -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_RE_OB -m set --match-set allow_ob_net_set src -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_OR_OB -m set --match-set allow_ob_net_set dst -j FW_ACCEPT
 
 # bidirection
 -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set src -j FW_DROP
@@ -465,20 +478,33 @@ cat << EOF > "$filter_file"
 -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set dst -j FW_DROP
 -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set src -j FW_DROP
 -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set dst -j FW_DROP
+
+-N FW_FW_GLOBAL_BLOCK_OR
+-N FW_FW_GLOBAL_BLOCK_OR_OB
+-N FW_FW_GLOBAL_BLOCK_OR_IB
+-A FW_FIREWALL_GLOBAL_BLOCK -m conntrack --ctdir ORIGINAL -j FW_FW_GLOBAL_BLOCK_OR
+-A FW_FW_GLOBAL_BLOCK_OR -m set --match-set monitored_net_set src,src -j FW_FW_GLOBAL_BLOCK_OR_OB
+-A FW_FW_GLOBAL_BLOCK_OR -m set --match-set monitored_net_set dst,dst -j FW_FW_GLOBAL_BLOCK_OR_IB
+-N FW_FW_GLOBAL_BLOCK_RE
+-N FW_FW_GLOBAL_BLOCK_RE_OB
+-N FW_FW_GLOBAL_BLOCK_RE_IB
+-A FW_FIREWALL_GLOBAL_BLOCK -m conntrack --ctdir REPLY -j FW_FW_GLOBAL_BLOCK_RE
+-A FW_FW_GLOBAL_BLOCK_RE -m set --match-set monitored_net_set src,src -j FW_FW_GLOBAL_BLOCK_RE_IB
+-A FW_FW_GLOBAL_BLOCK_RE -m set --match-set monitored_net_set dst,dst -j FW_FW_GLOBAL_BLOCK_RE_OB
 # inbound
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_ip_set src -m conntrack --ctdir ORIGINAL -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_ip_set dst -m conntrack --ctdir REPLY -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_domain_set src -m conntrack --ctdir ORIGINAL -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_domain_set dst -m conntrack --ctdir REPLY -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_net_set src -m conntrack --ctdir ORIGINAL -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_net_set dst -m conntrack --ctdir REPLY -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_OR_IB -m set --match-set block_ib_ip_set src -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_RE_IB -m set --match-set block_ib_ip_set dst -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_OR_IB -m set --match-set block_ib_domain_set src -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_RE_IB -m set --match-set block_ib_domain_set dst -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_OR_IB -m set --match-set block_ib_net_set src -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_RE_IB -m set --match-set block_ib_net_set dst -j FW_DROP
 # outbound
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_ip_set src -m conntrack --ctdir REPLY -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_ip_set dst -m conntrack --ctdir ORIGINAL -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_domain_set src -m conntrack --ctdir REPLY -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_domain_set dst -m conntrack --ctdir ORIGINAL -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_net_set src -m conntrack --ctdir REPLY -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_net_set dst -m conntrack --ctdir ORIGINAL -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_RE_OB -m set --match-set block_ob_ip_set src -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_OR_OB -m set --match-set block_ob_ip_set dst -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_RE_OB -m set --match-set block_ob_domain_set src -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_OR_OB -m set --match-set block_ob_domain_set dst -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_RE_OB -m set --match-set block_ob_net_set src -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_OR_OB -m set --match-set block_ob_net_set dst -j FW_DROP
 
 # initialize firewall low priority chain
 -N FW_FIREWALL_LO
@@ -726,7 +752,6 @@ create_tc_rules() {
     sudo tc filter delete dev ifb0 &> /dev/null || true
     sudo tc qdisc delete dev ifb0 root &> /dev/null || true
     sudo ip link set ifb0 up
-    sudo tc filter del dev ifb0
     sudo tc qdisc replace dev ifb0 root handle 1: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
     sudo tc qdisc add dev ifb0 parent 1:1 handle 2: htb # htb tree for high priority rate limit upload rules
     sudo tc qdisc add dev ifb0 parent 1:2 fq_codel
@@ -743,7 +768,6 @@ create_tc_rules() {
     sudo tc filter delete dev ifb1 &> /dev/null || true
     sudo tc qdisc delete dev ifb1 root &> /dev/null || true
     sudo ip link set ifb1 up
-    sudo tc filter del dev ifb1
     sudo tc qdisc replace dev ifb1 root handle 1: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
     sudo tc qdisc add dev ifb1 parent 1:1 handle 2: htb # htb tree for high priority rate limit download rules
     sudo tc qdisc add dev ifb1 parent 1:2 fq_codel
