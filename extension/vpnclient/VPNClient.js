@@ -424,6 +424,9 @@ class VPNClient {
 
   async _checkConnectivity(force = false) {
     if (!this._started || this._restarting || (this._lastStartTime && Date.now() - this._lastStartTime < 60000 && !force)) {
+      if (!this._started) {
+        await this._setCachedState(false);
+      }
       return;
     }
     let result = await this._isLinkUp();
@@ -459,6 +462,7 @@ class VPNClient {
     if (result === null)
       return;
     if (result) {
+      await this._setCachedState(true);
       sem.emitEvent({
         type: "link_established",
         profileId: this.profileId,
@@ -466,6 +470,7 @@ class VPNClient {
         suppressEventLogging: true,
       });
     } else {
+      await this._setCachedState(false);
       sem.emitEvent({
         type: "link_broken",
         profileId: this.profileId,
@@ -969,6 +974,7 @@ class VPNClient {
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
     dnsmasq.scheduleRestartDNSService();
+    await this._setCachedState(false);
     
     if (!f.isMain()) {
       sem.emitEvent({
@@ -988,7 +994,15 @@ class VPNClient {
   }
 
   async status() {
-    return this._isLinkUp();
+    // cached state is usually set by checkConnectivity in firemain process
+    let status = await this._getCachedState();
+    // if not set, it is not managed by firemain, and fireapi will populate the cached state
+    if (status === null) {
+      status = await this._isLinkUp();
+      await this._setCachedState(status);
+      return status;
+    } else
+      return status;
   }
 
   async getStatistics() {
@@ -1006,6 +1020,7 @@ class VPNClient {
     await vpnClientEnforcer.destroyRtId(this.getInterfaceName());
     await fs.unlinkAsync(this._getSettingsPath()).catch((err) => {});
     await fs.unlinkAsync(this._getJSONConfigPath()).catch((err) => {});
+    await this._deleteCachedState();
     delete instances[this.profileId];
   }
 
@@ -1278,6 +1293,31 @@ class VPNClient {
 
   async getLatestSessionLog() {
     return null;
+  }
+
+  static getStateCacheKey(profileId) {
+    return `VC:${profileId}:connState`;
+  }
+
+  async _setCachedState(state) {
+    await rclient.setAsync(VPNClient.getStateCacheKey(this.profileId), state);
+    await rclient.expireAsync(VPNClient.getStateCacheKey(this.profileId), 86400 * 7);
+  }
+
+  async _getCachedState() {
+    const state = await rclient.getAsync(VPNClient.getStateCacheKey(this.profileId));
+    switch (state) {
+      case "true":
+        return true;
+      case "false":
+        return false;
+      default:
+        return null;
+    }
+  }
+
+  async _deleteCachedState() {
+    await rclient.delAsync(VPNClient.getStateCacheKey(this.profileId));
   }
 }
 
