@@ -393,7 +393,7 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  async hostsToJson(json, options) {
+  async hostsToJson(json, options = {}) {
     let _hosts = [];
     for (let i in this.hosts.all) {
       _hosts.push(this.hosts.all[i].toJson());
@@ -403,12 +403,13 @@ module.exports = class HostManager extends Monitorable {
       await this.enrichSTAInfo(_hosts);
     // Reduce json size of init response
     if (!options.includeScanResults) {
-      return;
+      return _hosts
     }
     await Promise.all(_hosts.map(async host => {
       await this.enrichWeakPasswordScanResult(host, "mac");
       await this.enrichNseScanResult(host, "mac", "suspect");
     }));
+    return _hosts
   }
 
   async enrichSTAInfo(hosts) {
@@ -1782,7 +1783,7 @@ module.exports = class HostManager extends Monitorable {
           }
   
           await hostbymac.update(Host.parse(o));
-          await hostbymac.identifyDevice(false);
+          if (f.isMain()) await hostbymac.identifyDevice(false);
         }
   
         // do not update host:ip4 entries in this.hostsdb since it may be previously occupied by other host

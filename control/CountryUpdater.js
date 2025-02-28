@@ -1,4 +1,4 @@
-/*    Copyright 2019-2024 Firewalla Inc.
+/*    Copyright 2019-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,7 +23,7 @@ const firewalla = require("../net2/Firewalla.js");
 const Block = require('./Block.js');
 const CategoryUpdaterBase = require('./CategoryUpdaterBase.js');
 const country = require('../extension/country/country.js')
-const geoipUtils = require('../vendor_lib/geoip-lite/utils.js')
+const ipUtil = require('../util/IPUtil.js')
 
 const exec = require('child-process-promise').exec
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -234,7 +234,7 @@ class CountryUpdater extends CategoryUpdaterBase {
     const geoip = country.geoip.lookup(ip)
     if (geoip && (!code || geoip.country == code)) {
       code = geoip.country
-      CIDRs = geoipUtils.numberToCIDRs(geoip.range[0], geoip.range[1], fam)
+      CIDRs = ipUtil.numberToCIDRs(geoip.range[0], geoip.range[1], fam)
     }
     if (!code) return
     log.debug('updateIP', ip, code, CIDRs)

@@ -199,6 +199,8 @@ cat << EOF > "$filter_file"
 -A FW_PLAIN_DROP -j CONNMARK --set-xmark 0x0/0x80000000
 -A FW_PLAIN_DROP -p tcp -m set ! --match-set monitored_net_set src,src -j DROP
 -A FW_PLAIN_DROP -p tcp -m set --match-set monitored_net_set src,src -j REJECT --reject-with tcp-reset
+-A FW_PLAIN_DROP -p udp -m set ! --match-set monitored_net_set src,src -j DROP
+-A FW_PLAIN_DROP -p udp -m set --match-set monitored_net_set src,src -j REJECT --reject-with icmp-port-unreachable
 -A FW_PLAIN_DROP -j DROP
 
 # alarm and drop, this should only be hit when rate limit is exceeded
@@ -217,7 +219,8 @@ cat << EOF > "$filter_file"
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 -A FW_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 -A FW_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
--A FW_DROP -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_drop -j FW_RATE_LIMITED_DROP
+# do not generate too many logs for flows from same (srcip, dstip, dstport)
+-A FW_DROP -m hashlimit --hashlimit-upto 1/second --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_drop_htable -j FW_RATE_LIMITED_DROP
 -A FW_DROP -j FW_RATE_EXCEEDED_DROP
 
 # security drop log chain
@@ -230,7 +233,7 @@ cat << EOF > "$filter_file"
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 -A FW_SEC_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 -A FW_SEC_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
--A FW_SEC_DROP -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_drop -j FW_SEC_RATE_LIMITED_DROP
+-A FW_SEC_DROP -m hashlimit --hashlimit-upto 1/second --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_drop_htable -j FW_SEC_RATE_LIMITED_DROP
 -A FW_SEC_DROP -j FW_RATE_EXCEEDED_DROP
 
 # tls drop log chain
@@ -243,7 +246,7 @@ cat << EOF > "$filter_file"
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 -A FW_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 -A FW_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
--A FW_TLS_DROP -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_drop -j FW_TLS_RATE_LIMITED_DROP
+-A FW_TLS_DROP -m hashlimit --hashlimit-upto 1/second --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_drop_htable -j FW_TLS_RATE_LIMITED_DROP
 -A FW_TLS_DROP -j FW_RATE_EXCEEDED_DROP
 
 # security tls drop log chain
@@ -256,7 +259,7 @@ cat << EOF > "$filter_file"
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 -A FW_SEC_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 -A FW_SEC_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
--A FW_SEC_TLS_DROP -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_drop -j FW_SEC_TLS_RATE_LIMITED_DROP
+-A FW_SEC_TLS_DROP -m hashlimit --hashlimit-upto 1/second --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_drop_htable -j FW_SEC_TLS_RATE_LIMITED_DROP
 -A FW_SEC_TLS_DROP -j FW_RATE_EXCEEDED_DROP
 
 # WAN inbound drop log chain
@@ -285,7 +288,7 @@ cat << EOF > "$filter_file"
 
 # accept allow rules
 -N FW_ACCEPT
--A FW_ACCEPT -m conntrack --ctstate NEW -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_accept -j FW_ACCEPT_LOG
+-A FW_ACCEPT -m conntrack --ctstate NEW -m hashlimit --hashlimit-upto 100/second --hashlimit-mode srcip --hashlimit-name fw_accept -j FW_ACCEPT_LOG
 -A FW_ACCEPT -j FW_ACCEPT_DEFAULT
 
 # WAN outgoing INVALID state check
@@ -440,20 +443,33 @@ cat << EOF > "$filter_file"
 -A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_domain_set dst -j FW_ACCEPT
 -A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_net_set src -j FW_ACCEPT
 -A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_net_set dst -j FW_ACCEPT
+
+-N FW_FW_GLOBAL_ALLOW_OR
+-N FW_FW_GLOBAL_ALLOW_OR_OB
+-N FW_FW_GLOBAL_ALLOW_OR_IB
+-A FW_FIREWALL_GLOBAL_ALLOW -m conntrack --ctdir ORIGINAL -j FW_FW_GLOBAL_ALLOW_OR
+-A FW_FW_GLOBAL_ALLOW_OR -m set --match-set monitored_net_set src,src -j FW_FW_GLOBAL_ALLOW_OR_OB
+-A FW_FW_GLOBAL_ALLOW_OR -m set --match-set monitored_net_set dst,dst -j FW_FW_GLOBAL_ALLOW_OR_IB
+-N FW_FW_GLOBAL_ALLOW_RE
+-N FW_FW_GLOBAL_ALLOW_RE_OB
+-N FW_FW_GLOBAL_ALLOW_RE_IB
+-A FW_FIREWALL_GLOBAL_ALLOW -m conntrack --ctdir REPLY -j FW_FW_GLOBAL_ALLOW_RE
+-A FW_FW_GLOBAL_ALLOW_RE -m set --match-set monitored_net_set src,src -j FW_FW_GLOBAL_ALLOW_RE_IB
+-A FW_FW_GLOBAL_ALLOW_RE -m set --match-set monitored_net_set dst,dst -j FW_FW_GLOBAL_ALLOW_RE_OB
 # inbound
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_ip_set src -m conntrack --ctdir ORIGINAL -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_ip_set dst -m conntrack --ctdir REPLY -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_domain_set src -m conntrack --ctdir ORIGINAL -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_domain_set dst -m conntrack --ctdir REPLY -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_net_set src -m conntrack --ctdir ORIGINAL -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ib_net_set dst -m conntrack --ctdir REPLY -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_OR_IB -m set --match-set allow_ib_ip_set src -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_RE_IB -m set --match-set allow_ib_ip_set dst -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_OR_IB -m set --match-set allow_ib_domain_set src -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_RE_IB -m set --match-set allow_ib_domain_set dst -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_OR_IB -m set --match-set allow_ib_net_set src -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_RE_IB -m set --match-set allow_ib_net_set dst -j FW_ACCEPT
 # outbound
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_ip_set src -m conntrack --ctdir REPLY -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_ip_set dst -m conntrack --ctdir ORIGINAL -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_domain_set src -m conntrack --ctdir REPLY -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_domain_set dst -m conntrack --ctdir ORIGINAL -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_net_set src -m conntrack --ctdir REPLY -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ob_net_set dst -m conntrack --ctdir ORIGINAL -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_RE_OB -m set --match-set allow_ob_ip_set src -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_OR_OB -m set --match-set allow_ob_ip_set dst -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_RE_OB -m set --match-set allow_ob_domain_set src -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_OR_OB -m set --match-set allow_ob_domain_set dst -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_RE_OB -m set --match-set allow_ob_net_set src -j FW_ACCEPT
+-A FW_FW_GLOBAL_ALLOW_OR_OB -m set --match-set allow_ob_net_set dst -j FW_ACCEPT
 
 # bidirection
 -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set src -j FW_DROP
@@ -462,20 +478,33 @@ cat << EOF > "$filter_file"
 -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set dst -j FW_DROP
 -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set src -j FW_DROP
 -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set dst -j FW_DROP
+
+-N FW_FW_GLOBAL_BLOCK_OR
+-N FW_FW_GLOBAL_BLOCK_OR_OB
+-N FW_FW_GLOBAL_BLOCK_OR_IB
+-A FW_FIREWALL_GLOBAL_BLOCK -m conntrack --ctdir ORIGINAL -j FW_FW_GLOBAL_BLOCK_OR
+-A FW_FW_GLOBAL_BLOCK_OR -m set --match-set monitored_net_set src,src -j FW_FW_GLOBAL_BLOCK_OR_OB
+-A FW_FW_GLOBAL_BLOCK_OR -m set --match-set monitored_net_set dst,dst -j FW_FW_GLOBAL_BLOCK_OR_IB
+-N FW_FW_GLOBAL_BLOCK_RE
+-N FW_FW_GLOBAL_BLOCK_RE_OB
+-N FW_FW_GLOBAL_BLOCK_RE_IB
+-A FW_FIREWALL_GLOBAL_BLOCK -m conntrack --ctdir REPLY -j FW_FW_GLOBAL_BLOCK_RE
+-A FW_FW_GLOBAL_BLOCK_RE -m set --match-set monitored_net_set src,src -j FW_FW_GLOBAL_BLOCK_RE_IB
+-A FW_FW_GLOBAL_BLOCK_RE -m set --match-set monitored_net_set dst,dst -j FW_FW_GLOBAL_BLOCK_RE_OB
 # inbound
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_ip_set src -m conntrack --ctdir ORIGINAL -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_ip_set dst -m conntrack --ctdir REPLY -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_domain_set src -m conntrack --ctdir ORIGINAL -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_domain_set dst -m conntrack --ctdir REPLY -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_net_set src -m conntrack --ctdir ORIGINAL -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ib_net_set dst -m conntrack --ctdir REPLY -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_OR_IB -m set --match-set block_ib_ip_set src -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_RE_IB -m set --match-set block_ib_ip_set dst -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_OR_IB -m set --match-set block_ib_domain_set src -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_RE_IB -m set --match-set block_ib_domain_set dst -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_OR_IB -m set --match-set block_ib_net_set src -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_RE_IB -m set --match-set block_ib_net_set dst -j FW_DROP
 # outbound
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_ip_set src -m conntrack --ctdir REPLY -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_ip_set dst -m conntrack --ctdir ORIGINAL -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_domain_set src -m conntrack --ctdir REPLY -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_domain_set dst -m conntrack --ctdir ORIGINAL -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_net_set src -m conntrack --ctdir REPLY -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_net_set dst -m conntrack --ctdir ORIGINAL -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_RE_OB -m set --match-set block_ob_ip_set src -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_OR_OB -m set --match-set block_ob_ip_set dst -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_RE_OB -m set --match-set block_ob_domain_set src -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_OR_OB -m set --match-set block_ob_domain_set dst -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_RE_OB -m set --match-set block_ob_net_set src -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_OR_OB -m set --match-set block_ob_net_set dst -j FW_DROP
 
 # initialize firewall low priority chain
 -N FW_FIREWALL_LO
@@ -534,7 +563,8 @@ fi
 
 {
 # save entries doesn't start with "FW_" first
-sudo iptables-save -t filter | grep -vE "^:FW_| FW_|^COMMIT"
+# flushing UPNP_<intf> chains as iptables is not able to recognize the port thus not restoring it correctly
+sudo iptables-save -t filter | grep -vE "^:FW_| FW_|^COMMIT|-A UPNP_"
 cat "$filter_file"
 
 cat << EOF
@@ -547,6 +577,11 @@ cat << EOF
 
 EOF
 } > "$iptables_file"
+
+# as allow rules are removed, we remove registered upnp services as well.
+# firerouter_upnp@* services are always running, restart is fine
+sudo rm /var/run/upnp.*.leases
+sudo systemctl restart firerouter_upnp*
 
 {
 sudo ip6tables-save -t filter | grep -vE "^:FW_| FW_|^COMMIT"
@@ -568,6 +603,9 @@ cat << EOF
 
 EOF
 } > "$ip6tables_file"
+
+# replace icmp-port-unreachable with icmp6-port-unreachable
+sed -i 's/icmp-port-unreachable/icmp6-port-unreachable/g' "$ip6tables_file"
 
 if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
 # these sets are not ipset and contain only domain names, use same set for both v4 & v6
@@ -679,7 +717,7 @@ cat << EOF
 # look into the first reply packet, it should contain both upload and download QoS conntrack mark.
 -N FW_QOS_LOG
 # tentatively disable qos iptables log as it is not used for now
-# -A FW_FORWARD -m connmark ! --mark 0x00000000/0x3fff0000 -m conntrack --ctdir REPLY -m connbytes --connbytes 1:1 --connbytes-dir reply --connbytes-mode packets -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_qos -j FW_QOS_LOG
+# -A FW_FORWARD -m connmark ! --mark 0x00000000/0x3fff0000 -m conntrack --ctdir REPLY -m connbytes --connbytes 1:1 --connbytes-dir reply --connbytes-mode packets -m hashlimit --hashlimit-upto 100/second --hashlimit-mode srcip --hashlimit-name fw_qos -j FW_QOS_LOG
 
 EOF
 
@@ -714,7 +752,6 @@ create_tc_rules() {
     sudo tc filter delete dev ifb0 &> /dev/null || true
     sudo tc qdisc delete dev ifb0 root &> /dev/null || true
     sudo ip link set ifb0 up
-    sudo tc filter del dev ifb0
     sudo tc qdisc replace dev ifb0 root handle 1: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
     sudo tc qdisc add dev ifb0 parent 1:1 handle 2: htb # htb tree for high priority rate limit upload rules
     sudo tc qdisc add dev ifb0 parent 1:2 fq_codel
@@ -731,7 +768,6 @@ create_tc_rules() {
     sudo tc filter delete dev ifb1 &> /dev/null || true
     sudo tc qdisc delete dev ifb1 root &> /dev/null || true
     sudo ip link set ifb1 up
-    sudo tc filter del dev ifb1
     sudo tc qdisc replace dev ifb1 root handle 1: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
     sudo tc qdisc add dev ifb1 parent 1:1 handle 2: htb # htb tree for high priority rate limit download rules
     sudo tc qdisc add dev ifb1 parent 1:2 fq_codel

@@ -980,9 +980,6 @@ class Host extends Monitorable {
   }
 
   async identifyDevice(force) {
-    if (!f.isMain()) {
-      return;
-    }
     const activeTS = this.o.lastActiveTimestamp || this.o.firstFoundTimestamp
     if (activeTS && activeTS < Date.now()/1000 - 60 * 60 * 24 * 7) {
       log.verbose('HOST:IDENTIFY, inactive for long, skip')

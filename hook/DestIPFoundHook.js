@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -53,7 +53,7 @@ const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
 const { isSimilarHost } = require('../util/util');
 const flowUtil = require('../net2/FlowUtil');
 const validator = require('validator');
-const iptool = require('ip');
+const ipUtil = require('../util/IPUtil.js');
 const Message = require('../net2/Message.js');
 
 const fastIntelFeature = "fast_intel";
@@ -308,7 +308,7 @@ class DestIPFoundHook extends Hook {
     options = options || {};
 
     try {
-      if (iptool.isPrivate(ip)) {
+      if (ipUtil.isPrivate(ip)) {
         return
       }
 

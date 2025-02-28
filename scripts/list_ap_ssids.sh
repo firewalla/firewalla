@@ -140,7 +140,7 @@ lines=0
 timeit begin
 ssids=$(frcc | jq -r '.profile[], .assets_template.ap_default.mesh|.ssid' | sort | uniq)
 timeit ssids
-ssid_data=$(local_api status/ap | jq -r ".info|to_entries[]|.key as \$mac|.value.aps |to_entries[] |.value|[.ssid, \$mac, .bssid,.channel,.band,.txPower,.maxRate//\"$NO_VALUE\", .intf//\"$NO_VALUE\"]|@tsv" )
+ssid_data=$(local_api status/ap | jq -r ".info|to_entries[]|.key as \$mac|.value.aps |map(select(.mode==\"ap\")) |to_entries[] |.value|[.ssid//\"x\", \$mac, .bssid,.channel,.band,.txPower,.maxRate//\"$NO_VALUE\", .intf//\"$NO_VALUE\"]|@tsv" )
 ssid_sta_bssid=$(local_api status/station | jq -r '.info|to_entries|map(select(.value.bssid != null)|[.value.ssid, .key, .value.bssid])[]|@tsv')
 while read ssid
 do
@@ -181,7 +181,7 @@ do
         timeit for-ssidcp
         let lines++
         echo
-    done < <( echo "$ssid_data" | fgrep -w "$ssid" )
+    done < <( echo "$ssid_data" | awk -F'\t' "\$1 == \"$ssid\"" )
 done < <(echo "$ssids")
 timeit while-ssid
 tty_rows=$(stty size | awk '{print $1}')

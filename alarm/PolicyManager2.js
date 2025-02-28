@@ -87,6 +87,12 @@ const IdentityManager = require('../net2/IdentityManager.js');
 const Message = require('../net2/Message.js');
 const AppTimeUsageManager = require('./AppTimeUsageManager.js');
 
+const VPNClient = require('../extension/vpnclient/VPNClient.js');
+let hostManager;
+
+const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
+const { map } = require('async');
+
 const ruleSetTypeMap = {
   'ip': 'hash:ip',
   'net': 'hash:net',
@@ -129,6 +135,7 @@ class PolicyManager2 {
       this.ipsetCache = null;
       this.ipsetCacheUpdateTime = null;
       this.sortedActiveRulesCache = null;
+      this.sortedRoutesCache = null;
     }
     return instance;
   }
@@ -318,6 +325,7 @@ class PolicyManager2 {
       // invalidate ipset and active rules cache after policy update
       this.ipsetCache = null;
       this.sortedActiveRulesCache = null;
+      this.sortedRoutesCache = null;
 
       sem.emitEvent({
         type: 'PolicyEnforcement',
@@ -2600,6 +2608,23 @@ class PolicyManager2 {
     }
   }
 
+  async getDeviceByIdentity(identity) {
+    let device = null;
+
+    //check if there is a device policy that matches the criteria
+    if (ht.isMacAddress(identity)) {
+      if (!hostManager) {
+        const HostManager = require('../net2/HostManager.js');
+        hostManager = new HostManager()
+      }
+      device = await hostManager.getHostAsync(identity);
+    } else if (IdentityManager.isGUID(identity)) {
+      device = IdentityManager.getIdentityByGUID(identity);
+    }
+
+    return device;
+  }
+
   async _matchLocal(rule, localMac) {
     if (!localMac)
       return false;
@@ -2609,9 +2634,19 @@ class PolicyManager2 {
     }
     // matching local device group if applicable
     if (rule.tags && rule.tags.length > 0) {
-      if (!rule.tags.some(uid => this.ipsetCache[Tag.getTagDeviceMacSetName(uid)] && this.ipsetCache[Tag.getTagDeviceMacSetName(uid)].includes(localMac) 
-      || this.ipsetCache[Tag.getTagSetName(uid)] && this.ipsetCache[Tag.getTagSetName(uid)].flatMap(e => this.ipsetCache[e] || []).includes(localMac)))
+      // const tagId = rule.tags[0].substring(Policy.TAG_PREFIX.length);
+      const tagId = rule.tags[0];
+      // check if the localMac has this tag
+      const device = await this.getDeviceByIdentity(localMac);
+      if (!device)
         return false;
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const uids = await device.getTags(type) || [];
+        if (uids.includes(tagId)) {
+          return true;
+        }
+      }
+      return false;
     }
     // matching local network if applicable
     if (rule.intfs && rule.intfs.length > 0) {
@@ -2826,125 +2861,120 @@ class PolicyManager2 {
     return true;
   }
 
-  async checkACL(localMac, localPort, remoteType, remoteVal = "", remotePort, protocol, direction = "outbound") {
-    if (!this.ipsetCache || (this.ipsetCacheUpdateTime && Date.now() / 1000 - this.ipsetCacheUpdateTime > 60)) { // ipset cache becomes invalid after 60 seconds
-      this.ipsetCache = await ipset.readAllIpsets() || {};
-      this.ipsetCacheUpdateTime = Date.now() / 1000
-    }
-    if (!this.sortedActiveRulesCache) {
-      let activeRules = await this.loadActivePoliciesAsync() || [];
-      activeRules = activeRules.filter(rule => !rule.action || ["allow", "block", "match_group", "app_block"].includes(rule.action) || rule.type === "match_group").filter(rule => (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
-      this.sortedActiveRulesCache = activeRules.map(rule => {
-        let { scope, target, action = "block", tag, guids } = rule;
-        rule.type = rule["i.type"] || rule["type"];
-        rule.direction = rule.direction || "bidirection";
-        const intfs = [];
-        let tags = [];
-        if (!_.isEmpty(tag)) {
-          let invalid = true;
-          for (const tagStr of tag) {
-            if (tagStr.startsWith(Policy.INTF_PREFIX)) {
-              invalid = false;
-              let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
-              intfs.push(intfUuid);
-            } else {
-              for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-                const config = Constants.TAG_TYPE_MAP[type];
-                if (tagStr.startsWith(config.ruleTagPrefix)) {
-                  invalid = false;
-                  const tagUid = tagStr.substring(config.ruleTagPrefix.length);
-                  tags.push(tagUid);
-                }
+  filterAndSortRule(rules) {
+    let sortedRules = rules.map(rule => {
+      let { scope, target, action = "block", tag, guids } = rule;
+      rule.type = rule["i.type"] || rule["type"];
+      rule.direction = rule.direction || "bidirection";
+      const intfs = [];
+      let tags = [];
+      if (!_.isEmpty(tag)) {
+        let invalid = true;
+        for (const tagStr of tag) {
+          if (tagStr.startsWith(Policy.INTF_PREFIX)) {
+            invalid = false;
+            let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
+            intfs.push(intfUuid);
+          } else {
+            for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+              const config = Constants.TAG_TYPE_MAP[type];
+              if (tagStr.startsWith(config.ruleTagPrefix)) {
+                invalid = false;
+                const tagUid = tagStr.substring(config.ruleTagPrefix.length);
+                tags.push(tagUid);
               }
-              tags = _.uniq(tags);
             }
-          }
-          if (invalid) {
-            rule.rank = -1;
-            return rule;
+            tags = _.uniq(tags);
           }
         }
+        if (invalid) {
+          rule.rank = -1;
+          return rule;
+        }
+      }
 
-        const seq = rule.getSeq()
+      const seq = rule.getSeq()
 
-        rule.rank = 6;
-        if (scope && scope.length > 0)
-          rule.rank = 0;
-        if (tags && tags.length > 0)
-          rule.rank = 2;
-        if (guids && guids.length > 0)
-          rule.rank = 2;
-        if (intfs && intfs.length > 0)
-          rule.rank = 4;
-        if (rule.parentRgId)
-          rule.rank = 8;
-        switch (rule.type) {
-          case "ip":
-          case "net":
+      rule.rank = 6;
+      if (scope && scope.length > 0)
+        rule.rank = 0;
+      if (tags && tags.length > 0)
+        rule.rank = 2;
+      if (guids && guids.length > 0)
+        rule.rank = 0;
+      if (intfs && intfs.length > 0)
+        rule.rank = 4;
+      if (rule.parentRgId)
+        rule.rank = 8;
+      switch (rule.type) {
+        case "ip":
+        case "net":
+          break;
+        case "remotePort":
+          rule.remotePort = target;
+          break;
+        case "mac":
+        case "internet":
+          if (ht.isMacAddress(target)) {
+            rule.scope = [target];
+            rule.rank = 0;
+          }
+          break;
+        case "domain":
+        case "dns":
+        case "domain_re":
+          break;
+        case "devicePort":
+          let data = this.parseDevicePortRule(target);
+          if (data && data.mac) {
+            rule.protocol = data.protocol;
+            rule.localPort = data.port;
+            rule.scope = [data.mac];
+            rule.rank = 0;
+            rule.direction = "inbound";
+          } else {
+            rule.rank = -1;
+          }
+          break;
+        case "category":
+        case "country":
+        case "intranet":
+        case "network":
+        case "tag":
+        case "device":
+          break;
+        default:
+      }
+      rule.intfs = intfs;
+      rule.tags = tags;
+
+      if (action === "block" || action === "app_block")
+        // block has lower priority than allow
+        rule.rank++;
+      if (action === "match_group" || rule.type === "match_group")
+        // a trick that makes match_group rule be checked after allow rule and before block rule
+        rule.rank += 0.5;
+      // high priority rule has a smaller base rank
+      if (rule.rank >= 0 && rule.action != "route") {
+        switch (seq) {
+          case Constants.RULE_SEQ_REG:
+            // security block still has high priority and low rank
+            if (!rule.isSecurityBlockPolicy())
+              rule.rank += 10;
             break;
-          case "remotePort":
-            rule.remotePort = target;
-            break;
-          case "mac":
-          case "internet":
-            if (ht.isMacAddress(target)) {
-              rule.scope = [target];
-              rule.rank = 0;
-            }
-            break;
-          case "domain":
-          case "dns":
-          case "domain_re":
-            break;
-          case "devicePort":
-            let data = this.parseDevicePortRule(target);
-            if (data && data.mac) {
-              rule.protocol = data.protocol;
-              rule.localPort = data.port;
-              rule.scope = [data.mac];
-              rule.rank = 0;
-              rule.direction = "inbound";
-            } else {
-              rule.rank = -1;
-            }
-            break;
-          case "category":
-          case "country":
-          case "intranet":
-          case "network":
-          case "tag":
-          case "device":
+          case Constants.RULE_SEQ_LO:
+            rule.rank += 20;
             break;
           default:
         }
-        rule.intfs = intfs;
-        rule.tags = tags;
+      }
+      return rule;
+      // sort rules by rank in ascending order
+    }).filter(rule => rule.rank >= 0).sort((a, b) => { return a.rank - b.rank });
+    return sortedRules;
+  }
 
-        if (action === "block" || action === "app_block")
-          // block has lower priority than allow
-          rule.rank++;
-        if (action === "match_group" || rule.type === "match_group")
-          // a trick that makes match_group rule be checked after allow rule and before block rule
-          rule.rank += 0.5;
-        // high priority rule has a smaller base rank
-        if (rule.rank >= 0) {
-          switch (seq) {
-            case Constants.RULE_SEQ_REG:
-              // security block still has high priority and low rank
-              if (!rule.isSecurityBlockPolicy())
-                rule.rank += 10;
-              break;
-            case Constants.RULE_SEQ_LO:
-              rule.rank += 20;
-              break;
-            default:
-          }
-        }
-        return rule;
-        // sort rules by rank in ascending order
-      }).filter(rule => rule.rank >= 0).sort((a, b) => { return a.rank - b.rank });
-    }
-
+  async getBestMatchRule(rules, localMac, localPort, remoteType, remoteVal = "", remotePort, protocol, direction = "outbound") {
     let remoteIpsToCheck = [];
     switch (remoteType) {
       case "ip":
@@ -2960,7 +2990,7 @@ class PolicyManager2 {
       default:
     }
 
-    for (const rule of this.sortedActiveRulesCache) {
+    for (const rule of rules) {
       // rules in rule group will be checked in match_group rule
       if (rule.parentRgId)
         continue;
@@ -3013,15 +3043,16 @@ class PolicyManager2 {
         if (!protocol || rule.protocol !== protocol)
           continue;
       }
-      if (!await this._matchLocal(rule, localMac))
+      if (!await this._matchLocal(rule, localMac)) {
         continue;
+      }
 
       if (rule.action === "match_group" || rule.type === "match_group") {
         // check rules in the rule group against remote target
         const targetRgId = rule.targetRgId;
         if (!targetRgId)
           continue;
-        const subRules = this.sortedActiveRulesCache.filter(r => r.parentRgId === targetRgId); // allow rules come first in the subRules list, the rank should be 8 and 9
+        const subRules = rules.filter(r => r.parentRgId === targetRgId); // allow rules come first in the subRules list, the rank should be 8 and 9
         for (const subRule of subRules) {
           if (await this._matchRemote(subRule, remoteType, remoteVal, remoteIpsToCheck, protocol, remotePort)) {
             return subRule;
@@ -3036,6 +3067,218 @@ class PolicyManager2 {
       return rule;
     }
     return null;
+  }
+
+  async loadAllVpnClientsState() {
+    const allVpnClientsStr = await rclient.hgetAsync("policy:system", "vpnClient");
+    if (!allVpnClientsStr)
+      return null;
+
+    const allVpnClients = JSON.parse(allVpnClientsStr);
+    if (!allVpnClients || !allVpnClients.multiClients) {
+      return null;
+    }
+    return allVpnClients;
+  }
+
+  isVpnClientEnabled(allVpnClients, vpnClientId) {
+    if (!allVpnClients || !allVpnClients.multiClients)
+      return false;
+    for (const vpnClient of allVpnClients.multiClients) {
+      const vpnType = vpnClient.type;
+      const vpnProfileInfo = vpnClient[vpnType];
+      if (vpnProfileInfo && vpnProfileInfo.profileId && vpnProfileInfo.profileId == vpnClientId) {
+        return vpnClient.state;
+      }
+    }
+    return false;
+  }
+
+  async checkVPN(allVpnClients, resultMap, vpnClientId, routeType = "hard") {
+    let isEnabled = false;
+    let isConnected = false;
+    let isStrictVPN = false;
+
+    if (resultMap.has(vpnClientId)) { // found in resultMap, retrun result directly
+      isEnabled = resultMap[vpnClientId].isEnabled;
+      isConnected = resultMap[vpnClientId].isConnected;
+      isStrictVPN = resultMap[vpnClientId].isStrictVPN;
+    } else {
+      let vpnClient = VPNClient.getInstance(vpnClientId);
+      if (!vpnClient) {
+        return false;
+      }
+      isEnabled = this.isVpnClientEnabled(allVpnClients, vpnClientId);
+      isConnected = await vpnClient.status();
+      const settings = await vpnClient.loadSettings();
+      if (settings && settings.strictVPN) {
+        isStrictVPN = true;
+      }
+      resultMap[vpnClientId] = {isEnabled:isEnabled, isConnected:isConnected, isStrictVPN:isStrictVPN};
+    }
+
+    if (!isEnabled) {
+      return false;
+    }
+    if (!isConnected) {
+      if (!isStrictVPN) {
+        return false;
+      }
+      if (routeType == "soft") {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  // check the rule created by VPN client
+  async getBestMatchVpnPolicie(localMac, allVpnClients) {
+    let policies = [];
+
+    //check if there is a device policy that matches the criteria
+    const device = await this.getDeviceByIdentity(localMac);
+    if (!device)
+      return null;
+
+    const devicePolicy = await device.loadPolicyAsync();
+    if (devicePolicy) {
+      devicePolicy.rank = 0;
+      devicePolicy.matchedTarget = localMac;
+      policies.push(devicePolicy);
+    }
+
+    // check if there is a group policy that matches the criteria
+    let tags = [];
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const uids = await device.getTags(type) || [];
+      tags.push(...uids);
+    }
+    tags = _.uniq(tags);
+
+    for (const tagId of tags) {
+      const tag = tagManager.getTagByUid(tagId);
+      const groupPolicy = await tag.loadPolicyAsync();
+      if (groupPolicy && Object.keys(groupPolicy).length !== 0){
+        groupPolicy.rank = 2;
+        groupPolicy.matchedTarget = "tag:" + tag.getTagUid();
+        policies.push(groupPolicy);
+      }
+    }
+
+    // check if there is a network policy that matches the criteria
+    const nicUUID = device.getNicUUID();
+    const networkProfile = NetworkProfileManager.getNetworkProfile(nicUUID);
+    const networkPolicy = await networkProfile.loadPolicyAsync();
+    if (networkPolicy && Object.keys(networkPolicy).length !== 0) {
+      networkPolicy.rank = 4;
+      networkPolicy.matchedTarget = "network:" + nicUUID;
+      policies.push(networkPolicy);
+    }
+
+    const checkedVpnMap = new Map();
+    for (const policy of policies) {
+      const vpnClient = policy.vpnClient;
+      if (!vpnClient || !vpnClient.profileId)
+        continue;
+      const matched = await this.checkVPN(allVpnClients, checkedVpnMap, vpnClient.profileId);
+
+      if (matched) {
+        policy.wanUUID = Block.VPN_CLIENT_WAN_PREFIX + vpnClient.profileId;
+        return policy;
+      }
+    }
+
+    return null;
+  }
+
+  async initIpsetCache() {
+    if (!this.ipsetCache || (this.ipsetCacheUpdateTime && Date.now() / 1000 - this.ipsetCacheUpdateTime > 60)) { // ipset cache becomes invalid after 60 seconds
+      this.ipsetCache = await ipset.readAllIpsets() || {};
+      this.ipsetCacheUpdateTime = Date.now() / 1000
+    }
+  }
+
+  /**
+   * 
+   * @returns
+   * {
+   *   "wanUUID": "xxxx-xxxx"/"VC:xxxxx", // either wan UUID or VPN client profile id pretending with "VC:"
+   *   "reason": "rule"/"policy", // return "rule" if it is determined by a rule, or return "policy" if it is determined by VPN client settings
+   *   "pid": "123", // rule id if reason is "rule"
+   *   "target": "xxxxx" // MAC address if reason is "policy" and the VPN client is applied to a device, or "tag:<group_id>" 
+   * }
+   */
+  async checkRoute(localMac, localPort, remoteType, remoteVal = "", remotePort, protocol, direction = "outbound") {
+
+    await this.initIpsetCache();
+
+    if (!this.sortedRoutesCache) {
+      let routes = await this.loadActivePoliciesAsync() || [];
+      routes = routes.filter(rule => rule.action === "route");
+      this.sortedRoutesCache = this.filterAndSortRule(routes);
+    }
+    // 1. if a VPN client is mannually disabled, all route rule and policies using it should be ignored.
+    // 2. if a VPN client is enabled but disconnected at the moment, and the kill switch(strictVPN) is not enabled on it, all route rules and policies using it should be ingnored
+    // 3. if routeType in a route is soft and the wan/VPN client in the rule is disconnected, the rule should be ignored.
+
+    let activeRules = [];
+    let checkedVpnMap = new Map();
+    const allVpnClients = await this.loadAllVpnClientsState();
+
+    for (const rule of this.sortedRoutesCache) {
+      if (rule.wanUUID.startsWith(Block.VPN_CLIENT_WAN_PREFIX)) {
+        const vpnID = rule.wanUUID.substring(Block.VPN_CLIENT_WAN_PREFIX.length);
+        const vpnCheckRsult = await this.checkVPN(allVpnClients, checkedVpnMap, vpnID, rule.routeType);
+        if (!vpnCheckRsult) {
+          continue;
+        }
+      } else if (rule.routeType == "soft") {
+        // check if the wan interface is up
+        const wanUUID = rule.wanUUID;
+        const networkProfile = NetworkProfileManager.getNetworkProfile(wanUUID);
+        if (!networkProfile.isReady()) {
+          continue;
+        }
+      }
+      activeRules.push(rule);
+    }
+    let result = null;
+    const bestMatchRoute = await this.getBestMatchRule(activeRules, localMac, localPort, remoteType, remoteVal, remotePort, protocol, direction);
+    if (bestMatchRoute) {
+      const matchedTarget = Policy.getMathcedTarget(bestMatchRoute);
+      result = {
+        "wanUUID": bestMatchRoute.wanUUID,
+        "reason": "rule",
+        "pid": bestMatchRoute.pid,
+        "target": matchedTarget
+      }
+    }
+
+
+    const bestMatchVpnPolicy = await this.getBestMatchVpnPolicie(localMac, allVpnClients);
+    if (bestMatchVpnPolicy) {
+      if (!result || bestMatchVpnPolicy.rank < bestMatchRoute.rank) {
+        result = {
+          "wanUUId": bestMatchVpnPolicy.wanUUID,
+          "reason": "policy",
+          "target": bestMatchVpnPolicy.matchedTarget
+        }
+      }
+    }
+    return result;
+  }
+
+  async checkACL(localMac, localPort, remoteType, remoteVal = "", remotePort, protocol, direction = "outbound") {
+    await this.initIpsetCache();
+
+    if (!this.sortedActiveRulesCache) {
+      let activeRules = await this.loadActivePoliciesAsync() || [];
+      activeRules = activeRules.filter(rule => !rule.action || ["allow", "block", "match_group", "app_block"].includes(rule.action) || rule.type === "match_group").filter(rule => (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
+      this.sortedActiveRulesCache = this.filterAndSortRule(activeRules);
+    }
+
+    return await this.getBestMatchRule(this.sortedActiveRulesCache, localMac, localPort, remoteType, remoteVal, remotePort, protocol, direction);
   }
 
   async batchPolicy(actions) {

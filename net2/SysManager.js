@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,6 +24,7 @@ const fsp = fs.promises;
 const scheduler = require('../util/scheduler.js');
 
 const iptool = require('ip');
+const ipUtil = require('../util/IPUtil.js')
 var instance = null;
 const license = require('../util/license.js');
 const rp = require('request-promise');
@@ -697,11 +698,11 @@ class SysManager {
   // filter Carrier-Grade NAT address pool accordinig to rfc6598
   filterPublicIp4(ipArray) {
     const rfc6598Net = iptool.subnet("100.64.0.0", "255.192.0.0")
-    return ipArray.filter(ip => iptool.isPublic(ip) && !rfc6598Net.contains(ip));
+    return ipArray.filter(ip => ipUtil.isPublic(ip) && !rfc6598Net.contains(ip));
   }
 
   filterPublicIp6(ip6Array) {
-    return ip6Array.filter(ip => iptool.isPublic(ip));
+    return ip6Array.filter(ip => ipUtil.isPublic(ip));
   }
 
   myGateways(fam = 4) {
@@ -1194,6 +1195,7 @@ class SysManager {
     try {
       const result = await rp({
         uri: `https://api.github.com/repos/firewalla/firewalla/commits/${branch}`,
+        followRedirect: false,
         headers: {
           "User-Agent": "curl/7.64.1",
         },
