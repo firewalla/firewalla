@@ -39,6 +39,7 @@ const AsyncLock = require('../../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const platform = PlatformLoader.getPlatform()
 const envCreatedMap = {};
+const INTERNET_ON_OFF_THRESHOLD = 2;
 
 const instances = {};
 
@@ -51,6 +52,8 @@ class VPNClient {
       instances[profileId] = this;
       this.profileId = profileId;
       if (f.isMain()) {
+        this.internetFailureCount = 0;
+        this.internetSuccessCount = 0;
         this.hookLinkStateChange();
         this.hookSettingsChange();
 
@@ -429,14 +432,31 @@ class VPNClient {
     } else {
       log.debug(`VPN client ${this.profileId} underlying link is up.`);
       if (this.settings.overrideDefaultRoute) {
-        result = await this._isInternetAvailable();
-        if (!result)
+        const internetAvailability = await this._isInternetAvailable();
+        if (!internetAvailability) {
           log.error(`Internet is unavailable via VPN client ${this.profileId}`);
-        else
+          this.internetFailureCount++;
+          this.internetSuccessCount = 0;
+        } else {
           log.debug(`Internet is available via VPN client ${this.profileId}`);
+          this.internetFailureCount = 0;
+          this.internetSuccessCount++;
+        }
+        // update result if consecutive internet connectivity tests return same results
+        if (this.internetSuccessCount >= INTERNET_ON_OFF_THRESHOLD)
+          result = true;
+        else {
+          if (this.internetFailureCount >= INTERNET_ON_OFF_THRESHOLD)
+            result = false;
+          else // internet success/failure count is within switching threshold, pending another consecutive result to decide
+            result = null;
+        }
       }
     }
     if (this._restarting)
+      return;
+    // result is null means internet connectivity is still pending another consecutive result to decide, do not emit event in this round
+    if (result === null)
       return;
     if (result) {
       sem.emitEvent({
