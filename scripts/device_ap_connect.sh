@@ -1,7 +1,7 @@
 #!/bin/bash
 
 TS_WIDTH=22
-AP_WIDTH=22
+AP_WIDTH=32
 
 local_fwapc_get () {
     curl -s -H 'Content-Type: application/json' -XGET http://127.0.0.1:8841/$1
@@ -15,14 +15,24 @@ hdr() {
   printf "%-${TS_WIDTH}s" TS/$mac
   for ap in $aps
   do
-    printf "%${AP_WIDTH}s" "$(echo $ap | sed -e 's/2[0-9]:6D:31://g')"
+    name="${ap/\(*/}"
+    full="$name-$(band $ap)-${ap/*-/}"
+    printf "  %s  " "$full"
   done
   echo
 }
 
 pad() {
-  width=$(( $(echo $aps|wc -w) * AP_WIDTH + TS_WIDTH ))
-  printf '%*s\n' $width "" | tr ' ' '-'
+  printf "%*s" $TS_WIDTH "" | tr ' ' '-'
+  for ap in $aps
+  do
+    name="${ap/\(*/}"
+    full="$name-$(band $ap)-${ap/*-/}"
+    width=$(echo -- $full | wc -c)
+    printf "%*s" $width  "" | tr ' ' '-'
+    printf " "
+  done
+  echo
 }
 
 displaytime() {
@@ -43,6 +53,16 @@ displaytime() {
     }
 }
 
+band() {
+  if [[ "$1" == *-ath1* ]]; then
+    echo "5g"
+  elif [[ "$1" == *-ath0* ]]; then
+    echo "2g"
+  elif [[ "$1" == *-ath2* ]]; then
+    echo "6g"
+  fi
+}
+
 record() {
   hdr; pad
   declare -a conns
@@ -50,6 +70,7 @@ record() {
   while read ts device dev_mac conn to SSID ssid on AP ap_mac rest
   do
     ts=${ts//[\[\]]}
+    b=$(band $ap_mac)
     printf "%-${TS_WIDTH}s" $ts
     i=0
     for ap in $aps; do
@@ -71,7 +92,7 @@ record() {
     done
     echo
   done
-  pad;hdr
+  pad; hdr
 }
 
 if [[ $# -gt 0 ]]; then
