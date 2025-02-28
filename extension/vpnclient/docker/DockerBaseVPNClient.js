@@ -368,21 +368,16 @@ if $programname == 'docker_vpn_${this.profileId}' then {
   }
 
   async getRoutedSubnets() {
-    const isLinkUp = await this._isLinkUp();
-    if (isLinkUp) {
-      const subnets = await super.getRoutedSubnets() || [];
-      // no need to add the whole subnet to the routed subnets, only need to route the container's IP address
-      const remoteIP = await this._getRemoteIP();
-      if (remoteIP)
-        subnets.push(remoteIP);
-      const remoteIP6 = await this._getRemoteIP6();
-      if (remoteIP6)
-        subnets.push(remoteIP6);
-      const results = _.uniq(subnets);
-      return results;
-    } else {
-      return [];
-    }
+    const subnets = await super.getRoutedSubnets() || [];
+    // no need to add the whole subnet to the routed subnets, only need to route the container's IP address
+    const remoteIP = await this._getRemoteIP();
+    if (remoteIP)
+      subnets.push(remoteIP);
+    const remoteIP6 = await this._getRemoteIP6();
+    if (remoteIP6)
+      subnets.push(remoteIP6);
+    const results = _.uniq(subnets);
+    return results;
   }
 
   _getWorkingDirectory() {
