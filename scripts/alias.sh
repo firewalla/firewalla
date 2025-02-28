@@ -231,3 +231,14 @@ function lfmove() {
 }
 
 alias lpair='curl localhost:8841/v1/runtime/pairing_stat -s | jq .'
+
+function lastat() {
+  local mac=$1
+  local filter=$2
+
+  if [[ "x$filter" == "x" ]]; then
+    lase "$mac" | tac | ~/firewalla/scripts/device_ap_connect.sh "$mac" | column -t --output-separator "      "
+  else
+    lase "$mac" | grep -- "$filter" | tac | ~/firewalla/scripts/device_ap_connect.sh "$mac" | column -t --output-separator "      "
+  fi
+}
