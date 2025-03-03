@@ -223,17 +223,14 @@ class APCMsgSensor extends Sensor {
 
     if (_.isObject(staStatus)) {
       for (const [mac, staInfo] of Object.entries(staStatus)) {
-        log.info(`Processing STA status for host ${mac} with vendor ${staInfo.vendor}`);
         const upcaseMac = mac.toUpperCase();
         if (!staInfo.vendor)
           continue;
         
         let wlanVendors = await APCMsgSensor.getWlanVendorFromCache(upcaseMac);
         if (wlanVendors) {
-          log.info(`Host ${upcaseMac} already has wlanVendor info ${wlanVendors} in cache`)
           continue;
         }
-        log.info(`Add mac:${upcaseMac} and vendor:${staInfo.vendor} pair to update list`);  
         needEnrichMacVendorPairs.push({mac: upcaseMac, vendor: staInfo.vendor});
       }
     }
@@ -243,7 +240,6 @@ class APCMsgSensor extends Sensor {
         for (const [mac, wlanVendorInfoList] of result) {
           const wlanVendors = wlanVendorInfoList.filter(v => v.vendorName !== "Unknown").map(v => v.vendorName);
           if (wlanVendors && wlanVendors.length > 0) {
-            log.info(`set wlanVendor info to cache for host ${mac} with wlanVendor ${wlanVendors}`);
             await APCMsgSensor.setWlanVendorToCache(mac, wlanVendors);
           } else {
             log.info(`Did not find a valid vendor name for mac ${mac}`);
@@ -261,7 +257,6 @@ class APCMsgSensor extends Sensor {
     
     let wlanVendors = await APCMsgSensor.getWlanVendorFromCache(mac);
     if (wlanVendors) {
-      log.info(`${mac} already has wlanVendor info ${wlanVendors} stored in cache`)
       return;
     }
 
@@ -269,7 +264,6 @@ class APCMsgSensor extends Sensor {
     if (result && result.size == 1) {
       wlanVendors = WlanVendorInfo.getVendorFromVendorMap(result, mac);
       if (wlanVendors.length > 0) {
-        log.info(`Host ${mac} has wlanVendor info ${wlanVendors}, store in cache`);
         await APCMsgSensor.setWlanVendorToCache(mac, wlanVendors);
       } else {
         log.info(`Did not find a valid vendor name for mac ${mac} with vendor ${vendor}`);
