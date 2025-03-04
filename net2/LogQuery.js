@@ -192,10 +192,10 @@ class LogQuery {
    * @param {Object} feeds[].options - unique options for the query
    */
   async logFeeder(options, feeds) {
-    log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(_.omit(options, 'macs')))
     options = this.checkArguments(options)
     // filter calculation is not related to options in each feed, only need to call optionsToFilter once here
     const filter = this.optionsToFilter(options);
+    log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(_.omit(options, 'macs')), JSON.stringify(filter))
     feeds.forEach(f => {
       f.options = f.options || {};
       Object.assign(f.options, options)
@@ -210,7 +210,7 @@ class LogQuery {
     results = _.flatten(await Promise.all(feeds.map(async feed => {
       const logs = await feed.query(feed.options)
       if (logs.length) {
-        feed.options.ts = logs[logs.length - 1]._ts
+        feed.options.ts = logs[logs.length - 1].ts
       } else {
         // no more elements, remove feed from feeds
         toRemove.push(feed)
@@ -234,7 +234,7 @@ class LogQuery {
 
       let logs = await feed.query(feed.options)
       if (logs.length) {
-        feed.options.ts = logs[logs.length - 1]._ts || logs[logs.length - 1].ts // _ts is newly added into block flows, in case it does not exist, use ts as a fallback
+        feed.options.ts = logs[logs.length - 1].ts // this is simple formatted data
 
         logs = logs.filter(log => feed.filter(log))
         if (logs.length) {
@@ -339,7 +339,7 @@ class LogQuery {
         }
       }
     }
-    const includedMacs = null;
+    let includedMacs = null;
     if (_.isArray(options.include) && options.include.every(f => f.device)) { // only consider included devices before redis query to reduce unnecessary IO overhead
       includedMacs = new Set();
       for (const inFilter of options.include) {
@@ -434,9 +434,10 @@ class LogQuery {
   }
 
 
-  async enrichWithIntel(logs) {
+  async enrichWithIntel(logs, enrichIP = false) {
     return mapLimit(logs, 50, async f => {
-      if (f.ip) {
+      // ignore dns and ntp here as ip intel doesn't make sense for intercepted flows
+      if (f.ip && f.type == 'ip' && !f.local || enrichIP) {
         const intel = await intelTool.getIntel(f.ip, f.appHosts)
 
         // lodash/assign appears to be x4 times less efficient
@@ -475,15 +476,9 @@ class LogQuery {
       }
 
       if (f.rl) {
-        const rlIp = f.rl.startsWith("[") && f.rl.includes("]:") ? f.rl.substring(1, f.rl.indexOf("]:")) : f.rl.split(":")[0];
-        const rlIntel = await intelTool.getIntel(rlIp);
-        if (rlIntel && rlIntel.country) {
-          f.rlCountry = rlIntel.country;
-        } else {
-          const c = country.getCountry(rlIp);
-          if (c)
-            f.rlCountry = c;
-        }
+        const c = country.getCountry(f.rl);
+        if (c)
+          f.rlCountry = c;
       }
 
       // special handling of flows blocked by adblock, ensure category is ad,
@@ -529,7 +524,7 @@ class LogQuery {
     const enrich = 'enrich' in options ? options.enrich : true
     delete options.enrich
 
-    log.debug(this.constructor.name, 'getDeviceLogs', options.direction || (options.block ? 'block':'accept'), target, options.ts)
+    log.debug(this.constructor.name, 'getDeviceLogs', key, options.type || '', options.ts)
 
     let logObjects = results
       .map(str => {

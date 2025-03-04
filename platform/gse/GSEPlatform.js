@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -182,6 +182,14 @@ class GSEPlatform extends Platform {
 
   getRetentionCountMultiplier() {
     return 1;
+  }
+
+  getDNSFlowRetentionTimeMultiplier() {
+    return 24;
+  }
+
+  getDNSFlowRetentionCountMultiplier() {
+    return 10;
   }
 
   getCompresseCountMultiplier(){
@@ -400,6 +408,8 @@ class GSEPlatform extends Platform {
   getDnsmasqLeaseFilePath() {
     return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
   }
+
+  isDNSFlowSupported() { return true }
 }
 
 module.exports = GSEPlatform;
