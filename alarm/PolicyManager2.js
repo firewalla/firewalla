@@ -1158,7 +1158,7 @@ class PolicyManager2 {
               }
             } 
             this.domainBlockTimers[policy.pid] = {
-              isTimerValid: true,
+              isTimerActive: true,
               domainBlockTimer: setTimeout(async () => {
                 await this._unenforce(tmpPolicy);
                 await this._enforce(policy);
