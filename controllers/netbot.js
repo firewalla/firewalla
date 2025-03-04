@@ -3291,6 +3291,15 @@ class netBot extends ControllerBot {
           return hosts[0]
         }
       }
+      case "host:classifyDetails": {
+        const { mac } = value;
+        if (!mac) throw new Error('MAC address is required')
+
+        const host = await this.hostManager.getHostAsync(mac)
+        const result = await host.identifyDevice(true, true)
+
+        return result
+      }
       case "host:syncAppTimeUsageToTags": {
         const {mac, begin, end} = value;
         await netBotTool.syncHostAppTimeUsageToTags(mac, {begin, end});
