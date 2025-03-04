@@ -1061,9 +1061,10 @@ class Host extends Monitorable {
         if (!this.o.detect) this.o.detect = {}
         this.o.detect.cloud = data
         await this.save('_identifyExpiration')
-        sem.emitLocalEvent({
+        sem.emitEvent({
           type: 'DetectUpdate',
           from: 'cloud',
+          toProcess: 'FireMain',
           mac: this.o.mac,
           detect: data,
           suppressEventLogging: true,
