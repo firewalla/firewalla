@@ -354,6 +354,8 @@ class AppTimeUsageManager {
     else if (uid && hostTool.isMacAddress(uid))
       p.scope = [uid];
 
+    p.manageredBy = "AppTimeUsageManager";
+
     if (p.type === "dns" || p.type === "category")
       p.dnsmasq_only = domainOnly;
     const PolicyManager2 = require('./PolicyManager2.js');
