@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -81,7 +81,7 @@ class LogQuery {
 
   optionsToFilter(options) {
     const filter = JSON.parse(JSON.stringify(options));
-    const logicFilterKeys = ["include", "exclude"]; // include and exclude can contain multiple filters in logic OR relationship
+    const logicFilterKeys = ["include", "exclude"];
     for (const logicFilterKey of logicFilterKeys) {
       if (_.isArray(filter[logicFilterKey])) {
         for (const logicFilter of filter[logicFilterKey]) {
@@ -134,7 +134,7 @@ class LogQuery {
           return false;
         continue;
       }
-      if (!logObj.hasOwnProperty(key))
+      if (!logObj.hasOwnProperty(key) && filter[key] !== false)
         return false;
       switch (filter[key].constructor.name) {
         case "DomainTrie": { // domain in log is always literal string, no need to take array of string into consideration
@@ -194,14 +194,16 @@ class LogQuery {
   async logFeeder(options, feeds) {
     options = this.checkArguments(options)
     // filter calculation is not related to options in each feed, only need to call optionsToFilter once here
-    const filter = this.optionsToFilter(options);
-    const filterKeyCount = Object.keys(filter).length
-    log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(_.omit(options, 'macs')), JSON.stringify(filter))
+    const filterCommon = this.optionsToFilter(options);
+    log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(_.omit(options, 'macs')), JSON.stringify(filterCommon))
     feeds.forEach(f => {
       f.options = f.options || {};
-      Object.assign(f.options, options)
-      const filterFunc = f.isValid // save pointer as var to avoid stackoverflow
-      f.isValid = log => filterFunc(log, filter)
+      Object.assign(f.options, options.exclude)
+      // feed based filter is only added in optionsToFeeds(), and we are only dealing with exclude for now
+      // both include and exclude can only be array, check optionsToFilter()
+      if (!_.isEmpty(f.options.exclude) || !_.isEmpty(options.exclude))
+        f.options.exclude = [].concat(f.options.exclude || [], options.exclude || [])
+      f.filter = this.optionsToFilter(f.options)
     })
     // log.debug( feeds.map(f => JSON.stringify(f) + '\n') )
     let results = []
@@ -217,13 +219,13 @@ class LogQuery {
         // no more elements, remove feed from feeds
         toRemove.push(feed)
       }
-      return logs.filter(log => feed.isValid(log))
+      return logs.filter(log => feed.isValid(log, feed.filter))
     })))
 
     // the following code could be optimized further by using a heap
     results = _.orderBy(results, 'ts', options.asc ? 'asc' : 'desc')
     feeds = feeds.filter(f => !toRemove.includes(f))
-    log.verbose(this.constructor.name, `Removed ${toRemove.length} feeds, ${feeds.length} remaining`, JSON.stringify(_.omit(options, 'macs')))
+    log.verbose(this.constructor.name, `Removed ${toRemove.length} feeds, ${feeds.length} remaining`, JSON.stringify(options))
 
     // always query the feed moves slowest
     let feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
@@ -239,12 +241,12 @@ class LogQuery {
 
       let logs = await feed.query(
         // cuts query count when there's no filter
-        Object.assign(feed.options, {count: options.count - (filterKeyCount ? 0 : validResultCount)})
+        Object.assign(feed.options, {count: options.count - (Object.keys(feed.filter).length ? 0 : validResultCount)})
       )
       if (logs.length) {
         feed.options.ts = logs[logs.length - 1].ts // this is simple formatted data
 
-        logs = logs.filter(log => feed.isValid(log))
+        logs = logs.filter(log => feed.isValid(log, feed.filter))
         if (logs.length) {
           // a more complicated but faster ordered merging without accessing elements via index.
           // result should be the same as

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -91,15 +91,7 @@ class FlowTool extends LogQuery {
     return true;
   }
 
-  async prepareRecentFlows(json, options) {
-    log.verbose('prepareRecentFlows', JSON.stringify(options))
-    options = options || {}
-    this.checkCount(options)
-    const macs = await this.expendMacs(options)
-    if (!("flows" in json)) {
-      json.flows = {};
-    }
-
+  optionsToFeeds(options, macs) {
     const feeds = []
     // use some filters to cut feed number here
     if (options.block !== true) {
@@ -110,33 +102,35 @@ class FlowTool extends LogQuery {
           feeds.push(... this.expendFeeds({macs, direction: 'in'}))
           feeds.push(... this.expendFeeds({macs, direction: 'out'}))
         }
-        if (options.dnsFlow) {
-          feeds.push(... auditTool.expendFeeds({macs, block: false, dnsFlow: true}))
-        }
-        if (options.auditDNSSuccess && options.ntpFlow)
-          feeds.push(... auditTool.expendFeeds({macs, block: false}))
-        else if (options.auditDNSSuccess && (!options.type || options.type == 'dns'))
-          feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'dns'}))
-        else if (options.ntpFlow && (!options.type || options.type == 'ntp'))
-          feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'ntp'}))
       }
       if (options.localFlow && options.local !== false) {
         // a local flow will be recorded in both src and dst host key, need to deduplicate flows on the two hosts if both hosts are included in macs
         feeds.push(... this.expendFeeds({macs, localFlow: true, exclude: {dstMac: macs, fd: "out"}}))
       }
     }
-    if (options.block !== false) {
-      if (options.audit) {
-        feeds.push(... auditTool.expendFeeds({macs, block: true}))
-      }
+
+    delete options.localFlow
+
+    return feeds
+  }
+
+  async prepareRecentFlows(json, options) {
+    log.verbose('prepareRecentFlows', JSON.stringify(options))
+    options = options || {}
+    this.checkCount(options)
+    const macs = await this.expendMacs(options)
+    if (!("flows" in json)) {
+      json.flows = {};
     }
 
-    delete options.audit
-    delete options.dnsFlow
-    delete options.ntpFlow
-    delete options.localFlow
-    delete options.auditDNSSuccess
-    let recentFlows = await this.logFeeder(options, feeds)
+    // default to not getting blocked flows
+    if (!options.audit) options.audit = false
+
+    const feeds = this.optionsToFeeds(options, macs).concat(
+      auditTool.optionsToFeeds(options, macs)
+    )
+
+    const recentFlows = await this.logFeeder(options, feeds)
 
     json.flows.recent = recentFlows;
     log.verbose('prepareRecentFlows ends', JSON.stringify(options))
