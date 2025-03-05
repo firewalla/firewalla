@@ -979,7 +979,7 @@ class Host extends Monitorable {
     return _neighbors;
   }
 
-  async identifyDevice(force) {
+  async identifyDevice(force, classifyDetails = false) {
     const activeTS = this.o.lastActiveTimestamp || this.o.firstFoundTimestamp
     if (activeTS && activeTS < Date.now()/1000 - 60 * 60 * 24 * 7) {
       log.verbose('HOST:IDENTIFY, inactive for long, skip')
@@ -1040,11 +1040,11 @@ class Host extends Monitorable {
       obj.monitored = this.policy.monitor
       obj.vpnClient = this.policy.vpnClient
 
-      let data = await bone.deviceAsync("identify", obj).catch(err => {
+      const data = await bone.deviceAsync(classifyDetails ? 'classify_details' : "identify", obj).catch(err => {
         // http error, no need to log host data
         log.error('Error identify host', obj.ipv4, obj.name || obj.bname, err)
       })
-      if (data) {
+      if (data && !classifyDetails) {
         log.debug("HOST:IDENTIFY:RESULT", this.name(), data);
 
         if (data._identifyExpiration) {
@@ -1061,19 +1061,21 @@ class Host extends Monitorable {
         if (!this.o.detect) this.o.detect = {}
         this.o.detect.cloud = data
         await this.save('_identifyExpiration')
-        sem.emitLocalEvent({
+        sem.emitEvent({
           type: 'DetectUpdate',
           from: 'cloud',
+          toProcess: 'FireMain',
           mac: this.o.mac,
           detect: data,
           suppressEventLogging: true,
         })
       }
 
+      return data
     } catch (e) {
       log.error("HOST:IDENTIFY:ERROR", obj, e);
+      return null
     }
-    return obj;
   }
 
   name() {
