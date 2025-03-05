@@ -452,34 +452,6 @@ class BroDetect {
     }
   }
 
-  // during firemain start and new device discovery, there's a small window that host object is
-  // not created in memory thus no tag info.
-  async getTags(monitorable, intfInfo) {
-    if (!monitorable) return {}
-    const intfId = intfInfo && intfInfo.uuid
-
-    const transitiveTags = await monitorable.getTransitiveTags()
-
-    const result = {}
-    for (const type of Object.keys(Constants.TAG_TYPE_MAP)){
-      const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
-      const tags = [];
-      if (_.has(transitiveTags, type)) {
-        tags.push(...Object.keys(transitiveTags[type]));
-        if (intfId && intfId !== '') {
-          const networkProfile = NetworkProfileManager.getNetworkProfile(intfId);
-          if (networkProfile)
-            tags.push(... await networkProfile.getTags(type));
-        }
-      }
-      result[flowKey] = _.uniq(tags);
-      // remove empty tag key to save memory, this cuts 4%+ from flow:conn
-      if (!result[flowKey].length) delete result[flowKey]
-    }
-
-    return result
-  }
-
   async saveDNSFlow(obj) {
     if (platform.isDNSFlowSupported() && fc.isFeatureOn('dns_flow')) try {
       const now = Date.now() / 1000
@@ -556,7 +528,7 @@ class BroDetect {
         return
       }
 
-      const tags = await this.getTags(monitorable, intfInfo)
+      const tags = await hostTool.getTags(monitorable, intfInfo && intfInfo.uuid)
 
       this.recordTraffic({ dns: 1 }, localMac);
       this.recordTraffic({ dns: 1 }, 'global');
@@ -1299,8 +1271,8 @@ class BroDetect {
         tmpspec.rpid = Number(connEntry.rpid); // route rule id
       }
 
-      const tags = await this.getTags(monitorable, intfInfo)
-      const dstTags = await this.getTags(dstMonitorable, dstIntfInfo)
+      const tags = await hostTool.getTags(monitorable, intfInfo && intfInfo.uuid)
+      const dstTags = await hostTool.getTags(dstMonitorable, dstIntfInfo && dstIntfInfo.uuid)
       Object.assign(tmpspec, tags)
       tmpspec.dstTags = dstTags
 

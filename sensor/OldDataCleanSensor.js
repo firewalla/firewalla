@@ -67,6 +67,7 @@ class OldDataCleanSensor extends Sensor {
       case "flowDNS":
       case "flowLocal":
       case "auditDrop":
+      case "auditLocalDrop":
       case "categoryflow":
       case "appflow":
         platformRetentionTimeMultiplier = platform.getRetentionTimeMultiplier();
@@ -93,6 +94,7 @@ class OldDataCleanSensor extends Sensor {
       case "flowDNS":
       case "flowLocal":
       case "auditDrop":
+      case "auditLocalDrop":
       case "categoryflow":
       case "appflow":
         platformRetentionCountMultiplier = platform.getRetentionCountMultiplier();
@@ -593,6 +595,7 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("flowLocal", (key) => key.startsWith("flow:local:"));
     this._registerFilterFunction("auditDrop", (key) => key.startsWith("audit:drop:"));
     this._registerFilterFunction("auditAccept", (key) => key.startsWith("audit:accept:"));
+    this._registerFilterFunction("auditLocalDrop", (key) => key.startsWith("audit:local:drop"));
     this._registerFilterFunction("http", (key) => key.startsWith("flow:http:"));
     this._registerFilterFunction("x509", key => key.startsWith("flow:x509:"), false, this.cleanFlowX509.bind(this));
     this._registerFilterFunction("flowgraph", key => key.startsWith("flowgraph:"), false, this.cleanFlowGraph);
@@ -631,6 +634,7 @@ class OldDataCleanSensor extends Sensor {
       case "flowLocal":
       case "auditDrop":
       case "auditAccept":
+      case "auditLocalDrop":
       case "categoryflow":
       case "appflow":
         platformRetentionCountMultiplier = platform.getRetentionCountMultiplier();

@@ -1778,7 +1778,7 @@ class netBot extends ControllerBot {
         throw new Error('Invalid target type: ' + type)
     }
 
-    const { audit, nonLocal, local } = msg.data
+    const { audit, nonLocal, local, localAudit } = msg.data
 
     const promises = []
     const tsMetrics = []
@@ -1818,6 +1818,17 @@ class netBot extends ControllerBot {
       if (type != 'host' || target != '0.0.0.0')
         tsMetrics.push('upload:lo', 'download:lo', 'conn:lo:in', 'conn:lo:out')
       hostMetrics.push('upload:lo', 'download:lo', 'conn:lo:in', 'conn:lo:out')
+    }
+    if (fc.isFeatureOn(Constants.FEATURE_LOCAL_AUDIT_LOG) && localAudit) {
+      promises.push(
+        netBotTool.prepareTopFlows(jsonobj, 'local:ipB', "in", Object.assign({}, options, {limit: 400})),
+        netBotTool.prepareTopFlows(jsonobj, 'local:ipB', "out", Object.assign({}, options, {limit: 400})),
+      )
+      if (type != 'host' || target == '0.0.0.0')
+        tsMetrics.push('ipB:lo:intra')
+      if (type != 'host' || target != '0.0.0.0')
+        tsMetrics.push('ipB:lo:in', 'ipB:lo:out')
+      hostMetrics.push('ipB:lo:in', 'ipB:lo:out')
     }
     promises.push(
       this.hostManager.last60MinStatsForInit(jsonobj, target, tsMetrics),
