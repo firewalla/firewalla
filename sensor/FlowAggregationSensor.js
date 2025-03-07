@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -253,24 +253,33 @@ class FlowAggregationSensor extends Sensor {
   }
 
   processBlockFlow(flow) {
-    const {type, mac, _ts, intf, dp, fd} = flow;
+    const {type, mac, _ts, intf, dp, fd, dir, dmac, dIntf, dstTags} = flow;
     if (!type || !mac || !_ts)
       return;
     const tags = [];
+    const dTags = []
     for (const type of ['group', 'user']) {
       const config = Constants.TAG_TYPE_MAP[type];
       tags.push(...(flow[config.flowKey] || []));
+      if (dir == 'L' && dstTags)
+        dTags.push(...(dstTags[config.flowKey] || []))
     }
     const tick = flowAggrTool.getIntervalTick(_ts, this.config.keySpan) + this.config.keySpan;
     const uidTickKeys = [];
-    uidTickKeys.push(`${mac}@${tick}`);
+    uidTickKeys.push(mac);
     if (!mac.startsWith(Constants.NS_INTERFACE + ":")) {
       if (intf)
-        uidTickKeys.push(`intf:${intf}@${tick}`);
+        uidTickKeys.push(`intf:${intf}`);
       if (!_.isEmpty(tags))
-        Array.prototype.push.apply(uidTickKeys, tags.map(tag => `tag:${tag}@${tick}`));
+        Array.prototype.push.apply(uidTickKeys, tags.map(tag => `tag:${tag}`));
     }
-    uidTickKeys.push(`global@${tick}`); // empty string means global
+    uidTickKeys.push(`global`); // empty string means global
+
+    // adds :local to uid before @
+    if (dir == 'L')
+      uidTickKeys.forEach((key, i) => uidTickKeys[i] = `${key}:local`)
+    uidTickKeys.forEach((key, i) => uidTickKeys[i] = `${key}@${tick}`)
+
     switch (flow.type) {
       case "ip": {
         if (mac.startsWith(Constants.NS_INTERFACE + ":")) {
@@ -288,15 +297,27 @@ class FlowAggregationSensor extends Sensor {
         } else {
           if (!dp)
             return;
-          const key = `${mac}:${fd=="out"?flow.sh:flow.dh}:${fd}:${dp}`
+          const key = `${mac}:${dir=='L'?dmac:fd=="out"?flow.sh:flow.dh}:${fd}:${dp}`
           for (const uidTickKey of uidTickKeys) {
             if (!this.ipBlockCache[uidTickKey])
               this.ipBlockCache[uidTickKey] = {};
             let t = this.ipBlockCache[uidTickKey][key];
             if (!t) {
               t = {device: mac, fd, count: 0};
-              if (flow.dmac)
-                t.dstMac = flow.dmac;
+              if (dir == 'L') {
+                if (flow.dmac)
+                  t.dstMac = flow.dmac;
+                if (uidTickKey.startsWith('intf:') && intf == dIntf) {
+                  t.intra = 1
+                } else if (uidTickKey.startsWith('tag:')) {
+                  const tagID = uidTickKey.split(':')[1]
+                  if (dTags.includes(tagID)) {
+                    t.intra = 1
+                  }
+                } else if (uidTickKey.startsWith('global')) {
+                  t.intra = 1
+                }
+              }
               if (fd === "out") {
                 t.devicePort = [ String(dp) ];
                 t.destIP = flow.sh;
@@ -415,7 +436,7 @@ class FlowAggregationSensor extends Sensor {
 
     await flowAggrTool.addSumFlow("download", options);
     await flowAggrTool.addSumFlow("upload", options);
-    if (platform.isAuditLogSupported()) {
+    if (platform.isAuditLogSupported() && fc.isFeatureOn(Constants.FEATURE_AUDIT_LOG)) {
       await flowAggrTool.addSumFlow("dnsB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow}));
       await flowAggrTool.addSumFlow("ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow}), "in");
       await flowAggrTool.addSumFlow("ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow}), "out");
@@ -425,6 +446,10 @@ class FlowAggregationSensor extends Sensor {
       await flowAggrTool.addSumFlow('local', options, 'upload');
       await flowAggrTool.addSumFlow('local', options, 'in');
       await flowAggrTool.addSumFlow('local', options, 'out');
+    }
+    if (platform.isAuditLogSupported() && fc.isFeatureOn(Constants.FEATURE_LOCAL_AUDIT_LOG)) {
+      await flowAggrTool.addSumFlow("local:ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow}), "in");
+      await flowAggrTool.addSumFlow("local:ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow}), "out");
     }
   }
 

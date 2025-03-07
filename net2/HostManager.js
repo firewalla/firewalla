@@ -496,7 +496,15 @@ module.exports = class HostManager extends Monitorable {
     const { granularities, hits} = statSettings;
     const stats = {}
     if (!metrics) { // default (full) metrics
-      metrics = [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB', 'ntp' ]
+      metrics = [ 'upload', 'download', 'conn', 'dns', 'ntp' ]
+      if (fc.isFeatureOn(Constants.FEATURE_AUDIT_LOG)) {
+        metrics.push('ipB', 'dnsB')
+      }
+      if (fc.isFeatureOn(Constants.FEATURE_LOCAL_AUDIT_LOG)) {
+        metrics.push('ipB:lo:intra', )
+        if (target && target != '0.0.0.0') // remove irrelevant matrics from init
+          metrics.push('ipB:lo:in', 'conn:lo:out')
+      }
       if (fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW)) {
         metrics.push('intra:lo', 'conn:lo:intra')
         if (target && target != '0.0.0.0') // remove irrelevant matrics from init

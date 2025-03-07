@@ -571,6 +571,10 @@
         "expires": 86400,
         "count": 5000
       },
+      "auditLocalDrop": {
+        "expires": 86400,
+        "count": 5000
+      },
       "auditDrop": {
         "expires": 86400,
         "count": 10000
@@ -991,6 +995,7 @@
     "pcap_zeek": true,
     "pcap_suricata": false,
     "local_flow": false,
+    "local_audit": true,
     "category_filter": true,
     "rule_stats": true,
     "unbound": false,
