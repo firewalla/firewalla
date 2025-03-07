@@ -1165,7 +1165,7 @@ class PolicyManager2 {
                 await this._unenforce(tmpPolicy);
                 await this._enforce(policy);
                 this.domainBlockTimers[policy.pid].isTimerActive = false;
-              }, 60 * 1000)
+              }, 600 * 1000)
             };
             return;
           }
