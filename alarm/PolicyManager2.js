@@ -1144,7 +1144,7 @@ class PolicyManager2 {
         this.notifyPolicyActivated(policy);
 
         const action = policy.action || "block";
-        if (action === "block" || action === "app_block") {
+        if (action === "block" || action === "app_block" || policy.action === "category") {
           if (policy.dnsmasq_only && !policy.manageredBy) {
             const tmpPolicy = Object.assign(Object.create(Policy.prototype), policy);
             tmpPolicy.dnsmasq_only = false;
@@ -1808,10 +1808,6 @@ class PolicyManager2 {
       clearTimeout(this.enabledTimers[pid])
       delete this.enabledTimers[pid]
     }
-    if (this.domainBlockTimers[pid]) {
-      clearTimeout(this.domainBlockTimers[pid].domainBlockTimer)
-      delete this.domainBlockTimers[pid];
-    }
   }
 
   unenforce(policy) {
@@ -1825,11 +1821,15 @@ class PolicyManager2 {
         return AppTimeUsageManager.deregisterPolicy(policy);
       } else {
         this.notifyPolicyDeactivated(policy);
-        const domainBlockTimer = this.domainBlockTimers[policy.pid];
-        if (domainBlockTimer && domainBlockTimer.isTimerActive) { // domain block timer is still running
-          const tmpPolicy = Object.assign(Object.create(Policy.prototype), policy);
-          tmpPolicy.dnsmasq_only = false;
-          return this._unenforce(tmpPolicy) // unenforce with dnsmasq_only=false
+        if (this.domainBlockTimers[policy.pid]) {
+          const isTimerActive = this.domainBlockTimers[policy.pid].isTimerActive;
+          clearTimeout(this.domainBlockTimers[policy.pid].domainBlockTimer);
+          delete this.domainBlockTimers[policy.pid];
+          if (isTimerActive) { // domain block timer is still running
+            const tmpPolicy = Object.assign(Object.create(Policy.prototype), policy);
+            tmpPolicy.dnsmasq_only = false;
+            return this._unenforce(tmpPolicy) // unenforce with dnsmasq_only=false
+          }
         }
         return this._unenforce(policy) // regular unenforce
       }
