@@ -1145,7 +1145,7 @@ class PolicyManager2 {
 
         const action = policy.action || "block";
         if (action === "block" || action === "app_block" || policy.action === "category") {
-          if (policy.dnsmasq_only && !policy.manageredBy) {
+          if (policy.dnsmasq_only && !policy.managedBy) {
             const tmpPolicy = Object.assign(Object.create(Policy.prototype), policy);
             tmpPolicy.dnsmasq_only = false;
             await this._enforce(tmpPolicy);
