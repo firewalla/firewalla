@@ -298,6 +298,18 @@ class Conntrack {
     }
   }
 
+  async setConnEntriesWithExpire(entries, expr = 600) {
+    if (!_.isEmpty(entries)) {
+      const pipeline = rclient.multi();
+      entries.forEach(entry => {
+        const key = `conn:${entry.protocol && entry.protocol.toLowerCase()}:${entry.src}:${entry.sport}:${entry.dst}:${entry.dport}`;
+        pipeline.hset(key, entry.data);
+        pipeline.expire(key, expr);
+      });
+      await pipeline.execAsync();
+    }
+  }
+
   async delConnEntries(src, sport, dst, dport, protocol) {
     const key = this.getKey(src, sport, dst, dport, protocol)
     await rclient.unlinkAsync(key)
