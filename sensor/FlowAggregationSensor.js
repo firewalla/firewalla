@@ -253,13 +253,16 @@ class FlowAggregationSensor extends Sensor {
   }
 
   processBlockFlow(flow) {
-    const {type, mac, _ts, intf, dp, fd, dir, dmac} = flow;
+    const {type, mac, _ts, intf, dp, fd, dir, dmac, dIntf, dstTags} = flow;
     if (!type || !mac || !_ts)
       return;
     const tags = [];
+    const dTags = []
     for (const type of ['group', 'user']) {
       const config = Constants.TAG_TYPE_MAP[type];
       tags.push(...(flow[config.flowKey] || []));
+      if (dir == 'L' && dstTags)
+        dTags.push(...(dstTags[config.flowKey] || []))
     }
     const tick = flowAggrTool.getIntervalTick(_ts, this.config.keySpan) + this.config.keySpan;
     const uidTickKeys = [];
@@ -294,15 +297,27 @@ class FlowAggregationSensor extends Sensor {
         } else {
           if (!dp)
             return;
-          const key = `${mac}:${fd=="out"?flow.sh:flow.dh}:${fd}:${dp}`
+          const key = `${mac}:${dir=='L'?dmac:fd=="out"?flow.sh:flow.dh}:${fd}:${dp}`
           for (const uidTickKey of uidTickKeys) {
             if (!this.ipBlockCache[uidTickKey])
               this.ipBlockCache[uidTickKey] = {};
             let t = this.ipBlockCache[uidTickKey][key];
             if (!t) {
               t = {device: mac, fd, count: 0};
-              if (flow.dmac)
-                t.dstMac = flow.dmac;
+              if (dir == 'L') {
+                if (flow.dmac)
+                  t.dstMac = flow.dmac;
+                if (uidTickKey.startsWith('intf:') && intf == dIntf) {
+                  t.intra = 1
+                } else if (uidTickKey.startsWith('tag:')) {
+                  const tagID = uidTickKey.split(':')[1]
+                  if (dTags.includes(tagID)) {
+                    t.intra = 1
+                  }
+                } else if (uidTickKey.startsWith('global')) {
+                  t.intra = 1
+                }
+              }
               if (fd === "out") {
                 t.devicePort = [ String(dp) ];
                 t.destIP = flow.sh;
