@@ -1144,7 +1144,8 @@ class PolicyManager2 {
         this.notifyPolicyActivated(policy);
 
         const action = policy.action || "block";
-        if (action === "block" || action === "app_block" || policy.action === "category") {
+        const type = policy["i.type"] || policy["type"]; //backward compatibility
+        if ((action === "block" || action === "app_block") && type === "category") {
           if (policy.dnsmasq_only && !policy.managedBy) {
             const tmpPolicy = Object.assign(Object.create(Policy.prototype), policy);
             tmpPolicy.dnsmasq_only = false;
@@ -1168,7 +1169,7 @@ class PolicyManager2 {
             return;
           }
         }
-        this._enforce(policy); // regular enforce
+        await this._enforce(policy); // regular enforce
       }
     } finally {
       const action = policy.action || "block";
