@@ -1161,7 +1161,6 @@ class PolicyManager2 {
             this.domainBlockTimers[policy.pid] = {
               isTimerActive: true,
               domainBlockTimer: setTimeout(async () => {
-                log.info(`reenable policy ${policy.pid} after 10 minutes of domain block`);
                 await this._unenforce(tmpPolicy);
                 await this._enforce(policy);
                 this.domainBlockTimers[policy.pid].isTimerActive = false;
