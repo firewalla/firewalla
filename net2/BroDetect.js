@@ -1179,12 +1179,14 @@ class BroDetect {
       // save flow under the destination host key for per device indexing
       // do this after we get real bytes in long connection
       let dstMonitorable = null;
+      let dstRealLocal = null
       if (localFlow) {
         const isDstIdentityIntf = this.isIdentityLAN(dstIntfInfo)
         if (isDstIdentityIntf) {
           dstMonitorable = await this.waitAndGetIdentity(dhost);
           if (dstMonitorable) {
             dstMac = IdentityManager.getGUID(dstMonitorable);
+            dstRealLocal = IdentityManager.getEndpointByIP(dhost);
           }
         } else {
           if (dstMac && sysManager.isMyMac(dstMac)) {
@@ -1258,6 +1260,8 @@ class BroDetect {
       if (localFlow) {
         tmpspec.dmac = dstMac
         tmpspec.dIntf = dstIntfInfo.uuid.substring(0, 8)
+        if (dstRealLocal)
+          tmpspec.drl = this.extractIP(dstRealLocal)
       } else {
         tmpspec.oIntf = outIntfId // egress intf id
         tmpspec.af = {} //application flows

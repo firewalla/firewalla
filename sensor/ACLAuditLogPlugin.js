@@ -515,6 +515,14 @@ class ACLAuditLogPlugin extends Sensor {
       reverseRecord.dmac = record.mac
       reverseRecord.intf = record.dIntf
       reverseRecord.dIntf = record.intf
+      if (record.rl)
+        reverseRecord.drl = record.rl
+      else
+        delete reverseRecord.drl
+      if (record.drl)
+        reverseRecord.rl = record.drl
+      else
+        delete reverseRecord.rl
       reverseRecord.fd = record.fd == 'in' ? 'out' : 'in'
       this.writeBuffer(reverseRecord)
     }

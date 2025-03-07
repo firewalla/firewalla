@@ -488,11 +488,12 @@ class LogQuery {
         }
       }
 
-      if (f.rl) {
-        const c = country.getCountry(f.rl);
-        if (c)
-          f.rlCountry = c;
-      }
+      for (const rlKey in ['rl', 'drl'])
+        if (f[rlKey]) {
+          const c = country.getCountry(f[rlKey].split(':')[0]);
+          if (c)
+            f[rlKey+'Country'] = c;
+        }
 
       // special handling of flows blocked by adblock, ensure category is ad,
       // better do this by consolidating cloud data for domain intel and adblock list
