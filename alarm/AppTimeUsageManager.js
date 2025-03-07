@@ -329,6 +329,7 @@ class AppTimeUsageManager {
       p.guids = [uid];
     else if (uid && hostTool.isMacAddress(uid))
       p.scope = [uid];
+    p.managedBy = "AppTimeUsageManager";
 
     if (p.type === "dns" || p.type === "category")
       p.dnsmasq_only = domainOnly;
@@ -353,6 +354,8 @@ class AppTimeUsageManager {
       p.guids = [uid];
     else if (uid && hostTool.isMacAddress(uid))
       p.scope = [uid];
+
+    p.managedBy = "AppTimeUsageManager";
 
     if (p.type === "dns" || p.type === "category")
       p.dnsmasq_only = domainOnly;
