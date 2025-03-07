@@ -73,6 +73,7 @@ class QuicLogPlugin extends Sensor {
 
   async _flushConnEntryCache() {
     lock.acquire('LOCK_CONN_CACHE', async () => {
+      const currentTime = new Date().getTime();
       if (this.connCache.length >= 0) {
         await conntrack.setConnEntriesWithExpire(this.connCache);
         this.connCache = [];
