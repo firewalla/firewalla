@@ -26,6 +26,7 @@ const HostManager = require('../net2/HostManager')
 const hostManager = new HostManager();
 const networkProfileManager = require('../net2/NetworkProfileManager')
 const IdentityManager = require('../net2/IdentityManager.js');
+const TagManager = require('../net2/TagManager.js');
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const Constants = require('../net2/Constants.js');
 const fc = require('../net2/config.js')
@@ -697,15 +698,16 @@ class ACLAuditLogPlugin extends Sensor {
             continue
 
           let transitiveTags = {};
+          let host = null;
           if (!IdentityManager.isGUID(mac)) {
             if (!mac.startsWith(Constants.NS_INTERFACE + ':')) {
-              const host = hostManager.getHostFastByMAC(mac);
+              host = hostManager.getHostFastByMAC(mac);
               if (host) transitiveTags = await host.getTransitiveTags();
             }
           } else {
-            const identity = IdentityManager.getIdentityByGUID(mac);
-            if (identity)
-              transitiveTags = await identity.getTransitiveTags();
+            host = IdentityManager.getIdentityByGUID(mac);
+            if (host)
+              transitiveTags = await host.getTransitiveTags();
           }
           for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
             const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
@@ -717,6 +719,29 @@ class ACLAuditLogPlugin extends Sensor {
             }
             if (tags.length)
               record[flowKey] = _.uniq(tags);
+          }
+
+          if (record.ac == "isolation") {
+            switch (record.isoLVL) {
+              case 1: {
+                if (host) {
+                  const isoPolicy = host.getPolicyFast("isolation");
+                  record.isoHost = _.get(isoPolicy, "external") ? "sh" : "dh"; // indicate whether the isolation is applied on source host or dest host
+                }
+                break;
+              }
+              case 3: {
+                if (record.isoGID && !_.has(record, "isoInt") && !_.has(record, "isoExt")) {
+                  const tag = TagManager.getTagByUid(record.isoGID);
+                  if (tag) {
+                    const tagIsoPolicy = tag.getPolicyFast("isolation");
+                    record.isoInt = _.get(tagIsoPolicy, "internal") || false;
+                    record.isoExt = _.get(tagIsoPolicy, "external") || false;
+                  }
+                }
+                break;
+              }
+            }
           }
 
           // use dns_flow as a prioirty for statistics
