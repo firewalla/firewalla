@@ -314,9 +314,7 @@ class DeviceHook extends Hook {
             return; // ignore if mac is undefined
           let vendor = null;
 
-          await withTimeout(this.getVendorInfo(mac), 3000)
-            .then(result => vendor = result)
-            .catch(err => log.error("Failed to get vendor info for " + mac, err));
+          vendor = await this.getVendorInfo(mac);
 
           let v = vendor || host.macVendor || "Unknown";
 
@@ -833,7 +831,12 @@ class DeviceHook extends Hook {
     } catch (err) {
       log.error("Failed to get vendor info from cloud", err);
     }
-    return WlanVendorInfo.lookupMacVendor(mac); // fallback to local lookup
+    let vendor = null;
+    // fallback to local lookup
+    await withTimeout(WlanVendorInfo.lookupMacVendor(mac), 1000)
+      .then(result => vendor = result)
+      .catch(err => log.error("Failed to get vendor info for " + mac + " from local lookup", err));
+    return vendor;
   }
 }
 
