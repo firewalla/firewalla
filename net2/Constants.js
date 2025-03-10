@@ -154,4 +154,6 @@ module.exports = {
 
   POLICY_KEY_ISOLATION: "isolation",
   POLICY_KEY_SSID_PSK: "ssidPSK",
+
+  LOG_PREFIX_QUIC: '[FW_QUIC]:',
 };

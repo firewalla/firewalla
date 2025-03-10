@@ -11,15 +11,23 @@ sudo chgrp adm /alog/acl-audit.log
 sudo chown syslog /alog/acl-audit.log
 sudo chmod 644 /alog/acl-audit.log
 
+touch /alog/quic.log
+sudo chgrp adm /alog/quic.log
+sudo chown syslog /alog/quic.log
+sudo chmod 644 /alog/quic.log
+
 sudo rm -rf /log/alog
 sudo ln -sf /alog /log/alog
 
 mkdir -p $FIREWALLA_HIDDEN/config/crontab/
 sudo cp $FIREWALLA_HOME/etc/logrotate.d/acl-audit /etc/logrotate.d/
+sudo cp $FIREWALLA_HOME/etc/logrotate.d/quic.logrotate /etc/logrotate.d/
 echo "* * * * * sudo logrotate /etc/logrotate.d/acl-audit" > $FIREWALLA_HIDDEN/config/crontab/acl-audit-logrotate
+echo "* * * * * sudo logrotate /etc/logrotate.d/quic.logrotate " > $FIREWALLA_HIDDEN/config/crontab/quic-logrotate
 $FIREWALLA_HOME/scripts/update_crontab.sh
 
 sudo cp ${FIREWALLA_HOME}/etc/rsyslog.d/30-acl-audit.conf /etc/rsyslog.d/
+sudo cp ${FIREWALLA_HOME}/etc/rsyslog.d/50-quic-log.conf /etc/rsyslog.d/
 sudo systemctl restart rsyslog
 
 cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/audit

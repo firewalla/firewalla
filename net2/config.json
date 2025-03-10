@@ -715,6 +715,13 @@
       "interval": 900,
       "expires": 86400
     },
+    "QuicLogPlugin": {
+      "syncInterval": 3,
+      "combineReqNumber": 10,
+      "runtimeSync": true,
+      "localCacheSize": 10000,
+      "localCacheTtl": 300
+    },
     "ACLAlarmLogPlugin": {},
     "WireGuardPlugin": {},
     "NewDeviceTagSensor": {},
@@ -974,6 +981,7 @@
     "family_protect": false,
     "internal_scan": true,
     "acl_audit": true,
+    "quic_log_reader": true,
     "acl_alarm": true,
     "new_device_tag": false,
     "dual_wan": true,
