@@ -83,6 +83,16 @@ class AuditTool extends LogQuery {
         f.isoGID = entry.isoGID;
       if (entry.isoNID)
         f.isoNID = entry.isoNID;
+      if (entry.isoLVL)
+        f.isoLVL = entry.isoLVL;
+      if (entry.orig)
+        f.orig = entry.orig;
+      if (entry.hasOwnProperty("isoExt"))
+        f.isoExt = entry.isoExt;
+      if (entry.hasOwnProperty("isoInt"))
+        f.isoInt = entry.isoInt;
+      if (entry.hasOwnProperty("isoHost"))
+        f.isoHost = entry.isoHost;
     }
 
     if (entry.dmac) {

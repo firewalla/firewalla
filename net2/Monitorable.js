@@ -407,6 +407,10 @@ class Monitorable {
     }
     return transitiveTags;
   }
+
+  getPolicyFast(policyKey) {
+    return _.get(this.policy, policyKey);
+  }
 }
 
 module.exports = Monitorable;
