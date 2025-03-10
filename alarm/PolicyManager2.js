@@ -131,6 +131,7 @@ class PolicyManager2 {
 
       this.enabledTimers = {}
       this.disableAllTimer = null;
+      this.domainBlockTimers = {};
 
       this.ipsetCache = null;
       this.ipsetCacheUpdateTime = null;
@@ -1141,7 +1142,34 @@ class PolicyManager2 {
         return AppTimeUsageManager.registerPolicy(policy);
       } else {
         this.notifyPolicyActivated(policy);
-        return this._enforce(policy); // regular enforce
+
+        const action = policy.action || "block";
+        const type = policy["i.type"] || policy["type"]; //backward compatibility
+        if ((action === "block" || action === "app_block") && type === "category") {
+          if (policy.dnsmasq_only && !policy.managedBy) {
+            const tmpPolicy = Object.assign(Object.create(Policy.prototype), policy);
+            tmpPolicy.dnsmasq_only = false;
+            await this._enforce(tmpPolicy);
+
+            let timeout = 600;
+            if (policy.expire) {
+              const policyTimeout = policy.getExpireDiffFromNow();
+              if (policyTimeout < timeout) { // policy's expire time is less than 10 minutes donot change to domain block again.
+                return;
+              }
+            } 
+            this.domainBlockTimers[policy.pid] = {
+              isTimerActive: true,
+              domainBlockTimer: setTimeout(async () => {
+                await this._unenforce(tmpPolicy);
+                await this._enforce(policy);
+                this.domainBlockTimers[policy.pid].isTimerActive = false;
+              }, 600 * 1000)
+            };
+            return;
+          }
+        }
+        await this._enforce(policy); // regular enforce
       }
     } finally {
       const action = policy.action || "block";
@@ -1794,6 +1822,16 @@ class PolicyManager2 {
         return AppTimeUsageManager.deregisterPolicy(policy);
       } else {
         this.notifyPolicyDeactivated(policy);
+        if (this.domainBlockTimers[policy.pid]) {
+          const isTimerActive = this.domainBlockTimers[policy.pid].isTimerActive;
+          clearTimeout(this.domainBlockTimers[policy.pid].domainBlockTimer);
+          delete this.domainBlockTimers[policy.pid];
+          if (isTimerActive) { // domain block timer is still running
+            const tmpPolicy = Object.assign(Object.create(Policy.prototype), policy);
+            tmpPolicy.dnsmasq_only = false;
+            return this._unenforce(tmpPolicy) // unenforce with dnsmasq_only=false
+          }
+        }
         return this._unenforce(policy) // regular unenforce
       }
     } finally {

@@ -1291,7 +1291,7 @@ class BroDetect {
 
       // might be blocked UDP packets, checking conntrack
       // blocked connections don't leave a trace in conntrack
-      if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0)) {
+      if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0) && !localFlow) {
         if (!outIntfId) {
           log.debug('Dropping blocked UDP', tmpspec)
           return

@@ -123,6 +123,8 @@ class AuditTool extends LogQuery {
         f.isoExt = entry.isoExt;
       if (entry.hasOwnProperty("isoInt"))
         f.isoInt = entry.isoInt;
+      if (entry.hasOwnProperty("isoHost"))
+        f.isoHost = entry.isoHost;
     }
 
     if (entry.dmac)

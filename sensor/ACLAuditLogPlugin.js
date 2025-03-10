@@ -27,6 +27,7 @@ const HostManager = require('../net2/HostManager')
 const hostManager = new HostManager();
 const networkProfileManager = require('../net2/NetworkProfileManager')
 const IdentityManager = require('../net2/IdentityManager.js');
+const TagManager = require('../net2/TagManager.js');
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const Constants = require('../net2/Constants.js');
 const fc = require('../net2/config.js')
@@ -741,6 +742,28 @@ class ACLAuditLogPlugin extends Sensor {
               if (dstMonitorable) {
                 const dstTags = await hostTool.getTags(dstMonitorable, intf)
                 if (Object.keys(dstTags).length) record.dstTags = dstTags
+              }
+            }
+            if (record.ac == "isolation") {
+              switch (record.isoLVL) {
+                case 1: {
+                  if (host) {
+                    const isoPolicy = host.getPolicyFast("isolation");
+                    record.isoHost = _.get(isoPolicy, "external") ? "sh" : "dh"; // indicate whether the isolation is applied on source host or dest host
+                  }
+                  break;
+                }
+                case 3: {
+                  if (record.isoGID && !_.has(record, "isoInt") && !_.has(record, "isoExt")) {
+                    const tag = TagManager.getTagByUid(record.isoGID);
+                    if (tag) {
+                      const tagIsoPolicy = tag.getPolicyFast("isolation");
+                      record.isoInt = _.get(tagIsoPolicy, "internal") || false;
+                      record.isoExt = _.get(tagIsoPolicy, "external") || false;
+                    }
+                  }
+                  break;
+                }
               }
             }
 
