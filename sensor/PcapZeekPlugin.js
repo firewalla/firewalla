@@ -67,6 +67,8 @@ class PcapZeekPlugin extends PcapPlugin {
     const multicastV6 = "ff00::/8";
     const monitoringIntfs = sysManager.getMonitoringInterfaces();
     for (const intf of monitoringIntfs) {
+      if (intf.name === Constants.INTF_AP_CTRL)
+        continue;
       const intfName = intf.name;
       const subnets4 = (_.isArray(intf.ip4_subnets) ? intf.ip4_subnets : []).concat(_.isArray(intf.rt4_subnets) ? intf.rt4_subnets : []).filter(cidr => cidr.includes('/') && !cidr.endsWith('/32') && !sysManager.isDefaultRoute(cidr)); // exclude single IP cidr, mainly for peer IP in mesh VPN that should be covered by another /24 cidr
       for (const ip of subnets4) {
@@ -104,6 +106,8 @@ class PcapZeekPlugin extends PcapPlugin {
     const wanIp4 = [];
     const wanIp6 = [];
     for (const intf of sysManager.getMonitoringInterfaces()) {
+      if (intf.name === Constants.INTF_AP_CTRL)
+        continue;
       const ip4Subnets = intf.ip4_subnets;
       const ip6Subnets = intf.ip6_subnets;
       if (_.isArray(ip4Subnets)) {
