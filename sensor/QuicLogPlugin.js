@@ -21,18 +21,20 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const LogReader = require('../util/LogReader.js');
 const Constants = require('../net2/Constants.js');
 const conntrack = require('../net2/Conntrack.js');
-const exec = require('child-process-promise').exec;
+// const exec = require('child-process-promise').exec;
 const LRU = require('lru-cache');
-const _ = require('lodash');
+// const _ = require('lodash');
 const AsyncLock = require('../vendor_lib/async-lock');
 const sl = require('./SensorLoader.js');
+const { Rule } = require('../net2/Iptables.js');
 
 
 const lock = new AsyncLock();
 
 const LOG_PREFIX = Constants.LOG_PREFIX_QUIC;
 const quicLogFile = '/alog/quic.log';
-const iptablesCmdTemplate = _.template("sudo <%= command  %> <%= action %> FW_FORWARD_LOG -p udp --dport 443 -m udp_tls  --log-tls -j LOG --log-level 7");
+
+// const iptablesCmdTemplate = _.template("sudo <%= command  %> <%= action %> FW_FORWARD_LOG -p udp --dport 443 -m udp_tls  --log-tls -j LOG --log-level 7");
 
 class QuicLogPlugin extends Sensor {
   constructor(config) {
@@ -131,28 +133,31 @@ class QuicLogPlugin extends Sensor {
 
   async globalOn() { // relay on ACLAuditLogPlugin.globalOn
     super.globalOn();
-    try {
-      let cmd = iptablesCmdTemplate({ command: "iptables", action: "-A" });
-      await exec(cmd);
-      cmd = iptablesCmdTemplate({ command: "ip6tables", action: "-A" });
-      await exec(cmd);
-    } catch (err) {
-      log.error("Failed to add iptables rules", err);
-    }
+
+    const rule = new Rule().chn('FW_FORWARD_LOG');
+    rule.mdl("udp_tls", '--log-tls');
+    rule.pro('udp');
+    rule.dport(443);
+    rule.jmp('LOG --log-level 7');
+    await rule.exec('-A');
+    rule.fam(6);
+    await rule.exec('-A');
+    
   }
 
   async globalOff() { // relay on ACLAuditLogPlugin.globalOn
     super.globalOff();
     this.localCache.reset();
     await this._flushConnEntryCache();
-    try {
-      let cmd = iptablesCmdTemplate({ command: "iptables", action: "-D" });
-      await exec(cmd);
-      cmd = iptablesCmdTemplate({ command: "ip6tables", action: "-D" });
-      await exec(cmd);
-    } catch (err) {
-      log.error("Failed to remove iptables rules", err);
-    }
+
+    const rule = new Rule().chn('FW_FORWARD_LOG');
+    rule.mdl("udp_tls", '--log-tls');
+    rule.pro('udp');
+    rule.dport(443);
+    rule.jmp('LOG --log-level 7');
+    await rule.exec('-D');
+    rule.fam(6);
+    await rule.exec('-D');
   }
 
 }
