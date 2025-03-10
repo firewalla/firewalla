@@ -747,8 +747,8 @@ class ACLAuditLogPlugin extends Sensor {
             if (record.ac == "isolation") {
               switch (record.isoLVL) {
                 case 1: {
-                  if (host) {
-                    const isoPolicy = host.getPolicyFast("isolation");
+                  if (monitorable) {
+                    const isoPolicy = monitorable.getPolicyFast("isolation");
                     record.isoHost = _.get(isoPolicy, "external") ? "sh" : "dh"; // indicate whether the isolation is applied on source host or dest host
                   }
                   break;
