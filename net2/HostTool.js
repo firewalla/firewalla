@@ -34,7 +34,6 @@ const maxV6Addr = 8;
 const asyncNative = require('../util/asyncNative.js');
 
 const {getPreferredBName,getPreferredName} = require('../util/util.js')
-const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
 const firewalla = require('./Firewalla.js');
 
 const LRU = require('lru-cache')
@@ -615,6 +614,33 @@ class HostTool {
     }
 
     return Object.values(activeHosts).filter((host, index, array) => array.indexOf(host) == index)
+  }
+
+  // during firemain start and new device discovery, there's a small window that host object is
+  // not created in memory thus no tag info.
+  async getTags(monitorable, intfUUID) {
+    if (!monitorable) return {}
+
+    const transitiveTags = await monitorable.getTransitiveTags()
+
+    const result = {}
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)){
+      const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
+      const tags = [];
+      if (_.has(transitiveTags, type)) {
+        tags.push(...Object.keys(transitiveTags[type]));
+        if (intfUUID && intfUUID !== '') {
+          const networkProfile = require('./NetworkProfileManager.js').getNetworkProfile(intfUUID);
+          if (networkProfile)
+            tags.push(... await networkProfile.getTags(type));
+        }
+      }
+      result[flowKey] = _.uniq(tags);
+      // remove empty tag key to save memory, this cuts 4%+ from flow:conn
+      if (!result[flowKey].length) delete result[flowKey]
+    }
+
+    return result
   }
 }
 

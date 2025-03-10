@@ -146,6 +146,8 @@ module.exports = {
 
   HOST_MAC_KEY_EXPIRE_SECS: 86400 * 365,
 
+  FEATURE_AUDIT_LOG: "acl_audit",
+  FEATURE_LOCAL_AUDIT_LOG: "local_audit",
   FEATURE_LOCAL_FLOW: "local_flow",
   FEATURE_VPN_DISCONNECT: "vpn_disconnect",
   FEATURE_VPN_RESTORE: "vpn_restore",
