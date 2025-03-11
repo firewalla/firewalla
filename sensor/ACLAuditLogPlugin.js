@@ -510,6 +510,12 @@ class ACLAuditLogPlugin extends Sensor {
 
     this.writeBuffer(record);
     // local block
+    const reverseRecord = this.getReverseRecord(record);
+    if (reverseRecord)
+      this.writeBuffer(reverseRecord);
+  }
+
+  getReverseRecord(record) {
     if (record.dmac) { // only record the reverse direction when distination device exists
       const reverseRecord = JSON.parse(JSON.stringify(record))
       reverseRecord.mac = record.dmac
@@ -525,8 +531,9 @@ class ACLAuditLogPlugin extends Sensor {
       else
         delete reverseRecord.rl
       reverseRecord.fd = record.fd == 'in' ? 'out' : 'in'
-      this.writeBuffer(reverseRecord)
+      return reverseRecord;
     }
+    return null;
   }
 
   async _processDnsRecord(record) {
