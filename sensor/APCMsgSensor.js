@@ -604,8 +604,12 @@ class APCMsgSensor extends Sensor {
     record.intf = intf && intf.name;
     if (msg.iso_lvl == 2 && intf) record.isoNID = intf.uuid; // network isolate
 
-    if (this.aclAuditLogPlugin) // in case AclAuditLogPlugin not loaded
-      this.aclAuditLogPlugin.writeBuffer(msg.smac, record);
+    if (this.aclAuditLogPlugin) { // in case AclAuditLogPlugin not loaded
+      this.aclAuditLogPlugin.writeBuffer(record);
+      const reverseRecord = this.aclAuditLogPlugin.getReverseRecord(record);
+      if (reverseRecord)
+        this.aclAuditLogPlugin.writeBuffer(reverseRecord);
+    }
   }
 
   static async setWlanVendorToCache(mac, wlanVendors) {
