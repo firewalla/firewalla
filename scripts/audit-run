@@ -27,7 +27,7 @@ echo "* * * * * sudo logrotate /etc/logrotate.d/quic.logrotate " > $FIREWALLA_HI
 $FIREWALLA_HOME/scripts/update_crontab.sh
 
 sudo cp ${FIREWALLA_HOME}/etc/rsyslog.d/30-acl-audit.conf /etc/rsyslog.d/
-sudo cp ${FIREWALLA_HOME}/etc/rsyslog.d/50-quic-log.conf /etc/rsyslog.d/
+sudo cp ${FIREWALLA_HOME}/etc/rsyslog.d/32-quic-log.conf /etc/rsyslog.d/
 sudo systemctl restart rsyslog
 
 cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/audit
