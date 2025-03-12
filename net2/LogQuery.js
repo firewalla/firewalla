@@ -198,11 +198,11 @@ class LogQuery {
     log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(_.omit(options, 'macs')), JSON.stringify(filterCommon))
     feeds.forEach(f => {
       f.options = f.options || {};
-      Object.assign(f.options, options.exclude)
       // feed based filter is only added in optionsToFeeds(), and we are only dealing with exclude for now
       // both include and exclude can only be array, check optionsToFilter()
       if (!_.isEmpty(f.options.exclude) || !_.isEmpty(options.exclude))
         f.options.exclude = [].concat(f.options.exclude || [], options.exclude || [])
+      Object.assign(f.options, _.omit(options, 'exclude'))
       f.filter = this.optionsToFilter(f.options)
     })
     // log.debug( feeds.map(f => JSON.stringify(f) + '\n') )
