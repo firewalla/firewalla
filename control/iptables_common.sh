@@ -188,6 +188,9 @@ cat << EOF > "$filter_file"
 -N FW_FORWARD
 -A FORWARD -j FW_FORWARD
 
+-N FW_FORWARD_LOG
+
+
 # INPUT chain protection
 -N FW_INPUT_ACCEPT
 -A INPUT -j FW_INPUT_ACCEPT
@@ -301,6 +304,9 @@ cat << EOF > "$filter_file"
 -A FW_FORWARD -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
 # only set once for NEW connection, for packets that may not fall into FW_ACCEPT_DEFAULT, this rule will set the bit, e.g., rules in FW_UPNP_ACCEPT created by miniupnpd
 -A FW_FORWARD -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x80000000/0x80000000
+# jump to FW_FORWARD_LOG after set CONNMARK for logging
+-A FW_FORWARD -j FW_FORWARD_LOG
+
 # do not block on firewalla APs
 -A FW_FORWARD -m set --match-set fw_assets_set src -j FW_ACCEPT_DEFAULT
 -A FW_FORWARD -m set --match-set fw_assets_set dst -j FW_ACCEPT_DEFAULT
