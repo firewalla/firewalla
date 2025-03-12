@@ -1726,19 +1726,15 @@ module.exports = class DNSMASQ {
     const p = host.policy.ipAllocation || {}
     const monitor = !(host.policy.monitor == false) // monitor default value is true
 
-    const TagManager = require('../../net2/TagManager.js');
-    const tags = [monitor ? 'monitor' : 'unmonitor'].concat(
-      // filter out invalid tags
-      (host.policy.tags || []).filter(TagManager.getTagByUid.bind(TagManager))
-    )
+    const tags = platform.isFireRouterManaged() ? [] : [monitor ? 'monitor' : 'unmonitor'];
 
     const lines = []
     const reservedIPs = []
     const previousIPs = []
+    if (!_.isEmpty(tags))
+      lines.push(mac + ',' + tags.map(t => 'set:'+t).join(','))
 
-    lines.push(mac + ',' + tags.map(t => 'set:'+t).join(','))
-
-    if (p.dhcpIgnore === true) {
+    if (p.dhcpIgnore === true) { // ignore dhcp requests from this MAC
       lines.push(`${mac},ignore`);
       for (const ip of Object.keys(this.reservedIPHost)) {
         if (this.reservedIPHost[ip] === host) {
@@ -1746,7 +1742,7 @@ module.exports = class DNSMASQ {
           delete this.reservedIPHost[ip];
         }
       }
-    } else for (const intf of sysManager.getMonitoringInterfaces()) {
+    } else for (const intf of sysManager.getMonitoringInterfaces()) { // set reserved IP on different networks for this MAC
       let reservedIp = null;
       const intfAlloc = _.get(p, ['allocations', intf.uuid], {})
       if (intfAlloc.dhcpIgnore) {
@@ -1781,20 +1777,29 @@ module.exports = class DNSMASQ {
       lines.push(`${mac},tag:${intf.name.endsWith(":0") ? intf.name.substring(0, intf.name.length - 2) : intf.name},${reservedIp}`)
     }
 
-    const content = lines.join('\n') + '\n'
+    if (_.isEmpty(lines)) {
+      if (!force && !_.has(this.lastHostsFileHash, mac)) {
+        log.verbose("No need to update hosts file, skipped", mac);
+        return
+      }
+      delete this.lastHostsFileHash[mac];
+      await fsp.unlink(HOSTFILE_PATH + mac).catch((err) => {});
+    } else {
+      const content = lines.join('\n') + '\n'
 
-    const _hostsHash = this.computeHash(content);
+      const _hostsHash = this.computeHash(content);
 
-    if (!force && this.lastHostsFileHash[mac] == _hostsHash) {
-      log.verbose("No need to update hosts file, skipped", mac);
-      return
+      if (!force && this.lastHostsFileHash[mac] == _hostsHash) {
+        log.verbose("No need to update hosts file, skipped", mac);
+        return
+      }
+
+      this.lastHostsFileHash[mac] = _hostsHash;
+
+      log.debug("HostsFile:", util.inspect(lines));
+
+      await fsp.writeFile(HOSTFILE_PATH + mac, content);
     }
-
-    this.lastHostsFileHash[mac] = _hostsHash;
-
-    log.debug("HostsFile:", util.inspect(lines));
-
-    await fsp.writeFile(HOSTFILE_PATH + mac, content);
     // delete lesase entry in case other device occupies the IP, also deletes for itself but that's fine
     // dnsmasq seems to be able to handle IP conflict if misconfigured, so we are good here
     const deleted = []
