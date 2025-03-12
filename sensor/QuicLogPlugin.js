@@ -39,15 +39,12 @@ const quicLogFile = '/alog/quic.log';
 class QuicLogPlugin extends Sensor {
   constructor(config) {
     super(config);
-    this.featureName = "quic_log_reader";
+    this.featureName = Constants.FEATURE_QUIC_LOG;
     this.connCache = [];
     this.lastFlushTime = new Date().getTime();
     this.localCache = LRU({
         max: this.config.localCacheSize,
         ttl: this.config.localCacheTtl * 1000
-    });
-    sl.initSingleSensor("ACLAuditLogPlugin").catch((err) => {
-      log.error("Failed to init ACLAuditLogPlugin", err);
     });
   }
   hookFeature(featureName) {
@@ -145,7 +142,7 @@ class QuicLogPlugin extends Sensor {
     
   }
 
-  async globalOff() { // relay on ACLAuditLogPlugin.globalOn
+  async globalOff() { // relay on ACLAuditLogPlugin.globalOff
     super.globalOff();
     this.localCache.reset();
     await this._flushConnEntryCache();
