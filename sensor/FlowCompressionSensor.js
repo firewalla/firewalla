@@ -391,7 +391,7 @@ class FlowCompressionSensor extends Sensor {
       ts: now,
       audit: true,
       count: 300,
-      macs: sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)
+      macs: sysManager.getWanInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)
     }
     await rclient.unlinkAsync(this.wanCompressedFlowsKey);
     while (!completed && this.featureOn) {
