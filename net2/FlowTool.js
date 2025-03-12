@@ -150,9 +150,10 @@ class FlowTool extends LogQuery {
       type: 'ip'
     };
     f.ts = flow._ts; // _ts:update/record time, front-end always show up this
+    f.ets = Number(flow.ts) + Number(flow.du); // add flow ets for consumer merge purpose
     f.fd = flow.fd;
-    f.count = flow.ct || 1,
-    f.duration = flow.du
+    f.count = flow.ct || 1;
+    f.duration = flow.du;
     if (flow.intf) f.intf = networkProfileManager.prefixMap[flow.intf] || flow.intf
     for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
       const flowKey = Constants.TAG_TYPE_MAP[type].flowKey
