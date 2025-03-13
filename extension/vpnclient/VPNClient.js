@@ -913,6 +913,7 @@ class VPNClient {
           const isUp = await this._isLinkUp();
           if (isUp) {
             clearInterval(establishmentTask);
+            await this._setCachedState(true);
             this._scheduleRefreshRoutes();
             await this.addRemoteEndpointRoutes().catch((err) => {});
             if (f.isMain()) {
