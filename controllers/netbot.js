@@ -3311,9 +3311,26 @@ class netBot extends ControllerBot {
         if (!mac) throw new Error('MAC address is required')
 
         const host = await this.hostManager.getHostAsync(mac)
-        const result = await host.identifyDevice(true, true)
+        if (!host) throw new Error('Invalid host')
 
+        const result = await host.identifyDevice(true, true)
         return result
+      }
+      case "host:detect": {
+        const { mac } = value;
+        if (!mac) throw new Error('MAC address is required')
+
+        const host = await this.hostManager.getHostAsync(mac)
+        if (!host) throw new Error('Invalid host')
+
+        sem.emitEvent({
+          type: 'FW_DETECT_REQUEST',
+          message: 'host:detect requested for ' + mac,
+          mac,
+          toProcess: 'FireMon',
+          from: 'host:detect'
+        });
+        return
       }
       case "host:syncAppTimeUsageToTags": {
         const {mac, begin, end} = value;
