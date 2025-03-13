@@ -1714,6 +1714,14 @@ class PolicyManager2 {
       dnsmasq.scheduleRestartDNSService();
     }
 
+    const commonOptions = {
+      pid, tags, intfs, scope, guids, parentRgId,
+      localPortSet, /*remoteSet4, remoteSet6,*/ remoteTupleCount, remotePositive, remotePortSet, proto: protocol,
+      action, direction, createOrDestroy: "create", ctstate,
+      trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
+      wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
+      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass
+    }
     if (tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets)) {
       let tlsInstalled = true;
       await platform.installTLSModules().catch((err) => {
@@ -1725,9 +1733,7 @@ class PolicyManager2 {
         // no need to specify remote set 4 & 6 for tls block\
         if (!_.isEmpty(tlsHostSets)) {
           for (const tlsHostSet of tlsHostSets) {
-            const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass];
-
-            await this.__applyTlsRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs).catch((err) => {
+            await this.__applyTlsRules({ ...commonOptions, tlsHostSet, tlsHost }).catch((err) => {
               log.error(`Failed to enforce rule ${pid} based on tls`, err.message);
             });
           }
@@ -1737,11 +1743,9 @@ class PolicyManager2 {
               await categoryUpdater.activateTLSCategory(target);
           }
         } else {
-            const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass];
-
-            await this.__applyTlsRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs).catch((err) => {
-              log.error(`Failed to enforce rule ${pid} based on tls`, err.message);
-            });
+          await this.__applyTlsRules({ ...commonOptions, tlsHostSet, tlsHost }).catch((err) => {
+            log.error(`Failed to enforce rule ${pid} based on tls`, err.message);
+          });
           // activate TLS category after rule is added in iptables, this can guarante hostset is generated in /proc filesystem
           if (tlsHostSet)
             await categoryUpdater.activateTLSCategory(target);
@@ -1755,49 +1759,46 @@ class PolicyManager2 {
 
     if (!_.isEmpty(remoteSets)) {
       for (const {remoteSet4, remoteSet6} of remoteSets) {
-        const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass]; // tlsHostSet and tlsHost always null for commonArgs
-        await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, commonArgs).catch((err) => {
+        await this.__applyRules({ ...commonOptions, remoteSet4, remoteSet6 }).catch((err) => {
           log.error(`Failed to enforce rule ${pid} based on ip`, err.message);
         });    
       }
     } else {
-      const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass]; // tlsHostSet and tlsHost always null for commonArgs
-      await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, commonArgs).catch((err) => {
+      await this.__applyRules({ ...commonOptions, remoteSet4, remoteSet6 }).catch((err) => {
         log.error(`Failed to enforce rule ${pid} based on ip`, err.message);
       });
     }
   }
 
-  async __applyRules(options, commonArgs) {
-    const { pid, tags, intfs, scope, guids, parentRgId } = options || {};
+  async __applyRules(options) {
+    const { tags, intfs, scope, guids, parentRgId } = options || {};
+    const ruleOptions = _.omit(options, 'tags', 'intfs', 'scope', 'guids', 'parentRgId')
 
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || !_.isEmpty(parentRgId)) {
       if (!_.isEmpty(tags))
-        await Block.setupTagsRules(pid, tags, ...commonArgs);
+        await Block.setupTagsRules({ ...ruleOptions, uids: tags });
       if (!_.isEmpty(intfs))
-        await Block.setupIntfsRules(pid, intfs, ...commonArgs);
+        await Block.setupIntfsRules({ ...ruleOptions, uuids: intfs });
       if (!_.isEmpty(scope))
-        await Block.setupDevicesRules(pid, scope, ...commonArgs);
+        await Block.setupDevicesRules({ ...ruleOptions, macAddresses: scope });
       if (!_.isEmpty(guids))
-        await Block.setupGenericIdentitiesRules(pid, guids, ...commonArgs);
+        await Block.setupGenericIdentitiesRules({ ...ruleOptions, guids });
       if (!_.isEmpty(parentRgId))
-        await Block.setupRuleGroupRules(pid, parentRgId, ...commonArgs);
+        await Block.setupRuleGroupRules({ ...ruleOptions, ruleGroupUUID: parentRgId });
     } else {
       // apply to global
-      await Block.setupGlobalRules(pid, ...commonArgs);
+      await Block.setupGlobalRules(ruleOptions);
     }
   }
 
-  async __applyTlsRules(options, commonArgs) {
-    const protoIdx = 6;
-    const protocol = commonArgs[protoIdx];
+  async __applyTlsRules(options) {
+    const { proto } = options;
 
-    if (protocol === "tcp" || protocol === "udp") {
-      await this.__applyRules(options, commonArgs);
-    } else if (!protocol) {
+    if (proto === "tcp" || proto === "udp") {
+      await this.__applyRules(options);
+    } else if (!proto) {
       for (const proto of ["tcp", "udp"]) {
-        commonArgs[protoIdx] = proto;
-        await this.__applyRules(options, commonArgs);
+        await this.__applyRules({ ...options, proto });
       }
     }
   }
@@ -2183,17 +2184,22 @@ class PolicyManager2 {
       dnsmasq.scheduleRestartDNSService();
     }
 
+    const commonOptions = {
+      pid, tags, intfs, scope, guids, parentRgId,
+      localPortSet, /*remoteSet4, remoteSet6,*/ remoteTupleCount, remotePositive, remotePortSet, proto: protocol,
+      action, direction, createOrDestroy: "destroy", ctstate,
+      trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
+      wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
+      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass
+    }
     if (!_.isEmpty(remoteSets)) {
-      for (const {remoteSet4, remoteSet6} of remoteSets) {
-        const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass]; // tlsHostSet and tlsHost always null for commonArgs
-        await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, commonArgs).catch((err) => {
+      for (const setPair of remoteSets) {
+        await this.__applyRules(Object.assign(setPair, commonOptions)).catch((err) => {
           log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
-        });
+        });    
       }
     } else {
-      const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass]; // tlsHostSet and tlsHost always null for commonArgs
-
-      await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, commonArgs).catch((err) => {
+      await this.__applyRules(Object.assign({ remoteSet4, remoteSet6 }, commonOptions)).catch((err) => {
         log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
       });
     }
@@ -2201,14 +2207,12 @@ class PolicyManager2 {
     if (tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets)) {
       if (!_.isEmpty(tlsHostSets)) {
         for (const tlsHostSet of tlsHostSets) {
-          const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass];
-          await this.__applyTlsRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs).catch((err) => {
+          await this.__applyTlsRules({ ...commonOptions, tlsHostSet, tlsHost }).catch((err) => {
             log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
           });
         }
       } else {
-        const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass];
-        await this.__applyTlsRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs).catch((err) => {
+        await this.__applyTlsRules({ ...commonOptions, tlsHostSet, tlsHost }).catch((err) => {
           log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
         });
       }
