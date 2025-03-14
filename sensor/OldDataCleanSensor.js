@@ -671,7 +671,7 @@ class OldDataCleanSensor extends Sensor {
       this.oneTimeJob();
       setInterval(() => {
         this.scheduledJob();
-      }, 1000 * 60 * 60); // cleanup every hour
+      }, 1000 * 60 * 45); // cleanup every 45 minutes
     }, 1000 * 60 * 5); // first time in 5 mins
   }
 }
