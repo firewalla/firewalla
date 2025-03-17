@@ -106,6 +106,29 @@ class HysteriaDockerClient extends DockerBaseVPNClient {
     return false;
   }
 
+  async getStatistics() {
+    // a self-made hy_stats.sh script to get the stats
+    const result = await exec(`sudo docker exec ${this.getContainerName()} hy_stats.sh`)
+    .then(output => output.stdout.trim())
+    .catch((err) => {
+      log.error(`Failed to check hysteria stats on ${this.profileId}`, err.message);
+      return super.getStatistics();
+    });
+
+    if (!result)
+      return {bytesIn: 0, bytesOut: 0};
+
+    let items = result.split(" ");
+    if (items.length != 2) {
+      log.error(`Invalid hysteria stats on ${this.profileId}`, result);
+      return {bytesIn: 0, bytesOut: 0};
+    }
+
+    let txBytes = Number(items[0]);
+    let rxBytes = Number(items[1]);
+    return {bytesIn: rxBytes, bytesOut: txBytes};
+  }
+
   isIPv6Enabled() {
     return true
   }
