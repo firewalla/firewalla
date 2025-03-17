@@ -123,9 +123,11 @@ class FlowTool extends LogQuery {
       json.flows = {};
     }
 
-    // default to not getting blocked flows
-    if (!options.audit) options.audit = false
-    if (options.localAudit === undefined) options.localAudit = true
+    // these are just ways to keep legacy behavior
+    if (!options.audit) // default to not getting blocked flows
+      options.audit = false
+    else if (options.localAudit === undefined) // default localAudit to true only if audit is true
+      options.localAudit = true
 
     const feeds = this.optionsToFeeds(options, macs).concat(
       auditTool.optionsToFeeds(options, macs)
