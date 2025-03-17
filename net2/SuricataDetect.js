@@ -28,6 +28,8 @@ const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 const {getPreferredName} = require('../util/util.js');
 const mustache = require('mustache');
+const conntrack = require('./Conntrack.js');
+const Constants = require('./Constants.js');
 
 class SuricataDetect {
   constructor(logDir = "/log/slog") {
@@ -42,9 +44,12 @@ class SuricataDetect {
         const obj = JSON.parse(line);
         switch (obj.event_type) {
           case "alert": {
-            this.processAlertEvent(obj).catch((err) => {
-              log.error(`Failed to process alert event: ${line}`, err.message);
-            });
+            // add a timeout before processing alert event for syncing contextual information to redis, e.g., hostname from ssl/http connections
+            setTimeout(() => {
+              this.processAlertEvent(obj).catch((err) => {
+                log.error(`Failed to process alert event: ${line}`, err.message);
+              });
+            }, 15000);
             break;
           }
           default:
@@ -81,9 +86,10 @@ class SuricataDetect {
     const proto = e.proto;
     const appProto = e.app_proto;
     const ts = e.timestamp && (Date.parse(e.timestamp) / 1000);
+    let hostname = srcOrig ? await conntrack.getConnEntry(srcIp, sport, dstIp, dport, proto, Constants.REDIS_HKEY_CONN_HOST) : await conntrack.getConnEntry(dstIp, dport, srcIp, sport, proto, Constants.REDIS_HKEY_CONN_HOST);
     let srcName = srcIp;
     let dstName = dstIp;
-    let localIP, remoteIP, localPort, remotePort;
+    let localIP, remoteIP, remoteName, localPort, remotePort;
     let srcLocal = true;
     let dstLocal = false;
     if (sysManager.isLocalIP(srcIp)) {
@@ -96,9 +102,11 @@ class SuricataDetect {
       srcLocal = false;
       remoteIP = srcIp;
       remotePort = sport;
-      const host = await dnsTool.getDns(srcIp);
-      if (host)
+      const host = hostname || await dnsTool.getDns(srcIp);
+      if (host) {
         srcName = host;
+        remoteName = host;
+      }
     }
     if (sysManager.isLocalIP(dstIp)) {
       dstLocal = true;
@@ -119,9 +127,11 @@ class SuricataDetect {
       }
       remoteIP = dstIp;
       remotePort = dport;
-      const host = await dnsTool.getDns(dstIp);
-      if (host)
+      const host = hostname || await dnsTool.getDns(dstIp);
+      if (host) {
         dstName = host;
+        remoteName = host;
+      }
     }
     let localOrig;
     if (srcLocal && srcOrig || dstLocal && !srcLocal && !srcOrig)
@@ -141,13 +151,14 @@ class SuricataDetect {
     log.info("alert message", message);
     const alarmPayload = {
       "p.device.ip": localIP,
-      "p.dest.name": dstName,
+      "p.dest.name": remoteName,
       "p.dest.ip": remoteIP,
       "p.local_is_client": localOrig ? "1" : "0",
       "p.protocol": proto,
       "p.security.category": category,
       "p.security.severity": severity,
       "p.security.source": "suricata",
+      "p.event.ts": ts,
       "p.description": message
     }
     if (localPort)
