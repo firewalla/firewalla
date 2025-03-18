@@ -102,6 +102,29 @@ class ClashDockerClient extends DockerBaseVPNClient {
     return `${f.getHiddenFolder()}/run/clash_profile`;
   }
 
+  async getStatistics() {
+    // a self-made hy_stats.sh script to get the stats
+    const result = await exec(`sudo docker exec ${this.getContainerName()} clash_stats.sh`)
+    .then(output => output.stdout.trim())
+    .catch((err) => {
+      log.error(`Failed to check clash stats on ${this.profileId}`, err.message);
+      return super.getStatistics();
+    });
+
+    if (!result)
+      return {bytesIn: 0, bytesOut: 0};
+
+    let items = result.split(" ");
+    if (items.length != 2) {
+      log.error(`Invalid clash stats on ${this.profileId}`, result);
+      return {bytesIn: 0, bytesOut: 0};
+    }
+
+    let txBytes = Number(items[0]);
+    let rxBytes = Number(items[1]);
+    return {bytesIn: rxBytes, bytesOut: txBytes};
+  }
+
   isIPv6Enabled() {
     // only enable in dev, may change in the future
     return f.isDevelopmentVersion();
