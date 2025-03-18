@@ -420,6 +420,7 @@ module.exports = class {
       const mspData = await this.getMspData();
       await Promise.all(policies.map(async p => {
         if (await this.isMspRelatedRule(p, { mspData })) {
+          log.warn("Remove msp policy", p.pid);
           await pm2.disableAndDeletePolicy(p.pid);
         }
       }))
