@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,7 +15,7 @@
 'use strict';
 const log = require('./logger.js')(__filename);
 
-const iptool = require('ip');
+const net = require('net');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
@@ -73,7 +73,7 @@ module.exports = class DNSManager {
   async resolveLocalHostAsync(ip) {
     let mac;
 
-    if (iptool.isV4Format(ip)) {
+    if (net.isIPv4(ip)) {
       let data = await rclient.hgetallAsync("host:ip4:" + ip)
       if (data && data.mac) {
         mac = data.mac
@@ -87,7 +87,7 @@ module.exports = class DNSManager {
         } else
           throw new Error('IP Not Found: ' + ip);
       }
-    } else if (iptool.isV6Format(ip)) {
+    } else if (net.isIPv6(ip)) {
       let data = await rclient.hgetallAsync("host:ip6:" + ip)
       if (data && data.mac) {
         mac = data.mac
@@ -98,7 +98,7 @@ module.exports = class DNSManager {
       log.error("ResolveHost:BadIP", ip);
       throw new Error('bad ip');
     }
-    
+
     return hostTool.getMACEntry(mac);
   }
 
