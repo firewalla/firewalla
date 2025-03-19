@@ -62,7 +62,7 @@ class AuditTool extends LogQuery {
     if (options.block !== false) {
       if (options.audit !== false && options.local !== true)
         feeds.push(... this.expendFeeds({macs, block: true}))
-      if (options.localAudit && options.local !== false)
+      if (options.localAudit != false && options.local !== false)
         feeds.push(... this.expendFeeds({macs, local: true, block: true, exclude: [{dstMac: macs, fd: "out"}] }))
     }
 
