@@ -695,6 +695,12 @@ class SysManager {
     return null;
   }
 
+  async isBridgeMode() {
+    const defaultWan = this.getDefaultWanInterface();
+    const defaultWanName = defaultWan && defaultWan.name;
+    return await Mode.isDHCPModeOn() && defaultWanName && defaultWanName.startsWith("br")
+  }
+
   // filter Carrier-Grade NAT address pool accordinig to rfc6598
   filterPublicIp4(ipArray) {
     const rfc6598Net = iptool.subnet("100.64.0.0", "255.192.0.0")

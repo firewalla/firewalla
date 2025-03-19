@@ -238,9 +238,7 @@ class BroDetect {
       }
     }
     if (firewalla.isDevelopmentVersion()) {
-      const defaultWan = sysManager.getDefaultWanInterface();
-      const defaultWanName = defaultWan && defaultWan.name;
-      if (await mode.isDHCPModeOn() && defaultWanName && defaultWanName.startsWith("br")) {
+      if (await sysManager.isBridgeMode()) {
         // probably need to add permanent ARP entries to arp table in bridge mode
         await l2.updatePermanentArpEntries(this.activeMac);
       }
@@ -793,12 +791,13 @@ class BroDetect {
         return false;
       }
 
-      if(obj.resp_bytes > maxBytes) {
+      // if duration too small then it's probably just 1 packet
+      if(obj.resp_bytes > maxBytes && duration > 0.0001 || obj.resp_bytes > 2000 && duration <= 0.0001) {
         log.debug("Conn:Drop:RespBytes:TooLarge", obj.conn_state, obj);
         return false;
       }
 
-      if(obj.orig_bytes > maxBytes) {
+      if(obj.orig_bytes > maxBytes && duration > 0.0001 || obj.orig_bytes > 2000 && duration <= 0.0001) {
         log.debug("Conn:Drop:OrigBytes:TooLarge", obj.conn_state, obj);
         return false;
       }
@@ -937,7 +936,7 @@ class BroDetect {
           return;
         }
 
-        if ((["RSTR", "RSTO", "S1", "S3", "SF"].includes(obj.conn_state) && obj.orig_pkts <= 10 && obj.resp_bytes == 0)) {
+        if (["RSTR", "RSTO", "S1", "S3", "SF"].includes(obj.conn_state) && obj.orig_pkts <= 10 && obj.resp_bytes == 0) {
           log.debug("Conn:Drop:TLS", obj.conn_state, data);
           // Likely blocked by TLS. In normal cases, the first packet is SYN, the second packet is ACK, the third packet is SSL client hello. conn_state will be "RSTR"
           // However, if zeek is listening on bridge interface, it will not capture tcp-reset from iptables due to br_netfilter kernel module.
@@ -953,8 +952,8 @@ class BroDetect {
       let flowdir = "in";
       let lhost = null;
       let dhost = null;
-      const origMac = obj["orig_l2_addr"] && (obj["orig_l2_addr"].length == 17 ? obj["orig_l2_addr"].toUpperCase() : obj["orig_l2_addr"]);
-      const respMac = obj["resp_l2_addr"] && (obj["resp_l2_addr"].length == 17 ? obj["resp_l2_addr"].toUpperCase() : obj["resp_l2_addr"]);
+      const origMac = obj.orig_l2_addr && (obj.orig_l2_addr.length == 17 ? obj.orig_l2_addr.toUpperCase() : obj.orig_l2_addr);
+      const respMac = obj.resp_l2_addr && (obj.resp_l2_addr.length == 17 ? obj.resp_l2_addr.toUpperCase() : obj.resp_l2_addr);
       let localMac = null;
       let dstMac = null;
       let intfId = null;
@@ -963,7 +962,7 @@ class BroDetect {
       let localFlow = false
       let bridge = obj["bridge"] || false;
 
-      log.debug("ProcessingConection:", obj.uid, orig, resp, obj['id.resp_p'],
+      log.debug("ProcessingConnection:", obj.uid, orig, resp, obj['id.resp_p'],
         long ? 'long' : '', reverseLocal ? 'reverseLocal' : '');
 
       // fd: in, this flow initiated from inside
@@ -972,7 +971,9 @@ class BroDetect {
       // zeek uses networks.cfg (check BroControl.js) determining local_orig and local_resp
       // so this is IP based and pretty realiable
       if (localOrig == true && localResp == true) {
-        if (!fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW) || !await mode.isRouterModeOn()) return;
+        if (!fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW) ||
+          !(await mode.isRouterModeOn() || await sysManager.isBridgeMode())
+        ) return;
 
         if (reverseLocal) {
           flowdir = 'out'
@@ -1059,7 +1060,9 @@ class BroDetect {
       } else {
         // local flow only available in router mode, so gateway is always Firewalla's mac
         // for non-local flows, this only happens in simple mode
-        if (localMac && sysManager.isMyMac(localMac)) {
+        if (localMac && !reverseLocal && (sysManager.isMyMac(localMac) ||
+          localFlow && sysManager.isBridgeMode() && intfInfo && intfInfo.gatewayMac == localMac
+        )) {
           log.debug("Discard incorrect local MAC address from bro log: ", localMac, lhost);
           localMac = null; // discard local mac from bro log since it is not correct
         }
@@ -1079,6 +1082,7 @@ class BroDetect {
         this.recordDeviceHeartbeat(localMac, Math.round((obj.ts + obj.duration) * 100) / 100, lhost, fam)
       }
 
+      // for v6 link-local addresses
       if (!intfInfo && monitorable) {
         intfInfo = sysManager.getInterfaceViaUUID(monitorable && monitorable.o.intf);
       }
@@ -1162,7 +1166,7 @@ class BroDetect {
         obj.resp_bytes -= previous.resp_bytes
 
         if (obj.orig_bytes <= 0 && obj.resp_bytes <= 0) {
-          log.debug("Conn:Drop:ZeroLength_Long", obj.conn_state, obj);
+          log.silly("Conn:Drop:ZeroLength_Long", obj.conn_state, obj);
           return;
         }
       }
@@ -1189,10 +1193,19 @@ class BroDetect {
             dstRealLocal = IdentityManager.getEndpointByIP(dhost);
           }
         } else {
-          if (dstMac && sysManager.isMyMac(dstMac)) {
+          if (dstMac && !reverseLocal && sysManager.isMyMac(dstMac)) {
             // double check dest mac for spoof leak
             log.debug("Discard incorrect dest MAC address from bro log: ", dstMac, dhost);
             dstMac = null
+          }
+          // zeeks records inter-network local flow twice in bridge mode, on both interfaces, drop one here to deduplicate
+          // if source is a VPN client, IP is NATed on the other interface and zeek sees it from Firewalla itself thus dropped
+          // don't drop in this case. also connection going to VPN client is not possible in bridge mode
+          if (!reverseLocal && !isIdentityIntf && sysManager.isBridgeMode() &&
+            dstIntfInfo && dstIntfInfo.gatewayMac == dstMac
+          ) {
+            log.debug("Drop duplicated bridge traffic when dstMac is gateway: ", lhost, dhost);
+            return
           }
 
           if (!dstMac)
@@ -1951,12 +1964,11 @@ class BroDetect {
       }
     }
 
-    log.debug('toRecord', toRecord)
+    log.silly('toRecord', toRecord)
     for (const key in toRecord) {
       const subKey = key == 'global' ? '' : ':' + (key.endsWith('global') ? key.slice(0, -7) : key)
       const download = isRouterMode && key == 'global' ? wanNicRxBytes : toRecord[key].download;
       const upload = isRouterMode && key == 'global' ? wanNicTxBytes : toRecord[key].upload;
-      log.debug("Store timeseries", lastTS, key, download, upload, toRecord[key].conn)
       download && timeSeries.recordHit('download' + subKey, lastTS, download)
       upload && timeSeries.recordHit('upload' + subKey, lastTS, upload)
       toRecord[key].intra && timeSeries.recordHit('intra' + subKey, lastTS, toRecord[key].intra)

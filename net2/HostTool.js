@@ -428,12 +428,6 @@ class HostTool {
 
   ////////////////// END OF IPV6 ////////////////
 
-  //pi@raspbNetworkScan:~/encipher.iot/net2 $ ip -6 neighbor show
-  //2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
-  // 2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
-  // 2601:646:a380:5511:385f:66ff:fe7a:79f0 dev eth0 lladdr 3a:5f:66:7a:79:f0 router STALE
-  // 2601:646:9100:74e0:8849:1ba4:352d:919f dev eth0  FAILED  (there are two spaces between eth0 and Failed)
-
   /*
    * ipv6 differs from ipv4, which it will randomly generate IP addresses, and use them
    * in very short term.  It is pretty hard to detect how long these will be used, so
