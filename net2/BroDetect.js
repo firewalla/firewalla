@@ -791,13 +791,12 @@ class BroDetect {
         return false;
       }
 
-      // if duration too small then it's probably just 1 packet
-      if(obj.resp_bytes > maxBytes && duration > 0.0001 || obj.resp_bytes > 2000 && duration <= 0.0001) {
+      if(obj.resp_bytes > maxBytes) {
         log.debug("Conn:Drop:RespBytes:TooLarge", obj.conn_state, obj);
         return false;
       }
 
-      if(obj.orig_bytes > maxBytes && duration > 0.0001 || obj.orig_bytes > 2000 && duration <= 0.0001) {
+      if(obj.orig_bytes > maxBytes) {
         log.debug("Conn:Drop:OrigBytes:TooLarge", obj.conn_state, obj);
         return false;
       }
