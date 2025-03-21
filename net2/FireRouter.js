@@ -1,4 +1,4 @@
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -35,6 +35,8 @@
 
 const log = require("./logger.js")(__filename);
 
+const layer2 = require('../util/Layer2.js');
+const nmap = require('./Nmap.js');
 const f = require('../net2/Firewalla.js');
 const SysTool = require('../net2/SysTool.js')
 const sysTool = new SysTool()
@@ -198,6 +200,7 @@ async function generateNetworkInfo() {
     }
     let gateway = null;
     let gateway6 = null;
+    let gatewayMac
     let dns = null;
     let dns6 = null;
     let resolver = null;
@@ -232,6 +235,7 @@ async function generateNetworkInfo() {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
         gateway6 = intf.config.gateway6 || intf.state.gateway6;
+        gatewayMac = gateway && await layer2.getMACAsync(gateway) || gateway6 && await nmap.neighborSolicit(gateway6);
         break;
       }
       case "lan": {
@@ -275,6 +279,8 @@ async function generateNetworkInfo() {
       rt4_subnets: rt4Subnets.length > 0 ? rt4Subnets : null,
       rt6_subnets: rt6Subnets.length > 0 ? rt6Subnets : null
     }
+
+    if (gatewayMac) redisIntf.gatewayMac = gatewayMac
 
     if (intf.state && intf.state.wanConnState) {
       redisIntf.ready = intf.state.wanConnState.ready || false;
