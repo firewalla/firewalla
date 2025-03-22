@@ -80,7 +80,7 @@ async function updatePermanentArpEntries(activeMacs) {
     }
   }
   const fileEntries = Object.keys(permanentArpCache).map(ipv4 => `${ipv4} ${permanentArpCache[ipv4].mac}`);
-  log.verbose("Update arp cache with the following permanent entries", fileEntries);
+  log.info("Update arp cache with the following permanent entries", fileEntries);
   await fsp.writeFile(`${f.getHiddenFolder()}/run/permanent_arp_entries`, fileEntries.join("\n")).then(() => {
     exec(`sudo arp -f ${f.getHiddenFolder()}/run/permanent_arp_entries`);
   }).catch((err) => {

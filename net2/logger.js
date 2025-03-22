@@ -1,5 +1,5 @@
 'use strict'
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -53,7 +53,7 @@ else if (production) {
 }
 
 function getFileTransport() {
-  let loglevel = 'silly';
+  let loglevel = 'debug';
   // if (production) {
   //   loglevel = 'warn';
   // }
@@ -82,7 +82,7 @@ function getFileTransport() {
 }
 
 function getConsoleTransport() {
-  let loglevel = 'silly';
+  let loglevel = 'debug';
   // if (production) {
   //   loglevel = 'warn';
   // }
@@ -106,7 +106,7 @@ function getConsoleTransport() {
 
 function getTestTransport() {
   return new(winston.transports.File) ({
-    level: 'silly',
+    level: 'debug',
     name: 'log-file-test',
     filename: "test.log",
     dirname: "/home/pi/.forever",
