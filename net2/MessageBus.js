@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -55,9 +55,6 @@ module.exports = class {
           }
           if (this.callbacks[channel][type]) {
             cbs.push(... this.callbacks[channel][type])
-          }
-          if (this.callbacks[channel]['']) {
-            cbs.push(... this.callbacks[channel][''])
           }
           for (const cb of cbs) try {
             // await no matter it's sync or async so error from callback would be caught here
@@ -120,8 +117,7 @@ module.exports = class {
       callback = id
       id = undefined
     }
-    // empty string to subscribe to all channel messages
-    const key = id ? type+'.'+id : (type || '')
+    const key = id ? type+'.'+id : type
 
     if (once && this.callbacks[channel][key]) {
       return; // already subscribed...

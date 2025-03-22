@@ -374,7 +374,7 @@ class DeviceHook extends Hook {
 
       sem.on("OldDeviceChangedToNewIP", async (event) => {
         try {
-          // Old IP might still be used by this one or something else, not going to delete the old IP entry
+          // this is typically old ip is taken by some device else, not going to delete the old ip entry
           const host = event.host;
 
           log.info(util.format("Device %s (%s) has a new IP: %s", host.bname, host.mac, host.ipv4Addr));
