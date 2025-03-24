@@ -205,6 +205,11 @@ class alarmIndexCache {
         }
         for (const atype of atypes) {
           const item = this.cache.get(atype);
+          if (!item || !_.isObject(item)) {
+            log.info(`skip outdated alarm cache type ${atype}`);
+            this.cache.delete(atype);
+            continue;
+          }
           if (item[aid]) this._size -= this._sizeof(item[aid]);
           delete item[aid];
           // clear top-level key
