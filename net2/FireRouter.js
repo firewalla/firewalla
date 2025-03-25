@@ -36,7 +36,8 @@
 const log = require("./logger.js")(__filename);
 
 const layer2 = require('../util/Layer2.js');
-const nmap = require('./Nmap.js');
+const Nmap = require('./Nmap.js');
+const nmap = new Nmap();
 const f = require('../net2/Firewalla.js');
 const SysTool = require('../net2/SysTool.js')
 const sysTool = new SysTool()
@@ -235,7 +236,9 @@ async function generateNetworkInfo() {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
         gateway6 = intf.config.gateway6 || intf.state.gateway6;
-        gatewayMac = gateway && await layer2.getMACAsync(gateway) || gateway6 && await nmap.neighborSolicit(gateway6);
+        if (!intfName.startsWith("pppoe")) {
+          gatewayMac = gateway && await layer2.getMACAsync(gateway) || gateway6 && await nmap.neighborSolicit(gateway6);
+        }
         break;
       }
       case "lan": {

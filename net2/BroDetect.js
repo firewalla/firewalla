@@ -969,7 +969,7 @@ class BroDetect {
       // fd: out, this flow initated from outside, it is more dangerous
 
       // zeek uses networks.cfg (check BroControl.js) determining local_orig and local_resp
-      // so this is IP based and pretty realiable
+      // so this is IP based and pretty realiable, except for multicast addresses
       if (localOrig == true && localResp == true) {
         if (!fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW) ||
           !(await mode.isRouterModeOn() || await sysManager.isBridgeMode())
@@ -1020,9 +1020,14 @@ class BroDetect {
         return;
       // ignore multicast IP
       try {
-        if (fam == 4 && sysManager.isMulticastIP4(dhost, intfInfo && intfInfo.name)
-          || fam == 6 && sysManager.isMulticastIP6(dhost)
-        ) {
+        // zeek has problem recognizeing multicast addresses as local, so direction could be wrong
+        if (fam == 4 && (
+          sysManager.isMulticastIP4(lhost, intfInfo && intfInfo.name) ||
+          sysManager.isMulticastIP4(dhost, dstIntfInfo && dstIntfInfo.name)
+        ) || fam == 6 && (
+          sysManager.isMulticastIP6(lhost) ||
+          sysManager.isMulticastIP6(dhost)
+        )) {
           return;
         }
         if (sysManager.isMyServer(resp) || sysManager.isMyServer(orig)) {
@@ -1061,7 +1066,7 @@ class BroDetect {
         // local flow only available in router mode, so gateway is always Firewalla's mac
         // for non-local flows, this only happens in simple mode
         if (localMac && !reverseLocal && (sysManager.isMyMac(localMac) ||
-          localFlow && sysManager.isBridgeMode() && intfInfo && intfInfo.gatewayMac == localMac
+          localFlow && await sysManager.isBridgeMode() && intfInfo && intfInfo.gatewayMac == localMac
         )) {
           log.debug("Discard incorrect local MAC address from bro log: ", localMac, lhost);
           localMac = null; // discard local mac from bro log since it is not correct
@@ -1201,7 +1206,7 @@ class BroDetect {
           // zeeks records inter-network local flow twice in bridge mode, on both interfaces, drop one here to deduplicate
           // if source is a VPN client, IP is NATed on the other interface and zeek sees it from Firewalla itself thus dropped
           // don't drop in this case. also connection going to VPN client is not possible in bridge mode
-          if (!reverseLocal && !isIdentityIntf && sysManager.isBridgeMode() &&
+          if (!reverseLocal && !isIdentityIntf && await sysManager.isBridgeMode() &&
             dstIntfInfo && dstIntfInfo.gatewayMac == dstMac
           ) {
             log.debug("Drop duplicated bridge traffic when dstMac is gateway: ", lhost, dhost);
