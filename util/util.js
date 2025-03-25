@@ -365,6 +365,24 @@ async function withTimeout(promise, timeout) {
   ]);
 }
 
+// auto-release in 1000ms by default
+async function acquire_plock(key, expire=3000) {
+  const rclient = require('./redis_manager.js').getRedisClient();
+  let ts = Date.now();
+  // SET resource_name my_random_value NX PX 30000
+  let r = await rclient.setAsync(key, ts, "NX", "PX", expire);
+  if (r == "OK") {
+    return ts;
+  }
+  return -1;
+}
+
+async function release_plock(key, ts) {
+  const rclient = require('./redis_manager.js').getRedisClient();
+  const cmd = 'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end';
+  return await rclient.evalAsync(cmd, 1, key, ts);
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -386,5 +404,7 @@ module.exports = {
   fileRemove,
   batchKeyExists,
   waitFor,
+  acquire_plock,
+  release_plock,
   withTimeout,
 };

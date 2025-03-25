@@ -66,6 +66,7 @@ const flowUtil = require('../net2/FlowUtil');
 
 const iptool = require('ip');
 const ipUtil = require('../util/IPUtil.js');
+const { acquire_plock, release_plock } = require('../util/util.js');
 const traceroute = require('../vendor/traceroute/traceroute.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
@@ -157,7 +158,7 @@ const wrapIptables = require('../net2/Iptables.js').wrapIptables;
 
 const Message = require('../net2/Message')
 
-const util = require('util')
+const util = require('util');
 
 const restartUPnPTask = {};
 
@@ -660,6 +661,9 @@ class netBot extends ControllerBot {
         }
         if (!monitorable) throw new Error(`Unknow target ${target}`)
 
+        // lock policy by target, auto expired.
+        const lock_ts = await acquire_policy_lock(target);
+
         const orig = await monitorable.loadPolicyAsync();
         try{await this._precedeRecord(msg.id, {origin: orig, diff: difference(value, orig)})} catch(err){};
 
@@ -686,6 +690,9 @@ class netBot extends ControllerBot {
           await monitorable.setPolicyAsync(o, policyData);
         }
         this._scheduleRedisBackgroundSave();
+        // release lock
+        await release_policy_lock(target, lock_ts);
+
         // can't get result of port forward, return original value for compatibility reasons
         const result = value.portforward ? value : monitorable.policy
         return result
@@ -2182,6 +2189,7 @@ class netBot extends ControllerBot {
         if (_.isArray(samePolicies) && samePolicies.filter(p => p.pid != pid).length > 0) {
           throw { code: 409, msg: "policy already exists", data: samePolicies[0] }
         } else {
+          const lock_ts = await acquire_policy_lock(pid);
           await this._precedeRecord(msg.id, {origin: oldPolicy, diff: difference(policy, oldPolicy)});
           policy.updatedTime = Date.now() / 1000;
           await pm2.updatePolicyAsync(policy)
@@ -2193,6 +2201,7 @@ class netBot extends ControllerBot {
             toProcess: "FireMain"
           });
           this._scheduleRedisBackgroundSave();
+          await release_policy_lock(pid, lock_ts);
           return newPolicy
         }
       }
@@ -2201,11 +2210,19 @@ class netBot extends ControllerBot {
         if (policyIDs && _.isArray(policyIDs)) {
           let results = {};
           let orig = [];
+
+          // acquire locks in advance
+          let plocks = [];
+          for (const policyID of policyIDs) {
+            const lock_ts = await acquire_policy_lock(policyID);
+            plocks.push({pid: policyID, lock_ts: lock_ts});
+          }
+
           for (const policyID of policyIDs) {
             let policy = await pm2.getPolicy(policyID);
             if (policy) {
               orig.push(policy);
-              await pm2.disableAndDeletePolicy(policyID)
+              await pm2.disableAndDeletePolicy(policyID);
               policy.deleted = true;
               results[policyID] = policy;
             } else {
@@ -2214,14 +2231,20 @@ class netBot extends ControllerBot {
           }
           await this._precedeRecord(msg.id, {origin: orig});
           this._scheduleRedisBackgroundSave();
+          // release locks
+          for (const plock of plocks) {
+            await release_policy_lock(plock.pid, plock.lock_ts);
+          }
           return results
         } else {
           let policy = await pm2.getPolicy(value.policyID)
           await this._precedeRecord(msg.id, {origin: policy});
           if (policy) {
+            const lock_ts = await acquire_policy_lock(policy.pid);
             await pm2.disableAndDeletePolicy(value.policyID)
             policy.deleted = true // policy is marked ask deleted
             this._scheduleRedisBackgroundSave();
+            await release_policy_lock(policy.pid, lock_ts);
             return policy
           } else {
             throw new Error("invalid policy");
@@ -4177,4 +4200,20 @@ setInterval(() => {
   }
 }, 1000 * 60 * 5);
 
+
+async function acquire_policy_lock(target) {
+  const lock_ts = await acquire_plock(`plock_${target}`, 1500);
+  if (lock_ts == -1) {
+    log.warn("cannot acquire policy lock", `plock_${target}`);
+    throw new Error("setting policy too fast, please try again later");
+  }
+  log.info("succeed to acquire policy lock", `plock_${target}`, lock_ts);
+  return lock_ts;
+}
+
+async function release_policy_lock(target, ts) {
+  await release_plock(`plock_${target}`, ts) == 1 ?
+  log.info("succeed to release policy lock", `plock_${target}`, ts) :
+  log.warn("failed to release policy lock", `plock_${target}`, ts);
+}
 module.exports = netBot;

@@ -18,7 +18,7 @@
 let chai = require('chai');
 let expect = chai.expect;
 
-const { versionCompare, difference } = require('../util/util.js');
+const { versionCompare, difference, acquire_plock, release_plock } = require('../util/util.js');
 
 describe('Test difference', () => {
     it('should compare the different keys', () => {
@@ -58,5 +58,16 @@ describe('Test versionCompare', () => {
         expect(versionCompare("1.62 (13)", "1.62"), false);
         expect(versionCompare("1.62", "1.62"), false);
         expect(versionCompare("1.62.10", "1.62.4"), false);
+    });
+});
+
+describe('Test plock', () => {
+    it('should acquire lock', async() => {
+        let ts = await acquire_plock("test");
+        expect( ts == -1, false);
+        expect(await acquire_plock("test")).to.be.equal(-1);
+        expect(await release_plock("test", 1)).to.be.equal(0);
+        expect(await release_plock("test", ts)).to.be.equal(1);
+        expect(await acquire_plock("test") != -1, true);
     });
 });
