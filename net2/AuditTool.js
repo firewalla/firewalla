@@ -41,6 +41,7 @@ class AuditTool extends LogQuery {
     const filter = super.optionsToFilter(options)
     if (options.direction) filter.fd = options.direction;
     delete filter.dnsFlow
+    delete filter.localAudit
     return filter
   }
 
@@ -63,7 +64,7 @@ class AuditTool extends LogQuery {
       if (options.audit !== false && options.local !== true)
         feeds.push(... this.expendFeeds({macs, block: true}))
       if (options.localAudit != false && options.local !== false)
-        feeds.push(... this.expendFeeds({macs, local: true, block: true, exclude: [{dstMac: macs, fd: "out"}] }))
+        feeds.push(... this.expendFeeds({macs, localAudit: true, block: true, exclude: [{dstMac: macs, fd: "out"}] }))
     }
 
     delete options.audit
@@ -154,7 +155,7 @@ class AuditTool extends LogQuery {
       if (entry.tls) f.type = 'tls'
       f.fd = entry.fd
     }
-    if (options.local)
+    if (options.localAudit)
       f.local = true
 
     try {
@@ -187,7 +188,8 @@ class AuditTool extends LogQuery {
   getLogKey(mac, options) {
     // options.block == null is also counted here
     return options.dnsFlow ? `flow:dns:${mac}`
-      : options.block ? `audit:${options.local?'local:':''}drop:${mac}`
+      : options.localAudit ? `audit:local:drop:${mac}`
+      : options.block ? `audit:drop:${mac}`
       : `audit:accept:${mac}`
   }
 }

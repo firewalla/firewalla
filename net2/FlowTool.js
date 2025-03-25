@@ -142,6 +142,7 @@ class FlowTool extends LogQuery {
 
   optionsToFilter(options) {
     const filter = super.optionsToFilter(options)
+    // direction ignored in base function, local flow only returns 'in', leave fd unfiltered here
     delete filter.localFlow
     return filter
   }
