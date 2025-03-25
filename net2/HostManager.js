@@ -165,6 +165,23 @@ module.exports = class HostManager extends Monitorable {
         });
       })
 
+      // updates hostsdb when host is updated
+      messageBus.subscribe('Host:Updated', null, null, async (channel, mac, id, obj) => {
+        let host = this.getHostFastByMAC(mac)
+        // once we are confident everything is in sync, we might be able to get rid of getHostsAsync()
+        if (!host) {
+          host = await this.getHostAsync(mac).catch(err => {
+            log.error('Failed to get host on Host:Updated', err, obj)
+          })
+          if (!host) return
+        }
+
+        if (host.ipv4Addr) {
+          this.hostsdb[`host:ip4:${obj.ipv4Addr}`] = host
+        }
+        this.syncV6DB(host)
+      })
+
       sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
 
       // ONLY register for these events in FireMain process
@@ -1576,7 +1593,7 @@ module.exports = class HostManager extends Monitorable {
       o = await hostTool.getMACEntry(target)
     } else {
       o = await dnsManager.resolveLocalHostAsync(target)
-      host = this.hostsdb[`host:ip4:${o.ipv4Addr}`];
+      host = this.hostsdb[`host:ip4:${target}`];
     }
     if (host && o) {
       await host.update(Host.parse(o));
@@ -1590,6 +1607,7 @@ module.exports = class HostManager extends Monitorable {
     this.hostsdb[`host:mac:${o.mac}`] = host
     this.hosts.all.push(host);
 
+    if (o.ipv4Addr) this.hostsdb[`host:ip4:${o.ipv4Addr}`] = host
     this.syncV6DB(host)
 
     return host
