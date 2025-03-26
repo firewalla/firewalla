@@ -92,6 +92,7 @@ class FlowTool extends LogQuery {
   }
 
   optionsToFeeds(options, macs) {
+    log.debug('optionsToFeeds', options)
     const feeds = []
     // use some filters to cut feed number here
     if (options.block !== true) {
@@ -123,11 +124,32 @@ class FlowTool extends LogQuery {
       json.flows = {};
     }
 
+
+    // App behavior
+    // 1.64:
+    // get flows { audit: true } to get regular, blocked, and local blocked flows
+    // get auditLogs { } to get blocked and local blocked flows
+    // 1.65:
+    // get flows { audit: true, auditDNSSuccess: true, dnsFlow: true, ntpFlow: true } to get regular, blocked, local blocked, DNS, and NTP flows
+    // get flows { local: true, localFlow: true, audit: false, dnsFlow: false, ntpFlow: false } to get local flows
+    // get auditLogs { } to get blocked and local blocked flows
+    // 1.66:
+    // get flows { audit: true, dnsFlow: true, ntpFlow: true, localAudit: false } to get regular, blocked, DNS, and NTP flows
+    // get flows { local: true, localFlow: true, localAudit: true } to get local and local blocked flows
+    // get auditLogs { localAudit: false } to get blocked flows
+
     // these are just ways to keep legacy behavior
-    if (!options.audit) // default to not getting blocked flows
+    if (!options.audit) { // default to not getting blocked flows
       options.audit = false
-    else if (options.localAudit === undefined) // default localAudit to true only if audit is true
-      options.localAudit = true
+      if (options.localAudit === undefined)
+        options.localAudit = false
+    } else if (options.localAudit === undefined) {
+      // default localAudit to true only if audit is true but false for App supports localFlow but not localAudit
+      if (options.localFlow === undefined)
+        options.localAudit = true
+      else
+        options.localAudit = false
+    }
 
     const feeds = this.optionsToFeeds(options, macs).concat(
       auditTool.optionsToFeeds(options, macs)

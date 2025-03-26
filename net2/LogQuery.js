@@ -217,7 +217,7 @@ class LogQuery {
         // no more elements, remove feed from feeds
         toRemove.push(feed)
       }
-      log.silly(JSON.stringify(_.omit(feed.options, 'exclude')), feed.filter)
+      // log.silly(JSON.stringify(_.omit(feed.options, 'exclude')), feed.filter)
       return logs.filter(log => feed.base.isLogValid(log, feed.filter))
     })))
 
@@ -272,7 +272,8 @@ class LogQuery {
       } else {
         // no more elements, remove feed from feeds
         feeds = feeds.filter(f => f != feed)
-        log.debug('Removing', feed.base.constructor.name, feed.options.direction, feed.options.local ? 'local' : '',
+        log.debug('Removing', feed.base.constructor.name, feed.options.direction,
+          (feed.options.localFlow || feed.options.localAudit) ? 'local' : feed.options.dnsFlow ? 'dns' : feed.options.type,
           feed.options.block ? 'block' : 'accept', feed.options.mac, feed.options.ts)
       }
 
@@ -415,7 +416,7 @@ class LogQuery {
     allMacs = allMacs.filter(mac => !excludedMacs.has(mac));
     if (_.isSet(includedMacs))
       allMacs = allMacs.filter(mac => includedMacs.has(mac));
-    log.debug('Expended mac addresses', allMacs)
+    log.silly('Expended mac addresses', allMacs)
 
     return allMacs
   }
