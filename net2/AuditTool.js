@@ -46,6 +46,7 @@ class AuditTool extends LogQuery {
   }
 
   optionsToFeeds(options, macs) {
+    log.debug('optionsToFeeds', options)
     const feeds = []
     if (options.block !== true) {
       if (options.dnsFlow) {
