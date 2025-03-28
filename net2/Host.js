@@ -98,9 +98,6 @@ class Host extends Monitorable {
       if (f.isMain() && !noEnvCreation) (async () => {
         this.spoofing = false;
 
-        const nameKeys = await this.predictHostNameUsingUserAgent();
-        await this.save(nameKeys)
-
         await Host.ensureCreateEnforcementEnv(this.o.mac)
 
         messageBus.subscribeOnce(this.constructor.getUpdateCh(), this.getGUID(), this.onUpdate.bind(this))
@@ -125,7 +122,18 @@ class Host extends Monitorable {
     await lock.acquire(`UPDATE_${this.getGUID()}`, async () => {
       const updatedKeys = await super.update(obj, partial)
 
-      const name = getPreferredName(this.o);
+      if (this.o.ipv4 && this.o.ipv4Addr != this.o.ipv4 ) {
+        this.o.ipv4Addr = this.o.ipv4;
+        updatedKeys.push('ipv4Addr')
+      }
+
+      const bname = getPreferredBName(this.o)
+      if (bname && bname != this.o.bname) {
+        this.o.bname = bname
+        updatedKeys.push('bname')
+      }
+
+      const name = this.o.name || bname;
       if (name) {
         const localDomain = getCanonicalizedDomainname(name.replace(/\s+/g, "."))
         if (localDomain != this.o.localDomain) {
@@ -140,16 +148,6 @@ class Host extends Monitorable {
           this.o.userLocalDomain = userLocalDomain
           updatedKeys.push('userLocalDomain')
         }
-      }
-
-      if (this.o.ipv4 && this.o.ipv4Addr != this.o.ipv4 ) {
-        this.o.ipv4Addr = this.o.ipv4;
-        updatedKeys.push('ipv4Addr')
-      }
-
-      if (f.isMain()) {
-        const nameKeys = await this.predictHostNameUsingUserAgent();
-        updatedKeys.push(... nameKeys)
       }
 
       for (const f of Host.metaFieldsJson) {
@@ -1135,7 +1133,7 @@ class Host extends Monitorable {
       mac: this.o.mac,
       lastActive: this.o.lastActiveTimestamp,
       firstFound: this.o.firstFoundTimestamp,
-      macVendor: this.o.macVendor,
+      macVendor: this.o.macVendor || 'Unknown',
       recentActivity: this.o.recentActivity,
       manualSpoof: this.o.manualSpoof,
       dhcpName: this.o.dhcpName,

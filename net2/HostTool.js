@@ -351,9 +351,6 @@ class HostTool {
   }
 
   async removeDupIPv4FromMacEntry(mac, ip, newMac) {
-    // Keep uid for now as it's used as keys in a lot of places
-    // TODO: use mac as uid should be a true fix to this
-
     let macEntry = await this.getMACEntry(mac);
     if (!macEntry) {
       log.error('removeDupIPv4FromMacEntry:', mac, 'not found')

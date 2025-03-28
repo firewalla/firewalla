@@ -36,7 +36,7 @@ function extend(target) {
 }
 
 function getPreferredName(hostObject) {
-  if (hostObject == null) {
+  if (!hostObject) {
     return null
   }
 
@@ -47,10 +47,15 @@ function getPreferredName(hostObject) {
   return getPreferredBName(hostObject);
 }
 
+// priority list of names on App (legacy) goes:
+// hostname, name, bname, bonjourName, dhcpName
+//
+// we should be avoiding setting anything used here as 'Unknown' (for easier checking)
+// except on serializing to JSON before returning to App
 
 function getPreferredBName(hostObject) {
 
-  if (hostObject == null) {
+  if (!hostObject) {
     return null;
   }
 
@@ -58,45 +63,37 @@ function getPreferredBName(hostObject) {
     return hostObject.cloudName
   }
 
+  let detectName
+  let modelName
   if (hostObject.detect) {
     let detect = hostObject.detect
     if (_.isString(detect)) try {
       detect = JSON.parse(detect)
     } catch(err) { }
 
-    if (_.get(detect, 'bonjour.name')) {
-      return detect.bonjour.name
-    }
+    detectName = _.get(detect, 'cloud.name') || _.get(detect, 'bonjour.name')
+    if (detectName)
+      return detectName
+    else
+      detectName = detect.name
+
+    modelName = detect.model
   }
 
+  const name = hostObject.dhcpName
+    || hostObject['dnsmasq.dhcp.leaseName']
+    || hostObject.bonjourName
+    || hostObject.sambaName
+    // hostname doesn't seem to be assigned anywhere, on App, this actually has the highest priority
+    || hostObject.hostname
+    // below 2 mostly from user-agent now
+    || detectName
+    || modelName
 
-  if (hostObject.dhcpName) {
-    return hostObject.dhcpName
-  }
+  if (name) return name
 
-  if (hostObject['dnsmasq.dhcp.leaseName']) {
-    return hostObject['dnsmasq.dhcp.leaseName']
-  }
-
-  if (hostObject.bonjourName) {
-    return hostObject.bonjourName
-  }
-
-  if (hostObject.bname) {
-    return hostObject.bname
-  }
-
-  /* predict name is inaccurate, not suitable to use it at the moment
-  if (hostObject.pname) {
-    return hostObject.pname
-  }
-  */
-  if (hostObject.hostname) {
-    return hostObject.hostname
-  }
-  if (hostObject.macVendor != null) {
-    let name = hostObject.macVendor
-    return name
+  if (hostObject.macVendor != null && hostObject.macVendor !== 'Unknown') {
+    return hostObject.macVendor
   }
 
   if (hostObject.ipv4Addr)
