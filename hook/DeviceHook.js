@@ -316,26 +316,19 @@ class DeviceHook extends Hook {
 
           vendor = await this.getVendorInfo(mac);
 
-          let v = vendor || host.macVendor || "Unknown";
+          enrichedHost.macVendor = vendor || host.macVendor
 
+          // doesn't seem to be working, macVendor is set in NmapSensor but it's unlikely to be first event
           if (host.macVendor && host.macVendor != "Unknown") {
             enrichedHost.defaultMacVendor = host.macVendor
           }
-          enrichedHost.macVendor = v;
 
-          if (!enrichedHost.bname && host.ipv4Addr) {
+          if (!enrichedHost.sambaName && host.ipv4Addr) {
             let sambaName = await samba.getSambaName(host.ipv4Addr);
             if (sambaName)
-              enrichedHost.bname = sambaName;
+              enrichedHost.sambaNname = sambaName;
+            enrichedHost.bnameCheckTime = Math.floor(new Date() / 1000);
           }
-
-          if (!enrichedHost.bname && enrichedHost.macVendor !== "Unknown") {
-            // finally, use macVendor if no name
-            // if macVendor is not available, don't set the bname
-            enrichedHost.bname = enrichedHost.macVendor;
-          }
-
-          enrichedHost.bnameCheckTime = Math.floor(new Date() / 1000);
 
           if (platform.isFireRouterManaged()) {
             const networkConfig = await FireRouter.getConfig();
@@ -347,12 +340,14 @@ class DeviceHook extends Hook {
             log.debug(`Try to get vlanVendor info for ${mac}`);
             const wlanVendors = await APCMsgSensor.getWlanVendorFromCache(host.mac)
               .catch(err => log.error("Failed to get vendor info for " + mac, err));
-            
+
             if (wlanVendors && wlanVendors.length > 0) {
               log.info(`Got wlanVendor info for ${mac}: ${wlanVendors}`);
               enrichedHost.wlanVendor = wlanVendors;
             }
           }
+
+          enrichedHost.bname = getPreferredBName(enrichedHost)
 
           const hostManager = new HostManager();
           const h = await hostManager.createHost(enrichedHost)

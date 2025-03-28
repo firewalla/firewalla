@@ -42,7 +42,7 @@ class DeviceNameUpdateSensor extends Sensor {
           bnameCheckTime: now, // no matter whether there is a backup name, reset the timestamp after check
         }
         if (name) {
-          update.bname = name;
+          update.sambaName = name;
         }
         await host.update(update, true, true)
       }
