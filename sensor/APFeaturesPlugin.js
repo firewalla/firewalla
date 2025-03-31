@@ -31,6 +31,9 @@ const hostManager = new HostManager();
 const NetworkProfile = require('../net2/NetworkProfile.js');
 const Constants = require('../net2/Constants.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const LOCK_FWAPC_ISOLATION = "LOCK_FWAPC_ISOLATION";
 
 class APFeaturesPlugin extends Sensor {
   async run() {
@@ -98,8 +101,12 @@ class APFeaturesPlugin extends Sensor {
       await ruleInternal.exec(opInternal).catch((err) => { });
       await ruleInternalLog6.exec(opInternal).catch((err) => { });
       await ruleInternal6.exec(opInternal).catch((err) => { });
-  
-      await fwapc.setGroup(tagUid, {config: {isolation: {internal: policy.internal || false, external: policy.external || false}}}).catch((err) => {});
+
+      await lock.acquire(LOCK_FWAPC_ISOLATION, async () => {
+        await fwapc.setGroup(tagUid, {config: {isolation: {internal: policy.internal || false, external: policy.external || false}}}).catch((err) => {});
+       }).catch((err) => {
+        log.error("Failed to sync fwapc isolation", err.message);
+      });
     }
 
     if (obj instanceof NetworkProfile) {
@@ -150,8 +157,11 @@ class APFeaturesPlugin extends Sensor {
         await ruleRxLog.exec(op).catch((err) => {});
         await ruleRx.exec(op).catch((err) => {});
       }
-      if (obj instanceof Host)
-        await fwapc.setDeviceAcl(obj.getUniqueId(), {isolation: policy.external ? true : false}).catch((err) => {});
+
+      await lock.acquire(LOCK_FWAPC_ISOLATION, async () => {
+        if (obj instanceof Host)
+          await fwapc.setDeviceAcl(obj.getUniqueId(), {isolation: policy.external ? true : false}).catch((err) => {});
+      });
     }
   }
 
@@ -173,6 +183,12 @@ class APFeaturesPlugin extends Sensor {
   }
 
   async syncIsolation() {
+    await lock.acquire(LOCK_FWAPC_ISOLATION, async () => {
+      await this._syncIsolation();
+    });
+  }
+
+  async _syncIsolation() {
     const hosts = hostManager.getHostsFast();
     for (const host of hosts) {
       const p = await host.getPolicyAsync(Constants.POLICY_KEY_ISOLATION);
@@ -180,7 +196,7 @@ class APFeaturesPlugin extends Sensor {
         await fwapc.setDeviceAcl(host.getUniqueId(), {isolation: p.external ? true : false}).catch((err) => {});
     }
     const tags = await TagManager.getPolicyTags(Constants.POLICY_KEY_ISOLATION).catch((err) => {
-      log.error(`Failed to load tags with policy ${Constants.POLICY_KEY_SSID_PSK}`, err.message);
+      log.error(`Failed to load tags with policy ${Constants.POLICY_KEY_ISOLATION}`, err.message);
       return [];
     });
     for (const tag of tags) {
