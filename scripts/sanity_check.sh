@@ -85,6 +85,7 @@ element_in() {
 }
 
 declare -A NETWORK_UUID_NAME
+declare -A WGPEER_NAME
 frcc_done=0
 frcc() {
     if [[ $ROUTER_MANAGED == "no" ]]; then
@@ -96,6 +97,11 @@ frcc() {
         jq -r '.interface | to_entries[].value | to_entries[].value.meta | .uuid, .name' /tmp/scc_config |
         while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
             NETWORK_UUID_NAME[${ARY[0]}]=${ARY[1]}
+        done
+
+        jq -r '.interface.wireguard.wg0.extra.peers[] | .publicKey, .name' /tmp/scc_config |
+        while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
+            WGPEER_NAME[${ARY[0]}]=${ARY[1]}
         done
 
         frcc_done=1
@@ -558,6 +564,11 @@ check_policies() {
                 SCOPE="net:${NETWORK_UUID_NAME[${TAG:5}]}"
             else
                 SCOPE="${TAG%%:*}:$(get_tag_name "$TAG")"
+            fi
+        elif [[ -n ${p[guids]} ]]; then
+            GUID="${p[guids]:2:-2}"
+            if [[ "$GUID" == "wg_peer:"* ]]; then
+                SCOPE="wg:${WGPEER_NAME[${GUID:8}]}"
             fi
         elif [[ -z $SCOPE ]]; then
             SCOPE="All Devices"
@@ -1109,18 +1120,20 @@ check_network() {
     $COLUMN_OPT -t -s$'\t' /tmp/scc_csv_multline
     echo ""
 
-    #check source NAT
-    mapfile -t WANS < <(jq -r ". | to_entries | .[] | select(.value.config.meta.type == \"wan\") | .key" /tmp/scc_interfaces)
-    mapfile -t SOURCE_NAT < <(jq -r ".nat | keys | .[]" /tmp/scc_config | cut -d - -f 2 | sort | uniq)
-    echo "WAN Interfaces:"
-    for WAN in "${WANS[@]}"; do
-      if [[ " ${SOURCE_NAT[*]} " =~ " ${WAN} " ]]; then
-        printf "%10s: Source NAT ON\n" $WAN
-      else
-        printf "\e[31m%10s: Source NAT OFF\e[0m\n" $WAN
-      fi
-    done
-    echo ""
+    if  [[ "$(get_mode)" == "router" ]]; then
+      #check source NAT
+      mapfile -t WANS < <(jq -r ". | to_entries | .[] | select(.value.config.meta.type == \"wan\") | .key" /tmp/scc_interfaces)
+      mapfile -t SOURCE_NAT < <(jq -r ".nat | keys | .[]" /tmp/scc_config | cut -d - -f 2 | sort | uniq)
+      echo "WAN Interfaces:"
+      for WAN in "${WANS[@]}"; do
+        if [[ " ${SOURCE_NAT[*]} " =~ " ${WAN} " ]]; then
+          printf "%10s: Source NAT ON\n" $WAN
+        else
+          printf "\e[31m%10s: Source NAT OFF\e[0m\n" $WAN
+        fi
+      done
+      echo ""
+    fi
     echo ""
 }
 
