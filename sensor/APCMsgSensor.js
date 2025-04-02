@@ -588,7 +588,7 @@ class APCMsgSensor extends Sensor {
       sh: msg.src, dh: msg.dst,
       sp: [msg.sport], dp: msg.dport,
       mac: msg.smac, dmac: msg.dmac,
-      fd: 'lo', dir: 'L',
+      fd: 'in', dir: 'L',
       isoLVL: msg.iso_lvl,
       orig: 'ap',
     };
