@@ -89,6 +89,7 @@ function getPreferredBName(hostObject) {
     // below 2 mostly from user-agent now
     || detectName
     || modelName
+    || hostObject.modelName // from SSDP
 
   if (name) return name
 
@@ -96,18 +97,19 @@ function getPreferredBName(hostObject) {
     return hostObject.macVendor
   }
 
-  if (hostObject.ipv4Addr)
-    return hostObject.ipv4Addr
+  // all of the clients we have show IP together with name, this doesn't make sense anymore
+  // if (hostObject.ipv4Addr)
+  //   return hostObject.ipv4Addr
 
-  if (hostObject.ipv6Addr) {
-    let v6Addrs = hostObject.ipv6Addr || [];
-    if (_.isString(v6Addrs)) {
-      try {
-        v6Addrs = JSON.parse(v6Addrs);
-      } catch (err) { }
-    }
-    return v6Addrs[0]
-  }
+  // if (hostObject.ipv6Addr) {
+  //   let v6Addrs = hostObject.ipv6Addr || [];
+  //   if (_.isString(v6Addrs)) {
+  //     try {
+  //       v6Addrs = JSON.parse(v6Addrs);
+  //     } catch (err) { }
+  //   }
+  //   return v6Addrs[0]
+  // }
 
   if (hostObject.wlanVendor && hostObject.wlanVendor.length > 0) {
     return hostObject.wlanVendor[0]
