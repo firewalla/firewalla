@@ -390,7 +390,6 @@ class FireRouter {
           // these two message types should cover all proactive and reactive network changes
           log.info("Network is changed, schedule reload from FireRouter ...");
           reloadNeeded = true;
-          this.pcapRestartNeeded = true;
           break;
         }
         default:
