@@ -176,6 +176,63 @@ class netBot extends ControllerBot {
     nm.loadConfig();
   }
 
+  async _notifyNewEvent(event) {
+    const event_type = event.event_type == "state" ? event.state_type: event.action_type;
+    const event_value = event.event_type == "state" ? event.state_value: event.action_value;
+
+    if (this.hostManager.policy && this.hostManager.policy["notify"]) {
+      if (this.hostManager.policy['notify']['state'] == false) {
+        log.info("host notification disabled");
+        return;
+      }
+
+      if (this.hostManager.policy["notify"][event_type] !== true
+      ) {
+        log.info("host event notification disable for event type", event_type);
+        return;
+      }
+    }
+
+    let notifEvent = await this.getNotifEvent(event_type, event_value, event.labels);
+    if (notifEvent.msg == "") {
+      log.info(`event ${event_type} not supported for notification`);
+      return;
+    }
+    return {
+      type: 'FW_NOTIFICATION',
+      message: notifEvent.msg,
+      titleKey: 'NOTIF_EVENT_TITLE',
+      bodyKey: 'NOTIF_EVENT_BODY',
+      titleLocalKey: `NEW_EVENT_TITLE_${event_type}`,
+      bodyLocalKey: `NEW_EVENT_BODY_${event_type}`,
+      bodyLocalArgs: [notifEvent.args.eid, notifEvent.args.deviceName || "", notifEvent.args.ts || 0 ],
+      bodyLocalMsg: notifEvent.msg,
+      payload: notifEvent.args,
+    }
+  }
+
+  async getNotifEvent(event_type, event_value, event_labels) {
+    let payload = {msg: '', args: {}};
+    switch (event_type) {
+      case "phone_paired":
+        const eid = event_labels.eid;
+        const deviceName = event_labels.deviceName;
+        if (eid == "") return;
+        payload.msg = `A new phone ${deviceName ? "("+deviceName+") " : ""}is paired with your Firewalla box.`;
+        payload.args.eid = eid;
+        payload.args.deviceName = deviceName || "";
+        // find latest event ts
+        let results = await ea.getLatestEventsByType(event_type);
+        results = results.filter(i => i.labels && i.labels.eid == eid);
+        if (results.length > 0) {
+          payload.args.ts = results[0].ts
+        }
+        break;
+      default:
+    }
+    return payload
+  }
+
   async _sendLog() {
     let password = require('../extension/common/key.js').randomPassword(10)
     let filename = this.primarygid + ".tar.gz.gpg";
@@ -187,7 +244,7 @@ class netBot extends ControllerBot {
       const homePath = f.getFirewallaHome();
       let cmdline = `${homePath}/scripts/encrypt-upload-s3.sh ${filename} ${password} '${url.url}'`;
       await execAsync(cmdline).catch(err => {
-        log.error("sendLog: unable to process encrypt-upload", err.message, err.stdout, err.stderr);	
+        log.error("sendLog: unable to process encrypt-upload", err.message, err.stdout, err.stderr);
       })
       return { password: password, filename: path }
     }
@@ -270,6 +327,13 @@ class netBot extends ControllerBot {
 
     let c = require('../net2/MessageBus.js');
     this.messageBus = new c('debug');
+
+    sem.on('Event:NewEvent', async (event) => {
+      let notifEvent = await this._notifyNewEvent(event.event);
+      if (notifEvent) {
+        sem.sendEventToFireApi(notifEvent);
+      }
+    });
 
     sem.on('Alarm:NewAlarm', async (event) => {
       let alarm, notifMsg;
@@ -430,6 +494,10 @@ class netBot extends ControllerBot {
           notifyMsg["loc-args"] = event.bodyLocalArgs;
           notifyMsg["body_loc_args"] = event.bodyLocalArgs;
         }
+      }
+
+      if (event.bodyLocalMsg) {
+        notifyMsg["body_loc_msg"] = event.bodyLocalMsg;
       }
 
       const data = {
@@ -975,6 +1043,17 @@ class netBot extends ControllerBot {
             const date = Math.floor(Date.now() / 1000)
             result["msg"] = `${historyMsg}paired at ${date},`;
             await rclient.hsetAsync("sys:ept:members:history", appInfo.eid, JSON.stringify(result));
+             // notify phone_pair events
+            sem.sendEventToFireApi({
+              type: `Event:NewEvent`,
+              message: "A new event is generated",
+              event: {
+                  "event_type": "action",
+                  "action_type": "phone_paired",
+                  "action_value": 1,
+                  "labels": {"eid": appInfo.eid, "deviceName": appInfo.deviceName}
+              },
+            });
           }
         }
       } catch (err) {
@@ -1367,7 +1446,6 @@ class netBot extends ControllerBot {
         return { categories }
       }
       case "whois": {
-
         const target = value.target;
         let whois = await intelManager.whois(target);
         return { target, whois }
