@@ -72,6 +72,10 @@
       "8.8.8.8",
       "1.1.1.1"
     ],
+    "fallbackDNS6Servers": [
+      "2001:4860:4860::8888",
+      "2001:4860:4860::8844"
+    ],
     "verificationDomains": [
       "firewalla.encipher.io",
       "github.com",

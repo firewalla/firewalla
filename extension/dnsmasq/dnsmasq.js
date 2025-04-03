@@ -93,6 +93,7 @@ const BLUE_HOLE_IP = "198.51.100.100"
 
 const DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 const FALLBACK_DNS_SERVERS = (fConfig.dns && fConfig.dns.fallbackDNSServers) || ["8.8.8.8", "1.1.1.1"];
+const FALLBACK_DNS6_SERVERS = (fConfig.dns && fConfig.dns.fallbackDNS6Servers) || ["2001:4860:4860::8888"];
 const VERIFICATION_DOMAINS = (fConfig.dns && fConfig.dns.verificationDomains) || ["firewalla.encipher.io"];
 const VERIFICATION_WHILELIST_PATH = FILTER_DIR + "/verification_whitelist.conf";
 
@@ -1522,6 +1523,10 @@ module.exports = class DNSMASQ {
           await redirectRule.clone().pro('udp').exec('-A');
         }
       }
+    }
+    for (const dns6_server of FALLBACK_DNS6_SERVERS) {
+      await execAsync(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -p tcp -m tcp --dport 53 -j DNAT --to-destination [${dns6_server}]:53`)).catch((err) => { });
+      await execAsync(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -p udp -m udp --dport 53 -j DNAT --to-destination [${dns6_server}]:53`)).catch((err) => { });
     }
     await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -p tcp --dport 53 -j ACCEPT`)).catch((err) => { });
     await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_FALLBACK -p udp --dport 53 -j ACCEPT`)).catch((err) => { });
