@@ -102,13 +102,36 @@ class EventApi {
         return result;
     }
 
+    async getLatestEventsByType(type, offset = 600000, limit_count = 10) {
+        let now = Date.now();
+        try {
+            let data = await rclient.zrevrangebyscoreAsync(KEY_EVENT_LOG, now, now-offset);
+            data = limit_count > 0 ? data.slice(0, limit_count) : data;
+            let events = data.map( i => JSON.parse(i)).filter( i => i.event_type == "action" ? i.action_type == type : i.state_type == type);
+            return events;
+        } catch(e) {
+            log.warn("Failed to get event by type", type, e);
+        }
+        return [];
+    }
+
+    async getEventByTs(ts) {
+        try {
+            const result = await rclient.zrangebyscoreAsync(KEY_EVENT_LOG, ts, ts);
+            return JSON.parse(result);
+        } catch {
+            log.warn("Failed to get event by timestamp", ts);
+        }
+        return {}
+    }
+
     async listEvents(min="-inf", max="inf", limit_offset=0, limit_count=-1, reverse=false, parse_json=true, filters = null) {
       let results = [];
       try {
         log.info(`getting events from ${min} to ${max}`);
         const [begin,end] = reverse ? [max,min] : [min,max];
         const params = [KEY_EVENT_LOG, begin, end];
-        
+
         results = reverse ? await rclient.zrevrangebyscoreAsync(params) : await rclient.zrangebyscoreAsync(params);
         if (results && parse_json) {
           results.forEach((x,idx)=>results[idx]=JSON.parse(x));

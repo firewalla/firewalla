@@ -58,6 +58,13 @@ class EventSensor extends Sensor {
             }
         });
 
+        extensionManager.onGet("eventDetail", async(msg, data) => {
+            if (!data.ts) {
+                throw { code: 400, msg: "invalid empty timestamp" }
+            }
+            return ea.getEventByTs(data.ts);
+        });
+
         extensionManager.onGet("latestAllStateEvents", async (msg, data) => {
             try {
                 log.info(`processing onGet latest events with data(${JSON.stringify(data)})`);
