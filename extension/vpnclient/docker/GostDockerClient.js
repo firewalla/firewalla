@@ -112,7 +112,8 @@ class GostDockerClient extends DockerBaseVPNClient {
       return super.getStatistics();
     });
 
-    if (!result)
+    // return zero if invalid
+    if (!result || !_.isString(result))
       return {bytesIn: 0, bytesOut: 0};
 
     let items = result.split(" ");
