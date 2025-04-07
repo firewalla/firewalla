@@ -169,6 +169,11 @@ class VPNClient {
         return c;
         break;
       }
+      case "gost": {
+        const c = require('./docker/GostDockerClient.js');
+        return c;
+        break;
+      }
       case "ts": {
         const c = require('./docker/TSDockerClient.js');
         return c;
