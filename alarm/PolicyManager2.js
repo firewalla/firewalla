@@ -1483,7 +1483,7 @@ class PolicyManager2 {
         }
 
         if (["allow", "block", "resolve", "address", "route"].includes(action)) {
-          if (direction !== "inbound" && !localPort && !remotePort) {
+          if (direction !== "inbound" && (action === "allow" || !localPort && !remotePort)) { // always implement allow rule in dnsmasq, but implement block rule only in iptables
             const scheduling = policy.isSchedulingPolicy();
             const exactMatch = policy.domainExactMatch;
             const flag = await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver, wanUUID, routeType }).catch(() => { });
@@ -1596,7 +1596,7 @@ class PolicyManager2 {
         }
 
         if (["allow", "block", "route"].includes(action)) {
-          if (direction !== "inbound" && !localPort && !remotePort) {
+          if (direction !== "inbound" && (action === "allow" || !localPort && !remotePort)) {
             await domainBlock.blockCategory({
               pid,
               scope: scope,
@@ -1993,7 +1993,7 @@ class PolicyManager2 {
         }
 
         if (["allow", "block", "resolve", "address", "route"].includes(action)) {
-          if (direction !== "inbound" && !localPort && !remotePort) {
+          if (direction !== "inbound" && (action === "allow" || !localPort && !remotePort)) {
             const scheduling = policy.isSchedulingPolicy();
             const exactMatch = policy.domainExactMatch;
             const flag = await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver, wanUUID, routeType }).catch(() => { });
@@ -2080,7 +2080,7 @@ class PolicyManager2 {
         }
 
         if (["allow", "block", "route"].includes(action)) {
-          if (direction !== "inbound" && !localPort && !remotePort) {
+          if (direction !== "inbound" && (action === "allow" || !localPort && !remotePort)) {
             await domainBlock.unblockCategory({
               pid,
               action,
