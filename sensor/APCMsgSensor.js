@@ -92,7 +92,7 @@ class APCMsgSensor extends Sensor {
             const mac = _.get(msg, ["station", "macAddr"]);
             const vendor = _.get(msg, ["station", "vendor"]);
 
-            if (vendor && mac) {
+            if (vendor && mac && msg.action === "join") {
               await this.updateWlanVendorInfo(mac, vendor);
             }
 
@@ -253,7 +253,7 @@ class APCMsgSensor extends Sensor {
     if (!mac || !vendor)
       return;
     mac = mac.toUpperCase();
-    log.info(`update wlanVendor info, mac:${mac}; vendor:${vendor}`);
+    
     
     let wlanVendors = await APCMsgSensor.getWlanVendorFromCache(mac);
     if (wlanVendors) {
@@ -265,6 +265,7 @@ class APCMsgSensor extends Sensor {
       wlanVendors = WlanVendorInfo.getVendorFromVendorMap(result, mac);
       if (wlanVendors.length > 0) {
         await APCMsgSensor.setWlanVendorToCache(mac, wlanVendors);
+        log.info(`update wlanVendor info, mac:${mac}; vendorId:${vendor} vendorName:${wlanVendors}`);
       } else {
         log.info(`Did not find a valid vendor name for mac ${mac} with vendor ${vendor}`);
         return;
