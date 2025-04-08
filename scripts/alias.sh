@@ -196,6 +196,14 @@ function lase() {
   local_fwapc_get "v1/event_history/$1?format=text" | jq -r '.[]'
 }
 
+function laseap() {
+  local_fwapc_get "v1/event_history/$1?type=ap&format=text" | jq -r '.[]'
+}
+
+function lase10() {
+  lase "$1" | head
+}
+
 function llap() {
   local_fwapc_get "v1/status/ap" | jq '.info[] | [.mac, .licenseUuid] | @tsv' -r
 }
@@ -237,7 +245,7 @@ function lastat() {
   local filter=$2
 
   if [[ "x$filter" == "x" ]]; then
-    lase "$mac" | tac | ~/firewalla/scripts/device_ap_connect.sh "$mac" | column -t --output-separator "      "
+    lase "$mac" | head -n 20 | tac | ~/firewalla/scripts/device_ap_connect.sh "$mac" | column -t --output-separator "      "
   else
     lase "$mac" | grep -- "$filter" | tac | ~/firewalla/scripts/device_ap_connect.sh "$mac" | column -t --output-separator "      "
   fi
