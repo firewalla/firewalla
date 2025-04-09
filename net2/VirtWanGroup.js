@@ -52,7 +52,7 @@ class VirtWanGroup {
       this.strictVPN = o.strictVPN || false;
       if (this.type === "primary_standby")
         this.failback = o.failback || false;
-      
+
       this.connState = {};
       this.applyConfig();
       instances[uuid] = this;
