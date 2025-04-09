@@ -311,9 +311,16 @@ class VPNClient {
     const localIP6 = await this._getLocalIP6();
     const intf = this.getInterfaceName();
     const snatNeeded = await this.isSNATNeeded();
+    if (settings.c2sSNATDisabled) {
+      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -I FW_VC_SNAT -m set --match-set ${VPNClient.getNetIpsetName(this.profileId, 4)}4 dst -j RETURN`)).catch((err) => {});
+      await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -I FW_VC_SNAT -m set --match-set ${VPNClient.getNetIpsetName(this.profileId, 6)}6 dst -j RETURN`)).catch((err) => {});
+    } else {
+      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_VC_SNAT -m set --match-set ${VPNClient.getNetIpsetName(this.profileId, 4)}4 dst -j RETURN`)).catch((err) => {});
+      await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -D FW_VC_SNAT -m set --match-set ${VPNClient.getNetIpsetName(this.profileId, 6)}6 dst -j RETURN`)).catch((err) => {});
+    }
     if (snatNeeded) {
-      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
-      await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
+      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_VC_SNAT -o ${intf} -j MASQUERADE`)).catch((err) => {});
+      await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_VC_SNAT -o ${intf} -j MASQUERADE`)).catch((err) => {});
     }
     log.verbose(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
     // remove routes from main table which is inserted by VPN client automatically,
@@ -741,6 +748,7 @@ class VPNClient {
       serverSubnets: [],
       overrideDefaultRoute: true,
       routeDNS: true,
+      c2sSNATDisabled: false,
       strictVPN: false
     }; // default settings
     const mergedSettings = Object.assign({}, defaultSettings, settings);
@@ -759,6 +767,7 @@ class VPNClient {
     let settings = {
       serverSubnets: [],
       overrideDefaultRoute: true,
+      c2sSNATDisabled: false,
       routeDNS: true,
       strictVPN: false
     }; // default settings
@@ -957,8 +966,12 @@ class VPNClient {
     await VPNClient.ensureCreateEnforcementEnv(this.profileId);
     await vpnClientEnforcer.flushVPNClientRoutes(intf);
     await vpnClientEnforcer.removeVPNClientIPRules(intf);
-    await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
-    await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -D FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
+
+    await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_VC_SNAT -m set --match-set ${VPNClient.getNetIpsetName(this.profileId, 4)}4 dst -j RETURN`)).catch((err) => {});
+    await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -D FW_VC_SNAT -m set --match-set ${VPNClient.getNetIpsetName(this.profileId, 6)}6 dst -j RETURN`)).catch((err) => {});
+
+    await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_VC_SNAT -o ${intf} -j MASQUERADE`)).catch((err) => {});
+    await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -D FW_VC_SNAT -o ${intf} -j MASQUERADE`)).catch((err) => {});
     await this.loadSettings();
     const dnsServers = await this._getDNSServers() || [];
     if (dnsServers.length > 0) {
