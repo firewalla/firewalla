@@ -416,8 +416,11 @@ module.exports = class HostManager extends Monitorable {
       _hosts.push(this.hosts.all[i].toJson());
     }
     json.hosts = _hosts;
-    if (platform.isFireRouterManaged())
+    if (platform.isFireRouterManaged()) {
       await this.enrichSTAInfo(_hosts);
+      await this.enrichApInfo(_hosts);
+    }
+
     // Reduce json size of init response
     if (!options.includeScanResults) {
       return _hosts
@@ -439,6 +442,30 @@ module.exports = class HostManager extends Monitorable {
         const mac = host.mac;
         if (mac && staStatus[mac])
           host.staInfo = staStatus[mac];
+      }
+    }
+  }
+
+  async enrichApInfo(hosts) {
+    const apStatus = await fwapc.getAssetsStatus().catch((err) => {
+      log.error(`Failed to get ap status from fwapc`, err.message);
+      return null;
+    });
+
+    await this._enrichApInfo(hosts, apStatus);
+  }
+
+  async _enrichApInfo(hosts, apStatus) {
+    if (_.isObject(apStatus)) {
+      for (const host of hosts) {
+        const mac = host.mac;
+        if (mac && apStatus[mac]) {
+          // override ip4 to br-lan0
+          const asset = apStatus[mac];
+          if (asset && asset.addrs && asset.addrs["br-lan0"] && asset.addrs["br-lan0"].ip4) {
+            host.ip = asset.addrs["br-lan0"].ip4;
+          }
+        }
       }
     }
   }
