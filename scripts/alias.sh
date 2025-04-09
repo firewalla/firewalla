@@ -250,3 +250,12 @@ function lastat() {
     lase "$mac" | grep -- "$filter" | tac | ~/firewalla/scripts/device_ap_connect.sh "$mac" | column -t --output-separator "      "
   fi
 }
+
+# lap_patch <mac> <version>
+function lap_patch() {
+  local mac=$1
+  local version=$2
+
+  local payload=$(jq -n --arg mac "$mac" --arg version "$version" '{"uid": $mac, "version": $version}')
+  curl -XPOST localhost:8841/v1/control/patch_version -d "$payload" -H "Content-Type:application/json"
+}
