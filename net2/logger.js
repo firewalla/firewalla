@@ -139,7 +139,7 @@ function setupLogger(transports) {
 }
 
 const logger = setupLogger([fileTransport, consoleTransport, testTransport].filter(x => x != null))
-const loglevelInt = logger.levels[logger.level]
+logger.levels['none'] = -1
 
 module.exports = function (component) {
   component = path.basename(component).split(".")[0].capitalizeFirstLetter();

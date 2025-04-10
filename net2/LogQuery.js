@@ -80,11 +80,11 @@ class LogQuery {
   }
 
   optionsToFilter(options) {
-    const filter = JSON.parse(JSON.stringify(options));
-    const logicFilterKeys = ["include", "exclude"];
-    for (const logicFilterKey of logicFilterKeys) {
-      if (_.isArray(filter[logicFilterKey])) {
-        for (const logicFilter of filter[logicFilterKey]) {
+    const filterKeys = ["include", "exclude"];
+    const filter = JSON.parse(JSON.stringify(_.pick(options, filterKeys)));
+    for (const key of filterKeys) {
+      if (_.isArray(filter[key])) {
+        for (const logicFilter of filter[key]) {
           for (const key of Object.keys(logicFilter)) {
             switch (key) {
               case "host":
@@ -109,10 +109,7 @@ class LogQuery {
         }
       }
     }
-    // don't filter logs with intf & tag here to keep the behavior same as before
-    // it only makes sense to filter intf & tag when we query all devices
-    // instead of simply expending intf and tag to mac addresses
-    return _.omit(filter, ['mac', 'macs', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag', 'enrich']);
+    return filter
   }
 
   isLogValid(logObj, filter) {

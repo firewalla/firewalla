@@ -696,8 +696,8 @@ class ACLAuditLogPlugin extends Sensor {
   }
 
   _getAuditKey(record, block) {
-    const { mac, dir } = record
-    return `audit:${dir=='L'?'local:':''}${block?'drop':'accept'}:${mac}`
+    const { mac, type, dir } = record
+    return `audit:${dir=='L'?'local:':''}${block?'drop':type=='dns'?'dns':'accept'}:${mac}`
   }
 
   async writeLogs() {

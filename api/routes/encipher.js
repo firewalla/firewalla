@@ -90,7 +90,6 @@ router.post('/message/:gid',
 //     "msg": "",
 //     "type": "jsondata",
 //     "compressMode": 1,
-//     "mtype": "msg"
 //   },
 //   "mtype": "msg"
 // }
@@ -125,7 +124,6 @@ const simple = async (req, res, next) => {
       "msg": "",
       "type": "jsondata",
       "compressMode": 1,
-      "mtype": "msg"
     },
     "mtype": "msg"
   }
@@ -226,7 +224,6 @@ router.post('/complex', async (req, res, next) => {
       "msg": "",
       "type": "jsondata",
       "compressMode": 1,
-      "mtype": "msg"
     },
     "mtype": "msg"
   }
