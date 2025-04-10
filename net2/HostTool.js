@@ -485,15 +485,6 @@ class HostTool {
         ipv6array = JSON.parse(macHost.ipv6Addr);
       }
 
-      // only keep around 5 ipv6 around
-      /*
-      ipv6array = ipv6array.slice(0,8)
-      let oldindex = ipv6array.indexOf(v6addr);
-      if (oldindex != -1) {
-        ipv6array.splice(oldindex,1);
-      }
-      ipv6array.unshift(v6addr);
-      */
       await this.ipv6Insert(ipv6array, v6addr, true)
       macHost.mac = mac.toUpperCase();
       macHost.ipv6Addr = JSON.stringify(ipv6array);
