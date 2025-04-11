@@ -99,7 +99,7 @@ frcc() {
             NETWORK_UUID_NAME[${ARY[0]}]=${ARY[1]}
         done
 
-        jq -r '.interface.wireguard.wg0.extra.peers[] | .publicKey, .name' /tmp/scc_config |
+        jq -r '.interface.wireguard.wg0.extra.peers[]? | .publicKey, .name' /tmp/scc_config |
         while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
             WGPEER_NAME[${ARY[0]}]=${ARY[1]}
         done
