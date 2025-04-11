@@ -336,7 +336,8 @@ class ACLAuditLogPlugin extends Sensor {
     if (tls)
       record.tls = 1;
 
-    if ((dir === "L" || dir === "O" || dir === "I") && mark) {
+    // redirected traffic with PBR has interface id in mark
+    if (mark && dir != 'W' && record.ac != "redirect") {
       record.pid = Number(mark) & 0xffff;
     }
     if (record.ac === "route") {
