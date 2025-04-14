@@ -1328,10 +1328,12 @@ class PolicyManager2 {
     }
 
     // for now, targets is only used for multiple category block/app time limit
-    let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, ipttl, resolver, flowIsolation, dscpClass } = policy;
+    let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, ipttl, resolver, flowIsolation, dscpClass, packetDelay, lossRate } = policy;
 
     if (action === "app_block")
       action = "block"; // treat app_block same as block, but using a different term for version compatibility, otherwise, block rule will always take effect in previous versions
+    else if (action === "app_disturb")
+      action = "qos";  // treat app_disturb same as qos
 
     if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);
@@ -1720,7 +1722,7 @@ class PolicyManager2 {
       action, direction, createOrDestroy: "create", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
       wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
-      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass
+      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, packetDelay, lossRate
     }
     if (tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets)) {
       let tlsInstalled = true;
@@ -1771,6 +1773,18 @@ class PolicyManager2 {
   }
 
   async __applyRules(options) {
+    if (options.action === "qos" && options.qdisc === "netem") {
+      // for app_disturb action, traffic direction is not specified, we handle both upload and download here.
+      for (const direction of ["upload", "download"]) {
+        options.trafficDirection = direction;
+        await this._applyRules(options);
+      }
+    }else{
+      await this._applyRules(options);
+    }
+  }
+
+  async _applyRules(options) {
     const { tags, intfs, scope, guids, parentRgId } = options || {};
     const ruleOptions = _.omit(options, 'tags', 'intfs', 'scope', 'guids', 'parentRgId')
 
@@ -1848,10 +1862,12 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, resolver, flowIsolation, dscpClass } = policy;
+    let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, resolver, flowIsolation, dscpClass, packetDelay, lossRate } = policy;
 
     if (action === "app_block")
       action = "block";
+    else if (action === "app_disturb")
+      action = "qos";  // treat app_disturb same as qos
 
     if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);
@@ -2190,7 +2206,7 @@ class PolicyManager2 {
       action, direction, createOrDestroy: "destroy", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
       wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
-      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass
+      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, packetDelay, lossRate
     }
     if (!_.isEmpty(remoteSets)) {
       for (const setPair of remoteSets) {

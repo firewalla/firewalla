@@ -478,9 +478,9 @@ async function setupGlobalRules(options) {
     action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null,
     trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
     wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost,
-    subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass
+    subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, packetDelay, lossRate
   } = options
-  log.verbose(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}`);
+  log.verbose(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}, packetDelay ${packetDelay}, lossRate ${lossRate}`);
   const parameters = [];
   const filterPrio = 1;
   let chainSuffix = "";
@@ -505,7 +505,7 @@ async function setupGlobalRules(options) {
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       priority = priority || qos.DEFAULT_PRIO;
       qdisc = qdisc || "fq_codel";
-      if (rateLimit) {
+      if (rateLimit || qdisc === "netem") {
         let parentHTBQdisc = "3";
         let subclassId = "4";
         if (priority <= qos.PRIO_HIGH) {
@@ -519,7 +519,7 @@ async function setupGlobalRules(options) {
         }
         if (createOrDestroy === "create") {
           await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
-          await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation);
+          await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, packetDelay, lossRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
@@ -642,9 +642,9 @@ async function setupGenericIdentitiesRules(options) {
     action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null,
     trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
     wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost,
-    subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass
+    subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, packetDelay, lossRate
   } = options
-  log.verbose(`${createOrDestroy} generic identity rule, guids ${JSON.stringify(guids)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}`);
+  log.verbose(`${createOrDestroy} generic identity rule, guids ${JSON.stringify(guids)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}, packetDelay ${packetDelay}, lossRate ${lossRate}`);
   // generic identity has the same priority level as device
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
@@ -671,7 +671,7 @@ async function setupGenericIdentitiesRules(options) {
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       priority = priority || qos.DEFAULT_PRIO;
       qdisc = qdisc || "fq_codel";
-      if (rateLimit) {
+      if (rateLimit || qdisc === "netem") {
         let parentHTBQdisc = "3";
         let subclassId = "4";
         if (priority <= qos.PRIO_HIGH) {
@@ -685,7 +685,7 @@ async function setupGenericIdentitiesRules(options) {
         }
         if (createOrDestroy === "create") {
           await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
-          await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation);
+          await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, packetDelay, lossRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
@@ -821,9 +821,9 @@ async function setupDevicesRules(options) {
     action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null,
     trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
     wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost,
-    subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass
+    subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, packetDelay, lossRate
   } = options
-  log.verbose(`${createOrDestroy} device rule, MAC address ${JSON.stringify(macAddresses)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}`);
+  log.verbose(`${createOrDestroy} device rule, MAC address ${JSON.stringify(macAddresses)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}, packetDelay ${packetDelay}, lossRate ${lossRate}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
   const filterPrio = 1;
@@ -849,7 +849,7 @@ async function setupDevicesRules(options) {
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       priority = priority || qos.DEFAULT_PRIO;
       qdisc = qdisc || "fq_codel";
-      if (rateLimit) {
+      if (rateLimit || qdisc === "netem") {
         let parentHTBQdisc = "3";
         let subclassId = "4";
         if (priority <= qos.PRIO_HIGH) {
@@ -863,7 +863,7 @@ async function setupDevicesRules(options) {
         }
         if (createOrDestroy === "create") {
           await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
-          await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation);
+          await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, packetDelay, lossRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
@@ -990,9 +990,9 @@ async function setupTagsRules(options) {
     action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null,
     trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
     wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost,
-    subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass
+    subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, packetDelay, lossRate
   } = options
-  log.verbose(`${createOrDestroy} group rule, policy id ${pid}, group uid ${JSON.stringify(uids)}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}`);
+  log.verbose(`${createOrDestroy} group rule, policy id ${pid}, group uid ${JSON.stringify(uids)}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}, packetDelay ${packetDelay}, lossRate ${lossRate}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
   const filterPrio = 1;
@@ -1023,7 +1023,7 @@ async function setupTagsRules(options) {
         const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
         priority = priority || qos.DEFAULT_PRIO;
         qdisc = qdisc || "fq_codel";
-        if (rateLimit) {
+        if (rateLimit || qdisc === "netem") {
           let parentHTBQdisc = "3";
           let subclassId = "4";
           if (priority <= qos.PRIO_HIGH) {
@@ -1037,7 +1037,7 @@ async function setupTagsRules(options) {
           }
           if (createOrDestroy === "create") {
             await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
-            await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation);
+            await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, packetDelay, lossRate);
             await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
           } else {
             await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
@@ -1202,9 +1202,9 @@ async function setupIntfsRules(options) {
     action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null,
     trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
     wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost,
-    subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass
+    subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, packetDelay, lossRate
   } = options
-  log.verbose(`${createOrDestroy} network rule, policy id ${pid}, uuid ${JSON.stringify(uuids)}, local port ${localPortSet}, remote set ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}`);
+  log.verbose(`${createOrDestroy} network rule, policy id ${pid}, uuid ${JSON.stringify(uuids)}, local port ${localPortSet}, remote set ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}, packetDelay ${packetDelay}, lossRate ${lossRate}`);
   if (_.isEmpty(uuids))
     return;
   const op = createOrDestroy === "create" ? "-A" : "-D";
@@ -1232,7 +1232,7 @@ async function setupIntfsRules(options) {
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       priority = priority || qos.DEFAULT_PRIO;
       qdisc = qdisc || "fq_codel";
-      if (rateLimit) {
+      if (rateLimit || qdisc === "netem") {
         let parentHTBQdisc = "3";
         let subclassId = "4";
         if (priority <= qos.PRIO_HIGH) {
@@ -1246,7 +1246,7 @@ async function setupIntfsRules(options) {
         }
         if (createOrDestroy === "create") {
           await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
-          await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation);
+          await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, packetDelay, lossRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
@@ -1374,9 +1374,9 @@ async function setupRuleGroupRules(options) {
     action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null,
     trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
     wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost,
-    subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass
+    subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, packetDelay, lossRate
   } = options
-  log.verbose(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, parent rule group UUID ${ruleGroupUUID}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}`);
+  log.verbose(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, parent rule group UUID ${ruleGroupUUID}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}, packetDelay ${packetDelay}, lossRate ${lossRate}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const filterPrio = 1;
   const parameters = [];
@@ -1403,7 +1403,7 @@ async function setupRuleGroupRules(options) {
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       priority = priority || qos.DEFAULT_PRIO;
       qdisc = qdisc || "fq_codel";
-      if (rateLimit) {
+      if (rateLimit || qdisc === "netem") {
         let parentHTBQdisc = "3";
         let subclassId = "4";
         if (priority <= qos.PRIO_HIGH) {
@@ -1417,7 +1417,7 @@ async function setupRuleGroupRules(options) {
         }
         if (createOrDestroy === "create") {
           await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
-          await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation);
+          await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, packetDelay, lossRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
