@@ -128,6 +128,10 @@ module.exports = class DNSManager {
       return;
     }
 
+    const HostManager = require("../net2/HostManager.js");
+    const hostManager = new HostManager();
+
+    // this is now only called in FlowMonitor to enrich flow info
     return asyncNative.eachLimit(list, DNSQUERYBATCHSIZE, async(o) => {
 
       const _ipsrc = o[ipsrc]
@@ -135,16 +139,27 @@ module.exports = class DNSManager {
       const _deviceMac = deviceMac && o[deviceMac];
       const _hostIndicators = hostIndicatorsKeyName && o[hostIndicatorsKeyName];
       try {
+        let monitorable
         if (_deviceMac && hostTool.isMacAddress(_deviceMac)) {
-          await this.enrichDevice(_deviceMac, o, fd == 'in');
+          monitorable = hostManager.getHostFastByMAC(_deviceMac);
         } else {
           if (_deviceMac && IdentityManager.isGUID(_deviceMac))
-            this.enrichIdentity(_deviceMac, o, fd == 'in');
-          else
-            await this.enrichDevice(_ipsrc, o, fd == 'in');
+            monitorable = IdentityManager.getIdentityByGUID(_deviceMac);
+          else {
+            monitorable = hostManager.getHostFastByMAC(o.fd == 'in' ? _ipsrc : _ipdst);
+          }
         }
 
-        await this.enrichDestIP(_ipsrc, o, fd != 'in', _hostIndicators);
+        if (monitorable) {
+          if (o.fd == 'in') {
+            o.shname = monitorable.getReadableName();
+          } else {
+            o.dhname = monitorable.getReadableName();
+          }
+          o.mac == monitorable.getGUID()
+        }
+
+        await this.enrichDestIP(o.fd == 'in' ? _ipdst : _ipsrc, o, _hostIndicators);
 
         this.enrichHttpFlow(o);
 
@@ -152,43 +167,6 @@ module.exports = class DNSManager {
         log.error(`Failed to enrich ip: ${_ipsrc}, ${_ipdst}`, err);
       }
     })
-  }
-
-  enrichIdentity(guid, flowObject, srcOrDest) {
-    if (!guid)
-      return;
-    const identity = IdentityManager.getIdentityByGUID(guid);
-    if (identity) {
-      if (srcOrDest === "src") {
-        flowObject["shname"] = identity.getReadableName();
-      } else {
-        flowObject["dhname"] = identity.getReadableName();
-      }
-      flowObject.mac = IdentityManager.getGUID(identity);
-    }
-  }
-
-  // works for both mac & ip
-  async enrichDevice(mac, flowObject, isSrc = false) {
-    if (!mac)
-      return;
-    mac = mac.toUpperCase();
-    try {
-      const HostManager = require("../net2/HostManager.js");
-      const hostManager = new HostManager();
-
-      const host = await hostManager.getHostAsync(mac)
-      if (host) {
-        if(isSrc) {
-          flowObject["shname"] = getPreferredName(host.o);
-        } else {
-          flowObject["dhname"] = getPreferredName(host.o);
-        }
-        flowObject.mac = mac;
-      }
-    } catch(err) {
-      log.error('Failed to get host name', err)
-    }
   }
 
   enrichHttpFlow(conn) {
@@ -211,12 +189,12 @@ module.exports = class DNSManager {
     }
   }
 
-  async enrichDestIP(ip, flowObject, isSrc, hostIndicators) {
+  async enrichDestIP(ip, flowObject, hostIndicators) {
     try {
       const intel = await intelTool.getIntel(ip, hostIndicators)
 
       if (intel.host) {
-        if (isSrc) {
+        if (flowObject.fd == 'out') {
           flowObject["shname"] = intel.host
         } else {
           flowObject["dhname"] = intel.host
