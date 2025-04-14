@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,6 +21,10 @@ let expect = chai.expect;
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const am2 = new AlarmManager2();
 const Alarm = require('../alarm/Alarm.js')
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
+const intelLoader = require('../intel/IntelLoader.js');
+const { getPreferredName } = require('../util/util.js')
 
 
 describe('Test localization', function(){
@@ -92,8 +96,21 @@ describe('Test generation', () => {
      payload['p.utag.ids'] = [ '6' ]
      const alarm3 = new Alarm.VideoAlarm(Date.now()/1000, 'Reinhard MBP', 'googlevideo.com', payload)
 
-     console.log(alarm1['p.utag.ids'])
-     console.log(alarm3['p.utag.ids'])
      expect(alarm1.isDup(alarm3)).to.be.false
+   })
+
+   it('should enriched device info with mac, not IP', async () => {
+     await hostManager.getHostsAsync();
+     const host = hostManager.hosts.all[0]
+
+     const payload = {
+       'p.device.ip': '192.168.1.1',
+       'p.device.mac': host.o.mac
+     }
+     let alarm = new Alarm.VideoAlarm(Date.now()/1000, 'test device', 'test-domain.com', payload)
+
+     alarm = await intelLoader.enrichAlarm(alarm);
+
+     expect(alarm['p.device.name']).to.be.equal(getPreferredName(host.o))
    })
 })

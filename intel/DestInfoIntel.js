@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,8 +25,8 @@ const IntelManager = require('../net2/IntelManager.js')
 const intelManager = new IntelManager();
 
 const sysManager = require('../net2/SysManager.js');
-const DNSManager = require('../net2/DNSManager.js');
-const dnsManager = new DNSManager('info');
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
 const getPreferredName = require('../util/util.js').getPreferredName
 const f = require('../net2/Firewalla.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -128,12 +128,12 @@ class DestInfoIntel extends Intel {
             "p.dest.isLocal": "1"
           })
         } else {
-          const result = await dnsManager.resolveLocalHostAsync(destIP);
+          const host = await hostManager.getHostAsync(destIP);
           Object.assign(alarm, {
-            "p.dest.name": getPreferredName(result),
-            "p.dest.id": result.mac,
-            "p.dest.mac": result.mac,
-            "p.dest.macVendor": result.macVendor || "Unknown",
+            "p.dest.name": getPreferredName(host.o),
+            "p.dest.id": host.o.mac,
+            "p.dest.mac": host.o.mac,
+            "p.dest.macVendor": host.o.macVendor || "Unknown",
             "p.dest.isLocal": "1"
           });
         }
