@@ -115,14 +115,19 @@ class ClashDockerClient extends DockerBaseVPNClient {
       return {bytesIn: 0, bytesOut: 0};
 
     let items = result.split(" ");
-    if (items.length != 2) {
+    if (items.length < 2) {
       log.error(`Invalid clash stats on ${this.profileId}`, result);
       return {bytesIn: 0, bytesOut: 0};
     }
 
     let txBytes = Number(items[0]);
     let rxBytes = Number(items[1]);
-    return {bytesIn: rxBytes, bytesOut: txBytes};
+    if (items[2]) {
+      let activeConn = Number(items[2]);
+      return {bytesIn: rxBytes, bytesOut: txBytes, activeConn: activeConn};
+    } else {
+      return {bytesIn: rxBytes, bytesOut: txBytes};
+    }
   }
 
   isIPv6Enabled() {
