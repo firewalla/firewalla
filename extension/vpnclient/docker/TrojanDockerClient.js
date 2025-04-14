@@ -106,6 +106,8 @@ class TrojanDockerClient extends DockerBaseVPNClient {
       return {bytesIn: 0, bytesOut: 0};
     }
 
+    let txBytes = Number(items[0]);
+    let rxBytes = Number(items[1]);
     if (items[2]) {
       let activeConn = Number(items[2]);
       return {bytesIn: rxBytes, bytesOut: txBytes, activeConn: activeConn};
