@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,8 +19,8 @@ const log = require('./logger.js')(__filename);
 
 const LogReader = require('../util/LogReader.js');
 const sysManager = require('./SysManager.js');
-const DNSManager = require('./DNSManager.js');
-const dnsManager = new DNSManager();
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
 const DNSTool = require('./DNSTool.js');
 const dnsTool = new DNSTool();
 const Alarm = require('../alarm/Alarm.js');
@@ -95,9 +95,9 @@ class SuricataDetect {
     if (sysManager.isLocalIP(srcIp)) {
       localIP = srcIp;
       localPort = sport;
-      const device = await dnsManager.resolveLocalHostAsync(srcIp);
-      if (device)
-        srcName = getPreferredName(device);
+      const host = await hostManager.getHostAsync(srcIp);
+      if (host)
+        srcName = getPreferredName(host.o);
     } else {
       srcLocal = false;
       remoteIP = srcIp;
@@ -117,9 +117,9 @@ class SuricataDetect {
         localIP = dstIp;
         localPort = dport;
       }
-      const device = await dnsManager.resolveLocalHostAsync(dstIp);
-      if (device)
-        dstName = getPreferredName(device);
+      const host = await hostManager.getHostAsync(dstIp);
+      if (host)
+        dstName = getPreferredName(host.o);
     } else {
       if (!srcLocal) {
         log.error(`Should not get alert on external traffic: ${srcIp} --> ${dstIp}`);

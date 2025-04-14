@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -2124,22 +2124,24 @@ module.exports = class {
       return alarm;
     }
 
-    // resolveLocalHost gets all info from redis, doesn't really use DNS on the fly
-    const host = await dnsManager.resolveLocalHostAsync(deviceIP)
+    const mac = alarm['p.device.mac']
+    const HostManager = require("../net2/HostManager.js");
+    const hostManager = new HostManager();
+    const host = await hostManager.getHostAsync(mac || deviceIP)
 
     if (host == null) {
       log.error("Failed to find host " + deviceIP + " in database");
       throw new Error("host " + deviceIP + " not found");
     }
 
-    let deviceName = getPreferredName(host);
-    let deviceID = host.mac;
+    const deviceName = getPreferredName(host.o);
+    const deviceID = host.o.mac;
 
     Object.assign(alarm, {
       "p.device.name": deviceName,
       "p.device.id": deviceID,
       "p.device.mac": deviceID,
-      "p.device.macVendor": host.macVendor || "Unknown",
+      "p.device.macVendor": host.o.macVendor || "Unknown",
     });
 
     if (!alarm["p.device.real.ip"] && !hostTool.isMacAddress(deviceID)) {
