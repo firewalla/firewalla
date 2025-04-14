@@ -1266,6 +1266,7 @@ module.exports = class HostManager extends Monitorable {
       if(mm && mm.length > 0) {
         const names = await rclient.hgetallAsync("sys:ept:memberNames")
         const lastVisits = await rclient.hgetallAsync("sys:ept:member:lastvisit")
+        const history = await rclient.hgetallAsync("sys:ept:members:history")
 
         if(names) {
           mm.forEach((m) => {
@@ -1277,6 +1278,34 @@ module.exports = class HostManager extends Monitorable {
           mm.forEach((m) => {
             m.lastVisit = m.eid && lastVisits[m.eid]
           })
+        }
+
+        if (history) {
+          mm.forEach((m) => {
+            const hStr = m.eid && history[m.eid];
+            // {\"deviceName\":\"iPhone 16 Pro 18.0\",\"msg\":\"paired at 1727166695,unpaired at 1728560998;paired at 1729947426,\"}
+            try {
+              const h = JSON.parse(hStr);
+              const msg = h.msg;
+              if (msg) {
+                const pairs = msg.split(';');
+                let lastPairTs = 0;
+                for (const pair of pairs) {
+                  const records = pair.split(',');
+                  for (const record of records) {
+                    if (record.startsWith("paired"))
+                      lastPairTs = record.split(" ")[2];
+                    if (record.startsWith("unpaired"))
+                      lastPairTs = 0;
+                  }
+                }
+                if (lastPairTs && !isNaN(lastPairTs))
+                  m.lastPairTs = lastPairTs;
+              }
+            } catch (err) {
+              log.error(`Failed to find lastPairTs of ${m.eid}`, err);
+            }
+          });
         }
 
         json.eMembers = mm
