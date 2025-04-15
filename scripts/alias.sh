@@ -214,6 +214,12 @@ function useq() {
   frcc . | jq --arg mac "$mac" --arg seq "$seq" 'if .apc.assets | has($mac) then .apc.assets[$mac].sysConfig.seq = $seq else . end' | frset -d @-
 }
 
+function sapb() {
+  local mac="$1"
+  local branch="$2"
+  curl 'http://localhost:8841/v1/control/switch_branch' -H 'Content-Type: application/json' -d "{\"uid\": \"$mac\", \"branch\": \"$branch\"}"
+}
+
 function lmove() {
   local mac="$1"
   local dst_bssid="$2"
