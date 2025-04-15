@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,7 +31,7 @@ const wrapIptables = iptables.wrapIptables;
 const routing = require('../../routing/routing.js');
 const scheduler = require('../../../util/scheduler.js');
 const _ = require('lodash');
-const iptool = require('ip');
+const ipUtil = require('../../../util/IPUtil.js');
 
 class DockerBaseVPNClient extends VPNClient {
 
@@ -236,7 +236,7 @@ class DockerBaseVPNClient extends VPNClient {
             const addr = new Address6(s);
             return `${addr.startAddress().correctForm()}/${addr.subnetMask}`;
           });
-          hostSubnets6 = hostSubnets6.concat(subnets6.filter(ip6 => iptool.isPublic(ip6)));
+          hostSubnets6 = hostSubnets6.concat(subnets6.filter(ip6 => ipUtil.isPublic(ip6)));
         }
       }
       if (service.hasOwnProperty("environment") && (_.isObject(service["environment"]) || _.isArray(service["environment"]))) {
@@ -368,21 +368,16 @@ if $programname == 'docker_vpn_${this.profileId}' then {
   }
 
   async getRoutedSubnets() {
-    const isLinkUp = await this._isLinkUp();
-    if (isLinkUp) {
-      const subnets = await super.getRoutedSubnets() || [];
-      // no need to add the whole subnet to the routed subnets, only need to route the container's IP address
-      const remoteIP = await this._getRemoteIP();
-      if (remoteIP)
-        subnets.push(remoteIP);
-      const remoteIP6 = await this._getRemoteIP6();
-      if (remoteIP6)
-        subnets.push(remoteIP6);
-      const results = _.uniq(subnets);
-      return results;
-    } else {
-      return [];
-    }
+    const subnets = await super.getRoutedSubnets() || [];
+    // no need to add the whole subnet to the routed subnets, only need to route the container's IP address
+    const remoteIP = await this._getRemoteIP();
+    if (remoteIP)
+      subnets.push(remoteIP);
+    const remoteIP6 = await this._getRemoteIP6();
+    if (remoteIP6)
+      subnets.push(remoteIP6);
+    const results = _.uniq(subnets);
+    return results;
   }
 
   _getWorkingDirectory() {

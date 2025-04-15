@@ -1,4 +1,4 @@
-/*    Copyright 2018-2022 Firewalla Inc.
+/*    Copyright 2018-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,7 +23,6 @@ const path = require('path');
 const logger = require('morgan');
 const cookieParser = require('cookie-parser');
 const bodyParser = require('body-parser');
-const argv = require('minimist')(process.argv.slice(2));
 const swagger = require("swagger-node-express");
 
 const firewalla = require('../net2/Firewalla.js');
@@ -79,6 +78,7 @@ function enableSubPath(path, lib) {
 
 // encipher api is enabled even for production enviornment
 enableSubPath('encipher');
+subpath_v1.use('/host', host);
 
 if(!firewalla.isProductionOrBeta()) {
   // apis for development purpose only, do NOT enable them in production
@@ -87,7 +87,6 @@ if(!firewalla.isProductionOrBeta()) {
   subpath_v1.use('/dns', dnsmasq);
   subpath_v1.use('/alarm', alarm);
   subpath_v1.use('/flow', flow);
-  subpath_v1.use('/host', host);
   subpath_v1.use('/mode', mode);
   subpath_v1.use('/test', test);
 
@@ -110,8 +109,6 @@ if(!firewalla.isProductionOrBeta()) {
   });
 
   let domain = require('ip').address;
-  if(argv.domain !== undefined)
-    domain = argv.domain;
 
   if(firewalla.isDocker()) {
     domain = "127.0.0.1"

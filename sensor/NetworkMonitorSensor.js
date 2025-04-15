@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -564,20 +564,21 @@ class NetworkMonitorSensor extends Sensor {
     log.info("Trying to get network monitor data...")
     try {
       let result = {};
-      await rclient.scanAll(`${KEY_PREFIX_RAW}:*`, async (scanResults) => {
-        for ( const key of scanResults) {
-          const result_json = await rclient.hgetallAsync(key);
-          if ( result_json ) {
-            Object.keys(result_json).forEach((k)=>{
-              const obj = JSON.parse(result_json[k]);
-              result_json[k] = {
-                stat: obj.stat
-              };
-            });
-          }
-          result[key] = result_json;
+      // TODO: better build a index instead of using scan here
+      const scanResults = await rclient.scanResults(`${KEY_PREFIX_RAW}:*`, 10000)
+      const rawResults = await rclient.pipelineAndLog(scanResults.map(key => ['hgetall', key]))
+      for ( const i in rawResults) {
+        const raw = rawResults[i]
+        if ( raw ) {
+          Object.keys(raw).forEach(k => {
+            const obj = JSON.parse(raw[k]);
+            raw[k] = {
+              stat: obj.stat
+            };
+          });
+          result[scanResults[i]] = raw;
         }
-      },10000);
+      }
       return result;
     } catch (err) {
       log.error("failed to get network monitor config: ",err.message);

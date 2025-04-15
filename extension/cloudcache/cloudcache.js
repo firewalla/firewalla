@@ -82,6 +82,7 @@ class CloudCacheItem {
   }
 
   async writeLocalMetadata(metadata) {
+    metadata.branch = f.getBranch();
     return jsonWriteFileAsync(this.localMetadataPath, metadata);
   }
 
@@ -174,8 +175,15 @@ class CloudCacheItem {
       }
     }
 
-    // cloud metadata has different checksum but with older timestamp than current one. Just ignore remote one. This is unlikely to occur.
-    if (localMetadata && cloudMetadata && localIntegrity && localMetadata.sha256sum && cloudMetadata.sha256sum && localMetadata.sha256sum !== cloudMetadata.sha256sum && cloudMetadata.updated < localMetadata.updated) {
+    // cloud metadata has different checksum but with older timestamp than current one.
+    // Just ignore remote one. This is unlikely to occur.
+    // after switching branch, an earlier ts might prevent cache from updating
+    if (localMetadata && cloudMetadata &&
+      localIntegrity && localMetadata.sha256sum && cloudMetadata.sha256sum &&
+      localMetadata.sha256sum !== cloudMetadata.sha256sum &&
+      cloudMetadata.updated < localMetadata.updated &&
+      (!localMetadata.branch || localMetadata.branch == f.getBranch())
+    ) {
       log.info(`cloud metadata for ${this.name} is older than local one. skip updating`);
       needDownload = false;
     }

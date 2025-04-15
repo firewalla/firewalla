@@ -72,6 +72,10 @@
       "8.8.8.8",
       "1.1.1.1"
     ],
+    "fallbackDNS6Servers": [
+      "2001:4860:4860::8888",
+      "2001:4860:4860::8844"
+    ],
     "verificationDomains": [
       "firewalla.encipher.io",
       "github.com",
@@ -571,6 +575,10 @@
         "expires": 86400,
         "count": 5000
       },
+      "auditLocalDrop": {
+        "expires": 86400,
+        "count": 5000
+      },
       "auditDrop": {
         "expires": 86400,
         "count": 10000
@@ -584,8 +592,7 @@
         "count": 10000
       },
       "x509": {
-        "expires": 600,
-        "count": 10000
+        "expires": 600
       },
       "knownHosts": {
         "expires": 3600,
@@ -636,9 +643,12 @@
         "count": 4000
       },
       "dns_proxy": {
-        "expires": 3600,
+        "expires": 86400,
         "count": 10000
       },
+      "host:ip4": { "expires": 2592000 },
+      "host:ip6": { "expires": 2592000 },
+      "host:mac": { "expires": 31536000 },
       "digitalfence": {
         "expires": 3600
       },
@@ -675,6 +685,7 @@
       ]
     },
     "FlowCompressionSensor": {
+      "refreshInterval": 5,
       "maxCount": 10000,
       "maxMem": 20971520
     },
@@ -707,6 +718,13 @@
       "buffer": 2,
       "interval": 900,
       "expires": 86400
+    },
+    "QuicLogPlugin": {
+      "syncInterval": 3,
+      "combineReqNumber": 10,
+      "runtimeSync": true,
+      "localCacheSize": 10000,
+      "localCacheTtl": 300
     },
     "ACLAlarmLogPlugin": {},
     "WireGuardPlugin": {},
@@ -967,6 +985,7 @@
     "family_protect": false,
     "internal_scan": true,
     "acl_audit": true,
+    "quic_log_reader": true,
     "acl_alarm": true,
     "new_device_tag": false,
     "dual_wan": true,
@@ -988,6 +1007,7 @@
     "pcap_zeek": true,
     "pcap_suricata": false,
     "local_flow": false,
+    "local_audit": true,
     "category_filter": true,
     "rule_stats": true,
     "unbound": false,

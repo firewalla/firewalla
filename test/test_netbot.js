@@ -96,7 +96,7 @@ describe('test netbot', function(){
   });
 
   it('should test eid acl', async() => {
-    const rawmsg = {"mtype":"msg","message":{"type":"jsondata","appInfo":{"eid":"test-eid1"},"obj":{"mtype":"cmd","data":{},"type":"jsonmsg"}},"target":"1f97bb38-7592-4be0"};
+    const rawmsg = {"mtype":"msg","message":{"type":"jsondata","appInfo":{"eid":"test-eid1", "platform": "ios"},"obj":{"mtype":"cmd","data":{},"type":"jsonmsg"}},"target":"1f97bb38-7592-4be0"};
     const response = await this.netbot.msgHandler(this.gid, rawmsg);
     log.debug("eid acl response", response);
   });
@@ -106,4 +106,32 @@ describe('test netbot', function(){
     const result = await rclient.getAsync("_hx:msg:FFFF056-5ECD-4F93-9201-AFFF7EC");
     expect(result).to.be.equal('{"kkk":111}');
   });
+
+  it('should get event message', async() => {
+    await rclient.hsetAsync("sys:ept:memberNames", "7wZYL2pk6hkzF313f8FkIA", "Device-abc");
+    await rclient.saddAsync("sys:ept:members", "{\"name\":\"my1@firewalla.com\",\"eid\":\"7wZYL2pk6hkzF313f8FkIA\"}")
+    expect(await this.netbot.getNotifEvent("phone_paired", 1, {"eid": "7wZYL2pk6hkzF313f8FkIA"})).to.be.eql({
+      "msg": "A new phone (Device-abc) is paired with your Firewalla box.",
+      "args": {eid: "7wZYL2pk6hkzF313f8FkIA", device: "Device-abc"},
+    })
+
+    await rclient.hdelAsync("sys:ept:memberNames", "7wZYL2pk6hkzF313f8FkIA");
+    await rclient.sremAsync("sys:ept:members", "{\"name\":\"my1@firewalla.com\",\"eid\":\"7wZYL2pk6hkzF313f8FkIA\"}")
+  });
+
+  it('should notify new event', async() => {
+    await rclient.hsetAsync("sys:ept:memberNames", "7wZYL2pk6hkzF313f8FkIA", "Device-abc");
+    await rclient.saddAsync("sys:ept:members", "{\"name\":\"my1@firewalla.com\",\"eid\":\"7wZYL2pk6hkzF313f8FkIA\"}")
+    this.netbot.hostManager.policy = {"state": true, "phone_paired": true};
+
+    const event = {"ts":1743556883664,"event_type":"action","action_type":"phone_paired","action_value":1,"labels":{"eid":"7wZYL2pk6hkzF313f8FkIA"}}
+    const payload = await this.netbot._notifyNewEvent(event);
+    expect(payload.type).to.be.equal('FW_NOTIFICATION');
+    expect(payload.titleLocalKey).to.be.equal('NEW_EVENT_TITLE_phone_paired');
+    expect(payload.bodyLocalMsg).to.be.equal("A new phone (Device-abc) is paired with your Firewalla box.");
+    expect(payload.bodyLocalArgs).to.be.eql(["7wZYL2pk6hkzF313f8FkIA", "Device-abc"]);
+
+    await rclient.hdelAsync("sys:ept:memberNames", "7wZYL2pk6hkzF313f8FkIA");
+    await rclient.sremAsync("sys:ept:members", "{\"name\":\"my1@firewalla.com\",\"eid\":\"7wZYL2pk6hkzF313f8FkIA\"}")
+  })
 });

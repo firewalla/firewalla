@@ -80,8 +80,8 @@ class AppTimeUsageManager {
             if (!this.watchList[app][uid])
               continue;
             for (const pid of Object.keys(this.watchList[app][uid])) {
-              const {timeWindows, quota, uniqueMinute} = this.watchList[app][uid][pid];
-              const usage = await this.getTimeUsage(uid, app, timeWindows, uniqueMinute);
+              const {timeWindows, quota, keys, uniqueMinute} = this.watchList[app][uid][pid];
+              const usage = await this.getTimeUsage(uid, keys, timeWindows, uniqueMinute);
               this.watchList[app][uid][pid].usage = usage;
               try {
                 await this.updateAppTimeUsedInPolicy(pid, usage);
@@ -101,7 +101,7 @@ class AppTimeUsageManager {
                       break;
                     }
                     default: {
-                      log.info(`${uid} reached ${app} time usage quota, quota: ${quota}, used: ${usage}, will apply policy ${pid}`);
+                      log.info(`${uid} reached ${keys} time usage quota, quota: ${quota}, used: ${usage}, will apply policy ${pid}`);
                       await this.applyPolicy(pid, uid);
                     }
                   }
@@ -172,11 +172,11 @@ class AppTimeUsageManager {
     return timeWindows;
   }
 
-  async getTimeUsage(uid, app, timeWindows, uniqueMinute) {
+  async getTimeUsage(uid, apps, timeWindows, uniqueMinute) {
     let result = 0;
     for (const timeWindow of timeWindows) {
       const {begin, end} = timeWindow;
-      result += await TimeUsageTool.getFilledBucketsCount(uid, app, begin / 1000, end / 1000, uniqueMinute);
+      result += await TimeUsageTool.getFilledBucketsCount(uid, apps, begin / 1000, end / 1000, uniqueMinute);
     }
     return result;
   }
@@ -203,10 +203,12 @@ class AppTimeUsageManager {
   async refreshPolicy(policy) {
     const pid = String(policy.pid);
     log.info(`Refreshing time usage on policy ${pid} ...`);
-    const {app, category, period, intervals, quota, uniqueMinute = true} = policy.appTimeUsage;
-    const key = app || category;
-    if (!this.watchList.hasOwnProperty(key))
-      this.watchList[key] = {};
+    const {app, apps, category, period, intervals, quota, uniqueMinute = true} = policy.appTimeUsage;
+    const keys = _.isArray(apps) ? apps : [app || category];
+    for (const key of keys) {
+      if (!this.watchList.hasOwnProperty(key))
+        this.watchList[key] = {};
+    }
     const uids = this.getUIDs(policy);
 
     for (const uid of Object.keys(this.enforcedPolicies[pid])) {
@@ -219,13 +221,15 @@ class AppTimeUsageManager {
 
     const timeWindows = this.calculateTimeWindows(period, intervals);
     for (const uid of uids) {
-      if (!this.watchList[key].hasOwnProperty(uid))
-        this.watchList[key][uid] = {};
-      const usage = await this.getTimeUsage(uid, key, timeWindows, uniqueMinute);
-      this.watchList[key][uid][pid] = {quota, usage, timeWindows, uniqueMinute};
+      const usage = await this.getTimeUsage(uid, keys, timeWindows, uniqueMinute);
+      for (const key of keys) {
+        if (!this.watchList[key].hasOwnProperty(uid))
+          this.watchList[key][uid] = {};
+        this.watchList[key][uid][pid] = {quota, usage, keys, timeWindows, uniqueMinute};
+      }
       await this.updateAppTimeUsedInPolicy(pid, usage);
       if (usage >= quota) {
-        log.info(`${uid} reached ${key} time usage quota, quota: ${quota}, used: ${usage}, will apply policy ${pid}`);
+        log.info(`${uid} reached ${keys} time usage quota, quota: ${quota}, used: ${usage}, will apply policy ${pid}`);
         await this.applyPolicy(pid, uid);
       }
     }
@@ -325,6 +329,7 @@ class AppTimeUsageManager {
       p.guids = [uid];
     else if (uid && hostTool.isMacAddress(uid))
       p.scope = [uid];
+    p.managedBy = "AppTimeUsageManager";
 
     if (p.type === "dns" || p.type === "category")
       p.dnsmasq_only = domainOnly;
@@ -349,6 +354,8 @@ class AppTimeUsageManager {
       p.guids = [uid];
     else if (uid && hostTool.isMacAddress(uid))
       p.scope = [uid];
+
+    p.managedBy = "AppTimeUsageManager";
 
     if (p.type === "dns" || p.type === "category")
       p.dnsmasq_only = domainOnly;

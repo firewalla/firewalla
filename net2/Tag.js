@@ -37,6 +37,7 @@ const HostTool = require('./HostTool.js');
 const hostTool = new HostTool();
 const fwapc = require('./fwapc.js');
 const {delay} = require('../util/util.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const envCreatedMap = {};
 
@@ -486,6 +487,8 @@ class Tag extends Monitorable {
   }
 
   async fwapcSetGroupMACs() {
+    if (!platform.isFireRouterManaged())
+      return;
     const HostManager = require('./HostManager.js');
     const hostManager = new HostManager();
     const macs = await hostManager.getTagMacs(this.o.uid).then(results => results.filter(m => hostTool.isMacAddress(m))).catch((err) => {
@@ -500,6 +503,8 @@ class Tag extends Monitorable {
   }
 
   async fwapcDeleteGroup() {
+    if (!platform.isFireRouterManaged())
+      return;
     await fwapc.deleteGroup(this.o.uid).catch((err) => {
       log.error(`Failed to delete group ACL in fwapc for ${this.getTagType()} ${this.o.uid}`, err.message);
     });

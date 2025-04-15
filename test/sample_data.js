@@ -25,18 +25,13 @@ let ExceptionManager = require('../alarm/ExceptionManager.js');
 let exceptionManager = new ExceptionManager();
 let AlarmManager2 = require('../alarm/AlarmManager2.js')
 let alarmManager2 = new AlarmManager2();
-let Promise = require('bluebird');
 
-let redis = require('redis');
-let rclient = redis.createClient();
+let rclient = require('../util/redis_manager').getRedisClient();
 
 let flowTool = require('../net2/FlowTool');
 
 let FlowAggrTool = require('../net2/FlowAggrTool');
 let flowAggrTool = new FlowAggrTool();
-
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 let ts = Math.floor(new Date() / 1000);
 let now = Math.floor(new Date() / 1000);

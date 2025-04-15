@@ -617,7 +617,7 @@ module.exports = class FlowMonitor {
       log.error('Error in run', service, period, runid, e);
     } finally {
       const endTime = new Date() / 1000
-      log.info(`Run ends with ${Math.floor(endTime - startTime)} seconds :`, service, period, runid);
+      log.info(`Run ends with ${Math.round((endTime - startTime)*1000)/1000} seconds :`, service, period, runid);
       this.garbagecollect();
     }
   }

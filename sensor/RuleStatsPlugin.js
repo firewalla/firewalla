@@ -1,4 +1,4 @@
-/*    Copyright 2022-2024 Firewalla Inc.
+/*    Copyright 2022-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -138,7 +138,7 @@ class RuleStatsPlugin extends Sensor {
     if (!this.on) {
       return;
     }
-    // TBD: we should add WAN block count to ingress firewall rule to reflect WAN blocks on the rule hit
+    // input drop is different than ingress firewall rule
     if (record.dir === "W") {
       return;
     }
@@ -178,7 +178,7 @@ class RuleStatsPlugin extends Sensor {
     if (v) {
       matchedPids = v;
     } else {
-      matchedPids = await this.getPolicyIds(record);
+      matchedPids = (await this.getPolicyIds(record)).map(Number)
       this.cache.set(key, matchedPids);
     }
     return matchedPids;

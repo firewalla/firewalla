@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -91,15 +91,8 @@ class FlowTool extends LogQuery {
     return true;
   }
 
-  async prepareRecentFlows(json, options) {
-    log.verbose('prepareRecentFlows', JSON.stringify(options))
-    options = options || {}
-    this.checkCount(options)
-    const macs = await this.expendMacs(options)
-    if (!("flows" in json)) {
-      json.flows = {};
-    }
-
+  optionsToFeeds(options, macs) {
+    log.debug('optionsToFeeds', options)
     const feeds = []
     // use some filters to cut feed number here
     if (options.block !== true) {
@@ -110,34 +103,59 @@ class FlowTool extends LogQuery {
           feeds.push(... this.expendFeeds({macs, direction: 'in'}))
           feeds.push(... this.expendFeeds({macs, direction: 'out'}))
         }
-        if (options.dnsFlow) {
-          feeds.push(... auditTool.expendFeeds({macs, block: false, dnsFlow: true}))
-        }
-        if (options.auditDNSSuccess && options.ntpFlow)
-          feeds.push(... auditTool.expendFeeds({macs, block: false}))
-        else if (options.auditDNSSuccess && (!options.type || options.type == 'dns'))
-          feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'dns'}))
-        else if (options.ntpFlow && (!options.type || options.type == 'ntp'))
-          feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'ntp'}))
       }
       if (options.localFlow && options.local !== false) {
         // a local flow will be recorded in both src and dst host key, need to deduplicate flows on the two hosts if both hosts are included in macs
-        options.exclude = [{dstMac: macs, fd: "out"}]
-        feeds.push(... this.expendFeeds({macs, localFlow: true}))
-      }
-    }
-    if (options.block !== false) {
-      if (options.audit) {
-        feeds.push(... auditTool.expendFeeds({macs, block: true}))
+        feeds.push(... this.expendFeeds({macs, localFlow: true, exclude: {dstMac: macs, fd: "out"}}))
       }
     }
 
-    delete options.audit
-    delete options.dnsFlow
-    delete options.ntpFlow
     delete options.localFlow
-    delete options.auditDNSSuccess
-    let recentFlows = await this.logFeeder(options, feeds)
+
+    return feeds
+  }
+
+  async prepareRecentFlows(json, options) {
+    log.verbose('prepareRecentFlows', JSON.stringify(options))
+    options = options || {}
+    this.checkCount(options)
+    const macs = await this.expendMacs(options)
+    if (!("flows" in json)) {
+      json.flows = {};
+    }
+
+
+    // App behavior
+    // 1.64:
+    // get flows { audit: true } to get regular, blocked, and local blocked flows
+    // get auditLogs { } to get blocked and local blocked flows
+    // 1.65:
+    // get flows { audit: true, auditDNSSuccess: true, dnsFlow: true, ntpFlow: true } to get regular, blocked, local blocked, DNS, and NTP flows
+    // get flows { local: true, localFlow: true, audit: false, dnsFlow: false, ntpFlow: false } to get local flows
+    // get auditLogs { } to get blocked and local blocked flows
+    // 1.66:
+    // get flows { audit: true, dnsFlow: true, ntpFlow: true, localAudit: false } to get regular, blocked, DNS, and NTP flows
+    // get flows { local: true, localFlow: true, localAudit: true } to get local and local blocked flows
+    // get auditLogs { localAudit: false } to get blocked flows
+
+    // these are just ways to keep legacy behavior
+    if (!options.audit) { // default to not getting blocked flows
+      options.audit = false
+      if (options.localAudit === undefined)
+        options.localAudit = false
+    } else if (options.localAudit === undefined) {
+      // default localAudit to true only if audit is true but false for App supports localFlow but not localAudit
+      if (options.localFlow === undefined)
+        options.localAudit = true
+      else
+        options.localAudit = false
+    }
+
+    const feeds = this.optionsToFeeds(options, macs).concat(
+      auditTool.optionsToFeeds(options, macs)
+    )
+
+    const recentFlows = await this.logFeeder(options, feeds)
 
     json.flows.recent = recentFlows;
     log.verbose('prepareRecentFlows ends', JSON.stringify(options))
@@ -146,6 +164,7 @@ class FlowTool extends LogQuery {
 
   optionsToFilter(options) {
     const filter = super.optionsToFilter(options)
+    // direction ignored in base function, local flow only returns 'in', leave fd unfiltered here
     delete filter.localFlow
     return filter
   }
@@ -157,13 +176,14 @@ class FlowTool extends LogQuery {
       type: 'ip'
     };
     f.ts = flow._ts; // _ts:update/record time, front-end always show up this
+    f.ets = Number(flow.ts) + Number(flow.du); // add flow ets for consumer merge purpose
     f.fd = flow.fd;
-    f.count = flow.ct || 1,
-    f.duration = flow.du
+    f.count = flow.ct || 1;
+    f.duration = flow.du;
     if (flow.intf) f.intf = networkProfileManager.prefixMap[flow.intf] || flow.intf
     for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-      const config = Constants.TAG_TYPE_MAP[type];
-      f[config.flowKey] = flow[config.flowKey];
+      const flowKey = Constants.TAG_TYPE_MAP[type].flowKey
+      if (flow[flowKey]) f[flowKey] = flow[flowKey];
     }
     if (_.isObject(flow.af) && !_.isEmpty(flow.af)) {
       f.appHosts = Object.keys(flow.af);
@@ -220,6 +240,8 @@ class FlowTool extends LogQuery {
     if (options.localFlow) {
       f.dstMac = flow.dmac
       f.local = true
+      if (flow.drl)
+        f.drl = flow.drl;
       if (flow.dstTags)
         f.dstTags = flow.dstTags;
     }

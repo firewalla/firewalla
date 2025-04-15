@@ -23,17 +23,12 @@ const fc = require('../net2/config.js').getConfig();
 const log = require('../net2/logger.js')(__filename);
 const sysManager = require('../net2/SysManager.js');
 
-let redis = require('redis');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 let license = require('../util/license');
 
 let sample = require('./sample_data');
 let intelSample = require('./sample_data_intel');
-
-let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 describe.skip('Bone', function () {
   this.timeout(10000);
