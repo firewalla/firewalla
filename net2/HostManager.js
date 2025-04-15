@@ -1310,6 +1310,8 @@ module.exports = class HostManager extends Monitorable {
         if (history) {
           mm.forEach((m) => {
             const hStr = m.eid && history[m.eid];
+            if (!hStr)
+              return;
             // {\"deviceName\":\"iPhone 16 Pro 18.0\",\"msg\":\"paired at 1727166695,unpaired at 1728560998;paired at 1729947426,\"}
             try {
               const h = JSON.parse(hStr);
