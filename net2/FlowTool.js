@@ -91,26 +91,18 @@ class FlowTool extends LogQuery {
     return true;
   }
 
+  // options here no longer serve as filter, just to query and format results
   optionsToFeeds(options, macs) {
     log.debug('optionsToFeeds', options)
     const feeds = []
-    // use some filters to cut feed number here
-    if (options.block !== true) {
-      if (options.local !== true) {
-        if (options.direction) {
-          feeds.push(... this.expendFeeds({macs, direction: options.direction}))
-        } else {
-          feeds.push(... this.expendFeeds({macs, direction: 'in'}))
-          feeds.push(... this.expendFeeds({macs, direction: 'out'}))
-        }
-      }
-      if (options.localFlow && options.local !== false) {
-        // a local flow will be recorded in both src and dst host key, need to deduplicate flows on the two hosts if both hosts are included in macs
-        feeds.push(... this.expendFeeds({macs, localFlow: true, exclude: {dstMac: macs, fd: "out"}}))
-      }
+    if (options.regular) {
+      feeds.push(... this.expendFeeds({macs, direction: 'in'}))
+      feeds.push(... this.expendFeeds({macs, direction: 'out'}))
     }
-
-    delete options.localFlow
+    if (options.local) {
+      // a local flow will be recorded in both src and dst host key, need to deduplicate flows on the two hosts if both hosts are included in macs
+      feeds.push(... this.expendFeeds({macs, local: true, exclude: {dstMac: macs, fd: "out"}}))
+    }
 
     return feeds
   }
@@ -124,33 +116,6 @@ class FlowTool extends LogQuery {
       json.flows = {};
     }
 
-
-    // App behavior
-    // 1.64:
-    // get flows { audit: true } to get regular, blocked, and local blocked flows
-    // get auditLogs { } to get blocked and local blocked flows
-    // 1.65:
-    // get flows { audit: true, auditDNSSuccess: true, dnsFlow: true, ntpFlow: true } to get regular, blocked, local blocked, DNS, and NTP flows
-    // get flows { local: true, localFlow: true, audit: false, dnsFlow: false, ntpFlow: false } to get local flows
-    // get auditLogs { } to get blocked and local blocked flows
-    // 1.66:
-    // get flows { audit: true, dnsFlow: true, ntpFlow: true, localAudit: false } to get regular, blocked, DNS, and NTP flows
-    // get flows { local: true, localFlow: true, localAudit: true } to get local and local blocked flows
-    // get auditLogs { localAudit: false } to get blocked flows
-
-    // these are just ways to keep legacy behavior
-    if (!options.audit) { // default to not getting blocked flows
-      options.audit = false
-      if (options.localAudit === undefined)
-        options.localAudit = false
-    } else if (options.localAudit === undefined) {
-      // default localAudit to true only if audit is true but false for App supports localFlow but not localAudit
-      if (options.localFlow === undefined)
-        options.localAudit = true
-      else
-        options.localAudit = false
-    }
-
     const feeds = this.optionsToFeeds(options, macs).concat(
       auditTool.optionsToFeeds(options, macs)
     )
@@ -160,13 +125,6 @@ class FlowTool extends LogQuery {
     json.flows.recent = recentFlows;
     log.verbose('prepareRecentFlows ends', JSON.stringify(options))
     return recentFlows
-  }
-
-  optionsToFilter(options) {
-    const filter = super.optionsToFilter(options)
-    // direction ignored in base function, local flow only returns 'in', leave fd unfiltered here
-    delete filter.localFlow
-    return filter
   }
 
   // convert flow json to a simplified json format that's more readable by app
@@ -237,7 +195,7 @@ class FlowTool extends LogQuery {
       f.download = flow.ob;
     }
 
-    if (options.localFlow) {
+    if (options.local) {
       f.dstMac = flow.dmac
       f.local = true
       if (flow.drl)
@@ -329,7 +287,7 @@ class FlowTool extends LogQuery {
   }
 
   getLogKey(mac, options) {
-    if (options.localFlow)
+    if (options.local)
       return `flow:local:${mac}`
     else
       return util.format("flow:conn:%s:%s", options.direction || 'in', mac);

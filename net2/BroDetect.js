@@ -1384,7 +1384,7 @@ class BroDetect {
 
       // Single flow is written to redis first to prevent data loss
       // will be aggregated on flow stash expiration and removed in most cases
-      const key = flowTool.getLogKey(localMac, {direction: tmpspec.fd, localFlow})
+      const key = flowTool.getLogKey(localMac, {direction: tmpspec.fd, local: localFlow})
       let strdata = JSON.stringify(tmpspec);
 
       // beware that _ts is used as score in flow:conn:* zset, since _ts is always monotonically increasing
@@ -1521,7 +1521,7 @@ class BroDetect {
       }
 
       const key = type == 'conn'
-        ? flowTool.getLogKey(spec.mac, {direction: spec.fd, localFlow: spec.local})
+        ? flowTool.getLogKey(spec.mac, {direction: spec.fd, local: spec.local})
         : `flow:dns:${spec.mac}`
       // not storing mac (as it's in key) to squeeze memory
       delete spec.mac

@@ -424,8 +424,10 @@ class FlowCompressionSensor extends Sensor {
       exclude: sysManager.getLogicInterfaces().map(i => { return { device: `${Constants.NS_INTERFACE}:${i.uuid}` } }),
       begin: begin,
       end: end,
+      regular: true,
       audit: true,
-      localFlow: true,
+      local: true,
+      localAudit: true,
       count: 300,
       asc: true
     }
