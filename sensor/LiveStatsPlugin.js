@@ -579,7 +579,8 @@ class LiveStatsPlugin extends Sensor {
     if (Object.keys(opts).length) {
       Object.assign(options, opts)
     } else {
-      options.dnsFlow = true
+      options.regular = true
+      options.dns = true
       options.audit = true
     }
 
@@ -602,7 +603,7 @@ class LiveStatsPlugin extends Sensor {
       }
 
     }
-    const flows = await flowTool.prepareRecentFlows({}, options);
+    const flows = await flowTool.prepareRecentFlows({ }, options);
     return flows;
   }
 

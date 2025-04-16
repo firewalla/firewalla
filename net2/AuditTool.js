@@ -37,47 +37,28 @@ class AuditTool extends LogQuery {
 
   includeFirewallaInterfaces() { return true }
 
-  optionsToFilter(options) {
-    const filter = super.optionsToFilter(options)
-    if (options.direction) filter.fd = options.direction;
-    delete filter.dnsFlow
-    delete filter.localAudit
-    return filter
-  }
-
+  // options here no longer serve as filter, just to query and format results
   optionsToFeeds(options, macs) {
     log.debug('optionsToFeeds', options)
     const feeds = []
-    if (options.block !== true) {
-      if (options.dnsFlow) {
-        feeds.push(... this.expendFeeds({macs, dnsFlow: true}))
-      }
-      if (options.local !== true) {
-        if (options.auditDNSSuccess && options.ntpFlow)
-          feeds.push(... this.expendFeeds({macs, block: false}))
-        else if (options.auditDNSSuccess && (!options.type || options.type == 'dns'))
-          feeds.push(... this.expendFeeds({macs, block: false, type: 'dns'}))
-        else if (options.ntpFlow && (!options.type || options.type == 'ntp'))
-          feeds.push(... this.expendFeeds({macs, block: false, type: 'ntp'}))
-      }
-    }
-    if (options.block !== false) {
-      if (options.audit !== false && options.local !== true)
-        feeds.push(... this.expendFeeds({macs, block: true}))
-      if (options.localAudit != false && options.local !== false)
-        feeds.push(... this.expendFeeds({macs, localAudit: true, block: true, exclude: [{dstMac: macs, fd: "out"}] }))
-    }
+    if (options.dns)
+      feeds.push(... this.expendFeeds({macs, block: false, dns: true}))
 
-    delete options.audit
-    delete options.dnsFlow
-    delete options.ntpFlow
-    delete options.localAudit
-    delete options.auditDNSSuccess
+    if (options.auditDNSSuccess)
+      feeds.push(... this.expendFeeds({macs, block: false, auditDNSSuccess: true}))
+    if (options.ntp)
+      feeds.push(... this.expendFeeds({macs, block: false, ntp: true}))
+
+    if (options.audit)
+      feeds.push(... this.expendFeeds({macs, block: true}))
+    if (options.localAudit)
+      feeds.push(... this.expendFeeds({macs, block: true, local: true, exclude: [{dstMac: macs, fd: "out"}] }))
 
     return feeds
   }
 
   async getAuditLogs(options) {
+    log.verbose('getAuditLogs', JSON.stringify(options))
     options = options || {}
     this.checkCount(options)
     const macs = await this.expendMacs(options)
@@ -90,8 +71,8 @@ class AuditTool extends LogQuery {
 
   toSimpleFormat(entry, options = {}) {
     const f = {
-      ltype: options.dnsFlow || !options.block ? 'flow' : 'audit',
-      type: options.dnsFlow ? 'dnsFlow' : entry.type,
+      ltype: options.dns || !options.block ? 'flow' : 'audit',
+      type: options.dns ? 'dnsFlow' : entry.type,
       ts: entry._ts || entry.ts + (entry.du || 0),
       count: entry.ct,
     };
@@ -149,14 +130,14 @@ class AuditTool extends LogQuery {
     }
 
 
-    if (options.dnsFlow || entry.type == 'dns') {
+    if (options.dns || entry.type == 'dns') {
       f.domain = entry.dn
       if (entry.as) f.answers = entry.as
     } else {
       if (entry.tls) f.type = 'tls'
       f.fd = entry.fd
     }
-    if (options.localAudit)
+    if (options.local)
       f.local = true
 
     try {
@@ -187,11 +168,12 @@ class AuditTool extends LogQuery {
   }
 
   getLogKey(mac, options) {
-    // options.block == null is also counted here
-    return options.dnsFlow ? `flow:dns:${mac}`
-      : options.localAudit ? `audit:local:drop:${mac}`
-      : options.block ? `audit:drop:${mac}`
-      : `audit:accept:${mac}`
+    if (options.block)
+      return `audit:${options.local?'local:':''}drop:${mac}`
+    else
+      return options.dns ? `flow:dns:${mac}`
+        : options.auditDNSSuccess ? `audit:dns:${mac}`
+        : `audit:accept:${mac}`
   }
 }
 

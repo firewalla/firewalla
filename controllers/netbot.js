@@ -1091,17 +1091,6 @@ class netBot extends ControllerBot {
   }
 
   async getHandler(gid, msg, appInfo, cloudOptions) {
-
-    // backward compatible
-    if (typeof appInfo === 'function') {
-      cloudOptions = appInfo;
-      appInfo = undefined;
-    }
-
-    if (appInfo) {
-      this.processAppInfo(appInfo)
-    }
-
     if (!msg.data) {
       throw new Error("Malformed request");
     }
@@ -1148,6 +1137,40 @@ class netBot extends ControllerBot {
           delete options.start
         }
 
+        // prior to audit:local:drop splited from audit:drop
+        if (!apiVer || apiVer <= 2) {
+          options.regular = options.local != true
+          if (options.ntpFlow !== undefined) options.ntp = options.ntpFlow
+          if (options.dnsFlow !== undefined) options.dns = options.dnsFlow
+
+          if (!options.audit) { // default to not getting blocked flows
+            options.audit = false
+            options.localAudit = false
+          } else { // audit == true
+            // default localAudit to true only if audit is true but false for App supports localFlow
+            if (options.localFlow === undefined)
+              options.localAudit = true
+            else
+              options.localAudit = false
+          }
+
+          // simple filters used by App
+          if (options.local) {
+            options.regular = false
+            options.ntp = false
+            options.dns = false
+            options.audit = false
+          }
+          for (const key of ['category', 'type'])
+            if (options[key]) {
+              if (!options.include || !options.include.length) {
+                options.include = [ {[key]: options[key]} ]
+              } else {
+                options.include.forEach(filters => filters[key] = options[key])
+              }
+            }
+        }
+
         const flows = await flowTool.prepareRecentFlows({}, options)
         if (!apiVer || apiVer == 1) flows.forEach(f => {
           if (f.ltype == 'flow') delete f.type
@@ -1160,6 +1183,12 @@ class netBot extends ControllerBot {
       }
       case "auditLogs": { // arguments are the same as get flows
         const options = await this.checkLogQueryArgs(msg)
+
+        // prior to audit:local:drop splited from audit:drop
+        if (!apiVer || apiVer <= 2) {
+          if (options.audit != false) options.audit = true
+          options.localAudit = options.audit
+        }
 
         const logs = await auditTool.getAuditLogs(options)
         return {
@@ -1755,8 +1784,11 @@ class netBot extends ControllerBot {
     let { target } = msg
     log.info("Getting info on", type, target);
 
-    let begin = msg.data && (msg.data.begin || msg.data.start);
-    let end = (msg.data && msg.data.end) || begin + 3600 * 24;
+    if (!msg.data) throw new Error('Invalid request')
+
+    const apiVer = msg.data.apiVer
+    let begin = msg.data.begin || msg.data.start
+    let end = msg.data.end || begin + 3600 * 24;
 
     // A backward compatibility fix for query host network stats for 'NOW'
     // extend it to a full hour if not enough
@@ -1779,7 +1811,7 @@ class netBot extends ControllerBot {
     log.info(type, "FlowHandler FROM: ", new Date(begin * 1000).toLocaleTimeString());
     log.info(type, "FlowHandler TO: ", new Date(end * 1000).toLocaleTimeString());
 
-    await this.hostManager.getHostsAsync();
+    // await this.hostManager.getHostsAsync();
     let jsonobj = {}
     switch (type) {
       case 'tag': {
@@ -1856,14 +1888,24 @@ class netBot extends ControllerBot {
         throw new Error('Invalid target type: ' + type)
     }
 
-    const { audit, nonLocal, local, localAudit } = msg.data
+    let { regular, audit, dns, ntp, local, localAudit, nonLocal } = msg.data
+    let legacyLocalBlock = false
+
+    if (!apiVer || apiVer < 3) {
+      regular = nonLocal !== false ? true : false
+      dns = regular
+      audit = audit !== false ? true : false
+      ntp = audit
+      localAudit = audit
+      legacyLocalBlock = audit
+    }
 
     const promises = []
     const tsMetrics = []
     const hostMetrics = []
 
-    // defaults to true
-    if (nonLocal != false) {
+    // only checks for capability but not feature switch, as feature might be turned off
+    if (regular) {
       promises.push(
         netBotTool.prepareTopUploadFlows(jsonobj, options),
         netBotTool.prepareTopDownloadFlows(jsonobj, options),
@@ -1871,20 +1913,28 @@ class netBot extends ControllerBot {
         netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'app', options),
         netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
       )
-      tsMetrics.push('upload', 'download', 'conn', 'dns')
-      hostMetrics.push('upload', 'download', 'conn', 'dns')
+      tsMetrics.push('upload', 'download', 'conn')
+      hostMetrics.push('upload', 'download', 'conn')
     }
-    if (platform.isAuditLogSupported() && audit != false) {
+    if (dns && platform.isDNSFlowSupported()) {
+      tsMetrics.push('dns')
+      hostMetrics.push('dns')
+    }
+    if (audit && platform.isAuditLogSupported()) {
       promises.push(
         netBotTool.prepareTopFlows(jsonobj, 'dnsB', null, Object.assign({}, options, {limit: 400})),
         netBotTool.prepareTopFlows(jsonobj, 'ipB', "in", Object.assign({}, options, {limit: 400})),
         netBotTool.prepareTopFlows(jsonobj, 'ipB', "out", Object.assign({}, options, {limit: 400})),
         netBotTool.prepareTopFlows(jsonobj, 'ifB', "out", Object.assign({}, options, {limit: 400})),
       )
-      tsMetrics.push('ipB', 'dnsB', 'ntp')
-      hostMetrics.push('ipB', 'dnsB', 'ntp')
+      tsMetrics.push('ipB', 'dnsB')
+      hostMetrics.push('ipB', 'dnsB')
     }
-    if (fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW) && local == true) {
+    if (ntp && platform.isAuditLogSupported()) {
+      tsMetrics.push('ntp')
+      hostMetrics.push('ntp')
+    }
+    if (local) {
       promises.push(
         netBotTool.prepareTopFlows(jsonobj, 'local', 'upload', options),
         netBotTool.prepareTopFlows(jsonobj, 'local', 'download', options),
@@ -1897,7 +1947,7 @@ class netBot extends ControllerBot {
         tsMetrics.push('upload:lo', 'download:lo', 'conn:lo:in', 'conn:lo:out')
       hostMetrics.push('upload:lo', 'download:lo', 'conn:lo:in', 'conn:lo:out')
     }
-    if (fc.isFeatureOn(Constants.FEATURE_LOCAL_AUDIT_LOG) && localAudit) {
+    if (localAudit && platform.isAuditLogSupported()) {
       promises.push(
         netBotTool.prepareTopFlows(jsonobj, 'local:ipB', "in", Object.assign({}, options, {limit: 400})),
         netBotTool.prepareTopFlows(jsonobj, 'local:ipB', "out", Object.assign({}, options, {limit: 400})),
@@ -1909,26 +1959,36 @@ class netBot extends ControllerBot {
       hostMetrics.push('ipB:lo:in', 'ipB:lo:out')
     }
     promises.push(
-      this.hostManager.last60MinStatsForInit(jsonobj, target, tsMetrics),
-      this.hostManager.last30daysStatsForInit(jsonobj, target, tsMetrics),
-      this.hostManager.newLast24StatsForInit(jsonobj, target, tsMetrics),
-      this.hostManager.last12MonthsStatsForInit(jsonobj, target, tsMetrics)
+      this.hostManager.last60MinStatsForInit(jsonobj, target, tsMetrics, { legacyLocalBlock }),
+      this.hostManager.last30daysStatsForInit(jsonobj, target, tsMetrics, { legacyLocalBlock }),
+      this.hostManager.newLast24StatsForInit(jsonobj, target, tsMetrics, { legacyLocalBlock }),
+      this.hostManager.last12MonthsStatsForInit(jsonobj, target, tsMetrics, { legacyLocalBlock }),
     )
 
     jsonobj.hosts = {}
     const hits = msg.data.hourblock == 24 ? 24 : Math.ceil((Date.now()/1000 - options.begin) / 3600)
     promises.push(asyncNative.eachLimit(options.macs, 20, async (t) => {
       const stats = await this.hostManager.getStats({ granularities: '1hour', hits }, t, hostMetrics)
-      jsonobj.hosts[t] = {}
+      const host = {}
       for (const m of hostMetrics) {
-        jsonobj.hosts[t][m] = msg.data.hourblock == 24
+        host[m] = msg.data.hourblock == 24
           ? _.get(stats, 'total' + m[0].toUpperCase() + m.slice(1), 0)
           : _.get(stats[m] && stats[m].find(s => s[0] == options.begin), 1, 0)
       }
+      if (legacyLocalBlock) {
+        for (const m of ['ipB:lo:intra', 'ipB:lo:in', 'ipB:lo:out']) {
+          host.ipB += host[m] || 0
+          delete host[m]
+        }
+      }
+      jsonobj.hosts[t] = host
     }))
 
     if (!msg.data.apiVer || msg.data.apiVer == 1) {
-      if (audit) options.audit = true
+      if (audit) {
+        options.audit = true
+        options.localAudit = true
+      }
       promises.push(flowTool.prepareRecentFlows(jsonobj, _.omit(options, ['queryall'])))
     }
 
@@ -3876,8 +3936,10 @@ class netBot extends ControllerBot {
     if (rawmsg.mtype === "msg" && rawmsg.message.type === 'jsondata') {
       let msg = rawmsg.message.obj;
       try {
-        const eid = _.get(rawmsg, 'message.appInfo.eid')
-        const version = _.get(rawmsg, 'message.appInfo.version');
+        const appInfo = _.get(rawmsg, ['message', 'appInfo'])
+        const { eid, version } = appInfo
+        const aplt = appInfo && appInfo.platform && appInfo.platform.toLowerCase()
+
         if (eid) {
           const revoked = await rclient.sismemberAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
           if (revoked) {
@@ -3893,13 +3955,15 @@ class netBot extends ControllerBot {
           );
         }
 
-        msg.appInfo = rawmsg.message.appInfo;
+        msg.appInfo = appInfo;
         if (rawmsg.message.obj.type === "jsonmsg") {
           let wltargets = await rclient.smembersAsync("sys:eid:whitelist:item") || [];
 
           // check app version, block requests if too old
           let minAppVer = await rclient.getAsync("sys:version:app:min");
-          if (minAppVer && rawmsg.message.from != "iRocoX" && msg.data.item != "ping" && (msg.appInfo.platform.toLowerCase() == "ios" || msg.appInfo.platform == "android" )){
+          if (minAppVer && rawmsg.message.from != "iRocoX" && msg.data.item != "ping" &&
+            (aplt == "ios" || aplt == "android" )
+          ) {
             if (["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && versionCompare(version, minAppVer)) {
               log.warn('deny access from eid', eid, "with", version, JSON.stringify(rawmsg));
               return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Please update the App to the latest version." }, cloudOptions);
@@ -3907,25 +3971,27 @@ class netBot extends ControllerBot {
           }
 
           // check whitelist, empty set allows all, only for dev
-          const notAllow = (await rclient.typeAsync('sys:eid:whitelist')) == "set" && !await rclient.sismemberAsync('sys:eid:whitelist', eid || "") && msg.appInfo.platform.toLowerCase() != "web";
+          const notAllow = (await rclient.typeAsync('sys:eid:whitelist')) == "set" &&
+            !await rclient.sismemberAsync('sys:eid:whitelist', eid || "") && aplt != "web";
           if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && notAllow){
             log.warn('deny access from eid', eid, "with", msg.data.item);
             return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
           }
 
           // check blacklist, only for dev
-          const forbid = (await rclient.typeAsync('sys:eid:blacklist')) == "set" && await rclient.sismemberAsync('sys:eid:blacklist', eid || "") && msg.appInfo.platform.toLowerCase() != "web";
+          const forbid = (await rclient.typeAsync('sys:eid:blacklist')) == "set" &&
+            await rclient.sismemberAsync('sys:eid:blacklist', eid || "") && aplt != "web";
           if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && forbid){
             log.warn('deny access from eid', eid);
             return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
           }
 
+          if (appInfo) {
+            this.processAppInfo(appInfo)
+          }
+
           switch(rawmsg.message.obj.mtype) {
             case "init": {
-              if (rawmsg.message.appInfo) {
-                this.processAppInfo(rawmsg.message.appInfo)
-              }
-
               log.info("Process Init load event");
 
               let begin = Date.now();
@@ -3937,23 +4003,39 @@ class netBot extends ControllerBot {
                 includeInactiveHosts: false,
                 includeAppTimeSlots: true,
                 includeAppTimeIntervals: true,
-                appInfo: rawmsg.message.appInfo
+                appInfo,
               }
 
-              if (rawmsg.message.obj.data &&
-                rawmsg.message.obj.data.simulator) {
+              const data = _.get(rawmsg, ['message', 'obj', 'data'], {})
+              if (data.simulator) {
                 // options.simulator = 1
               }
-              if (rawmsg.message.obj.data && rawmsg.message.obj.data.includeInactiveHosts)
+              if (data.includeInactiveHosts)
                 options.includeInactiveHosts = true;
-              if (rawmsg.message.obj.data && rawmsg.message.obj.data.hasOwnProperty("includePrivateMac"))
-                options.includePrivateMac = rawmsg.message.obj.data.includePrivateMac;
-              if (rawmsg.message.obj.data && rawmsg.message.obj.data.hasOwnProperty("includeAppTimeSlots"))
-                options.includeAppTimeSlots = rawmsg.message.obj.data.includeAppTimeSlots;
-              if (rawmsg.message.obj.data && rawmsg.message.obj.data.hasOwnProperty("includeAppTimeIntervals"))
-                options.includeAppTimeIntervals = rawmsg.message.obj.data.includeAppTimeIntervals;
-              if (rawmsg.message.obj.data && rawmsg.message.obj.data.timeUsageApps)
-                options.timeUsageApps = rawmsg.message.obj.data.timeUsageApps;
+              if (data.hasOwnProperty("includePrivateMac"))
+                options.includePrivateMac = data.includePrivateMac;
+              if (data.hasOwnProperty("includeAppTimeSlots"))
+                options.includeAppTimeSlots = data.includeAppTimeSlots;
+              if (data.hasOwnProperty("includeAppTimeIntervals"))
+                options.includeAppTimeIntervals = data.includeAppTimeIntervals;
+              if (data.timeUsageApps)
+                options.timeUsageApps = data.timeUsageApps;
+
+              if (!data.apiVer || data.apiVer <= 2) {
+                options.legacyLocalBlock = true
+                options.legacySystemFlows = true
+              } else {
+                const metrics = []
+                if (data.stats) {
+                  if (data.stats.regular) metrics.push('upload', 'download', 'conn')
+                  if (data.stats.dns && platform.isDNSFlowSupported()) metrics.push('dns')
+                  if (data.stats.audit && platform.isAuditLogSupported()) metrics.push('ipB', 'dnsB')
+                  if (data.stats.ntp) metrics.push('ntp')
+                  if (data.stats.local) metrics.push('intra:lo', 'conn:lo:intra')
+                  if (data.stats.localAudit) metrics.push('ipB:lo:intra')
+                }
+                options.tsMetrics = metrics
+              }
 
               await sysManager.updateAsync()
               try {
@@ -3965,7 +4047,7 @@ class netBot extends ControllerBot {
                 }
 
                 // skip acl for old app for backward compatibility
-                if (rawmsg.message.appInfo && rawmsg.message.appInfo.version && ["1.35", "1.36"].includes(rawmsg.message.appInfo.version)) {
+                if (appInfo && appInfo.version && ["1.35", "1.36"].includes(appInfo.version)) {
                   if (json && json.policy) {
                     delete json.policy.acl;
                   }
@@ -4020,7 +4102,6 @@ class netBot extends ControllerBot {
               return this.simpleTxData(msg, result, null, cloudOptions);
             }
             case "get": {
-              let appInfo = appTool.getAppInfo(rawmsg.message);
               const result = await this.getHandler(gid, msg, appInfo);
               return this.simpleTxData(msg, result, null, cloudOptions);
             }
