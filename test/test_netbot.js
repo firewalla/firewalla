@@ -468,20 +468,20 @@ describe('test netbot', function(){
   });
 
   it('should get event message', async() => {
-    expect(await netbot.getNotifEvent("phone_paired", 1, {"eid": "7wZYL2pk6hkzF313f8FkIA"})).to.be.eql({
+    expect(await netbot.getNotifEvent("phone_paired", 1, {"eid": "7wZYL2pk6hkzF313f8FkIA", "deviceName": "Device-abc"})).to.be.eql({
       "msg": "A new phone (Device-abc) is paired with your Firewalla box.",
-      "args": {eid: "7wZYL2pk6hkzF313f8FkIA", device: "Device-abc"},
+      "args": {eid: "7wZYL2pk6hkzF313f8FkIA", deviceName: "Device-abc"},
     })
   });
 
   it('should notify new event', async() => {
     netbot.hostManager.policy = {"state": true, "phone_paired": true};
 
-    const event = {"ts":1743556883664,"event_type":"action","action_type":"phone_paired","action_value":1,"labels":{"eid":"7wZYL2pk6hkzF313f8FkIA"}}
+    const event = {"ts":1743556883664, "event_type":"action", "action_type":"phone_paired","action_value":1, "labels":{"eid":"7wZYL2pk6hkzF313f8FkIA", "deviceName": "Device-abc"}}
     const payload = await netbot._notifyNewEvent(event);
     expect(payload.type).to.be.equal('FW_NOTIFICATION');
     expect(payload.titleLocalKey).to.be.equal('NEW_EVENT_TITLE_phone_paired');
     expect(payload.bodyLocalMsg).to.be.equal("A new phone (Device-abc) is paired with your Firewalla box.");
-    expect(payload.bodyLocalArgs).to.be.eql(["7wZYL2pk6hkzF313f8FkIA", "Device-abc"]);
+    expect(payload.bodyLocalArgs).to.be.eql(["7wZYL2pk6hkzF313f8FkIA", "Device-abc", 0]);
   })
 });
