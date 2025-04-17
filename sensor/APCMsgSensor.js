@@ -602,8 +602,9 @@ class APCMsgSensor extends Sensor {
     if (msg.hasOwnProperty('iso_int')) record.isoInt = msg.iso_int
 
     const intf = sysManager.getInterfaceViaIP(msg.src || msg.dst);
-    record.intf = intf && intf.name;
-    if (msg.iso_lvl == 2 && intf) record.isoNID = intf.uuid; // network isolate
+    record.intf = intf && intf.uuid.substring(0, 8);
+    record.dIntf = record.intf // AP only blocks traffic in the same interface
+    if (msg.iso_lvl == 2 && intf) record.isoNID = intf.uuid.substring(0, 8); // network isolate
 
     if (this.aclAuditLogPlugin) { // in case AclAuditLogPlugin not loaded
       this.aclAuditLogPlugin.writeBuffer(record);

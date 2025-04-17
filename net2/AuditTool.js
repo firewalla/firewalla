@@ -97,7 +97,7 @@ class AuditTool extends LogQuery {
       if (entry.isoGID)
         f.isoGID = entry.isoGID;
       if (entry.isoNID)
-        f.isoNID = entry.isoNID;
+        f.isoNID = networkProfileManager.prefixMap[entry.isoNID] || entry.isoNID;
       if (entry.isoLVL)
         f.isoLVL = entry.isoLVL;
       if (entry.orig)
