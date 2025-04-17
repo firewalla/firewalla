@@ -421,7 +421,7 @@ class FlowCompressionSensor extends Sensor {
     await this.clean(end)
     let completed = false
     const options = {
-      exclude: sysManager.getLogicInterfaces().map(i => { return { device: `${Constants.NS_INTERFACE}:${i.uuid}` } }),
+      exclude: [ { device: sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`) } ],
       begin: begin,
       end: end,
       regular: true,
