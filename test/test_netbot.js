@@ -18,9 +18,6 @@
 let chai = require('chai');
 let expect = chai.expect;
 
-// process.title = "FireMain";
-const execAsync = require('child-process-promise').exec;
-
 const cloud = require('../encipher');
 const netBot = require("../controllers/netbot.js");
 const gid = "3d0a201e-0b2f-**";
@@ -37,13 +34,17 @@ const loggerManager = require('../net2/LoggerManager.js')
 const { delay } = require('../util/util.js')
 
 async function getMacWithFlow(redisPrefix) {
-  const result = await execAsync(`redis-cli keys '${redisPrefix}*' | head -n 1`);
-  return result.stdout.trim().substring(redisPrefix.length);
+  const results = await rclient.scanResults(redisPrefix + '*', 10000)
+  if (!results.length)
+    throw new Error('No device with flow', redisPrefix);
+  return results[0].substring(redisPrefix.length);
 }
 
 async function getTsFromFlowKey(key) {
-  const result = await execAsync(`redis-cli zrevrangebyscore '${key}' +inf 0 limit 0 1 withscores`);
-  return Math.ceil(result.stdout.trim().split('\n')[1])
+  const result = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'limit', 0, 1, 'withscores');
+  if (result.length < 2)
+    throw new Error('No timestamp found for key', key);
+  return Math.ceil(result[1])
 }
 
 async function call(msg) {
