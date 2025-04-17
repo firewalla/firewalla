@@ -323,10 +323,10 @@ class ACLAuditLogPlugin extends Sensor {
       ctdir = "O";
       if (isolationNetworkIdPrefix) {
         if (inIntf && _.isString(inIntf.uuid) && inIntf.uuid.startsWith(isolationNetworkIdPrefix))
-          record.isoNID = inIntf.uuid;
+          record.isoNID = inIntf.uuid.substring(0, 8);
         else {
           if (outIntf && _.isString(outIntf.uuid) && outIntf.uuid.startsWith(isolationNetworkIdPrefix))
-            record.isoNID = outIntf.uuid;
+            record.isoNID = outIntf.uuid.substring(0, 8);
         }
       }
     }
