@@ -90,6 +90,10 @@ describe('test get flows', function() {
     // loggerManager.setLogLevel('LogQuery', 'verbose');
     // loggerManager.setLogLevel('FlowTool', 'verbose');
     // loggerManager.setLogLevel('AuditTool', 'verbose');
+    this.allFlowsData = {
+      item:"flows", count:200, apiVer: 3, asc: false,
+      regular:true, dns:true, ntp:true, audit:true, local:true, localAudit:true
+    }
   });
 
   after(() => {
@@ -125,6 +129,12 @@ describe('test get flows', function() {
     msg.data.regular = true
     resp = await get(msg)
     expect(resp.count).to.equal(2);
+    expect(resp.flows.every(f => f.ltype == 'flow' && f.type == 'ip' && !f.local)).to.be.true
+
+    const ts = await getTsFromFlowKey('flow:conn:in:' + target);
+    resp = await get({ data:{ ...this.allFlowsData, ts }, target })
+    expect(resp.count).to.above(0);
+    expect(resp.flows.some(f => f.ltype == 'flow' && f.type == 'ip' && !f.local)).to.be.true
   });
 
   it('should get audit flows', async() => {
@@ -141,6 +151,10 @@ describe('test get flows', function() {
     expect(resp.count).to.be.above(0);
     expect(resp.flows.every(f => f.ltype == 'audit' && !f.local)).to.be.true
 
+    resp = await get({ data:{ ...this.allFlowsData, ts }, target })
+    expect(resp.count).to.above(0);
+    expect(resp.flows.some(f => f.ltype == 'audit' && !f.local), `${target} ${ts}/* resp.flows.map(JSON.stringify) */`).to.be.true
+
     // default true for auditLogs
     const msgAuditLogs = {data:{item:"auditLogs", ts, count: 100, apiVer: 2}, target};
     resp = await get(msgAuditLogs)
@@ -155,6 +169,10 @@ describe('test get flows', function() {
     resp = await get(msgAuditLogs)
     expect(resp.count).to.be.above(0);
     expect(resp.logs.every(f => f.ltype == 'audit' && !f.local)).to.be.true
+
+    resp = await get({ data:{ ...this.allFlowsData, ts, item: 'auditLogs' }, target })
+    expect(resp.count).to.above(0);
+    expect(resp.logs.some(f => f.ltype == 'audit' && !f.local)).to.be.true
   });
 
   it('should get DNS flows', async() => {
@@ -175,6 +193,10 @@ describe('test get flows', function() {
     resp = await get(msg)
     expect(resp.count).to.be.above(0);
     expect(resp.flows.every(f => f.ltype == 'flow' && f.type == 'dnsFlow')).to.be.true
+
+    resp = await get({ data:{ ...this.allFlowsData, ts }, target })
+    expect(resp.count).to.above(0);
+    expect(resp.flows.some(f => f.ltype == 'flow' && f.type == 'dnsFlow')).to.be.true
   });
 
   it('should get NTP flows', async() => {
@@ -195,6 +217,10 @@ describe('test get flows', function() {
     resp = await get(msg)
     expect(resp.count).to.be.above(0);
     expect(resp.flows.every(f => f.ltype == 'flow' && f.type == 'ntp')).to.be.true
+
+    resp = await get({ data:{ ...this.allFlowsData, ts }, target })
+    expect(resp.count).to.above(0);
+    expect(resp.flows.some(f => f.ltype == 'flow' && f.type == 'ntp')).to.be.true
   });
 
   it('should get local flow according to apiVer', async() => {
@@ -211,6 +237,10 @@ describe('test get flows', function() {
     resp = await get(msg)
     expect(resp.count).to.be.above(0);
     expect(resp.flows.every(f => f.ltype == 'flow' && f.type == 'ip' && f.local)).to.be.true
+
+    resp = await get({ data:{ ...this.allFlowsData, ts }, target })
+    expect(resp.count).to.above(0);
+    expect(resp.flows.some(f => f.ltype == 'flow' && f.type == 'ip' && f.local)).to.be.true
   });
 
   it('should get local block flow according to apiVer', async() => {
@@ -232,6 +262,10 @@ describe('test get flows', function() {
     expect(resp.count).to.be.above(0);
     expect(resp.flows.every(f => f.ltype == 'audit' && f.local)).to.be.true
 
+    resp = await get({ data:{ ...this.allFlowsData, ts }, target })
+    expect(resp.count).to.above(0);
+    expect(resp.flows.some(f => f.ltype == 'audit' && f.local)).to.be.true
+
 
     const msgAuditLogs = {data:{item:"auditLogs", ts, count: 100, apiVer: 2}, target};
     resp = await get(msgAuditLogs)
@@ -246,6 +280,10 @@ describe('test get flows', function() {
     resp = await get({data:{item:"auditLogs", localAudit:true, ts, count: 100, apiVer: 3}, target})
     expect(resp.count).to.be.above(0);
     expect(resp.logs.every(f => f.ltype == 'audit' && f.local)).to.be.true
+
+    resp = await get({ data:{ ...this.allFlowsData, ts, item: 'auditLogs' }, target })
+    expect(resp.count).to.be.above(0);
+    expect(resp.logs.some(f => f.ltype == 'audit' && f.local)).to.be.true
   });
 
 });
