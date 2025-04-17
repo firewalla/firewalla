@@ -648,6 +648,14 @@ class Policy {
     }
   }
 
+  needPolicyDisturb() {
+    if(this.action === "app_block" && this.disturbMethod != null && this.disturbMethod.disturbPeriod != null && Number(this.disturbMethod.disturbPeriod) > 0) {
+      this.disturbTimeUsed = this.disturbTimeUsed || 0;
+      return Number( this.disturbMethod.disturbPeriod) > Number(this.disturbTimeUsed);
+    }
+    return false;
+  }
+
   static getMathcedTarget(policy) {
     let target = "";
     if (policy.scope) {
@@ -672,9 +680,9 @@ class Policy {
 }
 
 Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules", "targets"];
-Policy.OBJ_VALUE_KEYS = ["appTimeUsage"];
+Policy.OBJ_VALUE_KEYS = ["appTimeUsage", "disturbMethod"];
 Policy.NUM_VALUE_KEYS = [
-  'seq', 'appTimeUsed', 'priority', 'transferredBytes', 'transferredPackets', 'avgPacketBytes',
+  'seq', 'appTimeUsed', 'priority', 'transferredBytes', 'transferredPackets', 'avgPacketBytes', "disturbTimeUsed"
 ]
 Policy.INTF_PREFIX = "intf:";
 Policy.TAG_PREFIX = "tag:";
