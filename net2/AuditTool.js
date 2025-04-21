@@ -157,7 +157,7 @@ class AuditTool extends LogQuery {
     }
 
     if (entry.type == 'dns' || entry.fd !== 'out') {
-      f.ip = entry.dh;
+      if (entry.dh) f.ip = entry.dh;
       f.deviceIP = entry.sh;
     } else { // ip.out
       f.ip = entry.sh;

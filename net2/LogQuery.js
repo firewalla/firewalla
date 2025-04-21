@@ -190,6 +190,7 @@ class LogQuery {
    */
   async logFeeder(options, feeds) {
     options = this.checkArguments(options)
+    const commonOptions = _.pick(options, ['ts', 'ets', 'asc', 'count'])
     log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(_.omit(options, 'macs')))
     feeds.forEach(f => {
       f.options = f.options || {};
@@ -197,8 +198,8 @@ class LogQuery {
       // both include and exclude can only be array, check optionsToFilter()
       if (!_.isEmpty(f.options.exclude) || !_.isEmpty(options.exclude))
         f.options.exclude = [].concat(f.options.exclude || [], options.exclude || [])
-      Object.assign(f.options, _.omit(options, 'exclude'))
       f.filter = f.base.optionsToFilter(f.options)
+      Object.assign(f.options, commonOptions)
     })
     // log.debug( feeds.map(f => JSON.stringify(f) + '\n') )
     let results = []
