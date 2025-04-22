@@ -57,7 +57,9 @@ class APCMsgSensor extends Sensor {
 
   constructor(config) {
     super(config);
+    /* uncomment this if there is ssid based management in future releases
     this.ssidProfiles = {};
+    */
     this.ssidGroupMap = {};
     this.ssidVlanGroupMap = {};
     this.enforcedRules = {};
@@ -71,15 +73,19 @@ class APCMsgSensor extends Sensor {
   async run() {
     if (!platform.isFireRouterManaged())
       return;
+    /* uncomment this if there is ssid based management in future releases
     await this.loadCachedSSIDProfiles();
     await this.reloadSSIDProfiles();
+    */
 
     sclient.on("message", async (channel, message) => {
       switch (channel) {
+        /* uncomment this if there is ssid based management in future releases
         case Message.MSG_FR_CHANGE_APPLIED: {
           await this.reloadSSIDProfiles();
           break;
         }
+        */
         case Message.MSG_FWAPC_SSID_STA_UPDATE: {
           let msg = null;
           try {
