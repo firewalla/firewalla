@@ -951,6 +951,7 @@ class VPNClient {
                 toProcess: "FireMain"
               });
             }
+            log.info(`Time elapsed to start ${this.constructor.getProtocol()} client ${this.profileId}: ${(Date.now() - this._lastStartTime) / 1000}`);
             resolve({result: true});
           } else {
             const now = Date.now();
