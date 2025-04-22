@@ -35,6 +35,7 @@ const LOCK_RW = "lock_rw";
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const POLICY_STATE_DEFAULT_MODE = 1;
 const POLICY_STATE_DOMAIN_ONLY = 2;
+const DISTURB_INTERVAL = 30;
 
 class AppTimeUsageManager {
   constructor() {
@@ -74,8 +75,11 @@ class AppTimeUsageManager {
 
     setInterval(async () => {
       await this.refreshAppPolicyQuotaUsage();
+    }, 60 * 1000);
+
+    setInterval(async () => {
       await this.refreshAppDistubTimeUsage();
-    }, 30 * 1000);
+    }, DISTURB_INTERVAL * 1000);
   }
 
   async refreshAppPolicyQuotaUsage() {
@@ -136,7 +140,7 @@ class AppTimeUsageManager {
 
         for (const uid of Object.keys(this.acitveDisturbPolicies[pid])) {
           let timeElapse = Math.floor((Date.now() - this.acitveDisturbPolicies[pid][uid]) / 1000);
-          timeElapse = timeElapse < 30 ? timeElapse : 30;
+          timeElapse = timeElapse < DISTURB_INTERVAL ? timeElapse : DISTURB_INTERVAL;
           let disturbTimeUsed = Number(this.registeredPolicies[pid].disturbTimeUsed) + timeElapse;
           try {
             if (disturbTimeUsed >= Number(this.registeredPolicies[pid].disturbMethod.disturbPeriod)) {
