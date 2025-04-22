@@ -591,6 +591,12 @@ class VPNClient {
       if (profileId === this.profileId)
         this._started = false;
     })
+
+    sem.on("VPNClient:Started", async (event) => {
+      const profileId = event.profileId;
+      if (profileId === this.profileId);
+        this._started = true;
+    })
   }
 
   _isSettingsChanged(c1, c2) {
@@ -937,6 +943,13 @@ class VPNClient {
                   log.error(`Failed to check connectivity on VPN client ${this.profileId}`, err.message);
                 });
               }, 20000);
+            }
+            if (!f.isMain()) {
+              sem.emitEvent({
+                type: "VPNClient:Started",
+                profileId: this.profileId,
+                toProcess: "FireMain"
+              });
             }
             resolve({result: true});
           } else {
