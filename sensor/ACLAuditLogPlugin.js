@@ -478,8 +478,8 @@ class ACLAuditLogPlugin extends Sensor {
 
     // try to get host name from conn entries for better timeliness and accuracy
     if (dir === "O" && record.ac === "block") {
-      // delay 5 seconds to process outbound block flow, in case ssl/http host is available in zeek's ssl log and will be saved into conn entries
-      let t = 5
+      // delay 8 seconds to process outbound block flow, in case ssl/http host is available in zeek's ssl log and will be saved into conn entries
+      let t = 8
       // if flow is blocked by tls kernel module and zeek listens on bridge, zeek won't see the tcp RST packet due to br_netfilter. This introduces another 20 seconds before ssl/http log is generated
       if (record.pr == "tcp" && (record.dp === 443 || record.dp === 80) && this.isPcapOnBridge(inIntf))
         t += 20;
