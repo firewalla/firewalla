@@ -452,18 +452,26 @@ class APCMsgSensor extends Sensor {
   }
 
   async updateHostSSID(mac, uuid, groupId) {
-    const profile = this.ssidProfiles[uuid];
-    if (!profile) {
-      log.warn(`Cannot find ssid profile with uuid ${uuid}`);
-      return;
-    }
-    
     const host = await hostManager.getHostAsync(mac.toUpperCase());
     if (!host) {
       log.warn(`Unknown mac address ${mac}`);
       return;
     }
+    /* uncomment this if there is ssid based management in future releases
+    const profile = this.ssidProfiles[uuid];
+    if (!profile) {
+      log.warn(`Cannot find ssid profile with uuid ${uuid}`);
+      return;
+    }
     await host.setPolicyAsync(_.get(Constants.TAG_TYPE_MAP, [Constants.TAG_TYPE_SSID, "policyKey"]), [profile.getUniqueId()]);
+    */
+
+    // do not assign group to device if wifi auto group is disabled on this device
+    const wifiAutoGroup = host.getPolicyFast(Constants.POLICY_KEY_WIFI_AUTO_GROUP);
+    if (_.get(wifiAutoGroup, "state") === false) {
+      log.debug(`${Constants.POLICY_KEY_WIFI_AUTO_GROUP} is not enabled on device ${host.getUniqueId()}`);
+      return;
+    }
 
     let newTagId = null;
     if (groupId && await TagManager.tagUidExists(groupId, Constants.TAG_TYPE_GROUP))
