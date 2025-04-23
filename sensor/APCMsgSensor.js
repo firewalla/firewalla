@@ -57,7 +57,9 @@ class APCMsgSensor extends Sensor {
 
   constructor(config) {
     super(config);
+    /* uncomment this if there is ssid based management in future releases
     this.ssidProfiles = {};
+    */
     this.ssidGroupMap = {};
     this.ssidVlanGroupMap = {};
     this.enforcedRules = {};
@@ -71,15 +73,19 @@ class APCMsgSensor extends Sensor {
   async run() {
     if (!platform.isFireRouterManaged())
       return;
+    /* uncomment this if there is ssid based management in future releases
     await this.loadCachedSSIDProfiles();
     await this.reloadSSIDProfiles();
+    */
 
     sclient.on("message", async (channel, message) => {
       switch (channel) {
+        /* uncomment this if there is ssid based management in future releases
         case Message.MSG_FR_CHANGE_APPLIED: {
           await this.reloadSSIDProfiles();
           break;
         }
+        */
         case Message.MSG_FWAPC_SSID_STA_UPDATE: {
           let msg = null;
           try {
@@ -452,18 +458,26 @@ class APCMsgSensor extends Sensor {
   }
 
   async updateHostSSID(mac, uuid, groupId) {
-    const profile = this.ssidProfiles[uuid];
-    if (!profile) {
-      log.warn(`Cannot find ssid profile with uuid ${uuid}`);
-      return;
-    }
-    
     const host = await hostManager.getHostAsync(mac.toUpperCase());
     if (!host) {
       log.warn(`Unknown mac address ${mac}`);
       return;
     }
+    /* uncomment this if there is ssid based management in future releases
+    const profile = this.ssidProfiles[uuid];
+    if (!profile) {
+      log.warn(`Cannot find ssid profile with uuid ${uuid}`);
+      return;
+    }
     await host.setPolicyAsync(_.get(Constants.TAG_TYPE_MAP, [Constants.TAG_TYPE_SSID, "policyKey"]), [profile.getUniqueId()]);
+    */
+
+    // do not assign group to device if wifi auto group is disabled on this device
+    const wifiAutoGroup = host.getPolicyFast(Constants.POLICY_KEY_WIFI_AUTO_GROUP);
+    if (_.get(wifiAutoGroup, "state") === false) {
+      log.debug(`${Constants.POLICY_KEY_WIFI_AUTO_GROUP} is not enabled on device ${host.getUniqueId()}`);
+      return;
+    }
 
     let newTagId = null;
     if (groupId && await TagManager.tagUidExists(groupId, Constants.TAG_TYPE_GROUP))
@@ -602,8 +616,9 @@ class APCMsgSensor extends Sensor {
     if (msg.hasOwnProperty('iso_int')) record.isoInt = msg.iso_int
 
     const intf = sysManager.getInterfaceViaIP(msg.src || msg.dst);
-    record.intf = intf && intf.name;
-    if (msg.iso_lvl == 2 && intf) record.isoNID = intf.uuid; // network isolate
+    record.intf = intf && intf.uuid.substring(0, 8);
+    record.dIntf = record.intf // AP only blocks traffic in the same interface
+    if (msg.iso_lvl == 2 && intf) record.isoNID = intf.uuid.substring(0, 8); // network isolate
 
     if (this.aclAuditLogPlugin) { // in case AclAuditLogPlugin not loaded
       this.aclAuditLogPlugin.writeBuffer(record);

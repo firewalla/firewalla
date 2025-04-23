@@ -97,7 +97,7 @@ class AuditTool extends LogQuery {
       if (entry.isoGID)
         f.isoGID = entry.isoGID;
       if (entry.isoNID)
-        f.isoNID = entry.isoNID;
+        f.isoNID = networkProfileManager.prefixMap[entry.isoNID] || entry.isoNID;
       if (entry.isoLVL)
         f.isoLVL = entry.isoLVL;
       if (entry.orig)
@@ -157,7 +157,7 @@ class AuditTool extends LogQuery {
     }
 
     if (entry.type == 'dns' || entry.fd !== 'out') {
-      f.ip = entry.dh;
+      if (entry.dh) f.ip = entry.dh;
       f.deviceIP = entry.sh;
     } else { // ip.out
       f.ip = entry.sh;

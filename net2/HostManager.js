@@ -464,6 +464,8 @@ module.exports = class HostManager extends Monitorable {
           const asset = apStatus[mac];
           if (asset && asset.addrs && asset.addrs["br-lan0"] && asset.addrs["br-lan0"].ip4) {
             host.ip = asset.addrs["br-lan0"].ip4;
+            const intfInfo = sysManager.getInterfaceViaIP(host.ip);
+            host.intf = intfInfo && intfInfo.uuid;
           }
         }
       }

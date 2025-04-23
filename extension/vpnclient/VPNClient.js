@@ -591,6 +591,12 @@ class VPNClient {
       if (profileId === this.profileId)
         this._started = false;
     })
+
+    sem.on("VPNClient:Started", async (event) => {
+      const profileId = event.profileId;
+      if (profileId === this.profileId);
+        this._started = true;
+    })
   }
 
   _isSettingsChanged(c1, c2) {
@@ -938,6 +944,14 @@ class VPNClient {
                 });
               }, 20000);
             }
+            if (!f.isMain()) {
+              sem.emitEvent({
+                type: "VPNClient:Started",
+                profileId: this.profileId,
+                toProcess: "FireMain"
+              });
+            }
+            log.info(`Time elapsed to start ${this.constructor.getProtocol()} client ${this.profileId}: ${(Date.now() - this._lastStartTime) / 1000}`);
             resolve({result: true});
           } else {
             const now = Date.now();

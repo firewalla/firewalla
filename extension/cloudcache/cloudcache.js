@@ -243,7 +243,7 @@ class CloudCache {
 
       setInterval(() => {
         this.job();
-      }, 1800 * 1000); // every half hour
+      }, 10800 * 1000); // every 3 hours
 
       const eventType = "CLOUDCACHE_FORCE_REFRESH";
       sclient.subscribe(eventType);

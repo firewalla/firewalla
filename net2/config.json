@@ -1,5 +1,5 @@
 {
-  "version": 1.980,
+  "version": 1.981,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -922,7 +922,6 @@
   },
   "features": {
     "intel:feedback": true,
-    "fast_speedtest": true,
     "conntrack": {
       "enabled": true
     }
@@ -1014,7 +1013,8 @@
     "sys_patch": true,
     "clashdns": false,
     "mesh_vpn": false,
-    "app_time_usage": true
+    "app_time_usage": true,
+    "fast_speedtest": true
   },
   "hiddenFeatures": [
     "naughty_monkey"
