@@ -21,6 +21,7 @@ const exec = require('child-process-promise').exec;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const POLICY_QOS_HANDLER_MAP_KEY = "policy_qos_handler_map";
+const SKIP_QOS_SWITCH =  0x40000000;
 const QOS_UPLOAD_MASK = 0x3f800000;
 const QOS_DOWNLOAD_MASK = 0x7f0000;
 const PRIO_HIGH = 2;
@@ -29,7 +30,7 @@ const PRIO_LOW = 6;
 const DEFAULT_PRIO = PRIO_REG;
 const DEFAULT_RATE_LIMIT = "10240mbit";
 const DEFAULT_DELAY = "200";
-const DEFAULT_LOSS_RATE = "40";
+const DEFAULT_LOSS_RATE = "30";
 const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 
@@ -254,6 +255,7 @@ async function destroyTCFilter(filterId, parent, direction, prio, fwmark) {
 }
 
 module.exports = {
+  SKIP_QOS_SWITCH,
   QOS_UPLOAD_MASK,
   QOS_DOWNLOAD_MASK,
   PRIO_HIGH,
