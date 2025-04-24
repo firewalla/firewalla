@@ -137,6 +137,7 @@ class PolicyManager2 {
       this.ipsetCacheUpdateTime = null;
       this.sortedActiveRulesCache = null;
       this.sortedRoutesCache = null;
+      this.allRulesInitialized = false;
     }
     return instance;
   }
@@ -1000,6 +1001,7 @@ class PolicyManager2 {
     await Promise.all(initialOtherEnforcement);
 
     log.forceInfo(">>>>>==== All policy rules are enforced ====<<<<<", otherRules.length);
+    this.allRulesInitialized = true;
 
     await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'done')
     const end = Date.now();
@@ -1013,6 +1015,9 @@ class PolicyManager2 {
     sem.emitLocalEvent(event)
   }
 
+  isAllRulesInitialized() {
+    return this.allRulesInitialized;
+  }
 
   parseDevicePortRule(target) {
     let matches = target.match(/(.*):(\d+):(tcp|udp)/)

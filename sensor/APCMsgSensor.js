@@ -142,11 +142,11 @@ class APCMsgSensor extends Sensor {
     // wait for iptables ready in case Host object and its ipsets are created in HostManager.getHostAsync
     await sysManager.waitTillIptablesReady();
     sclient.subscribe(Message.MSG_FWAPC_SSID_STA_UPDATE);
-    await this.refreshSSIDSTAMapping().catch((err) => {
+    process.nextTick(() => this.refreshSSIDSTAMapping().catch((err) => {
       log.error(`Failed to refresh ssid sta mapping`, err.message);
-    });
+    }));
 
-    await this.syncAssetsIPSet().catch((err) => {});
+    process.nextTick(() => this.syncAssetsIPSet().catch((err) => {}));
     setInterval(async () => {
       this.syncAssetsIPSet().catch((err) => {
         log.error("Failed to sync assets ipset", err);
@@ -194,11 +194,15 @@ class APCMsgSensor extends Sensor {
       });
     });
 
-    sem.on("Policy:AllInitialized", async () => {
-      await this.syncRules();
-    });
+    if (pm2.isAllRulesInitialized())
+      process.nextTick(() => this.syncRules());
+    else {
+      sem.on("Policy:AllInitialized", async () => {
+        await this.syncRules();
+      });
+    }
 
-    await this.updateWlanVendorInfoForAllStations();
+    process.nextTick(() => this.updateWlanVendorInfoForAllStations().catch(err => {}));
 
     setInterval(this.updateWlanVendorInfoForAllStations.bind(this), 3600 * 1000); // every hour
 
