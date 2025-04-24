@@ -44,7 +44,8 @@ class AppTimeUsageSensor extends Sensor {
   async run() {
     this.hookFeature(featureName);
     this.enabled = fc.isFeatureOn(featureName);
-    this.cloudConfig = null;
+    this.cloudConfig = null; // for app time usage config
+    this.internetTimeUsageCfg = null;
     this.appConfs = {};
     await this.loadConfig(true);
 
@@ -108,13 +109,29 @@ class AppTimeUsageSensor extends Sensor {
   }
 
   async loadCloudConfig(reload = false) {
-    let data = await rclient.getAsync(CLOUD_CONFIG_KEY).then(result => result && JSON.parse(result)).catch(err => null);
-    this.cloudConfig = data;
-    if (_.isEmpty(data) || reload)
-      data = await bone.hashsetAsync("app_time_usage_config").then(result => result && JSON.parse(result)).catch((err) => null);
-    if (!_.isEmpty(data) && _.isObject(data)) {
-      await rclient.setAsync(CLOUD_CONFIG_KEY, JSON.stringify(data));
-      this.cloudConfig = data;
+    let isCloudConfigUpdated = false;
+    let appTimeUsageConfig = await rclient.getAsync(CLOUD_CONFIG_KEY).then(result => result && JSON.parse(result)).catch(err => null);
+    this.cloudConfig = appTimeUsageConfig;
+    if (_.isEmpty(appTimeUsageConfig) || reload) {
+      appTimeUsageConfig = await bone.hashsetAsync(Constants.REDIS_KEY_APP_TIME_USAGE_CONFIG).then(result => result && JSON.parse(result)).catch((err) => null);
+      if (!_.isEmpty(appTimeUsageConfig) && _.isObject(appTimeUsageConfig)) {
+        await rclient.setAsync(CLOUD_CONFIG_KEY, JSON.stringify(appTimeUsageConfig));
+        this.cloudConfig = appTimeUsageConfig;
+        isCloudConfigUpdated = true;
+      }
+    }
+    let internetTimeUsageCfg = await rclient.getAsync(Constants.REDIS_KEY_INTERNET_TIME_USAGE_CONFIG).then(result => result && JSON.parse(result)).catch(err => null);
+    this.internetTimeUsageCfg = internetTimeUsageCfg;
+    if (_.isEmpty(internetTimeUsageCfg) || reload) {
+      internetTimeUsageCfg = await bone.hashsetAsync(Constants.REDIS_KEY_INTERNET_TIME_USAGE_CONFIG).then(result => result && JSON.parse(result)).catch((err) => null);
+      if (!_.isEmpty(internetTimeUsageCfg) && _.isObject(internetTimeUsageCfg)) {
+        await rclient.setAsync(Constants.REDIS_KEY_INTERNET_TIME_USAGE_CONFIG, JSON.stringify(internetTimeUsageCfg));
+        this.internetTimeUsageCfg = internetTimeUsageCfg;
+        isCloudConfigUpdated = true;
+      }
+    }
+
+    if (isCloudConfigUpdated) {
       sem.sendEventToAll({type: Message.MSG_APP_INTEL_CONFIG_UPDATED});
     }
   }
@@ -168,6 +185,18 @@ class AppTimeUsageSensor extends Sensor {
     this._domainTrie = domainTrie;
   }
 
+  getCategoryThreshold(category) {
+    if (this.internetTimeUsageCfg) {
+      if (this.internetTimeUsageCfg[category] &&
+        typeof this.internetTimeUsageCfg[category].bytesThreshold === "number")
+        return this.internetTimeUsageCfg[category].bytesThreshold;
+      if (this.internetTimeUsageCfg["default"] &&
+        typeof this.internetTimeUsageCfg["default"].bytesThreshold === "number")
+        return this.internetTimeUsageCfg["default"].bytesThreshold;
+    }
+    return 200 * 1024; // default threshold is 200KB
+  }
+
   // returns an array with matched app criterias
   // [{"app": "youtube", "occupyMins": 1, "lingerMins": 1, "bytesThreshold": 1000000}]
   lookupAppMatch(flow) {
@@ -186,30 +215,7 @@ class AppTimeUsageSensor extends Sensor {
     }
     // match internet activity on flow
     const category = _.get(flow, ["intel", "category"]);
-    let bytesThreshold = 200 * 1024;
-    if (category) {
-      switch (category) {
-        case "av": {
-          bytesThreshold = 1024 * 1024;
-          break;
-        }
-        case "games": {
-          bytesThreshold = 20 * 1024;
-          break;
-        }
-        case "social": {
-          bytesThreshold = 10 * 1024;
-          break;
-        }
-        case "porn": {
-          bytesThreshold = 50 * 1024;
-          break;
-        }
-        default: {
-          bytesThreshold = 200 * 1024;
-        }
-      }
-    }
+    let bytesThreshold = this.getCategoryThreshold(category);
     if (flow.ob + flow.rb >= bytesThreshold || !_.isEmpty(result))
       result.push({app: "internet", occupyMins: 1, lingerMins: 10, minsThreshold: 1, noStray: true}); // set noStray to true to suppress single matched flow from being counted, e.g., single large flow when device is sleeping
     return result;
