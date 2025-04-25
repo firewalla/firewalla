@@ -540,7 +540,14 @@ async function setupGlobalRules(options) {
         else
           await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
       }
-      parameters.push({ table: "mangle", chain: `FW_QOS_GLOBAL_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
+      if(qdisc === "netem"){
+        // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
+        const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
+        const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
+        parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_GLOBAL`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+      } else {
+        parameters.push({ table: "mangle", chain: `FW_QOS_GLOBAL_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
+      }
       break;
     }
     case "route": {
@@ -706,7 +713,14 @@ async function setupGenericIdentitiesRules(options) {
         else
           await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
       }
-      parameters.push({ table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
+      if(qdisc === "netem"){
+        // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
+        const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
+        const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
+        parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+      } else {
+        parameters.push({ table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
+      }
       break;
     }
     case "route": {
@@ -884,7 +898,14 @@ async function setupDevicesRules(options) {
         else
           await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
       }
-      parameters.push({ table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
+      if(qdisc === "netem"){
+        // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
+        const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
+        const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
+        parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+      } else {
+        parameters.push({ table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
+      }
       break;
     }
     case "route": {
@@ -1058,8 +1079,16 @@ async function setupTagsRules(options) {
           else
             await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
         }
-        parameters.push({ table: "mangle", chain: `FW_QOS_DEV_G_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: devSet, localFlagCount: 1 });
-        parameters.push({ table: "mangle", chain: `FW_QOS_NET_G_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: netSet, localFlagCount: 2 });
+        if(qdisc === "netem"){
+          // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
+          const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
+          const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV_G`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`, localSet: devSet, localFlagCount: 1 });
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET_G`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`, localSet: netSet, localFlagCount: 2 });
+        } else {
+          parameters.push({ table: "mangle", chain: `FW_QOS_DEV_G_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: devSet, localFlagCount: 1 });
+          parameters.push({ table: "mangle", chain: `FW_QOS_NET_G_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: netSet, localFlagCount: 2 });
+        }
         break;
       }
       case "route": {
@@ -1267,7 +1296,14 @@ async function setupIntfsRules(options) {
         else
           await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
       }
-      parameters.push({ table: "mangle", chain: `FW_QOS_NET_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
+      if(qdisc === "netem"){
+        // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
+        const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
+        const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
+        parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+      } else {
+        parameters.push({ table: "mangle", chain: `FW_QOS_NET_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
+      }
       break;
     }
     case "route": {
@@ -1438,6 +1474,7 @@ async function setupRuleGroupRules(options) {
         else
           await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
       }
+      //TODO: Not consider how App Disturb feature use RuleGroup Qos currently.
       parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "qos")}_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       break;
     }
