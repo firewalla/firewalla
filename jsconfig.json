@@ -1,0 +1,30 @@
+{
+    "$schema": "https://json.schemastore.org/tsconfig",
+    /* Visit https://aka.ms/tsconfig to read more about this file */
+    "compilerOptions": {
+        /* Language and Environment */
+        "target": "es2018",
+        "lib": ["es2018"],
+
+        /* Modules */
+        "module": "commonjs",
+        "moduleResolution": "node10",
+        "resolveJsonModule": true,
+
+        /* JavaScript Support */
+        "checkJs": true,
+
+        /* Interop Constraints */
+        "esModuleInterop": true,
+
+        /* Type Checking */
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "allowUnusedLabels": false,
+        "allowUnreachableCode": false,
+
+        /* Completeness */
+        "skipLibCheck": true
+    },
+    "exclude": ["node_modules", "**/node_modules/*"]
+}
