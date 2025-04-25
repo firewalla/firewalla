@@ -1879,7 +1879,6 @@ module.exports = class HostManager extends Monitorable {
           }
   
           await hostbymac.update(Host.parse(o));
-          if (f.isMain()) await hostbymac.identifyDevice(false);
         }
   
         // do not update host:ip4 entries in this.hostsdb since it may be previously occupied by other host
