@@ -736,6 +736,7 @@ module.exports = class HostManager extends Monitorable {
   async newAlarmDataForInit(json) {
     json.activeAlarmCount = await alarmManager2.getActiveAlarmCount();
     json.newAlarms = await alarmManager2.loadActiveAlarmsAsync();
+    json.newAlarms = json.newAlarms.map((a) => alarmManager2.stripAlarm(a));
   }
 
   async pendingAlarmNumberForInit(json) {
@@ -1000,8 +1001,8 @@ module.exports = class HostManager extends Monitorable {
       }
     })
 
-    json.policyRules = rules;
-    json.screentimeRules = screentimeRules;
+    json.policyRules = rules.map((r) => policyManager2.stripRule(r));
+    json.screentimeRules = screentimeRules.map((r) => policyManager2.stripRule(r));
   }
 
   // whats is allowed
@@ -1056,7 +1057,7 @@ module.exports = class HostManager extends Monitorable {
               }
             })
 
-            json.exceptionRules = rules
+            json.exceptionRules = rules.map((r) => exceptionManager.stripRule(r));
             resolve();
           });
         }
@@ -2602,4 +2603,5 @@ module.exports = class HostManager extends Monitorable {
       log.warn('getCpuProfile error', e)
     }
   }
+
 }

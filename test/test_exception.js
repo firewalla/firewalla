@@ -17,13 +17,17 @@
 let chai = require('chai');
 let should = chai.should();
 let assert = chai.assert;
+let expect = chai.expect;
 
 let sample = require('./sample_data');
 
 let AlarmManager2 = require('../alarm/AlarmManager2.js')
-let alarmManager2 = new AlarmManager2();
 
 let Exception = require('../alarm/Exception');
+
+const EM = require('../alarm/ExceptionManager.js');
+let em = new EM();
+
 let Alarm = require('../alarm/Alarm');
 
 describe.skip('Exception', () => {
@@ -111,3 +115,21 @@ describe.skip('Exception', () => {
 
 });
 
+
+describe('Test strip fields', function() {
+  this.timeout(30000);
+  it('should strip fields', async () => {
+    let exceptions = [
+      {"type":"ALARM_VPN_RESTORE","p.vpn.profileid":"6ACC_6ACCB","timestamp":1541173167.733,"eid":"10"},
+      {"type":"ALARM_VPN_DISCONNECT","p.vpn.profileid":"6ACC_6ACCB","timestamp":1541173167.7,"eid":"9"},
+      {"type":"ALARM_CUSTOMIZED_SECURITY","alarmTimestamp":1541173167,"alarm_type":"ALARM_CUSTOMIZED_SECURITY","aid":"234","if.type":"category","category":"","timestamp":1528548944.65,"p.device.mac":"00","p.category.id":"10f81a5e71cc","eid":"5","if.targetList":"true","matchCount":"1"},
+      {"type":"ALARM_LARGE_UPLOAD","alarm_type":"ALARM_LARGE_UPLOAD","aid":"321","if.type":"dns","if.target":"firewalla.zendesk.com","category":"","timestamp":1527164701.257,"p.dest.name":"*.firewalla.com","target_name":"*.firewalla.com","target_ip":"1.2.3.4","p.device.mac":"00","eid":"1","matchCount":"33"}
+    ];
+
+    exceptions = exceptions.map((r) => em.stripRule(r));
+    expect(exceptions[2].hasOwnProperty('alarmTimestamp')).to.be.false;
+    expect(exceptions[2].hasOwnProperty('category')).to.be.false;
+    expect(exceptions[3].hasOwnProperty('if.type')).to.be.false;
+
+  });
+});

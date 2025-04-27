@@ -36,8 +36,8 @@ const DNSManager = require('../net2/DNSManager.js');
 const dnsManager = new DNSManager('info');
 
 const getPreferredName = require('../util/util.js').getPreferredName
-
 const delay = require('../util/util.js').delay;
+const {stripObject} = require('../util/util.js');
 
 const Policy = require('./Policy.js');
 
@@ -1252,7 +1252,7 @@ module.exports = class {
     let proto = Alarm.mapping[json.type];
     if (proto) {
       let obj = Object.assign(Object.create(proto), json);
-      obj.message = obj.localizedMessage(); // append locaized message info
+      obj.message = obj.localizedMessage(); // append localized message info
       if (obj["p.flow"]) {
         delete obj["p.flow"];
       }
@@ -2499,5 +2499,12 @@ module.exports = class {
     }
     log.info("Exception object:", e);
     return e;
+  }
+
+  stripAlarm(alarm) {
+    const omitFields = [
+      "state", "applyTimestamp", "p.cloud.decision",
+    ];
+    return stripObject(alarm, omitFields, []);
   }
 }

@@ -18,7 +18,7 @@
 let chai = require('chai');
 let expect = chai.expect;
 
-const { versionCompare, difference } = require('../util/util.js');
+const { versionCompare, difference, stripObject } = require('../util/util.js');
 
 describe('Test difference', () => {
     it('should compare the different keys', () => {
@@ -58,5 +58,12 @@ describe('Test versionCompare', () => {
         expect(versionCompare("1.62 (13)", "1.62"), false);
         expect(versionCompare("1.62", "1.62"), false);
         expect(versionCompare("1.62.10", "1.62.4"), false);
+    });
+});
+
+describe('test utils', () => {
+    it('should strip object', () => {
+        let a = {"a":"","b":0,"c":null,"d":"","f":1};
+        expect(Object.keys(stripObject(a, ["e", "f"], ["a", "b", "c"]))).to.be.eql(["b", "d"]);
     });
 });

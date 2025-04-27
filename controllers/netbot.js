@@ -1297,24 +1297,32 @@ class netBot extends ControllerBot {
         return { timezone: sysManager.timezone }
       case "alarms": {
         const alarms = await am2.loadActiveAlarmsAsync(value)
-        return { alarms: alarms, count: alarms.length }
+        return { alarms: alarms.map((x) => am2.stripAlarm(x)), count: alarms.length }
       }
       case "alarmIDs":
         return am2.loadAlarmIDs();
-      case "loadAlarmsWithRange":
-        return am2.loadAlarmsWithRange(value);
+      case "loadAlarmsWithRange": {
+        let {activeAlarms, archivedAlarms} = await am2.loadAlarmsWithRange(value);
+        if (activeAlarms) {
+          activeAlarms = activeAlarms.map((x) => am2.stripAlarm(x));
+        }
+        if (archivedAlarms) {
+          archivedAlarms = archivedAlarms.map((x) => am2.stripAlarm(x));
+        }
+        return { activeAlarms: activeAlarms, archivedAlarms: archivedAlarms }
+      }
       case "fetchNewAlarms": {
         const sinceTS = value.sinceTS;
         const timeout = value.timeout || 60;
         const alarms = await am2.fetchNewAlarms(sinceTS, { timeout });
-        return { alarms: alarms, count: alarms.length }
+        return { alarms: alarms.map((x) => am2.stripAlarm(x)), count: alarms.length }
       }
       case "alarm":
-        return am2.getAlarm(value.alarmID)
+        return am2.stripAlarm(am2.getAlarm(value.alarmID))
       case "alarmDetail": {
         const alarmID = value.alarmID;
         if (alarmID) {
-          const basic = await am2.getAlarm(alarmID);
+          const basic = am2.stripAlarm(await am2.getAlarm(alarmID));
           const detail = (await am2.getAlarmDetail(alarmID)) || {};
           return Object.assign({}, basic, detail)
         } else {
@@ -1360,13 +1368,13 @@ class netBot extends ControllerBot {
           limit: limit
         })
         return {
-          alarms: archivedAlarms,
+          alarms: archivedAlarms.map((x) => am2.stripAlarm(x)), // TODO
           count: archivedAlarms.length
         }
       }
       case "exceptions": {
         const exceptions = await em.loadExceptionsAsync()
-        return { exceptions: exceptions, count: exceptions.length }
+        return { exceptions: exceptions.map((x) => em.stripRule(x)), count: exceptions.length }
       }
       case "frpConfig": {
         let _config = frp.getConfig()
@@ -1497,7 +1505,7 @@ class netBot extends ControllerBot {
             list[i].alarmTimestamp = alarms[i].timestamp;
           }
         }
-        return { policies: list }
+        return { policies: list.map((x) => pm2.stripRule(x)) }
       }
       case "hosts": {
         const json = {};

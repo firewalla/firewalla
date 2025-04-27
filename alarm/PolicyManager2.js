@@ -75,7 +75,7 @@ const tagManager = require('../net2/TagManager')
 const ipset = require('../net2/Ipset.js');
 const _ = require('lodash');
 
-const { delay, isSameOrSubDomain, batchKeyExists } = require('../util/util.js');
+const { delay, isSameOrSubDomain, batchKeyExists, stripObject } = require('../util/util.js');
 const validator = require('validator');
 const iptool = require('ip');
 const util = require('util');
@@ -3485,6 +3485,12 @@ class PolicyManager2 {
         log.warn(`Failed to clear first bit of connmark on existing IPv6 connections`, err.message);
       });
     }, 5000);
+  }
+
+  stripRule(rule) {
+    const omitFields = ["if.target", "if.type"];
+    const filterFields = ["protocol", "notes", "useBf", "category", "idleTs"];
+    return stripObject(rule, omitFields, filterFields);
   }
 }
 

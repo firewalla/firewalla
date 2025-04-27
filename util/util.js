@@ -364,6 +364,18 @@ async function withTimeout(promise, timeout) {
   ]);
 }
 
+function stripObject(obj, omitFields=[], filterFields=[]) {
+  if ( !_.isObject(obj) || !_.isArray(omitFields) || !_.isArray(filterFields)) {
+    return obj;
+  }
+  if (omitFields.length == 0 && filterFields.length == 0) {
+    return obj;
+  }
+  return _.omitBy(obj, (v, k) => {
+    return omitFields.includes(k) || (filterFields.includes(k) && (v === "" || v === null || v === undefined));
+  });
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -384,6 +396,7 @@ module.exports = {
   fileTouch,
   fileRemove,
   batchKeyExists,
+  stripObject,
   waitFor,
   withTimeout,
 };

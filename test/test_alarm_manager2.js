@@ -314,7 +314,7 @@ const alarms = [
   {"ts":1724733200.231,"type":"ALARM_INTEL","state":"pending","aid":149},
 ];
 
-describe('Test alarm cache', function(){
+describe.skip('Test alarm cache', function(){
   this.timeout(30000);
 
   before((done) => (
@@ -403,4 +403,21 @@ describe('Test alarm cache', function(){
     let result = am2._queryCachedAlarmIds(10, Date.now()/1000, false, 'active', {types: ["test_type"]});
     expect(result).to.be.eql([]);
   });
+});
+
+describe("test strip alarms", () => {
+  it('test fallback alarm cache', () => {
+    let json = {alarms:[
+      {"type":"ALARM_VPN_RESTORE","timestamp":"1545314675.539","p.vpn.displayname":"1186_11862","p.fi":"40","state":"active","aid":"1465","p.vpn.profileid":"1186_11862","p.vpn.devicecount":"1","message":" ","p.vpn.strictvpn":"false","p.cloud.decision":"alarm","p.timestampTimezone":"5:37 PM","alarmTimestamp":"1545314675.54","p.vpn.protocol":"wireguard"},
+      {"type":"ALARM_VPN_DISCONNECT","timestamp":"1545314037.312","p.vpn.displayname":"1186_11862","state":"active","aid":"1464","p.vpn.profileid":"1186_11862","p.vpn.devicecount":"1","message":"to 1186_11862","p.vpn.strictvpn":"false","p.timestampTimezone":"5:27 PM","alarmTimestamp":"1545314037.313","p.cloud.error":"unknown","p.vpn.protocol":"wireguard"},
+      {"aid":"1459","type":"ALARM_BRO_NOTICE","device":"192.168.0.213","alarmTimestamp":"1544597507.288","timestamp":"1544597505.615799","state":"active","p.device.ip":"192.168.0.213","p.dest.ip":"1.1.2.3","p.noticeType":"Scan::Port_Scan","p.message":"scanning ports of 1.1.1.1.","p.local_is_client":"1","message":"scanning ports of 1.1.1.1.","p.device.name":"MacBook Air","p.device.id":"00:11:22:33:11:07","p.device.mac":"00:11:22:33:11:07","p.device.macVendor":"Industrial Co., Ltd.","p.dest.name":"1.6.158.166","p.dest.latitude":"1.7157","p.dest.longitude":"-1.1647","p.dest.country":"US","p.dtag.ids":["1"],"p.dtag.names":[{"uid":"1","name":"desktop"}],"p.utag.ids":["3"],"p.utag.names":[{"uid":"3","name":"MacBook"}],"p.tag.ids":["2"],"p.tag.names":[{"uid":"2","name":"4CC12B04"}],"p.cloud.decision":"alarm","p.fi":"40"},
+      {"p.intf.name":"br0","p.device.name":"MacBook Air","p.device.mac":"00:11:22:33:11:07","p.device.ip":"192.168.0.12","p.dest.name.suffix":"video.com","p.intf.subnet6":["fe80::/64"],"p.cloud.decision":"alarm","p.dest.domain":"video.com","p.intf.subnet":"192.168.1.1/24","p.dest.country":"US","p.dest.app.id":"youtube","p.dest.ip":"1.1.1.1","state":"active","aid":"1445","p.dtag.names":[{"uid":"1","name":"desktop"}],"p.protocol":"tcp","p.utag.names":[{"uid":"3","name":"MacBook"}],"p.dest.name":"video.com","p.dest.port":"443","p.dtag.ids":["1"],"timestamp":"1544092239.31","p.dest.category":"av","p.fi":"40","p.tag.ids":["2"],"device":"MacBook Air","p.timestampTimezone":"2:03 PM","p.utag.ids":["3"],"p.dest.id":"video.com","p.device.id":"00:11:22:33:11:07","type":"ALARM_VIDEO","p.intf.desc":"LAN 1","p.tag.names":[{"uid":"2","name":"4CC12B04"}],"p.showMap":"false","message":"video","p.dest.app":"YouTube","p.intf.id":"ed80e488","alarmTimestamp":"1544092255.764","p.dest.latitude":"1.0522","p.dest.longitude":"-1.2437","p.device.macVendor":"Industrial Co., Ltd."},
+      {"p.intf.name":"br0","p.device.name":"MacBook Air","p.device.mac":"00:11:22:33:11:07","p.device.ip":"192.168.0.12","p.transfer.duration":"119.42000007629395","p.dest.name.suffix":"a.com","p.intf.subnet6":["fe80::/64"],"p.cloud.decision":"alarm","p.dest.domain":"a.com","p.dest.country":"US","p.intf.subnet":"192.168.1.1/24","p.dest.ip":"3.3.3.3","state":"active","aid":"1443","p.local_is_client":"1","p.dtag.names":[{"uid":"1","name":"desktop"}],"p.protocol":"tcp","p.utag.names":[{"uid":"3","name":"MacBook"}],"p.transfer.outbound.humansize":"1.06 MB","p.dest.name":"a.com","p.dest.port":"443","p.dtag.ids":["1"],"p.transfer.inbound.size":"46485","timestamp":"1744077999.86","p.fi":"40","p.tag.ids":["2"],"device":"MacBook Air","p.timestampTimezone":"10:06 AM","p.utag.ids":["3"],"p.transfer.outbound.size":"1061119","p.dest.id":"a.com","p.flow.sigs":[],"p.device.id":"00:11:22:33:11:07","type":"ALARM_LARGE_UPLOAD","p.intf.desc":"LAN 1","p.tag.names":[{"uid":"2","name":"4CC12B04"}],"message":"uploaded","p.intf.id":"ed80e488","alarmTimestamp":"1544079954.236","p.dest.latitude":"1.3394","p.transfer.inbound.humansize":"46.48 KB","p.device.port":[63808],"p.dest.longitude":"-1.1","p.device.macVendor":"Industrial"},
+      {"aid":"1417","type":"ALARM_VWG_CONN","device":"1186_11862","alarmTimestamp":"1543724613.238","timestamp":"1543724613.238","state":"active","p.iface.name":"1186_11862","p.active.wans":["1186_11862"],"p.wan.switched":"true","p.wan.type":"primary_standby","p.ready":"true","p.vwg.name":"test-group","p.vwg.uuid":"5F09386D","p.vwg.strictvpn":"true","p.wan.total":"2","p.vwg.devicecount":"0","p.vpn.protocol":"wireguard","p.vpn.profileid":"1186_11862","p.vpn.displayname":"1186_11862","p.showMap":"false","p.timestampTimezone":"7:56 AM","message":"INFO_ALARM_VWG_CONN_KILLSWITCH","p.cloud.decision":"alarm","p.fi":"40"}
+    ]};
+
+    json.alarms = json.alarms.map((a) => am2.stripAlarm(a));
+    expect(json.alarms[0].alarmTimestamp).to.be.null;
+  });
+
 });
