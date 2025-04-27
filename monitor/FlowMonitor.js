@@ -708,9 +708,6 @@ module.exports = class FlowMonitor {
       alarm[config.alarmIdKey] = flow[config.flowKey];
     }
 
-    // ideally each destination should have a unique ID, now just use hostname as a workaround
-    // so destionationName, destionationHostname, destionationID are the same for now
-
     alarmManager2.enqueueAlarm(alarm, true, profile[type]);
   }
 
