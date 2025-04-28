@@ -1,9 +1,20 @@
 #!/bin/bash -
 
 /home/pi/firewalla/scripts/fire-stop
-redis-cli KEYS "policy:*" | xargs redis-cli DEL
+redis-cli KEYS "policy:*" | while IFS= read -r line; do
+  if [[ "$line" =~ policy:[0-9]+ ]]; then
+    redis-cli DEL "$line"
+  elif [[ "$line" == policy:mac:* || "$line" == policy:tag:* || "$line" == policy:network:* || "$line" == policy:wg_peer:* || "$line" == "policy:system" ]]; then
+    redis-cli HDEL "$line" adblock isolation
+  elif [[ "$line" == "policy:id" || "$line" == "policy:state" ]]; then
+    redis-cli DEL "$line"
+  else
+    # do nothing
+  fi
+done
 redis-cli DEL "policy_active"
+redis-cli DEL "policy_qos_handler_map"
 redis-cli HDEL "sys:config" "default_c_init_done"
 sync
 logger "REBOOT: User Reset Policy"
-/home/pi/firewalla/scripts/fire-reboot-normal
+/home/pi/firewalla/scripts/main-run

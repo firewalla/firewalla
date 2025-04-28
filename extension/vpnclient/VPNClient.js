@@ -594,7 +594,7 @@ class VPNClient {
 
     sem.on("VPNClient:Started", async (event) => {
       const profileId = event.profileId;
-      if (profileId === this.profileId);
+      if (profileId === this.profileId)
         this._started = true;
     })
   }
