@@ -137,6 +137,7 @@ class PolicyManager2 {
       this.ipsetCacheUpdateTime = null;
       this.sortedActiveRulesCache = null;
       this.sortedRoutesCache = null;
+      this.allRulesInitialized = false;
     }
     return instance;
   }
@@ -1000,6 +1001,7 @@ class PolicyManager2 {
     await Promise.all(initialOtherEnforcement);
 
     log.forceInfo(">>>>>==== All policy rules are enforced ====<<<<<", otherRules.length);
+    this.allRulesInitialized = true;
 
     await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'done')
     const end = Date.now();
@@ -1013,6 +1015,9 @@ class PolicyManager2 {
     sem.emitLocalEvent(event)
   }
 
+  isAllRulesInitialized() {
+    return this.allRulesInitialized;
+  }
 
   parseDevicePortRule(target) {
     let matches = target.match(/(.*):(\d+):(tcp|udp)/)
@@ -1328,11 +1333,19 @@ class PolicyManager2 {
     }
 
     // for now, targets is only used for multiple category block/app time limit
-    let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, ipttl, resolver, flowIsolation, dscpClass, packetDelay, lossRate } = policy;
+    let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, ipttl, resolver, flowIsolation, dscpClass} = policy;
+    let increaseLatency = null;
+    let dropPacketRate = null;
+    if (policy.disturbMethod) {
+      increaseLatency = policy.disturbMethod.increaseLatency;
+      dropPacketRate = policy.disturbMethod.dropPacketRate;
+      rateLimit = policy.disturbMethod.rateLimit;
+    }
 
     if (action === "app_block")
       action = "block"; // treat app_block same as block, but using a different term for version compatibility, otherwise, block rule will always take effect in previous versions
-    else if (action === "app_disturb")
+    
+    if (policy.needPolicyDisturb())
       action = "qos";  // treat app_disturb same as qos
 
     if (!validActions.includes(action)) {
@@ -1722,7 +1735,7 @@ class PolicyManager2 {
       action, direction, createOrDestroy: "create", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
       wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
-      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, packetDelay, lossRate
+      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
     }
     if (tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets)) {
       let tlsInstalled = true;
@@ -1774,7 +1787,7 @@ class PolicyManager2 {
 
   async __applyRules(options) {
     if (options.action === "qos" && options.qdisc === "netem") {
-      // for app_disturb action, traffic direction is not specified, we handle both upload and download here.
+      // for app disturb action, traffic direction is not specified, we handle both upload and download here.
       for (const direction of ["upload", "download"]) {
         options.trafficDirection = direction;
         await this._applyRules(options);
@@ -1862,11 +1875,20 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, resolver, flowIsolation, dscpClass, packetDelay, lossRate } = policy;
+    let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, resolver, flowIsolation, dscpClass} = policy;
+
+    let increaseLatency = null;
+    let dropPacketRate = null;
+    if (policy.disturbMethod) {
+      increaseLatency = policy.disturbMethod.increaseLatency;
+      dropPacketRate = policy.disturbMethod.dropPacketRate;
+      rateLimit = policy.disturbMethod.rateLimit;
+    }
 
     if (action === "app_block")
       action = "block";
-    else if (action === "app_disturb")
+    
+    if (policy.needPolicyDisturb())
       action = "qos";  // treat app_disturb same as qos
 
     if (!validActions.includes(action)) {
@@ -2206,7 +2228,7 @@ class PolicyManager2 {
       action, direction, createOrDestroy: "destroy", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
       wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
-      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, packetDelay, lossRate
+      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
     }
     if (!_.isEmpty(remoteSets)) {
       for (const setPair of remoteSets) {

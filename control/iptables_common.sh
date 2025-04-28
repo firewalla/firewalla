@@ -704,8 +704,24 @@ cat << EOF
 # do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already established before
 -A FW_FORWARD -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_QOS_PROBABILITY -j RETURN
 
+# qos chain for App Disturb feature which is not controlled by FW_QOS_SWITCH
+-N FW_DISTURB_QOS
+-A FW_FORWARD -j FW_DISTURB_QOS
+-N FW_DISTURB_QOS_GLOBAL
+-A FW_DISTURB_QOS -j FW_DISTURB_QOS_GLOBAL
+-N FW_DISTURB_QOS_NET_G
+-A FW_DISTURB_QOS -j FW_DISTURB_QOS_NET_G
+-N FW_DISTURB_QOS_NET
+-A FW_DISTURB_QOS -j FW_DISTURB_QOS_NET
+-N FW_DISTURB_QOS_DEV_G
+-A FW_DISTURB_QOS -j FW_DISTURB_QOS_DEV_G
+-N FW_DISTURB_QOS_DEV
+-A FW_DISTURB_QOS -j FW_DISTURB_QOS_DEV
+-A FW_DISTURB_QOS -m connmark ! --mark 0x0/0x40000000 -j RETURN
+
+
 -N FW_QOS_SWITCH
--A FW_FORWARD -j FW_QOS_SWITCH
+-A FW_DISTURB_QOS -j FW_QOS_SWITCH
 # bit 16 - 29 in connmark indicates if packet should be mirrored to ifb device in tc filter.
 # the packet will be mirrored to ifb only if these bits are non-zero
 -A FW_QOS_SWITCH -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x3fff0000

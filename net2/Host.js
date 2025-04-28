@@ -103,7 +103,6 @@ class Host extends Monitorable {
         messageBus.subscribeOnce(this.constructor.getUpdateCh(), this.getGUID(), this.onUpdate.bind(this))
 
         await this.applyPolicy()
-        await this.identifyDevice()
       })().catch(err => {
         log.error(`Error initializing Host ${this.o.mac}`, err);
       })
@@ -729,8 +728,7 @@ class Host extends Monitorable {
     this.updateHostDataTask = setTimeout(async () => {
       try {
         // update tracking ipset
-        const macEntry = await hostTool.getMACEntry(this.o.mac);
-        const ipv4Addr = macEntry && macEntry.ipv4Addr;
+        const ipv4Addr = this.o.ipv4Addr;
         const tags = [];
         for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
           const typeTags = await this.getTags(type) || [];
@@ -750,8 +748,7 @@ class Host extends Monitorable {
             this.ipCache.set(ipv4Addr, 1);
           }
         }
-        let ipv6Addr = null;
-        ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
+        const ipv6Addr = this.o.ipv6Addr
         if (Array.isArray(ipv6Addr)) {
           for (const addr of ipv6Addr) {
             const recentlyAdded = this.ipCache.peek(addr);
@@ -766,6 +763,8 @@ class Host extends Monitorable {
             }
           }
         }
+
+        await this.identifyDevice(false)
       } catch (err) {
         log.error('Error update host data', err)
       }

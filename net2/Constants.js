@@ -55,6 +55,8 @@ module.exports = {
   REDIS_KEY_NTP_SERVER_STATUS: "sys:ntp:status", // updated only when ntp_redirect is enabled
   REDIS_KEY_VPN_WG_PEER: 'vpn:wg:peer:', // vpn:wg:peer:{intf}:{pubkey}
   REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG: "app_time_usage_cloud_config",
+  REDIS_KEY_APP_TIME_USAGE_CONFIG: "app_time_usage_config",
+  REDIS_KEY_INTERNET_TIME_USAGE_CONFIG: "internet_time_usage_config",
   REDIS_KEY_HISTORY_MSG_PREFIX: "_hx:msg:",
   REDIS_KEY_ALARM_CACHED: "_alarm:cached", // 0 to disable alarm cache, default on
   REDIS_KEY_PLUGIN_RUNENV: '_plugin:runenv',
