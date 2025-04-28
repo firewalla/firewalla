@@ -39,6 +39,7 @@ const AsyncLock = require('../../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const platform = PlatformLoader.getPlatform()
 const envCreatedMap = {};
+const INTERNET_ON_OFF_THRESHOLD = 2;
 
 const instances = {};
 
@@ -51,6 +52,8 @@ class VPNClient {
       instances[profileId] = this;
       this.profileId = profileId;
       if (f.isMain()) {
+        this.internetFailureCount = 0;
+        this.internetSuccessCount = 0;
         this.hookLinkStateChange();
         this.hookSettingsChange();
 
@@ -92,7 +95,7 @@ class VPNClient {
   }
 
   static async getVPNProfilesForInit() {
-    const types = ["openvpn", "wireguard", "ssl", "zerotier", "nebula", "trojan", "clash", "hysteria", "ipsec", "ts"];
+    const types = ["openvpn", "wireguard", "ssl", "zerotier", "nebula", "trojan", "clash", "hysteria", "gost", "ipsec", "ts"];
     const results = {}
     await Promise.all(types.map(async (type) => {
       const c = this.getClass(type);
@@ -163,6 +166,11 @@ class VPNClient {
       }
       case "hysteria": {
         const c = require('./docker/HysteriaDockerClient.js');
+        return c;
+        break;
+      }
+      case "gost": {
+        const c = require('./docker/GostDockerClient.js');
         return c;
         break;
       }
@@ -303,9 +311,16 @@ class VPNClient {
     const localIP6 = await this._getLocalIP6();
     const intf = this.getInterfaceName();
     const snatNeeded = await this.isSNATNeeded();
+    if (settings.c2sSNATDisabled) {
+      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -I FW_VC_SNAT -m set --match-set ${VPNClient.getNetIpsetName(this.profileId, 4)}4 dst -j RETURN`)).catch((err) => {});
+      await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -I FW_VC_SNAT -m set --match-set ${VPNClient.getNetIpsetName(this.profileId, 6)}6 dst -j RETURN`)).catch((err) => {});
+    } else {
+      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_VC_SNAT -m set --match-set ${VPNClient.getNetIpsetName(this.profileId, 4)}4 dst -j RETURN`)).catch((err) => {});
+      await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -D FW_VC_SNAT -m set --match-set ${VPNClient.getNetIpsetName(this.profileId, 6)}6 dst -j RETURN`)).catch((err) => {});
+    }
     if (snatNeeded) {
-      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
-      await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
+      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_VC_SNAT -o ${intf} -j MASQUERADE`)).catch((err) => {});
+      await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_VC_SNAT -o ${intf} -j MASQUERADE`)).catch((err) => {});
     }
     log.verbose(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
     // remove routes from main table which is inserted by VPN client automatically,
@@ -421,6 +436,9 @@ class VPNClient {
 
   async _checkConnectivity(force = false) {
     if (!this._started || this._restarting || (this._lastStartTime && Date.now() - this._lastStartTime < 60000 && !force)) {
+      if (!this._started) {
+        await this._setCachedState(false);
+      }
       return;
     }
     let result = await this._isLinkUp();
@@ -429,16 +447,34 @@ class VPNClient {
     } else {
       log.debug(`VPN client ${this.profileId} underlying link is up.`);
       if (this.settings.overrideDefaultRoute) {
-        result = await this._isInternetAvailable();
-        if (!result)
+        const internetAvailability = await this._isInternetAvailable();
+        if (!internetAvailability) {
           log.error(`Internet is unavailable via VPN client ${this.profileId}`);
-        else
+          this.internetFailureCount++;
+          this.internetSuccessCount = 0;
+        } else {
           log.debug(`Internet is available via VPN client ${this.profileId}`);
+          this.internetFailureCount = 0;
+          this.internetSuccessCount++;
+        }
+        // update result if consecutive internet connectivity tests return same results
+        if (this.internetSuccessCount >= INTERNET_ON_OFF_THRESHOLD)
+          result = true;
+        else {
+          if (this.internetFailureCount >= INTERNET_ON_OFF_THRESHOLD)
+            result = false;
+          else // internet success/failure count is within switching threshold, pending another consecutive result to decide
+            result = null;
+        }
       }
     }
     if (this._restarting)
       return;
+    // result is null means internet connectivity is still pending another consecutive result to decide, do not emit event in this round
+    if (result === null)
+      return;
     if (result) {
+      await this._setCachedState(true);
       sem.emitEvent({
         type: "link_established",
         profileId: this.profileId,
@@ -446,6 +482,7 @@ class VPNClient {
         suppressEventLogging: true,
       });
     } else {
+      await this._setCachedState(false);
       sem.emitEvent({
         type: "link_broken",
         profileId: this.profileId,
@@ -553,6 +590,12 @@ class VPNClient {
       const profileId = event.profileId;
       if (profileId === this.profileId)
         this._started = false;
+    })
+
+    sem.on("VPNClient:Started", async (event) => {
+      const profileId = event.profileId;
+      if (profileId === this.profileId);
+        this._started = true;
     })
   }
 
@@ -711,6 +754,7 @@ class VPNClient {
       serverSubnets: [],
       overrideDefaultRoute: true,
       routeDNS: true,
+      c2sSNATDisabled: false,
       strictVPN: false
     }; // default settings
     const mergedSettings = Object.assign({}, defaultSettings, settings);
@@ -729,6 +773,7 @@ class VPNClient {
     let settings = {
       serverSubnets: [],
       overrideDefaultRoute: true,
+      c2sSNATDisabled: false,
       routeDNS: true,
       strictVPN: false
     }; // default settings
@@ -888,6 +933,7 @@ class VPNClient {
           const isUp = await this._isLinkUp();
           if (isUp) {
             clearInterval(establishmentTask);
+            await this._setCachedState(true);
             this._scheduleRefreshRoutes();
             await this.addRemoteEndpointRoutes().catch((err) => {});
             if (f.isMain()) {
@@ -898,6 +944,14 @@ class VPNClient {
                 });
               }, 20000);
             }
+            if (!f.isMain()) {
+              sem.emitEvent({
+                type: "VPNClient:Started",
+                profileId: this.profileId,
+                toProcess: "FireMain"
+              });
+            }
+            log.info(`Time elapsed to start ${this.constructor.getProtocol()} client ${this.profileId}: ${(Date.now() - this._lastStartTime) / 1000}`);
             resolve({result: true});
           } else {
             const now = Date.now();
@@ -926,8 +980,12 @@ class VPNClient {
     await VPNClient.ensureCreateEnforcementEnv(this.profileId);
     await vpnClientEnforcer.flushVPNClientRoutes(intf);
     await vpnClientEnforcer.removeVPNClientIPRules(intf);
-    await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
-    await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -D FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
+
+    await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_VC_SNAT -m set --match-set ${VPNClient.getNetIpsetName(this.profileId, 4)}4 dst -j RETURN`)).catch((err) => {});
+    await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -D FW_VC_SNAT -m set --match-set ${VPNClient.getNetIpsetName(this.profileId, 6)}6 dst -j RETURN`)).catch((err) => {});
+
+    await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_VC_SNAT -o ${intf} -j MASQUERADE`)).catch((err) => {});
+    await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -D FW_VC_SNAT -o ${intf} -j MASQUERADE`)).catch((err) => {});
     await this.loadSettings();
     const dnsServers = await this._getDNSServers() || [];
     if (dnsServers.length > 0) {
@@ -949,6 +1007,7 @@ class VPNClient {
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
     dnsmasq.scheduleRestartDNSService();
+    await this._setCachedState(false);
     
     if (!f.isMain()) {
       sem.emitEvent({
@@ -968,7 +1027,15 @@ class VPNClient {
   }
 
   async status() {
-    return this._isLinkUp();
+    // cached state is usually set by checkConnectivity in firemain process
+    let status = await this._getCachedState();
+    // if not set, it is not managed by firemain, and fireapi will populate the cached state
+    if (status === null) {
+      status = await this._isLinkUp();
+      await this._setCachedState(status);
+      return status;
+    } else
+      return status;
   }
 
   async getStatistics() {
@@ -986,6 +1053,7 @@ class VPNClient {
     await vpnClientEnforcer.destroyRtId(this.getInterfaceName());
     await fs.unlinkAsync(this._getSettingsPath()).catch((err) => {});
     await fs.unlinkAsync(this._getJSONConfigPath()).catch((err) => {});
+    await this._deleteCachedState();
     delete instances[this.profileId];
   }
 
@@ -1258,6 +1326,31 @@ class VPNClient {
 
   async getLatestSessionLog() {
     return null;
+  }
+
+  static getStateCacheKey(profileId) {
+    return `VC:${profileId}:connState`;
+  }
+
+  async _setCachedState(state) {
+    await rclient.setAsync(VPNClient.getStateCacheKey(this.profileId), state);
+    await rclient.expireAsync(VPNClient.getStateCacheKey(this.profileId), 86400 * 7);
+  }
+
+  async _getCachedState() {
+    const state = await rclient.getAsync(VPNClient.getStateCacheKey(this.profileId));
+    switch (state) {
+      case "true":
+        return true;
+      case "false":
+        return false;
+      default:
+        return null;
+    }
+  }
+
+  async _deleteCachedState() {
+    await rclient.delAsync(VPNClient.getStateCacheKey(this.profileId));
   }
 }
 

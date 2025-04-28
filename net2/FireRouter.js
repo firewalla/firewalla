@@ -1,4 +1,4 @@
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -35,6 +35,9 @@
 
 const log = require("./logger.js")(__filename);
 
+const layer2 = require('../util/Layer2.js');
+const Nmap = require('./Nmap.js');
+const nmap = new Nmap();
 const f = require('../net2/Firewalla.js');
 const SysTool = require('../net2/SysTool.js')
 const sysTool = new SysTool()
@@ -61,6 +64,8 @@ const AsyncLock = require('../vendor_lib/async-lock');
 const Constants = require("./Constants.js");
 const lock = new AsyncLock();
 const LOCK_INIT = "LOCK_INIT";
+
+const ERR_NCID_NOT_MATCH = "ERR_NCID_NOT_MATCH";
 
 // not exposing these methods/properties
 async function localGet(endpoint, retry = 5) {
@@ -196,6 +201,7 @@ async function generateNetworkInfo() {
     }
     let gateway = null;
     let gateway6 = null;
+    let gatewayMac
     let dns = null;
     let dns6 = null;
     let resolver = null;
@@ -230,6 +236,9 @@ async function generateNetworkInfo() {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
         gateway6 = intf.config.gateway6 || intf.state.gateway6;
+        if (!intfName.startsWith("pppoe")) {
+          gatewayMac = gateway && await layer2.getMACAsync(gateway) || gateway6 && await nmap.neighborSolicit(gateway6);
+        }
         break;
       }
       case "lan": {
@@ -273,6 +282,8 @@ async function generateNetworkInfo() {
       rt4_subnets: rt4Subnets.length > 0 ? rt4Subnets : null,
       rt6_subnets: rt6Subnets.length > 0 ? rt6Subnets : null
     }
+
+    if (gatewayMac) redisIntf.gatewayMac = gatewayMac
 
     if (intf.state && intf.state.wanConnState) {
       redisIntf.ready = intf.state.wanConnState.ready || false;
@@ -379,7 +390,6 @@ class FireRouter {
           // these two message types should cover all proactive and reactive network changes
           log.info("Network is changed, schedule reload from FireRouter ...");
           reloadNeeded = true;
-          this.pcapRestartNeeded = true;
           break;
         }
         default:
@@ -1055,6 +1065,12 @@ class FireRouter {
 
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
+      const errors = _.get(resp.body, "errors");
+      if (_.isArray(errors) && errors.includes("ncid not match")) {
+        const error = new Error("ncid not match");
+        error.errID = ERR_NCID_NOT_MATCH;
+        throw error;
+      }
       throw new Error("Error setting firerouter config: " + JSON.stringify(resp.body));
     }
 

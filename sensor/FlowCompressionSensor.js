@@ -30,7 +30,6 @@ const delay = require('../util/util.js').delay;
 const Queue = require('bee-queue');
 const { Readable } = require('stream');
 const SPLIT_STRING = "\n";
-const CronJob = require('cron').CronJob;
 const uuid = require('uuid');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const fc = require('../net2/config.js');
@@ -41,12 +40,14 @@ const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 class FlowCompressionSensor extends Sensor {
   constructor() {
     super()
+    this.refreshInterval = _.get(this.config, 'refreshInterval', 5) * 60 * 1000
     this.maxCount = (this.config && this.config.maxCount * platform.getCompresseCountMultiplier()) || 10000
     this.maxMem = (this.config && this.config.maxMem * platform.getCompresseMemMultiplier()) || 20 * 1024 * 1024
     this.lastestTsKey = "compressed:flows:lastest:ts"
     this.wanCompressedFlowsKey = "compressed:wanblock:flows"
     this.buildingKey = "compressed:building"
-    this.step = 60 * 60 // one hour
+    this.stepKey = "compressed:step:ts"
+    this.step = (this.config.step || 60) * 60
     this.maxInterval = 24 * 60 * 60 // 24 hours
     this.flowsType = ['normal', 'wanBlock']
     this.queueMap = {};
@@ -221,21 +222,23 @@ class FlowCompressionSensor extends Sensor {
       this.setupStreams(type);
       this.dumpingMap[type] = false;
     })
-    this.cornJob && this.cornJob.stop();
-    this.cornJob = new CronJob("0 0 * * * *", async () => {
-      // dump flow stream to redis hourly
-      // losing data will be re-load by build when service restart
-      const now = new Date() / 1000;
-      const nowTickTs = now - now % this.step;
-      await this.dumpStreamFlows(nowTickTs, "normal");
-      await this.checkAndCleanMem();
-    }, null, true)
     await rclient.setAsync(this.buildingKey, 1)
     while (!NetworkProfileManager.isInitialized())
       await delay(1000);
-    await Promise.all([this.build(now), this.buildWanBlockCompressedFlows()])
+    await this.build(now)
+    await this.buildWanBlockCompressedFlows()
     await rclient.setAsync(this.buildingKey, 0)
     log.info("Flows compression building done");
+  }
+
+  async job() {
+    if (!this.featureOn) return
+
+    const now = new Date() / 1000;
+    const nowTickTs = now - now % this.step;
+    await this.dumpStreamFlows(nowTickTs, "normal");
+    await this.dumpStreamFlows(nowTickTs, "wanBlock");
+    await this.checkAndCleanMem();
   }
 
   async globalOff() {
@@ -265,6 +268,7 @@ class FlowCompressionSensor extends Sensor {
       const mem = Number(await rclient.memoryAsync("usage", key) || 0)
       compressedMem += mem
       if (compressedMem > this.maxMem) { // accumulate memory size from the latest
+        log.warn(`Memory cap ${this.maxMem} exceeded, removing keys earlier than ${key} ...`)
         delFlag = true;
         await rclient.unlinkAsync(key);
       }
@@ -337,11 +341,9 @@ class FlowCompressionSensor extends Sensor {
       const { begin, end } = await this.getBuildingWindow(now);
       if (begin == end) return
       log.info(`Going to compress flows between ${new Date(begin * 1000)} - ${new Date(end * 1000)}`)
-      for (let i = 0; i < (end - begin) / this.step; i++) {
+      for (let ts = begin; ts < end; ts += this.step) {
         if (!this.featureOn) break;
-        const beginTs = begin + this.step * i
-        const endTs = begin + this.step * (i + 1)
-        await this.loadFlows(beginTs, endTs)
+        await this.loadFlows(ts, ts + this.step)
       }
       await this.checkAndCleanMem()
       log.info(`Normal compressed flows build complted, cost ${(new Date() / 1000 - now).toFixed(2)}`)
@@ -384,84 +386,70 @@ class FlowCompressionSensor extends Sensor {
     this.wanBlockBuilding = true;
     log.info(`Going to compress wan block flows`)
     let completed = false
-    let allFlows = []
     const now = Date.now() / 1000
     const options = {
       ts: now,
       audit: true,
-      count: 2000,
-      macs: sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)
+      count: 300,
+      macs: sysManager.getWanInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)
     }
     await rclient.unlinkAsync(this.wanCompressedFlowsKey);
     while (!completed && this.featureOn) {
       try {
         const flows = await flowTool.prepareRecentFlows({}, JSON.parse(JSON.stringify(options))) || []
+        if (!flows.length) break
+        const endTs = flows[flows.length - 1].ts;
+
         if (flows.length < options.count) {
           completed = true
         } else {
-          options.ts = flows[flows.length - 1].ts
+          options.ts = endTs
         }
-        allFlows = allFlows.concat(flows)
-        if (allFlows.length >= this.maxCount) {
-          // compress and dump flows to redis if it exceed count 
-          // big array of allFlows might cause oom
-          const ts = allFlows[allFlows.length - 1].ts;
-          await this.appendAndSave(ts, await this.compress(allFlows), 'wanBlock')
-          allFlows = [];
-        }
+        await this.appendAndSave(endTs, await this.compress(flows), 'wanBlock')
       } catch (e) {
         log.error(`Load flows error`, e)
         completed = true
       }
-    }
-    if (allFlows.length > 0) {
-      const ts = allFlows[allFlows.length - 1].ts;
-      await this.appendAndSave(ts, await this.compress(allFlows), 'wanBlock')
     }
     log.info(`Wanblock compressed flows build complted, cost ${(new Date() / 1000 - now).toFixed(2)}`)
     this.wanBlockBuilding = false;
   }
 
   async loadFlows(begin, end) {
-    log.info(`Going to load flows between ${new Date(begin * 1000)} - ${new Date(end * 1000)}`)
+    log.verbose(`Going to load flows between ${new Date(begin * 1000)} - ${new Date(end * 1000)}`)
     // clean legacy data generated by api caller
     await this.clean(end)
     let completed = false
     const options = {
+      exclude: [ { device: sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`) } ],
       begin: begin,
       end: end,
+      regular: true,
       audit: true,
-      localFlow: true,
-      count: 2000,
+      local: true,
+      localAudit: true,
+      count: 300,
       asc: true
     }
-    let allFlows = []
-    while (!completed && this.featureOn) {
+    while (!completed) {
+      if (!this.featureOn) {
+        log.warn(this.featureName, 'disabled, stop building')
+      }
       try {
         const flows = await flowTool.prepareRecentFlows({}, JSON.parse(JSON.stringify(options))) || []
+        if (!flows.length) break
+        const endTs = flows[flows.length - 1].ts;
+
         if (flows.length < options.count) {
           completed = true
         } else {
-          options.begin = flows[flows.length - 1].ts
+          options.begin = endTs
         }
-        allFlows = allFlows.concat(flows.filter(f => {
-          return f && f.ltype != 'audit' && f.device && !f.device.startsWith(Constants.NS_INTERFACE + ':')
-        }))
-        if (allFlows.length >= this.maxCount) {
-          // compress and dump flows to redis if it exceed count 
-          // big array of allFlows might cause oom
-          const ts = allFlows[allFlows.length - 1].ts;
-          await this.appendAndSave(ts, await this.compress(allFlows))
-          allFlows = [];
-        }
+        await this.appendAndSave(endTs, await this.compress(flows))
       } catch (e) {
         log.error(`Load flows error`, e)
         completed = true
       }
-    }
-    if (allFlows.length > 0) {
-      const ts = allFlows[allFlows.length - 1].ts;
-      await this.appendAndSave(ts, await this.compress(allFlows))
     }
   }
   async compress(flows) {
@@ -473,14 +461,13 @@ class FlowCompressionSensor extends Sensor {
   }
 
   async getCompreesedFlowsKey() {
-    const compressedFlowsKeys = await rclient.scanResults(this.getKey("*"), 1000) || []
-    return compressedFlowsKeys.filter(key => key != this.lastestTsKey).sort((a, b) => {
-      const ts1 = a.split(":")[2];
-      const ts2 = b.split(":")[2];
-      return ts1 > ts2 ? -1 : 1
-    })
+    const lastTs = Math.ceil(Date.now() / 1000 / this.step) * this.step
+    const result = []
+    for (let ts = lastTs; ts >= lastTs - this.maxInterval; ts -= this.step ) {
+      result.push(this.getKey(ts))
+    }
+    return result
   }
-
 }
 
 

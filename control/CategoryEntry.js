@@ -127,7 +127,14 @@ class CategoryEntry {
         let endPort = portObj.end;
         let proto = portObj.proto;
         if (proto === "udp") {
-          entries.push(this.composeEntry(entry, portObj, false));
+          if ( startPort <= 443 && endPort >= 443) {
+            if (startPort < 443)
+              entries.push(this.composeEntry(entry, { start: startPort, end: 442, proto: "udp" }));
+            entries.push(this.composeEntry(entry, { start: 443, end: 443, proto: "udp" }, true));
+            if (endPort > 443)
+              entries.push(this.composeEntry(entry, { start: 444, end: endPort, proto: "udp" }));
+          }
+          // entries.push(this.composeEntry(entry, portObj, false));
         } else if (proto === "tcp") {
           while (true) {
             let hit = false;

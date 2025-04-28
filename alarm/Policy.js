@@ -178,6 +178,7 @@ class Policy {
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&
+      arraysEqual(this.targets, policy.targets) && 
       arraysEqual(this.guids, policy.guids)
     ) {
       return true
@@ -646,9 +647,31 @@ class Policy {
       return portRange[0] * 1 <= port && port <= portRange[1] * 1;
     }
   }
+
+  static getMathcedTarget(policy) {
+    let target = "";
+    if (policy.scope) {
+      target = policy.scope[0];
+    }
+    if (policy.guids) {
+      target = policy.guids[0];
+    }
+
+    if (policy.tag && _.isArray(policy.tag) && !_.isEmpty(policy.tag)) {
+      if (policy.tag[0].startsWith(Policy.TAG_PREFIX)) {
+        target = policy.tag[0];
+      }
+
+      if (policy.tag[0].startsWith(Policy.INTF_PREFIX)) {
+        target = "network:" + policy.tag[0].substring(Policy.INTF_PREFIX.length);
+      }
+    }
+    return target;
+  }
+
 }
 
-Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules"];
+Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules", "targets"];
 Policy.OBJ_VALUE_KEYS = ["appTimeUsage"];
 Policy.NUM_VALUE_KEYS = [
   'seq', 'appTimeUsed', 'priority', 'transferredBytes', 'transferredPackets', 'avgPacketBytes',
