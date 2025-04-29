@@ -1113,7 +1113,6 @@ class netBot extends ControllerBot {
         if (!msg.target) {
           throw new Error('Invalid target')
         }
-        log.info(`Loading ${msg.data.item} info: ${msg.target}`);
         msg.data.begin = msg.data.begin || msg.data.start;
         delete msg.data.start
         return this.flowHandler(msg, msg.data.item)
@@ -1782,7 +1781,7 @@ class netBot extends ControllerBot {
 
   async flowHandler(msg, type) {
     let { target } = msg
-    log.info("Getting info on", type, target);
+    log.verbose("Getting info on", type, target);
 
     if (!msg.data) throw new Error('Invalid request')
 
@@ -1808,8 +1807,7 @@ class netBot extends ControllerBot {
       options.queryall = true
     }
 
-    log.info(type, "FlowHandler FROM: ", new Date(begin * 1000).toLocaleTimeString());
-    log.info(type, "FlowHandler TO: ", new Date(end * 1000).toLocaleTimeString());
+    log.verbose(type, "FlowHandler", new Date(begin * 1000).toLocaleTimeString(), '-', new Date(end * 1000).toLocaleTimeString());
 
     // await this.hostManager.getHostsAsync();
     let jsonobj = {}
