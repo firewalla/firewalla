@@ -286,6 +286,47 @@ describe('test get flows', function() {
     expect(resp.logs.some(f => f.ltype == 'audit' && f.local)).to.be.true
   });
 
+  it('should exclude flows as expected', async() => {
+    const target = await getMacWithFlow('flow:conn:in:');
+    const ts = await getTsFromFlowKey('flow:conn:in:' + target);
+
+    const msg = {data:{item:"flows", audit:true, ts, apiVer: 2, count: 100, exclude: [{device: target}]}, target:'0.0.0.0'};
+    let resp = await get(msg)
+    expect(resp.count).to.be.above(0);
+    expect(resp.flows.some(f => f.device == target)).to.be.false
+
+    Object.assign(msg.data, {regular: true, dns: true, apiVer: 3})
+    resp = await get(msg)
+    expect(resp.count).to.be.above(0);
+    expect(resp.flows.some(f => f.device == target)).to.be.false
+  });
+
+  it('should include flows as expected', async() => {
+    const target = await getMacWithFlow('flow:conn:in:');
+    const ts = await getTsFromFlowKey('flow:conn:in:' + target);
+
+    const msg = {data:{item:"flows", audit:true, ts, apiVer: 2, count: 500}, target: '0.0.0.0'};
+    let resp = await get(msg)
+    expect(resp.count).to.be.above(0);
+    const flow = resp.flows.find(f => f.category)
+    if (!flow) throw new Error('No flows with category')
+
+    msg.target = flow.device
+    msg.data.category = flow.category
+    resp = await get(msg)
+    expect(resp.count).to.be.above(0);
+    expect(resp.flows.every(f => f.category == flow.category)).to.be.true
+
+    msg.data.category == 'none' // this should be ignored
+    Object.assign(msg.data, {
+      regular: true, audit: true, dns: true, apiVer: 3,
+      include: [ {category: flow.category} ],
+    })
+    resp = await get(msg)
+    expect(resp.count).to.be.above(0);
+    expect(resp.flows.every(f => f.category == flow.category)).to.be.true
+  });
+
 });
 
 describe('test get stats', function() {

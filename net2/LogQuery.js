@@ -198,7 +198,9 @@ class LogQuery {
       // both include and exclude can only be array, check optionsToFilter()
       if (!_.isEmpty(f.options.exclude) || !_.isEmpty(options.exclude))
         f.options.exclude = [].concat(f.options.exclude || [], options.exclude || [])
-      f.filter = f.base.optionsToFilter(f.options)
+      if (!_.isEmpty(options.include))
+        f.options.include = options.include
+      f.filter = this.optionsToFilter(f.options)
       Object.assign(f.options, commonOptions)
     })
     // log.debug( feeds.map(f => JSON.stringify(f) + '\n') )
