@@ -144,7 +144,7 @@ class CloudCacheItem {
     }
 
     // cloud metadata doesn't exist.
-    if (localMetadata && _.isEmpty(cloudMetadata) || !cloudMetadata.updated || !cloudMetadata.sha256sum) {
+    if (_.isEmpty(cloudMetadata) || !cloudMetadata.updated || !cloudMetadata.sha256sum) {
       log.info(`Invalid file ${this.name} from cloud, ignored`);
       needDownload = false;
     }
