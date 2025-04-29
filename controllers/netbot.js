@@ -4171,6 +4171,7 @@ class netBot extends ControllerBot {
   */
   async batchHandler(gid, rawmsg) {
     const batchActionObjArr = rawmsg.message.obj.data.value;
+    const exitOnError = rawmsg.message.obj.data.exitOnError || false;
     const id = rawmsg.message.obj.id;
     const copyRawmsg = JSON.parse(JSON.stringify(rawmsg));
     const results = [];
@@ -4193,6 +4194,8 @@ class netBot extends ControllerBot {
         result: result,
         error: error
       })
+      if (exitOnError && (error || (_.has(result, "code") && result.code >= 400)))
+        break;
     }
     return results
   }
