@@ -10,6 +10,7 @@ redis-cli KEYS "policy:*" | while IFS= read -r line; do
     redis-cli DEL "$line"
   else
     # do nothing
+    :
   fi
 done
 redis-cli DEL "policy_active"

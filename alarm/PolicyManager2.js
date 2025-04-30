@@ -1345,8 +1345,10 @@ class PolicyManager2 {
     if (action === "app_block")
       action = "block"; // treat app_block same as block, but using a different term for version compatibility, otherwise, block rule will always take effect in previous versions
     
-    if (policy.needPolicyDisturb())
+    if (policy.needPolicyDisturb()){
       action = "qos";  // treat app_disturb same as qos
+      qdisc = "netem";
+    }
 
     if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);
@@ -1888,8 +1890,10 @@ class PolicyManager2 {
     if (action === "app_block")
       action = "block";
     
-    if (policy.needPolicyDisturb())
+    if (policy.needPolicyDisturb()){
       action = "qos";  // treat app_disturb same as qos
+      qdisc = "netem";
+    }
 
     if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);

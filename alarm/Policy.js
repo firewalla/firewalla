@@ -31,6 +31,7 @@ const flat = require('flat');
 const iptool = require('ip');
 const Constants = require('../net2/Constants.js');
 const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds, don't bother to enforce it.
+const MAX_APP_DISTURB_PERIOD = 86400 // 24 hours
 
 function arraysEqual(a, b) {
   if (a === b) return true;
@@ -649,7 +650,8 @@ class Policy {
   }
 
   needPolicyDisturb() {
-    if(this.action === "app_block" && this.disturbMethod != null && this.disturbMethod.disturbPeriod != null && Number(this.disturbMethod.disturbPeriod) > 0) {
+    if(this.action === "app_block" && this.disturbMethod != null && this.disturbMethod.enable != null && Number(this.disturbMethod.enable) == 1) {
+      this.disturbMethod.disturbPeriod = this.disturbMethod.disturbPeriod || MAX_APP_DISTURB_PERIOD;
       this.disturbTimeUsed = this.disturbTimeUsed || 0;
       return Number( this.disturbMethod.disturbPeriod) > Number(this.disturbTimeUsed);
     }
