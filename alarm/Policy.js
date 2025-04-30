@@ -650,7 +650,7 @@ class Policy {
   }
 
   needPolicyDisturb() {
-    if(this.action === "app_block" && this.disturbMethod != null && this.disturbMethod.enable != null && Number(this.disturbMethod.enable) == 1) {
+    if(this.action === "app_block" && this.disturbMethod != null ) {
       this.disturbMethod.disturbPeriod = this.disturbMethod.disturbPeriod || MAX_APP_DISTURB_PERIOD;
       this.disturbTimeUsed = this.disturbTimeUsed || 0;
       return Number( this.disturbMethod.disturbPeriod) > Number(this.disturbTimeUsed);
