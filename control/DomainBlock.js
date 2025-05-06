@@ -47,7 +47,10 @@ const { CategoryEntry } = require('./CategoryEntry');
 
 const _ = require('lodash');
 
-const tlsHostSetPath = "/proc/net/xt_tls/hostset/";
+const tls_modules = ["xt_tls", "xt_udp_tls"];
+const tlsHostSetBasePath = "/proc/net/";
+const tlsHostSetFolder = "hostset";
+
 
 class DomainBlock {
 
@@ -106,11 +109,13 @@ class DomainBlock {
     }
     const tlsHostSet = options.tlsHostSet;
     if (tlsHostSet) {
-      const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
-      const finalDomain = options.exactMatch || domain.startsWith("*.") ? domain : `*.${domain}`; // check domain.startsWith just for double check
-      await appendFileAsync(tlsFilePath, `+${finalDomain}`).catch((err) => {
-        log.error(`Failed to add ${finalDomain} to tls host set ${tlsFilePath}`, err.message);
-      });
+      for (const module of tls_modules) {
+        const tlsFilePath = `${tlsHostSetBasePath}/${module}/${tlsHostSetFolder}/${tlsHostSet}`;
+        const finalDomain = options.exactMatch || domain.startsWith("*.") ? domain : `*.${domain}`; // check domain.startsWith just for double check
+        await appendFileAsync(tlsFilePath, `+${finalDomain}`).catch((err) => {
+          log.error(`Failed to add ${finalDomain} to tls host set ${tlsFilePath}`, err.message);
+        });
+      }
     }
   }
 
@@ -127,11 +132,13 @@ class DomainBlock {
     }
     const tlsHostSet = options.tlsHostSet;
     if (tlsHostSet) {
-      const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
-      const finalDomain = options.exactMatch || domain.startsWith("*.") ? domain : `*.${domain}`; // check domain.startsWith just for double check
-      await appendFileAsync(tlsFilePath, `-${finalDomain}`).catch((err) => {
-        log.error(`Failed to remove ${finalDomain} from tls host set ${tlsFilePath}`, err.message);
-      });
+      for (const module of tls_modules) {
+        const tlsFilePath = `${tlsHostSetBasePath}/${module}/${tlsHostSetFolder}/${tlsHostSet}`;
+        const finalDomain = options.exactMatch || domain.startsWith("*.") ? domain : `*.${domain}`; // check domain.startsWith just for double check
+        await appendFileAsync(tlsFilePath, `-${finalDomain}`).catch((err) => {
+          log.error(`Failed to remove ${finalDomain} from tls host set ${tlsFilePath}`, err.message);
+        });
+      }
     }
   }
 
@@ -297,16 +304,12 @@ class DomainBlock {
     }
   }
 
-  async blockCategory(category, options) {
-    if (!options.category)
-      options.category = category;
+  async blockCategory(options) {
     await dnsmasq.addPolicyCategoryFilterEntry(options).catch((err) => undefined);
     dnsmasq.scheduleRestartDNSService();
   }
 
-  async unblockCategory(category, options) {
-    if (!options.category)
-      options.category = category;
+  async unblockCategory(options) {
     await dnsmasq.removePolicyCategoryFilterEntry(options).catch((err) => undefined);
     dnsmasq.scheduleRestartDNSService();
   }
@@ -328,13 +331,15 @@ class DomainBlock {
   }
 
   async appendDomainToCategoryTLSHostSet(category, domain) {
-    const tlsHostSet = Block.getTLSHostSet(category);
-    const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
+    for (const module of tls_modules) {
+      const tlsHostSet = Block.getTLSHostSet(category);
+      const tlsFilePath = `${tlsHostSetBasePath}/${module}/${tlsHostSetFolder}/${tlsHostSet}`;
 
-    try {
-      await appendFileAsync(tlsFilePath, `+${domain}`); // + => add
-    } catch (err) {
-      log.error(`Failed to add domain ${domain} to tls ${tlsFilePath}, err: ${err}`);
+      try {
+        await appendFileAsync(tlsFilePath, `+${domain}`); // + => add
+      } catch (err) {
+        log.error(`Failed to add domain ${domain} to tls ${tlsFilePath}, err: ${err}`);
+      }
     }
 
   }
@@ -345,23 +350,26 @@ class DomainBlock {
     const strategy = await (new CategoryUpdater()).getStrategy(category);
     const domains = await this.getCategoryDomains(category, strategy.tls.useHitSet);
     const tlsHostSet = Block.getTLSHostSet(category);
-    const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
 
-    // flush first
-    await appendFileAsync(tlsFilePath, "/").catch((err) => log.error(`got error when flushing ${tlsFilePath}, err: ${err}`)); // / => flush
+    for (const module of tls_modules) {
+      const tlsFilePath = `${tlsHostSetBasePath}/${module}/${tlsHostSetFolder}/${tlsHostSet}`;
 
-    // use fs.writeFile intead of bash -c "echo +domain > ..." to avoid too many process forks
-    for (const domain of domains) {
-      await appendFileAsync(tlsFilePath, `+${domain}`).catch((err) => log.error(`got error when adding ${domain} to ${tlsFilePath}, err: ${err}`));
-    }
+      // flush first
+      await appendFileAsync(tlsFilePath, "/").catch((err) => log.error(`got error when flushing ${tlsFilePath}, err: ${err}`)); // / => flush
 
-    const domainsWithPort = await this.getCategoryDomainsWithPort(category);
+      // use fs.writeFile intead of bash -c "echo +domain > ..." to avoid too many process forks
+      for (const domain of domains) {
+        await appendFileAsync(tlsFilePath, `+${domain}`).catch((err) => log.error(`got error when adding ${domain} to ${tlsFilePath}, err: ${err}`));
+      }
 
-    for (const domainObj of domainsWithPort) {
-      const portObj = domainObj.port;
-      const entry = `${domainObj.id},${CategoryEntry.toPortStr(portObj)}`;
-      log.debug("Tls port entry:", entry);
-      await appendFileAsync(tlsFilePath, `+${entry}`).catch((err) => log.error(`got error when adding ${entry} to ${tlsFilePath}, err: ${err}`));
+      const domainsWithPort = await this.getCategoryDomainsWithPort(category);
+
+      for (const domainObj of domainsWithPort) {
+        const portObj = domainObj.port;
+        const entry = `${domainObj.id},${CategoryEntry.toPortStr(portObj)}`;
+        log.debug("Tls port entry:", entry);
+        await appendFileAsync(tlsFilePath, `+${entry}`).catch((err) => log.error(`got error when adding ${entry} to ${tlsFilePath}, err: ${err}`));
+      }
     }
   }
 

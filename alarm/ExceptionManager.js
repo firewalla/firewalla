@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -109,40 +109,31 @@ module.exports = class {
     return exceptionPrefix + exceptionID
   }
 
-  getException(exceptionID) {
-    return new Promise((resolve, reject) => {
-      this.idsToExceptions([exceptionID], (err, results) => {
-        if (err) {
-          reject(err);
-          return;
-        }
+  async getException(exceptionID) {
+    const results = await this.idsToExceptions([exceptionID])
 
-        if (results == null || results.length === 0) {
-          reject(new Error("exception not exists"));
-          return;
-        }
+    if (results == null || results.length === 0) {
+      throw new Error("exception not exists")
+    }
 
-        resolve(results[0]);
-      });
-    });
+    return results[0]
   }
 
 
-  idsToExceptions(ids, callback) {
+  async idsToExceptions(ids) {
     let multi = rclient.multi();
 
     ids.forEach((eid) => {
       multi.hgetall(exceptionPrefix + eid)
     });
 
-    multi.exec((err, results) => {
-      if (err) {
-        log.error("Failed to load active exceptions (hgetall): " + err);
-        callback(err);
-        return;
-      }
-      callback(null, results.map((r) => this.jsonToException(r)));
-    });
+    try {
+      const results = await multi.execAsync()
+      return results.map((r) => this.jsonToException(r))
+
+    } catch(err) {
+      log.error("Failed to load active exceptions (hgetall)", err);
+    }
   }
 
   loadExceptions(callback = function() {}) {
