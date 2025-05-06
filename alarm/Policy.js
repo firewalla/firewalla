@@ -31,6 +31,7 @@ const flat = require('flat');
 const iptool = require('ip');
 const Constants = require('../net2/Constants.js');
 const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds, don't bother to enforce it.
+const MAX_APP_DISTURB_PERIOD = 86400 // 24 hours
 
 function arraysEqual(a, b) {
   if (a === b) return true;
@@ -178,6 +179,7 @@ class Policy {
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&
+      arraysEqual(this.targets, policy.targets) && 
       arraysEqual(this.guids, policy.guids)
     ) {
       return true
@@ -646,12 +648,43 @@ class Policy {
       return portRange[0] * 1 <= port && port <= portRange[1] * 1;
     }
   }
+
+  needPolicyDisturb() {
+    if(this.action === "app_block" && this.disturbMethod != null ) {
+      this.disturbMethod.disturbPeriod = this.disturbMethod.disturbPeriod || MAX_APP_DISTURB_PERIOD;
+      this.disturbTimeUsed = this.disturbTimeUsed || 0;
+      return Number( this.disturbMethod.disturbPeriod) > Number(this.disturbTimeUsed);
+    }
+    return false;
+  }
+
+  static getMathcedTarget(policy) {
+    let target = "";
+    if (policy.scope) {
+      target = policy.scope[0];
+    }
+    if (policy.guids) {
+      target = policy.guids[0];
+    }
+
+    if (policy.tag && _.isArray(policy.tag) && !_.isEmpty(policy.tag)) {
+      if (policy.tag[0].startsWith(Policy.TAG_PREFIX)) {
+        target = policy.tag[0];
+      }
+
+      if (policy.tag[0].startsWith(Policy.INTF_PREFIX)) {
+        target = "network:" + policy.tag[0].substring(Policy.INTF_PREFIX.length);
+      }
+    }
+    return target;
+  }
+
 }
 
-Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules"];
-Policy.OBJ_VALUE_KEYS = ["appTimeUsage"];
+Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules", "targets"];
+Policy.OBJ_VALUE_KEYS = ["appTimeUsage", "disturbMethod"];
 Policy.NUM_VALUE_KEYS = [
-  'seq', 'appTimeUsed', 'priority', 'transferredBytes', 'transferredPackets', 'avgPacketBytes',
+  'seq', 'appTimeUsed', 'priority', 'transferredBytes', 'transferredPackets', 'avgPacketBytes', "disturbTimeUsed"
 ]
 Policy.INTF_PREFIX = "intf:";
 Policy.TAG_PREFIX = "tag:";

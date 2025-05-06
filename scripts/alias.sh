@@ -195,3 +195,73 @@ function ncdiff() {
 function lase() {
   local_fwapc_get "v1/event_history/$1?format=text" | jq -r '.[]'
 }
+
+function laseap() {
+  local_fwapc_get "v1/event_history/$1?type=ap&format=text" | jq -r '.[]'
+}
+
+function lase10() {
+  lase "$1" | head
+}
+
+function llap() {
+  local_fwapc_get "v1/status/ap" | jq '.info[] | [.mac, .licenseUuid] | @tsv' -r
+}
+
+function useq() {
+  local mac="$1"
+  local seq="$2"
+  frcc . | jq --arg mac "$mac" --arg seq "$seq" 'if .apc.assets | has($mac) then .apc.assets[$mac].sysConfig.seq = $seq else . end' | frset -d @-
+}
+
+function sapb() {
+  local mac="$1"
+  local branch="$2"
+  curl 'http://localhost:8841/v1/control/switch_branch' -H 'Content-Type: application/json' -d "{\"uid\": \"$mac\", \"branch\": \"$branch\"}"
+}
+
+function lmove() {
+  local mac="$1"
+  local dst_bssid="$2"
+  local payload=""
+  if [[ "x$dst_bssid" == "x" ]]; then
+    payload=$(jq -n --arg mac "$mac" '{"staMac": $mac}')
+  else
+    payload=$(jq -n --arg mac "$mac" --arg dst_bssid "$dst_bssid" '{"staMac": $mac, "dstBSSID": $dst_bssid}')
+  fi
+  echo $payload | curl -X POST --url http://127.0.0.1:8841/v1/control/steer_station --header 'content-type: application/json' --data @-
+}
+
+function lfmove() {
+  local mac="$1"
+  local dst_bssid="$2"
+  local payload=""
+  if [[ "x$dst_bssid" == "x" ]]; then
+    payload=$(jq -n --arg mac "$mac" '{"staMac": $mac, "kickAsAlternative": true}')
+  else
+    payload=$(jq -n --arg mac "$mac" --arg dst_bssid "$dst_bssid" '{"staMac": $mac, "dstBSSID": $dst_bssid, "kickAsAlternative": true}')
+  fi
+  echo $payload | curl -X POST --url http://127.0.0.1:8841/v1/control/steer_station --header 'content-type: application/json' --data @-
+}
+
+alias lpair='curl localhost:8841/v1/runtime/pairing_stat -s | jq .'
+
+function lastat() {
+  local mac=$1
+  local filter=$2
+
+  if [[ "x$filter" == "x" ]]; then
+    lase "$mac" | head -n 20 | tac | ~/firewalla/scripts/device_ap_connect.sh "$mac" | column -t --output-separator "      "
+  else
+    lase "$mac" | grep -- "$filter" | tac | ~/firewalla/scripts/device_ap_connect.sh "$mac" | column -t --output-separator "      "
+  fi
+}
+
+# lap_patch <mac> <version>
+function lap_patch() {
+  local mac=$1
+  local version=$2
+
+  local payload=$(jq -n --arg mac "$mac" --arg version "$version" '{"uid": $mac, "version": $version}')
+  curl -XPOST localhost:8841/v1/control/patch_version -d "$payload" -H "Content-Type:application/json"
+}

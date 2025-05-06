@@ -32,7 +32,7 @@ const Message = require('../net2/Message.js');
 
 const PlatformLoader = require('../platform/PlatformLoader.js');
 const platform = PlatformLoader.getPlatform();
-
+const OUI_ASSET_PATH = '/home/pi/.firewalla/run/assets/nmap-mac-prefixes'
 const { Address4 } = require('ip-address')
 
 class NmapSensor extends Sensor {
@@ -181,12 +181,28 @@ class NmapSensor extends Sensor {
     }, 5000);
   }
 
+  static async getOUI(mac) {
+    try {
+      const rawMAC = mac.toUpperCase().replace(/:/g, '')
+      const result = await exec(`awk '"${rawMAC}" ~ "^" $1 {$1=""; print $0}' ${OUI_ASSET_PATH}`)
+      const lines = result.stdout.trim().split('\n').filter(Boolean)
+      if (lines.length)
+        // use last (longest) match
+        return lines[lines.length - 1].trim()
+      else
+        return null
+    } catch(err) {
+      log.error('Error looking up OUI data', err)
+      return null
+    }
+  }
+
   run() {
     // patch script for error "Failed to scan: Error: next_template: parse error (cpe delimiter not '/') on line 11594 of nmap-service-probes"
     exec(String.raw`sudo sed -i 's/cpe:|h:siemens:315-2pn\/dp|/cpe:\/h:siemens:315-2pn%2Fdp\//' /usr/share/nmap/nmap-service-probes`).catch(()=>{})
 
     // uses the latest OUI DB if possible
-    exec(String.raw`sudo cp -f /home/pi/.firewalla/run/assets/nmap-mac-prefixes /usr/share/nmap/nmap-mac-prefixes`).catch(()=>{})
+    exec(`sudo cp -f ${OUI_ASSET_PATH} /usr/share/nmap/nmap-mac-prefixes`).catch(()=>{})
 
     this.scheduleReload();
     setInterval(() => {

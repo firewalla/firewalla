@@ -119,7 +119,7 @@ hl() {
 timeit() {
     return 0
     tnow=$(date +%s%3N)
-    echo "TIMEIT $1: $((tnow-tlast))"
+    echo "TIMEIT $1: $((tnow-tlast))" >&2
     tlast=$tnow
 }
 
@@ -173,10 +173,11 @@ while true; do
     else 
         sta_data=$(local_api status/station/$STATION_MAC| jq -r '.info|[.macAddr, .assetUID, .ssid, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .intf, .assocTime, .ts, .idle, .dvlanVlanId, .vlanId]|@tsv')
     fi
+    timeit sta-data
     test -n "$sta_data" && echo "$sta_data" | while IFS=$'\t' read sta_mac ap_mac sta_ssid sta_band sta_channel sta_txnss sta_rxnss sta_rssi sta_snr sta_tx_rate sta_rx_rate sta_intf sta_assoc_time sta_ts sta_idle sta_dvlan sta_vlan
     do
         test -n "$sta_mac" || continue
-        timeit $sta_mac
+        timeit read-$sta_mac
         sta_ip=$(redis-cli --raw hget host:mac:$sta_mac ipv4Addr)
         timeit sta_ip
         timeit read
@@ -188,7 +189,7 @@ while true; do
         for stact in $STA_COLS
         do
             IFS=: read stac stacl stacu <<<$(echo $stact)
-            timeit "process col $stac"
+            timeit "process-col-$stac"
             test -n "$stacl" || stacl=-20
             case $stac in
                 sta_mac) stad=$sta_mac ;;
@@ -212,9 +213,9 @@ while true; do
                 hb_time) stad=$( displaytime $((time_now - sta_ts)) );;
                 *) stad=$NO_VALUE ;;
             esac
-            timeit 'case'
-            test -t 1 || stad=$(echo "$stad" | sed -e "s/ /_/g")
-            stad=$(echo "$stad" | sed -e "s/[‘’]/'/g")
+            timeit "case-$stac"
+            test -t 1 || stad=${stad// /_}
+            stad=${stad//[‘’]/\'}
             stadl=${#stad}
             # process unicode string
             test "$stacu" == 'u' && {
@@ -230,7 +231,7 @@ while true; do
                     fi
                 }
             }
-            timeit 'stadcl adjust'
+            timeit 'stadcl-adjust'
             stacla=${stacl#-}
             if [[ $stadl -gt $stacla ]]
             then

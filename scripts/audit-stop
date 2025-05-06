@@ -17,9 +17,11 @@ sudo iptables -w -F FW_WAN_IN_DROP_LOG
 sudo ip6tables -w -F FW_WAN_IN_DROP_LOG
 
 sudo rm /etc/rsyslog.d/30-acl-audit.conf
+sudo rm /etc/rsyslog.d/32-quic-log.conf
 sudo systemctl restart rsyslog
 
 sudo rm $FIREWALLA_HIDDEN/config/crontab/acl-audit-logrotate
+sudo rm $FIREWALLA_HIDDEN/config/crontab/quic-logrotate
 $FIREWALLA_HOME/scripts/update_crontab.sh
 
 logger 'FIREWALLA.ACLAUDIT Finished Stopping'

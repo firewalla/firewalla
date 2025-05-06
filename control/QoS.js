@@ -21,6 +21,7 @@ const exec = require('child-process-promise').exec;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const POLICY_QOS_HANDLER_MAP_KEY = "policy_qos_handler_map";
+const SKIP_QOS_SWITCH =  0x40000000;
 const QOS_UPLOAD_MASK = 0x3f800000;
 const QOS_DOWNLOAD_MASK = 0x7f0000;
 const PRIO_HIGH = 2;
@@ -28,6 +29,8 @@ const PRIO_REG = 4;
 const PRIO_LOW = 6;
 const DEFAULT_PRIO = PRIO_REG;
 const DEFAULT_RATE_LIMIT = "10240mbit";
+const DEFAULT_DELAY = "200";
+const DEFAULT_LOSS_RATE = "30";
 const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 
@@ -70,7 +73,7 @@ async function deallocateQoSHandlerForPolicy(pid) {
   }
 }
 
-async function createQoSClass(classId, parent, direction, rateLimit, priority, qdisc, isolation) {
+async function createQoSClass(classId, parent, direction, rateLimit, priority, qdisc, isolation, increaseLatency, dropPacketRate) {
   if (!platform.isIFBSupported()) {
     log.error("ifb is not supported on this platform");
     return;
@@ -79,14 +82,14 @@ async function createQoSClass(classId, parent, direction, rateLimit, priority, q
     log.error("parent is not defined");
     return;
   }
-  if (!rateLimit) {
-    log.error("rateLimit is not defined, no need to create tc class");
-    return;
-  }
+
   qdisc = qdisc || "fq_codel";
   rateLimit = rateLimit || DEFAULT_RATE_LIMIT;
   if (!isNaN(rateLimit)) // default unit of rate limit is mbit
     rateLimit = `${rateLimit}mbit`;
+
+  increaseLatency = increaseLatency || DEFAULT_DELAY;
+  dropPacketRate = dropPacketRate || DEFAULT_LOSS_RATE;
   priority = priority || DEFAULT_PRIO;
   log.info(`Creating QoS class for classid ${classId}, parent ${parent}, direction ${direction}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}`);
   if (!classId) {
@@ -103,6 +106,14 @@ async function createQoSClass(classId, parent, direction, rateLimit, priority, q
     case "fq_codel": {
       await exec(`sudo tc class replace dev ${device} parent ${parent}: classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit}`).then(() => {
         return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc}`);
+      }).catch((err) => {
+        log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
+      });
+      break;
+    }
+    case "netem": {
+      await exec(`sudo tc class replace dev ${device} parent ${parent}: classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit}`).then(() => {
+        return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc} delay ${increaseLatency}ms loss ${dropPacketRate}%`);
       }).catch((err) => {
         log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
       });
@@ -150,11 +161,15 @@ async function destroyQoSClass(classId, parent, direction, rateLimit) {
     return;
   }
   if (!rateLimit) {
-    log.info("rateLimit is not defined, no need to destroy tc class");
-    return;
+    log.info("rateLimit is not defined, but is not used in destroyQoSClass");
+    //return;
   }
   const device = direction === 'upload' ? 'ifb0' : 'ifb1';
   classId = Number(classId).toString(16);
+  
+  await exec(`if sudo tc qdisc show dev ${device} parent ${parent}:0x${classId} | grep -q "qdisc"; then sudo tc qdisc del dev ${device} parent ${parent}:0x${classId}; else true; fi`).catch((err) => {
+    log.error(`Failed to destroy child qdisc for ${parent}:0x${classId}, direction ${direction}`, err.message);
+  });
   // there is a bug in 4.15 kernel which will cause failure to add a filter with the same handle that was used by a deleted filter: https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1797669
   // if the filter cannot be solely deleted, the class cannot be deleted either. We have to replace it with a dummy class
   await exec(`sudo tc class replace dev ${device} classid ${parent}:0x${classId} htb rate ${DEFAULT_RATE_LIMIT} prio ${DEFAULT_PRIO}`).catch((err) => {
@@ -240,6 +255,7 @@ async function destroyTCFilter(filterId, parent, direction, prio, fwmark) {
 }
 
 module.exports = {
+  SKIP_QOS_SWITCH,
   QOS_UPLOAD_MASK,
   QOS_DOWNLOAD_MASK,
   PRIO_HIGH,

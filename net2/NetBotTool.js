@@ -71,7 +71,7 @@ class NetBotTool {
     const endString = new Date(end * 1000).toLocaleTimeString();
     const beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    log.verbose(`[Cache] Getting ${dimension} detail flows between ${beginString} and ${endString}`)
+    log.verbose(`[Cache] Getting ${dimension} detail flows between ${beginString} and ${endString}`, options)
 
     const key = dimension + 'Details'
 
