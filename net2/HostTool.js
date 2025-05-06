@@ -310,6 +310,11 @@ class HostTool {
     }
   }
 
+  async getMACsByTime(ts) {
+    const MACs = await rclient.zrevrangebyscoreAsync(Constants.REDIS_KEY_HOST_ACTIVE, '+inf', ts);
+    return MACs.filter(Boolean);
+  }
+
   async getAllMACEntries() {
     let macKeys = await this.getAllMACs();
     let entries = [];

@@ -153,7 +153,11 @@ class Host extends Monitorable {
         if (this.o[f]) this[f] = this.o[f]
       }
 
-      if (save) await this.save(updatedKeys)
+      // TODO: compare before saving and publishing to redis
+      if (save) {
+        await this.save(updatedKeys)
+        messageBus.publish(Host.getUpdateCh(), this.getGUID(), this.o)
+      }
 
       return updatedKeys
     }).catch((err) => {
@@ -339,7 +343,12 @@ class Host extends Monitorable {
       || Host.metaFieldsActiveTS.includes(fields) // if string as single key
     ) {
       const ts = this.o.lastActiveTimestamp || this.o.firstFoundTimestamp
-      if (ts) await rclient.zaddAsync(Constants.REDIS_KEY_HOST_ACTIVE, ts, this.getGUID())
+      if (ts) {
+        await rclient.pipelineAndLog([
+          [ 'zadd', Constants.REDIS_KEY_HOST_ACTIVE, ts, this.getGUID() ],
+          [ 'expire', this.getMetaKey(), Constants.HOST_MAC_KEY_EXPIRE_SECS ],
+        ])
+      }
     }
   }
 
