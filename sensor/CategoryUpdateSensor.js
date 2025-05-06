@@ -158,6 +158,8 @@ class CategoryUpdateSensor extends Sensor {
         log.error("Fail to fetch category list from cloud", category);
         return;
       }
+
+
       if (categoryUpdater.isUserTargetList(category) || categoryUpdater.isSmallExtendedTargetList(category)) {
         // with port support
         await categoryUpdater.flushCategoryData(category);

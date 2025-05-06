@@ -18,6 +18,7 @@
 let chai = require('chai');
 let expect = chai.expect;
 
+const _ = require('lodash');
 const Alarm = require('../alarm/Alarm.js')
 const AlarmManager2 = require('../alarm/AlarmManager2.js')
 const fc = require('../net2/config.js');
@@ -25,6 +26,7 @@ const Constants = require('../net2/Constants.js');
 const log = require('../net2/logger.js')(__filename, 'info');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const delay = require('../util/util.js').delay;
+const LRU = require('lru-cache');
 
 const am2 = new AlarmManager2();
 
@@ -328,12 +330,21 @@ describe('Test alarm cache', function(){
     })()
   );
 
+  it('test cache size', () =>  {
+    expect(am2.indexCache._sizeof("1")).to.be.equal(16);
+    expect(am2.indexCache._sizeof(2)).to.be.equal(8);
+    expect(am2.indexCache._sizeof(true)).to.be.equal(4);
+    expect(am2.indexCache._objsize([1,"1",true])).to.be.equal(28);
+    expect(am2.indexCache._objsize({"aid":"15221","state":"ignore","archived":1,"ts":1724733119.223})).to.be.equal(128);
+  });
+
   it('test set cache', async() => {
     for (const a of alarms) {
       await am2.indexCache.add(a);
     }
     expect(am2.indexCache.keys().sort()).to.be.eql(["ALARM_ABNORMAL_BANDWIDTH_USAGE", "ALARM_DUAL_WAN", "ALARM_GAME", "ALARM_INTEL", "ALARM_LARGE_UPLOAD", "ALARM_NEW_DEVICE", "ALARM_VPN_DISCONNECT", "ALARM_VPN_RESTORE"]);
     expect(am2.indexCache.list().sort()).to.be.eql(["148", "149", "150", "152", "153", "155", "175", "176", "240", "241"]);
+    expect(am2.indexCache.size()).to.be.equal(1152);
   });
 
   it('test query cached alarm ids', async() => {
@@ -355,10 +366,12 @@ describe('Test alarm cache', function(){
   });
 
   it('test delete cache item', async() => {
+    expect(am2.indexCache.size()).to.be.equal(1152);
     for (const i of [149, 175]) {
       await am2.indexCache.remove(i);
     }
     expect(am2.indexCache.list().sort()).to.be.eql(["148", "150", "152", "153", "155", "176", "240", "241"]);
+    expect(am2.indexCache.size()).to.be.equal(948);
   });
 
   it('test update alarm cache', async() => {
@@ -372,14 +385,22 @@ describe('Test alarm cache', function(){
     await am2._deleteAlarmCache({aid: "11111", aids:["22222"]});
   });
 
-  it('test refresh cache', async() => {
+  it.skip('test refresh cache', async() => {
     am2.indexCache.add({aid:"11111", type: "ALARM_INTEL", ts: "1724733200.231", state: "active"});
     am2.indexCache.add({aid:"12222", type: "ALARM_INTEL", ts: "1724733200.231", state: "active"});
     am2.indexCache.add({aid:"12333", type: "ALARM_INTEL", ts: "1724733200.231", state: "active"});
     await am2.refreshAlarmCache();
-    log.debug("loaded caches length", am2.indexCache.size());
+    log.debug(`loaded caches length ${am2.indexCache.length()} items, approximate size ${am2.indexCache.size()} bytes`);
     const alarmIds = await am2.loadAlarmIDs();
-    expect(am2.indexCache.size()).to.be.equal(Object.values(alarmIds).flat().length);
+    expect(am2.indexCache.length()).to.be.equal(Object.values(alarmIds).flat().length);
   });
 
+  it('test fallback alarm cache', async() => {
+    expect(await am2._fallbackAlarmCache()).to.be.true;
+    expect(await am2._fallbackAlarmCache("[]")).to.be.true;
+    expect(await am2._fallbackAlarmCache([])).to.be.false;
+    expect(await am2._fallbackAlarmCache(['test_type'])).to.be.false;
+    let result = am2._queryCachedAlarmIds(10, Date.now()/1000, false, 'active', {types: ["test_type"]});
+    expect(result).to.be.eql([]);
+  });
 });

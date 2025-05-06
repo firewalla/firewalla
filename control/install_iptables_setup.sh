@@ -49,6 +49,8 @@ cat << EOF
 # create POSTROUTING pbr chain
 -N FW_PR_SNAT
 -A FW_POSTROUTING -m conntrack --ctdir ORIGINAL -j FW_PR_SNAT
+-N FW_VC_SNAT
+-A FW_POSTROUTING -j FW_VC_SNAT
 
 -N FW_PR_SNAT_DEV
 -N FW_PR_SNAT_DEV_1
@@ -183,6 +185,8 @@ cat << EOF
 
 -N FW_POSTROUTING
 -A POSTROUTING -j FW_POSTROUTING
+-N FW_VC_SNAT
+-A FW_POSTROUTING -j FW_VC_SNAT
 
 # nat blackhole 8888
 -N FW_NAT_HOLE
@@ -272,17 +276,21 @@ cat "$qos_file"
 } >> "$ip6tables_file"
 
 if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
-  # existence of "-m tls" rules prevents kernel module from being updated, resotre with a tls-clean version first
-  grep -v "\-m tls" "$iptables_file" | sudo iptables-restore
-  grep -v "\-m tls" "$ip6tables_file" | sudo ip6tables-restore
-  if lsmod | grep -w "xt_tls"; then
-    sudo rmmod xt_tls
-    if [[ $? -eq 0 ]]; then
-      installTLSModule
+  # existence of "-m tls" or "-m udp_tls" rules prevents kernel module from being updated, resotre with a tls-clean version first
+  module_names=("tls" "udp_tls")
+  for module_name in "${module_names[@]}"; do
+    grep -v "\-m ${module_name}" "$iptables_file" | sudo iptables-restore
+    grep -v "\-m ${module_name}" "$ip6tables_file" | sudo ip6tables-restore
+    if lsmod | grep -w "xt_${module_name}"; then
+      sudo rmmod "xt_${module_name}"
+      if [[ $? -eq 0 ]]; then
+        installTLSModule "xt_${module_name}"
+      fi
+    else
+      installTLSModule "xt_${module_name}"
     fi
-  else
-    installTLSModule
-  fi
+  done
+
 fi
 
 # install out-of-tree sch_cake.ko if applicable

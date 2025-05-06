@@ -186,13 +186,15 @@ async function reloadConfig() {
     log.info('testConfig:', err.message)
   }
 
+  const oldConfigStr = JSON.stringify(config)
   config = aggregateConfig()
+  const newConfigStr = JSON.stringify(config)
 
   reloadFeatures()
 
-  log.info('config:updated')
-  if (f.isMain())
-    await pclient.publishAsync("config:updated", JSON.stringify(config))
+  log.verbose('config:updated')
+  if (f.isMain() && oldConfigStr != newConfigStr)
+    await pclient.publishAsync("config:updated", newConfigStr)
 }
 
 function aggregateConfig(configArray = [defaultConfig, platformConfig, versionConfig, cloudConfig, userConfig, testConfig, mspConfig]) {

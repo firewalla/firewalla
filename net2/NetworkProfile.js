@@ -979,6 +979,10 @@ class NetworkProfile extends Monitorable {
     await fs.unlinkAsync(this._getDnsmasqRouteConfigPath(routeType)).catch((err) => {});
     dnsmasq.scheduleRestartDNSService();
   }
+
+  isReady() {
+    return this.o.ready; 
+  }
 }
 
 module.exports = NetworkProfile;

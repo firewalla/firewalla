@@ -263,8 +263,14 @@ class BonjourSensor extends Sensor {
       case '_googlecast':
         // googlecast supports both video(TV) and audio(Speaker)
         if (txt) {
-          if (txt.fn) detect.name = txt.fn
-          if (txt.md) detect.model = txt.md
+          // a standalone service for chromecast group
+          if (txt.md == 'Google Cast Group') {
+            // this is the group name
+            if (txt.fn && !detected.name) detect.name = txt.fn
+          } else {
+            if (txt.fn) detect.name = txt.fn
+            if (txt.md) detect.model = txt.md
+          }
         }
         break
       case '_meshcop': // https://www.threadgroup.org/ThreadSpec

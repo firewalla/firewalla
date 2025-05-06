@@ -98,6 +98,7 @@ let Sensor = class {
         if (fc.isFeatureOn(featureName)) try {
           log.info("Enabling feature", featureName);
           await this.globalOn();
+          log.debug('Enabled feature', featureName);
         } catch(err) {
           log.error(`Failed to enable ${featureName}, reverting...`, err)
           try {
@@ -133,12 +134,14 @@ let Sensor = class {
           } catch(err) {
             log.error(`Failed to disable ${featureName}`, err)
           }
+          log.debug(`${status ? 'Enabled' : 'Disabled'} feature ${featureName}`);
         })
       })
 
       log.debug('Global hooks registered for', this.featureName)
 
       try {
+        log.debug('running job for', this.featureName)
         await this.job();
       } catch(err) {
         log.error(`Failed to run job of ${featureName}`, err)
@@ -147,6 +150,7 @@ let Sensor = class {
         if (this.timer) clearInterval(this.timer);
         this.timer = setInterval(async () => {
           try {
+            log.debug('running job for', this.featureName)
             await this.job();
           } catch(err) {
             log.error(`Failed to run job of ${featureName}`, err)
@@ -174,9 +178,7 @@ let Sensor = class {
       }
   }
 
-  async job() {
-    log.debug('running job for', this.featureName)
-  }
+  async job() { }
 
 };
 
