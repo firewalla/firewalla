@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -91,6 +91,22 @@ class FlowTool extends LogQuery {
     return true;
   }
 
+  // options here no longer serve as filter, just to query and format results
+  optionsToFeeds(options, macs) {
+    log.debug('optionsToFeeds', options)
+    const feeds = []
+    if (options.regular) {
+      feeds.push(... this.expendFeeds({macs, direction: 'in'}))
+      feeds.push(... this.expendFeeds({macs, direction: 'out'}))
+    }
+    if (options.local) {
+      // a local flow will be recorded in both src and dst host key, need to deduplicate flows on the two hosts if both hosts are included in macs
+      feeds.push(... this.expendFeeds({macs, local: true, exclude: {dstMac: macs, fd: "out"}}))
+    }
+
+    return feeds
+  }
+
   async prepareRecentFlows(json, options) {
     log.verbose('prepareRecentFlows', JSON.stringify(options))
     options = options || {}
@@ -100,54 +116,15 @@ class FlowTool extends LogQuery {
       json.flows = {};
     }
 
-    const feeds = []
-    // use some filters to cut feed number here
-    if (options.block !== true) {
-      if (options.local !== true) {
-        if (options.direction) {
-          feeds.push(... this.expendFeeds({macs, direction: options.direction}))
-        } else {
-          feeds.push(... this.expendFeeds({macs, direction: 'in'}))
-          feeds.push(... this.expendFeeds({macs, direction: 'out'}))
-        }
-        if (options.dnsFlow) {
-          feeds.push(... auditTool.expendFeeds({macs, block: false, dnsFlow: true}))
-        }
-        if (options.auditDNSSuccess && options.ntpFlow)
-          feeds.push(... auditTool.expendFeeds({macs, block: false}))
-        else if (options.auditDNSSuccess && (!options.type || options.type == 'dns'))
-          feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'dns'}))
-        else if (options.ntpFlow && (!options.type || options.type == 'ntp'))
-          feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'ntp'}))
-      }
-      if (options.localFlow && options.local !== false) {
-        // a local flow will be recorded in both src and dst host key, need to deduplicate flows on the two hosts if both hosts are included in macs
-        options.exclude = [{dstMac: macs, fd: "out"}]
-        feeds.push(... this.expendFeeds({macs, localFlow: true}))
-      }
-    }
-    if (options.block !== false) {
-      if (options.audit) {
-        feeds.push(... auditTool.expendFeeds({macs, block: true}))
-      }
-    }
+    const feeds = this.optionsToFeeds(options, macs).concat(
+      auditTool.optionsToFeeds(options, macs)
+    )
 
-    delete options.audit
-    delete options.dnsFlow
-    delete options.ntpFlow
-    delete options.localFlow
-    delete options.auditDNSSuccess
-    let recentFlows = await this.logFeeder(options, feeds)
+    const recentFlows = await this.logFeeder(options, feeds)
 
     json.flows.recent = recentFlows;
     log.verbose('prepareRecentFlows ends', JSON.stringify(options))
     return recentFlows
-  }
-
-  optionsToFilter(options) {
-    const filter = super.optionsToFilter(options)
-    delete filter.localFlow
-    return filter
   }
 
   // convert flow json to a simplified json format that's more readable by app
@@ -157,13 +134,14 @@ class FlowTool extends LogQuery {
       type: 'ip'
     };
     f.ts = flow._ts; // _ts:update/record time, front-end always show up this
+    f.ets = Number(flow.ts) + Number(flow.du); // add flow ets for consumer merge purpose
     f.fd = flow.fd;
-    f.count = flow.ct || 1,
-    f.duration = flow.du
+    f.count = flow.ct || 1;
+    f.duration = flow.du;
     if (flow.intf) f.intf = networkProfileManager.prefixMap[flow.intf] || flow.intf
     for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-      const config = Constants.TAG_TYPE_MAP[type];
-      f[config.flowKey] = flow[config.flowKey];
+      const flowKey = Constants.TAG_TYPE_MAP[type].flowKey
+      if (flow[flowKey]) f[flowKey] = flow[flowKey];
     }
     if (_.isObject(flow.af) && !_.isEmpty(flow.af)) {
       f.appHosts = Object.keys(flow.af);
@@ -217,9 +195,11 @@ class FlowTool extends LogQuery {
       f.download = flow.ob;
     }
 
-    if (options.localFlow) {
+    if (options.local) {
       f.dstMac = flow.dmac
       f.local = true
+      if (flow.drl)
+        f.drl = flow.drl;
       if (flow.dstTags)
         f.dstTags = flow.dstTags;
     }
@@ -307,7 +287,7 @@ class FlowTool extends LogQuery {
   }
 
   getLogKey(mac, options) {
-    if (options.localFlow)
+    if (options.local)
       return `flow:local:${mac}`
     else
       return util.format("flow:conn:%s:%s", options.direction || 'in', mac);

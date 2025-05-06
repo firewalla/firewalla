@@ -50,7 +50,8 @@ vars:
 # placed here if it's not specified with a full path name. This can be
 # overridden with the -l command line parameter.
 default-log-dir: /log/slog/
-
+# set to a large value in case of gro/tso
+default-packet-size: 8096
 # Global stats configuration
 stats:
   enabled: no
@@ -369,7 +370,7 @@ app-layer:
       #
       # For best performance, select 'bypass'.
       #
-      #encryption-handling: default
+      encryption-handling: bypass
 
     dcerpc:
       enabled: yes

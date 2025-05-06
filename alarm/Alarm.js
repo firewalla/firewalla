@@ -1079,11 +1079,6 @@ class AbnormalUploadAlarm extends OutboundAlarm {
     return fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4
   }
 
-  // dedup implemented before generation @ FlowMonitor
-  isDup() {
-    return false;
-  }
-
   getNotifKeyPrefix() {
     if (this["p.local_is_client"] === "0")
       return `${super.getNotifKeyPrefix()}.inbound`;
@@ -1145,11 +1140,6 @@ class LargeUploadAlarm extends OutboundAlarm {
   getExpirationTime() {
     // for upload activity, only generate one alarm every 4 hours.
     return fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4
-  }
-
-  // dedup implemented before generation @ FlowMonitor
-  isDup() {
-    return false;
   }
 
   getNotifKeyPrefix() {

@@ -21,12 +21,7 @@ let sample = require('./sample_data');
 
 let spoof = require('../net2/Spoofer');
 
-let redis = require('redis');
-let rclient = redis.createClient();
-
-let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
+let rclient = require('../util/redis_manager').getRedisClient();
 
 describe.skip('Test control features on host', () => {
   

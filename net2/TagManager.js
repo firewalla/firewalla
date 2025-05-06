@@ -1,4 +1,4 @@
-/*    Copyright 2020-2024 Firewalla Inc.
+/*    Copyright 2020-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,6 +27,7 @@ const Constants = require('./Constants.js');
 const dnsmasq = new DNSMASQ();
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock()
+const KEY_TAG_INDEXED = 'tag:indexed'
 
 class TagManager {
   constructor() {
@@ -39,6 +40,23 @@ class TagManager {
     this.subscriber.subscribeOnce("DiscoveryEvent", "Tags:Updated", null, async (channel, type, id, obj) => {
       this.scheduleRefresh();
     });
+
+    if (f.isMain()) {
+      this.buildIndex();
+      // periodically sync group macs to fwapc in case of inconsistency
+      setInterval(async () => {
+        if (sysManager.isIptablesReady()) {
+          for (const uid of Object.keys(this.tags)) {
+            const tag = this.tags[uid];
+            if (await this.tagUidExists(uid)) {
+              await Tag.scheduleFwapcSetGroupMACs(uid, tag.getTagType()).catch((err) => {
+                log.error(`Failed to sync macs to tag ${uid}`);
+              });
+            }
+          }
+        }
+      }, 900 * 1000);
+    }
 
     return this;
   }
@@ -61,8 +79,8 @@ class TagManager {
 
   async toJson() {
     const json = {};
+    await this.loadPolicyRules()
     for (let uid in this.tags) {
-      await this.tags[uid].loadPolicyAsync();
       json[uid] = this.tags[uid].toJson();
     }
     return json;
@@ -113,6 +131,7 @@ class TagManager {
       const now = Math.floor(Date.now() / 1000);
       const newTag = new Tag(Object.assign({}, obj, {uid: newUid, name: name, createTs: now}))
       await newTag.save()
+      await rclient.saddAsync(Constants.TAG_TYPE_MAP[type].redisIndexKey, newUid)
       this.tags[newUid] = newTag
 
       this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, newTag);
@@ -128,25 +147,28 @@ class TagManager {
   // This function should only be invoked in FireAPI. Please follow this rule!
   async removeTag(uid, name, type = Constants.TAG_TYPE_GROUP) { // remove tag by name is for backward compatibility
     uid = String(uid);
+
     if (_.has(this.tags, uid)) {
-      const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [this.tags[uid].getTagType(), "redisKeyPrefix"]);
-      const key = keyPrefix && `${keyPrefix}${uid}`;
-      key && await rclient.unlinkAsync(key);
+      const tagMap = Constants.TAG_TYPE_MAP[this.tags[uid].getTagType()]
+      if (!tagMap) return
+      const key = `${tagMap.redisKeyPrefix}${uid}`;
+      await rclient.sremAsync(tagMap.redisIndexKey, uid)
+      await rclient.unlinkAsync(key);
       this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, this.tags[uid].o);
       await this.refreshTags();
       return;
     }
     if (name && type) {
-      const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [type, "redisKeyPrefix"]);
-      if (keyPrefix) {
-        for (let uid in this.tags) {
-          if (this.tags[uid].o && this.tags[uid].o.name === name) {
-            const key = `${keyPrefix}${uid}`;
-            await rclient.unlinkAsync(key);
-            this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, this.tags[uid].o);
-            await this.refreshTags();
-            return;
-          }
+      const tagMap = Constants.TAG_TYPE_MAP[type]
+      if (!tagMap) return
+      for (let uid in this.tags) {
+        if (this.tags[uid].o && this.tags[uid].o.name === name) {
+          const key = `${tagMap.redisKeyPrefix}${uid}`;
+          await rclient.sremAsync(tagMap.redisIndexKey, uid)
+          await rclient.unlinkAsync(key);
+          this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, this.tags[uid].o);
+          await this.refreshTags();
+          return;
         }
       }
     }
@@ -166,19 +188,21 @@ class TagManager {
       // different type of tags are saved in different redis hash keys
       if (tag.o.type !== type) {
         const oldType = tag.o.type || Constants.TAG_TYPE_GROUP;
-        const oldPrefix = _.get(Constants.TAG_TYPE_MAP, [oldType, "redisKeyPrefix"]);
-        if (oldPrefix) {
-          const oldKey = `${oldPrefix}${uid}`;
+        const oldTagMap = _.get(Constants.TAG_TYPE_MAP, oldType);
+        if (oldTagMap) {
+          const oldKey = `${oldTagMap.redisKeyPrefix}${uid}`;
+          await rclient.sremAsync(oldTagMap.redisIndexKey, uid)
           await rclient.unlinkAsync(oldKey);
         }
         changed = true;
       }
       if (type) {
-        const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [type, "redisKeyPrefix"]);
-        if (keyPrefix) {
+        const tagMap = _.get(Constants.TAG_TYPE_MAP, type);
+        if (tagMap) {
           const o = Object.assign({}, { uid, name }, tag.o, obj);
-          const key = `${keyPrefix}${uid}`;
+          const key = `${tagMap.redisKeyPrefix}${uid}`;
           await rclient.hmsetAsync(key, o);
+          await rclient.saddAsync(tagMap.redisIndexKey, uid)
           changed = true;
         } else return null;
       }
@@ -239,6 +263,31 @@ class TagManager {
     return false;
   }
 
+  // this should be run only 1 time
+  async buildIndex() {
+    try {
+      const indexed = await rclient.getAsync(KEY_TAG_INDEXED)
+      if (Number(indexed)) return
+
+      log.info('Building tag indexes ...')
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const config = Constants.TAG_TYPE_MAP[type];
+        const keyPrefix = config.redisKeyPrefix;
+        const keys = await rclient.scanResults(`${keyPrefix}*`);
+        if (keys.length) {
+          await rclient.saddAsync(config.redisIndexKey, keys.map(k => k.substring(keyPrefix.length)))
+        }
+      }
+
+      await rclient.setAsync(KEY_TAG_INDEXED, 1)
+
+      log.info('Tag indexes built')
+    } catch(err) {
+      log.error('Error building Tag indexes', err)
+      await rclient.setAsync(KEY_TAG_INDEXED, 0)
+    }
+  }
+
   async refreshTags() {
     log.verbose('refreshTags')
     const markMap = {};
@@ -246,40 +295,39 @@ class TagManager {
       markMap[uid] = false;
     }
 
-    const keyPrefixes = [];
-    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+    await Promise.all(Object.keys(Constants.TAG_TYPE_MAP).map(async type => {
       const config = Constants.TAG_TYPE_MAP[type];
-      const redisKeyPrefix = config.redisKeyPrefix;
-      keyPrefixes.push(redisKeyPrefix);
-    }
-    for (const keyPrefix of keyPrefixes) {
-      const keys = await rclient.scanResults(`${keyPrefix}*`);
+      const IDs = await rclient.smembersAsync(config.redisIndexKey);
       const nameMap = {}
-      for (let key of keys) {
+      await asyncNative.eachLimit(IDs, 30, async uid => {
+        const key = config.redisKeyPrefix + uid
         const o = await rclient.hgetallAsync(key);
-        if (!o) continue
-        const uid = key.substring(keyPrefix.length);
+        if (!o) {
+          await rclient.sremAsync(config.redisIndexKey, uid);
+          return
+        }
         // remove duplicate deviceTag
         if (o.type == Constants.TAG_TYPE_DEVICE) {
           if (nameMap[o.name]) {
             if (f.isMain()) {
               log.info('Remove duplicated deviceTag', uid)
+              await rclient.sremAsync(config.redisIndexKey, uid);
               await rclient.unlinkAsync(key);
               this.subscriber.publish("DiscoveryEvent", "Tags:Updated");
             }
-            continue
+            return
           } else {
             nameMap[o.name] = true
           }
         }
         if (this.tags[uid]) {
-          await this.tags[uid].update(o);
+          await this.tags[uid].update(Tag.parse(o));
         } else {
-          this.tags[uid] = new Tag(o);
+          this.tags[uid] = new Tag(Tag.parse(o));
         }
         markMap[uid] = true;
-      }
-    }
+      })
+    }))
 
     const removedTags = {};
     Object.keys(this.tags).filter(uid => markMap[uid] === false).map((uid) => {
@@ -309,7 +357,7 @@ class TagManager {
   }
 
   async loadPolicyRules() {
-    await asyncNative.eachLimit(Object.values(this.tags), 10, id => id.loadPolicyAsync())
+    await asyncNative.eachLimit(Object.values(this.tags), 50, id => id.loadPolicyAsync())
   }
 }
 

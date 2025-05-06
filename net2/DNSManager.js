@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,7 +15,7 @@
 'use strict';
 const log = require('./logger.js')(__filename);
 
-const iptool = require('ip');
+const net = require('net');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
@@ -33,7 +33,7 @@ const IdentityManager = require('../net2/IdentityManager.js');
 
 const _ = require('lodash');
 
-const getPreferredBName = require('../util/util.js').getPreferredBName
+const { getPreferredName } = require('../util/util.js')
 
 const URL = require("url");
 
@@ -73,7 +73,7 @@ module.exports = class DNSManager {
   async resolveLocalHostAsync(ip) {
     let mac;
 
-    if (iptool.isV4Format(ip)) {
+    if (net.isIPv4(ip)) {
       let data = await rclient.hgetallAsync("host:ip4:" + ip)
       if (data && data.mac) {
         mac = data.mac
@@ -87,7 +87,7 @@ module.exports = class DNSManager {
         } else
           throw new Error('IP Not Found: ' + ip);
       }
-    } else if (iptool.isV6Format(ip)) {
+    } else if (net.isIPv6(ip)) {
       let data = await rclient.hgetallAsync("host:ip6:" + ip)
       if (data && data.mac) {
         mac = data.mac
@@ -98,7 +98,7 @@ module.exports = class DNSManager {
       log.error("ResolveHost:BadIP", ip);
       throw new Error('bad ip');
     }
-    
+
     return hostTool.getMACEntry(mac);
   }
 
@@ -124,54 +124,42 @@ module.exports = class DNSManager {
   // this is a bit expensive due to the lookup part
   async query(list, ipsrc, ipdst, deviceMac, hostIndicatorsKeyName) {
 
-    // use this as cache to calculate how much intel expires
-    // no need to call Date.now() too many times.
-    if (hostManager == null) {
-      let HostManager = require("../net2/HostManager.js");
-      hostManager = new HostManager();
-    }
-
     if (list == null || list.length == 0) {
       return;
     }
 
+    const HostManager = require("../net2/HostManager.js");
+    const hostManager = new HostManager();
+
+    // this is now only called in FlowMonitor to enrich flow info
     return asyncNative.eachLimit(list, DNSQUERYBATCHSIZE, async(o) => {
-      // resolve++;
 
       const _ipsrc = o[ipsrc]
       const _ipdst = o[ipdst]
       const _deviceMac = deviceMac && o[deviceMac];
       const _hostIndicators = hostIndicatorsKeyName && o[hostIndicatorsKeyName];
       try {
-        if(sysManager.isLocalIP(_ipsrc)) {
-          if (_deviceMac && hostTool.isMacAddress(_deviceMac)) {
-            await this.enrichDeviceMac(_deviceMac, o, "src");
-          } else {
-            // enrichDeviceCount++;
-            if (_deviceMac && IdentityManager.isGUID(_deviceMac))
-              this.enrichIdentity(_deviceMac, o, "src");
-            else
-              await this.enrichDeviceIP(_ipsrc, o, "src");
-          }
+        let monitorable
+        if (_deviceMac && hostTool.isMacAddress(_deviceMac)) {
+          monitorable = hostManager.getHostFastByMAC(_deviceMac);
         } else {
-          // enrichDstCount++;
-            await this.enrichDestIP(_ipsrc, o, "src", _hostIndicators);
+          if (_deviceMac && IdentityManager.isGUID(_deviceMac))
+            monitorable = IdentityManager.getIdentityByGUID(_deviceMac);
+          else {
+            monitorable = hostManager.getHostFastByMAC(o.fd == 'in' ? _ipsrc : _ipdst);
+          }
         }
 
-        if(sysManager.isLocalIP(_ipdst)) {
-          if (_deviceMac && hostTool.isMacAddress(_deviceMac)) {
-            await this.enrichDeviceMac(_deviceMac, o, "dst");
+        if (monitorable) {
+          if (o.fd == 'in') {
+            o.shname = monitorable.getReadableName();
           } else {
-            // enrichDeviceCount++;
-            if (_deviceMac && IdentityManager.isGUID(_deviceMac))
-              this.enrichIdentity(_deviceMac, o, "dst");
-            else
-              await this.enrichDeviceIP(_ipdst, o, "dst");
+            o.dhname = monitorable.getReadableName();
           }
-        } else {
-          // enrichDstCount++;
-          await this.enrichDestIP(_ipdst, o, "dst", _hostIndicators)
+          o.mac == monitorable.getGUID()
         }
+
+        await this.enrichDestIP(o.fd == 'in' ? _ipdst : _ipsrc, o, _hostIndicators);
 
         this.enrichHttpFlow(o);
 
@@ -179,53 +167,6 @@ module.exports = class DNSManager {
         log.error(`Failed to enrich ip: ${_ipsrc}, ${_ipdst}`, err);
       }
     })
-  }
-
-  enrichIdentity(guid, flowObject, srcOrDest) {
-    if (!guid)
-      return;
-    const identity = IdentityManager.getIdentityByGUID(guid);
-    if (identity) {
-      if (srcOrDest === "src") {
-        flowObject["shname"] = identity.getReadableName();
-      } else {
-        flowObject["dhname"] = identity.getReadableName();
-      }
-      flowObject.mac = IdentityManager.getGUID(identity);
-    }
-  }
-
-  async enrichDeviceMac(mac, flowObject, srcOrDest) {
-    if (!mac)
-      return;
-    mac = mac.toUpperCase();
-    await hostTool.getMACEntry(mac).then((macEntry) => {
-      if (macEntry) {
-        if(srcOrDest === "src") {
-          flowObject["shname"] = getPreferredBName(macEntry);
-        } else {
-          flowObject["dhname"] = getPreferredBName(macEntry);
-        }
-        flowObject.mac = mac;
-      }
-    }).catch((err) => {});
-  }
-
-  async enrichDeviceIP(ip, flowObject, srcOrDest) {
-    try {
-      const macEntry = await hostTool.getMacEntryByIP(ip)
-      if(macEntry) {
-        if(srcOrDest === "src") {
-          flowObject["shname"] = getPreferredBName(macEntry)
-        } else {
-          flowObject["dhname"] = getPreferredBName(macEntry)
-        }
-
-        flowObject.mac = macEntry.mac
-      }
-    } catch(err) {
-      // do nothing
-    }
   }
 
   enrichHttpFlow(conn) {
@@ -248,12 +189,12 @@ module.exports = class DNSManager {
     }
   }
 
-  async enrichDestIP(ip, flowObject, srcOrDest, hostIndicators) {
+  async enrichDestIP(ip, flowObject, hostIndicators) {
     try {
       const intel = await intelTool.getIntel(ip, hostIndicators)
 
       if (intel.host) {
-        if (srcOrDest === "src") {
+        if (flowObject.fd == 'out') {
           flowObject["shname"] = intel.host
         } else {
           flowObject["dhname"] = intel.host

@@ -73,22 +73,16 @@ class DeviceSTPSensor extends Sensor {
   }
 
   async discoverMacViaSTP(bridge, uuid) {
-    let results = await exec(`brctl showstp ${bridge} | grep -v "^ " | grep -v "${bridge}"`).then(result => result.stdout.trim().split('\n').filter(line => line.length !== 0));
-    const numberNicMap = {};
-    for (const result of results) {
-      const [intf, number] = result.split(' ', 2);
-      numberNicMap[number.substring(1, number.length - 1)] = intf.split('.')[0]; // strip vlan id suffix
-    }
-    results = await exec(`brctl showmacs ${bridge} | tail -n +2 | awk '{print $1" "$2}'`).then(result => result.stdout.trim().split('\n'));
     const macNicMap = {};
+    let results = await exec(`bridge fdb show br ${bridge} | grep -v permanent`).then(result => result.stdout.trim().split('\n').filter(line => line.length !== 0));
     for (const result of results) {
-      const [number, mac] = result.split(' ', 2);
-      if (numberNicMap[number]) {
-        const {intf} = await hostTool.getKeysInMAC(mac.toUpperCase(), ["intf"]);
-        if (intf && intf !== uuid) // do not record stp port if mac address does not belong to this bridge network
-            continue;
-        macNicMap[mac.toUpperCase()] = numberNicMap[number];
-      }
+      const [mac, _, dev] = result.split(' ', 3);
+      if (!mac || !dev)
+        continue;
+      const {intf} = await hostTool.getKeysInMAC(mac.toUpperCase(), ["intf"]);
+      if (intf && intf !== uuid) // do not record stp port if mac address does not belong to this bridge network
+        continue;
+      macNicMap[mac.toUpperCase()] = dev.split('.')[0]; // strip vlan id suffix
     }
     return macNicMap;
   }
