@@ -150,7 +150,7 @@ class GSEPlatform extends Platform {
   }
 
   getAllowCustomizedProfiles(){
-    return 1;
+    return 10;
   }
   getRatelimitConfig(){
     return {
