@@ -209,6 +209,28 @@ class Host extends Monitorable {
 
   */
 
+  async saveSinglePolicy(name, policy) {
+    await super.saveSinglePolicy(name, policy)
+
+    if (name == 'ipAllocation') {
+      let add = false
+      if (policy.dhcpIgnore) add = true
+      if (platform.isFireRouterManaged()) {
+        if (policy.allocations && Object.keys(policy.allocations).some(
+          uuid => policy.allocations[uuid].type === "static" && sysManager.getInterfaceViaUUID(uuid)
+        ))
+          add = true;
+      } else {
+        if (policy.type === "static")
+          add = true;
+      }
+      if (add)
+        await rclient.saddAsync(Constants.REDIS_KEY_HOST_DHCPCONF, this.getGUID());
+      else
+        await rclient.sremAsync(Constants.REDIS_KEY_HOST_DHCPCONF, this.getGUID());
+    }
+  }
+
   async setPolicyAsync(name, policy) {
     if (!this.policy) await this.loadPolicyAsync();
     if (name == 'dnsmasq') {

@@ -234,11 +234,40 @@ module.exports = class HostManager extends Monitorable {
         sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
           this.loadWifiSDAddr()
         })
+
+        // API depends on these lists, also FireApi initializes faster
+        this.buildsHostLists()
       }
 
       instance = this;
     }
     return instance;
+  }
+
+  async buildsHostLists() {
+    try {
+      const hosts = await this.getHostsAsync({includeInactiveHosts: true})
+      const activeHosts = []
+      const dhcpconf = []
+      const pinned = []
+      for (const host of hosts) {
+        if (host.o.lastActiveTimestamp || host.o.firstFoundTimestamp)
+          activeHosts.push(host.o.lastActiveTimestamp || host.o.firstFoundTimestamp, host.getGUID())
+
+        if (await this._hasDHCPReservation(host.o))
+          dhcpconf.push(host.getGUID())
+        if (host.o.pinned)
+          pinned.push(host.getGUID())
+      }
+      if (activeHosts.length)
+        await rclient.zaddAsync(Constants.REDIS_KEY_HOST_ACTIVE, activeHosts)
+      if (dhcpconf.length)
+        await rclient.saddAsync(Constants.REDIS_KEY_HOST_DHCPCONF, dhcpconf)
+      if (pinned.length)
+        await rclient.saddAsync(Constants.REDIS_KEY_HOST_PINNED, pinned)
+    } catch(err) {
+      log.error('Failed to build host lists', err)
+    }
   }
 
   async loadWifiSDAddr() {
@@ -727,7 +756,7 @@ module.exports = class HostManager extends Monitorable {
     return rclient.getAsync("extension.portforward.config").then((data) => {
       if (data) {
         const config = JSON.parse(data);
-        return config;
+          return config;
       } else
         return null;
     }).catch((err) => null);
@@ -1795,12 +1824,25 @@ module.exports = class HostManager extends Monitorable {
           this.hostsdb[h]._mark = false;
         }
       }
-      const inactiveTS = includeInactiveHosts ? 0 : Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
-      const MACs = await hostTool.getMACsByTime(inactiveTS)
-      this._totalHosts = MACs.length;
+      const inactiveTS = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
+      const visibleMACs = new Set()
+      for (const mac of await hostTool.getMACsByTime(inactiveTS))
+        visibleMACs.add(mac)
+      if (portforwardConfig && Array.isArray(portforwardConfig.maps))
+        portforwardConfig.maps.forEach(p => visibleMACs.add(p.toMac))
+
+      for (const mac of await rclient.smembersAsync(Constants.REDIS_KEY_HOST_DHCPCONF))
+        visibleMACs.add(mac)
+
+      if (includePinnedHosts)
+        for (const mac of await rclient.smembersAsync(Constants.REDIS_KEY_HOST_PINNED))
+          visibleMACs.add(mac)
+
+      const MACs = includeInactiveHosts ? new Set(await hostTool.getAllMACs()) : visibleMACs
+      this._totalHosts = MACs.size;
       let multiarray = [];
-      for (let i in MACs) {
-        multiarray.push(['hgetall', hostTool.getMacKey(MACs[i])])
+      for (const mac of MACs) {
+        multiarray.push(['hgetall', hostTool.getMacKey(mac)])
       }
       const rapidInactiveTS = Date.now() / 1000 - RAPID_INACTIVE_TIME_SPAN;
       const replies = await rclient.multi(multiarray).execAsync();
@@ -1819,20 +1861,13 @@ module.exports = class HostManager extends Monitorable {
         if (o.ipv4) {
           o.ipv4Addr = o.ipv4;
         }
-        const pinned = o.pinned;
-        const hasDHCPReservation = await this._hasDHCPReservation(o);
-        const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
         const hasNonLocalIP = o.ipv4Addr && !sysManager.isLocalIP(o.ipv4Addr);
         const isPrivateMac = o.mac && hostTool.isPrivateMacAddress(o.mac);
         // device might be created during migration with only found ts but no active ts
         const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
         const active = activeTS - o.firstFoundTimestamp > 600 ? true : activeTS && activeTS >= rapidInactiveTS; // expire transient devices in a short time
-        const inUse = (activeTS && activeTS >= inactiveTS) || hasDHCPReservation || hasPortforward || pinned || false;
         // always return devices that has DHCP reservation or port forwards
         const valid = (!isPrivateMac || includePrivateMac) && (active || includeInactiveHosts)
-          || hasDHCPReservation
-          || hasPortforward
-          || (pinned && includePinnedHosts)
         if (!valid)
           return;
         if (hasNonLocalIP) {
@@ -1881,7 +1916,7 @@ module.exports = class HostManager extends Monitorable {
         // ipv6 address conflict hardly happens, so update here is relatively safe
         this.syncV6DB(hostbymac)
   
-        hostbymac.stale = !inUse;
+        hostbymac.stale = !visibleMACs.has(hostbymac.o.mac);
         hostbymac._mark = true;
         if (hostbyip) {
           hostbyip._mark = true;

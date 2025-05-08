@@ -3352,6 +3352,7 @@ class netBot extends ControllerBot {
         if (macExists) {
           // pinned hosts will always be included in init data
           await hostTool.updateKeysInMAC(mac, {pinned: 1});
+          await rclient.saddAsync(Constants.REDIS_KEY_HOST_PINNED, mac);
         } else {
           throw { code: 404, msg: "device not found" }
         }
@@ -3362,6 +3363,7 @@ class netBot extends ControllerBot {
         const macExists = await hostTool.macExists(mac);
         if (macExists) {
           await hostTool.deleteKeysInMAC(mac, ["pinned"]);
+          await rclient.sremAsync(Constants.REDIS_KEY_HOST_PINNED, mac);
         } else {
           throw { code: 404, msg: "device not found" }
         }
@@ -3382,6 +3384,9 @@ class netBot extends ControllerBot {
             await categoryFlowTool.delAllTypes(hostMac);
             await flowAggrTool.removeAggrFlowsAll(hostMac);
             await flowManager.removeFlowsAll(hostMac);
+            await rclient.zremAsync(Constants.REDIS_KEY_HOST_ACTIVE, hostMac);
+            await rclient.sremAsync(Constants.REDIS_KEY_HOST_DHCPCONF, hostMac);
+            await rclient.sremAsync(Constants.REDIS_KEY_HOST_PINNED, hostMac);
 
             // TODO: delete and substract timeseries data from global/intf/tag
 
