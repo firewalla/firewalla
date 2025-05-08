@@ -22,6 +22,7 @@ const extensionManager = require('./ExtensionManager.js');
 const Tag = require('../net2/Tag.js');
 const TagManager = require('../net2/TagManager.js');
 const { Rule } = require('../net2/Iptables.js');
+const fireRouter = require('../net2/FireRouter.js');
 const ipset = require('../net2/Ipset.js');
 const fwapc = require('../net2/fwapc.js');
 const Identity = require('../net2/Identity.js');
@@ -44,6 +45,7 @@ class APFeaturesPlugin extends Sensor {
       "isolation": this.applyIsolation,
       "ssidPSK": this.applySSIDPSK,
       "apBinding": this.applyAPBinding,
+      "apControl": this.applyApControl,
     };
     for (const key of Object.keys(policyHandlers))
       extensionManager.registerExtension(key, this, {
@@ -61,6 +63,79 @@ class APFeaturesPlugin extends Sensor {
     }, 900 * 1000);
   }
 
+  async applyApControl(obj, ip, policy) {
+    if (!policy || !_.isObject(policy)) {
+      log.warn("invalid ap control policy", policy);
+      return;
+    }
+    if (ip == "0.0.0.0") {
+      await this._aclIptables(policy.aclOff === true ? "-I" : "-D");
+      await this._aclAps(policy.aclOff);
+    }
+  }
+
+  async _aclIptables(op) {
+    log.info("applyApControl", op);
+    const netRule = new Rule("filter").chn("FW_FIREWALL_NET_ISOLATION").comment("network ap acl off").jmp("RETURN");
+    const netRule6 = netRule.clone().fam(6);
+    await netRule.exec(op).catch((err) => { log.warn(err.message) });
+    await netRule6.exec(op).catch((err) => { log.warn(err.message) });
+
+    const groupRule = new Rule("filter").chn("FW_FIREWALL_DEV_G_ISOLATION").comment("group ap acl off").jmp("RETURN");
+    const groupRule6 = groupRule.clone().fam(6);
+    await groupRule.exec(op).catch((err) => {  log.warn(err.message) });
+    await groupRule6.exec(op).catch((err) => {  log.warn(err.message) });
+
+    const deviceRule = new Rule("filter").chn("FW_FIREWALL_DEV_ISOLATION").comment("device ap acl off").jmp("RETURN");
+    const deviceRule6 = deviceRule.clone().fam(6);
+    await deviceRule.exec(op).catch((err) => {  log.warn(err.message) });
+    await deviceRule6.exec(op).catch((err) => {  log.warn(err.message) });
+
+    // handle acl rules to intranet in box
+    const monitoredNetRule =new Rule("filter").chn("FW_DROP").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst").comment("ap acl off").jmp("RETURN");
+    const monitoredNetRule6 = monitoredNetRule.clone().fam(6);
+    await monitoredNetRule.exec(op).catch((err) => {  log.warn(err.message) });
+    await monitoredNetRule6.exec(op).catch((err) => {  log.warn(err.message) });
+  }
+
+  async _aclAps(acloff=false) {
+    // set disableAcl to APs
+    const config = await fireRouter.getConfig();
+    if (!config || !config.apc) {
+      log.error("Failed to get apc config");
+      return;
+    }
+    const changed = this._setApAcl(config, acloff);
+    if (changed === true) {
+      log.info("acl changed, reapply networkConfig", acloff);
+      await fireRouter.setConfig(config).catch((err) => {
+        log.warn("Failed to set apc config to change acl status", err.message);
+      });
+    }
+  }
+
+   _setApAcl(config, op) {
+    if (!config.apc || !config.apc.assets || !_.isObject(config.apc.assets)) {
+      log.error("Failed to get assets in apc config");
+      return;
+    }
+    let changed = false;
+    for (const uid in config.apc.assets) {
+      const asset = config.apc.assets[uid];
+      if (!asset || !asset.sysConfig || !_.isObject(asset.sysConfig)) {
+        log.error(`Failed to get sysConfig in apc config for asset ${uid}`);
+        continue;
+      }
+      if (asset.sysConfig.disableAcl === op) {
+        continue;
+      } else {
+        asset.sysConfig.disableAcl = op;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   async applyIsolation(obj, ip, policy) {
     if (obj instanceof Tag) {
       const tag = obj;
@@ -73,23 +148,23 @@ class APFeaturesPlugin extends Sensor {
       const tagDevSetName = Tag.getTagDeviceSetName(tagUid);
       const rule = new Rule("filter").chn("FW_FIREWALL_DEV_G_ISOLATION").mdl("conntrack", "--ctdir ORIGINAL").jmp("FW_PLAIN_DROP");
       const ruleLog = new Rule("filter").chn("FW_FIREWALL_DEV_G_ISOLATION").mdl("conntrack", "--ctdir ORIGINAL").jmp(`LOG --log-prefix "[FW_ADT]A=I G=${tagUid} "`);
-  
+
       const ruleTx = rule.clone().set(tagDevSetName, "src,src").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst").set(tagDevSetName, "dst,dst", true);
       const ruleTxLog = ruleLog.clone().set(tagDevSetName, "src,src").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst").set(tagDevSetName, "dst,dst", true);
-  
+
       const ruleRx = rule.clone().set(tagDevSetName, "dst,dst").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src").set(tagDevSetName, "src,src", true);
       const ruleRxLog = ruleLog.clone().set(tagDevSetName, "dst,dst").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src").set(tagDevSetName, "src,src", true);
   
       const ruleInternal = rule.clone().set(tagDevSetName, "src,src").set(tagDevSetName, "dst,dst");
       const ruleInternalLog = ruleLog.clone().set(tagDevSetName, "src,src").set(tagDevSetName, "dst,dst");
-  
+
       const ruleTx6 = ruleTx.clone().fam(6);
       const ruleTxLog6 = ruleTxLog.clone().fam(6);
       const ruleRx6 = ruleRx.clone().fam(6);
       const ruleRxLog6 = ruleRxLog.clone().fam(6);
       const ruleInternal6 = ruleInternal.clone().fam(6);
       const ruleInternalLog6 = ruleInternalLog.clone().fam(6);
-  
+
       const op = policy.external ? "-A" : "-D";
       const opInternal = policy.internal ? "-A" : "-D";
       
