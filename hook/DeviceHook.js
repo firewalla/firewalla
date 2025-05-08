@@ -188,8 +188,6 @@ class DeviceHook extends Hook {
           const hostManager = new HostManager();
           const h = await hostManager.getHostAsync(newHost.mac)
           await h.update(newHost, true, true)
-
-          this.messageBus.publish(HOST_UPDATED, host.mac, newHost);
         }
       }
 
@@ -442,8 +440,6 @@ class DeviceHook extends Hook {
           if (h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
             await h.spoof(true);
           }
-
-          this.messageBus.publish(HOST_UPDATED, host.mac, enrichedHost);
         } catch (err) {
           log.error("Failed to process OldDeviceChangedToNewIP event:", err);
         }
@@ -541,8 +537,6 @@ class DeviceHook extends Hook {
             await h.spoof(true);
           }
           log.info("MAC entry is updated with new IP", host.ipv4Addr);
-
-          this.messageBus.publish(HOST_UPDATED, host.mac, enrichedHost);
         } catch (err) {
           log.error("Failed to process OldDeviceTakenOverOtherDeviceIP event:", err);
         }
@@ -625,8 +619,6 @@ class DeviceHook extends Hook {
           if (h && h.isMonitoring() && !sysManager.isMyMac(mac)) {
             await h.spoof(true);
           }
-          // publish device updated event to trigger
-          this.messageBus.publish(HOST_UPDATED, mac, h.o);
         })().catch((err) => {
           log.error("Failed to create host entry:", err, err.stack);
         });
