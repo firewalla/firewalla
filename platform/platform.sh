@@ -206,7 +206,12 @@ function installTLSModule() {
   gid=$(id -g pi)
   module_name=$1
   if ! lsmod | grep -wq "${module_name}"; then
+    EMMC_DEV=$(df /media/root-ro | grep -o '/dev/mmcblk[0-9]*')
+    kernel_checksum=$(sudo dd if=$EMMC_DEV bs=512 count=75536 skip=73728 status=none | md5sum | awk '{print $1}')
     ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/${module_name}.ko
+    if [[ -f ${ko_path}.${kernel_checksum} ]]; then
+      ko_path=${ko_path}.${kernel_checksum}
+    fi
     if [[ -f $ko_path ]]; then
       sudo insmod ${ko_path} max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
     fi
