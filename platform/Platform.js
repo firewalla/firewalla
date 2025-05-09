@@ -278,7 +278,14 @@ class Platform {
     if (!codename)
       return;
 
-    const koPath = `${await this.getKernelModulesPath()}/${module_name}.ko`;
+    let koPath = `${await this.getKernelModulesPath()}/${module_name}.ko`;
+    const emmcDev = await exec("df /media/root-ro | grep -o '/dev/mmcblk[0-9]*'").then(result => result.stdout.trim());
+    const kernelChecksum = await exec("sudo dd if=$EMMC_DEV bs=512 count=75536 skip=73728 status=none | md5sum | awk '{print $1}'").then(result => result.stdout.trim());
+
+    const fileExists = await fsp.access(`${koPath}.${kernelChecksum}`, fs.constants.F_OK).then(() => true).catch(() => false);
+    if (fileExists) {
+      koPath = `${koPath}.${kernelChecksum}`;
+    }
     const koExists = await fsp.access(koPath, fs.constants.F_OK).then(() => true).catch((err) => false);
     if (koExists)
       await exec(`sudo insmod ${koPath} max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`).catch((err) => {
