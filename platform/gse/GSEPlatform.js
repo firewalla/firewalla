@@ -26,6 +26,7 @@ const fs = require('fs');
 const util = require('util');
 const readFileAsync = util.promisify(fs.readFile);
 const _ = require('lodash');
+const fsp = fs.promises
 
 const firestatusBaseURL = "http://127.0.0.1:9966";
 
@@ -410,6 +411,19 @@ class GSEPlatform extends Platform {
   }
 
   isDNSFlowSupported() { return true }
+
+  async getTlsKoPath(module_name) {
+    // check if the kernel module is already loaded
+    let koPath = `${await this.getKernelModulesPath()}/${module_name}.ko`;
+    const emmcDev = await exec("df /media/root-ro | grep -o '/dev/mmcblk[0-9]*'").then(result => result.stdout.trim());
+    const kernelChecksum = await exec("sudo dd if=$EMMC_DEV bs=512 count=75536 skip=73728 status=none | md5sum | awk '{print $1}'").then(result => result.stdout.trim());
+
+    const fileExists = await fsp.access(`${koPath}.${kernelChecksum}`, fs.constants.F_OK).then(() => true).catch(() => false);
+    if (fileExists) {
+      koPath = `${koPath}.${kernelChecksum}`;
+    }
+    return koPath;
+  }
 }
 
 module.exports = GSEPlatform;
