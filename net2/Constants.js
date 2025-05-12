@@ -61,6 +61,8 @@ module.exports = {
   REDIS_KEY_ALARM_CACHED: "_alarm:cached", // 0 to disable alarm cache, default on
   REDIS_KEY_PLUGIN_RUNENV: '_plugin:runenv',
   REDIS_KEY_HOST_ACTIVE: 'host:active:mac',
+  REDIS_KEY_HOST_PINNED: 'host:pinned:mac',
+  REDIS_KEY_HOST_DHCPCONF: 'host:dhcpconf:mac',
 
   REDIS_HKEY_NSE_DHCP: "dhcp",
   REDIS_HKEY_CONN_OINTF: "oIntf",

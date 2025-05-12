@@ -47,6 +47,7 @@ const CUSTOMIZED_CATEGORY_KEY_PREFIX = "customized_category:id:"
 const CATEGORY_FILTER_DIR = "/home/pi/.firewalla/run/category_data/filters";
 const crypto = require('crypto');
 const { CategoryEntry } = require("./CategoryEntry.js");
+const CATEGORY_BF_PARTS_KEY = "category_bf_parts";
 
 const net = require('net')
 
@@ -65,6 +66,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
       this.resetUpdaterState()
 
       this.recycleTasks = {};
+      this.categoryBfPartMap = {};
+      this.bfPartCategoryMap = {};
+      this.bfOrigCategoryMap = {};
+      this.origBfCategoryMap = {};
+      this.loadCategoryBfParts();
 
       this.excludedDomains = {
         "av": [
@@ -125,13 +131,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
               }
 
               // check if category filter exists to update
-              const bf_strategy = await this.getStrategy(event.category + '_bf');
-              if (bf_strategy && this.isActivated(event.category + '_bf')) {
+              const bfCategory = this.getBfCategoryByOrigCategory(event.category);
+              const bf_strategy = await this.getStrategy(bfCategory);
+              if (bfCategory && bf_strategy && this.isActivated(bfCategory)) {
                 if (bf_strategy.dnsmasq.enabled && bf_strategy.dnsmasq.useFilter)
                   sem.emitEvent({
                     type: "REFRESH_CATEGORY_FILTER",
-                    message: "Refresh category fitler " + event.category + '_bf',
-                    category: event.category + '_bf',
+                    message: "Refresh category fitler " + bfCategory,
+                    category: bfCategory,
                     toProcess: "FireMain"
                   });
               };
@@ -1432,14 +1439,58 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return;
   }
 
-  decideStrategy(category, categoryMeta) {
-    if (!fc.isFeatureOn("category_filter")) {
-      return "normal";
+
+
+  async loadCategoryBfParts() {
+    const data = await rclient.hgetallAsync(CATEGORY_BF_PARTS_KEY) || {};
+    for (const key of Object.keys(data)) {
+      const parts = JSON.parse(data[key]);
+      this.categoryBfPartMap[key] = parts;
+      if (_.isObject(parts)) {
+        for (const part of Object.keys(parts)) {
+          this.bfPartCategoryMap[part] = key;
+        }
+      }
     }
-    if (this.isManagedTargetList(category) && categoryMeta.domainCount >= 1000) {
-      return "filter";
+  }
+
+  getBfCategoryName(origCategory) {
+    return `${origCategory}_bf`;
+  }
+
+  addUseBfCategory(origCategory, bfCategory) {
+    bfCategory = bfCategory || this.getBfCategoryName(origCategory);
+    this.bfOrigCategoryMap[bfCategory] = origCategory;
+    this.origBfCategoryMap[origCategory] = bfCategory;
+  }
+
+  getOrigCategoryByBfCategory(bfCategory) {
+    return _.get(this.bfOrigCategoryMap, bfCategory);
+  }
+
+  getBfCategoryByOrigCategory(origCategory) {
+    return _.get(this.origBfCategoryMap, origCategory);
+  }
+
+  async setCategoryBfParts(category, parts) {
+    if (!category || !_.isArray(parts))
+      return;
+    this.categoryBfPartMap[category] = {};
+    for (const part of parts) {
+      this.categoryBfPartMap[category][part] = 1;
+      this.bfPartCategoryMap[part] = category;
     }
-    return "normal";
+    await rclient.hsetAsync(CATEGORY_BF_PARTS_KEY, category, JSON.stringify(this.categoryBfPartMap[category]));
+  }
+
+  getCategoryBfParts(category) {
+    if (_.isObject(this.categoryBfPartMap[category]))
+      return Object.keys(this.categoryBfPartMap[category]);
+    return [];
+  }
+
+  getCategoryByBfPart(bfPart) {
+    return this.bfPartCategoryMap[bfPart];
   }
 
   async getStrategy(category) {
@@ -1537,7 +1588,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   // system target list using cloudcache, mainly for large target list to reduce bandwidth usage of polling hashset
   isManagedTargetList(category) {
-    return !this.isUserTargetList(category) && !this.isSmallExtendedTargetList(category) && !this.excludeListBundleIds.has(category) && !category.endsWith('_bf');
+    return !this.isUserTargetList(category) && !this.isSmallExtendedTargetList(category) && !this.excludeListBundleIds.has(category);
   }
 }
 

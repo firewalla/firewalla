@@ -115,6 +115,9 @@ class IPSecDockerClient extends DockerBaseVPNClient {
         composeObj.services.vpn.volumes = files.map(file => `./files/${file}:/${file}`); // map relative path to the absolute path in container
         break;
     }
+    const ipsec_logpath = `/var/log/docker_ipsec_vpn_${this.profileId}.log`;
+    await this._checkAndCreateLogFile(ipsec_logpath);
+    composeObj.services.vpn.volumes.push(`${ipsec_logpath}:/var/log/ipsec.log`);
     await this._prepareDockerCompose(composeObj);
   }
 
@@ -250,6 +253,20 @@ FW_SERVER="${config.server}"`;
     }
     return attributes;
   }
+
+  async getLatestSessionLog() {
+    const logPath = `/var/log/docker_ipsec_vpn_${this.profileId}.log`;
+    const content = await exec(`sudo tail -n 200 ${logPath}`).then(result => result.stdout.trim()).catch((err) => null);
+    return content;
+  }
+
+  async _checkAndCreateLogFile(LogFileName) {
+    if (!LogFileName)
+      return;
+    await exec(`[ -f ${LogFileName} ] || sudo touch ${LogFileName}`).catch((err) => {});
+    await exec(`sudo chmod 644 ${LogFileName}`).catch((err) => {});
+  }
+
 }
 
 module.exports = IPSecDockerClient;
