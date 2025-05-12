@@ -153,7 +153,11 @@ class Host extends Monitorable {
         if (this.o[f]) this[f] = this.o[f]
       }
 
-      if (save) await this.save(updatedKeys)
+      // TODO: compare before saving and publishing to redis
+      if (save) {
+        await this.save(updatedKeys)
+        messageBus.publish(Host.getUpdateCh(), this.getGUID(), this.o)
+      }
 
       return updatedKeys
     }).catch((err) => {
@@ -204,6 +208,28 @@ class Host extends Monitorable {
   6) "1511846844.798"
 
   */
+
+  async saveSinglePolicy(name, policy) {
+    await super.saveSinglePolicy(name, policy)
+
+    if (name == 'ipAllocation') {
+      let add = false
+      if (policy.dhcpIgnore) add = true
+      if (platform.isFireRouterManaged()) {
+        if (policy.allocations && Object.keys(policy.allocations).some(
+          uuid => policy.allocations[uuid].type === "static" && sysManager.getInterfaceViaUUID(uuid)
+        ))
+          add = true;
+      } else {
+        if (policy.type === "static")
+          add = true;
+      }
+      if (add)
+        await rclient.saddAsync(Constants.REDIS_KEY_HOST_DHCPCONF, this.getGUID());
+      else
+        await rclient.sremAsync(Constants.REDIS_KEY_HOST_DHCPCONF, this.getGUID());
+    }
+  }
 
   async setPolicyAsync(name, policy) {
     if (!this.policy) await this.loadPolicyAsync();
@@ -339,7 +365,12 @@ class Host extends Monitorable {
       || Host.metaFieldsActiveTS.includes(fields) // if string as single key
     ) {
       const ts = this.o.lastActiveTimestamp || this.o.firstFoundTimestamp
-      if (ts) await rclient.zaddAsync(Constants.REDIS_KEY_HOST_ACTIVE, ts, this.getGUID())
+      if (ts) {
+        await rclient.pipelineAndLog([
+          [ 'zadd', Constants.REDIS_KEY_HOST_ACTIVE, ts, this.getGUID() ],
+          [ 'expire', this.getMetaKey(), Constants.HOST_MAC_KEY_EXPIRE_SECS ],
+        ])
+      }
     }
   }
 

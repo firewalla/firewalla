@@ -268,6 +268,11 @@ class Platform {
     return [];
   }
 
+  async getTlsKoPath(module_name) {
+    const koPath = `${await this.getKernelModulesPath()}/${module_name}.ko`;
+    return koPath;
+  }
+
   async installTLSModule(module_name) {
     const installed = await this.isTLSModuleInstalled(module_name);
     if (installed) return;
@@ -277,8 +282,7 @@ class Platform {
     });
     if (!codename)
       return;
-
-    const koPath = `${await this.getKernelModulesPath()}/${module_name}.ko`;
+    const koPath = `${await this.getTlsKoPath(module_name)}`
     const koExists = await fsp.access(koPath, fs.constants.F_OK).then(() => true).catch((err) => false);
     if (koExists)
       await exec(`sudo insmod ${koPath} max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`).catch((err) => {

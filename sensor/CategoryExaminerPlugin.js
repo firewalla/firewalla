@@ -147,7 +147,7 @@ class CategoryExaminerPlugin extends Sensor {
     const passthroughDomains = new Set(await rclient.zrangeAsync(redisPassthroughSetKey, 0, -1));
 
     // hitDomains - excludeDomain
-    const excludeDomains = await categoryUpdater.getExcludedDomains(category.split("_bf")[0]);
+    const excludeDomains = await categoryUpdater.getExcludedDomains(categoryUpdater.getOrigCategoryByBfCategory(category) || category);
     for (const domain of hitDomains) {
       if (excludeDomains.includes(domain)) {
         log.info(`Add domain ${domain} to passthrough set of ${category}`);
@@ -182,7 +182,8 @@ class CategoryExaminerPlugin extends Sensor {
         continue;
       }
       const result = response.results[0];
-      if (result && result.uid === `category:${category}` && result.status !== "NoMatch") {
+      const bfParts = categoryUpdater.getCategoryBfParts(category);
+      if (result && bfParts.some(bfPart => result.uid === `category:${bfPart}`) && result.status !== "NoMatch") {
         confirmMatchList.push(domain);
       } else {
         if (hitDomains.has(domain)) {
@@ -229,7 +230,12 @@ class CategoryExaminerPlugin extends Sensor {
 
     let filters;
     if (category) {
-      filters = [`category:${category}`];
+      const parts = categoryUpdater.getCategoryBfParts(category);
+      // category may have multiple bf files
+      if (_.isArray(parts) && !_.isEmpty(parts))
+        filters = parts.map(part => `category:${part}`);
+      else
+        filters = [`category:${category}`];
     } else {
       filters = [];
     }
@@ -267,12 +273,20 @@ class CategoryExaminerPlugin extends Sensor {
       log.warn(`Fail to get match result from category filter: ${origDomain}`);
       return;
     }
-    const categories = response.results.filter(result => result.status == 'Match').map((result) => {const [, c] = result.uid.split(':'); return c});
+    const categories = response.results.filter(result => result.status == 'Match').map((result) => {
+      const [, bfPart] = result.uid.split(':');
+      return categoryUpdater.getCategoryByBfPart(bfPart) || null;
+    }).filter(Boolean);
     const excludeDomains = await this._getCategoryExcludeDomains(_.uniq(categories));
 
     for (const result of response.results) {
       const status = result.status;
-      const [, category] = result.uid.split(":");
+      const [, bfPart] = result.uid.split(":");
+      const category = categoryUpdater.getCategoryByBfPart(bfPart);
+      if (!category) {
+        log.error(`Unknown bf part ${bfPart}`);
+        continue;
+      }
       const matchedDomain = result.item;
       if (!categoryUpdater.isActivated(category)) {
         // do not check if category is not activated
@@ -311,7 +325,7 @@ class CategoryExaminerPlugin extends Sensor {
   async _getCategoryExcludeDomains(categories) {
     let excludeDomains = {};
     for (const c of categories) {
-      const domains = await categoryUpdater.getExcludedDomains(c.split("_bf")[0]);
+      const domains = await categoryUpdater.getExcludedDomains(categoryUpdater.getOrigCategoryByBfCategory(c) || c);
       excludeDomains[c] = domains;
     }
     return excludeDomains;
@@ -341,11 +355,11 @@ class CategoryExaminerPlugin extends Sensor {
       // update hit set using matched domain list
       if (strategy.updateConfirmSet) {
         let score = Date.now();
-        if (!category.endsWith('_bf') && category != "adblock_strict") {
+        if (!categoryUpdater.getOrigCategoryByBfCategory(category) && category != "adblock_strict") {
           await this._confirmCloudCategoryDomains(category, strategy, domainList, score);
           continue;
         }
-        let originCategory = category.split("_bf")[0];
+        let originCategory = categoryUpdater.getOrigCategoryByBfCategory(category);
         if (originCategory === "adblock_strict")
           originCategory = "ad";
         const origDomainList = domainList.map(item => item[1]);

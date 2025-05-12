@@ -151,7 +151,7 @@ class HostTool {
     let key = this.getMacKey(hostCopy.mac);
     await rclient.hmsetAsync(key, hostCopy)
     const ts = hostCopy.lastActiveTimestamp || hostCopy.firstFoundTimestamp
-    if (ts) await rclient.zaddAsync(Constants.REDIS_KEY_hostCopy_ACTIVE, ts, hostCopy.mac)
+    if (ts) await rclient.zaddAsync(Constants.REDIS_KEY_HOST_ACTIVE, ts, hostCopy.mac)
 
     if(skipUpdatingExpireTime) {
       return;
@@ -300,14 +300,13 @@ class HostTool {
   }
 
   async getAllMACs() {
-    const MACs = await rclient.zrangeAsync(Constants.REDIS_KEY_HOST_ACTIVE, 0, -1);
-    if (MACs.length)
-      return MACs.filter(Boolean);
-    else {
-      // fallback to scan when index is not available yet
-      const keys = await rclient.scanResults("host:mac:*");
-      return keys.map(key => key.substring(9)).filter(Boolean);
-    }
+    const keys = await rclient.scanResults("host:mac:*");
+    return keys.map(key => key.substring(9)).filter(Boolean);
+  }
+
+  async getMACsByTime(ts) {
+    const MACs = await rclient.zrevrangebyscoreAsync(Constants.REDIS_KEY_HOST_ACTIVE, '+inf', ts);
+    return MACs.filter(Boolean);
   }
 
   async getAllMACEntries() {
