@@ -115,6 +115,9 @@ class OpenVPNClient extends VPNClient {
             if (value.startsWith("tap"))
               this._intfType = "tap";
             break;
+          case "proto":
+            this._proto = options[1];
+            break;
           default:
         }
       }
@@ -437,6 +440,13 @@ class OpenVPNClient extends VPNClient {
     if (_.isArray(result) && result.length == 2)
       endpoints.push({ip: result[0], port: result[1]});
     return endpoints;
+  }
+
+  _forceSwitchWAN() {
+    if (this._proto && this._proto.toLowerCase() === "tcp") {
+      return true;
+    }
+    return false;
   }
 }
 
