@@ -39,6 +39,7 @@ class NmapSensor extends Sensor {
   constructor(config) {
     super(config);
     this.interfaces = null;
+    this.rounds = 0;
     this.enabled = true; // very basic feature, always enabled
 
     let p = require('../net2/MessageBus.js');
@@ -238,14 +239,15 @@ class NmapSensor extends Sensor {
         range = networkTool.capSubnet(range)
       } catch (e) {
         log.error('Error reducing scan range:', range, fastMode, e);
-        return // Skipping this scan
+        continue // Skipping this scan
       }
 
       log.info(`Scanning network ${range} (fastMode: ${fastMode}) ...`);
 
 
+      // use ARP broadcast scan and ICMP/TCP scan in turn, this can reduce broadcast packets compared to using ARP broadcast scan alone
       const cmd = fastMode
-        ? `sudo timeout 1200s nmap -sn -n -PO1,6 ${intf.type === "wan" ? '--send-ip': ''} --host-timeout 30s  ${range} -oX - | ${xml2jsonBinary}` // protocol id 1, 6 corresponds to ICMP and TCP
+        ? `sudo timeout 1200s nmap -sn -n -PO1,6 ${this.rounds % 2 == 0 ? '--send-ip': ''} --host-timeout 30s  ${range} -oX - | ${xml2jsonBinary}` // protocol id 1, 6 corresponds to ICMP and TCP
         : `sudo timeout 1200s nmap -sU -n --host-timeout 200s --script nbstat.nse -p 137 ${range} -oX - | ${xml2jsonBinary}`;
 
       try {
@@ -254,7 +256,7 @@ class NmapSensor extends Sensor {
 
         if (hosts.length === 0) {
           log.info("No device is found for network", range);
-          return;
+          continue;
         }
 
         for (const host of hosts) {
@@ -265,6 +267,8 @@ class NmapSensor extends Sensor {
         await this._processHost({ipv4Addr: intf.ip_address, mac: (intf.mac_address && intf.mac_address).toUpperCase()}, intf);
       }
     }
+
+    this.rounds++;
 
     setTimeout(() => {
       log.info("publish Scan:Done after scan is finished")

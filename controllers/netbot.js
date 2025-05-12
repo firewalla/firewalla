@@ -779,13 +779,6 @@ class netBot extends ControllerBot {
         log.info("Changing name", host.o.name);
 
         await host.update({ name }, true, true)
-        this.messageBus.publish(host.constructor.getUpdateCh(), host.getGUID(), { name });
-        sem.emitEvent({
-          type: "LocalDomainUpdate",
-          message: `Update device:${host.getGUID()} localDomain`,
-          macArr: [host.getGUID()],
-          toProcess: 'FireMain'
-        });
         sem.emitEvent({
           type: "LocalDomainUpdate",
           message: `Update device:${host.getGUID()} localDomain`,
@@ -822,12 +815,18 @@ class netBot extends ControllerBot {
         }
       }
       case "hostDomain": {
-        let data = msg.data;
-        if (hostTool.isMacAddress(msg.target) || msg.target == '0.0.0.0') {
-          const macAddress = msg.target
-          const { customizeDomainName, suffix, noForward } = data.value;
+        const { data, target: macAddress } = msg
+        const { customizeDomainName, suffix, noForward } = data.value;
 
-          const host = await this.hostManager.getHostAsync(msg.target)
+        if (macAddress == '0.0.0.0') {
+          if (suffix) {
+            await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX, suffix);
+          }
+          if (_.isBoolean(noForward)) {
+            await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD, noForward);
+          }
+        } else if (hostTool.isMacAddress(macAddress)) {
+          const host = await this.hostManager.getHostAsync(macAddress)
 
           if (!host) {
             throw new Error("invalid host")
@@ -835,22 +834,13 @@ class netBot extends ControllerBot {
 
           if (customizeDomainName != host.o.customizeDomainName) {
             await host.update({ customizeDomainName }, true, true)
+            sem.emitEvent({
+              type: "LocalDomainUpdate",
+              message: `Update device:${macAddress} userLocalDomain`,
+              macArr: [macAddress],
+              toProcess: 'FireMain'
+            });
           }
-
-          if (suffix && macAddress == '0.0.0.0') {
-            await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX, suffix);
-          }
-          if (_.isBoolean(noForward) && macAddress == '0.0.0.0') {
-            await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD, noForward);
-          }
-
-          this.messageBus.publish(host.constructor.getUpdateCh(), host.getGUID(), { customizeDomainName });
-          sem.emitEvent({
-            type: "LocalDomainUpdate",
-            message: `Update device:${macAddress} userLocalDomain`,
-            macArr: [macAddress],
-            toProcess: 'FireMain'
-          });
           return { customizeDomainName, userLocalDomain: host.o.userLocalDomain }
         } else {
           throw new Error("Invalid mac address")
@@ -3362,6 +3352,7 @@ class netBot extends ControllerBot {
         if (macExists) {
           // pinned hosts will always be included in init data
           await hostTool.updateKeysInMAC(mac, {pinned: 1});
+          await rclient.saddAsync(Constants.REDIS_KEY_HOST_PINNED, mac);
         } else {
           throw { code: 404, msg: "device not found" }
         }
@@ -3372,6 +3363,7 @@ class netBot extends ControllerBot {
         const macExists = await hostTool.macExists(mac);
         if (macExists) {
           await hostTool.deleteKeysInMAC(mac, ["pinned"]);
+          await rclient.sremAsync(Constants.REDIS_KEY_HOST_PINNED, mac);
         } else {
           throw { code: 404, msg: "device not found" }
         }
@@ -3392,6 +3384,9 @@ class netBot extends ControllerBot {
             await categoryFlowTool.delAllTypes(hostMac);
             await flowAggrTool.removeAggrFlowsAll(hostMac);
             await flowManager.removeFlowsAll(hostMac);
+            await rclient.zremAsync(Constants.REDIS_KEY_HOST_ACTIVE, hostMac);
+            await rclient.sremAsync(Constants.REDIS_KEY_HOST_DHCPCONF, hostMac);
+            await rclient.sremAsync(Constants.REDIS_KEY_HOST_PINNED, hostMac);
 
             // TODO: delete and substract timeseries data from global/intf/tag
 

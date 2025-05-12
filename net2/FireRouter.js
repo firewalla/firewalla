@@ -1230,6 +1230,10 @@ class FireRouter {
           if (activeIntfIndex >= 0 && (dualWANStateValue ^ activeBitMask) === (1 << (activeIntfIndex * 2)))
             dualWANStateValue = 0;
         }
+        if (wanSwitched) {
+          const VPNClient = require('../extension/vpnclient/VPNClient.js');
+          VPNClient.notifyWanSwitched();
+        }
       }
       log.debug("labels=", labels);
       era.addStateEvent("dualwan_state", type, dualWANStateValue, labels);
