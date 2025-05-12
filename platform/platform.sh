@@ -105,6 +105,16 @@ function beep {
   return
 }
 
+function get_tls_ko_path {
+  module_name=$1
+  if [[ -z $module_name ]]; then
+    echo "Error: module_name is empty"
+    return 1
+  fi
+  ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/${module_name}.ko
+  echo $ko_path
+}
+
 case "$UNAME" in
   "x86_64")
     if [[ -e /etc/firewalla-release ]]; then
@@ -206,7 +216,13 @@ function installTLSModule() {
   gid=$(id -g pi)
   module_name=$1
   if ! lsmod | grep -wq "${module_name}"; then
-    ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/${module_name}.ko
+
+    ko_path=$(get_tls_ko_path ${module_name})
+    if [[ -z $ko_path ]]; then
+      echo "Error: ko_path is empty"
+      return 1
+    fi
+
     if [[ -f $ko_path ]]; then
       sudo insmod ${ko_path} max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
     fi

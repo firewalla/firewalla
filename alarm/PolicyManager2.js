@@ -1632,7 +1632,7 @@ class PolicyManager2 {
             });
             if (policy.useBf) {
               await domainBlock.blockCategory({pid,
-                scope: scope, categories: targets.map(target => target + "_bf"), intfs, guids,
+                scope: scope, categories: targets.map(target => categoryUpdater.getBfCategoryName(target)), intfs, guids,
                 action: action, tags, parentRgId, seq, wanUUID, routeType, append: true
               });
             }
@@ -1642,7 +1642,8 @@ class PolicyManager2 {
         for (const target of targets) {
           await categoryUpdater.activateCategory(target);
           if (policy.useBf) {
-            await categoryUpdater.activateCategory(target + '_bf');
+            await categoryUpdater.activateCategory(categoryUpdater.getBfCategoryName(target));
+            categoryUpdater.addUseBfCategory(target);
           }
 
           if (action === "allow") {

@@ -30,8 +30,6 @@ const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
 const CountryUpdater = require('../control/CountryUpdater.js');
 const countryUpdater = new CountryUpdater();
-const DomainUpdater = require('../control/DomainUpdater.js');
-const domainUpdater = new DomainUpdater();
 
 const { Address4, Address6 } = require('ip-address');
 
@@ -129,11 +127,12 @@ class CategoryUpdateSensor extends Sensor {
 
     const hashset = this.getCategoryHashset(category);
 
-    let domains;
+    let domains, info;
     if (category === "adblock_strict") {
       await categoryUpdater.updateStrategy(category, "adblock");
+      info = {use_bf: true};
     } else if (categoryUpdater.isManagedTargetList(category)) {
-      const info = await this.getManagedTargetListInfo(category);
+      info = await this.getManagedTargetListInfo(category);
       log.debug(category, info);
 
       if (info && _.isObject(info) && (info.domain_count > 20000 || info.use_bf)) {
@@ -142,7 +141,7 @@ class CategoryUpdateSensor extends Sensor {
         await categoryUpdater.updateStrategy(category, "default");
       }
     } else {
-      await categoryUpdater.updateStrategy(category, !category.endsWith('_bf') ? "default": "filter");
+      await categoryUpdater.updateStrategy(category, "default");
     }
 
     let categoryStrategy = await categoryUpdater.getStrategy(category);
@@ -229,37 +228,61 @@ class CategoryUpdateSensor extends Sensor {
         await categoryUpdater.updateStrategy(category, "default");
       } else {
         log.debug("Try to get filter data for category", category);
-        const hashsetName = `bf:app.${category}`;
-        let currentCacheItem = cloudcache.getCacheItem(hashsetName);
-        if (currentCacheItem) {
-          await currentCacheItem.download();
-        } else {
-          log.debug("Add category data item to cloud cache:", category);
-          await cloudcache.enableCache(hashsetName);
-          currentCacheItem = cloudcache.getCacheItem(hashsetName);
-        }
-        try {
-          const content = await currentCacheItem.getLocalCacheContent();
-          if (content) {
-            const updated = await this.updateData(category, content);
-            if (updated) {
-              const filterRefreshEvent = {
-                type: "REFRESH_CATEGORY_FILTER",
-                category: category,
-                toProcess: "FireMain"
-              };
-              sem.emitEvent(filterRefreshEvent);
-            } else {
-              log.debug("Skip sending REFRESH_CATEGORY_FILTER event");
-            }
-          } else {
-            // remove obselete category data
-            log.error(`Category ${category} data is invalid. Remove it`);
-            await this.removeData(category);
-          }
-        } catch (e) {
-          log.error(`Fail to update filter data for ${category}.`, e);
+        if (!_.isObject(info)) {
+          log.error(`Target list info of ${category} is unavailable, ignore it`);
           return;
+        }
+        // category may have multiple bloomfilter files, bf names are returned in "parts"
+        const parts = _.isArray(info.parts) ? info.parts : [category];
+        const prevParts = categoryUpdater.getCategoryBfParts(category);
+        if (_.isEmpty(prevParts))
+          prevParts.push(category); // this is for backward compatibility, parts is not supported before 1.981, so legacy data using category as bf name can be deleted if it is not included in parts now
+        const removedParts = _.difference(prevParts, parts);
+        log.info(`Current parts of category ${category} bf:`, parts);
+        log.info(`Previous parts of category ${category} bf:`, prevParts);
+        log.info(`Removed parts of category ${category} bf:`, removedParts);
+        let updated = false;
+        for (const part of removedParts) {
+          const hashsetName = `bf:app.${part}`;
+          await cloudcache.disableCache(hashsetName);
+          await this.removeData(category).catch((err) => { });
+          updated = true;
+        }
+        await categoryUpdater.setCategoryBfParts(category, parts);
+        for (const part of parts) {
+          const hashsetName = `bf:app.${part}`;
+          let currentCacheItem = cloudcache.getCacheItem(hashsetName);
+          if (currentCacheItem) {
+            await currentCacheItem.download();
+          } else {
+            log.debug("Add category data item to cloud cache:", part);
+            await cloudcache.enableCache(hashsetName);
+            currentCacheItem = cloudcache.getCacheItem(hashsetName);
+          }
+          try {
+            const content = await currentCacheItem.getLocalCacheContent();
+            if (content) {
+              updated = await this.updateData(part, content) || updated;
+            } else {
+              // remove obselete category data
+              log.error(`Category ${category} part ${part} data is invalid. Remove it`);
+              await this.removeData(part);
+              updated = true;
+            }
+          } catch (e) {
+            log.error(`Fail to update filter data for ${category}.`, e);
+            return;
+          }
+        }
+        if (updated) {
+          const filterRefreshEvent = {
+            type: "REFRESH_CATEGORY_FILTER",
+            category: category,
+            toProcess: "FireMain"
+          };
+          sem.emitEvent(filterRefreshEvent);
+        } else {
+          log.debug("Skip sending REFRESH_CATEGORY_FILTER event");
         }
       }
     }
@@ -330,12 +353,20 @@ class CategoryUpdateSensor extends Sensor {
   async updateDnsmasqConfig(category) {
     const strategy = await categoryUpdater.getStrategy(category);
     if (strategy.dnsmasq.useFilter) {
-      const uid = `category:${category}`;
-      const meta = await rclient.hgetAsync(CATEGORY_DATA_KEY, uid);
-      if (meta) {
-        await dnsmasq.createCategoryFilterMappingFile(category, JSON.parse(meta));
+      const parts = categoryUpdater.getCategoryBfParts(category);
+      const meta = {};
+      for (const part of parts) {
+        const key = `category:${part}`;
+        const partMeta = await rclient.hgetAsync(CATEGORY_DATA_KEY, key);
+        if (partMeta)
+          meta[part] = JSON.parse(partMeta);
+        else
+          log.error(`No bf data found for part ${part} of category ${category}`);
+      }
+      if (!_.isEmpty(meta)) {
+        await dnsmasq.createCategoryFilterMappingFile(category, meta);
       } else {
-        log.error("No bf data. Delete dns filter config for category:", category);
+        log.error(`No bf data. Delete dns filter config for category: ${category}`);
         await dnsmasq.deletePolicyCategoryFilterEntry(category);
       }
     } else {
