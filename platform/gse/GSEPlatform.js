@@ -26,6 +26,7 @@ const fs = require('fs');
 const util = require('util');
 const readFileAsync = util.promisify(fs.readFile);
 const _ = require('lodash');
+const fsp = fs.promises
 
 const firestatusBaseURL = "http://127.0.0.1:9966";
 
