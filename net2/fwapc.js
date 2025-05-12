@@ -346,6 +346,18 @@ class FWAPC {
     }
     return;
   }
+
+  async setStationControl(mac, data) {
+    if (!mac)
+      throw new Error("mac is not defined in setStationControl");
+    if (!_.isObject(data))
+      throw new Error("data should be an object in setStationControl");
+    const {code, body, msg} = await this.apiCall("POST", `/config/station/${mac.toUpperCase()}`, data);
+    if (!isNaN(code) && Number(code) > 299) {
+      throw new Error(msg || "Failed to set station control");
+    }
+    return;
+  }
 }
 
 const instance = new FWAPC();

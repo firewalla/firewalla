@@ -34,6 +34,7 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_FWAPC_ISOLATION = "LOCK_FWAPC_ISOLATION";
+const LOCK_FWAPC_AP_BINDING = "LOCK_FWAPC_AP_BINDING";
 
 class APFeaturesPlugin extends Sensor {
   async run() {
@@ -42,6 +43,7 @@ class APFeaturesPlugin extends Sensor {
     const policyHandlers = {
       "isolation": this.applyIsolation,
       "ssidPSK": this.applySSIDPSK,
+      "apBinding": this.applyAPBinding,
     };
     for (const key of Object.keys(policyHandlers))
       extensionManager.registerExtension(key, this, {
@@ -52,6 +54,9 @@ class APFeaturesPlugin extends Sensor {
     setInterval(async () => {
       await this.syncIsolation().catch((err) => {
         log.error(`Failed to run periodic sync isolation to fwapc`, err.message);
+      });
+      await this.syncAPBinding().catch((err) => {
+        log.error(`Failed to run periodic sync AP binding to fwapc`, err.message);
       });
     }, 900 * 1000);
   }
@@ -180,6 +185,34 @@ class APFeaturesPlugin extends Sensor {
     await fwapc.deleteGroup(tagUid, "ssid").catch((err) => {
       log.error(`Failed to delete fwapc ssid config on group ${tagUid}`, err.message);
     });
+  }
+
+  async applyAPBinding(obj, ip, policy) {
+    if (!obj instanceof Host) {
+      log.error(`${Constants.POLICY_KEY_AP_BINDING} is not supported on ${obj.constructor.name} object`);
+      return;
+    }
+    const host = obj;
+    const mac = host.getUniqueId();
+    await this.setStationControl(mac, policy).catch((err) => {})
+  }
+
+  async setStationControl(mac, policy) {
+    await lock.acquire(LOCK_FWAPC_AP_BINDING, async () => {
+      await fwapc.setStationControl(mac, policy).catch((err) => {
+        log.error(`Failed to set station control on device ${mac}`, err.message);
+      });
+    });
+  }
+
+  async syncAPBinding() {
+    const hosts = hostManager.getHostsFast();
+    for (const host of hosts) {
+      const mac = host.getUniqueId();
+      const p = await host.getPolicyAsync(Constants.POLICY_KEY_AP_BINDING);
+      if (!_.isEmpty(p) && _.isObject(p))
+        await this.setStationControl(mac, policy).catch((err) => {});
+    }
   }
 
   async syncIsolation() {
