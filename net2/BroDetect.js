@@ -1084,7 +1084,9 @@ class BroDetect {
         // recored device heartbeat
         // as flows with invalid conn_state are removed, all flows here could be considered as valid
         // this should be done before device monitoring check, we still want heartbeat update from unmonitored devices
-        this.recordDeviceHeartbeat(localMac, Math.round((obj.ts + obj.duration) * 100) / 100, lhost, fam)
+        log.info("Conn:Heartbeat", flowdir, localMac, lhost, obj.orig_pkts, obj.resp_pkts)
+        if (obj.proto == 'tcp' || flowdir == 'in' && obj.orig_pkts || flowdir == 'out' && obj.resp_pkts)
+          this.recordDeviceHeartbeat(localMac, Math.round((obj.ts + obj.duration) * 100) / 100, lhost, fam)
       }
 
       // for v6 link-local addresses
