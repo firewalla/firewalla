@@ -124,3 +124,18 @@ EOS
   }
 
 }
+
+function get_tls_ko_path() {
+  module_name=$1
+  if [[ -z $module_name ]]; then
+    echo "Module name is required"
+    return 1
+  fi
+  EMMC_DEV=$(df /media/root-ro | grep -o '/dev/mmcblk[0-9]*')
+  kernel_checksum=$(sudo dd if=$EMMC_DEV bs=512 count=75536 skip=73728 status=none | md5sum | awk '{print $1}')
+  ko_path=${CURRENT_DIR}/files/kernel_modules/$(uname -r)/${module_name}.ko
+  if [[ -f ${ko_path}.${kernel_checksum} ]]; then
+    ko_path=${ko_path}.${kernel_checksum}
+  fi
+  echo $ko_path
+}
