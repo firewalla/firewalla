@@ -278,9 +278,9 @@ cat "$qos_file"
 if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
   # existence of "-m tls" or "-m udp_tls" rules prevents kernel module from being updated, resotre with a tls-clean version first
   module_names=("tls" "udp_tls")
+  grep -vE "\-m tls|\-m udp_tls" "$iptables_file" | sudo iptables-restore
+  grep -vE "\-m tls|\-m udp_tls" "$ip6tables_file" | sudo ip6tables-restore
   for module_name in "${module_names[@]}"; do
-    grep -v "\-m ${module_name}" "$iptables_file" | sudo iptables-restore
-    grep -v "\-m ${module_name}" "$ip6tables_file" | sudo ip6tables-restore
     if lsmod | grep -w "xt_${module_name}"; then
       sudo rmmod "xt_${module_name}"
       if [[ $? -eq 0 ]]; then
