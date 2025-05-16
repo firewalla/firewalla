@@ -119,6 +119,7 @@ const globalAllowKey = "redis_zset_match:global_allow";
 const globalAllowHighKey = "redis_zset_match:global_allow_high";
 
 const AsyncLock = require('../../vendor_lib/async-lock');
+const { allow } = require("../../net2/Ip6tables.js");
 const lock = new AsyncLock();
 const LOCK_OPS = "LOCK_DNSMASQ_OPS";
 const LOCK_LEASE_FILE = "LOCK_DNSMASQ_LEASE";
@@ -1013,22 +1014,38 @@ module.exports = class DNSMASQ {
     const blackhole = "127.0.0.153#59953";
     const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
     const categoryAllowDomainsFile = FILTER_DIR + `/${category}_allow.conf`;
-    const blockEntries = [];
-    const allowEntries = [];
-    // TODO: update dnsmasq to support multiple bf files in one option to reduce redis lookup overhead
-    for (const part of Object.keys(meta)) {
-      const partMeta = meta[part];
-      blockEntries.push(...[
-        `server-bf=</home/pi/.firewalla/run/category_data/filters/${part}.data,${partMeta.size},${partMeta.error}><empty><category:${category}:hit:domain><category:${category}:passthrough:domain>${blackhole}$${category}_block`,
-        `server-bf-high=</home/pi/.firewalla/run/category_data/filters/${part}.data,${partMeta.size},${partMeta.error}><empty><category:${category}:hit:domain><category:${category}:passthrough:domain>${blackhole}$${category}_block_high`,
-      ]);
-      allowEntries.push(...[
-        `server-bf=</home/pi/.firewalla/run/category_data/filters/${part}.data,${partMeta.size},${partMeta.error}><category:${category}:hit:domain><empty><category:${category}:passthrough:domain>#$${category}_allow`,
-        `server-bf-high=</home/pi/.firewalla/run/category_data/filters/${part}.data,${partMeta.size},${partMeta.error}><category:${category}:hit:domain><empty><category:${category}:passthrough:domain>#$${category}_allow_high`,
-      ]);
-    }
-    await fs.writeFileAsync(categoryBlockDomainsFile, blockEntries.join("\n"));
-    await fs.writeFileAsync(categoryAllowDomainsFile, allowEntries.join("\n"));
+
+    const bfLinePrefix = "server-bf=";
+    const bfHighLinePrefix = "server-bf-high=";
+    const bfLineSuffix = "_block\n";
+    const bfHighLineSuffix = "_block_high\n";
+    const bfFilePath = "/home/pi/.firewalla/run/category_data/filters";
+
+    const bfEntryItems = Object.entries(meta).map(
+      ([part, partMeta]) => `<${bfFilePath}/${part}.data,${partMeta.size},${partMeta.error}>`
+    );
+    const bfEntriesStr = `[${bfEntryItems.join(",")}]`;
+
+    const blockEntries = [
+      bfLinePrefix, bfEntriesStr,
+      `<empty><category:${category}:hit:domain><category:${category}:passthrough:domain>${blackhole}$${category}`,
+      bfLineSuffix,
+      bfHighLinePrefix, bfEntriesStr,
+      `<empty><category:${category}:hit:domain><category:${category}:passthrough:domain>${blackhole}$${category}`,
+      bfHighLineSuffix
+    ];
+
+    const allowEntries = [
+      bfLinePrefix, bfEntriesStr,
+      `<category:${category}:hit:domain><empty><category:${category}:passthrough:domain>#$${category}`,
+      bfLineSuffix,
+      bfHighLinePrefix, bfEntriesStr,
+      `<category:${category}:hit:domain><empty><category:${category}:passthrough:domain>#$${category}`,
+      bfHighLineSuffix
+    ];
+
+    await fs.writeFileAsync(categoryBlockDomainsFile, blockEntries.join(""));
+    await fs.writeFileAsync(categoryAllowDomainsFile, allowEntries.join(""));
   }
 
   async createCategoryMappingFile(category, ipsets) {
