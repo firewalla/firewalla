@@ -210,6 +210,36 @@ class APCMsgSensor extends Sensor {
     setInterval(this.updateWlanVendorInfoForAllStations.bind(this), 3600 * 1000); // every hour
 
     setInterval(this.syncRules.bind(this), 900 * 1000); // periodically sync rules to fwapc in case of inconsistency
+
+    setInterval(this.updateStationLastActiveTime.bind(this), 300 * 1000); // every 5 minutes
+  }
+
+  async updateStationLastActiveTime() {
+    log.info("Update lastActiveTime for all stations");
+    const staStatus = await fwapc.getAllSTAStatus().catch((err) => {
+      log.error(`Failed to get STA status from fwapc`, err.message);
+      return null;
+    });
+    if (!_.isObject(staStatus))
+      return;
+    const pipeline = rclient.batch();
+    const now = Math.floor(Date.now() / 1000);
+    for (const [mac, _staInfo] of Object.entries(staStatus)) {
+      const upcaseMac = mac.toUpperCase();
+      const host = await hostManager.getHostAsync(upcaseMac);
+      if (!host)
+        continue;
+      const hostKey = host.getMetaKey();
+      pipeline.hset(hostKey, "lastActiveTimestamp", now);
+    }
+    pipeline.exec((err, results) => {
+      if (err) {
+        log.error("Redis pipeline execution failed", err);
+      } else {
+        log.info("Successfully updated lastActiveTimestamp for all stations");
+      }
+    });
+
   }
 
   async syncRules() {
