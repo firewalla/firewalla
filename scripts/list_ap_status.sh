@@ -150,7 +150,7 @@ convert_eth_speed() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-AP_COLS='version:-10 iversion:-10 device_ip:-16 device_vpn_ip:-16 uptime:6 hshake:8 sta:4 latency:7 branch:-8 eth0:6 eth1:6 act_up:9 bh_up_mac_rssi:-15 dev_mac:-8 name:-30'
+AP_COLS='version:-10 iversion:-10 device_ip:-16 device_vpn_ip:-16 temp:4 uptime:6 hshake:8 sta:4 latency:7 branch:-8 eth0:6 eth1:6 act_up:9 bh_up_mac_rssi:-15 dev_mac:-8 name:-30'
 AP_COLS="idx:-3 $AP_COLS"
 print_header >&2; hl >&2
 lines=0
@@ -159,7 +159,7 @@ ap_data=$(ap_config | jq -r ".assets|to_entries|sort_by(.key)[]|[.key, .value.sy
 timeit ap_data
 ap_status=$(local_api status/ap|jq -r ".info")
 ap_status_mac=$(echo "$ap_status" |  jq -r  'to_entries[]|.key as $mac| .value.aps|map($mac, .bssid)|@tsv')
-ap_status2=$(echo "$ap_status" | jq -r "to_entries[]|[.key,.value.branch,.value.ts,.value.version//\"${NO_VALUE}\",.value.imageVersion//\"${NO_VALUE}\",.value.sysUptime,(.value.eths|.eth0.linkSpeed//-1,.eth1.linkSpeed//-1),.value.activeUplink,.value.aps[\"ath2\"].upRssi//\"-\",.value.latencyToController, .value.aps[\"ath2\"].upBssid//\"-\"]|@tsv")
+ap_status2=$(echo "$ap_status" | jq -r "to_entries[]|[.key,.value.branch,.value.ts,.value.version//\"${NO_VALUE}\",.value.imageVersion//\"${NO_VALUE}\",.value.sysUptime,(.value.eths|.eth0.linkSpeed//-1,.eth1.linkSpeed//-1),.value.activeUplink,.value.aps[\"ath2\"].upRssi//\"-\",.value.latencyToController, .value.aps[\"ath2\"].upBssid//\"-\", ([.value.wifis[].temp]|max)//\"$NO_VALUE\"]|@tsv")
 timeit ap_status
 wg_dump=$(sudo wg show wg_ap dump)
 timeit wg_dump
@@ -170,7 +170,7 @@ now_ts=$(date +%s)
 declare -a ap_names ap_ips
 test -n "$ap_data" && while read ap_mac ap_meshmode ap_pubkey
 do
-    read ap_branch ap_last_handshake_ts ap_version ap_iversion ap_uptime eth0_speed eth1_speed ap_active_uplink ap_backhaul_up_rssi ap_latency ap_backhaul_up_bssid < <( echo "$ap_status2" | awk "\$1==\"$ap_mac\" {print \$2\" \"\$3\" \"\$4\" \"\$5\" \"\$6\" \"\$7\" \"\$8\" \"\$9\" \"\$10\" \"\$11\" \"\$12}")
+    read ap_branch ap_last_handshake_ts ap_version ap_iversion ap_uptime eth0_speed eth1_speed ap_active_uplink ap_backhaul_up_rssi ap_latency ap_backhaul_up_bssid ap_wifis_temp_max < <( echo "$ap_status2" | awk "\$1==\"$ap_mac\" {print \$2\" \"\$3\" \"\$4\" \"\$5\" \"\$6\" \"\$7\" \"\$8\" \"\$9\" \"\$10\" \"\$11\" \"\$12\" \"\$13}")
     timeit read
     if [[ -n "$ap_pubkey" ]]; then
       echo "$wg_ap_peers_pubkeys" | fgrep -q $ap_pubkey && ap_adopted=adopted || ap_adopted=pending
@@ -204,6 +204,7 @@ do
             dev_mac) apd=${ap_mac: -8} ;;
             device_ip) apd=$ap_ip ;;
             device_vpn_ip) apd=$device_vpn_ip ;;
+            temp) apd=$ap_wifis_temp_max ;;
             uptime) apd=$(displaytime $ap_uptime) ;;
             branch) apd="$ap_branch" ;;
             hshake) apd="$ap_last_handshake" ;;
