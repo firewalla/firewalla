@@ -272,12 +272,12 @@ async function testRoute(dstIp, srcIp, srcIntf) {
   }
 }
 
-async function addMultiPathRouteToTable(dest, tableName, af = 4, ...multipathDesc) {
+async function addMultiPathRouteToTable(dest, tableName, af = 4, metric, ...multipathDesc) {
   let cmd = null;
   dest = dest || "default";
   cmd =  `sudo ip -${af} route add ${dest}`;
   tableName = tableName || "main";
-  cmd = `${cmd} table ${tableName}`;
+  cmd = `${cmd} table ${tableName} metric ${metric}`;
   for (let desc of multipathDesc) {
     const nextHop = desc.nextHop;
     const dev = desc.dev;

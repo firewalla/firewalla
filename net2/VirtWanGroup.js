@@ -283,9 +283,9 @@ class VirtWanGroup {
           seq++;
         }
         if (multiPathDesc.length > 0)
-          await routing.addMultiPathRouteToTable("default", this._getRTName(), 4, ...multiPathDesc).catch((err) => { });
+          await routing.addMultiPathRouteToTable("default", this._getRTName(), 4, 1, ...multiPathDesc).catch((err) => { });
         if (multiPathDesc6.length > 0)
-          await routing.addMultiPathRouteToTable("default", this._getRTName(), 6, ...multiPathDesc6).catch((err) => { });
+          await routing.addMultiPathRouteToTable("default", this._getRTName(), 6, 1, ...multiPathDesc6).catch((err) => { });
         break;
       }
       default:
