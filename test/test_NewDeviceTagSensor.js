@@ -61,9 +61,14 @@ mock('../net2/TagManager.js', {});
 
 
 const NewDeviceTagSensor = require('../sensor/NewDeviceTagSensor');
-const sensorInstance = new NewDeviceTagSensor({});
+
 
 describe('NewDeviceTagSensor.isFirewallaAP', () => {
+  const sensorInstance = new NewDeviceTagSensor({});
+
+  after(() => {
+    mock.stopAll()
+  })
 
   it('should return true for Firewalla AP MAC address "20:6D:31:61"', () => {
     const host = {
