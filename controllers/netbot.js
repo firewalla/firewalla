@@ -4031,8 +4031,22 @@ class netBot extends ControllerBot {
               }
 
               await sysManager.updateAsync()
+              const fwapcOps = data.fwapcOps || [];
               try {
-                const json = await this.hostManager.toJson(options)
+                const json = {};
+                const tasks = fwapcOps.map(async (op) => {
+                  const {key, method, path, body} = op;
+                  const result = await fwapc.apiCall(method || "GET", path, body).catch((err) => null);
+                  if (result && result.code == 200)
+                    json[key] = result.body;
+                });
+                tasks.push((async () => {
+                  const result = await this.hostManager.toJson(options);
+                  Object.assign(json, result)
+                })());
+                await Promise.all(tasks).catch((err) => {
+                  log.error("Failed to run multiple tasks in init", err.message);
+                });
 
                 if (this.eptcloud) {
                   json.rkey = this.eptcloud.getMaskedRKey(gid);

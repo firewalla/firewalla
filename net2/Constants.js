@@ -162,7 +162,6 @@ module.exports = {
   POLICY_KEY_ISOLATION: "isolation",
   POLICY_KEY_SSID_PSK: "ssidPSK",
   POLICY_KEY_WIFI_AUTO_GROUP: "wifiAutoGroup",
-  POLICY_KEY_AP_BINDING: "apBinding",
 
   LOG_PREFIX_QUIC: '[FW_QUIC]:',
 };
