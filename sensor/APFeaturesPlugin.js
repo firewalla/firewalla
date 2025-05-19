@@ -286,7 +286,7 @@ class APFeaturesPlugin extends Sensor {
       const mac = host.getUniqueId();
       const p = await host.getPolicyAsync(Constants.POLICY_KEY_AP_BINDING);
       if (!_.isEmpty(p) && _.isObject(p))
-        await this.setStationControl(mac, p).catch((err) => {});
+        await this.setStationControl(mac, policy).catch((err) => {});
     }
   }
 
