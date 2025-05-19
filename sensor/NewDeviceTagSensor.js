@@ -159,9 +159,12 @@ class NewDeviceTagSensor extends Sensor {
   }
 
   isFirewallaAP(hostObj) {
-    const mac = _.get(hostObj, ["o", "mac"]);
-    if (_.isString(mac) && mac.toUpperCase().startsWith(Constants.FW_AP_MAC_PREFIX))
+    const mac = _.get(hostObj, ["o", "mac"], "").toUpperCase();
+    if (!mac.startsWith(Constants.FW_OUI))
+      return false;
+    if (mac.startsWith(Constants.FW_AP_MAC_PREFIX) || mac.startsWith(Constants.FW_AP_CEILING_MAC_PREFIX))
       return true;
+    
     const dhcpName = _.get(hostObj, ["o", "dhcpName"]);
     const dhcpLeaseName = _.get(hostObj, ["o", "dnsmasq.dhcp.leaseName"]);
     if (dhcpName === Constants.FW_AP_DEFAULT_DHCP_HOSTNAME || dhcpLeaseName === Constants.FW_AP_DEFAULT_DHCP_HOSTNAME)
