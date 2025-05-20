@@ -71,6 +71,7 @@ class VirtWanGroup {
             });
           }
         }
+        sem.on("VPNClient:Started", this._refreshRTListener);
         sem.on("VPNClient:Stopped", this._refreshRTListener);
         sem.on("VPNClient:SettingsChanged", this._refreshRTListener);
       }

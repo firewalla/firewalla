@@ -508,11 +508,19 @@ class OSIPlugin extends Sensor {
       await rclient.delAsync(OSI_RULES_KEY);
       await rclient.delAsync(OSI_KEY);
 
+      const VWG_PREFIX_LEN = Constants.ACL_VIRT_WAN_GROUP_PREFIX.length;  
       for (const rule of rules) {
         if (rule.action === 'route') {
-          const profileId = rule.wanUUID.replace(Constants.ACL_VPN_CLIENT_WAN_PREFIX, "");
-          if (!policy.vpnClient || !profileIds.includes(profileId)) {
-            continue; // if PBR rule's VPN doesn't have kill switch on, no need to OSI it.
+          if(rule.wanUUID.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
+            const vwgProfileIds = await virtWanGroupManager.getAllEnabledStrictVPNClients(rule.wanUUID.substring(VWG_PREFIX_LEN));
+            if (vwgProfileIds && vwgProfileIds.length == 0) {
+              continue; // if PBR rule's VPN doesn't have kill switch on, no need to OSI it.
+            }
+          }else if (rule.wanUUID.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX)){
+            const profileId = rule.wanUUID.replace(Constants.ACL_VPN_CLIENT_WAN_PREFIX, "");
+            if (!policy.vpnClient || !profileIds.includes(profileId)) {
+              continue; // if PBR rule's VPN doesn't have kill switch on, no need to OSI it.
+            }
           }
         }
 
@@ -524,8 +532,15 @@ class OSIPlugin extends Sensor {
       for (const tag of Object.values(tagJson)) {
         if (this.hasValidProfileId(tag)) {
           const hostProfileId = tag.policy.vpnClient.profileId;
-          if (profileIds.includes(hostProfileId)) {
-            await this.processTagId(tag.uid, OSI_KEY);
+          if (hostProfileId.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
+            const vwgProfileIds = await virtWanGroupManager.getAllEnabledStrictVPNClients(hostProfileId.substring(VWG_PREFIX_LEN));
+            if (vwgProfileIds && vwgProfileIds.length > 0) {
+                await this.processTagId(tag.uid, OSI_KEY);
+            }
+          }else {
+            if (profileIds.includes(hostProfileId)) {
+              await this.processTagId(tag.uid, OSI_KEY);
+            }
           }
         }
       }
@@ -534,9 +549,16 @@ class OSIPlugin extends Sensor {
       for (const host of hostManager.getHostsFast()) {
         if (this.hasValidProfileId(host)) {
           const hostProfileId = host.policy.vpnClient.profileId;
-          if (profileIds.includes(hostProfileId)) {
-            // mac,20:6D:31:00:00:01
-            await rclient.saddAsync(OSI_KEY, `mac,${host.o.mac}`);
+          if (hostProfileId.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
+            const vwgProfileIds = await virtWanGroupManager.getAllEnabledStrictVPNClients(hostProfileId.substring(VWG_PREFIX_LEN));
+            if (vwgProfileIds && vwgProfileIds.length > 0) {
+                await rclient.saddAsync(OSI_KEY, `mac,${host.o.mac}`);
+            }
+          }else {
+            if (profileIds.includes(hostProfileId)) {
+              // mac,20:6D:31:00:00:01
+              await rclient.saddAsync(OSI_KEY, `mac,${host.o.mac}`);
+            }
           }
         }
       }
@@ -545,8 +567,15 @@ class OSIPlugin extends Sensor {
       for (const network of Object.values(networkProfileManager.networkProfiles)) {
         if (this.hasValidProfileId(network)) {
           const networkVPNProfileId = network.policy.vpnClient.profileId;
-          if (profileIds.includes(networkVPNProfileId)) {
-            await this.processNetwork(network, OSI_KEY);
+          if (networkVPNProfileId.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
+            const vwgProfileIds = await virtWanGroupManager.getAllEnabledStrictVPNClients(networkVPNProfileId.substring(VWG_PREFIX_LEN));
+            if (vwgProfileIds && vwgProfileIds.length > 0) {
+                await this.processNetwork(network, OSI_KEY);
+            }
+          }else {
+            if (profileIds.includes(networkVPNProfileId)) {
+              await this.processNetwork(network, OSI_KEY);
+            }
           }
         }
       }
@@ -556,8 +585,15 @@ class OSIPlugin extends Sensor {
         for (const identity of Object.values(identities)) {
           if (this.hasValidProfileId(identity)) {
             const profileId = identity.policy.vpnClient.profileId;
-            if (profileIds.includes(profileId)) {
-              await this.processIdentity(identity, OSI_KEY);
+            if (profileId.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
+              const vwgProfileIds = await virtWanGroupManager.getAllEnabledStrictVPNClients(profileId.substring(VWG_PREFIX_LEN));
+              if (vwgProfileIds && vwgProfileIds.length > 0) {
+                  await this.processIdentity(identity, OSI_KEY);
+              }
+            }else {
+              if (profileIds.includes(profileId)) {
+                await this.processIdentity(identity, OSI_KEY);
+              }
             }
           }
         }

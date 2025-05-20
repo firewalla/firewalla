@@ -1181,9 +1181,15 @@ class PolicyManager2 {
       }
     } finally {
       const action = policy.action || "block";
-      if (action === "block" || action === "app_block")
+      if (action === "block" || action === "app_block"){
         this.scheduleRefreshConnmark();
-    }
+      }else if (action === "route" ){
+        sem.sendEventToFireMain({
+          type: Message.MSG_OSI_UPDATE_NOW,
+          message: ""
+        });
+      }
+     }
   }
 
   // should be invoked right before the policy is effectively enforced, e.g., regular enforcement, schedule/pause until triggered
@@ -1869,8 +1875,14 @@ class PolicyManager2 {
         return this._unenforce(policy) // regular unenforce
       }
     } finally {
-      if (policy.action === "allow")
+      if (policy.action === "allow"){
         this.scheduleRefreshConnmark();
+      }else if (policy.action === "route" ){
+        sem.sendEventToFireMain({
+          type: Message.MSG_OSI_UPDATE_NOW,
+          message: ""
+        });
+      }
     }
   }
 

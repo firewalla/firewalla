@@ -156,6 +156,10 @@ class PolicyManager {
         break;
       }
     }
+    sem.sendEventToFireMain({
+      type: Message.MSG_OSI_UPDATE_NOW,
+      message: ""
+    });
 
   }
 

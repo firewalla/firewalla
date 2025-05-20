@@ -942,7 +942,15 @@ class VPNClient {
   }
 
   async start() {
-    this._started = true;
+    if (! this._started) {
+      this._started = true;
+      sem.emitEvent({
+                type: "VPNClient:Started",
+                profileId: this.profileId,
+                toProcess: "FireMain"
+              });
+    }
+    
     this._lastStartTime = Date.now();
     await this._prepareRoutes();
     await this.flushRemoteEndpointRoutes().catch((err) => {});
