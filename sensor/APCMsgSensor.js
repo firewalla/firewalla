@@ -105,12 +105,12 @@ class APCMsgSensor extends Sensor {
               await this.updateWlanVendorInfo(mac, vendor);
             }
 
-            // wait for 5 seconds in case ssid tag is not synced to TagManager yet
+            // wait for 3 seconds in case device is not discovered by DeviceHook yet
             setTimeout(() => {
               this.processSTAUpdateMessage(msg).catch((err) => {
                 log.error(`Failed to process ${Message.MSG_FWAPC_SSID_STA_UPDATE} message: ${message}`, err.message);
               });
-            }, 5000);
+            }, 3000);
           }
           break;
         }
@@ -270,7 +270,7 @@ class APCMsgSensor extends Sensor {
         if (!staInfo.vendor)
           continue;
         
-        let wlanVendors = await APCMsgSensor.getWlanVendorFromCache(upcaseMac);
+        let wlanVendors = await hostTool.getWlanVendorFromCache(upcaseMac);
         if (wlanVendors) {
           continue;
         }
@@ -283,7 +283,7 @@ class APCMsgSensor extends Sensor {
         for (const [mac, wlanVendorInfoList] of result) {
           const wlanVendors = wlanVendorInfoList.filter(v => v.vendorName !== "Unknown").map(v => v.vendorName);
           if (wlanVendors && wlanVendors.length > 0) {
-            await APCMsgSensor.setWlanVendorToCache(mac, wlanVendors);
+            await hostTool.setWlanVendorToCache(mac, wlanVendors);
           } else {
             log.info(`Did not find a valid vendor name for mac ${mac}`);
           }
@@ -298,7 +298,7 @@ class APCMsgSensor extends Sensor {
     mac = mac.toUpperCase();
     
     
-    let wlanVendors = await APCMsgSensor.getWlanVendorFromCache(mac);
+    let wlanVendors = await hostTool.getWlanVendorFromCache(mac);
     if (wlanVendors) {
       return;
     }
@@ -307,7 +307,7 @@ class APCMsgSensor extends Sensor {
     if (result && result.size == 1) {
       wlanVendors = WlanVendorInfo.getVendorFromVendorMap(result, mac);
       if (wlanVendors.length > 0) {
-        await APCMsgSensor.setWlanVendorToCache(mac, wlanVendors);
+        await hostTool.setWlanVendorToCache(mac, wlanVendors);
         log.info(`update wlanVendor info, mac:${mac}; vendorId:${vendor} vendorName:${wlanVendors}`);
       } else {
         log.info(`Did not find a valid vendor name for mac ${mac} with vendor ${vendor}`);
@@ -535,7 +535,6 @@ class APCMsgSensor extends Sensor {
     const host = await hostManager.getHostAsync(mac.toUpperCase());
     if (!host) {
       log.warn(`Unknown mac address ${mac}`);
-      return;
     }
     /* uncomment this if there is ssid based management in future releases
     const profile = this.ssidProfiles[uuid];
@@ -547,17 +546,25 @@ class APCMsgSensor extends Sensor {
     */
 
     // do not assign group to device if wifi auto group is disabled on this device
-    const wifiAutoGroup = host.getPolicyFast(Constants.POLICY_KEY_WIFI_AUTO_GROUP);
+    const wifiAutoGroup = host && host.getPolicyFast(Constants.POLICY_KEY_WIFI_AUTO_GROUP);
+    let newTagId = null;
     if (_.get(wifiAutoGroup, "state") === false) {
       log.debug(`${Constants.POLICY_KEY_WIFI_AUTO_GROUP} is not enabled on device ${host.getUniqueId()}`);
-      return;
+    } else {
+      if (groupId && await TagManager.tagUidExists(groupId, Constants.TAG_TYPE_GROUP))
+        newTagId = groupId;
     }
 
-    let newTagId = null;
-    if (groupId && await TagManager.tagUidExists(groupId, Constants.TAG_TYPE_GROUP))
-      newTagId = groupId;
-    if (!_.isEmpty(newTagId))
+    if (!_.isEmpty(newTagId) && host) {
       await host.setPolicyAsync(_.get(Constants.TAG_TYPE_MAP, [Constants.TAG_TYPE_GROUP, "policyKey"]), [newTagId]);
+      await hostTool.deleteWirelessDeviceTagCandidate(mac.toUpperCase());
+    } else {
+      if (!host) {
+        // this may be a new device yet to be discovered
+        log.info(`A new device ${mac} is yet to be discovered in DeviceHook, tag id candidate is set to ${newTagId}`);
+        await hostTool.setWirelessDeviceTagCandidate(mac.toUpperCase(), String(newTagId));
+      }
+    }
   }
 
   async loadCachedSSIDProfiles() {
@@ -702,37 +709,6 @@ class APCMsgSensor extends Sensor {
     }
   }
 
-  static async setWlanVendorToCache(mac, wlanVendors) {
-    const key = `wlanVendor:${mac.toUpperCase()}`;
-    let value = wlanVendors;
-    if (!_.isString(value)) {
-      value = JSON.stringify(wlanVendors);
-    }
-    await rclient.setAsync(key, value);
-  }
-
-  /**
-   * get wlan vendor from cache and refresh expire time
-   * @param {string} mac 
-   * @returns [vendor_string, ...] or null if not found
-   */
-  static async getWlanVendorFromCache(mac) {
-    const key = `wlanVendor:${mac.toUpperCase()}`;
-    const value = await rclient.getAsync(key);
-    if (value) {
-      try {
-        const wlanVendors = JSON.parse(value);
-        return wlanVendors;
-      } catch (err) {
-        log.error(`Failed to parse wlan vendor for ${mac}`, err.message);
-        return null;
-      }
-      
-    } else {
-      return null;
-    }
-  }
-
   /**
    * first try to get wlan vendor from cache, if not found, get from fwapc and store in cache
    * @param {string} mac 
@@ -741,7 +717,7 @@ class APCMsgSensor extends Sensor {
   async getWlanVendor(mac) {
     let wlanVendors = null;
     mac = mac.toUpperCase();
-    wlanVendors = APCMsgSensor.getWlanVendorFromCache(mac);
+    wlanVendors = hostTool.getWlanVendorFromCache(mac);
     if (wlanVendors) {
       log.info(`Get wlan vendor for ${mac} from cache`, wlanVendors);
       return wlanVendors;
@@ -763,7 +739,7 @@ class APCMsgSensor extends Sensor {
 
     if (wlanVendors && wlanVendors.length > 0) {
       log.info(`Get wlan vendor for ${mac} wlanVendors:${wlanVendors}`);
-      APCMsgSensor.setWlanVendorToCache(mac, wlanVendors);
+      hostTool.setWlanVendorToCache(mac, wlanVendors);
       return wlanVendors;
     }
     return null;  
