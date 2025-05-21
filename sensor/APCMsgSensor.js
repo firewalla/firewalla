@@ -40,7 +40,6 @@ const Policy = require("../alarm/Policy.js");
 const pm2 = new PolicyManager2();
 const { getUniqueTs } = require('../net2/FlowUtil.js')
 const SUPPORTED_RULE_TYPES = ["device", "tag", "network", "intranet"];
-const Ipset = require('../net2/Ipset.js');
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const OUI_FILE_PATH = "/usr/share/nmap/nmap-mac-prefixes";
@@ -63,7 +62,6 @@ class APCMsgSensor extends Sensor {
     this.ssidGroupMap = {};
     this.ssidVlanGroupMap = {};
     this.enforcedRules = {};
-    this.assetsIP4s = {};
     this.policyInitialized = false;
     sl.initSingleSensor("ACLAuditLogPlugin").then((r) => {this.aclAuditLogPlugin = r}).catch((err) => {
       log.error("Failed to init ACLAuditLogPlugin", this.aclAuditLogPlugin);
@@ -145,13 +143,6 @@ class APCMsgSensor extends Sensor {
     process.nextTick(() => this.refreshSSIDSTAMapping().catch((err) => {
       log.error(`Failed to refresh ssid sta mapping`, err.message);
     }));
-
-    process.nextTick(() => this.syncAssetsIPSet().catch((err) => {}));
-    setInterval(async () => {
-      this.syncAssetsIPSet().catch((err) => {
-        log.error("Failed to sync assets ipset", err);
-      });
-    }, 60000);
 
     // sync ssid sta mapping once every 20 seconds to ensure consistency in case sta update message is missing somehow
     setInterval(async () => {
@@ -329,37 +320,6 @@ class APCMsgSensor extends Sensor {
     if (type === "device" && !hostTool.isMacAddress(target))
       return false;
     return true;
-  }
-
-  async syncAssetsIPSet() {
-    const status = await fwapc.getAssetsStatus().catch((err) => {
-      log.error("Failed to get assets status from fwapc", err.message);
-      return null;
-    });
-    if (!_.isObject(status) || _.isEmpty(status))
-      return;
-    const ip4s = {};
-    for (const uid of Object.keys(status)) {
-      const {addrs} = status[uid];
-      if (!_.isObject(addrs))
-        continue;
-      for (const intf of Object.keys(addrs)) {
-        const {ip4} = addrs[intf];
-        if (ip4)
-          ip4s[ip4] = 1;
-      }
-    }
-    const removedIP4s = Object.keys(this.assetsIP4s).filter(ip => !_.has(ip4s, ip));
-    const newIP4s = Object.keys(ip4s).filter(ip => !_.has(this.assetsIP4s, ip));
-    const ops = [];
-    for (const ip of removedIP4s)
-      ops.push(`del -! ${Ipset.CONSTANTS.IPSET_ASSETS_IP_SET4} ${ip}`);
-    for (const ip of newIP4s)
-      ops.push(`add -! ${Ipset.CONSTANTS.IPSET_ASSETS_IP_SET4} ${ip}`);
-    if (!_.isEmpty(ops))
-      await Ipset.batchOp(ops).catch((err) => {
-        log.error(`Failed to update assets ipset`, err.message);
-      });
   }
 
   async refreshSSIDSTAMapping() {
