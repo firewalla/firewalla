@@ -67,7 +67,7 @@ class VirtWanGroup {
         this._refreshRTListener = async (event) => {
           if (this.wans.some(wan => wan.profileId === event.profileId)) {
             await this.refreshRT(event).catch((err) => {
-              log.error(`Failed to refresh routing table of virtual wan group ${this.uuid}`. err.message);
+              log.error(`Failed to refresh routing table of virtual wan group ${this.uuid}`.err.message);
             });
           }
         }
@@ -349,8 +349,8 @@ class VirtWanGroup {
     const chain = VirtWanGroup.getDNSRedirectChainName(this.uuid);
     const rtId = await routing.createCustomizedRoutingTable(this._getRTName(), routing.RT_TYPE_VC);
     const rtIdHex = rtId && Number(rtId).toString(16);
-    await exec(`sudo iptables -w -t nat -F ${chain}`).catch((err) => {});
-    await exec(`sudo ip6tables -w -t nat -F ${chain}`).catch((err) => {});
+    await exec(`sudo iptables -w -t nat -F ${chain}`).catch((err) => { });
+    await exec(`sudo ip6tables -w -t nat -F ${chain}`).catch((err) => { });
     for (let i in dnsServers) {
       const dnsServer = dnsServers[i];
       let bin = "iptables";
@@ -422,7 +422,7 @@ class VirtWanGroup {
       }
       if (refreshRTNeeded) {
         await this.refreshRT().catch((err) => {
-          log.error(`Failed to refresh routing table of virtual wan group ${this.uuid}`. err.message);
+          log.error(`Failed to refresh routing table of virtual wan group ${this.uuid}`.err.message);
         });
       }
       // save connState to redis
@@ -502,14 +502,14 @@ class VirtWanGroup {
   async _enableDNSRoute(routeType = "hard") {
     const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
-    await fs.promises.writeFile(this._getDnsmasqRouteConfigPath(routeType), `conf-dir=${VirtWanGroup.getDNSRouteConfDir(this.uuid, routeType)}`).catch((err) => {});
+    await fs.promises.writeFile(this._getDnsmasqRouteConfigPath(routeType), `conf-dir=${VirtWanGroup.getDNSRouteConfDir(this.uuid, routeType)}`).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
   }
 
   async _disableDNSRoute(routeType = "hard") {
     const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
-    await fs.promises.unlink(this._getDnsmasqRouteConfigPath(routeType)).catch((err) => {});
+    await fs.promises.unlink(this._getDnsmasqRouteConfigPath(routeType)).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
   }
 
@@ -553,8 +553,8 @@ class VirtWanGroup {
       log.error(`Unsupported routing type for virtual wan group ${this.uuid}: ${this.type}`);
       return;
     }
-    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_VPN_CLIENT -j ${VirtWanGroup.getDNSRedirectChainName(this.uuid)}`)).catch((err) => {});
-    await exec(wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_DNS_VPN_CLIENT -j ${VirtWanGroup.getDNSRedirectChainName(this.uuid)}`)).catch((err) => {});
+    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_VPN_CLIENT -j ${VirtWanGroup.getDNSRedirectChainName(this.uuid)}`)).catch((err) => { });
+    await exec(wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_DNS_VPN_CLIENT -j ${VirtWanGroup.getDNSRedirectChainName(this.uuid)}`)).catch((err) => { });
     // create ip rule
     await routing.createPolicyRoutingRule("all", null, this._getRTName(), 6000, `${rtId}/${routing.MASK_VC}`);
     await routing.createPolicyRoutingRule("all", null, this._getRTName(), 6000, `${rtId}/${routing.MASK_VC}`, 6);
@@ -566,16 +566,16 @@ class VirtWanGroup {
     const rtId = await routing.createCustomizedRoutingTable(this._getRTName(), routing.RT_TYPE_VC);
     if (!rtId)
       return;
-    await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_DNS_VPN_CLIENT -j ${VirtWanGroup.getDNSRedirectChainName(this.uuid)}`)).catch((err) => {});
-    await exec(wrapIptables(`sudo ip6tables -w -t nat -D FW_PREROUTING_DNS_VPN_CLIENT -j ${VirtWanGroup.getDNSRedirectChainName(this.uuid)}`)).catch((err) => {});
+    await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_DNS_VPN_CLIENT -j ${VirtWanGroup.getDNSRedirectChainName(this.uuid)}`)).catch((err) => { });
+    await exec(wrapIptables(`sudo ip6tables -w -t nat -D FW_PREROUTING_DNS_VPN_CLIENT -j ${VirtWanGroup.getDNSRedirectChainName(this.uuid)}`)).catch((err) => { });
     // flush ipset with skbmark
-    await exec(`sudo ipset flush -! ${VirtWanGroup.getRouteIpsetName(this.uuid)}`).catch((err) => {});
-    await exec(`sudo ipset flush -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${VirtWanGroup.getRouteIpsetName(this.uuid)}`).catch((err) => { });
+    await exec(`sudo ipset flush -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)}`).catch((err) => { });
     // remove ip rule
-    await routing.removePolicyRoutingRule("all", null, this._getRTName(), 6000, `${rtId}/${routing.MASK_VC}`).catch((err) => {});
-    await routing.removePolicyRoutingRule("all", null, this._getRTName(), 6000, `${rtId}/${routing.MASK_VC}`, 6).catch((err) => {});
+    await routing.removePolicyRoutingRule("all", null, this._getRTName(), 6000, `${rtId}/${routing.MASK_VC}`).catch((err) => { });
+    await routing.removePolicyRoutingRule("all", null, this._getRTName(), 6000, `${rtId}/${routing.MASK_VC}`, 6).catch((err) => { });
     // flush routing table
-    await routing.flushRoutingTable(this._getRTName()).catch((err) => {});
+    await routing.flushRoutingTable(this._getRTName()).catch((err) => { });
     // remove customized routing table
     await routing.removeCustomizedRoutingTable(this._getRTName());
     // remove event listener
@@ -592,9 +592,9 @@ class VirtWanGroup {
     await this._disableDNSRoute("hard");
     await this._disableDNSRoute("soft");
     await this._resetRouteMarkInRedis(rtId);
-    await fs.promises.unlink(this._getDnsmasqConfigPath()).catch((err) => {});
-    await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "hard")}`).catch((err) => {});
-    await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "soft")}`).catch((err) => {});
+    await fs.promises.unlink(this._getDnsmasqConfigPath()).catch((err) => { });
+    await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "hard")}`).catch((err) => { });
+    await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "soft")}`).catch((err) => { });
   }
 
   async toJson() {
