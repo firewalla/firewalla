@@ -42,7 +42,6 @@ const { getUniqueTs } = require('../net2/FlowUtil.js')
 const SUPPORTED_RULE_TYPES = ["device", "tag", "network", "intranet"];
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
-const OUI_FILE_PATH = "/usr/share/nmap/nmap-mac-prefixes";
 
 const scheduler = require('../extension/scheduler/scheduler.js');
 

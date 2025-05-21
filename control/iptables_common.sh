@@ -123,10 +123,6 @@ add block_ip_set ${BLUE_HOLE_IP}
 create c_lan_set list:set
 flush c_lan_set
 
-# create a list of set which stores net set of lan networks
-create c_lan_set list:set
-flush c_lan_set
-
 EOF
 
 # dupe common entries from v4 to v6
