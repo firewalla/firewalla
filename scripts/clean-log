@@ -25,7 +25,11 @@ if [[ -f /home/pi/.forever/fwapc.log ]]; then
   cat /dev/null > /home/pi/.forever/fwapc.log
 fi
 
-find /home/pi/logs/*.log -maxdepth 1 -type f -mtime +7 -delete
+find /home/pi/logs/*.log -maxdepth 1 -type f -mtime +7 | while read -r file; do
+  if ! sudo lsof "$file" > /dev/null; then
+    rm "$file"
+  fi
+done
 
 cat /dev/null > /home/pi/.forever/main.log
 cat /dev/null > /home/pi/.forever/kickui.log
