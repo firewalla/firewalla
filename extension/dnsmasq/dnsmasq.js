@@ -1525,8 +1525,7 @@ module.exports = class DNSMASQ {
       const myIp4 = sysManager.myIp(intf.name);
       const myIp6 = sysManager.myIp6(intf.name);
       await NetworkProfile.ensureCreateEnforcementEnv(uuid);
-      const netSet = NetworkProfile.getNetIpsetName(uuid);
-      const netSet6 = NetworkProfile.getNetIpsetName(uuid, 6);
+      const netSet = ipset.CONSTANTS.IPSET_MONITORED_NET
       if (myIp4 && resolver4 && resolver4.length > 0) {
         // redirect dns request that is originally sent to box itself to the upstream resolver
         for (const i in resolver4) {
@@ -1541,7 +1540,7 @@ module.exports = class DNSMASQ {
       if (!_.isEmpty(myIp6) && resolver6 && resolver6.length > 0) {
         for (const i in resolver6) {
           const redirectRule = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_FALLBACK')
-            .set(netSet6, 'src,src').dst(myIp6.join(",")).dport(53)
+            .set(netSet, 'src,src').dst(myIp6.join(",")).dport(53)
             .mdl("statistic", `--mode nth --every ${resolver6.length - i} --packet 0`)
             .jmp(`DNAT --to-destination [${resolver6[i].split('%')[0]}]:53`);
           await redirectRule.clone().pro('tcp').exec('-A');
