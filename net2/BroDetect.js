@@ -1325,7 +1325,7 @@ class BroDetect {
       afobj = this.withdrawAppMap(orig, obj['id.orig_p'], resp, obj['id.resp_p'], long || this.activeLongConns.has(obj.uid)) || connEntry;
       if (!afobj || !afobj.host) {
         // use recent DNS lookup records from this IP as a fallback to parse application level info
-        const srcKey = flowdir == 'in' ? localMac : flowdir == 'out' ? dstMac : orig
+        const srcKey = (flowdir == 'in' ? localMac : dstMac) || orig
         afobj = await conntrack.getConnEntries(srcKey, "", resp, "", "dns", 600);
         if (afobj && afobj.host)
           // sync application level info from recent DNS lookup to five-tuple key of this connection
