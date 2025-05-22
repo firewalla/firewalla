@@ -459,8 +459,8 @@ class Host extends Monitorable {
         });
         const markTag = `${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`;
         // use two config files, one in network directory, the other in vpn client hard route directory, the second file is controlled by conf-dir in VPNClient.js and will not be included when client is disconnected
-        await fs.writeFileAsync(hostConfPath, `mac-address-tag=%${this.o.mac}$vc_${this.o.mac}`).catch((err) => {});
-        await fs.writeFileAsync(vcConfPath, `tag-tag=$vc_${this.o.mac}$${markTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
+        await dnsmasq.writeConfig(hostConfPath, `mac-address-tag=%${this.o.mac}$vc_${this.o.mac}`).catch((err) => {});
+        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$vc_${this.o.mac}$${markTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
       // null means off
@@ -483,8 +483,8 @@ class Host extends Monitorable {
         await exec(rule6.toCmd('-A')).catch((err) => {
           log.error(`Failed to add ipv6 vpn client rule for ${this.o.mac} ${profileId}`, err.message);
         });
-        await fs.writeFileAsync(hostConfPath, `mac-address-tag=%${this.o.mac}$vc_${this.o.mac}`).catch((err) => {});
-        await fs.writeFileAsync(vcConfPath, `tag-tag=$vc_${this.o.mac}$${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
+        await dnsmasq.writeConfig(hostConfPath, `mac-address-tag=%${this.o.mac}$vc_${this.o.mac}`).catch((err) => {});
+        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$vc_${this.o.mac}$${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
       // false means N/A
@@ -869,7 +869,7 @@ class Host extends Monitorable {
     }
     if (entries.length !== 0) {
       if (this._lastHostfileEntries !== entries.sort().join("\n")) {
-        await fs.writeFileAsync(hostsFile, entries.join("\n")).catch((err) => {
+        await dnsmasq.writeConfig(hostsFile, entries).catch((err) => {
           log.error(`Failed to write hosts file ${hostsFile}`, err.message);
         });
         dnsmasq.scheduleReloadDNSService();
@@ -1324,7 +1324,7 @@ class Host extends Monitorable {
           log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 6)} to tag ipset ${Tag.getTagDeviceSetName(uid)}`, err.message);
         });
         const dnsmasqEntry = `mac-address-group=%${this.o.mac.toUpperCase()}@${uid}`;
-        await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${uid}_${this.o.mac.toUpperCase()}.conf`, dnsmasqEntry).catch((err) => {
+        await dnsmasq.writeConfig(`${f.getUserConfigFolder()}/dnsmasq/tag_${uid}_${this.o.mac.toUpperCase()}.conf`, dnsmasqEntry).catch((err) => {
           log.error(`Failed to write dnsmasq tag ${uid} on mac ${this.o.mac}`, err);
         })
         updatedTags.push(uid);
