@@ -1061,6 +1061,9 @@ class BroDetect {
           if (fam == 4)
             realLocal = IdentityManager.getEndpointByIP(lhost);
           localType = TYPE_VPN;
+        } else {
+          log.verbose('Identity Not Found! Drop flow', data)
+          return
         }
       } else {
         // local flow only available in router mode, so gateway is always Firewalla's mac
