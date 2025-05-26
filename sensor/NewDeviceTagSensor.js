@@ -32,6 +32,8 @@ const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
 const TagManager = require('../net2/TagManager.js');
 const delay = require('../util/util.js').delay;
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
 
 // const PM2 = require('../alarm/PolicyManager2.js');
 // const pm2 = new PM2();
@@ -115,12 +117,24 @@ class NewDeviceTagSensor extends Sensor {
         const ssidPSKTags = await TagManager.getPolicyTags("ssidPSK");  
         if (policy) {
           if (!_.isEmpty(ssidPSKTags))
-            // there is ssid/PSK group mapping configured, hold for a while and see if the device is already assigned to another group, ssid STA status is updated once every 20 seconds in fwapc, so 20 seconds should be enough.
-            await delay(20000);
+            // there is ssid/PSK group mapping configured, hold for a while and see if the device is already assigned to another group.
+            // SSID STA status is updated once every 2 seconds in fwapc in the first 10 minutes after a wireless STA is connected. So, 10 seconds should be enough.
+            await delay(10000);
           const tags = await hostObj.getTags();
           if (!_.isEmpty(tags)) {
             log.warn(`Device ${mac} is already added to another group, new device tag will not be enforced`, tags);
             policy = null;
+          } else {
+            const tagCandidate = await hostTool.getWirelessDeviceTagCandidate(mac);
+            if (!_.isEmpty(tagCandidate)) {
+              if (tagCandidate !== "null") {
+                log.warn(`Device ${mac} should be added to group ${tagCandidate}, new device tag will not be enforced`);
+                policy = null;
+                await hostObj.setPolicyAsync('tags', [tagCandidate]);
+              }
+              // delete cached tag uid candidate from redis immediately after it is used, in case the device is deleted and discovered as a new device again, new candidate will be regenerated
+              await hostTool.deleteWirelessDeviceTagCandidate(mac);
+            }
           }
           // check again and see if the new device needs to be put into quarantine group
           if (policy) {
@@ -144,9 +158,10 @@ class NewDeviceTagSensor extends Sensor {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": !isFWAP && policy && [policy.tag].map(String) || [],
             "p.quarantine": isQuarantine
           });
+        if (!isFWAP && policy && [policy.tag].map(String))
+          alarm["p.tag.ids"] = [policy.tag].map(String);
         am2.enqueueAlarm(alarm);
       }
     } catch(err) {
