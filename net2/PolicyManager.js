@@ -156,6 +156,10 @@ class PolicyManager {
         break;
       }
     }
+    sem.sendEventToFireMain({
+      type: Message.MSG_OSI_UPDATE_NOW,
+      message: ""
+    });
 
   }
 
@@ -191,7 +195,7 @@ class PolicyManager {
   }
 
   async vpn(host, config, policies) {
-    if(host.constructor.name !== 'HostManager') {
+    if (host.constructor.name !== 'HostManager') {
       log.error("vpn doesn't support per device policy", host);
       return; // doesn't support per-device policy
     }
@@ -225,7 +229,7 @@ class PolicyManager {
   }
 
   async shadowsocks(host, config) {
-    if(host.constructor.name !== 'HostManager') {
+    if (host.constructor.name !== 'HostManager') {
       log.error("shadowsocks doesn't support per device policy", host);
       return; // doesn't support per-device policy
     }
@@ -259,7 +263,7 @@ class PolicyManager {
   }
 
   async dnsmasq(host, config) {
-    if(host.constructor.name !== 'HostManager') {
+    if (host.constructor.name !== 'HostManager') {
       // per-device or per-network dnsmasq policy
       await host._dnsmasq(config);
       return;
@@ -317,7 +321,7 @@ class PolicyManager {
   }
 
   externalAccess(host, config) {
-    if(host.constructor.name !== 'HostManager') {
+    if (host.constructor.name !== 'HostManager') {
       log.error("externalAccess doesn't support per device policy", host);
       return; // doesn't support per-device policy
     }
@@ -332,7 +336,7 @@ class PolicyManager {
   }
 
   async apiInterface(host, config) {
-    if(host.constructor.name !== 'HostManager') {
+    if (host.constructor.name !== 'HostManager') {
       log.error("apiInterface doesn't support per device policy", host);
       return;
     }
@@ -356,7 +360,7 @@ class PolicyManager {
 
     const tags = (config || []).map(String);
 
-    if (! _.isEmpty(tags)) { // ignore if no tags added to this target
+    if (!_.isEmpty(tags)) { // ignore if no tags added to this target
       sem.sendEventToFireMain({
         type: Message.MSG_OSI_TARGET_TAGS_APPLIED,
         message: "",
@@ -463,7 +467,7 @@ class PolicyManager {
         target.oper[p] = policy[p]; // use original policy data instead of the possible-changed clone
       }
 
-    } catch(err) {
+    } catch (err) {
       log.error('Error executing policy on', target.constructor.getClassName(), target.getReadableName(), p, policy[p], err)
     }
 

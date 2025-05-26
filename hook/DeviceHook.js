@@ -48,11 +48,8 @@ const MAX_IPV6_ADDRESSES = 10
 const MAX_LINKLOCAL_IPV6_ADDRESSES = 3
 const MessageBus = require('../net2/MessageBus.js');
 const VipManager = require('../net2/VipManager.js');
-const Constants = require('../net2/Constants.js');
 
 const WlanVendorInfo = require('../util/WlanVendorInfo.js');
-// const sensorLoader = require('../sensor/SensorLoader.js');
-const APCMsgSensor = require('../sensor/APCMsgSensor.js');
 
 
 const HOST_UPDATED = 'Host:Updated'
@@ -336,7 +333,7 @@ class DeviceHook extends Hook {
 
           if (!enrichedHost.wlanVendor) {
             log.debug(`Try to get vlanVendor info for ${mac}`);
-            const wlanVendors = await APCMsgSensor.getWlanVendorFromCache(host.mac)
+            const wlanVendors = await hostTool.getWlanVendorFromCache(host.mac)
               .catch(err => log.error("Failed to get vendor info for " + mac, err));
 
             if (wlanVendors && wlanVendors.length > 0) {
@@ -425,7 +422,7 @@ class DeviceHook extends Hook {
 
           if (!h.wlanVendor && !enrichedHost.wlanVendor) {
             log.debug(`Try to get vlanVendor info for ${host.mac}`);
-            const wlanVendors = await APCMsgSensor.getWlanVendorFromCache(host.mac)
+            const wlanVendors = await hostTool.getWlanVendorFromCache(host.mac)
               .catch(err => log.error("Failed to get vendor info for " + host.mac, err));
             
             if (wlanVendors && wlanVendors.length > 0) {
@@ -523,7 +520,7 @@ class DeviceHook extends Hook {
 
           if (!h.wlanVendor && !enrichedHost.wlanVendor) {
             log.debug(`Try to get vlanVendor info for ${host.mac}`);
-            const wlanVendors = await APCMsgSensor.getWlanVendorFromCache(host.mac)
+            const wlanVendors = await hostTool.getWlanVendorFromCache(host.mac)
               .catch(err => log.error("Failed to get vendor info for " + host.mac, err));
             
             if (wlanVendors && wlanVendors.length > 0) {
@@ -606,7 +603,7 @@ class DeviceHook extends Hook {
 
           if (!h.wlanVendor && !enrichedHost.wlanVendor) {
             log.debug(`Try to get vlanVendor info for ${mac}`);
-            const wlanVendors = await APCMsgSensor.getWlanVendorFromCache(mac)
+            const wlanVendors = await hostTool.getWlanVendorFromCache(mac)
               .catch(err => log.error("Failed to get vendor info for " + mac, err));
             
             if (wlanVendors && wlanVendors.length > 0) {
