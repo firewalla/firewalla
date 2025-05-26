@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,10 +16,6 @@
 
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
-
-const util = require('util');
-const fs = require('fs');
-const writeFileAsync = util.promisify(fs.writeFile);
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -46,14 +42,14 @@ class BoxAliasSensor extends Sensor {
             ["overlay.fire.walla", sysManager.myIp2()]
         ];
 
-        let content = '';
+        let content = [];
         for (let alias of aliases) {
             if (alias[1]) {
-                content += `address=/${alias[0]}/${alias[1]}\n`;
+                content.push(`address=/${alias[0]}/${alias[1]}`);
             }
         }
 
-        await writeFileAsync(generatedConfigFile, content).then(() => {
+        await dnsmasq.writeConfig(generatedConfigFile, content).then(() => {
             log.info(`generated ${generatedConfigFile}`, content);
         }).catch((err) => {
             log.error(`fail to write ${generatedConfigFile}`, err.message);
@@ -71,10 +67,10 @@ class BoxAliasSensor extends Sensor {
             continue;
           }
           const dnsmasqEntry = `address=/fire.walla/${sysManager.myIp(iface.name)}`;
-          await writeFileAsync(`${dnsmasqConfDir}/box_alias.conf`, dnsmasqEntry).then(() => {
-            log.info(`generated ${dnsmasqConfDir}/box_alias.conf`, dnsmasqEntry);
+          await dnsmasq.writeConfig(`${dnsmasqConfDir}box_alias.conf`, dnsmasqEntry).then(() => {
+            log.info(`generated ${dnsmasqConfDir}box_alias.conf`, dnsmasqEntry);
           }).catch((err) => {
-            log.error(`Failed to generate box_alias conf file ${dnsmasqConfDir}/box_alias.conf`, err.message);
+            log.error(`Failed to generate box_alias conf file ${dnsmasqConfDir}box_alias.conf`, err.message);
           });
         }
         dnsmasq.scheduleRestartDNSService();

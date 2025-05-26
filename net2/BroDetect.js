@@ -1061,6 +1061,9 @@ class BroDetect {
           if (fam == 4)
             realLocal = IdentityManager.getEndpointByIP(lhost);
           localType = TYPE_VPN;
+        } else {
+          log.verbose('Identity Not Found! Drop flow', data)
+          return
         }
       } else {
         // local flow only available in router mode, so gateway is always Firewalla's mac
@@ -1084,7 +1087,6 @@ class BroDetect {
         // recored device heartbeat
         // as flows with invalid conn_state are removed, all flows here could be considered as valid
         // this should be done before device monitoring check, we still want heartbeat update from unmonitored devices
-        log.info("Conn:Heartbeat", flowdir, localMac, lhost, obj.orig_pkts, obj.resp_pkts)
         if (obj.proto == 'tcp' || flowdir == 'in' && obj.orig_pkts || flowdir == 'out' && obj.resp_pkts)
           this.recordDeviceHeartbeat(localMac, Math.round((obj.ts + obj.duration) * 100) / 100, lhost, fam)
       }
@@ -1284,8 +1286,8 @@ class BroDetect {
           tmpspec.drl = this.extractIP(dstRealLocal)
       } else {
         tmpspec.oIntf = outIntfId // egress intf id
-        tmpspec.af = {} //application flows
       }
+      tmpspec.af = {} //application flows
 
       if (connEntry && connEntry.apid && Number(connEntry.apid)) {
         tmpspec.apid = Number(connEntry.apid); // allow rule id
@@ -1323,18 +1325,20 @@ class BroDetect {
         tmpspec.sigs = sigs;
 
       let afobj, afhost
-      if (!localFlow) {
-        afobj = this.withdrawAppMap(orig, obj['id.orig_p'], resp, obj['id.resp_p'], long || this.activeLongConns.has(obj.uid)) || connEntry;
-        if (!afobj || !afobj.host) {
-          afobj = await conntrack.getConnEntries(origMac ? origMac : orig, "", resp, "", "dns", 600); // use recent DNS lookup records from this IP as a fallback to parse application level info
-          if (afobj && afobj.host)
-            await conntrack.setConnEntries(orig, obj["id.orig_p"], resp, obj["id.resp_p"], obj.proto, afobj, 600); // sync application level info from recent DNS lookup to five-tuple key of this connection
-        }
+      afobj = this.withdrawAppMap(orig, obj['id.orig_p'], resp, obj['id.resp_p'], long || this.activeLongConns.has(obj.uid)) || connEntry;
+      if (!afobj || !afobj.host) {
+        // use recent DNS lookup records from this IP as a fallback to parse application level info
+        const srcKey = (flowdir == 'in' ? localMac : dstMac) || orig
+        afobj = await conntrack.getConnEntries(srcKey, "", resp, "", "dns", 600);
+        if (afobj && afobj.host)
+          // sync application level info from recent DNS lookup to five-tuple key of this connection
+          await conntrack.setConnEntries(orig, obj["id.orig_p"], resp, obj["id.resp_p"], obj.proto, afobj, 600);
+      }
 
-        if (afobj && afobj.host && flowdir === "in") { // only use information in app map for outbound flow, af describes remote site
-          tmpspec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
-          afhost = afobj.host
-        }
+      // only use information in app map for outbound flow, af describes remote site
+      if (afobj && afobj.host && (flowdir === "in" || localFlow)) {
+        tmpspec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
+        afhost = afobj.host
       }
 
       this.indicateNewFlowSpec(tmpspec);

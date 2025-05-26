@@ -9,9 +9,11 @@
   },
   "devDependencies": {
     "chai": "^3.5.0",
+    "mock-require": "^3.0.3",
     "muk": "^0.5.3",
     "node-pty": "^0.9.0",
     "nyc": "^15.1.0",
+    "proxyquire": "^2.1.3",
     "underscore": "^1.8.3"
   },
   "dependencies": {
