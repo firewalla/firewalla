@@ -174,6 +174,22 @@ class VirtWanGroupManager {
       log.error("Failed to refresh virtual wan groups", err);
     });
   }
+
+  // return a list of profile id
+  async getAllEnabledStrictVPNClients(uuid) {
+    const list = [];
+    const vwg = this.virtWanGroups[uuid];
+    if (vwg && vwg.strictVPN == true && vwg.connState) {
+      for (const client of Object.keys(vwg.connState)) {
+        const clientState = vwg.connState[client];
+        if (clientState && clientState.enabled == true && clientState.profileId) {
+          list.push(clientState.profileId)
+        }
+      }
+    }
+    return list;
+  }
+
 }
 
 module.exports = new VirtWanGroupManager();
