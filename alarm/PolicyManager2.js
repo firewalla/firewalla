@@ -563,8 +563,8 @@ class PolicyManager2 {
   }
 
   async getPoliciesByAction(actions) {
-    if (_.isString(actions)) actions = [ actions ]
-    const policies = await this.loadActivePoliciesAsync({includingDisabled : 1});
+    if (_.isString(actions)) actions = [actions]
+    const policies = await this.loadActivePoliciesAsync({ includingDisabled: 1 });
     const results = {}
 
     for (const p of policies) {
@@ -755,15 +755,15 @@ class PolicyManager2 {
           if (rule.tag.length <= 1) {
             policyIds.push(rule.pid);
             policyKeys.push('policy:' + rule.pid);
-  
+
             this.tryPolicyEnforcement(rule, 'unenforce');
           } else {
             let reducedTag = _.without(rule.tag, tagUid);
             await rclient.hsetAsync('policy:' + rule.pid, 'scope', JSON.stringify(reducedTag));
             const newRule = await this.getPolicy(rule.pid)
-  
+
             this.tryPolicyEnforcement(newRule, 'reenforce', rule);
-  
+
             log.info('remove scope from policy:' + rule.pid, tag);
           }
         }
@@ -772,7 +772,7 @@ class PolicyManager2 {
         this.tryPolicyEnforcement(rule, 'unenforce');
         policyIds.push(rule.pid);
         policyKeys.push(`policy:${rule.pid}`);
-      }  
+      }
     }
 
     if (policyIds.length) {
@@ -888,11 +888,11 @@ class PolicyManager2 {
         routeRules.push(rule);
       } else if (rule.isInboundInternetBlockRule()) {
         inboundBlockInternetRules.push(rule);
-      } else if (rule.isInboundInternetAllowRule()){
+      } else if (rule.isInboundInternetAllowRule()) {
         inboundAllowInternetRules.push(rule);
       } else if (rule.isInboundIntranetBlockRule()) {
         inboundBlockIntranetRules.push(rule);
-      } else if (rule.isInboundIntranetAllowRule()){
+      } else if (rule.isInboundIntranetAllowRule()) {
         inboundAllowIntranetRules.push(rule);
       } else if (rule.isBlockingInternetRule()) {
         internetRules.push(rule);
@@ -906,10 +906,10 @@ class PolicyManager2 {
     });
 
     return [
-      routeRules, 
+      routeRules,
       inboundBlockInternetRules, inboundAllowInternetRules,
       inboundBlockIntranetRules, inboundAllowIntranetRules,
-      internetRules, intranetRules, 
+      internetRules, intranetRules,
       outboundAllowRules, otherRules,
     ];
   }
@@ -918,8 +918,8 @@ class PolicyManager2 {
     const policies = await this.loadActivePoliciesAsync();
     return policies.filter((x) => {
       return x.isRouteRuleToVPN() ||
-      x.isBlockingInternetRule() ||
-      x.isBlockingIntranetRule();
+        x.isBlockingInternetRule() ||
+        x.isBlockingIntranetRule();
     });
   }
 
@@ -927,7 +927,7 @@ class PolicyManager2 {
     const start = Date.now();
     const isReboot = await rclient.getAsync(Constants.REDIS_KEY_RUN_REBOOT) == "1";
 
-    const rules = await this.loadActivePoliciesAsync({includingDisabled : 1});
+    const rules = await this.loadActivePoliciesAsync({ includingDisabled: 1 });
 
     const [routeRules, inboundBlockInternetRules, inboundAllowInternetRules, inboundBlockIntranetRules, inboundAllowIntranetRules,
       internetRules, intranetRules, outboundAllowRules, otherRules] = this.splitRules(rules);
@@ -1008,7 +1008,7 @@ class PolicyManager2 {
 
     await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'done')
     const end = Date.now();
-    await rclient.setAsync(Constants.REDIS_KEY_POLICY_ENFORCE_SPENT, JSON.stringify({spend: (end-start)/1000, reboot: isReboot, ts: end/1000}));
+    await rclient.setAsync(Constants.REDIS_KEY_POLICY_ENFORCE_SPENT, JSON.stringify({ spend: (end - start) / 1000, reboot: isReboot, ts: end / 1000 }));
 
     const event = {
       type: 'Policy:AllInitialized',
@@ -1061,7 +1061,7 @@ class PolicyManager2 {
       if (await this.isDisableAll()) {
         return policy; // temporarily by DisableAll flag
       }
-  
+
       if (policy.disabled == 1) {
         const idleInfo = policy.getIdleInfo();
         if (idleInfo) {
@@ -1105,7 +1105,7 @@ class PolicyManager2 {
         }
         return // ignore disabled policy rules
       }
-  
+
       // auto unenforce if expire time is set
       if (policy.expire) {
         if (policy.willExpireSoon()) {
@@ -1125,12 +1125,12 @@ class PolicyManager2 {
             log.info(`About to revoke policy ${pid} `)
             // make sure policy is still enabled before disabling it
             const policy = await this.getPolicy(pid);
-  
+
             // do not do anything if policy doesn't exist any more or it's disabled already
             if (!policy || policy.isDisabled()) {
               return
             }
-  
+
             log.info(`Revoke policy ${policy.pid}, since it's expired`)
             await this.unenforce(policy);
             await this._disablePolicy(policy);
@@ -1138,7 +1138,7 @@ class PolicyManager2 {
               await this.deletePolicy(pid);
             }
           }, policy.getExpireDiffFromNow() * 1000); // in milli seconds, will be set to 1 if it is a negative number
-  
+
           this.invalidateExpireTimer(policy); // remove old one if exists
           this.enabledTimers[pid] = policyTimer;
         }
@@ -1165,7 +1165,7 @@ class PolicyManager2 {
               if (policyTimeout < timeout) { // policy's expire time is less than 10 minutes donot change to domain block again.
                 return;
               }
-            } 
+            }
             this.domainBlockTimers[policy.pid] = {
               isTimerActive: true,
               domainBlockTimer: setTimeout(async () => {
@@ -1181,8 +1181,14 @@ class PolicyManager2 {
       }
     } finally {
       const action = policy.action || "block";
-      if (action === "block" || action === "app_block")
+      if (action === "block" || action === "app_block") {
         this.scheduleRefreshConnmark();
+      } else if (action === "route") {
+        sem.sendEventToFireMain({
+          type: Message.MSG_OSI_UPDATE_NOW,
+          message: ""
+        });
+      }
     }
   }
 
@@ -1336,7 +1342,7 @@ class PolicyManager2 {
     }
 
     // for now, targets is only used for multiple category block/app time limit
-    let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, ipttl, resolver, flowIsolation, dscpClass} = policy;
+    let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, ipttl, resolver, flowIsolation, dscpClass } = policy;
     let increaseLatency = null;
     let dropPacketRate = null;
     if (policy.disturbMethod) {
@@ -1347,8 +1353,8 @@ class PolicyManager2 {
 
     if (action === "app_block")
       action = "block"; // treat app_block same as block, but using a different term for version compatibility, otherwise, block rule will always take effect in previous versions
-    
-    if (policy.needPolicyDisturb()){
+
+    if (policy.needPolicyDisturb()) {
       action = "qos";  // treat app_disturb same as qos
       qdisc = "netem";
     }
@@ -1631,7 +1637,8 @@ class PolicyManager2 {
               routeType
             });
             if (policy.useBf) {
-              await domainBlock.blockCategory({pid,
+              await domainBlock.blockCategory({
+                pid,
                 scope: scope, categories: targets.map(target => categoryUpdater.getBfCategoryName(target)), intfs, guids,
                 action: action, tags, parentRgId, seq, wanUUID, routeType, append: true
               });
@@ -1719,7 +1726,7 @@ class PolicyManager2 {
             return;
           }
         }
-        
+
         break;
 
       case "match_group":
@@ -1779,10 +1786,10 @@ class PolicyManager2 {
     }
 
     if (!_.isEmpty(remoteSets)) {
-      for (const {remoteSet4, remoteSet6} of remoteSets) {
+      for (const { remoteSet4, remoteSet6 } of remoteSets) {
         await this.__applyRules({ ...commonOptions, remoteSet4, remoteSet6 }).catch((err) => {
           log.error(`Failed to enforce rule ${pid} based on ip`, err.message);
-        });    
+        });
       }
     } else {
       await this.__applyRules({ ...commonOptions, remoteSet4, remoteSet6 }).catch((err) => {
@@ -1798,7 +1805,7 @@ class PolicyManager2 {
         options.trafficDirection = direction;
         await this._applyRules(options);
       }
-    }else{
+    } else {
       await this._applyRules(options);
     }
   }
@@ -1869,8 +1876,14 @@ class PolicyManager2 {
         return this._unenforce(policy) // regular unenforce
       }
     } finally {
-      if (policy.action === "allow")
+      if (policy.action === "allow") {
         this.scheduleRefreshConnmark();
+      } else if (policy.action === "route") {
+        sem.sendEventToFireMain({
+          type: Message.MSG_OSI_UPDATE_NOW,
+          message: ""
+        });
+      }
     }
   }
 
@@ -1881,7 +1894,7 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, resolver, flowIsolation, dscpClass} = policy;
+    let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, resolver, flowIsolation, dscpClass } = policy;
 
     let increaseLatency = null;
     let dropPacketRate = null;
@@ -1893,8 +1906,8 @@ class PolicyManager2 {
 
     if (action === "app_block")
       action = "block";
-    
-    if (policy.needPolicyDisturb()){
+
+    if (policy.needPolicyDisturb()) {
       action = "qos";  // treat app_disturb same as qos
       qdisc = "netem";
     }
@@ -2242,7 +2255,7 @@ class PolicyManager2 {
       for (const setPair of remoteSets) {
         await this.__applyRules(Object.assign(setPair, commonOptions)).catch((err) => {
           log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
-        });    
+        });
       }
     } else {
       await this.__applyRules(Object.assign({ remoteSet4, remoteSet6 }, commonOptions)).catch((err) => {
@@ -2310,7 +2323,7 @@ class PolicyManager2 {
         !policy.isInboundFirewallRule() &&
         policy.match(alarm)
       )
-      .sort((a,b) => a.priorityCompare(b))
+      .sort((a, b) => a.priorityCompare(b))
 
     if (matchedPolicies.length) {
       const p = matchedPolicies[0]
@@ -2861,7 +2874,7 @@ class PolicyManager2 {
               (this.ipsetCache[remoteDomainSet6] && this.ipsetCache[remoteDomainSet6].some(net => remoteIpsToCheck.some(ip => new Address6(ip).isValid() && new Address6(ip).isInSubnet(new Address6(net))))))
               return true;
           }
-  
+
           if (remotePort && protocol) {
             const domainsWithPort = await domainBlock.getCategoryDomainsWithPort(target);
             for (const domainObj of domainsWithPort) {
@@ -2888,7 +2901,7 @@ class PolicyManager2 {
                 }
               }
             }
-            
+
             const netportIpset6 = categoryUpdater.getNetPortIPSetNameForIPV6(target);
             const domainportIpset6 = categoryUpdater.getDomainPortIPSetNameForIPV6(target);
             elements = [];
@@ -3202,7 +3215,7 @@ class PolicyManager2 {
       if (settings && settings.strictVPN) {
         isStrictVPN = true;
       }
-      resultMap[vpnClientId] = {isEnabled:isEnabled, isConnected:isConnected, isStrictVPN:isStrictVPN};
+      resultMap[vpnClientId] = { isEnabled: isEnabled, isConnected: isConnected, isStrictVPN: isStrictVPN };
     }
 
     if (!isEnabled) {
@@ -3247,7 +3260,7 @@ class PolicyManager2 {
     for (const tagId of tags) {
       const tag = tagManager.getTagByUid(tagId);
       const groupPolicy = await tag.loadPolicyAsync();
-      if (groupPolicy && Object.keys(groupPolicy).length !== 0){
+      if (groupPolicy && Object.keys(groupPolicy).length !== 0) {
         groupPolicy.rank = 2;
         groupPolicy.matchedTarget = "tag:" + tag.getTagUid();
         policies.push(groupPolicy);
