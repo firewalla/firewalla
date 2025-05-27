@@ -571,23 +571,20 @@ class VPNClient {
 
     sem.on('link_wan_switched', async (event) => {
       if (this._started === true && this.profileId === event.profileId) {
-        const forceSwitchWAN = await this._forceSwitchWAN();
-        if (forceSwitchWAN) {
-          if (this._currentState !== false) {
-            // clear soft route ipset
-            await VPNClient.ensureCreateEnforcementEnv(this.profileId);
-            await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => { });
-            await this._disableDNSRoute("soft");
-            // clear hard route ipset if strictVPN (kill-switch) is not enabled
-            if (!this.settings.strictVPN) {
-              await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}`).catch((err) => { });
-              await this._disableDNSRoute("hard");
-              await this._resetRouteMarkInRedis();
-            }
+        if (this._currentState !== false) {
+          // clear soft route ipset
+          await VPNClient.ensureCreateEnforcementEnv(this.profileId);
+          await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => { });
+          await this._disableDNSRoute("soft");
+          // clear hard route ipset if strictVPN (kill-switch) is not enabled
+          if (!this.settings.strictVPN) {
+            await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}`).catch((err) => { });
+            await this._disableDNSRoute("hard");
+            await this._resetRouteMarkInRedis();
           }
-          this.scheduleRestart();
-          this._currentState = false;
         }
+        this.scheduleRestart();
+        this._currentState = false;
       }
     });
 
@@ -1394,10 +1391,6 @@ class VPNClient {
         suppressEventLogging: true,
       });
     });
-  }
-
-  _forceSwitchWAN() {
-    return false;
   }
 }
 
