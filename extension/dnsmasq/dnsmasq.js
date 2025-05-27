@@ -1021,8 +1021,11 @@ module.exports = class DNSMASQ {
 
     const bfLinePrefix = "server-bf=";
     const bfHighLinePrefix = "server-bf-high=";
-    const bfLineSuffix = "_block\n";
-    const bfHighLineSuffix = "_block_high\n";
+    const bfBlockLineSuffix = "_block\n";
+    const bfBlockHighLineSuffix = "_block_high\n";
+    const bfAllowLineSuffix = "_allow\n";
+    const bfAllowHighLineSuffix = "_allow_high\n";
+
     const bfFilePath = "/home/pi/.firewalla/run/category_data/filters";
 
     const bfEntryItems = Object.entries(meta).map(
@@ -1033,19 +1036,19 @@ module.exports = class DNSMASQ {
     const blockEntries = [
       bfLinePrefix, bfEntriesStr,
       `<empty><category:${category}:hit:domain><category:${category}:passthrough:domain>${blackhole}$${category}`,
-      bfLineSuffix,
+      bfBlockLineSuffix,
       bfHighLinePrefix, bfEntriesStr,
       `<empty><category:${category}:hit:domain><category:${category}:passthrough:domain>${blackhole}$${category}`,
-      bfHighLineSuffix
+      bfBlockHighLineSuffix
     ];
 
     const allowEntries = [
       bfLinePrefix, bfEntriesStr,
       `<category:${category}:hit:domain><empty><category:${category}:passthrough:domain>#$${category}`,
-      bfLineSuffix,
+      bfAllowLineSuffix,
       bfHighLinePrefix, bfEntriesStr,
       `<category:${category}:hit:domain><empty><category:${category}:passthrough:domain>#$${category}`,
-      bfHighLineSuffix
+      bfAllowHighLineSuffix
     ];
 
     await this.writeConfig(categoryBlockDomainsFile, blockEntries.join(""));
