@@ -61,8 +61,11 @@ const bf = require('../extension/bf/bf.js');
 const LRU = require('lru-cache');
 const bone = require('../lib/Bone.js');
 
-const CategoryUpdater = require('../control/CategoryUpdater.js')
-const categoryUpdater = new CategoryUpdater()
+const CategoryUpdater = require('../control/CategoryUpdater.js');
+const categoryUpdater = new CategoryUpdater();
+const util = require('util');
+const readFileAsync = util.promisify(fs.readFile);
+
 
 
 // slices a single byte into bits
@@ -227,7 +230,7 @@ class DNSProxyPlugin extends Sensor {
 
     const buf = Buffer.from(obj.data, "base64");
     if (currentFileContent && buf.equals(currentFileContent)) {
-      log.debug(`No filter update for ${category}, skip`);
+      log.debug(`No filter update for dns_proxy part:${part}, skip`);
       return false;
     }
 
@@ -235,7 +238,7 @@ class DNSProxyPlugin extends Sensor {
       const need_decompress = false;
       await bf.updateBFData({perfix:part}, obj.data, bfDataFile, need_decompress);
     } catch(e){
-      log.error("Failed to process data file, err:", err);
+      log.error("Failed to process data file, err:", e);
       throw new Error(`Failed to updateBFData for ${part}, err: ${e.message}`);
     };
 
@@ -311,7 +314,7 @@ class DNSProxyPlugin extends Sensor {
             updated = true;
           }
         } catch (e) {
-          log.error(`Fail to update filter data for ${category}.`, e);
+          log.error(`Fail to update filter data for dns_proxy part: ${part}.`, e);
           return;
         }
       }
