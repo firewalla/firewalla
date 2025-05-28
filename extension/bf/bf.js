@@ -53,11 +53,11 @@ class bf {
     return `bf:${prefix}:${count}:${error}`;
   }
 
-  async updateBFData(item, content, outputFilePath, need_decompress = true) {
+  async updateBFData(bfKey, content, outputFilePath, need_decompress = true) {
     try {
       if(!content || content.length < 10) {
         // likely invalid, return null for protection
-        log.error(`Invalid bf data content for ${item && item.prefix}, ignored`);
+        log.error(`Invalid bf data content for ${bfKey}, ignored`);
         return;
       }
       let output = Buffer.from(content, 'base64');
