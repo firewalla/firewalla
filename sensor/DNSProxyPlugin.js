@@ -233,7 +233,7 @@ class DNSProxyPlugin extends Sensor {
 
     try {
       const need_decompress = false;
-      await bf.updateBFData(part, obj.data, bfDataFile, need_decompress);
+      await bf.updateBFData({perfix:part}, obj.data, bfDataFile, need_decompress);
     } catch(e){
       log.error("Failed to process data file, err:", err);
       throw new Error(`Failed to updateBFData for ${part}, err: ${e.message}`);
