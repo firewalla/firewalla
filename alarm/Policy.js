@@ -649,13 +649,19 @@ class Policy {
     }
   }
 
-  needPolicyDisturb() {
-    if(this.action === "app_block" && this.disturbMethod != null ) {
-      this.disturbMethod.disturbPeriod = this.disturbMethod.disturbPeriod || MAX_APP_DISTURB_PERIOD;
-      this.disturbTimeUsed = this.disturbTimeUsed || 0;
-      return Number( this.disturbMethod.disturbPeriod) > Number(this.disturbTimeUsed);
+  needPolicyDisturb(defaultVal) {
+    if (this.action !== "app_block" || this.disturbMethod == null) {
+      return false;
     }
-    return false;
+    this.disturbMethod.disturbPeriod = this.disturbMethod.disturbPeriod || MAX_APP_DISTURB_PERIOD;
+    this.disturbTimeUsed = this.disturbTimeUsed || 0;
+
+    if (defaultVal) {
+      this.disturbMethod.increaseLatency = this.disturbMethod.increaseLatency || defaultVal.increaseLatency;
+      this.disturbMethod.dropPacketRate = this.disturbMethod.dropPacketRate || defaultVal.dropPacketRate;
+      this.disturbMethod.rateLimit = this.disturbMethod.rateLimit || defaultVal.rateLimit;
+    }
+    return Number(this.disturbMethod.disturbPeriod) > Number(this.disturbTimeUsed);
   }
 
   static getMathcedTarget(policy) {

@@ -47,6 +47,7 @@ class AppTimeUsageManager {
     this.acitveDisturbPolicies = {};
 
     this._changedAppUIDs = {};
+    this._appDisturbDefaultValue = {};
     sem.on(Message.MSG_APP_TIME_USAGE_BUCKET_INCR, (event) => {
       lock.acquire(LOCK_RW, async() => {
         const {app, uids} = event;
@@ -57,6 +58,13 @@ class AppTimeUsageManager {
         }
       }).catch((err) => {
         log.error(`Failed to process ${Message.MSG_APP_TIME_USAGE_BUCKET_INCR} event`, err.message);
+      });
+    });
+    sem.on(Message.MSG_APP_DISTURB_VALUE_UPDATED, (event) => {
+      lock.acquire(LOCK_RW, async() => {
+        this._appDisturbDefaultValue = event.appDisturbs;
+      }).catch((err) => {
+        log.error(`Failed to process ${Message.MSG_APP_DISTURB_VALUE_UPDATED} event`, err.message);
       });
     });
     sclient.on("message", async (channel, message) => {
@@ -172,7 +180,12 @@ class AppTimeUsageManager {
       return;
     }
     const policy = Object.assign(Object.create(Policy.prototype), p);
-    const needDisturb = policy.needPolicyDisturb();
+
+    let defaultDisturbInfo = {};
+    if (policy.appTimeUsage && policy.appTimeUsage.app && this._appDisturbDefaultValue.hasOwnProperty(policy.appTimeUsage.app)) {
+      defaultDisturbInfo = this._appDisturbDefaultValue[policy.appTimeUsage.app];
+    }
+    const needDisturb = policy.needPolicyDisturb(defaultDisturbInfo);
     // a default mode policy will be applied first, and will be updated to domain only after a certain timeout
     await this.enforcePolicy(policy, uid, false);
     if (needDisturb) {
