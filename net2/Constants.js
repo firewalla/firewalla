@@ -63,6 +63,7 @@ module.exports = {
   REDIS_KEY_HOST_ACTIVE: 'host:active:mac',
   REDIS_KEY_HOST_PINNED: 'host:pinned:mac',
   REDIS_KEY_HOST_DHCPCONF: 'host:dhcpconf:mac',
+  REDIS_KEY_WIRELESS_TAG_CANDIDATE: "wireless_tag_candidate:", // wireless_tag_candidate:${mac}
 
   REDIS_HKEY_NSE_DHCP: "dhcp",
   REDIS_HKEY_CONN_OINTF: "oIntf",
@@ -77,7 +78,9 @@ module.exports = {
   ST_IGNORE: 'ignore',
   ST_TIMEOUT: 'timeout',
 
+  FW_OUI: "20:6D:31",
   FW_AP_MAC_PREFIX: "20:6D:31:61",
+  FW_AP_CEILING_MAC_PREFIX: "20:6D:31:71",
   FW_AP_DEFAULT_DHCP_HOSTNAME: "FirewallaAP",
   VPN_ROUTE_MARK_KEY_PREFIX: "fwmark:vpn",
 
@@ -160,7 +163,6 @@ module.exports = {
   POLICY_KEY_ISOLATION: "isolation",
   POLICY_KEY_SSID_PSK: "ssidPSK",
   POLICY_KEY_WIFI_AUTO_GROUP: "wifiAutoGroup",
-  POLICY_KEY_AP_BINDING: "apBinding",
 
   LOG_PREFIX_QUIC: '[FW_QUIC]:',
 };

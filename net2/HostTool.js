@@ -623,6 +623,54 @@ class HostTool {
 
     return result
   }
+
+  async setWlanVendorToCache(mac, wlanVendors) {
+    const key = `wlanVendor:${mac.toUpperCase()}`;
+    let value = wlanVendors;
+    if (!_.isString(value)) {
+      value = JSON.stringify(wlanVendors);
+    }
+    await rclient.setAsync(key, value);
+  }
+
+  /**
+   * get wlan vendor from cache and refresh expire time
+   * @param {string} mac 
+   * @returns [vendor_string, ...] or null if not found
+   */
+  async getWlanVendorFromCache(mac) {
+    const key = `wlanVendor:${mac.toUpperCase()}`;
+    const value = await rclient.getAsync(key);
+    if (value) {
+      try {
+        const wlanVendors = JSON.parse(value);
+        return wlanVendors;
+      } catch (err) {
+        log.error(`Failed to parse wlan vendor for ${mac}`, err.message);
+        return null;
+      }
+    } else {
+      return null;
+    }
+  }
+
+  async setWirelessDeviceTagCandidate(mac, tagUid) {
+    if (_.isEmpty(mac))
+      return;
+    const key = `${Constants.REDIS_KEY_WIRELESS_TAG_CANDIDATE}${mac}`;
+    await rclient.setAsync(key, tagUid);
+    await rclient.expireAsync(key, 3600);
+  }
+
+  async getWirelessDeviceTagCandidate(mac) {
+    const key = `${Constants.REDIS_KEY_WIRELESS_TAG_CANDIDATE}${mac}`;
+    return rclient.getAsync(key);
+  }
+
+  async deleteWirelessDeviceTagCandidate(mac) {
+    const key = `${Constants.REDIS_KEY_WIRELESS_TAG_CANDIDATE}${mac}`;
+    await rclient.delAsync(key);
+  }
 }
 
 module.exports = HostTool;

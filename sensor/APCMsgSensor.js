@@ -40,7 +40,6 @@ const Policy = require("../alarm/Policy.js");
 const pm2 = new PolicyManager2();
 const { getUniqueTs } = require('../net2/FlowUtil.js')
 const SUPPORTED_RULE_TYPES = ["device", "tag", "network", "intranet"];
-const Ipset = require('../net2/Ipset.js');
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
@@ -51,8 +50,6 @@ const Sensor = require('./Sensor.js').Sensor;
 const sl = require('./SensorLoader.js');
 const WlanVendorInfo = require('../util/WlanVendorInfo.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const fsp = require('fs').promises;
-const f = require('../net2/Firewalla.js');
 
 class APCMsgSensor extends Sensor {
 
@@ -64,9 +61,6 @@ class APCMsgSensor extends Sensor {
     this.ssidGroupMap = {};
     this.ssidVlanGroupMap = {};
     this.enforcedRules = {};
-    this.assetsIP4s = {};
-    this.assetsIP6s = {};
-    this.assetsMACs = {};
     this.policyInitialized = false;
     sl.initSingleSensor("ACLAuditLogPlugin").then((r) => {this.aclAuditLogPlugin = r}).catch((err) => {
       log.error("Failed to init ACLAuditLogPlugin", this.aclAuditLogPlugin);
@@ -105,12 +99,12 @@ class APCMsgSensor extends Sensor {
               await this.updateWlanVendorInfo(mac, vendor);
             }
 
-            // wait for 5 seconds in case ssid tag is not synced to TagManager yet
+            // wait for 3 seconds in case device is not discovered by DeviceHook yet
             setTimeout(() => {
               this.processSTAUpdateMessage(msg).catch((err) => {
                 log.error(`Failed to process ${Message.MSG_FWAPC_SSID_STA_UPDATE} message: ${message}`, err.message);
               });
-            }, 5000);
+            }, 3000);
           }
           break;
         }
@@ -148,13 +142,6 @@ class APCMsgSensor extends Sensor {
     process.nextTick(() => this.refreshSSIDSTAMapping().catch((err) => {
       log.error(`Failed to refresh ssid sta mapping`, err.message);
     }));
-
-    process.nextTick(() => this.syncAssetsIPSet().catch((err) => {}));
-    setInterval(async () => {
-      this.syncAssetsIPSet().catch((err) => {
-        log.error("Failed to sync assets ipset", err);
-      });
-    }, 60000);
 
     // sync ssid sta mapping once every 20 seconds to ensure consistency in case sta update message is missing somehow
     setInterval(async () => {
@@ -210,6 +197,36 @@ class APCMsgSensor extends Sensor {
     setInterval(this.updateWlanVendorInfoForAllStations.bind(this), 3600 * 1000); // every hour
 
     setInterval(this.syncRules.bind(this), 900 * 1000); // periodically sync rules to fwapc in case of inconsistency
+
+    setInterval(this.updateStationLastActiveTime.bind(this), 300 * 1000); // every 5 minutes
+  }
+
+  async updateStationLastActiveTime() {
+    log.info("Update lastActiveTime for all stations");
+    const staStatus = await fwapc.getAllSTAStatus().catch((err) => {
+      log.error(`Failed to get STA status from fwapc`, err.message);
+      return null;
+    });
+    if (!_.isObject(staStatus))
+      return;
+    const pipeline = rclient.batch();
+    const now = Math.floor(Date.now() / 1000);
+    for (const [mac, _staInfo] of Object.entries(staStatus)) {
+      const upcaseMac = mac.toUpperCase();
+      const host = await hostManager.getHostAsync(upcaseMac);
+      if (!host)
+        continue;
+      const hostKey = host.getMetaKey();
+      pipeline.hset(hostKey, "lastActiveTimestamp", now);
+    }
+    pipeline.exec((err, results) => {
+      if (err) {
+        log.error("Redis pipeline execution failed", err);
+      } else {
+        log.info("Successfully updated lastActiveTimestamp for all stations");
+      }
+    });
+
   }
 
   async syncRules() {
@@ -240,7 +257,7 @@ class APCMsgSensor extends Sensor {
         if (!staInfo.vendor)
           continue;
         
-        let wlanVendors = await APCMsgSensor.getWlanVendorFromCache(upcaseMac);
+        let wlanVendors = await hostTool.getWlanVendorFromCache(upcaseMac);
         if (wlanVendors) {
           continue;
         }
@@ -253,7 +270,7 @@ class APCMsgSensor extends Sensor {
         for (const [mac, wlanVendorInfoList] of result) {
           const wlanVendors = wlanVendorInfoList.filter(v => v.vendorName !== "Unknown").map(v => v.vendorName);
           if (wlanVendors && wlanVendors.length > 0) {
-            await APCMsgSensor.setWlanVendorToCache(mac, wlanVendors);
+            await hostTool.setWlanVendorToCache(mac, wlanVendors);
           } else {
             log.info(`Did not find a valid vendor name for mac ${mac}`);
           }
@@ -268,7 +285,7 @@ class APCMsgSensor extends Sensor {
     mac = mac.toUpperCase();
     
     
-    let wlanVendors = await APCMsgSensor.getWlanVendorFromCache(mac);
+    let wlanVendors = await hostTool.getWlanVendorFromCache(mac);
     if (wlanVendors) {
       return;
     }
@@ -277,7 +294,7 @@ class APCMsgSensor extends Sensor {
     if (result && result.size == 1) {
       wlanVendors = WlanVendorInfo.getVendorFromVendorMap(result, mac);
       if (wlanVendors.length > 0) {
-        await APCMsgSensor.setWlanVendorToCache(mac, wlanVendors);
+        await hostTool.setWlanVendorToCache(mac, wlanVendors);
         log.info(`update wlanVendor info, mac:${mac}; vendorId:${vendor} vendorName:${wlanVendors}`);
       } else {
         log.info(`Did not find a valid vendor name for mac ${mac} with vendor ${vendor}`);
@@ -302,74 +319,6 @@ class APCMsgSensor extends Sensor {
     if (type === "device" && !hostTool.isMacAddress(target))
       return false;
     return true;
-  }
-
-  async syncAssetsIPSet() {
-    if (!sysManager.isIptablesReady())
-      return;
-    const status = await fwapc.getAssetsStatus().catch((err) => {
-      log.error("Failed to get assets status from fwapc", err.message);
-      return null;
-    });
-    if (!_.isObject(status) || _.isEmpty(status))
-      return;
-    const ip4s = {};
-    const ip6s = {};
-    const macs = {};
-    for (const uid of Object.keys(status)) {
-      const {addrs} = status[uid];
-      if (!_.isObject(addrs))
-        continue;
-      for (const intf of Object.keys(addrs)) {
-        const {ip4, mac} = addrs[intf];
-        if (ip4)
-          ip4s[ip4] = 1;
-        if (mac) {
-          macs[mac.toUpperCase()] = 1;
-          const host = hostManager.getHostFastByMAC(mac.toUpperCase());
-          if (host) {
-            const ipv6Addrs = host.ipv6Addr;
-            if (_.isArray(ipv6Addrs)) {
-              for (const ipv6Addr of ipv6Addrs)
-                ip6s[ipv6Addr] = 1;
-            }
-          }
-        }
-      }
-    }
-    // update ipset of assets
-    const removedIP4s = Object.keys(this.assetsIP4s).filter(ip => !_.has(ip4s, ip));
-    const newIP4s = Object.keys(ip4s).filter(ip => !_.has(this.assetsIP4s, ip));
-    const removedIP6s = Object.keys(this.assetsIP6s).filter(ip => !_.has(ip6s, ip));
-    const newIP6s = Object.keys(ip6s).filter(ip => !_.has(this.assetsIP6s, ip));
-    const ops = [];
-    for (const ip of removedIP4s)
-      ops.push(`del -! ${Ipset.CONSTANTS.IPSET_ASSETS_IP_SET4} ${ip}`);
-    for (const ip of newIP4s)
-      ops.push(`add -! ${Ipset.CONSTANTS.IPSET_ASSETS_IP_SET4} ${ip}`);
-    for (const ip of removedIP6s)
-      ops.push(`del -! ${Ipset.CONSTANTS.IPSET_ASSETS_IP_SET6} ${ip}`);
-    for (const ip of newIP6s)
-      ops.push(`add -! ${Ipset.CONSTANTS.IPSET_ASSETS_IP_SET6} ${ip}`);
-    if (!_.isEmpty(ops))
-      await Ipset.batchOp(ops).catch((err) => {
-        log.error(`Failed to update assets ipset`, err.message);
-      });
-    // always allow any DNS query in dns booster, dns booster is still required because AP uses fire.walla to discover controller IP address
-    const removedMACs = Object.keys(this.assetsMACs).filter(mac => !_.has(macs, mac));
-    const newMACs = Object.keys(macs).filter(mac => !_.has(this.assetsMACs, mac));
-    const allowAssetsTag = "allow_assets";
-    if (!_.isEmpty(removedMACs) || !_.isEmpty(newMACs)) {
-      // allow any DNS queries from assets
-      const entries = [`server=//#$${allowAssetsTag}`];
-      for (const mac of Object.keys(macs)) {
-        entries.push(`mac-address-tag=%${mac}$${allowAssetsTag}`);
-      }
-      await fsp.writeFile(`${f.getUserConfigFolder()}/dnsmasq/allow_assets.conf`, entries.join("\n")).catch((err) => {});
-    }
-    this.assetsIP4s = ip4s;
-    this.assetsIP6s = ip6s;
-    this.assetsMACs = macs;
   }
 
   async refreshSSIDSTAMapping() {
@@ -505,7 +454,6 @@ class APCMsgSensor extends Sensor {
     const host = await hostManager.getHostAsync(mac.toUpperCase());
     if (!host) {
       log.warn(`Unknown mac address ${mac}`);
-      return;
     }
     /* uncomment this if there is ssid based management in future releases
     const profile = this.ssidProfiles[uuid];
@@ -517,17 +465,25 @@ class APCMsgSensor extends Sensor {
     */
 
     // do not assign group to device if wifi auto group is disabled on this device
-    const wifiAutoGroup = host.getPolicyFast(Constants.POLICY_KEY_WIFI_AUTO_GROUP);
+    const wifiAutoGroup = host && host.getPolicyFast(Constants.POLICY_KEY_WIFI_AUTO_GROUP);
+    let newTagId = null;
     if (_.get(wifiAutoGroup, "state") === false) {
       log.debug(`${Constants.POLICY_KEY_WIFI_AUTO_GROUP} is not enabled on device ${host.getUniqueId()}`);
-      return;
+    } else {
+      if (groupId && await TagManager.tagUidExists(groupId, Constants.TAG_TYPE_GROUP))
+        newTagId = groupId;
     }
 
-    let newTagId = null;
-    if (groupId && await TagManager.tagUidExists(groupId, Constants.TAG_TYPE_GROUP))
-      newTagId = groupId;
-    if (!_.isEmpty(newTagId))
+    if (!_.isEmpty(newTagId) && host) {
       await host.setPolicyAsync(_.get(Constants.TAG_TYPE_MAP, [Constants.TAG_TYPE_GROUP, "policyKey"]), [newTagId]);
+      await hostTool.deleteWirelessDeviceTagCandidate(mac.toUpperCase());
+    } else {
+      if (!host) {
+        // this may be a new device yet to be discovered
+        log.info(`A new device ${mac} is yet to be discovered in DeviceHook, tag id candidate is set to ${newTagId}`);
+        await hostTool.setWirelessDeviceTagCandidate(mac.toUpperCase(), String(newTagId));
+      }
+    }
   }
 
   async loadCachedSSIDProfiles() {
@@ -672,37 +628,6 @@ class APCMsgSensor extends Sensor {
     }
   }
 
-  static async setWlanVendorToCache(mac, wlanVendors) {
-    const key = `wlanVendor:${mac.toUpperCase()}`;
-    let value = wlanVendors;
-    if (!_.isString(value)) {
-      value = JSON.stringify(wlanVendors);
-    }
-    await rclient.setAsync(key, value);
-  }
-
-  /**
-   * get wlan vendor from cache and refresh expire time
-   * @param {string} mac 
-   * @returns [vendor_string, ...] or null if not found
-   */
-  static async getWlanVendorFromCache(mac) {
-    const key = `wlanVendor:${mac.toUpperCase()}`;
-    const value = await rclient.getAsync(key);
-    if (value) {
-      try {
-        const wlanVendors = JSON.parse(value);
-        return wlanVendors;
-      } catch (err) {
-        log.error(`Failed to parse wlan vendor for ${mac}`, err.message);
-        return null;
-      }
-      
-    } else {
-      return null;
-    }
-  }
-
   /**
    * first try to get wlan vendor from cache, if not found, get from fwapc and store in cache
    * @param {string} mac 
@@ -711,7 +636,7 @@ class APCMsgSensor extends Sensor {
   async getWlanVendor(mac) {
     let wlanVendors = null;
     mac = mac.toUpperCase();
-    wlanVendors = APCMsgSensor.getWlanVendorFromCache(mac);
+    wlanVendors = hostTool.getWlanVendorFromCache(mac);
     if (wlanVendors) {
       log.info(`Get wlan vendor for ${mac} from cache`, wlanVendors);
       return wlanVendors;
@@ -733,7 +658,7 @@ class APCMsgSensor extends Sensor {
 
     if (wlanVendors && wlanVendors.length > 0) {
       log.info(`Get wlan vendor for ${mac} wlanVendors:${wlanVendors}`);
-      APCMsgSensor.setWlanVendorToCache(mac, wlanVendors);
+      hostTool.setWlanVendorToCache(mac, wlanVendors);
       return wlanVendors;
     }
     return null;  
