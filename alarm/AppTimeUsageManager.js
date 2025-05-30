@@ -183,7 +183,7 @@ class AppTimeUsageManager {
 
     let defaultDisturbInfo = {};
     if (policy.appTimeUsage && policy.appTimeUsage.app && this._appDisturbDefaultValue.hasOwnProperty(policy.appTimeUsage.app)) {
-      defaultDisturbInfo = this._appDisturbDefaultValue[policy.appTimeUsage.app];
+      defaultDisturbInfo = this._appDisturbDefaultValue[policy.appTimeUsage.app] || {};
     }
     const needDisturb = policy.needPolicyDisturb(defaultDisturbInfo);
     // a default mode policy will be applied first, and will be updated to domain only after a certain timeout

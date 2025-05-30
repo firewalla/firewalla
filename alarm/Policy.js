@@ -32,6 +32,9 @@ const iptool = require('ip');
 const Constants = require('../net2/Constants.js');
 const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds, don't bother to enforce it.
 const MAX_APP_DISTURB_PERIOD = 86400 // 24 hours
+const APP_DISTURB_RATELIMIT = "1024";  // default 1024mbps
+const APP_DISTURB_DELAY = "200";       // default 200ms
+const APP_DISTURB_LOSSRATE = "30";     // default 30%
 
 function arraysEqual(a, b) {
   if (a === b) return true;
@@ -657,9 +660,9 @@ class Policy {
     this.disturbTimeUsed = this.disturbTimeUsed || 0;
 
     if (defaultVal) {
-      this.disturbMethod.increaseLatency = this.disturbMethod.increaseLatency || defaultVal.increaseLatency;
-      this.disturbMethod.dropPacketRate = this.disturbMethod.dropPacketRate || defaultVal.dropPacketRate;
-      this.disturbMethod.rateLimit = this.disturbMethod.rateLimit || defaultVal.rateLimit;
+      this.disturbMethod.increaseLatency = this.disturbMethod.increaseLatency || defaultVal.increaseLatency || APP_DISTURB_DELAY;
+      this.disturbMethod.dropPacketRate = this.disturbMethod.dropPacketRate || defaultVal.dropPacketRate || APP_DISTURB_LOSSRATE;
+      this.disturbMethod.rateLimit = this.disturbMethod.rateLimit || defaultVal.rateLimit || APP_DISTURB_RATELIMIT;
     }
     return Number(this.disturbMethod.disturbPeriod) > Number(this.disturbTimeUsed);
   }
