@@ -31,6 +31,9 @@ const qos = require('../control/QoS');
 const LRU = require('lru-cache');
 const crypto = require('crypto');
 const featureName = "rule_stats";
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const LOCK_RECORD_BUFFER = "LOCK_RECORD_BUFFER";
 
 const KEY_RULE_STATS_INIT_TS = "sys:ruleStats:initTs"
 class RuleStatsPlugin extends Sensor {
@@ -150,7 +153,9 @@ class RuleStatsPlugin extends Sensor {
 
     // limit buf size to avoid cpu and memory overload
     if (this.recordBuffer.length < 2000) {
-      this.recordBuffer.push(record);
+      lock.acquire(LOCK_RECORD_BUFFER, async () => {
+        this.recordBuffer.push(record);
+      }).catch((err) => {});
     }
   }
 
@@ -185,8 +190,11 @@ class RuleStatsPlugin extends Sensor {
   }
 
   async updateRuleStats() {
-    const recordBuffer = this.recordBuffer;
-    this.recordBuffer = [];
+    let recordBuffer = [];
+    await lock.acquire(LOCK_RECORD_BUFFER, async () => {
+      recordBuffer = this.recordBuffer;
+      this.recordBuffer = [];
+    }).catch((err) => {});
 
     if (!this.policyRulesMap) {
       await this.loadBlockAllowGlobalRules();
