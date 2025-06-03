@@ -275,7 +275,6 @@ class DNSProxyPlugin extends Sensor {
   
       const prevParts = categoryUpdater.getCategoryBfParts(this.targetListKey) || [];
       const removedParts = _.difference(prevParts, newParts);
-      let updated = false;
   
       log.info(`Current parts of dns_proxy bf:`, newParts);
       log.info(`Previous parts of dns_proxy bf:`, prevParts);
@@ -288,7 +287,6 @@ class DNSProxyPlugin extends Sensor {
         const hashsetName = `bf:app.${part}`;
         await cc.disableCache(hashsetName);
         this.removeData(part);
-        updated = true;
         this.bfInfoMap.delete(part);
       }
 
@@ -305,13 +303,12 @@ class DNSProxyPlugin extends Sensor {
         try {
           const content = await currentCacheItem.getLocalCacheContent();
           if (content) {
-            updated = await this.updateData(part, content) || updated;
+            await this.updateData(part, content);
           } else {
             // remove obselete category data
             log.error(`dns_proxy part ${part} data is invalid. Remove it`);
             await this.removeData(part);
             this.bfInfoMap.delete(part);
-            updated = true;
           }
         } catch (e) {
           log.error(`Fail to update filter data for dns_proxy part: ${part}.`, e);
@@ -319,12 +316,9 @@ class DNSProxyPlugin extends Sensor {
         }
       }
 
-      if (updated) {
-        await this.enableDnsmasqConfig().catch((err) => {
-          log.error("Failed to enable dnsmasq config, err", err);
-        });
-      }
-
+      await this.enableDnsmasqConfig().catch((err) => {
+        log.error("Failed to enable dnsmasq config, err", err);
+      });
     } else {
       log.info('not strict mode, disable dnsmasq config');
       this.disableDnsmasqConfig();
