@@ -162,7 +162,7 @@ class BroDetect {
     let c = require('./MessageBus.js');
     this.publisher = new c();
 
-    this.flowstash = { conn: {}, dns: {} }
+    this.flowstash = { conn: { keys: new Set(), ignore: {} }, dns: { keys: new Set() } }
     this.lastRotate = { conn: Date.now() / 1000, dns: Date.now() / 1000 }
     this.rotateFlowstashTask = {}
     this.rotateFlowstashTask.conn = setInterval(() => {
@@ -339,16 +339,14 @@ class BroDetect {
         // adding a lock doesn't really worth the performance penalty, simply adds a delay here
         await delay((config.http.proxyIntelRemoveDelay || 30) * 1000)
 
-        // remove af data from flowstash
+        // adds uid to ignore list, related af will be removed later on saving conn log, or on flow stash rotation
         // won't be querying redis for written flows here as the cost is probably too much for this feature
-        for (const key in this.flowstash.conn) {
-          if (this.flowstash.conn[key].uids.includes(obj.uid)) {
-            const af = this.flowstash.conn[key].af
-            if (af[host] && af[host].ip == ip)
-              delete af[host]
-            break // one uid could only appear in one flow
-          }
+        // it's possible that conn log goes to the next flowstash but we're just ingoring it for now
+        const key = `$(obj['id.orig_h']}:${ip}`
+        if (!this.flowstash.conn.ignore[key]) {
+          this.flowstash.conn.ignore[key] = new Set()
         }
+        this.flowstash.conn.ignore[key].add(obj.uid)
 
         this.withdrawAppMap(obj['id.orig_h'], obj['id.orig_p'], ip, obj['id.resp_p']);
         await conntrack.delConnEntries(obj['id.orig_h'], obj['id.orig_p'], ip, obj['id.resp_p'], 'tcp');
@@ -527,6 +525,7 @@ class BroDetect {
       }
 
       const tags = await hostTool.getTags(monitorable, intfInfo && intfInfo.uuid)
+      Object.assign(dnsFlow, tags)
 
       this.recordTraffic({ dns: 1 }, localMac);
       this.recordTraffic({ dns: 1 }, 'global');
@@ -540,31 +539,11 @@ class BroDetect {
         }
       }
 
-      let key = "flow:dns:" + localMac;
+      const key = "flow:dns:" + localMac;
+      this.flowstash.dns.keys.add(key)
       await rclient.zaddAsync(key, dnsFlow._ts, JSON.stringify(dnsFlow)).catch(
         err => log.error("Failed to save single DNS flow: ", dnsFlow, err)
       )
-
-      const flowspecKey = `${localMac}:${dnsFlow.dn}:${intfInfo ? intfInfo.uuid : ''}`;
-      // add keys to flowstash (but not redis)
-      dnsFlow.mac = localMac
-      Object.assign(dnsFlow, tags)
-
-      let flowspec = this.flowstash.dns[flowspecKey];
-      if (flowspec == null) {
-        flowspec = dnsFlow
-        this.flowstash.dns[flowspecKey] = flowspec;
-      } else {
-        flowspec.ct += 1;
-        if (flowspec.ts > dnsFlow.ts) {
-          // update start timestamp
-          flowspec.ts = dnsFlow.ts;
-        }
-        // update last time updated
-        flowspec._ts = Math.max(flowspec._ts, dnsFlow._ts);
-
-        flowspec.as = _.union(flowspec.as, dnsFlow.as)
-      }
 
     } catch(err) {
       log.error('Error saving DNS flow', JSON.stringify(obj), err)
@@ -861,12 +840,17 @@ class BroDetect {
     try {
       let obj = JSON.parse(data);
       if (obj == null) {
-        log.debug("Conn:Drop", obj);
+        log.debug("Conn:Drop", data);
         return;
       }
 
+      const orig = obj["id.orig_h"];
+      const resp = obj["id.resp_h"];
+      const orig_p = obj["id.orig_p"];
+      const resp_p = obj["id.resp_p"];
+
       // from zeek script heartbeat-flow
-      if (obj.uid == '0' && obj['id.orig_h'] == '0.0.0.0' && obj["id.resp_h"] == '0.0.0.0') {
+      if (obj.uid == '0' && orig == '0.0.0.0' && resp == '0.0.0.0') {
         await rclient.multi()
           .zadd('flow:conn:00:00:00:00:00:00', Date.now() / 1000, data)
           .expire('flow:conn:00:00:00:00:00:00', config.conn.expires)
@@ -879,11 +863,11 @@ class BroDetect {
         return;
       }
 
-      if (obj.service && obj.service == "dns" || obj["id.resp_p"] == 53 || obj["id.orig_p"] == 53) {
+      if (obj.service && obj.service == "dns" || resp_p == 53 || orig_p == 53) {
         return;
       }
 
-      if (obj['id.orig_h'] == '127.0.0.1' || obj["id.resp_h"] == '127.0.0.1' || obj['id.orig_h'] == '::1' || obj["id.resp_h"] == '::1')
+      if (orig == '127.0.0.1' || resp == '127.0.0.1' || orig == '::1' || resp == '::1')
         return
 
       // drop layer 3
@@ -947,8 +931,6 @@ class BroDetect {
         }
       }
 
-      const orig = obj["id.orig_h"];
-      const resp = obj["id.resp_h"];
       let flowdir = "in";
       let lhost = null;
       let dhost = null;
@@ -962,7 +944,7 @@ class BroDetect {
       let localFlow = false
       let bridge = obj["bridge"] || false;
 
-      log.debug("ProcessingConnection:", obj.uid, orig, resp, obj['id.resp_p'],
+      log.silly("ProcessingConnection:", obj.uid, orig, resp, obj['id.resp_p'],
         long ? 'long' : '', reverseLocal ? 'reverseLocal' : '');
 
       // fd: in, this flow initiated from inside
@@ -1127,14 +1109,14 @@ class BroDetect {
       obj.duration = Math.round(obj.duration * 100) / 100
 
       let connEntry, outIntfId
-      if (!localFlow && obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto']) {
-        connEntry = await conntrack.getConnEntries(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], 600);
+      if (!localFlow && orig && resp && orig_p && resp && obj['proto']) {
+        connEntry = await conntrack.getConnEntries(orig, orig_p, resp, resp_p, obj['proto'], 600);
         if (connEntry) {
           const { oIntf, redirect } = connEntry
           if (oIntf) outIntfId = oIntf.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX) ? oIntf : oIntf.substring(0, 8)
           if (redirect) return
         } else if (obj.conn_state === "OTH" || obj.conn_state === "SF" || (obj.proto === "tcp" && !_.get(obj, "history", "").startsWith("S"))) {
-          connEntry = await conntrack.getConnEntries(obj['id.resp_h'], obj['id.resp_p'], obj['id.orig_h'], obj['id.orig_p'], obj['proto'], 600);
+          connEntry = await conntrack.getConnEntries(resp, resp_p, orig, orig_p, obj['proto'], 600);
           // if reverse flow is found in conntrack, likely flow direction from zeek is wrong after zeek is restarted halfway
           if (connEntry) {
             if (connEntry.redirect) return
@@ -1149,7 +1131,7 @@ class BroDetect {
         }
       }
       if (flowdir == "in" && !localFlow)
-        conntrack.setConnRemote(obj['proto'], obj['id.resp_h'], obj['id.resp_p']);
+        conntrack.setConnRemote(obj['proto'], resp, resp_p);
 
       // Long connection aggregation
       const uid = obj.uid
@@ -1256,7 +1238,6 @@ class BroDetect {
 
       // flowstash is the aggregation of flows within FLOWSTASH_EXPIRES seconds
       const now = Date.now() / 1000; // keep it as float, reduce the same score flows
-      const flowspecKey = `${localMac}:${orig}:${resp}:${outIntfId || ""}:${obj['id.resp_p'] || ""}`;
 
       const tmpspec = {
         ts: obj.ts, // ts stands for start timestamp
@@ -1325,20 +1306,24 @@ class BroDetect {
         tmpspec.sigs = sigs;
 
       let afobj, afhost
-      afobj = this.withdrawAppMap(orig, obj['id.orig_p'], resp, obj['id.resp_p'], long || this.activeLongConns.has(obj.uid)) || connEntry;
-      if (!afobj || !afobj.host) {
-        // use recent DNS lookup records from this IP as a fallback to parse application level info
-        const srcKey = (flowdir == 'in' ? localMac : dstMac) || orig
-        afobj = await conntrack.getConnEntries(srcKey, "", resp, "", "dns", 600);
-        if (afobj && afobj.host)
-          // sync application level info from recent DNS lookup to five-tuple key of this connection
-          await conntrack.setConnEntries(orig, obj["id.orig_p"], resp, obj["id.resp_p"], obj.proto, afobj, 600);
-      }
 
-      // only use information in app map for outbound flow, af describes remote site
-      if (afobj && afobj.host && (flowdir === "in" || localFlow)) {
-        tmpspec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
-        afhost = afobj.host
+      const ipPairKey = `${orig}:${resp}`
+      if (!this.flowstash.conn.ignore[ipPairKey] || !this.flowstash.conn.ignore[ipPairKey].has(uid)) {
+        afobj = this.withdrawAppMap(orig, obj['id.orig_p'], resp, obj['id.resp_p'], long || this.activeLongConns.has(obj.uid)) || connEntry;
+        if (!afobj || !afobj.host) {
+          // use recent DNS lookup records from this IP as a fallback to parse application level info
+          const srcKey = (flowdir == 'in' ? localMac : dstMac) || orig
+          afobj = await conntrack.getConnEntries(srcKey, "", resp, "", "dns", 600);
+          if (afobj && afobj.host)
+            // sync application level info from recent DNS lookup to five-tuple key of this connection
+            await conntrack.setConnEntries(orig, obj["id.orig_p"], resp, obj["id.resp_p"], obj.proto, afobj, 600);
+        }
+
+        // only use information in app map for outbound flow, af describes remote site
+        if (afobj && afobj.host && (flowdir === "in" || localFlow)) {
+          tmpspec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
+          afhost = afobj.host
+        }
       }
 
       this.indicateNewFlowSpec(tmpspec);
@@ -1395,7 +1380,7 @@ class BroDetect {
 
       // beware that _ts is used as score in flow:conn:* zset, since _ts is always monotonically increasing
       let redisObj = [key, tmpspec._ts, strdata];
-      // log.debug("Conn:Save:Temp", redisObj);
+      this.flowstash.conn.keys.add(key)
 
       // adding keys to flowstash (but not redis)
       tmpspec.mac = localMac
@@ -1417,43 +1402,6 @@ class BroDetect {
       let remoteHost = null;
       if (afhost && _.isObject(afobj) && afobj.ip === remoteIPAddress) {
         remoteHost = afhost;
-      }
-
-      let flowspec = this.flowstash.conn[flowspecKey];
-      if (flowspec == null) {
-        flowspec = tmpspec
-        this.flowstash.conn[flowspecKey] = flowspec;
-      } else {
-        flowspec.ob += tmpspec.ob;
-        flowspec.rb += tmpspec.rb;
-        flowspec.ct += 1;
-        if (flowspec.ts > tmpspec.ts) {
-          // update start timestamp
-          flowspec.ts = tmpspec.ts;
-        }
-        const ets = Math.max(flowspec.ts + flowspec.du, tmpspec.ts + tmpspec.du)
-        // update last time updated
-        flowspec._ts = Math.max(flowspec._ts, tmpspec._ts);
-        // TBD: How to define and calculate the duration of flow?
-        //      The total time of network transfer?
-        //      Or the length of period from the beginning of the first to the end of last flow?
-        // Fow now, we use the length of period from to keep it consistent with app time usage calculation
-        flowspec.du = Math.round((ets - flowspec.ts) * 100) / 100;
-        flowspec.uids.includes(obj.uid) || flowspec.uids.push(obj.uid)
-
-        if (obj['id.orig_p']) {
-          if (_.isArray(obj['id.orig_p']))
-            flowspec.sp.push(...(obj['id.orig_p'].filter(p => !flowspec.sp.includes(p))));
-          else {
-            if (!flowspec.sp.includes(obj['id.orig_p']))
-              flowspec.sp.push(obj['id.orig_p']);
-          }
-        }
-        if (!_.isEmpty(sigs))
-          flowspec.sigs = _.union(flowspec.sigs, sigs);
-        if (afhost && !flowspec.af[afhost]) {
-          flowspec.af[afhost] = _.pick(afobj, ["proto", "ip"]);
-        }
       }
 
       if (localFlow) {
@@ -1500,74 +1448,105 @@ class BroDetect {
     }
   }
 
+  // flowstash no longer stores all flows being prcoessed, instead it just stores the redis key being touched
+  // so we don't have to duplicate flows in Node, just read from redis on rotation is good enough
   async rotateFlowStash(type) {
     const flowstash = this.flowstash[type]
-    this.flowstash[type] = {}
+    this.flowstash[type] = { keys: new Set(), ignore: {} }
     let end = Date.now() / 1000
     const start = this.lastRotate[type]
-
-    // Every FLOWSTASH_EXPIRES seconds, save aggregated flowstash into redis and empties flowstash
-    let stashed = {};
-    log.info("Processing Flow Stash:", start, end, type);
-
-    for (const specKey in flowstash) try {
-      const spec = flowstash[specKey];
-      if (!spec.mac)
-        continue;
-      if (type == 'conn' && !spec.local) try {
-        // try resolve host info for previous flows again here
-        for (const uid of spec.uids) {
-          const afobj = this.withdrawAppMap(spec.sh, spec.sp[0] || 0, spec.dh, spec.dp, this.activeLongConns.has(uid)) || await conntrack.getConnEntries(spec.sh, spec.sp[0] || 0, spec.dh, spec.dp, spec.pr, 600);;
-          if (spec.fd === "in" && afobj && afobj.host && !spec.af[afobj.host]) {
-            spec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
-          }
-        }
-      } catch (e) {
-        log.error("Conn:Save:AFMAP:EXCEPTION", e);
-      }
-
-      const key = type == 'conn'
-        ? flowTool.getLogKey(spec.mac, {direction: spec.fd, local: spec.local})
-        : `flow:dns:${spec.mac}`
-      // not storing mac (as it's in key) to squeeze memory
-      delete spec.mac
-      delete spec.local
-
-      if (spec._ts > end) end = spec._ts
-      const strdata = JSON.stringify(spec);
-      // _ts is the last time this flowspec is updated
-      const redisObj = [key, spec._ts, strdata];
-      if (stashed[key]) {
-        stashed[key].push(redisObj);
-      } else {
-        stashed[key] = [redisObj];
-      }
-
-    } catch (e) {
-      log.error("Error rotating flowstash", specKey, start, end, flowstash[specKey], e);
-    }
     this.lastRotate[type] = end
 
+    // delay the whole process of read/remove/write so we have less memory footprint
     setTimeout(async () => {
       log.info(`${type}:Save:Summary ${start} ${end}`);
-      for (let key in stashed) {
-        const stash = stashed[key];
-        log.verbose(`${type}:Save:Wipe ${key} Resolved To: ${stash.length}`);
+
+      for (const key of flowstash.keys) try {
+        const flows = await rclient.zrangebyscoreAsync(key, '(' + start, end)
+        const mac = key.split(':').slice(type == 'conn' ? 3 : 2).join(':')
+        const local = key.startsWith('flow:local:')
+        log.debug(`${type}:Save:Stash`, key, mac, local, flows.length);
+
+        const stashed = {};
+        for (const flowStr of flows) {
+          const f = JSON.parse(flowStr);
+
+          const descriptor = type == 'conn'
+            ? `${mac}:${f.sh}:${f.dh}:${f.oIntf || ""}:${f.dp || ""}`
+            : `${mac}:${f.sh}:${f.dn}`;
+
+          if (type == 'conn' && !local && f.uids[0] && f.fd === "in" && !Object.keys(f.af).length) try {
+            // try resolve host info for previous flows again here
+            // have to do this before flow aggregation as source port does matter
+            const uid = f.uids[0];
+            if (!flowstash.ignore[`${f.sh}:${f.dh}`].has(uid)) {
+              const afobj = this.withdrawAppMap(f.sh, f.sp[0] || 0, f.dh, f.dp, this.activeLongConns.has(uid)) || await conntrack.getConnEntries(f.sh, f.sp[0] || 0, f.dh, f.dp, f.pr, 600);;
+              if (afobj && afobj.host) {
+                f.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
+              }
+            }
+          } catch (e) {
+            log.error("Conn:Save:AFMAP:EXCEPTION", e);
+          }
+
+          const flowspec = stashed[descriptor];
+          if (!flowspec) {
+            stashed[descriptor] = f;
+          } else {
+            flowspec.ct += 1;
+            if (flowspec.ts > f.ts) {
+              // update start timestamp
+              flowspec.ts = f.ts;
+            }
+            // update last time updated
+            flowspec._ts = Math.max(flowspec._ts, f._ts);
+
+            if (type == 'conn') {
+              flowspec.ob += f.ob;
+              flowspec.rb += f.rb;
+              // TBD: How to define and calculate the duration of flow?
+              //      The total time of network transfer?
+              //      Or the length of period from the beginning of the first to the end of last flow?
+              // Fow now, we use the length of period from to keep it consistent with app time usage calculation
+              const ets = Math.max(flowspec.ts + flowspec.du, f.ts + f.du)
+              flowspec.du = Math.round((ets - flowspec.ts) * 100) / 100;
+              const uid = f.uids[0];
+              if (uid && !flowspec.uids.includes(uid)) flowspec.uids.push(uid)
+
+              if (f.sp) {
+                flowspec.sp = _.union(flowspec.sp, f.sp)
+              }
+              if (!_.isEmpty(f.sigs))
+                flowspec.sigs = _.union(flowspec.sigs, f.sigs);
+              Object.assign(flowspec.af, f.af);
+
+            } else {
+              flowspec.as = _.union(flowspec.as, f.as)
+            }
+          }
+        }
+
+        log.verbose(`${type}:Save:Wipe ${key} ${flows.length} => ${Object.keys(stashed).length}`);
 
         let transaction = [];
         transaction.push(['zremrangebyscore', key, '('+start, end]);
-        stash.forEach(robj => {
-          if (robj._ts < start || robj._ts > end) log.warn('Stashed flow out of range', start, end, robj)
-          transaction.push(['zadd', robj])
-        })
+
+        for (const descriptor in stashed) {
+          const spec = stashed[descriptor];
+
+          if (spec._ts < start || spec._ts > end) log.warn('Stashed flow out of range', start, end, spec)
+          if (spec._ts > end) end = spec._ts
+          const strdata = JSON.stringify(spec);
+          // _ts is the last time this flowspec is updated
+
+          transaction.push(['zadd', key, spec._ts, strdata])
+        }
         // no need to set ttl here, OldDataCleanSensor will take care of it
 
-        try {
-          await rclient.pipelineAndLog(transaction)
-          log.verbose(`${type}:Save:Done`, key, start, end);
-        } catch (err) {
-          log.error(`${type}:Save:Error`, err);
-        }
+        await rclient.pipelineAndLog(transaction)
+        log.verbose(`${type}:Save:Done`, key, start, end);
+      } catch (err) {
+        log.error(`${type}:Save:Error`, key, start, end, err);
       }
     }, config[type].flowstashExpires * 1000);
   }
@@ -1637,7 +1616,7 @@ class BroDetect {
         if (dsthost != null) {
           xobj['server_name'] = dsthost;
         }
-        log.debug("SSL: host:ext:x509:Save", key, xobj);
+        log.silly("SSL: host:ext:x509:Save", key, xobj);
 
         this.cleanUpSanDNS(xobj);
 

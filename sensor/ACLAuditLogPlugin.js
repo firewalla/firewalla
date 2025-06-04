@@ -114,7 +114,7 @@ class ACLAuditLogPlugin extends Sensor {
       s._ts = _.max([s._ts, record._ts])
       s.du = Math.round((_.max([s.ts + (s.du || 0), record.ts + (record.du || 0)]) - s.ts) * 100) / 100
       s.ct += record.ct
-      if (s.sp) s.sp = _.uniq(s.sp, record.sp)
+      if (s.sp) s.sp = _.union(s.sp, record.sp)
     } else {
       this.buffer[mac][descriptor] = record
     }
@@ -868,7 +868,7 @@ class ACLAuditLogPlugin extends Sensor {
               s._ts = _.max([s._ts, record._ts])
               s.du = Math.round((_.max([s.ts + (s.du || 0), record.ts + (record.du || 0)]) - s.ts) * 100) / 100
               s.ct += record.ct
-              if (s.sp) s.sp = _.uniq(s.sp, record.sp)
+              if (s.sp) s.sp = _.union(s.sp, record.sp)
             } else {
               stash[descriptor] = record
             }
