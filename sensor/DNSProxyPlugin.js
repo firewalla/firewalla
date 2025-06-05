@@ -59,6 +59,14 @@ const tm = require('../alarm/TrustManager.js');
 
 const bf = require('../extension/bf/bf.js');
 const LRU = require('lru-cache');
+const bone = require('../lib/Bone.js');
+
+const CategoryUpdater = require('../control/CategoryUpdater.js');
+const categoryUpdater = new CategoryUpdater();
+const util = require('util');
+const readFileAsync = util.promisify(fs.readFile);
+
+
 
 // slices a single byte into bits
 // assuming only single bytes
@@ -93,14 +101,17 @@ const allowKey = "dns_proxy:allow_list"; //unused at this moment
 const passthroughKey = "dns_proxy:passthrough_list";
 const blockKey = "dns_proxy:block_list";
 const featureName = "dns_proxy";
-const boneBfKey = "bf:app.intel_bf";
+const targetListKey = 'intel_bf';
 
 class DNSProxyPlugin extends Sensor {
-  constructor(config, bfInfo = { count: 0, error: 0, perfix: "data", level: "strict" }) {
+  constructor(config) {
     super(config);
-    this.bfInfo = bfInfo;
+    this.bfInfoMap = new Map();
     this.dnsProxyData = null;
     this.state = false;
+    this.level = "strict"; // default level is strict
+    this.targetListKey = config.targetListKey || targetListKey;
+
     this.processedDomainCache = null;
   }
   async run() {
@@ -110,15 +121,18 @@ class DNSProxyPlugin extends Sensor {
     await rclient.unlinkAsync(passthroughKey);
     this.processedDomainCache = new LRU({maxAge: 15000, max: 300});
 
+    // remove obsolete bloom filter data files
+    const obsDataFile = `${f.getRuntimeInfoFolder()}/${featureName}.strict_data.bf.data`;
+    await fs.unlinkAsync(obsDataFile).catch(() => undefined); // ignore error
+
     extensionManager.registerExtension(featureName, this, {
       applyPolicy: this.applyDnsProxy
     });
     this.hookFeature(featureName);
+
+    setInterval(this.applyDnsProxy.bind(this), this.config.regularInterval * 1000)
   }
 
-  getFilePath() {
-    return `${f.getRuntimeInfoFolder()}/${featureName}.strict_${this.bfInfo.perfix}.bf.data`;
-  }
 
   getDnsmasqConfigFile() {
     return `${dnsmasqConfigFolder}/${featureName}.conf`;
@@ -126,19 +140,35 @@ class DNSProxyPlugin extends Sensor {
 
   async enableDnsmasqConfig() {
     log.info("Enabling dnsmasq config file for dnsproxy...");
-    if (!this.bfInfo.count || !this.bfInfo.error) {
-      log.error("No bloom filter data, skip enabling dnsmasq config");
-      return;
-    }
-    if (this.bfInfo.level !== "strict") {
+    if (this.level !== "strict") {
       log.error("Bloom filter level is not strict, skip enabling dnsmasq config");
       return;
     }
 
     let dnsmasqEntry = "mac-address-tag=%FF:FF:FF:FF:FF:FF$dns_proxy&1\n";
-    const fp = this.getFilePath();
-    const entry = `server-bf-exact-uhigh=<${fp},${this.bfInfo.count},${this.bfInfo.error}><${allowKey}><${blockKey}><${passthroughKey}>127.0.0.153#59953$dns_proxy\n`;
-    dnsmasqEntry += entry;
+
+
+    const runTimeFolder = f.getRuntimeInfoFolder();
+
+    let bfEntryItems = [];
+
+    for (const [key, bfInfo] of this.bfInfoMap) {
+      if (!bfInfo.size || !bfInfo.error) {
+        log.error("bad bloom filter entry, skip key:", key, "info:", bfInfo);
+        continue;
+      }
+      bfEntryItems.push(`<${runTimeFolder}/${featureName}.strict_${key}.bf.data,${bfInfo.size},${bfInfo.error}>`);
+    }
+    const bfEntriesStr = `[${bfEntryItems.join(",")}]`;
+    const dnsproxy = [
+      'server-bf-exact-uhigh=',
+      bfEntriesStr,
+      `<${allowKey}>`,
+      `<${blockKey}>`,
+      `<${passthroughKey}>`,
+      '127.0.0.153#59953$dns_proxy\n'
+    ];
+    dnsmasqEntry += dnsproxy.join("");
 
     await fs.writeFileAsync(this.getDnsmasqConfigFile(), dnsmasqEntry);
   }
@@ -146,6 +176,73 @@ class DNSProxyPlugin extends Sensor {
   async disableDnsmasqConfig() {
     log.info("Disabling dnsmasq config file for dnsproxy...");
     await fs.unlinkAsync(this.getDnsmasqConfigFile()).catch(() => undefined); // ignore error
+  }
+
+  async getTargetList() {
+    const infoHashsetId = `info:app.${this.targetListKey}`;
+    try {
+      const result = await bone.hashsetAsync(infoHashsetId);
+      let targetListInfo = JSON.parse(result);
+      let targetList;
+      if (_.isObject(targetListInfo)) {
+        if (targetListInfo["parts"] && _.isArray(targetListInfo["parts"])) {
+          targetList = targetListInfo.parts;
+        } else if (targetListInfo["id"] && _.isString(targetListInfo["id"])) {
+          targetList = [targetListInfo.id];
+        }
+      }
+      return targetList || null;
+    } catch (e) {
+      log.error("Fail to fetch target list info, key:", infoHashsetId, ",error:", e);
+      return null;
+    }
+  }
+
+  async removeData(part) {
+    const runTimeFolder = f.getRuntimeInfoFolder();
+    const bfDataFile = `${runTimeFolder}/${featureName}.strict_${part}.bf.data`;
+
+    await fs.unlinkAsync(bfDataFile).catch(() => undefined); // ignore error
+  }
+
+  // return true on successful update.
+  // return false on skip.
+  // raise error on failure.
+  async updateData(part, content) {
+    log.debug("Update dns_proxy bloom filter data for parts:", part);
+    const obj = JSON.parse(content);
+    if (!obj.data || !obj.info) {
+      throw new Error("Invalid bloom filter data, missing data or info field");
+    }
+
+    let bfInfo = {key: part, size: obj.info.s, error: obj.info.e};
+    this.bfInfoMap.set(part, bfInfo);
+
+    const runTimeFolder = f.getRuntimeInfoFolder();
+    const bfDataFile = `${runTimeFolder}/${featureName}.strict_${part}.bf.data`;
+
+    let currentFileContent;
+    try {
+      currentFileContent = await readFileAsync(bfDataFile);
+    } catch (e) {
+      currentFileContent = null;
+    }
+
+    const buf = Buffer.from(obj.data, "base64");
+    if (currentFileContent && buf.equals(currentFileContent)) {
+      log.debug(`No filter update for dns_proxy part:${part}, skip`);
+      return false;
+    }
+
+    try {
+      const need_decompress = false;
+      await bf.updateBFData({perfix:part}, obj.data, bfDataFile, need_decompress);
+    } catch(e){
+      log.error("Failed to process data file, err:", e);
+      throw new Error(`Failed to updateBFData for ${part}, err: ${e.message}`);
+    };
+
+    return true;
   }
 
   async applyDnsProxy(host, ip, policy) {
@@ -166,34 +263,62 @@ class DNSProxyPlugin extends Sensor {
     /* currently, only strict mode is used and only one dns_proxy BF profile 
      * and confirmed no likely to support multiple dns_proxy profiles in the future
      */ 
-    const outputFilePath = this.getFilePath();
-
     if ("strict" in this.dnsProxyData && this.dnsProxyData["strict"]) {
-      this.bfInfo.level = "strict";
+      this.level = "strict";
 
-      await cc.enableCache(boneBfKey, async (jsonString) => {
-        if (jsonString) {
-          const bloomData = JSON.parse(jsonString);
-          if (!bloomData.data || !bloomData.info || !bloomData.info.s || !bloomData.info.e) {
-            log.error("Invalid bloom data, skip update bloom filter data.", bloomData);
-            return;
-          }
-          this.bfInfo.count = bloomData.info.s;
-          this.bfInfo.error = bloomData.info.e;
-          log.info(`dns_proxy bloom filter data loaded, count:${this.bfInfo.count}, error:${this.bfInfo.error}`);
+      const newParts = await this.getTargetList();
+  
+      if (!newParts || newParts.length === 0) {
+        log.error("No target list found, skip applying dns_proxy policy");
+        return;
+      }
+  
+      const prevParts = categoryUpdater.getCategoryBfParts(this.targetListKey) || [];
+      const removedParts = _.difference(prevParts, newParts);
+  
+      log.info(`Current parts of dns_proxy bf:`, newParts);
+      log.info(`Previous parts of dns_proxy bf:`, prevParts);
+      log.info(`Removed parts of dns_proxy bf:`, removedParts);
 
-          const need_decompress = false;
-          await bf.updateBFData(this.bfInfo, bloomData.data, outputFilePath, need_decompress).catch((err) => {
-            log.error("Failed to process data file, err:", err);
-          });
-          await this.enableDnsmasqConfig().catch((err) => {
-            log.error("Failed to enable dnsmasq config, err", err);
-          });
+      await categoryUpdater.setCategoryBfParts(this.targetListKey, newParts);
+
+      // remove old bloom filter data files
+      for (const part of removedParts) {
+        const hashsetName = `bf:app.${part}`;
+        await cc.disableCache(hashsetName);
+        this.removeData(part);
+        this.bfInfoMap.delete(part);
+      }
+
+      for (const part of newParts) {
+        const hashsetName = `bf:app.${part}`;
+        let currentCacheItem = cc.getCacheItem(hashsetName);
+        if (currentCacheItem) {
+          await currentCacheItem.download();
         } else {
-          log.info(`failed to fetch dns_proxy data from bone with key: ${boneBfKey}, keep original bloom filter data`);
+          log.debug("Add dns_proxy bf data item to cloud cache:", part);
+          await cc.enableCache(hashsetName);
+          currentCacheItem = cc.getCacheItem(hashsetName);
         }
-      });
+        try {
+          const content = await currentCacheItem.getLocalCacheContent();
+          if (content) {
+            await this.updateData(part, content);
+          } else {
+            // remove obselete category data
+            log.error(`dns_proxy part ${part} data is invalid. Remove it`);
+            await this.removeData(part);
+            this.bfInfoMap.delete(part);
+          }
+        } catch (e) {
+          log.error(`Fail to update filter data for dns_proxy part: ${part}.`, e);
+          return;
+        }
+      }
 
+      await this.enableDnsmasqConfig().catch((err) => {
+        log.error("Failed to enable dnsmasq config, err", err);
+      });
     } else {
       log.info('not strict mode, disable dnsmasq config');
       this.disableDnsmasqConfig();
@@ -247,9 +372,12 @@ class DNSProxyPlugin extends Sensor {
     // this channel is also used by CategoryExaminerPlugin.js, unsubscribe here will break functions there
     // sclient.unsubscribe(BF_SERVER_MATCH);
 
-    await cc.disableCache(boneBfKey).catch((err) => {
-      log.error("Failed to disable cache, err:", err);
-    });
+    for (const [key, bfInfo] of this.bfInfoMap) {
+      const hashsetName = `bf:app.${key}`;
+      await cc.disableCache(hashsetName).catch((err) => {
+        log.error("Failed to disable cache for", key, "err:", err);
+      });
+    }
 
     await this.disableDnsmasqConfig();
     dnsmasq.scheduleRestartDNSService();
