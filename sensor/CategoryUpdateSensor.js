@@ -52,7 +52,8 @@ const { CategoryEntry } = require('../control/CategoryEntry.js');
 
 const INTEL_PROXY_CHANNEL = "intel_proxy";
 
-const MAX_PORT_COUNT = 1000;
+const MAX_DOMAIN_PORT_COUNT = 1000;
+const MAX_IP_PORT_COUNT = 20000;
 
 const securityHashMapping = {
   "default_c": "blockset:default:consumer"
@@ -158,27 +159,36 @@ class CategoryUpdateSensor extends Sensor {
         return;
       }
 
-
-      if (categoryUpdater.isUserTargetList(category) || categoryUpdater.isSmallExtendedTargetList(category)) {
+      if (categoryUpdater.isUserTargetList(category) || categoryUpdater.isSmallExtendedTargetList(category) || (info && info.enable_v2))  {
+        // in case of some categorys, such as doh, being converted to support tagret list with ports
+        await categoryUpdater.flushDefaultDomains(category);
+        await categoryUpdater.flushDefaultHashedDomains(category);
+        await categoryUpdater.flushIPv4Addresses(category);
+        await categoryUpdater.flushIPv6Addresses(category);
         // with port support
         await categoryUpdater.flushCategoryData(category);
         let categoryEntries = [];
-        let totalPortCount = 0;
+        let totalDomainPortCount = 0;
+        let totalIpPortCount = 0;
         for (const item of domains) {
           try {
             log.debug("Parse category entry:", item);
             const entries = CategoryEntry.parse(item);
             log.debug("Category entries", entries);
             for (const entry of entries) {
-              totalPortCount += entry.pcount;
+              if (entry.type === "domain") {
+                totalDomainPortCount += entry.pcount;
+              } else if (entry.type === "ipv4" || entry.type === "ipv6") {
+                totalIpPortCount += entry.pcount;
+              }
               categoryEntries.push(entry);
             }
           } catch (err) {
             log.error(err.message, item);
           }
         }
-        log.debug("Total port count", totalPortCount);
-        if (totalPortCount > MAX_PORT_COUNT) {
+        log.debug(`Total domain port count: ${totalDomainPortCount}, total IP port count: ${totalIpPortCount}`);
+        if (totalDomainPortCount > MAX_DOMAIN_PORT_COUNT  || totalIpPortCount > MAX_IP_PORT_COUNT) {
           log.error("Too much port match, disable category", category);
           categoryEntries = [];
         }
