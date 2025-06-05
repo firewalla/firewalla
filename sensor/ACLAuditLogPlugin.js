@@ -36,9 +36,6 @@ const LogReader = require('../util/LogReader.js');
 const { delay } = require('../util/util.js');
 const { getUniqueTs } = require('../net2/FlowUtil.js')
 const FireRouter = require('../net2/FireRouter.js');
-const AsyncLock = require('../vendor_lib/async-lock');
-const lock = new AsyncLock();
-const LOCK_LOG_BUFFER = "LOCK_LOG_BUFFER";
 
 const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
@@ -107,24 +104,20 @@ class ACLAuditLogPlugin extends Sensor {
   }
 
   writeBuffer(record) {
-    lock.acquire(LOCK_LOG_BUFFER, async () => {
-      const { mac } = record
-      if (!this.buffer[mac]) this.buffer[mac] = {}
-      const descriptor = this.getDescriptor(record)
-      if (this.buffer[mac][descriptor]) {
-        const s = this.buffer[mac][descriptor]
-        // _.min() and _.max() ignore non-number values
-        s.ts = _.min([s.ts, record.ts])
-        s._ts = _.max([s._ts, record._ts])
-        s.du = Math.round((_.max([s.ts + (s.du || 0), record.ts + (record.du || 0)]) - s.ts) * 100) / 100
-        s.ct += record.ct
-        if (s.sp) s.sp = _.uniq(s.sp, record.sp)
-      } else {
-        this.buffer[mac][descriptor] = record
-      }
-    }).catch((err) => {
-      log.error(`Failed to write record to buffer`, record, err.message);
-    });
+    const { mac } = record
+    if (!this.buffer[mac]) this.buffer[mac] = {}
+    const descriptor = this.getDescriptor(record)
+    if (this.buffer[mac][descriptor]) {
+      const s = this.buffer[mac][descriptor]
+      // _.min() and _.max() ignore non-number values
+      s.ts = _.min([s.ts, record.ts])
+      s._ts = _.max([s._ts, record._ts])
+      s.du = Math.round((_.max([s.ts + (s.du || 0), record.ts + (record.du || 0)]) - s.ts) * 100) / 100
+      s.ct += record.ct
+      if (s.sp) s.sp = _.uniq(s.sp, record.sp)
+    } else {
+      this.buffer[mac][descriptor] = record
+    }
   }
 
   // dns on bridge interface is not the LAN IP, zeek will see different src/dst IP in DNS packets due to br_netfilter,
@@ -712,11 +705,9 @@ class ACLAuditLogPlugin extends Sensor {
     try {
       // log.debug('Start writing logs')
       // log.debug(JSON.stringify(this.buffer))
-      let buffer = {};
-      await lock.acquire(LOCK_LOG_BUFFER, async () => {
-        buffer = this.buffer;
-        this.buffer = {};
-      }).catch((err) => {});
+
+      const buffer = this.buffer
+      this.buffer = {}
       // log.debug(buffer)
 
       for (const mac in buffer) {
@@ -736,7 +727,7 @@ class ACLAuditLogPlugin extends Sensor {
               }
             }
 
-            if (record.ac !== "isolation" && (type == 'ip' || record.ac == 'block'))
+            if (type == 'ip' || record.ac == 'block')
               this.ruleStatsPlugin.accountRule(record);
           }
 
