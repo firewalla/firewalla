@@ -13,7 +13,7 @@ show_reboot() {
 
 ==> $1 <==
 EOT
-    zgrep -anP '(\x00+|fake-hwclock.data)' $1 | sed 's/\x0\x0*/NULLS/g' | reformat $1
+    zgrep -anP '(\x00+|fake-hwclock.data|Booting Linux)' $1 | sed 's/\x0\x0*/NULLS/g' | reformat $1
 }
 
 reformat() {
@@ -27,23 +27,23 @@ reformat() {
     lno= ; boot= ; last_ts= ; next_ts=
     while read line
     do
-    #echo ">>line<<"; echo "$line"
+        #echo ">>line<<"; echo "$line"
         case "$line" in
           *NULLS*)
               boot_lno=$(echo "$line" | awk -F: '{print $1}')
-              boot_ts=$(echo "$line" | awk '{print $1" "$2" "$3}' | sed 's/[0-9]*://')
-              last_date=$($CAT $file | head -$boot_lno | cut -d: -f1 | uniq | tail -2 |head -1)
-              last_ts=$($CAT $file | head -$boot_lno | cut -d\  -f1-3 | uniq | fgrep -a "$last_date" | tail -1)
+              boot_ts=$(echo "$line" | grep -aoP '[A-Za-z]+\s+\d+\s+[:0-9]{8}' | sed 's/[0-9]*://')
+              last_date=$($CAT $file | head -$boot_lno | awk -F: '{print $1}' | uniq | tail -2 |head -1)
+              last_ts=$($CAT $file | head -$boot_lno | grep -aoP '[A-Za-z]+\s+\d+\s+[:0-9]{8}' | uniq |fgrep -a "$last_date" | tail -1)
               lno=$($CAT $file|head -$boot_lno | fgrep -an "$last_ts" | tail -1|awk -F: '{print $1}')
               boot='power cycle'
               ;;
-          *'Unable to read saved clock information: /data/fake-hwclock.data'*)
+          *'Unable to read saved clock information: /data/fake-hwclock.data'*|*'Booting Linux'*)
               boot_lno=$(echo "$line" | awk -F: '{print $1}')
-              boot_ts=$(echo "$line" | awk '{print $1" "$2" "$3}' | sed 's/[0-9]*://')
-              last_date=$($CAT $file | head -$boot_lno | cut -d: -f1 | uniq | tail -2 |head -1)
-              last_ts=$($CAT $file|head -$boot_lno | cut -d\  -f1-3 | uniq | fgrep -a "$last_date" | tail -1)
+              boot_ts=$(echo "$line" | grep -aoP '[A-Za-z]+\s+\d+\s+[:0-9]{8}' | sed 's/[0-9]*://')
+              last_date=$($CAT $file | head -$boot_lno | awk -F: '{print $1}' | uniq | tail -2 |head -1|tr -d '\0')
+              last_ts=$($CAT $file|head -$boot_lno | grep -aoP '[A-Za-z]+\s+\d+\s+[:0-9]{8}' | uniq | fgrep -a "$last_date" | tail -1)
               lno=$($CAT $file|head -$boot_lno | fgrep -an "$last_ts" | tail -1|awk -F: '{print $1}')
-              next_ts=$($CAT $file | sed -n "$boot_lno,\$p" |fgrep -am 1 FIREONBOOT.UPGRADE.DATE.SYNC.DONE | cut -d\  -f1-3)
+              next_ts=$($CAT $file | sed -n "$boot_lno,\$p" |fgrep -am 1 FIREONBOOT.UPGRADE.DATE.SYNC.DONE | grep -aoP '[A-Za-z]+\s+\d+\s+[:0-9]{8}')
               if [[ -n "$last_ts" && -n "$next_ts" ]]; then
                   last_ts_epoch=$(date +%s -d "$last_ts")
                   next_ts_epoch=$(date +%s -d "$next_ts")
