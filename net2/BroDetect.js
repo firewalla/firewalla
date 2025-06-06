@@ -162,19 +162,29 @@ class BroDetect {
     let c = require('./MessageBus.js');
     this.publisher = new c();
 
-    this.flowstash = { conn: { keys: new Set(), ignore: {} }, dns: { keys: new Set() } }
-    this.lastRotate = { conn: Date.now() / 1000, dns: Date.now() / 1000 }
+    this.flowstash = {
+      conn: { keys: new Set(['flow:conn:system']), ignore: {} },
+      local: { keys: new Set(['flow:local:system']) },
+      dns: { keys: new Set(['flow:dns:system']) }
+    }
+    this.lastRotate = { conn: Date.now() / 1000, local: Date.now() / 1000, dns: Date.now() / 1000 }
     this.rotateFlowstashTask = {}
-    this.rotateFlowstashTask.conn = setInterval(() => {
+    this.rotateFlowstashTask.conn = setInterval(async () => {
       this.rotateFlowStash('conn')
     }, config.conn.flowstashExpires * 1000)
-    // stagger 2 flow stashes to flat redis IO
+    // stagger rotations to flat redis IO
+    setTimeout(() => {
+      this.rotateFlowStash('local')
+      this.rotateFlowstashTask.local = setInterval(() => {
+        this.rotateFlowStash('local')
+      }, config.local.flowstashExpires * 1000)
+    }, config.local.flowstashExpires * 1000 / 3)
     setTimeout(() => {
       this.rotateFlowStash('dns')
       this.rotateFlowstashTask.dns = setInterval(() => {
         this.rotateFlowStash('dns')
       }, config.dns.flowstashExpires * 1000)
-    }, config.dns.flowstashExpires * 1000 / 2)
+    }, config.dns.flowstashExpires * 1000 * 2 / 3)
 
     this.activeMac = {};
     this.incTs = 0;
@@ -541,9 +551,10 @@ class BroDetect {
 
       const key = "flow:dns:" + localMac;
       this.flowstash.dns.keys.add(key)
-      await rclient.zaddAsync(key, dnsFlow._ts, JSON.stringify(dnsFlow)).catch(
-        err => log.error("Failed to save single DNS flow: ", dnsFlow, err)
-      )
+      const commands = [ ['zadd', key, dnsFlow._ts, JSON.stringify(dnsFlow)] ]
+      dnsFlow.mac = localMac
+      commands.push(['zadd', `flow:dns:system`, dnsFlow._ts, JSON.stringify(dnsFlow)])
+      await rclient.pipelineAndLog(commands)
 
     } catch(err) {
       log.error('Error saving DNS flow', JSON.stringify(obj), err)
@@ -576,7 +587,7 @@ class BroDetect {
       const cacheHit = cached && obj.answers.every(as => cached.has(as))
       if (cacheHit) {
         // if (this.dnsMatch++ % 10 == 0) log.verbose(`Duplicated DNS ${this.dnsMatch} / ${this.dnsHit} / ${this.dnsCount} `)
-        log.debug("processDnsData:DNS:Duplicated:", obj['query'], JSON.stringify(obj['answers']));
+        log.silly("processDnsData:DNS:Duplicated:", obj['query'], JSON.stringify(obj['answers']));
       } else {
         this.dnsCache.set(cacheKey, new Set(obj.answers))
       }
@@ -1380,7 +1391,7 @@ class BroDetect {
 
       // beware that _ts is used as score in flow:conn:* zset, since _ts is always monotonically increasing
       let redisObj = [key, tmpspec._ts, strdata];
-      this.flowstash.conn.keys.add(key)
+      this.flowstash[localFlow ? 'local' : 'conn'].keys.add(key)
 
       // adding keys to flowstash (but not redis)
       tmpspec.mac = localMac
@@ -1392,6 +1403,10 @@ class BroDetect {
 
       const multi = rclient.multi()
       multi.zadd(redisObj)
+      // mac has been added to tmpspec here
+      const systemKey = localFlow ? 'flow:local:system' : 'flow:conn:system'
+      if (!localFlow || !reverseLocal)
+        multi.zadd(systemKey, tmpspec._ts, JSON.stringify(tmpspec))
       // no need to set ttl here, OldDataCleanSensor will take care of it
       multi.zadd("deviceLastFlowTs", now, localMac);
       await multi.execAsync().catch(
@@ -1452,7 +1467,7 @@ class BroDetect {
   // so we don't have to duplicate flows in Node, just read from redis on rotation is good enough
   async rotateFlowStash(type) {
     const flowstash = this.flowstash[type]
-    this.flowstash[type] = { keys: new Set(), ignore: {} }
+    this.flowstash[type] = { keys: new Set([`flow:${type}:system`]), ignore: {} }
     let end = Date.now() / 1000
     const start = this.lastRotate[type]
     this.lastRotate[type] = end
@@ -1463,19 +1478,19 @@ class BroDetect {
 
       for (const key of flowstash.keys) try {
         const flows = await rclient.zrangebyscoreAsync(key, '(' + start, end)
-        const mac = key.split(':').slice(type == 'conn' ? 3 : 2).join(':')
-        const local = key.startsWith('flow:local:')
-        log.debug(`${type}:Save:Stash`, key, mac, local, flows.length);
+        const systemFlow = key.endsWith(':system')
 
         const stashed = {};
         for (const flowStr of flows) {
           const f = JSON.parse(flowStr);
 
-          const descriptor = type == 'conn'
-            ? `${mac}:${f.sh}:${f.dh}:${f.oIntf || ""}:${f.dp || ""}`
-            : `${mac}:${f.sh}:${f.dn}`;
+          // need to insert mac into flow descriptor for system flows
+          const descriptor = (systemFlow ? f.mac+':' : '')
+            + (type == 'dns'
+              ? `${f.sh}:${f.dh}:${f.dn}`
+              : `${f.sh}:${f.dh}:${f.oIntf || ""}:${f.dp || ""}`)
 
-          if (type == 'conn' && !local && f.uids[0] && f.fd === "in" && !Object.keys(f.af).length) try {
+          if (type == 'conn' && f.uids[0] && f.fd === "in" && !Object.keys(f.af).length) try {
             // try resolve host info for previous flows again here
             // have to do this before flow aggregation as source port does matter
             const uid = f.uids[0];
@@ -1501,7 +1516,9 @@ class BroDetect {
             // update last time updated
             flowspec._ts = Math.max(flowspec._ts, f._ts);
 
-            if (type == 'conn') {
+            if (type == 'dns') {
+              flowspec.as = _.union(flowspec.as, f.as)
+            } else {
               flowspec.ob += f.ob;
               flowspec.rb += f.rb;
               // TBD: How to define and calculate the duration of flow?
@@ -1519,20 +1536,16 @@ class BroDetect {
               if (!_.isEmpty(f.sigs))
                 flowspec.sigs = _.union(flowspec.sigs, f.sigs);
               Object.assign(flowspec.af, f.af);
-
-            } else {
-              flowspec.as = _.union(flowspec.as, f.as)
             }
           }
         }
-
-        log.verbose(`${type}:Save:Wipe ${key} ${flows.length} => ${Object.keys(stashed).length}`);
 
         let transaction = [];
         transaction.push(['zremrangebyscore', key, '('+start, end]);
 
         for (const descriptor in stashed) {
           const spec = stashed[descriptor];
+          log.debug(`${type}:Save:Stash`, key, descriptor);
 
           if (spec._ts < start || spec._ts > end) log.warn('Stashed flow out of range', start, end, spec)
           if (spec._ts > end) end = spec._ts
@@ -1544,7 +1557,8 @@ class BroDetect {
         // no need to set ttl here, OldDataCleanSensor will take care of it
 
         await rclient.pipelineAndLog(transaction)
-        log.verbose(`${type}:Save:Done`, key, start, end);
+        log.verbose(`${type}:Save:Done`, key, start, end, flows.length, '=>', Object.keys(stashed).length);
+
       } catch (err) {
         log.error(`${type}:Save:Error`, key, start, end, err);
       }
