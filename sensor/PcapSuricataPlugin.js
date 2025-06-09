@@ -21,6 +21,22 @@ class PcapSuricataPlugin extends PcapPlugin {
   }
 
   async restart() {
+    await this._restart();
+    suricataControl.watchRulesDir((eventType, filename) => {
+      if (!this.isEnabled())
+        return;
+      log.info(`${filename} under rules directory is ${eventType}, schedule restarting suricata`);
+      if (this.restartTask)
+        clearTimeout(this.restartTask);
+      this.restartTask = setTimeout(async () => {
+        await this._restart().catch((err) => {
+          log.error(`Failed to restart suricata`, err.message);
+        });
+      }, 5000);
+    });
+  }
+
+  async _restart() {
     const yaml = await this.generateSuricataYAML();
     await suricataControl.cleanupRuntimeConfig();
     await suricataControl.writeSuricataYAML(yaml);

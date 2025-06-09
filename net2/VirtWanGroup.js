@@ -196,7 +196,7 @@ class VirtWanGroup {
                 await routing.addRouteToTable(dnsServer, gw6, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => { });
             }
           }
-          const vpnSubnets = await c.getRoutedSubnets();
+          const vpnSubnets = await c.getEffectiveRoutedSubnets();
           if (_.isArray(vpnSubnets)) {
             for (const vpnSubnet of vpnSubnets) {
               let af = 4;
@@ -264,7 +264,7 @@ class VirtWanGroup {
                 await routing.addRouteToTable(dnsServer, gw6, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => { });
             }
           }
-          const vpnSubnets = await c.getRoutedSubnets();
+          const vpnSubnets = await c.getEffectiveRoutedSubnets();
           if (_.isArray(vpnSubnets)) {
             for (const vpnSubnet of vpnSubnets) {
               let af = 4;

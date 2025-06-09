@@ -2113,29 +2113,29 @@ module.exports = class DNSMASQ {
     for (const monitoringInterface of sysManager.getMonitoringInterfaces()) {
       if (!monitoringInterface || !monitoringInterface.ip_address || !monitoringInterface.uuid)
         continue;
-      const STATUS_CHECK_INTERFACE = monitoringInterface.ip_address;
+      const intfIP = monitoringInterface.ip_address;
       const uuid = monitoringInterface.uuid;
       let resolved = false;
       for (const domain of VERIFICATION_DOMAINS) {
         // if there are 3 verification domains and each takes at most 6 seconds to fail the test, it will take 18 seconds to fail the test on one network interface
-        let cmd = `dig -4 A +short +time=3 +tries=2 -p ${MASQ_PORT} @${STATUS_CHECK_INTERFACE} ${domain}`;
-        log.debug(`Verifying DNS resolution to ${domain} on ${STATUS_CHECK_INTERFACE} ...`);
+        let cmd = `dig -4 A +short +time=3 +tries=2 -p ${MASQ_PORT} -b ${intfIP}#${Constants.PORT_DNS_TEST_SRC} @${intfIP} ${domain}`;
+        log.debug(`Verifying DNS resolution to ${domain} on ${intfIP} ...`);
         try {
           let { stdout, stderr } = await execAsync(cmd);
           if (!stdout || !stdout.trim().split('\n').some(line => new Address4(line).isValid())) {
-            log.warn(`Error verifying dns resolution to ${domain} on ${STATUS_CHECK_INTERFACE}`, stderr, stdout);
+            log.warn(`Error verifying dns resolution to ${domain} on ${intfIP}`, stderr, stdout);
           } else {
-            log.debug(`DNS resolution succeeds to ${domain} on ${STATUS_CHECK_INTERFACE}`);
+            log.debug(`DNS resolution succeeds to ${domain} on ${intfIP}`);
             resolved = true;
             break;
           }
         } catch (err) {
           // usually fall into catch clause if dns resolution is failed
-          log.error(`Failed to resolve ${domain} on ${STATUS_CHECK_INTERFACE}`, err.stdout, err.stderr);
+          log.error(`Failed to resolve ${domain} on ${intfIP}`, err.stdout, err.stderr);
         }
       }
       if (!resolved)
-        log.error(`Failed to resolve all domains on ${STATUS_CHECK_INTERFACE}.`);
+        log.error(`Failed to resolve all domains on ${intfIP}.`);
       result[uuid] = resolved;
     }
     return result;
