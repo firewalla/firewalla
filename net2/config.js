@@ -183,7 +183,7 @@ async function reloadConfig() {
   } catch(err) {
     // clears config on any error
     userConfig = {};
-    log.info('testConfig:', err.message)
+    if (err.code !== 'ENOENT') log.info('testConfig:', err.message)
   }
 
   const oldConfigStr = JSON.stringify(config)

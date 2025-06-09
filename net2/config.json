@@ -748,6 +748,8 @@
       }
     },
     "DNSProxyPlugin": {
+      "regularInterval": 28800,
+      "targetListKey": "intel_bf",
       "data": [
         {
           "prefix": "data",
@@ -884,6 +886,9 @@
       "pathdev": "/blog/current/conndev.log",
       "flowstashExpires": 900,
       "expires": 86400
+    },
+    "local": {
+      "flowstashExpires": 900
     },
     "connLong": {
       "path": "/blog/current/conn_long.log",

@@ -15,60 +15,87 @@
 
 
 
-const mock = require('mock-require');
+
 const { expect, assert } = require('chai');
+const { set } = require('lodash');
+let mock;
+let sensorInstance;
 
+function setupMocks() {
+  mock = require('mock-require');
+  mock('../net2/logger.js', () => ({
+    info: () => {},
+    warn: () => {},
+    error: () => {}
+  }));
+  
+  mock('../sensor/Sensor.js', {
+    Sensor: class {}
+  });
+  
+  mock('../sensor/SensorEventManager.js', {
+    getInstance: () => ({
+      on: () => {},
+      emit: () => {}
+    })
+  });
+  
+  mock('../net2/MessageBus.js', class {
+    constructor() {}
+    subscribe() {}
+    publish() {}
+  });
+  
+  mock('../net2/config.js', { get: () => {} });
+  mock('../net2/HostManager.js', class {});
+  mock('../net2/SysManager.js', {});
+  mock('../net2/NetworkProfileManager.js', {});
+  mock('../alarm/Alarm.js', {});
+  mock('../alarm/AlarmManager2.js', class {});
+  mock('../alarm/PolicyManager2.js', class {
+    constructor() {}
+  });
+  mock('../util/util.js', {
+    getPreferredBName: () => '',
+    delay: async () => {}
+  });
+  
+  mock('../net2/TagManager.js', {});
+  mock('../net2/HostTool.js', class {});
 
-mock('../net2/logger.js', () => ({
-  info: () => {},
-  warn: () => {},
-  error: () => {}
-}));
+  const NewDeviceTagSensor = require('../sensor/NewDeviceTagSensor');
+  sensorInstance = new NewDeviceTagSensor({});
+}
 
-mock('../sensor/Sensor.js', {
-  Sensor: class {}
-});
+function restoreMocks() {
+  mock.stopAll();
+  for (const id of Object.keys(require.cache)) {
+    if (id.includes('/net2/') || id.includes('/sensor/') || id.includes('/alarm/') || id.includes('/util/')) {
+      delete require.cache[id];
+    }
+  }
+}
 
-mock('../sensor/SensorEventManager.js', {
-  getInstance: () => ({
-    on: () => {},
-    emit: () => {}
-  })
-});
-
-mock('../net2/MessageBus.js', class {
-  constructor() {}
-  subscribe() {}
-  publish() {}
-});
-
-mock('../net2/config.js', { get: () => {} });
-mock('../net2/HostManager.js', class {});
-mock('../net2/SysManager.js', {});
-mock('../net2/NetworkProfileManager.js', {});
-mock('../alarm/Alarm.js', {});
-mock('../alarm/AlarmManager2.js', class {});
-mock('../alarm/PolicyManager2.js', class {
-  constructor() {}
-});
-mock('../util/util.js', {
-  getPreferredBName: () => '',
-  delay: async () => {}
-});
-mock('lodash', require('lodash'));
-// mock('../net2/Constants.js', {});
-mock('../net2/TagManager.js', {});
-
-
-const NewDeviceTagSensor = require('../sensor/NewDeviceTagSensor');
 
 
 describe('NewDeviceTagSensor.isFirewallaAP', () => {
-  const sensorInstance = new NewDeviceTagSensor({});
+  const mockMode = process.env.MOCK_MODE === 'true';
 
-  after(() => {
-    mock.stopAll()
-  })
+  before(function() {
+    this.timeout(60000);
+    if (mockMode) {
+      setupMocks();
+    }
+    const NewDeviceTagSensor = require('../sensor/NewDeviceTagSensor');
+    sensorInstance = new NewDeviceTagSensor({});
+
+  });
+
+  after(function() {
+    if (mockMode) {
+      restoreMocks();
+    }
+  });
 
   it('should return true for Firewalla AP MAC address "20:6D:31:61"', () => {
     const host = {

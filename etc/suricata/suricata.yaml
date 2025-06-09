@@ -1046,7 +1046,7 @@ pfring:
 ## Configure Suricata to load Suricata-Update managed rules.
 ##
 
-default-rule-path: /home/pi/.firewalla/run/suricata/rules
+default-rule-path: /home/pi/.firewalla/run/suricata_rules
 
 ##
 ## Auxiliary configuration files.
