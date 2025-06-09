@@ -887,6 +887,9 @@
       "flowstashExpires": 900,
       "expires": 86400
     },
+    "local": {
+      "flowstashExpires": 900
+    },
     "connLong": {
       "path": "/blog/current/conn_long.log",
       "expires": 600
