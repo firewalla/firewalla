@@ -83,6 +83,10 @@ class PcapPlugin extends Sensor {
 
   }
 
+  isEnabled() {
+    return this.enabled;
+  }
+
   async globalOn() {
     this.enabled = true;
     log.info(`Pcap plugin ${this.getFeatureName()} is enabled`);

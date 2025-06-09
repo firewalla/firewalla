@@ -25,9 +25,26 @@ Promise.promisifyAll(fs);
 const _ = require('lodash');
 const YAML = require('../vendor_lib/yaml');
 const delay = require('../util/util.js').delay;
+const CUSTOMIZED_RULES_DIR = `${f.getRuntimeInfoFolder()}/suricata_rules`;
+
 class SuricataControl {
   constructor() {
     this.restarting = false;
+    this.rulesDirWatched = false;
+  }
+
+  watchRulesDir(callback) {
+    if (this.rulesDirWatched)
+      return;
+    this.rulesDirWatched = true;
+    fs.watch(CUSTOMIZED_RULES_DIR, (eventType, filename) => {
+      if (callback)
+        callback(eventType, filename);
+    })
+  }
+
+  async reloadSuricataRules() {
+    await exec(`sudo systemctl reload suricata`).catch((err) => {});
   }
 
   async addCronJobs() {
@@ -65,13 +82,8 @@ class SuricataControl {
     });
   }
 
-  async prepareAssets() {
-    await exec(`mkdir -p ${f.getUserConfigFolder()}/suricata/rules`).catch((err) => {});
-    await exec(`mkdir -p ${f.getRuntimeInfoFolder()}/suricata/rules`).catch((err) => {});
-    // copy customized rule files to runtime folder
-    await exec(`cp ${f.getUserConfigFolder()}/suricata/rules/*.rules ${f.getRuntimeInfoFolder()}/suricata/rules/`).catch((err) => {
-      log.error(`Failed to copy suricata rules`, err.message);
-    });
+    async prepareAssets() {
+    await exec(`mkdir -p ${CUSTOMIZED_RULES_DIR}`).catch((err) => {});
     // copy other .config files to runtime folder
     await exec(`cp -r ${f.getFirewallaHome()}/etc/suricata/*.config ${f.getRuntimeInfoFolder()}/suricata`).catch((err) => {
       log.error(`Failed to copy .config files`, err.message);
@@ -79,7 +91,7 @@ class SuricataControl {
   }
 
   async getCustomizedRuleFiles() {
-    const ruleFiles = await fs.readdirAsync(`${f.getUserConfigFolder()}/suricata/rules/`).catch((err) => []);
+    const ruleFiles = await fs.readdirAsync(CUSTOMIZED_RULES_DIR).catch((err) => []);
     return ruleFiles;
   }
 
