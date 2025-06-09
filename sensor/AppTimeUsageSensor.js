@@ -141,13 +141,21 @@ class AppTimeUsageSensor extends Sensor {
     const apps = Object.keys(appConfs).filter(app => !_.isEmpty(_.get(appConfs, [app, "includedDomains"])));
     await rclient.delAsync(Constants.REDIS_KEY_APP_TIME_USAGE_APPS);
     await rclient.saddAsync(Constants.REDIS_KEY_APP_TIME_USAGE_APPS, apps);
+    let appDisturbs = {};
     for (const app of apps) {
       const {category} = appConfs[app];
       if (category)
         await rclient.hsetAsync(Constants.REDIS_KEY_APP_TIME_USAGE_CATEGORY, app, category);
       else
         await rclient.hdelAsync(Constants.REDIS_KEY_APP_TIME_USAGE_CATEGORY, app);
+
+      const value = _.get(appConfs, [app, "appDisturb"]);
+      if (value && _.isObject(value)){
+        appDisturbs[app] = value;
+      }
     }
+    if (appDisturbs && !_.isEmpty(appDisturbs))
+      sem.emitLocalEvent({type: Message.MSG_APP_DISTURB_VALUE_UPDATED, appDisturbs, suppressEventLogging: true});
   }
 
   rebuildTrie() {

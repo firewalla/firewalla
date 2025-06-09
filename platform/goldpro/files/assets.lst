@@ -1,3 +1,4 @@
 /home/pi/.firewalla/run/assets/speedtest /goldpro/speedtest 755
 /home/pi/.firewalla/run/intelproxy/intelproxy /goldpro/intelproxy 755 "sudo systemctl stop intelproxy" "sudo systemctl start intelproxy"
 /home/pi/.firewalla/run/zeek_signatures/dpi.sig /all/zeek-dpi.fwsig 644
+/home/pi/.firewalla/run/suricata_rules/firewalla.rules /goldpro/suricata_rules/firewalla.rules 644
