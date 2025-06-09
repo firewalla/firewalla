@@ -90,7 +90,7 @@ class RuleStatsPlugin extends Sensor {
           await this.updateRuleStats();
         }
       } catch (e) {
-        log.debug(e);
+        log.error(e);
       }
       await scheduler.delay(1000);
     }
@@ -338,6 +338,9 @@ class RuleStatsPlugin extends Sensor {
           result.push(uploadPolicyId);
         }
         return result;
+      }
+      default: {
+        return [];
       }
     }
   }

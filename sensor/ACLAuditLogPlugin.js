@@ -64,7 +64,7 @@ class ACLAuditLogPlugin extends Sensor {
 
     this.featureName = Constants.FEATURE_AUDIT_LOG
     this.buffer = {}
-    this.touchedKeys = {};
+    this.touchedKeys = {'audit:drop:system': 1, 'audit:accept:system': 1, 'audit:local:drop:system': 1};
     this.incTs = 0;
   }
 
@@ -114,7 +114,7 @@ class ACLAuditLogPlugin extends Sensor {
       s._ts = _.max([s._ts, record._ts])
       s.du = Math.round((_.max([s.ts + (s.du || 0), record.ts + (record.du || 0)]) - s.ts) * 100) / 100
       s.ct += record.ct
-      if (s.sp) s.sp = _.uniq(s.sp, record.sp)
+      if (s.sp) s.sp = _.union(s.sp, record.sp)
     } else {
       this.buffer[mac][descriptor] = record
     }
@@ -696,8 +696,7 @@ class ACLAuditLogPlugin extends Sensor {
     }
   }
 
-  _getAuditKey(record, block) {
-    const { mac, type, dir } = record
+  _getAuditKey(mac, type, dir, block) {
     return `audit:${dir=='L'?'local:':''}${block?'drop':type=='dns'?'dns':'accept'}:${mac}`
   }
 
@@ -809,9 +808,14 @@ class ACLAuditLogPlugin extends Sensor {
           // use a dedicated switch for saving to audit:accpet as we still want rule stats
           if (type == 'dns' && !block && !fc.isFeatureOn('dnsmasq_log_allow_redis')) continue
 
-          const key = this._getAuditKey(record, block)
-
           delete record.dir
+
+          if (dir != 'L' || fd == 'in') {
+            const systemKey = this._getAuditKey('system', type, dir, block)
+            multi.zadd(systemKey, _ts, JSON.stringify(record));
+          }
+
+          const key = this._getAuditKey(mac, type, dir, block)
           delete record.mac
           multi.zadd(key, _ts, JSON.stringify(record));
           if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
@@ -847,19 +851,19 @@ class ACLAuditLogPlugin extends Sensor {
       // merge 1 interval (default 5min) before to make sure it doesn't affect FlowAggregationSensor
       const end = endOpt || Math.floor(Date.now() / 1000 / this.config.interval - 1) * this.config.interval
       const start = startOpt || end - this.config.interval
-      log.debug('Start merging', start, end)
       const auditKeys = Object.keys(this.touchedKeys);
-      this.touchedKeys = {};
-      log.debug('Key(mac) count: ', auditKeys.length)
+      this.touchedKeys = {'audit:drop:system': 1, 'audit:accept:system': 1, 'audit:local:drop:system': 1};
+      log.verbose('Start merging', start, end, 'Key(mac) count: ', auditKeys.length)
       for (const key of auditKeys) {
         const records = await rclient.zrangebyscoreAsync(key, '('+start, end)
         // const mac = key.substring(11) // audit:drop:<mac>
+        const systemLog = key.endsWith(':system')
 
         const stash = {}
         for (const recordString of records) {
           try {
             const record = JSON.parse(recordString)
-            const descriptor = this.getDescriptor(record)
+            const descriptor = (systemLog ? record.mac+':' : '') + this.getDescriptor(record)
 
             if (stash[descriptor]) {
               const s = stash[descriptor]
@@ -868,7 +872,7 @@ class ACLAuditLogPlugin extends Sensor {
               s._ts = _.max([s._ts, record._ts])
               s.du = Math.round((_.max([s.ts + (s.du || 0), record.ts + (record.du || 0)]) - s.ts) * 100) / 100
               s.ct += record.ct
-              if (s.sp) s.sp = _.uniq(s.sp, record.sp)
+              if (s.sp) s.sp = _.union(s.sp, record.sp)
             } else {
               stash[descriptor] = record
             }
@@ -887,9 +891,9 @@ class ACLAuditLogPlugin extends Sensor {
 
         // catch this to proceed onto the next iteration
         try {
-          log.debug(transaction)
+          log.silly(transaction)
           await rclient.pipelineAndLog(transaction)
-          log.debug("Audit:Save:Aggregated", key);
+          log.debug("Audit:Save:Aggregated", key, start, end, records.length, '=>', Object.keys(stash).length);
         } catch (err) {
           log.error("Audit:Save:Error", err);
         }

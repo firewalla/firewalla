@@ -449,12 +449,17 @@ function setupIpset(element, ipset, remove = false) {
   if (ipAddr.match(/^\d+(-\d+)?$/)) {
     // ports
   } else if (new Address4(ipAddr).isValid()) {
-    // nothing needs to be done for v4 addresses
+    // cidr with subnet mask 0 is invalid in ipset, need to convert it to two /1 cidrs
+    if (element.endsWith("/0")) {
+      return Promise.all([setupIpset("0.0.0.0/1", ipset, remove), setupIpset("128.0.0.0/1", ipset, remove)]);
+    }
   } else {
     const ip6 = new Address6(ipAddr);
-    if (ip6.correctForm() == '::') return
-
-    if (ip6.isValid() && ip6.correctForm() != '::') {
+    if (ip6.isValid()) {
+      // cidr with subnet mask 0 is invalid in ipset, need to convert it to two /1 cidrs
+      if (element.endsWith("/0")) {
+        return Promise.all([setupIpset("::/1", ipset, remove), setupIpset("8000::/1", ipset, remove)]);
+      }
       ipset = ipset + '6';
     } else {
       return

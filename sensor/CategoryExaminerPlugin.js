@@ -284,7 +284,7 @@ class CategoryExaminerPlugin extends Sensor {
       const [, bfPart] = result.uid.split(":");
       const category = categoryUpdater.getCategoryByBfPart(bfPart);
       if (!category) {
-        log.error(`Unknown bf part ${bfPart}`);
+        log.debug(`Unknown bf part ${bfPart}`);
         continue;
       }
       const matchedDomain = result.item;

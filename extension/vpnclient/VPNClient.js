@@ -330,16 +330,7 @@ class VPNClient {
     await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove default route for " + this.profileId) });
     if (localIP6)
       await routing.removeRouteFromTable("default", remoteIP, intf, "main", null, 6).catch((err) => { log.verbose("No need to remove IPv6 default route for " + this.profileId) });
-    let routedSubnets = settings.serverSubnets || [];
-    // add vpn client specific routes
-    try {
-      const vpnSubnets = await this.getRoutedSubnets();
-      if (vpnSubnets && _.isArray(vpnSubnets))
-        routedSubnets = routedSubnets.concat(vpnSubnets);
-    } catch (err) {
-      log.error('Failed to parse VPN subnet', err.message);
-    }
-    routedSubnets = this.getSubnetsWithoutConflict(_.uniq(routedSubnets));
+    const routedSubnets = await this.getEffectiveRoutedSubnets();
     const dnsServers = await this._getDNSServers() || [];
 
     if (routedSubnets.length)
@@ -489,6 +480,31 @@ class VPNClient {
         suppressEventLogging: true,
       });
     }
+  }
+
+  async getEffectiveRoutedSubnets() {
+    const settings = await this.loadSettings();
+    const subnets = {};
+    const serverSubnets = _.get(settings, "serverSubnets");
+    if (!_.isEmpty(serverSubnets)) {
+      for (const s of serverSubnets) {
+        let addr = new Address4(s);
+        if (!addr.isValid()) {
+          addr = new Address6(s);
+          if (!addr.isValid())
+            continue;
+        }
+        // convert to network address and subnet mask length, it is required before being added to routing table
+        subnets[`${addr.startAddress().correctForm()}/${addr.subnetMask}`] = 1;
+      }
+    }
+    const routedSubnets = await this.getRoutedSubnets();
+    if (!_.isEmpty(routedSubnets)) {
+      for (const s of routedSubnets) {
+        subnets[s] = 1;
+      }
+    }
+    return this.getSubnetsWithoutConflict(Object.keys(subnets));
   }
 
   async getRoutedSubnets() {
@@ -1206,16 +1222,7 @@ class VPNClient {
     promises.push((async () => {
       const settings = await this.loadSettings();
       result.settings = settings;
-      let routedSubnets = settings.serverSubnets || [];
-      // add vpn client specific routes
-      try {
-        const vpnSubnets = await this.getRoutedSubnets();
-        if (vpnSubnets && _.isArray(vpnSubnets))
-          routedSubnets = routedSubnets.concat(vpnSubnets);
-      } catch (err) {
-        log.error('Failed to parse VPN subnet', err.message);
-      }
-      routedSubnets = this.getSubnetsWithoutConflict(_.uniq(routedSubnets));
+      const routedSubnets = await this.getEffectiveRoutedSubnets();
       result.routedSubnets = routedSubnets;
     })());
     promises.push((async () => {

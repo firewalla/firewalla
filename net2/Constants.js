@@ -36,6 +36,8 @@ module.exports = {
   TRUST_IP_SET: "trust:ip",
   TRUST_DOMAIN_SET: "trust:domain",
 
+  PORT_DNS_TEST_SRC: 8855,
+
   REDIS_KEY_EID_REVOKE_SET: "sys:ept:members:revoked",
   REDIS_KEY_GROUP_NAME: "groupName",
   REDIS_KEY_DDNS_UPDATE: "ddns:update",
