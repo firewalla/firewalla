@@ -101,8 +101,11 @@ class ICMP6Sensor extends Sensor {
       if (!dstIp)
         return;
       dstIp = dstIp.substring(0, dstIp.length - 1);
-      if (sysManager.isMulticastIP6(dstIp))
-        // do not process ICMP6 packet sent to multicast IP, the source mac not be the real mac
+      const srcIp = tokens[pos - 3];
+      if (!srcIp)
+        return;
+      if (sysManager.isMulticastIP6(dstIp) || sysManager.isMulticastIP6(srcIp))
+        // do not process ICMP6 packet sent from/to multicast IP, the source mac not be the real mac
         return;
       pos = tokens.indexOf("is");
       if (pos < 0)
