@@ -116,6 +116,11 @@ class EventRequestHandler {
         });
     }
 
+    isApStateEvent(eventRequest) {
+        // check if eventRequest is an AP state event
+        return (eventRequest.state_type && eventRequest.state_type.startsWith("ap_"));
+    }
+
     async queueStateEvent(message) {
         log.debug("got state event: ", message);
         try {
@@ -125,6 +130,13 @@ class EventRequestHandler {
                     throw new Error(`missing required field ${field} in event request`);
                 }
             }
+
+            // if not AP state event, process directly in processStateEvent
+            if (!this.isApStateEvent(eventRequest)) {
+                log.debug(`process non-ap state event directly: ${JSON.stringify(eventRequest)}`);
+                return await this.processStateEvent(eventRequest);
+            }
+
             const requestKey = `${eventRequest.state_type}:${eventRequest.state_key}`;
             await this.ensureEventQueue(requestKey);
             const queue = this.queueMap.get(requestKey);

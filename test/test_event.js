@@ -53,16 +53,16 @@ describe('Test event handler state event', function() {
 
   it("should handle state event", async () => {
     const now = Date.now();
-    const state1 = {"event_type":"state","ts":now-3000,"state_type":"test_type","state_value":0,"state_key":"test_key","labels":{"ok_value":0}};
+    const state1 = {"event_type":"state","ts":now-3000,"state_type":"ap_test_type","state_value":0,"state_key":"test_key","labels":{"ok_value":0}};
     await eventhandler.queueStateEvent(JSON.stringify(state1));
 
-    const state2 = {"event_type":"state","ts":now-2000,"state_type":"test_type","state_value":1,"state_key":"test_key","labels":{"ok_value":0}};
+    const state2 = {"event_type":"state","ts":now-2000,"state_type":"ap_test_type","state_value":1,"state_key":"test_key","labels":{"ok_value":0}};
     await eventhandler.queueStateEvent(JSON.stringify(state2));
 
-    const state3 = {"event_type":"state","ts":now-1000,"state_type":"test_type","state_value":0,"state_key":"test_key","labels":{"ok_value":0}};
+    const state3 = {"event_type":"state","ts":now-1000,"state_type":"ap_test_type","state_value":0,"state_key":"test_key","labels":{"ok_value":0}};
     await eventhandler.queueStateEvent(JSON.stringify(state3));
 
-    const state4 = {"event_type":"state","ts":now,"state_type":"test_type","state_value":1,"state_key":"test_key","labels":{"ok_value":0}};
+    const state4 = {"event_type":"state","ts":now,"state_type":"ap_test_type","state_value":1,"state_key":"test_key","labels":{"ok_value":0}};
     await eventhandler.queueStateEvent(JSON.stringify(state4));
 
     await sleep(2000);
@@ -70,18 +70,18 @@ describe('Test event handler state event', function() {
 
   it("should recreate event queue", async () => {
     const now = Date.now();
-    const state1 = {"event_type":"state","ts":now-1000,"state_type":"test_type","state_value":0,"state_key":"test_key","labels":{"ok_value":0}};
+    const state1 = {"event_type":"state","ts":now-1000,"state_type":"ap_test_type","state_value":0,"state_key":"test_key","labels":{"ok_value":0}};
     await eventhandler.queueStateEvent(JSON.stringify(state1));
 
     // close the event queue
-    const queue = eventhandler.queueMap.get("test_type:test_key");
+    const queue = eventhandler.queueMap.get("ap_test_type:test_key");
     await queue.recycle();
     expect(queue.getState()).to.equal('closed');
 
-    const state2 = {"event_type":"state","ts":now,"state_type":"test_type","state_value":1,"state_key":"test_key","labels":{"ok_value":0}};
+    const state2 = {"event_type":"state","ts":now,"state_type":"ap_test_type","state_value":1,"state_key":"test_key","labels":{"ok_value":0}};
     await eventhandler.queueStateEvent(JSON.stringify(state2));
 
-    const new_queue = eventhandler.queueMap.get("test_type:test_key");
+    const new_queue = eventhandler.queueMap.get("ap_test_type:test_key");
     expect(new_queue.getState()).to.equal('ready');
 
     await sleep(500);
@@ -107,6 +107,12 @@ describe('Test event handler state event', function() {
 
     log.debug(`event queue map size after cleanup: ${eventhandler.queueMap.size}`);
     // expect(eventhandler.queueMap.size).to.equal(0);
+  });
+
+  it('should check if ap state event', async () => {
+    expect(eventhandler.isApStateEvent({"event_type":"state","ts":Date.now(),"state_type":"ap_ethernet_state"})).to.be.true;
+    expect(eventhandler.isApStateEvent({"event_type":"state","ts":Date.now(),"state_type":"ap_ethernet_speed_change"})).to.be.true;
+    expect(eventhandler.isApStateEvent({"event_type":"state","ts":Date.now(),"state_type":"nic_speed"})).to.be.false;
   });
 });
 
