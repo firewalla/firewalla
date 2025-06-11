@@ -100,9 +100,15 @@ class CloudCacheItem {
     return bone.hashsetAsync(this.cloudHashKey);
   }
 
-  isExpired(currentTime, lastUpdateTime) {
+  isExpired(currentTime, lastUpdateTime, expireTime) {
     if (!currentTime || !lastUpdateTime) {
       return false;
+    }
+    if (_.isNumber(expireTime)) {
+      // never expire if expireTime is 0
+      if (expireTime === 0)
+        return false;
+      return currentTime > expireTime;
     }
     const ageInDays = (currentTime - lastUpdateTime) / 86400;
     if (ageInDays > expirationDays) {
@@ -192,7 +198,7 @@ class CloudCacheItem {
     let hasNewData = false;
 
     // download cloud data if needed.
-    if (needDownload && !this.isExpired(currentTime, cloudMetadata.updated)) {
+    if (needDownload && !this.isExpired(currentTime, cloudMetadata.updated, cloudMetadata.expired)) {
       log.info(`Downloading ${this.cloudHashKey}...`);
       const cloudContent = await this.getCloudData();
       log.info(`Download Complete for ${this.cloudHashKey}!`);
@@ -214,7 +220,7 @@ class CloudCacheItem {
       localContent = await this.getLocalCacheContent();
     }
 
-    if (localMetadata && this.isExpired(currentTime, localMetadata.updated)) {
+    if (localMetadata && this.isExpired(currentTime, localMetadata.updated, localMetadata.expired)) {
       log.error(`Cloud cache item ${this.cloudHashKey} is obsolete. Delete cache data`);
       await this.cleanUp();
       if (this.onUpdateCallback) {
