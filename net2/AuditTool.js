@@ -40,27 +40,30 @@ class AuditTool extends LogQuery {
   // options here no longer serve as filter, just to query and format results
   optionsToFeeds(options, macs) {
     log.debug('optionsToFeeds', options)
-    const feeds = []
+    const feedsArray = []
     if (options.dns)
-      feeds.push(... this.expendFeeds({macs, block: false, dns: true}))
+      feedsArray.push(this.expendFeeds({macs, block: false, dns: true}))
 
     if (options.auditDNSSuccess)
-      feeds.push(... this.expendFeeds({macs, block: false, auditDNSSuccess: true}))
+      feedsArray.push(this.expendFeeds({macs, block: false, auditDNSSuccess: true}))
     if (options.ntp)
-      feeds.push(... this.expendFeeds({macs, block: false, ntp: true}))
+      feedsArray.push(this.expendFeeds({macs, block: false, ntp: true}))
 
     if (options.audit)
-      feeds.push(... this.expendFeeds({macs, block: true}))
-    if (options.localAudit)
-      feeds.push(... this.expendFeeds({macs, block: true, local: true, exclude: [{dstMac: macs, fd: "out"}] }))
+      feedsArray.push(this.expendFeeds({macs, block: true}))
+    if (options.localAudit) {
+      if (macs[0] === 'system')
+        feedsArray.push(this.expendFeeds({macs, block: true, local: true }))
+      else
+        feedsArray.push(this.expendFeeds({macs, block: true, local: true, exclude: [{dstMac: macs, fd: "out"}] }))
+    }
 
-    return feeds
+    return [].concat(... feedsArray)
   }
 
   async getAuditLogs(options) {
     log.verbose('getAuditLogs', JSON.stringify(options))
-    options = options || {}
-    this.checkCount(options)
+    options = this.checkArguments(options || {})
     const macs = await this.expendMacs(options)
 
     const feeds = this.optionsToFeeds(options, macs)
