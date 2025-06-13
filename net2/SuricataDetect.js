@@ -174,7 +174,7 @@ class SuricataDetect {
       "p.security.severity": severity,
       "p.security.source": "suricata",
       "p.event.ts": ts,
-      "p.description": message
+      "p.message": message
     }
     if (localPort)
       alarmPayload["p.device.port"] = [localPort];
@@ -183,7 +183,7 @@ class SuricataDetect {
     if (appProto)
       alarmPayload["p.app.protocol"] = appProto;
     
-    const alarm = new Alarm.CustomizedSecurityAlarm(ts, localIP, alarmPayload);
+    const alarm = new Alarm.SuricataNoticeAlarm(ts, localIP, alarmPayload);
     am2.enqueueAlarm(alarm);
   }
 }
