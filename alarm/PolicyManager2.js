@@ -87,6 +87,8 @@ const IdentityManager = require('../net2/IdentityManager.js');
 const Message = require('../net2/Message.js');
 const AppTimeUsageManager = require('./AppTimeUsageManager.js');
 
+const PolicyDisturbManager = require('./PolicyDisturbManager.js');
+
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 let hostManager;
 
@@ -429,9 +431,6 @@ class PolicyManager2 {
     }
     if (!merged.hasOwnProperty('appTimeUsage') || _.isEmpty(merged.appTimeUsage)) {
       await rclient.hdelAsync(policyKey, "appTimeUsage");
-    }
-    if (!merged.hasOwnProperty('disturbMethod') || _.isEmpty(merged.appTimeUsage)) {
-      await rclient.hdelAsync(policyKey, "disturbMethod");
     }
   }
 
@@ -1056,6 +1055,20 @@ class PolicyManager2 {
     )
   }
 
+  needDisturbRegister(policy) {
+    if (policy && policy.disturbPretreatDone) return false;
+
+    const isDisturbAction = policy && policy.action === 'disturb';
+    const hasQuota = policy && policy.appTimeUsage && policy.appTimeUsage.disturbQuota != undefined;
+
+    return isDisturbAction || hasQuota;
+  }
+
+  needAppTimeUsageRegister(policy) {
+    if (policy && policy.appTimeUsageRegisterDone) return false;
+    return policy && policy.appTimeUsage;
+  }
+
   async enforce(policy) {
     try {
       if (await this.isDisableAll()) {
@@ -1106,8 +1119,11 @@ class PolicyManager2 {
         return // ignore disabled policy rules
       }
 
-      // auto unenforce if expire time is set
-      if (policy.expire) {
+      if (this.needDisturbRegister(policy)) {
+        // this is a disturb policy, use DisturbManager to manage it
+        return PolicyDisturbManager.registerPolicy(policy);
+      } else if (policy.expire) {
+        // auto unenforce if expire time is set
         if (policy.willExpireSoon()) {
           // skip enforce as it's already expired or expiring
           await delay(policy.getExpireDiffFromNow() * 1000);
@@ -1145,7 +1161,7 @@ class PolicyManager2 {
       } else if (policy.cronTime) {
         // this is a reoccuring policy, use scheduler to manage it
         return scheduler.registerPolicy(policy);
-      } else if (policy.appTimeUsage) {
+      } else if (this.needAppTimeUsageRegister(policy)) {
         // this is an app time usage policy, use AppTimeUsageManager to manage it
         return AppTimeUsageManager.registerPolicy(policy);
       } else {
@@ -1153,7 +1169,7 @@ class PolicyManager2 {
 
         const action = policy.action || "block";
         const type = policy["i.type"] || policy["type"]; //backward compatibility
-        if ((action === "block" || action === "app_block") && type === "category") {
+        if ((action === "block" || action === "app_block" || action === "disturb") && type === "category") {
           if (policy.dnsmasq_only && !policy.managedBy) {
             const tmpPolicy = Object.assign(Object.create(Policy.prototype), policy);
             tmpPolicy.dnsmasq_only = false;
@@ -1342,14 +1358,9 @@ class PolicyManager2 {
     }
 
     // for now, targets is only used for multiple category block/app time limit
-    let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, ipttl, resolver, flowIsolation, dscpClass } = policy;
-    let increaseLatency = null;
-    let dropPacketRate = null;
-    if (policy.disturbMethod) {
-      increaseLatency = policy.disturbMethod.increaseLatency;
-      dropPacketRate = policy.disturbMethod.dropPacketRate;
-      rateLimit = policy.disturbMethod.rateLimit;
-    }
+    let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit,
+      priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids,
+      parentRgId, targetRgId, ipttl, resolver, flowIsolation, dscpClass, increaseLatency, dropPacketRate } = policy;
 
     if (action === "app_block")
       action = "block"; // treat app_block same as block, but using a different term for version compatibility, otherwise, block rule will always take effect in previous versions
@@ -1855,10 +1866,14 @@ class PolicyManager2 {
   unenforce(policy) {
     try {
       this.invalidateExpireTimer(policy) // invalidate timer if exists
-      if (policy.cronTime) {
+
+      if (this.needDisturbRegister(policy)) {
+        // this is a disturb policy, use DisturbManager to manage it
+        return PolicyDisturbManager.deregisterPolicy(policy);
+      } else if (policy.cronTime) {
         // this is a reoccuring policy, use scheduler to manage it
         return scheduler.deregisterPolicy(policy)
-      } else if (policy.appTimeUsage) {
+      } else if (this.needAppTimeUsageRegister(policy)) {
         // this is an app time usage policy, use AppTimeUsageManager to manage it
         return AppTimeUsageManager.deregisterPolicy(policy);
       } else {
@@ -1894,15 +1909,9 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, resolver, flowIsolation, dscpClass } = policy;
-
-    let increaseLatency = null;
-    let dropPacketRate = null;
-    if (policy.disturbMethod) {
-      increaseLatency = policy.disturbMethod.increaseLatency;
-      dropPacketRate = policy.disturbMethod.dropPacketRate;
-      rateLimit = policy.disturbMethod.rateLimit;
-    }
+    let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit,
+      priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType,
+      guids, parentRgId, targetRgId, resolver, flowIsolation, dscpClass, increaseLatency, dropPacketRate } = policy;
 
     if (action === "app_block")
       action = "block";
