@@ -74,6 +74,21 @@ class SuricataDetect {
       return;
     let description = signature;
     let srcOrig = true;
+    if (e.direction) {
+      switch (e.direction) {
+        case "to_server":
+        case "from_client": {
+          srcOrig = true;
+          break;
+        }
+        case "to_client":
+        case "from_server": {
+          srcOrig = false;
+          break;
+        }
+        default:
+      }
+    }
     try {
       // try to parse signature as a JOSN object
       const signatureObj = JSON.parse(signature);
