@@ -47,7 +47,6 @@ class AppTimeUsageManager {
     this.acitveDisturbPolicies = {};
 
     this._changedAppUIDs = {};
-    this._appDisturbDefaultValue = {};
     sem.on(Message.MSG_APP_TIME_USAGE_BUCKET_INCR, (event) => {
       lock.acquire(LOCK_RW, async() => {
         const {app, uids} = event;
@@ -58,13 +57,6 @@ class AppTimeUsageManager {
         }
       }).catch((err) => {
         log.error(`Failed to process ${Message.MSG_APP_TIME_USAGE_BUCKET_INCR} event`, err.message);
-      });
-    });
-    sem.on(Message.MSG_APP_DISTURB_VALUE_UPDATED, (event) => {
-      lock.acquire(LOCK_RW, async() => {
-        this._appDisturbDefaultValue = event.appDisturbs;
-      }).catch((err) => {
-        log.error(`Failed to process ${Message.MSG_APP_DISTURB_VALUE_UPDATED} event`, err.message);
       });
     });
     sclient.on("message", async (channel, message) => {
@@ -151,7 +143,7 @@ class AppTimeUsageManager {
           timeElapse = timeElapse < DISTURB_INTERVAL ? timeElapse : DISTURB_INTERVAL;
           let disturbTimeUsed = Number(this.registeredPolicies[pid].disturbTimeUsed) + timeElapse;
           try {
-            if (disturbTimeUsed >= Number(this.registeredPolicies[pid].disturbMethod.disturbPeriod)) {
+            if (disturbTimeUsed >= Number(this.registeredPolicies[pid].appTimeUsage.disturbQuota)) {
               log.info(`Disturb time limit of Policy ${pid} is reached, will change to block mode`);
               await this.unenforcePolicy(this.registeredPolicies[pid], uid, false);
               // update policy disturbTimeUsed here to let unenforcePolicy to clear disturb rules.
@@ -181,12 +173,9 @@ class AppTimeUsageManager {
     }
     const policy = Object.assign(Object.create(Policy.prototype), p);
 
-    let defaultDisturbInfo = {};
-    if (policy.appTimeUsage && policy.appTimeUsage.app && this._appDisturbDefaultValue.hasOwnProperty(policy.appTimeUsage.app)) {
-      defaultDisturbInfo = this._appDisturbDefaultValue[policy.appTimeUsage.app] || {};
-    }
-    const needDisturb = policy.needPolicyDisturb(defaultDisturbInfo);
+    const needDisturb = policy.needPolicyDisturb();
     // a default mode policy will be applied first, and will be updated to domain only after a certain timeout
+    // if the policy is in disturb mode, it will not be updated to domain only mode
     await this.enforcePolicy(policy, uid, false);
     if (needDisturb) {
       this.registeredPolicies[pid].disturbTimeUsed = policy.disturbTimeUsed;
@@ -301,7 +290,7 @@ class AppTimeUsageManager {
         log.info(`${uid} reached ${keys} time usage quota, quota: ${quota}, used: ${usage}, will apply policy ${pid}`);
         await this.applyPolicy(pid, uid);
       }else{
-        if (this.registeredPolicies[pid] && this.registeredPolicies[pid].disturbMethod) {
+        if (this.registeredPolicies[pid] && this.registeredPolicies[pid].appTimeUsage && this.registeredPolicies[pid].appTimeUsage.disturbQuota) {
           this.registeredPolicies[pid].disturbTimeUsed = 0; 
           await this.updateDisturbTimeUsedInPolicy(pid, this.registeredPolicies[pid].disturbTimeUsed);
         }
@@ -391,8 +380,9 @@ class AppTimeUsageManager {
   }
 
   async enforcePolicy(policy, uid, domainOnly = true) {
-    const p = Object.assign(Object.create(Policy.prototype), policy);
-    delete p.appTimeUsage;
+    let p = Object.assign(Object.create(Policy.prototype), policy);
+    // delete p.appTimeUsage;
+    p.appTimeUsageRegisterDone = true;
     delete p.scope;
     delete p.guids;
     delete p.tag;
@@ -416,8 +406,9 @@ class AppTimeUsageManager {
   }
 
   async unenforcePolicy(policy, uid, domainOnly = true) {
-    const p = Object.assign(Object.create(Policy.prototype), policy);
-    delete p.appTimeUsage;
+    let p = Object.assign(Object.create(Policy.prototype), policy);
+    // delete p.appTimeUsage;
+    p.appTimeUsageRegisterDone = true;
     delete p.scope;
     delete p.guids;
     delete p.tag;

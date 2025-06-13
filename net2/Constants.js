@@ -66,6 +66,8 @@ module.exports = {
   REDIS_KEY_HOST_PINNED: 'host:pinned:mac',
   REDIS_KEY_HOST_DHCPCONF: 'host:dhcpconf:mac',
   REDIS_KEY_WIRELESS_TAG_CANDIDATE: "wireless_tag_candidate:", // wireless_tag_candidate:${mac}
+  REDIS_KEY_POLICY_DISTURB_CLOUD_CONFIG: "policy_disturb_cloud_config",
+  REDIS_KEY_POLICY_DISTURB_CONFIG: "policy_disturb_config",
 
   REDIS_HKEY_NSE_DHCP: "dhcp",
   REDIS_HKEY_CONN_OINTF: "oIntf",

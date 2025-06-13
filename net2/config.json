@@ -832,7 +832,26 @@
     "APCMsgSensor": {},
     "NicCalibrationSensor": {},
     "NicStateSensor": {},
-    "DeviceMonitorSensor": {}
+    "DeviceMonitorSensor": {},
+    "PolicyDisturbSensor": {
+      "disturbConfs": {
+        "high" : {
+          "rateLimit": 16,
+          "dropPacketRate": 60,
+          "increaseLatency": 250
+        },
+        "moderate" : {
+          "rateLimit": 64,
+          "dropPacketRate": 40,
+          "increaseLatency": 200
+        },
+        "low" : {
+          "rateLimit": 128,
+          "dropPacketRate": 30,
+          "increaseLatency": 150
+        }
+      }
+    }
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -1019,7 +1038,8 @@
     "clashdns": false,
     "mesh_vpn": false,
     "app_time_usage": true,
-    "fast_speedtest": true
+    "fast_speedtest": true,
+    "policy_disturb": true
   },
   "hiddenFeatures": [
     "naughty_monkey"
