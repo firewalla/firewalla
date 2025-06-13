@@ -1404,9 +1404,10 @@ class BroDetect {
       const multi = rclient.multi()
       multi.zadd(redisObj)
       // mac has been added to tmpspec here
-      const systemKey = localFlow ? 'flow:local:system' : 'flow:conn:system'
-      if (!localFlow || !reverseLocal)
+      if (!localFlow || !reverseLocal) {
+        const systemKey = localFlow ? 'flow:local:system' : 'flow:conn:system'
         multi.zadd(systemKey, tmpspec._ts, JSON.stringify(tmpspec))
+      }
       // no need to set ttl here, OldDataCleanSensor will take care of it
       multi.zadd("deviceLastFlowTs", now, localMac);
       await multi.execAsync().catch(

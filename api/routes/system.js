@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -131,10 +131,11 @@ router.get('/recent',
     let end = Math.floor(now / 3600) * 3600;
     let begin = end - 3600;
     let json = {};
-    flowTool.prepareRecentFlows(json, {
+    flowTool.prepareRecentFlows({
       begin: begin,
       end: end
-    }).then(() => {
+    }).then(results => {
+      json.flows = { recent: results }
       res.json(json);
     }).catch((err) => {
       res.status(500).send({error: err});

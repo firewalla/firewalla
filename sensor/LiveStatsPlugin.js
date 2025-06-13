@@ -603,7 +603,7 @@ class LiveStatsPlugin extends Sensor {
       }
 
     }
-    const flows = await flowTool.prepareRecentFlows({ }, options);
+    const flows = await flowTool.prepareRecentFlows(options);
     return flows;
   }
 

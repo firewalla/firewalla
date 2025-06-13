@@ -1160,7 +1160,7 @@ class netBot extends ControllerBot {
             }
         }
 
-        const flows = await flowTool.prepareRecentFlows({}, options)
+        const flows = await flowTool.prepareRecentFlows(options)
         if (!apiVer || apiVer == 1) flows.forEach(f => {
           if (f.ltype == 'flow') delete f.type
         })
@@ -1179,7 +1179,10 @@ class netBot extends ControllerBot {
           options.localAudit = options.audit
         }
 
-        const logs = await auditTool.getAuditLogs(options)
+        delete options.regular
+        delete options.local
+
+        const logs = await flowTool.prepareRecentFlows(options)
         return {
           count: logs.length,
           logs,
@@ -1977,7 +1980,9 @@ class netBot extends ControllerBot {
         options.audit = true
         options.localAudit = true
       }
-      promises.push(flowTool.prepareRecentFlows(jsonobj, _.omit(options, ['queryall'])))
+      promises.push(flowTool.prepareRecentFlows(_.omit(options, ['queryall']))
+        .then( results => { jsonobj.flows = { recent: results }; })
+      )
     }
 
     await Promise.all(promises)
