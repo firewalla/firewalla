@@ -13,10 +13,13 @@ fsp.readFile(path, { encoding: "utf8" }).then(content => {
       continue;
     const i1 = line.indexOf("msg:\"");
     const i2 = line.indexOf("\";", i1);
-    const msg = line.substring(i1 + 5, i2);
+    let msg = line.substring(i1 + 5, i2);
+    if (msg.startsWith("ET "))
+      msg = msg.substring(3);
     const options = line.substring(i2 + 2).split(";");
     let srcOrig = true;
     let classtypeDesc = "Potential bad traffic";
+    let sid = 0;
     for (const option of options) {
       const [key, value] = option.trim().split(":", 2);
       switch (key) {
@@ -156,8 +159,15 @@ fsp.readFile(path, { encoding: "utf8" }).then(content => {
           }
           break;
         }
-
+        case "sid": {
+          sid = Number(value);
+          break;
+        }
       }
+    }
+    if (sid >= 1 && sid <= 3464 || sid >= 100000000 && sid <= 100000908) {
+      console.log(`Ignore GPLv2 license signature ${sid}`);
+      continue;
     }
     const newMsg = `{\\"description\\":\\"${classtypeDesc} when {{${srcOrig ? "SRC" : "DST"}}} visited {{${srcOrig ? "DST" : "SRC"}}}, possibly triggered by ${msg}.\\", \\"srcOrig\\": ${srcOrig}}`;
     const newRule = `${line.substring(0, i1)}msg:"${newMsg}";${line.substring(i2 + 2)}`;
