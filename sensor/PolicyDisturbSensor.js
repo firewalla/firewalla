@@ -70,7 +70,7 @@ class PolicyDisturbSensor extends Sensor {
     });
     this.disturbConfs = Object.assign({}, _.get(this.config, "disturbConfs", {}), _.get(this.cloudConfig, "disturbConfs", {}));
     if (this.disturbConfs && !_.isEmpty(this.disturbConfs))
-      sem.emitLocalEvent({ type: Message.MSG_APP_DISTURB_VALUE_UPDATED, appDisturbs: this.disturbConfs, suppressEventLogging: true });
+      sem.emitLocalEvent({ type: Message.MSG_APP_DISTURB_VALUE_UPDATED, disturbConfs: this.disturbConfs, suppressEventLogging: true });
   }
 
   async loadCloudConfig(reload = false) {

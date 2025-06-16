@@ -19,26 +19,29 @@ const log = require('../net2/logger.js')(__filename);
 const Policy = require('./Policy.js');
 const _ = require('lodash');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const rclient = require('../util/redis_manager.js').getRedisClient();
 const Message = require('../net2/Message.js');
 const AsyncLock = require('../vendor_lib/async-lock');
+const Constants = require('../net2/Constants.js');
 const lock = new AsyncLock();
 const LOCK_RW = "lock_rw";
-const MAX_APP_DISTURB_PERIOD = 86400 // 24 hours
 
 class PolicyDisturbManager {
 
   constructor() {
     this.registeredPolicies = {};
 
-    this._appDisturbDefaultValue = {};
+    this._disturbDefaultValue = {};
+    this.loadConfig();
+
     sem.on(Message.MSG_APP_DISTURB_VALUE_UPDATED, async (event) => {
-      if (!event || !event.appDisturbs) {
+      if (!event || !event.disturbConfs) {
         log.error(`Invalid event for ${Message.MSG_APP_DISTURB_VALUE_UPDATED}`);
         return;
       }
-      if (_.isEqual(this._appDisturbDefaultValue, event.appDisturbs))
+      if (_.isEqual(this._disturbDefaultValue, event.disturbConfs))
         return;
-      this._appDisturbDefaultValue = event.appDisturbs;
+      this._disturbDefaultValue = event.disturbConfs;
       log.info(`Received ${Message.MSG_APP_DISTURB_VALUE_UPDATED} event, updating app disturb default value`);
       const pids = Object.keys(this.registeredPolicies);
       for (const pid of pids) {
@@ -52,6 +55,18 @@ class PolicyDisturbManager {
         }
       }
     });
+  }
+
+  async loadConfig() {
+    log.info(`Loading policy disturb config ...`);
+    this._disturbDefaultValue = {};
+    let policyDisturbConfig = await rclient.getAsync(Constants.REDIS_KEY_POLICY_DISTURB_CLOUD_CONFIG).then(result => result && JSON.parse(result)).catch(err => null);
+
+    if (policyDisturbConfig && policyDisturbConfig.disturbConfs) {
+      this._disturbDefaultValue = policyDisturbConfig.disturbConfs;
+    } else {
+      log.warn(`No app disturb config found, using empty default value`);
+    }
   }
 
   async registerPolicy(policy) {
@@ -76,8 +91,8 @@ class PolicyDisturbManager {
     //set default default values
     policy.disturbLevel = policy.disturbLevel || "moderate";
     let defaultDisturbVal = { "rateLimit": 64, "dropPacketRate": 40, "increaseLatency": 200 };
-    if (this._appDisturbDefaultValue && this._appDisturbDefaultValue.hasOwnProperty(policy.disturbLevel)) {
-      defaultDisturbVal = Object.assign(defaultDisturbVal, this._appDisturbDefaultValue[policy.disturbLevel]);
+    if (this._disturbDefaultValue && this._disturbDefaultValue.hasOwnProperty(policy.disturbLevel)) {
+      defaultDisturbVal = Object.assign(defaultDisturbVal, this._disturbDefaultValue[policy.disturbLevel]);
     }
     policy = Object.assign(policy, defaultDisturbVal);
 
