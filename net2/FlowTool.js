@@ -150,7 +150,7 @@ class FlowTool extends LogQuery {
 
       const validTS = await this.getValidGlobalTS(feeds)
       log.debug(`validTS for system flows: ${validTS}`)
-      if (sysOptions.ts < validTS)
+      if (sysOptions.ts <= validTS)
         skip = true
       else if (sysOptions.asc)
         queryDone = true
