@@ -725,7 +725,7 @@ check_hosts() {
 
     local MACs
     mapfile -t MACs < <(redis-cli zrevrangebyscore host:active:mac +inf "$(date -d '30 days ago' +%s)");
-    if [[ -z ${#MACs[@]} ]]; then
+    if [[ -z ${MACs[*]} ]]; then
         mapfile -t MACs < <(redis-cli keys 'host:mac:*' | cut -d: -f3-)
     fi
 
