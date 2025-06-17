@@ -85,7 +85,9 @@ element_in() {
 }
 
 declare -A NETWORK_UUID_NAME
+declare -A WGPEER_IP
 declare -A WGPEER_NAME
+declare WGPEER_NID
 frcc_done=0
 frcc() {
     if [[ $ROUTER_MANAGED == "no" ]]; then
@@ -97,6 +99,13 @@ frcc() {
         jq -r '.interface | to_entries[].value | to_entries[].value.meta | .uuid, .name' /tmp/scc_config |
         while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
             NETWORK_UUID_NAME[${ARY[0]}]=${ARY[1]}
+        done
+
+        WGPEER_NID=$(jq -r '.interface.wireguard.wg0.meta.uuid' /tmp/scc_config)
+
+        jq -r '.interface.wireguard.wg0.peers[]? | .publicKey, (.allowedIPs[] | select(endswith("/32")))' /tmp/scc_config |
+        while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
+            WGPEER_IP[${ARY[0]}]=${ARY[1]}
         done
 
         jq -r '.interface.wireguard.wg0.extra.peers[]? | .publicKey, .name' /tmp/scc_config |
@@ -279,12 +288,12 @@ check_each_system_service() {
     local EXPECTED_STATUS=$2
     local RESTART_TIMES=$(systemctl show "$1" -p NRestarts | awk -F= '{print $2}')
     local ACTUAL_STATUS=$(systemctl status "$1" | grep 'Active: ' | sed 's=Active: ==')
-    printf "%20s %10s %5s %s\n" "$SERVICE_NAME" "$EXPECTED_STATUS" "$RESTART_TIMES" "$ACTUAL_STATUS"
+    printf "%20s %10s %10s %s\n" "$SERVICE_NAME" "$EXPECTED_STATUS" "$RESTART_TIMES" "$ACTUAL_STATUS"
 }
 
 check_systemctl_services() {
     echo "----------------------- System Services ----------------------------"
-    printf "%20s %10s %5s %s\n" "Service Name" "Expect" "RestartedTimes" "Actual"
+    printf "%20s %10s %10s %s\n" "Service Name" "Expect" "Restarted" "Actual"
 
     check_each_system_service fireapi "running"
     check_each_system_service firemain "running"
@@ -607,8 +616,12 @@ check_policies() {
         unset p
     done
 
+    D="\e[2m"
+    U="\e[0m"
     echo ""
-    echo "Note: * - created from alarm, ** - created from network flow"
+    echo    "    *: created from alarm"
+    echo    "   **: created from network flow"
+    echo -e "Abbr.: Dir${D}ection$U Proto${D}col$U L${D}ocal${U}Port R${D}emote${U}Port Dis${D}abled$U"
 
     echo ""
     echo "QoS Rules:"
@@ -710,14 +723,15 @@ check_hosts() {
 
     # typeset -p hierarchicalPolicies
 
-    local DEVICES=$(redis-cli keys 'host:mac:*')
-    for DEVICE in $DEVICES; do
-        local MAC=${DEVICE/host:mac:/""}
-        # hide vpn_profile:*
-        if [[ ${MAC,,} == "vpn_profile:"* ]]; then
-            continue
-        fi
+    local MACs
+    mapfile -t MACs < <(redis-cli zrevrangebyscore host:active:mac +inf "$(date -d '30 days ago' +%s)");
+    if [[ -z ${#MACs[@]} ]]; then
+        mapfile -t MACs < <(redis-cli keys 'host:mac:*' | cut -d: -f3-)
+    fi
 
+    MACs=( "${MACs[@]}" "${!WGPEER_IP[@]}" )
+
+    for MAC in "${MACs[@]}"; do
         local IS_FIREWALLA
         if echo "$FIREWALLA_MAC" | grep -wiq "$MAC"; then
           IS_FIREWALLA=1 # true
@@ -725,28 +739,46 @@ check_hosts() {
           IS_FIREWALLA=0 # false
         fi
 
-        declare -A h
-        read_hash h "$DEVICE"
+        if [[ -n ${WGPEER_NAME[$MAC]+x} ]]; then
+          local NAME="${WGPEER_NAME[$MAC]}"
+          local nid=$WGPEER_NID
+          local POLICY_MAC="policy:wg_peer:${MAC}"
+          local IP=${WGPEER_IP[$MAC]/\/32/""}
+          local taggedMac="wg_peer:$MAC"
+          local ONLINE=" "
+        else
+          declare -A h
+          read_hash h "host:mac:$MAC"
 
-        local ONLINE_TS=${h[lastActiveTimestamp]}
-        ONLINE_TS=${ONLINE_TS%.*}
-        if [[ -z $ONLINE_TS ]]; then
+          local ONLINE_TS=${h[lastActiveTimestamp]}
+          ONLINE_TS=${ONLINE_TS%.*}
+          if [[ -z $ONLINE_TS ]]; then
             local ONLINE="NA"
-        elif ((ONLINE_TS < NOW - 2592000)); then # 30days ago, hide entry
+          elif ((ONLINE_TS < NOW - 2592000)); then # 30days ago, hide entry
             unset h
             continue
-        elif ((ONLINE_TS > NOW - 600)); then
+          elif ((ONLINE_TS > NOW - 600)); then
             local ONLINE="T"
-        else
+          else
             local ONLINE=
-        fi
+          fi
 
-        local NAME="${h[name]}"
-        if [[ -z "$NAME" ]]; then NAME="$( jq -re 'select(has("name")) | .name' <<< "${h[detect]}" )"; fi
-        if [[ -z "$NAME" ]]; then NAME="${h[bname]}"; fi
-        if [[ -z "$NAME" ]]; then NAME="${h[dhcpName]}"; fi
-        if [[ -z "$NAME" ]]; then NAME="${h[bonjourName]}"; fi
-        if [[ -z "$NAME" ]]; then NAME="${h[ssdpName]}"; fi
+          local NAME="${h[name]}"
+          if [[ -z "$NAME" ]]; then NAME="$( jq -re 'select(has("name")) | .name' <<< "${h[detect]}" )"; fi
+          if [[ -z "$NAME" ]]; then NAME="${h[bname]}"; fi
+          if [[ -z "$NAME" ]]; then NAME="${h[dhcpName]}"; fi
+          if [[ -z "$NAME" ]]; then NAME="${h[bonjourName]}"; fi
+          if [[ -z "$NAME" ]]; then NAME="${h[ssdpName]}"; fi
+
+          local nid="${h[intf]}"
+
+          local POLICY_MAC="policy:mac:${MAC}"
+
+          local IP=${h[ipv4Addr]}
+
+          local taggedMac="wg_peer:$MAC"
+        fi
+        # echo "$NAME $IP $POLICY_MAC $nid"
 
         declare -A fcv # feature color value
 
@@ -761,10 +793,9 @@ check_hosts() {
           fi
         done
 
-        local nid=${h[intf]}
         local NETWORK_NAME=
-        if [[ -n ${h[intf]+x} ]]; then
-          NETWORK_NAME=${NETWORK_UUID_NAME[${h[intf]}]}
+        if [[ -n ${nid+x} ]]; then
+          NETWORK_NAME=${NETWORK_UUID_NAME[$nid]}
           for policy in "${hierarchicalPolicies[@]}"; do
             if [[ -n ${NP[$nid,$policy]+x} ]]; then
               if [ "$policy" == "isolation" ]; then
@@ -785,12 +816,10 @@ check_hosts() {
         fi
 
         local MAC_VENDOR=${h[macVendor]}
-        local POLICY_MAC="policy:mac:${MAC}"
 
         declare -A p
         read_hash p "$POLICY_MAC"
 
-        local IP=${h[ipv4Addr]}
         if [[ -n $IP ]] && [[ "$(jq -r '.allocations[] | select(.type=="static") | .ipv4' <<< "${p[ipAllocation]}")" == $IP ]]; then
           IP="*$IP"
         fi
@@ -818,7 +847,7 @@ check_hosts() {
         done
 
         local MONITORING=
-        if ((IS_FIREWALLA)) || is_router "${h[ipv4Addr]}"; then
+        if ((IS_FIREWALLA)) || is_router "$IP"; then
             MONITORING="NA"
         elif [ -z ${p[monitor]+x} ] || [[ ${p[monitor]} == "true" ]]; then
             MONITORING=""
@@ -826,7 +855,7 @@ check_hosts() {
             MONITORING="F"
         fi
         if [[ $SIMPLE_MODE == "T" ]]; then
-          local B7_MONITORING_FLAG=$(redis-cli sismember monitored_hosts "${h[ipv4Addr]}")
+          local B7_MONITORING_FLAG=$(redis-cli sismember monitored_hosts "$IP")
           local B7_MONITORING=""
           if [[ $B7_MONITORING_FLAG == "1" ]]; then
             B7_MONITORING="T"
@@ -842,9 +871,9 @@ check_hosts() {
         local VPN=$( ((${#p[vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${p[vpnClient]}" || echo -n "")
         if ! element_in "$VPN" "${VPNClients[@]}" && [[ "$VPN" != VWG:* ]]; then VPN=""; fi
 
-        local FLOWINCOUNT=$(redis-cli zcount flow:conn:in:$MAC -inf +inf)
+        local FLOWINCOUNT=$(redis-cli zcount flow:conn:in:$taggedMac -inf +inf)
         # if [[ $FLOWINCOUNT == "0" ]]; then FLOWINCOUNT=""; fi
-        local FLOWOUTCOUNT=$(redis-cli zcount flow:conn:out:$MAC -inf +inf)
+        local FLOWOUTCOUNT=$(redis-cli zcount flow:conn:out:$taggedMAC -inf +inf)
         # if [[ $FLOWOUTCOUNT == "0" ]]; then FLOWOUTCOUNT=""; fi
 
         # local DNS_BOOST=$(jq -r 'select(.dnsCaching == false) | "F"' <<< "${p[dnsmasq]}")
@@ -874,7 +903,7 @@ check_hosts() {
         local BGC="\e[49m"  # background color
         local BGUC="\e[49m" # background uncolor
         if [[ $SIMPLE_MODE == "T" && -n $ONLINE && -z $MONITORING && $B7_MONITORING == "F" ]] &&
-          ((! IS_FIREWALLA)) && ! is_router ${h[ipv4Addr]}; then
+          ((! IS_FIREWALLA)) && ! is_router $IP; then
             FC="\e[91m"
         elif [ $FLOWINCOUNT -gt 2000 ] || [ $FLOWOUTCOUNT -gt 2000 ]; then
             FC="\e[33m" #yellow
@@ -884,7 +913,7 @@ check_hosts() {
         fi
 
         local MAC_COLOR="$FC"
-        if [[ $MAC =~ ^.[26AEae].*$ ]] && ((! IS_FIREWALLA)); then
+        if [[ $MAC =~ ^.[26AEae].*$ ]] && ((! IS_FIREWALLA)) && [[ -z ${WGPEER_NAME[$MAC]+x} ]]; then
           MAC_COLOR="\e[35m"
         fi
 
@@ -898,7 +927,7 @@ check_hosts() {
         fi
 
         printf "$BGC$FC%35s %15s %16s $MAC_COLOR%18s$FC %3s$B7_Placeholder %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s ${fcv[vql,c]}%3s$UC ${fcv[iso,c]}%3s$UC ${fcv[acl,c]}%3s$UC %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC$BGUC\n" \
-          "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$(align::right 11 $VPN)" "$FLOWINCOUNT" \
+          "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$IP" "$(align::right 18 "$MAC")" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$(align::right 11 $VPN)" "$FLOWINCOUNT" \
           "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "${fcv[vql,v]}" "${fcv[iso,v]}" "${fcv[acl,v]}" "$DNS_BOOST" "${fcv[adblock,v]}" "${fcv[family,v]}" "${fcv[safeSearch,v]}" "${fcv[doh,v]}" "${fcv[unbound,v]}"
 
         unset h
@@ -1065,7 +1094,7 @@ check_network() {
 
     get_system_policy
 
-    printf "Interface\tName\tUUID\tIPv4\tGateway\tIPv6\tGateway6\tDNS\tvpnClient\tAdB\tFam\tSS\tDoH\tubn\n" >/tmp/scc_csv_multline
+    printf "Interface\tName\tUUID\tIPv4\tGateway\tIPv6\tGateway6\tDNS\tvpnClient\tAdB\tFam\tSS\tDoH\tUbd\n" >/tmp/scc_csv_multline
     while read -r LINE; do
       mapfile -td $'\t' COL < <(printf "%s" "$LINE")
       # read multi line fields into array
@@ -1142,9 +1171,10 @@ check_tag() {
     mapfile -t TAGS < <(redis-cli --scan --pattern 'tag:uid:*' | sort --version-sort)
     mapfile -t -O "${#TAGS[@]}" TAGS < <(redis-cli --scan --pattern 'userTag:uid:*' | sort --version-sort)
     mapfile -t -O "${#TAGS[@]}" TAGS < <(redis-cli --scan --pattern 'deviceTag:uid:*' | sort --version-sort)
+    mapfile -t -O "${#TAGS[@]}" TAGS < <(redis-cli --scan --pattern 'ssidTag:uid:*' | sort --version-sort)
     get_system_policy
 
-    printf "ID\tType\tName\taffiliated\tvpnClient\tVqL\tIso\tAdB\tFam\tSS\tDoH\tubn\n" >/tmp/tag_csv
+    printf "ID\tType\tName\taffiliated\tvpnClient\tVqL\tIso\tAdB\tFam\tSS\tDoH\tUbd\n" >/tmp/tag_csv
     for TAG in "${TAGS[@]}"; do
       declare -A t p
       read_hash t "$TAG"
@@ -1178,7 +1208,11 @@ check_tag() {
 
     $COLUMN_OPT -t -s$'\t' /tmp/tag_csv
 
+    D="\e[2m"
+    U="\e[0m"
+
     echo ""
+    echo -e "Abbr.: affiliated${D}Tag$U VqL${D}an$U Iso${D}lation$U SS${D}(Safe Search)$U DoH${D}(DNS over HTTPS)$U Ubd${D}(Unbound)$U"
     echo ""
 }
 
@@ -1264,6 +1298,19 @@ check_events() {
   >&2 echo "  >> Keep in mind the timestamps above are all UTC, local timezone is: $(date +'%:::z %Z') <<"
 }
 
+check_connection() {
+  URLs=("firewalla.encipher.io" "api.firewalla.com" "connect.firewalla.com" "ota.firewalla.com" "fireupgrade.s3.us-west-2.amazonaws.com" "firewalla-ap-update-xyz.s3.us-west-2.amazonaws.com" "github.com" "firewalla.com")
+
+  for url in "${URLs[@]}"; do
+    code=$(curl -s -o /dev/null -w "%{http_code}" "https://$url")
+    if [[ $code -eq 000 ]]; then
+      echo -e "\e[41m$url is not reachable\e[0m"
+    else
+      echo -e "$url is reachable, HTTP status code: $code\e[0m"
+    fi
+  done
+}
+
 usage() {
     echo "Options:"
     echo "  -s  | --service"
@@ -1347,6 +1394,11 @@ while [ "$1" != "" ]; do
         FAST=true
         check_docker
         ;;
+    -c | --connection)
+        shift
+        FAST=true
+        check_connection
+        ;;
     -e | --events)
         shift
         FAST=true
@@ -1386,5 +1438,6 @@ if [ "$FAST" == false ]; then
     check_docker
     run_lsusb
     check_eth_count
+    check_connection
     test -z $SPEED || check_speed
 fi
