@@ -103,7 +103,7 @@ frcc() {
 
         WGPEER_NID=$(jq -r '.interface.wireguard.wg0.meta.uuid' /tmp/scc_config)
 
-        jq -r '.interface.wireguard.wg0.peers[]? | .publicKey, (.allowedIPs[] | select(endswith("/32")))' /tmp/scc_config |
+        jq -r '.interface.wireguard.wg0.peers[]? | .publicKey, [.allowedIPs[] | select(endswith("/32"))][0]' /tmp/scc_config |
         while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
             WGPEER_IP[${ARY[0]}]=${ARY[1]}
         done
@@ -776,7 +776,7 @@ check_hosts() {
 
           local IP=${h[ipv4Addr]}
 
-          local taggedMac="wg_peer:$MAC"
+          local taggedMac="$MAC"
         fi
         # echo "$NAME $IP $POLICY_MAC $nid"
 
@@ -871,9 +871,9 @@ check_hosts() {
         local VPN=$( ((${#p[vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${p[vpnClient]}" || echo -n "")
         if ! element_in "$VPN" "${VPNClients[@]}" && [[ "$VPN" != VWG:* ]]; then VPN=""; fi
 
-        local FLOWINCOUNT=$(redis-cli zcount flow:conn:in:$taggedMac -inf +inf)
+        local FLOWINCOUNT=$(redis-cli zcard flow:conn:in:$taggedMac)
         # if [[ $FLOWINCOUNT == "0" ]]; then FLOWINCOUNT=""; fi
-        local FLOWOUTCOUNT=$(redis-cli zcount flow:conn:out:$taggedMAC -inf +inf)
+        local FLOWOUTCOUNT=$(redis-cli zcard flow:conn:out:$taggedMAC)
         # if [[ $FLOWOUTCOUNT == "0" ]]; then FLOWOUTCOUNT=""; fi
 
         # local DNS_BOOST=$(jq -r 'select(.dnsCaching == false) | "F"' <<< "${p[dnsmasq]}")
@@ -905,7 +905,7 @@ check_hosts() {
         if [[ $SIMPLE_MODE == "T" && -n $ONLINE && -z $MONITORING && $B7_MONITORING == "F" ]] &&
           ((! IS_FIREWALLA)) && ! is_router $IP; then
             FC="\e[91m"
-        elif [ $FLOWINCOUNT -gt 2000 ] || [ $FLOWOUTCOUNT -gt 2000 ]; then
+        elif [ $FLOWINCOUNT -gt 5000 ] || [ $FLOWOUTCOUNT -gt 100 ]; then
             FC="\e[33m" #yellow
         fi
         if [[ ${NAME,,} == "circle"* || ${MAC_VENDOR,,} == "circle"* ]]; then
@@ -1304,9 +1304,9 @@ check_connection() {
   for url in "${URLs[@]}"; do
     code=$(curl -s -o /dev/null -w "%{http_code}" "https://$url")
     if [[ $code -eq 000 ]]; then
-      echo -e "\e[41m$url is not reachable\e[0m"
+      echo -e "\e[41m>>> $url is NOT reachable <<<\e[0m"
     else
-      echo -e "$url is reachable, HTTP status code: $code\e[0m"
+      echo -e "$url is reachable ($code)\e[0m"
     fi
   done
 }
@@ -1324,8 +1324,9 @@ usage() {
     echo "  -n  | --network"
     echo "  -p  | --port"
     echo "  -t  | --tag"
-    echo "  -e  | --events"
     echo "  -f  | --fast | --host"
+    echo "  -e  | --events"
+    echo "  -c  | --connection"
     echo "  -h  | --help"
     return
 }
