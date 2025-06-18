@@ -673,17 +673,11 @@ class VPNDisconnectAlarm extends Alarm {
 
   getI18NCategory() {
     let category = super.getI18NCategory();
-    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
-      category = category + "_KILLSWITCH";
-    }
     return category;
   }
 
   getNotifType() {
     let notify_type = super.getNotifType();
-    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
-      notify_type = notify_type + "_KILLSWITCH";
-    }
     return notify_type;
   }
 
@@ -709,9 +703,6 @@ class VPNDisconnectAlarm extends Alarm {
       suffix = VPN_PROTOCOL_SUFFIX_MAPPING[protocol];
     }
     key += "." + this["p.vpn.subtype"];
-    if (this["p.vpn.strictvpn"] == false || this["p.vpn.strictvpn"] == "false") {
-      key += ".FALLBACK";
-    }
     if (suffix)
       key += "." + suffix;
 
@@ -720,10 +711,6 @@ class VPNDisconnectAlarm extends Alarm {
 
   localizedNotificationTitleKey() {
     let key = super.localizedNotificationTitleKey();
-
-    if (this["p.vpn.strictvpn"] == false || this["p.vpn.strictvpn"] == "false") {
-      key += ".FALLBACK";
-    }
 
     return key;
   }
@@ -1529,6 +1516,7 @@ class DualWanAlarm extends Alarm {
   }
 }
 
+// Internet always routes through Virtual WAN Group (overrideDefaultRoute implicitly true)
 class VWGConnAlarm extends DualWanAlarm {
   constructor(timestamp, device, info) {
     super(timestamp, device, info);
