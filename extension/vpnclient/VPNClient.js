@@ -547,6 +547,7 @@ class VPNClient {
               'p.vpn.subtype': this.settings && this.settings.subtype,
               'p.vpn.devicecount': deviceCount,
               'p.vpn.displayname': this.getDisplayName(),
+              'p.vpn.overrideDefaultRoute': this.settings && this.settings.overrideDefaultRoute,
               'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false,
               'p.vpn.protocol': this.constructor.getProtocol()
             });
@@ -576,6 +577,7 @@ class VPNClient {
             'p.vpn.subtype': this.settings && this.settings.subtype,
             'p.vpn.devicecount': deviceCount,
             'p.vpn.displayname': this.getDisplayName(),
+            'p.vpn.overrideDefaultRoute': this.settings && this.settings.overrideDefaultRoute,
             'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false,
             'p.vpn.protocol': this.constructor.getProtocol()
           });
