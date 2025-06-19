@@ -386,6 +386,7 @@ class netBot extends ControllerBot {
         "p.begin.ts", "p.end.ts", "p.totalUsage", "p.percentage", "p.planUsage", // bandwidth usage
         "p.vpn.overrideDefaultRoute", "p.vpn.strictvpn", "p.vpn.subtype", "p.vpn.displayname", "p.vpn.devicecount", "p.vpn.protocol", // VPN disconnect/restore alarm
         "p.vwg.name", "p.vwg.uuid", "p.vwg.strictvpn", "p.vwg.devicecount", // VPN group connectivity change alarm
+        "p.suricata.classtype", "p.suricata.classtypeDesc", // suricata notice alarm
       ];
       Object.assign(alarmData, _.pick(alarm, appUsedKeys));
 

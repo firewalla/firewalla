@@ -30,6 +30,7 @@ const {getPreferredName} = require('../util/util.js');
 const mustache = require('mustache');
 const conntrack = require('./Conntrack.js');
 const Constants = require('./Constants.js');
+const _ = require('lodash');
 
 class SuricataDetect {
   constructor(logDir = "/log/slog") {
@@ -65,14 +66,15 @@ class SuricataDetect {
     const alert = e && e.alert;
     if (!alert)
       return;
-    const signature = alert.signature;
-    const category = alert.category;
-    const severity = alert.severity;
+    const {signature, signature_id, rev, gid, category, severity, metadata} = alert;
     const srcIp = e.src_ip;
     const dstIp = e.dest_ip;
     if (!srcIp || !dstIp || !signature)
       return;
     let description = signature;
+    let classtype = "bad-unknown";
+    let classtypeDesc = "potentially bad traffic";
+    let cause = null;
     let srcOrig = true;
     if (e.direction) {
       switch (e.direction) {
@@ -93,8 +95,14 @@ class SuricataDetect {
       // try to parse signature as a JOSN object
       const signatureObj = JSON.parse(signature);
       description = signatureObj.description;
+      if (signatureObj.hasOwnProperty("classtype"))
+        classtype = signatureObj.classtype;
       if (signatureObj.hasOwnProperty("srcOrig"))
         srcOrig = signatureObj.srcOrig;
+      if (signatureObj.hasOwnProperty("classtypeDesc"))
+        classtypeDesc = signatureObj.classtypeDesc;
+      if (signatureObj.hasOwnProperty("cause"))
+        cause = signatureObj.cause;
     } catch (err) {}
     const sport = e.src_port;
     const dport = e.dest_port;
@@ -170,9 +178,14 @@ class SuricataDetect {
       "p.dest.ip": remoteIP,
       "p.local_is_client": localOrig ? "1" : "0",
       "p.protocol": proto,
-      "p.security.category": category,
-      "p.security.severity": severity,
-      "p.security.source": "suricata",
+      "p.suricata.category": category,
+      "p.suricata.severity": severity,
+      "p.suricata.classtype": classtype,
+      "p.suricata.signatureId": signature_id,
+      "p.suricata.gid": gid,
+      "p.suricata.rev": rev,
+      "p.suricata.classtypeDesc": classtypeDesc,
+      "p.suricata.cause": cause,
       "p.event.ts": ts,
       "p.message": message
     }
@@ -182,6 +195,11 @@ class SuricataDetect {
       alarmPayload["p.dest.port"] = remotePort;
     if (appProto)
       alarmPayload["p.app.protocol"] = appProto;
+    if (_.isObject(metadata)) {
+      for (const key of Object.keys(metadata)) {
+        alarmPayload[`p.suricata.metadata.${key}`] = metadata[key];
+      }
+    }
     
     const alarm = new Alarm.SuricataNoticeAlarm(ts, localIP, alarmPayload);
     am2.enqueueAlarm(alarm);
