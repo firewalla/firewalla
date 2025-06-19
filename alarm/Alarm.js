@@ -547,7 +547,7 @@ class SuricataNoticeAlarm extends Alarm {
   }
 
   requiredKeys() {
-    return ["p.device.ip", "p.dest.name", "p.message", "p.suricata.classtype", "p.suricata.classtypeDesc", "p.suricata.cause"];
+    return ["p.device.ip", "p.dest.name", "p.message", "p.suricata.extra.classtype", "p.suricata.extra.classtypeDesc", "p.suricata.extra.cause"];
   }
 
   getExpirationTime() {
@@ -570,7 +570,7 @@ class SuricataNoticeAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    const result = [ this["p.device.name"],  this["p.dest.name"], this["p.suricata.classtypeDesc"], this["p.event.timestampTimezone"]];
+    const result = [ this["p.device.name"],  this["p.dest.name"], this["p.suricata.extra.classtypeDesc"], this["p.event.timestampTimezone"]];
     const username = this.getUserName();
     if (username)
       result.push(username);

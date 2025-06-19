@@ -72,9 +72,7 @@ class SuricataDetect {
     if (!srcIp || !dstIp || !signature)
       return;
     let description = signature;
-    let classtype = "bad-unknown";
-    let classtypeDesc = "potentially bad traffic";
-    let cause = null;
+    let alarmData = null;
     let srcOrig = true;
     if (e.direction) {
       switch (e.direction) {
@@ -95,14 +93,10 @@ class SuricataDetect {
       // try to parse signature as a JOSN object
       const signatureObj = JSON.parse(signature);
       description = signatureObj.description;
-      if (signatureObj.hasOwnProperty("classtype"))
-        classtype = signatureObj.classtype;
+      if (signatureObj.hasOwnProperty("alarmData") && _.isObject(signatureObj.alarmData))
+        alarmData = signatureObj.alarmData
       if (signatureObj.hasOwnProperty("srcOrig"))
         srcOrig = signatureObj.srcOrig;
-      if (signatureObj.hasOwnProperty("classtypeDesc"))
-        classtypeDesc = signatureObj.classtypeDesc;
-      if (signatureObj.hasOwnProperty("cause"))
-        cause = signatureObj.cause;
     } catch (err) {}
     const sport = e.src_port;
     const dport = e.dest_port;
@@ -180,14 +174,16 @@ class SuricataDetect {
       "p.protocol": proto,
       "p.suricata.category": category,
       "p.suricata.severity": severity,
-      "p.suricata.classtype": classtype,
       "p.suricata.signatureId": signature_id,
       "p.suricata.gid": gid,
       "p.suricata.rev": rev,
-      "p.suricata.classtypeDesc": classtypeDesc,
-      "p.suricata.cause": cause,
       "p.event.ts": ts,
       "p.message": message
+    }
+    if (_.isObject(alarmData) && !_.isEmpty(alarmData)) {
+      for (const key of Object.keys(alarmData)) {
+        alarmPayload[`p.suricata.extra.${key}`] = alarmData[key];
+      }
     }
     if (localPort)
       alarmPayload["p.device.port"] = [localPort];
