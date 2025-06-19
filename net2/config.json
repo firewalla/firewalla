@@ -584,8 +584,8 @@
         "count": 10000
       },
       "auditAccept": {
-        "expires": 3600,
-        "count": 1000
+        "expires": 86400,
+        "count": 5000
       },
       "ssh": {
         "expires": 86400,
