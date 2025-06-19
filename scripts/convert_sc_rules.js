@@ -19,6 +19,7 @@ fsp.readFile(path, { encoding: "utf8" }).then(content => {
     const options = line.substring(i2 + 2).split(";");
     let srcOrig = true;
     let classtypeDesc = "Potential bad traffic";
+    let classtype = "bad-unknown";
     let sid = 0;
     for (const option of options) {
       const [key, value] = option.trim().split(":", 2);
@@ -29,131 +30,132 @@ fsp.readFile(path, { encoding: "utf8" }).then(content => {
           break;
         }
         case "classtype": {
+          classtype = value;
           switch (value) {
             case "attempted-recon":
             case "successful-recon-limited":
             case "successful-recon-largescale": {
-              classtypeDesc = "Information leak attempt was detected";
+              classtypeDesc = "information leak attempt";
               break;
             }
             case "attempted-dos":
             case "successful-dos": {
-              classtypeDesc = "DoS attack was detected";
+              classtypeDesc = "DoS attack";
               break;
             }
             case "attempted-user":
             case "unsuccessful-user":
             case "successful-user": {
-              classtypeDesc = "User privilege gain attempt was detected";
+              classtypeDesc = "user privilege gain attempt";
               break;
             }
             case "attempted-admin":
             case "successful-admin": {
-              classtypeDesc = "Administrator privilege gain attempt was detected";
+              classtypeDesc = "administrator privilege gain attempt";
               break;
             }
             case "rpc-portmap-decode": {
-              classtypeDesc = "Decode of an RPC query was detected";
+              classtypeDesc = "decode of an RPC query";
               break;
             }
             case "shellcode-detect": {
-              classtypeDesc = "Executable shell code was detected";
+              classtypeDesc = "executable shell code";
               break;
             }
             case "string-detect": {
-              classtypeDesc = "A suspicious string was detected";
+              classtypeDesc = "a suspicious string";
               break;
             }
             case "suspicious-filename-detect": {
-              classtypeDesc = "A suspicious filename was detected";
+              classtypeDesc = "a suspicious filename";
               break;
             }
             case "suspicious-login": {
-              classtypeDesc = "Login attempt using a suspicious username was detected";
+              classtypeDesc = "a login attempt using a suspicious username";
               break;
             }
             case "system-call-detect": {
-              classtypeDesc = "A system call was detected";
+              classtypeDesc = "a system call";
               break;
             }
             case "trojan-activity": {
-              classtypeDesc = "A network trojan was detected";
+              classtypeDesc = "a network trojan";
               break;
             }
             case "unusual-client-port-connection": {
-              classtypeDesc = "An unusual port was used";
+              classtypeDesc = "an unusual port";
               break;
             }
             case "network-scan": {
-              classtypeDesc = "A network scan was detected";
+              classtypeDesc = "a network scan";
               break;
             }
             case "denial-of-service": {
-              classtypeDesc = "DoS attack was detected";
+              classtypeDesc = "DoS attack";
               break;
             }
             case "non-standard-protocol": {
-              classtypeDesc = "A non-standard protocol or event was detected";
+              classtypeDesc = "a non-standard protocol or event";
               break;
             }
             case "protocol-command-decode": {
-              classtypeDesc = "Generic protocol command decode was detected";
+              classtypeDesc = "generic protocol command decode";
               break;
             }
             case "web-application-activity": {
-              classtypeDesc = "A potentially vulnerable web application was detected";
+              classtypeDesc = "a potentially vulnerable web application";
               break;
             }
             case "web-application-attack": {
-              classtypeDesc = "Web application attack was detected";
+              classtypeDesc = "web application attack";
               break;
             }
             case "inappropriate-content": {
-              classtypeDesc = "Inappropriate content was detected";
+              classtypeDesc = "inappropriate content";
               break;
             }
             case "policy-violation": {
-              classtypeDesc = "Potential corporate privacy violation was detected";
+              classtypeDesc = "potential corporate privacy violation";
               break;
             }
             case "default-login-attempt": {
-              classtypeDesc = "Attempt to login by a default username and password was detected";
+              classtypeDesc = "an attempt to login by a default username and password";
               break;
             }
             case "targeted-activity": {
-              classtypeDesc = "Targeted malicious activity was detected";
+              classtypeDesc = "targeted malicious activity";
               break;
             }
             case "exploit-kit": {
-              classtypeDesc = "Exploit kit activity was detected";
+              classtypeDesc = "exploit kit activity";
               break;
             }
             case "external-ip-check": {
-              classtypeDesc = "Device retrieving external IP address was detected";
+              classtypeDesc = "an attempt to retrieve external IP address";
               break;
             }
             case "domain-c2": {
-              classtypeDesc = "Access to a domain used by command and control was detected";
+              classtypeDesc = "access to a domain used by command and control";
               break;
             }
             case "pup-activity": {
-              classtypeDesc = "Unwanted program was detected";
+              classtypeDesc = "an unwanted program";
               break;
             }
             case "credential-theft": {
-              classtypeDesc = "Credential theft was detected";
+              classtypeDesc = "credential theft";
               break;
             }
             case "social-engineering": {
-              classtypeDesc = "Social engineering attempt was detected";
+              classtypeDesc = "social engineering attempt";
               break;
             }
             case "coin-mining": {
-              classtypeDesc = "Crypto currency mining activity was detected";
+              classtypeDesc = "crypto currency mining activity";
               break;
             }
             case "command-and-control": {
-              classtypeDesc = "Malware command and control activity was detected";
+              classtypeDesc = "a malware command and control activity";
               break;
             }
           }
@@ -169,7 +171,7 @@ fsp.readFile(path, { encoding: "utf8" }).then(content => {
       console.log(`Ignore GPLv2 license signature ${sid}`);
       continue;
     }
-    const newMsg = `{\\"description\\":\\"${classtypeDesc} when {{${srcOrig ? "SRC" : "DST"}}} visited {{${srcOrig ? "DST" : "SRC"}}}, possibly triggered by ${msg}.\\", \\"srcOrig\\": ${srcOrig}}`;
+    const newMsg = `{\\"description\\":\\"{{${srcOrig ? "SRC" : "DST"}}} accessed site {{${srcOrig ? "DST" : "SRC"}}}, which is identified as ${classtypeDesc}.\\",\\"srcOrig\\": ${srcOrig},\\"alarmData\\": {\\"classtype\\":\\"${classtype}\\",\\"classtypeDesc\\":\\"${classtypeDesc}\\",\\"cause\\":\\"${msg}\\"}}`;
     const newRule = `${line.substring(0, i1)}msg:"${newMsg}";${line.substring(i2 + 2)}`;
     newLines.push(newRule);
   }

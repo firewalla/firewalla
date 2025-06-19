@@ -388,6 +388,7 @@ class netBot extends ControllerBot {
         "p.vwg.name", "p.vwg.uuid", "p.vwg.strictvpn", "p.vwg.devicecount", // VPN group connectivity change alarm
       ];
       Object.assign(alarmData, _.pick(alarm, appUsedKeys));
+      Object.assign(alarmData, _.pickBy(alarm, (value, key) => key.startsWith("p.suricata.extra."))); // suricata notice alarm
 
       let data = {
         gid: this.primarygid,
