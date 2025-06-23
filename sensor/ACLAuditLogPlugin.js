@@ -506,6 +506,9 @@ class ACLAuditLogPlugin extends Sensor {
 
     // record allow rule id
     if (record.pid && record.ac === "allow") {
+      // 1% middle connection packets are going through block chain, ignore these for rule hit accounting
+      const pid = await conntrack.getConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, 600);
+      if (pid == record.pid) return
       await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid, 600);
     }
 
@@ -718,7 +721,9 @@ class ACLAuditLogPlugin extends Sensor {
           const block = record.ac == "block" || record.ac == "isolation";
 
           // pid backtrace
-          if (type != 'ntp') { // ntp has nothing to do with rules
+          // ntp has nothing to do with rules
+          // for local flow, only account for 'in' flows
+          if (type != 'ntp' && !(record.dmac && fd == 'out')) {
             if (!record.pid && (type == 'dns' || ac == 'block' || ac == 'allow')) {
               const matchedPIDs = await this.ruleStatsPlugin.getMatchedPids(record);
               if (matchedPIDs && matchedPIDs.length > 0){
