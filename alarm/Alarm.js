@@ -533,6 +533,55 @@ class CustomizedSecurityAlarm extends Alarm {
   }
 }
 
+class SuricataNoticeAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_SURICATA_NOTICE", timestamp, device, info);
+    if (this['p.event.ts']) {
+      this["p.event.timestampTimezone"] = moment(this['p.event.ts'] * 1000).tz(sysManager.getTimezone()).format("LT")
+    }
+    this["p.showMap"] = false;
+  }
+
+  keysToCompareForDedup() {
+    return ["p.message"];
+  }
+
+  requiredKeys() {
+    return ["p.device.ip", "p.dest.name", "p.message", "p.suricata.extra.classtype", "p.suricata.extra.classtypeDesc", "p.suricata.extra.cause"];
+  }
+
+  getExpirationTime() {
+    return this["p.cooldown"] || 900;
+  }
+
+  isSecurityAlarm() {
+    return true;
+  }
+
+  localizedNotificationContentKey() {
+    let key = `notif.content.${this.getNotifKeyPrefix()}`;
+    const username = this.getUserName();
+    if (username)
+      key = `${key}.user`;
+    const suffix = this.getIdentitySuffix();
+    if (suffix)
+      key = `${key}${suffix}`;
+    return key;
+  }
+
+  localizedNotificationContentArray() {
+    const result = [ this["p.device.name"],  this["p.dest.name"], this["p.suricata.extra.classtypeDesc"], this["p.event.timestampTimezone"]];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
+  }
+
+  localizedMessage() {
+    return this["p.message"]; // p.message is rendered by mustache in SuricataDetect
+  }
+}
+
 class VPNClientConnectionAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_VPN_CLIENT_CONNECTION", timestamp, device, info);
@@ -624,17 +673,11 @@ class VPNDisconnectAlarm extends Alarm {
 
   getI18NCategory() {
     let category = super.getI18NCategory();
-    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
-      category = category + "_KILLSWITCH";
-    }
     return category;
   }
 
   getNotifType() {
     let notify_type = super.getNotifType();
-    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
-      notify_type = notify_type + "_KILLSWITCH";
-    }
     return notify_type;
   }
 
@@ -660,9 +703,6 @@ class VPNDisconnectAlarm extends Alarm {
       suffix = VPN_PROTOCOL_SUFFIX_MAPPING[protocol];
     }
     key += "." + this["p.vpn.subtype"];
-    if (this["p.vpn.strictvpn"] == false || this["p.vpn.strictvpn"] == "false") {
-      key += ".FALLBACK";
-    }
     if (suffix)
       key += "." + suffix;
 
@@ -671,10 +711,6 @@ class VPNDisconnectAlarm extends Alarm {
 
   localizedNotificationTitleKey() {
     let key = super.localizedNotificationTitleKey();
-
-    if (this["p.vpn.strictvpn"] == false || this["p.vpn.strictvpn"] == "false") {
-      key += ".FALLBACK";
-    }
 
     return key;
   }
@@ -1480,6 +1516,7 @@ class DualWanAlarm extends Alarm {
   }
 }
 
+// Internet always routes through Virtual WAN Group (overrideDefaultRoute implicitly true)
 class VWGConnAlarm extends DualWanAlarm {
   constructor(timestamp, device, info) {
     super(timestamp, device, info);
@@ -1697,6 +1734,7 @@ const classMapping = {
   ALARM_FW_APC: FwApcAlarm.prototype,
   ALARM_NETWORK_MONITOR_RTT: NetworkMonitorRTTAlarm.prototype,
   ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype,
+  ALARM_SURICATA_NOTICE: SuricataNoticeAlarm.prototype,
   ALARM_CUSTOMIZED: CustomizedAlarm.prototype,
   ALARM_CUSTOMIZED_SECURITY: CustomizedSecurityAlarm.prototype
 }
@@ -1723,6 +1761,7 @@ module.exports = {
   VPNRestoreAlarm,
   VPNDisconnectAlarm,
   BroNoticeAlarm,
+  SuricataNoticeAlarm,
   IntelAlarm,
   VulnerabilityAlarm,
   IntelReportAlarm,

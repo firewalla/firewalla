@@ -27,14 +27,20 @@ const netbot = new netBot(
   new cloud("netbot"),
   [], gid, true, true
 );
-const networkProfile = require('../net2/NetworkProfileManager.js');
+const fireRouter = require('../net2/FireRouter.js');
+const networkProfileManager = require('../net2/NetworkProfileManager.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const log = require('../net2/logger.js')(__filename);
 const loggerManager = require('../net2/LoggerManager.js')
+const sysManager = require('../net2/SysManager.js');
 const { delay } = require('../util/util.js')
+const Constants = require('../net2/Constants.js');
+const flowTool = require('../net2/FlowTool.js');
+const auditTool = require('../net2/AuditTool.js');
 
 async function getMacWithFlow(redisPrefix) {
-  const results = await rclient.scanResults(redisPrefix + '*', 10000)
+  let results = await rclient.scanResults(redisPrefix + '*', 10000)
+  results = results.filter(key => !key.includes(':if:') && !key.endsWith('system'))
   if (!results.length)
     throw new Error('No device with flow', redisPrefix);
   return results[0].substring(redisPrefix.length);
@@ -44,7 +50,7 @@ async function getTsFromFlowKey(key) {
   const result = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'limit', 0, 1, 'withscores');
   if (result.length < 2)
     throw new Error('No timestamp found for key', key);
-  return Math.ceil(result[1])
+  return Math.ceil(result[1]) + 1
 }
 
 async function call(msg) {
@@ -77,16 +83,20 @@ async function get(msg) {
 
 before(async () => {
   loggerManager.setLogLevel('Eptcloud', 'none');
-  netbot.networkProfileManager.scheduleRefresh()
+  netbot.identityManager.loadIdentityClasses()
+  await fireRouter.waitTillReady()
+  await sysManager.updateAsync();
+  await networkProfileManager.refreshNetworkProfiles()
   await netbot.hostManager.getHostsAsync()
+  for (const ns of Object.keys(netbot.identityManager.nsClassMap))
+    await netbot.identityManager.refreshIdentity(ns);
 })
 
 describe('test get flows', function() {
   this.timeout(3000);
 
   before(async() => {
-    networkProfile.networkProfiles = {};
-    networkProfile.networkProfiles["1f97bb38-7592-4be0-**"] = {ipv4:"192.168.203.134"};
+    networkProfileManager.networkProfiles["1f97bb38-7592-4be0-**"] = {ipv4:"192.168.203.134"};
     // loggerManager.setLogLevel('LogQuery', 'verbose');
     // loggerManager.setLogLevel('FlowTool', 'verbose');
     // loggerManager.setLogLevel('AuditTool', 'verbose');
@@ -256,7 +266,7 @@ describe('test get flows', function() {
     msg.data.ts = ts2
     resp = await get(msg)
     expect(resp.count).to.be.above(0);
-    expect(resp.flows.some(f => f.ltype == 'audit' && !f.local)).to.be.true
+    expect(resp.flows.some(f => f.ltype == 'audit' && !f.local), JSON.stringify(msg)).to.be.true
 
     resp = await get({data:{item:"flows", localAudit:true, ts, apiVer: 3, count: 100}, target})
     expect(resp.count).to.be.above(0);
@@ -302,14 +312,24 @@ describe('test get flows', function() {
   });
 
   it('should include flows as expected', async() => {
-    const target = await getMacWithFlow('flow:conn:in:');
+    const hosts = await netbot.hostManager.getHostsAsync()
+    const target = hosts.filter(h => {
+      try {
+        const activity = JSON.parse(h.o.recentActivity)
+        return activity.ts > Date.now()/1000 - 24*60*60
+      } catch(e) {
+        return false
+      }
+    })[0].getGUID()
+    expect(target).to.not.be.empty;
     const ts = await getTsFromFlowKey('flow:conn:in:' + target);
+    log.info(target, ts)
 
-    const msg = {data:{item:"flows", audit:true, ts, apiVer: 2, count: 500}, target: '0.0.0.0'};
+    const msg = {data:{item:"flows", audit:true, ts, apiVer: 2, count: 500}, target};
     let resp = await get(msg)
     expect(resp.count).to.be.above(0);
     const flow = resp.flows.find(f => f.category)
-    if (!flow) throw new Error('No flows with category')
+    expect(flow, `No flow with category from ${target}`).to.not.be.undefined;
 
     msg.target = flow.device
     msg.data.category = flow.category
@@ -328,6 +348,143 @@ describe('test get flows', function() {
   });
 
 });
+
+describe('test system flows', function() {
+  this.timeout(10000);
+
+  before(async() => {
+    // loggerManager.setLogLevel('LogQuery', 'verbose');
+    // loggerManager.setLogLevel('FlowTool', 'debug');
+    // loggerManager.setLogLevel('AuditTool', 'verbose');
+
+    this.allSwitches = ['regular', 'dns', 'ntp', 'audit', 'local', 'localAudit'];
+  });
+
+  after(() => {
+  })
+
+  it('global audit query should return wan blocks', async() => {
+    const msg = {data:{item:"flows", audit:true, count: 2000, apiVer: 2}, target: '0.0.0.0'};
+    let resp = await get(msg)
+    expect(resp.count).to.be.above(0);
+    expect(resp.flows.some(f => f.ltype == 'audit' && f.device.startsWith('if:'))).to.be.true
+
+    msg.data.apiVer = 3
+    resp = await get(msg)
+    expect(resp.count).to.be.above(0);
+    expect(resp.flows.some(f => f.ltype == 'audit' && f.device.startsWith('if:'))).to.be.true
+
+    const msgAuditLogs = {data:{item:"auditLogs", count: 2000, apiVer: 2}, target: '0.0.0.0'};
+    resp = await get(msgAuditLogs)
+    expect(resp.count).to.be.above(0);
+    expect(resp.logs.some(f => f.ltype == 'audit' && f.device.startsWith('if:'))).to.be.true
+
+    msg.data.apiVer = 3
+    resp = await get(msgAuditLogs)
+    expect(resp.count).to.be.above(0);
+    expect(resp.logs.some(f => f.ltype == 'audit' && f.device.startsWith('if:'))).to.be.true
+  })
+
+  it('flows within 15min should be exactly the same', async() => {
+    const monitorables = netbot.hostManager.getAllMonitorables();
+    const wanInterfaces = sysManager.getWanInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)
+    const macs = monitorables.map(m => m.getGUID()).concat(wanInterfaces);
+
+    const msg = {data:{item:"flows", count: 2000, apiVer: 3}, target: '0.0.0.0'};
+    for (const asc of [true, false]) {
+      msg.data.asc = asc;
+      msg.data.ts = Date.now() / 1000
+      msg.data.ets = Date.now() / 1000
+      if (asc)
+        msg.data.ts -= 15 * 60;
+      else
+        msg.data.ets -= 15 * 60;
+      for (const switchName of this.allSwitches) {
+        msg.data[switchName] = true;
+        const respSystem = await get(msg)
+        msg.data.macs = macs
+        const respIndiviual = await get(msg)
+        delete msg.data.macs
+        expect(respSystem.count, switchName).to.equal(respIndiviual.count);
+        for (const i in respSystem.flows) {
+          const p = respSystem.flows[i]
+          const q = respIndiviual.flows[i]
+          expect(p.ltype, switchName).to.equal(q.ltype);
+          expect(p.type, switchName).to.equal(q.type);
+          expect(p.ts, switchName).to.equal(q.ts);
+          expect(p.device, switchName).to.equal(q.device);
+          expect(p.fd, switchName).to.equal(q.fd);
+          expect(p.count, switchName).to.equal(q.count);
+          expect(p.type == 'ip' ? p.ip : p.domain, switchName).to.equal(q.type == 'ip' ? q.ip : q.domain);
+        }
+        msg.data[switchName] = false;
+      }
+
+      // all types together
+      for (const switchName of this.allSwitches) {
+        msg.data[switchName] = true;
+      }
+      const respSystem = await get(msg)
+      msg.data.macs = macs
+      const respIndiviual = await get(msg)
+      delete msg.data.macs
+      expect(respSystem.count).to.equal(respIndiviual.count);
+      for (const i in respSystem.flows) {
+        const p = respSystem.flows[i]
+        const q = respIndiviual.flows[i]
+        expect(p.ltype).to.equal(q.ltype);
+        expect(p.type).to.equal(q.type);
+        expect(p.ts).to.equal(q.ts);
+        expect(p.device).to.equal(q.device);
+        expect(p.fd).to.equal(q.fd);
+        expect(p.count).to.equal(q.count);
+        expect(p.type == 'ip' ? p.ip : p.domain).to.equal(q.type == 'ip' ? q.ip : q.domain);
+      }
+    }
+  })
+
+  // this case doesn't work if any of the key is cleaned by count
+  // it('flows within 12hr should adds up the same', async() => {
+  //   const monitorables = netbot.hostManager.getAllMonitorables();
+  //   const wanInterfaces = sysManager.getWanInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)
+  //   const macs = monitorables.map(m => m.getGUID()).concat(wanInterfaces);
+
+  //   const msg = {data:{item:"flows", count: 4000, apiVer: 3}, target: '0.0.0.0'};
+  //   for (const asc of [true, false]) {
+  //     msg.data.asc = asc;
+  //     msg.data.ts = Date.now() / 1000
+  //     msg.data.ets = Date.now() / 1000
+  //     if (asc)
+  //       msg.data.ts -= 12 * 60 * 60;
+  //     else
+  //       msg.data.ets -= 12 * 60 * 60;
+  //     for (const switchName of this.allSwitches) {
+  //       msg.data[switchName] = true;
+  //       const respSystem = await get(msg)
+  //       msg.data.macs = macs
+  //       const respIndiviual = await get(msg)
+  //       delete msg.data.macs
+  //       const pCount = respSystem.flows.reduce((sum, p) => sum + p.count, 0);
+  //       const qCount = respIndiviual.flows.reduce((sum, q) => sum + q.count, 0);
+  //       log.info(switchName, msg.data.ts, msg.data.ets, pCount, qCount)
+  //       expect(pCount, switchName).to.equal(qCount);
+  //       msg.data[switchName] = false;
+  //     }
+  //   }
+
+  //   for (const switchName of this.allSwitches) {
+  //     msg.data[switchName] = true;
+  //   }
+  //   let respSystem = await get(msg)
+  //   msg.data.macs = macs
+  //   let respIndiviual = await get(msg)
+  //   delete msg.data.macs
+  //   let pCount = respSystem.flows.reduce((sum, p) => sum + p.count, 0);
+  //   let qCount = respIndiviual.flows.reduce((sum, q) => sum + q.count, 0);
+  //   log.info('all', msg.data.ts, msg.data.ets, pCount, qCount)
+  //   expect(pCount).to.equal(qCount);
+  // })
+})
 
 describe('test get stats', function() {
   this.timeout(10000);
