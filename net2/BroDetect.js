@@ -1404,9 +1404,10 @@ class BroDetect {
       const multi = rclient.multi()
       multi.zadd(redisObj)
       // mac has been added to tmpspec here
-      const systemKey = localFlow ? 'flow:local:system' : 'flow:conn:system'
-      if (!localFlow || !reverseLocal)
+      if (!localFlow || !reverseLocal) {
+        const systemKey = localFlow ? 'flow:local:system' : 'flow:conn:system'
         multi.zadd(systemKey, tmpspec._ts, JSON.stringify(tmpspec))
+      }
       // no need to set ttl here, OldDataCleanSensor will take care of it
       multi.zadd("deviceLastFlowTs", now, localMac);
       await multi.execAsync().catch(
@@ -1494,7 +1495,8 @@ class BroDetect {
             // try resolve host info for previous flows again here
             // have to do this before flow aggregation as source port does matter
             const uid = f.uids[0];
-            if (!flowstash.ignore[`${f.sh}:${f.dh}`].has(uid)) {
+            const ipPairKey = `${f.sh}:${f.dh}`
+            if (!flowstash.ignore[ipPairKey] || !flowstash.ignore[ipPairKey].has(uid)) {
               const afobj = this.withdrawAppMap(f.sh, f.sp[0] || 0, f.dh, f.dp, this.activeLongConns.has(uid)) || await conntrack.getConnEntries(f.sh, f.sp[0] || 0, f.dh, f.dp, f.pr, 600);;
               if (afobj && afobj.host) {
                 f.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);

@@ -384,10 +384,11 @@ class netBot extends ControllerBot {
         "p.upnp.ttl", "p.upnp.description", "p.upnp.protocol", "p.upnp.public.port", "p.upnp.private.port", // upnp open port
         "p.file.type", "p.subnet.length", "p.dest.url",
         "p.begin.ts", "p.end.ts", "p.totalUsage", "p.percentage", "p.planUsage", // bandwidth usage
-        "p.vpn.strictvpn", "p.vpn.subtype", "p.vpn.displayname", "p.vpn.devicecount", "p.vpn.protocol", // VPN disconnect/restore alarm
+        "p.vpn.overrideDefaultRoute", "p.vpn.strictvpn", "p.vpn.subtype", "p.vpn.displayname", "p.vpn.devicecount", "p.vpn.protocol", // VPN disconnect/restore alarm
         "p.vwg.name", "p.vwg.uuid", "p.vwg.strictvpn", "p.vwg.devicecount", // VPN group connectivity change alarm
       ];
       Object.assign(alarmData, _.pick(alarm, appUsedKeys));
+      Object.assign(alarmData, _.pickBy(alarm, (value, key) => key.startsWith("p.suricata.extra."))); // suricata notice alarm
 
       let data = {
         gid: this.primarygid,
@@ -1160,7 +1161,7 @@ class netBot extends ControllerBot {
             }
         }
 
-        const flows = await flowTool.prepareRecentFlows({}, options)
+        const flows = await flowTool.prepareRecentFlows(options)
         if (!apiVer || apiVer == 1) flows.forEach(f => {
           if (f.ltype == 'flow') delete f.type
         })
@@ -1179,7 +1180,10 @@ class netBot extends ControllerBot {
           options.localAudit = options.audit
         }
 
-        const logs = await auditTool.getAuditLogs(options)
+        delete options.regular
+        delete options.local
+
+        const logs = await flowTool.prepareRecentFlows(options)
         return {
           count: logs.length,
           logs,
@@ -1977,7 +1981,9 @@ class netBot extends ControllerBot {
         options.audit = true
         options.localAudit = true
       }
-      promises.push(flowTool.prepareRecentFlows(jsonobj, _.omit(options, ['queryall'])))
+      promises.push(flowTool.prepareRecentFlows(_.omit(options, ['queryall']))
+        .then( results => { jsonobj.flows = { recent: results }; })
+      )
     }
 
     await Promise.all(promises)

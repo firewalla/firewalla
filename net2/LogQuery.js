@@ -188,7 +188,7 @@ class LogQuery {
    * @param {function} feeds[].query - function that gets log
    * @param {Object} feeds[].options - unique options for the query
    */
-  async logFeeder(options, feeds) {
+  async logFeeder(options, feeds, global = false) {
     options = this.checkArguments(options)
     const commonOptions = _.pick(options, ['ts', 'ets', 'asc', 'count'])
     log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(_.omit(options, 'macs')))
@@ -269,6 +269,9 @@ class LogQuery {
           // leaving merging for front-end
           // results = this.mergeLogs(results, options);
         }
+      } else if (global) {
+        // when query system logs, stop when any of the feed is exhausted
+        break
       } else {
         // no more elements, remove feed from feeds
         feeds = feeds.filter(f => f != feed)
@@ -290,14 +293,11 @@ class LogQuery {
     return results.slice(0, options.count)
   }
 
-  checkCount(options) {
-    if (!options.count) options.count = DEFAULT_QUERY_COUNT
-    if (options.count > MAX_QUERY_COUNT) options.count = MAX_QUERY_COUNT
-  }
-
   checkArguments(options) {
     options = options || {}
-    this.checkCount(options)
+
+    if (!options.count) options.count = DEFAULT_QUERY_COUNT
+    if (options.count > MAX_QUERY_COUNT) options.count = MAX_QUERY_COUNT
     if (!options.asc) options.asc = false;
     if (!options.ts) {
       options.ts = options.asc ?
@@ -331,7 +331,7 @@ class LogQuery {
       }
       return identityManager.getGUID(identity)
     } else if (mac.startsWith(Constants.NS_INTERFACE + ':')) {
-      const intf = networkProfileManager.getNetworkProfile(mac.split(Constants.NS_INTERFACE + ':')[1]);
+      const intf = networkProfileManager.getNetworkProfile(mac.substring(Constants.NS_INTERFACE.length + 1));
       if (!intf) {
         return null;
       }
@@ -520,11 +520,10 @@ class LogQuery {
     throw new Error('not implemented')
   }
 
+  // Don't call this outside of LogQuery
   // note that some fields are added with intel enrichment
   // options should not contains filters with these fields when called with enrich = false
   async getDeviceLogs(options) {
-    options = this.checkArguments(options)
-
     const target = options.mac
     if (!target) throw new Error('Invalid device')
 
@@ -533,7 +532,7 @@ class LogQuery {
     const zrange = (options.asc ? rclient.zrangebyscoreAsync : rclient.zrevrangebyscoreAsync).bind(rclient);
     const results = await zrange(key, '(' + options.ts, options.ets, "LIMIT", 0 , options.count);
 
-    // log.silly(key, '(' + options.ts, options.ets, "LIMIT", 0 , options.count)
+    log.silly(key, '(' + options.ts, options.ets, "LIMIT", 0 , options.count)
     if(results === null || results.length === 0)
       return [];
 
@@ -548,7 +547,7 @@ class LogQuery {
         if (!obj) return null
 
         const s = this.toSimpleFormat(obj, options)
-        s.device = target; // record the mac address here
+        s.device = target == 'system' ? obj.mac : target; // record the mac address here
         return s;
       })
 

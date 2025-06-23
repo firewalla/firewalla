@@ -360,7 +360,7 @@ class CategoryExaminerPlugin extends Sensor {
           continue;
         }
         let originCategory = categoryUpdater.getOrigCategoryByBfCategory(category);
-        if (originCategory === "adblock_strict")
+        if (category === "adblock_strict")
           originCategory = "ad";
         const origDomainList = domainList.map(item => item[1]);
         const unmatchedOrigDomainSet = new Set(origDomainList);
