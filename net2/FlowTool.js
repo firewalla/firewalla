@@ -94,37 +94,98 @@ class FlowTool extends LogQuery {
   // options here no longer serve as filter, just to query and format results
   optionsToFeeds(options, macs) {
     log.debug('optionsToFeeds', options)
-    const feeds = []
+    const feedsArray = []
     if (options.regular) {
-      feeds.push(... this.expendFeeds({macs, direction: 'in'}))
-      feeds.push(... this.expendFeeds({macs, direction: 'out'}))
+      if (macs[0] == 'system')
+        feedsArray.push(this.expendFeeds({macs}))
+      else {
+        feedsArray.push(this.expendFeeds({macs, direction: 'in'}))
+        feedsArray.push(this.expendFeeds({macs, direction: 'out'}))
+      }
     }
     if (options.local) {
       // a local flow will be recorded in both src and dst host key, need to deduplicate flows on the two hosts if both hosts are included in macs
-      feeds.push(... this.expendFeeds({macs, local: true, exclude: {dstMac: macs, fd: "out"}}))
+      if (macs[0] == 'system')
+        feedsArray.push(this.expendFeeds({macs, local: true}))
+      else
+        feedsArray.push(this.expendFeeds({macs, local: true, exclude: {dstMac: macs, fd: "out"}}))
     }
 
-    return feeds
+    return [].concat(... feedsArray)
   }
 
-  async prepareRecentFlows(json, options) {
-    log.verbose('prepareRecentFlows', JSON.stringify(options))
-    options = options || {}
-    this.checkCount(options)
-    const macs = await this.expendMacs(options)
-    if (!("flows" in json)) {
-      json.flows = {};
+  // max of min ts in all feeds, ignoring feed that has no flow
+  async getValidGlobalTS(feeds) {
+    const multi = []
+    for (const feed of feeds) {
+      const key = feed.base.getLogKey(feed.options.mac, feed.options);
+      multi.push(['zrangebyscore', key, 0, '+inf', 'LIMIT', 0 , 1, 'WITHSCORES']);
+    }
+    const results = await rclient.pipelineAndLog(multi);
+    // log.debug('getValidGlobalTS:', JSON.stringify(multi), results)
+    let ts = null;
+    for (const result of results) {
+      const t = Number(result[1]);
+      if (t && t > ts) ts = t;
     }
 
-    const feeds = this.optionsToFeeds(options, macs).concat(
-      auditTool.optionsToFeeds(options, macs)
-    )
+    return ts
+  }
 
-    const recentFlows = await this.logFeeder(options, feeds)
+  async prepareRecentFlows(options) {
+    log.verbose('prepareRecentFlows', JSON.stringify(options))
+    options = this.checkArguments(options || {})
 
-    json.flows.recent = recentFlows;
-    log.verbose('prepareRecentFlows ends', JSON.stringify(options))
-    return recentFlows
+    let results = []
+    let queryDone = false
+    // query system flows first if possible
+    if (!options.mac && !options.macs && !options.tag && !options.intf) {
+      const feeds = this.optionsToFeeds(options, ['system']).concat(
+        auditTool.optionsToFeeds(options, ['system'])
+      )
+
+      const sysOptions = JSON.parse(JSON.stringify(options))
+
+      let skip = false
+
+      const validTS = await this.getValidGlobalTS(feeds)
+      log.debug(`validTS for system flows: ${validTS}`)
+      if (sysOptions.ts <= validTS)
+        skip = true
+      else if (sysOptions.asc)
+        queryDone = true
+      else if (sysOptions.ets < validTS)
+        sysOptions.ets = validTS
+      else
+        queryDone = true
+
+      if (!skip) {
+        results = await this.logFeeder(sysOptions, feeds, true)
+        if (results.length >= sysOptions.count) {
+          log.verbose(`got ${results.length} system flows, query done`)
+          results = results.slice(0, sysOptions.count);
+          queryDone = true;
+        } else {
+          options.count -= results.length;
+          if (results.length)
+            options.ts = validTS;
+          log.verbose(`got ${results.length} system flows, ${options.count} left, starting ${options.ts} to ${options.ets}`)
+        }
+      }
+    }
+
+    if (!queryDone) {
+      const macs = await this.expendMacs(options)
+
+      const feeds = this.optionsToFeeds(options, macs).concat(
+        auditTool.optionsToFeeds(options, macs)
+      )
+
+      results = results.concat(await this.logFeeder(options, feeds))
+    }
+
+    // log.verbose('prepareRecentFlows ends', JSON.stringify(options))
+    return results
   }
 
   // convert flow json to a simplified json format that's more readable by app
@@ -288,8 +349,10 @@ class FlowTool extends LogQuery {
   getLogKey(mac, options) {
     if (options.local)
       return `flow:local:${mac}`
-    else
+    else if (options.direction)
       return util.format("flow:conn:%s:%s", options.direction || 'in', mac);
+    else
+      return 'flow:conn:system'
   }
 
   addFlow(mac, type, flow) {
