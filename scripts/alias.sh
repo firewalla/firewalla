@@ -155,6 +155,8 @@ alias tvpn='~/scripts/test_vpn.sh'
 alias twan='curl -fsSL https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/test_wan.sh | sudo bash -s --'
 alias ttwan='sudo /home/pi/firewalla/scripts/test_wan.sh'
 
+alias llas='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/list_ap_stations.sh -o /tmp/list_ap_stations.sh 2>/dev/null; bash /tmp/list_ap_stations.sh'
+
 # view redis hash
 function vh {
   echo | column -n 2>/dev/null && COLUMN_OPT='column -n' || COLUMN_OPT='column'
