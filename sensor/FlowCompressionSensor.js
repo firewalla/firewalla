@@ -396,7 +396,7 @@ class FlowCompressionSensor extends Sensor {
     await rclient.unlinkAsync(this.wanCompressedFlowsKey);
     while (!completed && this.featureOn) {
       try {
-        const flows = await flowTool.prepareRecentFlows({}, JSON.parse(JSON.stringify(options))) || []
+        const flows = await flowTool.prepareRecentFlows(JSON.parse(JSON.stringify(options))) || []
         if (!flows.length) break
         const endTs = flows[flows.length - 1].ts;
 
@@ -436,7 +436,7 @@ class FlowCompressionSensor extends Sensor {
         log.warn(this.featureName, 'disabled, stop building')
       }
       try {
-        const flows = await flowTool.prepareRecentFlows({}, JSON.parse(JSON.stringify(options))) || []
+        const flows = await flowTool.prepareRecentFlows(JSON.parse(JSON.stringify(options))) || []
         if (!flows.length) break
         const endTs = flows[flows.length - 1].ts;
 
