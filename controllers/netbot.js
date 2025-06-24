@@ -106,7 +106,6 @@ const clientMgmt = require('../mgmt/ClientMgmt.js');
 const f = require('../net2/Firewalla.js');
 
 const flowTool = require('../net2/FlowTool');
-const auditTool = require('../net2/AuditTool');
 
 const i18n = require('../util/i18n');
 
@@ -1178,6 +1177,15 @@ class netBot extends ControllerBot {
         if (!apiVer || apiVer <= 2) {
           if (options.audit != false) options.audit = true
           options.localAudit = options.audit
+
+          for (const key of ['category', 'type'])
+            if (options[key]) {
+              if (!options.include || !options.include.length) {
+                options.include = [ {[key]: options[key]} ]
+              } else {
+                options.include.forEach(filters => filters[key] = options[key])
+              }
+            }
         }
 
         delete options.regular

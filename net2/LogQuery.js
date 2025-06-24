@@ -536,10 +536,8 @@ class LogQuery {
     if(results === null || results.length === 0)
       return [];
 
-    const enrich = 'enrich' in options ? options.enrich : true
+    const { enrich = true } = options
     delete options.enrich
-
-    log.debug(this.constructor.name, 'getDeviceLogs', key, options.type || '', options.ts)
 
     let logObjects = results
       .map(str => {
