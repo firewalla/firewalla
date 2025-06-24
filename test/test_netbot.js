@@ -325,13 +325,12 @@ describe('test get flows', function() {
     const ts = await getTsFromFlowKey('flow:conn:in:' + target);
     log.info(target, ts)
 
-    const msg = {data:{item:"flows", audit:true, ts, apiVer: 2, count: 500}, target};
+    const msg = {data:{item:"flows", audit:true, ts, apiVer: 2, count: 2000}, target};
     let resp = await get(msg)
     expect(resp.count).to.be.above(0);
     const flow = resp.flows.find(f => f.category)
     expect(flow, `No flow with category from ${target}`).to.not.be.undefined;
 
-    msg.target = flow.device
     msg.data.category = flow.category
     resp = await get(msg)
     expect(resp.count).to.be.above(0);
@@ -345,6 +344,17 @@ describe('test get flows', function() {
     resp = await get(msg)
     expect(resp.count).to.be.above(0);
     expect(resp.flows.every(f => f.category == flow.category)).to.be.true
+
+    const auditMsg = {data:{item:"auditLogs", audit:true, ts, apiVer: 2, count: 4000}, target: '0.0.0.0'};
+    resp = await get(auditMsg)
+    expect(resp.count).to.be.above(0);
+    const auditFlow = resp.logs.find(f => f.category)
+    expect(auditFlow, `No blocked flow with category from ${target}`).to.not.be.undefined;
+
+    auditMsg.data.category = auditFlow.category
+    resp = await get(auditMsg)
+    expect(resp.count).to.be.above(0);
+    expect(resp.logs.every(f => f.category == auditFlow.category)).to.be.true
   });
 
 });
