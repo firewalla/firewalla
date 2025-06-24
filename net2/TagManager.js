@@ -277,6 +277,9 @@ class TagManager {
         }
       }
 
+      // make sure tags are refreshed on all processes
+      this.subscriber.publish("DiscoveryEvent", "Tags:Updated");
+
       log.info('Tag indexes built')
     } catch(err) {
       log.error('Error building Tag indexes', err)
