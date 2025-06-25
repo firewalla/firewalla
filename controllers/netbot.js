@@ -919,20 +919,13 @@ class netBot extends ControllerBot {
         return
       }
       case "dataPlan": {
-        const { total, date, enable, wanConfs } = value;
-        const featureName = 'data_plan';
-        if (enable) {
-          await fc.enableDynamicFeature(featureName)
-          await rclient.setAsync("sys:data:plan", JSON.stringify({ total, date, wanConfs }));
-          sem.emitEvent({
-            type: "DataPlan:Updated",
-            date: date,
-            toProcess: "FireMain"
-          });
-        } else {
-          await fc.disableDynamicFeature(featureName);
-          await rclient.unlinkAsync("sys:data:plan");
-        }
+        const { total, date, wanConfs } = value;
+        await rclient.setAsync("sys:data:plan", JSON.stringify({ total, date, wanConfs }));
+        sem.emitEvent({
+          type: "DataPlan:Updated",
+          date: date,
+          toProcess: "FireMain"
+        });
         return
       }
       case "networkConfig": {
