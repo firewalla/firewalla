@@ -131,14 +131,14 @@ class DataUsageSensor extends Sensor {
           const dataPlan = await this.getDataPlan();
           if (!dataPlan)
             return;
-          const {date, total, wanConfs, alarmEnabled} = dataPlan;
-          if (alarmEnabled) {
+          const {date, total, wanConfs, enable} = dataPlan;
+          if (enable) { // "enable" on global level won't be set in normal cases, so global level alarm won't be generated
             await this.checkMonthlyDataUsage(date, total);
           }
           const wanIntfs = sysManager.getWanInterfaces();
           for (const wanIntf of wanIntfs) {
-            const wanConf = _.get(wanConfs, wanIntf.uuid, {date, total, alarmEnabled: true}); // if wan uuid is not defined in wanConfs, enable bandwidth usage alarm on that WAN by default
-            if (alarmEnabled) {
+            const wanConf = _.get(wanConfs, wanIntf.uuid, {date, total, enable: true}); // if wan uuid is not defined in wanConfs, enable bandwidth usage alarm on that WAN by default
+            if (wanConf.enable) {
               await this.checkMonthlyDataUsage(wanConf.date || date, wanConf.total || total, wanIntf.uuid);
             }
           }
