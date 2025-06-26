@@ -206,21 +206,22 @@ module.exports = class HostManager extends Monitorable {
         // beware that MSG_SYS_NETWORK_INFO_RELOADED will trigger scan from sensors and thus generate Scan:Done event
         // getHosts will be invoked here to reflect updated hosts information
         log.info("Subscribing Scan:Done event...")
-        messageBus.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
+        messageBus.subscribe("DiscoveryEvent", "Scan:Done", null, async (channel, type, ip, obj) => {
           if (!sysManager.isIptablesReady()) {
             log.warn(channel, type, "Iptables is not ready yet, skipping...");
             return;
           }
           log.info("New Host May be added rescan");
-          this.getHosts((err, result) => {
-            if (result && _.isArray(result)) {
-              for (const host of result) {
-                host.updateHostsFile().catch((err) => {
-                  log.error(`Failed to update hosts file for ${host.o.mac}`, err.messsage);
-                });
-              }
+          const result = await this.getHostsAsync()
+          if (!result || !_.isArray(result)) return
+
+          await asyncNative.eachLimit(result, 30, async host => {
+            try {
+              await host.updateHostsFile()
+            } catch(err) {
+              log.error(`Failed to update hosts file for ${JSON.stringify(host)}`, err);
             }
-          });
+          })
         });
 
         this.keepalive();

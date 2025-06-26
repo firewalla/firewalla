@@ -27,7 +27,6 @@ const Constants = require('./Constants.js');
 const dnsmasq = new DNSMASQ();
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock()
-const KEY_TAG_INDEXED = 'tag:indexed'
 
 class TagManager {
   constructor() {
@@ -41,8 +40,10 @@ class TagManager {
       this.scheduleRefresh();
     });
 
-    if (f.isMain()) {
+    if (f.isApi())
       this.buildIndex();
+
+    if (f.isMain()) {
       // periodically sync group macs to fwapc in case of inconsistency
       setInterval(async () => {
         if (sysManager.isIptablesReady()) {
@@ -266,9 +267,6 @@ class TagManager {
   // this should be run only 1 time
   async buildIndex() {
     try {
-      const indexed = await rclient.getAsync(KEY_TAG_INDEXED)
-      if (Number(indexed)) return
-
       log.info('Building tag indexes ...')
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const config = Constants.TAG_TYPE_MAP[type];
@@ -279,12 +277,12 @@ class TagManager {
         }
       }
 
-      await rclient.setAsync(KEY_TAG_INDEXED, 1)
+      // make sure tags are refreshed on all processes
+      this.subscriber.publish("DiscoveryEvent", "Tags:Updated");
 
       log.info('Tag indexes built')
     } catch(err) {
       log.error('Error building Tag indexes', err)
-      await rclient.setAsync(KEY_TAG_INDEXED, 0)
     }
   }
 

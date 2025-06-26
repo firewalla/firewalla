@@ -282,10 +282,11 @@ class Conntrack {
 
   async setConnEntry(src, sport, dst, dport, protocol, subKey, value, expr = 600) {
     const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
-    await rclient.multi()
+    const results = await rclient.multi()
       .hset(key, subKey, value)
       .expire(key, expr)
       .execAsync()
+    return results && results[0]
   }
 
   async setConnEntries(src, sport, dst, dport, protocol, obj, expr = 600) {

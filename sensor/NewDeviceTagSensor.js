@@ -110,7 +110,7 @@ class NewDeviceTagSensor extends Sensor {
 
       log.debug(networkPolicy)
 
-      const isFWAP = await this.isFirewallaAP(hostObj);
+      const isFWAP = this.isFirewallaAP(hostObj);
       let isQuarantine = 0
 
       if (!isFWAP && policy) {
@@ -173,24 +173,12 @@ class NewDeviceTagSensor extends Sensor {
     this.queue.push(event)
   }
 
-  async isFirewallaAP(hostObj) {
+  isFirewallaAP(hostObj) {
     const mac = _.get(hostObj, ["o", "mac"], "").toUpperCase();
-    if (!mac.startsWith(Constants.FW_OUI))
-      return false;
+
     if (mac.startsWith(Constants.FW_AP_MAC_PREFIX) || mac.startsWith(Constants.FW_AP_CEILING_MAC_PREFIX))
       return true;
     
-    let dhcpName = _.get(hostObj, ["o", "dhcpName"]);
-    let dhcpLeaseName = _.get(hostObj, ["o", "dnsmasq.dhcp.leaseName"]);
-    if (!dhcpName && !dhcpLeaseName) {
-      await delay(10000); // wait 10s for host to be updated with dhcpName
-      const updatedHostObj = await hostManager.getHostAsync(mac);
-      dhcpName = _.get(updatedHostObj, ["o", "dhcpName"]);
-      dhcpLeaseName = _.get(updatedHostObj, ["o", "dnsmasq.dhcp.leaseName"]);
-    }
-
-    if (dhcpName === Constants.FW_AP_DEFAULT_DHCP_HOSTNAME || dhcpLeaseName === Constants.FW_AP_DEFAULT_DHCP_HOSTNAME)
-      return true;
     return false;
   }
 
