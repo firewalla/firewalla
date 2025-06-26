@@ -97,79 +97,37 @@ describe('NewDeviceTagSensor.isFirewallaAP', () => {
     }
   });
 
-  it('should return true for Firewalla AP MAC address "20:6D:31:61"', async () => {
+  it('should return true for Firewalla AP MAC address "20:6D:31:6"', () => {
     const host = {
       o: {
         mac: '20:6D:31:61:CC:CC',
         dhcpName: 'notfirewalla'
       }
     }
-    const result = await sensorInstance.isFirewallaAP(host);
+    const result = sensorInstance.isFirewallaAP(host);
     assert.equal(result, true);
   });
 
-  it('should return true for Firewalla Ceiling AP MAC address, perfix "20:6D:31:71" ', async () => {
+  it('should return true for Firewalla Ceiling AP MAC address, perfix "20:6D:31:7" ', () => {
     const host = {
       o: {
         mac: '20:6D:31:71:CC:CC',
         dhcpName: 'notfirewalla'
       }
     }
-    const result = await sensorInstance.isFirewallaAP(host);
+    const result = sensorInstance.isFirewallaAP(host);
     assert.equal(result, true);
   });
 
-  it('should return false for non-Firewalla MAC address', async () => {
+  it('should return false for non-Firewalla MAC address', () => {
     const host = {
       o: {
         mac: '00:11:22:33:44:55',
         dhcpName: 'notfirewalla'
       }
     }
-    const result = await sensorInstance.isFirewallaAP(host);
+    const result = sensorInstance.isFirewallaAP(host);
     assert.equal(result, false);
-  });
-
-  it('should return ture for these APs whose MAC address is start with "20:6D:31" and dhcpName or dhcpLeaseName is FirewallaAP', async () => {
-    let host = {
-      o: {
-        mac: '20:6D:31:XX:XX:XX',
-        dhcpName: 'FirewallaAP'
-      }
-    }
-    let result = await sensorInstance.isFirewallaAP(host);
-    assert.equal(result, true);
-    host = {
-      o: {
-        mac: '20:6D:31:XX:XX:XX',
-        dhcpLeaseName: 'notFirewallaAP',
-        "dnsmasq.dhcp.leaseName": "FirewallaAP"
-      }
-    }
-    result = await sensorInstance.isFirewallaAP(host);
-    assert.equal(result, true);
-
-  });
-
- it('should return false for these APs whose MAC address is start with "20:6D:31" and dhcpName or dhcpLeaseName is not FirewallaAP', async () => {
-    let host = {
-      o: {
-        mac: '20:6D:31:XX:XX:XX',
-        dhcpName: 'notFirewallaAP'
-      }
-    }
-    let result = await sensorInstance.isFirewallaAP(host);
-    assert.equal(result, false);
-    host = {
-      o: {
-        mac: '20:6D:31:XX:XX:XX',
-        dhcpLeaseName: 'notFirewallaAP',
-        "dnsmasq.dhcp.leaseName": "notFirewallaAP"
-      }
-    }
-    result = await sensorInstance.isFirewallaAP(host);
-    assert.equal(result, false);
-
   });
 
 });

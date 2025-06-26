@@ -83,8 +83,8 @@ module.exports = {
   ST_TIMEOUT: 'timeout',
 
   FW_OUI: "20:6D:31",
-  FW_AP_MAC_PREFIX: "20:6D:31:61",
-  FW_AP_CEILING_MAC_PREFIX: "20:6D:31:71",
+  FW_AP_MAC_PREFIX: "20:6D:31:6",
+  FW_AP_CEILING_MAC_PREFIX: "20:6D:31:7",
   FW_AP_DEFAULT_DHCP_HOSTNAME: "FirewallaAP",
   VPN_ROUTE_MARK_KEY_PREFIX: "fwmark:vpn",
 

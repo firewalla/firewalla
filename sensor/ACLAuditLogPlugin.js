@@ -506,10 +506,9 @@ class ACLAuditLogPlugin extends Sensor {
 
     // record allow rule id
     if (record.pid && record.ac === "allow") {
+      const added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid, 600);
       // 1% middle connection packets are going through block chain, ignore these for rule hit accounting
-      const pid = await conntrack.getConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, 600);
-      if (pid == record.pid) return
-      await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid, 600);
+      if (!added) return
     }
 
     this.writeBuffer(record);
