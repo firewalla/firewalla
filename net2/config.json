@@ -855,7 +855,8 @@
           "increaseLatency": 150
         }
       }
-    }
+    },
+    "PurposeDeviceAutoSecurePlugin":{}
   },
   "hooks": {
     "NewDeviceHook": {},
