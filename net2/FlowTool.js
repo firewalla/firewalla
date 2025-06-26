@@ -415,7 +415,7 @@ class FlowTool extends LogQuery {
 
   async getDeviceLogs(options) {
     // use TypeFlow as look ahead to cut empty queries in advance
-    if (options.category || options.app) {
+    if ((options.category || options.app) && options.mac != 'system') {
       let found = false
       while (options.asc ? options.ts < options.ets : options.ts > options.ets) {
         let allDimensionFound = true
