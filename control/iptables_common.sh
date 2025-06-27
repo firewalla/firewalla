@@ -584,11 +584,6 @@ cat << EOF
 EOF
 } > "$iptables_file"
 
-# as allow rules are removed, we remove registered upnp services as well.
-# firerouter_upnp@* services are always running, restart is fine
-sudo rm /var/run/upnp.*.leases
-sudo systemctl restart firerouter_upnp*
-
 {
 sudo ip6tables-save -t filter | grep -vE "^:FW_| FW_|^COMMIT"
 
