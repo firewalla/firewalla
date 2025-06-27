@@ -428,12 +428,12 @@ cat << EOF > "$filter_file"
 -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
 
 # bidirection
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ip_set src -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ip_set dst -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_domain_set src -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_domain_set dst -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_net_set src -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_net_set dst -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ip_set src -m set --match-set monitored_net_set dst,dst -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ip_set dst -m set --match-set monitored_net_set src,src -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_domain_set src -m set --match-set monitored_net_set dst,dst -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_domain_set dst -m set --match-set monitored_net_set src,src -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_net_set src -m set --match-set monitored_net_set dst,dst -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_net_set dst -m set --match-set monitored_net_set src,src -j FW_ACCEPT
 
 -N FW_FW_GLOBAL_ALLOW_OR
 -N FW_FW_GLOBAL_ALLOW_OR_OB
@@ -463,12 +463,12 @@ cat << EOF > "$filter_file"
 -A FW_FW_GLOBAL_ALLOW_OR_OB -m set --match-set allow_ob_net_set dst -j FW_ACCEPT
 
 # bidirection
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set src -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set dst -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set src -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set dst -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set src -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set dst -j FW_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set src -m set --match-set monitored_net_set dst,dst -j FW_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set dst -m set --match-set monitored_net_set src,src -j FW_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set src -m set --match-set monitored_net_set dst,dst -j FW_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set dst -m set --match-set monitored_net_set src,src -j FW_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set src -m set --match-set monitored_net_set dst,dst -j FW_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set dst -m set --match-set monitored_net_set src,src -j FW_DROP
 
 -N FW_FW_GLOBAL_BLOCK_OR
 -N FW_FW_GLOBAL_BLOCK_OR_OB
