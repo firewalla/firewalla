@@ -338,7 +338,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       for (const key of keys) {
         const o = await rclient.hgetallAsync(key);
         const category = key.substring(CUSTOMIZED_CATEGORY_KEY_PREFIX.length);
-        log.info(`Found customized category ${category}`);
+        log.debug(`Found customized category ${category}`);
         this.customizedCategories[category] = o;
         this.customizedCategories[category].exists = true;
       }

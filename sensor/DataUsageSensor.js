@@ -49,6 +49,7 @@ const Message = require('../net2/Message.js');
 const moment = require('moment-timezone/moment-timezone.js');
 moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const Constants = require('../net2/Constants.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 class DataUsageSensor extends Sensor {
     async run() {
@@ -132,14 +133,18 @@ class DataUsageSensor extends Sensor {
           if (!dataPlan)
             return;
           const {date, total, wanConfs, enable} = dataPlan;
-          if (enable) { // "enable" on global level won't be set in normal cases, so global level alarm won't be generated
+          // "enable" on global level won't be set in normal cases, so global level alarm won't be generated
+          // but for legacy platform that is not managed by firerouter, it still counts global data usage
+          if (enable || !platform.isFireRouterManaged()) {
             await this.checkMonthlyDataUsage(date, total);
           }
-          const wanIntfs = sysManager.getWanInterfaces();
-          for (const wanIntf of wanIntfs) {
-            const wanConf = _.get(wanConfs, wanIntf.uuid, {date, total, enable: true}); // if wan uuid is not defined in wanConfs, enable bandwidth usage alarm on that WAN by default
-            if (wanConf.enable) {
-              await this.checkMonthlyDataUsage(wanConf.date || date, wanConf.total || total, wanIntf.uuid);
+          if (platform.isFireRouterManaged()) {
+            const wanIntfs = sysManager.getWanInterfaces();
+            for (const wanIntf of wanIntfs) {
+              const wanConf = _.get(wanConfs, wanIntf.uuid, {date, total, enable: true}); // if wan uuid is not defined in wanConfs, enable bandwidth usage alarm on that WAN by default
+              if (wanConf.enable) {
+                await this.checkMonthlyDataUsage(wanConf.date || date, wanConf.total || total, wanIntf.uuid);
+              }
             }
           }
         }
