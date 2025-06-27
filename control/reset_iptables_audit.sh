@@ -24,6 +24,7 @@ sudo ip6tables-restore "$ip6tables_file"
 sudo iptables -w -S -tnat |grep "\-N UPNP_" | cut -d' ' -f2| while read -r chain; do sudo iptables -w -tnat -F $chain; done
 sudo rm /var/run/upnp.*.leases
 sudo systemctl restart firerouter_upnp*
+redis-cli hdel sys:scan:nat upnp
 
 
 # most policy created, block/allow related set starts with c_b._
