@@ -116,7 +116,7 @@ class PurposeRulePlugin extends Sensor {
     if (!host || (host.constructor.name !== "Host" && host.constructor.name !== "WGPeer")) {
       return;
     }
-    const deviceId = host.constructor.name === "WGPeer" ? `${Constants.NS_WG_PEER}:${id}` : id;
+    const deviceId = host.getGUID();
     const state = (policy && policy.enabled) ? policy.enabled : false;
     log.info(`Applying purpose: ${this.featureName}, state: ${policy.enabled} for host ${deviceId} and global state: ${PurposeRulePlugin.purposeStates[this.featureName]}`);
     const PolicyManager2 = require('../alarm/PolicyManager2.js');
