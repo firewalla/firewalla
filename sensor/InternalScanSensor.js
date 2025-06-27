@@ -1,4 +1,4 @@
-/*    Copyright 2020-2021 Firewalla Inc.
+/*    Copyright 2020-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -166,7 +166,7 @@ class InternalScanSensor extends Sensor {
       this.checkDictionary().catch((err) => {
         log.error(`Failed to fetch dictionary from cloud`, err.message);
       });
-    }, 3600 * 1000);
+    }, 3600 * 1000 * 24);
     await this.checkDictionary().catch((err) => {
       log.error(`Failed to fetch dictionary from cloud`, err.message);
     });
