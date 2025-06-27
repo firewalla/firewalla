@@ -178,7 +178,11 @@
       "firstScan": 120
     },
     "OpenPortByInboundFlowSensor": {},
-    "BoneSensor": {},
+    "BoneSensor": {
+      "checkInMinInterval": 900,
+      "checkInMaxInterval": 3600,
+      "hashsetConfigInterval": 86400
+    },
     "DNSCryptPlugin": {
       "refreshInterval": 1440
     },
@@ -1000,6 +1004,7 @@
     "local_domain": true,
     "external_scan": false,
     "alarm_openport": false,
+    "alarm_vpnclient_internet_pause": false,
     "device_service_scan": true,
     "device_detect": true,
     "wireguard": false,

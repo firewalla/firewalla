@@ -638,6 +638,19 @@ class VPNRestoreAlarm extends Alarm {
     return fc.getTimingConfig("alarm.vpn_connect.cooldown") || 60 * 5;
   }
 
+  localizedNotificationTitleKey() {
+    let key = super.localizedNotificationTitleKey();
+
+    if (fc.isFeatureOn('alarm_vpnclient_internet_pause')
+      && (this['p.vpn.overrideDefaultRoute'] === true || this['p.vpn.overrideDefaultRoute'] == 'true')
+    ) {
+      key += '.RESUME';
+    }
+
+
+    return key;
+  }
+
   localizedNotificationContentKey() {
     let key = super.localizedNotificationContentKey();
 
@@ -648,6 +661,13 @@ class VPNRestoreAlarm extends Alarm {
       suffix = VPN_PROTOCOL_SUFFIX_MAPPING[protocol];
     }
     key += "." + this["p.vpn.subtype"];
+
+    if (fc.isFeatureOn('alarm_vpnclient_internet_pause')
+      && (this['p.vpn.overrideDefaultRoute'] === true || this['p.vpn.overrideDefaultRoute'] == 'true')
+    ) {
+      key += '.RESUME';
+    }
+
     if (suffix)
       key += "." + suffix;
 
@@ -703,6 +723,17 @@ class VPNDisconnectAlarm extends Alarm {
       suffix = VPN_PROTOCOL_SUFFIX_MAPPING[protocol];
     }
     key += "." + this["p.vpn.subtype"];
+
+    if (fc.isFeatureOn('alarm_vpnclient_internet_pause')
+      && (this['p.vpn.overrideDefaultRoute'] === true || this['p.vpn.overrideDefaultRoute'] == 'true')
+    ) {
+      if (this['p.vpn.strictvpn'] === true || this['p.vpn.strictvpn'] == 'true') {
+        key += '.PAUSE';
+      } else {
+        key += '.FALLBACK';
+      }
+    }
+
     if (suffix)
       key += "." + suffix;
 
@@ -711,6 +742,16 @@ class VPNDisconnectAlarm extends Alarm {
 
   localizedNotificationTitleKey() {
     let key = super.localizedNotificationTitleKey();
+
+    if (fc.isFeatureOn('alarm_vpnclient_internet_pause')
+      && (this['p.vpn.overrideDefaultRoute'] === true || this['p.vpn.overrideDefaultRoute'] == 'true')
+    ) {
+      if (this['p.vpn.strictvpn'] === true || this['p.vpn.strictvpn'] == 'true') {
+        key += '.PAUSE';
+      } else {
+        key += '.FALLBACK';
+      }
+    }
 
     return key;
   }

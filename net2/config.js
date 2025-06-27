@@ -37,6 +37,7 @@ const platformConfig = getPlatformConfig()
 
 let versionConfigInitialized = false
 let versionConfig = null
+let hashsetConfig = null
 let cloudConfig = null
 let userConfig = null
 let testConfig = null
@@ -197,9 +198,12 @@ async function reloadConfig() {
     await pclient.publishAsync("config:updated", newConfigStr)
 }
 
-function aggregateConfig(configArray = [defaultConfig, platformConfig, versionConfig, cloudConfig, userConfig, testConfig, mspConfig]) {
+// later in this array, higher the priority
+// config from checkin has has much finer granularity, so higher the priority
+function aggregateConfig(configArray = [
+  defaultConfig, platformConfig, versionConfig, hashsetConfig, cloudConfig, mspConfig, userConfig, testConfig
+]) {
   const newConfig = {}
-  // later in this array higher the priority
   const prioritized = configArray.filter(Boolean)
 
   Object.assign(newConfig, ...prioritized);
@@ -296,6 +300,16 @@ async function syncDynamicFeatures() {
   reloadFeatures()
 }
 
+async function syncHashsetConfig() {
+  try {
+    hashsetConfig = JSON.parse(await rclient.getAsync('sys:bone:config:features'))
+    log.debug('hashsetConfig reloaded')
+    await reloadConfig()
+  } catch(err) {
+    log.error('Error syncing hashset config', err)
+  }
+}
+
 async function syncCloudConfig() {
   try {
     const boneInfo = await f.getBoneInfoAsync()
@@ -303,7 +317,7 @@ async function syncCloudConfig() {
     log.debug('cloudConfig reloaded')
     await reloadConfig()
   } catch(err) {
-    log.error('Error getting cloud config', err)
+    log.error('Error syncing cloud config', err)
   }
 }
 
@@ -371,6 +385,7 @@ function reloadFeatures() {
   }
 
   features = featuresNew;
+  log.debug('Features reloaded', features)
 }
 
 function getFeatures() {
@@ -407,6 +422,10 @@ sclient.on("message", (channel, message) => {
       versionConfig = JSON.parse(message)
       reloadConfig()
       break
+    case "config:hashset:updated":
+      hashsetConfig = JSON.parse(message)
+      reloadConfig()
+      break
     case "config:cloud:updated":
       cloudConfig = JSON.parse(message)
       reloadConfig()
@@ -425,6 +444,7 @@ sclient.on("message", (channel, message) => {
 reloadConfig() // starts reading userConfig & testConfig as this module loads
 config = aggregateConfig() // non-async call, garantees getConfig() will be returned with something
 
+syncHashsetConfig()
 syncCloudConfig()
 syncMspConfig()
 
