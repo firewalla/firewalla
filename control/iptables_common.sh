@@ -572,8 +572,8 @@ EOF
 {
 sudo ip6tables-save -t filter | grep -vE "^:FW_| FW_|^COMMIT"
 
-# not replacing monitored_net_set
-sed -E '/monitored_net_set/!s/_(ip|domain|net)_set/_\1_set6/' "$filter_file"
+# replace v4 sets later
+cat "$filter_file"
 
 cat << EOF
 # accept traffic to DHCPv6 client, sometimes the reply is a unicast packet and will not be considered as a reply packet of the original broadcast packet by conntrack module
@@ -589,6 +589,12 @@ cat << EOF
 
 EOF
 } > "$ip6tables_file"
+
+# replace v4 sets with v6
+# keep monitored_net_set as it has both v4 & v6
+sed -i -E -e 's/monitored_net_set/PLACEHOLDER/g' \
+          -e 's/_(ip|domain|net)_set/_\1_set6/g' \
+          -e 's/PLACEHOLDER/monitored_net_set/g' "$ip6tables_file"
 
 # replace icmp-port-unreachable with icmp6-port-unreachable
 sed -i 's/icmp-port-unreachable/icmp6-port-unreachable/g' "$ip6tables_file"
