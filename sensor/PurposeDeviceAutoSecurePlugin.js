@@ -19,7 +19,7 @@ const PurposeRulePlugin = require('./PurposeRulePlugin.js');
 class PurposeDeviceAutoSecurePlugin extends PurposeRulePlugin {
   constructor(config) {
     super(config);
-    this.featureName = 'purpose_device_auto_secure';
+    this.featureName = 'purpose_dap';
   }
 }
 
