@@ -769,6 +769,8 @@
     },
     "FastIntelPlugin": {
       "baseURL": "127.0.0.1:9964",
+      "targetListKey": "allcat_bf",
+      "regularInterval": 28800,
       "data": [
         {
           "prefix": "intel_data",
