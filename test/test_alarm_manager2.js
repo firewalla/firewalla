@@ -130,8 +130,8 @@ describe.skip('Test AlarmManager2', function(){
     (
       async() => {
         await fc.syncDynamicFeatures();
-        this.extdata = await rclient.getAsync("ext.guardian.data");
-        await rclient.setAsync("ext.guardian.data", "{\"config\":{\"alarms\":{\"apply\":{\"default\":{\"state\":\"ready\",\"timeout\":1800},\"large_upload\":{\"state\":\"pending\"},\"large_upload_2\":{\"state\":\"pending\"}}}}}");
+        this.extdata = await rclient.getAsync(Constants.REDIS_KEY_MSP_DATA);
+        await rclient.setAsync(Constants.REDIS_KEY_MSP_DATA, "{\"config\":{\"alarms\":{\"apply\":{\"default\":{\"state\":\"ready\",\"timeout\":1800},\"large_upload\":{\"state\":\"pending\"},\"large_upload_2\":{\"state\":\"pending\"}}}}}");
         log.debug("fc.getConfig", await fc.getConfig(true));
       }
     )();
@@ -141,7 +141,7 @@ describe.skip('Test AlarmManager2', function(){
   after((done) => {
     (
       async() => {
-        await rclient.setAsync("ext.guardian.data", this.extdata);
+        await rclient.setAsync(Constants.REDIS_KEY_MSP_DATA, this.extdata);
       }
     )();
     done();
