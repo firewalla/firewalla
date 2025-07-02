@@ -857,7 +857,8 @@
           "increaseLatency": 150
         }
       }
-    }
+    },
+    "SuricataRuleSetSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
