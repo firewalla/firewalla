@@ -858,6 +858,7 @@
         }
       }
     },
+    "PurposeDeviceAutoSecurePlugin":{},
     "SuricataRuleSetSensor": {}
   },
   "hooks": {
