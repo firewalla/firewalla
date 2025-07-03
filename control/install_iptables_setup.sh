@@ -20,7 +20,7 @@ create_filter_table
 
 # ============= NAT =============
 {
-sudo iptables-save -t nat | grep -vE "^:FW_| FW_|^COMMIT"
+sudo iptables-save -t nat | grep -vE "^:FW_| FW_|^COMMIT|-A UPNP_"
 
 cat << EOF
 -N FW_PREROUTING
@@ -298,6 +298,13 @@ installSchCakeModule
 
 sudo iptables-restore "$iptables_file"
 sudo ip6tables-restore "$ip6tables_file"
+
+
+# as allow rules are removed, we remove registered upnp services as well.
+# firerouter_upnp@* services are always running, restart is fine
+sudo rm /var/run/upnp.*.leases
+sudo systemctl restart firerouter_upnp*
+redis-cli hdel sys:scan:nat upnp
 
 
 {

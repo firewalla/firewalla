@@ -167,7 +167,7 @@ async function destroyQoSClass(classId, parent, direction, rateLimit) {
   const device = direction === 'upload' ? 'ifb0' : 'ifb1';
   classId = Number(classId).toString(16);
   
-  await exec(`if sudo tc qdisc show dev ${device} parent ${parent}:0x${classId} | grep -q "qdisc"; then sudo tc qdisc del dev ${device} parent ${parent}:0x${classId}; else true; fi`).catch((err) => {
+  await exec(`sudo tc qdisc del dev ${device} parent ${parent}:0x${classId} 2>/dev/null || true`).catch((err) => {
     log.error(`Failed to destroy child qdisc for ${parent}:0x${classId}, direction ${direction}`, err.message);
   });
   // there is a bug in 4.15 kernel which will cause failure to add a filter with the same handle that was used by a deleted filter: https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1797669

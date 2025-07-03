@@ -1,0 +1,1 @@
+0 3 * * * ( sleep $(( ${RANDOM} * 120 / 32768 ))m ; ASSETSD_PATH=/home/pi/.firewalla/config/assets.suricata /home/pi/firewalla/scripts/update_assets.sh >/tmp/assets_suricata.log 2>&1 )

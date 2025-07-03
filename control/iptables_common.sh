@@ -428,12 +428,12 @@ cat << EOF > "$filter_file"
 -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
 
 # bidirection
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ip_set src -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ip_set dst -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_domain_set src -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_domain_set dst -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_net_set src -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_net_set dst -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ip_set src -m set --match-set monitored_net_set dst,dst -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ip_set dst -m set --match-set monitored_net_set src,src -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_domain_set src -m set --match-set monitored_net_set dst,dst -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_domain_set dst -m set --match-set monitored_net_set src,src -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_net_set src -m set --match-set monitored_net_set dst,dst -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_net_set dst -m set --match-set monitored_net_set src,src -j FW_ACCEPT
 
 -N FW_FW_GLOBAL_ALLOW_OR
 -N FW_FW_GLOBAL_ALLOW_OR_OB
@@ -463,12 +463,12 @@ cat << EOF > "$filter_file"
 -A FW_FW_GLOBAL_ALLOW_OR_OB -m set --match-set allow_ob_net_set dst -j FW_ACCEPT
 
 # bidirection
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set src -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set dst -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set src -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set dst -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set src -j FW_DROP
--A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set dst -j FW_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set src -m set --match-set monitored_net_set dst,dst -j FW_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ip_set dst -m set --match-set monitored_net_set src,src -j FW_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set src -m set --match-set monitored_net_set dst,dst -j FW_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set dst -m set --match-set monitored_net_set src,src -j FW_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set src -m set --match-set monitored_net_set dst,dst -j FW_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set dst -m set --match-set monitored_net_set src,src -j FW_DROP
 
 -N FW_FW_GLOBAL_BLOCK_OR
 -N FW_FW_GLOBAL_BLOCK_OR_OB
@@ -569,16 +569,11 @@ cat << EOF
 EOF
 } > "$iptables_file"
 
-# as allow rules are removed, we remove registered upnp services as well.
-# firerouter_upnp@* services are always running, restart is fine
-sudo rm /var/run/upnp.*.leases
-sudo systemctl restart firerouter_upnp*
-
 {
 sudo ip6tables-save -t filter | grep -vE "^:FW_| FW_|^COMMIT"
 
-# not replacing monitored_net_set
-sed -E '/monitored_net_set/!s/_(ip|domain|net)_set/_\1_set6/' "$filter_file"
+# replace v4 sets later
+cat "$filter_file"
 
 cat << EOF
 # accept traffic to DHCPv6 client, sometimes the reply is a unicast packet and will not be considered as a reply packet of the original broadcast packet by conntrack module
@@ -594,6 +589,12 @@ cat << EOF
 
 EOF
 } > "$ip6tables_file"
+
+# replace v4 sets with v6
+# keep monitored_net_set as it has both v4 & v6
+sed -i -E -e 's/monitored_net_set/PLACEHOLDER/g' \
+          -e 's/_(ip|domain|net)_set/_\1_set6/g' \
+          -e 's/PLACEHOLDER/monitored_net_set/g' "$ip6tables_file"
 
 # replace icmp-port-unreachable with icmp6-port-unreachable
 sed -i 's/icmp-port-unreachable/icmp6-port-unreachable/g' "$ip6tables_file"
