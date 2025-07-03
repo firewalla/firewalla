@@ -143,6 +143,23 @@ displaytime() {
     printf '%02ds\n' $S
 }
 
+displaynumber() {
+  local num=$1
+  if [[ "$num" =~ ^[0-9]+$ ]]; then
+    if (( num < 1000 )); then
+      echo "$num"
+    elif (( num < 1000000 )); then
+      echo "$((num/1000))K"
+    elif (( num < 1000000000 )); then
+      echo "$((num/1000000))M"
+    else
+      echo "$((num/1000000000))G"
+    fi
+  else
+    echo "$num"
+  fi
+}
+
 get_sta_name() {
   m=$1
   result=$(redis-cli --raw hget host:mac:$m name)
@@ -216,8 +233,8 @@ while true; do
                 idle) stad=$sta_idle ;;
                 tx) stad=$sta_tx_rate ;;
                 rx) stad=$sta_rx_rate ;;
-                ctx) stad=$sta_ctx_rate ;;
-                crx) stad=$sta_crx_rate ;;
+                ctx) stad=$(displaynumber $sta_ctx_rate) ;;
+                crx) stad=$(displaynumber $sta_crx_rate) ;;
                 intf) stad=$sta_intf ;;
                 mlo) 
                     if $sta_mlo; then
