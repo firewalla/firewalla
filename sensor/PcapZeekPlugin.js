@@ -225,6 +225,42 @@ class PcapZeekPlugin extends PcapPlugin {
       })
     }
 
+    // because of br_netfilter and DNAT, zeek doesn't get full connection when listen on bridge.
+    // use conntrack for NTP instead
+    // we don't check ntp_redirect here so zeek doesn't have to be restarted on feature/policy change
+    // conntrack -E can't filter reply-sport, so this only covers inbound port forward with 123 as external port
+    restrictFilters["not-ntp"] = `not (udp and port 123)`;
+    conntrack.registerConnHook({dport: 123, protocol: "udp"}, (connInfo) => {
+      const {src, replysrc, sport, replysport, dst, dport, protocol, origPackets, respPackets, origBytes, respBytes, duration} = connInfo;
+      const local_orig = Boolean(sysManager.getInterfaceViaIP(src));
+
+      // DNATed local NTP request, drop
+      if (local_orig && dst != replysrc) return
+
+      bro.processConnData(JSON.stringify(
+        {
+          "id.orig_h": src,
+          "id.resp_h": local_orig ? dst : replysrc, // use replysrc for DNATed connection
+          "id.orig_p": sport,
+          "id.resp_p": local_orig ? dport : replysport,
+          "proto": protocol,
+          "orig_bytes": origBytes,
+          "orig_pkts": origPackets,
+          "resp_bytes": respBytes,
+          "resp_pkts": respPackets,
+          "orig_ip_bytes": origBytes + origPackets * 20,
+          "resp_ip_bytes": respBytes + respPackets * 20,
+          "missed_bytes": 0,
+          "local_orig": local_orig,
+          "local_resp": local_orig ? Boolean(sysManager.getInterfaceViaIP(dst)) : Boolean(sysManager.getInterfaceViaIP(replysrc)),
+          "conn_state": "SF",
+          "duration": duration,
+          "ts": Date.now() / 1000 - duration,
+          "uid": uuid.v4().substring(0, 8)
+        }
+      ))
+    })
+
     const sigFiles = [];
     const sigDir = `${f.getRuntimeInfoFolder()}/zeek_signatures`;
     const files = await fs.readdirAsync(sigDir).catch((err) => []);
