@@ -21,11 +21,13 @@ const f = require('./Firewalla.js')
 const { exec } = require('child-process-promise');
 const Promise = require('bluebird');
 const fs = require('fs');
-Promise.promisifyAll(fs);
+const fsp = require('fs').promises;
 const _ = require('lodash');
 const YAML = require('../vendor_lib/yaml');
 const delay = require('../util/util.js').delay;
-const CUSTOMIZED_RULES_DIR = `${f.getRuntimeInfoFolder()}/suricata_rules`;
+const BASIC_RULRS_DIR = `${f.getRuntimeInfoFolder()}/suricata_basic_rules`;
+const MSP_RULES_DIR = `${f.getRuntimeInfoFolder()}/suricata_msp_rules`;
+const ASSETS_DIR = `${f.getUserConfigFolder()}/assets.suricata`;
 
 class SuricataControl {
   constructor() {
@@ -37,7 +39,11 @@ class SuricataControl {
     if (this.rulesDirWatched)
       return;
     this.rulesDirWatched = true;
-    fs.watch(CUSTOMIZED_RULES_DIR, (eventType, filename) => {
+    fs.watch(BASIC_RULRS_DIR, (eventType, filename) => {
+      if (callback)
+        callback(eventType, filename);
+    });
+    fs.watch(MSP_RULES_DIR, (eventType, filename) => {
       if (callback)
         callback(eventType, filename);
     })
@@ -52,8 +58,8 @@ class SuricataControl {
       log.error(`Failed to copy suricata logrotate config file to /etc/logrotate.d`, err.message);
     });
     log.info("Adding suricata related cron jobs");
-    await fs.unlinkAsync(`${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
-    await fs.symlinkAsync(`${f.getFirewallaHome()}/etc/suricata/crontab`, `${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
+    await fsp.unlink(`${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
+    await fsp.symlink(`${f.getFirewallaHome()}/etc/suricata/crontab`, `${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
     await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
       log.error(`Failed to invoke update_crontab.sh`, err.message);
     })
@@ -64,7 +70,7 @@ class SuricataControl {
       log.error(`Failed to remove suricata logrotate config file from /etc/logrotate.d`, err.message);
     });
     log.info("Removing suricata related cron jobs");
-    await fs.unlinkAsync(`${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
+    await fsp.unlink(`${f.getUserConfigFolder()}/suricata_crontab`).catch((err) => {});
     await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
       log.error(`Failed to invoke update_crontab.sh in removeCronJobs`, err.message);
     });
@@ -77,21 +83,68 @@ class SuricataControl {
   }
 
   async writeSuricataYAML(config) {
-    await fs.writeFileAsync(`${f.getRuntimeInfoFolder()}/suricata/suricata.yaml`, "%YAML 1.1\n---\n" + YAML.stringify(config), {encoding: "utf8"}).catch((err) => {
+    await fsp.writeFile(`${f.getRuntimeInfoFolder()}/suricata/suricata.yaml`, "%YAML 1.1\n---\n" + YAML.stringify(config), {encoding: "utf8"}).catch((err) => {
       log.error(`Failed to write suricata.yaml to ${f.getRuntimeInfoFolder()}/suricata/suricata.yaml`, err.message);
     });
   }
 
-    async prepareAssets() {
-    await exec(`mkdir -p ${CUSTOMIZED_RULES_DIR}`).catch((err) => {});
+  async prepareAssets() {
+    await fsp.mkdir(BASIC_RULRS_DIR, {recursive: true}).catch((err) => {});
+    await fsp.mkdir(MSP_RULES_DIR, {recursive: true}).catch((err) => {});
+    await fsp.mkdir(ASSETS_DIR, {recursive: true}).catch((err) => {});
+    await exec(`mkdir -p ${BASIC_RULRS_DIR}`).catch((err) => {});
+    await exec(`mkdir -p ${MSP_RULES_DIR}`).catch((err) => {});
     // copy other .config files to runtime folder
     await exec(`cp -r ${f.getFirewallaHome()}/etc/suricata/*.config ${f.getRuntimeInfoFolder()}/suricata`).catch((err) => {
       log.error(`Failed to copy .config files`, err.message);
     });
   }
 
-  async getCustomizedRuleFiles() {
-    const ruleFiles = await fs.readdirAsync(CUSTOMIZED_RULES_DIR).catch((err) => []);
+  async addAssetsCronJob() {
+    log.info("Adding suricata assets cron job");
+    await fsp.unlink(`${f.getUserConfigFolder()}/suricata_assets_crontab`).catch((err) => {});
+    await fsp.symlink(`${f.getFirewallaHome()}/etc/suricata/crontab.assets`, `${f.getUserConfigFolder()}/suricata_assets_crontab`).catch((err) => {});
+    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+      log.error(`Failed to invoke update_crontab.sh`, err.message);
+    })
+  }
+
+  async removeAssetsCronJob() {
+    log.info("Removing suricata assets cron job");
+    await fsp.unlink(`${f.getUserConfigFolder()}/suricata_assets_crontab`).catch((err) => {});
+    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+      log.error(`Failed to invoke update_crontab.sh`, err.message);
+    })
+  }
+
+  async addRulesFromAssets(id) {
+    const assetsConf = `${BASIC_RULRS_DIR}/${id}.rules /all/suricata_rules/${id}.rules 644`;
+    const assetsConfPath = `${ASSETS_DIR}/${id}.lst`;
+    await fsp.writeFile(assetsConfPath, assetsConf, {encoding: "utf8"}).catch((err) => {
+      log.error(`Failed to write ${assetsConfPath}`, err.message);
+    });
+    await exec(`ASSETSD_PATH=${ASSETS_DIR} ${f.getFirewallaHome()}/scripts/update_assets.sh`).catch((err) => {
+      log.error(`Failed to invoke update_assets.sh`, err.message);
+    });
+  }
+
+  async deleteRulesFromAssets(id) {
+    const assetsConfPath = `${ASSETS_DIR}/${id}.lst`;
+    await fsp.unlink(assetsConfPath).catch((err) => {});
+    const ruleFilePath = `${BASIC_RULRS_DIR}/${id}.rules`;
+    await fsp.unlink(ruleFilePath).catch((err) => {});
+  }
+
+  async getRuleFiles(source) {
+    const ruleFiles = [];
+    if (!source || source === "basic") {
+      const basicRuleFiles = await fsp.readdir(BASIC_RULRS_DIR).catch((err) => []);
+      ruleFiles.push(...basicRuleFiles.map(filename => `${BASIC_RULRS_DIR}/${filename}`));
+    }
+    if (!source || source === "msp") {
+      const mspRuleFiles = await fsp.readdir(MSP_RULES_DIR).catch((err) => []);
+      ruleFiles.push(...mspRuleFiles.map(filename => `${MSP_RULES_DIR}/${filename}`));
+    }
     return ruleFiles;
   }
 
@@ -127,6 +180,25 @@ class SuricataControl {
     await exec(`sudo systemctl stop suricata`).catch((err) => {
       log.error(`Failed to stop suricata`, err.message);
     });
+  }
+
+  async saveRules(rules, filename, source = 'msp') {
+    const rulesDir = source === 'basic' ? BASIC_RULRS_DIR : MSP_RULES_DIR;
+    const path = `${rulesDir}/${filename}`;
+    await fsp.writeFile(path, rules.join("\n"));
+  }
+
+  async deleteRules(filename, source = 'msp') {
+    const rulesDir = source === 'basic' ? BASIC_RULRS_DIR : MSP_RULES_DIR;
+    const path = `${rulesDir}/${filename}`;
+    await fsp.unlink(path).catch((err) => {})
+  }
+
+  async cleanupRules(source = 'msp') {
+    const ruleFiles = await this.getRuleFiles(source);
+    for (const ruleFile of ruleFiles) {
+      await fsp.unlink(ruleFile);
+    }
   }
 }
 

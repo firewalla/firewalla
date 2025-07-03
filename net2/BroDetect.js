@@ -1006,6 +1006,12 @@ class BroDetect {
         return
       }
 
+      // ignore any traffic originated or to walla itself
+      if (fam == 4 && (sysManager.isMyIP(orig) || sysManager.isMyIP(resp))
+       || fam == 6 && (sysManager.isMyIP6(orig) || sysManager.isMyIP6(resp))) {
+        return
+      }
+
       let intfInfo = sysManager.getInterfaceViaIP(lhost, fam);
       let dstIntfInfo = localFlow && sysManager.getInterfaceViaIP(dhost, fam);
       // do not process traffic between devices in the same network unless bridge flag is set in log
@@ -1037,12 +1043,6 @@ class BroDetect {
       // TODO: this condition check does not cover the case if both ends are VPN devices, but this rarely happens
       if (localFlow && !reverseLocal && (origMac && sysManager.isMyMac(origMac) || isIdentityIntf && respMac))
         return;
-
-      // ignore any traffic originated or to walla itself
-      if (fam == 4 && (sysManager.isMyIP(orig) || sysManager.isMyIP(resp))
-       || fam == 6 && (sysManager.isMyIP6(orig) || sysManager.isMyIP6(resp))) {
-        return
-      }
 
       let localType = TYPE_MAC;
       let realLocal = null;

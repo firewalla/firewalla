@@ -1001,8 +1001,8 @@ class VPNClient {
             resolve({ result: true });
           } else {
             const now = Date.now();
-            if (now - startTime > 30000) {
-              log.error(`Failed to establish tunnel for VPN client ${this.profileId} in 30 seconds`);
+            if (now - startTime > 60000) {
+              log.error(`Failed to establish tunnel for VPN client ${this.profileId} in 60 seconds`);
               clearInterval(establishmentTask);
               const errMsg = await this.getMessage();
               resolve({ result: false, errMsg: errMsg });
