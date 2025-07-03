@@ -178,7 +178,11 @@
       "firstScan": 120
     },
     "OpenPortByInboundFlowSensor": {},
-    "BoneSensor": {},
+    "BoneSensor": {
+      "checkInMinInterval": 900,
+      "checkInMaxInterval": 3600,
+      "hashsetConfigInterval": 86400
+    },
     "DNSCryptPlugin": {
       "refreshInterval": 1440
     },
@@ -765,6 +769,8 @@
     },
     "FastIntelPlugin": {
       "baseURL": "127.0.0.1:9964",
+      "targetListKey": "allcat_bf",
+      "regularInterval": 28800,
       "data": [
         {
           "prefix": "intel_data",
@@ -851,7 +857,9 @@
           "increaseLatency": 150
         }
       }
-    }
+    },
+    "PurposeDeviceAutoSecurePlugin":{},
+    "SuricataRuleSetSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -1000,6 +1008,7 @@
     "local_domain": true,
     "external_scan": false,
     "alarm_openport": false,
+    "alarm_vpnclient_internet_pause": false,
     "device_service_scan": true,
     "device_detect": true,
     "wireguard": false,

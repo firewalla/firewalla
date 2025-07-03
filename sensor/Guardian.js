@@ -48,6 +48,7 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
 const tokenManager = require('../util/FWTokenManager.js');
+const { REDIS_KEY_MSP_DATA } = require('../net2/Constants.js');
 const execAsync = require('child-process-promise').exec;
 
 module.exports = class {
@@ -58,7 +59,7 @@ module.exports = class {
     this.configRegionKey = `ext.guardian.socketio.region${suffix}`;
     this.configBizModeKey = `ext.guardian.business${suffix}`; // this key save msp instance basic info, e.g. id/name/plan
     this.configAdminStatusKey = `ext.guardian.socketio.adminStatus${suffix}`;
-    this.mspDataKey = `ext.guardian.data${suffix}`; // this key save msp user's info, e.g. targetlists
+    this.mspDataKey = `${REDIS_KEY_MSP_DATA}${suffix}`; // this key save msp user's info, e.g. targetlists
     this.liveTransportCache = {};
     setInterval(() => {
       this.cleanupLiveTransport()
