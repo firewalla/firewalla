@@ -686,6 +686,7 @@ module.exports = class FlowMonitor {
     }
 
     let alarm = new profileAlarmMap[type](copy.ts, localName, remoteName || copy.rh, {
+      "p.device.mac": copy.mac,
       "p.device.id": localName,
       "p.device.name": localName,
       "p.device.ip": copy.lh,

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -36,6 +36,7 @@ const fc = require('../net2/config.js')
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const execAsync = require('child-process-promise').exec
+const _ = require('lodash');
 
 const mode = require('../net2/Mode.js');
 let HostManager = require('../net2/HostManager.js');
@@ -45,9 +46,6 @@ const Constants = require('../net2/Constants.js');
 
 const CLOUD_URL_KEY = "sys:bone:url";
 const FORCED_CLOUD_URL_KEY = "sys:bone:url:forced";
-
-const CHECK_IN_MIN_INTERVAL = 900 * 1000;
-const CHECK_IN_MAX_INTERVAL = 3600 * 4 * 1000;
 
 
 class BoneSensor extends Sensor {
@@ -61,7 +59,7 @@ class BoneSensor extends Sensor {
           }).catch((err) => {
             log.error("Scheduled checkin failed", err);
           }).then(() => {
-            this.nextInterval = Math.min(this.nextInterval * 2, CHECK_IN_MAX_INTERVAL);
+            this.nextInterval = Math.min(this.nextInterval * 2, (this.config.checkInMaxInterval || 3600 * 4) * 1000);
             this.checkinTask = null;
             this.scheduledJob();
           });
@@ -288,7 +286,7 @@ class BoneSensor extends Sensor {
 
   run() {
     // checkin interval increases exponentially from min to max
-    this.nextInterval = CHECK_IN_MIN_INTERVAL;
+    this.nextInterval = (this.config.checkinInterval || 900) * 1000;
     this.scheduledJob();
 
     sem.on("CloudURLUpdate", async () => {
@@ -315,6 +313,24 @@ class BoneSensor extends Sensor {
         message: ""
       });
     });
+
+    this.loadHashsetConfig();
+    setInterval(() => {
+      this.loadHashsetConfig();
+    }, (this.config.hashsetConfigInterval || 24 * 3600) * 1000);
+  }
+
+  async loadHashsetConfig() {
+    try {
+      const result = await Bone.hashsetAsync('features:config')
+      if (!_.isEmpty(JSON.stringify(result))) {
+        await rclient.setAsync('sys:bone:config:features', result);
+        await pclient.publishAsync('config:hashset:updated', result)
+        log.info("Hashset config updated successfully");
+      }
+    } catch (err) {
+      log.error("Failed to get hashset config", err);
+    }
   }
 
   // make config redis-friendly..

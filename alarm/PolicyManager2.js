@@ -3521,6 +3521,31 @@ class PolicyManager2 {
       });
     }, 5000);
   }
+
+  async getPurposeRelatedPolicies(purposeName, deviceId) {
+    const PURPOSE_PREFIX = "purpose_";
+    let result = [];
+    if (!purposeName || !purposeName.startsWith(PURPOSE_PREFIX))
+      return result;
+
+    const rules = (await this.loadActivePoliciesAsync({ includingDisabled: 1 }))
+      .filter(r => r.purpose === purposeName.slice(PURPOSE_PREFIX.length))
+    
+    if (deviceId) {
+      result = rules.filter(rule => {
+        const isScopeMatch = Array.isArray(rule.scope) && rule.scope.indexOf(deviceId) !== -1
+        const isDirectMacMatch = rule.type === 'mac' && (rule.target === deviceId);
+        const isGuidMatch = (rule.guids && rule.guids.length && rule.guids[0] === deviceId);
+        return isScopeMatch || isDirectMacMatch || isGuidMatch
+      })
+    } else {
+      result = rules.slice()
+    }
+    // old first
+    return result.sort((a, b) => a.timestamp - b.timestamp)
+  }
+
 }
+
 
 module.exports = PolicyManager2;

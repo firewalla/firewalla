@@ -85,30 +85,32 @@ let Sensor = class {
 
   }
 
-  async globalOn() { }
+  async globalOn(featureName) { }
 
-  async globalOff() { }
+  async globalOff(featureName) { }
 
   hookFeature(featureName) {
-    featureName = featureName || this.featureName
-    this.featureName = featureName;
+    featureName = featureName || this.featureName;
+    if (!this.featureName) {
+      this.featureName = featureName;
+    }
 
     sem.once('IPTABLES_READY', async () => {
-      await lock.acquire(`${this.featureName}`, async () => {
+      await lock.acquire(`${featureName}`, async () => {
         if (fc.isFeatureOn(featureName)) try {
           log.info("Enabling feature", featureName);
-          await this.globalOn();
+          await this.globalOn(featureName);
           log.debug('Enabled feature', featureName);
         } catch(err) {
           log.error(`Failed to enable ${featureName}, reverting...`, err)
           try {
-            await this.globalOff();
+            await this.globalOff(featureName);
           } catch(err) {
             log.error(`Failed to revert ${featureName}`, err)
           }
         }
         else try {
-          await this.globalOff();
+          await this.globalOff(featureName);
         } catch(err) {
           log.error(`Failed to disable ${featureName}`, err)
         }
@@ -117,20 +119,20 @@ let Sensor = class {
         if (feature !== featureName) {
           return;
         }
-        await lock.acquire(`${this.featureName}`, async () => {
+        await lock.acquire(`${featureName}`, async () => {
           log.info(`${status ? 'Enabling' : 'Disabling'} feature ${featureName}`);
           if (status) try {
-            await this.globalOn();
+            await this.globalOn(featureName);
           } catch(err) {
             log.error(`Failed to enable ${featureName}, reverting...`, err)
             try {
-              await this.globalOff();
+              await this.globalOff(featureName);
             } catch(err) {
               log.error(`Failed to revert ${featureName}`, err)
             }
           }
           else try {
-            await this.globalOff();
+            await this.globalOff(featureName);
           } catch(err) {
             log.error(`Failed to disable ${featureName}`, err)
           }
@@ -138,10 +140,10 @@ let Sensor = class {
         })
       })
 
-      log.debug('Global hooks registered for', this.featureName)
+      log.debug('Global hooks registered for', featureName)
 
       try {
-        log.debug('running job for', this.featureName)
+        log.debug('running job for', featureName)
         await this.job();
       } catch(err) {
         log.error(`Failed to run job of ${featureName}`, err)
@@ -150,7 +152,7 @@ let Sensor = class {
         if (this.timer) clearInterval(this.timer);
         this.timer = setInterval(async () => {
           try {
-            log.debug('running job for', this.featureName)
+            log.debug('running job for', featureName)
             await this.job();
           } catch(err) {
             log.error(`Failed to run job of ${featureName}`, err)
@@ -159,23 +161,6 @@ let Sensor = class {
       }
 
     });
-  }
-
-  async setFeatureConfig(config) {
-    return rclient.hsetAsync("sys:features:config", this.featureName, JSON.stringify(config));
-  }
-
-  async getFeatureConfig() {
-    const config = await rclient.hgetAsync("sys:features:config", this.featureName);
-      try {
-        if(config) {
-          return JSON.parse(config);
-        }
-        return {};
-      } catch(err) {
-        log.error(`Failed to parse config of feature ${this.featureName}, err:`, err);
-        return {};
-      }
   }
 
   async job() { }

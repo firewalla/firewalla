@@ -178,6 +178,7 @@ class GuardianSensor extends Sensor {
       throw err;
     }
     await guardian.reset();
+    await pclient.publishAsync('config:msp:updated', JSON.stringify(null));
     await rclient.zremAsync(guardianListKey, guardian.name);
     delete this.guardianMap[guardian.name];
   }
