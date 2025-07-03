@@ -25,6 +25,9 @@ class PcapSuricataPlugin extends PcapPlugin {
     suricataControl.watchRulesDir((eventType, filename) => {
       if (!this.isEnabled())
         return;
+      // ignore files that may be created by update_assets.sh temporarily, or created by other tools like vim
+      if (!filename || !filename.endsWith(".rules"))
+        return;
       log.info(`${filename} under rules directory is ${eventType}, schedule restarting suricata`);
       if (this.restartTask)
         clearTimeout(this.restartTask);
