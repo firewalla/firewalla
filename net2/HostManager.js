@@ -1271,7 +1271,7 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async getMspData(json) {
-    const data = await rclient.getAsync("ext.guardian.data");
+    const data = await rclient.getAsync(Constants.REDIS_KEY_MSP_DATA);
     if(!data) {
       return;
     }

@@ -41,8 +41,16 @@ class PcapSuricataPlugin extends PcapPlugin {
     await suricataControl.cleanupRuntimeConfig();
     await suricataControl.writeSuricataYAML(yaml);
     await suricataControl.prepareAssets();
+    await suricataControl.addAssetsCronJob();
     const listenInterfaces = await this.calculateListenInterfaces();
     await fs.writeFileAsync(`${f.getRuntimeInfoFolder()}/suricata/listen_interfaces.rc`, `LISTEN_INTERFACES="${Object.keys(listenInterfaces).join(" ")}"`, {encoding: "utf8"});
+    const ruleFiles = await suricataControl.getRuleFiles();
+    if (_.isEmpty(ruleFiles)) {
+      log.info("No rule file is found, stopping suricata ...");
+      await suricataControl.stop();
+      await suricataControl.removeCronJobs();
+      return;
+    }
     await suricataControl.restart().then(() => suricataControl.addCronJobs()).then(() => {
       log.info("Suricata restarted");
     });
@@ -51,6 +59,7 @@ class PcapSuricataPlugin extends PcapPlugin {
   async stop() {
     await suricataControl.stop();
     await suricataControl.removeCronJobs();
+    await suricataControl.removeAssetsCronJob();
   }
 
   getLocalSubnets() {
@@ -114,7 +123,7 @@ class PcapSuricataPlugin extends PcapPlugin {
       Array.prototype.push.apply(finalConfig["af-packet"], afpacketConfigs);
     if (finalConfig && finalConfig["pfring"] && _.isArray(finalConfig["pfring"]))
       Array.prototype.push.apply(finalConfig["pfring"], pfringConfigs);
-    const ruleFiles = await suricataControl.getCustomizedRuleFiles();
+    const ruleFiles = await suricataControl.getRuleFiles();
     if (!finalConfig["rule-files"])
       finalConfig["rule-files"] = [];
     Array.prototype.push.apply(finalConfig["rule-files"], ruleFiles);

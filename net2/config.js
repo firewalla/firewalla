@@ -55,7 +55,8 @@ const writeFileAsync = fs.promises.writeFile
 
 const { rrWithErrHandling } = require('../util/requestWrapper.js')
 
-const _ = require('lodash')
+const _ = require('lodash');
+const { REDIS_KEY_MSP_DATA } = require("./Constants.js");
 
 async function initVersionConfig() {
   try {
@@ -268,7 +269,7 @@ function _parseMspConfig(mspdata) {
 
 async function getMspConfig(field = '', reload = false) {
   if (reload) {
-    const mspdata = JSON.parse(await rclient.getAsync('ext.guardian.data'));
+    const mspdata = JSON.parse(await rclient.getAsync(REDIS_KEY_MSP_DATA));
     _parseMspConfig(mspdata);
   }
   if (field) {
