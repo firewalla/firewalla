@@ -31,11 +31,6 @@ if [[ -f $SURICATA_CRONTAB ]]; then
   cat $SURICATA_CRONTAB >> $TMP_CRONTAB_FILE
 fi
 
-SC_ASSETS_CRONTAB=$FIREWALLA_HIDDEN/config/suricata_assets_crontab
-if [[ -f $SC_ASSETS_CRONTAB ]]; then
-  cat $SC_ASSETS_CRONTAB >> $TMP_CRONTAB_FILE
-fi
-
 FWAPC_CRONTAB=$FIREWALLA_HIDDEN/config/fwapc_crontab
 if [[ -f $FWAPC_CRONTAB ]]; then
   cat $FWAPC_CRONTAB >> $TMP_CRONTAB_FILE
