@@ -71,6 +71,9 @@ function ll2 {
 function ll3 {
   redis-cli publish "TO.FireApi" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "toProcess":"FireApi", "level":"'${2:-info}'"}'
 }
+function lld3 {
+  redis-cli publish "TO.FireApi" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "toProcess":"FireApi", "level":"'${2:-debug}'"}'
+}
 function ll6 {
   redis-cli publish "TO.FireRouter" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "level":"'${2:-info}'"}'
 }
@@ -266,4 +269,10 @@ function lap_patch() {
 
   local payload=$(jq -n --arg mac "$mac" --arg version "$version" '{"uid": $mac, "version": $version}')
   curl -XPOST localhost:8841/v1/control/patch_version -d "$payload" -H "Content-Type:application/json"
+}
+
+function lap_support() {
+  local mac=$1
+  local payload=$(jq -n --arg mac "$mac" '{"uid": $mac}')
+  curl 'http://localhost:8841/v1/control/support' -H 'Content-Type: application/json' -d "$payload"
 }
