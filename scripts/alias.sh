@@ -13,6 +13,7 @@ alias t4='tail -F ~/.forever/blue.log'
 alias t5='tail -F ~/.forever/firereset.log'
 alias t6='tail -F ~/.forever/router.log'
 alias t7='tail -F ~/.forever/fwapc.log'
+alias t8='tail -F ~/.forever/dap.log'
 alias tt0='tail -F ~/logs/FireMain.log'
 alias tt00='tail -F ~/logs/Fire*.log'
 alias tt1='tail -F ~/logs/FireKick.log'
@@ -26,6 +27,8 @@ alias l4='less -R ~/.forever/blue.log'
 alias l5='less -R ~/.forever/firereset.log'
 alias l6='less -R ~/.forever/router.log'
 alias l7='less -R ~/.forever/fwapc.log'
+alias l8='less -R ~/.forever/dap.log'
+
 alias frr='forever restartall'
 alias fr0='forever restart 0'
 alias fr1='forever restart 1'
@@ -40,6 +43,7 @@ alias sr4='sudo systemctl restart firehttpd'
 alias sr5='sudo systemctl restart firereset'
 alias sr6='sudo systemctl restart firerouter; source /home/pi/firerouter/bin/common; init_network_config'
 alias sr7='sudo systemctl restart fwapc'
+alias sr8='sudo systemctl restart fwdap'
 alias srb4='sudo systemctl restart bitbridge4'
 alias srb6='sudo systemctl restart bitbridge6'
 alias ss7='sudo systemctl stop frpc.support.service'
@@ -70,6 +74,9 @@ function ll2 {
 }
 function ll3 {
   redis-cli publish "TO.FireApi" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "toProcess":"FireApi", "level":"'${2:-info}'"}'
+}
+function lld3 {
+  redis-cli publish "TO.FireApi" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "toProcess":"FireApi", "level":"'${2:-debug}'"}'
 }
 function ll6 {
   redis-cli publish "TO.FireRouter" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "level":"'${2:-info}'"}'
@@ -266,4 +273,10 @@ function lap_patch() {
 
   local payload=$(jq -n --arg mac "$mac" --arg version "$version" '{"uid": $mac, "version": $version}')
   curl -XPOST localhost:8841/v1/control/patch_version -d "$payload" -H "Content-Type:application/json"
+}
+
+function lap_support() {
+  local mac=$1
+  local payload=$(jq -n --arg mac "$mac" '{"uid": $mac}')
+  curl 'http://localhost:8841/v1/control/support' -H 'Content-Type: application/json' -d "$payload"
 }
