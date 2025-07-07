@@ -19,7 +19,6 @@ const log = require("./logger.js")(__filename);
 const f = require('./Firewalla.js')
 
 const { exec } = require('child-process-promise');
-const Promise = require('bluebird');
 const fs = require('fs');
 const fsp = require('fs').promises;
 const _ = require('lodash');
@@ -27,7 +26,6 @@ const YAML = require('../vendor_lib/yaml');
 const delay = require('../util/util.js').delay;
 const BASIC_RULRS_DIR = `${f.getRuntimeInfoFolder()}/suricata_basic_rules`;
 const MSP_RULES_DIR = `${f.getRuntimeInfoFolder()}/suricata_msp_rules`;
-const ASSETS_DIR = `${f.getUserConfigFolder()}/assets.suricata`;
 
 class SuricataControl {
   constructor() {
@@ -91,7 +89,8 @@ class SuricataControl {
   async prepareAssets() {
     await fsp.mkdir(BASIC_RULRS_DIR, {recursive: true}).catch((err) => {});
     await fsp.mkdir(MSP_RULES_DIR, {recursive: true}).catch((err) => {});
-    await fsp.mkdir(ASSETS_DIR, {recursive: true}).catch((err) => {});
+    await fsp.mkdir(`${f.getRuntimeInfoFolder()}/suricata`, {recursive: true}).catch((err) => {});
+    await fsp.mkdir(f.getExtraAssetsDir(), {recursive: true}).catch((err) => {});
     await exec(`mkdir -p ${BASIC_RULRS_DIR}`).catch((err) => {});
     await exec(`mkdir -p ${MSP_RULES_DIR}`).catch((err) => {});
     // copy other .config files to runtime folder
@@ -100,36 +99,19 @@ class SuricataControl {
     });
   }
 
-  async addAssetsCronJob() {
-    log.info("Adding suricata assets cron job");
-    await fsp.unlink(`${f.getUserConfigFolder()}/suricata_assets_crontab`).catch((err) => {});
-    await fsp.symlink(`${f.getFirewallaHome()}/etc/suricata/crontab.assets`, `${f.getUserConfigFolder()}/suricata_assets_crontab`).catch((err) => {});
-    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
-      log.error(`Failed to invoke update_crontab.sh`, err.message);
-    })
-  }
-
-  async removeAssetsCronJob() {
-    log.info("Removing suricata assets cron job");
-    await fsp.unlink(`${f.getUserConfigFolder()}/suricata_assets_crontab`).catch((err) => {});
-    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
-      log.error(`Failed to invoke update_crontab.sh`, err.message);
-    })
-  }
-
   async addRulesFromAssets(id) {
     const assetsConf = `${BASIC_RULRS_DIR}/${id}.rules /all/suricata_rules/${id}.rules 644`;
-    const assetsConfPath = `${ASSETS_DIR}/${id}.lst`;
+    const assetsConfPath = `${f.getExtraAssetsDir()}/${id}.lst`;
     await fsp.writeFile(assetsConfPath, assetsConf, {encoding: "utf8"}).catch((err) => {
       log.error(`Failed to write ${assetsConfPath}`, err.message);
     });
-    await exec(`ASSETSD_PATH=${ASSETS_DIR} ${f.getFirewallaHome()}/scripts/update_assets.sh`).catch((err) => {
+    await exec(`ASSETSD_PATH=${f.getExtraAssetsDir()} ${f.getFirewallaHome()}/scripts/update_assets.sh`).catch((err) => {
       log.error(`Failed to invoke update_assets.sh`, err.message);
     });
   }
 
   async deleteRulesFromAssets(id) {
-    const assetsConfPath = `${ASSETS_DIR}/${id}.lst`;
+    const assetsConfPath = `${f.getExtraAssetsDir()}/${id}.lst`;
     await fsp.unlink(assetsConfPath).catch((err) => {});
     const ruleFilePath = `${BASIC_RULRS_DIR}/${id}.rules`;
     await fsp.unlink(ruleFilePath).catch((err) => {});

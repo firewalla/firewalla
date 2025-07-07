@@ -293,7 +293,7 @@ class APCMsgSensor extends Sensor {
     const result = await WlanVendorInfo.lookupWlanVendors([{mac: mac, vendor: vendor}]);
     if (result && result.size == 1) {
       wlanVendors = WlanVendorInfo.getVendorFromVendorMap(result, mac);
-      if (wlanVendors.length > 0) {
+      if (wlanVendors && wlanVendors.length > 0) {
         await hostTool.setWlanVendorToCache(mac, wlanVendors);
         log.info(`update wlanVendor info, mac:${mac}; vendorId:${vendor} vendorName:${wlanVendors}`);
       } else {
