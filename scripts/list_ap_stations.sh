@@ -144,20 +144,20 @@ displaytime() {
 }
 
 displaynumber() {
-  local num=$1
-  if [[ "$num" =~ ^[0-9]+$ ]]; then
-    if (( num < 1000 )); then
-      echo "$num"
-    elif (( num < 1000000 )); then
-      echo "$((num/1000))K"
-    elif (( num < 1000000000 )); then
-      echo "$((num/1000000))M"
-    else
-      echo "$((num/1000000000))G"
-    fi
-  else
-    echo "$num"
-  fi
+  local number=$1
+  local units=("B" "K" "M" "G")
+  local unit_index=0
+
+  while [[ $(echo "$number >= 1000" | bc) -eq 1 && $unit_index -lt $((${#units[@]} - 1)) ]]; do
+    number=$(echo "scale=3; $number / 1000" | bc)
+    ((unit_index++))
+  done
+
+  # Format the number to ensure the total output string is no more than 5 characters
+  local formatted_number=$(printf "%.3g" "$number")
+  formatted_number=${formatted_number:0:4}  # Truncate to 4 characters (including dot)
+
+  printf "%s%s\n" "${formatted_number%.}" "${units[unit_index]}"
 }
 
 get_sta_name() {
