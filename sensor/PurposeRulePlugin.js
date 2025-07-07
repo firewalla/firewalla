@@ -37,13 +37,14 @@ class PurposeRulePlugin extends Sensor {
 
   async run() {
     const dynamicFeatures = fc.getDynamicFeatures();
-    if (dynamicFeatures && dynamicFeatures.hasOwnProperty(this.featureName) && dynamicFeatures[this.featureName] == "1") {
-      PurposeRulePlugin.purposeStates[this.featureName] = true;
+    if (dynamicFeatures && dynamicFeatures.hasOwnProperty(this.featureName)) {
+      PurposeRulePlugin.purposeStates[this.featureName] = dynamicFeatures[this.featureName] == "1" ? true : false;
     } else {
-      PurposeRulePlugin.purposeStates[this.featureName] = false;
+      // the default value of state in policy is considered true if policy is not set in system policy.
+      PurposeRulePlugin.purposeStates[this.featureName] = true;
     }
 
-    extensionManager.registerExtension(this.featureName, this, {
+    extensionManager.registerExtension(this.featureNameInPolicy, this, {
       applyPolicy: this.applyPolicy
     });
 
@@ -104,21 +105,24 @@ class PurposeRulePlugin extends Sensor {
     if (!device) {
       return false;
     }
-    const state = await device.getPolicyAsync(this.featureName);
-    if (state && state.enabled) {
-      return true;
+    const dapAdmin = await device.getPolicyAsync(this.featureNameInPolicy);
+    if (dapAdmin && dapAdmin.hasOwnProperty('state') && typeof dapAdmin.state === 'boolean') {
+      return dapAdmin.state;
     }
-    return false;
+    // the default value of state in policy is considered true if policy is not set.
+    return true;
   }
 
   // will be called only when the global option is enabled
   async applyPolicy(host, id, policy) {
-    if (!host || (host.constructor.name !== "Host" && host.constructor.name !== "WGPeer")) {
+    if (!host || (host.constructor.name !== "Host" && host.constructor.name !== "WGPeer") || !policy) {
       return;
     }
     const deviceId = host.getGUID();
-    const state = (policy && policy.enabled) ? policy.enabled : false;
-    log.info(`Applying purpose: ${this.featureName}, state: ${policy.enabled} for host ${deviceId} and global state: ${PurposeRulePlugin.purposeStates[this.featureName]}`);
+    // the default value of state in policy is considered true if policy is not set in host policy.
+    const state = (policy.state !== undefined &&  typeof policy.state === 'boolean') ? policy.state : true;
+
+    log.info(`Applying purpose: ${this.featureNameInPolicy}, state: ${policy.state} for host ${deviceId} and global state: ${PurposeRulePlugin.purposeStates[this.featureName]}`);
     const PolicyManager2 = require('../alarm/PolicyManager2.js');
     const pm2 = new PolicyManager2();
     let rules = await pm2.getPurposeRelatedPolicies(this.featureName, deviceId);

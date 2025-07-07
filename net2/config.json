@@ -1050,6 +1050,7 @@
     "app_time_usage": true,
     "fast_speedtest": true,
     "policy_disturb": true,
+    "purpose_dap": true,
     "dap": false
   },
   "hiddenFeatures": [
