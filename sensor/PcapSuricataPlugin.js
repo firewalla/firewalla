@@ -44,7 +44,6 @@ class PcapSuricataPlugin extends PcapPlugin {
     await suricataControl.cleanupRuntimeConfig();
     await suricataControl.writeSuricataYAML(yaml);
     await suricataControl.prepareAssets();
-    await suricataControl.addAssetsCronJob();
     const listenInterfaces = await this.calculateListenInterfaces();
     await fs.writeFileAsync(`${f.getRuntimeInfoFolder()}/suricata/listen_interfaces.rc`, `LISTEN_INTERFACES="${Object.keys(listenInterfaces).join(" ")}"`, {encoding: "utf8"});
     const ruleFiles = await suricataControl.getRuleFiles();
@@ -62,7 +61,6 @@ class PcapSuricataPlugin extends PcapPlugin {
   async stop() {
     await suricataControl.stop();
     await suricataControl.removeCronJobs();
-    await suricataControl.removeAssetsCronJob();
   }
 
   getLocalSubnets() {

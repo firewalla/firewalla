@@ -608,6 +608,7 @@ class ACLAuditLogPlugin extends Sensor {
       return
     }
 
+    record.mac = mac;
     record.ct = record.ct || 1;
 
     this.writeBuffer(record);
