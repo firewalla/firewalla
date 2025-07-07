@@ -290,6 +290,9 @@ async function run() {
     // ensure getHosts is called after Iptables is flushed
     await hostManager.getHostsAsync()
 
+    const qos = require('../control/QoS.js');
+    await qos.resetPolicyQoSHandlerMap();
+
     let PolicyManager2 = require('../alarm/PolicyManager2.js');
     let pm2 = new PolicyManager2();
     await pm2.setupPolicyQueue()
