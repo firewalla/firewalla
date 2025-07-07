@@ -29,7 +29,7 @@ const { fileExist, fileRemove } = require('../util/util.js');
 class DapSensor extends Sensor {
   constructor(config) {
     super(config);
-    this.featureName = 'dap';
+    this.featureName = 'purpose_dap';
   }
 
   async run() {
