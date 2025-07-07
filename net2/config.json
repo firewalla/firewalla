@@ -859,6 +859,7 @@
       }
     },
     "PurposeDeviceAutoSecurePlugin":{},
+    "DapSensor": {},
     "SuricataRuleSetSensor": {}
   },
   "hooks": {
@@ -1048,7 +1049,8 @@
     "mesh_vpn": false,
     "app_time_usage": true,
     "fast_speedtest": true,
-    "policy_disturb": true
+    "policy_disturb": true,
+    "dap": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
