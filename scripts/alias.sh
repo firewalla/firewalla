@@ -280,3 +280,5 @@ function lap_support() {
   local payload=$(jq -n --arg mac "$mac" '{"uid": $mac}')
   curl 'http://localhost:8841/v1/control/support' -H 'Content-Type: application/json' -d "$payload"
 }
+
+alias dap='/home/pi/.firewalla/run/assets/dap'
