@@ -432,6 +432,9 @@ class PolicyManager2 {
     if (!merged.hasOwnProperty('appTimeUsage') || _.isEmpty(merged.appTimeUsage)) {
       await rclient.hdelAsync(policyKey, "appTimeUsage");
     }
+    if (!merged.hasOwnProperty('disturbMethod') || _.isEmpty(merged.disturbMethod)) {
+      await rclient.hdelAsync(policyKey, "disturbMethod");
+    }
   }
 
   async savePolicyAsync(policy) {
