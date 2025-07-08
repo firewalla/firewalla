@@ -594,6 +594,11 @@ class SuricataNoticeAlarm extends Alarm {
   getExceptionAlarmType() {
     return "ALARM_INTEL";
   }
+
+  // suppress notification of intel alarm should also apply to suricata notice alarm
+  getNotifPolicyKey() {
+    return "ALARM_INTEL";
+  }
 }
 
 class VPNClientConnectionAlarm extends Alarm {
