@@ -64,7 +64,7 @@ class SuricataDetect {
   }
 
   async processAlertEvent(e) {
-    // Check if suricata_alarm feature is enabled
+    // Check if cyber_security feature is enabled
     if (!fc.isFeatureOn('cyber_security')) {
       return;
     }
