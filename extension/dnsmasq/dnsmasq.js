@@ -1582,6 +1582,7 @@ module.exports = class DNSMASQ {
       }
       await this._manipulate_ipv4_iptables_rule(intf, '-A');
       this.networkFailCountMap[uuid] = 0;
+      await this._remove_conntrack_entries(intf, 4);
     }
   }
 
@@ -1594,7 +1595,21 @@ module.exports = class DNSMASQ {
         return;
       }
       await this._manipulate_ipv6_iptables_rule(intf, '-A');
+      await this._remove_conntrack_entries(intf, 6);
     }
+  }
+ // remove existing conntrack so everything onward should be redirected to dnsmasq
+  async _remove_conntrack_entries(intf, fam = 4) {
+    log.verbose(`Removing conntrack entries for ${intf.name} family ${fam}`);
+    // remove existing conntrack so everything onward should be redirected to dnsmasq
+    const keys = [`ip${fam}_addresses`, `ip${fam}_masks`]
+    if (intf[keys[0]])
+      await Promise.all(intf[keys[0]].map(async (ip, i) => {
+        const cmd = `sudo conntrack -D -f ipv4 -p udp --dport 53 --src ${ip} --mask-src ${intf[keys[1]][i]}`;
+        return execAsync(cmd).catch(err => {
+          log.debug(`Failed to remove conntrack entry for ${intf.name}`, err.message)
+        })
+      }))
   }
 
   async _manipulate_ipv4_iptables_rule(intf, action) {
@@ -2195,7 +2210,9 @@ module.exports = class DNSMASQ {
           if (this.networkFailCountMap[uuid] > 2) {
             log.info(`DNS of network ${intf.name} is restored, add back DNS redirect rules ...`);
             await this._manipulate_ipv4_iptables_rule(intf, '-A');
+            await this._remove_conntrack_entries(intf, 4);
             await this._manipulate_ipv6_iptables_rule(intf, '-A');
+            await this._remove_conntrack_entries(intf, 6);
           }
           this.networkFailCountMap[uuid] = 0;
         } else {
@@ -2213,7 +2230,12 @@ module.exports = class DNSMASQ {
           if (this.networkFailCountMap[uuid] > 2) {
             log.info(`DNS of network ${intf.name} is unreachable, remove DNS redirect rules ...`);
             await this._manipulate_ipv4_iptables_rule(intf, '-D');
+            // only remove conntrack entries once on status change
+            if (this.networkFailCountMap[uuid] == 3)
+              await this._remove_conntrack_entries(intf, 4);
             await this._manipulate_ipv6_iptables_rule(intf, '-D');
+            if (this.networkFailCountMap[uuid] == 3)
+              await this._remove_conntrack_entries(intf, 6);
           }
         }
       }).catch((err) => {
