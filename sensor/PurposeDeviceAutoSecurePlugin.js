@@ -19,8 +19,8 @@ const PurposeRulePlugin = require('./PurposeRulePlugin.js');
 class PurposeDeviceAutoSecurePlugin extends PurposeRulePlugin {
   constructor(config) {
     super(config);
-    this.featureName = 'purpose_dap';
-    this.featureNameInPolicy = 'dapAdmin';
+    this.featureName = 'dap';
+    this.policyKey = 'dapAdmin';
   }
 }
 

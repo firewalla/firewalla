@@ -36,15 +36,8 @@ class PurposeRulePlugin extends Sensor {
   }
 
   async run() {
-    const dynamicFeatures = fc.getDynamicFeatures();
-    if (dynamicFeatures && dynamicFeatures.hasOwnProperty(this.featureName)) {
-      PurposeRulePlugin.purposeStates[this.featureName] = dynamicFeatures[this.featureName] == "1" ? true : false;
-    } else {
-      // the default value of state in policy is considered true if policy is not set in system policy.
-      PurposeRulePlugin.purposeStates[this.featureName] = true;
-    }
-
-    extensionManager.registerExtension(this.featureNameInPolicy, this, {
+    PurposeRulePlugin.purposeStates[this.featureName] = fc.isFeatureOn(this.featureName);
+    extensionManager.registerExtension(this.policyKey, this, {
       applyPolicy: this.applyPolicy
     });
 
@@ -105,7 +98,7 @@ class PurposeRulePlugin extends Sensor {
     if (!device) {
       return false;
     }
-    const dapAdmin = await device.getPolicyAsync(this.featureNameInPolicy);
+    const dapAdmin = await device.getPolicyAsync(this.policyKey);
     if (dapAdmin && dapAdmin.hasOwnProperty('state') && typeof dapAdmin.state === 'boolean') {
       return dapAdmin.state;
     }
@@ -122,7 +115,7 @@ class PurposeRulePlugin extends Sensor {
     // the default value of state in policy is considered true if policy is not set in host policy.
     const state = (policy.state !== undefined &&  typeof policy.state === 'boolean') ? policy.state : true;
 
-    log.info(`Applying purpose: ${this.featureNameInPolicy}, state: ${policy.state} for host ${deviceId} and global state: ${PurposeRulePlugin.purposeStates[this.featureName]}`);
+    log.info(`Applying purpose: ${this.policyKey}, state: ${policy.state} for host ${deviceId} and global state: ${PurposeRulePlugin.purposeStates[this.featureName]}`);
     const PolicyManager2 = require('../alarm/PolicyManager2.js');
     const pm2 = new PolicyManager2();
     let rules = await pm2.getPurposeRelatedPolicies(this.featureName, deviceId);
