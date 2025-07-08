@@ -2219,16 +2219,14 @@ module.exports = class DNSMASQ {
           // check upstream dns status, if down then DO NOT restart dnsmasq
           const upstreamDNSUP = await this.dnsUpstreamConnectivity(intf);
           if (!upstreamDNSUP){
-            log.info(`Upstream DNS status down(status up=${upstreamDNSUP}). DO NOT remove redirect rules` );
+            log.info(`${intf.name}: Upstream DNS status down(status up=${upstreamDNSUP}). NOT removing redirect rules` );
             return;
-          } else {
-            log.warn(`Upstream DNS status up (status up=${upstreamDNSUP}). Remove redirect rules` );
           }
 
           this.networkFailCountMap[uuid]++;
           needRestart = true;
           if (this.networkFailCountMap[uuid] > 2) {
-            log.info(`DNS of network ${intf.name} is unreachable, remove DNS redirect rules ...`);
+            log.warn(`DNS of network ${intf.name} is unreachable, remove DNS redirect rules ...`);
             await this._manipulate_ipv4_iptables_rule(intf, '-D');
             // only remove conntrack entries once on status change
             if (this.networkFailCountMap[uuid] == 3)
