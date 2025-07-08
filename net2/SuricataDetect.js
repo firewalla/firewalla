@@ -31,6 +31,7 @@ const mustache = require('mustache');
 const conntrack = require('./Conntrack.js');
 const Constants = require('./Constants.js');
 const _ = require('lodash');
+const fc = require('./config.js');
 
 class SuricataDetect {
   constructor(logDir = "/log/slog") {
@@ -63,6 +64,11 @@ class SuricataDetect {
   }
 
   async processAlertEvent(e) {
+    // Check if suricata_alarm feature is enabled
+    if (!fc.isFeatureOn('cyber_security')) {
+      return;
+    }
+    
     const alert = e && e.alert;
     if (!alert)
       return;
