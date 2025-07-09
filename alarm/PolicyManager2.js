@@ -432,6 +432,9 @@ class PolicyManager2 {
     if (!merged.hasOwnProperty('appTimeUsage') || _.isEmpty(merged.appTimeUsage)) {
       await rclient.hdelAsync(policyKey, "appTimeUsage");
     }
+    if (!merged.hasOwnProperty('disturbMethod') || _.isEmpty(merged.disturbMethod)) {
+      await rclient.hdelAsync(policyKey, "disturbMethod");
+    }
   }
 
   async savePolicyAsync(policy) {
@@ -1771,11 +1774,11 @@ class PolicyManager2 {
       if (tlsInstalled) {
         // no need to specify remote set 4 & 6 for tls block\
         if (!_.isEmpty(tlsHostSets)) {
-          for (const tlsHostSet of tlsHostSets) {
+          await Promise.all(tlsHostSets.map(async (tlsHostSet) => {
             await this.__applyTlsRules({ ...commonOptions, tlsHostSet, tlsHost }).catch((err) => {
               log.error(`Failed to enforce rule ${pid} based on tls`, err.message);
             });
-          }
+          }));
           // activate TLS category after rule is added in iptables, this can guarante hostset is generated in /proc filesystem
           if (!_.isEmpty(targets)) {
             for (const target of targets)
@@ -1797,11 +1800,12 @@ class PolicyManager2 {
     }
 
     if (!_.isEmpty(remoteSets)) {
-      for (const { remoteSet4, remoteSet6 } of remoteSets) {
+      await Promise.all(remoteSets.map(async (remoteSet) => {
+        const { remoteSet4, remoteSet6 } = remoteSet;
         await this.__applyRules({ ...commonOptions, remoteSet4, remoteSet6 }).catch((err) => {
           log.error(`Failed to enforce rule ${pid} based on ip`, err.message);
         });
-      }
+      }));
     } else {
       await this.__applyRules({ ...commonOptions, remoteSet4, remoteSet6 }).catch((err) => {
         log.error(`Failed to enforce rule ${pid} based on ip`, err.message);
@@ -2261,11 +2265,11 @@ class PolicyManager2 {
       subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
     }
     if (!_.isEmpty(remoteSets)) {
-      for (const setPair of remoteSets) {
+      await Promise.all(remoteSets.map(async (setPair) => {
         await this.__applyRules(Object.assign(setPair, commonOptions)).catch((err) => {
           log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
         });
-      }
+      }));
     } else {
       await this.__applyRules(Object.assign({ remoteSet4, remoteSet6 }, commonOptions)).catch((err) => {
         log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
@@ -2274,11 +2278,11 @@ class PolicyManager2 {
 
     if (tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets)) {
       if (!_.isEmpty(tlsHostSets)) {
-        for (const tlsHostSet of tlsHostSets) {
+        await Promise.all(tlsHostSets.map(async (tlsHostSet) => {
           await this.__applyTlsRules({ ...commonOptions, tlsHostSet, tlsHost }).catch((err) => {
             log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
           });
-        }
+        }));
       } else {
         await this.__applyTlsRules({ ...commonOptions, tlsHostSet, tlsHost }).catch((err) => {
           log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
@@ -3523,14 +3527,10 @@ class PolicyManager2 {
   }
 
   async getPurposeRelatedPolicies(purposeName, deviceId) {
-    const PURPOSE_PREFIX = "purpose_";
     let result = [];
-    if (!purposeName || !purposeName.startsWith(PURPOSE_PREFIX))
-      return result;
-
     const rules = (await this.loadActivePoliciesAsync({ includingDisabled: 1 }))
-      .filter(r => r.purpose === purposeName.slice(PURPOSE_PREFIX.length))
-    
+      .filter(r => r.purpose === purposeName)
+
     if (deviceId) {
       result = rules.filter(rule => {
         const isScopeMatch = Array.isArray(rule.scope) && rule.scope.indexOf(deviceId) !== -1

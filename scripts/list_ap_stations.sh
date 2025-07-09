@@ -148,6 +148,7 @@ displaynumber() {
   local units=("B" "K" "M" "G")
   local unit_index=0
 
+  echo "$number" | egrep -v '^[0-9]+$' && return 0
   while [[ $(echo "$number >= 1000" | bc) -eq 1 && $unit_index -lt $((${#units[@]} - 1)) ]]; do
     number=$(echo "scale=3; $number / 1000" | bc)
     ((unit_index++))
@@ -181,7 +182,7 @@ get_sta_name() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-STA_COLS='sta_mac sta_ip:-17 ap_uid:9 band:4 chan:5 mimo:5 rssi:5 snr:5 tx:5 rx:5 ctx:5 crx:5 intf:-8 mlo:7 vlan:5 dvlan:5 assoc_time:14 idle:6 hb_time:9 ssid:-15 ap_name:-20:u sta_name:-30:u'
+STA_COLS='sta_mac sta_ip:-17 ap_uid:9 band:4 chan:5 mimo:5 rssi:5 snr:5 tx:5 rx:5 ctx:6 crx:6 intf:-8 mlo:7 vlan:5 dvlan:5 assoc_time:14 idle:6 hb_time:9 ssid:-15 ap_name:-20:u sta_name:-30:u'
 (print_header; hl) >&2
 lines=0
 timeit begin
