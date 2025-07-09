@@ -1605,7 +1605,7 @@ module.exports = class DNSMASQ {
     const keys = [`ip${fam}_addresses`, `ip${fam}_masks`]
     if (intf[keys[0]])
       await Promise.all(intf[keys[0]].map(async (ip, i) => {
-        const cmd = `sudo conntrack -D -f ipv4 -p udp --dport 53 --src ${ip} --mask-src ${intf[keys[1]][i]}`;
+        const cmd = `sudo conntrack -D -f ipv${fam} -p udp --dport 53 --src ${ip} --mask-src ${intf[keys[1]][i]}`;
         return execAsync(cmd).catch(err => {
           log.debug(`Failed to remove conntrack entry for ${intf.name}`, err.message)
         })
