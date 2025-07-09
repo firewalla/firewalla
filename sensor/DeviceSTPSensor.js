@@ -74,7 +74,7 @@ class DeviceSTPSensor extends Sensor {
 
   async discoverMacViaSTP(bridge, uuid) {
     const macNicMap = {};
-    let results = await exec(`bridge fdb show br ${bridge} | grep -v permanent`).then(result => result.stdout.trim().split('\n').filter(line => line.length !== 0));
+    let results = await exec(`bridge fdb show br ${bridge} | grep -v permanent`).then(result => result.stdout.trim().split('\n').filter(line => line.length !== 0)).catch((err) => {});
     for (const result of results) {
       const [mac, _, dev] = result.split(' ', 3);
       if (!mac || !dev)

@@ -685,7 +685,7 @@ class Policy {
 }
 
 Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules", "targets"];
-Policy.OBJ_VALUE_KEYS = ["appTimeUsage"];
+Policy.OBJ_VALUE_KEYS = ["appTimeUsage", "disturbMethod"];
 Policy.NUM_VALUE_KEYS = [
   'seq', 'appTimeUsed', 'priority', 'transferredBytes', 'transferredPackets', 'avgPacketBytes', "disturbTimeUsed"
 ]
