@@ -359,6 +359,10 @@ class Alarm {
   getNotifPolicyKey() {
     return this.type;
   }
+
+  getExceptionAlarmType() {
+    return this.type;
+  }
 }
 
 
@@ -554,19 +558,24 @@ class SuricataNoticeAlarm extends Alarm {
     return this["p.cooldown"] || 900;
   }
 
+  // suricata notice alarm will be muted by ALARM_INTEL exception
   isSecurityAlarm() {
     return true;
   }
+  
+  getNotifKeyPrefix() {
+    let prefix = super.getNotifKeyPrefix();
 
-  localizedNotificationContentKey() {
-    let key = `notif.content.${this.getNotifKeyPrefix()}`;
-    const username = this.getUserName();
-    if (username)
-      key = `${key}.user`;
-    const suffix = this.getIdentitySuffix();
-    if (suffix)
-      key = `${key}${suffix}`;
-    return key;
+    if (this.isInbound()) {
+      prefix += ".INBOUND";
+    } else if (this.isOutbound()) {
+      prefix += ".OUTBOUND";
+    }
+
+    if (this.isAutoBlock()) {
+      prefix += ".AUTOBLOCK";
+    }
+    return prefix;
   }
 
   localizedNotificationContentArray() {
@@ -579,6 +588,16 @@ class SuricataNoticeAlarm extends Alarm {
 
   localizedMessage() {
     return this["p.message"]; // p.message is rendered by mustache in SuricataDetect
+  }
+
+  // mute from suricata notice alarm will create an exception for ALARM_INTEL
+  getExceptionAlarmType() {
+    return "ALARM_INTEL";
+  }
+
+  // suppress notification of intel alarm should also apply to suricata notice alarm
+  getNotifPolicyKey() {
+    return "ALARM_INTEL";
   }
 }
 

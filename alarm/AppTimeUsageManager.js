@@ -356,12 +356,14 @@ class AppTimeUsageManager {
       job.stop();
       delete this.jobs[pid];
     }
-    const { app, category } = policy.appTimeUsage;
-    const key = app || category;
+    const { app, apps, category } = policy.appTimeUsage;
+    const keys = _.isArray(apps) ? apps : [app || category];
     const uids = this.getUIDs(policy);
-    for (const uid of uids) {
-      if (this.watchList[key] && this.watchList[key][uid])
-        delete this.watchList[key][uid][pid];
+    for (const key of keys) {
+      for (const uid of uids) {
+        if (this.watchList[key] && this.watchList[key][uid])
+          delete this.watchList[key][uid][pid];
+      }
     }
     if (this.acitveDisturbPolicies[pid]) {
       delete this.acitveDisturbPolicies[pid];
