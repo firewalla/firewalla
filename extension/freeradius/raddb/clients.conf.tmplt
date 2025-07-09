@@ -157,7 +157,7 @@ client localhost {
 	#
 	#  allowed values: yes, no, auto
 	#
-	require_message_authenticator = yes
+	require_message_authenticator = no
 
 	#
 	#  The global configuration "security.limit_proxy_state"
