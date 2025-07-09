@@ -73,6 +73,11 @@ async function deallocateQoSHandlerForPolicy(pid) {
   }
 }
 
+async function resetPolicyQoSHandlerMap() {
+  await rclient.delAsync(POLICY_QOS_HANDLER_MAP_KEY).catch(() => undefined);
+  log.info("QoSHandler map is reseted");
+}
+
 async function createQoSClass(classId, parent, direction, rateLimit, priority, qdisc, isolation, increaseLatency, dropPacketRate) {
   if (!platform.isIFBSupported()) {
     log.error("ifb is not supported on this platform");
@@ -266,6 +271,7 @@ module.exports = {
   getPolicyForQosHandler,
   allocateQoSHanderForPolicy,
   deallocateQoSHandlerForPolicy,
+  resetPolicyQoSHandlerMap,
   createQoSClass,
   destroyQoSClass,
   createTCFilter,

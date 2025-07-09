@@ -5,7 +5,11 @@ redis-cli KEYS "policy:*" | while IFS= read -r line; do
   if [[ "$line" =~ policy:[0-9]+ ]]; then
     redis-cli DEL "$line"
   elif [[ "$line" == policy:mac:* || "$line" == policy:tag:* || "$line" == policy:network:* || "$line" == policy:wg_peer:* || "$line" == "policy:system" ]]; then
-    redis-cli HDEL "$line" adblock isolation
+    redis-cli HDEL "$line" adblock adblock_ext isolation newDeviceTag
+    # app saves family settings in app.family.setting, need to clear it to avoid inconsistency with rules
+    if [[ "$line" == "policy:system" ]]; then
+      redis-cli HSET "$line" app "$(redis-cli HGET "$line" app | jq -c '.family.setting={}')"
+    fi
   elif [[ "$line" == "policy:id" || "$line" == "policy:state" ]]; then
     redis-cli DEL "$line"
   else

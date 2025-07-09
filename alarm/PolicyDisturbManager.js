@@ -94,8 +94,10 @@ class PolicyDisturbManager {
     if (this._disturbDefaultValue && this._disturbDefaultValue.hasOwnProperty(policy.disturbLevel)) {
       defaultDisturbVal = Object.assign(defaultDisturbVal, this._disturbDefaultValue[policy.disturbLevel]);
     }
+    if (policy.disturbMethod) {
+      defaultDisturbVal = Object.assign(defaultDisturbVal, policy.disturbMethod);
+    }
     policy = Object.assign(policy, defaultDisturbVal);
-
     this.registeredPolicies[pid] = policy;
 
     await this.enforcePolicy(pid);

@@ -2379,7 +2379,7 @@ module.exports = class {
     }
     // TODO: may need to define exception at more fine grain level
     let e = new Exception({
-      type: alarm.type,
+      type: alarm instanceof Alarm.Alarm ? alarm.getExceptionAlarmType() : alarm.type,
       alarm_type: alarm.type,
       reason: alarm.type,
       aid: alarm.aid,
