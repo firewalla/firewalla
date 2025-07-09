@@ -27,6 +27,7 @@ const _ = require('lodash')
 const validator = require('validator');
 
 const Constants = require('../net2/Constants.js');
+const Alarm = require('./Alarm.js');
 
 function arraysEqual(a, b) {
   if (a === b) return true;
@@ -219,7 +220,7 @@ module.exports = class {
         if (!alarm[key]) return false;
         let val2 = alarm[key];
 
-        if (key === "type" && val === "ALARM_INTEL" && this.isSecurityAlarm(alarm)) {
+        if (key === "type" && val === "ALARM_INTEL" && (alarm instanceof Alarm.Alarm ? alarm.isSecurityAlarm() : this.isSecurityAlarm(alarm))) {
           matched = true;
           log.debug('matched security alarm')
           continue;
