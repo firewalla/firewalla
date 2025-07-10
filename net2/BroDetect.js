@@ -1015,7 +1015,7 @@ class BroDetect {
       let intfInfo = sysManager.getInterfaceViaIP(lhost, fam);
       let dstIntfInfo = localFlow && sysManager.getInterfaceViaIP(dhost, fam);
       // do not process traffic between devices in the same network unless bridge flag is set in log
-      if (intfInfo === dstIntfInfo && !bridge)
+      if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid && !bridge)
         return;
       // ignore multicast IP
       try {
@@ -1233,6 +1233,8 @@ class BroDetect {
             return;
           }
         }
+        if (!bridge && intfInfo.uuid == dstIntfInfo.uuid)
+          return
         if (obj.proto === "udp" && accounting.isBlockedDevice(dstMac)) {
           return
         }
