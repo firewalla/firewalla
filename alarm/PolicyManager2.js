@@ -2162,7 +2162,7 @@ class PolicyManager2 {
             tlsHostSets.push(categoryUpdater.getHostSetName(target));
         }
 
-        if (["allow", "block", "route"].includes(action)) {
+        if (["allow", "block", "route"].includes(action) && !iptables_only) {
           if (direction !== "inbound" && (action === "allow" || !localPort && !remotePort)) {
             await domainBlock.unblockCategory({
               pid,
