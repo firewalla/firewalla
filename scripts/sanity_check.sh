@@ -434,6 +434,10 @@ check_system_config() {
     declare -A c
     read_hash c sys:config
 
+    print_config 'OS Version' "$(grep VERSION_ID /etc/os-release | cut -d= -f2 | tr -d '"')"
+    print_config 'Kernel Version' "$(cut -d' ' -f3-4 /proc/version)"
+    echo
+
     for hkey in "${!c[@]}"; do
         print_config "$hkey" "${c[$hkey]}"
     done
@@ -694,8 +698,8 @@ check_hosts() {
     else
       B7_Placeholder='%.s'
     fi
-    printf "%35s %15s %16s %18s %3s$B7_Placeholder %2s %11s %7s %6s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s\n" \
-      "Host" "Network" "IP" "MAC" "Mon" "B7" "Ol" "VPNClient" "FlowOut" "FlowIn" "Grp" "Usr" "DvT" "VqL" "Iso" "EA" "DNS" "AdB" "Fam" "SS" "DoH" "Ubd"
+    printf "%35s %15s %16s %18s %3s$B7_Placeholder %2s %11s %7s %6s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s\n" \
+      "Host" "Network" "IP" "MAC" "Mon" "B7" "Ol" "VPNClient" "FlowOut" "FlowIn" "Grp" "Usr" "DvT" "VqL" "Iso" "EA" "DNS" "AdB" "Fam" "SS" "DoH" "Ubd" "NTP"
     NOW=$(date +%s)
     frcc
 
@@ -703,8 +707,8 @@ check_hosts() {
     local FIREWALLA_MAC="$(ip link list | awk '/ether/ {print $2}' | sort | uniq)"
 
     local hierarchicalPolicies=('isolation')
-    local policyNames=("adblock" "safeSearch" "doh" "unbound")
-    local featureNames=("adblock" "safe_search" "doh" "unbound")
+    local policyNames=("adblock" "safeSearch" "doh" "unbound" "ntp_redirect")
+    local featureNames=("adblock" "safe_search" "doh" "unbound" "ntp_redirect")
 
     # family native mode doesn't have 'family_protect' enabled but are all standalone app controlled rules
     if [[ "$(jq -r ".family | select(.state == true) | .mode" <<< "${SP[app]}")" == "native" ]]; then
@@ -735,6 +739,7 @@ check_hosts() {
         local IS_FIREWALLA
         if echo "$FIREWALLA_MAC" | grep -wiq "$MAC"; then
           IS_FIREWALLA=1 # true
+          continue
         else
           IS_FIREWALLA=0 # false
         fi
@@ -926,9 +931,9 @@ check_hosts() {
             FC=$FC"\e[2m" #dim
         fi
 
-        printf "$BGC$FC%35s %15s %16s $MAC_COLOR%18s$FC %3s$B7_Placeholder %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s ${fcv[vql,c]}%3s$UC ${fcv[iso,c]}%3s$UC ${fcv[acl,c]}%3s$UC %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC$BGUC\n" \
+        printf "$BGC$FC%35s %15s %16s $MAC_COLOR%18s$FC %3s$B7_Placeholder %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s ${fcv[vql,c]}%3s$UC ${fcv[iso,c]}%3s$UC ${fcv[acl,c]}%3s$UC %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC ${fcv[ntp_redirect,c]}%3s$UC$BGUC\n" \
           "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$IP" "$(align::right 18 "$MAC")" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$(align::right 11 $VPN)" "$FLOWINCOUNT" \
-          "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "${fcv[vql,v]}" "${fcv[iso,v]}" "${fcv[acl,v]}" "$DNS_BOOST" "${fcv[adblock,v]}" "${fcv[family,v]}" "${fcv[safeSearch,v]}" "${fcv[doh,v]}" "${fcv[unbound,v]}"
+          "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "${fcv[vql,v]}" "${fcv[iso,v]}" "${fcv[acl,v]}" "$DNS_BOOST" "${fcv[adblock,v]}" "${fcv[family,v]}" "${fcv[safeSearch,v]}" "${fcv[doh,v]}" "${fcv[unbound,v]}" "${fcv[ntp_redirect,v]}"
 
         unset h
         unset p
@@ -944,7 +949,8 @@ check_hosts() {
 
     echo ""
     echo    "    *: Reserved IP"
-    echo -e "Abbr.: Mon${D}itoring$U B7${D}(Spoofing Flag)$U Ol${D}(Online)$U DvT${D}(Device Type)$U VqL${D}an$U Iso${D}lation$U EA${D}(Emergency Access)$U SS${D}(Safe Search)$U DoH${D}(DNS over HTTPS)$U Ubd${D}(Unbound)$U"
+    echo -e "Abbr.: Mon${D}itoring$U B7${D}(Spoofing Flag)$U Ol${D}(Online)$U DvT${D}(Device Type)$U VqL${D}an$U Iso${D}lation$U EA${D}(Emergency Access)$U SS${D}(Safe Search)$U DoH${D}(DNS over HTTPS)$U Ubd${D}(Unbound)$U NTP${D} Intercept$U"
+    echo -e "Note : Feature flags marked in grey are inherented from upper levels, which are tag, network, or system"
     echo ""
 }
 
@@ -1094,7 +1100,7 @@ check_network() {
 
     get_system_policy
 
-    printf "Interface\tName\tUUID\tIPv4\tGateway\tIPv6\tGateway6\tDNS\tvpnClient\tAdB\tFam\tSS\tDoH\tUbd\n" >/tmp/scc_csv_multline
+    printf "Interface\tName\tUUID\tIPv4\tGateway\tIPv6\tGateway6\tDNS\tvpnClient\tAdB\tFam\tSS\tDoH\tUbd\tNTP\n" >/tmp/scc_csv_multline
     while read -r LINE; do
       mapfile -td $'\t' COL < <(printf "%s" "$LINE")
       # read multi line fields into array
@@ -1125,6 +1131,7 @@ check_network() {
       local SAFE_SEARCH=$(if [[ ${NP[$id,safeSearch]} == *"true"* ]]; then echo "T"; fi)
       local DOH=$(if [[ ${NP[$id,doh]} == *"true"* ]]; then echo "T"; fi)
       local UNBOUND=$(if [[ ${NP[$id,unbound]} == *"true"* ]]; then echo "T"; fi)
+      local NTP=$(if [[ ${NP[$id,ntp_redirect]} == *"true"* ]]; then echo "T"; fi)
 
 
       local LINE_COUNT=$(( "${#IP6[@]}" > "${#DNS[@]}" ? "${#IP6[@]}" : "${#DNS[@]}" ));
@@ -1137,11 +1144,11 @@ check_network() {
         fi
 
         if [[ $IDX -eq 0 ]]; then
-          printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+          printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
             "${COL[0]}" "${COL[1]}" "${COL[2]:0:7}" "${COL[3]}" "${COL[4]}" "$IP" "${COL[6]}" "${DNS[$IDX]}" \
-            "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$SAFE_SEARCH" "$DOH" "$UNBOUND" >> /tmp/scc_csv_multline
+            "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$SAFE_SEARCH" "$DOH" "$UNBOUND" "$NTP" >> /tmp/scc_csv_multline
         else
-          printf "\t\t\t\t\t%s\t\t%s\n" "$IP" "${DNS[$IDX]}" >> /tmp/scc_csv_multline
+          printf "\t\t\t\t\t%s\t\t%s\t\n" "$IP" "${DNS[$IDX]}" >> /tmp/scc_csv_multline
         fi
       done
 
