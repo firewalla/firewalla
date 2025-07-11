@@ -18,9 +18,6 @@ const log = require('./logger.js')(__filename);
 const net = require('net');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-
-const sysManager = require('./SysManager.js');
-
 const asyncNative = require('../util/asyncNative.js');
 
 const IntelTool = require('../net2/IntelTool.js')
@@ -32,14 +29,10 @@ const hostTool = new HostTool();
 const IdentityManager = require('../net2/IdentityManager.js');
 
 const _ = require('lodash');
-
-const { getPreferredName } = require('../util/util.js')
-
 const URL = require("url");
 
 const DNSQUERYBATCHSIZE = 5;
 
-var hostManager = null;
 var instance = null;
 
 
@@ -59,17 +52,6 @@ module.exports = class DNSManager {
     }
   }
 
-  // Reslve v6 or v4 address into a local host
-  resolveLocalHost(ip, callback) {
-    callback = callback || function() {}
-
-    this.resolveLocalHostAsync(ip)
-       .then(res => callback(null, res))
-       .catch(err => {
-         callback(err);
-       })
-  }
-
   async resolveLocalHostAsync(ip) {
     let mac;
 
@@ -78,14 +60,7 @@ module.exports = class DNSManager {
       if (data && data.mac) {
         mac = data.mac
       } else {
-        const identity = IdentityManager.getIdentityByIP(ip);
-        if (identity) {
-          return {
-            mac: IdentityManager.getGUID(identity),
-            name: identity.getReadableName()
-          }
-        } else
-          throw new Error('IP Not Found: ' + ip);
+        throw new Error('IP Not Found: ' + ip);
       }
     } else if (net.isIPv6(ip)) {
       let data = await rclient.hgetallAsync("host:ip6:" + ip)
