@@ -29,8 +29,8 @@ const PRIO_REG = 4;
 const PRIO_LOW = 6;
 const DEFAULT_PRIO = PRIO_REG;
 const DEFAULT_RATE_LIMIT = "10240mbit";
-const DEFAULT_DELAY = "200";
-const DEFAULT_LOSS_RATE = "30";
+const DEFAULT_DELAY = "0";
+const DEFAULT_LOSS_RATE = "0";
 const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 
@@ -89,12 +89,24 @@ async function createQoSClass(classId, parent, direction, rateLimit, priority, q
   }
 
   qdisc = qdisc || "fq_codel";
-  rateLimit = rateLimit || DEFAULT_RATE_LIMIT;
-  if (!isNaN(rateLimit)) // default unit of rate limit is mbit
-    rateLimit = `${rateLimit}mbit`;
 
-  increaseLatency = increaseLatency || DEFAULT_DELAY;
-  dropPacketRate = dropPacketRate || DEFAULT_LOSS_RATE;
+  const rateNum = Number(rateLimit);
+  if (Number.isNaN(rateNum) || rateNum <= 0 || rateNum > 10240) {
+    rateLimit = DEFAULT_RATE_LIMIT;
+  } else {
+    rateLimit = `${rateNum}mbit`;
+  }
+
+  const latencyNum = Number(increaseLatency);
+  if (Number.isNaN(latencyNum) || latencyNum < 0 || latencyNum > 1000) {
+    increaseLatency = DEFAULT_DELAY;
+  }
+
+  const dropNum = Number(dropPacketRate);
+  if (Number.isNaN(dropNum) || dropNum < 0 || dropNum > 100) {
+    dropPacketRate = DEFAULT_LOSS_RATE;
+  }
+
   priority = priority || DEFAULT_PRIO;
   log.info(`Creating QoS class for classid ${classId}, parent ${parent}, direction ${direction}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}`);
   if (!classId) {
@@ -118,7 +130,7 @@ async function createQoSClass(classId, parent, direction, rateLimit, priority, q
     }
     case "netem": {
       await exec(`sudo tc class replace dev ${device} parent ${parent}: classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit}`).then(() => {
-        return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc} ecn delay ${increaseLatency}ms loss ${dropPacketRate}%`);
+        return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc} delay ${increaseLatency}ms loss ${dropPacketRate}%`);
       }).catch((err) => {
         log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
       });
