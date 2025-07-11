@@ -1188,8 +1188,15 @@ class PolicyManager2 {
             this.domainBlockTimers[policy.pid] = {
               isTimerActive: true,
               domainBlockTimer: setTimeout(async () => {
-                tmpPolicy.iptables_only = true; // remove ip-port based iptables rules in order to change to domain based block
-                await this._unenforce(tmpPolicy);
+                if (action !== "disturb") {
+                  // unenforce disturb policy will destroy tc filter/class/qdisc as well, which is unexpected
+                  tmpPolicy.iptables_only = true; // remove ip based iptables rules mapped from domains, domain-only iptables rules are left untouched
+                  await this._unenforce(tmpPolicy);
+                } else {
+                  // there may be a minor gap between unenforce and enforce, but it's okay for disturb action since connmark is still set on previously matched flows
+                  await this._unenforce(tmpPolicy);
+                  await this._enforce(policy);
+                }
                 this.domainBlockTimers[policy.pid].isTimerActive = false;
               }, timeout * 1000)
             };
