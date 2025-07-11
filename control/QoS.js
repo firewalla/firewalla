@@ -29,8 +29,8 @@ const PRIO_REG = 4;
 const PRIO_LOW = 6;
 const DEFAULT_PRIO = PRIO_REG;
 const DEFAULT_RATE_LIMIT = "10240mbit";
-const DEFAULT_DELAY = "200";
-const DEFAULT_LOSS_RATE = "30";
+const DEFAULT_DELAY = "0";
+const DEFAULT_LOSS_RATE = "0.01";
 const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 
