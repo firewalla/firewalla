@@ -193,9 +193,9 @@ class ACLAlarmLogPlugin extends Sensor {
       remoteIP = dst;
       remotePort = dport;
       dir = "outbound";
-      const host = await hostManager.getHostAsync(localIP);
+      const host = await hostManager.getIdentityOrHost(localIP);
       if (host)
-        srcName = getPreferredName(host.o);
+        srcName = host.getReadableName()
     } else {
       if (sysManager.isLocalIP(dst)) {
         localIP = dst;
@@ -203,9 +203,9 @@ class ACLAlarmLogPlugin extends Sensor {
         remoteIP = src;
         remotePort = sport;
         dir = "inbound";
-        const host = await hostManager.getHostAsync(localIP);
+        const host = await hostManager.getIdentityOrHost(localIP);
         if (host)
-          dstName = getPreferredName(host.o);
+          dstName = host.getReadableName()
       } else return;
     }
 

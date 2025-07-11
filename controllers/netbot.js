@@ -987,23 +987,6 @@ class netBot extends ControllerBot {
     }
   }
 
-
-  getAllIPForHost(ip, callback) {
-    let listip = [];
-    this.hostManager.getHost(ip, (err, host) => {
-      if (host != null) {
-        listip.push(host.o.ipv4Addr);
-        if (host.ipv6Addr && host.ipv6Addr.length > 0) {
-          for (let j in host['ipv6Addr']) {
-            listip.push(host['ipv6Addr'][j]);
-          }
-        }
-      }
-      callback(err, listip);
-    });
-  }
-
-
   async processAppInfo(appInfo) {
     // if(appInfo.language) {
     //   if(sysManager.language !== appInfo.language) {

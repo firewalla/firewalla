@@ -35,8 +35,6 @@ const f = require('../net2/Firewalla.js');
 const DNSManager = require('../net2/DNSManager.js');
 const dnsManager = new DNSManager('info');
 
-const getPreferredName = require('../util/util.js').getPreferredName
-
 const delay = require('../util/util.js').delay;
 
 const Policy = require('./Policy.js');
@@ -85,8 +83,10 @@ const _ = require('lodash');
 
 const IntelManager = require('../net2/IntelManager.js')
 const intelManager = new IntelManager('info');
+const Identity = require('../net2/Identity.js');
 const IdentityManager = require('../net2/IdentityManager.js');
 const Constants = require('../net2/Constants.js');
+const { extractIP } = require('../net2/FlowUtil.js')
 
 const featureName = 'msp_sync_alarm';
 
@@ -1773,14 +1773,12 @@ module.exports = class {
         if (!targetMac) {
           let targetIp = alarm["p.device.ip"];
 
-          dnsManager.resolveLocalHost(targetIp, (err, result) => {
-            if (err || result == null) {
-              log.error("Alarm doesn't have mac and unable to resolve ip:", targetIp, err);
-              throw new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp);
-            }
-
-            targetMac = result.mac;
+          const result = await dnsManager.resolveLocalHostAsync(targetIp).catch(err => {
+            log.error("Alarm doesn't have mac and unable to resolve ip:", targetIp, err);
+            throw new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp);
           })
+
+          targetMac = result.mac;
         }
 
         p.localPort = alarm["p.upnp.private.port"];
@@ -1998,7 +1996,7 @@ module.exports = class {
       throw new Error("Invalid alarm ID: " + alarmID)
     }
 
-    const e = this.createException(alarm, userInput);
+    const e = await this.createException(alarm, userInput);
 
     // FIXME: make it transactional
     // set alarm handle result + add policy
@@ -2127,15 +2125,20 @@ module.exports = class {
     const mac = alarm['p.device.mac']
     const HostManager = require("../net2/HostManager.js");
     const hostManager = new HostManager();
-    const host = await hostManager.getHostAsync(mac || deviceIP)
+    let host
+    if (alarm['p.device.guid'])
+      host = IdentityManager.getIdentityByGUID(alarm['p.device.guid'])
+    else if (mac) {
+      host = await hostManager.getIdentityOrHost(mac || deviceIP)
+    }
 
     if (host == null) {
       log.error("Failed to find host " + deviceIP + " in database");
       throw new Error("host " + deviceIP + " not found");
     }
 
-    const deviceName = getPreferredName(host.o);
-    const deviceID = host.o.mac;
+    const deviceName = host.getReadableName();
+    const deviceID = host.getGUID();
 
     Object.assign(alarm, {
       "p.device.name": deviceName,
@@ -2144,23 +2147,17 @@ module.exports = class {
       "p.device.macVendor": host.o.macVendor || "Unknown",
     });
 
-    if (!alarm["p.device.real.ip"] && !hostTool.isMacAddress(deviceID)) {
-      const identity = IdentityManager.getIdentityByIP(deviceIP);
-      let guid;
-      let realLocal;
-      if (identity) {
-        guid = IdentityManager.getGUID(identity);
-        realLocal = IdentityManager.getEndpointByIP(deviceIP);
-        alarm[identity.constructor.getKeyOfUIDInAlarm()] = identity.getUniqueId();
-        alarm["p.device.guid"] = guid;
-      }
+    if (host instanceof Identity) {
+      const realLocal = IdentityManager.getEndpointByIP(deviceIP);
+      alarm[host.constructor.getKeyOfUIDInAlarm()] = host.getUniqueId();
+      alarm["p.device.guid"] = host.getGUID();
       if (realLocal) {
         alarm["p.device.real.ip"] = realLocal;
       }
     }
     let realIP = alarm["p.device.real.ip"];
     if (realIP) {
-      realIP = realIP.startsWith("[") && realIP.includes("]:") ? realIP.substring(1, realIP.indexOf("]:")) : realIP.split(":")[0];
+      realIP = extractIP(realIP)
       const whoisInfo = await intelManager.whois(realIP).catch((err) => { });
       if (whoisInfo) {
         if (whoisInfo.netRange) {
@@ -2223,7 +2220,7 @@ module.exports = class {
 
   async loadRelatedAlarms(alarm, userInput) {
     const alarms = await this.loadRecentAlarmsAsync("-inf");
-    const e = this.createException(alarm, userInput);
+    const e = await this.createException(alarm, userInput);
     if (!e) throw new Error("Unsupported Action!");
     const related = alarms
       .filter(relatedAlarm => e.match(relatedAlarm)).map(alarm => alarm.aid);
@@ -2272,7 +2269,7 @@ module.exports = class {
     return alarmIDs;
   }
 
-  createException(alarm, userInput) {
+  async createException(alarm, userInput) {
     let i_target = null;
     let i_type = null;
     //IGNORE
@@ -2308,17 +2305,15 @@ module.exports = class {
           )
         } else {
           let targetIp = alarm["p.device.ip"];
-          dnsManager.resolveLocalHost(targetIp, (err, result) => {
-            if (err || result == null) {
-              log.error("Alarm doesn't have mac and unable to resolve ip:", targetIp, err);
-              throw new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp);
-            }
-            i_target = util.format("%s:%s:%s",
-              result.mac,
-              alarm["p.upnp.private.port"],
-              alarm["p.upnp.protocol"]
-            )
+          const result = await dnsManager.resolveLocalHostAsync(targetIp).catch(err => {
+            log.error("Alarm doesn't have mac and unable to resolve ip:", targetIp, err);
+            throw new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp);
           })
+          i_target = util.format("%s:%s:%s",
+            result.mac,
+            alarm["p.upnp.private.port"],
+            alarm["p.upnp.protocol"]
+          )
         }
         break;
       case "ALARM_BRO_NOTICE":

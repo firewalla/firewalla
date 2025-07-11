@@ -1686,6 +1686,20 @@ module.exports = class HostManager extends Monitorable {
       })
   }
 
+  async getIdentityOrHost(target, noEnvCreation = false) {
+    let monitorable
+    if (IdentityManager.isGUID(target)) {
+      monitorable = IdentityManager.getIdentityByGUID(target)
+      return monitorable
+    } else {
+      // this is very fast key lookup
+      monitorable = IdentityManager.getIdentityByIP(target)
+      if (monitorable) return monitorable
+
+      return this.getHostAsync(target, noEnvCreation)
+    }
+  }
+
   async getHostAsync(target, noEnvCreation = false) {
     let host, o;
     if (hostTool.isMacAddress(target)) {

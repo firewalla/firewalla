@@ -81,7 +81,7 @@ const _ = require('lodash');
 const fsp = require('fs').promises;
 
 const {formulateHostname, isDomainValid, delay} = require('../util/util.js');
-const { getUniqueTs } = require('./FlowUtil.js')
+const { getUniqueTs, extractIP } = require('./FlowUtil.js')
 
 const LRU = require('lru-cache');
 const Constants = require('./Constants.js');
@@ -299,28 +299,6 @@ class BroDetect {
     return Object.keys(this.sigmap.get(uid));
   }
 
-  extractIP(str) {
-    // since zeek 5.0, the host will contain port number if it is not a well-known port
-    // http connect might contain target port (not the same as id.resp_p which is proxy port
-    // and sometimes there's a single trailing ':', probably a zeek bug
-    // v6 ip address is wrapped with []
-    if (str.includes(']:')) {
-      // only removes port and trailing : here
-      str = str.substring(0, str.indexOf(']:') + 1)
-    }
-    if (str.startsWith("[") && str.endsWith("]")) {
-      // strip [] from an ipv6 address
-      str = str.substring(1, str.length - 1);
-    }
-
-    // remove tailing port of v4 addresses
-    if (str.includes(':') && net.isIP(str) != 6) {
-      str = str.substring(0, str.indexOf(':'))
-    }
-
-    return str
-  }
-
   async processHttpData(data) {
     try {
       const obj = JSON.parse(data);
@@ -334,7 +312,7 @@ class BroDetect {
           host = ip || ''
         }
 
-        host = this.extractIP(host)
+        host = extractIP(host)
         obj.host = host
       }
 
@@ -1275,7 +1253,7 @@ class BroDetect {
         tmpspec.dmac = dstMac
         tmpspec.dIntf = dstIntfInfo.uuid.substring(0, 8)
         if (dstRealLocal)
-          tmpspec.drl = this.extractIP(dstRealLocal)
+          tmpspec.drl = extractIP(dstRealLocal)
       } else {
         tmpspec.oIntf = outIntfId // egress intf id
       }
@@ -1297,7 +1275,7 @@ class BroDetect {
       if (monitorable instanceof Identity)
         tmpspec.guid = IdentityManager.getGUID(monitorable);
       if (realLocal)
-        tmpspec.rl = this.extractIP(realLocal);
+        tmpspec.rl = extractIP(realLocal);
 
       // id.orig_p can be an array in local flow
       if (obj['id.orig_p']) tmpspec.sp = _.isArray(obj['id.orig_p']) ? obj['id.orig_p'] : [obj['id.orig_p']];

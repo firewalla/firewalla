@@ -118,9 +118,9 @@ class SuricataDetect {
     if (sysManager.isLocalIP(srcIp)) {
       localIP = srcIp;
       localPort = sport;
-      const host = await hostManager.getHostAsync(srcIp);
+      const host = await hostManager.getIdentityOrHost(srcIp);
       if (host)
-        srcName = getPreferredName(host.o);
+        srcName = host.getReadableName();
     } else {
       srcLocal = false;
       remoteIP = srcIp;
@@ -140,9 +140,9 @@ class SuricataDetect {
         localIP = dstIp;
         localPort = dport;
       }
-      const host = await hostManager.getHostAsync(dstIp);
+      const host = await hostManager.getIdentityOrHost(dstIp);
       if (host)
-        dstName = getPreferredName(host.o);
+        dstName = host.getReadableName();
     } else {
       if (!srcLocal) {
         log.error(`Should not get alert on external traffic: ${srcIp} --> ${dstIp}`);

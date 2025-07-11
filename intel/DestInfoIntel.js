@@ -25,9 +25,9 @@ const IntelManager = require('../net2/IntelManager.js')
 const intelManager = new IntelManager();
 
 const sysManager = require('../net2/SysManager.js');
+const Host = require('../net2/Host.js');
 const HostManager = require('../net2/HostManager.js');
 const hostManager = new HostManager();
-const getPreferredName = require('../util/util.js').getPreferredName
 const f = require('../net2/Firewalla.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Message = require('../net2/Message.js');
@@ -128,14 +128,18 @@ class DestInfoIntel extends Intel {
             "p.dest.isLocal": "1"
           })
         } else {
-          const host = await hostManager.getHostAsync(destIP);
-          Object.assign(alarm, {
-            "p.dest.name": getPreferredName(host.o),
-            "p.dest.id": host.o.mac,
-            "p.dest.mac": host.o.mac,
-            "p.dest.macVendor": host.o.macVendor || "Unknown",
-            "p.dest.isLocal": "1"
-          });
+          const host = await hostManager.getIdentityOrHost(destIP);
+          if (host) {
+            Object.assign(alarm, {
+              "p.dest.name": host.getReadableName(),
+              "p.dest.id": host.getGUID(),
+              "p.dest.mac": host.getGUID(),
+              "p.dest.isLocal": "1"
+            });
+
+            if (host instanceof Host)
+              alarm["p.dest.macVendor"] = host.o.macVendor
+          }
         }
       } catch (err) {
         log.error("Failed to find host " + destIP + " in database: " + err);

@@ -1,4 +1,4 @@
-/*    Copyright 2019-2024 Firewalla Inc.
+/*    Copyright 2019-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,9 +15,9 @@
 
 'use strict'
 
+const net = require('net')
 const log = require('./logger.js')(__filename);
 const urlHash = require('../util/UrlHash.js')
-
 const _ = require('lodash')
 
 // Take host and return hashed
@@ -246,6 +246,28 @@ function getUniqueTs(ts) {
   return tsMonotonic
 }
 
+function extractIP(str) {
+  // since zeek 5.0, the host will contain port number if it is not a well-known port
+  // http connect might contain target port (not the same as id.resp_p which is proxy port
+  // and sometimes there's a single trailing ':', probably a zeek bug
+  // v6 ip address is wrapped with []
+  if (str.includes(']:')) {
+    // only removes port and trailing : here
+    str = str.substring(0, str.indexOf(']:') + 1)
+  }
+  if (str.startsWith("[") && str.endsWith("]")) {
+    // strip [] from an ipv6 address
+    str = str.substring(1, str.length - 1);
+  }
+
+  // remove tailing port of v4 addresses
+  if (str.includes(':') && net.isIP(str) != 6) {
+    str = str.substring(0, str.indexOf(':'))
+  }
+
+  return str
+}
+
 module.exports = {
   addFlag,
   checkFlag,
@@ -261,4 +283,5 @@ module.exports = {
   dhnameFlow,
   getSubDomains,
   getUniqueTs,
+  extractIP,
 };

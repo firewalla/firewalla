@@ -630,7 +630,7 @@ describe('test get stats', function() {
   it('get intf', async() => {
     // choose the host that has some local drop
     const mac = await getMacWithFlow("audit:local:drop:");
-    const host = await netbot.hostManager.getHostAsync(mac)
+    const host = await netbot.hostManager.getIdentityOrHost(mac)
     const target = host.o.intf
 
     let resp, v3TS = {}
