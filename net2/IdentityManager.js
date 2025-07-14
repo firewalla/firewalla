@@ -1,4 +1,4 @@
-/*    Copyright 2021-2024 Firewalla Inc.
+/*    Copyright 2021-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,8 +15,9 @@
 
 'use strict';
 
-const log = require('./logger.js')(__filename);
+const net = require('net');
 
+const log = require('./logger.js')(__filename);
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const f = require('./Firewalla.js');
 const { Address4, Address6 } = require('ip-address');
@@ -294,8 +295,10 @@ class IdentityManager {
       if (uid && this.allIdentities[ns] && this.allIdentities[ns][uid])
         return this.allIdentities[ns][uid];
     }
+
+    const fam = net.isIP(ip);
     // Slow path. Match argument ip using CIDRTrie
-    if (new Address4(ip).isValid()) {
+    if (fam == 4) {
       for (const ns of Object.keys(this.cidr4TrieMap)) {
         const cidr4Trie = this.cidr4TrieMap[ns];
         const val = cidr4Trie.find(ip);
@@ -303,14 +306,12 @@ class IdentityManager {
           return this.getIdentity(ns, val.uid);
         }
       }
-    } else {
-      if (new Address6(ip).isValid()) {
-        for (const ns of Object.keys(this.cidr6TrieMap)) {
-          const cidr6Trie = this.cidr6TrieMap[ns];
-          const val = cidr6Trie.find(ip);
-          if (val && val.uid) {
-            return this.getIdentity(ns, val.uid);
-          }
+    } else if (fam == 6) {
+      for (const ns of Object.keys(this.cidr6TrieMap)) {
+        const cidr6Trie = this.cidr6TrieMap[ns];
+        const val = cidr6Trie.find(ip);
+        if (val && val.uid) {
+          return this.getIdentity(ns, val.uid);
         }
       }
     }
