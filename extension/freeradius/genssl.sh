@@ -17,4 +17,4 @@ touch ${RADIUS_DIR}/ca.pem
 
 sudo docker run --rm --volume ${RADIUS_DIR}/ca.cnf:${CERT_DIR}/ca.cnf \
     --volume ${RADIUS_DIR}/ca.key:${CERT_DIR}/ca.key.tmp --volume ${RADIUS_DIR}/ca.pem:${CERT_DIR}/ca.pem.tmp \
-    freeradius/freeradius-dev:v3.2.x bash -c "cd ${CERT_DIR} && make ca && cp ca.key ca.key.tmp && cp ca.pem ca.pem.tmp"
+    public.ecr.aws/a0j1s2e9/freeradius:v3.2.x bash -c "cd ${CERT_DIR} && make ca && cp ca.key ca.key.tmp && cp ca.pem ca.pem.tmp"

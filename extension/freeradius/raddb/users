@@ -88,7 +88,8 @@
 #	Reply-Message := "Hello, %{User-Name}"
 #
 
-%RADDB_USERS%
+
+$INCLUDE /etc/freeradius/wpa3/users
 
 #
 # This is an entry for a user with a space in their name.

@@ -191,8 +191,8 @@ class AppTimeUsageManager {
         await lock.acquire(LOCK_RW, async () => {
           if (this.policyTimeoutTasks[pid][uid] && this.enforcedPolicies[pid][uid] === POLICY_STATE_DEFAULT_MODE) {
             log.info(`Will change rule ${pid} back to domain-only mode`);
+            policy.iptables_only = true;
             await this.unenforcePolicy(policy, uid, false);
-            await this.enforcePolicy(policy, uid, true);
             this.enforcedPolicies[pid][uid] = POLICY_STATE_DOMAIN_ONLY;
             delete this.policyTimeoutTasks[pid][uid];
           }
