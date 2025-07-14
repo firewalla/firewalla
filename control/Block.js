@@ -469,6 +469,7 @@ function setupIpset(element, ipset, remove = false) {
   const gateway = sysManager.myDefaultGateway()
   //Prevent gateway IP from being added into blocking IP set dynamically
   if (!remove && (gateway == ipAddr || gateway6 == ipAddr)) {
+    log.warn('Not adding gateway IP into ipset', ipAddr, ipset);
     return
   }
   const action = remove ? Ipset.del : Ipset.add;

@@ -5,10 +5,17 @@ services:
     image: public.ecr.aws/a0j1s2e9/freeradius:v3.2.x
     network_mode: "host"
     volumes:
-      - /home/pi/.forever/radius.log:/var/log/freeradius/radius.log
-      - /home/pi/.firewalla/run/docker/freeradius/clients.conf:/etc/freeradius/clients.conf
-      - /home/pi/.firewalla/run/docker/freeradius/users:/etc/freeradius/users
-      - /home/pi/.firewalla/run/docker/freeradius/eap:/etc/freeradius/mods-available/eap
+      - /home/pi/.forever/freeradius/:/var/log/freeradius/
+      - /home/pi/.firewalla/run/docker/freeradius/wpa3:/etc/freeradius/wpa3
+      - /home/pi/.firewalla/run/docker/freeradius/clients.conf:/etc/freeradius/clients.conf:ro
+      - /home/pi/.firewalla/run/docker/freeradius/users:/etc/freeradius/users:ro
+      # - /home/pi/.firewalla/run/docker/freeradius/ldap:/etc/freeradius/mods-available/ldap
+      - /home/pi/.firewalla/run/docker/freeradius/json_accounting:/etc/freeradius/mods-available/json_accounting:ro
+      - /home/pi/.firewalla/run/docker/freeradius/status:/etc/freeradius/sites-available/status:ro
+      - /home/pi/.firewalla/run/docker/freeradius/default:/etc/freeradius/sites-available/default:ro
+      - /home/pi/.firewalla/run/docker/freeradius/inner-tunnel:/etc/freeradius/sites-available/inner-tunnel:ro
+      - /home/pi/.firewalla/run/docker/freeradius/boot.sh:/root/boot.sh:ro
       - /home/pi/.firewalla/run/docker/freeradius/ca.cnf:/etc/freeradius/certs/ca.cnf
       - /home/pi/.firewalla/run/docker/freeradius/ca.key:/etc/freeradius/certs/ca.key
       - /home/pi/.firewalla/run/docker/freeradius/ca.pem:/etc/freeradius/certs/ca.pem
+    command: bash -c "bash /root/boot.sh && freeradius -f > /var/log/freeradius/radius.log 2>&1"
