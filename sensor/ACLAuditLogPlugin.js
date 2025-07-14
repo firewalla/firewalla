@@ -36,12 +36,13 @@ const LogReader = require('../util/LogReader.js');
 const { delay } = require('../util/util.js');
 const { getUniqueTs } = require('../net2/FlowUtil.js')
 const FireRouter = require('../net2/FireRouter.js');
+const sl = require('./SensorLoader.js');
+const Message = require('../net2/Message.js');
 
 const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
 const _ = require('lodash');
-const sl = require('./SensorLoader.js');
-const Message = require('../net2/Message.js');
+const LRU = require('lru-cache');
 
 const LOG_PREFIX = Constants.IPTABLES_LOG_PREFIX_AUDIT
 
@@ -66,6 +67,7 @@ class ACLAuditLogPlugin extends Sensor {
     this.buffer = {}
     this.touchedKeys = {'audit:drop:system': 1, 'audit:accept:system': 1, 'audit:local:drop:system': 1};
     this.incTs = 0;
+    this.udpBlocks = new LRU({max: 1000, maxAge: 300 * 1000});
   }
 
   hookFeature() {
@@ -308,7 +310,19 @@ class ACLAuditLogPlugin extends Sensor {
           }
         }
         return;
+      } else if (record.ac == 'block' && record.type == 'ip' && record.pr == 'udp') {
+        // blocked UDP flow is always caught by zeek, it extends expiration of conn:udp: on existing connection
+        // delete it here to make sure following zeek logs are not recoreded
+        const cacheKey = `${src}:${sport}:${dst}:${dport}`;
+        if (!this.udpBlocks.get(cacheKey)) {
+          await rclient.unlinkAsync([
+            conntrack.getKey(src, sport, dst, dport, 'udp'),
+            conntrack.getKey(dst, dport, src, sport, 'udp'),
+          ])
+          this.udpBlocks.set(cacheKey, true);
+        }
       }
+
     }
 
     if (record.ac === 'redirect') {
