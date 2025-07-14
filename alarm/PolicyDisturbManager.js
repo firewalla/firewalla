@@ -90,7 +90,7 @@ class PolicyDisturbManager {
 
     //set default default values
     policy.disturbLevel = policy.disturbLevel || "moderate";
-    let defaultDisturbVal = { "rateLimit": 64, "dropPacketRate": 40, "increaseLatency": 200 };
+    let defaultDisturbVal = { "rateLimit": 10240, "dropPacketRate": 0, "increaseLatency": 0 };
     if (this._disturbDefaultValue && this._disturbDefaultValue.hasOwnProperty(policy.disturbLevel)) {
       defaultDisturbVal = Object.assign(defaultDisturbVal, this._disturbDefaultValue[policy.disturbLevel]);
     }
