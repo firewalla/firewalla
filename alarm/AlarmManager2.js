@@ -2128,9 +2128,8 @@ module.exports = class {
     let host
     if (alarm['p.device.guid'])
       host = IdentityManager.getIdentityByGUID(alarm['p.device.guid'])
-    else if (mac) {
+    else
       host = await hostManager.getIdentityOrHost(mac || deviceIP)
-    }
 
     if (host == null) {
       log.error("Failed to find host " + deviceIP + " in database");
