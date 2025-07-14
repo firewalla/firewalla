@@ -1188,10 +1188,17 @@ class PolicyManager2 {
             this.domainBlockTimers[policy.pid] = {
               isTimerActive: true,
               domainBlockTimer: setTimeout(async () => {
-                await this._unenforce(tmpPolicy);
-                await this._enforce(policy);
+                if (action !== "disturb") {
+                  // unenforce disturb policy will destroy tc filter/class/qdisc as well, which is unexpected
+                  tmpPolicy.iptables_only = true; // remove ip based iptables rules mapped from domains, domain-only iptables rules are left untouched
+                  await this._unenforce(tmpPolicy);
+                } else {
+                  // there may be a minor gap between unenforce and enforce, but it's okay for disturb action since connmark is still set on previously matched flows
+                  await this._unenforce(tmpPolicy);
+                  await this._enforce(policy);
+                }
                 this.domainBlockTimers[policy.pid].isTimerActive = false;
-              }, 600 * 1000)
+              }, timeout * 1000)
             };
             return;
           }
@@ -1680,6 +1687,10 @@ class PolicyManager2 {
             });
           } else {
             remoteSets.push({
+              remoteSet4: categoryUpdater.getAggrIPSetName(target, true),
+              remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(target, true)
+            });
+            remoteSets.push({
               remoteSet4: categoryUpdater.getAggrIPSetName(target),
               remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(target)
             });
@@ -1909,7 +1920,10 @@ class PolicyManager2 {
   async _unenforce(policy) {
     log.info(`Unenforce policy pid:${policy.pid}, type:${policy.type}, target:${policy.target}, scope:${policy.scope}, tag:${policy.tag}, action:${policy.action || "block"}`);
 
-    await this._removeActivatedTime(policy)
+    const iptables_only = policy["iptables_only"] || false;
+    if (!iptables_only) {
+      await this._removeActivatedTime(policy);
+    }
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
@@ -1956,11 +1970,15 @@ class PolicyManager2 {
     let qosHandler = null;
     if (localPort) {
       localPortSet = `c_bp_${pid}_local_port`;
-      await Block.batchUnblock(localPort.split(","), localPortSet);
+      if (!iptables_only) {
+        await Block.batchUnblock(localPort.split(","), localPortSet);
+      }
     }
     if (remotePort) {
       remotePortSet = `c_bp_${pid}_remote_port`;
-      await Block.batchUnblock(remotePort.split(","), remotePortSet);
+      if (!iptables_only) {
+        await Block.batchUnblock(remotePort.split(","), remotePortSet);
+      }
     }
 
     if (upnp) {
@@ -2151,7 +2169,7 @@ class PolicyManager2 {
             tlsHostSets.push(categoryUpdater.getHostSetName(target));
         }
 
-        if (["allow", "block", "route"].includes(action)) {
+        if (["allow", "block", "route"].includes(action) && !iptables_only) {
           if (direction !== "inbound" && (action === "allow" || !localPort && !remotePort)) {
             await domainBlock.unblockCategory({
               pid,
@@ -2181,6 +2199,13 @@ class PolicyManager2 {
               remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(target, true)
             });
           } else {
+            // only remove _ag rules when iptables_only
+            if (!iptables_only) {
+              remoteSets.push({
+                remoteSet4: categoryUpdater.getAggrIPSetName(target, true),
+                remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(target, true)
+              });
+            }
             remoteSets.push({
               remoteSet4: categoryUpdater.getAggrIPSetName(target),
               remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(target)
@@ -2250,7 +2275,7 @@ class PolicyManager2 {
         throw new Error("Unsupported policy");
     }
 
-    if (action === "match_group") {
+    if (action === "match_group" && !iptables_only) {
       // remove rule group link in dnsmasq config
       await dnsmasq.unlinkRuleFromRuleGroup({ scope, intfs, tags, guids, pid }, targetRgId);
       dnsmasq.scheduleRestartDNSService();
@@ -2274,6 +2299,10 @@ class PolicyManager2 {
       await this.__applyRules(Object.assign({ remoteSet4, remoteSet6 }, commonOptions)).catch((err) => {
         log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
       });
+    }
+    if (iptables_only) {
+      log.info(`Unenforce policy ${pid} with iptables_only=true, no further action is needed`);
+      return;
     }
 
     if (tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets)) {
