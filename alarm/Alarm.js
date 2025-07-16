@@ -554,6 +554,10 @@ class SuricataNoticeAlarm extends Alarm {
     this["p.showMap"] = false;
   }
 
+  needPolicyMatch() {
+    return true;
+  }
+
   keysToCompareForDedup() {
     return ["p.message"];
   }
@@ -752,11 +756,16 @@ class VPNDisconnectAlarm extends Alarm {
 
     const protocol = this["p.vpn.protocol"];
     let suffix = null;
-    if (protocol && VPN_PROTOCOL_SUFFIX_MAPPING[protocol]) {
-      key += ".vpn"
-      suffix = VPN_PROTOCOL_SUFFIX_MAPPING[protocol];
+    if (protocol) {
+      if (VPN_PROTOCOL_SUFFIX_MAPPING[protocol]) {
+        key += ".vpn"
+        suffix = VPN_PROTOCOL_SUFFIX_MAPPING[protocol];
+      } else {
+        key += ".vpn";
+        suffix = protocol;
+      }
     }
-    key += "." + this["p.vpn.subtype"];
+    key += "." + (this["p.vpn.subtype"] || "cs");
 
     if (fc.isFeatureOn('alarm_vpnclient_internet_pause')
       && (this['p.vpn.overrideDefaultRoute'] === true || this['p.vpn.overrideDefaultRoute'] == 'true')
