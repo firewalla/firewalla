@@ -13,6 +13,8 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
+const net = require('net')
+
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
@@ -315,7 +317,7 @@ module.exports = class HostManager extends Monitorable {
 
   async basicDataForInit(json, options) {
     let networkinfo = sysManager.getDefaultWanInterface();
-    if(networkinfo.gateway === null) {
+    if (networkinfo && networkinfo.gateway === null) {
       delete networkinfo.gateway;
     }
 
@@ -1706,8 +1708,11 @@ module.exports = class HostManager extends Monitorable {
       host = this.hostsdb[`host:mac:${target}`];
       o = await hostTool.getMACEntry(target)
     } else {
+      const fam = net.isIP(target)
+      if (!fam) return null
+
       o = await dnsManager.resolveLocalHostAsync(target)
-      host = this.hostsdb[`host:ip4:${target}`];
+      host = this.hostsdb[`host:ip${fam}:${target}`];
     }
     if (host && o) {
       await host.update(Host.parse(o));

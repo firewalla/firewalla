@@ -1773,10 +1773,10 @@ module.exports = class {
         if (!targetMac) {
           let targetIp = alarm["p.device.ip"];
 
-          const result = await dnsManager.resolveLocalHostAsync(targetIp).catch(err => {
-            log.error("Alarm doesn't have mac and unable to resolve ip:", targetIp, err);
+          const result = await dnsManager.resolveLocalHostAsync(targetIp).catch(() => null)
+          if (!result) {
             throw new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp);
-          })
+          }
 
           targetMac = result.mac;
         }
@@ -2304,10 +2304,10 @@ module.exports = class {
           )
         } else {
           let targetIp = alarm["p.device.ip"];
-          const result = await dnsManager.resolveLocalHostAsync(targetIp).catch(err => {
-            log.error("Alarm doesn't have mac and unable to resolve ip:", targetIp, err);
+          const result = await dnsManager.resolveLocalHostAsync(targetIp).catch(() => null)
+          if (!result) {
             throw new Error("Alarm doesn't have mac and unable to resolve ip:", targetIp);
-          })
+          }
           i_target = util.format("%s:%s:%s",
             result.mac,
             alarm["p.upnp.private.port"],

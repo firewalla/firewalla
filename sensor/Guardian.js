@@ -1,4 +1,4 @@
-/*    Copyright 2019-2023 Firewalla Inc.
+/*    Copyright 2019-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -343,7 +343,7 @@ module.exports = class {
 
     this.socket.on('connect', () => {
       log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", " + region : ""} is connected.`);
-      this.socket.emit("box_registration", {
+      this.socket && this.socket.emit("box_registration", {
         gid: gid,
         eid: eid,
         mspId: mspId
