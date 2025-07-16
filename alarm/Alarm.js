@@ -119,6 +119,10 @@ class Alarm {
     return this["p.dest.app"];
   }
 
+  isUserSuffixSupportedInNotification() {
+    return true;
+  }
+
   getUserName() {
     if (_.isArray(this["p.utag.names"]) && !_.isEmpty(this["p.utag.names"]))
       return this["p.utag.names"][0].name;
@@ -186,7 +190,7 @@ class Alarm {
   localizedNotificationContentKey() {
     let key = `notif.content.${this.getNotifKeyPrefix()}`;
     const username = this.getUserName();
-    if (username)
+    if (username && this.isUserSuffixSupportedInNotification())
       key = `${key}.user`;
     if (this.isAppSupported()) {
       const appName = this.getAppName();
@@ -369,6 +373,10 @@ class Alarm {
 class NewDeviceAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_NEW_DEVICE", timestamp, device, info);
+  }
+
+  isUserSuffixSupportedInNotification() {
+    return false;
   }
 
   keysToCompareForDedup() {
@@ -579,7 +587,14 @@ class SuricataNoticeAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    const result = [ this["p.device.name"],  this["p.dest.name"], this["p.suricata.extra.classtypeDesc"], this["p.event.timestampTimezone"]];
+    let deviceName = this["p.device.name"];
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      if (identity) {
+        deviceName = identity.getDeviceNameInNotificationContent(this);
+      }
+    }
+    const result = [ deviceName,  this["p.dest.name"], this["p.suricata.extra.classtypeDesc"], this["p.event.timestampTimezone"]];
     const username = this.getUserName();
     if (username)
       result.push(username);
