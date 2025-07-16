@@ -1136,8 +1136,11 @@ class PolicyManager2 {
           }
           log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
         } else {
-          this.notifyPolicyActivated(policy);
           await this._enforce(policy);
+          if (policy.iptables_only) {
+            return; // no need to set expire timer for iptables only policy
+          }
+          this.notifyPolicyActivated(policy);
           log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
           const pid = policy.pid;
           const policyTimer = setTimeout(async () => {
@@ -1161,14 +1164,16 @@ class PolicyManager2 {
           this.invalidateExpireTimer(policy); // remove old one if exists
           this.enabledTimers[pid] = policyTimer;
         }
-      } else if (policy.cronTime) {
+      } else if (policy.cronTime && !policy.iptables_only) {
         // this is a reoccuring policy, use scheduler to manage it
         return scheduler.registerPolicy(policy);
       } else if (this.needAppTimeUsageRegister(policy)) {
         // this is an app time usage policy, use AppTimeUsageManager to manage it
         return AppTimeUsageManager.registerPolicy(policy);
       } else {
-        this.notifyPolicyActivated(policy);
+        if (!policy.iptables_only) {
+          this.notifyPolicyActivated(policy);
+        }
 
         const action = policy.action || "block";
         const type = policy["i.type"] || policy["type"]; //backward compatibility
@@ -1361,7 +1366,9 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    await this._refreshActivatedTime(policy)
+    if (!policy.iptables_only) {
+      await this._refreshActivatedTime(policy)
+    }
 
     if (this.isFirewallaOrCloud(policy) && (policy.action || "block") === "block") {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
@@ -1412,13 +1419,17 @@ class PolicyManager2 {
     let qosHandler = null;
     if (localPort) {
       localPortSet = `c_bp_${pid}_local_port`;
-      await ipset.create(localPortSet, "bitmap:port");
-      await Block.batchBlock(localPort.split(","), localPortSet);
+      if (!policy.iptables_only) {
+        await ipset.create(localPortSet, "bitmap:port");
+        await Block.batchBlock(localPort.split(","), localPortSet);
+      }
     }
     if (remotePort) {
       remotePortSet = `c_bp_${pid}_remote_port`;
-      await ipset.create(remotePortSet, "bitmap:port");
-      await Block.batchBlock(remotePort.split(","), remotePortSet);
+      if (!policy.iptables_only) {
+        await ipset.create(remotePortSet, "bitmap:port");
+        await Block.batchBlock(remotePort.split(","), remotePortSet);
+      }
     }
 
     if (upnp) {
@@ -1427,7 +1438,9 @@ class PolicyManager2 {
     }
 
     if (action === "qos") {
-      qosHandler = await qos.allocateQoSHanderForPolicy(pid);
+      if (!policy.iptables_only) {
+        qosHandler = await qos.allocateQoSHanderForPolicy(pid);
+      }
     }
 
     switch (type) {
@@ -1642,7 +1655,7 @@ class PolicyManager2 {
             tlsHostSets.push(categoryUpdater.getHostSetName(target));
         }
 
-        if (["allow", "block", "route"].includes(action)) {
+        if (["allow", "block", "route"].includes(action) && !policy.iptables_only) {
           if (direction !== "inbound" && (action === "allow" || !localPort && !remotePort)) {
             await domainBlock.blockCategory({
               pid,
@@ -1668,10 +1681,12 @@ class PolicyManager2 {
         }
 
         for (const target of targets) {
-          await categoryUpdater.activateCategory(target);
-          if (policy.useBf) {
-            await categoryUpdater.activateCategory(categoryUpdater.getBfCategoryName(target));
-            categoryUpdater.addUseBfCategory(target);
+          if (!policy.iptables_only) {
+            await categoryUpdater.activateCategory(target);
+            if (policy.useBf) {
+              await categoryUpdater.activateCategory(categoryUpdater.getBfCategoryName(target));
+              categoryUpdater.addUseBfCategory(target);
+            }
           }
 
           if (action === "allow") {
@@ -1686,10 +1701,12 @@ class PolicyManager2 {
               remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(target, true)
             });
           } else {
-            remoteSets.push({
-              remoteSet4: categoryUpdater.getAggrIPSetName(target, true),
-              remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(target, true)
-            });
+            if (!policy.iptables_only) {
+              remoteSets.push({
+                remoteSet4: categoryUpdater.getAggrIPSetName(target, true),
+                remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(target, true)
+              });
+            }
             remoteSets.push({
               remoteSet4: categoryUpdater.getAggrIPSetName(target),
               remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(target)
@@ -1761,7 +1778,7 @@ class PolicyManager2 {
         throw new Error("Unsupported policy type");
     }
 
-    if (action === "match_group") {
+    if (action === "match_group" && !policy.iptables_only) {
       // add rule group link in dnsmasq config
       await dnsmasq.linkRuleToRuleGroup({ scope, intfs, tags, guids, pid }, targetRgId);
       dnsmasq.scheduleRestartDNSService();
@@ -1775,7 +1792,7 @@ class PolicyManager2 {
       wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
       subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
     }
-    if (tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets)) {
+    if ((tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets)) && !policy.iptables_only) {
       let tlsInstalled = true;
       await platform.installTLSModules().catch((err) => {
         log.error(`Failed to install TLS module, will not apply rule ${pid} based on tls`, err.message);

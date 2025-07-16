@@ -107,8 +107,9 @@ class AppTimeUsageManager {
                   }
                   case POLICY_STATE_DOMAIN_ONLY: {
                     log.info(`${uid} is still generating ${app} activity after domain-only mode rule ${pid} is applied, temporarily change to default mode`);
-                    await this.unenforcePolicy(this.registeredPolicies[pid], uid, true);
-                    await this.applyPolicy(pid, uid);
+                    const policy = this.registeredPolicies[pid];
+                    policy.iptables_only = true;
+                    await this.enforcePolicy(policy, uid);
                     break;
                   }
                   default: {
