@@ -107,9 +107,7 @@ class AppTimeUsageManager {
                   }
                   case POLICY_STATE_DOMAIN_ONLY: {
                     log.info(`${uid} is still generating ${app} activity after domain-only mode rule ${pid} is applied, temporarily change to default mode`);
-                    const policy = this.registeredPolicies[pid];
-                    policy.iptables_only = true;
-                    await this.enforcePolicy(policy, uid);
+                    await this.applyPolicy(pid, uid, true);
                     break;
                   }
                   default: {
@@ -166,13 +164,14 @@ class AppTimeUsageManager {
     });
   }
 
-  async applyPolicy(pid, uid) {
+  async applyPolicy(pid, uid, iptables_only = false) {
     const p = this.registeredPolicies[pid];
     if (!p) {
       log.error(`Policy ${pid} not found`);
       return;
     }
     const policy = Object.assign(Object.create(Policy.prototype), p);
+    policy.iptables_only = iptables_only;
 
     const needDisturb = policy.needPolicyDisturb();
     // a default mode policy will be applied first, and will be updated to domain only after a certain timeout
