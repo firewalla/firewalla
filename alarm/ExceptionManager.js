@@ -43,6 +43,10 @@ const ruleScheduler = require('../extension/scheduler/scheduler.js')
 
 const util = require('util');
 const Constants = require('../net2/Constants.js');
+const AsyncLock = require('../vendor_lib/async-lock');
+
+// Create a lock instance for protecting getNextID operations
+const GET_EXCEPTION_ID_LOCK = new AsyncLock();
 
 module.exports = class {
   constructor() {
@@ -164,42 +168,30 @@ module.exports = class {
     return rr
   }
 
-  createExceptionIDKey(callback) {
-    rclient.set(exceptionIDKey, initID, callback);
+  async getNextIDAsync() {
+    return GET_EXCEPTION_ID_LOCK.acquire('exception_id', async () => {
+      try {
+        const result = await rclient.getAsync(exceptionIDKey);
+        
+        if (result) {
+          await rclient.incrAsync(exceptionIDKey);
+          return result;
+        } else {
+          await rclient.setAsync(exceptionIDKey, initID);
+          await rclient.incrAsync(exceptionIDKey);
+          return initID;
+        }
+      } catch (err) {
+        log.error("Failed to get next ID: " + err);
+        throw err;
+      }
+    });
   }
 
   getNextID(callback) {
-    rclient.get(exceptionIDKey, (err, result) => {
-      if (err) {
-        log.error("Failed to get exceptionIDKey: " + err);
-        callback(err);
-        return;
-      }
-
-      if (result) {
-        rclient.incr(exceptionIDKey, (err) => {
-          if (err) {
-            log.error("Failed to incr exceptionIDKey: " + err);
-          }
-          callback(null, result);
-        });
-      } else {
-        this.createExceptionIDKey((err) => {
-          if (err) {
-            log.error("Failed to create exceptionIDKey: " + err);
-            callback(err);
-            return;
-          }
-
-          rclient.incr(exceptionIDKey, (err) => {
-            if (err) {
-              log.error("Failed to incr exceptionIDKey: " + err);
-            }
-            callback(null, initID);
-          });
-        });
-      }
-    });
+    this.getNextIDAsync()
+      .then(result => callback(null, result))
+      .catch(err => callback(err));
   }
 
   enqueue(exception, callback) {

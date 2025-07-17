@@ -115,12 +115,15 @@ class SuricataDetect {
     let localIP, remoteIP, remoteName, localPort, remotePort;
     let srcLocal = true;
     let dstLocal = false;
+    let intfId = null;
     if (sysManager.isLocalIP(srcIp)) {
       localIP = srcIp;
       localPort = sport;
       const host = await hostManager.getIdentityOrHost(srcIp);
-      if (host)
+      if (host) {
         srcName = host.getReadableName();
+        intfId = host.getNicUUID();
+      }
     } else {
       srcLocal = false;
       remoteIP = srcIp;
@@ -141,8 +144,10 @@ class SuricataDetect {
         localPort = dport;
       }
       const host = await hostManager.getIdentityOrHost(dstIp);
-      if (host)
+      if (host) {
         dstName = host.getReadableName();
+        intfId = host.getNicUUID();
+      }
     } else {
       if (!srcLocal) {
         log.error(`Should not get alert on external traffic: ${srcIp} --> ${dstIp}`);
@@ -191,6 +196,8 @@ class SuricataDetect {
         alarmPayload[`p.suricata.extra.${key}`] = alarmData[key];
       }
     }
+    if (intfId)
+      alarmPayload["p.intf.id"] = intfId;
     if (localPort)
       alarmPayload["p.device.port"] = [localPort];
     if (remotePort)
