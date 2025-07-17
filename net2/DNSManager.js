@@ -60,14 +60,16 @@ module.exports = class DNSManager {
       if (data && data.mac) {
         mac = data.mac
       } else {
-        throw new Error('IP Not Found: ' + ip);
+        log.warn('IP Not Found: ' + ip);
+        return null
       }
     } else if (net.isIPv6(ip)) {
       let data = await rclient.hgetallAsync("host:ip6:" + ip)
       if (data && data.mac) {
         mac = data.mac
       } else {
-        throw new Error('IP Not Found: ' + ip);
+        log.warn('IP Not Found: ' + ip);
+        return null
       }
     } else {
       log.error("ResolveHost:BadIP", ip);
