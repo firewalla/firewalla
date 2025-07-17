@@ -3403,7 +3403,7 @@ class PolicyManager2 {
     if (bestMatchVpnPolicy) {
       if (!result || bestMatchVpnPolicy.rank < bestMatchRoute.rank) {
         result = {
-          "wanUUId": bestMatchVpnPolicy.wanUUID,
+          "wanUUID": bestMatchVpnPolicy.wanUUID,
           "reason": "policy",
           "target": bestMatchVpnPolicy.matchedTarget
         }
