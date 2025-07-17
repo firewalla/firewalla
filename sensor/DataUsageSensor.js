@@ -141,7 +141,7 @@ class DataUsageSensor extends Sensor {
           if (platform.isFireRouterManaged()) {
             const wanIntfs = sysManager.getWanInterfaces();
             for (const wanIntf of wanIntfs) {
-              const wanConf = _.get(wanConfs, wanIntf.uuid, {date, total, enable: true}); // if wan uuid is not defined in wanConfs, enable bandwidth usage alarm on that WAN by default
+              const wanConf = _.get(wanConfs, wanIntf.uuid, {date, total, enable: false}); // if wan uuid is not defined in wanConfs, disable bandwidth usage alarm on that WAN by default
               if (wanConf.enable) {
                 await this.checkMonthlyDataUsage(wanConf.date || date, wanConf.total || total, wanIntf.uuid);
               }
@@ -341,7 +341,7 @@ class DataUsageSensor extends Sensor {
     }
 
     async getDataPlan() {
-        let dataPlan = await rclient.getAsync('sys:data:plan');
+        let dataPlan = await rclient.getAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS);
         if (!dataPlan) return;
         dataPlan = JSON.parse(dataPlan);
         return dataPlan

@@ -920,7 +920,7 @@ class netBot extends ControllerBot {
       }
       case "dataPlan": {
         const { total, date, wanConfs } = value;
-        await rclient.setAsync("sys:data:plan", JSON.stringify({ total, date, wanConfs }));
+        await rclient.setAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS, JSON.stringify({ total, date, wanConfs }));
         sem.emitEvent({
           type: "DataPlan:Updated",
           date: date,
@@ -1575,7 +1575,7 @@ class netBot extends ControllerBot {
         }
       }
       case "monthlyDataUsageOnWans": {
-        let dataPlan = await rclient.getAsync('sys:data:plan');
+        let dataPlan = await rclient.getAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS);
         if (dataPlan) {
           dataPlan = JSON.parse(dataPlan);
         } else {
@@ -1593,7 +1593,7 @@ class netBot extends ControllerBot {
       }
       case "dataPlan": {
         const featureName = 'data_plan';
-        let dataPlan = await rclient.getAsync('sys:data:plan');
+        let dataPlan = await rclient.getAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS);
         const enable = fc.isFeatureOn(featureName)
         if (dataPlan) {
           dataPlan = JSON.parse(dataPlan);
