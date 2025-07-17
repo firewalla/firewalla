@@ -685,7 +685,8 @@
     "DataMigrationSensor": {
       "migrationCodeNames": [
         "clairvoyant",
-        "bipartite_graph"
+        "bipartite_graph",
+        "per_wan_data_usage"
       ]
     },
     "FlowCompressionSensor": {
