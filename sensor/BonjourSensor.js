@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -246,7 +246,7 @@ class BonjourSensor extends Sensor {
         detect.type = 'tv'
         detect.brand = 'TiVo'
         detect.name = name
-        if (txt.platform) detect.model = txt.platform
+        if (txt && txt.platform) detect.model = txt.platform
         break
       case '_sonos':
         detect.type = 'smart speaker'
