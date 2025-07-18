@@ -305,6 +305,11 @@ class NetworkMonitorSensor extends Sensor {
           log.error(`Carrier of interface ${opts.intf} is not on, skip ping test on it`);
           return {status: `ERROR: carrier of interface ${opts.intf} is not on`, data: {}};
         }
+        if (!_.has(intf, "ready") || !intf.ready) {
+          log.error(`Interface ${opts.intf} is not ready, skip ping test on it`);
+          return {status: `ERROR: interface ${opts.intf} is not ready`, data: {}};
+        }
+
         rtid = intf.rtid;
       }
       const result = await exec(`sudo ping -i ${cfg.sampleTick} ${rtid ? `-m ${rtid}` : ""} -c ${cfg.sampleCount} -W 1 -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`).catch((err) => {
