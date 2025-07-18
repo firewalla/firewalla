@@ -1465,9 +1465,12 @@ class netBot extends ControllerBot {
       case "proToken":
         return { token: tokenManager.getToken(gid) }
       case "policies": {
-        const list = await pm2.loadActivePoliciesAsync()
+        const number = await pm2.countActivePolicyNumber();
+        const options = Object.assign({}, value);
+        options.number = value && value.limit;
+        const list = await pm2.loadActivePoliciesAsync(options);
         let alarmIDs = list.map((p) => p.aid);
-        const alarms = await am2.idsToAlarmsAsync(alarmIDs)
+        const alarms = await am2.idsToAlarmsAsync(alarmIDs);
 
         for (let i = 0; i < list.length; i++) {
           if (list[i] && alarms[i]) {
@@ -1475,7 +1478,7 @@ class netBot extends ControllerBot {
             list[i].alarmTimestamp = alarms[i].timestamp;
           }
         }
-        return { policies: list }
+        return { policies: list, number: number }
       }
       case "hosts": {
         const json = {};
