@@ -510,7 +510,8 @@ class PolicyManager2 {
   }
 
   async getSamePolicies(policy) {
-    let policies = await this.loadActivePoliciesAsync({ includingDisabled: true });
+    const count = await this.countActivePolicyNumber()
+    let policies = await this.loadActivePoliciesAsync({ includingDisabled: true, number: count });
 
     if (policies) {
       return policies.filter(p => policy.isEqual(p))
@@ -830,12 +831,19 @@ class PolicyManager2 {
     });
   }
 
+  async countActivePolicyNumber() {
+    return rclient.zcardAsync(policyActiveKey);
+  }
+
   async loadActivePolicyIDs(options = {}) {
+    // options: { offset, number }
     const number = options.number || policyCapacity;
-    return rclient.zrevrangeAsync(policyActiveKey, 0, number - 1)
+    const offset = options.offset || 0;
+    return rclient.zrevrangeAsync(policyActiveKey, offset, offset + number - 1)
   }
 
   // we may need to limit number of policy rules created by user
+  // options: { offset, number }
   async loadActivePoliciesAsync(options = {}) {
     const results = await this.loadActivePolicyIDs(options)
     const policyRules = await this.idsToPolicies(results)
@@ -846,8 +854,8 @@ class PolicyManager2 {
     }
   }
 
-  async cleanActiveSet() {
-    const IDs = await this.loadActivePolicyIDs()
+  async cleanActiveSet(options = {}) {
+    const IDs = await this.loadActivePolicyIDs(options)
     const keys = IDs.map(this.getPolicyKey)
     const existingKeys = await batchKeyExists(keys, 1000)
 
