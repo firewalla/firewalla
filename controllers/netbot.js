@@ -3931,7 +3931,8 @@ class netBot extends ControllerBot {
           }
         }
         const item = _.get(rawmsg, 'message.obj.data.item')
-        if (item !== 'ping') {
+        const mtype = _.get(rawmsg, 'message.obj.mtype');
+        if (item !== 'ping' && (mtype === "get" || mtype === "init")) { // other mtype, i.e., set, cmd, is included in trace log
           rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app",
             item == 'batchAction'
               ? _.get(rawmsg, 'message.obj.data.value', []).map(c => [c.mtype, c.data && c.data.item, c.target])
