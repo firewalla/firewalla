@@ -21,72 +21,16 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
-const cipher = require('./_cipher.js');
-var key = require('../common/key.js');
 const f = require('../../net2/Firewalla.js');
 const log = require('../../net2/logger.js')(__filename);
 const util = require('../../util/util.js');
-const yaml = require('../../api/dist/lib/js-yaml.min.js');
 
 const dockerDir = `${f.getRuntimeInfoFolder()}/docker/freeradius`
+const configDir = `${f.getHiddenFolder()}/config/freeradius`;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 let instance = null;
-
-const TEMP_CLIENT_NETWORK = `
-client %NAME% {
-	ipaddr		= %IPADDR%
-	secret		= %SECRET%
-	require_message_authenticator = %REQUIRE_MSG_AUTH%
-}
-`
-
-/*
-https://www.rfc-editor.org/rfc/rfc3580.html
-
-Tunnel-Type=VLAN (13)
-Tunnel-Medium-Type=802 (6)
-Tunnel-Private-Group-ID=VLANID
-
-e.g.
-testuser  NT-Password := "******"
-    Tunnel-Type = 13,
-    Tunnel-Medium-Type = 6,
-    Tunnel-Private-Group-Id = "2",
-    Reply-Message := "Hello, %{User-Name}"
-*/
-const TEMP_USER = `
-%USERNAME%	NT-Password := "%PASSWD%"
-       Reply-Message := "Hello, %{User-Name}"
-`
-
-const TEMP_USER_POLICY = `
-if (&User-Name == "%USERNAME%") {
-    # If it matches, add a "tag" to the reply packet.
-    update reply {
-        # Filter-Id is often used to assign a user/device to a
-        # pre-defined group or policy on the NAS.
-
-        Reply-Message := "Hello, %{User-Name}. Device %{Calling-Station-ID} is connected to %{Called-Station-ID}."
-    }
-
-    if (%USER_TAG%) {
-        update reply {
-            Filter-Id := "%USER_TAG_VALUE%"
-        }
-    }
-
-    if (%USER_VLAN%) {
-        update reply {
-            Tunnel-Type := 13
-            Tunnel-Medium-Type := 6
-            Tunnel-Private-Group-ID := "%USER_VLAN_ID%"
-        }
-    }
-}
-
-`
 
 class FreeRadius {
   constructor(config) {
@@ -119,175 +63,6 @@ class FreeRadius {
     }, interval * 1000 || 60000); // every 60s by default
   }
 
-  async generateComposeConfig(options = {}) {
-    try {
-      const templateFile = `${__dirname}/docker-compose${options.ssl ? '.ssl' : ''}.yml`;
-      const content = await fs.readFileAsync(templateFile);
-      const template = yaml.safeLoad(content);
-      if (options.debug) {
-        if (template.services && template.services.freeradius) {
-          template.services.freeradius.command = `bash -c "bash /root/boot.sh && freeradius -X -f > /var/log/freeradius/freeradius.log 2>&1"`
-        }
-      }
-      const output = yaml.safeDump(template);
-
-      await fs.writeFileAsync(`${dockerDir}/docker-compose.yml`, output);
-    } catch (err) {
-      log.warn("Failed to generate customized radius docker compose yml, use default template");
-      await exec(`cp ${__dirname}/docker-compose${options.ssl ? '.ssl' : ''}.yml ${dockerDir}/docker-compose.yml`);
-    }
-  }
-
-  // prepare config directory
-  async prepareContainer(options = {}) {
-    try {
-      await exec(`rm -rf ${dockerDir}`);
-      await exec(`mkdir -p ${dockerDir}`);
-      await exec(`mkdir -p ${f.getUserHome()}/.forever/freeradius`).catch(err => null); // systemd permission required
-      await exec(`mkdir -p ${dockerDir}/wpa3`).catch(err => null);
-      await this.generateComposeConfig(options);
-      await exec(`cp ${__dirname}/raddb/eap ${dockerDir}/`);
-      await exec(`cp ${__dirname}/raddb/users ${dockerDir}/`);
-      await exec(`cp ${__dirname}/raddb/default ${dockerDir}/`);
-      await exec(`cp ${__dirname}/raddb/inner-tunnel ${dockerDir}/`);
-      await exec(`cp ${__dirname}/raddb/json_accounting ${dockerDir}/`);
-      await exec(`cp ${__dirname}/raddb/status ${dockerDir}/`);
-      await exec(`cp ${__dirname}/raddb/boot.sh ${dockerDir}/`);
-      if (options.ssl) {
-        await exec(`cp ${__dirname}/raddb/ca.cnf ${dockerDir}/`);
-        await exec(`bash ${__dirname}/genssl.sh`);
-      }
-      return true;
-    } catch (err) {
-      log.warn("Cannot prepare freeradius-server environment,", err.message);
-    }
-  }
-
-  static rand(size = 8) {
-    return Math.random().toString(36).substring(2, size + 2);
-  }
-
-  _replaceClientConfig(clientConfig) {
-    if (!clientConfig.ipaddr) {
-      log.warn("invalid freeradius client config ipaddr", clientConfig);
-      return "";
-    }
-    if (!clientConfig.secret) {
-      log.warn("invalid freeradius client config secret", clientConfig);
-      return "";
-    }
-    let content = TEMP_CLIENT_NETWORK.replace(/%NAME%/g, clientConfig.name || "nw_" + FreeRadius.rand());
-    content = content.replace(/%IPADDR%/g, clientConfig.ipaddr);
-    content = content.replace(/%SECRET%/g, clientConfig.secret);
-    content = content.replace(/%REQUIRE_MSG_AUTH%/g, clientConfig.require_msg_auth || "auto");
-    return content;
-  }
-
-  _replaceUserPolicyConfig(userConfig) {
-    if (!userConfig.username) {
-      log.warn("Invalid freeradius user config username", userConfig);
-      return "";
-    }
-    if (!userConfig.vlan && !userConfig.tag) {
-      log.warn("Skip generating freeradius user policy config, vlan and tag is not set", userConfig);
-      return "";
-    }
-    let content = TEMP_USER_POLICY.replace(/%USERNAME%/g, userConfig.username);
-    content = content.replace(/%USER_VLAN%/g, userConfig.vlan ? "1" : "0");
-    content = content.replace(/%USER_VLAN_ID%/g, userConfig.vlan || "0");
-    content = content.replace(/%USER_TAG%/g, userConfig.tag ? "1" : "0");
-    content = content.replace(/%USER_TAG_VALUE%/g, userConfig.tag || "-");
-    return content;
-  }
-
-  _replaceUserConfig(userConfig) {
-    if (!userConfig.username) {
-      log.warn("Invalid freeradius user config username", userConfig);
-      return "";
-    }
-    if (!userConfig.passwd) {
-      log.warn("invalid freeradius user config passwd", userConfig);
-      return "";
-    }
-    let content = TEMP_USER.replace(/%USERNAME%/g, userConfig.username);
-    content = content.replace(/%PASSWD%/g, userConfig.passwd);
-
-    return content;
-  }
-
-  async _genClientsConfFile(clientConfig) {
-    const clientConf = [];
-    for (const client of clientConfig) {
-      const content = this._replaceClientConfig(client);
-      if (content) {
-        clientConf.push(content);
-      }
-    }
-    const clientConfigStr = clientConf.join("\n");
-    const content = await fs.readFileAsync(`${__dirname}/raddb/clients.conf.tmplt`, { encoding: "utf8" }).catch((err) => null);
-    if (!content) {
-      log.warn("Not found client.conf.template to generate clients.conf");
-      return;
-    }
-    await fs.writeFileAsync(`${dockerDir}/clients.conf`, content.replace(/%CLIENT_NETWORK_LIST%/g, clientConfigStr));
-  }
-
-  async _genUsersConfFile(usersConfig) {
-    const userConf = [];
-    for (const user of usersConfig) {
-      const content = this._replaceUserConfig(user);
-      if (content) {
-        userConf.push(content);
-      }
-    }
-    const usersConfStr = userConf.join("\n");
-    await fs.writeFileAsync(`${dockerDir}/wpa3/users`, usersConfStr);
-  }
-
-  async _genUserPolicyConfFile(usersConfig) {
-    const userPolicyConf = [];
-    for (const policy of usersConfig) {
-      const content = this._replaceUserPolicyConfig(policy);
-      if (content) {
-        userPolicyConf.push(content);
-      }
-    }
-    const userPolicyConfStr = userPolicyConf.join("\n");
-    await fs.writeFileAsync(`${dockerDir}/wpa3/users-policy`, userPolicyConfStr);
-  }
-
-  async prepareRadiusConfig(config) {
-    try {
-      await this._genClientsConfFile(config.clients || []);
-      if (!await fs.accessAsync(`${dockerDir}/clients.conf`, fs.constants.F_OK).then(() => true).catch((err) => {
-        log.warn("Failed to generate clients.conf file,", err.message);
-        return false;
-      })) {
-        log.warn("Failed to generate clients.conf");
-        return;
-      }
-      await this._genUsersConfFile(config.users || []);
-      if (!await fs.accessAsync(`${dockerDir}/wpa3/users`, fs.constants.F_OK).then(() => true).catch((err) => {
-        log.warn("Failed to genearte users file,", err.message);
-        return false;
-      })) {
-        log.warn("Failed to generate users");
-        return;
-      }
-      await this._genUserPolicyConfFile(config.users || []);
-      if (!await fs.accessAsync(`${dockerDir}/wpa3/users-policy`, fs.constants.F_OK).then(() => true).catch((err) => {
-        log.warn("Failed to genearte users-policy file,", err.message);
-      })) {
-        log.warn("Failed to generate users-policy");
-        return;
-      }
-      return true;
-    } catch (err) {
-      log.warn("Cannot prepare freeradius-server config", err.message);
-    }
-    return
-  }
-
   async startDockerDaemon() {
     let dockerRunning = false;
     if (await exec(`sudo systemctl -q is-active docker`).then(() => true).catch((err) => false)) {
@@ -304,85 +79,147 @@ class FreeRadius {
     return dockerRunning
   }
 
-  async startServer(radiusConfig, options = {}) {
+  async startServer(options = {}) {
     this.watchContainer(5);
-    await this._startServer(radiusConfig, options);
+    await this._startServer(options);
     this.watchContainer(60);
     await this._statusServer();
   }
 
-  async _startServer(radiusConfig, options = {}) {
-    if (!radiusConfig) {
-      log.warn("Abort starting radius-server, radius config must be specified.")
-      return
-    }
+  async _startServer(options = {}) {
     if (this.running) {
       log.warn("Abort starting radius-server, server is already running.")
-      return;
+      return false;
     }
-    log.info("Starting container freeradius-server...", radiusConfig);
+    log.debug("Starting container freeradius-server...");
     try {
-      if (!await this.prepareContainer(options)) {
-        log.warn("Abort starting radius-server, fail to prepare environment");
-        return;
+      if (!await this.generateRadiusConfig()) {
+        log.warn("Abort starting radius-server, configuration not ready");
+        return false;
       }
-      if (!await this.prepareRadiusConfig(radiusConfig)) {
-        log.warn("Abort starting radius-server, configuration not ready", radiusConfig);
-        return;
+      if (!await this._start()) {
+        return false;
       }
-      await this._start();
-      await util.waitFor(_ => this.running === true, options.timeout * 1000 || 30000).catch((err) => { });
+      await util.waitFor(_ => this.running === true, options.timeout * 1000 || 60000).catch((err) => { });
       if (!this.running) {
         log.warn("Container freeradius-server is not started.")
-        return;
+        return false;
       }
       log.info("Container freeradius-server is started.");
+      return true;
     } catch (err) {
       log.warn("Failed to start radius-server,", err.message);
     }
+    return false;
   }
 
   async _start() {
     if (!await this.startDockerDaemon()) {
       log.error("Docker daemon is not running.");
-      return;
+      return false;
     }
     await exec("sudo systemctl start docker-compose@freeradius").catch((e) => {
-      log.warn("Cannot start freeradius,", e.message)
+      log.warn("Cannot start freeradius,", e.message);
+      return false;
     });
+    return true;
   }
 
-  async reloadServer(radiusConfig, options = {}) {
+  async generateOptions(options = {}) {
+    const configPath = `${configDir}/.freerc`;
+    // remove existing file
+    if (await fs.accessAsync(configPath, fs.constants.F_OK).then(() => true).catch(_err => false)) {
+      await fs.unlinkAsync(configPath);
+    }
+    // generate new file
+    const lines = Object.entries(options).map(([key, value]) => `${key}=${value}`);
+    const content = lines.join("\n");
+    await fs.writeFileAsync(configPath, content);
+    return true;
+  }
+
+  async generateRadiusConfig() {
+    try {
+      const configPath = `${configDir}/freeradius.js`;
+      if (!await fs.accessAsync(configPath, fs.constants.F_OK).then(() => true).catch(_err => false)) {
+        log.warn("freeradius config scripts not exist");
+        return false;
+      }
+
+      const nodePath = await this.getNodePath();
+      if (!nodePath) {
+        log.warn("Cannot get generate radius config, node binary not found")
+        return "";
+      }
+      await exec(`NODE_PATH="${f.getUserHome()}/.node_modules/node_modules" ${nodePath} ${configPath} generate > ${f.getUserHome()}/logs/freeradius.log 2>&1`)
+      return true;
+    } catch (err) {
+      log.warn("Failed to generate radius config,", err.message);
+      return false;
+    }
+  }
+
+  async loadOptionsAsync() {
+    const options = {};
+    // Load environment file if .freerc` exists in working directory
+    if (await fs.accessAsync(`${configDir}/.freerc`).then(() => true).catch(() => false)) {
+      try {
+        const envContent = await fs.readFileAsync(`${configDir}/.freerc`, 'utf8');
+        const envLines = envContent.split('\n').filter(line =>
+          line.trim() && !line.trim().startsWith('#')
+        );
+        for (const line of envLines) {
+          const [key, value] = line.split('=');
+          if (key && value) options[key] = value;
+        }
+      } catch (error) {
+        console.warn(`Warning: Could not read environment file: ${error.message}`);
+      }
+    }
+    return options;
+  }
+
+  async getNodePath() {
+    try {
+      const result = await exec(`sudo -u pi bash -c "source ~/.nvm/nvm.sh && which node"`).then(r => r.stdout.trim());
+      if (result) return result;
+    } catch (err) {
+      log.warn("Cannot get node path via nvm as pi user,", err.message);
+    }
+  }
+
+  async reloadServer(options = {}) {
     this.watchContainer(5);
-    await this._reloadServer(radiusConfig, options);
+    await this._reloadServer(options);
     this.watchContainer(60);
     await this._statusServer();
   }
 
-  async _reloadServer(radiusConfig, options = {}) {
+  // TODO: will not reload clients, need to check changes
+  async _reloadServer(options = {}) {
     try {
-      if (!radiusConfig) {
-        log.warn("Abort reloading radius-server, radius config must be specified.")
-        return
-      }
-      if (!await this.prepareRadiusConfig(radiusConfig)) {
-        log.warn("Abort starting radius-server, configuration not ready", radiusConfig);
-        return;
+      if (!await this.generateRadiusConfig()) {
+        log.warn("Abort starting radius-server, configuration not ready");
+        return false;
       }
       log.info("Reloading container freeradius-server...");
 
       await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml kill -s SIGHUP freeradius`).catch((e) => {
         log.warn("Cannot reload freeradius,", e.message)
+        // comment out to keep for debug
+        // return false;
       });
       await sleep(3000);
-      await util.waitFor(_ => this.running === true, options.timeout * 1000 || 30000).catch((err) => { });
+      await util.waitFor(_ => this.running === true, options.timeout * 1000 || 60000).catch((err) => { });
       log.info("Container freeradius-server is reloaded.");
+      return this.running;
     } catch (err) {
       log.warn("Failed to reload radius-server,", err.message);
     }
+    return false;
   }
 
-  async _statusServer(options = {}) {
+  async _statusServer() {
     try {
       this.pid = null;
       log.info("Checking status of container freeradius-server...");
@@ -418,7 +255,7 @@ class FreeRadius {
       await exec("sudo systemctl stop docker-compose@freeradius").catch((e) => {
         log.warn("Cannot stop freeradius,", e.message)
       });
-      await util.waitFor(_ => this.running === false, options.timeout * 1000 || 30000).catch((err) => { });
+      await util.waitFor(_ => this.running === false, options.timeout * 1000 || 60000).catch((err) => { });
       if (this.running) {
         log.warn("Container freeradius-server is not stopped.")
         return
@@ -429,14 +266,17 @@ class FreeRadius {
     }
   }
 
-  async reconfigServer(radiusConfig, options = {}) {
+  async reconfigServer(options = {}) {
     this.watchContainer(5);
     if (options.quickReload) {
-      await this._reloadServer(radiusConfig, options);
+      await this._reloadServer(options);
     } else {
       await this._stopServer(options);
-      await this._startServer(radiusConfig, options);
+      if (!await this._startServer(options)) {
+        return false;
+      }
       this.watchContainer(60);
+      return this.running;
     }
   }
 

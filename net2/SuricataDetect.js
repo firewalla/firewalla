@@ -32,6 +32,15 @@ const conntrack = require('./Conntrack.js');
 const Constants = require('./Constants.js');
 const _ = require('lodash');
 const fc = require('./config.js');
+const LRU = require('lru-cache');
+
+// Cache for rate limiting alarm generation - 5 minutes TTL
+const alarmRateLimitCache = new LRU({
+  max: 1000, // Maximum number of entries
+  maxAge: 5 * 60 * 1000, // 5 minutes in milliseconds
+  updateAgeOnGet: false,
+  allowStale: false
+});
 
 class SuricataDetect {
   constructor(logDir = "/log/slog") {
@@ -161,6 +170,17 @@ class SuricataDetect {
         remoteName = host;
       }
     }
+    const alertDedupKey = `${localIP}:${remoteIP}:${signature_id}`;
+    
+    // Rate limiting: check if we've recently generated an alarm for this key
+    if (alarmRateLimitCache.has(alertDedupKey)) {
+      log.info(`Rate limiting alarm for key: ${alertDedupKey} - similar alarm generated within last 5 minutes`);
+      return;
+    }
+    
+    // Add to cache to prevent future alarms for 5 minutes
+    alarmRateLimitCache.set(alertDedupKey, Date.now());
+    
     let localOrig;
     if (srcLocal && srcOrig || dstLocal && !srcLocal && !srcOrig)
       localOrig = true;

@@ -264,6 +264,28 @@ class TagManager {
     return false;
   }
 
+  getTagByRadiusUser(radiusUser) {
+    for (const tag of Object.values(this.tags)) {
+      if (tag.getTagType() == Constants.TAG_TYPE_USER) {
+        const radiusPolicy = tag.policy && tag.policy.freeradius_server;
+        if (radiusPolicy) {
+          const users = radiusPolicy.radius && radiusPolicy.radius.users;
+          if (!users || !_.isArray(users)) {
+            log.info(`users of tag ${tag.getUniqueId()} not found`);
+            continue;
+          }
+          log.info(`checking users of tag ${tag.getUniqueId()}`, users);
+          for (const user of users) {
+            if (user.username == radiusUser) {
+              return tag;
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
+
   // this should be run only 1 time
   async buildIndex() {
     try {
