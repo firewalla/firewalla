@@ -998,6 +998,11 @@ module.exports = class HostManager extends Monitorable {
     json.networkMonitorEvents = networkMonitorEvents;
   }
 
+  async policyRuleNumberForInit(json) {
+      const count = await policyManager2.countActivePolicyNumber()
+      json.policyRuleNumber = count
+  }
+
   // what is blocked
   async policyRulesForInit(json) {
     log.debug("Reading policy rules");
@@ -1157,6 +1162,7 @@ module.exports = class HostManager extends Monitorable {
       this.extensionDataForInit(json),
       this.modeForInit(json),
       this.policyRulesForInit(json),
+      this.policyRuleNumberForInit(json),
       this.exceptionRulesForInit(json),
       this.natDataForInit(json),
       this.getCloudURL(json),
@@ -1304,7 +1310,7 @@ module.exports = class HostManager extends Monitorable {
 
   async getDataUsagePlan(json) {
     const enable = fc.isFeatureOn('data_plan');
-    const data = await rclient.getAsync('sys:data:plan');
+    const data = await rclient.getAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS);
     if(!data || !enable) {
       return;
     }
@@ -1316,7 +1322,7 @@ module.exports = class HostManager extends Monitorable {
       }
       return result;
     } catch(err) {
-      log.error(`Failed to parse sys:data:plan, err: ${err}`);
+      log.error(`Failed to parse ${Constants.REDIS_KEY_DATA_PLAN_SETTINGS}, err: ${err}`);
       return;
     }
   }
@@ -1566,6 +1572,7 @@ module.exports = class HostManager extends Monitorable {
       this.policyDataForInit(json),
       this.modeForInit(json),
       this.policyRulesForInit(json),
+      this.policyRuleNumberForInit(json),
       this.exceptionRulesForInit(json),
       this.newAlarmDataForInit(json),
       this.pendingAlarmNumberForInit(json),

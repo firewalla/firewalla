@@ -78,6 +78,23 @@ else
   cp  /log/redis/redis-server.log .
   timeout 40 /home/pi/firewalla/scripts/sanity_check.sh > scc.log
   (curl -s "http://localhost:8837/v1/config/active" | jq 'del(.interface.pppoe.pppoe0.password, .interface.pppoe.pppoe1.password, .interface.wlan.wlan0.wpaSupplicant, .interface.wlan.wlan1.wpaSupplicant, .hostapd.wlan0.params.ssid, .hostapd.wlan0.params.wpa_passphrase, .hostapd.wlan1.params.ssid, .hostapd.wlan1.params.wpa_passphrase, .apc.profile[]?.key, .apc.assets_template.ap_default.wifiNetworks[]?.aliasSSIDs[]?.password)' | cat) &> frcc.log
+
+  # unzip all gz tar.gz files
+  find . -type f -name "*.gz" -exec sudo gunzip {} +
+
+  # remove sensitive data from logs
+  find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" \) -exec sudo sed -i -E '
+  s/([[:space:]](password|key|privateKey|privKey):[[:space:]]*(\x1b\[[0-9;]*m)?[\x27"])([^\x27"]*)([\x27"](\x1b\[[0-9;]*m)?)/\1******\5/gI
+  ' {} +
+
+  find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" \) -exec sudo sed -i -E '
+  s/([[:space:]]("password"|"key"|"privateKey"|"privKey"):\s*[\x27"])([^\x27"]*)([\x27"])/\1******\4/gI
+  ' {} +
+
+  find . -type f -name "*.conf" -exec sudo sed -i -E '
+  s/(PrivateKey[[:space:]]*=[[:space:]]*)[^[:space:]].*/\1******/gI
+  ' {} +
+
   # save events
   redis-cli zrangebyscore event:log 0 inf > events_all.txt
   redis-cli hgetall event:state:cache > events_state_all.txt

@@ -920,7 +920,7 @@ class netBot extends ControllerBot {
       }
       case "dataPlan": {
         const { total, date, wanConfs } = value;
-        await rclient.setAsync("sys:data:plan", JSON.stringify({ total, date, wanConfs }));
+        await rclient.setAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS, JSON.stringify({ total, date, wanConfs }));
         sem.emitEvent({
           type: "DataPlan:Updated",
           date: date,
@@ -1465,9 +1465,12 @@ class netBot extends ControllerBot {
       case "proToken":
         return { token: tokenManager.getToken(gid) }
       case "policies": {
-        const list = await pm2.loadActivePoliciesAsync()
+        const number = await pm2.countActivePolicyNumber();
+        const options = Object.assign({}, value);
+        options.number = value && value.limit;
+        const list = await pm2.loadActivePoliciesAsync(options);
         let alarmIDs = list.map((p) => p.aid);
-        const alarms = await am2.idsToAlarmsAsync(alarmIDs)
+        const alarms = await am2.idsToAlarmsAsync(alarmIDs);
 
         for (let i = 0; i < list.length; i++) {
           if (list[i] && alarms[i]) {
@@ -1475,7 +1478,7 @@ class netBot extends ControllerBot {
             list[i].alarmTimestamp = alarms[i].timestamp;
           }
         }
-        return { policies: list }
+        return { policies: list, number: number }
       }
       case "hosts": {
         const json = {};
@@ -1575,7 +1578,7 @@ class netBot extends ControllerBot {
         }
       }
       case "monthlyDataUsageOnWans": {
-        let dataPlan = await rclient.getAsync('sys:data:plan');
+        let dataPlan = await rclient.getAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS);
         if (dataPlan) {
           dataPlan = JSON.parse(dataPlan);
         } else {
@@ -1593,7 +1596,7 @@ class netBot extends ControllerBot {
       }
       case "dataPlan": {
         const featureName = 'data_plan';
-        let dataPlan = await rclient.getAsync('sys:data:plan');
+        let dataPlan = await rclient.getAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS);
         const enable = fc.isFeatureOn(featureName)
         if (dataPlan) {
           dataPlan = JSON.parse(dataPlan);
@@ -3931,7 +3934,8 @@ class netBot extends ControllerBot {
           }
         }
         const item = _.get(rawmsg, 'message.obj.data.item')
-        if (item !== 'ping') {
+        const mtype = _.get(rawmsg, 'message.obj.mtype');
+        if (item !== 'ping' && (mtype === "get" || mtype === "init")) { // other mtype, i.e., set, cmd, is included in trace log
           rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app",
             item == 'batchAction'
               ? _.get(rawmsg, 'message.obj.data.value', []).map(c => [c.mtype, c.data && c.data.item, c.target])
