@@ -103,6 +103,7 @@ class IPSecDockerClient extends DockerBaseVPNClient {
         await this.prepareUserPassCert(config);
         composeObj.services.vpn.image = `public.ecr.aws/a0j1s2e9/strongswan-client:${f.isDevelopmentVersion() ? "dev" : "latest"}`;
         composeObj.services.vpn.volumes = ["./:/data", "./out:/output"];
+        break;
       case "ikev2-generic":
         // classic ipsec.conf ipsec.secrets and other dependent scripts/certificates if necessary
         composeObj.services.vpn.image = `public.ecr.aws/a0j1s2e9/strongswan-clientv2:${f.isDevelopmentVersion() ? "dev" : "latest"}`;

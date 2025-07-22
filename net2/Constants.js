@@ -69,6 +69,7 @@ module.exports = {
   REDIS_KEY_POLICY_DISTURB_CLOUD_CONFIG: "policy_disturb_cloud_config",
   REDIS_KEY_POLICY_DISTURB_CONFIG: "policy_disturb_config",
   REDIS_KEY_MSP_DATA: "ext.guardian.data",
+  REDIS_KEY_DATA_PLAN_SETTINGS: "sys:data:plan",
 
   REDIS_HKEY_NSE_DHCP: "dhcp",
   REDIS_HKEY_CONN_OINTF: "oIntf",

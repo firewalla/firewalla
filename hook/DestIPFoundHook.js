@@ -110,8 +110,8 @@ class DestIPFoundHook extends Hook {
     if (host)
       intel.host = host;
 
-    log.debug('sources', intelSources)
-    intelSources.forEach((info) => {
+    log.debug('sources', intelSources);
+    (intelSources || []).forEach((info) => {
 
       if (info.failed) {
         intel.cloudFailed = true;

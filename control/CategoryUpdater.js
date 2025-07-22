@@ -266,20 +266,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return `${CUSTOMIZED_CATEGORY_KEY_PREFIX}${category}`;
   }
 
-  _getCustomizedCategoryIpsetType(category) {
-    if (this.customizedCategories[category]) {
-      switch (this.customizedCategories[category].type) {
-        case "net":
-          return "hash:net";
-        case "port":
-          return "bitmap:port";
-        default:
-          return "hash:net";
-      }
-    }
-    return "hash:net";
-  }
-
   async _getNextCustomizedCategory() {
     let id = await rclient.getAsync("customized_category:id");
     if (!id) {
@@ -353,6 +339,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
           await this.flushIPv4Addresses(c);
           await this.flushIPv6Addresses(c);
           await this.flushIncludedDomains(c);
+          await this.flushCategoryData(c);
+          await this.flushIncludedElements(c);
           // this will trigger ipset recycle and dnsmasq config change
           const event = {
             type: "UPDATE_CATEGORY_DOMAIN",
@@ -373,7 +361,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     log.debug("invoke activate category", category)
     if (this.isActivated(category)) return;
     if (firewalla.isMain()) // do not create ipset unless in FireMain
-      await super.activateCategory(category, this.isCustomizedCategory(category) ? this._getCustomizedCategoryIpsetType(category) : "hash:net");
+      await super.activateCategory(category, "hash:net");
     sem.emitEvent({
       type: "Policy:CategoryActivated",
       toProcess: "FireMain",
@@ -438,6 +426,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   async categoryDataListExists(category) {
     return rclient.existsAsync(this.getCategoryDataListKey(category));
+  }
+
+  async includedElementsExists(category) {
+    return rclient.existsAsync(this.getIncludedElementsKey(category));
   }
 
   async getDefaultDomainPatterns(category) {
@@ -593,6 +585,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
       throw new Error(`Category ${category} is not found`);
     if (!_.isArray(elements) || elements.length === 0)
       return;
+    await this.flushCategoryData(category);
+    await this.flushIncludedElements(category);
+    await rclient.saddAsync(this.getIncludedElementsKey(category), elements);
+    
+    for (const element of elements) {
+      const entries = CategoryEntry.parse(element);
+      await this.addCategoryData(category, entries);
+    }
+    // following code is for backward compatibility, will be removed in the future
     await this.flushIPv4Addresses(category);
     await this.flushIPv6Addresses(category);
     await this.flushIncludedDomains(category);
@@ -624,11 +625,19 @@ class CategoryUpdater extends CategoryUpdaterBase {
   async getIncludedElements(category) {
     if (!this.customizedCategories[category])
       throw new Error(`Category ${category} is not found`);
+    if (await this.includedElementsExists(category)) {
+      return (await rclient.smembersAsync(this.getIncludedElementsKey(category)));
+    }
+    // following code is for backward compatibility, will be removed in the future
     const domains = await this.getIncludedDomains(category) || [];
     const ip4Addrs = await this.getIPv4Addresses(category) || [];
     const ip6Addrs = await this.getIPv6Addresses(category) || [];
     const elements = domains.concat(ip4Addrs).concat(ip6Addrs);
     return elements;
+  }
+
+  async flushIncludedElements(category) {
+    return rclient.unlinkAsync(this.getIncludedElementsKey(category));
   }
 
   async getExcludedDomains(category) {

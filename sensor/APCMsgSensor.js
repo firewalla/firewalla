@@ -60,6 +60,7 @@ class APCMsgSensor extends Sensor {
     */
     this.ssidGroupMap = {};
     this.ssidVlanGroupMap = {};
+    this.wpaEntSSIDs = [];
     this.enforcedRules = {};
     this.policyInitialized = false;
     sl.initSingleSensor("ACLAuditLogPlugin").then((r) => {this.aclAuditLogPlugin = r}).catch((err) => {
@@ -256,7 +257,7 @@ class APCMsgSensor extends Sensor {
         const upcaseMac = mac.toUpperCase();
         if (!staInfo.vendor)
           continue;
-        
+
         let wlanVendors = await hostTool.getWlanVendorFromCache(upcaseMac);
         if (wlanVendors) {
           continue;
@@ -283,8 +284,8 @@ class APCMsgSensor extends Sensor {
     if (!mac || !vendor)
       return;
     mac = mac.toUpperCase();
-    
-    
+
+
     let wlanVendors = await hostTool.getWlanVendorFromCache(mac);
     if (wlanVendors) {
       return;
@@ -354,6 +355,9 @@ class APCMsgSensor extends Sensor {
       const config = await fwapc.getConfig();
       const assets = _.get(config, "assets");
       const templates = _.get(config, "assets_template");
+      const ssidProfiles = _.get(config, "profile");
+      this.wpaEntSSIDs = Object.entries(ssidProfiles).filter(item => item[1].encryption === "wpa2" || item[1].wpa3 === true).map(item => item[0]);
+
       for (const uid of Object.keys(assets)) {
         const templateId = _.get(assets, [uid, "templateId"]);
         const template = _.get(templates, templateId);
@@ -377,6 +381,12 @@ class APCMsgSensor extends Sensor {
         const status = ssidStatus[uuid];
         if (!_.isObject(status))
           continue;
+
+        // if ssid is in wpa2 or wpa3 enterprise mode, skip updating host ssid
+        if (this.wpaEntSSIDs.includes(uuid)) {
+          log.debug(`ssid ${uuid} is in wpa2 or wpa3 enterprise mode, skip updating host ssid`);
+          continue;
+        }
         for (const key of Object.keys(status)) {
           if (!_.isArray(status[key]))
             continue;
@@ -440,6 +450,11 @@ class APCMsgSensor extends Sensor {
         const mac = _.get(msg, ["station", "macAddr"]);
         if (!mac)
           return;
+        const ssid = _.get(msg, ["station", "ssid"]);
+        if (this.wpaEntSSIDs.includes(ssid)) {
+          log.debug(`mac ${mac} ssid ${ssid} is in wpa2 or wpa3 enterprise mode, skip updating host ssid`);
+          return;
+        }
         // map to a group of a default segment if sta does not belong to a dynamic vlan
         if (!groupId && !dvlanId)
           groupId = this.ssidGroupMap[uuid] && this.ssidGroupMap[uuid].getUniqueId();
@@ -514,6 +529,7 @@ class APCMsgSensor extends Sensor {
       }
       const config = await fwapc.getConfig();
       const ssidProfiles = _.get(config, "profile");
+      this.wpaEntSSIDs = Object.entries(ssidProfiles).filter(item => item[1].encryption === "wpa2" || item[1].wpa3 === true).map(item => item[0]);;
       const removedProfiles = _.pick(this.ssidProfiles, Object.keys(this.ssidProfiles).filter(ssid => !_.has(ssidProfiles, ssid)));
       for (const uuid of Object.keys(removedProfiles)) {
         const profile = removedProfiles[uuid];
@@ -661,7 +677,7 @@ class APCMsgSensor extends Sensor {
       hostTool.setWlanVendorToCache(mac, wlanVendors);
       return wlanVendors;
     }
-    return null;  
+    return null;
   }
 
 }
