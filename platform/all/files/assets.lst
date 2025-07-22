@@ -8,3 +8,4 @@
 /home/pi/.firewalla/run/assets/mysql8.lua /all/mysql8.lua 644 ':' 'SLNAME="/usr/share/nmap/nselib/mysql8.lua"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/mysql8.lua ${SLNAME}; fi'
 /home/pi/.firewalla/run/assets/outlib.lua /all/outlib.lua 644 ':' 'SLNAME="/usr/share/nmap/nselib/outlib.lua"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/outlib.lua ${SLNAME}; fi'
 /home/pi/.firewalla/run/assets/nmap-mac-prefixes /all/nmap-mac-prefixes 644 ':' 'sudo cp -f /home/pi/.firewalla/run/assets/nmap-mac-prefixes /usr/share/nmap/nmap-mac-prefixes'
+/home/pi/.firewalla/run/assets/freeradius.tar.gz /all/freeradius.tar.gz 644 ':' 'cd /home/pi/.firewalla/run/assets; tar -C /home/pi/.firewalla/config -zxf freeradius.tar.gz'

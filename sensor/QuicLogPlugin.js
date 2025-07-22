@@ -44,7 +44,7 @@ class QuicLogPlugin extends Sensor {
     this.lastFlushTime = new Date().getTime();
     this.localCache = LRU({
         max: this.config.localCacheSize,
-        ttl: this.config.localCacheTtl * 1000
+        maxAge: this.config.localCacheTtl * 1000
     });
   }
   hookFeature(featureName) {

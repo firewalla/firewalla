@@ -415,7 +415,8 @@ module.exports = class {
     const mspId = await this.getMspId();
     try {
       // remove all msp related rules
-      const policies = await pm2.loadActivePoliciesAsync();
+      const count = await pm2.countActivePolicyNumber()
+      const policies = await pm2.loadActivePoliciesAsync({ number: count });
       const mspData = await this.getMspData();
       await Promise.all(policies.map(async p => {
         if (await this.isMspRelatedRule(p, { mspData })) {
@@ -471,7 +472,7 @@ module.exports = class {
       }
 
       // disable msp features if not support msp
-      if (this.name != "support"){
+      if (this.name != "support") {
         const features = Object.keys(fc.getFeatures()).filter(i => i.startsWith('msp_'));
         for (const f of features) {
           await fc.disableDynamicFeature(f);

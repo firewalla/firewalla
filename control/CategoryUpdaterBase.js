@@ -105,6 +105,10 @@ class CategoryUpdaterBase {
     return `domain:pattern:${pattern}`;
   }
 
+  getIncludedElementsKey(category) {
+    return `category:${category}:included:elements`;
+  }
+
   isDomainPattern(domain) {
     return (domain.startsWith("*.") ? domain.substring(2) : domain).includes("*");
   }
