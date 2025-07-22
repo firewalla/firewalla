@@ -510,7 +510,8 @@ class PolicyManager2 {
   }
 
   async getSamePolicies(policy) {
-    let policies = await this.loadActivePoliciesAsync({ includingDisabled: true });
+    const count = await this.countActivePolicyNumber()
+    let policies = await this.loadActivePoliciesAsync({ includingDisabled: true, number: count });
 
     if (policies) {
       return policies.filter(p => policy.isEqual(p))
@@ -830,12 +831,19 @@ class PolicyManager2 {
     });
   }
 
+  async countActivePolicyNumber() {
+    return rclient.zcardAsync(policyActiveKey);
+  }
+
   async loadActivePolicyIDs(options = {}) {
+    // options: { offset, number }
     const number = options.number || policyCapacity;
-    return rclient.zrevrangeAsync(policyActiveKey, 0, number - 1)
+    const offset = options.offset || 0;
+    return rclient.zrevrangeAsync(policyActiveKey, offset, offset + number - 1)
   }
 
   // we may need to limit number of policy rules created by user
+  // options: { offset, number }
   async loadActivePoliciesAsync(options = {}) {
     const results = await this.loadActivePolicyIDs(options)
     const policyRules = await this.idsToPolicies(results)
@@ -846,8 +854,8 @@ class PolicyManager2 {
     }
   }
 
-  async cleanActiveSet() {
-    const IDs = await this.loadActivePolicyIDs()
+  async cleanActiveSet(options = {}) {
+    const IDs = await this.loadActivePolicyIDs(options)
     const keys = IDs.map(this.getPolicyKey)
     const existingKeys = await batchKeyExists(keys, 1000)
 
@@ -1072,7 +1080,36 @@ class PolicyManager2 {
     return policy && policy.appTimeUsage;
   }
 
+  async enforceIptablesOnly(policy) {
+    try {
+      if (await this.isDisableAll()) {
+        return policy; // temporarily by DisableAll flag
+      }
+      if (policy.disabled == 1 || !policy.iptables_only) {
+        // if policy is disabled or not iptables only, skip enforcing
+        return policy;
+      }
+      const action = policy.action || "block";
+      if (action !== "block" && action !== "app_block") {
+        return policy; // only block or app_block action is supported for iptables only policy
+      }
+      await this._enforce(policy);
+
+    } catch (err) {
+      log.error(`Failed to enforce iptables only policy ${policy.pid}`, err.message);
+    } finally {
+      const action = policy.action || "block";
+      if (action === "block" || action === "app_block") {
+        this.scheduleRefreshConnmark();
+      }
+    }
+
+  }
+
   async enforce(policy) {
+    if (policy.iptables_only) {
+      return this.enforceIptablesOnly(policy);
+    }
     try {
       if (await this.isDisableAll()) {
         return policy; // temporarily by DisableAll flag
@@ -1137,9 +1174,6 @@ class PolicyManager2 {
           log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
         } else {
           await this._enforce(policy);
-          if (policy.iptables_only) {
-            return; // no need to set expire timer for iptables only policy
-          }
           this.notifyPolicyActivated(policy);
           log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
           const pid = policy.pid;
@@ -1164,16 +1198,14 @@ class PolicyManager2 {
           this.invalidateExpireTimer(policy); // remove old one if exists
           this.enabledTimers[pid] = policyTimer;
         }
-      } else if (policy.cronTime && !policy.iptables_only) {
+      } else if (policy.cronTime) {
         // this is a reoccuring policy, use scheduler to manage it
         return scheduler.registerPolicy(policy);
       } else if (this.needAppTimeUsageRegister(policy)) {
         // this is an app time usage policy, use AppTimeUsageManager to manage it
         return AppTimeUsageManager.registerPolicy(policy);
       } else {
-        if (!policy.iptables_only) {
-          this.notifyPolicyActivated(policy);
-        }
+        this.notifyPolicyActivated(policy);
 
         const action = policy.action || "block";
         const type = policy["i.type"] || policy["type"]; //backward compatibility

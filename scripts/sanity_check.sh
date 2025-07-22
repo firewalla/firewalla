@@ -799,7 +799,7 @@ check_hosts() {
         done
 
         local NETWORK_NAME=
-        if [[ -n ${nid+x} ]]; then
+        if [[ -n $nid ]]; then
           NETWORK_NAME=${NETWORK_UUID_NAME[$nid]}
           for policy in "${hierarchicalPolicies[@]}"; do
             if [[ -n ${NP[$nid,$policy]+x} ]]; then
