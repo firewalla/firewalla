@@ -88,11 +88,19 @@ else
   ' {} +
 
   find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" \) -exec sudo sed -i -E '
-  s/([[:space:]]("password"|"key"|"privateKey"|"privKey"):\s*[\x27"])([^\x27"]*)([\x27"])/\1******\4/gI
+  s/(("password"|"key"|"privateKey"|"privKey"):\s*[\x27"])([^\x27"]*)([\x27"])/\1******\4/gI
+  ' {} +
+
+  find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" \) -exec sudo sed -i -E '
+  s/\\"(privateKey|privKey|key|password)\\"\s*:\s*\\"([^\\"]+)\\"\s*/\\"\1\\":\\"******\\"/gI
   ' {} +
 
   find . -type f -name "*.conf" -exec sudo sed -i -E '
   s/(PrivateKey[[:space:]]*=[[:space:]]*)[^[:space:]].*/\1******/gI
+  ' {} +
+
+  find . -type f -name "*.log" -exec sudo sed -i -E '
+  s/(password:[[:space:]]*Some\(")[^"]+("\))/\1*****\2/gI
   ' {} +
 
   # save events
