@@ -325,8 +325,12 @@ class DataUsageSensor extends Sensor {
                     upload: upload
                 }
             });
-            if (wanUUID)
+            if (wanUUID) {
               alarm["p.wan.uuid"] = wanUUID;
+              const wanIntf = sysManager.getInterfaceViaUUID(wanUUID);
+              if (wanIntf)
+                alarm["p.wan.name"] = wanIntf.desc;
+            }
             alarmManager2.enqueueAlarm(alarm);
         }
     }
