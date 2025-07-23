@@ -3886,7 +3886,7 @@ class netBot extends ControllerBot {
       delete rawmsg.message.obj.data.ignoreRate;
     }
     if (ignoreRate) {
-      log.info('ignore rate limit');
+      // log.info('ignore rate limit');
       const response = await this.msgHandler(gid, rawmsg)
       log.debug('msgHandler returned', response)
       return response
