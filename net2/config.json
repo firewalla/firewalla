@@ -841,7 +841,7 @@
     "NicStateSensor": {},
     "DeviceMonitorSensor": {},
     "PolicyDisturbSensor": {
-      "disturbConfs": {
+      "generalConfs": {
         "high" : {
           "rateLimit": 16,
           "dropPacketRate": 60,
