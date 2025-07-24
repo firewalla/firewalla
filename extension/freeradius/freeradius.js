@@ -195,6 +195,24 @@ class FreeRadius {
     await this._statusServer();
   }
 
+  async _terminateServer() {
+    log.info("Fallback to terminate container freeradius-server...");
+    await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml down`).catch((e) => {
+      log.warn("Failed to stop docker freeradius,", e.message)
+      return;
+    });
+    await sleep(3000);
+    await util.waitFor(_ => this.running === true, options.timeout * 1000 || 60000).catch((err) => {
+      log.warn("Container freeradius-server timeout to terminate.")
+    });
+    if (this.running) {
+      log.warn("Container freeradius-server is not terminated.")
+      return;
+    }
+    log.info("Container freeradius-server is terminated.");
+    return;
+  }
+
   // TODO: will not reload clients, need to check changes
   async _reloadServer(options = {}) {
     try {
@@ -258,6 +276,7 @@ class FreeRadius {
       await util.waitFor(_ => this.running === false, options.timeout * 1000 || 60000).catch((err) => { });
       if (this.running) {
         log.warn("Container freeradius-server is not stopped.")
+        await this._terminateServer();
         return
       }
       log.info("Container freeradius-server is stopped.");
