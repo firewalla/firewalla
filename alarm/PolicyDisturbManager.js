@@ -31,7 +31,8 @@ class PolicyDisturbManager {
   constructor() {
     this.registeredPolicies = {};
 
-    this._disturbDefaultValue = {};
+    this._generalConfValue = {};
+    this._appConfValue = {};
     this.loadConfig();
 
     sem.on(Message.MSG_APP_DISTURB_VALUE_UPDATED, async (event) => {
@@ -39,9 +40,11 @@ class PolicyDisturbManager {
         log.error(`Invalid event for ${Message.MSG_APP_DISTURB_VALUE_UPDATED}`);
         return;
       }
-      if (_.isEqual(this._disturbDefaultValue, event.disturbConfs))
+      if (_.isEqual(this._generalConfValue, event.disturbConfs.generalConfs) && _.isEqual(this._appConfValue, event.disturbConfs.appConfs))
         return;
-      this._disturbDefaultValue = event.disturbConfs;
+      this._generalConfValue = event.disturbConfs.generalConfs || {};
+      this._appConfValue = event.disturbConfs.appConfs || {};
+
       log.info(`Received ${Message.MSG_APP_DISTURB_VALUE_UPDATED} event, updating app disturb default value`);
       const pids = Object.keys(this.registeredPolicies);
       for (const pid of pids) {
@@ -59,12 +62,16 @@ class PolicyDisturbManager {
 
   async loadConfig() {
     log.info(`Loading policy disturb config ...`);
-    this._disturbDefaultValue = {};
+    this._generalConfValue = {};
+    this._appConfValue = {};
     let policyDisturbConfig = await rclient.getAsync(Constants.REDIS_KEY_POLICY_DISTURB_CLOUD_CONFIG).then(result => result && JSON.parse(result)).catch(err => null);
 
-    if (policyDisturbConfig && policyDisturbConfig.disturbConfs) {
-      this._disturbDefaultValue = policyDisturbConfig.disturbConfs;
-    } else {
+    if (policyDisturbConfig) {
+      const { generalConfs, appConfs } = policyDisturbConfig;
+      if (generalConfs) this._generalConfValue = generalConfs;
+      if (appConfs) this._appConfValue = appConfs;
+    }
+    else {
       log.warn(`No app disturb config found, using empty default value`);
     }
   }
@@ -88,12 +95,17 @@ class PolicyDisturbManager {
     const pid = String(policy.pid);
     log.info(`Registering policy ${pid} ...`);
 
+    const appName = policy.app_name || "";
+    const disturbLevel = policy.disturbLevel || "moderate";
     //set default default values
-    policy.disturbLevel = policy.disturbLevel || "moderate";
     let defaultDisturbVal = { "rateLimit": 10240, "dropPacketRate": 0, "increaseLatency": 0 };
-    if (this._disturbDefaultValue && this._disturbDefaultValue.hasOwnProperty(policy.disturbLevel)) {
-      defaultDisturbVal = Object.assign(defaultDisturbVal, this._disturbDefaultValue[policy.disturbLevel]);
+
+    if (this._appConfValue && this._appConfValue.hasOwnProperty(appName) && this._appConfValue[appName].hasOwnProperty(disturbLevel)) {
+      defaultDisturbVal = Object.assign(defaultDisturbVal, this._appConfValue[appName][disturbLevel]);
+    } else if (this._generalConfValue && this._generalConfValue.hasOwnProperty(disturbLevel)) {
+      defaultDisturbVal = Object.assign(defaultDisturbVal, this._generalConfValue[disturbLevel]);
     }
+
     if (policy.disturbMethod) {
       defaultDisturbVal = Object.assign(defaultDisturbVal, policy.disturbMethod);
     }
