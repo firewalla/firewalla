@@ -46,7 +46,8 @@ class FreeRadius {
 
   async prepare() {
     await this.watchContainer();
-    this.startDockerDaemon();
+    await this.startDockerDaemon();
+    await this.prepareImage();
   }
 
   async _watchStatus() {
@@ -195,6 +196,58 @@ class FreeRadius {
     await this._statusServer();
   }
 
+  async prepareImage() {
+    try {
+      const result = await this.checkImage();
+      if (result.includes("freeradius")) {
+        log.info("Image freeradius-server is pulled.");
+        return;
+      }
+
+      log.info("Pull image freeradius-server...");
+      await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml pull`).catch((e) => {
+        log.warn("Failed to pull image freeradius,", e.message)
+        return;
+      });
+      result = await this.checkImage();
+      if (result.includes("freeradius")) {
+        log.info("Image freeradius-server is pulled.");
+        return;
+      }
+      log.warn("Image freeradius-server is not pulled.");
+      return false;
+    } catch (err) {
+      log.warn("Failed to pull image freeradius,", err.message);
+      return false;
+    }
+  }
+
+  async checkImage() {
+    const result = await exec(`sudo docker images | grep freeradius`).then(r => r.stdout.trim()).catch((e) => {
+      log.warn("Failed to check image freeradius,", e.message)
+      return;
+    });
+    return result;
+  }
+
+  async _terminateServer() {
+    log.info("Fallback to terminate container freeradius-server...");
+    await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml down`).catch((e) => {
+      log.warn("Failed to stop docker freeradius,", e.message)
+      return;
+    });
+    await sleep(3000);
+    await util.waitFor(_ => this.running === true, options.timeout * 1000 || 60000).catch((err) => {
+      log.warn("Container freeradius-server timeout to terminate.")
+    });
+    if (this.running) {
+      log.warn("Container freeradius-server is not terminated.")
+      return;
+    }
+    log.info("Container freeradius-server is terminated.");
+    return;
+  }
+
   // TODO: will not reload clients, need to check changes
   async _reloadServer(options = {}) {
     try {
@@ -258,6 +311,7 @@ class FreeRadius {
       await util.waitFor(_ => this.running === false, options.timeout * 1000 || 60000).catch((err) => { });
       if (this.running) {
         log.warn("Container freeradius-server is not stopped.")
+        await this._terminateServer();
         return
       }
       log.info("Container freeradius-server is stopped.");

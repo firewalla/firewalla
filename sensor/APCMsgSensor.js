@@ -384,9 +384,10 @@ class APCMsgSensor extends Sensor {
 
         // if ssid is in wpa2 or wpa3 enterprise mode, skip updating host ssid
         if (this.wpaEntSSIDs.includes(uuid)) {
-          log.debug(`ssid ${uuid} is in wpa2 or wpa3 enterprise mode, skip updating host ssid`);
+          log.debug(`ssid ${uuid} is in wpa2 or wpa3 enterprise mode ${this.wpaEntSSIDs}, skip updating host ssid`);
           continue;
         }
+
         for (const key of Object.keys(status)) {
           if (!_.isArray(status[key]))
             continue;
@@ -451,8 +452,8 @@ class APCMsgSensor extends Sensor {
         if (!mac)
           return;
         const ssid = _.get(msg, ["station", "ssid"]);
-        if (this.wpaEntSSIDs.includes(ssid)) {
-          log.debug(`mac ${mac} ssid ${ssid} is in wpa2 or wpa3 enterprise mode, skip updating host ssid`);
+        if (this.wpaEntSSIDs.includes(uuid)) {
+          log.debug(`mac ${mac} ssid ${ssid} profile ${uuid} is in wpa2 or wpa3 enterprise mode, skip updating host ssid`);
           return;
         }
         // map to a group of a default segment if sta does not belong to a dynamic vlan

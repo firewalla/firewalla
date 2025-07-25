@@ -1200,6 +1200,13 @@ module.exports = class HostManager extends Monitorable {
     if (json.remoteSupportPassword) delete json.remoteSupportPassword;
     if (json.policy && json.policy.wireguard && json.policy.wireguard.privateKey) delete json.policy.wireguard.privateKey;
 
+    if (json.policy && json.policy.freeradius_server && json.policy.freeradius_server.radius && json.policy.freeradius_server.radius.clients) {
+      for (const client of json.policy.freeradius_server.radius.clients) {
+        if (client.secret) {
+          delete client.secret;
+        }
+      }
+    }
     return json;
   }
 
