@@ -106,7 +106,6 @@ const fs = require('fs');
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
-const RAPID_INACTIVE_TIME_SPAN = 60 * 60 * 6;
 const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 
 let instance = null;
@@ -1865,13 +1864,13 @@ module.exports = class HostManager extends Monitorable {
         for (const mac of await rclient.smembersAsync(Constants.REDIS_KEY_HOST_PINNED))
           visibleMACs.add(mac)
 
+      // TODO: replace getAllMACs with getMACsByTime(0) after a year of 1.981
       const MACs = includeInactiveHosts ? new Set(await hostTool.getAllMACs()) : visibleMACs
       this._totalHosts = MACs.size;
       let multiarray = [];
       for (const mac of MACs) {
         multiarray.push(['hgetall', hostTool.getMacKey(mac)])
       }
-      const rapidInactiveTS = Date.now() / 1000 - RAPID_INACTIVE_TIME_SPAN;
       const replies = await rclient.multi(multiarray).execAsync();
       log.debug("getHosts: multi hgetall done");
       this._totalPrivateMacHosts = replies.filter(o => _.isObject(o) && o.mac && hostTool.isPrivateMacAddress(o.mac)).length;
@@ -1891,10 +1890,8 @@ module.exports = class HostManager extends Monitorable {
         const hasNonLocalIP = o.ipv4Addr && !sysManager.isLocalIP(o.ipv4Addr);
         const isPrivateMac = o.mac && hostTool.isPrivateMacAddress(o.mac);
         // device might be created during migration with only found ts but no active ts
-        const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
-        const active = activeTS - o.firstFoundTimestamp > 600 ? true : activeTS && activeTS >= rapidInactiveTS; // expire transient devices in a short time
         // always return devices that has DHCP reservation or port forwards
-        const valid = (!isPrivateMac || includePrivateMac) && (active || includeInactiveHosts)
+        const valid = !isPrivateMac || includePrivateMac
         if (!valid)
           return;
         if (hasNonLocalIP) {
