@@ -46,7 +46,8 @@ class FreeRadius {
 
   async prepare() {
     await this.watchContainer();
-    this.startDockerDaemon();
+    await this.startDockerDaemon();
+    await this.prepareImage();
   }
 
   async _watchStatus() {
@@ -193,6 +194,40 @@ class FreeRadius {
     await this._reloadServer(options);
     this.watchContainer(60);
     await this._statusServer();
+  }
+
+  async prepareImage() {
+    try {
+      const result = await this.checkImage();
+      if (result.includes("freeradius")) {
+        log.info("Image freeradius-server is pulled.");
+        return;
+      }
+
+      log.info("Pull image freeradius-server...");
+      await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml pull`).catch((e) => {
+        log.warn("Failed to pull image freeradius,", e.message)
+        return;
+      });
+      result = await this.checkImage();
+      if (result.includes("freeradius")) {
+        log.info("Image freeradius-server is pulled.");
+        return;
+      }
+      log.warn("Image freeradius-server is not pulled.");
+      return false;
+    } catch (err) {
+      log.warn("Failed to pull image freeradius,", err.message);
+      return false;
+    }
+  }
+
+  async checkImage() {
+    const result = await exec(`sudo docker images | grep freeradius`).then(r => r.stdout.trim()).catch((e) => {
+      log.warn("Failed to check image freeradius,", e.message)
+      return;
+    });
+    return result;
   }
 
   async _terminateServer() {
