@@ -15,7 +15,6 @@
 'use strict'
 
 let chai = require('chai');
-const _ = require('lodash');
 let expect = chai.expect;
 const { exec } = require('child-process-promise');
 const fs = require('fs');
@@ -47,15 +46,23 @@ const radiusConfig2 = {
 describe.skip('Test freeradius service', function () {
   this.timeout(30000);
 
-  beforeEach(async () => {
+  before(async () => {
     await exec(`rm -rf ${f.getRuntimeInfoFolder()}/docker/freeradius.bak`).catch(e => { });
     await exec(`mv ${f.getRuntimeInfoFolder()}/docker/freeradius ${f.getRuntimeInfoFolder()}/docker/freeradius.bak`).catch(e => { });
     await exec(`mkdir -p ${f.getRuntimeInfoFolder()}/docker/freeradius/wpa3`).catch(e => { });
   });
 
-  afterEach(async () => {
+  after(async () => {
     await exec(`rm -rf ${f.getRuntimeInfoFolder()}/docker/freeradius`).catch(e => { });
     await exec(`mv ${f.getRuntimeInfoFolder()}/docker/freeradius.bak ${f.getRuntimeInfoFolder()}/docker/freeradius`).catch(e => { });
+  });
+
+  it('should prepare radius image', async () => {
+    await freeradius.prepareImage();
+  });
+
+  it('should check radius image', async () => {
+    await freeradius._checkImage();
   });
 
   it('should start docker', async () => {
@@ -73,10 +80,27 @@ describe.skip('Test freeradius service', function () {
     expect(await freeradius.isListening()).to.be.true;
   });
 
+  it('should terminate radius container', async () => {
+    freeradius.watchContainer(5);
+    await freeradius._terminateServer();
+    expect(await freeradius.isListening()).to.be.false;
+  });
+
   it('should stop radius container', async () => {
     await freeradius.stopServer();
     expect(await freeradius.isListening()).to.be.false;
   });
+
+  it('should check radius container', async () => {
+    await freeradius._checkContainer();
+  });
+
+  it('should start radius container', async () => {
+    await freeradius.startServer(radiusConfig);
+    expect(freeradius.running).to.be.true;
+    expect(await freeradius.isListening()).to.be.true;
+  });
+
 });
 
 describe('Test freeradius sensor', function () {
