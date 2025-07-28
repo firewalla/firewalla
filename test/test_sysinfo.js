@@ -51,3 +51,24 @@ describe.skip('SysInfo', () => {
   });
 
 });
+
+describe('Test .getTop10RSSProcesses', function () {
+  this.timeout(10000);
+  beforeEach((done) => {
+    done();
+  });
+
+  afterEach((done) => {
+    done();
+  });
+
+  it('should process getTop10RSSProcesses correctly', async () => {
+    sysInfo.startUpdating();
+    await delay(1000);
+    let info = await sysInfo.getSysInfo();
+    let processes = info.processes;
+    // console.log(processes);
+    expect(processes.length).to.be.equal(10);
+    expect(processes[0].pid).to.be.above(0);
+  });
+});
