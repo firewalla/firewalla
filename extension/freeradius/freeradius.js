@@ -47,6 +47,7 @@ class FreeRadius {
   async prepare() {
     await this.watchContainer();
     await this.startDockerDaemon();
+    await this.generateRadiusConfig();
     await this.prepareImage();
   }
 
@@ -92,7 +93,7 @@ class FreeRadius {
       log.warn("Abort starting radius-server, server is already running.")
       return false;
     }
-    log.debug("Starting container freeradius-server...");
+    log.info("Starting container freeradius-server...");
     try {
       if (!await this.generateRadiusConfig()) {
         log.warn("Abort starting radius-server, configuration not ready");
@@ -107,6 +108,7 @@ class FreeRadius {
         return false;
       }
       log.info("Container freeradius-server is started.");
+      await this._statusServer();
       return true;
     } catch (err) {
       log.warn("Failed to start radius-server,", err.message);
