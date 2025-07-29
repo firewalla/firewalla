@@ -95,6 +95,7 @@ logger "FIREWALLA:MAIN-RUN:MAIN-START"
 redis-cli del sys:upgrade >/dev/null
 redis-cli publish FIREWALLA:HEARTBEAT:UPDATE '{"invoked-by":"firewalla"}' >/dev/null
 mkdir -p $FIREWALLA_HIDDEN/config/assets_extra
+rm -rf $FIREWALLA_HIDDEN/config/assets_extra/*
 ASSETSD_PATH=$FIREWALLA_HIDDEN/config/assets.fwapc timeout 90 $FIREWALLA_HOME/scripts/update_assets.sh > /tmp/fwapcupgrade.log
 $FIREWALLA_HOME/scripts/main-start
 
