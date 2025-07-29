@@ -391,7 +391,7 @@ function getTop10RSSProcesses() {
       const [pid, rss, comm, ...args] = line.trim().split(/\s+/);
       let exePath = '';
       try {
-        exePath = fs.readlinkSync(`/proc/${pid}/exe`);
+        exePath = execSync(`sudo readlink /proc/${pid}/exe`, { encoding: 'utf-8' }).trim();
       } catch (e) {
         // if can't get exe path, use comm name
         exePath = comm || 'unknown';
