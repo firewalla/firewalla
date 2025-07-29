@@ -46,7 +46,9 @@ class FreeRadius {
 
   async prepare() {
     await this.watchContainer();
-    this.startDockerDaemon();
+    await this.startDockerDaemon();
+    await this.generateRadiusConfig();
+    await this.prepareImage();
   }
 
   async _watchStatus() {
@@ -91,7 +93,7 @@ class FreeRadius {
       log.warn("Abort starting radius-server, server is already running.")
       return false;
     }
-    log.debug("Starting container freeradius-server...");
+    log.info("Starting container freeradius-server...");
     try {
       if (!await this.generateRadiusConfig()) {
         log.warn("Abort starting radius-server, configuration not ready");
@@ -106,6 +108,7 @@ class FreeRadius {
         return false;
       }
       log.info("Container freeradius-server is started.");
+      await this._statusServer();
       return true;
     } catch (err) {
       log.warn("Failed to start radius-server,", err.message);
@@ -195,6 +198,66 @@ class FreeRadius {
     await this._statusServer();
   }
 
+  async prepareImage() {
+    try {
+      if (await this._checkImage()) {
+        log.info("Image freeradius-server is pulled.");
+        return;
+      }
+
+      log.info("Pull image freeradius-server...");
+      await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml pull`).catch((e) => {
+        log.warn("Failed to pull image freeradius,", e.message)
+        return;
+      });
+      if (await this._checkImage()) {
+        log.info("Image freeradius-server is pulled.");
+        return;
+      }
+      log.warn("Image freeradius-server is not pulled.");
+      return false;
+    } catch (err) {
+      log.warn("Failed to pull image freeradius,", err.message);
+      return false;
+    }
+  }
+
+  async _checkImage() {
+    const result = await exec(`sudo docker images | grep freeradius`).then(r => r.stdout.trim()).catch((e) => {
+      log.warn("Failed to check image freeradius,", e.message)
+      return false;
+    });
+    log.info("Image freeradius-server:", result);
+    return result && result.includes("freeradius");
+  }
+
+  async _checkContainer() {
+    const result = await exec(`sudo docker ps | grep freeradius`).then(r => r.stdout.trim()).catch((e) => {
+      log.warn("Failed to check container freeradius,", e.message)
+      return false;
+    });
+    log.info("Container freeradius-server status:", result);
+    return result && result.includes("freeradius");
+  }
+
+  async _terminateServer(options = {}) {
+    log.info("Fallback to terminate container freeradius-server...");
+    await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml down`).catch((e) => {
+      log.warn("Failed to stop docker freeradius,", e.message)
+      return;
+    });
+    await sleep(3000);
+    await util.waitFor(_ => this.running === false, options.timeout * 1000 || 60000).catch((err) => {
+      log.warn("Container freeradius-server timeout to terminate,", err.message)
+    });
+    if (this.running) {
+      log.warn("Container freeradius-server is not terminated.")
+      return;
+    }
+    log.info("Container freeradius-server is terminated.");
+    return;
+  }
+
   // TODO: will not reload clients, need to check changes
   async _reloadServer(options = {}) {
     try {
@@ -210,7 +273,9 @@ class FreeRadius {
         // return false;
       });
       await sleep(3000);
-      await util.waitFor(_ => this.running === true, options.timeout * 1000 || 60000).catch((err) => { });
+      await util.waitFor(_ => this.running === true, options.timeout * 1000 || 60000).catch((err) => {
+        log.warn("Container freeradius-server timeout to reload,", err.message)
+      });
       log.info("Container freeradius-server is reloaded.");
       return this.running;
     } catch (err) {
@@ -227,8 +292,12 @@ class FreeRadius {
         log.warn("Cannot check status of freeradius,", e.message)
       });
 
-      const result = await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml exec -T freeradius pidof freeradius`).then(r => r.stdout.trim()).catch((e) => {
+      const result = await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml exec -T freeradius pidof freeradius`).then(r => r.stdout.trim()).catch(async (e) => {
         log.warn("Cannot check status of freeradius,", e.message)
+        if (!await this._checkContainer()) {
+          log.info("Container freeradius-server is not running");
+          return;
+        }
         return;
       });
       if (result) {
@@ -255,9 +324,12 @@ class FreeRadius {
       await exec("sudo systemctl stop docker-compose@freeradius").catch((e) => {
         log.warn("Cannot stop freeradius,", e.message)
       });
-      await util.waitFor(_ => this.running === false, options.timeout * 1000 || 60000).catch((err) => { });
+      await util.waitFor(_ => this.running === false, options.timeout * 1000 || 60000).catch((err) => {
+        log.warn("Container freeradius-server timeout to stop,", err.message)
+      });
       if (this.running) {
         log.warn("Container freeradius-server is not stopped.")
+        await this._terminateServer(options);
         return
       }
       log.info("Container freeradius-server is stopped.");

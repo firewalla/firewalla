@@ -3286,15 +3286,18 @@ class PolicyManager2 {
     return false;
   }
 
-  async checkVPN(allVpnClients, resultMap, vpnClientId, routeType = "hard") {
+  async checkVPN(allVpnClients, resultMap, vpnClientId, remoteIpsToCheck, routeType = "hard") {
     let isEnabled = false;
     let isConnected = false;
     let isStrictVPN = false;
+    let isDirect = true;
+    let serverSubnets = [];
 
     if (resultMap.has(vpnClientId)) { // found in resultMap, retrun result directly
       isEnabled = resultMap[vpnClientId].isEnabled;
       isConnected = resultMap[vpnClientId].isConnected;
       isStrictVPN = resultMap[vpnClientId].isStrictVPN;
+      isDirect = resultMap[vpnClientId].isDirect;
     } else {
       let vpnClient = VPNClient.getInstance(vpnClientId);
       if (!vpnClient) {
@@ -3303,15 +3306,27 @@ class PolicyManager2 {
       isEnabled = this.isVpnClientEnabled(allVpnClients, vpnClientId);
       isConnected = await vpnClient.status();
       const settings = await vpnClient.loadSettings();
-      if (settings && settings.strictVPN) {
-        isStrictVPN = true;
+      if (settings) {
+        if (settings.strictVPN) {
+          isStrictVPN = true;
+        }
+        if (settings.overrideDefaultRoute) {
+          isDirect = false;
+        }
+        if (settings.serverSubnets && settings.serverSubnets.length > 0) {
+          serverSubnets = settings.serverSubnets;
+        } else {
+          serverSubnets = [];
+        }
       }
-      resultMap[vpnClientId] = { isEnabled: isEnabled, isConnected: isConnected, isStrictVPN: isStrictVPN };
+
+      resultMap[vpnClientId] = { isEnabled: isEnabled, isConnected: isConnected, isStrictVPN: isStrictVPN, isDirect: isDirect, serverSubnets: serverSubnets };
     }
 
     if (!isEnabled) {
       return false;
     }
+
     if (!isConnected) {
       if (!isStrictVPN) {
         return false;
@@ -3320,12 +3335,34 @@ class PolicyManager2 {
         return false;
       }
     }
+    log.debug(`VPN client ${vpnClientId} is enabled: ${isEnabled}, connected: ${isConnected}, strictVPN: ${isStrictVPN}, direct: ${isDirect}`);
+    log.debug(`VPN client ${vpnClientId} server subnets: ${serverSubnets.join(", ")}`);
+    log.debug(`Remote IPs to check: ${remoteIpsToCheck.join(", ")}`);
+    if (isDirect) { // direct internet access, if remoteIpsToCheck is not in the server subnets, return false
+      if (serverSubnets && serverSubnets.length > 0) {
+        // check if the remote ips are in the server subnets
+        for (const subnet of serverSubnets) {
+          const net4 = new Address4(subnet);
+          const net6 = new Address6(subnet);
+          if (net4.isValid()) {
+            if (remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(net4))) {
+              return true;
+            }
+          } else if (net6.isValid()) {
+            if (remoteIpsToCheck.some(ip => new Address6(ip).isValid() && new Address6(ip).isInSubnet(net6))) {
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
 
     return true;
   }
 
   // check the rule created by VPN client
-  async getBestMatchVpnPolicie(localMac, allVpnClients) {
+  async getBestMatchVpnPolicie(localMac, allVpnClients, remoteIpsToCheck) {
     let policies = [];
 
     //check if there is a device policy that matches the criteria
@@ -3373,7 +3410,7 @@ class PolicyManager2 {
       const vpnClient = policy.vpnClient;
       if (!vpnClient || !vpnClient.profileId)
         continue;
-      const matched = await this.checkVPN(allVpnClients, checkedVpnMap, vpnClient.profileId);
+      const matched = await this.checkVPN(allVpnClients, checkedVpnMap, vpnClient.profileId, remoteIpsToCheck, policy.routeType);
 
       if (matched) {
         policy.wanUUID = Block.VPN_CLIENT_WAN_PREFIX + vpnClient.profileId;
@@ -3402,7 +3439,6 @@ class PolicyManager2 {
    * }
    */
   async checkRoute(localMac, localPort, remoteType, remoteVal = "", remotePort, protocol, direction = "outbound") {
-
     await this.initIpsetCache();
 
     if (!this.sortedRoutesCache) {
@@ -3410,6 +3446,22 @@ class PolicyManager2 {
       routes = routes.filter(rule => rule.action === "route");
       this.sortedRoutesCache = this.filterAndSortRule(routes);
     }
+
+    let remoteIpsToCheck = [];
+    switch (remoteType) {
+      case "ip":
+        if (remoteVal)
+          remoteIpsToCheck.push(remoteVal);
+        break;
+      case "domain":
+        if (remoteVal)
+          remoteIpsToCheck = (await dnsTool.getIPsByDomain(remoteVal)) || [];
+        if (remoteIpsToCheck.length === 0) // domain exact match not found, try matching domain pattern
+          remoteIpsToCheck.push.apply(remoteIpsToCheck, (await dnsTool.getIPsByDomainPattern(remoteVal)));
+        break;
+      default:
+    }
+
     // 1. if a VPN client is mannually disabled, all route rule and policies using it should be ignored.
     // 2. if a VPN client is enabled but disconnected at the moment, and the kill switch(strictVPN) is not enabled on it, all route rules and policies using it should be ingnored
     // 3. if routeType in a route is soft and the wan/VPN client in the rule is disconnected, the rule should be ignored.
@@ -3421,7 +3473,7 @@ class PolicyManager2 {
     for (const rule of this.sortedRoutesCache) {
       if (rule.wanUUID.startsWith(Block.VPN_CLIENT_WAN_PREFIX)) {
         const vpnID = rule.wanUUID.substring(Block.VPN_CLIENT_WAN_PREFIX.length);
-        const vpnCheckRsult = await this.checkVPN(allVpnClients, checkedVpnMap, vpnID, rule.routeType);
+        const vpnCheckRsult = await this.checkVPN(allVpnClients, checkedVpnMap, vpnID, remoteIpsToCheck, rule.routeType);
         if (!vpnCheckRsult) {
           continue;
         }
@@ -3448,7 +3500,7 @@ class PolicyManager2 {
     }
 
 
-    const bestMatchVpnPolicy = await this.getBestMatchVpnPolicie(localMac, allVpnClients);
+    const bestMatchVpnPolicy = await this.getBestMatchVpnPolicie(localMac, allVpnClients, remoteIpsToCheck);
     if (bestMatchVpnPolicy) {
       if (!result || bestMatchVpnPolicy.rank < bestMatchRoute.rank) {
         result = {
