@@ -43,6 +43,7 @@ const extensionManager = require('../sensor/ExtensionManager.js')
 const delay = require('../util/util.js').delay;
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
+const mode = require('../net2/Mode.js');
 
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
@@ -133,12 +134,13 @@ class DataUsageSensor extends Sensor {
           if (!dataPlan)
             return;
           const {date, total, wanConfs, enable} = dataPlan;
-          // "enable" on global level won't be set in normal cases, so global level alarm won't be generated
-          // but for legacy platform that is not managed by firerouter, it still counts global data usage
-          if (enable || !platform.isFireRouterManaged()) {
+          // "enable" on global level won't be set in router mode, so global level alarm won't be generated
+          // but for legacy platform that is not managed by firerouter or for non-router mode, it still counts global data usage
+          if (enable || !platform.isFireRouterManaged() || !await mode.isRouterModeOn()) {
             await this.checkMonthlyDataUsage(date, total);
           }
-          if (platform.isFireRouterManaged()) {
+          // per-wan data usage is only available in router mode
+          if (platform.isFireRouterManaged() && await mode.isRouterModeOn()) {
             const wanIntfs = sysManager.getWanInterfaces();
             for (const wanIntf of wanIntfs) {
               const wanConf = _.get(wanConfs, wanIntf.uuid, {date, total, enable: false}); // if wan uuid is not defined in wanConfs, disable bandwidth usage alarm on that WAN by default
@@ -325,8 +327,12 @@ class DataUsageSensor extends Sensor {
                     upload: upload
                 }
             });
-            if (wanUUID)
+            if (wanUUID) {
               alarm["p.wan.uuid"] = wanUUID;
+              const wanIntf = sysManager.getInterfaceViaUUID(wanUUID);
+              if (wanIntf)
+                alarm["p.wan.name"] = wanIntf.desc;
+            }
             alarmManager2.enqueueAlarm(alarm);
         }
     }

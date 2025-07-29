@@ -75,7 +75,7 @@ class DeviceSTPSensor extends Sensor {
   async discoverMacViaSTP(bridge, uuid) {
     const macNicMap = {};
     let results = await exec(`bridge fdb show br ${bridge} | grep -v permanent`).then(result => result.stdout.trim().split('\n').filter(line => line.length !== 0)).catch((err) => {});
-    for (const result of results) {
+    for (const result of results || []) {
       const [mac, _, dev] = result.split(' ', 3);
       if (!mac || !dev)
         continue;
@@ -90,7 +90,7 @@ class DeviceSTPSensor extends Sensor {
   async discoverMacViaARP(eths) {
     const results = await exec(`cat /proc/net/arp | awk '$3 != "0x0" && $4 != "00:00:00:00:00:00" {print $4" "$6}' | tail -n +2`).then(result => result.stdout.trim().split('\n'));
     const macNicMap = {};
-    for (const result of results) {
+    for (const result of results || []) {
       const [mac, intf] = result.split(' ', 2);
       if (eths.includes(intf))
         macNicMap[mac.toUpperCase()] = intf.split('.')[0]; // strip vlan id suffix

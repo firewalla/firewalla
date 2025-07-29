@@ -68,13 +68,12 @@ class PolicyDisturbSensor extends Sensor {
     await this.loadCloudConfig(forceReload).catch((err) => {
       log.error(`Failed to load policy disturb config from cloud`, err.message);
     });
-    this.disturbConfs = Object.assign({}, _.get(this.config, "disturbConfs", {}), _.get(this.cloudConfig, "disturbConfs", {}));
+    this.disturbConfs = _.merge({}, this.config || {}, this.cloudConfig || {} );
     if (this.disturbConfs && !_.isEmpty(this.disturbConfs))
       sem.emitLocalEvent({ type: Message.MSG_APP_DISTURB_VALUE_UPDATED, disturbConfs: this.disturbConfs, suppressEventLogging: true });
   }
 
   async loadCloudConfig(reload = false) {
-    // cat policy_disturb_config | jq -c .| redis-cli -x SET policy_disturb_cloud_config
     let policyDisturbConfig = await rclient.getAsync(CLOUD_CONFIG_KEY).then(result => result && JSON.parse(result)).catch(err => null);
     this.cloudConfig = policyDisturbConfig;
     if (_.isEmpty(policyDisturbConfig) || reload) {

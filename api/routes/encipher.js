@@ -129,6 +129,8 @@ const simple = async (req, res, next) => {
   }
 
   body.message.obj.mtype = command
+  if (body.message.obj.mtype == "get")
+    body.message.suppressLog = true
   body.message.obj.data.item = item
   body.message.obj.target = target
   body.message.obj.id = req.query.id || body.message.obj.id
@@ -229,6 +231,8 @@ router.post('/complex', async (req, res, next) => {
   }
 
   body.message.obj.mtype = command
+  if (body.message.obj.mtype == "get")
+    body.message.suppressLog = true
   body.message.obj.target = target
   body.message.obj.data = content;
 
