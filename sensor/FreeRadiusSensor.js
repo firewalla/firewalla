@@ -94,7 +94,8 @@ class FreeRadiusSensor extends Sensor {
 
   async run() {
     this.featureOn = false;
-    this._policy = null;
+    this._policy = await this.loadPolicyAsync();
+    this._options = await this.loadOptionsAsync();
 
     extensionManager.registerExtension(featureName, this, {
       applyPolicy: this.applyPolicy
@@ -240,16 +241,17 @@ class FreeRadiusSensor extends Sensor {
       }
       const _policy = JSON.stringify(policy);
 
-      if (!this._policy || !this._policy[target]) {
-        log.error(`radius policy of ${target} not found`);
-        return { err: `radiuspolicy of ${target} not found` };
+      if (!this._policy) {
+        log.error(`freeradius policy not initialized`);
+        return { err: `freeradius policy not initialized` };
       }
 
       // compare to previous policy applied
-      if (_.isEqual(this._policy[target], policy) && await freeradius.isListening()) {
+      if (this._policy[target] && _.isEqual(this._policy[target], policy) && await freeradius.isListening()) {
         log.info(`policy ${policyKeyName} is not changed.`);
         return;
       }
+
       const { radius, options } = policy;
 
       // 1. apply to radius-server

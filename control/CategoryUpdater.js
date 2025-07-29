@@ -598,7 +598,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await this.flushIPv6Addresses(category);
     await this.flushIncludedDomains(category);
 
-    const domainRegex = /^[-a-zA-Z0-9\.\*]+?/;
+    const domainRegex = /^[-a-zA-Z0-9\.\*]+?$/;
     let ipv4Addresses = [];
     let ipv6Addresses = [];
     switch (this.customizedCategories[category].type) {
@@ -1213,7 +1213,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
     this.recycleTasks[category] = true;
 
-    let ondemand = this.isCustomizedCategory(category);
+    let ondemand = false;
 
     const ipsetNeedComment = this.needIpSetComment(category);
     const updateOptions = {};

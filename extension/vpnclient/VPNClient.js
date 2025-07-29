@@ -956,6 +956,7 @@ class VPNClient {
     await vpnClientEnforcer.addVPNClientIPRules(this.getInterfaceName());
   }
 
+
   async start() {
     if (!this._started) {
       this._started = true;
@@ -972,49 +973,78 @@ class VPNClient {
     await this._start().catch((err) => {
       log.error(`Failed to exec _start of VPN client ${this.profileId}`, err.message);
     });
+
     return new Promise((resolve, reject) => {
-      const startTime = Date.now();
-      const establishmentTask = setInterval(() => {
-        (async () => {
-          const isUp = await this._isLinkUp();
-          if (isUp) {
-            clearInterval(establishmentTask);
-            await this._setCachedState(true);
-            this._scheduleRefreshRoutes();
-            await this.addRemoteEndpointRoutes().catch((err) => { });
-            if (f.isMain()) {
-              // check connectivity and emit link_established or link_broken later, before which routes are already added and ping test using fwmark will work properly
-              setTimeout(() => {
-                this._checkConnectivity(true).catch((err) => {
-                  log.error(`Failed to check connectivity on VPN client ${this.profileId}`, err.message);
-                });
-              }, 20000);
-            }
-            if (!f.isMain()) {
-              sem.emitEvent({
-                type: "VPNClient:Started",
-                profileId: this.profileId,
-                toProcess: "FireMain"
-              });
-            }
-            log.info(`Time elapsed to start ${this.constructor.getProtocol()} client ${this.profileId}: ${(Date.now() - this._lastStartTime) / 1000}`);
-            resolve({ result: true });
-          } else {
-            const now = Date.now();
-            if (now - startTime > 60000) {
-              log.error(`Failed to establish tunnel for VPN client ${this.profileId} in 60 seconds`);
-              clearInterval(establishmentTask);
-              const errMsg = await this.getMessage();
-              resolve({ result: false, errMsg: errMsg });
-            }
-          }
-        })().catch(async (err) => {
-          log.error(`Failed to start VPN client ${this.profileId}`, err.message);
+      let establishmentTask = null;
+      // function to handle successful tunnel establishment
+      const handleSuccessfulEstablishment = async () => {
+        if (establishmentTask) {
           clearInterval(establishmentTask);
-          const errMsg = await this.getMessage();
-          resolve({ result: false, errMsg: errMsg });
-        });
-      }, 2000);
+          establishmentTask = null;
+        }
+        await this._setCachedState(true);
+        this._scheduleRefreshRoutes();
+        await this.addRemoteEndpointRoutes().catch((err) => { });
+        if (f.isMain()) {
+          // check connectivity and emit link_established or link_broken later, before which routes are already added and ping test using fwmark will work properly
+          setTimeout(() => {
+            this._checkConnectivity(true).catch((err) => {
+              log.error(`Failed to check connectivity on VPN client ${this.profileId}`, err.message);
+            });
+          }, 20000);
+        }
+        if (!f.isMain()) {
+          sem.emitEvent({
+            type: "VPNClient:Started",
+            profileId: this.profileId,
+            toProcess: "FireMain"
+          });
+        }
+        const timeElapsed = (Date.now() - this._lastStartTime) / 1000;
+        log.info(`Time elapsed to start ${this.constructor.getProtocol()} client ${this.profileId}: ${timeElapsed} seconds`);
+        resolve({ result: true });
+      };
+
+      // function to handle failed tunnel establishment
+      const handleFailedEstablishment = async (reason) => {
+        if (establishmentTask) {
+          clearInterval(establishmentTask);
+          establishmentTask = null;
+        }
+        const errMsg = await this.getMessage();
+        log.error(`Failed to establish tunnel for VPN client ${this.profileId}. Reason: ${reason || 'Unknown error'}`, errMsg ? `Details: ${errMsg}` : '');
+        resolve({ result: false, errMsg: errMsg });
+      };
+
+      setTimeout(async () => {
+        try {
+          const isUpInitial = await this._isLinkUp();
+          if (isUpInitial) {
+            await handleSuccessfulEstablishment();
+            return;
+          }
+        } catch (err) {
+          await handleFailedEstablishment(`Initial link check failed: ${err.message}`);
+          return;
+        }
+
+        const startTime = Date.now();
+        establishmentTask = setInterval(async () => {
+          try {
+            const isUp = await this._isLinkUp();
+            if (isUp) {
+              await handleSuccessfulEstablishment();
+            } else {
+              const now = Date.now();
+              if (now - startTime > 60000) { // 60 seconds timeout
+                await handleFailedEstablishment(`Timed out after 60 seconds`);
+              }
+            }
+          } catch (err) {
+            await handleFailedEstablishment(`Link check during interval failed: ${err.message}`);
+          }
+        }, 2000);
+      }, 500);
     });
   }
 

@@ -101,7 +101,14 @@ local_api() {
 }
 
 local_api_with_code_checked() {
-    curl -s --fail-with-body "http://localhost:8841/v1/$1"
+    # Check if curl version supports --fail-with-body (introduced in 7.76.0)
+    curl_version=$(curl --version | head -n1 | sed 's/curl \([0-9.]*\).*/\1/')
+    if [[ "$(printf '%s\n' "7.76.0" "$curl_version" | sort -V | head -n1)" == "7.76.0" ]]; then
+        curl -s --fail-with-body "http://localhost:8841/v1/$1"
+    else
+        # Fallback for older curl versions
+        curl -s -f "http://localhost:8841/v1/$1" || curl -s "http://localhost:8841/v1/$1"
+    fi
 }
 
 local_simple_post_api() {
@@ -182,7 +189,7 @@ get_sta_name() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-STA_COLS='sta_mac sta_ip:-17 ap_uid:9 band:4 chan:5 mimo:5 rssi:5 snr:5 tx:5 rx:5 ctx:6 crx:6 intf:-8 mlo:7 vlan:5 dvlan:5 assoc_time:14 idle:6 hb_time:9 ssid:-15 ap_name:-20:u sta_name:-30:u'
+STA_COLS='sta_mac sta_ip:-17 ap_uid:9 band:4 chan:5 mimo:5 rssi:5 snr:5 tx:5 rx:5 ctx:6 crx:6 intf:-8 mlo:7 vlan:5 dvlan:5 assoc_time:14 idle:6 hb_time:9 ssid:-15 wpax:-15 ap_name:-20:u sta_name:-30:u'
 (print_header; hl) >&2
 lines=0
 timeit begin
@@ -193,14 +200,14 @@ set -o pipefail
 
 while true; do
     if [[ -z "$STATION_MAC" ]]; then
-        sta_data=$(local_api_with_code_checked status/station/flat| jq -r '.info[] |[.macAddr, .assetUID, .ssid, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .curTxRate//"_", .curRxRate//"_", .intf, has("mlo"), .mlo.standby//"false", .assocTime, .ts, .idle, .dvlanVlanId, .vlanId]|@tsv' 2>/dev/null)  ||\
-        sta_data=$(local_api_with_code_checked status/station| jq -r '.info|to_entries[]|[.key, .value.assetUID, .value.ssid, .value.band, .value.channel, .value.txnss, .value.rxnss, .value.rssi, .value.snr, .value.txRate, .value.rxRate, .value.curTxRate//"_", .value.curRxRate//"_", .value.intf, (.value|has("mlo")), .value.mlo.standby//"false", .value.assocTime, .value.ts, .value.idle, .value.dvlanVlanId, .value.vlanId]|@tsv')
+        sta_data=$(local_api_with_code_checked status/station/flat| jq -r '.info[] | with_entries(if .key == "wpax" then . else . end) + {"wpax": (.wpax // "-")} | [.macAddr, .assetUID, .ssid, .wpax, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .curTxRate//"_", .curRxRate//"_", .intf, has("mlo"), .mlo.standby//"false", .assocTime, .ts, .idle, .dvlanVlanId, .vlanId]|@tsv' 2>/dev/null)  ||\
+        sta_data=$(local_api_with_code_checked status/station| jq -r '.info|to_entries[]|.value + {"wpax": (.value.wpax // "-")} | [.key, .assetUID, .ssid, .wpax, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .curTxRate//"_", .curRxRate//"_", .intf, has("mlo"), .mlo.standby//"false", .assocTime, .ts, .idle, .dvlanVlanId, .vlanId]|@tsv')
     else 
-        sta_data=$(local_api_with_code_checked status/station/$STATION_MAC/flat| jq -r '.info[] |[.macAddr, .assetUID, .ssid, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .curTxRate//"_", .curRxRate//"_", .intf, has("mlo"), .mlo.standby//"false", .assocTime, .ts, .idle, .dvlanVlanId, .vlanId]|@tsv' 2>/dev/null) ||\
-        sta_data=$(local_api_with_code_checked status/station/$STATION_MAC| jq -r '.info |[.macAddr, .assetUID, .ssid, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .curTxRate//"_", .curRxRate//"_", .intf, has("mlo"), .mlo.standby//"false", .assocTime, .ts, .idle, .dvlanVlanId, .vlanId]|@tsv' 2>/dev/null)
+        sta_data=$(local_api_with_code_checked status/station/$STATION_MAC/flat| jq -r '.info[] | with_entries(if .key == "wpax" then . else . end) + {"wpax": (.wpax // "-")} | [.macAddr, .assetUID, .ssid, .wpax, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .curTxRate//"_", .curRxRate//"_", .intf, has("mlo"), .mlo.standby//"false", .assocTime, .ts, .idle, .dvlanVlanId, .vlanId]|@tsv' 2>/dev/null) ||\
+        sta_data=$(local_api_with_code_checked status/station/$STATION_MAC| jq -r '.info | with_entries(if .key == "wpax" then . else . end) + {"wpax": (.wpax // "-")} | [.macAddr, .assetUID, .ssid, .wpax, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .curTxRate//"_", .curRxRate//"_", .intf, has("mlo"), .mlo.standby//"false", .assocTime, .ts, .idle, .dvlanVlanId, .vlanId]|@tsv' 2>/dev/null)
     fi
     timeit sta-data
-    test -n "$sta_data" && echo "$sta_data" | while IFS=$'\t' read sta_mac ap_mac sta_ssid sta_band sta_channel sta_txnss sta_rxnss sta_rssi sta_snr sta_tx_rate sta_rx_rate sta_ctx_rate sta_crx_rate sta_intf sta_mlo sta_mlo_standby sta_assoc_time sta_ts sta_idle sta_dvlan sta_vlan
+    test -n "$sta_data" && echo "$sta_data" | while IFS=$'\t' read sta_mac ap_mac sta_ssid sta_wpax sta_band sta_channel sta_txnss sta_rxnss sta_rssi sta_snr sta_tx_rate sta_rx_rate sta_ctx_rate sta_crx_rate sta_intf sta_mlo sta_mlo_standby sta_assoc_time sta_ts sta_idle sta_dvlan sta_vlan
     do
         test -n "$sta_mac" || continue
         timeit read-$sta_mac
@@ -224,6 +231,7 @@ while true; do
                 ap_uid) stad=${ap_mac:9} ;;
                 ap_name) stad=$ap_name ;;
                 ssid) stad=$sta_ssid ;;
+                wpax) stad=$sta_wpax ;;
                 band) stad=$sta_band ;;
                 chan) stad=$sta_channel ;;
                 mimo) stad="${sta_txnss}x${sta_rxnss}" ;;
