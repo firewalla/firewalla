@@ -111,10 +111,6 @@ function getPreferredBName(hostObject) {
   //   return v6Addrs[0]
   // }
 
-  if (hostObject.wlanVendor && hostObject.wlanVendor.length > 0) {
-    return hostObject.wlanVendor[0]
-  }
-
   return undefined;
 }
 
