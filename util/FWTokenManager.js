@@ -109,20 +109,22 @@ class FWTokenManager {
   // TOKEN VERIFICATION
   verify(token) {
     if(this.pubKeys.length > 0) {
+      const errors = [];
       const results = this.pubKeys.map((key) => {
         try {
           const decoded = jwtlib.verify(token, key);
           return decoded;
         } catch(err) {
-          log.info("Failed to verify token with key:", err.message);
+          errors.push(err.message);
           return null;
-        }        
+        }
       });
 
       const validTokens = results.filter((result) => result !== null);
       if(validTokens.length > 0) {
         return validTokens[0];
       } else {
+        log.error("Failed to verify token:", errors);
         return null;
       }
     } else {
