@@ -109,7 +109,7 @@ class SuricataControl {
       // Update assets using the update_assets.sh script
       await exec(`ASSETSD_PATH=${f.getExtraAssetsDir()} ${f.getFirewallaHome()}/scripts/update_assets.sh`);
       await exec(`tar xzf ${suricataBinaryTarPath} -C ${f.getRuntimeInfoFolder()}/assets`);
-      await exec(`sudo ln -sfT ${suricataBinaryPath} /usr/bin/suricata  `);
+      await exec(`sudo ln -sfT ${suricataBinaryPath} /usr/bin/suricata`);
       log.info("Updated suricata binary assets");
     } catch(err) {
       log.error("Failed to update suricata binary", err);
@@ -120,8 +120,6 @@ class SuricataControl {
     await fsp.mkdir(BASIC_RULRS_DIR, {recursive: true}).catch((err) => {});
     await fsp.mkdir(MSP_RULES_DIR, {recursive: true}).catch((err) => {});
     await fsp.mkdir(`${f.getRuntimeInfoFolder()}/suricata`, {recursive: true}).catch((err) => {});
-    await fsp.mkdir(`${BASIC_RULRS_DIR}`, {recursive: true}).catch((err) => {});
-    await fsp.mkdir(`${MSP_RULES_DIR}`, {recursive: true}).catch((err) => {});
     // copy other .config files to runtime folder
     await exec(`cp -r ${f.getFirewallaHome()}/etc/suricata/*.config ${f.getRuntimeInfoFolder()}/suricata`).catch((err) => {
       log.error(`Failed to copy .config files`, err.message);
