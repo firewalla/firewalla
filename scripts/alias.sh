@@ -282,3 +282,24 @@ function lap_support() {
 }
 
 alias dap='/home/pi/.firewalla/run/assets/dap'
+alias fwapc='/home/pi/.firewalla/run/assets/fwapc'
+
+function sef() {
+  local featureName=$1
+  if [[ "x$featureName" == "x" ]]; then
+    echo "usage: sef <featureName>"
+    return 1
+  fi
+  local payload=$(jq -n --arg featureName "$featureName" '{"featureName": $featureName}')
+  curl 'http://localhost:8834/v1/encipher/simple?command=cmd&item=enableFeature' -H 'Content-Type: application/json' -d "$payload"
+}
+
+function sdf() {
+  local featureName=$1
+  if [[ "x$featureName" == "x" ]]; then
+    echo "usage: sdf <featureName>"
+    return 1
+  fi
+  local payload=$(jq -n --arg featureName "$featureName" '{"featureName": $featureName}')
+  curl 'http://localhost:8834/v1/encipher/simple?command=cmd&item=disableFeature' -H 'Content-Type: application/json' -d "$payload"
+}

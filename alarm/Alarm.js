@@ -1164,11 +1164,20 @@ class OverDataPlanUsageAlarm extends Alarm {
   requiredKeys() {
     return [];
   }
+
+  localizedNotificationContentKey() {
+    return `ALARM_OVER_DATA_PLAN_USAGE${this["p.wan.name"] ? ".multi.wan" : ""}`;
+  }
+
   localizedNotificationContentArray() {
-    return [this["p.percentage"],
-    this["p.totalUsage.humansize"],
-    this["p.planUsage.humansize"]
+    const result = [this["p.percentage"],
+      this["p.totalUsage.humansize"],
+      this["p.planUsage.humansize"]
     ];
+    if (this["p.wan.name"]) {
+      result.push(this["p.wan.name"]);
+    }
+    return result;
   }
 }
 
