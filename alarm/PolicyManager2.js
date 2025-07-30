@@ -3182,7 +3182,13 @@ class PolicyManager2 {
       default:
     }
 
+    let matchedRules = [];
+    let lastMatchedRuleRank = -1;
+
     for (const rule of rules) {
+      if (lastMatchedRuleRank > -1 && rule.rank > lastMatchedRuleRank) {
+        break; // no need to check rules with higher rank
+      }
       // rules in rule group will be checked in match_group rule
       if (rule.parentRgId)
         continue;
@@ -3212,16 +3218,18 @@ class PolicyManager2 {
         let matched = false;
         for (const port of ports) {
           const ranges = port.split("-", 2).map(n => Number(n));
-          if (ranges.length === 1)
+          if (ranges.length === 1) {
             if (Number(remotePort) === ranges[0]) {
               matched = true;
               break;
             }
-          if (ranges.length > 1)
-            if (Number(remotePort) >= ranges[0] || Number(remotePort) <= ranges[1]) {
+          }
+          if (ranges.length > 1) {
+            if (Number(remotePort) >= ranges[0] && Number(remotePort) <= ranges[1]) {
               matched = true;
-              break;;
+              break;
             }
+          }
         }
         if (!matched)
           continue;
@@ -3256,9 +3264,28 @@ class PolicyManager2 {
           continue;
       }
       // reach here if the rule matches the criteria
-      return rule;
+      matchedRules.push(rule);
+      lastMatchedRuleRank = rule.rank;
     }
-    return null;
+
+    // get best matched rules by sub priority
+    let highestSubPriority = -1;
+    let isPreferred = false;
+    let bestMatchRule = null;
+    for (const rule of matchedRules) {
+      const subPriority = this._getRuleSubPriority(rule.type);
+      if (!bestMatchRule || highestSubPriority == -1 || subPriority < highestSubPriority) {
+        highestSubPriority = subPriority;
+        bestMatchRule = rule;
+        isPreferred = rule.routeType === "soft";
+      } else if (subPriority === highestSubPriority) {
+        if (!isPreferred && rule.routeType === "soft") {
+          bestMatchRule = rule; // prefer soft route over hard route
+          isPreferred = true;
+        }
+      }
+    }
+    return bestMatchRule;
   }
 
   async loadAllVpnClientsState() {
@@ -3406,7 +3433,12 @@ class PolicyManager2 {
     }
 
     const checkedVpnMap = new Map();
+    let matchedVpnPolicies = [];
+    let lastPolicyRank = -1;
     for (const policy of policies) {
+      if (lastPolicyRank > -1 && policy.rank > lastPolicyRank) {
+        break; // no need to check leftover policies with higher rank
+      }
       const vpnClient = policy.vpnClient;
       if (!vpnClient || !vpnClient.profileId)
         continue;
@@ -3414,11 +3446,23 @@ class PolicyManager2 {
 
       if (matched) {
         policy.wanUUID = Block.VPN_CLIENT_WAN_PREFIX + vpnClient.profileId;
-        return policy;
+        matchedVpnPolicies.push(policy);
+        lastPolicyRank = policy.rank;
       }
     }
 
-    return null;
+    let bestMatchPolicy = null;
+    for (const policy of matchedVpnPolicies) {
+      if (!bestMatchPolicy || policy.rank < bestMatchPolicy.rank) {
+        bestMatchPolicy = policy;
+      } else if (policy.rank === bestMatchPolicy.rank) {
+        if (policy.routeType === "soft" && bestMatchPolicy.routeType !== "soft") {
+          bestMatchPolicy = policy; // prefer soft route over hard route
+          break;
+        }
+      }
+    }
+    return bestMatchPolicy;
   }
 
   async initIpsetCache() {
@@ -3502,7 +3546,7 @@ class PolicyManager2 {
 
     const bestMatchVpnPolicy = await this.getBestMatchVpnPolicie(localMac, allVpnClients, remoteIpsToCheck);
     if (bestMatchVpnPolicy) {
-      if (!result || bestMatchVpnPolicy.rank < bestMatchRoute.rank) {
+      if (!result || bestMatchVpnPolicy.rank < bestMatchRoute.rank || (bestMatchVpnPolicy.routeType === "soft" && bestMatchRoute.routeType !== "soft")) {
         result = {
           "wanUUID": bestMatchVpnPolicy.wanUUID,
           "reason": "policy",

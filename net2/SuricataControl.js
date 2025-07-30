@@ -26,6 +26,7 @@ const YAML = require('../vendor_lib/yaml');
 const delay = require('../util/util.js').delay;
 const BASIC_RULRS_DIR = `${f.getRuntimeInfoFolder()}/suricata_basic_rules`;
 const MSP_RULES_DIR = `${f.getRuntimeInfoFolder()}/suricata_msp_rules`;
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 class SuricataControl {
   constructor() {
@@ -86,13 +87,39 @@ class SuricataControl {
     });
   }
 
+  async tryUpdateSuricataBinary() {
+    try {
+      // Check if the current platform supports suricata from assets
+      
+      const isSupported = await platform.isSuricataFromAssetsSupported();
+      if (!isSupported) {
+        log.info("Suricata from assets not supported on this platform");
+        return;
+      }
+
+      // Create suricata binary lst file for assets
+      const suricataBinaryPath = `${f.getRuntimeInfoFolder()}/assets/suricata`;
+      const suricataBinaryTarPath = `${f.getRuntimeInfoFolder()}/assets/suricata.tar.gz`;
+      const assetsConf = `${suricataBinaryTarPath} /gold/assets/u22/6.5.0-25-generic/suricata.tar.gz 644 "" "tar xzf ${suricataBinaryTarPath} -C ${f.getRuntimeInfoFolder()}/assets; sudo ln -sfT /usr/bin/suricata ${suricataBinaryPath}; if systemctl is-active suricata; then sudo systemctl restart suricata; fi"`;
+      const assetsConfPath = `${f.getExtraAssetsDir()}/assets_suricata.lst`;
+      
+      await fsp.writeFile(assetsConfPath, assetsConf, {encoding: "utf8"});
+      log.info(`Created suricata binary assets config at ${assetsConfPath}`);
+      
+      // Update assets using the update_assets.sh script
+      await exec(`ASSETSD_PATH=${f.getExtraAssetsDir()} ${f.getFirewallaHome()}/scripts/update_assets.sh`);
+      await exec(`tar xzf ${suricataBinaryTarPath} -C ${f.getRuntimeInfoFolder()}/assets`);
+      await exec(`sudo ln -sfT ${suricataBinaryPath} /usr/bin/suricata`);
+      log.info("Updated suricata binary assets");
+    } catch(err) {
+      log.error("Failed to update suricata binary", err);
+    }
+  }
+
   async prepareAssets() {
     await fsp.mkdir(BASIC_RULRS_DIR, {recursive: true}).catch((err) => {});
     await fsp.mkdir(MSP_RULES_DIR, {recursive: true}).catch((err) => {});
     await fsp.mkdir(`${f.getRuntimeInfoFolder()}/suricata`, {recursive: true}).catch((err) => {});
-    await fsp.mkdir(f.getExtraAssetsDir(), {recursive: true}).catch((err) => {});
-    await exec(`mkdir -p ${BASIC_RULRS_DIR}`).catch((err) => {});
-    await exec(`mkdir -p ${MSP_RULES_DIR}`).catch((err) => {});
     // copy other .config files to runtime folder
     await exec(`cp -r ${f.getFirewallaHome()}/etc/suricata/*.config ${f.getRuntimeInfoFolder()}/suricata`).catch((err) => {
       log.error(`Failed to copy .config files`, err.message);
@@ -101,7 +128,7 @@ class SuricataControl {
 
   async addRulesFromAssets(id) {
     const assetsConf = `${BASIC_RULRS_DIR}/${id}.rules /all/suricata_rules/${id}.rules 644`;
-    const assetsConfPath = `${f.getExtraAssetsDir()}/${id}.lst`;
+    const assetsConfPath = `${f.getExtraAssetsDir()}/sc_rule_${id}.lst`;
     await fsp.writeFile(assetsConfPath, assetsConf, {encoding: "utf8"}).catch((err) => {
       log.error(`Failed to write ${assetsConfPath}`, err.message);
     });
@@ -111,7 +138,7 @@ class SuricataControl {
   }
 
   async deleteRulesFromAssets(id) {
-    const assetsConfPath = `${f.getExtraAssetsDir()}/${id}.lst`;
+    const assetsConfPath = `${f.getExtraAssetsDir()}/sc_rule_${id}.lst`;
     await fsp.unlink(assetsConfPath).catch((err) => {});
     const ruleFilePath = `${BASIC_RULRS_DIR}/${id}.rules`;
     await fsp.unlink(ruleFilePath).catch((err) => {});

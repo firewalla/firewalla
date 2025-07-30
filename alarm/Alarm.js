@@ -1166,7 +1166,7 @@ class OverDataPlanUsageAlarm extends Alarm {
   }
 
   localizedNotificationContentKey() {
-    return `ALARM_OVER_DATA_PLAN_USAGE${this["p.wan.name"] ? ".multi.wan" : ""}`;
+    return `notif.content.ALARM_OVER_DATA_PLAN_USAGE${this["p.wan.name"] ? ".multi.wan" : ""}`;
   }
 
   localizedNotificationContentArray() {
