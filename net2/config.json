@@ -861,7 +861,8 @@
     },
     "PurposeDeviceAutoSecurePlugin":{},
     "DapSensor": {},
-    "SuricataRuleSetSensor": {}
+    "SuricataRuleSetSensor": {},
+    "NoiseDomainsSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
