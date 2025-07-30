@@ -230,6 +230,12 @@ class AppTimeUsageSensor extends Sensor {
     if (!this.enabled)
       return;
     const host = enrichedFlow.host || enrichedFlow.intel && enrichedFlow.intel.host;
+    if (enrichedFlow.du > 300) {
+      // long connection should be sliced into partial flows in zeek and BroDetect, in normal cases, duration should be no more than 3 minutes,
+      //  a flow with long duration may happen if firemain is restarted
+      log.warn("Unexpected flow with long duration, ignore", enrichedFlow);
+      return;
+    }
     const appMatches = this.lookupAppMatch(enrichedFlow);
     if (_.isEmpty(appMatches))
       return;
