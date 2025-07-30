@@ -120,7 +120,7 @@ function delay(t) {
   });
 }
 
-const keysToRedact = new Set(["password", "passwd", "psk", "key", "psks"]);
+const keysToRedact = new Set(["password", "passwd", "psk", "key", "psks", "secret"]);
 function redactLog(obj, redactRequired = false, depth) {
   if (!obj || depth > 5)
     return obj;

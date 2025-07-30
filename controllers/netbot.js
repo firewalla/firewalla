@@ -803,10 +803,6 @@ class netBot extends ControllerBot {
           throw new Error("invalid tag")
         }
 
-        if (name == tag.getTagName()) {
-          return
-        }
-
         const result = await this.tagManager.updateTag(msg.target, name, value.obj);
         log.info(`Updating tag ${msg.target}`, name, value.obj);
         if (!result) {

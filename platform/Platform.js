@@ -483,6 +483,10 @@ class Platform {
   }
 
   isDNSFlowSupported() { return false }
+
+  async isSuricataFromAssetsSupported() {
+    return false;
+  }
 }
 
 module.exports = Platform;
