@@ -3,13 +3,14 @@
 /home/pi/firewalla/scripts/fire-stop
 redis-cli KEYS "policy:*" | while IFS= read -r line; do
   if [[ "$line" =~ policy:[0-9]+ ]]; then
-    redis-cli DEL "$line"
+    # do not remove rules with purpose, e.g., firewall, ap_allow, these are not regular rules created on the rules page
+    if [[ -z $(redis-cli HGET $line purpose) ]]; then
+      redis-cli DEL "$line"
+      pid=$(echo $line | awk -F: '{print $2}')
+      redis-cli ZREM "policy_active" "$pid"
+    fi
   elif [[ "$line" == policy:mac:* || "$line" == policy:tag:* || "$line" == policy:network:* || "$line" == policy:wg_peer:* || "$line" == "policy:system" ]]; then
     redis-cli HDEL "$line" adblock adblock_ext isolation newDeviceTag
-    # app saves family settings in app.family.setting, need to clear it to avoid inconsistency with rules
-    if [[ "$line" == "policy:system" ]]; then
-      redis-cli HSET "$line" app "$(redis-cli HGET "$line" app | jq -c '.family.setting={}')"
-    fi
   elif [[ "$line" == "policy:id" || "$line" == "policy:state" ]]; then
     redis-cli DEL "$line"
   else
@@ -17,7 +18,6 @@ redis-cli KEYS "policy:*" | while IFS= read -r line; do
     :
   fi
 done
-redis-cli DEL "policy_active"
 redis-cli DEL "policy_qos_handler_map"
 redis-cli HDEL "sys:config" "default_c_init_done"
 sync
