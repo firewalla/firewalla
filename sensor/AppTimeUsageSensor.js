@@ -38,6 +38,7 @@ const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
 const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
+const sl = require('../sensor/SensorLoader.js');
 
 class AppTimeUsageSensor extends Sensor {
   
@@ -216,9 +217,11 @@ class AppTimeUsageSensor extends Sensor {
     // match internet activity on flow
     const category = _.get(flow, ["intel", "category"]);
     let bytesThreshold = this.getCategoryThreshold(category);
-    if (flow.ob + flow.rb >= bytesThreshold || !_.isEmpty(result)) {
+    const nds = sl.getSensor("NoiseDomainsSensor");
+    let flowNoiseTags = nds ? nds.find(host) : null;
+    if ((flow.ob + flow.rb >= bytesThreshold && _.isEmpty(flowNoiseTags)) || !_.isEmpty(result)) {
       log.debug("match internet activity on flow", flow, `bytesThresold: ${bytesThreshold}`);
-      result.push({app: "internet", occupyMins: 1, lingerMins: 10, minsThreshold: 1, noStray: true}); // set noStray to true to suppress single matched flow from being counted, e.g., single large flow when device is sleeping
+      result.push({ app: "internet", occupyMins: 1, lingerMins: 10, minsThreshold: 1, noStray: true }); // set noStray to true to suppress single matched flow from being counted, e.g., single large flow when device is sleeping
     }
     return result;
   }
