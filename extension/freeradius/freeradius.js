@@ -60,8 +60,22 @@ class FreeRadius {
       clearInterval(this.watcher);
     }
     await exec("netstat -an  | egrep -q ':1812'").then(() => { this.running = true }).catch((err) => { this.running = false });
+    if (this.running) {
+      await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml exec -T freeradius pidof freeradius`).then((r) => { this.pid = r.stdout.trim() }).catch((e) => {
+        log.warn("Cannot get freeradius pid,", e.message);
+        this.pid = null;
+      });
+    }
+
     this.watcher = setInterval(() => {
       exec("netstat -an  | egrep -q ':1812'").then(() => { this.running = true }).catch((err) => { this.running = false });
+      if (this.running) {
+        exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml exec -T freeradius pidof freeradius`).then((r) => { this.pid = r.stdout.trim() }).catch((e) => {
+          log.warn("Cannot get freeradius pid,", e.message);
+          this.pid = null;
+        });
+      }
+
     }, interval * 1000 || 60000); // every 60s by default
   }
 
@@ -85,7 +99,6 @@ class FreeRadius {
     this.watchContainer(5);
     await this._startServer(options);
     this.watchContainer(60);
-    await this._statusServer();
   }
 
   async _startServer(options = {}) {
@@ -108,7 +121,6 @@ class FreeRadius {
         return false;
       }
       log.info("Container freeradius-server is started.");
-      await this._statusServer();
       return true;
     } catch (err) {
       log.warn("Failed to start radius-server,", err.message);
@@ -195,7 +207,6 @@ class FreeRadius {
     this.watchContainer(5);
     await this._reloadServer(options);
     this.watchContainer(60);
-    await this._statusServer();
   }
 
   async prepareImage() {
@@ -261,16 +272,28 @@ class FreeRadius {
   // TODO: will not reload clients, need to check changes
   async _reloadServer(options = {}) {
     try {
+      const pid = this.pid;
+
       if (!await this.generateRadiusConfig()) {
         log.warn("Abort starting radius-server, configuration not ready");
         return false;
       }
       log.info("Reloading container freeradius-server...");
 
+      if (pid) {
+        log.info(`Current freeradius pid ${pid}...`);
+        // check if pid is changed in 30s, return true if changed
+        await util.waitFor(_ => this.pid !== pid, 30000).then(() => {
+          log.info(`Container freeradius-server pid changed, new pid ${this.pid}`);
+          return true;
+        }).catch((err) => {
+          log.warn(`Container freeradius-server pid ${pid} not changed, try to reload container`, err.message)
+        });
+      }
+
       await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml kill -s SIGHUP freeradius`).catch((e) => {
         log.warn("Cannot reload freeradius,", e.message)
-        // comment out to keep for debug
-        // return false;
+        return false;
       });
       await sleep(3000);
       await util.waitFor(_ => this.running === true, options.timeout * 1000 || 60000).catch((err) => {
@@ -315,7 +338,6 @@ class FreeRadius {
     this.watchContainer(5);
     await this._stopServer(options);
     this.watchContainer(60);
-    await this._statusServer();
   }
 
   async _stopServer(options = {}) {
@@ -338,9 +360,9 @@ class FreeRadius {
     }
   }
 
-  async reconfigServer(options = {}) {
+  async reconfigServer(target, options = {}) {
     this.watchContainer(5);
-    if (options.quickReload) {
+    if (options.quickReload && target != "0.0.0.0") {
       await this._reloadServer(options);
     } else {
       await this._stopServer(options);
@@ -357,7 +379,8 @@ class FreeRadius {
     return await exec("netstat -an | egrep -q ':1812'").then(() => true).catch((err) => false);
   }
 
-  getStatus() {
+  async getStatus() {
+    await this._statusServer();
     return { running: this.running, pid: this.pid };
   }
 
