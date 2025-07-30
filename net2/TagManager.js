@@ -266,7 +266,6 @@ class TagManager {
 
   getTagByRadiusUser(radiusUser) {
     for (const tag of Object.values(this.tags)) {
-      if (tag.getTagType() == Constants.TAG_TYPE_USER) {
         const radiusPolicy = tag.policy && tag.policy.freeradius_server;
         if (radiusPolicy) {
           const users = radiusPolicy.radius && radiusPolicy.radius.users;
@@ -280,7 +279,6 @@ class TagManager {
               return tag;
             }
           }
-        }
       }
     }
     return null;

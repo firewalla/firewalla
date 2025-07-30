@@ -21,6 +21,7 @@ class PcapSuricataPlugin extends PcapPlugin {
   }
 
   async restart() {
+    await suricataControl.tryUpdateSuricataBinary();
     await this._restart();
     suricataControl.watchRulesDir((eventType, filename) => {
       if (!this.isEnabled())

@@ -31,6 +31,7 @@ const hostTool = new HostTool();
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const tagManager = require('../net2/TagManager.js');
+const fwapc = require('../net2/fwapc.js');
 
 const extensionManager = require('./ExtensionManager.js');
 const Constants = require('../net2/Constants.js');
@@ -97,6 +98,13 @@ class FreeRadiusSensor extends Sensor {
     this._policy = await this.loadPolicyAsync();
     this._options = await this.loadOptionsAsync();
 
+    // sync ssid sta mapping once every 20 seconds to ensure consistency in case sta update message is missing somehow
+    setInterval(async () => {
+      this.refreshDeviceTags().catch((err) => {
+        log.error(`Failed to refresh radius device tags`, err.message);
+      });
+    }, 120000); // every 2 minutes
+
     extensionManager.registerExtension(featureName, this, {
       applyPolicy: this.applyPolicy
     })
@@ -113,6 +121,21 @@ class FreeRadiusSensor extends Sensor {
     sclient.subscribe("radius_auth_event");
   }
 
+  async refreshDeviceTags(options = {}) {
+    log.info("refresh device tags");
+    const staStatus = await fwapc.getAllSTAStatus(true).catch((err) => {
+      log.error(`Failed to get STA status from fwapc`, err.message);
+      return null;
+    });
+    if (!_.isObject(staStatus))
+      return;
+    for (const [mac, staInfo] of Object.entries(staStatus)) {
+      if (staInfo.dot1xUserName) {
+        await this.setDeviceTag(mac, staInfo.dot1xUserName);
+      }
+    }
+  }
+
   async setDeviceTag(mac, username) {
     const userTag = tagManager.getTagByRadiusUser(username);
     if (!userTag) {
@@ -120,9 +143,13 @@ class FreeRadiusSensor extends Sensor {
       return;
     }
 
-    const tagId = userTag.afTag && userTag.afTag.getUniqueId();
+    let tagId = userTag.getUniqueId();
+    if (userTag.getTagType() == Constants.TAG_TYPE_USER) {
+      tagId = userTag.afTag && userTag.afTag.getUniqueId();
+    }
+
     if (!tagId) {
-      log.error(`Unexpected error, tag id of user tag ${userTag.getUniqueId()} not found`);
+      log.error(`Unexpected error, tag id of ${userTag.getTagType()} tag ${userTag.getUniqueId()} not found`);
       return;
     }
 
@@ -147,7 +174,7 @@ class FreeRadiusSensor extends Sensor {
     const policyKey = _.get(Constants.TAG_TYPE_MAP, [Constants.TAG_TYPE_GROUP, "policyKey"]);
 
     if (_.isEqual(origPolicy[policyKey], [tagId])) {
-      log.info(`${mac} already has tag ${username} ${tagId}`);
+      log.debug(`${mac} already has tag ${username} ${tagId}`);
       return;
     }
 
@@ -189,7 +216,7 @@ class FreeRadiusSensor extends Sensor {
     const tags = await tagManager.getPolicyTags(policyKeyName);
     for (const tag of tags) {
       const p = await tag.getPolicyAsync(policyKeyName);
-      policy["tag:" + tag.getTagUid()] = p;
+      policy[tag.getTagUid()] = p;
     }
     return policy;
   }
@@ -259,7 +286,7 @@ class FreeRadiusSensor extends Sensor {
       // generate options
       await this.generateOptions(options);
       log.debug("configured options", options);
-      const success = await freeradius.reconfigServer(options);
+      const success = await freeradius.reconfigServer(target, options);
 
       // 2. if radius-server fails, reset to previous policy
       if (!success || !await freeradius.isListening() && this._policy[target]) {
@@ -287,14 +314,23 @@ class FreeRadiusSensor extends Sensor {
   }
 
   async revertPolicy(target = "0.0.0.0") {
-    if (this._policy[target]) {
-      if (target == "0.0.0.0") {
-        await rclient.hsetAsync('policy:system', policyKeyName, JSON.stringify(this._policy[target]));
+    if (target == "0.0.0.0") {
+      // revert to system-level policy
+      if (this._policy[target]) {
+        await rclient.hsetAsync('policy:system', policyKeyName, JSON.stringify(this._policy[target] || "{}"));
       } else {
-        await rclient.hsetAsync(`policy:${target}`, policyKeyName, JSON.stringify(this._policy[target]));
+        await rclient.hdelAsync(`policy:tag:${target}`, policyKeyName);
       }
-      await this.generateOptions(this._options);
+    } else {
+      // revert to target-level policy
+      if (this._policy[target]) {
+        await rclient.hsetAsync(`policy:tag:${target}`, policyKeyName, JSON.stringify(this._policy[target]));
+      }
+      else {
+        await rclient.hdelAsync(`policy:tag:${target}`, policyKeyName);
+      }
     }
+    await this.generateOptions(this._options);
   }
 
   async _applyPolicy(policy, target = "0.0.0.0") {
@@ -304,22 +340,22 @@ class FreeRadiusSensor extends Sensor {
         return;
       }
 
-      const result = await this._apply(policy, target);
+      let result = await this._apply(policy, target);
       if (result && result.err) {
         // if apply error, reset to previous saved policy
         log.error('fail to apply policy,', result.err);
-        if (this._policy[target]) {
-          log.error("cannot apply freeradius policy, try to recover previous config", target, this._policy[target]);
-          await this.revertPolicy(target);
-          const result = await this._apply(this._policy, target);
-          if (result && result.err) {
-            log.error('fail to revert policy,', result.err);
-            return;
-          }
+        log.error("try to recover previous config", target, this._policy[target] || "");
+        await this.revertPolicy(target);
+        result = await this._apply(this._policy["0.0.0.0"], target); // reapply system-level policy
+        if (result && result.err) {
+          log.error('fail to revert policy,', result.err);
+          return;
         }
         return;
       }
-      log.info("freeradius policy applied, freeradius server status", freeradius.getStatus());
+
+      const status = await freeradius.getStatus();
+      log.info("freeradius policy applied, freeradius server status", status);
     }).catch((err) => {
       log.error(`failed to get lock to apply ${featureName} policy`, err.message);
     });
