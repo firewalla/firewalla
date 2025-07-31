@@ -30,6 +30,13 @@ const configDir = `${f.getHiddenFolder()}/config/freeradius`;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Log rotation configuration
+const LOG_ROTATION_CONFIG = {
+  maxSize: 256 * 1024, // 256KB
+  maxFiles: 5,
+  compressOld: true
+};
+
 let instance = null;
 
 class FreeRadius {
@@ -55,27 +62,24 @@ class FreeRadius {
     await exec("netstat -an  | egrep -q ':1812'").then(() => { this.running = true }).catch((err) => { this.running = false });
   }
 
+  async _watch() {
+    await this._watchStatus();
+    if (this.running) {
+      await sleep(1000);
+      const cmd = `sudo docker-compose -f ${dockerDir}/docker-compose.yml exec -T freeradius pidof freeradius`
+      await exec(cmd).then((r) => { this.pid = r.stdout.trim() }).catch((e) => { this.pid = null; });
+    }
+  }
+
   async watchContainer(interval) {
     if (this.watcher) {
       clearInterval(this.watcher);
     }
-    await exec("netstat -an  | egrep -q ':1812'").then(() => { this.running = true }).catch((err) => { this.running = false });
-    if (this.running) {
-      await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml exec -T freeradius pidof freeradius`).then((r) => { this.pid = r.stdout.trim() }).catch((e) => {
-        log.warn("Cannot get freeradius pid,", e.message);
-        this.pid = null;
-      });
-    }
 
-    this.watcher = setInterval(() => {
-      exec("netstat -an  | egrep -q ':1812'").then(() => { this.running = true }).catch((err) => { this.running = false });
-      if (this.running) {
-        exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml exec -T freeradius pidof freeradius`).then((r) => { this.pid = r.stdout.trim() }).catch((e) => {
-          log.warn("Cannot get freeradius pid,", e.message);
-          this.pid = null;
-        });
-      }
+    await this._watch();
 
+    this.watcher = setInterval(async () => {
+      await this._watch();
     }, interval * 1000 || 60000); // every 60s by default
   }
 
@@ -166,7 +170,9 @@ class FreeRadius {
         log.warn("Cannot get generate radius config, node binary not found")
         return "";
       }
-      await exec(`NODE_PATH="${f.getUserHome()}/.node_modules/node_modules" ${nodePath} ${configPath} generate > ${f.getUserHome()}/logs/freeradius.log 2>&1`)
+
+      await this._rotate(`${f.getUserHome()}/logs/freeradius.log`);
+      await exec(`NODE_PATH="${f.getUserHome()}/.node_modules/node_modules" ${nodePath} ${configPath} generate >> ${f.getUserHome()}/logs/freeradius.log 2>&1`)
       return true;
     } catch (err) {
       log.warn("Failed to generate radius config,", err.message);
@@ -201,12 +207,6 @@ class FreeRadius {
     } catch (err) {
       log.warn("Cannot get node path via nvm as pi user,", err.message);
     }
-  }
-
-  async reloadServer(options = {}) {
-    this.watchContainer(5);
-    await this._reloadServer(options);
-    this.watchContainer(60);
   }
 
   async prepareImage() {
@@ -283,12 +283,13 @@ class FreeRadius {
       if (pid) {
         log.info(`Current freeradius pid ${pid}...`);
         // check if pid is changed in 30s, return true if changed
-        await util.waitFor(_ => this.pid !== pid, 30000).then(() => {
+        await util.waitFor(_ => this.pid && this.pid !== pid, 60000).catch((err) => {
+          log.warn(`Container freeradius-server pid ${pid} not changed, try to reload container`, err.message);
+        });
+        if (this.pid && this.pid !== pid) {
           log.info(`Container freeradius-server pid changed, new pid ${this.pid}`);
           return true;
-        }).catch((err) => {
-          log.warn(`Container freeradius-server pid ${pid} not changed, try to reload container`, err.message)
-        });
+        }
       }
 
       await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml kill -s SIGHUP freeradius`).catch((e) => {
@@ -299,8 +300,8 @@ class FreeRadius {
       await util.waitFor(_ => this.running === true, options.timeout * 1000 || 60000).catch((err) => {
         log.warn("Container freeradius-server timeout to reload,", err.message)
       });
-      log.info("Container freeradius-server is reloaded.");
-      return this.running;
+      log.info("Container freeradius-server is reloaded successfully.");
+      return this.running === true;
     } catch (err) {
       log.warn("Failed to reload radius-server,", err.message);
     }
@@ -362,16 +363,16 @@ class FreeRadius {
 
   async reconfigServer(target, options = {}) {
     this.watchContainer(5);
-    if (options.quickReload && target != "0.0.0.0") {
+    if (target != "0.0.0.0") {
       await this._reloadServer(options);
     } else {
       await this._stopServer(options);
       if (!await this._startServer(options)) {
         return false;
       }
-      this.watchContainer(60);
-      return this.running;
     }
+    this.watchContainer(60);
+    return this.running;
   }
 
   // radius listens on 1812-1813
@@ -384,6 +385,14 @@ class FreeRadius {
     return { running: this.running, pid: this.pid };
   }
 
+  async _rotate(logPath, maxSize = 256 * 1024) {
+    const stats = await fs.statAsync(logPath).catch(() => null);
+    if (stats && stats.size > maxSize) {
+      await exec(`mv ${logPath} ${logPath}.1`).catch(() => null);
+    }
+  }
 }
+
+
 
 module.exports = new FreeRadius();

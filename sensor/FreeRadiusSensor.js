@@ -54,11 +54,6 @@ class FreeRadiusSensor extends Sensor {
         if (!this.featureOn) return;
         await freeradius.stopServer();
       });
-
-      sem.on("ReloadFreeRadiusServer", async (event) => {
-        if (!this.featureOn) return;
-        await freeradius.reloadServer();
-      });
     }
   }
 
@@ -72,12 +67,6 @@ class FreeRadiusSensor extends Sensor {
     extensionManager.onCmd("stopFreeRadius", async (msg, data) => {
       sem.sendEventToFireMain({
         type: "StopFreeRadiusServer",
-      });
-    });
-
-    extensionManager.onCmd("reloadFreeRadius", async (msg, data) => {
-      sem.sendEventToFireMain({
-        type: "ReloadFreeRadiusServer",
       });
     });
 
@@ -122,7 +111,7 @@ class FreeRadiusSensor extends Sensor {
   }
 
   async refreshDeviceTags(options = {}) {
-    log.info("refresh device tags");
+    log.debug("refresh device tags");
     const staStatus = await fwapc.getAllSTAStatus(true).catch((err) => {
       log.error(`Failed to get STA status from fwapc`, err.message);
       return null;
