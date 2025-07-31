@@ -27,6 +27,7 @@ const fs = require('fs');
 const Promise = require('bluebird');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const routing = require('../extension/routing/routing.js');
+const freeradius = require('../extension/freeradius/freeradius.js');
 const dnsmasq = new DNSMASQ();
 const Monitorable = require('./Monitorable');
 const Constants = require('./Constants.js');
@@ -156,6 +157,15 @@ class Tag extends Monitorable {
       log.error(`Failed to add ${Tag.getTagDeviceMacSetName(uid)} to ${Tag.getTagDeviceSetName(uid)}`, err.message);
     });
     envCreatedMap[uid] = 1;
+  }
+
+  async resetPolicies() {
+    await this.loadPolicyAsync();
+    for (const key of Object.keys(this.policy)) {
+      if (key === "freeradius_server") {
+        await freeradius.reconfigServer(this.o.uid, {});
+      }
+    }
   }
 
   async createEnv() {
