@@ -356,6 +356,7 @@ class TagManager {
         (async () => {
           await sysManager.waitTillIptablesReady()
           log.info(`Destroying environment for tag ${uid} ${removedTags[uid].name} ...`);
+          await removedTags[uid].resetPolicies();
           await removedTags[uid].destroyEnv();
           await removedTags[uid].destroy();
           await dnsmasq.writeAllocationOption(uid, {})
