@@ -186,8 +186,8 @@ class AppTimeUsageSensor extends Sensor {
     this._domainTrie = domainTrie;
   }
 
-  getCategoryThreshold(category) {
-    if (this.internetTimeUsageCfg) {
+  getCategoryBytesThreshold(category) {
+    if (category && this.internetTimeUsageCfg) {
       if (this.internetTimeUsageCfg[category] &&
         typeof this.internetTimeUsageCfg[category].bytesThreshold === "number")
         return this.internetTimeUsageCfg[category].bytesThreshold;
@@ -196,6 +196,18 @@ class AppTimeUsageSensor extends Sensor {
         return this.internetTimeUsageCfg["default"].bytesThreshold;
     }
     return 200 * 1024; // default threshold is 200KB
+  }
+
+  getCategoryUlDlRatioThreshold(category) {
+    if (category && this.internetTimeUsageCfg) {
+      if (this.internetTimeUsageCfg[category] &&
+        typeof this.internetTimeUsageCfg[category].ulDlRatioThreshold === "number")
+        return this.internetTimeUsageCfg[category].ulDlRatioThreshold;
+      if (this.internetTimeUsageCfg["default"] &&
+        typeof this.internetTimeUsageCfg["default"].ulDlRatioThreshold === "number")
+        return this.internetTimeUsageCfg["default"].ulDlRatioThreshold;
+    }
+    return 5; // default threshold is 5
   }
 
   // returns an array with matched app criterias
@@ -209,17 +221,19 @@ class AppTimeUsageSensor extends Sensor {
     if (_.isSet(values)) {
       for (const value of values) {
         if (_.isObject(value) && value.app && !values.has(`!${value.app}`)) {
-          if (!value.bytesThreshold || flow.ob + flow.rb >= value.bytesThreshold)
+          if ((!value.bytesThreshold || flow.ob + flow.rb >= value.bytesThreshold) && (!value.ulDlRatioThreshold || flow.ob <= value.ulDlRatioThreshold * flow.rb))
             result.push(value);
         }
       }
     }
     // match internet activity on flow
     const category = _.get(flow, ["intel", "category"]);
-    let bytesThreshold = this.getCategoryThreshold(category);
+    const bytesThreshold = this.getCategoryBytesThreshold(category);
+    // ignore flows with large upload/download ratio, e.g., a flow with large ul/dl ratio may happen if device is backing up data
+    const ulDlRatioThreshold = this.getCategoryUlDlRatioThreshold(category);
     const nds = sl.getSensor("NoiseDomainsSensor");
     let flowNoiseTags = nds ? nds.find(host) : null;
-    if ((flow.ob + flow.rb >= bytesThreshold && _.isEmpty(flowNoiseTags)) || !_.isEmpty(result)) {
+    if ((flow.ob + flow.rb >= bytesThreshold && flow.ob <= ulDlRatioThreshold * flow.rb && _.isEmpty(flowNoiseTags)) || !_.isEmpty(result)) {
       log.debug("match internet activity on flow", flow, `bytesThresold: ${bytesThreshold}`);
       result.push({ app: "internet", occupyMins: 1, lingerMins: 10, minsThreshold: 1, noStray: true }); // set noStray to true to suppress single matched flow from being counted, e.g., single large flow when device is sleeping
     }
