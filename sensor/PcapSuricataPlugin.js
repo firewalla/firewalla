@@ -133,7 +133,7 @@ class PcapSuricataPlugin extends PcapPlugin {
   }
 
   async isSupported() {
-    return fs.accessAsync(`/usr/bin/suricata`, fs.constants.F_OK).then(() => true).catch((err) => false);
+    return await fs.accessAsync(`/usr/bin/suricata`, fs.constants.F_OK).then(() => true).catch((err) => false) || await platform.isSuricataFromAssetsSupported();
   }
 
   getFeatureName() {
