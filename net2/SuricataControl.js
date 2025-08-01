@@ -100,7 +100,7 @@ class SuricataControl {
       // Create suricata binary lst file for assets
       const suricataBinaryPath = `${f.getRuntimeInfoFolder()}/assets/suricata`;
       const suricataBinaryTarPath = `${f.getRuntimeInfoFolder()}/assets/suricata.tar.gz`;
-      const assetsConf = `${suricataBinaryTarPath} /gold/assets/u22/6.5.0-25-generic/suricata.tar.gz 644 "" "tar xzf ${suricataBinaryTarPath} -C ${f.getRuntimeInfoFolder()}/assets; sudo ln -sfT /usr/bin/suricata ${suricataBinaryPath}; if systemctl is-active suricata; then sudo systemctl restart suricata; fi"`;
+      const assetsConf = `${suricataBinaryTarPath} /gold/assets/u22/6.5.0-25-generic/suricata.tar.gz 644 ":" "tar xzf ${suricataBinaryTarPath} -C ${f.getRuntimeInfoFolder()}/assets; sudo ln -sfT ${suricataBinaryPath} /usr/bin/suricata; if systemctl is-active suricata; then sudo systemctl restart suricata; fi"`;
       const assetsConfPath = `${f.getExtraAssetsDir()}/assets_suricata.lst`;
       
       await fsp.writeFile(assetsConfPath, assetsConf, {encoding: "utf8"});
