@@ -158,7 +158,7 @@ class AppTimeUsageSensor extends Sensor {
       const includedDomains = appConfs[key].includedDomains || [];
       const category = appConfs[key].category;
       for (const value of includedDomains) {
-        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold"]);
+        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold", "ulDlRatioThreshold"]);
         obj.app = key;
         if (category)
           obj.category = category;
