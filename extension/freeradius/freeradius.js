@@ -292,15 +292,17 @@ class FreeRadius {
         }
       }
 
-      await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml kill -s SIGHUP freeradius`).catch((e) => {
-        log.warn("Cannot reload freeradius,", e.message)
+      await exec(`sudo systemctl restart docker-compose@freeradius`).catch((e) => {
+        log.warn("Cannot restart freeradius,", e.message)
         return false;
       });
       await sleep(3000);
       await util.waitFor(_ => this.running === true, options.timeout * 1000 || 60000).catch((err) => {
         log.warn("Container freeradius-server timeout to reload,", err.message)
       });
-      log.info("Container freeradius-server is reloaded successfully.");
+      if (this.running) {
+        log.info("Container freeradius-server is reloaded successfully.");
+      }
       return this.running === true;
     } catch (err) {
       log.warn("Failed to reload radius-server,", err.message);
@@ -363,7 +365,7 @@ class FreeRadius {
 
   async reconfigServer(target, options = {}) {
     this.watchContainer(5);
-    if (target != "0.0.0.0") {
+    if (target != "0.0.0.0" && this.running === true) {
       await this._reloadServer(options);
     } else {
       await this._stopServer(options);
