@@ -25,11 +25,72 @@ const PlatformLoader = require('../platform/PlatformLoader.js');
 const platform = PlatformLoader.getPlatform();
 const fsp = require('fs').promises;
 const { fileExist, fileRemove } = require('../util/util.js');
+const Config = require('../net2/config.js');
+const rp = util.promisify(require('request'));
+const extensionManager = require('./ExtensionManager.js');
+
+// internal properties
+let dapInterface = null;
 
 class DapSensor extends Sensor {
   constructor(config) {
     super(config);
     this.featureName = 'dap';
+  }
+
+  async apiCall(method, path, body) {
+    const options = {
+      method: method,
+      headers: {
+        "Accept": "application/json"
+      },
+      url: dapInterface + path,
+      json: true
+    };
+
+    if(body) {
+      options.body = body;
+    }
+    try {
+      const resp = await rp(options);
+      let r =  {code: resp.statusCode, body: resp.body};
+      if (resp.statusCode === 500) {
+        r.msg = resp.body;
+      }
+      return r;
+    } catch (e) {
+      return {code: 500, msg: e.message};
+    }
+  }
+
+  async apiRun() {
+    // Initialize DAP interface configuration
+    const fwConfig = Config.getConfig();
+    if (fwConfig.dap && fwConfig.dap.interface) {
+      const intf = fwConfig.dap.interface;
+      dapInterface = `http://${intf.host}:${intf.port}/${intf.version}`;
+    } else {
+      // Default configuration if not specified in config
+      dapInterface = 'http://localhost:8842/v1';
+    }
+
+    // Register onCmd hook for "dap" item
+    extensionManager.onCmd("dap", async (msg, data) => {
+      if (!data.path) {
+        throw new Error("invalid input");
+      }
+
+      if (!Config.isFeatureOn(this.featureName)) {
+        throw new Error("DAP feature is not enabled");
+      }
+
+      const result = await this.apiCall(data.method || "GET", data.path, data.body);
+      if (result.code == 200) {
+        return result.body;
+      } else {
+        throw new Error(`DAP API call failed: ${result.msg || result.code}`);
+      }
+    });
   }
 
   async run() {
