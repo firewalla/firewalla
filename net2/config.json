@@ -136,7 +136,8 @@
     "STUNSensor": {},
     "NoiseDomainsSensor": {},
     "Iperf3Sensor": {},
-    "DeviceMonitorSensor": {}
+    "DeviceMonitorSensor": {},
+    "DapSensor": {}
   },
   "intels": [
     "DeviceInfoIntel",
@@ -1071,6 +1072,13 @@
     "interface": {
       "host": "127.0.0.1",
       "port": 8841,
+      "version": "v1"
+    }
+  },
+  "dap": {
+    "interface": {
+      "host": "127.0.0.1",
+      "port": 8842,
       "version": "v1"
     }
   },

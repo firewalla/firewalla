@@ -84,11 +84,11 @@ else
 
   # remove sensitive data from logs
   find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" \) -exec sudo sed -i -E '
-  s/([[:space:]](password|key|privateKey|privKey|secret|psk):[[:space:]]*(\x1b\[[0-9;]*m)?[\x27"])([^\x27"]*)([\x27"](\x1b\[[0-9;]*m)?)/\1******\5/gI
+  s/([[:space:]](password|key|privateKey|privKey|secret|psk|wpa_passphrase|passwd):[[:space:]]*(\x1b\[[0-9;]*m)?[\x27"])([^\x27"]*)([\x27"](\x1b\[[0-9;]*m)?)/\1******\5/gI
   ' {} +
 
   find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" \) -exec sudo sed -i -E '
-  s/(("password"|"key"|"privateKey"|"privKey"|"secret"|"psk"):\s*[\x27"])([^\x27"]*)([\x27"])/\1******\4/gI
+  s/(("password"|"key"|"privateKey"|"privKey"|"secret"|"psk"|"wpa_passphrase"|"passwd"):\s*[\x27"])([^\x27"]*)([\x27"])/\1******\4/gI
   ' {} +
 
   find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" \) -exec sudo sed -i -E '
