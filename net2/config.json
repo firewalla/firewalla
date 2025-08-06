@@ -1078,7 +1078,7 @@
   "dap": {
     "interface": {
       "host": "127.0.0.1",
-      "port": 8842,
+      "port": 8843,
       "version": "v1"
     }
   },
