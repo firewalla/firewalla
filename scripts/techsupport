@@ -56,8 +56,9 @@ else
   rm -f ./.sshpasswd
   rm -f ./.firewalla/run/ovpn_profile/*.password
   rm -r ./.firewalla/run/ovpn_profile/*.userpass
-  rm -f *.tar*
-  rm -f *.gz*
+
+  find . -type f -name "freeradius.tar.gz" -exec sudo rm -f {} +
+
   sed -i -E 's/^(\s*(user|password)) .*$/\1 ****/' .router/config/pppoe/*
   sed -i -E 's/^(\s*(ssid|.*identity|.*password|psk|wep_key.|phase.|.*_passwd))=.*$/\1=****/' .router/config/wpa_supplicant/*
   sed -i -E 's/^(\s*(ssid.*|wpa_psk|wpa_passphrase))=.*$/\1=****/' .router/config/hostapd/*
