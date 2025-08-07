@@ -1053,7 +1053,8 @@
     "app_time_usage": true,
     "fast_speedtest": true,
     "policy_disturb": true,
-    "dap": false
+    "dap": false,
+    "record_activity_flow": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

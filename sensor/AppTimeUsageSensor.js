@@ -39,7 +39,7 @@ const hostTool = new HostTool();
 const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
 const sl = require('../sensor/SensorLoader.js');
-
+const pclient = require('../util/redis_manager.js').getPublishClient()
 class AppTimeUsageSensor extends Sensor {
   
   async run() {
@@ -209,6 +209,28 @@ class AppTimeUsageSensor extends Sensor {
     }
     return 5; // default threshold is 5
   }
+  
+  recordFlow(flow, conf, tags) {
+    pclient.publishAsync("internet.activity.flow", JSON.stringify({
+      beginTime: flow.ts,
+      endTime: flow.ts + flow.du,
+      intf: flow.intf,
+      sourceMac: flow.mac,
+      destination: flow.host || flow.intel && flow.intel.host,
+      category: _.get(flow, ["intel", "category"]) || "",
+      app: conf.app,
+      tags: tags || [],
+      upload: flow.ob,
+      download: flow.rb,
+      total: flow.ob + flow.rb,
+      flowCount: 1, // this is a single flow, so count is 1
+      occupyMins: conf.occupyMins,
+      lingerMins: conf.lingerMins,
+      bytesThreshold: conf.bytesThreshold,
+      minsThreshold: conf.minsThreshold,
+      noStray: conf.noStray || false,
+    }));
+  }
 
   // returns an array with matched app criterias
   // [{"app": "youtube", "occupyMins": 1, "lingerMins": 1, "bytesThreshold": 1000000}]
@@ -263,6 +285,9 @@ class AppTimeUsageSensor extends Sensor {
         tags.push(...(enrichedFlow[config.flowKey] || []));
       }
       tags = _.uniq(tags);
+      if (fc.isFeatureOn("record_activity_flow")){
+        this.recordFlow(enrichedFlow, match, tags);
+      }
       await this.markBuckets(enrichedFlow.mac, tags, enrichedFlow.intf, app, category, enrichedFlow.ts, enrichedFlow.ts + enrichedFlow.du, occupyMins, lingerMins, minsThreshold, noStray);
     }
   }
