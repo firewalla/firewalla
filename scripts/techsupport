@@ -56,6 +56,9 @@ else
   rm -f ./.sshpasswd
   rm -f ./.firewalla/run/ovpn_profile/*.password
   rm -r ./.firewalla/run/ovpn_profile/*.userpass
+
+  find . -type f -name "freeradius.tar.gz" -exec sudo rm -f {} +
+
   sed -i -E 's/^(\s*(user|password)) .*$/\1 ****/' .router/config/pppoe/*
   sed -i -E 's/^(\s*(ssid|.*identity|.*password|psk|wep_key.|phase.|.*_passwd))=.*$/\1=****/' .router/config/wpa_supplicant/*
   sed -i -E 's/^(\s*(ssid.*|wpa_psk|wpa_passphrase))=.*$/\1=****/' .router/config/hostapd/*
@@ -83,16 +86,16 @@ else
   find . -type f -name "*.gz" -exec sudo gunzip {} +
 
   # remove sensitive data from logs
-  find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" \) -exec sudo sed -i -E '
-  s/([[:space:]](password|key|privateKey|privKey|secret|psk|wpa_passphrase|passwd):[[:space:]]*(\x1b\[[0-9;]*m)?[\x27"])([^\x27"]*)([\x27"](\x1b\[[0-9;]*m)?)/\1******\5/gI
+  find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" -o -path "./*/config/*" \) -exec sudo sed -i -E '
+  s/([[:space:]](password|key|privateKey|privKey|secret|psk|wpa_passphrase|passwd|user_password|pass):[[:space:]]*(\x1b\[[0-9;]*m)?[\x27"])([^\x27"]*)([\x27"](\x1b\[[0-9;]*m)?)/\1******\5/gI
   ' {} +
 
-  find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" \) -exec sudo sed -i -E '
-  s/(("password"|"key"|"privateKey"|"privKey"|"secret"|"psk"|"wpa_passphrase"|"passwd"):\s*[\x27"])([^\x27"]*)([\x27"])/\1******\4/gI
+  find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" -o -path "./*/config/*" \) -exec sudo sed -i -E '
+  s/(("password"|"key"|"privateKey"|"privKey"|"secret"|"psk"|"wpa_passphrase"|"passwd"|"user_password"|"pass"):\s*[\x27"])([^\x27"]*)([\x27"])/\1******\4/gI
   ' {} +
 
-  find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" \) -exec sudo sed -i -E '
-  s/\\"(privateKey|privKey|key|password|secret|psk)\\"\s*:\s*\\"([^\\"]+)\\"\s*/\\"\1\\":\\"******\\"/gI
+  find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" -o -path "./*/config/*" \) -exec sudo sed -i -E '
+  s/\\"(privateKey|privKey|key|password|secret|psk|passwd|user_password|pass)\\"\s*:\s*\\"([^\\"]+)\\"\s*/\\"\1\\":\\"******\\"/gI
   ' {} +
 
   find . -type f -name "*.conf" -exec sudo sed -i -E '
@@ -106,6 +109,8 @@ else
   find . -type f -name "*.log" -exec sudo sed -i -E '
   s/(password:[[:space:]]*Some\(")[^"]+("\))/\1*****\2/gI
   ' {} +
+
+  find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" -o -path "./*/config/*" \) -exec sudo sed -i '/secret.*[=:]/d' {} +
 
   # save events
   redis-cli zrangebyscore event:log 0 inf > events_all.txt

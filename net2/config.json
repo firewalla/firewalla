@@ -1053,7 +1053,8 @@
     "app_time_usage": true,
     "fast_speedtest": true,
     "policy_disturb": true,
-    "dap": false
+    "dap": false,
+    "record_activity_flow": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
@@ -1078,7 +1079,7 @@
   "dap": {
     "interface": {
       "host": "127.0.0.1",
-      "port": 8842,
+      "port": 8843,
       "version": "v1"
     }
   },

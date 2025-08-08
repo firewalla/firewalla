@@ -393,6 +393,12 @@ class FreeRadius {
       await exec(`mv ${logPath} ${logPath}.1`).catch(() => null);
     }
   }
+
+  mask(jsonStr) {
+    jsonStr = jsonStr.replace(/"secret"\s*:\s*"[^"]*"/g, '"secret":"*** redacted ***"');
+    return jsonStr.replace(/"passwd"\s*:\s*"[^"]*"/g, '"passwd":"*** redacted ***"');
+  }
+
 }
 
 
