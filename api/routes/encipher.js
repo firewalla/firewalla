@@ -100,6 +100,7 @@ const simple = async (req, res, next) => {
   const content = req.body || {}
   const target = req.query.target || "0.0.0.0"
   const streaming = req.query.streaming || false;
+  const sync_to_msp = req.query.sync_to_msp || false;
 
   let body = {
     "message": {
@@ -134,6 +135,9 @@ const simple = async (req, res, next) => {
   body.message.obj.data.item = item
   body.message.obj.target = target
   body.message.obj.id = req.query.id || body.message.obj.id
+  if (sync_to_msp) {
+    body.message.obj.syncToMsp = true;
+  }
   const data = body.message.obj.data
   if (req.query.start) data.start = parseInt(req.query.start)
   if (req.query.end) data.end = parseInt(req.query.end)
@@ -202,6 +206,7 @@ router.post('/complex', async (req, res, next) => {
   const command = req.query.command || "init"
   const content = req.body || {}
   const target = req.query.target || "0.0.0.0"
+  const sync_to_msp = req.query.sync_to_msp || false;
 
   let body = {
     "message": {
@@ -235,6 +240,9 @@ router.post('/complex', async (req, res, next) => {
     body.message.suppressLog = true
   body.message.obj.target = target
   body.message.obj.data = content;
+  if (sync_to_msp) {
+    body.message.obj.syncToMsp = true;
+  }
 
   try {
     const gid = (await jsReadFile("/home/pi/.firewalla/ui.conf")).gid;
