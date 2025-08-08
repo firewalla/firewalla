@@ -153,6 +153,7 @@ const RateLimiterRes = require('../vendor_lib/rate-limiter-flexible/RateLimiterR
 const cpuProfile = require('../net2/CpuProfile.js');
 const ea = require('../event/EventApi.js');
 const wrapIptables = require('../net2/Iptables.js').wrapIptables;
+const sl = require('../sensor/APISensorLoader.js');
 
 const Message = require('../net2/Message')
 
@@ -4024,6 +4025,7 @@ class netBot extends ControllerBot {
 
               await sysManager.updateAsync()
               const fwapcOps = data.fwapcOps || [];
+              const dapOps = data.dapOps || [];
               try {
                 const json = {};
                 const tasks = fwapcOps.map(async (op) => {
@@ -4032,6 +4034,15 @@ class netBot extends ControllerBot {
                   if (result && result.code == 200)
                     json[key] = result.body;
                 });
+                tasks.push(...dapOps.map(async (op) => {
+                  const {key, method, path, body} = op;
+                  const dapSensor = sl.getSensor('DapSensor');
+                  if (dapSensor) {
+                    const result = await dapSensor.apiCall(method || "GET", path, body).catch((err) => null);
+                    if (result && result.code == 200)
+                      json[key] = result.body;
+                  }
+                }));
                 tasks.push((async () => {
                   const result = await this.hostManager.toJson(options);
                   Object.assign(json, result)
