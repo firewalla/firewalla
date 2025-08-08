@@ -30,12 +30,13 @@ const spawn = cp.spawn;
 const Message = require('../net2/Message.js');
 const LRU = require('lru-cache');
 const scheduler = require('../util/scheduler.js');
+const asyncNative = require('../util/asyncNative.js');
 
 class ICMP6Sensor extends Sensor {
   constructor(config) {
     super(config);
     this.intfPidMap = {};
-    this.cache = new LRU({max: 600, maxAge: 1000 * 60 * 3});
+    this.cache = new LRU({max: 600, maxAge: 1000 * 60 * 5});
   }
 
   async restart() {
@@ -54,8 +55,8 @@ class ICMP6Sensor extends Sensor {
       if (intf.name.endsWith(":0")) continue; // do not listen on interface alias since it is not a real interface
       if (intf.name.includes("vpn")) continue; // do not listen on vpn interface
       if (intf.name.startsWith("wg")) continue; // do not listen on wireguard interface
-      await execAsync(`sudo sysctl -w net.ipv6.neigh.${intf.name.replace(/\./gi, "/")}.base_reachable_time_ms=300000`).catch((err) => {});
-      await execAsync(`sudo sysctl -w net.ipv6.neigh.${intf.name.replace(/\./gi, "/")}.gc_stale_time=120`).catch((err) => {});
+      await execAsync(`sudo sysctl -w net.ipv6.neigh.${intf.name.replace(/\./gi, "/")}.base_reachable_time_ms=600000`).catch((err) => {});
+      await execAsync(`sudo sysctl -w net.ipv6.neigh.${intf.name.replace(/\./gi, "/")}.gc_stale_time=240`).catch((err) => {});
       // listen on icmp6 neighbor-advertisement which is not sent from firewalla
       const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', intf.name, '-enl', `!(ether src ${intf.mac_address}) && icmp6 && ip6[40] == 136 && !vlan`]);
       const pid = tcpdumpSpawn.pid;
@@ -83,7 +84,7 @@ class ICMP6Sensor extends Sensor {
     // ping known public IPv6 addresses to keep OS ipv6 neighbor cache up-to-date
     setInterval(() => {
       this.pingKnownIPv6s().catch((err) => {});
-    }, 120000);
+    }, 240000);
   }
 
   processNeighborAdvertisement(line, intf) {
@@ -145,14 +146,14 @@ class ICMP6Sensor extends Sensor {
 
   async pingKnownIPv6s() {
     this.cache.prune();
-    await Promise.all(this.cache.keys().map(async (ipv6) => {
+    await asyncNative.eachLimit(this.cache.keys(), 10, async (ipv6) => {
       if (ipUtil.isPublic(ipv6))
         await this.pingIPv6(ipv6).catch((err) => {});
-    }));
+    });
   }
 
   async pingIPv6(ipv6) {
-    await execAsync(`ping6 -c 1 ${ipv6}`).catch((err) => {});
+    await execAsync(`ping6 -c 1 -W 0.5 ${ipv6}`).catch((err) => {});
   }
 }
 
