@@ -105,13 +105,11 @@ class DapSensor extends Sensor {
       const extraAssetsDir = f.getExtraAssetsDir();
       await fsp.copyFile(`${platform.getPlatformFilesPath()}/02_assets_dap.lst`, `${extraAssetsDir}/02_assets_dap.lst`);
       
-      // Update assets if dap binary doesn't exist
-      if (!await fileExist(`${f.getRuntimeInfoFolder()}/assets/dap`)) {
-        log.info('DAP binary not found, updating assets...');
-        await execAsync(`ASSETSD_PATH=${extraAssetsDir} ${f.getFirewallaHome()}/scripts/update_assets.sh`).catch((err) => {
-          log.error(`Failed to invoke update_assets.sh`, err.message);
-        });
-      }
+      // Update DAP binary from assets
+      log.info('Checking DAP update from assets...');
+      await execAsync(`ASSETSD_PATH=${extraAssetsDir} ${f.getFirewallaHome()}/scripts/update_assets.sh`).catch((err) => {
+        log.error(`Failed to invoke update_assets.sh`, err.message);
+      });
       
       // Start the fwdap.service
       log.info('Starting fwdap.service...');

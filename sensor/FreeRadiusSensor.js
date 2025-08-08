@@ -77,7 +77,7 @@ class FreeRadiusSensor extends Sensor {
       return {
         featureOn: fc.isFeatureOn(featureName),
         status: { pid: freeradius.pid, running: freeradius.running },
-        policy: policy,
+        policy: (JSON.parse(freeradius.mask(JSON.stringify(policy)))),
       };
     });
   }
@@ -173,7 +173,7 @@ class FreeRadiusSensor extends Sensor {
 
   async processAuthEvent(message) {
     message = "{" + message + "}"
-    log.info("radius auth event", message);
+    log.info("radius auth event", freeradius.mask(message));
     try {
       const msg = JSON.parse(message);
       if (msg) {
@@ -193,7 +193,7 @@ class FreeRadiusSensor extends Sensor {
       try {
         return JSON.parse(data);
       } catch (err) {
-        log.warn(`fail to load policy, invalid json ${data}`);
+        log.warn(`fail to load policy, invalid json ${freeradius.mask(JSON.stringify(data))}`);
         return {};
       };
     }
@@ -230,7 +230,7 @@ class FreeRadiusSensor extends Sensor {
     this.featureOn = true;
     this._policy = await this.loadPolicyAsync();
     this._options = await this.loadOptionsAsync();
-    log.debug("freeradius policy", this._policy);
+    log.debug("freeradius policy", freeradius.mask(JSON.stringify(this._policy)));
     freeradius.prepare(); // prepare in background
   }
 
@@ -271,7 +271,7 @@ class FreeRadiusSensor extends Sensor {
       const { radius, options } = policy;
 
       // 1. apply to radius-server
-      log.info("start to apply freeradius policy", radius, options);
+      log.info("start to apply freeradius policy", freeradius.mask(JSON.stringify(radius)), options);
       // generate options
       await this.generateOptions(options);
       log.debug("configured options", options);
@@ -294,7 +294,7 @@ class FreeRadiusSensor extends Sensor {
   async applyPolicy(host, ip, policy) {
     if (!this.featureOn) return;
     if (!policy) return;
-    log.info("start to apply policy freeradius", host.constructor.name, ip, policy);
+    log.info("start to apply policy freeradius", host.constructor.name, ip, freeradius.mask(JSON.stringify(policy)));
     try {
       await this._applyPolicy(policy, ip);
     } catch (err) {
@@ -344,7 +344,7 @@ class FreeRadiusSensor extends Sensor {
       }
 
       const status = await freeradius.getStatus();
-      log.info("freeradius policy applied, freeradius server status", status);
+      log.info("freeradius policy applied, freeradius server status", freeradius.mask(JSON.stringify(status)));
     }).catch((err) => {
       log.error(`failed to get lock to apply ${featureName} policy`, err.message);
     });
