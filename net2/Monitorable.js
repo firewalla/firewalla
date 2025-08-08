@@ -28,6 +28,8 @@ const util = require('util')
 const _ = require('lodash');
 const Constants = require('./Constants.js');
 
+const POLICY_KEYS_DEBUG_LOG = {dap: 1}
+
 // TODO: extract common methods like vpnClient() _dnsmasq() from Host, Identity, NetworkProfile, Tag
 class Monitorable {
 
@@ -97,7 +99,11 @@ class Monitorable {
 
   async onPolicyChange(channel, id, name, obj) {
     this.policy[name] = obj[name]
-    log.info(channel, id, obj);
+    if (POLICY_KEYS_DEBUG_LOG[name]) {
+      log.debug(channel, id, obj);
+    } else {
+      log.info(channel, id, obj);
+    }
     if (f.isMain()) {
       await sysManager.waitTillIptablesReady()
       this.scheduleApplyPolicy()

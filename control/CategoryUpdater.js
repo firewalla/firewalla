@@ -37,19 +37,21 @@ const { Address4, Address6 } = require('ip-address');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const _ = require('lodash');
-const fc = require('../net2/config.js');
 const scheduler = require('../util/scheduler');
 let instance = null
 
 const EXPIRE_TIME = 60 * 60 * 24 * 5 // five days...
 const CUSTOMIZED_CATEGORY_KEY_PREFIX = "customized_category:id:"
+const CUSTOMIZED_CATEGORY_KEY_INDEX = "customized_category:key_index"
 
 const CATEGORY_FILTER_DIR = "/home/pi/.firewalla/run/category_data/filters";
 const crypto = require('crypto');
 const { CategoryEntry } = require("./CategoryEntry.js");
 const CATEGORY_BF_PARTS_KEY = "category_bf_parts";
 
-const net = require('net')
+const net = require('net');
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
 
 const hashFunc = function (obj) {
   const str = JSON.stringify(obj);
@@ -84,15 +86,33 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
       this.excludeListBundleIds = new Set(["default_c", "adblock_strict", "games", "social", "av", "porn", "gamble", "p2p", "vpn", "shopping"]);
 
-      this.refreshCustomizedCategories();
+      // Rebuild the customized category index to ensure it's in sync
+      if (firewalla.isApi()) {
+        void this.rebuildCustomizedCategoryIndex().then(() => {
+          this.refreshCustomizedCategories();
+          sem.emitEvent({
+            type: "CustomizedCategory:Updated",
+            toProcess: "FireMain"
+          });
+        })
+      } else {
+        this.refreshCustomizedCategories();
+      }
 
       sem.on("CustomizedCategory:Updated", async () => {
         if (firewalla.isMain()) {
-          await this.refreshCustomizedCategories();
+          if (this.refreshCustomizedCategoryJob) {
+            await this.refreshCustomizedCategoryJob.exec();
+          } else {
+            await this.refreshCustomizedCategories();
+          }
         }
       });
 
       if (firewalla.isMain()) {
+        this.refreshCustomizedCategoryJob = new scheduler.UpdateJob(async () => {
+          await this.refreshCustomizedCategories();
+        }, 1000);
         this.domainPatternTrie = new DomainTrie();
         this.categoryWithPattern = new Set();
         sem.on('UPDATE_CATEGORY_DOMAIN', async (event) => {
@@ -295,6 +315,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const key = this._getCustomizedCategoryKey(category);
     await rclient.unlinkAsync(key);
     await rclient.hmsetAsync(key, obj);
+    await rclient.saddAsync(CUSTOMIZED_CATEGORY_KEY_INDEX, key);
     sem.emitEvent({
       type: "CustomizedCategory:Updated",
       toProcess: "FireMain"
@@ -308,6 +329,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       return;
     const key = this._getCustomizedCategoryKey(category);
     await rclient.unlinkAsync(key);
+    await rclient.sremAsync(CUSTOMIZED_CATEGORY_KEY_INDEX, key);
     sem.emitEvent({
       type: "CustomizedCategory:Updated",
       toProcess: "FireMain"
@@ -320,7 +342,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
       for (const c in this.customizedCategories)
         this.customizedCategories[c].exists = false;
 
-      const keys = await rclient.scanResults(`${CUSTOMIZED_CATEGORY_KEY_PREFIX}*`);
+      // Use the index to get all customized category keys
+      let keys = await this.getCustomizedCategoryKeys();
+      
       for (const key of keys) {
         const o = await rclient.hgetallAsync(key);
         const category = key.substring(CUSTOMIZED_CATEGORY_KEY_PREFIX.length);
@@ -341,6 +365,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
           await this.flushIncludedDomains(c);
           await this.flushCategoryData(c);
           await this.flushIncludedElements(c);
+          await dnsmasq.deletePolicyCategoryFilterEntry(c);
           // this will trigger ipset recycle and dnsmasq config change
           const event = {
             type: "UPDATE_CATEGORY_DOMAIN",
@@ -355,6 +380,44 @@ class CategoryUpdater extends CategoryUpdaterBase {
       log.error('Failed to refresh customized categories', err)
     }
     return this.customizedCategories;
+  }
+
+  async rebuildCustomizedCategoryIndex() {
+    try {
+      // Get existing keys from the index
+      const existingKeys = await rclient.smembersAsync(CUSTOMIZED_CATEGORY_KEY_INDEX);
+      
+      // Scan for all customized category keys
+      const actualKeys = await rclient.scanResults(`${CUSTOMIZED_CATEGORY_KEY_PREFIX}*`);
+      
+      // Find keys to add (in actualKeys but not in existingKeys)
+      const keysToAdd = actualKeys.filter(key => !existingKeys.includes(key));
+      
+      // Find keys to remove (in existingKeys but not in actualKeys)
+      const keysToRemove = existingKeys.filter(key => !actualKeys.includes(key));
+      
+      // Add new keys
+      if (keysToAdd.length > 0) {
+        await rclient.saddAsync(CUSTOMIZED_CATEGORY_KEY_INDEX, keysToAdd);
+        log.info(`Added ${keysToAdd.length} keys to customized category index`);
+      }
+      
+      // Remove stale keys
+      if (keysToRemove.length > 0) {
+        await rclient.sremAsync(CUSTOMIZED_CATEGORY_KEY_INDEX, keysToRemove);
+        log.info(`Removed ${keysToRemove.length} stale keys from customized category index`);
+      }
+      
+      if (keysToAdd.length > 0 || keysToRemove.length > 0) {
+        log.info(`Updated customized category index: ${actualKeys.length} total keys`);
+      }
+    } catch (err) {
+      log.error('Failed to rebuild customized category index', err);
+    }
+  }
+
+  async getCustomizedCategoryKeys() {
+    return await rclient.smembersAsync(CUSTOMIZED_CATEGORY_KEY_INDEX);
   }
 
   async activateCategory(category) {
