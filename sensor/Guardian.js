@@ -46,7 +46,7 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
 const tokenManager = require('../util/FWTokenManager.js');
-const { REDIS_KEY_MSP_DATA } = require('../net2/Constants.js');
+const { REDIS_KEY_MSP_DATA, REDIS_KEY_MSP_SYNC_OPS, FEATURE_MSP_SYNC_OPS } = require('../net2/Constants.js');
 const execAsync = require('child-process-promise').exec;
 
 module.exports = class {
@@ -59,8 +59,12 @@ module.exports = class {
     this.configAdminStatusKey = `ext.guardian.socketio.adminStatus${suffix}`;
     this.mspDataKey = `${REDIS_KEY_MSP_DATA}${suffix}`; // this key save msp user's info, e.g. targetlists
     this.liveTransportCache = {};
+    this.socketConnected = false; // Track socket.io connectivity status
     setInterval(() => {
       this.cleanupLiveTransport()
+      this.truncateOpQueue().catch((err) => {
+        log.error(`Failed to truncate op queue`, err);
+      });
     }, (config.cleanInterval || 30) * 1000);
   }
 
@@ -70,6 +74,17 @@ module.exports = class {
       if (!liveTransport.isLivetimeValid()) {
         log.info("Destory live transport for", alias);
         delete this.liveTransportCache[alias];
+      }
+    }
+  }
+
+  async truncateOpQueue() {
+    if (this.name == "default") {
+      if (fc.isFeatureOn(FEATURE_MSP_SYNC_OPS)) {
+        // keep the latest 100 ops
+        await rclient.ltrimAsync(REDIS_KEY_MSP_SYNC_OPS, -100, -1);
+      } else {
+        await rclient.delAsync(REDIS_KEY_MSP_SYNC_OPS);
       }
     }
   }
@@ -303,6 +318,10 @@ module.exports = class {
     return { server, region, business, alias: this.name };
   }
 
+  isSocketConnected() {
+    return this.socketConnected;
+  }
+
   async setAndStartGuardianService(data) {
     const socketioServer = data.server;
     if (!socketioServer) {
@@ -316,6 +335,9 @@ module.exports = class {
 
   async start() {
     this.scheduleCheck();
+    if (this.name == "default") {
+      this.scheduleSyncOpsToMsp();
+    }
     const server = await this.getServer();
     if (!server) {
       throw new Error("socketio server not set");
@@ -340,6 +362,7 @@ module.exports = class {
     }
 
     this.socket.on('connect', () => {
+      this.socketConnected = true;
       log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", " + region : ""} is connected.`);
       this.socket && this.socket.emit("box_registration", {
         gid: gid,
@@ -349,6 +372,7 @@ module.exports = class {
     });
 
     this.socket.on('disconnect', (reason) => {
+      this.socketConnected = false;
       log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", " + region : ""} is disconnected. reason:`, reason);
     });
 
@@ -381,14 +405,30 @@ module.exports = class {
     })
   }
 
+  scheduleSyncOpsToMsp() {
+    if (this.syncOpsTask) {
+      clearInterval(this.syncOpsTask);
+    }
+    this.syncOpsTask = setInterval(async () => {
+      if (fc.isFeatureOn(FEATURE_MSP_SYNC_OPS)) {
+        await this.syncOpsToMsp();
+      }
+    }, 5 * 1000);
+  }
+
   _stop() {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
     }
+    this.socketConnected = false;
   }
 
   async stop() {
+    if (this.syncOpsTask) {
+      clearInterval(this.syncOpsTask);
+      this.syncOpsTask = null;
+    }
     await this.adminStatusOff();
     this._stop();
   }
@@ -492,6 +532,11 @@ module.exports = class {
 
     // stop schedule check
     clearInterval(this.checkId);
+    if (this.syncOpsTask) {
+      clearInterval(this.syncOpsTask);
+      this.syncOpsTask = null;
+    }
+    await rclient.unlinkAsync(REDIS_KEY_MSP_SYNC_OPS);
   }
 
   async enable_key_rotation() {
@@ -679,6 +724,68 @@ module.exports = class {
       } catch (err) {
         log.error('Socket IO connection error', err);
       }
+    }
+  }
+
+  async enqueueOp(op) {
+    op.ts = Date.now() / 1000;
+    await rclient.rpushAsync(REDIS_KEY_MSP_SYNC_OPS, JSON.stringify(op));
+  }
+
+  async pushOp(op) {
+    await rclient.lpushAsync(REDIS_KEY_MSP_SYNC_OPS, JSON.stringify(op));
+  }
+
+  async dequeueOp() {
+    const op = await rclient.lpopAsync(REDIS_KEY_MSP_SYNC_OPS);
+    if (op) {
+      return JSON.parse(op);
+    }
+    return null;
+  }
+
+  async syncOpsToMsp() {
+    if (this.socket) {
+      const msgCount = await rclient.llenAsync(REDIS_KEY_MSP_SYNC_OPS);
+      if (msgCount == 0) {
+        return;
+      }
+      let count = 0;
+      const gid = await et.getGID();
+      const mspId = await this.getMspId();
+      if (!gid || !mspId) {
+        return;
+      }
+      while (this.isSocketConnected()) {
+        const op = await this.dequeueOp();
+        if (!op)
+          break;
+        try {
+          log.debug("syncOpsToMsp: sync op to msp", op);
+          const buffer = Buffer.from(JSON.stringify(op), 'utf8');
+          const compressedData = await deflateAsync(buffer);
+          const compressedMsg = JSON.stringify({
+            compressed: 1,
+            compressMode: 1,
+            data: compressedData.toString('base64')
+          });
+          const encryptedMsg = await encryptMessageAsync(gid, compressedMsg);
+          this.socket.emit("sync_op_from_box", {
+            message: encryptedMsg,
+            gid: gid,
+            mspId: mspId
+          });
+          count++;
+        } catch (err) {
+          log.error(`Failed to sync op to msp`, err);
+          // push back to the queue
+          log.debug("syncOpsToMsp: push op back to the queue", op);
+          await this.pushOp(op);
+          break;
+        }
+      }
+      if (count > 0)
+        log.info(`Synced ${count} ops to msp`);
     }
   }
 }
