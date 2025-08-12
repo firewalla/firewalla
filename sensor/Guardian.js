@@ -762,7 +762,8 @@ module.exports = class {
           break;
         try {
           log.debug("syncOpsToMsp: sync op to msp", op);
-          const buffer = Buffer.from(JSON.stringify(op), 'utf8');
+          const msg = {msgType: "sync_op_from_box", op: op};
+          const buffer = Buffer.from(JSON.stringify(msg), 'utf8');
           const compressedData = await deflateAsync(buffer);
           const compressedMsg = JSON.stringify({
             compressed: 1,
@@ -770,7 +771,7 @@ module.exports = class {
             data: compressedData.toString('base64')
           });
           const encryptedMsg = await encryptMessageAsync(gid, compressedMsg);
-          this.socket.emit("sync_op_from_box", {
+          this.socket.emit("send_from_box", {
             message: encryptedMsg,
             gid: gid,
             mspId: mspId
