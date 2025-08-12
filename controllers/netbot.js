@@ -2342,7 +2342,7 @@ class netBot extends ControllerBot {
             this._scheduleRedisBackgroundSave();
             return policy
           } else {
-            throw new Error("invalid policy");
+            throw new Error("invalid policy: ", value);
           }
         }
       }
