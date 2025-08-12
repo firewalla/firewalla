@@ -3937,8 +3937,9 @@ class netBot extends ControllerBot {
           rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app",
             item == 'batchAction'
               ? _.get(rawmsg, 'message.obj.data.value', []).map(c => [c.mtype, c.data && c.data.item, c.target])
-              : rawmsg.message
+              : `${mtype} ${item} ${msg.target}`
           );
+          log.verbose(rawmsg.message)
         }
 
         msg.appInfo = appInfo;

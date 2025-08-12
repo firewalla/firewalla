@@ -1864,7 +1864,7 @@ module.exports = class DNSMASQ {
       })
     }
     if (!this.counter.writeHostsFile[mac]) this.counter.writeHostsFile[mac] = 0
-    log.info("Hosts file has been updated:", mac, ++this.counter.writeHostsFile[mac], 'times')
+    log.verbose("Hosts file has been updated:", mac, ++this.counter.writeHostsFile[mac], 'times')
 
     // reload or not is check with config hash
     this.scheduleRestartDHCPService()
