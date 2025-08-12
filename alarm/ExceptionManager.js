@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -470,7 +470,8 @@ module.exports = class {
     const results = await this.loadExceptionsAsync();
     // wait for category data to load;
 
-    log.info("Start to match alarm", alarm);
+    log.info("Start to match alarm", alarm.type, alarm['p.device.mac'], alarm['p.dest.name']);
+    log.verbose(alarm);
     for (let i = 0; i < 30; i++) {
       if (this.categoryMap !== null) {
         for (const result of results) {
