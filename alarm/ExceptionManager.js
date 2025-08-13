@@ -419,18 +419,18 @@ module.exports = class {
 
   async updateException(json) {
     if (!json) {
-      return Promise.reject(new Error("Invalid Exception"));
+      throw new Error("Invalid Exception")
     }
 
     if (!json.eid) {
-      return Promise.reject(new Error("Invalid Exception ID"));
+      throw new Error("Invalid Exception ID")
     }
 
     if (!json.timestamp) {
       json.timestamp = new Date() / 1000;
     }
 
-    const e = this.jsonToException(json);
+    const e = json instanceof Exception ? json : this.jsonToException(json);
     if (e) {
       const oldException = await this.getException(e.eid).catch((err) => null);
       // delete old data before writing new one in case some key only exists in old data
