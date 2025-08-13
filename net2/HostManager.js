@@ -1157,8 +1157,9 @@ module.exports = class HostManager extends Monitorable {
    */
   async getCheckInAsync() {
     let json = {};
+    let hosts = []
     let requiredPromises = [
-      this.getHostsAsync(),
+      this.getHostsAsync().then(res => hosts = res),
       this.policyDataForInit(json),
       this.extensionDataForInit(json),
       this.modeForInit(json),
@@ -1185,9 +1186,9 @@ module.exports = class HostManager extends Monitorable {
 
     await Promise.all(requiredPromises);
 
-    json.hostCount = json.hosts.length;
-    json.policyRules = this.filterPolicyRules(json.policyRules, json.hosts);
-    json.exceptionRules = this.filterExceptions(json.exceptionRules, json.hosts);
+    json.hostCount = hosts.length;
+    json.policyRules = this.filterPolicyRules(json.policyRules, hosts);
+    json.exceptionRules = this.filterExceptions(json.exceptionRules, hosts);
 
     let firstBinding = await rclient.getAsync("firstBinding")
     if(firstBinding) {
