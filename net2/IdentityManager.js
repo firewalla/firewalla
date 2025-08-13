@@ -77,14 +77,16 @@ class IdentityManager {
       let events = c.getRefreshIdentitiesHookEvents() || [];
       for (const e of events) {
         sem.on(e, async (event) => {
-          log.info(`Schedule refreshing identity ${ns} on receiving event`, event);
+          log.info(`Schedule refreshing ${ns} on event`,
+            event.type, event.client && `${event.client.profile} ${event.client.peerIP4}`);
           this.scheduleRefreshIdentities([ns]);
         });
       }
       events = c.getRefreshIPMappingsHookEvents() || [];
       for (const e of events) {
         sem.on(e, async (event) => {
-          log.info(`Schedule refreshing IP mappings of identity ${ns} on receiving event`, event);
+          log.info(`Schedule refreshing IP mappings of ${ns} on event`,
+            event.type, event.client && `${event.client.profile} ${event.client.peerIP4}`);
           this.scheduleRefreshIPMappings([ns]);
         });
       }

@@ -463,8 +463,8 @@ class PolicyManager2 {
       }
       let policies = await this.getSamePolicies(policy)
       if (policies && policies.length > 0) {
-        log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
         const samePolicy = policies[0]
+        log.info(`policy with type:${policy.type}, target:${policy.target} already existed, ${samePolicy.pid}`)
         if (samePolicy.disabled && samePolicy.disabled == "1" && policy.disabled != "1") {
           // there is a policy in place and disabled, just need to enable it
           await this.enablePolicy(samePolicy)
@@ -477,7 +477,7 @@ class PolicyManager2 {
         callback(null, data);
       }
     } catch (err) {
-      log.error("failed to save policy:" + err)
+      log.error("failed to save policy:", err)
       callback(err)
     }
   }
@@ -1366,22 +1366,20 @@ class PolicyManager2 {
     }
   }
 
-  async parseTags(unsorted) {
+  parseTags(unsorted) {
     let intfs = [];
     let tags = [];
     if (!_.isEmpty(unsorted)) {
       for (const tagStr of unsorted) {
         if (tagStr.startsWith(Policy.INTF_PREFIX)) {
           const intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
-          // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
           intfs.push(intfUuid);
         } else {
           for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
             const config = Constants.TAG_TYPE_MAP[type];
             if (tagStr.startsWith(config.ruleTagPrefix)) {
               const tagUid = tagStr.substring(config.ruleTagPrefix.length);
-              const tagExists = await tagManager.tagUidExists(tagUid, type);
-              if (tagExists) tags.push(tagUid);
+              tags.push(tagUid);
             }
           }
         }
@@ -1417,6 +1415,14 @@ class PolicyManager2 {
     if (policy.needPolicyDisturb()) {
       action = "qos";  // treat app_disturb same as qos
       qdisc = "netem";
+      if (policy.disableQuic) {
+        const tmpPolicy = Object.assign(Object.create(Policy.prototype), policy);
+        tmpPolicy.action = "block";
+        tmpPolicy.protocol = "udp";
+        tmpPolicy.remotePort = "443";
+        tmpPolicy.dnsmasq_only = false;
+        await this._enforce(tmpPolicy);
+      }
     }
 
     if (!validActions.includes(action)) {
@@ -1424,7 +1430,9 @@ class PolicyManager2 {
       return;
     }
 
-    const { intfs, tags } = await this.parseTags(tag)
+    let { intfs, tags } = this.parseTags(tag)
+    // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
+    tags = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
     // invalid tag should not continue
     if (tag && tag.length && !tags.length && !intfs.length) {
       log.error(`Unknown policy tags format policy id: ${pid}, stop enforce policy`);
@@ -1842,7 +1850,7 @@ class PolicyManager2 {
           // activate TLS category after rule is added in iptables, this can guarante hostset is generated in /proc filesystem
           if (!_.isEmpty(targets)) {
             for (const target of targets)
-              await categoryUpdater.activateTLSCategory(target);
+              await categoryUpdater.activateTLSCategory(target, protocol);
           }
         } else {
           await this.__applyTlsRules({ ...commonOptions, tlsHostSet, tlsHost }).catch((err) => {
@@ -1850,7 +1858,7 @@ class PolicyManager2 {
           });
           // activate TLS category after rule is added in iptables, this can guarante hostset is generated in /proc filesystem
           if (tlsHostSet)
-            await categoryUpdater.activateTLSCategory(target);
+            await categoryUpdater.activateTLSCategory(target, protocol);
         }
       }
     }
@@ -1986,14 +1994,24 @@ class PolicyManager2 {
     if (policy.needPolicyDisturb()) {
       action = "qos";  // treat app_disturb same as qos
       qdisc = "netem";
-    }
+      if (policy.disableQuic) {
+        const tmpPolicy = Object.assign(Object.create(Policy.prototype), policy);
+        tmpPolicy.action = "block";
+        tmpPolicy.protocol = "udp";
+        tmpPolicy.remotePort = "443";
+        tmpPolicy.dnsmasq_only = false;
+        await this._unenforce(tmpPolicy);
+      }
+    }    
 
     if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);
       return;
     }
 
-    const { intfs, tags } = await this.parseTags(tag)
+    let { intfs, tags } = this.parseTags(tag)
+    // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
+    tags = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
     // invalid tag should not continue
     if (tag && tag.length && !tags.length && !intfs.length) {
       log.error(`Unknown policy tags format policy id: ${pid}, stop unenforce policy`);

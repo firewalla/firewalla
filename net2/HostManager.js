@@ -441,12 +441,11 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  async hostsToJson(json, options = {}) {
+  async hostsToJson(hosts, options = {}) {
     let _hosts = [];
-    for (let i in this.hosts.all) {
-      _hosts.push(this.hosts.all[i].toJson());
+    for (const host of hosts) {
+      _hosts.push(host.toJson());
     }
-    json.hosts = _hosts;
     if (platform.isFireRouterManaged()) {
       await this.enrichSTAInfo(_hosts);
       await this.enrichApInfo(_hosts);
@@ -865,24 +864,22 @@ module.exports = class HostManager extends Monitorable {
   async hostsInfoForInit(json, options) {
     log.debug("Reading host stats");
 
-    await this.getHostsAsync(options)
+    const hosts = await this.getHostsAsync(options)
 
     // keeps total download/upload only for sorting on app
     await Promise.all([
-      asyncNative.eachLimit(this.hosts.all, 30, async host => {
+      asyncNative.eachLimit(hosts, 30, async host => {
         const stats = await this.getStats({granularities: '1hour', hits: 24}, host.o.mac, ['upload', 'download']);
         host.flowsummary = {
           inbytes: stats.totalDownload,
           outbytes: stats.totalUpload
         }
       }),
-      this.loadHostsPolicyRules(),
+      this.loadHostsPolicyRules(hosts),
     ])
-    await this.hostsToJson(json, options);
+    json.hosts = await this.hostsToJson(hosts, options);
 
-    // _totalHosts and _totalPrivateMacHosts will be updated in getHostsAsync
-    json.totalHosts = this._totalHosts;
-    json.totalPrivateMacHosts = this._totalPrivateMacHosts;
+    json.totalHosts = hosts.length;
 
     return json;
   }
@@ -1007,15 +1004,15 @@ module.exports = class HostManager extends Monitorable {
     log.debug("Reading policy rules");
     let rules = await policyManager2.loadActivePoliciesAsync({includingDisabled: 1})
     // filters out rules with inactive devices
-    const screentimeRules = rules.filter(rule=> rule.action == 'screentime');
-
-    rules = rules.filter(rule => {
-      if (rule.action == 'screentime') return false;
-      if (_.isEmpty(rule.scope)) return true;
-      return rule.scope.some(mac =>
-        this.hosts.all.some(host => host.o.mac == mac)
-      )
-    })
+    const policyRules = []
+    const screentimeRules = []
+    for (const rule of rules) {
+      if (rule.action == 'screentime') {
+        screentimeRules.push(rule)
+      } else {
+        policyRules.push(rule)
+      }
+    }
 
     let alarmIDs = rules.map((p) => p.aid);
 
@@ -1036,73 +1033,78 @@ module.exports = class HostManager extends Monitorable {
       }
     })
 
-    json.policyRules = rules;
+    json.policyRules = policyRules;
     json.screentimeRules = screentimeRules;
   }
 
-  // whats is allowed
-  exceptionRulesForInit(json) {
-    log.debug("Reading exception rules");
-    return new Promise((resolve, reject) => {
-      exceptionManager.loadExceptions((err, rules) => {
-        if(err) {
-          reject(err);
-        } else {
-
-          /*
-          rules = rules.filter((r) => {
-            return r.type != "ALARM_NEW_DEVICE" // allow new device is default
-          })
-          */
-
-          // filters out rules with inactive devices
-          rules = rules.filter(rule => {
-            if(!rule) {
-              return false;
-            }
-
-            const mac = rule["p.device.mac"];
-
-            if (!mac) return true;
-
-            return this.hosts.all.some(host => host.o.mac === mac) || IdentityManager.getIdentityByGUID(mac);
-          })
-
-          let alarmIDs = rules.map((p) => p.aid);
-
-          alarmManager2.idsToAlarms(alarmIDs, (err, alarms) => {
-            if(err) {
-              log.error("Failed to get alarms by ids:", err);
-              reject(err);
-              return;
-            }
-
-            for(let i = 0; i < rules.length; i ++) {
-              if(rules[i] && alarms[i]) {
-                rules[i].alarmMessage = alarms[i].localizedInfo();
-                rules[i].alarmTimestamp = alarms[i].timestamp;
-              }
-            }
-
-            rules.sort((x,y) => {
-              if(y.timestamp < x.timestamp) {
-                return -1
-              } else {
-                return 1
-              }
-            })
-
-            json.exceptionRules = rules
-            resolve();
-          });
+  filterPolicyRules(rules, hosts) {
+    return rules.filter(rule => {
+      if (!_.isEmpty(rule.scope) && !rule.scope.some(mac => hosts.some(host => host.mac == mac))
+        || !_.isEmpty(rule.guids) && !rule.guids.some(guid => IdentityManager.getIdentityByGUID(guid))
+      ) {
+        return false
+      }
+      if (!_.isEmpty(rule.tag)) {
+        const {intfs, tags} = policyManager2.parseTags(rule.tag);
+        if (tags.length && !tags.some(t => TagManager.getTagByUid(t)) ||
+          intfs.length && !intfs.some(i => _.get(sysManager.getInterfaceViaUUID(i), 'active', false))
+        ) {
+          return false
         }
-      });
-    });
+      }
+
+      return true
+    })
   }
 
-  async loadHostsPolicyRules() {
+  // whats is allowed
+  async exceptionRulesForInit(json) {
+    log.debug("Reading exception rules");
+    let rules = await exceptionManager.loadExceptionsAsync()
+
+    /*
+    rules = rules.filter((r) => {
+      return r.type != "ALARM_NEW_DEVICE" // allow new device is default
+    })
+    */
+
+    let alarmIDs = rules.map((p) => p.aid);
+
+    const alarms = await alarmManager2.idsToAlarmsAsync(alarmIDs)
+
+    for (let i = 0; i < rules.length; i++) {
+      if (rules[i] && alarms[i]) {
+        rules[i].alarmMessage = alarms[i].localizedInfo();
+        rules[i].alarmTimestamp = alarms[i].timestamp;
+      }
+    }
+
+    rules.sort((x, y) => {
+      if (y.timestamp < x.timestamp) {
+        return -1
+      } else {
+        return 1
+      }
+    })
+
+    json.exceptionRules = rules
+  }
+
+  filterExceptions(rules, hosts) {
+    return rules.filter(rule => {
+      if (!rule
+        || !_.isEmpty(rule['p.device.mac']) && !hosts.some(host => host.mac == rule['p.device.mac']) && !IdentityManager.getIdentityByGUID(rule['p.device.mac'])
+        || !_.isEmpty(rule['p.intf.id']) && !_.get(sysManager.getInterfaceViaUUID(rule['p.intf.id']), 'active', false)
+      ) {
+        return false
+      }
+      return true
+    })
+  }
+
+  async loadHostsPolicyRules(hosts = this.hosts.all) {
     log.debug("Reading individual host policy rules");
-    await asyncNative.eachLimit(this.hosts.all, 50, host => host.loadPolicyAsync())
+    await asyncNative.eachLimit(hosts, 50, host => host.loadPolicyAsync())
   }
 
   async loadDDNSForInit(json) {
@@ -1177,14 +1179,15 @@ module.exports = class HostManager extends Monitorable {
       this.getSysInfo(json),
       this.assetsInfoForInit(json),
       this.pairingAssetsForInit(json),
-      this.addMsp2CheckIn(json)
+      this.addMsp2CheckIn(json),
+      this.basicDataForInit(json, {}),
     ]
-
-    await this.basicDataForInit(json, {});
 
     await Promise.all(requiredPromises);
 
-    json.hostCount = this.hosts.all.length;
+    json.hostCount = json.hosts.length;
+    json.policyRules = this.filterPolicyRules(json.policyRules, json.hosts);
+    json.exceptionRules = this.filterExceptions(json.exceptionRules, json.hosts);
 
     let firstBinding = await rclient.getAsync("firstBinding")
     if(firstBinding) {
@@ -1634,6 +1637,9 @@ module.exports = class HostManager extends Monitorable {
     }
     await Promise.all(requiredPromises.map(p => p.catch(log.error)))
 
+    json.policyRules = this.filterPolicyRules(json.policyRules, json.hosts);
+    json.exceptionRules = this.filterExceptions(json.exceptionRules, json.hosts);
+
     log.debug("Promise array finished")
 
     return json
@@ -1880,7 +1886,6 @@ module.exports = class HostManager extends Monitorable {
       }
       const replies = await rclient.multi(multiarray).execAsync();
       log.debug("getHosts: multi hgetall done");
-      this._totalPrivateMacHosts = replies.filter(o => _.isObject(o) && o.mac && hostTool.isPrivateMacAddress(o.mac)).length;
       await asyncNative.eachLimit(replies, 50, async (o) => {
         if (!o || !o.mac) {
           // defensive programming
@@ -2457,7 +2462,6 @@ module.exports = class HostManager extends Monitorable {
   // return: Array<{tag: number, macs: Array<string>}>
   async getActiveTags(types = Object.keys(Constants.TAG_TYPE_MAP)) {
     let tagMap = {};
-    await this.loadHostsPolicyRules()
     this.getAllMonitorables()
       .forEach(m => {
         const tags = m && m.policy && types.flatMap(type => m.policy[Constants.TAG_TYPE_MAP[type].policyKey]).filter(t => !_.isEmpty(t));
@@ -2477,7 +2481,6 @@ module.exports = class HostManager extends Monitorable {
 
   // need active host?
   async getTagMacs(tag) {
-    await this.loadHostsPolicyRules()
     tag = tag.toString();
     const macs = this.hosts.all.filter(host => {
       return host.o && host.policy && Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => host.policy[Constants.TAG_TYPE_MAP[type].policyKey] || []).map(String).includes(tag.toString())

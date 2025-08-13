@@ -368,13 +368,18 @@ class DomainBlock {
   }
 
   // flush and re-create from redis
-  async refreshTLSCategory(category) {
+  async refreshTLSCategory(category, protocol = '') {
     const CategoryUpdater = require("./CategoryUpdater.js");
     const strategy = await (new CategoryUpdater()).getStrategy(category);
     const domains = await this.getCategoryDomains(category, strategy.tls.useHitSet);
     const tlsHostSet = Block.getTLSHostSet(category);
 
     for (const module of tls_modules) {
+      if (module === "xt_tls" && protocol === "udp") { // xt_tls is for tcp tls
+        continue;
+      } else if (module === "xt_udp_tls" && protocol === "tcp") { // xt_udp_tls is for udp tls
+        continue;
+      }
       const tlsFilePath = `${tlsHostSetBasePath}/${module}/${tlsHostSetFolder}/${tlsHostSet}`;
 
       // flush first
