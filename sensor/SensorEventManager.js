@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -127,7 +127,7 @@ class SensorEventManager extends EventEmitter {
   }
 
   emitLocalEvent(event, from) {
-    (event.suppressEventLogging ? log.verbose : log.info)(
+    (event.suppressEventLogging || event.type === "DeviceUpdate" ? log.verbose : log.info)(
       `New Event: ${event.type} -- ${event.message || "(no message)"}${from ? ' -- from ' + from : ""}`
     )
     log.debug(JSON.stringify(event));

@@ -273,7 +273,7 @@ class TagManager {
             log.info(`users of tag ${tag.getUniqueId()} not found`);
             continue;
           }
-          log.info(`checking users of tag ${tag.getUniqueId()}`, users);
+          log.verbose(`checking users of tag ${tag.getUniqueId()}`, users);
           for (const user of users) {
             if (user.username == radiusUser) {
               return tag;

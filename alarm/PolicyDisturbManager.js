@@ -99,9 +99,12 @@ class PolicyDisturbManager {
     const disturbLevel = policy.disturbLevel || "moderate";
     //set default default values
     let defaultDisturbVal = { "rateLimit": 10240, "dropPacketRate": 0, "increaseLatency": 0 };
+    let disableQuic = false;
 
-    if (this._appConfValue && this._appConfValue.hasOwnProperty(appName) && this._appConfValue[appName].hasOwnProperty(disturbLevel)) {
-      defaultDisturbVal = Object.assign(defaultDisturbVal, this._appConfValue[appName][disturbLevel]);
+    if (this._appConfValue && this._appConfValue.hasOwnProperty(appName)){
+      disableQuic = this._appConfValue[appName].disableQuic || false;
+      if (this._appConfValue[appName].hasOwnProperty(disturbLevel))
+        defaultDisturbVal = Object.assign(defaultDisturbVal, this._appConfValue[appName][disturbLevel]);
     } else if (this._generalConfValue && this._generalConfValue.hasOwnProperty(disturbLevel)) {
       defaultDisturbVal = Object.assign(defaultDisturbVal, this._generalConfValue[disturbLevel]);
     }
@@ -110,6 +113,7 @@ class PolicyDisturbManager {
       defaultDisturbVal = Object.assign(defaultDisturbVal, policy.disturbMethod);
     }
     policy = Object.assign(policy, defaultDisturbVal);
+    policy.disableQuic = disableQuic;
     this.registeredPolicies[pid] = policy;
 
     await this.enforcePolicy(pid);

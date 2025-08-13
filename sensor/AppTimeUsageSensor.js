@@ -262,17 +262,17 @@ class AppTimeUsageSensor extends Sensor {
     return result;
   }
 
-  async processEnrichedFlow(enrichedFlow) {
+  async processEnrichedFlow(f) {
     if (!this.enabled)
       return;
-    const host = enrichedFlow.host || enrichedFlow.intel && enrichedFlow.intel.host;
-    if (enrichedFlow.du > 300) {
+    const host = f.host || f.intel && f.intel.host;
+    if (f.du > 300) {
       // long connection should be sliced into partial flows in zeek and BroDetect, in normal cases, duration should be no more than 3 minutes,
       //  a flow with long duration may happen if firemain is restarted
-      log.warn("Unexpected flow with long duration, ignore", enrichedFlow);
+      log.warn("Unexpected flow with long duration, ignore", f.ts, f.du, f.sh, f.sp, '->', f.dh, f.dp);
       return;
     }
-    const appMatches = this.lookupAppMatch(enrichedFlow);
+    const appMatches = this.lookupAppMatch(f);
     if (_.isEmpty(appMatches))
       return;
     for (const match of appMatches) {
@@ -282,13 +282,13 @@ class AppTimeUsageSensor extends Sensor {
       let tags = []
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const config = Constants.TAG_TYPE_MAP[type];
-        tags.push(...(enrichedFlow[config.flowKey] || []));
+        tags.push(...(f[config.flowKey] || []));
       }
       tags = _.uniq(tags);
       if (fc.isFeatureOn("record_activity_flow")){
-        this.recordFlow(enrichedFlow, match, tags);
+        this.recordFlow(f, match, tags);
       }
-      await this.markBuckets(enrichedFlow.mac, tags, enrichedFlow.intf, app, category, enrichedFlow.ts, enrichedFlow.ts + enrichedFlow.du, occupyMins, lingerMins, minsThreshold, noStray);
+      await this.markBuckets(f.mac, tags, f.intf, app, category, f.ts, f.ts + f.du, occupyMins, lingerMins, minsThreshold, noStray);
     }
   }
 

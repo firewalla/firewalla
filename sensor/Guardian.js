@@ -30,8 +30,6 @@ const et = new EncipherTool();
 const upgradeManager = require('../net2/UpgradeManager.js');
 const CloudWrapper = require('../api/lib/CloudWrapper.js');
 const cw = new CloudWrapper();
-const receicveMessageAsync = util.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
-const encryptMessageAsync = util.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
 
 const zlib = require('zlib');
 const deflateAsync = util.promisify(zlib.deflate);
@@ -567,6 +565,8 @@ module.exports = class {
         }
       }
 
+      const receicveMessageAsync = util.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
+      const encryptMessageAsync = util.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
       const decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
       decryptedMessage.mtype = decryptedMessage.message.mtype;
       decryptedMessage.obj.data.value.streaming = { id: decryptedMessage.message.obj.id };
@@ -620,6 +620,8 @@ module.exports = class {
       const replyid = message.replyid; // replyid will not encrypted
       let response, decryptedMessage, code = 200, encryptedResponse;
       try {
+        const receicveMessageAsync = util.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
+        const encryptMessageAsync = util.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
         decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
         decryptedMessage.mtype = decryptedMessage.message.mtype;
         const obj = decryptedMessage.message.obj;
