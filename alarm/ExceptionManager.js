@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -419,18 +419,18 @@ module.exports = class {
 
   async updateException(json) {
     if (!json) {
-      return Promise.reject(new Error("Invalid Exception"));
+      throw new Error("Invalid Exception")
     }
 
     if (!json.eid) {
-      return Promise.reject(new Error("Invalid Exception ID"));
+      throw new Error("Invalid Exception ID")
     }
 
     if (!json.timestamp) {
       json.timestamp = new Date() / 1000;
     }
 
-    const e = this.jsonToException(json);
+    const e = json instanceof Exception ? json : this.jsonToException(json);
     if (e) {
       const oldException = await this.getException(e.eid).catch((err) => null);
       // delete old data before writing new one in case some key only exists in old data
@@ -470,7 +470,8 @@ module.exports = class {
     const results = await this.loadExceptionsAsync();
     // wait for category data to load;
 
-    log.info("Start to match alarm", alarm);
+    log.info("Start to match alarm", alarm.type, alarm['p.device.mac'], alarm['p.dest.name']);
+    log.verbose(alarm);
     for (let i = 0; i < 30; i++) {
       if (this.categoryMap !== null) {
         for (const result of results) {

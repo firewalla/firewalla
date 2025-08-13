@@ -117,14 +117,12 @@ class SysManager {
         });
       }, 3000);
 
-      this.ts = Date.now() / 1000;
-      log.info("Init", this.ts);
       sclient.on("message", (channel, message) => {
-        log.debug("Msg", this.ts, channel, message);
+        log.debug("Msg", channel, message);
         switch (channel) {
           case "System:Upgrade:Hard":
             this.upgradeEvent = message;
-            log.info("[pubsub] System:Upgrade:Hard", this.ts, this.upgradeEvent);
+            log.info("[pubsub] System:Upgrade:Hard", this.upgradeEvent);
             break;
           case "System:DebugChange":
             if (message === "1") {
