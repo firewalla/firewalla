@@ -256,21 +256,35 @@ class CategoryUpdater extends CategoryUpdaterBase {
       // "vpn": 1
     };
 
-    this.activeTLSCategories = {}; // default_c is not preset here because hostset file is generated only if iptables rule is created.
+    this.activeTLSCategories_tcp = {}; // default_c is not preset here because hostset file is generated only if iptables rule is created.
+    this.activeTLSCategories_udp = {};
 
     this.customizedCategories = {};
   }
 
   async refreshTLSCategoryActivated() {
     try {
-      const cmdResult = await exec(`ls -l /proc/net/xt_tls/hostset |awk '{print $9}'`); //either from xt_tls or from xt_udp_tls is fine
-      const results = cmdResult.stdout.toString().trim().split('\n');
-      const activeCategories = Object.keys(this.activeTLSCategories).filter(c => results.includes(this.getHostSetName(c)));
-      Object.keys(this.activeTLSCategories).forEach(key => {
-        delete this.activeTLSCategories[key]
-      });
-      for (const c of activeCategories)
-        this.activeTLSCategories[c] = 1;
+      const updateActiveCategories = async (path, activeCategoriesObj) => {
+        try {
+          const cmdResult = await exec(`ls -l ${path}/hostset | awk '{print $9}'`);
+          const results = cmdResult.stdout.toString().trim().split('\n');
+          const activeCategories = Object.keys(activeCategoriesObj).filter(c => results.includes(this.getHostSetName(c)));
+          Object.keys(activeCategoriesObj).forEach(key => { 
+            delete activeCategoriesObj[key]
+          });
+          for (const c of activeCategories)
+            activeCategoriesObj[c] = 1;
+          return activeCategories;
+        } catch (error) {
+          log.error(`Failed to process TLS categories from ${path}`, error);
+          throw error;
+        }
+      };
+      await Promise.all([
+        updateActiveCategories('/proc/net/xt_tls', this.activeTLSCategories_tcp),
+        updateActiveCategories('/proc/net/xt_udp_tls', this.activeTLSCategories_udp)
+      ]);
+   
     } catch (err) {
       log.info("Failed to get active TLS category", err);
     }
@@ -446,10 +460,22 @@ class CategoryUpdater extends CategoryUpdaterBase {
     });
   }
 
-  async activateTLSCategory(category) {
-    if (this.isTLSActivated(category)) return;
-    this.activeTLSCategories[category] = 1;
-
+  async activateTLSCategory(category, proto = '') {
+    const categoryMap = {
+      'tcp': this.activeTLSCategories_tcp,
+      'udp': this.activeTLSCategories_udp
+    };
+    proto = proto || '';
+    const isActivated = (p) => p !== '' && categoryMap[p] && categoryMap[p][category] !== undefined;
+    if ((proto === '' && isActivated('tcp') && isActivated('udp')) || isActivated(proto)) {
+      return;
+    }
+    if (proto === 'tcp' || proto === '') {
+      this.activeTLSCategories_tcp[category] = 1;
+    }
+    if (proto === 'udp' || proto === '') {
+      this.activeTLSCategories_udp[category] = 1;
+    }
     // wait for a maximum of  30 seconds for category data to be ready.
     let i = 0;
     while (i < 30) {
@@ -463,8 +489,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
       await scheduler.delay(1000);
       i++;
     }
-    await domainBlock.refreshTLSCategory(category);
+    await domainBlock.refreshTLSCategory(category, proto);
   }
+
 
   async addPatternDomains(pattern, domain) {
     await rclient.saddAsync(this.getPatternDomainsKey(pattern), domain);
