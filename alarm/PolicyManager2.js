@@ -463,8 +463,8 @@ class PolicyManager2 {
       }
       let policies = await this.getSamePolicies(policy)
       if (policies && policies.length > 0) {
-        log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
         const samePolicy = policies[0]
+        log.info(`policy with type:${policy.type}, target:${policy.target} already existed, ${samePolicy.pid}`)
         if (samePolicy.disabled && samePolicy.disabled == "1" && policy.disabled != "1") {
           // there is a policy in place and disabled, just need to enable it
           await this.enablePolicy(samePolicy)
@@ -477,7 +477,7 @@ class PolicyManager2 {
         callback(null, data);
       }
     } catch (err) {
-      log.error("failed to save policy:" + err)
+      log.error("failed to save policy:", err)
       callback(err)
     }
   }
@@ -1366,22 +1366,20 @@ class PolicyManager2 {
     }
   }
 
-  async parseTags(unsorted) {
+  parseTags(unsorted) {
     let intfs = [];
     let tags = [];
     if (!_.isEmpty(unsorted)) {
       for (const tagStr of unsorted) {
         if (tagStr.startsWith(Policy.INTF_PREFIX)) {
           const intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
-          // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
           intfs.push(intfUuid);
         } else {
           for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
             const config = Constants.TAG_TYPE_MAP[type];
             if (tagStr.startsWith(config.ruleTagPrefix)) {
               const tagUid = tagStr.substring(config.ruleTagPrefix.length);
-              const tagExists = await tagManager.tagUidExists(tagUid, type);
-              if (tagExists) tags.push(tagUid);
+              tags.push(tagUid);
             }
           }
         }
@@ -1432,7 +1430,9 @@ class PolicyManager2 {
       return;
     }
 
-    const { intfs, tags } = await this.parseTags(tag)
+    let { intfs, tags } = this.parseTags(tag)
+    // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
+    tags = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
     // invalid tag should not continue
     if (tag && tag.length && !tags.length && !intfs.length) {
       log.error(`Unknown policy tags format policy id: ${pid}, stop enforce policy`);
@@ -2009,7 +2009,9 @@ class PolicyManager2 {
       return;
     }
 
-    const { intfs, tags } = await this.parseTags(tag)
+    let { intfs, tags } = this.parseTags(tag)
+    // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
+    tags = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
     // invalid tag should not continue
     if (tag && tag.length && !tags.length && !intfs.length) {
       log.error(`Unknown policy tags format policy id: ${pid}, stop unenforce policy`);
