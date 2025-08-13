@@ -1481,7 +1481,7 @@ class netBot extends ControllerBot {
       case "hosts": {
         const json = {};
         const includeVPNDevices = (value && value.includeVPNDevices) || false;
-        await this.hostManager.hostsInfoForInit(json, {includeScanResults:true});
+        await this.hostManager.hostsInfoForInit(json, Object.assign({}, value, {includeScanResults:true}));
         if (includeVPNDevices)
           await this.hostManager.identitiesForInit(json)
         return json
@@ -2342,7 +2342,7 @@ class netBot extends ControllerBot {
             this._scheduleRedisBackgroundSave();
             return policy
           } else {
-            throw new Error("invalid policy");
+            throw new Error("invalid policy: ", value);
           }
         }
       }
@@ -3420,7 +3420,7 @@ class netBot extends ControllerBot {
           await host.identifyDevice(true)
         })
 
-        hosts = (await this.hostManager.hostsToJson({}))
+        hosts = (await this.hostManager.hostsToJson(hosts))
           .filter(j => hosts.some(h => h.getGUID() == j.mac))
 
         if (!mac || Array.isArray(mac)) {
@@ -3937,8 +3937,9 @@ class netBot extends ControllerBot {
           rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app",
             item == 'batchAction'
               ? _.get(rawmsg, 'message.obj.data.value', []).map(c => [c.mtype, c.data && c.data.item, c.target])
-              : rawmsg.message
+              : `${mtype} ${item} ${msg.target}`
           );
+          log.verbose(rawmsg.message)
         }
 
         msg.appInfo = appInfo;
@@ -4049,6 +4050,7 @@ class netBot extends ControllerBot {
                 })());
                 await Promise.all(tasks).catch((err) => {
                   log.error("Failed to run multiple tasks in init", err.message);
+                  log.debug(err.stack);
                 });
 
                 if (this.eptcloud) {

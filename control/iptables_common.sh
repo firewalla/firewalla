@@ -281,6 +281,8 @@ cat << EOF > "$filter_file"
 # accept allow rules
 -N FW_ACCEPT
 -A FW_ACCEPT -m conntrack --ctstate NEW -m hashlimit --hashlimit-upto 100/second --hashlimit-mode srcip --hashlimit-name fw_accept -j FW_ACCEPT_LOG
+# some flows may be accepted when it is already established, this is a complement to the above rule
+-A FW_ACCEPT -m connmark --mark 0x0/0x80000000 -m hashlimit --hashlimit-upto 100/second --hashlimit-mode srcip --hashlimit-name fw_accept -j FW_ACCEPT_LOG
 -A FW_ACCEPT -j FW_ACCEPT_DEFAULT
 
 # WAN outgoing INVALID state check
@@ -693,6 +695,11 @@ cat << EOF
 # qos chain for App Disturb feature which is not controlled by FW_QOS_SWITCH
 -N FW_DISTURB_QOS
 -A FW_FORWARD -j FW_DISTURB_QOS
+# bypass disturb chain for acl off devices/networks
+-A FW_DISTURB_QOS -m set --match-set acl_off_set src,src -j CONNMARK --set-xmark 0x0/0x40000000
+-A FW_DISTURB_QOS -m set --match-set acl_off_set dst,dst -j CONNMARK --set-xmark 0x0/0x40000000
+-A FW_DISTURB_QOS -m set --match-set acl_off_set src,src -j RETURN
+-A FW_DISTURB_QOS -m set --match-set acl_off_set dst,dst -j RETURN
 -N FW_DISTURB_QOS_GLOBAL
 -A FW_DISTURB_QOS -j FW_DISTURB_QOS_GLOBAL
 -N FW_DISTURB_QOS_NET_G
@@ -703,11 +710,10 @@ cat << EOF
 -A FW_DISTURB_QOS -j FW_DISTURB_QOS_DEV_G
 -N FW_DISTURB_QOS_DEV
 -A FW_DISTURB_QOS -j FW_DISTURB_QOS_DEV
--A FW_DISTURB_QOS -m connmark ! --mark 0x0/0x40000000 -j RETURN
 
 
 -N FW_QOS_SWITCH
--A FW_DISTURB_QOS -j FW_QOS_SWITCH
+-A FW_FORWARD -m connmark --mark 0x0/0x40000000 -j FW_QOS_SWITCH
 # bit 16 - 29 in connmark indicates if packet should be mirrored to ifb device in tc filter.
 # the packet will be mirrored to ifb only if these bits are non-zero
 -A FW_QOS_SWITCH -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x3fff0000

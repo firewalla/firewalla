@@ -43,6 +43,7 @@ const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_TRAFFIC_CACHE = "LOCK_TRAFFIC_CACHE";
 const LOCK_BLOCK_CACHE = "LOCK_BLOCK_CACHE";
+const LOCK_SCHEDULED_JOB = "LOCK_SCHEDULED_JOB";
 
 const { compactTime } = require('../util/util')
 
@@ -121,7 +122,12 @@ class FlowAggregationSensor extends Sensor {
       });
 
       setInterval(() => {
-        this.scheduledJob();
+        // serialize scheduled job to avoid stressing the system when redis is busy
+        lock.acquire(LOCK_SCHEDULED_JOB, async () => {
+          this.scheduledJob();
+        }).catch((err) => {
+          log.error(`Failed to acquire lock for scheduled job`, err.message);
+        });
       }, this.config.interval * 1000)
 
     });
