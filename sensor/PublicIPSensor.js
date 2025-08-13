@@ -146,7 +146,7 @@ class PublicIPSensor extends Sensor {
       return publicIP;
     const publicIPApis = [
       {
-        url: "https://api.ipify.org?format=json",
+        url: "https://api64.ipify.org?format=json",
         followRedirect: false,
         cb: (result) => {
           if (result.body && result.body.ip)
