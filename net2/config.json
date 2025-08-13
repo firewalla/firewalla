@@ -1054,6 +1054,7 @@
     "fast_speedtest": true,
     "policy_disturb": true,
     "dap": false,
+    "dap_bg_task": true,
     "record_activity_flow": false
   },
   "hiddenFeatures": [

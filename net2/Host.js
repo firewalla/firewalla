@@ -294,7 +294,8 @@ class Host extends Monitorable {
       for (let ip6 in _ipv6Hosts) {
         let ip6Host = _ipv6Hosts[ip6];
         if (ip6Host.lastActiveTimestamp < lastActive - 60*30 || ip6Host.lastActiveTimestamp < ts-60*40) {
-          log.info("Host:"+this.o.mac+","+ts+","+ip6Host.lastActiveTimestamp+","+lastActive+" Remove Old Address "+ip6,JSON.stringify(ip6Host));
+          if (f.isMain())
+            log.info("Host:"+this.o.mac+","+ts+","+ip6Host.lastActiveTimestamp+","+lastActive+" Remove Old Address "+ip6,JSON.stringify(ip6Host));
         } else {
           this.ipv6Addr.push(ip6);
         }
@@ -1017,7 +1018,7 @@ class Host extends Monitorable {
       log.silly("HOST:IDENTIFY too early", this.o.mac, this.o._identifyExpiration);
       return;
     }
-    log.info("HOST:IDENTIFY",this.o.mac);
+    log.verbose("HOST:IDENTIFY",this.o.mac);
     // need to have if condition, not sending too much info if the device is ...
     // this may be used initially _identifyExpiration
 

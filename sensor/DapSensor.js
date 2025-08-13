@@ -35,7 +35,7 @@ let dapInterface = null;
 class DapSensor extends Sensor {
   constructor(config) {
     super(config);
-    this.featureName = 'dap';
+    this.featureName = 'dap_bg_task';
   }
 
   async apiCall(method, path, body) {
