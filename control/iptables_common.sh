@@ -281,6 +281,8 @@ cat << EOF > "$filter_file"
 # accept allow rules
 -N FW_ACCEPT
 -A FW_ACCEPT -m conntrack --ctstate NEW -m hashlimit --hashlimit-upto 100/second --hashlimit-mode srcip --hashlimit-name fw_accept -j FW_ACCEPT_LOG
+# some flows may be accepted when it is already established, this is a complement to the above rule
+-A FW_ACCEPT -m connmark --mark 0x0/0x80000000 -m hashlimit --hashlimit-upto 100/second --hashlimit-mode srcip --hashlimit-name fw_accept -j FW_ACCEPT_LOG
 -A FW_ACCEPT -j FW_ACCEPT_DEFAULT
 
 # WAN outgoing INVALID state check
