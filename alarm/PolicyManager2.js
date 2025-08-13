@@ -1417,6 +1417,14 @@ class PolicyManager2 {
     if (policy.needPolicyDisturb()) {
       action = "qos";  // treat app_disturb same as qos
       qdisc = "netem";
+      if (policy.disableQuic) {
+        const tmpPolicy = Object.assign(Object.create(Policy.prototype), policy);
+        tmpPolicy.action = "block";
+        tmpPolicy.protocol = "udp";
+        tmpPolicy.remotePort = "443";
+        tmpPolicy.dnsmasq_only = false;
+        await this._enforce(tmpPolicy);
+      }
     }
 
     if (!validActions.includes(action)) {
@@ -1842,7 +1850,7 @@ class PolicyManager2 {
           // activate TLS category after rule is added in iptables, this can guarante hostset is generated in /proc filesystem
           if (!_.isEmpty(targets)) {
             for (const target of targets)
-              await categoryUpdater.activateTLSCategory(target);
+              await categoryUpdater.activateTLSCategory(target, protocol);
           }
         } else {
           await this.__applyTlsRules({ ...commonOptions, tlsHostSet, tlsHost }).catch((err) => {
@@ -1850,7 +1858,7 @@ class PolicyManager2 {
           });
           // activate TLS category after rule is added in iptables, this can guarante hostset is generated in /proc filesystem
           if (tlsHostSet)
-            await categoryUpdater.activateTLSCategory(target);
+            await categoryUpdater.activateTLSCategory(target, protocol);
         }
       }
     }
@@ -1986,7 +1994,15 @@ class PolicyManager2 {
     if (policy.needPolicyDisturb()) {
       action = "qos";  // treat app_disturb same as qos
       qdisc = "netem";
-    }
+      if (policy.disableQuic) {
+        const tmpPolicy = Object.assign(Object.create(Policy.prototype), policy);
+        tmpPolicy.action = "block";
+        tmpPolicy.protocol = "udp";
+        tmpPolicy.remotePort = "443";
+        tmpPolicy.dnsmasq_only = false;
+        await this._unenforce(tmpPolicy);
+      }
+    }    
 
     if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);
