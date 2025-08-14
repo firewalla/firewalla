@@ -27,6 +27,9 @@ const lock = new AsyncLock();
 const util = require('util')
 const _ = require('lodash');
 const Constants = require('./Constants.js');
+const uuid = require('uuid');
+const POLICY_KEYS_SYNC_TO_MSP = ["tags", "userTags"];
+const fc = require('./config.js');
 
 const POLICY_KEYS_DEBUG_LOG = {dap: 1}
 
@@ -107,6 +110,30 @@ class Monitorable {
     if (f.isMain()) {
       await sysManager.waitTillIptablesReady()
       this.scheduleApplyPolicy()
+    }
+    // sync policy change to msp for specific keys, e.g., group/user related changes
+    if (f.isApi() && POLICY_KEYS_SYNC_TO_MSP.includes(name) && obj.syncToMsp) {
+      const sl = require('../sensor/APISensorLoader.js');
+      const gs = sl.getSensor('GuardianSensor');
+      const value = {};
+      value[name] = obj[name];
+      const msg = {
+        mtype: "set",
+        id: uuid.v4(),
+        data: {
+          value,
+          item: "policy"
+        },
+        type: "jsonmsg",
+        target: id,
+        syncToMsp: true,
+        ts: Date.now() / 1000
+      };
+      if (gs && fc.isFeatureOn(Constants.FEATURE_MSP_SYNC_OPS)) {
+        await gs.enqueueOpToMsp(msg).catch((err) => {
+          log.error("Failed to enqueue op to msp", err);
+        });
+      }
     }
   }
 
@@ -211,7 +238,7 @@ class Monitorable {
     return util.callbackify(this.setPolicyAsync).bind(this)(name, data, callback)
   }
 
-  async setPolicyAsync(name, data) {
+  async setPolicyAsync(name, data, syncToMsp = false) {
     // policy should be in sync once object is initialized
     if (!this.policy) await this.loadPolicyAsync();
 
@@ -223,6 +250,8 @@ class Monitorable {
 
     const obj = {};
     obj[name] = data;
+    if (syncToMsp)
+      obj.syncToMsp = true;
 
     messageBus.publish(this.constructor.getPolicyChangeCh(), this.getGUID(), name, obj)
     return obj
