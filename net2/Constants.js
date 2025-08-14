@@ -70,6 +70,7 @@ module.exports = {
   REDIS_KEY_POLICY_DISTURB_CONFIG: "policy_disturb_config",
   REDIS_KEY_MSP_DATA: "ext.guardian.data",
   REDIS_KEY_DATA_PLAN_SETTINGS: "sys:data:plan",
+  REDIS_KEY_MSP_SYNC_OPS: "msp_sync_ops",
 
   REDIS_HKEY_NSE_DHCP: "dhcp",
   REDIS_HKEY_CONN_OINTF: "oIntf",
@@ -165,6 +166,9 @@ module.exports = {
   FEATURE_VPN_DISCONNECT: "vpn_disconnect",
   FEATURE_VPN_RESTORE: "vpn_restore",
   FEATURE_QUIC_LOG: "quic_log_reader",
+  
+  // all features starting with msp_ will be automatically disabled when box has left msp
+  FEATURE_MSP_SYNC_OPS: "msp_sync_ops",
 
   POLICY_KEY_ISOLATION: "isolation",
   POLICY_KEY_SSID_PSK: "ssidPSK",
