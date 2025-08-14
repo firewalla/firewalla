@@ -231,7 +231,7 @@ class Host extends Monitorable {
     }
   }
 
-  async setPolicyAsync(name, policy) {
+  async setPolicyAsync(name, policy, syncToMsp = false) {
     if (!this.policy) await this.loadPolicyAsync();
     if (name == 'dnsmasq') {
       if (policy.alternativeIp && policy.type === "static") {
@@ -248,7 +248,7 @@ class Host extends Monitorable {
       }
     }
 
-    return super.setPolicyAsync(name, policy)
+    return super.setPolicyAsync(name, policy, syncToMsp)
   }
 
   keepalive() {
