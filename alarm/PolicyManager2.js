@@ -1424,7 +1424,8 @@ class PolicyManager2 {
 
     let { intfs, tags } = this.parseTags(tag)
     // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
-    tags = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
+    const tagExistenceChecks = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
+    tags = tags.filter((_, index) => tagExistenceChecks[index])
     // invalid tag should not continue
     if (tag && tag.length && !tags.length && !intfs.length) {
       log.error(`Unknown policy tags format policy id: ${pid}, stop enforce policy`);
@@ -1995,7 +1996,8 @@ class PolicyManager2 {
 
     let { intfs, tags } = this.parseTags(tag)
     // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
-    tags = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
+    const tagExistenceChecks = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
+    tags = tags.filter((_, index) => tagExistenceChecks[index])
     // invalid tag should not continue
     if (tag && tag.length && !tags.length && !intfs.length) {
       log.error(`Unknown policy tags format policy id: ${pid}, stop unenforce policy`);
