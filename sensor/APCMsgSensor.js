@@ -491,7 +491,7 @@ class APCMsgSensor extends Sensor {
     }
 
     if (!_.isEmpty(newTagId) && host) {
-      await host.setPolicyAsync(_.get(Constants.TAG_TYPE_MAP, [Constants.TAG_TYPE_GROUP, "policyKey"]), [newTagId]);
+      await host.setPolicyAsync(_.get(Constants.TAG_TYPE_MAP, [Constants.TAG_TYPE_GROUP, "policyKey"]), [newTagId], true);
       await hostTool.deleteWirelessDeviceTagCandidate(mac.toUpperCase());
     } else {
       if (!host) {

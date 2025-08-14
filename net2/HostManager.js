@@ -2025,13 +2025,13 @@ module.exports = class HostManager extends Monitorable {
     })
   }
 
-  async setPolicyAsync(name, policy) {
+  async setPolicyAsync(name, policy, syncToMsp = false) {
     if (!this.policy) await this.loadPolicyAsync();
     if (name == 'dnsmasq' || name == 'vpn') {
       policy = Object.assign({}, this.policy[name], policy)
     }
 
-    await super.setPolicyAsync(name, policy)
+    await super.setPolicyAsync(name, policy, syncToMsp)
   }
 
   async ipAllocation(policy) {
