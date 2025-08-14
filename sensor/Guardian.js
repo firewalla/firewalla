@@ -756,6 +756,7 @@ module.exports = class {
       if (!gid || !mspId) {
         return;
       }
+      const encryptMessageAsync = util.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
       while (this.isSocketConnected()) {
         const op = await this.dequeueOp();
         if (!op)
