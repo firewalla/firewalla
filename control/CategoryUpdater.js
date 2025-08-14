@@ -1078,12 +1078,16 @@ class CategoryUpdater extends CategoryUpdaterBase {
       cmd6 += `| sed 's=$= comment ${domain}=' `;
     }
     cmd6 += `| sudo ipset restore -!`;
-    await exec(cmd4).catch((err) => {
-      log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
-    })
-    await exec(cmd6).catch((err) => {
-      log.error(`Failed to update ipset6 by category ${category} domain ${domain}, err: ${err}`)
-    })
+    if (!portObj || portObj.proto !== 'icmpv6') {
+      await exec(cmd4).catch((err) => {
+        log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
+      })
+    }
+    if (!portObj || portObj.proto !== 'icmp') {
+      await exec(cmd6).catch((err) => {
+        log.error(`Failed to update ipset6 by category ${category} domain ${domain}, err: ${err}`)
+      })
+    }
 
   }
 
@@ -1279,8 +1283,12 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
       cmd6 += `| sudo ipset restore -!`;
       try {
-        await exec(cmd4)
-        await exec(cmd6)
+        if (!portObj || portObj.proto !== 'icmpv6') {
+          await exec(cmd4)
+        }
+        if (!portObj || portObj.proto !== 'icmp') {
+          await exec(cmd6)
+        }
       } catch (err) {
         log.error(`Failed to update ipset by category ${category} domain pattern ${domain}, err: ${err}`)
       }
