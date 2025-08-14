@@ -18,17 +18,16 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const fs = require('fs');
-const scheduler = require('../util/scheduler.js');
-const f = require('../net2/Firewalla.js');
 const _ = require('lodash');
-const readline = require('readline');
-const { Address4, Address6 } = require('ip-address');
-const DomainTrie = require('../util/DomainTrie.js');
-const BloomFilterManager = require('../util/BloomFilterManager.js')
-const { exec } = require('child-process-promise')
-
-let DOMAINS_DIR = `${f.getRuntimeInfoFolder()}/noise_domains`;
+const rclient = require('../util/redis_manager.js').getRedisClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../net2/Message.js');
+const Constants = require('../net2/Constants.js');
+const bone = require("../lib/Bone.js");
+const { BloomFilter } = require('../vendor_lib/bloomfilter.js');
+const SysManager = require('../net2/SysManager.js');
+const CLOUD_CONFIG_KEY = Constants.REDIS_KEY_NOISE_DOMAIN_CLOUD_CONFIG;
+const CronJob = require('cron').CronJob;
 
 class NoiseDomainsSensor extends Sensor {
   async run() {
@@ -40,70 +39,75 @@ class NoiseDomainsSensor extends Sensor {
   }
   
   async init() {
-    if (this.config.domainsDirectory)
-      DOMAINS_DIR = this.config.domainsDirectory;
-    await exec(`mkdir -p ${DOMAINS_DIR}`)
-    this.domainsTrie = new DomainTrie();
-    this.bloomFilterManager = new BloomFilterManager(4 * 1024 * 1024, 17); 
-    const reloadJob = new scheduler.UpdateJob(this.reloadDomains.bind(this), 5000);
-    await reloadJob.exec();
-    fs.watch(DOMAINS_DIR, (eventType, filename) => {
-      log.info(`${filename} under ${DOMAINS_DIR} is ${eventType}, will reload noise domains ...`);
-      reloadJob.exec();
-    });
-  }
-
-  async reloadDomains() {
-    const startTime = Date.now();
-    this.bloomFilterManager.reset();
-    await this.bloomFilterManager.loadFromDirectory(DOMAINS_DIR);
-    // await this.reloadDomainTries();
-
-    log.info(`Noise domain reconstruction complete in ${Date.now() - startTime} ms`);
-  }
-
-  async reloadDomainTries() {
-    const files = await fs.promises.readdir(DOMAINS_DIR).catch((err) => {
-      log.error(`Failed to read noise domains directory ${DOMAINS_DIR}`, err.message);
-      return null;
-    });
-    if (_.isArray(files)) {
-      this.domainsTrie.clear();
-      for (const file of files) {
-        await new Promise((resolve, reject) => {
-          const reader = readline.createInterface({
-            input: fs.createReadStream(`${DOMAINS_DIR}/${file}`)
-          });
-          reader.on('line', (data) => {
-            if (data.includes('*')) {
-              this.domainsTrie.add(data, file); // filename is the value of the domain
-            }
-          });
-          reader.on('close', () => {
-            resolve();
-          });
-        });
-        log.info(`Noise config file ${file} is reloaded`);
+    this.bloomfilter = null;
+    await this.reloadDomains(true);
+    await this.scheduleUpdateConfigCronJob();
+    sclient.on("message", async (channel, message) => {
+      if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
+        log.info("System timezone is reloaded, will reschedule update config cron job ...");
+        await this.scheduleUpdateConfigCronJob();
       }
+    });
+    sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
+  }
+
+  async scheduleUpdateConfigCronJob() {
+    if (this.reloadJob)
+      this.reloadJob.stop();
+    if (this.reloadTimeout)
+      clearTimeout(this.reloadTimeout);
+    const tz = SysManager.getTimezone();
+    this.reloadJob = new CronJob("30 23 * * *", async () => { // pull cloud config once every day, the request is sent between 23:30 to 00:00 to avoid calling cloud at the same time
+      const delayMins = Math.random() * 30;
+      this.reloadTimeout = setTimeout(async () => {
+        await this.reloadDomains(true).catch((err) => {
+          log.error(`Failed to load noise domains from cloud `, err.message);
+        });
+      }, delayMins * 60 * 1000);
+    }, () => { }, true, tz);
+  }
+
+  async reloadDomains(forceReload = false) {
+    try {
+      let bf_content = await rclient.getAsync(CLOUD_CONFIG_KEY).then(result => result && JSON.parse(result)).catch(err => null);
+      this.bloomfilter = new BloomFilter(this._decodeArrayOfIntBase64(bf_content.buckets), bf_content.k);
+      if (_.isEmpty(bf_content) || forceReload) {
+        bf_content = await bone.hashsetAsync(Constants.REDIS_KEY_NOISE_DOMAIN_CONFIG).then(result => result && JSON.parse(result)).catch((err) => null);
+        if (!_.isEmpty(bf_content) && _.isObject(bf_content)) {
+          await rclient.setAsync(CLOUD_CONFIG_KEY, JSON.stringify(bf_content));
+          this.bloomfilter = new BloomFilter(this._decodeArrayOfIntBase64(bf_content.buckets), bf_content.k);
+        }
+      }
+    } catch (err) {
+      log.error(`Failed to load noise domain config from cloud`, err.message);
     }
-    log.info(`Noise domain trie reconstruction complete`);
+  }
+ 
+  _decodeArrayOfIntBase64(s) {
+    const buf = Buffer.from(s, 'base64');
+    const arr = [];
+    for (let i = 0; i < buf.length; i += 4) {
+      arr.push(buf.readInt32LE(i));
+    }
+    return arr;
   }
 
   find(domain, isIP = false) {
+    if(!domain || !this.bloomfilter) {
+      return new Set();
+    }
     if (isIP) {
-      return this.bloomFilterManager.find(domain);
+      return this.bloomfilter.test(domain) ? new Set(["noise"]) : new Set();
     }
     const reversedParts = domain.split('.').reverse();
     for (let i = reversedParts.length - 1; i >= 0; i--) {
       const subDomain = reversedParts.slice(0, i + 1).reverse().join('.');
-      const result = this.bloomFilterManager.find(subDomain);
-      if (!_.isEmpty(result)) {
-        return result;
+      if(this.bloomfilter.test(subDomain)) {
+        return new Set(["noise"]);
       }
     }
-    return this.domainsTrie.find(domain) ;
+    return new Set();
   }
-
 }
 
 module.exports = NoiseDomainsSensor;
