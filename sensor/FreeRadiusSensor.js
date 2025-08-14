@@ -168,7 +168,7 @@ class FreeRadiusSensor extends Sensor {
     }
 
     log.info(`set policy of ${mac} ${policyKey}:[${tagId}]`);
-    await monitorable.setPolicyAsync(policyKey, [tagId]);
+    await monitorable.setPolicyAsync(policyKey, [tagId], true);
   }
 
   async processAuthEvent(message) {
