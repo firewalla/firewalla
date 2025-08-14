@@ -4111,6 +4111,15 @@ class netBot extends ControllerBot {
               // data.value = {'block':1},
               //
               const result = await this.setHandler(gid, msg);
+              const syncToMsp = msg.syncToMsp || false;
+              if (syncToMsp) {
+                const gs = sl.getSensor('GuardianSensor');
+                if (gs && fc.isFeatureOn(Constants.FEATURE_MSP_SYNC_OPS)) {
+                  await gs.enqueueOpToMsp(msg).catch((err) => {
+                    log.error("Failed to enqueue op to msp", err);
+                  });
+                }
+              }
               return this.simpleTxData(msg, result, null, cloudOptions);
             }
             case "get": {
@@ -4137,6 +4146,15 @@ class netBot extends ControllerBot {
                 return this.simpleTxData(msg, result, null, cloudOptions);
               } else {
                 const result = await this.cmdHandler(gid, msg);
+                const syncToMsp = msg.syncToMsp || false;
+                if (syncToMsp) {
+                  const gs = sl.getSensor('GuardianSensor');
+                  if (gs && fc.isFeatureOn(Constants.FEATURE_MSP_SYNC_OPS)) {
+                    await gs.enqueueOpToMsp(msg).catch((err) => {
+                      log.error("Failed to enqueue op to msp", err);
+                    });
+                  }
+                }
                 return this.simpleTxData(msg, result, null, cloudOptions);
               }
             }
