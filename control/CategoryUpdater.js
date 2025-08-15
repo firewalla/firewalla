@@ -673,7 +673,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   async updateIncludedElements(category, elements) {
     if (!this.customizedCategories[category])
       throw new Error(`Category ${category} is not found`);
-    if (!_.isArray(elements) || elements.length === 0)
+    if (!_.isArray(elements))
       return;
     await this.flushCategoryData(category);
     await this.flushIncludedElements(category);
