@@ -677,7 +677,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
       return;
     await this.flushCategoryData(category);
     await this.flushIncludedElements(category);
-    await rclient.saddAsync(this.getIncludedElementsKey(category), elements);
+    if (!_.isEmpty(elements))
+      await rclient.saddAsync(this.getIncludedElementsKey(category), elements);
     
     for (const element of elements) {
       const entries = CategoryEntry.parse(element);
