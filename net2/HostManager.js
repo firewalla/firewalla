@@ -636,7 +636,7 @@ module.exports = class HostManager extends Monitorable {
   async monthlyDataStats(mac, date) {
     if (!date) {
       const dataPlan = await this.getDataUsagePlan({});
-      date = dataPlan ? dataPlan.date : 1
+      date = dataPlan && dataPlan.date || 1;
     }
     const timezone = sysManager.getTimezone();
     const now = timezone ? moment().tz(timezone) : moment();
