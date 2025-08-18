@@ -521,7 +521,7 @@ class CustomizedSecurityAlarm extends Alarm {
   }
 
   isSecurityAlarm() {
-    if (this["p.msp.type"]) return true; // created by msp
+    if (this["p.msp.type"] || this["p.noticeType"]) return true; // created by msp
     return false;
   }
 
