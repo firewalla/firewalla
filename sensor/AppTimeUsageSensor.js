@@ -210,26 +210,8 @@ class AppTimeUsageSensor extends Sensor {
     return 5; // default threshold is 5
   }
   
-  recordFlow(flow, conf, tags) {
-    pclient.publishAsync("internet.activity.flow", JSON.stringify({
-      beginTime: flow.ts,
-      endTime: flow.ts + flow.du,
-      intf: flow.intf,
-      sourceMac: flow.mac,
-      destination: flow.host || flow.intel && flow.intel.host,
-      category: _.get(flow, ["intel", "category"]) || "",
-      app: conf.app,
-      tags: tags || [],
-      upload: flow.ob,
-      download: flow.rb,
-      total: flow.ob + flow.rb,
-      flowCount: 1, // this is a single flow, so count is 1
-      occupyMins: conf.occupyMins,
-      lingerMins: conf.lingerMins,
-      bytesThreshold: conf.bytesThreshold,
-      minsThreshold: conf.minsThreshold,
-      noStray: conf.noStray || false,
-    }));
+  recordFlow(flow) {
+    pclient.publishAsync("internet.activity.flow", JSON.stringify({flow}));
   }
 
   // returns an array with matched app criterias
@@ -272,6 +254,10 @@ class AppTimeUsageSensor extends Sensor {
       log.warn("Unexpected flow with long duration, ignore", f.ts, f.du, f.sh, f.sp, '->', f.dh, f.dp);
       return;
     }
+    if (fc.isFeatureOn("record_activity_flow")){
+      this.recordFlow(f);
+    }
+
     const appMatches = this.lookupAppMatch(f);
     if (_.isEmpty(appMatches))
       return;
@@ -285,9 +271,6 @@ class AppTimeUsageSensor extends Sensor {
         tags.push(...(f[config.flowKey] || []));
       }
       tags = _.uniq(tags);
-      if (fc.isFeatureOn("record_activity_flow")){
-        this.recordFlow(f, match, tags);
-      }
       await this.markBuckets(f.mac, tags, f.intf, app, category, f.ts, f.ts + f.du, occupyMins, lingerMins, minsThreshold, noStray);
     }
   }
