@@ -673,11 +673,12 @@ class CategoryUpdater extends CategoryUpdaterBase {
   async updateIncludedElements(category, elements) {
     if (!this.customizedCategories[category])
       throw new Error(`Category ${category} is not found`);
-    if (!_.isArray(elements) || elements.length === 0)
+    if (!_.isArray(elements))
       return;
     await this.flushCategoryData(category);
     await this.flushIncludedElements(category);
-    await rclient.saddAsync(this.getIncludedElementsKey(category), elements);
+    if (!_.isEmpty(elements))
+      await rclient.saddAsync(this.getIncludedElementsKey(category), elements);
     
     for (const element of elements) {
       const entries = CategoryEntry.parse(element);

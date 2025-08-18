@@ -70,13 +70,17 @@ class NoiseDomainsSensor extends Sensor {
   async reloadDomains(forceReload = false) {
     try {
       let bf_content = await rclient.getAsync(CLOUD_CONFIG_KEY).then(result => result && JSON.parse(result)).catch(err => null);
-      this.bloomfilter = new BloomFilter(this._decodeArrayOfIntBase64(bf_content.buckets), bf_content.k);
       if (_.isEmpty(bf_content) || forceReload) {
-        bf_content = await bone.hashsetAsync(Constants.REDIS_KEY_NOISE_DOMAIN_CONFIG).then(result => result && JSON.parse(result)).catch((err) => null);
-        if (!_.isEmpty(bf_content) && _.isObject(bf_content)) {
-          await rclient.setAsync(CLOUD_CONFIG_KEY, JSON.stringify(bf_content));
-          this.bloomfilter = new BloomFilter(this._decodeArrayOfIntBase64(bf_content.buckets), bf_content.k);
+        let cloud_bf_content = await bone.hashsetAsync(Constants.REDIS_KEY_NOISE_DOMAIN_CONFIG).then(result => result && JSON.parse(result)).catch((err) => null);
+        if (!_.isEmpty(cloud_bf_content) && _.isObject(cloud_bf_content)) {
+          await rclient.setAsync(CLOUD_CONFIG_KEY, JSON.stringify(cloud_bf_content));
+          bf_content = cloud_bf_content;
         }
+      }
+      if(!_.isEmpty(bf_content) && _.isObject(bf_content)) {
+        this.bloomfilter = new BloomFilter(this._decodeArrayOfIntBase64(bf_content.buckets), bf_content.k);
+      }else{
+        log.warn(`No noise domain config found in cloud, will not load noise domains.`);
       }
     } catch (err) {
       log.error(`Failed to load noise domain config from cloud`, err.message);
