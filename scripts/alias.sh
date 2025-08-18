@@ -14,11 +14,11 @@ alias t5='tail -F ~/.forever/firereset.log'
 alias t6='tail -F ~/.forever/router.log'
 alias t7='tail -F ~/.forever/fwapc.log'
 alias t8='tail -F ~/.forever/dap.log'
-alias tt0='tail -F ~/logs/FireMain.log'
+alias tt0='ls -1t ~/logs/FireMain*.log | head -n 1 | xargs tail -F'
 alias tt00='tail -F ~/logs/Fire*.log'
-alias tt1='tail -F ~/logs/FireKick.log'
-alias tt2='tail -F ~/logs/FireMon.log'
-alias tt3='tail -F ~/logs/FireApi.log'
+alias tt1='ls -1t ~/logs/FireKick*.log | head -n 1 | xargs tail -F'
+alias tt2='ls -1t ~/logs/FireMon*.log | head -n 1 | xargs tail -F'
+alias tt3='ls -1t ~/logs/FireApi*.log | head -n 1 | xargs tail -F'
 alias l0='less -R ~/.forever/main.log'
 alias l1='less -R ~/.forever/kickui.log'
 alias l2='less -R ~/.forever/monitor.log'
@@ -302,4 +302,10 @@ function sdf() {
   fi
   local payload=$(jq -n --arg featureName "$featureName" '{"featureName": $featureName}')
   curl 'http://localhost:8834/v1/encipher/simple?command=cmd&item=disableFeature' -H 'Content-Type: application/json' -d "$payload"
+}
+
+function lap_reboot() {
+  local mac=$1
+  local payload=$(jq -n --arg mac "$mac" '{"uid": $mac}')
+  curl 'http://localhost:8841/v1/control/reboot' -H 'Content-Type: application/json' -d "$payload"
 }
