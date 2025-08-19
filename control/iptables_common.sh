@@ -690,7 +690,7 @@ create_qos_chains() {
 {
 cat << EOF
 # do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already established before
--A FW_FORWARD -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_QOS_PROBABILITY -j RETURN
+-A FW_FORWARD -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_QOS_PROBABILITY -j RETURN
 
 # qos chain for App Disturb feature which is not controlled by FW_QOS_SWITCH
 -N FW_DISTURB_QOS
