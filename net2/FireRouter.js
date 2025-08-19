@@ -311,6 +311,13 @@ async function generateNetworkInfo() {
       redisIntf.pds = intf.state.pds;
     }
 
+    if (intf.config.vid) {
+      redisIntf.vid = intf.config.vid
+    } else if (intfName.startsWith("br") && Array.isArray(intf.config.intf)) {
+      const vid = intfNameMap[intf.config.intf[0]].config.vid
+      if (vid) redisIntf.vid = vid
+    }
+
     if (f.isMain()) {
       await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
       await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))

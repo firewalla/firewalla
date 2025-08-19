@@ -54,7 +54,7 @@ const dnsTool = new DNSTool()
 
 const firewalla = require('../net2/Firewalla.js');
 const Message = require('../net2/Message.js');
-
+const sl = require('../sensor/SensorLoader.js');
 const mode = require('../net2/Mode.js')
 
 const linux = require('../util/linux.js');
@@ -154,6 +154,7 @@ class BroDetect {
     this.sigmap = new LRU({max: SIG_MAP_SIZE, maxAge: 10800 * 1000});
     this.proxyConn = new LRU({max: PROXY_CONN_SIZE, maxAge: 60 * 1000});
     this.dnsCache = new LRU({max: DNS_CACHE_SIZE, maxAge: 3600 * 1000});
+    this.bridgeLocalFlow = new LRU({max: 1000, maxAge: 10 * 1000});
     this.dnsCount = 0
     this.dnsHit = 0
     this.dnsMatch = 0
@@ -319,7 +320,7 @@ class BroDetect {
       // HTTP proxy, drop host info
       if (obj.method == 'CONNECT' || obj.proxied) {
         this.proxyConn.set(obj.uid, true)
-        log.verbose('Drop HTTP CONNECT', host, obj)
+        log.verbose('Drop HTTP CONNECT', host, obj['id.orig_h'], obj['id.resp_h'])
 
         // in case SSL record processed already
 
@@ -829,7 +830,7 @@ class BroDetect {
     try {
       let obj = JSON.parse(data);
       if (obj == null) {
-        log.debug("Conn:Drop", data);
+        log.silly("Conn:Drop", data);
         return;
       }
 
@@ -1005,9 +1006,11 @@ class BroDetect {
           sysManager.isMulticastIP6(lhost) ||
           sysManager.isMulticastIP6(dhost)
         )) {
+          log.silly("Conn:Drop:Multicast", obj.uid, orig, resp);
           return;
         }
         if (sysManager.isMyServer(resp) || sysManager.isMyServer(orig)) {
+          log.silly("Conn:Drop:MyServer", obj.uid, orig, resp);
           return;
         }
       } catch (e) {
@@ -1037,7 +1040,8 @@ class BroDetect {
           return
         }
       } else {
-        // local flow only available in router mode, so gateway is always Firewalla's mac
+        // local flow in router mode, gateway is always Firewalla's mac
+        // local flow in bridge mode, one side might be NATed as gateway MAC, thus discarded here
         // for non-local flows, this only happens in simple mode
         if (localMac && !reverseLocal && (sysManager.isMyMac(localMac) ||
           localFlow && await sysManager.isBridgeMode() && intfInfo && intfInfo.gatewayMac == localMac
@@ -1146,7 +1150,7 @@ class BroDetect {
         obj.resp_bytes -= previous.resp_bytes
 
         if (obj.orig_bytes <= 0 && obj.resp_bytes <= 0) {
-          log.silly("Conn:Drop:ZeroLength_Long", obj.conn_state, obj);
+          log.silly("Conn:Drop:ZeroLength_Long", obj.uid, orig, orig_p, resp, resp_p);
           return;
         }
       }
@@ -1173,19 +1177,15 @@ class BroDetect {
             dstRealLocal = IdentityManager.getEndpointByIP(dhost);
           }
         } else {
-          if (dstMac && !reverseLocal && sysManager.isMyMac(dstMac)) {
+          // local flow in router mode, gateway is always Firewalla's mac
+          // local flow in bridge mode, one side might be NATed as gateway MAC, thus discarded here
+          // for non-local flows, this only happens in simple mode
+          if (dstMac && !reverseLocal && (sysManager.isMyMac(dstMac) || 
+            localFlow && await sysManager.isBridgeMode() && dstIntfInfo && dstIntfInfo.gatewayMac == dstMac
+          )) {
             // double check dest mac for spoof leak
             log.debug("Discard incorrect dest MAC address from bro log: ", dstMac, dhost);
             dstMac = null
-          }
-          // zeeks records inter-network local flow twice in bridge mode, on both interfaces, drop one here to deduplicate
-          // if source is a VPN client, IP is NATed on the other interface and zeek sees it from Firewalla itself thus dropped
-          // don't drop in this case. also connection going to VPN client is not possible in bridge mode
-          if (!reverseLocal && !isIdentityIntf && await sysManager.isBridgeMode() &&
-            dstIntfInfo && dstIntfInfo.gatewayMac == dstMac
-          ) {
-            log.debug("Drop duplicated bridge traffic when dstMac is gateway: ", lhost, dhost);
-            return
           }
 
           if (!dstMac)
@@ -1215,6 +1215,30 @@ class BroDetect {
           return
         if (obj.proto === "udp" && accounting.isBlockedDevice(dstMac)) {
           return
+        }
+
+        // zeek records inter-network local flow multiple times, on each involving interface that zeek listens to
+        // only bridge mode is considered here, as route mode duplicats are dropped earlier
+        // if source is a VPN client, IP is NATed on the other interface and zeek sees it from Firewalla itself thus dropped already
+        // don't drop in this case. also connection going to VPN client is not possible in bridge mode
+        if (!reverseLocal && !isIdentityIntf && await sysManager.isBridgeMode()) {
+          const pcapZeekPlugin = sl.getSensor("PcapZeekPlugin");
+
+          if (pcapZeekPlugin.listenOnParentIntf) {
+            // there's duplicated logs for local flows, and the duplicates are almost identical.
+            // by removing zeek worker on port connecting gateway, we could be getting 1-2 logs, depending on how many zeek worker sees the traffic
+            // there's no way to know from the a single log whether a duplicate exists, so a short lived cached is used for dedup here
+            const key = `${obj.proto}:${orig}:${orig_p}:${resp}:${resp_p}`
+            if (this.bridgeLocalFlow.has(key)) {
+              log.verbose("Drop duplicated bridge traffic on eth: ", key);
+              return
+            }
+            this.bridgeLocalFlow.set(key, true)
+          } else if (dstIntfInfo.gatewayMac == localMac) { 
+            // drop log captured on dst interface
+            log.verbose("Drop duplicated bridge traffic on dst interface: ", lhost, dhost);
+            return
+          }
         }
 
         if (!reverseLocal) {
