@@ -203,6 +203,10 @@ class NetBotTool {
     })
 
     const enriched = await flowTool.enrichWithIntel(traffic, !dimension.startsWith('dns') && dimension != 'local');
+    // overwrite enriched host with original (domain) info
+    enriched.forEach(f => {
+      if (f.domain && f.host) f.host = f.domain
+    })
 
     json.flows[`${dimension}${fd ? `:${fd}` : ""}`] = enriched.sort((a, b) => {
       return b.count - a.count;
