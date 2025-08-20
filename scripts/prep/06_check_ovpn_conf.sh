@@ -2,16 +2,14 @@
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
-source ${FIREWALLA_HOME}/platform/platform.sh
-
-if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
-  exit 0
-fi
+source ${FIREWALLA_HOME}/platform/platform.sh  
 
 sudo chmod 777 -R /etc/openvpn
-if [[ -e /etc/openvpn/easy-rsa/keys ]] && [[ $(uname -m) == "aarch64" ]] && ! [[ -e /etc/openvpn/multi_profile_support ]]; then
-  bash $FIREWALLA_HOME/scripts/reset-vpn-keys.sh
-fi 
+if [[ $MANAGED_BY_FIREROUTER != "yes" ]]; then
+  if [[ -e /etc/openvpn/easy-rsa/keys ]] && [[ $(uname -m) == "aarch64" ]] && ! [[ -e /etc/openvpn/multi_profile_support ]]; then
+    bash $FIREWALLA_HOME/scripts/reset-vpn-keys.sh
+  fi
+fi
 
 OPENSSL_CNF=$(get_openssl_cnf_file)
 # Ensure nextUpdate in openssl crl to 3600 days
