@@ -4,6 +4,10 @@
 
 source ${FIREWALLA_HOME}/platform/platform.sh
 
+if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
+  exit 0
+fi
+
 sudo chmod 777 -R /etc/openvpn
 if [[ -e /etc/openvpn/easy-rsa/keys ]] && [[ $(uname -m) == "aarch64" ]] && ! [[ -e /etc/openvpn/multi_profile_support ]]; then
   bash $FIREWALLA_HOME/scripts/reset-vpn-keys.sh
