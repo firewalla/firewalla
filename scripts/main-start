@@ -41,7 +41,6 @@ mkdir -p "$HOME/.firewalla"
 mkdir -p "$HOME/.firewalla/tmp"
 mkdir -p "$HOME/.firewalla/pubKeys"
 mkdir -p "$HOME/logs"
-sudo rm -r -f /tmp/*
 cd $FIREWALLA_HOME
 branch=$(git rev-parse --abbrev-ref HEAD)
 if [[ $branch =~ release.* ]]; then
