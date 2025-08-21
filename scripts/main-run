@@ -78,6 +78,7 @@ $FIREWALLA_HOME/scripts/update_crontab.sh
 fire_time_out=$($FIREWALLA_HOME/scripts/fire-time.sh)
 logger "FIREWALLA:MAIN-RUN:FIRETIME:END"+"set time to $fire_time_out"
 
+$FIREWALLA_HOME/scripts/prepare_assets_list.sh
 timeout 1200 $FIREWALLA_HOME/scripts/update_assets.sh &>/dev/null &
 UPDATE_ASSETS_PID=$!
 
