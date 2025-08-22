@@ -1014,14 +1014,15 @@ module.exports = class HostManager extends Monitorable {
       }
     }
 
-    let alarmIDs = rules.map((p) => p.aid);
+    let rulesWithAlarmID = rules.filter((p) => _.has(p, "aid"));
+    const alarmIDs = rulesWithAlarmID.map((p) => p.aid);
 
     const alarms = await alarmManager2.idsToAlarmsAsync(alarmIDs)
 
-    for(let i = 0; i < rules.length; i ++) {
-      if(rules[i] && alarms[i]) {
-        rules[i].alarmMessage = alarms[i].localizedInfo();
-        rules[i].alarmTimestamp = alarms[i].timestamp;
+    for(let i = 0; i < rulesWithAlarmID.length; i ++) {
+      if(rulesWithAlarmID[i] && alarms[i]) {
+        rulesWithAlarmID[i].alarmMessage = alarms[i].localizedInfo();
+        rulesWithAlarmID[i].alarmTimestamp = alarms[i].timestamp;
       }
     }
 
