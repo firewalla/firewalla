@@ -170,11 +170,12 @@ module.exports = class DNSManager {
     try {
       const intel = await intelTool.getIntel(ip, hostIndicators)
 
-      if (intel.host) {
+      const host = hostIndicators && hostIndicators[0] || intel && intel.host
+      if (host) {
         if (flowObject.fd == 'out') {
-          flowObject["shname"] = intel.host
+          flowObject["shname"] = host
         } else {
-          flowObject["dhname"] = intel.host
+          flowObject["dhname"] = host
         }
       }
 
