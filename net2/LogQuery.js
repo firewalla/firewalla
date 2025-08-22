@@ -460,8 +460,10 @@ class LogQuery {
           if (intel.country) f.country = intel.country
           if (intel.category) f.category = intel.category
           if (intel.app) f.app = intel.app
-          if (intel.host) f.host = intel.host
         }
+
+        const host = f.appHosts && f.appHosts[0] || intel && intel.host
+        if (host) f.host = host
 
         // getIntel should always return host if at least 1 domain is provided
         delete f.appHosts
@@ -476,16 +478,12 @@ class LogQuery {
           // not waiting as that will be too slow for API call
           destIPFoundHook.processIP(f.ip);
         }
-      }
-
-      if (f.domain) {
+      } else if (f.domain) {
         const intel = await intelTool.getIntel(undefined, [f.domain])
 
-        // Object.assign(f, _.pick(intel, ['category', 'app', 'host']))
         if (intel) {
           if (intel.category) f.category = intel.category
           if (intel.app) f.app = intel.app
-          if (intel.host) f.host = intel.host
         }
       }
 

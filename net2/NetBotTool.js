@@ -200,13 +200,14 @@ class NetBotTool {
     traffic.forEach(f => {
       f.begin = begin;
       f.end = end;
+      if (!dimension.startsWith('dns') && f.domain) {
+        // change it to the same format as regular flows for intel enrichment
+        f.appHosts = [f.domain]
+        delete f.domain
+      }
     })
 
-    const enriched = await flowTool.enrichWithIntel(traffic, !dimension.startsWith('dns') && dimension != 'local');
-    // overwrite enriched host with original (domain) info
-    enriched.forEach(f => {
-      if (f.domain && f.host) f.host = f.domain
-    })
+    const enriched = await flowTool.enrichWithIntel(traffic, !dimension.startsWith('dns') && !dimension.startsWith('local'));
 
     json.flows[`${dimension}${fd ? `:${fd}` : ""}`] = enriched.sort((a, b) => {
       return b.count - a.count;
