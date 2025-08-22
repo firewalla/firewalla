@@ -71,8 +71,6 @@ class DestIPFoundHook extends Hook {
   }
 
   appendNewFlow(flow) {
-    if (!flow.retryCount)
-      flow.retryCount = 0;
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, JSON.stringify(flow));
   }
 
@@ -87,25 +85,10 @@ class DestIPFoundHook extends Hook {
     return patterns.filter(p => host.match(p)).length > 0;
   }
 
-  aggregateIntelResult(ip, host, sslInfo, dnsInfo, intelSources) {
+  aggregateIntelResult(ip, host, intelSources) {
     let intel = {
       ip: ip
     };
-
-    // sslInfo is an object, dnsInfo is a string
-    if (dnsInfo) {
-      intel.host = dnsInfo;
-      intel.dnsHost = dnsInfo;
-    }
-
-    if (sslInfo) {
-      if (sslInfo.server_name) {
-        intel.host = sslInfo.server_name
-        intel.sslHost = sslInfo.server_name
-      }
-      if (sslInfo.org)
-        intel.org = sslInfo.O
-    }
 
     if (host)
       intel.host = host;
@@ -158,9 +141,7 @@ class DestIPFoundHook extends Hook {
       Object.assign(intel, _.pick(info, ['s', 't', 'cc', 'cs', 'v', 'a', 'originIP', 'msg', 'reference', 'e', 'country', 'category']))
     });
 
-    const domain = this.getDomain(sslInfo, dnsInfo);
-
-    if (intel.originIP && domain != intel.originIP && ip != intel.originIP) {
+    if (intel.originIP && host != intel.originIP && ip != intel.originIP) {
       // it's a pattern
       intel.isOriginIPAPattern = true
     }
@@ -172,9 +153,13 @@ class DestIPFoundHook extends Hook {
     return intel;
   }
 
-  getDomain(sslInfo, dnsInfo) {
-    // sslInfo is an object, dnsInfo is a string
-    return sslInfo && sslInfo.server_name || dnsInfo;
+  async getDomain(ip) {
+    const sslInfo = await intelTool.getSSLCertificate(ip);
+    if (sslInfo && sslInfo.server_name) {
+      return sslInfo.server_name;
+    }
+    const dnsInfo = await intelTool.getDNS(ip);
+    return dnsInfo;
   }
 
   async updateCategoryDomain(intel) {
@@ -292,19 +277,17 @@ class DestIPFoundHook extends Hook {
       try {
         parsed = JSON.parse(flow);
         enrichedFlow = Object.assign(enrichedFlow, parsed);
-        enrichedFlow.retryCount = parsed.retryCount || 0;
         enrichedFlow.fd = parsed.fd || "in";
       } catch (e) {
         // base IP address as argument
         enrichedFlow.ip = flow;
         enrichedFlow.fd = "in";
-        enrichedFlow.retryCount = 0;
       }
     }
     if (_.isEmpty(enrichedFlow))
       return;
 
-    const {ip, fd, host, mac, retryCount} = enrichedFlow;
+    const {ip, fd, host, mac} = enrichedFlow;
     options = options || {};
 
     try {
@@ -314,15 +297,7 @@ class DestIPFoundHook extends Hook {
 
       const skipReadLocalCache = options.skipReadLocalCache;
       const skipWriteLocalCache = options.skipWriteLocalCache;
-      let sslInfo = await intelTool.getSSLCertificate(ip);
-      let dnsInfo = await intelTool.getDNS(ip);
-      let domain = host || this.getDomain(sslInfo, dnsInfo);
-      if (!domain && retryCount < 5) {
-        enrichedFlow.retryCount++;
-        // domain is not fetched from either dns or ssl entries, retry in next job() schedule
-        this.appendNewFlow(enrichedFlow);
-        requeued = true;
-      }
+      let domain = host || await this.getDomain(ip);
 
       // Update category filter set
       if (domain) {
@@ -339,12 +314,9 @@ class DestIPFoundHook extends Hook {
         intel = await intelTool.getIntel(ip);
 
         if (intel && !intel.cloudFailed) {
-          // use cache data if host is similar or ssl org is identical
+          // use cache data if host is similar
           // (relatively loose condition to avoid calling intel API too frequently)
-          if (!domain
-            || sslInfo && intel.org && sslInfo.O === intel.org
-            || intel.host && isSimilarHost(domain, intel.host)
-          ) {
+          if (!domain || intel.host && isSimilarHost(domain, intel.host)) {
             await this.updateCategoryDomain(intel);
             await this.updateCountryIP(intel);
             if (intel.category === "intel")
@@ -395,7 +367,7 @@ class DestIPFoundHook extends Hook {
       }
 
       // Update intel rdns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
-      let aggrIntelInfo = this.aggregateIntelResult(ip, domain, sslInfo, dnsInfo, intelSources);
+      let aggrIntelInfo = this.aggregateIntelResult(ip, domain, intelSources);
 
       for (const key in aggrIntelInfo) {
         // NONE is a reseved word for custom intel to state a specific field to be empty
