@@ -4138,7 +4138,8 @@ class netBot extends ControllerBot {
                 if (result.code == 200) {
                   return this.simpleTxData(msg, result.body, null, cloudOptions);
                 } else {
-                  return this.simpleTxData(msg, null, {code: result.code, data: result.body, msg: result.msg}, cloudOptions);
+                  const errmsg = result.body && typeof result.body === 'object' ? JSON.stringify(result.body) : result.body ||  result.code;
+                  return this.simpleTxData(msg, null, {code: result.code, data: result.body, msg: result.msg || errmsg}, cloudOptions);
                 }
 
               } else if (msg.data.item == 'batchAction') {
