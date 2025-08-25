@@ -47,12 +47,12 @@ class FreeRadiusSensor extends Sensor {
     if (f.isMain()) {
       sem.on("StartFreeRadiusServer", async (event) => {
         if (!this.featureOn) return;
-        return freeradius.startServer();
+        return freeradius.startServer(this._options || {});
       });
 
       sem.on("StopFreeRadiusServer", async (event) => {
         if (!this.featureOn) return;
-        await freeradius.stopServer();
+        await freeradius.stopServer(this._options || {});
       });
     }
   }
@@ -85,7 +85,7 @@ class FreeRadiusSensor extends Sensor {
   async run() {
     this.featureOn = false;
     this._policy = await this.loadPolicyAsync();
-    this._options = await this.loadOptionsAsync();
+    this._options = await this.loadOptionsAsync()
 
     // sync ssid sta mapping once every 20 seconds to ensure consistency in case sta update message is missing somehow
     setInterval(async () => {
@@ -212,7 +212,8 @@ class FreeRadiusSensor extends Sensor {
 
   async loadOptionsAsync() {
     try {
-      return await freeradius.loadOptionsAsync();
+      const policyOpts = this._policy && this._policy["0.0.0.0"] && this._policy["0.0.0.0"].options || {};
+      return Object.assign({}, await freeradius.loadOptionsAsync(), policyOpts);
     } catch (err) {
       log.error("failed to load options", err.message);
       return {};
@@ -228,16 +229,19 @@ class FreeRadiusSensor extends Sensor {
   // global on/off
   async globalOn() {
     this.featureOn = true;
+    freeradius.globalOn();
     this._policy = await this.loadPolicyAsync();
     this._options = await this.loadOptionsAsync();
     log.debug("freeradius policy", freeradius.mask(JSON.stringify(this._policy)));
-    freeradius.prepare(); // prepare in background
+    log.debug("freeradius options", freeradius.mask(JSON.stringify(this._options)));
+    freeradius.prepare(this._options); // prepare in background
   }
 
   async globalOff() {
     this.featureOn = false;
+    freeradius.globalOff();
     if (await freeradius.isListening()) {
-      freeradius.stopServer();  // stop container in background
+      freeradius.stopServer(this._options || {});  // stop container in background
     }
   }
 
@@ -252,6 +256,11 @@ class FreeRadiusSensor extends Sensor {
   // apply global policy changes, policy={radius:{}, options:{}}
   async _apply(policy, target = "0.0.0.0") {
     try {
+      if (!this.featureOn) {
+        log.error(`feature ${featureName} is disabled`);
+        return;
+      }
+
       if (!policy) {
         return { err: 'policy must be specified' };
       }

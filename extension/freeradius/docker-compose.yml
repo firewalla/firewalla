@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+  freeradius:
+    image: public.ecr.aws/a0j1s2e9/freeradius:v3.2.7
+    working_dir: /etc/freeradius
+    network_mode: "host"
+    volumes:
+      - /home/pi/.firewalla/run/docker/freeradius/config:/root/freeradius/config
+      - /home/pi/.forever/freeradius/:/var/log/freeradius/
+      - /home/pi/.node_modules/node_modules:/root/.node_modules/node_modules:ro
+      - /home/pi/.nvm/versions/node:/root/.nvm/versions:ro
+    command: bash -c "bash /root/freeradius/freeradius.sh run & tail -f /var/log/freeradius/radius.log"
