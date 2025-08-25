@@ -5,7 +5,7 @@ sudo ip route del 0.0.0.0/1 || true
 sudo ip route del 128.0.0.0/1 || true
 
 # flush IPv6 address
-sudo ip -6 a flush dev $dev || true
+#sudo ip -6 a flush dev $dev || true
 
 # create file with vpn gateway IP and subnet
 PROFILE_ID=$1

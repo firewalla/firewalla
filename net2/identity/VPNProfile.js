@@ -117,7 +117,7 @@ class VPNProfile extends Identity {
         if (!client.vAddr || !client.cn)
           continue;
         for (const addr of client.vAddr) {
-          if (new Address4(addr).isValid())
+          if (new Address4(addr).isValid() || new Address6(addr).isValid())
             ipUidCache.set(addr, client.cn);
         }
       }
@@ -140,7 +140,7 @@ class VPNProfile extends Identity {
       if (!client.vAddr || !client.addr)
         continue;
       for (const addr of client.vAddr) {
-        if (new Address4(addr).isValid())
+        if (new Address4(addr).isValid() || new Address6(addr).isValid())
           ipEndpointMap[addr] = client.addr;
       }
     }

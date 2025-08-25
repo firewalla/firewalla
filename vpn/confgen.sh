@@ -17,6 +17,10 @@ LOCAL_PORT=$6
 : ${LOCAL_PORT:="1194"}
 PROTO=$7
 : ${PROTO:="udp"}
+DNS6=$8
+: ${DNS6:="2001:4860:4860::8888"}
+SERVER_IPV6_ADDR=$9
+: ${SERVER_IPV6_ADDR:="fd00:1234:5678::1"}
 
 chmod 777 -R /etc/openvpn
 
@@ -80,6 +84,11 @@ sed -i "s=LOCAL_PORT=$LOCAL_PORT=" /etc/openvpn/$INSTANCE_NAME.conf
 sed -i "s/SERVER_INSTANCE/$INSTANCE_NAME/" /etc/openvpn/$INSTANCE_NAME.conf
 # Set protocol, tcp6 or udp6, this also listens on ipv4 stack
 sed -i "s/PROTO/${PROTO}6/" /etc/openvpn/$INSTANCE_NAME.conf
+# Set DNS6
+sed -i "s=IPV6_DNS=$DNS6=" /etc/openvpn/$INSTANCE_NAME.conf
+# Set server IPv6 address
+sed -i "s=SERVER_IPV6_ADDR=$SERVER_IPV6_ADDR=" /etc/openvpn/$INSTANCE_NAME.conf
+
 
 if [ $ENCRYPT = 2048 ]; then
  sed -i 's:dh1024:dh2048:' /etc/openvpn/$INSTANCE_NAME.conf
