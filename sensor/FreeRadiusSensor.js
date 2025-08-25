@@ -47,12 +47,12 @@ class FreeRadiusSensor extends Sensor {
     if (f.isMain()) {
       sem.on("StartFreeRadiusServer", async (event) => {
         if (!this.featureOn) return;
-        return freeradius.startServer();
+        return freeradius.startServer(this._options || {});
       });
 
       sem.on("StopFreeRadiusServer", async (event) => {
-        if (!this.featureOn) return;
-        await freeradius.stopServer();
+        // if (!this.featureOn) return;
+        await freeradius.stopServer(this._options || {});
       });
     }
   }
@@ -70,6 +70,25 @@ class FreeRadiusSensor extends Sensor {
       });
     });
 
+    extensionManager.onCmd("uploadFreeradius", async (msg, data) => {
+      if (!data.path || !data.content) {
+        return {
+          success: false,
+          error: "path or content is invalid",
+        };
+      }
+      const result = await freeradius.saveFile(data.path, data.content);
+      if (result.ok) {
+        return {
+          success: true,
+        };
+      }
+      return {
+        success: false,
+        error: `Failed to save file ${data.path}: ${result.error}`,
+      };
+    });
+
     extensionManager.onGet("getFreeRadiusStatus", async (msg, data) => {
       await freeradius._statusServer();
       await freeradius._watchStatus();
@@ -85,7 +104,7 @@ class FreeRadiusSensor extends Sensor {
   async run() {
     this.featureOn = false;
     this._policy = await this.loadPolicyAsync();
-    this._options = await this.loadOptionsAsync();
+    this._options = await this.loadOptionsAsync()
 
     // sync ssid sta mapping once every 20 seconds to ensure consistency in case sta update message is missing somehow
     setInterval(async () => {
@@ -212,7 +231,8 @@ class FreeRadiusSensor extends Sensor {
 
   async loadOptionsAsync() {
     try {
-      return await freeradius.loadOptionsAsync();
+      const policyOpts = this._policy && this._policy["0.0.0.0"] && this._policy["0.0.0.0"].options || {};
+      return Object.assign({}, await freeradius.loadOptionsAsync(), policyOpts);
     } catch (err) {
       log.error("failed to load options", err.message);
       return {};
@@ -228,17 +248,20 @@ class FreeRadiusSensor extends Sensor {
   // global on/off
   async globalOn() {
     this.featureOn = true;
+    freeradius.globalOn();
     this._policy = await this.loadPolicyAsync();
     this._options = await this.loadOptionsAsync();
     log.debug("freeradius policy", freeradius.mask(JSON.stringify(this._policy)));
-    freeradius.prepare(); // prepare in background
+    log.debug("freeradius options", freeradius.mask(JSON.stringify(this._options)));
+    freeradius.prepare(this._options); // prepare in background
   }
 
   async globalOff() {
     this.featureOn = false;
-    if (await freeradius.isListening()) {
-      freeradius.stopServer();  // stop container in background
-    }
+    freeradius.globalOff();
+    // if (await freeradius.isListening()) {
+    freeradius.stopServer(this._options || {});  // stop container in background
+    // }
   }
 
   async generateOptions(options = {}) {
@@ -252,6 +275,11 @@ class FreeRadiusSensor extends Sensor {
   // apply global policy changes, policy={radius:{}, options:{}}
   async _apply(policy, target = "0.0.0.0") {
     try {
+      if (!this.featureOn) {
+        log.error(`feature ${featureName} is disabled`);
+        return;
+      }
+
       if (!policy) {
         return { err: 'policy must be specified' };
       }
@@ -268,7 +296,8 @@ class FreeRadiusSensor extends Sensor {
         return;
       }
 
-      const { radius, options } = policy;
+      const { radius } = policy;
+      const options = Object.assign({}, await this.loadOptionsAsync(), policy.options || {});
 
       // 1. apply to radius-server
       log.info("start to apply freeradius policy", freeradius.mask(JSON.stringify(radius)), options);
@@ -343,7 +372,7 @@ class FreeRadiusSensor extends Sensor {
         return;
       }
 
-      const status = await freeradius.getStatus();
+      const status = await freeradius.getStatus(this._options);
       log.info("freeradius policy applied, freeradius server status", freeradius.mask(JSON.stringify(status)));
     }).catch((err) => {
       log.error(`failed to get lock to apply ${featureName} policy`, err.message);
