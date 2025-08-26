@@ -50,6 +50,7 @@ class Conntrack {
     this.connHooks = {};
     this.connCache = {};
     this.connRemoteDB = new LRU({max: 2048, maxAge: 600 * 1000});
+    this.connEntriesCache = new LRU({max: 10000, maxAge: 600 * 1000});
 
     sem.once('IPTABLES_READY', () => {
       this.parseEstablishedConnections().catch((err) => {
@@ -289,7 +290,13 @@ class Conntrack {
   }
 
   async setConnEntry(src, sport, dst, dport, protocol, subKey, value, expr = 600) {
-    const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
+    const key = this.getKey(src, sport, dst, dport, protocol);
+    let entries = this.connEntriesCache.get(key);
+    if (!entries)
+      entries = {};
+    entries[subKey] = value;
+    // refresh expiration time in cache and redis
+    this.connEntriesCache.set(key, entries, expr * 1000);
     const results = await rclient.multi()
       .hset(key, subKey, value)
       .expire(key, expr)
@@ -298,7 +305,13 @@ class Conntrack {
   }
 
   async setConnEntries(src, sport, dst, dport, protocol, obj, expr = 600) {
-    const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
+    const key = this.getKey(src, sport, dst, dport, protocol);
+    let entries = this.connEntriesCache.get(key);
+    if (!entries)
+      entries = {};
+    Object.assign(entries, obj);
+    // refresh expiration time in cache and redis
+    this.connEntriesCache.set(key, entries, expr * 1000);
     if (!_.isEmpty(obj)) {
       await rclient.multi()
         .hmset(key, obj)
@@ -311,7 +324,13 @@ class Conntrack {
     if (!_.isEmpty(entries)) {
       const pipeline = rclient.multi();
       entries.forEach(entry => {
-        const key = `conn:${entry.protocol && entry.protocol.toLowerCase()}:${entry.src}:${entry.sport}:${entry.dst}:${entry.dport}`;
+        const key = this.getKey(entry.src, entry.sport, entry.dst, entry.dport, entry.protocol);
+        let entries = this.connEntriesCache.get(key);
+        if (!entries)
+          entries = {};
+        Object.assign(entries, entry.data);
+        // refresh expiration time in cache and redis
+        this.connEntriesCache.set(key, entries, expr * 1000);
         pipeline.hset(key, entry.data);
         pipeline.expire(key, expr);
       });
@@ -321,23 +340,31 @@ class Conntrack {
 
   async delConnEntries(src, sport, dst, dport, protocol) {
     const key = this.getKey(src, sport, dst, dport, protocol)
+    this.connEntriesCache.del(key);
     await rclient.unlinkAsync(key)
   }
 
   async getConnEntry(src, sport, dst, dport, protocol, subKey, expr) {
-    const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
-    const result = await rclient.hgetAsync(key, subKey);
-    if (result && expr)
+    const key = this.getKey(src, sport, dst, dport, protocol);
+    const entries = this.connEntriesCache.get(key) || await rclient.hgetallAsync(key);
+    const result = entries && entries[subKey];
+    if (entries && expr) {
+      // refresh expiration time in cache and redis
+      this.connEntriesCache.set(key, entries, expr * 1000);
       rclient.expireAsync(key, expr).catch(()=>{})
+    }
     return result;
   }
 
   async getConnEntries(src, sport, dst, dport, protocol, expr) {
-    const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
-    const result = await rclient.hgetallAsync(key);
-    if (result && expr)
+    const key = this.getKey(src, sport, dst, dport, protocol);
+    const entries = this.connEntriesCache.get(key) || await rclient.hgetallAsync(key);
+    if (entries && expr) {
+      // refresh expiration time in cache and redis
+      this.connEntriesCache.set(key, entries, expr * 1000);
       rclient.expireAsync(key, expr).catch(()=>{})
-    return result;
+    }
+    return entries;
   }
 
   setConnRemote(protocol, ip, port) {
