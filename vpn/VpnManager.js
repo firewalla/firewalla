@@ -254,13 +254,13 @@ class VpnManager {
   }
 
   async unsetIp6tables() {
-    let serverNetwork = this.serverNetwork6;
+    let serverNetwork6 = this.serverNetwork6;
     if (this._currentServerNetwork6)
-      serverNetwork = this._currentServerNetwork6;
+      serverNetwork6 = this._currentServerNetwork6;
     if (!serverNetwork6) {
       return;
     }
-    log.info("VpnManager:UnsetIp6tables", serverNetwork);
+    log.info("VpnManager:UnsetIp6tables", serverNetwork6);
 
     // clean up
     await iptable.run(["sudo ip6tables -w -t nat -F FW_POSTROUTING_OPENVPN"]);
