@@ -1,4 +1,4 @@
-/*    Copyright 2021-2024 Firewalla Inc.
+/*    Copyright 2021-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -72,8 +72,10 @@ class Conntrack {
           const subnets = mIntf.ip4_subnets || [];
           for (const subnet of subnets) { // in most cases, each lan only has one IPv4 subnet
             for (const protocol of ["tcp", "udp"]) {
-              const lines = await exec(`sudo conntrack -L -s ${subnet} --reply-dst ${wanIP} -f ipv4 -p ${protocol}`, {maxBuffer: 4 * 1024 * 1024}).then(result => result.stdout.trim().split('\n').filter(Boolean));
-              log.info(`Found ${lines.length} IPv4 ${protocol} outbound connections from ${subnet} through ${wanIP} on wan ${wanIntf.name}`);
+              const lines = await exec(`sudo conntrack -L -s ${subnet} --reply-dst ${wanIP} -f ipv4 -p ${protocol}`, {maxBuffer: 4 * 1024 * 1024})
+                .then(result => result.stdout.trim().split('\n').filter(Boolean));
+              if (lines.length)
+                log.info(`Found ${lines.length} IPv4 ${protocol} outbound connections from ${subnet} through ${wanIP} on wan ${wanIntf.name}`);
               for (const line of lines) {
                 const conn = this.parseLine(protocol, line);
                 conn && await this.setConnEntry(conn.src, conn.sport, conn.dst, conn.dport, protocol, Constants.REDIS_HKEY_CONN_OINTF, wanIntf.uuid, 600);
@@ -82,8 +84,10 @@ class Conntrack {
           }
         }
         for (const protocol of ["tcp", "udp"]) {
-          const lines = await exec(`sudo conntrack -L -d ${wanIP} -f ipv4 -p ${protocol}`, {maxBuffer: 4 * 1024 * 1024}).then(result => result.stdout.trim().split('\n').filter(Boolean));
-          log.info(`Found ${lines.length} IPv4 ${protocol} inbound connections on wan ${wanIntf.name} ${wanIP}`);
+          const lines = await exec(`sudo conntrack -L -d ${wanIP} -f ipv4 -p ${protocol}`, {maxBuffer: 4 * 1024 * 1024})
+            .then(result => result.stdout.trim().split('\n').filter(Boolean));
+          if (lines.length)
+            log.info(`Found ${lines.length} IPv4 ${protocol} inbound connections on wan ${wanIntf.name} ${wanIP}`);
           for (const line of lines) {
             const conn = this.parseLine(protocol, line);
             if (conn && conn.dst !== conn.replysrc) // DNAT-ed IPv4 connection
@@ -107,8 +111,10 @@ class Conntrack {
           for (const subnet of subnets) { // in most cases, each lan only has one IPv4 subnet
             for (const protocol of ["tcp", "udp"]) {
               // use both vpn IP and connmark to match VPN interface in case multiple VPN clients have same IPs
-              const lines = await exec(`sudo conntrack -L -s ${subnet} --reply-dst ${localIP} -f ipv4 -p ${protocol} -m 0x${rtIdHex}/0xffff`, {maxBuffer: 4 * 1024 * 1024}).then(result => result.stdout.trim().split('\n').filter(Boolean));
-              log.info(`Found ${lines.length} established IPv4 ${protocol} outbound connections from ${subnet} through ${localIP} on ${profile.type} VPN client ${profileId}`);
+              const lines = await exec(`sudo conntrack -L -s ${subnet} --reply-dst ${localIP} -f ipv4 -p ${protocol} -m 0x${rtIdHex}/0xffff`, {maxBuffer: 4 * 1024 * 1024})
+                .then(result => result.stdout.trim().split('\n').filter(Boolean));
+              if (lines.length)
+                log.info(`Found ${lines.length} established IPv4 ${protocol} outbound connections from ${subnet} through ${localIP} on ${profile.type} VPN client ${profileId}`);
               for (const line of lines) {
                 const conn = this.parseLine(protocol, line);
                 conn && await this.setConnEntry(conn.src, conn.sport, conn.dst, conn.dport, protocol, Constants.REDIS_HKEY_CONN_OINTF, `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`, 600);
@@ -117,8 +123,10 @@ class Conntrack {
           }
         }
         for (const protocol of ["tcp", "udp"]) {
-          const lines = await exec(`sudo conntrack -L -d ${localIP} -f ipv4 -p ${protocol} -m 0x${rtIdHex}/0xffff`, {maxBuffer: 4 * 1024 * 1024}).then(result => result.stdout.trim().split('\n').filter(Boolean));
-          log.info(`Found ${lines.length} IPv4 ${protocol} inbound connections on VPN client ${profileId}`);
+          const lines = await exec(`sudo conntrack -L -d ${localIP} -f ipv4 -p ${protocol} -m 0x${rtIdHex}/0xffff`, {maxBuffer: 4 * 1024 * 1024})
+            .then(result => result.stdout.trim().split('\n').filter(Boolean));
+          if (lines.length)
+            log.info(`Found ${lines.length} IPv4 ${protocol} inbound connections on VPN client ${profileId}`);
           for (const line of lines) {
             const conn = this.parseLine(protocol, line);
             if (conn && conn.dst !== conn.replysrc) // DNAT-ed IPv4 connection
@@ -282,15 +290,32 @@ class Conntrack {
 
   async setConnEntry(src, sport, dst, dport, protocol, subKey, value, expr = 600) {
     const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
-    await rclient.hsetAsync(key, subKey, value);
-    await rclient.expireAsync(key, expr);
+    const results = await rclient.multi()
+      .hset(key, subKey, value)
+      .expire(key, expr)
+      .execAsync()
+    return results && results[0]
   }
 
   async setConnEntries(src, sport, dst, dport, protocol, obj, expr = 600) {
     const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
     if (!_.isEmpty(obj)) {
-      await rclient.hmsetAsync(key, obj);
-      await rclient.expireAsync(key, expr);
+      await rclient.multi()
+        .hmset(key, obj)
+        .expire(key, expr)
+        .execAsync()
+    }
+  }
+
+  async setConnEntriesWithExpire(entries, expr = 600) {
+    if (!_.isEmpty(entries)) {
+      const pipeline = rclient.multi();
+      entries.forEach(entry => {
+        const key = `conn:${entry.protocol && entry.protocol.toLowerCase()}:${entry.src}:${entry.sport}:${entry.dst}:${entry.dport}`;
+        pipeline.hset(key, entry.data);
+        pipeline.expire(key, expr);
+      });
+      await pipeline.execAsync();
     }
   }
 
@@ -303,7 +328,7 @@ class Conntrack {
     const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
     const result = await rclient.hgetAsync(key, subKey);
     if (result && expr)
-      await rclient.expireAsync(key, expr);
+      rclient.expireAsync(key, expr).catch(()=>{})
     return result;
   }
 
@@ -311,7 +336,7 @@ class Conntrack {
     const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
     const result = await rclient.hgetallAsync(key);
     if (result && expr)
-      await rclient.expireAsync(key, expr);
+      rclient.expireAsync(key, expr).catch(()=>{})
     return result;
   }
 

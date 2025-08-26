@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -147,6 +147,16 @@ class PublicIPSensor extends Sensor {
     const publicIPApis = [
       {
         url: "https://api.ipify.org?format=json",
+        followRedirect: false,
+        cb: (result) => {
+          if (result.body && result.body.ip)
+            return result.body.ip;
+          return null;
+        }
+      },
+      {
+        url: "https://api64.ipify.org?format=json",
+        followRedirect: false,
         cb: (result) => {
           if (result.body && result.body.ip)
             return result.body.ip;
@@ -155,6 +165,7 @@ class PublicIPSensor extends Sensor {
       },
       {
         url: "https://ipinfo.io",
+        followRedirect: false,
         cb: (result) => {
           if (result.body && result.body.ip)
             return result.body.ip;
@@ -176,9 +187,10 @@ class PublicIPSensor extends Sensor {
         if (publicIP)
           return publicIP;
       } catch (err) {
-        log.error("Failed to discover public ip, err:", err);
+        log.verbose("Failed to get public ip", err);
       }
     }
+    log.warn("Failed to discover public ip");
     return null;
   }
 

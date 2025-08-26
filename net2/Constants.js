@@ -1,4 +1,4 @@
-/*    Copyright 2020-2024 Firewalla Inc.
+/*    Copyright 2020-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -36,6 +36,8 @@ module.exports = {
   TRUST_IP_SET: "trust:ip",
   TRUST_DOMAIN_SET: "trust:domain",
 
+  PORT_DNS_TEST_SRC: 8855,
+
   REDIS_KEY_EID_REVOKE_SET: "sys:ept:members:revoked",
   REDIS_KEY_GROUP_NAME: "groupName",
   REDIS_KEY_DDNS_UPDATE: "ddns:update",
@@ -46,6 +48,8 @@ module.exports = {
   REDIS_KEY_ETH_INFO: "sys:ethInfo",
   REDIS_KEY_APP_TIME_USAGE_APPS: "app_time_usage_apps",
   REDIS_KEY_APP_TIME_USAGE_CATEGORY: "app_time_usage_category",
+  REDIS_KEY_RUN_REBOOT: "run:reboot",
+  REDIS_KEY_POLICY_ENFORCE_SPENT: 'policy:enforce:spend',
   REDIS_KEY_POLICY_STATE: 'policy:state',
   REDIS_KEY_EXT_SCAN_RESULT: "sys:scan:external",
   REDIS_KEY_WEAK_PWD_RESULT: "sys:scan:weak_password",
@@ -53,7 +57,22 @@ module.exports = {
   REDIS_KEY_NTP_SERVER_STATUS: "sys:ntp:status", // updated only when ntp_redirect is enabled
   REDIS_KEY_VPN_WG_PEER: 'vpn:wg:peer:', // vpn:wg:peer:{intf}:{pubkey}
   REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG: "app_time_usage_cloud_config",
+  REDIS_KEY_APP_TIME_USAGE_CONFIG: "app_time_usage_config",
+  REDIS_KEY_INTERNET_TIME_USAGE_CONFIG: "internet_time_usage_config",
   REDIS_KEY_HISTORY_MSG_PREFIX: "_hx:msg:",
+  REDIS_KEY_ALARM_CACHED: "_alarm:cached", // 0 to disable alarm cache, default on
+  REDIS_KEY_PLUGIN_RUNENV: '_plugin:runenv',
+  REDIS_KEY_HOST_ACTIVE: 'host:active:mac',
+  REDIS_KEY_HOST_PINNED: 'host:pinned:mac',
+  REDIS_KEY_HOST_DHCPCONF: 'host:dhcpconf:mac',
+  REDIS_KEY_WIRELESS_TAG_CANDIDATE: "wireless_tag_candidate:", // wireless_tag_candidate:${mac}
+  REDIS_KEY_POLICY_DISTURB_CLOUD_CONFIG: "policy_disturb_cloud_config",
+  REDIS_KEY_POLICY_DISTURB_CONFIG: "policy_disturb_config",
+  REDIS_KEY_NOISE_DOMAIN_CLOUD_CONFIG: "noise_domain_cloud_config",
+  REDIS_KEY_NOISE_DOMAIN_CONFIG: "noise_domain",
+  REDIS_KEY_MSP_DATA: "ext.guardian.data",
+  REDIS_KEY_DATA_PLAN_SETTINGS: "sys:data:plan",
+  REDIS_KEY_MSP_SYNC_OPS: "msp_sync_ops",
 
   REDIS_HKEY_NSE_DHCP: "dhcp",
   REDIS_HKEY_CONN_OINTF: "oIntf",
@@ -68,7 +87,9 @@ module.exports = {
   ST_IGNORE: 'ignore',
   ST_TIMEOUT: 'timeout',
 
-  FW_AP_MAC_PREFIX: "20:6D:31:61",
+  FW_OUI: "20:6D:31",
+  FW_AP_MAC_PREFIX: "20:6D:31:6",
+  FW_AP_CEILING_MAC_PREFIX: "20:6D:31:7",
   FW_AP_DEFAULT_DHCP_HOSTNAME: "FirewallaAP",
   VPN_ROUTE_MARK_KEY_PREFIX: "fwmark:vpn",
 
@@ -141,7 +162,19 @@ module.exports = {
 
   HOST_MAC_KEY_EXPIRE_SECS: 86400 * 365,
 
+  FEATURE_AUDIT_LOG: "acl_audit",
+  FEATURE_LOCAL_AUDIT_LOG: "local_audit",
   FEATURE_LOCAL_FLOW: "local_flow",
   FEATURE_VPN_DISCONNECT: "vpn_disconnect",
   FEATURE_VPN_RESTORE: "vpn_restore",
+  FEATURE_QUIC_LOG: "quic_log_reader",
+  
+  // all features starting with msp_ will be automatically disabled when box has left msp
+  FEATURE_MSP_SYNC_OPS: "msp_sync_ops",
+
+  POLICY_KEY_ISOLATION: "isolation",
+  POLICY_KEY_SSID_PSK: "ssidPSK",
+  POLICY_KEY_WIFI_AUTO_GROUP: "wifiAutoGroup",
+
+  LOG_PREFIX_QUIC: '[FW_QUIC]:',
 };

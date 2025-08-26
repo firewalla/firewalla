@@ -17,6 +17,8 @@ RAMFS_ROOT_PARTITION=no
 XT_TLS_SUPPORTED=no
 MAX_OLD_SPACE_SIZE=256
 HAVE_FWAPC=no
+HAVE_FWDAP=no
+WAN_INPUT_DROP_RATE_LIMIT=10
 
 hook_server_route_up() {
   echo nothing > /dev/null
@@ -102,6 +104,16 @@ function get_profile_default_name {
 
 function beep {
   return
+}
+
+function get_tls_ko_path {
+  module_name=$1
+  if [[ -z $module_name ]]; then
+    echo "Error: module_name is empty"
+    return 1
+  fi
+  ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/${module_name}.ko
+  echo $ko_path
 }
 
 case "$UNAME" in
@@ -200,15 +212,22 @@ case "$UNAME" in
     ;;
 esac
 
-function installTLSModule {
+function installTLSModule() {
   uid=$(id -u pi)
   gid=$(id -g pi)
-  if ! lsmod | grep -wq "xt_tls"; then
-    ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/xt_tls.ko
+  module_name=$1
+  if ! lsmod | grep -wq "${module_name}"; then
+
+    ko_path=$(get_tls_ko_path ${module_name})
+    if [[ -z $ko_path ]]; then
+      echo "Error: ko_path is empty"
+      return 1
+    fi
+
     if [[ -f $ko_path ]]; then
       sudo insmod ${ko_path} max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
     fi
-    so_path=${FW_PLATFORM_CUR_DIR}/files/shared_objects/$(lsb_release -cs)/libxt_tls.so
+    so_path=${FW_PLATFORM_CUR_DIR}/files/shared_objects/$(lsb_release -cs)/lib${module_name}.so
     if [[ -f $so_path ]]; then
       sudo install -D -v -m 644 ${so_path} /usr/lib/$(uname -m)-linux-gnu/xtables
     fi

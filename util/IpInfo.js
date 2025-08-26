@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla Inc.
+/*    Copyright 2019-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,7 +21,8 @@ class IpInfo {
 
   async get(ip) {
     const options = {
-      uri: "http://ipinfo.io/" + ip,
+      uri: "https://ipinfo.io/" + ip,
+      followRedirect: false,
       method: 'GET',
       timeout: 2000, // ms
       json: true,

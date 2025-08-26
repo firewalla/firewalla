@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,8 +23,11 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const scheduler = require('../util/scheduler.js');
 const Message = require('../net2/Message.js');
 const FireRouter = require('../net2/FireRouter.js');
+const sysManager = require('../net2/SysManager.js');
 const Config = require('../net2/config.js');
 const extensionManager = require('./ExtensionManager.js');
+
+const { exec } = require('child-process-promise');
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
 
@@ -54,12 +57,12 @@ class PcapPlugin extends Sensor {
     this.enabled = false;
     this.listenInterfaces = [];
     this.hookFeature(this.getFeatureName());
-    const restartJob = new scheduler.UpdateJob(this.restart.bind(this), 5000);
+    this.restartJob = new scheduler.UpdateJob(this.restart.bind(this), 5000);
     await this.initLogProcessing();
     sem.on(Message.MSG_PCAP_RESTART_NEEDED, (event) => {
       if (this.enabled) {
         log.info(`Received event ${Message.MSG_PCAP_RESTART_NEEDED}, will restart pcap tool ${this.constructor.name}`);
-        restartJob.exec().catch((err) => {
+        this.restartJob.exec().catch((err) => {
           log.error(`Failed to restart pcap job ${this.constructor.name}`, err.message);
         });
       }
@@ -70,7 +73,7 @@ class PcapPlugin extends Sensor {
         return;
       if (this.enabled) {
         log.info(`Received feature change event ${feature} ${status}, will restart pcap tool ${this.constructor.name}`);
-        restartJob.exec().catch((err) => {
+        this.restartJob.exec().catch((err) => {
           log.error(`Failed to restart pcap job ${this.constructor.name}`, err.message);
         });
       }
@@ -83,10 +86,14 @@ class PcapPlugin extends Sensor {
 
   }
 
+  isEnabled() {
+    return this.enabled;
+  }
+
   async globalOn() {
     this.enabled = true;
     log.info(`Pcap plugin ${this.getFeatureName()} is enabled`);
-    await this.restart().catch((err) => {
+    await this.restartJob.exec().catch((err) => {
       log.error(`Failed to start ${this.constructor.name}`, err.message);
     });
   }
@@ -116,6 +123,8 @@ class PcapPlugin extends Sensor {
       for (const intfName in intfNameMap) {
         if (!monitoringInterfaces.includes(intfName))
           continue;
+        if (intfName === Constants.INTF_AP_CTRL)
+          continue;
         const intf = intfNameMap[intfName];
         if (intf && intf.config && intf.config.assetsController) // bypass assets controller wireguard interface
           continue;
@@ -144,11 +153,37 @@ class PcapPlugin extends Sensor {
           monitoringIntfOptions[intfName] = { pcapBufsize: maxPcapBufsize };
         }
       }
-      if (monitoringInterfaces.length <= Object.keys(parentIntfOptions).length) {
+      if (monitoringInterfaces.length < Object.keys(parentIntfOptions).length) {
         this.listenInterfaces = Object.keys(monitoringIntfOptions);
+        this.listenOnParentIntf = false
         return monitoringIntfOptions;
       } else {
+        // remove "WAN" interface so there's less duplication of internet traffic
+        // assuming every bridge has gateway on the same parent interface
+        if (sysManager.isBridgeMode()) {
+          let gatewayIntf = null
+          for (const intfName of monitoringInterfaces) {
+            const intf = intfNameMap[intfName];
+            if (intfName.startsWith('br') && Array.isArray(_.get(intf, 'config.intf', null)) && intf.state.gateway) {
+              const gatewayMac = await sysManager.myGatewayMac(intfName);
+              const { stdout } = await exec(`bridge fdb show br ${intfName}`);
+              const lines = stdout.split('\n');
+              for (const line of lines) {
+                const [mac, , intf] = line.split(/\s+/)
+                if (mac.toUpperCase() == gatewayMac) {
+                  gatewayIntf = intf
+                  break
+                }
+              }
+              if (gatewayIntf) break
+            }
+          }
+          if (gatewayIntf)
+            delete parentIntfOptions[gatewayIntf.split('.')[0]];
+        }
+
         this.listenInterfaces = Object.keys(parentIntfOptions);
+        this.listenOnParentIntf = true
         return parentIntfOptions;
       }
     } else {

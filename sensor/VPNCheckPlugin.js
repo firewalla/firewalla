@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2019-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,7 +24,7 @@ const rp = require('request-promise');
 
 const config = require('../net2/config.js').getConfig();
 const exec = require('child-process-promise').exec;
-const spawn = require('child-process-promise').spawn;
+const spawn = require('child_process').spawn;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const delay = require('../util/util.js').delay;
 const f = require('../net2/Firewalla.js');
@@ -127,14 +127,13 @@ class VPNCheckPlugin extends Sensor {
       try {
         if (type == 'wireguard') {
           const conntrackCP = spawn('sudo', ['timeout', '10s', 'conntrack', '-E', '-p', 'udp', `--dport=${port}`, '-d', localIP, '-e', 'NEW']);
-          conntrackCP.catch((err) => { }); // killed by timeout
-          const conntrack = conntrackCP.childProcess;
-          conntrack.stdout.on('data', (data) => {
+          conntrackCP.on('error', () => { }); // killed by timeout
+          conntrackCP.stdout.on('data', (data) => {
             log.info(`Found connection to ${localIP} UDP port ${port}`, data.toString());
             conntrack_check_result = true;
           })
-          conntrack.stderr.on('data', (data) => { });
-          conntrack.on('close', (code) => { conntrack_check_done = true; });
+          conntrackCP.stderr.on('data', () => { });
+          conntrackCP.on('close', () => { conntrack_check_done = true; });
         }
       } catch (e) {
         conntrack_check_done = true;

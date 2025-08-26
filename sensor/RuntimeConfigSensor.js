@@ -41,10 +41,10 @@ class RuntimeConfigSensor extends Sensor {
   }
 
   async updateRedisConfig() {
-    // 900 seconds (15min) for one key change
-    // 500 seconds (8.3min) for 10 keys change
-    // 2 mins for 10000 keys change
-    const saveConfig = "900 10 500 100 120 100000"
+    // 900 seconds (15min) for 10 key change
+    // 600 seconds (10min) for 1000 keys change
+    // 5 mins for 100000 keys change
+    const saveConfig = "900 10 600 1000 300 100000"
     return exec(`redis-cli config set save "${saveConfig}"`)
   }
 
@@ -57,7 +57,7 @@ class RuntimeConfigSensor extends Sensor {
   }
 
   async updateFakeClock() {
-    return exec('sudo fake-hwclock');
+    return exec('sudo FILE=/data/fake-hwclock.data fake-hwclock');
   }
 }
 

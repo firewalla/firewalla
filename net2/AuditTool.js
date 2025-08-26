@@ -1,4 +1,4 @@
-/*    Copyright 2020-2024 Firewalla Inc.
+/*    Copyright 2020-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -37,27 +37,45 @@ class AuditTool extends LogQuery {
 
   includeFirewallaInterfaces() { return true }
 
-  optionsToFilter(options) {
-    const filter = super.optionsToFilter(options)
-    if (options.direction) filter.fd = options.direction;
-    delete filter.dnsFlow
-    return filter
+  // options here no longer serve as filter, just to query and format results
+  optionsToFeeds(options, macs) {
+    log.debug('optionsToFeeds', options)
+    const feedsArray = []
+    if (options.dns)
+      feedsArray.push(this.expendFeeds({macs, block: false, dns: true}))
+
+    if (options.auditDNSSuccess)
+      feedsArray.push(this.expendFeeds({macs, block: false, auditDNSSuccess: true}))
+    if (options.ntp)
+      feedsArray.push(this.expendFeeds({macs, block: false, ntp: true}))
+
+    if (options.audit)
+      feedsArray.push(this.expendFeeds({macs, block: true}))
+    if (options.localAudit) {
+      if (macs[0] === 'system')
+        feedsArray.push(this.expendFeeds({macs, block: true, local: true }))
+      else
+        feedsArray.push(this.expendFeeds({macs, block: true, local: true, exclude: [{dstMac: macs, fd: "out"}] }))
+    }
+
+    return [].concat(... feedsArray)
   }
 
   async getAuditLogs(options) {
-    options = options || {}
-    this.checkCount(options)
+    log.verbose('getAuditLogs', JSON.stringify(options))
+    options = this.checkArguments(options || {})
     const macs = await this.expendMacs(options)
 
-    const logs = await this.logFeeder(options, this.expendFeeds({macs}))
+    const feeds = this.optionsToFeeds(options, macs)
+    const logs = await this.logFeeder(options, feeds)
 
     return logs.slice(0, options.count)
   }
 
   toSimpleFormat(entry, options = {}) {
     const f = {
-      ltype: options.block == undefined || options.block ? 'audit' : 'flow',
-      type: options.dnsFlow ? 'dnsFlow' : entry.type,
+      ltype: options.dns || !options.block ? 'flow' : 'audit',
+      type: options.dns ? 'dnsFlow' : entry.type,
       ts: entry._ts || entry.ts + (entry.du || 0),
       count: entry.ct,
     };
@@ -82,15 +100,28 @@ class AuditTool extends LogQuery {
       if (entry.isoGID)
         f.isoGID = entry.isoGID;
       if (entry.isoNID)
-        f.isoNID = entry.isoNID;
+        f.isoNID = networkProfileManager.prefixMap[entry.isoNID] || entry.isoNID;
+      if (entry.isoLVL)
+        f.isoLVL = entry.isoLVL;
+      if (entry.orig)
+        f.orig = entry.orig;
+      if (entry.hasOwnProperty("isoExt"))
+        f.isoExt = entry.isoExt;
+      if (entry.hasOwnProperty("isoInt"))
+        f.isoInt = entry.isoInt;
+      if (entry.hasOwnProperty("isoHost"))
+        f.isoHost = entry.isoHost;
     }
 
-    if (entry.dmac) {
+    if (entry.dmac)
       f.dstMac = entry.dmac
-    }
-    if (entry.drl) {
+    if (entry.drl)
       f.drl = entry.drl
-    }
+    if (entry.dIntf)
+      f.dIntf = networkProfileManager.prefixMap[entry.dIntf] || entry.dIntf
+    if (entry.dstTags)
+      f.dstTags = entry.dstTags;
+
     if (entry.pid) {
       f.pid = entry.pid
     }
@@ -102,13 +133,15 @@ class AuditTool extends LogQuery {
     }
 
 
-    if (options.dnsFlow || entry.type == 'dns') {
+    if (options.dns || entry.type == 'dns') {
       f.domain = entry.dn
       if (entry.as) f.answers = entry.as
     } else {
       if (entry.tls) f.type = 'tls'
       f.fd = entry.fd
     }
+    if (options.local)
+      f.local = true
 
     try {
       if (entry.type == 'ip') {
@@ -127,7 +160,7 @@ class AuditTool extends LogQuery {
     }
 
     if (entry.type == 'dns' || entry.fd !== 'out') {
-      f.ip = entry.dh;
+      if (entry.dh) f.ip = entry.dh;
       f.deviceIP = entry.sh;
     } else { // ip.out
       f.ip = entry.sh;
@@ -138,10 +171,12 @@ class AuditTool extends LogQuery {
   }
 
   getLogKey(mac, options) {
-    // options.block == null is also counted here
-    return options.block == undefined || options.block
-      ? `audit:drop:${mac}`
-      : options.dnsFlow ? `flow:dns:${mac}` : `audit:accept:${mac}`
+    if (options.block)
+      return `audit:${options.local?'local:':''}drop:${mac}`
+    else
+      return options.dns ? `flow:dns:${mac}`
+        : options.auditDNSSuccess ? `audit:dns:${mac}`
+        : `audit:accept:${mac}`
   }
 }
 

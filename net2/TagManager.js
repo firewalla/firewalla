@@ -1,4 +1,4 @@
-/*    Copyright 2020-2024 Firewalla Inc.
+/*    Copyright 2020-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,7 +27,6 @@ const Constants = require('./Constants.js');
 const dnsmasq = new DNSMASQ();
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock()
-const KEY_TAG_INDEXED = 'tag:indexed'
 
 class TagManager {
   constructor() {
@@ -41,7 +40,24 @@ class TagManager {
       this.scheduleRefresh();
     });
 
-    if (f.isMain()) this.buildIndex()
+    if (f.isApi())
+      this.buildIndex();
+
+    if (f.isMain()) {
+      // periodically sync group macs to fwapc in case of inconsistency
+      setInterval(async () => {
+        if (sysManager.isIptablesReady()) {
+          for (const uid of Object.keys(this.tags)) {
+            const tag = this.tags[uid];
+            if (await this.tagUidExists(uid)) {
+              await Tag.scheduleFwapcSetGroupMACs(uid, tag.getTagType()).catch((err) => {
+                log.error(`Failed to sync macs to tag ${uid}`);
+              });
+            }
+          }
+        }
+      }, 900 * 1000);
+    }
 
     return this;
   }
@@ -248,12 +264,29 @@ class TagManager {
     return false;
   }
 
+  getTagByRadiusUser(radiusUser) {
+    for (const tag of Object.values(this.tags)) {
+        const radiusPolicy = tag.policy && tag.policy.freeradius_server;
+        if (radiusPolicy) {
+          const users = radiusPolicy.radius && radiusPolicy.radius.users;
+          if (!users || !_.isArray(users)) {
+            log.info(`users of tag ${tag.getUniqueId()} not found`);
+            continue;
+          }
+          log.verbose(`checking users of tag ${tag.getUniqueId()}`, users);
+          for (const user of users) {
+            if (user.username == radiusUser) {
+              return tag;
+            }
+          }
+      }
+    }
+    return null;
+  }
+
   // this should be run only 1 time
   async buildIndex() {
     try {
-      const indexed = await rclient.getAsync(KEY_TAG_INDEXED)
-      if (Number(indexed)) return
-
       log.info('Building tag indexes ...')
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const config = Constants.TAG_TYPE_MAP[type];
@@ -264,12 +297,12 @@ class TagManager {
         }
       }
 
-      await rclient.setAsync(KEY_TAG_INDEXED, 1)
+      // make sure tags are refreshed on all processes
+      this.subscriber.publish("DiscoveryEvent", "Tags:Updated");
 
       log.info('Tag indexes built')
     } catch(err) {
       log.error('Error building Tag indexes', err)
-      await rclient.setAsync(KEY_TAG_INDEXED, 0)
     }
   }
 
@@ -323,6 +356,7 @@ class TagManager {
         (async () => {
           await sysManager.waitTillIptablesReady()
           log.info(`Destroying environment for tag ${uid} ${removedTags[uid].name} ...`);
+          await removedTags[uid].resetPolicies();
           await removedTags[uid].destroyEnv();
           await removedTags[uid].destroy();
           await dnsmasq.writeAllocationOption(uid, {})
@@ -342,7 +376,7 @@ class TagManager {
   }
 
   async loadPolicyRules() {
-    await asyncNative.eachLimit(Object.values(this.tags), 10, id => id.loadPolicyAsync())
+    await asyncNative.eachLimit(Object.values(this.tags), 50, id => id.loadPolicyAsync())
   }
 }
 

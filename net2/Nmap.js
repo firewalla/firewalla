@@ -23,17 +23,18 @@ const Firewalla = require('./Firewalla.js');
 const networkTool = require('./NetworkTool.js')();
 const Message = require('../net2/Message.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-const SimpleCache = require('../util/SimpleCache.js')
+const LRU = require('lru-cache');
 
-const foundCache = new SimpleCache("foundCache", 60*10);
-const notFoundCache = new SimpleCache("notFoundCache", 60);
+const hitCache = new LRU({maxAge: 600000});
+const missCache = new LRU({maxAge: 60000});
+
 sem.on(Message.MSG_MAPPING_IP_MAC_DELETED, event => {
   const { ip, mac, fam } = event
   if (mac && ip && fam == 6) {
-    if (foundCache.lookup(ip) == mac)
-      delete foundCache.cache[ip]
-    if (notFoundCache.lookup(ip) == mac)
-      delete notFoundCache.cache[ip]
+    if (hitCache.peek(ip) == mac)
+      hitCache.del(ip)
+    if (missCache.peek(ip) == mac)
+      missCache.del(ip)
   }
 })
 
@@ -122,11 +123,11 @@ module.exports = class {
   }
 
   async neighborSolicit(ipv6Addr) {
-    let _mac = foundCache.lookup(ipv6Addr);
+    let _mac = hitCache.peek(ipv6Addr);
     if (_mac != null) {
       return _mac
     }
-    const notFoundRecently = notFoundCache.lookup(ipv6Addr);
+    const notFoundRecently = missCache.peek(ipv6Addr);
     if (notFoundRecently) {
       log.verbose(ipv6Addr, 'not found, skip')
       return null
@@ -144,11 +145,11 @@ module.exports = class {
     for (let i in hosts) {
       const host = hosts[i];
       if (host.mac) {
-        foundCache.insert(ipv6Addr, host.mac)
+        hitCache.set(ipv6Addr, host.mac)
         return host.mac
       }
     }
-    notFoundCache.insert(ipv6Addr, true)
+    missCache.set(ipv6Addr, true)
     return null
   }
 

@@ -1,4 +1,4 @@
-/*    Copyright 2021-2024 Firewalla Inc.
+/*    Copyright 2021-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,6 +27,11 @@ const lock = new AsyncLock();
 const util = require('util')
 const _ = require('lodash');
 const Constants = require('./Constants.js');
+const uuid = require('uuid');
+const POLICY_KEYS_SYNC_TO_MSP = ["tags", "userTags"];
+const fc = require('./config.js');
+
+const POLICY_KEYS_DEBUG_LOG = {dap: 1}
 
 // TODO: extract common methods like vpnClient() _dnsmasq() from Host, Identity, NetworkProfile, Tag
 class Monitorable {
@@ -97,10 +102,38 @@ class Monitorable {
 
   async onPolicyChange(channel, id, name, obj) {
     this.policy[name] = obj[name]
-    log.info(channel, id, obj);
+    if (POLICY_KEYS_DEBUG_LOG[name]) {
+      log.debug(channel, id, obj);
+    } else {
+      log.info(channel, id, obj);
+    }
     if (f.isMain()) {
       await sysManager.waitTillIptablesReady()
       this.scheduleApplyPolicy()
+    }
+    // sync policy change to msp for specific keys, e.g., group/user related changes
+    if (f.isApi() && POLICY_KEYS_SYNC_TO_MSP.includes(name) && obj.syncToMsp) {
+      const sl = require('../sensor/APISensorLoader.js');
+      const gs = sl.getSensor('GuardianSensor');
+      const value = {};
+      value[name] = obj[name];
+      const msg = {
+        mtype: "set",
+        id: uuid.v4(),
+        data: {
+          value,
+          item: "policy"
+        },
+        type: "jsonmsg",
+        target: id,
+        syncToMsp: true,
+        ts: Date.now() / 1000
+      };
+      if (gs && fc.isFeatureOn(Constants.FEATURE_MSP_SYNC_OPS)) {
+        await gs.enqueueOpToMsp(msg).catch((err) => {
+          log.error("Failed to enqueue op to msp", err);
+        });
+      }
     }
   }
 
@@ -126,6 +159,8 @@ class Monitorable {
       Object.assign(this.o, raw)
     else
       this.o = raw;
+
+    return Object.keys(raw)
   }
 
   toJson() {
@@ -145,7 +180,7 @@ class Monitorable {
       }
       if (validTags.length) policy[policyKey] = validTags
     }
-    return Object.assign(JSON.parse(JSON.stringify(this.o)), {policy})
+    return JSON.parse(JSON.stringify(Object.assign({}, this.o, {policy})))
   }
 
   getUniqueId() { throw new Error('Not Implemented') }
@@ -203,7 +238,7 @@ class Monitorable {
     return util.callbackify(this.setPolicyAsync).bind(this)(name, data, callback)
   }
 
-  async setPolicyAsync(name, data) {
+  async setPolicyAsync(name, data, syncToMsp = false) {
     // policy should be in sync once object is initialized
     if (!this.policy) await this.loadPolicyAsync();
 
@@ -215,6 +250,8 @@ class Monitorable {
 
     const obj = {};
     obj[name] = data;
+    if (syncToMsp)
+      obj.syncToMsp = true;
 
     messageBus.publish(this.constructor.getPolicyChangeCh(), this.getGUID(), name, obj)
     return obj
@@ -414,6 +451,10 @@ class Monitorable {
         await this._extractAllTags(uid, type, transitiveTags);
     }
     return transitiveTags;
+  }
+
+  getPolicyFast(policyKey) {
+    return _.get(this.policy, policyKey);
   }
 }
 

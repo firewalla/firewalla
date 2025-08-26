@@ -19,20 +19,11 @@ let should = chai.should;
 let expect = chai.expect;
 let assert = chai.assert;
 
-let redis = require('redis');
-let rclient = redis.createClient();
-
-let sem = require('../sensor/SensorEventManager.js').getInstance();
-
 let sample = require('./sample_data');
 
-let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
-
 let muk = require('muk');
-
-Promise.promisify(muk);
+const util = require('util')
+util.promisify(muk);
 
 let Samba = require('../extension/samba/samba.js');
 let samba = new Samba();

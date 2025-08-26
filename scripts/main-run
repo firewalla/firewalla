@@ -78,6 +78,11 @@ $FIREWALLA_HOME/scripts/update_crontab.sh
 fire_time_out=$($FIREWALLA_HOME/scripts/fire-time.sh)
 logger "FIREWALLA:MAIN-RUN:FIRETIME:END"+"set time to $fire_time_out"
 
+$FIREWALLA_HOME/scripts/prepare_assets_list.sh
+sudo rm -r -f /tmp/*
+timeout 1200 $FIREWALLA_HOME/scripts/update_assets.sh &>/dev/null &
+UPDATE_ASSETS_PID=$!
+
 # prepare Firewalla run time environment
 logger "FIREWALLA:MAIN-RUN:PREP"
 sudo $FIREWALLA_HOME/scripts/main-prep
@@ -94,6 +99,9 @@ fi
 logger "FIREWALLA:MAIN-RUN:MAIN-START"
 redis-cli del sys:upgrade >/dev/null
 redis-cli publish FIREWALLA:HEARTBEAT:UPDATE '{"invoked-by":"firewalla"}' >/dev/null
+mkdir -p $FIREWALLA_HIDDEN/config/assets_extra
+rm -rf $FIREWALLA_HIDDEN/config/assets_extra/*
+ASSETSD_PATH=$FIREWALLA_HIDDEN/config/assets.fwapc timeout 90 $FIREWALLA_HOME/scripts/update_assets.sh > /tmp/fwapcupgrade.log
 $FIREWALLA_HOME/scripts/main-start
 
 # cleanup overlay backups from a previous reset
@@ -115,9 +123,9 @@ else
     sudo service watchdog stop
     echo "WatchDog Stopped"
     $FIREWALLA_HOME/scripts/fire-ping.sh
-    sleep 3
-
+    
     if [[ $MANAGED_BY_FIREROUTER != "yes" ]]; then
+      sleep 3
       sudo service watchdog start
       echo "WatchDog Started"
       logger "FIREWALLA:WATCHDOG:ENABLED"
@@ -141,6 +149,6 @@ if [[ -d $POST_MAIN_D ]]; then
 fi
 
 sudo $FIREWALLA_HOME/scripts/apply_profile.sh -f &> /tmp/apply_profile-main-run.log
-timeout 1200 $FIREWALLA_HOME/scripts/update_assets.sh &>/dev/null
+wait $UPDATE_ASSETS_PID
 
 logger "FIREWALLA:MAIN-RUN:DONE"

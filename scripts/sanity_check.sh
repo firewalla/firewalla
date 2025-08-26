@@ -85,6 +85,9 @@ element_in() {
 }
 
 declare -A NETWORK_UUID_NAME
+declare -A WGPEER_IP
+declare -A WGPEER_NAME
+declare WGPEER_NID
 frcc_done=0
 frcc() {
     if [[ $ROUTER_MANAGED == "no" ]]; then
@@ -96,6 +99,18 @@ frcc() {
         jq -r '.interface | to_entries[].value | to_entries[].value.meta | .uuid, .name' /tmp/scc_config |
         while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
             NETWORK_UUID_NAME[${ARY[0]}]=${ARY[1]}
+        done
+
+        WGPEER_NID=$(jq -r '.interface.wireguard.wg0.meta.uuid' /tmp/scc_config)
+
+        jq -r '.interface.wireguard.wg0.peers[]? | .publicKey, [.allowedIPs[] | select(endswith("/32"))][0]' /tmp/scc_config |
+        while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
+            WGPEER_IP[${ARY[0]}]=${ARY[1]}
+        done
+
+        jq -r '.interface.wireguard.wg0.extra.peers[]? | .publicKey, .name' /tmp/scc_config |
+        while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
+            WGPEER_NAME[${ARY[0]}]=${ARY[1]}
         done
 
         frcc_done=1
@@ -164,7 +179,7 @@ get_system_policy() {
   if [ "$system_policy_done" -eq "0" ]; then
     read_hash SP policy:system
     system_policy_done=1
-    VPNClients=($(jq -r 'if .multiClients then .multiClients[]|.[.type].profileId else .[.type//empty].profileId end' <<< "${SP[vpnClient]}"))
+    mapfile -t VPNClients < <(jq -r 'if .multiClients then .multiClients[]|.[.type].profileId else .[.type//empty].profileId end' <<< "${SP[vpnClient]}")
   fi
 }
 
@@ -273,12 +288,12 @@ check_each_system_service() {
     local EXPECTED_STATUS=$2
     local RESTART_TIMES=$(systemctl show "$1" -p NRestarts | awk -F= '{print $2}')
     local ACTUAL_STATUS=$(systemctl status "$1" | grep 'Active: ' | sed 's=Active: ==')
-    printf "%20s %10s %5s %s\n" "$SERVICE_NAME" "$EXPECTED_STATUS" "$RESTART_TIMES" "$ACTUAL_STATUS"
+    printf "%20s %10s %10s %s\n" "$SERVICE_NAME" "$EXPECTED_STATUS" "$RESTART_TIMES" "$ACTUAL_STATUS"
 }
 
 check_systemctl_services() {
     echo "----------------------- System Services ----------------------------"
-    printf "%20s %10s %5s %s\n" "Service Name" "Expect" "RestartedTimes" "Actual"
+    printf "%20s %10s %10s %s\n" "Service Name" "Expect" "Restarted" "Actual"
 
     check_each_system_service fireapi "running"
     check_each_system_service firemain "running"
@@ -291,7 +306,7 @@ check_systemctl_services() {
     check_each_system_service fireboot "dead"
 
     get_system_policy
-    if fgrep -q '"state":true' <<< $SP[vpn]
+    if grep -F -q '"state":true' <<< "${SP[vpn]}"
     then
       vpn_run_state='running'
     else
@@ -315,7 +330,7 @@ check_systemctl_services() {
 check_rejection() {
     echo "----------------------- Node Rejections ----------------------------"
 
-    find /home/pi/logs/ -type f -mtime -2 -exec bash -c 'grep -a "Possibly Unhandled Rejection" -A 10 -B 2 {} | tail -n 300' \;
+    find /home/pi/logs/ -type f -mtime -2 -exec bash -c 'grep -a "Possibly Unhandled Rejection" -A 10 -B 2 $1 | tail -n 300' shell {} \;
 
     echo ""
     echo ""
@@ -324,7 +339,7 @@ check_rejection() {
 check_exception() {
     echo "----------------------- Node Exceptions ----------------------------"
 
-    find /home/pi/logs/ -type f -mtime -2 -exec bash -c "egrep -a -H -i '##### CRASH #####' -A 20 {} | tail -n 300" \;
+    find /home/pi/logs/ -type f -mtime -2 -exec bash -c 'grep -a -H -i "##### CRASH #####" -A 20 $1 | tail -n 300' shell {} \;
 
     echo ""
     echo ""
@@ -399,7 +414,10 @@ get_auto_upgrade() {
 }
 
 check_firerouter_hash() {
-  pushd "$FIREROUTER_HOME" &>/dev/null
+  if ! pushd "$FIREROUTER_HOME" &>/dev/null; then
+      printf "no firerouter"
+      return
+  fi
 
   if git merge-base --is-ancestor 97a43b9faf0492b3a4a96628ea6c23246524fb90 HEAD &>/dev/null; then
     git rev-parse @
@@ -416,10 +434,34 @@ check_system_config() {
     declare -A c
     read_hash c sys:config
 
+    print_config 'OS Version' "$(grep VERSION_ID /etc/os-release | cut -d= -f2 | tr -d '"')"
+    print_config 'Kernel Version' "$(cut -d' ' -f3-4 /proc/version)"
+    echo
+
     for hkey in "${!c[@]}"; do
         print_config "$hkey" "${c[$hkey]}"
     done
     print_config 'version' "$(jq -c .version /home/pi/firewalla/net2/config.json)"
+
+    pushd "$FIREWALLA_HOME" &>/dev/null
+    branch="$(git rev-parse --abbrev-ref HEAD)"
+    release=branch
+    case "$branch" in
+      "release_6_0")
+        release="prod"
+        ;;
+      "beta_6_0")
+        release="beta"
+        ;;
+      "beta_7_0")
+        release="alpha"
+        ;;
+      "master")
+        release="dev"
+        ;;
+    esac
+    print_config 'release' "$release"
+    popd &>/dev/null
 
     echo ""
 
@@ -536,7 +578,12 @@ check_policies() {
             else
                 SCOPE="${TAG%%:*}:$(get_tag_name "$TAG")"
             fi
-        elif [[ ! -n $SCOPE ]]; then
+        elif [[ -n ${p[guids]} ]]; then
+            GUID="${p[guids]:2:-2}"
+            if [[ "$GUID" == "wg_peer:"* ]]; then
+                SCOPE="wg:${WGPEER_NAME[${GUID:8}]}"
+            fi
+        elif [[ -z $SCOPE ]]; then
             SCOPE="All Devices"
         fi
 
@@ -573,8 +620,12 @@ check_policies() {
         unset p
     done
 
+    D="\e[2m"
+    U="\e[0m"
     echo ""
-    echo "Note: * - created from alarm, ** - created from network flow"
+    echo    "    *: created from alarm"
+    echo    "   **: created from network flow"
+    echo -e "Abbr.: Dir${D}ection$U Proto${D}col$U L${D}ocal${U}Port R${D}emote${U}Port Dis${D}abled$U"
 
     echo ""
     echo "QoS Rules:"
@@ -594,7 +645,7 @@ check_policies() {
 
 is_router() {
     local GW=$(/sbin/ip route show | awk '/default via/ {print $3}')
-    if [[ $GW == $1 ]]; then
+    if [[ $GW == "$1" ]]; then
         return 0
     else
         return 1
@@ -647,17 +698,17 @@ check_hosts() {
     else
       B7_Placeholder='%.s'
     fi
-    printf "%35s %15s %16s %18s %3s$B7_Placeholder %2s %11s %7s %6s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s\n" \
-      "Host" "Network" "IP" "MAC" "Mon" "B7" "Ol" "VPNClient" "FlowOut" "FlowIn" "Grp" "Usr" "DvT" "EA" "DNS" "AdB" "Fam" "SS" "DoH" "Ubd"
+    printf "%35s %15s %16s %18s %3s$B7_Placeholder %2s %11s %7s %6s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s %3s\n" \
+      "Host" "Network" "IP" "MAC" "Mon" "B7" "Ol" "VPNClient" "FlowOut" "FlowIn" "Grp" "Usr" "DvT" "VqL" "Iso" "EA" "DNS" "AdB" "Fam" "SS" "DoH" "Ubd" "NTP"
     NOW=$(date +%s)
     frcc
 
 
     local FIREWALLA_MAC="$(ip link list | awk '/ether/ {print $2}' | sort | uniq)"
 
-    local hierarchicalPolicies=()
-    local policyNames=("adblock" "safeSearch" "doh" "unbound")
-    local featureNames=("adblock" "safe_search" "doh" "unbound")
+    local hierarchicalPolicies=('isolation')
+    local policyNames=("adblock" "safeSearch" "doh" "unbound" "ntp_redirect")
+    local featureNames=("adblock" "safe_search" "doh" "unbound" "ntp_redirect")
 
     # family native mode doesn't have 'family_protect' enabled but are all standalone app controlled rules
     if [[ "$(jq -r ".family | select(.state == true) | .mode" <<< "${SP[app]}")" == "native" ]]; then
@@ -676,43 +727,63 @@ check_hosts() {
 
     # typeset -p hierarchicalPolicies
 
-    local DEVICES=$(redis-cli keys 'host:mac:*')
-    for DEVICE in $DEVICES; do
-        local MAC=${DEVICE/host:mac:/""}
-        # hide vpn_profile:*
-        if [[ ${MAC,,} == "vpn_profile:"* ]]; then
-            continue
-        fi
+    local MACs
+    mapfile -t MACs < <(redis-cli zrevrangebyscore host:active:mac +inf "$(date -d '30 days ago' +%s)");
+    if [[ -z ${MACs[*]} ]]; then
+        mapfile -t MACs < <(redis-cli keys 'host:mac:*' | cut -d: -f3-)
+    fi
 
+    MACs=( "${MACs[@]}" "${!WGPEER_IP[@]}" )
+
+    for MAC in "${MACs[@]}"; do
         local IS_FIREWALLA
         if echo "$FIREWALLA_MAC" | grep -wiq "$MAC"; then
           IS_FIREWALLA=1 # true
+          continue
         else
           IS_FIREWALLA=0 # false
         fi
 
-        declare -A h
-        read_hash h "$DEVICE"
+        if [[ -n ${WGPEER_NAME[$MAC]+x} ]]; then
+          local NAME="${WGPEER_NAME[$MAC]}"
+          local nid=$WGPEER_NID
+          local POLICY_MAC="policy:wg_peer:${MAC}"
+          local IP=${WGPEER_IP[$MAC]/\/32/""}
+          local taggedMac="wg_peer:$MAC"
+          local ONLINE=" "
+        else
+          declare -A h
+          read_hash h "host:mac:$MAC"
 
-        local ONLINE_TS=${h[lastActiveTimestamp]}
-        ONLINE_TS=${ONLINE_TS%.*}
-        if [[ -z $ONLINE_TS ]]; then
+          local ONLINE_TS=${h[lastActiveTimestamp]}
+          ONLINE_TS=${ONLINE_TS%.*}
+          if [[ -z $ONLINE_TS ]]; then
             local ONLINE="NA"
-        elif ((ONLINE_TS < NOW - 2592000)); then # 30days ago, hide entry
+          elif ((ONLINE_TS < NOW - 2592000)); then # 30days ago, hide entry
             unset h
             continue
-        elif ((ONLINE_TS > NOW - 600)); then
+          elif ((ONLINE_TS > NOW - 600)); then
             local ONLINE="T"
-        else
+          else
             local ONLINE=
-        fi
+          fi
 
-        local NAME="${h[name]}"
-        if [[ -z "$NAME" ]]; then NAME="$( jq -re 'select(has("name")) | .name' <<< "${h[detect]}" )"; fi
-        if [[ -z "$NAME" ]]; then NAME="${h[bname]}"; fi
-        if [[ -z "$NAME" ]]; then NAME="${h[dhcpName]}"; fi
-        if [[ -z "$NAME" ]]; then NAME="${h[bonjourName]}"; fi
-        if [[ -z "$NAME" ]]; then NAME="${h[ssdpName]}"; fi
+          local NAME="${h[name]}"
+          if [[ -z "$NAME" ]]; then NAME="$( jq -re 'select(has("name")) | .name' <<< "${h[detect]}" )"; fi
+          if [[ -z "$NAME" ]]; then NAME="${h[bname]}"; fi
+          if [[ -z "$NAME" ]]; then NAME="${h[dhcpName]}"; fi
+          if [[ -z "$NAME" ]]; then NAME="${h[bonjourName]}"; fi
+          if [[ -z "$NAME" ]]; then NAME="${h[ssdpName]}"; fi
+
+          local nid="${h[intf]}"
+
+          local POLICY_MAC="policy:mac:${MAC}"
+
+          local IP=${h[ipv4Addr]}
+
+          local taggedMac="$MAC"
+        fi
+        # echo "$NAME $IP $POLICY_MAC $nid"
 
         declare -A fcv # feature color value
 
@@ -727,14 +798,20 @@ check_hosts() {
           fi
         done
 
-        local nid=${h[intf]}
         local NETWORK_NAME=
-        if [[ -n ${h[intf]+x} ]]; then
-          NETWORK_NAME=${NETWORK_UUID_NAME[${h[intf]}]}
+        if [[ -n $nid ]]; then
+          NETWORK_NAME=${NETWORK_UUID_NAME[$nid]}
           for policy in "${hierarchicalPolicies[@]}"; do
             if [[ -n ${NP[$nid,$policy]+x} ]]; then
-              [[ ${NP[$nid,$policy]} == *"true"* ]] && set_color_value "$policy" "T"
-              [[ ${NP[$nid,$policy]} == *"null"* ]] && set_color_value "$policy" "F"
+              if [ "$policy" == "isolation" ]; then
+                if [[ "${NP[$nid,isolation]}" == *'"external":true'* ]]; then
+                  set_color_value vql "T"
+                  [[ "${NP[$nid,isolation]}" == *'"internal":true'* ]] && set_color_value iso "T"
+                fi
+              else
+                [[ ${NP[$nid,$policy]} == *"true"* ]] && set_color_value "$policy" "T"
+                [[ ${NP[$nid,$policy]} == *"null"* ]] && set_color_value "$policy" "F"
+              fi
             fi
             # echo $policy $uid ${NP[$uid,$policy]} ${fcv[$policy,v]}
           done
@@ -744,33 +821,38 @@ check_hosts() {
         fi
 
         local MAC_VENDOR=${h[macVendor]}
-        local POLICY_MAC="policy:mac:${MAC}"
 
         declare -A p
-        read_hash p $POLICY_MAC
+        read_hash p "$POLICY_MAC"
 
-        local IP=${h[ipv4Addr]}
         if [[ -n $IP ]] && [[ "$(jq -r '.allocations[] | select(.type=="static") | .ipv4' <<< "${p[ipAllocation]}")" == $IP ]]; then
           IP="*$IP"
         fi
 
-        local TAGS=${p[tags]//[\][\" ]/}
-        local USER_TAGS=${p[userTags]//[\][\" ]/}
-        local DEVICE_TAGS=${p[deviceTags]//[\][\" ]/}
+        local TAGS=${p[tags]//[\]\[\" ]/}
+        local USER_TAGS=${p[userTags]//[\]\[\" ]/}
+        local DEVICE_TAGS=${p[deviceTags]//[\]\[\" ]/}
 
         for tag in $TAGS; do
           get_tag_policy "$tag"
           for policy in "${hierarchicalPolicies[@]}"; do
             if [[ -n ${TP[$tag,$policy]+x} ]]; then
-              [[ ${TP[$tag,$policy]} == *"true"* ]] && set_color_value "$policy" "T"
-              [[ ${TP[$tag,$policy]} == *"null"* ]] && set_color_value "$policy" "F"
-              # echo $policy $tag ${TP[$tag,$policy]} ${fcv[$policy,v]}
+              if [ "$policy" == "isolation" ]; then
+                if [[ "${TP[$tag,isolation]}" == *'"external":true'* ]]; then
+                  set_color_value vql "T"
+                  [[ "${TP[$tag,isolation]}" == *'"internal":true'* ]] && set_color_value iso "T"
+                fi
+              else
+                [[ ${TP[$tag,$policy]} == *"true"* ]] && set_color_value "$policy" "T"
+                [[ ${TP[$tag,$policy]} == *"null"* ]] && set_color_value "$policy" "F"
+                # echo $policy $tag ${TP[$tag,$policy]} ${fcv[$policy,v]}
+              fi
             fi
           done
         done
 
         local MONITORING=
-        if ((IS_FIREWALLA)) || is_router ${h[ipv4Addr]}; then
+        if ((IS_FIREWALLA)) || is_router "$IP"; then
             MONITORING="NA"
         elif [ -z ${p[monitor]+x} ] || [[ ${p[monitor]} == "true" ]]; then
             MONITORING=""
@@ -778,7 +860,7 @@ check_hosts() {
             MONITORING="F"
         fi
         if [[ $SIMPLE_MODE == "T" ]]; then
-          local B7_MONITORING_FLAG=$(redis-cli sismember monitored_hosts "${h[ipv4Addr]}")
+          local B7_MONITORING_FLAG=$(redis-cli sismember monitored_hosts "$IP")
           local B7_MONITORING=""
           if [[ $B7_MONITORING_FLAG == "1" ]]; then
             B7_MONITORING="T"
@@ -794,18 +876,25 @@ check_hosts() {
         local VPN=$( ((${#p[vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${p[vpnClient]}" || echo -n "")
         if ! element_in "$VPN" "${VPNClients[@]}" && [[ "$VPN" != VWG:* ]]; then VPN=""; fi
 
-        local FLOWINCOUNT=$(redis-cli zcount flow:conn:in:$MAC -inf +inf)
+        local FLOWINCOUNT=$(redis-cli zcard flow:conn:in:$taggedMac)
         # if [[ $FLOWINCOUNT == "0" ]]; then FLOWINCOUNT=""; fi
-        local FLOWOUTCOUNT=$(redis-cli zcount flow:conn:out:$MAC -inf +inf)
+        local FLOWOUTCOUNT=$(redis-cli zcard flow:conn:out:$taggedMAC)
         # if [[ $FLOWOUTCOUNT == "0" ]]; then FLOWOUTCOUNT=""; fi
 
         # local DNS_BOOST=$(jq -r 'select(.dnsCaching == false) | "F"' <<< "${p[dnsmasq]}")
         local DNS_BOOST=$(if [[ ${p[dnsmasq]} == *"false"* ]]; then echo "F"; fi)
 
-        for policy in ${hierarchicalPolicies[@]}; do
+        for policy in "${hierarchicalPolicies[@]}"; do
           if [ -n "${p[$policy]+x}" ]; then
-            [[ "${p[$policy]}" == *"true"* ]] && set_color_value $policy "T" 1
-            [[ "${p[$policy]}" == *"null"* ]] && set_color_value $policy "F" 1
+            if [ "$policy" == "isolation" ]; then
+              if [[ "${p[isolation]}" == *'"external":true'* ]]; then
+                set_color_value vql "T" 1
+                [[ "${p[isolation]}" == *'"internal":true'* ]] && set_color_value iso "T" 1
+              fi
+            else
+              [[ "${p[$policy]}" == *"true"* ]] && set_color_value $policy "T" 1
+              [[ "${p[$policy]}" == *"null"* ]] && set_color_value $policy "F" 1
+            fi
             # echo "$policy | ${p[$policy]} | ${fcv[$policy,v]}"
           fi
         done
@@ -819,9 +908,9 @@ check_hosts() {
         local BGC="\e[49m"  # background color
         local BGUC="\e[49m" # background uncolor
         if [[ $SIMPLE_MODE == "T" && -n $ONLINE && -z $MONITORING && $B7_MONITORING == "F" ]] &&
-          ((! IS_FIREWALLA)) && ! is_router ${h[ipv4Addr]}; then
+          ((! IS_FIREWALLA)) && ! is_router $IP; then
             FC="\e[91m"
-        elif [ $FLOWINCOUNT -gt 2000 ] || [ $FLOWOUTCOUNT -gt 2000 ]; then
+        elif [ $FLOWINCOUNT -gt 5000 ] || [ $FLOWOUTCOUNT -gt 100 ]; then
             FC="\e[33m" #yellow
         fi
         if [[ ${NAME,,} == "circle"* || ${MAC_VENDOR,,} == "circle"* ]]; then
@@ -829,7 +918,7 @@ check_hosts() {
         fi
 
         local MAC_COLOR="$FC"
-        if [[ $MAC =~ ^.[26AEae].*$ ]] && ((! IS_FIREWALLA)); then
+        if [[ $MAC =~ ^.[26AEae].*$ ]] && ((! IS_FIREWALLA)) && [[ -z ${WGPEER_NAME[$MAC]+x} ]]; then
           MAC_COLOR="\e[35m"
         fi
 
@@ -842,9 +931,9 @@ check_hosts() {
             FC=$FC"\e[2m" #dim
         fi
 
-        printf "$BGC$FC%35s %15s %16s $MAC_COLOR%18s$FC %3s$B7_Placeholder %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s ${fcv[acl,c]}%3s$UC %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC$BGUC\n" \
-          "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$(align::right 11 $VPN)" "$FLOWINCOUNT" \
-          "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "${fcv[acl,v]}" "$DNS_BOOST" "${fcv[adblock,v]}" "${fcv[family,v]}" "${fcv[safeSearch,v]}" "${fcv[doh,v]}" "${fcv[unbound,v]}"
+        printf "$BGC$FC%35s %15s %16s $MAC_COLOR%18s$FC %3s$B7_Placeholder %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s ${fcv[vql,c]}%3s$UC ${fcv[iso,c]}%3s$UC ${fcv[acl,c]}%3s$UC %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC ${fcv[ntp_redirect,c]}%3s$UC$BGUC\n" \
+          "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$IP" "$(align::right 18 "$MAC")" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$(align::right 11 $VPN)" "$FLOWINCOUNT" \
+          "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "${fcv[vql,v]}" "${fcv[iso,v]}" "${fcv[acl,v]}" "$DNS_BOOST" "${fcv[adblock,v]}" "${fcv[family,v]}" "${fcv[safeSearch,v]}" "${fcv[doh,v]}" "${fcv[unbound,v]}" "${fcv[ntp_redirect,v]}"
 
         unset h
         unset p
@@ -860,7 +949,8 @@ check_hosts() {
 
     echo ""
     echo    "    *: Reserved IP"
-    echo -e "Abbr.: Mon${D}(Monitoring)$U B7${D}(Spoofing Flag)$U Ol${D}(Online)$U DvT${D}(Device Type)$U EA${D}(Emergency Access)$U SS${D}(Safe Search)$U DoH${D}(DNS over HTTPS)$U Ubd${D}(Unbound)$U"
+    echo -e "Abbr.: Mon${D}itoring$U B7${D}(Spoofing Flag)$U Ol${D}(Online)$U DvT${D}(Device Type)$U VqL${D}an$U Iso${D}lation$U EA${D}(Emergency Access)$U SS${D}(Safe Search)$U DoH${D}(DNS over HTTPS)$U Ubd${D}(Unbound)$U NTP${D} Intercept$U"
+    echo -e "Note : Feature flags marked in grey are inherented from upper levels, which are tag, network, or system"
     echo ""
 }
 
@@ -951,7 +1041,7 @@ check_sys_features() {
     nameMap[compress_flows]="Compress Flow"
     nameMap[event_collect]="Events"
     nameMap[mesh_vpn]="Mesh VPN"
-    nameMap[redirect_httpd]="Legacy API service"
+    nameMap[redirect_httpd]="Legacy block service"
     nameMap[upstream_dns]="Legacy DNS -should be off-"
 
     for key in "${keyList[@]}"; do
@@ -960,7 +1050,7 @@ check_sys_features() {
         fi
     done
 
-    for key in ${!SF[@]}; do
+    for key in "${!SF[@]}"; do
         [ -z "${nameMap[$key]+x}" ] && print_config "" "${SF[$key]}" "$key"
     done
 
@@ -1002,7 +1092,7 @@ check_network() {
         DNS_CONFIG[${ARY[0]}]=${ARY[1]}
       done
 
-    >/tmp/scc_csv
+    :>/tmp/scc_csv # clear file
     for INTF in $INTFS; do
       jq -rj ".[\"$INTF\"] | if (.state.ip6 | length) == 0 then .state.ip6 |= [] else . end | [\"$INTF\", .config.meta.name, .config.meta.uuid, .state.ip4, .state.gateway, (.state.ip6 | join(\"|\")), .state.gateway6, (.state.dns // [] | join(\";\"))] | @tsv" /tmp/scc_interfaces >>/tmp/scc_csv
       echo "" >> /tmp/scc_csv
@@ -1010,7 +1100,7 @@ check_network() {
 
     get_system_policy
 
-    printf "Interface\tName\tUUID\tIPv4\tGateway\tIPv6\tGateway6\tDNS\tvpnClient\tAdB\tFam\tSS\tDoH\tubn\n" >/tmp/scc_csv_multline
+    printf "Interface\tName\tUUID\tIPv4\tGateway\tIPv6\tGateway6\tDNS\tvpnClient\tAdB\tFam\tSS\tDoH\tUbd\tNTP\n" >/tmp/scc_csv_multline
     while read -r LINE; do
       mapfile -td $'\t' COL < <(printf "%s" "$LINE")
       # read multi line fields into array
@@ -1041,6 +1131,7 @@ check_network() {
       local SAFE_SEARCH=$(if [[ ${NP[$id,safeSearch]} == *"true"* ]]; then echo "T"; fi)
       local DOH=$(if [[ ${NP[$id,doh]} == *"true"* ]]; then echo "T"; fi)
       local UNBOUND=$(if [[ ${NP[$id,unbound]} == *"true"* ]]; then echo "T"; fi)
+      local NTP=$(if [[ ${NP[$id,ntp_redirect]} == *"true"* ]]; then echo "T"; fi)
 
 
       local LINE_COUNT=$(( "${#IP6[@]}" > "${#DNS[@]}" ? "${#IP6[@]}" : "${#DNS[@]}" ));
@@ -1053,11 +1144,11 @@ check_network() {
         fi
 
         if [[ $IDX -eq 0 ]]; then
-          printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-            "${COL[0]}" "${COL[1]}" "${COL[2]:0:7}" "${COL[3]}" "${COL[4]}" "$IP" "${COL[6]}" "${DNS[$IDX]}" \
-            "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$SAFE_SEARCH" "$DOH" "$UNBOUND" >> /tmp/scc_csv_multline
+          printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+            "${COL[0]}" "${COL[1]}" "${COL[2]:0:8}" "${COL[3]}" "${COL[4]}" "$IP" "${COL[6]}" "${DNS[$IDX]}" \
+            "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$SAFE_SEARCH" "$DOH" "$UNBOUND" "$NTP" >> /tmp/scc_csv_multline
         else
-          printf "\t\t\t\t\t%s\t\t%s\n" "$IP" "${DNS[$IDX]}" >> /tmp/scc_csv_multline
+          printf "\t\t\t\t\t%s\t\t%s\t\n" "$IP" "${DNS[$IDX]}" >> /tmp/scc_csv_multline
         fi
       done
 
@@ -1065,18 +1156,20 @@ check_network() {
     $COLUMN_OPT -t -s$'\t' /tmp/scc_csv_multline
     echo ""
 
-    #check source NAT
-    mapfile -t WANS < <(jq -r ". | to_entries | .[] | select(.value.config.meta.type == \"wan\") | .key" /tmp/scc_interfaces)
-    mapfile -t SOURCE_NAT < <(jq -r ".nat | keys | .[]" /tmp/scc_config | cut -d - -f 2 | sort | uniq)
-    echo "WAN Interfaces:"
-    for WAN in "${WANS[@]}"; do
-      if [[ " ${SOURCE_NAT[*]} " =~ " ${WAN} " ]]; then
-        printf "%10s: Source NAT ON\n" $WAN
-      else
-        printf "\e[31m%10s: Source NAT OFF\e[0m\n" $WAN
-      fi
-    done
-    echo ""
+    if  [[ "$(get_mode)" == "router" ]]; then
+      #check source NAT
+      mapfile -t WANS < <(jq -r ". | to_entries | .[] | select(.value.config.meta.type == \"wan\") | .key" /tmp/scc_interfaces)
+      mapfile -t SOURCE_NAT < <(jq -r ".nat | keys | .[]" /tmp/scc_config | cut -d - -f 2 | sort | uniq)
+      echo "WAN Interfaces:"
+      for WAN in "${WANS[@]}"; do
+        if [[ " ${SOURCE_NAT[*]} " =~ " ${WAN} " ]]; then
+          printf "%10s: Source NAT ON\n" $WAN
+        else
+          printf "\e[31m%10s: Source NAT OFF\e[0m\n" $WAN
+        fi
+      done
+      echo ""
+    fi
     echo ""
 }
 
@@ -1085,17 +1178,25 @@ check_tag() {
     mapfile -t TAGS < <(redis-cli --scan --pattern 'tag:uid:*' | sort --version-sort)
     mapfile -t -O "${#TAGS[@]}" TAGS < <(redis-cli --scan --pattern 'userTag:uid:*' | sort --version-sort)
     mapfile -t -O "${#TAGS[@]}" TAGS < <(redis-cli --scan --pattern 'deviceTag:uid:*' | sort --version-sort)
+    mapfile -t -O "${#TAGS[@]}" TAGS < <(redis-cli --scan --pattern 'ssidTag:uid:*' | sort --version-sort)
     get_system_policy
 
-    printf "ID\tType\tName\taffiliated\tvpnClient\tAdB\tFam\tSS\tDoH\tubn\n" >/tmp/tag_csv
+    printf "ID\tType\tName\taffiliated\tvpnClient\tVqL\tIso\tAdB\tFam\tSS\tDoH\tUbd\n" >/tmp/tag_csv
     for TAG in "${TAGS[@]}"; do
-      declare -A t p
+      declare -A t
       read_hash t "$TAG"
       local id=${t[uid]}
       get_tag_policy "$id"
 
       local VPN=$( ((${#TP[$id,vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${TP[$id,vpnClient]}" || echo -n "")
       if ! element_in "$VPN" "${VPNClients[@]}" && [[ "$VPN" != VWG:* ]]; then VPN=""; fi
+
+      local VQLAN=""
+      local ISOLATION=""
+      if [[ "${TP[$id,isolation]}" == *'"external":true'* ]]; then
+        VQLAN="T";
+        if [[ "${TP[$id,isolation]}" == *'"internal":true'* ]]; then ISOLATION="T"; fi
+      fi
 
       local ADBLOCK=""
       if [[ "${TP[$id,adblock]}" == "true" ]]; then ADBLOCK="T"; fi
@@ -1106,15 +1207,82 @@ check_tag() {
       local SAFE_SEARCH=$(if [[ ${TP[$id,safeSearch]} == *"true"* ]]; then echo "T"; fi)
       local UNBOUND=$(if [[ ${TP[$id,unbound]} == *"true"* ]]; then echo "T"; fi)
 
-      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-        "${t[uid]}" "${t[type]}" "${t[name]}" "${t[affiliatedTag]}" "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$SAFE_SEARCH" "$DOH" "$UNBOUND" >>/tmp/tag_csv
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+        "${t[uid]}" "${t[type]}" "${t[name]}" "${t[affiliatedTag]}" "$VPN" "$VQLAN" "$ISOLATION" "$ADBLOCK" "$FAMILY_PROTECT" "$SAFE_SEARCH" "$DOH" "$UNBOUND" >>/tmp/tag_csv
 
       unset t
     done
 
     $COLUMN_OPT -t -s$'\t' /tmp/tag_csv
 
+    D="\e[2m"
+    U="\e[0m"
+
     echo ""
+    echo -e "Abbr.: affiliated${D}Tag$U VqL${D}an$U Iso${D}lation$U SS${D}(Safe Search)$U DoH${D}(DNS over HTTPS)$U Ubd${D}(Unbound)$U"
+    echo ""
+}
+
+check_ap() {
+    echo "---------------------- AP ------------------"
+    frcc
+    mapfile -t tags < <(redis-cli --scan --pattern 'tag:uid:*')
+
+    declare -A ssidVlanUserMap
+    for tag in "${tags[@]}"; do
+      local uid=${tag#tag:uid:}
+      get_tag_policy "$uid"
+      #echo "uid $uid ${TP[$uid,ssidPSK]}"
+      if [[ "${#TP[$uid,ssidPSK]}" -gt 2 ]]; then
+        jq -r '.defaultSSIDs[]?, (.vlan as $vlan | .psks | to_entries[] | .key + "," + ($vlan|tostring))' <<< "${TP[$uid,ssidPSK]}" |
+        while read -r ssidVlan; do
+          ssidVlanUserMap["$ssidVlan"]="$uid"
+          #echo "ssidVlanUserMap $ssidVlan = $uid"
+        done
+      fi
+    done
+  
+    mapfile -t ssid_profiles < <(jq -r '.apc.assets_template.ap_default.wifiNetworks[0].ssidProfiles[]' /tmp/scc_config)
+    declare -A alias_ssids
+    jq -r '.apc.assets_template.ap_default.wifiNetworks[0].aliasSSIDs[] | "\(.id) \(.vlan)"' /tmp/scc_config |
+    while read -r id vlan; do
+      alias_ssids["$id"]="$vlan"
+      #echo "alias_ssids $id = $vlan"
+    done
+
+    printf "Profile\tSSID\tBand\tEncryption\tPriSeg\tAddSeg\n" >/tmp/ap_csv
+    jq -r '.apc.profile | to_entries[] | [.key, .value.ssid, .value.band, .value.encryption] | @tsv' /tmp/scc_config |
+    while read -r LINE; do
+      mapfile -td $'\t' COL < <(printf "%s" "$LINE")
+      local id="${COL[0]}"
+      # only print profile that included in ssidProfiles and aliasSSIDs
+      if [[ "${ssid_profiles[*]}" =~ "$id" ]] || [[ "${alias_ssids[*]}" =~ "$id" ]]; then
+        local priSeg=""
+        local addSeg=""
+        for key in "${!ssidVlanUserMap[@]}"; do
+          if [[ "$key" == "$id" ]]; then
+            priSeg="${ssidVlanUserMap[$key]}"
+          elif [[ "$key" == "$id,"* ]]; then
+            # local vlan=${key#*,}
+            [[ -n "$addSeg" ]] && addSeg+=","
+            addSeg+="${ssidVlanUserMap[$key]}"
+          fi
+        done
+        printf "%s\t%s\t%s\t%s\t%s\t%s\n" "${COL[0]}" "${COL[1]}" "${COL[2]}" "${COL[3]}" "${priSeg}" "${addSeg}" >>/tmp/ap_csv
+      fi
+
+    done
+
+    $COLUMN_OPT -t -s$'\t' /tmp/ap_csv
+
+    unset ssidVlanUserMap
+    unset alias_ssids
+
+    D="\e[2m"
+    U="\e[0m"
+
+    echo ""
+    echo -e "Abbr.: PriSeg${D}(PrimaryMicrosegment)$U AddSeg${D}(AddtionalMicrosegment)$U"
     echo ""
 }
 
@@ -1122,11 +1290,11 @@ check_portmapping() {
   echo "------------------ Port Forwarding ------------------"
 
   (
-    printf "type\tactive\tProto\tExtPort\ttoIP\ttoPort\ttoMac\tdescription\n"
+    printf "type\tactive\tProto\tExtIP\tExtPort\ttoIP\ttoPort\ttoMac\tdescription\n"
     redis-cli get extension.portforward.config |
-      jq -r '.maps[] | select(.state == true) | [ ._type // "Forward", .active, .protocol, .dport, .toIP, .toPort, .toMac, .description ] | @tsv'
+      jq -r '.maps[] | select(.state == true) | [ ._type // "Forward", .active, .protocol, .extIP // "", .dport, .toIP, .toPort, .toMac, .description ] | @tsv'
     redis-cli hget sys:scan:nat upnp |
-      jq -r '.[] | [ "UPnP", .expire, .protocol, .public.port, .private.host, .private.port, "N\/A", .description ] | @tsv'
+      jq -r '.[] | [ "UPnP", .expire, .protocol, .public.host, .public.port, .private.host, .private.port, "N\/A", .description ] | @tsv'
   ) |
     $COLUMN_OPT -t -s$'\t'
   echo ""
@@ -1181,7 +1349,7 @@ run_lsusb() {
 }
 
 check_eth_count() {
-  ports=$(ls -l /sys/class/net | grep -c "eth[0-3] ")
+  ports=$(find /sys/class/net/ | grep -c "\\eth[0-3]$")
 
   if [[ ("$PLATFORM" == 'gold' || "$PLATFORM" == 'gold-se') && $ports -ne 4 ||
     ("$PLATFORM" == 'purple' || "$PLATFORM" == 'purple-se') && $ports -ne 2 ||
@@ -1200,6 +1368,19 @@ check_events() {
   >&2 echo "  >> Keep in mind the timestamps above are all UTC, local timezone is: $(date +'%:::z %Z') <<"
 }
 
+check_connection() {
+  URLs=("firewalla.encipher.io" "api.firewalla.com" "connect.firewalla.com" "ota.firewalla.com" "fireupgrade.s3.us-west-2.amazonaws.com" "firewalla-ap-update-xyz.s3.us-west-2.amazonaws.com" "github.com" "firewalla.com")
+
+  for url in "${URLs[@]}"; do
+    code=$(curl -s -o /dev/null -w "%{http_code}" "https://$url")
+    if [[ $code -eq 000 ]]; then
+      echo -e "\e[41m>>> $url is NOT reachable <<<\e[0m"
+    else
+      echo -e "$url is reachable ($code)\e[0m"
+    fi
+  done
+}
+
 usage() {
     echo "Options:"
     echo "  -s  | --service"
@@ -1211,10 +1392,12 @@ usage() {
     echo "  -re | --redis"
     echo "        --docker"
     echo "  -n  | --network"
+    echo "  --ap"
     echo "  -p  | --port"
     echo "  -t  | --tag"
-    echo "  -e  | --events"
     echo "  -f  | --fast | --host"
+    echo "  -e  | --events"
+    echo "  -c  | --connection"
     echo "  -h  | --help"
     return
 }
@@ -1263,6 +1446,11 @@ while [ "$1" != "" ]; do
         FAST=true
         check_network
         ;;
+    --ap)
+        shift
+        FAST=true
+        check_ap
+        ;;
     -t | --tag)
         shift
         FAST=true
@@ -1282,6 +1470,11 @@ while [ "$1" != "" ]; do
         shift
         FAST=true
         check_docker
+        ;;
+    -c | --connection)
+        shift
+        FAST=true
+        check_connection
         ;;
     -e | --events)
         shift
@@ -1317,10 +1510,12 @@ if [ "$FAST" == false ]; then
     run_ifconfig
     check_network
     check_portmapping
+    check_ap
     check_tag
     check_hosts
     check_docker
     run_lsusb
     check_eth_count
+    check_connection
     test -z $SPEED || check_speed
 fi

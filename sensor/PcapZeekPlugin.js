@@ -67,8 +67,13 @@ class PcapZeekPlugin extends PcapPlugin {
     const multicastV6 = "ff00::/8";
     const monitoringIntfs = sysManager.getMonitoringInterfaces();
     for (const intf of monitoringIntfs) {
+      if (intf.name === Constants.INTF_AP_CTRL)
+        continue;
       const intfName = intf.name;
-      const subnets4 = (_.isArray(intf.ip4_subnets) ? intf.ip4_subnets : []).concat(_.isArray(intf.rt4_subnets) ? intf.rt4_subnets : []).filter(cidr => cidr.includes('/') && !cidr.endsWith('/32') && !sysManager.isDefaultRoute(cidr)); // exclude single IP cidr, mainly for peer IP in mesh VPN that should be covered by another /24 cidr
+      const subnets4 = (_.isArray(intf.ip4_subnets) ? intf.ip4_subnets : [])
+        .concat(_.isArray(intf.rt4_subnets) ? intf.rt4_subnets : [])
+         // exclude single IP cidr, mainly for peer IP in mesh VPN that should be covered by another /24 cidr
+        .filter(cidr => cidr.includes('/') && !cidr.endsWith('/32') && !sysManager.isDefaultRoute(cidr));
       for (const ip of subnets4) {
         if (localNetworks[ip])
           localNetworks[ip].push(intfName);
@@ -104,6 +109,8 @@ class PcapZeekPlugin extends PcapPlugin {
     const wanIp4 = [];
     const wanIp6 = [];
     for (const intf of sysManager.getMonitoringInterfaces()) {
+      if (intf.name === Constants.INTF_AP_CTRL)
+        continue;
       const ip4Subnets = intf.ip4_subnets;
       const ip6Subnets = intf.ip6_subnets;
       if (_.isArray(ip4Subnets)) {
@@ -132,21 +139,52 @@ class PcapZeekPlugin extends PcapPlugin {
     // do not capture intranet traffic, but still keep tcp SYN/FIN/RST for port scan detection
     const restrictFilters = {};
     if (!fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW)) {
+      log.info('local_flow is off, dropping intranet traffic');
       if (!_.isEmpty(monitoredNetworks4))
-        restrictFilters["not-intranet-ip4"] = `not (ip and (${monitoredNetworks4.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks4.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or tcp[13] & 0x7 == 0))`;
+        restrictFilters["not-intranet-ip4"] = `not (ip` +
+          ` and (${monitoredNetworks4.map(net => `src net ${net}`).join(" or ")})` +
+          ` and (${monitoredNetworks4.map(net => `dst net ${net}`).join(" or ")})` +
+          ` and not (port 53 or port 8853 or port 22 or port 67 or port 68)` +
+          ` and (not tcp or tcp[13] & 0x7 == 0))`; // No RST/SYN/FIN flags
       if (!_.isEmpty(monitoredNetworks6))
-        restrictFilters["not-intranet-ip6"] = `not (ip6 and (${monitoredNetworks6.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks6.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or ip6[40+13] & 0x7 == 0))`;
+        restrictFilters["not-intranet-ip6"] = `not (ip6` +
+          ` and (${monitoredNetworks6.map(net => `src net ${net}`).join(" or ")})` +
+          ` and (${monitoredNetworks6.map(net => `dst net ${net}`).join(" or ")})` +
+          ` and not (port 53 or port 8853 or port 22 or port 67 or port 68)` +
+          ` and (not tcp or ip6[40+13] & 0x7 == 0))`; // No RST/SYN/FIN flags
     } else {
       // randomly drop local traffic packets without SYN/FIN/RST based on the first bit of the most significant byte of TCP checksum(tcp header offset +16), this can reduce 50% traffic
       if (!_.isEmpty(monitoredNetworks4))
-        restrictFilters["not-intranet-ip4"] = `not (ip and (${monitoredNetworks4.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks4.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (tcp and tcp[13] & 0x7 == 0 and (len >= 1000 || tcp[13] == 0x10) and tcp[16] & 0x8 != 0))`;
+        restrictFilters["not-intranet-ip4"] = `not (ip` +
+          ` and (${monitoredNetworks4.map(net => `src net ${net}`).join(" or ")})` +
+          ` and (${monitoredNetworks4.map(net => `dst net ${net}`).join(" or ")})` +
+          ` and not (port 53 or port 8853 or port 22 or port 67 or port 68)` +
+          ` and (tcp` +
+            ` and tcp[13] & 0x7 == 0` + // No RST/SYN/FIN flags
+            ` and (len >= 1000 || tcp[13] == 0x10)` + // Large packet or pure ACK
+            ` and tcp[16] & 0x8 != 0` + // 50% sampling based on checksum
+          `))`;
       if (!_.isEmpty(monitoredNetworks6))
-        restrictFilters["not-intranet-ip6"] = `not (ip6 and (${monitoredNetworks6.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks6.map(net => `dst net ${net}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (tcp and ip6[40+13] & 0x7 == 0 and (len >= 1000 || ip6[40 + 13] == 0x10) and ip6[40 + 16] & 0x8 != 0))`;
+        restrictFilters["not-intranet-ip6"] = `not (ip6` +
+          ` and (${monitoredNetworks6.map(net => `src net ${net}`).join(" or ")})` +
+          ` and (${monitoredNetworks6.map(net => `dst net ${net}`).join(" or ")})` +
+          ` and not (port 53 or port 8853 or port 22 or port 67 or port 68)` +
+          ` and (tcp` +
+            ` and ip6[40+13] & 0x7 == 0` + // No RST/SYN/FIN flags
+            ` and (len >= 1000 || ip6[40 + 13] == 0x10)` + // Large packet or pure ACK
+            ` and ip6[40 + 16] & 0x8 != 0` + // 50% sampling based on checksum
+          `))`;
     }
     // do not record TCP SYN originated from box, which is device port scan packets
     if (!_.isEmpty(selfIp4)) {
-      restrictFilters["not-self-tx-syn-ip4"] = `not (ip and (${selfIp4.map(ip => `src host ${ip}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or tcp[13] & 0x12 == 2))`;
-      restrictFilters["not-self-rx-nosyn-ip4"] = `not (ip and (${selfIp4.map(ip => `dst host ${ip}`).join(" or ")}) and not (port 53 or port 8853 or port 22 or port 67 or port 68) and (not tcp or tcp[13] & 0x12 != 2))`;
+      restrictFilters["not-self-tx-syn-ip4"] = `not (ip` +
+        ` and (${selfIp4.map(ip => `src host ${ip}`).join(" or ")})` +
+        ` and not (port 53 or port 8853 or port 22 or port 67 or port 68)` +
+        ` and (not tcp or tcp[13] & 0x12 == 2))`; // TCP SYN packets without ACK flag
+      restrictFilters["not-self-rx-nosyn-ip4"] = `not (ip` +
+        ` and (${selfIp4.map(ip => `dst host ${ip}`).join(" or ")})` +
+        ` and not (port 53 or port 8853 or port 22 or port 67 or port 68)` +
+        ` and (not tcp or tcp[13] & 0x12 != 2))`;
     }
     /* box won't do IPv6 port scan in practice, remove them from restrictFilters to reduce pcap filter expression length in zeek. Zeek may not work properly with an excessively long pcap filter expression
     if (!_.isEmpty(selfIp6)) {
@@ -189,6 +227,42 @@ class PcapZeekPlugin extends PcapPlugin {
         ))
       })
     }
+
+    // because of br_netfilter and DNAT, zeek doesn't get full connection when listen on bridge.
+    // use conntrack for NTP instead
+    // we don't check ntp_redirect here so zeek doesn't have to be restarted on feature/policy change
+    // conntrack -E can't filter reply-sport, so this only covers inbound port forward with 123 as external port
+    restrictFilters["not-ntp"] = `not (udp and port 123)`;
+    conntrack.registerConnHook({dport: 123, protocol: "udp"}, (connInfo) => {
+      const {src, replysrc, sport, replysport, dst, dport, protocol, origPackets, respPackets, origBytes, respBytes, duration} = connInfo;
+      const local_orig = Boolean(sysManager.getInterfaceViaIP(src));
+
+      // DNATed local NTP request, drop
+      if (local_orig && dst != replysrc) return
+
+      bro.processConnData(JSON.stringify(
+        {
+          "id.orig_h": src,
+          "id.resp_h": local_orig ? dst : replysrc, // use replysrc for DNATed connection
+          "id.orig_p": sport,
+          "id.resp_p": local_orig ? dport : replysport,
+          "proto": protocol,
+          "orig_bytes": origBytes,
+          "orig_pkts": origPackets,
+          "resp_bytes": respBytes,
+          "resp_pkts": respPackets,
+          "orig_ip_bytes": origBytes + origPackets * 20,
+          "resp_ip_bytes": respBytes + respPackets * 20,
+          "missed_bytes": 0,
+          "local_orig": local_orig,
+          "local_resp": local_orig ? Boolean(sysManager.getInterfaceViaIP(dst)) : Boolean(sysManager.getInterfaceViaIP(replysrc)),
+          "conn_state": "SF",
+          "duration": duration,
+          "ts": Date.now() / 1000 - duration,
+          "uid": uuid.v4().substring(0, 8)
+        }
+      ))
+    })
 
     const sigFiles = [];
     const sigDir = `${f.getRuntimeInfoFolder()}/zeek_signatures`;
