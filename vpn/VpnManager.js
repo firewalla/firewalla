@@ -380,7 +380,6 @@ class VpnManager {
     }
     if (this.serverNetwork6 == null) {
       this.serverNetwork6 = this.generateLocalIpv6Network();
-      log.info("VPNManager:CONFIGURE:Generated IPv6 network", this.serverNetwork6);
       this.needRestart = true;
     }
     if (this.netmask == null) {
@@ -404,10 +403,8 @@ class VpnManager {
     }
     var mydns = (sysManager.myResolver("tun_fwvpn") && sysManager.myResolver("tun_fwvpn")[0]) || sysManager.myDefaultDns()[0];
     var mydns6 = (sysManager.myResolver6("tun_fwvpn") && sysManager.myResolver6("tun_fwvpn")[0]) || sysManager.myDefaultDns6()[0];
-    log.info(`mydns: ${mydns}, mydns6: ${mydns6}`);
     const myip  = ip.subnet(this.serverNetwork, this.netmask).firstAddress;
     this.ipv6Addr = this.firstIpv6Address(this.serverNetwork6);
-    log.info("VPNManager:CONFIGURE:myip", myip, "ipv6Addr", this.ipv6Addr);
 
     const vpnIntf = sysManager.getInterface("tun_fwvpn");
     // push vpn local IP as DNS option if resolver is from WAN, i.e. no dedicated DNS server specified on vpn network
@@ -421,7 +418,6 @@ class VpnManager {
     if (mydns6 == null || mydns6 === "::1") {
       mydns6 = "2001:4860:4860::8888"; // use google DNS as default
     }
-    log.info("VPNManager:CONFIGURE:mydns", mydns, "mydns6", mydns6, "myip", myip, "ipv6Addr", this.ipv6Addr);
     if (this.mydns !== mydns)
       this.needRestart = true;
     this.mydns = mydns;
