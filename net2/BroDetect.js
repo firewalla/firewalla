@@ -1032,7 +1032,7 @@ class BroDetect {
         monitorable = await this.waitAndGetIdentity(lhost);
         if (monitorable) {
           localMac = IdentityManager.getGUID(monitorable);
-          if (fam == 4)
+          if (fam == 4 || fam == 6)
             realLocal = IdentityManager.getEndpointByIP(lhost);
           localType = TYPE_VPN;
         } else {
