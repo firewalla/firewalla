@@ -1092,7 +1092,7 @@ check_network() {
         DNS_CONFIG[${ARY[0]}]=${ARY[1]}
       done
 
-    :>/tmp/scc_csv
+    :>/tmp/scc_csv # clear file
     for INTF in $INTFS; do
       jq -rj ".[\"$INTF\"] | if (.state.ip6 | length) == 0 then .state.ip6 |= [] else . end | [\"$INTF\", .config.meta.name, .config.meta.uuid, .state.ip4, .state.gateway, (.state.ip6 | join(\"|\")), .state.gateway6, (.state.dns // [] | join(\";\"))] | @tsv" /tmp/scc_interfaces >>/tmp/scc_csv
       echo "" >> /tmp/scc_csv
@@ -1145,7 +1145,7 @@ check_network() {
 
         if [[ $IDX -eq 0 ]]; then
           printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-            "${COL[0]}" "${COL[1]}" "${COL[2]:0:7}" "${COL[3]}" "${COL[4]}" "$IP" "${COL[6]}" "${DNS[$IDX]}" \
+            "${COL[0]}" "${COL[1]}" "${COL[2]:0:8}" "${COL[3]}" "${COL[4]}" "$IP" "${COL[6]}" "${DNS[$IDX]}" \
             "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$SAFE_SEARCH" "$DOH" "$UNBOUND" "$NTP" >> /tmp/scc_csv_multline
         else
           printf "\t\t\t\t\t%s\t\t%s\t\n" "$IP" "${DNS[$IDX]}" >> /tmp/scc_csv_multline
@@ -1183,7 +1183,7 @@ check_tag() {
 
     printf "ID\tType\tName\taffiliated\tvpnClient\tVqL\tIso\tAdB\tFam\tSS\tDoH\tUbd\n" >/tmp/tag_csv
     for TAG in "${TAGS[@]}"; do
-      declare -A t p
+      declare -A t
       read_hash t "$TAG"
       local id=${t[uid]}
       get_tag_policy "$id"
@@ -1220,6 +1220,69 @@ check_tag() {
 
     echo ""
     echo -e "Abbr.: affiliated${D}Tag$U VqL${D}an$U Iso${D}lation$U SS${D}(Safe Search)$U DoH${D}(DNS over HTTPS)$U Ubd${D}(Unbound)$U"
+    echo ""
+}
+
+check_ap() {
+    echo "---------------------- AP ------------------"
+    frcc
+    mapfile -t tags < <(redis-cli --scan --pattern 'tag:uid:*')
+
+    declare -A ssidVlanUserMap
+    for tag in "${tags[@]}"; do
+      local uid=${tag#tag:uid:}
+      get_tag_policy "$uid"
+      #echo "uid $uid ${TP[$uid,ssidPSK]}"
+      if [[ "${#TP[$uid,ssidPSK]}" -gt 2 ]]; then
+        jq -r '.defaultSSIDs[]?, (.vlan as $vlan | .psks | to_entries[] | .key + "," + ($vlan|tostring))' <<< "${TP[$uid,ssidPSK]}" |
+        while read -r ssidVlan; do
+          ssidVlanUserMap["$ssidVlan"]="$uid"
+          #echo "ssidVlanUserMap $ssidVlan = $uid"
+        done
+      fi
+    done
+  
+    mapfile -t ssid_profiles < <(jq -r '.apc.assets_template.ap_default.wifiNetworks[0].ssidProfiles[]' /tmp/scc_config)
+    declare -A alias_ssids
+    jq -r '.apc.assets_template.ap_default.wifiNetworks[0].aliasSSIDs[] | "\(.id) \(.vlan)"' /tmp/scc_config |
+    while read -r id vlan; do
+      alias_ssids["$id"]="$vlan"
+      #echo "alias_ssids $id = $vlan"
+    done
+
+    printf "Profile\tSSID\tBand\tEncryption\tPriSeg\tAddSeg\n" >/tmp/ap_csv
+    jq -r '.apc.profile | to_entries[] | [.key, .value.ssid, .value.band, .value.encryption] | @tsv' /tmp/scc_config |
+    while read -r LINE; do
+      mapfile -td $'\t' COL < <(printf "%s" "$LINE")
+      local id="${COL[0]}"
+      # only print profile that included in ssidProfiles and aliasSSIDs
+      if [[ "${ssid_profiles[*]}" =~ "$id" ]] || [[ "${alias_ssids[*]}" =~ "$id" ]]; then
+        local priSeg=""
+        local addSeg=""
+        for key in "${!ssidVlanUserMap[@]}"; do
+          if [[ "$key" == "$id" ]]; then
+            priSeg="${ssidVlanUserMap[$key]}"
+          elif [[ "$key" == "$id,"* ]]; then
+            # local vlan=${key#*,}
+            [[ -n "$addSeg" ]] && addSeg+=","
+            addSeg+="${ssidVlanUserMap[$key]}"
+          fi
+        done
+        printf "%s\t%s\t%s\t%s\t%s\t%s\n" "${COL[0]}" "${COL[1]}" "${COL[2]}" "${COL[3]}" "${priSeg}" "${addSeg}" >>/tmp/ap_csv
+      fi
+
+    done
+
+    $COLUMN_OPT -t -s$'\t' /tmp/ap_csv
+
+    unset ssidVlanUserMap
+    unset alias_ssids
+
+    D="\e[2m"
+    U="\e[0m"
+
+    echo ""
+    echo -e "Abbr.: PriSeg${D}(PrimaryMicrosegment)$U AddSeg${D}(AddtionalMicrosegment)$U"
     echo ""
 }
 
@@ -1329,6 +1392,7 @@ usage() {
     echo "  -re | --redis"
     echo "        --docker"
     echo "  -n  | --network"
+    echo "  --ap"
     echo "  -p  | --port"
     echo "  -t  | --tag"
     echo "  -f  | --fast | --host"
@@ -1381,6 +1445,11 @@ while [ "$1" != "" ]; do
         shift
         FAST=true
         check_network
+        ;;
+    --ap)
+        shift
+        FAST=true
+        check_ap
         ;;
     -t | --tag)
         shift
@@ -1441,6 +1510,7 @@ if [ "$FAST" == false ]; then
     run_ifconfig
     check_network
     check_portmapping
+    check_ap
     check_tag
     check_hosts
     check_docker
