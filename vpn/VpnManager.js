@@ -537,13 +537,19 @@ class VpnManager {
               for (let j in colNames) {
                 switch (colNames[j]) {
                   case "Virtual Address":
-                    if (new Address4(values[j]).isValid() || new Address6(values[j]).isValid()) {
+                    if (new Address4(values[j]).isValid()) {
                       if (!clientDesc.vAddr)
                         clientDesc.vAddr = [values[j]];
                       else
                         clientDesc.vAddr.push(values[j]);
+                    } else if (new Address6(values[j]).isValid()) {
+                      if (!clientDesc.vAddr6)
+                        clientDesc.vAddr6 = [values[j]];
+                      else
+                        clientDesc.vAddr6.push(values[j]);
                     }
                     clientDesc.vAddr = clientDesc.vAddr || [];
+                    clientDesc.vAddr6 = clientDesc.vAddr6 || [];
                     break;
                   case "Common Name":
                     clientDesc.cn = values[j];
@@ -560,6 +566,7 @@ class VpnManager {
               const key =`${clientDesc.cn}::${clientDesc.addr}`;
               if (clientMap[key]) {
                 Array.prototype.push.apply(clientDesc.vAddr, clientMap[key].vAddr || []);
+                Array.prototype.push.apply(clientDesc.vAddr6, clientMap[key].vAddr6 || []);
                 clientMap[key] = Object.assign({}, clientMap[key], clientDesc);
               } else {
                 clientMap[key] = clientDesc;
