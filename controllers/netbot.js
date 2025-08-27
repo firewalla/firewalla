@@ -176,21 +176,32 @@ class netBot extends ControllerBot {
     nm.loadConfig();
   }
 
+  // by default, all event-based notifications are disabled (alarms by default enabled)
+  _checkEventNotifyPolicy(policy, event_type) {
+    if (!policy || !policy["notify"]) {
+      log.info("host notification policy not set, skip notification");
+      return false;
+    }
+
+    if (!policy["notify"]["state"]) {
+      log.info("host notification disabled");
+      return false;
+    }
+
+    if (!policy["notify"][event_type]) {
+      log.info("host event notification disable for event type", event_type);
+      return false;
+    }
+
+    return true;
+  }
+
   async _notifyNewEvent(event) {
     const event_type = event.event_type == "state" ? event.state_type: event.action_type;
     const event_value = event.event_type == "state" ? event.state_value: event.action_value;
 
-    if (this.hostManager.policy && this.hostManager.policy["notify"]) {
-      if (this.hostManager.policy['notify']['state'] == false) {
-        log.info("host notification disabled");
-        return;
-      }
-
-      if (this.hostManager.policy["notify"][event_type] !== true
-      ) {
-        log.info("host event notification disable for event type", event_type);
-        return;
-      }
+    if (!this._checkEventNotifyPolicy(this.hostManager.policy, event_type)) {
+      return;
     }
 
     let notifEvent = await this.getNotifEvent(event_type, event_value, event.labels);
