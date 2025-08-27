@@ -286,7 +286,7 @@ class BoneSensor extends Sensor {
 
   run() {
     // checkin interval increases exponentially from min to max
-    this.nextInterval = (this.config.checkinInterval || 900) * 1000;
+    this.nextInterval = (this.config.checkInMinInterval || 900) * 1000;
     this.scheduledJob();
 
     sem.on("CloudURLUpdate", async () => {
