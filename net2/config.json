@@ -181,7 +181,7 @@
     "OpenPortByInboundFlowSensor": {},
     "BoneSensor": {
       "checkInMinInterval": 900,
-      "checkInMaxInterval": 3600,
+      "checkInMaxInterval": 14400,
       "hashsetConfigInterval": 86400
     },
     "DNSCryptPlugin": {
