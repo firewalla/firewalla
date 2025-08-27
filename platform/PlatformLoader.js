@@ -89,7 +89,7 @@ class PlatformLoader {
           }
           case "orange": {
             const OrangePlatform = require('./orange/OrangePlatform.js');
-            this.platform = new GSEPlatform();
+            this.platform = new OrangePlatform();
             break;
           }
           default: {
