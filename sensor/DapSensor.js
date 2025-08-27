@@ -63,16 +63,14 @@ class DapSensor extends Sensor {
     }
   }
 
+  async getCheckInData() {
+    const result = await this.apiCall("GET", "/checkin");
+    return result && result.body;
+  }
+
   async apiRun() {
     // Initialize DAP interface configuration
-    const fwConfig = Config.getConfig();
-    if (fwConfig.dap && fwConfig.dap.interface) {
-      const intf = fwConfig.dap.interface;
-      dapInterface = `http://${intf.host}:${intf.port}/${intf.version}`;
-    } else {
-      // Default configuration if not specified in config
-      dapInterface = 'http://localhost:8842/v1';
-    }
+    this.initDapRestClientFromConfig();
 
     // Register onCmd hook for "dap" item
     extensionManager.onCmd("dap", async (msg, data) => {
@@ -93,8 +91,19 @@ class DapSensor extends Sensor {
     });
   }
 
+  initDapRestClientFromConfig() {
+    const fwConfig = Config.getConfig();
+    if (fwConfig.dap && fwConfig.dap.interface) {
+      const intf = fwConfig.dap.interface;
+      dapInterface = `http://${intf.host}:${intf.port}/${intf.version}`;
+    } else {
+      dapInterface = 'http://localhost:8843/v1';
+    }
+  }
+
   async run() {
     log.info('DapSensor is launched');
+    this.initDapRestClientFromConfig();
     this.hookFeature(this.featureName);
   }
 
