@@ -180,6 +180,11 @@ class netBot extends ControllerBot {
     const event_type = event.event_type == "state" ? event.state_type: event.action_type;
     const event_value = event.event_type == "state" ? event.state_value: event.action_value;
 
+    if (!this.hostManager.policy || !this.hostManager.policy["notify"]) {
+      log.info("host notification policy not set, skip notification");
+      return;
+    }
+
     if (this.hostManager.policy && this.hostManager.policy["notify"]) {
       if (this.hostManager.policy['notify']['state'] == false) {
         log.info("host notification disabled");
