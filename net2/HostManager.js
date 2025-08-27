@@ -1728,6 +1728,8 @@ module.exports = class HostManager extends Monitorable {
     if (hostTool.isMacAddress(target)) {
       host = this.hostsdb[`host:mac:${target}`];
       o = await hostTool.getMACEntry(target)
+      if (o)
+        o.mac = target;
     } else {
       const fam = net.isIP(target)
       if (!fam) return null
