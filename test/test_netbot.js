@@ -721,14 +721,29 @@ describe('test netbot', function(){
     })
   });
 
-  it('should notify new event', async() => {
-    netbot.hostManager.policy = {"state": true, "phone_paired": true};
+  it('should notify new event', async () => {
+    netbot.hostManager.policy = {"notify": { "state": true, "phone_paired": true }};
 
-    const event = {"ts":1743556883664, "event_type":"action", "action_type":"phone_paired","action_value":1, "labels":{"eid":"7wZYL2pk6hkzF313f8FkIA", "deviceName": "Device-abc"}}
+    const event = { "ts": 1743556883664, "event_type": "action", "action_type": "phone_paired", "action_value": 1, "labels": { "eid": "7wZYL2pk6hkzF313f8FkIA", "deviceName": "Device-abc" } }
     const payload = await netbot._notifyNewEvent(event);
     expect(payload.type).to.be.equal('FW_NOTIFICATION');
     expect(payload.titleLocalKey).to.be.equal('NEW_EVENT_TITLE_phone_paired');
     expect(payload.bodyLocalMsg).to.be.equal("A new phone (Device-abc) is paired with your Firewalla box.");
     expect(payload.bodyLocalArgs).to.be.eql(["7wZYL2pk6hkzF313f8FkIA", "Device-abc", 0]);
-  })
+  });
+
+  it('should not notify new event if policy is not set', async () => {
+    const event = { "ts": 1743556883664, "event_type": "action", "action_type": "phone_paired", "action_value": 1, "labels": { "eid": "7wZYL2pk6hkzF313f8FkIA", "deviceName": "Device-abc" } }
+    netbot.hostManager.policy = {};
+    const payload = await netbot._notifyNewEvent(event);
+    expect(payload).to.be.undefined;
+  });
+
+  it('should check event notify policy', async () => {
+    expect(netbot._checkEventNotifyPolicy({}, "test")).to.be.false;
+    expect(netbot._checkEventNotifyPolicy({ "notify": {} }, "test")).to.be.false;
+    expect(netbot._checkEventNotifyPolicy({ "notify": { "state": 1 } }, "test")).to.be.false;
+    expect(netbot._checkEventNotifyPolicy({ "notify": { "state": 1, "test": true } }, "test")).to.be.true;
+  });
+
 });
