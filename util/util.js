@@ -130,7 +130,7 @@ function redactLog(obj, redactRequired = false, depth) {
     for (const key of Object.keys(obj)) {
       if (_.isFunction(obj[key]))
         continue;
-      if (_.isObject(obj[key]) || _.isArray(obj[key]))
+      if (_.isPlainObject(obj[key]) || _.isArray(obj[key]))
         objCopy[key] = redactLog(obj[key], redactRequired || keysToRedact.has(key), depth + 1);
       else {
         if (redactRequired || keysToRedact.has(key))
@@ -154,7 +154,7 @@ function argumentsToString(v) {
         // args[k] = JSON.stringify(args[k]);
         if (_.isFunction(args[k]))
           continue;
-        if (_.isArray(args[k]) || _.isObject(args[k]))
+        if (_.isArray(args[k]) || _.isPlainObject(args[k]))
           args[k] = redactLog(args[k], false, depth + 1);
         args[k] = require('util').inspect(args[k], false, null, true);
       }
