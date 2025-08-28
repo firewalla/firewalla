@@ -386,7 +386,8 @@ function reloadFeatures() {
   }
 
   features = featuresNew;
-  log.debug('Features reloaded', features)
+  log.debug('Features reloaded')
+  log.silly(features)
 }
 
 function getFeatures() {
@@ -396,6 +397,7 @@ function getFeatures() {
 sclient.subscribe("config:feature:dynamic:enable")
 sclient.subscribe("config:feature:dynamic:disable")
 sclient.subscribe("config:feature:dynamic:clear")
+sclient.subscribe("config:hashset:updated")
 sclient.subscribe("config:cloud:updated")
 sclient.subscribe("config:msp:updated")
 sclient.subscribe("config:user:updated")
