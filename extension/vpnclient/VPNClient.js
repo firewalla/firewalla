@@ -426,7 +426,7 @@ class VPNClient {
   }
 
   async _checkConnectivity(force = false) {
-    if (!this._started || this._restarting || (this._lastStartTime && Date.now() - this._lastStartTime < 60000 && !force)) {
+    if (!this._started || this._restarting || (this._lastStartTime && Date.now() - this._lastStartTime < 70000 && !force)) {
       if (!this._started) {
         await this._setCachedState(false);
       }
@@ -632,8 +632,10 @@ class VPNClient {
 
     sem.on("VPNClient:Started", async (event) => {
       const profileId = event.profileId;
-      if (profileId === this.profileId)
+      if (profileId === this.profileId) {
         this._started = true;
+        this._lastStartTime = Date.now();
+      }
     })
   }
 
