@@ -675,6 +675,10 @@
       "dm": {
         "expires": 86400,
         "count": 3600
+      },
+      "internet_flows": {
+        "expires": 172800,
+        "count": 2000
       }
     },
     "DeviceOfflineSensor": {
