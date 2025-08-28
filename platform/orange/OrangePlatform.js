@@ -420,38 +420,7 @@ class OrangePlatform extends Platform {
   }
 
   async getWlanVendor() {
-    if ( !this.vendor ) {
-      this.vendor = await fs.readFileAsync("/proc/cmdline", {encoding: 'utf8'}).then(cmdline => cmdline.match(' wifi_rev=([0-9a-z]*) ')[1]).catch(err => {
-        log.error("Failed to parse wifi_rev from /proc/cmdline", err.message);
-        return "unknown";
-      });
-    }
-    return this.vendor;
-  }
-
-  /* There are 2 variants for Orange
-   *
-   * Variant A
-   * - Realtek WiFi chip
-   * 
-   * Variant B
-   * - Ampak WiFi chip
-   * 
-   */
-  async getVariant() {
-    if ( !this.variant ) {
-      switch (await this.getWlanVendor()) {
-        case '88x2cs':
-          this.variant = 'A';
-          break;
-        case 'dhd':
-          this.variant = 'B';
-          break;
-        default:
-          this.variant = '';
-      }
-    }
-    return this.variant;
+    return "mt7996e";
   }
 
   getDefaultWlanIntfName() {
