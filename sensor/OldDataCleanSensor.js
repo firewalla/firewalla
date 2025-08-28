@@ -623,6 +623,7 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("host:mac", key => key.startsWith('host:mac:'), false, this.cleanHostData.bind(this))
     this._registerFilterFunction("digitalfence", key => key.startsWith('digitalfence:'), false, this.cleanHostData.bind(this))
     this._registerFilterFunction("policy", key => key.match(/^policy:[0-9]+/), false, this.cleanBrokenPolicy.bind(this))
+    this._registerFilterFunction("internet_flows", (key) => key.startsWith("internet_flows:"));
   }
 
   _registerFilterFunction(type, filterFunc, fullCleanOnly = false, customCleanerFunc) {

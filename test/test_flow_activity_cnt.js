@@ -18,6 +18,7 @@
 Usage:
   
 MOCK_MODE=true \
+TIMEZONE=Asia/Shanghai \
 FLOW_PATH=/home/pi/bak/flows-0819 \
 START_TIME="8/19/2025, 10:00:00" \
 END_TIME="8/19/2025, 23:00:00" \
@@ -25,7 +26,7 @@ npx mocha test/test_flow_activity_cnt.js --exit
 */
 
 'use strict'
-
+const moment = require('moment-timezone');
 const chai = require('chai');
 const expect = chai.expect;
 const _ = require('lodash');
@@ -55,9 +56,12 @@ appTimeUsageSensor.loadConfig(false);
 const flowTool = require('../net2/FlowTool');
 const sensorLoader = require('../sensor/SensorLoader.js');
 
-const flowPath = process.env.FLOW_PATH || '/home/pi/bak/flows-0819';
-let startTime = process.env.START_TIME || "2025-08-19 00:00:00";
-let endTime = process.env.END_TIME || "2025-08-20 00:00:00";
+const flowPath = process.env.FLOW_PATH || '/data/flows/us/flows-0825/';
+let startTime = process.env.START_TIME || "2025-08-25 00:00:00";
+let endTime = process.env.END_TIME || "2025-08-25 08:00:00";
+// const startTime = process.env.START_TIME || "1756105140.13";
+// const endTime = process.env.END_TIME || "1756130343.68";
+const timezone = process.env.TIMEZONE || "America/Los_Angeles";  //America/Los_Angeles, Asia/Shanghai
 
 let deviceNetworkActivityMap = new Map();
 
@@ -70,10 +74,10 @@ function getDeviceName(mac) {
     "C4:35:D9:98:3F:13": "Melvin's MacBook Air",
     "0E:0F:B6:05:F8:A9": "Rebecca's MacBook Air",
     "B0:8C:75:E2:08:33": "FirewalasiPhone",
-    "80:74:84:67:47:D3":"(US)android-1d7c51edaa499e91",
-    "5E:35:21:95:AA:10":"(US)Jerry’s Mac mini (9)",
-    "FC:B0:DE:04:9C:E3":"(US)dell-desktop",
-    "D0:C9:07:C8:6C:58":"(US)Govee Air Monitor"
+    "80:74:84:67:47:D3": "(US)android-1d7c51edaa499e91",
+    "5E:35:21:95:AA:10": "(US)Jerry’s Mac mini (9)",
+    "FC:B0:DE:04:9C:E3": "(US)dell-desktop",
+    "D0:C9:07:C8:6C:58": "(US)Govee Air Monitor"
   };
   return macDeviceMap[mac] || mac;
 }
@@ -115,21 +119,34 @@ async function clearRedisKeys() {
   }
 }
 
-function convertTimeToTimestamp() {
-  let start;
-  let end;
-  if (startTime.includes("-") || startTime.includes(":")) {
-    start = new Date(startTime).getTime() / 1000;
+function convertTimeToTimestamp(startTime, endTime) {
+  if (!moment.tz.zone(timezone)) {
+    throw new Error(`Invalid timezone: ${timezone}`);
   }
-  if (endTime.includes("-") || endTime.includes(":")) {
-    end = new Date(endTime).getTime() / 1000;
+  const inputFormat = "M/D/YYYY, HH:mm:ss"; // Example: "8/27/2025, 19:00:00"
+
+  const startMoment = startTime
+    ? moment.tz(startTime, inputFormat, true, timezone) 
+    : moment().tz(timezone).startOf('day');
+
+  const endMoment = endTime
+    ? moment.tz(endTime, inputFormat, true, timezone) 
+    : moment().tz(timezone);
+
+  if (startTime && !startMoment.isValid()) {
+    throw new Error(`Invalid startTime format. Expected "${inputFormat}", got "${startTime}"`);
   }
-  if (startTime === null || startTime === "") {
-    start = new Date().setHours(0, 0, 0, 0) / 1000;
+  if (endTime && !endMoment.isValid()) {
+    throw new Error(`Invalid endTime format. Expected "${inputFormat}", got "${endTime}"`);
   }
-  if (endTime === null || endTime === "" || endTime < startTime) {
-    end = new Date().getTime() / 1000;
+
+  const start = startMoment.unix();
+  let end = endMoment.unix();
+
+  if (end < start) {
+    end = startMoment.clone().add(1, 'day').unix();
   }
+
   return { start, end };
 }
 
@@ -177,7 +194,7 @@ async function loadFlowsFromDirectory(pathname) {
 
 function getAllAppMatches(flows) {
   const appMatches = [];
-  const { start, end } = convertTimeToTimestamp();
+  const { start, end } = convertTimeToTimestamp(startTime, endTime);
   flows.forEach(flow => {
     const flowval = flow.flow;
     if (flowval.ts < start || flowval.ts + flowval.du > end) {
@@ -255,6 +272,7 @@ describe('Should verify the device network activity is calculated correctly.', f
   });
 
   it.only('should output AppMatches statistics correctly', async function () {
+    this.timeout(20000);
     modifyAppTimeUsageSensorConfig();
     deviceNetworkActivityMap.forEach((flows, filename) => {
       const appMatches = getAllAppMatches(flows);
@@ -264,10 +282,11 @@ describe('Should verify the device network activity is calculated correctly.', f
       const deviceInfo = `${getDeviceName(mac)} ${date}`;
       console.log(`\nDevice: \x1b[32m${filename} (${deviceInfo})\x1b[0m`);
       console.log('Network Activity Summary:\n');
-      console.log(`Time\tDuration\tDestination\tTotal\nCategory\t`);
+      console.log(`Time\tDuration\tDestination\tUpload\tDownload\tTotal\nCategory\t`);
       appMatches.forEach(appMatch => {
         const appMatchObj = JSON.parse(appMatch);
-        console.log(`${new Date(appMatchObj.beginTime * 1000).toLocaleString('en-US', { hour12: false })}\t${appMatchObj.duration}s\t${appMatchObj.destination}\t${(appMatchObj.total / 1024).toFixed(2)} KB\t${appMatchObj.category}`);
+        console.log(`${new Date(appMatchObj.beginTime * 1000).toLocaleString('en-US',
+          { timeZone: timezone, hour12: false })}\t${appMatchObj.duration}s\t${appMatchObj.destination}\t${(appMatchObj.upload / 1024).toFixed(2)} KB\t${(appMatchObj.download / 1024).toFixed(2)} KB\t${(appMatchObj.total / 1024).toFixed(2)} KB\t${appMatchObj.category}`);
       });
       const summary = summarizeAppMatchesDestination(appMatches);
       //Destination-based statistics
@@ -277,7 +296,7 @@ describe('Should verify the device network activity is calculated correctly.', f
         const data = item;
         console.log(`  Destination: \x1b[32m${destination}\x1b[0m`);
         console.log(`    Count: ${data.count}`);
-        console.log(`    Details: ${data.details.map(detail => `${new Date(detail.beginTime * 1000).toLocaleString('en-US', { hour12: false })} ${(detail.total / 1024).toFixed(2)} KB`).join(', ')}`);
+        console.log(`    Details: ${data.details.map(detail => `${new Date(detail.beginTime * 1000).toLocaleString('en-US', { timeZone: timezone, hour12: false })} ${(detail.total / 1024).toFixed(2)} KB`).join(', ')}`);
       });
       console.log(`\n----------------------------------------------------------`);
     });
@@ -300,7 +319,7 @@ describe('Should verify the device network activity is calculated correctly.', f
     for (const mac of devices) {
       const uid = mac;
 
-      const { start, end } = convertTimeToTimestamp();
+      const { start, end } = convertTimeToTimestamp(startTime, endTime);
       const apps = ["internet"];
       const granularity = "hour";
       const uidIsDevice = true;
@@ -323,7 +342,7 @@ describe('Should verify the device network activity is calculated correctly.', f
       for (const [timestamp, { totalMins }] of Object.entries(slots)) {
         if (totalMins > 0) {
           const readableTime = new Date(Number(timestamp) * 1000)
-            .toLocaleString("en-US", { hour12: false });
+            .toLocaleString("en-US", { timeZone: timezone, hour12: false });
           console.log(`Time: ${readableTime}, Total Minutes: ${totalMins}`);
         }
       }
@@ -333,7 +352,7 @@ describe('Should verify the device network activity is calculated correctly.', f
           console.log(`\nNetwork Activity for Device: ${device}`);
           for (const interval of internetTimeUsage.devices[device].intervals) {
             const duration = Math.ceil((interval.end - interval.begin) / 60 + 1);
-            console.log(`  From ${new Date(interval.begin * 1000).toLocaleString('en-US', { hour12: false })} to ${new Date(interval.end * 1000).toLocaleString('en-US', { hour12: false })}, Duration: ${duration} mins`);
+            console.log(`  From ${new Date(interval.begin * 1000).toLocaleString('en-US', { timeZone: timezone, hour12: false })} to ${new Date(interval.end * 1000).toLocaleString('en-US', { timeZone: timezone, hour12: false })}, Duration: ${duration} mins`);
           }
         }
       }
