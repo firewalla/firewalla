@@ -380,6 +380,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
           await this.flushCategoryData(c);
           await this.flushIncludedElements(c);
           await dnsmasq.deletePolicyCategoryFilterEntry(c);
+          delete this.activeCategories[c];
           // this will trigger ipset recycle and dnsmasq config change
           const event = {
             type: "UPDATE_CATEGORY_DOMAIN",
