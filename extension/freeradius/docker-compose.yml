@@ -9,4 +9,4 @@ services:
       - /home/pi/.firewalla/run/docker/freeradius/config:/root/freeradius/config
       - /home/pi/.firewalla/config/freeradius:/root/.config
       - /home/pi/.forever/freeradius/:/var/log/freeradius/
-    command: bash -c "bash /root/freeradius/freeradius.sh run & tail -f /var/log/freeradius/radius.log"
+    command: bash -c "bash /root/freeradius/freeradius.sh run && tail -f /dev/null"

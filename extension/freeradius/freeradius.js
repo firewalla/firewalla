@@ -29,6 +29,7 @@ const util = require('../../util/util.js');
 
 const dockerDir = `${f.getRuntimeInfoFolder()}/docker/freeradius`
 const configDir = `${f.getUserConfigFolder()}/freeradius`
+const logDir = `${f.getUserHome()}/.forever/freeradius`
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -245,9 +246,14 @@ class FreeRadius {
     await exec(`mkdir -p ${dockerDir}/config`).catch((e) => {
       log.warn("Failed to create config directory,", e.message);
     });
+
+    await exec(`mkdir -p ${logDir}/`).catch((e) => {
+      log.warn("Failed to create log directory,", e.message);
+    });
+
     const content = await fs.readFileAsync(`${__dirname}/docker-compose.yml`, 'utf8');
     const yamlContent = yaml.load(content);
-    const tag = this.getImageTag(options)
+    const tag = this.getImageTag(options);
     yamlContent.services.freeradius.image = `public.ecr.aws/a0j1s2e9/freeradius:${tag}`;
     // add --security-opt seccomp=unconfined if host u18
     if (await this.isU18()) {
