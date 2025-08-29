@@ -580,7 +580,7 @@ class ACLAuditLogPlugin extends Sensor {
     if (!mac || mac === "FF:FF:FF:FF:FF:FF") {
       mac = null;
       if (record.sh) {
-        if (net.isIPv4(record.sh)) {
+        if (net.isIPv4(record.sh) || net.isIPv6(record.sh)) {
           // very likely this is a VPN device
           const identity = IdentityManager.getIdentityByIP(record.sh);
           if (identity) {

@@ -28,6 +28,9 @@ Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const iptool = require('ip');
 const crypto = require('crypto');
+const Address6 = require('ip-address').Address6;
+const ipTool = require('ip');
+const sysManager = require('../../net2/SysManager');
 
 const SERVICE_NAME = "openvpn_client";
 
@@ -48,6 +51,15 @@ class OpenVPNClient extends VPNClient {
     const ip4File = this._getIP4FilePath();
     const ips = await fs.readFileAsync(ip4File, "utf8").then((content) => content.trim().split('\n')).catch((err) => {
       log.error(`Failed to read IPv4 address file of vpn ${this.profileId}`, err.message);
+      return null;
+    });
+    return ips;
+  }
+
+  async getVpnIP6s() {
+    const ip6File = this._getIP6FilePath();
+    const ips = await fs.readFileAsync(ip6File, "utf8").then((content) => content.trim().split('\n')).catch((err) => {
+      log.error(`Failed to read IPv6 address file of vpn ${this.profileId}`, err.message);
       return null;
     });
     return ips;
@@ -81,16 +93,33 @@ class OpenVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.push_options`;
   }
 
-  _getGatewayFilePath() {
-    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.gateway`;
+  _getGatewayFilePath(ipFamily=4) {
+    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.gateway${ipFamily === 6 ? '6' : ''}`;
   }
 
-  _getSubnetFilePath() {
-    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.subnet`;
+  _getSubnetFilePath(ipFamily=4) {
+    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.subnet${ipFamily === 6 ? '6' : ''}`;
+  }
+
+  _getLocalIPFilePath(ipFamily=4) {
+    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.ip${ipFamily === 6 ? '6' : '4'}`;
   }
 
   _getIP4FilePath() {
-    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.ip4`;
+    return this._getLocalIPFilePath(4);
+  }
+
+  _getIP6FilePath() {
+    return this._getLocalIPFilePath(6);
+  }
+
+  async _getRemoteIP6() {
+    const gw6File = this._getGatewayFilePath(6);
+    const gw6 = await fs.readFileAsync(gw6File, "utf8").then((content) => content.trim().split('\n')).catch((err) => {
+      log.error(`Failed to read Gateway6 address file of vpn ${this.profileId}`, err.message);
+      return null;
+    });
+    return gw6;
   }
 
   async _cleanupLogFiles() {
@@ -328,7 +357,107 @@ class OpenVPNClient extends VPNClient {
         }
       }
     }
+
+    const subnet6s = await fs.readFileAsync(this._getSubnetFilePath(6), "utf8").then((content) => content.trim().split("\n")).catch((err) => {
+      log.error(`Failed to read IPv6 subnet file of vpn ${this.profileId}`, err.message);
+      return null;
+    });
+    log.info("subnet6s:", subnet6s);
+
+    if (subnet6s) {
+      for (const subnet of subnet6s) {
+        const [network, mask] = subnet.split("/", 2);
+        if (!network || !mask)
+          continue;
+        try {
+          const addr = new Address6(network);
+          if (addr.isValid()) {
+            const prefix = parseInt(mask);
+            if (prefix >= 0 && prefix <= 128) {
+              results.push(`${addr.correctForm()}/${prefix}`);
+            }
+          }
+        } catch (err) {
+          log.error(`Failed to parse cidr subnet ${subnet} for profile ${this.profileId}`, err.message);
+        }
+      }
+    }
+
     return results;
+  }
+
+  isConflictSubnet6(subnetStr1, subnetStr2) {
+    const subnet1= {}, subnet2={};
+    subnet1.addr = new Address6(subnetStr1);
+    subnet2.addr = new Address6(subnetStr2);
+
+    if (!subnet1.addr.isValid() || !subnet2.addr.isValid()) {
+      return false;
+    }
+    subnet1.firstAddress = subnet1.addr.startAddress().bigInteger();
+    subnet2.firstAddress = subnet2.addr.startAddress().bigInteger();
+    subnet1.lastAddress = subnet1.addr.endAddress().bigInteger();
+    subnet2.lastAddress = subnet2.addr.endAddress().bigInteger();
+
+    if ( (subnet1.firstAddress.compareTo(subnet2.firstAddress) <= 0 && subnet1.lastAddress.compareTo(subnet2.firstAddress) >= 0) ||
+        (subnet2.firstAddress.compareTo(subnet1.firstAddress) <= 0 && subnet2.lastAddress.compareTo(subnet1.firstAddress) >= 0))  {
+      return true;
+    }
+    return false;
+  }
+
+  getSubnetsWithoutConflict(subnets) {
+    const validSubnets = [];
+    if (subnets && Array.isArray(subnets)) {
+      for (let subnet of subnets) {
+        const ipSubnets = subnet.split('/');
+        if (ipSubnets.length != 2 && ipSubnets.length != 3) {
+          continue;
+        }
+        const ipAddr = ipSubnets[0];
+        const maskLength = ipSubnets[1];
+        if (isNaN(maskLength) || !Number.isInteger(Number(maskLength))) {
+          continue;
+        }
+        let maskLenNum = Number(maskLength);
+        // only check conflict of IPv4 addresses here
+        if (ipTool.isV4Format(ipAddr)) {
+
+          if (maskLenNum > 32 || maskLenNum < 0) {
+            continue;
+          }
+          const serverSubnetCidr = ipTool.cidrSubnet(subnet);
+          const conflict = sysManager.getLogicInterfaces().some((iface) => {
+            const mySubnetCidr = iface.subnet && ipTool.cidrSubnet(iface.subnet);
+            return mySubnetCidr && (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress)) || false;
+          });
+          if (!conflict) {
+            validSubnets.push(subnet);
+          }
+        } else if (ipTool.isV6Format(ipAddr)) {
+          // Handle IPv6 subnets
+          if (maskLenNum > 128 || maskLenNum < 0) {
+            continue;
+          }
+          
+          const conflict = sysManager.getLogicInterfaces().some((iface) => {
+            if (iface.ip6_subnets && _.isArray(iface.ip6_subnets)) {
+              for (const s of iface.ip6_subnets) {
+                if (this.isConflictSubnet6(subnet, s)) {
+                  log.info(`Conflict found between IPv6 subnets: ${subnet} and ${s}`);
+                  return true;
+                }
+              }
+            }
+            return false;
+          });
+          if (!conflict) {
+            validSubnets.push(subnet);
+          }
+        }
+      }
+    }
+    return validSubnets;
   }
 
   async _isLinkUp() {
