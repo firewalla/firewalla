@@ -17,8 +17,8 @@ SUBNET_FILE="/etc/openvpn/ovpn_server/$INSTANCE.subnet"
 echo "${route_network_1}/${route_netmask_1}" > $SUBNET_FILE
 
 SUBNET6_FILE="/etc/openvpn/ovpn_server/$INSTANCE.subnet6"
-subnetwork6=$(redis-cli hget policy:system vpn | jq .serverNetwork6)
-echo "${subnetwork6//\"/}" > $SUBNET6_FILE
+subnetwork6=$(ipcalc -nb $ifconfig_ipv6_local/$ifconfig_ipv6_netbits |awk '$1 == "Prefix:" {print $2}')
+echo "${subnetwork6}" > $SUBNET6_FILE
 
 LOCAL_FILE="/etc/openvpn/ovpn_server/$INSTANCE.local"
 echo "${ifconfig_local}/${route_netmask_1}" > $LOCAL_FILE
