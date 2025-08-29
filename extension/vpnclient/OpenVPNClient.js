@@ -420,20 +420,20 @@ class OpenVPNClient extends VPNClient {
         }
         let maskLenNum = Number(maskLength);
         // only check conflict of IPv4 addresses here
-        if (ipTool.isV4Format(ipAddr)) {
+        if (iptool.isV4Format(ipAddr)) {
 
           if (maskLenNum > 32 || maskLenNum < 0) {
             continue;
           }
-          const serverSubnetCidr = ipTool.cidrSubnet(subnet);
+          const serverSubnetCidr = iptool.cidrSubnet(subnet);
           const conflict = sysManager.getLogicInterfaces().some((iface) => {
-            const mySubnetCidr = iface.subnet && ipTool.cidrSubnet(iface.subnet);
+            const mySubnetCidr = iface.subnet && iptool.cidrSubnet(iface.subnet);
             return mySubnetCidr && (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress)) || false;
           });
           if (!conflict) {
             validSubnets.push(subnet);
           }
-        } else if (ipTool.isV6Format(ipAddr)) {
+        } else if (iptool.isV6Format(ipAddr)) {
           // Handle IPv6 subnets
           if (maskLenNum > 128 || maskLenNum < 0) {
             continue;
