@@ -29,7 +29,6 @@ const exec = require('child-process-promise').exec;
 const iptool = require('ip');
 const crypto = require('crypto');
 const Address6 = require('ip-address').Address6;
-const ipTool = require('ip');
 const sysManager = require('../../net2/SysManager');
 
 const SERVICE_NAME = "openvpn_client";
@@ -421,20 +420,20 @@ class OpenVPNClient extends VPNClient {
         }
         let maskLenNum = Number(maskLength);
         // only check conflict of IPv4 addresses here
-        if (ipTool.isV4Format(ipAddr)) {
+        if (iptool.isV4Format(ipAddr)) {
 
           if (maskLenNum > 32 || maskLenNum < 0) {
             continue;
           }
-          const serverSubnetCidr = ipTool.cidrSubnet(subnet);
+          const serverSubnetCidr = iptool.cidrSubnet(subnet);
           const conflict = sysManager.getLogicInterfaces().some((iface) => {
-            const mySubnetCidr = iface.subnet && ipTool.cidrSubnet(iface.subnet);
+            const mySubnetCidr = iface.subnet && iptool.cidrSubnet(iface.subnet);
             return mySubnetCidr && (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress)) || false;
           });
           if (!conflict) {
             validSubnets.push(subnet);
           }
-        } else if (ipTool.isV6Format(ipAddr)) {
+        } else if (iptool.isV6Format(ipAddr)) {
           // Handle IPv6 subnets
           if (maskLenNum > 128 || maskLenNum < 0) {
             continue;
@@ -488,7 +487,11 @@ class OpenVPNClient extends VPNClient {
 
   async destroy() {
     await super.destroy();
-    const filesToDelete = [this._getProfilePath(), this._getRuntimeProfilePath(), this._getUserPassPath(), this._getPasswordPath(), this._getGatewayFilePath(), this._getPushOptionsPath(), this._getSubnetFilePath(), this._getIP4FilePath()];
+    const filesToDelete = [
+      this._getProfilePath(), this._getRuntimeProfilePath(), this._getUserPassPath(), this._getPasswordPath(), 
+      this._getGatewayFilePath(), this._getPushOptionsPath(), this._getSubnetFilePath(), this._getIP4FilePath(),
+      this._getGatewayFilePath(6), this._getSubnetFilePath(6), this._getIP6FilePath()
+    ];
     for (const file of filesToDelete)
       await fs.unlinkAsync(file).catch((err) => {});
     await this._cleanupLogFiles();
