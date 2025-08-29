@@ -114,7 +114,7 @@ class VPNProfile extends Identity {
     if (statistics && _.isArray(statistics.clients)) {
       const clients = statistics.clients;
       for (const client of clients) {
-        if ((!client.vAddr && !client.vAddr6) || !client.addr)
+        if ((!client.vAddr && !client.vAddr6) || !client.addr || !client.cn)
           continue;
         for (const addr of client.vAddr) {
           if (new Address4(addr).isValid())

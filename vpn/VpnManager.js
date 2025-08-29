@@ -227,8 +227,8 @@ class VpnManager {
       await iptable.run(commands);
     } else {
       const commands =[
-        // delete this rule if it exists, logical opertion ensures correct execution
-        wrapIptables(`sudo ip6tables -w -t nat -D FW_POSTROUTING -s ${serverNetwork6}/24 -j MASQUERADE`),
+        // delete this rule if it exists, logical operation ensures correct execution
+        wrapIptables(`sudo ip6tables -w -t nat -D FW_POSTROUTING -s ${serverNetwork6} -j MASQUERADE`),
         // insert back as top rule in table
         `sudo ip6tables -w -t nat -I FW_POSTROUTING 1 -s ${serverNetwork6} -j MASQUERADE`
       ];
