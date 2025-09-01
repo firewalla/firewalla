@@ -7,8 +7,8 @@ try_set_value() {
 }
 
 set_value() {
-    try_set_value /sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1_enable $1
-    try_set_value /sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1 $2
+    try_set_value /sys/class/hwmon/hwmon0/pwm1_enable $1
+    try_set_value /sys/class/hwmon/hwmon0/pwm1 $2
 }
 
 set_cpu() {
