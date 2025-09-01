@@ -89,6 +89,22 @@ class FreeRadiusSensor extends Sensor {
       };
     });
 
+    extensionManager.onCmd("processFreeRadius", async (msg, data) => {
+      if (!data.script || !data.cmd) {
+        return {
+          success: false,
+          error: "script or cmd is invalid",
+        };
+      }
+      const options = await this.loadOptionsAsync();
+      const result = await freeradius.processCommand(data.script, data.cmd, options);
+      log.info(`Processed ${data.script} with command ${data.cmd}, result: ${result}`);
+      return {
+        success: true,
+        result: result,
+      };
+    });
+
     extensionManager.onGet("getFreeRadiusStatus", async (msg, data) => {
       await freeradius._statusServer();
       await freeradius._watchStatus();

@@ -49,6 +49,14 @@ class FreeRadius {
   }
 
   async prepare(options = {}) {
+    try {
+      await this._prepare(options);
+    } catch (err) {
+      log.warn(`failed to prepare freeradius`, err.message);
+    }
+  }
+
+  async _prepare(options = {}) {
     await this.watchContainer();
     await this.startDockerDaemon(options);
     await this.generateDockerCompose(options);
@@ -132,8 +140,12 @@ class FreeRadius {
       }
       await util.waitFor(_ => this.running === true, options.timeout * 1000 || 60000).catch((err) => { });
       if (!this.running) {
-        log.warn("Container freeradius-server is not started.")
-        return false;
+        // fallback to check container status
+        await this._statusServer(options);
+        if (!this.running) {
+          log.warn("Container freeradius-server is not started.")
+          return false;
+        }
       }
       log.info("Container freeradius-server is started.");
       return true;
@@ -221,6 +233,23 @@ class FreeRadius {
     return options;
   }
 
+  // policy in format: { "0.0.0.0": { "options": {}, "radius": {} }, "tag":{"radius":{"users":[]}} }
+  async processCommand(script, cmd, options) {
+    log.info(`Processing ${script} with command ${cmd}`);
+    try {
+      // check if container is running
+      if (!await this._checkContainer(options)) {
+        log.warn("container freeradius-server is not running, cannot process radius command");
+        return false;
+      }
+      return await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml exec -T freeradius bash -c "/usr/bin/node /root/freeradius/${script} ${cmd}"`).then((r) => {
+        return r.stdout.trim()
+      }).catch((e) => { return e.message });
+    } catch (err) {
+      log.warn("Failed to process script,", script, cmd, err.message);
+    }
+  }
+
   async saveFile(filepath, content) {
     filepath = filepath.replace(/^\//, ''); // remove leading slash
     const baseFolder = filepath.split('/').slice(0, -1).join('/'); // get base folder
@@ -258,6 +287,9 @@ class FreeRadius {
     // add --security-opt seccomp=unconfined if host u18
     if (await this.isU18()) {
       yamlContent.services.freeradius.security_opt = ["seccomp=unconfined"]
+    }
+    if (options.hostname) {
+      yamlContent.services.freeradius.hostname = options.hostname;
     }
     await fs.writeFileAsync(`${dockerDir}/docker-compose.yml`, yaml.dump(yamlContent), 'utf8');
   }
@@ -347,12 +379,11 @@ class FreeRadius {
   async _getFrccClients() {
     const frcc = await fr.getConfig();
     const assets = _.get(frcc, "apc.assets", {});
-    const bridge = _.get(frcc, "interface.bridge", {});
     const wifis = _.get(frcc, "apc.assets_template.ap_default.wifiNetworks", {});
-
-    const brx = _.isObject(wifis) && Object.values(wifis).map(v => v.intf).filter(i => i) || [];
+    const interfaces = _.get(frcc, "interface", {});
+    const wifi_intfs = _.isObject(wifis) && Object.values(wifis).map(v => v.intf).filter(i => i) || [];
+    const subnets = Object.values(interfaces).flatMap(intf => wifi_intfs.filter(name => intf[name] && intf[name].ipv4).map(name => intf[name].ipv4));
     const macs = _.isObject(assets) && Object.keys(assets).filter(i => i) || [];
-    const subnets = _.isObject(bridge) && brx.map(i => bridge[i].ipv4) || [];
     return { macs, subnets }
   }
 
@@ -375,6 +406,14 @@ class FreeRadius {
   }
 
   async prepareIptables() {
+    try {
+      await this._prepareIptables();
+    } catch (err) {
+      log.warn(`failed to prepare iptables`, err.message);
+    }
+  }
+
+  async _prepareIptables() {
     const { macs, subnets } = await this.getClients();
     await this.setupIptables(macs, subnets);
     await this.saveIpset("ap_ip_list");
@@ -573,13 +612,7 @@ class FreeRadius {
     }
   }
 
-  async reconfigServer(target, options = {}) {
-    if (!this.featureOn) {
-      log.error(`feature is disabled`);
-      return false;
-    }
-
-    this.watchContainer(5);
+  async _reconfigServer(target, options = {}) {
     // if new image detected, update image first
     const imageUpdated = await this.upgradeImage(options);
     const isRunning = await this._checkContainer(options);
@@ -594,7 +627,23 @@ class FreeRadius {
         return false;
       }
     }
-    this.watchContainer(60);
+  }
+
+  async reconfigServer(target, options = {}) {
+    if (!this.featureOn) {
+      log.error(`feature is disabled`);
+      return false;
+    }
+
+    try {
+      this.watchContainer(5);
+      await this._reconfigServer(target, options);
+    } catch (err) {
+      log.warn("Failed to reconfig freeradius,", target, options, err.message);
+    } finally {
+      this.watchContainer(60);
+    }
+
     return this.running;
   }
 
