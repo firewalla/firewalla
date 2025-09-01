@@ -40,7 +40,7 @@ class OrangePlatform extends Platform {
   }
 
   getLicenseTypes() {
-    return ["c1"];
+    return ["j1"];
   }
 
   getAllNicNames() {
@@ -209,8 +209,8 @@ class OrangePlatform extends Platform {
   }
 
   async configFan(policy) {
-    const FAN_MODE_PATH='/sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1_enable';
-    const FAN_SPEED_PATH='/sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1';
+    const FAN_MODE_PATH="/sys/class/hwmon/hwmon0/pwm1_enable";
+    const FAN_SPEED_PATH="/sys/class/hwmon/hwmon0/pwm1";
     const FAN_MODE_MANUAL=1;
     const FAN_MODE_AUTO=2;
     const FAN_SPEED_MIN=0;
@@ -430,7 +430,7 @@ class OrangePlatform extends Platform {
   async getFanSpeed() {
     let fanSpeed = "-1"
     try {
-      fanSpeed = await fs.readFileAsync("/sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1", {encoding: 'utf8'}).then(r => r.trim());
+      fanSpeed = await fs.readFileAsync("/sys/class/hwmon/hwmon0/pwm1", {encoding: 'utf8'}).then(r => r.trim());
     } catch (err) {
       log.error("failed to get fan speed:",err);
       fanSpeed = "-1"
