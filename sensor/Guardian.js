@@ -763,7 +763,10 @@ module.exports = class {
           break;
         try {
           log.debug("syncOpsToMsp: sync op to msp", op);
-          const msg = {msgType: "sync_op_from_box", op: op};
+          const msg = {
+            data: op,
+            replyid: "sync_op_from_box"
+          }
           const buffer = Buffer.from(JSON.stringify(msg), 'utf8');
           const compressedData = await deflateAsync(buffer);
           const compressedMsg = JSON.stringify({
