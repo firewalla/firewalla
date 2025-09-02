@@ -56,13 +56,15 @@ appTimeUsageSensor.loadConfig(false);
 const flowTool = require('../net2/FlowTool');
 const sensorLoader = require('../sensor/SensorLoader.js');
 
-const flowPath = process.env.FLOW_PATH || '/data/flows/us/flows-0825/';
-let startTime = process.env.START_TIME || "2025-08-25 00:00:00";
-let endTime = process.env.END_TIME || "2025-08-25 08:00:00";
+const flowPath = process.env.FLOW_PATH || '/data/flows/test';
+let startTime = process.env.START_TIME || "8/30/2025, 19:00:00";
+let endTime = process.env.END_TIME || "8/31/2025, 09:00:00";
 // const startTime = process.env.START_TIME || "1756105140.13";
 // const endTime = process.env.END_TIME || "1756130343.68";
-const timezone = process.env.TIMEZONE || "America/Los_Angeles";  //America/Los_Angeles, Asia/Shanghai
+const timezone = process.env.TIMEZONE || "Asia/Shanghai";  //America/Los_Angeles, Asia/Shanghai
 
+// const outputApps = ['snapchat', 'internet'];
+const outputApps = ['internet'];
 let deviceNetworkActivityMap = new Map();
 
 
@@ -79,12 +81,13 @@ function getDeviceName(mac) {
     "FC:B0:DE:04:9C:E3": "(US)dell-desktop",
     "D0:C9:07:C8:6C:58": "(US)Govee Air Monitor"
   };
+
   return macDeviceMap[mac] || mac;
 }
 
 async function loadNoiseDomainsSensor() {
-  let noisedomain = ["marketplace.jetbrains.com", "fe2.apple-dns.net"];
-  // noisedomain = [];
+  let noisedomain = ["tiktokv.us", "tiktokv.com", "icloud-content.com.cn", "tiktokv.eu"];
+  noisedomain = [];
   const nds = await sensorLoader.initSingleSensor("NoiseDomainsSensor");
   await nds.reloadDomains(false);
   noisedomain.forEach(domain => {
@@ -126,11 +129,11 @@ function convertTimeToTimestamp(startTime, endTime) {
   const inputFormat = "M/D/YYYY, HH:mm:ss"; // Example: "8/27/2025, 19:00:00"
 
   const startMoment = startTime
-    ? moment.tz(startTime, inputFormat, true, timezone) 
+    ? moment.tz(startTime, inputFormat, true, timezone)
     : moment().tz(timezone).startOf('day');
 
   const endMoment = endTime
-    ? moment.tz(endTime, inputFormat, true, timezone) 
+    ? moment.tz(endTime, inputFormat, true, timezone)
     : moment().tz(timezone);
 
   if (startTime && !startMoment.isValid()) {
@@ -233,6 +236,8 @@ function summarizeAppMatchesDestination(appMatches) {
   const summary = {};
   appMatches.forEach(appMatch => {
     const appMatchObj = JSON.parse(appMatch);
+    if (!outputApps.includes(appMatchObj.app))
+      return;
     const destination = appMatchObj.destination;
     if (!summary[destination]) {
       summary[destination] = {
@@ -282,11 +287,13 @@ describe('Should verify the device network activity is calculated correctly.', f
       const deviceInfo = `${getDeviceName(mac)} ${date}`;
       console.log(`\nDevice: \x1b[32m${filename} (${deviceInfo})\x1b[0m`);
       console.log('Network Activity Summary:\n');
-      console.log(`Time\tDuration\tDestination\tUpload\tDownload\tTotal\nCategory\t`);
+      console.log(`Time\tDuration\tDestination\tUpload\tDownload\tTotal\tCategory\t\App`);
       appMatches.forEach(appMatch => {
         const appMatchObj = JSON.parse(appMatch);
-        console.log(`${new Date(appMatchObj.beginTime * 1000).toLocaleString('en-US',
-          { timeZone: timezone, hour12: false })}\t${appMatchObj.duration}s\t${appMatchObj.destination}\t${(appMatchObj.upload / 1024).toFixed(2)} KB\t${(appMatchObj.download / 1024).toFixed(2)} KB\t${(appMatchObj.total / 1024).toFixed(2)} KB\t${appMatchObj.category}`);
+        if (outputApps.includes(appMatchObj.app)) {
+          console.log(`${new Date(appMatchObj.beginTime * 1000).toLocaleString('en-US',
+            { timeZone: timezone, hour12: false })}\t${appMatchObj.duration}s\t${appMatchObj.destination}\t${(appMatchObj.upload / 1024).toFixed(2)} KB\t${(appMatchObj.download / 1024).toFixed(2)} KB\t${(appMatchObj.total / 1024).toFixed(2)} KB\t${appMatchObj.category}\t${appMatchObj.app}`);
+        }
       });
       const summary = summarizeAppMatchesDestination(appMatches);
       //Destination-based statistics
@@ -320,46 +327,46 @@ describe('Should verify the device network activity is calculated correctly.', f
       const uid = mac;
 
       const { start, end } = convertTimeToTimestamp(startTime, endTime);
-      const apps = ["internet"];
       const granularity = "hour";
       const uidIsDevice = true;
       const includeSlots = true;
       const includeIntervals = true;
 
       const stats = await realTimeUsageToolInstance.getAppTimeUsageStats(
-        uid, null, apps, start, end, granularity, uidIsDevice, includeSlots, includeIntervals
+        uid, null, outputApps, start, end, granularity, uidIsDevice, includeSlots, includeIntervals
       );
 
-      const internetTimeUsage = _.get(stats, ["appTimeUsage", "internet"]);
-      if (!internetTimeUsage) {
-        console.warn(`No internet usage data found for device: ${getDeviceName(uid)}`);
-        continue;
-      }
-
-      console.log(`\nInternet Time Usage Statistics for device: \x1b[32m${getDeviceName(uid)}\x1b[0m`);
-      const slots = internetTimeUsage.slots;
-
-      for (const [timestamp, { totalMins }] of Object.entries(slots)) {
-        if (totalMins > 0) {
-          const readableTime = new Date(Number(timestamp) * 1000)
-            .toLocaleString("en-US", { timeZone: timezone, hour12: false });
-          console.log(`Time: ${readableTime}, Total Minutes: ${totalMins}`);
+      for (const app of outputApps) {
+        const appTimeUsage = _.get(stats, ["appTimeUsage", app]);
+        if (!appTimeUsage) {
+          console.warn(`No internet usage data found for device: ${getDeviceName(uid)}`);
+          continue;
         }
-      }
 
-      if (internetTimeUsage.devices && Object.keys(internetTimeUsage.devices).length > 0) {
-        for (const device of Object.keys(internetTimeUsage.devices)) {
-          console.log(`\nNetwork Activity for Device: ${device}`);
-          for (const interval of internetTimeUsage.devices[device].intervals) {
-            const duration = Math.ceil((interval.end - interval.begin) / 60 + 1);
-            console.log(`  From ${new Date(interval.begin * 1000).toLocaleString('en-US', { timeZone: timezone, hour12: false })} to ${new Date(interval.end * 1000).toLocaleString('en-US', { timeZone: timezone, hour12: false })}, Duration: ${duration} mins`);
+        console.log(`\n${app} Time Usage Statistics for device: \x1b[32m${getDeviceName(uid)}\x1b[0m`);
+        const slots = appTimeUsage.slots;
+
+        for (const [timestamp, { totalMins }] of Object.entries(slots)) {
+          if (totalMins > 0) {
+            const readableTime = new Date(Number(timestamp) * 1000)
+              .toLocaleString("en-US", { timeZone: timezone, hour12: false });
+            console.log(`Time: ${readableTime}, Total Minutes: ${totalMins}`);
           }
         }
-      }
-      console.log(`Total Minutes: ${internetTimeUsage.totalMins}`);
-      console.log(`\n----------------------------------------------------------`);
 
-      expect(internetTimeUsage).to.have.property('totalMins').that.is.a('number');
+        if (appTimeUsage.devices && Object.keys(appTimeUsage.devices).length > 0) {
+          for (const device of Object.keys(appTimeUsage.devices)) {
+            console.log(`\nNetwork Activity for Device: ${device}`);
+            for (const interval of appTimeUsage.devices[device].intervals) {
+              const duration = Math.ceil((interval.end - interval.begin) / 60 + 1);
+              console.log(`  From ${new Date(interval.begin * 1000).toLocaleString('en-US', { timeZone: timezone, hour12: false })} to ${new Date(interval.end * 1000).toLocaleString('en-US', { timeZone: timezone, hour12: false })}, Duration: ${duration} mins`);
+            }
+          }
+        }
+        console.log(`Total Minutes: ${appTimeUsage.totalMins}`);
+        console.log(`\n----------------------------------------------------------`);
+        expect(appTimeUsage).to.have.property('totalMins').that.is.a('number');
+      }
     }
   });
 
