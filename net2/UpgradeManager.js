@@ -23,7 +23,6 @@ const config = require('./config.js')
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const { fileExist, fileTouch, fileRemove } = require('../util/util.js');
-const { rrWithErrHandling } = require('../util/requestWrapper.js')
 
 const _ = require('lodash')
 const { exec } = require('child-process-promise')

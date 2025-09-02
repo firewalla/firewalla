@@ -1,4 +1,4 @@
-/*    Copyright 2020-2024 Firewalla Inc.
+/*    Copyright 2020-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -180,7 +180,7 @@ class DeviceServiceScanSensor extends Sensor {
           const hostKeyExists = await rclient.existsAsync(`host:mac:${host.o.mac}`);
           // in case host entry is deleted when the scan is in progress
           if (hostKeyExists == 1)
-            await rclient.hsetAsync("host:mac:" + host.o.mac, "openports", JSON.stringify(scanResult));
+            await host.update({"openports": JSON.stringify(scanResult)}, true, true);
         }
       }
     } catch (err) {

@@ -153,6 +153,7 @@ class AutoBlocksRevalidationSensor extends Sensor {
         if (this.config.dryrun) {
           await pm2.markAsShouldDelete(autoBlockRule.pid);
         } else {
+          log.warn("Remove auto block policy", autoBlockRule.pid);
           await pm2.disableAndDeletePolicy(autoBlockRule.pid);
         }
       }

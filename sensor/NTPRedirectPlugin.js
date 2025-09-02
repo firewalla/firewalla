@@ -91,7 +91,8 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
 
   async applyMonitorable(m, setting) {
     if (!(m instanceof NetworkProfile)) {
-      log.warn(`Policy on ${m.constructor.getClassName()}:${m.getGUID()} not supported`)
+      if (setting !== 0)
+        log.warn(`Policy on ${m.constructor.getClassName()}:${m.getGUID()} not supported`)
       return
     }
 

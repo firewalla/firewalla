@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -38,8 +38,8 @@ const _ = require('lodash');
 const LRU = require('lru-cache');
 const sem = require('./SensorEventManager.js').getInstance();
 const {getPreferredName} = require('../util/util.js');
-const DNSManager = require('../net2/DNSManager.js');
-const dnsManager = new DNSManager();
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
 const mustache = require("mustache");
 
 const LOG_PREFIX = "[FW_ALM]";
@@ -193,9 +193,9 @@ class ACLAlarmLogPlugin extends Sensor {
       remoteIP = dst;
       remotePort = dport;
       dir = "outbound";
-      const device = await dnsManager.resolveLocalHostAsync(localIP);
-      if (device)
-        srcName = getPreferredName(device);
+      const host = await hostManager.getIdentityOrHost(localIP);
+      if (host)
+        srcName = host.getReadableName()
     } else {
       if (sysManager.isLocalIP(dst)) {
         localIP = dst;
@@ -203,9 +203,9 @@ class ACLAlarmLogPlugin extends Sensor {
         remoteIP = src;
         remotePort = sport;
         dir = "inbound";
-        const device = await dnsManager.resolveLocalHostAsync(localIP);
-        if (device)
-          dstName = getPreferredName(device);
+        const host = await hostManager.getIdentityOrHost(localIP);
+        if (host)
+          dstName = host.getReadableName()
       } else return;
     }
 

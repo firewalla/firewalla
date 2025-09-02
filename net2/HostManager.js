@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -13,6 +13,8 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
+const net = require('net')
+
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
@@ -104,7 +106,6 @@ const fs = require('fs');
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
-const RAPID_INACTIVE_TIME_SPAN = 60 * 60 * 6;
 const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 
 let instance = null;
@@ -165,6 +166,23 @@ module.exports = class HostManager extends Monitorable {
         });
       })
 
+      // updates hostsdb when host is updated
+      messageBus.subscribe('Host:Updated', null, null, async (channel, mac, id, obj) => {
+        let host = this.getHostFastByMAC(mac)
+        // once we are confident everything is in sync, we might be able to get rid of getHostsAsync()
+        if (!host) {
+          host = await this.getHostAsync(mac).catch(err => {
+            log.error('Failed to get host on Host:Updated', err, obj)
+          })
+          if (!host) return
+        }
+
+        if (host.ipv4Addr) {
+          this.hostsdb[`host:ip4:${obj.ipv4Addr}`] = host
+        }
+        this.syncV6DB(host)
+      })
+
       sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
 
       // ONLY register for these events in FireMain process
@@ -189,21 +207,22 @@ module.exports = class HostManager extends Monitorable {
         // beware that MSG_SYS_NETWORK_INFO_RELOADED will trigger scan from sensors and thus generate Scan:Done event
         // getHosts will be invoked here to reflect updated hosts information
         log.info("Subscribing Scan:Done event...")
-        messageBus.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
+        messageBus.subscribe("DiscoveryEvent", "Scan:Done", null, async (channel, type, ip, obj) => {
           if (!sysManager.isIptablesReady()) {
             log.warn(channel, type, "Iptables is not ready yet, skipping...");
             return;
           }
           log.info("New Host May be added rescan");
-          this.getHosts((err, result) => {
-            if (result && _.isArray(result)) {
-              for (const host of result) {
-                host.updateHostsFile().catch((err) => {
-                  log.error(`Failed to update hosts file for ${host.o.mac}`, err.messsage);
-                });
-              }
+          const result = await this.getHostsAsync()
+          if (!result || !_.isArray(result)) return
+
+          await asyncNative.eachLimit(result, 30, async host => {
+            try {
+              await host.updateHostsFile()
+            } catch(err) {
+              log.error(`Failed to update hosts file for ${JSON.stringify(host)}`, err);
             }
-          });
+          })
         });
 
         this.keepalive();
@@ -217,11 +236,40 @@ module.exports = class HostManager extends Monitorable {
         sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
           this.loadWifiSDAddr()
         })
+
+        // API depends on these lists, also FireApi initializes faster
+        this.buildsHostLists()
       }
 
       instance = this;
     }
     return instance;
+  }
+
+  async buildsHostLists() {
+    try {
+      const hosts = await this.getHostsAsync({includeInactiveHosts: true})
+      const activeHosts = []
+      const dhcpconf = []
+      const pinned = []
+      for (const host of hosts) {
+        if (host.o.lastActiveTimestamp || host.o.firstFoundTimestamp)
+          activeHosts.push(host.o.lastActiveTimestamp || host.o.firstFoundTimestamp, host.getGUID())
+
+        if (await this._hasDHCPReservation(host.o))
+          dhcpconf.push(host.getGUID())
+        if (host.o.pinned)
+          pinned.push(host.getGUID())
+      }
+      if (activeHosts.length)
+        await rclient.zaddAsync(Constants.REDIS_KEY_HOST_ACTIVE, activeHosts)
+      if (dhcpconf.length)
+        await rclient.saddAsync(Constants.REDIS_KEY_HOST_DHCPCONF, dhcpconf)
+      if (pinned.length)
+        await rclient.saddAsync(Constants.REDIS_KEY_HOST_PINNED, pinned)
+    } catch(err) {
+      log.error('Failed to build host lists', err)
+    }
   }
 
   async loadWifiSDAddr() {
@@ -268,7 +316,7 @@ module.exports = class HostManager extends Monitorable {
 
   async basicDataForInit(json, options) {
     let networkinfo = sysManager.getDefaultWanInterface();
-    if(networkinfo.gateway === null) {
+    if (networkinfo && networkinfo.gateway === null) {
       delete networkinfo.gateway;
     }
 
@@ -393,22 +441,25 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  async hostsToJson(json, options) {
+  async hostsToJson(hosts, options = {}) {
     let _hosts = [];
-    for (let i in this.hosts.all) {
-      _hosts.push(this.hosts.all[i].toJson());
+    for (const host of hosts) {
+      _hosts.push(host.toJson());
     }
-    json.hosts = _hosts;
-    if (platform.isFireRouterManaged())
+    if (platform.isFireRouterManaged()) {
       await this.enrichSTAInfo(_hosts);
+      await this.enrichApInfo(_hosts);
+    }
+
     // Reduce json size of init response
     if (!options.includeScanResults) {
-      return;
+      return _hosts
     }
     await Promise.all(_hosts.map(async host => {
       await this.enrichWeakPasswordScanResult(host, "mac");
       await this.enrichNseScanResult(host, "mac", "suspect");
     }));
+    return _hosts
   }
 
   async enrichSTAInfo(hosts) {
@@ -421,6 +472,32 @@ module.exports = class HostManager extends Monitorable {
         const mac = host.mac;
         if (mac && staStatus[mac])
           host.staInfo = staStatus[mac];
+      }
+    }
+  }
+
+  async enrichApInfo(hosts) {
+    const apStatus = await fwapc.getAssetsStatus().catch((err) => {
+      log.error(`Failed to get ap status from fwapc`, err.message);
+      return null;
+    });
+
+    await this._enrichApInfo(hosts, apStatus);
+  }
+
+  async _enrichApInfo(hosts, apStatus) {
+    if (_.isObject(apStatus)) {
+      for (const host of hosts) {
+        const mac = host.mac;
+        if (mac && apStatus[mac]) {
+          // override ip4 to br-lan0
+          const asset = apStatus[mac];
+          if (asset && asset.addrs && asset.addrs["br-lan0"] && asset.addrs["br-lan0"].ip4) {
+            host.ip = asset.addrs["br-lan0"].ip4;
+            const intfInfo = sysManager.getInterfaceViaIP(host.ip);
+            host.intf = intfInfo && intfInfo.uuid;
+          }
+        }
       }
     }
   }
@@ -495,12 +572,16 @@ module.exports = class HostManager extends Monitorable {
     const { granularities, hits} = statSettings;
     const stats = {}
     if (!metrics) { // default (full) metrics
-      metrics = [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB', 'ntp' ]
-      if (fc.isFeatureOn(Constants.FEATURE_LOCAL_FLOW)) {
-        metrics.push('intra:lo', 'conn:lo:intra')
+      metrics = [ 'upload', 'download', 'conn', 'ntp' ]
+      if (platform.isDNSFlowSupported()) metrics.push('dns')
+      if (platform.isAuditLogSupported()) {
+        metrics.push('ipB', 'dnsB', 'ipB:lo:intra')
         if (target && target != '0.0.0.0') // remove irrelevant matrics from init
-          metrics.push('upload:lo', 'download:lo', 'conn:lo:in', 'conn:lo:out')
+          metrics.push('ipB:lo:in', 'ipB:lo:out')
       }
+      metrics.push('intra:lo', 'conn:lo:intra')
+      if (target && target != '0.0.0.0') // remove irrelevant matrics from init
+        metrics.push('upload:lo', 'download:lo', 'conn:lo:in', 'conn:lo:out')
     }
     for (const metric of metrics) {
       const s = await getHitsAsync(metric + subKey, granularities, hits)
@@ -520,12 +601,18 @@ module.exports = class HostManager extends Monitorable {
     return this.generateStats(stats);
   }
 
-  async newLast24StatsForInit(json, target, metrics) {
+  async newLast24StatsForInit(json, target, metrics, options) {
     json.newLast24 = await this.getStats({granularities: '1hour', hits: 24}, target, metrics);
+    if (options.legacyLocalBlock) {
+      this.mergeStats(json.newLast24);
+    }
   }
 
-  async last12MonthsStatsForInit(json, target, metrics) {
+  async last12MonthsStatsForInit(json, target, metrics, options) {
     json.last12Months = await this.getStats({granularities: '1month', hits: 12}, target, metrics);
+    if (options.legacyLocalBlock) {
+      this.mergeStats(json.last12Months);
+    }
   }
 
   async monthlyDataUsageForInit(json) {
@@ -549,7 +636,7 @@ module.exports = class HostManager extends Monitorable {
   async monthlyDataStats(mac, date) {
     if (!date) {
       const dataPlan = await this.getDataUsagePlan({});
-      date = dataPlan ? dataPlan.date : 1
+      date = dataPlan && dataPlan.date || 1;
     }
     const timezone = sysManager.getTimezone();
     const now = timezone ? moment().tz(timezone) : moment();
@@ -604,12 +691,18 @@ module.exports = class HostManager extends Monitorable {
     return offset;
   }
 
-  async last60MinStatsForInit(json, target, metrics) {
+  async last60MinStatsForInit(json, target, metrics, options) {
     json.last60 = await this.getStats({granularities: '1minute', hits: 61}, target, metrics);
+    if (options.legacyLocalBlock) {
+      this.mergeStats(json.last60);
+    }
   }
 
-  async last30daysStatsForInit(json, target, metrics) {
+  async last30daysStatsForInit(json, target, metrics, options) {
     json.last30 = await this.getStats({granularities: '1day', hits: 30}, target, metrics);
+    if (options.legacyLocalBlock) {
+      this.mergeStats(json.last30);
+    }
   }
 
   async policyDataForInit(json) {
@@ -664,7 +757,7 @@ module.exports = class HostManager extends Monitorable {
     return rclient.getAsync("extension.portforward.config").then((data) => {
       if (data) {
         const config = JSON.parse(data);
-        return config;
+          return config;
       } else
         return null;
     }).catch((err) => null);
@@ -771,24 +864,22 @@ module.exports = class HostManager extends Monitorable {
   async hostsInfoForInit(json, options) {
     log.debug("Reading host stats");
 
-    await this.getHostsAsync(options)
+    const hosts = await this.getHostsAsync(options)
 
     // keeps total download/upload only for sorting on app
     await Promise.all([
-      asyncNative.eachLimit(this.hosts.all, 30, async host => {
+      asyncNative.eachLimit(hosts, 30, async host => {
         const stats = await this.getStats({granularities: '1hour', hits: 24}, host.o.mac, ['upload', 'download']);
         host.flowsummary = {
           inbytes: stats.totalDownload,
           outbytes: stats.totalUpload
         }
       }),
-      this.loadHostsPolicyRules(),
+      this.loadHostsPolicyRules(hosts),
     ])
-    await this.hostsToJson(json, options);
+    json.hosts = await this.hostsToJson(hosts, options);
 
-    // _totalHosts and _totalPrivateMacHosts will be updated in getHostsAsync
-    json.totalHosts = this._totalHosts;
-    json.totalPrivateMacHosts = this._totalPrivateMacHosts;
+    json.totalHosts = hosts.length;
 
     return json;
   }
@@ -827,7 +918,7 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async ruleGroupsForInit(json) {
-    const rgs = policyManager2.getAllRuleGroupMetaData();
+    const rgs = await policyManager2.getAllRuleGroupMetaData();
     json.ruleGroups = rgs;
   }
 
@@ -839,7 +930,7 @@ module.exports = class HostManager extends Monitorable {
   async internetSpeedtestResultsForInit(json, limit = 50) {
     const end = Date.now() / 1000;
     const begin = Date.now() / 1000 - 86400 * 30;
-    const results = (await rclient.zrevrangebyscoreAsync("internet_speedtest_results", end, begin) || []).map(e => {
+    const results = (await rclient.zrevrangebyscoreAsync("internet_speedtest_results", end, begin, 'limit', 0, limit) || []).map(e => {
       try {
         const r = JSON.parse(e);
         r.manual = r.manual || false;
@@ -903,20 +994,25 @@ module.exports = class HostManager extends Monitorable {
     json.networkMonitorEvents = networkMonitorEvents;
   }
 
+  async policyRuleNumberForInit(json) {
+      const count = await policyManager2.countActivePolicyNumber()
+      json.policyRuleNumber = count
+  }
+
   // what is blocked
   async policyRulesForInit(json) {
     log.debug("Reading policy rules");
     let rules = await policyManager2.loadActivePoliciesAsync({includingDisabled: 1})
     // filters out rules with inactive devices
-    const screentimeRules = rules.filter(rule=> rule.action == 'screentime');
-
-    rules = rules.filter(rule => {
-      if (rule.action == 'screentime') return false;
-      if (_.isEmpty(rule.scope)) return true;
-      return rule.scope.some(mac =>
-        this.hosts.all.some(host => host.o.mac == mac)
-      )
-    })
+    const policyRules = []
+    const screentimeRules = []
+    for (const rule of rules) {
+      if (rule.action == 'screentime') {
+        screentimeRules.push(rule)
+      } else {
+        policyRules.push(rule)
+      }
+    }
 
     let alarmIDs = rules.map((p) => p.aid);
 
@@ -937,73 +1033,79 @@ module.exports = class HostManager extends Monitorable {
       }
     })
 
-    json.policyRules = rules;
+    json.policyRules = policyRules;
     json.screentimeRules = screentimeRules;
   }
 
-  // whats is allowed
-  exceptionRulesForInit(json) {
-    log.debug("Reading exception rules");
-    return new Promise((resolve, reject) => {
-      exceptionManager.loadExceptions((err, rules) => {
-        if(err) {
-          reject(err);
-        } else {
-
-          /*
-          rules = rules.filter((r) => {
-            return r.type != "ALARM_NEW_DEVICE" // allow new device is default
-          })
-          */
-
-          // filters out rules with inactive devices
-          rules = rules.filter(rule => {
-            if(!rule) {
-              return false;
-            }
-
-            const mac = rule["p.device.mac"];
-
-            if (!mac) return true;
-
-            return this.hosts.all.some(host => host.o.mac === mac) || IdentityManager.getIdentityByGUID(mac);
-          })
-
-          let alarmIDs = rules.map((p) => p.aid);
-
-          alarmManager2.idsToAlarms(alarmIDs, (err, alarms) => {
-            if(err) {
-              log.error("Failed to get alarms by ids:", err);
-              reject(err);
-              return;
-            }
-
-            for(let i = 0; i < rules.length; i ++) {
-              if(rules[i] && alarms[i]) {
-                rules[i].alarmMessage = alarms[i].localizedInfo();
-                rules[i].alarmTimestamp = alarms[i].timestamp;
-              }
-            }
-
-            rules.sort((x,y) => {
-              if(y.timestamp < x.timestamp) {
-                return -1
-              } else {
-                return 1
-              }
-            })
-
-            json.exceptionRules = rules
-            resolve();
-          });
+  filterPolicyRules(rules, hosts) {
+    return rules.filter(rule => {
+      if (!_.isEmpty(rule.scope) && !rule.scope.some(mac => hosts.some(host => host.mac == mac))
+        || !_.isEmpty(rule.guids) && !rule.guids.some(guid => IdentityManager.getIdentityByGUID(guid))
+      ) {
+        return false
+      }
+      if (!_.isEmpty(rule.tag)) {
+        const {intfs, tags} = policyManager2.parseTags(rule.tag);
+        // not filtering interface as we still want rules on misconfigured interface or stopped VPNServer
+        // client'll filter unrecognized interface
+        if (tags.length && !tags.some(t => TagManager.getTagByUid(t))) {
+          return false
         }
-      });
-    });
+      }
+
+      return true
+    })
   }
 
-  async loadHostsPolicyRules() {
+  // whats is allowed
+  async exceptionRulesForInit(json) {
+    log.debug("Reading exception rules");
+    let rules = await exceptionManager.loadExceptionsAsync()
+
+    /*
+    rules = rules.filter((r) => {
+      return r.type != "ALARM_NEW_DEVICE" // allow new device is default
+    })
+    */
+
+    let alarmIDs = rules.map((p) => p.aid);
+
+    const alarms = await alarmManager2.idsToAlarmsAsync(alarmIDs)
+
+    for (let i = 0; i < rules.length; i++) {
+      if (rules[i] && alarms[i]) {
+        rules[i].alarmMessage = alarms[i].localizedInfo();
+        rules[i].alarmTimestamp = alarms[i].timestamp;
+      }
+    }
+
+    rules.sort((x, y) => {
+      if (y.timestamp < x.timestamp) {
+        return -1
+      } else {
+        return 1
+      }
+    })
+
+    json.exceptionRules = rules
+  }
+
+  filterExceptions(rules, hosts) {
+    return rules.filter(rule => {
+      // not filtering interface as we still want rules on misconfigured interface or stopped VPNServer
+      // client'll filter unrecognized interface
+      if (!rule
+        || !_.isEmpty(rule['p.device.mac']) && !hosts.some(host => host.mac == rule['p.device.mac']) && !IdentityManager.getIdentityByGUID(rule['p.device.mac'])
+      ) {
+        return false
+      }
+      return true
+    })
+  }
+
+  async loadHostsPolicyRules(hosts = this.hosts.all) {
     log.debug("Reading individual host policy rules");
-    await asyncNative.eachLimit(this.hosts.all, 10, host => host.loadPolicyAsync())
+    await asyncNative.eachLimit(hosts, 50, host => host.loadPolicyAsync())
   }
 
   async loadDDNSForInit(json) {
@@ -1056,12 +1158,14 @@ module.exports = class HostManager extends Monitorable {
    */
   async getCheckInAsync() {
     let json = {};
+    let hosts = []
     let requiredPromises = [
-      this.getHostsAsync(),
+      this.getHostsAsync().then(res => hosts = res),
       this.policyDataForInit(json),
       this.extensionDataForInit(json),
       this.modeForInit(json),
       this.policyRulesForInit(json),
+      this.policyRuleNumberForInit(json),
       this.exceptionRulesForInit(json),
       this.natDataForInit(json),
       this.getCloudURL(json),
@@ -1076,14 +1180,16 @@ module.exports = class HostManager extends Monitorable {
       this.boxMetrics(json),
       this.getSysInfo(json),
       this.assetsInfoForInit(json),
-      this.pairingAssetsForInit(json)
+      this.pairingAssetsForInit(json),
+      this.addMsp2CheckIn(json),
+      this.basicDataForInit(json, {}),
     ]
-
-    await this.basicDataForInit(json, {});
 
     await Promise.all(requiredPromises);
 
-    json.hostCount = this.hosts.all.length;
+    json.hostCount = hosts.length;
+    json.policyRules = this.filterPolicyRules(json.policyRules, hosts);
+    json.exceptionRules = this.filterExceptions(json.exceptionRules, hosts);
 
     let firstBinding = await rclient.getAsync("firstBinding")
     if(firstBinding) {
@@ -1098,6 +1204,13 @@ module.exports = class HostManager extends Monitorable {
     if (json.remoteSupportPassword) delete json.remoteSupportPassword;
     if (json.policy && json.policy.wireguard && json.policy.wireguard.privateKey) delete json.policy.wireguard.privateKey;
 
+    if (json.policy && json.policy.freeradius_server && json.policy.freeradius_server.radius && json.policy.freeradius_server.radius.clients) {
+      for (const client of json.policy.freeradius_server.radius.clients) {
+        if (client.secret) {
+          delete client.secret;
+        }
+      }
+    }
     return json;
   }
 
@@ -1151,6 +1264,13 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
+  async addMsp2CheckIn(json) {
+    const msp = await this.getGuardian({});
+    if (msp) {
+      json.msp = _.pick(msp, ['id', 'name', 'plan', 'channel']);
+    }
+  }
+
   async getGuardian(json) {
     const data = await rclient.getAsync("ext.guardian.business");
     if(!data) {
@@ -1161,6 +1281,7 @@ module.exports = class HostManager extends Monitorable {
       const result = JSON.parse(data);
       if(result) {
         json.guardianBiz = result;
+        return result;
       }
     } catch(err) {
       log.error(`Failed to parse data, err: ${err}`);
@@ -1169,7 +1290,7 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async getMspData(json) {
-    const data = await rclient.getAsync("ext.guardian.data");
+    const data = await rclient.getAsync(Constants.REDIS_KEY_MSP_DATA);
     if(!data) {
       return;
     }
@@ -1200,7 +1321,7 @@ module.exports = class HostManager extends Monitorable {
 
   async getDataUsagePlan(json) {
     const enable = fc.isFeatureOn('data_plan');
-    const data = await rclient.getAsync('sys:data:plan');
+    const data = await rclient.getAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS);
     if(!data || !enable) {
       return;
     }
@@ -1212,7 +1333,7 @@ module.exports = class HostManager extends Monitorable {
       }
       return result;
     } catch(err) {
-      log.error(`Failed to parse sys:data:plan, err: ${err}`);
+      log.error(`Failed to parse ${Constants.REDIS_KEY_DATA_PLAN_SETTINGS}, err: ${err}`);
       return;
     }
   }
@@ -1231,6 +1352,7 @@ module.exports = class HostManager extends Monitorable {
       if(mm && mm.length > 0) {
         const names = await rclient.hgetallAsync("sys:ept:memberNames")
         const lastVisits = await rclient.hgetallAsync("sys:ept:member:lastvisit")
+        const history = await rclient.hgetallAsync("sys:ept:members:history")
 
         if(names) {
           mm.forEach((m) => {
@@ -1242,6 +1364,36 @@ module.exports = class HostManager extends Monitorable {
           mm.forEach((m) => {
             m.lastVisit = m.eid && lastVisits[m.eid]
           })
+        }
+
+        if (history) {
+          mm.forEach((m) => {
+            const hStr = m.eid && history[m.eid];
+            if (!hStr)
+              return;
+            // {\"deviceName\":\"iPhone 16 Pro 18.0\",\"msg\":\"paired at 1727166695,unpaired at 1728560998;paired at 1729947426,\"}
+            try {
+              const h = JSON.parse(hStr);
+              const msg = h.msg;
+              if (msg) {
+                const pairs = msg.split(';');
+                let lastPairTs = 0;
+                for (const pair of pairs) {
+                  const records = pair.split(',');
+                  for (const record of records) {
+                    if (record.startsWith("paired"))
+                      lastPairTs = record.split(" ")[2];
+                    if (record.startsWith("unpaired"))
+                      lastPairTs = 0;
+                  }
+                }
+                if (lastPairTs && !isNaN(lastPairTs))
+                  m.lastPairTs = lastPairTs;
+              }
+            } catch (err) {
+              log.error(`Failed to find lastPairTs of ${m.eid}`, err);
+            }
+          });
         }
 
         json.eMembers = mm
@@ -1420,17 +1572,18 @@ module.exports = class HostManager extends Monitorable {
 
     let requiredPromises = [
       this.hostsInfoForInit(json, options),
-      this.newLast24StatsForInit(json),
-      this.last60MinStatsForInit(json),
+      this.newLast24StatsForInit(json, null, options.tsMetrics, options),
+      this.last60MinStatsForInit(json, null, options.tsMetrics, options),
       this.extensionDataForInit(json),
       this.dohConfigDataForInit(json),
       this.unboundConfigDataForInit(json),
       this.safeSearchConfigDataForInit(json),
-      this.last30daysStatsForInit(json),
-      this.last12MonthsStatsForInit(json),
+      this.last30daysStatsForInit(json, null, options.tsMetrics, options),
+      this.last12MonthsStatsForInit(json, null, options.tsMetrics, options),
       this.policyDataForInit(json),
       this.modeForInit(json),
       this.policyRulesForInit(json),
+      this.policyRuleNumberForInit(json),
       this.exceptionRulesForInit(json),
       this.newAlarmDataForInit(json),
       this.pendingAlarmNumberForInit(json),
@@ -1455,7 +1608,6 @@ module.exports = class HostManager extends Monitorable {
       this.identitiesForInit(json),
       this.tagsForInit(json, options.timeUsageApps, options.includeAppTimeSlots, options.includeAppTimeIntervals),
       this.btMacForInit(json),
-      this.loadStats(json),
       this.vpnClientProfilesForInit(json),
       this.ruleGroupsForInit(json),
       this.virtWanGroupsForInit(json),
@@ -1466,7 +1618,7 @@ module.exports = class HostManager extends Monitorable {
       this.basicDataForInit(json, options),
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
-      this.dhcpPoolUsageForInit(json),
+      // this.dhcpPoolUsageForInit(json), // should be re-implemented before putting into use
       this.assetsInfoForInit(json),
       this.pairingAssetsForInit(json),
       this.getConfigForInit(json),
@@ -1475,10 +1627,20 @@ module.exports = class HostManager extends Monitorable {
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
 
+    if (options.legacySystemFlows)
+      requiredPromises.push(this.loadStats(json))
+
     for (const i in requiredPromises) {
-      requiredPromises[i].then(()=> {log.debug(`promise ${i} finished`)})
+      requiredPromises[i] = (async() => {
+        const ts = Date.now()
+        await requiredPromises[i]
+        log.debug(`promise ${i} finished`, (Date.now() - ts)/1000)
+      })()
     }
     await Promise.all(requiredPromises.map(p => p.catch(log.error)))
+
+    json.policyRules = this.filterPolicyRules(json.policyRules, json.hosts);
+    json.exceptionRules = this.filterExceptions(json.exceptionRules, json.hosts);
 
     log.debug("Promise array finished")
 
@@ -1521,12 +1683,12 @@ module.exports = class HostManager extends Monitorable {
     return this.hostsdb[`host:mac:${mac.toUpperCase()}`];
   }
 
-  getHostFast(ip) {
+  getHostFast(ip, fam = 4) {
     if (ip == null) {
       return null;
     }
 
-    return this.hostsdb["host:ip4:"+ip];
+    return this.hostsdb[`host:ip${fam}:${ip}`]
   }
 
   getHostFast6(ip6) {
@@ -1547,27 +1709,47 @@ module.exports = class HostManager extends Monitorable {
       })
   }
 
+  async getIdentityOrHost(target, noEnvCreation = false) {
+    let monitorable
+    if (IdentityManager.isGUID(target)) {
+      // this is very fast key lookup
+      monitorable = IdentityManager.getIdentityByGUID(target)
+      return monitorable
+    } else {
+      monitorable = IdentityManager.getIdentityByIP(target)
+      if (monitorable) return monitorable
+
+      return this.getHostAsync(target, noEnvCreation)
+    }
+  }
+
   async getHostAsync(target, noEnvCreation = false) {
     let host, o;
     if (hostTool.isMacAddress(target)) {
       host = this.hostsdb[`host:mac:${target}`];
       o = await hostTool.getMACEntry(target)
+      if (o)
+        o.mac = target;
     } else {
+      const fam = net.isIP(target)
+      if (!fam) return null
+
       o = await dnsManager.resolveLocalHostAsync(target)
-      host = this.hostsdb[`host:ip4:${o.ipv4Addr}`];
+      host = this.hostsdb[`host:ip${fam}:${target}`];
     }
     if (host && o) {
-      await host.update(o);
+      await host.update(Host.parse(o));
       return host;
     }
 
     if (o == null) return null;
 
-    host = new Host(o, noEnvCreation);
+    host = new Host(Host.parse(o), noEnvCreation);
 
     this.hostsdb[`host:mac:${o.mac}`] = host
     this.hosts.all.push(host);
 
+    if (o.ipv4Addr) this.hostsdb[`host:ip4:${o.ipv4Addr}`] = host
     this.syncV6DB(host)
 
     return host
@@ -1577,9 +1759,8 @@ module.exports = class HostManager extends Monitorable {
     let host = await this.getHostAsync(o.mac)
     if (host) {
       log.info('createHost: already exist', o.mac)
-      await host.update(o)
-      await host.save()
-      return
+      await host.update(o, false, true)
+      return host
     }
 
     host = new Host(o)
@@ -1589,6 +1770,7 @@ module.exports = class HostManager extends Monitorable {
     this.hosts.all.push(host);
 
     this.syncV6DB(host)
+    return host
   }
 
   syncV6DB(host) {
@@ -1637,17 +1819,20 @@ module.exports = class HostManager extends Monitorable {
     try {
       // if the ip allocation on an old (stale) device is changed in fireapi, firemain will not execute ipAllocation function on the host object, which sets intfIp in host:mac
       // therefore, need to check policy:mac to determine if the device has reserved IP instead of host:mac
-      const policy = await hostTool.loadDevicePolicyByMAC(h.mac);
+      let policy
+      if (_.get(this.hostsdb, ['host:mac:' + h.mac, policy])) {
+        policy = this.hostsdb['host:mac:' + h.mac].policy.ipAllocation
+      } else {
+        policy = JSON.parse(await rclient.hgetAsync('policy:mac:' + h.mac, 'ipAllocation'))
+      }
+      if (!policy) return false
       if (policy.dhcpIgnore) return true
-      if (policy.ipAllocation) {
-        const ipAllocation = JSON.parse(policy.ipAllocation);
-        if (platform.isFireRouterManaged()) {
-          if (ipAllocation.allocations && Object.keys(ipAllocation.allocations).some(uuid => ipAllocation.allocations[uuid].type === "static" && sysManager.getInterfaceViaUUID(uuid)))
-            return true;
-        } else {
-          if (ipAllocation.type === "static")
-            return true;
-        }
+      if (platform.isFireRouterManaged()) {
+        if (policy.allocations && Object.keys(policy.allocations).some(uuid => policy.allocations[uuid].type === "static" && sysManager.getInterfaceViaUUID(uuid)))
+          return true;
+      } else {
+        if (policy.type === "static")
+          return true;
       }
     } catch (err) { }
     return false;
@@ -1676,23 +1861,36 @@ module.exports = class HostManager extends Monitorable {
       this.getHostsLastOptions = options;
       // end of mutx check
       const portforwardConfig = await this.getPortforwardConfig();
-  
+
       for (let h in this.hostsdb) {
         if (this.hostsdb[h]) {
           this.hostsdb[h]._mark = false;
         }
       }
-      const keys = await rclient.keysAsync("host:mac:*");
-      this._totalHosts = keys.length;
-      let multiarray = [];
-      for (let i in keys) {
-        multiarray.push(['hgetall', keys[i]]);
-      }
       const inactiveTS = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
-      const rapidInactiveTS = Date.now() / 1000 - RAPID_INACTIVE_TIME_SPAN;
+      const visibleMACs = new Set()
+      for (const mac of await hostTool.getMACsByTime(inactiveTS))
+        visibleMACs.add(mac)
+      if (portforwardConfig && Array.isArray(portforwardConfig.maps))
+        portforwardConfig.maps.forEach(p => visibleMACs.add(p.toMac))
+
+      for (const mac of await rclient.smembersAsync(Constants.REDIS_KEY_HOST_DHCPCONF))
+        visibleMACs.add(mac)
+
+      if (includePinnedHosts)
+        for (const mac of await rclient.smembersAsync(Constants.REDIS_KEY_HOST_PINNED))
+          visibleMACs.add(mac)
+
+      // TODO: replace getAllMACs with getMACsByTime(0) after a year of 1.981
+      const MACs = includeInactiveHosts ? new Set(await hostTool.getAllMACs()) : visibleMACs
+      this._totalHosts = MACs.size;
+      let multiarray = [];
+      for (const mac of MACs) {
+        multiarray.push(['hgetall', hostTool.getMacKey(mac)])
+      }
       const replies = await rclient.multi(multiarray).execAsync();
-      this._totalPrivateMacHosts = replies.filter(o => _.isObject(o) && o.mac && hostTool.isPrivateMacAddress(o.mac)).length;
-      await asyncNative.eachLimit(replies, 20, async (o) => {
+      log.debug("getHosts: multi hgetall done");
+      await asyncNative.eachLimit(replies, 50, async (o) => {
         if (!o || !o.mac) {
           // defensive programming
           return;
@@ -1705,26 +1903,11 @@ module.exports = class HostManager extends Monitorable {
         if (o.ipv4) {
           o.ipv4Addr = o.ipv4;
         }
-        const pinned = o.pinned;
-        const hasDHCPReservation = await this._hasDHCPReservation(o);
-        const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
         const hasNonLocalIP = o.ipv4Addr && !sysManager.isLocalIP(o.ipv4Addr);
         const isPrivateMac = o.mac && hostTool.isPrivateMacAddress(o.mac);
         // device might be created during migration with only found ts but no active ts
-        const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
-        if (f.isMain()) {
-          const expireatTS = parseInt(activeTS || (Date.now() / 1000)) + Constants.HOST_MAC_KEY_EXPIRE_SECS;
-          await rclient.expireatAsync(`host:mac:${o.mac.toUpperCase()}`, expireatTS);
-          if (expireatTS < Date.now() / 1000)
-            return;
-        }
-        const active = (activeTS - o.firstFoundTimestamp > 600 ? activeTS && activeTS >= inactiveTS : activeTS && activeTS >= rapidInactiveTS); // expire transient devices in a short time
-        const inUse = (activeTS && activeTS >= inactiveTS) || hasDHCPReservation || hasPortforward || pinned || false;
         // always return devices that has DHCP reservation or port forwards
-        const valid = (!isPrivateMac || includePrivateMac) && (active || includeInactiveHosts)
-          || hasDHCPReservation
-          || hasPortforward
-          || (pinned && includePinnedHosts)
+        const valid = !isPrivateMac || includePrivateMac
         if (!valid)
           return;
         if (hasNonLocalIP) {
@@ -1738,7 +1921,7 @@ module.exports = class HostManager extends Monitorable {
         let hostbyip = o.ipv4Addr ? this.hostsdb["host:ip4:" + o.ipv4Addr] : null;
   
         if (hostbymac == null) {
-          hostbymac = new Host(o);
+          hostbymac = new Host(Host.parse(o));
           this.hosts.all.push(hostbymac);
           this.hostsdb['host:mac:' + o.mac] = hostbymac;
         } else {
@@ -1764,8 +1947,7 @@ module.exports = class HostManager extends Monitorable {
             log.error('Failed to check v6 address of', o.mac, err)
           }
   
-          await hostbymac.update(o);
-          await hostbymac.identifyDevice(false);
+          await hostbymac.update(Host.parse(o));
         }
   
         // do not update host:ip4 entries in this.hostsdb since it may be previously occupied by other host
@@ -1774,7 +1956,7 @@ module.exports = class HostManager extends Monitorable {
         // ipv6 address conflict hardly happens, so update here is relatively safe
         this.syncV6DB(hostbymac)
   
-        hostbymac.stale = !inUse;
+        hostbymac.stale = !visibleMACs.has(hostbymac.o.mac);
         hostbymac._mark = true;
         if (hostbyip) {
           hostbyip._mark = true;
@@ -1846,13 +2028,13 @@ module.exports = class HostManager extends Monitorable {
     })
   }
 
-  async setPolicyAsync(name, policy) {
+  async setPolicyAsync(name, policy, syncToMsp = false) {
     if (!this.policy) await this.loadPolicyAsync();
     if (name == 'dnsmasq' || name == 'vpn') {
       policy = Object.assign({}, this.policy[name], policy)
     }
 
-    await super.setPolicyAsync(name, policy)
+    await super.setPolicyAsync(name, policy, syncToMsp)
   }
 
   async ipAllocation(policy) {
@@ -2282,10 +2464,8 @@ module.exports = class HostManager extends Monitorable {
   }
 
   // return: Array<{tag: number, macs: Array<string>}>
-  async getActiveTags() {
+  async getActiveTags(types = Object.keys(Constants.TAG_TYPE_MAP)) {
     let tagMap = {};
-    await this.loadHostsPolicyRules()
-    const types = Object.keys(Constants.TAG_TYPE_MAP)
     this.getAllMonitorables()
       .forEach(m => {
         const tags = m && m.policy && types.flatMap(type => m.policy[Constants.TAG_TYPE_MAP[type].policyKey]).filter(t => !_.isEmpty(t));
@@ -2305,7 +2485,6 @@ module.exports = class HostManager extends Monitorable {
 
   // need active host?
   async getTagMacs(tag) {
-    await this.loadHostsPolicyRules()
     tag = tag.toString();
     const macs = this.hosts.all.filter(host => {
       return host.o && host.policy && Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => host.policy[Constants.TAG_TYPE_MAP[type].policyKey] || []).map(String).includes(tag.toString())
@@ -2384,6 +2563,26 @@ module.exports = class HostManager extends Monitorable {
       result['total' + metric[0].toUpperCase() + metric.slice(1) ] = _.sumBy(stats[metric], 1)
     }
     return result
+  }
+
+  mergeStats(stats) {
+    if (!stats.ipB) return
+
+    const tsMap = {}
+    for (const metric of ['ipB', 'ipB:lo:intra', 'ipB:lo:in', 'ipB:lo:out']) {
+      if (stats[metric]) {
+        stats[metric].forEach(([ts, v]) => {
+          tsMap[ts] = (tsMap[ts] || 0) + v
+        })
+        const totalKey = 'total' + metric[0].toUpperCase() + metric.slice(1)
+        if (metric != 'ipB') {
+          stats.totalIpB += stats[totalKey]
+          delete stats[metric]
+          delete stats[totalKey]
+        }
+      }
+    }
+    stats.ipB = Object.entries(tsMap).map(([ts, v]) => [Number(ts), v]).sort(([a], [b]) => a - b)
   }
 
   // Deprecating, MSP no longer needs this after 2.7.0

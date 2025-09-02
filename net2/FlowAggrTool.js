@@ -25,10 +25,11 @@ const _ = require('lodash')
 
 let instance = null;
 
-const MAX_FLOW_PER_AGGR = 200
-const MAX_FLOW_PER_SUM = 2000
+const MAX_FLOW_PER_SUM = 400
 
-const MIN_AGGR_TRAFFIC = 256
+const COMMON_SUMFLOW_KEYS = [ 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason', 'intra' ]
+const FLOW_STR_KEYS = COMMON_SUMFLOW_KEYS.concat('destIP')
+const TOPFLOW_KEYS = COMMON_SUMFLOW_KEYS.concat('device')
 
 function toInt(n){ return Math.floor(Number(n)) }
 
@@ -74,7 +75,7 @@ class FlowAggrTool {
 
   getFlowStr(mac, entry) {
     const flow = {device: mac};
-    [ 'destIP', 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason', 'intra' ].forEach(f => {
+    FLOW_STR_KEYS.forEach(f => {
       if (entry[f]) flow[f] = entry[f]
     })
     return JSON.stringify(flow);
@@ -112,8 +113,8 @@ class FlowAggrTool {
       max_flow = options.max_flow
     }
 
-    let count = await rclient.zremrangebyrankAsync(sumFlowKey, 0, -1 * max_flow) // only keep the MAX_FLOW_PER_SUM highest flows
-
+    // only keep the MAX_FLOW_PER_SUM highest flows
+    let count = await rclient.zremrangebyrankAsync(sumFlowKey, 0, -1 * max_flow)
     if (count) log.debug(`${count} flows are trimmed from ${sumFlowKey}`)
   }
 
@@ -134,12 +135,13 @@ class FlowAggrTool {
       if (incr) {
         const flowStr = this.getFlowStr(mac, entry);
         transactions.push(['zincrby', sumFlowKey, incr, flowStr]);
-        transactions.push(['expire', sumFlowKey, expire]);
       }
     }
-    if (!_.isEmpty(transactions))
+    if (!_.isEmpty(transactions)) {
+      transactions.push(['expire', sumFlowKey, expire]);
+      transactions.push(['zremrangebyrank', sumFlowKey, 0, - (options.max_flow || MAX_FLOW_PER_SUM)])
       await rclient.multi(transactions).execAsync();
-    await this.trimSumFlow(sumFlowKey, options);
+    }
   }
 
   // sumflow:<device_mac>:download:<begin_ts>:<end_ts>
@@ -210,18 +212,21 @@ class FlowAggrTool {
       let args = [sumFlowKey, num];
       args = args.concat(tickKeys);
 
-      let result = await rclient.zunionstoreAsync(args);
-      if(options.setLastSumFlow) {
-        await this.setLastSumFlow(target, dimension, fd, sumFlowKey)
-      }
-      if (result > 0) {
-        await this.trimSumFlow(sumFlowKey, options)
-      } else {
-        await rclient.zaddAsync(sumFlowKey, 0, '_')
-      }
-      await rclient.expireAsync(sumFlowKey, expire)
+      const multi = rclient.multi()
+      multi.zunionstore(args);
 
-      return result;
+      if (options.setLastSumFlow) {
+        const lastKey = 'last' + this.getSumFlowKey(target, dimension, null, null, fd)
+        multi.set(lastKey, sumFlowKey);
+        multi.expire(lastKey, 24 * 60 * 60);
+      }
+      multi.zadd(sumFlowKey, 0, '_')
+      multi.zremrangebyrank(sumFlowKey, 0, -(options.max_flow || MAX_FLOW_PER_SUM))
+      multi.expire(sumFlowKey, expire)
+
+      const results = await multi.execAsync()
+
+      return results[0];
     } catch(err) {
       log.error('Error adding sumflow', sumFlowKey, err)
     }
@@ -315,7 +320,7 @@ class FlowAggrTool {
         if(payload !== '_' && count !== 0) {
           try {
             const json = JSON.parse(payload);
-            const flow = _.pick(json, 'domain', 'type', 'device', 'port', 'devicePort', 'fd', 'dstMac', 'reason', 'intra');
+            const flow = _.pick(json, TOPFLOW_KEYS);
             flow.count = count
             if (json.destIP) {
               // this is added as a counter for trimmed flows, check FlowAggrTool.addFlow()
