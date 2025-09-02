@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -91,63 +91,101 @@ class FlowTool extends LogQuery {
     return true;
   }
 
-  async prepareRecentFlows(json, options) {
-    log.verbose('prepareRecentFlows', JSON.stringify(options))
-    options = options || {}
-    this.checkCount(options)
-    const macs = await this.expendMacs(options)
-    if (!("flows" in json)) {
-      json.flows = {};
-    }
-
-    const feeds = []
-    // use some filters to cut feed number here
-    if (options.block !== true) {
-      if (options.local !== true) {
-        if (options.direction) {
-          feeds.push(... this.expendFeeds({macs, direction: options.direction}))
-        } else {
-          feeds.push(... this.expendFeeds({macs, direction: 'in'}))
-          feeds.push(... this.expendFeeds({macs, direction: 'out'}))
-        }
-        if (options.dnsFlow) {
-          feeds.push(... auditTool.expendFeeds({macs, block: false, dnsFlow: true}))
-        }
-        if (options.auditDNSSuccess && options.ntpFlow)
-          feeds.push(... auditTool.expendFeeds({macs, block: false}))
-        else if (options.auditDNSSuccess && (!options.type || options.type == 'dns'))
-          feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'dns'}))
-        else if (options.ntpFlow && (!options.type || options.type == 'ntp'))
-          feeds.push(... auditTool.expendFeeds({macs, block: false, type: 'ntp'}))
-      }
-      if (options.localFlow && options.local !== false) {
-        // a local flow will be recorded in both src and dst host key, need to deduplicate flows on the two hosts if both hosts are included in macs
-        options.exclude = [{dstMac: macs, fd: "out"}]
-        feeds.push(... this.expendFeeds({macs, localFlow: true}))
+  // options here no longer serve as filter, just to query and format results
+  optionsToFeeds(options, macs) {
+    log.debug('optionsToFeeds', options)
+    const feedsArray = []
+    if (options.regular) {
+      if (macs[0] == 'system')
+        feedsArray.push(this.expendFeeds({macs}))
+      else {
+        feedsArray.push(this.expendFeeds({macs, direction: 'in'}))
+        feedsArray.push(this.expendFeeds({macs, direction: 'out'}))
       }
     }
-    if (options.block !== false) {
-      if (options.audit) {
-        feeds.push(... auditTool.expendFeeds({macs, block: true}))
-      }
+    if (options.local) {
+      // a local flow will be recorded in both src and dst host key, need to deduplicate flows on the two hosts if both hosts are included in macs
+      if (macs[0] == 'system')
+        feedsArray.push(this.expendFeeds({macs, local: true}))
+      else
+        feedsArray.push(this.expendFeeds({macs, local: true, exclude: {dstMac: macs, fd: "out"}}))
     }
 
-    delete options.audit
-    delete options.dnsFlow
-    delete options.ntpFlow
-    delete options.localFlow
-    delete options.auditDNSSuccess
-    let recentFlows = await this.logFeeder(options, feeds)
-
-    json.flows.recent = recentFlows;
-    log.verbose('prepareRecentFlows ends', JSON.stringify(options))
-    return recentFlows
+    return [].concat(... feedsArray)
   }
 
-  optionsToFilter(options) {
-    const filter = super.optionsToFilter(options)
-    delete filter.localFlow
-    return filter
+  // max of min ts in all feeds, ignoring feed that has no flow
+  async getValidGlobalTS(feeds) {
+    const multi = []
+    for (const feed of feeds) {
+      const key = feed.base.getLogKey(feed.options.mac, feed.options);
+      multi.push(['zrangebyscore', key, 0, '+inf', 'LIMIT', 0 , 1, 'WITHSCORES']);
+    }
+    const results = await rclient.pipelineAndLog(multi);
+    // log.debug('getValidGlobalTS:', JSON.stringify(multi), results)
+    let ts = null;
+    for (const result of results) {
+      const t = Number(result[1]);
+      if (t && t > ts) ts = t;
+    }
+
+    return ts
+  }
+
+  async prepareRecentFlows(options) {
+    log.verbose('prepareRecentFlows', JSON.stringify(options))
+    options = this.checkArguments(options || {})
+
+    let results = []
+    let queryDone = false
+    // query system flows first if possible
+    if (!options.mac && !options.macs && !options.tag && !options.intf) {
+      const feeds = this.optionsToFeeds(options, ['system']).concat(
+        auditTool.optionsToFeeds(options, ['system'])
+      )
+
+      const sysOptions = JSON.parse(JSON.stringify(options))
+
+      let skip = false
+
+      const validTS = await this.getValidGlobalTS(feeds)
+      log.debug(`validTS for system flows: ${validTS}`)
+      if (sysOptions.ts <= validTS)
+        skip = true
+      else if (sysOptions.asc)
+        queryDone = true
+      else if (sysOptions.ets < validTS)
+        sysOptions.ets = validTS
+      else
+        queryDone = true
+
+      if (!skip) {
+        results = await this.logFeeder(sysOptions, feeds, true)
+        if (results.length >= sysOptions.count) {
+          log.verbose(`got ${results.length} system flows, query done`)
+          results = results.slice(0, sysOptions.count);
+          queryDone = true;
+        } else {
+          options.count -= results.length;
+          if (results.length)
+            options.ts = validTS;
+          log.verbose(`got ${results.length} system flows, ${options.count} left, starting ${options.ts} to ${options.ets}`)
+        }
+      }
+    }
+
+    if (!queryDone) {
+      const macs = await this.expendMacs(options)
+
+      const feeds = this.optionsToFeeds(options, macs).concat(
+        auditTool.optionsToFeeds(options, macs)
+      )
+
+      results = results.concat(await this.logFeeder(options, feeds))
+    }
+
+    // log.verbose('prepareRecentFlows ends', JSON.stringify(options))
+    return results
   }
 
   // convert flow json to a simplified json format that's more readable by app
@@ -162,8 +200,8 @@ class FlowTool extends LogQuery {
     f.duration = flow.du
     if (flow.intf) f.intf = networkProfileManager.prefixMap[flow.intf] || flow.intf
     for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-      const config = Constants.TAG_TYPE_MAP[type];
-      f[config.flowKey] = flow[config.flowKey];
+      const flowKey = Constants.TAG_TYPE_MAP[type].flowKey
+      if (flow[flowKey]) f[flowKey] = flow[flowKey];
     }
     if (_.isObject(flow.af) && !_.isEmpty(flow.af)) {
       f.appHosts = Object.keys(flow.af);
@@ -217,9 +255,11 @@ class FlowTool extends LogQuery {
       f.download = flow.ob;
     }
 
-    if (options.localFlow) {
+    if (options.local) {
       f.dstMac = flow.dmac
       f.local = true
+      if (flow.drl)
+        f.drl = flow.drl;
       if (flow.dstTags)
         f.dstTags = flow.dstTags;
     }
@@ -307,10 +347,12 @@ class FlowTool extends LogQuery {
   }
 
   getLogKey(mac, options) {
-    if (options.localFlow)
+    if (options.local)
       return `flow:local:${mac}`
-    else
+    else if (options.direction)
       return util.format("flow:conn:%s:%s", options.direction || 'in', mac);
+    else
+      return 'flow:conn:system'
   }
 
   addFlow(mac, type, flow) {
@@ -373,7 +415,7 @@ class FlowTool extends LogQuery {
 
   async getDeviceLogs(options) {
     // use TypeFlow as look ahead to cut empty queries in advance
-    if (options.category || options.app) {
+    if ((options.category || options.app) && options.mac != 'system') {
       let found = false
       while (options.asc ? options.ts < options.ets : options.ts > options.ets) {
         let allDimensionFound = true

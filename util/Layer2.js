@@ -22,17 +22,16 @@ const log = require('../net2/logger.js')(__filename);
 const f = require('../net2/Firewalla.js');
 const Message = require('../net2/Message.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const LRU = require('lru-cache');
 
-const _SimpleCache = require('../util/SimpleCache.js')
-const SimpleCache = new _SimpleCache("macCache",60*10);
-const notFoundCache = new _SimpleCache("notFoundCache", 60); // do not repeatedly invoke cat /proc/net/arp for the same IP address
+const hitCache = new LRU({maxAge: 600000});
+const missCache = new LRU({maxAge: 60000});
+
 sem.on(Message.MSG_MAPPING_IP_MAC_DELETED, (event) => {
   const { ip, mac, fam } = event
   if (mac && ip && fam == 4) {
-    if (SimpleCache.lookup(ip) == mac)
-      delete SimpleCache.cache[ip]
-    if (notFoundCache.lookup(ip) == mac)
-      delete notFoundCache.cache[ip]
+    hitCache.del(ip);
+    missCache.del(ip);
   }
 })
 
@@ -81,7 +80,7 @@ async function updatePermanentArpEntries(activeMacs) {
     }
   }
   const fileEntries = Object.keys(permanentArpCache).map(ipv4 => `${ipv4} ${permanentArpCache[ipv4].mac}`);
-  log.info("Update arp cache with the following permanent entries", fileEntries);
+  log.verbose("Update arp cache with the following permanent entries", fileEntries);
   await fsp.writeFile(`${f.getHiddenFolder()}/run/permanent_arp_entries`, fileEntries.join("\n")).then(() => {
     exec(`sudo arp -f ${f.getHiddenFolder()}/run/permanent_arp_entries`);
   }).catch((err) => {
@@ -91,56 +90,50 @@ async function updatePermanentArpEntries(activeMacs) {
 
 function getMAC(ipaddress, cb) {
 
-  let _mac = SimpleCache.lookup(ipaddress);
+  let _mac = hitCache.peek(ipaddress);
   if (_mac != null) {
       cb(false,_mac);
       return;
   }
-  const notFoundRecently = notFoundCache.lookup(ipaddress);
+  const notFoundRecently = missCache.peek(ipaddress);
   if (notFoundRecently) {
     cb(false, null);
     return;
   }
 
-  // ping the ip address to encourage the kernel to populate the arp tables
-  let ping = spawn("ping", ["-c", "1", "-W", "1", ipaddress ]);
-
-  ping.on('exit', function () {
-    // not bothered if ping did not work
-    fs.readFile('/proc/net/arp', (err, data) => {
-      let i, lines;
-      if (err) {
-        log.error("Failed to read /proc/net/arp", err.message);
-        cb(true, err.message);
-      } else {
-        lines = data.toString().split('\n');
-        let resultReturned = false;
-        for (i = 0; i < lines.length; i++) {
-          if (i === 0)
-            continue;
-          const [ ip, /* type */, flags, mac, /* mask */, /* intf */ ] = lines[i].replace(/ [ ]*/g, ' ').split(' ');
-          if (!ip || !flags || !mac)
-            continue;
-          if (flags !== "0x0" && mac !== "00:00:00:00:00:00") {
-            SimpleCache.insert(ip, mac.toUpperCase());
-            if (ip === ipaddress) {
-              cb(false, mac.toUpperCase());
-              resultReturned = true;
-            }
-          } else {
-            notFoundCache.insert(ip, true);
-            if (ip === ipaddress) {
-              cb(false, null);
-              resultReturned = true;
-            }
+  fs.readFile('/proc/net/arp', (err, data) => {
+    let i, lines;
+    if (err) {
+      log.error("Failed to read /proc/net/arp", err.message);
+      cb(true, err.message);
+    } else {
+      lines = data.toString().split('\n');
+      let resultReturned = false;
+      for (i = 0; i < lines.length; i++) {
+        if (i === 0)
+          continue;
+        const [ip, /* type */, flags, mac, /* mask */, /* intf */] = lines[i].replace(/ [ ]*/g, ' ').split(' ');
+        if (!ip || !flags || !mac)
+          continue;
+        if (flags !== "0x0" && mac !== "00:00:00:00:00:00") {
+          hitCache.set(ip, mac.toUpperCase());
+          if (ip === ipaddress) {
+            cb(false, mac.toUpperCase());
+            resultReturned = true;
+          }
+        } else {
+          missCache.set(ip, true);
+          if (ip === ipaddress) {
+            cb(false, null);
+            resultReturned = true;
           }
         }
-        if (!resultReturned) {
-          notFoundCache.insert(ipaddress, true);
-          cb(false, null)
-        }
       }
-    });
+      if (!resultReturned) {
+        missCache.set(ipaddress, true);
+        cb(false, null)
+      }
+    }
   });
 }
 

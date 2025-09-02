@@ -1,4 +1,4 @@
-/*    Copyright 2021-2022 Firewalla Inc.
+/*    Copyright 2021-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,7 +19,7 @@ const log = require('../logger.js')(__filename);
 const sysManager = require('../SysManager.js');
 const platform = require('../../platform/PlatformLoader.js').getPlatform();
 const rclient = require('../../util/redis_manager.js').getRedisClient();
-
+const asyncNative = require('../../util/asyncNative.js');
 const Constants = require('../Constants.js');
 const NetworkProfile = require('../NetworkProfile.js');
 const Message = require('../Message.js');
@@ -88,7 +88,7 @@ class WGPeer extends Identity {
         return null;
       });
       if (_.isArray(dumpResult)) {
-        for (const line of dumpResult) {
+        await asyncNative.eachLimit(dumpResult, 30, async line => {
           try {
             const [pubKey, psk, endpoint, allowedIPs, latestHandshake, rxBytes, txBytes, keepalive] = line.split('\t');
             if (pubKey) {
@@ -115,10 +115,10 @@ class WGPeer extends Identity {
           } catch (err) {
             log.error(`Failed to parse dump result ${line}`, err.message);
           }
-        }
+        })
       }
     }));
-    
+
     const IntelTool = require('../IntelTool.js');
     const IntelManager = require('../IntelManager.js');
     const intelTool = new IntelTool();

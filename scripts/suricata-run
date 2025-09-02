@@ -14,6 +14,10 @@ if [[ $(/usr/bin/suricata --build-info | grep "PF_RING support" | awk '{print $3
   pf_ring_supported="yes"
 fi
 
+if ! modinfo pf_ring; then
+  pf_ring_supported="no"
+fi
+
 if [[ -n $LISTEN_INTERFACES ]]; then
   for INTF in $LISTEN_INTERFACES; do
     if [[ $pf_ring_supported == "yes" ]]; then

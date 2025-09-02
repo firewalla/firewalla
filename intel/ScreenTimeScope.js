@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla Inc
+/*    Copyright 2020-2025 Firewalla Inc
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,12 +17,12 @@
 const Intel = require('./Intel.js');
 const tagManager = require('../net2/TagManager.js');
 const sysManager = require('../net2/SysManager.js');
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
 const getPreferredName = require('../util/util.js').getPreferredName
 const INTF_PREFIX = "intf:";
 const TAG_PREFIX = "tag:";
 const MAC_PREFIX = "mac:"
-const HostTool = require('../net2/HostTool.js')
-const hostTool = new HostTool();
 class ScreenTimeScope extends Intel {
     async enrichAlarm(alarm) {
         if (alarm.type == "ALARM_SCREEN_TIME") {
@@ -31,8 +31,8 @@ class ScreenTimeScope extends Intel {
                 for (const ele of alarm['p.scope']) {
                     if (ele.includes(MAC_PREFIX)) {
                         const mac = ele.split(MAC_PREFIX)[1];
-                        const hostInfo = await hostTool.getMACEntry(mac);
-                        hostInfo && names.push(getPreferredName(hostInfo));
+                        const host = await hostManager.getHostAsync(mac);
+                        host && names.push(getPreferredName(host.o));
                     } else if (ele.includes(TAG_PREFIX)) {
                         const tagUid = ele.split(TAG_PREFIX)[1];
                         const tagInfo = tagManager.getTagByUid(tagUid);
