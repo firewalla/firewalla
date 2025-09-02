@@ -100,6 +100,17 @@ local_api() {
     curl -s "http://localhost:8841/v1/$1"
 }
 
+local_api_with_code_checked() {
+    # Check if curl version supports --fail-with-body (introduced in 7.76.0)
+    curl_version=$(curl --version | head -n1 | sed 's/curl \([0-9.]*\).*/\1/')
+    if [[ "$(printf '%s\n' "7.76.0" "$curl_version" | sort -V | head -n1)" == "7.76.0" ]]; then
+        curl -s --fail-with-body "http://localhost:8841/v1/$1"
+    else
+        # Fallback for older curl versions
+        curl -s -f "http://localhost:8841/v1/$1" || curl -s "http://localhost:8841/v1/$1"
+    fi
+}
+
 local_simple_post_api() {
     curl -XPOST -s "http://localhost:8841/v1/$1"
 }
@@ -119,7 +130,7 @@ hl() {
 timeit() {
     return 0
     tnow=$(date +%s%3N)
-    echo "TIMEIT $1: $((tnow-tlast))"
+    echo "TIMEIT $1: $((tnow-tlast))" >&2
     tlast=$tnow
 }
 
@@ -137,6 +148,24 @@ displaytime() {
     (( H > 0 )) && printf '%02dh' $H
     (( M > 0 )) && printf '%02dm' $M
     printf '%02ds\n' $S
+}
+
+displaynumber() {
+  local number=$1
+  local units=("B" "K" "M" "G")
+  local unit_index=0
+
+  echo "$number" | egrep -v '^[0-9]+$' && return 0
+  while [[ $(echo "$number >= 1000" | bc) -eq 1 && $unit_index -lt $((${#units[@]} - 1)) ]]; do
+    number=$(echo "scale=3; $number / 1000" | bc)
+    ((unit_index++))
+  done
+
+  # Format the number to ensure the total output string is no more than 5 characters
+  local formatted_number=$(printf "%.3g" "$number")
+  formatted_number=${formatted_number:0:4}  # Truncate to 4 characters (including dot)
+
+  printf "%s%s\n" "${formatted_number%.}" "${units[unit_index]}"
 }
 
 get_sta_name() {
@@ -160,23 +189,28 @@ get_sta_name() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-STA_COLS='sta_mac sta_ip:-17 ap_uid:9 band:4 chan:5 mimo:5 rssi:5 snr:5 tx:5 rx:5 intf:-8 vlan:5 dvlan:5 assoc_time:14 idle:6 hb_time:9 ssid:-15 ap_name:-20:u sta_name:-30:u'
+STA_COLS='sta_mac sta_ip:-17 ap_uid:9 band:4 chan:5 mimo:5 rssi:5 snr:5 tx:5 rx:5 ctx:6 crx:6 intf:-8 mlo:7 vlan:5 dvlan:5 assoc_time:14 idle:6 hb_time:9 ssid:-15 wpax:-15 ap_name:-20:u sta_name:-30:u'
 (print_header; hl) >&2
 lines=0
 timeit begin
 
 test -z "$STATION_MAC" || local_simple_post_api "control/monitor/$STATION_MAC"
 
+set -o pipefail
+
 while true; do
     if [[ -z "$STATION_MAC" ]]; then
-        sta_data=$(local_api status/station| jq -r '.info|to_entries[]|[.key, .value.assetUID, .value.ssid, .value.band, .value.channel, .value.txnss, .value.rxnss, .value.rssi, .value.snr, .value.txRate, .value.rxRate, .value.intf, .value.assocTime, .value.ts, .value.idle, .value.dvlanVlanId, .value.vlanId]|@tsv')
+        sta_data=$(local_api_with_code_checked status/station/flat| jq -r '.info[] | with_entries(if .key == "wpax" then . else . end) + {"wpax": (.wpax // "-")} | [.macAddr, .assetUID, .ssid, .wpax, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .curTxRate//"_", .curRxRate//"_", .intf, has("mlo"), .mlo.standby//"false", .assocTime, .ts, .idle, .dvlanVlanId, .vlanId]|@tsv' 2>/dev/null)  ||\
+        sta_data=$(local_api_with_code_checked status/station| jq -r '.info|to_entries[]|.value + {"wpax": (.value.wpax // "-")} | [.key, .assetUID, .ssid, .wpax, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .curTxRate//"_", .curRxRate//"_", .intf, has("mlo"), .mlo.standby//"false", .assocTime, .ts, .idle, .dvlanVlanId, .vlanId]|@tsv')
     else 
-        sta_data=$(local_api status/station/$STATION_MAC| jq -r '.info|[.macAddr, .assetUID, .ssid, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .intf, .assocTime, .ts, .idle, .dvlanVlanId, .vlanId]|@tsv')
+        sta_data=$(local_api_with_code_checked status/station/$STATION_MAC/flat| jq -r '.info[] | with_entries(if .key == "wpax" then . else . end) + {"wpax": (.wpax // "-")} | [.macAddr, .assetUID, .ssid, .wpax, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .curTxRate//"_", .curRxRate//"_", .intf, has("mlo"), .mlo.standby//"false", .assocTime, .ts, .idle, .dvlanVlanId, .vlanId]|@tsv' 2>/dev/null) ||\
+        sta_data=$(local_api_with_code_checked status/station/$STATION_MAC| jq -r '.info | with_entries(if .key == "wpax" then . else . end) + {"wpax": (.wpax // "-")} | [.macAddr, .assetUID, .ssid, .wpax, .band, .channel, .txnss, .rxnss, .rssi, .snr, .txRate, .rxRate, .curTxRate//"_", .curRxRate//"_", .intf, has("mlo"), .mlo.standby//"false", .assocTime, .ts, .idle, .dvlanVlanId, .vlanId]|@tsv' 2>/dev/null)
     fi
-    test -n "$sta_data" && echo "$sta_data" | while IFS=$'\t' read sta_mac ap_mac sta_ssid sta_band sta_channel sta_txnss sta_rxnss sta_rssi sta_snr sta_tx_rate sta_rx_rate sta_intf sta_assoc_time sta_ts sta_idle sta_dvlan sta_vlan
+    timeit sta-data
+    test -n "$sta_data" && echo "$sta_data" | while IFS=$'\t' read sta_mac ap_mac sta_ssid sta_wpax sta_band sta_channel sta_txnss sta_rxnss sta_rssi sta_snr sta_tx_rate sta_rx_rate sta_ctx_rate sta_crx_rate sta_intf sta_mlo sta_mlo_standby sta_assoc_time sta_ts sta_idle sta_dvlan sta_vlan
     do
         test -n "$sta_mac" || continue
-        timeit $sta_mac
+        timeit read-$sta_mac
         sta_ip=$(redis-cli --raw hget host:mac:$sta_mac ipv4Addr)
         timeit sta_ip
         timeit read
@@ -188,7 +222,7 @@ while true; do
         for stact in $STA_COLS
         do
             IFS=: read stac stacl stacu <<<$(echo $stact)
-            timeit "process col $stac"
+            timeit "process-col-$stac"
             test -n "$stacl" || stacl=-20
             case $stac in
                 sta_mac) stad=$sta_mac ;;
@@ -197,6 +231,7 @@ while true; do
                 ap_uid) stad=${ap_mac:9} ;;
                 ap_name) stad=$ap_name ;;
                 ssid) stad=$sta_ssid ;;
+                wpax) stad=$sta_wpax ;;
                 band) stad=$sta_band ;;
                 chan) stad=$sta_channel ;;
                 mimo) stad="${sta_txnss}x${sta_rxnss}" ;;
@@ -207,14 +242,27 @@ while true; do
                 idle) stad=$sta_idle ;;
                 tx) stad=$sta_tx_rate ;;
                 rx) stad=$sta_rx_rate ;;
+                ctx) stad=$(displaynumber $sta_ctx_rate) ;;
+                crx) stad=$(displaynumber $sta_crx_rate) ;;
                 intf) stad=$sta_intf ;;
+                mlo) 
+                    if $sta_mlo; then
+                        if [[ $sta_mlo_standby == "true" ]]; then
+                            stad=STANDBY
+                        else
+                            stad=ACTIVE
+                        fi
+                    else
+                        stad=$NO_VALUE
+                    fi
+                    ;;
                 assoc_time) stad=$(displaytime $sta_assoc_time) ;;
                 hb_time) stad=$( displaytime $((time_now - sta_ts)) );;
                 *) stad=$NO_VALUE ;;
             esac
-            timeit 'case'
-            test -t 1 || stad=$(echo "$stad" | sed -e "s/ /_/g")
-            stad=$(echo "$stad" | sed -e "s/[‘’]/'/g")
+            timeit "case-$stac"
+            test -t 1 || stad=${stad// /_}
+            stad=${stad//[‘’]/\'}
             stadl=${#stad}
             # process unicode string
             test "$stacu" == 'u' && {
@@ -230,7 +278,7 @@ while true; do
                     fi
                 }
             }
-            timeit 'stadcl adjust'
+            timeit 'stadcl-adjust'
             stacla=${stacl#-}
             if [[ $stadl -gt $stacla ]]
             then

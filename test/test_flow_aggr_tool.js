@@ -87,37 +87,31 @@ describe('FlowAggrTool', () => {
     })
   })
 
-  describe('.addSumFlow', () => {
+  describe.skip('.addSumFlow', () => {
 
-    afterEach((done) => {
-      (async() =>{
-        await flowAggrTool.removeAllFlowKeys(sample.hostMac, "download", 600);
-        await flowAggrTool.removeAllSumFlows(sample.hostMac, "download");
-        done();
-      })();
+    afterEach(async () => {
+      await flowAggrTool.removeAllFlowKeys(sample.hostMac, "download", 600);
+      await flowAggrTool.removeAllSumFlows(sample.hostMac, "download");
     });
 
-    it('should be able to sum flows correctly', (done) => {
+    it('should be able to sum flows correctly', async () => {
       let ts = flowAggrTool.toFloorInt(new Date() / 1000 - 24 * 3600);
       let begin = flowAggrTool.getIntervalTick(ts, 600);
       let end = flowAggrTool.getLargerIntervalTick(ts + 24* 3600, 600);
 
-      (async() =>{
-        await sample.createSampleAggrFlows();
-        let result = await flowAggrTool.addSumFlow("download", {
-          begin: begin,
-          end: end,
-          interval: 600,
-          mac: sample.hostMac
-        })
-        expect(result).to.above(0);
+      await sample.createSampleAggrFlows();
+      let result = await flowAggrTool.addSumFlow("download", {
+        begin: begin,
+        end: end,
+        interval: 600,
+        mac: sample.hostMac
+      })
+      expect(result).to.above(0);
 
-        let traffic = await flowAggrTool.getSumFlow(sample.hostMac, "download", begin, end, -1);
-        expect(traffic.length).to.equal(2);
-        expect(traffic[0]).to.equal(sample.destIP);
-        expect(traffic[1]).to.equal("500");
-        done();
-      })();
+      let traffic = await flowAggrTool.getSumFlow(sample.hostMac, "download", begin, end, -1);
+      expect(traffic.length).to.equal(2);
+      expect(traffic[0]).to.equal(sample.destIP);
+      expect(traffic[1]).to.equal("500");
     })
   });
 

@@ -74,7 +74,7 @@ class CategoryEntry {
     entry.type = type;
     entry.id = id;
 
-    if (proto && !["tcp", "udp"].includes(proto)) {
+    if (proto && !["tcp", "udp", "icmp", "icmpv6"].includes(proto)) {
       throw new Error("Invalid protocol");
     }
 
@@ -85,13 +85,13 @@ class CategoryEntry {
         if (extra.length !== 0) {
           throw new Error("Invalid port format");
         }
-        const startPort = this.validatePort(portStartStr);
+        const startPort = (proto === "tcp" || proto === "udp") ? this.validatePort(portStartStr) : portStartStr;
         if (startPort === null) {
           throw new Error("Invalid port format");
         }
         let endPort;
         if (portEndStr) {
-          endPort = this.validatePort(portEndStr);
+          endPort = (proto === "tcp" || proto === "udp") ? this.validatePort(portEndStr) : portEndStr;
           if (endPort === null || endPort < startPort) {
             throw new Error("Invalid port format");
           }
@@ -126,28 +126,46 @@ class CategoryEntry {
         let startPort = portObj.start;
         let endPort = portObj.end;
         let proto = portObj.proto;
-        if (proto === "udp") {
-          entries.push(this.composeEntry(entry, portObj, false));
-        } else if (proto === "tcp") {
-          while (true) {
-            let hit = false;
-            for (const tlsPort of domainOnlyPorts) {
-              if (tlsPort >= startPort && tlsPort <= endPort) {
-                hit = true;
-                if (startPort < tlsPort) {
-                  entries.push(this.composeEntry(entry, { start: startPort, end: tlsPort - 1, proto: "tcp" }, false));
+        switch (proto) {
+          case "udp": {
+            if ( startPort <= 443 && endPort >= 443) {
+              // if (startPort < 443)
+              //   entries.push(this.composeEntry(entry, { start: startPort, end: 442, proto: "udp" }));
+              entries.push(this.composeEntry(entry, { start: 443, end: 443, proto: "udp" }, true));
+              // if (endPort > 443)
+              //   entries.push(this.composeEntry(entry, { start: 444, end: endPort, proto: "udp" }));
+              // entries.push(this.composeEntry(entry, { start: startPort, end: endPort, proto: "udp" }));
+            }
+            entries.push(this.composeEntry(entry, portObj, false));
+            break;
+          }
+          case "tcp": {
+            while (true) {
+              let hit = false;
+              for (const tlsPort of domainOnlyPorts) {
+                if (tlsPort >= startPort && tlsPort <= endPort) {
+                  hit = true;
+                  if (startPort < tlsPort) {
+                    entries.push(this.composeEntry(entry, { start: startPort, end: tlsPort - 1, proto: "tcp" }, false));
+                  }
+                  entries.push(this.composeEntry(entry, { start: tlsPort, end: tlsPort, proto: "tcp" }, true));
+                  startPort = tlsPort + 1;
+                  break;
                 }
-                entries.push(this.composeEntry(entry, { start: tlsPort, end: tlsPort, proto: "tcp" }, true));
-                startPort = tlsPort + 1;
+              }
+              if (!hit) {
+                if (endPort >= startPort) {
+                  entries.push(this.composeEntry(entry, { start: startPort, end: endPort, proto: "tcp" }, false));
+                }
                 break;
               }
             }
-            if (!hit) {
-              if (endPort >= startPort) {
-                entries.push(this.composeEntry(entry, { start: startPort, end: endPort, proto: "tcp" }, false));
-              }
-              break;
-            }
+            break;
+          }
+          case "icmp":
+          case "icmpv6": {
+            entries.push(this.composeEntry(entry, portObj, false));
+            break;
           }
         }
       }

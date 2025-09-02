@@ -310,8 +310,8 @@ class NetworkProfile extends Monitorable {
         });
         const markTag = `${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`;
         // use two config files, one in network directory, the other in vpn client hard route directory, the second file is controlled by conf-dir in VPNClient.js and will not be included when client is disconnected
-        await fs.writeFileAsync(networkConfPath, `mac-address-tag=%00:00:00:00:00:00$vc_${this.o.uuid}`).catch((err) => {});
-        await fs.writeFileAsync(vcConfPath, `tag-tag=$vc_${this.o.uuid}$${markTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
+        await dnsmasq.writeConfig(networkConfPath, `mac-address-tag=%00:00:00:00:00:00$vc_${this.o.uuid}`).catch((err) => {});
+        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$vc_${this.o.uuid}$${markTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
       // null means off
@@ -334,8 +334,8 @@ class NetworkProfile extends Monitorable {
         await exec(rule6.toCmd('-A')).catch((err) => {
           log.error(`Failed to add ipv6 vpn client rule for network ${this.o.uuid} ${profileId}`, err.message);
         });
-        await fs.writeFileAsync(networkConfPath, `mac-address-tag=%00:00:00:00:00:00$vc_${this.o.uuid}`).catch((err) => {});
-        await fs.writeFileAsync(vcConfPath, `tag-tag=$vc_${this.o.uuid}$${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
+        await dnsmasq.writeConfig(networkConfPath, `mac-address-tag=%00:00:00:00:00:00$vc_${this.o.uuid}`).catch((err) => {});
+        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$vc_${this.o.uuid}$${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
       // false means N/A
@@ -778,7 +778,7 @@ class NetworkProfile extends Monitorable {
       if (_.isArray(this.o.dns) && !_.isEmpty(this.o.dns)) {
         entries.push(`server=${this.o.dns[0]}$${NetworkProfile.getDnsMarkTag(this.o.uuid)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`);
       }
-      await fs.writeFileAsync(this._getDnsmasqConfigPath(), entries.join('\n')).catch((err) => {});
+      await dnsmasq.writeConfig(this._getDnsmasqConfigPath(), entries).catch((err) => {});
     } else {
       await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
     }
@@ -941,7 +941,7 @@ class NetworkProfile extends Monitorable {
           log.error(`Failed to add ${netIpsetName}(6) to ${Tag.getTagNetSetName(uid)}, ${this.o.uuid} ${this.o.intf}`, err);
         });
         const dnsmasqEntry = `mac-address-group=%00:00:00:00:00:00@${uid}`;
-        await fs.writeFileAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${uid}_${this.o.uuid}.conf`, dnsmasqEntry).catch((err) => {
+        await dnsmasq.writeConfig(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${uid}_${this.o.uuid}.conf`, dnsmasqEntry).catch((err) => {
           log.error(`Failed to write dnsmasq tag ${uid} on network ${this.o.uuid} ${this.o.intf}`, err);
         })
         updatedTags.push(uid);
@@ -971,13 +971,17 @@ class NetworkProfile extends Monitorable {
   }
 
   async _enableDNSRoute(routeType = "hard") {
-    await fs.writeFileAsync(this._getDnsmasqRouteConfigPath(routeType), `conf-dir=${NetworkProfile.getDNSRouteConfDir(this.o.uuid, routeType)}`).catch((err) => {});
+    await dnsmasq.writeConfig(this._getDnsmasqRouteConfigPath(routeType), `conf-dir=${NetworkProfile.getDNSRouteConfDir(this.o.uuid, routeType)}`).catch((err) => {});
     dnsmasq.scheduleRestartDNSService();
   }
 
   async _disableDNSRoute(routeType = "hard") {
     await fs.unlinkAsync(this._getDnsmasqRouteConfigPath(routeType)).catch((err) => {});
     dnsmasq.scheduleRestartDNSService();
+  }
+
+  isReady() {
+    return this.o.ready; 
   }
 }
 
