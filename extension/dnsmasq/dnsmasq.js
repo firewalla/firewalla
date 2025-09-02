@@ -266,10 +266,10 @@ module.exports = class DNSMASQ {
       clearTimeout(this.restartDNSTask);
     this.restartDNSIgnoreFileCheck = this.restartDNSIgnoreFileCheck || ignoreFileCheck
     this.restartDNSTask = setTimeout(async () => {
-      if (!this.restartDNSIgnoreFileCheck) {
-        const confChanged = await this.checkConfsChange();
-        if (!confChanged)
-          return;
+      // checkConfsChange will update md5sum in redis, call it before checking ignoreFileCheck to keep md5sum consistent with config files
+      const confChanged = await this.checkConfsChange();
+      if (!this.restartDNSIgnoreFileCheck && !confChanged) {
+        return;
       }
       delete this.restartDNSIgnoreFileCheck
       await execAsync(`sudo systemctl stop ${SERVICE_NAME}`).catch((err) => { });
@@ -306,11 +306,10 @@ module.exports = class DNSMASQ {
       clearTimeout(this.restartDHCPTask);
     this.restartDHCPIgnoreFileCheck = this.restartDHCPIgnoreFileCheck || ignoreFileCheck
     this.restartDHCPTask = setTimeout(async () => {
-      if (!this.restartDHCPIgnoreFileCheck) {
-        const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH])
-        if (!confChanged) {
-          return;
-        }
+      // checkConfsChange will update md5sum in redis, call it before checking ignoreFileCheck to keep md5sum consistent with config files
+      const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH]);
+      if (!this.restartDHCPIgnoreFileCheck && !confChanged) {
+        return;
       }
       delete this.restartDHCPIgnoreFileCheck
       await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => { });
