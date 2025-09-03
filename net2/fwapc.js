@@ -194,14 +194,27 @@ class FWAPC {
 
   async getAllSTAStatus(live = false) {
     if (live || Date.now() / 1000 - staStatusTs > 15) {
-      staStatus = await localGet("/status/station", 1).then(resp => resp.info);
+      let status = {};
+      if (platform.hasIntegratedFWAPC()) {
+        const fwapc_integrated = require('./fwapc_integrated.js');
+        status = await fwapc_integrated.getAllSTAStatus(live);
+      }
+      Object.assign(status, await localGet("/status/station", 1).then(resp => resp.info));
+      staStatus = status;
       staStatusTs = Date.now() / 1000;
     }
     return Object.assign({}, staStatus);
   }
 
   async getSTAStatus(mac) {
-    return localGet(`/status/station/${mac}`, 1).then(resp => resp && resp.info);
+    let status = null;
+    if (platform.hasIntegratedFWAPC()) {
+      const fwapc_integrated = require('./fwapc_integrated.js');
+      status = await fwapc_integrated.getSTAStatus(mac);
+    }
+    if (!status)
+      status = await localGet(`/status/station/${mac}`, 1).then(resp => resp && resp.info);
+    return status;
   }
 
   async getAssetsStatus() {
