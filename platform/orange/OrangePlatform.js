@@ -501,6 +501,10 @@ class OrangePlatform extends Platform {
   async resetNicCalib() {
     await this.setNicCalib(0);
   }
+
+  hasIntegratedFWAPC() {
+    return true;
+  }
 }
 
 module.exports = OrangePlatform;
