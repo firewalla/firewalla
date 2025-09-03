@@ -239,7 +239,7 @@ class AppTimeUsageSensor extends Sensor {
       sourcePort: _.isArray(flow.sp) ? flow.sp[0] : flow.sp,
       destinationPort: flow.dp,
       protocol: flow.pr || "",
-      category: flow.category || "",
+      category: _.get(flow, ["intel", "category"]) || "",
       upload: flow.ob,
       download: flow.rb,
       app: app
@@ -256,13 +256,18 @@ class AppTimeUsageSensor extends Sensor {
     if (!this._domainTrie || !host)
       return result;
     const values = this._domainTrie.find(host);
+    let isAppMatch = false;
     if (_.isSet(values)) {
       for (const value of values) {
         if (_.isObject(value) && value.app && !values.has(`!${value.app}`)) {
+          isAppMatch = true;
           if ((!value.bytesThreshold || flow.ob + flow.rb >= value.bytesThreshold) && (!value.ulDlRatioThreshold || flow.ob <= value.ulDlRatioThreshold * flow.rb))
             result.push(value);
         }
       }
+    }
+    if (isAppMatch && _.isEmpty(result)) {
+      return result;
     }
     // match internet activity on flow
     const category = _.get(flow, ["intel", "category"]);
