@@ -42,6 +42,24 @@ class IntegratedFWAPC {
     log.info(`platform is: ${platform.constructor.name}`);
   }
 
+  async apiCall(method, path, body) {
+    if (method !== "GET") {
+      log.error("Unsupported method for integrated FWAPC");
+      return {code: 500, msg: "Unsupported method for integrated FWAPC"};
+    }
+    if (path.startsWith("/status/station")) {
+      const mac = path.substring("/status/station/".length);
+      if (!mac) {
+        const status = await this.getAllSTAStatus();
+        return {code: 200, body: status && {info: status, errors: []} || {}};
+      }
+      const status = await this.getSTAStatus(mac);
+      return {code: 200, body: status && {info: status, errors: []} || {}};
+    }
+    log.error("Unsupported path for integrated FWAPC");
+    return {code: 500, msg: "Unsupported path for integrated FWAPC"};
+  }
+
   async getAllSTAStatus(live = false) {
     if (live || Date.now() / 1000 - staStatusTs > 15) {
       try {
