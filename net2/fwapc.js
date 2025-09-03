@@ -272,6 +272,13 @@ class FWAPC {
       if (resp.statusCode === 500) {
         r.msg = resp.body;
       }
+      if (platform.hasIntegratedFWAPC()) {
+        const fwapc_integrated = require('./fwapc_integrated.js');
+        const resp_integrated = await fwapc_integrated.apiCall(method, path, body);
+        if (resp_integrated.code === 200) {
+          _.merge(r.body, resp_integrated.body);
+        }
+      }
       return r;
     } catch (e) {
       return {code: 500, msg: e.message};
