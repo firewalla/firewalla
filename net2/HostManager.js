@@ -1047,9 +1047,9 @@ module.exports = class HostManager extends Monitorable {
       }
       if (!_.isEmpty(rule.tag)) {
         const {intfs, tags} = policyManager2.parseTags(rule.tag);
-        if (tags.length && !tags.some(t => TagManager.getTagByUid(t)) ||
-          intfs.length && !intfs.some(i => _.get(sysManager.getInterfaceViaUUID(i), 'active', false))
-        ) {
+        // not filtering interface as we still want rules on misconfigured interface or stopped VPNServer
+        // client'll filter unrecognized interface
+        if (tags.length && !tags.some(t => TagManager.getTagByUid(t))) {
           return false
         }
       }
@@ -1093,9 +1093,10 @@ module.exports = class HostManager extends Monitorable {
 
   filterExceptions(rules, hosts) {
     return rules.filter(rule => {
+      // not filtering interface as we still want rules on misconfigured interface or stopped VPNServer
+      // client'll filter unrecognized interface
       if (!rule
         || !_.isEmpty(rule['p.device.mac']) && !hosts.some(host => host.mac == rule['p.device.mac']) && !IdentityManager.getIdentityByGUID(rule['p.device.mac'])
-        || !_.isEmpty(rule['p.intf.id']) && !_.get(sysManager.getInterfaceViaUUID(rule['p.intf.id']), 'active', false)
       ) {
         return false
       }
@@ -1728,6 +1729,8 @@ module.exports = class HostManager extends Monitorable {
     if (hostTool.isMacAddress(target)) {
       host = this.hostsdb[`host:mac:${target}`];
       o = await hostTool.getMACEntry(target)
+      if (o)
+        o.mac = target;
     } else {
       const fam = net.isIP(target)
       if (!fam) return null

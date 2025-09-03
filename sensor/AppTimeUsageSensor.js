@@ -40,6 +40,7 @@ const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
 const sl = require('../sensor/SensorLoader.js');
 const pclient = require('../util/redis_manager.js').getPublishClient()
+const firewalla = require("../net2/Firewalla.js");
 class AppTimeUsageSensor extends Sensor {
   
   async run() {
@@ -158,7 +159,7 @@ class AppTimeUsageSensor extends Sensor {
       const includedDomains = appConfs[key].includedDomains || [];
       const category = appConfs[key].category;
       for (const value of includedDomains) {
-        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold", "ulDlRatioThreshold"]);
+        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold", "ulDlRatioThreshold", "noStray"]);
         obj.app = key;
         if (category)
           obj.category = category;
@@ -214,6 +215,39 @@ class AppTimeUsageSensor extends Sensor {
     pclient.publishAsync("internet.activity.flow", JSON.stringify({flow}));
   }
 
+  async recordFlow2Redis(flow, app) {
+    const release = firewalla.getReleaseType();
+    if (!(fc.isFeatureOn("record_activity_flow") || ["alpha", "beta"].includes(release))){
+      return;
+    }
+    const date = new Date(flow.ts * 1000);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const formattedDate = `${year}${month}${day}`;
+    const appName =  app || "internet";
+    const key = `internet_flows:${appName}:${flow.mac}:${formattedDate}`;
+ 
+    const jobj = JSON.stringify({
+      begin: flow.ts,
+      dur: flow.du,
+      intf: flow.intf,
+      mac: flow.mac,
+      destination: flow.host || flow.intel && flow.intel.host,
+      sourceIp: flow.sh,
+      destinationIp: flow.dh,
+      sourcePort: _.isArray(flow.sp) ? flow.sp[0] : flow.sp,
+      destinationPort: flow.dp,
+      protocol: flow.pr || "",
+      category: _.get(flow, ["intel", "category"]) || "",
+      upload: flow.ob,
+      download: flow.rb,
+      app: app
+    });
+
+    await rclient.zaddAsync(key, flow.ts, jobj);
+  }
+
   // returns an array with matched app criterias
   // [{"app": "youtube", "occupyMins": 1, "lingerMins": 1, "bytesThreshold": 1000000}]
   lookupAppMatch(flow) {
@@ -222,13 +256,18 @@ class AppTimeUsageSensor extends Sensor {
     if (!this._domainTrie || !host)
       return result;
     const values = this._domainTrie.find(host);
+    let isAppMatch = false;
     if (_.isSet(values)) {
       for (const value of values) {
         if (_.isObject(value) && value.app && !values.has(`!${value.app}`)) {
+          isAppMatch = true;
           if ((!value.bytesThreshold || flow.ob + flow.rb >= value.bytesThreshold) && (!value.ulDlRatioThreshold || flow.ob <= value.ulDlRatioThreshold * flow.rb))
             result.push(value);
         }
       }
+    }
+    if (isAppMatch && _.isEmpty(result)) {
+      return result;
     }
     // match internet activity on flow
     const category = _.get(flow, ["intel", "category"]);
@@ -263,6 +302,7 @@ class AppTimeUsageSensor extends Sensor {
       return;
     for (const match of appMatches) {
       const {app, category, domain, occupyMins, lingerMins, minsThreshold, noStray} = match;
+      await this.recordFlow2Redis(f, app);
       if (host && domain)
         await dnsTool.addSubDomains(domain, [host]);
       let tags = []
