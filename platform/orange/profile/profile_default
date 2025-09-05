@@ -31,7 +31,9 @@
   },
   "nic_feature": [
     [ "eth0","rx-gro-list","off" ],
-    [ "eth1","rx-gro-list","off" ]
+    [ "eth1","rx-gro-list","off" ],
+    [ "eth0","rx-udp-gro-forwarding","on" ],
+    [ "eth1","rx-udp-gro-forwarding","on" ]
   ],
   "priority": [
     ["ovpn-server", 0, "match"],
@@ -39,9 +41,6 @@
   ],
   "sysctl": [
     [ "net.core.netdev_max_backlog", 1000 ]
-  ],
-  "iplink": [
-      [ "eth0", "txqueuelen", 1000]
   ],
   "tc": [
   ]
