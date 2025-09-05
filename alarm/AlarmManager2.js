@@ -77,7 +77,7 @@ const LRU = require('lru-cache');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-const alarmDetailPrefix = "_alarmDetail";
+const alarmDetailPrefix = "_alarmDetail:";
 
 const _ = require('lodash');
 
@@ -753,7 +753,7 @@ module.exports = class {
 
     // add extended info, extended info are optional
     (async () => {
-      const extendedAlarmKey = `${alarmDetailPrefix}:${alarm.aid}`;
+      const extendedAlarmKey = `${alarmDetailPrefix}${alarm.aid}`;
       // if there is any extended info
       if (Object.keys(extended).length !== 0 && extended.constructor === Object) {
         await rclient.hmsetAsync(extendedAlarmKey, extended);
@@ -790,7 +790,7 @@ module.exports = class {
 
     if (related.length) {
       await rclient.zremAsync(alarmActiveKey, related);
-      await rclient.unlinkAsync(related.map(id => alarmDetailPrefix + ':' + id));
+      await rclient.unlinkAsync(related.map(id => alarmDetailPrefix + id));
       await rclient.unlinkAsync(related.map(id => alarmPrefix + id));
       pclient.publishAsync("alarm:removeCache", JSON.stringify({aids:related}));
     }
@@ -1285,19 +1285,35 @@ module.exports = class {
     return results[0];
   }
 
-  async idsToAlarmsAsync(ids) {
+  async idsToAlarmsAsync(ids, withDetails = false) {
     if (!Array.isArray(ids)) throw new Error('Non-array ID input')
 
-    let multi = rclient.multi();
+    const multi = rclient.multi();
 
     ids.forEach((aid) => {
       multi.hgetall(alarmPrefix + aid);
     });
 
+    if (withDetails) {
+      ids.forEach(aid => {
+        multi.hgetall(alarmDetailPrefix + aid);
+      });
+    }
+
     const results = await multi.execAsync()
 
+    if (withDetails) {
+      for (let i = 0; i < ids.length; i++) {
+        if (!results[ids.length + i]) continue;
+        Object.keys(results[ids.length + i])
+          .filter(key => key.startsWith('r.'))
+          .forEach(key => delete results[ids.length + i][key])
+        Object.assign(results[i], results[ids.length + i])
+      }
+    }
+
     // don't filter result and keep the original id to alarm mapping
-    return results.map((r) => this.jsonToAlarm(r))
+    return results.slice(0, ids.length).map(r => this.jsonToAlarm(r))
   }
 
   idsToAlarms(ids, callback = function () { }) {
@@ -1438,9 +1454,9 @@ module.exports = class {
   }
 
   async listExtendedAlarms() {
-    const list = await rclient.scanResults(`${alarmDetailPrefix}:*`);
+    const list = await rclient.scanResults(`${alarmDetailPrefix}*`);
 
-    return list.map(l => l.substring(alarmDetailPrefix.length + 1))
+    return list.map(l => l.substring(alarmDetailPrefix.length))
   }
 
   async listBasicAlarms() {
@@ -1450,7 +1466,7 @@ module.exports = class {
   }
 
   async deleteExtendedAlarm(alarmID) {
-    await rclient.unlinkAsync(`${alarmDetailPrefix}:${alarmID}`);
+    await rclient.unlinkAsync(`${alarmDetailPrefix}${alarmID}`);
   }
 
   numberOfAlarms(callback) {
@@ -1571,18 +1587,19 @@ module.exports = class {
   }
 
   async loadActiveAlarmsAsync(options) {
-    let count, ts, asc, type, filters;
+    let count, ts, asc, type, filters, withDetails;
 
     if (_.isNumber(options)) {
       count = options;
     } else if (options) {
-      ({ count, ts, asc, type, filters } = options);
+      ({ count, ts, asc, type, filters, withDetails } = options);
     }
 
     count = count || 50;
     ts = ts || Date.now() / 1000;
     asc = asc || false;
     type = type || 'active';
+    withDetails = withDetails || false;
 
     let ids;
     if (filters && this.indexCache._disabled != 1 && !await this._fallbackAlarmCache(filters.types)) {
@@ -1597,13 +1614,13 @@ module.exports = class {
       ids = await query;
     }
 
-    let alarms = await this.idsToAlarmsAsync(ids)
+    let alarms = await this.idsToAlarmsAsync(ids, withDetails)
 
     return alarms.filter(Boolean)
   }
 
   async getAlarmDetail(aid) {
-    const key = `${alarmDetailPrefix}:${aid}`
+    const key = `${alarmDetailPrefix}${aid}`
     const detail = await rclient.hgetallAsync(key);
     if (detail) {
       for (let key in detail) {
@@ -2245,7 +2262,7 @@ module.exports = class {
     for (const alarmID of alarmIDs) {
       log.info("delete active alarm_id:" + alarmID);
       multi.zrem(alarmActiveKey, alarmID);
-      multi.unlink(`${alarmDetailPrefix}:${alarmID}`);
+      multi.unlink(`${alarmDetailPrefix}${alarmID}`);
       multi.unlink(alarmPrefix + alarmID);
     }
     await multi.execAsync();
@@ -2259,7 +2276,7 @@ module.exports = class {
     for (const alarmID of alarmIDs) {
       log.info("delete archive alarm_id:" + alarmID);
       multi.zrem(alarmArchiveKey, alarmID);
-      multi.unlink(`${alarmDetailPrefix}:${alarmID}`);
+      multi.unlink(`${alarmDetailPrefix}${alarmID}`);
       multi.unlink(alarmPrefix + alarmID);
     }
     await multi.execAsync();
