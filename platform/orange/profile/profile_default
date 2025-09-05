@@ -13,7 +13,7 @@
     [ "tun_fwvpn", "rx-0", 9 ]
   ],
   "taskset": [
-    ["zeek", "0-3"],
+    ["zeek", "0"],
     ["FireApi", "0-3"],
     ["FireMain", "0-3"],
     ["FireMon", "0-3"],
@@ -29,6 +29,10 @@
       [ 0, 1000000, 2000000, "ondemand" ]
     ]
   },
+  "nic_feature": [
+    [ "eth0","rx-gro-list","off" ],
+    [ "eth1","rx-gro-list","off" ]
+  ],
   "priority": [
     ["ovpn-server", 0, "match"],
     ["vpnclient", 0, "match"]
