@@ -276,6 +276,10 @@ class FWAPC {
         const fwapc_integrated = require('./fwapc_integrated.js');
         const resp_integrated = await fwapc_integrated.apiCall(method, path, body);
         if (resp_integrated.code === 200) {
+          r.code = 200;
+          delete r.msg;
+          if (!_.isPlainObject(r.body))
+            r.body = {};
           _.merge(r.body, resp_integrated.body);
         }
       }
