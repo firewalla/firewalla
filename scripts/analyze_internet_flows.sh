@@ -74,6 +74,87 @@ retrieve_internet_flows_from_redis() {
   done
 }
 
+get_app_network_activity() {
+  if [[ $# -ne 3 ]]; then
+    echo "Usage: get_app_network_activity <app_name> <mac_address> <date_string>" >&2
+    return 1
+  fi
+
+  local app=$1
+  local mac=$2
+  local date_str=$3
+  local app_time_usage
+
+  local begin_ts end_ts
+  if ! begin_ts=$(date -d "$date_str" "+%s" 2>/dev/null); then
+    echo "Error: Invalid start date format for '$date_str'" >&2
+    return 1
+  fi
+  if ! end_ts=$(date -d "$date_str +1 day" "+%s" 2>/dev/null); then
+    echo "Error: Invalid end date format for '$date_str +1 day'" >&2
+    return 1
+  fi
+  
+  local json_payload
+  local json_payload="{
+    \"item\": \"appTimeUsage\",
+    \"begin\": $begin_ts,
+    \"end\": $end_ts,
+    \"granularity\": \"day\",
+    \"type\": \"host\",
+    \"apps\": [\"$app\"]
+  }"
+
+  local api_url="http://localhost:8834/v1/encipher/complex?command=get&target=$mac"
+
+  local response=$(curl -s -X POST \
+    --header 'Content-Type: application/json' \
+    --header 'Accept: application/json' \
+    -d "$json_payload" \
+    "$api_url")
+  
+  local curl_exit_code=$?
+  
+  if [[ $curl_exit_code -ne 0 ]]; then
+    echo "Error: curl request failed with exit code $curl_exit_code" >&2
+    return 1
+  fi
+  
+  local intervals
+  if [[ "$app" == "internet" ]]; then
+    # extract internetTimeUsage.devices[mac].intervals
+    intervals=$(echo "$response" | jq -r --arg mac "$mac" '
+      .data.internetTimeUsage.devices[$mac].intervals? // empty
+    ')
+  else
+    # extract appTimeUsage.app.devices[mac].intervals
+    intervals=$(echo "$response" | jq -r --arg app "$app" --arg mac "$mac" '
+      .data.appTimeUsage[$app].devices[$mac].intervals? // empty
+    ')
+  fi
+
+  if [[ -n "$intervals" && "$intervals" != "null" ]]; then
+    echo ""
+    echo "Network Activity:"
+    echo "----------------------------------------"
+    echo "$intervals" | jq -c '.[]' | while read -r interval; do
+      if [[ -n "$interval" ]]; then
+        begin=$(echo "$interval" | jq -r '.begin')
+        end=$(echo "$interval" | jq -r '.end')
+            
+        begin_time=$(date -d "@$begin" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "INVALID_TIME")
+        end_time=$(date -d "@$end" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "INVALID_TIME")
+
+        echo "  Interval: $begin_time to $end_time (Duration: $(( (end - begin) / 60 )) minutes)"
+      fi
+    done
+    echo "----------------------------------------"
+  else
+    echo "No intervals found... (no network activity)"
+  fi
+  return 0
+}
+
 print_flows_statistics() {
   if ! declare -p all_flows &>/dev/null; then
     echo "Error: 'all_flows' associative array not found!" >&2
@@ -140,6 +221,13 @@ print_flows_statistics() {
       all_time=${all_time%, }  
       printf "%s\t\t%d\t%s\n" "$dest" "$count" "$all_time"
     done
+
+    app=$(echo "$key" | cut -d':' -f2)
+    mac=$(echo "$key" | cut -d':' -f3-8)
+    date=$(echo "$key" | cut -d':' -f9)
+
+    get_app_network_activity $app $mac $date
+
   done
 }
 
