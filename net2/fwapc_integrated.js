@@ -167,7 +167,7 @@ class IntegratedFWAPC {
         const value = trimmedLine.substring(firstSpaceIndex + 1).trim();
         switch (key) {
           case 'addr':
-            result.bssid = value.toUpperCase;
+            result.bssid = value.toUpperCase();
             break;
           case 'ssid':
             result.ssid = value;
