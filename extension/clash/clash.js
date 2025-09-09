@@ -50,8 +50,6 @@ class Clash {
     return instance;
   }
 
-	// load config from redis sys:features:config
-	// and generate yml files
   async prepareClashConfig() {
     const config = this.config || {};
 		

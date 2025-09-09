@@ -43,12 +43,14 @@ const extensionManager = require('../sensor/ExtensionManager.js')
 const delay = require('../util/util.js').delay;
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
+const mode = require('../net2/Mode.js');
 
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
 const moment = require('moment-timezone/moment-timezone.js');
 moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const Constants = require('../net2/Constants.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 class DataUsageSensor extends Sensor {
     async run() {
@@ -131,16 +133,19 @@ class DataUsageSensor extends Sensor {
           const dataPlan = await this.getDataPlan();
           if (!dataPlan)
             return;
-          const {date, total, wanConfs} = dataPlan;
-          if (date && total) {
+          const {date, total, wanConfs, enable} = dataPlan;
+          // "enable" on global level won't be set in router mode, so global level alarm won't be generated
+          // but for legacy platform that is not managed by firerouter or for non-router mode, it still counts global data usage
+          if (enable || !platform.isFireRouterManaged() || !await mode.isRouterModeOn()) {
             await this.checkMonthlyDataUsage(date, total);
           }
-          const wanIntfs = sysManager.getWanInterfaces();
-          for (const wanIntf of wanIntfs) {
-            if (wanConfs && _.isObject(wanConfs[wanIntf.uuid])) {
-              const {date, total} = wanConfs[wanIntf.uuid];
-              if (date && total) {
-                await this.checkMonthlyDataUsage(date, total, wanIntf.uuid);
+          // per-wan data usage is only available in router mode
+          if (platform.isFireRouterManaged() && await mode.isRouterModeOn()) {
+            const wanIntfs = sysManager.getWanInterfaces();
+            for (const wanIntf of wanIntfs) {
+              const wanConf = _.get(wanConfs, wanIntf.uuid, {date, total, enable: false}); // if wan uuid is not defined in wanConfs, disable bandwidth usage alarm on that WAN by default
+              if (wanConf.enable) {
+                await this.checkMonthlyDataUsage(wanConf.date || date, wanConf.total || total, wanIntf.uuid);
               }
             }
           }
@@ -322,8 +327,12 @@ class DataUsageSensor extends Sensor {
                     upload: upload
                 }
             });
-            if (wanUUID)
+            if (wanUUID) {
               alarm["p.wan.uuid"] = wanUUID;
+              const wanIntf = sysManager.getInterfaceViaUUID(wanUUID);
+              if (wanIntf)
+                alarm["p.wan.name"] = wanIntf.desc;
+            }
             alarmManager2.enqueueAlarm(alarm);
         }
     }
@@ -338,7 +347,7 @@ class DataUsageSensor extends Sensor {
     }
 
     async getDataPlan() {
-        let dataPlan = await rclient.getAsync('sys:data:plan');
+        let dataPlan = await rclient.getAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS);
         if (!dataPlan) return;
         dataPlan = JSON.parse(dataPlan);
         return dataPlan

@@ -1,4 +1,4 @@
-/*    Copyright 2019-2023 Firewalla Inc.
+/*    Copyright 2019-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -179,10 +179,6 @@ class FWAPC {
     });
   }
 
-  isReady() {
-    return this.ready
-  }
-
   async getGroupStatus(groupId) {
     const groupStatus = await localGet(`/status/group/${groupId}`).catch((err) => {
       log.error(`Failed to get group status of ${groupId}`, err.message);
@@ -222,6 +218,10 @@ class FWAPC {
 
   async getConfig() {
     return localGet("/config/active", 1);
+  }
+
+  async getCheckInData() {
+    return localGet("/status/checkin_data");
   }
 
   async staBssSteer(staMAC, targetAP, targetSSID, targetBand) {

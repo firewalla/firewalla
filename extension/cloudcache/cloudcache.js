@@ -82,6 +82,7 @@ class CloudCacheItem {
   }
 
   async writeLocalMetadata(metadata) {
+    metadata.branch = f.getBranch();
     return jsonWriteFileAsync(this.localMetadataPath, metadata);
   }
 
@@ -99,9 +100,15 @@ class CloudCacheItem {
     return bone.hashsetAsync(this.cloudHashKey);
   }
 
-  isExpired(currentTime, lastUpdateTime) {
+  isExpired(currentTime, lastUpdateTime, expireTime) {
     if (!currentTime || !lastUpdateTime) {
       return false;
+    }
+    if (_.isNumber(expireTime)) {
+      // never expire if expireTime is 0
+      if (expireTime === 0)
+        return false;
+      return currentTime > expireTime;
     }
     const ageInDays = (currentTime - lastUpdateTime) / 86400;
     if (ageInDays > expirationDays) {
@@ -174,8 +181,15 @@ class CloudCacheItem {
       }
     }
 
-    // cloud metadata has different checksum but with older timestamp than current one. Just ignore remote one. This is unlikely to occur.
-    if (localMetadata && cloudMetadata && localIntegrity && localMetadata.sha256sum && cloudMetadata.sha256sum && localMetadata.sha256sum !== cloudMetadata.sha256sum && cloudMetadata.updated < localMetadata.updated) {
+    // cloud metadata has different checksum but with older timestamp than current one.
+    // Just ignore remote one. This is unlikely to occur.
+    // after switching branch, an earlier ts might prevent cache from updating
+    if (localMetadata && cloudMetadata &&
+      localIntegrity && localMetadata.sha256sum && cloudMetadata.sha256sum &&
+      localMetadata.sha256sum !== cloudMetadata.sha256sum &&
+      cloudMetadata.updated < localMetadata.updated &&
+      (!localMetadata.branch || localMetadata.branch == f.getBranch())
+    ) {
       log.info(`cloud metadata for ${this.name} is older than local one. skip updating`);
       needDownload = false;
     }
@@ -184,7 +198,7 @@ class CloudCacheItem {
     let hasNewData = false;
 
     // download cloud data if needed.
-    if (needDownload && !this.isExpired(currentTime, cloudMetadata.updated)) {
+    if (needDownload && !this.isExpired(currentTime, cloudMetadata.updated, cloudMetadata.expired)) {
       log.info(`Downloading ${this.cloudHashKey}...`);
       const cloudContent = await this.getCloudData();
       log.info(`Download Complete for ${this.cloudHashKey}!`);
@@ -206,7 +220,7 @@ class CloudCacheItem {
       localContent = await this.getLocalCacheContent();
     }
 
-    if (localMetadata && this.isExpired(currentTime, localMetadata.updated)) {
+    if (localMetadata && this.isExpired(currentTime, localMetadata.updated, localMetadata.expired)) {
       log.error(`Cloud cache item ${this.cloudHashKey} is obsolete. Delete cache data`);
       await this.cleanUp();
       if (this.onUpdateCallback) {
@@ -235,7 +249,7 @@ class CloudCache {
 
       setInterval(() => {
         this.job();
-      }, 1800 * 1000); // every half hour
+      }, 10800 * 1000); // every 3 hours
 
       const eventType = "CLOUDCACHE_FORCE_REFRESH";
       sclient.subscribe(eventType);

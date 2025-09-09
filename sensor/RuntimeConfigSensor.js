@@ -57,7 +57,7 @@ class RuntimeConfigSensor extends Sensor {
   }
 
   async updateFakeClock() {
-    return exec('sudo fake-hwclock');
+    return exec('sudo FILE=/data/fake-hwclock.data fake-hwclock');
   }
 }
 
