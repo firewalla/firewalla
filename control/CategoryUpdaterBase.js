@@ -105,6 +105,10 @@ class CategoryUpdaterBase {
     return `domain:pattern:${pattern}`;
   }
 
+  getIncludedElementsKey(category) {
+    return `category:${category}:included:elements`;
+  }
+
   isDomainPattern(domain) {
     return (domain.startsWith("*.") ? domain.substring(2) : domain).includes("*");
   }
@@ -260,25 +264,28 @@ class CategoryUpdaterBase {
 
   // add entries from category:{category}:ip:domain to ipset
   async updateNetportIpset(category, ip6 = false, options) {
-    let ipsetName = ip6 ? this.getNetPortIPSetNameForIPV6(category) : this.getNetPortIPSetName(category)
-
+    const BATCH_SIZE = 3000; 
+    const ipsetName = ip6 ? this.getNetPortIPSetNameForIPV6(category) : this.getNetPortIPSetName(category);
+  
     const categoryIps = ip6 ? await this.getIPv6AddressesWithPort(category) : await this.getIPv4AddressesWithPort(category);
     await exec(`sudo ipset flush ${ipsetName}`).catch((err) => { });
 
-    if (categoryIps.length == 0) return;
-    const entryList = [];
-    for (const ipObj of categoryIps) {
-      const ip = ipObj.id;
-      entryList.push(`${ip},${CategoryEntry.toPortStr(ipObj.port)}`);
+    if (categoryIps.length === 0) return;
+    const entryList = categoryIps.map(ipObj => 
+      `${ipObj.id},${CategoryEntry.toPortStr(ipObj.port)}`
+    );
+
+    for (let i = 0; i < entryList.length; i += BATCH_SIZE) {
+      const batchEntries = entryList.slice(i, i + BATCH_SIZE);
+      let cmd = `echo "${batchEntries.join('\n')}" | sed 's=^=add ${ipsetName} = '`;
+      if (options.comment) {
+        cmd += `| sed 's=$= comment ${options.comment}=' `;
+      }
+      cmd += `| sudo ipset restore -!`;
+      await exec(cmd).catch((err) => {
+        log.error(`Failed to update ipset by ${category} with ip${ip6 ? 6 : 4} addresses`, err);
+      });
     }
-    let cmd = `echo "${entryList.join('\n')}" | sed 's=^=add ${ipsetName} = '`;
-    if (options.comment) {
-      cmd += `| sed 's=$= comment ${options.comment}=' `;
-    }
-    cmd += `| sudo ipset restore -!`;
-    await exec(cmd).catch((err) => {
-      log.error(`Failed to update ipset by ${category} with ip${ip6 ? 6 : 4} addresses`, err);
-    });
   }
 
   async updatePersistentIPSets(category, ip6 = false, options) {
@@ -431,7 +438,8 @@ class CategoryUpdaterBase {
   }
 
   isTLSActivated(category) {
-    return this.activeTLSCategories && this.activeTLSCategories[category] !== undefined
+    return (this.activeTLSCategories_tcp && this.activeTLSCategories_tcp[category] !== undefined) 
+    || (this.activeTLSCategories_udp && this.activeTLSCategories_udp[category] !== undefined)
   }
 
   async refreshCategoryRecord(category) { }

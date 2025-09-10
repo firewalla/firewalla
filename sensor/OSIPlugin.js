@@ -48,19 +48,19 @@ const PolicyManager2 = require('../alarm/PolicyManager2.js')
 const pm2 = new PolicyManager2()
 
 const LRU = require('lru-cache');
-const tagCache = new LRU({maxAge: 1000 * 60}); // 1 min
+const tagCache = new LRU({ maxAge: 1000 * 60 }); // 1 min
 
 class OSIPlugin extends Sensor {
   apiRun() {
 
     // register get/set handlers for fireapi
     extensionManager.onGet("osiStop", async (msg) => {
-      return {state: await this.isAdminStop()}
+      return { state: await this.isAdminStop() }
     })
 
     extensionManager.onSet("osiStop", async (msg, data) => {
-      try {await extensionManager._precedeRecord(msg.id, {origin: {state: await this.isAdminStop()}})} catch(err) {};
-      if(data.state === true) {
+      try { await extensionManager._precedeRecord(msg.id, { origin: { state: await this.isAdminStop() } }) } catch (err) { };
+      if (data.state === true) {
         await this.adminStopOn();
       } else {
         await this.adminStopOff();
@@ -69,7 +69,7 @@ class OSIPlugin extends Sensor {
 
     // register get/set handlers for fireapi
     extensionManager.onGet("osiTimeout", async (msg) => {
-      return {timeout : await rclient.getAsync(OSI_ADMIN_TIMEOUT)};
+      return { timeout: await rclient.getAsync(OSI_ADMIN_TIMEOUT) };
     })
 
     extensionManager.onSet("osiTimeout", async (msg, data) => {
@@ -80,7 +80,7 @@ class OSIPlugin extends Sensor {
   }
 
   run() {
-    if (! platform.supportOSI()) {
+    if (!platform.supportOSI()) {
       return;
     }
 
@@ -89,7 +89,7 @@ class OSIPlugin extends Sensor {
     const autoStopTime = this.config.autoStop || 30 * 60 * 1000;
 
     setTimeout(() => {
-      this.stop().catch((err) => {});
+      this.stop().catch((err) => { });
     }, autoStopTime);
 
     this.vpnClientDone = false;
@@ -145,17 +145,17 @@ class OSIPlugin extends Sensor {
     });
 
     sem.on(Message.MSG_OSI_TARGET_TAGS_APPLIED, async (event) => {
-      switch(event.targetType) {
+      switch (event.targetType) {
         case "Host": {
           const tags = (event.tags || []).map(String);
-          if(_.isEmpty(tags)) {
+          if (_.isEmpty(tags)) {
             return;
           }
 
           log.info(`Tags ${tags.join(",")} applied to host ${event.uid}`);
 
-          for(const tag of tags) {
-            if(this.appliedTags[tag]) {
+          for (const tag of tags) {
+            if (this.appliedTags[tag]) {
               log.info("Tag already applied, adding to osi_verified_mac_set", event.uid, tag);
               exec(`sudo ipset add -! osi_verified_mac_set ${event.uid}`).catch((err) => { });
               return;
@@ -164,7 +164,7 @@ class OSIPlugin extends Sensor {
 
           // the group tag has not been applied yet, add to cache
           log.info("Adding host to tag tracking cache", event.uid, tags);
-          for(const tag of tags) {
+          for (const tag of tags) {
             this.tagsTrackingForMac[tag] = this.tagsTrackingForMac[tag] || [];
             this.tagsTrackingForMac[tag].push(event.uid);
           }
@@ -181,14 +181,14 @@ class OSIPlugin extends Sensor {
         }
         case "WGPeer": {
           const tags = (event.tags || []).map(String);
-          if(_.isEmpty(tags)) {
+          if (_.isEmpty(tags)) {
             return;
           }
 
           log.info(`Tags ${tags.join(",")} applied to peer ${event.uid}`);
 
-          for(const tag of tags) {
-            if(this.appliedTags[tag]) {
+          for (const tag of tags) {
+            if (this.appliedTags[tag]) {
               log.info("Tag already applied, adding to osi_verified_subnet_set", event.uid, tag);
               const cmd = `redis-cli smembers osi:active | awk -F, '$1 == "identityTag" && $2 == "${tag}" && $3 == "${event.uid}" {print "add osi_verified_subnet_set " $NF}' | sudo ipset -exist restore &> /dev/null`;
               exec(cmd).catch((err) => { });
@@ -197,12 +197,12 @@ class OSIPlugin extends Sensor {
           }
 
           // the group tag has not been applied yet, add to cache
-          for(const tag of tags) {
+          for (const tag of tags) {
             const cmd = `redis-cli smembers osi:active | awk -F, '$1 == "identityTag" && $2 == "${tag}" && $3 == "${event.uid}" {print $NF}'`;
             const result = await exec(cmd).catch((err) => {
               log.error("Failed run cmd", cmd, err);
             });
-            if(result && result.stdout) {
+            if (result && result.stdout) {
               const stdout = result.stdout.trim();
               this.tagsTrackingForSubnet[tag] = this.tagsTrackingForSubnet[tag] || [];
               for (const subnet of stdout.split("\n")) {
@@ -222,68 +222,68 @@ class OSIPlugin extends Sensor {
 
     sem.on(Message.MSG_OSI_VERIFIED, async (event) => {
       try {
-        switch(event.targetType) {
-        case "Host": {
-          log.info(`Marked mac ${event.uid} as verified`);
-          const exists = await rclient.sismemberAsync(OSI_KEY, `mac,${event.uid}`);
-          if(exists) {
-            exec(`sudo ipset add -! osi_verified_mac_set ${event.uid}`).catch((err) => { });
+        switch (event.targetType) {
+          case "Host": {
+            log.info(`Marked mac ${event.uid} as verified`);
+            const exists = await rclient.sismemberAsync(OSI_KEY, `mac,${event.uid}`);
+            if (exists) {
+              exec(`sudo ipset add -! osi_verified_mac_set ${event.uid}`).catch((err) => { });
+            }
+            break;
           }
-          break;
-        }
-        case "Tag": {
-          const tagId = event.uid;
-          this.appliedTags[tagId] = true; // marked this tag as applied, so when macs/subnets are added to this tag, it can be marked as verified immediately
-          log.info(`Marked tag ${tagId} as verified.`);
+          case "Tag": {
+            const tagId = event.uid;
+            this.appliedTags[tagId] = true; // marked this tag as applied, so when macs/subnets are added to this tag, it can be marked as verified immediately
+            log.info(`Marked tag ${tagId} as verified.`);
 
-          // If the `tag` of these macs/subnets have been applied, then just add them to verified macs/subnets
-          const macs = this.tagsTrackingForMac[tagId] || [];
-          for(const mac of macs) {
+            // If the `tag` of these macs/subnets have been applied, then just add them to verified macs/subnets
+            const macs = this.tagsTrackingForMac[tagId] || [];
+            for (const mac of macs) {
               log.info(`Marked tag ${tagId} mac ${mac} as verified`);
               exec(`sudo ipset add -! osi_verified_mac_set ${mac}`).catch((err) => { });
-          }
-          delete this.tagsTrackingForMac[tagId]; // no longer needed
+            }
+            delete this.tagsTrackingForMac[tagId]; // no longer needed
 
-          const subnets = this.tagsTrackingForSubnet[tagId] || [];
-          for(const subnet of subnets) {
+            const subnets = this.tagsTrackingForSubnet[tagId] || [];
+            for (const subnet of subnets) {
               log.info(`Marked tag ${tagId} subnet ${subnet} as verified`);
               exec(`sudo ipset add -! osi_verified_subnet_set ${subnet}`).catch((err) => { });
-          }
-          delete this.tagsTrackingForSubnet[tagId]; // no longer needed
+            }
+            delete this.tagsTrackingForSubnet[tagId]; // no longer needed
 
-          break;
-        }
-        case "NetworkProfile": {
-          const activeItems = await rclient.smembersAsync(OSI_KEY);
-          for (const item of activeItems) {
-            if (item.startsWith(`network,${event.uid},`)) {
-              const subnet = item.replace(`network,${event.uid},`, "");
-              log.info(`Marked network ${event.uid} subnet ${subnet} as verified`);
-              exec(`sudo ipset add -! osi_verified_subnet_set ${subnet}`).catch((err) => { });
-            }
-            if (item.startsWith(`network6,${event.uid},`)) {
-              const subnet = item.replace(`network6,${event.uid},`, "");
-              log.info(`Marked network ${event.uid} subnet ${subnet} as verified`);
-              exec(`sudo ipset add -! osi_verified_subnet6_set ${subnet}`).catch((err) => { });
-            }
+            break;
           }
-          break;
-        }
-        case "WGPeer": {
-          const activeItems = await rclient.smembersAsync(OSI_KEY);
-          for (const item of activeItems) {
-            if (item.startsWith(`identity,${event.uid},`)) {
-              const ip = item.replace(`identity,${event.uid},`, "");
-              log.info(`Marked WireGuard ${event.uid} ip ${ip} as verified`);
-              exec(`sudo ipset add -! osi_verified_subnet_set ${ip}`).catch((err) => { });
-              // exec(`sudo ipset add -! osi_verified_subnet6_set ${ip}`).catch((err) => { });
+          case "NetworkProfile": {
+            const activeItems = await rclient.smembersAsync(OSI_KEY);
+            for (const item of activeItems) {
+              if (item.startsWith(`network,${event.uid},`)) {
+                const subnet = item.replace(`network,${event.uid},`, "");
+                log.info(`Marked network ${event.uid} subnet ${subnet} as verified`);
+                exec(`sudo ipset add -! osi_verified_subnet_set ${subnet}`).catch((err) => { });
+              }
+              if (item.startsWith(`network6,${event.uid},`)) {
+                const subnet = item.replace(`network6,${event.uid},`, "");
+                log.info(`Marked network ${event.uid} subnet ${subnet} as verified`);
+                exec(`sudo ipset add -! osi_verified_subnet6_set ${subnet}`).catch((err) => { });
+              }
             }
+            break;
           }
-          break;
-        }
-        default: {
-          log.error("Unknown target type in MSG_OSI_VERIFIED event", event);
-        }
+          case "WGPeer": {
+            const activeItems = await rclient.smembersAsync(OSI_KEY);
+            for (const item of activeItems) {
+              if (item.startsWith(`identity,${event.uid},`)) {
+                const ip = item.replace(`identity,${event.uid},`, "");
+                log.info(`Marked WireGuard ${event.uid} ip ${ip} as verified`);
+                exec(`sudo ipset add -! osi_verified_subnet_set ${ip}`).catch((err) => { });
+                // exec(`sudo ipset add -! osi_verified_subnet6_set ${ip}`).catch((err) => { });
+              }
+            }
+            break;
+          }
+          default: {
+            log.error("Unknown target type in MSG_OSI_VERIFIED event", event);
+          }
         }
       } catch (err) {
         log.error("Got error on handling MSG_OSI_VERIFIED event", err);
@@ -296,8 +296,8 @@ class OSIPlugin extends Sensor {
       return;
     if (this.inboundRulesDone) {
       log.info("Flushing osi_wan_inbound_set & osi_wan_inbound_set6");
-      await exec("sudo ipset flush -! osi_wan_inbound_set").catch((err) => {});
-      await exec("sudo ipset flush -! osi_wan_inbound_set6").catch((err) => {});
+      await exec("sudo ipset flush -! osi_wan_inbound_set").catch((err) => { });
+      await exec("sudo ipset flush -! osi_wan_inbound_set6").catch((err) => { });
     }
     if (this.vpnClientDone) {
       if (!this.knob1Lifted) {
@@ -308,7 +308,7 @@ class OSIPlugin extends Sensor {
       }
       if (this.rulesDone) {
         if (!this.knob2Lifted) {
-          this.releaseBrake().catch((err) => {});
+          this.releaseBrake().catch((err) => { });
           this.knob2Lifted = true;
         }
       }
@@ -323,7 +323,11 @@ class OSIPlugin extends Sensor {
     await exec("sudo ipset flush -! osi_rules_match_all_knob6").catch((err) => { });
 
     sem.on(Message.MSG_OSI_UPDATE_NOW, (event) => {
-      this.updateOSIPool();
+      if (this.updateTask)
+        clearTimeout(this.updateTask);
+      this.updateTask = setTimeout(async () => {
+        await this.updateOSIPool();
+      }, 15 * 1000);
     });
 
     // DO NOT UPDATE OSI Pool too soon, only after knob off is triggered
@@ -339,21 +343,21 @@ class OSIPlugin extends Sensor {
 
   // disable this feature at all, no more osi
   async cleanup() {
-      // await rclient.delAsync(OSI_KEY);
-      // await rclient.delAsync(OSI_RULES_KEY);
-      await exec("sudo ipset flush -! osi_mac_set").catch((err) => {});
-      await exec("sudo ipset flush -! osi_subnet_set").catch((err) => {});
-      await exec("sudo ipset flush -! osi_subnet6_set").catch((err) => {});
-      await exec("sudo ipset flush -! osi_rules_mac_set").catch((err) => {});
-      await exec("sudo ipset flush -! osi_rules_subnet_set").catch((err) => {});
-      await exec("sudo ipset flush -! osi_rules_subnet6_set").catch((err) => {});
+    // await rclient.delAsync(OSI_KEY);
+    // await rclient.delAsync(OSI_RULES_KEY);
+    await exec("sudo ipset flush -! osi_mac_set").catch((err) => { });
+    await exec("sudo ipset flush -! osi_subnet_set").catch((err) => { });
+    await exec("sudo ipset flush -! osi_subnet6_set").catch((err) => { });
+    await exec("sudo ipset flush -! osi_rules_mac_set").catch((err) => { });
+    await exec("sudo ipset flush -! osi_rules_subnet_set").catch((err) => { });
+    await exec("sudo ipset flush -! osi_rules_subnet6_set").catch((err) => { });
   }
 
   hasValidProfileId(x) {
-    return x.policy && 
-    x.policy.vpnClient && 
-    x.policy.vpnClient.state && 
-    x.policy.vpnClient.profileId;
+    return x.policy &&
+      x.policy.vpnClient &&
+      x.policy.vpnClient.state &&
+      x.policy.vpnClient.profileId;
   }
 
   async stop() {
@@ -410,7 +414,7 @@ class OSIPlugin extends Sensor {
   async processTagId(tagId, key) {
     const cacheKey = `${tagId},${key}`;
     const hit = tagCache.get(cacheKey);
-    if(hit) {
+    if (hit) {
       return; // just process once per session
     }
 
@@ -500,7 +504,7 @@ class OSIPlugin extends Sensor {
 
     try {
       const policy = hostManager.getPolicyFast();
-      
+
       const profileIds = policy.vpnClient ? await hostManager.getAllActiveStrictVPNClients(policy.vpnClient) : [];
 
       const rules = await pm2.getHighImpactfulRules();
@@ -508,11 +512,19 @@ class OSIPlugin extends Sensor {
       await rclient.delAsync(OSI_RULES_KEY);
       await rclient.delAsync(OSI_KEY);
 
+      const VWG_PREFIX_LEN = Constants.ACL_VIRT_WAN_GROUP_PREFIX.length;
       for (const rule of rules) {
         if (rule.action === 'route') {
-          const profileId = rule.wanUUID.replace(Constants.ACL_VPN_CLIENT_WAN_PREFIX, "");
-          if (!policy.vpnClient || !profileIds.includes(profileId)) {
-            continue; // if PBR rule's VPN doesn't have kill switch on, no need to OSI it.
+          if (rule.wanUUID.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
+            const vwgProfileIds = await virtWanGroupManager.getAllEnabledStrictVPNClients(rule.wanUUID.substring(VWG_PREFIX_LEN));
+            if (vwgProfileIds && vwgProfileIds.length == 0) {
+              continue; // if PBR rule's VPN doesn't have kill switch on, no need to OSI it.
+            }
+          } else if (rule.wanUUID.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX)) {
+            const profileId = rule.wanUUID.replace(Constants.ACL_VPN_CLIENT_WAN_PREFIX, "");
+            if (!policy.vpnClient || !profileIds.includes(profileId)) {
+              continue; // if PBR rule's VPN doesn't have kill switch on, no need to OSI it.
+            }
           }
         }
 
@@ -524,8 +536,15 @@ class OSIPlugin extends Sensor {
       for (const tag of Object.values(tagJson)) {
         if (this.hasValidProfileId(tag)) {
           const hostProfileId = tag.policy.vpnClient.profileId;
-          if (profileIds.includes(hostProfileId)) {
-            await this.processTagId(tag.uid, OSI_KEY);
+          if (hostProfileId.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
+            const vwgProfileIds = await virtWanGroupManager.getAllEnabledStrictVPNClients(hostProfileId.substring(VWG_PREFIX_LEN));
+            if (vwgProfileIds && vwgProfileIds.length > 0) {
+              await this.processTagId(tag.uid, OSI_KEY);
+            }
+          } else {
+            if (profileIds.includes(hostProfileId)) {
+              await this.processTagId(tag.uid, OSI_KEY);
+            }
           }
         }
       }
@@ -534,9 +553,16 @@ class OSIPlugin extends Sensor {
       for (const host of hostManager.getHostsFast()) {
         if (this.hasValidProfileId(host)) {
           const hostProfileId = host.policy.vpnClient.profileId;
-          if (profileIds.includes(hostProfileId)) {
-            // mac,20:6D:31:00:00:01
-            await rclient.saddAsync(OSI_KEY, `mac,${host.o.mac}`);
+          if (hostProfileId.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
+            const vwgProfileIds = await virtWanGroupManager.getAllEnabledStrictVPNClients(hostProfileId.substring(VWG_PREFIX_LEN));
+            if (vwgProfileIds && vwgProfileIds.length > 0) {
+              await rclient.saddAsync(OSI_KEY, `mac,${host.o.mac}`);
+            }
+          } else {
+            if (profileIds.includes(hostProfileId)) {
+              // mac,20:6D:31:00:00:01
+              await rclient.saddAsync(OSI_KEY, `mac,${host.o.mac}`);
+            }
           }
         }
       }
@@ -545,8 +571,15 @@ class OSIPlugin extends Sensor {
       for (const network of Object.values(networkProfileManager.networkProfiles)) {
         if (this.hasValidProfileId(network)) {
           const networkVPNProfileId = network.policy.vpnClient.profileId;
-          if (profileIds.includes(networkVPNProfileId)) {
-            await this.processNetwork(network, OSI_KEY);
+          if (networkVPNProfileId.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
+            const vwgProfileIds = await virtWanGroupManager.getAllEnabledStrictVPNClients(networkVPNProfileId.substring(VWG_PREFIX_LEN));
+            if (vwgProfileIds && vwgProfileIds.length > 0) {
+              await this.processNetwork(network, OSI_KEY);
+            }
+          } else {
+            if (profileIds.includes(networkVPNProfileId)) {
+              await this.processNetwork(network, OSI_KEY);
+            }
           }
         }
       }
@@ -556,8 +589,15 @@ class OSIPlugin extends Sensor {
         for (const identity of Object.values(identities)) {
           if (this.hasValidProfileId(identity)) {
             const profileId = identity.policy.vpnClient.profileId;
-            if (profileIds.includes(profileId)) {
-              await this.processIdentity(identity, OSI_KEY);
+            if (profileId.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
+              const vwgProfileIds = await virtWanGroupManager.getAllEnabledStrictVPNClients(profileId.substring(VWG_PREFIX_LEN));
+              if (vwgProfileIds && vwgProfileIds.length > 0) {
+                await this.processIdentity(identity, OSI_KEY);
+              }
+            } else {
+              if (profileIds.includes(profileId)) {
+                await this.processIdentity(identity, OSI_KEY);
+              }
             }
           }
         }

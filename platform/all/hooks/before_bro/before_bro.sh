@@ -13,6 +13,7 @@ cp $CUR_DIR/zeek-conn-log-filter/* /home/pi/.firewalla/run/zeek/scripts/zeek-con
 mkdir -p /home/pi/.firewalla/run/zeek/scripts/well-known-server-ports
 cp $CUR_DIR/well-known-server-ports/* /home/pi/.firewalla/run/zeek/scripts/well-known-server-ports/
 cp $CUR_DIR/dns-mac-logging.zeek /home/pi/.firewalla/run/zeek/scripts/
+cp $CUR_DIR/http-fast-logging.zeek /home/pi/.firewalla/run/zeek/scripts/
 
 [[ -e $PLATFORM_HOOK_DIR/broctl.cfg ]] && sudo cp $PLATFORM_HOOK_DIR/broctl.cfg /usr/local/$BRO_PROC_NAME/etc/${BRO_PROC_NAME}ctl.cfg
 

@@ -438,6 +438,7 @@ class OpenVPNClient extends VPNClient {
       endpoints.push({ip: result[0], port: result[1]});
     return endpoints;
   }
+
 }
 
 module.exports = OpenVPNClient;

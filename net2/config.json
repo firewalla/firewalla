@@ -1,5 +1,5 @@
 {
-  "version": 1.980,
+  "version": 1.981,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -72,6 +72,10 @@
       "8.8.8.8",
       "1.1.1.1"
     ],
+    "fallbackDNS6Servers": [
+      "2001:4860:4860::8888",
+      "2001:4860:4860::8844"
+    ],
     "verificationDomains": [
       "firewalla.encipher.io",
       "github.com",
@@ -132,7 +136,8 @@
     "STUNSensor": {},
     "NoiseDomainsSensor": {},
     "Iperf3Sensor": {},
-    "DeviceMonitorSensor": {}
+    "DeviceMonitorSensor": {},
+    "DapSensor": {}
   },
   "intels": [
     "DeviceInfoIntel",
@@ -174,7 +179,11 @@
       "firstScan": 120
     },
     "OpenPortByInboundFlowSensor": {},
-    "BoneSensor": {},
+    "BoneSensor": {
+      "checkInMinInterval": 900,
+      "checkInMaxInterval": 14400,
+      "hashsetConfigInterval": 86400
+    },
     "DNSCryptPlugin": {
       "refreshInterval": 1440
     },
@@ -571,21 +580,24 @@
         "expires": 86400,
         "count": 5000
       },
+      "auditLocalDrop": {
+        "expires": 86400,
+        "count": 5000
+      },
       "auditDrop": {
         "expires": 86400,
         "count": 10000
       },
       "auditAccept": {
-        "expires": 3600,
-        "count": 1000
+        "expires": 86400,
+        "count": 5000
       },
       "ssh": {
         "expires": 86400,
         "count": 10000
       },
       "x509": {
-        "expires": 600,
-        "count": 10000
+        "expires": 600
       },
       "knownHosts": {
         "expires": 3600,
@@ -636,9 +648,12 @@
         "count": 4000
       },
       "dns_proxy": {
-        "expires": 3600,
+        "expires": 86400,
         "count": 10000
       },
+      "host:ip4": { "expires": 2592000 },
+      "host:ip6": { "expires": 2592000 },
+      "host:mac": { "expires": 31536000 },
       "digitalfence": {
         "expires": 3600
       },
@@ -671,10 +686,12 @@
     "DataMigrationSensor": {
       "migrationCodeNames": [
         "clairvoyant",
-        "bipartite_graph"
+        "bipartite_graph",
+        "per_wan_data_usage"
       ]
     },
     "FlowCompressionSensor": {
+      "refreshInterval": 5,
       "maxCount": 10000,
       "maxMem": 20971520
     },
@@ -708,6 +725,13 @@
       "interval": 900,
       "expires": 86400
     },
+    "QuicLogPlugin": {
+      "syncInterval": 3,
+      "combineReqNumber": 10,
+      "runtimeSync": true,
+      "localCacheSize": 10000,
+      "localCacheTtl": 300
+    },
     "ACLAlarmLogPlugin": {},
     "WireGuardPlugin": {},
     "NewDeviceTagSensor": {},
@@ -730,6 +754,8 @@
       }
     },
     "DNSProxyPlugin": {
+      "regularInterval": 28800,
+      "targetListKey": "intel_bf",
       "data": [
         {
           "prefix": "data",
@@ -745,6 +771,8 @@
     },
     "FastIntelPlugin": {
       "baseURL": "127.0.0.1:9964",
+      "targetListKey": "allcat_bf",
+      "regularInterval": 28800,
       "data": [
         {
           "prefix": "intel_data",
@@ -812,7 +840,30 @@
     "APCMsgSensor": {},
     "NicCalibrationSensor": {},
     "NicStateSensor": {},
-    "DeviceMonitorSensor": {}
+    "DeviceMonitorSensor": {},
+    "PolicyDisturbSensor": {
+      "generalConfs": {
+        "high" : {
+          "rateLimit": 16,
+          "dropPacketRate": 60,
+          "increaseLatency": 250
+        },
+        "moderate" : {
+          "rateLimit": 64,
+          "dropPacketRate": 40,
+          "increaseLatency": 200
+        },
+        "low" : {
+          "rateLimit": 128,
+          "dropPacketRate": 30,
+          "increaseLatency": 150
+        }
+      }
+    },
+    "PurposeDeviceAutoSecurePlugin":{},
+    "DapSensor": {},
+    "SuricataRuleSetSensor": {},
+    "NoiseDomainsSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -867,6 +918,9 @@
       "flowstashExpires": 900,
       "expires": 86400
     },
+    "local": {
+      "flowstashExpires": 900
+    },
     "connLong": {
       "path": "/blog/current/conn_long.log",
       "expires": 600
@@ -904,7 +958,6 @@
   },
   "features": {
     "intel:feedback": true,
-    "fast_speedtest": true,
     "conntrack": {
       "enabled": true
     }
@@ -959,6 +1012,7 @@
     "local_domain": true,
     "external_scan": false,
     "alarm_openport": false,
+    "alarm_vpnclient_internet_pause": false,
     "device_service_scan": true,
     "device_detect": true,
     "wireguard": false,
@@ -967,6 +1021,7 @@
     "family_protect": false,
     "internal_scan": true,
     "acl_audit": true,
+    "quic_log_reader": true,
     "acl_alarm": true,
     "new_device_tag": false,
     "dual_wan": true,
@@ -988,13 +1043,19 @@
     "pcap_zeek": true,
     "pcap_suricata": false,
     "local_flow": false,
+    "local_audit": true,
     "category_filter": true,
     "rule_stats": true,
     "unbound": false,
     "sys_patch": true,
     "clashdns": false,
     "mesh_vpn": false,
-    "app_time_usage": true
+    "app_time_usage": true,
+    "fast_speedtest": true,
+    "policy_disturb": true,
+    "dap": false,
+    "dap_bg_task": true,
+    "record_activity_flow": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
@@ -1016,6 +1077,13 @@
       "version": "v1"
     }
   },
+  "dap": {
+    "interface": {
+      "host": "127.0.0.1",
+      "port": 8843,
+      "version": "v1"
+    }
+  },
   "profiles": {
     "alarm": {
       "default":{
@@ -1034,7 +1102,7 @@
     }
   },
   "cloudcache": {
-    "expirationDays": 30
+    "expirationDays": 90
   },
   "pairedDeviceMaxHistory": 100
 }
