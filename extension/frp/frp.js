@@ -30,7 +30,6 @@ const sem = require('../../sensor/SensorEventManager.js').getInstance()
 
 const bone = require("../../lib/Bone.js");
 
-//const spawn = require('child-process-promise').spawn;
 const spawn = require('child_process').spawn
 const spawnSync = require('child_process').spawnSync
 const execSync = require('child_process').execSync

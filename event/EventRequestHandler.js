@@ -19,6 +19,10 @@ const log = require('../net2/logger.js')(__filename,"debug");
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const eventApi = require('./EventApi.js');
+const EventQueue = require('../event/EventQueue.js');
+
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
 
 const KEY_EVENT_REQUEST_STATE = "event:request:state";
 const KEY_EVENT_REQUEST_ACTION = "event:request:action";
@@ -41,9 +45,17 @@ const STATE_ERROR_VALUE='error_value';
  * Values of STATE events are stored at following keys in Redis
  *     event:state:<state_type>:<state_key>
  */
+
+
+const eventQueueRecycleInterval = 3600000; // 60 minutes
 class EventRequestHandler {
     constructor() {
         this.setupRedisSubscriber();
+        this.queueMap = new Map();
+
+        setInterval(() => {
+            this.cleanupEventQueue();
+        }, eventQueueRecycleInterval) // recycle every 60m
     }
 
     async setupRedisSubscriber() {
@@ -53,7 +65,7 @@ class EventRequestHandler {
             log.debug(`got message in ${channel} - ${message}`);
             switch (channel) {
                 case KEY_EVENT_REQUEST_STATE:
-                    await this.processStateEvent(message);
+                    await this.queueStateEvent(message);
                     break;
                 case KEY_EVENT_REQUEST_ACTION:
                     await this.processActionEvent(message);
@@ -68,6 +80,74 @@ class EventRequestHandler {
         sclient.subscribe(KEY_EVENT_REQUEST_STATE);
         sclient.subscribe(KEY_EVENT_REQUEST_ACTION);
         sclient.subscribe(KEY_EVENT_REQUEST_CLEAN);
+    }
+
+    async cleanupEventQueue() {
+        log.debug(`event queue map size before cleanup: ${this.queueMap.size}`);
+        const deleted = [];
+        for (const key of this.queueMap.keys()) {
+            const queue = this.queueMap.get(key);
+            if (queue && queue.state == 'closed') { // if connection is closed
+                log.info(`cleanup closed event queue ${key} (${queue.name})`);
+                this.queueMap.delete(key);
+                deleted.push(key);
+            } else if (queue) {
+                log.debug(`checked event queue ${key} (${queue.name}), state ${queue.state}, ts ${queue.lastJobTs}`);
+            }
+        }
+        log.info(`event queue map size after cleanup: ${this.queueMap.size}, ${deleted.length} queues deleted, ${deleted.join(', ')}`);
+        log.info(`event queue map items: ${Array.from(this.queueMap.values()).map(q => `${q.name} (${q.state}/${q.getState()} [${q.lastJobTs}])`).join(', ')}`);
+    }
+
+    async ensureEventQueue(requestKey) {
+        const lockkey = `LOCK_EVENT_QUEUE:${requestKey}`;
+        await lock.acquire(lockkey, async () => {
+            if (!this.queueMap.has(requestKey) ) {
+                log.info(`create event queue for ${requestKey}`);
+                const queue = new EventQueue(requestKey);
+                await queue.setupEventQueue(1, this.processStateEvent.bind(this));
+                this.queueMap.set(requestKey, queue);
+            }
+            const queue = this.queueMap.get(requestKey);
+            if (queue.getState() !== 'ready') {
+                log.info(`event queue ${requestKey} is not ready, state ${queue.state}, recreate the queue`);
+                await queue.setupEventQueue(1, this.processStateEvent.bind(this));
+            }
+        });
+    }
+
+    isApStateEvent(eventRequest) {
+        // check if eventRequest is an AP state event
+        return (eventRequest.state_type && eventRequest.state_type.startsWith("ap_"));
+    }
+
+    async queueStateEvent(message) {
+        log.debug("got state event: ", message);
+        try {
+            const eventRequest = JSON.parse(message);
+            for (const field of STATE_REQUIRED_FIELDS) {
+                if ( !(field in eventRequest) ) {
+                    throw new Error(`missing required field ${field} in event request`);
+                }
+            }
+
+            // if not AP state event, process directly in processStateEvent
+            if (!this.isApStateEvent(eventRequest)) {
+                log.debug(`process non-ap state event directly: ${JSON.stringify(eventRequest)}`);
+                return await this.processStateEvent(eventRequest);
+            }
+
+            const requestKey = `${eventRequest.state_type}:${eventRequest.state_key}`;
+            await this.ensureEventQueue(requestKey);
+            const queue = this.queueMap.get(requestKey);
+            if (queue) {
+                await queue.addEvent(eventRequest);
+            } else {
+                log.error(`failed to add to event queue ${requestKey}`);
+            }
+        } catch (err) {
+            log.error(`failed to process state event ${message}:`, err.message);
+        }
     }
 
     sendEvent(eventRequest,event_type) {
@@ -105,16 +185,9 @@ class EventRequestHandler {
         return false;
     }
 
-    async processStateEvent(message) {
-        log.debug("got state event: ", message);
+    async processStateEvent(eventRequest) {
         try{
-            const eventRequest = JSON.parse(message);
-            for (const field of STATE_REQUIRED_FIELDS) {
-                if ( !(field in eventRequest) ) {
-                    throw new Error(`missing required field ${field} in event request`);
-                }
-            }
-
+            log.debug("process state event: ", JSON.stringify(eventRequest));
             const savedEvent = await eventApi.getSavedStateEvent(eventRequest);
             const savedValue = (savedEvent && 'state_value' in savedEvent) ? savedEvent.state_value : null;
             const newValue = eventRequest.state_value;
@@ -153,10 +226,10 @@ class EventRequestHandler {
             if (isError) {
                 await eventApi.saveStateEventRequestError(eventRequest);
             }
-
-
         } catch (err) {
-            log.error(`failed to process state event ${message}:`, err);
+            log.error(`failed to process state event ${JSON.stringify(eventRequest)}:`, err.message);
+        } finally {
+            log.debug("finished state event: ", JSON.stringify(eventRequest));
         }
     }
 

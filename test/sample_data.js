@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,39 +14,36 @@
  */
 'use strict';
 
-let HostTool = require('../net2/HostTool')
-let hostTool = new HostTool();
+const HostTool = require('../net2/HostTool')
+const hostTool = new HostTool();
 const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 
-let Alarm = require('../alarm/Alarm.js');
-let Exception = require('../alarm/Exception.js');
-let ExceptionManager = require('../alarm/ExceptionManager.js');
-let exceptionManager = new ExceptionManager();
-let AlarmManager2 = require('../alarm/AlarmManager2.js')
-let alarmManager2 = new AlarmManager2();
-let Promise = require('bluebird');
+const Alarm = require('../alarm/Alarm.js');
+const Exception = require('../alarm/Exception.js');
+const ExceptionManager = require('../alarm/ExceptionManager.js');
+const exceptionManager = new ExceptionManager();
+const AlarmManager2 = require('../alarm/AlarmManager2.js')
+const alarmManager2 = new AlarmManager2();
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
 
-let redis = require('redis');
-let rclient = redis.createClient();
+const rclient = require('../util/redis_manager').getRedisClient();
 
-let flowTool = require('../net2/FlowTool');
+const flowTool = require('../net2/FlowTool');
 
-let FlowAggrTool = require('../net2/FlowAggrTool');
-let flowAggrTool = new FlowAggrTool();
+const FlowAggrTool = require('../net2/FlowAggrTool');
+const flowAggrTool = new FlowAggrTool();
 
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
+const ts = Math.floor(new Date() / 1000);
+const now = Math.floor(new Date() / 1000);
 
-let ts = Math.floor(new Date() / 1000);
-let now = Math.floor(new Date() / 1000);
-
-let hostIP = "172.17.0.10";
-let hostMac = "F4:0F:24:00:00:01";
-let hostIP2 = "172.17.0.20";
-let hostMac2 = "F4:0F:24:00:00:02";
-let destIP = "114.113.217.103";
-let destIP2 = "114.113.217.104";
+const hostIP = "172.17.0.10";
+const hostMac = "F4:0F:24:00:00:01";
+const hostIP2 = "172.17.0.20";
+const hostMac2 = "F4:0F:24:00:00:02";
+const destIP = "114.113.217.103";
+const destIP2 = "114.113.217.104";
 
 exports.ts = ts;
 exports.now = now;
@@ -134,23 +131,14 @@ exports.removeSampleHost = () => {
 
 let lastExceptionID = null;
 
-exports.createSampleException= () => {
-  return new Promise((resolve, reject) => {
-    let e1 = new Exception({"p.dest.name": "spotify.com"});
-    exceptionManager.saveException(e1, (err) => {
-      if(err) {
-        reject(err);
-        return;
-      }
-
-      lastExceptionID = e1.eid;
-
-      resolve();
-    })
-  })
+exports.createSampleException= async () => {
+  let e1 = new Exception({"p.dest.name": "spotify.com"});
+  await exceptionManager.saveExceptionAsync(e1)
+  lastExceptionID = e1.eid;
+  return e1
 }
 
-exports.removeSampleException = () => {
+exports.removeSampleException = async () => {
   if(lastExceptionID) {
     return exceptionManager.deleteException(lastExceptionID)
   }
@@ -162,61 +150,51 @@ exports.createSamplePolicy = () => {
 
 }
 
-exports.createSampleVideoAlarm = () => {
-  let a1 = new Alarm.VideoAlarm(new Date() / 1000, "10.0.1.22", "DEST-1", {
-    "p.dest.name": "spotify.com",
-    "p.device.name": "My Macbook",
-    "p.device.id": "My Macbook",
-    "p.dest.id": "spotify.com"
+exports.createSampleVideoAlarm = async () => {
+  const hosts = await hostManager.getHostsAsync()
+  if (!hosts || !hosts.length) {
+    throw new Error("No host found");
+  }
+  const a1 = new Alarm.VideoAlarm(new Date() / 1000, hosts[0].getReadableName(), "spotify.com", {
+    "p.device.name": hosts[0].getReadableName(),
+    "p.device.id": hosts[0].getGUID(),
+    "p.device.mac": hosts[0].getGUID(),
   });
   return alarmManager2.checkAndSaveAsync(a1);
 };
 
-exports.createSampleGameAlarm = () => {
-  let a1 = new Alarm.GameAlarm(new Date() / 1000, "10.0.1.199", "battle.net", {
-    device: "MiMac",
-    alarmTimestamp: "1500906094.763",
-    timestamp: "1500906041.064573",
+exports.createSampleGameAlarm = async () => {
+  const hosts = await hostManager.getHostsAsync()
+  if (!hosts || !hosts.length) {
+    throw new Error("No host found");
+  }
+  let a1 = new Alarm.GameAlarm(new Date() / 1000, hosts[0].getReadableName(), "battle.net", {
     notifType: "activity",
     "p.dest.ip": destIP,
-    "p.dest.name": "battle.net",
-    "p.device.ip" : "10.0.1.199",
-    "p.device.name": "MiMac",
-    "p.device.id": "B8:09:8A:B9:4B:05",
-    "p.dest.id": "battle.net",
-    "p.device.macVendor": "Apple",
-    "p.device.mac": "B8:09:8A:B9:4B:05",
-    "p.dest.latitude": "31.0456",
-    "p.dest.longitude": "121.3997",
-    "p.dest.country": "CN",
+    "p.device.name": hosts[0].getReadableName(),
+    "p.device.id": hosts[0].getGUID(),
+    "p.device.mac": hosts[0].getGUID(),
     message: "This device visited game website battle.net."
   });
   return alarmManager2.checkAndSaveAsync(a1);
 };
 
-exports.createSampleException2 = () => {
-  return new Promise((resolve, reject) => {
-    let e1 = new Exception({
-      "i.type": "domain",
-      "reason": "ALARM_GAME",
-      "type": "ALARM_GAME",
-      "timestamp": "1500913117.175",
-      "p.dest.id": "battle.net",
-      "target_name": "battle.net",
-      "target_ip": destIP,
-    });
-
-    exceptionManager.saveException(e1, (err) => {
-      if(err) {
-        reject(err);
-        return;
-      }
-
-      lastExceptionID = e1.eid;
-
-      resolve();
-    })
+exports.createSampleException2 = async () => {
+  let e2 = new Exception({
+    "i.type": "domain",
+    "reason": "ALARM_GAME",
+    "type": "ALARM_GAME",
+    "timestamp": "1500913117.175",
+    "p.dest.id": "battle.net",
+    "target_name": "battle.net",
+    "target_ip": destIP,
   });
+
+  await exceptionManager.saveExceptionAsync(e2)
+
+  lastExceptionID = e2.eid;
+
+  return e2
 };
 
 let flowObj = {

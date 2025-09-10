@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -80,11 +80,11 @@ class LogQuery {
   }
 
   optionsToFilter(options) {
-    const filter = JSON.parse(JSON.stringify(options));
-    const logicFilterKeys = ["include", "exclude"]; // include and exclude can contain multiple filters in logic OR relationship
-    for (const logicFilterKey of logicFilterKeys) {
-      if (_.isArray(filter[logicFilterKey])) {
-        for (const logicFilter of filter[logicFilterKey]) {
+    const filterKeys = ["include", "exclude"];
+    const filter = JSON.parse(JSON.stringify(_.pick(options, filterKeys)));
+    for (const key of filterKeys) {
+      if (_.isArray(filter[key])) {
+        for (const logicFilter of filter[key]) {
           for (const key of Object.keys(logicFilter)) {
             switch (key) {
               case "host":
@@ -109,10 +109,7 @@ class LogQuery {
         }
       }
     }
-    // don't filter logs with intf & tag here to keep the behavior same as before
-    // it only makes sense to filter intf & tag when we query all devices
-    // instead of simply expending intf and tag to mac addresses
-    return _.omit(filter, ['mac', 'macs', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag', 'enrich']);
+    return filter
   }
 
   isLogValid(logObj, filter) {
@@ -134,7 +131,7 @@ class LogQuery {
           return false;
         continue;
       }
-      if (!logObj.hasOwnProperty(key))
+      if (!logObj.hasOwnProperty(key) && filter[key] !== false)
         return false;
       switch (filter[key].constructor.name) {
         case "DomainTrie": { // domain in log is always literal string, no need to take array of string into consideration
@@ -191,16 +188,20 @@ class LogQuery {
    * @param {function} feeds[].query - function that gets log
    * @param {Object} feeds[].options - unique options for the query
    */
-  async logFeeder(options, feeds) {
+  async logFeeder(options, feeds, global = false) {
     options = this.checkArguments(options)
-    // filter calculation is not related to options in each feed, only need to call optionsToFilter once here
-    const filter = this.optionsToFilter(options);
-    log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(_.omit(options, 'macs')), JSON.stringify(filter))
+    const commonOptions = _.pick(options, ['ts', 'ets', 'asc', 'count'])
+    log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(_.omit(options, 'macs')))
     feeds.forEach(f => {
       f.options = f.options || {};
-      Object.assign(f.options, options)
-      const filterFunc = f.filter // save pointer as var to avoid stackoverflow
-      f.filter = log => filterFunc(log, filter)
+      // feed based filter is only added in optionsToFeeds(), and we are only dealing with exclude for now
+      // both include and exclude can only be array, check optionsToFilter()
+      if (!_.isEmpty(f.options.exclude) || !_.isEmpty(options.exclude))
+        f.options.exclude = [].concat(f.options.exclude || [], options.exclude || [])
+      if (!_.isEmpty(options.include))
+        f.options.include = options.include
+      f.filter = this.optionsToFilter(f.options)
+      Object.assign(f.options, commonOptions)
     })
     // log.debug( feeds.map(f => JSON.stringify(f) + '\n') )
     let results = []
@@ -208,35 +209,44 @@ class LogQuery {
     const toRemove = []
     // query every feed once concurrentyly to reduce io block
     results = _.flatten(await Promise.all(feeds.map(async feed => {
-      const logs = await feed.query(feed.options)
+      // use half of the desired count to do initial concurrent query to reduce memory consumption
+      const logs = await feed.base.getDeviceLogs(Object.assign({}, feed.options, {count: Math.floor(options.count/2)}))
       if (logs.length) {
         feed.options.ts = logs[logs.length - 1].ts
       } else {
         // no more elements, remove feed from feeds
         toRemove.push(feed)
       }
-      return logs.filter(log => feed.filter(log))
+      // log.silly(JSON.stringify(_.omit(feed.options, 'exclude')), feed.filter)
+      return logs.filter(log => feed.base.isLogValid(log, feed.filter))
     })))
 
     // the following code could be optimized further by using a heap
     results = _.orderBy(results, 'ts', options.asc ? 'asc' : 'desc')
     feeds = feeds.filter(f => !toRemove.includes(f))
-    log.verbose(this.constructor.name, `Removed ${toRemove.length} feeds, ${feeds.length} remaining`, JSON.stringify(_.omit(options, 'macs')))
+    log.verbose(this.constructor.name, `Removed ${toRemove.length} feeds, ${feeds.length} remaining`, JSON.stringify(options))
 
     // always query the feed moves slowest
     let feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
+    if (!feed) return results
     let prevFeed, prevTS
 
-    while (feed && this.validResultCount(feed.options, results) < options.count) {
+    let validResultCount = this.validResultCount(feed.options, results)
+
+    while (validResultCount < options.count) {
 
       prevFeed = feed
       prevTS = feed.options.ts
 
-      let logs = await feed.query(feed.options)
+      let logs = await feed.base.getDeviceLogs(
+        // cuts query count when there's no filter
+        Object.assign(feed.options, {count: options.count - (Object.keys(feed.filter).length ? 0 : validResultCount)})
+      )
       if (logs.length) {
         feed.options.ts = logs[logs.length - 1].ts // this is simple formatted data
 
-        logs = logs.filter(log => feed.filter(log))
+        // log.silly(JSON.stringify(_.omit(feed.options, 'exclude')), feed.filter)
+        logs = logs.filter(log => feed.base.isLogValid(log, feed.filter))
         if (logs.length) {
           // a more complicated but faster ordered merging without accessing elements via index.
           // result should be the same as
@@ -259,30 +269,35 @@ class LogQuery {
           // leaving merging for front-end
           // results = this.mergeLogs(results, options);
         }
+      } else if (global) {
+        // when query system logs, stop when any of the feed is exhausted
+        break
       } else {
         // no more elements, remove feed from feeds
         feeds = feeds.filter(f => f != feed)
-        log.debug('Removing', feed.query.name, feed.options.direction || (feed.options.block ? 'block':'accept'), feed.options.mac, feed.options.ts)
+        log.debug('Removing', feed.base.constructor.name, feed.options.direction,
+          (feed.options.localFlow || feed.options.localAudit) ? 'local' : feed.options.dnsFlow ? 'dns' : feed.options.type,
+          feed.options.block ? 'block' : 'accept', feed.options.mac, feed.options.ts)
       }
 
       feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
+      if (!feed) break
       if (feed == prevFeed && feed.options.ts == prevTS) {
-        log.error("Looping!!", feed.query.name, feed.options)
+        log.error("Looping!!", feed.base.constructor.name, feed.options)
         break
       }
+
+      validResultCount = this.validResultCount(feed.options, results)
     }
 
     return results.slice(0, options.count)
   }
 
-  checkCount(options) {
-    if (!options.count) options.count = DEFAULT_QUERY_COUNT
-    if (options.count > MAX_QUERY_COUNT) options.count = MAX_QUERY_COUNT
-  }
-
   checkArguments(options) {
     options = options || {}
-    this.checkCount(options)
+
+    if (!options.count) options.count = DEFAULT_QUERY_COUNT
+    if (options.count > MAX_QUERY_COUNT) options.count = MAX_QUERY_COUNT
     if (!options.asc) options.asc = false;
     if (!options.ts) {
       options.ts = options.asc ?
@@ -316,7 +331,7 @@ class LogQuery {
       }
       return identityManager.getGUID(identity)
     } else if (mac.startsWith(Constants.NS_INTERFACE + ':')) {
-      const intf = networkProfileManager.getNetworkProfile(mac.split(Constants.NS_INTERFACE + ':')[1]);
+      const intf = networkProfileManager.getNetworkProfile(mac.substring(Constants.NS_INTERFACE.length + 1));
       if (!intf) {
         return null;
       }
@@ -401,7 +416,7 @@ class LogQuery {
     allMacs = allMacs.filter(mac => !excludedMacs.has(mac));
     if (_.isSet(includedMacs))
       allMacs = allMacs.filter(mac => includedMacs.has(mac));
-    log.debug('Expended mac addresses', allMacs)
+    log.silly('Expended mac addresses', allMacs)
 
     return allMacs
   }
@@ -421,8 +436,7 @@ class LogQuery {
 
     const feeds = allMacs.map(mac => {
       return {
-        query: this.getDeviceLogs.bind(this),
-        filter: this.isLogValid.bind(this),
+        base: this, // returning base class directly so member functions are all accessible
         options: Object.assign({mac}, options)
       }
     })
@@ -475,11 +489,12 @@ class LogQuery {
         }
       }
 
-      if (f.rl) {
-        const c = country.getCountry(f.rl);
-        if (c)
-          f.rlCountry = c;
-      }
+      for (const rlKey in ['rl', 'drl'])
+        if (f[rlKey]) {
+          const c = country.getCountry(f[rlKey].split(':')[0]);
+          if (c)
+            f[rlKey+'Country'] = c;
+        }
 
       // special handling of flows blocked by adblock, ensure category is ad,
       // better do this by consolidating cloud data for domain intel and adblock list
@@ -505,11 +520,10 @@ class LogQuery {
     throw new Error('not implemented')
   }
 
+  // Don't call this outside of LogQuery
   // note that some fields are added with intel enrichment
   // options should not contains filters with these fields when called with enrich = false
   async getDeviceLogs(options) {
-    options = this.checkArguments(options)
-
     const target = options.mac
     if (!target) throw new Error('Invalid device')
 
@@ -518,13 +532,12 @@ class LogQuery {
     const zrange = (options.asc ? rclient.zrangebyscoreAsync : rclient.zrevrangebyscoreAsync).bind(rclient);
     const results = await zrange(key, '(' + options.ts, options.ets, "LIMIT", 0 , options.count);
 
+    log.silly(key, '(' + options.ts, options.ets, "LIMIT", 0 , options.count)
     if(results === null || results.length === 0)
       return [];
 
-    const enrich = 'enrich' in options ? options.enrich : true
+    const { enrich = true } = options
     delete options.enrich
-
-    log.debug(this.constructor.name, 'getDeviceLogs', key, options.type || '', options.ts)
 
     let logObjects = results
       .map(str => {
@@ -532,7 +545,7 @@ class LogQuery {
         if (!obj) return null
 
         const s = this.toSimpleFormat(obj, options)
-        s.device = target; // record the mac address here
+        s.device = target == 'system' ? obj.mac : target; // record the mac address here
         return s;
       })
 
