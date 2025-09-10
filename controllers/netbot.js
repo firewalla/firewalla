@@ -4128,7 +4128,8 @@ class netBot extends ControllerBot {
               if (syncToMsp) {
                 const gs = sl.getSensor('GuardianSensor');
                 if (gs && fc.isFeatureOn(Constants.FEATURE_MSP_SYNC_OPS)) {
-                  await gs.enqueueOpToMsp(msg).catch((err) => {
+                  const op = Object.assign({response: result}, msg);
+                  await gs.enqueueOpToMsp(op).catch((err) => {
                     log.error("Failed to enqueue op to msp", err);
                   });
                 }
@@ -4168,7 +4169,8 @@ class netBot extends ControllerBot {
                 if (syncToMsp) {
                   const gs = sl.getSensor('GuardianSensor');
                   if (gs && fc.isFeatureOn(Constants.FEATURE_MSP_SYNC_OPS)) {
-                    await gs.enqueueOpToMsp(msg).catch((err) => {
+                    const op = Object.assign({response: result}, msg);
+                    await gs.enqueueOpToMsp(op).catch((err) => {
                       log.error("Failed to enqueue op to msp", err);
                     });
                   }
