@@ -258,6 +258,9 @@ class ACLAuditLogPlugin extends Sensor {
               record.ac = "isolation";
               isoLvl = 1;
               break;
+            case "D":
+              record.ac = "disturb";
+              break;
           }
           break;
         }
@@ -358,8 +361,12 @@ class ACLAuditLogPlugin extends Sensor {
       record.pid = Number(routeMark) & 0xffff; // route rule id
     }
 
-    if (record.ac === "qos") {
+    if (record.ac === "qos" || record.ac === "disturb") {
       record.qmark = Number(mark) & 0x3fff000;
+      const matchedPids = (await this.ruleStatsPlugin.getPolicyIds(record)).map(Number);
+      if (matchedPids && matchedPids.length > 0){
+        record.pid = matchedPids[0];
+      }
     }
 
     record.dir = dir;
@@ -522,6 +529,11 @@ class ACLAuditLogPlugin extends Sensor {
     if (record.pid && record.ac === "allow") {
       const added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid, 600);
       // 1% middle connection packets are going through block chain, ignore these for rule hit accounting
+      if (!added) return
+    }
+    // record disturb rule id 
+    if (record.pid && record.ac === "disturb") {
+      const added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_DPID, record.pid, 600);
       if (!added) return
     }
 
@@ -733,23 +745,24 @@ class ACLAuditLogPlugin extends Sensor {
           const { type, ac, _ts, ct, fd, dir } = record
           const intf = record.intf && networkProfileManager.prefixMap[record.intf]
           const block = record.ac == "block" || record.ac == "isolation";
+          const disturb = record.ac == "disturb";
 
           // pid backtrace
           // ntp has nothing to do with rules
           // for local flow, only account for 'in' flows
           if (type != 'ntp' && !(record.dmac && fd == 'out')) {
-            if (!record.pid && (type == 'dns' || ac == 'block' || ac == 'allow')) {
+            if (!record.pid && (type == 'dns' || ac == 'block' || ac == 'allow' || ac == 'disturb')) {
               const matchedPIDs = await this.ruleStatsPlugin.getMatchedPids(record);
               if (matchedPIDs && matchedPIDs.length > 0){
                 record.pid = matchedPIDs[0];
               }
             }
 
-            if (type == 'ip' || record.ac == 'block')
+            if (type == 'ip' || record.ac == 'block' || record.ac == 'disturb')
               this.ruleStatsPlugin.accountRule(record);
           }
 
-          if (type == 'ip' && record.ac != "block" && record.ac != 'redirect' && record.ac != "isolation")
+          if (type == 'ip' && record.ac != "block" && record.ac != 'redirect' && record.ac != "isolation" && record.ac != "disturb")
             continue
 
           let monitorable = IdentityManager.getIdentityByGUID(mac);
@@ -811,8 +824,8 @@ class ACLAuditLogPlugin extends Sensor {
               }
             }
           } else // use dns_flow as a prioirty for statistics
-            if (type != 'dns' || block || !platform.isDNSFlowSupported() || !fc.isFeatureOn('dns_flow')) {
-              const hitType = type + (block ? 'B' : '')
+            if (type != 'dns' || block || disturb || !platform.isDNSFlowSupported() || !fc.isFeatureOn('dns_flow')) {
+              const hitType = type + (block ? 'B' : disturb ? 'D' : '')
               timeSeries.recordHit(`${hitType}`, _ts, ct)
               timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct)
               if (intf) timeSeries.recordHit(`${hitType}:intf:${intf}`, _ts, ct)

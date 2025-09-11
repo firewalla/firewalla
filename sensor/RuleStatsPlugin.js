@@ -325,18 +325,21 @@ class RuleStatsPlugin extends Sensor {
         return [];
 
       }
+      case "disturb":
       case "qos": {
         const downloadHandlerId = (record.qmark & qos.QOS_DOWNLOAD_MASK) >> 16;
         const uploadHandlerId = (record.qmark & qos.QOS_UPLOAD_MASK) >> 23;
         const downloadPolicyId = await qos.getPolicyForQosHandler(downloadHandlerId);
         const uploadPolicyId = await qos.getPolicyForQosHandler(uploadHandlerId);
-        const result = [];
+        let result = [];
         if (downloadPolicyId) {
           result.push(downloadPolicyId);
         }
         if (uploadPolicyId) {
           result.push(uploadPolicyId);
         }
+        // disturb rule may cause multiple policy ids, we need to remove duplicate
+        result = [...new Set(result)];
         return result;
       }
       default: {

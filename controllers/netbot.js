@@ -1916,8 +1916,8 @@ class netBot extends ControllerBot {
         netBotTool.prepareTopFlows(jsonobj, 'ipB', "out", Object.assign({}, options, {limit: 400})),
         netBotTool.prepareTopFlows(jsonobj, 'ifB', "out", Object.assign({}, options, {limit: 400})),
       )
-      tsMetrics.push('ipB', 'dnsB')
-      hostMetrics.push('ipB', 'dnsB')
+      tsMetrics.push('ipB', 'dnsB', 'ipD')
+      hostMetrics.push('ipB', 'dnsB', 'ipD')
     }
     if (ntp && platform.isAuditLogSupported()) {
       tsMetrics.push('ntp')

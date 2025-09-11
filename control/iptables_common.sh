@@ -711,6 +711,9 @@ cat << EOF
 -N FW_DISTURB_QOS_DEV
 -A FW_DISTURB_QOS -j FW_DISTURB_QOS_DEV
 
+-N FW_DISTURB_LOG
+-A FW_DISTURB_QOS -m connmark --mark 0x40000000/0x40000000 -m conntrack --ctdir ORIGINAL -m connbytes --connbytes 2:10 --connbytes-mode packets --connbytes-dir original -m hashlimit --hashlimit-upto 1/second --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_disturb -j FW_DISTURB_LOG
+
 
 -N FW_QOS_SWITCH
 -A FW_FORWARD -m connmark --mark 0x0/0x40000000 -j FW_QOS_SWITCH

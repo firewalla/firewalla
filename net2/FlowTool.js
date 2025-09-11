@@ -230,6 +230,11 @@ class FlowTool extends LogQuery {
       f.rpid = Number(flow.rpid);
     }
 
+    // disturb rule id
+    if (flow.dpid && Number(flow.dpid)) {
+      f.dpid = Number(flow.dpid);
+    }
+
     f.protocol = flow.pr;
 
     try {

@@ -1293,6 +1293,10 @@ class BroDetect {
         tmpspec.rpid = Number(connEntry.rpid); // route rule id
       }
 
+      if (connEntry && connEntry.dpid && Number(connEntry.dpid)) {
+        tmpspec.dpid = Number(connEntry.dpid); // disturb rule id
+      }
+
       const tags = await hostTool.getTags(monitorable, intfInfo && intfInfo.uuid)
       const dstTags = await hostTool.getTags(dstMonitorable, dstIntfInfo && dstIntfInfo.uuid)
       Object.assign(tmpspec, tags)
