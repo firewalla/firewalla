@@ -41,6 +41,9 @@ const categoryUpdater = new CategoryUpdater();
 const sl = require('../sensor/SensorLoader.js');
 const pclient = require('../util/redis_manager.js').getPublishClient()
 const firewalla = require("../net2/Firewalla.js");
+const CIDRTrie = require('../util/CIDRTrie.js');
+const { Address4, Address6 } = require('ip-address');
+
 class AppTimeUsageSensor extends Sensor {
   
   async run() {
@@ -155,21 +158,34 @@ class AppTimeUsageSensor extends Sensor {
   rebuildTrie() {
     const appConfs = this.appConfs;
     const domainTrie = new DomainTrie();
+    const cidr4Trie = new CIDRTrie(4);
+    const cidr6Trie = new CIDRTrie(6);
+
     for (const key of Object.keys(appConfs)) {
       const includedDomains = appConfs[key].includedDomains || [];
       const category = appConfs[key].category;
       for (const value of includedDomains) {
-        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold", "ulDlRatioThreshold", "noStray"]);
+        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold", "ulDlRatioThreshold", "noStray", "portInfo"]);
         obj.app = key;
         if (category)
           obj.category = category;
-        if (value.domain) {
-          if (value.domain.startsWith("*.")) {
-            obj.domain = value.domain.substring(2);
-            domainTrie.add(value.domain.substring(2), obj);
+
+        const id = value.domain || value.cidr;
+        if (id) {
+          if (new Address4(id).isValid()) {
+            obj.domain = id;
+            cidr4Trie.add(id, obj);
+          } else if (new Address6(id).isValid()) {
+            obj.domain = id;
+            cidr6Trie.add(id, obj);
           } else {
-            obj.domain = value.domain;
-            domainTrie.add(value.domain, obj, false);
+            if (id.startsWith("*.")) {
+              obj.domain = id.substring(2);
+              domainTrie.add(id.substring(2), obj);
+            } else {
+              obj.domain = id;
+              domainTrie.add(id, obj, false);
+            }
           }
         }
       }
@@ -185,6 +201,8 @@ class AppTimeUsageSensor extends Sensor {
       }
     }
     this._domainTrie = domainTrie;
+    this._cidr4Trie = cidr4Trie;
+    this._cidr6Trie = cidr6Trie;
   }
 
   getCategoryBytesThreshold(category) {
@@ -227,13 +245,15 @@ class AppTimeUsageSensor extends Sensor {
     const formattedDate = `${year}${month}${day}`;
     const appName =  app || "internet";
     const key = `internet_flows:${appName}:${flow.mac}:${formattedDate}`;
+    const host = flow.host || flow.intel && flow.intel.host;
+    const ip = flow.ip || flow.intel && flow.intel.ip;
  
     const jobj = JSON.stringify({
       begin: flow.ts,
       dur: flow.du,
       intf: flow.intf,
       mac: flow.mac,
-      destination: flow.host || flow.intel && flow.intel.host,
+      destination: host || ip,
       sourceIp: flow.sh,
       destinationIp: flow.dh,
       sourcePort: _.isArray(flow.sp) ? flow.sp[0] : flow.sp,
@@ -248,24 +268,61 @@ class AppTimeUsageSensor extends Sensor {
     await rclient.zaddAsync(key, flow.ts, jobj);
   }
 
+  _isMatchPortInfo(portInfo, port, proto) {
+    // if portInfo is empty, it means no port restriction
+    if (!portInfo || _.isEmpty(portInfo)) return true;
+
+    return _.some(portInfo, (pinfo) => {
+      const startPort = parseInt(pinfo.start);
+      const endPort = parseInt(pinfo.end);
+      if (isNaN(startPort) || isNaN(endPort) || startPort < 0 || endPort < 0 || startPort > endPort)
+        return false;
+      return (!pinfo.proto || pinfo.proto === proto) && port >= startPort && port <= endPort;
+    });
+  }
+
+
   // returns an array with matched app criterias
   // [{"app": "youtube", "occupyMins": 1, "lingerMins": 1, "bytesThreshold": 1000000}]
   lookupAppMatch(flow) {
     const host = flow.host || flow.intel && flow.intel.host;
+    const ip = flow.ip || (flow.intel && flow.intel.ip);
     const result = [];
-    if (!this._domainTrie || !host)
+    if ((!this._domainTrie && !this._cidr4Trie && !this._cidr6Trie) || (!host && !ip))
       return result;
+    // check domain trie
     const values = this._domainTrie.find(host);
     let isAppMatch = false;
     if (_.isSet(values)) {
       for (const value of values) {
         if (_.isObject(value) && value.app && !values.has(`!${value.app}`)) {
+          if (!this._isMatchPortInfo(value.portInfo, flow.dp, flow.pr))
+            continue;
           isAppMatch = true;
-          if ((!value.bytesThreshold || flow.ob + flow.rb >= value.bytesThreshold) && (!value.ulDlRatioThreshold || flow.ob <= value.ulDlRatioThreshold * flow.rb))
+          if ((!value.bytesThreshold || flow.ob + flow.rb >= value.bytesThreshold)
+            && (!value.ulDlRatioThreshold || flow.ob <= value.ulDlRatioThreshold * flow.rb)) {
             result.push(value);
+            break;
+          }
         }
       }
     }
+
+    let cidrTrie = new Address4(ip).isValid() ? this._cidr4Trie : this._cidr6Trie;
+
+    if (_.isEmpty(result) && cidrTrie){
+      const entry = cidrTrie.find(ip);
+      if (_.isObject(entry)) {
+        if (this._isMatchPortInfo(entry.portInfo, flow.dp, flow.pr)) {
+          isAppMatch = true;
+          if ((!entry.bytesThreshold || flow.ob + flow.rb >= entry.bytesThreshold)
+            && (!entry.ulDlRatioThreshold || flow.ob <= entry.ulDlRatioThreshold * flow.rb))
+            result.push(entry);
+        }
+
+      }
+    }
+
     if (isAppMatch && _.isEmpty(result)) {
       return result;
     }
