@@ -32,6 +32,7 @@ dumpEssentialLogs() {
   ls -td1 /var/log/wpa_supplicant* | xargs -i sudo cp -p {} .
   ls -td1 /var/log/hostapd* | xargs -i sudo cp -p {} .
   ls -td1 /etc/resolv.conf |head -1 | xargs -i sudo cp -p {} .
+  sudo ls -t1 /sys/fs/pstore/ |head -100 | xargs -i sudo cp -p /sys/fs/pstore/{} .
   sudo cp -p /etc/firewalla_release .
 }
 
