@@ -1062,13 +1062,13 @@ module.exports = class DNSMASQ {
       `redis-hash-match=/${this._getRedisMatchKey(category, true)}/$${category}_block`,
       `redis-match-high=/${this._getRedisMatchKey(category, false)}/$${category}_block_high`,
       `redis-hash-match-high=/${this._getRedisMatchKey(category, true)}/$${category}_block_high`,
-      `redis-ipset=/${this._getRedisMatchKey(category, false)}/${ipsets.join(',')}` // no need to duplicate redis-ipset config in block config file, both use the same ipset and redis set
     ]);
     await this.writeConfig(categoryAllowDomainsFile, [
       `redis-match=/${this._getRedisMatchKey(category, false)}/#$${category}_allow`,
       `redis-hash-match=/${this._getRedisMatchKey(category, true)}/#$${category}_allow`,
       `redis-match-high=/${this._getRedisMatchKey(category, false)}/#$${category}_allow_high`,
-      `redis-hash-match-high=/${this._getRedisMatchKey(category, true)}/#$${category}_allow_high`
+      `redis-hash-match-high=/${this._getRedisMatchKey(category, true)}/#$${category}_allow_high`,
+      `redis-ipset=/${this._getRedisMatchKey(category, false)}/${ipsets.join(',')}$${category}_allow,$${category}_allow_high` // no need to duplicate redis-ipset config in block config file, both use the same ipset and redis set
     ]);
   }
 
