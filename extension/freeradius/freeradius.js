@@ -51,11 +51,27 @@ class FreeRadius {
     return instance;
   }
 
+  async cleanUp() {
+    this.pid = null;
+    this.running = false;
+    if (this.watcher) {
+      clearInterval(this.watcher);
+      this.watcher = null;
+    }
+  }
+
   async prepare() {
     await this.watchContainer();
     await this.startDockerDaemon();
     await this.generateRadiusConfig();
     await this.prepareImage();
+  }
+
+  async ready() {
+    if (!await fs.accessAsync(`${dockerDir}/docker-compose.yml`, fs.constants.F_OK).then(() => true).catch(_err => false)) {
+      return false;
+    }
+    return true;
   }
 
   async _watchStatus() {
@@ -66,6 +82,10 @@ class FreeRadius {
     await this._watchStatus();
     if (this.running) {
       await sleep(1000);
+      if (!await fs.accessAsync(`${dockerDir}/docker-compose.yml`, fs.constants.F_OK).then(() => true).catch(_err => false)) {
+        log.debug("freeradius docker compose file not exist, skip checking status of container freeradius-server");
+        return;
+      }
       const cmd = `sudo docker-compose -f ${dockerDir}/docker-compose.yml exec -T freeradius pidof freeradius`
       await exec(cmd).then((r) => { this.pid = r.stdout.trim() }).catch((e) => { this.pid = null; });
     }
@@ -77,7 +97,6 @@ class FreeRadius {
     }
 
     await this._watch();
-
     this.watcher = setInterval(async () => {
       await this._watch();
     }, interval * 1000 || 60000); // every 60s by default
@@ -120,7 +139,7 @@ class FreeRadius {
         return false;
       }
       await util.waitFor(_ => this.running === true, options.timeout * 1000 || 60000).catch((err) => { });
-      if (!this.running) {
+      if (!this.running && !await this.isListening()) {
         log.warn("Container freeradius-server is not started.")
         return false;
       }
@@ -217,10 +236,15 @@ class FreeRadius {
       }
 
       log.info("Pull image freeradius-server...");
+      if (!await fs.accessAsync(`${dockerDir}/docker-compose.yml`, fs.constants.F_OK).then(() => true).catch(_err => false)) {
+        log.info("freeradius docker compose file not exist, skip pulling image freeradius-server");
+        return;
+      }
       await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml pull`).catch((e) => {
         log.warn("Failed to pull image freeradius,", e.message)
         return;
       });
+
       if (await this._checkImage()) {
         log.info("Image freeradius-server is pulled.");
         return;
@@ -261,7 +285,8 @@ class FreeRadius {
     await util.waitFor(_ => this.running === false, options.timeout * 1000 || 60000).catch((err) => {
       log.warn("Container freeradius-server timeout to terminate,", err.message)
     });
-    if (this.running) {
+
+    if (await this.isListening()) {
       log.warn("Container freeradius-server is not terminated.")
       return;
     }
@@ -313,6 +338,11 @@ class FreeRadius {
   async _statusServer() {
     try {
       this.pid = null;
+      if (!await fs.accessAsync(`${dockerDir}/docker-compose.yml`, fs.constants.F_OK).then(() => true).catch(_err => false)) {
+        log.debug("freeradius docker compose file not exist, skip checking status of container freeradius-server");
+        return false;
+      }
+
       log.info("Checking status of container freeradius-server...");
       await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml ps`).catch((e) => {
         log.warn("Cannot check status of freeradius,", e.message)

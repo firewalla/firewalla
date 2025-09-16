@@ -231,11 +231,22 @@ class FreeRadiusSensor extends Sensor {
     this._policy = await this.loadPolicyAsync();
     this._options = await this.loadOptionsAsync();
     log.debug("freeradius policy", freeradius.mask(JSON.stringify(this._policy)));
-    freeradius.prepare(); // prepare in background
+    await freeradius.prepare(); // prepare in background
+    // check if need to start server
+    if (this.policyReady() && await freeradius.ready() && !await freeradius.isListening()) {
+      await freeradius.startServer();
+    }
+  }
+
+  policyReady() {
+    const policy = this._policy["0.0.0.0"];
+    const enabled = policy && _.isObject(policy) && Object.keys(policy).length > 0;
+    return enabled || Object.keys(this._policy).length > 1;
   }
 
   async globalOff() {
     this.featureOn = false;
+    await freeradius.cleanUp();
     if (await freeradius.isListening()) {
       freeradius.stopServer();  // stop container in background
     }
@@ -250,7 +261,7 @@ class FreeRadiusSensor extends Sensor {
   }
 
   // apply global policy changes, policy={radius:{}, options:{}}
-  async _apply(policy, target = "0.0.0.0") {
+  async _apply(policy, target = "0.0.0.0", force = false) {
     try {
       if (!policy) {
         return { err: 'policy must be specified' };
@@ -263,7 +274,7 @@ class FreeRadiusSensor extends Sensor {
       }
 
       // compare to previous policy applied
-      if (this._policy[target] && _.isEqual(this._policy[target], policy) && await freeradius.isListening()) {
+      if (this._policy[target] && _.isEqual(this._policy[target], policy) && await freeradius.isListening() && !force) {
         log.info(`policy ${policyKeyName} is not changed.`);
         return;
       }
@@ -335,7 +346,9 @@ class FreeRadiusSensor extends Sensor {
         log.error('fail to apply policy,', result.err);
         log.error("try to recover previous config", target, this._policy[target] || "");
         await this.revertPolicy(target);
-        result = await this._apply(this._policy["0.0.0.0"], target); // reapply system-level policy
+        const systemPolicy = this._policy["0.0.0.0"] || await this._getHostPolicy();
+        log.warn("reapply system-level policy", systemPolicy);
+        result = await this._apply(systemPolicy, "0.0.0.0", true); // reapply system-level policy
         if (result && result.err) {
           log.error('fail to revert policy,', result.err);
           return;
