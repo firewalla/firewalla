@@ -480,7 +480,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     // wait for a maximum of  30 seconds for category data to be ready.
     let i = 0;
     while (i < 30) {
-      if (category === "default_c") {
+      if (category === "default_c" || this.isCustomizedCategory(category)) {
         break;
       }
       const categoryStrategy = await rclient.getAsync(this.getCategoryStrategyKey(category));
