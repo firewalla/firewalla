@@ -4122,11 +4122,14 @@ class netBot extends ControllerBot {
               // data.value = {'block':1},
               //
               const result = await this.setHandler(gid, msg);
-              const syncToMsp = msg.syncToMsp || false;
+              // by default sync to msp for set and cmd operations
+              let syncToMspDefaultVal = aplt != "web" && aplt != "msp";
+              const syncToMsp = _.has(msg, 'syncToMsp') ? msg.syncToMsp : syncToMspDefaultVal;
               if (syncToMsp) {
                 const gs = sl.getSensor('GuardianSensor');
                 if (gs && fc.isFeatureOn(Constants.FEATURE_MSP_SYNC_OPS)) {
-                  await gs.enqueueOpToMsp(msg).catch((err) => {
+                  const op = Object.assign({response: result}, msg);
+                  await gs.enqueueOpToMsp(op).catch((err) => {
                     log.error("Failed to enqueue op to msp", err);
                   });
                 }
@@ -4157,11 +4160,16 @@ class netBot extends ControllerBot {
                 return this.simpleTxData(msg, result, null, cloudOptions);
               } else {
                 const result = await this.cmdHandler(gid, msg);
-                const syncToMsp = msg.syncToMsp || false;
+                // by default sync to msp for set and cmd operations
+                let syncToMspDefaultVal = aplt != "web" && aplt != "msp";
+                if (msg.data.item == "ping")
+                  syncToMspDefaultVal = false;
+                const syncToMsp = _.has(msg, 'syncToMsp') ? msg.syncToMsp : syncToMspDefaultVal;
                 if (syncToMsp) {
                   const gs = sl.getSensor('GuardianSensor');
                   if (gs && fc.isFeatureOn(Constants.FEATURE_MSP_SYNC_OPS)) {
-                    await gs.enqueueOpToMsp(msg).catch((err) => {
+                    const op = Object.assign({response: result}, msg);
+                    await gs.enqueueOpToMsp(op).catch((err) => {
                       log.error("Failed to enqueue op to msp", err);
                     });
                   }
