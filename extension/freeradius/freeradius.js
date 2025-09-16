@@ -48,6 +48,15 @@ class FreeRadius {
     return instance;
   }
 
+  async cleanUp() {
+    this.pid = null;
+    this.running = false;
+    if (this.watcher) {
+      clearInterval(this.watcher);
+      this.watcher = null;
+    }
+  }
+
   async prepare(options = {}) {
     try {
       await this._prepare(options);
@@ -65,6 +74,13 @@ class FreeRadius {
     await this.prepareIptables(options);
   }
 
+  async ready() {
+    if (!await fs.accessAsync(`${dockerDir}/docker-compose.yml`, fs.constants.F_OK).then(() => true).catch(_err => false)) {
+      return false;
+    }
+    return true;
+  }
+
   async _watchStatus() {
     await exec("netstat -an  | egrep -q ':1812'").then(() => { this.running = true }).catch((err) => { this.running = false });
   }
@@ -73,6 +89,10 @@ class FreeRadius {
     await this._watchStatus();
     if (this.running) {
       await sleep(1000);
+      if (!await fs.accessAsync(`${dockerDir}/docker-compose.yml`, fs.constants.F_OK).then(() => true).catch(_err => false)) {
+        log.debug("freeradius docker compose file not exist, skip checking status of container freeradius-server");
+        return;
+      }
       const cmd = `sudo docker-compose -f ${dockerDir}/docker-compose.yml exec -T freeradius pidof freeradius`
       await exec(cmd).then((r) => { this.pid = r.stdout.trim() }).catch((e) => { this.pid = null; });
     }
@@ -99,7 +119,6 @@ class FreeRadius {
     }
 
     await this._watch();
-
     this.watcher = setInterval(async () => {
       await this._watch();
     }, interval * 1000 || 60000); // every 60s by default
@@ -139,13 +158,9 @@ class FreeRadius {
         return false;
       }
       await util.waitFor(_ => this.running === true, options.timeout * 1000 || 60000).catch((err) => { });
-      if (!this.running) {
-        // fallback to check container status
-        await this._statusServer(options);
-        if (!this.running) {
-          log.warn("Container freeradius-server is not started.")
-          return false;
-        }
+      if (!this.running && !await this.isListening()) {
+        log.warn("Container freeradius-server is not started.")
+        return false;
       }
       log.info("Container freeradius-server is started.");
       return true;
@@ -284,10 +299,6 @@ class FreeRadius {
     const yamlContent = yaml.load(content);
     const tag = this.getImageTag(options);
     yamlContent.services.freeradius.image = `public.ecr.aws/a0j1s2e9/freeradius:${tag}`;
-    // add --security-opt seccomp=unconfined if host u18
-    if (await this.isU18()) {
-      yamlContent.services.freeradius.security_opt = ["seccomp=unconfined"]
-    }
     if (options.hostname) {
       yamlContent.services.freeradius.hostname = options.hostname;
     }
@@ -302,6 +313,10 @@ class FreeRadius {
       }
 
       log.info("Pull image freeradius-server...");
+      if (!await fs.accessAsync(`${dockerDir}/docker-compose.yml`, fs.constants.F_OK).then(() => true).catch(_err => false)) {
+        log.info("freeradius docker compose file not exist, skip pulling image freeradius-server");
+        return;
+      }
       await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml pull`).catch((e) => {
         log.warn("Failed to pull image freeradius,", e.message)
         return;
@@ -321,11 +336,6 @@ class FreeRadius {
   async upgradeImage(options = {}) {
     try {
       log.debug("Checking for new image freeradius-server...");
-      if (!options.allow_image_update) {
-        log.debug("image freeradius-server update is not allowed, skip update");
-        return false;
-      }
-
       const tag = this.getImageTag(options);
       log.info(`Checking for new image freeradius-server:${tag}`);
       // get current image digest using docker images (works even when container not running)
@@ -359,7 +369,7 @@ class FreeRadius {
       // remove old image
       if (currentImage) {
         // stop container first
-        await this._stopServer();
+        await this._stopServer(options);
 
         await exec(`sudo docker rmi ${currentImage}`).catch((e) => {
           log.warn("Failed to remove old image,", e.message);
@@ -500,7 +510,8 @@ class FreeRadius {
     await util.waitFor(_ => this.running === false, options.timeout * 1000 || 60000).catch((err) => {
       log.warn("Container freeradius-server timeout to terminate,", err.message)
     });
-    if (this.running) {
+
+    if (await this.isListening()) {
       log.warn("Container freeradius-server is not terminated.")
       return;
     }
@@ -552,6 +563,11 @@ class FreeRadius {
   async _statusServer(options = {}) {
     try {
       this.pid = null;
+      if (!await fs.accessAsync(`${dockerDir}/docker-compose.yml`, fs.constants.F_OK).then(() => true).catch(_err => false)) {
+        log.debug("freeradius docker compose file not exist, skip checking status of container freeradius-server");
+        return false;
+      }
+
       log.info("Checking status of container freeradius-server...");
       await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml ps`).catch((e) => {
         log.warn("Cannot get container status of freeradius by docker-compose,", e.message)
@@ -655,14 +671,6 @@ class FreeRadius {
   async getStatus(options = {}) {
     await this._statusServer(options);
     return { running: this.running, pid: this.pid };
-  }
-
-  async isU18() {
-    const codename = await exec("lsb_release -cs", { encoding: 'utf8' }).then(r => r.stdout.trim()).catch((err) => {
-      log.warn("Failed to detect Ubuntu version, assuming Ubuntu 18:", err.message);
-      return "bionic";
-    });
-    return codename === 'bionic';
   }
 
   mask(jsonStr) {
