@@ -112,7 +112,8 @@ function setupMocks() {
     info: () => { },
     warn: () => { },
     error: () => { },
-    forceInfo: () => { }
+    forceInfo: () => { },
+    silly: () => { }
   }));
 }
 async function clearRedisKeys() {
