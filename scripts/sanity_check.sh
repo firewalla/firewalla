@@ -1226,6 +1226,12 @@ check_tag() {
 check_ap() {
     echo "---------------------- AP ------------------"
     frcc
+    if [ "$(jq 'has("apc")' /tmp/scc_config)" == "false" ]; then
+        echo "AP not configured"
+        echo ""
+        return
+    fi
+
     mapfile -t tags < <(redis-cli --scan --pattern 'tag:uid:*')
 
     declare -A ssidVlanUserMap
@@ -1242,9 +1248,9 @@ check_ap() {
       fi
     done
   
-    mapfile -t ssid_profiles < <(jq -r '.apc.assets_template.ap_default.wifiNetworks[0].ssidProfiles[]' /tmp/scc_config)
+    mapfile -t ssid_profiles < <(jq -r '.apc.assets_template.ap_default.wifiNetworks?[0]?.ssidProfiles?[]?' /tmp/scc_config)
     declare -A alias_ssids
-    jq -r '.apc.assets_template.ap_default.wifiNetworks[0].aliasSSIDs[] | "\(.id) \(.vlan)"' /tmp/scc_config |
+    jq -r '.apc.assets_template.ap_default.wifiNetworks?[0]?.aliasSSIDs?[]? | "\(.id) \(.vlan)"' /tmp/scc_config |
     while read -r id vlan; do
       alias_ssids["$id"]="$vlan"
       #echo "alias_ssids $id = $vlan"
@@ -1303,11 +1309,14 @@ check_portmapping() {
 
 check_dhcp() {
     echo "---------------------- DHCP ------------------"
+    (
+    printf "ts,server_addr,mac,host_name,requested_addr,assigned_addr,lease_time,msg_types\n"
     find /log/blog/ -mmin -120 -name "dhcp*log.gz" |
       sort | xargs zcat -f |
       jq -r '.msg_types=(.msg_types|join("|"))|[."ts", ."server_addr", ."mac", ."host_name", ."requested_addr", ."assigned_addr", ."lease_time", ."msg_types"]|@csv' |
       sed 's="==g' | grep -v "INFORM|ACK" |
-      awk -F, 'BEGIN { OFS = "," } { cmd="date -d @"$1; cmd | getline d;$1=d;print;close(cmd)}' |
+      awk -F, 'BEGIN { OFS = "," } { cmd="date -d @"$1; cmd | getline d;$1=d;print;close(cmd)}'
+    ) |
       $COLUMN_OPT -s "," -t
     echo ""
     echo ""
