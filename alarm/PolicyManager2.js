@@ -1571,7 +1571,7 @@ class PolicyManager2 {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
 
-        if (platform.isTLSBlockSupport()) { // default on
+        if (platform.isTLSBlockSupport() || platform.isUdpTLSBlockSupport()) { // default on
           if (!policy.domainExactMatch && !target.startsWith("*."))
             tlsHost = `*.${target}`;
           else
@@ -1691,7 +1691,7 @@ class PolicyManager2 {
       case "category":
         if (_.isEmpty(targets))
           targets = [target];
-        if (platform.isTLSBlockSupport()) { // default on
+        if (platform.isTLSBlockSupport() || platform.isUdpTLSBlockSupport()) { // default on
           for (const target of targets)
             tlsHostSets.push(categoryUpdater.getHostSetName(target));
         }
@@ -2140,7 +2140,7 @@ class PolicyManager2 {
         break;
       case "domain":
       case "dns":
-        if (platform.isTLSBlockSupport()) { // default on
+        if (platform.isTLSBlockSupport() || platform.isUdpTLSBlockSupport()) { // default on
           if (!policy.domainExactMatch && !target.startsWith("*."))
             tlsHost = `*.${target}`;
           else
@@ -2239,7 +2239,7 @@ class PolicyManager2 {
       case "category":
         if (_.isEmpty(targets))
           targets = [target];
-        if (platform.isTLSBlockSupport()) { // default on
+        if (platform.isTLSBlockSupport() || platform.isUdpTLSBlockSupport()) { // default on
           for (const target of targets)
             tlsHostSets.push(categoryUpdater.getHostSetName(target));
         }
