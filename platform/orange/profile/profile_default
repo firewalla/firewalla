@@ -9,6 +9,7 @@
   "rps_cpus": [
     [ "eth0", "rx-0", "e" ],
     [ "eth1", "rx-0", "e" ],
+    [ "wg0", "rx-0", "f" ],
     [ "vpn_*", "rx-0", 9 ],
     [ "tun_fwvpn", "rx-0", 9 ]
   ],
