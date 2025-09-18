@@ -88,6 +88,8 @@ const IdentityManager = require('../net2/IdentityManager.js');
 const Constants = require('../net2/Constants.js');
 const { extractIP } = require('../net2/FlowUtil.js')
 
+const TimeUsageTool = require('../flow/TimeUsageTool.js');
+
 const featureName = 'msp_sync_alarm';
 
 // TODO: Support suppress alarm for a while
@@ -824,6 +826,46 @@ module.exports = class {
     }
   }
 
+  async hasRelatedAppTimeUsage(alarm) {
+    const appId = alarm['p.dest.app.id'];
+    if (!appId) {
+      return true;
+    }
+    const endTimestamp = alarm.alarmTimestamp || Date.now()/1000;
+    const startTimestamp = endTimestamp - 300; // check timeusage in last 300 seconds 
+
+    const queryOptions = {
+      deviceId: alarm['p.device.id'],
+      apps: [appId],
+      startTime: startTimestamp,
+      endTime: endTimestamp,
+      granularity: "hour",
+      uidIsDevice: true,
+      includeSlots: false,
+      includeIntervals: false
+    };
+
+    try {
+      const stats = await TimeUsageTool.getAppTimeUsageStats(
+        queryOptions.deviceId,
+        null,
+        queryOptions.apps,
+        queryOptions.startTime,
+        queryOptions.endTime,
+        queryOptions.granularity,
+        queryOptions.uidIsDevice,
+        queryOptions.includeSlots,
+        queryOptions.includeIntervals
+      );
+
+      const totalMins = _.get(stats, ["appTimeUsage", appId, "totalMins"], 0);
+      return totalMins > 0;
+    } catch (err) {
+      log.error("hasRelatedAppTimeUsage error:", err);
+      return false;
+    }
+  }
+
   enqueueAlarm(alarm, retry = true, profile) {
     if (this.queue) {
       const job = this.queue.createJob({
@@ -1015,6 +1057,13 @@ module.exports = class {
       throw err3;
     }
 
+    log.info("Checking if alarm has related app time usage");
+    const hasRelatedAppTimeUsage = await this.hasRelatedAppTimeUsage(alarm);
+    if (!hasRelatedAppTimeUsage) {
+      const err4 = new Error("alarm has no related app time usage");
+      err4.code = 'ERR_NO_RELATED_APP_TIME_USAGE';
+      throw err4;
+    }
 
     const devicePolicy = _.get(await alarm.getDevice(), 'policy', {})
 
