@@ -27,7 +27,7 @@ const _ = require('lodash');
 const AsyncLock = require('../vendor_lib/async-lock');
 const sl = require('./SensorLoader.js');
 const { Rule } = require('../net2/Iptables.js');
-platform = require('../platform/PlatformLoader.js').getPlatform();
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 
 const lock = new AsyncLock();
