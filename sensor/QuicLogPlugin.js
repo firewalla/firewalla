@@ -27,6 +27,7 @@ const _ = require('lodash');
 const AsyncLock = require('../vendor_lib/async-lock');
 const sl = require('./SensorLoader.js');
 const { Rule } = require('../net2/Iptables.js');
+platform = require('../platform/PlatformLoader.js').getPlatform();
 
 
 const lock = new AsyncLock();
@@ -131,6 +132,10 @@ class QuicLogPlugin extends Sensor {
   async globalOn() { // relay on ACLAuditLogPlugin.globalOn
     super.globalOn();
 
+    if (!platform.isUdpTLSBlockSupport()) {
+      log.info("UDP TLS block is not supported on this platform, skip setting up quic log iptables rule");
+      return;
+    }
     const rule = new Rule().chn('FW_FORWARD_LOG');
     rule.mdl("udp_tls", '--log-tls');
     rule.pro('udp');
@@ -144,6 +149,12 @@ class QuicLogPlugin extends Sensor {
 
   async globalOff() { // relay on ACLAuditLogPlugin.globalOff
     super.globalOff();
+
+    if (!platform.isUdpTLSBlockSupport()) {
+      log.info("UDP TLS block is not supported on this platform, skip removing quic log iptables rule");
+      return;
+    }
+
     this.localCache.reset();
     await this._flushConnEntryCache();
 
