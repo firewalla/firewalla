@@ -217,12 +217,12 @@ function installTLSModule() {
   uid=$(id -u pi)
   gid=$(id -g pi)
   module_name=$1
-  if [[ ${module_name} = "xt_TLS" && ${XT_TLS_SUPPORTED} != "yes" ]]; then
-    # xt_TLS is not supported on this platform ingore
+  if [[ ${module_name} = "xt_tls" && ${XT_TLS_SUPPORTED} != "yes" ]]; then
+    # xt_tls is not supported on this platform ingore
     return 0
   fi
-  if [[ ${module_name} = "xt_UDP_TLS" && ${XT_UDP_TLS_SUPPORTED} != "yes" ]]; then
-    # xt_UDP_TLS is not supported on this platform ingore
+  if [[ ${module_name} = "xt_udp_tls" && ${XT_UDP_TLS_SUPPORTED} != "yes" ]]; then
+    # xt_udp_tls is not supported on this platform ingore
     return 0
   fi
   if ! lsmod | grep -wq "${module_name}"; then
