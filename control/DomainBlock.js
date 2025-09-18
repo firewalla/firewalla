@@ -50,6 +50,7 @@ const _ = require('lodash');
 const tls_modules = ["xt_tls", "xt_udp_tls"];
 const tlsHostSetBasePath = "/proc/net/";
 const tlsHostSetFolder = "hostset";
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 
 class DomainBlock {
@@ -86,6 +87,11 @@ class DomainBlock {
   async updateHostset(tlsHostSet, action, domain, options={}, modules=tls_modules) {
     const finalDomain = options.exactMatch || domain.startsWith("*.") ? domain : `*.${domain}`; // check domain.startsWith just for double check
     for (const module of modules) {
+      if (module == "xt_tls" && !platform.isTLSBlockSupport()) { // xt_tls is for tcp tls
+        continue;
+      } else if (module == "xt_udp_tls" && !platform.isUdpTLSBlockSupport()) { // xt_udp_tls is for udp tls
+        continue;
+      }
       const tlsFilePath = `${tlsHostSetBasePath}/${module}/${tlsHostSetFolder}/${tlsHostSet}`;
       if (this.isDomainMatchedWithModule(finalDomain, module)) {
         if (action === "add") {
@@ -375,9 +381,9 @@ class DomainBlock {
     const tlsHostSet = Block.getTLSHostSet(category);
 
     for (const module of tls_modules) {
-      if (module === "xt_tls" && protocol === "udp") { // xt_tls is for tcp tls
+      if (module === "xt_tls" && (protocol === "udp" || !platform.isTLSBlockSupport())) { // xt_tls is for tcp tls
         continue;
-      } else if (module === "xt_udp_tls" && protocol === "tcp") { // xt_udp_tls is for udp tls
+      } else if (module === "xt_udp_tls" && (protocol === "tcp" || !platform.isUdpTLSBlockSupport())) { // xt_udp_tls is for udp tls
         continue;
       }
       const tlsFilePath = `${tlsHostSetBasePath}/${module}/${tlsHostSetFolder}/${tlsHostSet}`;
