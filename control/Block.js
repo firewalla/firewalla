@@ -1686,15 +1686,15 @@ async function manipulateFiveTupleRule(options) {
       rule.mdl("connbytes", `--connbytes ${avgPacketBytes} --connbytes-dir ${transferDirection} --connbytes-mode avgpkt`);
   }
   if (tlsHostSet) {
-    if (proto === "tcp")
+    if (proto === "tcp" && platform.isTLSBlockSupport())
       rule.mdl("tls", `--tls-hostset ${tlsHostSet}`);
-    else if (proto === "udp")
+    else if (proto === "udp" && platform.isUdpTLSBlockSupport())
       rule.mdl("udp_tls", `--tls-hostset ${tlsHostSet}`);
   }
   if (tlsHost) {
-    if (proto === "tcp")
+    if (proto === "tcp" && platform.isTLSBlockSupport())
       rule.mdl("tls", `--tls-host ${tlsHost}`)
-    else if (proto === "udp")
+    else if (proto === "udp" && platform.isUdpTLSBlockSupport())
       rule.mdl("udp_tls", `--tls-host ${tlsHost}`)
   }
   if (limit) {
