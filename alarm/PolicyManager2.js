@@ -1919,10 +1919,16 @@ class PolicyManager2 {
     const { proto } = options;
 
     if (proto === "tcp" || proto === "udp") {
-      await this.__applyRules(options);
+      if ((proto == "tcp" && platform.isTLSBlockSupport()) || 
+          (proto == "udp" && platform.isUdpTLSBlockSupport())) {
+        await this.__applyRules(options);
+      }
     } else if (!proto) {
       for (const proto of ["tcp", "udp"]) {
-        await this.__applyRules({ ...options, proto });
+        if ((proto == "tcp" && platform.isTLSBlockSupport()) || 
+            (proto == "udp" && platform.isUdpTLSBlockSupport())) {
+          await this.__applyRules({ ...options, proto });
+        }
       }
     }
   }
