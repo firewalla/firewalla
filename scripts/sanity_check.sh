@@ -85,7 +85,7 @@ element_in() {
 }
 
 ip_to_num() {
-  awk -F. '{print ($1 * 256^3) + ($2 * 256^2) + ($3 * 256) + $4}' <<< "$1"
+  awk -F. '{printf "%.0f", ($1 * 256^3) + ($2 * 256^2) + ($3 * 256) + $4}' <<< "$1"
 }
 
 declare -A NETWORK_UUID_NAME
@@ -1098,11 +1098,12 @@ check_network() {
 
     declare -A DHCP
     declare -a DHCP_INTF
-    jq -r '.dhcp | to_entries[] | .key,.value.range.from,.value.range.to' /tmp/scc_config |
+    jq -r '.dhcp // {} | to_entries[] | .key,.value.range.from,.value.range.to' /tmp/scc_config |
       # mapfile -t -n 3 ARY reads 3 lines at a time into array ARY
       # ((${#ARY[@]})) checks if array ARY has any elements (length > 0)
       # Together they read 3 lines at a time until no more lines are left
       while mapfile -t -n 3 ARY && ((${#ARY[@]})); do
+        # echo "${ARY[0]},$(ip_to_num "${ARY[1]}"),$(ip_to_num "${ARY[2]}")";
         DHCP_INTF+=("${ARY[0]}")
         DHCP[${ARY[0]},from]=$(ip_to_num "${ARY[1]}")
         DHCP[${ARY[0]},to]=$(ip_to_num "${ARY[2]}")
