@@ -84,6 +84,10 @@ element_in() {
   return 1
 }
 
+ip_to_num() {
+  awk -F. '{print ($1 * 256^3) + ($2 * 256^2) + ($3 * 256) + $4}' <<< "$1"
+}
+
 declare -A NETWORK_UUID_NAME
 declare -A WGPEER_IP
 declare -A WGPEER_NAME
@@ -1092,6 +1096,32 @@ check_network() {
         DNS_CONFIG[${ARY[0]}]=${ARY[1]}
       done
 
+    declare -A DHCP
+    declare -a DHCP_INTF
+    jq -r '.dhcp | to_entries[] | .key,.value.range.from,.value.range.to' /tmp/scc_config |
+      # mapfile -t -n 3 ARY reads 3 lines at a time into array ARY
+      # ((${#ARY[@]})) checks if array ARY has any elements (length > 0)
+      # Together they read 3 lines at a time until no more lines are left
+      while mapfile -t -n 3 ARY && ((${#ARY[@]})); do
+        DHCP_INTF+=("${ARY[0]}")
+        DHCP[${ARY[0]},from]=$(ip_to_num "${ARY[1]}")
+        DHCP[${ARY[0]},to]=$(ip_to_num "${ARY[2]}")
+        DHCP[${ARY[0]},used]=0
+        DHCP[${ARY[0]},pool]=$((${DHCP[${ARY[0]},to]} - ${DHCP[${ARY[0]},from]} + 1))
+      done
+
+    # Read DHCP leases and convert IP addresses to numbers
+    while read -r _ _ ip; do
+      if [[ -n "$ip" ]]; then
+        ip_num=$(ip_to_num "$ip")
+        for intf in "${DHCP_INTF[@]}"; do
+          if [[ "$ip_num" -ge "${DHCP[$intf,from]}" && "$ip_num" -le "${DHCP[$intf,to]}" ]]; then
+            ((DHCP[$intf,used]++))
+          fi
+        done
+      fi
+    done < /home/pi/.router/run/dhcp/dnsmasq.leases
+
     :>/tmp/scc_csv # clear file
     for INTF in $INTFS; do
       jq -rj ".[\"$INTF\"] | if (.state.ip6 | length) == 0 then .state.ip6 |= [] else . end | [\"$INTF\", .config.meta.name, .config.meta.uuid, .state.ip4, .state.gateway, (.state.ip6 | join(\"|\")), .state.gateway6, (.state.dns // [] | join(\";\"))] | @tsv" /tmp/scc_interfaces >>/tmp/scc_csv
@@ -1100,7 +1130,7 @@ check_network() {
 
     get_system_policy
 
-    printf "Interface\tName\tUUID\tIPv4\tGateway\tIPv6\tGateway6\tDNS\tvpnClient\tAdB\tFam\tSS\tDoH\tUbd\tNTP\n" >/tmp/scc_csv_multline
+    printf "Interface\tName\tUUID\tIPv4\tGateway\tIPv6\tGateway6\tDNS\tvpnClient\tAdB\tFam\tSS\tDoH\tUbd\tNTP\tDHCP\n" >/tmp/scc_csv_multline
     while read -r LINE; do
       mapfile -td $'\t' COL < <(printf "%s" "$LINE")
       # read multi line fields into array
@@ -1133,6 +1163,10 @@ check_network() {
       local UNBOUND=$(if [[ ${NP[$id,unbound]} == *"true"* ]]; then echo "T"; fi)
       local NTP=$(if [[ ${NP[$id,ntp_redirect]} == *"true"* ]]; then echo "T"; fi)
 
+      local DHCP=
+      if element_in "${COL[0]}" "${DHCP_INTF[@]}"; then
+        DHCP="${DHCP[${COL[0]},used]}/${DHCP[${COL[0]},pool]}"
+      fi
 
       local LINE_COUNT=$(( "${#IP6[@]}" > "${#DNS[@]}" ? "${#IP6[@]}" : "${#DNS[@]}" ));
       [[ $LINE_COUNT -eq 0 ]] && LINE_COUNT=1
@@ -1144,11 +1178,11 @@ check_network() {
         fi
 
         if [[ $IDX -eq 0 ]]; then
-          printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+          printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
             "${COL[0]}" "${COL[1]}" "${COL[2]:0:8}" "${COL[3]}" "${COL[4]}" "$IP" "${COL[6]}" "${DNS[$IDX]}" \
-            "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$SAFE_SEARCH" "$DOH" "$UNBOUND" "$NTP" >> /tmp/scc_csv_multline
+            "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$SAFE_SEARCH" "$DOH" "$UNBOUND" "$NTP" "$DHCP" >> /tmp/scc_csv_multline
         else
-          printf "\t\t\t\t\t%s\t\t%s\t\n" "$IP" "${DNS[$IDX]}" >> /tmp/scc_csv_multline
+          printf "\t\t\t\t\t%s\t\t%s\t\t\n" "$IP" "${DNS[$IDX]}" >> /tmp/scc_csv_multline
         fi
       done
 
