@@ -53,6 +53,8 @@ const net = require('net');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
 const hashFunc = function (obj) {
   const str = JSON.stringify(obj);
   return crypto.createHash("md5").update(str).digest("base64");
@@ -280,11 +282,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
           throw error;
         }
       };
-      await Promise.all([
-        updateActiveCategories('/proc/net/xt_tls', this.activeTLSCategories_tcp),
-        updateActiveCategories('/proc/net/xt_udp_tls', this.activeTLSCategories_udp)
-      ]);
-   
+
+      if (platform.isTLSBlockSupport()) {
+        await updateActiveCategories('/proc/net/xt_tls', this.activeTLSCategories_tcp);
+      }
+      if (platform.isUdpTLSBlockSupport()) {
+        await updateActiveCategories('/proc/net/xt_udp_tls', this.activeTLSCategories_udp);
+      }
+
     } catch (err) {
       log.info("Failed to get active TLS category", err);
     }
@@ -480,7 +485,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     // wait for a maximum of  30 seconds for category data to be ready.
     let i = 0;
     while (i < 30) {
-      if (category === "default_c") {
+      if (category === "default_c" || this.isCustomizedCategory(category)) {
         break;
       }
       const categoryStrategy = await rclient.getAsync(this.getCategoryStrategyKey(category));
