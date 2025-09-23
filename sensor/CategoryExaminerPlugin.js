@@ -23,9 +23,11 @@ const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
 const Sensor = require('./Sensor.js').Sensor;
 const bone = require('../lib/Bone');
+const Message = require('../net2/Message.js');
 
 const rp = require('request-promise');
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const CronJob = require('cron').CronJob;
 
 const sem = require('./SensorEventManager.js').getInstance();
 const categoryFastFilterFeature = "category_filter";
@@ -37,6 +39,7 @@ const intelTool = new IntelTool();
 
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Hashes = require('../util/Hashes');
+const SysManager = require('../net2/SysManager.js');
 const BF_SERVER_MATCH = 'bf_server_match';
 
 const MAX_CONFIRM_SET_SIZE = 20000;
@@ -56,7 +59,7 @@ class CategoryExaminerPlugin extends Sensor {
     if (firewalla.isMain()) {
       void this.runConfirmJob();
 
-      void this.runRefreshJob();
+      void this.scheduleRefreshJob();
       sem.on("REFRESH_CATEGORY_FILTER", (event) => {
         const category = event.category;
         void this.refreshCategoryFilter(category);
@@ -78,6 +81,12 @@ class CategoryExaminerPlugin extends Sensor {
             } catch (err) {
               log.error("parse msg failed", err, message);
             }
+            break;
+          }
+          case Message.MSG_SYS_TIMEZONE_RELOADED: {
+            log.info("System timezone is reloaded , will reschedule confirm domain cron job ...");
+            await this.scheduleRefreshJob();
+            break;
           }
         }
       });
@@ -138,7 +147,7 @@ class CategoryExaminerPlugin extends Sensor {
     const passthroughDomains = new Set(await rclient.zrangeAsync(redisPassthroughSetKey, 0, -1));
 
     // hitDomains - excludeDomain
-    const excludeDomains = await categoryUpdater.getExcludedDomains(category.split("_bf")[0]);
+    const excludeDomains = await categoryUpdater.getExcludedDomains(categoryUpdater.getOrigCategoryByBfCategory(category) || category);
     for (const domain of hitDomains) {
       if (excludeDomains.includes(domain)) {
         log.info(`Add domain ${domain} to passthrough set of ${category}`);
@@ -173,7 +182,8 @@ class CategoryExaminerPlugin extends Sensor {
         continue;
       }
       const result = response.results[0];
-      if (result && result.uid === `category:${category}` && result.status !== "NoMatch") {
+      const bfParts = categoryUpdater.getCategoryBfParts(category);
+      if (result && bfParts.some(bfPart => result.uid === `category:${bfPart}`) && result.status !== "NoMatch") {
         confirmMatchList.push(domain);
       } else {
         if (hitDomains.has(domain)) {
@@ -220,7 +230,12 @@ class CategoryExaminerPlugin extends Sensor {
 
     let filters;
     if (category) {
-      filters = [`category:${category}`];
+      const parts = categoryUpdater.getCategoryBfParts(category);
+      // category may have multiple bf files
+      if (_.isArray(parts) && !_.isEmpty(parts))
+        filters = parts.map(part => `category:${part}`);
+      else
+        filters = [`category:${category}`];
     } else {
       filters = [];
     }
@@ -258,12 +273,20 @@ class CategoryExaminerPlugin extends Sensor {
       log.warn(`Fail to get match result from category filter: ${origDomain}`);
       return;
     }
-    const categories = response.results.filter(result => result.status == 'Match').map((result) => {const [, c] = result.uid.split(':'); return c});
+    const categories = response.results.filter(result => result.status == 'Match').map((result) => {
+      const [, bfPart] = result.uid.split(':');
+      return categoryUpdater.getCategoryByBfPart(bfPart) || null;
+    }).filter(Boolean);
     const excludeDomains = await this._getCategoryExcludeDomains(_.uniq(categories));
 
     for (const result of response.results) {
       const status = result.status;
-      const [, category] = result.uid.split(":");
+      const [, bfPart] = result.uid.split(":");
+      const category = categoryUpdater.getCategoryByBfPart(bfPart);
+      if (!category) {
+        log.debug(`Unknown bf part ${bfPart}`);
+        continue;
+      }
       const matchedDomain = result.item;
       if (!categoryUpdater.isActivated(category)) {
         // do not check if category is not activated
@@ -302,7 +325,7 @@ class CategoryExaminerPlugin extends Sensor {
   async _getCategoryExcludeDomains(categories) {
     let excludeDomains = {};
     for (const c of categories) {
-      const domains = await categoryUpdater.getExcludedDomains(c.split("_bf")[0]);
+      const domains = await categoryUpdater.getExcludedDomains(categoryUpdater.getOrigCategoryByBfCategory(c) || c);
       excludeDomains[c] = domains;
     }
     return excludeDomains;
@@ -332,12 +355,12 @@ class CategoryExaminerPlugin extends Sensor {
       // update hit set using matched domain list
       if (strategy.updateConfirmSet) {
         let score = Date.now();
-        if (!category.endsWith('_bf') && category != "adblock_strict") {
+        if (!categoryUpdater.getOrigCategoryByBfCategory(category) && category != "adblock_strict") {
           await this._confirmCloudCategoryDomains(category, strategy, domainList, score);
           continue;
         }
-        let originCategory = category.split("_bf")[0];
-        if (originCategory === "adblock_strict")
+        let originCategory = categoryUpdater.getOrigCategoryByBfCategory(category);
+        if (category === "adblock_strict")
           originCategory = "ad";
         const origDomainList = domainList.map(item => item[1]);
         const unmatchedOrigDomainSet = new Set(origDomainList);
@@ -421,13 +444,22 @@ class CategoryExaminerPlugin extends Sensor {
     }
   }
 
-  async runRefreshJob() {
-    while (true) {
-      await scheduler.delay(1000 * 60 * 60 * 2); // 2 hours
-      for (const category of categoryUpdater.getActiveCategories()) {
-        await this.refreshCategoryFilter(category);
-      }
-    }
+  async scheduleRefreshJob() {
+    if (this.refreshJob)
+      this.refreshJob.stop();
+    if (this.refreshTimeout)
+      clearTimeout(this.refreshTimeout);
+    const tz = SysManager.getTimezone();
+    // confirm all hit domains on all active categories is resource consuming, no need to run periodical confirm too frequently,
+    // if category bloomfilter is updated, a REFRESH_CATEGORY_FILTER event will be triggered, and refreshCategoryFilter will be called on the updated category at that time
+    this.refreshJob = new CronJob("0 3 * * *", async () => {
+      const delayMins = Math.random() * 120; // a random time between 3 a.m. and 5 a.m.
+      this.refreshTimeout = setTimeout(async () => {
+        for (const category of categoryUpdater.getActiveCategories()) {
+          await this.refreshCategoryFilter(category);
+        }
+      }, delayMins * 60 * 1000);
+    }, () => {}, true, tz);
   }
 
   async confirmDomains(category, strategy, domainList) {

@@ -2,6 +2,7 @@ module.exports = {
   "env": {
     "commonjs": true,
     "es6": true,
+    "es2020": true,
     "mocha": true,
     "node": true
   },

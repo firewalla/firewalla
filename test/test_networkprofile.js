@@ -41,7 +41,9 @@ describe('test networkProfile', function(){
         const profiles = networkProfielManager.networkProfiles;
         const eth0 = Object.values(profiles).filter(i => i.o.intf == "eth0");
         const br0 = Object.values(profiles).filter(i => i.o.intf == "br0");
-        log.debug("network profile eth0", eth0.o.origDns6);
-        log.debug("network profile br0", br0.o.origDns);
+        log.debug("network profile eth0", eth0.o && eth0.o.origDns6);
+        log.debug("network profile br0", br0.o && br0.o.origDns);
+        expect(eth0).to.be.not.empty
+        expect(br0).to.be.not.empty
     });
   });

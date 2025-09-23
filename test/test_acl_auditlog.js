@@ -18,7 +18,6 @@
 let chai = require('chai');
 let expect = chai.expect;
 
-
 process.title = "FireMain";
 
 const LRU = require('lru-cache');

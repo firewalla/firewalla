@@ -189,9 +189,12 @@ class BroNotice {
         await this.processSQLInjection(alarm, broObj);
         break
 
+      case 'Signatures::Sensitive_Signature':
+        // should dealing with signature event here?
       default:
         // do nothing
-        log.info(`Unsupported zeek notice type ${noticeType}, ignored`, broObj);
+        log.info(`Unsupported zeek notice type ${noticeType}, ignored`, noticeType);
+        log.verbose(broObj)
         return null;
     }
     return alarm;

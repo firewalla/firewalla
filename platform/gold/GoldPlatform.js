@@ -298,6 +298,20 @@ class GoldPlatform extends Platform {
   }
 
   isDNSFlowSupported() { return true }
+
+  async isSuricataFromAssetsSupported() {
+    try {
+      // 6.5 kernel image has built-in suricata directory, but cannot run on gold platform due to unsupported instructions
+      const kernelVersion = await exec("uname -r").then(result => result.stdout.trim());
+      return kernelVersion === "6.5.0-25-generic";
+    } catch(err) {
+      log.error("Failed to get kernel version, err:", err);
+      return false;
+    }
+    return false;
+  }
+
+
 }
 
 module.exports = GoldPlatform;
