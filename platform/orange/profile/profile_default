@@ -14,6 +14,8 @@
     [ "tun_fwvpn", "rx-0", 9 ]
   ],
   "taskset": [
+    ["napi/phy", "1-3", "match"],
+    ["mt76-tx", "0", "match"],
     ["zeek", "0"],
     ["FireApi", "0-3"],
     ["FireMain", "0-3"],
