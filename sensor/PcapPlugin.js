@@ -83,6 +83,10 @@ class PcapPlugin extends Sensor {
 
   }
 
+  isEnabled() {
+    return this.enabled;
+  }
+
   async globalOn() {
     this.enabled = true;
     log.info(`Pcap plugin ${this.getFeatureName()} is enabled`);
@@ -115,6 +119,8 @@ class PcapPlugin extends Sensor {
       const monitoringIntfOptions = {}
       for (const intfName in intfNameMap) {
         if (!monitoringInterfaces.includes(intfName))
+          continue;
+        if (intfName === Constants.INTF_AP_CTRL)
           continue;
         const intf = intfNameMap[intfName];
         if (intf && intf.config && intf.config.assetsController) // bypass assets controller wireguard interface

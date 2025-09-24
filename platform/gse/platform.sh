@@ -16,12 +16,14 @@ FW_SCHEDULE_BRO=false
 STATUS_LED_PATH='/sys/class/leds/sys_led/'
 IFB_SUPPORTED=yes
 XT_TLS_SUPPORTED=yes
+XT_UDP_TLS_SUPPORTED=no
 MANAGED_BY_FIREROUTER=yes
 REDIS_MAXMEMORY=400mb
 RAMFS_ROOT_PARTITION=yes
 FW_ZEEK_RSS_THRESHOLD=800000
 MAX_OLD_SPACE_SIZE=512
 HAVE_FWAPC=yes
+HAVE_FWDAP=yes
 WAN_INPUT_DROP_RATE_LIMIT=8
 
 function get_openssl_cnf_file {
@@ -123,4 +125,19 @@ rcvbuf 0
 EOS
   }
 
+}
+
+function get_tls_ko_path() {
+  module_name=$1
+  if [[ -z $module_name ]]; then
+    echo "Module name is required"
+    return 1
+  fi
+  EMMC_DEV=$(df /media/root-ro | grep -o '/dev/mmcblk[0-9]*')
+  kernel_checksum=$(sudo dd if=$EMMC_DEV bs=512 count=75536 skip=73728 status=none | md5sum | awk '{print $1}')
+  ko_path=${CURRENT_DIR}/files/kernel_modules/$(uname -r)/${module_name}.ko
+  if [[ -f ${ko_path}.${kernel_checksum} ]]; then
+    ko_path=${ko_path}.${kernel_checksum}
+  fi
+  echo $ko_path
 }

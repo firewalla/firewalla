@@ -46,7 +46,7 @@ class DeviceIdentificationSensor extends Sensor {
 
     for (const host of hosts) try {
       // keep user feedback and other detection sources
-      const keepsake = _.pick(host.o.detect, ['feedback', 'bonjour'])
+      const keepsake = _.pick(host.o.detect, ['feedback', 'bonjour', 'cloud'])
 
       host.o.detect = await this.detect(host)
 

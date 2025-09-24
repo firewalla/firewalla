@@ -21,12 +21,39 @@ class PcapSuricataPlugin extends PcapPlugin {
   }
 
   async restart() {
+    await suricataControl.tryUpdateSuricataBinary();
+    await this._restart();
+    suricataControl.watchRulesDir((eventType, filename) => {
+      if (!this.isEnabled())
+        return;
+      // ignore files that may be created by update_assets.sh temporarily, or created by other tools like vim
+      if (!filename || !filename.endsWith(".rules"))
+        return;
+      log.info(`${filename} under rules directory is ${eventType}, schedule restarting suricata`);
+      if (this.restartTask)
+        clearTimeout(this.restartTask);
+      this.restartTask = setTimeout(async () => {
+        await this._restart().catch((err) => {
+          log.error(`Failed to restart suricata`, err.message);
+        });
+      }, 5000);
+    });
+  }
+
+  async _restart() {
     const yaml = await this.generateSuricataYAML();
     await suricataControl.cleanupRuntimeConfig();
     await suricataControl.writeSuricataYAML(yaml);
     await suricataControl.prepareAssets();
     const listenInterfaces = await this.calculateListenInterfaces();
     await fs.writeFileAsync(`${f.getRuntimeInfoFolder()}/suricata/listen_interfaces.rc`, `LISTEN_INTERFACES="${Object.keys(listenInterfaces).join(" ")}"`, {encoding: "utf8"});
+    const ruleFiles = await suricataControl.getRuleFiles();
+    if (_.isEmpty(ruleFiles)) {
+      log.info("No rule file is found, stopping suricata ...");
+      await suricataControl.stop();
+      await suricataControl.removeCronJobs();
+      return;
+    }
     await suricataControl.restart().then(() => suricataControl.addCronJobs()).then(() => {
       log.info("Suricata restarted");
     });
@@ -82,8 +109,8 @@ class PcapSuricataPlugin extends PcapPlugin {
         "defrag": true,
         "use-mmap": true,
         "tpacket-v3": true,
-        "block-size": 65536,
-        "buffer-size": 65536,
+        "block-size": 8192,
+        "ring-size": 128,
         "bpf-filter": "not port 5353"
       });
       pfringConfigs.push({
@@ -98,7 +125,7 @@ class PcapSuricataPlugin extends PcapPlugin {
       Array.prototype.push.apply(finalConfig["af-packet"], afpacketConfigs);
     if (finalConfig && finalConfig["pfring"] && _.isArray(finalConfig["pfring"]))
       Array.prototype.push.apply(finalConfig["pfring"], pfringConfigs);
-    const ruleFiles = await suricataControl.getCustomizedRuleFiles();
+    const ruleFiles = await suricataControl.getRuleFiles();
     if (!finalConfig["rule-files"])
       finalConfig["rule-files"] = [];
     Array.prototype.push.apply(finalConfig["rule-files"], ruleFiles);
@@ -106,7 +133,7 @@ class PcapSuricataPlugin extends PcapPlugin {
   }
 
   async isSupported() {
-    return fs.accessAsync(`/usr/bin/suricata`, fs.constants.F_OK).then(() => true).catch((err) => false);
+    return await fs.accessAsync(`/usr/bin/suricata`, fs.constants.F_OK).then(() => true).catch((err) => false) || await platform.isSuricataFromAssetsSupported();
   }
 
   getFeatureName() {
