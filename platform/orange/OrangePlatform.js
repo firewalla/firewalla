@@ -505,6 +505,10 @@ class OrangePlatform extends Platform {
   hasIntegratedFWAPC() {
     return true;
   }
+
+  isPDOSupported() {
+    return true;
+  }
 }
 
 module.exports = OrangePlatform;
