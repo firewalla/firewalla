@@ -501,6 +501,10 @@ class Platform {
   hasIntegratedFWAPC() {
     return false;
   }
+
+  isPDOSupported() {
+    return false;
+  }
 }
 
 module.exports = Platform;

@@ -1171,6 +1171,7 @@ module.exports = class HostManager extends Monitorable {
       this.natDataForInit(json),
       this.getCloudURL(json),
       this.networkConfig(json, true),
+      this.powerModeForInit(json),
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.getCpuUsage(json),
@@ -1437,6 +1438,18 @@ module.exports = class HostManager extends Monitorable {
     json.networkConfig = config;
   }
 
+  async powerModeForInit(json) {
+    if (platform.isPDOSupported()) {
+      const powerMode = await FireRouter.getPowerMode().catch((err) => {
+        log.error("failed to get power mode: ", err);
+        return null;
+      });
+      if (powerMode) {
+        json.powerMode = powerMode;
+      }
+    }
+  }
+
   async tagsForInit(json, timeUsageApps, includeAppTimeSlots, includeAppTimeIntervals) {
     await TagManager.refreshTags();
     const tags = await TagManager.toJson();
@@ -1604,6 +1617,7 @@ module.exports = class HostManager extends Monitorable {
       this.getDataUsagePlan(json),
       this.monthlyDataUsageForInit(json),
       this.networkConfig(json),
+      this.powerModeForInit(json),
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.identitiesForInit(json),
