@@ -274,6 +274,13 @@ class Platform {
   }
 
   async installTLSModule(module_name) {
+    if (!module_name) return;
+    if (module_name == "xt_tls" && !this.isTLSBlockSupport()) {
+      return;
+    }
+    if (module_name == "xt_udp_tls" && !this.isUdpTLSBlockSupport()) {
+      return;
+    }
     const installed = await this.isTLSModuleInstalled(module_name);
     if (installed) return;
     const codename = await exec(`lsb_release -cs`).then((result) => result.stdout.trim()).catch((err) => {
@@ -321,6 +328,9 @@ class Platform {
   }
 
   isTLSBlockSupport() {
+    return false;
+  }
+  isUdpTLSBlockSupport() {
     return false;
   }
 

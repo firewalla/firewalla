@@ -15,6 +15,7 @@ MANAGED_BY_FIREROUTER=no
 REDIS_MAXMEMORY=300mb
 RAMFS_ROOT_PARTITION=no
 XT_TLS_SUPPORTED=no
+XT_UDP_TLS_SUPPORTED=no
 MAX_OLD_SPACE_SIZE=256
 HAVE_FWAPC=no
 HAVE_FWDAP=no
@@ -224,6 +225,14 @@ function installTLSModule() {
   uid=$(id -u pi)
   gid=$(id -g pi)
   module_name=$1
+  if [[ ${module_name} = "xt_tls" && ${XT_TLS_SUPPORTED} != "yes" ]]; then
+    # xt_tls is not supported on this platform ingore
+    return 0
+  fi
+  if [[ ${module_name} = "xt_udp_tls" && ${XT_UDP_TLS_SUPPORTED} != "yes" ]]; then
+    # xt_udp_tls is not supported on this platform ingore
+    return 0
+  fi
   if ! lsmod | grep -wq "${module_name}"; then
 
     ko_path=$(get_tls_ko_path ${module_name})

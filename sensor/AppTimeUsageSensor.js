@@ -288,6 +288,14 @@ class AppTimeUsageSensor extends Sensor {
     const host = flow.host || flow.intel && flow.intel.host;
     const ip = flow.ip || (flow.intel && flow.intel.ip);
     const result = [];
+    let internet_options = {
+      app: "internet",
+      occupyMins: 1,
+      lingerMins: 10,
+      minsThreshold: 1,
+      noStray: true
+    };
+
     if ((!this._domainTrie && !this._cidr4Trie && !this._cidr6Trie) || (!host && !ip))
       return result;
     // check domain trie
@@ -302,6 +310,13 @@ class AppTimeUsageSensor extends Sensor {
           if ((!value.bytesThreshold || flow.ob + flow.rb >= value.bytesThreshold)
             && (!value.ulDlRatioThreshold || flow.ob <= value.ulDlRatioThreshold * flow.rb)) {
             result.push(value);
+            // keep internet options same as the matched app
+            Object.assign(internet_options, {
+              occupyMins: value.occupyMins,
+              lingerMins: value.lingerMins,
+              minsThreshold: value.minsThreshold,
+              noStray: value.noStray
+            });
             break;
           }
         }
@@ -335,7 +350,7 @@ class AppTimeUsageSensor extends Sensor {
     let flowNoiseTags = nds ? nds.find(host) : null;
     if ((flow.ob + flow.rb >= bytesThreshold && flow.ob <= ulDlRatioThreshold * flow.rb && _.isEmpty(flowNoiseTags)) || !_.isEmpty(result)) {
       log.debug("match internet activity on flow", flow, `bytesThresold: ${bytesThreshold}`);
-      result.push({ app: "internet", occupyMins: 1, lingerMins: 10, minsThreshold: 1, noStray: true }); // set noStray to true to suppress single matched flow from being counted, e.g., single large flow when device is sleeping
+      result.push(internet_options);
     }
     return result;
   }
