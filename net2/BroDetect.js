@@ -725,10 +725,10 @@ class BroDetect {
     const resp_pkts = obj.resp_pkts;
     const resp_port = obj["id.resp_p"];
     // missed bytes that are randomly skipped on ssl traffic may lead to inaccurate ip tcp ratio
-    if (resp_port == 443)
-      return true;
+    // check random-pick-ssl in local.bro, HTTPS drops rate is 50%
+    const multipler = resp_port == 443 ? 2 : 1;
 
-    if (missed_bytes / (resp_bytes + orig_bytes) > threshold.missedBytesRatio) {
+    if (missed_bytes / (resp_bytes + orig_bytes) > threshold.missedBytesRatio * multipler) {
         log.debug("Conn:Drop:MissedBytes:RatioTooLarge", obj.conn_state, obj);
         return false;
     }
@@ -736,7 +736,7 @@ class BroDetect {
     if (orig_ip_bytes && orig_bytes &&
       (orig_ip_bytes > 1000 || orig_bytes > 1000) &&
       orig_pkts > 0 && (orig_ip_bytes / orig_pkts < 1400) && // if multiple packets are assembled into one packet, orig(resp)_ip_bytes may be much less than orig(resp)_bytes
-      (orig_ip_bytes / orig_bytes) < iptcpRatio) {
+      (orig_ip_bytes / orig_bytes) < iptcpRatio / multipler) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Orig", obj.conn_state, obj);
       return false;
     }
@@ -744,7 +744,7 @@ class BroDetect {
     if (resp_ip_bytes && resp_bytes &&
       (resp_ip_bytes > 1000 || resp_bytes > 1000) &&
       resp_pkts > 0 && (resp_ip_bytes / resp_pkts < 1400) &&
-      (resp_ip_bytes / resp_bytes) < iptcpRatio) {
+      (resp_ip_bytes / resp_bytes) < iptcpRatio / multipler) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Resp", obj.conn_state, obj);
       return false;
     }
@@ -1315,7 +1315,7 @@ class BroDetect {
       // blocked connections don't leave a trace in conntrack
       if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0) && !localFlow) {
         if (!outIntfId) {
-          log.debug('Dropping blocked UDP', tmpspec)
+          log.debug('Dropping blocked UDP', JSON.stringify(tmpspec))
           return
         }
       }
