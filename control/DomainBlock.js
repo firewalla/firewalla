@@ -114,8 +114,8 @@ class DomainBlock {
     domain = domain && domain.toLowerCase();
     log.debug(`Implementing Block on ${domain}`);
 
+    domainUpdater.registerUpdate(domain, options);
     if (!options.noIpsetUpdate) {
-      domainUpdater.registerUpdate(domain, options);
       // do not execute full update on ipset if ondemand is set
       if (!options.ondemand) {
         await this.syncDomainIPMapping(domain, options)
