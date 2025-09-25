@@ -1717,10 +1717,10 @@ module.exports = class HostManager extends Monitorable {
       monitorable = IdentityManager.getIdentityByGUID(target)
       return monitorable
     } else {
-      monitorable = IdentityManager.getIdentityByIP(target)
+      monitorable = this.getHostAsync(target, noEnvCreation)
       if (monitorable) return monitorable
 
-      return this.getHostAsync(target, noEnvCreation)
+      return IdentityManager.getIdentityByIP(target)
     }
   }
 
