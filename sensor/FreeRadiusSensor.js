@@ -269,7 +269,7 @@ class FreeRadiusSensor extends Sensor {
     this._options = await this.loadOptionsAsync();
     log.debug("freeradius policy", freeradius.mask(JSON.stringify(this._policy)));
     log.debug("freeradius options", freeradius.mask(JSON.stringify(this._options)));
-    await freeradius.prepare(); // prepare in background
+    await freeradius.prepare(this._options); // prepare in background
     // check if need to start server
     if (this.policyReady() && await freeradius.ready() && !await freeradius.isListening()) {
       await freeradius.startServer();
