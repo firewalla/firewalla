@@ -321,7 +321,7 @@ async function generateNetworkInfo() {
 
     if (intf.config.vid) {
       redisIntf.vid = intf.config.vid
-    } else if (intfName.startsWith("br") && Array.isArray(intf.config.intf)) {
+    } else if (intfName.startsWith("br") && Array.isArray(intf.config.intf) && !_.isEmpty(intf.config.intf)) {
       const vid = intfNameMap[intf.config.intf[0]].config.vid
       if (vid) redisIntf.vid = vid
     }
