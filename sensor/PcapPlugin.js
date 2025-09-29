@@ -129,7 +129,7 @@ class PcapPlugin extends Sensor {
         if (intf && intf.config && intf.config.assetsController) // bypass assets controller wireguard interface
           continue;
         const isBond = intfName && intfName.startsWith("bond") && !intfName.includes(".");
-        const subIntfs = !isBond && intf.config && intf.config.intf;
+        const subIntfs = !isBond && (_.get(intf, "state.subIntfs") || _.get(intf, "config.intf"));
         if (!subIntfs) {
           monitoringIntfOptions[intfName] = parentIntfOptions[intfName] = { pcapBufsize: this.getPcapBufsize(intfName) };
         } else {
