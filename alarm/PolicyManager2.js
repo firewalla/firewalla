@@ -1544,7 +1544,7 @@ class PolicyManager2 {
             await dnsmasq.addIpsetUpdateEntry([target], [remoteSet4, remoteSet6], pid);
             dnsmasq.scheduleRestartDNSService();
           } else { //dnsmasq_only
-              if (action == "block" || action == "disturb") {
+              if (isBlockOrdisturb) {
                 connSet4 = Block.getConnSet(pid);
                 connSet6 = Block.getConnSet6(pid);
                 await ipset.create(connSet4, "hash:ip,port,ip", false, {timeout: 300}).catch((err) => {
@@ -2133,7 +2133,7 @@ class PolicyManager2 {
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid)
           });
-          if ((action == "block" || action == "disturb") && policy.dnsmasq_only) {
+          if (isBlockOrdisturb && policy.dnsmasq_only) {
             connSet4 = Block.getConnSet(pid);
             connSet6 = Block.getConnSet6(pid);
           }
