@@ -584,7 +584,6 @@ cat << EOF
 -I FW_ACCEPT_DEFAULT ! -p icmp -m conntrack --ctstate NEW --ctdir ORIGINAL -m connbytes --connbytes 1:1 --connbytes-dir original --connbytes-mode packets -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m hashlimit --hashlimit-upto 8/second --hashlimit-burst 10  --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_conn_htable -j LOG --log-prefix "[FW_ADT]A=C D=O "
 -I FW_ACCEPT_DEFAULT ! -p icmp -m conntrack --ctstate NEW --ctdir ORIGINAL -m connbytes --connbytes 1:1 --connbytes-dir original --connbytes-mode packets -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m hashlimit --hashlimit-upto 8/second --hashlimit-burst 10 --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_conn_htable -j LOG --log-prefix "[FW_ADT]A=C D=I "
 
-
 EOF
 } > "$iptables_file"
 

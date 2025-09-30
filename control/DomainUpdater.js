@@ -139,7 +139,7 @@ class DomainUpdater {
       return;
     const domain = flow.host || flow.intel && flow.intel.host;
     if (!domain) {
-      return; // skip if device uptime is more than 5 minutes or host info is not available
+      return; // skip if host info is not available
     }
 
     const connection = {

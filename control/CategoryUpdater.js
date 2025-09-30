@@ -276,7 +276,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     if (!category || !devOpts) return false;
     const { tags, intfs, scope, guids } = devOpts; // keep devOpts the same structure as updateDevCategoryMapping
 
-    log.info(`Check if device is blocked by category ${category}`, devOpts);
+    log.debug(`Check if device is blocked by category ${category}`, devOpts);
 
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids)) {
       if (!_.isEmpty(tags)) {

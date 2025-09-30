@@ -1681,7 +1681,6 @@ class PolicyManager2 {
           categoryUpdater.updateDevCategoryMapping(target, devOpts, isBlockOrdisturb);
           if (policy.useBf) {
             await categoryUpdater.activateCategory(categoryUpdater.getBfCategoryName(target));
-            categoryUpdater.updateDevCategoryMapping(categoryUpdater.getBfCategoryName(target), devOpts, isBlockOrdisturb);
             categoryUpdater.addUseBfCategory(target);
           }
 
@@ -2207,9 +2206,6 @@ class PolicyManager2 {
         
         for (const target of targets) {
           categoryUpdater.updateDevCategoryMapping(target, devOpts, isBlockOrdisturb, false);
-          if (policy.useBf) {
-            categoryUpdater.updateDevCategoryMapping(categoryUpdater.getBfCategoryName(target), devOpts, isBlockOrdisturb, false);
-          }
         }
 
         if (["allow", "block", "route"].includes(action)) {
