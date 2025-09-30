@@ -163,6 +163,30 @@ function getTLSHostSet(tag) {
   return `c_bd_${tag}_tls_hostset`
 }
 
+function getConnSet(tag, ip6 = false) {
+  if (!ip6)
+    return `c_bc_${tag}_set`
+  else
+    return `c_bc_${tag}_set6`
+}
+
+function getConnSet6(tag) {
+  return `c_bc_${tag}_set6`
+}
+
+function getPredefinedConnSet(security, direction, ip6=false) {
+  let dirc = ""
+  if (direction === "inbound") dirc = "ib_"
+  else if (direction === "outbound") dirc = "ob_"
+  
+  const connSet = (security ? 'sec_' : '') + 'block_' + dirc + 'conn_set' + (ip6 ? '6' : '');
+  return connSet;
+}
+
+function getPredefinedConnSet6(security, direction) {
+  return getPredefinedConnSet(security, direction, true);
+}
+
 function getDstSet6(tag) {
   return `c_bd_${tag}_set6`
 }
@@ -219,7 +243,10 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128, n
     const tempStaticDomainPortIpset = categoryUpdater.getTempDomainPortIPSetName(category, true);
     const staticDomainPortIpset6 = categoryUpdater.getDomainPortIPSetNameForIPV6(category, true);
     const tempStaticDomainPortIpset6 = categoryUpdater.getTempDomainPortIPSetNameForIPV6(category, true);
-  
+
+    const connIpset = categoryUpdater.getConnectionIPSetName(category);
+    const connIpset6 = categoryUpdater.getConnectionIPSetNameForIPV6(category);
+
     const aggrIpset = categoryUpdater.getAggrIPSetName(category);
     const aggrIpset6 = categoryUpdater.getAggrIPSetNameForIPV6(category);
     const staticAggrIpset = categoryUpdater.getAggrIPSetName(category, true);
@@ -247,7 +274,10 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128, n
     const cmdCreateStaticDomainPortCategorySet6 = `sudo ipset create -! ${staticDomainPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
     const cmdCreateTempStaticDomainPortCategorySet = `sudo ipset create -! ${tempStaticDomainPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
     const cmdCreateTempStaticDomainPortCategorySet6 = `sudo ipset create -! ${tempStaticDomainPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-  
+
+    const cmdCreateConnectionSet = `sudo ipset create -! ${connIpset} hash:ip,port,ip family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator} timeout 300`
+    const cmdCreateConnectionSet6 = `sudo ipset create -! ${connIpset6} hash:ip,port,ip family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator} timeout 300`
+
     const cmdCreateStaticAggrCategorySet = `sudo ipset create -! ${staticAggrIpset} list:set`
     const cmdCreateStaticAggrCategorySet6 = `sudo ipset create -! ${staticAggrIpset6} list:set`
   
@@ -287,7 +317,10 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128, n
     await exec(cmdCreateStaticDomainPortCategorySet6);
     await exec(cmdCreateTempStaticDomainPortCategorySet);
     await exec(cmdCreateTempStaticDomainPortCategorySet6);
-  
+
+    await exec(cmdCreateConnectionSet);
+    await exec(cmdCreateConnectionSet6);
+
     await exec(cmdCreateAggrCategorySet);
     await exec(cmdCreateAggrCategorySet6); 
   
@@ -391,6 +424,58 @@ function batchBlockNetPort(elements, portObj, ipset, options = {}) {
           cmds.push(`${op} ${v6Set} ${ipAddr},${CategoryEntry.toPortStr(portObj)} comment ${options.comment}`);
         } else {
           cmds.push(`${op} ${v6Set} ${ipAddr},${CategoryEntry.toPortStr(portObj)}`);
+        }
+      }
+    }
+  }
+  log.debug(`Batch setup IP set ${op}`, cmds);
+  return Ipset.batchOp(cmds);
+}
+
+// no need to remove from ipset, record will be cleared when timeout
+function batchBlockConnection(elements, ipset, options = {}) {
+  log.debug("Batch block connection of", ipset);
+  if (!_.isArray(elements) || elements.length === 0)
+    return;
+  const v4Set = ipset;
+  const v6Set = ipset + '6';
+  const gateway6 = sysManager.myDefaultGateway6();
+  const gateway = sysManager.myDefaultGateway();
+  const cmds = [];
+  const op = 'add';
+  for (const element of elements) {
+    let {localAddr, localPorts, remoteAddr, protocol} = element;
+    if (!localAddr || !localPorts || !remoteAddr || !protocol) {
+      continue;
+    }
+
+    if (!_.isArray(localPorts)) {
+      localPorts = [localPorts];
+    }
+
+    //Prevent gateway IP from being added into blocking IP set dynamically
+    if (gateway == remoteAddr || gateway6 == remoteAddr) {
+      continue;
+    }
+
+    if (new Address4(remoteAddr).isValid() && new Address4(localAddr).isValid()) {
+      for (const localPort of localPorts) {
+        if (options.comment) {
+          cmds.push(`${op} ${v4Set} ${localAddr},${protocol}:${localPort},${remoteAddr} comment ${options.comment}`);
+        } else {
+          cmds.push(`${op} ${v4Set} ${localAddr},${protocol}:${localPort},${remoteAddr}`);
+        }
+      }
+    } else {
+      const local6 = new Address6(localAddr);
+      const remote6 = new Address6(remoteAddr);
+      if (local6.isValid() && local6.correctForm() != '::' && remote6.isValid() && remote6.correctForm() != '::') {
+        for (const localPort of localPorts) {
+          if (options.comment) {
+            cmds.push(`${op} ${v6Set} ${localAddr},${protocol}:${localPort},${remoteAddr} comment ${options.comment}`);
+          } else {
+            cmds.push(`${op} ${v6Set} ${localAddr},${protocol}:${localPort},${remoteAddr}`);
+          }
         }
       }
     }
@@ -1551,7 +1636,8 @@ async function prepareOutboundOptions(options) {
   const { pid, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto,
     direction, createOrDestroy = "create", ctstate = null, 
     transferredBytes, transferredPackets, avgPacketBytes,
-    tlsHostSet, tlsHost, upnp, owanUUID, origDst, origDport, dscpClass
+    tlsHostSet, tlsHost, upnp, owanUUID, origDst, origDport, dscpClass,
+    connSet4 = null, connSet6 = null
   } = options;
 
   const remote = {
@@ -1560,6 +1646,11 @@ async function prepareOutboundOptions(options) {
     specs: new Array(remoteTupleCount).fill("dst"),
     positive: remotePositive,
     portSet: remotePortSet,
+  }
+  const conn = {
+    specs: ["src", "src", "dst"],
+    set: connSet4,
+    set6: connSet6
   }
 
   if (owanUUID) {
@@ -1578,6 +1669,7 @@ async function prepareOutboundOptions(options) {
     direction,
     action: createOrDestroy === 'create' ? '-A' : '-D',
     dst: remote,
+    conn: conn,
     proto, af: 4, comment: `rule_${pid}`, ctstate,
     transferredBytes, transferredPackets, avgPacketBytes,
     tlsHostSet, tlsHost,
@@ -1590,7 +1682,7 @@ function flipSrcDst(options) {
   const tmp = result.src
   result.src = result.dst
   result.dst = tmp;
-  for (const group of ['src', 'dst']) {
+  for (const group of ['src', 'dst', 'conn']) {
     const groupSpecs = result[group].specs;
     for (const index in groupSpecs) {
       if (groupSpecs[index] == 'src')
@@ -1647,11 +1739,13 @@ async function generateRules(ruleOptions) {
 
 async function manipulateFiveTupleRule(options) {
   const { action, src, dst, proto, ctDir, target, chain, table, limit, af = 4, comment, ctstate,
-    transferredBytes, transferredPackets, avgPacketBytes, transferDirection, tlsHostSet, tlsHost, origDst, origDport, dscpClass
+    transferredBytes, transferredPackets, avgPacketBytes, transferDirection, tlsHostSet, tlsHost, origDst, origDport, dscpClass,
+    conn
   } = options;
   // sport and dport can be range string, e.g., 10000-20000
   const rule = new Rule(table).fam(af).chn(chain);
   const srcSet = af == 4 ? src.set : src.set6;
+  const connSet = af == 4 ? conn.set : conn.set6;
   if (srcSet)
     rule.mdl("set", `${src.positive ? "" : "!"} --match-set ${srcSet} ${src.specs.join(",")}`);
   if (src.portSet)
@@ -1659,6 +1753,8 @@ async function manipulateFiveTupleRule(options) {
   const dstSet = af == 4 ? dst.set : dst.set6;
   if (dstSet)
     rule.mdl("set", `${dst.positive ? "" : "!"} --match-set ${dstSet} ${dst.specs.join(",")}`);
+  if (connSet)
+    rule.mdl("set", `--match-set ${connSet} ${conn.specs.join(",")}`);
   if (dst.portSet)
     rule.mdl("set", `--match-set ${dst.portSet} dst`);
   if (src.ifSet)
@@ -1716,6 +1812,7 @@ module.exports = {
   batchBlock,
   batchUnblock,
   batchBlockNetPort,
+  batchBlockConnection,
   block,
   unblock,
   setupCategoryEnv,
@@ -1725,6 +1822,10 @@ module.exports = {
   getTLSHostSet,
   getDstSet,
   getDstSet6,
+  getConnSet,
+  getConnSet6,
+  getPredefinedConnSet,
+  getPredefinedConnSet6,
   getMacSet,
   existsBlockingEnv,
   setupTagsRules,
