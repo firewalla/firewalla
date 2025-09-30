@@ -70,7 +70,7 @@ class FreeRadiusSensor extends Sensor {
       });
     });
 
-    extensionManager.onCmd("uploadFreeradius", async (msg, data) => {
+    extensionManager.onCmd("uploadFreeRadius", async (msg, data) => {
       if (!data.path || !data.content) {
         return {
           success: false,
@@ -163,7 +163,7 @@ class FreeRadiusSensor extends Sensor {
   async setDeviceTag(mac, username) {
     const userTag = tagManager.getTagByRadiusUser(username);
     if (!userTag) {
-      log.error(`Unexpected error, user tag of radius user ${username} not found`);
+      log.info(`Unexpected error, user tag of radius user ${username} not found`);
       return;
     }
 
@@ -173,7 +173,7 @@ class FreeRadiusSensor extends Sensor {
     }
 
     if (!tagId) {
-      log.error(`Unexpected error, tag id of ${userTag.getTagType()} tag ${userTag.getUniqueId()} not found`);
+      log.info(`Unexpected error, tag id of ${userTag.getTagType()} tag ${userTag.getUniqueId()} not found`);
       return;
     }
 
