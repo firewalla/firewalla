@@ -194,27 +194,14 @@ class FWAPC {
 
   async getAllSTAStatus(live = false) {
     if (live || Date.now() / 1000 - staStatusTs > 15) {
-      let status = {};
-      if (platform.hasIntegratedFWAPC()) {
-        const fwapc_integrated = require('./fwapc_integrated.js');
-        status = await fwapc_integrated.getAllSTAStatus(live);
-      }
-      Object.assign(status, await localGet("/status/station", 1).then(resp => resp.info));
-      staStatus = status;
+      staStatus = await localGet("/status/station", 1).then(resp => resp.info);
       staStatusTs = Date.now() / 1000;
     }
     return Object.assign({}, staStatus);
   }
 
   async getSTAStatus(mac) {
-    let status = null;
-    if (platform.hasIntegratedFWAPC()) {
-      const fwapc_integrated = require('./fwapc_integrated.js');
-      status = await fwapc_integrated.getSTAStatus(mac);
-    }
-    if (!status)
-      status = await localGet(`/status/station/${mac}`, 1).then(resp => resp && resp.info);
-    return status;
+    return localGet(`/status/station/${mac}`, 1).then(resp => resp && resp.info);
   }
 
   async getAssetsStatus() {
@@ -271,17 +258,6 @@ class FWAPC {
       let r =  {code: resp.statusCode, body: resp.body};
       if (resp.statusCode === 500) {
         r.msg = resp.body;
-      }
-      if (platform.hasIntegratedFWAPC()) {
-        const fwapc_integrated = require('./fwapc_integrated.js');
-        const resp_integrated = await fwapc_integrated.apiCall(method, path, body);
-        if (resp_integrated.code === 200) {
-          r.code = 200;
-          delete r.msg;
-          if (!_.isPlainObject(r.body))
-            r.body = {};
-          _.merge(r.body, resp_integrated.body);
-        }
       }
       return r;
     } catch (e) {
