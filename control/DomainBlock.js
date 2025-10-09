@@ -115,7 +115,7 @@ class DomainBlock {
     log.debug(`Implementing Block on ${domain}`);
 
     domainUpdater.registerUpdate(domain, options);
-    if (!options.noIpsetUpdate) {
+    if (!options.domainOnly) {
       // do not execute full update on ipset if ondemand is set
       if (!options.ondemand) {
         await this.syncDomainIPMapping(domain, options)
@@ -142,7 +142,7 @@ class DomainBlock {
   }
 
   async applyBlock(domain, options) {
-    if (!options.noIpsetUpdate) {
+    if (!options.domainOnly) {
       const blockSet = options.blockSet || "block_domain_set";
       const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
       if (addresses) {
@@ -164,7 +164,7 @@ class DomainBlock {
   }
 
   async unapplyBlock(domain, options) {
-    if (!options.noIpsetUpdate) {
+    if (!options.domainOnly) {
       const blockSet = options.blockSet || "block_domain_set"
 
       const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
