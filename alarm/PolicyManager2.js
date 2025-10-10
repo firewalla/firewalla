@@ -94,7 +94,6 @@ let hostManager;
 
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 const { map } = require('async');
-const { is } = require('bluebird');
 
 const ruleSetTypeMap = {
   'ip': 'hash:ip',
