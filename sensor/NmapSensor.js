@@ -32,13 +32,14 @@ const Message = require('../net2/Message.js');
 
 const PlatformLoader = require('../platform/PlatformLoader.js');
 const platform = PlatformLoader.getPlatform();
-
+const OUI_ASSET_PATH = '/home/pi/.firewalla/run/assets/nmap-mac-prefixes'
 const { Address4 } = require('ip-address')
 
 class NmapSensor extends Sensor {
   constructor(config) {
     super(config);
     this.interfaces = null;
+    this.rounds = 0;
     this.enabled = true; // very basic feature, always enabled
 
     let p = require('../net2/MessageBus.js');
@@ -181,12 +182,28 @@ class NmapSensor extends Sensor {
     }, 5000);
   }
 
+  static async getOUI(mac) {
+    try {
+      const rawMAC = mac.toUpperCase().replace(/:/g, '')
+      const result = await exec(`awk '"${rawMAC}" ~ "^" $1 {$1=""; print $0}' ${OUI_ASSET_PATH}`)
+      const lines = result.stdout.trim().split('\n').filter(Boolean)
+      if (lines.length)
+        // use last (longest) match
+        return lines[lines.length - 1].trim()
+      else
+        return null
+    } catch(err) {
+      log.error('Error looking up OUI data', err)
+      return null
+    }
+  }
+
   run() {
     // patch script for error "Failed to scan: Error: next_template: parse error (cpe delimiter not '/') on line 11594 of nmap-service-probes"
     exec(String.raw`sudo sed -i 's/cpe:|h:siemens:315-2pn\/dp|/cpe:\/h:siemens:315-2pn%2Fdp\//' /usr/share/nmap/nmap-service-probes`).catch(()=>{})
 
     // uses the latest OUI DB if possible
-    exec(String.raw`sudo cp -f /home/pi/.firewalla/run/assets/nmap-mac-prefixes /usr/share/nmap/nmap-mac-prefixes`).catch(()=>{})
+    exec(`sudo cp -f ${OUI_ASSET_PATH} /usr/share/nmap/nmap-mac-prefixes`).catch(()=>{})
 
     this.scheduleReload();
     setInterval(() => {
@@ -222,14 +239,15 @@ class NmapSensor extends Sensor {
         range = networkTool.capSubnet(range)
       } catch (e) {
         log.error('Error reducing scan range:', range, fastMode, e);
-        return // Skipping this scan
+        continue // Skipping this scan
       }
 
       log.info(`Scanning network ${range} (fastMode: ${fastMode}) ...`);
 
 
+      // use ARP broadcast scan and ICMP/TCP scan in turn, this can reduce broadcast packets compared to using ARP broadcast scan alone
       const cmd = fastMode
-        ? `sudo timeout 1200s nmap -sn -n -PO1,6 ${intf.type === "wan" ? '--send-ip': ''} --host-timeout 30s  ${range} -oX - | ${xml2jsonBinary}` // protocol id 1, 6 corresponds to ICMP and TCP
+        ? `sudo timeout 1200s nmap -sn -n -PO1,6 ${this.rounds % 2 == 0 ? '--send-ip': ''} --host-timeout 30s  ${range} -oX - | ${xml2jsonBinary}` // protocol id 1, 6 corresponds to ICMP and TCP
         : `sudo timeout 1200s nmap -sU -n --host-timeout 200s --script nbstat.nse -p 137 ${range} -oX - | ${xml2jsonBinary}`;
 
       try {
@@ -238,7 +256,7 @@ class NmapSensor extends Sensor {
 
         if (hosts.length === 0) {
           log.info("No device is found for network", range);
-          return;
+          continue;
         }
 
         for (const host of hosts) {
@@ -249,6 +267,8 @@ class NmapSensor extends Sensor {
         await this._processHost({ipv4Addr: intf.ip_address, mac: (intf.mac_address && intf.mac_address).toUpperCase()}, intf);
       }
     }
+
+    this.rounds++;
 
     setTimeout(() => {
       log.info("publish Scan:Done after scan is finished")

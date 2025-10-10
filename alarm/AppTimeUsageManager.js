@@ -35,6 +35,7 @@ const LOCK_RW = "lock_rw";
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const POLICY_STATE_DEFAULT_MODE = 1;
 const POLICY_STATE_DOMAIN_ONLY = 2;
+const DISTURB_INTERVAL = 30;
 
 class AppTimeUsageManager {
   constructor() {
@@ -43,6 +44,7 @@ class AppTimeUsageManager {
     this.registeredPolicies = {};
     this.enforcedPolicies = {};
     this.policyTimeoutTasks = {};
+    this.acitveDisturbPolicies = {};
 
     this._changedAppUIDs = {};
     sem.on(Message.MSG_APP_TIME_USAGE_BUCKET_INCR, (event) => {
@@ -72,69 +74,125 @@ class AppTimeUsageManager {
     });
 
     setInterval(async () => {
-      await lock.acquire(LOCK_RW, async () => {
-        for (const app of Object.keys(this._changedAppUIDs)) {
-          if (!this.watchList[app])
+      await this.refreshAppPolicyQuotaUsage();
+    }, 60 * 1000);
+
+    setInterval(async () => {
+      await this.refreshAppDistubTimeUsage();
+    }, DISTURB_INTERVAL * 1000);
+  }
+
+  async refreshAppPolicyQuotaUsage() {
+    await lock.acquire(LOCK_RW, async () => {
+      for (const app of Object.keys(this._changedAppUIDs)) {
+        if (!this.watchList[app])
+          continue;
+        for (const uid of Object.keys(this._changedAppUIDs[app])) {
+          if (!this.watchList[app][uid])
             continue;
-          for (const uid of Object.keys(this._changedAppUIDs[app])) {
-            if (!this.watchList[app][uid])
-              continue;
-            for (const pid of Object.keys(this.watchList[app][uid])) {
-              const {timeWindows, quota, uniqueMinute} = this.watchList[app][uid][pid];
-              const usage = await this.getTimeUsage(uid, app, timeWindows, uniqueMinute);
-              this.watchList[app][uid][pid].usage = usage;
-              try {
-                await this.updateAppTimeUsedInPolicy(pid, usage);
-                if (usage >= quota) {
-                  switch (this.enforcedPolicies[pid][uid]) {
-                    case POLICY_STATE_DEFAULT_MODE: {
-                      if (this.policyTimeoutTasks[pid][uid]) {
-                        log.info(`${uid} is still generating ${app} activity after temp default mode rule ${pid} is applied, extend default mode rule duration`);
-                        this.policyTimeoutTasks[pid][uid].refresh();
-                      }
-                      break;
+          for (const pid of Object.keys(this.watchList[app][uid])) {
+            const {timeWindows, quota, keys, uniqueMinute} = this.watchList[app][uid][pid];
+            const usage = await this.getTimeUsage(uid, keys, timeWindows, uniqueMinute);
+            this.watchList[app][uid][pid].usage = usage;
+            try {
+              await this.updateAppTimeUsedInPolicy(pid, usage);
+              if (usage >= quota) {
+                switch (this.enforcedPolicies[pid][uid]) {
+                  case POLICY_STATE_DEFAULT_MODE: {
+                    if (this.policyTimeoutTasks[pid][uid]) {
+                      log.info(`${uid} is still generating ${app} activity after temp default mode rule ${pid} is applied, extend default mode rule duration`);
+                      this.policyTimeoutTasks[pid][uid].refresh();
                     }
-                    case POLICY_STATE_DOMAIN_ONLY: {
-                      log.info(`${uid} is still generating ${app} activity after domain-only mode rule ${pid} is applied, temporarily change to default mode`);
-                      await this.unenforcePolicy(this.registeredPolicies[pid], uid, true);
-                      await this.applyPolicy(pid, uid);
-                      break;
-                    }
-                    default: {
-                      log.info(`${uid} reached ${app} time usage quota, quota: ${quota}, used: ${usage}, will apply policy ${pid}`);
-                      await this.applyPolicy(pid, uid);
-                    }
+                    break;
+                  }
+                  case POLICY_STATE_DOMAIN_ONLY: {
+                    log.info(`${uid} is still generating ${app} activity after domain-only mode rule ${pid} is applied, temporarily change to default mode`);
+                    await this.applyPolicy(pid, uid, true);
+                    break;
+                  }
+                  default: {
+                    log.info(`${uid} reached ${keys} time usage quota, quota: ${quota}, used: ${usage}, will apply policy ${pid}`);
+                    await this.applyPolicy(pid, uid);
                   }
                 }
-              } catch (err) {
-                log.error(`Failed to update app time used in policy ${pid}`, err.message);
               }
+            } catch (err) {
+              log.error(`Failed to update app time used in policy ${pid}`, err.message);
             }
           }
         }
-        this._changedAppUIDs = {};
-      }).catch((err) => {
-        log.error(`Failed to refresh time usage`, err.message);
-      });
-    }, 60 * 1000);
+      }
+      this._changedAppUIDs = {};
+    }).catch((err) => {
+      log.error(`Failed to refresh time usage`, err.message);
+    });
   }
 
-  async applyPolicy(pid, uid) {
-    const policy = this.registeredPolicies[pid];
-    if (!policy) {
+  async refreshAppDistubTimeUsage() {
+    await lock.acquire(LOCK_RW, async () => {
+      for (const pid of Object.keys(this.acitveDisturbPolicies)) {
+        if (!this.registeredPolicies[pid]) {
+          log.warn(`Cannot find policy with ${pid}, just remove from acitveDisturbPolicies list`);
+          delete this.acitveDisturbPolicies[pid];
+          continue;
+        }
+
+        for (const uid of Object.keys(this.acitveDisturbPolicies[pid])) {
+          let timeElapse = Math.floor((Date.now() - this.acitveDisturbPolicies[pid][uid]) / 1000);
+          timeElapse = timeElapse < DISTURB_INTERVAL ? timeElapse : DISTURB_INTERVAL;
+          let disturbTimeUsed = Number(this.registeredPolicies[pid].disturbTimeUsed) + timeElapse;
+          try {
+            if (disturbTimeUsed >= Number(this.registeredPolicies[pid].appTimeUsage.disturbQuota)) {
+              log.info(`Disturb time limit of Policy ${pid} is reached, will change to block mode`);
+              await this.unenforcePolicy(this.registeredPolicies[pid], uid, false);
+              // update policy disturbTimeUsed here to let unenforcePolicy to clear disturb rules.
+              this.registeredPolicies[pid].disturbTimeUsed = disturbTimeUsed;
+              await this.updateDisturbTimeUsedInPolicy(pid, this.registeredPolicies[pid].disturbTimeUsed);
+              await this.applyPolicy(pid, uid);
+              delete this.acitveDisturbPolicies[pid][uid];
+            }else {
+              this.registeredPolicies[pid].disturbTimeUsed = disturbTimeUsed;
+              await this.updateDisturbTimeUsedInPolicy(pid, this.registeredPolicies[pid].disturbTimeUsed);
+            }
+          } catch (err) {
+            log.error(`Failed to update disturb time used in policy ${pid}`, err.message);
+          }
+        }
+      }
+    }).catch((err) => {
+      log.error(`Failed to refresh App disturb time usage`, err.message);
+    });
+  }
+
+  async applyPolicy(pid, uid, iptables_only = false) {
+    const p = this.registeredPolicies[pid];
+    if (!p) {
       log.error(`Policy ${pid} not found`);
       return;
     }
+    const policy = Object.assign(Object.create(Policy.prototype), p);
+    policy.iptables_only = iptables_only;
+
+    const needDisturb = policy.needPolicyDisturb();
     // a default mode policy will be applied first, and will be updated to domain only after a certain timeout
+    // if the policy is in disturb mode, it will not be updated to domain only mode
     await this.enforcePolicy(policy, uid, false);
+    if (needDisturb) {
+      this.registeredPolicies[pid].disturbTimeUsed = policy.disturbTimeUsed;
+      log.info(`The policy has been in disturb mode for ${policy.disturbTimeUsed} seconds.`);
+      await this.updateDisturbTimeUsedInPolicy(pid, policy.disturbTimeUsed);
+      this.acitveDisturbPolicies[pid] = {};
+      this.acitveDisturbPolicies[pid][uid] = Date.now();
+    }
+
     this.enforcedPolicies[pid][uid] = POLICY_STATE_DEFAULT_MODE;
-    if (policy.dnsmasq_only) {
+    if (policy.dnsmasq_only && ! needDisturb) {
       this.policyTimeoutTasks[pid][uid] = setTimeout(async () => {
         await lock.acquire(LOCK_RW, async () => {
           if (this.policyTimeoutTasks[pid][uid] && this.enforcedPolicies[pid][uid] === POLICY_STATE_DEFAULT_MODE) {
             log.info(`Will change rule ${pid} back to domain-only mode`);
+            policy.iptables_only = true;
             await this.unenforcePolicy(policy, uid, false);
-            await this.enforcePolicy(policy, uid, true);
             this.enforcedPolicies[pid][uid] = POLICY_STATE_DOMAIN_ONLY;
             delete this.policyTimeoutTasks[pid][uid];
           }
@@ -172,11 +230,11 @@ class AppTimeUsageManager {
     return timeWindows;
   }
 
-  async getTimeUsage(uid, app, timeWindows, uniqueMinute) {
+  async getTimeUsage(uid, apps, timeWindows, uniqueMinute) {
     let result = 0;
     for (const timeWindow of timeWindows) {
       const {begin, end} = timeWindow;
-      result += await TimeUsageTool.getFilledBucketsCount(uid, app, begin / 1000, end / 1000, uniqueMinute);
+      result += await TimeUsageTool.getFilledBucketsCount(uid, apps, begin / 1000, end / 1000, uniqueMinute);
     }
     return result;
   }
@@ -203,10 +261,12 @@ class AppTimeUsageManager {
   async refreshPolicy(policy) {
     const pid = String(policy.pid);
     log.info(`Refreshing time usage on policy ${pid} ...`);
-    const {app, category, period, intervals, quota, uniqueMinute = true} = policy.appTimeUsage;
-    const key = app || category;
-    if (!this.watchList.hasOwnProperty(key))
-      this.watchList[key] = {};
+    const {app, apps, category, period, intervals, quota, uniqueMinute = true} = policy.appTimeUsage;
+    const keys = _.isArray(apps) ? apps : [app || category];
+    for (const key of keys) {
+      if (!this.watchList.hasOwnProperty(key))
+        this.watchList[key] = {};
+    }
     const uids = this.getUIDs(policy);
 
     for (const uid of Object.keys(this.enforcedPolicies[pid])) {
@@ -219,14 +279,21 @@ class AppTimeUsageManager {
 
     const timeWindows = this.calculateTimeWindows(period, intervals);
     for (const uid of uids) {
-      if (!this.watchList[key].hasOwnProperty(uid))
-        this.watchList[key][uid] = {};
-      const usage = await this.getTimeUsage(uid, key, timeWindows, uniqueMinute);
-      this.watchList[key][uid][pid] = {quota, usage, timeWindows, uniqueMinute};
+      const usage = await this.getTimeUsage(uid, keys, timeWindows, uniqueMinute);
+      for (const key of keys) {
+        if (!this.watchList[key].hasOwnProperty(uid))
+          this.watchList[key][uid] = {};
+        this.watchList[key][uid][pid] = {quota, usage, keys, timeWindows, uniqueMinute};
+      }
       await this.updateAppTimeUsedInPolicy(pid, usage);
       if (usage >= quota) {
-        log.info(`${uid} reached ${key} time usage quota, quota: ${quota}, used: ${usage}, will apply policy ${pid}`);
+        log.info(`${uid} reached ${keys} time usage quota, quota: ${quota}, used: ${usage}, will apply policy ${pid}`);
         await this.applyPolicy(pid, uid);
+      }else{
+        if (this.registeredPolicies[pid] && this.registeredPolicies[pid].appTimeUsage && this.registeredPolicies[pid].appTimeUsage.disturbQuota) {
+          this.registeredPolicies[pid].disturbTimeUsed = 0; 
+          await this.updateDisturbTimeUsedInPolicy(pid, this.registeredPolicies[pid].disturbTimeUsed);
+        }
       }
     }
   }
@@ -289,12 +356,17 @@ class AppTimeUsageManager {
       job.stop();
       delete this.jobs[pid];
     }
-    const { app, category } = policy.appTimeUsage;
-    const key = app || category;
+    const { app, apps, category } = policy.appTimeUsage;
+    const keys = _.isArray(apps) ? apps : [app || category];
     const uids = this.getUIDs(policy);
-    for (const uid of uids) {
-      if (this.watchList[key] && this.watchList[key][uid])
-        delete this.watchList[key][uid][pid];
+    for (const key of keys) {
+      for (const uid of uids) {
+        if (this.watchList[key] && this.watchList[key][uid])
+          delete this.watchList[key][uid][pid];
+      }
+    }
+    if (this.acitveDisturbPolicies[pid]) {
+      delete this.acitveDisturbPolicies[pid];
     }
     if (_.isObject(this.enforcedPolicies[pid])) {
       for (const uid of Object.keys(this.enforcedPolicies[pid]))
@@ -310,8 +382,9 @@ class AppTimeUsageManager {
   }
 
   async enforcePolicy(policy, uid, domainOnly = true) {
-    const p = Object.assign(Object.create(Policy.prototype), policy);
-    delete p.appTimeUsage;
+    let p = Object.assign(Object.create(Policy.prototype), policy);
+    // delete p.appTimeUsage;
+    p.appTimeUsageRegisterDone = true;
     delete p.scope;
     delete p.guids;
     delete p.tag;
@@ -325,6 +398,7 @@ class AppTimeUsageManager {
       p.guids = [uid];
     else if (uid && hostTool.isMacAddress(uid))
       p.scope = [uid];
+    p.managedBy = "AppTimeUsageManager";
 
     if (p.type === "dns" || p.type === "category")
       p.dnsmasq_only = domainOnly;
@@ -334,8 +408,9 @@ class AppTimeUsageManager {
   }
 
   async unenforcePolicy(policy, uid, domainOnly = true) {
-    const p = Object.assign(Object.create(Policy.prototype), policy);
-    delete p.appTimeUsage;
+    let p = Object.assign(Object.create(Policy.prototype), policy);
+    // delete p.appTimeUsage;
+    p.appTimeUsageRegisterDone = true;
     delete p.scope;
     delete p.guids;
     delete p.tag;
@@ -349,6 +424,12 @@ class AppTimeUsageManager {
       p.guids = [uid];
     else if (uid && hostTool.isMacAddress(uid))
       p.scope = [uid];
+
+    if(this.registeredPolicies[p.pid] && this.registeredPolicies[p.pid].disturbTimeUsed) {
+      p.disturbTimeUsed = this.registeredPolicies[p.pid].disturbTimeUsed;
+    }
+
+    p.managedBy = "AppTimeUsageManager";
 
     if (p.type === "dns" || p.type === "category")
       p.dnsmasq_only = domainOnly;
@@ -361,6 +442,12 @@ class AppTimeUsageManager {
     const PolicyManager2 = require('./PolicyManager2.js');
     const pm2 = new PolicyManager2();
     await pm2.updatePolicyAsync({pid, appTimeUsed: used});
+  }
+
+  async updateDisturbTimeUsedInPolicy(pid, used) {
+    const PolicyManager2 = require('./PolicyManager2.js');
+    const pm2 = new PolicyManager2();
+    await pm2.updatePolicyAsync({pid, disturbTimeUsed: used});
   }
 }
 

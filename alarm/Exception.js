@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla INC
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,8 +15,9 @@
 
 'use strict'
 
-let log = require('../net2/logger.js')(__filename, 'info');
-let ip = require('ip')
+const log = require('../net2/logger.js')(__filename, 'info');
+const net = require('net')
+const ip = require('ip')
 
 
 const minimatch = require('minimatch')
@@ -25,8 +26,8 @@ const _ = require('lodash')
 
 const validator = require('validator');
 
-const CategoryMatcher = require('./CategoryMatcher');
 const Constants = require('../net2/Constants.js');
+const Alarm = require('./Alarm.js');
 
 function arraysEqual(a, b) {
   if (a === b) return true;
@@ -139,43 +140,43 @@ module.exports = class {
 
   valueMatch(val, val2) {
     //special exception
-    if (val.endsWith("*")) {
-      if (minimatch(val2, val)) {
-        return true
-      }
-    }
+    if (_.isString(val)) {
 
-    if (val.startsWith("*.")) {
-      // use glob matching
-      if (!minimatch(val2, val) && // NOT glob match
-        val.slice(2) !== val2) { // NOT exact sub domain match
-        return false
-      }
-    } else {
-      let cidrParts = val.split("/", 2);
-      if (cidrParts.length == 2) {
-        let addr = cidrParts[0];
-        let mask = cidrParts[1];
-        if (ip.isV4Format(addr) && RegExp("^\\d+$").test(mask) && ip.isV4Format(val2)) {
-          // try matching cidr subnet iff value in alarm is an ipv4 address and value in exception is a cidr notation
-          if (!ip.cidrSubnet(val).contains(val2)) {
+      // glob match
+      if (val.startsWith('*') || val.endsWith("*")) {
+        if (minimatch(val2, val)) {
+          log.debug('glob matched', val, val2)
+          return true
+        } else if (val.startsWith("*.") && val.slice(2) === val2) {
+          log.debug('domain matched', val, val2)
+          return true
+        } else
+          log.debug('glob mismatch', val, val2)
+          return false
+      } else {
+        // CIDR subnet
+        let cidrParts = val.split("/", 2);
+        if (cidrParts.length == 2 && net.isIPv4(cidrParts[0]) && net.isIPv4(val2) && Number(cidrParts[1]) <= 32) {
+          if (ip.cidrSubnet(val).contains(val2)) {
+            log.debug('CIDR matched', val, val2)
+            return true;
+          } else {
+            log.debug('CIDR mismatch', val, val2)
             return false;
           }
         }
-      } else {
-        // not a cidr subnet exception
-
-        // alarm might has field in number
-        // and assume exceptions are always loaded from redis before comparing
-        if (_.isNumber(val2)) {
-          val = _.toNumber(val)
-          if (isNaN(val)) return false;
-        }
-        if (val2 !== val) return false;
       }
     }
 
-    return true;
+    // alarm might has field in number
+    // and assume exceptions are always loaded from redis before comparing
+    if (Number(val) && Number(val2)) { // not null and non zero
+      return Number(val) === Number(val2)
+    } else if ((val === 0 || val === '0') && (val2 === 0 || val2 === '0')) {
+      return true;
+    }
+
+    return val === val2
   }
 
   getCategory() {
@@ -215,29 +216,39 @@ module.exports = class {
         }
 
         var val = this[key];
+        if (val === undefined || val === null || val === "") continue
         if (!alarm[key]) return false;
         let val2 = alarm[key];
 
-        if (key === "type" && val === "ALARM_INTEL" && this.isSecurityAlarm(alarm)) {
+        if (key === "type" && val === "ALARM_INTEL" && (alarm instanceof Alarm.Alarm ? alarm.isSecurityAlarm() : this.isSecurityAlarm(alarm))) {
           matched = true;
+          log.debug('matched security alarm')
           continue;
         }
 
         if ((this["json." + key] == true || this["json." + key] == "true") && val && validator.isJSON(val)) {
           if (this.jsonComparisonMatch(val, val2)) {
             matched = true;
+            log.debug('matched json', val, val2)
             continue;
           }
         }
-        let val2Array = val2;
+        let val2JSON
         // Exception will be parsed at object creation
         // while alarm will always use string to avoid compatibility issue with clients
-        isJsonString(val2) && (val2Array = JSON.parse(val2));
+        try {
+          val2JSON = JSON.parse(val2)
+          log.debug('parsed val2 as JSON', key, val2JSON);
+        } catch(err) {
+        }
 
-        if (Object.keys(Constants.TAG_TYPE_MAP).some(type => key.startsWith(Constants.TAG_TYPE_MAP[type].alarmIdKey))) {
-          if (_.intersection(val, val2Array.map(String)).length > 0) {
-            matched = true;
-            continue;
+        if (val2JSON && Array.isArray(val2JSON)) {
+          if (Object.keys(Constants.TAG_TYPE_MAP).some(type => key.startsWith(Constants.TAG_TYPE_MAP[type].alarmIdKey))) {
+            if (_.intersection(val, val2JSON.map(String)).length > 0) {
+              log.debug('matched tag', key, val, val2);
+              matched = true;
+              continue;
+            }
           }
         }
 
@@ -246,19 +257,23 @@ module.exports = class {
           for (const valCurrent of val) {
             if (this.valueMatch(valCurrent + "", val2)) {
               matchInArray = true;
+              log.debug('matched in array', key, val, valCurrent, val2);
               break;
             }
           }
 
           if (!matchInArray) {
+            log.debug('mismatch array', key, val, val2);
             return false;
           }
         } else {
           if (!this.valueMatch(val, val2)) {
+            log.debug('mismatch value', key, val, val2);
             return false;
           }
         }
 
+        log.debug('matched value', key, val, val2);
         matched = true;
       }
 
@@ -266,16 +281,19 @@ module.exports = class {
       if (this.categoryMatcher) {
         if (this.getCategory() === alarm["p.dest.category"]) {
           // shortcut for direct category id match
+          log.debug(`Matched category ${this.getCategory()} ${alarm["p.dest.category"]}`);
           matched = true;
         } else {
           const targetDomain = alarm["p.dest.name"];
           const targetIP = alarm["p.dest.ip"];
-          log.info(`Match dest domain ${targetDomain} and ip ${targetIP} against category ${this.getCategory()}`);
           if (targetDomain && this.categoryMatcher.matchDomain(targetDomain)) {
+            log.debug(`Matched category ${this.getCategory()} with domain ${targetDomain}`);
             matched = true;
           } else if (targetIP && this.categoryMatcher.matchIP(targetIP)) {
+            log.debug(`Matched category ${this.getCategory()} with IP ${targetIP}`);
             matched = true;
           } else {
+            log.debug(`No match for category ${this.getCategory()} with domain ${targetDomain} and IP ${targetIP}`);
             return false;
           }
         }

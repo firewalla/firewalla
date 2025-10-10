@@ -24,8 +24,16 @@ if [[ -f /home/pi/.forever/fwapc.log ]]; then
   cp /home/pi/.forever/fwapc.log /home/pi/.forever/fwapc_last.log
   cat /dev/null > /home/pi/.forever/fwapc.log
 fi
+if [[ -f /home/pi/.forever/dap.log ]]; then
+  cp /home/pi/.forever/dap.log /home/pi/.forever/dap_last.log
+  cat /dev/null > /home/pi/.forever/dap.log
+fi
 
-find /home/pi/logs/*.log -maxdepth 1 -type f -mtime +7 -delete
+find /home/pi/logs/*.log -maxdepth 1 -type f -mtime +7 | while read -r file; do
+  if ! sudo lsof "$file" > /dev/null; then
+    rm "$file"
+  fi
+done
 
 cat /dev/null > /home/pi/.forever/main.log
 cat /dev/null > /home/pi/.forever/kickui.log

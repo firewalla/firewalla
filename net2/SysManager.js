@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,6 +24,7 @@ const fsp = fs.promises;
 const scheduler = require('../util/scheduler.js');
 
 const iptool = require('ip');
+const ipUtil = require('../util/IPUtil.js')
 var instance = null;
 const license = require('../util/license.js');
 const rp = require('request-promise');
@@ -116,14 +117,12 @@ class SysManager {
         });
       }, 3000);
 
-      this.ts = Date.now() / 1000;
-      log.info("Init", this.ts);
       sclient.on("message", (channel, message) => {
-        log.debug("Msg", this.ts, channel, message);
+        log.debug("Msg", channel, message);
         switch (channel) {
           case "System:Upgrade:Hard":
             this.upgradeEvent = message;
-            log.info("[pubsub] System:Upgrade:Hard", this.ts, this.upgradeEvent);
+            log.info("[pubsub] System:Upgrade:Hard", this.upgradeEvent);
             break;
           case "System:DebugChange":
             if (message === "1") {
@@ -694,20 +693,28 @@ class SysManager {
     return null;
   }
 
+  async isBridgeMode() {
+    const defaultWan = this.getDefaultWanInterface();
+    const defaultWanName = defaultWan && defaultWan.name;
+    return await Mode.isDHCPModeOn() && defaultWanName && defaultWanName.startsWith("br")
+  }
+
   // filter Carrier-Grade NAT address pool accordinig to rfc6598
   filterPublicIp4(ipArray) {
     const rfc6598Net = iptool.subnet("100.64.0.0", "255.192.0.0")
-    return ipArray.filter(ip => iptool.isPublic(ip) && !rfc6598Net.contains(ip));
+    return ipArray.filter(ip => ipUtil.isPublic(ip) && !rfc6598Net.contains(ip));
   }
 
   filterPublicIp6(ip6Array) {
-    return ip6Array.filter(ip => iptool.isPublic(ip));
+    return ip6Array.filter(ip => ipUtil.isPublic(ip));
   }
 
-  myGateways() {
+  myGateways(fam = 4) {
     const wanIntfs = fireRouter.getWanIntfNames();
     return wanIntfs.reduce((acc,wanIntf) => {
-      const gw = this.myGateway(wanIntf);
+      const gw =
+        fam == 4 ? this.myGateway(wanIntf) :
+        fam == 6 ? this.myGateway6(wanIntf) : null
       if (gw) acc.push(gw);
       return acc;
     },[]);
@@ -1053,11 +1060,23 @@ class SysManager {
       cpuTemperature,
       cpuTemperatureList,
       sss: await sss.getSysInfo(),
+      stats: await this.getStats(),
       publicWanIps,
       publicWanIp6s,
       publicIp: this.publicIp,
       publicIp6s: this.publicIp6s
     }
+  }
+
+  async getStats() {
+    const data = {};
+    try {
+      data.policyEnforceSpent = JSON.parse(await rclient.getAsync(Constants.REDIS_KEY_POLICY_ENFORCE_SPENT));
+    } catch (err) {
+      log.error("Failed to get policy:enforce time", err)
+    }
+
+    return data
   }
 
   isLinkLocal(ip, family) {
@@ -1089,6 +1108,9 @@ class SysManager {
       if (!net.isIPv4(ip)) return false
 
       if (ip == "255.255.255.255") return true
+      // https://en.wikipedia.org/wiki/Multicast_address
+      if (ip.startsWith("224.")) return true
+      if (ip.startsWith("239.")) return true
 
       const intfObj = intf ? this.getInterface(intf) : this.getInterfaceViaIP(ip, 4, monitoringOnly)
 
@@ -1180,6 +1202,7 @@ class SysManager {
     try {
       const result = await rp({
         uri: `https://api.github.com/repos/firewalla/firewalla/commits/${branch}`,
+        followRedirect: false,
         headers: {
           "User-Agent": "curl/7.64.1",
         },

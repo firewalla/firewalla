@@ -21,19 +21,12 @@ let assert = chai.assert;
 
 let Bootstrap = require('../net2/Bootstrap');
 
-let redis = require('redis');
-let rclient = redis.createClient();
-
 let license = require('../util/license');
 
 let sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let sample = require('./sample_data');
 let intelSample = require('./sample_data_intel');
-
-let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 let flowUtil = require('../net2/FlowUtil.js');
 
