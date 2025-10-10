@@ -18,6 +18,7 @@
 const log = require("../../net2/logger.js")(__filename, "info");
 
 const util = require('util');
+const fs = require('fs');
 
 const f = require('../../net2/Firewalla.js');
 const logFolder = f.getLogFolder();
@@ -379,6 +380,36 @@ async function getActiveContainers() {
   }
 }
 
+function getTop10RSSProcesses() {
+  try {
+    const psOutput = execSync(
+      'ps -eo pid,rss,comm,args:256 --no-headers --sort=-rss | head -n 10',
+      { encoding: 'utf-8' }
+    ).trim().split('\n');
+
+    return psOutput.map(line => {
+      const [pid, rss, comm, ...args] = line.trim().split(/\s+/);
+      let exePath = '';
+      try {
+        exePath = execSync(`sudo readlink /proc/${pid}/exe`, { encoding: 'utf-8' }).trim();
+      } catch (e) {
+        // if can't get exe path, use comm name
+        exePath = comm || 'unknown';
+      }
+      return {
+        pid: parseInt(pid),
+        rss: rss,
+        exe: exePath,
+        command: comm,
+        args: args.filter(a => a).join(' ')
+      };
+    });
+  } catch (err) {
+    log.error("Failed to get top 10 RSS processes:", err);
+    return [];
+  }
+}
+
 async function getSysInfo() {
   let sysinfo = {
     cpu: cpuUsage,
@@ -413,6 +444,7 @@ async function getSysInfo() {
     wlanInfo,
     slabInfo,
     diskUsage: diskUsage,
+    processes : getTop10RSSProcesses(),
     releaseInfo: releaseInfo
   }
 

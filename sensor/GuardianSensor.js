@@ -23,6 +23,8 @@ const extensionManager = require('./ExtensionManager.js')
 const guardianListKey = "guardian:alias:list";
 const Guardian = require('./Guardian');
 const _ = require('lodash');
+const fc = require('../net2/config.js');
+const Constants = require('../net2/Constants.js');
 
 class GuardianSensor extends Sensor {
   constructor(config) {
@@ -178,6 +180,7 @@ class GuardianSensor extends Sensor {
       throw err;
     }
     await guardian.reset();
+    await pclient.publishAsync('config:msp:updated', JSON.stringify(null));
     await rclient.zremAsync(guardianListKey, guardian.name);
     delete this.guardianMap[guardian.name];
   }
@@ -200,6 +203,21 @@ class GuardianSensor extends Sensor {
   async getGuardian(data) {
     const guardian = await this.getGuardianByAlias(data.alias);
     return guardian.getGuardianInfo();
+  }
+
+  async enqueueOpToMsp(op) {
+    const guardian = _.get(this.guardianMap, "default");
+    if (guardian) {
+      if (!fc.isFeatureOn(Constants.FEATURE_MSP_SYNC_OPS))
+        return;
+      const mspId = await guardian.getMspId();
+      if (!mspId)
+        return;
+      if (await guardian.isAdminStatusOn()) {
+        log.debug("enqueueOpToMsp: admin status is on, enqueue op", op);
+        return guardian.enqueueOp(op);
+      }
+    }
   }
 }
 

@@ -19,19 +19,10 @@ let should = chai.should;
 let expect = chai.expect;
 let assert = chai.assert;
 
-let redis = require('redis');
-let rclient = redis.createClient();
-
-let sem = require('../sensor/SensorEventManager.js').getInstance();
-
 let log = require('../net2/logger')(__filename);
 
 let sample = require('./sample_data');
 let license = require('../util/license.js');
-
-let Promise = require('bluebird');
-Promise.promisifyAll(redis.RedisClient.prototype);
-Promise.promisifyAll(redis.Multi.prototype);
 
 let IntelTool = require('../net2/IntelTool');
 let intelTool = new IntelTool();

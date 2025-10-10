@@ -49,6 +49,8 @@ class AuthLogPlugin extends Sensor {
         if (loginFailStr) {
             sshLoginFailIPs = loginFailStr.split("\n");
             if (!_.isArray(sshLoginFailIPs)) return;
+            // weak password scan may trigger password guess alarm from box itself
+            sshLoginFailIPs = sshLoginFailIPs.filter(ip => !sysManager.isMyIP(ip));
             const sshLoginFailRst = sshLoginFailIPs.reduce( (acc, curr) => {
                 acc[curr] ? acc[curr]++ : acc[curr] = 1
                 return acc;

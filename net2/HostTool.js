@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,6 +25,7 @@ const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 const Hashes = require('../util/Hashes.js');
 const f = require('./Firewalla.js');
+const Constants = require('./Constants.js');
 
 let instance = null;
 
@@ -33,7 +34,6 @@ const maxV6Addr = 8;
 const asyncNative = require('../util/asyncNative.js');
 
 const {getPreferredBName,getPreferredName} = require('../util/util.js')
-const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
 const firewalla = require('./Firewalla.js');
 
 const LRU = require('lru-cache')
@@ -150,6 +150,8 @@ class HostTool {
 
     let key = this.getMacKey(hostCopy.mac);
     await rclient.hmsetAsync(key, hostCopy)
+    const ts = hostCopy.lastActiveTimestamp || hostCopy.firstFoundTimestamp
+    if (ts) await rclient.zaddAsync(Constants.REDIS_KEY_HOST_ACTIVE, ts, hostCopy.mac)
 
     if(skipUpdatingExpireTime) {
       return;
@@ -199,8 +201,10 @@ class HostTool {
     return "host:mac:" + mac;
   }
 
-  deleteMac(mac) {
-    return rclient.unlinkAsync(this.getMacKey(mac));
+  async deleteMac(mac) {
+    await rclient.unlinkAsync(this.getMacKey(mac));
+    await rclient.zremAsync(Constants.REDIS_KEY_HOST_ACTIVE, mac)
+    return
   }
 
   mergeHosts(oldhost, newhost) {
@@ -271,6 +275,10 @@ class HostTool {
     }
   }
 
+  setIPMacCache(ip, mac) {
+    this.ipMacMapping.set(ip, mac);
+  }
+
   async getMacByIPWithCache(ip) {
     const cached = this.ipMacMapping.peek(ip)
     if (cached) {
@@ -294,6 +302,11 @@ class HostTool {
   async getAllMACs() {
     const keys = await rclient.scanResults("host:mac:*");
     return keys.map(key => key.substring(9)).filter(Boolean);
+  }
+
+  async getMACsByTime(ts) {
+    const MACs = await rclient.zrevrangebyscoreAsync(Constants.REDIS_KEY_HOST_ACTIVE, '+inf', ts);
+    return MACs.filter(Boolean);
   }
 
   async getAllMACEntries() {
@@ -337,9 +350,6 @@ class HostTool {
   }
 
   async removeDupIPv4FromMacEntry(mac, ip, newMac) {
-    // Keep uid for now as it's used as keys in a lot of places
-    // TODO: use mac as uid should be a true fix to this
-
     let macEntry = await this.getMACEntry(mac);
     if (!macEntry) {
       log.error('removeDupIPv4FromMacEntry:', mac, 'not found')
@@ -414,12 +424,6 @@ class HostTool {
 
   ////////////////// END OF IPV6 ////////////////
 
-  //pi@raspbNetworkScan:~/encipher.iot/net2 $ ip -6 neighbor show
-  //2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
-  // 2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
-  // 2601:646:a380:5511:385f:66ff:fe7a:79f0 dev eth0 lladdr 3a:5f:66:7a:79:f0 router STALE
-  // 2601:646:9100:74e0:8849:1ba4:352d:919f dev eth0  FAILED  (there are two spaces between eth0 and Failed)
-
   /*
    * ipv6 differs from ipv4, which it will randomly generate IP addresses, and use them
    * in very short term.  It is pretty hard to detect how long these will be used, so
@@ -480,21 +484,13 @@ class HostTool {
         ipv6array = JSON.parse(macHost.ipv6Addr);
       }
 
-      // only keep around 5 ipv6 around
-      /*
-      ipv6array = ipv6array.slice(0,8)
-      let oldindex = ipv6array.indexOf(v6addr);
-      if (oldindex != -1) {
-        ipv6array.splice(oldindex,1);
-      }
-      ipv6array.unshift(v6addr);
-      */
       await this.ipv6Insert(ipv6array, v6addr, true)
       macHost.mac = mac.toUpperCase();
       macHost.ipv6Addr = JSON.stringify(ipv6array);
       macHost.lastActiveTimestamp = Date.now() / 1000;
       log.info("HostTool:Writing macHost:", mackey, macHost);
       await rclient.hmsetAsync(mackey, macHost)
+      await rclient.zaddAsync(Constants.REDIS_KEY_HOST_ACTIVE, macHost.lastActiveTimestamp, macHost.mac)
       //v6 at times will discver neighbors that not there ...
       //so we don't update last active here
       //macHost.lastActiveTimestamp = Date.now() / 1000;
@@ -506,6 +502,7 @@ class HostTool {
       macHost.firstFoundTimestamp = macHost.lastActiveTimestamp;
       log.info("HostTool:Writing macHost:", mackey, macHost);
       await rclient.hmsetAsync(mackey, macHost)
+      await rclient.zaddAsync(Constants.REDIS_KEY_HOST_ACTIVE, macHost.lastActiveTimestamp, macHost.mac)
     }
 
   }
@@ -600,27 +597,79 @@ class HostTool {
     return Object.values(activeHosts).filter((host, index, array) => array.indexOf(host) == index)
   }
 
-  async generateLocalDomain(mac) {
-    if(!this.isMacAddress(mac)) {
+  // during firemain start and new device discovery, there's a small window that host object is
+  // not created in memory thus no tag info.
+  async getTags(monitorable, intfUUID) {
+    if (!monitorable) return {}
+
+    const transitiveTags = await monitorable.getTransitiveTags()
+
+    const result = {}
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)){
+      const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
+      const tags = [];
+      if (_.has(transitiveTags, type)) {
+        tags.push(...Object.keys(transitiveTags[type]));
+        if (intfUUID && intfUUID !== '') {
+          const networkProfile = require('./NetworkProfileManager.js').getNetworkProfile(intfUUID);
+          if (networkProfile)
+            tags.push(... await networkProfile.getTags(type));
+        }
+      }
+      result[flowKey] = _.uniq(tags);
+      // remove empty tag key to save memory, this cuts 4%+ from flow:conn
+      if (!result[flowKey].length) delete result[flowKey]
+    }
+
+    return result
+  }
+
+  async setWlanVendorToCache(mac, wlanVendors) {
+    const key = `wlanVendor:${mac.toUpperCase()}`;
+    let value = wlanVendors;
+    if (!_.isString(value)) {
+      value = JSON.stringify(wlanVendors);
+    }
+    await rclient.setAsync(key, value);
+  }
+
+  /**
+   * get wlan vendor from cache and refresh expire time
+   * @param {string} mac 
+   * @returns [vendor_string, ...] or null if not found
+   */
+  async getWlanVendorFromCache(mac) {
+    const key = `wlanVendor:${mac.toUpperCase()}`;
+    const value = await rclient.getAsync(key);
+    if (value) {
+      try {
+        const wlanVendors = JSON.parse(value);
+        return wlanVendors;
+      } catch (err) {
+        log.error(`Failed to parse wlan vendor for ${mac}`, err.message);
+        return null;
+      }
+    } else {
+      return null;
+    }
+  }
+
+  async setWirelessDeviceTagCandidate(mac, tagUid) {
+    if (_.isEmpty(mac))
       return;
-    }
-    const macEntry = await this.getMACEntry(mac);
-    // customizeDomainName actually specifies hostname, domain corresponds to suffix
-    let customizedHostname = macEntry.customizeDomainName;
-    let ipv4Addr = macEntry.ipv4Addr;
-    let name = getPreferredName(macEntry);
-    if (!ipv4Addr || (!name && !customizedHostname)) return;
-    name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."));
-    customizedHostname = customizedHostname && getCanonicalizedDomainname(customizedHostname.replace(/\s+/g, "."));
-    await this.updateMACKey({
-      localDomain: name || "",
-      userLocalDomain: customizedHostname || "",
-      mac: mac
-    }, true);
-    return {
-      localDomain: name,
-      userLocalDomain: customizedHostname
-    }
+    const key = `${Constants.REDIS_KEY_WIRELESS_TAG_CANDIDATE}${mac}`;
+    await rclient.setAsync(key, tagUid);
+    await rclient.expireAsync(key, 3600);
+  }
+
+  async getWirelessDeviceTagCandidate(mac) {
+    const key = `${Constants.REDIS_KEY_WIRELESS_TAG_CANDIDATE}${mac}`;
+    return rclient.getAsync(key);
+  }
+
+  async deleteWirelessDeviceTagCandidate(mac) {
+    const key = `${Constants.REDIS_KEY_WIRELESS_TAG_CANDIDATE}${mac}`;
+    await rclient.delAsync(key);
   }
 }
 
