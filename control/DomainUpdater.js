@@ -137,10 +137,7 @@ class DomainUpdater {
     // and check if need add to crossponding connection ipset
     if (!flow || !flow.lh || !flow.ip || !flow.sp || !flow.dp || !flow.pr || !flow.sh)
       return;
-    const domain = flow.host || flow.intel && flow.intel.host;
-    if (!domain) {
-      return; // skip if host info is not available
-    }
+    const sigs = flow.sigs || [];
 
     const connection = {
       localAddr: flow.lh,
@@ -149,6 +146,32 @@ class DomainUpdater {
       localPorts: flow.sp,
       remotePorts: flow.dp
     };
+
+    for (const sigId of sigs) {
+      if (categoryUpdater == null) {
+        const CategoryUpdater = require('../control/CategoryUpdater.js');
+        categoryUpdater = new CategoryUpdater();
+      }
+      const categories = categoryUpdater.getCategoryByFlowSignature(sigId);
+      for (const category of categories) {
+        if (!categoryUpdater.isActivated(category)) {
+          continue;
+        }
+        if (!this.isFlowMatchWithDomainOptions(flow, {"category": category})) {
+          continue;
+        }
+        const connSet = categoryUpdater.getConnectionIPSetName(category)
+        await Block.batchBlockConnection([connection], connSet).catch((err) => {
+          log.error(`Failed to update connection ipset ${connSet} for ${sigId}`, err.message);
+        });
+      }
+    }
+
+    const domain = flow.host || flow.intel && flow.intel.host;
+    if (!domain) {
+      return; // skip if host info is not available
+    }
+
     if (flow.lh != flow.sh) {
       connection.localPorts = flow.dp;
       connection.remotePorts = flow.sp;
