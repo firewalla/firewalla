@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -46,7 +46,7 @@ async function broadcastDhcpDiscover(intf, ipv4=null, macAddr=null, options=null
   let scriptArgs = getScriptArgs(["broadcast-dhcp-discover.mac="+macAddr], options);
 
   let cmd = util.format('sudo timeout 1200s nmap --script %s %s -e %s %s -oX - | %s', scriptName, scriptArgs, intf, cmdArgs.join(' '), xml2jsonBinary);
-  log.info("Running command:", cmd);
+  log.verbose("Running command:", cmd);
 
   return new Promise((resolve, reject) => {
     cp.exec(cmd, (err, stdout, stderr) => {

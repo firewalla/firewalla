@@ -37,6 +37,7 @@ const platformConfig = getPlatformConfig()
 
 let versionConfigInitialized = false
 let versionConfig = null
+let hashsetConfig = null
 let cloudConfig = null
 let userConfig = null
 let testConfig = null
@@ -54,7 +55,8 @@ const writeFileAsync = fs.promises.writeFile
 
 const { rrWithErrHandling } = require('../util/requestWrapper.js')
 
-const _ = require('lodash')
+const _ = require('lodash');
+const { REDIS_KEY_MSP_DATA } = require("./Constants.js");
 
 async function initVersionConfig() {
   try {
@@ -183,21 +185,26 @@ async function reloadConfig() {
   } catch(err) {
     // clears config on any error
     userConfig = {};
-    log.info('testConfig:', err.message)
+    if (err.code !== 'ENOENT') log.info('testConfig:', err.message)
   }
 
+  const oldConfigStr = JSON.stringify(config)
   config = aggregateConfig()
+  const newConfigStr = JSON.stringify(config)
 
   reloadFeatures()
 
-  log.info('config:updated')
-  if (f.isMain())
-    await pclient.publishAsync("config:updated", JSON.stringify(config))
+  log.verbose('config:updated')
+  if (f.isMain() && oldConfigStr != newConfigStr)
+    await pclient.publishAsync("config:updated", newConfigStr)
 }
 
-function aggregateConfig(configArray = [defaultConfig, platformConfig, versionConfig, cloudConfig, userConfig, testConfig, mspConfig]) {
+// later in this array, higher the priority
+// config from checkin has has much finer granularity, so higher the priority
+function aggregateConfig(configArray = [
+  defaultConfig, platformConfig, versionConfig, hashsetConfig, cloudConfig, mspConfig, userConfig, testConfig
+]) {
   const newConfig = {}
-  // later in this array higher the priority
   const prioritized = configArray.filter(Boolean)
 
   Object.assign(newConfig, ...prioritized);
@@ -262,7 +269,7 @@ function _parseMspConfig(mspdata) {
 
 async function getMspConfig(field = '', reload = false) {
   if (reload) {
-    const mspdata = JSON.parse(await rclient.getAsync('ext.guardian.data'));
+    const mspdata = JSON.parse(await rclient.getAsync(REDIS_KEY_MSP_DATA));
     _parseMspConfig(mspdata);
   }
   if (field) {
@@ -294,6 +301,16 @@ async function syncDynamicFeatures() {
   reloadFeatures()
 }
 
+async function syncHashsetConfig() {
+  try {
+    hashsetConfig = JSON.parse(await rclient.getAsync('sys:bone:config:features'))
+    log.debug('hashsetConfig reloaded')
+    await reloadConfig()
+  } catch(err) {
+    log.error('Error syncing hashset config', err)
+  }
+}
+
 async function syncCloudConfig() {
   try {
     const boneInfo = await f.getBoneInfoAsync()
@@ -301,7 +318,7 @@ async function syncCloudConfig() {
     log.debug('cloudConfig reloaded')
     await reloadConfig()
   } catch(err) {
-    log.error('Error getting cloud config', err)
+    log.error('Error syncing cloud config', err)
   }
 }
 
@@ -369,6 +386,8 @@ function reloadFeatures() {
   }
 
   features = featuresNew;
+  log.debug('Features reloaded')
+  log.silly(features)
 }
 
 function getFeatures() {
@@ -378,6 +397,7 @@ function getFeatures() {
 sclient.subscribe("config:feature:dynamic:enable")
 sclient.subscribe("config:feature:dynamic:disable")
 sclient.subscribe("config:feature:dynamic:clear")
+sclient.subscribe("config:hashset:updated")
 sclient.subscribe("config:cloud:updated")
 sclient.subscribe("config:msp:updated")
 sclient.subscribe("config:user:updated")
@@ -405,6 +425,10 @@ sclient.on("message", (channel, message) => {
       versionConfig = JSON.parse(message)
       reloadConfig()
       break
+    case "config:hashset:updated":
+      hashsetConfig = JSON.parse(message)
+      reloadConfig()
+      break
     case "config:cloud:updated":
       cloudConfig = JSON.parse(message)
       reloadConfig()
@@ -423,6 +447,7 @@ sclient.on("message", (channel, message) => {
 reloadConfig() // starts reading userConfig & testConfig as this module loads
 config = aggregateConfig() // non-async call, garantees getConfig() will be returned with something
 
+syncHashsetConfig()
 syncCloudConfig()
 syncMspConfig()
 

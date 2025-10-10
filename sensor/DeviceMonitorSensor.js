@@ -69,7 +69,7 @@ class DeviceMonitorSensor extends Sensor {
   }
 
   async job() {
-    log.info("Running device monitor job...");
+    log.verbose("Running device monitor job...");
     for (const device of Object.keys(this.selectedDevices)) {
       await this.monitorDevice(device);
     }
@@ -132,7 +132,6 @@ class DeviceMonitorSensor extends Sensor {
 
   async apiRun(){
     extensionManager.onGet("deviceMonitorData", async (msg,data) => {
-      // return await this.getNetworkMonitorData();
     });
 
     extensionManager.onGet("staStatus", async (msg,data) => {
