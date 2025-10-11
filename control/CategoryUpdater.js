@@ -915,7 +915,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   getDynamicAddressCategoryKey(category) {
-    return `dynamicCategoryAddress:${category}}`
+    return `dynamicCategoryAddress:${category}`
   }
 
   isDynamicAddressCategoryExists(category) {
@@ -956,7 +956,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
 
   // might need support multi-port support or port range in the future?
-  async addDynamicCategoryAddress(category, targetAddress, proto, targetPort, expireTime) {
+  async addDynamicCategoryAddress(category, targetAddress, proto, targetPort) {
     if (!category || !targetAddress || !proto) {
       return
     }
@@ -975,7 +975,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
 
     let addrEntry  = this.composeAddressEntry(targetAddress, proto, targetPort);
-    let data = JSON.stringify(addrEntry)
+    const addressObj = { id: addrEntry.id, port: addrEntry.port, isStatic: true }
+    let data = JSON.stringify(addressObj)
 
 
     // use current time as score for zset, it will be used to expire address
@@ -991,6 +992,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       if (!this.effectiveCategoryAdresses[category]) {
         this.effectiveCategoryAdresses[category] = new Map();
       }
+      this.effectiveCategoryAdresses[category].set(hashFunc(addressObj), addressObj);
       // await domainBlock.blockDomain(addrEntry.id, { ondemand: true, blockSet: this.getDomainPortIPSetName(category, addrEntry.isStatic), port: addrEntry.port, needComment: ipsetNeedComment });
       
       this.blockAddress(category, addrEntry.id, addrEntry.port, addrEntry.isStatic)
@@ -1523,7 +1525,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
     let addressMap = new Map()
 
     for (const item of await this.getDynamicAddresses(category)) {
-      const addressObj = { id: item.id, port: item.port, isStatic: true }
+      const itemObj = JSON.parse(item);
+      const addressObj = { id: itemObj.id, port: itemObj.port, isStatic: true }
       addressMap.set(hashFunc(addressObj), addressObj);
     }
 
@@ -1795,6 +1798,21 @@ class CategoryUpdater extends CategoryUpdaterBase {
   async updateStrategy(category, strategy) {
     await rclient.setAsync(this.getCategoryStrategyKey(category), strategy);
     return;
+  }
+
+  updateFlowSignatureList(flowSignatureConfig) {
+    this.flowSignatureConfigMap = new Map();
+    for (const key of Object.keys(flowSignatureConfig)) {
+      this.flowSignatureConfigMap.set(key, flowSignatureConfig[key]);
+    }
+    return;
+  }
+
+  getCategoryByFlowSignature(sigId) {
+    if (!this.flowSignatureConfigMap.has(sigId)) {
+      return [];
+    }
+    return this.flowSignatureConfigMap.get(sigId).categories || [];
   }
 
   // system target list using cloudcache, mainly for large target list to reduce bandwidth usage of polling hashset

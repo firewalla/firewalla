@@ -146,4 +146,13 @@ describe('test process conn data', function(){
     expect(intel.dnsHost).to.not.exist
     expect(intel.category).to.not.exist
   });
+
+  it.skip('processSignatureData should ', async() => {
+    const data = '{"ts":1759056399.516877,"uid":"C9T2j44J5SZt1jaDae","src_addr":"192.168.159.239","src_port":58193,"dst_addr":"54.245.196.33","dst_port":53043,"note":"Signatures::Sensitive_Signature","sig_id":"roblox-sig","event_msg":"192.168.159.239: Possible Roblox UDP traffic (client->server)","sub_msg":"..."}'
+    const ip = '54.245.196.33'
+
+    categoryUpdater.isActivated = (category)=>{return true};
+    await bro.processSignatureData(data);
+  });
+
 });
