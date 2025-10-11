@@ -94,7 +94,6 @@ let hostManager;
 
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 const { map } = require('async');
-const { is } = require('bluebird');
 
 const ruleSetTypeMap = {
   'ip': 'hash:ip',
@@ -1557,10 +1556,10 @@ class PolicyManager2 {
           }
           
           await domainBlock.blockDomain(target, {
-            noIpsetUpdate: policy.dnsmasq_only ? true : false,
+            domainOnly: policy.dnsmasq_only ? true : false,
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid),
-            connSet: Block.getConnSet(pid),
+            connSet: isBlockOrdisturb ? Block.getConnSet(pid) : null,
             devOpts: devOpts,
             ipttl: ipttl
           });
@@ -1573,10 +1572,10 @@ class PolicyManager2 {
             tlsHostSet = (security ? 'sec_' : '') + (action === "allow" ? 'allow_' : 'block_') + "domain_set";
             const connSet = Block.getPredefinedConnSet(security, direction);
             await domainBlock.blockDomain(target, {
-              noIpsetUpdate: policy.dnsmasq_only ? true : false,
+              domainOnly: policy.dnsmasq_only ? true : false,
               exactMatch: policy.domainExactMatch,
               blockSet: set,
-              connSet: action === "block" ? connSet : null,
+              connSet: isBlockOrdisturb ? connSet : null,
               devOpts: devOpts,
               tlsHostSet: tlsHostSet
             });
@@ -2128,15 +2127,17 @@ class PolicyManager2 {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
         if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || action == "snat" || (seq !== Constants.RULE_SEQ_REG && !security)) {
-          await domainBlock.unblockDomain(target, {
-            noIpsetUpdate: policy.dnsmasq_only ? true : false,
-            exactMatch: policy.domainExactMatch,
-            blockSet: Block.getDstSet(pid)
-          });
           if (isBlockOrdisturb && policy.dnsmasq_only) {
             connSet4 = Block.getConnSet(pid);
             connSet6 = Block.getConnSet6(pid);
           }
+          await domainBlock.unblockDomain(target, {
+            domainOnly: policy.dnsmasq_only ? true : false,
+            exactMatch: policy.domainExactMatch,
+            blockSet: Block.getDstSet(pid),
+            connSet: isBlockOrdisturb ? connSet4 : null
+          });
+
         } else {
           if (["allow", "block"].includes(action)) {
             const set = (security ? 'sec_' : '')
@@ -2144,9 +2145,12 @@ class PolicyManager2 {
               + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : ""))
               + simpleRuleSetMap[type];
             tlsHostSet = (security ? 'sec_' : '') + (action === "allow" ? 'allow_' : 'block_') + "domain_set";
+            const connSet = Block.getPredefinedConnSet(security, direction);
             await domainBlock.unblockDomain(target, {
+              domainOnly: policy.dnsmasq_only ? true : false,
               exactMatch: policy.domainExactMatch,
               blockSet: set,
+              connSet: isBlockOrdisturb ? connSet : null,
               tlsHostSet: tlsHostSet
             });
             return;

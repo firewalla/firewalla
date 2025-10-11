@@ -281,29 +281,29 @@ class CategoryUpdater extends CategoryUpdaterBase {
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids)) {
       if (!_.isEmpty(tags)) {
         for (const tag of tags) {
-          const key = category + 'tag' + tag;
+          const key = category + '_tag:' + tag;
           if (TagCategoryMap.get(key)) return true;
         }
       }
       if (!_.isEmpty(intfs)) {
         for (const intf of intfs) {
-          const key = category + 'intf' + intf;
+          const key = category + '_intf:' + intf;
           if (intfsCategoryMap.get(key)) return true;
         }
       }
       if (!_.isEmpty(scope)) {
         for (const s of scope) {
-          const key = category + 'scope' + s;
+          const key = category + '_scope:' + s;
           if (scopeCategoryMap.get(key)) return true;
         }
       }
       if (!_.isEmpty(guids)) {
         for (const guid of guids) {
-          const key = category + 'guid' + guid;
+          const key = category + '_guid:' + guid;
           if (guidCategoryMap.get(key)) return true;
         }
       }
-      if (globalCategoryMap.get(category + 'global')) return true;
+      if (globalCategoryMap.get(category + '_global')) return true;
     }
     return false;
   }
@@ -318,28 +318,28 @@ class CategoryUpdater extends CategoryUpdaterBase {
       
       if (!_.isEmpty(tags)) {
         for (const tag of tags) {
-          keys.push(category + 'tag' + tag);
+          keys.push(category + '_tag:' + tag);
         }
         targetMap = TagCategoryMap;
       } else if (!_.isEmpty(intfs)) {
         for (const intf of intfs) {
-          keys.push(category + 'intf' + intf);
+          keys.push(category + '_intf:' + intf);
         }
         targetMap = intfsCategoryMap;
       } else if (!_.isEmpty(scope)) {
         for (const s of scope) {
-          keys.push(category + 'scope' + s);
+          keys.push(category + '_scope:' + s);
         }
         targetMap = scopeCategoryMap;
       } else if (!_.isEmpty(guids)) {
         for (const guid of guids) {
-          keys.push(category + 'guid' + guid);
+          keys.push(category + '_guid:' + guid);
         }
         targetMap = guidCategoryMap;
       }
     } else {
       // global
-      keys.push(category + 'global');
+      keys.push(category + '_global');
       targetMap = globalCategoryMap;
     }
 
