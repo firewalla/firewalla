@@ -83,6 +83,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       this.bfOrigCategoryMap = {};
       this.origBfCategoryMap = {};
       this.loadCategoryBfParts();
+      this.flowSignatureConfigMap = new Map();
 
       this.excludedDomains = {
         "av": [
