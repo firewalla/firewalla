@@ -101,6 +101,9 @@ class WgvpnConnSensor extends Sensor {
             log.error(`Failed to show endpoints using wg command`, err.message);
             return [];
           })).map(result => result.split(/\s+/g));
+          if (!Array.isArray(endpointsResults) || endpointsResults.length === 0) {
+            continue;
+          }
           for (const endpointsResult of endpointsResults) {
             if (endpointsResult[0] === pubKey) {
               let endpoint = endpointsResult[1];
@@ -115,8 +118,8 @@ class WgvpnConnSensor extends Sensor {
               }
             }
           }
-          if (peerLastEndpointMap[pubKey] === `${remoteIP}:${remotePort}`) {
-            return;
+          if (!remoteIP || !remotePort || peerLastEndpointMap[pubKey] === `${remoteIP}:${remotePort}`) {
+            continue;
           }
           peerLastEndpointMap[pubKey] = `${remoteIP}:${remotePort}`;
           log.info(`Wireguard VPN client connection accepted, remote ${remoteIP}:${remotePort}, peer ipv4: ${peerIP4s.length > 0 ? peerIP4s[0] : null}, peer ipv6: ${peerIP6s.length > 0 ? peerIP6s[0] : null}, public key: ${pubKey}`);
