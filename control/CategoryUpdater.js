@@ -1002,6 +1002,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async blockAddress(category, address, portObj, isStatic) {
+    if (!this.isActivated(category)) return;
     let blockSet = this.getDomainPortIPSetName(category, isStatic)
     await Block.batchBlockNetPort([address], portObj, blockSet).catch((err) => {
       log.error(`Failed to batch update domain ipset ${blockSet} for ${address}`, err.message);
@@ -1009,6 +1010,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async unblockAddress(category, address, portObj, isStatic) {
+    if (!this.isActivated(category)) return;
     let blockSet = this.getDomainPortIPSetName(category, isStatic)
     await Block.batchUnblock([address], portObj, blockSet).catch((err) => {
       log.error(`Failed to batch update domain ipset ${blockSet} for ${address}`, err.message);
