@@ -309,3 +309,34 @@ function lap_reboot() {
   local payload=$(jq -n --arg mac "$mac" '{"uid": $mac}')
   curl 'http://localhost:8841/v1/control/reboot' -H 'Content-Type: application/json' -d "$payload"
 }
+
+function fu() {
+  _uu "journalctl -fu" "$1" "$2"
+}
+
+function uu() {
+  _uu "journalctl -u" "$1" "$2"
+}
+
+function _uu() {
+   local ACTION="$1"
+   local PATTERN="*$2*"
+   local INDEX="$3"
+   test -z "$PATTERN" && echo "usage: fu <serviceNamePattern>" && return 1
+   LIST=$(sudo systemctl list-units  --type=service "$PATTERN" | awk '{print $1}' | fgrep .service |sort)
+   test -z "$LIST" && echo "service not found: $PATTERN" && return 2
+   if [[ "$LIST" == *$'\n'* ]]; then
+     if [[ "x$INDEX" == "x" ]]; then
+           echo "multiple services matched:"
+           echo ""
+           echo "$LIST" | nl
+           return 3
+     else
+           SERVICE=$(echo "$LIST" | head -n $INDEX | tail -n 1)
+     fi
+   else
+           SERVICE=$LIST
+   fi
+   echo "Showing logs for $SERVICE"
+   sudo $ACTION $SERVICE
+}
