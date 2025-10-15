@@ -323,7 +323,7 @@ function _uu() {
    local PATTERN="*$2*"
    local INDEX="$3"
    test -z "$PATTERN" && echo "usage: fu <serviceNamePattern>" && return 1
-   LIST=$(sudo systemctl list-units  --type=service "$PATTERN" | awk '{print $1}' | fgrep .service |sort)
+   LIST=$(sudo systemctl list-units  --type=service "$PATTERN" | sed 's=●==g' | awk '{print $1}' | fgrep .service |sort)
    test -z "$LIST" && echo "service not found: $PATTERN" && return 2
    if [[ "$LIST" == *$'\n'* ]]; then
      if [[ "x$INDEX" == "x" ]]; then
