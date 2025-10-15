@@ -2190,7 +2190,7 @@ module.exports = class {
       return alarm;
     }
 
-    if (sysManager.isMyIP(deviceIP) || sysManager.isMyIP6(deviceIP)) {
+    if (sysManager.isMyIP(deviceIP, false) || sysManager.isMyIP6(deviceIP, false)) {
       // device is the router itself, do nothing
       return alarm;
     }
