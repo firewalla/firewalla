@@ -135,6 +135,10 @@ class OrangePlatform extends Platform {
   isTLSBlockSupport() {
     return true;
   }
+  
+  isUdpTLSBlockSupport() {
+    return true;
+  }
 
   isFireRouterManaged() {
     return true;
