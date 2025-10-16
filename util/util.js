@@ -120,9 +120,9 @@ function delay(t) {
   });
 }
 
-const keysToRedact = new Set(["password", "passwd", "psk", "key", "psks", "secret"]);
+const keysToRedact = new Set(["password", "passwd", "psk", "key", "psks", "secret", "private_key_pass"]);
 function redactLog(obj, redactRequired = false, depth) {
-  if (!obj || depth > 5)
+  if (!obj || depth > 6)
     return obj;
   // obj should be either object or array
   const objCopy = _.isArray(obj) ? [] : _.clone(obj);
@@ -130,6 +130,9 @@ function redactLog(obj, redactRequired = false, depth) {
     for (const key of Object.keys(obj)) {
       if (_.isFunction(obj[key]))
         continue;
+      if (key === "freeradius_server") {
+        depth = 0; // need more depth for freeradius_server
+      }
       if (_.isPlainObject(obj[key]) || _.isArray(obj[key]))
         objCopy[key] = redactLog(obj[key], redactRequired || keysToRedact.has(key), depth + 1);
       else {

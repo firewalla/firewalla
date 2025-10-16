@@ -728,6 +728,7 @@ class FreeRadius {
 
   mask(jsonStr) {
     jsonStr = jsonStr.replace(/"secret"\s*:\s*"[^"]*"/g, '"secret":"*** redacted ***"');
+    jsonStr = jsonStr.replace(/"private_key_pass"\s*:\s*"[^"]*"/g, '"private_key_pass":"*** redacted ***"');
     return jsonStr.replace(/"passwd"\s*:\s*"[^"]*"/g, '"passwd":"*** redacted ***"');
   }
 
