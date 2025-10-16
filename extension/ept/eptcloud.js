@@ -47,6 +47,22 @@ class EptCloudExtension {
       JSON.stringify({ name: client.displayName, eid: client.eid })
     );
 
+    //clear members info which is not in the group
+    const names = (await rclient.hgetallAsync("sys:ept:memberNames")) || {};
+    const lastVisits = (await rclient.hgetallAsync("sys:ept:member:lastvisit")) || {};
+
+    const allEids = new Set([...Object.keys(names), ...Object.keys(lastVisits)])
+    const clientsEidList = clients.map(client => client.eid);
+    const eidsToDelete = Array.from(allEids).filter(eid => !clientsEidList.includes(eid));
+
+    for (const eid of eidsToDelete) {
+      log.info(`Deleting unpaired eid ${eid} from group ${gid}`);
+      await rclient.hdelAsync("sys:ept:memberNames", eid);
+      await rclient.hdelAsync("sys:ept:member:lastvisit", eid);
+    }
+    const groupMemberCnt = groupInfo.symmetricKeys.length;
+    await rclient.hsetAsync("sys:ept", "group_member_cnt", groupMemberCnt);
+
     const keyName = "sys:ept:members";
 
     const cmd = [keyName];
