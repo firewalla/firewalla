@@ -497,6 +497,12 @@ class ACLAuditLogPlugin extends Sensor {
 
     record.mac = mac
 
+    // if record.ac is in ['block', 'route', 'allow', 'disturb'] check record.sp is valid
+    if (['block', 'route', 'allow', 'disturb'].includes(record.ac) && (!record.sp || record.sp.length == 0)) {
+      log.error('Invalid source port info in acl audit log', line);
+      return;
+    }
+
     // try to get host name from conn entries for better timeliness and accuracy
     if (dir === "O" && record.ac === "block") {
       // delay 8 seconds to process outbound block flow, in case ssl/http host is available in zeek's ssl log and will be saved into conn entries
