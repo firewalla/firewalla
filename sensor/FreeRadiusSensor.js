@@ -163,7 +163,7 @@ class FreeRadiusSensor extends Sensor {
   async setDeviceTag(mac, username) {
     const userTag = tagManager.getTagByRadiusUser(username);
     if (!userTag) {
-      log.info(`Unexpected error, user tag of radius user ${username} not found`);
+      log.info(`skip set device tag ${mac} with username ${username}, user tag not found`);
       return;
     }
 
@@ -173,7 +173,7 @@ class FreeRadiusSensor extends Sensor {
     }
 
     if (!tagId) {
-      log.info(`Unexpected error, tag id of ${userTag.getTagType()} tag ${userTag.getUniqueId()} not found`);
+      log.info(`skip set device tag ${mac} with username ${username}, tag ${tagId} of ${userTag.getTagType()} ${userTag.getUniqueId()} not found`);
       return;
     }
 
