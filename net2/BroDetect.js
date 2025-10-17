@@ -714,7 +714,8 @@ class BroDetect {
 
   async validateConnData(obj) {
     const threshold = config.threshold;
-    const iptcpRatio = threshold.IPTCPRatio || 0.1;
+    const iptcpRatio = threshold.IPTCPRatio || 10000;
+    const S2S3MaxBytes = threshold.S2S3MaxBytes || 100000; // 100KB
 
     const missed_bytes = obj.missed_bytes;
     const resp_bytes = obj.resp_bytes;
@@ -728,6 +729,12 @@ class BroDetect {
     // check random-pick-ssl in local.bro, HTTPS drops rate is 50%
     const multipler = resp_port == 443 ? 2 : 1;
 
+    // S2 and S3 with enough volumn, ignore
+    if (missed_bytes > S2S3MaxBytes && (missed_bytes == orig_bytes || missed_bytes == resp_bytes)) {
+      log.debug("Conn:Drop:MissedBytes:Equal", obj.conn_state, obj);
+      return false
+    }
+
     if (missed_bytes / (resp_bytes + orig_bytes) > threshold.missedBytesRatio * multipler) {
         log.debug("Conn:Drop:MissedBytes:RatioTooLarge", obj.conn_state, obj);
         return false;
@@ -736,7 +743,7 @@ class BroDetect {
     if (orig_ip_bytes && orig_bytes &&
       (orig_ip_bytes > 1000 || orig_bytes > 1000) &&
       orig_pkts > 0 && (orig_ip_bytes / orig_pkts < 1400) && // if multiple packets are assembled into one packet, orig(resp)_ip_bytes may be much less than orig(resp)_bytes
-      (orig_ip_bytes / orig_bytes) < iptcpRatio / multipler) {
+      (orig_bytes / orig_ip_bytes) > iptcpRatio * multipler) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Orig", obj.conn_state, obj);
       return false;
     }
@@ -744,7 +751,7 @@ class BroDetect {
     if (resp_ip_bytes && resp_bytes &&
       (resp_ip_bytes > 1000 || resp_bytes > 1000) &&
       resp_pkts > 0 && (resp_ip_bytes / resp_pkts < 1400) &&
-      (resp_ip_bytes / resp_bytes) < iptcpRatio / multipler) {
+      (resp_bytes / resp_ip_bytes) > iptcpRatio * multipler) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Resp", obj.conn_state, obj);
       return false;
     }
