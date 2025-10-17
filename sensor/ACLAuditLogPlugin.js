@@ -499,7 +499,7 @@ class ACLAuditLogPlugin extends Sensor {
 
     // if record.ac is in ['block', 'route', 'allow', 'disturb'] check record.sp is valid
     if (['block', 'route', 'allow', 'disturb'].includes(record.ac) && (!record.sp || record.sp.length == 0)) {
-      log.error('Invalid source port info in acl audit log', line);
+      log.info('Skip line, invalid source port info in acl audit log.', line);
       return;
     }
 
