@@ -99,14 +99,18 @@ class TimeUsageTool {
     return result;
   }
 
-  async getFilledBucketsCount(uid, app, begin, end, uniqueMinute = false) {
+  async getFilledBucketsCount(uid, apps, begin, end, uniqueMinute = false) {
     let result = 0;
     const beginMin = Math.floor(begin / 60);
     const endMin = Math.floor((end - 1) / 60); // end excluded
     const beginHour = Math.floor(beginMin / 60);
     const endHour = Math.floor(endMin / 60);
     for (let hour = beginHour; hour <= endHour; hour++) {
-      const buckets = await this.getHourBuckets(uid, app, hour);
+      const buckets = await Promise.all(apps.map(app => this.getHourBuckets(uid, app, hour))).then(results => results.reduce((total, cur) => {
+        for (const k of Object.keys(cur))
+          total[k] = (!isNaN(total[k]) ? Number(total[k]) : 0) + (!isNaN(cur[k]) ? Number(cur[k]) : 0);
+        return total;
+      }, {}));
       for (let minOfHour = (hour === beginHour ? beginMin % 60 : 0); minOfHour <= (hour === endHour ? endMin % 60 : 59); minOfHour++) {
         if (!isNaN(buckets[`${minOfHour}`]) && buckets[`${minOfHour}`] > 0) {
           result += (uniqueMinute ? 1 : Number(buckets[minOfHour]));
