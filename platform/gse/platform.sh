@@ -139,7 +139,7 @@ function get_tls_ko_path() {
   compiler=$(grep -o 'aarch64.*-linux-gnu-gcc' /proc/version)
   if [[ -f ${ko_path}.${kernel_checksum} ]]; then
     ko_path=${ko_path}.${kernel_checksum}
-  elif [ $compiler == "aarch64-none-linux-gnu-gcc" ] && [ -f ${ko_path}.aarch64-none-linux-gnu-gcc ]; then
+  elif [ "$compiler" == "aarch64-none-linux-gnu-gcc" ] && [ -f ${ko_path}.aarch64-none-linux-gnu-gcc ]; then
     ko_path=${ko_path}.aarch64-none-linux-gnu-gcc
   fi
   echo $ko_path
