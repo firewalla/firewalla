@@ -141,10 +141,6 @@ class GSEPlatform extends Platform {
   isTLSBlockSupport() {
     return true;
   }
-  
-  isUdpTLSBlockSupport() {
-    return false;
-  }
 
   isFireRouterManaged() {
     return true;
@@ -422,9 +418,16 @@ class GSEPlatform extends Platform {
     const emmcDev = await exec("df /media/root-ro | grep -o '/dev/mmcblk[0-9]*'").then(result => result.stdout.trim());
     const kernelChecksum = await exec("sudo dd if=$EMMC_DEV bs=512 count=75536 skip=73728 status=none | md5sum | awk '{print $1}'").then(result => result.stdout.trim());
 
+    const compiler = await exec("grep -o 'aarch64.*-linux-gnu-gcc' /proc/version").then(result => result.stdout.trim());
     const fileExists = await fsp.access(`${koPath}.${kernelChecksum}`, fs.constants.F_OK).then(() => true).catch(() => false);
     if (fileExists) {
       koPath = `${koPath}.${kernelChecksum}`;
+    } else if (compiler === "aarch64-none-linux-gnu-gcc") {
+      const altKoPath = `${koPath}.aarch64-none-linux-gnu-gcc`;
+      const altFileExists = await fsp.access(altKoPath, fs.constants.F_OK).then(() => true).catch(() => false);
+      if (altFileExists) {
+        koPath = altKoPath;
+      }
     }
     return koPath;
   }
