@@ -136,8 +136,11 @@ function get_tls_ko_path() {
   EMMC_DEV=$(df /media/root-ro | grep -o '/dev/mmcblk[0-9]*')
   kernel_checksum=$(sudo dd if=$EMMC_DEV bs=512 count=75536 skip=73728 status=none | md5sum | awk '{print $1}')
   ko_path=${CURRENT_DIR}/files/kernel_modules/$(uname -r)/${module_name}.ko
+  compiler=$(grep -o 'aarch64.*-linux-gnu-gcc' /proc/version)
   if [[ -f ${ko_path}.${kernel_checksum} ]]; then
     ko_path=${ko_path}.${kernel_checksum}
+  elif [ $compiler == "aarch64-none-linux-gnu-gcc" ] && [ -f ${ko_path}.aarch64-none-linux-gnu-gcc ]; then
+    ko_path=${ko_path}.aarch64-none-linux-gnu-gcc
   fi
   echo $ko_path
 }
