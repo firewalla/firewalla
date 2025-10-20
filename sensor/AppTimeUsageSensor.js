@@ -160,6 +160,7 @@ class AppTimeUsageSensor extends Sensor {
     const domainTrie = new DomainTrie();
     const cidr4Trie = new CIDRTrie(4);
     const cidr6Trie = new CIDRTrie(6);
+    const sigMap = new Map();
 
     for (const key of Object.keys(appConfs)) {
       const includedDomains = appConfs[key].includedDomains || [];
@@ -188,6 +189,10 @@ class AppTimeUsageSensor extends Sensor {
             }
           }
         }
+        const sigId = value.sigId;
+        if (sigId) {
+          sigMap.set(sigId, obj);
+        }
       }
 
       // use !<app_key> to mark a domain is excluded from an app
@@ -203,6 +208,7 @@ class AppTimeUsageSensor extends Sensor {
     this._domainTrie = domainTrie;
     this._cidr4Trie = cidr4Trie;
     this._cidr6Trie = cidr6Trie;
+    this._sigMap = sigMap;
   }
 
   getCategoryBytesThreshold(category) {
@@ -287,6 +293,7 @@ class AppTimeUsageSensor extends Sensor {
   lookupAppMatch(flow) {
     const host = flow.host || flow.intel && flow.intel.host;
     const ip = flow.ip || (flow.intel && flow.intel.ip);
+    const sigs = flow.sigs || [];
     const result = [];
     let internet_options = {
       app: "internet",
@@ -296,7 +303,7 @@ class AppTimeUsageSensor extends Sensor {
       noStray: true
     };
 
-    if ((!this._domainTrie && !this._cidr4Trie && !this._cidr6Trie) || (!host && !ip))
+    if ((!this._domainTrie && !this._cidr4Trie && !this._cidr6Trie && !this._sigMap) || (!host && !ip))
       return result;
     // check domain trie
     const values = this._domainTrie.find(host);
@@ -323,8 +330,8 @@ class AppTimeUsageSensor extends Sensor {
       }
     }
 
+    // check cidr trie
     let cidrTrie = new Address4(ip).isValid() ? this._cidr4Trie : this._cidr6Trie;
-
     if (_.isEmpty(result) && cidrTrie){
       const entry = cidrTrie.find(ip);
       if (_.isObject(entry)) {
@@ -335,6 +342,19 @@ class AppTimeUsageSensor extends Sensor {
             result.push(entry);
         }
 
+      }
+    }
+
+    // check sigs
+    if (_.isEmpty(result) && this._sigMap.size > 0) {
+      for (const sigId of sigs) {
+        const entry = this._sigMap.get(sigId);
+        if (_.isObject(entry)) {
+          isAppMatch = true;
+          if ((!entry.bytesThreshold || flow.ob + flow.rb >= entry.bytesThreshold)
+            && (!entry.ulDlRatioThreshold || flow.ob <= entry.ulDlRatioThreshold * flow.rb))
+            result.push(entry);
+        }
       }
     }
 
