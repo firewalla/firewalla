@@ -51,6 +51,22 @@ class DomainIPTool {
     }    
   }
 
+  getDomainConnMappingKey(domain, options) {
+    options = options || {}
+    let prefix = 'connmapping';
+    if (options.connSet) {
+      prefix = `connmapping:connset:${options.connSet}`;
+    }
+    if (options.port) {
+      prefix = `${prefix}:${CategoryEntry.toPortStr(options.port)}`;
+    }
+    if(options.exactMatch) {
+      return `${prefix}:exactdomain:${domain}`
+    } else {
+      return `${prefix}:domain:${domain}`
+    }
+  }
+
   async removeDomainIPMapping(domain, options) {
     const key = this.getDomainIPMappingKey(domain, options)
     await rclient.unlinkAsync(key)

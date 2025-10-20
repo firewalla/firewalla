@@ -83,6 +83,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       this.bfOrigCategoryMap = {};
       this.origBfCategoryMap = {};
       this.loadCategoryBfParts();
+      this.flowSignatureConfigMap = new Map();
 
       this.excludedDomains = {
         "av": [
@@ -281,29 +282,29 @@ class CategoryUpdater extends CategoryUpdaterBase {
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids)) {
       if (!_.isEmpty(tags)) {
         for (const tag of tags) {
-          const key = category + 'tag' + tag;
+          const key = category + '_tag:' + tag;
           if (TagCategoryMap.get(key)) return true;
         }
       }
       if (!_.isEmpty(intfs)) {
         for (const intf of intfs) {
-          const key = category + 'intf' + intf;
+          const key = category + '_intf:' + intf;
           if (intfsCategoryMap.get(key)) return true;
         }
       }
       if (!_.isEmpty(scope)) {
         for (const s of scope) {
-          const key = category + 'scope' + s;
+          const key = category + '_scope:' + s;
           if (scopeCategoryMap.get(key)) return true;
         }
       }
       if (!_.isEmpty(guids)) {
         for (const guid of guids) {
-          const key = category + 'guid' + guid;
+          const key = category + '_guid:' + guid;
           if (guidCategoryMap.get(key)) return true;
         }
       }
-      if (globalCategoryMap.get(category + 'global')) return true;
+      if (globalCategoryMap.get(category + '_global')) return true;
     }
     return false;
   }
@@ -318,28 +319,28 @@ class CategoryUpdater extends CategoryUpdaterBase {
       
       if (!_.isEmpty(tags)) {
         for (const tag of tags) {
-          keys.push(category + 'tag' + tag);
+          keys.push(category + '_tag:' + tag);
         }
         targetMap = TagCategoryMap;
       } else if (!_.isEmpty(intfs)) {
         for (const intf of intfs) {
-          keys.push(category + 'intf' + intf);
+          keys.push(category + '_intf:' + intf);
         }
         targetMap = intfsCategoryMap;
       } else if (!_.isEmpty(scope)) {
         for (const s of scope) {
-          keys.push(category + 'scope' + s);
+          keys.push(category + '_scope:' + s);
         }
         targetMap = scopeCategoryMap;
       } else if (!_.isEmpty(guids)) {
         for (const guid of guids) {
-          keys.push(category + 'guid' + guid);
+          keys.push(category + '_guid:' + guid);
         }
         targetMap = guidCategoryMap;
       }
     } else {
       // global
-      keys.push(category + 'global');
+      keys.push(category + '_global');
       targetMap = globalCategoryMap;
     }
 
@@ -915,7 +916,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   getDynamicAddressCategoryKey(category) {
-    return `dynamicCategoryAddress:${category}}`
+    return `dynamicCategoryAddress:${category}`
   }
 
   isDynamicAddressCategoryExists(category) {
@@ -956,7 +957,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
 
   // might need support multi-port support or port range in the future?
-  async addDynamicCategoryAddress(category, targetAddress, proto, targetPort, expireTime) {
+  async addDynamicCategoryAddress(category, targetAddress, proto, targetPort) {
     if (!category || !targetAddress || !proto) {
       return
     }
@@ -975,7 +976,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
 
     let addrEntry  = this.composeAddressEntry(targetAddress, proto, targetPort);
-    let data = JSON.stringify(addrEntry)
+    const addressObj = { id: addrEntry.id, port: addrEntry.port, isStatic: true }
+    let data = JSON.stringify(addressObj)
 
 
     // use current time as score for zset, it will be used to expire address
@@ -991,6 +993,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       if (!this.effectiveCategoryAdresses[category]) {
         this.effectiveCategoryAdresses[category] = new Map();
       }
+      this.effectiveCategoryAdresses[category].set(hashFunc(addressObj), addressObj);
       // await domainBlock.blockDomain(addrEntry.id, { ondemand: true, blockSet: this.getDomainPortIPSetName(category, addrEntry.isStatic), port: addrEntry.port, needComment: ipsetNeedComment });
       
       this.blockAddress(category, addrEntry.id, addrEntry.port, addrEntry.isStatic)
@@ -999,6 +1002,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async blockAddress(category, address, portObj, isStatic) {
+    if (!this.isActivated(category)) return;
     let blockSet = this.getDomainPortIPSetName(category, isStatic)
     await Block.batchBlockNetPort([address], portObj, blockSet).catch((err) => {
       log.error(`Failed to batch update domain ipset ${blockSet} for ${address}`, err.message);
@@ -1006,6 +1010,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async unblockAddress(category, address, portObj, isStatic) {
+    if (!this.isActivated(category)) return;
     let blockSet = this.getDomainPortIPSetName(category, isStatic)
     await Block.batchUnblock([address], portObj, blockSet).catch((err) => {
       log.error(`Failed to batch update domain ipset ${blockSet} for ${address}`, err.message);
@@ -1523,7 +1528,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
     let addressMap = new Map()
 
     for (const item of await this.getDynamicAddresses(category)) {
-      const addressObj = { id: item.id, port: item.port, isStatic: true }
+      const itemObj = JSON.parse(item);
+      const addressObj = { id: itemObj.id, port: itemObj.port, isStatic: true }
       addressMap.set(hashFunc(addressObj), addressObj);
     }
 
@@ -1795,6 +1801,21 @@ class CategoryUpdater extends CategoryUpdaterBase {
   async updateStrategy(category, strategy) {
     await rclient.setAsync(this.getCategoryStrategyKey(category), strategy);
     return;
+  }
+
+  updateFlowSignatureList(flowSignatureConfig) {
+    this.flowSignatureConfigMap = new Map();
+    for (const key of Object.keys(flowSignatureConfig)) {
+      this.flowSignatureConfigMap.set(key, flowSignatureConfig[key]);
+    }
+    return;
+  }
+
+  getCategoryByFlowSignature(sigId) {
+    if (!this.flowSignatureConfigMap.has(sigId)) {
+      return [];
+    }
+    return this.flowSignatureConfigMap.get(sigId).categories || [];
   }
 
   // system target list using cloudcache, mainly for large target list to reduce bandwidth usage of polling hashset

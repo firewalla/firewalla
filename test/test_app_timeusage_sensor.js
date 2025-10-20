@@ -466,6 +466,63 @@ describe('Test process AppTimeUsageSensor', function () {
   });
 
 
+  it('should match the sigId correctly', async () => {
+    this.plugin.appConfs = {
+      "Roblox": {
+        "category": "games",
+        "displayName": "Roblox",
+        "includedDomains": [
+          {
+            "cidr": "128.116.0.0/17",
+            "portInfo": [
+              {
+                "start": "8080",
+                "end": "8088"
+              },
+              {
+                "proto": "tcp",
+                "start": "443",
+                "end": "443"
+              },
+              {
+                "proto": "udp",
+                "start": "49152",
+                "end": "65535"
+              }
+            ],
+            "occupyMins": 1,
+            "lingerMins": 5,
+            "minsThreshold": 1,
+            "bytesThreshold": 1024
+          },
+          {
+            "sigId": "roblox-sig",
+            "occupyMins": 1,
+            "lingerMins": 5,
+            "minsThreshold": 1,
+            "bytesThreshold": 1024
+          }
+        ],
+        "excludedDomains": []
+      }
+    }
+    this.plugin.rebuildTrie();
+
+    const flow = {
+      "ts": 1759200147.93, "_ts": 1759200274.882, "sh": "192.168.159.239", "dh": "54.245.196.33", "ob": 566339, "rb": 17877850, "ct": 1, "fd": "in", "lh": "192.168.159.239",
+      "intf": "ff670d62-752d-4b74-87b0-108ef7d945d2", "du": 119.97, "pr": "udp", "uids": [], "ltype": "mac", "oIntf": "924acbb9", "af": {}, "rpid": 388,
+      "dpid": 406, "dTags": ["49"], "dstTags": {}, "sp": [65137], "dp": 61491, "sigs": ["roblox-sig-reverse", "roblox-sig"], "mac": "66:6E:7A:8D:80:ED",
+      "ip": "54.245.196.33", "host": null, "from": "flow", "intel": { "updateTime": "1759133337.844", "ip": "128.116.53.33" }
+    };
+    const result = this.plugin.lookupAppMatch(flow);
+    expect(result.length).to.be.equal(2);
+    expect(result[0].app).to.be.equal("Roblox");
+    expect(result[0].occupyMins).to.be.equal(1);
+    expect(result[0].lingerMins).to.be.equal(5);
+    expect(result[0].minsThreshold).to.be.equal(1);
+    expect(result[0].bytesThreshold).to.be.equal(1024);
+  });
+
 
 
 });

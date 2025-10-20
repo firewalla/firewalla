@@ -90,6 +90,8 @@ const { extractIP } = require('../net2/FlowUtil.js')
 
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
 
+const sysManager = require('../net2/SysManager.js');
+
 const featureName = 'msp_sync_alarm';
 
 // TODO: Support suppress alarm for a while
@@ -2169,7 +2171,7 @@ module.exports = class {
   }
 
   async enrichDeviceInfo(alarm) {
-    const ignoreAlarmTypes = ['ALARM_SCREEN_TIME', 'ALARM_DUAL_WAN'];
+    const ignoreAlarmTypes = ['ALARM_SCREEN_TIME', 'ALARM_DUAL_WAN', 'ALARM_VPN_CLIENT_CONNECTION'];
     if (ignoreAlarmTypes.includes(alarm.type)) return alarm;
     let deviceIP = alarm["p.device.ip"];
     if (!deviceIP) {
@@ -2185,6 +2187,11 @@ module.exports = class {
         "p.device.macVendor": "Unknown"
       });
 
+      return alarm;
+    }
+
+    if (sysManager.isMyIP(deviceIP, false) || sysManager.isMyIP6(deviceIP, false)) {
+      // device is the router itself, do nothing
       return alarm;
     }
 

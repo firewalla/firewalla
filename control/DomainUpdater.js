@@ -28,7 +28,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Message = require('../net2/Message.js');
 
 const exec = require('util').promisify(require('child_process').exec);
-const ipset = require('../net2/Ipset.js');
+const Constants = require('../net2/Constants.js');
 
 let categoryUpdater = null;
 
@@ -39,6 +39,7 @@ class DomainUpdater {
   constructor() {
     if (instance == null) {
       this.updateOptions = {};
+      this.connUpdateOptions = {}; // options for connection ipset update
       instance = this;
       this._needRefresh = false;
 
@@ -82,11 +83,10 @@ class DomainUpdater {
 
       if (!_.isEmpty(options.devOpts.tags)) {
         // check if any tag matches
-        if (flow.tags) {
-          for (const t of flow.tags) {
-            if (options.devOpts.tags.includes(t)) {
-              return true;
-            }
+        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+          const config = Constants.TAG_TYPE_MAP[type];
+          if (flow[config.flowKey] && options.devOpts.tags.some(r => flow[config.flowKey].includes(r))) {
+            return true;
           }
         }
       }
@@ -118,8 +118,13 @@ class DomainUpdater {
         }
 
         const devOpts = {};
-        if (flow.tags)
-          devOpts.tags = flow.tags;
+        const tmpTags = [];
+        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+          const config = Constants.TAG_TYPE_MAP[type];
+          if (flow[config.flowKey])
+            tmpTags.push(...flow[config.flowKey]);
+        }
+        devOpts.tags = tmpTags;
         if (flow.intf)
           devOpts.intfs = [flow.intf];
         if (flow.mac)
@@ -132,15 +137,25 @@ class DomainUpdater {
     return false;
   }
 
+  getParentDomains(domain) {
+    const parentDomains = [domain];
+    for (let i = 0; i < domain.length; i++) {
+      if (domain[i] === '.') {
+        while (domain[i] === '.' && i < domain.length)
+          i++;
+        if (i < domain.length)
+          parentDomains.push(domain.substring(i));
+      }
+    }
+    return parentDomains;
+  }
+
   async updateConnectIpset(flow) {
     // get connection info from enriched flow message
     // and check if need add to crossponding connection ipset
     if (!flow || !flow.lh || !flow.ip || !flow.sp || !flow.dp || !flow.pr || !flow.sh)
       return;
-    const domain = flow.host || flow.intel && flow.intel.host;
-    if (!domain) {
-      return; // skip if host info is not available
-    }
+    const sigs = flow.sigs || [];
 
     const connection = {
       localAddr: flow.lh,
@@ -149,6 +164,32 @@ class DomainUpdater {
       localPorts: flow.sp,
       remotePorts: flow.dp
     };
+
+    for (const sigId of sigs) {
+      if (categoryUpdater == null) {
+        const CategoryUpdater = require('../control/CategoryUpdater.js');
+        categoryUpdater = new CategoryUpdater();
+      }
+      const categories = categoryUpdater.getCategoryByFlowSignature(sigId);
+      for (const category of categories) {
+        if (!categoryUpdater.isActivated(category)) {
+          continue;
+        }
+        if (!this.isFlowMatchWithDomainOptions(flow, {"category": category})) {
+          continue;
+        }
+        const connSet = categoryUpdater.getConnectionIPSetName(category)
+        await Block.batchBlockConnection([connection], connSet).catch((err) => {
+          log.error(`Failed to update connection ipset ${connSet} for ${sigId}`, err.message);
+        });
+      }
+    }
+
+    const domain = flow.host || flow.intel && flow.intel.host;
+    if (!domain) {
+      return; // skip if host info is not available
+    }
+
     if (flow.lh != flow.sh) {
       connection.localPorts = flow.dp;
       connection.remotePorts = flow.sp;
@@ -159,21 +200,13 @@ class DomainUpdater {
       return;
     }
 
-    const parentDomains = [domain];
-    for (let i = 0; i < domain.length; i++) {
-      if (domain[i] === '.') {
-        while (domain[i] === '.' && i < domain.length)
-          i++;
-        if (i < domain.length)
-          parentDomains.push(domain.substring(i));
-      }
-    }
+    const parentDomains = this.getParentDomains(domain);
 
     for (const domainKey of parentDomains) {
-      if (!this.updateOptions[domainKey])
+      if (!this.connUpdateOptions[domainKey])
         continue;
-      for (const key in this.updateOptions[domainKey]) {
-        const config = this.updateOptions[domainKey][key];
+      for (const key in this.connUpdateOptions[domainKey]) {
+        const config = this.connUpdateOptions[domainKey][key];
         const d = config.domain;
         const options = config.options;
         if (!options.connSet)
@@ -230,23 +263,34 @@ class DomainUpdater {
 
 
   registerUpdate(domain, options) {
-    log.info(`DomainUpdater registerUpdate for domain ${domain} with options`, options);
+    log.debug(`DomainUpdater registerUpdate for domain ${domain} with options`, options);
     const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
-    // a secondary index for domain update options
-    if (!this.updateOptions[domainKey])
-      this.updateOptions[domainKey] = {};
+
     if (domain.startsWith("*.")) {
       options.exactMatch = false;
       domain = domain.substring(2);
     }
-    // use mapping key to uniquely identify each domain mapping settings
-    const key = domainIPTool.getDomainIPMappingKey(domain, options);
 
-    const config =  {domain: domain, options: options, ipCache: null };
-    if (!options.noIpsetUpdate) {
-      config.ipCache = new LRU({maxAge: options.ipttl * 1000 / 2 || 0}); // invalidate the entry in lru earlier than its ttl so that it can be re-added to the underlying ipset
+    const config = {domain: domain, options: options};
+    let domainOnly = true; // default to domain only
+    if ( options.domainOnly === false) {
+      domainOnly = false;
     }
-    this.updateOptions[domainKey][key] = config;
+    if (!domainOnly) {
+      // a secondary index for domain update options
+      if (!this.updateOptions[domainKey])
+        this.updateOptions[domainKey] = {};
+      // use mapping key to uniquely identify each domain mapping settings
+      const key = domainIPTool.getDomainIPMappingKey(domain, options);
+      config.ipCache = new LRU({maxAge: options.ipttl * 1000 / 2 || 0}); // invalidate the entry in lru earlier than its ttl so that it can be re-added to the underlying ipset
+      this.updateOptions[domainKey][key] = config;
+    } else if (options.connSet) {
+      if (!this.connUpdateOptions[domainKey])
+        this.connUpdateOptions[domainKey] = {};
+      const key = domainIPTool.getDomainConnMappingKey(domain, options);
+      log.debug(`DomainUpdater registerUpdate connection ipset for domain ${domain} with key ${key}, options`, options);
+      this.connUpdateOptions[domainKey][key] = config;
+    }
   }
 
   unregisterUpdate(domain, options) {
@@ -255,23 +299,28 @@ class DomainUpdater {
       options.exactMatch = false;
       domain = domain.substring(2);
     }
-    const key = domainIPTool.getDomainIPMappingKey(domain, options);
-    if (this.updateOptions[domainKey] && this.updateOptions[domainKey][key])
-      delete this.updateOptions[domainKey][key];
+    
+    let domainOnly = true; // default to domain only
+    if ( options.domainOnly === false) {
+      domainOnly = false;
+    }
+
+    if (!domainOnly) {
+      const key = domainIPTool.getDomainIPMappingKey(domain, options);
+      if (this.updateOptions[domainKey] && this.updateOptions[domainKey][key])
+        delete this.updateOptions[domainKey][key];
+    } else if (options.connSet) {
+      const key = domainIPTool.getDomainConnMappingKey(domain, options);
+      log.debug(`DomainUpdater unregisterUpdate for domain ${domain} with key:${key}, options`, options);
+      if (this.connUpdateOptions[domainKey] && this.connUpdateOptions[domainKey][key])
+        delete this.connUpdateOptions[domainKey][key];
+    }
   }
 
   async updateDomainMapping(domain, addresses) {
     if (!_.isString(domain)) return;
 
-    const parentDomains = [domain];
-    for (let i = 0; i < domain.length; i++) {
-      if (domain[i] === '.') {
-        while (domain[i] === '.' && i < domain.length)
-          i++;
-        if (i < domain.length)
-          parentDomains.push(domain.substring(i));
-      }
-    }
+    const parentDomains = this.getParentDomains(domain);
 
     for (const domainKey of parentDomains) {
       if (!this.updateOptions[domainKey])
@@ -283,9 +332,6 @@ class DomainUpdater {
         const config = this.updateOptions[domainKey][key];
         const d = config.domain;
         const options = config.options;
-
-        if (options.noIpsetUpdate)
-          continue;
         
         const ipCache = config.ipCache || null;
 
