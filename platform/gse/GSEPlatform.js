@@ -141,10 +141,6 @@ class GSEPlatform extends Platform {
   isTLSBlockSupport() {
     return true;
   }
-  
-  isUdpTLSBlockSupport() {
-    return false;
-  }
 
   isFireRouterManaged() {
     return true;
