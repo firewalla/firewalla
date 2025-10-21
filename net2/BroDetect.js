@@ -85,7 +85,6 @@ const { getUniqueTs, extractIP } = require('./FlowUtil.js')
 
 const LRU = require('lru-cache');
 const Constants = require('./Constants.js');
-const {Address6} = require('ip-address');
 
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
