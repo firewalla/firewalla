@@ -85,6 +85,7 @@ const { getUniqueTs, extractIP } = require('./FlowUtil.js')
 
 const LRU = require('lru-cache');
 const Constants = require('./Constants.js');
+const {Address6} = require('ip-address');
 
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
@@ -425,13 +426,16 @@ class BroDetect {
   recordDeviceHeartbeat(mac, ts, ip, fam = 4) {
     // do not record into activeMac if it is earlier than 5 minutes ago, in case the IP address has changed in the last 5 minutes
     if (ts > Date.now() / 1000 - 300) {
+      if (sysManager.isLinkLocal(ip, fam)) return; // ignore link local address
       let macIPEntry = this.activeMac[mac];
       if (!macIPEntry)
         macIPEntry = { ipv6Addr: [] };
       if (fam == 4) {
         macIPEntry.ipv4Addr = ip;
       } else if (fam == 6) {
-        macIPEntry.ipv6Addr.push(ip);
+        if (!macIPEntry.ipv6Addr.includes(ip)) {
+          macIPEntry.ipv6Addr.push(ip);
+        }
       }
       this.activeMac[mac] = macIPEntry;
     }
