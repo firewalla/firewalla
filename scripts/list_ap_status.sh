@@ -159,7 +159,7 @@ ap_data=$(ap_config | jq -r ".assets|to_entries|sort_by(.key)[]|[.key, .value.sy
 timeit ap_data
 ap_status=$(local_api status/ap|jq -r ".info")
 ap_status_mac=$(echo "$ap_status" |  jq -r  'to_entries[]|.key as $mac| .value.aps|map($mac, .bssid)|@tsv')
-ap_status2=$(echo "$ap_status" | jq -r "to_entries[]|[.key,.value.branch,.value.ts,.value.version//\"${NO_VALUE}\",.value.imageVersion//\"${NO_VALUE}\",.value.sysUptime,(.value.eths|.eth0.linkSpeed//-1,.eth1.linkSpeed//-1),.value.activeUplink,.value.lastActiveUplinkTs,.value.aps[\"ath2\"].upRssi//\"-\",.value.latencyToController, .value.aps[\"ath2\"].upBssid//\"-\", ([.value.wifis[].temp]|max)//\"$NO_VALUE\"]|@tsv")
+ap_status2=$(echo "$ap_status" | jq -r "to_entries[]|[.key,.value.branch,.value.ts,.value.version//\"-\",.value.imageVersion//\"-\",.value.sysUptime,(.value.eths|.eth0.linkSpeed//-1,.eth1.linkSpeed//-1),.value.activeUplink,.value.lastActiveUplinkTs//\"-\",.value.aps[\"ath2\"].upRssi//\"-\",.value.latencyToController, .value.aps[\"ath2\"].upBssid//\"-\", ([.value.wifis[].temp]|max)//\"-\"]|@tsv")
 timeit ap_status
 wg_dump=$(sudo wg show wg_ap dump)
 timeit wg_dump
@@ -211,7 +211,7 @@ do
             sta) apd="$ap_stations_per_ap" ;;
             act_up) apd="${ap_active_uplink}" ;;
             last_up_ts) 
-                if [[ -n "${ap_last_active_uplink_ts}" && "${ap_last_active_uplink_ts}" != "${NO_VALUE}" && "${ap_last_active_uplink_ts}" =~ ^[0-9]+$ ]]; then
+                if [[ -n "${ap_last_active_uplink_ts}" && "${ap_last_active_uplink_ts}" != "-" && "${ap_last_active_uplink_ts}" =~ ^[0-9]+$ ]]; then
                     # Convert milliseconds to seconds and format as local date
                     apd=$(date -d "@$((ap_last_active_uplink_ts/1000))" +"%b %d %H:%M" 2>/dev/null || echo "${ap_last_active_uplink_ts}")
                 else
