@@ -211,8 +211,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
         sem.once('IPTABLES_READY', async () => {
           log.info("iptables is ready");
           await this.refreshCustomizedCategories();
-          setInterval(() => {
-            this.refreshAllCategoryRecords()
+          setInterval(async () => {
+            await this.refreshAllCategoryRecords()
+            await this.refreshTLSCategoryActivated();
           }, 60 * 60 * 1000 * 4) // update records every 4 hours 
           await this.refreshAllCategoryRecords()
           this.inited = true;

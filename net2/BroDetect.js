@@ -237,7 +237,7 @@ class BroDetect {
       if (host.ipv4Addr || host.ipv6Addr) {
         const intfInfo = host.ipv4Addr ? sysManager.getInterfaceViaIP4(host.ipv4Addr) : host.ipv6Addr.map(ip6 => sysManager.getInterfaceViaIP6(ip6)).find(i => i);
         if (!intfInfo || !intfInfo.uuid) {
-          log.error(`HeartBeat: Unable to find nif uuid, ${host.ipv4Addr}, ${mac}`);
+          log.error(`HeartBeat: Unable to find nif uuid, ${host.ipv4Addr}, ${host.ipv6Addr}, ${mac}`);
           continue;
         }
         sem.emitEvent({
@@ -425,13 +425,16 @@ class BroDetect {
   recordDeviceHeartbeat(mac, ts, ip, fam = 4) {
     // do not record into activeMac if it is earlier than 5 minutes ago, in case the IP address has changed in the last 5 minutes
     if (ts > Date.now() / 1000 - 300) {
+      if (sysManager.isLinkLocal(ip, fam)) return; // ignore link local address
       let macIPEntry = this.activeMac[mac];
       if (!macIPEntry)
         macIPEntry = { ipv6Addr: [] };
       if (fam == 4) {
         macIPEntry.ipv4Addr = ip;
       } else if (fam == 6) {
-        macIPEntry.ipv6Addr.push(ip);
+        if (!macIPEntry.ipv6Addr.includes(ip)) {
+          macIPEntry.ipv6Addr.push(ip);
+        }
       }
       this.activeMac[mac] = macIPEntry;
     }

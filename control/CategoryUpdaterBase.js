@@ -445,9 +445,16 @@ class CategoryUpdaterBase {
     return this.activeCategories[category] !== undefined
   }
 
+  isTLSActivatedTCP(category) {
+    return this.activeTLSCategories_tcp && this.activeTLSCategories_tcp[category] !== undefined
+  }
+
+  isTLSActivatedUDP(category) {
+    return this.activeTLSCategories_udp && this.activeTLSCategories_udp[category] !== undefined
+  }
+
   isTLSActivated(category) {
-    return (this.activeTLSCategories_tcp && this.activeTLSCategories_tcp[category] !== undefined) 
-    || (this.activeTLSCategories_udp && this.activeTLSCategories_udp[category] !== undefined)
+    return this.isTLSActivatedTCP(category) || this.isTLSActivatedUDP(category)
   }
 
   async refreshCategoryRecord(category) { }

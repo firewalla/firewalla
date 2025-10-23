@@ -18,6 +18,8 @@ const _ = require('lodash');
 let freeradius = require("../extension/freeradius/freeradius.js");
 const fc = require('../net2/config.js')
 const f = require('../net2/Firewalla.js');
+const fsp = require('fs').promises;
+const exec = require('child-process-promise').exec;
 const log = require('../net2/logger.js')(__filename);
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
@@ -47,12 +49,23 @@ class FreeRadiusSensor extends Sensor {
     if (f.isMain()) {
       sem.on("StartFreeRadiusServer", async (event) => {
         if (!this.featureOn) return;
+        this.options = await this.loadOptionsAsync();
         return freeradius.startServer(this._options || {});
       });
 
       sem.on("StopFreeRadiusServer", async (event) => {
         // if (!this.featureOn) return;
+        this.options = await this.loadOptionsAsync();
         await freeradius.stopServer(this._options || {});
+      });
+
+      sem.on("ResetFreeRadiusServer", async (event) => {
+        try {
+          this.options = await this.loadOptionsAsync();
+          await freeradius.resetServer(this._options || {});
+        } catch (err) {
+          log.warn("Failed to reset freeradius server", err.message);
+        }
       });
     }
   }
@@ -67,6 +80,12 @@ class FreeRadiusSensor extends Sensor {
     extensionManager.onCmd("stopFreeRadius", async (msg, data) => {
       sem.sendEventToFireMain({
         type: "StopFreeRadiusServer",
+      });
+    });
+
+    extensionManager.onCmd("resetFreeRadius", async (msg, data) => {
+      sem.sendEventToFireMain({
+        type: "ResetFreeRadiusServer",
       });
     });
 
@@ -265,6 +284,7 @@ class FreeRadiusSensor extends Sensor {
   async globalOn() {
     this.featureOn = true;
     freeradius.globalOn();
+    await this.addCronJobs();
     this._policy = await this.loadPolicyAsync();
     this._options = await this.loadOptionsAsync();
     log.debug("freeradius policy", freeradius.mask(JSON.stringify(this._policy)));
@@ -276,6 +296,24 @@ class FreeRadiusSensor extends Sensor {
     }
   }
 
+
+  async addCronJobs() {
+    log.info("Adding freeradius image update cron jobs");
+    await fsp.unlink(`${f.getUserConfigFolder()}/freeradius_crontab`).catch((err) => { });
+    await fsp.symlink(`${f.getFirewallaHome()}/etc/crontab.freeradius`, `${f.getUserConfigFolder()}/freeradius_crontab`).catch((err) => { });
+    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+      log.error(`Failed to invoke update_crontab.sh in addCronJobs`, err.message);
+    });
+  }
+
+  async removeCronJobs() {
+    log.info("Removing freeradius image update cron jobs");
+    await fsp.unlink(`${f.getUserConfigFolder()}/freeradius_crontab`).catch((err) => { });
+    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+      log.error(`Failed to invoke update_crontab.sh in removeCronJobs`, err.message);
+    });
+  }
+
   policyReady() {
     const policy = this._policy["0.0.0.0"];
     const enabled = policy && _.isObject(policy) && Object.keys(policy).length > 0;
@@ -285,6 +323,7 @@ class FreeRadiusSensor extends Sensor {
   async globalOff() {
     this.featureOn = false;
     freeradius.globalOff();
+    await this.removeCronJobs();
     await freeradius.cleanUp();
     // if (await freeradius.isListening()) {
     freeradius.stopServer(this._options || {});  // stop container in background
@@ -348,8 +387,14 @@ class FreeRadiusSensor extends Sensor {
 
   // policy: {options:{},radius:{clients:[{"name":"","ipaddr":"","require_msg_auth":"yes|no|auto"}], users:[{username:""}]}}
   async applyPolicy(host, ip, policy) {
-    if (!this.featureOn) return;
-    if (!policy) return;
+    if (!this.featureOn) {
+      log.info("skip to apply policy freeradius, feature freeradius is disabled", host.constructor.name, ip, freeradius.mask(JSON.stringify(policy)));
+      return;
+    }
+    if (!policy) {
+      log.info("skip to apply empty policy freeradius", host.constructor.name, ip);
+      return;
+    }
     log.info("start to apply policy freeradius", host.constructor.name, ip, freeradius.mask(JSON.stringify(policy)));
     try {
       await this._applyPolicy(policy, ip);

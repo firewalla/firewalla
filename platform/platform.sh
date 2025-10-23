@@ -221,6 +221,12 @@ case "$UNAME" in
     ;;
 esac
 
+branch=$(git rev-parse --abbrev-ref HEAD)
+if [ "$branch" = "master" ]; then
+  XT_UDP_TLS_SUPPORTED=yes # it's development branch, enable xt_udp_tls for testing
+fi
+
+
 function installTLSModule() {
   uid=$(id -u pi)
   gid=$(id -g pi)

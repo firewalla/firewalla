@@ -392,7 +392,7 @@ function unblock(target, ipset) {
 }
 
 // this is used only for user defined target list so there is no need to remove from ipset. The ipset will be reset upon category reload or update.
-function batchBlockNetPort(elements, portObj, ipset, options = {}) {
+async function batchBlockNetPort(elements, portObj, ipset, options = {}) {
   log.debug("Batch block net port of", ipset);
   if (!_.isArray(elements) || elements.length === 0)
     return;
@@ -433,7 +433,7 @@ function batchBlockNetPort(elements, portObj, ipset, options = {}) {
 }
 
 // no need to remove from ipset, record will be cleared when timeout
-function batchBlockConnection(elements, ipset, options = {}) {
+async function batchBlockConnection(elements, ipset, options = {}) {
   log.debug("Batch block connection of", ipset);
   if (!_.isArray(elements) || elements.length === 0)
     return;
