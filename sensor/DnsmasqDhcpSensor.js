@@ -16,6 +16,7 @@
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const rclient = require('../util/redis_manager.js').getRedisClient();
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const ip = require('ip');
 
@@ -31,11 +32,17 @@ const dnsmasq = new DNSMASQ();
 
 class DnsmasqDhcpSensor extends Sensor {
     async run() {
+        if (platform.isFireRouterManaged()) {
+            await fs.writeFileAsync(dhcphook, `dhcp-script=${f.getFirewallaHome()}/extension/dnsmasq/dhcp_hook.sh`);
+            await dnsmasq.scheduleRestartDHCPService();
 
-      if(platform.isFireRouterManaged()) {
-        await fs.writeFileAsync(dhcphook, `dhcp-script=${f.getFirewallaHome()}/extension/dnsmasq/dhcp_hook.sh`);
-        await dnsmasq.scheduleRestartDHCPService();
-      }
+            await this.cleanUpEvents();
+            setInterval(async () => {
+                await this.cleanUpEvents().catch((err) => {
+                    log.error("Failed to clean up dnsmasq dhcp events", err);
+                });
+            }, 86400000); // 24 hours
+        }
 
         sclient.on("message", (channel, message) => {
             if (channel == 'dnsmasq.dhcp.lease') {
@@ -54,6 +61,20 @@ class DnsmasqDhcpSensor extends Sensor {
         sclient.subscribe("dnsmasq.dhcp.lease");
 
     }
+
+    async cleanUpEvents() {
+        const keys = await rclient.keysAsync("dnsmasq.dhcp.event:*");
+        for (const key of keys) {
+            // remove older than 72 hours
+            const expireTime = Math.floor(new Date()) - 259200000
+            await rclient.zremrangebyscoreAsync(key, '-inf', expireTime) // expires in 3 days
+            const size = await rclient.zcardAsync(key);
+            if (size > 1000) {
+                await rclient.zremrangebyrankAsync(key, 0, -1001); // keep only 1000 events
+            }
+        }
+    }
+
     processHost(host) {
         const action = host.action;
         if (action == 'del') return;
