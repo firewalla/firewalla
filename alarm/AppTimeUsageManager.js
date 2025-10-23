@@ -144,7 +144,7 @@ class AppTimeUsageManager {
           try {
             if (disturbTimeUsed >= Number(this.registeredPolicies[pid].appTimeUsage.disturbQuota)) {
               log.info(`Disturb time limit of Policy ${pid} is reached, will change to block mode`);
-              await this.unenforcePolicy(this.registeredPolicies[pid], uid, false);
+              await this.unenforcePolicy(this.registeredPolicies[pid], uid);
               // update policy disturbTimeUsed here to let unenforcePolicy to clear disturb rules.
               this.registeredPolicies[pid].disturbTimeUsed = disturbTimeUsed;
               await this.updateDisturbTimeUsedInPolicy(pid, this.registeredPolicies[pid].disturbTimeUsed);
@@ -174,7 +174,8 @@ class AppTimeUsageManager {
     const needDisturb = policy.needPolicyDisturb();
     // a default mode policy will be applied first, and will be updated to domain only after a certain timeout
     // if the policy is in disturb mode, it will not be updated to domain only mode
-    await this.enforcePolicy(policy, uid, false);
+    // always apply domain only mode, new machnism to handle existing connections
+    await this.enforcePolicy(policy, uid);
     if (needDisturb) {
       this.registeredPolicies[pid].disturbTimeUsed = policy.disturbTimeUsed;
       log.info(`The policy has been in disturb mode for ${policy.disturbTimeUsed} seconds.`);
@@ -267,7 +268,7 @@ class AppTimeUsageManager {
     const uids = this.getUIDs(policy);
 
     for (const uid of Object.keys(this.enforcedPolicies[pid])) {
-      await this.unenforcePolicy(policy, uid, this.enforcedPolicies[pid][uid] === POLICY_STATE_DOMAIN_ONLY);
+      await this.unenforcePolicy(policy, uid);
     }
     this.enforcedPolicies[pid] = {};
     for (const uid of Object.keys(this.policyTimeoutTasks[pid]))
@@ -367,7 +368,7 @@ class AppTimeUsageManager {
     }
     if (_.isObject(this.enforcedPolicies[pid])) {
       for (const uid of Object.keys(this.enforcedPolicies[pid]))
-        await this.unenforcePolicy(policy, uid, this.enforcedPolicies[pid][uid] === POLICY_STATE_DOMAIN_ONLY);
+        await this.unenforcePolicy(policy, uid);
       delete this.enforcedPolicies[pid];
     }
     if (_.isObject(this.policyTimeoutTasks[pid])) {

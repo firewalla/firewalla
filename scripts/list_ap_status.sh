@@ -211,7 +211,7 @@ do
             sta) apd="$ap_stations_per_ap" ;;
             act_up) apd="${ap_active_uplink}" ;;
             last_up_ts) 
-                if [[ -n "${ap_last_active_uplink_ts}" && "${ap_last_active_uplink_ts}" != "${NO_VALUE}" && "${ap_last_active_uplink_ts}" =~ ^[0-9]+$ ]]; then
+                if [[ -n "${ap_last_active_uplink_ts}" && "${ap_last_active_uplink_ts}" != "-" && "${ap_last_active_uplink_ts}" =~ ^[0-9]+$ ]]; then
                     # Convert milliseconds to seconds and format as local date
                     apd=$(date -d "@$((ap_last_active_uplink_ts/1000))" +"%b %d %H:%M" 2>/dev/null || echo "${ap_last_active_uplink_ts}")
                 else

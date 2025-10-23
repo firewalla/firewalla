@@ -330,7 +330,15 @@ class Platform {
   isTLSBlockSupport() {
     return false;
   }
+
+  isDevMode() {
+    return f.getBranch() == "master";
+  }
+
   isUdpTLSBlockSupport() {
+    if (this.isDevMode()) {
+      return true;
+    }
     return false;
   }
 
