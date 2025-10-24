@@ -175,7 +175,11 @@ class FlowTool extends LogQuery {
     }
 
     if (!queryDone) {
-      const macs = await this.expendMacs(options)
+      const macs = await this.expendMacs(options).catch((err) => {
+        log.info('Failed to expand macs', err);
+        err.code = 400;
+        throw err;
+      });
 
       const feeds = this.optionsToFeeds(options, macs).concat(
         auditTool.optionsToFeeds(options, macs)
