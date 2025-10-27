@@ -19,7 +19,6 @@
   "taskset": [
     ["napi/phy0-19", "2", "match"],
     ["napi/phy0-18", "3", "match"],
-    ["napi/phy", "1-3", "match"],
     ["mt76-tx", "0", "match"],
     ["zeek", "0"],
     ["suricata", "1"],
