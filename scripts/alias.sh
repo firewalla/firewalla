@@ -13,11 +13,12 @@ alias t4='tail -F ~/.forever/blue.log'
 alias t5='tail -F ~/.forever/firereset.log'
 alias t6='tail -F ~/.forever/router.log'
 alias t7='tail -F ~/.forever/fwapc.log'
-alias tt0='tail -F ~/logs/FireMain.log'
+alias t8='tail -F ~/.forever/dap.log'
+alias tt0='ls -1t ~/logs/FireMain*.log | head -n 1 | xargs tail -F'
 alias tt00='tail -F ~/logs/Fire*.log'
-alias tt1='tail -F ~/logs/FireKick.log'
-alias tt2='tail -F ~/logs/FireMon.log'
-alias tt3='tail -F ~/logs/FireApi.log'
+alias tt1='ls -1t ~/logs/FireKick*.log | head -n 1 | xargs tail -F'
+alias tt2='ls -1t ~/logs/FireMon*.log | head -n 1 | xargs tail -F'
+alias tt3='ls -1t ~/logs/FireApi*.log | head -n 1 | xargs tail -F'
 alias l0='less -R ~/.forever/main.log'
 alias l1='less -R ~/.forever/kickui.log'
 alias l2='less -R ~/.forever/monitor.log'
@@ -26,6 +27,8 @@ alias l4='less -R ~/.forever/blue.log'
 alias l5='less -R ~/.forever/firereset.log'
 alias l6='less -R ~/.forever/router.log'
 alias l7='less -R ~/.forever/fwapc.log'
+alias l8='less -R ~/.forever/dap.log'
+
 alias frr='forever restartall'
 alias fr0='forever restart 0'
 alias fr1='forever restart 1'
@@ -40,6 +43,7 @@ alias sr4='sudo systemctl restart firehttpd'
 alias sr5='sudo systemctl restart firereset'
 alias sr6='sudo systemctl restart firerouter; source /home/pi/firerouter/bin/common; init_network_config'
 alias sr7='sudo systemctl restart fwapc'
+alias sr8='sudo systemctl restart fwdap'
 alias srb4='sudo systemctl restart bitbridge4'
 alias srb6='sudo systemctl restart bitbridge6'
 alias ss7='sudo systemctl stop frpc.support.service'
@@ -70,6 +74,9 @@ function ll2 {
 }
 function ll3 {
   redis-cli publish "TO.FireApi" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "toProcess":"FireApi", "level":"'${2:-info}'"}'
+}
+function lld3 {
+  redis-cli publish "TO.FireApi" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "toProcess":"FireApi", "level":"'${2:-debug}'"}'
 }
 function ll6 {
   redis-cli publish "TO.FireRouter" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "level":"'${2:-info}'"}'
@@ -155,6 +162,8 @@ alias tvpn='~/scripts/test_vpn.sh'
 alias twan='curl -fsSL https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/test_wan.sh | sudo bash -s --'
 alias ttwan='sudo /home/pi/firewalla/scripts/test_wan.sh'
 
+alias llas='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/list_ap_stations.sh -o /tmp/list_ap_stations.sh 2>/dev/null; bash /tmp/list_ap_stations.sh'
+
 # view redis hash
 function vh {
   echo | column -n 2>/dev/null && COLUMN_OPT='column -n' || COLUMN_OPT='column'
@@ -194,4 +203,109 @@ function ncdiff() {
 
 function lase() {
   local_fwapc_get "v1/event_history/$1?format=text" | jq -r '.[]'
+}
+
+function laseap() {
+  local_fwapc_get "v1/event_history/$1?type=ap&format=text" | jq -r '.[]'
+}
+
+function lase10() {
+  lase "$1" | head
+}
+
+function llap() {
+  local_fwapc_get "v1/status/ap" | jq '.info[] | [.mac, .licenseUuid] | @tsv' -r
+}
+
+function useq() {
+  local mac="$1"
+  local seq="$2"
+  frcc . | jq --arg mac "$mac" --arg seq "$seq" 'if .apc.assets | has($mac) then .apc.assets[$mac].sysConfig.seq = $seq else . end' | frset -d @-
+}
+
+function sapb() {
+  local mac="$1"
+  local branch="$2"
+  curl 'http://localhost:8841/v1/control/switch_branch' -H 'Content-Type: application/json' -d "{\"uid\": \"$mac\", \"branch\": \"$branch\"}"
+}
+
+function lmove() {
+  local mac="$1"
+  local dst_bssid="$2"
+  local payload=""
+  if [[ "x$dst_bssid" == "x" ]]; then
+    payload=$(jq -n --arg mac "$mac" '{"staMac": $mac}')
+  else
+    payload=$(jq -n --arg mac "$mac" --arg dst_bssid "$dst_bssid" '{"staMac": $mac, "dstBSSID": $dst_bssid}')
+  fi
+  echo $payload | curl -X POST --url http://127.0.0.1:8841/v1/control/steer_station --header 'content-type: application/json' --data @-
+}
+
+function lfmove() {
+  local mac="$1"
+  local dst_bssid="$2"
+  local payload=""
+  if [[ "x$dst_bssid" == "x" ]]; then
+    payload=$(jq -n --arg mac "$mac" '{"staMac": $mac, "kickAsAlternative": true}')
+  else
+    payload=$(jq -n --arg mac "$mac" --arg dst_bssid "$dst_bssid" '{"staMac": $mac, "dstBSSID": $dst_bssid, "kickAsAlternative": true}')
+  fi
+  echo $payload | curl -X POST --url http://127.0.0.1:8841/v1/control/steer_station --header 'content-type: application/json' --data @-
+}
+
+alias lpair='curl localhost:8841/v1/runtime/pairing_stat -s | jq .'
+
+function lastat() {
+  local mac=$1
+  local filter=$2
+
+  if [[ "x$filter" == "x" ]]; then
+    lase "$mac" | head -n 20 | tac | ~/firewalla/scripts/device_ap_connect.sh "$mac" | column -t --output-separator "      "
+  else
+    lase "$mac" | grep -- "$filter" | tac | ~/firewalla/scripts/device_ap_connect.sh "$mac" | column -t --output-separator "      "
+  fi
+}
+
+# lap_patch <mac> <version>
+function lap_patch() {
+  local mac=$1
+  local version=$2
+
+  local payload=$(jq -n --arg mac "$mac" --arg version "$version" '{"uid": $mac, "version": $version}')
+  curl -XPOST localhost:8841/v1/control/patch_version -d "$payload" -H "Content-Type:application/json"
+}
+
+function lap_support() {
+  local mac=$1
+  local payload=$(jq -n --arg mac "$mac" '{"uid": $mac}')
+  curl 'http://localhost:8841/v1/control/support' -H 'Content-Type: application/json' -d "$payload"
+}
+
+alias dap='/home/pi/.firewalla/run/assets/dap'
+alias fwapc='/home/pi/.firewalla/run/assets/fwapc'
+
+function sef() {
+  local featureName=$1
+  if [[ "x$featureName" == "x" ]]; then
+    echo "usage: sef <featureName>"
+    return 1
+  fi
+  local payload=$(jq -n --arg featureName "$featureName" '{"featureName": $featureName}')
+  curl 'http://localhost:8834/v1/encipher/simple?command=cmd&item=enableFeature' -H 'Content-Type: application/json' -d "$payload"
+}
+
+function sdf() {
+  local featureName=$1
+  if [[ "x$featureName" == "x" ]]; then
+    echo "usage: sdf <featureName>"
+    return 1
+  fi
+  local payload=$(jq -n --arg featureName "$featureName" '{"featureName": $featureName}')
+  curl 'http://localhost:8834/v1/encipher/simple?command=cmd&item=disableFeature' -H 'Content-Type: application/json' -d "$payload"
+}
+
+function lap_reboot() {
+  local mac=$1
+  local payload=$(jq -n --arg mac "$mac" '{"uid": $mac}')
+  curl 'http://localhost:8841/v1/control/reboot' -H 'Content-Type: application/json' -d "$payload"
 }

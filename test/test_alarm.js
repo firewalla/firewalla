@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,6 +21,10 @@ let expect = chai.expect;
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const am2 = new AlarmManager2();
 const Alarm = require('../alarm/Alarm.js')
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
+const intelLoader = require('../intel/IntelLoader.js');
+const { getPreferredName } = require('../util/util.js')
 
 
 describe('Test localization', function(){
@@ -46,15 +50,28 @@ const data = {"p.device.id":"A:BB:CC:DD:EE:FF","p.device.ip":"172.16.1.144","p.p
   "p.dest.port":443,"p.intf.id":"0000000-0000-0000-0000-00000000000","p.dtag.ids":["1"],"p.device.mac":"A:BB:CC:DD:EE:FF", "p.dest.category":"games","p.dest.name.suffix":"nintendo.co.jp"}
 
 describe('Test dedup keys', () => {
-    it('test outbound domain suffix key', async() => {
-        const gameAlarm = new Alarm.GameAlarm(Date.now()/1000, 'MacBook Air', 'support.nintendo.com', data);
-        expect(gameAlarm.getDomainSuffixKey()).to.be.eql("p.dest.name.suffix")
-    });
-
-    it('test compare dedup keys', async() => {
-      const gameAlarm = new Alarm.GameAlarm(Date.now()/1000, 'MacBook Air', 'support.nintendo.com', data);
-      expect(gameAlarm.keysToCompareForDedup()).to.be.eql(["p.device.mac", "p.dest.name.suffix",  "p.intf.id", "p.utag.ids"]);
+  it('test outbound domain suffix key', async() => {
+    const gameAlarm = new Alarm.GameAlarm(Date.now()/1000, 'MacBook Air', 'support.nintendo.com', data);
+    expect(gameAlarm.getDomainSuffixKey()).to.be.eql("p.dest.name.suffix")
   });
+
+  it('test compare dedup keys', async() => {
+    const gameAlarm = new Alarm.GameAlarm(Date.now()/1000, 'MacBook Air', 'support.nintendo.com', data);
+    expect(gameAlarm.keysToCompareForDedup()).to.be.eql(["p.device.mac", "p.dest.name.suffix",  "p.intf.id", "p.utag.ids"]);
+  });
+
+  it('test dedup in action', async() => {
+    const alarm1 = new Alarm.LargeUploadAlarm(Date.now()/1000, 'MacBook Air', 'www.nintendo.co.jp', data);
+    const alarm2 = new Alarm.LargeUploadAlarm(Date.now()/1000, 'MacBook Air', 'www.nintendo.co.jp', Object.assign({}, data, {
+      'p.dest.ip': '1.2.3.4',
+    }))
+    expect(alarm1.isDup(alarm2)).to.be.true;
+    const alarm3 = new Alarm.LargeUploadAlarm(Date.now()/1000, 'MacBook Air', 'www.nintendo.co.jp', Object.assign({}, data, {
+      'p.dest.name': 'www.nintendo.com',
+      'p.dest.name.suffix': 'nintendo.com',
+    }))
+    expect(alarm1.isDup(alarm3)).to.be.false;
+  })
 });
 
 describe('Test generation', () => {
@@ -92,8 +109,21 @@ describe('Test generation', () => {
      payload['p.utag.ids'] = [ '6' ]
      const alarm3 = new Alarm.VideoAlarm(Date.now()/1000, 'Reinhard MBP', 'googlevideo.com', payload)
 
-     console.log(alarm1['p.utag.ids'])
-     console.log(alarm3['p.utag.ids'])
      expect(alarm1.isDup(alarm3)).to.be.false
+   })
+
+   it('should enriched device info with mac, not IP', async () => {
+     await hostManager.getHostsAsync();
+     const host = hostManager.hosts.all[0]
+
+     const payload = {
+       'p.device.ip': '192.168.1.1',
+       'p.device.mac': host.o.mac
+     }
+     let alarm = new Alarm.VideoAlarm(Date.now()/1000, 'test device', 'test-domain.com', payload)
+
+     alarm = await intelLoader.enrichAlarm(alarm);
+
+     expect(alarm['p.device.name']).to.be.equal(getPreferredName(host.o))
    })
 })

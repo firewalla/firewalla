@@ -19,6 +19,7 @@ let chai = require('chai');
 let expect = chai.expect;
 
 const fc = require('../net2/config.js');
+const { REDIS_KEY_MSP_DATA } = require('../net2/Constants.js');
 const log = require('../net2/logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
@@ -45,14 +46,14 @@ describe('Test Config', function(){
     });
 
     it('should sync msp config', async() => {
-      const origin = await rclient.getAsync("ext.guardian.data");
+      const origin = await rclient.getAsync(REDIS_KEY_MSP_DATA);
       const data = `{"config": {"alarms": {"apply":{"test":{"state": "111"}}}}}`
-      rclient.setAsync("ext.guardian.data", data);
+      rclient.setAsync(REDIS_KEY_MSP_DATA, data);
       await fc.syncMspConfig();
       const config = await fc.getMspConfig();
       expect(config.alarms.apply.test.state).to.be.equal('111');
 
-      await rclient.setAsync("ext.guardian.data", origin);
+      await rclient.setAsync(REDIS_KEY_MSP_DATA, origin);
     });
 
     it('should subscribe msp update', async() => {
