@@ -227,7 +227,8 @@ class DestIPFoundHook extends Hook {
         qs: { d: query },
         family: 4,
         method: "GET",
-        json: true
+        json: true,
+        timeout: 3000
       };
 
       const rpResult = await rp(options).catch((err) => {
