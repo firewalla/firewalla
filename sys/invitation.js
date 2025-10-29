@@ -272,6 +272,7 @@ class FWInvitation {
             status: "pending"
           };
         try {
+          await rclient.setAsync(Constants.REDIS_KEY_LAST_LICENSE_REQ_STATUS, Constants.LICENSE_REQ_STATUS_TRY_REFRESH);
           let lic = await bone.getLicenseAsync(userInfo.license, mac);
           if (lic) {
             const types = platform.getLicenseTypes();
@@ -293,6 +294,7 @@ class FWInvitation {
               log.forceInfo("Got a new license");
               log.info("Got a new license:", lic && lic.DATA && lic.DATA.UUID && lic.DATA.UUID.substring(0, 8));
               await license.writeLicense(lic);
+              await rclient.setAsync(Constants.REDIS_KEY_LAST_LICENSE_REQ_STATUS, Constants.LICENSE_REQ_STATUS_REFRESHED);
             }
           }
         } catch (err) {
