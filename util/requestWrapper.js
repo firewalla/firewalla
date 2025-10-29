@@ -40,7 +40,8 @@ sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
 async function rrWithErrHandling(options, usePool = false, compress = false) {
   const msg = `HTTP failed after ${options.maxAttempts || 5} attempt(s) ${options.method || 'GET'} ${options.uri}`
   const uid = uuid.v4()
-  log.verbose(uid, options.method || 'GET', options.uri)
+  const json = Boolean(options.json)
+  log.verbose(uid, options.method || 'GET', options.uri, usePool, compress)
 
   options.fullResponse = true
 
@@ -97,7 +98,15 @@ async function rrWithErrHandling(options, usePool = false, compress = false) {
     throw error
   }
 
-  if (!response.body) response.body = null
+  if (response.body) {
+    // compressed json request does not get parsed automatically
+    if (compress && json && typeof response.body === 'string') try {
+      response.body = JSON.parse(response.body)
+    } catch (err) {
+      log.error('Failed to parse response body:', err)
+    }
+  } else
+    response.body = null
 
   return response
 }
