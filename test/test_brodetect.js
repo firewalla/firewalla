@@ -19,8 +19,7 @@ let chai = require('chai');
 let expect = chai.expect;
 
 const log = require('../net2/logger.js')(__filename);
-const bro = require("../net2/BroDetect.js");
-const conntrack = require('../net2/Conntrack.js');
+let bro, conntrack
 const execAsync = require('child-process-promise').exec;
 const fireRouter = require('../net2/FireRouter.js')
 const sysManager = require('../net2/SysManager.js');
@@ -33,6 +32,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
 const DomainTrie = require('../util/DomainTrie.js');
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
 
 describe('test process conn data', function(){
   this.timeout(35000);
@@ -40,6 +41,8 @@ describe('test process conn data', function(){
   before(async() => {
     process.title = "FireMain";
 
+    bro = require("../net2/BroDetect.js");
+    conntrack = require('../net2/Conntrack.js');
     categoryUpdater.domainPatternTrie = new DomainTrie();
     categoryUpdater.categoryWithPattern = new Set();
 
@@ -51,9 +54,36 @@ describe('test process conn data', function(){
     // source port 9999 for test
   });
 
-  it('should validate conn data', () => {
+  // test this first so activeMac is empty
+  it('should not update device active ts if source byte is 0', async() => {
+    const hosts = await hostManager.getHostsAsync()
+    if (!hosts.length) throw new Error('No hosts found')
+
+    const data = {ts:Date.now(), 'id.orig_h':hosts[0].o.ipv4, 'id.orig_p':57900, 'id.resp_h':"44.242.88.88", 'id.resp_p':8890, proto:"udp", duration:0.3, orig_bytes:0, resp_bytes:674, conn_state:"SF", local_orig:true, local_resp:false, missed_bytes:0, history:"ShADadFf", orig_pkts:0, orig_ip_bytes:403, resp_pkts:4, resp_ip_bytes:890, orig_l2_addr:hosts[0].o.mac, resp_l2_addr:"20:6d:31:01:2b:40" };
+    await bro.processConnData(JSON.stringify(data), false);
+    expect(bro.activeMac).to.not.have.property(hosts[0].o.mac)
+
+    if (hosts.length < 2) throw new Error('At least 2 hosts required')
+
+    // local flow, on saving with dest device key, activeMac should not be updated
+    Object.assign(data, {
+      'id.resp_h': hosts[1].o.ipv4,
+      resp_l2_addr: hosts[1].o.mac,
+      local_resp: true,
+      orig_bytes: 100,
+      orig_pkts: 4,
+      resp_bytes: 0,
+      resp_pkts: 0,
+      bridge: true,
+    })
+    await bro.processConnData(JSON.stringify(data), false);
+    expect(bro.activeMac).to.have.property(hosts[0].o.mac)
+    expect(bro.activeMac).to.not.have.property(hosts[1].o.mac)
+  })
+
+  it('should validate conn data', async () => {
     const data = {"ts":1710209544.631895,"uid":"CTPhHjfLC1DepnDF3","id.orig_h":"192.168.1.201","id.orig_p":57985,"id.resp_h":"44.242.60.85","id.resp_p":80,"proto":"tcp","service":"http","duration":0.34476304054260254,"orig_bytes":79,"resp_bytes":674,"conn_state":"SF","local_orig":true,"local_resp":false,"missed_bytes":0,"history":"ShADadFf","orig_pkts":6,"orig_ip_bytes":403,"resp_pkts":4,"resp_ip_bytes":890,"orig_l2_addr":"68:da:73:ac:ff:ff","resp_l2_addr":"20:6d:31:01:bb:bb"};
-    const valid = bro.validateConnData(data, false);
+    const valid = await bro.validateConnData(data);
     expect(valid).to.equal(true);
   });
 
@@ -86,7 +116,7 @@ describe('test process conn data', function(){
     expect(JSON.parse(flows).rpid).to.be.undefined;
   });
 
-  it('extractIP should currectly parse IP string', async() => {
+  it('extractIP should correctly parse IP string', async() => {
     expect(bro.extractIP('fe80::')).to.equal('fe80::')
     expect(bro.extractIP('[fe80::]')).to.equal('fe80::')
     expect(bro.extractIP('[fe80::]:123')).to.equal('fe80::')

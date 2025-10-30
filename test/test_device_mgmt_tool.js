@@ -38,10 +38,7 @@ let gmt = require('../util/DeviceMgmtTool');
 
 let Firewalla = require('../net2/Firewalla.js');
 
-let redis = require('redis');
-let rclient = redis.createClient();
-
-Promise.promisifyAll(redis.RedisClient.prototype);
+let rclient = require('../util/redis_manager').getRedisClient();
 
 function delay(t) {
   return new Promise(function(resolve) {

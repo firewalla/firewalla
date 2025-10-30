@@ -38,13 +38,15 @@ const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
 const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
-
+const sl = require('../sensor/SensorLoader.js');
+const pclient = require('../util/redis_manager.js').getPublishClient()
 class AppTimeUsageSensor extends Sensor {
   
   async run() {
     this.hookFeature(featureName);
     this.enabled = fc.isFeatureOn(featureName);
-    this.cloudConfig = null;
+    this.cloudConfig = null; // for app time usage config
+    this.internetTimeUsageCfg = null;
     this.appConfs = {};
     await this.loadConfig(true);
 
@@ -59,10 +61,8 @@ class AppTimeUsageSensor extends Sensor {
 
     sclient.on("message", async (channel, message) => {
       if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
-        if (this._policy) {
-          log.info("System timezone is reloaded, will reschedule update config cron job ...");
-          await this.scheduleUpdateConfigCronJob();
-        }
+        log.info("System timezone is reloaded, will reschedule update config cron job ...");
+        await this.scheduleUpdateConfigCronJob();
       }
     });
     sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
@@ -110,13 +110,29 @@ class AppTimeUsageSensor extends Sensor {
   }
 
   async loadCloudConfig(reload = false) {
-    let data = await rclient.getAsync(CLOUD_CONFIG_KEY).then(result => result && JSON.parse(result)).catch(err => null);
-    this.cloudConfig = data;
-    if (_.isEmpty(data) || reload)
-      data = await bone.hashsetAsync("app_time_usage_config").then(result => result && JSON.parse(result)).catch((err) => null);
-    if (!_.isEmpty(data) && _.isObject(data)) {
-      await rclient.setAsync(CLOUD_CONFIG_KEY, JSON.stringify(data));
-      this.cloudConfig = data;
+    let isCloudConfigUpdated = false;
+    let appTimeUsageConfig = await rclient.getAsync(CLOUD_CONFIG_KEY).then(result => result && JSON.parse(result)).catch(err => null);
+    this.cloudConfig = appTimeUsageConfig;
+    if (_.isEmpty(appTimeUsageConfig) || reload) {
+      appTimeUsageConfig = await bone.hashsetAsync(Constants.REDIS_KEY_APP_TIME_USAGE_CONFIG).then(result => result && JSON.parse(result)).catch((err) => null);
+      if (!_.isEmpty(appTimeUsageConfig) && _.isObject(appTimeUsageConfig)) {
+        await rclient.setAsync(CLOUD_CONFIG_KEY, JSON.stringify(appTimeUsageConfig));
+        this.cloudConfig = appTimeUsageConfig;
+        isCloudConfigUpdated = true;
+      }
+    }
+    let internetTimeUsageCfg = await rclient.getAsync(Constants.REDIS_KEY_INTERNET_TIME_USAGE_CONFIG).then(result => result && JSON.parse(result)).catch(err => null);
+    this.internetTimeUsageCfg = internetTimeUsageCfg;
+    if (_.isEmpty(internetTimeUsageCfg) || reload) {
+      internetTimeUsageCfg = await bone.hashsetAsync(Constants.REDIS_KEY_INTERNET_TIME_USAGE_CONFIG).then(result => result && JSON.parse(result)).catch((err) => null);
+      if (!_.isEmpty(internetTimeUsageCfg) && _.isObject(internetTimeUsageCfg)) {
+        await rclient.setAsync(Constants.REDIS_KEY_INTERNET_TIME_USAGE_CONFIG, JSON.stringify(internetTimeUsageCfg));
+        this.internetTimeUsageCfg = internetTimeUsageCfg;
+        isCloudConfigUpdated = true;
+      }
+    }
+
+    if (isCloudConfigUpdated) {
       sem.sendEventToAll({type: Message.MSG_APP_INTEL_CONFIG_UPDATED});
     }
   }
@@ -142,7 +158,7 @@ class AppTimeUsageSensor extends Sensor {
       const includedDomains = appConfs[key].includedDomains || [];
       const category = appConfs[key].category;
       for (const value of includedDomains) {
-        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold"]);
+        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold", "ulDlRatioThreshold"]);
         obj.app = key;
         if (category)
           obj.category = category;
@@ -170,6 +186,34 @@ class AppTimeUsageSensor extends Sensor {
     this._domainTrie = domainTrie;
   }
 
+  getCategoryBytesThreshold(category) {
+    if (category && this.internetTimeUsageCfg) {
+      if (this.internetTimeUsageCfg[category] &&
+        typeof this.internetTimeUsageCfg[category].bytesThreshold === "number")
+        return this.internetTimeUsageCfg[category].bytesThreshold;
+      if (this.internetTimeUsageCfg["default"] &&
+        typeof this.internetTimeUsageCfg["default"].bytesThreshold === "number")
+        return this.internetTimeUsageCfg["default"].bytesThreshold;
+    }
+    return 200 * 1024; // default threshold is 200KB
+  }
+
+  getCategoryUlDlRatioThreshold(category) {
+    if (category && this.internetTimeUsageCfg) {
+      if (this.internetTimeUsageCfg[category] &&
+        typeof this.internetTimeUsageCfg[category].ulDlRatioThreshold === "number")
+        return this.internetTimeUsageCfg[category].ulDlRatioThreshold;
+      if (this.internetTimeUsageCfg["default"] &&
+        typeof this.internetTimeUsageCfg["default"].ulDlRatioThreshold === "number")
+        return this.internetTimeUsageCfg["default"].ulDlRatioThreshold;
+    }
+    return 5; // default threshold is 5
+  }
+  
+  recordFlow(flow) {
+    pclient.publishAsync("internet.activity.flow", JSON.stringify({flow}));
+  }
+
   // returns an array with matched app criterias
   // [{"app": "youtube", "occupyMins": 1, "lingerMins": 1, "bytesThreshold": 1000000}]
   lookupAppMatch(flow) {
@@ -181,42 +225,53 @@ class AppTimeUsageSensor extends Sensor {
     if (_.isSet(values)) {
       for (const value of values) {
         if (_.isObject(value) && value.app && !values.has(`!${value.app}`)) {
-          if (!value.bytesThreshold || flow.ob + flow.rb >= value.bytesThreshold)
+          if ((!value.bytesThreshold || flow.ob + flow.rb >= value.bytesThreshold) && (!value.ulDlRatioThreshold || flow.ob <= value.ulDlRatioThreshold * flow.rb))
             result.push(value);
         }
       }
     }
     // match internet activity on flow
     const category = _.get(flow, ["intel", "category"]);
-    let bytesThreshold = category ? 1024 * 1024 : 1024 * 1024 * 5;
-    let minsThreshold = category ? 1 : 2;
-    if (host && host.startsWith("www.")) {
-      bytesThreshold = 256 * 1024;
-      minsThreshold = 2;
+    const bytesThreshold = this.getCategoryBytesThreshold(category);
+    // ignore flows with large upload/download ratio, e.g., a flow with large ul/dl ratio may happen if device is backing up data
+    const ulDlRatioThreshold = this.getCategoryUlDlRatioThreshold(category);
+    const nds = sl.getSensor("NoiseDomainsSensor");
+    let flowNoiseTags = nds ? nds.find(host) : null;
+    if ((flow.ob + flow.rb >= bytesThreshold && flow.ob <= ulDlRatioThreshold * flow.rb && _.isEmpty(flowNoiseTags)) || !_.isEmpty(result)) {
+      log.debug("match internet activity on flow", flow, `bytesThresold: ${bytesThreshold}`);
+      result.push({ app: "internet", occupyMins: 1, lingerMins: 10, minsThreshold: 1, noStray: true }); // set noStray to true to suppress single matched flow from being counted, e.g., single large flow when device is sleeping
     }
-    if (flow.ob + flow.rb >= bytesThreshold || !_.isEmpty(result))
-      result.push({"app": "internet", "occupyMins": 2, "lingerMins": 3, minsThreshold});
     return result;
   }
 
-  async processEnrichedFlow(enrichedFlow) {
+  async processEnrichedFlow(f) {
     if (!this.enabled)
       return;
-    const host = enrichedFlow.host || enrichedFlow.intel && enrichedFlow.intel.host;
-    const appMatches = this.lookupAppMatch(enrichedFlow);
+    const host = f.host || f.intel && f.intel.host;
+    if (f.du > 300) {
+      // long connection should be sliced into partial flows in zeek and BroDetect, in normal cases, duration should be no more than 3 minutes,
+      //  a flow with long duration may happen if firemain is restarted
+      log.warn("Unexpected flow with long duration, ignore", f.ts, f.du, f.sh, f.sp, '->', f.dh, f.dp);
+      return;
+    }
+    if (fc.isFeatureOn("record_activity_flow")){
+      this.recordFlow(f);
+    }
+
+    const appMatches = this.lookupAppMatch(f);
     if (_.isEmpty(appMatches))
       return;
     for (const match of appMatches) {
-      const {app, category, domain, occupyMins, lingerMins, minsThreshold} = match;
+      const {app, category, domain, occupyMins, lingerMins, minsThreshold, noStray} = match;
       if (host && domain)
         await dnsTool.addSubDomains(domain, [host]);
       let tags = []
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const config = Constants.TAG_TYPE_MAP[type];
-        tags.push(...(enrichedFlow[config.flowKey] || []));
+        tags.push(...(f[config.flowKey] || []));
       }
       tags = _.uniq(tags);
-      await this.markBuckets(enrichedFlow.mac, tags, enrichedFlow.intf, app, category, enrichedFlow.ts, enrichedFlow.ts + enrichedFlow.du, occupyMins, lingerMins, minsThreshold);
+      await this.markBuckets(f.mac, tags, f.intf, app, category, f.ts, f.ts + f.du, occupyMins, lingerMins, minsThreshold, noStray);
     }
   }
 
@@ -281,7 +336,7 @@ class AppTimeUsageSensor extends Sensor {
     }
   }
 
-  async markBuckets(mac, tags, intf, app, category, begin, end, occupyMins, lingerMins, minsThreshold) {
+  async markBuckets(mac, tags, intf, app, category, begin, end, occupyMins, lingerMins, minsThreshold, noStray = false) {
     const beginMin = Math.floor(begin / 60);
     const endMin = Math.floor(end / 60) + occupyMins - 1;
     await lock.acquire(`LOCK_${mac}`, async () => {
@@ -320,7 +375,7 @@ class AppTimeUsageSensor extends Sensor {
         }
       }
 
-      const effective = endMin - beginMin + 1 >= minsThreshold || extended; // do not record interval less than minsThreshold unless it is adjacent to linger minutes of other intervals
+      const effective = (endMin - beginMin + 1 >= minsThreshold && !noStray) || extended; // do not record interval less than minsThreshold unless it is adjacent to linger minutes of other intervals
       const beginHour = Math.floor(beginMin / 60);
       const endHour = Math.floor(endMin / 60);
       for (let hour = beginHour; hour <= endHour; hour++) {

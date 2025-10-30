@@ -1,4 +1,4 @@
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,10 +18,10 @@ const log = require('../net2/logger.js')(__filename);
 
 const util = require('util');
 const readline = require('readline');
-const ip = require('ip');
+const net = require('net')
 
+const ipUtil = require('../util/IPUtil.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-
 const Sensor = require('./Sensor.js').Sensor;
 const sysManager = require('../net2/SysManager.js');
 const cp = require('child_process');
@@ -30,12 +30,13 @@ const spawn = cp.spawn;
 const Message = require('../net2/Message.js');
 const LRU = require('lru-cache');
 const scheduler = require('../util/scheduler.js');
+const asyncNative = require('../util/asyncNative.js');
 
 class ICMP6Sensor extends Sensor {
   constructor(config) {
     super(config);
     this.intfPidMap = {};
-    this.cache = new LRU({max: 600, maxAge: 1000 * 60 * 3});
+    this.cache = new LRU({max: 600, maxAge: 1000 * 60 * 5});
   }
 
   async restart() {
@@ -54,6 +55,8 @@ class ICMP6Sensor extends Sensor {
       if (intf.name.endsWith(":0")) continue; // do not listen on interface alias since it is not a real interface
       if (intf.name.includes("vpn")) continue; // do not listen on vpn interface
       if (intf.name.startsWith("wg")) continue; // do not listen on wireguard interface
+      await execAsync(`sudo sysctl -w net.ipv6.neigh.${intf.name.replace(/\./gi, "/")}.base_reachable_time_ms=600000`).catch((err) => {});
+      await execAsync(`sudo sysctl -w net.ipv6.neigh.${intf.name.replace(/\./gi, "/")}.gc_stale_time=240`).catch((err) => {});
       // listen on icmp6 neighbor-advertisement which is not sent from firewalla
       const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', intf.name, '-enl', `!(ether src ${intf.mac_address}) && icmp6 && ip6[40] == 136 && !vlan`]);
       const pid = tcpdumpSpawn.pid;
@@ -81,7 +84,7 @@ class ICMP6Sensor extends Sensor {
     // ping known public IPv6 addresses to keep OS ipv6 neighbor cache up-to-date
     setInterval(() => {
       this.pingKnownIPv6s().catch((err) => {});
-    }, 20000);
+    }, 240000);
   }
 
   processNeighborAdvertisement(line, intf) {
@@ -99,8 +102,11 @@ class ICMP6Sensor extends Sensor {
       if (!dstIp)
         return;
       dstIp = dstIp.substring(0, dstIp.length - 1);
-      if (sysManager.isMulticastIP6(dstIp))
-        // do not process ICMP6 packet sent to multicast IP, the source mac not be the real mac
+      const srcIp = tokens[pos - 3];
+      if (!srcIp)
+        return;
+      if (sysManager.isMulticastIP6(dstIp) || sysManager.isMulticastIP6(srcIp))
+        // do not process ICMP6 packet sent from/to multicast IP, the source mac not be the real mac
         return;
       pos = tokens.indexOf("is");
       if (pos < 0)
@@ -111,7 +117,7 @@ class ICMP6Sensor extends Sensor {
       // strip trailing comma
       tgtIp = tgtIp.substring(0, tgtIp.length - 1);
       log.verbose("Neighbor advertisement detected: " + dstMac + ", " + tgtIp);
-      if (dstMac && ip.isV6Format(tgtIp)) {
+      if (dstMac && net.isIPv6(tgtIp)) {
         let newlyFound = true;
         if (this.cache.get(tgtIp) === dstMac)
           newlyFound = false;
@@ -119,7 +125,7 @@ class ICMP6Sensor extends Sensor {
         if (!newlyFound)
           return;
         // ping newly found public ipv6 to refresh neighbor cache on the box
-        if (ip.isPublic(tgtIp))
+        if (ipUtil.isPublic(tgtIp))
           this.pingIPv6(tgtIp);
         sem.emitEvent({
           type: "DeviceUpdate",
@@ -140,14 +146,14 @@ class ICMP6Sensor extends Sensor {
 
   async pingKnownIPv6s() {
     this.cache.prune();
-    await Promise.all(this.cache.keys().map(async (ipv6) => {
-      if (ip.isPublic(ipv6))
+    await asyncNative.eachLimit(this.cache.keys(), 10, async (ipv6) => {
+      if (ipUtil.isPublic(ipv6))
         await this.pingIPv6(ipv6).catch((err) => {});
-    }));
+    });
   }
 
   async pingIPv6(ipv6) {
-    await execAsync(`ping6 -c 1 ${ipv6}`).catch((err) => {});
+    await execAsync(`ping6 -c 1 -W 0.5 ${ipv6}`).catch((err) => {});
   }
 }
 

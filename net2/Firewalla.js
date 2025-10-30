@@ -392,6 +392,10 @@ async function getBoxName() {
   return rclient.getAsync(Constants.REDIS_KEY_GROUP_NAME);
 }
 
+function getExtraAssetsDir() {
+  return `${getUserConfigFolder()}/assets_extra`;
+}
+
 module.exports = {
   getFirewallaHome: getFirewallaHome,
   getLocalesDirectory: getLocalesDirectory,
@@ -446,5 +450,6 @@ module.exports = {
   getLatestCommitHash:getLatestCommitHash,
   getLocalCommitHash,
   getRemoteCommitHash,
-  getBoxName: getBoxName
+  getBoxName: getBoxName,
+  getExtraAssetsDir: getExtraAssetsDir
 }

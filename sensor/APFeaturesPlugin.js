@@ -18,26 +18,117 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 const _ = require('lodash');
-const policyKeyName = "isolation";
 const extensionManager = require('./ExtensionManager.js');
 const Tag = require('../net2/Tag.js');
+const TagManager = require('../net2/TagManager.js');
 const { Rule } = require('../net2/Iptables.js');
+const fireRouter = require('../net2/FireRouter.js');
 const ipset = require('../net2/Ipset.js');
 const fwapc = require('../net2/fwapc.js');
 const Identity = require('../net2/Identity.js');
 const Host = require('../net2/Host.js');
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
 const NetworkProfile = require('../net2/NetworkProfile.js');
+const Constants = require('../net2/Constants.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const LOCK_FWAPC_ISOLATION = "LOCK_FWAPC_ISOLATION";
 
 class APFeaturesPlugin extends Sensor {
   async run() {
+    if (!platform.isFireRouterManaged())
+      return;
     const policyHandlers = {
       "isolation": this.applyIsolation,
       "ssidPSK": this.applySSIDPSK,
+      "apControl": this.applyApControl,
     };
     for (const key of Object.keys(policyHandlers))
       extensionManager.registerExtension(key, this, {
         applyPolicy: policyHandlers[key]
       });
+
+    // periodically sync isolation and ssidPSK to fwapc in case of inconsistency
+    setInterval(async () => {
+      await this.syncIsolation().catch((err) => {
+        log.error(`Failed to run periodic sync isolation to fwapc`, err.message);
+      });
+    }, 900 * 1000);
+  }
+
+  async applyApControl(obj, ip, policy) {
+    if (!policy || !_.isObject(policy)) {
+      log.warn("invalid ap control policy", policy);
+      return;
+    }
+    if (ip == "0.0.0.0") {
+      await this._aclIptables(policy.aclOff === true ? "-I" : "-D");
+      await this._aclAps(policy.aclOff);
+    }
+  }
+
+  async _aclIptables(op) {
+    log.info("applyApControl", op);
+    const netRule = new Rule("filter").chn("FW_FIREWALL_NET_ISOLATION").comment("network ap acl off").jmp("RETURN");
+    const netRule6 = netRule.clone().fam(6);
+    await netRule.exec(op).catch((err) => { log.warn(err.message) });
+    await netRule6.exec(op).catch((err) => { log.warn(err.message) });
+
+    const groupRule = new Rule("filter").chn("FW_FIREWALL_DEV_G_ISOLATION").comment("group ap acl off").jmp("RETURN");
+    const groupRule6 = groupRule.clone().fam(6);
+    await groupRule.exec(op).catch((err) => {  log.warn(err.message) });
+    await groupRule6.exec(op).catch((err) => {  log.warn(err.message) });
+
+    const deviceRule = new Rule("filter").chn("FW_FIREWALL_DEV_ISOLATION").comment("device ap acl off").jmp("RETURN");
+    const deviceRule6 = deviceRule.clone().fam(6);
+    await deviceRule.exec(op).catch((err) => {  log.warn(err.message) });
+    await deviceRule6.exec(op).catch((err) => {  log.warn(err.message) });
+
+    // handle acl rules to intranet in box
+    const monitoredNetRule =new Rule("filter").chn("FW_DROP").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst").comment("ap acl off").jmp("RETURN");
+    const monitoredNetRule6 = monitoredNetRule.clone().fam(6);
+    await monitoredNetRule.exec(op).catch((err) => {  log.warn(err.message) });
+    await monitoredNetRule6.exec(op).catch((err) => {  log.warn(err.message) });
+  }
+
+  async _aclAps(acloff=false) {
+    // set disableAcl to APs
+    const config = await fireRouter.getConfig();
+    if (!config || !config.apc) {
+      log.error("Failed to get apc config");
+      return;
+    }
+    const changed = this._setApAcl(config, acloff);
+    if (changed === true) {
+      log.info("acl changed, reapply networkConfig", acloff);
+      await fireRouter.setConfig(config).catch((err) => {
+        log.warn("Failed to set apc config to change acl status", err.message);
+      });
+    }
+  }
+
+   _setApAcl(config, op) {
+    if (!config.apc || !config.apc.assets || !_.isObject(config.apc.assets)) {
+      log.error("Failed to get assets in apc config");
+      return;
+    }
+    let changed = false;
+    for (const uid in config.apc.assets) {
+      const asset = config.apc.assets[uid];
+      if (!asset || !asset.sysConfig || !_.isObject(asset.sysConfig)) {
+        log.error(`Failed to get sysConfig in apc config for asset ${uid}`);
+        continue;
+      }
+      if (asset.sysConfig.disableAcl === op) {
+        continue;
+      } else {
+        asset.sysConfig.disableAcl = op;
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   async applyIsolation(obj, ip, policy) {
@@ -52,23 +143,23 @@ class APFeaturesPlugin extends Sensor {
       const tagDevSetName = Tag.getTagDeviceSetName(tagUid);
       const rule = new Rule("filter").chn("FW_FIREWALL_DEV_G_ISOLATION").mdl("conntrack", "--ctdir ORIGINAL").jmp("FW_PLAIN_DROP");
       const ruleLog = new Rule("filter").chn("FW_FIREWALL_DEV_G_ISOLATION").mdl("conntrack", "--ctdir ORIGINAL").jmp(`LOG --log-prefix "[FW_ADT]A=I G=${tagUid} "`);
-  
+
       const ruleTx = rule.clone().set(tagDevSetName, "src,src").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst").set(tagDevSetName, "dst,dst", true);
       const ruleTxLog = ruleLog.clone().set(tagDevSetName, "src,src").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst").set(tagDevSetName, "dst,dst", true);
-  
+
       const ruleRx = rule.clone().set(tagDevSetName, "dst,dst").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src").set(tagDevSetName, "src,src", true);
       const ruleRxLog = ruleLog.clone().set(tagDevSetName, "dst,dst").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src").set(tagDevSetName, "src,src", true);
   
       const ruleInternal = rule.clone().set(tagDevSetName, "src,src").set(tagDevSetName, "dst,dst");
       const ruleInternalLog = ruleLog.clone().set(tagDevSetName, "src,src").set(tagDevSetName, "dst,dst");
-  
+
       const ruleTx6 = ruleTx.clone().fam(6);
       const ruleTxLog6 = ruleTxLog.clone().fam(6);
       const ruleRx6 = ruleRx.clone().fam(6);
       const ruleRxLog6 = ruleRxLog.clone().fam(6);
       const ruleInternal6 = ruleInternal.clone().fam(6);
       const ruleInternalLog6 = ruleInternalLog.clone().fam(6);
-  
+
       const op = policy.external ? "-A" : "-D";
       const opInternal = policy.internal ? "-A" : "-D";
       
@@ -85,8 +176,12 @@ class APFeaturesPlugin extends Sensor {
       await ruleInternal.exec(opInternal).catch((err) => { });
       await ruleInternalLog6.exec(opInternal).catch((err) => { });
       await ruleInternal6.exec(opInternal).catch((err) => { });
-  
-      await fwapc.setGroup(tagUid, {config: {isolation: {internal: policy.internal || false, external: policy.external || false}}}).catch((err) => {});
+
+      await lock.acquire(LOCK_FWAPC_ISOLATION, async () => {
+        await fwapc.setGroup(tagUid, {config: {isolation: {internal: policy.internal || false, external: policy.external || false}}}).catch((err) => {});
+       }).catch((err) => {
+        log.error("Failed to sync fwapc isolation", err.message);
+      });
     }
 
     if (obj instanceof NetworkProfile) {
@@ -137,14 +232,17 @@ class APFeaturesPlugin extends Sensor {
         await ruleRxLog.exec(op).catch((err) => {});
         await ruleRx.exec(op).catch((err) => {});
       }
-      if (obj instanceof Host)
-        await fwapc.setDeviceAcl(obj.getUniqueId(), {isolation: policy.external ? true : false}).catch((err) => {});
+
+      await lock.acquire(LOCK_FWAPC_ISOLATION, async () => {
+        if (obj instanceof Host)
+          await fwapc.setDeviceAcl(obj.getUniqueId(), {isolation: policy.external ? true : false}).catch((err) => {});
+      });
     }
   }
 
   async applySSIDPSK(obj, ip, policy) {
     if (!obj instanceof Tag) {
-      log.error(`${policyKeyName} is not supported on ${obj.constructor.name} object`);
+      log.error(`${Constants.POLICY_KEY_SSID_PSK} is not supported on ${obj.constructor.name} object`);
       return;
     }
     const tag = obj;
@@ -153,27 +251,34 @@ class APFeaturesPlugin extends Sensor {
       log.error(`uid is not found on Tag object`, obj);
       return;
     }
-    // filter non-existent profile uuid
-    
-    const psks = policy.psks;
-    if (_.isObject(psks)) {
-      const apcConfig = await fwapc.getConfig();
-      for (const uuid of Object.keys(psks)) {
-        if (!_.has(apcConfig, ["profile", uuid])) {
-          log.error(`${uuid} is not found in apc active config, ignore it`);
-          delete psks[uuid];
-        }
-      }
+    // no need to sync ssid PSK config to AP controller, group will be set in APCMsgSensor according to dynamic VLAN of each station
+    await fwapc.deleteGroup(tagUid, "ssid").catch((err) => {
+      log.error(`Failed to delete fwapc ssid config on group ${tagUid}`, err.message);
+    });
+  }
+
+  async syncIsolation() {
+    await lock.acquire(LOCK_FWAPC_ISOLATION, async () => {
+      await this._syncIsolation();
+    });
+  }
+
+  async _syncIsolation() {
+    const hosts = hostManager.getHostsFast();
+    for (const host of hosts) {
+      const p = await host.getPolicyAsync(Constants.POLICY_KEY_ISOLATION);
+      if (!_.isEmpty(p) && _.isObject(p))
+        await fwapc.setDeviceAcl(host.getUniqueId(), {isolation: p.external ? true : false}).catch((err) => {});
     }
-    const ssidConfig = {vlan: policy.vlan, psks};
-    if (_.isEmpty(ssidConfig) || !_.has(ssidConfig, "vlan") || _.isEmpty(ssidConfig.psks))
-      await fwapc.deleteGroup(tagUid, "ssid").catch((err) => {
-        log.error(`Failed to delete fwapc ssid config on group ${tagUid}`, err.message);
-      });
-    else
-      await fwapc.setGroup(tagUid, {config: {ssid: ssidConfig}}).catch((err) => {
-        log.error(`Failed to set fwapc ssid config on group ${tagUid}`, err.message);
-      });
+    const tags = await TagManager.getPolicyTags(Constants.POLICY_KEY_ISOLATION).catch((err) => {
+      log.error(`Failed to load tags with policy ${Constants.POLICY_KEY_ISOLATION}`, err.message);
+      return [];
+    });
+    for (const tag of tags) {
+      const p = await tag.getPolicyAsync(Constants.POLICY_KEY_ISOLATION);
+      if (!_.isEmpty(p) && _.isObject(p))
+        await fwapc.setGroup(tag.getUniqueId(), {config: {isolation: {internal: p.internal || false, external: p.external || false}}}).catch((err) => {});
+    }
   }
 }
 
