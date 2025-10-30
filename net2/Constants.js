@@ -75,6 +75,7 @@ module.exports = {
   REDIS_KEY_MSP_DATA: "ext.guardian.data",
   REDIS_KEY_DATA_PLAN_SETTINGS: "sys:data:plan",
   REDIS_KEY_MSP_SYNC_OPS: "msp_sync_ops",
+  REDIS_KEY_LAST_LICENSE_REQ_STATUS: "sys:license:last_request_status",
 
   REDIS_HKEY_NSE_DHCP: "dhcp",
   REDIS_HKEY_CONN_OINTF: "oIntf",
@@ -89,6 +90,10 @@ module.exports = {
   ST_ACTIVATED: 'active',
   ST_IGNORE: 'ignore',
   ST_TIMEOUT: 'timeout',
+
+  LICENSE_REQ_STATUS_TRY_REFRESH: "TryLicenseRefresh",
+  LICENSE_REQ_STATUS_TRY_RESCUE: "TryLicenseRescue",
+  LICENSE_REQ_STATUS_REFRESHED: "LicenseRefreshed",
 
   FW_OUI: "20:6D:31",
   FW_AP_MAC_PREFIX: "20:6D:31:6",
