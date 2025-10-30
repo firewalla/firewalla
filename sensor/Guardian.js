@@ -449,7 +449,7 @@ module.exports = class {
   }
 
   async reset() {
-    log.info("Reset guardian settings", this.name);
+    log.warn("Reset guardian settings", this.name);
     const mspId = await this.getMspId();
     try {
       // remove all msp related rules
@@ -458,7 +458,7 @@ module.exports = class {
       const mspData = await this.getMspData();
       await Promise.all(policies.map(async p => {
         if (await this.isMspRelatedRule(p, { mspData })) {
-          log.warn("Remove msp policy", p.pid);
+          log.info("Remove msp policy", p.pid);
           await pm2.disableAndDeletePolicy(p.pid);
         }
       }))
