@@ -18,6 +18,7 @@ function setup_folders() {
     mkdir -p ~/.firewalla/run/oc_profile
     mkdir -p ~/.firewalla/run/clash_profile
     mkdir -p ~/.firewalla/run/hysteria_profile
+    mkdir -p ~/.firewalla/run/gost_profile
     mkdir -p ~/.firewalla/run/trojan_profile
     mkdir -p ~/.firewalla/run/nebula_profile
     mkdir -p ~/.firewalla/run/ts_profile

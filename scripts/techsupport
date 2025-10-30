@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-#    Copyright 2017-2020 Firewalla Inc.
+#    Copyright 2017-2025 Firewalla Inc.
 #
 #    This program is free software: you can redistribute it and/or  modify
 #    it under the terms of the GNU Affero General Public License, version 3,
@@ -44,6 +44,7 @@ sudo dmesg > dmesg.txt
 ifconfig > ifconfig.txt
 ps -ef > ps.txt
 $FIREWALLA_HOME/scripts/status > service_status.txt
+curl localhost:8841/v1/status/checkin_data 2>/dev/null | jq . > fwapc_status
 if [[ $1 == 'reset' ]]; then
   # very essential only for debug after reset
   dumpEssentialLogs
@@ -55,6 +56,9 @@ else
   rm -f ./.sshpasswd
   rm -f ./.firewalla/run/ovpn_profile/*.password
   rm -r ./.firewalla/run/ovpn_profile/*.userpass
+
+  find . -type f -name "freeradius.tar.gz" -exec sudo rm -f {} +
+
   sed -i -E 's/^(\s*(user|password)) .*$/\1 ****/' .router/config/pppoe/*
   sed -i -E 's/^(\s*(ssid|.*identity|.*password|psk|wep_key.|phase.|.*_passwd))=.*$/\1=****/' .router/config/wpa_supplicant/*
   sed -i -E 's/^(\s*(ssid.*|wpa_psk|wpa_passphrase))=.*$/\1=****/' .router/config/hostapd/*
@@ -77,6 +81,37 @@ else
   cp  /log/redis/redis-server.log .
   timeout 40 /home/pi/firewalla/scripts/sanity_check.sh > scc.log
   (curl -s "http://localhost:8837/v1/config/active" | jq 'del(.interface.pppoe.pppoe0.password, .interface.pppoe.pppoe1.password, .interface.wlan.wlan0.wpaSupplicant, .interface.wlan.wlan1.wpaSupplicant, .hostapd.wlan0.params.ssid, .hostapd.wlan0.params.wpa_passphrase, .hostapd.wlan1.params.ssid, .hostapd.wlan1.params.wpa_passphrase, .apc.profile[]?.key, .apc.assets_template.ap_default.wifiNetworks[]?.aliasSSIDs[]?.password)' | cat) &> frcc.log
+
+  # unzip all gz tar.gz files
+  find . -type f -name "*.gz" -exec sudo gunzip {} +
+
+  # remove sensitive data from logs
+  find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" -o -path "./*/config/*" \) -exec sudo sed -i -E '
+  s/([[:space:]](password|key|privateKey|privKey|secret|psk|wpa_passphrase|passwd|user_password|pass):[[:space:]]*(\x1b\[[0-9;]*m)?[\x27"])([^\x27"]*)([\x27"](\x1b\[[0-9;]*m)?)/\1******\5/gI
+  ' {} +
+
+  find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" -o -path "./*/config/*" \) -exec sudo sed -i -E '
+  s/(("password"|"key"|"privateKey"|"privKey"|"secret"|"psk"|"wpa_passphrase"|"passwd"|"user_password"|"pass"):\s*[\x27"])([^\x27"]*)([\x27"])/\1******\4/gI
+  ' {} +
+
+  find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" -o -path "./*/config/*" \) -exec sudo sed -i -E '
+  s/\\"(privateKey|privKey|key|password|secret|psk|passwd|user_password|pass)\\"\s*:\s*\\"([^\\"]+)\\"\s*/\\"\1\\":\\"******\\"/gI
+  ' {} +
+
+  find . -type f -name "*.conf" -exec sudo sed -i -E '
+  s/(PrivateKey[[:space:]]*=[[:space:]]*)[^[:space:]].*/\1******/gI
+  ' {} +
+
+  find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" \) -exec sudo sed -i -E '
+  s/('\''PrivateKey[[:space:]]*=[[:space:]]*)[^'\'']*('\'')/\1******\2/gI
+  ' {} +
+
+  find . -type f -name "*.log" -exec sudo sed -i -E '
+  s/(password:[[:space:]]*Some\(")[^"]+("\))/\1*****\2/gI
+  ' {} +
+
+  find . -type f \( -name "*.log" -o -name "*.json" -o -name "*.conf" -o -path "./*/config/*" \) -exec sudo sed -i '/secret.*[=:]/d' {} +
+
   # save events
   redis-cli zrangebyscore event:log 0 inf > events_all.txt
   redis-cli hgetall event:state:cache > events_state_all.txt
