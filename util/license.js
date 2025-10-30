@@ -59,7 +59,8 @@ function getLicenseLicense() {
 
 function writeLicense(license) {
   return jsWriteFile(licensePath, license, {
-    spaces: 2
+    spaces: 2,
+    flush: true
   }) // ~/.firewalla/license
 }
 
