@@ -57,21 +57,6 @@ class FlowCompressionSensor extends Sensor {
 
   async run() {
     this.hookFeature(featureName);
-    sem.on('Flow2Stream', (event) => {
-      if (!fc.isFeatureOn(featureName)) {
-        return
-      }
-      const { raw, audit, ftype = "normal" } = event;
-      const queueObj = this.queueMap[ftype];
-      if (queueObj) {
-        const job = queueObj.createJob({ raw, audit });
-        job.timeout(60000).retries(2).save((err) => {
-          if (err) {
-            log.error("Failed to create flows stream job", err.message);
-          }
-        })
-      }
-    })
     sem.on('AuditFlowsDrop', async () => {
       if (!this.featureOn) {
         return
