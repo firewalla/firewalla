@@ -15,7 +15,6 @@
 'use strict';
 
 const flowTool = require('../net2/FlowTool');
-const auditTool = require('../net2/AuditTool');
 const log = require('../net2/logger.js')(__filename)
 const _ = require('lodash');
 const Sensor = require('./Sensor.js').Sensor
@@ -27,10 +26,7 @@ const rclient = require('../util/redis_manager').getRedisClient();
 const deflateAsync = Promise.promisify(zlib.deflate);
 const sem = require('./SensorEventManager.js').getInstance();
 const delay = require('../util/util.js').delay;
-const Queue = require('bee-queue');
-const { Readable } = require('stream');
 const SPLIT_STRING = "\n";
-const uuid = require('uuid');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const fc = require('../net2/config.js');
 const sysManager = require('../net2/SysManager.js');
@@ -49,10 +45,6 @@ class FlowCompressionSensor extends Sensor {
     this.stepKey = "compressed:step:ts"
     this.step = (this.config.step || 60) * 60
     this.maxInterval = 24 * 60 * 60 // 24 hours
-    this.flowsType = ['normal', 'wanBlock']
-    this.queueMap = {};
-    this.streamMap = {};
-    this.dumpingMap = {};
   }
 
   async run() {
@@ -64,149 +56,16 @@ class FlowCompressionSensor extends Sensor {
       // re-build wanBlock compressed flows
       try {
         await this.buildWanBlockCompressedFlows();
-        const type = "wanBlock";
-        const streamObj = this.streamMap[type];
-        const queueObj = this.queueMap[type];
-        this.dumpingMap[type] = true; // avoid stream.push() after EOF
-        queueObj.destroy();
-        streamObj.destroyStreams(); // destory and re-create
-        this.setupStreams(type);
-        queueObj.close(() => {
-          this.setupFlowsQueue(type);
-        });
-        this.dumpingMap[type] = false;
       } catch (e) {
         log.warn("re-build wanBlock compressed flows error", e)
       }
     })
-
-    sem.on('DumpStreamFlows', async (event) => {
-      const id = event.messageId;
-      const now = new Date() / 1000;
-      for (const type of this.flowsType) {
-        await this.dumpStreamFlows(now, type);
-      }
-      sem.emitEvent({
-        type: `DumpStreamFlows:Done-${id}`,
-        toProcess: "FireApi",
-        suppressEventLogging: false,
-        message: "DumpStreamFlows:Done"
-      })
-    })
-
-  }
-
-  setupFlowsQueue(type) {
-    const queueObj = new Queue(`${type}-flows-stream`, {
-      removeOnFailure: true,
-      removeOnSuccess: true
-    })
-    queueObj.on('error', (err) => {
-      log.error("Queue got err:", err)
-    })
-    queueObj.on('failed', (job, err) => {
-      log.error(`Job ${job.id} ${job.action} failed with error ${err.message}`);
-    });
-    queueObj.destroy(() => {
-      log.verbose(`${type} flows stream queue is cleaned up`)
-    })
-    queueObj.process(async (job, done) => {
-      try {
-        if (job && job.data) { // raw flow string
-          const flow = await this.raw2Flow(job.data);
-          while (this.dumpingMap[type] || !this.streamMap[type]) {
-            log.debug("deferred due to readableStream might be destoryed and re-create");
-            await delay(3000)
-          }
-          this.streamMap[type].readableStream.push(JSON.stringify(flow) + SPLIT_STRING)
-        }
-      } catch (e) {
-        log.info("process job error", e);
-      } finally {
-        done();
-      }
-    })
-    this.queueMap[type] = queueObj;
-  }
-
-  setupStreams(type) {
-    const readableStream = new Readable({
-      read() { }
-    })
-    const def = zlib.createDeflate();
-    const zstream = readableStream.pipe(def);
-    let chunks = [];
-    const streamObj = {};
-    streamObj.readableStream = readableStream;
-    zstream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-    zstream.on('error', (err) => {
-      log.error("Stream deflate error", err);
-      chunks = [];
-    });
-    streamObj.streamToStringAsync = new Promise((resolve) => zstream.on('end', () => {
-      // zlib deflate will compresse the null EOF as ""
-      // the chunks will always end of a chunk which base64 string like: eJwDAAAAAAE=
-      // drop the chunks which only contains EOF
-      if (chunks.length == 1) {
-        resolve(null)
-      } else {
-        resolve(Buffer.concat(chunks).toString('base64'))
-      }
-    }))
-    streamObj.destroyStreams = () => {
-      readableStream.destroy();
-      def.destroy();
-      zstream.destroy();
-    }
-    this.streamMap[type] = streamObj;
-  }
-
-  async dumpStreamFlows(ts, type) {
-    log.info(`Start dump ${type} stream data to redis`)
-    while (this.dumpingMap[type] || !this.streamMap[type]) {
-      await delay(1000)
-    }
-    const streamObj = this.streamMap[type];
-    this.dumpingMap[type] = true;
-    try {
-      if (streamObj.readableStream) {
-        streamObj.readableStream.push(null); // readable stream EOF
-        const result = await streamObj.streamToStringAsync; // dump the result to the redis
-        await this.appendAndSave(ts, result, type);
-        streamObj.destroyStreams(); // destory and re-create
-        this.setupStreams(type);
-      }
-    } catch (e) {
-      log.info("DumpStreamFlows error", e)
-    }
-    log.info("Dump stream data to redis done")
-    this.dumpingMap[type] = false
-  }
-
-  async raw2Flow(message) {
-    const { raw, audit } = message;
-    let flow, enriched;
-    if (audit) {
-      flow = auditTool.toSimpleFormat(raw, {})
-      flow.device = raw.mac
-      enriched = await auditTool.enrichWithIntel([flow]);
-    } else {
-      flow = flowTool.toSimpleFormat(raw)
-      flow.device = raw.mac
-      enriched = await flowTool.enrichWithIntel([flow]);
-    }
-    return enriched[0]
   }
 
 
   async globalOn() {
     this.featureOn = true;
     const now = Date.now() / 1000;
-    this.flowsType.map((type) => {
-      this.setupFlowsQueue(type);
-      this.setupStreams(type);
-      this.dumpingMap[type] = false;
-    })
     await rclient.setAsync(this.buildingKey, 1)
     while (!NetworkProfileManager.isInitialized())
       await delay(1000);
@@ -216,29 +75,8 @@ class FlowCompressionSensor extends Sensor {
     log.info("Flows compression building done");
   }
 
-  async job() {
-    if (!this.featureOn) return
-
-    const now = new Date() / 1000;
-    const nowTickTs = now - now % this.step;
-    await this.dumpStreamFlows(nowTickTs, "normal");
-    await this.dumpStreamFlows(nowTickTs, "wanBlock");
-    await this.checkAndCleanMem();
-  }
-
   async globalOff() {
     this.featureOn = false;
-    this.flowsType.map((type) => {
-      const queueObj = this.queueMap[type];
-      const streamObj = this.streamMap[type];
-      queueObj && queueObj.destroy();
-      streamObj && streamObj.destroyStreams && streamObj.destroyStreams();
-    })
-    this.queueMap = {};
-    this.streamMap = {};
-    this.dumpingMap = {};
-    this.cornJob && this.cornJob.stop();
-    this.cornJob = null;
   }
 
   async checkAndCleanMem() {
@@ -282,7 +120,6 @@ class FlowCompressionSensor extends Sensor {
     log.info(`Load compressed flows between ${new Date(begin * 1000)} - ${new Date(end * 1000)}`)
     begin = begin - begin % this.step
     end = end - end % this.step + this.step
-    await this.waitRealtimeDumpDone(); // emit dumpStreamFlows on firemain process and wait the dump done
     const compressedFlows = []
     for (let i = 0; i < (end - begin) / this.step; i++) {
       const endTs = begin + this.step * (i + 1)
@@ -292,25 +129,6 @@ class FlowCompressionSensor extends Sensor {
     const wanBlockCompressedFlows = await rclient.getAsync(this.wanCompressedFlowsKey);
     wanBlockCompressedFlows && compressedFlows.push(wanBlockCompressedFlows)
     return compressedFlows
-  }
-
-  async waitRealtimeDumpDone() {
-    const messageId = uuid.v4();
-    sem.emitEvent({
-      type: "DumpStreamFlows",
-      toProcess: 'FireMain',
-      suppressEventLogging: false,
-      messageId: messageId
-    })
-    return new Promise((resolve) => {
-      const channelId = `DumpStreamFlows:Done-${messageId}`
-      sem.on(channelId, (event) => {
-        resolve()
-      })
-      setTimeout(() => {
-        resolve();
-      }, 30 * 1000);
-    })
   }
 
   getKey(ts) {
@@ -344,10 +162,8 @@ class FlowCompressionSensor extends Sensor {
   }
 
   async appendAndSave(ts, base64Str, type) {
-    const tickTs = Math.ceil(ts / this.step) * this.step;
-    const key = type == "wanBlock" ? this.wanCompressedFlowsKey : this.getKey(tickTs);
+    const key = type == "wanBlock" ? this.wanCompressedFlowsKey : this.getKey(ts);
     base64Str && await rclient.appendAsync(key, base64Str + SPLIT_STRING);
-    await rclient.expireatAsync(key, tickTs + this.maxInterval);
     type != "wanBlock" && await rclient.setAsync(this.lastestTsKey, ts);
   }
 
@@ -396,6 +212,7 @@ class FlowCompressionSensor extends Sensor {
         completed = true
       }
     }
+    await rclient.expireAsync(this.wanCompressedFlowsKey, this.maxInterval);
     log.info(`Wanblock compressed flows build complted, cost ${(new Date() / 1000 - now).toFixed(2)}`)
     this.wanBlockBuilding = false;
   }
@@ -430,12 +247,14 @@ class FlowCompressionSensor extends Sensor {
         } else {
           options.begin = endTs
         }
-        await this.appendAndSave(endTs, await this.compress(flows))
+        log.verbose(begin, end, `Append ${flows.length} flows to ${this.getKey(end)}`)
+        await this.appendAndSave(end, await this.compress(flows))
       } catch (e) {
         log.error(`Load flows error`, e)
         completed = true
       }
     }
+    await rclient.expireAsync(this.getKey(end), this.maxInterval);
   }
   async compress(flows) {
     const str = JSON.stringify(flows)
