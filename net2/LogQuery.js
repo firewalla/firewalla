@@ -210,7 +210,7 @@ class LogQuery {
     // query every feed once concurrentyly to reduce io block
     results = _.flatten(await Promise.all(feeds.map(async feed => {
       // use half of the desired count to do initial concurrent query to reduce memory consumption
-      const logs = await feed.base.getDeviceLogs(Object.assign({}, feed.options, {count: Math.floor(options.count/2)}))
+      const logs = await feed.base.getDeviceLogs(Object.assign({}, feed.options, {count: global ? options.count : Math.floor(options.count/2)}))
       if (logs.length) {
         feed.options.ts = logs[logs.length - 1].ts
       } else {
@@ -271,12 +271,15 @@ class LogQuery {
         }
       } else if (global) {
         // when query system logs, stop when any of the feed is exhausted
+        log.debug('System flow exhausted', feed.base.constructor.name,
+          feed.options.local ? 'local' : feed.options.dns ? 'dns' : feed.options.ntp ? 'regular' : 'ntp',
+          feed.options.block ? 'block' : 'accept', feed.options.ts)
         break
       } else {
         // no more elements, remove feed from feeds
         feeds = feeds.filter(f => f != feed)
         log.debug('Removing', feed.base.constructor.name, feed.options.direction,
-          (feed.options.localFlow || feed.options.localAudit) ? 'local' : feed.options.dnsFlow ? 'dns' : feed.options.type,
+          feed.options.local ? 'local' : feed.options.dns ? 'dns' : feed.options.ntp ? 'ntp' : 'regular',
           feed.options.block ? 'block' : 'accept', feed.options.mac, feed.options.ts)
       }
 
