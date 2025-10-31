@@ -861,13 +861,6 @@ class ACLAuditLogPlugin extends Sensor {
           this.touchedKeys[key] = 1;
           // no need to set ttl here, OldDataCleanSensor will take care of it
 
-          block && sem.emitLocalEvent({
-            type: "Flow2Stream",
-            suppressEventLogging: true,
-            raw: Object.assign({}, record, { mac }), // record the mac address here
-            audit: true,
-            ftype: mac.startsWith(Constants.NS_INTERFACE + ':') ? "wanBlock" : "normal"
-          })
           // audit block event stream that will be consumed by FlowAggregationSensor
           block && sem.emitLocalEvent({
             type: Message.MSG_FLOW_ACL_AUDIT_BLOCKED,
