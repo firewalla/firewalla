@@ -143,7 +143,7 @@ class GSEPlatform extends Platform {
   }
   
   isUdpTLSBlockSupport() {
-    return true;
+    return false;
   }
 
   isFireRouterManaged() {
