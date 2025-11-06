@@ -505,6 +505,14 @@ class Platform {
   async isSuricataFromAssetsSupported() {
     return false;
   }
+
+  hasIntegratedFWAPC() {
+    return false;
+  }
+
+  isPDOSupported() {
+    return false;
+  }
 }
 
 module.exports = Platform;

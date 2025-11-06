@@ -1,0 +1,13 @@
+[Unit]
+Description= FTC
+After=redis-server.service
+
+[Service]
+Environment="FTC_INTERVAL=30"
+User=pi
+Type=simple
+Restart=always
+ExecStart = /bin/bash -c "while true; do /usr/local/bin/fire-temp-check.sh & sleep ${FTC_INTERVAL}; done"
+
+[Install]
+WantedBy=multi-user.target

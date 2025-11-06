@@ -123,6 +123,14 @@ async function getInterface(intf) {
   return localGet(`/config/interfaces/${intf}`, 2)
 }
 
+async function getPowerMode() {
+  return localGet("/config/power_mode");
+}
+
+async function setPowerMode(powerMode) {
+  return localSet("/config/power_mode", { powerMode });
+}
+
 function updateMaps() {
   if (!_.isObject(intfNameMap))
     return false;
@@ -1101,6 +1109,14 @@ class FireRouter {
     }
 
     return resp.body
+  }
+
+  async getPowerMode() {
+    return getPowerMode();
+  }
+
+  async setPowerMode(powerMode) {
+    return setPowerMode(powerMode);
   }
 
   getSysNetworkInfo() {
