@@ -41,7 +41,6 @@ const sysManager = require('../net2/SysManager.js');
 const Message = require('../net2/Message.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
-const LOCK_BLOCK_CACHE = "LOCK_BLOCK_CACHE";
 const LOCK_SCHEDULED_JOB = "LOCK_SCHEDULED_JOB";
 
 const { compactTime } = require('../util/util')
