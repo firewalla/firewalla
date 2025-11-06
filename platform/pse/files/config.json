@@ -13,6 +13,8 @@
     }
   },
   "userFeatures": {
+    "dap": false,
+    "dap_bg_task": false,
     "local_flow": true
   }
 }
