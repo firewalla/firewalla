@@ -235,7 +235,8 @@ module.exports = class {
       } else {
         await rclient.unlinkAsync(this.configRegionKey);
       }
-      return rclient.setAsync(this.configServerKey, server);
+      await rclient.setAsync(this.configServerKey, server);
+      this._scheduleRedisBackgroundSave();
     } else {
       throw new Error("invalid server");
     }
