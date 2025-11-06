@@ -41,7 +41,6 @@ const sysManager = require('../net2/SysManager.js');
 const Message = require('../net2/Message.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
-const LOCK_TRAFFIC_CACHE = "LOCK_TRAFFIC_CACHE";
 const LOCK_BLOCK_CACHE = "LOCK_BLOCK_CACHE";
 const LOCK_SCHEDULED_JOB = "LOCK_SCHEDULED_JOB";
 
@@ -65,23 +64,19 @@ class FlowAggregationSensor extends Sensor {
     let ifBlockCache = null;
     let categoryFlowCache = null;
     let appFlowCache = null;
-    // minimize critical section, retrieve global cache reference and set global cache to a new empty object
-    await lock.acquire(LOCK_TRAFFIC_CACHE, async () => {
-      trafficCache = this.trafficCache;
-      this.trafficCache = {};
-      categoryFlowCache = this.categoryFlowCache;
-      this.categoryFlowCache = {};
-      appFlowCache = this.appFlowCache;
-      this.appFlowCache = {};
-    }).catch((err) => {});
-    await lock.acquire(LOCK_BLOCK_CACHE, async () => {
-      ipBlockCache = this.ipBlockCache;
-      dnsBlockCache = this.dnsBlockCache;
-      ifBlockCache = this.ifBlockCache;
-      this.ipBlockCache = {};
-      this.dnsBlockCache = {};
-      this.ifBlockCache = {};
-    }).catch((err) => {});
+    // retrieve global cache reference and set global cache to a new empty object
+    trafficCache = this.trafficCache;
+    this.trafficCache = {};
+    categoryFlowCache = this.categoryFlowCache;
+    this.categoryFlowCache = {};
+    appFlowCache = this.appFlowCache;
+    this.appFlowCache = {};
+    ipBlockCache = this.ipBlockCache;
+    dnsBlockCache = this.dnsBlockCache;
+    ifBlockCache = this.ifBlockCache;
+    this.ipBlockCache = {};
+    this.dnsBlockCache = {};
+    this.ifBlockCache = {};
 
 
     let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
@@ -140,23 +135,19 @@ class FlowAggregationSensor extends Sensor {
     this.ifBlockCache = {};
 
     // BroDetect -> DestIPFoundHook -> here
-    sem.on(Message.MSG_FLOW_ENRICHED, async (event) => {
-      if (event && event.flow) {
-        await lock.acquire(LOCK_TRAFFIC_CACHE, async () => {
-          this.processEnrichedFlow(event.flow);
-        }).catch((err) => {
-          log.error(`Failed to process enriched flow`, event.flow, err.message);
-        });
+    sem.on(Message.MSG_FLOW_ENRICHED, (event) => {
+      if (event && event.flow) try {
+        this.processEnrichedFlow(event.flow)
+      } catch (err) {
+        log.error(`Failed to process enriched flow`, event.flow, err.message);
       }
     });
 
-    sem.on(Message.MSG_FLOW_ACL_AUDIT_BLOCKED, async (event) => {
-      if (event && event.flow) {
-        await lock.acquire(LOCK_BLOCK_CACHE, async () => {
-          this.processBlockFlow(event.flow);
-        }).catch((err) => {
-          log.error(`Failed to process audit flow`, event.flow, err.message);
-        });
+    sem.on(Message.MSG_FLOW_ACL_AUDIT_BLOCKED, (event) => {
+      if (event && event.flow) try {
+        this.processBlockFlow(event.flow)
+      } catch (err) {
+        log.error(`Failed to process audit flow`, event.flow, err.message);
       }
     });
   }
