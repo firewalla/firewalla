@@ -280,10 +280,17 @@ class FreeRadiusSensor extends Sensor {
     return { "0.0.0.0": hostPolicy, ...tagPolicy };
   }
 
-  // global on/off
+  // global on
   async globalOn() {
     this.featureOn = true;
     freeradius.globalOn();
+    // avoid a race condition between applyPolicy and globalOn
+    await lock.acquire(LOCK_APPLY_FREERADIUS_SERVER_POLICY, async () => {
+      await this._globalOn();
+    });
+  }
+
+  async _globalOn() {
     await this.addCronJobs();
     this._policy = await this.loadPolicyAsync();
     this._options = await this.loadOptionsAsync();
@@ -320,9 +327,18 @@ class FreeRadiusSensor extends Sensor {
     return enabled || Object.keys(this._policy).length > 1;
   }
 
+  // global off
   async globalOff() {
     this.featureOn = false;
     freeradius.globalOff();
+
+    // avoid a race condition between applyPolicy and globalOff
+    await lock.acquire(LOCK_APPLY_FREERADIUS_SERVER_POLICY, async () => {
+      await this._globalOff();
+    });
+  }
+
+  async _globalOff() {
     await this.removeCronJobs();
     await freeradius.cleanUp();
     // if (await freeradius.isListening()) {
