@@ -702,7 +702,7 @@ class FreeRadius {
       await util.waitFor(_ => this.running === false, options.timeout * 1000 || 120000).catch((err) => {
         log.warn("Container freeradius-server timeout to stop,", err.message)
       });
-      if (this.running) {
+      if (this.running || await this.isListening()) {
         log.warn("Container freeradius-server is not stopped.")
         await this._terminateServer(options);
         return
