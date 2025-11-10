@@ -82,6 +82,13 @@ class FreeRadius {
     return true;
   }
 
+  async ready() {
+    if (!await fs.accessAsync(`${dockerDir}/docker-compose.yml`, fs.constants.F_OK).then(() => true).catch(_err => false)) {
+      return false;
+    }
+    return true;
+  }
+
   async _watchStatus() {
     await exec("netstat -an  | egrep -q ':1812'").then(() => { this.running = true }).catch((err) => { this.running = false });
   }
