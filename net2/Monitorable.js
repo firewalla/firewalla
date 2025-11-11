@@ -272,6 +272,7 @@ class Monitorable {
       family: false,
       unbound: { state: false },
       doh: { state: false },
+      isolation: { external: false, internal: false },
       monitor: true
     }
   }
