@@ -75,7 +75,7 @@ if [[ "$feature_on" == "1" ]]; then
         if [ $? -ne 0 ]; then
         echo "failed to restart freeradius server"
         else
-        echo "freeradius server restarted successfully"s
+        echo "freeradius server restarted successfully"
         fi
     fi
 else 
