@@ -13,4 +13,4 @@ services:
       - /home/pi/.firewalla/config/freeradius:/root/.config
       - /home/pi/.forever/freeradius:/var/log/freeradius
       - /home/pi/.node_modules/node_modules:/root/node_modules
-    command: bash -c "bash /root/freeradius/freeradius.sh run && tail -f /dev/null"
+    command: bash /root/freeradius/freeradius.sh run
