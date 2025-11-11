@@ -330,7 +330,15 @@ class Platform {
   isTLSBlockSupport() {
     return false;
   }
+
+  isDevMode() {
+    return f.getBranch() == "master";
+  }
+
   isUdpTLSBlockSupport() {
+    if (this.isDevMode()) {
+      return true;
+    }
     return false;
   }
 
@@ -495,6 +503,14 @@ class Platform {
   isDNSFlowSupported() { return false }
 
   async isSuricataFromAssetsSupported() {
+    return false;
+  }
+
+  hasIntegratedFWAPC() {
+    return false;
+  }
+
+  isPDOSupported() {
     return false;
   }
 }

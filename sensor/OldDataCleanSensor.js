@@ -321,16 +321,15 @@ class OldDataCleanSensor extends Sensor {
   }
 
   async cleanupAlarmExtendedKeys() {
-    log.info("Cleaning up alarm extended keys");
-
-    const basicAlarms = await am2.listBasicAlarms();
-    const extendedAlarms = await am2.listExtendedAlarms();
+    // scan _alarm and _alarmDetail together
+    const keys = await rclient.scanResults('_alarm*');
+    const basicAlarms = keys.filter(key => key.startsWith('_alarm:')).map(key => Number(key.substring(7)));
+    const extendedAlarms = keys.filter(key => key.startsWith('_alarmDetail:')).map(key => Number(key.substring(13)));
 
     const diff = arrayDiff(extendedAlarms, basicAlarms);
-
-    for (let index = 0; index < diff.length; index++) {
-      const alarmID = diff[index];
-      await am2.deleteExtendedAlarm(alarmID);
+    if (diff.length) {
+      log.info("Cleaning up alarm extended keys", diff);
+      await rclient.unlinkAsync(diff.map(id => '_alarmDetail:' + id));
     }
   }
 
@@ -623,6 +622,8 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("host:mac", key => key.startsWith('host:mac:'), false, this.cleanHostData.bind(this))
     this._registerFilterFunction("digitalfence", key => key.startsWith('digitalfence:'), false, this.cleanHostData.bind(this))
     this._registerFilterFunction("policy", key => key.match(/^policy:[0-9]+/), false, this.cleanBrokenPolicy.bind(this))
+    this._registerFilterFunction("internet_flows", (key) => key.startsWith("internet_flows:"));
+    this._registerFilterFunction("dhcp_event", (key) => key.startsWith("dnsmasq.dhcp.event:"));
   }
 
   _registerFilterFunction(type, filterFunc, fullCleanOnly = false, customCleanerFunc) {

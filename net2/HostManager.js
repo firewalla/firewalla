@@ -1014,14 +1014,15 @@ module.exports = class HostManager extends Monitorable {
       }
     }
 
-    let alarmIDs = rules.map((p) => p.aid);
+    let rulesWithAlarmID = rules.filter((p) => _.has(p, "aid"));
+    const alarmIDs = rulesWithAlarmID.map((p) => p.aid);
 
     const alarms = await alarmManager2.idsToAlarmsAsync(alarmIDs)
 
-    for(let i = 0; i < rules.length; i ++) {
-      if(rules[i] && alarms[i]) {
-        rules[i].alarmMessage = alarms[i].localizedInfo();
-        rules[i].alarmTimestamp = alarms[i].timestamp;
+    for(let i = 0; i < rulesWithAlarmID.length; i ++) {
+      if(rulesWithAlarmID[i] && alarms[i]) {
+        rulesWithAlarmID[i].alarmMessage = alarms[i].localizedInfo();
+        rulesWithAlarmID[i].alarmTimestamp = alarms[i].timestamp;
       }
     }
 
@@ -1170,6 +1171,7 @@ module.exports = class HostManager extends Monitorable {
       this.natDataForInit(json),
       this.getCloudURL(json),
       this.networkConfig(json, true),
+      this.powerModeForInit(json),
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.getCpuUsage(json),
@@ -1436,6 +1438,18 @@ module.exports = class HostManager extends Monitorable {
     json.networkConfig = config;
   }
 
+  async powerModeForInit(json) {
+    if (platform.isPDOSupported()) {
+      const powerMode = await FireRouter.getPowerMode().catch((err) => {
+        log.error("failed to get power mode: ", err);
+        return null;
+      });
+      if (powerMode) {
+        json.powerMode = powerMode;
+      }
+    }
+  }
+
   async tagsForInit(json, timeUsageApps, includeAppTimeSlots, includeAppTimeIntervals) {
     await TagManager.refreshTags();
     const tags = await TagManager.toJson();
@@ -1603,6 +1617,7 @@ module.exports = class HostManager extends Monitorable {
       this.getDataUsagePlan(json),
       this.monthlyDataUsageForInit(json),
       this.networkConfig(json),
+      this.powerModeForInit(json),
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.identitiesForInit(json),
@@ -1716,10 +1731,10 @@ module.exports = class HostManager extends Monitorable {
       monitorable = IdentityManager.getIdentityByGUID(target)
       return monitorable
     } else {
-      monitorable = IdentityManager.getIdentityByIP(target)
+      monitorable = this.getHostAsync(target, noEnvCreation)
       if (monitorable) return monitorable
 
-      return this.getHostAsync(target, noEnvCreation)
+      return IdentityManager.getIdentityByIP(target)
     }
   }
 

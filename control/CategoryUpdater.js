@@ -59,6 +59,14 @@ const hashFunc = function (obj) {
   const str = JSON.stringify(obj);
   return crypto.createHash("md5").update(str).digest("base64");
 };
+
+const TagCategoryMap = new Map();
+const intfsCategoryMap = new Map();
+const scopeCategoryMap = new Map();
+const guidCategoryMap = new Map();
+const globalCategoryMap = new Map();
+
+
 class CategoryUpdater extends CategoryUpdaterBase {
 
   constructor() {
@@ -75,6 +83,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       this.bfOrigCategoryMap = {};
       this.origBfCategoryMap = {};
       this.loadCategoryBfParts();
+      this.flowSignatureConfigMap = new Map();
 
       this.excludedDomains = {
         "av": [
@@ -202,8 +211,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
         sem.once('IPTABLES_READY', async () => {
           log.info("iptables is ready");
           await this.refreshCustomizedCategories();
-          setInterval(() => {
-            this.refreshAllCategoryRecords()
+          setInterval(async () => {
+            await this.refreshAllCategoryRecords()
+            await this.refreshTLSCategoryActivated();
           }, 60 * 60 * 1000 * 4) // update records every 4 hours 
           await this.refreshAllCategoryRecords()
           this.inited = true;
@@ -262,6 +272,88 @@ class CategoryUpdater extends CategoryUpdaterBase {
     this.activeTLSCategories_udp = {};
 
     this.customizedCategories = {};
+  }
+
+  isDevBlockedByCategory(category, devOpts) {
+    if (!category || !devOpts) return false;
+    const { tags, intfs, scope, guids } = devOpts; // keep devOpts the same structure as updateDevCategoryMapping
+
+    log.debug(`Check if device is blocked by category ${category}`, devOpts);
+
+    if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids)) {
+      if (!_.isEmpty(tags)) {
+        for (const tag of tags) {
+          const key = category + '_tag:' + tag;
+          if (TagCategoryMap.get(key)) return true;
+        }
+      }
+      if (!_.isEmpty(intfs)) {
+        for (const intf of intfs) {
+          const key = category + '_intf:' + intf;
+          if (intfsCategoryMap.get(key)) return true;
+        }
+      }
+      if (!_.isEmpty(scope)) {
+        for (const s of scope) {
+          const key = category + '_scope:' + s;
+          if (scopeCategoryMap.get(key)) return true;
+        }
+      }
+      if (!_.isEmpty(guids)) {
+        for (const guid of guids) {
+          const key = category + '_guid:' + guid;
+          if (guidCategoryMap.get(key)) return true;
+        }
+      }
+      if (globalCategoryMap.get(category + '_global')) return true;
+    }
+    return false;
+  }
+
+
+  updateDevCategoryMapping(category, devOpts, isBlock=true, isAdd = true) {
+    if (!category || !devOpts) return;
+    const { tags, intfs, scope, guids } = devOpts;
+    let keys = [];
+    let targetMap = null;
+    if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids)) {
+      
+      if (!_.isEmpty(tags)) {
+        for (const tag of tags) {
+          keys.push(category + '_tag:' + tag);
+        }
+        targetMap = TagCategoryMap;
+      } else if (!_.isEmpty(intfs)) {
+        for (const intf of intfs) {
+          keys.push(category + '_intf:' + intf);
+        }
+        targetMap = intfsCategoryMap;
+      } else if (!_.isEmpty(scope)) {
+        for (const s of scope) {
+          keys.push(category + '_scope:' + s);
+        }
+        targetMap = scopeCategoryMap;
+      } else if (!_.isEmpty(guids)) {
+        for (const guid of guids) {
+          keys.push(category + '_guid:' + guid);
+        }
+        targetMap = guidCategoryMap;
+      }
+    } else {
+      // global
+      keys.push(category + '_global');
+      targetMap = globalCategoryMap;
+    }
+
+    for (const k of keys) {
+      if (isAdd) {
+        targetMap.set(k, isBlock);
+        log.debug(`CategoryUpdater set dev-category mapping: ${k} -> ${isBlock}`);
+      } else {
+        targetMap.delete(k);
+        log.debug(`CategoryUpdater remove dev-category mapping: ${k}`);
+      }
+    }
   }
 
   async refreshTLSCategoryActivated() {
@@ -808,6 +900,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
           options.tlsHostSet = Block.getTLSHostSet(category);
         if (!_.isEmpty(port))
           options.port = port;
+        options.connSet = this.getConnectionIPSetName(category);
+        options.category = category;
         await domainBlock.blockDomain(domain, options);
         // add to redis set before calling updateCategoryBlock, pattern matched domains will be fetched from redis set in updateCategoryBlock
         await this.addPatternDomains(pattern, domain);
@@ -823,7 +917,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   getDynamicAddressCategoryKey(category) {
-    return `dynamicCategoryAddress:${category}}`
+    return `dynamicCategoryAddress:${category}`
   }
 
   isDynamicAddressCategoryExists(category) {
@@ -864,7 +958,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
 
   // might need support multi-port support or port range in the future?
-  async addDynamicCategoryAddress(category, targetAddress, proto, targetPort, expireTime) {
+  async addDynamicCategoryAddress(category, targetAddress, proto, targetPort) {
     if (!category || !targetAddress || !proto) {
       return
     }
@@ -883,7 +977,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
 
     let addrEntry  = this.composeAddressEntry(targetAddress, proto, targetPort);
-    let data = JSON.stringify(addrEntry)
+    const addressObj = { id: addrEntry.id, port: addrEntry.port, isStatic: true }
+    let data = JSON.stringify(addressObj)
 
 
     // use current time as score for zset, it will be used to expire address
@@ -899,6 +994,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       if (!this.effectiveCategoryAdresses[category]) {
         this.effectiveCategoryAdresses[category] = new Map();
       }
+      this.effectiveCategoryAdresses[category].set(hashFunc(addressObj), addressObj);
       // await domainBlock.blockDomain(addrEntry.id, { ondemand: true, blockSet: this.getDomainPortIPSetName(category, addrEntry.isStatic), port: addrEntry.port, needComment: ipsetNeedComment });
       
       this.blockAddress(category, addrEntry.id, addrEntry.port, addrEntry.isStatic)
@@ -907,6 +1003,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async blockAddress(category, address, portObj, isStatic) {
+    if (!this.isActivated(category)) return;
     let blockSet = this.getDomainPortIPSetName(category, isStatic)
     await Block.batchBlockNetPort([address], portObj, blockSet).catch((err) => {
       log.error(`Failed to batch update domain ipset ${blockSet} for ${address}`, err.message);
@@ -914,6 +1011,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async unblockAddress(category, address, portObj, isStatic) {
+    if (!this.isActivated(category)) return;
     let blockSet = this.getDomainPortIPSetName(category, isStatic)
     await Block.batchUnblock([address], portObj, blockSet).catch((err) => {
       log.error(`Failed to batch update domain ipset ${blockSet} for ${address}`, err.message);
@@ -974,6 +1072,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
           const options = { blockSet: this.getIPSetName(category) }
           if (this.isTLSActivated(category))
             options.tlsHostSet = Block.getTLSHostSet(category);
+
+          const connIpset = this.getConnectionIPSetName(category);
+
+          options.connIpset = connIpset;
+          options.category = category;
 
           if (d.startsWith("*."))
             await action(d.substring(2), options);
@@ -1407,15 +1510,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
       // will skip unapply in unblockDomain because the ipset will be flushed later if ondemand is false.
       if (domain.startsWith("*.")) {
         if (domainObj.port) {
-          await domainBlock.unblockDomain(domain.substring(2), { blockSet: this.getDomainPortIPSetName(category, domainObj.isStatic), port: domainObj.port, skipUnapply: !ondemand });
+          await domainBlock.unblockDomain(domain.substring(2), { blockSet: this.getDomainPortIPSetName(category, domainObj.isStatic), connSet: this.getConnectionIPSetName(category), port: domainObj.port, skipUnapply: !ondemand });
         } else {
-          await domainBlock.unblockDomain(domainSuffix, { blockSet: this.getIPSetName(category, domainObj.isStatic), skipUnapply: !ondemand });
+          await domainBlock.unblockDomain(domainSuffix, { blockSet: this.getIPSetName(category, domainObj.isStatic), connSet: this.getConnectionIPSetName(category), skipUnapply: !ondemand });
         }
       } else {
         if (domainObj.port) {
-          await domainBlock.unblockDomain(domain, { exactMatch: true, blockSet: this.getDomainPortIPSetName(category, domainObj.isStatic), port: domainObj.port, skipUnapply: !ondemand });
+          await domainBlock.unblockDomain(domain, { exactMatch: true, blockSet: this.getDomainPortIPSetName(category, domainObj.isStatic), connSet: this.getConnectionIPSetName(category), port: domainObj.port, skipUnapply: !ondemand });
         } else {
-          await domainBlock.unblockDomain(domainSuffix, { exactMatch: true, blockSet: this.getIPSetName(category, domainObj.isStatic), skipUnapply: !ondemand });
+          await domainBlock.unblockDomain(domainSuffix, { exactMatch: true, blockSet: this.getIPSetName(category, domainObj.isStatic), connSet: this.getConnectionIPSetName(category), skipUnapply: !ondemand });
         }
       }
     }
@@ -1426,7 +1529,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
     let addressMap = new Map()
 
     for (const item of await this.getDynamicAddresses(category)) {
-      const addressObj = { id: item.id, port: item.port, isStatic: true }
+      const itemObj = JSON.parse(item);
+      const addressObj = { id: itemObj.id, port: itemObj.port, isStatic: true }
       addressMap.set(hashFunc(addressObj), addressObj);
     }
 
@@ -1491,15 +1595,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
       const domain = domainObj.id;
       if (domain.startsWith("*.")) {
         if (domainObj.port) {
-          await domainBlock.blockDomain(domain.substring(2), { ondemand: true, blockSet: this.getDomainPortIPSetName(category, domainObj.isStatic), port: domainObj.port, needComment: ipsetNeedComment });
+          await domainBlock.blockDomain(domain.substring(2), { ondemand: true, blockSet: this.getDomainPortIPSetName(category, domainObj.isStatic), connSet: this.getConnectionIPSetName(category), category, port: domainObj.port, needComment: ipsetNeedComment });
         } else {
-          await domainBlock.blockDomain(domain.substring(2), { ondemand: true, blockSet: this.getIPSetName(category, domainObj.isStatic), needComment: ipsetNeedComment });
+          await domainBlock.blockDomain(domain.substring(2), { ondemand: true, blockSet: this.getIPSetName(category, domainObj.isStatic), connSet: this.getConnectionIPSetName(category), category, needComment: ipsetNeedComment });
         }
       } else {
         if (domainObj.port) {
-          await domainBlock.blockDomain(domain, { ondemand: true, exactMatch: true, blockSet: this.getDomainPortIPSetName(category, domainObj.isStatic), port: domainObj.port, needComment: ipsetNeedComment });
+          await domainBlock.blockDomain(domain, { ondemand: true, exactMatch: true, blockSet: this.getDomainPortIPSetName(category, domainObj.isStatic), connSet: this.getConnectionIPSetName(category), category, port: domainObj.port, needComment: ipsetNeedComment });
         } else {
-          await domainBlock.blockDomain(domain, { ondemand: true, exactMatch: true, blockSet: this.getIPSetName(category, domainObj.isStatic), needComment: ipsetNeedComment });
+          await domainBlock.blockDomain(domain, { ondemand: true, exactMatch: true, blockSet: this.getIPSetName(category, domainObj.isStatic), connSet: this.getConnectionIPSetName(category), category, needComment: ipsetNeedComment });
         }
       }
     }
@@ -1698,6 +1802,21 @@ class CategoryUpdater extends CategoryUpdaterBase {
   async updateStrategy(category, strategy) {
     await rclient.setAsync(this.getCategoryStrategyKey(category), strategy);
     return;
+  }
+
+  updateFlowSignatureList(flowSignatureConfig) {
+    this.flowSignatureConfigMap = new Map();
+    for (const key of Object.keys(flowSignatureConfig)) {
+      this.flowSignatureConfigMap.set(key, flowSignatureConfig[key]);
+    }
+    return;
+  }
+
+  getCategoryByFlowSignature(sigId) {
+    if (!this.flowSignatureConfigMap.has(sigId)) {
+      return [];
+    }
+    return this.flowSignatureConfigMap.get(sigId).categories || [];
   }
 
   // system target list using cloudcache, mainly for large target list to reduce bandwidth usage of polling hashset

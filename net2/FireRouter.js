@@ -123,6 +123,14 @@ async function getInterface(intf) {
   return localGet(`/config/interfaces/${intf}`, 2)
 }
 
+async function getPowerMode() {
+  return localGet("/config/power_mode");
+}
+
+async function setPowerMode(powerMode) {
+  return localSet("/config/power_mode", { powerMode });
+}
+
 function updateMaps() {
   if (!_.isObject(intfNameMap))
     return false;
@@ -309,6 +317,13 @@ async function generateNetworkInfo() {
 
     if (intf.state && intf.state.hasOwnProperty("pds")) {
       redisIntf.pds = intf.state.pds;
+    }
+
+    if (intf.config.vid) {
+      redisIntf.vid = intf.config.vid
+    } else if (intfName.startsWith("br") && Array.isArray(intf.config.intf) && !_.isEmpty(intf.config.intf)) {
+      const vid = intfNameMap[intf.config.intf[0]].config.vid
+      if (vid) redisIntf.vid = vid
     }
 
     if (f.isMain()) {
@@ -1094,6 +1109,14 @@ class FireRouter {
     }
 
     return resp.body
+  }
+
+  async getPowerMode() {
+    return getPowerMode();
+  }
+
+  async setPowerMode(powerMode) {
+    return setPowerMode(powerMode);
   }
 
   getSysNetworkInfo() {

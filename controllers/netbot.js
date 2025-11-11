@@ -1916,8 +1916,8 @@ class netBot extends ControllerBot {
         netBotTool.prepareTopFlows(jsonobj, 'ipB', "out", Object.assign({}, options, {limit: 400})),
         netBotTool.prepareTopFlows(jsonobj, 'ifB', "out", Object.assign({}, options, {limit: 400})),
       )
-      tsMetrics.push('ipB', 'dnsB')
-      hostMetrics.push('ipB', 'dnsB')
+      tsMetrics.push('ipB', 'dnsB', 'ipD')
+      hostMetrics.push('ipB', 'dnsB', 'ipD')
     }
     if (ntp && platform.isAuditLogSupported()) {
       tsMetrics.push('ntp')
@@ -3970,7 +3970,7 @@ class netBot extends ControllerBot {
 
           // check whitelist, empty set allows all, only for dev
           const notAllow = (await rclient.typeAsync('sys:eid:whitelist')) == "set" &&
-            !await rclient.sismemberAsync('sys:eid:whitelist', eid || "") && aplt != "web";
+            !await rclient.sismemberAsync('sys:eid:whitelist', eid || "") && aplt != "web" && aplt != "msp";
           if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && notAllow){
             log.warn('deny access from eid', eid, "with", msg.data.item);
             return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
@@ -3978,7 +3978,7 @@ class netBot extends ControllerBot {
 
           // check blacklist, only for dev
           const forbid = (await rclient.typeAsync('sys:eid:blacklist')) == "set" &&
-            await rclient.sismemberAsync('sys:eid:blacklist', eid || "") && aplt != "web";
+            await rclient.sismemberAsync('sys:eid:blacklist', eid || "") && aplt != "web" && aplt != "msp";
           if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && forbid){
             log.warn('deny access from eid', eid);
             return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
@@ -4152,7 +4152,8 @@ class netBot extends ControllerBot {
                 if (result.code == 200) {
                   return this.simpleTxData(msg, result.body, null, cloudOptions);
                 } else {
-                  return this.simpleTxData(msg, null, {code: result.code, data: result.body, msg: result.msg}, cloudOptions);
+                  const errmsg = result.body && typeof result.body === 'object' ? JSON.stringify(result.body) : result.body ||  result.code;
+                  return this.simpleTxData(msg, null, {code: result.code, data: result.body, msg: result.msg || errmsg}, cloudOptions);
                 }
 
               } else if (msg.data.item == 'batchAction') {
