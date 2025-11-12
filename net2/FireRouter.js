@@ -434,9 +434,12 @@ class FireRouter {
   scheduleReload() {
     if (this.reloadTask)
       clearTimeout(this.reloadTask);
+    this.reloadTaskOngoing = true;
     this.reloadTask = setTimeout(() => {
       this.init().catch((err) => {
         log.error("Failed to reload init", err.message);
+      }).finally(() => {
+        this.reloadTaskOngoing = false;
       });
     }, 3000);
   }
