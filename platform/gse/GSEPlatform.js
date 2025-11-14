@@ -416,7 +416,7 @@ class GSEPlatform extends Platform {
     // check if the kernel module is already loaded
     let koPath = `${await this.getKernelModulesPath()}/${module_name}.ko`;
     const emmcDev = await exec("df /media/root-ro | grep -o '/dev/mmcblk[0-9]*'").then(result => result.stdout.trim());
-    const kernelChecksum = await exec("sudo dd if=$EMMC_DEV bs=512 count=75536 skip=73728 status=none | md5sum | awk '{print $1}'").then(result => result.stdout.trim());
+    const kernelChecksum = await exec(`sudo dd if=${emmcDev} bs=512 count=75536 skip=73728 status=none | md5sum | awk '{print $1}'`).then(result => result.stdout.trim());
 
     const compiler = await exec("grep -o 'aarch64.*-linux-gnu-gcc' /proc/version").then(result => result.stdout.trim());
     const fileExists = await fsp.access(`${koPath}.${kernelChecksum}`, fs.constants.F_OK).then(() => true).catch(() => false);
