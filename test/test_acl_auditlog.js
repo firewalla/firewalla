@@ -18,8 +18,6 @@
 let chai = require('chai');
 let expect = chai.expect;
 
-process.title = "FireMain";
-
 const LRU = require('lru-cache');
 
 const sysManager = require('../net2/SysManager.js');

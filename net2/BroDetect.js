@@ -148,7 +148,7 @@ class BroDetect {
 
   constructor() {
     log.info('Initializing BroDetect')
-    if (!firewalla.isMain())
+    if (!firewalla.isMain() && !firewalla.isTest())
       return;
     this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 10800 * 1000});
     this.sigmap = new LRU({max: SIG_MAP_SIZE, maxAge: 10800 * 1000});

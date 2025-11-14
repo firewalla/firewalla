@@ -118,9 +118,8 @@ function setupMocks() {
 }
 async function clearRedisKeys() {
   const keyList = await rclient.scanResults(`mock:*`);
-  for (const key of keyList) {
-    await rclient.delAsync(key).catch(() => undefined);
-  }
+  if (keyList.length)
+    await rclient.unlinkAsync(keyList);
 }
 
 function convertTimeToTimestamp(startTime, endTime) {
@@ -277,7 +276,7 @@ describe('Should verify the device network activity is calculated correctly.', f
     await clearRedisKeys();
   });
 
-  it.only('should output AppMatches statistics correctly', async function () {
+  it('should output AppMatches statistics correctly', async function () {
     this.timeout(20000);
     modifyAppTimeUsageSensorConfig();
     deviceNetworkActivityMap.forEach((flows, filename) => {
@@ -310,8 +309,8 @@ describe('Should verify the device network activity is calculated correctly.', f
     });
   });
 
-  it.only('should process EnrichedFlow correctly', async function () {
-    this.timeout(20000);
+  it('should process EnrichedFlow correctly', async function () {
+    this.timeout(30000);
     modifyAppTimeUsageSensorConfig();
     await appTimeUsageSensor.globalOn();
 

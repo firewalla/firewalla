@@ -43,7 +43,7 @@ class Conntrack {
       return stub
     }
 
-    if (!f.isMain())
+    if (!f.isMain() && !f.isTest())
       return this
 
     this.scheduledJob = {}

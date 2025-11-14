@@ -16,7 +16,6 @@
 
 'use strict'
 
-process.title = "FireApi";
 const net = require('net')
 const _ = require('lodash');
 
