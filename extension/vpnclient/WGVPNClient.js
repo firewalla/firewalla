@@ -24,8 +24,12 @@ Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const {Address4, Address6} = require('ip-address');
 const _ = require('lodash');
-
 class WGVPNClient extends VPNClient {
+  constructor(options) {
+    super(options);
+    this.wgCmd = "wg";
+  }
+
   static convertPlainTextToJson(content) {
     let addresses = [];
     let dns = []
@@ -148,6 +152,7 @@ class WGVPNClient extends VPNClient {
     const fwmark = this.getFwMark();
     if (fwmark)
       entries.push(`FwMark = ${fwmark}`);
+    this._addObfuscationOptions(entries, config);
     const peers = config.peers || [];
     for (const peer of peers) {
       entries.push(`[Peer]`);
@@ -196,13 +201,13 @@ class WGVPNClient extends VPNClient {
   async _start() {
     await this._generateConfig();
     const intf = this.getInterfaceName();
-    await exec(`sudo ip link add dev ${intf} type wireguard`).catch((err) => {
-      log.warn(`Failed to create wireguard interface ${intf}`, err.message);
+    await exec(`sudo ip link add dev ${intf} type ${this.constructor.getProtocol()}`).catch((err) => {
+      log.warn(`Failed to create ${this.constructor.getProtocol()} interface ${intf}`, err.message);
     });
     await exec(`sudo ip link set ${intf} up`).catch((err) => {});
     await exec(`sudo ip addr flush dev ${intf}`).catch((err) => {});
     await exec(`sudo ip -6 addr flush dev ${intf}`).catch((err) => {});
-    await exec(`sudo wg setconf ${intf} ${this._getConfigPath()}`).catch((err) => {
+    await exec(`sudo ${this.wgCmd} setconf ${intf} ${this._getConfigPath()}`).catch((err) => {
       log.error(`Failed to set interface config ${this._getConfigPath()} on ${intf}`, err.message);
     });
     await exec(`sudo bash -c 'echo f > /sys/class/net/${intf}/queues/rx-0/rps_cpus'`).catch((err) => {});
@@ -237,7 +242,7 @@ class WGVPNClient extends VPNClient {
     let config = value.config || {};
     if (content) {
       // merge JSON config and plain text config file together, JSON config takes higher precedence
-      const convertedConfig = WGVPNClient.convertPlainTextToJson(content);
+      const convertedConfig = this.constructor.convertPlainTextToJson(content);
       config = Object.assign({}, convertedConfig, config);
     }
     if (Object.keys(config).length === 0) {
@@ -259,7 +264,7 @@ class WGVPNClient extends VPNClient {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
       return false;
     }
-    const handshakeDetected = await exec(`sudo wg show ${intf} latest-handshakes`).then(result => result.stdout.trim().split('\n').some(line => {
+    const handshakeDetected = await exec(`sudo ${this.wgCmd} show ${intf} latest-handshakes`).then(result => result.stdout.trim().split('\n').some(line => {
       const [pubKey, handshakeTimestamp] = line.split('\t');
       const peer = config && config.peers.find(p => p.publicKey === pubKey);
       // consider as connected if latest handshake happens no more than (120 + 2 x persistentKeepalive) seconds ago
@@ -286,7 +291,7 @@ class WGVPNClient extends VPNClient {
   }
 
   async getRemoteEndpoints() {
-    const results = await exec(`sudo wg show ${this.getInterfaceName()} endpoints | awk '{print $2}' | grep -v none`).then(result => result.stdout.trim().split('\n')).catch((err) => []);
+    const results = await exec(`sudo ${this.wgCmd} show ${this.getInterfaceName()} endpoints | awk '{print $2}' | grep -v none`).then(result => result.stdout.trim().split('\n')).catch((err) => []);
     const endpoints = [];
     for (const result of results) {
       if (result.startsWith("[") && result.includes("]:")) {
@@ -331,6 +336,10 @@ class WGVPNClient extends VPNClient {
     // no pattern found, return last 30 lines of log
     // maybe pattern line failed to sync at startup.
     return lines.slice(Math.max(lines.length-30, 0)).join("\n");
+  }
+
+  _addObfuscationOptions(entries, config) {
+    // for wireguard, no obfuscation options
   }
 }
 
