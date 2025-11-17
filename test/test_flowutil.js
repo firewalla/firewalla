@@ -56,4 +56,10 @@ describe('FlowUtil', function () {
     })
   })
 
+  it('extractIP should correctly parse IP string', async() => {
+    expect(flowUtil.extractIP('fe80::')).to.equal('fe80::')
+    expect(flowUtil.extractIP('[fe80::]')).to.equal('fe80::')
+    expect(flowUtil.extractIP('[fe80::]:123')).to.equal('fe80::')
+    expect(flowUtil.extractIP('192.168.0.1:123')).to.equal('192.168.0.1')
+  });
 });
