@@ -97,7 +97,7 @@ class VPNClient {
   }
 
   static async getVPNProfilesForInit() {
-    const types = ["openvpn", "wireguard", "ssl", "zerotier", "nebula", "trojan", "clash", "hysteria", "gost", "ipsec", "ts"];
+    const types = ["openvpn", "wireguard", "amneziawg", "ssl", "zerotier", "nebula", "trojan", "clash", "hysteria", "gost", "ipsec", "ts"];
     const results = {}
     await Promise.all(types.map(async (type) => {
       const c = this.getClass(type);
@@ -123,6 +123,11 @@ class VPNClient {
       }
       case "wireguard": {
         const c = require('./WGVPNClient.js');
+        return c;
+        break;
+      }
+      case "amneziawg": {
+        const c = require('./AmneziaWGVPNClient.js');
         return c;
         break;
       }
