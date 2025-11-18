@@ -430,6 +430,13 @@ class NetworkProfile extends Monitorable {
       return null;
   }
 
+  static getGatewayIpsetName(uuid, af = 4) {
+    if (uuid) {
+      return `c_gw_${uuid.substring(0, 13)}_set` + (af === 4 ? "" : "6");
+    } else
+      return null;
+  }
+
   static getRouteIpsetName(uuid, hard = true) {
     if (uuid) {
       return `c_rt_${hard ? "hard" : "soft"}_${uuid.substring(0, 13)}_set`;
@@ -462,6 +469,25 @@ class NetworkProfile extends Monitorable {
   // In case the network doesn't exist at the time when policy is enforced, but may be restored from config history in future.
   // Thereby, the rule can still be applied and take effect once the network is restored
   static async ensureCreateEnforcementEnv(uuid) {
+
+    const ensureCreateIpset = async (netIpsetName, family = 4) => {
+      const createCmd = (family === 4)
+        ? `sudo ipset create -! ${netIpsetName} hash:net maxelem 1024`
+        : `sudo ipset create -! ${netIpsetName} hash:net family inet6 maxelem 1024`;
+      const deleteCmd = `sudo ipset destroy ${netIpsetName}`;
+      try {
+        await exec(createCmd);
+      } catch (createError) {
+        log.warn(`Ipset ${netIpsetName} creation failed (will retry after destruction):`, createError.message);
+        try {
+          await exec(deleteCmd);
+          await exec(createCmd);
+        } catch (recreateError) {
+          log.error(`Failed to successfully create/recreate ipset ${netIpsetName}.`, recreateError.message);
+        }
+      }
+    };
+
     await lock.acquire(`NET_ENFORCE_${uuid}`, async() => {
       if (envCreatedMap[uuid])
         return;
@@ -470,11 +496,28 @@ class NetworkProfile extends Monitorable {
       if (!netIpsetName || !netIpsetName6) {
         log.error(`Failed to get ipset name for ${uuid}`);
       } else {
-        await exec(`sudo ipset create -! ${netIpsetName} hash:net,iface maxelem 1024`).catch((err) => {
-          log.error(`Failed to create network profile ipset ${netIpsetName}`, err.message);
+        await ensureCreateIpset(netIpsetName, 4);
+        await ensureCreateIpset(netIpsetName6, 6);
+      }
+
+      const GatewayIpsetName = NetworkProfile.getGatewayIpsetName(uuid);
+      const GatewayIpsetName6 = NetworkProfile.getGatewayIpsetName(uuid, 6);
+      if (!GatewayIpsetName || !GatewayIpsetName6) {
+        log.error(`Failed to get gateway ipset name for ${uuid}`);
+      } else {
+        await exec(`sudo ipset create -! ${GatewayIpsetName} hash:ip maxelem 32`).then(() => {
+          return exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET} ${GatewayIpsetName}`).catch((err) => {
+            log.error(`Failed to add network gateway ipset ${GatewayIpsetName} to ${ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET}`, err.message);
+          });
+        }).catch((err) => {
+          log.error(`Failed to create network gateway ipset ${GatewayIpsetName}`, err.message);
         });
-        await exec(`sudo ipset create -! ${netIpsetName6} hash:net,iface family inet6 maxelem 1024`).catch((err) => {
-          log.error(`Failed to create network profile ipset ${netIpsetName6}`, err.message);
+        await exec(`sudo ipset create -! ${GatewayIpsetName6} hash:ip family inet6 maxelem 32`).then(() => {
+          return exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET} ${GatewayIpsetName6}`).catch((err) => {
+            log.error(`Failed to add network gateway ipset ${GatewayIpsetName6} to ${ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET}`, err.message);
+          });
+        }).catch((err) => {
+          log.error(`Failed to create network gateway ipset ${GatewayIpsetName6}`, err.message);
         });
       }
       const selfIpsetName = NetworkProfile.getSelfIpsetName(uuid);
@@ -593,12 +636,12 @@ class NetworkProfile extends Monitorable {
       if (this.o && this.o.monitoring === true) {
         if (_.isArray(this.o.ipv4Subnets)) {
           for (const subnet of this.o.ipv4Subnets)
-            commands.push(`add ${netIpsetName} ${subnet},${realIntf}`);
+            commands.push(`add ${netIpsetName} ${subnet}`);
         }
         if (_.isArray(this.o.rt4Subnets)) {
           for (const subnet of this.o.rt4Subnets) {
             if (!sysManager.isDefaultRoute(subnet))
-              commands.push(`add ${netIpsetName} ${subnet},${realIntf}`);
+              commands.push(`add ${netIpsetName} ${subnet}`);
             else
               hasDefaultRTSubnets = true;
           }
@@ -609,12 +652,12 @@ class NetworkProfile extends Monitorable {
       if (this.o && this.o.monitoring === true) {
         if (_.isArray(this.o.ipv6Subnets)) {
           for (const subnet6 of this.o.ipv6Subnets)
-            commands.push(`add ${netIpsetName6} ${subnet6},${realIntf}`);
+            commands.push(`add ${netIpsetName6} ${subnet6}`);
         }
         if (_.isArray(this.o.rt6Subnets)) {
           for (const subnet6 of this.o.rt6Subnets) {
             if (!sysManager.isDefaultRoute(subnet6))
-              commands.push(`add ${netIpsetName6} ${subnet6},${realIntf}`);
+              commands.push(`add ${netIpsetName6} ${subnet6}`);
             else
               hasDefaultRTSubnets = true;
           }
@@ -654,6 +697,29 @@ class NetworkProfile extends Monitorable {
       }).catch((err) => {
         log.error(`Failed to ${op} ${netIpsetName}(6) to ${ipset.CONSTANTS.IPSET_MONITORED_NET}`, err.message);
       });
+    }
+
+    if (this.o.monitoring === true) {
+      const GatewayIpsetName = NetworkProfile.getGatewayIpsetName(this.o.uuid);
+      const GatewayIpsetName6 = NetworkProfile.getGatewayIpsetName(this.o.uuid, 6);
+      if (!GatewayIpsetName || !GatewayIpsetName6) {
+        log.error(`Failed to get gateway ipset name for ${this.o.uuid}`);
+      } else {
+        await exec(`sudo ipset flush -! ${GatewayIpsetName}`).then(async () => {
+          if (this.o && this.o.gateway && typeof this.o.gateway === 'string') {
+            await exec(`sudo ipset add -! ${GatewayIpsetName} ${this.o.gateway}`);
+          }
+        }).catch((err) => {
+          log.error(`Failed to populate network gateway ipset ${GatewayIpsetName}`, err.message);
+        });
+        await exec(`sudo ipset flush -! ${GatewayIpsetName6}`).then(async () => {
+          if (this.o && this.o.gateway6 && typeof this.o.gateway6 === 'string') {
+            await exec(`sudo ipset add -! ${GatewayIpsetName6} ${this.o.gateway6}`);
+          }
+        }).catch((err) => {
+          log.error(`Failed to populate network gateway ipset ${GatewayIpsetName6}`, err.message);
+        });
+      }
     }
 
     const selfIpsetName = NetworkProfile.getSelfIpsetName(this.o.uuid);
@@ -839,6 +905,29 @@ class NetworkProfile extends Monitorable {
         });
       }
       // do not touch dnsmasq network config directory here, it should only be updated by rule enforcement modules
+    }
+
+    const GatewayIpsetName = NetworkProfile.getGatewayIpsetName(this.o.uuid);
+    const GatewayIpsetName6 = NetworkProfile.getGatewayIpsetName(this.o.uuid, 6);
+    if (!GatewayIpsetName || !GatewayIpsetName6) {
+      log.error(`Failed to get gateway ipset name for ${this.o.uuid}`);
+    } else {
+      if (options.cleanup) {
+        await exec(`sudo ipset flush -! ${GatewayIpsetName}`).catch((err) => {
+          log.debug(`Failed to flush network gateway ipset ${GatewayIpsetName}`, err.message);
+        });
+        await exec(`sudo ipset flush -! ${GatewayIpsetName6}`).catch((err) => {
+          log.debug(`Failed to flush network gateway ipset ${GatewayIpsetName6}`, err.message);
+        });
+
+        // remove from fw_network_gateway_set
+        await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET} ${GatewayIpsetName}`).catch((err) => {
+          log.debug(`Failed to remove ${GatewayIpsetName} from ${ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET}`, err.message);
+        });
+        await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET} ${GatewayIpsetName6}`).catch((err) => {
+          log.debug(`Failed to remove ${GatewayIpsetName6} from ${ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET}`, err.message);
+        });
+      }
     }
 
     const selfIpsetName = NetworkProfile.getSelfIpsetName(this.o.uuid);
