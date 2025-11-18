@@ -170,6 +170,7 @@ EOF
 
 if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
   echo '-A FW_PREROUTING_DMZ_HOST -j FR_WIREGUARD'
+  echo '-A FW_PREROUTING_DMZ_HOST -j FR_AMNEZIA_WG'
 fi
 
 echo 'COMMIT'

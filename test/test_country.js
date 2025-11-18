@@ -25,18 +25,20 @@ describe('Country', () => {
 
   describe('.getCountry', () => {
 
-    it('should return the right countries for ip addresses', (done) => {
+    it('should return the right countries for ip addresses', async () => {
       let mappings = {
-        "123.58.180.7": "CN",
+        // "123.58.180.7": "CN",
+        "13.35.186.7": "HK",
         "151.101.73.67": "US",
         "97.64.107.97": "US",
         "58.38.224.108": "CN"
       }
 
+      await country.init();
+
       for(let ip in mappings) {
         expect(country.getCountry(ip)).to.equal(mappings[ip]);
       }
-      done();
     })
 
   });
