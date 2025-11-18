@@ -167,6 +167,8 @@ describe.skip('FlowTool', () => {
 
 
 describe('should format simple format', function() {
+  this.timeout(10000);
+
   before( async() => {
     await fireRouter.waitTillReady()
     await sysManager.updateAsync()
@@ -177,7 +179,7 @@ describe('should format simple format', function() {
     const flow = {ts:1710300917.62,ets:1710300947.06,"_ts":1710300977.65034,sh:"192.168.196.105",dh:"140.82.113.25",ob:29,rb:25,ct:1,fd:"in",lh:"192.168.196.105",intf:"75da8a81-4881-4fcd-964f-7cb935355acc",du:29.44,
       af:{"alive.github.com":{"proto":"ssl","ip":"140.82.113.25"}},pr:"tcp",uids:["CVisnh3UdTVurR370j"],ltype:"mac",userTags:["1"],tags:["2"],sp:[51899],dp:443, dpid:77,apid:88,rpid:99};
     const formatted = flowTool.toSimpleFormat(flow);
-    expect(formatted.apid).to.equal(77);
+    expect(formatted.dpid).to.equal(77);
     expect(formatted.apid).to.equal(88);
     expect(formatted.rpid).to.equal(99);
   })

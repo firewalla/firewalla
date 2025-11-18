@@ -23,8 +23,6 @@ const DomainTrie = require('../util/DomainTrie.js');
 const AppTimeUsageSensor = require('../sensor/AppTimeUsageSensor.js');
 const e = require('express');
 
-process.title = "FireMain";
-
 
 describe('Test process AppTimeUsageSensor', function () {
   this.timeout(3000);
