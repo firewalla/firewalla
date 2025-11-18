@@ -16,7 +16,6 @@
 
 'use strict'
 
-process.title = "FireApi";
 const net = require('net')
 const _ = require('lodash');
 
@@ -834,6 +833,12 @@ class netBot extends ControllerBot {
           if (_.isBoolean(noForward)) {
             await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD, noForward);
           }
+          sem.emitEvent({
+            type: "LocalDomainUpdate",
+            message: `Update localDomain suffix`,
+            macArr: [macAddress],
+            toProcess: 'FireMain'
+          });
           return { suffix, noForward }
         } else if (hostTool.isMacAddress(macAddress)) {
           const host = await this.hostManager.getHostAsync(macAddress)
