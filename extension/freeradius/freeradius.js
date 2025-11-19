@@ -606,6 +606,8 @@ class FreeRadius {
 
   // TODO: will not reload clients, need to check changes
   async _reloadServer(options = {}) {
+    if (!this.featureOn) return false;
+
     try {
       const pid = this.pid;
 
@@ -617,7 +619,7 @@ class FreeRadius {
 
       if (pid) {
         log.info(`Current freeradius pid ${pid}...`);
-        // check if pid is changed in 30s, return true if changed
+        // check if pid is changed in 120s, return true if changed
         await util.waitFor(_ => this.pid && this.pid !== pid, 120000).catch((err) => {
           log.warn(`Container freeradius-server pid ${pid} not changed, try to reload container`, err.message);
         });
@@ -653,7 +655,7 @@ class FreeRadius {
         return false;
       }
 
-      log.info("Checking status of container freeradius-server...");
+      log.debug("Checking status of container freeradius-server...");
       await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml ps`).catch((e) => {
         log.warn("Cannot get container status of freeradius by docker-compose,", e.message)
       });
@@ -754,6 +756,8 @@ class FreeRadius {
   }
 
   async _reconfigServer(target, options = {}) {
+    if (!this.featureOn) return false;
+
     // if new image detected, update image first
     const imageUpdated = await this.upgradeImage(options);
     const isRunning = await this._checkContainer(options);
