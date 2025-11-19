@@ -36,8 +36,7 @@
 const log = require("./logger.js")(__filename);
 
 const layer2 = require('../util/Layer2.js');
-const Nmap = require('./Nmap.js');
-const nmap = new Nmap();
+const nmap = require('./Nmap.js');
 const f = require('../net2/Firewalla.js');
 const SysTool = require('../net2/SysTool.js')
 const sysTool = new SysTool()
