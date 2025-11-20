@@ -2057,7 +2057,21 @@ module.exports = class HostManager extends Monitorable {
     return this.spoofing;
   }
 
+  async getAppConfs() {
+    try {
+      const appString = await rclient.hgetAsync('policy:system', 'app')
+      if (!appString) return null
+
+      const appConfs = JSON.parse(appString)
+      return appConfs
+    } catch(err) {
+      log.error('Error reading policy:system => app', err)
+      return null
+    }
+  }
+
   async qos(policy, wanUUID) {
+    log.info("in HostManager.qos:", policy, wanUUID);
     if (wanUUID) { // per-wan config
       let upload = true;
       let download = true;
@@ -2134,7 +2148,35 @@ module.exports = class HostManager extends Monitorable {
           }
         }
       }
+
+      // get bandwidth from the app property of policy:system 
+      // for load balance mode, set the speed rate limit to sum of all WANs
+      // for failover mode, set the speed to primary WAN only
+      const appConfs = await this.getAppConfs();
+      const bandwidth = appConfs && appConfs.bandwidth || {};
+      let uploadSpeed = parseInt(bandwidth.upload) || 0;
+      let downloadSpeed = parseInt(bandwidth.download) || 0;
+      if (bandwidth.wanConfs) {
+        let totalUpload = 0;
+        let totalDownload = 0;
+        for (const [wanId, wanConf] of Object.entries(bandwidth.wanConfs)) {
+          if (wanType === Constants.WAN_TYPE_FAILOVER) {
+            if (wanId === primaryWanUUID) {
+              totalUpload = parseInt(wanConf.upload) || 0;
+              totalDownload = parseInt(wanConf.download) || 0;
+              break;
+            }
+          } else if (wanType === Constants.WAN_TYPE_LB) {
+            totalUpload += parseInt(wanConf.upload) || 0;
+            totalDownload += parseInt(wanConf.download) || 0;
+          }
+        }
+        uploadSpeed = totalUpload;
+        downloadSpeed = totalDownload;
+      }
       await platform.switchQoS(state, qdisc);
+      log.info('before setQoSBandwidth:', uploadSpeed, downloadSpeed);
+      await platform.setQoSBandwidth(uploadSpeed, downloadSpeed);
     } 
   }
 
