@@ -323,12 +323,30 @@ class FreeRadius {
   async saveFile(filepath, content) {
     filepath = filepath.replace(/^\//, ''); // remove leading slash
     const baseFolder = filepath.split('/').slice(0, -1).join('/'); // get base folder
-    await exec(`mkdir -p ${configDir}/${baseFolder}`).catch((e) => {
-      log.warn(`Failed to create config directory ${baseFolder}`, e.message);
+
+    // Ensure base configDir exists with proper permissions
+    await exec(`mkdir -p ${configDir}`).catch((e) => {
+      log.warn(`Failed to create config directory ${configDir}`, e.message);
+    });
+    await exec(`chmod 755 ${configDir}`).catch((e) => {
+      log.warn(`Failed to set permissions on ${configDir}`, e.message);
     });
 
+    // Create subdirectory if needed
+    if (baseFolder) {
+      await exec(`mkdir -p ${configDir}/${baseFolder}`).catch((e) => {
+        log.warn(`Failed to create config directory ${baseFolder}`, e.message);
+      });
+      await exec(`chmod 755 ${configDir}/${baseFolder}`).catch((e) => {
+        log.warn(`Failed to set permissions on ${configDir}/${baseFolder}`, e.message);
+      });
+    }
+
     log.info(`Saving file to ${configDir}/${filepath}...`);
-    return await fs.writeFileAsync(`${configDir}/${filepath}`, content, 'utf8').then((r) => {
+    return await fs.writeFileAsync(`${configDir}/${filepath}`, content, 'utf8').then(async (r) => {
+      await exec(`chmod 644 ${configDir}/${filepath}`).catch((e) => {
+        log.warn(`Failed to set permissions on ${configDir}/${filepath}`, e.message);
+      });
       log.info(`File ${configDir}/${filepath} saved successfully.`);
       return { ok: true };
     }).catch((e) => {
@@ -340,6 +358,9 @@ class FreeRadius {
   async generateDockerCompose(options = {}) {
     await exec(`mkdir -p ${configDir}`).catch((e) => {
       log.warn("Failed to create config directory,", e.message);
+    });
+    await exec(`chmod 755 ${configDir}`).catch((e) => {
+      log.warn(`Failed to set permissions on ${configDir}`, e.message);
     });
 
     await exec(`mkdir -p ${dockerDir}/config`).catch((e) => {
@@ -758,6 +779,9 @@ class FreeRadius {
   async _reconfigServer(target, options = {}) {
     if (!this.featureOn) return false;
 
+    // check certificate permission
+    await this.checkCertsPermission();
+
     // if new image detected, update image first
     const imageUpdated = await this.upgradeImage(options);
     const isRunning = await this._checkContainer(options);
@@ -772,6 +796,12 @@ class FreeRadius {
         return false;
       }
     }
+  }
+
+  // set proper permission for certificates
+  async checkCertsPermission() {
+    await exec(`sudo find ${certsDir} -maxdepth 2 -name "*.key" -exec chmod 640 {} +`).catch(() => { });
+    await exec(`sudo find ${certsDir} -maxdepth 2 -name "*.pem" -exec chmod 644 {} +`).catch(() => { });
   }
 
   async reconfigServer(target = "0.0.0.0", options = {}) {
