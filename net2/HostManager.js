@@ -2175,7 +2175,6 @@ module.exports = class HostManager extends Monitorable {
         downloadSpeed = totalDownload;
       }
       await platform.switchQoS(state, qdisc);
-      log.info('before setQoSBandwidth:', uploadSpeed, downloadSpeed);
       await platform.setQoSBandwidth(uploadSpeed, downloadSpeed);
     } 
   }

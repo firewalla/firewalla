@@ -740,7 +740,6 @@ class FireRouter {
         if (first || this.tcFilterRefreshNeeded) {
 
           const model = platform.getName();
-          log.info(`Resetting tc filters on platform: ${model}`);
           let qosNetworkType = 'lan';
 
           const lanIntfs = monitoringIntfNames.filter(iface => intfNameMap[iface] && intfNameMap[iface].config.meta.type === 'lan');
