@@ -156,6 +156,7 @@ const sl = require('../sensor/APISensorLoader.js');
 
 const Message = require('../net2/Message')
 
+const {logApiStats, getApiStats, API_STATS_KEY_EXCLUDE_LIST} = require('./stats.js');
 const util = require('util')
 
 const restartUPnPTask = {};
@@ -1668,6 +1669,12 @@ class netBot extends ControllerBot {
           result[branch] = await sysManager.getBranchUpdateTime(branch);
         }
         return result
+      }
+      case "apiStats": {
+        const topEid = value && value.topEidNum || 5;
+        const topApi = value && value.topApiNum || 3;
+        const recent = value && value.recent || 3600;
+        return await getApiStats(recent, topEid, topApi);
       }
       case "mspConfig":
         return fc.getMspConfig();
@@ -3945,6 +3952,12 @@ class netBot extends ControllerBot {
               : `${mtype} ${item} ${msg.target}`
           );
           log.verbose(rawmsg.message)
+        }
+
+        // record api stats asynchronously
+        const apikey = `${mtype}:${item || ""}:${msg.target || ""}`;
+        if (f.isDevelopmentVersion() && eid && eid != "undefined" && !API_STATS_KEY_EXCLUDE_LIST.includes(apikey)) {
+          logApiStats(eid, apikey, Date.now());
         }
 
         msg.appInfo = appInfo;
