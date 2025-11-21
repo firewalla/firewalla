@@ -601,7 +601,6 @@ async function setupGlobalRules(options) {
       if (model === "gold" || model === "goldpro") {
         rootClassId = "10";
       }
-      log.info(`rootClassId for QoS is ${rootClassId} for model ${model}`);
       if (rateLimit || qdisc === "netem") {
         let parentHTBQdisc = "3";
         let subclassId = "4";

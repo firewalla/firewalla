@@ -728,14 +728,12 @@ class FireRouter {
         }
         if (first || this.tcFilterRefreshNeeded) {
           const model = platform.getName();
-          log.info(`Resetting tc filters on platform: ${model}`);
           let qosNetworkType = 'lan';
           // if (model === 'gold' || model === 'goldpro') {
           //   qosNetworkType = 'wan';
           // }
           const lanIntfs = monitoringIntfNames.filter(iface => intfNameMap[iface] && intfNameMap[iface].config.meta.type === 'lan');
           const wanIntfs = this.getWanIntfNames();
-          log.info(`Resetting tc filters on ${qosNetworkType} lanIntfs: ${lanIntfs} wanIntfs: ${wanIntfs}`);
           await this.resetTCFilters(lanIntfs, wanIntfs, qosNetworkType);
           this.tcFilterRefreshNeeded = false;
         }
