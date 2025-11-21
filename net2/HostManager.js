@@ -616,7 +616,10 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async monthlyDataUsageForInit(json) {
-    const dataPlan = await this.getDataUsagePlan({});
+    const enable = fc.isFeatureOn('data_plan');
+    const dataPlan = await this.getDataUsagePlan();
+    if (enable)
+      json.dataUsagePlan = dataPlan;
     const globalDate = dataPlan && dataPlan.date || 1;
     json.monthlyDataUsage = _.pick(await this.monthlyDataStats(null, globalDate), [
       'totalDownload', 'totalUpload', 'monthlyBeginTs', 'monthlyEndTs'
@@ -635,7 +638,7 @@ module.exports = class HostManager extends Monitorable {
 
   async monthlyDataStats(mac, date) {
     if (!date) {
-      const dataPlan = await this.getDataUsagePlan({});
+      const dataPlan = await this.getDataUsagePlan();
       date = dataPlan && dataPlan.date || 1;
     }
     const timezone = sysManager.getTimezone();
@@ -1321,22 +1324,15 @@ module.exports = class HostManager extends Monitorable {
     json.guardians = result;
   }
 
-  async getDataUsagePlan(json) {
-    const enable = fc.isFeatureOn('data_plan');
+  async getDataUsagePlan() {
     const data = await rclient.getAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS);
-    if(!data || !enable) {
-      return;
-    }
 
     try {
       const result = JSON.parse(data);
-      if(result) {
-        json.dataUsagePlan = result;
-      }
       return result;
     } catch(err) {
       log.error(`Failed to parse ${Constants.REDIS_KEY_DATA_PLAN_SETTINGS}, err: ${err}`);
-      return;
+      return {};
     }
   }
 
@@ -1614,7 +1610,6 @@ module.exports = class HostManager extends Monitorable {
       this.getGuardian(json),
       this.getGuardians(json),
       this.getMspData(json),
-      this.getDataUsagePlan(json),
       this.monthlyDataUsageForInit(json),
       this.networkConfig(json),
       this.powerModeForInit(json),
