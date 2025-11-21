@@ -1592,12 +1592,7 @@ class netBot extends ControllerBot {
         }
       }
       case "monthlyDataUsageOnWans": {
-        let dataPlan = await rclient.getAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS);
-        if (dataPlan) {
-          dataPlan = JSON.parse(dataPlan);
-        } else {
-          dataPlan = {}
-        }
+        const dataPlan = await this.hostManager.getDataUsagePlan();
         const globalDate = dataPlan && dataPlan.date || 1;
         const wanConfs = dataPlan && dataPlan.wanConfs || {};
         const wanIntfs = sysManager.getWanInterfaces();
@@ -1609,14 +1604,8 @@ class netBot extends ControllerBot {
         return result
       }
       case "dataPlan": {
-        const featureName = 'data_plan';
-        let dataPlan = await rclient.getAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS);
-        const enable = fc.isFeatureOn(featureName)
-        if (dataPlan) {
-          dataPlan = JSON.parse(dataPlan);
-        } else {
-          dataPlan = {}
-        }
+        const dataPlan = await this.hostManager.getDataUsagePlan();
+        const enable = fc.isFeatureOn('data_plan');
         return { dataPlan: dataPlan, enable: enable }
       }
       case "network:filenames": {
