@@ -596,6 +596,11 @@ async function setupGlobalRules(options) {
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       priority = priority || qos.DEFAULT_PRIO;
       qdisc = qdisc || "fq_codel";
+      const model = platform.getName();
+      let rootClassId = "1";
+      if (model === "gold" || model === "goldpro") {
+        rootClassId = "10";
+      }
       if (rateLimit || qdisc === "netem") {
         let parentHTBQdisc = "3";
         let subclassId = "4";
@@ -608,14 +613,15 @@ async function setupGlobalRules(options) {
             subclassId = "7";
           }
         }
+
         if (createOrDestroy === "create") {
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
           await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
         }
       } else {
         let subclassId = qdisc == "fq_codel" ? "5" : "6";
@@ -627,9 +633,9 @@ async function setupGlobalRules(options) {
           }
         }
         if (createOrDestroy === "create")
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
         else
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
       }
       if(qdisc === "netem"){
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
@@ -769,6 +775,11 @@ async function setupGenericIdentitiesRules(options) {
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       priority = priority || qos.DEFAULT_PRIO;
       qdisc = qdisc || "fq_codel";
+      const model = platform.getName();
+      let rootClassId = "1";
+      if (model === "gold" || model === "goldpro") {
+        rootClassId = "10";
+      }
       if (rateLimit || qdisc === "netem") {
         let parentHTBQdisc = "3";
         let subclassId = "4";
@@ -782,13 +793,13 @@ async function setupGenericIdentitiesRules(options) {
           }
         }
         if (createOrDestroy === "create") {
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
           await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
         }
       } else {
         let subclassId = qdisc == "fq_codel" ? "5" : "6";
@@ -800,9 +811,9 @@ async function setupGenericIdentitiesRules(options) {
           }
         }
         if (createOrDestroy === "create")
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
         else
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
       }
       if(qdisc === "netem"){
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
@@ -954,6 +965,11 @@ async function setupDevicesRules(options) {
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       priority = priority || qos.DEFAULT_PRIO;
       qdisc = qdisc || "fq_codel";
+      const model = platform.getName();
+      let rootClassId = "1";
+      if (model === "gold" || model === "goldpro") {
+        rootClassId = "10";
+      }
       if (rateLimit || qdisc === "netem") {
         let parentHTBQdisc = "3";
         let subclassId = "4";
@@ -967,13 +983,13 @@ async function setupDevicesRules(options) {
           }
         }
         if (createOrDestroy === "create") {
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
           await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
         }
       } else {
         let subclassId = qdisc == "fq_codel" ? "5" : "6";
@@ -985,9 +1001,9 @@ async function setupDevicesRules(options) {
           }
         }
         if (createOrDestroy === "create")
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
         else
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
       }
       if(qdisc === "netem"){
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
@@ -1135,6 +1151,11 @@ async function setupTagsRules(options) {
         const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
         priority = priority || qos.DEFAULT_PRIO;
         qdisc = qdisc || "fq_codel";
+        const model = platform.getName();
+        let rootClassId = "1";
+        if (model === "gold" || model === "goldpro") {
+          rootClassId = "10";
+        }
         if (rateLimit || qdisc === "netem") {
           let parentHTBQdisc = "3";
           let subclassId = "4";
@@ -1148,13 +1169,13 @@ async function setupTagsRules(options) {
             }
           }
           if (createOrDestroy === "create") {
-            await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+            await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
             await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
             await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
           } else {
             await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
             await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-            await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+            await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
           }
         } else {
           let subclassId = qdisc == "fq_codel" ? "5" : "6";
@@ -1166,9 +1187,9 @@ async function setupTagsRules(options) {
             }
           }
           if (createOrDestroy === "create")
-            await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+            await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           else
-            await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+            await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
         }
         if(qdisc === "netem"){
           // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
@@ -1352,6 +1373,11 @@ async function setupIntfsRules(options) {
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       priority = priority || qos.DEFAULT_PRIO;
       qdisc = qdisc || "fq_codel";
+      const model = platform.getName();
+      let rootClassId = "1";
+      if (model === "gold" || model === "goldpro") {
+        rootClassId = "10";
+      }
       if (rateLimit || qdisc === "netem") {
         let parentHTBQdisc = "3";
         let subclassId = "4";
@@ -1365,13 +1391,13 @@ async function setupIntfsRules(options) {
           }
         }
         if (createOrDestroy === "create") {
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
           await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
         }
       } else {
         let subclassId = qdisc == "fq_codel" ? "5" : "6";
@@ -1383,9 +1409,9 @@ async function setupIntfsRules(options) {
           }
         }
         if (createOrDestroy === "create")
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
         else
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
       }
       if(qdisc === "netem"){
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
@@ -1530,6 +1556,11 @@ async function setupRuleGroupRules(options) {
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       priority = priority || qos.DEFAULT_PRIO;
       qdisc = qdisc || "fq_codel";
+      const model = platform.getName();
+      let rootClassId = "1";
+      if (model === "gold" || model === "goldpro") {
+        rootClassId = "10";
+      }
       if (rateLimit || qdisc === "netem") {
         let parentHTBQdisc = "3";
         let subclassId = "4";
@@ -1543,13 +1574,13 @@ async function setupRuleGroupRules(options) {
           }
         }
         if (createOrDestroy === "create") {
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
           await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
         }
       } else {
         let subclassId = qdisc == "fq_codel" ? "5" : "6";
@@ -1561,9 +1592,9 @@ async function setupRuleGroupRules(options) {
           }
         }
         if (createOrDestroy === "create")
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
         else
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
       }
       //TODO: Not consider how App Disturb feature use RuleGroup Qos currently.
       parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "qos")}_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });

@@ -138,6 +138,10 @@ class Platform {
 
   }
 
+  async setQoSBandwidth(upload, download) {
+
+  }
+
   getDNSServiceName() {
     return "firemasq";
   }
