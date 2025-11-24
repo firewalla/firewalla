@@ -618,7 +618,7 @@ module.exports = class HostManager extends Monitorable {
   async monthlyDataUsageForInit(json) {
     const enable = fc.isFeatureOn('data_plan');
     const dataPlan = await this.getDataUsagePlan();
-    if (enable)
+    if (dataPlan && enable)
       json.dataUsagePlan = dataPlan;
     const globalDate = dataPlan && dataPlan.date || 1;
     json.monthlyDataUsage = _.pick(await this.monthlyDataStats(null, globalDate), [
@@ -1332,7 +1332,7 @@ module.exports = class HostManager extends Monitorable {
       return result;
     } catch(err) {
       log.error(`Failed to parse ${Constants.REDIS_KEY_DATA_PLAN_SETTINGS}, err: ${err}`);
-      return {};
+      return null;
     }
   }
 
