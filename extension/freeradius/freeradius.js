@@ -83,7 +83,7 @@ class FreeRadius {
   }
 
   async _watchStatus() {
-    await exec("netstat -an  | egrep -q ':1812'").then(() => { this.running = true }).catch((err) => { this.running = false });
+    await exec("sudo netstat -tulpn | egrep -qw '1812'").then(() => { this.running = true }).catch((err) => { this.running = false });
   }
 
   async _watch() {
@@ -824,7 +824,7 @@ class FreeRadius {
 
   // radius listens on 1812-1813
   async isListening() {
-    return await exec("netstat -an | egrep -q ':1812'").then(() => true).catch((err) => false);
+    return await exec("sudo netstat -tulpn | egrep -qw '1812'").then(() => true).catch((err) => false);
   }
 
   async getStatus(options = {}) {
