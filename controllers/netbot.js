@@ -1606,7 +1606,7 @@ class netBot extends ControllerBot {
       case "dataPlan": {
         const dataPlan = await this.hostManager.getDataUsagePlan();
         const enable = fc.isFeatureOn('data_plan');
-        return { dataPlan: dataPlan, enable: enable }
+        return { dataPlan: dataPlan || {}, enable: enable }
       }
       case "network:filenames": {
         const filenames = await FireRouter.getFilenames();
