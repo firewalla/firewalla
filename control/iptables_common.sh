@@ -125,6 +125,9 @@ add match_all_set4 0.0.0.0/1
 add match_all_set4 128.0.0.0/1
 add match_dns_port_set 53
 
+create fw_network_gateway_set list:set
+flush fw_network_gateway_set
+
 add block_ip_set ${BLUE_HOLE_IP}
 
 # create a list of set which stores net set of lan networks
@@ -307,6 +310,10 @@ cat << EOF > "$filter_file"
 -A FW_FORWARD -j FW_FORWARD_LOG
 # do not check reply packets of a inbound connection, this is mainly for upnp allow rule implementation, which only accepts packets in original direction
 -A FW_FORWARD -m conntrack --ctdir REPLY -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j ACCEPT
+
+# do not block network gateway
+-A FW_FORWARD -m set --match-set fw_network_gateway_set src -j FW_ACCEPT_DEFAULT
+-A FW_FORWARD -m set --match-set fw_network_gateway_set dst -j FW_ACCEPT_DEFAULT
 
 # initialize alarm chain
 -N FW_ALARM
