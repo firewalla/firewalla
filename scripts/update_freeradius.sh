@@ -89,7 +89,7 @@ else
 fi
 
 # cleanup unexpected containers
-sudo docker ps --format "{{.Names}}" -f "ancestor=public.ecr.aws/a0j1s2e9/freeradius:${image_tag}" | grep -v "^freeradius_freeradius_1$" | xargs -r sudo docker rm -f
+sudo docker ps -a --format "{{.Names}}" -f "ancestor=public.ecr.aws/a0j1s2e9/freeradius:${image_tag}" | grep -v "^freeradius_freeradius_1$" | xargs -r sudo docker rm -f
 echo "unexpected containers cleaned up"
 
 # remove other freeradius images except the current image

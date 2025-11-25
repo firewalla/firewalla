@@ -86,6 +86,7 @@ function getPreferredBName(hostObject) {
     || hostObject.sambaName
     // hostname doesn't seem to be assigned anywhere, on App, this actually has the highest priority
     || hostObject.hostname
+    || hostObject.nbtName
     // below 2 mostly from user-agent now
     || detectName
     || modelName
