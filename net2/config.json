@@ -680,6 +680,10 @@
         "expires": 172800,
         "count": 2000
       },
+      "api_stats": {
+        "expires": 86400,
+        "count": 10000
+      },
       "dhcp_event": {
         "expires": 2592000,
         "count": 1000
