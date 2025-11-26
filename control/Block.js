@@ -34,6 +34,8 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const { CategoryEntry } = require('./CategoryEntry.js');
+const rclient = require('../util/redis_manager.js').getRedisClient();
+
 const VPN_CLIENT_WAN_PREFIX = Constants.ACL_VPN_CLIENT_WAN_PREFIX;
 const VIRT_WAN_GROUP_PREFIX = Constants.ACL_VIRT_WAN_GROUP_PREFIX;
 const UPNP_ACCEPT_CHAIN = "FR_UPNP_ACCEPT";
@@ -391,6 +393,13 @@ function unblock(target, ipset) {
   return setupIpset(target, ipset, true)
 }
 
+async function isMyGatewayOrPublicIp(ip) {
+  const gateway = sysManager.myDefaultGateway();
+  const gateway6 = sysManager.myDefaultGateway6();
+  let { publicIps, publicIp6s } = await rclient.hgetallAsync('sys:network:info');
+  return ip === gateway || ip === gateway6 || publicIps.includes(ip) || publicIp6s.includes(ip);
+}
+
 // this is used only for user defined target list so there is no need to remove from ipset. The ipset will be reset upon category reload or update.
 async function batchBlockNetPort(elements, portObj, ipset, options = {}) {
   log.debug("Batch block net port of", ipset);
@@ -398,8 +407,6 @@ async function batchBlockNetPort(elements, portObj, ipset, options = {}) {
     return;
   const v4Set = ipset;
   const v6Set = ipset + '6';
-  const gateway6 = sysManager.myDefaultGateway6();
-  const gateway = sysManager.myDefaultGateway();
   const cmds = [];
   const op = 'add';
 
@@ -408,7 +415,9 @@ async function batchBlockNetPort(elements, portObj, ipset, options = {}) {
     const ipAddr = ipSpliterIndex > 0 ? element.substring(0, ipSpliterIndex) : element;
 
     //Prevent gateway IP from being added into blocking IP set dynamically
-    if (gateway == ipAddr || gateway6 == ipAddr) {
+    const shouldSkip = await isMyGatewayOrPublicIp(ipAddr);
+    if (shouldSkip) {
+      log.info(`Skip adding gateway or public IP ${ipAddr} into blocking IP set ${ipset}`);
       continue;
     }
     if (new Address4(ipAddr).isValid()) {
@@ -439,8 +448,6 @@ async function batchBlockConnection(elements, ipset, options = {}) {
     return;
   const v4Set = ipset;
   const v6Set = ipset + '6';
-  const gateway6 = sysManager.myDefaultGateway6();
-  const gateway = sysManager.myDefaultGateway();
   const cmds = [];
   const op = 'add';
   for (const element of elements) {
@@ -454,7 +461,9 @@ async function batchBlockConnection(elements, ipset, options = {}) {
     }
 
     //Prevent gateway IP from being added into blocking IP set dynamically
-    if (gateway == remoteAddr || gateway6 == remoteAddr) {
+    const shouldSkip = await isMyGatewayOrPublicIp(remoteAddr);
+    if (shouldSkip) {
+      log.info(`Skip adding gateway or public IP ${remoteAddr} into blocking IP set ${ipset}`);
       continue;
     }
 
@@ -489,8 +498,6 @@ async function batchSetupIpset(elements, ipset, remove = false, options = {}) {
     return;
   const v4Set = ipset;
   const v6Set = ipset + '6';
-  const gateway6 = sysManager.myDefaultGateway6();
-  const gateway = sysManager.myDefaultGateway();
   const cmds = [];
   const op = remove ? 'del' : 'add';
 
@@ -499,8 +506,12 @@ async function batchSetupIpset(elements, ipset, remove = false, options = {}) {
     const ipAddr = ipSpliterIndex > 0 ? element.substring(0, ipSpliterIndex) : element;
 
     //Prevent gateway IP from being added into blocking IP set dynamically
-    if (!remove && (gateway == ipAddr || gateway6 == ipAddr)) {
-      continue;
+    if (!remove) {
+      const shouldSkip = await isMyGatewayOrPublicIp(ipAddr);
+      if (shouldSkip) {
+        log.info(`Skip adding gateway or public IP ${ipAddr} into blocking IP set ${ipset}`);
+        continue;
+      }
     }
     // check and add v6 suffix
     if (ipAddr.match(/^\d+(-\d+)?$/)) {
@@ -526,7 +537,7 @@ async function batchSetupIpset(elements, ipset, remove = false, options = {}) {
   return Ipset.batchOp(cmds);
 }
 
-function setupIpset(element, ipset, remove = false) {
+async function setupIpset(element, ipset, remove = false) {
   const ipSpliterIndex = element.search(/[/,]/)
   const ipAddr = ipSpliterIndex > 0 ? element.substring(0, ipSpliterIndex) : element;
 
@@ -550,12 +561,13 @@ function setupIpset(element, ipset, remove = false) {
       return
     }
   }
-  const gateway6 = sysManager.myDefaultGateway6()
-  const gateway = sysManager.myDefaultGateway()
   //Prevent gateway IP from being added into blocking IP set dynamically
-  if (!remove && (gateway == ipAddr || gateway6 == ipAddr)) {
-    log.warn('Not adding gateway IP into ipset', ipAddr, ipset);
-    return
+  if (!remove) {
+    const shouldSkip = await isMyGatewayOrPublicIp(ipAddr);
+    if (shouldSkip) {
+      log.warn('Not adding gateway IP into ipset', ipAddr, ipset);
+      return;
+    }
   }
   const action = remove ? Ipset.del : Ipset.add;
 
