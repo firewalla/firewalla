@@ -393,11 +393,45 @@ function unblock(target, ipset) {
   return setupIpset(target, ipset, true)
 }
 
-async function isMyGatewayOrPublicIp(ip) {
+async function getIpWhiteList(ip) {
+  const whiteIpList = [];
+  const whiteIp6List = [];
   const gateway = sysManager.myDefaultGateway();
+  if (gateway) {
+    whiteIpList.push(gateway);
+  }
   const gateway6 = sysManager.myDefaultGateway6();
+  if (gateway6) {
+    whiteIp6List.push(gateway6);
+  }
   let { publicIps, publicIp6s } = await rclient.hgetallAsync('sys:network:info');
-  return ip === gateway || ip === gateway6 || publicIps.includes(ip) || publicIp6s.includes(ip);
+  try {
+    publicIps = JSON.parse(publicIps);
+    publicIp6s = JSON.parse(publicIp6s);
+  } catch (e) {
+    log.error("Failed to parse public IPs from sys:network:info", e.message);
+  }
+
+  if (publicIps && _.isObject(publicIps)) {
+    for (const [_, ipEntry] of Object.entries(publicIps)) {
+      if (!whiteIpList.includes(ipEntry))
+        whiteIpList.push(ipEntry);
+    }
+  }
+  //if publicIp6s exists and type is array
+  if (publicIp6s && _.isArray(publicIp6s)) {
+    for (const ip6Entry of publicIp6s) {
+      if (!whiteIp6List.includes(ip6Entry))
+        whiteIp6List.push(ip6Entry);
+    }
+  }
+  log.debug("White IP list:", whiteIpList, whiteIp6List);
+
+  return { whiteIpList, whiteIp6List };
+}
+
+function isIpInWhiteList(destIp, { whiteIpList, whiteIp6List }) {
+  return whiteIpList.includes(destIp) || whiteIp6List.includes(destIp);
 }
 
 // this is used only for user defined target list so there is no need to remove from ipset. The ipset will be reset upon category reload or update.
@@ -409,14 +443,14 @@ async function batchBlockNetPort(elements, portObj, ipset, options = {}) {
   const v6Set = ipset + '6';
   const cmds = [];
   const op = 'add';
+  const whiteList = await getIpWhiteList();
 
   for (const element of elements) {
     const ipSpliterIndex = element.search(/[/,]/)
     const ipAddr = ipSpliterIndex > 0 ? element.substring(0, ipSpliterIndex) : element;
 
     //Prevent gateway IP from being added into blocking IP set dynamically
-    const shouldSkip = await isMyGatewayOrPublicIp(ipAddr);
-    if (shouldSkip) {
+    if (isIpInWhiteList(ipAddr, whiteList)) {
       log.info(`Skip adding gateway or public IP ${ipAddr} into blocking IP set ${ipset}`);
       continue;
     }
@@ -450,6 +484,7 @@ async function batchBlockConnection(elements, ipset, options = {}) {
   const v6Set = ipset + '6';
   const cmds = [];
   const op = 'add';
+  const whiteList = await getIpWhiteList();
   for (const element of elements) {
     let {localAddr, localPorts, remoteAddr, protocol} = element;
     if (!localAddr || !localPorts || !remoteAddr || !protocol) {
@@ -461,8 +496,7 @@ async function batchBlockConnection(elements, ipset, options = {}) {
     }
 
     //Prevent gateway IP from being added into blocking IP set dynamically
-    const shouldSkip = await isMyGatewayOrPublicIp(remoteAddr);
-    if (shouldSkip) {
+    if (isIpInWhiteList(remoteAddr, whiteList)) {
       log.info(`Skip adding gateway or public IP ${remoteAddr} into blocking IP set ${ipset}`);
       continue;
     }
@@ -500,6 +534,7 @@ async function batchSetupIpset(elements, ipset, remove = false, options = {}) {
   const v6Set = ipset + '6';
   const cmds = [];
   const op = remove ? 'del' : 'add';
+  const whiteList = await getIpWhiteList();
 
   for (const element of elements) {
     const ipSpliterIndex = element.search(/[/,]/)
@@ -507,8 +542,7 @@ async function batchSetupIpset(elements, ipset, remove = false, options = {}) {
 
     //Prevent gateway IP from being added into blocking IP set dynamically
     if (!remove) {
-      const shouldSkip = await isMyGatewayOrPublicIp(ipAddr);
-      if (shouldSkip) {
+      if (isIpInWhiteList(ipAddr, whiteList)) {
         log.info(`Skip adding gateway or public IP ${ipAddr} into blocking IP set ${ipset}`);
         continue;
       }
@@ -563,8 +597,8 @@ async function setupIpset(element, ipset, remove = false) {
   }
   //Prevent gateway IP from being added into blocking IP set dynamically
   if (!remove) {
-    const shouldSkip = await isMyGatewayOrPublicIp(ipAddr);
-    if (shouldSkip) {
+    const whiteList = await getIpWhiteList();
+    if (isIpInWhiteList(ipAddr, whiteList)) {
       log.warn('Not adding gateway IP into ipset', ipAddr, ipset);
       return;
     }
