@@ -591,7 +591,7 @@ module.exports = class HostManager extends Monitorable {
         else if (s.length > 60)
           s.shift()
       }
-      if (['intra:lo', 'conn:lo:intra'].includes(metric)) {
+      if (['intra:lo', 'conn:lo:intra', 'ipB:lo:intra'].includes(metric)) {
         // global local bandwidth and connection are being counted twice
         // the result should always be interger, but use Math.floor as a safe guard
         s.forEach((h, i) => s[i][1] = Math.floor(h[1]/2))
@@ -1757,7 +1757,11 @@ module.exports = class HostManager extends Monitorable {
     host = new Host(Host.parse(o), noEnvCreation);
 
     this.hostsdb[`host:mac:${o.mac}`] = host
-    this.hosts.all.push(host);
+    const index = this.hosts.all.findIndex(h => h.o.mac === o.mac)
+    if (index == -1)
+      this.hosts.all.push(host);
+    else
+      this.hosts.all[index] = host;
 
     if (o.ipv4Addr) this.hostsdb[`host:ip4:${o.ipv4Addr}`] = host
     this.syncV6DB(host)
@@ -1939,7 +1943,7 @@ module.exports = class HostManager extends Monitorable {
             // the physical host get a new ipv4 address
             // remove host:ip4 entry from this.hostsdb only if the entry belongs to this mac
             if (hostbyip && hostbyip.o.mac === o.mac)
-              this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
+              delete this.hostsdb['host:ip4:' + hostbymac.o.ipv4]
           }
   
           try {
@@ -1968,9 +1972,7 @@ module.exports = class HostManager extends Monitorable {
   
         hostbymac.stale = !visibleMACs.has(hostbymac.o.mac);
         hostbymac._mark = true;
-        if (hostbyip) {
-          hostbyip._mark = true;
-        }
+
         if (this.wifiSDAddresses.includes(o.mac)) hostbymac.wifiSD = true
         // two mac have the same IP,  pick the latest, until the otherone update itself
         if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
