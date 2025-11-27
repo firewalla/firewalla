@@ -2,7 +2,7 @@ version: '3'
 
 services:
   freeradius:
-    image: public.ecr.aws/a0j1s2e9/freeradius:latest
+    image: public.ecr.aws/a0j1s2e9/freeradius:prod
     working_dir: /etc/freeradius
     network_mode: "host"
     environment:

@@ -67,7 +67,7 @@ class FreeRadius {
   }
 
   async _prepare(options = {}) {
-    await this.watchContainer();
+    await this.watchContainer(60000, false);
     await this.startDockerDaemon(options);
     await this.generateDockerCompose(options);
     await this.prepareImage(options);
@@ -86,9 +86,9 @@ class FreeRadius {
     await exec("sudo netstat -tulpn | egrep -qw '1812'").then(() => { this.running = true }).catch((err) => { this.running = false });
   }
 
-  async _watch() {
+  async _watch(container = false) {
     await this._watchStatus();
-    if (this.running) {
+    if (this.running && container) {
       await sleep(1000);
       if (!await fs.accessAsync(`${dockerDir}/docker-compose.yml`, fs.constants.F_OK).then(() => true).catch(_err => false)) {
         log.debug("freeradius docker compose file not exist, skip checking status of container freeradius-server");
@@ -114,14 +114,14 @@ class FreeRadius {
     }
   }
 
-  async watchContainer(interval) {
+  async watchContainer(interval, force = false) {
     if (this.watcher) {
       clearInterval(this.watcher);
     }
 
-    await this._watch();
+    await this._watch(force);
     this.watcher = setInterval(async () => {
-      await this._watch();
+      await this._watch(force);
     }, interval * 1000 || 60000); // every 60s by default
   }
 
@@ -142,12 +142,13 @@ class FreeRadius {
   }
 
   async startServer(options = {}) {
-    this.watchContainer(5);
+    this.watchContainer(5, true);
     await this._startServer(options);
-    this.watchContainer(60);
+    this.watchContainer(60, false);
   }
 
   async _startServer(options = {}) {
+    await this._watchStatus();
     if (this.running) {
       log.warn("Abort starting radius-server, server is already running.")
       return false;
@@ -321,6 +322,10 @@ class FreeRadius {
   }
 
   async saveFile(filepath, content) {
+    // Prevent directory traversal attacks
+    if (filepath.includes('../')) {
+      return { ok: false, error: "Invalid filepath: directory traversal not allowed" };
+    }
     filepath = filepath.replace(/^\//, ''); // remove leading slash
     const baseFolder = filepath.split('/').slice(0, -1).join('/'); // get base folder
 
@@ -630,6 +635,7 @@ class FreeRadius {
     if (!this.featureOn) return false;
 
     try {
+      await this._statusServer(options);
       const pid = this.pid;
 
       if (!await this.generateRadiusConfig(options)) {
@@ -711,13 +717,14 @@ class FreeRadius {
   }
 
   async stopServer(options = {}) {
-    this.watchContainer(5);
+    this.watchContainer(5, true);
     await this._stopServer(options);
-    this.watchContainer(60);
+    this.watchContainer(60, false);
   }
 
   async _stopServer(options = {}) {
     try {
+      await this._watchStatus();
       log.info("Stopping container freeradius-server...");
       await exec("sudo systemctl stop docker-compose@freeradius").catch((e) => {
         log.warn("Cannot stop freeradius,", e.message)
@@ -811,12 +818,12 @@ class FreeRadius {
     }
 
     try {
-      this.watchContainer(5);
+      this.watchContainer(5, true);
       await this._reconfigServer(target, options);
     } catch (err) {
       log.warn("Failed to reconfig freeradius,", target, options, err.message);
     } finally {
-      this.watchContainer(60);
+      this.watchContainer(60, false);
     }
 
     return this.running;
