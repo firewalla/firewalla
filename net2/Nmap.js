@@ -252,7 +252,7 @@ class Nmap {
       const job = this.scanQ[0] // Peek at first job
       
       try {
-        const hosts = await this.nmapScan(job.cmd, true, job.scriptName)
+        const hosts = await this.nmapScan(job.cmd, job.requiremac, job.scriptName)
         log.verbose(`job ${job.id} done`, hosts)
         job.deferred.resolve(hosts)
       } catch(err) {
@@ -328,6 +328,7 @@ class Nmap {
    *   - protocols: number[] - optional array for -PO flag (e.g., [1,6] for -PO1,6) - only for ping scan
    *   - sendIp: boolean - optional: add --send-ip flag - only for ping scan
    *   - hostTimeout: string - host timeout (default: '30s' for ping scan, '200s' for UDP scan, '60s' for script scan)
+   *   - requiremac: boolean - filter hosts that don't have MAC address (default: false)
    * @returns {Promise<Array>} Array of host objects
    */
   async scanAsync(range /*Must be v4 CIDR*/, options = {}) {
@@ -382,7 +383,8 @@ class Nmap {
     }
 
     const jobID = ports ? `script-${range}-${ports.join(',')}` : (script ? 'script-' : 'fast-') + range
-    const job = this.createJob({ id: jobID, cmd, scriptName: script })
+    const requiremac = !!options.requiremac
+    const job = this.createJob({ id: jobID, cmd, scriptName: script, requiremac })
     const hosts = await job.deferred.promise
 
     return hosts

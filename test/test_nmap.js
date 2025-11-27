@@ -22,7 +22,8 @@ let Nmap = require('../net2/Nmap');
 describe('Test Nmap.parseNmapTextOutput', () => {
   
   describe('Simple scan without scripts', () => {
-    const simpleOutput = `Starting Nmap 7.94 ( https://nmap.org ) at 2025-11-14 19:06
+    it('should parse simple scan without scripts', () => {
+      const simpleOutput = `Starting Nmap 7.94 ( https://nmap.org ) at 2025-11-14 19:06
 Nmap scan report for 192.168.1.1
 Host is up (0.00056s latency).
 MAC Address: AA:BB:CC:DD:EE:FF (Test Vendor)
@@ -30,7 +31,6 @@ Nmap scan report for 192.168.1.2
 Host is up.
 Nmap done: 64 IP addresses (2 hosts up) scanned in 2.15 seconds`;
 
-    it('should parse simple scan without scripts', () => {
       const result = Nmap.parseNmapTextOutput(simpleOutput);
       expect(result.hosts).to.be.an('array');
       expect(result.hosts.length).to.equal(2);
@@ -62,6 +62,21 @@ Nmap done: 1 IP addresses (1 hosts up) scanned in 1.00 seconds`;
       const host = result.hosts[0];
       expect(host.ipv4Addr).to.equal('192.168.1.1');
       expect(host.mac).to.equal('AA:BB:CC:DD:EE:FF');
+    });
+  });
+
+  describe('Empty network with only box itself', () => {
+    const emptyNetworkOutput = `Starting Nmap 7.94 ( https://nmap.org ) at 2025-11-26 16:29
+Nmap scan report for 192.168.128.1
+Host is up.
+Nmap done: 256 IP addresses (1 host up) scanned in 103.34 seconds`
+    it('should parse empty network output', () => {
+      const result = Nmap.parseNmapTextOutput(emptyNetworkOutput);
+      expect(result.hosts).to.be.an('array');
+      expect(result.hosts.length).to.equal(1);
+      expect(result.hosts[0].ipv4Addr).to.equal('192.168.128.1');
+      expect(result.hosts[0].mac).to.be.null;
+      expect(result.hosts[0].script).to.not.exist;
     });
   });
 
