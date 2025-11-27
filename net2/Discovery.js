@@ -108,7 +108,7 @@ module.exports = class {
 
         // intf.subnet is in v4 CIDR notation
         try {
-          let hosts = await nmap.scanAsync(intf.subnet, { fast: true })
+          let hosts = await nmap.scanAsync(intf.subnet, { fast: true, requiremac: true })
 
           this.hosts = [];
 
