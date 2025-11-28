@@ -378,8 +378,8 @@ class FreeRadius {
 
     const content = await fs.readFileAsync(`${__dirname}/docker-compose.yml`, 'utf8');
     const yamlContent = yaml.load(content);
-    const tag = this.getImageTag(options);
-    yamlContent.services.freeradius.image = `public.ecr.aws/a0j1s2e9/freeradius:${tag}`;
+    const image = this.getImage(options);
+    yamlContent.services.freeradius.image = image;
     if (options.hostname) {
       yamlContent.services.freeradius.hostname = options.hostname;
     }
@@ -417,16 +417,16 @@ class FreeRadius {
   async upgradeImage(options = {}) {
     try {
       log.debug("Checking for new image freeradius-server...");
-      const tag = this.getImageTag(options);
-      log.info(`Checking for new image freeradius-server:${tag}`);
+      const image = this.getImage(options);
+      log.info(`Checking for new image ${image}`);
       // get current image digest using docker images (works even when container not running)
-      const currentImage = await exec(`sudo docker images --format "{{.ID}}" --filter "reference=public.ecr.aws/a0j1s2e9/freeradius:${tag}"`).then(r => r.stdout.trim()).catch(() => null);
+      const currentImage = await exec(`sudo docker images --format "{{.ID}}" --filter "reference=${image}"`).then(r => r.stdout.trim()).catch(() => null);
       if (!currentImage) {
         log.info("No freeradius image found, need to pull");
       }
 
       // pull latest image
-      await exec(`sudo docker pull public.ecr.aws/a0j1s2e9/freeradius:${tag}`).catch((e) => {
+      await exec(`sudo docker pull ${image}`).catch((e) => {
         log.warn("Failed to pull image for comparison,", e.message);
         return false;
       });
@@ -434,7 +434,7 @@ class FreeRadius {
       await sleep(2000);
 
       // get new image digest using docker images
-      const newImage = await exec(`sudo docker images --format "{{.ID}}" --filter "reference=public.ecr.aws/a0j1s2e9/freeradius:${tag}"`).then(r => r.stdout.trim()).catch(() => null);
+      const newImage = await exec(`sudo docker images --format "{{.ID}}" --filter "reference=${image}"`).then(r => r.stdout.trim()).catch(() => null);
       if (!newImage) {
         log.warn("Failed to get new image digest");
         return false;
@@ -467,10 +467,9 @@ class FreeRadius {
     }
   }
 
-
   async cleanupImages() {
     log.info("Cleaning up all freeradius images...");
-    await exec(`sudo docker images public.ecr.aws/a0j1s2e9/freeradius --format "{{.Tag}}" | xargs -r -I % sudo docker rmi public.ecr.aws/a0j1s2e9/freeradius:%`).then(r => r.stdout.trim()).catch((e) => {
+    await exec(`sudo docker images --filter "reference=public.ecr.aws/a0j1s2e9/freeradius*" --format "{{.Repository}}:{{.Tag}}" | xargs -r -I % sudo docker rmi %`).then(r => r.stdout.trim()).catch((e) => {
       log.warn("Failed to remove freeradius all images,", e.message);
     });
     log.info("All freeradius images cleaned up");
@@ -479,7 +478,7 @@ class FreeRadius {
   async cleanupOldImages() {
     // remove dangling images
     log.info("Cleaning up dangling images...");
-    const data = await exec(`sudo docker images public.ecr.aws/a0j1s2e9/freeradius -f "dangling=true" -q`).then(r => r.stdout.trim()).catch((e) => {
+    const data = await exec(`sudo docker images --filter "reference=public.ecr.aws/a0j1s2e9/freeradius*" -f "dangling=true" -q`).then(r => r.stdout.trim()).catch((e) => {
       log.warn("Failed to get dangling images,", e.message);
       return "";
     });
@@ -580,7 +579,7 @@ class FreeRadius {
     }
   }
 
-  getImageTag(options = {}) {
+  _getImageTag(options = {}) {
     if (options.image_tag) {
       return options.image_tag;
     }
@@ -591,19 +590,27 @@ class FreeRadius {
     return release;
   }
 
+  getImage(options = {}) {
+    const tag = this._getImageTag(options);
+    if (tag === "dev" || tag === "test") {
+      return `public.ecr.aws/a0j1s2e9/freeradius-dev:${tag}`;
+    }
+    return `public.ecr.aws/a0j1s2e9/freeradius:${tag}`;
+  }
+
   async _checkImage(options) {
-    const tag = this.getImageTag(options);
-    const result = await exec(`sudo docker images | grep freeradius | grep ${tag}`).then(r => r.stdout.trim()).catch((e) => {
+    const image = this.getImage(options);
+    const result = await exec(`sudo docker images --filter "reference=${image}"`).then(r => r.stdout.trim()).catch((e) => {
       log.warn("Failed to check image freeradius,", e.message)
       return false;
     });
     log.info("Image freeradius-server:", result);
-    return result && result.includes("freeradius") && result.includes(tag);
+    return result && result.includes(image);
   }
 
   async _checkContainer(options = {}) {
-    const tag = this.getImageTag(options);
-    const result = await exec(`sudo docker ps | grep freeradius | grep ${tag}`).then(r => r.stdout.trim()).catch((e) => {
+    const image = this.getImage(options);
+    const result = await exec(`sudo docker ps | grep ${image}`).then(r => r.stdout.trim()).catch((e) => {
       log.warn("Failed to check container freeradius,", e.message)
       return false;
     });
