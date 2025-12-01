@@ -1003,8 +1003,8 @@ class BroDetect {
 
       let intfInfo = sysManager.getInterfaceViaIP(lhost, fam);
       let dstIntfInfo = localFlow && sysManager.getInterfaceViaIP(dhost, fam);
-      // do not process traffic between devices in the same network unless bridge flag is set in log
-      if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid && !bridge)
+      // do not process traffic between devices in the same network unless bridge flag is set (from fwap) or integrated AP is enabled (orange platform)
+      if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid && !bridge && !await platform.hasIntegratedAPAssets())
         return;
       // ignore multicast IP
       try {
@@ -1221,17 +1221,17 @@ class BroDetect {
             return;
           }
         }
-        if (!bridge && intfInfo.uuid == dstIntfInfo.uuid)
+        if (!bridge && intfInfo.uuid == dstIntfInfo.uuid && !await platform.hasIntegratedAPAssets())
           return
         if (obj.proto === "udp" && accounting.isBlockedDevice(dstMac)) {
           return
         }
 
         // zeek records inter-network local flow multiple times, on each involving interface that zeek listens to
-        // only bridge mode is considered here, as route mode duplicats are dropped earlier
+        // only bridge mode or integrated APs are considered here, as router mode duplicates are dropped earlier
         // if source is a VPN client, IP is NATed on the other interface and zeek sees it from Firewalla itself thus dropped already
         // don't drop in this case. also connection going to VPN client is not possible in bridge mode
-        if (!reverseLocal && !isIdentityIntf && await sysManager.isBridgeMode()) {
+        if (!reverseLocal && !isIdentityIntf && (await sysManager.isBridgeMode() || await platform.hasIntegratedAPAssets())) {
           const pcapZeekPlugin = sl.getSensor("PcapZeekPlugin");
 
           if (pcapZeekPlugin.listenOnParentIntf) {

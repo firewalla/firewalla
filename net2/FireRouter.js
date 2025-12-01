@@ -920,11 +920,15 @@ class FireRouter {
     return {code: resp.statusCode, body: resp.body};
   }
 
-  async getConfig(reload = false) {
+  async getConfig(reload = false, clone = true) {
     if (reload) {
       routerConfig = await getConfig();
     }
-    return JSON.parse(JSON.stringify(routerConfig))
+    if (!clone) {
+      return routerConfig;
+    } else {
+      return JSON.parse(JSON.stringify(routerConfig));
+    }
   }
 
   checkConfig(newConfig) {
