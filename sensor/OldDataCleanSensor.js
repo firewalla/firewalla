@@ -151,6 +151,13 @@ class OldDataCleanSensor extends Sensor {
                 cntC = await this.cleanToCount(key, count);
               if (cntE + cntC > 0)
                 wanAuditDropCleaned = true;
+            } else if (type === "api_stats" || type == "dhcp_event") {
+              if (expireInterval) {
+                batch.push(['zremrangebyscore', key, "-inf", Date.now() - expireInterval * 1000]);
+              }
+              if (count) {
+                batch.push(['zremrangebyrank', key, 0, -count])
+              }
             } else {
               if (expireInterval) {
                 batch.push(['zremrangebyscore', key, "-inf", Date.now() / 1000 - expireInterval]);
@@ -624,6 +631,7 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("policy", key => key.match(/^policy:[0-9]+/), false, this.cleanBrokenPolicy.bind(this))
     this._registerFilterFunction("internet_flows", (key) => key.startsWith("internet_flows:"));
     this._registerFilterFunction("dhcp_event", (key) => key.startsWith("dnsmasq.dhcp.event:"));
+    this._registerFilterFunction("api_stats", (key) => key.startsWith("api:stats:"));
   }
 
   _registerFilterFunction(type, filterFunc, fullCleanOnly = false, customCleanerFunc) {

@@ -16,7 +16,6 @@
 
 'use strict'
 
-process.title = "FireApi";
 const net = require('net')
 const _ = require('lodash');
 
@@ -157,6 +156,7 @@ const sl = require('../sensor/APISensorLoader.js');
 
 const Message = require('../net2/Message')
 
+const {logApiStats, getApiStats, API_STATS_KEY_EXCLUDE_LIST} = require('./stats.js');
 const util = require('util')
 
 const restartUPnPTask = {};
@@ -834,6 +834,12 @@ class netBot extends ControllerBot {
           if (_.isBoolean(noForward)) {
             await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD, noForward);
           }
+          sem.emitEvent({
+            type: "LocalDomainUpdate",
+            message: `Update localDomain suffix`,
+            macArr: [macAddress],
+            toProcess: 'FireMain'
+          });
           return { suffix, noForward }
         } else if (hostTool.isMacAddress(macAddress)) {
           const host = await this.hostManager.getHostAsync(macAddress)
@@ -1587,12 +1593,7 @@ class netBot extends ControllerBot {
         }
       }
       case "monthlyDataUsageOnWans": {
-        let dataPlan = await rclient.getAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS);
-        if (dataPlan) {
-          dataPlan = JSON.parse(dataPlan);
-        } else {
-          dataPlan = {}
-        }
+        const dataPlan = await this.hostManager.getDataUsagePlan();
         const globalDate = dataPlan && dataPlan.date || 1;
         const wanConfs = dataPlan && dataPlan.wanConfs || {};
         const wanIntfs = sysManager.getWanInterfaces();
@@ -1604,15 +1605,9 @@ class netBot extends ControllerBot {
         return result
       }
       case "dataPlan": {
-        const featureName = 'data_plan';
-        let dataPlan = await rclient.getAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS);
-        const enable = fc.isFeatureOn(featureName)
-        if (dataPlan) {
-          dataPlan = JSON.parse(dataPlan);
-        } else {
-          dataPlan = {}
-        }
-        return { dataPlan: dataPlan, enable: enable }
+        const dataPlan = await this.hostManager.getDataUsagePlan();
+        const enable = fc.isFeatureOn('data_plan');
+        return { dataPlan: dataPlan || {}, enable: enable }
       }
       case "network:filenames": {
         const filenames = await FireRouter.getFilenames();
@@ -1674,6 +1669,12 @@ class netBot extends ControllerBot {
           result[branch] = await sysManager.getBranchUpdateTime(branch);
         }
         return result
+      }
+      case "apiStats": {
+        const topEid = value && value.topEidNum || 5;
+        const topApi = value && value.topApiNum || 3;
+        const recent = value && value.recent || 3600;
+        return await getApiStats(recent, topEid, topApi);
       }
       case "mspConfig":
         return fc.getMspConfig();
@@ -3951,6 +3952,12 @@ class netBot extends ControllerBot {
               : `${mtype} ${item} ${msg.target}`
           );
           log.verbose(rawmsg.message)
+        }
+
+        // record api stats asynchronously
+        const apikey = `${mtype}:${item || ""}:${msg.target || ""}`;
+        if (f.isDevelopmentVersion() && eid && eid != "undefined" && !API_STATS_KEY_EXCLUDE_LIST.includes(apikey)) {
+          logApiStats(eid, apikey, Date.now());
         }
 
         msg.appInfo = appInfo;

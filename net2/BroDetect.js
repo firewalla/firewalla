@@ -148,7 +148,7 @@ class BroDetect {
 
   constructor() {
     log.info('Initializing BroDetect')
-    if (!firewalla.isMain())
+    if (!firewalla.isMain() && !firewalla.isTest())
       return;
     this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 10800 * 1000});
     this.sigmap = new LRU({max: SIG_MAP_SIZE, maxAge: 10800 * 1000});
@@ -1893,8 +1893,18 @@ class BroDetect {
       if (!src_addr || !src_port) {
         return;
       }
-      let portObj = {};
 
+      const publicIps = await sysManager.getPublicIPs();
+      if (publicIps && _.isObject(publicIps)) {
+        for (const [_intf, ip] of Object.entries(publicIps)) {
+          if (ip === src_addr) {
+            log.info("VPN signature source address is public IP, skip blocking", src_addr);
+            return;
+          }
+        }
+      }
+
+      let portObj = {};
       portObj.proto = "udp";
       portObj.start = src_port;
       portObj.end = src_port;

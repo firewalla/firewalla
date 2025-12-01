@@ -36,8 +36,7 @@
 const log = require("./logger.js")(__filename);
 
 const layer2 = require('../util/Layer2.js');
-const Nmap = require('./Nmap.js');
-const nmap = new Nmap();
+const nmap = require('./Nmap.js');
 const f = require('../net2/Firewalla.js');
 const SysTool = require('../net2/SysTool.js')
 const sysTool = new SysTool()
@@ -434,9 +433,12 @@ class FireRouter {
   scheduleReload() {
     if (this.reloadTask)
       clearTimeout(this.reloadTask);
+    this.reloadTaskOngoing = true;
     this.reloadTask = setTimeout(() => {
       this.init().catch((err) => {
         log.error("Failed to reload init", err.message);
+      }).finally(() => {
+        this.reloadTaskOngoing = false;
       });
     }, 3000);
   }
