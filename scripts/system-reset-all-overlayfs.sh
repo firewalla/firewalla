@@ -10,11 +10,6 @@
 sudo systemctl stop redis-server
 sudo rm /data/redis/*
 
-# remove docker images
-sudo systemctl stop docker.socket
-sudo systemctl stop docker
-sudo rm -rf /var/lib/docker/*
-
 # clean up logs
 : ${FIREWALLA_LOG_DIR:=/log}
 

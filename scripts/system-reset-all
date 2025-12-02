@@ -13,13 +13,6 @@ sudo usermod --password $(echo firewalla | openssl passwd -1 -stdin) pi
 # source the vars file just edited
 sudo source ./vars
 
-# remove docker images
-tags=$(sudo docker images --filter "reference=public.ecr.aws/a0j1s2e9/freeradius*" --format "{{.Repository}}:{{.Tag}}")
-for tag in $tags; do
-    sudo docker ps -a -q -f "ancestor=$tag" | xargs -r sudo docker rm -f
-done
-sudo docker images --filter "reference=public.ecr.aws/a0j1s2e9/freeradius*" -q | xargs -r sudo docker rmi
-
 # Remove any previous keys
 sudo ./clean-all
 sudo find /var/log -type f -exec /bin/cp /dev/null {} \;

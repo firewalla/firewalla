@@ -100,6 +100,7 @@ feature_on=$(redis-cli hget sys:features freeradius_server)
 
 # check if freeradius server is running on latest image
 if [[ "$feature_on" == "1" ]]; then
+    running_image_name=$(sudo docker ps --format='{{.Image}}' --filter "name=freeradius_freeradius_1" 2>/dev/null)
     running_image_full=$(sudo docker inspect --format='{{.Image}}' freeradius_freeradius_1 2>/dev/null)
     running_image=$(echo "$running_image_full" | sed 's/sha256://' | cut -c1-12)
     if [[ -n "$running_image" && "$running_image" != "$new_image" ]]; then
@@ -107,6 +108,11 @@ if [[ "$feature_on" == "1" ]]; then
       updated=true
     fi
     if [[ "$updated" == true ]]; then
+        ## need to update docker-compose.yml image
+        if [ -f "/home/pi/.firewalla/run/docker/freeradius/docker-compose.yml" ]; then
+          sed -i -E "s|image: ['\"]?${running_image_name}['\"]?|image: '${image}'|" /home/pi/.firewalla/run/docker/freeradius/docker-compose.yml
+          echo "docker-compose.yml image updated from ${running_image_name} to ${image}"
+        fi
         sudo systemctl restart docker-compose@freeradius
         # check if freeradius server is running
         if [ $? -ne 0 ]; then
