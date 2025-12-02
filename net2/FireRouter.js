@@ -445,6 +445,7 @@ class FireRouter {
 
   async init(first = false) {
     await lock.acquire(LOCK_INIT, async () => {
+      const lastMonitoringIntfNames = monitoringIntfNames;
       const routingWans = [];
       if (platform.isFireRouterManaged()) {
         // fireroute
@@ -713,6 +714,9 @@ class FireRouter {
         }
       }
 
+      monitoringIntfNames.sort();
+      lastMonitoringIntfNames.sort();
+
       // this will ensure SysManger on each process will be updated with correct info
       sem.emitLocalEvent({ type: Message.MSG_FW_FR_RELOADED });
 
@@ -721,7 +725,7 @@ class FireRouter {
 
       if (f.isMain()) {
         // zeek used to be bro
-        if (this.pcapRestartNeeded || !platform.isFireRouterManaged() && first) {
+        if (this.pcapRestartNeeded || !platform.isFireRouterManaged() && first || !_.isEqual(monitoringIntfNames, lastMonitoringIntfNames)) {
           sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
           this.pcapRestartNeeded = false;
         }
