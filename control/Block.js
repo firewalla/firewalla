@@ -1284,8 +1284,8 @@ async function setupTagsRules(options) {
         break;
       }
       case "snat": {
-        parameters.push({ table: "nat", chain: `FW_PR_SNAT_DEV_G_${subPrio}`, target: `SNAT --to-source ${snatIP}`});
-        parameters.push({ table: "nat", chain: `FW_PR_SNAT_NET_G_${subPrio}`, target: `SNAT --to-source ${snatIP}`});
+        parameters.push({ table: "nat", chain: `FW_PR_SNAT_DEV_G_${subPrio}`, target: `SNAT --to-source ${snatIP}`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "nat", chain: `FW_PR_SNAT_NET_G_${subPrio}`, target: `SNAT --to-source ${snatIP}`, localSet: netSet, localFlagCount: 2 });
         break;
       }
       case "block":
@@ -1668,6 +1668,7 @@ async function prepareOutboundOptions(options) {
   return {
     direction,
     action: createOrDestroy === 'create' ? '-A' : '-D',
+    isSnat: (options.action && options.action === "snat") || false,
     dst: remote,
     conn: conn,
     proto, af: 4, comment: `rule_${pid}`, ctstate,
@@ -1695,15 +1696,15 @@ function flipSrcDst(options) {
 }
 
 function generateV46Rule(ruleOptions) {
-  const { upnp } = ruleOptions;
+  const { upnp, isSnat } = ruleOptions;
   const rules = []
   rules.push({ ...ruleOptions, af: 4 })
-  if (!upnp) rules.push({ ...ruleOptions, af: 6 })
+  if (!upnp && !isSnat) rules.push({ ...ruleOptions, af: 6 })
   return rules
 }
 
 async function generateRules(ruleOptions) {
-  const { direction, trafficDirection, transferredBytes, transferredPackets, avgPacketBytes, dscpClass } = ruleOptions
+  const { direction, trafficDirection, transferredBytes, transferredPackets, avgPacketBytes, dscpClass, isSnat } = ruleOptions
 
   const rules = []
   // log.debug(`generateRules ${JSON.stringify(ruleOptions)}`)
@@ -1714,7 +1715,7 @@ async function generateRules(ruleOptions) {
     ruleOptions.transferDirection = trafficDirection ? (trafficDirection === 'upload' ? 'original' : 'reply') : null
     if (!dscpClass || !trafficDirection || trafficDirection === "upload")
       rules.push(...generateV46Rule({ ...ruleOptions, ctDir: 'ORIGINAL' }))
-    if (!dscpClass || !trafficDirection || trafficDirection === "download")
+    if ((!dscpClass || !trafficDirection || trafficDirection === "download") && !isSnat)
       rules.push(...generateV46Rule(flipSrcDst({ ...ruleOptions, ctDir: 'REPLY' })))
   }
   if (direction === 'bidirection' && trafficDirection && (transferredBytes || transferredPackets || avgPacketBytes)
