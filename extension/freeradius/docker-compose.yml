@@ -2,9 +2,12 @@ version: '3'
 
 services:
   freeradius:
-    image: public.ecr.aws/a0j1s2e9/freeradius:latest
+    image: public.ecr.aws/a0j1s2e9/freeradius:prod
     working_dir: /etc/freeradius
     network_mode: "host"
+    ## u18 needs to specify --security-opt seccomp=unconfined
+    ## security_opt:
+    ##  - seccomp=unconfined
     environment:
       - NODE_PATH=/root/node_modules
     volumes:
