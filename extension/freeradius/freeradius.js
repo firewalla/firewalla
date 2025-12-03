@@ -386,7 +386,7 @@ class FreeRadius {
       yamlContent.services.freeradius.hostname = options.hostname;
     }
     // if u18, need to specify --security-opt seccomp=unconfined
-    if (platform.isUbuntu18()) {
+    if (platform && typeof platform.isUbuntu18 === 'function' && platform.isUbuntu18()) {
       yamlContent.services.freeradius.security_opt = ["seccomp=unconfined"];
     }
 
