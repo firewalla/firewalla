@@ -21,6 +21,8 @@ const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const yaml = require('../../api/dist/lib/js-yaml.min.js');
+const PlatformLoader = require('../../platform/PlatformLoader.js');
+const platform = PlatformLoader.getPlatform()
 
 const f = require('../../net2/Firewalla.js');
 const fr = require('../../net2/FireRouter.js');
@@ -383,6 +385,11 @@ class FreeRadius {
     if (options.hostname) {
       yamlContent.services.freeradius.hostname = options.hostname;
     }
+    // if u18, need to specify --security-opt seccomp=unconfined
+    if (platform.isUbuntu18()) {
+      yamlContent.services.freeradius.security_opt = ["seccomp=unconfined"];
+    }
+
     await fs.writeFileAsync(`${dockerDir}/docker-compose.yml`, yaml.dump(yamlContent), 'utf8');
   }
 
@@ -814,6 +821,7 @@ class FreeRadius {
 
   // set proper permission for certificates
   async checkCertsPermission() {
+    await exec(`sudo chown -R pi:pi ${certsDir}`).catch(() => { });
     await exec(`sudo find ${certsDir} -maxdepth 2 -name "*.key" -exec chmod 640 {} +`).catch(() => { });
     await exec(`sudo find ${certsDir} -maxdepth 2 -name "*.pem" -exec chmod 644 {} +`).catch(() => { });
   }
@@ -830,6 +838,7 @@ class FreeRadius {
     } catch (err) {
       log.warn("Failed to reconfig freeradius,", target, options, err.message);
     } finally {
+      await this.checkCertsPermission();
       this.watchContainer(60, false);
     }
 
@@ -851,9 +860,6 @@ class FreeRadius {
     jsonStr = jsonStr.replace(/"private_key_pass"\s*:\s*"[^"]*"/g, '"private_key_pass":"*** redacted ***"');
     return jsonStr.replace(/"passwd"\s*:\s*"[^"]*"/g, '"passwd":"*** redacted ***"');
   }
-
 }
-
-
 
 module.exports = new FreeRadius();
