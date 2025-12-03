@@ -457,15 +457,6 @@ async function batchBlockConnection(elements, ipset, options = {}) {
     if (gateway == remoteAddr || gateway6 == remoteAddr) {
       continue;
     }
-    // Also prevent blocking own public IPs
-    const publicIps = await sysManager.getPublicIPs();
-    if (publicIps && _.isObject(publicIps)) {
-      for (const [_intf, ip] of Object.entries(publicIps)) {
-        if (ip === remoteAddr) {
-          continue;
-        }
-      }
-    }
 
     if (new Address4(remoteAddr).isValid() && new Address4(localAddr).isValid()) {
       for (const localPort of localPorts) {
