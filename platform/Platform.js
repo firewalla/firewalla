@@ -23,6 +23,7 @@ const fsp = fs.promises
 const cp = require('child_process');
 
 const { exec } = require('child-process-promise');
+const _ = require('lodash');
 
 class Platform {
   getAllNicNames() {
@@ -512,6 +513,18 @@ class Platform {
 
   isPDOSupported() {
     return false;
+  }
+
+  async hasIntegratedAPAssets() {
+    if (!this.hasIntegratedFWAPC()) {
+      return false;
+    }
+    const firerouter = require('../net2/FireRouter.js');
+    // will read cached config instead of reloading from firerouter, low overhead
+    const networkConfig = await firerouter.getConfig(false, false);
+    const assets = _.get(networkConfig, ["apc", "assets"], {});
+    const integratedAssets = _.pickBy(assets, (value, key) => value.integrated === true);
+    return !_.isEmpty(integratedAssets);
   }
 }
 
