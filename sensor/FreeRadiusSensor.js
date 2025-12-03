@@ -27,6 +27,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Sensor = require('./Sensor.js').Sensor;
 const sem = require('./SensorEventManager.js').getInstance();
+const platformLoader = require('../platform/PlatformLoader.js');
 
 const HostTool = require("../net2/HostTool.js");
 const hostTool = new HostTool();
@@ -146,6 +147,12 @@ class FreeRadiusSensor extends Sensor {
     this.featureOn = false;
     this._policy = await this.loadPolicyAsync();
     this._options = await this.loadOptionsAsync();
+
+    const boardName = platformLoader.getBoardName();
+    log.debug(`board name: ${boardName}`);
+    await rclient.setAsync(`board_name`, boardName).catch((err) => {
+      log.error(`Failed to set board name`, err.message);
+    });
 
     // sync ssid sta mapping once every 20 seconds to ensure consistency in case sta update message is missing somehow
     setInterval(async () => {
