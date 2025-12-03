@@ -17,5 +17,3 @@ services:
       - /home/pi/.forever/freeradius:/var/log/freeradius
       - /home/pi/.node_modules/node_modules:/root/node_modules
     command: bash /root/freeradius/freeradius.sh run
-    logging:
-      driver: "none"
