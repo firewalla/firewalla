@@ -200,6 +200,26 @@ class netBot extends ControllerBot {
     const event_type = event.event_type == "state" ? event.state_type: event.action_type;
     const event_value = event.event_type == "state" ? event.state_value: event.action_value;
 
+    if (event_type == "phone_paired" && event.labels && event.labels.eid) {
+      // sync to MSP
+      const sl = require('../sensor/APISensorLoader.js');
+      const gs = sl.getSensor('GuardianSensor');
+      if (gs && fc.isFeatureOn(Constants.FEATURE_MSP_SYNC_OPS)) {
+        const op = {
+          mtype: "cmd",
+          data: {
+            value: { eid: event.labels.eid },
+            item: "group:eid:add" //meaning app paired
+          },
+          type: "jsonmsg",
+          ts: Date.now() / 1000
+        };
+        await gs.enqueueOpToMsp(op).catch((err) => {
+          log.error("Failed to enqueue op to msp", err);
+        });
+      }
+    }
+
     if (!this._checkEventNotifyPolicy(this.hostManager.policy, event_type)) {
       return;
     }
