@@ -1003,8 +1003,8 @@ class BroDetect {
 
       let intfInfo = sysManager.getInterfaceViaIP(lhost, fam);
       let dstIntfInfo = localFlow && sysManager.getInterfaceViaIP(dhost, fam);
-      // do not process traffic between devices in the same network unless bridge flag is set in log
-      if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid && !bridge)
+      // do not process traffic between devices in the same network unless bridge flag is set (from fwap) or integrated AP is enabled (orange platform)
+      if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid && !bridge && !await platform.hasIntegratedAPAssets())
         return;
       // ignore multicast IP
       try {
@@ -1221,17 +1221,17 @@ class BroDetect {
             return;
           }
         }
-        if (!bridge && intfInfo.uuid == dstIntfInfo.uuid)
+        if (!bridge && intfInfo.uuid == dstIntfInfo.uuid && !await platform.hasIntegratedAPAssets())
           return
         if (obj.proto === "udp" && accounting.isBlockedDevice(dstMac)) {
           return
         }
 
         // zeek records inter-network local flow multiple times, on each involving interface that zeek listens to
-        // only bridge mode is considered here, as route mode duplicats are dropped earlier
+        // only bridge mode or integrated APs are considered here, as router mode duplicates are dropped earlier
         // if source is a VPN client, IP is NATed on the other interface and zeek sees it from Firewalla itself thus dropped already
         // don't drop in this case. also connection going to VPN client is not possible in bridge mode
-        if (!reverseLocal && !isIdentityIntf && await sysManager.isBridgeMode()) {
+        if (!reverseLocal && !isIdentityIntf && (await sysManager.isBridgeMode() || await platform.hasIntegratedAPAssets())) {
           const pcapZeekPlugin = sl.getSensor("PcapZeekPlugin");
 
           if (pcapZeekPlugin.listenOnParentIntf) {
@@ -1873,31 +1873,67 @@ class BroDetect {
 
   async processSignatureData(data) {
     const obj = JSON.parse(data);
-    const {uid, sig_id, src_addr, src_port} = obj;
+    const {uid, sig_id, src_addr, src_port, dst_addr, dst_port} = obj;
     if (!uid || !sig_id)
       return;
     this.addConnSignature(uid, sig_id);
 
     let isVPNSignature = false;
+    let flowDirection = "from_server";
 
-    if (sig_id == "wireguard-second-msg-sig") {
+    if (sig_id == "wireguard-second-msg-sig") { // from server
       log.info("Wireguard handshake signature detected", uid, sig_id, src_addr, src_port);
       isVPNSignature = true;
-      
-    } else if (sig_id.startsWith("openvpn-server-")) {
+    } else if (sig_id.startsWith("openvpn-server-")) { // from server
       log.info("openVPN handshake signature detected", uid, sig_id, src_addr, src_port);
+      isVPNSignature = true;
+    } else if (sig_id == "ipsec-ikev2-sa-init-resp") { // could from both client and server
+      log.info("IPSec IKEv2 SA Init Resp signature detected", uid, sig_id, src_addr, src_port, dst_addr, dst_port);
+      flowDirection = "unknown";
+      isVPNSignature = true;
+    } else if (sig_id == "ipsec-ikev2-auth-init-resp") { // could from both client and server
+      log.info("IPSec IKEv2 Auth Init Resp signature detected", uid, sig_id, src_addr, src_port, dst_addr, dst_port);
+      flowDirection = "unknown";
+      isVPNSignature = true;
+    } else if (sig_id == "ipsec-ikev1-ke-req") { // could from both client and server
+      log.info("IPSec IKEv1 Key exchange Req signature detected", uid, sig_id, src_addr, src_port, dst_addr, dst_port);
+      flowDirection = "unknown";
+      isVPNSignature = true;
+    } else if (sig_id == "ipsec-ikev1-id-req") { // could from both client and server
+      log.info("IPSec IKEv1 Identification Req signature detected", uid, sig_id, src_addr, src_port, dst_addr, dst_port);
+      flowDirection = "unknown";
       isVPNSignature = true;
     }
 
+    let remote_addr = null;
+    let remote_port = null;
+
+    if (flowDirection === "from_client") {
+      remote_addr = dst_addr;
+      remote_port = dst_port;
+    } else if (flowDirection === "from_server") {
+      remote_addr = src_addr;
+      remote_port = src_port;
+    } else {
+      // unknown direction, have to pick one that is not local IP
+      if (sysManager.isLocalIP(src_addr)) {
+        remote_addr = dst_addr;
+        remote_port = dst_port;
+      } else {
+        remote_addr = src_addr;
+        remote_port = src_port;
+      }
+    }
+
     if (isVPNSignature) {
-      if (!src_addr || !src_port) {
+      if (!remote_addr || !remote_port) {
         return;
       }
 
       const publicIps = await sysManager.getPublicIPs();
       if (publicIps && _.isObject(publicIps)) {
         for (const [_intf, ip] of Object.entries(publicIps)) {
-          if (ip === src_addr) {
+          if (ip === remote_addr) {
             log.info("VPN signature source address is public IP, skip blocking", src_addr);
             return;
           }
@@ -1906,9 +1942,9 @@ class BroDetect {
 
       let portObj = {};
       portObj.proto = "udp";
-      portObj.start = src_port;
-      portObj.end = src_port;
-      categoryUpdater.blockAddress("vpn", src_addr, portObj, true);
+      portObj.start = remote_port;
+      portObj.end = remote_port;
+      categoryUpdater.blockAddress("vpn", remote_addr, portObj, true);
     }
   }
 
