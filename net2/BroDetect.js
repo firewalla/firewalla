@@ -86,8 +86,12 @@ const { getUniqueTs, extractIP } = require('./FlowUtil.js')
 const LRU = require('lru-cache');
 const Constants = require('./Constants.js');
 
+const Block = require('../control/Block.js');
+const exec = require('util').promisify(require('child_process').exec);
+
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
+const CONNMARK_REFRESH_INTERVAL = 15 * 1000; // 15 seconds
 
 /*
  *
@@ -162,6 +166,7 @@ class BroDetect {
 
     let c = require('./MessageBus.js');
     this.publisher = new c();
+    this._needRefresh = false;
 
     this.flowstash = {
       conn: { keys: new Set(['flow:conn:system']), ignore: {} },
@@ -218,6 +223,14 @@ class BroDetect {
           this.activeLongConns.delete(uid)
       }
     }, 60 * 1000)
+
+    setInterval(async () => {
+      if (this._needRefresh) {
+        log.info("refreshing connmark for updated ipsets");
+        await this.scheduleRefreshConnmark();
+        this._needRefresh = false;
+      }
+    }, CONNMARK_REFRESH_INTERVAL);
   }
 
   async _activeMacHeartbeat() {
@@ -1877,6 +1890,39 @@ class BroDetect {
     if (!uid || !sig_id)
       return;
     this.addConnSignature(uid, sig_id);
+
+    const connection = {
+      localAddr: src_addr,
+      remoteAddr: dst_addr,
+      protocol: "udp",
+      localPorts: src_port,
+      remotePorts: dst_port
+    };
+
+
+    if (!sysManager.isLocalIP(src_addr)) {
+      connection.localAddr = dst_addr;
+      connection.remoteAddr = src_addr;
+      connection.localPorts = dst_port;
+      connection.remotePorts = src_port;
+    }
+
+    const categories = categoryUpdater.getCategoryByFlowSignature(sig_id);
+    log.debug(`processing signature ${sig_id} for categories:`, categories, ",connection:", connection);
+    if (!categories || categories.length == 0) {
+      return;
+    } else {
+      this._needRefresh = true;
+    }
+    for (const category of categories) {
+      if (!categoryUpdater.isActivated(category)) {
+        continue;
+      }
+      const connSet = categoryUpdater.getConnectionIPSetName(category)
+      await Block.batchBlockConnection([connection], connSet).catch((err) => {
+        log.error(`Failed to update connection ipset ${connSet} for ${sig_id}`, err.message);
+      });
+    }
   }
 
   async getWanNicStats() {
@@ -2008,6 +2054,19 @@ class BroDetect {
     if (this.outportarray.length > maxsize) {
       this.outportarray.shift();
     }
+  }
+  async scheduleRefreshConnmark() {
+    if (this._refreshConnmarkTimeout)
+      clearTimeout(this._refreshConnmarkTimeout);
+    this._refreshConnmarkTimeout = setTimeout(async () => {
+      // use conntrack to clear the first bit of connmark on existing connections
+      await exec(`sudo conntrack -U -m 0x00000000/0x80000000`).catch((err) => {
+        // log.warn(`Failed to clear first bit of connmark on existing IPv4 connections`, err.message);
+      });
+      await exec(`sudo conntrack -U -f ipv6 -m 0x00000000/0x80000000`).catch((err) => {
+        // log.warn(`Failed to clear first bit of connmark on existing IPv6 connections`, err.message);
+      });
+    }, 5000);
   }
 }
 
