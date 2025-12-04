@@ -432,6 +432,27 @@ async function batchBlockNetPort(elements, portObj, ipset, options = {}) {
   return Ipset.batchOp(cmds);
 }
 
+function isGatewayOrPublicIp(ip) {
+  const gateway6 = sysManager.myDefaultGateway6();
+  const gateway = sysManager.myDefaultGateway();
+  const publicIps = sysManager.getPublicIPs();
+
+  if (ip === gateway || ip === gateway6) {
+    return true;
+  }
+
+  if (publicIps && _.isObject(publicIps)) {
+    for (const [_intf, publicIp] of Object.entries(publicIps)) {
+      if (ip === publicIp) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+
 // no need to remove from ipset, record will be cleared when timeout
 async function batchBlockConnection(elements, ipset, options = {}) {
   log.debug("Batch block connection of", ipset);
@@ -439,8 +460,6 @@ async function batchBlockConnection(elements, ipset, options = {}) {
     return;
   const v4Set = ipset;
   const v6Set = ipset + '6';
-  const gateway6 = sysManager.myDefaultGateway6();
-  const gateway = sysManager.myDefaultGateway();
   const cmds = [];
   const op = 'add';
   for (const element of elements) {
@@ -453,19 +472,10 @@ async function batchBlockConnection(elements, ipset, options = {}) {
       localPorts = [localPorts];
     }
 
-    //Prevent gateway IP from being added into blocking IP set dynamically
-    if (gateway == remoteAddr || gateway6 == remoteAddr) {
+    //Prevent gateway IP and publicIp from being added into blocking IP set dynamically
+    if (isGatewayOrPublicIp(remoteAddr)) {
       continue;
-    }
-    // Also prevent blocking own public IPs
-    const publicIps = await sysManager.getPublicIPs();
-    if (publicIps && _.isObject(publicIps)) {
-      for (const [_intf, ip] of Object.entries(publicIps)) {
-        if (ip === remoteAddr) {
-          continue;
-        }
-      }
-    }
+    } 
 
     if (new Address4(remoteAddr).isValid() && new Address4(localAddr).isValid()) {
       for (const localPort of localPorts) {
