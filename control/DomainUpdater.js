@@ -110,30 +110,6 @@ class DomainUpdater {
       }
     }
 
-    if (options.category) {
-        // check if any category matches the device type/value
-        if (categoryUpdater == null) {
-          const CategoryUpdater = require('../control/CategoryUpdater.js');
-          categoryUpdater = new CategoryUpdater();
-        }
-
-        const devOpts = {};
-        const tmpTags = [];
-        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-          const config = Constants.TAG_TYPE_MAP[type];
-          if (flow[config.flowKey])
-            tmpTags.push(...flow[config.flowKey]);
-        }
-        devOpts.tags = tmpTags;
-        if (flow.intf)
-          devOpts.intfs = [flow.intf];
-        if (flow.mac)
-          devOpts.scope = [flow.mac];
-        if (flow.guid)
-          devOpts.guids = [flow.guid];
-        if (categoryUpdater.isDevBlockedByCategory(options.category, devOpts))
-          return true;
-    }
     return false;
   }
 
@@ -155,7 +131,6 @@ class DomainUpdater {
     // and check if need add to crossponding connection ipset
     if (!flow || !flow.lh || !flow.ip || !flow.sp || !flow.dp || !flow.pr || !flow.sh)
       return;
-    const sigs = flow.sigs || [];
 
     const connection = {
       localAddr: flow.lh,
@@ -165,25 +140,6 @@ class DomainUpdater {
       remotePorts: flow.dp
     };
 
-    for (const sigId of sigs) {
-      if (categoryUpdater == null) {
-        const CategoryUpdater = require('../control/CategoryUpdater.js');
-        categoryUpdater = new CategoryUpdater();
-      }
-      const categories = categoryUpdater.getCategoryByFlowSignature(sigId);
-      for (const category of categories) {
-        if (!categoryUpdater.isActivated(category)) {
-          continue;
-        }
-        if (!this.isFlowMatchWithDomainOptions(flow, {"category": category})) {
-          continue;
-        }
-        const connSet = categoryUpdater.getConnectionIPSetName(category)
-        await Block.batchBlockConnection([connection], connSet).catch((err) => {
-          log.error(`Failed to update connection ipset ${connSet} for ${sigId}`, err.message);
-        });
-      }
-    }
 
     const domain = flow.host || flow.intel && flow.intel.host;
     if (!domain) {

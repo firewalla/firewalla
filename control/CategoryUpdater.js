@@ -1807,7 +1807,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
   updateFlowSignatureList(flowSignatureConfig) {
     this.flowSignatureConfigMap = new Map();
     for (const key of Object.keys(flowSignatureConfig)) {
-      this.flowSignatureConfigMap.set(key, flowSignatureConfig[key]);
+      // make sure signatures property exists
+      if (!flowSignatureConfig[key].signatures || !_.isArray(flowSignatureConfig[key].signatures)) {
+        continue;
+      }
+      for (const sigId of flowSignatureConfig[key].signatures) {
+        this.flowSignatureConfigMap.set(sigId, flowSignatureConfig[key]);
+      }
     }
     return;
   }
