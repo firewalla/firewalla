@@ -179,5 +179,8 @@ module.exports = {
   POLICY_KEY_SSID_PSK: "ssidPSK",
   POLICY_KEY_WIFI_AUTO_GROUP: "wifiAutoGroup",
 
+  QOS_MODE_ADAPTIVE: "adaptive",
+  QOS_MAX_BANDWIDTH_MBPS: 10240, // 10Gbps
+
   LOG_PREFIX_QUIC: '[FW_QUIC]:',
 };
