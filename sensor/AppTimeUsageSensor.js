@@ -40,6 +40,10 @@ const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
 const sl = require('../sensor/SensorLoader.js');
 const pclient = require('../util/redis_manager.js').getPublishClient()
+const firewalla = require("../net2/Firewalla.js");
+const CIDRTrie = require('../util/CIDRTrie.js');
+const { Address4, Address6 } = require('ip-address');
+
 class AppTimeUsageSensor extends Sensor {
   
   async run() {
@@ -154,22 +158,40 @@ class AppTimeUsageSensor extends Sensor {
   rebuildTrie() {
     const appConfs = this.appConfs;
     const domainTrie = new DomainTrie();
+    const cidr4Trie = new CIDRTrie(4);
+    const cidr6Trie = new CIDRTrie(6);
+    const sigMap = new Map();
+
     for (const key of Object.keys(appConfs)) {
       const includedDomains = appConfs[key].includedDomains || [];
       const category = appConfs[key].category;
       for (const value of includedDomains) {
-        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold", "ulDlRatioThreshold"]);
+        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold", "ulDlRatioThreshold", "noStray", "portInfo"]);
         obj.app = key;
         if (category)
           obj.category = category;
-        if (value.domain) {
-          if (value.domain.startsWith("*.")) {
-            obj.domain = value.domain.substring(2);
-            domainTrie.add(value.domain.substring(2), obj);
+
+        const id = value.domain || value.cidr;
+        if (id) {
+          if (new Address4(id).isValid()) {
+            obj.domain = id;
+            cidr4Trie.add(id, obj);
+          } else if (new Address6(id).isValid()) {
+            obj.domain = id;
+            cidr6Trie.add(id, obj);
           } else {
-            obj.domain = value.domain;
-            domainTrie.add(value.domain, obj, false);
+            if (id.startsWith("*.")) {
+              obj.domain = id.substring(2);
+              domainTrie.add(id.substring(2), obj);
+            } else {
+              obj.domain = id;
+              domainTrie.add(id, obj, false);
+            }
           }
+        }
+        const sigId = value.sigId;
+        if (sigId) {
+          sigMap.set(sigId, obj);
         }
       }
 
@@ -184,6 +206,9 @@ class AppTimeUsageSensor extends Sensor {
       }
     }
     this._domainTrie = domainTrie;
+    this._cidr4Trie = cidr4Trie;
+    this._cidr6Trie = cidr6Trie;
+    this._sigMap = sigMap;
   }
 
   getCategoryBytesThreshold(category) {
@@ -214,21 +239,127 @@ class AppTimeUsageSensor extends Sensor {
     pclient.publishAsync("internet.activity.flow", JSON.stringify({flow}));
   }
 
+  async recordFlow2Redis(flow, app) {
+    const release = firewalla.getReleaseType();
+    if (!(fc.isFeatureOn("record_activity_flow") || ["alpha", "beta"].includes(release))){
+      return;
+    }
+    const date = new Date(flow.ts * 1000);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const formattedDate = `${year}${month}${day}`;
+    const appName =  app || "internet";
+    const key = `internet_flows:${appName}:${flow.mac}:${formattedDate}`;
+    const host = flow.host || flow.intel && flow.intel.host;
+    const ip = flow.ip || flow.intel && flow.intel.ip;
+ 
+    const jobj = JSON.stringify({
+      begin: flow.ts,
+      dur: flow.du,
+      intf: flow.intf,
+      mac: flow.mac,
+      destination: host || ip,
+      sourceIp: flow.sh,
+      destinationIp: flow.dh,
+      sourcePort: _.isArray(flow.sp) ? flow.sp[0] : flow.sp,
+      destinationPort: flow.dp,
+      protocol: flow.pr || "",
+      category: _.get(flow, ["intel", "category"]) || "",
+      upload: flow.ob,
+      download: flow.rb,
+      app: app
+    });
+
+    await rclient.zaddAsync(key, flow.ts, jobj);
+  }
+
+  _isMatchPortInfo(portInfo, port, proto) {
+    // if portInfo is empty, it means no port restriction
+    if (!portInfo || _.isEmpty(portInfo)) return true;
+
+    return _.some(portInfo, (pinfo) => {
+      const startPort = parseInt(pinfo.start);
+      const endPort = parseInt(pinfo.end);
+      if (isNaN(startPort) || isNaN(endPort) || startPort < 0 || endPort < 0 || startPort > endPort)
+        return false;
+      return (!pinfo.proto || pinfo.proto === proto) && port >= startPort && port <= endPort;
+    });
+  }
+
+
   // returns an array with matched app criterias
   // [{"app": "youtube", "occupyMins": 1, "lingerMins": 1, "bytesThreshold": 1000000}]
   lookupAppMatch(flow) {
     const host = flow.host || flow.intel && flow.intel.host;
+    const ip = flow.ip || (flow.intel && flow.intel.ip);
+    const sigs = flow.sigs || [];
     const result = [];
-    if (!this._domainTrie || !host)
+    let internet_options = {
+      app: "internet",
+      occupyMins: 1,
+      lingerMins: 10,
+      minsThreshold: 1,
+      noStray: true
+    };
+
+    if ((!this._domainTrie && !this._cidr4Trie && !this._cidr6Trie && !this._sigMap) || (!host && !ip))
       return result;
+    // check domain trie
     const values = this._domainTrie.find(host);
+    let isAppMatch = false;
     if (_.isSet(values)) {
       for (const value of values) {
         if (_.isObject(value) && value.app && !values.has(`!${value.app}`)) {
-          if ((!value.bytesThreshold || flow.ob + flow.rb >= value.bytesThreshold) && (!value.ulDlRatioThreshold || flow.ob <= value.ulDlRatioThreshold * flow.rb))
+          if (!this._isMatchPortInfo(value.portInfo, flow.dp, flow.pr))
+            continue;
+          isAppMatch = true;
+          if ((!value.bytesThreshold || flow.ob + flow.rb >= value.bytesThreshold)
+            && (!value.ulDlRatioThreshold || flow.ob <= value.ulDlRatioThreshold * flow.rb)) {
             result.push(value);
+            // keep internet options same as the matched app
+            Object.assign(internet_options, {
+              occupyMins: value.occupyMins,
+              lingerMins: value.lingerMins,
+              minsThreshold: value.minsThreshold,
+              noStray: value.noStray
+            });
+            break;
+          }
         }
       }
+    }
+
+    // check cidr trie
+    let cidrTrie = new Address4(ip).isValid() ? this._cidr4Trie : this._cidr6Trie;
+    if (_.isEmpty(result) && cidrTrie){
+      const entry = cidrTrie.find(ip);
+      if (_.isObject(entry)) {
+        if (this._isMatchPortInfo(entry.portInfo, flow.dp, flow.pr)) {
+          isAppMatch = true;
+          if ((!entry.bytesThreshold || flow.ob + flow.rb >= entry.bytesThreshold)
+            && (!entry.ulDlRatioThreshold || flow.ob <= entry.ulDlRatioThreshold * flow.rb))
+            result.push(entry);
+        }
+
+      }
+    }
+
+    // check sigs
+    if (_.isEmpty(result) && this._sigMap.size > 0) {
+      for (const sigId of sigs) {
+        const entry = this._sigMap.get(sigId);
+        if (_.isObject(entry)) {
+          isAppMatch = true;
+          if ((!entry.bytesThreshold || flow.ob + flow.rb >= entry.bytesThreshold)
+            && (!entry.ulDlRatioThreshold || flow.ob <= entry.ulDlRatioThreshold * flow.rb))
+            result.push(entry);
+        }
+      }
+    }
+
+    if (isAppMatch && _.isEmpty(result)) {
+      return result;
     }
     // match internet activity on flow
     const category = _.get(flow, ["intel", "category"]);
@@ -239,7 +370,7 @@ class AppTimeUsageSensor extends Sensor {
     let flowNoiseTags = nds ? nds.find(host) : null;
     if ((flow.ob + flow.rb >= bytesThreshold && flow.ob <= ulDlRatioThreshold * flow.rb && _.isEmpty(flowNoiseTags)) || !_.isEmpty(result)) {
       log.debug("match internet activity on flow", flow, `bytesThresold: ${bytesThreshold}`);
-      result.push({ app: "internet", occupyMins: 1, lingerMins: 10, minsThreshold: 1, noStray: true }); // set noStray to true to suppress single matched flow from being counted, e.g., single large flow when device is sleeping
+      result.push(internet_options);
     }
     return result;
   }
@@ -263,6 +394,7 @@ class AppTimeUsageSensor extends Sensor {
       return;
     for (const match of appMatches) {
       const {app, category, domain, occupyMins, lingerMins, minsThreshold, noStray} = match;
+      await this.recordFlow2Redis(f, app);
       if (host && domain)
         await dnsTool.addSubDomains(domain, [host]);
       let tags = []

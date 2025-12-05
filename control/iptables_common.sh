@@ -24,18 +24,22 @@ cat << EOF > "$ipset4_file"
 # bidirection
 create block_ip_set hash:ip family inet hashsize 16384 maxelem 65536
 create block_domain_set hash:ip family inet hashsize 16384 maxelem 65536
+create block_conn_set hash:ip,port,ip family inet hashsize 16384 maxelem 65536 timeout 300
 create block_net_set hash:net family inet hashsize 4096 maxelem 65536
 create sec_block_ip_set hash:ip family inet hashsize 16384 maxelem 65536
 create sec_block_domain_set hash:ip family inet hashsize 16384 maxelem 65536
+create sec_block_conn_set hash:ip,port,ip family inet hashsize 16384 maxelem 65536 timeout 300
 create sec_block_net_set hash:net family inet hashsize 4096 maxelem 65536
 # inbound
 create block_ib_ip_set hash:ip family inet hashsize 16384 maxelem 65536
 create block_ib_domain_set hash:ip family inet hashsize 16384 maxelem 65536
 create block_ib_net_set hash:net family inet hashsize 4096 maxelem 65536
+create block_ib_conn_set hash:ip,port,ip family inet hashsize 16384 maxelem 65536 timeout 300
 # outbound
 create block_ob_ip_set hash:ip family inet hashsize 16384 maxelem 65536
 create block_ob_domain_set hash:ip family inet hashsize 16384 maxelem 65536
 create block_ob_net_set hash:net family inet hashsize 4096 maxelem 65536
+create block_ob_conn_set hash:ip,port,ip family inet hashsize 16384 maxelem 65536 timeout 300
 
 # bidirection
 create allow_ip_set hash:ip family inet hashsize 16384 maxelem 65536
@@ -55,16 +59,20 @@ create monitored_ip_set hash:ip family inet hashsize 128 maxelem 65536
 # This is to ensure all ipsets are empty when initializing
 flush block_ip_set
 flush block_domain_set
+flush block_conn_set
 flush block_net_set
 flush sec_block_ip_set
 flush sec_block_domain_set
+flush sec_block_conn_set
 flush sec_block_net_set
 flush block_ib_ip_set
 flush block_ib_domain_set
 flush block_ib_net_set
+flush block_ib_conn_set
 flush block_ob_ip_set
 flush block_ob_domain_set
 flush block_ob_net_set
+flush block_ob_conn_set
 flush allow_ip_set
 flush allow_domain_set
 flush allow_net_set
@@ -117,6 +125,9 @@ add match_all_set4 0.0.0.0/1
 add match_all_set4 128.0.0.0/1
 add match_dns_port_set 53
 
+create fw_network_gateway_set list:set
+flush fw_network_gateway_set
+
 add block_ip_set ${BLUE_HOLE_IP}
 
 # create a list of set which stores net set of lan networks
@@ -126,7 +137,7 @@ flush c_lan_set
 EOF
 
 # dupe common entries from v4 to v6
-sed -E "s/_(ip|domain|net)_set/_\1_set6/" "$ipset4_file" |
+sed -E "s/_(ip|domain|net|conn)_set/_\1_set6/" "$ipset4_file" |
   sed "s/ inet / inet6 /"
 
 # v6 specific entries
@@ -300,6 +311,10 @@ cat << EOF > "$filter_file"
 # do not check reply packets of a inbound connection, this is mainly for upnp allow rule implementation, which only accepts packets in original direction
 -A FW_FORWARD -m conntrack --ctdir REPLY -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j ACCEPT
 
+# do not block network gateway
+-A FW_FORWARD -m set --match-set fw_network_gateway_set src -j FW_ACCEPT_DEFAULT
+-A FW_FORWARD -m set --match-set fw_network_gateway_set dst -j FW_ACCEPT_DEFAULT
+
 # initialize alarm chain
 -N FW_ALARM
 -A FW_FORWARD -m conntrack --ctdir ORIGINAL -j FW_ALARM
@@ -368,6 +383,8 @@ cat << EOF > "$filter_file"
 -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_ip_set dst -j FW_SEC_DROP
 -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_domain_set src -j FW_SEC_DROP
 -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_domain_set dst -j FW_SEC_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_conn_set src,src,dst -j FW_SEC_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_conn_set dst,dst,src -j FW_SEC_DROP
 -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_net_set src -j FW_SEC_DROP
 -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_net_set dst -j FW_SEC_DROP
 
@@ -471,6 +488,8 @@ cat << EOF > "$filter_file"
 -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_domain_set dst -m set --match-set monitored_net_set src,src -j FW_DROP
 -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set src -m set --match-set monitored_net_set dst,dst -j FW_DROP
 -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_net_set dst -m set --match-set monitored_net_set src,src -j FW_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_conn_set dst,dst,src -m set --match-set monitored_net_set dst,dst -j FW_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_conn_set src,src,dst -m set --match-set monitored_net_set src,src -j FW_DROP
 
 -N FW_FW_GLOBAL_BLOCK_OR
 -N FW_FW_GLOBAL_BLOCK_OR_OB
@@ -491,6 +510,8 @@ cat << EOF > "$filter_file"
 -A FW_FW_GLOBAL_BLOCK_RE_IB -m set --match-set block_ib_domain_set dst -j FW_DROP
 -A FW_FW_GLOBAL_BLOCK_OR_IB -m set --match-set block_ib_net_set src -j FW_DROP
 -A FW_FW_GLOBAL_BLOCK_RE_IB -m set --match-set block_ib_net_set dst -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_OR_IB -m set --match-set block_ib_conn_set dst,dst,src -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_RE_IB -m set --match-set block_ib_conn_set src,src,dst -j FW_DROP
 # outbound
 -A FW_FW_GLOBAL_BLOCK_RE_OB -m set --match-set block_ob_ip_set src -j FW_DROP
 -A FW_FW_GLOBAL_BLOCK_OR_OB -m set --match-set block_ob_ip_set dst -j FW_DROP
@@ -498,6 +519,8 @@ cat << EOF > "$filter_file"
 -A FW_FW_GLOBAL_BLOCK_OR_OB -m set --match-set block_ob_domain_set dst -j FW_DROP
 -A FW_FW_GLOBAL_BLOCK_RE_OB -m set --match-set block_ob_net_set src -j FW_DROP
 -A FW_FW_GLOBAL_BLOCK_OR_OB -m set --match-set block_ob_net_set dst -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_RE_OB -m set --match-set block_ob_conn_set dst,dst,src -j FW_DROP
+-A FW_FW_GLOBAL_BLOCK_OR_OB -m set --match-set block_ob_conn_set src,src,dst -j FW_DROP
 
 # initialize firewall low priority chain
 -N FW_FIREWALL_LO
@@ -589,13 +612,14 @@ cat << EOF
 -I FW_ACCEPT_DEFAULT ! -p icmpv6 -m conntrack --ctstate NEW --ctdir ORIGINAL -m connbytes --connbytes 1:1 --connbytes-dir original --connbytes-mode packets -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m hashlimit --hashlimit-upto 8/second  --hashlimit-burst 10  --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_conn_htable -j LOG --log-prefix "[FW_ADT]A=C D=O "
 -I FW_ACCEPT_DEFAULT ! -p icmpv6 -m conntrack --ctstate NEW --ctdir ORIGINAL -m connbytes --connbytes 1:1 --connbytes-dir original --connbytes-mode packets -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m hashlimit --hashlimit-upto 8/second  --hashlimit-burst 10 --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_conn_htable -j LOG --log-prefix "[FW_ADT]A=C D=I "
 
+
 EOF
 } > "$ip6tables_file"
 
 # replace v4 sets with v6
 # keep monitored_net_set as it has both v4 & v6
 sed -i -E -e 's/monitored_net_set/PLACEHOLDER/g' \
-          -e 's/_(ip|domain|net)_set/_\1_set6/g' \
+          -e 's/_(ip|domain|net|conn)_set/_\1_set6/g' \
           -e 's/PLACEHOLDER/monitored_net_set/g' "$ip6tables_file"
 
 # replace icmp-port-unreachable with icmp6-port-unreachable
@@ -715,6 +739,9 @@ cat << EOF
 -A FW_DISTURB_QOS -j FW_DISTURB_QOS_DEV_G
 -N FW_DISTURB_QOS_DEV
 -A FW_DISTURB_QOS -j FW_DISTURB_QOS_DEV
+
+-N FW_DISTURB_LOG
+-A FW_DISTURB_QOS -m connmark --mark 0x40000000/0x40000000 -m conntrack --ctdir ORIGINAL -m connbytes --connbytes 2:10 --connbytes-mode packets --connbytes-dir original -m hashlimit --hashlimit-upto 1/second --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_disturb -j FW_DISTURB_LOG
 
 
 -N FW_QOS_SWITCH
