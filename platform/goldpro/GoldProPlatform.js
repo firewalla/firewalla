@@ -201,6 +201,10 @@ class GoldProPlatform extends Platform {
     return true;
   }
 
+  isAmneziaWgSupported() {
+    return true;
+  }
+
   getCronTabFile() {
     return `${f.getFirewallaHome()}/etc/crontab.gold`;
   }
