@@ -476,28 +476,32 @@ async function batchBlockConnection(elements, ipset, options = {}) {
     if (isGatewayOrPublicIp(remoteAddr)) {
       continue;
     } 
-
+    let setName;
+    let cmd;
     if (new Address4(remoteAddr).isValid() && new Address4(localAddr).isValid()) {
-      for (const localPort of localPorts) {
-        if (options.comment) {
-          cmds.push(`${op} ${v4Set} ${localAddr},${protocol}:${localPort},${remoteAddr} comment ${options.comment}`);
-        } else {
-          cmds.push(`${op} ${v4Set} ${localAddr},${protocol}:${localPort},${remoteAddr}`);
-        }
-      }
+      setName = v4Set;
     } else {
       const local6 = new Address6(localAddr);
       const remote6 = new Address6(remoteAddr);
       if (local6.isValid() && local6.correctForm() != '::' && remote6.isValid() && remote6.correctForm() != '::') {
-        for (const localPort of localPorts) {
-          if (options.comment) {
-            cmds.push(`${op} ${v6Set} ${localAddr},${protocol}:${localPort},${remoteAddr} comment ${options.comment}`);
-          } else {
-            cmds.push(`${op} ${v6Set} ${localAddr},${protocol}:${localPort},${remoteAddr}`);
-          }
-        }
+        setName = v6Set;
+      } else {
+        log.debug("invalid local address or remote address", localAddr, remoteAddr);
+        continue;
       }
     }
+
+    for (const localPort of localPorts) {
+      cmd = `${op} ${setName} ${localAddr},${protocol}:${localPort},${remoteAddr}`;
+      if (options.comment) {
+        cmd += ` comment ${options.comment}`;
+      }
+      if (options.timeout != null) {
+        cmd += ` timeout ${options.timeout}`;
+      }
+      cmds.push(cmd);
+    }
+
   }
   log.debug(`Batch setup IP set ${op}`, cmds);
   return Ipset.batchOp(cmds);
