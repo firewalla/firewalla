@@ -371,7 +371,7 @@ class ACLAuditLogPlugin extends Sensor {
 
     record.dir = dir;
 
-    if (sysManager.isMulticastIP(dst, outIntf && outIntf.name || inIntf.name, false)) return
+    if (sysManager.isMulticastIP(dst, outIntf && outIntf.name || inIntf && inIntf.name, false)) return
 
     switch (ctdir) {
       case undefined:
