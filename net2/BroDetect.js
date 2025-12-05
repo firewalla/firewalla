@@ -86,8 +86,12 @@ const { getUniqueTs, extractIP } = require('./FlowUtil.js')
 const LRU = require('lru-cache');
 const Constants = require('./Constants.js');
 
+const Block = require('../control/Block.js');
+const exec = require('util').promisify(require('child_process').exec);
+
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
+const CONNMARK_REFRESH_INTERVAL = 15 * 1000; // 15 seconds
 
 /*
  *
@@ -162,6 +166,7 @@ class BroDetect {
 
     let c = require('./MessageBus.js');
     this.publisher = new c();
+    this._needRefresh = false;
 
     this.flowstash = {
       conn: { keys: new Set(['flow:conn:system']), ignore: {} },
@@ -218,6 +223,14 @@ class BroDetect {
           this.activeLongConns.delete(uid)
       }
     }, 60 * 1000)
+
+    setInterval(async () => {
+      if (this._needRefresh) {
+        log.info("refreshing connmark for updated ipsets");
+        await this.scheduleRefreshConnmark();
+        this._needRefresh = false;
+      }
+    }, CONNMARK_REFRESH_INTERVAL);
   }
 
   async _activeMacHeartbeat() {
@@ -1878,73 +1891,37 @@ class BroDetect {
       return;
     this.addConnSignature(uid, sig_id);
 
-    let isVPNSignature = false;
-    let flowDirection = "from_server";
+    const connection = {
+      localAddr: src_addr,
+      remoteAddr: dst_addr,
+      protocol: "udp",
+      localPorts: src_port,
+      remotePorts: dst_port
+    };
 
-    if (sig_id == "wireguard-second-msg-sig") { // from server
-      log.info("Wireguard handshake signature detected", uid, sig_id, src_addr, src_port);
-      isVPNSignature = true;
-    } else if (sig_id.startsWith("openvpn-server-")) { // from server
-      log.info("openVPN handshake signature detected", uid, sig_id, src_addr, src_port);
-      isVPNSignature = true;
-    } else if (sig_id == "ipsec-ikev2-sa-init-resp") { // could from both client and server
-      log.info("IPSec IKEv2 SA Init Resp signature detected", uid, sig_id, src_addr, src_port, dst_addr, dst_port);
-      flowDirection = "unknown";
-      isVPNSignature = true;
-    } else if (sig_id == "ipsec-ikev2-auth-init-resp") { // could from both client and server
-      log.info("IPSec IKEv2 Auth Init Resp signature detected", uid, sig_id, src_addr, src_port, dst_addr, dst_port);
-      flowDirection = "unknown";
-      isVPNSignature = true;
-    } else if (sig_id == "ipsec-ikev1-ke-req") { // could from both client and server
-      log.info("IPSec IKEv1 Key exchange Req signature detected", uid, sig_id, src_addr, src_port, dst_addr, dst_port);
-      flowDirection = "unknown";
-      isVPNSignature = true;
-    } else if (sig_id == "ipsec-ikev1-id-req") { // could from both client and server
-      log.info("IPSec IKEv1 Identification Req signature detected", uid, sig_id, src_addr, src_port, dst_addr, dst_port);
-      flowDirection = "unknown";
-      isVPNSignature = true;
+
+    if (!sysManager.isLocalIP(src_addr)) {
+      connection.localAddr = dst_addr;
+      connection.remoteAddr = src_addr;
+      connection.localPorts = dst_port;
+      connection.remotePorts = src_port;
     }
 
-    let remote_addr = null;
-    let remote_port = null;
-
-    if (flowDirection === "from_client") {
-      remote_addr = dst_addr;
-      remote_port = dst_port;
-    } else if (flowDirection === "from_server") {
-      remote_addr = src_addr;
-      remote_port = src_port;
+    const categories = categoryUpdater.getCategoryByFlowSignature(sig_id);
+    log.debug(`processing signature ${sig_id} for categories:`, categories, ",connection:", connection);
+    if (!categories || categories.length == 0) {
+      return;
     } else {
-      // unknown direction, have to pick one that is not local IP
-      if (sysManager.isLocalIP(src_addr)) {
-        remote_addr = dst_addr;
-        remote_port = dst_port;
-      } else {
-        remote_addr = src_addr;
-        remote_port = src_port;
-      }
+      this._needRefresh = true;
     }
-
-    if (isVPNSignature) {
-      if (!remote_addr || !remote_port) {
-        return;
+    for (const category of categories) {
+      if (!categoryUpdater.isActivated(category)) {
+        continue;
       }
-
-      const publicIps = await sysManager.getPublicIPs();
-      if (publicIps && _.isObject(publicIps)) {
-        for (const [_intf, ip] of Object.entries(publicIps)) {
-          if (ip === remote_addr) {
-            log.info("VPN signature source address is public IP, skip blocking", src_addr);
-            return;
-          }
-        }
-      }
-
-      let portObj = {};
-      portObj.proto = "udp";
-      portObj.start = remote_port;
-      portObj.end = remote_port;
-      categoryUpdater.blockAddress("vpn", remote_addr, portObj, true);
+      const connSet = categoryUpdater.getConnectionIPSetName(category)
+      await Block.batchBlockConnection([connection], connSet).catch((err) => {
+        log.error(`Failed to update connection ipset ${connSet} for ${sig_id}`, err.message);
+      });
     }
   }
 
@@ -2077,6 +2054,19 @@ class BroDetect {
     if (this.outportarray.length > maxsize) {
       this.outportarray.shift();
     }
+  }
+  async scheduleRefreshConnmark() {
+    if (this._refreshConnmarkTimeout)
+      clearTimeout(this._refreshConnmarkTimeout);
+    this._refreshConnmarkTimeout = setTimeout(async () => {
+      // use conntrack to clear the first bit of connmark on existing connections
+      await exec(`sudo conntrack -U -m 0x00000000/0x80000000`).catch((err) => {
+        // log.warn(`Failed to clear first bit of connmark on existing IPv4 connections`, err.message);
+      });
+      await exec(`sudo conntrack -U -f ipv6 -m 0x00000000/0x80000000`).catch((err) => {
+        // log.warn(`Failed to clear first bit of connmark on existing IPv6 connections`, err.message);
+      });
+    }, 5000);
   }
 }
 
