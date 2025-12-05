@@ -19,6 +19,7 @@
 module.exports = {
   NS_VPN_PROFILE: "vpn_profile",
   NS_WG_PEER: "wg_peer",
+  NS_AMNEZIAWG_PEER: "awg_peer",
   NS_VIP_PROFILE: "vip",
   NS_INTERFACE: "if",
   RULE_SEQ_HI: 1,
@@ -30,6 +31,7 @@ module.exports = {
 
   VPN_TYPE_OVPN: "ovpn",
   VPN_TYPE_WG: "wg",
+  VPN_TYPE_AMNEZIAWG: "awg",
 
   INTF_AP_CTRL: "wg_ap",
 
@@ -56,6 +58,7 @@ module.exports = {
   REDIS_KEY_NSE_RESULT: "sys:scan:nse",
   REDIS_KEY_NTP_SERVER_STATUS: "sys:ntp:status", // updated only when ntp_redirect is enabled
   REDIS_KEY_VPN_WG_PEER: 'vpn:wg:peer:', // vpn:wg:peer:{intf}:{pubkey}
+  REDIS_KEY_VPN_AMNEZIAWG_PEER: 'vpn:awg:peer:', // vpn:awg:peer:{intf}:{pubkey}
   REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG: "app_time_usage_cloud_config",
   REDIS_KEY_APP_TIME_USAGE_CONFIG: "app_time_usage_config",
   REDIS_KEY_INTERNET_TIME_USAGE_CONFIG: "internet_time_usage_config",

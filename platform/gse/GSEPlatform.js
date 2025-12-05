@@ -150,6 +150,10 @@ class GSEPlatform extends Platform {
     return true;
   }
 
+  isAmneziaWgSupported() {
+    return true;
+  }
+
   getAllowCustomizedProfiles(){
     return 10;
   }

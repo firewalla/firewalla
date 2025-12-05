@@ -47,7 +47,7 @@ class NmapSensor extends Sensor {
 
 
   getScanInterfaces() {
-    return sysManager.getMonitoringInterfaces().filter(i => i.name && !i.name.includes("vpn") && !i.name.startsWith("wg")) // do not scan vpn interface
+    return sysManager.getMonitoringInterfaces().filter(i => i.name && !i.name.includes("vpn") && !i.name.startsWith("wg") && !i.name.startsWith("awg")) // do not scan vpn interface
   }
 
   scheduleReload() {
