@@ -1807,22 +1807,16 @@ class CategoryUpdater extends CategoryUpdaterBase {
   updateFlowSignatureList(flowSignatureConfig) {
     this.flowSignatureConfigMap = new Map();
     for (const key of Object.keys(flowSignatureConfig)) {
-      // make sure signatures property exists
-      if (!flowSignatureConfig[key].signatures || !_.isArray(flowSignatureConfig[key].signatures)) {
-        continue;
-      }
-      for (const sigId of flowSignatureConfig[key].signatures) {
-        this.flowSignatureConfigMap.set(sigId, flowSignatureConfig[key]);
-      }
+      this.flowSignatureConfigMap.set(key, flowSignatureConfig[key]);
     }
     return;
   }
 
-  getCategoryByFlowSignature(sigId) {
+  getSignatureConfig(sigId) {
     if (!this.flowSignatureConfigMap.has(sigId)) {
-      return [];
+      return null;
     }
-    return this.flowSignatureConfigMap.get(sigId).categories || [];
+    return this.flowSignatureConfigMap.get(sigId);
   }
 
   // system target list using cloudcache, mainly for large target list to reduce bandwidth usage of polling hashset
