@@ -875,6 +875,7 @@
     "PurposeDeviceAutoSecurePlugin":{},
     "DapSensor": {},
     "SuricataRuleSetSensor": {},
+    "NetconsolePlugin": {},
     "NoiseDomainsSensor": {}
   },
   "hooks": {
