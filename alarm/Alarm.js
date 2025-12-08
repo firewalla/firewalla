@@ -649,7 +649,8 @@ class VPNClientConnectionAlarm extends Alarm {
 
 const VPN_PROTOCOL_SUFFIX_MAPPING = {
   "openvpn": "ovpn",
-  "wireguard": "wgvpn"
+  "wireguard": "wgvpn",
+  "amneziawg": "awgvpn"
 };
 
 class VPNRestoreAlarm extends Alarm {
