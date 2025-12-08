@@ -267,7 +267,6 @@ get_active_profile() {
 # Main
 # ----------------------------------------------------------------------------
 
-logger "FIREWALLA:APPLY_PROFILE:START"
 
 test $UID -eq 0 || {
     logerror 'Must run with root privilege'
@@ -295,6 +294,7 @@ if ! $PROFILE_CHECK && [[ $prev_profile == $active_profile ]] && ((cur_ts - prev
   echo "Profile $active_profile was applied less than 3600 seconds ago, skip apply this time"
   exit 0
 fi
+logger "FIREWALLA:APPLY_PROFILE:START"
 if ! $PROFILE_CHECK; then
   echo -n $active_profile > $PREV_APPLY_PROFILE_NAME
   echo -n $cur_ts > $PREV_APPLY_PROFILE_TS
