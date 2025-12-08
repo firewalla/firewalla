@@ -63,7 +63,7 @@ class NetworkProfile extends Monitorable {
   }
 
   isVPNInterface() {
-    return this.o.intf && (this.o.intf.startsWith("wg") || this.o.intf.startsWith("tun"));
+    return this.o.intf && (this.o.intf.startsWith("wg") || this.o.intf.startsWith("awg") || this.o.intf.startsWith("tun"));
   }
 
   getUniqueId() {
