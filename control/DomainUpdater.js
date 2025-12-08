@@ -109,7 +109,30 @@ class DomainUpdater {
           return true;
       }
     }
+    if (options.category) {
+      // check if any category matches the device type/value
+      if (categoryUpdater == null) {
+        const CategoryUpdater = require('../control/CategoryUpdater.js');
+        categoryUpdater = new CategoryUpdater();
+      }
 
+      const devOpts = {};
+      const tmpTags = [];
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const config = Constants.TAG_TYPE_MAP[type];
+        if (flow[config.flowKey])
+          tmpTags.push(...flow[config.flowKey]);
+      }
+      devOpts.tags = tmpTags;
+      if (flow.intf)
+        devOpts.intfs = [flow.intf];
+      if (flow.mac)
+        devOpts.scope = [flow.mac];
+      if (flow.guid)
+        devOpts.guids = [flow.guid];
+      if (categoryUpdater.isDevBlockedByCategory(options.category, devOpts))
+        return true;
+    }
     return false;
   }
 
