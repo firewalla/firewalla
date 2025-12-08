@@ -290,7 +290,15 @@ class OpenVPNClient extends VPNClient {
     if (!profileId)
       throw new Error("profileId is not set");
     await this._generateRuntimeProfile();
-    let cmd = util.format("sudo systemctl start \"%s@%s\"", SERVICE_NAME, this.profileId);
+    let cmd;
+    if (this.isFirstLaunch) {
+      //Use `restart` to force the OpenVPN client to reconnect to the server, 
+      //thus enabling it to fetch the new configuration from the server again after an upgrade.
+      log.debug("first launch using restart instead of start.");
+      cmd = util.format("sudo systemctl restart \"%s@%s\"", SERVICE_NAME, this.profileId);
+    } else {
+      cmd = util.format("sudo systemctl start \"%s@%s\"", SERVICE_NAME, this.profileId);
+    }
     await exec(cmd);
   }
 

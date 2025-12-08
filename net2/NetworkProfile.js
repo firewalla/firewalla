@@ -63,7 +63,7 @@ class NetworkProfile extends Monitorable {
   }
 
   isVPNInterface() {
-    return this.o.intf && (this.o.intf.startsWith("wg") || this.o.intf.startsWith("tun"));
+    return this.o.intf && (this.o.intf.startsWith("wg") || this.o.intf.startsWith("awg") || this.o.intf.startsWith("tun"));
   }
 
   getUniqueId() {
@@ -715,6 +715,12 @@ class NetworkProfile extends Monitorable {
         await exec(`sudo ipset flush -! ${GatewayIpsetName6}`).then(async () => {
           if (this.o && this.o.gateway6 && typeof this.o.gateway6 === 'string') {
             await exec(`sudo ipset add -! ${GatewayIpsetName6} ${this.o.gateway6}`);
+          }
+          //Add DNS6 to the gateway set since IPv6 gateways typically use Link-Local addresses.
+          if(this.o && _.isArray(this.o.dns6)) {
+            for (const dns6 of this.o.dns6) {
+              await exec(`sudo ipset add -! ${GatewayIpsetName6} ${dns6}`);
+            }
           }
         }).catch((err) => {
           log.error(`Failed to populate network gateway ipset ${GatewayIpsetName6}`, err.message);
