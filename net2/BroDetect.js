@@ -432,7 +432,7 @@ class BroDetect {
   }
 
   isIdentityLAN(intfInfo) {
-    return intfInfo && intfInfo.name && (intfInfo.name == "tun_fwvpn" || intfInfo.name.startsWith("wg"))
+    return intfInfo && intfInfo.name && (intfInfo.name == "tun_fwvpn" || intfInfo.name.startsWith("wg") || intfInfo.name.startsWith("awg"))
   }
 
   recordDeviceHeartbeat(mac, ts, ip, fam = 4) {

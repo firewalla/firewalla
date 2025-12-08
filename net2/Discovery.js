@@ -101,7 +101,7 @@ module.exports = class {
       if (found) {
         break;
       }
-      if (intf != null && intf.name && intf.name !== "tun_fwvpn" && !intf.name.startsWith("wg")) {
+      if (intf != null && intf.name && intf.name !== "tun_fwvpn" && !intf.name.startsWith("wg") && !intf.name.startsWith("awg")) {
         log.debug("Prepare to scan subnet", intf);
 
         log.info("Start scanning network ", intf.subnet, "to look for mac", mac);
