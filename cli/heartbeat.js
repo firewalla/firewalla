@@ -182,12 +182,13 @@ async function getSysinfo(status) {
   const timestamp = Date.now();
   const uptime = os.uptime();
   const [
-    arch, booted, btMac, cpuTemp, diskFree, ethSpeed, gatewayMacPrefix, gitBranchName, hashRouter,
+    arch, booted, boxName, btMac, cpuTemp, diskFree, ethSpeed, gatewayMacPrefix, gitBranchName, hashRouter,
     hashWalla, licenseInfo, mac, mode, serviceActiveSince, redisEid, redisInfoMemory, procVersion,
   ] =
     await Promise.all([
       getShellOutput("uname -m"),
       isBooted(),
+      getShellOutput("redis-cli get groupName"),
       getShellOutput("hcitool dev | awk '/hci0/ {print $2}'"),
       getCpuTemperature(),
       getDiskFree(),
@@ -212,6 +213,7 @@ async function getSysinfo(status) {
   return {
     arch,
     booted,
+    boxName,
     btMac,
     cpuTemp,
     ifs,

@@ -199,6 +199,7 @@
       "logPath": "/var/log/openvpn-server.log"
     },
     "WgvpnConnSensor": {},
+    "AmneziaWgConnSensor": {},
     "NaughtyMonkeySensor": {},
     "ActiveProtectSensor": {},
     "IntelLocalCachePlugin": {
@@ -875,6 +876,7 @@
     "PurposeDeviceAutoSecurePlugin":{},
     "DapSensor": {},
     "SuricataRuleSetSensor": {},
+    "NetconsolePlugin": {},
     "NoiseDomainsSensor": {}
   },
   "hooks": {

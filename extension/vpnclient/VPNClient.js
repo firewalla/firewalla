@@ -48,6 +48,7 @@ const instances = {};
 class VPNClient {
   constructor(options) {
     const profileId = options.profileId;
+    this.isFirstLaunch = true; // should be only true when first created
     if (!profileId)
       return null;
     if (!instances[profileId]) {
@@ -994,6 +995,7 @@ class VPNClient {
     await this._start().catch((err) => {
       log.error(`Failed to exec _start of VPN client ${this.profileId}`, err.message);
     });
+    this.isFirstLaunch = false;
 
     return new Promise((resolve, reject) => {
       let establishmentTask = null;
