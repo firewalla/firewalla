@@ -29,6 +29,7 @@ const sysManager = require('../../net2/SysManager')
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
 const exec = require('child-process-promise').exec;
+const {Address4} = require('ip-address');
 
 const iptable = require("../../net2/Iptables.js");
 const Message = require('../../net2/Message.js');
@@ -232,8 +233,10 @@ class PortForward {
             continue;
           } else {
             const ips = identity.getIPs();
-            if (ips.length !== 0) {
-              ipv4Addr = ips[0];
+            // ips from identity.getIPs may be cidr with subnet mask length
+            const ip4s = ips.filter(ip => new Address4(ip).isValid()).map(ip => ip.split('/')[0]);
+            if (ip4s.length !== 0) {
+              ipv4Addr = ip4s[0];
             } else {
               ipv4Addr = null;
             }
@@ -350,7 +353,7 @@ class PortForward {
       }
 
       if (!this._isLANInterfaceIP(map.toIP)) {
-        log.warn("IP is not in secondary network, port forward will not be applied: ", map);
+        log.warn("IP is not in LAN network, port forward will not be applied: ", map);
         return;
       }
 

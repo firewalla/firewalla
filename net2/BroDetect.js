@@ -432,7 +432,7 @@ class BroDetect {
   }
 
   isIdentityLAN(intfInfo) {
-    return intfInfo && intfInfo.name && (intfInfo.name == "tun_fwvpn" || intfInfo.name.startsWith("wg"))
+    return intfInfo && intfInfo.name && (intfInfo.name == "tun_fwvpn" || intfInfo.name.startsWith("wg") || intfInfo.name.startsWith("awg"))
   }
 
   recordDeviceHeartbeat(mac, ts, ip, fam = 4) {
@@ -933,7 +933,7 @@ class BroDetect {
           return;
         }
 
-        if (["RSTR", "RSTO", "S1", "S3", "SF"].includes(obj.conn_state) && obj.orig_pkts <= 10 && obj.resp_bytes == 0) {
+        if (["RSTR", "RSTO", "S1", "S3", "SF"].includes(obj.conn_state) && obj.orig_pkts <= 10 && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
           log.debug("Conn:Drop:TLS", obj.conn_state, data);
           // Likely blocked by TLS. In normal cases, the first packet is SYN, the second packet is ACK, the third packet is SSL client hello. conn_state will be "RSTR"
           // However, if zeek is listening on bridge interface, it will not capture tcp-reset from iptables due to br_netfilter kernel module.
@@ -1907,19 +1907,25 @@ class BroDetect {
       connection.remotePorts = src_port;
     }
 
-    const categories = categoryUpdater.getCategoryByFlowSignature(sig_id);
-    log.debug(`processing signature ${sig_id} for categories:`, categories, ",connection:", connection);
-    if (!categories || categories.length == 0) {
+    const sigConfig = categoryUpdater.getSignatureConfig(sig_id);
+    log.debug(`processing signature ${sig_id} signature config:`, sigConfig, ",connection:", connection);
+    if (!sigConfig || !sigConfig.categories || sigConfig.categories.length == 0) {
       return;
-    } else {
-      this._needRefresh = true;
     }
-    for (const category of categories) {
+    this._needRefresh = true;
+    for (const category of sigConfig.categories) {
       if (!categoryUpdater.isActivated(category)) {
         continue;
       }
-      const connSet = categoryUpdater.getConnectionIPSetName(category)
-      await Block.batchBlockConnection([connection], connSet).catch((err) => {
+      if (sigConfig.proto) {
+        connection.protocol = sigConfig.proto;
+      }
+      const connSet = categoryUpdater.getConnectionIPSetName(category);
+      const options = {};
+      if (sigConfig.timeout != null) {
+        options.timeout = sigConfig.timeout;
+      }
+      await Block.batchBlockConnection([connection], connSet, options).catch((err) => {
         log.error(`Failed to update connection ipset ${connSet} for ${sig_id}`, err.message);
       });
     }

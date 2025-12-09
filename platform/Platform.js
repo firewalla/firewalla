@@ -177,6 +177,10 @@ class Platform {
     return false;
   }
 
+  isAmneziaWgSupported() {
+    return false;
+  }
+
   getCronTabFile() {
     return `${f.getFirewallaHome()}/etc/crontab`;
   }

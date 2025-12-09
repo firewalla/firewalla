@@ -386,7 +386,7 @@ class LogQuery {
       if (!intf) {
         throw new Error('Invalid Interface ' + options.intf)
       }
-      if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
+      if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg") || intf.o.intf.startsWith("awg"))) {
         // add additional macs into options for VPN server network
         const allIdentities = identityManager.getIdentitiesByNicName(intf.o.intf);
         for (const ns of Object.keys(allIdentities)) {
