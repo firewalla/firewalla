@@ -306,6 +306,11 @@ cat << EOF > "$filter_file"
 -A FW_FORWARD -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
 # only set once for NEW connection, for packets that may not fall into FW_ACCEPT_DEFAULT, this rule will set the bit, e.g., rules in FW_UPNP_ACCEPT created by miniupnpd
 -A FW_FORWARD -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x80000000/0x80000000
+
+# accept all multicast and broadcast requests in FORWARD chain
+-A FW_FORWARD -m addrtype --dst-type MULTICAST -j FW_ACCEPT_DEFAULT
+-A FW_FORWARD -m addrtype --dst-type BROADCAST -j FW_ACCEPT_DEFAULT
+
 # jump to FW_FORWARD_LOG after set CONNMARK for logging
 -A FW_FORWARD -j FW_FORWARD_LOG
 # do not check reply packets of a inbound connection, this is mainly for upnp allow rule implementation, which only accepts packets in original direction
@@ -624,6 +629,9 @@ sed -i -E -e 's/monitored_net_set/PLACEHOLDER/g' \
 
 # replace icmp-port-unreachable with icmp6-port-unreachable
 sed -i 's/icmp-port-unreachable/icmp6-port-unreachable/g' "$ip6tables_file"
+
+# remove broadcast accept rule from ip6tables file
+sed -i '/^-A FW_FORWARD -m addrtype --dst-type BROADCAST -j FW_ACCEPT_DEFAULT/d' "$ip6tables_file"
 
 if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
 # these sets are not ipset and contain only domain names, use same set for both v4 & v6
