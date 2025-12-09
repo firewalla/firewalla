@@ -43,6 +43,8 @@ const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
 const _ = require('lodash');
 const LRU = require('lru-cache');
+const DNSTool = require('../net2/DNSTool.js');
+const dnsTool = new DNSTool();
 
 const LOG_PREFIX = Constants.IPTABLES_LOG_PREFIX_AUDIT
 
@@ -308,8 +310,10 @@ class ACLAuditLogPlugin extends Sensor {
           let host = await conntrack.getConnEntry(src, sport, dst, dport, record.pr, "host", 600);
           if (!host) {
             host = await conntrack.getConnEntry(srcMac, "", dst, "", "dns", "host", 600);
-            if (host)
+            if (host) {
               await conntrack.setConnEntries(src, sport, dst, dport, record.pr, {proto: "dns", ip: dst, host}, 600);
+              await dnsTool.addReverseDns(host, [dst]);
+            }
           }
         }
         return;
