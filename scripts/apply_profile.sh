@@ -53,7 +53,7 @@ set_nic_feature() {
 set_smp_affinity() {
     while read intf smp_affinity
     do
-        for irq in $(cat /proc/interrupts | awk "\$NF == \"$intf\" {print \$1}"|tr -d :)
+        for irq in $(cat /proc/interrupts | awk "\$1 == \"$intf\" || \$NF == \"$intf\" {print \$1}"|tr -d :)
         do
             if $PROFILE_CHECK; then
                 cat /proc/irq/$irq/smp_affinity
@@ -69,6 +69,7 @@ set_rps_cpus() {
     do
         rps_cpus_paths=/sys/class/net/$intf/queues/$q/rps_cpus
         for rps_cpus_path in $rps_cpus_paths; do
+            test -e $rps_cpus_paths || continue
             if $PROFILE_CHECK; then
                 cat $rps_cpus_path
             else

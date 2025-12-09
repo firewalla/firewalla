@@ -145,7 +145,10 @@ class PolicyManager {
       }
       default: {
         await target.vpnClient(policy);
-
+        // if vpn client is not enabled, not need to send verified event to OSI
+        if(! policy.state || !policy.profileId) {
+          break;
+        }
         sem.sendEventToFireMain({
           type: Message.MSG_OSI_VERIFIED,
           message: "",

@@ -38,6 +38,8 @@ const Constants = require('../../net2/Constants.js');
 const AsyncLock = require('../../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const platform = PlatformLoader.getPlatform()
+const fireRouter = require('../../net2/FireRouter.js');
+const scheduler = require('../../util/scheduler.js');
 const envCreatedMap = {};
 const INTERNET_ON_OFF_THRESHOLD = 2;
 
@@ -46,6 +48,7 @@ const instances = {};
 class VPNClient {
   constructor(options) {
     const profileId = options.profileId;
+    this.isFirstLaunch = true; // should be only true when first created
     if (!profileId)
       return null;
     if (!instances[profileId]) {
@@ -95,7 +98,7 @@ class VPNClient {
   }
 
   static async getVPNProfilesForInit() {
-    const types = ["openvpn", "wireguard", "ssl", "zerotier", "nebula", "trojan", "clash", "hysteria", "gost", "ipsec", "ts"];
+    const types = ["openvpn", "wireguard", "amneziawg", "ssl", "zerotier", "nebula", "trojan", "clash", "hysteria", "gost", "ipsec", "ts"];
     const results = {}
     await Promise.all(types.map(async (type) => {
       const c = this.getClass(type);
@@ -121,6 +124,11 @@ class VPNClient {
       }
       case "wireguard": {
         const c = require('./WGVPNClient.js');
+        return c;
+        break;
+      }
+      case "amneziawg": {
+        const c = require('./AmneziaWGVPNClient.js');
         return c;
         break;
       }
@@ -656,14 +664,26 @@ class VPNClient {
   scheduleRestart() {
     if (this.restartTask)
       clearTimeout(this.restartTask)
-    this.restartTask = setTimeout(() => {
+    this.restartTask = setTimeout(async () => {
       if (!this._started)
         return;
+      // if fireRouter is reloading, repeate to check until it is finished and then restart
+      let count = 0;
+      while (fireRouter.reloadTaskOngoing){
+        log.info(`FireRouter is reloading, waiting for it to finish...`);
+        await scheduler.delay(1000);
+        count++;
+        if (count > 20){
+          log.error(`FireRouter is reloading, but it is taking too long, skip restarting ${this.constructor.getProtocol()} vpn client ${this.profileId}`);
+          break;
+        }
+      }
       // use _stop instead of stop() here, this will only re-establish connection, but will not remove other settings, e.g., kill-switch
       this._restarting = true;
       this.setup().then(() => this._stop()).then(() => this.start()).catch((err) => {
         log.error(`Failed to restart ${this.constructor.getProtocol()} vpn client ${this.profileId}`, err.message);
       }).finally(() => {
+        log.info(`Restart ${this.constructor.getProtocol()} vpn client ${this.profileId} complete`);
         this._restarting = false;
       });
     }, 5000);
@@ -975,6 +995,7 @@ class VPNClient {
     await this._start().catch((err) => {
       log.error(`Failed to exec _start of VPN client ${this.profileId}`, err.message);
     });
+    this.isFirstLaunch = false;
 
     return new Promise((resolve, reject) => {
       let establishmentTask = null;
