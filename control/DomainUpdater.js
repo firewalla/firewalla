@@ -251,9 +251,9 @@ class DomainUpdater {
     }
 
     const config = {domain: domain, options: options};
-    let domainOnly = true; // default to domain only
-    if ( options.domainOnly === false) {
-      domainOnly = false;
+    let domainOnly = false; // default to domain-only false
+    if ( options.domainOnly === true) {
+      domainOnly = true;
     }
     if (!domainOnly) {
       // a secondary index for domain update options
@@ -263,7 +263,8 @@ class DomainUpdater {
       const key = domainIPTool.getDomainIPMappingKey(domain, options);
       config.ipCache = new LRU({maxAge: options.ipttl * 1000 / 2 || 0}); // invalidate the entry in lru earlier than its ttl so that it can be re-added to the underlying ipset
       this.updateOptions[domainKey][key] = config;
-    } else if (options.connSet) {
+    }
+    if (options.connSet) {
       if (!this.connUpdateOptions[domainKey])
         this.connUpdateOptions[domainKey] = {};
       const key = domainIPTool.getDomainConnMappingKey(domain, options);
@@ -279,16 +280,18 @@ class DomainUpdater {
       domain = domain.substring(2);
     }
     
-    let domainOnly = true; // default to domain only
-    if ( options.domainOnly === false) {
-      domainOnly = false;
+    let domainOnly = false; // default to domain-only false
+    if ( options.domainOnly === true) {
+      domainOnly = true;
     }
 
     if (!domainOnly) {
       const key = domainIPTool.getDomainIPMappingKey(domain, options);
       if (this.updateOptions[domainKey] && this.updateOptions[domainKey][key])
         delete this.updateOptions[domainKey][key];
-    } else if (options.connSet) {
+    }
+    
+    if (options.connSet) {
       const key = domainIPTool.getDomainConnMappingKey(domain, options);
       log.debug(`DomainUpdater unregisterUpdate for domain ${domain} with key:${key}, options`, options);
       if (this.connUpdateOptions[domainKey] && this.connUpdateOptions[domainKey][key])

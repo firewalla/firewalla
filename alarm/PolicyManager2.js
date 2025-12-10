@@ -1559,7 +1559,7 @@ class PolicyManager2 {
             domainOnly: policy.dnsmasq_only ? true : false,
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid),
-            connSet: isBlockOrdisturb ? Block.getConnSet(pid) : null,
+            connSet: isBlockOrdisturb ? connSet4 : null,
             devOpts: devOpts,
             ipttl: ipttl
           });
@@ -1570,12 +1570,15 @@ class PolicyManager2 {
               + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : ""))
               + simpleRuleSetMap[type];
             tlsHostSet = (security ? 'sec_' : '') + (action === "allow" ? 'allow_' : 'block_') + "domain_set";
-            const connSet = Block.getPredefinedConnSet(security, direction);
+            let connSet = null;
+            if (policy.dnsmasq_only && isBlockOrdisturb) {
+              connSet = Block.getPredefinedConnSet(security, direction);
+            }
             await domainBlock.blockDomain(target, {
               domainOnly: policy.dnsmasq_only ? true : false,
               exactMatch: policy.domainExactMatch,
               blockSet: set,
-              connSet: isBlockOrdisturb ? connSet : null,
+              connSet: connSet,
               devOpts: devOpts,
               tlsHostSet: tlsHostSet
             });
@@ -2145,12 +2148,15 @@ class PolicyManager2 {
               + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : ""))
               + simpleRuleSetMap[type];
             tlsHostSet = (security ? 'sec_' : '') + (action === "allow" ? 'allow_' : 'block_') + "domain_set";
-            const connSet = Block.getPredefinedConnSet(security, direction);
+            let connSet = null;
+            if (policy.dnsmasq_only && isBlockOrdisturb) {
+              connSet = Block.getPredefinedConnSet(security, direction);
+            }
             await domainBlock.unblockDomain(target, {
               domainOnly: policy.dnsmasq_only ? true : false,
               exactMatch: policy.domainExactMatch,
               blockSet: set,
-              connSet: isBlockOrdisturb ? connSet : null,
+              connSet: connSet,
               tlsHostSet: tlsHostSet
             });
             return;
