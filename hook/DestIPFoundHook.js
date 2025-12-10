@@ -34,6 +34,9 @@ const m = require('../extension/metrics/metrics.js');
 
 const rp = require('request-promise');
 
+const DNSTool = require('../net2/DNSTool.js');
+const dnsTool = new DNSTool();
+
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
 const CountryUpdater = require('../control/CountryUpdater.js')
@@ -325,6 +328,9 @@ class DestIPFoundHook extends Hook {
             log.debug('return cached intel:', intel)
             if (enrichedFlow)
               enrichedFlow.intel = intel;
+            if(intel.host && ip) {
+              await dnsTool.addReverseDns(intel.host, ip);
+            }
             return intel;
           }
         }
