@@ -16,7 +16,6 @@
 
 'use strict'
 
-process.title = "FireApi";
 const net = require('net')
 const _ = require('lodash');
 
@@ -157,6 +156,7 @@ const sl = require('../sensor/APISensorLoader.js');
 
 const Message = require('../net2/Message')
 
+const {logApiStats, getApiStats, API_STATS_KEY_EXCLUDE_LIST} = require('./stats.js');
 const util = require('util')
 
 const restartUPnPTask = {};
@@ -199,6 +199,26 @@ class netBot extends ControllerBot {
   async _notifyNewEvent(event) {
     const event_type = event.event_type == "state" ? event.state_type: event.action_type;
     const event_value = event.event_type == "state" ? event.state_value: event.action_value;
+
+    if (event_type == "phone_paired" && event.labels && event.labels.eid) {
+      // sync to MSP
+      const sl = require('../sensor/APISensorLoader.js');
+      const gs = sl.getSensor('GuardianSensor');
+      if (gs && fc.isFeatureOn(Constants.FEATURE_MSP_SYNC_OPS)) {
+        const op = {
+          mtype: "cmd",
+          data: {
+            value: { eid: event.labels.eid },
+            item: "group:eid:add" //meaning app paired
+          },
+          type: "jsonmsg",
+          ts: Date.now() / 1000
+        };
+        await gs.enqueueOpToMsp(op).catch((err) => {
+          log.error("Failed to enqueue op to msp", err);
+        });
+      }
+    }
 
     if (!this._checkEventNotifyPolicy(this.hostManager.policy, event_type)) {
       return;
@@ -834,6 +854,12 @@ class netBot extends ControllerBot {
           if (_.isBoolean(noForward)) {
             await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD, noForward);
           }
+          sem.emitEvent({
+            type: "LocalDomainUpdate",
+            message: `Update localDomain suffix`,
+            macArr: [macAddress],
+            toProcess: 'FireMain'
+          });
           return { suffix, noForward }
         } else if (hostTool.isMacAddress(macAddress)) {
           const host = await this.hostManager.getHostAsync(macAddress)
@@ -1587,12 +1613,7 @@ class netBot extends ControllerBot {
         }
       }
       case "monthlyDataUsageOnWans": {
-        let dataPlan = await rclient.getAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS);
-        if (dataPlan) {
-          dataPlan = JSON.parse(dataPlan);
-        } else {
-          dataPlan = {}
-        }
+        const dataPlan = await this.hostManager.getDataUsagePlan();
         const globalDate = dataPlan && dataPlan.date || 1;
         const wanConfs = dataPlan && dataPlan.wanConfs || {};
         const wanIntfs = sysManager.getWanInterfaces();
@@ -1604,15 +1625,9 @@ class netBot extends ControllerBot {
         return result
       }
       case "dataPlan": {
-        const featureName = 'data_plan';
-        let dataPlan = await rclient.getAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS);
-        const enable = fc.isFeatureOn(featureName)
-        if (dataPlan) {
-          dataPlan = JSON.parse(dataPlan);
-        } else {
-          dataPlan = {}
-        }
-        return { dataPlan: dataPlan, enable: enable }
+        const dataPlan = await this.hostManager.getDataUsagePlan();
+        const enable = fc.isFeatureOn('data_plan');
+        return { dataPlan: dataPlan || {}, enable: enable }
       }
       case "network:filenames": {
         const filenames = await FireRouter.getFilenames();
@@ -1674,6 +1689,12 @@ class netBot extends ControllerBot {
           result[branch] = await sysManager.getBranchUpdateTime(branch);
         }
         return result
+      }
+      case "apiStats": {
+        const topEid = value && value.topEidNum || 5;
+        const topApi = value && value.topApiNum || 3;
+        const recent = value && value.recent || 3600;
+        return await getApiStats(recent, topEid, topApi);
       }
       case "mspConfig":
         return fc.getMspConfig();
@@ -1817,7 +1838,7 @@ class netBot extends ControllerBot {
         const intf = this.networkProfileManager.getNetworkProfile(target);
         if (!intf) throw new Error("Invalid Network ID")
         options.intf = target;
-        if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
+        if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg") || intf.o.intf.startsWith("awg"))) {
           // add additional macs into options for VPN server network
           const allIdentities = this.identityManager.getIdentitiesByNicName(intf.o.intf);
           const macs = [];
@@ -1916,8 +1937,8 @@ class netBot extends ControllerBot {
         netBotTool.prepareTopFlows(jsonobj, 'ipB', "out", Object.assign({}, options, {limit: 400})),
         netBotTool.prepareTopFlows(jsonobj, 'ifB', "out", Object.assign({}, options, {limit: 400})),
       )
-      tsMetrics.push('ipB', 'dnsB')
-      hostMetrics.push('ipB', 'dnsB')
+      tsMetrics.push('ipB', 'dnsB', 'ipD')
+      hostMetrics.push('ipB', 'dnsB', 'ipD')
     }
     if (ntp && platform.isAuditLogSupported()) {
       tsMetrics.push('ntp')
@@ -3953,6 +3974,12 @@ class netBot extends ControllerBot {
           log.verbose(rawmsg.message)
         }
 
+        // record api stats asynchronously
+        const apikey = `${mtype}:${item || ""}:${msg.target || ""}`;
+        if (f.isDevelopmentVersion() && eid && eid != "undefined" && !API_STATS_KEY_EXCLUDE_LIST.includes(apikey)) {
+          logApiStats(eid, apikey, Date.now());
+        }
+
         msg.appInfo = appInfo;
         if (rawmsg.message.obj.type === "jsonmsg") {
           let wltargets = await rclient.smembersAsync("sys:eid:whitelist:item") || [];
@@ -3970,7 +3997,7 @@ class netBot extends ControllerBot {
 
           // check whitelist, empty set allows all, only for dev
           const notAllow = (await rclient.typeAsync('sys:eid:whitelist')) == "set" &&
-            !await rclient.sismemberAsync('sys:eid:whitelist', eid || "") && aplt != "web";
+            !await rclient.sismemberAsync('sys:eid:whitelist', eid || "") && aplt != "web" && aplt != "msp";
           if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && notAllow){
             log.warn('deny access from eid', eid, "with", msg.data.item);
             return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
@@ -3978,7 +4005,7 @@ class netBot extends ControllerBot {
 
           // check blacklist, only for dev
           const forbid = (await rclient.typeAsync('sys:eid:blacklist')) == "set" &&
-            await rclient.sismemberAsync('sys:eid:blacklist', eid || "") && aplt != "web";
+            await rclient.sismemberAsync('sys:eid:blacklist', eid || "") && aplt != "web" && aplt != "msp";
           if (eid && ["set","cmd"].includes(rawmsg.message.obj.mtype) && !wltargets.includes(msg.data.item) && forbid){
             log.warn('deny access from eid', eid);
             return this.simpleTxData(msg, null, { code: 403, msg: "Access Denied. Contact Administrator." }, cloudOptions);
@@ -4152,7 +4179,8 @@ class netBot extends ControllerBot {
                 if (result.code == 200) {
                   return this.simpleTxData(msg, result.body, null, cloudOptions);
                 } else {
-                  return this.simpleTxData(msg, null, {code: result.code, data: result.body, msg: result.msg}, cloudOptions);
+                  const errmsg = result.body && typeof result.body === 'object' ? JSON.stringify(result.body) : result.body ||  result.code;
+                  return this.simpleTxData(msg, null, {code: result.code, data: result.body, msg: result.msg || errmsg}, cloudOptions);
                 }
 
               } else if (msg.data.item == 'batchAction') {

@@ -1213,6 +1213,10 @@ class SysManager {
       log.warn(`Get ${branch} update time error`, e);
     }
   }
+
+  getPublicIPs() {
+    return this.publicIps;
+  }
 }
 
 module.exports = new SysManager();

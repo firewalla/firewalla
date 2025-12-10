@@ -23,6 +23,7 @@ const fsp = fs.promises
 const cp = require('child_process');
 
 const { exec } = require('child-process-promise');
+const _ = require('lodash');
 
 class Platform {
   getAllNicNames() {
@@ -173,6 +174,10 @@ class Platform {
   }
 
   isWireguardSupported() {
+    return false;
+  }
+
+  isAmneziaWgSupported() {
     return false;
   }
 
@@ -330,7 +335,15 @@ class Platform {
   isTLSBlockSupport() {
     return false;
   }
+
+  isDevMode() {
+    return f.getBranch() == "master";
+  }
+
   isUdpTLSBlockSupport() {
+    if (this.isDevMode()) {
+      return true;
+    }
     return false;
   }
 
@@ -496,6 +509,26 @@ class Platform {
 
   async isSuricataFromAssetsSupported() {
     return false;
+  }
+
+  hasIntegratedFWAPC() {
+    return false;
+  }
+
+  isPDOSupported() {
+    return false;
+  }
+
+  async hasIntegratedAPAssets() {
+    if (!this.hasIntegratedFWAPC()) {
+      return false;
+    }
+    const firerouter = require('../net2/FireRouter.js');
+    // will read cached config instead of reloading from firerouter, low overhead
+    const networkConfig = await firerouter.getConfig(false, false);
+    const assets = _.get(networkConfig, ["apc", "assets"], {});
+    const integratedAssets = _.pickBy(assets, (value, key) => value.integrated === true);
+    return !_.isEmpty(integratedAssets);
   }
 }
 

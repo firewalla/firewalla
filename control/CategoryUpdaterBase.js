@@ -215,6 +215,14 @@ class CategoryUpdaterBase {
     return Block.getDstSet6((category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category) + (isStatic ? "_ip" : "_dm"));
   }
 
+  getConnectionIPSetName(category) {
+    return Block.getConnSet(`${(category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category)}`);
+  }
+
+  getConnectionIPSetNameForIPV6(category) {
+    return Block.getConnSet6(`${(category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category)}`);
+  }
+
   getTempIPSetName(category, isStatic = false) {
     return Block.getDstSet(`tmp_${(category.length >= 13 ? `${category.substring(0, 10)}${category.substring(category.length - 3)}` : category)}` + (isStatic ? "_ip" : "_dm"));
   }
@@ -437,9 +445,16 @@ class CategoryUpdaterBase {
     return this.activeCategories[category] !== undefined
   }
 
+  isTLSActivatedTCP(category) {
+    return this.activeTLSCategories_tcp && this.activeTLSCategories_tcp[category] !== undefined
+  }
+
+  isTLSActivatedUDP(category) {
+    return this.activeTLSCategories_udp && this.activeTLSCategories_udp[category] !== undefined
+  }
+
   isTLSActivated(category) {
-    return (this.activeTLSCategories_tcp && this.activeTLSCategories_tcp[category] !== undefined) 
-    || (this.activeTLSCategories_udp && this.activeTLSCategories_udp[category] !== undefined)
+    return this.isTLSActivatedTCP(category) || this.isTLSActivatedUDP(category)
   }
 
   async refreshCategoryRecord(category) { }

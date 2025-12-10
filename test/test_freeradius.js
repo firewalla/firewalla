@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,13 +17,10 @@
 let chai = require('chai');
 let expect = chai.expect;
 const { exec } = require('child-process-promise');
-const fs = require('fs');
-const Promise = require('bluebird');
-Promise.promisifyAll(fs);
+const fs = require('fs').promises;
 const FreeRadiusSensor = require("../sensor/FreeRadiusSensor.js")
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
-process.title = "FireMain";
 let freeradius = require("../extension/freeradius/freeradius.js");
 const f = require('../net2/Firewalla.js');
 
@@ -136,7 +133,7 @@ describe('Test freeradius sensor', function () {
 
   it('should generateOptions', async () => {
     await this.plugin.generateOptions({ ssl: true, debug: true, timeout: 10 });
-    const options = await fs.readFileAsync(`${f.getHiddenFolder()}/config/freeradius/.freerc`, { encoding: "utf8" });
+    const options = await fs.promises.readFile(`${f.getHiddenFolder()}/config/freeradius/.freerc`, { encoding: "utf8" });
     expect(options).to.contains("ssl=true");
     expect(options).to.contains("debug=true");
     expect(options).to.contains("timeout=10");

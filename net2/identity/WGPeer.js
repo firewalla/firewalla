@@ -26,14 +26,21 @@ const Message = require('../Message.js');
 const FireRouter = require('../FireRouter.js');
 const exec = require('child-process-promise').exec;
 
-const wgPeers = {};
-
 const Identity = require('../Identity.js');
 const _ = require('lodash');
 
-const privPubKeyMap = {};
-
 class WGPeer extends Identity {
+
+  static wgPeers = {};
+  static privPubKeyMap = {};
+  static wgCmd() {
+    return "wg";
+  }
+
+  static getProtocol() {
+    return "wireguard";
+  }
+
   static isAddressInRedis() {
     // IP address of WireGuard peer is statically configured, no need to use redis for dynamic update
     return false;
@@ -59,17 +66,22 @@ class WGPeer extends Identity {
     return "wgPeers";
   }
 
+  static getRedisKeyVPNWGPeer() {
+    return Constants.REDIS_KEY_VPN_WG_PEER;
+  }
+
   static async getInitData() {
     const hash = await super.getInitData();
     const hashCopy = JSON.parse(JSON.stringify(hash));
     const peers = [];
     let intfs = [];
+    const protocol = this.getProtocol();
     if (platform.isFireRouterManaged()) {
       const networkConfig = await FireRouter.getConfig();
-      if (networkConfig && networkConfig.interface && networkConfig.interface.wireguard) {
-        intfs = Object.keys(networkConfig.interface.wireguard);
+      if (networkConfig && networkConfig.interface && networkConfig.interface[protocol]) {
+        intfs = Object.keys(networkConfig.interface[protocol]);
       }
-    } else {
+    } else if (this === WGPeer) {
       intfs.push("wg0");
     }
     await Promise.all(intfs.map(async intf => {
@@ -83,8 +95,8 @@ class WGPeer extends Identity {
           autonomousPeerInfo = _.get(intfInfo, ["state", "autonomy", "peerInfo"], undefined);
         }
       }
-      const dumpResult = await exec(`sudo wg show ${intf} dump | tail +2`).then(result => result.stdout.trim().split('\n')).catch((err) => {
-        log.error(`Failed to dump wireguard peers on ${intf}`, err.message);
+      const dumpResult = await exec(`sudo ${this.wgCmd()} show ${intf} dump | tail +2`).then(result => result.stdout.trim().split('\n')).catch((err) => {
+        log.error(`Failed to dump ${this.getProtocol()} peers on ${intf}`, err.message);
         return null;
       });
       if (_.isArray(dumpResult)) {
@@ -97,7 +109,8 @@ class WGPeer extends Identity {
                 obj.uid = pubKey;
                 obj.lastActiveTimestamp = !isNaN(latestHandshake) && Number(latestHandshake) || null;
                 if (!obj.lastActiveTimestamp || obj.lastActiveTimestamp == 0) {
-                  const lastActiveTs = await rclient.hgetAsync(`${Constants.REDIS_KEY_VPN_WG_PEER}${intf}:${pubKey}`, "lastActiveTimestamp");
+                  const redisKey = this.getRedisKeyVPNWGPeer();
+                  const lastActiveTs = await rclient.hgetAsync(`${redisKey}${intf}:${pubKey}`, "lastActiveTimestamp");
                   if (lastActiveTs && Number(lastActiveTs)) {
                     obj.lastActiveTimestamp = Number(lastActiveTs);
                   }
@@ -167,12 +180,13 @@ class WGPeer extends Identity {
     if (platform.isFireRouterManaged()) {
       const networkConfig = await FireRouter.getConfig();
       let intfs = [];
-      if (networkConfig && networkConfig.interface && networkConfig.interface.wireguard) {
-        intfs = Object.keys(networkConfig.interface.wireguard);
+      const protocol = this.getProtocol();
+      if (networkConfig && networkConfig.interface && networkConfig.interface[protocol]) {
+        intfs = Object.keys(networkConfig.interface[protocol]);
       }
       for (const intf of intfs) {
-        const peers = networkConfig.interface.wireguard[intf] && networkConfig.interface.wireguard[intf].peers || [];
-        const peersExtra = networkConfig.interface.wireguard[intf] && networkConfig.interface.wireguard[intf].extra && networkConfig.interface.wireguard[intf].extra.peers || [];
+        const peers = networkConfig.interface[protocol][intf] && networkConfig.interface[protocol][intf].peers || [];
+        const peersExtra = networkConfig.interface[protocol][intf] && networkConfig.interface[protocol][intf].extra && networkConfig.interface[protocol][intf].extra.peers || [];
         for (const peer of peers) {
           const pubKey = peer.publicKey;
           const allowedIPs = peer.allowedIPs;
@@ -185,18 +199,18 @@ class WGPeer extends Identity {
         await Promise.all(peersExtra.map(async (peerExtra) => {
           const name = peerExtra.name;
           const privateKey = peerExtra.privateKey;
-          const pubKey = peerExtra.publicKey || privPubKeyMap[privateKey] || await exec(`echo ${privateKey} | wg pubkey`).then(result => result.stdout.trim()).catch((err) => {
+          const pubKey = peerExtra.publicKey || this.privPubKeyMap[privateKey] || await exec(`echo ${privateKey} | ${this.wgCmd()} pubkey`).then(result => result.stdout.trim()).catch((err) => {
             log.error(`Failed to calculate public key from private key ${privateKey}`, err.message);
             return null;
           });
           if (pubKey) {
-            privPubKeyMap[privateKey] = pubKey;
+            this.privPubKeyMap[privateKey] = pubKey;
             if (result[pubKey])
               result[pubKey].name = name;
           }
         }));
       }
-    } else {
+    } else if (this === WGPeer) { // only WGPeer need to get peers from extension
       const wireguard = require('../../extension/wireguard/wireguard.js');
       const peers = await wireguard.getPeers();
       for (const peer of peers) {
@@ -206,29 +220,29 @@ class WGPeer extends Identity {
       }
     }
 
-    for (const pubKey of Object.keys(wgPeers))
-      wgPeers[pubKey].active = false;
+    for (const pubKey of Object.keys(this.wgPeers))
+      this.wgPeers[pubKey].active = false;
 
     for (const pubKey of Object.keys(result)) {
       const o = result[pubKey];
       o.publicKey = pubKey;
-      if (wgPeers[pubKey])
-        await wgPeers[pubKey].update(o);
+      if (this.wgPeers[pubKey])
+        await this.wgPeers[pubKey].update(o);
       else
-        wgPeers[pubKey] = new WGPeer(o);
-      wgPeers[pubKey].active = true;
+        this.wgPeers[pubKey] = new this(o);
+      this.wgPeers[pubKey].active = true;
     }
 
-    await Promise.all(Object.keys(wgPeers).map(async pubKey => {
-      if (wgPeers[pubKey].active === false) {
-        delete wgPeers[pubKey]
+    await Promise.all(Object.keys(this.wgPeers).map(async pubKey => {
+      if (this.wgPeers[pubKey].active === false) {
+        delete this.wgPeers[pubKey]
         return;
       }
 
-      const redisMeta = await rclient.hgetallAsync(wgPeers[pubKey].getMetaKey())
-      Object.assign(wgPeers[pubKey].o, WGPeer.parse(redisMeta))
+      const redisMeta = await rclient.hgetallAsync(this.wgPeers[pubKey].getMetaKey())
+      Object.assign(this.wgPeers[pubKey].o, WGPeer.parse(redisMeta))
     }));
-    return wgPeers;
+    return this.wgPeers;
   }
 
   static async getIPUniqueIdMappings() {
@@ -236,11 +250,12 @@ class WGPeer extends Identity {
     if (platform.isFireRouterManaged()) {
       const networkConfig = await FireRouter.getConfig();
       let intfs = [];
-      if (networkConfig && networkConfig.interface && networkConfig.interface.wireguard) {
-        intfs = Object.keys(networkConfig.interface.wireguard);
+      const protocol = this.getProtocol();
+      if (networkConfig && networkConfig.interface && networkConfig.interface[protocol]) {
+        intfs = Object.keys(networkConfig.interface[protocol]);
       }
       for (const intf of intfs) {
-        const peers = networkConfig.interface.wireguard[intf] && networkConfig.interface.wireguard[intf].peers || [];
+        const peers = networkConfig.interface[protocol][intf] && networkConfig.interface[protocol][intf].peers || [];
         for (const peer of peers) {
           const pubKey = peer.publicKey;
           const allowedIPs = peer.allowedIPs || [];
@@ -249,7 +264,7 @@ class WGPeer extends Identity {
           }
         }
       }
-    } else {
+    } else if (this === WGPeer) {
       const wireguard = require('../../extension/wireguard/wireguard.js');
       const peers = await wireguard.getPeers();
       for (const peer of peers) {
@@ -266,16 +281,19 @@ class WGPeer extends Identity {
   static async getIPEndpointMappings() {
     const pubKeyEndpointMap = {};
     let intfs = [];
+    const protocol = this.getProtocol();
     if (platform.isFireRouterManaged()) {
       const networkConfig = await FireRouter.getConfig();
-      if (networkConfig && networkConfig.interface && networkConfig.interface.wireguard) {
-        intfs = Object.keys(networkConfig.interface.wireguard);
+      if (networkConfig && networkConfig.interface && networkConfig.interface[protocol]) {
+        intfs = Object.keys(networkConfig.interface[protocol]);
       }
-    } else
+    } else if (this === WGPeer) {
       intfs.push("wg0");
+    }
+
     for (const intf of intfs) {
-      const endpointsResults = (await exec(`sudo wg show ${intf} endpoints`).then(result => result.stdout.trim().split('\n')).catch((err) => {
-        log.debug(`Failed to show endpoints using wg command`, err.message);
+      const endpointsResults = (await exec(`sudo ${this.wgCmd()} show ${intf} endpoints`).then(result => result.stdout.trim().split('\n')).catch((err) => {
+        log.debug(`Failed to show endpoints using ${this.wgCmd()} command`, err.message);
         return [];
       })).map(result => result.split(/\s+/g));
       for (const endpointResult of endpointsResults) {
@@ -290,7 +308,7 @@ class WGPeer extends Identity {
     if (platform.isFireRouterManaged()) {
       const networkConfig = await FireRouter.getConfig();
       for (const intf of intfs) {
-        const peers = networkConfig.interface.wireguard[intf] && networkConfig.interface.wireguard[intf].peers || [];
+        const peers = networkConfig.interface[protocol][intf] && networkConfig.interface[protocol][intf].peers || [];
         for (const peer of peers) {
           const pubKey = peer.publicKey;
           const allowedIPs = peer.allowedIPs || [];
@@ -300,7 +318,7 @@ class WGPeer extends Identity {
           }
         }
       }
-    } else {
+    } else if (this === WGPeer) {
       const wireguard = require('../../extension/wireguard/wireguard.js');
       const peers = await wireguard.getPeers();
       for (const peer of peers) {

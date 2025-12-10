@@ -36,8 +36,7 @@
 const log = require("./logger.js")(__filename);
 
 const layer2 = require('../util/Layer2.js');
-const Nmap = require('./Nmap.js');
-const nmap = new Nmap();
+const nmap = require('./Nmap.js');
 const f = require('../net2/Firewalla.js');
 const SysTool = require('../net2/SysTool.js')
 const sysTool = new SysTool()
@@ -121,6 +120,14 @@ async function getInterfaces() {
 
 async function getInterface(intf) {
   return localGet(`/config/interfaces/${intf}`, 2)
+}
+
+async function getPowerMode() {
+  return localGet("/config/power_mode");
+}
+
+async function setPowerMode(powerMode) {
+  return localSet("/config/power_mode", { powerMode });
 }
 
 function updateMaps() {
@@ -311,6 +318,13 @@ async function generateNetworkInfo() {
       redisIntf.pds = intf.state.pds;
     }
 
+    if (intf.config.vid) {
+      redisIntf.vid = intf.config.vid
+    } else if (intfName.startsWith("br") && Array.isArray(intf.config.intf) && !_.isEmpty(intf.config.intf)) {
+      const vid = intfNameMap[intf.config.intf[0]].config.vid
+      if (vid) redisIntf.vid = vid
+    }
+
     if (f.isMain()) {
       await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
       await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))
@@ -419,15 +433,19 @@ class FireRouter {
   scheduleReload() {
     if (this.reloadTask)
       clearTimeout(this.reloadTask);
+    this.reloadTaskOngoing = true;
     this.reloadTask = setTimeout(() => {
       this.init().catch((err) => {
         log.error("Failed to reload init", err.message);
+      }).finally(() => {
+        this.reloadTaskOngoing = false;
       });
     }, 3000);
   }
 
   async init(first = false) {
     await lock.acquire(LOCK_INIT, async () => {
+      const lastMonitoringIntfNames = monitoringIntfNames;
       const routingWans = [];
       if (platform.isFireRouterManaged()) {
         // fireroute
@@ -696,6 +714,9 @@ class FireRouter {
         }
       }
 
+      monitoringIntfNames.sort();
+      lastMonitoringIntfNames.sort();
+
       // this will ensure SysManger on each process will be updated with correct info
       sem.emitLocalEvent({ type: Message.MSG_FW_FR_RELOADED });
 
@@ -704,7 +725,7 @@ class FireRouter {
 
       if (f.isMain()) {
         // zeek used to be bro
-        if (this.pcapRestartNeeded || !platform.isFireRouterManaged() && first) {
+        if (this.pcapRestartNeeded || !platform.isFireRouterManaged() && first || !_.isEqual(monitoringIntfNames, lastMonitoringIntfNames)) {
           sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
           this.pcapRestartNeeded = false;
         }
@@ -903,11 +924,15 @@ class FireRouter {
     return {code: resp.statusCode, body: resp.body};
   }
 
-  async getConfig(reload = false) {
+  async getConfig(reload = false, clone = true) {
     if (reload) {
       routerConfig = await getConfig();
     }
-    return JSON.parse(JSON.stringify(routerConfig))
+    if (!clone) {
+      return routerConfig;
+    } else {
+      return JSON.parse(JSON.stringify(routerConfig));
+    }
   }
 
   checkConfig(newConfig) {
@@ -1094,6 +1119,14 @@ class FireRouter {
     }
 
     return resp.body
+  }
+
+  async getPowerMode() {
+    return getPowerMode();
+  }
+
+  async setPowerMode(powerMode) {
+    return setPowerMode(powerMode);
   }
 
   getSysNetworkInfo() {

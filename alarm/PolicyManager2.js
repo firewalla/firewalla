@@ -133,7 +133,6 @@ class PolicyManager2 {
 
       this.enabledTimers = {}
       this.disableAllTimer = null;
-      this.domainBlockTimers = {};
 
       this.ipsetCache = null;
       this.ipsetCacheUpdateTime = null;
@@ -1080,36 +1079,7 @@ class PolicyManager2 {
     return policy && policy.appTimeUsage;
   }
 
-  async enforceIptablesOnly(policy) {
-    try {
-      if (await this.isDisableAll()) {
-        return policy; // temporarily by DisableAll flag
-      }
-      if (policy.disabled == 1 || !policy.iptables_only) {
-        // if policy is disabled or not iptables only, skip enforcing
-        return policy;
-      }
-      const action = policy.action || "block";
-      if (action !== "block" && action !== "app_block") {
-        return policy; // only block or app_block action is supported for iptables only policy
-      }
-      await this._enforce(policy);
-
-    } catch (err) {
-      log.error(`Failed to enforce iptables only policy ${policy.pid}`, err.message);
-    } finally {
-      const action = policy.action || "block";
-      if (action === "block" || action === "app_block") {
-        this.scheduleRefreshConnmark();
-      }
-    }
-
-  }
-
   async enforce(policy) {
-    if (policy.iptables_only) {
-      return this.enforceIptablesOnly(policy);
-    }
     try {
       if (await this.isDisableAll()) {
         return policy; // temporarily by DisableAll flag
@@ -1209,37 +1179,6 @@ class PolicyManager2 {
 
         const action = policy.action || "block";
         const type = policy["i.type"] || policy["type"]; //backward compatibility
-        if ((action === "block" || action === "app_block" || action === "disturb") && type === "category") {
-          if (policy.dnsmasq_only && !policy.managedBy) {
-            const tmpPolicy = Object.assign(Object.create(Policy.prototype), policy);
-            tmpPolicy.dnsmasq_only = false;
-            await this._enforce(tmpPolicy);
-
-            let timeout = 600;
-            if (policy.expire) {
-              const policyTimeout = policy.getExpireDiffFromNow();
-              if (policyTimeout < timeout) { // policy's expire time is less than 10 minutes donot change to domain block again.
-                return;
-              }
-            }
-            this.domainBlockTimers[policy.pid] = {
-              isTimerActive: true,
-              domainBlockTimer: setTimeout(async () => {
-                if (action !== "disturb") {
-                  // unenforce disturb policy will destroy tc filter/class/qdisc as well, which is unexpected
-                  tmpPolicy.iptables_only = true; // remove ip based iptables rules mapped from domains, domain-only iptables rules are left untouched
-                  await this._unenforce(tmpPolicy);
-                } else {
-                  // there may be a minor gap between unenforce and enforce, but it's okay for disturb action since connmark is still set on previously matched flows
-                  await this._unenforce(tmpPolicy);
-                  await this._enforce(policy);
-                }
-                this.domainBlockTimers[policy.pid].isTimerActive = false;
-              }, timeout * 1000)
-            };
-            return;
-          }
-        }
         await this._enforce(policy); // regular enforce
       }
     } finally {
@@ -1390,15 +1329,12 @@ class PolicyManager2 {
     return { intfs, tags }
   }
 
-
   async _enforce(policy) {
     log.info(`Enforce policy pid:${policy.pid}, type:${policy.type}, target:${policy.target}, scope:${policy.scope}, tag:${policy.tag}, action:${policy.action || "block"}`);
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    if (!policy.iptables_only) {
-      await this._refreshActivatedTime(policy)
-    }
+    await this._refreshActivatedTime(policy);
 
     if (this.isFirewallaOrCloud(policy) && (policy.action || "block") === "block") {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
@@ -1412,6 +1348,7 @@ class PolicyManager2 {
     if (action === "app_block")
       action = "block"; // treat app_block same as block, but using a different term for version compatibility, otherwise, block rule will always take effect in previous versions
 
+    const isBlockOrdisturb = (action === "block" || action === "disturb");
     if (policy.needPolicyDisturb()) {
       action = "qos";  // treat app_disturb same as qos
       qdisc = "netem";
@@ -1447,7 +1384,10 @@ class PolicyManager2 {
 
     let remoteSet4 = null;
     let remoteSet6 = null;
+    let connSet4 = null;
+    let connSet6 = null;
     let remoteSets = []; // only for multiple categories rule
+    let connSets = [];
     let localPortSet = null;
     let remotePortSet = null;
     let remotePositive = true;
@@ -1460,17 +1400,13 @@ class PolicyManager2 {
     let qosHandler = null;
     if (localPort) {
       localPortSet = `c_bp_${pid}_local_port`;
-      if (!policy.iptables_only) {
-        await ipset.create(localPortSet, "bitmap:port");
-        await Block.batchBlock(localPort.split(","), localPortSet);
-      }
+      await ipset.create(localPortSet, "bitmap:port");
+      await Block.batchBlock(localPort.split(","), localPortSet);
     }
     if (remotePort) {
       remotePortSet = `c_bp_${pid}_remote_port`;
-      if (!policy.iptables_only) {
-        await ipset.create(remotePortSet, "bitmap:port");
-        await Block.batchBlock(remotePort.split(","), remotePortSet);
-      }
+      await ipset.create(remotePortSet, "bitmap:port");
+      await Block.batchBlock(remotePort.split(","), remotePortSet);
     }
 
     if (upnp) {
@@ -1479,10 +1415,10 @@ class PolicyManager2 {
     }
 
     if (action === "qos") {
-      if (!policy.iptables_only) {
-        qosHandler = await qos.allocateQoSHanderForPolicy(pid);
-      }
+      qosHandler = await qos.allocateQoSHanderForPolicy(pid);
     }
+
+    const devOpts = { tags, intfs, scope, guids };
 
     switch (type) {
       case "ip":
@@ -1606,11 +1542,25 @@ class PolicyManager2 {
             // register ipset update in dnsmasq config so that it will immediately take effect in ip level
             await dnsmasq.addIpsetUpdateEntry([target], [remoteSet4, remoteSet6], pid);
             dnsmasq.scheduleRestartDNSService();
+          } else { //dnsmasq_only
+              if (isBlockOrdisturb) {
+                connSet4 = Block.getConnSet(pid);
+                connSet6 = Block.getConnSet6(pid);
+                await ipset.create(connSet4, "hash:ip,port,ip", false, {timeout: 300}).catch((err) => {
+                  log.error("Failed to create connSet for domain block", err);
+                });
+                await ipset.create(connSet6, "hash:ip,port,ip", true, {timeout: 300}).catch((err) => {
+                  log.error("Failed to create connSet for domain block", err);
+                });
+              }
           }
+          
           await domainBlock.blockDomain(target, {
-            noIpsetUpdate: policy.dnsmasq_only ? true : false,
+            domainOnly: policy.dnsmasq_only ? true : false,
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid),
+            connSet: isBlockOrdisturb ? connSet4 : null,
+            devOpts: devOpts,
             ipttl: ipttl
           });
         } else {
@@ -1620,10 +1570,16 @@ class PolicyManager2 {
               + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : ""))
               + simpleRuleSetMap[type];
             tlsHostSet = (security ? 'sec_' : '') + (action === "allow" ? 'allow_' : 'block_') + "domain_set";
+            let connSet = null;
+            if (policy.dnsmasq_only && isBlockOrdisturb) {
+              connSet = Block.getPredefinedConnSet(security, direction);
+            }
             await domainBlock.blockDomain(target, {
-              noIpsetUpdate: policy.dnsmasq_only ? true : false,
+              domainOnly: policy.dnsmasq_only ? true : false,
               exactMatch: policy.domainExactMatch,
               blockSet: set,
+              connSet: connSet,
+              devOpts: devOpts,
               tlsHostSet: tlsHostSet
             });
             if (!policy.dnsmasq_only) {
@@ -1696,7 +1652,7 @@ class PolicyManager2 {
             tlsHostSets.push(categoryUpdater.getHostSetName(target));
         }
 
-        if (["allow", "block", "route"].includes(action) && !policy.iptables_only) {
+        if (["allow", "block", "route"].includes(action)) {
           if (direction !== "inbound" && (action === "allow" || !localPort && !remotePort)) {
             await domainBlock.blockCategory({
               pid,
@@ -1721,13 +1677,13 @@ class PolicyManager2 {
           }
         }
 
+        
         for (const target of targets) {
-          if (!policy.iptables_only) {
-            await categoryUpdater.activateCategory(target);
-            if (policy.useBf) {
-              await categoryUpdater.activateCategory(categoryUpdater.getBfCategoryName(target));
-              categoryUpdater.addUseBfCategory(target);
-            }
+          await categoryUpdater.activateCategory(target);
+          categoryUpdater.updateDevCategoryMapping(target, devOpts, isBlockOrdisturb);
+          if (policy.useBf) {
+            await categoryUpdater.activateCategory(categoryUpdater.getBfCategoryName(target));
+            categoryUpdater.addUseBfCategory(target);
           }
 
           if (action === "allow") {
@@ -1741,13 +1697,13 @@ class PolicyManager2 {
               remoteSet4: categoryUpdater.getAggrIPSetName(target, true),
               remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(target, true)
             });
-          } else {
-            if (!policy.iptables_only) {
-              remoteSets.push({
-                remoteSet4: categoryUpdater.getAggrIPSetName(target, true),
-                remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(target, true)
+            if (isBlockOrdisturb) {
+              connSets.push({
+                connSet4: categoryUpdater.getConnectionIPSetName(target),
+                connSet6: categoryUpdater.getConnectionIPSetNameForIPV6(target)
               });
             }
+          } else {
             remoteSets.push({
               remoteSet4: categoryUpdater.getAggrIPSetName(target),
               remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(target)
@@ -1819,7 +1775,7 @@ class PolicyManager2 {
         throw new Error("Unsupported policy type");
     }
 
-    if (action === "match_group" && !policy.iptables_only) {
+    if (action === "match_group") {
       // add rule group link in dnsmasq config
       await dnsmasq.linkRuleToRuleGroup({ scope, intfs, tags, guids, pid }, targetRgId);
       dnsmasq.scheduleRestartDNSService();
@@ -1833,7 +1789,7 @@ class PolicyManager2 {
       wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
       subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
     }
-    if ((tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets)) && !policy.iptables_only) {
+    if ((tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets))) {
       let tlsInstalled = true;
       await platform.installTLSModules().catch((err) => {
         log.error(`Failed to install TLS module, will not apply rule ${pid} based on tls`, err.message);
@@ -1862,6 +1818,19 @@ class PolicyManager2 {
             await categoryUpdater.activateTLSCategory(target, protocol);
         }
       }
+    }
+
+    if (!_.isEmpty(connSets)) {
+      await Promise.all(connSets.map(async (connSet) => {
+        const { connSet4, connSet6 } = connSet;
+        await this.__applyRules({ ...commonOptions, connSet4, connSet6 }).catch((err) => {
+          log.error(`Failed to enforce rule ${pid} based on connection set`, err.message);
+        });
+      }));
+    } else if (connSet4 || connSet6) {
+      await this.__applyRules({ ...commonOptions, connSet4, connSet6 }).catch((err) => {
+        log.error(`Failed to enforce rule ${pid} based on connection set`, err.message);
+      });
     }
 
     if (skipFinalApplyRules) {
@@ -1957,16 +1926,6 @@ class PolicyManager2 {
         return AppTimeUsageManager.deregisterPolicy(policy);
       } else {
         this.notifyPolicyDeactivated(policy);
-        if (this.domainBlockTimers[policy.pid]) {
-          const isTimerActive = this.domainBlockTimers[policy.pid].isTimerActive;
-          clearTimeout(this.domainBlockTimers[policy.pid].domainBlockTimer);
-          delete this.domainBlockTimers[policy.pid];
-          if (isTimerActive) { // domain block timer is still running
-            const tmpPolicy = Object.assign(Object.create(Policy.prototype), policy);
-            tmpPolicy.dnsmasq_only = false;
-            return this._unenforce(tmpPolicy) // unenforce with dnsmasq_only=false
-          }
-        }
         return this._unenforce(policy) // regular unenforce
       }
     } finally {
@@ -1984,10 +1943,7 @@ class PolicyManager2 {
   async _unenforce(policy) {
     log.info(`Unenforce policy pid:${policy.pid}, type:${policy.type}, target:${policy.target}, scope:${policy.scope}, tag:${policy.tag}, action:${policy.action || "block"}`);
 
-    const iptables_only = policy["iptables_only"] || false;
-    if (!iptables_only) {
-      await this._removeActivatedTime(policy);
-    }
+    await this._removeActivatedTime(policy);
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
@@ -1998,6 +1954,7 @@ class PolicyManager2 {
     if (action === "app_block")
       action = "block";
 
+    const isBlockOrdisturb = (action === "block" || action === "disturb");
     if (policy.needPolicyDisturb()) {
       action = "qos";  // treat app_disturb same as qos
       qdisc = "netem";
@@ -2009,7 +1966,7 @@ class PolicyManager2 {
         tmpPolicy.dnsmasq_only = false;
         await this._unenforce(tmpPolicy);
       }
-    }    
+    }
 
     if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);
@@ -2026,6 +1983,8 @@ class PolicyManager2 {
       return;
     }
 
+    const devOpts = { tags, intfs, scope, guids };
+
     const security = policy.isSecurityBlockPolicy();
     const subPrio = this._getRuleSubPriority(type);
 
@@ -2034,6 +1993,9 @@ class PolicyManager2 {
     let remoteSet4 = null;
     let remoteSet6 = null;
     let remoteSets = []; // only for multiple categories rule
+    let connSets = [];
+    let connSet4 = null;
+    let connSet6 = null;
     let localPortSet = null;
     let remotePortSet = null;
     let remotePositive = true;
@@ -2045,15 +2007,11 @@ class PolicyManager2 {
     let qosHandler = null;
     if (localPort) {
       localPortSet = `c_bp_${pid}_local_port`;
-      if (!iptables_only) {
-        await Block.batchUnblock(localPort.split(","), localPortSet);
-      }
+      await Block.batchUnblock(localPort.split(","), localPortSet);
     }
     if (remotePort) {
       remotePortSet = `c_bp_${pid}_remote_port`;
-      if (!iptables_only) {
-        await Block.batchUnblock(remotePort.split(","), remotePortSet);
-      }
+      await Block.batchUnblock(remotePort.split(","), remotePortSet);
     }
 
     if (upnp) {
@@ -2172,11 +2130,17 @@ class PolicyManager2 {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
         if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || action == "snat" || (seq !== Constants.RULE_SEQ_REG && !security)) {
+          if (isBlockOrdisturb && policy.dnsmasq_only) {
+            connSet4 = Block.getConnSet(pid);
+            connSet6 = Block.getConnSet6(pid);
+          }
           await domainBlock.unblockDomain(target, {
-            noIpsetUpdate: policy.dnsmasq_only ? true : false,
+            domainOnly: policy.dnsmasq_only ? true : false,
             exactMatch: policy.domainExactMatch,
-            blockSet: Block.getDstSet(pid)
+            blockSet: Block.getDstSet(pid),
+            connSet: isBlockOrdisturb ? connSet4 : null
           });
+
         } else {
           if (["allow", "block"].includes(action)) {
             const set = (security ? 'sec_' : '')
@@ -2184,9 +2148,15 @@ class PolicyManager2 {
               + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : ""))
               + simpleRuleSetMap[type];
             tlsHostSet = (security ? 'sec_' : '') + (action === "allow" ? 'allow_' : 'block_') + "domain_set";
+            let connSet = null;
+            if (policy.dnsmasq_only && isBlockOrdisturb) {
+              connSet = Block.getPredefinedConnSet(security, direction);
+            }
             await domainBlock.unblockDomain(target, {
+              domainOnly: policy.dnsmasq_only ? true : false,
               exactMatch: policy.domainExactMatch,
               blockSet: set,
+              connSet: connSet,
               tlsHostSet: tlsHostSet
             });
             return;
@@ -2243,8 +2213,12 @@ class PolicyManager2 {
           for (const target of targets)
             tlsHostSets.push(categoryUpdater.getHostSetName(target));
         }
+        
+        for (const target of targets) {
+          categoryUpdater.updateDevCategoryMapping(target, devOpts, isBlockOrdisturb, false);
+        }
 
-        if (["allow", "block", "route"].includes(action) && !iptables_only) {
+        if (["allow", "block", "route"].includes(action)) {
           if (direction !== "inbound" && (action === "allow" || !localPort && !remotePort)) {
             await domainBlock.unblockCategory({
               pid,
@@ -2273,14 +2247,13 @@ class PolicyManager2 {
               remoteSet4: categoryUpdater.getAggrIPSetName(target, true),
               remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(target, true)
             });
-          } else {
-            // only remove _ag rules when iptables_only
-            if (!iptables_only) {
-              remoteSets.push({
-                remoteSet4: categoryUpdater.getAggrIPSetName(target, true),
-                remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(target, true)
+            if (isBlockOrdisturb) {
+              connSets.push({
+                connSet4: categoryUpdater.getConnectionIPSetName(target),
+                connSet6: categoryUpdater.getConnectionIPSetNameForIPV6(target)
               });
             }
+          } else {
             remoteSets.push({
               remoteSet4: categoryUpdater.getAggrIPSetName(target),
               remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(target)
@@ -2350,7 +2323,7 @@ class PolicyManager2 {
         throw new Error("Unsupported policy");
     }
 
-    if (action === "match_group" && !iptables_only) {
+    if (action === "match_group") {
       // remove rule group link in dnsmasq config
       await dnsmasq.unlinkRuleFromRuleGroup({ scope, intfs, tags, guids, pid }, targetRgId);
       dnsmasq.scheduleRestartDNSService();
@@ -2375,10 +2348,6 @@ class PolicyManager2 {
         log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
       });
     }
-    if (iptables_only) {
-      log.info(`Unenforce policy ${pid} with iptables_only=true, no further action is needed`);
-      return;
-    }
 
     if (tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets)) {
       if (!_.isEmpty(tlsHostSets)) {
@@ -2397,6 +2366,18 @@ class PolicyManager2 {
         await delay(200); // wait for 200 ms so that hostset file can be purged from proc fs
         await categoryUpdater.refreshTLSCategoryActivated();
       }
+    }
+    if (!_.isEmpty(connSets)) {
+      await Promise.all(connSets.map(async (connSet) => {
+        const { connSet4, connSet6 } = connSet;
+        await this.__applyRules({ ...commonOptions, connSet4, connSet6 }).catch((err) => {
+          log.error(`Failed to unenforce rule ${pid} based on connection set`, err.message);
+        });
+      }));
+    } else if (connSet4 || connSet6) {
+      await this.__applyRules({ ...commonOptions, connSet4, connSet6 }).catch((err) => {
+        log.error(`Failed to unenforce rule ${pid} based on connection set`, err.message);
+      });
     }
 
     if (localPortSet) {
@@ -2420,6 +2401,31 @@ class PolicyManager2 {
         if (!policy.dnsmasq_only) {
           await ipset.flush(remoteSet6);
           await ipset.destroy(remoteSet6);
+        }
+      }
+    }
+
+    if (policy.dnsmasq_only && (type === "domain" || type === "dns")) { // do not need to remove conn ipset for other types
+      if (!_.isEmpty(connSets)) {
+        await Promise.all(connSets.map(async (connSet) => {
+          const { connSet4, connSet6 } = connSet;
+          if (connSet4) {
+            await ipset.flush(connSet4).catch((_err) => {});
+            await ipset.destroy(connSet4).catch((_err) => {});
+          }
+          if (connSet6) {
+            await ipset.flush(connSet6).catch((_err) => {});
+            await ipset.destroy(connSet6).catch((_err) => {});
+          }
+        }));
+      } else {
+        if (connSet4) {
+          await ipset.flush(connSet4).catch((_err) => {});
+          await ipset.destroy(connSet4).catch((_err) => {});
+        }
+        if (connSet6) {
+          await ipset.flush(connSet6).catch((_err) => {});
+          await ipset.destroy(connSet6).catch((_err) => {});
         }
       }
     }
