@@ -186,30 +186,34 @@ class FlowCompressionSensor extends Sensor {
     }
     this.wanBlockBuilding = true;
     log.info(`Going to compress wan block flows`)
-    let completed = false
     const now = Date.now() / 1000
-    const options = {
-      ts: now,
-      audit: true,
-      count: 300,
-      macs: sysManager.getWanInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)
-    }
     await rclient.unlinkAsync(this.wanCompressedFlowsKey);
-    while (!completed && this.featureOn) {
-      try {
-        const flows = await flowTool.prepareRecentFlows(JSON.parse(JSON.stringify(options))) || []
-        if (!flows.length) break
-        const endTs = flows[flows.length - 1].ts;
+    const wanMacs = sysManager.getWanInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)
+    // get flows from 1 redis key at a time so there's no redis overhead
+    for (const mac of wanMacs) {
+      const options = {
+        ts: now,
+        audit: true,
+        count: 1000,
+        mac
+      }
+      let completed = false
+      while (!completed && this.featureOn) {
+        try {
+          const flows = await flowTool.prepareRecentFlows(JSON.parse(JSON.stringify(options))) || []
+          if (!flows.length) break
+          const endTs = flows[flows.length - 1].ts;
 
-        if (flows.length < options.count) {
+          if (flows.length < options.count) {
+            completed = true
+          } else {
+            options.ts = endTs
+          }
+          await this.appendAndSave(endTs, await this.compress(flows), 'wanBlock')
+        } catch (e) {
+          log.error(`Load flows error`, e)
           completed = true
-        } else {
-          options.ts = endTs
         }
-        await this.appendAndSave(endTs, await this.compress(flows), 'wanBlock')
-      } catch (e) {
-        log.error(`Load flows error`, e)
-        completed = true
       }
     }
     await rclient.expireAsync(this.wanCompressedFlowsKey, this.maxInterval);
