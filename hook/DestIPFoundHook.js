@@ -329,7 +329,7 @@ class DestIPFoundHook extends Hook {
             if (enrichedFlow)
               enrichedFlow.intel = intel;
             if(intel.host && ip) {
-              await dnsTool.addReverseDns(intel.host, [intel.ip]);
+              await dnsTool.addReverseDns(intel.host, ip);
             }
             return intel;
           }
