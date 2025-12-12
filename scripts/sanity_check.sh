@@ -512,11 +512,15 @@ check_tc_classes() {
         local RATE_LIMIT=$(redis-cli hget policy:${RULE_ID} rateLimit)
         local PRIORITY=$(redis-cli hget policy:${RULE_ID} priority)
         local DISABLED=$(redis-cli hget policy:${RULE_ID} disabled)
+        local parent_classid=1
         echo "PID: ${RULE_ID}, traffic direction: ${TRAFFIC_DIRECTION}, rate limit: ${RATE_LIMIT}, priority: ${PRIORITY}, disabled: ${DISABLED}"
+        if [[ $PLATFORM == "gold" ]]; then
+          parent_classid=10
+        fi
         if [[ $TRAFFIC_DIRECTION == "upload" ]]; then
-          tc class show dev ifb0 classid 1:0x${QOS_HANDLER_ID}
+          tc class show dev ifb0 classid ${parent_classid}:0x${QOS_HANDLER_ID}
         else
-          tc class show dev ifb1 classid 1:0x${QOS_HANDLER_ID}
+          tc class show dev ifb1 classid ${parent_classid}:0x${QOS_HANDLER_ID}
         fi
         echo ""
     done
