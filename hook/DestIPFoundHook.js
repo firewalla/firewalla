@@ -328,8 +328,8 @@ class DestIPFoundHook extends Hook {
             log.debug('return cached intel:', intel)
             if (enrichedFlow)
               enrichedFlow.intel = intel;
-            if(intel.host && ip) {
-              await dnsTool.addReverseDns(intel.host, ip);
+            if(intel.host) {
+              await dnsTool.addReverseDns(intel.host, [ip]);
             }
             return intel;
           }

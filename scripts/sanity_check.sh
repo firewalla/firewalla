@@ -476,7 +476,7 @@ check_system_config() {
     print_config "Family" "${SP[family]}"
     print_config "DoH" "${SP[doh]}"
     print_config "Unbound" "${SP[unbound]}"
-    print_config "Monitor" "${SP[monitor]}"
+    print_config "Monitor" "${SP[monitor]:=true}"
     print_config "Emergency Access" "${SP[acl]}"
     print_config "vpnAvailable" "${SP[vpnAvailable]}"
     print_config "vpn" "${SP[vpn]}"

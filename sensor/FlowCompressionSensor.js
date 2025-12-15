@@ -1,4 +1,4 @@
-/*    Copyright 2021-2024 Firewalla Inc.
+/*    Copyright 2021-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,27 +19,28 @@ const log = require('../net2/logger.js')(__filename)
 const _ = require('lodash');
 const Sensor = require('./Sensor.js').Sensor
 const featureName = 'compress_flows'
-const Promise = require('bluebird');
+const util = require('util')
 const zlib = require('zlib');
 const extensionManager = require('./ExtensionManager.js')
 const rclient = require('../util/redis_manager').getRedisClient();
-const deflateAsync = Promise.promisify(zlib.deflate);
+const deflateAsync = util.promisify(zlib.deflate);
 const sem = require('./SensorEventManager.js').getInstance();
 const delay = require('../util/util.js').delay;
 const SPLIT_STRING = "\n";
 const platform = require('../platform/PlatformLoader.js').getPlatform();
-const fc = require('../net2/config.js');
 const sysManager = require('../net2/SysManager.js');
 const Constants = require('../net2/Constants.js');
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
+const HostManager = require("../net2/HostManager.js");
+const hostManager = new HostManager();
 
 class FlowCompressionSensor extends Sensor {
-  constructor() {
-    super()
+  constructor(config) {
+    super(config)
     this.refreshInterval = _.get(this.config, 'refreshInterval', 5) * 60 * 1000
     this.maxCount = (this.config && this.config.maxCount * platform.getCompresseCountMultiplier()) || 10000
     this.maxMem = (this.config && this.config.maxMem * platform.getCompresseMemMultiplier()) || 20 * 1024 * 1024
-    this.lastestTsKey = "compressed:flows:lastest:ts"
+    this.latestTsKey = "compressed:flows:latest:ts"
     this.wanCompressedFlowsKey = "compressed:wanblock:flows"
     this.buildingKey = "compressed:building"
     this.stepKey = "compressed:step:ts"
@@ -100,7 +101,7 @@ class FlowCompressionSensor extends Sensor {
 
   async apiRun() {
     extensionManager.onGet("compressedflowsBuildStatus", async (msg, data) => {
-      const lastestTs = Number(await rclient.getAsync(this.lastestTsKey) || 0)
+      const lastestTs = Number(await rclient.getAsync(this.latestTsKey) || 0)
       const building = await rclient.getAsync(this.buildingKey) == "1"
       return { ts: lastestTs, building: building }
     })
@@ -147,8 +148,8 @@ class FlowCompressionSensor extends Sensor {
       for (let ts = begin; ts < end; ts += this.step) {
         if (!this.featureOn) break;
         await this.loadFlows(ts, ts + this.step)
+        await this.checkAndCleanMem()
       }
-      await this.checkAndCleanMem()
       log.info(`Normal compressed flows build complted, cost ${(new Date() / 1000 - now).toFixed(2)}`)
     } catch (e) {
       log.error(`Compress flows error`, e)
@@ -164,12 +165,11 @@ class FlowCompressionSensor extends Sensor {
   async appendAndSave(ts, base64Str, type) {
     const key = type == "wanBlock" ? this.wanCompressedFlowsKey : this.getKey(ts);
     base64Str && await rclient.appendAsync(key, base64Str + SPLIT_STRING);
-    type != "wanBlock" && await rclient.setAsync(this.lastestTsKey, ts);
   }
 
   async getBuildingWindow(now) {
     const nowTickTs = Math.ceil(now / this.step) * this.step;
-    let lastestTs = Number(await rclient.getAsync(this.lastestTsKey) || 0)
+    let lastestTs = Number(await rclient.getAsync(this.latestTsKey) || 0)
     if (nowTickTs - lastestTs > this.maxInterval) {
       lastestTs = nowTickTs - this.maxInterval
     }
@@ -186,30 +186,34 @@ class FlowCompressionSensor extends Sensor {
     }
     this.wanBlockBuilding = true;
     log.info(`Going to compress wan block flows`)
-    let completed = false
     const now = Date.now() / 1000
-    const options = {
-      ts: now,
-      audit: true,
-      count: 300,
-      macs: sysManager.getWanInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)
-    }
     await rclient.unlinkAsync(this.wanCompressedFlowsKey);
-    while (!completed && this.featureOn) {
-      try {
-        const flows = await flowTool.prepareRecentFlows(JSON.parse(JSON.stringify(options))) || []
-        if (!flows.length) break
-        const endTs = flows[flows.length - 1].ts;
+    const wanMacs = sysManager.getWanInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)
+    // get flows from 1 redis key at a time so there's no redis overhead
+    for (const mac of wanMacs) {
+      const options = {
+        ts: now,
+        audit: true,
+        count: 1000,
+        mac
+      }
+      let completed = false
+      while (!completed && this.featureOn) {
+        try {
+          const flows = await flowTool.prepareRecentFlows(JSON.parse(JSON.stringify(options))) || []
+          if (!flows.length) break
+          const endTs = flows[flows.length - 1].ts;
 
-        if (flows.length < options.count) {
+          if (flows.length < options.count) {
+            completed = true
+          } else {
+            options.ts = endTs
+          }
+          await this.appendAndSave(endTs, await this.compress(flows), 'wanBlock')
+        } catch (e) {
+          log.error(`Load flows error`, e)
           completed = true
-        } else {
-          options.ts = endTs
         }
-        await this.appendAndSave(endTs, await this.compress(flows), 'wanBlock')
-      } catch (e) {
-        log.error(`Load flows error`, e)
-        completed = true
       }
     }
     await rclient.expireAsync(this.wanCompressedFlowsKey, this.maxInterval);
@@ -221,41 +225,56 @@ class FlowCompressionSensor extends Sensor {
     log.verbose(`Going to load flows between ${new Date(begin * 1000)} - ${new Date(end * 1000)}`)
     // clean legacy data generated by api caller
     await this.clean(end)
-    let completed = false
-    const options = {
-      exclude: [ { device: sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`) } ],
+    // if end is beyond now, use now as the ts to align results from each device
+    const queryEnd = end > Date.now() / 1000 ? Date.now() / 1000 : end
+    const baseOptions = {
       begin: begin,
-      end: end,
-      regular: true,
-      audit: true,
-      local: true,
-      localAudit: true,
-      count: 300,
+      end: queryEnd,
+      count: 1000,
       asc: true
     }
-    while (!completed) {
+    const GUIDs = hostManager.getAllMonitorables().map(m => m.getGUID())
+    // get flows from 1 redis key at a time so there's no redis overhead
+    // MSP don't care about the order as long as all flow before the highest ts is included
+    for (const GUID of GUIDs) {
       if (!this.featureOn) {
         log.warn(this.featureName, 'disabled, stop building')
+        // clean latest keys as the data is incomplete
+        await this.clean(end)
+        break
       }
-      try {
-        const flows = await flowTool.prepareRecentFlows(JSON.parse(JSON.stringify(options))) || []
-        if (!flows.length) break
-        const endTs = flows[flows.length - 1].ts;
+      const allFlows = []
+      for (const type of ['regular', 'audit', 'local', 'localAudit']) {
+        const options = Object.assign({ mac: GUID }, baseOptions)
+        options[type] = true
+        let completed = false
 
-        if (flows.length < options.count) {
-          completed = true
-        } else {
-          options.begin = endTs
+        while (!completed) {
+          try {
+            const flows = await flowTool.prepareRecentFlows(JSON.parse(JSON.stringify(options))) || []
+            if (!flows.length) break
+            const endTs = flows[flows.length - 1].ts;
+
+            if (flows.length < options.count) {
+              completed = true
+            } else {
+              options.begin = endTs
+            }
+            log.debug(begin, queryEnd, `Append ${GUID} ${type} ${flows.length} flows to ${this.getKey(end)}`)
+            allFlows.push(...flows.filter(f => type.startsWith('local') ? f.fd == 'in' : true))
+          } catch (e) {
+            log.error(`Load flows error`, e)
+            completed = true
+          }
         }
-        log.verbose(begin, end, `Append ${flows.length} flows to ${this.getKey(end)}`)
-        await this.appendAndSave(end, await this.compress(flows))
-      } catch (e) {
-        log.error(`Load flows error`, e)
-        completed = true
       }
+      await this.appendAndSave(end, await this.compress(allFlows))
     }
+    // only update latest TS if the hour slot is fully built
+    await rclient.setAsync(this.latestTsKey, queryEnd);
     await rclient.expireAsync(this.getKey(end), this.maxInterval);
   }
+
   async compress(flows) {
     const str = JSON.stringify(flows)
     const deflateBuffer = await deflateAsync(str)
