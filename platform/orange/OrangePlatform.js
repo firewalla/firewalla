@@ -520,7 +520,7 @@ class OrangePlatform extends Platform {
 
   getZeekPcapBufsize() {
     return {
-      eth: 32,
+      eth: 24,
       tun_fwvpn: 16,
       wg: 16,
       wlan: 16,
