@@ -517,6 +517,15 @@ class OrangePlatform extends Platform {
   isPDOSupported() {
     return true;
   }
+
+  getZeekPcapBufsize() {
+    return {
+      eth: 32,
+      tun_fwvpn: 16,
+      wg: 16,
+      wlan: 16,
+    }
+  }
 }
 
 module.exports = OrangePlatform;
