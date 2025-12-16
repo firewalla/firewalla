@@ -88,6 +88,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       // key: category, value: map of sigId to map of hashkey string to sig detected server entry
       // {category: {sigId: {hashkey: sigEntry}, ...}, ...}
       this.effectiveCategorySigDtSrvs = new Map();
+      this.lastFlowSignatureConfigUpdate = 0;
 
       this.excludedDomains = {
         "av": [
@@ -219,7 +220,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
               sem.emitEvent(event);
             }, 5000);
           } else {
-            await this.updateFlowSignatureList().catch((err) => {
+            await this.updateFlowSignatureList(true).catch((err) => {
               log.error(`Failed to update flow signature list`, err.message);
             });
           }
@@ -235,41 +236,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
           await this.refreshAllCategoryRecords()
           this.inited = true;
         });
-
-        // regularly clean up obsolete sig detected servers from ipset
-        setInterval(async () => {
-          await this.removeObsoleteSigDetectedServers().catch((err) => {
-            log.error(`Failed to remove obsolete sig detected servers`, err.message);
-          });
-        }, 60 * 60 * 1000 * 1); // clean up every 1 hour
       }
     }
 
     return instance
   }
-
-  async removeObsoleteSigDetectedServers() {
-
-    for (const [category, categoryMap] of this.effectiveCategorySigDtSrvs.entries()) {
-
-      const sigDetectedServerMap = await this.getSigDetectedServers(category);
-      for (const [sigId, sigIdMap] of categoryMap.entries()) {
-        for (const [srvKey, srvEntry] of sigIdMap.entries()) {
-          if (!sigDetectedServerMap.has(srvKey)) {
-            await this.unblockSigDtServer(category, srvEntry);
-            sigIdMap.delete(srvKey);
-          }
-        }
-        if (sigIdMap.size === 0) {
-          categoryMap.delete(sigId);
-          if (categoryMap.size === 0) {
-            this.effectiveCategorySigDtSrvs.delete(category);
-          }
-        }
-      }
-    }
-  }
-
 
   async rebuildDomainPatternTrie() {
     const trie = new DomainTrie();
@@ -969,7 +940,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const results = await rclient.zrangeAsync(this.getCategorySigDtSvrKey(category), 0, -1).catch(err => []);
     for (const result of results) {
       const se = JSON.parse(result);
-      const key = `${se.sigId}:${se.id}:${se.port.start}:${se.port.end}`;
+      const key = this.getSigDtSvrKey(se);
       if (!srvMap.has(key)) {
         srvMap.set(key, se);
       }
@@ -1033,14 +1004,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const sigCfg = this.getSignatureConfig(sigId);
     if (!sigCfg || !sigCfg.categories || !_.isArray(sigCfg.categories) || !sigCfg.categories.includes(category)) {
       log.info(`Signature ID ${sigId} is not found or not matched with signature config, skip adding sig detected server ${sigEntry.id} to category ${category}`);
-      if (sigCfg.blockMode )
       return;
     }
     let serverEntry  = this.composeSigDetectedServerEntry(remoteAddr, protocol, remotePorts, sigId);
     const now = Math.floor(Date.now() / 1000);
     await rclient.zaddAsync(this.getCategorySigDtSvrKey(category), now, JSON.stringify(serverEntry));
     
-    log.debug(`Add a ${category} sig detected server: ${serverEntry.id} port: ${serverEntry.port}, proto: ${serverEntry.proto}, sigId: ${serverEntry.sigId}`)
+    log.debug(`Add a ${category} sig detected server:`, JSON.stringify(serverEntry, null, 2));
 
     // IP address not need to update dnsmasq config
     // skip ipset config update if category is not activated
@@ -1064,10 +1034,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async removeSigDtServer(category, serverEntry) {
-    const cKey = this.getCategorySigDtSvrKey(category, serverEntry);
+    const cKey = this.getCategorySigDtSvrKey(category);
     await rclient.zremAsync(cKey, JSON.stringify(serverEntry));
 
-    const categoryMap = this.effectiveCategorySigDtSrvs.get(serverEntry.category);
+    const categoryMap = this.effectiveCategorySigDtSrvs.get(category);
     if (categoryMap && categoryMap.has(serverEntry.sigId)) {
       const sigIdMap = categoryMap.get(serverEntry.sigId);
       const srvKey = this.getSigDtSvrKey(serverEntry);
@@ -1077,10 +1047,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
           categoryMap.delete(serverEntry.sigId);
         }
         if (categoryMap.size === 0) {
-          this.effectiveCategorySigDtSrvs.delete(serverEntry.category);
+          this.effectiveCategorySigDtSrvs.delete(category);
         }
-        if (!this.isActivated(serverEntry.category)) { // shouldn't happen
-          log.warn(`Category ${serverEntry.category} is not activated, skip removing sig detected server ${serverEntry.id} port: ${serverEntry.port}, proto: ${serverEntry.proto}, sigId: ${serverEntry.sigId} from ipset`);
+        if (!this.isActivated(category)) { // shouldn't happen
+          log.info(`Category ${category} is not activated, skip removing sig detected server from ipset`, JSON.stringify(serverEntry, null, 2));
           return;
         }
         await this.unblockSigDtServer(category, serverEntry);
@@ -1107,9 +1077,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
   async unblockSigDtServer(category, serverEntry) {
     const {id, port, isStatic} = serverEntry;
     let blockSet = this.getDomainPortIPSetName(category, isStatic)
-    await Block.batchUnblock([id], port, blockSet).catch((err) => {
-      log.error(`Failed to batch update domain ipset ${blockSet} for ${id}`, err.message);
-      });
+
+    await Block.batchUnblockNetPort([id], port, blockSet).catch((err) => {
+      log.error(`Failed to batch update sig detected server ipset ${blockSet} for ${id}`, err.message);
+    });
   }
 
   async updateDomain(category, domain, isPattern, add = true) {
@@ -1617,6 +1588,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
     }
 
+    await this.updateFlowSignatureList();
+
     const newSigDtSrvMap = await this.getSigDetectedServerMap(category);
     const categoryMap = this.effectiveCategorySigDtSrvs.get(category);
     if (categoryMap) {
@@ -1670,7 +1643,17 @@ class CategoryUpdater extends CategoryUpdaterBase {
           await this.updateIPSetByDomainPort(category, v, { useTemp: true, isStatic: v.isStatic, needComment: ipsetNeedComment });
         }
       }
+      this.effectiveCategorySigDtSrvs.set(category, new Map());
       for (const se of newSigDtSrvMap.values()) {
+        const categoryMap = this.effectiveCategorySigDtSrvs.get(category);
+        if (!categoryMap.has(se.sigId)) {
+          categoryMap.set(se.sigId, new Map());
+        }
+        const sigIdMap = categoryMap.get(se.sigId);
+        const key = this.getSigDtSvrKey(se);
+        if (!sigIdMap.has(key)) {
+          sigIdMap.set(key, se);
+        }
         await this.blockSigDtServer(category, se, true);
       }
       await this.filterIPSetByDomain(category, { useTemp: true });
@@ -1706,21 +1689,21 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
     this.effectiveCategoryDomains[category] = domainMap;
 
-    
-    // this.effectiveCategorySigDtSrvs[category] = new Map();
-    for (const se of newSigDtSrvMap.values()) {
-      if (!this.effectiveCategorySigDtSrvs.has(category)) {
-        this.effectiveCategorySigDtSrvs.set(category, new Map());
-      }
-      const categoryMap = this.effectiveCategorySigDtSrvs.get(category);
-      if (!categoryMap.has(se.sigId)) {
-        categoryMap.set(se.sigId, new Map());
-      }
-      const sigIdMap = categoryMap.get(se.sigId);
-      const key = this.getSigDtSvrKey(se);
-      if (!sigIdMap.has(key)) {
-        sigIdMap.set(key, se);
-        await this.blockSigDtServer(se, true);
+    if (ondemand) {
+      for (const se of newSigDtSrvMap.values()) {
+        if (!this.effectiveCategorySigDtSrvs.has(category)) {
+          this.effectiveCategorySigDtSrvs.set(category, new Map());
+        }
+        const categoryMap = this.effectiveCategorySigDtSrvs.get(category);
+        if (!categoryMap.has(se.sigId)) {
+          categoryMap.set(se.sigId, new Map());
+        }
+        const sigIdMap = categoryMap.get(se.sigId);
+        const key = this.getSigDtSvrKey(se);
+        if (!sigIdMap.has(key)) {
+          sigIdMap.set(key, se);
+          await this.blockSigDtServer(category, se, true);
+        }
       }
     }
 
@@ -1903,8 +1886,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await rclient.setAsync(this.getCategoryStrategyKey(category), strategy);
     return;
   }
-
-  async updateFlowSignatureList() {
+  
+  async updateFlowSignatureList(force = false) {
+    if (!force && Math.floor(Date.now() / 1000) - this.lastFlowSignatureConfigUpdate < 60 * 60 * 1000) {
+      return;
+    }
     const flowSignatureConfig = await rclient.getAsync(Constants.REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG).then(result => result && JSON.parse(result)).catch(err => null);
     if (!flowSignatureConfig) {
       log.warn("Flow signature config is not found in redis");
@@ -1918,8 +1904,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       if (!sigCfg || (origBlockType == "ipPort" && sigCfg.blockType != "ipPort") ) {
         //remove related servers from ipset
         log.info(`Flow signature config for ${sigId} is removed, deleting related servers from ipset`);
-        const sigIdMap = this.effectiveCategorySigDtSrvs.get(sigId);
-        
+
         if (sigConfig.categories && sigConfig.categories.length > 0) {
           for (const category of sigConfig.categories) {
             const categoryMap = this.effectiveCategorySigDtSrvs.get(category);
@@ -1942,6 +1927,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
 
     this.flowSignatureConfig = flowSignatureConfig;
+    this.lastFlowSignatureConfigUpdate = Math.floor(Date.now() / 1000);
     return;
   }
 
