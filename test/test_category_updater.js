@@ -72,7 +72,7 @@ describe('Test CategoryUpdater.processSignatureData', function() {
     const sigData = {
       sigId: 'non_existent_sig',
       remoteAddr: '1.2.3.4',
-      remotePorts: 443
+      remotePorts: [443]
     };
 
     // Save original method
@@ -107,7 +107,7 @@ describe('Test CategoryUpdater.processSignatureData', function() {
     const sigData = {
       sigId: 'sig_without_categories',
       remoteAddr: '1.2.3.4',
-      remotePorts: 443
+      remotePorts: [443]
     };
 
     categoryUpdater.flowSignatureConfig = {
@@ -140,7 +140,7 @@ describe('Test CategoryUpdater.processSignatureData', function() {
     const sigData = {
       sigId: 'test_sig',
       remoteAddr: '1.2.3.4',
-      remotePorts: 443
+      remotePorts: [443]
     };
 
     categoryUpdater.flowSignatureConfig = {
@@ -169,7 +169,7 @@ describe('Test CategoryUpdater.processSignatureData', function() {
     const sigData = {
       sigId: 'test_sig',
       remoteAddr: '1.2.3.4',
-      remotePorts: 443
+      remotePorts: [443]
     };
 
     categoryUpdater.flowSignatureConfig = {
@@ -199,7 +199,7 @@ describe('Test CategoryUpdater.processSignatureData', function() {
     const sigData = {
       sigId: 'test_sig',
       remoteAddr: '1.2.3.4',
-      remotePorts: 443
+      remotePorts: [443]
     };
 
     categoryUpdater.flowSignatureConfig = {
@@ -249,7 +249,7 @@ describe('Test CategoryUpdater.processSignatureData', function() {
     const sigData = {
       sigId: 'test_sig',
       remoteAddr: '1.2.3.4',
-      remotePorts: 443
+      remotePorts: [443]
     };
 
     categoryUpdater.flowSignatureConfig = {
@@ -285,7 +285,7 @@ describe('Test CategoryUpdater.processSignatureData', function() {
     const sigData = {
       sigId: 'test_sig',
       remoteAddr: '1.2.3.4',
-      remotePorts: 443
+      remotePorts: [443]
     };
 
     categoryUpdater.flowSignatureConfig = {
@@ -329,7 +329,7 @@ describe('Test CategoryUpdater.processSignatureData', function() {
     const sigData = {
       sigId: 'test_sig',
       remoteAddr: '1.2.3.4',
-      remotePorts: 443
+      remotePorts: [443]
     };
 
     categoryUpdater.flowSignatureConfig = {
@@ -356,17 +356,14 @@ describe('Test CategoryUpdater.processSignatureData', function() {
 
     expect(callCounts.addSigDetectedServer).to.equal(1);
     expect(capturedCategory).to.equal('test_category');
-    expect(capturedSigData.sigId).to.equal('test_sig');
-    expect(capturedSigData.remoteAddr).to.equal('1.2.3.4');
-    expect(capturedSigData.remotePorts).to.equal(443);
-    expect(capturedSigData.protocol).to.equal('tcp');
+    expect(capturedSigData).to.deep.equal(sigData);
   });
 
   it('should process multiple categories', async () => {
     const sigData = {
       sigId: 'test_sig',
       remoteAddr: '1.2.3.4',
-      remotePorts: 443
+      remotePorts: [443]
     };
 
     categoryUpdater.flowSignatureConfig = {
@@ -397,7 +394,7 @@ describe('Test CategoryUpdater.processSignatureData', function() {
     const sigData = {
       sigId: 'test_sig',
       remoteAddr: '1.2.3.4',
-      remotePorts: 443
+      remotePorts: [443]
     };
 
     categoryUpdater.flowSignatureConfig = {
@@ -435,7 +432,7 @@ describe('Test CategoryUpdater.processSignatureData', function() {
     const sigData = {
       sigId: 'test_sig',
       remoteAddr: '1.2.3.4',
-      remotePorts: 443
+      remotePorts: [443]
     };
 
     categoryUpdater.flowSignatureConfig = {
@@ -475,7 +472,7 @@ describe('Test CategoryUpdater.processSignatureData', function() {
     const sigData = {
       sigId: 'test_sig',
       remoteAddr: '1.2.3.4',
-      remotePorts: 443
+      remotePorts: [443]
     };
 
     categoryUpdater.flowSignatureConfig = {
