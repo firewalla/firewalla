@@ -56,6 +56,10 @@ class CategoryUpdaterBase {
     return `dynamicCategoryDomain:${category}`
   }
 
+  getCategorySigDtSvrKey(category) {
+    return `category:${category}:sigDetectedServers`
+  }
+
   getCategoryDataListKey(category) {
     return `category:${category}:data`;
   }
