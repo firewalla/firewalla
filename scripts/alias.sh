@@ -164,6 +164,8 @@ alias ttwan='sudo /home/pi/firewalla/scripts/test_wan.sh'
 
 alias llas='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/list_ap_stations.sh -o /tmp/list_ap_stations.sh 2>/dev/null; bash /tmp/list_ap_stations.sh'
 
+alias diagrad='curl -sL https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/diag_radius.sh  2>/dev/null | bash -s --'
+
 # view redis hash
 function vh {
   echo | column -n 2>/dev/null && COLUMN_OPT='column -n' || COLUMN_OPT='column'
