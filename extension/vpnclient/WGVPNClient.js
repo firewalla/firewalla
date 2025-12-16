@@ -341,6 +341,16 @@ class WGVPNClient extends VPNClient {
   _addObfuscationOptions(entries, config) {
     // for wireguard, no obfuscation options
   }
+
+  async _getRemoteIP6() {
+    //For a Layer 3 tunnel like WireGuard,
+    //the kernel doesn't actually care about the specific MAC address of the next hop (because it doesn't need ARP/NDP).
+    //It only needs a syntactically valid IP address that conforms to the link specifications
+    //to satisfy the "nexthop via..." format requirement.
+    // return null;
+    return "fe80::1"
+  }
+
 }
 
 module.exports = WGVPNClient;
