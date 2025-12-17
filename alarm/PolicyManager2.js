@@ -1373,7 +1373,7 @@ class PolicyManager2 {
     tags = tags.filter((_, index) => tagExistenceChecks[index])
     // invalid tag should not continue
     if (tag && tag.length && !tags.length && !intfs.length) {
-      log.error(`Unknown policy tags format policy id: ${pid}, stop enforce policy`);
+      log.verbose(`Unknown policy tags format policy id: ${pid}, stop enforce policy`);
       return;
     }
 
