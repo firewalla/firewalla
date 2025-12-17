@@ -54,6 +54,7 @@ const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
+const Constants = require('../net2/Constants.js');
 
 const hashFunc = function (obj) {
   const str = JSON.stringify(obj);
@@ -83,7 +84,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
       this.bfOrigCategoryMap = {};
       this.origBfCategoryMap = {};
       this.loadCategoryBfParts();
-      this.flowSignatureConfigMap = new Map();
+      this.flowSignatureConfig = {};
+      // key: category, value: map of sigId to map of hashkey string to sig detected server entry
+      // {category: {sigId: {hashkey: sigEntry}, ...}, ...}
+      this.effectiveCategorySigDtSrvs = new Map();
+      this.lastFlowSignatureConfigUpdate = 0;
 
       this.excludedDomains = {
         "av": [
@@ -208,6 +213,19 @@ class CategoryUpdater extends CategoryUpdaterBase {
           }
         });
 
+        sem.on('FlowSignatureListUpdated', async (event) => {
+          if (!this.inited) {
+            log.info("Category updater is not ready yet, will retry in 5 seconds", event.category);
+            setTimeout(() => {
+              sem.emitEvent(event);
+            }, 5000);
+          } else {
+            await this.updateFlowSignatureList(true).catch((err) => {
+              log.error(`Failed to update flow signature list`, err.message);
+            });
+          }
+        });
+
         sem.once('IPTABLES_READY', async () => {
           log.info("iptables is ready");
           await this.refreshCustomizedCategories();
@@ -217,7 +235,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
           }, 60 * 60 * 1000 * 4) // update records every 4 hours 
           await this.refreshAllCategoryRecords()
           this.inited = true;
-        })
+        });
       }
     }
 
@@ -253,7 +271,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   resetUpdaterState() {
     this.effectiveCategoryDomains = {};
-    this.effectiveCategoryAdresses = {};
+
+    this.effectiveCategorySigDtSrvs = new Map();
 
     this.activeCategories = {
       // "default_c": 1
@@ -916,23 +935,24 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return false
   }
 
-  getDynamicAddressCategoryKey(category) {
-    return `dynamicCategoryAddress:${category}`
-  }
-
-  isDynamicAddressCategoryExists(category) {
-    return rclient.existsAsync(this.getDynamicAddressCategoryKey(category));
-  }
-
-  async getDynamicAddresses(category) {
-    return  rclient.zrangeAsync(this.getDynamicAddressCategoryKey(category), 0, -1)
+  async getSigDetectedServerMap(category) {
+    const srvMap = new Map();
+    const results = await rclient.zrangeAsync(this.getCategorySigDtSvrKey(category), 0, -1).catch(err => []);
+    for (const result of results) {
+      const se = JSON.parse(result);
+      const key = this.getSigDtSvrKey(se);
+      if (!srvMap.has(key)) {
+        srvMap.set(key, se);
+      }
+    }
+    return srvMap;
   }
 
   // entry format follow the same rule as domain's
   // example:
-  // "{\"type\":\"IP\",\"id\":\"1.1.1.1\",\"port\":{\"proto\":\"udp\",\"start\":443,\"end\":443},\"pcount\":1,\"domainOnly\":true}"
-  composeAddressEntry(address, proto, port) {
-    if (!address || !proto || !port) {
+  // "{\"type\":\"IP\",\"id\":\"1.1.1.1\",\"port\":{\"proto\":\"udp\",\"start\":443,\"end\":443},\"pcount\":1,\"domainOnly\":true, \"sigId\":\"sig_12345\"}"
+  composeSigDetectedServerEntry(address, proto, port, sigId) {
+    if (!address || !proto || !port || !sigId) {
       return
     }
 
@@ -952,70 +972,115 @@ class CategoryUpdater extends CategoryUpdaterBase {
     entry.domainOnly = true;  // do not need to translate ip address
 
     entry.isStatic = true;
+    entry.sigId = sigId;
 
     return entry;
   }
 
+  getSigDtSvrKey(serverEntry) {
+    return `${serverEntry.sigId}:${serverEntry.id}:${serverEntry.port.start}:${serverEntry.port.end}`;
+  }
 
-  // might need support multi-port support or port range in the future?
-  async addDynamicCategoryAddress(category, targetAddress, proto, targetPort) {
-    if (!category || !targetAddress || !proto) {
+
+
+  async addSigDetectedServer(category, sigData) {
+    const {remoteAddr, protocol, remotePorts, sigId} = sigData;
+
+    if (!category || !remoteAddr || !protocol || !sigId) {
       return
     }
     let ipVersion = "";
 
-    if (!net.isIPv4(targetAddress) && !net.isIPv6(targetAddress)){
+    if (!net.isIPv4(remoteAddr) && !net.isIPv6(remoteAddr)){
       return
     }
-    if (proto != "tcp" && proto != "udp") {  //bad proto
+    if (protocol != "tcp" && protocol != "udp") {  //bad protocol
       return
     }
-    if (!this.isValidPort(targetPort)) {
+    if (!this.isValidPort(remotePorts)) {
       return
     }
-    const key = this.getDynamicAddressCategoryKey(category)
 
-
-    let addrEntry  = this.composeAddressEntry(targetAddress, proto, targetPort);
-    const addressObj = { id: addrEntry.id, port: addrEntry.port, isStatic: true }
-    let data = JSON.stringify(addressObj)
-
-
-    // use current time as score for zset, it will be used to expire address
-    const now = Math.floor(Date.now() / 1000)
-    await rclient.zaddAsync(key, now, data)
-
+    const sigCfg = this.getSignatureConfig(sigId);
+    if (!sigCfg || !sigCfg.categories || !_.isArray(sigCfg.categories) || !sigCfg.categories.includes(category)) {
+      log.info(`Signature ID ${sigId} is not found or not matched with signature config, skip adding sig detected server ${sigEntry.id} to category ${category}`);
+      return;
+    }
+    let serverEntry  = this.composeSigDetectedServerEntry(remoteAddr, protocol, remotePorts, sigId);
+    const now = Math.floor(Date.now() / 1000);
+    await rclient.zaddAsync(this.getCategorySigDtSvrKey(category), now, JSON.stringify(serverEntry));
     
-    log.debug(`Add a ${category} targetAddress: ${targetAddress} targetPort: ${targetPort}`)
+    log.debug(`Add a ${category} sig detected server:`, JSON.stringify(serverEntry, null, 2));
 
     // IP address not need to update dnsmasq config
     // skip ipset config update if category is not activated
     if (this.isActivated(category)) {
-      if (!this.effectiveCategoryAdresses[category]) {
-        this.effectiveCategoryAdresses[category] = new Map();
+      if (!this.effectiveCategorySigDtSrvs.has(category)) {
+        this.effectiveCategorySigDtSrvs.set(category, new Map());
       }
-      this.effectiveCategoryAdresses[category].set(hashFunc(addressObj), addressObj);
-      // await domainBlock.blockDomain(addrEntry.id, { ondemand: true, blockSet: this.getDomainPortIPSetName(category, addrEntry.isStatic), port: addrEntry.port, needComment: ipsetNeedComment });
-      
-      this.blockAddress(category, addrEntry.id, addrEntry.port, addrEntry.isStatic)
-    }
 
+      const categoryMap = this.effectiveCategorySigDtSrvs.get(category);
+      if (!categoryMap.has(sigId)) {
+        categoryMap.set(sigId, new Map());
+      }
+      const sigIdMap = categoryMap.get(sigId);
+
+      const key = this.getSigDtSvrKey(serverEntry);
+      if (!sigIdMap.has(key)) {
+        sigIdMap.set(key, serverEntry);
+        await this.blockSigDtServer(category, serverEntry);
+      }
+    }
   }
 
-  async blockAddress(category, address, portObj, isStatic) {
-    if (!this.isActivated(category)) return;
-    let blockSet = this.getDomainPortIPSetName(category, isStatic)
-    await Block.batchBlockNetPort([address], portObj, blockSet).catch((err) => {
-      log.error(`Failed to batch update domain ipset ${blockSet} for ${address}`, err.message);
+  async removeSigDtServer(category, serverEntry) {
+    const cKey = this.getCategorySigDtSvrKey(category);
+    await rclient.zremAsync(cKey, JSON.stringify(serverEntry));
+
+    const categoryMap = this.effectiveCategorySigDtSrvs.get(category);
+    if (categoryMap && categoryMap.has(serverEntry.sigId)) {
+      const sigIdMap = categoryMap.get(serverEntry.sigId);
+      const srvKey = this.getSigDtSvrKey(serverEntry);
+      if (sigIdMap.has(srvKey)) {
+        sigIdMap.delete(srvKey);
+        if (sigIdMap.size === 0) {
+          categoryMap.delete(serverEntry.sigId);
+        }
+        if (categoryMap.size === 0) {
+          this.effectiveCategorySigDtSrvs.delete(category);
+        }
+        if (!this.isActivated(category)) { // shouldn't happen
+          log.info(`Category ${category} is not activated, skip removing sig detected server from ipset`, JSON.stringify(serverEntry, null, 2));
+          return;
+        }
+        await this.unblockSigDtServer(category, serverEntry);
+      }
+    }
+  }
+
+  async blockSigDtServer(category, serverEntry, useTemp = false) {
+    const {id, port, isStatic} = serverEntry;
+    if (!this.isActivated(category)) { // skip finally block if category is not activated
+      return;
+    }
+
+    let blockSet = this.getDomainPortIPSetName(category, isStatic);
+    if (useTemp) {
+      blockSet = this.getTempDomainPortIPSetName(category, isStatic);
+    }
+
+    await Block.batchBlockNetPort([id], port, blockSet).catch((err) => {
+      log.error(`Failed to batch update sig detected server ipset ${blockSet} for ${id}`, err.message);
     });
   }
 
-  async unblockAddress(category, address, portObj, isStatic) {
-    if (!this.isActivated(category)) return;
+  async unblockSigDtServer(category, serverEntry) {
+    const {id, port, isStatic} = serverEntry;
     let blockSet = this.getDomainPortIPSetName(category, isStatic)
-    await Block.batchUnblock([address], portObj, blockSet).catch((err) => {
-      log.error(`Failed to batch update domain ipset ${blockSet} for ${address}`, err.message);
-      });
+
+    await Block.batchUnblockNetPort([id], port, blockSet).catch((err) => {
+      log.error(`Failed to batch update sig detected server ipset ${blockSet} for ${id}`, err.message);
+    });
   }
 
   async updateDomain(category, domain, isPattern, add = true) {
@@ -1523,28 +1588,30 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
     }
 
-    const previousEffectiveAddresses = this.effectiveCategoryAdresses[category] || new Map()
+    await this.updateFlowSignatureList();
 
+    const newSigDtSrvMap = await this.getSigDetectedServerMap(category);
+    const categoryMap = this.effectiveCategorySigDtSrvs.get(category);
+    if (categoryMap) {
+      for (const [sigId, sigIdMap] of categoryMap.entries()) {
+        for (const [srvKey, srvEntry] of sigIdMap.entries()) {
+          if (!newSigDtSrvMap.has(srvKey)) {
+            await this.unblockSigDtServer(category, srvEntry);
+            sigIdMap.delete(srvKey);
 
-    let addressMap = new Map()
-
-    for (const item of await this.getDynamicAddresses(category)) {
-      const itemObj = JSON.parse(item);
-      const addressObj = { id: itemObj.id, port: itemObj.port, isStatic: true }
-      addressMap.set(hashFunc(addressObj), addressObj);
-    }
-
-    let removedAddresses = []
-    for (const [k, v] of previousEffectiveAddresses) {
-      if (!addressMap.has(k)) {
-        removedAddresses.push(v)
+            if (categoryMap.size === 0) {
+              this.effectiveCategorySigDtSrvs.delete(category);
+            }
+          }
+        }
+        if (sigIdMap.size === 0) {
+          categoryMap.delete(sigId);
+        }
+      }
+      if (categoryMap.size === 0) {
+        this.effectiveCategorySigDtSrvs.delete(category);
       }
     }
-    for (const addressObj of removedAddresses) {
-      log.debug(`Address ${addressObj.id} is removed from category ${category}, remove address from ipset ...`)
-      await this.unblockAddress(category, addressObj.id, addressObj.port, addressObj.isStatic);
-    }
-
 
     // do not execute full update on ipset if ondemand is set
     if (!ondemand) {
@@ -1575,6 +1642,19 @@ class CategoryUpdater extends CategoryUpdaterBase {
         } else {
           await this.updateIPSetByDomainPort(category, v, { useTemp: true, isStatic: v.isStatic, needComment: ipsetNeedComment });
         }
+      }
+      this.effectiveCategorySigDtSrvs.set(category, new Map());
+      for (const se of newSigDtSrvMap.values()) {
+        const categoryMap = this.effectiveCategorySigDtSrvs.get(category);
+        if (!categoryMap.has(se.sigId)) {
+          categoryMap.set(se.sigId, new Map());
+        }
+        const sigIdMap = categoryMap.get(se.sigId);
+        const key = this.getSigDtSvrKey(se);
+        if (!sigIdMap.has(key)) {
+          sigIdMap.set(key, se);
+        }
+        await this.blockSigDtServer(category, se, true);
       }
       await this.filterIPSetByDomain(category, { useTemp: true });
       await this.filterIPSetByDomain(category, { useTemp: true, isStatic: true });
@@ -1609,17 +1689,23 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
     this.effectiveCategoryDomains[category] = domainMap;
 
-    const newAddresses = [];
-    for (const [k, v] of addressMap) {
-      if (!previousEffectiveAddresses.has(k)) {
-        newAddresses.push(v);
+    if (ondemand) {
+      for (const se of newSigDtSrvMap.values()) {
+        if (!this.effectiveCategorySigDtSrvs.has(category)) {
+          this.effectiveCategorySigDtSrvs.set(category, new Map());
+        }
+        const categoryMap = this.effectiveCategorySigDtSrvs.get(category);
+        if (!categoryMap.has(se.sigId)) {
+          categoryMap.set(se.sigId, new Map());
+        }
+        const sigIdMap = categoryMap.get(se.sigId);
+        const key = this.getSigDtSvrKey(se);
+        if (!sigIdMap.has(key)) {
+          sigIdMap.set(key, se);
+          await this.blockSigDtServer(category, se, true);
+        }
       }
     }
-    for (const addressObj of newAddresses) {
-      await this.blockAddress(category, addressObj.id, addressObj.port, addressObj.isStatic)
-    }
-
-    this.effectiveCategoryAdresses[category] = addressMap;
 
     this.recycleTasks[category] = false;
   }
@@ -1629,9 +1715,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const date = Math.floor(new Date() / 1000) - EXPIRE_TIME
 
     await rclient.zremrangebyscoreAsync(domainsKey, '-inf', date)
-
-    const addresseskey = this.getDynamicAddressCategoryKey(category)
-    await rclient.zremrangebyscoreAsync(addresseskey, '-inf', date)
   }
 
   getEffectiveDomains(category) {
@@ -1803,25 +1886,99 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await rclient.setAsync(this.getCategoryStrategyKey(category), strategy);
     return;
   }
-
-  updateFlowSignatureList(flowSignatureConfig) {
-    this.flowSignatureConfigMap = new Map();
-    for (const key of Object.keys(flowSignatureConfig)) {
-      this.flowSignatureConfigMap.set(key, flowSignatureConfig[key]);
+  
+  async updateFlowSignatureList(force = false) {
+    if (!force && Math.floor(Date.now() / 1000) - this.lastFlowSignatureConfigUpdate < 60 * 60 * 1000) {
+      return;
     }
+    const flowSignatureConfig = await rclient.getAsync(Constants.REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG).then(result => result && JSON.parse(result)).catch(err => null);
+    if (!flowSignatureConfig) {
+      log.warn("Flow signature config is not found in redis");
+      return;
+    }
+    const origSigCfg = this.flowSignatureConfig;
+
+    for (const [sigId, sigConfig] of Object.entries(origSigCfg)) {
+      const origBlockType = sigConfig.blockType || "connection";
+      const sigCfg = flowSignatureConfig[sigId];
+      if (!sigCfg || (origBlockType == "ipPort" && sigCfg.blockType != "ipPort") ) {
+        //remove related servers from ipset
+        log.info(`Flow signature config for ${sigId} is removed, deleting related servers from ipset`);
+
+        if (sigConfig.categories && sigConfig.categories.length > 0) {
+          for (const category of sigConfig.categories) {
+            const categoryMap = this.effectiveCategorySigDtSrvs.get(category);
+            if (categoryMap && categoryMap.has(sigId)) {
+              const sigIdMap = categoryMap.get(sigId);
+              if (sigIdMap) {
+                for (const [srvKey, srvEntry] of sigIdMap.entries()) {
+                  await this.removeSigDtServer(category, srvEntry);
+                }
+              }
+              categoryMap.delete(sigId);
+              if (categoryMap.size === 0) {
+                this.effectiveCategorySigDtSrvs.delete(category);
+              }
+            }
+
+          }
+        }
+      }
+    }
+
+    this.flowSignatureConfig = flowSignatureConfig;
+    this.lastFlowSignatureConfigUpdate = Math.floor(Date.now() / 1000);
     return;
   }
 
   getSignatureConfig(sigId) {
-    if (!this.flowSignatureConfigMap.has(sigId)) {
+    if (!this.flowSignatureConfig.hasOwnProperty(sigId)) {
       return null;
     }
-    return this.flowSignatureConfigMap.get(sigId);
+    return this.flowSignatureConfig[sigId];
   }
 
   // system target list using cloudcache, mainly for large target list to reduce bandwidth usage of polling hashset
   isManagedTargetList(category) {
     return !this.isUserTargetList(category) && !this.isSmallExtendedTargetList(category) && !this.excludeListBundleIds.has(category);
+  }
+  async processSignatureData(sigData) {
+    const sigId = sigData.sigId;
+    const sigConfig = this.getSignatureConfig(sigId);
+    log.debug(`processing signature ${sigId} signature config:`, sigConfig, ",sigData:", sigData);
+    if (!sigConfig || !sigConfig.categories || sigConfig.categories.length == 0) {
+      log.debug(`Signature ${sigId} is not found or not matched with signature config, skip processing`);
+      return;
+    }
+    sigData.protocol = "udp";
+    if (sigConfig.proto) {
+      sigData.protocol = sigConfig.proto;
+    }
+    for (const category of sigConfig.categories) {
+
+      let blockType = sigConfig.blockType || "connection";
+      switch (blockType) {
+        case "connection":
+          if (!this.isActivated(category)) {
+            continue;
+          }
+          const connSet = this.getConnectionIPSetName(category);
+          const options = {};
+          if (sigConfig.timeout != null) {
+            options.timeout = sigConfig.timeout;
+          }
+          await Block.batchBlockConnection([sigData], connSet, options).catch((err) => {
+            log.error(`Failed to update connection ipset ${connSet} for ${sigId}`, err.message);
+          });
+          break;
+        case "ipPort":
+          await this.addSigDetectedServer(category, sigData).catch((err) => {
+            log.error(`Failed to add dynamic category address ${category} for ${sigId}`, err.message);
+          });
+          break;
+      }
+
+    }
   }
 }
 

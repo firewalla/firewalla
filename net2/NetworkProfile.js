@@ -926,7 +926,7 @@ class NetworkProfile extends Monitorable {
           log.debug(`Failed to flush network gateway ipset ${GatewayIpsetName6}`, err.message);
         });
 
-        // remove from fw_network_gateway_set
+        // remove from c_network_gateway_set
         await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET} ${GatewayIpsetName}`).catch((err) => {
           log.debug(`Failed to remove ${GatewayIpsetName} from ${ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET}`, err.message);
         });

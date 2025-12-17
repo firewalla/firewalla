@@ -45,7 +45,7 @@ function wait_for_freeradius_start() {
 function get_image_tag() {
   image_tag=$(redis-cli hget policy:system freeradius_server | jq -r '.options.image_tag // empty')
   if [ -z "$image_tag" ]; then
-      image_tag=$(get_release_type)
+      image_tag=$(get_release_type|tail -n 1)
       if [[ "$image_tag" == "dev" || "$image_tag" == "unknown" ]]; then
         image_tag="dev"
       fi
