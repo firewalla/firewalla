@@ -391,8 +391,7 @@ function unblock(target, ipset) {
   return setupIpset(target, ipset, true)
 }
 
-// this is used only for user defined target list so there is no need to remove from ipset. The ipset will be reset upon category reload or update.
-async function batchBlockNetPort(elements, portObj, ipset, options = {}) {
+async function batchActionNetPort(elements, portObj, ipset, op='add', options = {}) {
   log.debug("Batch block net port of", ipset);
   if (!_.isArray(elements) || elements.length === 0)
     return;
@@ -401,7 +400,6 @@ async function batchBlockNetPort(elements, portObj, ipset, options = {}) {
   const gateway6 = sysManager.myDefaultGateway6();
   const gateway = sysManager.myDefaultGateway();
   const cmds = [];
-  const op = 'add';
 
   for (const element of elements) {
     const ipSpliterIndex = element.search(/[/,]/)
@@ -430,6 +428,15 @@ async function batchBlockNetPort(elements, portObj, ipset, options = {}) {
   }
   log.debug(`Batch setup IP set ${op}`, cmds);
   return Ipset.batchOp(cmds);
+}
+
+// this is used only for user defined target list so there is no need to remove from ipset. The ipset will be reset upon category reload or update.
+async function batchBlockNetPort(elements, portObj, ipset, options = {}) {
+  return batchActionNetPort(elements, portObj, ipset, 'add', options);
+}
+
+async function batchUnblockNetPort(elements, portObj, ipset, options = {}) {
+  return batchActionNetPort(elements, portObj, ipset, 'del', options);
 }
 
 function isGatewayOrPublicIp(ip) {
@@ -1836,6 +1843,7 @@ module.exports = {
   batchBlock,
   batchUnblock,
   batchBlockNetPort,
+  batchUnblockNetPort,
   batchBlockConnection,
   block,
   unblock,
