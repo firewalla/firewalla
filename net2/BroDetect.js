@@ -1891,44 +1891,37 @@ class BroDetect {
       return;
     this.addConnSignature(uid, sig_id);
 
-    const connection = {
+    const sigDataObj = {
       localAddr: src_addr,
       remoteAddr: dst_addr,
-      protocol: "udp",
       localPorts: src_port,
-      remotePorts: dst_port
+      remotePorts: dst_port,
+      sigId: sig_id,
     };
 
 
     if (!sysManager.isLocalIP(src_addr)) {
-      connection.localAddr = dst_addr;
-      connection.remoteAddr = src_addr;
-      connection.localPorts = dst_port;
-      connection.remotePorts = src_port;
+      sigDataObj.localAddr = dst_addr;
+      sigDataObj.remoteAddr = src_addr;
+      sigDataObj.localPorts = dst_port;
+      sigDataObj.remotePorts = src_port;
     }
+    log.debug(`Signature ${sig_id} sigDataObj:`, sigDataObj);
 
-    const sigConfig = categoryUpdater.getSignatureConfig(sig_id);
-    log.debug(`processing signature ${sig_id} signature config:`, sigConfig, ",connection:", connection);
-    if (!sigConfig || !sigConfig.categories || sigConfig.categories.length == 0) {
+    const publicIPs = sysManager.getPublicIPs();
+    if (publicIPs && _.isObject(publicIPs)) {
+      for (const [_intf, ip] of Object.entries(publicIPs)) {
+        if (ip === sigDataObj.remoteAddr) {
+          log.debug(`Signature ${sig_id} is detected on public IP ${ip}, skipping signature data processing`);
+          return;
+        }
+      }
+    } else {
+      log.error("Failed to get public IPs");
       return;
     }
-    this._needRefresh = true;
-    for (const category of sigConfig.categories) {
-      if (!categoryUpdater.isActivated(category)) {
-        continue;
-      }
-      if (sigConfig.proto) {
-        connection.protocol = sigConfig.proto;
-      }
-      const connSet = categoryUpdater.getConnectionIPSetName(category);
-      const options = {};
-      if (sigConfig.timeout != null) {
-        options.timeout = sigConfig.timeout;
-      }
-      await Block.batchBlockConnection([connection], connSet, options).catch((err) => {
-        log.error(`Failed to update connection ipset ${connSet} for ${sig_id}`, err.message);
-      });
-    }
+
+    await categoryUpdater.processSignatureData(sigDataObj);
   }
 
   async getWanNicStats() {
