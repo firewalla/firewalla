@@ -688,6 +688,10 @@
       "dhcp_event": {
         "expires": 2592000,
         "count": 1000
+      },
+      "sigDetectedServers": {
+        "expires": 86400,
+        "count": 10000
       }
     },
     "DeviceOfflineSensor": {
