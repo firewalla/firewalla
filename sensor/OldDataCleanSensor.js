@@ -632,6 +632,7 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("internet_flows", (key) => key.startsWith("internet_flows:"));
     this._registerFilterFunction("dhcp_event", (key) => key.startsWith("dnsmasq.dhcp.event:"));
     this._registerFilterFunction("api_stats", (key) => key.startsWith("api:stats:"));
+    this._registerFilterFunction("sigDetectedServers", (key) => key.startsWith("category:") && key.endsWith(":sigDetectedServers"));
   }
 
   _registerFilterFunction(type, filterFunc, fullCleanOnly = false, customCleanerFunc) {

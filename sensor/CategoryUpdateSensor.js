@@ -637,7 +637,10 @@ class CategoryUpdateSensor extends Sensor {
       }
     }
     if (this.flowSignatureConfig && !_.isEqual(pervFlowSignatureConfig, this.flowSignatureConfig)){
-      categoryUpdater.updateFlowSignatureList(this.flowSignatureConfig);
+      sem.emitEvent({
+        type: "FlowSignatureListUpdated",
+        toProcess: "FireMain"
+      });
     }
   }
 
