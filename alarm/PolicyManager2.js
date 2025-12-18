@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -80,6 +80,8 @@ const validator = require('validator');
 const iptool = require('ip');
 const util = require('util');
 const exec = require('child-process-promise').exec;
+const LRU = require('lru-cache');
+
 const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 
@@ -93,7 +95,7 @@ const VPNClient = require('../extension/vpnclient/VPNClient.js');
 let hostManager;
 
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
-const { map } = require('async');
+
 
 const ruleSetTypeMap = {
   'ip': 'hash:ip',
@@ -141,6 +143,14 @@ class PolicyManager2 {
       this.allRulesInitialized = false;
 
       this.tlsInstalled = false;
+
+      this.policyCache = new LRU({max: 1000});
+      sem.on('Policy:Updated', (event) => {
+        const pid = event && event.pid;
+        if (!isNaN(pid)) {
+          this.policyCache.del(Number(pid));
+        }
+      });
     }
     return instance;
   }
@@ -414,7 +424,11 @@ class PolicyManager2 {
 
     await rclient.hmsetAsync(policyKey, merged.redisfy());
 
-    const emptyStringCheckKeys = ["expire", "cronTime", "duration", "activatedTime", "remote", "remoteType", "local", "localType", "localPort", "remotePort", "proto", "parentRgId", "targetRgId"];
+    const emptyStringCheckKeys = ["expire", "cronTime", "duration", "activatedTime", "idleTs",
+      "remote", "remoteType", "local", "localType", "localPort", "remotePort", "protocol",
+      "parentRgId", "targetRgId", "targetList", "disturbLevel", 'appTimeUsage', "useBf",
+      "notes", 
+    ];
 
     for (const key of emptyStringCheckKeys) {
       if (!merged[key] || merged[key] === '')
@@ -500,11 +514,21 @@ class PolicyManager2 {
     return check == 1
   }
 
-  async getPolicy(policyID) {
+  async getPolicy(policyID, useCache = false) {
+    if (useCache) {
+      // update policy is removed from cache, safe to extend ttl here
+      const policy = this.policyCache.get(policyID)
+      if (policy) {
+        return policy
+      }
+    }
+
     const results = await this.idsToPolicies([policyID])
 
     if (results == null || results.length === 0) {
       return null
+    } else if (useCache) {
+      this.policyCache.set(policyID, results[0])
     }
 
     return results[0]

@@ -40,7 +40,6 @@ const sl = require('./SensorLoader.js');
 const Message = require('../net2/Message.js');
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PolicyManager2();
-const Policy = require('../alarm/Policy.js');
 const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 
@@ -524,7 +523,6 @@ class ACLAuditLogPlugin extends Sensor {
         t += 20;
       await delay(t * 1000);
       let connEntries = await conntrack.getConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr, 600);
-      if (record.sh == '192.168.135.75' && record.dp == 443 && record.ac == 'allow') log.info(connEntries)
 
       if (!connEntries || !connEntries.host) {
         if (this.isDNATedOnBridge(inIntf)) {
@@ -770,9 +768,8 @@ class ACLAuditLogPlugin extends Sensor {
           // ntp has nothing to do with rules
           // for local flow, only account for 'in' flows
           if (type != 'ntp' && !(record.dmac && fd == 'out')) {
-            if (record.pid && record.sh == '192.168.135.75' && record.dp == 443 && record.ac == 'allow') log.info(record)
             if (record.pid && type == 'ip' && record.ac == 'allow' && record.af) {
-              const policy = await pm2.getPolicy(record.pid);
+              const policy = await pm2.getPolicy(record.pid, true);
               // domain allow that uses IP-based matching
               if (policy && ['dns', 'domain'].includes(policy.type) && !policy.dnsmasq_only && policy.target)
                 for (const domain in record.af) {
