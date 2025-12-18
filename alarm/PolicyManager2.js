@@ -2113,6 +2113,10 @@ class PolicyManager2 {
           await Block.block(values[0], Block.getDstSet(pid));
           remotePort = values[1];
         }
+        if (remotePort) {
+          remotePortSet = `c_bp_${pid}_remote_port`;
+          await Block.batchUnblock(remotePort.split(","), remotePortSet);
+        }
         break;
       }
       case "mac":
@@ -2236,7 +2240,11 @@ class PolicyManager2 {
           localPort = data.port;
           scope = [data.mac];
 
-          if (!localPort) return;
+          if (localPort) {
+            localPortSet = `c_bp_${pid}_local_port`;
+            await Block.batchUnblock(localPort.split(","), localPortSet);
+          } else
+            return;
         } else
           return;
         break;
