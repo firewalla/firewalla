@@ -96,7 +96,6 @@ let hostManager;
 
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 
-
 const ruleSetTypeMap = {
   'ip': 'hash:ip',
   'net': 'hash:net',
@@ -1663,7 +1662,12 @@ class PolicyManager2 {
           localPort = data.port;
           scope = [data.mac];
 
-          if (!localPort) return;
+          if (localPort) {
+            localPortSet = `c_bp_${pid}_local_port`;
+            await ipset.create(localPortSet, "bitmap:port");
+            await Block.batchBlock(localPort.split(","), localPortSet);
+          } else
+            return;
         } else
           return;
         break;
