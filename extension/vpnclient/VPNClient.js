@@ -845,29 +845,75 @@ class VPNClient {
     return settings;
   }
 
+  isConflictSubnet6(subnetStr1, subnetStr2) {
+    const subnet1= {}, subnet2={};
+    subnet1.addr = new Address6(subnetStr1);
+    subnet2.addr = new Address6(subnetStr2);
+
+    if (!subnet1.addr.isValid() || !subnet2.addr.isValid()) {
+      return false;
+    }
+    subnet1.firstAddress = subnet1.addr.startAddress().bigInteger();
+    subnet2.firstAddress = subnet2.addr.startAddress().bigInteger();
+    subnet1.lastAddress = subnet1.addr.endAddress().bigInteger();
+    subnet2.lastAddress = subnet2.addr.endAddress().bigInteger();
+
+    if ( (subnet1.firstAddress.compareTo(subnet2.firstAddress) <= 0 && subnet1.lastAddress.compareTo(subnet2.firstAddress) >= 0) ||
+        (subnet2.firstAddress.compareTo(subnet1.firstAddress) <= 0 && subnet2.lastAddress.compareTo(subnet1.firstAddress) >= 0))  {
+      return true;
+    }
+    return false;
+  }
+
   getSubnetsWithoutConflict(subnets) {
     const validSubnets = [];
     if (subnets && Array.isArray(subnets)) {
       for (let subnet of subnets) {
         const ipSubnets = subnet.split('/');
-        if (ipSubnets.length != 2) {
+        if (ipSubnets.length != 2 && ipSubnets.length != 3) {
           continue;
         }
         const ipAddr = ipSubnets[0];
         const maskLength = ipSubnets[1];
-        // only check conflict of IPv4 addresses here
-        if (!ipTool.isV4Format(ipAddr))
-          continue;
-        if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0) {
+        if (isNaN(maskLength) || !Number.isInteger(Number(maskLength))) {
           continue;
         }
-        const serverSubnetCidr = ipTool.cidrSubnet(subnet);
-        const conflict = sysManager.getLogicInterfaces().some((iface) => {
-          const mySubnetCidr = iface.subnet && ipTool.cidrSubnet(iface.subnet);
-          return mySubnetCidr && (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress)) || false;
-        });
-        if (!conflict)
-          validSubnets.push(subnet)
+        let maskLenNum = Number(maskLength);
+        // only check conflict of IPv4 addresses here
+        if (ipTool.isV4Format(ipAddr)) {
+
+          if (maskLenNum > 32 || maskLenNum < 0) {
+            continue;
+          }
+          const serverSubnetCidr = ipTool.cidrSubnet(subnet);
+          const conflict = sysManager.getLogicInterfaces().some((iface) => {
+            const mySubnetCidr = iface.subnet && ipTool.cidrSubnet(iface.subnet);
+            return mySubnetCidr && (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress)) || false;
+          });
+          if (!conflict) {
+            validSubnets.push(subnet);
+          }
+        } else if (ipTool.isV6Format(ipAddr)) {
+          // Handle IPv6 subnets
+          if (maskLenNum > 128 || maskLenNum < 0) {
+            continue;
+          }
+
+          const conflict = sysManager.getLogicInterfaces().some((iface) => {
+            if (iface.ip6_subnets && _.isArray(iface.ip6_subnets)) {
+              for (const s of iface.ip6_subnets) {
+                if (this.isConflictSubnet6(subnet, s)) {
+                  log.info(`Conflict found between IPv6 subnets: ${subnet} and ${s}`);
+                  return true;
+                }
+              }
+            }
+            return false;
+          });
+          if (!conflict) {
+            validSubnets.push(subnet);
+          }
+        }
       }
     }
     return validSubnets;
