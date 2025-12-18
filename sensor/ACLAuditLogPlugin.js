@@ -38,13 +38,16 @@ const { getUniqueTs } = require('../net2/FlowUtil.js')
 const FireRouter = require('../net2/FireRouter.js');
 const sl = require('./SensorLoader.js');
 const Message = require('../net2/Message.js');
+const PolicyManager2 = require('../alarm/PolicyManager2.js');
+const pm2 = new PolicyManager2();
+const Policy = require('../alarm/Policy.js');
+const DNSTool = require('../net2/DNSTool.js');
+const dnsTool = new DNSTool();
 
 const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
 const _ = require('lodash');
 const LRU = require('lru-cache');
-const DNSTool = require('../net2/DNSTool.js');
-const dnsTool = new DNSTool();
 
 const LOG_PREFIX = Constants.IPTABLES_LOG_PREFIX_AUDIT
 
@@ -508,14 +511,20 @@ class ACLAuditLogPlugin extends Sensor {
     }
 
     // try to get host name from conn entries for better timeliness and accuracy
-    if (dir === "O" && record.ac === "block") {
-      // delay 8 seconds to process outbound block flow, in case ssl/http host is available in zeek's ssl log and will be saved into conn entries
-      let t = 8
-      // if flow is blocked by tls kernel module and zeek listens on bridge, zeek won't see the tcp RST packet due to br_netfilter. This introduces another 20 seconds before ssl/http log is generated
-      if (record.pr == "tcp" && (record.dp === 443 || record.dp === 80) && this.isPcapOnBridge(inIntf))
+    if (dir == "O" && ['block', 'allow'].includes(record.ac)) {
+      // delay 10 seconds to process outbound block flow, in case ssl/http host
+      // is available in zeek's ssl log and will be saved into conn entries
+      let t = 10
+      // if flow is blocked by tls kernel module and zeek listens on bridge,
+      // zeek won't see the tcp RST packet due to br_netfilter. This introduces another
+      // 20 seconds before ssl/http log is generated
+      if (record.ac == 'block' && record.pr == "tcp"
+        && (record.dp == 443 || record.dp == 80) && this.isPcapOnBridge(inIntf)
+      )
         t += 20;
       await delay(t * 1000);
       let connEntries = await conntrack.getConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr, 600);
+      if (record.sh == '192.168.135.75' && record.dp == 443 && record.ac == 'allow') log.info(connEntries)
 
       if (!connEntries || !connEntries.host) {
         if (this.isDNATedOnBridge(inIntf)) {
@@ -761,7 +770,23 @@ class ACLAuditLogPlugin extends Sensor {
           // ntp has nothing to do with rules
           // for local flow, only account for 'in' flows
           if (type != 'ntp' && !(record.dmac && fd == 'out')) {
-            if (!record.pid && (type == 'dns' || ac == 'block' || ac == 'allow' || ac == 'disturb')) {
+            if (record.pid && record.sh == '192.168.135.75' && record.dp == 443 && record.ac == 'allow') log.info(record)
+            if (record.pid && type == 'ip' && record.ac == 'allow' && record.af) {
+              const policy = await pm2.getPolicy(record.pid);
+              // domain allow that uses IP-based matching
+              if (policy && ['dns', 'domain'].includes(policy.type) && !policy.dnsmasq_only && policy.target)
+                for (const domain in record.af) {
+                  // found ssl host that doesn't match the policy target
+                  // return here to skip rule accounting and log writing
+
+                  // NOTE: ssl host is very accurate for a specific flow, but there's a corner case
+                  // that flows with multiple domains are recorded in the same buffer write interval,
+                  // ignore this for now
+                  if (record.af[domain].proto == 'ssl' && !policy.matchDomain(domain)) {
+                    return
+                  }
+                }
+            } else if (!record.pid && (type == 'dns' || ac == 'block' || ac == 'allow' || ac == 'disturb')) {
               const matchedPIDs = await this.ruleStatsPlugin.getMatchedPids(record);
               if (matchedPIDs && matchedPIDs.length > 0){
                 record.pid = matchedPIDs[0];
