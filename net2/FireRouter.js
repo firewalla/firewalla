@@ -52,6 +52,7 @@ const Mode = require('./Mode.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const QoS = require('../control/QoS.js');
 const { rrWithErrHandling } = require('../util/requestWrapper.js')
+const fsp = require('fs').promises;
 
 const util = require('util')
 const rp = util.promisify(require('request'))
@@ -406,6 +407,13 @@ class FireRouter {
           reloadNeeded = true;
           break;
         }
+        case Message.MSG_HAPD_EVENT: {
+          if (message && message.includes(" AP-ENABLED")) {
+            log.info("Hostapd AP-ENABLED event is received, schedule reset pcap tap tc filters ...");
+            this.scheduleResetPcapTap();
+          }
+          break;
+        }
         default:
       }
       if (reloadNeeded)
@@ -418,6 +426,7 @@ class FireRouter {
     sclient.subscribe(Message.MSG_FR_IFACE_CHANGE_APPLIED);
     sclient.subscribe(Message.MSG_FR_WAN_CONN_CHANGED);
     sclient.subscribe(Message.MSG_FR_WAN_STATE_CHANGED);
+    sclient.subscribe(Message.MSG_HAPD_EVENT);
   }
 
   async retryUntilInitComplete() {
@@ -724,7 +733,6 @@ class FireRouter {
       this.ready = true
 
       if (f.isMain()) {
-        // zeek used to be bro
         if (this.pcapRestartNeeded || !platform.isFireRouterManaged() && first || !_.isEqual(monitoringIntfNames, lastMonitoringIntfNames)) {
           sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
           this.pcapRestartNeeded = false;
@@ -732,6 +740,7 @@ class FireRouter {
         if (first || this.tcFilterRefreshNeeded) {
           const localIntfs = monitoringIntfNames.filter(iface => intfNameMap[iface] && intfNameMap[iface].config.meta.type === 'lan');
           await this.resetTCFilters(localIntfs);
+          this.scheduleResetPcapTap();
           this.tcFilterRefreshNeeded = false;
         }
         if (platform.isFireRouterManaged()) {
@@ -767,6 +776,53 @@ class FireRouter {
         }
       }
     });
+  }
+
+  scheduleResetPcapTap() {
+    if (this.resetPcapTapTask) {
+      clearTimeout(this.resetPcapTapTask);
+    }
+    this.resetPcapTapTask = setTimeout(() => {
+      this.resetPcapTap().catch((err) => {
+        log.error(`Failed to reset pcap tap`, err.message);
+      });
+    }, 3000);
+  }
+
+  async resetPcapTap() {
+    if (!platform.isIFBSupported()) {
+      return;
+    }
+    const pcapTapIntfs = platform.getInterfacesRedirectedToPcapTap(intfNameMap);
+    if (_.isEmpty(pcapTapIntfs)) {
+      return;
+    }
+    for (const intf of pcapTapIntfs) {
+      // clear previous tc filters
+      await exec(`sudo tc qdisc del dev ${intf} root`).catch(() => {});
+      await exec(`sudo tc qdisc del dev ${intf} ingress`).catch(() => {});
+      // add tc filters to redirect traffic to the pcap tap ifb
+      await exec(`sudo tc qdisc add dev ${intf} ingress`).catch((err) => {
+        log.error(`Failed to create ingress qdisc on ${intf}`, err.message);
+      });
+      await exec(`sudo tc qdisc replace dev ${intf} root handle 1: htb default 1`).catch((err) => {
+        log.error(`Failed to create default htb qdisc on ${intf}`, err.message);
+      })
+      // only redirect ipv4 and ipv6 traffic to ifb devices, prevent 802.1q packets from being redirected to ifb twice
+      // redirect ingress (upload) traffic to ifb0, egress (download) traffic to ifb1
+      for (const {dir, parent} of [{dir: "upload", parent: "ffff:"}, {dir: "download", parent: "1:"}]) {
+        for (const {proto, ht, prio} of [{proto: "ip", ht: 800, prio: 1}, {proto: "ipv6", ht: 801, prio: 2}]) {
+          const cmds = [
+            `sudo tc filter add dev ${intf} parent ${parent} handle ${ht}::0x1 prio ${prio} protocol ${proto} u32 match u32 0 0 action mirred egress redirect dev ${Constants.INTF_PCAP_TAP} pass`
+          ];
+          for (const cmd of cmds) {
+            await exec(cmd).catch((err) => {
+              log.error(`Failed to add pcap tap tc filter for ${proto} ${dir} traffic on ${intf}, ${cmd}`, err.message);
+            });
+          }
+        }
+      }
+    }
   }
 
   async resetTCFilters(ifaces) {
