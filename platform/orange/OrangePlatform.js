@@ -526,6 +526,25 @@ class OrangePlatform extends Platform {
       wlan: 16,
     }
   }
+
+  getInterfacesRedirectedToPcapTap(intfNameMap) {
+    const result = [];
+    for (const intfName of Object.keys(intfNameMap)) {
+      const intf = intfNameMap[intfName];
+      const type = _.get(intf, "config.meta.type", null);
+      if (type !== "lan")
+        continue;
+      const subIntfs = _.get(intf, "config.intf", []);
+      if (!_.isArray(subIntfs))
+        continue;
+      for (const subIntf of subIntfs) {
+        if (subIntf.startsWith("wlan")) {
+          result.push(subIntf);
+        }
+      }
+    }
+    return result;
+  }
 }
 
 module.exports = OrangePlatform;
