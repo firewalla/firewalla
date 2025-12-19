@@ -3362,12 +3362,10 @@ class netBot extends ControllerBot {
         const keyList = Object.keys(savingKeysMap)
         for (const key of Object.keys(host)) {
           if (keyList.includes(key)) {
-            if (!_.isString(host[key]))
-              hostObj[savingKeysMap[key]] = JSON.stringify(host[key]);
-            else
-              hostObj[savingKeysMap[key]] = host[key];
+            hostObj[savingKeysMap[key]] = host[key];
           }
         }
+        log.debug('hostObj', hostObj);
         if (!hostObj.firstFoundTimestamp)
           // set firstFound time as a activeTS for migration, so non-existing device could expire normal
           hostObj.firstFoundTimestamp = Date.now() / 1000;
