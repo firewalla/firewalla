@@ -3340,9 +3340,13 @@ class netBot extends ControllerBot {
         const savingKeysMap = {
           mac: "mac",
           macVendor: "macVendor",
+          cloudName: "cloudName",
           dhcpName: "dhcpName",
+          'dnsmasq.dhcp.leaseName': "dnsmasq.dhcp.leaseName",
           bonjourName: "bonjourName",
+          nbtName: "nbtName",
           nmapName: "nmapName",
+          sambaName: "sambaName",
           ssdpName: "ssdpName",
           userLocalDomain: "userLocalDomain",
           localDomain: "localDomain",
