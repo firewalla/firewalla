@@ -117,6 +117,7 @@ class PcapPlugin extends Sensor {
   async calculateListenInterfaces() {
     if (platform.isFireRouterManaged()) {
       const intfNameMap = await FireRouter.getInterfaceAll();
+      const pcapTapIntfs = platform.isIFBSupported() ? platform.getInterfacesRedirectedToPcapTap(intfNameMap) : [];
       const monitoringInterfaces = FireRouter.getMonitoringIntfNames();
       const parentIntfOptions = {};
       const monitoringIntfOptions = {}
@@ -129,30 +130,32 @@ class PcapPlugin extends Sensor {
         if (intf && intf.config && intf.config.assetsController) // bypass assets controller wireguard interface
           continue;
         const isBond = intfName && intfName.startsWith("bond") && !intfName.includes(".");
-        const subIntfs = !isBond && _.get(intf, "config.intf");
-        if (!subIntfs) {
+        let subIntfs = !isBond && _.get(intf, "config.intf") || [];
+        if (typeof subIntfs === 'string') {
+          subIntfs = [subIntfs];
+        }
+        if (!_.isArray(subIntfs) || _.isEmpty(subIntfs)) {
           monitoringIntfOptions[intfName] = parentIntfOptions[intfName] = { pcapBufsize: this.getPcapBufsize(intfName) };
         } else {
-          const phyIntfs = []
-          if (typeof subIntfs === 'string') {
-            // strip vlan tag if present
-            phyIntfs.push(subIntfs.split('.')[0])
-          } else if (Array.isArray(subIntfs)) {
-            // bridge interface can have multiple sub interfaces
-            phyIntfs.push(...subIntfs.map(i => i.split('.')[0]))
-          }
+          const phyIntfs = subIntfs.map(subIntf => subIntf.split('.')[0]);
           let maxPcapBufsize = 0
           for (const phyIntf of phyIntfs) {
-            if (!parentIntfOptions[phyIntf]) {
-              const pcapBufsize = this.getPcapBufsize(phyIntf)
-              parentIntfOptions[phyIntf] = { pcapBufsize };
-              if (pcapBufsize > maxPcapBufsize)
-                maxPcapBufsize = pcapBufsize
+            // if the interface is mirrored to pcap tap, use the pcap tap interface instead
+            const pcapIntf = pcapTapIntfs.includes(phyIntf) ? Constants.INTF_PCAP_TAP : phyIntf;
+            const pcapBufsize = this.getPcapBufsize(phyIntf);
+            if (!parentIntfOptions[pcapIntf]) {
+              parentIntfOptions[pcapIntf] = { pcapBufsize };
+            } else {
+              parentIntfOptions[pcapIntf].pcapBufsize = Math.max(parentIntfOptions[pcapIntf].pcapBufsize, pcapBufsize);
             }
+            if (pcapBufsize > maxPcapBufsize)
+              maxPcapBufsize = pcapBufsize;
           }
           monitoringIntfOptions[intfName] = { pcapBufsize: maxPcapBufsize };
         }
       }
+      log.info("parentIntfOptions: ", parentIntfOptions);
+      log.info("monitoringIntfOptions: ", monitoringIntfOptions);
       if (monitoringInterfaces.length < Object.keys(parentIntfOptions).length) {
         this.listenInterfaces = Object.keys(monitoringIntfOptions);
         this.listenOnParentIntf = false
