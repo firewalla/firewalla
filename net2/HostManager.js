@@ -136,7 +136,7 @@ module.exports = class HostManager extends Monitorable {
 
       // make sure cached host is created/deleted in all processes
       messageBus.subscribe("DiscoveryEvent", "Device:Create", null, (channel, type, mac, obj) => {
-        this.createHost(obj).catch(err => {
+        this.createHost(obj, !f.isMain()).catch(err => {
           log.error('Error creating host', err, obj)
         })
       })
@@ -1769,16 +1769,16 @@ module.exports = class HostManager extends Monitorable {
     return host
   }
 
-  async createHost(o) {
+  async createHost(o, noWrite = false) {
     let host = await this.getHostAsync(o.mac)
     if (host) {
       log.info('createHost: already exist', o.mac)
-      await host.update(o, false, true)
+      await host.update(o, false, !noWrite)
       return host
     }
 
     host = new Host(o)
-    await host.save()
+    !noWrite && await host.save()
 
     this.hostsdb[`host:mac:${o.mac}`] = host
     this.hosts.all.push(host);
