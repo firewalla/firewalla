@@ -24,6 +24,7 @@ const Constant = require('../net2/Constants.js')
 
 const execAsync = require('child-process-promise').exec
 
+const ipset = require('../net2/Ipset.js');
 
 const PREROUTING_CHAIN = 'FW_PREROUTING'
 const NTP_CHAIN = 'FW_PREROUTING_NTP'
@@ -34,11 +35,17 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     super(config)
 
     this.refreshInterval = (this.config.refreshInterval || 60) * 1000;
+    this.ntpOffSet = new Set();
+    this.lastNtpOffSetUpdateTime = 0;
+    this.ntpOffSetUpdateInterval = 1000 * 60 * 60 * 4; // 4 hours
 
     // only request is DNATed
     this.ruleFeature = new Rule('nat').chn(PREROUTING_CHAIN).pro('udp').dport(123)
       .set('monitored_net_set', 'src,src').set('acl_off_set', 'src,src', true).jmp(NTP_CHAIN)
     this.ruleFeature6 = this.ruleFeature.clone().fam(6)
+
+    this.ruleNtpOff = new Rule('nat').chn(NTP_CHAIN_DNAT).set(ipset.CONSTANTS.IPSET_NTP_OFF, 'src,src').jmp('RETURN')
+    this.ruleNtpOff6 = this.ruleNtpOff.clone().fam(6)
 
     // TODO: local NTP traffic is not distinguished here
     this.ruleLog = new Rule('nat').chn(NTP_CHAIN_DNAT).mdl('conntrack', '--ctstate NEW --ctdir ORIGINAL')
@@ -61,6 +68,88 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     execAsync(String.raw`sudo sed -i -E 's/(^restrict .*)limited(.*$)/\1\2/' /etc/ntp.conf; sudo systemctl restart ntp`).catch(()=>{})
   }
 
+  async updateNtpOff(mac, op='add', updateRedis=false, useTemp=false) {
+    if (!mac) return;
+
+    if (updateRedis === true) {
+      if (op === 'add') {
+        if (updateRedis === true) {
+          const now = Math.floor(Date.now() / 1000);
+          await rclient.zaddAsync(Constant.REDIS_KEY_NTP_OFF_SET, now, mac).catch((err) => {
+            log.error(`Failed to store ${mac} to NTP off set`, err);
+          });
+        }
+      } else if (op === 'del') {
+        if (updateRedis === true) {
+          await rclient.zremAsync(Constant.REDIS_KEY_NTP_OFF_SET, mac).catch((err) => {
+            log.error(`Failed to remove ${mac} from NTP off set`, err);
+          });
+        }
+      }
+    }
+
+    if (op === 'add') {
+      if (this.ntpOffSet.has(mac))
+        return;
+      this.ntpOffSet.add(mac);
+    } else if (op === 'del') {
+      if (!this.ntpOffSet.has(mac))
+        return;
+      this.ntpOffSet.delete(mac);
+    }
+
+    const ipsetName = useTemp ? `${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP` : ipset.CONSTANTS.IPSET_NTP_OFF_MAC;
+    let cmd =  `sudo ipset ${op} -! ${ipsetName} ${mac}`;
+    await execAsync(cmd).catch((err) => {
+      log.error(`Failed to ${op} ${mac} to ${ipsetName}`, err);
+    });
+  }
+
+  async swapIpset() {
+    const ipsetName = ipset.CONSTANTS.IPSET_NTP_OFF_MAC;
+    const tmpIPSetName = `${ipsetName}_TEMP`;
+
+    // swap temp ipset with ipset
+    const swapCmd = `sudo ipset swap ${ipsetName} ${tmpIPSetName}`;
+    await execAsync(swapCmd).catch((err) => {
+      log.error(`Failed to swap ipsets ${ipsetName} ${tmpIPSetName}`, err);
+    });
+
+    const flushCmd = `sudo ipset flush ${tmpIPSetName}`;
+    await execAsync(flushCmd).catch((err) => {
+      log.error(`Failed to flush temp ipsets ${tmpIPSetName}`, err);
+    });
+  }
+
+  async syncNtpOffSet() {
+    const now = Date.now();
+    if (now - this.lastNtpOffSetUpdateTime < this.ntpOffSetUpdateInterval)
+      return;
+
+    const ntpOffSetEntries = await rclient.zrangeAsync(Constant.REDIS_KEY_NTP_OFF_SET, 0, -1).catch((err) => {
+      log.error(`Failed to load NTP off set from redis`, err);
+      return [];
+    });
+    if (ntpOffSetEntries.length === 0)
+      return;
+
+    this.ntpOffSet.clear();
+    for (const mac of ntpOffSetEntries) {;
+      await this.updateNtpOff(mac, 'add', false, true);
+    }
+
+    await this.swapIpset();
+    this.lastNtpOffSetUpdateTime = now;
+  }
+
+  async cleanupNtpOffSet() {
+    const ipsetName = ipset.CONSTANTS.IPSET_NTP_OFF_MAC;
+    await execAsync(`sudo ipset flush ${ipsetName}`).catch((err) => {
+      log.error(`Failed to flush ipset ${ipsetName}`, err);
+    });
+    this.ntpOffSet.clear();
+  }
+
   async job(retry = 5) {
     super.job()
 
@@ -75,6 +164,7 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
         await this.ruleFeature6.exec('-A')
         await rclient.setAsync(Constant.REDIS_KEY_NTP_SERVER_STATUS, 1)
         this.localServerStatus = true
+        await this.syncNtpOffSet();
         return
       } catch(err) {
         (this.localServerStatus ? log.warn : log.verbose)('NTP not available on localhost, retries left', retry)
@@ -146,10 +236,18 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     await new Rule('nat').chn(NTP_CHAIN_DNAT).fam(6).exec('-N')
     await this.ruleFeature.exec('-A')
     await this.ruleFeature6.exec('-A')
+    await this.ruleNtpOff.exec('-A')
+    await this.ruleNtpOff6.exec('-A')
     await this.ruleLog.exec('-A')
     await this.ruleLog6.exec('-A')
     await this.ruleDNAT.exec('-A')
     await this.ruleDNAT6.exec('-A')
+
+    // create temp ipset
+    await execAsync(`sudo ipset create -! ${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP hash:mac`).catch((err) => {
+      log.error(`Failed to create temp ipset ${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP`, err);
+    });
+    await this.syncNtpOffSet();
 
     await super.globalOn()
     // start a quick check right away
@@ -160,6 +258,10 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     await this.ruleFeature.exec('-D')
     await this.ruleFeature6.exec('-D')
     // no need to touch FW_PREROUTING_NTP_DNAT chain here
+
+    await execAsync(`sudo ipset destroy ${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP`).catch((err) => {
+      log.error(`Failed to destroy temp ipset ${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP`, err);
+    });
 
     await super.globalOff()
   }

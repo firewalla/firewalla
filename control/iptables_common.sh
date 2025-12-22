@@ -98,6 +98,9 @@ create monitored_net_set list:set
 create qos_off_mac_set hash:mac
 create qos_off_set list:set
 
+create ntp_off_mac_set hash:mac
+create ntp_off_set list:set
+
 create match_dns_port_set bitmap:port range 0-65535
 
 flush acl_off_mac_set
@@ -112,6 +115,10 @@ flush monitored_net_set
 flush qos_off_mac_set
 flush qos_off_set
 add qos_off_set qos_off_mac_set
+
+flush ntp_off_mac_set
+flush ntp_off_set
+add ntp_off_set ntp_off_mac_set
 
 EOF
 

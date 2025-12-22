@@ -89,6 +89,8 @@ const Constants = require('./Constants.js');
 const Block = require('../control/Block.js');
 const exec = require('util').promisify(require('child_process').exec);
 
+const ipset = require('./Ipset.js');
+
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
 const CONNMARK_REFRESH_INTERVAL = 15 * 1000; // 15 seconds
@@ -1624,6 +1626,23 @@ class BroDetect {
       if (obj == null) {
         log.error("SSL:Drop", obj);
         return;
+      }
+
+      if (obj.orig_alpn && obj.orig_alpn.includes("ntske/1")
+        && obj['id.orig_h'] && obj['id.resp_p'] && obj['id.resp_p'] == 4460) { // NTS KE exchange, add related device to ignore NTP intercept list
+        let mac = await hostTool.getMacByIPWithCache(obj['id.orig_h']);
+        if (!mac) {
+          const identity = await this.waitAndGetIdentity(obj['id.orig_h']);
+          if (identity)
+            mac = identity.getGUID();
+        }
+        const ntpRedPlugin = sl.getSensor("NTPRedirectPlugin");
+        if (ntpRedPlugin) {
+          log.debug(`NTS KE exchange detected, local mac: ${mac}, server IP: ${obj['id.resp_h']}, server port: ${obj['id.resp_p']}`);
+          await ntpRedPlugin.updateNtpOff(mac, 'add', true).catch((err) => {
+            log.error(`Failed to add ${mac} to NTP off set`, err);
+          });
+        }
       }
 
       if (this.proxyConn.get(obj.uid)) {
