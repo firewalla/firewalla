@@ -423,7 +423,9 @@ class Policy {
       let tagMatched = false;
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const config = Constants.TAG_TYPE_MAP[type];
-        if (_.has(alarm, config.alarmIdKey) && alarm[config.alarmIdKey].some(tid => this.tag.includes(`${config.ruleTagPrefix}${tid}`)))
+        if (_.has(alarm, config.alarmIdKey) && _.isArray(alarm[config.alarmIdKey]) &&
+          alarm[config.alarmIdKey].some(tid => this.tag.includes(`${config.ruleTagPrefix}${tid}`))
+        )
           tagMatched = true;
       }
       if (!intfMatched && !tagMatched) {
@@ -468,8 +470,7 @@ class Policy {
       case "dns":
       case "domain":
         if (alarm['p.dest.name']) {
-          return minimatch(alarm['p.dest.name'], `*.${this.target}`) ||
-            alarm['p.dest.name'] === this.target
+          return this.matchDomain(alarm['p.dest.name'])
         } else {
           return false
         }
@@ -542,6 +543,10 @@ class Policy {
       default:
         return false
     }
+  }
+
+  matchDomain(domain) {
+    return minimatch(domain, `*.${this.target}`) || domain === this.target
   }
 
   redisfyObj(p) {

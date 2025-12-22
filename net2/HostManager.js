@@ -136,7 +136,7 @@ module.exports = class HostManager extends Monitorable {
 
       // make sure cached host is created/deleted in all processes
       messageBus.subscribe("DiscoveryEvent", "Device:Create", null, (channel, type, mac, obj) => {
-        this.createHost(obj).catch(err => {
+        this.createHost(obj, !f.isMain()).catch(err => {
           log.error('Error creating host', err, obj)
         })
       })
@@ -199,6 +199,9 @@ module.exports = class HostManager extends Monitorable {
             // global qos config will be applied to default WAN, need to re-apply in case of network change
             if (this.policy && _.has(this.policy, "qos"))
               await this.qos(this.policy.qos);
+
+            if (this.policy && _.has(this.policy, "app"))
+              await this.app(this.policy.app);
           })
 
           setInterval(() => this.validateSpoofs(), 5 * 60 * 1000)
@@ -1769,16 +1772,16 @@ module.exports = class HostManager extends Monitorable {
     return host
   }
 
-  async createHost(o) {
+  async createHost(o, noWrite = false) {
     let host = await this.getHostAsync(o.mac)
     if (host) {
       log.info('createHost: already exist', o.mac)
-      await host.update(o, false, true)
+      await host.update(o, false, !noWrite)
       return host
     }
 
     host = new Host(o)
-    await host.save()
+    !noWrite && await host.save()
 
     this.hostsdb[`host:mac:${o.mac}`] = host
     this.hosts.all.push(host);
@@ -2057,6 +2060,31 @@ module.exports = class HostManager extends Monitorable {
     return this.spoofing;
   }
 
+  async getQosConfs() {
+    try {
+      const qosString = await rclient.hgetAsync('policy:system', 'qos')
+      if (!qosString) return null
+
+      const qosConfs = JSON.parse(qosString)
+      return qosConfs
+    } catch(err) {
+      log.error('Error reading policy:system => qos', err)
+      return null
+    }
+  }
+  async getAppConfs() {
+    try {
+      const appString = await rclient.hgetAsync('policy:system', 'app')
+      if (!appString) return null
+
+      const appConfs = JSON.parse(appString)
+      return appConfs
+    } catch(err) {
+      log.error('Error reading policy:system => app', err)
+      return null
+    }
+  }
+
   async qos(policy, wanUUID) {
     if (wanUUID) { // per-wan config
       let upload = true;
@@ -2134,6 +2162,16 @@ module.exports = class HostManager extends Monitorable {
           }
         }
       }
+      
+      if (!state) {
+        await platform.setQoSBandwidth(Constants.QOS_MAX_BANDWIDTH_MBPS, Constants.QOS_MAX_BANDWIDTH_MBPS);
+      } else {
+        const appConfs = await this.getAppConfs();
+        this.app(appConfs).catch((err) => {
+          log.error(`Failed to set app qos bandwidth`, err.message);
+        });
+      }
+
       await platform.switchQoS(state, qdisc);
     } 
   }
@@ -2154,6 +2192,60 @@ module.exports = class HostManager extends Monitorable {
         log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
       });
     }
+  }
+
+  async app(policy) {
+    if (!policy) {
+      return;
+    }
+    //following part should be executed when app conf changes or WAN changes
+    //only set the speed limit base on config when qos is adaptive mode otherwise set to max speed
+
+    // get current qos mode
+    const qosConfs = await this.getQosConfs();
+    if (!qosConfs || !qosConfs.state || qosConfs.mode !== Constants.QOS_MODE_ADAPTIVE) {
+      log.info("Set app Qos to max speed since qos is not in adaptive mode");
+      await platform.setQoSBandwidth(Constants.QOS_MAX_BANDWIDTH_MBPS, Constants.QOS_MAX_BANDWIDTH_MBPS);
+      return;
+    }
+
+    // for load balance mode, set the speed rate limit to sum of all WANs
+    // for failover mode, set the speed to primary WAN only
+    // const appConfs = await this.getAppConfs();
+    const wanType = sysManager.getWanType();
+    const bandwidth = policy && policy.bandwidth || {};
+    let uploadSpeed = parseInt(bandwidth.upload) || 0;
+    let downloadSpeed = parseInt(bandwidth.download) || 0;
+    if (bandwidth.wanConfs) {
+      let totalUpload = 0;
+      let totalDownload = 0;
+      const activeWanIntf = sysManager.getDefaultWanInterface();
+      const activeWanUUID = activeWanIntf && activeWanIntf.uuid;
+      for (const [wanId, wanConf] of Object.entries(bandwidth.wanConfs)) {
+        if (wanType === Constants.WAN_TYPE_FAILOVER) {
+          if (wanId === activeWanUUID) {
+            totalUpload = parseInt(wanConf.upload) || 0;
+            totalDownload = parseInt(wanConf.download) || 0;
+            break;
+          }
+        } else if (wanType === Constants.WAN_TYPE_SINGLE) {
+          totalUpload = parseInt(wanConf.upload) || 0;
+          totalDownload = parseInt(wanConf.download) || 0;
+          break;
+        } else if (wanType === Constants.WAN_TYPE_LB) {
+          const intf = sysManager.getInterfaceViaUUID(wanId);
+          if (!intf || intf.type !== "wan" || !intf.ready)
+            continue;
+          totalUpload += parseInt(wanConf.upload) || 0;
+          totalDownload += parseInt(wanConf.download) || 0;
+        }
+      }
+      uploadSpeed = totalUpload;
+      downloadSpeed = totalDownload;
+    }
+    log.info(`Set app QoS bandwidth to upload: ${uploadSpeed} mbps, download: ${downloadSpeed} mbps`);
+
+    await platform.setQoSBandwidth(uploadSpeed, downloadSpeed);
   }
 
   async aclTimer(policy = {}) {

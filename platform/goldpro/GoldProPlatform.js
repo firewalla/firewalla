@@ -147,12 +147,31 @@ class GoldProPlatform extends Platform {
     }
     // replace the default tc filter
     const QoS = require('../../control/QoS.js');
-    await exec (`sudo tc filter replace dev ifb0 parent 1: handle 800::0x1 prio 1 u32 match mark 0x800000 0x${QoS.QOS_UPLOAD_MASK.toString(16)} flowid 1:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
+    const parent_classid = 10;
+    await exec (`sudo tc filter replace dev ifb0 parent ${parent_classid}: handle 800::0x1 prio 1 u32 match mark 0x800000 0x${QoS.QOS_UPLOAD_MASK.toString(16)} flowid ${parent_classid}:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
       log.error(`Failed to update tc filter on ifb0`, err.message);
     });
-    await exec (`sudo tc filter replace dev ifb1 parent 1: handle 800::0x1 prio 1 u32 match mark 0x10000 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)} flowid 1:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
+    await exec (`sudo tc filter replace dev ifb1 parent ${parent_classid}: handle 800::0x1 prio 1 u32 match mark 0x10000 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)} flowid ${parent_classid}:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
       log.error(`Failed to update tc filter on ifb1`, err.message);
     });
+  }
+
+  async setQoSBandwidth(upload, download) {
+    if (upload > 0 && download > 0) {
+      upload = Math.floor(upload * 0.98); // leave some margin
+      download = Math.floor(download * 0.98); // leave some margin
+
+      const upload_burst = Math.floor(upload * 1024 / 800); // in KB
+      const download_burst = Math.floor(download * 1024 / 800); // in KB
+
+
+      await exec (`sudo tc class replace dev ifb0 parent 1: classid 1:1 htb rate ${upload}mbit ceil ${upload}mbit burst ${upload_burst}kbit cburst ${upload_burst}kbit`).catch((err) => {
+        log.error(`Failed to set upload bandwidth to ${upload}mbit`, err.message);
+      });
+      await exec (`sudo tc class replace dev ifb1 parent 1: classid 1:1 htb rate ${download}mbit ceil ${download}mbit burst ${download_burst}kbit cburst ${download_burst}kbit`).catch((err) => {
+        log.error(`Failed to set download bandwidth to ${download}mbit`, err.message);
+      });
+    }
   }
 
   getSubnetCapacity() {

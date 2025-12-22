@@ -34,6 +34,7 @@ module.exports = {
   VPN_TYPE_AMNEZIAWG: "awg",
 
   INTF_AP_CTRL: "wg_ap",
+  INTF_PCAP_TAP: "ifb_pcap_tap",
 
   TRUST_IP_SET: "trust:ip",
   TRUST_DOMAIN_SET: "trust:domain",
@@ -181,6 +182,9 @@ module.exports = {
   POLICY_KEY_ISOLATION: "isolation",
   POLICY_KEY_SSID_PSK: "ssidPSK",
   POLICY_KEY_WIFI_AUTO_GROUP: "wifiAutoGroup",
+
+  QOS_MODE_ADAPTIVE: "adaptive",
+  QOS_MAX_BANDWIDTH_MBPS: 10240, // 10Gbps
 
   LOG_PREFIX_QUIC: '[FW_QUIC]:',
 };

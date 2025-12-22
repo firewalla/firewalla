@@ -139,6 +139,10 @@ class Platform {
 
   }
 
+  async setQoSBandwidth(upload, download) {
+
+  }
+
   getDNSServiceName() {
     return "firemasq";
   }
@@ -529,6 +533,10 @@ class Platform {
     const assets = _.get(networkConfig, ["apc", "assets"], {});
     const integratedAssets = _.pickBy(assets, (value, key) => value.integrated === true);
     return !_.isEmpty(integratedAssets);
+  }
+
+  getInterfacesRedirectedToPcapTap(intfNameMap) {
+    return [];
   }
 }
 

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -80,6 +80,8 @@ const validator = require('validator');
 const iptool = require('ip');
 const util = require('util');
 const exec = require('child-process-promise').exec;
+const LRU = require('lru-cache');
+
 const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 
@@ -93,7 +95,6 @@ const VPNClient = require('../extension/vpnclient/VPNClient.js');
 let hostManager;
 
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
-const { map } = require('async');
 
 const ruleSetTypeMap = {
   'ip': 'hash:ip',
@@ -139,6 +140,16 @@ class PolicyManager2 {
       this.sortedActiveRulesCache = null;
       this.sortedRoutesCache = null;
       this.allRulesInitialized = false;
+
+      this.tlsInstalled = false;
+
+      this.policyCache = new LRU({max: 1000});
+      sem.on('Policy:Updated', (event) => {
+        const pid = event && event.pid;
+        if (!isNaN(pid)) {
+          this.policyCache.del(Number(pid));
+        }
+      });
     }
     return instance;
   }
@@ -412,7 +423,11 @@ class PolicyManager2 {
 
     await rclient.hmsetAsync(policyKey, merged.redisfy());
 
-    const emptyStringCheckKeys = ["expire", "cronTime", "duration", "activatedTime", "remote", "remoteType", "local", "localType", "localPort", "remotePort", "proto", "parentRgId", "targetRgId"];
+    const emptyStringCheckKeys = ["expire", "cronTime", "duration", "activatedTime", "idleTs",
+      "remote", "remoteType", "local", "localType", "localPort", "remotePort", "protocol",
+      "parentRgId", "targetRgId", "targetList", "disturbLevel", 'appTimeUsage', "useBf",
+      "notes", 
+    ];
 
     for (const key of emptyStringCheckKeys) {
       if (!merged[key] || merged[key] === '')
@@ -498,11 +513,21 @@ class PolicyManager2 {
     return check == 1
   }
 
-  async getPolicy(policyID) {
+  async getPolicy(policyID, useCache = false) {
+    if (useCache) {
+      // update policy is removed from cache, safe to extend ttl here
+      const policy = this.policyCache.get(policyID)
+      if (policy) {
+        return policy
+      }
+    }
+
     const results = await this.idsToPolicies([policyID])
 
     if (results == null || results.length === 0) {
       return null
+    } else if (useCache) {
+      this.policyCache.set(policyID, results[0])
     }
 
     return results[0]
@@ -1373,7 +1398,7 @@ class PolicyManager2 {
     tags = tags.filter((_, index) => tagExistenceChecks[index])
     // invalid tag should not continue
     if (tag && tag.length && !tags.length && !intfs.length) {
-      log.error(`Unknown policy tags format policy id: ${pid}, stop enforce policy`);
+      log.verbose(`Unknown policy tags format policy id: ${pid}, stop enforce policy`);
       return;
     }
 
@@ -1390,7 +1415,7 @@ class PolicyManager2 {
     let connSets = [];
     let localPortSet = null;
     let remotePortSet = null;
-    let remotePositive = true;
+    let remoteNegate = false;
     let remoteTupleCount = 1;
     let ctstate = null;
     let tlsHostSet = null;
@@ -1482,7 +1507,7 @@ class PolicyManager2 {
       case "internet": // mac is the alias of internet
         remoteSet4 = ipset.CONSTANTS.IPSET_MONITORED_NET;
         remoteSet6 = ipset.CONSTANTS.IPSET_MONITORED_NET;
-        remotePositive = false;
+        remoteNegate = true;
         remoteTupleCount = 2;
         // legacy data format
         // target: "TAG" is a placeholder for various rules from App
@@ -1535,7 +1560,11 @@ class PolicyManager2 {
         if (action === "resolve" || action == "address") // no further action is needed for pure dns rule
           return;
 
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || action === "snat" || Number.isInteger(ipttl) || (seq !== Constants.RULE_SEQ_REG && !security)) {
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId
+          || localPortSet || remotePortSet || owanUUID || origDst || origDport
+          || action === "qos" || action === "route" || action === "alarm" || action === "snat"
+          || Number.isInteger(ipttl) || (seq !== Constants.RULE_SEQ_REG && !security)
+        ) {
           if (!policy.dnsmasq_only) {
             await ipset.create(remoteSet4, "hash:ip", false, { timeout: ipttl });
             await ipset.create(remoteSet6, "hash:ip", true, { timeout: ipttl });
@@ -1783,20 +1812,20 @@ class PolicyManager2 {
 
     const commonOptions = {
       pid, tags, intfs, scope, guids, parentRgId,
-      localPortSet, /*remoteSet4, remoteSet6,*/ remoteTupleCount, remotePositive, remotePortSet, proto: protocol,
+      localPortSet, /*remoteSet4, remoteSet6,*/ remoteTupleCount, remoteNegate, remotePortSet, proto: protocol,
       action, direction, createOrDestroy: "create", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
       wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
       subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
     }
     if ((tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets))) {
-      let tlsInstalled = true;
+      this.tlsInstalled = true;
       await platform.installTLSModules().catch((err) => {
         log.error(`Failed to install TLS module, will not apply rule ${pid} based on tls`, err.message);
-        tlsInstalled = false;
+        this.tlsInstalled = false;
       })
 
-      if (tlsInstalled) {
+      if (this.tlsInstalled) {
         // no need to specify remote set 4 & 6 for tls block\
         if (!_.isEmpty(tlsHostSets)) {
           await Promise.all(tlsHostSets.map(async (tlsHostSet) => {
@@ -1816,6 +1845,22 @@ class PolicyManager2 {
           // activate TLS category after rule is added in iptables, this can guarante hostset is generated in /proc filesystem
           if (tlsHostSet)
             await categoryUpdater.activateTLSCategory(target, protocol);
+        }
+
+        // For default mode (dnsmasq_only === false) domain/dns rules where TLS/SNI rules are installed, exclude port 443
+        // from the generic ipset-based rules to avoid over-blocking shared IPs on 443. TLS rules will still handle 443.
+        // only use this on domain block as global block might block TLS handshake for domain allow
+        if (['domain', 'dns'].includes(type) && action == 'block' && !policy.dnsmasq_only) {
+          if (remotePortSet) {
+            log.error(`Unsuported rule ${pid}: remotePort ${remotePort} exist on TLS rule`);
+            return
+          } else {
+            remotePortSet = `c_bp_${pid}_remote_port`;
+            await ipset.create(remotePortSet, "bitmap:port");
+            await Block.batchBlock(["443"], remotePortSet);
+            commonOptions.remotePortNegate = true;
+            commonOptions.remotePortSet = remotePortSet;
+          }
         }
       }
     }
@@ -1998,7 +2043,7 @@ class PolicyManager2 {
     let connSet6 = null;
     let localPortSet = null;
     let remotePortSet = null;
-    let remotePositive = true;
+    let remoteNegate = false;
     let remoteTupleCount = 1;
     let ctstate = null;
     let tlsHostSet = null;
@@ -2068,7 +2113,6 @@ class PolicyManager2 {
           await Block.block(values[0], Block.getDstSet(pid));
           remotePort = values[1];
         }
-
         if (remotePort) {
           remotePortSet = `c_bp_${pid}_remote_port`;
           await Block.batchUnblock(remotePort.split(","), remotePortSet);
@@ -2079,7 +2123,7 @@ class PolicyManager2 {
       case "internet":
         remoteSet4 = ipset.CONSTANTS.IPSET_MONITORED_NET;
         remoteSet6 = ipset.CONSTANTS.IPSET_MONITORED_NET;
-        remotePositive = false;
+        remoteNegate = true;
         remoteTupleCount = 2;
         // legacy data format
         if (target && ht.isMacAddress(target)) {
@@ -2331,7 +2375,7 @@ class PolicyManager2 {
 
     const commonOptions = {
       pid, tags, intfs, scope, guids, parentRgId,
-      localPortSet, /*remoteSet4, remoteSet6,*/ remoteTupleCount, remotePositive, remotePortSet, proto: protocol,
+      localPortSet, /*remoteSet4, remoteSet6,*/ remoteTupleCount, remoteNegate, remotePortSet, proto: protocol,
       action, direction, createOrDestroy: "destroy", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
       wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
@@ -2350,23 +2394,40 @@ class PolicyManager2 {
     }
 
     if (tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets)) {
-      if (!_.isEmpty(tlsHostSets)) {
-        await Promise.all(tlsHostSets.map(async (tlsHostSet) => {
+      if (this.tlsInstalled) {
+        if (!_.isEmpty(tlsHostSets)) {
+          await Promise.all(tlsHostSets.map(async (tlsHostSet) => {
+            await this.__applyTlsRules({ ...commonOptions, tlsHostSet, tlsHost }).catch((err) => {
+              log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
+            });
+          }));
+        } else {
           await this.__applyTlsRules({ ...commonOptions, tlsHostSet, tlsHost }).catch((err) => {
             log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
           });
-        }));
-      } else {
-        await this.__applyTlsRules({ ...commonOptions, tlsHostSet, tlsHost }).catch((err) => {
-          log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
-        });
-      }
-      // refresh activated tls category after rule is removed from iptables, hostset in /proc filesystem will be removed after last reference in iptables rule is removed
-      if (tlsHostSet || !_.isEmpty(tlsHostSets)) {
-        await delay(200); // wait for 200 ms so that hostset file can be purged from proc fs
-        await categoryUpdater.refreshTLSCategoryActivated();
+        }
+        // refresh activated tls category after rule is removed from iptables, hostset in /proc filesystem will be removed after last reference in iptables rule is removed
+        if (tlsHostSet || !_.isEmpty(tlsHostSets)) {
+          await delay(200); // wait for 200 ms so that hostset file can be purged from proc fs
+          await categoryUpdater.refreshTLSCategoryActivated();
+        }
+
+        // Mirror enforcement behavior: exclude 443 via inverted bitmap:port set
+        if (['domain', 'dns'].includes(type) && action == 'block' && !policy.dnsmasq_only) {
+          if (remotePortSet) {
+            log.error(`Unsuported rule ${pid}: remotePort ${remotePort} exist on TLS rule`);
+            return;
+          } else {
+            remotePortSet = `c_bp_${pid}_remote_port`;
+            await ipset.create(remotePortSet, "bitmap:port");
+            await Block.batchBlock(["443"], remotePortSet);
+            commonOptions.remotePortNegate = true;
+            commonOptions.remotePortSet = remotePortSet;
+          }
+        }
       }
     }
+
     if (!_.isEmpty(connSets)) {
       await Promise.all(connSets.map(async (connSet) => {
         const { connSet4, connSet6 } = connSet;
