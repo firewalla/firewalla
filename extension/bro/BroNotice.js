@@ -193,7 +193,7 @@ class BroNotice {
         // should dealing with signature event here?
       default:
         // do nothing
-        log.info(`Unsupported zeek notice type ${noticeType}, ignored`, noticeType);
+        log.verbose(`Unsupported zeek notice type ${noticeType}, ignored`, noticeType);
         log.verbose(broObj)
         return null;
     }
