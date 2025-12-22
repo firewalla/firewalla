@@ -470,8 +470,7 @@ class Policy {
       case "dns":
       case "domain":
         if (alarm['p.dest.name']) {
-          return minimatch(alarm['p.dest.name'], `*.${this.target}`) ||
-            alarm['p.dest.name'] === this.target
+          return this.matchDomain(alarm['p.dest.name'])
         } else {
           return false
         }
@@ -544,6 +543,10 @@ class Policy {
       default:
         return false
     }
+  }
+
+  matchDomain(domain) {
+    return minimatch(domain, `*.${this.target}`) || domain === this.target
   }
 
   redisfyObj(p) {

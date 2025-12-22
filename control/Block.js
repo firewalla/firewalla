@@ -1663,8 +1663,9 @@ async function setupRuleGroupRules(options) {
 }
 
 async function prepareOutboundOptions(options) {
-  const { pid, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto,
-    direction, createOrDestroy = "create", ctstate = null, 
+  const { pid, remoteSet4, remoteSet6, remoteTupleCount = 1, remoteNegate = false,
+    remotePortSet, remotePortNegate = false, proto,
+    direction, createOrDestroy = "create", ctstate = null,
     transferredBytes, transferredPackets, avgPacketBytes,
     tlsHostSet, tlsHost, upnp, owanUUID, origDst, origDport, dscpClass,
     connSet4 = null, connSet6 = null
@@ -1674,8 +1675,9 @@ async function prepareOutboundOptions(options) {
     set: remoteSet4,
     set6: remoteSet6,
     specs: new Array(remoteTupleCount).fill("dst"),
-    positive: remotePositive,
+    negate: remoteNegate,
     portSet: remotePortSet,
+    portNegate: remotePortNegate,
   }
   const conn = {
     specs: ["src", "src", "dst"],
@@ -1778,20 +1780,20 @@ async function manipulateFiveTupleRule(options) {
   const srcSet = af == 4 ? src.set : src.set6;
   const connSet = af == 4 ? conn.set : conn.set6;
   if (srcSet)
-    rule.mdl("set", `${src.positive ? "" : "!"} --match-set ${srcSet} ${src.specs.join(",")}`);
+    rule.set(srcSet, src.specs.join(","), src.negate);
   if (src.portSet)
-    rule.mdl("set", `--match-set ${src.portSet} src`);
+    rule.set(src.portSet, 'src', src.portNegate);
   const dstSet = af == 4 ? dst.set : dst.set6;
   if (dstSet)
-    rule.mdl("set", `${dst.positive ? "" : "!"} --match-set ${dstSet} ${dst.specs.join(",")}`);
+    rule.set(dstSet, dst.specs.join(","), dst.negate);
   if (connSet)
-    rule.mdl("set", `--match-set ${connSet} ${conn.specs.join(",")}`);
+    rule.set(connSet, conn.specs.join(","), conn.negate);
   if (dst.portSet)
-    rule.mdl("set", `--match-set ${dst.portSet} dst`);
+    rule.set(dst.portSet, 'dst', dst.portNegate);
   if (src.ifSet)
-    rule.mdl("set", `--match-set ${src.ifSet} src,src`);
+    rule.set(src.ifSet, 'src,src');
   if (dst.ifSet)
-    rule.mdl("set", `--match-set ${dst.ifSet} dst,dst`);
+    rule.set(dst.ifSet, 'dst,dst');
   if (origDst)
     rule.mdl("conntrack", `--ctorigdst ${origDst}`);
   if (origDport)
