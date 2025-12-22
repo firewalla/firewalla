@@ -75,6 +75,8 @@ const MSG_FWAPC_SSID_STA_UPDATE = "fwapc:ssid_station_update";
 const MSG_FWAPC_CONNTRACK_UPDATE = "fwapc:conntrack_update";
 const MSG_FWAPC_BLOCK_FLOW = "fwapc:block_flow";
 
+const MSG_HAPD_EVENT = "hostapd.event";
+
 module.exports = {
   MSG_TRACE,
   MSG_NETWORK_CHANGED,
@@ -123,4 +125,5 @@ module.exports = {
   MSG_FWAPC_SSID_STA_UPDATE,
   MSG_FWAPC_CONNTRACK_UPDATE,
   MSG_FWAPC_BLOCK_FLOW,
+  MSG_HAPD_EVENT,
 }
