@@ -73,18 +73,14 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
 
     if (updateRedis === true) {
       if (op === 'add') {
-        if (updateRedis === true) {
-          const now = Math.floor(Date.now() / 1000);
-          await rclient.zaddAsync(Constant.REDIS_KEY_NTP_OFF_SET, now, mac).catch((err) => {
-            log.error(`Failed to store ${mac} to NTP off set`, err);
-          });
-        }
+        const now = Math.floor(Date.now() / 1000);
+        await rclient.zaddAsync(Constant.REDIS_KEY_NTP_OFF_SET, now, mac).catch((err) => {
+          log.error(`Failed to store ${mac} to NTP off set`, err);
+        });
       } else if (op === 'del') {
-        if (updateRedis === true) {
-          await rclient.zremAsync(Constant.REDIS_KEY_NTP_OFF_SET, mac).catch((err) => {
-            log.error(`Failed to remove ${mac} from NTP off set`, err);
-          });
-        }
+        await rclient.zremAsync(Constant.REDIS_KEY_NTP_OFF_SET, mac).catch((err) => {
+          log.error(`Failed to remove ${mac} from NTP off set`, err);
+        });
       }
     }
 
@@ -134,7 +130,7 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
       return;
 
     this.ntpOffSet.clear();
-    for (const mac of ntpOffSetEntries) {;
+    for (const mac of ntpOffSetEntries) {
       await this.updateNtpOff(mac, 'add', false, true);
     }
 
