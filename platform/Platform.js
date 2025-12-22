@@ -530,6 +530,10 @@ class Platform {
     const integratedAssets = _.pickBy(assets, (value, key) => value.integrated === true);
     return !_.isEmpty(integratedAssets);
   }
+
+  getInterfacesRedirectedToPcapTap(intfNameMap) {
+    return [];
+  }
 }
 
 module.exports = Platform;
