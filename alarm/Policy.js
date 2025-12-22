@@ -423,7 +423,9 @@ class Policy {
       let tagMatched = false;
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const config = Constants.TAG_TYPE_MAP[type];
-        if (_.has(alarm, config.alarmIdKey) && alarm[config.alarmIdKey].some(tid => this.tag.includes(`${config.ruleTagPrefix}${tid}`)))
+        if (_.has(alarm, config.alarmIdKey) && _.isArray(alarm[config.alarmIdKey]) &&
+          alarm[config.alarmIdKey].some(tid => this.tag.includes(`${config.ruleTagPrefix}${tid}`))
+        )
           tagMatched = true;
       }
       if (!intfMatched && !tagMatched) {

@@ -62,7 +62,7 @@ class DomainUpdater {
 
       setInterval(async () => {
         if (this._needRefresh) {
-          log.info("DomainUpdater refreshing connmark for updated ipsets");
+          log.debug("DomainUpdater refreshing connmark for updated ipsets");
           await this.scheduleRefreshConnmark();
           this._needRefresh = false;
         }
