@@ -525,7 +525,7 @@ module.exports = class {
     })
 
     this.queue.on('failed', (job, err) => {
-      log.error(`Job ${job.id} ${job.action} failed with error ${err.message}`);
+      log.error(`Job ${job.id} failed with error ${err.message}`, job.data);
     });
 
     this.queue.destroy(() => {
@@ -868,30 +868,28 @@ module.exports = class {
     }
   }
 
-  enqueueAlarm(alarm, retry = true, profile) {
+  async enqueueAlarm(alarm, retry = true, profile) {
     if (this.queue) {
       const job = this.queue.createJob({
         alarm,
         profile,
         action: "create"
       })
-      job.timeout(60000).save((err) => {
-        if (err) {
-          log.error("Failed to create alarm job", err.message);
-          if (err.message && err.message.includes("NOSCRIPT")) {
-            // this is usually caused by unexpected redis restart and previously loaded scripts are flushed
-            log.info("Re-creating alarm queue ...");
-            this.queue.close(() => {
-              this.setupAlarmQueue().then(() => {
-                if (retry) {
-                  log.info("Retry creating alarm ...", alarm);
-                  this.enqueueAlarm(alarm, false, profile);
-                }
-              });
-            });
+      try {
+        await job.timeout(60000).save();
+      } catch (err) {
+        log.error("Failed to create alarm job", err.message);
+        if (err.message && err.message.includes("NOSCRIPT")) {
+          // this is usually caused by unexpected redis restart and previously loaded scripts are flushed
+          log.info("Re-creating alarm queue ...");
+          await this.queue.close();
+          await this.setupAlarmQueue();
+          if (retry) {
+            log.info("Retry creating alarm ...", alarm);
+            await this.enqueueAlarm(alarm, false, profile);
           }
         }
-      })
+      }
     }
   }
 
