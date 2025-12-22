@@ -738,8 +738,16 @@ class FireRouter {
           this.pcapRestartNeeded = false;
         }
         if (first || this.tcFilterRefreshNeeded) {
+
+          const model = platform.getName();
+          let qosNetworkType = 'lan';
+
+          const lanIntfs = monitoringIntfNames.filter(iface => intfNameMap[iface] && intfNameMap[iface].config.meta.type === 'lan');
+          const wanIntfs = this.getWanIntfNames();
+          log.info(`Resetting tc filters on ${qosNetworkType} lanIntfs: ${lanIntfs} wanIntfs: ${wanIntfs}`);
+
           const localIntfs = monitoringIntfNames.filter(iface => intfNameMap[iface] && intfNameMap[iface].config.meta.type === 'lan');
-          await this.resetTCFilters(localIntfs);
+          await this.resetTCFilters(lanIntfs, wanIntfs, qosNetworkType);
           this.scheduleResetPcapTap();
           this.tcFilterRefreshNeeded = false;
         }
@@ -825,7 +833,7 @@ class FireRouter {
     }
   }
 
-  async resetTCFilters(ifaces) {
+  async resetTCFilters(lanIntfs, wanIntfs, qosNetworkType) {
     if (!platform.isIFBSupported()) {
       log.info("Platform does not support ifb, tc filters will not be reset");
       return;
@@ -836,7 +844,14 @@ class FireRouter {
         await exec(`sudo tc qdisc del dev ${iface} root`).catch(() => {});
         await exec(`sudo tc qdisc del dev ${iface} ingress`).catch(() => {});
       }
+    } else {
+      log.info("No existing tc filters, clear both lan and wan interfaces");
+      for (const iface of lanIntfs.concat(wanIntfs)) {
+        await exec(`sudo tc qdisc del dev ${iface} root`).catch(() => { });
+        await exec(`sudo tc qdisc del dev ${iface} ingress`).catch(() => { });
+      }
     }
+    const ifaces = qosNetworkType === 'lan' ? lanIntfs : wanIntfs;
     log.info("Initializing tc filters ...", ifaces);
     for (const iface of ifaces) {
       await exec(`sudo tc qdisc del dev ${iface} root`).catch(() => { });
@@ -854,7 +869,15 @@ class FireRouter {
       })
       // only redirect ipv4 and ipv6 traffic to ifb devices, prevent 802.1q packets from being redirected to ifb twice
       // redirect ingress (upload) traffic to ifb0, egress (download) traffic to ifb1
-      for (const {dir, parent, ifb, mask} of [{dir: "upload", parent: "ffff:", ifb: "ifb0", mask: QoS.QOS_UPLOAD_MASK}, {dir: "download", parent: "1:", ifb: "ifb1", mask: QoS.QOS_DOWNLOAD_MASK}]) {
+
+      let uploadSetting = { dir: "upload", parent: "ffff:", ifb: "ifb0", mask: QoS.QOS_UPLOAD_MASK };
+      let downloadSetting = { dir: "download", parent: "1:", ifb: "ifb1", mask: QoS.QOS_DOWNLOAD_MASK };
+      if (qosNetworkType === 'wan') {
+        uploadSetting = { dir: "upload", parent: "1:", ifb: "ifb0", mask: QoS.QOS_UPLOAD_MASK };
+        downloadSetting = { dir: "download", parent: "ffff:", ifb: "ifb1", mask: QoS.QOS_DOWNLOAD_MASK };
+      }
+
+      for (const {dir, parent, ifb, mask} of [uploadSetting, downloadSetting]) {
         for (const {proto, ht, prio} of [{proto: "ip", ht: 800, prio: 1}, {proto: "ipv6", ht: 801, prio: 2}]) {
           const cmds = [
             `sudo tc filter add dev ${iface} parent ${parent} handle ${ht}::0x1 prio ${prio} protocol ${proto} u32 match u32 0 0 action connmark continue`,

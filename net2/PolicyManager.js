@@ -458,6 +458,8 @@ class PolicyManager {
         await this.ipAllocation(target, policyDataClone);
       } else if (p === "dnsmasq") {
         // do nothing here, will handle dnsmasq at the end
+      } else if (p === "app") {
+        await target.app(policyDataClone);
       } else {
         for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
           const config = Constants.TAG_TYPE_MAP[type];
