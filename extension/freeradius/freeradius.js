@@ -33,6 +33,7 @@ const dockerDir = `${f.getRuntimeInfoFolder()}/docker/freeradius`
 const configDir = `${f.getUserConfigFolder()}/freeradius`
 const logDir = `${f.getUserHome()}/.forever/freeradius`
 const certsDir = `${f.getHiddenFolder()}/certs/freeradius`
+const fwrcFile = `${f.getUserHome()}/.fwrc`
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -289,8 +290,9 @@ class FreeRadius {
   async loadOptionsAsync() {
     const options = {};
     // Load environment file if .env` exists in working directory
-    if (await fs.accessAsync(`${dockerDir}/config/.env`).then(() => true).catch(() => false)) {
-      try {
+    try {
+      // ~/.firewalla/run/docker/freeradius/config/.env
+      if (await fs.accessAsync(`${dockerDir}/config/.env`).then(() => true).catch(() => false)) {
         const envContent = await fs.readFileAsync(`${dockerDir}/config/.env`, 'utf8');
         const envLines = envContent.split('\n').filter(line =>
           line.trim() && !line.trim().startsWith('#')
@@ -299,9 +301,24 @@ class FreeRadius {
           const [key, value] = line.split('=');
           if (key && value) options[key] = value;
         }
-      } catch (error) {
-        log.warn(`Warning: Could not read environment file: ${error.message}`);
       }
+
+      // ~/.fwrc
+      if (await fs.accessAsync(fwrcFile, fs.constants.F_OK).then(() => true).catch(() => false)) {
+        const content = await fs.readFileAsync(fwrcFile, 'utf8');
+        const envLines = content.split('\n').filter(line =>
+          line.trim() && !line.trim().startsWith('#')
+        );
+        for (const line of envLines) {
+          const [key, value] = line.split('=');
+          if (key == "RADIUS_REPO" && value) {
+            options.image_repo = value;
+            break;
+          }
+        }
+      }
+    } catch (error) {
+      log.warn(`Warning: Could not read environment file: ${error.message}`);
     }
     return options;
   }
@@ -601,6 +618,10 @@ class FreeRadius {
     const tag = this._getImageTag(options);
     if (tag === "dev" || tag === "test") {
       return `public.ecr.aws/a0j1s2e9/freeradius-dev:${tag}`;
+    }
+
+    if (options.image_repo) {
+      return `${options.image_repo}:${tag}`;
     }
     return `public.ecr.aws/a0j1s2e9/freeradius:${tag}`;
   }
