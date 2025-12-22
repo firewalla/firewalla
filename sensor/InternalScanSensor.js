@@ -623,7 +623,7 @@ class InternalScanSensor extends Sensor {
   }
 
   async _updateRunningStatus(status) {
-    log.info("update running status set to", status)
+    log.verbose("update running status set to", status)
     return await rclient.evalAsync('if redis.call("get", KEYS[1]) == ARGV[1] then return 0 else redis.call("set", KEYS[1], ARGV[1]) return 1 end', 1, 'weak_password_scan:status', status);
   }
 

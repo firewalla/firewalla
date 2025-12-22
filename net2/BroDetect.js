@@ -208,15 +208,23 @@ class BroDetect {
     }, this.tsWriteInterval)
 
     this.activeLongConns = new Map();
+    this.lastActiveLongConnPrintTsMap = new Map();
     setInterval(() => {
       const now = Date.now() / 1000
       const connCount = this.activeLongConns.size
-      if (connCount > 1000)
-        log.warn('Active long conn:', connCount);
-      else if (connCount > 500)
-        log.info('Active long conn:', connCount);
-      else
+      if (connCount > 1000) {
+        if (now - (this.lastActiveLongConnPrintTsMap.get("warn") || 0) > 300) {
+          log.warn('Active long conn:', connCount);
+          this.lastActiveLongConnPrintTsMap.set("warn", now);
+        }
+      } else if (connCount > 500) {
+        if (now - (this.lastActiveLongConnPrintTsMap.get("info") || 0) > 300) {
+          log.info('Active long conn:', connCount);
+          this.lastActiveLongConnPrintTsMap.set("info", now);
+        }
+      } else {
         log.debug('Active long conn:', connCount);
+      }
       for (const uid of this.activeLongConns.keys()) {
         const lastTick = this.activeLongConns.get(uid).ts + this.activeLongConns.get(uid).duration
         if (lastTick + config.connLong.expires < now)
