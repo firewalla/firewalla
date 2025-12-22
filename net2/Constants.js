@@ -34,6 +34,7 @@ module.exports = {
   VPN_TYPE_AMNEZIAWG: "awg",
 
   INTF_AP_CTRL: "wg_ap",
+  INTF_PCAP_TAP: "ifb_pcap_tap",
 
   TRUST_IP_SET: "trust:ip",
   TRUST_DOMAIN_SET: "trust:domain",
