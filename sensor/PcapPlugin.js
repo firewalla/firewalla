@@ -156,7 +156,7 @@ class PcapPlugin extends Sensor {
       }
       log.info("parentIntfOptions: ", parentIntfOptions);
       log.info("monitoringIntfOptions: ", monitoringIntfOptions);
-      if (monitoringInterfaces.length < Object.keys(parentIntfOptions).length) {
+      if (Object.keys(monitoringIntfOptions).length < Object.keys(parentIntfOptions).length) {
         this.listenInterfaces = Object.keys(monitoringIntfOptions);
         this.listenOnParentIntf = false
         return monitoringIntfOptions;
