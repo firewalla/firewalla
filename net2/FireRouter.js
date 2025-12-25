@@ -408,6 +408,8 @@ class FireRouter {
           break;
         }
         case Message.MSG_HAPD_EVENT: {
+          if (!f.isMain())
+            return;
           if (message && message.includes(" AP-ENABLED")) {
             log.info("Hostapd AP-ENABLED event is received, schedule reset pcap tap tc filters ...");
             this.scheduleResetPcapTap();
