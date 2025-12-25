@@ -46,7 +46,18 @@ logerror() {
 set_nic_feature() {
     while read nic k v
     do
-        ethtool -K $nic $k $v
+        if [[ "$nic" == *"*"* ]]; then
+            # Find all interfaces matching the pattern
+            # Convert * to shell glob pattern and iterate through /sys/class/net/
+            shopt -s nullglob
+            for matched_nic in /sys/class/net/$nic; do
+                matched_nic=$(basename "$matched_nic")
+                ethtool -K $matched_nic $k $v
+            done
+            shopt -u nullglob
+        else
+            ethtool -K $nic $k $v
+        fi
     done
 }
 
