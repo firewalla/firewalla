@@ -4,7 +4,8 @@
     ["69:", 4 ],
     ["70:", 2 ],
     ["71:", 8 ],
-    ["73:", 1 ]
+    ["73:", 1 ],
+    ["mt7996e", 8]
   ],
   "rps_cpus": [
     [ "eth0", "rx-0", "e" ],
@@ -16,8 +17,8 @@
     [ "tun_fwvpn", "rx-0", 9 ]
   ],
   "taskset": [
-    ["napi/phy0-19", "2", "match"],
-    ["napi/phy0-18", "3", "match"],
+    ["napi/phy0-18", "0", "match"],
+    ["napi/phy0-17", "3", "match"],
     ["mt76-tx", "0", "match"],
     ["zeek", "0"],
     ["suricata", "1"],
