@@ -674,7 +674,7 @@ class VPNClient {
         await scheduler.delay(1000);
         count++;
         if (count > 20){
-          log.error(`FireRouter is reloading, but it is taking too long, skip restarting ${this.constructor.getProtocol()} vpn client ${this.profileId}`);
+          log.warn(`FireRouter is reloading, but it is taking too long, force restarting ${this.constructor.getProtocol()} vpn client ${this.profileId}`);
           break;
         }
       }
