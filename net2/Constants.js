@@ -87,6 +87,8 @@ module.exports = {
   REDIS_HKEY_CONN_RPID: "rpid", // route rule id
   REDIS_HKEY_CONN_DPID: "dpid", // disturb rule id
 
+  REDIS_KEY_NTP_OFF_SET: "ntp_off_set",
+
   ST_INIT: 'init',
   ST_PENDING: 'pending',
   ST_READY: 'ready',

@@ -354,6 +354,8 @@ const CONSTANTS = {
   IPSET_NO_DNS_BOOST_MAC: "no_dns_caching_mac_set",
   IPSET_QOS_OFF: "qos_off_set",
   IPSET_QOS_OFF_MAC: "qos_off_mac_set",
+  IPSET_NTP_OFF: "ntp_off_set",
+  IPSET_NTP_OFF_MAC: "ntp_off_mac_set",
   IPSET_MATCH_ALL_SET4: "match_all_set4",
   IPSET_MATCH_ALL_SET6: "match_all_set6",
   IPSET_MATCH_DNS_PORT_SET: "match_dns_port_set",

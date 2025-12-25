@@ -692,6 +692,10 @@
       "sigDetectedServers": {
         "expires": 86400,
         "count": 10000
+      },
+      "ntp_off_set": {
+        "expires": 86400,
+        "count": 1000
       }
     },
     "DeviceOfflineSensor": {
