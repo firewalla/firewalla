@@ -29,6 +29,8 @@ const _ = require('lodash');
 
 const firestatusBaseURL = "http://127.0.0.1:9966";
 
+const MIN_ETHERNET_LAN_COUNT_FOR_PCAP_TAP = 2;
+
 class OrangePlatform extends Platform {
   constructor() {
     super()
@@ -528,7 +530,9 @@ class OrangePlatform extends Platform {
   }
 
   getInterfacesRedirectedToPcapTap(intfNameMap) {
-    const result = [];
+    const resultMap = {};
+    const candidateIntfs = []
+    let numEthernetLANs = 0;
     for (const intfName of Object.keys(intfNameMap)) {
       const intf = intfNameMap[intfName];
       const type = _.get(intf, "config.meta.type", null);
@@ -537,13 +541,26 @@ class OrangePlatform extends Platform {
       const subIntfs = _.get(intf, "config.intf", []);
       if (!_.isArray(subIntfs))
         continue;
+      if (intfName.startsWith("eth") || intfName.startsWith("bond") || intfName.startsWith("br"))
+        numEthernetLANs++;
       for (const subIntf of subIntfs) {
         if (subIntf.startsWith("wlan")) {
-          result.push(subIntf);
+          // resultMap holds all candidate interfaces that can be redirected to pcap tap, will be set to true in the end according to the number of ethernet LANs
+          resultMap[subIntf] = false;
+          candidateIntfs.push(subIntf);
         }
       }
     }
-    return result;
+    // do not redirect to pcap tap if number of ethernet LANs is less than MIN_ETHERNET_LAN_COUNT_FOR_PCAP_TAP as redirection has performance penalty
+    if (numEthernetLANs > MIN_ETHERNET_LAN_COUNT_FOR_PCAP_TAP) {
+      log.info(`Number of ethernet LANs ${numEthernetLANs} is greater than ${MIN_ETHERNET_LAN_COUNT_FOR_PCAP_TAP}, redirect interfaces to pcap tap: ${candidateIntfs}`);
+      for (const intf of candidateIntfs) {
+        resultMap[intf] = true;
+      }
+    } else {
+      log.info(`Number of ethernet LANs ${numEthernetLANs} is not greater than ${MIN_ETHERNET_LAN_COUNT_FOR_PCAP_TAP}, do not redirect to pcap tap`);
+    }
+    return resultMap;
   }
 }
 
