@@ -41,7 +41,11 @@
     [ "eth0","rx-gro-list","off" ],
     [ "eth1","rx-gro-list","off" ],
     [ "eth0","rx-udp-gro-forwarding","on" ],
-    [ "eth1","rx-udp-gro-forwarding","on" ]
+    [ "eth1","rx-udp-gro-forwarding","on" ],
+    [ "wlan24g_*","rx-udp-gro-forwarding","on" ],
+    [ "wlan5g_*","rx-udp-gro-forwarding","on" ],
+    [ "wlan24g_*","rx-gro-list","off" ],
+    [ "wlan5g_*","rx-gro-list","off" ]
   ],
   "priority": [
     ["ovpn-server", 0, "match"],
