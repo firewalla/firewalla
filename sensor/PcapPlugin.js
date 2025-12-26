@@ -117,7 +117,7 @@ class PcapPlugin extends Sensor {
   async calculateListenInterfaces() {
     if (platform.isFireRouterManaged()) {
       const intfNameMap = await FireRouter.getInterfaceAll();
-      const pcapTapIntfs = platform.isIFBSupported() ? platform.getInterfacesRedirectedToPcapTap(intfNameMap) : [];
+      const pcapTapIntfs = platform.isIFBSupported() ? platform.getInterfacesRedirectedToPcapTap(intfNameMap) : {};
       const monitoringInterfaces = FireRouter.getMonitoringIntfNames();
       const parentIntfOptions = {};
       const monitoringIntfOptions = {}
@@ -141,7 +141,7 @@ class PcapPlugin extends Sensor {
           let maxPcapBufsize = 0
           for (const phyIntf of phyIntfs) {
             // if the interface is mirrored to pcap tap, use the pcap tap interface instead
-            const pcapIntf = pcapTapIntfs.includes(phyIntf) ? Constants.INTF_PCAP_TAP : phyIntf;
+            const pcapIntf = pcapTapIntfs[phyIntf] ? Constants.INTF_PCAP_TAP : phyIntf;
             const pcapBufsize = this.getPcapBufsize(phyIntf);
             if (!parentIntfOptions[pcapIntf]) {
               parentIntfOptions[pcapIntf] = { pcapBufsize };
