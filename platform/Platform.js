@@ -536,7 +536,7 @@ class Platform {
   }
 
   getInterfacesRedirectedToPcapTap(intfNameMap) {
-    return [];
+    return {};
   }
 }
 
