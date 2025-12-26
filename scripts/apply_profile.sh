@@ -80,7 +80,7 @@ set_rps_cpus() {
     do
         rps_cpus_paths=/sys/class/net/$intf/queues/$q/rps_cpus
         for rps_cpus_path in $rps_cpus_paths; do
-            test -e $rps_cpus_paths || continue
+            test -e $rps_cpus_path || continue
             if $PROFILE_CHECK; then
                 cat $rps_cpus_path
             else
@@ -210,10 +210,19 @@ process_profile() {
     do
         loginfo "- process '$key'"
 
-        test -n "$FW_PROFILE_KEY" && \
-            test "$key" != "$FW_PROFILE_KEY" && \
-            loginfo "- ignore key '$key', as only '$FW_PROFILE_KEY' is selected" && \
-            continue
+        if [[ -n "$FW_PROFILE_KEYS" ]]; then
+            found=false
+            for k in $FW_PROFILE_KEYS; do
+                if [[ "$k" == "$key" ]]; then
+                    found=true
+                    break
+                fi
+            done
+            if [[ "$found" == "false" ]]; then
+                loginfo "- ignore key '$key', as it is not in FW_PROFILE_KEYS"
+                continue
+            fi
+        fi
 
         case $key in
             nic_feature)
