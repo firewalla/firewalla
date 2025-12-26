@@ -799,10 +799,12 @@ class FireRouter {
     if (_.isEmpty(pcapTapIntfs)) {
       return;
     }
-    for (const intf of pcapTapIntfs) {
+    for (const intf of Object.keys(pcapTapIntfs)) {
       // clear previous tc filters
       await exec(`sudo tc qdisc del dev ${intf} root`).catch(() => {});
       await exec(`sudo tc qdisc del dev ${intf} parent ffff:`).catch(() => {});
+      if (!pcapTapIntfs[intf])
+        continue;
       // add tc filters to redirect traffic to the pcap tap ifb
       await exec(`sudo tc qdisc replace dev ${intf} clsact`).catch((err) => {
         log.error(`Failed to create clsact qdisc on ${intf}`, err.message);
