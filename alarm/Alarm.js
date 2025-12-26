@@ -1377,7 +1377,14 @@ class PornAlarm extends OutboundAlarm {
         deviceName = identity.getDeviceNameInNotificationContent(this);
       }
     }
-    return [deviceName, this["p.dest.name"]];
+    const result = [deviceName];
+    // although there is no application for porn, but still follow the same logic
+    const dest = this.getAppName() || this["p.dest.name"];
+    result.push(dest);
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
