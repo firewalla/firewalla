@@ -117,6 +117,12 @@ class FlowAggregationSensor extends Sensor {
 
       setInterval(() => {
         // serialize scheduled job to avoid stressing the system when redis is busy
+        if (lock.isBusy(LOCK_SCHEDULED_JOB)) {
+          // this may happen if system is under extremely heavy load and the scheduled job takes longer than the interval
+          // no need to queue the job because the job itself is stateless
+          log.warn('Last scheduled job is still running, skipping current scheduled job');
+          return;
+        }
         lock.acquire(LOCK_SCHEDULED_JOB, async () => {
           await this.scheduledJob();
         }).catch((err) => {
