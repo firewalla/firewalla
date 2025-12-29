@@ -458,6 +458,11 @@ class FireRouter {
     await lock.acquire(LOCK_INIT, async () => {
       const lastMonitoringIntfNames = monitoringIntfNames;
       const routingWans = [];
+      const tcFilterRefreshNeeded = this.tcFilterRefreshNeeded;
+      this.tcFilterRefreshNeeded = false;
+      const pcapRestartNeeded = this.pcapRestartNeeded;
+      this.pcapRestartNeeded = false;
+
       if (platform.isFireRouterManaged()) {
         // fireroute
         routerConfig = await getConfig()
@@ -735,11 +740,10 @@ class FireRouter {
       this.ready = true
 
       if (f.isMain()) {
-        if (this.pcapRestartNeeded || !platform.isFireRouterManaged() && first || !_.isEqual(monitoringIntfNames, lastMonitoringIntfNames)) {
+        if (pcapRestartNeeded || !platform.isFireRouterManaged() && first || !_.isEqual(monitoringIntfNames, lastMonitoringIntfNames)) {
           sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
-          this.pcapRestartNeeded = false;
         }
-        if (first || this.tcFilterRefreshNeeded) {
+        if (first || tcFilterRefreshNeeded) {
 
           const model = platform.getName();
           let qosNetworkType = 'lan';
@@ -749,9 +753,11 @@ class FireRouter {
           log.info(`Resetting tc filters on ${qosNetworkType} lanIntfs: ${lanIntfs} wanIntfs: ${wanIntfs}`);
 
           const localIntfs = monitoringIntfNames.filter(iface => intfNameMap[iface] && intfNameMap[iface].config.meta.type === 'lan');
-          await this.resetTCFilters(lanIntfs, wanIntfs, qosNetworkType);
+          let ret = await this.resetTCFilters(lanIntfs, wanIntfs, qosNetworkType);
+          if (!ret) {
+            this.tcFilterRefreshNeeded = true;
+          }
           this.scheduleResetPcapTap();
-          this.tcFilterRefreshNeeded = false;
         }
         if (platform.isFireRouterManaged()) {
           // overall_wan_state event
@@ -827,9 +833,10 @@ class FireRouter {
   }
 
   async resetTCFilters(lanIntfs, wanIntfs, qosNetworkType) {
+    let ret = true;
     if (!platform.isIFBSupported()) {
       log.info("Platform does not support ifb, tc filters will not be reset");
-      return;
+      return ret;
     }
     if (this._qosIfaces) {
       log.info("Clearing tc filters ...", this._qosIfaces);
@@ -856,9 +863,11 @@ class FireRouter {
     for (const iface of ifaces) {
       await exec(`sudo tc qdisc add dev ${iface} ingress`).catch((err) => {
         log.error(`Failed to create ingress qdisc on ${iface}`, err.message);
+        ret = false;
       });
       await exec(`sudo tc qdisc replace dev ${iface} root handle 1: htb default 1`).catch((err) => {
         log.error(`Failed to create default htb qdisc on ${iface}`, err.message);
+        ret = false;
       })
       // only redirect ipv4 and ipv6 traffic to ifb devices, prevent 802.1q packets from being redirected to ifb twice
       // redirect ingress (upload) traffic to ifb0, egress (download) traffic to ifb1
@@ -880,12 +889,14 @@ class FireRouter {
           for (const cmd of cmds) {
             await exec(cmd).catch((err) => {
               log.error(`Failed to add tc filter for ${proto} ${dir} traffic on ${iface}, ${cmd}`, err.message);
+              ret = false;
             });
           }
         }
       }
     }
     this._qosIfaces = ifaces;
+    return ret;
   }
 
   async getWanConnectivity(live = false) {
