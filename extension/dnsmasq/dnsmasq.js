@@ -2124,9 +2124,11 @@ module.exports = class DNSMASQ {
 
   async verifyDNSConnectivity() {
     const result = {};
-    for (const monitoringInterface of sysManager.getMonitoringInterfaces()) {
+    const interfaces = sysManager.getMonitoringInterfaces();
+
+    await Promise.all(interfaces.map(async (monitoringInterface) => {
       if (!monitoringInterface || !monitoringInterface.ip_address || !monitoringInterface.uuid)
-        continue;
+        return;
       const intfIP = monitoringInterface.ip_address;
       const uuid = monitoringInterface.uuid;
       let resolved = false;
@@ -2146,12 +2148,16 @@ module.exports = class DNSMASQ {
         } catch (err) {
           // usually fall into catch clause if dns resolution is failed
           log.error(`Failed to resolve ${domain} on ${intfIP}`, err.stdout, err.stderr);
+          if (err.stdout && err.stdout.includes("address in use") || err.stderr && err.stderr.includes("address in use")) {
+            let { stdout: netstatResult } = await execAsync(`sudo netstat -4uanp|grep ${intfIP}:${Constants.PORT_DNS_TEST_SRC}`);
+            log.error(`Address in use on ${intfIP}, netstat result: ${err.stdout}, ${err.stderr}, ${netstatResult}`);
+          }
         }
       }
       if (!resolved)
         log.error(`Failed to resolve all domains on ${intfIP}.`);
       result[uuid] = resolved;
-    }
+    }));
     return result;
   }
 
