@@ -336,8 +336,10 @@ class VPNClient {
     await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove 0.0.0.0/1 for " + this.profileId) });
     await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove 128.0.0.0/1 for " + this.profileId) });
     await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove default route for " + this.profileId) });
-    if (localIP6)
+    if (localIP6) {
+      await routing.flushRoutingTable("main", intf, "boot", 6).catch((err) => { log.verbose("No need to remove IPv6 routes for " + this.profileId) });
       await routing.removeRouteFromTable("default", remoteIP, intf, "main", null, 6).catch((err) => { log.verbose("No need to remove IPv6 default route for " + this.profileId) });
+    }
     const routedSubnets = await this.getEffectiveRoutedSubnets();
     const dnsServers = await this._getDNSServers() || [];
 

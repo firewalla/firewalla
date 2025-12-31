@@ -340,6 +340,17 @@ class OpenVPNClient extends VPNClient {
     }
   }
 
+  isIpv6RouteEverything(subnet) {
+    // check subnet prefix length, if it is less than or equal to 8, it is route everything
+    const [network, mask] = subnet.split("/", 2);
+    if (!network || !mask)
+      return false;
+    const prefix = parseInt(mask);
+    if (prefix <= 8 && prefix >= 0)
+      return true;
+    return false;
+  }
+
   async getRoutedSubnets() {
     const intf = this.getInterfaceName();
     const cmd = util.format(`ip link show dev ${intf}`);
@@ -373,6 +384,9 @@ class OpenVPNClient extends VPNClient {
 
     if (subnet6s) {
       for (const subnet of subnet6s) {
+        // avoid route everything
+        if (this.isIpv6RouteEverything(subnet))
+          continue;
         const [network, mask] = subnet.split("/", 2);
         if (!network || !mask)
           continue;
