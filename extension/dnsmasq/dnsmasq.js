@@ -2123,12 +2123,13 @@ module.exports = class DNSMASQ {
   }
 
   async verifyDNSConnectivity() {
-    const result = {};
-    for (const monitoringInterface of sysManager.getMonitoringInterfaces()) {
-      if (!monitoringInterface || !monitoringInterface.ip_address || !monitoringInterface.uuid)
-        continue;
-      const intfIP = monitoringInterface.ip_address;
-      const uuid = monitoringInterface.uuid;
+    const interfaces = sysManager.getMonitoringInterfaces();
+
+    const verificationResults = await Promise.all(interfaces.map(async (intf) => {
+      if (!intf || !intf.ip_address || !intf.uuid)
+        return { uuid: intf.uuid || '', resolved: false };
+      const intfIP = intf.ip_address;
+      const uuid = intf.uuid;
       let resolved = false;
       for (const domain of VERIFICATION_DOMAINS) {
         // if there are 3 verification domains and each takes at most 6 seconds to fail the test, it will take 18 seconds to fail the test on one network interface
@@ -2146,10 +2147,23 @@ module.exports = class DNSMASQ {
         } catch (err) {
           // usually fall into catch clause if dns resolution is failed
           log.error(`Failed to resolve ${domain} on ${intfIP}`, err.stdout, err.stderr);
+          if ((err.stdout && err.stdout.includes('address in use')) 
+            || (err.stderr && err.stderr.includes('address in use'))) {
+            let { stdout: netstatResult } = await execAsync(`sudo netstat -4uanp|grep ${intfIP}:${Constants.PORT_DNS_TEST_SRC}`).catch(err => {
+              return { stdout: '' };
+            });
+            log.error(`Address in use on ${intfIP}. Diagnostic info: netstat=${netstatResult}`);
+          }
         }
       }
       if (!resolved)
         log.error(`Failed to resolve all domains on ${intfIP}.`);
+      return { uuid, resolved };
+    }));
+
+    const result = {};
+    for (const { uuid, resolved } of verificationResults) {
+      if (!uuid) continue; // skip invalid results
       result[uuid] = resolved;
     }
     return result;
