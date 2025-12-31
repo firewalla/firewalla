@@ -305,7 +305,7 @@ class VPNClient {
   async _removeIpv6RoutesFromMainTable(intf) {
     // get intf ipv6 routes
     const routes = await exec(`sudo ip -6 route show dev ${intf} |grep -v kernel`).then((result) => {
-      return result.stdout.trim().split("\n");
+      return result.stdout.trim().length > 0 ? result.stdout.trim().split("\n") : [];
     }).catch((err) => {
       return [];
     });
