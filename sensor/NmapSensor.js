@@ -89,10 +89,13 @@ class NmapSensor extends Sensor {
       this.checkAndRunOnce(true);
     }, 1000 * 60 * 5); // every 5 minutes, fast scan
 
+    /* nmap scan is no longer essential for device discovery, we have flow, ARPSensor, DHCPSensor, and ICMP6Sensor
+       so we don't need to run it immediately after network info is reloaded to reduce CPU overhead
     sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
       log.info("Schedule reload NmapSensor since network info is reloaded");
       this.scheduleReload();
     })
+      */
   }
 
   checkAndRunOnce(fastMode) {
