@@ -7,8 +7,7 @@ sudo ip route del 0.0.0.0/1 || true
 sudo ip route del 128.0.0.0/1 || true
 
 # remove IPv6 routes from main table
-dev="vpn_${PROFILE_ID}"
-sudo ip -6 route show dev "$dev" | grep -v kernel | awk -v dev="$dev" '{print "sudo ip -6 route del dev " dev " " $0}' | bash || true
+sudo ip -6 route flush dev $dev proto boot || true
 
 # create file with vpn gateway IP and subnet
 GATEWAY_FILE="/home/pi/.firewalla/run/ovpn_profile/$PROFILE_ID.gateway"
@@ -32,6 +31,12 @@ chown pi $SUBNET_FILE
 
 SUBNET6_FILE="/home/pi/.firewalla/run/ovpn_profile/$PROFILE_ID.subnet6"
 echo -n "" > $SUBNET6_FILE
+subnetwork6=$(ipcalc -nb $ifconfig_ipv6_local/$ifconfig_ipv6_netbits |awk '$1 == "Prefix:" {print $2}')
+if [ -z "$subnetwork6" ]; then
+  subnetwork6=$(python3 -c "import ipaddress; print(ipaddress.IPv6Network(u'${ifconfig_ipv6_local}/${ifconfig_ipv6_netbits}', strict=False).with_prefixlen)")
+fi
+echo "${subnetwork6}" >> $SUBNET6_FILE
+
 for route_network_option_name in ${!route_ipv6_network_*}; do
   route_network="${!route_network_option_name}"
   echo "$route_network" >> $SUBNET6_FILE
