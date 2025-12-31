@@ -302,6 +302,19 @@ class VPNClient {
     return true;
   }
 
+  async _removeIpv6RoutesFromMainTable(intf) {
+    // get intf ipv6 routes
+    const routes = await exec(`sudo ip -6 route show dev ${intf} |grep -v kernel`).then((result) => {
+      return result.stdout.trim().split("\n");
+    }).catch((err) => {
+      return [];
+    });
+    for (const route of routes) {
+      let cmd = `sudo ip -6 route del dev ${intf} ${route}`;
+      await exec(cmd).catch((err) => { log.verbose("No need to remove IPv6 route for " + this.profileId) });
+    }
+  }
+
   async _refreshRoutes() {
     if (!this._started)
       return;
@@ -336,8 +349,11 @@ class VPNClient {
     await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove 0.0.0.0/1 for " + this.profileId) });
     await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove 128.0.0.0/1 for " + this.profileId) });
     await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove default route for " + this.profileId) });
-    if (localIP6)
+    if (localIP6) {
+      // remove all ipv6 routes added by VPN client automatically from main table, otherwise tunnel will be enabled globally
+      await this._removeIpv6RoutesFromMainTable(intf);
       await routing.removeRouteFromTable("default", remoteIP, intf, "main", null, 6).catch((err) => { log.verbose("No need to remove IPv6 default route for " + this.profileId) });
+    }
     const routedSubnets = await this.getEffectiveRoutedSubnets();
     const dnsServers = await this._getDNSServers() || [];
 
