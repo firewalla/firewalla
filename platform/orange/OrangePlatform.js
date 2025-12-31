@@ -533,10 +533,11 @@ class OrangePlatform extends Platform {
     const resultMap = {};
     const candidateIntfs = []
     let numEthernetLANs = 0;
+    const sysManager = require('../../net2/SysManager.js');
+    const monitoringIntfNames = sysManager.getMonitoringInterfaces().map(intf => intf.name);
     for (const intfName of Object.keys(intfNameMap)) {
       const intf = intfNameMap[intfName];
-      const type = _.get(intf, "config.meta.type", null);
-      if (type !== "lan")
+      if (!monitoringIntfNames.includes(intfName))
         continue;
       const subIntfs = _.get(intf, "config.intf", []);
       if (!_.isArray(subIntfs))
