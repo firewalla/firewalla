@@ -318,6 +318,9 @@ cat << EOF > "$filter_file"
 -A FW_FORWARD -m addrtype --dst-type MULTICAST -j FW_ACCEPT_DEFAULT
 -A FW_FORWARD -m addrtype --dst-type BROADCAST -j FW_ACCEPT_DEFAULT
 
+-A FW_FORWARD -s fc00::/7 -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j FW_ACCEPT_DEFAULT
+-A FW_FORWARD -d fc00::/7 -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j FW_ACCEPT_DEFAULT
+
 # jump to FW_FORWARD_LOG after set CONNMARK for logging
 -A FW_FORWARD -j FW_FORWARD_LOG
 # do not check reply packets of a inbound connection, this is mainly for upnp allow rule implementation, which only accepts packets in original direction
@@ -605,6 +608,10 @@ cat << EOF
 
 EOF
 } > "$iptables_file"
+
+# remove ULA accept rule from iptables file
+sed -i '/^-A FW_FORWARD -s fc00::\/7 -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j FW_ACCEPT_DEFAULT/d' "$iptables_file"
+sed -i '/^-A FW_FORWARD -d fc00::\/7 -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j FW_ACCEPT_DEFAULT/d' "$iptables_file"
 
 {
 sudo ip6tables-save -t filter | grep -vE "^:FW_| FW_|^COMMIT"
