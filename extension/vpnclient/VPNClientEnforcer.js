@@ -183,7 +183,7 @@ class VPNClientEnforcer {
       // then add remote IP as gateway of default route to vpn client table
       await routing.addRouteToTable("default", remoteIP, vpnIntf, tableName).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
       if (v6Enabled)
-        await routing.addRouteToTable("default", remoteIP6, vpnIntf, tableName, null, 6).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
+        await routing.addRouteToTable("default", null, vpnIntf, tableName, null, 6).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
     }
     // add inbound connmark rule for vpn client interface
     await execAsync(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
