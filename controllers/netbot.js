@@ -1377,6 +1377,14 @@ class netBot extends ControllerBot {
           count: archivedAlarms.length
         }
       }
+      case "policy": {
+        const pid = value.pid
+        const policy = await pm2.getPolicy(pid)
+        if (!policy) {
+          throw { code: 404, msg: "Policy not found", data: value}
+        }
+        return policy
+      }
       case "exceptions": {
         const exceptions = await em.loadExceptionsAsync()
         return { exceptions: exceptions, count: exceptions.length }
