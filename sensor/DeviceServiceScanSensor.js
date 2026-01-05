@@ -175,9 +175,18 @@ class DeviceServiceScanSensor extends Sensor {
       }
       for (const host of hostsToScan) {
         log.info("Scanning device: ", host.o.ipv4Addr);
-        const scanResult = await this._scan(host.o.ipv4Addr);
+        let ipAddr = null;
+        let mac = null;
+        if (host && host.o && host.o.ipv4Addr && host.o.mac) { // double check host object is valid
+          ipAddr = host.o.ipv4Addr;
+          mac = host.o.mac;
+        } else {
+          log.debug("Skipping host with invalid or missing IPv4 address or MAC address:", host);
+          continue;
+        }
+        const scanResult = await this._scan(ipAddr);
         if (scanResult) {
-          const hostKeyExists = await rclient.existsAsync(`host:mac:${host.o.mac}`);
+          const hostKeyExists = await rclient.existsAsync(`host:mac:${mac}`);
           // in case host entry is deleted when the scan is in progress
           if (hostKeyExists == 1)
             await host.update({"openports": JSON.stringify(scanResult)}, true, true);
