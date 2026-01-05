@@ -296,6 +296,10 @@ cat << EOF > "$filter_file"
 -A FW_ACCEPT_DEFAULT -j ACCEPT
 -A FORWARD -j FW_ACCEPT_DEFAULT
 
+# Enforce local-only scope for ULA traffic; block WAN traversal to prevent spoofing and leakage.
+-N FW_ULA_LOCAL_ONLY
+-A FW_ULA_LOCAL_ONLY -j FW_ACCEPT_DEFAULT
+
 # accept allow rules
 -N FW_ACCEPT
 -A FW_ACCEPT -m conntrack --ctstate NEW -m hashlimit --hashlimit-upto 100/second --hashlimit-mode srcip --hashlimit-name fw_accept -j FW_ACCEPT_LOG
@@ -317,6 +321,9 @@ cat << EOF > "$filter_file"
 # accept all multicast and broadcast requests in FORWARD chain
 -A FW_FORWARD -m addrtype --dst-type MULTICAST -j FW_ACCEPT_DEFAULT
 -A FW_FORWARD -m addrtype --dst-type BROADCAST -j FW_ACCEPT_DEFAULT
+
+-A FW_FORWARD -s fc00::/7 -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j FW_ULA_LOCAL_ONLY
+-A FW_FORWARD -d fc00::/7 -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j FW_ULA_LOCAL_ONLY
 
 # jump to FW_FORWARD_LOG after set CONNMARK for logging
 -A FW_FORWARD -j FW_FORWARD_LOG
@@ -605,6 +612,12 @@ cat << EOF
 
 EOF
 } > "$iptables_file"
+
+# remove ULA accept rule from iptables file
+sed -i '/^-N FW_ULA_LOCAL_ONLY/d' "$iptables_file"
+sed -i '/^-A FW_ULA_LOCAL_ONLY -j FW_ACCEPT_DEFAULT/d' "$iptables_file"
+sed -i '/^-A FW_FORWARD -s fc00::\/7 -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j FW_ULA_LOCAL_ONLY/d' "$iptables_file"
+sed -i '/^-A FW_FORWARD -d fc00::\/7 -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j FW_ULA_LOCAL_ONLY/d' "$iptables_file"
 
 {
 sudo ip6tables-save -t filter | grep -vE "^:FW_| FW_|^COMMIT"
