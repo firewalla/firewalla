@@ -263,9 +263,9 @@ class FreeRadius {
       await this.prepareIptables().catch((e) => {
         log.warn("Failed to prepare ap ipset iptables,", e.message);
       });
-      if (!await fs.accessAsync(`${dockerDir}/docker-compose.yml`).then(() => true).catch(() => false)) {
-        await this.generateDockerCompose(options);
-      }
+
+      await this.generateDockerCompose(options);
+
       // check if container is up
       if (!await this._checkContainer(options)) {
         log.info("container freeradius-server is not running, fallback to generate radius config from old version");
