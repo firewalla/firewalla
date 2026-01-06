@@ -1377,6 +1377,14 @@ class netBot extends ControllerBot {
           count: archivedAlarms.length
         }
       }
+      case "policy": {
+        const pid = value.pid
+        const policy = await pm2.getPolicy(pid)
+        if (!policy) {
+          throw { code: 404, msg: "Policy not found", data: value}
+        }
+        return policy
+      }
       case "exceptions": {
         const exceptions = await em.loadExceptionsAsync()
         return { exceptions: exceptions, count: exceptions.length }
@@ -2321,6 +2329,18 @@ class netBot extends ControllerBot {
           this._scheduleRedisBackgroundSave();
           return policy
         }
+      }
+      case "policy:toggle": {
+        const policy = value
+        const pid = policy.pid
+        const oldPolicy = await pm2.getPolicy(pid)
+        if (!oldPolicy) {
+          throw { code: 404, msg: "Policy not found", data: policy}
+        }
+        // Set the disabled field to reverse of current value
+        const disabled = _.get(oldPolicy, 'disabled', '0') == '0' ? '1' : '0';
+        value.disabled = disabled
+        // Fall through to policy:update
       }
       case "policy:update": {
         const policy = value
