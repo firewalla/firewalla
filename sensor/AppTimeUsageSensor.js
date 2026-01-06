@@ -240,8 +240,7 @@ class AppTimeUsageSensor extends Sensor {
   }
 
   async recordFlow2Redis(flow, app) {
-    const release = firewalla.getReleaseType();
-    if (!(fc.isFeatureOn("record_activity_flow") || ["alpha", "beta"].includes(release))){
+    if (!fc.isFeatureOn("record_activity_flow")){
       return;
     }
     const date = new Date(flow.ts * 1000);

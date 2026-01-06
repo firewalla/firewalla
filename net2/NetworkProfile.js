@@ -586,6 +586,24 @@ class NetworkProfile extends Monitorable {
     });
   }
 
+  async setULALocalOnlyRule(cleanup = false) {
+    if (this.o.type !== "wan") return;
+
+    const chain = "FW_ULA_LOCAL_ONLY";
+    const action = cleanup ? "-D" : "-I";
+    const rules = [
+      new Rule().chn(chain).iif(this.o.intf).fam(6).jmp("RETURN"),
+      new Rule().chn(chain).oif(this.o.intf).fam(6).jmp("RETURN")
+    ];
+    for (const rule of rules) {
+      await exec(rule.toCmd(action)).catch((err) => {
+        if (!cleanup) {
+          log.error(`Failed to apply ${chain} rule`, err.message);
+        }
+      });
+    }
+  }
+
   async createEnv() {
     // create and populate related ipsets
     await NetworkProfile.ensureCreateEnforcementEnv(this.o.uuid);
@@ -626,6 +644,7 @@ class NetworkProfile extends Monitorable {
       await exec(invalidDropRule.toCmd("-D")).catch((err) => {});
       await exec(invalidDropRule6.toCmd("-D")).catch((err) => {});
     }
+    await this.setULALocalOnlyRule();
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
     let hasDefaultRTSubnets = false;
@@ -918,14 +937,13 @@ class NetworkProfile extends Monitorable {
     if (!GatewayIpsetName || !GatewayIpsetName6) {
       log.error(`Failed to get gateway ipset name for ${this.o.uuid}`);
     } else {
+      await exec(`sudo ipset flush -! ${GatewayIpsetName}`).catch((err) => {
+        log.debug(`Failed to flush network gateway ipset ${GatewayIpsetName}`, err.message);
+      });
+      await exec(`sudo ipset flush -! ${GatewayIpsetName6}`).catch((err) => {
+        log.debug(`Failed to flush network gateway ipset ${GatewayIpsetName6}`, err.message);
+      });
       if (options.cleanup) {
-        await exec(`sudo ipset flush -! ${GatewayIpsetName}`).catch((err) => {
-          log.debug(`Failed to flush network gateway ipset ${GatewayIpsetName}`, err.message);
-        });
-        await exec(`sudo ipset flush -! ${GatewayIpsetName6}`).catch((err) => {
-          log.debug(`Failed to flush network gateway ipset ${GatewayIpsetName6}`, err.message);
-        });
-
         // remove from c_network_gateway_set
         await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET} ${GatewayIpsetName}`).catch((err) => {
           log.debug(`Failed to remove ${GatewayIpsetName} from ${ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET}`, err.message);
@@ -982,6 +1000,7 @@ class NetworkProfile extends Monitorable {
     }
     await sm.emptySpoofSet(this.o.intf);
     await dnsmasq.writeAllocationOption(this.o.intf, {})
+    await this.setULALocalOnlyRule(true);
   }
 
   async tags(tags, type = Constants.TAG_TYPE_GROUP) {
