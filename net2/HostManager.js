@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -118,6 +118,7 @@ const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
 const Constants = require('./Constants.js');
 const { Rule, wrapIptables } = require('./Iptables.js');
+const iptc = require('../control/IptablesControl.js');
 const QoS = require('../control/QoS.js');
 const Monitorable = require('./Monitorable.js')
 const AsyncLock = require('../vendor_lib/async-lock');
@@ -2110,12 +2111,8 @@ module.exports = class HostManager extends Monitorable {
         .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_UPLOAD_MASK).toString(16)}/0x${QoS.QOS_UPLOAD_MASK.toString(16)}`)
         .comment(`global-qos`);
       let rule6 = rule4.clone().fam(6);
-      await exec(rule4.toCmd('-A')).catch((err) => {
-        log.error(`Failed to toggle global upload ipv4 qos`, err.message);
-      });
-      await exec(rule6.toCmd('-A')).catch((err) => {
-        log.error(`Failed to toggle global upload ipv6 qos`, err.message);
-      });
+      iptc.addRule(rule4.opr('-A'));
+      iptc.addRule(rule6.opr('-A'));
 
       rule4 = new Rule("mangle").chn("FW_QOS_GLOBAL_FALLBACK")
         .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
@@ -2124,12 +2121,8 @@ module.exports = class HostManager extends Monitorable {
         .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_DOWNLOAD_MASK).toString(16)}/0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`)
         .comment(`global-qos`);
       rule6 = rule4.clone().fam(6);
-      await exec(rule4.toCmd('-A')).catch((err) => {
-        log.error(`Failed to toggle global ipv4 qos`, err.message);
-      });
-      await exec(rule6.toCmd('-A')).catch((err) => {
-        log.error(`Failed to toggle global ipv6 qos`, err.message);
-      });
+      iptc.addRule(rule4.opr('-A'));
+      iptc.addRule(rule6.opr('-A'));
     } else { // global config
       let state = false;
       let qdisc = "fq_codel";
@@ -2178,19 +2171,11 @@ module.exports = class HostManager extends Monitorable {
 
   async acl(state) {
     if (state == false) {
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
-        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
-      });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
-        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
-      });
+      ipset.add(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
+      ipset.add(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
     } else {
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
-        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
-      });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
-        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
-      });
+      ipset.del(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
+      ipset.del(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
     }
   }
 

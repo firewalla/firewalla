@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -175,6 +175,7 @@ class DestIPFoundHook extends Hook {
     }
   }
 
+  // deprecated
   async updateCountryIP(intel) {
     if (intel.ip) try {
       await countryUpdater.updateIP(intel.ip, intel.country)
@@ -322,7 +323,7 @@ class DestIPFoundHook extends Hook {
           // (relatively loose condition to avoid calling intel API too frequently)
           if (!domain || intel.host && isSimilarHost(domain, intel.host)) {
             await this.updateCategoryDomain(intel);
-            await this.updateCountryIP(intel);
+            // await this.updateCountryIP(intel);
             if (intel.category === "intel")
               this.shouldTriggerDetectionImmediately(mac);
             log.debug('return cached intel:', intel)
@@ -404,8 +405,8 @@ class DestIPFoundHook extends Hook {
         await intelTool.addIntel(ip, aggrIntelInfo);
       }
 
-      // update country with geoip-lite after writting to intel:ip so geoip data doesn't go there
-      await this.updateCountryIP(aggrIntelInfo);
+      // geoip-lite should be our single source of truth
+      // await this.updateCountryIP(aggrIntelInfo);
 
       // check if detection should be triggered on this flow/mac immediately to speed up detection
       if(aggrIntelInfo.category === 'intel') {

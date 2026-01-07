@@ -1,4 +1,4 @@
-/*    Copyright 2019-2024 Firewalla Inc.
+/*    Copyright 2019-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,6 +16,7 @@
 'use strict';
 
 const log = require('./logger.js')(__filename);
+const ipsetControl = require('../control/IpsetControl.js');
 const { exec } = require('child-process-promise');
 const { spawn } = require('child_process');
 const AsyncLock = require('../vendor_lib/async-lock');
@@ -151,18 +152,18 @@ function enqueue(ipsetCmd) {
 
 async function destroy(setName) {
   if (setName && !await isReferenced(setName))
-    await exec(`sudo ipset destroy ${setName}`);
+    ipsetControl.addRule(`destroy ${setName}`);
 }
 
-async function flush(setName) {
+function flush(setName) {
   if (setName)
-    await exec(`sudo ipset flush ${setName}`);
+    ipsetControl.addRule(`flush ${setName}`);
 }
 
 // seems that maxelem doesn't really effect memory usage
-async function create(name, type, v6 = false, options = {}) {
-  let { timeout, hashsize = 128, maxelem = 65536 } = options
-  let cmd
+function create(name, type, v6 = false, options = {}) {
+  let { timeout, hashsize = 128, maxelem = 65536, comment } = options
+  let cmd = '';
   switch(type) {
     case 'bitmap:port':
       cmd = 'range 0-65535';
@@ -170,6 +171,8 @@ async function create(name, type, v6 = false, options = {}) {
     case 'hash:mac':
       cmd = `hashsize ${hashsize} maxelem ${maxelem}`
       break;
+    case 'list:set':
+      break
     default: {
       let family = 'family inet';
       if (v6) family = family + '6';
@@ -178,18 +181,28 @@ async function create(name, type, v6 = false, options = {}) {
   }
   if (Number.isInteger(timeout))
     cmd = `${cmd} timeout ${timeout}`;
-  cmd = `sudo ipset create -! ${name} ${type} ${cmd}`
-  return exec(cmd)
+  if (options.skbinfo) cmd += ' skbinfo';
+  if (comment) cmd += ` comment`;
+  ipsetControl.addRule(`create ${name} ${type} ${cmd}`);
 }
 
-function add(name, target) {
-  const cmd = `add -! ${name} ${target}`
-  return exec('sudo ipset ' + cmd);
+function add(name, target, options = {}) {
+  const { timeout, comment, skbmark, skbprio, skbqueue } = options;
+  let cmd = `add ${name} ${target}`;
+  if (timeout) cmd += ` timeout ${timeout}`;
+  if (comment) cmd += ` comment ${comment}`;
+  if (skbmark) cmd += ` skbmark ${skbmark}`;
+  if (skbprio) cmd += ` skbprio ${skbprio}`;
+  if (skbqueue) cmd += ` skbqueue ${skbqueue}`;
+  ipsetControl.addRule(cmd);
 }
 
 function del(name, target) {
-  const cmd = `del -! ${name} ${target}`
-  return exec('sudo ipset ' + cmd);
+  ipsetControl.addRule(`del ${name} ${target}`);
+}
+
+function swap(name1, name2) {
+  ipsetControl.addRule(`swap ${name1} ${name2}`);
 }
 
 async function list(name) {
@@ -214,6 +227,7 @@ let interactiveIpset = null;
 let interactiveIpsetStartTs = null;
 
 function initInteractiveIpset() {
+  log.info(`Starting interactive ipset for batch operations`)
   interactiveIpset = spawn("sudo", ["ipset", "-", "-!"]);
   interactiveIpsetStartTs = Date.now();
   interactiveIpset.stderr.on('data', (data) => {
@@ -251,6 +265,7 @@ let testProcess, testResolve, testResults, testCount, remainingBuffer, testProce
 
 // use seperate process for ipset test, so we have a guarantee of no unfinished operations
 function initTestProcess() {
+  log.info(`Starting interactive ipset for entry test`)
   testProcess = spawn("sudo", ["ipset", "-"]);
   testProcessStartTs = Date.now();
   testProcess.stderr.on('data', parseTestResult);
@@ -372,6 +387,7 @@ module.exports = {
   create,
   add,
   del,
+  swap,
   list,
   batchOp,
   batchTest,

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -1566,8 +1566,8 @@ class PolicyManager2 {
           || Number.isInteger(ipttl) || (seq !== Constants.RULE_SEQ_REG && !security)
         ) {
           if (!policy.dnsmasq_only) {
-            await ipset.create(remoteSet4, "hash:ip", false, { timeout: ipttl });
-            await ipset.create(remoteSet6, "hash:ip", true, { timeout: ipttl });
+            ipset.create(remoteSet4, "hash:ip", false, { timeout: ipttl });
+            ipset.create(remoteSet6, "hash:ip", true, { timeout: ipttl });
             // register ipset update in dnsmasq config so that it will immediately take effect in ip level
             await dnsmasq.addIpsetUpdateEntry([target], [remoteSet4, remoteSet6], pid);
             dnsmasq.scheduleRestartDNSService();
@@ -1575,12 +1575,8 @@ class PolicyManager2 {
               if (isBlockOrdisturb) {
                 connSet4 = Block.getConnSet(pid);
                 connSet6 = Block.getConnSet6(pid);
-                await ipset.create(connSet4, "hash:ip,port,ip", false, {timeout: 300}).catch((err) => {
-                  log.error("Failed to create connSet for domain block", err);
-                });
-                await ipset.create(connSet6, "hash:ip,port,ip", true, {timeout: 300}).catch((err) => {
-                  log.error("Failed to create connSet for domain block", err);
-                });
+                ipset.create(connSet4, "hash:ip,port,ip", false, {timeout: 300})
+                ipset.create(connSet6, "hash:ip,port,ip", true, {timeout: 300})
               }
           }
           
@@ -2406,11 +2402,7 @@ class PolicyManager2 {
             log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
           });
         }
-        // refresh activated tls category after rule is removed from iptables, hostset in /proc filesystem will be removed after last reference in iptables rule is removed
-        if (tlsHostSet || !_.isEmpty(tlsHostSets)) {
-          await delay(200); // wait for 200 ms so that hostset file can be purged from proc fs
-          await categoryUpdater.refreshTLSCategoryActivated();
-        }
+        // TLS hostset state is refreshed at the start of each BlockControl processing session.
 
         // Mirror enforcement behavior: exclude 443 via inverted bitmap:port set
         if (['domain', 'dns'].includes(type) && action == 'block' && !policy.dnsmasq_only) {

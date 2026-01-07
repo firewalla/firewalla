@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -154,8 +154,8 @@ class PcapPlugin extends Sensor {
           monitoringIntfOptions[intfName] = { pcapBufsize: maxPcapBufsize };
         }
       }
-      log.info("parentIntfOptions: ", parentIntfOptions);
-      log.info("monitoringIntfOptions: ", monitoringIntfOptions);
+      log.verbose("parentIntfOptions: ", parentIntfOptions);
+      log.verbose("monitoringIntfOptions: ", monitoringIntfOptions);
       if (Object.keys(monitoringIntfOptions).length < Object.keys(parentIntfOptions).length) {
         this.listenInterfaces = Object.keys(monitoringIntfOptions);
         this.listenOnParentIntf = false
