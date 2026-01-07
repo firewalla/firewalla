@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -107,8 +107,11 @@ class BonjourSensor extends Sensor {
 
   run() {
     sem.once('IPTABLES_READY', () => {
-      log.info("Bonjour Watch Starting");
-      this.scheduleReload();
+      // delay a bit for interface to be ready
+      setTimeout(() => {
+        log.info("Bonjour Watch Starting");
+        this.scheduleReload();
+      }, 10000);
 
       sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
         log.info("Schedule reload BonjourSensor since network info is reloaded");

@@ -118,7 +118,6 @@ const globalAllowKey = "redis_zset_match:global_allow";
 const globalAllowHighKey = "redis_zset_match:global_allow_high";
 
 const AsyncLock = require('../../vendor_lib/async-lock');
-const { allow } = require("../../net2/Ip6tables.js");
 const lock = new AsyncLock();
 const LOCK_OPS = "LOCK_DNSMASQ_OPS";
 const LOCK_LEASE_FILE = "LOCK_DNSMASQ_LEASE";

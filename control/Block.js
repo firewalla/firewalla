@@ -296,7 +296,6 @@ async function batchActionNetPort(elements, portObj, ipset, op='add', options = 
   const v6Set = ipset + '6';
   const gateway6 = sysManager.myDefaultGateway6();
   const gateway = sysManager.myDefaultGateway();
-  const cmds = [];
 
   for (const element of elements) {
     const ipSpliterIndex = element.search(/[/,]/)
@@ -323,15 +322,6 @@ async function batchActionNetPort(elements, portObj, ipset, op='add', options = 
       Ipset.del(setName, `${ipAddr},${CategoryEntry.toPortStr(portObj)}`);
     }
   }
-}
-
-// this is used only for user defined target list so there is no need to remove from ipset. The ipset will be reset upon category reload or update.
-async function batchBlockNetPort(elements, portObj, ipset, options = {}) {
-  return batchActionNetPort(elements, portObj, ipset, 'add', options);
-}
-
-async function batchUnblockNetPort(elements, portObj, ipset, options = {}) {
-  return batchActionNetPort(elements, portObj, ipset, 'del', options);
 }
 
 // this is used only for user defined target list so there is no need to remove from ipset. The ipset will be reset upon category reload or update.
@@ -1362,6 +1352,7 @@ async function setupIntfsRules(options) {
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
         } else {
+          NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
         }
