@@ -151,7 +151,7 @@ class VPNClientEnforcer {
         await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, tableName, null, af).catch((err) => {});
       else {
         if (v6Enabled)
-          await routing.addRouteToTable(formattedSubnet, remoteIP6, vpnIntf, tableName, null, af).catch((err) => {});
+          await routing.addRouteToTable(formattedSubnet, null, vpnIntf, tableName, null, af).catch((err) => {});
       }
       // make routed subnets reachable from all lan networks
       let maskNum = Number(routing.MASK_VC);
@@ -167,7 +167,7 @@ class VPNClientEnforcer {
         await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, "main", pref, af).catch((err) => {});
       else {
         if (v6Enabled)
-          await routing.addRouteToTable(formattedSubnet, remoteIP6, vpnIntf, "main", pref, af).catch((err) => {});
+          await routing.addRouteToTable(formattedSubnet, null, vpnIntf, "main", pref, af).catch((err) => {});
       }
     }
     for (const dnsServer of dnsServers) {
@@ -176,14 +176,14 @@ class VPNClientEnforcer {
         await routing.addRouteToTable(dnsServer, remoteIP, vpnIntf, tableName, null, 4).catch((err) => {});
       else {
         if (v6Enabled)
-          await routing.addRouteToTable(dnsServer, remoteIP6, vpnIntf, tableName, null, 6).catch((err) => {});
+          await routing.addRouteToTable(dnsServer, null, vpnIntf, tableName, null, 6).catch((err) => {});
       }
     }
     if (overrideDefaultRoute) {
       // then add remote IP as gateway of default route to vpn client table
       await routing.addRouteToTable("default", remoteIP, vpnIntf, tableName).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
       if (v6Enabled)
-        await routing.addRouteToTable("default", remoteIP6, vpnIntf, tableName, null, 6).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
+        await routing.addRouteToTable("default", null, vpnIntf, tableName, null, 6).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
     }
     // add inbound connmark rule for vpn client interface
     const connmarkRule = new Rule('nat').chn('FW_PREROUTING_VC_INBOUND').iif(vpnIntf).jmp(`CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`).opr('-A');

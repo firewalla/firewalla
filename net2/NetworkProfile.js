@@ -491,6 +491,20 @@ class NetworkProfile extends Monitorable {
     });
   }
 
+  setULALocalOnlyRule(cleanup = false) {
+    if (this.o.type !== "wan") return;
+
+    const chain = "FW_ULA_LOCAL_ONLY";
+    const action = cleanup ? "-D" : "-I";
+    const rules = [
+      new Rule().chn(chain).iif(this.o.intf).fam(6).jmp("RETURN"),
+      new Rule().chn(chain).oif(this.o.intf).fam(6).jmp("RETURN")
+    ];
+    for (const rule of rules) {
+      iptc.addRule(rule.opr(action));
+    }
+  }
+
   async createEnv() {
     // create and populate related ipsets
     await NetworkProfile.ensureCreateEnforcementEnv(this.o.uuid);
@@ -512,7 +526,7 @@ class NetworkProfile extends Monitorable {
     } else {
       commands.forEach(command => iptc.addRule(command.opr('-D')));
     }
-
+    this.setULALocalOnlyRule();
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
     let hasDefaultRTSubnets = false;
@@ -748,9 +762,9 @@ class NetworkProfile extends Monitorable {
     if (!GatewayIpsetName || !GatewayIpsetName6) {
       log.error(`Failed to get gateway ipset name for ${this.o.uuid}`);
     } else {
+      Ipset.flush(GatewayIpsetName);
+      Ipset.flush(GatewayIpsetName6);
       if (options.cleanup) {
-        Ipset.flush(GatewayIpsetName);
-        Ipset.flush(GatewayIpsetName6);
         // remove from c_network_gateway_set
         Ipset.del(Ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET, GatewayIpsetName);
         Ipset.del(Ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET, GatewayIpsetName6);
@@ -799,6 +813,7 @@ class NetworkProfile extends Monitorable {
     }
     await sm.emptySpoofSet(this.o.intf);
     await dnsmasq.writeAllocationOption(this.o.intf, {})
+    this.setULALocalOnlyRule(true);
   }
 
   async tags(tags, type = Constants.TAG_TYPE_GROUP) {

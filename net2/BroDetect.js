@@ -1865,11 +1865,6 @@ class BroDetect {
 
       log.debug("Notice:Processing", obj);
       if (config.notice.ignore[obj.note] == null) {
-        let strdata = JSON.stringify(obj);
-        let key = "notice:" + obj.src;
-        let redisObj = [key, obj.ts, strdata];
-        log.debug("Notice:Save", redisObj);
-        await rclient.zaddAsync(redisObj);
         let lh = null;
         let dh = null;
 

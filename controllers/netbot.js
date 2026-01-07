@@ -342,12 +342,6 @@ class netBot extends ControllerBot {
       }
     }, 1000 * 60);
 
-    setTimeout(() => {
-      setInterval(() => {
-        //          this.refreshCache(); // keep cache refreshed every 50 seconds so that app will load data fast
-      }, 50 * 1000);
-    }, 30 * 1000)
-
     this.hostManager = new HostManager();
     this.hostManager.loadPolicy((err, data) => { });  //load policy
 
@@ -728,8 +722,6 @@ class netBot extends ControllerBot {
     //
     //       log.info("Set: ",gid,msg);
 
-    // invalidate cache
-    this.invalidateCache();
     if (extMgr.hasSet(msg.data.item)) {
       const result = await extMgr.set(msg.data.item, msg, msg.data.value)
       return result
@@ -1376,6 +1368,14 @@ class netBot extends ControllerBot {
           alarms: archivedAlarms,
           count: archivedAlarms.length
         }
+      }
+      case "policy": {
+        const pid = value.pid
+        const policy = await pm2.getPolicy(pid)
+        if (!policy) {
+          throw { code: 404, msg: "Policy not found", data: value}
+        }
+        return policy
       }
       case "exceptions": {
         const exceptions = await em.loadExceptionsAsync()
@@ -2321,6 +2321,18 @@ class netBot extends ControllerBot {
           this._scheduleRedisBackgroundSave();
           return policy
         }
+      }
+      case "policy:toggle": {
+        const policy = value
+        const pid = policy.pid
+        const oldPolicy = await pm2.getPolicy(pid)
+        if (!oldPolicy) {
+          throw { code: 404, msg: "Policy not found", data: policy}
+        }
+        // Set the disabled field to reverse of current value
+        const disabled = _.get(oldPolicy, 'disabled', '0') == '0' ? '1' : '0';
+        value.disabled = disabled
+        // Fall through to policy:update
       }
       case "policy:update": {
         const policy = value
@@ -3856,58 +3868,6 @@ class netBot extends ControllerBot {
     return datamodel;
   }
 
-  invalidateCache(callback) {
-    callback = callback || function () {
-    }
-
-    rclient.unlink("init.cache", callback);
-  }
-
-  loadInitCache(callback) {
-    callback = callback || function () { }
-
-    rclient.get("init.cache", callback);
-  }
-
-  cacheInitData(json, callback) {
-    callback = callback || function () { }
-
-    let jsonString = JSON.stringify(json);
-    let expireTime = 60; // cache for 1 min
-    rclient.set("init.cache", jsonString, (err) => {
-      if (err) {
-        log.error("Failed to set init cache: " + err);
-        callback(err);
-        return;
-      }
-
-      rclient.expire("init.cache", expireTime, (err) => {
-        if (err) {
-          log.error("Failed to set expire time on init cache: " + err);
-          callback(err);
-          return;
-        }
-
-        log.info("init cache is refreshed, auto-expiring in ", expireTime, "seconds");
-
-        callback(null);
-      });
-
-    });
-  }
-
-  async refreshCache() {
-    if (this.hostManager) {
-      try {
-        const json = await this.hostManager.toJson()
-        this.cacheInitData(json);
-      } catch (err) {
-        log.error("Failed to generate init data", err);
-        return;
-      }
-    }
-  }
-
   async msgHandlerAsync(gid, rawmsg, from = 'app') {
     // msgHandlerAsync is direct callback mode
     // will return value directly, not send to cloud
@@ -4130,7 +4090,6 @@ class netBot extends ControllerBot {
                   let end = Date.now();
                   log.info("Took " + (end - begin) + "ms to load init data");
 
-                  this.cacheInitData(json);
                   return this.simpleTxData(msg, json, null, cloudOptions);
                 } else {
                   log.error("json is null when calling init")
