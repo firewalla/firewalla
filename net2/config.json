@@ -1058,6 +1058,7 @@
     "dnsmasq_log_allow": true,
     "dnsmasq_log_allow_redis": false,
     "dns_flow": true,
+    "dns_flow_record": false,
     "digitalfence": false,
     "compress_flows": false,
     "rekey": false,

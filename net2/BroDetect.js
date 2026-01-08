@@ -554,6 +554,7 @@ class BroDetect {
         }
       }
 
+      if (!fc.isFeatureOn('dns_flow_record')) return;
       const key = "flow:dns:" + localMac;
       this.flowstash.dns.keys.add(key)
       const commands = [ ['zadd', key, dnsFlow._ts, JSON.stringify(dnsFlow)] ]
@@ -1300,13 +1301,12 @@ class BroDetect {
         intf: intfId, // intf id
         du: obj.duration,
         pr: obj.proto,
-        uids: [],
         ltype: localType
       };
 
       // uids is only used to correlate with uri in http.log
       if (obj.service === "http")
-        tmpspec.uids.push(obj.uid);
+        tmpspec.uids = [obj.uid];
 
       if (localFlow) {
         tmpspec.dmac = dstMac
@@ -1316,7 +1316,6 @@ class BroDetect {
       } else {
         tmpspec.oIntf = outIntfId // egress intf id
       }
-      tmpspec.af = {} //application flows
 
       if (connEntry && connEntry.apid && Number(connEntry.apid)) {
         tmpspec.apid = Number(connEntry.apid); // allow rule id
@@ -1333,7 +1332,7 @@ class BroDetect {
       const tags = await hostTool.getTags(monitorable, intfInfo && intfInfo.uuid)
       const dstTags = await hostTool.getTags(dstMonitorable, dstIntfInfo && dstIntfInfo.uuid)
       Object.assign(tmpspec, tags)
-      tmpspec.dstTags = dstTags
+      if (Object.keys(dstTags).length) tmpspec.dstTags = dstTags;
 
       if (monitorable instanceof Identity)
         tmpspec.guid = IdentityManager.getGUID(monitorable);
@@ -1373,6 +1372,7 @@ class BroDetect {
 
         // only use information in app map for outbound flow, af describes remote site
         if (afobj && afobj.host && (flowdir === "in" || localFlow)) {
+          if (!tmpspec.af) tmpspec.af = {}
           tmpspec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
           afhost = afobj.host
         }
@@ -1526,7 +1526,7 @@ class BroDetect {
               ? `${f.sh}:${f.dh}:${f.dn}`
               : `${f.sh}:${f.dh}:${f.oIntf || ""}:${f.dp || ""}`)
 
-          if (type == 'conn' && f.uids[0] && f.fd === "in" && !Object.keys(f.af).length) try {
+          if (type == 'conn' && f.uids && f.uids.length && f.fd === "in" && !f.af) try {
             // try resolve host info for previous flows again here
             // have to do this before flow aggregation as source port does matter
             const uid = f.uids[0];
@@ -1534,7 +1534,7 @@ class BroDetect {
             if (!flowstash.ignore[ipPairKey] || !flowstash.ignore[ipPairKey].has(uid)) {
               const afobj = this.withdrawAppMap(f.sh, f.sp[0] || 0, f.dh, f.dp, this.activeLongConns.has(uid)) || await conntrack.getConnEntries(f.sh, f.sp[0] || 0, f.dh, f.dp, f.pr, 600);;
               if (afobj && afobj.host) {
-                f.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
+                f.af = { [afobj.host]: _.pick(afobj, ["proto", "ip"]) };
               }
             }
           } catch (e) {
@@ -1564,15 +1564,23 @@ class BroDetect {
               // Fow now, we use the length of period from to keep it consistent with app time usage calculation
               const ets = Math.max(flowspec.ts + flowspec.du, f.ts + f.du)
               flowspec.du = Math.round((ets - flowspec.ts) * 100) / 100;
-              const uid = f.uids[0];
-              if (uid && !flowspec.uids.includes(uid)) flowspec.uids.push(uid)
+              const uid = f.uids && f.uids[0]
+              if (uid) {
+                if (!flowspec.uids)
+                  flowspec.uids = [uid]
+                else if (!flowspec.uids.includes(uid))
+                  flowspec.uids.push(uid)
+              }
 
               if (f.sp) {
                 flowspec.sp = _.union(flowspec.sp, f.sp)
               }
               if (!_.isEmpty(f.sigs))
                 flowspec.sigs = _.union(flowspec.sigs, f.sigs);
-              Object.assign(flowspec.af, f.af);
+              if (f.af) {
+                if (!flowspec.af) flowspec.af = {}
+                Object.assign(flowspec.af, f.af);
+              }
             }
           }
         }
