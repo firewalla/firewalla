@@ -388,9 +388,28 @@ class FreeRadius {
     // if u18, need to specify --security-opt seccomp=unconfined
     if (platform && typeof platform.isUbuntu18 === 'function' && platform.isUbuntu18()) {
       yamlContent.services.freeradius.security_opt = ["seccomp=unconfined"];
+    } else if (await this.checkCgroupVersion() != "cgroup2") { // for u20
+      yamlContent.services.freeradius.security_opt = ["seccomp=unconfined"];
+      // yamlContent.services.freeradius.cgroup = "host"; // not supported in docker-compose v1
     }
 
     await fs.writeFileAsync(`${dockerDir}/docker-compose.yml`, yaml.dump(yamlContent), 'utf8');
+  }
+
+  async checkCgroupVersion() {
+    try {
+      const result = await exec(`stat -fc %T /sys/fs/cgroup/`).then(r => r.stdout.trim()).catch((e) => {
+        log.warn("Failed to check cgroup version,", e.message);
+        return "";
+      })
+      if (result == "cgroup2fs") {
+        return "cgroup2";
+      }
+      return "cgroup1";
+    } catch (err) {
+      log.warn("Failed to check docker runtime,", err.message);
+    }
+    return "cgroup1";
   }
 
   async prepareImage(options = {}) {
