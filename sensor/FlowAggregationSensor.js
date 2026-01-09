@@ -346,8 +346,6 @@ class FlowAggregationSensor extends Sensor {
           let t = this.dnsBlockCache[uidTickKey][key];
           if (!t) {
             t = {device: mac, domain, count: 0};
-            if (flow.dp)
-              t.port = [ String(flow.dp) ];
             if (reason)
               t.reason = reason;
             this.dnsBlockCache[uidTickKey][key] = t;

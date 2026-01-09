@@ -664,7 +664,6 @@ class ACLAuditLogPlugin extends Sensor {
     if (line) {
       let recordArr;
       const record = {};
-      record.dp = 53;
 
       const iBlocked = line.indexOf('[Blocked]')
       if (iBlocked >= 0) {
