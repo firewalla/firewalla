@@ -102,6 +102,7 @@ const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
 
 const fs = require('fs');
+const fsp = fs.promises;
 
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
@@ -1191,6 +1192,8 @@ module.exports = class HostManager extends Monitorable {
       this.pairingAssetsForInit(json),
       this.addMsp2CheckIn(json),
       this.basicDataForInit(json, {}),
+      this.getRdbFileSize(json),
+      this.getEmmcLifeSpan(json),
     ]
 
     await Promise.all(requiredPromises);
@@ -2770,6 +2773,34 @@ module.exports = class HostManager extends Monitorable {
       }
     } catch (e) {
       log.warn('getCpuProfile error', e)
+    }
+  }
+  async getRdbFileSize(json) {
+    try {
+      const rdbSize = (await fsp.stat('/data/redis/dump.rdb').then(stat => stat.size)) || 0;
+      json.rdbSize = rdbSize;
+    } catch (e) {
+      log.warn('getRdbFileSize error', e)
+    }
+  }
+
+  async getEmmcLifeSpan(json) {
+    try {
+      const emmcDisk = await SysInfo.getEmmcDiskName();
+      if (emmcDisk) {
+        const cmd = `sudo ${f.getHiddenFolder()}/run/assets/mmc extcsd read ${emmcDisk} | grep LIFE_TIME`;
+        const result = await exec(cmd);
+        const matchA = result.stdout.match(/eMMC Life Time Estimation A \[EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_A\]: (\w+)/);
+        const estimationA = matchA ? matchA[1] : undefined;
+        const matchB = result.stdout.match(/eMMC Life Time Estimation B \[EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_B\]: (\w+)/);
+        const estimationB = matchB ? matchB[1] : undefined;
+        json.emmcLifeSpan = {
+          EstimationA: estimationA,
+          EstimationB: estimationB
+        };
+      }
+    } catch (e) {
+      log.warn('getEmmcLifeSpan error:', e)
     }
   }
 }

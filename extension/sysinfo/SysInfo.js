@@ -91,6 +91,8 @@ let diskUsage = {};
 
 let releaseInfo = {};
 
+let emmcDiskName = undefined;
+
 
 getMultiProfileSupportFlag();
 
@@ -638,6 +640,13 @@ async function getReleaseInfo() {
   });
 }
 
+async function getEmmcDiskName() {
+  if (emmcDiskName === undefined) {
+    emmcDiskName = await exec('ls /dev/mmcblk[0-9]').then(result => result.stdout.trim()).catch(err => null);
+  }
+  return emmcDiskName;
+}
+
 module.exports = {
   getSysInfo: getSysInfo,
   startUpdating: startUpdating,
@@ -646,5 +655,6 @@ module.exports = {
   getRecentLogs: getRecentLogs,
   getPerfStats: getPerfStats,
   getHeapDump: getHeapDump,
+  getEmmcDiskName: getEmmcDiskName,
   getAutoUpgrade
 };

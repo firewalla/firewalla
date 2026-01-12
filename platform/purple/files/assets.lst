@@ -6,3 +6,4 @@
 /home/pi/.firewalla/run/assets/libmysqlclient.so.21 /navy/libmysqlclient.so.21 644 ":" 'SLNAME="/usr/lib/aarch64-linux-gnu/libmysqlclient.so.21"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/libmysqlclient.so.21 ${SLNAME}; fi'
 /home/pi/.firewalla/run/assets/liblua5.4-sql-mysql.so /navy/liblua5.4-sql-mysql.so 644 "" 'sudo mkdir -p /usr/local/lib/lua/5.4/luasql/; SLNAME="/usr/local/lib/lua/5.4/luasql/mysql.so"; if [[ -L "${SLNAME}" ]];then sudo rm ${SLNAME}; fi; if [[ ! -f "${SLNAME}" ]]; then sudo ln -s /home/pi/.firewalla/run/assets/liblua5.4-sql-mysql.so ${SLNAME}; fi'
 /home/pi/.firewalla/run/zeek_signatures/dpi.sig /all/zeek-dpi.fwsig 644
+/home/pi/.firewalla/run/assets/mmc /purple/mmc 755

@@ -76,6 +76,8 @@ module.exports = {
   REDIS_KEY_NOISE_DOMAIN_CONFIG: "noise_domain",
   REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG: "flow_signature_cloud_config",
   REDIS_KEY_FLOW_SIGNATURE_CONFIG: "flow_signature_config",
+  REDIS_KEY_BGSAVE_CLOUD_CONFIG: "redis_bgsave_cloud_config",
+  REDIS_KEY_BGSAVE_CONFIG: "redis_bgsave_config",
   REDIS_KEY_MSP_DATA: "ext.guardian.data",
   REDIS_KEY_DATA_PLAN_SETTINGS: "sys:data:plan",
   REDIS_KEY_MSP_SYNC_OPS: "msp_sync_ops",
