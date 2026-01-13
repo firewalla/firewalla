@@ -371,6 +371,23 @@ async function withTimeout(promise, timeout) {
   ]);
 }
 
+// Parse device type from user-agent string
+function parseDeviceType(userAgent) {
+  if (!userAgent) {
+    return 'Unknown Device';
+  }
+
+  // Try to extract platform from parentheses: Mozilla/5.0 (Platform; ...)
+  const match = userAgent.match(/\(([^;)]+)/);
+  if (match) {
+    const platform = match[1].trim();
+    return platform;
+  }
+
+  // Fallback: return the original user agent
+  return userAgent;
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -393,4 +410,5 @@ module.exports = {
   batchKeyExists,
   waitFor,
   withTimeout,
+  parseDeviceType,
 };

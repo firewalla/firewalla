@@ -132,6 +132,7 @@ const sm = require('../net2/SpooferManager.js')
 const extMgr = require('../sensor/ExtensionManager.js')
 
 const policyManager = require('../net2/PolicyManager.js');
+const nfcManager = require('../net2/NFCManager.js');
 
 const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 
@@ -532,6 +533,10 @@ class netBot extends ControllerBot {
       };
       if (category)
         data.category = category;
+
+      if (payload.data && typeof payload.data === "object") {
+        Object.assign(data, payload.data);
+      }
 
       this.tx2(this.primarygid, "", notifyMsg, data);
     });
@@ -1046,7 +1051,7 @@ class netBot extends ControllerBot {
             const date = Math.floor(Date.now() / 1000)
             result["msg"] = `${historyMsg}paired at ${date},`;
             await rclient.hsetAsync("sys:ept:members:history", appInfo.eid, JSON.stringify(result));
-             // notify phone_pair events
+            // notify phone_pair events
             sem.sendEventToFireApi({
               type: `Event:NewEvent`,
               message: "A new event is generated",
@@ -1743,6 +1748,13 @@ class netBot extends ControllerBot {
         }
         return result
       }
+      case "nfc:list": {
+        const filters = { from: value.from, to: value.to, all: value.all };
+        return await nfcManager.listRequests(filters);
+      }
+      case "nfc:get": {
+        return await nfcManager.getRequest(parseInt(value.ts));
+      }
       default:
         throw new Error("unsupported action");
     }
@@ -2241,6 +2253,39 @@ class netBot extends ControllerBot {
           await this.tagManager.removeTag(uid, name);
           return
         }
+      }
+      case "nfc:createRequest": {
+        if (!value || !value.pid) {
+          throw { code: 400, msg: "'pid' is not specified" };
+        }
+        const req = await nfcManager.newRequest(value);
+        const titleLocalArgs = nfcManager.getNotifyArgs(req);
+
+        log.info(`Created NFC Request`, JSON.stringify(req));
+        sem.sendEventToFireApi({
+          type: 'FW_NOTIFICATION',
+          titleKey: 'NOTIF_NFC_NEW_REQ_TITLE',
+          bodyKey: 'NOTIF_NFC_NEW_REQ',
+          titleLocalKey: 'NFC_NEW_REQ',
+          titleLocalArgs: titleLocalArgs,
+          bodyLocalKey: `NFC_NEW_REQ`,
+          bodyLocalArgs: titleLocalArgs,
+          category: "com.firewalla.category.new_nfc_request",
+          payload: {
+            data: { ts: req.ts },
+          }
+        });
+        return req;
+      }
+      case "nfc:activateRequest": {
+        if (!value || !value.ts) {
+          throw { code: 400, msg: "'ts' is not specified" };
+        }
+        const req = await nfcManager.activateRequest(value);
+        if (!req) {
+          throw { code: 400, msg: "NFC Request is not valid" };
+        }
+        return req;
       }
       case "alarm:block": {
         const result = await am2.blockFromAlarmAsync(value.alarmID, value)

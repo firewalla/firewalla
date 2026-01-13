@@ -693,6 +693,10 @@
         "expires": 86400,
         "count": 10000
       },
+      "nfc:request": {
+        "expires": 259200,
+        "count": 1000
+      },
       "ntp_off_set": {
         "expires": 86400,
         "count": 1000
