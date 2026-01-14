@@ -1,0 +1,235 @@
+<!--
+    TEMPLATE PLACEHOLDER SYSTEM
+    ===========================
+    This template uses double-underscore placeholders: __PLACEHOLDER_NAME__
+    
+    Examples:
+    - __POLICY_MESSAGE__ : Information about the policy to be affected
+    - __CONTAINER_CLASS__ : CSS class for main container (success/hidden)
+    - __SUCCESS_MESSAGE_CLASS__ : CSS class to show success message (show/hidden)
+    
+    IMPORTANT: 
+    - Use __PLACEHOLDER_NAME__ format for all dynamic content
+    - DO NOT use {placeholder} or {{placeholder}} - this causes brace escaping issues
+    - CSS/JavaScript braces {} can be used freely without escaping
+    - When adding new placeholders, update firenfc.py generate_html_response() method
+-->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FireNFC Response</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+
+        .policy-message {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #e7f3ff;
+            border-left: 4px solid #3498db;
+            border-radius: 4px;
+        }
+
+        .policy-message:empty {
+            display: none;
+        }
+
+        .send-request-button {
+            font-size: 16px;
+            font-weight: bold;
+            color: white;
+            background-color: #28a745;
+            border: none;
+            border-radius: 4px;
+            padding: 12px 24px;
+            cursor: pointer;
+            margin-bottom: 20px;
+            transition: background-color 0.3s;
+        }
+
+        .send-request-button:hover {
+            background-color: #218838;
+        }
+
+        .send-request-button:active {
+            background-color: #1e7e34;
+        }
+
+        .send-request-button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .request-sent-message {
+            font-size: 16px;
+            font-weight: bold;
+            color: #28a745;
+            margin-bottom: 20px;
+            padding: 12px 24px;
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 4px;
+            display: none;
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .request-sent-message.show {
+            display: block;
+        }
+
+        .container.success {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container __CONTAINER_CLASS__">
+        <div class="policy-message">__POLICY_MESSAGE__</div>
+        <button class="send-request-button" id="sendRequestButton">Send Request</button>
+        <div class="request-sent-message __SUCCESS_MESSAGE_CLASS__" id="requestSentMessage">✓ Request is sent!</div>
+    </div>
+    <script>
+        function formatTimestamp(ts) {
+            try {
+                const dt = new Date(ts);
+                const year = dt.getFullYear();
+                const month = String(dt.getMonth() + 1).padStart(2, '0');
+                const day = String(dt.getDate()).padStart(2, '0');
+                const hours = String(dt.getHours()).padStart(2, '0');
+                const minutes = String(dt.getMinutes()).padStart(2, '0');
+                const seconds = String(dt.getSeconds()).padStart(2, '0');
+                return year + '-' + month + '-' + day + ' ' + hours + ':' + minutes + ':' + seconds;
+            } catch (e) {
+                return ts.toString();
+            }
+        }
+
+
+        // Handle Send Request button click
+        (function () {
+            const sendButton = document.getElementById('sendRequestButton');
+            const sentMessage = document.getElementById('requestSentMessage');
+            const policyMessage = document.querySelector('.policy-message');
+
+            if (sendButton) {
+                // Show button on /nfc page, hide on /nfc/create
+                const currentPath = window.location.pathname;
+                const isCreatePage = currentPath === '/nfc/create';
+                const hasPolicyMessage = policyMessage && policyMessage.textContent.trim() &&
+                    policyMessage.textContent.trim() !== '&nbsp;' &&
+                    policyMessage.style.display !== 'none';
+
+                if (!isCreatePage && (currentPath === '/nfc' || hasPolicyMessage)) {
+                    sendButton.style.display = 'block';
+                    sendButton.addEventListener('click', function () {
+                        // Store in sessionStorage that request was sent
+                        sessionStorage.setItem('requestSent', 'true');
+
+                        // Disable the button to prevent multiple clicks
+                        sendButton.disabled = true;
+                        sendButton.textContent = 'Sending...';
+
+                        // Get current URL query parameters
+                        const currentUrl = window.location.href;
+                        const url = new URL(currentUrl);
+                        const queryString = url.search;
+
+                        // Navigate to /nfc/create (without send=true)
+                        window.location.href = '/nfc/create' + queryString;
+                    });
+                } else {
+                    sendButton.style.display = 'none';
+                }
+            }
+
+            // Handle auto-redirect to send=true on /nfc/create page
+            const currentPath = window.location.pathname;
+            const isCreatePage = currentPath === '/nfc/create';
+
+            if (isCreatePage) {
+                const urlParams = new URLSearchParams(window.location.search);
+                const hasSendParam = urlParams.get('send') === 'true';
+
+                // If send=true is present, show success message (server already handled creation)
+                if (hasSendParam) {
+                    // Server has handled NFC creation, show success message
+                    sentMessage.style.display = 'block';
+                    sentMessage.style.visibility = 'visible';
+                    sentMessage.style.opacity = '1';
+                }
+            }
+
+            // Check if request was just sent (via URL parameter or sessionStorage) and show message
+            // Only show on /nfc/create page, not on /nfc page
+            if (sentMessage) {
+                if (isCreatePage) {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const hasSentParam = urlParams.get('sent') === 'true';
+                    const wasSent = hasSentParam || sessionStorage.getItem('requestSent') === 'true';
+
+                    if (wasSent) {
+                        sentMessage.style.display = 'block';
+                        sentMessage.style.visibility = 'visible';
+                        sentMessage.style.opacity = '1';
+                    } else {
+                        sentMessage.style.display = 'none';
+                    }
+
+                    // If sent=true is not in URL, redirect to add it after page loads
+                    if (!hasSentParam) {
+                        // Wait for page to fully load (including all resources), then redirect with sent=true
+                        if (document.readyState === 'complete') {
+                            // Page already loaded, redirect immediately
+                            redirectWithSentParam();
+                        } else {
+                            // Wait for page to load
+                            window.addEventListener('load', redirectWithSentParam);
+                        }
+
+                        function redirectWithSentParam() {
+                            const currentUrl = window.location.href;
+                            const url = new URL(currentUrl);
+                            const queryString = url.search;
+
+                            // Add sent=true parameter
+                            const separator = queryString ? '&' : '?';
+                            const newQueryString = queryString + separator + 'sent=true';
+
+                            // Redirect to same URL with sent=true after a short delay
+                            setTimeout(function () {
+                                window.location.href = '/nfc/create' + newQueryString;
+                            }, 500);
+                        }
+                    }
+                } else {
+                    // Hide message on /nfc page
+                    sentMessage.style.display = 'none';
+                }
+            }
+        })();
+    </script>
+</body>
+
+</html>
