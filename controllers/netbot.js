@@ -764,7 +764,13 @@ class netBot extends ControllerBot {
         const orig = await monitorable.loadPolicyAsync();
         try{await this._precedeRecord(msg.id, {origin: orig, diff: difference(value, orig)})} catch(err){};
 
-        for (const o of Object.keys(value)) {
+        let skipBgSave = false;
+        const valueKeys = Object.keys(value);
+        if (valueKeys.length === 1 && valueKeys[0] === 'dap') {
+          // Updating DAP policy does not require redis bgsave
+          skipBgSave = true;
+        }
+        for (const o of valueKeys) {
           if (processorMap[o]) {
             await processorMap[o].bind(this)(target, value[o])
             continue
@@ -786,7 +792,10 @@ class netBot extends ControllerBot {
           }
           await monitorable.setPolicyAsync(o, policyData);
         }
-        this._scheduleRedisBackgroundSave();
+
+        if (!skipBgSave) {
+          this._scheduleRedisBackgroundSave();
+        }
         // can't get result of port forward, return original value for compatibility reasons
         const result = value.portforward ? value : monitorable.policy
         return result
