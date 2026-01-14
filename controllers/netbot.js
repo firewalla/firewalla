@@ -2260,7 +2260,8 @@ class netBot extends ControllerBot {
         }
         const req = await nfcManager.newRequest(value);
         const titleLocalArgs = nfcManager.getNotifyArgs(req);
-
+        const device = nfcManager.getNotifyDeviceAlias(req);
+      
         log.info(`Created NFC Request`, JSON.stringify(req));
         sem.sendEventToFireApi({
           type: 'FW_NOTIFICATION',
@@ -2272,7 +2273,7 @@ class netBot extends ControllerBot {
           bodyLocalArgs: titleLocalArgs,
           category: "com.firewalla.category.new_nfc_request",
           payload: {
-            data: { ts: req.ts },
+            data: { ts: req.ts, device: device || "Unknown"},
           }
         });
         return req;

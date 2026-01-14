@@ -14,11 +14,16 @@
  */
 'use strict';
 
+const _ = require('lodash');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const log = require("./logger.js")(__filename);
 const PM2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PM2();
 const { parseDeviceType } = require('../util/util.js');
+const tagManager = require('../net2/TagManager.js');
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
+const Constants = require('../net2/Constants.js');
 
 const KEY_NFC_REQUEST = "nfc:request";
 
@@ -73,6 +78,9 @@ class NFCManager {
         }
         const ts = Date.now();
         const nfcReq = Object.assign({}, { ts }, req);
+        const device = this.getRequestDevice(req);
+        nfcReq.device = device && device.name || "";
+        nfcReq.device_mac = device && device.mac || "";
         await saveRequest(nfcReq);
 
         nfcReq.policy = policy;
@@ -157,31 +165,95 @@ class NFCManager {
             }
             return newNfcReq;
         } catch (err) {
-            log.error(`Failed to activate NFC Request ${req.ts}:`, err);
+            log.warn(`Failed to activate NFC Request ${req.ts}:`, err);
         }
     }
 
     getNotifyArgs(req) {
         const titleLocalArgs = [];
-        if (req.device) {
-            titleLocalArgs.push(parseDeviceType(req.device));
+        if (req.user_agent) {
+            titleLocalArgs.push(parseDeviceType(req.user_agent));
         } else {
-            titleLocalArgs.push("Unknown Device");
+            titleLocalArgs.push("Unknown device");
         }
-        let target = "";
-        if (req.policy && req.policy.app_name) {
-            target = req.policy.app_name;
-        }
-        if (!target && req.policy && req.policy.target) {
-            target = req.policy.target;
-        }
-        if (!target) {
-            target = "Unknown App";
-        }
-        titleLocalArgs.push(target);
+        titleLocalArgs.push(this.getNotifyDeviceAlias(req));
+        titleLocalArgs.push(this.getNotifyTarget(req));
         titleLocalArgs.push(Math.round(req.duration / 60) || 0);
         titleLocalArgs.push(req.ts);
         return titleLocalArgs;
+    }
+
+    getNotifyTarget(req) {
+        if (req.policy && req.policy.app_name) {
+            return req.policy.app_name;
+        }
+        if (req.policy && req.policy.target) {
+            if (req.policy.target.startsWith("TLX-fw-")) {
+                return req.policy.target.substring(7);
+            }
+            return req.policy.target;
+        }
+        return "";
+    }
+
+    getNotifyUser(req) {
+        if (!req.policy || !req.policy.tag) {
+            return "";
+        }
+        const tags = req.policy.tag
+        if (tags && _.isArray(tags) && tags.length > 0) {
+            const tag = tagManager.getTagByUid(tags[0].substring(4));
+            if (tag.getTagType() == Constants.TAG_TYPE_USER) {
+                return tag.name;
+            }
+            // group
+            const userTags = tag && tag.policy && tag.policy.userTags;
+            if (userTags && _.isArray(userTags) && userTags.length > 0) {
+                const userTag = tagManager.getTagByUid(userTags[0]);
+                if (userTag) {
+                    return userTag.getTagName();
+                }
+            }
+        }
+        return "";
+    }
+
+    getRequestDevice(req) {
+        if (req.ip) {
+            const host = hostManager.getHostFast(req.ip);
+            if (host) {
+                return { name: host.getReadableName(), mac: host.getUniqueId() };
+            }
+        }
+        return {};
+    }
+
+    getNotifyDevice(req) {
+        if (!req.policy || !req.policy.scope) {
+            return "";
+        }
+        try {
+            const scope = req.policy.scope;
+            if (_.isArray(scope) && scope.length > 0) {
+                const device = hostManager.getHostFastByMAC(scope[0]);
+                if (device) {
+                    return device.getReadableName();
+                }
+            }
+        } catch (error) {
+            log.warn(`Failed to parse policy scope: ${req.policy.scope}`, error);
+        }
+
+        return "";
+    }
+
+    getNotifyDeviceAlias(req) {
+        const user = this.getNotifyUser(req);
+        const device = this.getNotifyDevice(req);
+        if (user) {
+            return user;
+        }
+        return (device || "unknown");
     }
 }
 

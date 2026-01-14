@@ -45,8 +45,13 @@ app.set('query parser', 'simple')
 //app.use(favicon(path.join(__dirname, 'public', 'favicon.ico')));
 app.use(logger('combined'));
 app.use(bodyParser.json());
+
+// Ignore favicon requests
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.use("/ss", require('./routes/ss.js'));
+app.use("/nfc", require('./routes/nfc.js'));
 
 var subpath_v1 = express();
 app.use("/v1", subpath_v1);
