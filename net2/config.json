@@ -137,7 +137,8 @@
     "NoiseDomainsSensor": {},
     "Iperf3Sensor": {},
     "DeviceMonitorSensor": {},
-    "DapSensor": {}
+    "DapSensor": {},
+    "ResourcePlugin": {}
   },
   "intels": [
     "DeviceInfoIntel",

@@ -1637,6 +1637,7 @@ module.exports = class HostManager extends Monitorable {
       this.getConfigForInit(json),
       this.miscForInit(json),
       this.appConfsForInit(json),
+      this.resourcesForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
 
@@ -1658,6 +1659,23 @@ module.exports = class HostManager extends Monitorable {
     log.debug("Promise array finished")
 
     return json
+  }
+
+  async resourcesForInit(json) {
+    if (f.isApi()) {
+      try {
+        const apiSensorLoader = require('../sensor/APISensorLoader.js');
+        const resourcePlugin = await apiSensorLoader.getSensor('ResourcePlugin');
+        if (resourcePlugin) {
+          json.resources = await resourcePlugin.getAllResources();
+        } else {
+          json.resources = [];
+        }
+      } catch (err) {
+        log.error(`Failed to load resources for init: ${err.message}`);
+        json.resources = [];
+      }
+    }
   }
 
   async miscForInit(json) {
