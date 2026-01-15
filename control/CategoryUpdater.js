@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,7 +31,6 @@ const intelTool = new IntelTool()
 const { eachLimit } = require('../util/asyncNative.js')
 const DomainTrie = require('../util/DomainTrie.js');
 
-const exec = require('child-process-promise').exec
 const { Address4, Address6 } = require('ip-address');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -53,7 +52,8 @@ const net = require('net');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
-const platform = require('../platform/PlatformLoader.js').getPlatform();
+const tlsc = require('./TLSSetControl.js');
+const Ipset = require('../net2/Ipset.js');
 const Constants = require('../net2/Constants.js');
 
 const hashFunc = function (obj) {
@@ -231,7 +231,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
           await this.refreshCustomizedCategories();
           setInterval(async () => {
             await this.refreshAllCategoryRecords()
-            await this.refreshTLSCategoryActivated();
           }, 60 * 60 * 1000 * 4) // update records every 4 hours 
           await this.refreshAllCategoryRecords()
           this.inited = true;
@@ -286,9 +285,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
       // "gamble": 1,
       // "vpn": 1
     };
-
-    this.activeTLSCategories_tcp = {}; // default_c is not preset here because hostset file is generated only if iptables rule is created.
-    this.activeTLSCategories_udp = {};
 
     this.customizedCategories = {};
   }
@@ -372,37 +368,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
         targetMap.delete(k);
         log.debug(`CategoryUpdater remove dev-category mapping: ${k}`);
       }
-    }
-  }
-
-  async refreshTLSCategoryActivated() {
-    try {
-      const updateActiveCategories = async (path, activeCategoriesObj) => {
-        try {
-          const cmdResult = await exec(`ls -l ${path}/hostset | awk '{print $9}'`);
-          const results = cmdResult.stdout.toString().trim().split('\n');
-          const activeCategories = Object.keys(activeCategoriesObj).filter(c => results.includes(this.getHostSetName(c)));
-          Object.keys(activeCategoriesObj).forEach(key => { 
-            delete activeCategoriesObj[key]
-          });
-          for (const c of activeCategories)
-            activeCategoriesObj[c] = 1;
-          return activeCategories;
-        } catch (error) {
-          log.error(`Failed to process TLS categories from ${path}`, error);
-          throw error;
-        }
-      };
-
-      if (platform.isTLSBlockSupport()) {
-        await updateActiveCategories('/proc/net/xt_tls', this.activeTLSCategories_tcp);
-      }
-      if (platform.isUdpTLSBlockSupport()) {
-        await updateActiveCategories('/proc/net/xt_udp_tls', this.activeTLSCategories_udp);
-      }
-
-    } catch (err) {
-      log.info("Failed to get active TLS category", err);
     }
   }
 
@@ -578,21 +543,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async activateTLSCategory(category, proto = '') {
-    const categoryMap = {
-      'tcp': this.activeTLSCategories_tcp,
-      'udp': this.activeTLSCategories_udp
-    };
     proto = proto || '';
-    const isActivated = (p) => p !== '' && categoryMap[p] && categoryMap[p][category] !== undefined;
-    if ((proto === '' && isActivated('tcp') && isActivated('udp')) || isActivated(proto)) {
+    // avoid duplicating work if already activated
+    if (this.isTLSActivated(category, proto)) {
       return;
     }
-    if (proto === 'tcp' || proto === '') {
-      this.activeTLSCategories_tcp[category] = 1;
-    }
-    if (proto === 'udp' || proto === '') {
-      this.activeTLSCategories_udp[category] = 1;
-    }
+    const tlsHostSet = Block.getTLSHostSet(category);
+    tlsc.activateTLSSet(tlsHostSet, proto);
     // wait for a maximum of  30 seconds for category data to be ready.
     let i = 0;
     while (i < 30) {
@@ -1179,7 +1136,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return `srdns:pattern:${d}`
   }
 
-  // use "ipset restore" to add rdns entries to corresponding ipset
+  // use ipset.addRule() to queue rdns entries for batch processing
   async updateIPSetByDomain(category, domain, options) {
     if (!this.inited) return
     log.debug(`About to update category ${category} with domain ${domain}, options: ${JSON.stringify(options)}`)
@@ -1200,24 +1157,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     const categoryIps = await rclient.zrangeAsync(mapping, 0, -1).then(ips => ips.filter(ip => !firewalla.isReservedBlockingIP(ip)));
     if (categoryIps.length == 0) return;
-    // Existing sets and elements are not erased by restore unless specified so in the restore file.
-    // -! ignores error on entries already exists
-    let cmd4 = `echo "${categoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = '`;
-    if (options.needComment) {
-      cmd4 += `| sed 's=$= comment ${domain}=' `;
-    }
-    cmd4 += `| sudo ipset restore -!`;
-    let cmd6 = `echo "${categoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = '`;
-    if (options.needComment) {
-      cmd6 += `| sed 's=$= comment ${domain}=' `;
-    }
-    cmd6 += `| sudo ipset restore -!`;
-    await exec(cmd4).catch((err) => {
-      log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
-    })
-    await exec(cmd6).catch((err) => {
-      log.error(`Failed to update ipset6 by category ${category} domain ${domain}, err: ${err}`)
-    })
+    
+    const opt = options.needComment ? { comment: domain } : {};
+    // Filter IPv4 addresses (no colons)
+    const ipv4Ips = categoryIps.filter(ip => !ip.includes(':'));
+    ipv4Ips.forEach(ip => Ipset.add(ipsetName, ip, opt));
+    // Filter IPv6 addresses (contain colons)
+    const ipv6Ips = categoryIps.filter(ip => ip.includes(':'));
+    ipv6Ips.forEach(ip => Ipset.add(ipset6Name, ip, opt));
   }
 
   async updateIPSetByDomainPort(category, domainObj, options) {
@@ -1240,30 +1187,22 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     const categoryIps = await rclient.zrangeAsync(mapping, 0, -1).then(ips => ips.filter(ip => !firewalla.isReservedBlockingIP(ip)));
     if (categoryIps.length == 0) return;
-    // Existing sets and elements are not erased by restore unless specified so in the restore file.
-    // -! ignores error on entries already exists
+    
     const portObj = domainObj.port;
-    let cmd4 = `echo "${categoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sed 's=$=,${CategoryEntry.toPortStr(portObj)}=' `;
-    if (options.needComment) {
-      cmd4 += `| sed 's=$= comment ${domain}=' `;
-    }
-    cmd4 += `| sudo ipset restore -!`;
-    let cmd6 = `echo "${categoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sed 's=$=,${CategoryEntry.toPortStr(portObj)}=' `;
-    if (options.needComment) {
-      cmd6 += `| sed 's=$= comment ${domain}=' `;
-    }
-    cmd6 += `| sudo ipset restore -!`;
+    const portStr = CategoryEntry.toPortStr(portObj);
+    
+    const opt = options.needComment ? { comment: domain } : {};
+    // Filter IPv4 addresses (no colons)
     if (!portObj || portObj.proto !== 'icmpv6') {
-      await exec(cmd4).catch((err) => {
-        log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
-      })
+      const ipv4Ips = categoryIps.filter(ip => !ip.includes(':'));
+      ipv4Ips.forEach(ip => Ipset.add(ipsetName, `${ip},${portStr}`, opt));
     }
+    
+    // Filter IPv6 addresses (contain colons)
     if (!portObj || portObj.proto !== 'icmp') {
-      await exec(cmd6).catch((err) => {
-        log.error(`Failed to update ipset6 by category ${category} domain ${domain}, err: ${err}`)
-      })
+      const ipv6Ips = categoryIps.filter(ip => ip.includes(':'));
+      ipv6Ips.forEach(ip => Ipset.add(ipset6Name, `${ip},${portStr}`, opt));
     }
-
   }
 
   async filterIPSetByDomain(category, options) {
@@ -1302,14 +1241,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     const categoryFilterIps = await rclient.zrangeAsync(mapping, 0, -1);
     if (categoryFilterIps.length == 0) return;
-    let cmd4 = `echo "${categoryFilterIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
-    let cmd6 = `echo "${categoryFilterIps.join('\n')}" | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
-    await exec(cmd4).catch((err) => {
-      log.error(`Failed to delete ipset by category ${category} domain ${domain}, err: ${err}`)
-    })
-    await exec(cmd6).catch((err) => {
-      log.error(`Failed to delete ipset6 by category ${category} domain ${domain}, err: ${err}`)
-    })
+    
+    // Filter IPv4 addresses (no colons)
+    const ipv4Ips = categoryFilterIps.filter(ip => !ip.includes(':'));
+    ipv4Ips.forEach(ip => Ipset.del(ipsetName, ip));
+    // Filter IPv6 addresses (contain colons)
+    const ipv6Ips = categoryFilterIps.filter(ip => ip.includes(':'));
+    ipv6Ips.forEach(ip => Ipset.del(ipset6Name, ip));
     const categoryIpMappingKey = this.getCategoryIpMapping(category);
     await rclient.sremAsync(categoryIpMappingKey, categoryFilterIps);
 
@@ -1346,14 +1284,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
       const categoryFilterIps = await rclient.zrangeAsync(smappings, 0, -1);
       if (categoryFilterIps.length == 0) return;
-      let cmd4 = `echo "${categoryFilterIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=del ${ipsetName} = ' | sudo ipset restore -!`
-      let cmd6 = `echo "${categoryFilterIps.join('\n')}" | egrep ".*:.*" | sed 's=^=del ${ipset6Name} = ' | sudo ipset restore -!`
-      try {
-        await exec(cmd4);
-        await exec(cmd6);
-      } catch (err) {
-        log.error(`Failed to filter ipset by category ${category} domain pattern ${domain}, err: ${err}`)
-      }
+      
+      // Filter IPv4 addresses (no colons)
+      const ipv4Ips = categoryFilterIps.filter(ip => !ip.includes(':'));
+      ipv4Ips.forEach(ip => Ipset.del(ipsetName, ip));
+      // Filter IPv6 addresses (contain colons)
+      const ipv6Ips = categoryFilterIps.filter(ip => ip.includes(':'));
+      ipv6Ips.forEach(ip => Ipset.del(ipset6Name, ip));
       const categoryIpMappingKey = this.getCategoryIpMapping(category);
       await rclient.sremAsync(categoryIpMappingKey, categoryFilterIps);
     }
@@ -1392,22 +1329,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
       const categoryIps = await rclient.zrangeAsync(smappings, 0, -1).then(ips => ips.filter(ip => !firewalla.isReservedBlockingIP(ip)));
       if (categoryIps.length == 0) return;
-      let cmd4 = `echo "${categoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = '`
-      if (options.needComment) {
-        cmd4 += `| sed 's=$= comment ${domain}=' `;
-      }
-      cmd4 += `| sudo ipset restore -!`;
-      let cmd6 = `echo "${categoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' `;
-      if (options.needComment) {
-        cmd6 += `| sed 's=$= comment ${domain}=' `;
-      }
-      cmd6 += `| sudo ipset restore -!`;
-      try {
-        await exec(cmd4)
-        await exec(cmd6)
-      } catch (err) {
-        log.error(`Failed to update ipset by category ${category} domain pattern ${domain}, err: ${err}`)
-      }
+      
+      const opt = options.needComment ? { comment: domain } : {};
+      // Filter IPv4 addresses (no colons)
+      const ipv4Ips = categoryIps.filter(ip => !ip.includes(':'));
+      ipv4Ips.forEach(ip => Ipset.add(ipsetName, ip, opt));
+      // Filter IPv6 addresses (contain colons)
+      const ipv6Ips = categoryIps.filter(ip => ip.includes(':'));
+      ipv6Ips.forEach(ip => Ipset.add(ipset6Name, ip, opt));
+      
     }
   }
 
@@ -1447,27 +1377,20 @@ class CategoryUpdater extends CategoryUpdaterBase {
       if (categoryIps.length == 0) return;
 
       const portObj = domainObj.port;
-      let cmd4 = `echo "${categoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sed 's=$=,${CategoryEntry.toPortStr(portObj)}=' `;
-      if (options.needComment) {
-        cmd4 += `| sed 's=$= comment ${domain}=' `;
+      const portStr = CategoryEntry.toPortStr(portObj);
+      const opt = options.needComment ? { comment: domain } : {};
+      
+      // Filter IPv4 addresses (no colons)
+      if (!portObj || portObj.proto !== 'icmpv6') {
+        const ipv4Ips = categoryIps.filter(ip => !ip.includes(':'));
+        ipv4Ips.forEach(ip => Ipset.add(ipsetName, `${ip},${portStr}`, opt));
       }
-      cmd4 += `| sudo ipset restore -!`;
-      let cmd6 = `echo "${categoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sed 's=$=,${CategoryEntry.toPortStr(portObj)}=' `;
-      if (options.needComment) {
-        cmd6 += `| sed 's=$= comment ${domain}=' `;
+      
+      // Filter IPv6 addresses (contain colons)
+      if (!portObj || portObj.proto !== 'icmp') {
+        const ipv6Ips = categoryIps.filter(ip => ip.includes(':'));
+        ipv6Ips.forEach(ip => Ipset.add(ipset6Name, `${ip},${portStr}`, opt));
       }
-      cmd6 += `| sudo ipset restore -!`;
-      try {
-        if (!portObj || portObj.proto !== 'icmpv6') {
-          await exec(cmd4)
-        }
-        if (!portObj || portObj.proto !== 'icmp') {
-          await exec(cmd6)
-        }
-      } catch (err) {
-        log.error(`Failed to update ipset by category ${category} domain pattern ${domain}, err: ${err}`)
-      }
-
     }
   }
 

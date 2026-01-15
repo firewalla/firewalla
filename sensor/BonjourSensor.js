@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -70,6 +70,8 @@ class BonjourSensor extends Sensor {
       let bound = false;
       // create new bonjour listeners
       for (const iface of sysManager.getMonitoringInterfaces().filter(i => i.ip_address)) {
+        for (const vpnPrefix of ['wg', 'awg', 'tun'])
+          if (iface.name.startsWith(vpnPrefix)) continue
         const opts = {interface: iface.ip_address};
         if (!bound) {
           // only bind to INADDR_ANY once, otherwise duplicate dgrams will be received on multiple instances
@@ -105,8 +107,11 @@ class BonjourSensor extends Sensor {
 
   run() {
     sem.once('IPTABLES_READY', () => {
-      log.info("Bonjour Watch Starting");
-      this.scheduleReload();
+      // delay a bit for interface to be ready
+      setTimeout(() => {
+        log.info("Bonjour Watch Starting");
+        this.scheduleReload();
+      }, 10000);
 
       sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
         log.info("Schedule reload BonjourSensor since network info is reloaded");

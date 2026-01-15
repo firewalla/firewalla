@@ -1,4 +1,4 @@
-/*    Copyright 2020-2023 Firewalla Inc.
+/*    Copyright 2020-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,13 +17,15 @@
 
 const log = require('./logger.js')(__filename);
 
+const net = require('net');
 const exec = require('child-process-promise').exec;
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const fs = require('fs');
 const Promise = require('bluebird');
 const routing = require('../extension/routing/routing.js');
-const { wrapIptables } = require('./Iptables');
+const { Rule } = require('./Iptables');
 const ipset = require('./Ipset.js');
+const iptc = require('../control/IptablesControl.js');
 Promise.promisifyAll(fs);
 const f = require('./Firewalla.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -66,8 +68,8 @@ class VirtWanGroup {
         sem.on("link_broken", this._linkStateEventListener);
         this._refreshRTListener = async (event) => {
           if (this.wans.some(wan => wan.profileId === event.profileId)) {
-            await this.refreshRT(event).catch((err) => {
-              log.error(`Failed to refresh routing table of virtual wan group ${this.uuid}`.err.message);
+            await this.refreshRT().catch((err) => {
+              log.error(`Failed to refresh routing table of virtual wan group ${this.uuid}`, err.message);
             });
           }
         }
@@ -118,22 +120,14 @@ class VirtWanGroup {
       if (envCreatedMap[uid])
         return;
       const hardRouteIpsetName = VirtWanGroup.getRouteIpsetName(uid);
-      await exec(`sudo ipset create -! ${hardRouteIpsetName} list:set skbinfo`).catch((err) => {
-        log.error(`Failed to create virtual wan group routing ipset ${hardRouteIpsetName}`, err.message);
-      });
+      ipset.create(hardRouteIpsetName, 'list:set', false, { skbinfo: true });
 
       const softRouteIpsetName = VirtWanGroup.getRouteIpsetName(uid, false);
-      await exec(`sudo ipset create -! ${softRouteIpsetName} list:set skbinfo`).catch((err) => {
-        log.error(`Failed to create virtual wan group routing ipset ${softRouteIpsetName}`, err.message);
-      });
+      ipset.create(softRouteIpsetName, 'list:set', false, { skbinfo: true });
 
       const dnsRedirectChain = VirtWanGroup.getDNSRedirectChainName(uid);
-      await exec(`sudo iptables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
-        log.error(`Failed to create virtual wan group DNS redirect chain ${dnsRedirectChain}`, err.message);
-      });
-      await exec(`sudo ip6tables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
-        log.error(`Failed to create ipv6 virtual wan group DNS redirect chain ${dnsRedirectChain}`, err.message);
-      });
+      iptc.addRule(new Rule('nat').chn(dnsRedirectChain).opr('-N'));
+      iptc.addRule(new Rule('nat').fam(6).chn(dnsRedirectChain).opr('-N'));
 
       await fs.promises.mkdir(VirtWanGroup.getDNSRouteConfDir(uid, "hard")).catch((err) => { });
       await fs.promises.mkdir(VirtWanGroup.getDNSRouteConfDir(uid, "soft")).catch((err) => { });
@@ -308,34 +302,36 @@ class VirtWanGroup {
     const rtIdHex = Number(rtId).toString(16);
     if (anyWanEnabled && this.strictVPN || anyWanReady) {
       // populate hard route ipset with skbmark
-      await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
-      await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+      const hardRouteIpsetName = VirtWanGroup.getRouteIpsetName(this.uuid);
+      ipset.add(hardRouteIpsetName, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+      ipset.add(hardRouteIpsetName, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
       if (!_.isEmpty(routedDnsServers)) {
-        await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+        ipset.add(hardRouteIpsetName, ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
         await this._enableDNSRoute("hard");
       } else {
-        await exec(`sudo ipset del -! ${VirtWanGroup.getRouteIpsetName(this.uuid)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+        ipset.del(hardRouteIpsetName, ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET);
         await this._disableDNSRoute("hard");
       }
       await this._setRouteMarkInRedis(rtId);
     } else {
-      await exec(`sudo ipset flush -! ${VirtWanGroup.getRouteIpsetName(this.uuid)}`).catch((err) => { });
+      ipset.flush(VirtWanGroup.getRouteIpsetName(this.uuid));
       await this._disableDNSRoute("hard");
-      await this._resetRouteMarkInRedis(rtId);
+      await this._resetRouteMarkInRedis();
     }
     if (anyWanReady) {
       // populate soft route ipset with skbmark
-      await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
-      await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+      const softRouteIpsetName = VirtWanGroup.getRouteIpsetName(this.uuid, false);
+      ipset.add(softRouteIpsetName, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+      ipset.add(softRouteIpsetName, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
       if (!_.isEmpty(routedDnsServers)) {
-        await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+        ipset.add(softRouteIpsetName, ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
         await this._enableDNSRoute("soft");
       } else {
-        await exec(`sudo ipset del -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+        ipset.del(softRouteIpsetName, ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET);
         await this._disableDNSRoute("soft");
       }
     } else {
-      await exec(`sudo ipset flush -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)}`).catch((err) => { });
+      ipset.flush(VirtWanGroup.getRouteIpsetName(this.uuid, false));
       await this._disableDNSRoute("soft");
     }
     if (!_.isEmpty(routedDnsServers)) {
@@ -359,35 +355,19 @@ class VirtWanGroup {
     const chain = VirtWanGroup.getDNSRedirectChainName(this.uuid);
     const rtId = await routing.createCustomizedRoutingTable(this._getRTName(), routing.RT_TYPE_VC);
     const rtIdHex = rtId && Number(rtId).toString(16);
-    await exec(`sudo iptables -w -t nat -F ${chain}`).catch((err) => { });
-    await exec(`sudo ip6tables -w -t nat -F ${chain}`).catch((err) => { });
+    iptc.addRule(new Rule('nat').chn(chain).opr('-F'));
+    iptc.addRule(new Rule('nat').fam(6).chn(chain).opr('-F'));
     for (let i in dnsServers) {
       const dnsServer = dnsServers[i];
-      let bin = "iptables";
-      if (!ipTool.isV4Format(dnsServer) && ipTool.isV6Format(dnsServer)) {
-        bin = "ip6tables";
-      }
+      const fam = net.isIP(dnsServer)
+      if (!fam) continue
       // round robin rule for multiple dns servers
-      if (i == 0) {
-        // no need to use statistic module for the first rule
-        let cmd = wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p tcp --dport 53 -j DNAT --to-destination ${dnsServer}`);
-        await exec(cmd).catch((err) => {
-          log.error(`Failed to update DNS redirect chain: ${cmd}, dnsServer: ${dnsServer}`, err);
-        });
-        cmd = wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p udp --dport 53 -j DNAT --to-destination ${dnsServer}`);
-        await exec(cmd).catch((err) => {
-          log.error(`Failed to update DNS redirect chain: ${cmd}, dnsServer: ${dnsServer}`, err);
-        });
-      } else {
-        let cmd = wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC}  -p tcp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
-        await exec(cmd).catch((err) => {
-          log.error(`Failed to update DNS redirect chain: ${cmd}, dnsServer: ${dnsServer}`, err);
-        });
-        cmd = wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC}  -p udp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
-        await exec(cmd).catch((err) => {
-          log.error(`Failed to update DNS redirect chain: ${cmd}, dnsServer: ${dnsServer}`, err);
-        });
-      }
+      const tcpRule = new Rule('nat').fam(fam).chn(chain).mark(`0x${rtIdHex}/${routing.MASK_VC}`).pro('tcp').dport('53').dnat(dnsServer).opr('-I');
+      // no need to use statistic module for the first rule
+      if (Number(i) != 0)
+        tcpRule.mdl('statistic', `--mode nth --every ${Number(i) + 1} --packet 0`);
+      iptc.addRule(tcpRule);
+      iptc.addRule(tcpRule.pro('udp'));
     }
   }
 
@@ -432,7 +412,7 @@ class VirtWanGroup {
       }
       if (refreshRTNeeded) {
         await this.refreshRT().catch((err) => {
-          log.error(`Failed to refresh routing table of virtual wan group ${this.uuid}`.err.message);
+          log.error(`Failed to refresh routing table of virtual wan group ${this.uuid}`, err.message);
         });
       }
       // save connState to redis
@@ -563,8 +543,9 @@ class VirtWanGroup {
       log.error(`Unsupported routing type for virtual wan group ${this.uuid}: ${this.type}`);
       return;
     }
-    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_VPN_CLIENT -j ${VirtWanGroup.getDNSRedirectChainName(this.uuid)}`)).catch((err) => { });
-    await exec(wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_DNS_VPN_CLIENT -j ${VirtWanGroup.getDNSRedirectChainName(this.uuid)}`)).catch((err) => { });
+    const rule4 = new Rule('nat').chn('FW_PREROUTING_DNS_VPN_CLIENT').jmp(VirtWanGroup.getDNSRedirectChainName(this.uuid)).opr('-A');
+    iptc.addRule(rule4);
+    iptc.addRule(rule4.fam(6));
     // create ip rule
     await routing.createPolicyRoutingRule("all", null, this._getRTName(), 6000, `${rtId}/${routing.MASK_VC}`);
     await routing.createPolicyRoutingRule("all", null, this._getRTName(), 6000, `${rtId}/${routing.MASK_VC}`, 6);
@@ -576,11 +557,12 @@ class VirtWanGroup {
     const rtId = await routing.createCustomizedRoutingTable(this._getRTName(), routing.RT_TYPE_VC);
     if (!rtId)
       return;
-    await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_DNS_VPN_CLIENT -j ${VirtWanGroup.getDNSRedirectChainName(this.uuid)}`)).catch((err) => { });
-    await exec(wrapIptables(`sudo ip6tables -w -t nat -D FW_PREROUTING_DNS_VPN_CLIENT -j ${VirtWanGroup.getDNSRedirectChainName(this.uuid)}`)).catch((err) => { });
+    const rule4 = new Rule('nat').chn('FW_PREROUTING_DNS_VPN_CLIENT').jmp(VirtWanGroup.getDNSRedirectChainName(this.uuid)).opr('-D');
+    iptc.addRule(rule4);
+    iptc.addRule(rule4.fam(6));
     // flush ipset with skbmark
-    await exec(`sudo ipset flush -! ${VirtWanGroup.getRouteIpsetName(this.uuid)}`).catch((err) => { });
-    await exec(`sudo ipset flush -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)}`).catch((err) => { });
+    ipset.flush(VirtWanGroup.getRouteIpsetName(this.uuid));
+    ipset.flush(VirtWanGroup.getRouteIpsetName(this.uuid, false));
     // remove ip rule
     await routing.removePolicyRoutingRule("all", null, this._getRTName(), 6000, `${rtId}/${routing.MASK_VC}`).catch((err) => { });
     await routing.removePolicyRoutingRule("all", null, this._getRTName(), 6000, `${rtId}/${routing.MASK_VC}`, 6).catch((err) => { });
@@ -601,7 +583,7 @@ class VirtWanGroup {
     }
     await this._disableDNSRoute("hard");
     await this._disableDNSRoute("soft");
-    await this._resetRouteMarkInRedis(rtId);
+    await this._resetRouteMarkInRedis();
     await fs.promises.unlink(this._getDnsmasqConfigPath()).catch((err) => { });
     await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "hard")}`).catch((err) => { });
     await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "soft")}`).catch((err) => { });

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -246,9 +246,9 @@ async function run() {
     const policyManager = require('./PolicyManager.js');
 
     try {
-      await policyManager.flush(fc.getConfig())
+      await policyManager.flush()
     } catch(err) {
-      log.error("Failed to setup iptables basic rules, skipping applying existing policy rules");
+      log.error("Failed to setup iptables basic rules, skipping applying existing policy rules", err);
       return;
     }
 

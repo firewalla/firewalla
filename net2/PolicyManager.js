@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,8 +22,6 @@ const Message = require('./Message.js');
 const fc = require('../net2/config.js');
 const f = require('./Firewalla.js');
 const _ = require('lodash');
-const iptable = require('./Iptables.js');
-const ip6table = require('./Ip6tables.js');
 
 const Block = require('../control/Block.js');
 
@@ -48,6 +46,8 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
+const blockControl = require('../control/BlockControl.js');
+const iptc = require('../control/IptablesControl.js');
 
 const { Rule } = require('../net2/Iptables.js');
 
@@ -62,11 +62,8 @@ class PolicyManager {
       return;
     }
 
-    await this.prepareOsiIpset(); 
-    await ip6table.prepare();
-    await iptable.prepare();
-    await ip6table.flush()
-    await iptable.flush()
+    await this.prepareOsiIpset();
+    await blockControl.startInitialization();
 
     // In case diag service is running, immediate adds redirection back to prevent pairing failure
     sem.emitEvent({
@@ -79,11 +76,11 @@ class PolicyManager {
     const secondarySubnet = sysManager.mySubnet2();
     if (platform.getDHCPCapacity() && secondarySubnet) {
       const overlayMasquerade = new Rule('nat').chn('FW_POSTROUTING').src(secondarySubnet).jmp('MASQUERADE');
-      await overlayMasquerade.exec('-A')
+      iptc.addRule(overlayMasquerade);
     }
     const icmpv6Redirect = new Rule().fam(6).chn('OUTPUT').pro('icmpv6').opt('--icmpv6-type', 'redirect').jmp('DROP');
-    await icmpv6Redirect.exec('-D');
-    await icmpv6Redirect.exec('-I');
+    // Add rule using iptablesControl (delete/insert handled by rule processing)
+    iptc.addRule(icmpv6Redirect);
 
     // Setup iptables so that it's ready for blocking
     await Block.setupBlockChain();
@@ -96,6 +93,9 @@ class PolicyManager {
 
     // device ipsets are created on creation of Host(), mostly happens on the first call of HostManager.getHostsAsync()
     // PolicyManager2 will ensure device sets are created before policy enforcement. nothing needs to be done here
+
+    // Finish initialization - this will process all queued rules (setup script runs, then rules are applied)
+    await blockControl.finishInitialization();
 
     // only FireMain should be listening on this
     sem.emitLocalEvent({

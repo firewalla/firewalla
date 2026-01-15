@@ -3,6 +3,13 @@
 # shellcheck source=iptables_common.sh
 source "$(dirname "$0")/iptables_common.sh"
 
+# Check if --dry-run parameter is provided
+DRY_RUN=false
+if [[ "$1" == "--dry-run" ]]; then
+  DRY_RUN=true
+  echo "Running in dry-run mode - no iptables-restore or ipset restore will be executed"
+fi
+
 reset_ipset
 
 if [[ $MANAGED_BY_FIREROUTER != "yes" ]]; then
@@ -301,8 +308,14 @@ fi
 # install out-of-tree sch_cake.ko if applicable
 installSchCakeModule
 
-sudo iptables-restore "$iptables_file"
-sudo ip6tables-restore "$ip6tables_file"
+if [[ "$DRY_RUN" == "false" ]]; then
+  sudo iptables-restore "$iptables_file"
+  sudo ip6tables-restore "$ip6tables_file"
+else
+  echo "Skipping iptables-restore in dry-run mode"
+  echo "Would restore IPv4 rules from: $iptables_file"
+  echo "Would restore IPv6 rules from: $ip6tables_file"
+fi
 
 
 # as allow rules are removed, we remove registered upnp services as well.
@@ -323,20 +336,18 @@ redis-cli hdel sys:scan:nat upnp
   done
 } > "${ipset_destroy_file}"
 
-sudo ipset restore -! --file "${ipset_destroy_file}"
+if [[ "$DRY_RUN" == "false" ]]; then
+  sudo ipset restore -! --file "${ipset_destroy_file}"
+else
+  echo "Skipping ipset restore in dry-run mode"
+  echo "Would restore ipset from: ${ipset_destroy_file}"
+fi
 
 if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
   sudo iptables -w -N DOCKER-USER &>/dev/null
   sudo iptables -w -F DOCKER-USER
   sudo iptables -w -A DOCKER-USER -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
   sudo iptables -w -A DOCKER-USER -j RETURN
-fi
-
-if [[ $ALOG_SUPPORTED == "yes" ]]; then
-  sudo mkdir -p /alog/
-  sudo rm -r -f /alog/*
-  sudo umount -l /alog
-  sudo mount -t tmpfs -o size=20m tmpfs /alog
 fi
 
 create_tc_rules

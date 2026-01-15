@@ -161,7 +161,11 @@ flush monitored_ip_set6
 EOF
 } > "$ipset_file"
 
-sudo ipset restore -! --file "$ipset_file"
+if [[ "${DRY_RUN:-false}" == "false" ]]; then
+  sudo ipset restore -! --file "$ipset_file"
+else
+  echo "Would restore ipset from: $ipset_file"
+fi
 }
 
 

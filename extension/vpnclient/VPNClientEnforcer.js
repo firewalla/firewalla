@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,9 +20,9 @@ const cp = require('child_process');
 const util = require('util');
 const routing = require('../routing/routing.js');
 
-const iptables = require('../../net2/Iptables.js');
-const wrapIptables = iptables.wrapIptables;
+const { Rule } = require('../../net2/Iptables.js');
 const ipset = require('../../net2/Ipset.js');
+const iptc = require('../../control/IptablesControl.js');
 const platformLoader = require('../../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const Mode = require('../../net2/Mode.js');
@@ -186,12 +186,9 @@ class VPNClientEnforcer {
         await routing.addRouteToTable("default", null, vpnIntf, tableName, null, 6).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
     }
     // add inbound connmark rule for vpn client interface
-    await execAsync(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
-      log.error(`Failed to add VPN client ipv4 inbound connmark rule for ${vpnIntf}`, err.message);
-    });
-    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
-      log.error(`Failed to add VPN client ipv6 inbound connmark rule for ${vpnIntf}`, err.message);
-    });
+    const connmarkRule = new Rule('nat').chn('FW_PREROUTING_VC_INBOUND').iif(vpnIntf).jmp(`CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`).opr('-A');
+    iptc.addRule(connmarkRule);
+    iptc.addRule(connmarkRule.fam(6));
   }
 
   async flushVPNClientRoutes(vpnIntf) {
@@ -220,12 +217,9 @@ class VPNClientEnforcer {
       log.error(`Failed to remove policy routing rule`, err.message);
     });
     // remove inbound connmark rule for vpn client interface
-    await execAsync(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
-      log.error(`Failed to remove VPN client ipv4 inbound connmark rule for ${vpnIntf}`, err.message);
-    });
-    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -D FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
-      log.error(`Failed to remove VPN client ipv6 inbound connmark rule for ${vpnIntf}`, err.message);
-    });
+    const connmarkRule = new Rule('nat').chn('FW_PREROUTING_VC_INBOUND').iif(vpnIntf).jmp(`CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`).opr('-D');
+    iptc.addRule(connmarkRule);
+    iptc.addRule(connmarkRule.fam(6));
   }
 
   _getVPNClientIPSetName(vpnIntf) {
@@ -235,17 +229,17 @@ class VPNClientEnforcer {
   async enforceDNSRedirect(vpnIntf, dnsServers, dnsRedirectChain) {
     if (!vpnIntf || !dnsServers || dnsServers.length == 0)
       return;
-    const tableName = this._getRoutingTableName(vpnIntf);
-    await execAsync(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_VPN_CLIENT -j ${dnsRedirectChain}`)).catch((err) => {});
-    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_DNS_VPN_CLIENT -j ${dnsRedirectChain}`)).catch((err) => {});
+    const dnsRule = new Rule('nat').chn('FW_PREROUTING_DNS_VPN_CLIENT').jmp(dnsRedirectChain).opr('-A');
+    iptc.addRule(dnsRule);
+    iptc.addRule(dnsRule.fam(6));
   }
 
   async unenforceDNSRedirect(vpnIntf, dnsServers, dnsRedirectChain) {
     if (!vpnIntf || !dnsServers || dnsServers.length == 0)
       return;
-    const tableName = this._getRoutingTableName(vpnIntf);
-    await execAsync(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_DNS_VPN_CLIENT -j ${dnsRedirectChain}`)).catch((err) => {});
-    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -D FW_PREROUTING_DNS_VPN_CLIENT -j ${dnsRedirectChain}`)).catch((err) => {});
+    const dnsRule = new Rule('nat').chn('FW_PREROUTING_DNS_VPN_CLIENT').jmp(dnsRedirectChain).opr('-D');
+    iptc.addRule(dnsRule);
+    iptc.addRule(dnsRule.fam(6));
   }
 }
 

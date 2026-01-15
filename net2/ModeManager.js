@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,6 +26,8 @@ const sm = require('./SpooferManager.js');
 
 const iptables = require('./Iptables.js');
 const wrapIptables = iptables.wrapIptables;
+const { Rule } = require('./Iptables.js');
+const iptc = require('../control/IptablesControl.js');
 const firewalla = require('./Firewalla.js')
 const firerouter = require('./FireRouter.js');
 
@@ -156,14 +158,10 @@ async function enableSecondaryInterface() {
     let { secondaryIpSubnet, legacyIpSubnet } = await secondaryInterface.create(fConfig)
     log.info("Successfully created secondary interface");
     if (legacyIpSubnet) {
-      await iptables.dhcpSubnetChangeAsync(legacyIpSubnet, false).catch((err) => {
-        log.error(`Failed to remove old SNAT rule for ${legacyIpSubnet}`, err.message);
-      });
+      iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').src(legacyIpSubnet).opr('-D'));
     }
     if (secondaryIpSubnet) {
-      await iptables.dhcpSubnetChangeAsync(secondaryIpSubnet, true).catch((err) => {
-        log.error(`Failed to add new SNAT rule for ${secondaryIpSubnet}`, err.message);
-      });
+      iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').src(secondaryIpSubnet));
     }
   } catch (err) {
     log.error("Failed to enable secondary interface, err:", err);

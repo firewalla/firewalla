@@ -1,4 +1,4 @@
-/*    Copyright 2019-2025 Firewalla Inc.
+/*    Copyright 2019-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -53,14 +53,6 @@ class CountryUpdater extends CategoryUpdaterBase {
 
       this.resetActiveCountries()
       exec(`mkdir -p ${DISK_CACHE_FOLDER}`);
-      setInterval(async () => {
-        if (firewalla.isMain()) {
-          await Ipset.batchOp(this.batchOps).catch((err) => {
-            log.error(`Failed to update country ipsets`, err.message);
-          });
-        }
-        this.batchOps = [];
-      }, 60000); // update country ipsets once every minute
     }
 
     return instance
@@ -126,7 +118,6 @@ class CountryUpdater extends CategoryUpdaterBase {
   resetActiveCountries() {
     this.activeCountries = {}
     this.activeCategories = {}
-    this.batchOps = []
   }
 
   async refreshCategoryRecord(category) {
@@ -172,9 +163,11 @@ class CountryUpdater extends CategoryUpdaterBase {
     }
 
     try {
-      await exec(`sudo ipset flush ${ipsetName}`)
-      const cmd4 = `sed 's=^=add ${ipsetName} = ' ${file} | sudo ipset restore -!`
-      await exec(cmd4)
+      Ipset.flush(ipsetName);
+      const fileContent = await fsp.readFile(file, 'utf8');
+      const addresses = fileContent.trim().split('\n').filter(line => line.trim());
+      
+      addresses.forEach(addr => Ipset.add(ipsetName, addr));
     } catch(err) {
       log.error(`Failed to update ipset by category ${category} with ipv${ip6?6:4} addresses`, err.message)
     }
@@ -221,6 +214,7 @@ class CountryUpdater extends CategoryUpdaterBase {
     log.info(`Successfully recycled ipset for category ${category}`)
   }
 
+  // deprecated
   async updateIP(ip, code, add = true) {
     if (!ip || ip == 'undefined') {
       return
@@ -263,10 +257,11 @@ class CountryUpdater extends CategoryUpdaterBase {
 
       // test and add ipset right away to enforce policies
       await Ipset.testAndAdd(CIDRs, ipset)
-    } else
+    } else {
       await rclient.zremAsync(key, ip)
 
-      this.batchOps.push(`del ${ipset} ${ip}`);
+      Ipset.del(ipset, ip);
+    }
   }
 }
 
