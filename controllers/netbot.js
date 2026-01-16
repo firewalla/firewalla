@@ -1315,8 +1315,6 @@ class netBot extends ControllerBot {
       }
       case "alarmIDs":
         return am2.loadAlarmIDs();
-      case "loadAlarmsWithRange":
-        return am2.loadAlarmsWithRange(value);
       case "fetchNewAlarms": {
         const sinceTS = value.sinceTS;
         const timeout = value.timeout || 60;
