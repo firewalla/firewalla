@@ -463,7 +463,7 @@ module.exports = class FlowManager {
 
   async _findRelatedHttpFlows(flow) {
     if (!flow || !flow.uids) {
-      return;
+      return [];
     }
 
     const urls = [];

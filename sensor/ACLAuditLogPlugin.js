@@ -664,7 +664,6 @@ class ACLAuditLogPlugin extends Sensor {
     if (line) {
       let recordArr;
       const record = {};
-      record.dp = 53;
 
       const iBlocked = line.indexOf('[Blocked]')
       if (iBlocked >= 0) {
@@ -873,6 +872,7 @@ class ACLAuditLogPlugin extends Sensor {
           if (type == 'dns' && !block && !fc.isFeatureOn('dnsmasq_log_allow_redis')) continue
 
           delete record.dir
+          if (type == 'ntp') delete record.dp
 
           if (dir != 'L' || fd == 'in') {
             const systemKey = this._getAuditKey('system', type, dir, block)
