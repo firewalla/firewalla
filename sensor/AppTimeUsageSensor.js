@@ -166,7 +166,7 @@ class AppTimeUsageSensor extends Sensor {
       const includedDomains = appConfs[key].includedDomains || [];
       const category = appConfs[key].category;
       for (const value of includedDomains) {
-        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold", "ulDlRatioThreshold", "noStray", "portInfo"]);
+        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold", "ulDlRatioThreshold", "noStray", "portInfo", "backgroundDownload"]);
         obj.app = key;
         if (category)
           obj.category = category;
@@ -212,29 +212,66 @@ class AppTimeUsageSensor extends Sensor {
   }
 
   getCategoryBytesThreshold(category) {
-    if (category && this.internetTimeUsageCfg) {
-      if (this.internetTimeUsageCfg[category] &&
-        typeof this.internetTimeUsageCfg[category].bytesThreshold === "number")
+    if (this.internetTimeUsageCfg) {
+      if (category && this.internetTimeUsageCfg[category] && 
+        typeof this.internetTimeUsageCfg[category].bytesThreshold === "number") {
         return this.internetTimeUsageCfg[category].bytesThreshold;
-      if (this.internetTimeUsageCfg["default"] &&
-        typeof this.internetTimeUsageCfg["default"].bytesThreshold === "number")
+      }
+      if (this.internetTimeUsageCfg["default"] && 
+        typeof this.internetTimeUsageCfg["default"].bytesThreshold === "number") {
         return this.internetTimeUsageCfg["default"].bytesThreshold;
+      }
     }
     return 200 * 1024; // default threshold is 200KB
   }
 
   getCategoryUlDlRatioThreshold(category) {
-    if (category && this.internetTimeUsageCfg) {
-      if (this.internetTimeUsageCfg[category] &&
-        typeof this.internetTimeUsageCfg[category].ulDlRatioThreshold === "number")
+    if (this.internetTimeUsageCfg) {
+      if (category && this.internetTimeUsageCfg[category] && 
+        typeof this.internetTimeUsageCfg[category].ulDlRatioThreshold === "number") {
         return this.internetTimeUsageCfg[category].ulDlRatioThreshold;
-      if (this.internetTimeUsageCfg["default"] &&
-        typeof this.internetTimeUsageCfg["default"].ulDlRatioThreshold === "number")
+      }
+      if (this.internetTimeUsageCfg["default"] && 
+        typeof this.internetTimeUsageCfg["default"].ulDlRatioThreshold === "number") {
         return this.internetTimeUsageCfg["default"].ulDlRatioThreshold;
+      }
     }
     return 5; // default threshold is 5
   }
+
+  getCategoryBackgroundDownload(category) {
+    if (this.internetTimeUsageCfg) {
+      if (category &&
+        this.internetTimeUsageCfg[category] &&
+        typeof this.internetTimeUsageCfg[category].backgroundDownload === "object") {
+        return this.internetTimeUsageCfg[category].backgroundDownload;
+      }
+      if (this.internetTimeUsageCfg["default"] &&
+        typeof this.internetTimeUsageCfg["default"].backgroundDownload === "object") {
+        return this.internetTimeUsageCfg["default"].backgroundDownload;
+      }
+    }
+    return {};
+  }
+
+  getInternetOptions() {
+    const defaultCfg = (this.internetTimeUsageCfg && this.internetTimeUsageCfg["default"]) || {};
+    const {
+      occupyMins = 1,
+      lingerMins = 10,
+      minsThreshold = 1,
+      noStray = true
+    } = defaultCfg;
   
+    return {
+      app: "internet",
+      occupyMins,
+      lingerMins,
+      minsThreshold,
+      noStray
+    };
+  }
+
   recordFlow(flow) {
     pclient.publishAsync("internet.activity.flow", JSON.stringify({flow}));
   }
@@ -273,6 +310,22 @@ class AppTimeUsageSensor extends Sensor {
     await rclient.zaddAsync(key, flow.ts, jobj);
   }
 
+  isBackgroundDownload(flow, backgroundDownload) {
+    if (_.isEmpty(backgroundDownload) || !backgroundDownload.minDuration || !backgroundDownload.minDownloadRate)
+      return false;
+    const duration = flow.du || 0.1;
+    const downloadRate = (flow.rb || 0) / duration;
+    const uploadRate = (flow.ob || 0) / duration;
+    if (duration >= backgroundDownload.minDuration
+      && downloadRate >= backgroundDownload.minDownloadRate
+      && uploadRate <= backgroundDownload.maxUploadRate) {
+      this.recordFlow2Redis(flow, "background");
+      return true;
+    }
+    return false;
+  }
+
+
   _isMatchPortInfo(portInfo, port, proto) {
     // if portInfo is empty, it means no port restriction
     if (!portInfo || _.isEmpty(portInfo)) return true;
@@ -294,14 +347,7 @@ class AppTimeUsageSensor extends Sensor {
     const ip = flow.ip || (flow.intel && flow.intel.ip);
     const sigs = flow.sigs || [];
     const result = [];
-    let internet_options = {
-      app: "internet",
-      occupyMins: 1,
-      lingerMins: 10,
-      minsThreshold: 1,
-      noStray: true
-    };
-
+    let internet_options = this.getInternetOptions()
     if ((!this._domainTrie && !this._cidr4Trie && !this._cidr6Trie && !this._sigMap) || (!host && !ip))
       return result;
     // check domain trie
@@ -314,7 +360,8 @@ class AppTimeUsageSensor extends Sensor {
             continue;
           isAppMatch = true;
           if ((!value.bytesThreshold || flow.ob + flow.rb >= value.bytesThreshold)
-            && (!value.ulDlRatioThreshold || flow.ob <= value.ulDlRatioThreshold * flow.rb)) {
+            && (!value.ulDlRatioThreshold || flow.ob <= value.ulDlRatioThreshold * flow.rb)
+            && !this.isBackgroundDownload(flow, value.backgroundDownload)) {
             result.push(value);
             // keep internet options same as the matched app
             Object.assign(internet_options, {
@@ -337,10 +384,18 @@ class AppTimeUsageSensor extends Sensor {
         if (this._isMatchPortInfo(entry.portInfo, flow.dp, flow.pr)) {
           isAppMatch = true;
           if ((!entry.bytesThreshold || flow.ob + flow.rb >= entry.bytesThreshold)
-            && (!entry.ulDlRatioThreshold || flow.ob <= entry.ulDlRatioThreshold * flow.rb))
-            result.push(entry);
+            && (!entry.ulDlRatioThreshold || flow.ob <= entry.ulDlRatioThreshold * flow.rb)
+            && !this.isBackgroundDownload(flow, entry.backgroundDownload)){
+              result.push(entry);
+              // keep internet options same as the matched app
+              Object.assign(internet_options, {
+                occupyMins: entry.occupyMins,
+                lingerMins: entry.lingerMins,
+                minsThreshold: entry.minsThreshold,
+                noStray: entry.noStray
+              });
+            }
         }
-
       }
     }
 
@@ -351,8 +406,17 @@ class AppTimeUsageSensor extends Sensor {
         if (_.isObject(entry)) {
           isAppMatch = true;
           if ((!entry.bytesThreshold || flow.ob + flow.rb >= entry.bytesThreshold)
-            && (!entry.ulDlRatioThreshold || flow.ob <= entry.ulDlRatioThreshold * flow.rb))
-            result.push(entry);
+            && (!entry.ulDlRatioThreshold || flow.ob <= entry.ulDlRatioThreshold * flow.rb)
+            && (!this.isBackgroundDownload(flow, entry.backgroundDownload))){
+              result.push(entry);
+              // keep internet options same as the matched app
+              Object.assign(internet_options, {
+                occupyMins: entry.occupyMins,
+                lingerMins: entry.lingerMins,
+                minsThreshold: entry.minsThreshold,
+                noStray: entry.noStray
+              });
+            }
         }
       }
     }
@@ -365,9 +429,10 @@ class AppTimeUsageSensor extends Sensor {
     const bytesThreshold = this.getCategoryBytesThreshold(category);
     // ignore flows with large upload/download ratio, e.g., a flow with large ul/dl ratio may happen if device is backing up data
     const ulDlRatioThreshold = this.getCategoryUlDlRatioThreshold(category);
+    const backgroundDownload = this.getCategoryBackgroundDownload(category);
     const nds = sl.getSensor("NoiseDomainsSensor");
     let flowNoiseTags = nds ? nds.find(host) : null;
-    if ((flow.ob + flow.rb >= bytesThreshold && flow.ob <= ulDlRatioThreshold * flow.rb && _.isEmpty(flowNoiseTags)) || !_.isEmpty(result)) {
+    if ((flow.ob + flow.rb >= bytesThreshold && flow.ob <= ulDlRatioThreshold * flow.rb && _.isEmpty(flowNoiseTags) && !this.isBackgroundDownload(flow, backgroundDownload)) || !_.isEmpty(result)) {
       log.debug("match internet activity on flow", flow, `bytesThresold: ${bytesThreshold}`);
       result.push(internet_options);
     }
