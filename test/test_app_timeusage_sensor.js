@@ -29,7 +29,7 @@ describe('Test process AppTimeUsageSensor', function () {
 
   before(() => {
     this.plugin = new AppTimeUsageSensor({});
-
+    this.plugin.loadConfig();
   });
 
 
@@ -521,6 +521,53 @@ describe('Test process AppTimeUsageSensor', function () {
     expect(result[0].bytesThreshold).to.be.equal(1024);
   });
 
+
+  it('should not match the large background download flow', async () => {
+
+    this.plugin.appConfs = { };
+    this.plugin.rebuildTrie();
+
+    const flow = {
+      "ts": 1768473630.66,
+      "_ts": 1768473689.671,
+      "sh": "192.168.130.136",
+      "dh": "180.163.147.215",
+      "ob": 1120,
+      "rb": 62958191,
+      "ct": 1,
+      "fd": "in",
+      "lh": "192.168.130.136",
+      "intf": "385975d4-1203-4607-b5a8-aef3f83e3f13",
+      "du": 58.48,
+      "pr": "tcp",
+      "ltype": "mac",
+      "oIntf": "0f0a3fe3",
+      "dTags": [
+        "3"
+      ],
+      "sp": [
+        64755
+      ],
+      "dp": 443,
+      "af": {
+        "cowork-common-public-cdn.lx.netease.com": {
+          "proto": "ssl",
+          "ip": "180.163.147.215"
+        }
+      },
+      "mac": "6C:1F:F7:23:39:CB",
+      "ip": "180.163.147.215",
+      "host": "cowork-common-public-cdn.lx.netease.com",
+      "from": "flow",
+      "intel": {
+        "ip": "180.163.147.215",
+        "host": "cowork-common-public-cdn.lx.netease.com",
+        "updateTime": "1768473691.177"
+      }
+    };
+    const result = this.plugin.lookupAppMatch(flow);
+    expect(result.length).to.be.equal(0);
+  });
 
 
 });
