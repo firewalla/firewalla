@@ -96,7 +96,7 @@ class PolicyDisturbManager {
     log.info(`Registering policy ${pid} ...`);
 
     const appName = policy.app_name || "";
-    const disturbLevel = policy.disturbLevel || "moderate";
+    const disturbLevel = policy.disturbLevel || "";
     //set default default values
     let defaultDisturbVal = { "rateLimit": 10240, "dropPacketRate": 0, "increaseLatency": 0 };
     let disableQuic = false;
