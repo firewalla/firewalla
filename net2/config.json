@@ -882,6 +882,7 @@
     "DapSensor": {},
     "SuricataRuleSetSensor": {},
     "NetconsolePlugin": {},
+    "ResourcePlugin": {},
     "NoiseDomainsSensor": {}
   },
   "hooks": {
