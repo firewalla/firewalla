@@ -26,6 +26,11 @@ Promise.promisifyAll(fs);
 const crypto = require('crypto');
 const path = require('path');
 const execAsync = require('child-process-promise').exec;
+const CronJob = require('cron').CronJob;
+const HostManager = require('../net2/HostManager.js');
+const sysManager = require('../net2/SysManager.js');
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../net2/Message.js');
 
 const RESOURCES_DIR = '/data/fw_resources';
 const CONTENT_SIZE_LIMIT = 1024 * 1024 * 2;
@@ -34,6 +39,109 @@ class ResourcePlugin extends Sensor {
   constructor(config) {
     super(config);
     this.initialized = false;
+    this.cleanupJob = null;
+    this.hostManager = new HostManager();
+  }
+
+  async run() {
+    // Schedule initial cleanup job
+    await this.scheduleCleanupJob();
+
+    // Subscribe to timezone reload events to reschedule the job
+    sclient.on("message", async (channel, message) => {
+      if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
+        log.info("System timezone is reloaded, will reschedule resource cleanup cron job ...");
+        await this.scheduleCleanupJob();
+      }
+    });
+    sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
+  }
+
+  async scheduleCleanupJob() {
+    // Schedule resource cleanup to run daily at midnight
+    const tz = sysManager.getTimezone();
+    const cron = '0 1 * * *'; // Daily at midnight
+    
+    if (this.cleanupJob) {
+      this.cleanupJob.stop();
+    }
+
+    this.cleanupJob = new CronJob(cron, async () => {
+      try {
+        await this.cleanupUnusedResources();
+      } catch (err) {
+        log.error(`Failed to cleanup unused resources: ${err.message}`, err);
+      }
+    }, () => {}, true, tz);
+
+    log.info('Resource cleanup cronjob scheduled');
+  }
+
+  async cleanupUnusedResources() {
+    try {
+      log.info('Starting resource cleanup...');
+      
+      // Load policy from HostManager to get resIdsInUse
+      const policy = await this.hostManager.loadPolicyAsync();
+      
+      // Extract resIdsInUse from policy
+      // Structure: { "resIdsInUse": ["123123", "456456"] }
+      let resIdsInUse = [];
+      if (policy && policy.resIdsInUse && Array.isArray(policy.resIdsInUse)) {
+        resIdsInUse = policy.resIdsInUse;
+      }
+
+      // Convert to Set for efficient lookup
+      const resIdsInUseSet = new Set(resIdsInUse.map(id => String(id)));
+      
+      log.info(`Found ${resIdsInUse.length} resources in use`);
+
+      // Get all resources from filesystem
+      const allResources = await this.getAllResources();
+      log.info(`Found ${allResources.length} total resources on filesystem`);
+
+      // Find unused resources
+      const unusedResources = allResources.filter(resource => {
+        if (!resource || !resource.resId) {
+          return false;
+        }
+        return !resIdsInUseSet.has(String(resource.resId));
+      });
+
+      if (unusedResources.length === 0) {
+        log.info('No unused resources to cleanup');
+        return;
+      }
+
+      log.info(`Found ${unusedResources.length} unused resources to cleanup`);
+
+      // Delete unused resources
+      let deletedCount = 0;
+      let errorCount = 0;
+      
+      for (const resource of unusedResources) {
+        try {
+          const resourcePath = this.getResourcePath(resource.resId);
+          await fs.unlinkAsync(resourcePath);
+          deletedCount++;
+          log.info(`Deleted unused resource: ${resource.resId}`);
+        } catch (err) {
+          errorCount++;
+          if (err.code === 'ENOENT') {
+            // File already deleted, not an error
+            deletedCount++;
+            log.debug(`Resource already deleted: ${resource.resId}`);
+          } else {
+            log.error(`Failed to delete resource ${resource.resId}: ${err.message}`);
+          }
+        }
+      }
+
+      log.info(`Resource cleanup completed: ${deletedCount} deleted, ${errorCount} errors`);
+    } catch (err) {
+      log.error(`Error during resource cleanup: ${err.message}`, err);
+      throw err;
+    }
   }
 
   async apiRun() {
