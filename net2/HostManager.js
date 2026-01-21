@@ -1747,7 +1747,7 @@ module.exports = class HostManager extends Monitorable {
       monitorable = IdentityManager.getIdentityByGUID(target)
       return monitorable
     } else {
-      monitorable = this.getHostAsync(target, noEnvCreation)
+      monitorable = await this.getHostAsync(target, noEnvCreation)
       if (monitorable) return monitorable
 
       return IdentityManager.getIdentityByIP(target)
