@@ -49,7 +49,7 @@
     "notification.resend.duration": 86400,
     "notification.resend.maxcount": 50,
     "alarm.sshPwdGuess.cooldown": 3600,
-    "host.inactive": 604800,
+    "host.active": 604800,
     "host.redis.mackey.expire": 31536000,
     "host.redis.ipkey.expire": 2592000
   },

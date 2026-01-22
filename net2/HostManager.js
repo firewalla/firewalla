@@ -1902,7 +1902,7 @@ module.exports = class HostManager extends Monitorable {
           this.hostsdb[h]._mark = false;
         }
       }
-      const inactiveTS = Date.now()/1000 - fc.getConfig().timing['host.inactive'] || INACTIVE_TIME_SPAN
+      const inactiveTS = Date.now()/1000 - fc.getConfig().timing['host.active'] || INACTIVE_TIME_SPAN
       const visibleMACs = new Set()
       for (const mac of await hostTool.getMACsByTime(inactiveTS))
         visibleMACs.add(mac)
