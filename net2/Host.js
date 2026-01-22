@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -29,7 +29,7 @@ const Mode = require('./Mode.js')
 const routing = require('../extension/routing/routing.js');
 
 const util = require('util')
-
+const fc = require('./config.js');
 const f = require('./Firewalla.js');
 
 const { getPreferredName, getPreferredBName } = require('../util/util.js')
@@ -369,7 +369,7 @@ class Host extends Monitorable {
       if (ts) {
         await rclient.pipelineAndLog([
           [ 'zadd', Constants.REDIS_KEY_HOST_ACTIVE, ts, this.getGUID() ],
-          [ 'expire', this.getMetaKey(), Constants.HOST_MAC_KEY_EXPIRE_SECS ],
+          [ 'expire', this.getMetaKey(), fc.getConfig().timing['host.redis.mackey.expire'] ],
         ])
       }
     }

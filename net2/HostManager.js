@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -1902,7 +1902,7 @@ module.exports = class HostManager extends Monitorable {
           this.hostsdb[h]._mark = false;
         }
       }
-      const inactiveTS = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
+      const inactiveTS = Date.now()/1000 - fc.getConfig().timing['host.active'] || INACTIVE_TIME_SPAN
       const visibleMACs = new Set()
       for (const mac of await hostTool.getMACsByTime(inactiveTS))
         visibleMACs.add(mac)
