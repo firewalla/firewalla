@@ -51,7 +51,8 @@
     "alarm.sshPwdGuess.cooldown": 3600,
     "host.active": 604800,
     "host.redis.mackey.expire": 31536000,
-    "host.redis.ipkey.expire": 2592000
+    "host.redis.ip4key.expire": 2592000,
+    "host.redis.ip6key.expire": 345600
   },
   "secondaryInterface": {
     "intf": "eth0:0",
