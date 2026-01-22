@@ -832,8 +832,13 @@ module.exports = class HostManager extends Monitorable {
     const result = await rclient.hgetallAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT);
     if (!result)
       return {};
-    if (_.has(result, "tasks"))
-      result.tasks = JSON.parse(result.tasks);
+    if (_.has(result, "tasks")) {
+      try {
+        result.tasks = JSON.parse(result.tasks);
+      } catch (err) {
+        result.tasks = {};
+      }
+    }
     if (_.has(result, "lastCompletedScanTs"))
       result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
     if (result.tasks) {

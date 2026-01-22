@@ -145,7 +145,7 @@ class InternalScanSensor extends Sensor {
     this.hookFeature(featureName);
     const previousScanResult = await this.getScanResult();
     if (_.has(previousScanResult, "tasks"))
-      this.scheduledScanTasks = previousScanResult.tasks;
+      this.scheduledScanTasks = previousScanResult.tasks || {};
     // set state of previous pending/running tasks to "stopped" on service restart
     for (const key of Object.keys(this.scheduledScanTasks)) {
       const task = this.scheduledScanTasks[key];
@@ -487,7 +487,7 @@ class InternalScanSensor extends Sensor {
   }
 
   getTasks() {
-    return this.scheduledScanTasks;
+    return this.scheduledScanTasks || {};
   }
 
   async saveToRedis(hostId, result) {
