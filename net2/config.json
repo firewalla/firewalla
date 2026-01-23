@@ -693,6 +693,9 @@
       "sigDetectedServers": {
         "expires": 86400,
         "count": 10000
+      },
+      "flow_domain:": {
+        "count": 200
       }
     },
     "DeviceOfflineSensor": {
