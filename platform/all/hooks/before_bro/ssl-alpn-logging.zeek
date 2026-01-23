@@ -16,3 +16,10 @@ event ssl_extension_application_layer_protocol_negotiation(c: connection, is_cli
         if ( is_client )
                 c$ssl$orig_alpn = names;
         }
+
+event ssl_client_hello(c: connection, version: count, record_version: count, possible_ts: time, client_random: string, session_id: string, ciphers: index_vec, comp_methods: index_vec)
+        {
+        ## server hello might get lost when a domain was blocked, ssl log might not be generated until connection timeout.
+        ## as a workaround we log a record once we get clientHello.
+        Log::write(SSL::LOG, c$ssl);
+        }

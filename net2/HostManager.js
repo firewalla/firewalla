@@ -833,8 +833,13 @@ module.exports = class HostManager extends Monitorable {
     const result = await rclient.hgetallAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT);
     if (!result)
       return {};
-    if (_.has(result, "tasks"))
-      result.tasks = JSON.parse(result.tasks);
+    if (_.has(result, "tasks")) {
+      try {
+        result.tasks = JSON.parse(result.tasks);
+      } catch (err) {
+        result.tasks = {};
+      }
+    }
     if (_.has(result, "lastCompletedScanTs"))
       result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
     if (result.tasks) {
@@ -1748,7 +1753,7 @@ module.exports = class HostManager extends Monitorable {
       monitorable = IdentityManager.getIdentityByGUID(target)
       return monitorable
     } else {
-      monitorable = this.getHostAsync(target, noEnvCreation)
+      monitorable = await this.getHostAsync(target, noEnvCreation)
       if (monitorable) return monitorable
 
       return IdentityManager.getIdentityByIP(target)
@@ -1903,7 +1908,7 @@ module.exports = class HostManager extends Monitorable {
           this.hostsdb[h]._mark = false;
         }
       }
-      const inactiveTS = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
+      const inactiveTS = Date.now()/1000 - fc.getConfig().timing['host.active'] || INACTIVE_TIME_SPAN
       const visibleMACs = new Set()
       for (const mac of await hostTool.getMACsByTime(inactiveTS))
         visibleMACs.add(mac)

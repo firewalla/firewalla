@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,6 +26,7 @@ const intelTool = new IntelTool();
 const Hashes = require('../util/Hashes.js');
 const f = require('./Firewalla.js');
 const Constants = require('./Constants.js');
+const fc = require('./config.js');
 
 let instance = null;
 
@@ -128,7 +129,7 @@ class HostTool {
 
     this.cleanupData(hostCopy);
     await rclient.hmsetAsync(key, hostCopy)
-    await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 30); // auto expire after 30 days
+    await rclient.expireatAsync(key, Math.floor(Date.now() / 1000) + fc.getConfig().timing['host.redis.ip4key.expire'])
   }
 
   async updateMACKey(host, skipUpdatingExpireTime) {
@@ -155,7 +156,7 @@ class HostTool {
     if(skipUpdatingExpireTime) {
       return;
     } else {
-      return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 365); // auto expire after 365 days
+      return rclient.expireatAsync(key, Math.floor(Date.now() / 1000) + fc.getConfig().timing['host.redis.mackey.expire'])
     }
   }
 
@@ -416,7 +417,7 @@ class HostTool {
 
       if (data) {
         await rclient.hmsetAsync(key, data)
-        await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 4)
+        await rclient.expireatAsync(key, Math.floor(Date.now() / 1000) + fc.getConfig().timing['host.redis.ip6key.expire'])
       }
     }
   }
@@ -458,7 +459,7 @@ class HostTool {
     await require('child-process-promise').exec(`ping6 -c 3 -I ${intf} ` + v6addr).catch((err) => {});
     log.info("Discovery:AddV6Host:", v6addr, mac);
     mac = mac.toUpperCase();
-    let v6key = "host:ip6:" + v6addr;
+    let v6key = this.getIPv6HostKey(v6addr);
     log.debug("============== Discovery:v6Neighbor:Scan", v6key, mac);
     let ip6Host = await rclient.hgetallAsync(v6key)
     log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, ip6Host);
@@ -474,7 +475,7 @@ class HostTool {
     let result = await rclient.hmsetAsync(v6key, ip6Host)
     log.debug("++++++ Discover:v6Neighbor:Scan:find", result);
     let mackey = "host:mac:" + mac;
-    await rclient.expireatAsync(v6key, parseInt((+new Date) / 1000) + 604800); // 7 days
+    await rclient.expireatAsync(v6key, Math.floor(Date.now() / 1000) + fc.getConfig().timing['host.redis.ip6key.expire']);
     let macHost = await rclient.hgetallAsync(mackey)
     log.info("============== Discovery:v6Neighbor:Scan:mac", v6key, mac, mackey, macHost);
     if (macHost != null) {

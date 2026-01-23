@@ -48,7 +48,11 @@
     "notification.box_offline.threshold": 900,
     "notification.resend.duration": 86400,
     "notification.resend.maxcount": 50,
-    "alarm.sshPwdGuess.cooldown": 3600
+    "alarm.sshPwdGuess.cooldown": 3600,
+    "host.active": 604800,
+    "host.redis.mackey.expire": 31536000,
+    "host.redis.ip4key.expire": 2592000,
+    "host.redis.ip6key.expire": 345600
   },
   "secondaryInterface": {
     "intf": "eth0:0",
