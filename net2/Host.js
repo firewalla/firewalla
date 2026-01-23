@@ -76,6 +76,7 @@ const iptool = require('ip');
 
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
+const TimeUsageTool = require('../flow/TimeUsageTool.js');
 
 const envCreatedMap = {};
 
@@ -1068,6 +1069,7 @@ class Host extends Monitorable {
       // assign policy values just before request to give it enough time to load policy from constructor
       obj.monitored = this.policy.monitor
       obj.vpnClient = this.policy.vpnClient
+      obj.internetActivityStats = await this.fetch24HoursInternetActivityStats();
 
       const data = await bone.deviceAsync(classifyDetails ? 'classify_details' : "identify", obj).catch(err => {
         // http error, no need to log host data
@@ -1343,6 +1345,171 @@ class Host extends Monitorable {
   getNicUUID() {
     return this.o.intf
   }
+
+  async _get24HoursInternetActivity() {
+    const app = ["internet"];
+    const mac = this.o.mac || this.getUniqueId();
+    if (!mac) {
+      return null;
+    }
+
+    // Calculate time range: past 24 hours
+    const now = Math.floor(Date.now() / 1000);
+    const startTimestamp = now - 24 * 3600; // 24 hours ago
+    const endTimestamp = now; // current time
+
+    const stats = await TimeUsageTool.getAppTimeUsageStats(
+      mac,
+      null,   // containerUid is null because we are querying for a single device
+      app,
+      startTimestamp,
+      endTimestamp,
+      "hour",
+      true,  // uidIsDevice
+      true, // includeSlots
+      false  // includeIntervals
+    );
+
+    if (!stats || !stats.appTimeUsage || !stats.appTimeUsage.internet || !stats.appTimeUsage.internet.slots) {
+      return {
+        last24HoursTotal: 0,
+        last24HoursMidnight: 0
+      };
+    }
+
+    const slots = stats.appTimeUsage.internet.slots;
+    const last24HoursStart = now - 24 * 3600;
+
+    let last24HoursTotal = 0;
+    let last24HoursMidnightTotal = 0;
+
+    // Iterate through all slots
+    for (const [slotTimestampStr, slotData] of Object.entries(slots)) {
+      const slotTimestamp = parseInt(slotTimestampStr, 10);
+      const totalMins = slotData.totalMins || 0;
+
+      // Check if slot is within last 24 hours
+      if (slotTimestamp >= last24HoursStart && slotTimestamp < now) {
+        last24HoursTotal += totalMins;
+
+        // Check if slot is in midnight hours (1:00-5:00)
+        const slotDate = new Date(slotTimestamp * 1000);
+        const hour = slotDate.getHours();
+        if (hour >= 1 && hour < 5) {
+          last24HoursMidnightTotal += totalMins;
+        }
+      }
+    }
+    return {
+      last24HoursTotal: last24HoursTotal,
+      last24HoursMidnight: last24HoursMidnightTotal
+    };
+  }
+
+  async _get24HoursTopDomains(appName) {
+
+    const app = appName || "internet";
+    const mac = this.o.mac || this.getUniqueId();
+    if (!mac) {
+      return {
+        last24Hours: [],
+        last24HoursMidnight: []
+      };
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    
+    // Calculate all hour timestamps in the past 24 hours
+    const hourTimestampsSet = new Set();
+    const currentHour = new Date(now * 1000);
+    currentHour.setMinutes(0, 0, 0);
+    currentHour.setSeconds(0, 0, 0);
+    currentHour.setMilliseconds(0);
+    const currentHourTs = Math.floor(currentHour.getTime() / 1000);
+    
+    for (let hourTs = currentHourTs - 23 * 3600; hourTs <= currentHourTs; hourTs += 3600) {
+      if (hourTs < now) {
+        hourTimestampsSet.add(hourTs);
+      }
+    }
+
+    // Calculate midnight hour timestamps (1:00-5:00, excluding 5:00) in the past 24 hours
+    const midnightHourTimestampsSet = new Set();
+    for (let hourTs = currentHourTs - 23 * 3600; hourTs <= currentHourTs; hourTs += 3600) {
+      const date = new Date(hourTs * 1000);
+      const hour = date.getHours();
+      // 1:00-4:00 (excluding 5:00)
+      if (hour >= 1 && hour < 5 && hourTs < now) {
+        midnightHourTimestampsSet.add(hourTs);
+      }
+    }
+
+    // Aggregate domain counts from all hour keys
+    const last24HoursMap = new Map();
+    const midnightMap = new Map();
+
+    // Fetch data for last 24 hours
+    for (const hourTs of hourTimestampsSet) {
+      const key = `flow_domain:${app}:${mac}:${hourTs}`;
+      try {
+        const domainScores = await rclient.zrangeAsync(key, 0, -1, 'withscores');
+        for (let i = 0; i < domainScores.length; i += 2) {
+          const domain = domainScores[i];
+          const count = parseFloat(domainScores[i + 1]) || 0;
+          if (domain && count > 0) {
+            const current = last24HoursMap.get(domain) || 0;
+            last24HoursMap.set(domain, current + count);
+          }
+        }
+      } catch (err) {
+        // Key might not exist, skip silently
+      }
+    }
+
+    // Fetch data for midnight hours
+    for (const hourTs of midnightHourTimestampsSet) {
+      const key = `flow_domain:${app}:${mac}:${hourTs}`;
+      try {
+        const domainScores = await rclient.zrangeAsync(key, 0, -1, 'withscores');
+        for (let i = 0; i < domainScores.length; i += 2) {
+          const domain = domainScores[i];
+          const count = parseFloat(domainScores[i + 1]) || 0;
+          if (domain && count > 0) {
+            const current = midnightMap.get(domain) || 0;
+            midnightMap.set(domain, current + count);
+          }
+        }
+      } catch (err) {
+        // Key might not exist, skip silently
+      }
+    }
+
+    // Convert maps to arrays, sort by count (descending), and take top 10
+    const last24Hours = Array.from(last24HoursMap.entries())
+      .map(([domain, count]) => ({ domain, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    const last24HoursMidnight = Array.from(midnightMap.entries())
+      .map(([domain, count]) => ({ domain, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    return {
+      "last24Hours": last24Hours,
+      "last24HoursMidnight": last24HoursMidnight
+    };
+  }
+
+  async fetch24HoursInternetActivityStats() {
+    const activity = await this._get24HoursInternetActivity();
+    const topDomains = await this._get24HoursTopDomains();
+    return {
+      "activityMinutes": activity,
+      "topDomains": topDomains
+    };
+  }
+
 }
 
 module.exports = Host
