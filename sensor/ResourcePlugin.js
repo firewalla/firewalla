@@ -34,6 +34,7 @@ const Message = require('../net2/Message.js');
 
 const RESOURCES_DIR = '/data/fw_resources';
 const CONTENT_SIZE_LIMIT = 1024 * 1024 * 2;
+const MAX_TOTAL_SIZE = 200 * 1024 * 1024; // 200MB
 
 class ResourcePlugin extends Sensor {
   constructor(config) {
@@ -153,6 +154,12 @@ class ResourcePlugin extends Sensor {
       return await this.updateResources(data.resources);
     });
 
+    // Register cleanup_resources command handler
+    extensionManager.onCmd("cleanup_resources", async (msg, data) => {
+      await this.cleanupUnusedResources();
+      return { success: true };
+    });
+
     // Register resources get handler
     extensionManager.onGet("resources", async (msg, data) => {
       if (!data || !data.resIds) {
@@ -198,8 +205,59 @@ class ResourcePlugin extends Sensor {
     return path.join(RESOURCES_DIR, resId);
   }
 
+  getSha256Path(resId) {
+    return path.join(RESOURCES_DIR, `${resId}.sha256`);
+  }
+
   calculateSha256(content) {
     return crypto.createHash('sha256').update(content).digest('hex');
+  }
+
+  async getSha256FromCache(resId) {
+    try {
+      const sha256Path = this.getSha256Path(resId);
+      const sha256 = await fs.readFileAsync(sha256Path, 'utf8');
+      return sha256.trim();
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        return null; // Cache file doesn't exist
+      }
+      throw err;
+    }
+  }
+
+  async saveSha256ToCache(resId, sha256) {
+    try {
+      const sha256Path = this.getSha256Path(resId);
+      await fs.writeFileAsync(sha256Path, sha256, 'utf8');
+    } catch (err) {
+      log.error(`Failed to save SHA256 cache for ${resId}: ${err.message}`);
+      // Don't throw - this is just a cache, not critical
+    }
+  }
+
+  async getTotalResourceSize() {
+    try {
+      await this.ensureDirectory();
+      
+      // Check if directory exists
+      try {
+        await fs.accessAsync(RESOURCES_DIR, fs.constants.F_OK);
+      } catch (err) {
+        // Directory doesn't exist, return 0
+        return 0;
+      }
+
+      // Use du command to get total size in bytes
+      const result = await execAsync(`du -sb ${RESOURCES_DIR} 2>/dev/null || echo 0`);
+      const output = result.stdout.trim();
+      const size = parseInt(output.split(/\s+/)[0], 10);
+      
+      return isNaN(size) ? 0 : size;
+    } catch (err) {
+      log.error(`Failed to calculate total resource size: ${err.message}`);
+      return 0;
+    }
   }
 
   async updateResource(resId, base64) {
@@ -215,6 +273,13 @@ class ResourcePlugin extends Sensor {
       // Delete resource
       try {
         await fs.unlinkAsync(resourcePath);
+        // Also delete the SHA256 cache file
+        try {
+          const sha256Path = this.getSha256Path(resId);
+          await fs.unlinkAsync(sha256Path);
+        } catch (err) {
+          // Ignore errors when deleting cache file
+        }
         log.info(`Resource deleted: ${resId}`);
         return null; // Return null to indicate deletion
       } catch (err) {
@@ -238,10 +303,19 @@ class ResourcePlugin extends Sensor {
         throw new Error(`ERR_CONTENT_TOO_LARGE`);
       }
 
+      // Check total resource size before creating/updating
+      const totalSize = await this.getTotalResourceSize();
+      
+      if (totalSize > MAX_TOTAL_SIZE) {
+        throw new Error(`ERR_NO_SPACE`);
+      }
+
       const sha256 = this.calculateSha256(content);
       
       try {
         await fs.writeFileAsync(resourcePath, content);
+        // Save SHA256 to cache file
+        await this.saveSha256ToCache(resId, sha256);
         log.info(`Resource updated: ${resId}, sha256: ${sha256}`);
         return {
           resId: resId,
@@ -263,8 +337,21 @@ class ResourcePlugin extends Sensor {
 
     try {
       const resourcePath = this.getResourcePath(resId);
-      const content = await fs.readFileAsync(resourcePath);
-      const sha256 = this.calculateSha256(content);
+      
+      // Try to get SHA256 from cache first
+      let sha256 = await this.getSha256FromCache(resId);
+      let content = null;
+      
+      if (!sha256 || withContent) {
+        // Cache doesn't exist or we need content, read the file
+        content = await fs.readFileAsync(resourcePath);
+        
+        if (!sha256) {
+          // Calculate SHA256 and save to cache
+          sha256 = this.calculateSha256(content);
+          await this.saveSha256ToCache(resId, sha256);
+        }
+      }
       
       const result = {
         resId: resId,
@@ -372,8 +459,11 @@ class ResourcePlugin extends Sensor {
         return [];
       });
 
+      // Filter out .sha256 cache files
+      const resourceFiles = files.filter(filename => !filename.endsWith('.sha256'));
+
       // Process each file using getResource (without content for efficiency)
-      const resources = await Promise.all(files.map(async (filename) => {
+      const resources = await Promise.all(resourceFiles.map(async (filename) => {
         const filePath = this.getResourcePath(filename);
         try {
           // Check if it's a file (not a directory)
