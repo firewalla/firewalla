@@ -176,7 +176,7 @@ describe('Test process AppTimeUsageSensor', function () {
     };
     const result = this.plugin.lookupAppMatch(flow);
     //domainTier will only return the first matched entry. even if the portinfo of it is not matched by the flow, the other entries will be skipped.
-    expect(result.length).to.be.equal(2);     
+    expect(result.length).to.be.equal(2);
     expect(result[0].app).to.be.equal("Roblox");
     expect(result[0].occupyMins).to.be.equal(13);
     expect(result[0].lingerMins).to.be.equal(10);
@@ -217,18 +217,18 @@ describe('Test process AppTimeUsageSensor', function () {
     this.plugin.rebuildTrie();
 
     const flow = {
-        "ts": 1757651024.73, "_ts": 1757651145.385, "sh": "192.168.159.4", "dh": "157.240.11.30", "ob": 50230,
-        "rb": 82682, "ct": 1, "fd": "in", "lh": "192.168.159.4", "intf": "ff670d62-752d-4b74-87b0-108ef7d945d2", "du": 117.85, "pr": "tcp",
-        "uids": [], "ltype": "mac", "oIntf": "3a57dadb", "af": { "chat-e2ee.c10r.facebook.com": { "proto": "dns", "ip": "157.240.11.30" } }, "dTags": ["50"],
-        "dstTags": {}, "sp": [50642], "dp": 5222, "mac": "7A:3C:EB:12:DF:57", "ip": "157.240.11.30", "host": "chat-e2ee.c10r.facebook.com", "from": "flow",
-        "intel": {
-          "ip": "157.240.11.30", "host": "chat-e2ee.c10r.facebook.com", "s": "0", "t": "35", "cc": "[]", "v": "1", "originIP": "facebook.com", "e": "604800",
-          "category": "social", "isOriginIPAPattern": true, "updateTime": "1757651146.856"
-        }
+      "ts": 1757651024.73, "_ts": 1757651145.385, "sh": "192.168.159.4", "dh": "157.240.11.30", "ob": 50230,
+      "rb": 82682, "ct": 1, "fd": "in", "lh": "192.168.159.4", "intf": "ff670d62-752d-4b74-87b0-108ef7d945d2", "du": 117.85, "pr": "tcp",
+      "uids": [], "ltype": "mac", "oIntf": "3a57dadb", "af": { "chat-e2ee.c10r.facebook.com": { "proto": "dns", "ip": "157.240.11.30" } }, "dTags": ["50"],
+      "dstTags": {}, "sp": [50642], "dp": 5222, "mac": "7A:3C:EB:12:DF:57", "ip": "157.240.11.30", "host": "chat-e2ee.c10r.facebook.com", "from": "flow",
+      "intel": {
+        "ip": "157.240.11.30", "host": "chat-e2ee.c10r.facebook.com", "s": "0", "t": "35", "cc": "[]", "v": "1", "originIP": "facebook.com", "e": "604800",
+        "category": "social", "isOriginIPAPattern": true, "updateTime": "1757651146.856"
+      }
     };
     const result = this.plugin.lookupAppMatch(flow);
     //domainTier will only return the first matched entry. even if the portinfo of it is not matched by the flow, the other entries will be skipped.
-    expect(result.length).to.be.equal(2);     
+    expect(result.length).to.be.equal(2);
     expect(result[0].app).to.be.equal("facebook");
     expect(result[0].occupyMins).to.be.equal(1);
     expect(result[0].lingerMins).to.be.equal(3);
@@ -524,7 +524,7 @@ describe('Test process AppTimeUsageSensor', function () {
 
   it('should not match the large background download flow', async () => {
 
-    this.plugin.appConfs = { };
+    this.plugin.appConfs = {};
     this.plugin.rebuildTrie();
 
     const flow = {
@@ -567,6 +567,77 @@ describe('Test process AppTimeUsageSensor', function () {
     };
     const result = this.plugin.lookupAppMatch(flow);
     expect(result.length).to.be.equal(0);
+  });
+
+  it('should handle IPv4 and IPv6 addresses in recordDomain2Redis', async () => {
+    // Test IPv4 address from flow.host
+    const flowIPv4 = {
+      "ts": 1756908607.07,
+      "mac": "56:30:BA:F0:11:9A",
+      "du": 20.45,
+      "host": "192.168.1.1"
+    };
+    await this.plugin.recordDomain2Redis(flowIPv4, "internet");
+
+    // Test IPv6 address (full format)
+    const flowIPv6 = {
+      "ts": 1756908607.07,
+      "mac": "56:30:BA:F0:11:9A",
+      "du": 20.45,
+      "host": "2001:0db8:85a3:0000:0000:8a2e:0370:7334"
+    };
+    await this.plugin.recordDomain2Redis(flowIPv6, "internet");
+
+    // Test IPv6 address (compressed format)
+    const flowIPv6Compressed = {
+      "ts": 1756908607.07,
+      "mac": "56:30:BA:F0:11:9A",
+      "du": 20.45,
+      "host": "2001:db8:85a3::8a2e:370:7334"
+    };
+    await this.plugin.recordDomain2Redis(flowIPv6Compressed, "internet");
+
+    // Test IPv4 from flow.intel.host
+    const flowIPv4Intel = {
+      "ts": 1756908607.07,
+      "mac": "56:30:BA:F0:11:9A",
+      "du": 20.45,
+      "intel": {
+        "host": "10.0.0.1"
+      }
+    };
+    await this.plugin.recordDomain2Redis(flowIPv4Intel, "internet");
+
+    // Test IPv6 from flow.intel.host
+    const flowIPv6Intel = {
+      "ts": 1756908607.07,
+      "mac": "56:30:BA:F0:11:9A",
+      "du": 20.45,
+      "intel": {
+        "host": "2001:db8::1"
+      }
+    };
+
+    await this.plugin.recordDomain2Redis(flowIPv6Intel, "internet");
+
+    // Test Domain from flow.host
+    const flowDomain = {
+      "ts": 1756908607.07,
+      "mac": "56:30:BA:F0:11:9A",
+      "du": 20.45,
+      "host": "www.google.com"
+    };
+    await this.plugin.recordDomain2Redis(flowDomain, "internet");
+
+    // Test empty domain from flow.host
+    const flowEmptyDomain = {
+      "ts": 1756908607.07,
+      "mac": "56:30:BA:F0:11:9A",
+      "du": 20.45,
+      "host": null
+    };
+    await this.plugin.recordDomain2Redis(flowEmptyDomain, "internet");
+
   });
 
 
