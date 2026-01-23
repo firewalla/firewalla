@@ -54,7 +54,7 @@ app.set('json spaces', 2);
 // uncomment after placing your favicon in /public
 //app.use(favicon(path.join(__dirname, 'public', 'favicon.ico')));
 app.use(logger('dev'));
-app.use(bodyParser.json());
+app.use(bodyParser.json({limit: '5mb'}));
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use('/dashboard', require('./routes/dashboard.js'));
@@ -67,7 +67,7 @@ app.use(function (req, res, next) {
 
 var subpath_v1 = express();
 app.use("/v1", subpath_v1);
-subpath_v1.use(bodyParser.json());
+subpath_v1.use(bodyParser.json({limit: '5mb'}));
 subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 
 function enableSubPath(path, lib) {
