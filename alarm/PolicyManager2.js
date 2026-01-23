@@ -1269,9 +1269,12 @@ class PolicyManager2 {
     }
     await this.updatePolicyAsync({
       pid: policy.pid,
-      activatedTime: activatedTime
+      activatedTime: activatedTime,
+      // this field indicates the last time when the rule is activated and unlike activatedTime, it won't be removed when policy is unenforced
+      lastActivatedTime: activatedTime
     })
     policy.activatedTime = activatedTime
+    policy.lastActivatedTime = activatedTime;
     return policy
   }
 
