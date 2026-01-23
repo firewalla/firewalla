@@ -21,8 +21,6 @@ const messageBus = new MessageBus('info')
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fwapc = require('./fwapc.js');
 
-const exec = require('child-process-promise').exec
-
 const spoofer = require('./Spoofer.js');
 const sysManager = require('./SysManager.js');
 const Mode = require('./Mode.js')

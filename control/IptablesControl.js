@@ -18,6 +18,8 @@ const log = require('../net2/logger.js')(__filename);
 const { exec } = require('child-process-promise');
 const { Rule } = require('../net2/Iptables.js');
 const f = require('../net2/Firewalla.js');
+const path = require('path');
+const fsp = require('fs').promises;
 
 const ModuleControl = require('./ModuleControl.js')
 
@@ -34,6 +36,10 @@ class IptablesControl extends ModuleControl {
     // Track current iptables state (from iptables-save / setup script output)
     // Each table is split into chains vs rules.
     this.aggregatedRules = this._emptyState();
+  }
+
+  _getIptablesRestoreFile(family) {
+    return path.join(f.getHiddenFolder(), 'run', 'iptables', family === 4 ? 'iptables' : 'ip6tables');
   }
 
   /**
@@ -107,20 +113,16 @@ class IptablesControl extends ModuleControl {
   async readSetupScriptResult() {
     log.info('Reading iptables setup script result');
     try {
-      const path = require('path');
-
       // Read and parse the generated files (same format as iptables-save)
-      const fs = require('fs').promises;
-      const basePath = path.join(f.getHiddenFolder(), 'run', 'iptables');
       
       // Read IPv4 iptables file
-      const iptablesFile = path.join(basePath, 'iptables');
-      const iptablesContent = await fs.readFile(iptablesFile, 'utf8');
+      const iptablesFile = this._getIptablesRestoreFile(4);
+      const iptablesContent = await fsp.readFile(iptablesFile, 'utf8');
       this.parseIptablesSaveOutput(iptablesContent, 4);
       
       // Read IPv6 iptables file
-      const ip6tablesFile = path.join(basePath, 'ip6tables');
-      const ip6tablesContent = await fs.readFile(ip6tablesFile, 'utf8');
+      const ip6tablesFile = this._getIptablesRestoreFile(6);
+      const ip6tablesContent = await fsp.readFile(ip6tablesFile, 'utf8');
       this.parseIptablesSaveOutput(ip6tablesContent, 6);
       
       log.info('Iptables setup script result read successfully');
@@ -172,7 +174,7 @@ class IptablesControl extends ModuleControl {
       if (trimmedLine.startsWith('*')) {
         currentTable = trimmedLine.substring(1);
         if (this.aggregatedRules[family][currentTable]) {
-          this.aggregatedRules[family][currentTable] = { chains: [], rules: [] };
+          this.aggregatedRules[family][currentTable] = { chains: {}, rules: [] };
         } else {
           // Skip unsupported tables (raw, security, etc.)
           log.info(`Skipping unsupported table: ${currentTable} for family ${family}`);
@@ -212,7 +214,7 @@ class IptablesControl extends ModuleControl {
     log.verbose(`Parsed iptables rules for family ${family}: ${JSON.stringify(
       Object.keys(this.aggregatedRules[family]).reduce((acc, table) => {
         acc[table] = {
-          chains: this.aggregatedRules[family][table].chains.length,
+          chains: Object.keys(this.aggregatedRules[family][table].chains).length,
           rules: this.aggregatedRules[family][table].rules.length,
         };
         return acc;
@@ -253,10 +255,17 @@ class IptablesControl extends ModuleControl {
       }
     }
 
-    const content = lines.join('\n');
+    const content = lines.join('\n') + '\n';
     const command = family === 4 ? 'iptables-restore' : 'ip6tables-restore';
-    log.debug(command, content);
-    await exec(`sudo ${command} << 'EOF'\n${content}\nEOF`, { timeout: 30000 });
+
+    // Avoid E2BIG: do NOT embed the restore payload in the exec() command string.
+    // Write it to the same file location used by readSetupScriptResult(),
+    // then feed that file to iptables-restore.
+    const restoreFile = this._getIptablesRestoreFile(family);
+    await fsp.writeFile(restoreFile, content, 'utf8');
+
+    log.debug(`${command} < ${restoreFile} bytes=${content.length}`);
+    await exec(`sudo ${command} < "${restoreFile}"`, { timeout: 30000 });
     log.info(`iptables v${family} restored ${lines.length} lines successfully`);
   }
 

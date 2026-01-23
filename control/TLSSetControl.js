@@ -52,10 +52,10 @@ class TLSSetControl extends ModuleControl {
   getModulesToUpdate(opts = {}) {
     const { protocol = '', tlsHostSet } = opts;
     const modules = [];
-    if (protocol !== 'udp' && platform.isTLSBlockSupport() && (!tlsHostSet || this.isSetActiveTCP(tlsHostSet))) {
+    if ((protocol === 'tcp' || protocol === '') && platform.isTLSBlockSupport() && (!tlsHostSet || this.isSetActiveTCP(tlsHostSet))) {
       modules.push('xt_tls');
     }
-    if (protocol !== 'tcp' && platform.isUdpTLSBlockSupport() && (!tlsHostSet || this.isSetActiveUDP(tlsHostSet))) {
+    if ((protocol === 'udp' || protocol === '') && platform.isUdpTLSBlockSupport() && (!tlsHostSet || this.isSetActiveUDP(tlsHostSet))) {
       modules.push('xt_udp_tls');
     }
     return modules;
@@ -128,13 +128,17 @@ class TLSSetControl extends ModuleControl {
     const queued = this.queuedRules;
     this.queuedRules = { 'xt_tls': {}, 'xt_udp_tls': {} };
 
-    const modules = Object.keys(queued);
-
-    for (const module of modules) {
+    for (const module of TLS_MODULES) {
+      const proto = module === 'xt_tls' ? 'tcp' : 'udp';
       const sets = queued[module] || {};
       for (const setName of Object.keys(sets)) {
         const ops = sets[setName] || [];
         if (!ops.length) continue;
+
+        if (!this.isSetActive(setName, proto)) {
+          log.warn("Skip inactive TLS set", proto, setName, ops);
+          continue;
+        }
 
         const tlsFilePath = this._tlsFilePath(setName, module);
 
