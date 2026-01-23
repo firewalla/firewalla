@@ -101,7 +101,7 @@ module.exports = class {
       for (const exception of exceptions) {
         const category = exception.getCategory();
         if (category && !newCategoryMap.has(category)) {
-          log.info("New category matcher", category);
+          log.verbose("New category matcher", category);
           newCategoryMap.set(category, await CategoryMatcher.newCategoryMatcher(category));
         }
       }

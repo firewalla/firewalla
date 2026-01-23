@@ -23,7 +23,7 @@ const fsp = require('fs').promises;
 
 const ModuleControl = require('./ModuleControl.js')
 
-const TABLES = ['filter', 'nat', 'mangle'];
+const TABLES = ['filter', 'nat', 'mangle', 'raw'];
 
 class IptablesControl extends ModuleControl {
   constructor() {
@@ -177,7 +177,7 @@ class IptablesControl extends ModuleControl {
           this.aggregatedRules[family][currentTable] = { chains: {}, rules: [] };
         } else {
           // Skip unsupported tables (raw, security, etc.)
-          log.info(`Skipping unsupported table: ${currentTable} for family ${family}`);
+          log.error(`Skipping unsupported table: ${currentTable} for family ${family}`);
           currentTable = null;
         }
         continue;
@@ -291,13 +291,15 @@ class IptablesControl extends ModuleControl {
   }
 
   _emptyState(queue = false) {
-    // use object to dedup for existing chains
-    // keep rules as array as they are ordered
-    const mk = () => (queue ? [] : { chains: {}, rules: [] });
-    return {
-      4: { filter: mk(), nat: mk(), mangle: mk() },
-      6: { filter: mk(), nat: mk(), mangle: mk() },
-    };
+    const state = {};
+    for (const family of [4, 6]) {
+      state[family] = {};
+      for (const table of TABLES)
+        // use object to dedup for existing chains
+        // keep rules as array as they are ordered
+        state[family][table] = queue ? [] : { chains: {}, rules: [] };
+    }
+    return state;
   }
 
   mergeQueuedToAggregated(agg, queued) {

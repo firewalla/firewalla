@@ -1223,7 +1223,8 @@ class PolicyManager2 {
   notifyPolicyActivated(policy) {
     sem.emitLocalEvent({
       type: "Policy:Activated",
-      policy
+      policy,
+      suppressEventLogging: true
     });
   }
 
@@ -1231,7 +1232,8 @@ class PolicyManager2 {
   notifyPolicyDeactivated(policy) {
     sem.emitLocalEvent({
       type: "Policy:Deactivated",
-      policy
+      policy,
+      suppressEventLogging: true
     });
   }
 
@@ -1355,7 +1357,7 @@ class PolicyManager2 {
   }
 
   async _enforce(policy) {
-    log.info(`Enforce policy pid:${policy.pid}, type:${policy.type}, target:${policy.target}, scope:${policy.scope}, tag:${policy.tag}, action:${policy.action || "block"}`);
+    log.info(`Enforce policy pid:${policy.pid}, type:${policy.type}, target:${policy.target}${policy.scope ? ', scope:' + policy.scope : ''}${policy.tag ? ', ' + policy.tag : ''}, action:${policy.action || "block"}`);
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
@@ -1614,7 +1616,8 @@ class PolicyManager2 {
             if (policy.blockby == 'fastdns') {
               sem.emitEvent({
                 type: 'FastDNSPolicyComplete',
-                domain: target
+                domain: target,
+                suppressEventLogging: true
               })
             }
             return;
