@@ -42,7 +42,7 @@ class AppTimeUsageManager {
     this.jobs = {};
     this.registeredPolicies = {};
     this.enforcedPolicies = {};
-    this.acitveDisturbPolicies = {};
+    this.activeDisturbPolicies = {};
 
     this._changedAppUIDs = {};
     sem.on(Message.MSG_APP_TIME_USAGE_BUCKET_INCR, (event) => {
@@ -120,15 +120,15 @@ class AppTimeUsageManager {
 
   async refreshAppDistubTimeUsage() {
     await lock.acquire(LOCK_RW, async () => {
-      for (const pid of Object.keys(this.acitveDisturbPolicies)) {
+      for (const pid of Object.keys(this.activeDisturbPolicies)) {
         if (!this.registeredPolicies[pid]) {
-          log.warn(`Cannot find policy with ${pid}, just remove from acitveDisturbPolicies list`);
-          delete this.acitveDisturbPolicies[pid];
+          log.warn(`Cannot find policy with ${pid}, just remove from activeDisturbPolicies list`);
+          delete this.activeDisturbPolicies[pid];
           continue;
         }
 
-        for (const uid of Object.keys(this.acitveDisturbPolicies[pid])) {
-          let timeElapse = Math.floor((Date.now() - this.acitveDisturbPolicies[pid][uid]) / 1000);
+        for (const uid of Object.keys(this.activeDisturbPolicies[pid])) {
+          let timeElapse = Math.floor((Date.now() - this.activeDisturbPolicies[pid][uid]) / 1000);
           timeElapse = timeElapse < DISTURB_INTERVAL ? timeElapse : DISTURB_INTERVAL;
           let disturbTimeUsed = Number(this.registeredPolicies[pid].disturbTimeUsed) + timeElapse;
           try {
@@ -139,7 +139,7 @@ class AppTimeUsageManager {
               this.registeredPolicies[pid].disturbTimeUsed = disturbTimeUsed;
               await this.updateDisturbTimeUsedInPolicy(pid, this.registeredPolicies[pid].disturbTimeUsed);
               await this.applyPolicy(pid, uid);
-              delete this.acitveDisturbPolicies[pid][uid];
+              delete this.activeDisturbPolicies[pid][uid];
             }else {
               this.registeredPolicies[pid].disturbTimeUsed = disturbTimeUsed;
               await this.updateDisturbTimeUsedInPolicy(pid, this.registeredPolicies[pid].disturbTimeUsed);
@@ -170,8 +170,8 @@ class AppTimeUsageManager {
       this.registeredPolicies[pid].disturbTimeUsed = policy.disturbTimeUsed;
       log.info(`The policy has been in disturb mode for ${policy.disturbTimeUsed} seconds.`);
       await this.updateDisturbTimeUsedInPolicy(pid, policy.disturbTimeUsed);
-      this.acitveDisturbPolicies[pid] = {};
-      this.acitveDisturbPolicies[pid][uid] = Date.now();
+      this.activeDisturbPolicies[pid] = {};
+      this.activeDisturbPolicies[pid][uid] = Date.now();
     }
 
     this.enforcedPolicies[pid][uid] = POLICY_STATE_DOMAIN_ONLY;
@@ -334,8 +334,8 @@ class AppTimeUsageManager {
           delete this.watchList[key][uid][pid];
       }
     }
-    if (this.acitveDisturbPolicies[pid]) {
-      delete this.acitveDisturbPolicies[pid];
+    if (this.activeDisturbPolicies[pid]) {
+      delete this.activeDisturbPolicies[pid];
     }
     if (_.isObject(this.enforcedPolicies[pid])) {
       for (const uid of Object.keys(this.enforcedPolicies[pid]))
