@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2025-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,8 +25,8 @@ const conntrack = require('../net2/Conntrack.js');
 const LRU = require('lru-cache');
 const _ = require('lodash');
 const AsyncLock = require('../vendor_lib/async-lock');
-const sl = require('./SensorLoader.js');
 const { Rule } = require('../net2/Iptables.js');
+const iptc = require('../control/IptablesControl.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 
@@ -141,9 +141,8 @@ class QuicLogPlugin extends Sensor {
     rule.pro('udp');
     rule.dport(443);
     rule.jmp('LOG --log-level 7');
-    await rule.exec('-A');
-    rule.fam(6);
-    await rule.exec('-A');
+    iptc.addRule(rule);
+    iptc.addRule(rule.fam(6));
     
   }
 
@@ -163,9 +162,9 @@ class QuicLogPlugin extends Sensor {
     rule.pro('udp');
     rule.dport(443);
     rule.jmp('LOG --log-level 7');
-    await rule.exec('-D');
-    rule.fam(6);
-    await rule.exec('-D');
+    rule.opr('-D');
+    iptc.addRule(rule);
+    iptc.addRule(rule.fam(6));
   }
 
 }

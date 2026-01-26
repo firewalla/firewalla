@@ -782,7 +782,10 @@ class SysManager {
   }
 
   isSearchDomain(d) {
-    return this.getMonitoringInterfaces().some(intf => d && _.isArray(intf.searchDomains) && intf.searchDomains.some(sd => d.toLowerCase().endsWith(`.${sd.toLowerCase()}`)));
+    return this.getMonitoringInterfaces()
+      .some(intf => d && _.isArray(intf.searchDomains) &&
+        intf.searchDomains.some(sd => d.toLowerCase().endsWith(`.${sd.toLowerCase()}`))
+      );
   }
 
   myIp2(intf = this.config.monitoringInterface) {
