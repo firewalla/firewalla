@@ -124,6 +124,9 @@ class ResourcePlugin extends Sensor {
         try {
           const resourcePath = this.getResourcePath(resource.resId);
           await fs.unlinkAsync(resourcePath);
+          // Also delete the SHA256 cache file
+          const sha256Path = this.getSha256Path(resource.resId);
+          await fs.unlinkAsync(sha256Path).catch((err) => {});
           deletedCount++;
           log.info(`Deleted unused resource: ${resource.resId}`);
         } catch (err) {
