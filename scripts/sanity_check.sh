@@ -689,16 +689,18 @@ check_hosts() {
     get_system_features
     if [[ "${SF[new_device_tag]}" == "1" ]]; then
       NEW_DEVICE_TAGS=( $(jq "select(.state == true) | .tag" <<< ${SP[newDeviceTag]}) )
-      while read -r POLICY_KEY; do
-        if [ -n "$POLICY_KEY" ]; then
-          local nid=${POLICY_KEY/policy:network:/""}
-          get_network_policy "$nid"
-          NEW_DEVICE_TAGS+=( $(jq "select(.state == true) | .tag" <<< ${NP[$nid,newDeviceTag]}) );
-        fi
-      done < <(redis-cli keys 'policy:network:*')
     else
       NEW_DEVICE_TAGS=( )
     fi
+    while read -r POLICY_KEY; do
+      if [ -n "$POLICY_KEY" ]; then
+        local nid=${POLICY_KEY/policy:network:/""}
+        get_network_policy "$nid"
+        if [[ "${SF[new_device_tag]}" == "1" ]]; then
+          NEW_DEVICE_TAGS+=( $(jq "select(.state == true) | .tag" <<< ${NP[$nid,newDeviceTag]}) );
+        fi
+      fi
+    done < <(redis-cli keys 'policy:network:*')
 
     local B7_Placeholder=
     if [[ $SIMPLE_MODE == "T" ]]; then
