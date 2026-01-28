@@ -623,6 +623,8 @@ class PolicyManager2 {
       method: 'auto',
     })
     await Block.setupCategoryEnv("default_c", "hash:net", 4096)
+    // setup active protect category mapping file
+    await dnsmasq.createCategoryMappingFile("default_c", [categoryUpdater.getIPSetName("default_c"), categoryUpdater.getIPSetNameForIPV6("default_c")]);
     return this.checkAndSaveAsync(policy)
   }
 

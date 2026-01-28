@@ -2160,8 +2160,8 @@ module.exports = class HostManager extends Monitorable {
         default:
           return;
       }
-      await exec(wrapIptables(`sudo iptables -w -t mangle -F FW_QOS_GLOBAL_FALLBACK`)).catch((err) => { });
-      await exec(wrapIptables(`sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL_FALLBACK`)).catch((err) => { });
+      iptc.addRule(new Rule('mangle').chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
+      iptc.addRule(new Rule('mangle').fam(6).chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
       const wanConfs = _.isObject(policy) && policy.wanConfs || {};
       const wanType = sysManager.getWanType();
       const primaryWanIntf = sysManager.getPrimaryWanInterface();

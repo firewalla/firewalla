@@ -1,4 +1,4 @@
-/*    Copyright 2023-2024 Firewalla Inc.
+/*    Copyright 2023-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,6 +25,7 @@ const Constant = require('../net2/Constants.js')
 const execAsync = require('child-process-promise').exec
 
 const ipset = require('../net2/Ipset.js');
+const iptc = require('../control/IptablesControl.js');
 
 const PREROUTING_CHAIN = 'FW_PREROUTING'
 const NTP_CHAIN = 'FW_PREROUTING_NTP'
@@ -84,37 +85,26 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
       }
     }
 
+    const ipsetName = useTemp ? `${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP` : ipset.CONSTANTS.IPSET_NTP_OFF_MAC;
     if (op === 'add') {
       if (this.ntpOffSet.has(mac))
         return;
       this.ntpOffSet.add(mac);
+      ipset.add(ipsetName, mac);
     } else if (op === 'del') {
       if (!this.ntpOffSet.has(mac))
         return;
       this.ntpOffSet.delete(mac);
+      ipset.del(ipsetName, mac);
     }
-
-    const ipsetName = useTemp ? `${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP` : ipset.CONSTANTS.IPSET_NTP_OFF_MAC;
-    let cmd =  `sudo ipset ${op} -! ${ipsetName} ${mac}`;
-    await execAsync(cmd).catch((err) => {
-      log.error(`Failed to ${op} ${mac} to ${ipsetName}`, err);
-    });
   }
 
   async swapIpset() {
     const ipsetName = ipset.CONSTANTS.IPSET_NTP_OFF_MAC;
     const tmpIPSetName = `${ipsetName}_TEMP`;
 
-    // swap temp ipset with ipset
-    const swapCmd = `sudo ipset swap ${ipsetName} ${tmpIPSetName}`;
-    await execAsync(swapCmd).catch((err) => {
-      log.error(`Failed to swap ipsets ${ipsetName} ${tmpIPSetName}`, err);
-    });
-
-    const flushCmd = `sudo ipset flush ${tmpIPSetName}`;
-    await execAsync(flushCmd).catch((err) => {
-      log.error(`Failed to flush temp ipsets ${tmpIPSetName}`, err);
-    });
+    ipset.swap(ipsetName, tmpIPSetName);
+    ipset.flush(tmpIPSetName);
   }
 
   async syncNtpOffSet() {
@@ -140,9 +130,7 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
 
   async cleanupNtpOffSet() {
     const ipsetName = ipset.CONSTANTS.IPSET_NTP_OFF_MAC;
-    await execAsync(`sudo ipset flush ${ipsetName}`).catch((err) => {
-      log.error(`Failed to flush ipset ${ipsetName}`, err);
-    });
+    ipset.flush(ipsetName);
     this.ntpOffSet.clear();
   }
 
@@ -156,8 +144,8 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
         await execAsync('ntpdate -q localhost')
         if (!this.localServerStatus)
           log.info('NTP is back online on localhost')
-        await this.ruleFeature.exec('-A')
-        await this.ruleFeature6.exec('-A')
+        iptc.addRule(this.ruleFeature.opr('-A'));
+        iptc.addRule(this.ruleFeature6.opr('-A'));
         await rclient.setAsync(Constant.REDIS_KEY_NTP_SERVER_STATUS, 1)
         this.localServerStatus = true
         await this.syncNtpOffSet();
@@ -169,8 +157,8 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
 
     if (this.localServerStatus)
       log.error('Local NTP down, removing redirection')
-    await this.ruleFeature.exec('-D')
-    await this.ruleFeature6.exec('-D')
+    iptc.addRule(this.ruleFeature.opr('-D'));
+    iptc.addRule(this.ruleFeature6.opr('-D'));
     await rclient.setAsync(Constant.REDIS_KEY_NTP_SERVER_STATUS, 0)
     this.localServerStatus = false
   }
@@ -195,54 +183,52 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     const ruleDisable6 = ruleBase6.clone().jmp('RETURN')
 
     if (setting == 1) { // positive
-      await ruleEnable.exec('-I')
-      await ruleEnable6.exec('-I')
-      await ruleDisable.exec('-D')
-      await ruleDisable6.exec('-D')
+      iptc.addRule(ruleEnable.opr('-I'));
+      iptc.addRule(ruleEnable6.opr('-I'));
+      iptc.addRule(ruleDisable.opr('-D'));
+      iptc.addRule(ruleDisable6.opr('-D'));
     } else if (setting == -1) { // negative
-      await ruleEnable.exec('-D')
-      await ruleEnable6.exec('-D')
-      await ruleDisable.exec('-I')
-      await ruleDisable6.exec('-I')
+      iptc.addRule(ruleEnable.opr('-D'));
+      iptc.addRule(ruleEnable6.opr('-D'));
+      iptc.addRule(ruleDisable.opr('-I'));
+      iptc.addRule(ruleDisable6.opr('-I'));
     } else if (setting == 0) { // neutral/reset
-      await ruleEnable.exec('-D')
-      await ruleEnable6.exec('-D')
-      await ruleDisable.exec('-D')
-      await ruleDisable6.exec('-D')
+      iptc.addRule(ruleEnable.opr('-D'));
+      iptc.addRule(ruleEnable6.opr('-D'));
+      iptc.addRule(ruleDisable.opr('-D'));
+      iptc.addRule(ruleDisable6.opr('-D'));
     }
   }
 
   async systemStart() {
     const rule = new Rule('nat').chn(NTP_CHAIN).jmp(NTP_CHAIN_DNAT)
-    await rule.exec('-A')
-    await rule.fam('6').exec('-A')
+    iptc.addRule(rule);
+    iptc.addRule(rule.fam(6));
   }
 
   async systemStop() {
     const rule = new Rule('nat').chn(NTP_CHAIN).jmp(NTP_CHAIN_DNAT)
-    await rule.exec('-D')
-    await rule.fam('6').exec('-D')
+    iptc.addRule(rule.opr('-D'));
+    iptc.addRule(rule.fam(6).opr('-D'));
   }
 
   // consider using iptables-restore/scripts if complexity goes up
   async globalOn() {
-    await new Rule('nat').chn(NTP_CHAIN).exec('-N')
-    await new Rule('nat').chn(NTP_CHAIN).fam(6).exec('-N')
-    await new Rule('nat').chn(NTP_CHAIN_DNAT).exec('-N')
-    await new Rule('nat').chn(NTP_CHAIN_DNAT).fam(6).exec('-N')
-    await this.ruleFeature.exec('-A')
-    await this.ruleFeature6.exec('-A')
-    await this.ruleNtpOff.exec('-A')
-    await this.ruleNtpOff6.exec('-A')
-    await this.ruleLog.exec('-A')
-    await this.ruleLog6.exec('-A')
-    await this.ruleDNAT.exec('-A')
-    await this.ruleDNAT6.exec('-A')
+    iptc.addRule(new Rule('nat').chn(NTP_CHAIN).opr('-N'));
+    iptc.addRule(new Rule('nat').chn(NTP_CHAIN).fam(6).opr('-N'));
+    iptc.addRule(new Rule('nat').chn(NTP_CHAIN_DNAT).opr('-N'));
+    iptc.addRule(new Rule('nat').chn(NTP_CHAIN_DNAT).fam(6).opr('-N'));
+    iptc.addRule(this.ruleFeature.opr('-A'));
+    iptc.addRule(this.ruleFeature6.opr('-A'));
+    iptc.addRule(this.ruleNtpOff.opr('-A'));
+    iptc.addRule(this.ruleNtpOff6.opr('-A'));
+    iptc.addRule(this.ruleLog.opr('-A'));
+    iptc.addRule(this.ruleLog6.opr('-A'));
+    iptc.addRule(this.ruleDNAT.opr('-A'));
+    iptc.addRule(this.ruleDNAT6.opr('-A'));
 
     // create temp ipset
-    await execAsync(`sudo ipset create -! ${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP hash:mac`).catch((err) => {
-      log.error(`Failed to create temp ipset ${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP`, err);
-    });
+    ipset.create(`${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP`, 'hash:mac');
     await this.syncNtpOffSet();
 
     await super.globalOn()
@@ -251,14 +237,11 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
   }
 
   async globalOff() {
-    await this.ruleFeature.exec('-D')
-    await this.ruleFeature6.exec('-D')
+    iptc.addRule(this.ruleFeature.opr('-D'));
+    iptc.addRule(this.ruleFeature6.opr('-D'));
     // no need to touch FW_PREROUTING_NTP_DNAT chain here
 
-    await execAsync(`sudo ipset destroy ${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP`).catch((err) => {
-      log.error(`Failed to destroy temp ipset ${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP`, err);
-    });
-
+    ipset.destroy(`${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP`);
     await super.globalOff()
   }
 }

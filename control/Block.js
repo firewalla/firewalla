@@ -96,21 +96,6 @@ function getRuleGroupChainName(uuid, action) {
   }
 }
 
-// This function MUST be called at the beginning of main.js
-async function setupBlockChain() {
-  log.info("Setting up iptables for traffic blocking");
-  let cmd = __dirname + "/install_iptables_setup.sh";
-
-  await exec(cmd);
-
-
-  await Promise.all([
-    setupCategoryEnv("default_c", "hash:net", 4096),
-  ])
-
-  log.info("Finished setup for traffic blocking");
-}
-
 function getMacSet(tag) {
   return `c_bm_${tag}_set`
 }
@@ -1750,7 +1735,6 @@ async function manipulateFiveTupleRule(options) {
 
 
 module.exports = {
-  setupBlockChain,
   batchBlock,
   batchUnblock,
   batchBlockNetPort,
