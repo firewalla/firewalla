@@ -67,7 +67,7 @@ class TLSSetControl extends ModuleControl {
    * @param {string} tlsHostSet - TLS set name to check activation
    * @returns {string[]} Array of module names
    */
-  _getModulesForDomain(domain, tlsHostSet) {
+  getModulesForDomain(domain, tlsHostSet) {
     if (!domain) return [];
 
     // domain format:
@@ -75,7 +75,7 @@ class TLSSetControl extends ModuleControl {
     // protocol is optional, if not specified, it will match all protocols
     // start_port and end_port are optional, if not specified, it will match all ports
     const parts = domain.split(',');
-    const protocol = parts.length > 1 ? parts[1].split(':')[0] : null;
+    const protocol = parts.length > 1 ? parts[1].split(':')[0] : '';
 
     return this.getModulesToUpdate({ protocol, tlsHostSet });
   }
@@ -89,7 +89,8 @@ class TLSSetControl extends ModuleControl {
    */
   addRule(tlsHostSet, action, domain) {
     // Determine which modules to update based on domain protocol and platform support
-    const modules = this._getModulesForDomain(domain, tlsHostSet);
+    log.debug(`addRule: ${tlsHostSet}, ${action}, ${domain}`);
+    const modules = this.getModulesForDomain(domain, tlsHostSet);
 
     for (const module of modules) {
       if (action === 'add') {
@@ -142,6 +143,8 @@ class TLSSetControl extends ModuleControl {
 
         const tlsFilePath = this._tlsFilePath(setName, module);
 
+        log.verbose(`processRules: ${proto} ${setName}, ${ops.length} entries`);
+        log.debug(tlsFilePath, ops);
         for (const op of ops) {
           await fs.promises.appendFile(tlsFilePath, op).catch(err => {
             log.error('Failed to write TLS hostset', tlsFilePath, op, err);
@@ -199,8 +202,7 @@ class TLSSetControl extends ModuleControl {
    * @param {string} tlsHostSet - TLS set name (e.g. 'c_bd_games_tls_hostset')
    * @param {string} proto - 'tcp' | 'udp' | '' (both)
    */
-  activateTLSSet(tlsHostSet, proto) {
-    proto = proto || '';
+  activateTLSSet(tlsHostSet, proto = '') {
     if (proto === 'tcp' || proto === '') {
       this.activeTCPSets[tlsHostSet] = 1;
     }
