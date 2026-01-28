@@ -38,7 +38,7 @@ case $service in
 esac
 
 cd $FIREWALLA_HOME
-branch=$(git branch --show-current)
+branch=$(git rev-parse --abbrev-ref HEAD)
 if [[ $branch == "master" && -f /home/pi/.firewalla/config/inspect_${service} ]]; then
   debug_opts="--inspect=0.0.0.0:$dport"
 fi

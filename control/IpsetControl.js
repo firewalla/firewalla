@@ -106,15 +106,45 @@ class IpsetControl extends ModuleControl {
     });
 
     for (let i = 0; i < ops.length; i += MAX_BATCH_SIZE) {
-      const batch = ops.slice(i, i + MAX_BATCH_SIZE);
-
-      const input = batch.join('\n');
-      log.info(`Processing batch ${Math.floor(i / MAX_BATCH_SIZE) + 1}/${Math.ceil(ops.length / MAX_BATCH_SIZE)}`);
-      log.debug(input)
-      try {
-        await exec(`sudo ipset restore -! << EOF\n${input}\nEOF`);
-      } catch (err) {
-        log.error('Error processing ipset operations', err.stderr);
+      let batch = ops.slice(i, i + MAX_BATCH_SIZE);
+      const batchNumber = Math.floor(i / MAX_BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(ops.length / MAX_BATCH_SIZE);
+      
+      let retryCount = 0;
+      const MAX_RETRIES = 10; // Prevent infinite loops
+      
+      while (batch.length > 0 && retryCount < MAX_RETRIES) {
+        const input = batch.join('\n');
+        log.info(`Processing batch ${batchNumber}/${totalBatches} (${batch.length} operations, retry ${retryCount})`);
+        log.debug(input);
+        
+        try {
+          await exec(`sudo ipset restore -! << EOF\n${input}\nEOF`);
+          break; // Success, exit retry loop
+        } catch (err) {
+          const errorLine = this._parseErrorLine(err.stderr);
+          if (errorLine !== null && errorLine > 0 && errorLine <= batch.length) {
+            // Line number is 1-indexed in error message, convert to 0-indexed array
+            const failedIndex = errorLine - 1;
+            const failedLine = batch[failedIndex];
+            log.error(`ipset restore failed at line ${errorLine} in batch ${batchNumber}: ${failedLine}`);
+            
+            // Remove everything before and including the error line, keep only lines after
+            // Lines before the error were successfully processed, so we only retry with remaining lines
+            batch = batch.slice(errorLine);
+            retryCount++;
+            continue
+          } else {
+            // Cannot parse error line or invalid line number, log and skip this batch
+            log.error(`Error processing ipset operations (batch ${batchNumber}): ${err.stderr}`);
+            log.error(`Failed to parse error line number, skipping batch`);
+            break;
+          }
+        }
+      }
+      
+      if (retryCount >= MAX_RETRIES) {
+        log.error(`Max retries (${MAX_RETRIES}) reached for batch ${batchNumber}, skipping remaining operations`);
       }
     }
   }
@@ -146,6 +176,26 @@ class IpsetControl extends ModuleControl {
 
   flush() {
     this.queuedRules = [];
+  }
+
+  /**
+   * Parse error line number from ipset restore stderr output
+   * @param {string} stderr - stderr output from ipset restore
+   * @returns {number|null} Line number (1-indexed) or null if cannot parse
+   */
+  _parseErrorLine(stderr) {
+    if (!stderr) return null;
+    
+    // Match patterns like:
+    // "ipset v7.15: Error in line 1022: The set with the given name does not exist"
+    // "Error in line 5: ..."
+    const match = stderr.match(/Error in line (\d+):/i);
+    if (match && match[1]) {
+      const lineNum = parseInt(match[1], 10);
+      return isNaN(lineNum) ? null : lineNum;
+    }
+    
+    return null;
   }
 
   /**

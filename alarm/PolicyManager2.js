@@ -210,7 +210,7 @@ class PolicyManager2 {
             log.info("START UNENFORCING POLICY", policy.pid, action);
             await this.unenforce(policy)
           } catch (err) {
-            log.error("unenforce policy failed:" + err, policy)
+            log.error("unenforce policy failed:", err, policy)
           } finally {
             log.info("COMPLETE UNENFORCING POLICY", policy.pid, action);
           }
@@ -623,6 +623,8 @@ class PolicyManager2 {
       method: 'auto',
     })
     await Block.setupCategoryEnv("default_c", "hash:net", 4096)
+    // setup active protect category mapping file
+    await dnsmasq.createCategoryMappingFile("default_c", [categoryUpdater.getIPSetName("default_c"), categoryUpdater.getIPSetNameForIPV6("default_c")]);
     return this.checkAndSaveAsync(policy)
   }
 
@@ -1988,7 +1990,7 @@ class PolicyManager2 {
   }
 
   async _unenforce(policy) {
-    log.info(`Unenforce policy pid:${policy.pid}, type:${policy.type}, target:${policy.target}, scope:${policy.scope}, tag:${policy.tag}, action:${policy.action || "block"}`);
+    log.info(`Unenforce policy pid:${policy.pid}, type:${policy.type}, target:${policy.target}${policy.scope ? ', scope:' + policy.scope : ''}${policy.tag ? ', ' + policy.tag : ''}, action:${policy.action || "block"}`);
 
     await this._removeActivatedTime(policy);
 
@@ -2440,17 +2442,17 @@ class PolicyManager2 {
     }
 
     if (localPortSet) {
-      await ipset.flush(localPortSet);
+      ipset.flush(localPortSet);
       await ipset.destroy(localPortSet);
     }
     if (remotePortSet) {
-      await ipset.flush(remotePortSet);
+      ipset.flush(remotePortSet);
       await ipset.destroy(remotePortSet);
     }
     if (remoteSet4) {
       if (type === "ip" || type === "net" || type === "remoteIpPort" || type === "remoteNetPort" || type === "domain" || type === "dns") {
         if (!policy.dnsmasq_only) {
-          await ipset.flush(remoteSet4);
+          ipset.flush(remoteSet4);
           await ipset.destroy(remoteSet4);
         }
       }
@@ -2458,7 +2460,7 @@ class PolicyManager2 {
     if (remoteSet6) {
       if (type === "ip" || type === "net" || type === "remoteIpPort" || type === "remoteNetPort" || type === "domain" || type === "dns") {
         if (!policy.dnsmasq_only) {
-          await ipset.flush(remoteSet6);
+          ipset.flush(remoteSet6);
           await ipset.destroy(remoteSet6);
         }
       }
@@ -2469,21 +2471,21 @@ class PolicyManager2 {
         await Promise.all(connSets.map(async (connSet) => {
           const { connSet4, connSet6 } = connSet;
           if (connSet4) {
-            await ipset.flush(connSet4).catch((_err) => {});
+            ipset.flush(connSet4)
             await ipset.destroy(connSet4).catch((_err) => {});
           }
           if (connSet6) {
-            await ipset.flush(connSet6).catch((_err) => {});
+            ipset.flush(connSet6)
             await ipset.destroy(connSet6).catch((_err) => {});
           }
         }));
       } else {
         if (connSet4) {
-          await ipset.flush(connSet4).catch((_err) => {});
+          ipset.flush(connSet4)
           await ipset.destroy(connSet4).catch((_err) => {});
         }
         if (connSet6) {
-          await ipset.flush(connSet6).catch((_err) => {});
+          ipset.flush(connSet6)
           await ipset.destroy(connSet6).catch((_err) => {});
         }
       }

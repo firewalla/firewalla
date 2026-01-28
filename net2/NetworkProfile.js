@@ -674,11 +674,13 @@ class NetworkProfile extends Monitorable {
       }
       if (!_.isEmpty(this.o.rt4Subnets)) {
         for (const subnet of this.o.rt4Subnets)
-          Ipset.add(hardRouteIpsetName4, subnet);
+          if (!sysManager.isDefaultRoute(subnet))
+            Ipset.add(hardRouteIpsetName4, subnet);
       }
       if (!_.isEmpty(this.o.rt6Subnets)) {
         for (const subnet of this.o.rt6Subnets)
-          Ipset.add(hardRouteIpsetName6, subnet);
+          if (!sysManager.isDefaultRoute(subnet))
+            Ipset.add(hardRouteIpsetName6, subnet);
       }
       Ipset.add(hardRouteIpsetName, hardRouteIpsetName4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
       Ipset.add(hardRouteIpsetName, hardRouteIpsetName6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
@@ -693,11 +695,13 @@ class NetworkProfile extends Monitorable {
         }
         if (!_.isEmpty(this.o.rt4Subnets)) {
           for (const subnet of this.o.rt4Subnets)
-            Ipset.add(softRouteIpsetName4, subnet);
+            if (!sysManager.isDefaultRoute(subnet))
+              Ipset.add(softRouteIpsetName4, subnet);
         }
         if (!_.isEmpty(this.o.rt6Subnets)) {
           for (const subnet of this.o.rt6Subnets)
-            Ipset.add(softRouteIpsetName6, subnet);
+            if (!sysManager.isDefaultRoute(subnet))
+              Ipset.add(softRouteIpsetName6, subnet);
         }
         Ipset.add(softRouteIpsetName, softRouteIpsetName4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
         Ipset.add(softRouteIpsetName, softRouteIpsetName6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });

@@ -79,17 +79,10 @@ class PolicyManager {
       iptc.addRule(overlayMasquerade);
     }
     const icmpv6Redirect = new Rule().fam(6).chn('OUTPUT').pro('icmpv6').opt('--icmpv6-type', 'redirect').jmp('DROP');
-    // Add rule using iptablesControl (delete/insert handled by rule processing)
     iptc.addRule(icmpv6Redirect);
-
-    // Setup iptables so that it's ready for blocking
-    await Block.setupBlockChain();
 
     // setup global blocking redis match rule
     await dnsmasq.createGlobalRedisMatchRule();
-
-    // setup active protect category mapping file
-    await dnsmasq.createCategoryMappingFile("default_c", [categoryUpdater.getIPSetName("default_c"), categoryUpdater.getIPSetNameForIPV6("default_c")]);
 
     // device ipsets are created on creation of Host(), mostly happens on the first call of HostManager.getHostsAsync()
     // PolicyManager2 will ensure device sets are created before policy enforcement. nothing needs to be done here

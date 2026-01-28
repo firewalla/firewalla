@@ -121,7 +121,7 @@ class BlockControl {
     log.info('Starting initialization process');
     this.state = 'initializing';
     
-    log.info('Running iptables setup script in dry-run mode');
+    log.info('Running iptables setup script');
     try {
       const path = require('path');
       const setupScriptPath = path.join(f.getFirewallaHome(), 'control', 'install_iptables_setup.sh');

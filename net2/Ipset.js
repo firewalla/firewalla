@@ -242,6 +242,7 @@ function initInteractiveIpset() {
 // this spawn eats all CR from node cli output for some reason
 if (f.isMain()) initInteractiveIpset();
 
+// deprecated
 // with exclusive set to true, the interactive process stalls other requests until the current batch
 async function batchOp(operations) {
   if (!Array.isArray(operations) || operations.length === 0)
@@ -352,6 +353,7 @@ async function batchTest(targets, setName, timeout = 10) {
   })
 }
 
+// deprecated
 async function testAndAdd(targets, setName, timeout = 10) {
   const exists = await batchTest(targets, setName, timeout)
 
