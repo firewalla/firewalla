@@ -1637,20 +1637,14 @@ module.exports = class {
     return ids.map(i => i.aid).slice(0, count);
   }
 
-  async loadActiveAlarmsAsync(options) {
+  async loadActiveAlarmsAsync(options = {}) {
     let count, ts, asc, type, filters, withDetails;
 
     if (_.isNumber(options)) {
-      count = options;
-    } else if (options) {
-      ({ count, ts, asc, type, filters, withDetails } = options);
+      options = { count: options };
     }
 
-    count = count || 50;
-    ts = ts || Date.now() / 1000;
-    asc = asc || false;
-    type = type || 'active';
-    withDetails = withDetails || false;
+    ({ count = 50, ts = Date.now() / 1000, asc = false, type = 'active', filters, withDetails = false } = options);
 
     let ids;
     if (filters && this.indexCache._disabled != 1 && !await this._fallbackAlarmCache(filters.types)) {
