@@ -544,6 +544,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   async activateTLSCategory(category, proto = '') {
     proto = proto || '';
+    log.verbose(`activateTLSCategory: ${category}, ${proto}`);
     // avoid duplicating work if already activated
     if (this.isTLSActivated(category, proto)) {
       return;
