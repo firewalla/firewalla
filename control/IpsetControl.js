@@ -136,7 +136,7 @@ class IpsetControl extends ModuleControl {
             continue
           } else {
             // Cannot parse error line or invalid line number, log and skip this batch
-            log.error(`Error processing ipset operations (batch ${batchNumber}): ${err.stderr}`);
+            log.error(`Error processing ipset operations (batch ${batchNumber})`, err);
             log.error(`Failed to parse error line number, skipping batch`);
             break;
           }

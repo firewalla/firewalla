@@ -133,6 +133,10 @@ class RedPlatform extends Platform {
   supportSSHInNmap() {
     return false;
   }
+
+  async switchQoS(state, qdisc) {
+    return; // do nothing for red
+  }
 }
 
 module.exports = RedPlatform;

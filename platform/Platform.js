@@ -135,7 +135,33 @@ class Platform {
     }
   }
 
+  getQosParentClassid() {
+    return 10;
+  }
+
   async switchQoS(state, qdisc) {
+    const ipset = require('../net2/Ipset.js');
+    if (state == false) {
+      ipset.add(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
+      ipset.add(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
+    } else {
+      ipset.del(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
+      ipset.del(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
+    }
+    const supported = await exec(`modinfo sch_${qdisc}`).then(() => true).catch((err) => false);
+    if (!supported) {
+      log.error(`qdisc ${qdisc} is not supported`);
+      return;
+    }
+    // replace the default tc filter
+    const QoS = require('../control/QoS.js');
+    const classid = this.getQosParentClassid();
+    await exec (`sudo tc filter replace dev ifb0 parent ${classid}: handle 800::0x1 prio 1 u32 match mark 0x800000 0x${QoS.QOS_UPLOAD_MASK.toString(16)} flowid ${classid}:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
+      log.error(`Failed to update tc filter on ifb0`, err.message);
+    });
+    await exec (`sudo tc filter replace dev ifb1 parent ${classid}: handle 800::0x1 prio 1 u32 match mark 0x10000 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)} flowid ${classid}:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
+      log.error(`Failed to update tc filter on ifb1`, err.message);
+    });
 
   }
 
