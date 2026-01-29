@@ -241,7 +241,9 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     iptc.addRule(this.ruleFeature6.opr('-D'));
     // no need to touch FW_PREROUTING_NTP_DNAT chain here
 
-    ipset.destroy(`${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP`);
+    if (this.adminSystemSwitch) {
+      ipset.destroy(`${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP`);
+    }
     await super.globalOff()
   }
 }
