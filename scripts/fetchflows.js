@@ -22,6 +22,8 @@ log.setGlobalLogLevel('warn')
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const flowTool = require('../net2/FlowTool');
+const Constants = require('../net2/Constants.js');
+const TimeUsageTool = require('../flow/TimeUsageTool.js');
 const _ = require('lodash');
 const NoiseDomainsSensor = require('../sensor/NoiseDomainsSensor.js');
 const moment = require('moment-timezone/moment-timezone.js');
@@ -109,10 +111,10 @@ function parseArgs() {
 
 // Print help message
 function printHelp() {
-  console.log('Usage: node fetchflows.js --mac MAC_ADDRESS --start START_TIME --end END_TIME [--app APP_NAME]');
+  console.log('Usage: node fetchflows.js [--mac MAC_ADDRESS[,MAC2,...]] --start START_TIME --end END_TIME [--app APP_NAME]');
   console.log('');
   console.log('Options:');
-  console.log('  --mac MAC_ADDRESS    Device MAC address (required)');
+  console.log('  --mac MAC_ADDRESS    Device MAC address (optional). Multiple MACs separated by comma. If omitted, use all devices active since start time.');
   console.log('  --start START_TIME   Start time: Unix timestamp or date string (required)');
   console.log('  --end END_TIME       End time: Unix timestamp or date string (required)');
   console.log('  --app APP_NAME       App name (default: internet)');
@@ -123,16 +125,16 @@ function printHelp() {
   console.log('  Date string: "2023-10-28 14:00:00" or "2023-10-28T14:00:00"');
   console.log('');
   console.log('Example:');
+  console.log('  node fetchflows.js --start 1769083200 --end 1769788800');
   console.log('  node fetchflows.js --mac 6C:1F:F7:23:39:CB --start 1769083200 --end 1769788800');
-  console.log('  node fetchflows.js --mac 6C:1F:F7:23:39:CB --start "2026-01-22 20:00:00" --end "2026-01-31 00:00:00"');
+  console.log('  node fetchflows.js --mac "6C:1F:F7:23:39:CB,AA:BB:CC:DD:EE:FF" --start "2026-01-22 20:00:00" --end "2026-01-31 00:00:00"');
 }
 
-// Validate arguments
+// Validate arguments; mac is optional (omit to use all devices active since start); mac may be comma-separated
 function validateArgs(options, timezone) {
-  if (!options.mac) {
-    console.error('Error: MAC address is required');
-    console.error('Use --help for usage information');
-    process.exit(1);
+  let macs = [];
+  if (options.mac && typeof options.mac === 'string') {
+    macs = options.mac.split(',').map(m => m.trim()).filter(m => m);
   }
 
   if (!options.startTime) {
@@ -161,7 +163,7 @@ function validateArgs(options, timezone) {
     process.exit(1);
   }
 
-  return { startTs, endTs };
+  return { startTs, endTs, macs };
 }
 
 // Get category bytes threshold from config
@@ -214,7 +216,6 @@ function getCategoryBackgroundDownload(category, internet_time_usage_config) {
 function isBackgroundDownload(flow, backgroundDownload) {
   if (_.isEmpty(backgroundDownload) || !backgroundDownload.minDuration || !backgroundDownload.minDownloadRate)
     return false;
-  // flow.du is duration in original format, flow.duration in simplified format
   const duration = flow.duration || flow.du || 0.1;
   // flow.rb is download, flow.ob is upload in original format
   // flow.download and flow.upload in simplified format
@@ -244,9 +245,7 @@ function lookupAppMatch(flows, internet_time_usage_config, noiseDomainsSensor) {
   const nds = noiseDomainsSensor;
 
   for (const flow of flows) {
-    // Get flow properties
-    // Note: flow.rb is download, flow.ob is upload in the original format
-    // But in the comment format, it's flow.upload and flow.download
+
     const upload = flow.upload || flow.ob || 0;
     const download = flow.download || flow.rb || 0;
     const count = flow.count || 1;
@@ -275,172 +274,208 @@ function lookupAppMatch(flows, internet_time_usage_config, noiseDomainsSensor) {
       log.debug("match internet activity on flow", flow, `bytesThreshold: ${bytesThreshold}`);
     }
     // matchedFlows.push(flow);
-   
+
   }
 
   return matchedFlows;
 }
 
+async function fetchFlowsForMac(mac, startTs, endTs, appName, timezone, internet_time_usage_config, noiseDomainsSensor) {
+  const baseOptions = {
+    begin: startTs,
+    end: endTs,
+    count: 500,
+    asc: true
+  };
+
+  const flowOptions = {
+    ...baseOptions,
+    mac: mac,
+    regular: true,
+    audit: false,
+    localAudit: false,
+    type: "host",
+    apiVer: 2,
+  };
+
+  const allFlows = [];
+  let completed = false;
+  let currentOptions = JSON.parse(JSON.stringify(flowOptions));
+
+  while (!completed) {
+    try {
+      const flows = await flowTool.prepareRecentFlows(currentOptions) || [];
+      if (!flows.length) {
+        completed = true;
+        break;
+      }
+      allFlows.push(...flows);
+      const lastTs = flows[flows.length - 1].ts;
+
+      if (lastTs >= endTs) {
+        completed = true;
+        break;
+      }
+
+      if (flows.length < currentOptions.count) {
+        completed = true;
+      } else {
+        currentOptions.ts = lastTs;
+      }
+    } catch (e) {
+      log.error(`Load flows error`, e);
+      completed = true;
+    }
+  }
+
+  const matchedFlows = lookupAppMatch(allFlows, internet_time_usage_config, noiseDomainsSensor);
+
+  console.log(`\n=== Matched Flows (MAC: ${mac}) ===`);
+  console.log(`Total matched flows: ${matchedFlows.length}\n`);
+
+  if (matchedFlows.length > 0) {
+    const colWidths = {
+      ts: 19,
+      count: 5,
+      duration: 8,
+      protocol: 8,
+      port: 6,
+      devicePort: 10,
+      ip: 16,
+      deviceIP: 16,
+      upload: 12,
+      download: 12,
+      total_average: 13,
+      device: 17,
+      host: 60
+    };
+
+    const header = [
+      'ts'.padEnd(colWidths.ts),
+      'count'.padEnd(colWidths.count),
+      'duration'.padEnd(colWidths.duration),
+      'protocol'.padEnd(colWidths.protocol),
+      'port'.padEnd(colWidths.port),
+      'devicePort'.padEnd(colWidths.devicePort),
+      'ip'.padEnd(colWidths.ip),
+      'deviceIP'.padEnd(colWidths.deviceIP),
+      'upload'.padEnd(colWidths.upload),
+      'download'.padEnd(colWidths.download),
+      'total_average'.padEnd(colWidths.total_average),
+      'device'.padEnd(colWidths.device),
+      'host'.padEnd(colWidths.host)
+    ].join(' | ');
+
+    console.log(header);
+    console.log('-'.repeat(header.length));
+
+    for (const flow of matchedFlows) {
+      const ts = flow.ts || flow._ts || 0;
+      const readableTime = timezone
+        ? moment.unix(ts).tz(timezone).format('YYYY-MM-DD HH:mm:ss')
+        : moment.unix(ts).format('YYYY-MM-DD HH:mm:ss');
+      const tsStr = `${readableTime}`.substring(0, colWidths.ts);
+
+      const upload = flow.upload || flow.ob || 0;
+      const download = flow.download || flow.rb || 0;
+      const count = flow.count || 1;
+      const total_average = count > 0 ? Math.round((upload + download) / count) : 0;
+
+      const uploadKB = (upload / 1024).toFixed(2);
+      const downloadKB = (download / 1024).toFixed(2);
+      const total_averageKB = (total_average / 1024).toFixed(2);
+
+      const row = [
+        tsStr.padEnd(colWidths.ts),
+        String(count).padEnd(colWidths.count),
+        String(flow.duration || flow.du || 0).padEnd(colWidths.duration),
+        String(flow.protocol || flow.pr || '').padEnd(colWidths.protocol),
+        String(flow.port || flow.dp || '').padEnd(colWidths.port),
+        String(flow.devicePort || (Array.isArray(flow.sp) ? flow.sp[0] : flow.sp) || '').padEnd(colWidths.devicePort),
+        String(flow.ip || flow.dh || '').padEnd(colWidths.ip),
+        String(flow.deviceIP || flow.sh || '').padEnd(colWidths.deviceIP),
+        `${uploadKB} KB`.padEnd(colWidths.upload),
+        `${downloadKB} KB`.padEnd(colWidths.download),
+        `${total_averageKB} KB`.padEnd(colWidths.total_average),
+        String(flow.device || flow.mac || '').padEnd(colWidths.device),
+        String(flow.host || (flow.intel && flow.intel.host) || '').substring(0, colWidths.host).padEnd(colWidths.host)
+      ].join(' | ');
+
+      console.log(row);
+    }
+    console.log('');
+  }
+}
+
+// from Redis sorted set host:active:mac, score = last activity time
+async function fetchActiveDevices(startTs) {
+  const macs = await rclient.zrevrangebyscoreAsync(Constants.REDIS_KEY_HOST_ACTIVE, '+inf', startTs) || [];
+  return macs.filter(Boolean);
+}
+
+async function fetchInternetActivityForMac(mac, startTs, endTs, timezone) {
+  const granularity = 'hour';
+  const uidIsDevice = true;
+  const includeSlots = true;
+  const includeIntervals = true;
+  const outputApps = ['internet'];
+
+  const stats = await TimeUsageTool.getAppTimeUsageStats(
+    mac, null, outputApps, startTs, endTs, granularity, uidIsDevice, includeSlots, includeIntervals
+  );
+
+  const appTimeUsage = _.get(stats, ['appTimeUsage', 'internet']);
+  if (!appTimeUsage) {
+    console.warn(`No internet usage data found for device: ${mac}`);
+    return;
+  }
+
+  console.log(`\ninternet Time Usage Statistics for device: ${mac}`);
+  if (appTimeUsage.devices && Object.keys(appTimeUsage.devices).length > 0) {
+    for (const device of Object.keys(appTimeUsage.devices)) {
+      console.log(`\nNetwork Activity for Device: ${device}`);
+      for (const interval of appTimeUsage.devices[device].intervals) {
+        const duration = Math.ceil((interval.end - interval.begin) / 60 + 1);
+        const fromStr = timezone
+          ? moment.unix(interval.begin).tz(timezone).format('YYYY-MM-DD HH:mm:ss')
+          : moment.unix(interval.begin).format('YYYY-MM-DD HH:mm:ss');
+        const toStr = timezone
+          ? moment.unix(interval.end).tz(timezone).format('YYYY-MM-DD HH:mm:ss')
+          : moment.unix(interval.end).format('YYYY-MM-DD HH:mm:ss');
+        console.log(`  From ${fromStr} to ${toStr}, Duration: ${duration} mins`);
+      }
+    }
+  }
+  console.log(`Total Minutes: ${appTimeUsage.totalMins}`);
+  console.log('\n----------------------------------------------------------');
+}
 
 // Main function
 async function main() {
   try {
-    // Get timezone from Redis first (needed for parsing date strings)
     const timezone = await rclient.hgetAsync("sys:config", "timezone");
-    
-    // Parse and validate arguments
+
     const options = parseArgs();
-    const { startTs, endTs } = validateArgs(options, timezone);
-    const { mac, appName } = options;
+    let { startTs, endTs, macs } = validateArgs(options, timezone);
+    const { appName } = options;
 
-    // Build flow query options
-    // Note: begin is start time, end is end time
-    const baseOptions = {
-      begin: startTs,
-      end: endTs,
-      count: 500,  // Batch size: fetch 500 flows per request
-      asc: true
-    };
-    
-    const flowOptions = {
-      ...baseOptions,
-      mac: mac,
-      regular: true,
-      audit: false,
-      localAudit: false,
-      type: "host",
-      apiVer: 2,
-    };
-    
-    // Get flows by calling prepareRecentFlows multiple times until all data is retrieved
-    // Fetch 500 flows per batch until all flows in the specified time range are retrieved
-    const allFlows = [];
-    let completed = false;
-    let currentOptions = JSON.parse(JSON.stringify(flowOptions));
-    
-    while (!completed) {
-      try {
-        const flows = await flowTool.prepareRecentFlows(currentOptions) || [];
-        if (!flows.length) {
-          completed = true;
-          break;
-        }
-        allFlows.push(...flows);
-        const lastTs = flows[flows.length - 1].ts;
-        
-        // Check if we've reached or exceeded the end time
-        if (lastTs >= endTs) {
-          completed = true;
-          break;
-        }
-
-        // If we got fewer flows than requested (500), we've reached the end
-        if (flows.length < currentOptions.count) {
-          completed = true;
-        } else {
-          // Update begin time to continue from where we left off
-          currentOptions.ts = lastTs;
-        }
-        // log.debug(`Loaded ${flows.length} flows, total: ${allFlows.length}, lastTs: ${lastTs}`);
-      } catch (e) {
-        log.error(`Load flows error`, e);
-        completed = true;
-      }
-    }
-    
-    const flows = allFlows;
-
-    // Get internet time usage config from Redis and parse to JSON object
     const configStr = await rclient.getAsync('internet_time_usage_config');
     const internet_time_usage_config = configStr ? JSON.parse(configStr) : null;
 
-    // Initialize NoiseDomainsSensor
     const noiseDomainsSensor = new NoiseDomainsSensor();
     await noiseDomainsSensor.apiRun();
 
-    // Filter flows that match internet activity criteria
-    const matchedFlows = lookupAppMatch(flows, internet_time_usage_config, noiseDomainsSensor);
-
-    // Print matched flows in table format
-    console.log('\n=== Matched Flows ===');
-    console.log(`Total matched flows: ${matchedFlows.length}\n`);
-    
-    if (matchedFlows.length > 0) {
-      // Define column widths
-      const colWidths = {
-        ts: 19,           // YYYY-MM-DD HH:mm:ss
-        count: 6,         // numeric
-        duration: 10,     // numeric
-        protocol: 8,      // tcp/udp/etc
-        port: 6,          // 0-65535
-        devicePort: 12,    // 0-65535
-        ip: 16,           // IPv4 max length
-        deviceIP: 16,     // IPv4 max length
-        upload: 12,       // "123.45 KB"
-        download: 12,     // "123.45 KB"
-        total_average: 13, // "123.45 KB"
-        device: 17,       // MAC address
-        host: 30          // domain name
-      };
-      
-      // Print header
-      const header = [
-        'ts'.padEnd(colWidths.ts),
-        'count'.padEnd(colWidths.count),
-        'duration'.padEnd(colWidths.duration),
-        'protocol'.padEnd(colWidths.protocol),
-        'port'.padEnd(colWidths.port),
-        'devicePort'.padEnd(colWidths.devicePort),
-        'ip'.padEnd(colWidths.ip),
-        'deviceIP'.padEnd(colWidths.deviceIP),
-        'upload'.padEnd(colWidths.upload),
-        'download'.padEnd(colWidths.download),
-        'total_average'.padEnd(colWidths.total_average),
-        'device'.padEnd(colWidths.device),
-        'host'.padEnd(colWidths.host)
-      ].join(' | ');
-      
-      console.log(header);
-      console.log('-'.repeat(header.length));
-      
-      // Print rows
-      for (const flow of matchedFlows) {
-        const ts = flow.ts || flow._ts || 0;
-        // Format time with timezone
-        const readableTime = timezone 
-          ? moment.unix(ts).tz(timezone).format('YYYY-MM-DD HH:mm:ss')
-          : moment.unix(ts).format('YYYY-MM-DD HH:mm:ss');
-        const tsStr = `${readableTime}`.substring(0, colWidths.ts);
-        
-        const upload = flow.upload || flow.ob || 0;
-        const download = flow.download || flow.rb || 0;
-        const count = flow.count || 1;
-        const total_average = count > 0 ? Math.round((upload + download) / count) : 0;
-        
-        // Convert bytes to KB
-        const uploadKB = (upload / 1024).toFixed(2);
-        const downloadKB = (download / 1024).toFixed(2);
-        const total_averageKB = (total_average / 1024).toFixed(2);
-        
-        const row = [
-          tsStr.padEnd(colWidths.ts),
-          String(count).padEnd(colWidths.count),
-          String(flow.duration || flow.du || 0).padEnd(colWidths.duration),
-          String(flow.protocol || flow.pr || '').padEnd(colWidths.protocol),
-          String(flow.port || flow.dp || '').padEnd(colWidths.port),
-          String(flow.devicePort || (Array.isArray(flow.sp) ? flow.sp[0] : flow.sp) || '').padEnd(colWidths.devicePort),
-          String(flow.ip || flow.dh || '').padEnd(colWidths.ip),
-          String(flow.deviceIP || flow.sh || '').padEnd(colWidths.deviceIP),
-          `${uploadKB} KB`.padEnd(colWidths.upload),
-          `${downloadKB} KB`.padEnd(colWidths.download),
-          `${total_averageKB} KB`.padEnd(colWidths.total_average),
-          String(flow.device || flow.mac || '').padEnd(colWidths.device),
-          String(flow.host || (flow.intel && flow.intel.host) || '').substring(0, colWidths.host).padEnd(colWidths.host)
-        ].join(' | ');
-        
-        console.log(row);
+    if (!macs || macs.length === 0) {
+      macs = await fetchActiveDevices(startTs);
+      if (macs.length === 0) {
+        console.log('No devices with activity since start time.');
+        process.exit(0);
       }
-      console.log('');
+    }
+
+    for (const mac of macs) {
+      await fetchFlowsForMac(mac, startTs, endTs, appName, timezone, internet_time_usage_config, noiseDomainsSensor);
+      await fetchInternetActivityForMac(mac, startTs, endTs, timezone);
     }
 
     process.exit(0);
@@ -453,5 +488,4 @@ async function main() {
   }
 }
 
-// Run main function
 main();
