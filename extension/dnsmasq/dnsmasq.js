@@ -259,7 +259,12 @@ module.exports = class DNSMASQ {
     }, 5000);
   }
 
-  scheduleRestartDNSService(ignoreFileCheck = false) {
+    scheduleRestartDNSService(ignoreFileCheck = false) {
+    if (this.reloadDNSTask) {
+      clearTimeout(this.reloadDNSTask);
+      delete this.reloadDNSTask;
+    }
+      clearTimeout(this.reloadDNSTask);
     if (this.restartDNSTask)
       clearTimeout(this.restartDNSTask);
     this.restartDNSIgnoreFileCheck = this.restartDNSIgnoreFileCheck || ignoreFileCheck
@@ -279,10 +284,13 @@ module.exports = class DNSMASQ {
       }).catch((err) => {
         log.error(`Failed to restart ${SERVICE_NAME} service`, err.message);
       });
+      delete this.restartDNSTask
     }, 5000);
   }
 
   scheduleReloadDNSService() {
+    if (this.restartDNSTask)
+      return
     if (this.reloadDNSTask)
       clearTimeout(this.reloadDNSTask);
     this.reloadDNSTask = setTimeout(async () => {
@@ -296,6 +304,7 @@ module.exports = class DNSMASQ {
       }).catch((err) => {
         log.error(`Failed to reload ${SERVICE_NAME} service`, err.message);
       });
+      delete this.reloadDNSTask
     }, 5000);
   }
 
