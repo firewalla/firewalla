@@ -1381,6 +1381,7 @@ class PolicyManager2 {
       action = "block"; // treat app_block same as block, but using a different term for version compatibility, otherwise, block rule will always take effect in previous versions
 
     const isBlockOrdisturb = (action === "block" || action === "disturb");
+    const origAction = action;
     if (policy.needPolicyDisturb()) {
       action = "qos";  // treat app_disturb same as qos
       qdisc = "netem";
@@ -1566,6 +1567,9 @@ class PolicyManager2 {
         }
         if (action === "resolve" || action == "address") // no further action is needed for pure dns rule
           return;
+        if (origAction === "disturb" && policy.dnsmasq_only) {
+          skipFinalApplyRules = true;
+        }
 
         if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId
           || localPortSet || remotePortSet || owanUUID || origDst || origDport
@@ -2004,6 +2008,7 @@ class PolicyManager2 {
       action = "block";
 
     const isBlockOrdisturb = (action === "block" || action === "disturb");
+    const origAction = action;
     if (policy.needPolicyDisturb()) {
       action = "qos";  // treat app_disturb same as qos
       qdisc = "netem";
@@ -2175,6 +2180,9 @@ class PolicyManager2 {
         }
         if (action === "resolve" || action === "address") // no further action is needed for pure dns rule
           return;
+        if (origAction === "disturb" && policy.dnsmasq_only) {
+          skipFinalApplyRules = true;
+        }
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
         if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || action == "snat" || (seq !== Constants.RULE_SEQ_REG && !security)) {
