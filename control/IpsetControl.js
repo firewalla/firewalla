@@ -64,7 +64,7 @@ class IpsetControl extends ModuleControl {
 
     if (!ops.length) return;
 
-    log.info(`Processing ${ops.length} ipset operations via ipset restore`);
+    log.verbose(`Processing ${ops.length} ipset operations via ipset restore`);
 
     this.existingSets = await this.listExistingSets();
 

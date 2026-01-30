@@ -151,7 +151,8 @@ const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimite
 const RateLimiterRes = require('../vendor_lib/rate-limiter-flexible/RateLimiterRes');
 const cpuProfile = require('../net2/CpuProfile.js');
 const ea = require('../event/EventApi.js');
-const wrapIptables = require('../net2/Iptables.js').wrapIptables;
+const { Rule } = require('../net2/Iptables.js');
+const iptc = require('../control/IptablesControl.js');
 const sl = require('../sensor/APISensorLoader.js');
 
 const Message = require('../net2/Message')
@@ -4280,7 +4281,7 @@ class netBot extends ControllerBot {
     const entries = JSON.parse(await rclient.hgetAsync("sys:scan:nat", "upnp") || "[]");
     const newEntries = entries.filter(e => e.public.port != externalPort && e.private.host != internalIP && e.private.port != internalPort && e.protocol != protocol);
     // remove iptables redirect rule
-    await execAsync(wrapIptables(`sudo iptables -w -t nat -D ${chain} -p ${protocol} --dport ${externalPort} -j DNAT --to-destination ${internalIP}:${internalPort}`));
+    iptc.addRule(new Rule('nat').chn(chain).pro(protocol).dport(externalPort).dnat(`${internalIP}:${internalPort}`).opr('-D'));
     // clean up upnp cache in redis
     await rclient.hsetAsync("sys:scan:nat", "upnp", JSON.stringify(newEntries));
     // remove entry from lease file
@@ -4300,7 +4301,7 @@ class netBot extends ControllerBot {
       return intf && intf.name !== intfName;
     });
     // flush iptables UPnP chain
-    await execAsync(`sudo iptables -w -t nat -F ${chain}`).catch((err) => { });
+    iptc.addRule(new Rule('nat').chn(chain).opr('-F'));
     // clean up upnp cache in redis
     await rclient.hsetAsync("sys:scan:nat", "upnp", JSON.stringify(newEntries));
     // remove lease file
