@@ -64,7 +64,7 @@ class IpsetControl extends ModuleControl {
 
     if (!ops.length) return;
 
-    log.info(`Processing ${ops.length} ipset operations via ipset restore`);
+    log.verbose(`Processing ${ops.length} ipset operations via ipset restore`);
 
     this.existingSets = await this.listExistingSets();
 
@@ -136,7 +136,7 @@ class IpsetControl extends ModuleControl {
             continue
           } else {
             // Cannot parse error line or invalid line number, log and skip this batch
-            log.error(`Error processing ipset operations (batch ${batchNumber}): ${err.stderr}`);
+            log.error(`Error processing ipset operations (batch ${batchNumber})`, err);
             log.error(`Failed to parse error line number, skipping batch`);
             break;
           }

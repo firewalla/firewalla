@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,7 +31,8 @@ const hostTool = new HostTool();
 const exec = require('child-process-promise').exec;
 const {Address4} = require('ip-address');
 
-const iptable = require("../../net2/Iptables.js");
+const { Rule } = require("../../net2/Iptables.js");
+const iptc = require('../../control/IptablesControl.js');
 const Message = require('../../net2/Message.js');
 const pl = require('../../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
@@ -166,15 +167,9 @@ class PortForward {
   }
 
   async updateExtIPChain(extIPs) {
-    const cmd = iptable.wrapIptables(`sudo iptables -w -t nat -F FW_PREROUTING_EXT_IP`);
-    await exec(cmd).catch((err) => {
-      log.error(`Failed to flush FW_PREROUTING_EXT_IP`, err.message);
-    });
+    iptc.addRule(new Rule('nat').chn('FW_PREROUTING_EXT_IP').opr('-F'));
     for (const extIP of extIPs) {
-      const cmd = iptable.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_EXT_IP -d ${extIP} -j FW_PRERT_PORT_FORWARD`);
-      await exec(cmd).catch((err) => {
-        log.error(`Failed to update FW_PREROUTING_EXT_IP with command: ${cmd}`, err.message);
-      });
+      iptc.addRule(new Rule('nat').chn('FW_PREROUTING_EXT_IP').dst(extIP).jmp('FW_PRERT_PORT_FORWARD'));
     }
   }
 
@@ -483,29 +478,38 @@ class PortForward {
     if (type === "dmz_host")
       chains = ["FW_PREROUTING_DMZ_HOST"];
 
-    let cmdline = [];
+    const operation = state ? (type === "port_forward" ? "-I" : "-A") : "-D";
+    const baseRule = new Rule('nat')
+    if (protocol) baseRule.pro(protocol);
+    if (extIP) baseRule.dst(extIP);
+    if (dstSet) baseRule.set(dstSet, 'dst');
+    if (dport) baseRule.dport(dport);
+    baseRule.opr(operation);
+
+    const hairpinRule = new Rule('nat')
+    if (protocol) hairpinRule.pro(protocol);
+    hairpinRule.jmp('FW_POSTROUTING_HAIRPIN').opr(operation);
     switch (type) {
       case "port_forward": {
-        for (const chain of chains)
-          cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} ${chain} -p ${protocol} ${extIP ? `-d ${extIP}`: ""} ${dstSet ? `-m set --match-set ${dstSet} dst` : ""} --dport ${dport} -j DNAT --to-destination ${toIP}:${toPort}`));
-        cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} FW_POSTROUTING_PORT_FORWARD -p ${protocol} -d ${toIP} --dport ${toPort.toString().replace(/-/, ':')} -j FW_POSTROUTING_HAIRPIN`));
+        baseRule.dnat(`${toIP}:${toPort}`)
+        hairpinRule.chn('FW_POSTROUTING_PORT_FORWARD').dst(toIP);
+        hairpinRule.dport(toPort.toString().replace(/-/, ':'));
         break;
       }
       case "dmz_host": {
-        for (const chain of chains)
-          cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} ${chain} ${protocol ? `-p ${protocol}` : ""} ${extIP ? `-d ${extIP}`: ""} ${dstSet ? `-m set --match-set ${dstSet} dst` : ""} ${dport ? `--dport ${dport}` : ""} -j DNAT --to-destination ${toIP}`));
-        cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} FW_POSTROUTING_DMZ_HOST ${protocol ? `-p ${protocol}` : ""} -d ${toIP} ${dport ? `--dport ${dport}` : ""} -j FW_POSTROUTING_HAIRPIN`));
+        baseRule.dnat(toIP);
+        hairpinRule.chn('FW_POSTROUTING_DMZ_HOST').dst(toIP);
+        if (dport) hairpinRule.dport(dport);
         break;
       }
       default:
         log.error("Unrecognized port forward type", type);
         return;
     }
-    for (const cmd of cmdline) {
-      await exec(cmd).catch((err) => {
-        log.error(`Failed to enforce iptables rule, cmd: ${cmd}`, rule, err.message);
-      });
+    for (const chain of chains) {
+      iptc.addRule(baseRule.chn(chain));
     }
+    iptc.addRule(hairpinRule);
   }
 }
 

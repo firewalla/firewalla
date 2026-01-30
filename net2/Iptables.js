@@ -126,6 +126,17 @@ class Rule {
     return rule;
   }
 
+  from(copy) {
+    if (typeof copy === 'string') {
+      copy = JSON.parse(copy)
+    }
+    if (!(typeof copy === 'object')) {
+      throw new Error('Invalid parameter: ' + copy);
+    }
+    Object.assign(this, copy);
+    return this
+  }
+
   _rawCmd(operation) {
     operation = operation || this.operation
     if (!operation) throw new Error("operation missing")

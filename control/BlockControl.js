@@ -20,8 +20,7 @@ const f = require('../net2/Firewalla.js');
 const iptables = require('./IptablesControl.js');
 const ipset = require('./IpsetControl.js');
 const tlsset = require('./TLSSetControl.js');
-const MessageBus = require('../net2/MessageBus.js');
-const messageBus = new MessageBus('info')
+const SensorEventManager = require('../sensor/SensorEventManager.js').getInstance();
 const { delay } = require('../util/util.js');
 
 const { exec } = require('child-process-promise');
@@ -31,24 +30,47 @@ const { exec } = require('child-process-promise');
 class BlockControl {
   constructor() {
     this.queuingTimer = null;
-    this.queuingTimeout = 10000; // 10 seconds
+    this.queuingTimeout = 5000; // 5 seconds
     this.processingPromise = null;
 
     // Order matters: ipset operations should be applied before iptables rules that may reference sets
     // TLSIpset is depends on iptables rules to create hashset files
     this.modules = [ipset, iptables, tlsset];
     
-    // Listen to RuleAdded events from modules
-    // Modules manage their own queues, BlockControl just coordinates timing
-    messageBus.subscribe('Control', 'RuleAdded', (channel, type, moduleName, rule) => {
-      log.debug(`Rule added event from ${moduleName}`);
+    // Map module names to module instances
+    this.moduleMap = {
+      'ipset': ipset,
+      'iptables': iptables,
+      'tlsset': tlsset
+    };
+    
+    // enable cross-process event handling
+    if (f.isMain()) {
+      SensorEventManager.on('Control:RuleAdded', (event) => {
+        const { module, rule, fromProcess } = event;
+        
+        log.debug(`Rule added event from ${module}${fromProcess ? ` (from ${fromProcess})` : ' (local)'}`);
 
-      if (this.state === 'idle')
-        this.enterQueuingState();
-      else
-        this.refreshQueuingTimer();
-      // If in 'processing' or 'initializing' state, rules will be processed when state changes
-    })
+        // Only call addRule if event is coming from another process
+        if (fromProcess && fromProcess !== 'FireMain') {
+          const control = this.moduleMap[module];
+          if (control && typeof control.addRule === 'function') {
+            try {
+              control.addRule(rule);
+            } catch (err) {
+              log.error(`Error calling addRule on ${control}:`, err);
+            }
+          }
+        }
+
+        // Always coordinate timing
+        if (this.state === 'idle')
+          this.enterQueuingState();
+        else
+          this.refreshQueuingTimer();
+        // If in 'processing' or 'initializing' state, rules will be processed when state changes
+      });
+    }
     
     this.enterIdleState();
   }
@@ -126,7 +148,7 @@ class BlockControl {
       const path = require('path');
       const setupScriptPath = path.join(f.getFirewallaHome(), 'control', 'install_iptables_setup.sh');
       
-      await exec(setupScriptPath, { timeout: 10000 });
+      await exec(setupScriptPath, { timeout: 30000 });
     } catch (err) {
       log.error(`Error running iptables setup script: ${err.message}`);
       throw err;

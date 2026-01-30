@@ -16,8 +16,7 @@
 
 const log = require('../net2/logger.js')(__filename);
 
-const MessageBus = require('../net2/MessageBus.js');
-const messageBus = new MessageBus('info')
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 // wraps a linux tool that we use to implement rules, ipset, iptables, dnsmasq, etc
 class ModuleControl {
@@ -26,8 +25,13 @@ class ModuleControl {
   }
 
   addRule(rule) {
-    // Channel: Control, Type: RuleAdded, Id: module name, Msg: rule/op
-    messageBus.publish('Control', 'RuleAdded', this.name, rule);
+    // Emit in-process event via SensorEventManager (no Redis for same-process events)
+    sem.sendEventToFireMain({
+      type: 'Control:RuleAdded',
+      module: this.name,
+      rule,
+      suppressEventLogging: true,
+    });
   }
 
   

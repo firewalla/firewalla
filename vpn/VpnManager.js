@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,8 +16,8 @@
 
 var instance = null;
 const log = require("../net2/logger.js")(__filename)
-const iptable = require("../net2/Iptables");
-const wrapIptables = iptable.wrapIptables;
+const { Rule } = require("../net2/Iptables");
+const iptc = require('../control/IptablesControl.js');
 const cp = require('child_process');
 const exec = require('child_process').exec
 const sysManager = require('../net2/SysManager.js');
@@ -45,7 +45,6 @@ const readdirAsync = util.promisify(fs.readdir);
 const statAsync = util.promisify(fs.stat);
 const {Address4, Address6} = require('ip-address');
 const {BigInteger} = require('jsbn');
-const {fileExist} = require('../util/util.js');
 
 const pclient = require('../util/redis_manager.js').getPublishClient();
 
@@ -144,13 +143,11 @@ class VpnManager {
       return;
     const localPort = this.localPort;
     const protocol = this.protocol;
-    const commands = [];
-    commands.push(wrapIptables(`sudo iptables -w -t nat -F FW_PREROUTING_VPN_OVERLAY`));
+    iptc.addRule(new Rule('nat').chn('FW_PREROUTING_VPN_OVERLAY').opr('-F'));
     for (const wanIp of allWanIps) {
       if (wanIp !== primaryIp)
-        commands.push(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VPN_OVERLAY -d ${wanIp} -p ${protocol} --dport ${localPort} -j DNAT --to-destination ${primaryIp}:${localPort}`));
+        iptc.addRule(new Rule('nat').chn('FW_PREROUTING_VPN_OVERLAY').dst(wanIp).pro(protocol).dport(localPort).dnat(primaryIp+':'+localPort));
     }
-    await iptable.run(commands);
   }
 
   async updateOverlayNetworkDNAT() {
@@ -162,20 +159,17 @@ class VpnManager {
     const protocol = this.protocol;
     if (overlayIp === this._dnatOverlayIp && primaryIp === this._dnatPrimaryIp && localPort === this._dnatLocalPort && protocol === this._dnatProtocol)
       return;
-    const commands = [];
     if (this._dnatOverlayIp && this._dnatPrimaryIp && this._dnatLocalPort && this._dnatProtocol)
-      commands.push(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_VPN_OVERLAY -d ${this._dnatOverlayIp} -p ${this._dnatProtocol} --dport ${this._dnatLocalPort} -j DNAT --to-destination ${this._dnatPrimaryIp}:${this._dnatLocalPort}`));
+      iptc.addRule(new Rule('nat').chn('FW_PREROUTING_VPN_OVERLAY').dst(this._dnatOverlayIp).pro(this._dnatProtocol).dport(this._dnatLocalPort).dnat(this._dnatPrimaryIp+':'+this._dnatLocalPort).opr('-D'));
     const cidr1 = ip.cidrSubnet(sysManager.mySubnet());
     const cidr2 = ip.cidrSubnet(sysManager.mySubnet2());
     if (cidr1.networkAddress === cidr2.networkAddress && cidr1.subnetMask === cidr2.subnetMask) {
-      commands.push(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VPN_OVERLAY -d ${overlayIp} -p ${protocol} --dport ${localPort} -j DNAT --to-destination ${primaryIp}:${localPort}`));
+      iptc.addRule(new Rule('nat').chn('FW_PREROUTING_VPN_OVERLAY').dst(overlayIp).pro(protocol).dport(localPort).dnat(primaryIp+':'+localPort));
       this._dnatOverlayIp = overlayIp;
       this._dnatPrimaryIp = primaryIp;
       this._dnatLocalPort = localPort;
       this._dnatProtocol = protocol;
     }
-    if (commands.length > 0)
-      await iptable.run(commands);
   }
 
   getEffectiveWANNames() {
@@ -194,20 +188,19 @@ class VpnManager {
     log.info("VpnManager:SetIptables", serverNetwork);
 
     // clean up
-    await iptable.run(["sudo iptables -w -t nat -F FW_POSTROUTING_OPENVPN"]);
+    iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_OPENVPN').opr('-F'));
     
     if (platform.isFireRouterManaged()) {
       const wanNames = this.getEffectiveWANNames();
-      const commands = wanNames.map((name) => `sudo iptables -w -t nat -I FW_POSTROUTING_OPENVPN -s ${serverNetwork}/24 -o ${name} -j MASQUERADE`);
-      await iptable.run(commands);
+      for (const name of wanNames) {
+        iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_OPENVPN').src(`${serverNetwork}/24`).oif(name).jmp('MASQUERADE').opr('-I'));
+      }
     } else {
-      const commands =[
-        // delete this rule if it exists, logical opertion ensures correct execution
-        wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${serverNetwork}/24 -j MASQUERADE`),
-        // insert back as top rule in table
-        `sudo iptables -w -t nat -I FW_POSTROUTING 1 -s ${serverNetwork}/24 -j MASQUERADE`
-      ];
-      await iptable.run(commands);
+      // delete this rule if it exists (IptablesControl handles deduplication)
+      const rule = new Rule('nat').chn('FW_POSTROUTING').src(`${serverNetwork}/24`).jmp('MASQUERADE')
+      iptc.addRule(rule.opr('-D'));
+      // insert back as top rule in table
+      iptc.addRule(rule.opr('-I'));
     }
 
     this._currentServerNetwork = serverNetwork;
@@ -220,19 +213,18 @@ class VpnManager {
     }
     log.info("VpnManager:setIp6tables", serverNetwork6);
     // clean up ipv6
-    await iptable.run(["sudo ip6tables -w -t nat -F FW_POSTROUTING_OPENVPN"]);
+    iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING_OPENVPN').opr('-F'));
     if (platform.isFireRouterManaged()) {
       const wanNames = this.getEffectiveWANNames();
-      const commands = wanNames.map((name) => `sudo ip6tables -w -t nat -I FW_POSTROUTING_OPENVPN -s ${serverNetwork6} -o ${name} -j MASQUERADE`);
-      await iptable.run(commands);
+      for (const name of wanNames) {
+        iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING_OPENVPN').src(serverNetwork6).oif(name).jmp('MASQUERADE').opr('-I'));
+      }
     } else {
-      const commands =[
-        // delete this rule if it exists, logical operation ensures correct execution
-        wrapIptables(`sudo ip6tables -w -t nat -D FW_POSTROUTING -s ${serverNetwork6} -j MASQUERADE`),
-        // insert back as top rule in table
-        `sudo ip6tables -w -t nat -I FW_POSTROUTING 1 -s ${serverNetwork6} -j MASQUERADE`
-      ];
-      await iptable.run(commands);
+      // delete this rule if it exists (IptablesControl handles deduplication)
+      const rule = new Rule('nat').fam(6).chn('FW_POSTROUTING').src(serverNetwork6).jmp('MASQUERADE')
+      iptc.addRule(rule.opr('-D'));
+      // insert back as top rule in table
+      iptc.addRule(rule.opr('-I'));
     }
 
     this._currentServerNetwork6 = serverNetwork6;
@@ -249,7 +241,7 @@ class VpnManager {
     log.info("VpnManager:UnsetIptables", serverNetwork);
 
     // clean up
-    await iptable.run(["sudo iptables -w -t nat -F FW_POSTROUTING_OPENVPN"]);
+    iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_OPENVPN').opr('-F'));
     this._currentServerNetwork = null;
   }
 
@@ -263,7 +255,7 @@ class VpnManager {
     log.info("VpnManager:UnsetIp6tables", serverNetwork6);
 
     // clean up
-    await iptable.run(["sudo ip6tables -w -t nat -F FW_POSTROUTING_OPENVPN"]);
+    iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING_OPENVPN').opr('-F'));
     this._currentServerNetwork6 = null;
   }
 

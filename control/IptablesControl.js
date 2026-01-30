@@ -48,7 +48,7 @@ class IptablesControl extends ModuleControl {
    */
   addRule(rule) {
     if (!(rule instanceof Rule)) {
-      throw new Error('addRule requires a Rule object');
+      rule = new Rule().from(rule);
     }
 
     const family = rule.family || 4;
@@ -61,7 +61,7 @@ class IptablesControl extends ModuleControl {
 
     this.queuedRules[family][table].push(rule.clone());
 
-    super.addRule(rule);
+    super.addRule(JSON.stringify(rule));
   }
 
   /**
@@ -309,6 +309,7 @@ class IptablesControl extends ModuleControl {
       if (!(rule instanceof Rule)) continue;
       const operation = rule.operation || '-A';
       const essential = rule.essential();
+      log.debug(`Merging queued rule: ${operation} ${essential}`);
 
       switch (operation) {
         case '-N':

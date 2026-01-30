@@ -451,7 +451,8 @@ module.exports = class DNSMASQ {
       const filePath = `${FILTER_DIR}/policy_${pid}_ipset.conf`;
       await fs.unlinkAsync(filePath);
     }).catch((err) => {
-      log.error("Failed to remove ipset update entry from config", err);
+      if (err.code !== 'ENOENT')
+        log.error("Failed to remove ipset update entry from config", err);
     });
   }
 

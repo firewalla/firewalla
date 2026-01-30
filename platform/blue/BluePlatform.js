@@ -139,6 +139,10 @@ class BluePlatform extends Platform {
   supportSSHInNmap() {
     return false;
   }
+
+  async switchQoS(state, qdisc) {
+    return; // do nothing for blue
+  }
 }
 
 module.exports = BluePlatform;

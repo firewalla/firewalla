@@ -87,8 +87,15 @@ class TLSSetControl extends ModuleControl {
    * @param {string} action - 'add' or 'rm'
    * @param {string} domain - already finalized by application layer (e.g. exact match vs suffix match)
    */
+  // @ts-ignore
   addRule(tlsHostSet, action, domain) {
     // Determine which modules to update based on domain protocol and platform support
+    if (!action && !domain && typeof tlsHostSet === 'string') {
+      [ tlsHostSet, action, domain ] = tlsHostSet.split(':');
+    }
+    if (!tlsHostSet || !action || !domain) {
+      throw new Error(`invalid parameters: set: ${tlsHostSet}, action: ${action}, domain: ${domain}`);
+    }
     log.debug(`addRule: ${tlsHostSet}, ${action}, ${domain}`);
     const modules = this.getModulesForDomain(domain, tlsHostSet);
 
