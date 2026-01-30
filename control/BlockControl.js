@@ -47,18 +47,18 @@ class BlockControl {
     // enable cross-process event handling
     if (f.isMain()) {
       SensorEventManager.on('Control:RuleAdded', (event) => {
-        const { moduleName, rule, fromProcess } = event;
+        const { module, rule, fromProcess } = event;
         
-        log.debug(`Rule added event from ${moduleName}${fromProcess ? ` (from ${fromProcess})` : ' (local)'}`);
+        log.debug(`Rule added event from ${module}${fromProcess ? ` (from ${fromProcess})` : ' (local)'}`);
 
         // Only call addRule if event is coming from another process
         if (fromProcess && fromProcess !== 'FireMain') {
-          const module = this.moduleMap[moduleName];
-          if (module && typeof module.addRule === 'function') {
+          const control = this.moduleMap[module];
+          if (control && typeof control.addRule === 'function') {
             try {
-              module.addRule(rule);
+              control.addRule(rule);
             } catch (err) {
-              log.error(`Error calling addRule on ${moduleName}:`, err);
+              log.error(`Error calling addRule on ${control}:`, err);
             }
           }
         }
@@ -148,7 +148,7 @@ class BlockControl {
       const path = require('path');
       const setupScriptPath = path.join(f.getFirewallaHome(), 'control', 'install_iptables_setup.sh');
       
-      await exec(setupScriptPath, { timeout: 10000 });
+      await exec(setupScriptPath, { timeout: 30000 });
     } catch (err) {
       log.error(`Error running iptables setup script: ${err.message}`);
       throw err;

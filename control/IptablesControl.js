@@ -309,6 +309,7 @@ class IptablesControl extends ModuleControl {
       if (!(rule instanceof Rule)) continue;
       const operation = rule.operation || '-A';
       const essential = rule.essential();
+      log.debug(`Merging queued rule: ${operation} ${essential}`);
 
       switch (operation) {
         case '-N':

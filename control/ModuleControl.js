@@ -28,7 +28,7 @@ class ModuleControl {
     // Emit in-process event via SensorEventManager (no Redis for same-process events)
     sem.sendEventToFireMain({
       type: 'Control:RuleAdded',
-      moduleName: this.name,
+      module: this.name,
       rule,
       suppressEventLogging: true,
     });
