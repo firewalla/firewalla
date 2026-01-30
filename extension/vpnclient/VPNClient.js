@@ -212,12 +212,11 @@ class VPNClient {
   async _bypassDNSRedirect() {
     const chain = VPNClient.getDNSRedirectChainName(this.profileId);
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
-    const rtIdHex = rtId && Number(rtId).toString(16);
     iptc.addRule(new Rule('nat').chn(chain).opr('-F'));
     iptc.addRule(new Rule('nat').fam(6).chn(chain).opr('-F'));
 
     for (const fam of [4, 6]) {
-      const tcpCmd = new Rule('nat').fam(fam).chn(chain).mark(`0x${rtIdHex}/${routing.MASK_VC}`).pro('tcp').dport('53').jmp('ACCEPT').opr('-I');
+      const tcpCmd = new Rule('nat').fam(fam).chn(chain).mark(rtId, routing.MASK_VC).pro('tcp').dport('53').jmp('ACCEPT').opr('-I');
       iptc.addRule(tcpCmd);
       iptc.addRule(tcpCmd.pro('udp'));
     }
@@ -229,7 +228,6 @@ class VPNClient {
 
     const chain = VPNClient.getDNSRedirectChainName(this.profileId);
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
-    const rtIdHex = rtId && Number(rtId).toString(16);
     iptc.addRule(new Rule('nat').chn(chain).opr('-F'));
     iptc.addRule(new Rule('nat').fam(6).chn(chain).opr('-F'));
     
@@ -238,7 +236,7 @@ class VPNClient {
       const fam = net.isIP(dnsServer);
       if (!fam) continue
       // round robin rule for multiple dns servers
-      const tcpRule = new Rule('nat').fam(fam).chn(chain).mark(`0x${rtIdHex}/${routing.MASK_VC}`).pro('tcp').dport('53').dnat(dnsServer).opr('-I');
+      const tcpRule = new Rule('nat').fam(fam).chn(chain).mark(rtId, routing.MASK_VC).pro('tcp').dport('53').dnat(dnsServer).opr('-I');
       // no need to use statistic module for the first rule
       if (Number(i) != 0)
         tcpRule.mdl('statistic', `--mode nth --every ${Number(i) + 1} --packet 0`);

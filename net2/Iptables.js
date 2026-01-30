@@ -82,6 +82,18 @@ async function run(listofcmds) {
 // }
 
 class Rule {
+  static stdMark(value, mark) {
+    if (typeof value == 'string' && !value.startsWith('0x') || typeof value == 'number')
+      value = `0x${Number(value).toString(16)}`;
+
+    if (!mark)
+      mark = 0xffff; // in cmd line, this is 0xffffffff by default
+    else if (typeof mark == 'string' && !mark.startsWith('0x') || typeof mark == 'number')
+      mark = `0x${Number(mark).toString(16)}`;
+
+    return value + '/' + mark;
+  }
+
   constructor(table = 'filter') {
     this.family = 4;
     this.table = table;
@@ -104,8 +116,8 @@ class Rule {
     this.modules.push({module: 'set', options: [ ['--match-set', [name, spec], negate] ]})
     return this
   }
-  mark(v, negate) {
-    this.modules.push({ module: 'mark', options: [ ['--mark', v, negate] ] })
+  mark(v, m, negate) {
+    this.modules.push({ module: 'mark', options: [ ['--mark', Rule.stdMark(v, m), negate] ] })
     return this
   }
   mdl(module, expr) {

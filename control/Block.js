@@ -607,12 +607,12 @@ async function setupGlobalRules(options) {
       break;
     }
     case "allow": {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_GLOBAL_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark 0x${pid.toString(16)}/0xffff` });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_GLOBAL_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${Rule.stdMark(pid)}` });
       break;
     }
     case "block":
     default: {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK" + chainSuffix, target: `MARK --set-xmark 0x${pid.toString(16)}/0xffff` });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
     }
   }
 
@@ -785,12 +785,12 @@ async function setupGenericIdentitiesRules(options) {
       break;
     }
     case "allow": {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark 0x${pid.toString(16)}/0xffff` });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${Rule.stdMark(pid)}` });
       break;
     }
     case "block":
     default: {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: `MARK --set-xmark 0x${pid.toString(16)}/0xffff` });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
     }
   }
   const IdentityManager = require('../net2/IdentityManager.js');
@@ -975,12 +975,12 @@ async function setupDevicesRules(options) {
       break;
     }
     case "allow": {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark 0x${pid.toString(16)}/0xffff` });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${Rule.stdMark(pid)}` });
       break;
     }
     case "block":
     default: {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: `MARK --set-xmark 0x${pid.toString(16)}/0xffff` });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
     }
   }
 
@@ -1194,8 +1194,8 @@ async function setupTagsRules(options) {
         break;
       }
       case "allow": {
-        parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark 0x${pid.toString(16)}/0xffff`, localSet: devSet, localFlagCount: 1 });
-        parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_G_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark 0x${pid.toString(16)}/0xffff`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${Rule.stdMark(pid)}`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_G_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${Rule.stdMark(pid)}`, localSet: netSet, localFlagCount: 2 });
         break;
       }
       case "snat": {
@@ -1205,8 +1205,8 @@ async function setupTagsRules(options) {
       }
       case "block":
       default: {
-        parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: `MARK --set-xmark 0x${pid.toString(16)}/0xffff`, localSet: devSet, localFlagCount: 1 });
-        parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK" + chainSuffix, target: `MARK --set-xmark 0x${pid.toString(16)}/0xffff`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}`, localSet: netSet, localFlagCount: 2 });
       }
     }
   }
@@ -1383,12 +1383,12 @@ async function setupIntfsRules(options) {
       break;
     }
     case "allow": {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark 0x${pid.toString(16)}/0xffff` });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${Rule.stdMark(pid)}` });
       break;
     }
     case "block":
     default: {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_BLOCK" + chainSuffix, target: `MARK --set-xmark 0x${pid.toString(16)}/0xffff` });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
     }
   }
 
@@ -1529,12 +1529,12 @@ async function setupRuleGroupRules(options) {
       break;
     }
     case "allow": {
-      parameters.push({ table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "allow") + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark 0x${pid.toString(16)}/0xffff` });
+      parameters.push({ table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "allow") + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${Rule.stdMark(pid)}` });
       break;
     }
     case "block":
     default: {
-      parameters.push({ table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "block") + chainSuffix, target: `MARK --set-xmark 0x${pid.toString(16)}/0xffff` });
+      parameters.push({ table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "block") + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
     }
   }
   const ruleOptions = await prepareOutboundOptions(options)

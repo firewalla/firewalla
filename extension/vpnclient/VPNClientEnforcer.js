@@ -186,7 +186,7 @@ class VPNClientEnforcer {
         await routing.addRouteToTable("default", null, vpnIntf, tableName, null, 6).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
     }
     // add inbound connmark rule for vpn client interface
-    const connmarkRule = new Rule('nat').chn('FW_PREROUTING_VC_INBOUND').iif(vpnIntf).jmp(`CONNMARK --set-xmark 0x${rtId.toString(16)}/${routing.MASK_ALL}`).opr('-A');
+    const connmarkRule = new Rule('nat').chn('FW_PREROUTING_VC_INBOUND').iif(vpnIntf).jmp(`CONNMARK --set-xmark ${Rule.stdMark(rtId, routing.MASK_ALL)}`).opr('-A');
     iptc.addRule(connmarkRule);
     iptc.addRule(connmarkRule.fam(6));
   }
@@ -217,7 +217,7 @@ class VPNClientEnforcer {
       log.error(`Failed to remove policy routing rule`, err.message);
     });
     // remove inbound connmark rule for vpn client interface
-    const connmarkRule = new Rule('nat').chn('FW_PREROUTING_VC_INBOUND').iif(vpnIntf).jmp(`CONNMARK --set-xmark 0x${rtId.toString(16)}/${routing.MASK_ALL}`).opr('-D');
+    const connmarkRule = new Rule('nat').chn('FW_PREROUTING_VC_INBOUND').iif(vpnIntf).jmp(`CONNMARK --set-xmark ${Rule.stdMark(rtId, routing.MASK_ALL)}`).opr('-D');
     iptc.addRule(connmarkRule);
     iptc.addRule(connmarkRule.fam(6));
   }
