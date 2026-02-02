@@ -687,10 +687,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return rclient.unlinkAsync(this.getCategoryDataListKey(category));
   }
 
-  async flushCategoryAddresses(category) {
-    return rclient.unlinkAsync(this.getDynamicAddressCategoryKey(category));
-  }
-
   async flushDefaultDomains(category) {
     return rclient.unlinkAsync(this.getDefaultCategoryKey(category));
   }
@@ -1891,9 +1887,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
           if (sigConfig.timeout != null) {
             options.timeout = sigConfig.timeout;
           }
-          await Block.batchBlockConnection([sigData], connSet, options).catch((err) => {
-            log.error(`Failed to update connection ipset ${connSet} for ${sigId}`, err.message);
-          });
+          Block.batchBlockConnection([sigData], connSet, options)
           break;
         case "ipPort":
           await this.addSigDetectedServer(category, sigData).catch((err) => {
