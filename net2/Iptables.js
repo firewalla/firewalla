@@ -87,7 +87,7 @@ class Rule {
       value = `0x${Number(value).toString(16)}`;
 
     if (!mark)
-      mark = 0xffff; // in cmd line, this is 0xffffffff by default
+      mark = '0xffff'; // in cmd line, this is 0xffffffff by default
     else if (typeof mark == 'string' && !mark.startsWith('0x') || typeof mark == 'number')
       mark = `0x${Number(mark).toString(16)}`;
 
