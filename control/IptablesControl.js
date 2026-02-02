@@ -86,7 +86,7 @@ class IptablesControl extends ModuleControl {
 
     for (const family of [4, 6]) try {
       if (!changed[family]) {
-        log.verbose(`No changes for v${family}, skipping iptables restore`);
+        log.debug(`No changes for v${family}, skipping iptables restore`);
         continue;
       }
       log.info(`Restoring iptables v${family} queue=${this.getQueuedRuleCount(queued)}`);
@@ -137,7 +137,7 @@ class IptablesControl extends ModuleControl {
    * Backup current iptables using iptables-save
    */
   async dumpIptables() {
-    log.verbose('Dumping current iptables');
+    log.debug('Dumping current iptables');
     try {
       // Backup both IPv4 and IPv6
       const [v4Result, v6Result] = await Promise.all([
@@ -211,7 +211,7 @@ class IptablesControl extends ModuleControl {
       }
     }
     
-    log.verbose(`Parsed iptables rules for family ${family}: ${JSON.stringify(
+    log.debug(`Parsed iptables rules for family ${family}: ${JSON.stringify(
       Object.keys(this.aggregatedRules[family]).reduce((acc, table) => {
         acc[table] = {
           chains: Object.keys(this.aggregatedRules[family][table].chains).length,
@@ -309,7 +309,7 @@ class IptablesControl extends ModuleControl {
       if (!(rule instanceof Rule)) continue;
       const operation = rule.operation || '-A';
       const essential = rule.essential();
-      log.debug(`Merging queued rule: ${operation} ${essential}`);
+      log.verbose(`Merging queued rule: ${operation} ${essential}`);
 
       switch (operation) {
         case '-N':
