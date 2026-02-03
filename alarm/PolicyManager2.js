@@ -1855,10 +1855,7 @@ class PolicyManager2 {
         // from the generic ipset-based rules to avoid over-blocking shared IPs on 443. TLS rules will still handle 443.
         // only use this on domain block as global block might block TLS handshake for domain allow
         if (['domain', 'dns'].includes(type) && action == 'block' && !policy.dnsmasq_only) {
-          if (remotePortSet) {
-            log.error(`Unsuported rule ${pid}: remotePort ${remotePort} exist on TLS rule`);
-            return
-          } else {
+          if (!remotePortSet) {
             remotePortSet = `c_bp_${pid}_remote_port`;
             await ipset.create(remotePortSet, "bitmap:port");
             await Block.batchBlock(["443"], remotePortSet);
@@ -2414,10 +2411,7 @@ class PolicyManager2 {
 
         // Mirror enforcement behavior: exclude 443 via inverted bitmap:port set
         if (['domain', 'dns'].includes(type) && action == 'block' && !policy.dnsmasq_only) {
-          if (remotePortSet) {
-            log.error(`Unsuported rule ${pid}: remotePort ${remotePort} exist on TLS rule`);
-            return;
-          } else {
+          if (!remotePortSet) {
             remotePortSet = `c_bp_${pid}_remote_port`;
             await ipset.create(remotePortSet, "bitmap:port");
             await Block.batchBlock(["443"], remotePortSet);
