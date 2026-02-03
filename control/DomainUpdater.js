@@ -214,9 +214,7 @@ class DomainUpdater {
           }
 
           log.debug(`DomainUpdater updating connection ipset ${connSet} for domain ${domain}`, connection);
-          await Block.batchBlockConnection([connection], connSet, options).catch((err) => {
-            log.error(`Failed to update domain connection ipset ${connSet} for ${domain}`, err.message);
-          });
+          Block.batchBlockConnection([connection], connSet, options)
 
           this._needRefresh = true;
 
