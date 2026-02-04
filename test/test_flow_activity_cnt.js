@@ -54,7 +54,7 @@ let appTimeUsageSensor = new AppTimeUsageSensor({});
 appTimeUsageSensor.loadConfig(false);
 
 const flowTool = require('../net2/FlowTool');
-const sensorLoader = require('../sensor/SensorLoader.js');
+const NoiseDomainsSensor = require('../sensor/NoiseDomainsSensor.js');
 
 const flowPath = process.env.FLOW_PATH || '/data/flows/test';
 let startTime = process.env.START_TIME || "8/30/2025, 19:00:00";
@@ -88,8 +88,8 @@ function getDeviceName(mac) {
 async function loadNoiseDomainsSensor() {
   let noisedomain = ["tiktokv.us", "tiktokv.com", "icloud-content.com.cn", "tiktokv.eu"];
   noisedomain = [];
-  const nds = await sensorLoader.initSingleSensor("NoiseDomainsSensor");
-  await nds.reloadDomains(false);
+  const nds = new NoiseDomainsSensor();
+  await nds.loadLocalNoiseDomainData4Test();
   noisedomain.forEach(domain => {
     nds.bloomfilter.add(domain);
   });

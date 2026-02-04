@@ -442,7 +442,7 @@ function lookupAppMatch(flow, internetTimeUsageCfg, noiseDomainsSensor) {
   // ignore flows with large upload/download ratio, e.g., a flow with large ul/dl ratio may happen if device is backing up data
   const ulDlRatioThreshold = getCategoryUlDlRatioThreshold(category, internetTimeUsageCfg);
   const backgroundDownload = getCategoryBackgroundDownload(category, internetTimeUsageCfg);
-  const nds = noiseDomainsSensor;;
+  const nds = noiseDomainsSensor;
   let flowNoiseTags = nds ? nds.find(host) : null;
 
   if ((upload + download >= bytesThreshold * count
@@ -711,7 +711,7 @@ async function main() {
     const internet_time_usage_config = configStr ? JSON.parse(configStr) : null;
 
     const noiseDomainsSensor = new NoiseDomainsSensor();
-    await noiseDomainsSensor.apiRun();
+    await noiseDomainsSensor.loadLocalNoiseDomainData4Test();
 
     await rebuildTrie();
 
