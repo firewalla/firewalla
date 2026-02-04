@@ -1602,12 +1602,12 @@ module.exports = class {
     return ids.map(i => i.aid).slice(0, count);
   }
 
-  async loadActiveAlarmsAsync(options = {}) {
+  async loadActiveAlarmsAsync(options) {
     let count, ts, asc, type, filters, withDetails;
 
     if (_.isNumber(options)) {
       count = options;
-    } else {
+    } else if (options) {
       ({ count = 50, ts = Date.now() / 1000, asc = false, type = 'active', filters, withDetails = false } = options);
     }
 
