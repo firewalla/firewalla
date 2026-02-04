@@ -1641,10 +1641,10 @@ module.exports = class {
     let count, ts, asc, type, filters, withDetails;
 
     if (_.isNumber(options)) {
-      options = { count: options };
+      count = options;
+    } else {
+      ({ count = 50, ts = Date.now() / 1000, asc = false, type = 'active', filters, withDetails = false } = options);
     }
-
-    ({ count = 50, ts = Date.now() / 1000, asc = false, type = 'active', filters, withDetails = false } = options);
 
     let ids;
     if (filters && this.indexCache._disabled != 1 && !await this._fallbackAlarmCache(filters.types)) {
