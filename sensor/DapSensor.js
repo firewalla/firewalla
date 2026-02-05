@@ -44,6 +44,7 @@ class DapSensor extends Sensor {
       headers: {
         "Accept": "application/json"
       },
+      timeout: 5000,
       url: dapInterface + path,
       json: true
     };
@@ -64,7 +65,9 @@ class DapSensor extends Sensor {
   }
 
   async getCheckInData() {
+    log.debug('Getting checkin data');
     const result = await this.apiCall("GET", "/checkin");
+    log.debug('Checkin data:', result);
     return result && result.body;
   }
 

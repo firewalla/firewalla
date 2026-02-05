@@ -179,6 +179,14 @@ case "$UNAME" in
         export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
         export FIREWALLA_PLATFORM=gse
         ;;
+      orange)
+        source $FW_PLATFORM_DIR/orange/platform.sh
+        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/orange
+        BRO_PROC_NAME="zeek"
+        BRO_PROC_COUNT=2
+        export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
+        export FIREWALLA_PLATFORM=orange
+        ;;
       blue)
         source $FW_PLATFORM_DIR/blue/platform.sh
         FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/blue
@@ -212,6 +220,12 @@ case "$UNAME" in
   *)
     ;;
 esac
+
+branch=$(cd /home/pi/firewalla;git rev-parse --abbrev-ref HEAD)
+if [ "$branch" = "master" ]; then
+  XT_UDP_TLS_SUPPORTED=yes # it's development branch, enable xt_udp_tls for testing
+fi
+
 
 function installTLSModule() {
   uid=$(id -u pi)

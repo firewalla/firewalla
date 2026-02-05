@@ -629,6 +629,7 @@ class APCMsgSensor extends Sensor {
     if (msg.proto) record.pr = msg.proto
     if (msg.iso_lvl && msg.action == "block") record.ac = "isolation"
     if (msg.gid) record.isoGID = msg.gid
+    if (msg.ap) record.ap = msg.ap
     if (msg.hasOwnProperty('iso_ext')) record.isoExt = msg.iso_ext
     if (msg.hasOwnProperty('iso_int')) record.isoInt = msg.iso_int
 

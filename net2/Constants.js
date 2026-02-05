@@ -19,6 +19,7 @@
 module.exports = {
   NS_VPN_PROFILE: "vpn_profile",
   NS_WG_PEER: "wg_peer",
+  NS_AMNEZIAWG_PEER: "awg_peer",
   NS_VIP_PROFILE: "vip",
   NS_INTERFACE: "if",
   RULE_SEQ_HI: 1,
@@ -30,8 +31,10 @@ module.exports = {
 
   VPN_TYPE_OVPN: "ovpn",
   VPN_TYPE_WG: "wg",
+  VPN_TYPE_AMNEZIAWG: "awg",
 
   INTF_AP_CTRL: "wg_ap",
+  INTF_PCAP_TAP: "ifb_pcap_tap",
 
   TRUST_IP_SET: "trust:ip",
   TRUST_DOMAIN_SET: "trust:domain",
@@ -56,6 +59,7 @@ module.exports = {
   REDIS_KEY_NSE_RESULT: "sys:scan:nse",
   REDIS_KEY_NTP_SERVER_STATUS: "sys:ntp:status", // updated only when ntp_redirect is enabled
   REDIS_KEY_VPN_WG_PEER: 'vpn:wg:peer:', // vpn:wg:peer:{intf}:{pubkey}
+  REDIS_KEY_VPN_AMNEZIAWG_PEER: 'vpn:awg:peer:', // vpn:awg:peer:{intf}:{pubkey}
   REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG: "app_time_usage_cloud_config",
   REDIS_KEY_APP_TIME_USAGE_CONFIG: "app_time_usage_config",
   REDIS_KEY_INTERNET_TIME_USAGE_CONFIG: "internet_time_usage_config",
@@ -70,6 +74,8 @@ module.exports = {
   REDIS_KEY_POLICY_DISTURB_CONFIG: "policy_disturb_config",
   REDIS_KEY_NOISE_DOMAIN_CLOUD_CONFIG: "noise_domain_cloud_config",
   REDIS_KEY_NOISE_DOMAIN_CONFIG: "noise_domain",
+  REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG: "flow_signature_cloud_config",
+  REDIS_KEY_FLOW_SIGNATURE_CONFIG: "flow_signature_config",
   REDIS_KEY_MSP_DATA: "ext.guardian.data",
   REDIS_KEY_DATA_PLAN_SETTINGS: "sys:data:plan",
   REDIS_KEY_MSP_SYNC_OPS: "msp_sync_ops",
@@ -79,6 +85,7 @@ module.exports = {
   REDIS_HKEY_CONN_HOST: "host",
   REDIS_HKEY_CONN_APID: "apid", // allow rule id
   REDIS_HKEY_CONN_RPID: "rpid", // route rule id
+  REDIS_HKEY_CONN_DPID: "dpid", // disturb rule id
 
   ST_INIT: 'init',
   ST_PENDING: 'pending',

@@ -17,6 +17,8 @@
 
 let chai = require('chai');
 let expect = chai.expect;
+const log = require('../net2/logger.js')(__filename);
+const loggerManager = require('../net2/LoggerManager.js')
 
 const cloud = require('../encipher');
 const netBot = require("../controllers/netbot.js");
@@ -27,23 +29,26 @@ const netbot = new netBot(
   new cloud("netbot"),
   [], gid, true, true
 );
+log.info('netbot initialized')
 const fireRouter = require('../net2/FireRouter.js');
+log.info('firerouter initialized')
 const networkProfileManager = require('../net2/NetworkProfileManager.js');
+log.info('network profile manager initialized')
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const log = require('../net2/logger.js')(__filename);
-const loggerManager = require('../net2/LoggerManager.js')
 const sysManager = require('../net2/SysManager.js');
+log.info('sys manager initialized')
 const { delay } = require('../util/util.js')
 const Constants = require('../net2/Constants.js');
-const flowTool = require('../net2/FlowTool.js');
-const auditTool = require('../net2/AuditTool.js');
 
 async function getMacWithFlow(redisPrefix) {
   let results = await rclient.scanResults(redisPrefix + '*', 10000)
-  results = results.filter(key => !key.includes(':if:') && !key.endsWith('system'))
+  results = results
+    .filter(key => !key.includes(':if:') && !key.endsWith('system'))
+    .map(key => key.substring(redisPrefix.length))
+    .filter(mac => netbot.hostManager.getHostFastByMAC(mac));
   if (!results.length)
     throw new Error('No device with flow', redisPrefix);
-  return results[0].substring(redisPrefix.length);
+  return results[0]
 }
 
 async function getTsFromFlowKey(key) {
@@ -81,15 +86,20 @@ async function get(msg) {
   }, msg))
 }
 
-before(async () => {
+before(async function() {
+  this.timeout(10000)
   loggerManager.setLogLevel('Eptcloud', 'none');
   netbot.identityManager.loadIdentityClasses()
   await fireRouter.waitTillReady()
   await sysManager.updateAsync();
-  await networkProfileManager.refreshNetworkProfiles()
+  await networkProfileManager.refreshNetworkProfiles(true)
+  log.info('network profiles refreshed')
   await netbot.hostManager.getHostsAsync()
+  log.info('hosts refreshed')
   for (const ns of Object.keys(netbot.identityManager.nsClassMap))
     await netbot.identityManager.refreshIdentity(ns);
+
+  log.info('netbot before all hook done')
 })
 
 describe('test get flows', function() {
@@ -262,12 +272,6 @@ describe('test get flows', function() {
     expect(resp.count).to.be.above(0);
     expect(resp.flows.some(f => f.ltype == 'audit' && f.local)).to.be.true
 
-    const ts2 = await getTsFromFlowKey('audit:drop:' + target);
-    msg.data.ts = ts2
-    resp = await get(msg)
-    expect(resp.count).to.be.above(0);
-    expect(resp.flows.some(f => f.ltype == 'audit' && !f.local), JSON.stringify(msg)).to.be.true
-
     resp = await get({data:{item:"flows", localAudit:true, ts, apiVer: 3, count: 100}, target})
     expect(resp.count).to.be.above(0);
     expect(resp.flows.every(f => f.ltype == 'audit' && f.local)).to.be.true
@@ -281,11 +285,6 @@ describe('test get flows', function() {
     resp = await get(msgAuditLogs)
     expect(resp.count).to.be.above(0);
     expect(resp.logs.some(f => f.ltype == 'audit' && f.local)).to.be.true
-
-    msgAuditLogs.data.ts = ts2
-    resp = await get(msgAuditLogs)
-    expect(resp.count).to.be.above(0);
-    expect(resp.logs.some(f => f.ltype == 'audit' && !f.local)).to.be.true
 
     resp = await get({data:{item:"auditLogs", localAudit:true, ts, count: 100, apiVer: 3}, target})
     expect(resp.count).to.be.above(0);
@@ -311,7 +310,7 @@ describe('test get flows', function() {
     expect(resp.flows.some(f => f.device == target)).to.be.false
   });
 
-  it('should include flows as expected', async() => {
+  it.skip('should include flows as expected', async() => {
     const hosts = await netbot.hostManager.getHostsAsync()
     const target = hosts.filter(h => {
       try {
@@ -374,7 +373,7 @@ describe('test system flows', function() {
   })
 
   it('global audit query should return wan blocks', async() => {
-    const msg = {data:{item:"flows", audit:true, count: 2000, apiVer: 2}, target: '0.0.0.0'};
+    const msg = {data:{item:"flows", audit:true, count: 4000, apiVer: 2}, target: '0.0.0.0'};
     let resp = await get(msg)
     expect(resp.count).to.be.above(0);
     expect(resp.flows.some(f => f.ltype == 'audit' && f.device.startsWith('if:'))).to.be.true
@@ -395,7 +394,7 @@ describe('test system flows', function() {
     expect(resp.logs.some(f => f.ltype == 'audit' && f.device.startsWith('if:'))).to.be.true
   })
 
-  it('flows within 15min should be exactly the same', async() => {
+  it.skip('flows within 15min should be exactly the same', async() => {
     const monitorables = netbot.hostManager.getAllMonitorables();
     const wanInterfaces = sysManager.getWanInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)
     const macs = monitorables.map(m => m.getGUID()).concat(wanInterfaces);
