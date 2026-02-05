@@ -18,6 +18,7 @@ const net = require('net')
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const pclient = require('../util/redis_manager.js').getPublishClient();
 const f = require('../net2/Firewalla.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const sysManager = require('../net2/SysManager.js');
@@ -882,7 +883,8 @@ class ACLAuditLogPlugin extends Sensor {
 
           const key = this._getAuditKey(mac, type, dir, block)
           delete record.mac
-          multi.zadd(key, _ts, JSON.stringify(record));
+          const recordJson = JSON.stringify(record);
+          multi.zadd(key, _ts, recordJson);
           if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
             multi.zadd("deviceLastFlowTs", _ts, mac);
           this.touchedKeys[key] = 1;
@@ -894,6 +896,13 @@ class ACLAuditLogPlugin extends Sensor {
             suppressEventLogging: true,
             flow: Object.assign({}, record, {mac, _ts, intf, dir})
           });
+
+          // publish block flow to Redis channel (same JSON string as written to zset), this will be consumed by other components, e.g., DAP
+          if (block) {
+            pclient.publishAsync(Constants.REDIS_CHANNEL_FLOW_BLOCK, recordJson).catch(err => {
+              log.error("Failed to publish block flow to Redis", err);
+            });
+          }
         }
         await multi.execAsync()
       }
