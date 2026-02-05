@@ -335,6 +335,9 @@ class ACLAuditLogPlugin extends Sensor {
 
     }
 
+    // there should be no conn log without port info, but just in case
+    if (record.ac === 'conn') return
+
     if (record.ac === 'redirect') {
       if (dport == '123') record.type = 'ntp'
       await conntrack.setConnEntry(src, sport, dst, dport, record.pr, 'redirect', 1);

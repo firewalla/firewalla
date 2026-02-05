@@ -292,12 +292,18 @@ cat << EOF > "$filter_file"
 -A FW_ACCEPT_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]A=A D=L CD=O "
 
 # add FW_ACCEPT_DEFAULT to the end of FORWARD chain
+-N FW_ACCEPT_DEFAULT_LOG
+-N FW_ACCEPT_DEFAULT_RATE
 -N FW_ACCEPT_DEFAULT
 -A FW_ACCEPT_DEFAULT -j CONNMARK --set-xmark 0x80000000/0x80000000
+-A FW_ACCEPT_DEFAULT -p tcp -m conntrack --ctstate NEW --ctdir ORIGINAL -m connbytes --connbytes 1:1 --connbytes-dir original --connbytes-mode packets -j FW_ACCEPT_DEFAULT_RATE
+-A FW_ACCEPT_DEFAULT -p udp -m conntrack --ctstate NEW --ctdir ORIGINAL -m connbytes --connbytes 1:1 --connbytes-dir original --connbytes-mode packets -j FW_ACCEPT_DEFAULT_RATE
 # match if FIN/RST flag is set, this is a complement in case TCP SYN is not matched during service restart
--A FW_ACCEPT_DEFAULT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m hashlimit --hashlimit-upto 8/second --hashlimit-burst 10 --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_conn_htable -j LOG --log-prefix "[FW_ADT]A=C D=O "
--A FW_ACCEPT_DEFAULT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m hashlimit --hashlimit-upto 8/second --hashlimit-burst 10 --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_conn_htable -j LOG --log-prefix "[FW_ADT]A=C D=I "
+-A FW_ACCEPT_DEFAULT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -j FW_ACCEPT_DEFAULT_RATE
 -A FW_ACCEPT_DEFAULT -j ACCEPT
+-A FW_ACCEPT_DEFAULT_RATE -m hashlimit --hashlimit-upto 8/second --hashlimit-burst 10 --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_conn_htable -j FW_ACCEPT_DEFAULT_LOG
+-A FW_ACCEPT_DEFAULT_LOG -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
+-A FW_ACCEPT_DEFAULT_LOG -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
 -A FORWARD -j FW_ACCEPT_DEFAULT
 
 # Enforce local-only scope for ULA traffic; block WAN traversal to prevent spoofing and leakage.
@@ -611,9 +617,6 @@ cat << EOF
 -A FW_INPUT_ACCEPT -p udp --dport 68 --sport 67:68 -j ACCEPT
 -A FW_INPUT_ACCEPT -p tcp --dport 68 --sport 67:68 -j ACCEPT
 
--I FW_ACCEPT_DEFAULT ! -p icmp -m conntrack --ctstate NEW --ctdir ORIGINAL -m connbytes --connbytes 1:1 --connbytes-dir original --connbytes-mode packets -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m hashlimit --hashlimit-upto 8/second --hashlimit-burst 10  --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_conn_htable -j LOG --log-prefix "[FW_ADT]A=C D=O "
--I FW_ACCEPT_DEFAULT ! -p icmp -m conntrack --ctstate NEW --ctdir ORIGINAL -m connbytes --connbytes 1:1 --connbytes-dir original --connbytes-mode packets -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m hashlimit --hashlimit-upto 8/second --hashlimit-burst 10 --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_conn_htable -j LOG --log-prefix "[FW_ADT]A=C D=I "
-
 EOF
 } > "$iptables_file"
 
@@ -637,10 +640,6 @@ cat << EOF
 -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type neighbour-solicitation -j ACCEPT
 -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type neighbour-advertisement -j ACCEPT
 -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type router-advertisement -j ACCEPT
-
--I FW_ACCEPT_DEFAULT ! -p icmpv6 -m conntrack --ctstate NEW --ctdir ORIGINAL -m connbytes --connbytes 1:1 --connbytes-dir original --connbytes-mode packets -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m hashlimit --hashlimit-upto 8/second  --hashlimit-burst 10  --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_conn_htable -j LOG --log-prefix "[FW_ADT]A=C D=O "
--I FW_ACCEPT_DEFAULT ! -p icmpv6 -m conntrack --ctstate NEW --ctdir ORIGINAL -m connbytes --connbytes 1:1 --connbytes-dir original --connbytes-mode packets -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m hashlimit --hashlimit-upto 8/second  --hashlimit-burst 10 --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_conn_htable -j LOG --log-prefix "[FW_ADT]A=C D=I "
-
 
 EOF
 } > "$ip6tables_file"
