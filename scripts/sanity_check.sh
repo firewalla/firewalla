@@ -1289,33 +1289,65 @@ check_ap() {
       fi
     done
   
-    mapfile -t ssid_profiles < <(jq -r '.apc.assets_template.ap_default.wifiNetworks?[0]?.ssidProfiles?[]?' /tmp/scc_config)
-    declare -A alias_ssids
-    jq -r '.apc.assets_template.ap_default.wifiNetworks?[0]?.aliasSSIDs?[]? | "\(.id) \(.vlan)"' /tmp/scc_config |
-    while read -r id vlan; do
-      alias_ssids["$id"]="$vlan"
-      #echo "alias_ssids $id = $vlan"
+    # Map SSID IDs to interfaces
+    declare -A ssid_intf_map
+    
+    # Extract all wifiNetworks data in one jq call - format: index|intf|ssidProfiles|aliasSSIDs
+    # ssidProfiles format: profile1,profile2,profile3
+    # aliasSSIDs format: id1,id2,id3
+    jq -r '.apc.assets_template.ap_default.wifiNetworks? // [] | 
+      to_entries[] | 
+      [
+        .key,
+        (.value.intf // ""),
+        ((.value.ssidProfiles // []) | join(",")),
+        ((.value.aliasSSIDs // []) | map(.id) | join(","))
+      ] | join("|")' /tmp/scc_config |
+    while IFS='|' read -r idx network_intf ssid_profiles_str alias_ssids_str; do
+      # Only process entries that have ssidProfiles (making it a valid entry)
+      if [[ -n "$ssid_profiles_str" ]]; then
+        # Map SSID profiles to their interface
+        IFS=',' read -ra network_ssid_profiles <<< "$ssid_profiles_str"
+        for profile_id in "${network_ssid_profiles[@]}"; do
+          if [[ -z "${ssid_intf_map[$profile_id]+x}" ]]; then
+            ssid_intf_map["$profile_id"]="$network_intf"
+          fi
+        done
+        
+        # Process aliasSSIDs (map them to interface too)
+        if [[ -n "$alias_ssids_str" ]]; then
+          IFS=',' read -ra alias_ids <<< "$alias_ssids_str"
+          for id in "${alias_ids[@]}"; do
+            if [[ -z "${ssid_intf_map[$id]+x}" ]]; then
+              ssid_intf_map["$id"]="$network_intf"
+            fi
+          done
+        fi
+      fi
     done
 
-    printf "Profile\tSSID\tBand\tEncryption\tPriSeg\tAddSeg\n" >/tmp/ap_csv
+    printf "Profile\tSSID\tBand\tEncryption\tInterface\tPriSeg\tAddSeg\n" >/tmp/ap_csv
     jq -r '.apc.profile | to_entries[] | [.key, .value.ssid, .value.band, .value.encryption] | @tsv' /tmp/scc_config |
     while read -r LINE; do
       mapfile -td $'\t' COL < <(printf "%s" "$LINE")
       local id="${COL[0]}"
-      # only print profile that included in ssidProfiles and aliasSSIDs
-      if [[ "${ssid_profiles[*]}" =~ "$id" ]] || [[ "${alias_ssids[*]}" =~ "$id" ]]; then
+      # only print profile that has an interface mapping (from ssidProfiles or aliasSSIDs)
+      if [[ -n "${ssid_intf_map[$id]+x}" ]]; then
         local priSeg=""
         local addSeg=""
         for key in "${!ssidVlanUserMap[@]}"; do
           if [[ "$key" == "$id" ]]; then
             priSeg="${ssidVlanUserMap[$key]}"
           elif [[ "$key" == "$id,"* ]]; then
-            # local vlan=${key#*,}
             [[ -n "$addSeg" ]] && addSeg+=","
             addSeg+="${ssidVlanUserMap[$key]}"
           fi
         done
-        printf "%s\t%s\t%s\t%s\t%s\t%s\n" "${COL[0]}" "${COL[1]}" "${COL[2]}" "${COL[3]}" "${priSeg}" "${addSeg}" >>/tmp/ap_csv
+        
+        # Get interface for this SSID from the wifiNetwork entry that contains it
+        local ssid_intf="${ssid_intf_map[$id]:-}"
+        
+        printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "${COL[0]}" "${COL[1]}" "${COL[2]}" "${COL[3]}" "$ssid_intf" "$priSeg" "$addSeg" >>/tmp/ap_csv
       fi
 
     done
@@ -1323,13 +1355,13 @@ check_ap() {
     $COLUMN_OPT -t -s$'\t' /tmp/ap_csv
 
     unset ssidVlanUserMap
-    unset alias_ssids
+    unset ssid_intf_map
 
     D="\e[2m"
     U="\e[0m"
 
     echo ""
-    echo -e "Abbr.: PriSeg${D}(PrimaryMicrosegment)$U AddSeg${D}(AddtionalMicrosegment)$U"
+    echo -e "Abbr.: PriSeg${D}(PrimaryMicrosegment)$U AddSeg${D}(AdditionalMicrosegment)$U"
     echo ""
 }
 
