@@ -145,7 +145,7 @@ class InternalScanSensor extends Sensor {
     this.hookFeature(featureName);
     const previousScanResult = await this.getScanResult();
     if (_.has(previousScanResult, "tasks"))
-      this.scheduledScanTasks = previousScanResult.tasks;
+      this.scheduledScanTasks = previousScanResult.tasks || {};
     // set state of previous pending/running tasks to "stopped" on service restart
     for (const key of Object.keys(this.scheduledScanTasks)) {
       const task = this.scheduledScanTasks[key];
@@ -487,7 +487,7 @@ class InternalScanSensor extends Sensor {
   }
 
   getTasks() {
-    return this.scheduledScanTasks;
+    return this.scheduledScanTasks || {};
   }
 
   async saveToRedis(hostId, result) {
@@ -515,10 +515,20 @@ class InternalScanSensor extends Sensor {
 
   async getScanResult(latestNum=-1, maxResult=-1) { // -1 for all
     const result = await rclient.hgetallAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT);
-    if (!result)
+    if (!result) {
+      await this._updateRunningStatus(STATE_COMPLETE);
       return {};
+    }
     if (_.has(result, "tasks"))
-      result.tasks = JSON.parse(result.tasks);
+      try {
+        result.tasks = JSON.parse(result.tasks);
+      } catch (err) {
+        log.warn("failed to parse tasks", err.message);
+        result.tasks = {};
+      }
+      if (Object.keys(result.tasks).length == 0) {
+        await this._updateRunningStatus(STATE_COMPLETE);
+      }
     if (_.has(result, "lastCompletedScanTs"))
       result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
 
@@ -623,7 +633,7 @@ class InternalScanSensor extends Sensor {
   }
 
   async _updateRunningStatus(status) {
-    log.info("update running status set to", status)
+    log.verbose("update running status set to", status)
     return await rclient.evalAsync('if redis.call("get", KEYS[1]) == ARGV[1] then return 0 else redis.call("set", KEYS[1], ARGV[1]) return 1 end', 1, 'weak_password_scan:status', status);
   }
 
@@ -700,12 +710,18 @@ class InternalScanSensor extends Sensor {
           log.error("Error when mkdir:", err);
           return;
         }
-
-        const dictData = JSON.parse(data);
+        let dictData = {};
+        try {
+          dictData = JSON.parse(data);
+        } catch (err) {
+            log.warn("failed to parse scan config", err.message);
+            return;
+        }
         if (!dictData) {
           log.error("Error to parse scan config");
           return;
         }
+
         // process customCreds, commonCreds
         await this._process_dict_creds(dictData);
 
@@ -1006,7 +1022,13 @@ class InternalScanSensor extends Sensor {
 
     // prepare extra configs in advance (http-form-brute)
     const data = await rclient.hgetAsync('sys:config', 'weak_password_scan');
-    const extraConfig = JSON.parse(data);
+    let extraConfig = {};
+    try {
+      extraConfig = JSON.parse(data);
+    } catch (err) {
+      log.warn("failed to parse extra config", err.message);
+      return nmapCmdList;
+    }
 
     // 1. compose default userdb/passdb (NO apply extra configs)
     const defaultCmds = await this._genNmapCmd_default(ipAddr, port, scripts);

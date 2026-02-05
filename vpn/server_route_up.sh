@@ -10,14 +10,27 @@ mkdir -p /etc/openvpn/ovpn_server
 GATEWAY_FILE="/etc/openvpn/ovpn_server/$INSTANCE.gateway"
 echo $route_vpn_gateway > $GATEWAY_FILE
 
+GATEWAY6_FILE="/etc/openvpn/ovpn_server/$INSTANCE.gateway6"
+echo ${ifconfig_ipv6_remote} > $GATEWAY6_FILE
+
 SUBNET_FILE="/etc/openvpn/ovpn_server/$INSTANCE.subnet"
 echo "${route_network_1}/${route_netmask_1}" > $SUBNET_FILE
+
+SUBNET6_FILE="/etc/openvpn/ovpn_server/$INSTANCE.subnet6"
+subnetwork6=$(ipcalc -nb $ifconfig_ipv6_local/$ifconfig_ipv6_netbits |awk '$1 == "Prefix:" {print $2}')
+if [ -z "$subnetwork6" ]; then
+  subnetwork6=$(python3 -c "import ipaddress; print(ipaddress.IPv6Network(u'${ifconfig_ipv6_local}/${ifconfig_ipv6_netbits}', strict=False).with_prefixlen)")
+fi
+echo "${subnetwork6}" > $SUBNET6_FILE
 
 LOCAL_FILE="/etc/openvpn/ovpn_server/$INSTANCE.local"
 echo "${ifconfig_local}/${route_netmask_1}" > $LOCAL_FILE
 
+LOCAL6_FILE="/etc/openvpn/ovpn_server/$INSTANCE.local6"
+echo "${ifconfig_ipv6_local}/${ifconfig_ipv6_netbits}" > $LOCAL6_FILE
+
 # flush IPv6 address
-sudo ip -6 a flush dev $dev || true
+# sudo ip -6 a flush dev $dev || true
 
 # send to firerouter redis db
 redis-cli -n 1 publish "ifup" "$dev" || true

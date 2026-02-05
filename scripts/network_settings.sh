@@ -144,6 +144,10 @@ case "$UNAME" in
         export FIREWALLA_PLATFORM=gse
         export MANAGED_BY_FIREROUTER=yes
         ;;
+      orange)
+        export FIREWALLA_PLATFORM=orange
+        export MANAGED_BY_FIREROUTER=yes
+        ;;
       *)
         ;;
     esac
