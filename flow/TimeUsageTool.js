@@ -99,24 +99,38 @@ class TimeUsageTool {
     return result;
   }
 
-  async getFilledBucketsCount(uid, apps, begin, end, uniqueMinute = false) {
-    let result = 0;
+  async getFilledBucketsCount(uid, apps, begin, end, uniqueMinute = false, minContinuousBuckets = 1) {
     const beginMin = Math.floor(begin / 60);
     const endMin = Math.floor((end - 1) / 60); // end excluded
     const beginHour = Math.floor(beginMin / 60);
     const endHour = Math.floor(endMin / 60);
+
+    // Collect all buckets first
+    const allBuckets = {};
     for (let hour = beginHour; hour <= endHour; hour++) {
       const buckets = await Promise.all(apps.map(app => this.getHourBuckets(uid, app, hour))).then(results => results.reduce((total, cur) => {
         for (const k of Object.keys(cur))
           total[k] = (!isNaN(total[k]) ? Number(total[k]) : 0) + (!isNaN(cur[k]) ? Number(cur[k]) : 0);
         return total;
       }, {}));
+
       for (let minOfHour = (hour === beginHour ? beginMin % 60 : 0); minOfHour <= (hour === endHour ? endMin % 60 : 59); minOfHour++) {
         if (!isNaN(buckets[`${minOfHour}`]) && buckets[`${minOfHour}`] > 0) {
-          result += (uniqueMinute ? 1 : Number(buckets[minOfHour]));
+          const timestamp = hour * 3600 + minOfHour * 60;
+          allBuckets[timestamp] = Number(buckets[minOfHour]);
         }
       }
     }
+
+    // Apply filtering
+    const filteredBuckets = this._filterBucketsByMinContinuousSequence(allBuckets, minContinuousBuckets);
+
+    // Count filtered buckets
+    let result = 0;
+    for (const key of Object.keys(filteredBuckets)) {
+      result += (uniqueMinute ? 1 : Number(filteredBuckets[key]));
+    }
+
     return result;
   }
 
@@ -141,7 +155,7 @@ class TimeUsageTool {
   }
 
   // begin included, end excluded
-  async getAppTimeUsageStats(uid, containerUid, apps = [], begin, end, granularity, uidIsDevice = false, includeSlots = true, includeIntervals = true) {
+  async getAppTimeUsageStats(uid, containerUid, apps = [], begin, end, granularity, uidIsDevice = false, includeSlots = true, includeIntervals = true, minContinuousBuckets = 1) {
     const macs = uidIsDevice ? [uid] : await this.getUIDAssociation(uid, begin, end);
     const timezone = sysManager.getTimezone();
     const appTimeUsage = {};
@@ -174,7 +188,8 @@ class TimeUsageTool {
     }
 
     await Promise.all(apps.map(async (app) => {
-      const buckets = await this.getFilledBuckets(containerUid ? `${uid}@${containerUid}` : uid, app, begin, end, "minute");
+      const rawBuckets = await this.getFilledBuckets(containerUid ? `${uid}@${containerUid}` : uid, app, begin, end, "minute");
+      const buckets = this._filterBucketsByMinContinuousSequence(rawBuckets, minContinuousBuckets);
       const appResult = {};
       const category = await this.getAppCategory(app) || "none"; // categorize an app into a placeholder category, UI may it as "Other" in category-level drill down
       appResult.category = category;
@@ -228,7 +243,8 @@ class TimeUsageTool {
       appResult.devices = {};
       if (_.isArray(macs)) {
         await Promise.all(macs.map(async (mac) => {
-          const buckets = await this.getFilledBuckets((uidIsDevice || uid === "global") ? (containerUid ? `${mac}@${containerUid}` : mac) : `${mac}@${uid}`, app, begin, end, "minute"); // use device-tag or device-intf associated key to query
+          const rawDeviceBuckets = await this.getFilledBuckets((uidIsDevice || uid === "global") ? (containerUid ? `${mac}@${containerUid}` : mac) : `${mac}@${uid}`, app, begin, end, "minute"); // use device-tag or device-intf associated key to query
+          const buckets = this._filterBucketsByMinContinuousSequence(rawDeviceBuckets, minContinuousBuckets);
           const bucketKeys = Object.keys(buckets);
           const totalMins = bucketKeys.reduce((v, k) => v + buckets[k], 0);
           const uniqueMins = bucketKeys.length;
@@ -267,6 +283,54 @@ class TimeUsageTool {
       }
     }
     return intervals;
+  }
+
+  /**
+   * Filters buckets to only include those in continuous sequences >= minContinuousBuckets
+   * @param {Object} buckets - Map of timestamp -> bucket value
+   * @param {number} minContinuousBuckets - Minimum sequence length (default: 1 = no filtering)
+   * @returns {Object} Filtered buckets map
+   */
+  _filterBucketsByMinContinuousSequence(buckets, minContinuousBuckets = 1) {
+    if (minContinuousBuckets <= 1) {
+      return buckets; // No filtering needed
+    }
+
+    const sortedKeys = Object.keys(buckets).map(Number).sort((a, b) => a - b);
+    if (sortedKeys.length === 0) {
+      return {};
+    }
+
+    // Group buckets into continuous sequences
+    const sequences = [];
+    let currentSequence = { keys: [sortedKeys[0]] };
+
+    for (let i = 1; i < sortedKeys.length; i++) {
+      const prevKey = sortedKeys[i - 1];
+      const currentKey = sortedKeys[i];
+
+      // Check if this bucket is continuous (within 60 seconds of previous)
+      if (currentKey - prevKey <= 60) {
+        currentSequence.keys.push(currentKey);
+      } else {
+        // Gap detected - end current sequence, start new one
+        sequences.push(currentSequence);
+        currentSequence = { keys: [currentKey] };
+      }
+    }
+    sequences.push(currentSequence); // Add last sequence
+
+    // Filter: only keep sequences with length >= minContinuousBuckets
+    const filteredBuckets = {};
+    for (const sequence of sequences) {
+      if (sequence.keys.length >= minContinuousBuckets) {
+        for (const key of sequence.keys) {
+          filteredBuckets[key] = buckets[key];
+        }
+      }
+    }
+
+    return filteredBuckets;
   }
 }
 
