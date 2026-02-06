@@ -262,7 +262,7 @@ async function rebuildTrie() {
     const includedDomains = appConfs[key].includedDomains || [];
     const category = appConfs[key].category;
     for (const value of includedDomains) {
-      const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold", "ulDlRatioThreshold", "noStray", "portInfo", "backgroundDownload"]);
+      const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold", "ulDlRatioThreshold", "portInfo", "backgroundDownload"]);
       obj.app = key;
       if (category)
         obj.category = category;
@@ -306,16 +306,14 @@ function getInternetOptions(internetTimeUsageCfg) {
   const {
     occupyMins = 1,
     lingerMins = 10,
-    minsThreshold = 1,
-    noStray = true
+    minsThreshold = 1
   } = defaultCfg;
 
   return {
     app: "internet",
     occupyMins,
     lingerMins,
-    minsThreshold,
-    noStray
+    minsThreshold
   };
 }
 
@@ -372,8 +370,7 @@ function lookupAppMatch(flow, internetTimeUsageCfg, noiseDomainsSensor) {
           Object.assign(internet_options, {
             occupyMins: value.occupyMins,
             lingerMins: value.lingerMins,
-            minsThreshold: value.minsThreshold,
-            noStray: value.noStray
+            minsThreshold: value.minsThreshold
           });
           break;
         }
@@ -396,8 +393,7 @@ function lookupAppMatch(flow, internetTimeUsageCfg, noiseDomainsSensor) {
           Object.assign(internet_options, {
             occupyMins: entry.occupyMins,
             lingerMins: entry.lingerMins,
-            minsThreshold: entry.minsThreshold,
-            noStray: entry.noStray
+            minsThreshold: entry.minsThreshold
           });
         }
       }
@@ -418,8 +414,7 @@ function lookupAppMatch(flow, internetTimeUsageCfg, noiseDomainsSensor) {
           Object.assign(internet_options, {
             occupyMins: entry.occupyMins,
             lingerMins: entry.lingerMins,
-            minsThreshold: entry.minsThreshold,
-            noStray: entry.noStray
+            minsThreshold: entry.minsThreshold
           });
         }
       }

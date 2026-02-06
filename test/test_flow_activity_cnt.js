@@ -223,8 +223,7 @@ function getAllAppMatches(flows) {
           occupyMins: item.occupyMins,
           lingerMins: item.lingerMins,
           bytesThreshold: item.bytesThreshold,
-          minsThreshold: item.minsThreshold,
-          noStray: item.noStray || false,
+          minsThreshold: item.minsThreshold
         }));
       });
     }
