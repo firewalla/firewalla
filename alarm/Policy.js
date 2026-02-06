@@ -379,6 +379,11 @@ class Policy {
       return false;
     }
 
+    if (this.appTimeUsage && !this.isTimeUsageExceeded()) {
+      log.debug(`mismatch, time usage not exceeded, rule ${this.pid} is not in effect`)
+      return false;
+    }
+
     if (this.direction === "inbound") {
       // default to outbound alarm
       if ((alarm["p.local_is_client"] || "1") === "1") {
@@ -543,6 +548,12 @@ class Policy {
       default:
         return false
     }
+  }
+
+  isTimeUsageExceeded() {
+    const quota = _.get(this.appTimeUsage, 'quota', 0);
+    const used = this.appTimeUsed || 0;
+    return used >= quota;
   }
 
   matchDomain(domain) {
