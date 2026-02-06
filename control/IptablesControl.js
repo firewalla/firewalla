@@ -163,7 +163,8 @@ class IptablesControl extends ModuleControl {
     let currentTable = null;
     
     for (const line of lines) {
-      const trimmedLine = line.trim();
+      // a workaround to handle extra spaces in udp_tls dump
+      const trimmedLine = line.trim().replace(/\s{2,}/g, ' ');
       
       // Skip empty lines and comments
       if (!trimmedLine || !trimmedLine.length || trimmedLine.startsWith('#')) {
