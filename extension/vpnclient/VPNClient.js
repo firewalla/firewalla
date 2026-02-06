@@ -367,7 +367,7 @@ class VPNClient {
     Ipset.flush(VPNClient.getNetIpsetName(this.profileId))
     Ipset.flush(VPNClient.getNetIpsetName(this.profileId, 6))
     for (const routedSubnet of routedSubnets) {
-      const fam = net.isIP(routedSubnet);
+      const fam = net.isIP(routedSubnet && routedSubnet.split('/')[0]);
       if (!fam) continue
       Ipset.add(VPNClient.getNetIpsetName(this.profileId, fam), routedSubnet)
     }
