@@ -166,7 +166,7 @@ class AppTimeUsageSensor extends Sensor {
       const includedDomains = appConfs[key].includedDomains || [];
       const category = appConfs[key].category;
       for (const value of includedDomains) {
-        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold", "ulDlRatioThreshold", "noStray", "portInfo", "backgroundDownload"]);
+        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold", "ulDlRatioThreshold", "portInfo", "backgroundDownload"]);
         obj.app = key;
         if (category)
           obj.category = category;
@@ -259,16 +259,14 @@ class AppTimeUsageSensor extends Sensor {
     const {
       occupyMins = 1,
       lingerMins = 10,
-      minsThreshold = 1,
-      noStray = true
+      minsThreshold = 1
     } = defaultCfg;
   
     return {
       app: "internet",
       occupyMins,
       lingerMins,
-      minsThreshold,
-      noStray
+      minsThreshold
     };
   }
 
@@ -400,8 +398,7 @@ class AppTimeUsageSensor extends Sensor {
             Object.assign(internet_options, {
               occupyMins: value.occupyMins,
               lingerMins: value.lingerMins,
-              minsThreshold: value.minsThreshold,
-              noStray: value.noStray
+              minsThreshold: value.minsThreshold
             });
             break;
           }
@@ -424,8 +421,7 @@ class AppTimeUsageSensor extends Sensor {
               Object.assign(internet_options, {
                 occupyMins: entry.occupyMins,
                 lingerMins: entry.lingerMins,
-                minsThreshold: entry.minsThreshold,
-                noStray: entry.noStray
+                minsThreshold: entry.minsThreshold
               });
             }
         }
@@ -446,8 +442,7 @@ class AppTimeUsageSensor extends Sensor {
               Object.assign(internet_options, {
                 occupyMins: entry.occupyMins,
                 lingerMins: entry.lingerMins,
-                minsThreshold: entry.minsThreshold,
-                noStray: entry.noStray
+                minsThreshold: entry.minsThreshold
               });
             }
         }
@@ -490,7 +485,7 @@ class AppTimeUsageSensor extends Sensor {
     if (_.isEmpty(appMatches))
       return;
     for (const match of appMatches) {
-      const {app, category, domain, occupyMins, lingerMins, minsThreshold, noStray} = match;
+      const {app, category, domain, occupyMins, lingerMins, minsThreshold} = match;
       await this.recordFlow2Redis(f, app);
       if (host && domain)
         await dnsTool.addSubDomains(domain, [host]);
@@ -500,7 +495,7 @@ class AppTimeUsageSensor extends Sensor {
         tags.push(...(f[config.flowKey] || []));
       }
       tags = _.uniq(tags);
-      await this.markBuckets(f.mac, tags, f.intf, app, category, f.ts, f.ts + f.du, occupyMins, lingerMins, minsThreshold, noStray);
+      await this.markBuckets(f.mac, tags, f.intf, app, category, f.ts, f.ts + f.du, occupyMins, lingerMins, minsThreshold);
     }
   }
 
@@ -565,12 +560,13 @@ class AppTimeUsageSensor extends Sensor {
     }
   }
 
-  async markBuckets(mac, tags, intf, app, category, begin, end, occupyMins, lingerMins, minsThreshold, noStray = false) {
+  async markBuckets(mac, tags, intf, app, category, begin, end, occupyMins, lingerMins, minsThreshold) {
     const beginMin = Math.floor(begin / 60);
     const endMin = Math.floor(end / 60) + occupyMins - 1;
     await lock.acquire(`LOCK_${mac}`, async () => {
       let extended = false;
       // set leading consecutive minute buckets with explicit "0" to "1", because they are in a linger window of a previous session
+      const leadingBuckets = [];
       for (let min = beginMin - 1; min >= 0; min--) {
         const hour = Math.floor(min / 60);
         const minOfHour = min % 60;
@@ -580,9 +576,10 @@ class AppTimeUsageSensor extends Sensor {
             extended = true;
           break;
         }
-        extended = true;
-        await this._incrBucketHierarchy(mac, tags, intf, app, category, hour, minOfHour, oldValue);
+        leadingBuckets.push({hour: hour, minOfHour: minOfHour, value: oldValue});
       }
+
+      const trailingBuckets = [];
       // look ahead trailing lingerMins buckets and set them to "0" or "1" accordingly
       let hour = Math.floor((endMin + lingerMins + 1) / 60);
       let minOfHour = (endMin + lingerMins + 1) % 60;
@@ -598,13 +595,22 @@ class AppTimeUsageSensor extends Sensor {
           } else
             nextVal = oldValue;
         } else {
-          await this._incrBucketHierarchy(mac, tags, intf, app, category, hour, minOfHour, oldValue);
           nextVal = "1";
           extended = true;
+          trailingBuckets.push({hour: hour, minOfHour: minOfHour, value: oldValue});
         }
       }
 
-      const effective = (endMin - beginMin + 1 >= minsThreshold && !noStray) || extended; // do not record interval less than minsThreshold unless it is adjacent to linger minutes of other intervals
+      // do not record interval less than minsThreshold unless extended or total minutes (including leading/trailing) exceed threshold
+      const effective = extended || (endMin - beginMin + 1 + trailingBuckets.length + leadingBuckets.length >= minsThreshold);
+      if (effective) {
+        for (const bucket of leadingBuckets) {
+          await this._incrBucketHierarchy(mac, tags, intf, app, category, bucket.hour, bucket.minOfHour, bucket.value);
+        }
+        for (const bucket of trailingBuckets) {
+          await this._incrBucketHierarchy(mac, tags, intf, app, category, bucket.hour, bucket.minOfHour, bucket.value);
+        }
+      } 
       const beginHour = Math.floor(beginMin / 60);
       const endHour = Math.floor(endMin / 60);
       for (let hour = beginHour; hour <= endHour; hour++) {
