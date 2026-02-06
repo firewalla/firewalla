@@ -86,6 +86,7 @@ function getPreferredBName(hostObject) {
     || hostObject.sambaName
     // hostname doesn't seem to be assigned anywhere, on App, this actually has the highest priority
     || hostObject.hostname
+    || hostObject.nbtName
     // below 2 mostly from user-agent now
     || detectName
     || modelName
@@ -120,9 +121,9 @@ function delay(t) {
   });
 }
 
-const keysToRedact = new Set(["password", "passwd", "psk", "key", "psks", "secret"]);
+const keysToRedact = new Set(["password", "passwd", "psk", "key", "psks", "secret", "private_key_pass"]);
 function redactLog(obj, redactRequired = false, depth) {
-  if (!obj || depth > 5)
+  if (!obj || depth > 6)
     return obj;
   // obj should be either object or array
   const objCopy = _.isArray(obj) ? [] : _.clone(obj);
@@ -130,7 +131,10 @@ function redactLog(obj, redactRequired = false, depth) {
     for (const key of Object.keys(obj)) {
       if (_.isFunction(obj[key]))
         continue;
-      if (_.isObject(obj[key]) || _.isArray(obj[key]))
+      if (key === "freeradius_server") {
+        depth = 0; // need more depth for freeradius_server
+      }
+      if (_.isPlainObject(obj[key]) || _.isArray(obj[key]))
         objCopy[key] = redactLog(obj[key], redactRequired || keysToRedact.has(key), depth + 1);
       else {
         if (redactRequired || keysToRedact.has(key))
@@ -154,7 +158,7 @@ function argumentsToString(v) {
         // args[k] = JSON.stringify(args[k]);
         if (_.isFunction(args[k]))
           continue;
-        if (_.isArray(args[k]) || _.isObject(args[k]))
+        if (_.isArray(args[k]) || _.isPlainObject(args[k]))
           args[k] = redactLog(args[k], false, depth + 1);
         args[k] = require('util').inspect(args[k], false, null, true);
       }

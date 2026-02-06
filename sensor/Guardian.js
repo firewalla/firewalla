@@ -235,7 +235,8 @@ module.exports = class {
       } else {
         await rclient.unlinkAsync(this.configRegionKey);
       }
-      return rclient.setAsync(this.configServerKey, server);
+      await rclient.setAsync(this.configServerKey, server);
+      this._scheduleRedisBackgroundSave();
     } else {
       throw new Error("invalid server");
     }
@@ -449,7 +450,7 @@ module.exports = class {
   }
 
   async reset() {
-    log.info("Reset guardian settings", this.name);
+    log.warn("Reset guardian settings", this.name);
     const mspId = await this.getMspId();
     try {
       // remove all msp related rules
@@ -458,7 +459,7 @@ module.exports = class {
       const mspData = await this.getMspData();
       await Promise.all(policies.map(async p => {
         if (await this.isMspRelatedRule(p, { mspData })) {
-          log.warn("Remove msp policy", p.pid);
+          log.info("Remove msp policy", p.pid);
           await pm2.disableAndDeletePolicy(p.pid);
         }
       }))
@@ -763,7 +764,10 @@ module.exports = class {
           break;
         try {
           log.debug("syncOpsToMsp: sync op to msp", op);
-          const msg = {msgType: "sync_op_from_box", op: op};
+          const msg = {
+            data: op,
+            replyid: "sync_op_from_box"
+          }
           const buffer = Buffer.from(JSON.stringify(msg), 'utf8');
           const compressedData = await deflateAsync(buffer);
           const compressedMsg = JSON.stringify({

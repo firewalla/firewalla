@@ -153,6 +153,10 @@ class PSEPlatform extends Platform {
     return true;
   }
 
+  isAmneziaWgSupported() {
+    return true;
+  }
+
   getAllowCustomizedProfiles(){
     return 1;
   }
