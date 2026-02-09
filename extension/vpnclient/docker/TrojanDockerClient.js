@@ -97,6 +97,10 @@ class TrojanDockerClient extends DockerBaseVPNClient {
       return super.getStatistics();
     });
 
+    if (_.isObject(result)) {
+      return result;
+    }
+
     if (!result)
       return {bytesIn: 0, bytesOut: 0};
 
