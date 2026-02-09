@@ -1883,6 +1883,15 @@ class PolicyManager2 {
       });
     }
 
+    let overrideDscp = false;
+    if (qosHandler && priority === qos.PRIO_HIGH && policy.overrideDscp !== false) {
+      overrideDscp = true;
+    }
+
+    if (qosHandler && overrideDscp) {
+      await qos.applyOverrideDscp({ qosHandler, op: "-A", priority, comments: `rule_${pid}`, trafficDirection: trafficDirection });
+    }
+
     if (skipFinalApplyRules) {
       return;
     }
@@ -2428,6 +2437,14 @@ class PolicyManager2 {
           }
         }
       }
+    }
+    let overrideDscp = false;
+    if (qosHandler && priority === qos.PRIO_HIGH && policy.overrideDscp !== false) {
+      overrideDscp = true;
+    }
+
+    if (qosHandler && overrideDscp) {
+      await qos.applyOverrideDscp({ qosHandler, op: "-D", priority, comments: `rule_${pid}`, trafficDirection: trafficDirection });
     }
 
     if (!_.isEmpty(connSets)) {

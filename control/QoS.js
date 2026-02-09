@@ -20,6 +20,9 @@ const log = require('../net2/logger.js')(__filename);
 const exec = require('child-process-promise').exec;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
+const { Rule } = require('../net2/Iptables.js');
+const iptc = require('./IptablesControl.js');
+
 const POLICY_QOS_HANDLER_MAP_KEY = "policy_qos_handler_map";
 const SKIP_QOS_SWITCH =  0x40000000;
 const QOS_UPLOAD_MASK = 0x3f800000;
@@ -271,6 +274,31 @@ async function destroyTCFilter(filterId, parent, direction, prio, fwmark) {
   });
 }
 
+
+async function applyOverrideDscp(opts) {
+  let {qosHandler, op, priority, comments, trafficDirection} = opts;
+
+  const table = "mangle";
+  if (priority != PRIO_HIGH) {
+    return;
+  }
+
+  const fwmark = Number(qosHandler) << (trafficDirection === "upload" ? 23 : 16); // 23-29 bit is reserved for upload mark filter, 16-22 bit is reserved for download mark filter
+  const fwmask = trafficDirection === "upload" ? QOS_UPLOAD_MASK : QOS_DOWNLOAD_MASK;
+  priority = priority || DEFAULT_PRIO;
+
+  let rule = new Rule(table).chn("FW_POSTROUTING_DSCP_OVERRIDE");
+  rule.mark(fwmark, fwmask, false);
+  rule.jmp("DSCP --set-dscp 0x2e");
+  rule.comment(comments);
+  rule.opr(op);
+  rule.fam(4);
+  await exec(rule.toCmd(op));
+  rule.fam(6);
+  await exec(rule.toCmd(op));
+}
+
+
 module.exports = {
   SKIP_QOS_SWITCH,
   QOS_UPLOAD_MASK,
@@ -287,5 +315,6 @@ module.exports = {
   createQoSClass,
   destroyQoSClass,
   createTCFilter,
-  destroyTCFilter
+  destroyTCFilter,
+  applyOverrideDscp
 }
