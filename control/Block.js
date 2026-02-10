@@ -1697,7 +1697,7 @@ async function manipulateFiveTupleRule(options) {
   if (ctDir)
     rule.mdl("conntrack", `--ctdir ${ctDir}`);
   if (comment)
-    rule.mdl("comment", `--comment ${comment}`);
+    rule.comment(comment);
   if (ctstate)
     rule.mdl("conntrack", `--ctstate ${ctstate}`);
   if (transferDirection) {
