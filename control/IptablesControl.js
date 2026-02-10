@@ -79,7 +79,7 @@ class IptablesControl extends ModuleControl {
     let changed = { 4: false, 6: false };
     for (const family of [4, 6]) {
       for (const table of TABLES) {
-        const res = this.mergeQueuedToAggregated(this.aggregatedRules[family][table], queued[family][table]);
+        const res = this.mergeQueuedToAggregated(family, table, queued);
         if (res) changed[family] = true;
       }
     }
@@ -164,7 +164,9 @@ class IptablesControl extends ModuleControl {
     
     for (const line of lines) {
       // a workaround to handle extra spaces in udp_tls dump
-      const trimmedLine = line.trim().replace(/\s{2,}/g, ' ');
+      const trimmedLine = line.trim().replace(/\s{2,}/g, ' ')
+        // spaceless comments are dumped without quotes
+        .replace(/ --comment ([^ ]+) /, ' --comment "$1" ');
       
       // Skip empty lines and comments
       if (!trimmedLine || !trimmedLine.length || trimmedLine.startsWith('#')) {
@@ -303,14 +305,15 @@ class IptablesControl extends ModuleControl {
     return state;
   }
 
-  mergeQueuedToAggregated(agg, queued) {
+  mergeQueuedToAggregated(family, table, queued) {
+    const agg = this.aggregatedRules[family][table];
     let changed = false;
 
-    for (const rule of (queued || [])) {
+    for (const rule of (queued[family][table] || [])) {
       if (!(rule instanceof Rule)) continue;
       const operation = rule.operation || '-A';
       const essential = rule.essential();
-      log.verbose(`Merging queued rule: ${operation} ${essential}`);
+      log.verbose(`Merging v${family} ${table}: ${operation} ${essential}`);
 
       switch (operation) {
         case '-N':
@@ -329,8 +332,7 @@ class IptablesControl extends ModuleControl {
         case '-F':
           if (!agg.chains[rule.chain]) continue;
           for (const i in agg.rules) {
-            const rule = agg.rules[i];
-            if (rule && rule.startsWith(rule.chain + ' ')) {
+            if (agg.rules[i] && agg.rules[i].startsWith(rule.chain + ' ')) {
               agg.rules[i] = null;
               changed = true;
             }
