@@ -536,8 +536,8 @@ check_policies() {
     echo "No.|Target|Type|Scope|Expire|Scheduler|Proto|TosDir|RateLmt|Pri|Dis|Purpose">/tmp/qos_csv
     echo "No.|Target|Type|Scope|Expire|Scheduler|Proto|Dir|wanUUID|Type|Dis|Purpose">/tmp/route_csv
     echo "No.|Target|Action|Scope|Expire|Scheduler|Resolver|Dis|Purpose">/tmp/dns_csv
-    printf "%7s %52s %11s %25s %10s %25s %5s %8s %5s %9s %9s %3s %8s %20s\n" \
-      "No." "Target" "Type" "Scope" "Expire" "Scheduler" "Dir" "Action" "Proto" "LPort" "RPort" "Dis" "Hit" "Purpose"
+    printf "%7s %52s %11s %25s %10s %25s %5s %9s %5s %9s %9s %3s %8s %15s %20s %20s\n" \
+      "No." "Target" "Type" "Scope" "Expire" "Scheduler" "Dir" "Action" "Proto" "LPort" "RPort" "Dis" "Hit" "LastHitTS" "Purpose" "Name"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
         declare -A p
@@ -620,9 +620,13 @@ check_policies() {
         elif [[ $ACTION == 'address' ]] || [[ $ACTION == 'resolve' ]]; then
           echo -e "$RULE_ID|$TARGET|$ACTION|$SCOPE|$EXPIRE|$CRONTIME|${p[resolver]}|$DISABLED|${p[purpose]}">>/tmp/dns_csv
         else
-          printf "$COLOR%7s %52s %11s %25s %10s %25s %5s %8s %5s %9s %9s %3s %8s %20s$UNCOLOR\n" \
+          local TS_STR=""
+          if [[ -n "${p[lastHitTs]}" ]]; then
+            TS_STR="$(date -d "@${p[lastHitTs]}" '+%y-%m-%d %H:%M' 2>/dev/null)"
+          fi
+          printf "$COLOR%7s %52s %11s %25s %10s %25s %5s %9s %5s %9s %9s %3s %8s %15s %20s %20s$UNCOLOR\n" \
             "$RULE_ID" "$(align::right 52 "$TARGET")" "$TYPE" "$(align::right 25 "$SCOPE")" "$EXPIRE" "$CRONTIME" \
-            "$DIRECTION" "$ACTION" "${p[protocol]}" "${p[localPort]}" "${p[remotePort]}" "$DISABLED" "${p[hitCount]}" "${p[purpose]:-${p[app_name]}}"
+            "$DIRECTION" "$ACTION" "${p[protocol]}" "${p[localPort]}" "${p[remotePort]}" "$DISABLED" "${p[hitCount]}" "$TS_STR" "${p[purpose]:-${p[app_name]}}" "${p[_name]}"
         fi;
 
         unset p
