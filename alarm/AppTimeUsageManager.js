@@ -413,6 +413,18 @@ class AppTimeUsageManager {
     const pm2 = new PolicyManager2();
     await pm2.updatePolicyAsync({pid, disturbTimeUsed: used});
   }
+
+  async getAppTimeUsage(policy) {
+    const {app, apps, category, period, intervals, uniqueMinute = true} = policy.appTimeUsage;
+    const keys = _.isArray(apps) ? apps : [app || category];
+    const timeWindows = this.calculateTimeWindows(period, intervals);
+    const uids = this.getUIDs(policy);
+    let usage = 0;
+    if (_.isArray(uids) && uids.length > 0) {
+      usage = await this.getTimeUsage(uids[0], keys, timeWindows, uniqueMinute);
+    }
+    return usage;
+  }
 }
 
 module.exports = new AppTimeUsageManager();

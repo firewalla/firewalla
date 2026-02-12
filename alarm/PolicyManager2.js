@@ -487,6 +487,10 @@ class PolicyManager2 {
           callback(null, samePolicy, "duplicated")
         }
       } else {
+        if (policy && policy.appTimeUsage){
+          const usage = await AppTimeUsageManager.getAppTimeUsage(policy);
+          policy.appTimeUsed = usage;
+        }
         const data = await this.savePolicyAsync(policy);
         callback(null, data);
       }
