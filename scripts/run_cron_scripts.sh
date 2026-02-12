@@ -16,27 +16,30 @@ fi
 
 # Find all shell scripts in the cron directory and sort them
 # This ensures consistent execution order
-CRON_SCRIPTS=$(find "$CRON_SCRIPTS_DIR" -maxdepth 1 -name "*.sh" -type f -executable | sort)
+CRON_SCRIPTS_RAW=$(find "$CRON_SCRIPTS_DIR" -maxdepth 1 -name "*.sh" -type f -executable | sort)
 
-if [[ -z "$CRON_SCRIPTS" ]]; then
+if [[ -z "$CRON_SCRIPTS_RAW" ]]; then
     logger "$LOG_TAG:NO_SCRIPTS_FOUND"
     exit 0
 fi
+
+readarray -t CRON_SCRIPTS <<< "$CRON_SCRIPTS_RAW"
 
 # Counter for executed scripts
 EXECUTED_COUNT=0
 FAILED_COUNT=0
 
-logger "$LOG_TAG:FOUND_SCRIPTS:$(echo "$CRON_SCRIPTS" | wc -l)"
+logger "$LOG_TAG:FOUND_SCRIPTS:${#CRON_SCRIPTS[@]}"
 
 # Execute each script sequentially
-while IFS= read -r script; do
+for script in "${CRON_SCRIPTS[@]}"; do
     if [[ -f "$script" && -x "$script" ]]; then
         script_name=$(basename "$script")
         logger "$LOG_TAG:EXECUTING:$script_name"
         
         # Execute the script with timeout and capture exit code
-        if timeout 300 bash "$script"; then
+        # detach child script from stdin to avoid interactive prompts
+        if timeout 300 bash "$script" </dev/null; then
             logger "$LOG_TAG:SUCCESS:$script_name"
             ((EXECUTED_COUNT++))
         else
@@ -44,7 +47,7 @@ while IFS= read -r script; do
             ((FAILED_COUNT++))
         fi
     fi
-done <<< "$CRON_SCRIPTS"
+done
 
 logger "$LOG_TAG:COMPLETED:EXECUTED=$EXECUTED_COUNT:FAILED=$FAILED_COUNT"
 
