@@ -92,7 +92,7 @@ PRE_MAIN_D="/home/pi/.firewalla/config/pre_main.d"
 if [[ -d $PRE_MAIN_D ]]; then
   for pre_script in $(ls $PRE_MAIN_D/*.sh)
   do
-      bash $pre_script
+      bash "$pre_script" </dev/null
   done
 fi
 
@@ -144,7 +144,7 @@ POST_MAIN_D="/home/pi/.firewalla/config/post_main.d"
 if [[ -d $POST_MAIN_D ]]; then
   for post_script in $(ls $POST_MAIN_D/*.sh)
   do
-      bash $post_script
+      bash "$post_script" </dev/null
   done
 fi
 

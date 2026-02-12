@@ -28,10 +28,10 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 
 for prep_script in $(ls ${FIREWALLA_HOME}/scripts/prep/*.sh)
 do
-    bash $prep_script
+    bash "$prep_script" </dev/null
 done
 
 for prep_script in $(ls ${FW_PLATFORM_CUR_DIR}/hooks/before_main_run/*.sh 2>/dev/null)
 do
-    bash $prep_script
+    bash "$prep_script" </dev/null
 done
