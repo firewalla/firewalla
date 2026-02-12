@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -86,10 +86,7 @@ const { getUniqueTs, extractIP } = require('./FlowUtil.js')
 const LRU = require('lru-cache');
 const Constants = require('./Constants.js');
 
-const Block = require('../control/Block.js');
 const exec = require('util').promisify(require('child_process').exec);
-
-const ipset = require('./Ipset.js');
 
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
@@ -1024,6 +1021,10 @@ class BroDetect {
        || fam == 6 && (sysManager.isMyIP6(orig) || sysManager.isMyIP6(resp))) {
         return
       }
+
+      // exclude traffic to gateway from local flow (bridge mode)
+      if (localFlow && (sysManager.myGateways(fam).includes(orig) || sysManager.myGateways(fam).includes(resp)))
+        return
 
       let intfInfo = sysManager.getInterfaceViaIP(lhost, fam);
       let dstIntfInfo = localFlow && sysManager.getInterfaceViaIP(dhost, fam);
