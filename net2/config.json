@@ -1,5 +1,5 @@
 {
-  "version": 1.981,
+  "version": 1.982,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -137,7 +137,8 @@
     "NoiseDomainsSensor": {},
     "Iperf3Sensor": {},
     "DeviceMonitorSensor": {},
-    "DapSensor": {}
+    "DapSensor": {},
+    "ResourcePlugin": {}
   },
   "intels": [
     "DeviceInfoIntel",
@@ -199,6 +200,7 @@
       "logPath": "/var/log/openvpn-server.log"
     },
     "WgvpnConnSensor": {},
+    "AmneziaWgConnSensor": {},
     "NaughtyMonkeySensor": {},
     "ActiveProtectSensor": {},
     "IntelLocalCachePlugin": {
@@ -675,6 +677,25 @@
       "dm": {
         "expires": 86400,
         "count": 3600
+      },
+      "internet_flows": {
+        "expires": 172800,
+        "count": 2000
+      },
+      "api_stats": {
+        "expires": 86400,
+        "count": 10000
+      },
+      "dhcp_event": {
+        "expires": 2592000,
+        "count": 1000
+      },
+      "sigDetectedServers": {
+        "expires": 86400,
+        "count": 10000
+      },
+      "flow_domain:": {
+        "count": 200
       }
     },
     "DeviceOfflineSensor": {
@@ -863,6 +884,8 @@
     "PurposeDeviceAutoSecurePlugin":{},
     "DapSensor": {},
     "SuricataRuleSetSensor": {},
+    "NetconsolePlugin": {},
+    "ResourcePlugin": {},
     "NoiseDomainsSensor": {}
   },
   "hooks": {
@@ -949,7 +972,6 @@
     "threshold": {
       "maxSpeed": 100000000,
       "missedBytesRatio": 0.98,
-      "IPTCPRatio": 0.1,
       "tcpZeroBytesResp": 1000000,
       "tcpZeroBytesOrig": 1000000,
       "logLargeBytesResp": 100000000,

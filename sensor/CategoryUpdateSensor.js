@@ -60,7 +60,7 @@ const securityHashMapping = {
 }
 
 const CATEGORY_DATA_KEY = "intel_proxy.data";
-
+const Constants = require('../net2/Constants.js');
 class CategoryUpdateSensor extends Sensor {
   constructor(config) {
     super(config)
@@ -75,6 +75,7 @@ class CategoryUpdateSensor extends Sensor {
       for (const category of categories) {
         await this.updateCategory(category);
       }
+      await this.updateFlowSignatureList(true);
     } catch (err) {
       log.error("Failed to update categories", err)
     }
@@ -623,6 +624,26 @@ class CategoryUpdateSensor extends Sensor {
       await rclient.saddAsync('country:list', countryList);
     }
   }
+
+  async updateFlowSignatureList(forceReload = false) {
+    const pervFlowSignatureConfig = this.flowSignatureConfig || {};
+    let flowSignatureConfig = await rclient.getAsync(Constants.REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG).then(result => result && JSON.parse(result)).catch(err => null);
+    this.flowSignatureConfig = flowSignatureConfig;
+    if (_.isEmpty(flowSignatureConfig) || forceReload) {
+      flowSignatureConfig = await bone.hashsetAsync(Constants.REDIS_KEY_FLOW_SIGNATURE_CONFIG).then(result => result && JSON.parse(result)).catch((err) => null);
+      if (!_.isEmpty(flowSignatureConfig) && _.isObject(flowSignatureConfig)) {
+        await rclient.setAsync(Constants.REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG, JSON.stringify(flowSignatureConfig));
+        this.flowSignatureConfig = flowSignatureConfig;
+      }
+    }
+    if (this.flowSignatureConfig && !_.isEqual(pervFlowSignatureConfig, this.flowSignatureConfig)){
+      sem.emitEvent({
+        type: "FlowSignatureListUpdated",
+        toProcess: "FireMain"
+      });
+    }
+  }
+
 }
 
 module.exports = CategoryUpdateSensor;

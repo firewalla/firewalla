@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,8 +23,11 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const scheduler = require('../util/scheduler.js');
 const Message = require('../net2/Message.js');
 const FireRouter = require('../net2/FireRouter.js');
+const sysManager = require('../net2/SysManager.js');
 const Config = require('../net2/config.js');
 const extensionManager = require('./ExtensionManager.js');
+
+const { exec } = require('child-process-promise');
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
 
@@ -114,6 +117,7 @@ class PcapPlugin extends Sensor {
   async calculateListenInterfaces() {
     if (platform.isFireRouterManaged()) {
       const intfNameMap = await FireRouter.getInterfaceAll();
+      const pcapTapIntfs = platform.isIFBSupported() ? platform.getInterfacesRedirectedToPcapTap(intfNameMap) : {};
       const monitoringInterfaces = FireRouter.getMonitoringIntfNames();
       const parentIntfOptions = {};
       const monitoringIntfOptions = {}
@@ -126,35 +130,63 @@ class PcapPlugin extends Sensor {
         if (intf && intf.config && intf.config.assetsController) // bypass assets controller wireguard interface
           continue;
         const isBond = intfName && intfName.startsWith("bond") && !intfName.includes(".");
-        const subIntfs = !isBond && intf.config && intf.config.intf;
-        if (!subIntfs) {
+        let subIntfs = !isBond && _.get(intf, "config.intf") || [];
+        if (typeof subIntfs === 'string') {
+          subIntfs = [subIntfs];
+        }
+        if (!_.isArray(subIntfs) || _.isEmpty(subIntfs)) {
           monitoringIntfOptions[intfName] = parentIntfOptions[intfName] = { pcapBufsize: this.getPcapBufsize(intfName) };
         } else {
-          const phyIntfs = []
-          if (typeof subIntfs === 'string') {
-            // strip vlan tag if present
-            phyIntfs.push(subIntfs.split('.')[0])
-          } else if (Array.isArray(subIntfs)) {
-            // bridge interface can have multiple sub interfaces
-            phyIntfs.push(...subIntfs.map(i => i.split('.')[0]))
-          }
+          const phyIntfs = subIntfs.map(subIntf => subIntf.split('.')[0]);
           let maxPcapBufsize = 0
           for (const phyIntf of phyIntfs) {
-            if (!parentIntfOptions[phyIntf]) {
-              const pcapBufsize = this.getPcapBufsize(phyIntf)
-              parentIntfOptions[phyIntf] = { pcapBufsize };
-              if (pcapBufsize > maxPcapBufsize)
-                maxPcapBufsize = pcapBufsize
+            // if the interface is mirrored to pcap tap, use the pcap tap interface instead
+            const pcapIntf = pcapTapIntfs[phyIntf] ? Constants.INTF_PCAP_TAP : phyIntf;
+            const pcapBufsize = this.getPcapBufsize(phyIntf);
+            if (!parentIntfOptions[pcapIntf]) {
+              parentIntfOptions[pcapIntf] = { pcapBufsize };
+            } else {
+              parentIntfOptions[pcapIntf].pcapBufsize = Math.max(parentIntfOptions[pcapIntf].pcapBufsize, pcapBufsize);
             }
+            if (pcapBufsize > maxPcapBufsize)
+              maxPcapBufsize = pcapBufsize;
           }
           monitoringIntfOptions[intfName] = { pcapBufsize: maxPcapBufsize };
         }
       }
-      if (monitoringInterfaces.length <= Object.keys(parentIntfOptions).length) {
+      log.info("parentIntfOptions: ", parentIntfOptions);
+      log.info("monitoringIntfOptions: ", monitoringIntfOptions);
+      if (Object.keys(monitoringIntfOptions).length < Object.keys(parentIntfOptions).length) {
         this.listenInterfaces = Object.keys(monitoringIntfOptions);
+        this.listenOnParentIntf = false
         return monitoringIntfOptions;
       } else {
+        // remove "WAN" interface so there's less duplication of internet traffic
+        // assuming every bridge has gateway on the same parent interface
+        if (sysManager.isBridgeMode()) {
+          let gatewayIntf = null
+          for (const intfName of monitoringInterfaces) {
+            const intf = intfNameMap[intfName];
+            if (intfName.startsWith('br') && Array.isArray(_.get(intf, 'config.intf', null)) && intf.state.gateway) {
+              const gatewayMac = await sysManager.myGatewayMac(intfName);
+              const { stdout } = await exec(`bridge fdb show br ${intfName}`);
+              const lines = stdout.split('\n');
+              for (const line of lines) {
+                const [mac, , intf] = line.split(/\s+/)
+                if (mac.toUpperCase() == gatewayMac) {
+                  gatewayIntf = intf
+                  break
+                }
+              }
+              if (gatewayIntf) break
+            }
+          }
+          if (gatewayIntf)
+            delete parentIntfOptions[gatewayIntf.split('.')[0]];
+        }
+
         this.listenInterfaces = Object.keys(parentIntfOptions);
+        this.listenOnParentIntf = true
         return parentIntfOptions;
       }
     } else {

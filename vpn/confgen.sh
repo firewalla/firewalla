@@ -1,22 +1,25 @@
 #!/bin/bash
 # Generate OpenVPN server config file for specific server instance
-# confgen.sh <instance_name> <local_ip> <dns> <server_network> <local_port>
+# confgen.sh <instance_name> <dns> <server_network> <local_port>
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 source ${FIREWALLA_HOME}/platform/platform.sh
 
 INSTANCE_NAME=$1
-LOCAL_IP=$2
-DNS=$3
+DNS=$2
 : ${DNS:="8.8.8.8"}
-SERVER_NETWORK=$4
+SERVER_NETWORK=$3
 : ${SERVER_NETWORK:="10.8.0.0"}
-NETMASK=$5
+NETMASK=$4
 : ${NETMASK:="255.255.255.0"}
-LOCAL_PORT=$6
+LOCAL_PORT=$5
 : ${LOCAL_PORT:="1194"}
-PROTO=$7
+PROTO=$6
 : ${PROTO:="udp"}
+DNS6=$7
+: ${DNS6:="2001:4860:4860::8888"}
+SERVER_IPV6_ADDR=$8
+: ${SERVER_IPV6_ADDR:="fd00:1234:5678::1"}
 
 chmod 777 -R /etc/openvpn
 
@@ -66,7 +69,7 @@ chmod 644 /etc/openvpn/client_conf/*
 : ${ENCRYPT:="1024"}
 
 # Write config file for server using the template .txt file
-sed 's/LOCAL_IP/'$LOCAL_IP'/' < $FIREWALLA_HOME/vpn/server_config.txt > /etc/openvpn/$INSTANCE_NAME.conf
+cp $FIREWALLA_HOME/vpn/server_config.txt /etc/openvpn/$INSTANCE_NAME.conf
 # Set DNS
 sed -i "s=MY_DNS=$DNS=" /etc/openvpn/$INSTANCE_NAME.conf
 # sed 's/MYDNS/'$DNS'/' <$FIREWALLA_HOME/vpn/server_config.txt.tmp >/etc/openvpn/server.conf
@@ -80,6 +83,11 @@ sed -i "s=LOCAL_PORT=$LOCAL_PORT=" /etc/openvpn/$INSTANCE_NAME.conf
 sed -i "s/SERVER_INSTANCE/$INSTANCE_NAME/" /etc/openvpn/$INSTANCE_NAME.conf
 # Set protocol, tcp6 or udp6, this also listens on ipv4 stack
 sed -i "s/PROTO/${PROTO}6/" /etc/openvpn/$INSTANCE_NAME.conf
+# Set DNS6
+sed -i "s=IPV6_DNS=$DNS6=" /etc/openvpn/$INSTANCE_NAME.conf
+# Set server IPv6 address
+sed -i "s=SERVER_IPV6_ADDR=$SERVER_IPV6_ADDR=" /etc/openvpn/$INSTANCE_NAME.conf
+
 
 if [ $ENCRYPT = 2048 ]; then
  sed -i 's:dh1024:dh2048:' /etc/openvpn/$INSTANCE_NAME.conf

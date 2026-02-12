@@ -285,7 +285,8 @@ class Alarm {
         if (!_.isEqual(idsA, idsB)) {
           return false;
         }
-      } else if (alarm[k] && alarm2[k] && _.isEqual(alarm[k], alarm2[k]) || !_.has(alarm, k) && !_.has(alarm2, k)) {
+      } else if (alarm[k] && alarm2[k] && _.isEqual(alarm[k], alarm2[k]) ||
+        (!_.has(alarm, k) || alarm[k] === undefined) && (!_.has(alarm2, k) || alarm2[k] === undefined)) {
 
       } else {
         return false;
@@ -649,7 +650,8 @@ class VPNClientConnectionAlarm extends Alarm {
 
 const VPN_PROTOCOL_SUFFIX_MAPPING = {
   "openvpn": "ovpn",
-  "wireguard": "wgvpn"
+  "wireguard": "wgvpn",
+  "amneziawg": "awgvpn"
 };
 
 class VPNRestoreAlarm extends Alarm {
@@ -1376,7 +1378,14 @@ class PornAlarm extends OutboundAlarm {
         deviceName = identity.getDeviceNameInNotificationContent(this);
       }
     }
-    return [deviceName, this["p.dest.name"]];
+    const result = [deviceName];
+    // although there is no application for porn, but still follow the same logic
+    const dest = this.getAppName() || this["p.dest.name"];
+    result.push(dest);
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
