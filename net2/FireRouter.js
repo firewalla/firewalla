@@ -503,34 +503,38 @@ class FireRouter {
             case Constants.WAN_TYPE_FAILOVER: {
               const viaIntfs = [];
               if (_.isArray(defaultRoutingConfig.viaIntfs)) {
-                defaultWanIntfName = defaultRoutingConfig.viaIntfs[0];
+                primaryWanIntfName = defaultRoutingConfig.viaIntfs[0]; // primary wan is always the first wan in failover mode
                 viaIntfs.push(...defaultRoutingConfig.viaIntfs);
               } else {
-                defaultWanIntfName = defaultRoutingConfig.viaIntf;
+                primaryWanIntfName = defaultRoutingConfig.viaIntf;
                 viaIntfs.push(defaultRoutingConfig.viaIntf, defaultRoutingConfig.viaIntf2);
               }
-              primaryWanIntfName = defaultWanIntfName; // primary wan is always the first wan in failover mode
               for (const viaIntf of viaIntfs) {
                 routingWans.push(viaIntf);
-                if ((intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true)) {
+                const state = intfNameMap[viaIntf] && intfNameMap[viaIntf].state;
+                if (state && state.wanConnState && state.wanConnState.active === true) {
                   defaultWanIntfName = viaIntf;
                 }
+              }
+              if (!defaultWanIntfName) {
+                const inUseIntf = viaIntfs.find(viaIntf => {
+                  const state = intfNameMap[viaIntf] && intfNameMap[viaIntf].state;
+                  return state && state.wanConnState && state.wanConnState.inUse === true;
+                });
+                defaultWanIntfName = inUseIntf || primaryWanIntfName;
               }
               break;
             }
             case Constants.WAN_TYPE_LB: {
               if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
-                // load balance default route, choose the fisrt one as fallback default WAN
-                defaultWanIntfName = defaultRoutingConfig.nextHops[0].viaIntf;
-                let activeWanFound = false;
+                // load balance default route: first active WAN in nextHops+intfNameMap, else first inUse WAN
                 for (const nextHop of defaultRoutingConfig.nextHops) {
-                  const viaIntf = nextHop.viaIntf;
-                  routingWans.push(viaIntf);
-                  if (intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true && !activeWanFound) {
-                    defaultWanIntfName = viaIntf;
-                    activeWanFound = true;
-                  }
+                  routingWans.push(nextHop.viaIntf);
                 }
+                const getWanConnState = (viaIntf) => intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState;
+                const firstActive = defaultRoutingConfig.nextHops.find(nh => { const s = getWanConnState(nh.viaIntf); return s && s.active === true; });
+                const firstInUse = defaultRoutingConfig.nextHops.find(nh => { const s = getWanConnState(nh.viaIntf); return s && s.inUse === true; });
+                defaultWanIntfName = (firstActive && firstActive.viaIntf) || (firstInUse && firstInUse.viaIntf) || defaultRoutingConfig.nextHops[0].viaIntf;
                 primaryWanIntfName = defaultWanIntfName;
               }
               break;
