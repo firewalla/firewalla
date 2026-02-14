@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,16 +23,11 @@ log.info("======================================================================
 log.info("Monitor Starting:",config.version);
 log.info("================================================================================");
 
-const fc = require("../net2/config.js");
-
 // init FireRouter ASAP
 const fireRouter = require('../net2/FireRouter.js')
-
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-
 const bone = require("../lib/Bone.js");
-
-const fs = require('fs');
+const { fileTouch } = require('../util/util.js');
 const { timeout } = require('../util/asyncNative.js')
 
 // api/main/monitor all depends on sysManager configuration
@@ -62,6 +57,7 @@ run0();
 
 async function run0() {
   await sysManager.waitTillInitialized();
+  updateTouchFile();
   if (bone.cloudready()==true &&
       bone.isAppConnected() &&
       fireRouter.isReady() &&
@@ -90,10 +86,7 @@ process.on('uncaughtException',(err)=>{
     err: err
   });
   setTimeout(()=>{
-    try {
-      require('child_process').execSync("touch /home/pi/.firewalla/managed_reboot")
-    } catch(e) {
-    }
+    fileTouch('/home/pi/.firewalla/managed_reboot').catch(() => {})
     process.exit(1);
   },1000*2);
 });
@@ -138,13 +131,7 @@ function setStatus(type, opts) {
 function updateTouchFile() {
   const monitorTouchFile = "/dev/shm/monitor.touch";
 
-  fs.open(monitorTouchFile, 'w', (err, fd) => {
-    if(!err) {
-      fs.close(fd, (err2) => {
-
-      })
-    }
-  })
+  fileTouch(monitorTouchFile).catch(() => {})
 }
 
 let cachedSingleDetect = {};
