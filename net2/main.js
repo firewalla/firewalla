@@ -27,6 +27,7 @@ require('events').EventEmitter.prototype._maxListeners = 100;
 const fc = require('./config.js')
 const Constants = require('../net2/Constants.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const { fileTouch } = require('../util/util.js');
 
 const fs = require('fs');
 
@@ -35,11 +36,7 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 function updateTouchFile() {
   const mainTouchFile = "/dev/shm/main.touch";
 
-  fs.open(mainTouchFile, 'w', (err, fd) => {
-    if(!err) {
-      fs.close(fd, () => { })
-    }
-  })
+  fileTouch(mainTouchFile).catch(() => {})
 }
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
@@ -57,8 +54,6 @@ const fireRouter = require('./FireRouter.js')
 const sysManager = require('./SysManager.js');
 
 const sensorLoader = require('../sensor/SensorLoader.js');
-
-const cp = require('child_process');
 
 let interfaceDetected = false;
 
@@ -94,6 +89,8 @@ async function run0() {
       await fireRouter.switchBranch(fwReleaseType);
     }
   }
+
+  updateTouchFile();
 
   if (interfaceDetected && bone.cloudready()==true &&
       bone.isAppConnected() &&
@@ -147,10 +144,7 @@ process.on('uncaughtException',(err)=>{
     err: err
   });
   setTimeout(()=>{
-    try {
-      cp.execSync("touch /home/pi/.firewalla/managed_reboot")
-    } catch(e) {
-    }
+    fileTouch('/home/pi/.firewalla/managed_reboot').catch(() => {})
     process.exit(1);
   }, 1000*5);
 });
@@ -308,8 +302,6 @@ async function run() {
     require('./UpgradeManager').finishUpgrade();
 
   },1000*2);
-
-  updateTouchFile();
 
   setInterval(()=>{
     const {rss, heapTotal, heapUsed, external, arrayBuffers} = process.memoryUsage();

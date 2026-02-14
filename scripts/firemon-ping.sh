@@ -14,7 +14,7 @@ FILE=/dev/shm/monitor.touch
 
 firemon_ping() {
 	RESULT=$(find $FILE -mmin ${MMIN} 2>/dev/null)
-  if [[ -e $FILE && "x$RESULT" == "x" ]]; then
+	if [ -z "$RESULT" ]; then
 		return 1
 	else
 		return 0
@@ -23,7 +23,7 @@ firemon_ping() {
 
 retry=1
 ping_ok=0
-while (($retry <= $TOTAL_RETRIES)); do
+while ((retry <= TOTAL_RETRIES)); do
 	if firemon_ping; then
 		ping_ok=1
 		break
