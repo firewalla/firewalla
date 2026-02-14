@@ -65,11 +65,14 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     this.ruleDNAT6 = this.ruleDNAT.clone().fam(6)
 
     this.localServerStatus = true
+  }
 
+  async run() {
+    await super.run();
     // keep ntpd working in orphan mode even if external peers are not available, in most cases the time on the box should be accurate
     // this is to avoid suspending NTP intercept, which may cause NTP flows being blocked if there is another internet block rule
-    execAsync(String.raw`sudo bash -c 'grep -q "^tos orphan" /etc/ntp.conf || echo "tos orphan 10" >> /etc/ntp.conf'`).catch(()=>{})
-    execAsync(String.raw`sudo sed -i -E 's/(^restrict .*)limited(.*$)/\1\2/' /etc/ntp.conf; sudo systemctl restart ntp`).catch(()=>{})
+    await execAsync(String.raw`sudo bash -c 'grep -q "^tos orphan" /etc/ntp.conf || echo "tos orphan 10" >> /etc/ntp.conf'`).catch(()=>{});
+    await execAsync(String.raw`sudo sed -i -E 's/(^restrict .*)limited(.*$)/\1\2/' /etc/ntp.conf; sudo systemctl restart ntp`).catch(()=>{});
   }
 
   async updateNtpOff(mac, op='add', updateRedis=false, useTemp=false) {
