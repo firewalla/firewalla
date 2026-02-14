@@ -1,4 +1,4 @@
-/*    Copyright 2020-2025 Firewalla Inc.
+/*    Copyright 2020-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -625,6 +625,11 @@ class APCMsgSensor extends Sensor {
       orig: 'ap',
     };
     record.ac = msg.action
+
+    // ignore blocks from Firewalla
+    if (sysManager.isMyMac(record.mac) && ['isolation', 'block'].includes(record.ac))
+      return
+
     if (msg.pid) record.pid = msg.pid
     if (msg.proto) record.pr = msg.proto
     if (msg.iso_lvl && msg.action == "block") record.ac = "isolation"
@@ -643,7 +648,8 @@ class APCMsgSensor extends Sensor {
       const reverseRecord = this.aclAuditLogPlugin.getReverseRecord(record);
       if (reverseRecord)
         this.aclAuditLogPlugin.writeBuffer(reverseRecord);
-    }
+    } else
+      log.verbose('ACLAuditPlugin not initialized')
   }
 
   /**
