@@ -89,8 +89,8 @@ class AppTimeUsageManager {
           if (!this.watchList[app][uid])
             continue;
           for (const pid of Object.keys(this.watchList[app][uid])) {
-            const {timeWindows, quota, keys, uniqueMinute} = this.watchList[app][uid][pid];
-            const usage = await this.getTimeUsage(uid, keys, timeWindows, uniqueMinute);
+            const {timeWindows, quota, keys, uniqueMinute, minContinuousBuckets = 1} = this.watchList[app][uid][pid];
+            const usage = await this.getTimeUsage(uid, keys, timeWindows, uniqueMinute, minContinuousBuckets);
             this.watchList[app][uid][pid].usage = usage;
             try {
               await this.updateAppTimeUsedInPolicy(pid, usage);
@@ -204,11 +204,11 @@ class AppTimeUsageManager {
     return timeWindows;
   }
 
-  async getTimeUsage(uid, apps, timeWindows, uniqueMinute) {
+  async getTimeUsage(uid, apps, timeWindows, uniqueMinute, minContinuousBuckets = 1) {
     let result = 0;
     for (const timeWindow of timeWindows) {
       const {begin, end} = timeWindow;
-      result += await TimeUsageTool.getFilledBucketsCount(uid, apps, begin / 1000, end / 1000, uniqueMinute);
+      result += await TimeUsageTool.getFilledBucketsCount(uid, apps, begin / 1000, end / 1000, uniqueMinute, minContinuousBuckets);
     }
     return result;
   }
@@ -235,7 +235,7 @@ class AppTimeUsageManager {
   async refreshPolicy(policy) {
     const pid = String(policy.pid);
     log.info(`Refreshing time usage on policy ${pid} ...`);
-    const {app, apps, category, period, intervals, quota, uniqueMinute = true} = policy.appTimeUsage;
+    const {app, apps, category, period, intervals, quota, uniqueMinute = true, minContinuousBuckets = 1} = policy.appTimeUsage;
     const keys = _.isArray(apps) ? apps : [app || category];
     for (const key of keys) {
       if (!this.watchList.hasOwnProperty(key))
@@ -249,11 +249,11 @@ class AppTimeUsageManager {
     this.enforcedPolicies[pid] = {};
     const timeWindows = this.calculateTimeWindows(period, intervals);
     for (const uid of uids) {
-      const usage = await this.getTimeUsage(uid, keys, timeWindows, uniqueMinute);
+      const usage = await this.getTimeUsage(uid, keys, timeWindows, uniqueMinute, minContinuousBuckets);
       for (const key of keys) {
         if (!this.watchList[key].hasOwnProperty(uid))
           this.watchList[key][uid] = {};
-        this.watchList[key][uid][pid] = {quota, usage, keys, timeWindows, uniqueMinute};
+        this.watchList[key][uid][pid] = {quota, usage, keys, timeWindows, uniqueMinute, minContinuousBuckets};
       }
       await this.updateAppTimeUsedInPolicy(pid, usage);
       if (usage >= quota) {
