@@ -571,6 +571,7 @@ class AppTimeUsageSensor extends Sensor {
     await lock.acquire(`LOCK_${mac}`, async () => {
       let extended = false;
       // set leading consecutive minute buckets with explicit "0" to "1", because they are in a linger window of a previous session
+      const leadingBuckets = [];
       for (let min = beginMin - 1; min >= 0; min--) {
         const hour = Math.floor(min / 60);
         const minOfHour = min % 60;
@@ -580,9 +581,10 @@ class AppTimeUsageSensor extends Sensor {
             extended = true;
           break;
         }
-        extended = true;
-        await this._incrBucketHierarchy(mac, tags, intf, app, category, hour, minOfHour, oldValue);
+        leadingBuckets.push({hour: hour, minOfHour: minOfHour, value: oldValue});
       }
+
+      const trailingBuckets = [];
       // look ahead trailing lingerMins buckets and set them to "0" or "1" accordingly
       let hour = Math.floor((endMin + lingerMins + 1) / 60);
       let minOfHour = (endMin + lingerMins + 1) % 60;
@@ -598,13 +600,22 @@ class AppTimeUsageSensor extends Sensor {
           } else
             nextVal = oldValue;
         } else {
-          await this._incrBucketHierarchy(mac, tags, intf, app, category, hour, minOfHour, oldValue);
           nextVal = "1";
           extended = true;
+          trailingBuckets.push({hour: hour, minOfHour: minOfHour, value: oldValue});
         }
       }
 
-      const effective = (endMin - beginMin + 1 >= minsThreshold && !noStray) || extended; // do not record interval less than minsThreshold unless it is adjacent to linger minutes of other intervals
+      // do not record interval less than minsThreshold unless extended or total minutes (including leading/trailing) exceed threshold
+      const effective = extended || (endMin - beginMin + 1 + trailingBuckets.length + leadingBuckets.length >= minsThreshold);
+      if (effective) {
+        for (const bucket of leadingBuckets) {
+          await this._incrBucketHierarchy(mac, tags, intf, app, category, bucket.hour, bucket.minOfHour, bucket.value);
+        }
+        for (const bucket of trailingBuckets) {
+          await this._incrBucketHierarchy(mac, tags, intf, app, category, bucket.hour, bucket.minOfHour, bucket.value);
+        }
+      } 
       const beginHour = Math.floor(beginMin / 60);
       const endHour = Math.floor(endMin / 60);
       for (let hour = beginHour; hour <= endHour; hour++) {
