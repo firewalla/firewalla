@@ -265,6 +265,8 @@ class DomainUpdater {
         const key = domainIPTool.getDomainIPMappingKey(domain, options);
         config.ipCache = new LRU({maxAge: options.ipttl * 1000 / 2 || 0}); // invalidate the entry in lru earlier than its ttl so that it can be re-added to the underlying ipset
         this.updateOptions[domainKey][key] = config;
+      }).catch((err) => {
+        log.error(`Failed to register update for domain ${domain}`, err.message);
       });
     }
 
@@ -294,6 +296,8 @@ class DomainUpdater {
       await lock.acquire(domainKey, async () => {
         if (this.updateOptions[domainKey] && this.updateOptions[domainKey][key])
           delete this.updateOptions[domainKey][key];
+      }).catch((err) => {
+        log.error(`Failed to unregister update for domain ${domain}`, err.message);
       });
     }
     
@@ -368,6 +372,8 @@ class DomainUpdater {
             }
           }
         }
+      }).catch((err) => {
+        log.error(`Failed to update domain mapping for domain ${domain}`, err.message);
       });
     }
   }
