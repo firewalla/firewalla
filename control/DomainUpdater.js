@@ -30,6 +30,9 @@ const Message = require('../net2/Message.js');
 const exec = require('util').promisify(require('child_process').exec);
 const Constants = require('../net2/Constants.js');
 
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+
 let categoryUpdater = null;
 
 const CONNMARK_REFRESH_INTERVAL = 15 * 1000; // 15 seconds
@@ -239,7 +242,7 @@ class DomainUpdater {
   }
 
 
-  registerUpdate(domain, options) {
+  async registerUpdate(domain, options) {
     log.debug(`DomainUpdater registerUpdate for domain ${domain} with options`, options);
     const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
 
@@ -254,14 +257,17 @@ class DomainUpdater {
       domainOnly = true;
     }
     if (!domainOnly) {
-      // a secondary index for domain update options
-      if (!this.updateOptions[domainKey])
-        this.updateOptions[domainKey] = {};
-      // use mapping key to uniquely identify each domain mapping settings
-      const key = domainIPTool.getDomainIPMappingKey(domain, options);
-      config.ipCache = new LRU({maxAge: options.ipttl * 1000 / 2 || 0}); // invalidate the entry in lru earlier than its ttl so that it can be re-added to the underlying ipset
-      this.updateOptions[domainKey][key] = config;
+      await lock.acquire(domainKey, async () => {
+        // a secondary index for domain update options
+        if (!this.updateOptions[domainKey])
+          this.updateOptions[domainKey] = {};
+        // use mapping key to uniquely identify each domain mapping settings
+        const key = domainIPTool.getDomainIPMappingKey(domain, options);
+        config.ipCache = new LRU({maxAge: options.ipttl * 1000 / 2 || 0}); // invalidate the entry in lru earlier than its ttl so that it can be re-added to the underlying ipset
+        this.updateOptions[domainKey][key] = config;
+      });
     }
+
     if (options.connSet) {
       if (!this.connUpdateOptions[domainKey])
         this.connUpdateOptions[domainKey] = {};
@@ -271,7 +277,7 @@ class DomainUpdater {
     }
   }
 
-  unregisterUpdate(domain, options) {
+  async unregisterUpdate(domain, options) {
     const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
     if (domain.startsWith("*.")) {
       options.exactMatch = false;
@@ -285,8 +291,10 @@ class DomainUpdater {
 
     if (!domainOnly) {
       const key = domainIPTool.getDomainIPMappingKey(domain, options);
-      if (this.updateOptions[domainKey] && this.updateOptions[domainKey][key])
-        delete this.updateOptions[domainKey][key];
+      await lock.acquire(domainKey, async () => {
+        if (this.updateOptions[domainKey] && this.updateOptions[domainKey][key])
+          delete this.updateOptions[domainKey][key];
+      });
     }
     
     if (options.connSet) {
@@ -303,62 +311,64 @@ class DomainUpdater {
     const parentDomains = this.getParentDomains(domain);
 
     for (const domainKey of parentDomains) {
-      if (!this.updateOptions[domainKey])
-        continue;
-      const DNSTool = require("../net2/DNSTool.js");
-      const dnsTool = new DNSTool();
+      await lock.acquire(domainKey, async () => {
+        if (!this.updateOptions[domainKey])
+          return;
+        const DNSTool = require("../net2/DNSTool.js");
+        const dnsTool = new DNSTool();
 
-      for (const key in this.updateOptions[domainKey]) {
-        const config = this.updateOptions[domainKey][key];
-        const d = config.domain;
-        const options = config.options;
-        
-        const ipCache = config.ipCache || null;
+        for (const key in this.updateOptions[domainKey]) {
+          const config = this.updateOptions[domainKey][key];
+          const d = config.domain;
+          const options = config.options;
+          
+          const ipCache = config.ipCache || null;
 
-        if (domain.toLowerCase() === d.toLowerCase()
-          || !options.exactMatch && domain.toLowerCase().endsWith("." + d.toLowerCase())) {
-          if (!options.exactMatch) {
-            await dnsTool.addSubDomains(d, [domain]);
-          }
-          const existingAddresses = await domainIPTool.getMappedIPAddresses(d, options);
-          const existingSet = {};
-          existingAddresses.forEach((addr) => {
-            existingSet[addr] = 1;
-          });
-          addresses = addresses.filter((addr) => { // ignore reserved blocking ip addresses
-            return firewalla.isReservedBlockingIP(addr) != true;
-          });
-          let blockSet = "block_domain_set";
-          let updateIpsetNeeded = false;
-          if (options.blockSet)
-            blockSet = options.blockSet;
-          const ipttl = options.ipttl || null;
-
-          for (let i in addresses) {
-            const address = addresses[i];
-            if (!existingSet[address] || (Number.isInteger(ipttl) && ipCache && !ipCache.get(address))) {
-              updateIpsetNeeded = true;
-              ipCache && ipCache.set(address, 1);
-              await rclient.saddAsync(key, address);
+          if (domain.toLowerCase() === d.toLowerCase()
+            || !options.exactMatch && domain.toLowerCase().endsWith("." + d.toLowerCase())) {
+            if (!options.exactMatch) {
+              await dnsTool.addSubDomains(d, [domain]);
             }
-          }
-          if (updateIpsetNeeded) {
-            // add comment string to ipset, @ to indicate dynamically updated.
-            if (options.needComment) {
-              options.comment = `${domain}@`;
+            const existingAddresses = await domainIPTool.getMappedIPAddresses(d, options);
+            const existingSet = {};
+            existingAddresses.forEach((addr) => {
+              existingSet[addr] = 1;
+            });
+            addresses = addresses.filter((addr) => { // ignore reserved blocking ip addresses
+              return firewalla.isReservedBlockingIP(addr) != true;
+            });
+            let blockSet = "block_domain_set";
+            let updateIpsetNeeded = false;
+            if (options.blockSet)
+              blockSet = options.blockSet;
+            const ipttl = options.ipttl || null;
+
+            for (let i in addresses) {
+              const address = addresses[i];
+              if (!existingSet[address] || (Number.isInteger(ipttl) && ipCache && !ipCache.get(address))) {
+                updateIpsetNeeded = true;
+                ipCache && ipCache.set(address, 1);
+                await rclient.saddAsync(key, address);
+              }
             }
-            if (options.port) {
-              await Block.batchBlockNetPort(addresses, options.port, blockSet, options).catch((err) => {
+            if (updateIpsetNeeded) {
+              // add comment string to ipset, @ to indicate dynamically updated.
+              if (options.needComment) {
+                options.comment = `${domain}@`;
+              }
+              if (options.port) {
+                await Block.batchBlockNetPort(addresses, options.port, blockSet, options).catch((err) => {
+                  log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
+                });
+              } else {
+                await Block.batchBlock(addresses, blockSet, options).catch((err) => {
                 log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
               });
-            } else {
-              await Block.batchBlock(addresses, blockSet, options).catch((err) => {
-              log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
-            });
+              }
             }
           }
         }
-      }
+      });
     }
   }
 
