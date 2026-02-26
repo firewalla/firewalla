@@ -19,6 +19,8 @@ if apt list $pkgName --upgradable 2>/dev/null | grep security; then
   logger "FIREWALLA:PATCH_OPENSSH:START"
   sudo dpkg --configure -a --force-confdef
   sudo timeout 60 apt install -o Dpkg::Options::="--force-confold" -y $pkgName
+  sudo systemctl daemon-reload
+  sudo systemctl restart sshd
   logger "FIREWALLA:PATCH_OPENSSH:DONE"
 fi
 

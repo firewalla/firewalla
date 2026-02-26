@@ -1,0 +1,1 @@
+0 3 * * * ( sleep $(( ${RANDOM} * 120 / 32768 ))m ; /home/pi/firewalla/scripts/update_freeradius.sh > /tmp/freeradius_upgrade.log 2>&1 )

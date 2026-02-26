@@ -17,6 +17,7 @@ const log = require('../../net2/logger.js')(__filename);
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 const Constants = require('../../net2/Constants.js');
+const fc = require('../../net2/config.js');
 
 class EptCloudExtension {
   constructor(eptcloud, gid) {
@@ -46,6 +47,41 @@ class EptCloudExtension {
     const clientInfos = clients.map(client =>
       JSON.stringify({ name: client.displayName, eid: client.eid })
     );
+
+    //clear members info which is not in the group
+    const names = (await rclient.hgetallAsync("sys:ept:memberNames")) || {};
+    const lastVisits = (await rclient.hgetallAsync("sys:ept:member:lastvisit")) || {};
+
+    const allEids = new Set([...Object.keys(names), ...Object.keys(lastVisits)])
+    const clientsEidList = clients.map(client => client.eid);
+    const eidsToDelete = Array.from(allEids).filter(eid => !clientsEidList.includes(eid));
+
+    for (const eid of eidsToDelete) {
+      log.info(`Deleting unpaired eid ${eid} from group ${gid}`);
+      await rclient.hdelAsync("sys:ept:memberNames", eid);
+      await rclient.hdelAsync("sys:ept:member:lastvisit", eid);
+
+      // sync op to msp
+      const sl = require('../../sensor/APISensorLoader.js');
+      const gs = sl.getSensor('GuardianSensor');
+      if (gs && fc.isFeatureOn(Constants.FEATURE_MSP_SYNC_OPS)) {
+        const msg = {
+          mtype: "cmd",
+          data: {
+            value: { eid: eid },
+            item: "group:eid:delete" //meaning app unpaired
+          },
+          type: "jsonmsg",
+          ts: Date.now() / 1000
+        };
+        await gs.enqueueOpToMsp(msg).catch((err) => {
+          log.error("Failed to enqueue op to msp", err);
+        });
+      }
+
+    }
+    const groupMemberCnt = groupInfo.symmetricKeys.length;
+    await rclient.hsetAsync("sys:ept", "group_member_cnt", groupMemberCnt);
 
     const keyName = "sys:ept:members";
 
@@ -83,7 +119,7 @@ class EptCloudExtension {
 
     setInterval(() => {
       this.job();
-    }, 1000 * 3600 * 24); // every day
+    }, 1000 * 3600); // every hour
   }
 }
 

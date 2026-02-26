@@ -43,6 +43,8 @@ const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
 const _ = require('lodash');
 const LRU = require('lru-cache');
+const DNSTool = require('../net2/DNSTool.js');
+const dnsTool = new DNSTool();
 
 const LOG_PREFIX = Constants.IPTABLES_LOG_PREFIX_AUDIT
 
@@ -258,6 +260,9 @@ class ACLAuditLogPlugin extends Sensor {
               record.ac = "isolation";
               isoLvl = 1;
               break;
+            case "D":
+              record.ac = "disturb";
+              break;
           }
           break;
         }
@@ -305,8 +310,10 @@ class ACLAuditLogPlugin extends Sensor {
           let host = await conntrack.getConnEntry(src, sport, dst, dport, record.pr, "host", 600);
           if (!host) {
             host = await conntrack.getConnEntry(srcMac, "", dst, "", "dns", "host", 600);
-            if (host)
+            if (host) {
               await conntrack.setConnEntries(src, sport, dst, dport, record.pr, {proto: "dns", ip: dst, host}, 600);
+              await dnsTool.addReverseDns(host, [dst]);
+            }
           }
         }
         return;
@@ -358,13 +365,17 @@ class ACLAuditLogPlugin extends Sensor {
       record.pid = Number(routeMark) & 0xffff; // route rule id
     }
 
-    if (record.ac === "qos") {
+    if (record.ac === "qos" || record.ac === "disturb") {
       record.qmark = Number(mark) & 0x3fff000;
+      const matchedPids = (await this.ruleStatsPlugin.getPolicyIds(record)).map(Number);
+      if (matchedPids && matchedPids.length > 0){
+        record.pid = matchedPids[0];
+      }
     }
 
     record.dir = dir;
 
-    if (sysManager.isMulticastIP(dst, outIntf && outIntf.name || inIntf.name, false)) return
+    if (sysManager.isMulticastIP(dst, outIntf && outIntf.name || inIntf && inIntf.name, false)) return
 
     switch (ctdir) {
       case undefined:
@@ -490,6 +501,12 @@ class ACLAuditLogPlugin extends Sensor {
 
     record.mac = mac
 
+    // if record.ac is in ['block', 'route', 'allow', 'disturb'] check record.sp is valid
+    if (['block', 'route', 'allow', 'disturb'].includes(record.ac) && (!record.sp || record.sp.length == 0)) {
+      log.info('Skip line, invalid source port info in acl audit log.', line);
+      return;
+    }
+
     // try to get host name from conn entries for better timeliness and accuracy
     if (dir === "O" && record.ac === "block") {
       // delay 8 seconds to process outbound block flow, in case ssl/http host is available in zeek's ssl log and will be saved into conn entries
@@ -522,6 +539,11 @@ class ACLAuditLogPlugin extends Sensor {
     if (record.pid && record.ac === "allow") {
       const added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid, 600);
       // 1% middle connection packets are going through block chain, ignore these for rule hit accounting
+      if (!added) return
+    }
+    // record disturb rule id 
+    if (record.pid && record.ac === "disturb") {
+      const added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_DPID, record.pid, 600);
       if (!added) return
     }
 
@@ -580,7 +602,7 @@ class ACLAuditLogPlugin extends Sensor {
     if (!mac || mac === "FF:FF:FF:FF:FF:FF") {
       mac = null;
       if (record.sh) {
-        if (net.isIPv4(record.sh)) {
+        if (net.isIPv4(record.sh) || net.isIPv6(record.sh)) {
           // very likely this is a VPN device
           const identity = IdentityManager.getIdentityByIP(record.sh);
           if (identity) {
@@ -733,23 +755,24 @@ class ACLAuditLogPlugin extends Sensor {
           const { type, ac, _ts, ct, fd, dir } = record
           const intf = record.intf && networkProfileManager.prefixMap[record.intf]
           const block = record.ac == "block" || record.ac == "isolation";
+          const disturb = record.ac == "disturb";
 
           // pid backtrace
           // ntp has nothing to do with rules
           // for local flow, only account for 'in' flows
           if (type != 'ntp' && !(record.dmac && fd == 'out')) {
-            if (!record.pid && (type == 'dns' || ac == 'block' || ac == 'allow')) {
+            if (!record.pid && (type == 'dns' || ac == 'block' || ac == 'allow' || ac == 'disturb')) {
               const matchedPIDs = await this.ruleStatsPlugin.getMatchedPids(record);
               if (matchedPIDs && matchedPIDs.length > 0){
                 record.pid = matchedPIDs[0];
               }
             }
 
-            if (type == 'ip' || record.ac == 'block')
+            if (type == 'ip' || record.ac == 'block' || record.ac == 'disturb')
               this.ruleStatsPlugin.accountRule(record);
           }
 
-          if (type == 'ip' && record.ac != "block" && record.ac != 'redirect' && record.ac != "isolation")
+          if (type == 'ip' && record.ac != "block" && record.ac != 'redirect' && record.ac != "isolation" && record.ac != "disturb")
             continue
 
           let monitorable = IdentityManager.getIdentityByGUID(mac);
@@ -811,8 +834,8 @@ class ACLAuditLogPlugin extends Sensor {
               }
             }
           } else // use dns_flow as a prioirty for statistics
-            if (type != 'dns' || block || !platform.isDNSFlowSupported() || !fc.isFeatureOn('dns_flow')) {
-              const hitType = type + (block ? 'B' : '')
+            if (type != 'dns' || block || disturb || !platform.isDNSFlowSupported() || !fc.isFeatureOn('dns_flow')) {
+              const hitType = type + (block ? 'B' : disturb ? 'D' : '')
               timeSeries.recordHit(`${hitType}`, _ts, ct)
               timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct)
               if (intf) timeSeries.recordHit(`${hitType}:intf:${intf}`, _ts, ct)
@@ -842,13 +865,6 @@ class ACLAuditLogPlugin extends Sensor {
           this.touchedKeys[key] = 1;
           // no need to set ttl here, OldDataCleanSensor will take care of it
 
-          block && sem.emitLocalEvent({
-            type: "Flow2Stream",
-            suppressEventLogging: true,
-            raw: Object.assign({}, record, { mac }), // record the mac address here
-            audit: true,
-            ftype: mac.startsWith(Constants.NS_INTERFACE + ':') ? "wanBlock" : "normal"
-          })
           // audit block event stream that will be consumed by FlowAggregationSensor
           block && sem.emitLocalEvent({
             type: Message.MSG_FLOW_ACL_AUDIT_BLOCKED,
