@@ -3,7 +3,7 @@
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 : ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
 source ${FIREWALLA_HOME}/platform/platform.sh
-source ~/.fwrc
+[[ -f ~/.fwrc ]] && source ~/.fwrc
 
 
 : ${ASSETSD_PATH:=${FIREWALLA_HIDDEN}/config/assets.d/}
