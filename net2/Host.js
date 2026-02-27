@@ -1087,6 +1087,7 @@ class Host extends Monitorable {
       ip: this.o.ipv4Addr,
       ipv6: this.ipv6Addr,
       mac: this.o.mac,
+      devId: this.o.devId,
       lastActive: this.o.lastActiveTimestamp,
       firstFound: this.o.firstFoundTimestamp,
       macVendor: this.o.macVendor || 'Unknown',
