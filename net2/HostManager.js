@@ -1940,6 +1940,7 @@ module.exports = class HostManager extends Monitorable {
           log.error(`Invalid MAC address: ${o.mac}`);
           return;
         }
+        o.devId = "hosts:" + o.mac;
         const ipv6AddrOld = o.ipv6Addr
         if (o.ipv4) {
           o.ipv4Addr = o.ipv4;
