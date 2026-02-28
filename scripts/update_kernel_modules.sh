@@ -1,5 +1,5 @@
 #! /usr/bin/env bash
-SRC_HOST="pi@192.168.10.31"
+SRC_HOST="pi@192.168.203.191"
 SRC_BASE_DIR="/home/pi/ws/build_kernel_module/output"
 
 
@@ -13,6 +13,7 @@ gold_kernels=( \
 #GSE
 gse_kernels=( \
 '5.10.110' \
+'5.10.110-NS' \
 '5.10.160' \
 )
 
@@ -45,13 +46,21 @@ function update_kernel_modules() {
 
 	eval "local length=\${#$kernel_array_name[@]}"
 	echo "length:"$length
+	CMDDIR=$(dirname $0)
+	FIREWALLA_HOME=$(cd $CMDDIR; git rev-parse --show-toplevel)
 	
 	for (( i=0; i<$length; i++ )); do
 		eval "local kernel=\${$kernel_array_name[$i]}"
 		echo "kernel version:"$kernel
-		local cmd="scp ${SRC_HOST}:${SRC_BASE_DIR}/${kernel}/xt_udp_tls.ko platform/${product}/files/kernel_modules/${kernel}/xt_udp_tls.ko"
-		echo $cmd
-		$cmd
+		
+		for module_name in "xt_udp_tls" "xt_tls"; do
+			local cmd="scp ${SRC_HOST}:${SRC_BASE_DIR}/${kernel}/${module_name}.ko ${FIREWALLA_HOME}/platform/${product}/files/kernel_modules/${kernel}/${module_name}.ko"
+			if [[ ${product} = 'gse' && ${kernel} = '5.10.110-NS' ]]; then
+				cmd="scp ${SRC_HOST}:${SRC_BASE_DIR}/${kernel}/${module_name}.ko ${FIREWALLA_HOME}/platform/${product}/files/kernel_modules/5.10.110/${module_name}.ko.1b33aa1cb114bb2640c5bfe838118b3e"
+			fi
+			echo $cmd
+			$cmd
+		done
 	done
 }
 
