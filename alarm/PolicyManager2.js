@@ -3310,7 +3310,12 @@ class PolicyManager2 {
         continue;
       if (rule.action === "app_block") {
         if (_.isObject(rule.appTimeUsage) && rule.appTimeUsed) {
-          if (rule.appTimeUsage.quota > rule.appTimeUsed)
+          const au = rule.appTimeUsage;
+          const base = Number(au.quota) || 0;
+          const extra = (au.extraQuota != null && au.extraQuotaUntilTs != null && (Date.now() / 1000) < au.extraQuotaUntilTs)
+            ? (Number(au.extraQuota) || 0) : 0;
+          const effectiveQuota = base + extra;
+          if (effectiveQuota > rule.appTimeUsed)
             continue;
         }
       }

@@ -552,8 +552,12 @@ class Policy {
 
   isTimeUsageExceeded() {
     const quota = _.get(this.appTimeUsage, 'quota', 0);
+    const extraQuota = _.get(this.appTimeUsage, 'extraQuota');
+    const extraQuotaUntilTs = _.get(this.appTimeUsage, 'extraQuotaUntilTs');
+    const effectiveQuota = (extraQuota != null && extraQuotaUntilTs != null && (Date.now() / 1000) < extraQuotaUntilTs)
+      ? (Number(quota) || 0) + (Number(extraQuota) || 0) : (Number(quota) || 0);
     const used = this.appTimeUsed || 0;
-    return used >= quota;
+    return used >= effectiveQuota;
   }
 
   matchDomain(domain) {
