@@ -1531,6 +1531,11 @@ class netBot extends ControllerBot {
           await this.hostManager.identitiesForInit(json)
         return json
       }
+      case "networkProfiles": {
+        await this.networkProfileManager.refreshNetworkProfiles(true);
+        const networks = await this.networkProfileManager.toJson();
+        return networks;
+      }
       case "vpnProfile":
       case "ovpnProfile": {
         const type = (value && value.type) || "openvpn";
