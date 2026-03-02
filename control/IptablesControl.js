@@ -165,8 +165,9 @@ class IptablesControl extends ModuleControl {
     for (const line of lines) {
       // a workaround to handle extra spaces in udp_tls dump
       const trimmedLine = line.trim().replace(/\s{2,}/g, ' ')
-        // spaceless comments are dumped without quotes
-        .replace(/ --comment ([^ ]+) /, ' --comment "$1" ');
+        // comments with quote or space are dumped with quotes
+        // comment should not contain quote, otherwise this fails
+        .replace(/ --comment ([^" ]+) /, ' --comment "$1" ');
       
       // Skip empty lines and comments
       if (!trimmedLine || !trimmedLine.length || trimmedLine.startsWith('#')) {
