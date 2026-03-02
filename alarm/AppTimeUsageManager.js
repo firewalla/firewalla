@@ -36,6 +36,13 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const POLICY_STATE_DOMAIN_ONLY = 2;
 const DISTURB_INTERVAL = 30;
 
+function getEffectiveQuota(quota, extraQuota, extraQuotaUntilTs) {
+  const base = Number(quota) || 0;
+  const extra = (extraQuota != null && extraQuotaUntilTs != null && (Date.now() / 1000) < extraQuotaUntilTs)
+    ? (Number(extraQuota) || 0) : 0;
+  return base + extra;
+}
+
 class AppTimeUsageManager {
   constructor() {
     this.watchList = {};
@@ -89,19 +96,21 @@ class AppTimeUsageManager {
           if (!this.watchList[app][uid])
             continue;
           for (const pid of Object.keys(this.watchList[app][uid])) {
-            const {timeWindows, quota, keys, uniqueMinute} = this.watchList[app][uid][pid];
+            const {timeWindows, quota, extraQuota, extraQuotaUntilTs, keys, uniqueMinute} = this.watchList[app][uid][pid];
             const usage = await this.getTimeUsage(uid, keys, timeWindows, uniqueMinute);
             this.watchList[app][uid][pid].usage = usage;
+            const effectiveQuota = getEffectiveQuota(quota, extraQuota, extraQuotaUntilTs);
+            log.debug(`Effective quota for policy ${pid}: ${effectiveQuota}, usage: ${usage}`);
             try {
               await this.updateAppTimeUsedInPolicy(pid, usage);
-              if (usage >= quota) {
+              if (usage >= effectiveQuota) {
                 switch (this.enforcedPolicies[pid][uid]) {
                   case POLICY_STATE_DOMAIN_ONLY: {
                     log.info(`${uid} is still generating ${app} activity after domain-only mode rule ${pid} is applied`);
                     break;
                   }
                   default: {
-                    log.info(`${uid} reached ${keys} time usage quota, quota: ${quota}, used: ${usage}, will apply policy ${pid}`);
+                    log.info(`${uid} reached ${keys} time usage quota, quota: ${effectiveQuota}, used: ${usage}, will apply policy ${pid}`);
                     await this.applyPolicy(pid, uid);
                   }
                 }
@@ -235,7 +244,7 @@ class AppTimeUsageManager {
   async refreshPolicy(policy) {
     const pid = String(policy.pid);
     log.info(`Refreshing time usage on policy ${pid} ...`);
-    const {app, apps, category, period, intervals, quota, uniqueMinute = true} = policy.appTimeUsage;
+    const {app, apps, category, period, intervals, quota, extraQuota, extraQuotaUntilTs, uniqueMinute = true} = policy.appTimeUsage;
     const keys = _.isArray(apps) ? apps : [app || category];
     for (const key of keys) {
       if (!this.watchList.hasOwnProperty(key))
@@ -253,11 +262,13 @@ class AppTimeUsageManager {
       for (const key of keys) {
         if (!this.watchList[key].hasOwnProperty(uid))
           this.watchList[key][uid] = {};
-        this.watchList[key][uid][pid] = {quota, usage, keys, timeWindows, uniqueMinute};
+        this.watchList[key][uid][pid] = {quota, extraQuota, extraQuotaUntilTs, usage, keys, timeWindows, uniqueMinute};
       }
       await this.updateAppTimeUsedInPolicy(pid, usage);
-      if (usage >= quota) {
-        log.info(`${uid} reached ${keys} time usage quota, quota: ${quota}, used: ${usage}, will apply policy ${pid}`);
+      const effectiveQuota = getEffectiveQuota(quota, extraQuota, extraQuotaUntilTs);
+      log.debug(`Effective quota for policy ${pid}: ${effectiveQuota}, usage: ${usage}`);
+      if (usage >= effectiveQuota) {
+        log.info(`${uid} reached ${keys} time usage quota, quota: ${effectiveQuota}, used: ${usage}, will apply policy ${pid}`);
         await this.applyPolicy(pid, uid);
       }else{
         if (this.registeredPolicies[pid] && this.registeredPolicies[pid].appTimeUsage && this.registeredPolicies[pid].appTimeUsage.disturbQuota) {
