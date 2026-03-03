@@ -2190,9 +2190,6 @@ class PolicyManager2 {
         }
         if (action === "resolve" || action === "address") // no further action is needed for pure dns rule
           return;
-        if (origAction === "disturb" && policy.dnsmasq_only) {
-          skipFinalApplyRules = true;
-        }
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
         if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || action == "snat" || (seq !== Constants.RULE_SEQ_REG && !security)) {
