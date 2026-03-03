@@ -84,7 +84,7 @@ outputs:
       types:
         - alert:
             tagged-packets: yes
-        - anomaly:
+#        - anomaly:
             # Anomaly log records describe unexpected conditions such
             # as truncated packets, packets with invalid IP/UDP/TCP
             # length values, and other events that render the packet
@@ -109,21 +109,21 @@ outputs:
             # By default, anomaly logging is enabled. When anomaly
             # logging is enabled, applayer anomaly reporting is
             # also enabled.
-            enabled: yes
+#            enabled: yes
             #
             # Choose one or more types of anomaly logging and whether to enable
             # logging of the packet header for packet anomalies.
-            types:
+#            types:
               # decode: no
               # stream: no
               # applayer: yes
             #packethdr: no
-        - http:
-            extended: yes     # enable this for extended logging information
-        - dns:
-            enabled: yes
-            requests: yes
-            responses: yes
+#        - http:
+#            extended: yes     # enable this for extended logging information
+#        - dns:
+#            enabled: yes
+#            requests: yes
+#            responses: yes
 
             # Format of answer logging:
             # - detailed: array item per answer
@@ -134,11 +134,11 @@ outputs:
             # DNS record types to log, based on the query type.
             # Default: all.
             #types: [a, aaaa, cname, mx, ns, ptr, txt]
-        - tls:
-            extended: yes     # enable this for extended logging information
-        - files:
-            force-magic: no   # force logging magic on all logged files
-        - smtp:
+#        - tls:
+#            extended: yes     # enable this for extended logging information
+#        - files:
+#            force-magic: no   # force logging magic on all logged files
+#        - smtp:
             #extended: yes # enable this for extended logging information
             # this includes: bcc, message-id, subject, x_mailer, user-agent
             # custom fields logging from the list:
@@ -151,29 +151,29 @@ outputs:
             # to yes
             #md5: [body, subject]
 
-        - ftp
-        - rdp
-        - nfs
-        - smb
-        - tftp
-        - ikev2
-        - dcerpc
-        - krb5
-        - snmp
-        - rfb
-        - sip
-        - dhcp:
-            enabled: yes
+#        - ftp
+#        - rdp
+#        - nfs
+#        - smb
+#        - tftp
+#        - ikev2
+#        - dcerpc
+#        - krb5
+#        - snmp
+#        - rfb
+#        - sip
+#        - dhcp:
+#            enabled: yes
             # When extended mode is on, all DHCP messages are logged
             # with full detail. When extended mode is off (the
             # default), just enough information to map a MAC address
             # to an IP address is logged.
-            extended: yes
-        - ssh
-        # bi-directional flows
-        - flow
-        # uni-directional flows
-        #- netflow
+#            extended: yes
+#        - ssh
+#        # bi-directional flows
+#        - flow
+#        # uni-directional flows
+#        #- netflow
 
   # Stats.log contains data from various counters of the Suricata engine.
   - stats:

@@ -36,8 +36,7 @@
 const log = require("./logger.js")(__filename);
 
 const layer2 = require('../util/Layer2.js');
-const Nmap = require('./Nmap.js');
-const nmap = new Nmap();
+const nmap = require('./Nmap.js');
 const f = require('../net2/Firewalla.js');
 const SysTool = require('../net2/SysTool.js')
 const sysTool = new SysTool()
@@ -53,6 +52,7 @@ const Mode = require('./Mode.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const QoS = require('../control/QoS.js');
 const { rrWithErrHandling } = require('../util/requestWrapper.js')
+const fsp = require('fs').promises;
 
 const util = require('util')
 const rp = util.promisify(require('request'))
@@ -121,6 +121,14 @@ async function getInterfaces() {
 
 async function getInterface(intf) {
   return localGet(`/config/interfaces/${intf}`, 2)
+}
+
+async function getPowerMode() {
+  return localGet("/config/power_mode");
+}
+
+async function setPowerMode(powerMode) {
+  return localSet("/config/power_mode", { powerMode });
 }
 
 function updateMaps() {
@@ -311,6 +319,13 @@ async function generateNetworkInfo() {
       redisIntf.pds = intf.state.pds;
     }
 
+    if (intf.config.vid) {
+      redisIntf.vid = intf.config.vid
+    } else if (intfName.startsWith("br") && Array.isArray(intf.config.intf) && !_.isEmpty(intf.config.intf)) {
+      const vid = intfNameMap[intf.config.intf[0]].config.vid
+      if (vid) redisIntf.vid = vid
+    }
+
     if (f.isMain()) {
       await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
       await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))
@@ -392,6 +407,15 @@ class FireRouter {
           reloadNeeded = true;
           break;
         }
+        case Message.MSG_HAPD_EVENT: {
+          if (!f.isMain())
+            return;
+          if (message && message.includes(" AP-ENABLED")) {
+            log.info("Hostapd AP-ENABLED event is received, schedule reset pcap tap tc filters ...");
+            this.scheduleResetPcapTap();
+          }
+          break;
+        }
         default:
       }
       if (reloadNeeded)
@@ -404,6 +428,7 @@ class FireRouter {
     sclient.subscribe(Message.MSG_FR_IFACE_CHANGE_APPLIED);
     sclient.subscribe(Message.MSG_FR_WAN_CONN_CHANGED);
     sclient.subscribe(Message.MSG_FR_WAN_STATE_CHANGED);
+    sclient.subscribe(Message.MSG_HAPD_EVENT);
   }
 
   async retryUntilInitComplete() {
@@ -419,15 +444,19 @@ class FireRouter {
   scheduleReload() {
     if (this.reloadTask)
       clearTimeout(this.reloadTask);
+    this.reloadTaskOngoing = true;
     this.reloadTask = setTimeout(() => {
       this.init().catch((err) => {
         log.error("Failed to reload init", err.message);
+      }).finally(() => {
+        this.reloadTaskOngoing = false;
       });
     }, 3000);
   }
 
   async init(first = false) {
     await lock.acquire(LOCK_INIT, async () => {
+      const lastMonitoringIntfNames = monitoringIntfNames;
       const routingWans = [];
       if (platform.isFireRouterManaged()) {
         // fireroute
@@ -696,6 +725,9 @@ class FireRouter {
         }
       }
 
+      monitoringIntfNames.sort();
+      lastMonitoringIntfNames.sort();
+
       // this will ensure SysManger on each process will be updated with correct info
       sem.emitLocalEvent({ type: Message.MSG_FW_FR_RELOADED });
 
@@ -703,14 +735,14 @@ class FireRouter {
       this.ready = true
 
       if (f.isMain()) {
-        // zeek used to be bro
-        if (this.pcapRestartNeeded || !platform.isFireRouterManaged() && first) {
+        if (this.pcapRestartNeeded || !platform.isFireRouterManaged() && first || !_.isEqual(monitoringIntfNames, lastMonitoringIntfNames)) {
           sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
           this.pcapRestartNeeded = false;
         }
         if (first || this.tcFilterRefreshNeeded) {
           const localIntfs = monitoringIntfNames.filter(iface => intfNameMap[iface] && intfNameMap[iface].config.meta.type === 'lan');
           await this.resetTCFilters(localIntfs);
+          this.scheduleResetPcapTap();
           this.tcFilterRefreshNeeded = false;
         }
         if (platform.isFireRouterManaged()) {
@@ -746,6 +778,44 @@ class FireRouter {
         }
       }
     });
+  }
+
+  scheduleResetPcapTap() {
+    if (this.resetPcapTapTask) {
+      clearTimeout(this.resetPcapTapTask);
+    }
+    this.resetPcapTapTask = setTimeout(() => {
+      this.resetPcapTap().catch((err) => {
+        log.error(`Failed to reset pcap tap`, err.message);
+      });
+    }, 3000);
+  }
+
+  async resetPcapTap() {
+    if (!platform.isIFBSupported()) {
+      return;
+    }
+    const pcapTapIntfs = platform.getInterfacesRedirectedToPcapTap(intfNameMap);
+    if (_.isEmpty(pcapTapIntfs)) {
+      return;
+    }
+    for (const intf of Object.keys(pcapTapIntfs)) {
+      // clear previous tc filters
+      await exec(`sudo tc qdisc del dev ${intf} root`).catch(() => {});
+      await exec(`sudo tc qdisc del dev ${intf} parent ffff:`).catch(() => {});
+      if (!pcapTapIntfs[intf])
+        continue;
+      // add tc filters to redirect traffic to the pcap tap ifb
+      await exec(`sudo tc qdisc replace dev ${intf} clsact`).catch((err) => {
+        log.error(`Failed to create clsact qdisc on ${intf}`, err.message);
+      });
+      await exec(`sudo tc filter add dev ${intf} ingress u32 match u32 0 0 action mirred egress redirect dev ${Constants.INTF_PCAP_TAP}`).catch((err) => {
+        log.error(`Failed to add pcap tap tc ingress redirect filter for ${intf}`, err.message);
+      });
+      await exec(`sudo tc filter add dev ${intf} egress u32 match u32 0 0 action mirred egress redirect dev ${Constants.INTF_PCAP_TAP}`).catch((err) => {
+        log.error(`Failed to add pcap tap tc egress redirect filter for ${intf}`, err.message);
+      });
+    }
   }
 
   async resetTCFilters(ifaces) {
@@ -903,11 +973,15 @@ class FireRouter {
     return {code: resp.statusCode, body: resp.body};
   }
 
-  async getConfig(reload = false) {
+  async getConfig(reload = false, clone = true) {
     if (reload) {
       routerConfig = await getConfig();
     }
-    return JSON.parse(JSON.stringify(routerConfig))
+    if (!clone) {
+      return routerConfig;
+    } else {
+      return JSON.parse(JSON.stringify(routerConfig));
+    }
   }
 
   checkConfig(newConfig) {
@@ -1094,6 +1168,14 @@ class FireRouter {
     }
 
     return resp.body
+  }
+
+  async getPowerMode() {
+    return getPowerMode();
+  }
+
+  async setPowerMode(powerMode) {
+    return setPowerMode(powerMode);
   }
 
   getSysNetworkInfo() {

@@ -199,8 +199,13 @@ class VirtWanGroup {
           const vpnSubnets = await c.getEffectiveRoutedSubnets();
           if (_.isArray(vpnSubnets)) {
             for (const vpnSubnet of vpnSubnets) {
+              const ipSubnets = vpnSubnet.split('/');
+              if (ipSubnets.length < 1) {
+                continue;
+              }
+              const ip = ipSubnets[0];
               let af = 4;
-              if (!ipTool.isV4Format(vpnSubnet) && ipTool.isV6Format(vpnSubnet))
+              if (!ipTool.isV4Format(ip) && ipTool.isV6Format(ip))
                 af = 6;
               if (af == 4)
                 await routing.addRouteToTable(vpnSubnet, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => { });
@@ -267,8 +272,13 @@ class VirtWanGroup {
           const vpnSubnets = await c.getEffectiveRoutedSubnets();
           if (_.isArray(vpnSubnets)) {
             for (const vpnSubnet of vpnSubnets) {
+              const ipSubnets = vpnSubnet.split('/');
+              if (ipSubnets.length < 1) {
+                continue;
+              }
+              const ip = ipSubnets[0];
               let af = 4;
-              if (!ipTool.isV4Format(vpnSubnet) && ipTool.isV6Format(vpnSubnet))
+              if (!ipTool.isV4Format(ip) && ipTool.isV6Format(ip))
                 af = 6;
               if (af == 4)
                 await routing.addRouteToTable(vpnSubnet, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => { });

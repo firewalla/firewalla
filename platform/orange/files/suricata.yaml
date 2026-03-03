@@ -1,0 +1,8 @@
+%YAML 1.1
+---
+
+flow:
+  memcap: 256mb
+  hash-size: 65536
+  prealloc: 10000
+  emergency-recovery: 30

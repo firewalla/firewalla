@@ -20,7 +20,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 const Message = require('./Message.js');
 const fc = require('../net2/config.js');
-
+const f = require('./Firewalla.js');
 const _ = require('lodash');
 const iptable = require('./Iptables.js');
 const ip6table = require('./Ip6tables.js');
@@ -62,6 +62,7 @@ class PolicyManager {
       return;
     }
 
+    await this.prepareOsiIpset(); 
     await ip6table.prepare();
     await iptable.prepare();
     await ip6table.flush()
@@ -145,7 +146,10 @@ class PolicyManager {
       }
       default: {
         await target.vpnClient(policy);
-
+        // if vpn client is not enabled, not need to send verified event to OSI
+        if(! policy.state || !policy.profileId) {
+          break;
+        }
         sem.sendEventToFireMain({
           type: Message.MSG_OSI_VERIFIED,
           message: "",
@@ -498,6 +502,20 @@ class PolicyManager {
         message: ""
       });
     }
+  }
+
+  async prepareOsiIpset() {
+    const osiInitDone = await rclient.getAsync("osi:init:done").catch((err) => { })
+    if (!osiInitDone) {
+      log.info("OSI ipset is not initialized, begin to prepareOsiIpset...");
+      const homePath = f.getFirewallaHome();
+      let cmdline = `${homePath}/scripts/fullfil_osi_ipset.sh`;
+      await exec(cmdline).catch(err => {
+        log.error("failed to prepare osi ipset", err.message);
+      })
+    }
+    await rclient.delAsync("osi:init:done").catch((err) => { });
+    return;
   }
 }
 
