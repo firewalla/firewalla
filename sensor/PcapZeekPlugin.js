@@ -70,7 +70,10 @@ class PcapZeekPlugin extends PcapPlugin {
       if (intf.name === Constants.INTF_AP_CTRL)
         continue;
       const intfName = intf.name;
-      const subnets4 = (_.isArray(intf.ip4_subnets) ? intf.ip4_subnets : []).concat(_.isArray(intf.rt4_subnets) ? intf.rt4_subnets : []).filter(cidr => cidr.includes('/') && !cidr.endsWith('/32') && !sysManager.isDefaultRoute(cidr)); // exclude single IP cidr, mainly for peer IP in mesh VPN that should be covered by another /24 cidr
+      const subnets4 = (_.isArray(intf.ip4_subnets) ? intf.ip4_subnets : [])
+        .concat(_.isArray(intf.rt4_subnets) ? intf.rt4_subnets : [])
+         // exclude single IP cidr, mainly for peer IP in mesh VPN that should be covered by another /24 cidr
+        .filter(cidr => cidr.includes('/') && !cidr.endsWith('/32') && !sysManager.isDefaultRoute(cidr));
       for (const ip of subnets4) {
         if (localNetworks[ip])
           localNetworks[ip].push(intfName);

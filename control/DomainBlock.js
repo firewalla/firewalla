@@ -114,8 +114,8 @@ class DomainBlock {
     domain = domain && domain.toLowerCase();
     log.debug(`Implementing Block on ${domain}`);
 
-    if (!options.noIpsetUpdate) {
-      domainUpdater.registerUpdate(domain, options);
+    domainUpdater.registerUpdate(domain, options);
+    if (!options.domainOnly) {
       // do not execute full update on ipset if ondemand is set
       if (!options.ondemand) {
         await this.syncDomainIPMapping(domain, options)
@@ -142,7 +142,7 @@ class DomainBlock {
   }
 
   async applyBlock(domain, options) {
-    if (!options.noIpsetUpdate) {
+    if (!options.domainOnly) {
       const blockSet = options.blockSet || "block_domain_set";
       const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
       if (addresses) {
@@ -164,7 +164,7 @@ class DomainBlock {
   }
 
   async unapplyBlock(domain, options) {
-    if (!options.noIpsetUpdate) {
+    if (!options.domainOnly) {
       const blockSet = options.blockSet || "block_domain_set"
 
       const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
@@ -376,14 +376,17 @@ class DomainBlock {
   // flush and re-create from redis
   async refreshTLSCategory(category, protocol = '') {
     const CategoryUpdater = require("./CategoryUpdater.js");
-    const strategy = await (new CategoryUpdater()).getStrategy(category);
+    const categoryUpdater = new CategoryUpdater();
+    const strategy = await categoryUpdater.getStrategy(category);
     const domains = await this.getCategoryDomains(category, strategy.tls.useHitSet);
     const tlsHostSet = Block.getTLSHostSet(category);
 
     for (const module of tls_modules) {
-      if (module === "xt_tls" && (protocol === "udp" || !platform.isTLSBlockSupport())) { // xt_tls is for tcp tls
+      // xt_tls is for tcp tls, xt_udp_tls is for udp tls
+      if (module === "xt_tls" && (protocol === "udp" || !platform.isTLSBlockSupport() || !categoryUpdater.isTLSActivatedTCP(category))) {
         continue;
-      } else if (module === "xt_udp_tls" && (protocol === "tcp" || !platform.isUdpTLSBlockSupport())) { // xt_udp_tls is for udp tls
+      }
+      if (module === "xt_udp_tls" && (protocol === "tcp" || !platform.isUdpTLSBlockSupport() || !categoryUpdater.isTLSActivatedUDP(category))) {
         continue;
       }
       const tlsFilePath = `${tlsHostSetBasePath}/${module}/${tlsHostSetFolder}/${tlsHostSet}`;

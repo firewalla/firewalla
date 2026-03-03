@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC
+/*    Copyright 2020-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,11 +17,12 @@
 const log = require('../net2/logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const KEY_EVENT_LOG = "event:log";
 const KEY_EVENT_STATE_CACHE = "event:state:cache";
 const KEY_EVENT_STATE_CACHE_ERROR = "event:state:cache:error";
+
+const STATE_CACHE_MAX_KEYS_RETURN = 100;
 
 /*
  * EventApi provides API to event data access in Redis
@@ -64,17 +65,19 @@ class EventApi {
     }
 
     async listLatestStateEventsAll(parse_json=true) {
-        let result = {};
         try {
-            result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE);
+            const result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE);
             if (result && parse_json) {
                 Object.keys(result).forEach( (k)=>{result[k] = JSON.parse(result[k]) });
+                const keys = Object.keys(result);
+                keys.sort( (a,b) => result[b].ts - result[a].ts )
+                return keys.slice(0, STATE_CACHE_MAX_KEYS_RETURN)
+                  .reduce((acc, k) => { acc[k] = result[k]; return acc; }, {});
             }
         } catch (err) {
             log.error("failed to get all saved state event requests:",err);
-            result = {};
         }
-        return result;
+        return {}
     }
 
     async saveStateEventRequestError(eventRequest) {
@@ -89,17 +92,19 @@ class EventApi {
     }
 
     async listLatestStateEventsError(parse_json=true) {
-        let result = {};
         try {
-            result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE_ERROR);
+            const result = await rclient.hgetallAsync(KEY_EVENT_STATE_CACHE_ERROR);
             if (result && parse_json) {
                 Object.keys(result).forEach( (k)=>{result[k] = JSON.parse(result[k]) });
+                const keys = Object.keys(result);
+                keys.sort( (a,b) => result[b].ts - result[a].ts )
+                return keys.slice(0, STATE_CACHE_MAX_KEYS_RETURN)
+                  .reduce((acc, k) => { acc[k] = result[k]; return acc; }, {});
             }
         } catch (err) {
             log.error("failed to get all error state event requests:",err);
-            result = {};
         }
-        return result;
+        return {}
     }
 
     async getLatestEventsByType(type, offset = 600000, limit_count = 10) {

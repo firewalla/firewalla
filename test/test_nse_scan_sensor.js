@@ -30,7 +30,6 @@ const sysManager = require('../net2/SysManager.js');
 const NseScanPlugin = require('../sensor/NseScanPlugin.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
-process.title = "FireMain"
 const hostManager = new HostManager();
 
 async function _setIntfPolicy(uuid, policy) {

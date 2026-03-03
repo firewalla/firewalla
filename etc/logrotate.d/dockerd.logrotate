@@ -1,0 +1,23 @@
+/var/log/dockerd.log {
+  daily
+  maxsize 2M
+  rotate 3
+  copytruncate
+  compress
+  delaycompress
+  missingok
+  notifempty
+  su root root
+}
+
+/var/log/docker-compose.log {
+  daily
+  maxsize 2M
+  rotate 3
+  copytruncate
+  compress
+  delaycompress
+  missingok
+  notifempty
+  su root root
+}
