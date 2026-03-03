@@ -208,7 +208,12 @@ class PolicyManager2 {
         case "unenforce": {
           try {
             log.info("START UNENFORCING POLICY", policy.pid, action);
-            await this.unenforce(policy)
+            // if policy is disabled, skip unenforce
+            if (policy.isDisabled()) {
+              log.info("Policy is disabled, skip unenforce", policy.pid, action);
+            } else {
+              await this.unenforce(policy)
+            }
           } catch (err) {
             log.error("unenforce policy failed:", err, policy)
           } finally {
@@ -224,12 +229,18 @@ class PolicyManager2 {
             } else {
               log.info("START REENFORCING POLICY", policy.pid, action);
 
-              await this.unenforce(oldPolicy).catch((err) => {
-                log.error("Failed to unenforce policy before reenforce", err.message, policy);
-              });
+              // if oldPolicy is disabled, skip unenforce
+              if (oldPolicy.isDisabled()) {
+                log.info("Old policy is disabled, skip unenforce", oldPolicy.pid, action);
+              } else {
+                await this.unenforce(oldPolicy).catch((err) => {
+                    log.error("Failed to unenforce policy before reenforce", err.message, policy);
+                });
+              }
+              
               await this.enforce(policy).catch((err) => {
                 log.error("Failed to reenforce policy", err.message, policy);
-              })
+              });
             }
           } catch (err) {
             log.error("reenforce policy failed:" + err, policy)
@@ -568,8 +579,8 @@ class PolicyManager2 {
     if (policy.disabled == '1') {
       return // do nothing, since it's already disabled
     }
-    await this._disablePolicy(policy)
     this.tryPolicyEnforcement(policy, "unenforce")
+    await this._disablePolicy(policy)
     Bone.submitIntelFeedback('disable', policy)
   }
 
