@@ -111,7 +111,10 @@ class GostDockerClient extends DockerBaseVPNClient {
       log.error(`Failed to check gost stats on ${this.profileId}`, err.message);
       return super.getStatistics();
     });
-
+    
+    if (_.isObject(result)) {
+      return result;
+    }
     // return zero if invalid
     if (!result || !_.isString(result))
       return {bytesIn: 0, bytesOut: 0};

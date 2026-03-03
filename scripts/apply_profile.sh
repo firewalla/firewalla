@@ -46,14 +46,25 @@ logerror() {
 set_nic_feature() {
     while read nic k v
     do
-        ethtool -K $nic $k $v
+        if [[ "$nic" == *"*"* ]]; then
+            # Find all interfaces matching the pattern
+            # Convert * to shell glob pattern and iterate through /sys/class/net/
+            shopt -s nullglob
+            for matched_nic in /sys/class/net/$nic; do
+                matched_nic=$(basename "$matched_nic")
+                ethtool -K $matched_nic $k $v
+            done
+            shopt -u nullglob
+        else
+            ethtool -K $nic $k $v
+        fi
     done
 }
 
 set_smp_affinity() {
     while read intf smp_affinity
     do
-        for irq in $(cat /proc/interrupts | awk "\$NF == \"$intf\" {print \$1}"|tr -d :)
+        for irq in $(cat /proc/interrupts | awk "\$1 == \"$intf\" || \$NF == \"$intf\" {print \$1}"|tr -d :)
         do
             if $PROFILE_CHECK; then
                 cat /proc/irq/$irq/smp_affinity
@@ -69,6 +80,7 @@ set_rps_cpus() {
     do
         rps_cpus_paths=/sys/class/net/$intf/queues/$q/rps_cpus
         for rps_cpus_path in $rps_cpus_paths; do
+            test -e $rps_cpus_path || continue
             if $PROFILE_CHECK; then
                 cat $rps_cpus_path
             else
@@ -198,10 +210,19 @@ process_profile() {
     do
         loginfo "- process '$key'"
 
-        test -n "$FW_PROFILE_KEY" && \
-            test "$key" != "$FW_PROFILE_KEY" && \
-            loginfo "- ignore key '$key', as only '$FW_PROFILE_KEY' is selected" && \
-            continue
+        if [[ -n "$FW_PROFILE_KEYS" ]]; then
+            found=false
+            for k in $FW_PROFILE_KEYS; do
+                if [[ "$k" == "$key" ]]; then
+                    found=true
+                    break
+                fi
+            done
+            if [[ "$found" == "false" ]]; then
+                loginfo "- ignore key '$key', as it is not in FW_PROFILE_KEYS"
+                continue
+            fi
+        fi
 
         case $key in
             nic_feature)
@@ -266,7 +287,6 @@ get_active_profile() {
 # Main
 # ----------------------------------------------------------------------------
 
-logger "FIREWALLA:APPLY_PROFILE:START"
 
 test $UID -eq 0 || {
     logerror 'Must run with root privilege'
@@ -294,6 +314,7 @@ if ! $PROFILE_CHECK && [[ $prev_profile == $active_profile ]] && ((cur_ts - prev
   echo "Profile $active_profile was applied less than 3600 seconds ago, skip apply this time"
   exit 0
 fi
+logger "FIREWALLA:APPLY_PROFILE:START"
 if ! $PROFILE_CHECK; then
   echo -n $active_profile > $PREV_APPLY_PROFILE_NAME
   echo -n $cur_ts > $PREV_APPLY_PROFILE_TS

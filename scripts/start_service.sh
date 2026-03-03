@@ -56,6 +56,11 @@ fi
 
 redis-cli HINCRBY "stats:systemd:restart" $service 1
 
+jemalloc_so_path=$(readlink -f $(ldconfig -p | grep libjemalloc | awk -F '=> ' '{print $2}'))
+if [[ -n "$jemalloc_so_path" ]]; then
+  export LD_PRELOAD=$jemalloc_so_path
+fi
+
 ( cd $FIREWALLA_HOME/$service_subdir
 
 UV_THREADPOOL_SIZE=16 $FIREWALLA_HOME/bin/node \

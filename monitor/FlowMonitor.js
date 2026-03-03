@@ -90,7 +90,8 @@ function alarmBootstrap(flow, mac, typedAlarm) {
 
   for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
     const config = Constants.TAG_TYPE_MAP[type];
-    obj[config.alarmIdKey] = flow[config.flowKey];
+    if (_.isArray(flow[config.flowKey]))
+      obj[config.alarmIdKey] = flow[config.flowKey];
   }
 
   if (flow.rl)

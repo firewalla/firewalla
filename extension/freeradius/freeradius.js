@@ -20,22 +20,21 @@ const _ = require('lodash');
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
+const yaml = require('../../api/dist/lib/js-yaml.min.js');
+const PlatformLoader = require('../../platform/PlatformLoader.js');
+const platform = PlatformLoader.getPlatform()
 
 const f = require('../../net2/Firewalla.js');
+const fr = require('../../net2/FireRouter.js');
 const log = require('../../net2/logger.js')(__filename);
 const util = require('../../util/util.js');
 
 const dockerDir = `${f.getRuntimeInfoFolder()}/docker/freeradius`
-const configDir = `${f.getHiddenFolder()}/config/freeradius`;
+const configDir = `${f.getUserConfigFolder()}/freeradius`
+const logDir = `${f.getUserHome()}/.forever/freeradius`
+const certsDir = `${f.getHiddenFolder()}/certs/freeradius`
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Log rotation configuration
-const LOG_ROTATION_CONFIG = {
-  maxSize: 256 * 1024, // 256KB
-  maxFiles: 5,
-  compressOld: true
-};
 
 let instance = null;
 
@@ -47,6 +46,7 @@ class FreeRadius {
       this.running = false;
       this.watcher = null;
       this.pid = null;
+      this.featureOn = false;
     }
     return instance;
   }
@@ -60,11 +60,21 @@ class FreeRadius {
     }
   }
 
-  async prepare() {
-    await this.watchContainer();
-    await this.startDockerDaemon();
-    await this.generateRadiusConfig();
-    await this.prepareImage();
+  async prepare(options = {}) {
+    try {
+      await this._prepare(options);
+    } catch (err) {
+      log.warn(`failed to prepare freeradius`, err.message);
+    }
+  }
+
+  async _prepare(options = {}) {
+    await this.watchContainer(60000, false);
+    await this.startDockerDaemon(options);
+    await this.generateDockerCompose(options);
+    await this.prepareImage(options);
+    await this.generateOptions(options);
+    await this.prepareIptables(options);
   }
 
   async ready() {
@@ -75,12 +85,12 @@ class FreeRadius {
   }
 
   async _watchStatus() {
-    await exec("netstat -an  | egrep -q ':1812'").then(() => { this.running = true }).catch((err) => { this.running = false });
+    await exec("sudo netstat -tulpn | egrep -qw '1812'").then(() => { this.running = true }).catch((err) => { this.running = false });
   }
 
-  async _watch() {
+  async _watch(container = false) {
     await this._watchStatus();
-    if (this.running) {
+    if (this.running && container) {
       await sleep(1000);
       if (!await fs.accessAsync(`${dockerDir}/docker-compose.yml`, fs.constants.F_OK).then(() => true).catch(_err => false)) {
         log.debug("freeradius docker compose file not exist, skip checking status of container freeradius-server");
@@ -89,20 +99,35 @@ class FreeRadius {
       const cmd = `sudo docker-compose -f ${dockerDir}/docker-compose.yml exec -T freeradius pidof freeradius`
       await exec(cmd).then((r) => { this.pid = r.stdout.trim() }).catch((e) => { this.pid = null; });
     }
+    await this.saveIpset("ap_ip_list");
   }
 
-  async watchContainer(interval) {
+  async saveIpset(name = "ap_ip_list") {
+    try {
+      const data = await this.getIpset(name);
+      if (!await fs.accessAsync(`${dockerDir}/config`).then(() => true).catch(() => false)) {
+        await exec(`mkdir -p ${dockerDir}/config`).catch((e) => {
+          log.warn(`Failed to create directory ${dockerDir}/config,`, e.message);
+        });
+      }
+      await fs.writeFileAsync(`${dockerDir}/config/${name}`, data.join("\n"), 'utf8');
+    } catch (err) {
+      log.warn(`Failed to save ipset ${name},`, err.message);
+    }
+  }
+
+  async watchContainer(interval, force = false) {
     if (this.watcher) {
       clearInterval(this.watcher);
     }
 
-    await this._watch();
+    await this._watch(force);
     this.watcher = setInterval(async () => {
-      await this._watch();
+      await this._watch(force);
     }, interval * 1000 || 60000); // every 60s by default
   }
 
-  async startDockerDaemon() {
+  async startDockerDaemon(options = {}) {
     let dockerRunning = false;
     if (await exec(`sudo systemctl -q is-active docker`).then(() => true).catch((err) => false)) {
       dockerRunning = true;
@@ -113,32 +138,30 @@ class FreeRadius {
       exec(`sudo systemctl -q is-active docker`).then(() => { dockerRunning = true }).catch((err) => { dockerRunning = false });
     }, 10000);
     await exec(`sudo systemctl start docker`).catch((err) => { });
-    await util.waitFor(_ => dockerRunning === true, 30000).then(() => true).catch((err) => false);
+    await util.waitFor(_ => dockerRunning === true, 60000).then(() => true).catch((err) => false);
     clearInterval(watcher);
     return dockerRunning
   }
 
   async startServer(options = {}) {
-    this.watchContainer(5);
+    this.watchContainer(5, true);
     await this._startServer(options);
-    this.watchContainer(60);
+    this.watchContainer(60, false);
   }
 
   async _startServer(options = {}) {
+    await this._watchStatus();
     if (this.running) {
       log.warn("Abort starting radius-server, server is already running.")
       return false;
     }
     log.info("Starting container freeradius-server...");
     try {
-      if (!await this.generateRadiusConfig()) {
-        log.warn("Abort starting radius-server, configuration not ready");
-        return false;
-      }
+      await this.generateOptions(options);
       if (!await this._start()) {
         return false;
       }
-      await util.waitFor(_ => this.running === true, options.timeout * 1000 || 60000).catch((err) => { });
+      await util.waitFor(_ => this.running === true, options.timeout * 1000 || 120000).catch((err) => { });
       if (!this.running && !await this.isListening()) {
         log.warn("Container freeradius-server is not started.")
         return false;
@@ -163,63 +186,19 @@ class FreeRadius {
     return true;
   }
 
-  async generateOptions(options = {}) {
-    const configPath = `${configDir}/.freerc`;
-    // remove existing file
-    if (await fs.accessAsync(configPath, fs.constants.F_OK).then(() => true).catch(_err => false)) {
-      await fs.unlinkAsync(configPath);
-    }
-    // generate new file
-    const lines = Object.entries(options).map(([key, value]) => `${key}=${value}`);
-    const content = lines.join("\n");
-    await fs.writeFileAsync(configPath, content);
-    return true;
-  }
-
-  async generateRadiusConfig() {
-    try {
-      const configPath = `${configDir}/freeradius.js`;
-      if (!await fs.accessAsync(configPath, fs.constants.F_OK).then(() => true).catch(_err => false)) {
-        log.warn("freeradius config scripts not exist");
+  // fallback for old iamge
+  async _rotate(logPath, maxSize = 256 * 1024) {
+    const stats = await fs.statAsync(logPath).catch(() => null);
+    if (stats && stats.size > maxSize) {
+      await exec(`mv ${logPath} ${logPath}.1`).catch(() => null).catch((e) => {
+        log.warn("Failed to rotate freeradius log,", e.message);
         return false;
-      }
-
-      const nodePath = await this.getNodePath();
-      if (!nodePath) {
-        log.warn("Cannot get generate radius config, node binary not found")
-        return "";
-      }
-
-      await this._rotate(`${f.getUserHome()}/logs/freeradius.log`);
-      await exec(`NODE_PATH="${f.getUserHome()}/.node_modules/node_modules" ${nodePath} ${configPath} generate >> ${f.getUserHome()}/logs/freeradius.log 2>&1`)
-      return true;
-    } catch (err) {
-      log.warn("Failed to generate radius config,", err.message);
-      return false;
+      });
     }
   }
 
-  async loadOptionsAsync() {
-    const options = {};
-    // Load environment file if .freerc` exists in working directory
-    if (await fs.accessAsync(`${configDir}/.freerc`).then(() => true).catch(() => false)) {
-      try {
-        const envContent = await fs.readFileAsync(`${configDir}/.freerc`, 'utf8');
-        const envLines = envContent.split('\n').filter(line =>
-          line.trim() && !line.trim().startsWith('#')
-        );
-        for (const line of envLines) {
-          const [key, value] = line.split('=');
-          if (key && value) options[key] = value;
-        }
-      } catch (error) {
-        console.warn(`Warning: Could not read environment file: ${error.message}`);
-      }
-    }
-    return options;
-  }
-
-  async getNodePath() {
+  // fallback for old iamge
+  async _getNodePath() {
     try {
       const result = await exec(`sudo -u pi bash -c "source ~/.nvm/nvm.sh && which node"`).then(r => r.stdout.trim());
       if (result) return result;
@@ -228,10 +207,215 @@ class FreeRadius {
     }
   }
 
-  async prepareImage() {
+  // fallback for old iamge
+  async _generateRadiusConfig(options = {}) {
+    log.info("Generating radius config from config scripts...");
     try {
-      if (await this._checkImage()) {
-        log.info("Image freeradius-server is pulled.");
+      const configPath = `${configDir}/freeradius.js`;
+      if (!await fs.accessAsync(configPath, fs.constants.F_OK).then(() => true).catch(_err => false)) {
+        log.warn("freeradius config scripts not exist");
+        return false;
+      }
+
+      const nodePath = await this._getNodePath();
+      if (!nodePath) {
+        log.warn("Cannot get generate radius config, node binary not found")
+        return "";
+      }
+
+      await this._rotate(`${f.getUserHome()}/logs/freeradius.log`);
+      await this._rotate(`${f.getUserHome()}/.forever/freeradius/service.log`);
+      await exec(`NODE_PATH="${f.getUserHome()}/.node_modules/node_modules" ${nodePath} ${configPath} generate >> ${f.getUserHome()}/logs/freeradius.log 2>&1`).catch((e) => {
+        log.warn("Failed to generate radius config,", e.message);
+        return false;
+      });
+
+      return true;
+    } catch (err) {
+      log.warn("Failed to generate radius config,", err.message);
+      return false;
+    }
+  }
+
+  async generateOptions(options = {}) {
+    const configPath = `${dockerDir}/config/.env`;
+    // remove existing file
+    if (await fs.accessAsync(configPath, fs.constants.F_OK).then(() => true).catch(_err => false)) {
+      await fs.unlinkAsync(configPath);
+    }
+    if (!await fs.accessAsync(`${dockerDir}/config`).then(() => true).catch(() => false)) {
+      await exec(`mkdir -p ${dockerDir}/config`).catch((e) => {
+        log.warn("Failed to create config directory,", e.message);
+      });
+    }
+    // generate new file
+    const lines = Object.entries(options).filter(([key, _value]) => key !== 'secret').map(([key, value]) => `${key}=${value}`);
+    const content = lines.join("\n");
+    await fs.writeFileAsync(configPath, content, 'utf8');
+    return true;
+  }
+
+  async generateRadiusConfig(options = {}) {
+    try {
+      await exec(`mkdir -p ${dockerDir}/config`).catch((e) => {
+        log.warn("Failed to create config directory,", e.message);
+      });
+      await this.prepareIptables().catch((e) => {
+        log.warn("Failed to prepare ap ipset iptables,", e.message);
+      });
+
+      await this.generateDockerCompose(options);
+
+      // check if container is up
+      if (!await this._checkContainer(options)) {
+        log.info("container freeradius-server is not running, fallback to generate radius config from old version");
+        return await this._generateRadiusConfig(options);
+      }
+
+      log.info("container freeradius-server is running, generating radius config...");
+      return await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml exec -T freeradius bash -c "bash /root/freeradius/freeradius.sh generate"`)
+        .then((r) => { return true })
+        .catch(async (e) => {
+          log.warn("Failed to generate radius config,", e.message);
+          // fallback to generate config from old version
+          return await this._generateRadiusConfig(options);
+        });
+    } catch (err) {
+      log.warn("Failed to generate radius config,", err.message);
+      return false;
+    }
+  }
+
+  async loadOptionsAsync() {
+    const options = {};
+    // Load environment file if .env` exists in working directory
+    if (await fs.accessAsync(`${dockerDir}/config/.env`).then(() => true).catch(() => false)) {
+      try {
+        const envContent = await fs.readFileAsync(`${dockerDir}/config/.env`, 'utf8');
+        const envLines = envContent.split('\n').filter(line =>
+          line.trim() && !line.trim().startsWith('#')
+        );
+        for (const line of envLines) {
+          const [key, value] = line.split('=');
+          if (key && value) options[key] = value;
+        }
+      } catch (error) {
+        log.warn(`Warning: Could not read environment file: ${error.message}`);
+      }
+    }
+    return options;
+  }
+
+  // policy in format: { "0.0.0.0": { "options": {}, "radius": {} }, "tag":{"radius":{"users":[]}} }
+  async processCommand(script, cmd, options) {
+    log.info(`Processing ${script} with command ${cmd}`);
+    try {
+      // check if container is running
+      if (!await this._checkContainer(options)) {
+        log.warn("container freeradius-server is not running, cannot process radius command");
+        return false;
+      }
+      return await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml exec -T freeradius bash -c "/usr/bin/node /root/freeradius/${script} ${cmd}"`).then((r) => {
+        return r.stdout.trim()
+      }).catch((e) => { return e.message });
+    } catch (err) {
+      log.warn("Failed to process script,", script, cmd, err.message);
+    }
+  }
+
+  async saveFile(filepath, content) {
+    // Prevent directory traversal attacks
+    if (filepath.includes('../')) {
+      return { ok: false, error: "Invalid filepath: directory traversal not allowed" };
+    }
+    filepath = filepath.replace(/^\//, ''); // remove leading slash
+    const baseFolder = filepath.split('/').slice(0, -1).join('/'); // get base folder
+
+    // Ensure base configDir exists with proper permissions
+    await exec(`mkdir -p ${configDir}`).catch((e) => {
+      log.warn(`Failed to create config directory ${configDir}`, e.message);
+    });
+    await exec(`chmod 755 ${configDir}`).catch((e) => {
+      log.warn(`Failed to set permissions on ${configDir}`, e.message);
+    });
+
+    // Create subdirectory if needed
+    if (baseFolder) {
+      await exec(`mkdir -p ${configDir}/${baseFolder}`).catch((e) => {
+        log.warn(`Failed to create config directory ${baseFolder}`, e.message);
+      });
+      await exec(`chmod 755 ${configDir}/${baseFolder}`).catch((e) => {
+        log.warn(`Failed to set permissions on ${configDir}/${baseFolder}`, e.message);
+      });
+    }
+
+    log.info(`Saving file to ${configDir}/${filepath}...`);
+    return await fs.writeFileAsync(`${configDir}/${filepath}`, content, 'utf8').then(async (r) => {
+      await exec(`chmod 644 ${configDir}/${filepath}`).catch((e) => {
+        log.warn(`Failed to set permissions on ${configDir}/${filepath}`, e.message);
+      });
+      log.info(`File ${configDir}/${filepath} saved successfully.`);
+      return { ok: true };
+    }).catch((e) => {
+      log.warn(`Failed to save file to ${configDir}/${filepath},`, e.message);
+      return { ok: false, error: e.message };
+    });
+  }
+
+  async generateDockerCompose(options = {}) {
+    await exec(`mkdir -p ${configDir}`).catch((e) => {
+      log.warn("Failed to create config directory,", e.message);
+    });
+    await exec(`chmod 755 ${configDir}`).catch((e) => {
+      log.warn(`Failed to set permissions on ${configDir}`, e.message);
+    });
+
+    await exec(`mkdir -p ${dockerDir}/config`).catch((e) => {
+      log.warn("Failed to create config directory,", e.message);
+    });
+
+    await exec(`mkdir -p ${logDir}/`).catch((e) => {
+      log.warn("Failed to create log directory,", e.message);
+    });
+
+    const content = await fs.readFileAsync(`${__dirname}/docker-compose.yml`, 'utf8');
+    const yamlContent = yaml.load(content);
+    const image = this.getImage(options);
+    yamlContent.services.freeradius.image = image;
+    if (options.hostname) {
+      yamlContent.services.freeradius.hostname = options.hostname;
+    }
+    // if u18, need to specify --security-opt seccomp=unconfined
+    if (platform && typeof platform.isUbuntu18 === 'function' && platform.isUbuntu18()) {
+      yamlContent.services.freeradius.security_opt = ["seccomp=unconfined"];
+    } else if (await this.checkCgroupVersion() != "cgroup2") { // for u20
+      yamlContent.services.freeradius.security_opt = ["seccomp=unconfined"];
+      // yamlContent.services.freeradius.cgroup = "host"; // not supported in docker-compose v1
+    }
+
+    await fs.writeFileAsync(`${dockerDir}/docker-compose.yml`, yaml.dump(yamlContent), 'utf8');
+  }
+
+  async checkCgroupVersion() {
+    try {
+      const result = await exec(`stat -fc %T /sys/fs/cgroup/`).then(r => r.stdout.trim()).catch((e) => {
+        log.warn("Failed to check cgroup version,", e.message);
+        return "";
+      })
+      if (result == "cgroup2fs") {
+        return "cgroup2";
+      }
+      return "cgroup1";
+    } catch (err) {
+      log.warn("Failed to check docker runtime,", err.message);
+    }
+    return "cgroup1";
+  }
+
+  async prepareImage(options = {}) {
+    try {
+      if (await this._checkImage(options) && !await this.upgradeImage(options)) {
+        log.info("Image freeradius-server is pulled and up to date.");
         return;
       }
 
@@ -244,8 +428,7 @@ class FreeRadius {
         log.warn("Failed to pull image freeradius,", e.message)
         return;
       });
-
-      if (await this._checkImage()) {
+      if (await this._checkImage(options)) {
         log.info("Image freeradius-server is pulled.");
         return;
       }
@@ -257,17 +440,203 @@ class FreeRadius {
     }
   }
 
-  async _checkImage() {
-    const result = await exec(`sudo docker images | grep freeradius`).then(r => r.stdout.trim()).catch((e) => {
+  async upgradeImage(options = {}) {
+    try {
+      log.debug("Checking for new image freeradius-server...");
+      const image = this.getImage(options);
+      log.info(`Checking for new image ${image}`);
+      // get current image digest using docker images (works even when container not running)
+      const currentImage = await exec(`sudo docker images --format "{{.ID}}" --filter "reference=${image}"`).then(r => r.stdout.trim()).catch(() => null);
+      if (!currentImage) {
+        log.info("No freeradius image found, need to pull");
+      }
+
+      // pull latest image
+      await exec(`sudo docker pull ${image}`).catch((e) => {
+        log.warn("Failed to pull image for comparison,", e.message);
+        return false;
+      });
+
+      await sleep(2000);
+
+      // get new image digest using docker images
+      const newImage = await exec(`sudo docker images --format "{{.ID}}" --filter "reference=${image}"`).then(r => r.stdout.trim()).catch(() => null);
+      if (!newImage) {
+        log.warn("Failed to get new image digest");
+        return false;
+      }
+
+      // Check if image has changed
+      if (currentImage === newImage) {
+        log.info("Current image is latest", currentImage);
+        return false;
+      }
+
+      log.info("new image detected and pulled", newImage);
+      // remove old image
+      if (currentImage) {
+        // stop container first
+        await this._stopServer(options);
+
+        await exec(`sudo docker rmi ${currentImage}`).catch((e) => {
+          log.warn("Failed to remove old image,", e.message);
+        });
+        log.info("outdated image removed", currentImage);
+      }
+
+      await this.cleanupOldImages();
+      return true;
+
+    } catch (err) {
+      log.error("Failed to check for new image,", err.message);
+      return false;
+    }
+  }
+
+  async cleanupImages() {
+    log.info("Cleaning up all freeradius images...");
+    await exec(`sudo docker images --filter "reference=public.ecr.aws/a0j1s2e9/freeradius*" --format "{{.Repository}}:{{.Tag}}" | xargs -r -I % sudo docker rmi %`).then(r => r.stdout.trim()).catch((e) => {
+      log.warn("Failed to remove freeradius all images,", e.message);
+    });
+    log.info("All freeradius images cleaned up");
+  }
+
+  async cleanupOldImages() {
+    // remove dangling images
+    log.info("Cleaning up dangling images...");
+    const data = await exec(`sudo docker images --filter "reference=public.ecr.aws/a0j1s2e9/freeradius*" -f "dangling=true" -q`).then(r => r.stdout.trim()).catch((e) => {
+      log.warn("Failed to get dangling images,", e.message);
+      return "";
+    });
+    const danglingImages = data.split("\n").map(i => i.trim()).filter(i => i && i !== "");
+    if (danglingImages.length > 0) {
+      await exec(`sudo docker rmi ${danglingImages.join(" ")}`).catch((e) => {
+        log.warn("Failed to remove dangling images,", e.message);
+      });
+    }
+    log.info("dangling images removed", danglingImages.join(" "));
+  }
+
+  // get clients from frcc
+  async _getFrccClients() {
+    const frcc = await fr.getConfig();
+    const assets = _.get(frcc, "apc.assets", {});
+    const wifis = _.get(frcc, "apc.assets_template.ap_default.wifiNetworks", {});
+    const interfaces = _.get(frcc, "interface", {});
+    const wifi_intfs = _.isObject(wifis) && Object.values(wifis).map(v => v.intf).filter(i => i) || [];
+    const subnets = Object.values(interfaces).flatMap(intf => wifi_intfs.filter(name => intf[name] && intf[name].ipv4).map(name => intf[name].ipv4));
+    const macs = _.isObject(assets) && Object.keys(assets).filter(i => i) || [];
+    return { macs, subnets }
+  }
+
+  async getClients() {
+    const { macs, subnets } = await this._getFrccClients();
+    log.debug(`get clients from frcc`, { macs, subnets });
+
+    return {
+      macs: macs,
+      subnets: subnets
+    };
+  }
+
+  async getIpset(name = "ap_ip_list", number = 1000) {
+    const data = await exec(`sudo ipset list ${name} | grep -A ${number} "Members:" | grep -v "^Members:$" | awk '{print $1}'| sort`).then(r => r.stdout.trim()).catch((err) => {
+      log.warn(`failed to get ipset clients`, err.message);
+      return "";
+    });
+    return data.split("\n").map(i => i.trim()).filter(i => i);
+  }
+
+  async prepareIptables() {
+    try {
+      await this._prepareIptables();
+    } catch (err) {
+      log.warn(`failed to prepare iptables`, err.message);
+    }
+  }
+
+  async _prepareIptables() {
+    const { macs, subnets } = await this.getClients();
+    await this.setupIptables(macs, subnets);
+    await this.saveIpset("ap_ip_list");
+  }
+
+  async setupIptables(macs = [], subnets = []) {
+    log.debug(`setting up iptables rules...`);
+    try {
+      await exec(`sudo iptables -D INPUT -m set --match-set ap_subnet_list src -m set --match-set ap_mac_list src -j SET --add-set ap_ip_list src`);
+      await exec(`sudo ipset destroy ap_mac_list`);
+      await exec(`sudo ipset destroy ap_subnet_list`);
+    } catch (error) {
+      log.warn(`failed to remove iptables rules`, error.message);
+    }
+
+    await exec(`sudo ipset create ap_mac_list hash:mac --exist`).catch((err) => {
+      log.warn(`failed to create ap_mac_list`, err.message);
+    });
+    await exec(`sudo ipset create ap_subnet_list hash:net --exist`).catch((err) => {
+      log.warn(`failed to create ap_subnet_list`, err.message);
+    });
+    // create ap_ip_list if not exists
+    await exec(`sudo ipset list ap_ip_list`).then(r => r.stdout.trim()).catch(async (err) => {
+      await exec(`sudo ipset create ap_ip_list hash:ip timeout 86400 --exist`).catch((err) => {
+        log.warn(`failed to create ap_ip_list`, err.message);
+      });
+    });
+
+    for (const mac of macs) {
+      await exec(`sudo ipset add ap_mac_list ${mac}`).catch((err) => {
+        log.warn(`failed to add mac to ap_mac_list`, err.message);
+      });
+    }
+    for (const subnet of subnets) {
+      await exec(`sudo ipset add ap_subnet_list ${subnet}`).catch((err) => {
+        log.warn(`failed to add subnet to ap_subnet_list`, err.message);
+      });
+    }
+
+    try {
+      await exec(`sudo iptables -C INPUT -m set --match-set ap_subnet_list src -m set --match-set ap_mac_list src -j SET --add-set ap_ip_list src`);
+    } catch (error) {
+      log.debug(`inserting iptables ap_ip_list rule...`);
+      await exec(`sudo iptables -I INPUT -m set --match-set ap_subnet_list src -m set --match-set ap_mac_list src -j SET --add-set ap_ip_list src`).catch((err) => {
+        log.warn(`failed to add iptables rule`, err.message);
+      });
+    }
+  }
+
+  _getImageTag(options = {}) {
+    if (options.image_tag) {
+      return options.image_tag;
+    }
+    const release = f.getReleaseType();
+    if (release === "dev" || release === "unknown") {
+      return "dev";
+    }
+    return release;
+  }
+
+  getImage(options = {}) {
+    const tag = this._getImageTag(options);
+    if (tag === "dev" || tag === "test") {
+      return `public.ecr.aws/a0j1s2e9/freeradius-dev:${tag}`;
+    }
+    return `public.ecr.aws/a0j1s2e9/freeradius:${tag}`;
+  }
+
+  async _checkImage(options) {
+    const image = this.getImage(options);
+    const result = await exec(`sudo docker images --filter "reference=${image}"`).then(r => r.stdout.trim()).catch((e) => {
       log.warn("Failed to check image freeradius,", e.message)
       return false;
     });
     log.info("Image freeradius-server:", result);
-    return result && result.includes("freeradius");
+    return result && result.includes(image);
   }
 
-  async _checkContainer() {
-    const result = await exec(`sudo docker ps | grep freeradius`).then(r => r.stdout.trim()).catch((e) => {
+  async _checkContainer(options = {}) {
+    const image = this.getImage(options);
+    const result = await exec(`sudo docker ps | grep ${image}`).then(r => r.stdout.trim()).catch((e) => {
       log.warn("Failed to check container freeradius,", e.message)
       return false;
     });
@@ -282,7 +651,7 @@ class FreeRadius {
       return;
     });
     await sleep(3000);
-    await util.waitFor(_ => this.running === false, options.timeout * 1000 || 60000).catch((err) => {
+    await util.waitFor(_ => this.running === false, options.timeout * 1000 || 120000).catch((err) => {
       log.warn("Container freeradius-server timeout to terminate,", err.message)
     });
 
@@ -296,10 +665,13 @@ class FreeRadius {
 
   // TODO: will not reload clients, need to check changes
   async _reloadServer(options = {}) {
+    if (!this.featureOn) return false;
+
     try {
+      await this._statusServer(options);
       const pid = this.pid;
 
-      if (!await this.generateRadiusConfig()) {
+      if (!await this.generateRadiusConfig(options)) {
         log.warn("Abort starting radius-server, configuration not ready");
         return false;
       }
@@ -307,8 +679,8 @@ class FreeRadius {
 
       if (pid) {
         log.info(`Current freeradius pid ${pid}...`);
-        // check if pid is changed in 30s, return true if changed
-        await util.waitFor(_ => this.pid && this.pid !== pid, 60000).catch((err) => {
+        // check if pid is changed in 120s, return true if changed
+        await util.waitFor(_ => this.pid && this.pid !== pid, 120000).catch((err) => {
           log.warn(`Container freeradius-server pid ${pid} not changed, try to reload container`, err.message);
         });
         if (this.pid && this.pid !== pid) {
@@ -322,7 +694,7 @@ class FreeRadius {
         return false;
       });
       await sleep(3000);
-      await util.waitFor(_ => this.running === true, options.timeout * 1000 || 60000).catch((err) => {
+      await util.waitFor(_ => this.running === true, options.timeout * 1000 || 120000).catch((err) => {
         log.warn("Container freeradius-server timeout to reload,", err.message)
       });
       if (this.running) {
@@ -335,7 +707,7 @@ class FreeRadius {
     return false;
   }
 
-  async _statusServer() {
+  async _statusServer(options = {}) {
     try {
       this.pid = null;
       if (!await fs.accessAsync(`${dockerDir}/docker-compose.yml`, fs.constants.F_OK).then(() => true).catch(_err => false)) {
@@ -343,14 +715,15 @@ class FreeRadius {
         return false;
       }
 
-      log.info("Checking status of container freeradius-server...");
+      log.debug("Checking status of container freeradius-server...");
       await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml ps`).catch((e) => {
-        log.warn("Cannot check status of freeradius,", e.message)
+        log.warn("Cannot get container status of freeradius by docker-compose,", e.message)
       });
 
       const result = await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml exec -T freeradius pidof freeradius`).then(r => r.stdout.trim()).catch(async (e) => {
-        log.warn("Cannot check status of freeradius,", e.message)
-        if (!await this._checkContainer()) {
+        log.warn("Cannot get freeradius pid from container,", e.message)
+        if (!await this._checkContainer(options)) {
+          this.running = false;
           log.info("Container freeradius-server is not running");
           return;
         }
@@ -359,6 +732,7 @@ class FreeRadius {
       if (result) {
         log.info("Container freeradius-server is running, pid:", result);
         this.pid = result;
+        this.running = true;
         return;
       }
       log.info("Container freeradius-server is not running.");
@@ -367,22 +741,31 @@ class FreeRadius {
     }
   }
 
+  async globalOn() {
+    this.featureOn = true;
+  }
+
+  async globalOff() {
+    this.featureOn = false;
+  }
+
   async stopServer(options = {}) {
-    this.watchContainer(5);
+    this.watchContainer(5, true);
     await this._stopServer(options);
-    this.watchContainer(60);
+    this.watchContainer(60, false);
   }
 
   async _stopServer(options = {}) {
     try {
+      await this._watchStatus();
       log.info("Stopping container freeradius-server...");
       await exec("sudo systemctl stop docker-compose@freeradius").catch((e) => {
         log.warn("Cannot stop freeradius,", e.message)
       });
-      await util.waitFor(_ => this.running === false, options.timeout * 1000 || 60000).catch((err) => {
+      await util.waitFor(_ => this.running === false, options.timeout * 1000 || 120000).catch((err) => {
         log.warn("Container freeradius-server timeout to stop,", err.message)
       });
-      if (this.running) {
+      if (this.running || await this.isListening()) {
         log.warn("Container freeradius-server is not stopped.")
         await this._terminateServer(options);
         return
@@ -393,44 +776,109 @@ class FreeRadius {
     }
   }
 
-  async reconfigServer(target, options = {}) {
-    this.watchContainer(5);
-    if (target != "0.0.0.0" && this.running === true) {
-      await this._reloadServer(options);
+  async resetServer(options = {}) {
+    // stop server
+    log.info("Resetting freeradius server...");
+    await this.stopServer(options);
+
+    await this.cleanupConfig(options);
+    await this.cleanupOldImages();
+
+    if (this.featureOn) {
+      await this.upgradeImage(options);
+      await this.generateRadiusConfig(options);
+      await this.startServer(options);
     } else {
+      await this.cleanupImages();
+    }
+    log.info("Freeradius server is reset successfully.");
+    return true;
+  }
+
+  async cleanupConfig(options = {}) {
+    // cleanup certificates
+    log.info("Cleaning up freeradius certificates...");
+    await exec(`sudo rm -rf ${certsDir}/*`).catch((e) => {
+      log.warn("Failed to cleanup certificates,", e.message);
+    });
+
+    // cleanup config
+    log.info("Cleaning up freeradius config...");
+    await exec(`sudo rm -rf ${configDir}/*`).catch((e) => {
+      log.warn("Failed to cleanup freeradius config,", e.message);
+    });
+
+    // cleanup docker compose folder
+    log.info("Cleaning up freeradius docker files...");
+    await exec(`sudo rm -rf ${dockerDir}/*`).catch((e) => {
+      log.warn("Failed to cleanup docker compose folder,", e.message);
+    });
+    log.info("Finished to cleanup freeradius server.");
+  }
+
+  async _reconfigServer(target, options = {}) {
+    if (!this.featureOn) return false;
+
+    // check certificate permission
+    await this.checkCertsPermission();
+
+    // if new image detected, update image first
+    const imageUpdated = await this.upgradeImage(options);
+    const isRunning = await this._checkContainer(options);
+    log.debug(`reconfigure freeradius, imageUpdated ${imageUpdated}, target ${target}, isRunning ${isRunning}, force_restart ${options.force_restart}`);
+    if (!imageUpdated && isRunning && !options.force_restart) {
+      log.info("reloading freeradius server to apply new config...");
+      return await this._reloadServer(options);
+    } else {
+      log.info("restarting freeradius container to apply new config...");
       await this._stopServer(options);
       if (!await this._startServer(options)) {
         return false;
       }
     }
-    this.watchContainer(60);
+  }
+
+  // set proper permission for certificates
+  async checkCertsPermission() {
+    await exec(`sudo chown -R pi:pi ${certsDir}`).catch(() => { });
+    await exec(`sudo find ${certsDir} -maxdepth 2 -name "*.key" -exec chmod 640 {} +`).catch(() => { });
+    await exec(`sudo find ${certsDir} -maxdepth 2 -name "*.pem" -exec chmod 644 {} +`).catch(() => { });
+  }
+
+  async reconfigServer(target = "0.0.0.0", options = {}) {
+    if (!this.featureOn) {
+      log.error(`feature is disabled`);
+      return false;
+    }
+
+    try {
+      this.watchContainer(5, true);
+      await this._reconfigServer(target, options);
+    } catch (err) {
+      log.warn("Failed to reconfig freeradius,", target, options, err.message);
+    } finally {
+      await this.checkCertsPermission();
+      this.watchContainer(60, false);
+    }
+
     return this.running;
   }
 
   // radius listens on 1812-1813
   async isListening() {
-    return await exec("netstat -an | egrep -q ':1812'").then(() => true).catch((err) => false);
+    return await exec("sudo netstat -tulpn | egrep -qw '1812'").then(() => true).catch((err) => false);
   }
 
-  async getStatus() {
-    await this._statusServer();
+  async getStatus(options = {}) {
+    await this._statusServer(options);
     return { running: this.running, pid: this.pid };
-  }
-
-  async _rotate(logPath, maxSize = 256 * 1024) {
-    const stats = await fs.statAsync(logPath).catch(() => null);
-    if (stats && stats.size > maxSize) {
-      await exec(`mv ${logPath} ${logPath}.1`).catch(() => null);
-    }
   }
 
   mask(jsonStr) {
     jsonStr = jsonStr.replace(/"secret"\s*:\s*"[^"]*"/g, '"secret":"*** redacted ***"');
+    jsonStr = jsonStr.replace(/"private_key_pass"\s*:\s*"[^"]*"/g, '"private_key_pass":"*** redacted ***"');
     return jsonStr.replace(/"passwd"\s*:\s*"[^"]*"/g, '"passwd":"*** redacted ***"');
   }
-
 }
-
-
 
 module.exports = new FreeRadius();
