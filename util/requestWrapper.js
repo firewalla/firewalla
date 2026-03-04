@@ -16,6 +16,12 @@
 const log = require('../net2/logger.js')(__filename);
 const https = require('https');
 const requestretry = require('requestretry');
+const zlib = require('zlib');
+const util = require('util');
+
+// Promisify zlib.gzip
+const gzipAsync = util.promisify(zlib.gzip);
+
 
 const agent = new https.Agent({ keepAlive: true, keepAliveMsecs: 20000, maxSockets: 1, timeout: 55000, });
 const rrPooled = requestretry.defaults({ agent: agent });
@@ -31,12 +37,40 @@ sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
   agent.destroy();
 })
 
-async function rrWithErrHandling(options, usePool) {
+async function rrWithErrHandling(options, usePool = false, compress = false) {
   const msg = `HTTP failed after ${options.maxAttempts || 5} attempt(s) ${options.method || 'GET'} ${options.uri}`
   const uid = uuid.v4()
-  log.verbose(uid, options.method || 'GET', options.uri)
+  const json = Boolean(options.json)
+  log.verbose(uid, options.method || 'GET', options.uri, usePool, compress)
 
   options.fullResponse = true
+
+  // Handle compression if requested
+  if (compress && (options.body || options.json)) {
+    try {
+      let payload;
+      if (options.json) {
+        payload = JSON.stringify(options.json);
+      } else if (options.body) {
+        payload = typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
+      }
+
+      if (payload) {
+        const compressedPayload = await gzipAsync(payload)
+
+        options.body = compressedPayload;
+        options.headers = options.headers || {};
+        options.headers['Content-Encoding'] = 'gzip';
+        if (options.json) {
+          delete options.json;
+          options.headers['Content-Type'] = 'application/json';
+        }
+        options.gzip = true;
+      }
+    } catch (err) {
+      log.error(uid, 'Failed to compress payload:', err.message);
+    }
+  }
 
   let response
   try {
@@ -64,7 +98,15 @@ async function rrWithErrHandling(options, usePool) {
     throw error
   }
 
-  if (!response.body) response.body = null
+  if (response.body) {
+    // compressed json request does not get parsed automatically
+    if (compress && json && typeof response.body === 'string') try {
+      response.body = JSON.parse(response.body)
+    } catch (err) {
+      log.error('Failed to parse response body:', err)
+    }
+  } else
+    response.body = null
 
   return response
 }

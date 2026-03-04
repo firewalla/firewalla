@@ -8,6 +8,7 @@
     "coverage": "NODE_ENV=test nyc mocha --exit"
   },
   "devDependencies": {
+    "mocha": "^9.2.2",
     "chai": "^3.5.0",
     "mock-require": "^3.0.3",
     "muk": "^0.5.3",

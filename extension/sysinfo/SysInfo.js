@@ -434,6 +434,7 @@ async function getSysInfo() {
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
     kernelVersion: await getKernelVersion(),
+    procVersion: await exec("cat /proc/version").then(result => result.stdout.trim()).catch(err => null),
     diskInfo: diskInfo || [],
     //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,

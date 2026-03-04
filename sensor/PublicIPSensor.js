@@ -187,9 +187,10 @@ class PublicIPSensor extends Sensor {
         if (publicIP)
           return publicIP;
       } catch (err) {
-        log.error("Failed to discover public ip, err:", err);
+        log.verbose("Failed to get public ip", err);
       }
     }
+    log.warn("Failed to discover public ip");
     return null;
   }
 
