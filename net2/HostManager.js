@@ -2197,7 +2197,7 @@ module.exports = class HostManager extends Monitorable {
   async setupDefaultQosAutoRules() {
     const qosConfs = await this.getQosConfs();
     let op = '-D';
-    if (qosConfs && qosConfs.enableDefaultQosRules === 'true') {
+    if (qosConfs && qosConfs.state === true && qosConfs.enableDefaultQosRules === true) {
       op = '-A';
     }
     // setup default qos auto rules to FW_QOS_AUTO chain 
@@ -2237,6 +2237,21 @@ module.exports = class HostManager extends Monitorable {
     rule6 = rule4.clone().fam(6);
     iptc.addRule(rule4.opr(op));
     iptc.addRule(rule6.opr(op));
+
+
+    // setup default tc rules auto redirect these packets which are marked by FW_QOS_AUTO chain to high priority queue
+    for (const direction of ['upload', 'download']) {
+      const device = direction === 'upload' ? 'ifb0' : 'ifb1';
+      const fwmask = direction === 'upload' ? QoS.QOS_UPLOAD_MASK : QoS.QOS_DOWNLOAD_MASK;
+      const filterId = Number(127).toString(16);
+      const classId = Number(2).toString(16);
+      const parentId = platform.getQosParentClassid();
+      let tcCmd = `sudo tc filter replace dev ${device} parent ${parentId}: handle 800::0x${filterId} prio 1 u32 match mark 0x${fwmask.toString(16)} 0x${fwmask.toString(16)} flowid ${parentId}:0x${classId}`;
+      await exec(tcCmd).catch((err) => {
+        log.error(`Failed to create tc filter ${tcCmd}`, err.message);
+      });
+    }
+
   }
 
   async acl(state) {
