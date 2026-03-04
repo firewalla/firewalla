@@ -2188,9 +2188,55 @@ module.exports = class HostManager extends Monitorable {
           log.error(`Failed to set app qos bandwidth`, err.message);
         });
       }
-
+      await this.setupDefaultQosAutoRules();
       await platform.switchQoS(state, qdisc);
     } 
+  }
+
+
+  async setupDefaultQosAutoRules() {
+    const qosConfs = await this.getQosConfs();
+    let op = '-D';
+    if (qosConfs && qosConfs.enableDefaultQosRules === 'true') {
+      op = '-A';
+    }
+    // setup default qos auto rules to FW_QOS_AUTO chain 
+    let rule4 = new Rule("mangle").chn("FW_QOS_AUTO")
+    .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
+    .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
+    .mdl("dscp", "--dscp 0x2e")
+    .jmp(`CONNMARK --set-xmark 0x${QoS.QOS_UPLOAD_MASK.toString(16)}/0x${QoS.QOS_UPLOAD_MASK.toString(16)}`)
+    .comment(`fw_qos_auto_upload`);
+    let rule6 = rule4.clone().fam(6);
+    iptc.addRule(rule4.opr(op));
+    iptc.addRule(rule6.opr(op));
+
+    rule4 = new Rule("mangle").chn("FW_QOS_AUTO")
+      .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
+      .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
+      .mdl("dscp", "--dscp 0x2e")
+      .jmp(`CONNMARK --set-xmark 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}/0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`)
+      .comment(`fw_qos_auto_download`);
+    rule6 = rule4.clone().fam(6);
+    iptc.addRule(rule4.opr(op));
+    iptc.addRule(rule6.opr(op));
+
+    // setup default qos auto rules to FW_POSTROUTING_DSCP_OVERRIDE chain
+    rule4 = new Rule("mangle").chn("FW_POSTROUTING_DSCP_OVERRIDE")
+      .mdl("mark", `--mark 0x${QoS.QOS_UPLOAD_MASK.toString(16)}/0x${QoS.QOS_UPLOAD_MASK.toString(16)}`)
+      .jmp(`DSCP --set-dscp 0x2e`)
+      .comment(`fw_qos_auto_upload`);
+    rule6 = rule4.clone().fam(6);
+    iptc.addRule(rule4.opr(op));
+    iptc.addRule(rule6.opr(op));
+
+    rule4 = new Rule("mangle").chn("FW_POSTROUTING_DSCP_OVERRIDE")
+      .mdl("mark", `--mark 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}/0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`)
+      .jmp(`DSCP --set-dscp 0x2e`)
+      .comment(`fw_qos_auto_download`);
+    rule6 = rule4.clone().fam(6);
+    iptc.addRule(rule4.opr(op));
+    iptc.addRule(rule6.opr(op));
   }
 
   async acl(state) {
