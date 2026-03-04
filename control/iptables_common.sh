@@ -798,6 +798,9 @@ cat << EOF
 -N FW_QOS_GLOBAL_FALLBACK
 -A FW_QOS -j FW_QOS_GLOBAL_FALLBACK
 
+-N FW_QOS_AUTO
+-A FW_QOS -j FW_QOS_AUTO
+
 # look into the first reply packet, it should contain both upload and download QoS conntrack mark.
 -N FW_QOS_LOG
 # tentatively disable qos iptables log as it is not used for now

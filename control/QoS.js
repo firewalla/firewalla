@@ -58,7 +58,7 @@ async function allocateQoSHanderForPolicy(pid) {
   if (policyHandlerMap[`policy_${pid}`])
     return policyHandlerMap[`policy_${pid}`];
   else {
-    for (let i = 2; i != 128; i++) {
+    for (let i = 2; i != 127; i++) {
       if (!policyHandlerMap[`qos_${i}`]) {
         await rclient.hmsetAsync(POLICY_QOS_HANDLER_MAP_KEY, `policy_${pid}`, i, `qos_${i}`, pid);
         return i;
@@ -293,9 +293,9 @@ async function applyOverrideDscp(opts) {
   rule.comment(comments);
   rule.opr(op);
   rule.fam(4);
-  await exec(rule.toCmd(op));
+  iptc.addRule(rule);
   rule.fam(6);
-  await exec(rule.toCmd(op));
+  iptc.addRule(rule);
 }
 
 
