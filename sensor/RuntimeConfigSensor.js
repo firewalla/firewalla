@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2026 Firewalla Inc
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,16 +20,13 @@ const log = require("../net2/logger.js")(__filename)
 const fsp = require('fs').promises;
 const exec = require('child-process-promise').exec
 
-const Promise = require('bluebird');
-
 const Sensor = require('./Sensor.js').Sensor;
-
-const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 class RuntimeConfigSensor extends Sensor {
   async run() {
     try {
       await this.updateRedisConfig();
+      this.runCronScripts();
       await this.schedule();
     } catch(err) {
       log.error("Failed to update redis config:", err);
@@ -56,6 +53,12 @@ class RuntimeConfigSensor extends Sensor {
     }
 
     return exec(`redis-cli config set save "${saveConfig}"`)
+  }
+
+  runCronScripts() {
+    // do not await/block on this
+    exec(`sudo ${firewalla.getFirewallaHome()}/scripts/run_cron_scripts.sh`)
+      .catch(err => log.error("Failed to run cron scripts:", err.message));
   }
 
   async schedule() {
