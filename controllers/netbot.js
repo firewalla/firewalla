@@ -764,7 +764,13 @@ class netBot extends ControllerBot {
         const orig = await monitorable.loadPolicyAsync();
         try{await this._precedeRecord(msg.id, {origin: orig, diff: difference(value, orig)})} catch(err){};
 
-        for (const o of Object.keys(value)) {
+        let skipBgSave = false;
+        const valueKeys = Object.keys(value);
+        if (valueKeys.length === 1 && valueKeys[0] === 'dap') {
+          // Updating DAP policy does not require redis bgsave
+          skipBgSave = true;
+        }
+        for (const o of valueKeys) {
           if (processorMap[o]) {
             await processorMap[o].bind(this)(target, value[o])
             continue
@@ -786,7 +792,10 @@ class netBot extends ControllerBot {
           }
           await monitorable.setPolicyAsync(o, policyData);
         }
-        this._scheduleRedisBackgroundSave();
+
+        if (!skipBgSave) {
+          this._scheduleRedisBackgroundSave();
+        }
         // can't get result of port forward, return original value for compatibility reasons
         const result = value.portforward ? value : monitorable.policy
         return result
@@ -1376,6 +1385,14 @@ class netBot extends ControllerBot {
           alarms: archivedAlarms,
           count: archivedAlarms.length
         }
+      }
+      case "policy": {
+        const pid = value.pid
+        const policy = await pm2.getPolicy(pid)
+        if (!policy) {
+          throw { code: 404, msg: "Policy not found", data: value}
+        }
+        return policy
       }
       case "exceptions": {
         const exceptions = await em.loadExceptionsAsync()
@@ -2321,6 +2338,18 @@ class netBot extends ControllerBot {
           this._scheduleRedisBackgroundSave();
           return policy
         }
+      }
+      case "policy:toggle": {
+        const policy = value
+        const pid = policy.pid
+        const oldPolicy = await pm2.getPolicy(pid)
+        if (!oldPolicy) {
+          throw { code: 404, msg: "Policy not found", data: policy}
+        }
+        // Set the disabled field to reverse of current value
+        const disabled = _.get(oldPolicy, 'disabled', '0') == '0' ? '1' : '0';
+        value.disabled = disabled
+        // Fall through to policy:update
       }
       case "policy:update": {
         const policy = value

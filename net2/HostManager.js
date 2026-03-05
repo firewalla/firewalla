@@ -829,8 +829,13 @@ module.exports = class HostManager extends Monitorable {
     const result = await rclient.hgetallAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT);
     if (!result)
       return {};
-    if (_.has(result, "tasks"))
-      result.tasks = JSON.parse(result.tasks);
+    if (_.has(result, "tasks")) {
+      try {
+        result.tasks = JSON.parse(result.tasks);
+      } catch (err) {
+        result.tasks = {};
+      }
+    }
     if (_.has(result, "lastCompletedScanTs"))
       result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
     if (result.tasks) {
@@ -1634,6 +1639,7 @@ module.exports = class HostManager extends Monitorable {
       this.getConfigForInit(json),
       this.miscForInit(json),
       this.appConfsForInit(json),
+      this.resourcesForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
 
@@ -1655,6 +1661,23 @@ module.exports = class HostManager extends Monitorable {
     log.debug("Promise array finished")
 
     return json
+  }
+
+  async resourcesForInit(json) {
+    if (f.isApi()) {
+      try {
+        const apiSensorLoader = require('../sensor/APISensorLoader.js');
+        const resourcePlugin = await apiSensorLoader.getSensor('ResourcePlugin');
+        if (resourcePlugin) {
+          json.resources = await resourcePlugin.getAllResources();
+        } else {
+          json.resources = [];
+        }
+      } catch (err) {
+        log.error(`Failed to load resources for init: ${err.message}`);
+        json.resources = [];
+      }
+    }
   }
 
   async miscForInit(json) {
@@ -1726,7 +1749,7 @@ module.exports = class HostManager extends Monitorable {
       monitorable = IdentityManager.getIdentityByGUID(target)
       return monitorable
     } else {
-      monitorable = this.getHostAsync(target, noEnvCreation)
+      monitorable = await this.getHostAsync(target, noEnvCreation)
       if (monitorable) return monitorable
 
       return IdentityManager.getIdentityByIP(target)

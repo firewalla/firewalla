@@ -285,7 +285,8 @@ class Alarm {
         if (!_.isEqual(idsA, idsB)) {
           return false;
         }
-      } else if (alarm[k] && alarm2[k] && _.isEqual(alarm[k], alarm2[k]) || !_.has(alarm, k) && !_.has(alarm2, k)) {
+      } else if (alarm[k] && alarm2[k] && _.isEqual(alarm[k], alarm2[k]) ||
+        (!_.has(alarm, k) || alarm[k] === undefined) && (!_.has(alarm2, k) || alarm2[k] === undefined)) {
 
       } else {
         return false;

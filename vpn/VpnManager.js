@@ -370,10 +370,6 @@ class VpnManager {
         }
       }
     }
-    if (this.listenIp !== sysManager.myDefaultWanIp()) {
-      this.needRestart = true;
-      this.listenIp = sysManager.myDefaultWanIp();
-    }
     if (this.serverNetwork == null) {
       this.serverNetwork = this.generateNetwork();
       this.needRestart = true;
@@ -422,8 +418,7 @@ class VpnManager {
       this.needRestart = true;
     this.mydns = mydns;
     const confGenLockFile = "/dev/shm/vpn_confgen_lock_file";
-    // sysManager.myIp() is not used in the below command
-    const cmd = `cd ${fHome}/vpn; flock -n ${confGenLockFile} -c 'ENCRYPT=${platform.getDHKeySize()} sudo -E ./confgen.sh ${this.instanceName} ${this.listenIp} ${mydns} ${this.serverNetwork} ${this.netmask} ${this.localPort} ${this.protocol} ${mydns6} ${this.serverNetwork6}'; sync`
+    const cmd = `cd ${fHome}/vpn; flock -n ${confGenLockFile} -c 'ENCRYPT=${platform.getDHKeySize()} sudo -E ./confgen.sh ${this.instanceName} ${mydns} ${this.serverNetwork} ${this.netmask} ${this.localPort} ${this.protocol} ${mydns6} ${this.serverNetwork6}'; sync`
     log.info("VPNManager:CONFIGURE:cmd", cmd);
     await execAsync(cmd).catch((err) => {
       log.error("VPNManager:CONFIGURE:Error", "Unable to generate server config for " + this.instanceName, err);

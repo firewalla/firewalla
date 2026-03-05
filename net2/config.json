@@ -137,7 +137,8 @@
     "NoiseDomainsSensor": {},
     "Iperf3Sensor": {},
     "DeviceMonitorSensor": {},
-    "DapSensor": {}
+    "DapSensor": {},
+    "ResourcePlugin": {}
   },
   "intels": [
     "DeviceInfoIntel",
@@ -692,6 +693,9 @@
       "sigDetectedServers": {
         "expires": 86400,
         "count": 10000
+      },
+      "flow_domain:": {
+        "count": 200
       }
     },
     "DeviceOfflineSensor": {
@@ -881,6 +885,7 @@
     "DapSensor": {},
     "SuricataRuleSetSensor": {},
     "NetconsolePlugin": {},
+    "ResourcePlugin": {},
     "NoiseDomainsSensor": {}
   },
   "hooks": {

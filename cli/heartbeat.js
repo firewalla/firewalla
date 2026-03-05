@@ -176,8 +176,28 @@ async function getRedisInfoMemory() {
     },{} )
 }
 
+const MAX_IPV6_COUNT = 100;
+
 async function getSysinfo(status) {
   const ifs = os.networkInterfaces();
+  for (const intfName in ifs) {
+    const intf = ifs[intfName];
+    if (intf.filter(addr => addr.family == "IPv6").length > MAX_IPV6_COUNT) {
+      log(`WARNING: ${intfName} has more than ${MAX_IPV6_COUNT} IPv6 addresses, discarding...`);
+      const capped = []
+      let ipv6Count = 0;
+      for (const addr of intf) {
+        if (addr.family == "IPv6") {
+          if (ipv6Count < MAX_IPV6_COUNT) {
+            capped.push(addr);
+            ipv6Count++;
+          }
+        } else
+          capped.push(addr);
+      }
+      ifs[intfName] = capped;
+    }
+  }
   const memory = os.totalmem()
   const timestamp = Date.now();
   const uptime = os.uptime();
