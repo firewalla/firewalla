@@ -579,8 +579,9 @@ class PolicyManager2 {
     if (policy.disabled == '1') {
       return // do nothing, since it's already disabled
     }
-    this.tryPolicyEnforcement(policy, "unenforce")
+    const oldPolicy = Object.assign(Object.create(Policy.prototype), policy);
     await this._disablePolicy(policy)
+    this.tryPolicyEnforcement(oldPolicy, "unenforce")
     Bone.submitIntelFeedback('disable', policy)
   }
 
