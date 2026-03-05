@@ -109,6 +109,10 @@ class AmneziaWGVPNClient extends WGVPNClient {
   }
 
 
+  static getDefaultMTU() {
+    return 1376;
+  }
+
   static getProtocol() {
     return "amneziawg";
   }
