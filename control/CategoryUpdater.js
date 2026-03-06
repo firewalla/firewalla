@@ -47,6 +47,8 @@ const CATEGORY_FILTER_DIR = "/home/pi/.firewalla/run/category_data/filters";
 const crypto = require('crypto');
 const { CategoryEntry } = require("./CategoryEntry.js");
 const CATEGORY_BF_PARTS_KEY = "category_bf_parts";
+const AsyncLock = require('../vendor_lib/async-lock');
+const customizedCategoryLock = new AsyncLock();
 
 const net = require('net');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
@@ -406,11 +408,16 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     if (!category)
       category = require('uuid').v4();
-    obj.category = category;
-    const key = this._getCustomizedCategoryKey(category);
-    await rclient.unlinkAsync(key);
-    await rclient.hmsetAsync(key, obj);
-    await rclient.saddAsync(CUSTOMIZED_CATEGORY_KEY_INDEX, key);
+    const lockKey = `CUSTOMIZED_CATEGORY_${category}`;
+    await customizedCategoryLock.acquire(lockKey, async () => {
+      obj.category = category;
+      const key = this._getCustomizedCategoryKey(category);
+      await rclient.unlinkAsync(key);
+      await rclient.hmsetAsync(key, obj);
+      await rclient.saddAsync(CUSTOMIZED_CATEGORY_KEY_INDEX, key);
+    }).catch((err) => {
+      log.error(`Failed to create or update customized category ${category}`, err.message);
+    });
     sem.emitEvent({
       type: "CustomizedCategory:Updated",
       toProcess: "FireMain"
@@ -420,11 +427,18 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async removeCustomizedCategory(category) {
-    if (!category || !this.customizedCategories[category])
+    if (!category)
       return;
-    const key = this._getCustomizedCategoryKey(category);
-    await rclient.unlinkAsync(key);
-    await rclient.sremAsync(CUSTOMIZED_CATEGORY_KEY_INDEX, key);
+    const lockKey = `CUSTOMIZED_CATEGORY_${category}`;
+    await customizedCategoryLock.acquire(lockKey, async () => {
+      if (!this.customizedCategories[category])
+        return;
+      const key = this._getCustomizedCategoryKey(category);
+      await rclient.sremAsync(CUSTOMIZED_CATEGORY_KEY_INDEX, key);
+      await rclient.unlinkAsync(key);
+    }).catch((err) => {
+      log.error(`Failed to remove customized category ${category}`, err.message);
+    });
     sem.emitEvent({
       type: "CustomizedCategory:Updated",
       toProcess: "FireMain"
@@ -442,6 +456,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
       
       for (const key of keys) {
         const o = await rclient.hgetallAsync(key);
+        if (!o) {
+          // race condition, key is deleted after getting the keys from index, ignore it and it will be added to removedCategories below
+          continue;
+        }
         const category = key.substring(CUSTOMIZED_CATEGORY_KEY_PREFIX.length);
         log.debug(`Found customized category ${category}`);
         this.customizedCategories[category] = o;
