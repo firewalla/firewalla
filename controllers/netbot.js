@@ -1532,9 +1532,9 @@ class netBot extends ControllerBot {
         return json
       }
       case "networkProfiles": {
-        await this.networkProfileManager.refreshNetworkProfiles(true);
-        const networks = await this.networkProfileManager.toJson();
-        return networks;
+        const json = {};
+        await this.hostManager.networkProfilesForInit(json);
+        return json;
       }
       case "vpnProfile":
       case "ovpnProfile": {

@@ -231,8 +231,8 @@ cat << EOF > "$filter_file"
 # multi protocol block chain
 -N FW_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
--A FW_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
--A FW_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+-A FW_DROP -m set --match-set acl_off_set src,src -j RETURN
+-A FW_DROP -m set --match-set acl_off_set dst,dst -j RETURN
 # do not generate too many logs for flows from same (srcip, dstip, dstport)
 -A FW_DROP -m hashlimit --hashlimit-upto 1/second --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_drop_htable -j FW_RATE_LIMITED_DROP
 -A FW_DROP -j FW_RATE_EXCEEDED_DROP
@@ -245,8 +245,8 @@ cat << EOF > "$filter_file"
 # multi protocol block chain
 -N FW_SEC_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
--A FW_SEC_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
--A FW_SEC_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+-A FW_SEC_DROP -m set --match-set acl_off_set src,src -j RETURN
+-A FW_SEC_DROP -m set --match-set acl_off_set dst,dst -j RETURN
 -A FW_SEC_DROP -m hashlimit --hashlimit-upto 1/second --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_drop_htable -j FW_SEC_RATE_LIMITED_DROP
 -A FW_SEC_DROP -j FW_RATE_EXCEEDED_DROP
 
@@ -258,8 +258,8 @@ cat << EOF > "$filter_file"
 # multi protocol block chain
 -N FW_TLS_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
--A FW_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
--A FW_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+-A FW_TLS_DROP -m set --match-set acl_off_set src,src -j RETURN
+-A FW_TLS_DROP -m set --match-set acl_off_set dst,dst -j RETURN
 -A FW_TLS_DROP -m hashlimit --hashlimit-upto 1/second --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_drop_htable -j FW_TLS_RATE_LIMITED_DROP
 -A FW_TLS_DROP -j FW_RATE_EXCEEDED_DROP
 
@@ -271,8 +271,8 @@ cat << EOF > "$filter_file"
 # multi protocol block chain
 -N FW_SEC_TLS_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
--A FW_SEC_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
--A FW_SEC_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+-A FW_SEC_TLS_DROP -m set --match-set acl_off_set src,src -j RETURN
+-A FW_SEC_TLS_DROP -m set --match-set acl_off_set dst,dst -j RETURN
 -A FW_SEC_TLS_DROP -m hashlimit --hashlimit-upto 1/second --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_drop_htable -j FW_SEC_TLS_RATE_LIMITED_DROP
 -A FW_SEC_TLS_DROP -j FW_RATE_EXCEEDED_DROP
 
@@ -432,6 +432,8 @@ cat << EOF > "$filter_file"
 # initialize device isolation chain
 -N FW_FIREWALL_DEV_ISOLATION
 -A FW_FIREWALL -j FW_FIREWALL_DEV_ISOLATION
+-A FW_FIREWALL_DEV_ISOLATION -m set --match-set acl_off_set src,src -j RETURN
+-A FW_FIREWALL_DEV_ISOLATION -m set --match-set acl_off_set dst,dst -j RETURN
 # device group block/allow chains
 -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 -N FW_FIREWALL_DEV_G_ALLOW
@@ -444,6 +446,8 @@ cat << EOF > "$filter_file"
 # initialize group isolation chain
 -N FW_FIREWALL_DEV_G_ISOLATION
 -A FW_FIREWALL -j FW_FIREWALL_DEV_G_ISOLATION
+-A FW_FIREWALL_DEV_G_ISOLATION -m set --match-set acl_off_set src,src -j RETURN
+-A FW_FIREWALL_DEV_G_ISOLATION -m set --match-set acl_off_set dst,dst -j RETURN
 # network block/allow chains
 -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 -N FW_FIREWALL_NET_ALLOW
@@ -456,6 +460,8 @@ cat << EOF > "$filter_file"
 # initialize network isolation chain
 -N FW_FIREWALL_NET_ISOLATION
 -A FW_FIREWALL -j FW_FIREWALL_NET_ISOLATION
+-A FW_FIREWALL_NET_ISOLATION -m set --match-set acl_off_set src,src -j RETURN
+-A FW_FIREWALL_NET_ISOLATION -m set --match-set acl_off_set dst,dst -j RETURN
 # network group block/allow chains
 -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 -N FW_FIREWALL_NET_G_ALLOW
