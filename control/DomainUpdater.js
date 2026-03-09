@@ -241,6 +241,71 @@ class DomainUpdater {
     }, 5000);
   }
 
+  async registerDomainOnlyUpdate(domain, options) {
+    log.debug(`DomainUpdater registerDomainOnlyUpdate for domain ${domain} with options`, options);
+    const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
+    if (domain.startsWith("*.")) {
+      options.exactMatch = false;
+      domain = domain.substring(2);
+    }
+    const config = {domain: domain, options: options};
+    if (!this.connUpdateOptions[domainKey])
+      this.connUpdateOptions[domainKey] = {};
+    const key = domainIPTool.getDomainConnMappingKey(domain, options);
+    log.debug(`DomainUpdater registerDomainOnlyUpdate for domain ${domain} with key ${key}, options`, options);
+    this.connUpdateOptions[domainKey][key] = config;
+  }
+
+  async unregisterDomainOnlyUpdate(domain, options) {
+    log.debug(`DomainUpdater unregisterDomainOnlyUpdate for domain ${domain} with options`, options);
+    const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
+    if (domain.startsWith("*.")) {
+      options.exactMatch = false;
+      domain = domain.substring(2);
+    }
+    const key = domainIPTool.getDomainConnMappingKey(domain, options);
+    log.debug(`DomainUpdater unregisterUpdate for domain ${domain} with key:${key}, options`, options);
+    if (this.connUpdateOptions[domainKey] && this.connUpdateOptions[domainKey][key])
+      delete this.connUpdateOptions[domainKey][key];
+  }
+
+  async registerDefaultUpdate(domain, options) {
+    log.debug(`DomainUpdater registerDefaultUpdate for domain ${domain} with options`, options);
+    const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
+    if (domain.startsWith("*.")) {
+      options.exactMatch = false;
+      domain = domain.substring(2);
+    }
+    const config = {domain: domain, options: options};
+    await lock.acquire(domainKey, async () => {
+      // a secondary index for domain update options
+      if (!this.updateOptions[domainKey])
+        this.updateOptions[domainKey] = {};
+      // use mapping key to uniquely identify each domain mapping settings
+      const key = domainIPTool.getDomainIPMappingKey(domain, options);
+      config.ipCache = new LRU({maxAge: options.ipttl * 1000 / 2 || 0}); // invalidate the entry in lru earlier than its ttl so that it can be re-added to the underlying ipset
+      this.updateOptions[domainKey][key] = config;
+    }).catch((err) => {
+      log.error(`Failed to register default update for domain ${domain}`, err.message);
+    });
+  }
+
+  async unregisterDefaultUpdate(domain, options) {
+    log.debug(`DomainUpdater unregisterDefaultUpdate for domain ${domain} with options`, options);
+    const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
+    if (domain.startsWith("*.")) {
+      options.exactMatch = false;
+      domain = domain.substring(2);
+    }
+
+    const key = domainIPTool.getDomainIPMappingKey(domain, options);
+    await lock.acquire(domainKey, async () => {
+      if (this.updateOptions[domainKey] && this.updateOptions[domainKey][key])
+        delete this.updateOptions[domainKey][key];
+    }).catch((err) => {
+      log.error(`Failed to unregister default update for domain ${domain}`, err.message);
+    });
+  }
 
   async registerUpdate(domain, options) {
     log.debug(`DomainUpdater registerUpdate for domain ${domain} with options`, options);
@@ -257,25 +322,11 @@ class DomainUpdater {
       domainOnly = true;
     }
     if (!domainOnly) {
-      await lock.acquire(domainKey, async () => {
-        // a secondary index for domain update options
-        if (!this.updateOptions[domainKey])
-          this.updateOptions[domainKey] = {};
-        // use mapping key to uniquely identify each domain mapping settings
-        const key = domainIPTool.getDomainIPMappingKey(domain, options);
-        config.ipCache = new LRU({maxAge: options.ipttl * 1000 / 2 || 0}); // invalidate the entry in lru earlier than its ttl so that it can be re-added to the underlying ipset
-        this.updateOptions[domainKey][key] = config;
-      }).catch((err) => {
-        log.error(`Failed to register update for domain ${domain}`, err.message);
-      });
+      await this.registerDefaultUpdate(domain, options);
     }
 
     if (options.connSet) {
-      if (!this.connUpdateOptions[domainKey])
-        this.connUpdateOptions[domainKey] = {};
-      const key = domainIPTool.getDomainConnMappingKey(domain, options);
-      log.debug(`DomainUpdater registerUpdate connection ipset for domain ${domain} with key ${key}, options`, options);
-      this.connUpdateOptions[domainKey][key] = config;
+      await this.registerDomainOnlyUpdate(domain, options);
     }
   }
 
@@ -292,20 +343,11 @@ class DomainUpdater {
     }
 
     if (!domainOnly) {
-      const key = domainIPTool.getDomainIPMappingKey(domain, options);
-      await lock.acquire(domainKey, async () => {
-        if (this.updateOptions[domainKey] && this.updateOptions[domainKey][key])
-          delete this.updateOptions[domainKey][key];
-      }).catch((err) => {
-        log.error(`Failed to unregister update for domain ${domain}`, err.message);
-      });
+      await this.unregisterDefaultUpdate(domain, options);
     }
     
     if (options.connSet) {
-      const key = domainIPTool.getDomainConnMappingKey(domain, options);
-      log.debug(`DomainUpdater unregisterUpdate for domain ${domain} with key:${key}, options`, options);
-      if (this.connUpdateOptions[domainKey] && this.connUpdateOptions[domainKey][key])
-        delete this.connUpdateOptions[domainKey][key];
+      await this.unregisterDomainOnlyUpdate(domain, options);
     }
   }
 
