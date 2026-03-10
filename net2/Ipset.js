@@ -163,27 +163,27 @@ function flush(setName) {
 // seems that maxelem doesn't really effect memory usage
 function create(name, type, v6 = false, options = {}) {
   let { timeout, hashsize = 128, maxelem = 65536, comment } = options
-  let cmd = '';
+  let cmd = `create ${name} ${type}`;
   switch(type) {
     case 'bitmap:port':
-      cmd = 'range 0-65535';
+      cmd += ' range 0-65535';
       break;
     case 'hash:mac':
-      cmd = `hashsize ${hashsize} maxelem ${maxelem}`
+      cmd += ` hashsize ${hashsize} maxelem ${maxelem}`
       break;
     case 'list:set':
       break
     default: {
-      let family = 'family inet';
+      let family = ' family inet';
       if (v6) family = family + '6';
-      cmd = family + ` hashsize ${hashsize} maxelem ${maxelem}`
+      cmd += family + ` hashsize ${hashsize} maxelem ${maxelem}`
     }
   }
   if (Number.isInteger(timeout))
-    cmd = `${cmd} timeout ${timeout}`;
+    cmd += ` timeout ${timeout}`;
   if (options.skbinfo) cmd += ' skbinfo';
   if (comment) cmd += ` comment`;
-  ipsetControl.addRule(`create ${name} ${type} ${cmd}`);
+  ipsetControl.addRule(cmd);
 }
 
 function add(name, target, options = {}) {

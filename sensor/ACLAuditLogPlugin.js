@@ -48,8 +48,12 @@ const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
 const _ = require('lodash');
 const LRU = require('lru-cache');
+const { Rule } = require('../net2/Iptables.js');
+const iptc = require('../control/IptablesControl.js');
+const ipset = require('../net2/Ipset.js');
 
 const LOG_PREFIX = Constants.IPTABLES_LOG_PREFIX_AUDIT
+const MONITORED_NET_SET = ipset.CONSTANTS.IPSET_MONITORED_NET;
 
 const auditLogFile = "/alog/acl-audit.log";
 const dnsmasqLog = "/alog/dnsmasq-acl.log"
@@ -975,9 +979,83 @@ class ACLAuditLogPlugin extends Sensor {
     }
   }
 
+  addAuditLogRule(table, chain, r, logSuffix = '') {
+    const rule = new Rule(table).chn(chain);
+    rule.set(MONITORED_NET_SET, 'src,src', !r.src);
+    rule.set(MONITORED_NET_SET, 'dst,dst', !r.dst);
+    rule.mdl('conntrack', `--ctdir ${r.ctdir}`);
+    logSuffix = LOG_PREFIX + logSuffix
+    logSuffix += `D=${r.d} CD=${r.ctdir[0]} `
+    if (chain.includes('_TLS_')) logSuffix += 'TLS=1 ';
+    if (chain.includes('_SEC_')) logSuffix += 'SEC=1 ';
+    rule.log(logSuffix);
+
+    iptc.addRule(rule);
+    iptc.addRule(rule.fam(6));
+  }
+
+  addIptablesLogging() {
+    // 3 packet directions (outbound, inbound, local) × 2 conntrack (original, reply)
+    // Each: src (in monitored set), dst (in monitored set), ctdir (ORIGINAL|REPLY), d (O/I/L) Outbound/Inbound/Local
+    const DIR_CTDIR_RULES = [
+      { src: true, dst: false, ctdir: 'ORIGINAL', d: 'O' },
+      { src: false, dst: true, ctdir: 'REPLY', d: 'O' },
+      { src: true, dst: false, ctdir: 'REPLY', d: 'I' },
+      { src: false, dst: true, ctdir: 'ORIGINAL', d: 'I' },
+      { src: true, dst: true, ctdir: 'ORIGINAL', d: 'L' },
+      { src: true, dst: true, ctdir: 'REPLY', d: 'L' },
+    ];
+
+    // ====== filter =======
+    // blocks
+    const filterChains = [ 'FW_DROP_LOG', 'FW_SEC_DROP_LOG', 'FW_TLS_DROP_LOG', 'FW_SEC_TLS_DROP_LOG' ];
+    for (const chain of filterChains) {
+      for (const r of DIR_CTDIR_RULES)
+        this.addAuditLogRule('filter', chain, r);
+    }
+    // WAN inbound drop
+    const wanDropRule = new Rule('filter').chn('FW_WAN_IN_DROP_LOG').log(`${LOG_PREFIX}D=W CD=O SEC=1 `);
+    iptc.addRule(wanDropRule);
+    iptc.addRule(wanDropRule.fam(6));
+
+    // accept
+    for (const r of DIR_CTDIR_RULES.filter(r => r.ctdir == 'ORIGINAL'))
+      this.addAuditLogRule('filter', 'FW_ACCEPT_LOG', r, `A=A `);
+
+    // ====== mangle =======
+    // QoS
+    const qosMarkRule = new Rule('mangle').chn('FW_QOS_LOG').jmp('CONNMARK --restore-mark --mask 0x3fff0000');
+    iptc.addRule(qosMarkRule);
+    iptc.addRule(qosMarkRule.fam(6));
+    for (const r of DIR_CTDIR_RULES.filter(r => r.ctdir == 'REPLY'))
+      this.addAuditLogRule('mangle', 'FW_QOS_LOG', r, `A=Q `);
+
+    // distrub
+    const disturbMarkRule = new Rule('mangle').chn('FW_DISTURB_LOG').jmp('CONNMARK --restore-mark --mask 0x3fff0000');
+    iptc.addRule(disturbMarkRule);
+    iptc.addRule(disturbMarkRule.fam(6));
+    for (const r of DIR_CTDIR_RULES.filter(r => r.ctdir == 'ORIGINAL' && r.d != 'L'))
+      this.addAuditLogRule('mangle', 'FW_DISTURB_LOG', r, `A=D `);
+  }
+
+  flushAuditChains() {
+    const filterChains = ['FW_DROP_LOG', 'FW_SEC_DROP_LOG', 'FW_TLS_DROP_LOG', 'FW_SEC_TLS_DROP_LOG', 'FW_WAN_IN_DROP_LOG', 'FW_ACCEPT_LOG'];
+    const mangleChains = ['FW_QOS_LOG', 'FW_DISTURB_LOG'];
+    for (const chain of filterChains) {
+      iptc.addRule(new Rule('filter').chn(chain).opr('-F').fam(4));
+      iptc.addRule(new Rule('filter').chn(chain).opr('-F').fam(6));
+    }
+    for (const chain of mangleChains) {
+      iptc.addRule(new Rule('mangle').chn(chain).opr('-F').fam(4));
+      iptc.addRule(new Rule('mangle').chn(chain).opr('-F').fam(6));
+    }
+  }
+
   async globalOn() {
     super.globalOn()
 
+    this.flushAuditChains();
+    this.addIptablesLogging();
     await exec(`${f.getFirewallaHome()}/scripts/audit-run`)
 
     this.bufferDumper = this.bufferDumper || setInterval(this.writeLogs.bind(this), (this.config.buffer || 30) * 1000)
@@ -989,6 +1067,7 @@ class ACLAuditLogPlugin extends Sensor {
   async globalOff() {
     super.globalOff()
 
+    this.flushAuditChains();
     await exec(`${f.getFirewallaHome()}/scripts/audit-stop`)
 
     clearInterval(this.bufferDumper)

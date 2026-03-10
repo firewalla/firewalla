@@ -1165,34 +1165,34 @@ class VPNClient {
 
   static getOifIpsetName(uid) {
     if (uid) {
-      return `c_oif_${uid.substring(0, 13)}_set`;
+      return `c_oif_${uid.substring(0, 10)}_set`;
     } else
       return null;
   }
 
   static getRouteIpsetName(uid, hard = true) {
     if (uid) {
-      return `c_rt_${hard ? "hard" : "soft"}_${uid.substring(0, 13)}_set`;
+      return `c_rt_${hard ? "hard" : "soft"}_${uid.substring(0, 10)}_set`;
     } else
       return null;
   }
 
   static getNetIpsetName(uid, af = 4) {
     if (uid) {
-      return `c_net_${uid.substring(0, 13)}_set${af}`;
+      return `c_net_${uid.substring(0, 10)}_set${af}`;
     } else
       return null;
   }
 
   static getSelfIpsetName(uid, af = 4) {
     if (uid) {
-      return `c_ip_${uid.substring(0, 13)}_set${af}`;
+      return `c_ip_${uid.substring(0, 10)}_set${af}`;
     } else
       return null;
   }
 
   static getDNSRedirectChainName(uid) {
-    return `FW_PR_VC_DNS_${uid.substring(0, 13)}`;
+    return `FW_PR_VC_DNS_${uid.substring(0, 10)}`;
   }
 
   static async ensureCreateEnforcementEnv(uid) {

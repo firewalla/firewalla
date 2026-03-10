@@ -79,20 +79,20 @@ async function ensureCreateRuleGroupChain(uuid) {
 function getRuleGroupChainName(uuid, action) {
   switch (action) {
     case "qos":
-      return `FW_RG_${uuid.substring(0, 13)}_QOS`;
+      return `FW_RG_${uuid.substring(0, 8)}_QOS`;
     case "soft_route":
-      return `FW_RG_${uuid.substring(0, 13)}_SROUTE`;
+      return `FW_RG_${uuid.substring(0, 8)}_SROUTE`;
     case "route":
-      return `FW_RG_${uuid.substring(0, 13)}_ROUTE`;
+      return `FW_RG_${uuid.substring(0, 8)}_ROUTE`;
     case "allow":
-      return `FW_RG_${uuid.substring(0, 13)}_ALLOW`;
+      return `FW_RG_${uuid.substring(0, 8)}_ALLOW`;
     case "alarm":
-      return `FW_RG_${uuid.substring(0, 13)}_ALARM`;
+      return `FW_RG_${uuid.substring(0, 8)}_ALARM`;
     case "snat":
-      return `FW_RG_${uuid.substring(0, 13)}_SNAT`;
+      return `FW_RG_${uuid.substring(0, 8)}_SNAT`;
     case "block":
     default:
-      return `FW_RG_${uuid.substring(0, 13)}_BLOCK`;
+      return `FW_RG_${uuid.substring(0, 8)}_BLOCK`;
   }
 }
 
@@ -168,9 +168,7 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashsize = 128, c
     const tempStaticIpset6 = categoryUpdater.getTempIPSetNameForIPV6(category, true);
   
     const netPortIpset = categoryUpdater.getNetPortIPSetName(category);
-    const tempNetPortIpset = categoryUpdater.getTempNetPortIPSetName(category);
     const netPortIpset6 = categoryUpdater.getNetPortIPSetNameForIPV6(category);
-    const tempNetPortIpset6 = categoryUpdater.getTempNetPortIPSetNameForIPV6(category);
   
     const domainPortIpset = categoryUpdater.getDomainPortIPSetName(category);
     const tempDomainPortIpset = categoryUpdater.getTempDomainPortIPSetName(category);
@@ -194,8 +192,6 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashsize = 128, c
 
     Ipset.create(netPortIpset, 'hash:net,port', false, { hashsize, maxelem: 65536, comment });
     Ipset.create(netPortIpset6, 'hash:net,port', true, { hashsize, maxelem: 65536, comment });
-    Ipset.create(tempNetPortIpset, 'hash:net,port', false, { hashsize, maxelem: 65536, comment });
-    Ipset.create(tempNetPortIpset6, 'hash:net,port', true, { hashsize, maxelem: 65536, comment });
     Ipset.create(domainPortIpset, 'hash:net,port', false, { hashsize, maxelem: 65536, comment });
     Ipset.create(domainPortIpset6, 'hash:net,port', true, { hashsize, maxelem: 65536, comment });
     Ipset.create(tempDomainPortIpset, 'hash:net,port', false, { hashsize, maxelem: 65536, comment });

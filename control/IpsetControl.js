@@ -17,14 +17,14 @@
 const log = require('../net2/logger.js')(__filename);
 const ModuleControl = require('./ModuleControl.js');
 const f = require('../net2/Firewalla.js');
-
-const MAX_BATCH_SIZE = 2000
+const path = require('path');
+const fsp = require('fs').promises;
 
 const { exec } = require('child-process-promise');
 
 /**
  * - Queues ipset operations as ipset-restore lines (e.g. "create -! ...", "add -! ...")
- * - Applies them in batch using "sudo ipset restore -!".
+ * - Writes operations to a file and applies via "ipset restore -! -f <file>"
  * - No need to dump current state (ipset restore is incremental).
  */
 class IpsetControl extends ModuleControl {
@@ -32,6 +32,17 @@ class IpsetControl extends ModuleControl {
     super('ipset');
     this.queuedRules = []; // array of ipset-restore lines
     this.existingSets = new Set(); // maintain a set of existing ipset set names to filter out invalid operations
+  }
+
+  _getIpsetRestoreFile() {
+    return path.join(f.getHiddenFolder(), 'run', 'iptables', 'ipset');
+  }
+
+  /** Replace first occurrence of setName with newName in line (for ipset restore lines). */
+  _replaceSetNameInLine(line, setName, newName) {
+    const idx = line.indexOf(setName);
+    if (idx < 0) return line;
+    return line.substring(0, idx) + newName + line.substring(idx + setName.length);
   }
 
   /**
@@ -51,101 +62,164 @@ class IpsetControl extends ModuleControl {
   }
 
   /**
-   * Execute queued ipset operations in a single ipset-restore batch.
+   * Execute queued ipset operations: filter into a map by set, then write restore file and run ipset restore
+   * to avoid interrupting blocking rules, use swap for existing sets
    */
-  async processRules(fromInitialization = false) {
+  async processRules(fromInitialization = false, dryRun = false) {
     if (fromInitialization) {
-      // do nothing here, trust install script for initial setup
-      // await this.readSetupScriptResult();
+      await this.readSetupScriptResult();
     }
 
-    let ops = this.queuedRules;
+    const queuedOps = this.queuedRules;
     this.queuedRules = [];
 
-    if (!ops.length) return;
+    if (!queuedOps.length) return;
 
-    log.verbose(`Processing ${ops.length} ipset operations via ipset restore`);
+    const previousSets = await this.listExistingSets();
+    this.existingSets = fromInitialization ? new Set() : previousSets;
+    const swapSets = new Set();
+    const restoreFile = this._getIpsetRestoreFile();
 
-    this.existingSets = await this.listExistingSets();
+    if (fromInitialization) {
+      await fsp.writeFile(restoreFile + '.prev', Array.from(previousSets).join('\n') + '\n', 'utf8');
+      await fsp.writeFile(restoreFile + '.queue', queuedOps.join('\n') + '\n', 'utf8');
+    }
 
-    ops = ops.filter(line => {
-      const [ op, setName, newName ] = line.split(' ');
+    // clean leftover _swp sets
+    const leftoverSwpSets = Array.from(previousSets).filter(setName => setName.endsWith('_swp'));
+    const ops = leftoverSwpSets.map(setName => `flush ${setName}`)
+      .concat(leftoverSwpSets.map(setName => `destroy ${setName}`));
+    if (leftoverSwpSets.length)
+      log.verbose('leftover _swp sets', leftoverSwpSets);
+
+    queuedOps.forEach(line => {
+      let [ op, setName, newName ] = line.split(' ');
+      // for initialization, swap existing sets to avoid interrupting blocking rules
+      // temporary sets are not swapped, leave the flush job to CategoryUpdater
+      // this is mainly to workaround the set name length limit
+      if (fromInitialization && previousSets.has(setName) && !setName.startsWith('c_bd_tmp_')) {
+        swapSets.add(setName);
+        line = line.replace(setName, `${setName}_swp`);
+        setName = `${setName}_swp`;
+      }
       switch (op) {
         case 'create':
-          this.existingSets.add(setName);
-          return true;
+          if (!this.existingSets.has(setName)) {
+            this.existingSets.add(setName);
+            ops.push(line);
+          }
+          break
         case 'flush':
-          return this.existingSets.has(setName);
+          if (this.existingSets.has(setName)) ops.push(line);
+          break;
+        case 'destroy':
+          if (this.existingSets.delete(setName)) ops.push(line);
+          break;
         case 'add':
         case 'del':
-          if (!this.existingSets.has(setName)) {
+          if (this.existingSets.has(setName))
+            ops.push(line);
+          else
             log.warn(`${setName} not found, dropping ${line}`);
-            return false;
-          }
-          return true;
+          break;
         case 'rename':
           if (this.existingSets.has(setName)) {
             this.existingSets.delete(setName);
+            if (fromInitialization && previousSets.has(newName)) {
+              line = line.trim() + '_swp'
+              newName = `${newName}_swp`;
+            }
             this.existingSets.add(newName);
-            return true;
-          } else {
+            ops.push(line);
+          } else
             log.warn(`${setName} not found, dropping ${line}`);
-            return false;
-          }
+          break;
         case 'swap':
+          if (fromInitialization && swapSets.has(newName)) {
+            line = line.trim() + '_swp'
+            newName = `${newName}_swp`;
+          }
           if (!this.existingSets.has(setName) || !this.existingSets.has(newName)) {
             log.warn(`${setName} or ${newName} not found, dropping ${line}`);
-            return false;
-          }
-          return true
-        case 'destroy':
-          return this.existingSets.delete(setName);
+          } else
+            ops.push(line);
+          break;
         default:
-          return false;
       }
-    });
+    })
 
-    for (let i = 0; i < ops.length; i += MAX_BATCH_SIZE) {
-      let batch = ops.slice(i, i + MAX_BATCH_SIZE);
-      const batchNumber = Math.floor(i / MAX_BATCH_SIZE) + 1;
-      const totalBatches = Math.ceil(ops.length / MAX_BATCH_SIZE);
-      
-      let retryCount = 0;
-      const MAX_RETRIES = 10; // Prevent infinite loops
-      
-      while (batch.length > 0 && retryCount < MAX_RETRIES) {
-        const input = batch.join('\n');
-        log.info(`Processing batch ${batchNumber}/${totalBatches} (${batch.length} operations, retry ${retryCount})`);
-        log.debug(input);
-        
-        try {
-          await exec(`sudo ipset restore -! << EOF\n${input}\nEOF`);
-          break; // Success, exit retry loop
-        } catch (err) {
-          const errorLine = this._parseErrorLine(err.stderr);
-          if (errorLine !== null && errorLine > 0 && errorLine <= batch.length) {
-            // Line number is 1-indexed in error message, convert to 0-indexed array
-            const failedIndex = errorLine - 1;
-            const failedLine = batch[failedIndex];
-            log.error(`ipset restore failed at line ${errorLine} in batch ${batchNumber}: ${failedLine}`);
-            
-            // Remove everything before and including the error line, keep only lines after
-            // Lines before the error were successfully processed, so we only retry with remaining lines
-            batch = batch.slice(errorLine);
-            retryCount++;
-            continue
-          } else {
-            // Cannot parse error line or invalid line number, log and skip this batch
-            log.error(`Error processing ipset operations (batch ${batchNumber})`, err);
-            log.error(`Failed to parse error line number, skipping batch`);
-            break;
-          }
+    // swap then destroy old ipsets
+    // same logic as install_iptables_setup.sh, flush first so members in list set could be destroyed
+    if (fromInitialization) {
+      previousSets.forEach(setName => {
+        if (swapSets.has(setName)) {
+          ops.push(`swap ${setName} ${setName}_swp`);
+          ops.push(`flush ${setName}_swp`);
+        } else if (setName.startsWith('c_')) {
+          if (setName.startsWith('c_bd_tmp_') && this.existingSets.has(setName)) return
+          ops.push(`flush ${setName}`);
+        }
+      });
+      // if ipset name changes between versions/restarts, ipset with old name might still be referenced
+      // and destroy operation might fail, but that's fine.
+      previousSets.forEach(setName => {
+        if (setName.startsWith('c_bd_tmp_')) return
+        if (swapSets.has(setName)) {
+          ops.push(`destroy ${setName}_swp`);
+        } else if (setName.startsWith('c_')) {
+          if (setName.startsWith('c_bd_tmp_') && this.existingSets.has(setName)) return
+          ops.push(`destroy ${setName}`);
+        }
+      });
+    }
+
+    if (ops.length !== 0) {
+      log.verbose(`Processing ${ops.length} ipset operations`);
+    } else {
+      return;
+    }
+
+    const restoreDir = path.dirname(restoreFile);
+    await fsp.mkdir(restoreDir, { recursive: true });
+
+    let remaining = ops;
+    let retryCount = 0;
+    const MAX_RETRIES = 10;
+    if (fromInitialization) {
+      await fsp.writeFile(restoreFile + '.orig', remaining.join('\n') + '\n', 'utf8');
+    }
+
+    while (remaining.length > 0 && retryCount < MAX_RETRIES) {
+      const content = remaining.join('\n') + '\n';
+      await fsp.writeFile(restoreFile, content, 'utf8');
+
+      if (dryRun) {
+        log.info(`DRY-RUN: ipset restore would have processed ${remaining.length} operations`);
+        return
+      }
+
+      log.debug(`ipset restore -! -f ${restoreFile} bytes=${content.length}`);
+      try {
+        await exec(`sudo ipset restore -! -f "${restoreFile}"`, { timeout: 60000 });
+        log.info(`ipset restore completed ${remaining.length} operations successfully`);
+        break;
+      } catch (err) {
+        const errorLine = this._parseErrorLine(err.stderr);
+        if (errorLine !== null && errorLine > 0 && errorLine <= remaining.length) {
+          const failedLine = remaining[errorLine - 1];
+          log.error(`ipset restore failed at line ${errorLine}: ${failedLine}`);
+          remaining = remaining.slice(errorLine);
+          retryCount++;
+        } else {
+          log.error('Error processing ipset operations', err);
+          log.error('Failed to parse error line number, skipping');
+          break;
         }
       }
-      
-      if (retryCount >= MAX_RETRIES) {
-        log.error(`Max retries (${MAX_RETRIES}) reached for batch ${batchNumber}, skipping remaining operations`);
-      }
+    }
+
+    if (retryCount >= MAX_RETRIES && remaining.length > 0) {
+      log.error(`Max retries (${MAX_RETRIES}) reached, skipping ${remaining.length} remaining operations`);
     }
   }
 
@@ -155,13 +229,10 @@ class IpsetControl extends ModuleControl {
   async readSetupScriptResult() {
     log.info('Reading ipset setup script result');
     try {
-      const path = require('path');
-      const fs = require('fs').promises;
-
-      const ipsetFile = path.join(f.getHiddenFolder(), 'run', 'iptables', 'ipset');
-      
-      const content = await fs.readFile(ipsetFile, 'utf8');
-      const lines = content.split('\n');
+      const ipsetFile = this._getIpsetRestoreFile();
+      const content = await fsp.readFile(ipsetFile, 'utf8');
+      const lines = content.split('\n')
+        .filter(line => line.length && !line.startsWith('flush') && !line.startsWith('#'));
       this.queuedRules = lines.concat(this.queuedRules);
 
       log.info(`Successfully queued ${lines.length} entries from ipset setup script`);
@@ -211,6 +282,7 @@ class IpsetControl extends ModuleControl {
         .filter(line => line.length > 0);
       
       log.verbose(`Found ${names.length} existing ipset names`);
+      log.debug(names.join(' '));
       return new Set(names);
     } catch (err) {
       log.error(`Error listing current ipset names: ${err.message}`);
