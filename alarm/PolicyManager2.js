@@ -1733,7 +1733,7 @@ class PolicyManager2 {
         
         for (const target of targets) {
           await categoryUpdater.activateCategory(target);
-          categoryUpdater.updateDevCategoryMapping(target, devOpts, isBlockOrdisturb);
+          await categoryUpdater.updateCategoryState(target, devOpts, pid, policy.dnsmasq_only, isBlockOrdisturb, true);
           if (policy.useBf) {
             await categoryUpdater.activateCategory(categoryUpdater.getBfCategoryName(target));
             categoryUpdater.addUseBfCategory(target);
@@ -2290,7 +2290,7 @@ class PolicyManager2 {
         }
         
         for (const target of targets) {
-          categoryUpdater.updateDevCategoryMapping(target, devOpts, isBlockOrdisturb, false);
+          await categoryUpdater.updateCategoryState(target, devOpts, pid, policy.dnsmasq_only, isBlockOrdisturb, false);
         }
 
         if (["allow", "block", "route"].includes(action)) {

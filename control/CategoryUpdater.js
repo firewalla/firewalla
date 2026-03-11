@@ -26,6 +26,8 @@ const dnsTool = new DNSTool()
 const CategoryUpdaterBase = require('./CategoryUpdaterBase.js');
 const domainBlock = require('../control/DomainBlock.js');
 const Block = require('../control/Block.js');
+const DomainUpdater = require('../control/DomainUpdater.js');
+const domainUpdater = new DomainUpdater();
 const IntelTool = require('../net2/IntelTool.js')
 const intelTool = new IntelTool()
 const { eachLimit } = require('../util/asyncNative.js')
@@ -289,6 +291,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     };
 
     this.customizedCategories = {};
+    this.activeCategoryPolicyMap = new Map();
   }
 
   isDevBlockedByCategory(category, devOpts) {
@@ -327,6 +330,75 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return false;
   }
 
+  async updateCategoryState(category, devOpts, policyId, domainOnly = true, isBlock=true, isAdd = true) {
+    if (!category || !devOpts || !policyId) return;
+    await this.updateActiveCategoryPolicyMap(category, policyId, domainOnly, isAdd);
+
+    this.updateDevCategoryMapping(category, devOpts, isBlock, isAdd);
+  }
+
+  async updateActiveCategoryPolicyMap(category, policyId, domainOnly = true, isAdd = true) {
+    if (!category || !policyId) return;
+    let categoryPolicies = this.activeCategoryPolicyMap.get(category);
+    let isRecycleRequired = false;
+
+    if (!categoryPolicies) {
+      categoryPolicies = {
+        category: category,
+        lastRecyclemode: "domainOnly",
+        numDefaultPolicies: 0,
+        numDomainOnlyPolicies: 0,
+        policies: new Map() // policyId to domainOnly};
+      }
+    }
+    if (isAdd) {
+      if (categoryPolicies.policies.has(policyId)) { // policy already exists
+        return;
+      }
+      if (domainOnly) {
+        categoryPolicies.numDomainOnlyPolicies++;
+      } else {
+        if (categoryPolicies.numDefaultPolicies === 0) {
+          isRecycleRequired = true;
+        }
+        categoryPolicies.numDefaultPolicies++;
+      }
+      categoryPolicies.policies.set(policyId, domainOnly);
+      this.activeCategoryPolicyMap.set(category, categoryPolicies);
+
+    } else {
+      if (!categoryPolicies.policies.has(policyId)) { // policy not found
+        return;
+      }
+      if (domainOnly) {
+        categoryPolicies.numDomainOnlyPolicies--;
+      } else {
+        if (categoryPolicies.numDefaultPolicies === 1) {
+          isRecycleRequired = true;
+        }
+        categoryPolicies.numDefaultPolicies--;
+      }
+      categoryPolicies.policies.delete(policyId);
+      this.activeCategoryPolicyMap.set(category, categoryPolicies);
+    }
+
+    if (isRecycleRequired) {
+      // add the ip of related domains to _dm ipset
+      let retryCount = 0;
+      while (retryCount < 10) {
+        if (!this.isRecycleTaskRunning(category)) {
+          break;
+        }
+        await scheduler.delay(3000);
+        retryCount++;
+      }
+      if (retryCount >= 10) {
+        log.error(`Failed to add the ip of related domains to _dm ipset for category ${category}`);
+        return;
+      }
+      await this.recycleIPSet(category);
+    }
+  }
 
   updateDevCategoryMapping(category, devOpts, isBlock=true, isAdd = true) {
     if (!category || !devOpts) return;
@@ -1156,6 +1228,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
     if (!this.inited) return
     log.debug(`About to update category ${category} with domain ${domain}, options: ${JSON.stringify(options)}`)
 
+    if (options.domainOnly && !options.isStatic) {
+      return;
+    }
+
     const mapping = this.getDomainMapping(domain)
 
     let ipsetName = this.getIPSetName(category, options.isStatic)
@@ -1335,6 +1411,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
       await rclient.expireAsync(smappings, 600) // auto expire in 10 minutes
 
+      if (options.domainOnly && !options.isStatic) {
+        return;
+      }
+
       let ipsetName = this.getIPSetName(category, options.isStatic)
       let ipset6Name = this.getIPSetNameForIPV6(category, options.isStatic)
 
@@ -1416,6 +1496,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return false;
   }
 
+  isRecycleTaskRunning(category) {
+    return this.recycleTasks[category];
+  }
+
   // rebuild category ipset
   async recycleIPSet(category) {
     if (this.recycleTasks[category]) {
@@ -1430,6 +1514,25 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const updateOptions = {};
     if (ipsetNeedComment) {
       updateOptions.comment = "persistent";
+    }
+
+    let lastRecyclemode = "domainOnly";
+    let currentRecyclemode = "domainOnly";
+
+    if (this.activeCategoryPolicyMap.has(category)) {
+      lastRecyclemode = this.activeCategoryPolicyMap.get(category).lastRecyclemode;
+      if (this.activeCategoryPolicyMap.get(category).numDefaultPolicies > 0) {
+        currentRecyclemode = "default";
+      }
+    } else { // first time to add category to activeCategoryPolicyMap
+      let categoryPolicies = {
+        category: category,
+        lastRecyclemode: "domainOnly",
+        numDefaultPolicies: 0,
+        numDomainOnlyPolicies: 0,
+        policies: new Map() // policyId to domainOnly};
+      }
+      this.activeCategoryPolicyMap.set(category, categoryPolicies);      
     }
 
     await this.updatePersistentIPSets(category, false, updateOptions);
@@ -1496,13 +1599,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     const previousEffectiveDomains = this.effectiveCategoryDomains[category] || new Map();
 
-    const removedDomains = [];
-    for (const [k, v] of previousEffectiveDomains) {
-      if (!domainMap.has(k)) {
-        removedDomains.push(v)
+    const removedDomains = new Map();
+    for (const [k, v] of previousEffectiveDomains.entries()) {
+      if (!domainMap.has(k) || (lastRecyclemode === "default" && currentRecyclemode === "domainOnly")) {
+        removedDomains.set(k, v);
       }
     }
-    for (const domainObj of removedDomains) {
+    for (const [key, domainObj] of removedDomains.entries()) {
       const domain = domainObj.id;
       log.debug(`Domain ${domain} is removed from category ${category}, unregister domain updater ...`, domainObj);
       let domainSuffix = domain
@@ -1511,19 +1614,52 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
       // unregister domain updater for removed domain
       // will skip unapply in unblockDomain because the ipset will be flushed later if ondemand is false.
+      const options = {connSet: this.getConnectionIPSetName(category), skipUnapply: !ondemand };
       if (domain.startsWith("*.")) {
         if (domainObj.port) {
-          await domainBlock.unblockDomain(domain.substring(2), { blockSet: this.getDomainPortIPSetName(category, domainObj.isStatic), connSet: this.getConnectionIPSetName(category), port: domainObj.port, skipUnapply: !ondemand });
+          options.port = domainObj.port;
+          options.blockSet = this.getDomainPortIPSetName(category, domainObj.isStatic);
+          if(!domainMap.has(key)) { // if the domain is not in the new domain map, unblock the domain
+            await domainBlock.unblockDomain(domainSuffix, options);
+          }
         } else {
-          await domainBlock.unblockDomain(domainSuffix, { blockSet: this.getIPSetName(category, domainObj.isStatic), connSet: this.getConnectionIPSetName(category), skipUnapply: !ondemand });
+          options.blockSet = this.getIPSetName(category, domainObj.isStatic);
+          if (lastRecyclemode === "domainOnly" && !domainObj.isStatic) {
+            options.domainOnly = true;
+          }
+          if(!domainMap.has(key)) { // if the domain is not in the new domain map, unblock the domain
+            await domainBlock.unblockDomain(domainSuffix, options);
+          } else if (!domainObj.isStatic && lastRecyclemode === "default" && currentRecyclemode === "domainOnly") {
+              //TODO:mode change from default to domainOnly, need unregister the domain updater
+              await domainUpdater.unregisterDefaultUpdate(domainSuffix, options);
+          }
         }
       } else {
+        options.exactMatch = true;
         if (domainObj.port) {
-          await domainBlock.unblockDomain(domain, { exactMatch: true, blockSet: this.getDomainPortIPSetName(category, domainObj.isStatic), connSet: this.getConnectionIPSetName(category), port: domainObj.port, skipUnapply: !ondemand });
+          options.blockSet = this.getDomainPortIPSetName(category, domainObj.isStatic);
+          options.port = domainObj.port;
+          await domainBlock.unblockDomain(domainSuffix, options);
         } else {
-          await domainBlock.unblockDomain(domainSuffix, { exactMatch: true, blockSet: this.getIPSetName(category, domainObj.isStatic), connSet: this.getConnectionIPSetName(category), skipUnapply: !ondemand });
+          options.blockSet = this.getIPSetName(category, domainObj.isStatic);
+          if (lastRecyclemode === "domainOnly" && !domainObj.isStatic) {
+            options.domainOnly = true;
+          }
+          if(!domainMap.has(key)) { // if the domain is not in the new domain map, unblock the domain
+            await domainBlock.unblockDomain(domainSuffix, options);
+          } else if (!domainObj.isStatic && lastRecyclemode === "default" && currentRecyclemode === "domainOnly") {
+            //TODO:mode change from default to domainOnly, need unregister the domain updater
+            await domainUpdater.unregisterDefaultUpdate(domainSuffix, options);
+
+          }
         }
       }
+    }
+
+    if (lastRecyclemode === "default" && currentRecyclemode === "domainOnly") {
+      //TODO: flush the _dm ipset
+      Ipset.flush(this.getIPSetName(category, false, false));
+      Ipset.flush(this.getIPSetName(category, false, true));
     }
 
     await this.updateFlowSignatureList();
@@ -1534,7 +1670,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
       for (const [sigId, sigIdMap] of categoryMap.entries()) {
         for (const [srvKey, srvEntry] of sigIdMap.entries()) {
           if (!newSigDtSrvMap.has(srvKey)) {
-            await this.unblockSigDtServer(category, srvEntry);
+            if (!ondemand) {
+              await this.unblockSigDtServer(category, srvEntry);
+            }
             sigIdMap.delete(srvKey);
 
             if (categoryMap.size === 0) {
@@ -1575,10 +1713,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
             port: v.port || null
           }
         );
+        const options = { useTemp: true, isStatic: v.isStatic, needComment: ipsetNeedComment };
         if (!v.port) {
-          await this.updateIPSetByDomain(category, domain, { useTemp: true, isStatic: v.isStatic, needComment: ipsetNeedComment });
+          if (currentRecyclemode === "domainOnly" && !v.isStatic) {
+            options.domainOnly = true;
+          }
+          await this.updateIPSetByDomain(category, domain, options);
         } else {
-          await this.updateIPSetByDomainPort(category, v, { useTemp: true, isStatic: v.isStatic, needComment: ipsetNeedComment });
+          await this.updateIPSetByDomainPort(category, v, options);
         }
       }
       this.effectiveCategorySigDtSrvs.set(category, new Map());
@@ -1601,27 +1743,55 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     log.info(`Successfully recycled ipset for category ${category}`)
 
-    const newDomains = [];
+    const newDomains = new Map();
     for (const [k, v] of domainMap) {
-      if (!previousEffectiveDomains.has(k)) {
-        newDomains.push(v);
+      if (!previousEffectiveDomains.has(k) || (lastRecyclemode === "domainOnly" && currentRecyclemode === "default")) {
+        newDomains.set(k, v);
       }
     }
-    for (const domainObj of newDomains) {
+    for (const [key, domainObj] of newDomains.entries()) {
       // register domain updater for new effective domain
       // ondemand is set to "true" because we don't want blockDomain to update ipset directly because it has been handled above.
       const domain = domainObj.id;
+      let domainSuffix = domain
+      if (domainSuffix.startsWith("*.")) {
+        domainSuffix = domainSuffix.substring(2);
+      }
+      const options = { ondemand: true, connSet: this.getConnectionIPSetName(category), category, needComment: ipsetNeedComment };
       if (domain.startsWith("*.")) {
         if (domainObj.port) {
-          await domainBlock.blockDomain(domain.substring(2), { ondemand: true, blockSet: this.getDomainPortIPSetName(category, domainObj.isStatic), connSet: this.getConnectionIPSetName(category), category, port: domainObj.port, needComment: ipsetNeedComment });
+          options.blockSet = this.getDomainPortIPSetName(category, domainObj.isStatic);
+          options.port = domainObj.port;
+          await domainBlock.blockDomain(domainSuffix, options);
         } else {
-          await domainBlock.blockDomain(domain.substring(2), { ondemand: true, blockSet: this.getIPSetName(category, domainObj.isStatic), connSet: this.getConnectionIPSetName(category), category, needComment: ipsetNeedComment });
+          options.blockSet = this.getIPSetName(category, domainObj.isStatic);
+          if (currentRecyclemode === "domainOnly" && !domainObj.isStatic) {
+            options.domainOnly = true;
+          }
+          if(!previousEffectiveDomains.has(key)) { // if the domain is not in the new domain map, block the domain
+            await domainBlock.blockDomain(domainSuffix, options);
+          } else if (!domainObj.isStatic && lastRecyclemode === "domainOnly" && currentRecyclemode === "default") {
+            //TODO:mode change from domainOnly to default, need register the domain updater
+            await domainUpdater.registerDefaultUpdate(domainSuffix, options);
+          }
         }
       } else {
+        options.exactMatch = true;
         if (domainObj.port) {
-          await domainBlock.blockDomain(domain, { ondemand: true, exactMatch: true, blockSet: this.getDomainPortIPSetName(category, domainObj.isStatic), connSet: this.getConnectionIPSetName(category), category, port: domainObj.port, needComment: ipsetNeedComment });
+          options.blockSet = this.getDomainPortIPSetName(category, domainObj.isStatic);
+          options.port = domainObj.port;
+          await domainBlock.blockDomain(domainSuffix, options);
         } else {
-          await domainBlock.blockDomain(domain, { ondemand: true, exactMatch: true, blockSet: this.getIPSetName(category, domainObj.isStatic), connSet: this.getConnectionIPSetName(category), category, needComment: ipsetNeedComment });
+          options.blockSet = this.getIPSetName(category, domainObj.isStatic);
+          if (currentRecyclemode === "domainOnly" && !domainObj.isStatic) {
+            options.domainOnly = true;
+          }
+          if(!previousEffectiveDomains.has(key)) { // if the domain is not in the new domain map, block the domain
+            await domainBlock.blockDomain(domainSuffix, options);
+          } else if (!domainObj.isStatic && lastRecyclemode === "domainOnly" && currentRecyclemode === "default") {
+            //TODO:mode change from domainOnly to default, need register the domain updater
+            await domainUpdater.registerDefaultUpdate(domainSuffix, options);
+          }
         }
       }
     }
@@ -1646,6 +1816,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
 
     this.recycleTasks[category] = false;
+    this.activeCategoryPolicyMap.get(category).lastRecyclemode = currentRecyclemode;
   }
 
   async refreshCategoryRecord(category) {
