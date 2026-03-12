@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -1824,6 +1824,8 @@ class netBot extends ControllerBot {
     if (begin && end) {
       options.begin = begin
       options.end = end
+
+      log.debug(type, "FlowHandler", new Date(begin * 1000).toLocaleTimeString(), '-', new Date(end * 1000).toLocaleTimeString());
     }
     options.limit = msg.data.limit
 
@@ -1831,8 +1833,6 @@ class netBot extends ControllerBot {
     if (msg.data.hourblock != "1" && msg.data.hourblock != "0") {
       options.queryall = true
     }
-
-    log.verbose(type, "FlowHandler", new Date(begin * 1000).toLocaleTimeString(), '-', new Date(end * 1000).toLocaleTimeString());
 
     // await this.hostManager.getHostsAsync();
     let jsonobj = {}
@@ -3892,13 +3892,13 @@ class netBot extends ControllerBot {
     if (ignoreRate) {
       // log.info('ignore rate limit');
       const response = await this.msgHandler(gid, rawmsg)
-      log.debug('msgHandler returned', response)
+      log.silly('msgHandler returned', response)
       return response
     } else {
       try {
         await this.rateLimiter[from].consume('msg_handler')
         const response = await this.msgHandler(gid, rawmsg)
-        log.debug('msgHandler returned', response)
+        log.silly('msgHandler returned', response)
         return response
       } catch (err) {
         log.error(err)
@@ -3940,8 +3940,8 @@ class netBot extends ControllerBot {
         }
         const item = _.get(rawmsg, 'message.obj.data.item')
         const mtype = _.get(rawmsg, 'message.obj.mtype');
-        if (item !== 'ping' && (mtype === "get" || mtype === "init")) { // other mtype, i.e., set, cmd, is included in trace log
-          rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app",
+        if (item !== 'ping' && (mtype === "get" || mtype === "init") && rawmsg.message && !rawmsg.message.suppressLog) { // other mtype, i.e., set, cmd, is included in trace log
+          log.info("Received jsondata from app",
             item == 'batchAction'
               ? _.get(rawmsg, 'message.obj.data.value', []).map(c => `mtype: ${c.mtype} item: ${c.data && c.data.item} target: ${c.target}, msgid: ${c.id}`)
               : `mtype: ${mtype} item: ${item} target: ${msg.target}, msgid: ${msg.id}`
@@ -4359,6 +4359,8 @@ process.on('unhandledRejection', (reason, p) => {
     msg: msg,
     stack: reason.stack,
     err: reason
+  }).catch(err => {
+    log.error("Failed to log unhandled rejection", err.message);
   });
 });
 
@@ -4369,6 +4371,8 @@ process.on('uncaughtException', (err) => {
     msg: err.message,
     stack: err.stack,
     err: err
+  }).catch(err => {
+    log.error("Failed to log unhandled exception", err.message);
   });
   setTimeout(() => {
     try {
