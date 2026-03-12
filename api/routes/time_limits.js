@@ -199,8 +199,13 @@ router.post('/requests', async (req, res) => {
     res.status(400).json({ error: 'app and requestQuota are required' });
     return;
   }
-  if (requestQuota <= 0) {
-    res.status(400).json({ error: 'requestQuota must be greater than 0' });
+  const reqQuota = Number(requestQuota);
+  if (Number.isNaN(reqQuota)) {
+    res.status(400).json({ error: 'requestQuota must be a number' });
+    return;
+  }
+  if (reqQuota <= 0 || reqQuota >= 86400) {
+    res.status(400).json({ error: 'requestQuota must be greater than 0 and less than 86400' });
     return;
   }
   try {
@@ -213,7 +218,7 @@ router.post('/requests', async (req, res) => {
       res.status(404).json({ error: 'No user tag found for this device' });
       return;
     }
-    const request = await accessRequestManager.createOrUpdateRequest(userId, app, requestQuota, {
+    const request = await accessRequestManager.createOrUpdateRequest(userId, app, reqQuota, {
       deviceMac: monitorable.getGUID ? monitorable.getGUID() : null,
       reason: reason || null
     });

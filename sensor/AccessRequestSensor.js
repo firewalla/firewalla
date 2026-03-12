@@ -33,7 +33,7 @@ class AccessRequestSensor extends Sensor {
         if (Number.isNaN(num)) {
           throw { code: 400, msg: 'approvedQuota must be a number' };
         }
-        if (num <= 0) {
+        if (num <= 0 || num >= 86400) {
           throw { code: 400, msg: 'approvedQuota must be greater than 0' };
         }
         approvedQuota = num;
