@@ -31,10 +31,6 @@ const accessRequestManager = getAccessRequestManager();
 
 function getClientIP(req) {
   let ip = req.connection && req.connection.remoteAddress;
-  if (req.headers && req.headers['x-forwarded-for']) {
-    const forwarded = req.headers['x-forwarded-for'];
-    ip = typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : forwarded[0];
-  }
   if (ip && ip.startsWith('::ffff:')) {
     ip = ip.substring(7);
   }
@@ -137,6 +133,8 @@ router.get('/', async (req, res) => {
     for (const rule of matchedRules) {
       const au = rule.appTimeUsage;
       if (!au) continue;
+      // paused rule is also returned, but need to filter out in the result
+      if (rule.disabled) continue;
       const quota = Number(au.quota) || 0;
       const extraQuotaEffective = (au.extraQuota != null && au.extraQuotaUntilTs != null && nowTs < au.extraQuotaUntilTs)
         ? (Number(au.extraQuota) || 0) : 0;
@@ -150,7 +148,7 @@ router.get('/', async (req, res) => {
         continue;
       }
       const existing = appToBest.get(key);
-      if (!existing || sum > existing.sum) {
+      if (!existing || sum < existing.sum) {
         appToBest.set(key, { app: key, quota, extraQuota: extraQuotaEffective, sum });
       }
     }
@@ -199,6 +197,10 @@ router.post('/requests', async (req, res) => {
   const { app, requestQuota, reason } = req.body || {};
   if (!app || requestQuota == null) {
     res.status(400).json({ error: 'app and requestQuota are required' });
+    return;
+  }
+  if (requestQuota <= 0) {
+    res.status(400).json({ error: 'requestQuota must be greater than 0' });
     return;
   }
   try {

@@ -59,6 +59,7 @@ function getUserRelatedTags(userId) {
  * Find time-limit policies that match the given userId and optionally app.
  * Uses getUserRelatedTags to get user and affiliated tag, then matches policy.tag to their rule tag values (e.g. userTag:uid, tag:uid).
  * When app is omitted, returns all policies that match the user (any app).
+ * Paused rule is also returned
  * @param {string|null} userId - user tag uid
  * @param {string} [app] - optional app/category key; when omitted, all matching policies are returned
  * @returns {Promise<Array>} matching policies
@@ -85,7 +86,6 @@ async function findMatchingTimeLimitRules(userId, app) {
     const au = p.appTimeUsage;
     if (au.app && au.app === app) return true;
     if (Array.isArray(au.apps) && au.apps.includes(app)) return true;
-    if (au.category && au.category === app) return true;
     return false;
   };
   const policyTargetsUserOrGroup = (p) => p.tag && p.tag.some(t => ruleTagValues.has(t));

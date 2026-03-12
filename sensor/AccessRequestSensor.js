@@ -28,6 +28,9 @@ class AccessRequestSensor extends Sensor {
         throw { code: 400, msg: 'requestId is required' };
       }
       const approvedQuota = data && data.approvedQuota != null ? data.approvedQuota : undefined;
+      if (!approvedQuota || approvedQuota <= 0) {
+        throw { code: 400, msg: 'approvedQuota must be greater than 0' };
+      }
       const result = await AccessRequestManager.getInstance().approveRequest(requestId, approvedQuota);
       if (!result.ok) {
         throw { code: 400, msg: result.error || 'Failed to approve' };
