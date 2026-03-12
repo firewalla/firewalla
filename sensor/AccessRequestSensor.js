@@ -27,9 +27,16 @@ class AccessRequestSensor extends Sensor {
       if (!requestId) {
         throw { code: 400, msg: 'requestId is required' };
       }
-      const approvedQuota = data && data.approvedQuota != null ? data.approvedQuota : undefined;
-      if (!approvedQuota || approvedQuota <= 0) {
-        throw { code: 400, msg: 'approvedQuota must be greater than 0' };
+      let approvedQuota = data && data.approvedQuota != null ? data.approvedQuota : undefined;
+      if (approvedQuota != null) {
+        const num = Number(approvedQuota);
+        if (Number.isNaN(num)) {
+          throw { code: 400, msg: 'approvedQuota must be a number' };
+        }
+        if (num <= 0) {
+          throw { code: 400, msg: 'approvedQuota must be greater than 0' };
+        }
+        approvedQuota = num;
       }
       const result = await AccessRequestManager.getInstance().approveRequest(requestId, approvedQuota);
       if (!result.ok) {

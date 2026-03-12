@@ -230,6 +230,7 @@ class AccessRequestManager {
     const endOfTodayTs = this._getEndOfDayTimestamp(tz);
     const nowTs = Date.now() / 1000;
 
+    // matchingPolices includes paused rules, but extraQuota on these rules can still be updated in case they are resumed after approval
     for (const policy of matchingPolicies) {
       const au = Object.assign({}, policy.appTimeUsage);
       if (au.extraQuotaUntilTs != null && nowTs < au.extraQuotaUntilTs) {
