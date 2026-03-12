@@ -34,7 +34,7 @@ class AccessRequestSensor extends Sensor {
           throw { code: 400, msg: 'approvedQuota must be a number' };
         }
         if (num <= 0 || num >= 86400) {
-          throw { code: 400, msg: 'approvedQuota must be greater than 0' };
+          throw { code: 400, msg: 'approvedQuota must be greater than 0 and less than 86400' };
         }
         approvedQuota = num;
       }
