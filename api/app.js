@@ -54,6 +54,10 @@ subpath_v1.use(bodyParser.json({limit: '5mb'}));
 
 subpath_v1.use('/encipher', encipher);
 subpath_v1.use('/encipher_raw', require('./routes/raw_encipher.js'));
+subpath_v1.use('/time_limits', require('./routes/time_limits.js'));
+
+const AccessRequestManager = require('../alarm/AccessRequestManager.js');
+AccessRequestManager.scheduleExpireCronJob();
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {

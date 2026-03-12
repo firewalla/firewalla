@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time Limits</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; }
+        h1 { font-size: 1.25rem; margin-bottom: 8px; }
+        .device { color: #666; margin-bottom: 24px; }
+        .rule { border: 1px solid #ddd; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
+        .rule h2 { font-size: 1rem; margin: 0 0 8px 0; }
+        .rule .meta { color: #666; font-size: 0.875rem; margin-bottom: 8px; }
+        .usage { display: flex; gap: 16px; flex-wrap: wrap; }
+        .usage span { font-size: 0.875rem; }
+        .remaining { font-weight: 600; }
+        .no-rules { color: #666; }
+        .btn-request-more { padding: 6px 12px; font-size: 0.875rem; cursor: pointer; border-radius: 6px; border: 1px solid #ccc; background: #f5f5f5; }
+        .btn-request-more:hover { background: #eee; }
+        .btn-request-more:disabled { opacity: 0.6; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+    <h1>Time Limits</h1>
+    {{#device}}
+    <p class="device">Device: {{name}} — {{ip}}</p>
+    {{/device}}
+    {{^device}}
+    <p class="device">Device not found for your IP.</p>
+    {{/device}}
+
+    {{#device}}
+    <p class="device">User: {{username}}</p>
+    {{/device}}
+
+    {{#internetTimeLimit}}
+    <h2 style="font-size: 1rem; margin-top: 24px;">Internet</h2>
+    <div class="rule">
+        <div class="meta">Quota: {{quota}} min · Extra: {{extraQuota}} min</div>
+        <div class="request-more" style="margin-top: 12px;">
+            <button type="button" class="btn-request-more" data-app="internet" data-quota="30">Request more time</button>
+            <span class="request-feedback" style="margin-left: 8px; font-size: 0.875rem;"></span>
+        </div>
+    </div>
+    {{/internetTimeLimit}}
+
+    {{#appTimeLimits}}
+    <div class="rule">
+        <h2>App: {{app}}</h2>
+        <div class="meta">Quota: {{quota}} min · Extra: {{extraQuota}} min</div>
+        <div class="request-more" style="margin-top: 12px;">
+            <button type="button" class="btn-request-more" data-app="{{app}}" data-quota="30">Request more time</button>
+            <span class="request-feedback" style="margin-left: 8px; font-size: 0.875rem;"></span>
+        </div>
+    </div>
+    {{/appTimeLimits}}
+    {{^appTimeLimits}}
+    <p class="no-rules">No time limit rules apply to you.</p>
+    {{/appTimeLimits}}
+
+    <h2 style="font-size: 1rem; margin-top: 24px;">Pending Requests</h2>
+    {{#pendingAccessRequests}}
+    <div class="rule">
+        <h2>Request — {{app}}</h2>
+        <div class="meta">Requested: {{requestQuota}} min · {{requestId}}</div>
+    </div>
+    {{/pendingAccessRequests}}
+    {{^pendingAccessRequests}}
+    <p class="no-rules">No pending requests.</p>
+    {{/pendingAccessRequests}}
+
+    <h2 style="font-size: 1rem; margin-top: 24px;">Previous Requests</h2>
+    {{#previousAccessRequests}}
+    <div class="rule">
+        <h2>Request — {{app}}</h2>
+        <div class="meta">Requested: {{requestQuota}} min · {{state}}{{#approvedQuota}} · Approved: {{approvedQuota}} min{{/approvedQuota}}{{#denyReason}} · Denied: {{denyReason}}{{/denyReason}}</div>
+    </div>
+    {{/previousAccessRequests}}
+    {{^previousAccessRequests}}
+    <p class="no-rules">No previous requests today.</p>
+    {{/previousAccessRequests}}
+
+    <script>
+    document.querySelectorAll('.btn-request-more').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var app = this.dataset.app;
+            var quota = parseInt(this.dataset.quota, 10) || 30;
+            var feedback = this.closest('.request-more').querySelector('.request-feedback');
+            if (!app) return;
+            btn.disabled = true;
+            feedback.textContent = 'Sending…';
+            fetch('/v1/time_limits/requests', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ app: app, requestQuota: quota })
+            }).then(function(r) {
+                return r.json().then(function(body) {
+                    if (r.ok) {
+                        feedback.textContent = 'Request sent.';
+                        setTimeout(function() { location.reload(); }, 800);
+                    } else {
+                        feedback.textContent = (body && (body.error || body.message)) || 'Request failed';
+                        btn.disabled = false;
+                    }
+                }).catch(function() {
+                    feedback.textContent = r.ok ? 'Request sent.' : 'Request failed';
+                    if (r.ok) setTimeout(function() { location.reload(); }, 800);
+                    else btn.disabled = false;
+                });
+            }).catch(function() {
+                feedback.textContent = 'Request failed';
+                btn.disabled = false;
+            });
+        });
+    });
+    </script>
+</body>
+</html>
