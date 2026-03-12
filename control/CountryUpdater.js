@@ -204,6 +204,8 @@ class CountryUpdater extends CategoryUpdaterBase {
       }
     }
 
+    this.flushTempIpset(category, true);
+
     // only update v4 persistent set, v6 space is too big for this approach
     await this.updatePersistentIPSets(category, false, {useTemp: true});
 

@@ -237,14 +237,6 @@ class CategoryUpdaterBase {
     return Block.getDstSet6(`tmp_${this.shortString(category)}` + (isStatic ? "_ip" : "_dm"));
   }
 
-  getTempNetPortIPSetName(category) {
-    return Block.getDstSet(`tmp_${this.shortString(category)}` + "_np");
-  }
-
-  getTempNetPortIPSetNameForIPV6(category) {
-    return Block.getDstSet6(`tmp_${this.shortString(category)}` + "_np");
-  }
-
   getTempDomainPortIPSetName(category, isStatic = false) {
     return Block.getDstSet(`tmp_${this.shortString(category)}` + (isStatic ? "_sdp" : "_ddp"));
   }
@@ -310,6 +302,28 @@ class CategoryUpdaterBase {
       hashsize: maxelem / 4,
       maxelem,
     });
+  }
+
+  flushTempIpset(category, isCountry = false) {
+    const tmpIPSetName = this.getTempIPSetName(category);
+    const tmpIPSet6Name = this.getTempIPSetNameForIPV6(category);
+
+    Ipset.flush(tmpIPSetName);
+    Ipset.flush(tmpIPSet6Name);
+
+    if (!isCountry) {
+      const tmpDomainportIpsetName = this.getTempDomainPortIPSetName(category);
+      const tmpDomainportIpset6Name = this.getTempDomainPortIPSetNameForIPV6(category);
+
+      const tmpStaticDomainportIpsetName = this.getTempDomainPortIPSetName(category, true);
+      const tmpStaticDomainportIpset6Name = this.getTempDomainPortIPSetNameForIPV6(category, true);
+
+      Ipset.flush(tmpDomainportIpsetName);
+      Ipset.flush(tmpDomainportIpset6Name);
+
+      Ipset.flush(tmpStaticDomainportIpsetName);
+      Ipset.flush(tmpStaticDomainportIpset6Name);
+    }
   }
 
   async swapIpset(category, isCountry = false) {

@@ -87,9 +87,6 @@ class PolicyManager {
     // device ipsets are created on creation of Host(), mostly happens on the first call of HostManager.getHostsAsync()
     // PolicyManager2 will ensure device sets are created before policy enforcement. nothing needs to be done here
 
-    // Finish initialization - this will process all queued rules (setup script runs, then rules are applied)
-    await blockControl.finishInitialization();
-
     // only FireMain should be listening on this
     sem.emitLocalEvent({
       type: 'IPTABLES_READY',

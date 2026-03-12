@@ -133,7 +133,7 @@ class BlockControl {
       this.enterProcessingState();
     }, this.queuingTimeout);
     
-    log.verbose(`Queuing timer refreshed, will process in ${this.queuingTimeout}ms`);
+    // log.debug(`Queuing timer refreshed, will process in ${this.queuingTimeout}ms`);
   }
 
   /**
@@ -148,7 +148,7 @@ class BlockControl {
       const path = require('path');
       const setupScriptPath = path.join(f.getFirewallaHome(), 'control', 'install_iptables_setup.sh');
       
-      await exec(setupScriptPath, { timeout: 30000 });
+      await exec(`${setupScriptPath} --dry-run`, { timeout: 30000 });
     } catch (err) {
       log.error(`Error running iptables setup script: ${err.message}`);
       throw err;

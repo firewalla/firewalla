@@ -1691,6 +1691,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     // do not execute full update on ipset if ondemand is set
     if (!ondemand) {
+      this.flushTempIpset(category);
+
       for (const [k, v] of domainMap) {
         const domain = v.id;
         let domainSuffix = domain

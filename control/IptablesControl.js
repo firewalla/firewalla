@@ -67,13 +67,17 @@ class IptablesControl extends ModuleControl {
   /**
    * Process queued rules (called by BlockControl when ready)
    */
-  async processRules() {
+  async processRules(fromInitialization = false) {
     // snapshot & clear queue early (new requests will be handled in next round)
     const queued = this.queuedRules;
     this.queuedRules = this._emptyState(true);
 
     // dump current iptables to aggregate with queued rules
-    await this.dumpIptables();
+    if (fromInitialization) {
+      await this.readSetupScriptResult();
+    } else {
+      await this.dumpIptables();
+    }
 
     // Apply queued ops to aggregatedRules, per-table, per-family
     let changed = { 4: false, 6: false };
@@ -165,7 +169,7 @@ class IptablesControl extends ModuleControl {
     for (const line of lines) {
       // a workaround to handle extra spaces in udp_tls dump
       const trimmedLine = line.trim().replace(/\s{2,}/g, ' ')
-        // comments with quote or space are dumped with quotes
+        // comments with colon or space are dumped with quotes
         // comment should not contain quote, otherwise this fails
         .replace(/ --comment ([^" ]+) /, ' --comment "$1" ');
       

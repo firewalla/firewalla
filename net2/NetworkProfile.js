@@ -353,7 +353,7 @@ class NetworkProfile extends Monitorable {
 
   static getSelfIpsetName(uuid, af = 4) {
     if (uuid) {
-      return `c_ip_${uuid.substring(0, 13)}_set` + (af === 4 ? "" : "6");
+      return `c_ip_${uuid.substring(0, 8)}_set` + (af === 4 ? "" : "6");
     } else
       return null;
   }
@@ -361,28 +361,28 @@ class NetworkProfile extends Monitorable {
   static getNetIpsetName(uuid, af = 4) {
     // TODO: need find a better way to get a unique name from uuid
     if (uuid) {
-      return `c_net_${uuid.substring(0, 13)}_set` + (af === 4 ? "" : "6");
+      return `c_net_${uuid.substring(0, 8)}_set` + (af === 4 ? "" : "6");
     } else
       return null;
   }
 
   static getGatewayIpsetName(uuid, af = 4) {
     if (uuid) {
-      return `c_gw_${uuid.substring(0, 13)}_set` + (af === 4 ? "" : "6");
+      return `c_gw_${uuid.substring(0, 8)}_set` + (af === 4 ? "" : "6");
     } else
       return null;
   }
 
   static getRouteIpsetName(uuid, hard = true) {
     if (uuid) {
-      return `c_rt_${hard ? "hard" : "soft"}_${uuid.substring(0, 13)}_set`;
+      return `c_rt_${hard ? "hard" : "soft"}_${uuid.substring(0, 8)}_set`;
     } else
       return null;
   }
 
   static getOifIpsetName(uuid) {
     if (uuid) {
-      return `c_oif_${uuid.substring(0, 13)}_set`;
+      return `c_oif_${uuid.substring(0, 8)}_set`;
     } else
       return null;
   }
@@ -406,25 +406,6 @@ class NetworkProfile extends Monitorable {
   // Thereby, the rule can still be applied and take effect once the network is restored
   static async ensureCreateEnforcementEnv(uuid) {
 
-    const ensureCreateIpset = async (netIpsetName, family = 4) => {
-      const createCmd = (family === 4)
-        ? `sudo ipset create -! ${netIpsetName} hash:net maxelem 1024`
-        : `sudo ipset create -! ${netIpsetName} hash:net family inet6 maxelem 1024`;
-      const deleteCmd = `sudo ipset destroy ${netIpsetName}`;
-      try {
-        await exec(createCmd);
-        log.info(`Successfully created ipset ${netIpsetName}`);
-      } catch (createError) {
-        log.warn(`Ipset ${netIpsetName} creation failed (will retry after destruction):`, createError.message);
-        try {
-          await exec(deleteCmd);
-          await exec(createCmd);
-        } catch (recreateError) {
-          log.error(`Failed to successfully create/recreate ipset ${netIpsetName}.`, recreateError.message);
-        }
-      }
-    };
-
     await lock.acquire(`NET_ENFORCE_${uuid}`, async() => {
       if (envCreatedMap[uuid])
         return;
@@ -433,8 +414,8 @@ class NetworkProfile extends Monitorable {
       if (!netIpsetName || !netIpsetName6) {
         log.error(`Failed to get ipset name for ${uuid}`);
       } else {
-        await ensureCreateIpset(netIpsetName, 4);
-        await ensureCreateIpset(netIpsetName6, 6);
+        Ipset.create(netIpsetName, 'hash:net', false, { maxelem: 1024 });
+        Ipset.create(netIpsetName6, 'hash:net', true, { maxelem: 1024 });
       }
 
       const GatewayIpsetName = NetworkProfile.getGatewayIpsetName(uuid);

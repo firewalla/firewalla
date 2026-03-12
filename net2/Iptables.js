@@ -107,10 +107,10 @@ class Rule {
   pro(v, negate) { this.proto = [ '-p', v, negate ]; return this }
   sport(v, negate) { this.options.push([ '--sport', v, negate ]); return this }
   dport(v, negate) { this.options.push([ '--dport', v, negate ]); return this }
-  src(v, negate) { this.options.push([ '-s', v, negate ]); return this }
-  dst(v, negate) { this.options.push([ '-d', v, negate ]); return this }
-  iif(v, negate) { this.options.push([ '-i', v, negate ]); return this }
-  oif(v, negate) { this.options.push([ '-o', v, negate ]); return this }
+  src(v, negate) { this.source = [ '-s', v, negate ]; return this }
+  dst(v, negate) { this.destination = [ '-d', v, negate ]; return this }
+  iif(v, negate) { this.inInterface = [ '-i', v, negate ]; return this }
+  oif(v, negate) { this.outInterface = [ '-o', v, negate ]; return this }
   opt(name, values, negate) { this.options.push([ name, values, negate]); return this }
   set(name, spec, negate) { // simple set match, use mdl for more options
     this.modules.push({module: 'set', options: [ ['--match-set', [name, spec], negate] ]})
@@ -171,6 +171,8 @@ class Rule {
 
     const _rawOpt = (name, values, negate) => {
       // use full format same as iptables-save
+      if ((name === '-d' || name === '-s') && values.indexOf('/') === -1)
+        values = values + (this.family === 4 ? '/32' : '/128')
       if (name === '--dport' || name === '--sport') {
         if (!Array.isArray(this.proto)) throw new Error("dport/sport without protocol")
         cmd.push('-m', this.proto[1])
@@ -183,7 +185,11 @@ class Rule {
         cmd.push(values)
     }
 
-    // make sure protocol comes before sport/dport
+    // these are default order of options
+    this.source && _rawOpt(... this.source)
+    this.destination && _rawOpt(... this.destination)
+    this.inInterface && _rawOpt(... this.inInterface)
+    this.outInterface && _rawOpt(... this.outInterface)
     this.proto && _rawOpt(... this.proto)
 
     this.options.forEach(opt => _rawOpt(...opt))

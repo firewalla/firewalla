@@ -73,6 +73,7 @@ const NetworkProfile = require('../net2/NetworkProfile.js');
 const Tag = require('../net2/Tag.js');
 const tagManager = require('../net2/TagManager')
 const ipset = require('../net2/Ipset.js');
+const blockControl = require('../control/BlockControl.js');
 const _ = require('lodash');
 
 const { delay, isSameOrSubDomain, batchKeyExists } = require('../util/util.js');
@@ -1057,6 +1058,9 @@ class PolicyManager2 {
 
     log.forceInfo(">>>>>==== All policy rules are enforced ====<<<<<", otherRules.length);
     this.allRulesInitialized = true;
+
+    // Finish initialization - this will process all queued rules (setup script runs, then rules are applied)
+    await blockControl.finishInitialization();
 
     await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'done')
     const end = Date.now();
