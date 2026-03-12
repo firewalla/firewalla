@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -387,7 +387,9 @@ class NetworkStatsSensor extends Sensor {
             type: 'FIREWALLA.NetworkStatsSensor.LinkDown',
             msg: { newLines }
           }
-        );
+        ).catch(err => {
+          log.error("Failed to log LinkDown error", err.message);
+        });
       }
 
     } catch (err) {
