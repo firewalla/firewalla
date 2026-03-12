@@ -142,7 +142,8 @@
     "Iperf3Sensor": {},
     "DeviceMonitorSensor": {},
     "DapSensor": {},
-    "ResourcePlugin": {}
+    "ResourcePlugin": {},
+    "AccessRequestSensor": {}
   },
   "intels": [
     "DeviceInfoIntel",
