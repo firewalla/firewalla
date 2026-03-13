@@ -273,6 +273,7 @@ class Monitorable {
       unbound: { state: false },
       doh: { state: false },
       isolation: { external: false, internal: false },
+      extraTimeLimit: { mode: 'off', autoApproveLimit: 0 },
       monitor: true
     }
   }

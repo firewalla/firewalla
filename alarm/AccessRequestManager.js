@@ -181,6 +181,11 @@ class AccessRequestManager {
     return this.listAllRequests(mergedFilter);
   }
 
+  async getExtraTimeLimitPolicy(userId) {
+    const { user, afTag } = getUserRelatedTags(userId || '');
+    return await afTag.getPolicyAsync('extraTimeLimit');
+  }
+
   /**
    * List all access requests (for admin). Uses pending and archived sets only (no scan).
    * Filter values are Sets: filter.state, filter.userId, filter.app.

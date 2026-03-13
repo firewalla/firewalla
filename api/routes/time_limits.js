@@ -134,7 +134,7 @@ router.get('/', async (req, res) => {
       const au = rule.appTimeUsage;
       if (!au) continue;
       // paused rule is also returned, but need to filter out in the result
-      if (rule.disabled) continue;
+      if (rule.disabled === '1') continue;
       const quota = Number(au.quota) || 0;
       const extraQuotaEffective = (au.extraQuota != null && au.extraQuotaUntilTs != null && nowTs < au.extraQuotaUntilTs)
         ? (Number(au.extraQuota) || 0) : 0;
@@ -191,6 +191,15 @@ router.get('/', async (req, res) => {
   }
 });
 
+router.get('/request-more', (req, res) => {
+  const app = req.query.app;
+  if (!app) {
+    res.status(400).json({ error: 'app query parameter is required' });
+    return;
+  }
+  res.render('request_more', { app });
+});
+
 // ---------- Access requests (user: create, list mine; admin: list all, approve, deny) ----------
 
 router.post('/requests', async (req, res) => {
@@ -222,6 +231,27 @@ router.post('/requests', async (req, res) => {
       deviceMac: monitorable.getGUID ? monitorable.getGUID() : null,
       reason: reason || null
     });
+
+    // get the extra time limit policy by userId
+    const extraTimeLimitPolicy = await accessRequestManager.getExtraTimeLimitPolicy(userId);
+
+    if (extraTimeLimitPolicy && extraTimeLimitPolicy.mode === 'auto') {
+      const autoApproveQuota = Number(extraTimeLimitPolicy.autoApproveLimit) || 0;
+      // already approved quota
+      const archivedRequests = await accessRequestManager.listRequestsByUserIds(userId, {
+        state: new Set([STATE_APPROVED])
+      });
+      const approvedQuota = archivedRequests.reduce((acc, req) => acc + Number(req.approvedQuota) || 0, 0);
+      if (approvedQuota + reqQuota <= autoApproveQuota) {
+        // approve the request
+        const result = await accessRequestManager.approveRequest(request.requestId, reqQuota);
+        if (!result.ok) {
+          res.status(500).json({ error: 'Internal server error', message: result.error });
+          return;
+        }
+      }
+    }
+
     res.status(200).json(request);
   } catch (err) {
     log.error('Time limits request create error:', err);
