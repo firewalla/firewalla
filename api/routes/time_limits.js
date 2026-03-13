@@ -231,6 +231,27 @@ router.post('/requests', async (req, res) => {
       deviceMac: monitorable.getGUID ? monitorable.getGUID() : null,
       reason: reason || null
     });
+
+    // get the extra time limit policy by userId
+    const extraTimeLimitPolicy = await accessRequestManager.getExtraTimeLimitPolicy(userId);
+
+    if (extraTimeLimitPolicy && extraTimeLimitPolicy.mode === 'auto') {
+      const autoApproveQuota = Number(extraTimeLimitPolicy.autoApproveLimit) || 0;
+      // already approved quota
+      const archivedRequests = await accessRequestManager.listRequestsByUserIds(userId, {
+        state: new Set([STATE_APPROVED])
+      });
+      const approvedQuota = archivedRequests.reduce((acc, req) => acc + Number(req.approvedQuota) || 0, 0);
+      if (approvedQuota + reqQuota <= autoApproveQuota) {
+        // approve the request
+        const result = await accessRequestManager.approveRequest(request.requestId, reqQuota);
+        if (!result.ok) {
+          res.status(500).json({ error: 'Internal server error', message: result.error });
+          return;
+        }
+      }
+    }
+
     res.status(200).json(request);
   } catch (err) {
     log.error('Time limits request create error:', err);
