@@ -84,33 +84,8 @@
     document.querySelectorAll('.btn-request-more').forEach(function(btn) {
         btn.addEventListener('click', function() {
             var app = this.dataset.app;
-            var quota = parseInt(this.dataset.quota, 10) || 30;
-            var feedback = this.closest('.request-more').querySelector('.request-feedback');
             if (!app) return;
-            btn.disabled = true;
-            feedback.textContent = 'Sending…';
-            fetch('/v1/time_limits/requests', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ app: app, requestQuota: quota })
-            }).then(function(r) {
-                return r.json().then(function(body) {
-                    if (r.ok) {
-                        feedback.textContent = 'Request sent.';
-                        setTimeout(function() { location.reload(); }, 800);
-                    } else {
-                        feedback.textContent = (body && (body.error || body.message)) || 'Request failed';
-                        btn.disabled = false;
-                    }
-                }).catch(function() {
-                    feedback.textContent = r.ok ? 'Request sent.' : 'Request failed';
-                    if (r.ok) setTimeout(function() { location.reload(); }, 800);
-                    else btn.disabled = false;
-                });
-            }).catch(function() {
-                feedback.textContent = 'Request failed';
-                btn.disabled = false;
-            });
+            window.location.href = '/v1/time_limits/request-more?app=' + encodeURIComponent(app);
         });
     });
     </script>
