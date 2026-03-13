@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Request More Time</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; }
+        h1 { font-size: 1.25rem; margin-bottom: 8px; }
+        .info { color: #666; margin-bottom: 24px; font-size: 0.875rem; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; font-size: 0.875rem; font-weight: 600; margin-bottom: 6px; }
+        select { width: 100%; padding: 10px 12px; font-size: 1rem; border: 1px solid #ccc; border-radius: 6px; background: #fff; appearance: auto; }
+        .actions { display: flex; gap: 12px; margin-top: 24px; }
+        .btn { padding: 10px 20px; font-size: 0.875rem; cursor: pointer; border-radius: 6px; border: 1px solid #ccc; }
+        .btn-primary { background: #007aff; color: #fff; border-color: #007aff; }
+        .btn-primary:hover { background: #005ecb; }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn-cancel { background: #f5f5f5; }
+        .btn-cancel:hover { background: #eee; }
+        .feedback { margin-top: 12px; font-size: 0.875rem; }
+        .feedback.error { color: #d00; }
+        .feedback.success { color: #2a2; }
+    </style>
+</head>
+<body>
+    <h1>Request More Time</h1>
+    <p class="info">App: <strong>{{app}}</strong></p>
+
+    <form id="request-form">
+        <div class="form-group">
+            <label for="quota-select">Select extra time</label>
+            <select id="quota-select" name="requestQuota">
+                <option value="15">15 minutes</option>
+                <option value="30" selected>30 minutes</option>
+                <option value="60">1 hour</option>
+            </select>
+        </div>
+        <div class="actions">
+            <button type="submit" class="btn btn-primary" id="btn-submit">Submit Request</button>
+            <a href="/v1/time_limits" class="btn btn-cancel" style="text-decoration: none; text-align: center;">Cancel</a>
+        </div>
+        <div class="feedback" id="feedback"></div>
+    </form>
+
+    <script>
+    document.getElementById('request-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        var app = '{{app}}';
+        var quota = parseInt(document.getElementById('quota-select').value, 10);
+        var btn = document.getElementById('btn-submit');
+        var feedback = document.getElementById('feedback');
+        btn.disabled = true;
+        feedback.className = 'feedback';
+        feedback.textContent = 'Sending…';
+        fetch('/v1/time_limits/requests', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ app: app, requestQuota: quota })
+        }).then(function(r) {
+            return r.json().then(function(body) {
+                if (r.ok) {
+                    feedback.className = 'feedback success';
+                    feedback.textContent = 'Request sent! Redirecting…';
+                    setTimeout(function() { window.location.href = '/v1/time_limits'; }, 800);
+                } else {
+                    feedback.className = 'feedback error';
+                    feedback.textContent = (body && (body.error || body.message)) || 'Request failed';
+                    btn.disabled = false;
+                }
+            }).catch(function() {
+                if (r.ok) {
+                    feedback.className = 'feedback success';
+                    feedback.textContent = 'Request sent! Redirecting…';
+                    setTimeout(function() { window.location.href = '/v1/time_limits'; }, 800);
+                } else {
+                    feedback.className = 'feedback error';
+                    feedback.textContent = 'Request failed';
+                    btn.disabled = false;
+                }
+            });
+        }).catch(function() {
+            feedback.className = 'feedback error';
+            feedback.textContent = 'Request failed';
+            btn.disabled = false;
+        });
+    });
+    </script>
+</body>
+</html>

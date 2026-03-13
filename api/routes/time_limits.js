@@ -191,6 +191,15 @@ router.get('/', async (req, res) => {
   }
 });
 
+router.get('/request-more', (req, res) => {
+  const app = req.query.app;
+  if (!app) {
+    res.status(400).json({ error: 'app query parameter is required' });
+    return;
+  }
+  res.render('request_more', { app });
+});
+
 // ---------- Access requests (user: create, list mine; admin: list all, approve, deny) ----------
 
 router.post('/requests', async (req, res) => {
