@@ -134,7 +134,7 @@ router.get('/', async (req, res) => {
       const au = rule.appTimeUsage;
       if (!au) continue;
       // paused rule is also returned, but need to filter out in the result
-      if (rule.disabled) continue;
+      if (rule.disabled === '1') continue;
       const quota = Number(au.quota) || 0;
       const extraQuotaEffective = (au.extraQuota != null && au.extraQuotaUntilTs != null && nowTs < au.extraQuotaUntilTs)
         ? (Number(au.extraQuota) || 0) : 0;
