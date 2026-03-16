@@ -173,7 +173,7 @@ class DeviceServiceScanSensor extends Sensor {
         if (this.globalSettings === null)
           continue;
       }
-      for (const host of hostsToScan) {
+      for (const host of hostsToScan) try {
         let ipAddr = null;
         let mac = null;
         if (host && host.o && host.o.ipv4Addr && host.o.mac) { // double check host object is valid
@@ -183,7 +183,6 @@ class DeviceServiceScanSensor extends Sensor {
           log.debug("Skipping host with invalid or missing IPv4 address or MAC address:", host);
           continue;
         }
-        log.info("Scanning device: ", ipAddr, mac);
         const scanResult = await this._scan(ipAddr);
         if (scanResult) {
           const hostKeyExists = await rclient.existsAsync(`host:mac:${mac}`);
@@ -191,6 +190,8 @@ class DeviceServiceScanSensor extends Sensor {
           if (hostKeyExists == 1)
             await host.update({"openports": JSON.stringify(scanResult)}, true, true);
         }
+      } catch (err) {
+        log.error("Failed to scan host: " + host.o.ipv4Addr, host.o.mac, err);
       }
     } catch (err) {
       log.error("Failed to scan: " + err);

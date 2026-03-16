@@ -93,7 +93,7 @@ class IptablesControl extends ModuleControl {
         log.debug(`No changes for v${family}, skipping iptables restore`);
         continue;
       }
-      log.info(`Restoring iptables v${family} queue=${this.getQueuedRuleCount(queued)}`);
+      log.verbose(`Restoring iptables v${family} queue=${this.getQueuedRuleCount(queued)}`);
       await this.restoreIptables(family);
     } catch (err) {
       log.error(`Error restoring iptables v${family}: ${err.stderr}, executing queued commands individually...`);
@@ -272,9 +272,8 @@ class IptablesControl extends ModuleControl {
     const restoreFile = this._getIptablesRestoreFile(family);
     await fsp.writeFile(restoreFile, content, 'utf8');
 
-    log.debug(`${command} < ${restoreFile} bytes=${content.length}`);
     await exec(`sudo ${command} < "${restoreFile}"`, { timeout: 30000 });
-    log.info(`iptables v${family} restored ${lines.length} lines successfully`);
+    log.verbose(`iptables v${family} restored ${lines.length} lines successfully`);
   }
 
   /**

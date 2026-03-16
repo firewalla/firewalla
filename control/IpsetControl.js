@@ -207,10 +207,9 @@ class IpsetControl extends ModuleControl {
         return
       }
 
-      log.debug(`ipset restore -! -f ${restoreFile} bytes=${content.length}`);
       try {
         await exec(`sudo ipset restore -! -f "${restoreFile}"`, { timeout: 180000 });
-        log.info(`ipset restore completed ${remaining.length} operations successfully`);
+        log.verbose(`ipset restore completed ${remaining.length} operations successfully`);
         break;
       } catch (err) {
         const errorLine = this._parseErrorLine(err.stderr);

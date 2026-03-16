@@ -817,10 +817,10 @@ class BroDetect {
     }
 
     if (obj.orig_bytes > threshold.logLargeBytesOrig) {
-      log.warn("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj.uid, obj['id.orig_h'], obj['id.resp_h']);
+      log.verbose("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj.uid, obj['id.orig_h'], obj['id.resp_h']);
     }
     if (obj.resp_bytes > threshold.logLargeBytesResp) {
-      log.warn("Conn:Debug:Resp_bytes:", obj.resp_bytes, obj.uid, obj['id.orig_h'], obj['id.resp_h']);
+      log.verbose("Conn:Debug:Resp_bytes:", obj.resp_bytes, obj.uid, obj['id.orig_h'], obj['id.resp_h']);
     }
 
     return true;
