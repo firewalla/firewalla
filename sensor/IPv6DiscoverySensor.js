@@ -44,7 +44,7 @@ class IPv6DiscoverySensor extends Sensor {
 
       setInterval(() => {
         this.checkAndRunOnce(true);
-      }, 1000 * 60 * 5); // every 5 minutes, fast scan
+      }, 1000 * 60 * 15); // every 15 minutes, fast scan, it is reduced from 5 minutes to 15 minutes because nmap scan is no longer essential for device discovery, we already have flow, ARPSensor, DHCPSensor, and ICMP6Sensor
 
     }, 1000 * 60 * 5); // start the first run in 5 minutes
   }
@@ -143,7 +143,8 @@ class IPv6DiscoverySensor extends Sensor {
     // several seconds is necessary to ensure new ip addresses are added
     setTimeout(() => {
       log.info("IPv6 Scan:Done");
-      this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
+      // Scan:Done message will be emiited in NmapSensor
+      // this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
     }, 5000)
 
   }
