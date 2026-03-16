@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -88,6 +88,8 @@ process.on('uncaughtException',(err)=>{
     msg: err.message,
     stack: err.stack,
     err: err
+  }).catch(err => {
+    log.error("Failed to log unhandled exception", err.message);
   });
   setTimeout(()=>{
     try {
@@ -108,6 +110,8 @@ process.on('unhandledRejection', (reason, p)=>{
     msg: msg,
     stack: reason.stack,
     err: reason
+  }).catch(err => {
+    log.error("Failed to log unhandled rejection", err.message);
   });
 });
 
