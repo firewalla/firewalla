@@ -2,18 +2,17 @@
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 CMD=$(basename $0)
-DATE_FORMAT='[%Y-%m-%d %H:%M:%S]'
 
 mylog() {
-    echo "$(date -u +"$DATE_FORMAT")$@"
+  tee >(logger -t $CMD "$@")
 }
 
 loginfo() {
-    mylog "[INFO] $@"
+  echo "[INFO] $@" | mylog
 }
 
 logerror() {
-    mylog "[ERROR] $@" >&2
+  echo "[ERROR] $@" >&2 | mylog
 }
 
 MNT_RO=/media/root-ro
@@ -38,7 +37,7 @@ sudo sed -i.bak -e "s|LABEL=root-rw|${root_rw_dev_path}|" $CFG_FILE
 test $mounted_opt == 'ro' && sudo mount -o remount,ro $MNT_RO
 
 loginfo "Show diff in $CFG_FILE"
-diff -u $CFG_FILE{.bak,}
+diff -u $CFG_FILE{.bak,} | mylog
 
 loginfo "Script $CMD finished successfully"
 exit 0
