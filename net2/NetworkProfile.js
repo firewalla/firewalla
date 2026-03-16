@@ -353,7 +353,7 @@ class NetworkProfile extends Monitorable {
 
   static getSelfIpsetName(uuid, af = 4) {
     if (uuid) {
-      return `c_ip_${uuid.substring(0, 8)}_set` + (af === 4 ? "" : "6");
+      return `c_ip_${uuid.substring(0, 13)}_set` + (af === 4 ? "" : "6");
     } else
       return null;
   }
@@ -361,28 +361,28 @@ class NetworkProfile extends Monitorable {
   static getNetIpsetName(uuid, af = 4) {
     // TODO: need find a better way to get a unique name from uuid
     if (uuid) {
-      return `c_net_${uuid.substring(0, 8)}_set` + (af === 4 ? "" : "6");
+      return `c_net_${uuid.substring(0, 13)}_set` + (af === 4 ? "" : "6");
     } else
       return null;
   }
 
   static getGatewayIpsetName(uuid, af = 4) {
     if (uuid) {
-      return `c_gw_${uuid.substring(0, 8)}_set` + (af === 4 ? "" : "6");
+      return `c_gw_${uuid.substring(0, 13)}_set` + (af === 4 ? "" : "6");
     } else
       return null;
   }
 
   static getRouteIpsetName(uuid, hard = true) {
     if (uuid) {
-      return `c_rt_${hard ? "hard" : "soft"}_${uuid.substring(0, 8)}_set`;
+      return `c_rt_${hard ? "hard" : "soft"}_${uuid.substring(0, 13)}_set`;
     } else
       return null;
   }
 
   static getOifIpsetName(uuid) {
     if (uuid) {
-      return `c_oif_${uuid.substring(0, 8)}_set`;
+      return `c_oif_${uuid.substring(0, 13)}_set`;
     } else
       return null;
   }

@@ -61,6 +61,10 @@ class IpsetControl extends ModuleControl {
     super.addRule(cmd);
   }
 
+  getSwapSetName(setName) {
+    return setName.includes('_set') ? setName.replace('_set', '_swp') : `${setName}_swp`;
+  }
+
   /**
    * Execute queued ipset operations: filter into a map by set, then write restore file and run ipset restore
    * to avoid interrupting blocking rules, use swap for existing sets
@@ -86,7 +90,7 @@ class IpsetControl extends ModuleControl {
     }
 
     // clean leftover _swp sets
-    const leftoverSwpSets = Array.from(previousSets).filter(setName => setName.endsWith('_swp'));
+    const leftoverSwpSets = Array.from(previousSets).filter(setName => setName.includes('_swp'));
     const ops = leftoverSwpSets.map(setName => `flush ${setName}`)
       .concat(leftoverSwpSets.map(setName => `destroy ${setName}`));
     if (leftoverSwpSets.length)
@@ -99,8 +103,9 @@ class IpsetControl extends ModuleControl {
       // this is mainly to workaround the set name length limit
       if (fromInitialization && previousSets.has(setName) && !setName.startsWith('c_bd_tmp_')) {
         swapSets.add(setName);
-        line = line.replace(setName, `${setName}_swp`);
-        setName = `${setName}_swp`;
+        const swapSetName = this.getSwapSetName(setName);
+        line = line.replace(setName, swapSetName);
+        setName = swapSetName;
       }
       switch (op) {
         case 'create':
@@ -126,8 +131,9 @@ class IpsetControl extends ModuleControl {
           if (this.existingSets.has(setName)) {
             this.existingSets.delete(setName);
             if (fromInitialization && previousSets.has(newName)) {
-              line = line.trim() + '_swp'
-              newName = `${newName}_swp`;
+              const swapSetName = this.getSwapSetName(newName);
+              line = line.replace(newName, swapSetName);
+              newName = swapSetName;
             }
             this.existingSets.add(newName);
             ops.push(line);
@@ -136,8 +142,9 @@ class IpsetControl extends ModuleControl {
           break;
         case 'swap':
           if (fromInitialization && swapSets.has(newName)) {
-            line = line.trim() + '_swp'
-            newName = `${newName}_swp`;
+            const swapSetName = this.getSwapSetName(newName);
+            line = line.replace(newName, swapSetName);
+            newName = swapSetName;
           }
           if (!this.existingSets.has(setName) || !this.existingSets.has(newName)) {
             log.warn(`${setName} or ${newName} not found, dropping ${line}`);
@@ -153,8 +160,9 @@ class IpsetControl extends ModuleControl {
     if (fromInitialization) {
       previousSets.forEach(setName => {
         if (swapSets.has(setName)) {
-          ops.push(`swap ${setName} ${setName}_swp`);
-          ops.push(`flush ${setName}_swp`);
+          const swapSetName = this.getSwapSetName(setName);
+          ops.push(`swap ${setName} ${swapSetName}`);
+          ops.push(`flush ${swapSetName}`);
         } else if (setName.startsWith('c_')) {
           if (setName.startsWith('c_bd_tmp_') && this.existingSets.has(setName)) return
           ops.push(`flush ${setName}`);
@@ -165,7 +173,8 @@ class IpsetControl extends ModuleControl {
       previousSets.forEach(setName => {
         if (setName.startsWith('c_bd_tmp_')) return
         if (swapSets.has(setName)) {
-          ops.push(`destroy ${setName}_swp`);
+          const swapSetName = this.getSwapSetName(setName);
+          ops.push(`destroy ${swapSetName}`);
         } else if (setName.startsWith('c_')) {
           if (setName.startsWith('c_bd_tmp_') && this.existingSets.has(setName)) return
           ops.push(`destroy ${setName}`);
@@ -200,7 +209,7 @@ class IpsetControl extends ModuleControl {
 
       log.debug(`ipset restore -! -f ${restoreFile} bytes=${content.length}`);
       try {
-        await exec(`sudo ipset restore -! -f "${restoreFile}"`, { timeout: 60000 });
+        await exec(`sudo ipset restore -! -f "${restoreFile}"`, { timeout: 180000 });
         log.info(`ipset restore completed ${remaining.length} operations successfully`);
         break;
       } catch (err) {

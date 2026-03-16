@@ -79,20 +79,20 @@ async function ensureCreateRuleGroupChain(uuid) {
 function getRuleGroupChainName(uuid, action) {
   switch (action) {
     case "qos":
-      return `FW_RG_${uuid.substring(0, 8)}_QOS`;
+      return `FW_RG_${uuid.substring(0, 13)}_QOS`;
     case "soft_route":
-      return `FW_RG_${uuid.substring(0, 8)}_SROUTE`;
+      return `FW_RG_${uuid.substring(0, 13)}_SROUTE`;
     case "route":
-      return `FW_RG_${uuid.substring(0, 8)}_ROUTE`;
+      return `FW_RG_${uuid.substring(0, 13)}_ROUTE`;
     case "allow":
-      return `FW_RG_${uuid.substring(0, 8)}_ALLOW`;
+      return `FW_RG_${uuid.substring(0, 13)}_ALLOW`;
     case "alarm":
-      return `FW_RG_${uuid.substring(0, 8)}_ALARM`;
+      return `FW_RG_${uuid.substring(0, 13)}_ALARM`;
     case "snat":
-      return `FW_RG_${uuid.substring(0, 8)}_SNAT`;
+      return `FW_RG_${uuid.substring(0, 13)}_SNAT`;
     case "block":
     default:
-      return `FW_RG_${uuid.substring(0, 8)}_BLOCK`;
+      return `FW_RG_${uuid.substring(0, 13)}_BLOCK`;
   }
 }
 

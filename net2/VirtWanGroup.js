@@ -104,13 +104,13 @@ class VirtWanGroup {
 
   static getRouteIpsetName(uid, hard = true) {
     if (uid) {
-      return `c_rt_vwg_${hard ? "hard" : "soft"}_${uid.substring(0, 8)}_set`;
+      return `c_rt_vwg_${hard ? "hard" : "soft"}_${uid.substring(0, 13)}_set`;
     } else
       return null;
   }
 
   static getDNSRedirectChainName(uid) {
-    return `FW_PR_VWG_DNS_${uid.substring(0, 8)}`;
+    return `FW_PR_VWG_DNS_${uid.substring(0, 13)}`;
   }
 
   static async ensureCreateEnforcementEnv(uid) {
@@ -346,7 +346,7 @@ class VirtWanGroup {
   }
 
   static getDnsMarkTag(uuid) {
-    return `vwg_${uuid.substring(0, 8)}`;
+    return `vwg_${uuid.substring(0, 13)}`;
   }
 
   async _updateDNSRedirectChain(dnsServers) {
@@ -473,7 +473,7 @@ class VirtWanGroup {
   }
 
   _getRTName() {
-    return `vwg_${this.uuid.substring(0, 8)}`;
+    return `vwg_${this.uuid.substring(0, 13)}`;
   }
 
   _getDnsmasqConfigPath() {
