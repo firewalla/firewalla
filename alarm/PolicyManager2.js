@@ -1382,7 +1382,7 @@ class PolicyManager2 {
   }
 
   async _enforce(policy) {
-    log.info(`Enforce policy pid:${policy.pid}, type:${policy.type}, target:${policy.target}${policy.scope ? ', scope:' + policy.scope : ''}${policy.tag ? ', ' + policy.tag : ''}, action:${policy.action || "block"}`);
+    log.info(`Enforce policy ${policy.pid}:`, policy.action || "block", policy.type, policy.target, policy.scope, policy.tag);
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
@@ -2020,7 +2020,7 @@ class PolicyManager2 {
   }
 
   async _unenforce(policy) {
-    log.info(`Unenforce policy pid:${policy.pid}, type:${policy.type}, target:${policy.target}${policy.scope ? ', scope:' + policy.scope : ''}${policy.tag ? ', ' + policy.tag : ''}, action:${policy.action || "block"}`);
+    log.info(`Unenforce policy ${policy.pid}:`, policy.action || "block", policy.type, policy.target, policy.scope, policy.tag);
 
     await this._removeActivatedTime(policy);
 

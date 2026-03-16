@@ -148,7 +148,7 @@ class NetworkStatsSensor extends Sensor {
     }
     log.info(`scheduling process job on ${iface}`);
     if (iface in this.processJobs) {
-      log.warn(`process job on ${iface} already scheduled`);
+      log.verbose(`process job on ${iface} already scheduled`);
     } else {
       this.processJobs[iface] = setInterval( () => {
         this.processInterface(iface,'rx');
