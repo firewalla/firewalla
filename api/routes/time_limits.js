@@ -116,6 +116,14 @@ router.get('/', async (req, res) => {
     }
 
     const userId = await getDeviceUserId(monitorable);
+
+    // get the extra time limit policy by userId
+    const extraTimeLimitPolicy = await accessRequestManager.getExtraTimeLimitPolicy(userId);
+    if (!extraTimeLimitPolicy || extraTimeLimitPolicy.mode === Constants.POLICY_EXTRA_TIME_LIMIT_MODE_OFF) {
+      res.status(404).json({ error: 'Extra time limit is disabled for this user' });
+      return;
+    }
+
     const pendingAccessRequests = await accessRequestManager.listRequestsByUserIds(userId, { state: new Set([STATE_PENDING]) });
     const archivedRequests = await accessRequestManager.listRequestsByUserIds(userId, {
       state: new Set([STATE_APPROVED, STATE_DENIED, STATE_EXPIRED])
@@ -227,15 +235,21 @@ router.post('/requests', async (req, res) => {
       res.status(404).json({ error: 'No user tag found for this device' });
       return;
     }
+
+    // get the extra time limit policy by userId
+    const extraTimeLimitPolicy = await accessRequestManager.getExtraTimeLimitPolicy(userId);
+    if (!extraTimeLimitPolicy || extraTimeLimitPolicy.mode === Constants.POLICY_EXTRA_TIME_LIMIT_MODE_OFF) {
+      res.status(404).json({ error: 'Extra time limit is disabled for this user' });
+      return;
+    }
+
     const request = await accessRequestManager.createOrUpdateRequest(userId, app, reqQuota, {
       deviceMac: monitorable.getGUID ? monitorable.getGUID() : null,
       reason: reason || null
     });
 
-    // get the extra time limit policy by userId
-    const extraTimeLimitPolicy = await accessRequestManager.getExtraTimeLimitPolicy(userId);
 
-    if (extraTimeLimitPolicy && extraTimeLimitPolicy.mode === 'auto') {
+    if (extraTimeLimitPolicy && extraTimeLimitPolicy.mode === Constants.POLICY_EXTRA_TIME_LIMIT_MODE_AUTO) {
       const autoApproveQuota = Number(extraTimeLimitPolicy.autoApproveLimit) || 0;
       // already approved quota
       const archivedRequests = await accessRequestManager.listRequestsByUserIds(userId, {
