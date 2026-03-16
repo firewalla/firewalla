@@ -26,6 +26,11 @@ const { getInstance: getAccessRequestManager, STATE_PENDING, STATE_APPROVED, STA
 const moment = require('moment-timezone/moment-timezone.js');
 try { moment.tz.load(require('../../vendor_lib/moment-tz-data.json')); } catch (_) { /* optional */ }
 
+const fs = require('fs');
+const Mustache = require('mustache');
+const path = require('path');
+const CLOUD_VIEW_ASSETS_PATH = "/home/pi/.firewalla/run/assets/views";
+
 const hostManager = new HostManager();
 const accessRequestManager = getAccessRequestManager();
 
@@ -174,14 +179,24 @@ router.get('/', async (req, res) => {
 
     const accept = (req.headers && req.headers.accept) || '';
     if (accept.indexOf('text/html') !== -1) {
-      res.render('time_limits', {
+      const data = {
         device: devicePayload,
         username,
         appTimeLimits,
         internetTimeLimit,
         pendingAccessRequests,
         previousAccessRequests
-      });
+      };
+      // if cloud view exists, render the cloud view
+      const timeLimitsPath = path.join(CLOUD_VIEW_ASSETS_PATH, 'time_limits.mustache');
+      if (fs.existsSync(timeLimitsPath)) {
+        const template = fs.readFileSync(timeLimitsPath, 'utf8');
+        const rendered = Mustache.render(template, data);
+        res.send(rendered);
+        return;
+      }
+      // otherwise, render the local view
+      res.render('time_limits', data);
     } else {
       res.json({
         device: devicePayload,
@@ -205,7 +220,19 @@ router.get('/request-more', (req, res) => {
     res.status(400).json({ error: 'app query parameter is required' });
     return;
   }
-  res.render('request_more', { app });
+  const data = { app };
+  // check if the request_more_cloud.mustache file exists
+  const requestMorePath = path.join(CLOUD_VIEW_ASSETS_PATH, 'request_more.mustache');
+  if (fs.existsSync(requestMorePath)) {
+    // render 
+    const template = fs.readFileSync(requestMorePath, 'utf8');
+    const rendered = Mustache.render(template, data);
+    res.send(rendered);
+    return;
+  }
+  // otherwise, render the local view
+  res.render('request_more', data);
+  return;
 });
 
 // ---------- Access requests (user: create, list mine; admin: list all, approve, deny) ----------

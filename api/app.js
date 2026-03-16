@@ -39,7 +39,7 @@ app.set('title', 'FireAPI')
 app.set('views', path.join(__dirname, 'views'));
 app.engine('mustache', require('mustache-express')());
 app.set('view engine', 'mustache');
-app.set('query parser', 'simple')
+app.set('query parser', 'simple');
 
 app.use(logger('combined'));
 app.use(bodyParser.json({limit: '5mb'}));
