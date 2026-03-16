@@ -252,13 +252,21 @@ router.post('/requests', async (req, res) => {
     if (extraTimeLimitPolicy && extraTimeLimitPolicy.mode === Constants.POLICY_EXTRA_TIME_LIMIT_MODE_AUTO) {
       const autoApproveQuota = Number(extraTimeLimitPolicy.autoApproveLimit) || 0;
       // already approved quota
-      const archivedRequests = await accessRequestManager.listRequestsByUserIds(userId, {
+      let archivedRequests = await accessRequestManager.listRequestsByUserIds(userId, {
         state: new Set([STATE_APPROVED])
       });
+      const tz = sysManager.getTimezone() || 'UTC';
+      const startOfDay = moment.tz ? moment().tz(tz).startOf('day').unix() : moment().startOf('day').unix();
+      const endOfDay = moment.tz ? moment().tz(tz).endOf('day').unix() : moment().endOf('day').unix();
+      // only count today's requests
+      archivedRequests = archivedRequests.filter(r => (r.requestTs != null && r.requestTs >= startOfDay && r.requestTs <= endOfDay));
+
       const approvedQuota = archivedRequests.reduce((acc, req) => acc + Number(req.approvedQuota) || 0, 0);
-      if (approvedQuota + reqQuota <= autoApproveQuota) {
+      const leftQuota = approvedQuota < autoApproveQuota ? autoApproveQuota - approvedQuota : 0;
+      const actualApproveQuota = reqQuota <= leftQuota ? reqQuota : leftQuota;
+      if (actualApproveQuota > 0) {
         // approve the request
-        const result = await accessRequestManager.approveRequest(request.requestId, reqQuota);
+        const result = await accessRequestManager.approveRequest(request.requestId, actualApproveQuota);
         if (!result.ok) {
           res.status(500).json({ error: 'Internal server error', message: result.error });
           return;
