@@ -24,8 +24,10 @@ const fsp = require('fs').promises;
 const _ = require('lodash');
 const YAML = require('../vendor_lib/yaml');
 const delay = require('../util/util.js').delay;
-const BASIC_RULRS_DIR = `${f.getRuntimeInfoFolder()}/suricata_basic_rules`;
+const BASIC_RULES_DIR = `${f.getRuntimeInfoFolder()}/suricata_basic_rules`;
+const BASIC_RULES_ASSETS_DIR = `${f.getRuntimeInfoFolder()}/assets/suricata_basic_rules`;
 const MSP_RULES_DIR = `${f.getRuntimeInfoFolder()}/suricata_msp_rules`;
+const MSP_RULES_ASSETS_DIR = `${f.getRuntimeInfoFolder()}/assets/suricata_msp_rules`;
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 class SuricataControl {
@@ -38,7 +40,7 @@ class SuricataControl {
     if (this.rulesDirWatched)
       return;
     this.rulesDirWatched = true;
-    fs.watch(BASIC_RULRS_DIR, (eventType, filename) => {
+    fs.watch(BASIC_RULES_DIR, (eventType, filename) => {
       if (callback)
         callback(eventType, filename);
     });
@@ -117,8 +119,10 @@ class SuricataControl {
   }
 
   async prepareAssets() {
-    await fsp.mkdir(BASIC_RULRS_DIR, {recursive: true}).catch((err) => {});
+    await fsp.mkdir(BASIC_RULES_DIR, {recursive: true}).catch((err) => {});
     await fsp.mkdir(MSP_RULES_DIR, {recursive: true}).catch((err) => {});
+    await fsp.mkdir(BASIC_RULES_ASSETS_DIR, {recursive: true}).catch((err) => {});
+    await fsp.mkdir(MSP_RULES_ASSETS_DIR, {recursive: true}).catch((err) => {});
     await fsp.mkdir(`${f.getRuntimeInfoFolder()}/suricata`, {recursive: true}).catch((err) => {});
     // copy other .config files to runtime folder
     await exec(`cp -r ${f.getFirewallaHome()}/etc/suricata/*.config ${f.getRuntimeInfoFolder()}/suricata`).catch((err) => {
@@ -127,7 +131,9 @@ class SuricataControl {
   }
 
   async addRulesFromAssets(id) {
-    const assetsConf = `${BASIC_RULRS_DIR}/${id}.rules /all/suricata_rules/${id}.rules 644`;
+    const ruleFilePath = `${BASIC_RULES_DIR}/${id}.rules`;
+    const ruleFilePathAssets = `${BASIC_RULES_ASSETS_DIR}/${id}.rules`;
+    const assetsConf = `${ruleFilePathAssets} /all/suricata_rules/${id}.rules 644 ":" "cp ${ruleFilePathAssets} ${ruleFilePath}"`;
     const assetsConfPath = `${f.getExtraAssetsDir()}/sc_rule_${id}.lst`;
     await fsp.writeFile(assetsConfPath, assetsConf, {encoding: "utf8"}).catch((err) => {
       log.error(`Failed to write ${assetsConfPath}`, err.message);
@@ -135,20 +141,25 @@ class SuricataControl {
     await exec(`ASSETSD_PATH=${f.getExtraAssetsDir()} ${f.getFirewallaHome()}/scripts/update_assets.sh`).catch((err) => {
       log.error(`Failed to invoke update_assets.sh`, err.message);
     });
+    await fsp.copyFile(ruleFilePathAssets, ruleFilePath).catch((err) => {
+      log.error(`Failed to copy ${ruleFilePathAssets} to ${ruleFilePath}`, err.message);
+    });
   }
 
   async deleteRulesFromAssets(id) {
     const assetsConfPath = `${f.getExtraAssetsDir()}/sc_rule_${id}.lst`;
     await fsp.unlink(assetsConfPath).catch((err) => {});
-    const ruleFilePath = `${BASIC_RULRS_DIR}/${id}.rules`;
+    const ruleFilePath = `${BASIC_RULES_DIR}/${id}.rules`;
     await fsp.unlink(ruleFilePath).catch((err) => {});
+    const ruleFilePathAssets = `${BASIC_RULES_ASSETS_DIR}/${id}.rules`;
+    await fsp.unlink(ruleFilePathAssets).catch((err) => {});
   }
 
   async getRuleFiles(source) {
     const ruleFiles = [];
     if (!source || source === "basic") {
-      const basicRuleFiles = await fsp.readdir(BASIC_RULRS_DIR).catch((err) => []);
-      ruleFiles.push(...basicRuleFiles.map(filename => `${BASIC_RULRS_DIR}/${filename}`));
+      const basicRuleFiles = await fsp.readdir(BASIC_RULES_DIR).catch((err) => []);
+      ruleFiles.push(...basicRuleFiles.map(filename => `${BASIC_RULES_DIR}/${filename}`));
     }
     if (!source || source === "msp") {
       const mspRuleFiles = await fsp.readdir(MSP_RULES_DIR).catch((err) => []);
@@ -192,13 +203,13 @@ class SuricataControl {
   }
 
   async saveRules(rules, filename, source = 'msp') {
-    const rulesDir = source === 'basic' ? BASIC_RULRS_DIR : MSP_RULES_DIR;
+    const rulesDir = source === 'basic' ? BASIC_RULES_DIR : MSP_RULES_DIR;
     const path = `${rulesDir}/${filename}`;
     await fsp.writeFile(path, rules.join("\n"));
   }
 
   async deleteRules(filename, source = 'msp') {
-    const rulesDir = source === 'basic' ? BASIC_RULRS_DIR : MSP_RULES_DIR;
+    const rulesDir = source === 'basic' ? BASIC_RULES_DIR : MSP_RULES_DIR;
     const path = `${rulesDir}/${filename}`;
     await fsp.unlink(path).catch((err) => {})
   }

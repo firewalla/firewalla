@@ -391,11 +391,20 @@ class PolicyManager {
     if (!policy.hasOwnProperty('ipAllocation'))
       policy['ipAllocation'] = {};
 
-    for (let p in policy) try {
+    const policyKeys = Object.keys(policy);
+    const tagPolicyKeys = Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].policyKey);
+    // vpnClient and tag policy enforcement may affect OSI verification, so they should be applied first, check OSIPlugin.js for more details.
+    const prioritizedPolicyKeys = ["vpnClient", ...tagPolicyKeys, "dnsmasq", "acl", "aclTimer"].filter(p => policyKeys.includes(p));
+    const otherPolicyKeys = policyKeys.filter(p => !prioritizedPolicyKeys.includes(p));
+    const sortedPolicyKeys = [...prioritizedPolicyKeys, ...otherPolicyKeys];
+
+    let t1;
+    // apply policy in prioritized order
+    for (const p of sortedPolicyKeys) try {
       // keep a clone of the policy object to make sure the original policy data is not changed
       // the original data will be used for comparison to know if configured policy is updated,
       // if not updated, the applyPolicy below will not be changed
-
+      t1 = Date.now() / 1000;
       const policyDataClone = JSON.parse(JSON.stringify(policy[p]));
 
       if (target.oper[p] !== undefined && JSON.stringify(target.oper[p]) === JSON.stringify(policy[p])) {
@@ -465,6 +474,9 @@ class PolicyManager {
 
     } catch (err) {
       log.error('Error executing policy on', target.constructor.getClassName(), target.getReadableName(), p, policy[p], err)
+    } finally {
+      const t2 = Date.now() / 1000;
+      log.verbose(`Time taken to apply policy ${p} on ${target.getReadableName()}: ${(t2 - t1).toFixed(2)}s`);
     }
 
     // put dnsmasq logic at the end, as it is foundation feature
