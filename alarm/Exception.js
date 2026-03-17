@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,9 +15,9 @@
 
 'use strict'
 
-const log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename);
 const net = require('net')
-const ip = require('ip')
+const { Address4, Address6 } = require('ip-address');
 
 
 const minimatch = require('minimatch')
@@ -155,14 +155,17 @@ module.exports = class {
           return false
       } else {
         // CIDR subnet
-        let cidrParts = val.split("/", 2);
-        if (cidrParts.length == 2 && net.isIPv4(cidrParts[0]) && net.isIPv4(val2) && Number(cidrParts[1]) <= 32) {
-          if (ip.cidrSubnet(val).contains(val2)) {
-            log.debug('CIDR matched', val, val2)
-            return true;
-          } else {
-            log.debug('CIDR mismatch', val, val2)
-            return false;
+        let cidrParts = val.split("/", 3);
+        if (cidrParts.length == 2) {
+          const fam = net.isIP(cidrParts[0])
+          if (fam) {
+            const AddressClass = fam == 4 ? Address4 : Address6;
+            const addr1 = new AddressClass(val);
+            const addr2 = new AddressClass(val2);
+            if (addr1.isValid() && addr2.isValid() && addr2.isInSubnet(addr1)) {
+              log.debug('CIDR matched', val, val2)
+              return true;
+            }
           }
         }
       }
