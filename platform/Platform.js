@@ -326,17 +326,45 @@ class Platform {
       return;
     const koPath = `${await this.getTlsKoPath(module_name)}`
     const koExists = await fsp.access(koPath, fs.constants.F_OK).then(() => true).catch((err) => false);
-    if (koExists)
+    if (koExists) {
       await exec(`sudo insmod ${koPath} max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`).catch((err) => {
         log.error(`Failed to install tls.ko`, err.message);
       });
+    } else {
+      await exec(`sudo modprobe ${module_name} max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`).catch((err) => {
+        log.error(`Failed to install ${module_name}.ko`, err.message);
+      });
+    }
+
+    const arch = await exec(`uname -m`).then((result) => result.stdout.trim()).catch((err) => {
+      log.error("Failed to get architecture of OS", err.message);
+      return null;
+    });
+    if (!arch)
+      return;
 
     const soPath = `${await this.getSharedObjectsPath()}/lib${module_name}.so`;
+    const soPathAlt = `/usr/lib/${arch}-linux-gnu/xtables/lib${module_name}.so`;
     const soExists = await fsp.access(soPath, fs.constants.F_OK).then(() => true).catch((err) => false);
-    if (soExists)
-      await exec(`sudo install -D -v -m 644 ${soPath} /usr/lib/$(uname -m)-linux-gnu/xtables`).catch((err) => {
-        log.error(`Failed to install lib${module_name}}.so`, err.message);
+    if (soExists) {
+      await exec(`sudo install -D -v -m 644 ${soPath} /usr/lib/${arch}-linux-gnu/xtables`).catch((err) => {
+        log.error(`Failed to install lib${module_name}.so`, err.message);
       });
+    } else {
+      const soExistsAlt = await fsp.access(soPathAlt, fs.constants.F_OK).then(() => true).catch((err) => false);
+      if (soExistsAlt) {
+        await exec(`sudo install -D -v -m 644 ${soPathAlt} /usr/lib/${arch}-linux-gnu/xtables`).catch((err) => {
+          log.error(`Failed to install lib${module_name}.so`, err.message);
+        });
+      } else {
+        log.error(`Failed to install lib${module_name}.so`, `soPath: ${soPath}, soPathAlt: ${soPathAlt}`);
+      }
+    }
+    const installedAfter = await this.isTLSModuleInstalled(module_name);
+    if (!installedAfter) {
+      log.error(`TLS module ${module_name} is still not installed after installation attempt`);
+      return;
+    }
     this.installedModules[module_name] = true;
   }
   async installTLSModules() {
