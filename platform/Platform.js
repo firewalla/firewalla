@@ -336,22 +336,34 @@ class Platform {
       });
     }
 
+    const arch = await exec(`uname -m`).then((result) => result.stdout.trim()).catch((err) => {
+      log.error("Failed to get architecture of OS", err.message);
+      return null;
+    });
+    if (!arch)
+      return;
+
     const soPath = `${await this.getSharedObjectsPath()}/lib${module_name}.so`;
-    const soPathAlt = `/usr/lib/$(uname -m)-linux-gnu/xtables/lib${module_name}.so`;
+    const soPathAlt = `/usr/lib/${arch}-linux-gnu/xtables/lib${module_name}.so`;
     const soExists = await fsp.access(soPath, fs.constants.F_OK).then(() => true).catch((err) => false);
     if (soExists) {
-      await exec(`sudo install -D -v -m 644 ${soPath} /usr/lib/$(uname -m)-linux-gnu/xtables`).catch((err) => {
-        log.error(`Failed to install lib${module_name}}.so`, err.message);
+      await exec(`sudo install -D -v -m 644 ${soPath} /usr/lib/${arch}-linux-gnu/xtables`).catch((err) => {
+        log.error(`Failed to install lib${module_name}.so`, err.message);
       });
     } else {
       const soExistsAlt = await fsp.access(soPathAlt, fs.constants.F_OK).then(() => true).catch((err) => false);
       if (soExistsAlt) {
-        await exec(`sudo install -D -v -m 644 ${soPathAlt} /usr/lib/$(uname -m)-linux-gnu/xtables`).catch((err) => {
-          log.error(`Failed to install lib${module_name}}.so`, err.message);
+        await exec(`sudo install -D -v -m 644 ${soPathAlt} /usr/lib/${arch}-linux-gnu/xtables`).catch((err) => {
+          log.error(`Failed to install lib${module_name}.so`, err.message);
         });
       } else {
-        log.error(`Failed to install lib${module_name}}.so`, `soPath: ${soPath}, soPathAlt: ${soPathAlt}`);
+        log.error(`Failed to install lib${module_name}.so`, `soPath: ${soPath}, soPathAlt: ${soPathAlt}`);
       }
+    }
+    const installedAfter = await this.isTLSModuleInstalled(module_name);
+    if (!installedAfter) {
+      log.error(`TLS module ${module_name} is still not installed after installation attempt`);
+      return;
     }
     this.installedModules[module_name] = true;
   }
