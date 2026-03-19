@@ -334,13 +334,16 @@ class VirtWanGroup {
       ipset.flush(VirtWanGroup.getRouteIpsetName(this.uuid, false));
       await this._disableDNSRoute("soft");
     }
+    const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
     if (!_.isEmpty(routedDnsServers)) {
-      await fs.promises.writeFile(this._getDnsmasqConfigPath(), `mark=${rtId}$${VirtWanGroup.getDnsMarkTag(this.uuid)}$*!${Constants.DNS_DEFAULT_WAN_TAG}\nserver=${routedDnsServers[0]}$${VirtWanGroup.getDnsMarkTag(this.uuid)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => { });
+      await dnsmasq.writeConfig(this._getDnsmasqConfigPath(), [
+        `mark=${rtId}$${VirtWanGroup.getDnsMarkTag(this.uuid)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`,
+        `server=${routedDnsServers[0]}$${VirtWanGroup.getDnsMarkTag(this.uuid)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`
+      ]).catch((err) => { });
     } else {
       await fs.promises.unlink(this._getDnsmasqConfigPath()).catch((err) => { });
     }
-    const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-    const dnsmasq = new DNSMASQ();
     dnsmasq.scheduleRestartDNSService();
     await this._updateDNSRedirectChain(routedDnsServers);
   }
@@ -491,7 +494,7 @@ class VirtWanGroup {
   async _enableDNSRoute(routeType = "hard") {
     const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
-    await fs.promises.writeFile(this._getDnsmasqRouteConfigPath(routeType), `conf-dir=${VirtWanGroup.getDNSRouteConfDir(this.uuid, routeType)}`).catch((err) => { });
+    await dnsmasq.writeConfig(this._getDnsmasqRouteConfigPath(routeType), `conf-dir=${VirtWanGroup.getDNSRouteConfDir(this.uuid, routeType)}`).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
   }
 

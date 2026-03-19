@@ -277,8 +277,8 @@ class Tag extends Monitorable {
 
         const markTag = `${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`;
         // use two config files, one in network directory, the other in vpn client hard route directory, the second file is controlled by conf-dir in VPNClient.js and will not be included when client is disconnected
-        await fs.writeFileAsync(tagConfPath, `group-tag=@${this.o.uid}$vc_tag_${this.o.uid}`).catch((err) => {});
-        await fs.writeFileAsync(vcConfPath, `tag-tag=$vc_tag_${this.o.uid}$${markTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
+        await dnsmasq.writeConfig(tagConfPath, `group-tag=@${this.o.uid}$vc_tag_${this.o.uid}`).catch((err) => {});
+        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$vc_tag_${this.o.uid}$${markTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
       // null means off
@@ -288,8 +288,8 @@ class Tag extends Monitorable {
         // override target and clear vpn client bits in fwmark
         rules.forEach(rule => iptc.addRule(rule.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-A')));
 
-        await fs.writeFileAsync(tagConfPath, `group-tag=@${this.o.uid}$vc_tag_${this.o.uid}`).catch((err) => {});
-        await fs.writeFileAsync(vcConfPath, `tag-tag=$vc_tag_${this.o.uid}$${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
+        await dnsmasq.writeConfig(tagConfPath, `group-tag=@${this.o.uid}$vc_tag_${this.o.uid}`).catch((err) => {});
+        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$vc_tag_${this.o.uid}$${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
       // false means N/A
@@ -346,7 +346,7 @@ class Tag extends Monitorable {
       }
     }
     if (!_.isEmpty(updatedTags))
-      await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}.conf`, `group-group=@${this.o.uid}${updatedTags.map(t => `@${t}`)}`, {encoding: "utf8"});
+      await dnsmasq.writeConfig(`${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}.conf`, `group-group=@${this.o.uid}${updatedTags.map(t => `@${t}`)}`);
     dnsmasq.scheduleRestartDNSService();
     this[`_${policyKey}`] = updatedTags;
     await this.setPolicyAsync(policyKey, this[`_${policyKey}`]); // keep tags in policy data up-to-date
