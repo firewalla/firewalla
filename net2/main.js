@@ -56,6 +56,9 @@ const fireRouter = require('./FireRouter.js')
 // api/main/monitor all depends on sysManager configuration
 const sysManager = require('./SysManager.js');
 
+// load BlockControl to start timer
+require('../control/BlockControl.js');
+
 const sensorLoader = require('../sensor/SensorLoader.js');
 
 const cp = require('child_process');
@@ -209,6 +212,7 @@ async function run() {
 
   const HostManager = require('./HostManager.js');
   const hostManager = new HostManager();
+  const Monitorable = require('./Monitorable.js');
 
   const hl = require('../hook/HookLoader.js');
   hl.initHooks();
@@ -293,6 +297,7 @@ async function run() {
 
     // ensure getHosts is called after Iptables is flushed
     await hostManager.getHostsAsync()
+    Monitorable.startInitLogger()
 
     const qos = require('../control/QoS.js');
     await qos.resetPolicyQoSHandlerMap();

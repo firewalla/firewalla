@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -470,7 +470,7 @@ module.exports = class {
     const results = await this.loadExceptionsAsync();
     // wait for category data to load;
 
-    log.info("Start to match alarm", alarm.type, alarm['p.device.mac'], alarm['p.dest.name']);
+    log.verbose("Start to match alarm", alarm.type, alarm['p.device.mac'], alarm['p.dest.name']);
     log.verbose(alarm);
     for (let i = 0; i < 30; i++) {
       if (this.categoryMap !== null) {
@@ -490,7 +490,7 @@ module.exports = class {
     // do not match exceptions that are expired, paused or not in scheduled running time
     let matches = results.filter((e) => !e.isExpired() && !e.isIdle() && (!e.cronTime || ruleScheduler.shouldPolicyBeRunning(e)) && e.match(alarm));
     if (matches.length > 0) {
-      log.info("Alarm " + alarm.aid + " is covered by exception " + matches.map((e) => e.eid).join(","));
+      log.info(`Alarm ${alarm.type} ${alarm["p.device.mac"]} ${alarm["p.dest.name"]} is covered by exception ${matches.map((e) => e.eid).join(",")}`);
     }
 
     return matches

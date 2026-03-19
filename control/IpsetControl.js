@@ -208,7 +208,8 @@ class IpsetControl extends ModuleControl {
       }
 
       try {
-        await exec(`sudo ipset restore -! -f "${restoreFile}"`, { timeout: 180000 });
+        // the 5 min timeout is for https://ubuntu.com/security/CVE-2024-26910
+        await exec(`sudo ipset restore -! -f "${restoreFile}"`, { timeout: 300000 });
         log.verbose(`ipset restore completed ${remaining.length} operations successfully`);
         break;
       } catch (err) {

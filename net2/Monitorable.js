@@ -74,9 +74,22 @@ class Monitorable {
     return obj
   }
 
+  // check if all Monitorables are initialized
+  static startInitLogger() {
+    const allInitialized = Object.values(this.instances).every(instance => instance && instance.init === true);
+
+    if (!allInitialized) {
+      setTimeout(() => this.startInitLogger(), 1000);
+    } else {
+      const secs = (Date.now() / 1000 - sysManager.startTS).toFixed(2);
+      log.info(`====== All Monitorables initialized in ${secs} seconds ======`);
+    }
+  }
+
   constructor(o) {
     this.o = o
     this.policy = {};
+    this.init = false
 
     if (!this.getUniqueId()) {
       log.warn('cannot new monitorable (no uniqId)', this.o);
@@ -336,12 +349,14 @@ class Monitorable {
     await lock.acquire(`LOCK_APPLY_POLICY_${this.getGUID()}`, async () => {
       if (sysManager.isMyMac(this.getUniqueId())) {
         log.warn(`Skip applying policy on self MAC address`, this.getUniqueId());
+        this.init = true
         return;
       }
       for (const intf of sysManager.getWanInterfaces()) {
         const gwMAC = await sysManager.myGatewayMac(intf.name);
         if (gwMAC && gwMAC === this.getUniqueId()) {
           log.warn(`Skip applying policy on WAN gateway MAC address`, this.getUniqueId());
+          this.init = true
           return;
         }
       }
@@ -351,6 +366,7 @@ class Monitorable {
       const policy = JSON.parse(JSON.stringify(this.policy));
       const pm = require('./PolicyManager.js');
       await pm.execute(this, this.getUniqueId(), policy);
+      this.init = true
     }).catch((err) => {
       log.error('Failed to apply policy', this.getGUID(), this.policy, err);
     });

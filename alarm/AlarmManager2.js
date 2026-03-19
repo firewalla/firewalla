@@ -564,10 +564,11 @@ module.exports = class {
             if (aid > 0) log.info(`Alarm ${aid} is created successfully`);
           } catch (err) {
             if (err.code === 'ERR_DUP_ALARM' ||
+                err.code === 'ERR_NO_RELATED_APP_TIME_USAGE' ||
                 err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY' ||
                 err.code === 'ERR_BLOCKED_BY_TRUST_ALREADY' ||
                 err.code === 'ERR_COVERED_BY_EXCEPTION') {
-              log.info("failed to create alarm:", err.message);
+              log.verbose("failed to create alarm:", err.message);
             } else {
               log.error("failed to create alarm:", err);
             }
@@ -861,6 +862,9 @@ module.exports = class {
       );
 
       const totalMins = _.get(stats, ["appTimeUsage", appId, "totalMins"], 0);
+      if (!totalMins) {
+        log.info("Alarm has no related app time usage", alarm.type, alarm["p.device.mac"], appId, alarm["p.dest.name"]);
+      }
       return totalMins > 0;
     } catch (err) {
       log.error("hasRelatedAppTimeUsage error:", err);
@@ -1034,11 +1038,11 @@ module.exports = class {
       throw new Error("invalid alarm, failed to pass verification");
     }
 
-    log.info("Checking if similar alarms are generated recently");
+    log.verbose("Checking if similar alarms are generated recently");
     const hasDup = await this.dedup(alarm, profile);
 
     if (hasDup) {
-      log.warn("Skipped dup alarm", alarm.type, "dest:", alarm["p.dest.name"], alarm["p.dest.ip"],
+      log.info("Skipped dup alarm", alarm.type, "dest:", alarm["p.dest.name"], alarm["p.dest.ip"],
         "src:", alarm["p.device.name"], alarm["p.device.ip"]);
       let err = new Error("duplicated with existing alarms");
       err.code = 'ERR_DUP_ALARM';
@@ -1049,7 +1053,6 @@ module.exports = class {
 
     if (exceptionManager.isFirewallaCloud(alarm) || matches && matches.length) {
       matches.forEach((e) => {
-        log.info("Matched Exception: " + e.eid);
         exceptionManager.updateMatchCount(e.eid); // async incr the match count for each matched exception
       });
       const err3 = new Error("alarm is covered by exceptions");
@@ -1057,7 +1060,7 @@ module.exports = class {
       throw err3;
     }
 
-    log.info("Checking if alarm has related app time usage");
+    log.verbose("Checking if alarm has related app time usage");
     const hasRelatedAppTimeUsage = await this.hasRelatedAppTimeUsage(alarm);
     if (!hasRelatedAppTimeUsage) {
       const err4 = new Error("alarm has no related app time usage");
@@ -1197,7 +1200,7 @@ module.exports = class {
     }
 
     try {
-      log.info("AlarmManager:Check:AutoBlock", alarm.aid);
+      log.verbose("AlarmManager:Check:AutoBlock", alarm.aid);
       const ret = await this.shouldAutoBlock(alarm);
       if (fConfig && fConfig.policy &&
         fConfig.policy.autoBlock &&

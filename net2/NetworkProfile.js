@@ -102,6 +102,7 @@ class NetworkProfile extends Monitorable {
   async applyPolicy() {
     if (this.o.monitoring !== true) {
       log.info(`Network ${this.o.uuid} ${this.o.intf} does not require monitoring, skip apply policy`);
+      this.init = true
       return;
     }
     await super.applyPolicy()
