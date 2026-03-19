@@ -2531,7 +2531,7 @@ class PolicyManager2 {
   }
 
   async match(alarm) {
-    log.info("Checking policies against", alarm.type, alarm.device, alarm['p.device.id']);
+    log.verbose("Checking policies against", alarm.type, alarm.device, alarm['p.device.id']);
     const policies = await this.loadActivePoliciesAsync()
 
     const matchedPolicies = policies

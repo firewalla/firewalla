@@ -21,6 +21,7 @@ const iptables = require('./IptablesControl.js');
 const ipset = require('./IpsetControl.js');
 const tlsset = require('./TLSSetControl.js');
 const SensorEventManager = require('../sensor/SensorEventManager.js').getInstance();
+const sysManager = require('../net2/SysManager.js');
 const { delay } = require('../util/util.js');
 
 const { exec } = require('child-process-promise');
@@ -32,6 +33,7 @@ class BlockControl {
     this.queuingTimer = null;
     this.queuingTimeout = 5000; // 5 seconds
     this.processingPromise = null;
+    this.startTS = Date.now()
 
     // Order matters: ipset operations should be applied before iptables rules that may reference sets
     // TLSIpset is depends on iptables rules to create hashset files
@@ -141,6 +143,7 @@ class BlockControl {
    */
   async startInitialization() {
     log.info('Starting initialization process');
+    this.initTS = Date.now() / 1000
     this.state = 'initializing';
     
     log.info('Running iptables setup script');
@@ -175,7 +178,9 @@ class BlockControl {
     
     await this.enterProcessingState();
 
-    log.info('Initialization completed');
+    const processingTimeSec = (Date.now() / 1000 - this.initTS).toFixed(2);
+    const totalTimeSec = (Date.now() / 1000 - sysManager.startTS).toFixed(2);
+    log.info(`======= Initialization completed, processing time: ${processingTimeSec}s, total: ${totalTimeSec}s =======`);
   }
 
   /**

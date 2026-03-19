@@ -943,7 +943,7 @@ module.exports = class FlowMonitor {
         log.info("Skip firing new alarm", err.message);
         return true; // in this case, ip alarm no need to trigger either
       }
-      log.error("Error when save alarm:", err.message);
+      log.error("Error when save alarm:", err);
       return;
     }
 
