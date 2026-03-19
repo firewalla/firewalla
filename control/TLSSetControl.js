@@ -39,6 +39,14 @@ class TLSSetControl extends ModuleControl {
     // e.g. 'c_bd_games_tls_hostset', 'c_bd_default_c_tls_hostset', etc.
     this.activeTCPSets = {}; // set name -> 1
     this.activeUDPSets = {}; // set name -> 1
+
+    // activate default TLS sets
+    for (const sec of ['', 'sec_']) {
+      for (const action of ['allow', 'block']) {
+        const setName = `${sec}${action}_domain_set`;
+        this.activateTLSSet(setName);
+      }
+    }
   }
 
   /**
