@@ -117,7 +117,7 @@ moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
 const Constants = require('./Constants.js');
-const { Rule, wrapIptables } = require('./Iptables.js');
+const { Rule } = require('./Iptables.js');
 const iptc = require('../control/IptablesControl.js');
 const QoS = require('../control/QoS.js');
 const Monitorable = require('./Monitorable.js')

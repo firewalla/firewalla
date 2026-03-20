@@ -354,14 +354,16 @@ class TagManager {
     });
     for (const uid in removedTags) {
       if (f.isMain()) {
-        (async () => {
+        try {
           await sysManager.waitTillIptablesReady()
           log.info(`Destroying environment for tag ${uid} ${removedTags[uid].name} ...`);
           await removedTags[uid].resetPolicies();
           await removedTags[uid].destroyEnv();
           await removedTags[uid].destroy();
           await dnsmasq.writeAllocationOption(uid, {})
-        })()
+        } catch (err) {
+          log.error(`Error destroying environment for tag ${uid} ${removedTags[uid].name}`, err);
+        }
       }
       delete this.tags[uid];
     }
