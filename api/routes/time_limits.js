@@ -22,7 +22,7 @@ const log = require('../../net2/logger.js')(__filename);
 const HostManager = require('../../net2/HostManager.js');
 const sysManager = require('../../net2/SysManager.js');
 const Constants = require('../../net2/Constants.js');
-const { getInstance: getAccessRequestManager, STATE_PENDING, STATE_APPROVED, STATE_DENIED, STATE_EXPIRED, getUserRelatedTags: getManagerUserRelatedTags, findMatchingTimeLimitRules, matchApp } = require('../../alarm/AccessRequestManager.js');
+const { getInstance: getAccessRequestManager, STATE_PENDING, STATE_APPROVED, STATE_DENIED, STATE_EXPIRED, getUserRelatedTags: getManagerUserRelatedTags, findMatchingTimeLimitRules} = require('../../alarm/AccessRequestManager.js');
 const moment = require('moment-timezone/moment-timezone.js');
 try { moment.tz.load(require('../../vendor_lib/moment-tz-data.json')); } catch (_) { /* optional */ }
 const AppTimeUsageManager = require('../../alarm/AppTimeUsageManager.js');
@@ -147,7 +147,7 @@ router.get('/', async (req, res) => {
       }
     }
 
-    const matchedRules = await findMatchingTimeLimitRules(userId, app, { includeBlockedApps: true, includeDisabled: false });
+    const matchedRules = await findMatchingTimeLimitRules(userId, app, { includeNonTimeLimitApps: true, includeDisabled: false });
 
     let bestRule = null;
     let bestSum = Infinity;
@@ -177,7 +177,7 @@ router.get('/', async (req, res) => {
         }
         timeUsed = Number(bestRule.appTimeUsed);
       } else {
-        //TODO: get time used for blocked app
+        //TODO: get time used for blocked app, how to deal with paused rule and schedule rule?
         // timeUsed = await AppTimeUsageManager.getTimeUsage();
       }
     } else { //no rule found, no limit
