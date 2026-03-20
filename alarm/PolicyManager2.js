@@ -3825,10 +3825,10 @@ class PolicyManager2 {
       clearTimeout(this._refreshConnmarkTimeout);
     this._refreshConnmarkTimeout = setTimeout(async () => {
       // use conntrack to clear the first bit of connmark on existing connections
-      await exec(`sudo conntrack -U -m 0x00000000/0x80000000`).catch((err) => {
+      await exec(`sudo conntrack -U -m 0x00000000/0x80000000 > /dev/null 2>&1`).catch((err) => {
         log.warn(`Failed to clear first bit of connmark on existing IPv4 connections`, err.message);
       });
-      await exec(`sudo conntrack -U -f ipv6 -m 0x00000000/0x80000000`).catch((err) => {
+      await exec(`sudo conntrack -U -f ipv6 -m 0x00000000/0x80000000 > /dev/null 2>&1`).catch((err) => {
         log.warn(`Failed to clear first bit of connmark on existing IPv6 connections`, err.message);
       });
     }, 5000);
