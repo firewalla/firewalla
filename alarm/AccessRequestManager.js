@@ -59,17 +59,30 @@ function getUserRelatedTags(userId) {
   return { user, afTag };
 }
 
-function isInSchedule(policy) {
+function isInSchedule(policy, includeNonTimeLimitApps = false) {
+  // check if the policy is paused
+  const now = Date.now() / 1000;
+  if (policy.idleTs != null && policy.idleTs > 0) {
+    
+    if (now < policy.idleTs) {
+      return false;
+    }
+  }
+
+  const au = policy.appTimeUsage;
+  if (!au && !includeNonTimeLimitApps) {
+    return false;
+  }
+
   const cronTime = policy.cronTime;
-  if (!cronTime) return false;
+  const duration = policy.duration;
+  if (!cronTime || cronTime.length === 0 || !duration || duration.length === 0) return true;
+
+  // check if the policy is in schedule
   const interval = cronParser.parseExpression(cronTime, { tz: sysManager.getTimezone() });
-  const lastDate = interval.prev().getTime() / 1000;
+  const lastTriggerTime = interval.prev().getTime() / 1000;
 
-  const timezone = sysManager.getTimezone();
-
-  const startOfDay = moment.tz ? moment().tz(timezone).startOf('day').unix() : moment().startOf('day').unix();
-  const endOfDay = moment.tz ? moment().tz(timezone).endOf('day').unix() : moment().endOf('day').unix();
-  if (lastDate >= startOfDay && lastDate <= endOfDay) return true;
+  if (lastTriggerTime <= now && now < lastTriggerTime + duration) return true;
   return false;
 }
 
@@ -89,7 +102,7 @@ function matchTarget(policy, target) {
 }
 
 // check if the policy is matched with the given app
-function matchApp(policy, app='all', supportedApps = [], includeBlockedApps = false) {
+function matchApp(policy, app='all', supportedApps = [], includeNonTimeLimitApps = false) {
   let target = "TLX-fw-" + app;
   if (app === 'internet') {
     target = 'TAG';
@@ -111,10 +124,8 @@ function matchApp(policy, app='all', supportedApps = [], includeBlockedApps = fa
   // check target
   if (!matchTarget(policy, target)) return false;
 
-  if (includeBlockedApps) return true;
-  if (!policy.appTimeUsage) return false;
   // check if the policy is in schedule
-  if (!isInSchedule(policy)) return false;
+  if (!isInSchedule(policy, includeNonTimeLimitApps)) return false;
   return true;
 }
 
@@ -148,7 +159,7 @@ async function findMatchingTimeLimitRules(userId, app, options = {}) {
   const accessRequestManager = getInstance();
   const supportedApps = await accessRequestManager.getSupportedApps();
 
-  return allPolicies.filter(p => matchApp(p, app, supportedApps, options.includeBlockedApps) && policyTargetsUserOrGroup(p));
+  return allPolicies.filter(p => matchApp(p, app, supportedApps, options.includeNonTimeLimitApps) && policyTargetsUserOrGroup(p));
 }
 
 
@@ -302,7 +313,7 @@ class AccessRequestManager {
     const pm2 = new PolicyManager2();
     const Policy = require('./Policy.js');
 
-    const matchingPolicies = await findMatchingTimeLimitRules(req.userId, req.app, { includeBlockedApps: true, includeDisabled: true });
+    const matchingPolicies = await findMatchingTimeLimitRules(req.userId, req.app, { includeNonTimeLimitApps: true, includeDisabled: true });
     if (matchingPolicies.length === 0) {
       return { ok: false, error: 'No time limit rule found for this user and app' };
     }
@@ -381,6 +392,7 @@ class AccessRequestManager {
         oneTimePolicy.parentPid = policy.pid;
         oneTimePolicy.expire = endOfTodayTs - nowTs;
         oneTimePolicy.timestamp = nowTs;
+        oneTimePolicy.cronTime = "0 0 * * *";
         
         // remove pid and other fields
         delete oneTimePolicy.pid;
@@ -396,7 +408,7 @@ class AccessRequestManager {
         }
 
         //pause this block rule for 1 day
-        await pm2.updatePolicyAsync({ pid: policy.pid, disabled: "1", shadowPid: oneTimePolicy.pid });
+        await pm2.updatePolicyAsync({ pid: policy.pid, idleTs: endOfTodayTs, shadowPid: oneTimePolicy.pid });
         const updatedPolicy = await pm2.getPolicy(policy.pid);
         if (updatedPolicy) {
           pm2.tryPolicyEnforcement(updatedPolicy, 'reenforce', oldPolicy);
