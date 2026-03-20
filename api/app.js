@@ -58,7 +58,7 @@ const AccessRequestManager = require('../alarm/AccessRequestManager.js');
 AccessRequestManager.scheduleExpireCronJob();
 
 app.get('/favicon.ico', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'network', 'favicon.ico'), (err) => {
+  res.sendFile(path.join(__dirname, 'public', 'network', 'firewalla-icon.png'), (err) => {
     if (err) res.status(204).end();
   });
 });

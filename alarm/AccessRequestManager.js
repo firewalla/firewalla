@@ -19,6 +19,10 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const log = require('../net2/logger.js')(__filename);
 const moment = require('moment-timezone/moment-timezone.js');
 moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
+const sysManager = require('../net2/SysManager.js');
+const cronParser = require('cron-parser');
+const Constants = require('../net2/Constants.js');
+const _ = require('lodash');
 
 const REQUEST_KEY_PREFIX = 'access_request:';
 const CURRENT_LOOKUP_PREFIX = 'access_request:current:';
@@ -55,6 +59,65 @@ function getUserRelatedTags(userId) {
   return { user, afTag };
 }
 
+function isInSchedule(policy) {
+  const cronTime = policy.cronTime;
+  if (!cronTime) return false;
+  const interval = cronParser.parseExpression(cronTime, { tz: sysManager.getTimezone() });
+  const lastDate = interval.prev().getTime() / 1000;
+
+  const timezone = sysManager.getTimezone();
+
+  const startOfDay = moment.tz ? moment().tz(timezone).startOf('day').unix() : moment().startOf('day').unix();
+  const endOfDay = moment.tz ? moment().tz(timezone).endOf('day').unix() : moment().endOf('day').unix();
+  if (lastDate >= startOfDay && lastDate <= endOfDay) return true;
+  return false;
+}
+
+function matchTarget(policy, target) {
+  if (target === 'all') {
+    return true;
+  }
+  if (policy.targets) {
+    if (policy.targets.includes(target)) {
+      return true;
+    }
+  }
+  if (policy.target === target) {
+    return true;
+  }
+  return false;
+}
+
+// check if the policy is matched with the given app
+function matchApp(policy, app='all', supportedApps = [], includeBlockedApps = false) {
+  let target = "TLX-fw-" + app;
+  if (app === 'internet') {
+    target = 'TAG';
+  } else if (app === 'all') {
+    target = 'all';
+  }
+  // check tag
+  if (!policy.tag || policy.tag.length === 0 ) return false;
+
+  // check action
+  if (policy.action !== 'app_block' && policy.action !== 'block') return false;
+
+  // check if the app is supported time limit app
+  if (supportedApps.length > 0) {
+    const supportedApp = supportedApps.find(item => item.app === app);
+    if (!supportedApp && app !== 'internet') return false;
+  }
+
+  // check target
+  if (!matchTarget(policy, target)) return false;
+
+  if (includeBlockedApps) return true;
+  if (!policy.appTimeUsage) return false;
+  // check if the policy is in schedule
+  if (!isInSchedule(policy)) return false;
+  return true;
+}
+
 /**
  * Find time-limit policies that match the given userId and optionally app.
  * Uses getUserRelatedTags to get user and affiliated tag, then matches policy.tag to their rule tag values (e.g. userTag:uid, tag:uid).
@@ -64,7 +127,7 @@ function getUserRelatedTags(userId) {
  * @param {string} [app] - optional app/category key; when omitted, all matching policies are returned
  * @returns {Promise<Array>} matching policies
  */
-async function findMatchingTimeLimitRules(userId, app) {
+async function findMatchingTimeLimitRules(userId, app, options = {}) {
   const Constants = require('../net2/Constants.js');
   const { user, afTag } = getUserRelatedTags(userId || '');
   const ruleTagValues = new Set();
@@ -79,20 +142,32 @@ async function findMatchingTimeLimitRules(userId, app) {
 
   const PolicyManager2 = require('./PolicyManager2.js');
   const pm2 = new PolicyManager2();
-  const allPolicies = await pm2.loadActivePoliciesAsync({ includingDisabled: 1 });
-  const matchApp = (p) => {
-    if (!p.appTimeUsage || !p.tag || p.tag.length === 0) return false;
-    if (!app) return true;
-    const au = p.appTimeUsage;
-    if (au.app && au.app === app) return true;
-    if (Array.isArray(au.apps) && au.apps.includes(app)) return true;
-    return false;
-  };
+  const includeDisabled = options.includeDisabled ? 1 : 0;
+  const allPolicies = await pm2.loadActivePoliciesAsync({ includingDisabled: includeDisabled });
   const policyTargetsUserOrGroup = (p) => p.tag && p.tag.some(t => ruleTagValues.has(t));
-  return allPolicies.filter(p => matchApp(p) && policyTargetsUserOrGroup(p));
+  const accessRequestManager = getInstance();
+  const supportedApps = await accessRequestManager.getSupportedApps();
+
+  return allPolicies.filter(p => matchApp(p, app, supportedApps, options.includeBlockedApps) && policyTargetsUserOrGroup(p));
 }
 
+
 class AccessRequestManager {
+
+  async getSupportedApps() {
+    const supportedApps = [];
+    const appCloudConfig = await rclient.getAsync(Constants.REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG).then(result => result && JSON.parse(result)).catch(err => null);
+    if (_.isObject(appCloudConfig) && !_.isEmpty(_.get(appCloudConfig, "appConfs"))) {
+      for (const app of Object.keys(appCloudConfig.appConfs)) {
+        const features = appCloudConfig.appConfs[app].features;
+        if (!_.isEmpty(features) && features.timeUsage === true) {
+          supportedApps.push({app: app, displayName: appCloudConfig.appConfs[app].displayName});
+        }
+      }
+    }
+    return supportedApps;
+  }
+
   /**
    * Create or update an access request. If a pending request exists for (userId, app), reuse its id and overwrite.
    * @param {string} userId - user tag uid
@@ -183,6 +258,7 @@ class AccessRequestManager {
 
   async getExtraTimeLimitPolicy(userId) {
     const { user, afTag } = getUserRelatedTags(userId || '');
+    if (!afTag) return null;
     return await afTag.getPolicyAsync('extraTimeLimit');
   }
 
@@ -224,8 +300,9 @@ class AccessRequestManager {
     const PolicyManager2 = require('./PolicyManager2.js');
     const sysManager = require('../net2/SysManager.js');
     const pm2 = new PolicyManager2();
+    const Policy = require('./Policy.js');
 
-    const matchingPolicies = await findMatchingTimeLimitRules(req.userId, req.app);
+    const matchingPolicies = await findMatchingTimeLimitRules(req.userId, req.app, { includeBlockedApps: true, includeDisabled: true });
     if (matchingPolicies.length === 0) {
       return { ok: false, error: 'No time limit rule found for this user and app' };
     }
@@ -237,19 +314,93 @@ class AccessRequestManager {
 
     // matchingPolices includes paused rules, but extraQuota on these rules can still be updated in case they are resumed after approval
     for (const policy of matchingPolicies) {
-      const au = Object.assign({}, policy.appTimeUsage);
-      if (au.extraQuotaUntilTs != null && nowTs < au.extraQuotaUntilTs) {
-        au.extraQuota = (Number(au.extraQuota) || 0) + minutes;
-      } else {
-        au.extraQuota = minutes;
-      }
-      au.extraQuotaUntilTs = endOfTodayTs;
-
       const oldPolicy = policy;
-      await pm2.updatePolicyAsync({ pid: policy.pid, appTimeUsage: au });
-      const updatedPolicy = await pm2.getPolicy(policy.pid);
-      if (updatedPolicy) {
-        pm2.tryPolicyEnforcement(updatedPolicy, 'reenforce', oldPolicy);
+      if (policy.appTimeUsage) {
+        const au = Object.assign({}, policy.appTimeUsage);
+        if (au.extraQuotaUntilTs != null && nowTs < au.extraQuotaUntilTs) {
+          au.extraQuota = (Number(au.extraQuota) || 0) + minutes;
+        } else {
+          au.extraQuota = minutes;
+        }
+        au.extraQuotaUntilTs = endOfTodayTs;
+        
+        await pm2.updatePolicyAsync({ pid: policy.pid, appTimeUsage: au });
+        const updatedPolicy = await pm2.getPolicy(policy.pid);
+        if (updatedPolicy) {
+          pm2.tryPolicyEnforcement(updatedPolicy, 'reenforce', oldPolicy);
+        }
+      } else { // this is a block rule
+        // check if there is already a one-time policy exists for this user and app
+        if (policy.shadowPid) {
+          // check if the shadow policy is exists
+          const shadowPolicy = await pm2.getPolicy(policy.shadowPid);
+          if (shadowPolicy) {
+            continue;
+          }
+        }
+        //build up appTimeUsage object
+        let app = '';
+        let apps = [];
+        if (policy.target.startsWith('TLX-fw-')) {
+          app = policy.target.substring('TLX-fw-'.length);
+        } else if (policy.target === 'TAG') {
+          app = 'internet';
+        }
+
+        if (policy.targets && policy.targets.length > 0) {
+          for (const target of policy.targets) {
+            if (target.startsWith('TLX-fw-')) {
+              apps.push(target.substring('TLX-fw-'.length));
+            } else if (target === 'TAG') {
+              apps.push('internet');
+            }
+          }
+        }
+        if (!apps.includes(app)) {
+          apps.push(app);
+        }
+
+
+        const au = {
+          quota: 0,
+          extraQuota: minutes,
+          extraQuotaUntilTs: endOfTodayTs,
+          period: "0 0 * * *",
+        };
+
+        if (app) {
+          au.app = app;
+        }
+        if (apps && apps.length > 0) {
+          au.apps = apps;
+        }
+        //create a one-time policy to block the app for the duration of the request
+        const oneTimePolicy = Object.assign(Object.create(Policy.prototype), policy);
+        oneTimePolicy.appTimeUsage = au;
+        oneTimePolicy.autoDeleteWhenExpires = "1";
+        oneTimePolicy.parentPid = policy.pid;
+        oneTimePolicy.expire = endOfTodayTs - nowTs;
+        oneTimePolicy.timestamp = nowTs;
+        
+        // remove pid and other fields
+        delete oneTimePolicy.pid;
+        delete oneTimePolicy.lastActivatedTime;
+        delete oneTimePolicy.activatedTime;
+        delete oneTimePolicy.updatedTime;
+
+        const result = await pm2.checkAndSaveAsync(oneTimePolicy);
+        if (result.alreadyExists == 'duplicated' || result.alreadyExists == 'duplicated_and_updated') {
+          log.info('One-time policy already exists for this user and app', oneTimePolicy.pid);
+        } else {
+          log.info('One-time policy created for this user and app', oneTimePolicy.pid);
+        }
+
+        //pause this block rule for 1 day
+        await pm2.updatePolicyAsync({ pid: policy.pid, disabled: "1", shadowPid: oneTimePolicy.pid });
+        const updatedPolicy = await pm2.getPolicy(policy.pid);
+        if (updatedPolicy) {
+          pm2.tryPolicyEnforcement(updatedPolicy, 'reenforce', oldPolicy);
+        }
       }
     }
 
@@ -368,6 +519,7 @@ module.exports = {
   getInstance,
   scheduleExpireCronJob,
   findMatchingTimeLimitRules,
+  matchApp,
   getUserRelatedTags,
   AccessRequestManager,
   STATE_PENDING,

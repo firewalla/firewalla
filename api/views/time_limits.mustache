@@ -2,92 +2,595 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Time Limits</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{{appDisplayName}} Time Left Today</title>
     <style>
-        body { font-family: system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; }
-        h1 { font-size: 1.25rem; margin-bottom: 8px; }
-        .device { color: #666; margin-bottom: 24px; }
-        .rule { border: 1px solid #ddd; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
-        .rule h2 { font-size: 1rem; margin: 0 0 8px 0; }
-        .rule .meta { color: #666; font-size: 0.875rem; margin-bottom: 8px; }
-        .usage { display: flex; gap: 16px; flex-wrap: wrap; }
-        .usage span { font-size: 0.875rem; }
-        .remaining { font-weight: 600; }
-        .no-rules { color: #666; }
-        .btn-request-more { padding: 6px 12px; font-size: 0.875rem; cursor: pointer; border-radius: 6px; border: 1px solid #ccc; background: #f5f5f5; }
-        .btn-request-more:hover { background: #eee; }
-        .btn-request-more:disabled { opacity: 0.6; cursor: not-allowed; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+            background: #fff;
+            color: #1a1a1a;
+            max-width: 480px;
+            margin: 0 auto;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 14px 16px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .header-logo {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #000000;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .header-logo svg { flex-shrink: 0; }
+        .header-logo img {
+            width: 28px;
+            height: 28px;
+            object-fit: contain;
+            flex-shrink: 0;
+        }
+
+        .banner {
+            padding: 12px 16px;
+        }
+        .banner-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+        .banner-left {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .banner-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .banner-icon svg { display: block; }
+        .banner-icon-pending  { background: #F5A623; }
+        .banner-icon-denied   { background: #FF3B30; }
+        .banner-icon-approved { background: #34C759; }
+        .banner-title {
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+        .banner-time {
+            font-size: 0.8125rem;
+            color: #8e8e93;
+        }
+        .banner-msg {
+            font-size: 0.8125rem;
+            color: #3c3c43;
+            line-height: 1.45;
+            padding-left: 26px;
+        }
+        .banner-dismiss {
+            text-align: right;
+            padding-right: 2px;
+        }
+        .banner-dismiss a {
+            color: #007AFF;
+            font-size: 0.8125rem;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .banner-bar {
+            display: none;
+            align-items: center;
+            padding: 0 16px;
+            height: 28px;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .banner-bar-line {
+            flex: 1;
+            height: 1px;
+            background: #D1D1D6;
+        }
+        .banner-bar-arrow {
+            margin-left: 8px;
+            width: 0;
+            height: 0;
+            border-top: 5px solid transparent;
+            border-bottom: 5px solid transparent;
+            border-left: 6px solid #8e8e93;
+        }
+        .banner.collapsed .banner-body { display: none; }
+        .banner.collapsed .banner-bar  { display: flex; }
+
+        .content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 28px 24px 0;
+        }
+        .section-title {
+            font-size: 1.0625rem;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+            flex-wrap: wrap;
+        }
+        .app-select-wrap {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+        }
+        .app-select {
+            appearance: none;
+            -webkit-appearance: none;
+            border: none;
+            background: none;
+            font-size: 1.0625rem;
+            font-weight: 600;
+            color: #007AFF;
+            padding: 2px 18px 2px 0;
+            cursor: pointer;
+            outline: none;
+            font-family: inherit;
+        }
+        .app-select-arrow {
+            position: absolute;
+            right: 2px;
+            top: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+            color: #007AFF;
+            font-size: 0.625rem;
+        }
+
+        .circle-wrap {
+            position: relative;
+            width: 180px;
+            height: 180px;
+            margin-bottom: 36px;
+        }
+        .circle-svg {
+            width: 100%;
+            height: 100%;
+            transform: rotate(-90deg);
+        }
+        .circle-bg {
+            fill: none;
+            stroke: #E8E8E8;
+            stroke-width: 12;
+        }
+        .circle-fg {
+            fill: none;
+            stroke-width: 12;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 0.5s ease, stroke 0.5s ease;
+        }
+        .circle-label {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            line-height: 1;
+        }
+        .circle-num {
+            font-size: 2.75rem;
+            font-weight: 300;
+        }
+        .circle-unit {
+            font-size: 1.125rem;
+            font-weight: 400;
+            color: #8e8e93;
+        }
+
+        .stats {
+            width: 100%;
+            margin-bottom: 36px;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+        }
+        .stat-row + .stat-row {
+            border-top: 1px solid #f0f0f0;
+        }
+        .stat-lbl { font-size: 0.9375rem; }
+        .stat-val { font-size: 0.9375rem; font-weight: 500; }
+        .extra-note {
+            text-align: right;
+            font-size: 0.75rem;
+            color: #8e8e93;
+            margin-top: 2px;
+            display: none;
+        }
+
+        .btn-wrap {
+            width: 100%;
+            padding: 0 24px 36px;
+            margin-top: auto;
+        }
+        .btn-action {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #fff;
+            cursor: pointer;
+            text-align: center;
+            -webkit-tap-highlight-color: transparent;
+            transition: background 0.15s;
+        }
+        .btn-ask       { background: #00A1DE; }
+        .btn-ask:active { background: #008BC0; }
+        .btn-reminder  { background: #FF3B30; }
+        .btn-reminder:active { background: #D63029; }
+        .btn-action.disabled {
+            background: #C7C7CC !important;
+            cursor: not-allowed;
+        }
+
+        .toast-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0,0,0,0.15);
+        }
+        .toast-overlay.visible { display: flex; }
+        .toast {
+            background: rgba(60,60,67,0.92);
+            color: #fff;
+            border-radius: 14px;
+            padding: 24px 28px 20px;
+            max-width: 260px;
+            text-align: center;
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+        .toast-close {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 14px auto 0;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.55);
+            background: none;
+            color: rgba(255,255,255,0.85);
+            font-size: 15px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
-    <h1>Time Limits</h1>
-    {{#device}}
-    <p class="device">Device: {{name}} — {{ip}}</p>
-    {{/device}}
-    {{^device}}
-    <p class="device">Device not found for your IP.</p>
-    {{/device}}
-
-    {{#device}}
-    <p class="device">User: {{username}}</p>
-    {{/device}}
-
-    {{#internetTimeLimit}}
-    <h2 style="font-size: 1rem; margin-top: 24px;">Internet</h2>
-    <div class="rule">
-        <div class="meta">Quota: {{quota}} min · Extra: {{extraQuota}} min</div>
-        <div class="request-more" style="margin-top: 12px;">
-            <button type="button" class="btn-request-more" data-app="internet" data-quota="30">Request more time</button>
-            <span class="request-feedback" style="margin-left: 8px; font-size: 0.875rem;"></span>
+    <div class="header">
+        <div class="header-logo">
+            <img src="http://fire.walla:8833/favicon.ico" alt="Avatar">
+            Firewalla
         </div>
     </div>
-    {{/internetTimeLimit}}
 
-    {{#appTimeLimits}}
-    <div class="rule">
-        <h2>App: {{app}}</h2>
-        <div class="meta">Quota: {{quota}} min · Extra: {{extraQuota}} min</div>
-        <div class="request-more" style="margin-top: 12px;">
-            <button type="button" class="btn-request-more" data-app="{{app}}" data-quota="30">Request more time</button>
-            <span class="request-feedback" style="margin-left: 8px; font-size: 0.875rem;"></span>
+    {{#lastRequest}}
+    {{#isPending}}
+    <div class="banner" id="banner">
+        <div class="banner-row">
+            <div class="banner-left">
+                <span class="banner-icon banner-icon-pending">
+                    <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="3" r="1.2" fill="#fff"/><rect x="5.2" y="5" width="1.6" height="3.5" rx=".8" fill="#fff"/></svg>
+                </span>
+                <span class="banner-title">Request Sent</span>
+            </div>
+            <span class="banner-time">{{time}}</span>
+        </div>
+        <p class="banner-msg">Your request for {{quotaText}} extra {{appDisplayNameLower}} time is waiting for approval.</p>
+    </div>
+    {{/isPending}}
+
+    {{#isDenied}}
+    <div class="banner" id="banner">
+        <div class="banner-body">
+            <div class="banner-row">
+                <div class="banner-left">
+                    <span class="banner-icon banner-icon-denied">
+                        <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2.5 2.5l5 5M7.5 2.5l-5 5" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>
+                    </span>
+                    <span class="banner-title">Request Rejected</span>
+                </div>
+                <span class="banner-time">{{time}}</span>
+            </div>
+            <p class="banner-msg">Your request for {{quotaText}} extra {{appDisplayNameLower}} time was not approved.</p>
+            <div class="banner-dismiss"><a href="#" id="dismiss-link">Dismiss</a></div>
+        </div>
+        <div class="banner-bar" id="banner-bar"><div class="banner-bar-line"></div><div class="banner-bar-arrow"></div></div>
+    </div>
+    {{/isDenied}}
+
+    {{#isApproved}}
+    <div class="banner" id="banner">
+        <div class="banner-body">
+            <div class="banner-row">
+                <div class="banner-left">
+                    <span class="banner-icon banner-icon-approved">
+                        <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 5.5l2.2 2.2L8 3" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+                    </span>
+                    <span class="banner-title">Request Approved</span>
+                </div>
+                <span class="banner-time">{{time}}</span>
+            </div>
+            <p class="banner-msg">You received {{approvedText}} extra {{appDisplayNameLower}} time.</p>
+            <div class="banner-dismiss"><a href="#" id="dismiss-link">Dismiss</a></div>
+        </div>
+        <div class="banner-bar" id="banner-bar"><div class="banner-bar-line"></div><div class="banner-bar-arrow"></div></div>
+    </div>
+    {{/isApproved}}
+    {{/lastRequest}}
+
+    <div class="content">
+        <h1 class="section-title">
+            <span class="app-select-wrap">
+                <select class="app-select" id="app-select">
+                    {{#appList}}
+                    <option value="{{name}}" {{#selected}}selected{{/selected}}>{{displayName}}</option>
+                    {{/appList}}
+                </select>
+                <span class="app-select-arrow">&#9662;</span>
+            </span>
+            &nbsp;Time Left Today
+        </h1>
+
+        <div class="circle-wrap">
+            <svg class="circle-svg" viewBox="0 0 180 180">
+                <circle class="circle-bg" cx="90" cy="90" r="76"/>
+                <circle class="circle-fg" id="circle-fg" cx="90" cy="90" r="76"
+                    stroke="#E8E8E8"
+                    stroke-dasharray="0"
+                    stroke-dashoffset="0"/>
+            </svg>
+            <div class="circle-label">
+                <span class="circle-num" id="circle-num">--</span><span class="circle-unit" id="circle-unit"></span>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-row">
+                <span class="stat-lbl">Time Used</span>
+                <span class="stat-val" id="stat-used">--</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-lbl">Total</span>
+                <span class="stat-val" id="stat-total">--</span>
+            </div>
+            <div class="extra-note" id="extra-note"></div>
         </div>
     </div>
-    {{/appTimeLimits}}
-    {{^appTimeLimits}}
-    <p class="no-rules">No time limit rules apply to you.</p>
-    {{/appTimeLimits}}
 
-    <h2 style="font-size: 1rem; margin-top: 24px;">Pending Requests</h2>
-    {{#pendingAccessRequests}}
-    <div class="rule">
-        <h2>Request — {{app}}</h2>
-        <div class="meta">Requested: {{requestQuota}} min · {{requestId}}</div>
+    <div class="btn-wrap">
+        {{#lastRequest}}{{#isPending}}
+        <button class="btn-action btn-reminder" id="action-btn">Send Reminder</button>
+        {{/isPending}}{{^isPending}}
+        <button class="btn-action btn-ask" id="action-btn">Ask For More Time</button>
+        {{/isPending}}{{/lastRequest}}
+        {{^lastRequest}}
+        <button class="btn-action btn-ask" id="action-btn">Ask For More Time</button>
+        {{/lastRequest}}
     </div>
-    {{/pendingAccessRequests}}
-    {{^pendingAccessRequests}}
-    <p class="no-rules">No pending requests.</p>
-    {{/pendingAccessRequests}}
 
-    <h2 style="font-size: 1rem; margin-top: 24px;">Previous Requests</h2>
-    {{#previousAccessRequests}}
-    <div class="rule">
-        <h2>Request — {{app}}</h2>
-        <div class="meta">Requested: {{requestQuota}} min · {{state}}{{#approvedQuota}} · Approved: {{approvedQuota}} min{{/approvedQuota}}{{#denyReason}} · Denied: {{denyReason}}{{/denyReason}}</div>
+    <div class="toast-overlay" id="toast-overlay">
+        <div class="toast">
+            <button class="toast-close" id="toast-close">
+                <svg width="12" height="12" viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
+            <p>Please wait a moment before requesting again.</p>
+        </div>
     </div>
-    {{/previousAccessRequests}}
-    {{^previousAccessRequests}}
-    <p class="no-rules">No previous requests today.</p>
-    {{/previousAccessRequests}}
 
     <script>
-    document.querySelectorAll('.btn-request-more').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-            var app = this.dataset.app;
-            if (!app) return;
-            window.location.href = '/v1/time_limits/request-more?app=' + encodeURIComponent(app);
+    (function() {
+        var APP       = '{{app}}';
+        var TIME_USED = {{timeUsed}};
+        var QUOTA     = {{quota}};
+        var EXTRA     = {{extraQuota}};
+
+        var HAS_PENDING = {{#lastRequest}}{{#isPending}}true{{/isPending}}{{^isPending}}false{{/isPending}}{{/lastRequest}}{{^lastRequest}}false{{/lastRequest}};
+        var REQUEST_ID  = '{{#lastRequest}}{{requestId}}{{/lastRequest}}';
+
+        document.getElementById('app-select').addEventListener('change', function() {
+            var url = new URL(window.location.href);
+            url.searchParams.set('app', this.value);
+            window.location.href = url.toString();
         });
-    });
+
+        var banner = document.getElementById('banner');
+        var dismissLink = document.getElementById('dismiss-link');
+        var bannerBar = document.getElementById('banner-bar');
+        var dismissKey = 'fw_dismiss_' + APP;
+
+        function collapseBanner() {
+            if (banner) banner.classList.add('collapsed');
+            if (REQUEST_ID) localStorage.setItem(dismissKey, REQUEST_ID);
+        }
+        function expandBanner() {
+            if (banner) banner.classList.remove('collapsed');
+            localStorage.removeItem(dismissKey);
+        }
+
+        if (dismissLink) {
+            dismissLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                collapseBanner();
+            });
+        }
+        if (bannerBar) {
+            bannerBar.addEventListener('click', function() {
+                expandBanner();
+            });
+        }
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('from_request') === '1') {
+            expandBanner();
+            params.delete('from_request');
+            var cleanUrl = window.location.pathname;
+            var rest = params.toString();
+            if (rest) cleanUrl += '?' + rest;
+            history.replaceState(null, '', cleanUrl);
+        } else if (banner && REQUEST_ID && localStorage.getItem(dismissKey) === REQUEST_ID) {
+            banner.classList.add('collapsed');
+        }
+
+        var COLOR_GREEN  = '#34C759';
+        var COLOR_YELLOW = '#F5A623';
+        var COLOR_RED    = '#FF3B30';
+        var COLOR_EMPTY  = '#E8E8E8';
+        var R = 76;
+        var C = 2 * Math.PI * R;
+        var COOLDOWN_MS = 30000;
+        var storageKey  = 'fw_req_ts_' + APP;
+
+        var NO_LIMIT = QUOTA === -1;
+        var total    = NO_LIMIT ? -1 : QUOTA + EXTRA;
+        var timeLeft = NO_LIMIT ? -1 : Math.max(0, total - TIME_USED);
+        var pct      = NO_LIMIT ? 100 : (total > 0 ? (timeLeft / total) * 100 : 0);
+
+        function pickColor(p) {
+            if (p <= 0)  return COLOR_EMPTY;
+            if (p < 30)  return COLOR_RED;
+            if (p < 50)  return COLOR_YELLOW;
+            return COLOR_GREEN;
+        }
+
+        function fmtTime(mins) {
+            if (mins >= 60 && mins % 60 === 0) return (mins / 60) + ' h';
+            if (mins < 60) return mins + ' m';
+            return Math.floor(mins / 60) + ' h ' + (mins % 60) + ' m';
+        }
+
+        function fmtCircle(mins) {
+            if (mins >= 60 && mins % 60 === 0) return { n: String(mins / 60), u: 'h' };
+            return { n: String(mins), u: 'm' };
+        }
+
+        var circleFg   = document.getElementById('circle-fg');
+        var circleNum  = document.getElementById('circle-num');
+        var circleUnit = document.getElementById('circle-unit');
+        var statUsed   = document.getElementById('stat-used');
+        var statTotal  = document.getElementById('stat-total');
+        var extraNote  = document.getElementById('extra-note');
+
+        var dashOffset = C * (1 - pct / 100);
+        circleFg.setAttribute('stroke-dasharray',  C.toFixed(2));
+        circleFg.setAttribute('stroke-dashoffset', dashOffset.toFixed(2));
+        circleFg.setAttribute('stroke', pickColor(pct));
+
+        if (NO_LIMIT) {
+            circleNum.textContent  = '∞';
+            circleUnit.textContent = '';
+        } else {
+            var ci = fmtCircle(timeLeft);
+            circleNum.textContent  = ci.n;
+            circleUnit.textContent = ci.u;
+        }
+
+        statUsed.textContent  = fmtTime(TIME_USED);
+        statTotal.textContent = NO_LIMIT ? 'No Limit' : fmtTime(total);
+
+        if (EXTRA > 0) {
+            extraNote.textContent = 'Includes Extra + ' + fmtTime(EXTRA);
+            extraNote.style.display = 'block';
+        }
+
+        var actionBtn    = document.getElementById('action-btn');
+        var toastOverlay = document.getElementById('toast-overlay');
+        var toastClose   = document.getElementById('toast-close');
+
+        function isInCooldown() {
+            var ts = localStorage.getItem(storageKey);
+            if (!ts) return false;
+            return (Date.now() - Number(ts)) < COOLDOWN_MS;
+        }
+
+        function updateBtnState() {
+            if (!actionBtn) return;
+            if (NO_LIMIT) {
+                actionBtn.classList.add('disabled');
+            } else {
+                actionBtn.classList.remove('disabled');
+            }
+        }
+
+        if (toastClose) {
+            toastClose.addEventListener('click', function() {
+                toastOverlay.classList.remove('visible');
+            });
+        }
+
+        function getSelectedAppDisplayName() {
+            var sel = document.getElementById('app-select');
+            if (sel && sel.selectedIndex >= 0) return sel.options[sel.selectedIndex].text;
+            return APP;
+        }
+
+        if (actionBtn) {
+            actionBtn.addEventListener('click', function() {
+                if (isInCooldown()) {
+                    toastOverlay.classList.add('visible');
+                    return;
+                }
+                localStorage.removeItem(dismissKey);
+                fetch('/v1/time_limits/request-more', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'text/html' },
+                    body: JSON.stringify({ app: APP, appDisplayName: getSelectedAppDisplayName() })
+                }).then(function(r) { return r.text(); }).then(function(html) {
+                    document.open();
+                    document.write(html);
+                    document.close();
+                    history.pushState(null, '', '/v1/time_limits/request-more');
+                }).catch(function() {
+                    window.location.href = '/v1/time_limits?app=' + encodeURIComponent(APP);
+                });
+            });
+        }
+
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('just_requested') === '1') {
+            localStorage.setItem(storageKey, String(Date.now()));
+            params.delete('just_requested');
+            var clean = window.location.pathname;
+            var remaining = params.toString();
+            if (remaining) clean += '?' + remaining;
+            history.replaceState(null, '', clean);
+        }
+
+        updateBtnState();
+        setInterval(updateBtnState, 2000);
+    })();
     </script>
 </body>
 </html>
