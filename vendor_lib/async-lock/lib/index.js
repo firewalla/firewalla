@@ -20,7 +20,7 @@ var AsyncLock = function (opts) {
 };
 
 AsyncLock.DEFAULT_TIMEOUT = 0; //Never
-AsyncLock.DEFAULT_MAX_PENDING = 2000;
+AsyncLock.DEFAULT_MAX_PENDING = 1000;
 
 /**
  * Acquire Locks
