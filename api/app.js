@@ -39,10 +39,8 @@ app.set('title', 'FireAPI')
 app.set('views', path.join(__dirname, 'views'));
 app.engine('mustache', require('mustache-express')());
 app.set('view engine', 'mustache');
-app.set('query parser', 'simple')
+app.set('query parser', 'simple');
 
-// uncomment after placing your favicon in /public
-//app.use(favicon(path.join(__dirname, 'public', 'favicon.ico')));
 app.use(logger('combined'));
 app.use(bodyParser.json({limit: '5mb'}));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -58,6 +56,12 @@ subpath_v1.use('/time_limits', require('./routes/time_limits.js'));
 
 const AccessRequestManager = require('../alarm/AccessRequestManager.js');
 AccessRequestManager.scheduleExpireCronJob();
+
+app.get('/favicon.ico', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'network', 'firewalla-icon.png'), (err) => {
+    if (err) res.status(204).end();
+  });
+});
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
