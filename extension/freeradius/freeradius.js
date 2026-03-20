@@ -839,6 +839,7 @@ class FreeRadius {
     } else {
       log.info("restarting freeradius container to apply new config...");
       await this._stopServer(options);
+      await this.generateDockerCompose(options);
       if (!await this._startServer(options)) {
         return false;
       }
