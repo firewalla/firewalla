@@ -75,7 +75,7 @@ const bone = require("../../lib/Bone.js");
 const startScriptFile = __dirname + "/dnsmasq.sh";
 
 const configFile = __dirname + "/dnsmasq.conf";
-const { formulateHostname, isDomainValid } = require('../../util/util.js');
+const { formulateHostname, isDomainValid, fileRemove } = require('../../util/util.js');
 
 const resolvFile = f.getRuntimeInfoFolder() + "/dnsmasq.resolv.conf";
 
@@ -350,7 +350,7 @@ module.exports = class DNSMASQ {
     } else {
       log.info("unset upstream server");
       // remove upstream server config file from config directory anyway
-      await fs.unlinkAsync(UPSTREAM_SERVER_FILE).catch((err) => { });
+      await fileRemove(UPSTREAM_SERVER_FILE).catch((err) => { });
     }
     this.scheduleRestartDNSService();
   }
@@ -429,16 +429,9 @@ module.exports = class DNSMASQ {
   async cleanUpFilter(type) {
     const file = FILTER_FILE[type];
     log.info("Clean up filter file:", file);
-    try {
-      await fs.unlinkAsync(file);
-    } catch (err) {
-      if (err.code === 'ENOENT') {
-        // ignore
-        log.verbose(`Filter file '${file}' not exist, ignore`);
-      } else {
-        log.error(`Failed to remove filter file: '${file}'`, err);
-      }
-    }
+    await fileRemove(file).catch((err) => {
+      log.error(`Failed to remove filter file: '${file}'`, err);
+    });
   }
 
   async addIpsetUpdateEntry(domains, ipsets, pid) {
@@ -458,10 +451,9 @@ module.exports = class DNSMASQ {
   async removeIpsetUpdateEntry(pid) {
     await lock.acquire(LOCK_OPS, async() => {
       const filePath = `${FILTER_DIR}/policy_${pid}_ipset.conf`;
-      await fs.unlinkAsync(filePath);
+      await fileRemove(filePath);
     }).catch((err) => {
-      if (err.code !== 'ENOENT')
-        log.error("Failed to remove ipset update entry from config", err);
+      log.error("Failed to remove ipset update entry from config", err);
     });
   }
 
@@ -868,14 +860,8 @@ module.exports = class DNSMASQ {
           restartNeeded = true;
         }
       } else {
-        try {
-          await fsp.unlink(filePath)
-          restartNeeded = true;
-        } catch(err) {
-          // file not exist, ignore
-          if (err.code == 'ENOENT') return
-          else throw err
-        }
+        await fileRemove(filePath)
+        restartNeeded = true;
       }
     }).catch(err => {
       log.error("Failed to write allocation file:", err);
@@ -912,15 +898,15 @@ module.exports = class DNSMASQ {
           return;
         if (options.wanUUID.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
           const routeConfPath = `${VirtWanGroup.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
-          await fs.unlinkAsync(routeConfPath).catch((err) => {});
+          await fileRemove(routeConfPath).catch((err) => {});
         } else {
           if (options.wanUUID.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX)) {
             const routeConfPath = `${VPNClient.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
-            await fs.unlinkAsync(routeConfPath).catch((err) => {});
+            await fileRemove(routeConfPath).catch((err) => {});
           } else {
             const NetworkProfile = require('../../net2/NetworkProfile.js');
             const routeConfPath = `${NetworkProfile.getDNSRouteConfDir(options.wanUUID, options.routeType || "hard")}/policy_${options.pid}.conf`;
-            await fs.unlinkAsync(routeConfPath).catch((err) => {});
+            await fileRemove(routeConfPath).catch((err) => {});
           }
         }
       }
@@ -931,7 +917,7 @@ module.exports = class DNSMASQ {
       if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids) || !_.isEmpty(options.parentRgId)) {
         if (options.scope && options.scope.length > 0) {
           const filePath = `${FILTER_DIR}/${name}.conf`;
-          await fs.unlinkAsync(filePath).catch((err) => {
+          await fileRemove(filePath).catch((err) => {
             if (options.muteError) {
               return;
             }
@@ -943,7 +929,7 @@ module.exports = class DNSMASQ {
           const NetworkProfile = require('../../net2/NetworkProfile.js');
           for (const intf of options.intfs) {
             const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/${name}.conf`;
-            await fs.unlinkAsync(filePath).catch((err) => {
+            await fileRemove(filePath).catch((err) => {
               if (options.muteError) {
                 return;
               }
@@ -955,7 +941,7 @@ module.exports = class DNSMASQ {
         if (!_.isEmpty(options.tags)) {
           for (const tag of options.tags) {
             const filePath = `${FILTER_DIR}/tag_${tag}_${name}.conf`;
-            await fs.unlinkAsync(filePath).catch((err) => {
+            await fileRemove(filePath).catch((err) => {
               if (options.muteError) {
                 return;
               }
@@ -971,7 +957,7 @@ module.exports = class DNSMASQ {
             if (identityClass) {
               const { ns, uid } = IdentityManager.getNSAndUID(guid);
               const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${name}.conf`;
-              await fs.unlinkAsync(filePath).catch((err) => {
+              await fileRemove(filePath).catch((err) => {
                 if (options.muteError) {
                   return;
                 }
@@ -984,7 +970,7 @@ module.exports = class DNSMASQ {
         if (!_.isEmpty(options.parentRgId)) {
           const uuid = options.parentRgId;
           let path = this._getRuleGroupConfigPath(options.pid, uuid);
-          await fs.unlinkAsync(path).catch((err) => {
+          await fileRemove(path).catch((err) => {
             if (options.muteError) {
               return;
             }
@@ -993,7 +979,7 @@ module.exports = class DNSMASQ {
         }
       } else {
         const filePath = `${FILTER_DIR}/${name}.conf`;
-        await fs.unlinkAsync(filePath).catch((err) => {
+        await fileRemove(filePath).catch((err) => {
           if (options.muteError) {
             return;
           }
@@ -1086,8 +1072,8 @@ module.exports = class DNSMASQ {
     await lock.acquire(LOCK_OPS, async () => {
       await rclient.unlinkAsync(this._getRedisMatchKey(category, false));
       await rclient.unlinkAsync(this._getRedisMatchKey(category, true));
-      await fs.unlinkAsync(categoryBlockDomainsFile);
-      await fs.unlinkAsync(categoryAllowDomainsFile);
+      await fileRemove(categoryBlockDomainsFile);
+      await fileRemove(categoryAllowDomainsFile);
     }).catch((err) => {
       log.warn('failed to delete category filter entry', category, err);
     });
@@ -1103,7 +1089,7 @@ module.exports = class DNSMASQ {
       for await (const dirent of dir) {
         if (dirent.name.match(/^[^\/]*_(block|allow)\.conf$/)) {
           log.debug('Removing category conf file: ', dirent.name)
-          await fsp.unlink(FILTER_DIR + '/' + dirent.name);
+          await fileRemove(FILTER_DIR + '/' + dirent.name);
         }
       }
     }).catch((err) => {
@@ -1136,22 +1122,22 @@ module.exports = class DNSMASQ {
           return;
         if (options.wanUUID.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
           const routeConfPath = `${VirtWanGroup.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
-          await fs.unlinkAsync(routeConfPath).catch((err) => {});
+          await fileRemove(routeConfPath).catch((err) => {});
         } else {
           if (options.wanUUID.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX)) {
             const routeConfPath = `${VPNClient.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
-            await fs.unlinkAsync(routeConfPath).catch((err) => {});
+            await fileRemove(routeConfPath).catch((err) => {});
           } else {
             const NetworkProfile = require('../../net2/NetworkProfile.js');
             const routeConfPath = `${NetworkProfile.getDNSRouteConfDir(options.wanUUID, options.routeType || "hard")}/policy_${options.pid}.conf`;
-            await fs.unlinkAsync(routeConfPath).catch((err) => {});
+            await fileRemove(routeConfPath).catch((err) => {});
           }
         }
       }
       if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids) || !_.isEmpty(options.parentRgId)) {
         if (!_.isEmpty(options.scope)) {
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
-          await fs.unlinkAsync(filePath).catch((err) => {
+          await fileRemove(filePath).catch((err) => {
             log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
           });
         }
@@ -1160,7 +1146,7 @@ module.exports = class DNSMASQ {
           const NetworkProfile = require('../../net2/NetworkProfile.js');
           for (const intf of options.intfs) {
             const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
-            await fs.unlinkAsync(filePath).catch((err) => {
+            await fileRemove(filePath).catch((err) => {
               log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
             });
           }
@@ -1169,7 +1155,7 @@ module.exports = class DNSMASQ {
         if (!_.isEmpty(options.tags)) {
           for (const tag of options.tags) {
             const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
-            await fs.unlinkAsync(filePath).catch((err) => {
+            await fileRemove(filePath).catch((err) => {
               log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
             });
           }
@@ -1182,7 +1168,7 @@ module.exports = class DNSMASQ {
             if (identityClass) {
               const { ns, uid } = IdentityManager.getNSAndUID(guid);
               const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${options.pid}.conf`;
-              await fs.unlinkAsync(filePath).catch((err) => {
+              await fileRemove(filePath).catch((err) => {
                 log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
               });
             }
@@ -1192,14 +1178,14 @@ module.exports = class DNSMASQ {
         if (!_.isEmpty(options.parentRgId)) {
           const uuid = options.parentRgId;
           const filePath = this._getRuleGroupConfigPath(options.pid, uuid);
-          await fs.unlinkAsync(filePath).catch((err) => {
+          await fileRemove(filePath).catch((err) => {
             log.error(`Failed to remove policy config file for ${options.pid} gid ${uuid}`, err.message);
           });
         }
       } else {
         if (options.scheduling || !domains.some(d => d.includes(".")) || options.resolver || options.matchType === "re" || options.action === "route") {
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
-          await fs.unlinkAsync(filePath).catch((err) => {
+          await fileRemove(filePath).catch((err) => {
             log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
           });
         } else {
@@ -1225,7 +1211,7 @@ module.exports = class DNSMASQ {
               const match = subEnt.name.match(extractPid)
               if (match && pidArray.includes(match[1])) {
                 log.info(`Removing policy conf file: ${dirEnt.name}/${subEnt.name}`);
-                await fsp.unlink(`${FILTER_DIR}/${dirEnt.name}/${subEnt.name}`);
+                await fileRemove(`${FILTER_DIR}/${dirEnt.name}/${subEnt.name}`);
               }
             }
           }
@@ -1234,7 +1220,7 @@ module.exports = class DNSMASQ {
           const match = dirEnt.name.match(extractPid)
           if (match && pidArray.includes(match[1])) {
             log.info(`Removing policy conf file: ${dirEnt.name}`);
-            await fsp.unlink(`${FILTER_DIR}/${dirEnt.name}`);
+            await fileRemove(`${FILTER_DIR}/${dirEnt.name}`);
           }
         }
       }
@@ -1298,19 +1284,19 @@ module.exports = class DNSMASQ {
       if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids)) {
         if (!_.isEmpty(options.scope)) {
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
-          await fs.unlinkAsync(filePath).catch((err) => { });
+          await fileRemove(filePath).catch((err) => { });
         }
         if (!_.isEmpty(options.intfs)) {
           const NetworkProfile = require('../../net2/NetworkProfile.js');
           for (const intf of options.intfs) {
             const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
-            await fs.unlinkAsync(filePath).catch((err) => { });
+            await fileRemove(filePath).catch((err) => { });
           }
         }
         if (!_.isEmpty(options.tags)) {
           for (const tag of options.tags) {
             const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
-            await fs.unlinkAsync(filePath).catch((err) => { });
+            await fileRemove(filePath).catch((err) => { });
           }
         }
         if (!_.isEmpty(options.guids)) {
@@ -1320,13 +1306,13 @@ module.exports = class DNSMASQ {
             if (identityClass) {
               const { ns, uid } = IdentityManager.getNSAndUID(guid);
               const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${options.pid}.conf`;
-              await fs.unlinkAsync(filePath).catch((err) => { });
+              await fileRemove(filePath).catch((err) => { });
             }
           }
         }
       } else {
         const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
-        await fs.unlinkAsync(filePath).catch((err) => { });
+        await fileRemove(filePath).catch((err) => { });
       }
     }).catch((err) => {
       log.error(`Failed to remove rule group membership from ${uuid}`, options, err.message);
@@ -1438,14 +1424,7 @@ module.exports = class DNSMASQ {
 
     // to update only if filter file has not been updated recently or doesn't exsit
     if (force || noent || (new Date() - stats.mtime) > FILTER_EXPIRE_TIME) {
-      try {
-        await fs.statAsync(filterFileTmp);
-        await fs.unlinkAsync(filterFileTmp);
-      } catch (err) {
-        if (err.code !== "ENOENT") {
-          throw err;
-        }
-      }
+      await fileRemove(filterFileTmp);
 
       let hashes = null;
       try {
@@ -1831,7 +1810,7 @@ module.exports = class DNSMASQ {
         return
       }
       delete this.lastHostsFileHash[mac];
-      await fsp.unlink(HOSTFILE_PATH + mac).catch((err) => {});
+      await fileRemove(HOSTFILE_PATH + mac).catch((err) => {});
     } else {
       const content = lines.join('\n') + '\n'
 
@@ -1872,7 +1851,7 @@ module.exports = class DNSMASQ {
   }
 
   async removeHostsFile(host) {
-    await fsp.unlink(HOSTFILE_PATH + host.o.mac);
+    await fileRemove(HOSTFILE_PATH + host.o.mac);
     log.info("Hosts file has been removed:", host.o.mac)
 
     const hID = host.getGUID()
@@ -2280,7 +2259,7 @@ module.exports = class DNSMASQ {
           try {
             const fileStat = await fs.statAsync(filePath);
             if (fileStat.isFile()) {
-              await fs.unlinkAsync(filePath).catch((err) => {
+              await fileRemove(filePath).catch((err) => {
                 log.error(`Failed to remove ${filePath}, err:`, err);
               });
             }
@@ -2303,9 +2282,8 @@ module.exports = class DNSMASQ {
           else log.error(err)
         })
       } else {
-        await fsp.unlink(f.getRuntimeInfoFolder() + "/dnsmasq-hosts").catch(err => {
-          if (err.code == 'ENOENT') return
-          else log.error(err)
+        await fileRemove(f.getRuntimeInfoFolder() + "/dnsmasq-hosts").catch(err => {
+          log.error(err)
         })
       }
 

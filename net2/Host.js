@@ -653,7 +653,7 @@ class Host extends Monitorable {
     if (f.isMain()) {
       // this effectively stops all iptables rules against this device
       // PolicyManager2 should be dealing with iptables entries alone
-      await this.destroyEnv().catch((err) => { log.error('Error destorying environment', err) });
+      this.destroyEnv();
 
       await this.resetPolicies().catch(err => { log.error('Error reseting policy', err) });
 
