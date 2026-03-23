@@ -231,6 +231,7 @@ class APCMsgSensor extends Sensor {
   }
 
   async syncRules() {
+    log.info("Starting to sync rules to fwapc...");
     await lock.acquire(LOCK_RULE_UPDATE, async () => {
       const rules = (await pm2.loadActivePoliciesAsync() || []).filter(rule => this.isAPCSupportedRule(rule) && (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
       for (const rule of rules) {
