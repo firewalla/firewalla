@@ -310,6 +310,7 @@ class BonjourSensor extends Sensor {
         from: 'bonjour',
         mac,
         detect,
+        source: _.pick(service, ['type', 'name', 'ipv4Addr']),
         suppressEventLogging: true,
       })
     }

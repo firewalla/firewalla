@@ -77,7 +77,7 @@ const LRU = require('lru-cache');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-const alarmDetailPrefix = "_alarmDetail";
+const alarmDetailPrefix = "_alarmDetail:";
 
 const _ = require('lodash');
 
@@ -87,6 +87,10 @@ const Identity = require('../net2/Identity.js');
 const IdentityManager = require('../net2/IdentityManager.js');
 const Constants = require('../net2/Constants.js');
 const { extractIP } = require('../net2/FlowUtil.js')
+
+const TimeUsageTool = require('../flow/TimeUsageTool.js');
+
+const sysManager = require('../net2/SysManager.js');
 
 const featureName = 'msp_sync_alarm';
 
@@ -753,7 +757,7 @@ module.exports = class {
 
     // add extended info, extended info are optional
     (async () => {
-      const extendedAlarmKey = `${alarmDetailPrefix}:${alarm.aid}`;
+      const extendedAlarmKey = `${alarmDetailPrefix}${alarm.aid}`;
       // if there is any extended info
       if (Object.keys(extended).length !== 0 && extended.constructor === Object) {
         await rclient.hmsetAsync(extendedAlarmKey, extended);
@@ -790,7 +794,7 @@ module.exports = class {
 
     if (related.length) {
       await rclient.zremAsync(alarmActiveKey, related);
-      await rclient.unlinkAsync(related.map(id => alarmDetailPrefix + ':' + id));
+      await rclient.unlinkAsync(related.map(id => alarmDetailPrefix + id));
       await rclient.unlinkAsync(related.map(id => alarmPrefix + id));
       pclient.publishAsync("alarm:removeCache", JSON.stringify({aids:related}));
     }
@@ -821,6 +825,46 @@ module.exports = class {
       return true
     } else {
       return false
+    }
+  }
+
+  async hasRelatedAppTimeUsage(alarm) {
+    const appId = alarm['p.dest.app.id'];
+    if (!appId) {
+      return true;
+    }
+    const endTimestamp = alarm.alarmTimestamp || Date.now()/1000;
+    const startTimestamp = endTimestamp - 300; // check timeusage in last 300 seconds 
+
+    const queryOptions = {
+      deviceId: alarm['p.device.id'],
+      apps: [appId],
+      startTime: startTimestamp,
+      endTime: endTimestamp,
+      granularity: "hour",
+      uidIsDevice: true,
+      includeSlots: false,
+      includeIntervals: false
+    };
+
+    try {
+      const stats = await TimeUsageTool.getAppTimeUsageStats(
+        queryOptions.deviceId,
+        null,
+        queryOptions.apps,
+        queryOptions.startTime,
+        queryOptions.endTime,
+        queryOptions.granularity,
+        queryOptions.uidIsDevice,
+        queryOptions.includeSlots,
+        queryOptions.includeIntervals
+      );
+
+      const totalMins = _.get(stats, ["appTimeUsage", appId, "totalMins"], 0);
+      return totalMins > 0;
+    } catch (err) {
+      log.error("hasRelatedAppTimeUsage error:", err);
+      return false;
     }
   }
 
@@ -1015,6 +1059,13 @@ module.exports = class {
       throw err3;
     }
 
+    log.info("Checking if alarm has related app time usage");
+    const hasRelatedAppTimeUsage = await this.hasRelatedAppTimeUsage(alarm);
+    if (!hasRelatedAppTimeUsage) {
+      const err4 = new Error("alarm has no related app time usage");
+      err4.code = 'ERR_NO_RELATED_APP_TIME_USAGE';
+      throw err4;
+    }
 
     const devicePolicy = _.get(await alarm.getDevice(), 'policy', {})
 
@@ -1285,19 +1336,35 @@ module.exports = class {
     return results[0];
   }
 
-  async idsToAlarmsAsync(ids) {
+  async idsToAlarmsAsync(ids, withDetails = false) {
     if (!Array.isArray(ids)) throw new Error('Non-array ID input')
 
-    let multi = rclient.multi();
+    const multi = rclient.multi();
 
     ids.forEach((aid) => {
       multi.hgetall(alarmPrefix + aid);
     });
 
+    if (withDetails) {
+      ids.forEach(aid => {
+        multi.hgetall(alarmDetailPrefix + aid);
+      });
+    }
+
     const results = await multi.execAsync()
 
+    if (withDetails) {
+      for (let i = 0; i < ids.length; i++) {
+        if (!results[ids.length + i]) continue;
+        Object.keys(results[ids.length + i])
+          .filter(key => key.startsWith('r.'))
+          .forEach(key => delete results[ids.length + i][key])
+        Object.assign(results[i], results[ids.length + i])
+      }
+    }
+
     // don't filter result and keep the original id to alarm mapping
-    return results.map((r) => this.jsonToAlarm(r))
+    return results.slice(0, ids.length).map(r => this.jsonToAlarm(r))
   }
 
   idsToAlarms(ids, callback = function () { }) {
@@ -1438,9 +1505,9 @@ module.exports = class {
   }
 
   async listExtendedAlarms() {
-    const list = await rclient.scanResults(`${alarmDetailPrefix}:*`);
+    const list = await rclient.scanResults(`${alarmDetailPrefix}*`);
 
-    return list.map(l => l.substring(alarmDetailPrefix.length + 1))
+    return list.map(l => l.substring(alarmDetailPrefix.length))
   }
 
   async listBasicAlarms() {
@@ -1450,7 +1517,7 @@ module.exports = class {
   }
 
   async deleteExtendedAlarm(alarmID) {
-    await rclient.unlinkAsync(`${alarmDetailPrefix}:${alarmID}`);
+    await rclient.unlinkAsync(`${alarmDetailPrefix}${alarmID}`);
   }
 
   numberOfAlarms(callback) {
@@ -1571,18 +1638,19 @@ module.exports = class {
   }
 
   async loadActiveAlarmsAsync(options) {
-    let count, ts, asc, type, filters;
+    let count, ts, asc, type, filters, withDetails;
 
     if (_.isNumber(options)) {
       count = options;
     } else if (options) {
-      ({ count, ts, asc, type, filters } = options);
+      ({ count, ts, asc, type, filters, withDetails } = options);
     }
 
     count = count || 50;
     ts = ts || Date.now() / 1000;
     asc = asc || false;
     type = type || 'active';
+    withDetails = withDetails || false;
 
     let ids;
     if (filters && this.indexCache._disabled != 1 && !await this._fallbackAlarmCache(filters.types)) {
@@ -1597,13 +1665,13 @@ module.exports = class {
       ids = await query;
     }
 
-    let alarms = await this.idsToAlarmsAsync(ids)
+    let alarms = await this.idsToAlarmsAsync(ids, withDetails)
 
     return alarms.filter(Boolean)
   }
 
   async getAlarmDetail(aid) {
-    const key = `${alarmDetailPrefix}:${aid}`
+    const key = `${alarmDetailPrefix}${aid}`
     const detail = await rclient.hgetallAsync(key);
     if (detail) {
       for (let key in detail) {
@@ -2103,7 +2171,7 @@ module.exports = class {
   }
 
   async enrichDeviceInfo(alarm) {
-    const ignoreAlarmTypes = ['ALARM_SCREEN_TIME', 'ALARM_DUAL_WAN'];
+    const ignoreAlarmTypes = ['ALARM_SCREEN_TIME', 'ALARM_DUAL_WAN', 'ALARM_VPN_CLIENT_CONNECTION'];
     if (ignoreAlarmTypes.includes(alarm.type)) return alarm;
     let deviceIP = alarm["p.device.ip"];
     if (!deviceIP) {
@@ -2119,6 +2187,11 @@ module.exports = class {
         "p.device.macVendor": "Unknown"
       });
 
+      return alarm;
+    }
+
+    if (sysManager.isMyIP(deviceIP, false) || sysManager.isMyIP6(deviceIP, false)) {
+      // device is the router itself, do nothing
       return alarm;
     }
 
@@ -2245,7 +2318,7 @@ module.exports = class {
     for (const alarmID of alarmIDs) {
       log.info("delete active alarm_id:" + alarmID);
       multi.zrem(alarmActiveKey, alarmID);
-      multi.unlink(`${alarmDetailPrefix}:${alarmID}`);
+      multi.unlink(`${alarmDetailPrefix}${alarmID}`);
       multi.unlink(alarmPrefix + alarmID);
     }
     await multi.execAsync();
@@ -2259,7 +2332,7 @@ module.exports = class {
     for (const alarmID of alarmIDs) {
       log.info("delete archive alarm_id:" + alarmID);
       multi.zrem(alarmArchiveKey, alarmID);
-      multi.unlink(`${alarmDetailPrefix}:${alarmID}`);
+      multi.unlink(`${alarmDetailPrefix}${alarmID}`);
       multi.unlink(alarmPrefix + alarmID);
     }
     await multi.execAsync();

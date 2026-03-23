@@ -107,7 +107,7 @@ class AppTimeUsageManager {
                   }
                   case POLICY_STATE_DOMAIN_ONLY: {
                     log.info(`${uid} is still generating ${app} activity after domain-only mode rule ${pid} is applied, temporarily change to default mode`);
-                    await this.applyPolicy(pid, uid, true);
+                    // await this.applyPolicy(pid, uid);
                     break;
                   }
                   default: {
@@ -144,7 +144,7 @@ class AppTimeUsageManager {
           try {
             if (disturbTimeUsed >= Number(this.registeredPolicies[pid].appTimeUsage.disturbQuota)) {
               log.info(`Disturb time limit of Policy ${pid} is reached, will change to block mode`);
-              await this.unenforcePolicy(this.registeredPolicies[pid], uid, false);
+              await this.unenforcePolicy(this.registeredPolicies[pid], uid);
               // update policy disturbTimeUsed here to let unenforcePolicy to clear disturb rules.
               this.registeredPolicies[pid].disturbTimeUsed = disturbTimeUsed;
               await this.updateDisturbTimeUsedInPolicy(pid, this.registeredPolicies[pid].disturbTimeUsed);
@@ -164,19 +164,18 @@ class AppTimeUsageManager {
     });
   }
 
-  async applyPolicy(pid, uid, iptables_only = false) {
+  async applyPolicy(pid, uid) {
     const p = this.registeredPolicies[pid];
     if (!p) {
       log.error(`Policy ${pid} not found`);
       return;
     }
     const policy = Object.assign(Object.create(Policy.prototype), p);
-    policy.iptables_only = iptables_only;
-
     const needDisturb = policy.needPolicyDisturb();
     // a default mode policy will be applied first, and will be updated to domain only after a certain timeout
     // if the policy is in disturb mode, it will not be updated to domain only mode
-    await this.enforcePolicy(policy, uid, false);
+    // always apply domain only mode, new machnism to handle existing connections
+    await this.enforcePolicy(policy, uid);
     if (needDisturb) {
       this.registeredPolicies[pid].disturbTimeUsed = policy.disturbTimeUsed;
       log.info(`The policy has been in disturb mode for ${policy.disturbTimeUsed} seconds.`);
@@ -191,8 +190,7 @@ class AppTimeUsageManager {
         await lock.acquire(LOCK_RW, async () => {
           if (this.policyTimeoutTasks[pid][uid] && this.enforcedPolicies[pid][uid] === POLICY_STATE_DEFAULT_MODE) {
             log.info(`Will change rule ${pid} back to domain-only mode`);
-            policy.iptables_only = true;
-            await this.unenforcePolicy(policy, uid, false);
+            // await this.unenforcePolicy(policy, uid, false);
             this.enforcedPolicies[pid][uid] = POLICY_STATE_DOMAIN_ONLY;
             delete this.policyTimeoutTasks[pid][uid];
           }
@@ -270,7 +268,7 @@ class AppTimeUsageManager {
     const uids = this.getUIDs(policy);
 
     for (const uid of Object.keys(this.enforcedPolicies[pid])) {
-      await this.unenforcePolicy(policy, uid, this.enforcedPolicies[pid][uid] === POLICY_STATE_DOMAIN_ONLY);
+      await this.unenforcePolicy(policy, uid);
     }
     this.enforcedPolicies[pid] = {};
     for (const uid of Object.keys(this.policyTimeoutTasks[pid]))
@@ -370,7 +368,7 @@ class AppTimeUsageManager {
     }
     if (_.isObject(this.enforcedPolicies[pid])) {
       for (const uid of Object.keys(this.enforcedPolicies[pid]))
-        await this.unenforcePolicy(policy, uid, this.enforcedPolicies[pid][uid] === POLICY_STATE_DOMAIN_ONLY);
+        await this.unenforcePolicy(policy, uid);
       delete this.enforcedPolicies[pid];
     }
     if (_.isObject(this.policyTimeoutTasks[pid])) {

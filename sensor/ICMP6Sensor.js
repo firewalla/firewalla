@@ -55,6 +55,7 @@ class ICMP6Sensor extends Sensor {
       if (intf.name.endsWith(":0")) continue; // do not listen on interface alias since it is not a real interface
       if (intf.name.includes("vpn")) continue; // do not listen on vpn interface
       if (intf.name.startsWith("wg")) continue; // do not listen on wireguard interface
+      if (intf.name.startsWith("awg")) continue; // do not listen on amnezia interface
       await execAsync(`sudo sysctl -w net.ipv6.neigh.${intf.name.replace(/\./gi, "/")}.base_reachable_time_ms=600000`).catch((err) => {});
       await execAsync(`sudo sysctl -w net.ipv6.neigh.${intf.name.replace(/\./gi, "/")}.gc_stale_time=240`).catch((err) => {});
       // listen on icmp6 neighbor-advertisement which is not sent from firewalla

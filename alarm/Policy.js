@@ -379,6 +379,11 @@ class Policy {
       return false;
     }
 
+    if (this.appTimeUsage && !this.isTimeUsageExceeded()) {
+      log.debug(`mismatch, time usage not exceeded, rule ${this.pid} is not in effect`)
+      return false;
+    }
+
     if (this.direction === "inbound") {
       // default to outbound alarm
       if ((alarm["p.local_is_client"] || "1") === "1") {
@@ -423,7 +428,9 @@ class Policy {
       let tagMatched = false;
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const config = Constants.TAG_TYPE_MAP[type];
-        if (_.has(alarm, config.alarmIdKey) && alarm[config.alarmIdKey].some(tid => this.tag.includes(`${config.ruleTagPrefix}${tid}`)))
+        if (_.has(alarm, config.alarmIdKey) && _.isArray(alarm[config.alarmIdKey]) &&
+          alarm[config.alarmIdKey].some(tid => this.tag.includes(`${config.ruleTagPrefix}${tid}`))
+        )
           tagMatched = true;
       }
       if (!intfMatched && !tagMatched) {
@@ -542,6 +549,12 @@ class Policy {
       default:
         return false
     }
+  }
+
+  isTimeUsageExceeded() {
+    const quota = _.get(this.appTimeUsage, 'quota', 0);
+    const used = this.appTimeUsed || 0;
+    return used >= quota;
   }
 
   redisfyObj(p) {
