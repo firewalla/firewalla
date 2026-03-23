@@ -48,6 +48,12 @@ if [[ -f $FWAPC_CRONTAB ]]; then
   add_newline_if_needed $TMP_CRONTAB_FILE
 fi
 
+FREERADIUS_CRONTAB=$FIREWALLA_HIDDEN/config/freeradius_crontab
+if [[ -f $FREERADIUS_CRONTAB ]]; then
+  cat $FREERADIUS_CRONTAB >> $TMP_CRONTAB_FILE
+  add_newline_if_needed $TMP_CRONTAB_FILE
+fi
+
 sudo -u pi crontab -r
 sudo -u pi crontab $TMP_CRONTAB_FILE
 

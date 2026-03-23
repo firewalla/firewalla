@@ -148,6 +148,10 @@ class DeviceIdentificationSensor extends Sensor {
     if (!Object.keys(detect)) return
 
     Object.assign(detect, detect.bonjour, detect.cloud)
+    for (const key of Object.keys(detect)) {
+      if (key.endsWith('.source'))
+        delete detect[key]
+    }
     log.debug('Saving', host.o.mac, detect)
     await host.save('detect')
 
@@ -171,7 +175,7 @@ class DeviceIdentificationSensor extends Sensor {
       if (!config.isFeatureOn(FEATURE_NAME)) return
 
       try {
-        const { mac, detect, from } = event
+        const { mac, detect, from, source } = event
         log.verbose('DetectUpdate', mac, from, detect)
 
         if (mac && detect && from) {
@@ -179,6 +183,9 @@ class DeviceIdentificationSensor extends Sensor {
           if (!host) return
           if (!host.o.detect) host.o.detect = {}
           host.o.detect[from] = Object.assign({}, host.o.detect[from], detect)
+          if (source)
+            for (const key in detect)
+              host.o.detect[from][`${key}.source`] = source
           await this.mergeAndSave(host)
         }
       } catch(err) {

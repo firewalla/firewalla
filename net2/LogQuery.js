@@ -210,7 +210,7 @@ class LogQuery {
     // query every feed once concurrentyly to reduce io block
     results = _.flatten(await Promise.all(feeds.map(async feed => {
       // use half of the desired count to do initial concurrent query to reduce memory consumption
-      const logs = await feed.base.getDeviceLogs(Object.assign({}, feed.options, {count: Math.floor(options.count/2)}))
+      const logs = await feed.base.getDeviceLogs(Object.assign({}, feed.options, {count: global ? options.count : Math.floor(options.count/2)}))
       if (logs.length) {
         feed.options.ts = logs[logs.length - 1].ts
       } else {
@@ -271,12 +271,15 @@ class LogQuery {
         }
       } else if (global) {
         // when query system logs, stop when any of the feed is exhausted
+        log.debug('System flow exhausted', feed.base.constructor.name,
+          feed.options.local ? 'local' : feed.options.dns ? 'dns' : feed.options.ntp ? 'regular' : 'ntp',
+          feed.options.block ? 'block' : 'accept', feed.options.ts)
         break
       } else {
         // no more elements, remove feed from feeds
         feeds = feeds.filter(f => f != feed)
         log.debug('Removing', feed.base.constructor.name, feed.options.direction,
-          (feed.options.localFlow || feed.options.localAudit) ? 'local' : feed.options.dnsFlow ? 'dns' : feed.options.type,
+          feed.options.local ? 'local' : feed.options.dns ? 'dns' : feed.options.ntp ? 'ntp' : 'regular',
           feed.options.block ? 'block' : 'accept', feed.options.mac, feed.options.ts)
       }
 
@@ -383,7 +386,7 @@ class LogQuery {
       if (!intf) {
         throw new Error('Invalid Interface ' + options.intf)
       }
-      if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
+      if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg") || intf.o.intf.startsWith("awg"))) {
         // add additional macs into options for VPN server network
         const allIdentities = identityManager.getIdentitiesByNicName(intf.o.intf);
         for (const ns of Object.keys(allIdentities)) {
@@ -460,8 +463,10 @@ class LogQuery {
           if (intel.country) f.country = intel.country
           if (intel.category) f.category = intel.category
           if (intel.app) f.app = intel.app
-          if (intel.host) f.host = intel.host
         }
+
+        const host = f.appHosts && f.appHosts[0] || intel && intel.host
+        if (host) f.host = host
 
         // getIntel should always return host if at least 1 domain is provided
         delete f.appHosts
@@ -476,16 +481,12 @@ class LogQuery {
           // not waiting as that will be too slow for API call
           destIPFoundHook.processIP(f.ip);
         }
-      }
-
-      if (f.domain) {
+      } else if (f.domain) {
         const intel = await intelTool.getIntel(undefined, [f.domain])
 
-        // Object.assign(f, _.pick(intel, ['category', 'app', 'host']))
         if (intel) {
           if (intel.category) f.category = intel.category
           if (intel.app) f.app = intel.app
-          if (intel.host) f.host = intel.host
         }
       }
 

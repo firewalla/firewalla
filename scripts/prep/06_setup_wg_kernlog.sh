@@ -21,15 +21,15 @@ function count_ddc_wg_flags() {
 }
 
 function enable_ddc_wg_flags() {
-    #sudo sh -c  "echo 'file device.c func wg_newlink +p' > /sys/kernel/debug/dynamic_debug/control"
-    #sudo sh -c  "echo 'file device.c func wg_destruct +p' > /sys/kernel/debug/dynamic_debug/control"
-    #sudo sh -c  "echo 'file device.c func wg_xmit +p' > /sys/kernel/debug/dynamic_debug/control"
-    #sudo sh -c  "echo 'file timers.c func wg_expired_new_handshake +p' > /sys/kernel/debug/dynamic_debug/control"
-    #sudo sh -c  "echo 'file timers.c func wg_expired_retransmit_handshake +p' > /sys/kernel/debug/dynamic_debug/control"
-    sudo sh -c  "echo 'file send.c func wg_packet_send_handshake_initiation +p' > /sys/kernel/debug/dynamic_debug/control"
-    sudo sh -c  "echo 'file send.c func wg_packet_send_handshake_response +p' > /sys/kernel/debug/dynamic_debug/control"
-    sudo sh -c  "echo 'file receive.c func wg_packet_receive +p' > /sys/kernel/debug/dynamic_debug/control"
-    sudo sh -c  "echo 'file receive.c func wg_receive_handshake_packet +p' > /sys/kernel/debug/dynamic_debug/control"
+    #sudo sh -c  "echo 'module wireguard file device.c func wg_newlink +p' > /sys/kernel/debug/dynamic_debug/control"
+    #sudo sh -c  "echo 'module wireguard file device.c func wg_destruct +p' > /sys/kernel/debug/dynamic_debug/control"
+    #sudo sh -c  "echo 'module wireguard file device.c func wg_xmit +p' > /sys/kernel/debug/dynamic_debug/control"
+    #sudo sh -c  "echo 'module wireguard file timers.c func wg_expired_new_handshake +p' > /sys/kernel/debug/dynamic_debug/control"
+    #sudo sh -c  "echo 'module wireguard file timers.c func wg_expired_retransmit_handshake +p' > /sys/kernel/debug/dynamic_debug/control"
+    sudo sh -c  "echo 'module wireguard file send.c func wg_packet_send_handshake_initiation +p' > /sys/kernel/debug/dynamic_debug/control"
+    sudo sh -c  "echo 'module wireguard file send.c func wg_packet_send_handshake_response +p' > /sys/kernel/debug/dynamic_debug/control"
+    sudo sh -c  "echo 'module wireguard file receive.c func wg_packet_receive +p' > /sys/kernel/debug/dynamic_debug/control"
+    sudo sh -c  "echo 'module wireguard file receive.c func wg_receive_handshake_packet +p' > /sys/kernel/debug/dynamic_debug/control"
 
     sudo sysctl -w net.core.message_burst=50
     sudo sysctl -w net.core.message_cost=5

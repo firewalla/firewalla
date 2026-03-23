@@ -38,6 +38,8 @@ const Constants = require('../../net2/Constants.js');
 const AsyncLock = require('../../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const platform = PlatformLoader.getPlatform()
+const fireRouter = require('../../net2/FireRouter.js');
+const scheduler = require('../../util/scheduler.js');
 const envCreatedMap = {};
 const INTERNET_ON_OFF_THRESHOLD = 2;
 
@@ -46,6 +48,7 @@ const instances = {};
 class VPNClient {
   constructor(options) {
     const profileId = options.profileId;
+    this.isFirstLaunch = true; // should be only true when first created
     if (!profileId)
       return null;
     if (!instances[profileId]) {
@@ -95,7 +98,7 @@ class VPNClient {
   }
 
   static async getVPNProfilesForInit() {
-    const types = ["openvpn", "wireguard", "ssl", "zerotier", "nebula", "trojan", "clash", "hysteria", "gost", "ipsec", "ts"];
+    const types = ["openvpn", "wireguard", "amneziawg", "ssl", "zerotier", "nebula", "trojan", "clash", "hysteria", "gost", "ipsec", "ts"];
     const results = {}
     await Promise.all(types.map(async (type) => {
       const c = this.getClass(type);
@@ -121,6 +124,11 @@ class VPNClient {
       }
       case "wireguard": {
         const c = require('./WGVPNClient.js');
+        return c;
+        break;
+      }
+      case "amneziawg": {
+        const c = require('./AmneziaWGVPNClient.js');
         return c;
         break;
       }
@@ -328,8 +336,10 @@ class VPNClient {
     await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove 0.0.0.0/1 for " + this.profileId) });
     await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove 128.0.0.0/1 for " + this.profileId) });
     await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove default route for " + this.profileId) });
-    if (localIP6)
+    if (localIP6) {
+      await routing.flushRoutingTable("main", intf, "boot", 6).catch((err) => { log.verbose("No need to remove IPv6 routes for " + this.profileId) });
       await routing.removeRouteFromTable("default", remoteIP, intf, "main", null, 6).catch((err) => { log.verbose("No need to remove IPv6 default route for " + this.profileId) });
+    }
     const routedSubnets = await this.getEffectiveRoutedSubnets();
     const dnsServers = await this._getDNSServers() || [];
 
@@ -656,14 +666,26 @@ class VPNClient {
   scheduleRestart() {
     if (this.restartTask)
       clearTimeout(this.restartTask)
-    this.restartTask = setTimeout(() => {
+    this.restartTask = setTimeout(async () => {
       if (!this._started)
         return;
+      // if fireRouter is reloading, repeate to check until it is finished and then restart
+      let count = 0;
+      while (fireRouter.reloadTaskOngoing){
+        log.info(`FireRouter is reloading, waiting for it to finish...`);
+        await scheduler.delay(1000);
+        count++;
+        if (count > 20){
+          log.error(`FireRouter is reloading, but it is taking too long, skip restarting ${this.constructor.getProtocol()} vpn client ${this.profileId}`);
+          break;
+        }
+      }
       // use _stop instead of stop() here, this will only re-establish connection, but will not remove other settings, e.g., kill-switch
       this._restarting = true;
       this.setup().then(() => this._stop()).then(() => this.start()).catch((err) => {
         log.error(`Failed to restart ${this.constructor.getProtocol()} vpn client ${this.profileId}`, err.message);
       }).finally(() => {
+        log.info(`Restart ${this.constructor.getProtocol()} vpn client ${this.profileId} complete`);
         this._restarting = false;
       });
     }, 5000);
@@ -825,29 +847,75 @@ class VPNClient {
     return settings;
   }
 
+  isConflictSubnet6(subnetStr1, subnetStr2) {
+    const subnet1= {}, subnet2={};
+    subnet1.addr = new Address6(subnetStr1);
+    subnet2.addr = new Address6(subnetStr2);
+
+    if (!subnet1.addr.isValid() || !subnet2.addr.isValid()) {
+      return false;
+    }
+    subnet1.firstAddress = subnet1.addr.startAddress().bigInteger();
+    subnet2.firstAddress = subnet2.addr.startAddress().bigInteger();
+    subnet1.lastAddress = subnet1.addr.endAddress().bigInteger();
+    subnet2.lastAddress = subnet2.addr.endAddress().bigInteger();
+
+    if ( (subnet1.firstAddress.compareTo(subnet2.firstAddress) <= 0 && subnet1.lastAddress.compareTo(subnet2.firstAddress) >= 0) ||
+        (subnet2.firstAddress.compareTo(subnet1.firstAddress) <= 0 && subnet2.lastAddress.compareTo(subnet1.firstAddress) >= 0))  {
+      return true;
+    }
+    return false;
+  }
+
   getSubnetsWithoutConflict(subnets) {
     const validSubnets = [];
     if (subnets && Array.isArray(subnets)) {
       for (let subnet of subnets) {
         const ipSubnets = subnet.split('/');
-        if (ipSubnets.length != 2) {
+        if (ipSubnets.length != 2 && ipSubnets.length != 3) {
           continue;
         }
         const ipAddr = ipSubnets[0];
         const maskLength = ipSubnets[1];
-        // only check conflict of IPv4 addresses here
-        if (!ipTool.isV4Format(ipAddr))
-          continue;
-        if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0) {
+        if (isNaN(maskLength) || !Number.isInteger(Number(maskLength))) {
           continue;
         }
-        const serverSubnetCidr = ipTool.cidrSubnet(subnet);
-        const conflict = sysManager.getLogicInterfaces().some((iface) => {
-          const mySubnetCidr = iface.subnet && ipTool.cidrSubnet(iface.subnet);
-          return mySubnetCidr && (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress)) || false;
-        });
-        if (!conflict)
-          validSubnets.push(subnet)
+        let maskLenNum = Number(maskLength);
+        // only check conflict of IPv4 addresses here
+        if (ipTool.isV4Format(ipAddr)) {
+
+          if (maskLenNum > 32 || maskLenNum < 0) {
+            continue;
+          }
+          const serverSubnetCidr = ipTool.cidrSubnet(subnet);
+          const conflict = sysManager.getLogicInterfaces().some((iface) => {
+            const mySubnetCidr = iface.subnet && ipTool.cidrSubnet(iface.subnet);
+            return mySubnetCidr && (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress)) || false;
+          });
+          if (!conflict) {
+            validSubnets.push(subnet);
+          }
+        } else if (ipTool.isV6Format(ipAddr)) {
+          // Handle IPv6 subnets
+          if (maskLenNum > 128 || maskLenNum < 0) {
+            continue;
+          }
+
+          const conflict = sysManager.getLogicInterfaces().some((iface) => {
+            if (iface.ip6_subnets && _.isArray(iface.ip6_subnets)) {
+              for (const s of iface.ip6_subnets) {
+                if (this.isConflictSubnet6(subnet, s)) {
+                  log.info(`Conflict found between IPv6 subnets: ${subnet} and ${s}`);
+                  return true;
+                }
+              }
+            }
+            return false;
+          });
+          if (!conflict) {
+            validSubnets.push(subnet);
+          }
+        }
       }
     }
     return validSubnets;
@@ -975,6 +1043,7 @@ class VPNClient {
     await this._start().catch((err) => {
       log.error(`Failed to exec _start of VPN client ${this.profileId}`, err.message);
     });
+    this.isFirstLaunch = false;
 
     return new Promise((resolve, reject) => {
       let establishmentTask = null;

@@ -18,8 +18,6 @@
 let chai = require('chai');
 let expect = chai.expect;
 
-process.title = "FireMain";
-
 const LRU = require('lru-cache');
 
 const sysManager = require('../net2/SysManager.js');
@@ -49,6 +47,17 @@ describe('Test process iptables log', function(){
     await this.plugin._processIptablesLog(line);
   });
 
+  it('should process disturb rule', async() => {
+    const line = "Aug 29 17:02:20 localhost kernel: [364290.140849] [FW_ADT]A=D D=O CD=O IN=bond1 OUT=eth0 MAC=4e:a7:af:66:4c:33:6c:1f:f7:23:39:cb:08:00 SRC=192.168.216.136 DST=173.194.8.70 LEN=1492 TOS=0x00 PREC=0x00 TTL=127 ID=42722 DF PROTO=TCP SPT=55050 DPT=443 WINDOW=255 RES=0x00 ACK PSH URGP=0 MARK=0xc2040000";
+    this.plugin.ruleStatsPlugin = new RuleStatsPlugin();
+    this.plugin.ruleStatsPlugin.recordBuffer = [];
+    await this.plugin.ruleStatsPlugin.globalOn();
+    this.plugin.ruleStatsPlugin.cache = new LRU({max: 10, maxAge: 15 * 1000, updateAgeOnGet: false});
+    this.plugin.ruleStatsPlugin.policyRulesMap = new Map();
+    await this.plugin._processIptablesLog(line);
+    await this.plugin.writeLogs();
+    await this.plugin.ruleStatsPlugin.updateRuleStats();
+  });
 
   it('should process global allow rule', async() => {
     this.plugin.ruleStatsPlugin = new RuleStatsPlugin();
