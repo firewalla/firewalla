@@ -633,7 +633,7 @@ class FreeRadius {
 
   async _checkImage(options) {
     const image = this.getImage(options);
-    const result = await exec(`sudo docker images --filter "reference=${image}"`).then(r => r.stdout.trim()).catch((e) => {
+    const result = await exec(`sudo docker images --filter "reference=${image}" --format "{{.Repository}}:{{.Tag}} {{.ID}}"`).then(r => r.stdout.trim()).catch((e) => {
       log.warn("Failed to check image freeradius,", e.message)
       return false;
     });
