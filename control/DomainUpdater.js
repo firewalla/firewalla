@@ -43,6 +43,9 @@ class DomainUpdater {
       this.connUpdateOptions = {}; // options for connection ipset update
       instance = this;
       this._needRefresh = false;
+      this._priorityJobQueue = []; // registerUpdate / unregisterUpdate
+      this._standardJobQueue = []; // updateDomainMapping
+      this._processorRunning = false;
 
       sem.on('Domain:Flush', async () => {
         try {
@@ -239,6 +242,47 @@ class DomainUpdater {
     }, 5000);
   }
 
+  _dequeueNextJob() {
+    if (this._priorityJobQueue.length > 0)
+      return this._priorityJobQueue.shift();
+    if (this._standardJobQueue.length > 0)
+      return this._standardJobQueue.shift();
+    return null;
+  }
+
+  _enqueueJob(fn, highPriority) {
+    return new Promise((resolve, reject) => {
+      const entry = { fn, resolve, reject };
+      if (highPriority)
+        this._priorityJobQueue.push(entry);
+      else
+        this._standardJobQueue.push(entry);
+      this._kickJobProcessor();
+    });
+  }
+
+  _kickJobProcessor() {
+    if (this._processorRunning)
+      return;
+    this._processorRunning = true;
+    const processNext = async () => {
+      let job;
+      while ((job = this._dequeueNextJob()) != null) {
+        const { fn, resolve, reject } = job;
+        try {
+          await fn();
+          resolve();
+        } catch (err) {
+          reject(err);
+        }
+      }
+      this._processorRunning = false;
+      if (this._priorityJobQueue.length > 0 || this._standardJobQueue.length > 0)
+        this._kickJobProcessor();
+    };
+    processNext();
+  }
+
   async registerDomainOnlyUpdate(domain, options) {
     log.debug(`DomainUpdater registerDomainOnlyUpdate for domain ${domain} with options`, options);
     const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
@@ -297,7 +341,7 @@ class DomainUpdater {
       delete this.updateOptions[domainKey][key];
   }
 
-  async registerUpdate(domain, options) {
+  async _registerUpdate(domain, options) {
     log.debug(`DomainUpdater registerUpdate for domain ${domain} with options`, options);
     const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
 
@@ -320,7 +364,11 @@ class DomainUpdater {
     }
   }
 
-  async unregisterUpdate(domain, options) {
+  registerUpdate(domain, options) {
+    return this._enqueueJob(() => this._registerUpdate(domain, options), true);
+  }
+
+  async _unregisterUpdate(domain, options) {
     const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
     if (domain.startsWith("*.")) {
       options.exactMatch = false;
@@ -341,7 +389,11 @@ class DomainUpdater {
     }
   }
 
-  async updateDomainMapping(domain, addresses) {
+  unregisterUpdate(domain, options) {
+    return this._enqueueJob(() => this._unregisterUpdate(domain, options), true);
+  }
+
+  async _updateDomainMapping(domain, addresses) {
     if (!_.isString(domain)) return;
 
     const parentDomains = this.getParentDomains(domain);
@@ -404,6 +456,10 @@ class DomainUpdater {
         }
       }
     }
+  }
+
+  updateDomainMapping(domain, addresses) {
+    return this._enqueueJob(() => this._updateDomainMapping(domain, addresses), false);
   }
 
   async flush() {
