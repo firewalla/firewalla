@@ -416,43 +416,55 @@ class DomainUpdater {
           if (!options.exactMatch) {
             await dnsTool.addSubDomains(d, [domain]);
           }
+          let blockSet = "block_domain_set";
+          if (options.blockSet)
+            blockSet = options.blockSet;
+
+          let newAddresses = [];
+          for (let i in addresses) {
+            const address = addresses[i];
+            if (firewalla.isReservedBlockingIP(address) === true) {
+              continue;
+            }
+            if (ipCache && ipCache.get(address) === 1) {
+              continue;
+            }
+            newAddresses.push(address);
+          }
+          if (newAddresses.length === 0) {
+            continue;
+          }
+
           const existingAddresses = await domainIPTool.getMappedIPAddresses(d, options);
           const existingSet = {};
           existingAddresses.forEach((addr) => {
             existingSet[addr] = 1;
           });
-          addresses = addresses.filter((addr) => { // ignore reserved blocking ip addresses
-            return firewalla.isReservedBlockingIP(addr) != true;
-          });
-          let blockSet = "block_domain_set";
-          let updateIpsetNeeded = false;
-          if (options.blockSet)
-            blockSet = options.blockSet;
-          const ipttl = options.ipttl || null;
 
-          for (let i in addresses) {
-            const address = addresses[i];
-            if (!existingSet[address] || (Number.isInteger(ipttl) && ipCache && !ipCache.get(address))) {
-              updateIpsetNeeded = true;
-              ipCache && ipCache.set(address, 1);
+          for (let i in newAddresses) {
+            const address = newAddresses[i];
+            if (ipCache) {
+              ipCache.set(address, 1);
+            }
+            if (!existingSet[address]) {
               await rclient.saddAsync(key, address);
             }
           }
-          if (updateIpsetNeeded) {
-            // add comment string to ipset, @ to indicate dynamically updated.
-            if (options.needComment) {
-              options.comment = `${domain}@`;
-            }
-            if (options.port) {
-              await Block.batchBlockNetPort(addresses, options.port, blockSet, options).catch((err) => {
-                log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
-              });
-            } else {
-              await Block.batchBlock(addresses, blockSet, options).catch((err) => {
+          log.debug(`DomainUpdater updateDomainMapping for domain ${domain} with filteredaddresses: ${newAddresses}, original addresses: ${addresses}`);
+          // add comment string to ipset, @ to indicate dynamically updated.
+          if (options.needComment) {
+            options.comment = `${domain}@`;
+          }
+          if (options.port) {
+            await Block.batchBlockNetPort(newAddresses, options.port, blockSet, options).catch((err) => {
               log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
             });
-            }
+          } else {
+            await Block.batchBlock(newAddresses, blockSet, options).catch((err) => {
+              log.error(`Failed to batch block domain ${domain} in ${blockSet}`, err.message);
+            });
           }
+          
         }
       }
     }
