@@ -58,6 +58,8 @@ class IpsetControl extends ModuleControl {
       throw new Error('IpsetControl.addRule requires a command string or array of strings');
     }
 
+    log.debug(cmd);
+
     super.addRule(cmd);
   }
 
@@ -291,7 +293,7 @@ class IpsetControl extends ModuleControl {
         .filter(line => line.length > 0);
       
       log.verbose(`Found ${names.length} existing ipset names`);
-      log.debug(names.join(' '));
+      log.silly(names.join(' '));
       return new Set(names);
     } catch (err) {
       log.error(`Error listing current ipset names: ${err.message}`);

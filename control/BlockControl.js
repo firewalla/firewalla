@@ -51,7 +51,7 @@ class BlockControl {
       SensorEventManager.on('Control:RuleAdded', (event) => {
         const { module, rule, fromProcess } = event;
         
-        log.debug(`Rule added event from ${module}${fromProcess ? ` (from ${fromProcess})` : ' (local)'}`);
+        log.debug(`Rule:Added ${module}${fromProcess ? ` (from ${fromProcess})` : ''} ${rule}`);
 
         // Only call addRule if event is coming from another process
         if (fromProcess && fromProcess !== 'FireMain') {
@@ -134,8 +134,6 @@ class BlockControl {
     this.queuingTimer = setTimeout(() => {
       this.enterProcessingState();
     }, this.queuingTimeout);
-    
-    // log.debug(`Queuing timer refreshed, will process in ${this.queuingTimeout}ms`);
   }
 
   /**

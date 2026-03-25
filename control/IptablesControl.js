@@ -317,7 +317,7 @@ class IptablesControl extends ModuleControl {
       if (!(rule instanceof Rule)) continue;
       const operation = rule.operation || '-A';
       const essential = rule.essential();
-      log.verbose(`Merging v${family} ${table}: ${operation} ${essential}`);
+      log.debug(`Merging v${family} ${table}: ${operation} ${essential}`);
 
       switch (operation) {
         case '-N':
