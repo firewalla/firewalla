@@ -16,9 +16,9 @@
 
 const log = require('../net2/logger.js')(__filename);
 
+const sysManager = require('../net2/SysManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js');
-const rclient = require('../util/redis_manager.js').getRedisClient();
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 
@@ -95,7 +95,7 @@ let Sensor = class {
       this.featureName = featureName;
     }
 
-    sem.once('IPTABLES_READY', async () => {
+    sysManager.waitTillIptablesReady().then(async () => {
       await lock.acquire(`${featureName}`, async () => {
         if (fc.isFeatureOn(featureName)) try {
           log.info("Enabling feature", featureName);

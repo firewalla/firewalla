@@ -2173,7 +2173,7 @@ module.exports = class DNSMASQ {
             log.warn(`DNS upstream check, error verifying dns resolution to ${domain} on ${dnsServer}`, stderr, stdout);
           } else {
             // normal dns answer, quick return
-            log.info(`DNS upstream check, succeeded to resolve ${domain} on ${dnsServer} to`, stdout);
+            log.info(`DNS upstream check, succeeded to resolve ${domain} on ${dnsServer} to`, stdout && stdout.trim().replace(/\n/g, ','));
             return true;
           }
         } catch (err) {
