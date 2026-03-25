@@ -369,6 +369,9 @@ class Tag extends Monitorable {
   async fwapcSetGroupMACs() {
     if (!platform.isFireRouterManaged())
       return;
+    // if tag type is device, skip sync to fwapc
+    if (this.getTagType() === Constants.TAG_TYPE_DEVICE)
+      return;
     const HostManager = require('./HostManager.js');
     const hostManager = new HostManager();
     const macs = await hostManager.getTagMacs(this.o.uid).then(results => results.filter(m => hostTool.isMacAddress(m))).catch((err) => {
