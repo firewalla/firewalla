@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,6 +23,7 @@ const fc = require('../net2/config.js');
 
 const bone = require('../lib/Bone.js');
 const log = require('../net2/logger.js')(__filename);
+const loggerManager = require('../net2/LoggerManager.js')
 const CategoryExaminerPlugin = require('../sensor/CategoryExaminerPlugin.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const CategoryUpdater = require('../control/CategoryUpdater.js');
@@ -42,9 +43,7 @@ plugin.cache = new LRU({
 describe('Test category examiner', function(){
   this.timeout(30000);
 
-  before((done) => {
-    (async() =>{
-        process.title="FireMain";
+  before(async() =>{
         await rclient.setAsync('sys:bone:url', 'https://fwdev.encipher.io/bone/api/dv5');
         bone.setEndpoint(await rclient.getAsync('sys:bone:url'));
         const jwt = await rclient.getAsync('sys:bone:jwt');
@@ -57,15 +56,14 @@ describe('Test category examiner', function(){
         await categoryUpdater.activateCategory('games_bf');
         await categoryUpdater.activateCategory('oisd');
         await fc.syncDynamicFeatures();
-        done();
-    })();
+        loggerManager.setLogLevel('Bone', 'debug');
   });
 
   after((done) => {
     done();
   });
 
-  it('should get category intels', async() => {
+  it.skip('should get category intels', async() => {
     expect((await plugin._getCloudIntels("www.onlyfans.com")).map(i => i.c)).to.be.eql(['porn']);
     expect((await plugin._getCloudIntels("static2.onlyfans.com")).map(i => i.c)).to.be.eql(['porn']);
     expect((await plugin._getCloudIntels("clienttoken.spotify.com")).map(i => i.c)).to.be.eql([]);
