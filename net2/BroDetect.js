@@ -1639,18 +1639,21 @@ class BroDetect {
 
       if (obj.orig_alpn && obj.orig_alpn.includes("ntske/1")
         && obj['id.orig_h'] && obj['id.resp_p'] && obj['id.resp_p'] == 4460) { // NTS KE exchange, add related device to ignore NTP intercept list
-        let mac = await hostTool.getMacByIPWithCache(obj['id.orig_h']);
-        if (!mac) {
+        let devId = await hostTool.getMacByIPWithCache(obj['id.orig_h']);
+        if (!devId) {
           const identity = await this.waitAndGetIdentity(obj['id.orig_h']);
           if (identity)
-            mac = identity.getGUID();
+            devId = identity.getGUID();
         }
-        const ntpRedPlugin = sl.getSensor("NTPRedirectPlugin");
-        if (ntpRedPlugin) {
-          log.debug(`NTS KE exchange detected, local mac: ${mac}, server IP: ${obj['id.resp_h']}, server port: ${obj['id.resp_p']}`);
-          await ntpRedPlugin.updateNtpOff(mac, 'add', true).catch((err) => {
-            log.error(`Failed to add ${mac} to NTP off set`, err);
-          });
+
+        if (devId) {
+          const ntpRedPlugin = sl.getSensor("NTPRedirectPlugin");
+          if (ntpRedPlugin) {
+            log.debug(`NTS KE exchange detected, local devId: ${devId}, server IP: ${obj['id.resp_h']}, server port: ${obj['id.resp_p']}`);
+            await ntpRedPlugin.updateNtpOff(devId, 'add', true).catch((err) => {
+              log.error(`Failed to add ${devId} to NTP off set`, err);
+            });
+          }
         }
       }
 
