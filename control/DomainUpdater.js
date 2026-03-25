@@ -43,6 +43,9 @@ class DomainUpdater {
       this.connUpdateOptions = {}; // options for connection ipset update
       instance = this;
       this._needRefresh = false;
+      this._priorityJobQueue = []; // registerUpdate / unregisterUpdate
+      this._standardJobQueue = []; // updateDomainMapping
+      this._processorRunning = false;
 
       sem.on('Domain:Flush', async () => {
         try {
@@ -239,6 +242,47 @@ class DomainUpdater {
     }, 5000);
   }
 
+  _dequeueNextJob() {
+    if (this._priorityJobQueue.length > 0)
+      return this._priorityJobQueue.shift();
+    if (this._standardJobQueue.length > 0)
+      return this._standardJobQueue.shift();
+    return null;
+  }
+
+  _enqueueJob(fn, highPriority) {
+    return new Promise((resolve, reject) => {
+      const entry = { fn, resolve, reject };
+      if (highPriority)
+        this._priorityJobQueue.push(entry);
+      else
+        this._standardJobQueue.push(entry);
+      this._kickJobProcessor();
+    });
+  }
+
+  _kickJobProcessor() {
+    if (this._processorRunning)
+      return;
+    this._processorRunning = true;
+    const processNext = async () => {
+      let job;
+      while ((job = this._dequeueNextJob()) != null) {
+        const { fn, resolve, reject } = job;
+        try {
+          await fn();
+          resolve();
+        } catch (err) {
+          reject(err);
+        }
+      }
+      this._processorRunning = false;
+      if (this._priorityJobQueue.length > 0 || this._standardJobQueue.length > 0)
+        this._kickJobProcessor();
+    };
+    processNext();
+  }
+
   async registerDomainOnlyUpdate(domain, options) {
     log.debug(`DomainUpdater registerDomainOnlyUpdate for domain ${domain} with options`, options);
     const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
@@ -297,7 +341,7 @@ class DomainUpdater {
       delete this.updateOptions[domainKey][key];
   }
 
-  async registerUpdate(domain, options) {
+  async _registerUpdate(domain, options) {
     log.debug(`DomainUpdater registerUpdate for domain ${domain} with options`, options);
     const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
 
@@ -320,7 +364,11 @@ class DomainUpdater {
     }
   }
 
-  async unregisterUpdate(domain, options) {
+  registerUpdate(domain, options) {
+    return this._enqueueJob(() => this._registerUpdate(domain, options), true);
+  }
+
+  async _unregisterUpdate(domain, options) {
     const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
     if (domain.startsWith("*.")) {
       options.exactMatch = false;
@@ -341,7 +389,11 @@ class DomainUpdater {
     }
   }
 
-  async updateDomainMapping(domain, addresses) {
+  unregisterUpdate(domain, options) {
+    return this._enqueueJob(() => this._unregisterUpdate(domain, options), true);
+  }
+
+  async _updateDomainMapping(domain, addresses) {
     if (!_.isString(domain)) return;
 
     const parentDomains = this.getParentDomains(domain);
@@ -364,46 +416,62 @@ class DomainUpdater {
           if (!options.exactMatch) {
             await dnsTool.addSubDomains(d, [domain]);
           }
+          let blockSet = "block_domain_set";
+          if (options.blockSet)
+            blockSet = options.blockSet;
+
+          let newAddresses = [];
+          for (let i in addresses) {
+            const address = addresses[i];
+            if (firewalla.isReservedBlockingIP(address) === true) {
+              continue;
+            }
+            if (ipCache && ipCache.get(address) === 1) {
+              continue;
+            }
+            newAddresses.push(address);
+          }
+          if (newAddresses.length === 0) {
+            continue;
+          }
+
           const existingAddresses = await domainIPTool.getMappedIPAddresses(d, options);
           const existingSet = {};
           existingAddresses.forEach((addr) => {
             existingSet[addr] = 1;
           });
-          addresses = addresses.filter((addr) => { // ignore reserved blocking ip addresses
-            return firewalla.isReservedBlockingIP(addr) != true;
-          });
-          let blockSet = "block_domain_set";
-          let updateIpsetNeeded = false;
-          if (options.blockSet)
-            blockSet = options.blockSet;
-          const ipttl = options.ipttl || null;
 
-          for (let i in addresses) {
-            const address = addresses[i];
-            if (!existingSet[address] || (Number.isInteger(ipttl) && ipCache && !ipCache.get(address))) {
-              updateIpsetNeeded = true;
-              ipCache && ipCache.set(address, 1);
+          for (let i in newAddresses) {
+            const address = newAddresses[i];
+            if (ipCache) {
+              ipCache.set(address, 1);
+            }
+            if (!existingSet[address]) {
               await rclient.saddAsync(key, address);
             }
           }
-          if (updateIpsetNeeded) {
-            // add comment string to ipset, @ to indicate dynamically updated.
-            if (options.needComment) {
-              options.comment = `${domain}@`;
-            }
-            if (options.port) {
-              await Block.batchBlockNetPort(addresses, options.port, blockSet, options).catch((err) => {
-                log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
-              });
-            } else {
-              await Block.batchBlock(addresses, blockSet, options).catch((err) => {
+          log.debug(`DomainUpdater updateDomainMapping for domain ${domain} with filteredaddresses: ${newAddresses}, original addresses: ${addresses}`);
+          // add comment string to ipset, @ to indicate dynamically updated.
+          if (options.needComment) {
+            options.comment = `${domain}@`;
+          }
+          if (options.port) {
+            await Block.batchBlockNetPort(newAddresses, options.port, blockSet, options).catch((err) => {
               log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
             });
-            }
+          } else {
+            await Block.batchBlock(newAddresses, blockSet, options).catch((err) => {
+              log.error(`Failed to batch block domain ${domain} in ${blockSet}`, err.message);
+            });
           }
+          
         }
       }
     }
+  }
+
+  updateDomainMapping(domain, addresses) {
+    return this._enqueueJob(() => this._updateDomainMapping(domain, addresses), false);
   }
 
   async flush() {

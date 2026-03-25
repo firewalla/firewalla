@@ -2231,6 +2231,8 @@ class PolicyManager2 {
             if (policy.dnsmasq_only && isBlockOrdisturb) {
               connSet = Block.getPredefinedConnSet(security, direction);
             }
+
+            await delay(5000); // wait 5 seconds to wait dnsmasq restart
             await domainBlock.unblockDomain(target, {
               domainOnly: policy.dnsmasq_only ? true : false,
               exactMatch: policy.domainExactMatch,
