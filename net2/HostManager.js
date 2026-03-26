@@ -1644,6 +1644,7 @@ module.exports = class HostManager extends Monitorable {
       this.miscForInit(json),
       this.appConfsForInit(json),
       this.resourcesForInit(json),
+      this.extraTimeRequestsForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
 
@@ -1680,6 +1681,20 @@ module.exports = class HostManager extends Monitorable {
       } catch (err) {
         log.error(`Failed to load resources for init: ${err.message}`);
         json.resources = [];
+      }
+    }
+  }
+
+  async extraTimeRequestsForInit(json) {
+    if (f.isApi()) {
+      try {
+        const accessRequestManager = require('../alarm/AccessRequestManager.js').getInstance();
+
+        const extraTimeRequests = await accessRequestManager.listAllRequests({ todayOnly: true });
+        json.extraTimeRequests = extraTimeRequests;
+      } catch (err) {
+        log.error(`Failed to load extra time requests for init: ${err.message}`);
+        json.extraTimeRequests = [];
       }
     }
   }

@@ -57,6 +57,22 @@ class AccessRequestSensor extends Sensor {
       }
       return result.request;
     });
+
+    extensionManager.onCmd('listExtraTimeRequests', async (msg, data) => {
+      const options = data || {};
+      const filterOpts = {};
+      if (options.todayOnly) {
+        filterOpts.todayOnly = true;
+      }
+      if (options.app) {
+        filterOpts.app = new Set([options.app]);
+      }
+      if (options.userId) {
+        filterOpts.userId = new Set([options.userId]);
+      }
+      const result = await AccessRequestManager.getInstance().listAllRequests(filterOpts);
+      return result;
+    });
   }
 }
 

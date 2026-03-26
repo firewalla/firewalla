@@ -287,6 +287,10 @@ class AccessRequestManager {
     const archivedIds = onlyPending ? [] : await rclient.smembersAsync(ARCHIVED_SET_KEY);
     const seen = new Set();
     const list = [];
+
+    const tz = sysManager.getTimezone() || 'UTC';
+    const startOfDay = moment.tz ? moment().tz(tz).startOf('day').unix() : moment().startOf('day').unix();
+    const endOfDay = moment.tz ? moment().tz(tz).endOf('day').unix() : moment().endOf('day').unix();
     for (const requestId of [...pendingIds, ...archivedIds]) {
       if (seen.has(requestId)) continue;
       seen.add(requestId);
@@ -295,6 +299,7 @@ class AccessRequestManager {
       if (stateSet && !stateSet.has(req.state)) continue;
       if (filter.userId && !filter.userId.has(req.userId)) continue;
       if (filter.app && !filter.app.has(req.app)) continue;
+      if (filter.todayOnly && (req.requestTs < startOfDay || req.requestTs > endOfDay)) continue;
       list.push(req);
     }
     return list;
