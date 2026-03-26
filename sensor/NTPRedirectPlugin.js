@@ -27,6 +27,10 @@ const execAsync = require('child-process-promise').exec
 const ipset = require('../net2/Ipset.js');
 const iptc = require('../control/IptablesControl.js');
 
+const IdentityManager = require('../net2/IdentityManager.js');
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
+
 const PREROUTING_CHAIN = 'FW_PREROUTING'
 const NTP_CHAIN = 'FW_PREROUTING_NTP'
 const NTP_CHAIN_DNAT = 'FW_PREROUTING_NTP_DNAT'
@@ -75,38 +79,68 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     await execAsync(String.raw`sudo sed -i -E 's/(^restrict .*)limited(.*$)/\1\2/' /etc/ntp.conf; sudo systemctl restart ntp`).catch(()=>{});
   }
 
-  async updateNtpOff(mac, op='add', updateRedis=false, useTemp=false) {
-    if (!mac) return;
+  async updateNtpOff(devId, op='add', updateRedis=false, useTemp=false) {
+    if (!devId) return;
 
     if (updateRedis === true) {
       if (op === 'add') {
         const now = Math.floor(Date.now() / 1000);
-        await rclient.zaddAsync(Constant.REDIS_KEY_NTP_OFF_SET, now, mac).catch((err) => {
-          log.error(`Failed to store ${mac} to NTP off set`, err);
+        await rclient.zaddAsync(Constant.REDIS_KEY_NTP_OFF_SET, now, devId).catch((err) => {
+          log.error(`Failed to store ${devId} to NTP off set`, err);
         });
       } else if (op === 'del') {
-        await rclient.zremAsync(Constant.REDIS_KEY_NTP_OFF_SET, mac).catch((err) => {
-          log.error(`Failed to remove ${mac} from NTP off set`, err);
+        await rclient.zremAsync(Constant.REDIS_KEY_NTP_OFF_SET, devId).catch((err) => {
+          log.error(`Failed to remove ${devId} from NTP off set`, err);
         });
       }
     }
 
-    const ipsetName = useTemp ? `${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP` : ipset.CONSTANTS.IPSET_NTP_OFF_MAC;
+    const ipsetName = useTemp ? `${ipset.CONSTANTS.IPSET_NTP_OFF}_TEMP` : ipset.CONSTANTS.IPSET_NTP_OFF;
+    let devIpsets = new Set();
+    if (hostTool.isMacAddress(devId)) {
+      const Host = require('../net2/Host.js');
+      Host.ensureCreateEnforcementEnv(devId);
+
+      const ipSet4 = Host.getIpSetName(devId, 4);
+      const ipSet6 = Host.getIpSetName(devId, 6);
+      const macSet = Host.getMacSetName(devId);
+      devIpsets.add(ipSet4);
+      devIpsets.add(ipSet6);
+      devIpsets.add(macSet);
+    } else if (IdentityManager.isGUID(devId)) {
+      const c = IdentityManager.getIdentityClassByGUID(devId);
+      if (c) {
+        const { ns, uid } = IdentityManager.getNSAndUID(devId);
+        await c.ensureCreateEnforcementEnv(uid);
+        const ipSet4 = c.getEnforcementIPsetName(uid, 4);
+        const ipSet6 = c.getEnforcementIPsetName(uid, 6);
+        devIpsets.add(ipSet4);
+        devIpsets.add(ipSet6);
+      }
+    }
+    if (devIpsets.size === 0) {
+      log.error(`Cannot find remote sets for devId ${devId}`);
+      return;
+    }
     if (op === 'add') {
-      if (this.ntpOffSet.has(mac))
+      if (this.ntpOffSet.has(devId))
         return;
-      this.ntpOffSet.add(mac);
-      ipset.add(ipsetName, mac);
+      this.ntpOffSet.add(devId);
+      for (const ipSet of devIpsets) {
+        ipset.add(ipsetName, ipSet);
+      }
     } else if (op === 'del') {
-      if (!this.ntpOffSet.has(mac))
+      if (!this.ntpOffSet.has(devId))
         return;
-      this.ntpOffSet.delete(mac);
-      ipset.del(ipsetName, mac);
+      this.ntpOffSet.delete(devId);
+      for (const ipSet of devIpsets) {
+        ipset.del(ipsetName, ipSet);
+      }
     }
   }
 
   async swapIpset() {
-    const ipsetName = ipset.CONSTANTS.IPSET_NTP_OFF_MAC;
+    const ipsetName = ipset.CONSTANTS.IPSET_NTP_OFF;
     const tmpIPSetName = `${ipsetName}_TEMP`;
 
     ipset.swap(ipsetName, tmpIPSetName);
@@ -126,8 +160,8 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
       return;
 
     this.ntpOffSet.clear();
-    for (const mac of ntpOffSetEntries) {
-      await this.updateNtpOff(mac, 'add', false, true);
+    for (const devId of ntpOffSetEntries) {
+      await this.updateNtpOff(devId, 'add', false, true);
     }
 
     await this.swapIpset();
@@ -135,7 +169,7 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
   }
 
   async cleanupNtpOffSet() {
-    const ipsetName = ipset.CONSTANTS.IPSET_NTP_OFF_MAC;
+    const ipsetName = ipset.CONSTANTS.IPSET_NTP_OFF;
     ipset.flush(ipsetName);
     this.ntpOffSet.clear();
   }
@@ -234,7 +268,7 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     iptc.addRule(this.ruleDNAT6.opr('-A'));
 
     // create temp ipset
-    ipset.create(`${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP`, 'hash:mac');
+    ipset.create(`${ipset.CONSTANTS.IPSET_NTP_OFF}_TEMP`, 'list:set');
     await this.syncNtpOffSet();
 
     await super.globalOn()
@@ -248,7 +282,7 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     // no need to touch FW_PREROUTING_NTP_DNAT chain here
 
     if (this.adminSystemSwitch) {
-      ipset.destroy(`${ipset.CONSTANTS.IPSET_NTP_OFF_MAC}_TEMP`);
+      ipset.destroy(`${ipset.CONSTANTS.IPSET_NTP_OFF}_TEMP`);
     }
     await super.globalOff()
   }
