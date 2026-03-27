@@ -22,10 +22,11 @@ const log = require('../../net2/logger.js')(__filename);
 const HostManager = require('../../net2/HostManager.js');
 const sysManager = require('../../net2/SysManager.js');
 const Constants = require('../../net2/Constants.js');
-const { getInstance: getAccessRequestManager, STATE_PENDING, STATE_APPROVED, STATE_DENIED, STATE_EXPIRED, getUserRelatedTags: getManagerUserRelatedTags, findMatchingTimeLimitRules} = require('../../alarm/AccessRequestManager.js');
+const { getInstance: getAccessRequestManager, STATE_PENDING, STATE_APPROVED, STATE_DENIED, STATE_EXPIRED, getUserRelatedTags: getManagerUserRelatedTags, findMatchingTimeLimitRules, getAppFromTarget} = require('../../alarm/AccessRequestManager.js');
 const moment = require('moment-timezone/moment-timezone.js');
 try { moment.tz.load(require('../../vendor_lib/moment-tz-data.json')); } catch (_) { /* optional */ }
-const AppTimeUsageManager = require('../../alarm/AppTimeUsageManager.js');
+
+const TagManager = require('../../net2/TagManager.js');
 
 const fs = require('fs');
 const Mustache = require('mustache');
@@ -113,149 +114,117 @@ router.get('/', async (req, res) => {
       return;
     }
     const userId = await getDeviceUserId(monitorable);
+    if (!userId) {
+      res.status(404).json({ error: 'No user tag found for this device' });
+      return;
+    }
     const extraTimeLimitPolicy = await accessRequestManager.getExtraTimeLimitPolicy(userId);
     if (!extraTimeLimitPolicy || extraTimeLimitPolicy.mode === Constants.POLICY_EXTRA_TIME_LIMIT_MODE_OFF) {
       res.status(404).json({ error: 'Extra time limit is disabled for this user' });
       return;
     }
 
+    const userTag = TagManager.getTagByUid(userId);
+    const userInfo = {
+      id: userId,
+      name: userTag ? userTag.getTagName() : null,
+      extraTimeLimitPolicy: extraTimeLimitPolicy,
+      icon: null,
+    };
+
     const nowTs = Date.now() / 1000;
-    const supportedAppsSet = new Set();
+    const appSpecs = {};
     // fetch all support time limit apps
     const supportedApps = await accessRequestManager.getSupportedApps();
     for (const supportedApp of supportedApps) {
-      supportedAppsSet.add({app: supportedApp.app, displayName: supportedApp.displayName});
+      appSpecs[supportedApp.app] = {
+        name: supportedApp.app,
+        displayName: supportedApp.displayName,
+        icon: null,
+      };
     }
-    supportedAppsSet.add({app: 'internet', displayName: 'Internet'});
-
-    // const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-    const appList = Array.from(supportedAppsSet).sort((a, b) => {
-      if (a.app === 'internet') return -1;
-      if (b.app === 'internet') return 1;
-      return a.app.localeCompare(b.app);
-    }).map(item => ({
-      name: item.app,
-      displayName: item.displayName,
-      selected: item.app === app
-    }));
-
-    let appDisplayName = app;
-    for (const entry of appList) {
-      if (entry.name === app) {
-        appDisplayName = entry.displayName;
-        break;
-      }
-    }
-
-    const matchedRules = await findMatchingTimeLimitRules(userId, app, { includeNonTimeLimitApps: true, includeDisabled: false });
-
-    let bestRule = null;
-    let bestSum = Infinity;
-    for (const rule of matchedRules) {
-      let quota = 0, extra = 0;
-      const au = rule.appTimeUsage;
-      if (au) { // this is a time limit rule
-        quota = Number(rule.appTimeUsage.quota);
-        if (au.extraQuota != null && au.extraQuotaUntilTs != null && nowTs < au.extraQuotaUntilTs) {
-          extra = Number(au.extraQuota);
-        }
-      }
-      const sum = quota + extra;
-      if (sum < bestSum) {
-        bestSum = sum;
-        bestRule = rule;
-      }
-    }
-
-    let quota = 0, extraQuota = 0, timeUsed = 0;
-    if (bestRule) {
-      const au = bestRule.appTimeUsage;
-      if (au) {
-        quota = Number(au.quota);
-        if (au.extraQuota != null && au.extraQuotaUntilTs != null && nowTs < au.extraQuotaUntilTs) {
-          extraQuota = Number(au.extraQuota);
-        }
-        timeUsed = Number(bestRule.appTimeUsed);
-      } else {
-        //TODO: get time used for blocked app, how to deal with paused rule and schedule rule?
-        // timeUsed = await AppTimeUsageManager.getTimeUsage();
-      }
-    } else { //no rule found, no limit
-      quota = -1;
-      extraQuota = -1;
-      //TODO: get time used for no limit app
-      // timeUsed = await AppTimeUsageManager.getTimeUsage();
-    }
-
-    const tz = sysManager.getTimezone() || 'UTC';
-    const startOfDay = moment.tz ? moment().tz(tz).startOf('day').unix() : moment().startOf('day').unix();
-    const endOfDay = moment.tz ? moment().tz(tz).endOf('day').unix() : moment().endOf('day').unix();
-
-    const pendingRequests = await accessRequestManager.listRequestsByUserIds(userId, {
-      state: new Set([STATE_PENDING]), app: new Set([app])
-    });
-    const pendingRequest = pendingRequests.length > 0 ? pendingRequests[0] : null;
-
-    const archivedRequests = await accessRequestManager.listRequestsByUserIds(userId, {
-      state: new Set([STATE_APPROVED, STATE_DENIED]), app: new Set([app])
-    });
-    const todayArchived = archivedRequests
-      .filter(r => r.requestTs != null && r.requestTs >= startOfDay && r.requestTs <= endOfDay)
-      .sort((a, b) => (b.updatedAt || b.requestTs || 0) - (a.updatedAt || a.requestTs || 0));
-    const latestResolved = todayArchived.length > 0 ? todayArchived[0] : null;
-
-    const fmtQuota = (mins) => {
-      if (mins >= 60 && mins % 60 === 0) {
-        const h = mins / 60;
-        return h + ' hour' + (h > 1 ? 's' : '');
-      }
-      return mins + ' minute' + (mins > 1 ? 's' : '');
+    appSpecs['internet'] = {
+      name: 'internet',
+      displayName: 'Internet',
+      icon: null,
     };
 
-    let lastRequest = null;
-    if (pendingRequest) {
-      lastRequest = {
-        isPending: true,
-        time: moment.unix(pendingRequest.requestTs).tz(tz).format('h:mm'),
-        quotaText: fmtQuota(Number(pendingRequest.requestQuota) || 0),
-        requestId: pendingRequest.requestId || '',
-        appDisplayName: appDisplayName
+    const matchedRules = await findMatchingTimeLimitRules(userId, "all", { includeNonTimeLimitRules: true, includeDisabled: false });
+
+    const bestMatchAppMap = new Map();
+
+    for (const rule of matchedRules) {
+      const appQuotaInfo = {
+        bestMatchPolicy: null,
+        app: null,
+        apps: [],
+        quota: 0,
+        extraQuota: 0,
+        timeUsed: 0,
+        pendingRequest: null,
+        latestResolved: null,
       };
-    } else if (latestResolved) {
-      lastRequest = {
-        isApproved: latestResolved.state === STATE_APPROVED,
-        isDenied: latestResolved.state === STATE_DENIED,
-        time: moment.unix(latestResolved.updatedAt || latestResolved.requestTs).tz(tz).format('h:mm'),
-        quotaText: fmtQuota(Number(latestResolved.requestQuota) || 0),
-        approvedText: latestResolved.state === STATE_APPROVED
-          ? fmtQuota(Number(latestResolved.approvedQuota) || 0) : '',
-        requestId: latestResolved.requestId || '',
-        appDisplayName: appDisplayName
-      };
+
+      if (rule.appTimeUsage) {
+        appQuotaInfo.quota = Number(rule.appTimeUsage.quota);
+        if (rule.appTimeUsage.extraQuota != null && rule.appTimeUsage.extraQuotaUntilTs != null && nowTs < rule.appTimeUsage.extraQuotaUntilTs) {
+          appQuotaInfo.extraQuota = Number(rule.appTimeUsage.extraQuota);
+        }
+        appQuotaInfo.timeUsed = Number(rule.appTimeUsed);
+      }
+
+      if (rule.targets && rule.targets.length > 1) {
+        appQuotaInfo.bestMatchPolicy = rule.pid;
+        appQuotaInfo.app = `policy:${rule.pid}`;
+
+        for (const target of rule.targets) {
+          const targetApp = getAppFromTarget(target);
+          appQuotaInfo.apps.push(targetApp);
+        }
+        bestMatchAppMap.set(appQuotaInfo.app, appQuotaInfo);
+      } else {
+        appQuotaInfo.bestMatchPolicy = rule.pid;
+        appQuotaInfo.app = getAppFromTarget(rule.target);
+        //get app from targets
+        if (!appQuotaInfo.app && rule.targets && rule.targets.length == 1) {
+          appQuotaInfo.app = getAppFromTarget(rule.targets[0]);
+        }
+        appQuotaInfo.apps.push(appQuotaInfo.app);
+        if (!bestMatchAppMap.has(appQuotaInfo.app)) {
+          bestMatchAppMap.set(appQuotaInfo.app, appQuotaInfo);
+        } else {
+          const bestMatchApp = bestMatchAppMap.get(appQuotaInfo.app);
+          if (bestMatchApp.quota + bestMatchApp.extraQuota > appQuotaInfo.quota + appQuotaInfo.extraQuota) {
+            bestMatchAppMap.set(appQuotaInfo.app, appQuotaInfo);
+          }
+        }
+      }
     }
+
+    const extraTimeRequests = await accessRequestManager.listRequestsByUserIds(userId,{ todayOnly: true });
+    const resolvedRequests = extraTimeRequests.filter(r => r.state == STATE_APPROVED || r.state == STATE_DENIED);
+
+    for (const [app, appQuotaInfo] of bestMatchAppMap.entries()) {
+      const appPendingRequests = extraTimeRequests.filter(r => r.app === app && r.state === STATE_PENDING);
+      const appResolvedRequests = extraTimeRequests.filter(r => r.app === app && (r.state == STATE_APPROVED || r.state == STATE_DENIED));
+      appQuotaInfo.pendingRequest = appPendingRequests.length > 0 ? appPendingRequests[0] : null;
+      for (const appResolvedRequest of appResolvedRequests) {
+        if (!appQuotaInfo.latestResolved || appResolvedRequest.updatedAt > appQuotaInfo.latestResolved.updatedAt) {
+          appQuotaInfo.latestResolved = appResolvedRequest;
+        }
+      }
+    }
+
 
     const data = {
-      app,
-      timeUsed,
-      quota,
-      extraQuota,
-      appList,
-      lastRequest
+      user: userInfo,
+      appSpecs: appSpecs,
+      appQuotas: Array.from(bestMatchAppMap.values()),
+      resolvedRequests: resolvedRequests,
     };
 
-    const accept = (req.headers && req.headers.accept) || '';
-    if (accept.indexOf('text/html') !== -1) {
-      const cloudPath = path.join(CLOUD_VIEW_ASSETS_PATH, 'time_limits.mustache');
-      if (fs.existsSync(cloudPath)) {
-        const template = fs.readFileSync(cloudPath, 'utf8');
-        const rendered = Mustache.render(template, data);
-        res.send(rendered);
-        return;
-      }
-      res.render('time_limits', data);
-    } else {
-      res.json(data);
-    }
+
+    res.json(data);
   } catch (err) {
     log.error('App detail time limit route error:', err);
     res.status(500).json({ error: 'Internal server error', message: err.message });
@@ -314,9 +283,9 @@ router.post('/requests', async (req, res) => {
       return;
     }
 
-    const supportedApps = await accessRequestManager.getSupportedApps();
-    if (!supportedApps.find(item => item.app === app) && app !== 'internet') {
-      res.status(400).json({ error: `App: ${app} is not supported` });
+    const matchingRules = await findMatchingTimeLimitRules(userId, app);
+    if (matchingRules.length === 0) {
+      res.status(400).json({ error: `No time limit rule found for this user: ${userId} and app: ${app}` });
       return;
     }
 

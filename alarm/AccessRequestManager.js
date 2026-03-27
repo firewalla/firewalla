@@ -59,7 +59,7 @@ function getUserRelatedTags(userId) {
   return { user, afTag };
 }
 
-function isInSchedule(policy, includeNonTimeLimitApps = false) {
+function isInSchedule(policy, includeNonTimeLimitRules = false) {
   // check if the policy is paused
   const now = Date.now() / 1000;
   if (policy.idleTs != null && policy.idleTs > 0) {
@@ -70,7 +70,7 @@ function isInSchedule(policy, includeNonTimeLimitApps = false) {
   }
 
   const au = policy.appTimeUsage;
-  if (!au && !includeNonTimeLimitApps) {
+  if (!au && !includeNonTimeLimitRules) {
     return false;
   }
 
@@ -86,46 +86,70 @@ function isInSchedule(policy, includeNonTimeLimitApps = false) {
   return false;
 }
 
-function matchTarget(policy, target) {
-  if (target === 'all') {
-    return true;
+function getAppFromTarget(target) {
+  if (target.startsWith('TLX-fw-')) {
+    return target.substring('TLX-fw-'.length);
   }
-  if (policy.targets) {
-    if (policy.targets.includes(target)) {
-      return true;
+  if (target === 'TAG') {
+    return 'internet';
+  }
+  return null;
+}
+
+function matchTarget(policy, app, supportedApps = []) {
+  // check if the policy targets and target are supported time limit apps
+  if (supportedApps.length > 0) {
+    if (policy.targets) {
+      for (const target of policy.targets) {
+        const targetApp = getAppFromTarget(target);
+        if (targetApp != "internet" && !supportedApps.some(a => a.app === targetApp)) {
+          return false;
+        }
+      }
+    }
+    if (policy.target) {
+      const targetApp = getAppFromTarget(policy.target);
+      if (targetApp != "internet" && !supportedApps.some(a => a.app === targetApp)) {
+        return false;
+      }
     }
   }
-  if (policy.target === target) {
+
+  if (app === 'all') {
     return true;
+  }
+
+  // check if the policy targets or target matches the given app
+  if (policy.targets) {
+    for (const target of policy.targets) {
+      const targetApp = getAppFromTarget(target);
+      if (targetApp == app) {
+        return true;
+      }
+    }
+  }
+  if (policy.target) {
+    const targetApp = getAppFromTarget(policy.target);
+    if (targetApp == app) {
+      return true;
+    }
   }
   return false;
 }
 
 // check if the policy is matched with the given app
-function matchApp(policy, app='all', supportedApps = [], includeNonTimeLimitApps = false) {
-  let target = "TLX-fw-" + app;
-  if (app === 'internet') {
-    target = 'TAG';
-  } else if (app === 'all') {
-    target = 'all';
-  }
+function matchApp(policy, app='all', supportedApps = [], includeNonTimeLimitRules = false, includeDisabled = false) {
   // check tag
   if (!policy.tag || policy.tag.length === 0 ) return false;
 
   // check action
-  if (policy.action !== 'app_block' && policy.action !== 'block') return false;
+  if (policy.action !== 'app_block' && policy.action !== 'block' && policy.action !== 'disturb') return false;
 
-  // check if the app is supported time limit app
-  if (supportedApps.length > 0) {
-    const supportedApp = supportedApps.find(item => item.app === app);
-    if (!supportedApp && app !== 'internet') return false;
-  }
-
-  // check target
-  if (!matchTarget(policy, target)) return false;
+  // check target, target|targets should be supported apps and match the given app
+  if (!matchTarget(policy, app, supportedApps)) return false;
 
   // check if the policy is in schedule
-  if (!isInSchedule(policy, includeNonTimeLimitApps)) return false;
+  if (!includeDisabled && !isInSchedule(policy, includeNonTimeLimitRules)) return false;
   return true;
 }
 
@@ -140,7 +164,10 @@ function matchApp(policy, app='all', supportedApps = [], includeNonTimeLimitApps
  */
 async function findMatchingTimeLimitRules(userId, app, options = {}) {
   const Constants = require('../net2/Constants.js');
+  const PolicyManager2 = require('./PolicyManager2.js');
+  const pm2 = new PolicyManager2();
   const { user, afTag } = getUserRelatedTags(userId || '');
+
   const ruleTagValues = new Set();
   const addRuleTag = (tag) => {
     if (!tag || !tag.getTagType) return;
@@ -151,15 +178,33 @@ async function findMatchingTimeLimitRules(userId, app, options = {}) {
   addRuleTag(user);
   addRuleTag(afTag);
 
-  const PolicyManager2 = require('./PolicyManager2.js');
-  const pm2 = new PolicyManager2();
-  const includeDisabled = options.includeDisabled ? 1 : 0;
-  const allPolicies = await pm2.loadActivePoliciesAsync({ includingDisabled: includeDisabled });
-  const policyTargetsUserOrGroup = (p) => p.tag && p.tag.some(t => ruleTagValues.has(t));
+  // if app format is "policy:1234", extract the number
+  let policyNumber = null;
+  if(app.match(/policy:(\d+)/)) {
+    policyNumber = app.substring("policy:".length);
+  }
+  if (policyNumber) {
+    const policy = await pm2.getPolicy(parseInt(policyNumber));
+    if (policy) {
+      // check if the policy is related to the user
+      if (policy.tag && policy.tag.some(t => ruleTagValues.has(t))) {
+        return [policy];
+      }
+    }
+  }
   const accessRequestManager = getInstance();
   const supportedApps = await accessRequestManager.getSupportedApps();
 
-  return allPolicies.filter(p => matchApp(p, app, supportedApps, options.includeNonTimeLimitApps) && policyTargetsUserOrGroup(p));
+  if (app !== 'all' && app !== 'internet' && !supportedApps.some(a => a.app === app)) {
+    return [];
+  }
+
+  const includeDisabled = options.includeDisabled ? 1 : 0;
+  const allPolicies = await pm2.loadActivePoliciesAsync({ includingDisabled: includeDisabled });
+  const policyTargetsUserOrGroup = (p) => p.tag && p.tag.some(t => ruleTagValues.has(t));
+
+
+  return allPolicies.filter(p => matchApp(p, app, supportedApps, options.includeNonTimeLimitRules, options.includeDisabled) && policyTargetsUserOrGroup(p));
 }
 
 
@@ -318,7 +363,7 @@ class AccessRequestManager {
     const pm2 = new PolicyManager2();
     const Policy = require('./Policy.js');
 
-    const matchingPolicies = await findMatchingTimeLimitRules(req.userId, req.app, { includeNonTimeLimitApps: true, includeDisabled: true });
+    const matchingPolicies = await findMatchingTimeLimitRules(req.userId, req.app, { includeNonTimeLimitRules: true, includeDisabled: true });
     if (matchingPolicies.length === 0) {
       return { ok: false, error: 'No time limit rule found for this user and app' };
     }
@@ -537,6 +582,7 @@ module.exports = {
   scheduleExpireCronJob,
   findMatchingTimeLimitRules,
   matchApp,
+  getAppFromTarget,
   getUserRelatedTags,
   AccessRequestManager,
   STATE_PENDING,

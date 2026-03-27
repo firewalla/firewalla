@@ -27,6 +27,9 @@ const log = require('../net2/logger.js')(__filename, 'info')
 
 const encipher = require('./routes/fastencipher2').router;
 
+const fs = require('fs');
+const Firewalla = require('../net2/Firewalla.js');
+
 // periodically update cpu usage, so that latest info can be pulled at any time
 let si = require('../extension/sysinfo/SysInfo.js');
 si.startUpdating();
@@ -45,6 +48,13 @@ app.use(logger('combined'));
 app.use(bodyParser.json({limit: '5mb'}));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use("/ss", require('./routes/ss.js'));
+// const cors = require('cors');
+
+// app.use(cors({
+//   origin: '*'
+// }));
+
+
 
 var subpath_v1 = express();
 app.use("/v1", subpath_v1);
@@ -53,6 +63,19 @@ subpath_v1.use(bodyParser.json({limit: '5mb'}));
 subpath_v1.use('/encipher', encipher);
 subpath_v1.use('/encipher_raw', require('./routes/raw_encipher.js'));
 subpath_v1.use('/time_limits', require('./routes/time_limits.js'));
+
+app.get('/time_limits/*', (req, res) => {
+  const timeLimitPath = path.join(__dirname, 'public', 'time_limits');
+  // check if file "/home/pi/.firewalla/run/assets/views/time_limits/index.html" exists
+  const hotPatchPath = path.join(Firewalla.getHiddenFolder(), 'run', 'assets', 'views', 'time_limits', 'index.html');
+
+  if (fs.existsSync(hotPatchPath)) {
+    res.sendFile(hotPatchPath);
+  } else {
+    res.sendFile(path.join(timeLimitPath, 'index.html'));
+  }
+});
+
 
 const AccessRequestManager = require('../alarm/AccessRequestManager.js');
 AccessRequestManager.scheduleExpireCronJob();
