@@ -25,7 +25,9 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const { rrWithErrHandling } = require('../util/requestWrapper.js')
 
 const util = require('util')
-const rp = util.promisify(require('request'))
+const querystring = require('querystring');
+const request = require('request');
+const rp = util.promisify(request)
 const _ = require('lodash');
 const sysManager = require('./SysManager.js');
 const Message = require('./Message.js');
@@ -36,6 +38,107 @@ const {fileExist, fileRemove} = require('../util/util.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_FWAPC_RULE = "LOCK_FWAPC_RULE";
+
+/** Idle time after which the switch metrics HTTP stream for a uid is torn down. */
+const SWITCH_METRICS_IDLE_MS = 60 * 1000;
+
+/** Per-switch-uid session for GET /switch/metrics (NDJSON stream). */
+const switchMetricsSessions = new Map();
+
+function terminateSwitchMetricsSession(uid) {
+  const session = switchMetricsSessions.get(uid);
+  if (!session)
+    return;
+  if (session.idleTimer) {
+    clearTimeout(session.idleTimer);
+    session.idleTimer = null;
+  }
+  if (session.req) {
+    try {
+      session.req.abort();
+    } catch (err) {
+      // ignore
+    }
+    session.req = null;
+  }
+  switchMetricsSessions.delete(uid);
+}
+
+function startSwitchMetricsStream(uid, opts = {}) {
+  const qs = {};
+  if (opts.mode != null)
+    qs.mode = opts.mode;
+  if (opts.timeout_secs != null)
+    qs.timeout_secs = opts.timeout_secs;
+  const qstr = Object.keys(qs).length ? `?${querystring.stringify(qs)}` : '';
+  const url = `${fwapcInterface}/switch/metrics/${encodeURIComponent(uid)}${qstr}`;
+
+  const session = {
+    lastLine: null,
+    lastParsed: null,
+    lineBuf: '',
+    req: null,
+    idleTimer: null,
+  };
+
+  const req = request({
+    url,
+    method: 'GET',
+    headers: { Accept: 'application/x-ndjson' },
+    forever: true,
+    // Long-lived stream; idle teardown is handled locally via SWITCH_METRICS_IDLE_MS.
+    timeout: 3600000,
+  });
+
+  session.req = req;
+
+  req.on('response', (res) => {
+    if (res.statusCode !== 200) {
+      log.error(`switch metrics ${uid}: HTTP ${res.statusCode}`);
+      res.resume();
+      const sess = switchMetricsSessions.get(uid);
+      if (sess && sess.req === req)
+        terminateSwitchMetricsSession(uid);
+      return;
+    }
+    res.setEncoding('utf8');
+    res.on('data', (chunk) => {
+      session.lineBuf += chunk;
+      let nl;
+      while ((nl = session.lineBuf.indexOf('\n')) >= 0) {
+        const line = session.lineBuf.slice(0, nl).trim();
+        session.lineBuf = session.lineBuf.slice(nl + 1);
+        if (!line)
+          continue;
+        session.lastLine = line;
+        try {
+          session.lastParsed = JSON.parse(line);
+        } catch (e) {
+          session.lastParsed = null;
+        }
+      }
+    });
+    res.on('end', () => {
+      log.verbose(`switch metrics stream ended for ${uid}`);
+      const sess = switchMetricsSessions.get(uid);
+      if (sess && sess.req === req)
+        terminateSwitchMetricsSession(uid);
+    });
+    res.on('error', (err) => {
+      log.error(`switch metrics response error ${uid}:`, err.message);
+    });
+  });
+
+  req.on('error', (err) => {
+    log.error(`switch metrics request error ${uid}:`, err.message);
+    const sess = switchMetricsSessions.get(uid);
+    if (sess && sess.req === req)
+      terminateSwitchMetricsSession(uid);
+  });
+
+  switchMetricsSessions.set(uid, session);
+  return session;
+}
 
 // not exposing these methods/properties
 async function localGet(endpoint, retry = 5) {
@@ -208,6 +311,20 @@ class FWAPC {
     return localGet("/status/ap", 1).then(resp => resp.info);
   }
 
+  /**
+   * All switch runtime statuses keyed by asset uid (same shape as fwapc GET /v1/status/switch).
+   * @returns {Promise<object|null>} map of uid -> status, or null on error
+   */
+  async getSwitchStatus() {
+    try {
+      const resp = await localGet("/status/switch", 1);
+      return resp && resp.info != null ? resp.info : null;
+    } catch (err) {
+      log.error("Failed to get switch status from fwapc", err.message);
+      return null;
+    }
+  }
+
   async getControllerInfo() {
     return localGet("/info", 1).then(resp => resp.info);
   }
@@ -346,6 +463,43 @@ class FWAPC {
       throw new Error(msg || "Failed to delete device acl in fwapc");
     }
     return;
+  }
+
+  /**
+   * Subscribe to fwapc's streaming switch port metrics (NDJSON over HTTP).
+   * Opens GET /switch/metrics/:uid once per uid when needed; each call returns the latest
+   * complete line received. If this method is not called again for the same uid within
+   * 60 seconds, the HTTP stream is aborted and the session is discarded.
+   *
+   * @param {string} uid - switch asset uid
+   * @param {object} [opts] - optional query params (only applied when the stream is first opened)
+   * @param {string} [opts.mode] - sampling mode, e.g. "fast" or "slow"
+   * @param {number} [opts.timeout_secs] - upstream accept timeout (fwapc default applies if omitted)
+   * @returns {Promise<{ raw: string|null, sample: object|null }|null>}
+   */
+  async getSwitchMetricsLast(uid, opts = {}) {
+    if (!uid)
+      throw new Error("uid is required in getSwitchMetricsLast");
+    if (!platform.isFireRouterManaged())
+      throw new Error("Forbidden");
+    if (!fwapcInterface)
+      return null;
+
+    let session = switchMetricsSessions.get(uid);
+    if (!session || !session.req) {
+      session = startSwitchMetricsStream(uid, opts);
+    }
+
+    if (session.idleTimer)
+      clearTimeout(session.idleTimer);
+    session.idleTimer = setTimeout(() => {
+      terminateSwitchMetricsSession(uid);
+    }, SWITCH_METRICS_IDLE_MS);
+
+    return {
+      raw: session.lastLine,
+      sample: session.lastParsed,
+    };
   }
 }
 
