@@ -379,7 +379,7 @@ class FWAPC {
       }
       return r;
     } catch (e) {
-      return {code: 500, msg: e.message};
+      return {code: 503, msg: e.message};
     }
   }
 
@@ -391,7 +391,7 @@ class FWAPC {
     const payload = _.pick(data, ["macs", "config"]);
     const {code, body, msg} = await this.apiCall("POST", `/config/group/${groupId}`, payload);
     if (!isNaN(code) && Number(code) > 299) {
-      throw new Error(msg || "Failed to set group in fwapc");
+      throw new Error(msg || `Failed to set group in fwapc: ${code}`);
     }
     return;
   }
@@ -401,7 +401,7 @@ class FWAPC {
       throw new Error("groupId is not defined in deletGroup");
     const {code, body, msg} = await this.apiCall("DELETE", `/config/group/${groupId}${optKey ? `/${optKey}` : ""}`);
     if (!isNaN(code) && Number(code) > 299) {
-      throw new Error(msg || "Failed to delete group in fwapc");
+      throw new Error(msg || `Failed to delete group in fwapc: ${code}`);
     }
     return;
   }
@@ -410,10 +410,10 @@ class FWAPC {
     await lock.acquire(LOCK_FWAPC_RULE, async () => {
       const {code, body, msg} = await this.apiCall("POST", "/config/rules", {rules, full_sync: fullSync});
       if (!isNaN(code) && Number(code) > 299) {
-        throw new Error(msg || "Failed to delete group in fwapc");
+        throw new Error(msg || `fwapc api error: ${code}`);
       }
     }).catch((err) => {
-      log.error(`Failed to update rules, fullSync: ${fullSync}`, err.message);
+      log.warn(`Failed to update rules, fullSync: ${fullSync}`, err.message);
     });
   }
 
@@ -425,7 +425,7 @@ class FWAPC {
     await lock.acquire(LOCK_FWAPC_RULE, async () => {
       const {code, body, msg} = await this.apiCall("PUT", `/config/rules/${rule.pid}`, rule);
       if (!isNaN(code) && Number(code) > 299) {
-        throw new Error(msg || "Failed to delete group in fwapc");
+        throw new Error(msg || `fwapc api error: ${code}`);
       }
     }).catch((err) => {
       log.error(`Failed to update rule`, rule, err.message);
@@ -436,7 +436,7 @@ class FWAPC {
     await lock.acquire(LOCK_FWAPC_RULE, async () => {
       const {code, body, msg} = await this.apiCall("DELETE", `/config/rules/${pid}`);
       if (!isNaN(code) && Number(code) > 299) {
-        throw new Error(msg || "Failed to delete group in fwapc");
+        throw new Error(msg || `fwapc api error: ${code}`);
       }
     }).catch((err) => {
       log.error(`Failed to delete rule, pid: ${pid}`, err.message);
@@ -451,7 +451,7 @@ class FWAPC {
     const payload = _.pick(data, ["isolation"]);
     const {code, body, msg} = await this.apiCall("POST", `/config/device_acl/${mac.toUpperCase()}`, data);
     if (!isNaN(code) && Number(code) > 299)
-      throw new Error(msg || "Failed to set DeviceAcl")
+      throw new Error(msg || `Failed to set DeviceAcl: ${code}`);
     return;
   }
 
@@ -460,7 +460,7 @@ class FWAPC {
       throw new Error("mac is not defined in deleteDeviceAcl");
     const {code, body, msg} = await this.apiCall("DELETE", `/config/device_acl/${mac.toUpperCase()}`);
     if (!isNaN(code) && Number(code) > 299) {
-      throw new Error(msg || "Failed to delete device acl in fwapc");
+      throw new Error(msg || `Failed to delete device acl in fwapc: ${code}`);
     }
     return;
   }
