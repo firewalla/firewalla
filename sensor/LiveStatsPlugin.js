@@ -424,7 +424,7 @@ class LiveStatsPlugin extends Sensor {
   }
 
   /**
-   * Bits/s per id from byte counter maps at two timestamps (switch counter semantics: no backward jump).
+   * Bytes/s per id from byte counter maps at two timestamps (same units as getIntfThroughput; no backward jump).
    */
   _switchThroughputRatesFromMaps(prevMap, currMap, dtSec) {
     const rows = [];
@@ -437,9 +437,9 @@ class LiveStatsPlugin extends Sensor {
       let rx = 0;
       if (p) {
         if (c.tx >= p.tx)
-          tx = Math.round(((c.tx - p.tx) / dtSec) * 8);
+          tx = Math.round((c.tx - p.tx) / dtSec);
         if (c.rx >= p.rx)
-          rx = Math.round(((c.rx - p.rx) / dtSec) * 8);
+          rx = Math.round((c.rx - p.rx) / dtSec);
       }
       rows.push({ port: id, tx, rx });
     }
@@ -448,7 +448,7 @@ class LiveStatsPlugin extends Sensor {
   }
 
   /**
-   * Bit/s from switch byte counters via fwapc metrics stream (×8). Keeps previous sample on streamCache.
+   * Bytes/s from switch byte counters via fwapc metrics stream (same units as intf/device throughput).
    * @param {string} target - switch asset uid
    * @param {object} streamCache - this.streamingCache[streamingId] from liveStats
    */
@@ -479,9 +479,9 @@ class LiveStatsPlugin extends Sensor {
       const dtSec = (agg.ts - prev.ts) / 1000;
       if (dtSec > 0) {
         if (agg.tx >= prev.tx)
-          tx = Math.round(((agg.tx - prev.tx) / dtSec) * 8);
+          tx = Math.round((agg.tx - prev.tx) / dtSec);
         if (agg.rx >= prev.rx)
-          rx = Math.round(((agg.rx - prev.rx) / dtSec) * 8);
+          rx = Math.round((agg.rx - prev.rx) / dtSec);
         ports = this._switchThroughputRatesFromMaps(prev.ports, agg.ports, dtSec);
         lagPorts = this._switchThroughputRatesFromMaps(prev.lags, agg.lags, dtSec);
       }
