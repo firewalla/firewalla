@@ -27,6 +27,7 @@ const moment = require('moment-timezone/moment-timezone.js');
 try { moment.tz.load(require('../../vendor_lib/moment-tz-data.json')); } catch (_) { /* optional */ }
 
 const TagManager = require('../../net2/TagManager.js');
+const firewalla = require('../../net2/Firewalla.js');
 
 const fs = require('fs');
 const Mustache = require('mustache');
@@ -85,11 +86,23 @@ async function getDeviceUserId(monitorable) {
  * @returns {Promise<{ monitorable: object|null, userId: string|null }>}
  */
 async function getDeviceUserFromRequest(req) {
-  const clientIP = getClientIP(req);
-  if (!clientIP || !sysManager.isLocalIP(clientIP)) {
-    return { monitorable: null, userId: null };
+  let mac = null;
+  if (req.body && req.body.mac) {
+    mac = req.body.mac;
   }
-  const monitorable = await hostManager.getIdentityOrHost(clientIP);
+  let target = getClientIP(req);
+
+  if (mac) {
+    if (firewalla.isDevelopmentVersion()) {
+      target = mac;
+    } else {
+      if (!target || !sysManager.isLocalIP(target)) {
+        return { monitorable: null, userId: null };
+      }
+    }
+  }
+
+  const monitorable = await hostManager.getIdentityOrHost(target);
   if (!monitorable) {
     return { monitorable: null, userId: null };
   }
@@ -98,17 +111,21 @@ async function getDeviceUserFromRequest(req) {
 }
 
 router.get('/', async (req, res) => {
-  const clientIP = getClientIP(req);
-  if (!clientIP || !sysManager.isLocalIP(clientIP)) {
-    res.status(403).json({ error: 'Access allowed only from local network' });
-    return;
+  let target = getClientIP(req);
+
+  if (req.query && req.query.mac) { 
+    if (firewalla.isDevelopmentVersion()) {
+      target = req.query.mac;
+    } else {
+      if (!target || !sysManager.isLocalIP(target)) {
+        res.status(403).json({ error: 'Access allowed only from local network' });
+        return;
+      }
+    }
   }
-  let app = req.query.app;
-  if (!app) {
-    app = 'internet';
-  }
+
   try {
-    const monitorable = await hostManager.getIdentityOrHost(clientIP);
+    const monitorable = await hostManager.getIdentityOrHost(target);
     if (!monitorable) {
       res.status(404).json({ error: 'Device not found' });
       return;
