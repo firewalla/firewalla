@@ -136,17 +136,18 @@ router.get('/', async (req, res) => {
     const appSpecs = {};
     // fetch all support time limit apps
     const supportedApps = await accessRequestManager.getSupportedApps();
+    const appIcons = await accessRequestManager.getAllAppIcons();
     for (const supportedApp of supportedApps) {
       appSpecs[supportedApp.app] = {
         name: supportedApp.app,
         displayName: supportedApp.displayName,
-        icon: null,
+        icon: appIcons[supportedApp.app] || null,
       };
     }
     appSpecs['internet'] = {
       name: 'internet',
       displayName: 'Internet',
-      icon: null,
+      icon: "http://fire.walla:8833/time_limits/img/Internet_light@3x.png",
     };
 
     const matchedRules = await findMatchingTimeLimitRules(userId, "all", { includeNonTimeLimitRules: true, includeDisabled: false });
