@@ -70,6 +70,13 @@ function isInSchedule(policy, includeNonTimeLimitRules = false) {
     }
   }
 
+  // if the policy is expired, return false
+  if (policy.expire) {
+    if (policy.isExpired() || policy.willExpireSoon()) {
+      return false;
+    }
+  }
+
   const au = policy.appTimeUsage;
   if (!au && !includeNonTimeLimitRules) {
     return false;

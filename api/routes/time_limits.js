@@ -284,7 +284,7 @@ router.post('/requests', async (req, res) => {
       return;
     }
 
-    const matchingRules = await findMatchingTimeLimitRules(userId, app);
+    const matchingRules = await findMatchingTimeLimitRules(userId, app, { includeNonTimeLimitRules: true, includeDisabled: false });
     if (matchingRules.length === 0) {
       res.status(400).json({ error: `No time limit rule found for this user: ${userId} and app: ${app}` });
       return;

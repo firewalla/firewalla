@@ -28,7 +28,46 @@ const log = require('../net2/logger.js')(__filename, 'info')
 const encipher = require('./routes/fastencipher2').router;
 
 const fs = require('fs');
+const url = require('url');
 const Firewalla = require('../net2/Firewalla.js');
+
+/** Decode one URL path segment (+ as space). Invalid encoding or traversal token -> null */
+function decodeTimeLimitsPathSegment(segment) {
+  try {
+    const s = decodeURIComponent(segment.replace(/\+/g, ' '));
+    if (s === '..' || s.includes('\0') || s.includes('/') || s.includes('\\')) return null;
+    return s;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Relative file path under time_limits from the request (handles %20, %40, Unicode, etc.).
+ * Prefer originalUrl pathname so percent-encoding is applied per segment.
+ */
+function timeLimitsRelativePath(req) {
+  const pathname = (url.parse(req.originalUrl || '', false, true).pathname || req.path || '')
+    .replace(/^\/+/, '/');
+  if (!pathname.toLowerCase().startsWith('/time_limits')) {
+    return { err: 404 };
+  }
+  let suffix = pathname.replace(/^\/time_limits\/?/i, '');
+  const trailingSlash = suffix.endsWith('/') && suffix.length > 0;
+  suffix = suffix.replace(/\/+$/, '');
+  if (!suffix) {
+    return { rel: 'index.html' };
+  }
+  const segments = suffix.split('/').filter(Boolean).map(decodeTimeLimitsPathSegment);
+  if (segments.some(s => s == null)) {
+    return { err: 403 };
+  }
+  let rel = path.join(...segments);
+  if (trailingSlash) {
+    rel = path.join(rel, 'index.html');
+  }
+  return { rel };
+}
 
 // periodically update cpu usage, so that latest info can be pulled at any time
 let si = require('../extension/sysinfo/SysInfo.js');
@@ -46,6 +85,39 @@ app.set('query parser', 'simple');
 
 app.use(logger('combined'));
 app.use(bodyParser.json({limit: '5mb'}));
+
+const handleTimeLimits = (req, res) => {
+  const timeLimitPath = path.join(__dirname, 'public', 'time_limits');
+  const hotPatchDir = path.join(Firewalla.getHiddenFolder(), 'run', 'assets', 'views', 'time_limits');
+
+  const parsed = timeLimitsRelativePath(req);
+  if (parsed.err) {
+    res.status(parsed.err).send('');
+    return;
+  }
+  const rel = parsed.rel;
+  const resolved = path.resolve(timeLimitPath, rel);
+  if (path.relative(timeLimitPath, resolved).startsWith('..')) {
+    res.status(403).send('');
+    return;
+  }
+
+  const hotResolved = path.resolve(hotPatchDir, rel);
+  const hotBase = path.resolve(hotPatchDir);
+  if (!path.relative(hotBase, hotResolved).startsWith('..') &&
+      fs.existsSync(hotResolved) && fs.statSync(hotResolved).isFile()) {
+    res.sendFile(hotResolved);
+    return;
+  }
+  if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
+    res.sendFile(resolved);
+    return;
+  }
+  res.status(404).send('');
+}
+app.get('/time_limits', handleTimeLimits);
+app.get('/time_limits/*', handleTimeLimits);
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.use("/ss", require('./routes/ss.js'));
 // const cors = require('cors');
@@ -64,17 +136,7 @@ subpath_v1.use('/encipher', encipher);
 subpath_v1.use('/encipher_raw', require('./routes/raw_encipher.js'));
 subpath_v1.use('/time_limits', require('./routes/time_limits.js'));
 
-app.get('/time_limits/*', (req, res) => {
-  const timeLimitPath = path.join(__dirname, 'public', 'time_limits');
-  // check if file "/home/pi/.firewalla/run/assets/views/time_limits/index.html" exists
-  const hotPatchPath = path.join(Firewalla.getHiddenFolder(), 'run', 'assets', 'views', 'time_limits', 'index.html');
 
-  if (fs.existsSync(hotPatchPath)) {
-    res.sendFile(hotPatchPath);
-  } else {
-    res.sendFile(path.join(timeLimitPath, 'index.html'));
-  }
-});
 
 
 const AccessRequestManager = require('../alarm/AccessRequestManager.js');
