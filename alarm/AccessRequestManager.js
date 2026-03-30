@@ -23,6 +23,7 @@ const sysManager = require('../net2/SysManager.js');
 const cronParser = require('cron-parser');
 const Constants = require('../net2/Constants.js');
 const _ = require('lodash');
+const { rrWithErrHandling } = require('../util/requestWrapper.js')
 
 const REQUEST_KEY_PREFIX = 'access_request:';
 const CURRENT_LOOKUP_PREFIX = 'access_request:current:';
@@ -209,6 +210,34 @@ async function findMatchingTimeLimitRules(userId, app, options = {}) {
 
 
 class AccessRequestManager {
+
+  async getAllAppIcons() {
+    const options = {
+      uri: "https://s3-us-west-2.amazonaws.com/fireapp/fapp.json",
+      family: 4,
+      method: 'GET',
+
+      maxAttempts: 3,
+      json: true,
+      retryDelay: 1000,
+    };
+    const appIcons = {};
+    try {
+      const response = await rrWithErrHandling(options, false, false, false);
+      if (!response.body) return {};
+      const body = response.body;
+      
+      for (const app of body.app) {
+        appIcons[app.app] = app.icon;
+      }
+    } catch (err) {
+      log.error("getAllAppIcons error", err.message);
+      log.debug(err.stack)
+      return {};
+    }
+    return appIcons;
+
+  }
 
   async getSupportedApps() {
     const supportedApps = [];
