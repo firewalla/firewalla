@@ -1184,14 +1184,27 @@ class PolicyManager2 {
         if (policy.willExpireSoon()) {
           // skip enforce as it's already expired or expiring
           await delay(policy.getExpireDiffFromNow() * 1000);
-          await this._disablePolicy(policy);
+
+          if (policy.cronTime) {
+            return scheduler.deregisterPolicy(policy);
+          } else if (this.needAppTimeUsageRegister(policy)) {
+            return AppTimeUsageManager.deregisterPolicy(policy);
+          } else {
+            await this._disablePolicy(policy);
+          }
           if (policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
             await this.deletePolicy(policy.pid);
           }
           log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
         } else {
-          await this._enforce(policy);
-          this.notifyPolicyActivated(policy);
+          if (policy.cronTime) {
+            return scheduler.registerPolicy(policy);
+          } else if (this.needAppTimeUsageRegister(policy)) {
+            return AppTimeUsageManager.registerPolicy(policy);
+          } else {
+            await this._enforce(policy);
+            this.notifyPolicyActivated(policy);
+          }
           log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
           const pid = policy.pid;
           const policyTimer = setTimeout(async () => {
@@ -1205,8 +1218,14 @@ class PolicyManager2 {
             }
 
             log.info(`Revoke policy ${policy.pid}, since it's expired`)
-            await this.unenforce(policy);
-            await this._disablePolicy(policy);
+            if (policy.cronTime) {
+              return scheduler.deregisterPolicy(policy);
+            } else if (this.needAppTimeUsageRegister(policy)) {
+              return AppTimeUsageManager.deregisterPolicy(policy);
+            } else {
+              await this.unenforce(policy);
+              await this._disablePolicy(policy);
+            }
             if (policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
               await this.deletePolicy(pid);
             }
