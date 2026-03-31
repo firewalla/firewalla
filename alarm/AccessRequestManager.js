@@ -24,6 +24,7 @@ const cronParser = require('cron-parser');
 const Constants = require('../net2/Constants.js');
 const _ = require('lodash');
 const { rrWithErrHandling } = require('../util/requestWrapper.js')
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const REQUEST_KEY_PREFIX = 'access_request:';
 const CURRENT_LOOKUP_PREFIX = 'access_request:current:';
@@ -399,7 +400,7 @@ class AccessRequestManager {
     const pm2 = new PolicyManager2();
     const Policy = require('./Policy.js');
 
-    const matchingPolicies = await findMatchingTimeLimitRules(req.userId, req.app, { includeNonTimeLimitRules: true, includeDisabled: true });
+    const matchingPolicies = await findMatchingTimeLimitRules(req.userId, req.app, { includeNonTimeLimitRules: true, includeDisabled: false });
     if (matchingPolicies.length === 0) {
       return { ok: false, error: 'No time limit rule found for this user and app' };
     }
@@ -431,8 +432,8 @@ class AccessRequestManager {
         if (policy.shadowPid) {
           // check if the shadow policy is exists
           const shadowPolicy = await pm2.getPolicy(policy.shadowPid);
-          if (shadowPolicy) {
-            continue;
+          if (shadowPolicy && !shadowPolicy.disabled) {
+              continue;
           }
         }
         //build up appTimeUsage object
@@ -472,29 +473,44 @@ class AccessRequestManager {
           au.apps = apps;
         }
         //create a one-time policy to block the app for the duration of the request
-        const oneTimePolicy = Object.assign(Object.create(Policy.prototype), policy);
-        oneTimePolicy.appTimeUsage = au;
-        oneTimePolicy.autoDeleteWhenExpires = "1";
-        oneTimePolicy.parentPid = policy.pid;
-        oneTimePolicy.expire = endOfTodayTs - nowTs;
-        oneTimePolicy.timestamp = nowTs;
-        oneTimePolicy.cronTime = "0 0 * * *";
-        
-        // remove pid and other fields
-        delete oneTimePolicy.pid;
-        delete oneTimePolicy.lastActivatedTime;
-        delete oneTimePolicy.activatedTime;
-        delete oneTimePolicy.updatedTime;
+        const policyRaw = {
+          app_name: policy.app_name,
+          action: "app_block",
+          app_uid: policy.app_uid,
+          type: policy.type,
+          dnsmasq_only: policy.dnsmasq_only,
+          target: policy.target,
+          targets: policy.targets,
+          appTimeUsage: au,
+          autoDeleteWhenExpires: "1",
+          parentPid: policy.pid,
+          expire: endOfTodayTs - nowTs,
+          timestamp: nowTs,
+          cronTime: "0 0 * * *",
+          duration: 86390, // 86390 seconds ~= 1 day, follow the same value as rule create by app.
+          direction: "bidirection",
+          tag: ["userTag:" + req.userId],
+        };
 
+        const oneTimePolicy = new Policy(policyRaw);
         const result = await pm2.checkAndSaveAsync(oneTimePolicy);
-        if (result.alreadyExists == 'duplicated' || result.alreadyExists == 'duplicated_and_updated') {
+        if (result.alreadyExists == 'duplicated') {
           log.info('One-time policy already exists for this user and app', oneTimePolicy.pid);
+        } else if (result.alreadyExists == 'duplicated_and_updated') {
+          log.info('duplicated and updated one-time policy', oneTimePolicy.pid);
+          const p = JSON.parse(JSON.stringify(result.policy))
+          p.updated = true // a kind hacky, but works
+          sem.emitEvent({
+            type: "Policy:Updated",
+            pid: p.pid,
+            toProcess: "FireMain"
+          });
         } else {
           log.info('One-time policy created for this user and app', oneTimePolicy.pid);
         }
 
         //pause this block rule for 1 day
-        await pm2.updatePolicyAsync({ pid: policy.pid, idleTs: endOfTodayTs, shadowPid: oneTimePolicy.pid });
+        await pm2.updatePolicyAsync({ pid: policy.pid, idleTs: endOfTodayTs, disabled: "1", shadowPid: oneTimePolicy.pid });
         const updatedPolicy = await pm2.getPolicy(policy.pid);
         if (updatedPolicy) {
           pm2.tryPolicyEnforcement(updatedPolicy, 'reenforce', oldPolicy);
