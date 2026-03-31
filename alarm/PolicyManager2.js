@@ -1218,14 +1218,9 @@ class PolicyManager2 {
             }
 
             log.info(`Revoke policy ${policy.pid}, since it's expired`)
-            if (policy.cronTime) {
-              return scheduler.deregisterPolicy(policy);
-            } else if (this.needAppTimeUsageRegister(policy)) {
-              return AppTimeUsageManager.deregisterPolicy(policy);
-            } else {
-              await this.unenforce(policy);
-              await this._disablePolicy(policy);
-            }
+            await this.unenforce(policy);
+            await this._disablePolicy(policy);
+
             if (policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
               await this.deletePolicy(pid);
             }
