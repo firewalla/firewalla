@@ -233,16 +233,26 @@ class CategoryUpdater extends CategoryUpdaterBase {
         sem.once('IPTABLES_READY', async () => {
           log.info("iptables is ready");
           await this.refreshCustomizedCategories();
-          setInterval(async () => {
-            await this.refreshAllCategoryRecords()
-          }, 60 * 60 * 1000 * 4) // update records every 4 hours 
-          await this.refreshAllCategoryRecords()
+          setTimeout(async () => {
+            await this.refreshAllCategoryRecords(); // refresh category at the next midnight
+            setInterval(async () => {
+              await this.refreshAllCategoryRecords();
+            }, 24 * 60 * 60 * 1000); // refresh category every 24 hours 
+          }, this.getDelayToMidnight());
+          await this.refreshAllCategoryRecords(); // refresh category immediately after iptables is ready
           this.inited = true;
         });
       }
     }
 
     return instance
+  }
+
+  getDelayToMidnight() {
+    const now = new Date();
+    const next = new Date();
+    next.setHours(24, 0, 0, 0);
+    return next - now; // in milliseconds
   }
 
   async rebuildDomainPatternTrie() {
