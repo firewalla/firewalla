@@ -176,8 +176,12 @@ cat << EOF
 EOF
 
 if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
-  echo '-A FW_PREROUTING_DMZ_HOST -j FR_WIREGUARD'
-  echo '-A FW_PREROUTING_DMZ_HOST -j FR_AMNEZIA_WG'
+  if sudo iptables -w -t nat -L FR_WIREGUARD -n &>/dev/null; then
+    echo '-A FW_PREROUTING_DMZ_HOST -j FR_WIREGUARD'
+  fi
+  if sudo iptables -w -t nat -L FR_AMNEZIA_WG -n &>/dev/null; then
+    echo '-A FW_PREROUTING_DMZ_HOST -j FR_AMNEZIA_WG'
+  fi
 fi
 
 echo 'COMMIT'
