@@ -163,6 +163,30 @@ function getTLSHostSet(tag) {
   return `c_bd_${tag}_tls_hostset`
 }
 
+function getConnSet(tag, ip6 = false) {
+  if (!ip6)
+    return `c_bc_${tag}_set`
+  else
+    return `c_bc_${tag}_set6`
+}
+
+function getConnSet6(tag) {
+  return `c_bc_${tag}_set6`
+}
+
+function getPredefinedConnSet(security, direction, ip6=false) {
+  let dirc = ""
+  if (direction === "inbound") dirc = "ib_"
+  else if (direction === "outbound") dirc = "ob_"
+  
+  const connSet = (security ? 'sec_' : '') + 'block_' + dirc + 'conn_set' + (ip6 ? '6' : '');
+  return connSet;
+}
+
+function getPredefinedConnSet6(security, direction) {
+  return getPredefinedConnSet(security, direction, true);
+}
+
 function getDstSet6(tag) {
   return `c_bd_${tag}_set6`
 }
@@ -219,7 +243,10 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128, n
     const tempStaticDomainPortIpset = categoryUpdater.getTempDomainPortIPSetName(category, true);
     const staticDomainPortIpset6 = categoryUpdater.getDomainPortIPSetNameForIPV6(category, true);
     const tempStaticDomainPortIpset6 = categoryUpdater.getTempDomainPortIPSetNameForIPV6(category, true);
-  
+
+    const connIpset = categoryUpdater.getConnectionIPSetName(category);
+    const connIpset6 = categoryUpdater.getConnectionIPSetNameForIPV6(category);
+
     const aggrIpset = categoryUpdater.getAggrIPSetName(category);
     const aggrIpset6 = categoryUpdater.getAggrIPSetNameForIPV6(category);
     const staticAggrIpset = categoryUpdater.getAggrIPSetName(category, true);
@@ -247,7 +274,10 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128, n
     const cmdCreateStaticDomainPortCategorySet6 = `sudo ipset create -! ${staticDomainPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
     const cmdCreateTempStaticDomainPortCategorySet = `sudo ipset create -! ${tempStaticDomainPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
     const cmdCreateTempStaticDomainPortCategorySet6 = `sudo ipset create -! ${tempStaticDomainPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-  
+
+    const cmdCreateConnectionSet = `sudo ipset create -! ${connIpset} hash:ip,port,ip family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator} timeout 300`
+    const cmdCreateConnectionSet6 = `sudo ipset create -! ${connIpset6} hash:ip,port,ip family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator} timeout 300`
+
     const cmdCreateStaticAggrCategorySet = `sudo ipset create -! ${staticAggrIpset} list:set`
     const cmdCreateStaticAggrCategorySet6 = `sudo ipset create -! ${staticAggrIpset6} list:set`
   
@@ -287,7 +317,10 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128, n
     await exec(cmdCreateStaticDomainPortCategorySet6);
     await exec(cmdCreateTempStaticDomainPortCategorySet);
     await exec(cmdCreateTempStaticDomainPortCategorySet6);
-  
+
+    await exec(cmdCreateConnectionSet);
+    await exec(cmdCreateConnectionSet6);
+
     await exec(cmdCreateAggrCategorySet);
     await exec(cmdCreateAggrCategorySet6); 
   
@@ -358,8 +391,7 @@ function unblock(target, ipset) {
   return setupIpset(target, ipset, true)
 }
 
-// this is used only for user defined target list so there is no need to remove from ipset. The ipset will be reset upon category reload or update.
-function batchBlockNetPort(elements, portObj, ipset, options = {}) {
+async function batchActionNetPort(elements, portObj, ipset, op='add', options = {}) {
   log.debug("Batch block net port of", ipset);
   if (!_.isArray(elements) || elements.length === 0)
     return;
@@ -368,7 +400,6 @@ function batchBlockNetPort(elements, portObj, ipset, options = {}) {
   const gateway6 = sysManager.myDefaultGateway6();
   const gateway = sysManager.myDefaultGateway();
   const cmds = [];
-  const op = 'add';
 
   for (const element of elements) {
     const ipSpliterIndex = element.search(/[/,]/)
@@ -394,6 +425,90 @@ function batchBlockNetPort(elements, portObj, ipset, options = {}) {
         }
       }
     }
+  }
+  log.debug(`Batch setup IP set ${op}`, cmds);
+  return Ipset.batchOp(cmds);
+}
+
+// this is used only for user defined target list so there is no need to remove from ipset. The ipset will be reset upon category reload or update.
+async function batchBlockNetPort(elements, portObj, ipset, options = {}) {
+  return batchActionNetPort(elements, portObj, ipset, 'add', options);
+}
+
+async function batchUnblockNetPort(elements, portObj, ipset, options = {}) {
+  return batchActionNetPort(elements, portObj, ipset, 'del', options);
+}
+
+function isGatewayOrPublicIp(ip) {
+  const gateway6 = sysManager.myDefaultGateway6();
+  const gateway = sysManager.myDefaultGateway();
+  const publicIps = sysManager.getPublicIPs();
+
+  if (ip === gateway || ip === gateway6) {
+    return true;
+  }
+
+  if (publicIps && _.isObject(publicIps)) {
+    for (const [_intf, publicIp] of Object.entries(publicIps)) {
+      if (ip === publicIp) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+
+// no need to remove from ipset, record will be cleared when timeout
+async function batchBlockConnection(elements, ipset, options = {}) {
+  log.debug("Batch block connection of", ipset);
+  if (!_.isArray(elements) || elements.length === 0)
+    return;
+  const v4Set = ipset;
+  const v6Set = ipset + '6';
+  const cmds = [];
+  const op = 'add';
+  for (const element of elements) {
+    let {localAddr, localPorts, remoteAddr, protocol} = element;
+    if (!localAddr || !localPorts || !remoteAddr || !protocol) {
+      continue;
+    }
+
+    if (!_.isArray(localPorts)) {
+      localPorts = [localPorts];
+    }
+
+    //Prevent gateway IP and publicIp from being added into blocking IP set dynamically
+    if (isGatewayOrPublicIp(remoteAddr)) {
+      continue;
+    } 
+    let setName;
+    let cmd;
+    if (new Address4(remoteAddr).isValid() && new Address4(localAddr).isValid()) {
+      setName = v4Set;
+    } else {
+      const local6 = new Address6(localAddr);
+      const remote6 = new Address6(remoteAddr);
+      if (local6.isValid() && local6.correctForm() != '::' && remote6.isValid() && remote6.correctForm() != '::') {
+        setName = v6Set;
+      } else {
+        log.debug("invalid local address or remote address", localAddr, remoteAddr);
+        continue;
+      }
+    }
+
+    for (const localPort of localPorts) {
+      cmd = `${op} ${setName} ${localAddr},${protocol}:${localPort},${remoteAddr}`;
+      if (options.comment) {
+        cmd += ` comment ${options.comment}`;
+      }
+      if (options.timeout != null) {
+        cmd += ` timeout ${options.timeout}`;
+      }
+      cmds.push(cmd);
+    }
+
   }
   log.debug(`Batch setup IP set ${op}`, cmds);
   return Ipset.batchOp(cmds);
@@ -1199,8 +1314,8 @@ async function setupTagsRules(options) {
         break;
       }
       case "snat": {
-        parameters.push({ table: "nat", chain: `FW_PR_SNAT_DEV_G_${subPrio}`, target: `SNAT --to-source ${snatIP}`});
-        parameters.push({ table: "nat", chain: `FW_PR_SNAT_NET_G_${subPrio}`, target: `SNAT --to-source ${snatIP}`});
+        parameters.push({ table: "nat", chain: `FW_PR_SNAT_DEV_G_${subPrio}`, target: `SNAT --to-source ${snatIP}`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "nat", chain: `FW_PR_SNAT_NET_G_${subPrio}`, target: `SNAT --to-source ${snatIP}`, localSet: netSet, localFlagCount: 2 });
         break;
       }
       case "block":
@@ -1551,7 +1666,8 @@ async function prepareOutboundOptions(options) {
   const { pid, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto,
     direction, createOrDestroy = "create", ctstate = null, 
     transferredBytes, transferredPackets, avgPacketBytes,
-    tlsHostSet, tlsHost, upnp, owanUUID, origDst, origDport, dscpClass
+    tlsHostSet, tlsHost, upnp, owanUUID, origDst, origDport, dscpClass,
+    connSet4 = null, connSet6 = null
   } = options;
 
   const remote = {
@@ -1560,6 +1676,11 @@ async function prepareOutboundOptions(options) {
     specs: new Array(remoteTupleCount).fill("dst"),
     positive: remotePositive,
     portSet: remotePortSet,
+  }
+  const conn = {
+    specs: ["src", "src", "dst"],
+    set: connSet4,
+    set6: connSet6
   }
 
   if (owanUUID) {
@@ -1577,7 +1698,9 @@ async function prepareOutboundOptions(options) {
   return {
     direction,
     action: createOrDestroy === 'create' ? '-A' : '-D',
+    isSnat: (options.action && options.action === "snat") || false,
     dst: remote,
+    conn: conn,
     proto, af: 4, comment: `rule_${pid}`, ctstate,
     transferredBytes, transferredPackets, avgPacketBytes,
     tlsHostSet, tlsHost,
@@ -1590,7 +1713,7 @@ function flipSrcDst(options) {
   const tmp = result.src
   result.src = result.dst
   result.dst = tmp;
-  for (const group of ['src', 'dst']) {
+  for (const group of ['src', 'dst', 'conn']) {
     const groupSpecs = result[group].specs;
     for (const index in groupSpecs) {
       if (groupSpecs[index] == 'src')
@@ -1603,15 +1726,15 @@ function flipSrcDst(options) {
 }
 
 function generateV46Rule(ruleOptions) {
-  const { upnp } = ruleOptions;
+  const { upnp, isSnat } = ruleOptions;
   const rules = []
   rules.push({ ...ruleOptions, af: 4 })
-  if (!upnp) rules.push({ ...ruleOptions, af: 6 })
+  if (!upnp && !isSnat) rules.push({ ...ruleOptions, af: 6 })
   return rules
 }
 
 async function generateRules(ruleOptions) {
-  const { direction, trafficDirection, transferredBytes, transferredPackets, avgPacketBytes, dscpClass } = ruleOptions
+  const { direction, trafficDirection, transferredBytes, transferredPackets, avgPacketBytes, dscpClass, isSnat } = ruleOptions
 
   const rules = []
   // log.debug(`generateRules ${JSON.stringify(ruleOptions)}`)
@@ -1622,7 +1745,7 @@ async function generateRules(ruleOptions) {
     ruleOptions.transferDirection = trafficDirection ? (trafficDirection === 'upload' ? 'original' : 'reply') : null
     if (!dscpClass || !trafficDirection || trafficDirection === "upload")
       rules.push(...generateV46Rule({ ...ruleOptions, ctDir: 'ORIGINAL' }))
-    if (!dscpClass || !trafficDirection || trafficDirection === "download")
+    if ((!dscpClass || !trafficDirection || trafficDirection === "download") && !isSnat)
       rules.push(...generateV46Rule(flipSrcDst({ ...ruleOptions, ctDir: 'REPLY' })))
   }
   if (direction === 'bidirection' && trafficDirection && (transferredBytes || transferredPackets || avgPacketBytes)
@@ -1647,11 +1770,13 @@ async function generateRules(ruleOptions) {
 
 async function manipulateFiveTupleRule(options) {
   const { action, src, dst, proto, ctDir, target, chain, table, limit, af = 4, comment, ctstate,
-    transferredBytes, transferredPackets, avgPacketBytes, transferDirection, tlsHostSet, tlsHost, origDst, origDport, dscpClass
+    transferredBytes, transferredPackets, avgPacketBytes, transferDirection, tlsHostSet, tlsHost, origDst, origDport, dscpClass,
+    conn
   } = options;
   // sport and dport can be range string, e.g., 10000-20000
   const rule = new Rule(table).fam(af).chn(chain);
   const srcSet = af == 4 ? src.set : src.set6;
+  const connSet = af == 4 ? conn.set : conn.set6;
   if (srcSet)
     rule.mdl("set", `${src.positive ? "" : "!"} --match-set ${srcSet} ${src.specs.join(",")}`);
   if (src.portSet)
@@ -1659,6 +1784,8 @@ async function manipulateFiveTupleRule(options) {
   const dstSet = af == 4 ? dst.set : dst.set6;
   if (dstSet)
     rule.mdl("set", `${dst.positive ? "" : "!"} --match-set ${dstSet} ${dst.specs.join(",")}`);
+  if (connSet)
+    rule.mdl("set", `--match-set ${connSet} ${conn.specs.join(",")}`);
   if (dst.portSet)
     rule.mdl("set", `--match-set ${dst.portSet} dst`);
   if (src.ifSet)
@@ -1716,6 +1843,8 @@ module.exports = {
   batchBlock,
   batchUnblock,
   batchBlockNetPort,
+  batchUnblockNetPort,
+  batchBlockConnection,
   block,
   unblock,
   setupCategoryEnv,
@@ -1725,6 +1854,10 @@ module.exports = {
   getTLSHostSet,
   getDstSet,
   getDstSet6,
+  getConnSet,
+  getConnSet6,
+  getPredefinedConnSet,
+  getPredefinedConnSet6,
   getMacSet,
   existsBlockingEnv,
   setupTagsRules,

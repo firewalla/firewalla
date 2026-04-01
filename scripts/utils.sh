@@ -15,6 +15,7 @@ function setup_folders() {
     sudo chown -R pi ~/logs/
     mkdir -p ~/.firewalla/run/ovpn_profile
     mkdir -p ~/.firewalla/run/wg_profile
+    mkdir -p ~/.firewalla/run/awg_profile
     mkdir -p ~/.firewalla/run/oc_profile
     mkdir -p ~/.firewalla/run/clash_profile
     mkdir -p ~/.firewalla/run/hysteria_profile

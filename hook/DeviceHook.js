@@ -817,7 +817,7 @@ class DeviceHook extends Hook {
     }
     let vendor = null;
     // fallback to local lookup
-    await withTimeout(WlanVendorInfo.lookupMacVendor(mac), 1000)
+    await withTimeout(WlanVendorInfo.lookupMacVendor(mac), 3000)
       .then(result => vendor = result)
       .catch(err => log.error("Failed to get vendor info for " + mac + " from local lookup", err));
     return vendor;

@@ -124,6 +124,10 @@ class NavyPlatform extends Platform {
     return true;
   }
 
+  isAmneziaWgSupported() {
+    return false;
+  }
+
   getAllowCustomizedProfiles(){
     return 1;
   }
