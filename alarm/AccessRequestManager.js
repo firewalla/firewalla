@@ -85,13 +85,14 @@ function isInSchedule(policy, includeNonTimeLimitRules = false) {
 
   const cronTime = policy.cronTime;
   const duration = policy.duration;
-  if (!cronTime || cronTime.length === 0 || !duration || duration.length === 0) return true;
+  if (!cronTime || !duration) return true;
 
   // check if the policy is in schedule
   const interval = cronParser.parseExpression(cronTime, { tz: sysManager.getTimezone() });
   const lastTriggerTime = interval.prev().getTime() / 1000;
+  const lastTriggerEndTime = lastTriggerTime + parseFloat(duration);
 
-  if (lastTriggerTime <= now && now < lastTriggerTime + duration) return true;
+  if (lastTriggerTime <= now && now < lastTriggerEndTime) return true;
   return false;
 }
 
