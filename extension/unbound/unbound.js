@@ -96,7 +96,9 @@ class Unbound {
     // update fw markkey
     const vpnClientConfig = unboundConfig.vpnClient
     if (vpnClientConfig && vpnClientConfig.state && vpnClientConfig.profileId) {
-      const markKey = vpnClientConfig.profileId.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX) ? VirtWanGroup.getRouteMarkKey(vpnClientConfig.profileId.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length)) : VPNClient.getRouteMarkKey(vpnClientConfig.profileId);
+      const markKey = vpnClientConfig.profileId.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX) 
+        ? VirtWanGroup.getRouteMarkKey(vpnClientConfig.profileId.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length))
+        : VPNClient.getRouteMarkKey(vpnClientConfig.profileId);
       log.info("Set markkey to", markKey);
       await rclient.setAsync(UNBOUND_FWMARK_KEY, markKey);
     } else {

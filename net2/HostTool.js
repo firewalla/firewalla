@@ -54,8 +54,7 @@ class HostTool {
       })
 
       if (f.isMain()) {
-        const Nmap = require('../net2/Nmap.js');
-        this.nmap = new Nmap();
+        this.nmap = require('../net2/Nmap.js');
       }
     }
     return instance;

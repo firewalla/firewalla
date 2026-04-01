@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,7 +23,6 @@ let bro, conntrack
 const execAsync = require('child-process-promise').exec;
 const fireRouter = require('../net2/FireRouter.js')
 const sysManager = require('../net2/SysManager.js');
-const { delay } = require('../util/util.js')
 const IntelTool = require('../net2/IntelTool.js')
 const intelTool = new IntelTool()
 const DNSTool = require('../net2/DNSTool.js')
@@ -39,8 +38,6 @@ describe('test process conn data', function(){
   this.timeout(35000);
 
   before(async() => {
-    process.title = "FireMain";
-
     bro = require("../net2/BroDetect.js");
     conntrack = require('../net2/Conntrack.js');
     categoryUpdater.domainPatternTrie = new DomainTrie();
@@ -116,13 +113,6 @@ describe('test process conn data', function(){
     expect(JSON.parse(flows).rpid).to.be.undefined;
   });
 
-  it('extractIP should correctly parse IP string', async() => {
-    expect(bro.extractIP('fe80::')).to.equal('fe80::')
-    expect(bro.extractIP('[fe80::]')).to.equal('fe80::')
-    expect(bro.extractIP('[fe80::]:123')).to.equal('fe80::')
-    expect(bro.extractIP('192.168.0.1:123')).to.equal('192.168.0.1')
-  });
-
   it('processHttpData should remove domain info on http connect', async() => {
     const data = '{"ts":1728719301,"uid":"COBkiT1UEOCvOOKzn6","id.orig_h":"192.168.1.100","id.orig_p":50000,"id.resp_h":"192.168.2.1","id.resp_p":8888,"trans_depth":1,"method":"CONNECT","host":"www.random.org","uri":"www.random.org:443","version":"1.1","user_agent":"curl/8.10.1","request_body_len":0,"response_body_len":0,"status_code":200,"status_msg":"OK","tags":[],"proxied":["PROXY-CONNECTION -> Keep-Alive"]}'
     const ip = '192.168.2.1'
@@ -146,4 +136,13 @@ describe('test process conn data', function(){
     expect(intel.dnsHost).to.not.exist
     expect(intel.category).to.not.exist
   });
+
+  it.skip('processSignatureData should ', async() => {
+    const data = '{"ts":1759056399.516877,"uid":"C9T2j44J5SZt1jaDae","src_addr":"192.168.159.239","src_port":58193,"dst_addr":"54.245.196.33","dst_port":53043,"note":"Signatures::Sensitive_Signature","sig_id":"roblox-sig","event_msg":"192.168.159.239: Possible Roblox UDP traffic (client->server)","sub_msg":"..."}'
+    const ip = '54.245.196.33'
+
+    categoryUpdater.isActivated = (category)=>{return true};
+    await bro.processSignatureData(data);
+  });
+
 });

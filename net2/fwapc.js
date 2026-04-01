@@ -246,6 +246,7 @@ class FWAPC {
       headers: {
         "Accept": "application/json"
       },
+      timeout: 5000,
       url: fwapcInterface + path,
       json: true
     };

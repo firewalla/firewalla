@@ -135,7 +135,6 @@ class EventQueue {
             // graceful close in 3000ms
             await this.queue.close(3000, () => {
                 log.info(`event queue ${this.name} closed successfully`);
-                if (this.queue) this.queue.destroy(); // cleanup queue data
             });
         } catch (err) {
             log.error(`event queue ${this.name} failed to close, ${err.message}`);

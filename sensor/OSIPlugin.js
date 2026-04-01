@@ -179,6 +179,7 @@ class OSIPlugin extends Sensor {
           // no tag of network profile yet
           break;
         }
+        case "AWGPeer": 
         case "WGPeer": {
           const tags = (event.tags || []).map(String);
           if (_.isEmpty(tags)) {
@@ -269,6 +270,7 @@ class OSIPlugin extends Sensor {
             }
             break;
           }
+          case "AWGPeer": 
           case "WGPeer": {
             const activeItems = await rclient.smembersAsync(OSI_KEY);
             for (const item of activeItems) {
