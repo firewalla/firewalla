@@ -158,6 +158,7 @@ class BroDetect {
     this.proxyConn = new LRU({max: PROXY_CONN_SIZE, maxAge: 60 * 1000});
     this.dnsCache = new LRU({max: DNS_CACHE_SIZE, maxAge: 3600 * 1000});
     this.bridgeLocalFlow = new LRU({max: 1000, maxAge: 10 * 1000});
+    this.oIntfCache = new LRU({max: 1000, maxAge: 10 * 1000}); // for rate limited A=C log
     this.dnsCount = 0
     this.dnsHit = 0
     this.dnsMatch = 0
@@ -1305,6 +1306,10 @@ class BroDetect {
         ltype: localType
       };
 
+      // id.orig_p can be an array in local flow
+      if (obj['id.orig_p']) tmpspec.sp = _.isArray(obj['id.orig_p']) ? obj['id.orig_p'] : [obj['id.orig_p']];
+      if (obj['id.resp_p']) tmpspec.dp = obj['id.resp_p'];
+
       // uids is only used to correlate with uri in http.log
       if (obj.service === "http")
         tmpspec.uids = [obj.uid];
@@ -1315,7 +1320,15 @@ class BroDetect {
         if (dstRealLocal)
           tmpspec.drl = extractIP(dstRealLocal)
       } else {
-        tmpspec.oIntf = outIntfId // egress intf id
+        if (outIntfId) {
+          tmpspec.oIntf = outIntfId // egress intf id
+          if (tmpspec.pr == 'tcp')
+            this.oIntfCache.set(`${tmpspec.sh}:${tmpspec.dh}:${tmpspec.dp}`, outIntfId);
+        } else if (tmpspec.pr == 'tcp') {
+          const oIntf = this.oIntfCache.get(`${tmpspec.sh}:${tmpspec.dh}:${tmpspec.dp}`);
+          if (oIntf)
+            tmpspec.oIntf = oIntf;
+        }
       }
 
       if (connEntry && connEntry.apid && Number(connEntry.apid)) {
@@ -1339,10 +1352,6 @@ class BroDetect {
         tmpspec.guid = IdentityManager.getGUID(monitorable);
       if (realLocal)
         tmpspec.rl = extractIP(realLocal);
-
-      // id.orig_p can be an array in local flow
-      if (obj['id.orig_p']) tmpspec.sp = _.isArray(obj['id.orig_p']) ? obj['id.orig_p'] : [obj['id.orig_p']];
-      if (obj['id.resp_p']) tmpspec.dp = obj['id.resp_p'];
 
       // might be blocked UDP packets, checking conntrack
       // blocked connections don't leave a trace in conntrack
