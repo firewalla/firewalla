@@ -76,7 +76,6 @@ class ACLAuditLogPlugin extends Sensor {
     this.buffer = {}
     this.touchedKeys = {'audit:drop:system': 1, 'audit:accept:system': 1, 'audit:local:drop:system': 1};
     this.incTs = 0;
-    this.udpBlocks = new LRU({max: 1000, maxAge: 300 * 1000});
   }
 
   hookFeature() {
@@ -327,14 +326,10 @@ class ACLAuditLogPlugin extends Sensor {
       } else if (record.ac == 'block' && record.type == 'ip' && record.pr == 'udp') {
         // blocked UDP flow is always caught by zeek, it extends expiration of conn:udp: on existing connection
         // delete it here to make sure following zeek logs are not recoreded
-        const cacheKey = `${src}:${sport}:${dst}:${dport}`;
-        if (!this.udpBlocks.get(cacheKey)) {
-          await rclient.unlinkAsync([
-            conntrack.getKey(src, sport, dst, dport, 'udp'),
-            conntrack.getKey(dst, dport, src, sport, 'udp'),
-          ])
-          this.udpBlocks.set(cacheKey, true);
-        }
+        await rclient.unlinkAsync([
+          conntrack.getKey(src, sport, dst, dport, 'udp'),
+          conntrack.getKey(dst, dport, src, sport, 'udp'),
+        ])
       }
 
     }
