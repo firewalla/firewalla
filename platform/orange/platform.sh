@@ -142,27 +142,3 @@ function led_boot_state() {
 function restart_bluetooth_service() {
   sudo systemctl restart rtk-hciuart.service
 }
-
-function platform_wise_cron_1min {
-  local speed_path=/sys/class/net/eth1/speed
-  [[ -r "$speed_path" ]] || return 0
-
-  local speed
-  speed=$(tr -d '\n' <"$speed_path" 2>/dev/null)
-
-  local gbe_file
-  gbe_file=$(find /sys/bus/mdio_bus/devices/mdio-bus\:*/ -name gbe_min_ipg_11B 2>/dev/null | head -1)
-  [[ -n "$gbe_file" ]] || return 0
-
-  local cur want=0
-  if [[ -r "$gbe_file" ]]; then
-    cur=$(tr -d '\n' <"$gbe_file" 2>/dev/null)
-  else
-    cur=$(sudo cat "$gbe_file" 2>/dev/null | tr -d '\n')
-  fi
-  [[ "$speed" == "1000" ]] && want=1
-  [[ "$cur" == "$want" ]] && return 0
-  logger "platform_wise_cron_1min: gbe_min_ipg_11B cur=$cur want=$want eth1_speed=$speed file=$gbe_file"
-  echo "$want" | sudo tee "$gbe_file" >/dev/null
-  return 0
-}
