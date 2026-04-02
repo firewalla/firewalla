@@ -1174,6 +1174,15 @@ class FireRouter {
       json: true,
       body: config
     };
+    
+    // check if only apc config changes
+    const currentConfigWithoutAPC = _.omit(routerConfig, ['apc']);
+    const newConfigWithoutAPC = _.omit(config, ['apc']);
+    let isOnlyAPCConfigChanged = false;
+    if (_.isEqual(currentConfigWithoutAPC, newConfigWithoutAPC)) {
+      log.info("Only apc config changes, will not send MSG_NETWORK_CHANGED event");
+      isOnlyAPCConfigChanged = true;
+    }
 
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
@@ -1199,7 +1208,9 @@ class FireRouter {
     // do not call this.init in setConfig, make this function pure
     // await this.init()
     // init of FireRouter should be triggered by published message
-    await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");
+    if (!isOnlyAPCConfigChanged) {
+      await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");
+    }
     if (f.isApi()) {
       // reload config from lower layer to reflect change immediately in FireAPI
       routerConfig = await getConfig();
