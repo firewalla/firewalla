@@ -117,6 +117,10 @@ function get_tls_ko_path {
   echo $ko_path
 }
 
+function platform_wise_cron_1min {
+  return 0
+}
+
 case "$UNAME" in
   "x86_64")
     if [[ -e /etc/firewalla-release ]]; then
