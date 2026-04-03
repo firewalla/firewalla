@@ -85,18 +85,20 @@ class IpsetControl extends ModuleControl {
     this.existingSets = fromInitialization ? new Set() : previousSets;
     const swapSets = new Set();
     const restoreFile = this._getIpsetRestoreFile();
+    const ops = []
+    const leftoverSwpSets = [];
 
     if (fromInitialization) {
       await fsp.writeFile(restoreFile + '.prev', Array.from(previousSets).join('\n') + '\n', 'utf8');
       await fsp.writeFile(restoreFile + '.queue', queuedOps.join('\n') + '\n', 'utf8');
-    }
 
-    // clean leftover _swp sets
-    const leftoverSwpSets = Array.from(previousSets).filter(setName => setName.includes('_swp'));
-    const ops = leftoverSwpSets.map(setName => `flush ${setName}`)
-      .concat(leftoverSwpSets.map(setName => `destroy ${setName}`));
-    if (leftoverSwpSets.length)
-      log.verbose('leftover _swp sets', leftoverSwpSets);
+      // clean leftover _swp sets
+      leftoverSwpSets.push(...Array.from(previousSets).filter(setName => setName.includes('_swp')));
+      ops.push(...leftoverSwpSets.map(setName => `flush ${setName}`))
+      ops.push(...leftoverSwpSets.map(setName => `destroy ${setName}`));
+      if (leftoverSwpSets.length)
+        log.verbose('leftover _swp sets', leftoverSwpSets);
+    }
 
     queuedOps.forEach(line => {
       let [ op, setName, newName ] = line.split(' ');
@@ -218,8 +220,8 @@ class IpsetControl extends ModuleControl {
         const errorLine = this._parseErrorLine(err.stderr);
         if (errorLine !== null && errorLine > 0 && errorLine <= remaining.length) {
           const failedLine = remaining[errorLine - 1];
-          const infoOrError = (errorLine > leftoverSwpSets.length * 2 && failedLine.startsWith('destroy ') ? log.info : log.error)
-          infoOrError(`ipset restore failed at line ${errorLine}: ${failedLine}`);
+          const logLevel = (errorLine > leftoverSwpSets.length * 2 && failedLine.startsWith('destroy ') ? log.info : log.error)
+          logLevel(`ipset restore failed at line ${errorLine}: ${failedLine}`);
           remaining = remaining.slice(errorLine);
           retryCount++;
         } else {
