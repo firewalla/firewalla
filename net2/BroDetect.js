@@ -885,7 +885,7 @@ class BroDetect {
         return;
       }
 
-      if (obj.service && obj.service == "dns" || resp_p == 53 || orig_p == 53) {
+      if (obj.service && obj.service == "dns" || [53, 5353].includes(resp_p) || [53, 5353].includes(orig_p)) {
         return;
       }
 
