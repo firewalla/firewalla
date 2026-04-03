@@ -881,36 +881,35 @@ class Host extends Monitorable {
     return this.o.dtype
   }
 
-  packageTopNeighbors(count, callback) {
-    let nkey = "neighbor:"+this.o.mac;
-    rclient.hgetall(nkey,(err,neighbors)=> {
-      if (neighbors) {
-        let neighborArray = [];
-        for (let i in neighbors) {
-          try {
-            let obj = JSON.parse(neighbors[i]);
-            obj['ip'] = i;
-            neighborArray.push(obj);
-            count--;
-          } catch (e) {
-            log.warn('parse neighbor data error', neighbors[i], nkey);
-          }
-        }
-        neighborArray.sort(function (a, b) {
-          return Number(b.count) - Number(a.count);
-        })
-        callback(err, neighborArray.slice(0,count));
-      } else {
-        callback(err, null);
-      }
-    });
+  async packageTopNeighbors(count, local = false) {
+    const nkey = this.getNeighborKey(local);
+    const neighbors = await rclient.hgetallAsync(nkey);
 
+    if (!neighbors) return null;
+
+    let neighborArray = [];
+    for (let i in neighbors) {
+      try {
+        let obj = JSON.parse(neighbors[i]);
+        if (local)
+          obj.dmac = i;
+        else
+          obj.ip = i;
+        neighborArray.push(obj);
+      } catch (e) {
+        log.warn('parse neighbor data error', neighbors[i], nkey);
+      }
+    }
+    neighborArray.sort(function (a, b) {
+      return Number(b.count) - Number(a.count);
+    });
+    return neighborArray.slice(0, count);
   }
 
   //'17.249.9.246': '{"neighbor":"17.249.9.246","cts":1481259330.564,"ts":1482050353.467,"count":348,"rb":1816075,"ob":1307870,"du":10285.943863000004,"name":"api-glb-sjc.smoot.apple.com"}
 
 
-  hashNeighbors(neighbors) {
+  hashNeighbors(neighbors, local = false) {
     let _neighbors = JSON.parse(JSON.stringify(neighbors));
     let debug =  sysManager.isSystemDebugOn() || !f.isProduction();
     for (let i in _neighbors) {
@@ -922,10 +921,13 @@ class Host extends Monitorable {
         if (hashes.length)
           neighbor._nameFull = hashes[hashes.length-1][2]
       }
+      if (neighbor.dmac)
+        neighbor._dmac = flowUtil.hashMac(neighbor.dmac);
       if (debug == false) {
         delete neighbor.neighbor;
         delete neighbor.name;
         delete neighbor.ip;
+        delete neighbor.dmac;
       }
     }
 
@@ -977,9 +979,13 @@ class Host extends Monitorable {
       obj.flowInCount = await rclient.zcountAsync("flow:conn:in:" + this.o.mac, "-inf", "+inf");
       obj.flowOutCount = await rclient.zcountAsync("flow:conn:out:" + this.o.mac, "-inf", "+inf");
 
-      let neighbors = await util.promisify(this.packageTopNeighbors).bind(this)(60)
+      let neighbors = await this.packageTopNeighbors(60)
       if (neighbors) {
         obj.neighbors = this.hashNeighbors(neighbors);
+      }
+      let neighborsLocal = await this.packageTopNeighbors(60, true);
+      if (neighborsLocal) {
+        obj.neighborsLocal = this.hashNeighbors(neighborsLocal, true);
       }
       // old data clean sensor should have cleaned most of obsolated entries
       const results = await rclient.zrangeAsync(`host:user_agent2:${this.o.mac}`, 0, -1)

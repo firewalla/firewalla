@@ -1220,11 +1220,13 @@ class netBot extends ControllerBot {
         const flows = await this.hostManager.loadStats({}, msg.target, count);
         return { flows: flows };
       }
-      case "neighbors": {
+      case "neighbors":
+      case "neighborsLocal": {
         if (!msg.target) {
           throw new Error('Invalid target')
         }
-        const neighbors = await rclient.hgetallAsync(`neighbor:${msg.target}`)
+        const redisKey = (msg.data.item === "neighborsLocal" ? `neigh:local:` : `neighbor:`) + msg.target;
+        const neighbors = await rclient.hgetallAsync(redisKey);
         for (const ip in neighbors) try {
           neighbors[ip] = JSON.parse(neighbors[ip])
         } catch(err) {

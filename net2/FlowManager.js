@@ -355,7 +355,7 @@ module.exports = class FlowManager {
   async summarizeConnections(mac, direction, end, start) {
     let sorted = [];
     try {
-      const key = "flow:conn:" + direction + ":" + mac;
+      const key = direction == 'local' ? `flow:local:${mac}` : `flow:conn:${direction}:${mac}`
       const result = await rclient.zrevrangebyscoreAsync([key, end, start, "LIMIT", 0, QUERY_MAX_FLOW]);
       let conndb = {};
 

@@ -38,8 +38,8 @@ const { timeout } = require('../util/asyncNative.js')
 // api/main/monitor all depends on sysManager configuration
 const sysManager = require('../net2/SysManager.js');
 
-const tick = 60 * 15; // waking up every 15 min
-const monitorWindow = 60 * 60 * 4; // 4 hours window
+const tick = fc.getConfig().timing['monitor.tick'] || 60 * 15; // waking up every 15 min
+const monitorWindow = fc.getConfig().timing['monitor.window'] || 60 * 60 * 4; // 4 hours window
 
 const FlowMonitor = require('./FlowMonitor.js');
 const flowMonitor = new FlowMonitor(tick, monitorWindow);
