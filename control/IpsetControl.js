@@ -218,7 +218,8 @@ class IpsetControl extends ModuleControl {
         const errorLine = this._parseErrorLine(err.stderr);
         if (errorLine !== null && errorLine > 0 && errorLine <= remaining.length) {
           const failedLine = remaining[errorLine - 1];
-          log.error(`ipset restore failed at line ${errorLine}: ${failedLine}`);
+          const infoOrError = (errorLine > leftoverSwpSets.length * 2 && failedLine.startsWith('destroy ') ? log.info : log.error)
+          infoOrError(`ipset restore failed at line ${errorLine}: ${failedLine}`);
           remaining = remaining.slice(errorLine);
           retryCount++;
         } else {
