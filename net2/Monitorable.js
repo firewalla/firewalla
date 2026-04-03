@@ -202,6 +202,10 @@ class Monitorable {
 
   getMetaKey() { throw new Error('Not Implemented') }
 
+  getNeighborKey(local = false) {
+    return (local ? "neigh:local:" : "neighbor:") + this.getGUID();
+  }
+
   static getClassName() { return this.name }
 
   getReadableName() {
