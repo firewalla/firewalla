@@ -28,6 +28,7 @@ try { moment.tz.load(require('../../vendor_lib/moment-tz-data.json')); } catch (
 
 const TagManager = require('../../net2/TagManager.js');
 const firewalla = require('../../net2/Firewalla.js');
+const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
 const fs = require('fs');
 const Mustache = require('mustache');
@@ -249,22 +250,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.post('/request-more', (req, res) => {
-  const { app, appDisplayName } = req.body || {};
-  if (!app) {
-    res.status(400).json({ error: 'app is required' });
-    return;
-  }
-  const data = { app, appDisplayName: appDisplayName || app };
-  const requestMorePath = path.join(CLOUD_VIEW_ASSETS_PATH, 'request_more.mustache');
-  if (fs.existsSync(requestMorePath)) {
-    const template = fs.readFileSync(requestMorePath, 'utf8');
-    const rendered = Mustache.render(template, data);
-    res.send(rendered);
-    return;
-  }
-  res.render('request_more', data);
-});
 
 // ---------- Access requests (user: create, list mine; admin: list all, approve, deny) ----------
 
@@ -312,6 +297,25 @@ router.post('/requests', async (req, res) => {
       reason: reason || null
     });
 
+    const userTag = TagManager.getTagByUid(userId);
+    const userName = userTag ? userTag.getTagName() : userId;
+    let appDisplayName = app;
+    if (app == "internet") {
+      appDisplayName = "Internet"
+    } else if(!app.match(/policy:(\d+)/)) {
+      const supportedApps = await accessRequestManager.getSupportedApps();
+      //get app displayName from supportedApps array
+      for (const appInfo of supportedApps) {
+        if (appInfo.app == app) {
+          appDisplayName = appInfo.displayName;
+          break;
+        }
+      }
+    }
+
+    let titleKey = 'NOTIF_TIME_LIMITS_NEW_REQUEST_TITLE';
+    let bodyKey = 'NOTIF_TIME_LIMITS_NEW_REQUEST_BODY';
+    let bodyLocalArgs = [userName, reqQuota, appDisplayName];
 
     if (extraTimeLimitPolicy && extraTimeLimitPolicy.mode === Constants.POLICY_EXTRA_TIME_LIMIT_MODE_AUTO && app == "internet") {
       const autoApproveQuota = Number(extraTimeLimitPolicy.autoApproveLimit) || 0;
@@ -337,8 +341,30 @@ router.post('/requests', async (req, res) => {
           return;
         }
         log.info(`Auto approve extra time request for userId:${userId} on app:${app}, aprroved quota:${actualApproveQuota}`);
+
+        titleKey = 'NOTIF_TIME_LIMITS_AUTO_APPROVED_TITLE';
+        bodyKey = 'NOTIF_TIME_LIMITS_AUTO_APPROVED_BODY';
+        bodyLocalArgs = [userName, actualApproveQuota, appDisplayName];
       }
     }
+
+    const requestInfo = await accessRequestManager.getRequest(request.requestId);
+    if (!requestInfo) {
+      res.status(500).json({ error: 'Internal server error', message: 'Request not found' });
+      return;
+    }
+
+    // send notification
+    sem.sendEventToFireApi({
+      type: 'FW_NOTIFICATION',
+      titleKey: titleKey,
+      titleLocalKey: titleKey,
+      bodyKey: bodyKey,
+      bodyLocalKey: bodyKey,
+      bodyLocalArgs: bodyLocalArgs,
+      payload: { requestInfo: requestInfo },
+      category: Constants.NOTIF_CATEGORY_TIME_LIMITS
+    });
 
     res.status(200).json(request);
   } catch (err) {

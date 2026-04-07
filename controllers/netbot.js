@@ -534,6 +534,10 @@ class netBot extends ControllerBot {
       if (category)
         data.category = category;
 
+      if (payload) {
+        Object.assign(data, payload);
+      }
+
       this.tx2(this.primarygid, "", notifyMsg, data);
     });
 
