@@ -1180,15 +1180,16 @@ class PolicyManager2 {
         // this is a disturb policy, use DisturbManager to manage it
         return PolicyDisturbManager.registerPolicy(policy);
       } else if (policy.expire) {
+        const p = Object.assign(Object.create(Policy.prototype), policy);
+        delete p.expire;
+
         // auto unenforce if expire time is set
         if (policy.willExpireSoon()) {
           // skip enforce as it's already expired or expiring
           await delay(policy.getExpireDiffFromNow() * 1000);
 
-          if (policy.cronTime) {
-            return scheduler.deregisterPolicy(policy);
-          } else if (this.needAppTimeUsageRegister(policy)) {
-            return AppTimeUsageManager.deregisterPolicy(policy);
+          if (this.needAppTimeUsageRegister(policy)) {
+            await AppTimeUsageManager.deregisterPolicy(p);
           } else {
             await this._disablePolicy(policy);
           }
@@ -1197,10 +1198,8 @@ class PolicyManager2 {
           }
           log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
         } else {
-          if (policy.cronTime) {
-            return scheduler.registerPolicy(policy);
-          } else if (this.needAppTimeUsageRegister(policy)) {
-            return AppTimeUsageManager.registerPolicy(policy);
+          if (this.needAppTimeUsageRegister(policy)) {
+            await AppTimeUsageManager.registerPolicy(p);
           } else {
             await this._enforce(policy);
             this.notifyPolicyActivated(policy);

@@ -487,8 +487,6 @@ class AccessRequestManager {
           parentPid: policy.pid,
           expire: endOfTodayTs - nowTs,
           timestamp: nowTs,
-          cronTime: "0 0 * * *",
-          duration: 86390, // 86390 seconds ~= 1 day, follow the same value as rule create by app.
           direction: "bidirection",
           tag: ["userTag:" + req.userId],
         };
