@@ -906,9 +906,11 @@ module.exports = class FlowMonitor {
       alarm['p.security.tags'] = intelObj.tags;
     }
 
-    log.info(`Cyber alarm for domain '${domain}' has been generated`, alarm);
+    log.debug(`Cyber alarm for domain '${domain}' is generating...`, alarm);
 
     try {
+      alarmManager2.applyConfig(alarm, []);
+      log.info(`Cyber alarm for domain '${domain}' has been generated`, alarm);
       await alarmManager2.checkAndSaveAsync(alarm);
     } catch (err) {
       if (err.code === 'ERR_DUP_ALARM' || err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY' || err.code === 'ERR_COVERED_BY_EXCEPTION') {
