@@ -69,7 +69,7 @@ class GoldProPlatform extends Platform {
   }
 
   getGCMemoryForMain() {
-    return 200;
+    return 350;
   }
 
   getLSBCodeName() {
