@@ -313,11 +313,12 @@ router.post('/requests', async (req, res) => {
     });
 
 
-    if (extraTimeLimitPolicy && extraTimeLimitPolicy.mode === Constants.POLICY_EXTRA_TIME_LIMIT_MODE_AUTO) {
+    if (extraTimeLimitPolicy && extraTimeLimitPolicy.mode === Constants.POLICY_EXTRA_TIME_LIMIT_MODE_AUTO && app == "internet") {
       const autoApproveQuota = Number(extraTimeLimitPolicy.autoApproveLimit) || 0;
       // already approved quota
       let archivedRequests = await accessRequestManager.listRequestsByUserIds(userId, {
-        state: new Set([STATE_APPROVED])
+        state: new Set([STATE_APPROVED]),
+        app: new Set([app])
       });
       const tz = sysManager.getTimezone() || 'UTC';
       const startOfDay = moment.tz ? moment().tz(tz).startOf('day').unix() : moment().startOf('day').unix();
@@ -335,6 +336,7 @@ router.post('/requests', async (req, res) => {
           res.status(500).json({ error: 'Internal server error', message: result.error });
           return;
         }
+        log.info(`Auto approve extra time request for userId:${userId} on app:${app}, aprroved quota:${actualApproveQuota}`);
       }
     }
 
