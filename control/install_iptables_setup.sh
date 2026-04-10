@@ -173,6 +173,8 @@ cat << EOF
 # redirect blue hole ip 80/443 port to localhost
 -A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 80 -j REDIRECT --to-ports 8880
 -A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 443 -j REDIRECT --to-ports 8883
+# redirect local http request to port 8833
+-A FW_PREROUTING -p tcp -m tcp --dport 80 -m set --match-set monitored_net_set src,src -m addrtype --dst-type LOCAL  -j REDIRECT --to-ports 8833
 EOF
 
 if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
@@ -230,6 +232,8 @@ cat << EOF
 -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT
 # traverse DNS fallback chain if default chain is not taken
 -A FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK
+# redirect local http request to port 8833
+-A FW_PREROUTING -p tcp -m tcp --dport 80 -m set --match-set monitored_net_set src,src -m addrtype --dst-type LOCAL  -j REDIRECT --to-ports 8833
 
 COMMIT
 EOF
