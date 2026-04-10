@@ -89,9 +89,6 @@ class IpsetControl extends ModuleControl {
     const leftoverSwpSets = [];
 
     if (fromInitialization) {
-      await fsp.writeFile(restoreFile + '.prev', Array.from(previousSets).join('\n') + '\n', 'utf8');
-      await fsp.writeFile(restoreFile + '.queue', queuedOps.join('\n') + '\n', 'utf8');
-
       // clean leftover _swp sets
       leftoverSwpSets.push(...Array.from(previousSets).filter(setName => setName.includes('_swp')));
       ops.push(...leftoverSwpSets.map(setName => `flush ${setName}`))
@@ -199,9 +196,10 @@ class IpsetControl extends ModuleControl {
     let retryCount = 0;
     const MAX_RETRIES = 10;
     if (fromInitialization) {
-      await fsp.writeFile(restoreFile + '.orig', remaining.join('\n') + '\n', 'utf8');
+      await fsp.writeFile(restoreFile + '.init', remaining.join('\n') + '\n', 'utf8');
     }
 
+    let logLevel
     while (remaining.length > 0 && retryCount < MAX_RETRIES) {
       const content = remaining.join('\n') + '\n';
       await fsp.writeFile(restoreFile, content, 'utf8');
@@ -217,10 +215,17 @@ class IpsetControl extends ModuleControl {
         log.verbose(`ipset restore completed ${remaining.length} operations successfully`);
         break;
       } catch (err) {
+        // copy the ipset file as ipset.error
+        if (retryCount == 0)
+          await fsp.copyFile(restoreFile, restoreFile + '.err').catch(copyErr => {
+            log.error(`Failed to copy ipset restore file to ${restoreFile}.err:`, copyErr);
+          })
+
         const errorLine = this._parseErrorLine(err.stderr);
         if (errorLine !== null && errorLine > 0 && errorLine <= remaining.length) {
           const failedLine = remaining[errorLine - 1];
-          const logLevel = (errorLine > leftoverSwpSets.length * 2 && failedLine.startsWith('destroy ') ? log.info : log.error)
+          if (!logLevel)
+            logLevel = (errorLine > leftoverSwpSets.length * 2 && failedLine.startsWith('destroy ') ? log.info : log.error)
           logLevel(`ipset restore failed at line ${errorLine}: ${failedLine}`);
           remaining = remaining.slice(errorLine);
           retryCount++;
@@ -233,7 +238,7 @@ class IpsetControl extends ModuleControl {
     }
 
     if (retryCount >= MAX_RETRIES && remaining.length > 0) {
-      log.error(`Max retries (${MAX_RETRIES}) reached, skipping ${remaining.length} remaining operations`);
+      (logLevel || log.error)(`Max retries (${MAX_RETRIES}) reached, skipping ${remaining.length} remaining operations`);
     }
   }
 

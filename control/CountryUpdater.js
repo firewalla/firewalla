@@ -155,7 +155,8 @@ class CountryUpdater extends CategoryUpdaterBase {
       const countFile = file + '.count'
       const entriesCount = Number(await fsp.readFile(countFile))
       const setMeta = await Ipset.read(ipsetName, true)
-      if (entriesCount > Number(_.get(setMeta, 'header.maxelem'))) {
+      const maxelem = Number(_.get(setMeta, 'header.maxelem'))
+      if (Number.isNaN(maxelem) || entriesCount > maxelem) {
         await this.rebuildIpset(category, ip6, Object.assign({count: entriesCount}, options))
       }
     } catch(err) {

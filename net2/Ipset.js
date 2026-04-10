@@ -41,7 +41,7 @@ async function read(setName, metaOnly = false) {
     if (Array.isArray(jsonResult))
       return jsonResult
     else if (_.isEmpty(jsonResult)) {
-      log.warn('Read: empty response', result.stderr)
+      log.warn('Read: empty response', setName, result.stderr)
       if (setName) return null
       else return []
     } else if (setName) return jsonResult
