@@ -1274,15 +1274,16 @@ class PolicyManager2 {
 
   // this is the real execution of enable and disable policy
   async _enablePolicy(policy) {
-    const now = new Date() / 1000
+    // remove activated time here, it will be refreshed when the rule is taking effect in _enforce,
+    // some rules won't take effect immediately after being resumed, e.g., scheduled rule, time limit rule
     await this.updatePolicyAsync({
       pid: policy.pid,
       disabled: 0,
-      activatedTime: now,
+      activatedTime: "",
       idleTs: ''
     })
     policy.disabled = 0
-    policy.activatedTime = now
+    policy.activatedTime = ""
     log.info(`Policy ${policy.pid} is enabled`)
     return policy
   }
