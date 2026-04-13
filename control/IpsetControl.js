@@ -34,8 +34,8 @@ class IpsetControl extends ModuleControl {
     this.existingSets = new Set(); // maintain a set of existing ipset set names to filter out invalid operations
   }
 
-  _getIpsetRestoreFile() {
-    return path.join(f.getHiddenFolder(), 'run', 'iptables', 'ipset');
+  getIpsetRestoreFile(script = false) {
+    return path.join(f.getHiddenFolder(), 'run', 'iptables', 'ipset' + (script ? '.script' : ''));
   }
 
   /** Replace first occurrence of setName with newName in line (for ipset restore lines). */
@@ -84,7 +84,7 @@ class IpsetControl extends ModuleControl {
     const previousSets = await this.listExistingSets();
     this.existingSets = fromInitialization ? new Set() : previousSets;
     const swapSets = new Set();
-    const restoreFile = this._getIpsetRestoreFile();
+    const restoreFile = this.getIpsetRestoreFile();
     const ops = []
     const leftoverSwpSets = [];
 
@@ -164,7 +164,8 @@ class IpsetControl extends ModuleControl {
           const swapSetName = this.getSwapSetName(setName);
           ops.push(`swap ${setName} ${swapSetName}`);
           ops.push(`flush ${swapSetName}`);
-        } else if (setName.startsWith('c_')) {
+        } else if (setName.startsWith('c_') && !setName.includes('_swp')) {
+          // _swp sets are already handled by leftover cleanup above; skip to avoid duplicate ops
           if (setName.startsWith('c_bd_tmp_') && this.existingSets.has(setName)) return
           ops.push(`flush ${setName}`);
         }
@@ -176,7 +177,8 @@ class IpsetControl extends ModuleControl {
         if (swapSets.has(setName)) {
           const swapSetName = this.getSwapSetName(setName);
           ops.push(`destroy ${swapSetName}`);
-        } else if (setName.startsWith('c_')) {
+        } else if (setName.startsWith('c_') && !setName.includes('_swp')) {
+          // _swp sets are already handled by leftover cleanup above; skip to avoid duplicate ops
           if (setName.startsWith('c_bd_tmp_') && this.existingSets.has(setName)) return
           ops.push(`destroy ${setName}`);
         }
@@ -248,7 +250,7 @@ class IpsetControl extends ModuleControl {
   async readSetupScriptResult() {
     log.info('Reading ipset setup script result');
     try {
-      const ipsetFile = this._getIpsetRestoreFile();
+      const ipsetFile = this.getIpsetRestoreFile(true);
       const content = await fsp.readFile(ipsetFile, 'utf8');
       const lines = content.split('\n')
         .filter(line => line.length && !line.startsWith('flush') && !line.startsWith('#'));
