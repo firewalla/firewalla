@@ -105,6 +105,7 @@ module.exports = {
   VPN_ROUTE_MARK_KEY_PREFIX: "fwmark:vpn",
 
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
+  NOTIF_CATEGORY_TIME_LIMITS: "com.firewalla.category.time_limits",
 
   STATE_EVENT_NIC_SPEED: "nic_speed",
 
