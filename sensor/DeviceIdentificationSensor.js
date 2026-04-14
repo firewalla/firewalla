@@ -144,13 +144,14 @@ class DeviceIdentificationSensor extends Sensor {
     const bonjour = detect && detect.bonjour && JSON.parse(JSON.stringify(detect.bonjour)) || {}
     const now = Date.now() / 1000
     for (const key in bonjour) {
-      if (key.endsWith('.source'))
+      if (key.endsWith('.source')) {
         if (!bonjour[key].expire)
           // add default expire time if not set
           detect.bonjour[key].expire = now + (this.config.expire.bonjour || 30 * 24 * 3600)
-        else if (bonjour[key].expire > now)
+        else if (bonjour[key].expire < now)
           delete bonjour[key.slice(0, -7)];
         delete bonjour[key]
+      }
     }
 
     const cloud = host.o._identifyExpiration && host.o._identifyExpiration > now ? detect.cloud : {}
