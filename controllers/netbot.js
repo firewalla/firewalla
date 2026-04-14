@@ -4042,6 +4042,7 @@ class netBot extends ControllerBot {
               await sysManager.updateAsync()
               const fwapcOps = data.fwapcOps || [];
               const dapOps = data.dapOps || [];
+              const embeddedOps = data.embeddedOps || [];
               try {
                 const json = {};
                 const tasks = fwapcOps.map(async (op) => {
@@ -4057,6 +4058,27 @@ class netBot extends ControllerBot {
                     const result = await dapSensor.apiCall(method || "GET", path, body).catch((err) => null);
                     if (result && result.code == 200)
                       json[key] = result.body;
+                  }
+                }));
+                // embeddedOps: array of embedded get requests, each dispatched through getHandler
+                // format: { item: string, value?: object, key?: string, target?: string }
+                tasks.push(...embeddedOps.map(async (op) => {
+                  const { item, value, key, target } = op;
+                  if (!item) return;
+                  try {
+                    const getMsg = {
+                      mtype: "get",
+                      target: target,
+                      data: {
+                        item: item,
+                        value: value || {},
+                        apiVer: data.apiVer
+                      }
+                    };
+                    // defaults to item as json key, but allows custom key override
+                    json[key || item] = await this.getHandler(gid, getMsg, appInfo);
+                  } catch (err) {
+                    log.warn(`Failed to execute embeddedOps item ${item}:`, err.message);
                   }
                 }));
                 tasks.push((async () => {
