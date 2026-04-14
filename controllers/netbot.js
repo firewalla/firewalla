@@ -3452,6 +3452,14 @@ class netBot extends ControllerBot {
               "monitor:flow:" + hostMac,
               "monitor:large:" + hostMac,
             ]);
+
+            // Clean up DAP resources (category + conf files) for the deleted device
+            const dapSensor = sl.getSensor('DapSensor');
+            if (dapSensor) {
+              await dapSensor.apiCall("POST", `/reset-dap/${hostMac}`).catch((err) => {
+                log.warn(`Failed to reset DAP for ${hostMac}`, err.message);
+              });
+            }
           })().catch((err) => {
             log.error(`Failed to delete information of host ${hostMac}`, err);
           });
