@@ -1,4 +1,4 @@
-/*    Copyright 2023-2024 Firewalla Inc.
+/*    Copyright 2023-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -45,48 +45,24 @@ class DeviceIdentificationSensor extends Sensor {
     this.expire = config.get('bro.userAgent.expires')
 
     for (const host of hosts) try {
-      // keep user feedback and other detection sources
-      const keepsake = _.pick(host.o.detect, ['feedback', 'bonjour', 'cloud'])
-
-      host.o.detect = await this.detect(host)
-
-      Object.assign(host.o.detect, keepsake)
+      if (!host.o.detect) host.o.detect = {}
+      if (host instanceof Host && sm.isFirewallaMac(host.o.mac)) {
+        log.debug('Found Firewalla device', host.o.mac)
+        host.o.detect.nameBased = { name: 'Firewalla' }
+        continue
+      }
+      host.o.detect.ua = await this.userAgentDetect(host)
       await this.mergeAndSave(host)
     } catch(err) {
       log.error('Error identifying device', host.o.mac, err)
     }
   }
 
-  async detect(host) {
-    if (host instanceof Host && sm.isFirewallaMac(host.o.mac)) {
-      log.debug('Found Firewalla device', host.o.mac)
-      return { name: 'Firewalla' }
-    }
-
-    const name = getPreferredName(host.o)
-    if (name) {
-      const type = await nameToType(name)
-      if (type) {
-        log.debug('Type from name', host.o.mac, name, type)
-        return { type }
-      }
-    }
-
+  async userAgentDetect(host) {
     const key = `host:user_agent2:${host.o.mac}`
     const results = await rclient.zrevrangebyscoreAsync(key, this.now, this.now - this.expire).map(JSON.parse)
 
-    // parse legacy results to give detection an instant bootup
-    if (httpFlow.detector) try {
-      const oldKey = `host:user_agent:${host.o.mac}`
-      const oldResults = await rclient.smembersAsync(oldKey)
-      for (const result of oldResults) {
-        const ua = JSON.parse(result).ua
-        // should be fine not to dedup here
-        results.push(httpFlow.detector.detect(ua))
-      }
-    } catch(err) {
-      log.error('Error getting legacy user agents for', host.o.mac, err)
-    }
+    // lagacy key host:user_agent:<mac> should no longer available
 
     const deviceType = {};
     const deviceBrand = {};
@@ -143,22 +119,50 @@ class DeviceIdentificationSensor extends Sensor {
       counter[key] = 1
   }
 
+  async applyNameBasedType(mac) {
+    const host = hostManager.getHostFastByMAC(mac)
+    if (!host) return
+    const name = getPreferredName(host.o)
+    if (!name) return
+    const type = await nameToType(name)
+    if (!type) return
+    log.debug('Type from name', mac, name, type)
+    sem.emitLocalEvent({
+      type: 'DetectUpdate',
+      from: 'nameBased',
+      mac,
+      detect: { type },
+      suppressEventLogging: true,
+    })
+  }
+
   async mergeAndSave(host) {
     const detect = host.o.detect
     if (!Object.keys(detect)) return
 
-    Object.assign(detect, detect.bonjour, detect.cloud)
-    for (const key of Object.keys(detect)) {
+    // key deletion won't affect source data
+    const bonjour = detect && detect.bonjour && JSON.parse(JSON.stringify(detect.bonjour)) || {}
+    const now = Date.now() / 1000
+    for (const key in bonjour) {
       if (key.endsWith('.source'))
-        delete detect[key]
+        if (!bonjour[key].expire)
+          // add default expire time if not set
+          detect.bonjour[key].expire = now + (this.config.expire.bonjour || 30 * 24 * 3600)
+        else if (bonjour[key].expire > now)
+          delete bonjour[key.slice(0, -7)];
+        delete bonjour[key]
     }
+
+    const cloud = host.o._identifyExpiration && host.o._identifyExpiration > now ? detect.cloud : {}
+
+    Object.assign(detect, detect.ua, detect.nameBased, bonjour, cloud)
     log.debug('Saving', host.o.mac, detect)
     await host.save('detect')
 
     const type = detect.feedback && detect.feedback.type || detect.type
     if (type) {
       log.verbose(`Applying ${type} tag to ${host.getUniqueId()}`)
-      let tag = await TagManager.getTagByName(type, Constants.TAG_TYPE_DEVICE);
+      let tag = TagManager.getTagByName(type, Constants.TAG_TYPE_DEVICE);
       if (!tag)
         tag = await TagManager.createTag(type, { type: Constants.TAG_TYPE_DEVICE })
       // policy should be loaded at this point
@@ -171,21 +175,41 @@ class DeviceIdentificationSensor extends Sensor {
   run() {
     this.hookFeature(FEATURE_NAME)
 
+    this.nameJobs = {}
+    for (const eventType of ['NewDeviceFound', 'RegularDeviceInfoUpdate']) {
+      sem.on(eventType, (event) => {
+        if (!config.isFeatureOn(FEATURE_NAME)) return
+        const mac = event.host && event.host.mac
+        if (!mac) return
+        // a buffer for multiple events but also allows Host object to be updated
+        if (this.nameJobs[mac]) clearTimeout(this.nameJobs[mac])
+        this.nameJobs[mac] = setTimeout(async () => {
+          delete this.nameJobs[mac]
+          try {
+            await this.applyNameBasedType(mac)
+          } catch(err) {
+            log.error('Error applying name-based type for', mac, err)
+          }
+        }, 2000)
+      })
+    }
+
     sem.on('DetectUpdate', async (event) => {
       if (!config.isFeatureOn(FEATURE_NAME)) return
 
       try {
         const { mac, detect, from, source } = event
-        log.verbose('DetectUpdate', mac, from, detect)
+        log.verbose('DetectUpdate', mac, from, source && source.type, detect)
 
         if (mac && detect && from) {
           const host = await hostManager.getHostAsync(mac)
           if (!host) return
           if (!host.o.detect) host.o.detect = {}
           host.o.detect[from] = Object.assign({}, host.o.detect[from], detect)
-          if (source)
+          if (source) {
             for (const key in detect)
               host.o.detect[from][`${key}.source`] = source
+          }
           await this.mergeAndSave(host)
         }
       } catch(err) {
