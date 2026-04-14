@@ -82,6 +82,8 @@ const iptool = require('ip');
 const util = require('util');
 const exec = require('child-process-promise').exec;
 const LRU = require('lru-cache');
+const { Rule } = require('../net2/Iptables.js');
+const iptc = require('../control/IptablesControl.js');
 
 const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
@@ -1879,6 +1881,18 @@ class PolicyManager2 {
       wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
       subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
     }
+
+    if (type === "category" && isBlockOrdisturb) {
+      const chainName = `FW_${policy.pid}_BYPASS`;
+      commonOptions.byPassChain = chainName;
+
+      for (const family of ['4', '6']) {
+        const rule = new Rule().fam(family).chn(chainName).opr('-N');
+        iptc.addRule(rule);
+        iptc.addRule(rule.opr('-F')); // make sure the chain is empty before use
+      }
+    }
+
     if ((tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets))) {
       this.tlsInstalled = true;
       await platform.installTLSModules().catch((err) => {
@@ -2466,6 +2480,12 @@ class PolicyManager2 {
       wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
       subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
     }
+
+    if (type === "category" && isBlockOrdisturb) {
+      const chainName = `FW_${pid}_BYPASS`;
+      commonOptions.byPassChain = chainName;
+    }
+
     if (!_.isEmpty(remoteSets)) {
       await Promise.all(remoteSets.map(async (setPair) => {
         await this.__applyRules(Object.assign(setPair, commonOptions)).catch((err) => {
@@ -2578,6 +2598,15 @@ class PolicyManager2 {
     }
     if (qosHandler)
       await qos.deallocateQoSHandlerForPolicy(pid);
+
+    if (type === "category" && isBlockOrdisturb) {
+      const chainName = `FW_${pid}_BYPASS`;
+      for (const family of [4, 6]) {
+        const rule = new Rule().fam(family).chn(chainName).opr('-F');
+        iptc.addRule(rule);
+        iptc.addRule(rule.opr('-X'));
+      }
+    }
   }
 
   async match(alarm) {
