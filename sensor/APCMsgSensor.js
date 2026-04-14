@@ -706,6 +706,10 @@ class APCMsgSensor extends Sensor {
       const tags2 = await hostTool.getTags(host2, intf2);
 
       // mac1's perspective: uploaded tx_bytes, downloaded rx_bytes
+      bro.recordLocalTraffic({
+        mac: mac1Upper, upload: tx_bytes || 0, download: rx_bytes || 0,
+        intf: intf1, dIntf: intf2, tags: tags1, dstTags: tags2
+      });
       sem.emitEvent({
         type: Message.MSG_FLOW_SWITCH_ACCOUNTING,
         flow: {
@@ -718,6 +722,10 @@ class APCMsgSensor extends Sensor {
       });
 
       // mac2's perspective: uploaded rx_bytes, downloaded tx_bytes
+      bro.recordLocalTraffic({
+        mac: mac2Upper, upload: rx_bytes || 0, download: tx_bytes || 0,
+        intf: intf2, dIntf: intf1, tags: tags2, dstTags: tags1
+      });
       sem.emitEvent({
         type: Message.MSG_FLOW_SWITCH_ACCOUNTING,
         flow: {

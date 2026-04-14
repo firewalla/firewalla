@@ -1396,29 +1396,28 @@ class BroDetect {
       const tuple = { download: traffic[0], upload: traffic[1] }
       if (localFlow) {
         const tupleConn = {conn: tmpspec.ct}
-        const tupleIntra = { intra: tmpspec.ob + tmpspec.rb }
 
-        this.recordTraffic(tupleIntra, 'lo:global')
+        this.recordLocalTraffic({
+          mac: localMac, upload: tuple.upload, download: tuple.download,
+          intf: intfInfo && intfInfo.uuid,
+          dIntf: dstIntfInfo && dstIntfInfo.uuid,
+          tags, dstTags
+        })
+
         this.recordTraffic(tupleConn, 'lo:intra:global')
-
-        this.recordTraffic(tuple, 'lo:' + localMac)
         this.recordTraffic(tupleConn, `lo:${flowdir}:${localMac}`)
 
         if (dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid) {
-          this.recordTraffic(tupleIntra, 'lo:intf:' + intfInfo.uuid)
           this.recordTraffic(tupleConn, 'lo:intra:intf:' + intfInfo.uuid)
         } else {
-          this.recordTraffic(tuple, 'lo:intf:' + intfInfo.uuid)
           this.recordTraffic(tupleConn, `lo:${flowdir}:intf:${intfInfo.uuid}`)
         }
 
         for (const key in tags) {
           for (const tag of tags[key]) {
             if (dstTags[key] && dstTags[key].includes(tag)) {
-              this.recordTraffic(tupleIntra, 'lo:tag:' + tag)
               this.recordTraffic(tupleConn, 'lo:intra:tag:' + tag)
             } else {
-              this.recordTraffic(tuple, 'lo:tag:' + tag)
               this.recordTraffic(tupleConn, `lo:${flowdir}:tag:${tag}`)
             }
           }
@@ -2060,6 +2059,30 @@ class BroDetect {
     }
 
     timeSeries.exec()
+  }
+
+  recordLocalTraffic({ mac, upload, download, intf, dIntf, tags, dstTags }) {
+    const tuple = { upload, download };
+    const tupleIntra = { intra: (upload || 0) + (download || 0) };
+
+    this.recordTraffic(tupleIntra, 'lo:global')
+    this.recordTraffic(tuple, 'lo:' + mac)
+
+    if (intf) {
+      if (intf === dIntf)
+        this.recordTraffic(tupleIntra, 'lo:intf:' + intf)
+      else
+        this.recordTraffic(tuple, 'lo:intf:' + intf)
+    }
+
+    for (const key in tags) {
+      for (const tag of tags[key]) {
+        if (dstTags && dstTags[key] && dstTags[key].includes(tag))
+          this.recordTraffic(tupleIntra, 'lo:tag:' + tag)
+        else
+          this.recordTraffic(tuple, 'lo:tag:' + tag)
+      }
+    }
   }
 
   recordTraffic(tuple, key) {
