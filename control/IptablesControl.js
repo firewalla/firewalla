@@ -38,8 +38,10 @@ class IptablesControl extends ModuleControl {
     this.aggregatedRules = this._emptyState();
   }
 
-  _getIptablesRestoreFile(family) {
-    return path.join(f.getHiddenFolder(), 'run', 'iptables', family === 4 ? 'iptables' : 'ip6tables');
+  _getIptablesRestoreFile(family, script = false) {
+    return path.join(f.getHiddenFolder(), 'run', 'iptables',
+      `ip${family === 6 ? '6' : ''}tables${script ? '.script' : ''}`
+    );
   }
 
   /**
@@ -96,9 +98,22 @@ class IptablesControl extends ModuleControl {
       log.verbose(`Restoring iptables v${family} queue=${this.getQueuedRuleCount(queued)}`);
       await this.restoreIptables(family);
     } catch (err) {
-      log.error(`Error restoring iptables v${family}: ${err.stderr}, executing queued commands individually...`);
+      log.error(`Error restoring iptables v${family}: ${err.stderr}`);
       log.info(err.message);
-      // executing queued commands individually here
+      if (fromInitialization) {
+        log.info(`Initialization restore failed for v${family}, flushing and restoring from setup file...`);
+        try {
+          const flushScript = path.join(f.getFirewallaHome(), 'scripts', 'flush_iptables.sh');
+          await exec(`sudo ${flushScript} ${family}`, { timeout: 60000 });
+          const restoreCmd = family === 4 ? 'iptables-restore' : 'ip6tables-restore';
+          const restoreFile = this._getIptablesRestoreFile(family, true);
+          await exec(`sudo ${restoreCmd} < ${restoreFile}`, { timeout: 30000 });
+          log.info(`Setup file restored for v${family}`);
+        } catch (setupErr) {
+          log.error(`Error restoring setup file for v${family}: ${setupErr.message}`);
+        }
+      }
+      log.info(`Executing queued commands individually for v${family}...`);
       for (const table of TABLES) {
         for (const rule of queued[family][table]) try {
           if (!(rule instanceof Rule)) continue;
@@ -120,12 +135,12 @@ class IptablesControl extends ModuleControl {
       // Read and parse the generated files (same format as iptables-save)
       
       // Read IPv4 iptables file
-      const iptablesFile = this._getIptablesRestoreFile(4);
+      const iptablesFile = this._getIptablesRestoreFile(4, true);
       const iptablesContent = await fsp.readFile(iptablesFile, 'utf8');
       this.parseIptablesSaveOutput(iptablesContent, 4);
       
       // Read IPv6 iptables file
-      const ip6tablesFile = this._getIptablesRestoreFile(6);
+      const ip6tablesFile = this._getIptablesRestoreFile(6, true);
       const ip6tablesContent = await fsp.readFile(ip6tablesFile, 'utf8');
       this.parseIptablesSaveOutput(ip6tablesContent, 6);
       

@@ -17,7 +17,7 @@ sudo which ipset &>/dev/null || sudo apt-get install -y ipset
 mkdir -p "${FIREWALLA_HIDDEN}"/run/iptables
 
 ipset4_file=${FIREWALLA_HIDDEN}/run/iptables/ipset4
-ipset_file=${FIREWALLA_HIDDEN}/run/iptables/ipset
+ipset_file=${FIREWALLA_HIDDEN}/run/iptables/ipset.script
 
 reset_ipset() {
 cat << EOF > "$ipset4_file"
@@ -182,8 +182,8 @@ reset_ip_rules() {
 }
 
 
-iptables_file=${FIREWALLA_HIDDEN}/run/iptables/iptables
-ip6tables_file=${FIREWALLA_HIDDEN}/run/iptables/ip6tables
+iptables_file=${FIREWALLA_HIDDEN}/run/iptables/iptables.script
+ip6tables_file=${FIREWALLA_HIDDEN}/run/iptables/ip6tables.script
 
 # ============= filter =============
 filter_file=${FIREWALLA_HIDDEN}/run/iptables/filter
