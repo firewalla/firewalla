@@ -712,6 +712,7 @@ class APCMsgSensor extends Sensor {
       });
       sem.emitEvent({
         type: Message.MSG_FLOW_SWITCH_ACCOUNTING,
+        suppressEventLogging: true,
         flow: {
           mac: mac1Upper, dstMac: mac2Upper,
           upload: tx_bytes || 0, download: rx_bytes || 0,
@@ -728,6 +729,7 @@ class APCMsgSensor extends Sensor {
       });
       sem.emitEvent({
         type: Message.MSG_FLOW_SWITCH_ACCOUNTING,
+        suppressEventLogging: true,
         flow: {
           mac: mac2Upper, dstMac: mac1Upper,
           upload: rx_bytes || 0, download: tx_bytes || 0,
