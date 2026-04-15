@@ -758,7 +758,8 @@ module.exports = class {
         return;
       }
       const encryptMessageAsync = util.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
-      while (this.isSocketConnected()) {
+      const MAX_OPS_PER_CYCLE = 20;
+      while (this.isSocketConnected() && count < MAX_OPS_PER_CYCLE) {
         const op = await this.dequeueOp();
         if (!op)
           break;
@@ -782,6 +783,7 @@ module.exports = class {
             mspId: mspId
           });
           count++;
+          await delay(200);
         } catch (err) {
           log.error(`Failed to sync op to msp`, err);
           // push back to the queue
