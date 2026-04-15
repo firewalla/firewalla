@@ -38,6 +38,7 @@ const FEATURE_NAME = 'device_detect'
 class DeviceIdentificationSensor extends Sensor {
 
   async job() {
+    if (!config.isFeatureOn(FEATURE_NAME)) return
     log.info('Identifying local devices ...')
     const hosts = await hostManager.getHostsAsync()
 
@@ -119,45 +120,62 @@ class DeviceIdentificationSensor extends Sensor {
       counter[key] = 1
   }
 
-  async applyNameBasedType(mac) {
-    const host = hostManager.getHostFastByMAC(mac)
-    if (!host) return
-    const name = getPreferredName(host.o)
-    if (!name) return
-    const type = await nameToType(name)
-    if (!type) return
-    log.debug('Type from name', mac, name, type)
-    sem.emitLocalEvent({
-      type: 'DetectUpdate',
-      from: 'nameBased',
-      mac,
-      detect: { type },
-      suppressEventLogging: true,
-    })
+  mergeAndSave(host) {
+    const mac = host.o.mac
+    if (this.mergeJobs[mac]) clearTimeout(this.mergeJobs[mac])
+    this.mergeJobs[mac] = setTimeout(async () => {
+      delete this.mergeJobs[mac]
+      try {
+        await this._mergeAndSave(host)
+      } catch(err) {
+        log.error('Error in mergeAndSave for', mac, err)
+      }
+    }, 2000)
   }
 
-  async mergeAndSave(host) {
+  async _mergeAndSave(host) {
     const detect = host.o.detect
     if (!Object.keys(detect)) return
 
+    // name-based type detection from preferred name
+    const name = getPreferredName(host.o)
+    if (name) {
+      const nameType = await nameToType(name)
+      if (nameType)
+        detect.nameBased = { type: nameType }
+    }
+
+    const keepsake = _.pick(detect, ['feedback', 'bonjour', 'cloud', 'nameBased', 'ua'])
+
+    const now = Date.now() / 1000
+    // iterate over all non-source keys and add default expire time if not set
+    for (const key in detect.bonjour)
+      if (!key.endsWith('.source')) {
+        const sourceKey = key + '.source'
+        const bonjour = detect.bonjour
+        if (!bonjour[sourceKey]) bonjour[sourceKey] = {}
+        if (!bonjour[sourceKey].expire)
+          bonjour[sourceKey].expire = now + (this.config.expire.bonjour || 30 * 24 * 3600)
+      }
+
     // key deletion won't affect source data
     const bonjour = detect && detect.bonjour && JSON.parse(JSON.stringify(detect.bonjour)) || {}
-    const now = Date.now() / 1000
     for (const key in bonjour) {
       if (key.endsWith('.source')) {
-        if (!bonjour[key].expire)
-          // add default expire time if not set
-          detect.bonjour[key].expire = now + (this.config.expire.bonjour || 30 * 24 * 3600)
-        else if (bonjour[key].expire < now)
+        if (bonjour[key].expire < now)
           delete bonjour[key.slice(0, -7)];
         delete bonjour[key]
       }
     }
 
-    const cloud = host.o._identifyExpiration && host.o._identifyExpiration > now ? detect.cloud : {}
+    // remove various keys that are not used in the detect object
+    const cloud = _.pick(
+      host.o._identifyExpiration && host.o._identifyExpiration > now ? detect.cloud : {},
+      ['type', 'brand', 'model', 'os', 'name']
+    )
 
-    Object.assign(detect, detect.ua, detect.nameBased, bonjour, cloud)
-    log.debug('Saving', host.o.mac, detect)
+    host.o.detect = Object.assign(keepsake, detect.ua, detect.nameBased, bonjour, cloud)
+    log.debug('Saving', host.o.mac, host.o.detect)
     await host.save('detect')
 
     const type = detect.feedback && detect.feedback.type || detect.type
@@ -174,24 +192,17 @@ class DeviceIdentificationSensor extends Sensor {
   }
 
   run() {
+    this.refreshInterval = (this.config.interval || 3600) * 1000
     this.hookFeature(FEATURE_NAME)
 
-    this.nameJobs = {}
+    this.mergeJobs = {}
     for (const eventType of ['NewDeviceFound', 'RegularDeviceInfoUpdate']) {
       sem.on(eventType, (event) => {
         if (!config.isFeatureOn(FEATURE_NAME)) return
-        const mac = event.host && event.host.mac
-        if (!mac) return
-        // a buffer for multiple events but also allows Host object to be updated
-        if (this.nameJobs[mac]) clearTimeout(this.nameJobs[mac])
-        this.nameJobs[mac] = setTimeout(async () => {
-          delete this.nameJobs[mac]
-          try {
-            await this.applyNameBasedType(mac)
-          } catch(err) {
-            log.error('Error applying name-based type for', mac, err)
-          }
-        }, 2000)
+        const host = hostManager.getHostFastByMAC(event.host && event.host.mac)
+        if (!host) return
+        if (!host.o.detect) host.o.detect = {}
+        this.mergeAndSave(host)
       })
     }
 
@@ -203,7 +214,7 @@ class DeviceIdentificationSensor extends Sensor {
         log.verbose('DetectUpdate', mac, from, source && source.type, detect)
 
         if (mac && detect && from) {
-          const host = await hostManager.getHostAsync(mac)
+          const host = hostManager.getHostFastByMAC(mac)
           if (!host) return
           if (!host.o.detect) host.o.detect = {}
           host.o.detect[from] = Object.assign({}, host.o.detect[from], detect)
@@ -225,7 +236,7 @@ class DeviceIdentificationSensor extends Sensor {
       const hashset = await bone.hashsetAsync('device:type:list:preload')
       const types = JSON.parse(hashset)
       for (const type of types) {
-        const tag = await TagManager.getTagByName(type, Constants.TAG_TYPE_DEVICE);
+        const tag = TagManager.getTagByName(type, Constants.TAG_TYPE_DEVICE);
         if (!tag) {
           const tag = await TagManager.createTag(type, { type: Constants.TAG_TYPE_DEVICE })
           log.info('created preload device type tag', tag.getUniqueId(), tag.o.name)
@@ -237,21 +248,15 @@ class DeviceIdentificationSensor extends Sensor {
   }
 
   async globalOn() {
-    if (!this.intervalTask)
-      this.job()
-      this.intervalTask = setInterval(() => {
-        this.job();
-      }, (this.config.interval || 60 * 60) * 1000)
-    if (!this.intervalTaskListCheck)
+    if (!this.intervalTaskListCheck) {
       this.checkList()
       this.intervalTaskListCheck = setInterval(() => {
         this.checkList();
       }, (this.config.intervalListCheck || 24 * 60 * 60) * 1000)
+    }
   }
 
   async globalOff() {
-    clearInterval(this.intervalTask)
-    delete this.intervalTask
     clearInterval(this.intervalTaskListCheck)
     delete this.intervalTaskListCheck
   }
