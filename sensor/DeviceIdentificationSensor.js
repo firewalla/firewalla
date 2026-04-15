@@ -24,8 +24,6 @@ const TagManager = require('../net2/TagManager.js');
 const Constants = require('../net2/Constants.js');
 const config = require('../net2/config.js')
 const sm = require('../net2/SysManager.js')
-const Host = require('../net2/Host.js')
-const httpFlow = require('../extension/flow/HttpFlow.js');
 const sem = require('./SensorEventManager.js').getInstance();
 const { getPreferredName } = require('../util/util.js')
 const { nameToType } = require('../extension/detect/common.js')
@@ -47,12 +45,12 @@ class DeviceIdentificationSensor extends Sensor {
 
     for (const host of hosts) try {
       if (!host.o.detect) host.o.detect = {}
-      if (host instanceof Host && sm.isFirewallaMac(host.o.mac)) {
+      if (sm.isFirewallaMac(host.o.mac)) {
         log.debug('Found Firewalla device', host.o.mac)
         host.o.detect.nameBased = { name: 'Firewalla' }
-        continue
+      } else {
+        host.o.detect.ua = await this.userAgentDetect(host)
       }
-      host.o.detect.ua = await this.userAgentDetect(host)
       await this.mergeAndSave(host)
     } catch(err) {
       log.error('Error identifying device', host.o.mac, err)
