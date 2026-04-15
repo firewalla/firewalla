@@ -648,7 +648,7 @@ class APCMsgSensor extends Sensor {
     if (msg.pid) record.pid = msg.pid
     if (msg.proto) record.pr = msg.proto
     if (msg.iso_lvl && msg.action == "block") record.ac = "isolation"
-    if (msg.gid) record.isoGID = msg.gid
+    if (msg.gid !== undefined && msg.gid !== null) record.isoGID = String(msg.gid)
     if (msg.ap) record.ap = msg.ap
     if (msg.hasOwnProperty('iso_ext')) record.isoExt = msg.iso_ext
     if (msg.hasOwnProperty('iso_int')) record.isoInt = msg.iso_int
@@ -706,8 +706,13 @@ class APCMsgSensor extends Sensor {
       const tags2 = await hostTool.getTags(host2, intf2);
 
       // mac1's perspective: uploaded tx_bytes, downloaded rx_bytes
+      bro.recordLocalTraffic({
+        mac: mac1Upper, upload: tx_bytes || 0, download: rx_bytes || 0,
+        intf: intf1, dIntf: intf2, tags: tags1, dstTags: tags2
+      });
       sem.emitEvent({
         type: Message.MSG_FLOW_SWITCH_ACCOUNTING,
+        suppressEventLogging: true,
         flow: {
           mac: mac1Upper, dstMac: mac2Upper,
           upload: tx_bytes || 0, download: rx_bytes || 0,
@@ -718,8 +723,13 @@ class APCMsgSensor extends Sensor {
       });
 
       // mac2's perspective: uploaded rx_bytes, downloaded tx_bytes
+      bro.recordLocalTraffic({
+        mac: mac2Upper, upload: rx_bytes || 0, download: tx_bytes || 0,
+        intf: intf2, dIntf: intf1, tags: tags2, dstTags: tags1
+      });
       sem.emitEvent({
         type: Message.MSG_FLOW_SWITCH_ACCOUNTING,
+        suppressEventLogging: true,
         flow: {
           mac: mac2Upper, dstMac: mac1Upper,
           upload: rx_bytes || 0, download: tx_bytes || 0,
