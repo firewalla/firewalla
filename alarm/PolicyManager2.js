@@ -1780,6 +1780,53 @@ class PolicyManager2 {
             });
           }
         }
+
+        // --- Derive app-level block rules from category ---
+        if (isBlockOrdisturb) {
+          const allDerivedAppTargets = [];
+          for (const catTarget of targets) {
+            const derived = await this._getDerivedAppTargetsForCategory(catTarget);
+            allDerivedAppTargets.push(...derived);
+          }
+
+          if (!_.isEmpty(allDerivedAppTargets)) {
+            log.info(`Policy ${pid}: derive app targets from category:`, allDerivedAppTargets);
+
+            // DNS blocking (append to existing dnsmasq entries)
+            if (direction !== "inbound" && !localPort && !remotePort) {
+              await domainBlock.blockCategory({
+                pid, scope, categories: allDerivedAppTargets, intfs, guids,
+                action, tags, parentRgId, seq, wanUUID, routeType,
+                append: true
+              });
+            }
+
+            // TLS host sets
+            if (platform.isTLSBlockSupport() || platform.isUdpTLSBlockSupport()) {
+              for (const dt of allDerivedAppTargets)
+                tlsHostSets.push(categoryUpdater.getHostSetName(dt));
+            }
+
+            // Activate + ipset (dnsmasq_only=false, no bloom filter)
+            for (const dt of allDerivedAppTargets) {
+              await categoryUpdater.activateCategory(dt);
+              await categoryUpdater.updateCategoryState(dt, devOpts, pid, false, isBlockOrdisturb, true);
+              remoteSets.push({
+                remoteSet4: categoryUpdater.getAggrIPSetName(dt),
+                remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(dt)
+              });
+              // connSet for signature-detected connections (e.g. roblox-sig blockType=connection)
+              connSets.push({
+                connSet4: categoryUpdater.getConnectionIPSetName(dt),
+                connSet6: categoryUpdater.getConnectionIPSetNameForIPV6(dt)
+              });
+            }
+
+            // Push into targets for post-switch TLS activation
+            targets.push(...allDerivedAppTargets);
+          }
+        }
+
         remoteTupleCount = 2;
         break;
 
@@ -2354,6 +2401,46 @@ class PolicyManager2 {
             });
           }
         }
+
+        // --- Unenforce derived app-level block rules ---
+        if (isBlockOrdisturb) {
+          const allDerivedAppTargets = [];
+          for (const catTarget of targets) {
+            const derived = await this._getDerivedAppTargetsForCategory(catTarget);
+            allDerivedAppTargets.push(...derived);
+          }
+
+          if (!_.isEmpty(allDerivedAppTargets)) {
+            log.info(`Policy ${pid}: unenforce derived app targets:`, allDerivedAppTargets);
+
+            if (direction !== "inbound" && !localPort && !remotePort) {
+              await domainBlock.unblockCategory({
+                pid, action, scope, categories: allDerivedAppTargets,
+                intfs, tags, guids, parentRgId, seq, wanUUID, routeType
+              });
+            }
+
+            if (platform.isTLSBlockSupport() || platform.isUdpTLSBlockSupport()) {
+              for (const dt of allDerivedAppTargets)
+                tlsHostSets.push(categoryUpdater.getHostSetName(dt));
+            }
+
+            for (const dt of allDerivedAppTargets) {
+              await categoryUpdater.updateCategoryState(dt, devOpts, pid, false, isBlockOrdisturb, false);
+              remoteSets.push({
+                remoteSet4: categoryUpdater.getAggrIPSetName(dt),
+                remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(dt)
+              });
+              connSets.push({
+                connSet4: categoryUpdater.getConnectionIPSetName(dt),
+                connSet6: categoryUpdater.getConnectionIPSetNameForIPV6(dt)
+              });
+            }
+
+            targets.push(...allDerivedAppTargets);
+          }
+        }
+
         remoteTupleCount = 2;
         break;
 
@@ -2915,6 +3002,18 @@ class PolicyManager2 {
     }
 
     return false;
+  }
+
+  async _getDerivedAppTargetsForCategory(category) {
+    const cloudConfig = await rclient.getAsync(Constants.REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG)
+      .then(r => r && JSON.parse(r)).catch(() => null);
+    const appConfs = _.get(cloudConfig, 'appConfs', {});
+    if (_.isEmpty(appConfs)) return [];
+
+    return Object.keys(appConfs).filter(app => {
+      return appConfs[app].category === category
+        && _.get(appConfs[app], ['features', 'acl']) === true;
+    }).map(app => `TLX-fw-${app}`);
   }
 
   _getRuleSubPriority(type) {
