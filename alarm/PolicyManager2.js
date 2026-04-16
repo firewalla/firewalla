@@ -1717,6 +1717,20 @@ class PolicyManager2 {
       case "category":
         if (_.isEmpty(targets))
           targets = [target];
+
+        // Derive app-level targets for this category (only for block/disturb)
+        if (isBlockOrdisturb) {
+          const derivedAppTargets = [];
+          for (const catTarget of targets) {
+            const derived = await this._getDerivedAppTargetsForCategory(catTarget);
+            derivedAppTargets.push(...derived);
+          }
+          if (!_.isEmpty(derivedAppTargets)) {
+            log.info(`Policy ${pid}: derive app targets from category:`, derivedAppTargets);
+            targets.push(...derivedAppTargets);
+          }
+        }
+
         if (platform.isTLSBlockSupport() || platform.isUdpTLSBlockSupport()) { // default on
           for (const target of targets)
             tlsHostSets.push(categoryUpdater.getHostSetName(target));
@@ -1738,20 +1752,24 @@ class PolicyManager2 {
               routeType
             });
             if (policy.useBf) {
-              await domainBlock.blockCategory({
-                pid,
-                scope: scope, categories: targets.map(target => categoryUpdater.getBfCategoryName(target)), intfs, guids,
-                action: action, tags, parentRgId, seq, wanUUID, routeType, append: true
-              });
+              // useBf only applies to original categories, not TLX-fw-* derived targets
+              const bfTargets = targets.filter(t => !categoryUpdater.isSmallExtendedTargetList(t));
+              if (!_.isEmpty(bfTargets)) {
+                await domainBlock.blockCategory({
+                  pid,
+                  scope: scope, categories: bfTargets.map(t => categoryUpdater.getBfCategoryName(t)), intfs, guids,
+                  action: action, tags, parentRgId, seq, wanUUID, routeType, append: true
+                });
+              }
             }
           }
         }
 
-        
+
         for (const target of targets) {
           await categoryUpdater.activateCategory(target);
           await categoryUpdater.updateCategoryState(target, devOpts, pid, policy.dnsmasq_only, isBlockOrdisturb, true);
-          if (policy.useBf) {
+          if (policy.useBf && !categoryUpdater.isSmallExtendedTargetList(target)) {
             await categoryUpdater.activateCategory(categoryUpdater.getBfCategoryName(target));
             categoryUpdater.addUseBfCategory(target);
           }
@@ -1778,52 +1796,6 @@ class PolicyManager2 {
               remoteSet4: categoryUpdater.getAggrIPSetName(target),
               remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(target)
             });
-          }
-        }
-
-        // --- Derive app-level block rules from category ---
-        if (isBlockOrdisturb) {
-          const allDerivedAppTargets = [];
-          for (const catTarget of targets) {
-            const derived = await this._getDerivedAppTargetsForCategory(catTarget);
-            allDerivedAppTargets.push(...derived);
-          }
-
-          if (!_.isEmpty(allDerivedAppTargets)) {
-            log.info(`Policy ${pid}: derive app targets from category:`, allDerivedAppTargets);
-
-            // DNS blocking (append to existing dnsmasq entries)
-            if (direction !== "inbound" && !localPort && !remotePort) {
-              await domainBlock.blockCategory({
-                pid, scope, categories: allDerivedAppTargets, intfs, guids,
-                action, tags, parentRgId, seq, wanUUID, routeType,
-                append: true
-              });
-            }
-
-            // TLS host sets
-            if (platform.isTLSBlockSupport() || platform.isUdpTLSBlockSupport()) {
-              for (const dt of allDerivedAppTargets)
-                tlsHostSets.push(categoryUpdater.getHostSetName(dt));
-            }
-
-            // Activate + ipset (dnsmasq_only=false, no bloom filter)
-            for (const dt of allDerivedAppTargets) {
-              await categoryUpdater.activateCategory(dt);
-              await categoryUpdater.updateCategoryState(dt, devOpts, pid, false, isBlockOrdisturb, true);
-              remoteSets.push({
-                remoteSet4: categoryUpdater.getAggrIPSetName(dt),
-                remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(dt)
-              });
-              // connSet for signature-detected connections (e.g. roblox-sig blockType=connection)
-              connSets.push({
-                connSet4: categoryUpdater.getConnectionIPSetName(dt),
-                connSet6: categoryUpdater.getConnectionIPSetNameForIPV6(dt)
-              });
-            }
-
-            // Push into targets for post-switch TLS activation
-            targets.push(...allDerivedAppTargets);
           }
         }
 
@@ -2350,11 +2322,25 @@ class PolicyManager2 {
       case "category":
         if (_.isEmpty(targets))
           targets = [target];
+
+        // Derive app-level targets for this category (only for block/disturb)
+        if (isBlockOrdisturb) {
+          const derivedAppTargets = [];
+          for (const catTarget of targets) {
+            const derived = await this._getDerivedAppTargetsForCategory(catTarget);
+            derivedAppTargets.push(...derived);
+          }
+          if (!_.isEmpty(derivedAppTargets)) {
+            log.info(`Policy ${pid}: unenforce derived app targets:`, derivedAppTargets);
+            targets.push(...derivedAppTargets);
+          }
+        }
+
         if (platform.isTLSBlockSupport() || platform.isUdpTLSBlockSupport()) { // default on
           for (const target of targets)
             tlsHostSets.push(categoryUpdater.getHostSetName(target));
         }
-        
+
         for (const target of targets) {
           await categoryUpdater.updateCategoryState(target, devOpts, pid, policy.dnsmasq_only, isBlockOrdisturb, false);
         }
@@ -2399,45 +2385,6 @@ class PolicyManager2 {
               remoteSet4: categoryUpdater.getAggrIPSetName(target),
               remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(target)
             });
-          }
-        }
-
-        // --- Unenforce derived app-level block rules ---
-        if (isBlockOrdisturb) {
-          const allDerivedAppTargets = [];
-          for (const catTarget of targets) {
-            const derived = await this._getDerivedAppTargetsForCategory(catTarget);
-            allDerivedAppTargets.push(...derived);
-          }
-
-          if (!_.isEmpty(allDerivedAppTargets)) {
-            log.info(`Policy ${pid}: unenforce derived app targets:`, allDerivedAppTargets);
-
-            if (direction !== "inbound" && !localPort && !remotePort) {
-              await domainBlock.unblockCategory({
-                pid, action, scope, categories: allDerivedAppTargets,
-                intfs, tags, guids, parentRgId, seq, wanUUID, routeType
-              });
-            }
-
-            if (platform.isTLSBlockSupport() || platform.isUdpTLSBlockSupport()) {
-              for (const dt of allDerivedAppTargets)
-                tlsHostSets.push(categoryUpdater.getHostSetName(dt));
-            }
-
-            for (const dt of allDerivedAppTargets) {
-              await categoryUpdater.updateCategoryState(dt, devOpts, pid, false, isBlockOrdisturb, false);
-              remoteSets.push({
-                remoteSet4: categoryUpdater.getAggrIPSetName(dt),
-                remoteSet6: categoryUpdater.getAggrIPSetNameForIPV6(dt)
-              });
-              connSets.push({
-                connSet4: categoryUpdater.getConnectionIPSetName(dt),
-                connSet6: categoryUpdater.getConnectionIPSetNameForIPV6(dt)
-              });
-            }
-
-            targets.push(...allDerivedAppTargets);
           }
         }
 
