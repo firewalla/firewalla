@@ -78,7 +78,7 @@ class PolicyManager {
       const overlayMasquerade = new Rule('nat').chn('FW_POSTROUTING').src(secondarySubnet).jmp('MASQUERADE');
       iptc.addRule(overlayMasquerade);
     }
-    const icmpv6Redirect = new Rule().fam(6).chn('OUTPUT').pro('icmpv6').opt('--icmpv6-type', 'redirect').jmp('DROP');
+    const icmpv6Redirect = new Rule().fam(6).chn('OUTPUT').icmp6('redirect').jmp('DROP');
     iptc.addRule(icmpv6Redirect);
 
     // setup global blocking redis match rule

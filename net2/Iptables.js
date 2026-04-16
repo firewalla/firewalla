@@ -124,6 +124,37 @@ class Rule {
     this.modules.push({module, expr});
     return this;
   }
+  icmp6(v, negate) {
+    this.proto = [ '-p', 'ipv6-icmp', negate ];
+    switch (v) {
+      case 'echo-request':
+        v = 128
+        break;
+      case 'echo-reply':
+        v = 129
+        break;
+      case 'router-solicitation':
+        v = 133
+        break;
+      case 'router-advertisement':
+        v = 134
+        break;
+      case 'neighbor-solicitation':
+      case 'neighbour-solicitation':
+        v = 135
+        break;
+      case 'neighbor-advertisement':
+      case 'neighbour-advertisement':
+        v = 136
+        break;
+      case 'redirect':
+        v = 137
+        break;
+      default:
+        log.warn('Unknown icmp6 type: ', v);
+    }
+    this.modules.push({ module: 'icmp6', options: [['--icmpv6-type', v, negate]] }); return this
+  }
 
   jmp(j) { this.jump = j; return this }
   log(l) { this.jump = `LOG --log-prefix "${l}"`; return this }
