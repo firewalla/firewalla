@@ -252,7 +252,7 @@ fi
 #export FWPRODUCTION=$branch
 #cat $FWPRODUCTION > /tmp/FWPRODUCTION
 
-sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
+sudo ip6tables -w -C OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP &>/dev/null || sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP
 
 cd $FIREWALLA_HOME
 

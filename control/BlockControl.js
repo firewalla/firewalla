@@ -22,7 +22,6 @@ const ipset = require('./IpsetControl.js');
 const tlsset = require('./TLSSetControl.js');
 const SensorEventManager = require('../sensor/SensorEventManager.js').getInstance();
 const sysManager = require('../net2/SysManager.js');
-const { delay } = require('../util/util.js');
 
 const { exec } = require('child-process-promise');
 
@@ -73,8 +72,9 @@ class BlockControl {
         // If in 'processing' or 'initializing' state, rules will be processed when state changes
       });
     }
-    
-    this.enterIdleState();
+
+    // start in 'initializing' state so rules queued before startInitialization() are preserved
+    this.state = 'initializing';
   }
 
   /**
@@ -106,8 +106,6 @@ class BlockControl {
     // Each module manages its own queue and processes it when called
     // Process modules in order to avoid races (e.g. iptables referencing ipset before it's created)
     for (const module of this.modules) try {
-      // there's a short delay before TLS set file is created
-      // if (module == tlsset) await delay(3000);
       await module.processRules(fromInitialization);
     } catch (err) {
       log.error('Error processing rules', module.name, err);
@@ -139,11 +137,7 @@ class BlockControl {
   /**
    * Start initialization process
    */
-  async startInitialization() {
-    log.info('Starting initialization process');
-    this.initTS = Date.now() / 1000
-    this.state = 'initializing';
-    
+  async callInitScript() {
     log.info('Running iptables setup script');
     try {
       const path = require('path');
@@ -156,12 +150,7 @@ class BlockControl {
     }
     log.info('Iptables setup script completed successfully');
 
-    // Clear queued rules in all modules
-    this.modules.forEach(module => {
-      module.flush()
-    });
-    
-    log.info('Entered initializing state - rules can be added until finishInitialization is called');
+    // Do NOT flush module queues here: some Rules may be queued before startInitialization()
   }
 
   /**
@@ -169,16 +158,15 @@ class BlockControl {
    */
   async finishInitialization() {
     log.info('Finishing initialization process');
-    
+
     if (this.state !== 'initializing') {
       throw new Error('finishInitialization can only be called in initializing state');
     }
-    
+
     await this.enterProcessingState();
 
-    const processingTimeSec = (Date.now() / 1000 - this.initTS).toFixed(2);
     const totalTimeSec = (Date.now() / 1000 - sysManager.startTS).toFixed(2);
-    log.info(`======= Initialization completed, processing time: ${processingTimeSec}s, total: ${totalTimeSec}s =======`);
+    log.info(`======= Initialization completed, took ${totalTimeSec}s from service start =======`);
   }
 
   /**
