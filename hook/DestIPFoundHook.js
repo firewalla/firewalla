@@ -14,8 +14,8 @@
  */
 'use strict';
 
-const log = require('../net2/logger.js')(__filename, 'info');
-
+const net = require('net');
+const log = require('../net2/logger.js')(__filename);
 const Hook = require('./Hook.js');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -175,7 +175,6 @@ class DestIPFoundHook extends Hook {
     }
   }
 
-  // deprecated
   async updateCountryIP(intel) {
     if (intel.ip) try {
       await countryUpdater.updateIP(intel.ip, intel.country)
@@ -296,7 +295,8 @@ class DestIPFoundHook extends Hook {
     options = options || {};
 
     try {
-      if (ipUtil.isPrivate(ip)) {
+      const fam = net.isIP(ip);
+      if (ipUtil.isPrivate(ip, fam)) {
         return
       }
 
@@ -323,7 +323,8 @@ class DestIPFoundHook extends Hook {
           // (relatively loose condition to avoid calling intel API too frequently)
           if (!domain || intel.host && isSimilarHost(domain, intel.host)) {
             await this.updateCategoryDomain(intel);
-            // await this.updateCountryIP(intel);
+            if (fam === 6)
+              await this.updateCountryIP(intel);
             if (intel.category === "intel")
               this.shouldTriggerDetectionImmediately(mac);
             log.debug('return cached intel:', intel)
@@ -405,8 +406,8 @@ class DestIPFoundHook extends Hook {
         await intelTool.addIntel(ip, aggrIntelInfo);
       }
 
-      // geoip-lite should be our single source of truth
-      // await this.updateCountryIP(aggrIntelInfo);
+      if (fam === 6)
+        await this.updateCountryIP(aggrIntelInfo);
 
       // check if detection should be triggered on this flow/mac immediately to speed up detection
       if(aggrIntelInfo.category === 'intel') {
