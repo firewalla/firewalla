@@ -1718,6 +1718,20 @@ class PolicyManager2 {
       case "category":
         if (_.isEmpty(targets))
           targets = [target];
+
+        // Derive app-level targets for this category (only for block/disturb)
+        if (isBlockOrdisturb) {
+          const derivedAppTargets = [];
+          for (const catTarget of targets) {
+            const derived = await this._getDerivedAppTargetsForCategory(catTarget);
+            derivedAppTargets.push(...derived);
+          }
+          if (!_.isEmpty(derivedAppTargets)) {
+            log.info(`Policy ${pid}: derive app targets from category:`, derivedAppTargets);
+            targets.push(...derivedAppTargets);
+          }
+        }
+
         if (platform.isTLSBlockSupport() || platform.isUdpTLSBlockSupport()) { // default on
           for (const target of targets)
             tlsHostSets.push(categoryUpdater.getHostSetName(target));
@@ -1739,20 +1753,24 @@ class PolicyManager2 {
               routeType
             });
             if (policy.useBf) {
-              await domainBlock.blockCategory({
-                pid,
-                scope: scope, categories: targets.map(target => categoryUpdater.getBfCategoryName(target)), intfs, guids,
-                action: action, tags, parentRgId, seq, wanUUID, routeType, append: true
-              });
+              // useBf only applies to original categories, not TLX-fw-* derived targets
+              const bfTargets = targets.filter(t => !categoryUpdater.isSmallExtendedTargetList(t));
+              if (!_.isEmpty(bfTargets)) {
+                await domainBlock.blockCategory({
+                  pid,
+                  scope: scope, categories: bfTargets.map(t => categoryUpdater.getBfCategoryName(t)), intfs, guids,
+                  action: action, tags, parentRgId, seq, wanUUID, routeType, append: true
+                });
+              }
             }
           }
         }
 
-        
+
         for (const target of targets) {
           await categoryUpdater.activateCategory(target);
           await categoryUpdater.updateCategoryState(target, devOpts, pid, policy.dnsmasq_only, isBlockOrdisturb, true);
-          if (policy.useBf) {
+          if (policy.useBf && !categoryUpdater.isSmallExtendedTargetList(target)) {
             await categoryUpdater.activateCategory(categoryUpdater.getBfCategoryName(target));
             categoryUpdater.addUseBfCategory(target);
           }
@@ -1781,6 +1799,7 @@ class PolicyManager2 {
             });
           }
         }
+
         remoteTupleCount = 2;
         break;
 
@@ -2304,11 +2323,25 @@ class PolicyManager2 {
       case "category":
         if (_.isEmpty(targets))
           targets = [target];
+
+        // Derive app-level targets for this category (only for block/disturb)
+        if (isBlockOrdisturb) {
+          const derivedAppTargets = [];
+          for (const catTarget of targets) {
+            const derived = await this._getDerivedAppTargetsForCategory(catTarget);
+            derivedAppTargets.push(...derived);
+          }
+          if (!_.isEmpty(derivedAppTargets)) {
+            log.info(`Policy ${pid}: unenforce derived app targets:`, derivedAppTargets);
+            targets.push(...derivedAppTargets);
+          }
+        }
+
         if (platform.isTLSBlockSupport() || platform.isUdpTLSBlockSupport()) { // default on
           for (const target of targets)
             tlsHostSets.push(categoryUpdater.getHostSetName(target));
         }
-        
+
         for (const target of targets) {
           await categoryUpdater.updateCategoryState(target, devOpts, pid, policy.dnsmasq_only, isBlockOrdisturb, false);
         }
@@ -2355,6 +2388,7 @@ class PolicyManager2 {
             });
           }
         }
+
         remoteTupleCount = 2;
         break;
 
@@ -2916,6 +2950,18 @@ class PolicyManager2 {
     }
 
     return false;
+  }
+
+  async _getDerivedAppTargetsForCategory(category) {
+    const cloudConfig = await rclient.getAsync(Constants.REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG)
+      .then(r => r && JSON.parse(r)).catch(() => null);
+    const appConfs = _.get(cloudConfig, 'appConfs', {});
+    if (_.isEmpty(appConfs)) return [];
+
+    return Object.keys(appConfs).filter(app => {
+      return appConfs[app].category === category
+        && _.get(appConfs[app], ['features', 'acl']) === true;
+    }).map(app => `TLX-fw-${app}`);
   }
 
   _getRuleSubPriority(type) {
