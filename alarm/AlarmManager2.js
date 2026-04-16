@@ -93,6 +93,7 @@ const TimeUsageTool = require('../flow/TimeUsageTool.js');
 const sysManager = require('../net2/SysManager.js');
 
 const featureName = 'msp_sync_alarm';
+const featureSkipDeviceInfoEnrich = 'alarm_skip_device_info_enrich';
 
 // TODO: Support suppress alarm for a while
 
@@ -439,7 +440,11 @@ module.exports = class {
         return;
       }
       log.info('alarm:create', alarm);
-      await this.enrichDeviceInfo(alarm);
+      if (!fc.isFeatureOn(featureSkipDeviceInfoEnrich)) {
+        await this.enrichDeviceInfo(alarm);
+      } else {
+        log.info('alarm:create skip device info enrich by feature flag', featureSkipDeviceInfoEnrich);
+      }
       this.enqueueAlarm(alarm); // use enqueue to ensure no dup alarms
     } catch (err) {
       log.warn('cannot create alarm', err.message);
