@@ -109,7 +109,7 @@ class PolicyDisturbManager {
     const primary = policy.app_name || this._getAppNameFromTarget(policy.target);
     if (primary && !appNames.includes(primary))
       appNames.push(primary);
-    return appNames.length > 0 ? appNames : [""];
+    return appNames;
   }
 
   async _registerPolicy(policy) {
@@ -123,11 +123,11 @@ class PolicyDisturbManager {
 
     let hasAppConf = false;
     for (const appName of appNames) {
-      if (this._appConfValue && this._appConfValue.hasOwnProperty(appName)) {
+      if (this._appConfValue && Object.prototype.hasOwnProperty.call(this._appConfValue, appName)) {
         hasAppConf = true;
         // Use the strictest effective behavior when app-specific defaults differ.
         disableQuic = disableQuic || (this._appConfValue[appName].disableQuic || false);
-        if (this._appConfValue[appName].hasOwnProperty(disturbLevel)) {
+        if (Object.prototype.hasOwnProperty.call(this._appConfValue[appName], disturbLevel)) {
           const appConf = this._appConfValue[appName][disturbLevel];
           if (appConf.rateLimit != null)
             defaultDisturbVal.rateLimit = Math.min(defaultDisturbVal.rateLimit, appConf.rateLimit);
@@ -139,7 +139,7 @@ class PolicyDisturbManager {
       }
     }
 
-    if (!hasAppConf && this._generalConfValue && this._generalConfValue.hasOwnProperty(disturbLevel)) {
+    if (!hasAppConf && this._generalConfValue && Object.prototype.hasOwnProperty.call(this._generalConfValue, disturbLevel)) {
       defaultDisturbVal = Object.assign(defaultDisturbVal, this._generalConfValue[disturbLevel]);
     }
 
