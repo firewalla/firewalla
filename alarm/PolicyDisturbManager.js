@@ -91,21 +91,56 @@ class PolicyDisturbManager {
     });
   }
 
+  _getAppNameFromTarget(target) {
+    if (target && target.startsWith('TLX-fw-'))
+      return target.substring('TLX-fw-'.length);
+    return target || "";
+  }
+
+  _getAppNames(policy) {
+    const appNames = [];
+    if (!_.isEmpty(policy.targets)) {
+      for (const t of policy.targets) {
+        const name = this._getAppNameFromTarget(t);
+        if (name && !appNames.includes(name))
+          appNames.push(name);
+      }
+    }
+    const primary = policy.app_name || this._getAppNameFromTarget(policy.target);
+    if (primary && !appNames.includes(primary))
+      appNames.push(primary);
+    return appNames.length > 0 ? appNames : [""];
+  }
+
   async _registerPolicy(policy) {
     const pid = String(policy.pid);
     log.info(`Registering policy ${pid} ...`);
 
-    const appName = policy.app_name || "";
+    const appNames = this._getAppNames(policy);
     const disturbLevel = policy.disturbLevel || "";
     //set default default values
     let defaultDisturbVal = { "rateLimit": 10240, "dropPacketRate": 0, "increaseLatency": 0 };
     let disableQuic = false;
 
-    if (this._appConfValue && this._appConfValue.hasOwnProperty(appName)){
-      disableQuic = this._appConfValue[appName].disableQuic || false;
-      if (this._appConfValue[appName].hasOwnProperty(disturbLevel))
-        defaultDisturbVal = Object.assign(defaultDisturbVal, this._appConfValue[appName][disturbLevel]);
-    } else if (this._generalConfValue && this._generalConfValue.hasOwnProperty(disturbLevel)) {
+    let hasAppConf = false;
+    for (const appName of appNames) {
+      if (this._appConfValue && this._appConfValue.hasOwnProperty(appName)) {
+        hasAppConf = true;
+        // Use the strictest effective behavior when app-specific defaults differ.
+        disableQuic = disableQuic || (this._appConfValue[appName].disableQuic || false);
+        if (this._appConfValue[appName].hasOwnProperty(disturbLevel)) {
+          const appConf = this._appConfValue[appName][disturbLevel];
+          if (appConf.rateLimit != null)
+            defaultDisturbVal.rateLimit = Math.min(defaultDisturbVal.rateLimit, appConf.rateLimit);
+          if (appConf.dropPacketRate != null)
+            defaultDisturbVal.dropPacketRate = Math.max(defaultDisturbVal.dropPacketRate, appConf.dropPacketRate);
+          if (appConf.increaseLatency != null)
+            defaultDisturbVal.increaseLatency = Math.max(defaultDisturbVal.increaseLatency, appConf.increaseLatency);
+        }
+      }
+    }
+
+    if (!hasAppConf && this._generalConfValue && this._generalConfValue.hasOwnProperty(disturbLevel)) {
       defaultDisturbVal = Object.assign(defaultDisturbVal, this._generalConfValue[disturbLevel]);
     }
 
