@@ -114,9 +114,8 @@ class PolicyDisturbManager {
 
   async _registerPolicy(policy) {
     const pid = String(policy.pid);
-    log.info(`Registering policy ${pid} ...`);
-
     const appNames = this._getAppNames(policy);
+    log.info(`Registering policy ${pid}, appNames: ${JSON.stringify(appNames)}, disturbLevel: ${policy.disturbLevel || "default"}`);
     const disturbLevel = policy.disturbLevel || "";
     //set default default values
     let defaultDisturbVal = { "rateLimit": 10240, "dropPacketRate": 0, "increaseLatency": 0 };
@@ -149,6 +148,7 @@ class PolicyDisturbManager {
     }
     policy = Object.assign(policy, defaultDisturbVal);
     policy.disableQuic = disableQuic;
+    log.info(`Policy ${pid} disturb params: ${JSON.stringify(defaultDisturbVal)}, disableQuic: ${disableQuic}`);
     this.registeredPolicies[pid] = policy;
 
     await this.enforcePolicy(pid);
