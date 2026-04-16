@@ -1406,7 +1406,7 @@ class PolicyManager2 {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
-    // for now, targets is only used for multiple category block/app time limit
+    // for now, targets is only used for multiple category block/app time limit/app disturb
     let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit,
       priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids,
       parentRgId, targetRgId, ipttl, resolver, flowIsolation, dscpClass, increaseLatency, dropPacketRate } = policy;
