@@ -152,33 +152,23 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashsize = 128, c
   const categoryUpdater = new CategoryUpdater();
 
   const ipset4 = categoryUpdater.getIPSetName(category);
-  const tempIpset = categoryUpdater.getTempIPSetName(category);
-  const ipset6 = categoryUpdater.getIPSetNameForIPV6(category);
-  const tempIpset6 = categoryUpdater.getTempIPSetNameForIPV6(category);
+  const ipset6 = categoryUpdater.getIPSetName(category, false, true);
 
   Ipset.create(ipset4, dstType, false, { hashsize, maxelem: 65536, comment });
   Ipset.create(ipset6, dstType, true, { hashsize, maxelem: 65536, comment });
-  Ipset.create(tempIpset, dstType, false, { hashsize, maxelem: 65536, comment });
-  Ipset.create(tempIpset6, dstType, true, { hashsize, maxelem: 65536, comment });
 
   if (!isCountry) { // country does not need following ipsets
     const staticIpset = categoryUpdater.getIPSetName(category, true);
-    const tempStaticIpset = categoryUpdater.getTempIPSetName(category, true);
-    const staticIpset6 = categoryUpdater.getIPSetNameForIPV6(category, true);
-    const tempStaticIpset6 = categoryUpdater.getTempIPSetNameForIPV6(category, true);
-  
+    const staticIpset6 = categoryUpdater.getIPSetName(category, true, true);
+
     const netPortIpset = categoryUpdater.getNetPortIPSetName(category);
     const netPortIpset6 = categoryUpdater.getNetPortIPSetNameForIPV6(category);
-  
+
     const domainPortIpset = categoryUpdater.getDomainPortIPSetName(category);
-    const tempDomainPortIpset = categoryUpdater.getTempDomainPortIPSetName(category);
-    const domainPortIpset6 = categoryUpdater.getDomainPortIPSetNameForIPV6(category);
-    const tempDomainPortIpset6 = categoryUpdater.getTempDomainPortIPSetNameForIPV6(category);
-  
+    const domainPortIpset6 = categoryUpdater.getDomainPortIPSetName(category, false, true);
+
     const staticDomainPortIpset = categoryUpdater.getDomainPortIPSetName(category, true);
-    const tempStaticDomainPortIpset = categoryUpdater.getTempDomainPortIPSetName(category, true);
-    const staticDomainPortIpset6 = categoryUpdater.getDomainPortIPSetNameForIPV6(category, true);
-    const tempStaticDomainPortIpset6 = categoryUpdater.getTempDomainPortIPSetNameForIPV6(category, true);
+    const staticDomainPortIpset6 = categoryUpdater.getDomainPortIPSetName(category, true, true);
 
     const connIpset = categoryUpdater.getConnectionIPSetName(category);
     const connIpset6 = categoryUpdater.getConnectionIPSetNameForIPV6(category);
@@ -194,20 +184,13 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashsize = 128, c
     Ipset.create(netPortIpset6, 'hash:net,port', true, { hashsize, maxelem: 65536, comment });
     Ipset.create(domainPortIpset, 'hash:net,port', false, { hashsize, maxelem: 65536, comment });
     Ipset.create(domainPortIpset6, 'hash:net,port', true, { hashsize, maxelem: 65536, comment });
-    Ipset.create(tempDomainPortIpset, 'hash:net,port', false, { hashsize, maxelem: 65536, comment });
-    Ipset.create(tempDomainPortIpset6, 'hash:net,port', true, { hashsize, maxelem: 65536, comment });
     Ipset.create(aggrIpset, 'list:set');
     Ipset.create(aggrIpset6, 'list:set');
 
-
     Ipset.create(staticIpset, dstType, false, { hashsize, maxelem: 65536, comment });
     Ipset.create(staticIpset6, dstType, true, { hashsize, maxelem: 65536, comment });
-    Ipset.create(tempStaticIpset, dstType, false, { hashsize, maxelem: 65536, comment });
-    Ipset.create(tempStaticIpset6, dstType, true, { hashsize, maxelem: 65536, comment });
     Ipset.create(staticDomainPortIpset, 'hash:net,port', false, { hashsize, maxelem: 65536, comment });
     Ipset.create(staticDomainPortIpset6, 'hash:net,port', true, { hashsize, maxelem: 65536, comment });
-    Ipset.create(tempStaticDomainPortIpset, 'hash:net,port', false, { hashsize, maxelem: 65536, comment });
-    Ipset.create(tempStaticDomainPortIpset6, 'hash:net,port', true, { hashsize, maxelem: 65536, comment });
 
     Ipset.create(connIpset, 'hash:ip,port,ip', false, { hashsize, maxelem: 65536, comment, timeout: 300 });
     Ipset.create(connIpset6, 'hash:ip,port,ip', true, { hashsize, maxelem: 65536, comment, timeout: 300 });

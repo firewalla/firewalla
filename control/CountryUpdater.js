@@ -108,8 +108,6 @@ class CountryUpdater extends CategoryUpdaterBase {
 
     await Ipset.destroy(this.getIPSetName(category))
     await Ipset.destroy(this.getIPSetNameForIPV6(category))
-    await Ipset.destroy(this.getTempIPSetName(category))
-    await Ipset.destroy(this.getTempIPSetNameForIPV6(category))
 
     delete this.activeCountries[code]
     await this.deactivateCategory(category)
@@ -204,7 +202,7 @@ class CountryUpdater extends CategoryUpdaterBase {
       }
     }
 
-    this.flushTempIpset(category, true);
+    await this.createTempIpsets(category, true);
 
     // only update v4 persistent set, v6 space is too big for this approach
     await this.updatePersistentIPSets(category, false, {useTemp: true});
