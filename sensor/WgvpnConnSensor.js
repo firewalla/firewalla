@@ -146,15 +146,17 @@ class WgvpnConnSensor extends Sensor {
             continue;
           }
           this.constructor.peerLastEndpointMap[pubKey] = `${remoteIP}:${remotePort}`;
-          log.info(`Wireguard VPN client connection accepted, remote ${remoteIP}:${remotePort}, peer ipv4: ${peerIP4s.length > 0 ? peerIP4s[0] : null}, peer ipv6: ${peerIP6s.length > 0 ? peerIP6s[0] : null}, public key: ${pubKey}`);
+          const peerIP4 = peerIP4s.find(ip => ip.endsWith('/32')) || peerIP4s[0] || null;
+          const peerIP6 = peerIP6s.find(ip => ip.endsWith('/128')) || peerIP6s[0] || null;
+          log.info(`Wireguard VPN client connection accepted, remote ${remoteIP}:${remotePort}, peer ipv4: ${peerIP4}, peer ipv6: ${peerIP6}, public key: ${pubKey}`);
           const event = {
             type: this.getConnAcceptedMessageType(),
             message: `A new ${this.protocol} VPN connection was accepted`,
             client: {
               remoteIP: remoteIP,
               remotePort: remotePort,
-              peerIP4: peerIP4s.length > 0 ? peerIP4s[0] : null,
-              peerIP6: peerIP6s.length > 0 ? peerIP6s[0] : null,
+              peerIP4: peerIP4,
+              peerIP6: peerIP6,
               profile: pubKey,
               intf,
               vpnType: this.getVpnType()
