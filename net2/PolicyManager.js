@@ -63,7 +63,7 @@ class PolicyManager {
     }
 
     await this.prepareOsiIpset();
-    await blockControl.startInitialization();
+    await blockControl.callInitScript();
 
     // In case diag service is running, immediate adds redirection back to prevent pairing failure
     sem.emitEvent({

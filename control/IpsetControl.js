@@ -81,8 +81,11 @@ class IpsetControl extends ModuleControl {
 
     if (!queuedOps.length) return;
 
+    // sets before processing queued ops
     const previousSets = await this.listExistingSets();
-    this.existingSets = fromInitialization ? new Set() : previousSets;
+    // expected existing sets updated as filtering queued ops
+    this.existingSets = fromInitialization ? new Set() : previousSets || this.existingSets;
+    // sets should be swapped
     const swapSets = new Set();
     const restoreFile = this.getIpsetRestoreFile();
     const ops = []
@@ -162,9 +165,16 @@ class IpsetControl extends ModuleControl {
       previousSets.forEach(setName => {
         if (swapSets.has(setName)) {
           const swapSetName = this.getSwapSetName(setName);
-          ops.push(`swap ${setName} ${swapSetName}`);
-          ops.push(`flush ${swapSetName}`);
-        } else if (setName.startsWith('c_') && !setName.includes('_swp')) {
+          // only swap if set has been created
+          if (this.existingSets.has(swapSetName)) {
+            ops.push(`swap ${setName} ${swapSetName}`);
+            ops.push(`flush ${swapSetName}`);
+            return
+          }
+          // this should not happen, it probably indicates a bug somewhere
+          log.error(`${swapSetName} not found, skip swap and destroy`);
+        }
+        if (setName.startsWith('c_') && !setName.includes('_swp')) {
           // _swp sets are already handled by leftover cleanup above; skip to avoid duplicate ops
           if (setName.startsWith('c_bd_tmp_') && this.existingSets.has(setName)) return
           ops.push(`flush ${setName}`);
@@ -176,8 +186,12 @@ class IpsetControl extends ModuleControl {
         if (setName.startsWith('c_bd_tmp_')) return
         if (swapSets.has(setName)) {
           const swapSetName = this.getSwapSetName(setName);
-          ops.push(`destroy ${swapSetName}`);
-        } else if (setName.startsWith('c_') && !setName.includes('_swp')) {
+          if (this.existingSets.has(swapSetName)) {
+            ops.push(`destroy ${swapSetName}`);
+            return
+          }
+        }
+        if (setName.startsWith('c_') && !setName.includes('_swp')) {
           // _swp sets are already handled by leftover cleanup above; skip to avoid duplicate ops
           if (setName.startsWith('c_bd_tmp_') && this.existingSets.has(setName)) return
           ops.push(`destroy ${setName}`);
