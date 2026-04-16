@@ -22,8 +22,16 @@ SUBNET_FILE="/home/pi/.firewalla/run/ovpn_profile/$PROFILE_ID.subnet"
 echo -n "" > $SUBNET_FILE
 for route_network_option_name in ${!route_network_*} ; do
   route_network="${!route_network_option_name}"
-  route_netmask_option_name="route_netmask_$(echo $route_network_option_name | awk -F_ '{print $3}')"
+  route_idx=$(echo $route_network_option_name | awk -F_ '{print $3}')
+  route_netmask_option_name="route_netmask_${route_idx}"
   route_netmask="${!route_netmask_option_name}"
+  route_gateway_option_name="route_gateway_${route_idx}"
+  route_gateway="${!route_gateway_option_name}"
+  # skip routes with net_gateway — they should go through ISP, not VPN
+  # config without gateway_option will not be filtered.
+  if [ -n "$route_gateway" ] && [ "$route_gateway" != "$route_vpn_gateway" ]; then
+    continue
+  fi
   echo "$route_network/$route_netmask" >> $SUBNET_FILE
 done
 
@@ -39,6 +47,14 @@ echo "${subnetwork6}" >> $SUBNET6_FILE
 
 for route_network_option_name in ${!route_ipv6_network_*}; do
   route_network="${!route_network_option_name}"
+  route_idx=$(echo $route_network_option_name | awk -F_ '{print $4}')
+  route_gateway_option_name="route_ipv6_gateway_${route_idx}"
+  route_gateway="${!route_gateway_option_name}"
+  # skip routes with net_gateway6 — they should go through ISP, not VPN.
+  # config without gateway_option will not be filtered.
+  if [ -n "$route_gateway" ] && [ "$route_gateway" != "$ifconfig_ipv6_remote" ]; then
+    continue
+  fi
   echo "$route_network" >> $SUBNET6_FILE
 done
 chown pi $SUBNET6_FILE
