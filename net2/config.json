@@ -1090,10 +1090,12 @@
     "policy_disturb": true,
     "dap": false,
     "dap_bg_task": true,
-    "record_activity_flow": false
+    "record_activity_flow": false,
+    "alarm_skip_device_info_enrich": false
   },
   "hiddenFeatures": [
-    "naughty_monkey"
+    "naughty_monkey",
+    "alarm_skip_device_info_enrich"
   ],
   "pubKeys": [],
   "firerouter": {
