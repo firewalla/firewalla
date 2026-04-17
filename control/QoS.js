@@ -37,12 +37,14 @@ const DEFAULT_LOSS_RATE = "0";
 const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 
-async function getQoSHandlerForPolicy(pid) {
+function _policyField({ pid, subKey }) {
+  return subKey ? `policy_${pid}_${subKey}` : `policy_${pid}`;
+}
+
+async function getQoSHandlerForPolicy(ref) {
   const policyHandlerMap = (await rclient.hgetallAsync(POLICY_QOS_HANDLER_MAP_KEY)) || {};
-  if (policyHandlerMap[`policy_${pid}`])
-    return policyHandlerMap[`policy_${pid}`];
-  else
-    return null;
+  const field = _policyField(ref);
+  return policyHandlerMap[field] || null;
 }
 
 async function getPolicyForQosHandler(handlerId) {
@@ -53,26 +55,29 @@ async function getPolicyForQosHandler(handlerId) {
     return null;
 }
 
-async function allocateQoSHanderForPolicy(pid) {
+async function allocateQoSHanderForPolicy(ref) {
   const policyHandlerMap = (await rclient.hgetallAsync(POLICY_QOS_HANDLER_MAP_KEY)) || {};
-  if (policyHandlerMap[`policy_${pid}`])
-    return policyHandlerMap[`policy_${pid}`];
-  else {
-    for (let i = 2; i != 127; i++) {
-      if (!policyHandlerMap[`qos_${i}`]) {
-        await rclient.hmsetAsync(POLICY_QOS_HANDLER_MAP_KEY, `policy_${pid}`, i, `qos_${i}`, pid);
-        return i;
-      }
+  const field = _policyField(ref);
+  if (policyHandlerMap[field])
+    return policyHandlerMap[field];
+  for (let i = 2; i != 127; i++) {
+    if (!policyHandlerMap[`qos_${i}`]) {
+      await rclient.hmsetAsync(
+          POLICY_QOS_HANDLER_MAP_KEY,
+          field, i,
+          `qos_${i}`, ref.pid);
+      return i;
     }
-    return null;
   }
+  return null;
 }
 
-async function deallocateQoSHandlerForPolicy(pid) {
-  const qosHandler = await rclient.hgetAsync(POLICY_QOS_HANDLER_MAP_KEY, `policy_${pid}`);
+async function deallocateQoSHandlerForPolicy(ref) {
+  const field = _policyField(ref);
+  const qosHandler = await rclient.hgetAsync(POLICY_QOS_HANDLER_MAP_KEY, field);
   if (qosHandler) {
     await rclient.hdelAsync(POLICY_QOS_HANDLER_MAP_KEY, `qos_${qosHandler}`);
-    await rclient.hdelAsync(POLICY_QOS_HANDLER_MAP_KEY, `policy_${pid}`);
+    await rclient.hdelAsync(POLICY_QOS_HANDLER_MAP_KEY, field);
   }
 }
 
