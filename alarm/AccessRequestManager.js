@@ -489,7 +489,7 @@ class AccessRequestManager {
     }
 
     // if there is any block rule affected, create/update the bypass rule
-    const appset = new Set();
+    let apps = [];
     if (affectedPids.size > 0) {
       let policyNumber;
       if(req.app.match(/policy:(\d+)/)) {
@@ -504,9 +504,9 @@ class AccessRequestManager {
           return { ok: false, error: 'Bad app format' };
         }
       } else {
-        appset.add(req.app);
+        apps.push(req.app);
       }
-      const apps = Array.from(appset).sort();
+      
       if (apps.length === 0) {
         log.error('AccessRequestManager approveRequest no app found for affected block rules');
       } else {

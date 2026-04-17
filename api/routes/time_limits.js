@@ -22,7 +22,7 @@ const log = require('../../net2/logger.js')(__filename);
 const HostManager = require('../../net2/HostManager.js');
 const sysManager = require('../../net2/SysManager.js');
 const Constants = require('../../net2/Constants.js');
-const { getInstance: getAccessRequestManager, STATE_PENDING, STATE_APPROVED, STATE_DENIED, STATE_EXPIRED, getUserRelatedTags: getManagerUserRelatedTags, findMatchingTimeLimitRules, getAppFromTarget} = require('../../alarm/AccessRequestManager.js');
+const { getInstance: getAccessRequestManager, STATE_PENDING, STATE_APPROVED, STATE_DENIED, STATE_EXPIRED, getUserRelatedTags: getManagerUserRelatedTags, findMatchingTimeLimitRules, getAppFromTarget, getAppsFromPolicy} = require('../../alarm/AccessRequestManager.js');
 const moment = require('moment-timezone/moment-timezone.js');
 try { moment.tz.load(require('../../vendor_lib/moment-tz-data.json')); } catch (_) { /* optional */ }
 
@@ -33,7 +33,6 @@ const sem = require('../../sensor/SensorEventManager.js').getInstance();
 const fs = require('fs');
 const Mustache = require('mustache');
 const path = require('path');
-const { block } = require('../../control/Block.js');
 const CLOUD_VIEW_ASSETS_PATH = "/home/pi/.firewalla/run/assets/views";
 
 const hostManager = new HostManager();
@@ -225,6 +224,7 @@ router.get('/', async (req, res) => {
         }
         appQuotaInfo.apps.push(appQuotaInfo.app);
       }
+      appQuotaInfo.apps.sort();
 
       if (rule.appTimeUsage) {
         appQuotaInfo.quota = Number(rule.appTimeUsage.quota);
@@ -234,7 +234,7 @@ router.get('/', async (req, res) => {
         appQuotaInfo.timeUsed = Number(rule.appTimeUsed);
       } else {
         // for non-time-limit rules, get quota from the bypass policy if exists
-        const bypassPolicyKey = accessRequestManager.getBypassPolicyKey(userId, [appQuotaInfo.app]);
+        const bypassPolicyKey = accessRequestManager.getBypassPolicyKey(userId, appQuotaInfo.apps);
         const bypassPolicy = appsBypassPolicyMap.get(bypassPolicyKey);
         if (bypassPolicy) {
           if (_.isArray(bypassPolicy.affectedPids) && bypassPolicy.affectedPids.includes(rule.pid)) {
@@ -344,7 +344,7 @@ router.post('/requests', async (req, res) => {
       const policyId = app.match(/policy:(\d+)/)[1];
       let policy = blockOrDisturbPolicies.find(p => String(p.pid) === policyId);
       if (policy) {
-        const apps = fs.accessRequestManager.getAppsFromRule(policy);
+        const apps = getAppsFromPolicy(policy);
         for (const appName of apps) {
           for (const appInfo of supportedApps) {
             if (appInfo.app == appName) {

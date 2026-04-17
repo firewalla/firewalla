@@ -24,6 +24,8 @@ const domainBlock = require('../control/DomainBlock.js');
 async function setupTagsRules(options) {
   const {affectedPids, tags, intfs, action, pid, targets} = options;
   const PolicyManager2 = require('../alarm/PolicyManager2.js');
+  const CategoryUpdater = require('../control/CategoryUpdater.js')
+  const categoryUpdater = new CategoryUpdater()
   const pm2 = new PolicyManager2();
   const categoriesWithBfSet = new Set();
 

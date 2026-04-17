@@ -2095,13 +2095,13 @@ class PolicyManager2 {
         const timeLeft = policy.getExpireDiffFromNow();
         if (timeLeft > 0) {
           const policyTimer = setTimeout(async () => {
-            await this.deletePolicy(pid);
-            delete this.enabledTimers[pid];
+            await this.deletePolicy(policy.pid);
+            delete this.enabledTimers[policy.pid];
           }, timeLeft * 1000);
-           this.enabledTimers[pid] = policyTimer;
+           this.enabledTimers[policy.pid] = policyTimer;
         } else {
           // already expired, delete immediately
-          await this.deletePolicy(pid);
+          await this.deletePolicy(policy.pid);
         }
       }
 

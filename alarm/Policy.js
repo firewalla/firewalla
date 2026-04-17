@@ -170,7 +170,7 @@ class Policy {
       "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
       "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
       "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", 
-      "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf", "affactedPids"];
+      "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf", "affectedPids"];
 
     for (const field of compareFields) {
       if (!Policy.fieldEqual(this[field], policy[field], field)) {

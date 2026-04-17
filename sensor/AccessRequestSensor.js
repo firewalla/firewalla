@@ -18,7 +18,7 @@
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 const extensionManager = require('./ExtensionManager.js');
-const AccessRequestManager = require('../alarm/AccessRequestManager.js');
+const { getInstance: getAccessRequestManager, getUserRelatedTags, getAppsFromPolicy } = require('../alarm/AccessRequestManager.js');
 const LOCK_BYPASS_RULE_UPDATE = "LOCK_BYPASS_RULE_UPDATE";
 const _ = require('lodash');
 const AsyncLock = require('../vendor_lib/async-lock');
@@ -53,7 +53,7 @@ class AccessRequestSensor extends Sensor {
         }
         approvedQuota = num;
       }
-      const result = await AccessRequestManager.getInstance().approveRequest(requestId, approvedQuota);
+      const result = await getAccessRequestManager().approveRequest(requestId, approvedQuota);
       if (!result.ok) {
         throw { code: 400, msg: result.error || 'Failed to approve' };
       }
@@ -66,7 +66,7 @@ class AccessRequestSensor extends Sensor {
         throw { code: 400, msg: 'requestId is required' };
       }
       const reason = data && data.reason;
-      const result = await AccessRequestManager.getInstance().denyRequest(requestId, reason);
+      const result = await getAccessRequestManager().denyRequest(requestId, reason);
       if (!result.ok) {
         throw { code: 400, msg: result.error || 'Failed to deny' };
       }
@@ -85,7 +85,7 @@ class AccessRequestSensor extends Sensor {
       if (options.userId) {
         filterOpts.userId = new Set([options.userId]);
       }
-      const result = await AccessRequestManager.getInstance().listAllRequests(filterOpts);
+      const result = await getAccessRequestManager().listAllRequests(filterOpts);
       return result;
     });
   }
@@ -119,9 +119,9 @@ class AccessRequestSensor extends Sensor {
     // if yes, add pid into the affectedPids of the bypass rule
     if (policy.type === "category" && (policy.action == "block" || policy.action == "disturb" || policy.action == "app_block")) {
 
-      const tags = Object.values(this.tagManager.tags);
+      const tags = this.tagManager.tags;
       for (let uid in tags) {
-        const { user, afTag } = AccessRequestManager.getUserRelatedTags(uid);
+        const { user, afTag } = getUserRelatedTags(uid);
       
         const ruleTagValues = new Set();
         const addRuleTag = (tag) => {
@@ -136,8 +136,8 @@ class AccessRequestSensor extends Sensor {
         const policyTargetsUserOrGroup = (p) => p.tag && p.tag.some(t => ruleTagValues.has(t));
         if (!policyTargetsUserOrGroup(policy)) continue;
 
-        const apps = AccessRequestManager.getAppsFromPolicy(policy);
-        const bypassPolicyKey = AccessRequestManager.getInstance().getBypassPolicyKey(uid, apps);
+        const apps = getAppsFromPolicy(policy);
+        const bypassPolicyKey = getAccessRequestManager().getBypassPolicyKey(uid, apps);
         const bypassPolicyId = await rclient.getAsync(bypassPolicyKey);
         if (bypassPolicyId) {
           const oldPolicy = await pm2.getPolicy(parseInt(bypassPolicyId));
