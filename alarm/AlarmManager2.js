@@ -440,11 +440,13 @@ module.exports = class {
         return;
       }
       log.info('alarm:create', alarm);
-      if (!fc.isFeatureOn(featureSkipDeviceInfoEnrich)) {
-        await this.enrichDeviceInfo(alarm);
-      } else {
-        log.info('alarm:create skip device info enrich by feature flag', featureSkipDeviceInfoEnrich);
-      }
+      await this.enrichDeviceInfo(alarm).catch((err) => {
+        if (fc.isFeatureOn(featureSkipDeviceInfoEnrich)) {
+          log.info('alarm:create skip device info enrich on error by feature flag', featureSkipDeviceInfoEnrich);
+          return;
+        }
+        throw err;
+      });
       this.enqueueAlarm(alarm); // use enqueue to ensure no dup alarms
     } catch (err) {
       log.warn('cannot create alarm', err.message);
