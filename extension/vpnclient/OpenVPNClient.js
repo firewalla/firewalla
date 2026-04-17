@@ -100,6 +100,10 @@ class OpenVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.subnet${ipFamily === 6 ? '6' : ''}`;
   }
 
+  _getBypassSubnetFilePath(ipFamily=4) {
+    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.subnet${ipFamily === 6 ? '6' : ''}_bypass`;
+  }
+
   _getLocalIPFilePath(ipFamily=4) {
     return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.ip${ipFamily === 6 ? '6' : '4'}`;
   }
@@ -407,6 +411,45 @@ class OpenVPNClient extends VPNClient {
     return results;
   }
 
+  async getBypassSubnets() {
+    const results = [];
+    // IPv4 bypass subnets (xx.xx.xx.xx/255.255.255.0 format)
+    const subnets = await fs.readFileAsync(this._getBypassSubnetFilePath(), "utf8")
+      .then((content) => content.trim().split("\n"))
+      .catch(() => []);
+    for (const subnet of subnets) {
+      const [network, mask] = subnet.split("/", 2);
+      if (!network || !mask)
+        continue;
+      try {
+        const ipSubnet = iptool.subnet(network, mask);
+        results.push(`${ipSubnet.networkAddress}/${ipSubnet.subnetMaskLength}`);
+      } catch (err) {
+        log.error(`Failed to parse bypass cidr subnet ${subnet} for profile ${this.profileId}`, err.message);
+      }
+    }
+    // IPv6 bypass subnets (CIDR format)
+    const subnet6s = await fs.readFileAsync(this._getBypassSubnetFilePath(6), "utf8")
+      .then((content) => content.trim().split("\n"))
+      .catch(() => []);
+    for (const subnet of subnet6s) {
+      const [network, mask] = subnet.split("/", 2);
+      if (!network || !mask)
+        continue;
+      try {
+        const addr = new Address6(network);
+        if (addr.isValid()) {
+          const prefix = parseInt(mask);
+          if (prefix >= 0 && prefix <= 128)
+            results.push(`${addr.correctForm()}/${prefix}`);
+        }
+      } catch (err) {
+        log.error(`Failed to parse bypass IPv6 subnet ${subnet} for profile ${this.profileId}`, err.message);
+      }
+    }
+    return results;
+  }
+
   async _isLinkUp() {
     const remoteIP = await this._getRemoteIP();
     if (remoteIP) {
@@ -438,7 +481,8 @@ class OpenVPNClient extends VPNClient {
     const filesToDelete = [
       this._getProfilePath(), this._getRuntimeProfilePath(), this._getUserPassPath(), this._getPasswordPath(), 
       this._getGatewayFilePath(), this._getPushOptionsPath(), this._getSubnetFilePath(), this._getIP4FilePath(),
-      this._getGatewayFilePath(6), this._getSubnetFilePath(6), this._getIP6FilePath()
+      this._getGatewayFilePath(6), this._getSubnetFilePath(6), this._getIP6FilePath(),
+      this._getBypassSubnetFilePath(), this._getBypassSubnetFilePath(6)
     ];
     for (const file of filesToDelete)
       await fs.unlinkAsync(file).catch((err) => {});

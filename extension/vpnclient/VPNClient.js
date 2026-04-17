@@ -290,12 +290,15 @@ class VPNClient {
       await routing.removeRouteFromTable("default", remoteIP, intf, "main", null, 6).catch((err) => { log.verbose("No need to remove IPv6 default route for " + this.profileId) });
     }
     const routedSubnets = await this.getEffectiveRoutedSubnets();
+    const bypassSubnets = await this.getBypassSubnets();
     const dnsServers = await this._getDNSServers() || [];
 
     if (routedSubnets.length)
       log.info(`Adding routes for vpn ${this.profileId}`, routedSubnets);
+    if (bypassSubnets.length)
+      log.info(`Adding throw routes for vpn ${this.profileId}`, bypassSubnets);
     // always add default route into VPN client's routing table, the switch is implemented in ipset, so no need to implement it in routing tables
-    await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, remoteIP6, intf, routedSubnets, dnsServers, true, Boolean(localIP6));
+    await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, remoteIP6, intf, routedSubnets, bypassSubnets, dnsServers, true, Boolean(localIP6));
     // loosen reverse path filter
     await exec(`sudo sysctl -w net.ipv4.conf.${intf}.rp_filter=2`).catch((err) => { });
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
@@ -471,6 +474,12 @@ class VPNClient {
 
   async getRoutedSubnets() {
     return null;
+  }
+
+  // returns subnets that should bypass the VPN tunnel (go through ISP)
+  // subclasses override this when the VPN protocol provides bypass route info
+  async getBypassSubnets() {
+    return [];
   }
 
   async _isLinkUp() {

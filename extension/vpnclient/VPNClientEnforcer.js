@@ -93,13 +93,15 @@ class VPNClientEnforcer {
     });
   }
 
-  async enforceVPNClientRoutes(remoteIP, remoteIP6, vpnIntf, routedSubnets = [], dnsServers = [], overrideDefaultRoute = true, v6Enabled = false) {
+  async enforceVPNClientRoutes(remoteIP, remoteIP6, vpnIntf, routedSubnets = [], bypassSubnets = [], dnsServers = [], overrideDefaultRoute = true, v6Enabled = false) {
     if (!vpnIntf)
       throw "Interface is not specified";
     const tableName = this._getRoutingTableName(vpnIntf);
     // ensure customized routing table is created
     const rtId = await routing.createCustomizedRoutingTable(tableName, routing.RT_TYPE_VC);
     await routing.flushRoutingTable(tableName, vpnIntf); // do not touch unreachable route, which is used for kill-switch
+    // flush throw routes (bypass subnets)
+    await routing.flushRoutingTable(tableName, null, null, null, "throw");
     if (!platform.isFireRouterManaged())
       await routing.flushRoutingTable(tableName, FireRouter.getDefaultWanIntfName());
     await routing.flushRoutingTable("main", vpnIntf); // flush routes in main RT using vpnIntf as outgoing interface
@@ -178,6 +180,24 @@ class VPNClientEnforcer {
         if (v6Enabled)
           await routing.addRouteToTable(dnsServer, null, vpnIntf, tableName, null, 6).catch((err) => {});
       }
+    }
+    // add throw routes for bypass subnets before the default route
+    for (const bypassSubnet of bypassSubnets) {
+      let af = 4;
+      let addr = new Address4(bypassSubnet);
+      if (!addr.isValid()) {
+        addr = new Address6(bypassSubnet);
+        if (addr.isValid())
+          af = 6;
+        else {
+          log.error(`Malformed bypass subnet ${bypassSubnet}`);
+          continue;
+        }
+      }
+      if (af === 4)
+        await routing.addRouteToTable(bypassSubnet, null, null, tableName, null, 4, "throw").catch((err) => {});
+      else if (v6Enabled)
+        await routing.addRouteToTable(bypassSubnet, null, null, tableName, null, 6, "throw").catch((err) => {});
     }
     if (overrideDefaultRoute) {
       // then add remote IP as gateway of default route to vpn client table
