@@ -65,6 +65,7 @@ class DomainUpdater {
       });
 
       setInterval(async () => {
+        log.debug(`_priorityJobQueue.length:${this._priorityJobQueue.length}, _standardJobQueue.length:${this._standardJobQueue.length}`);
         if (this._needRefresh) {
           log.debug("DomainUpdater refreshing connmark for updated ipsets");
           await this.scheduleRefreshConnmark();
