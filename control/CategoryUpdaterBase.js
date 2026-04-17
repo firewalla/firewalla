@@ -205,8 +205,8 @@ class CategoryUpdaterBase {
     return Block.getDstSet6(this.shortString(category) + "_np");
   }
 
-  getDomainPortIPSetName(category, isStatic = false) {
-    return Block.getDstSet(this.shortString(category) + (isStatic ? "_sdp" : "_ddp")); // domain-mapped ip:port, static or dynamic
+  getDomainPortIPSetName(category, isStatic = false, isIP6 = false, isTmp = false) {
+    return Block.getDstSet((isTmp ? 'tmp_' : '') + this.shortString(category) + (isStatic ? "_sdp" : "_ddp"), isIP6); // domain-mapped ip:port, static or dynamic
   }
 
   getDomainPortIPSetNameForIPV6(category, isStatic = false) {
@@ -304,25 +304,26 @@ class CategoryUpdaterBase {
     });
   }
 
-  flushTempIpset(category, isCountry = false) {
-    const tmpIPSetName = this.getTempIPSetName(category);
-    const tmpIPSet6Name = this.getTempIPSetNameForIPV6(category);
+  // Create temp ipsets right before populating them in recycleIPSet.
+  // They are destroyed after swapIpset completes, so they only exist during the recycle window.
+  // Reads the live set's type via Ipset.read(metaOnly) so the temp matches exactly.
+  async createTempIpsets(category, isCountry = false) {
+    const liveMeta = await Ipset.read(this.getIPSetName(category), true);
+    const dstType = liveMeta && liveMeta.type || this.constructor.name === 'CountryUpdater' ? 'hash:net' : 'hash:ip';
+    const needComment = this.needIpSetComment(category);
 
-    Ipset.flush(tmpIPSetName);
-    Ipset.flush(tmpIPSet6Name);
+    Ipset.create(this.getIPSetName(category, false, false, true), dstType, false, { maxelem: 65536, comment: needComment });
+    Ipset.create(this.getIPSetName(category, false, true, true), dstType, true, { maxelem: 65536, comment: needComment });
 
     if (!isCountry) {
-      const tmpDomainportIpsetName = this.getTempDomainPortIPSetName(category);
-      const tmpDomainportIpset6Name = this.getTempDomainPortIPSetNameForIPV6(category);
+      Ipset.create(this.getIPSetName(category, true, false, true), dstType, false, { maxelem: 65536, comment: needComment });
+      Ipset.create(this.getIPSetName(category, true, true, true), dstType, true, { maxelem: 65536, comment: needComment });
 
-      const tmpStaticDomainportIpsetName = this.getTempDomainPortIPSetName(category, true);
-      const tmpStaticDomainportIpset6Name = this.getTempDomainPortIPSetNameForIPV6(category, true);
+      Ipset.create(this.getDomainPortIPSetName(category, false, false, true), 'hash:net,port', false, { maxelem: 65536, comment: needComment });
+      Ipset.create(this.getDomainPortIPSetName(category, false, true, true), 'hash:net,port', true, { maxelem: 65536, comment: needComment });
 
-      Ipset.flush(tmpDomainportIpsetName);
-      Ipset.flush(tmpDomainportIpset6Name);
-
-      Ipset.flush(tmpStaticDomainportIpsetName);
-      Ipset.flush(tmpStaticDomainportIpset6Name);
+      Ipset.create(this.getDomainPortIPSetName(category, true, false, true), 'hash:net,port', false, { maxelem: 65536, comment: needComment });
+      Ipset.create(this.getDomainPortIPSetName(category, true, true, true), 'hash:net,port', true, { maxelem: 65536, comment: needComment });
     }
   }
 
@@ -339,6 +340,9 @@ class CategoryUpdaterBase {
 
     Ipset.flush(tmpIPSetName);
     Ipset.flush(tmpIPSet6Name);
+
+    Ipset.destroy(tmpIPSetName);
+    Ipset.destroy(tmpIPSet6Name);
 
     if (!isCountry) { // country does not have following ipsets, this can greatly save kernel memory usage
       const domainportIpsetName = this.getDomainPortIPSetName(category);
@@ -362,6 +366,12 @@ class CategoryUpdaterBase {
 
       Ipset.flush(tmpStaticDomainportIpsetName);
       Ipset.flush(tmpStaticDomainportIpset6Name);
+
+      Ipset.destroy(tmpDomainportIpsetName);
+      Ipset.destroy(tmpDomainportIpset6Name);
+
+      Ipset.destroy(tmpStaticDomainportIpsetName);
+      Ipset.destroy(tmpStaticDomainportIpset6Name);
     }
   }
 

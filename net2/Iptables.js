@@ -81,6 +81,8 @@ async function run(listofcmds) {
 //   jump: "FW_DROP"
 // }
 
+// make sure essential() outputs exactly the same as iptables-save
+// otherwise, add implementation to essential() or iptables comparison will fail and we create duplicate entries
 class Rule {
   static stdMark(value, mark) {
     if (typeof value == 'string' && !value.startsWith('0x') || typeof value == 'number')

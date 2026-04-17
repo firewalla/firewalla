@@ -1234,7 +1234,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   // use ipset.addRule() to queue rdns entries for batch processing
-  async updateIPSetByDomain(category, domain, options) {
+  async updateIPSetByDomain(category, domain, options = {}) {
     if (!this.inited) return
     log.debug(`About to update category ${category} with domain ${domain}, options: ${JSON.stringify(options)}`)
 
@@ -1244,13 +1244,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     const mapping = this.getDomainMapping(domain)
 
-    let ipsetName = this.getIPSetName(category, options.isStatic)
-    let ipset6Name = this.getIPSetNameForIPV6(category, options.isStatic)
-
-    if (options && options.useTemp) {
-      ipsetName = this.getTempIPSetName(category, options.isStatic)
-      ipset6Name = this.getTempIPSetNameForIPV6(category, options.isStatic)
-    }
+    const ipsetName = this.getIPSetName(category, options.isStatic, false, options.useTemp)
+    const ipset6Name = this.getIPSetName(category, options.isStatic, true, options.useTemp)
 
     if (domain.startsWith("*.")) {
       return this.updateIPSetByDomainPattern(category, domain, options)
@@ -1332,13 +1327,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
     options = options || {}
 
     const mapping = this.getDomainMapping(domain)
-    let ipsetName = this.getIPSetName(category, options.isStatic)
-    let ipset6Name = this.getIPSetNameForIPV6(category, options.isStatic)
-
-    if (options && options.useTemp) {
-      ipsetName = this.getTempIPSetName(category, options.isStatic)
-      ipset6Name = this.getTempIPSetNameForIPV6(category, options.isStatic)
-    }
+    const ipsetName = this.getIPSetName(category, options.isStatic, false, options.useTemp)
+    const ipset6Name = this.getIPSetName(category, options.isStatic, true, options.useTemp)
 
     const categoryFilterIps = await rclient.zrangeAsync(mapping, 0, -1);
     if (categoryFilterIps.length == 0) return;
@@ -1376,13 +1366,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
       await rclient.expireAsync(smappings, 600) // auto expire in 10 minutes
 
-      let ipsetName = this.getIPSetName(category, options.isStatic)
-      let ipset6Name = this.getIPSetNameForIPV6(category, options.isStatic)
+      const ipsetName = this.getIPSetName(category, options.isStatic, false, options.useTemp)
+      const ipset6Name = this.getIPSetName(category, options.isStatic, true, options.useTemp)
 
-      if (options && options.useTemp) {
-        ipsetName = this.getTempIPSetName(category, options.isStatic)
-        ipset6Name = this.getTempIPSetNameForIPV6(category, options.isStatic)
-      }
       const categoryFilterIps = await rclient.zrangeAsync(smappings, 0, -1);
       if (categoryFilterIps.length == 0) return;
       
@@ -1425,13 +1411,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
         return;
       }
 
-      let ipsetName = this.getIPSetName(category, options.isStatic)
-      let ipset6Name = this.getIPSetNameForIPV6(category, options.isStatic)
+      const ipsetName = this.getIPSetName(category, options.isStatic, false, options.useTemp)
+      const ipset6Name = this.getIPSetName(category, options.isStatic, true, options.useTemp)
 
-      if (options && options.useTemp) {
-        ipsetName = this.getTempIPSetName(category, options.isStatic)
-        ipset6Name = this.getTempIPSetNameForIPV6(category, options.isStatic)
-      }
       const categoryIps = await rclient.zrangeAsync(smappings, 0, -1).then(ips => ips.filter(ip => !firewalla.isReservedBlockingIP(ip)));
       if (categoryIps.length == 0) return;
       
@@ -1701,7 +1683,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     // do not execute full update on ipset if ondemand is set
     if (!ondemand) {
-      this.flushTempIpset(category);
+      await this.createTempIpsets(category);
 
       for (const [k, v] of domainMap) {
         const domain = v.id;

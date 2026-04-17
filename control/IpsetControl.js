@@ -84,7 +84,7 @@ class IpsetControl extends ModuleControl {
     // sets before processing queued ops
     const previousSets = await this.listExistingSets();
     // expected existing sets updated as filtering queued ops
-    this.existingSets = fromInitialization ? new Set() : previousSets || this.existingSets;
+    this.existingSets = fromInitialization ? new Set() : (previousSets || this.existingSets);
     // sets should be swapped
     const swapSets = new Set();
     const restoreFile = this.getIpsetRestoreFile();
@@ -93,7 +93,7 @@ class IpsetControl extends ModuleControl {
 
     if (fromInitialization) {
       // clean leftover _swp sets
-      leftoverSwpSets.push(...Array.from(previousSets).filter(setName => setName.includes('_swp')));
+      leftoverSwpSets.push(...Array.from(previousSets).filter(setName => setName.startsWith('c_bd_tmp_') || setName.includes('_swp')));
       ops.push(...leftoverSwpSets.map(setName => `flush ${setName}`))
       ops.push(...leftoverSwpSets.map(setName => `destroy ${setName}`));
       if (leftoverSwpSets.length)
@@ -123,6 +123,7 @@ class IpsetControl extends ModuleControl {
           break;
         case 'destroy':
           if (this.existingSets.delete(setName)) ops.push(line);
+          if (fromInitialization && previousSets.has(setName)) previousSets.delete(setName);
           break;
         case 'add':
         case 'del':
@@ -163,6 +164,7 @@ class IpsetControl extends ModuleControl {
     // same logic as install_iptables_setup.sh, flush first so members in list set could be destroyed
     if (fromInitialization) {
       previousSets.forEach(setName => {
+        if (setName.startsWith('c_bd_tmp_')) return
         if (swapSets.has(setName)) {
           const swapSetName = this.getSwapSetName(setName);
           // only swap if set has been created
@@ -174,9 +176,8 @@ class IpsetControl extends ModuleControl {
           // this should not happen, it probably indicates a bug somewhere
           log.error(`${swapSetName} not found, skip swap and destroy`);
         }
+        // _swp sets are already handled by leftover cleanup above; skip to avoid duplicate ops
         if (setName.startsWith('c_') && !setName.includes('_swp')) {
-          // _swp sets are already handled by leftover cleanup above; skip to avoid duplicate ops
-          if (setName.startsWith('c_bd_tmp_') && this.existingSets.has(setName)) return
           ops.push(`flush ${setName}`);
         }
       });
@@ -191,9 +192,8 @@ class IpsetControl extends ModuleControl {
             return
           }
         }
+        // _swp sets are already handled by leftover cleanup above; skip to avoid duplicate ops
         if (setName.startsWith('c_') && !setName.includes('_swp')) {
-          // _swp sets are already handled by leftover cleanup above; skip to avoid duplicate ops
-          if (setName.startsWith('c_bd_tmp_') && this.existingSets.has(setName)) return
           ops.push(`destroy ${setName}`);
         }
       });
