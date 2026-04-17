@@ -898,7 +898,8 @@
     "SuricataRuleSetSensor": {},
     "NetconsolePlugin": {},
     "ResourcePlugin": {},
-    "NoiseDomainsSensor": {}
+    "NoiseDomainsSensor": {},
+    "AccessRequestSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},

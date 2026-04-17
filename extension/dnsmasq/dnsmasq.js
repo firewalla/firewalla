@@ -752,6 +752,11 @@ module.exports = class DNSMASQ {
                   entries.push(`group-tag=@${tag}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
                   break;
                 }
+                case "bypass": {
+                  entries.push(`group-tag=@${tag}$!${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+
+                  break;
+                }
                 case "allow": {
                   entries.push(`group-tag=@${tag}$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
                   break;
@@ -779,6 +784,10 @@ module.exports = class DNSMASQ {
                 switch (options.action) {
                   case "block": {
                     entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+                    break;
+                  }
+                  case "bypass": {
+                    entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$!${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
                     break;
                   }
                   case "allow": {

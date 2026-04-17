@@ -1021,7 +1021,7 @@ module.exports = class HostManager extends Monitorable {
     for (const rule of rules) {
       if (rule.action == 'screentime') {
         screentimeRules.push(rule)
-      } else {
+      } else if (rule.action != "bypass") {
         policyRules.push(rule)
       }
     }
