@@ -69,9 +69,6 @@ class Policy {
     if (!_.isArray(this.tag) || _.isEmpty(this.tag))
       delete this.tag;
 
-    if (!_.isArray(this.affectedPids) || _.isEmpty(this.affectedPids))
-      delete this.affectedPids;
-
     this.upnp = false;
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
@@ -170,7 +167,7 @@ class Policy {
       "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
       "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
       "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", 
-      "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf", "affectedPids"];
+      "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf"];
 
     for (const field of compareFields) {
       if (!Policy.fieldEqual(this[field], policy[field], field)) {
@@ -707,7 +704,7 @@ class Policy {
 
 }
 
-Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules", "targets", "affectedPids"];
+Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules", "targets"];
 Policy.OBJ_VALUE_KEYS = ["appTimeUsage", "disturbMethod"];
 Policy.NUM_VALUE_KEYS = [
   'seq', 'appTimeUsed', 'priority', 'transferredBytes', 'transferredPackets', 'avgPacketBytes', "disturbTimeUsed"

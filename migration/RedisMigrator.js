@@ -38,7 +38,6 @@
   "rules": [
     "policy:id",
     "policy_active",
-    "active_bypass_policy",
     "policy:*"
   ],
   "exceptions": [
