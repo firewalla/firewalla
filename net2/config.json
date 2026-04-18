@@ -179,7 +179,8 @@
         "_raop", "_sleep-proxy", "_remotepairing", "_remotepairing-tunnel", "_apple-mobdev2",
         "_asquic", "_dacp", "_spotify-connect", "_spotify-social-listening", "_trel"
       ],
-      "ignoreNames": []
+      "ignoreNames": [],
+      "expire": 2592000
     },
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
@@ -489,7 +490,10 @@
     "DeviceNameUpdateSensor": {},
     "DeviceIdentificationSensor": {
       "intervalListCheck": 86400,
-      "interval": 3600
+      "interval": 3600,
+      "expire": {
+        "bonjour": 2592000
+      }
     },
     "IPv6DiscoverySensor": {},
     "NetworkMonitorSensor": {

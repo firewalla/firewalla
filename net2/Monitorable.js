@@ -1,4 +1,4 @@
-/*    Copyright 2021-2025 Firewalla Inc.
+/*    Copyright 2021-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -235,7 +235,7 @@ class Monitorable {
       obj = _.pick(obj, fields)
     }
 
-    log.debug('Saving', this.getMetaKey(), fields, obj)
+    log.debug('Saving', this.getMetaKey(), obj)
     if (Object.keys(obj).length)
       await rclient.hmsetAsync(this.getMetaKey(), obj)
   }

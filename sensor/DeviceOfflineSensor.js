@@ -55,7 +55,7 @@ class DeviceOfflineSensor extends Sensor {
 
       if (idleTime > customizedOfflineIdle && idleTime < customizedOfflineIdle + 2 * this.interval) {
         // ensure that device offline message will be emitted at most twice
-        log.info(`Device ${o.mac} is offline, last seen at ${lastActiveTimestamp}.`);
+        log.info(`Device ${o.mac} is offline, last seen at ${lastActiveTimestamp}`);
         const hostData = Object.assign({}, o);
         try {
           if (hostData.ipv6Addr && hostData.ipv6Addr.length > 0) {

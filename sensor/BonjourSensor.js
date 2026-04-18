@@ -310,12 +310,14 @@ class BonjourSensor extends Sensor {
 
     if (Object.keys(detect).length) {
       log.verbose('Bonjour', mac, detect)
+      const source = _.pick(service, ['type', 'name', 'ipv4Addr'])
+      source.expire = Date.now() / 1000 + (this.config.expire || 30 * 24 * 3600)
       sem.emitLocalEvent({
         type: 'DetectUpdate',
         from: 'bonjour',
         mac,
         detect,
-        source: _.pick(service, ['type', 'name', 'ipv4Addr']),
+        source,
         suppressEventLogging: true,
       })
     }
