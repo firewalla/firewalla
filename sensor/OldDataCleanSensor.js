@@ -369,7 +369,6 @@ class OldDataCleanSensor extends Sensor {
     if (policyKeys.length == 1 && policyKeys[0] == 'pid') {
       batch.push(
         ['zrem', "policy_active", policy.pid],
-        ['zrem', "active_bypass_policy", policy.pid],
         ['unlink', key],
       )
       log.info("Remove broken policy:", policy.pid);
