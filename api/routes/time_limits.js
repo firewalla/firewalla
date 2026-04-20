@@ -22,7 +22,7 @@ const log = require('../../net2/logger.js')(__filename);
 const HostManager = require('../../net2/HostManager.js');
 const sysManager = require('../../net2/SysManager.js');
 const Constants = require('../../net2/Constants.js');
-const { getInstance: getAccessRequestManager, STATE_PENDING, STATE_APPROVED, STATE_DENIED, STATE_EXPIRED, getUserRelatedTags: getManagerUserRelatedTags, findMatchingTimeLimitRules, getAppFromTarget} = require('../../alarm/AccessRequestManager.js');
+const { getInstance: getAccessRequestManager, STATE_PENDING, STATE_APPROVED, STATE_DENIED, STATE_EXPIRED, getUserRelatedTags: getManagerUserRelatedTags, findMatchingTimeLimitRules, getAppFromTarget, getAppsFromPolicy} = require('../../alarm/AccessRequestManager.js');
 const moment = require('moment-timezone/moment-timezone.js');
 try { moment.tz.load(require('../../vendor_lib/moment-tz-data.json')); } catch (_) { /* optional */ }
 
@@ -168,11 +168,34 @@ router.get('/', async (req, res) => {
       icon: "http://fire.walla:8833/time_limits/img/Internet_light@3x.png",
     };
 
-    const matchedRules = await findMatchingTimeLimitRules(userId, "all", { includeNonTimeLimitRules: true, includeDisabled: false });
+    const {bypassPolicies, blockOrDisturbPolicies} = await findMatchingTimeLimitRules(userId, "all", { includeNonTimeLimitRules: true, includeDisabled: false });
 
     const bestMatchAppMap = new Map();
+    const appsBypassPolicyMap = new Map();
+    for (const bypassPolicy of bypassPolicies) {
+      const au = bypassPolicy.appTimeUsage;
+      if (!au || !au.apps) { // should not happen as bypass policy should have appTimeUsage
+        continue;
+      }
+      const apps = au.apps;
+      const bypassPolicyKey = accessRequestManager.getBypassPolicyKey(userId, apps);
+      if (appsBypassPolicyMap.has(bypassPolicyKey)) {
+        log.warn(`Found multiple bypass policies for user ${userId} and apps ${apps.join(',')}, this should not happen`);
+        continue;
+      }
+      if (bypassPolicy.expire) {
+        if (bypassPolicy.isExpired() || bypassPolicy.willExpireSoon()) {
+          continue;
+        }
+      }
+      if (au.extraQuota != null && au.extraQuotaUntilTs != null && nowTs >= au.extraQuotaUntilTs) {
+        continue;
+      }
+      appsBypassPolicyMap.set(bypassPolicyKey, bypassPolicy);
+    }
 
-    for (const rule of matchedRules) {
+
+    for (const rule of blockOrDisturbPolicies) {
       const appQuotaInfo = {
         bestMatchPolicy: null,
         app: null,
@@ -184,14 +207,6 @@ router.get('/', async (req, res) => {
         latestResolved: null,
       };
 
-      if (rule.appTimeUsage) {
-        appQuotaInfo.quota = Number(rule.appTimeUsage.quota);
-        if (rule.appTimeUsage.extraQuota != null && rule.appTimeUsage.extraQuotaUntilTs != null && nowTs < rule.appTimeUsage.extraQuotaUntilTs) {
-          appQuotaInfo.extraQuota = Number(rule.appTimeUsage.extraQuota);
-        }
-        appQuotaInfo.timeUsed = Number(rule.appTimeUsed);
-      }
-
       if (rule.targets && rule.targets.length > 1) {
         appQuotaInfo.bestMatchPolicy = rule.pid;
         appQuotaInfo.app = `policy:${rule.pid}`;
@@ -200,7 +215,6 @@ router.get('/', async (req, res) => {
           const targetApp = getAppFromTarget(target);
           appQuotaInfo.apps.push(targetApp);
         }
-        bestMatchAppMap.set(appQuotaInfo.app, appQuotaInfo);
       } else {
         appQuotaInfo.bestMatchPolicy = rule.pid;
         appQuotaInfo.app = getAppFromTarget(rule.target);
@@ -209,13 +223,34 @@ router.get('/', async (req, res) => {
           appQuotaInfo.app = getAppFromTarget(rule.targets[0]);
         }
         appQuotaInfo.apps.push(appQuotaInfo.app);
-        if (!bestMatchAppMap.has(appQuotaInfo.app)) {
-          bestMatchAppMap.set(appQuotaInfo.app, appQuotaInfo);
-        } else {
-          const bestMatchApp = bestMatchAppMap.get(appQuotaInfo.app);
-          if (bestMatchApp.quota + bestMatchApp.extraQuota > appQuotaInfo.quota + appQuotaInfo.extraQuota) {
-            bestMatchAppMap.set(appQuotaInfo.app, appQuotaInfo);
+      }
+      appQuotaInfo.apps.sort();
+
+      if (rule.appTimeUsage) {
+        appQuotaInfo.quota = Number(rule.appTimeUsage.quota);
+        if (rule.appTimeUsage.extraQuota != null && rule.appTimeUsage.extraQuotaUntilTs != null && nowTs < rule.appTimeUsage.extraQuotaUntilTs) {
+          appQuotaInfo.extraQuota = Number(rule.appTimeUsage.extraQuota);
+        }
+        appQuotaInfo.timeUsed = Number(rule.appTimeUsed);
+      } else {
+        // for non-time-limit rules, get quota from the bypass policy if exists
+        const bypassPolicyKey = accessRequestManager.getBypassPolicyKey(userId, appQuotaInfo.apps);
+        const bypassPolicy = appsBypassPolicyMap.get(bypassPolicyKey);
+        if (bypassPolicy) {
+          if (_.isArray(bypassPolicy.affectedPids) && bypassPolicy.affectedPids.includes(rule.pid)) {
+            appQuotaInfo.quota = Number(bypassPolicy.appTimeUsage.quota);
+            appQuotaInfo.extraQuota = Number(bypassPolicy.appTimeUsage.extraQuota);
+            appQuotaInfo.timeUsed = Number(bypassPolicy.appTimeUsed);
           }
+        }
+      }
+
+      if (!bestMatchAppMap.has(appQuotaInfo.app)) {
+        bestMatchAppMap.set(appQuotaInfo.app, appQuotaInfo);
+      } else {
+        const bestMatchApp = bestMatchAppMap.get(appQuotaInfo.app);
+        if (bestMatchApp.quota + bestMatchApp.extraQuota > appQuotaInfo.quota + appQuotaInfo.extraQuota) {
+          bestMatchAppMap.set(appQuotaInfo.app, appQuotaInfo);
         }
       }
     }
@@ -286,8 +321,8 @@ router.post('/requests', async (req, res) => {
       return;
     }
 
-    const matchingRules = await findMatchingTimeLimitRules(userId, app, { includeNonTimeLimitRules: true, includeDisabled: false });
-    if (matchingRules.length === 0) {
+    const {blockOrDisturbPolicies}  = await findMatchingTimeLimitRules(userId, app, { includeNonTimeLimitRules: true, includeDisabled: false });
+    if (blockOrDisturbPolicies.length === 0) {
       res.status(400).json({ error: `No time limit rule found for this user: ${userId} and app: ${app}` });
       return;
     }
@@ -300,10 +335,26 @@ router.post('/requests', async (req, res) => {
     const userTag = TagManager.getTagByUid(userId);
     const userName = userTag ? userTag.getTagName() : userId;
     let appDisplayName = app;
+    const supportedApps = await accessRequestManager.getSupportedApps();
+    let multiAppsDisplayNames = [];
+    
     if (app == "internet") {
       appDisplayName = "Internet"
-    } else if(!app.match(/policy:(\d+)/)) {
-      const supportedApps = await accessRequestManager.getSupportedApps();
+    } else if(app.match(/policy:(\d+)/)) {
+      const policyId = app.match(/policy:(\d+)/)[1];
+      let policy = blockOrDisturbPolicies.find(p => String(p.pid) === policyId);
+      if (policy) {
+        const apps = getAppsFromPolicy(policy);
+        for (const appName of apps) {
+          for (const appInfo of supportedApps) {
+            if (appInfo.app == appName) {
+              multiAppsDisplayNames.push(appInfo.displayName);
+              break;
+            }
+          }
+        }
+      }
+    } else {
       //get app displayName from supportedApps array
       for (const appInfo of supportedApps) {
         if (appInfo.app == app) {
@@ -313,9 +364,15 @@ router.post('/requests', async (req, res) => {
       }
     }
 
+    let appNotificationName = appDisplayName || app;
+    if (multiAppsDisplayNames.length > 0) {
+      appNotificationName = multiAppsDisplayNames.join(', ');
+      appNotificationName = `\"${appNotificationName}\"`;
+    }
+
     let titleKey = 'NOTIF_TIME_LIMITS_NEW_REQUEST_TITLE';
     let bodyKey = 'NOTIF_TIME_LIMITS_NEW_REQUEST_BODY';
-    let bodyLocalArgs = [userName, reqQuota, appDisplayName];
+    let bodyLocalArgs = [userName, reqQuota, appNotificationName];
 
     if (extraTimeLimitPolicy && extraTimeLimitPolicy.mode === Constants.POLICY_EXTRA_TIME_LIMIT_MODE_AUTO && app == "internet") {
       const autoApproveQuota = Number(extraTimeLimitPolicy.autoApproveLimit) || 0;
@@ -344,7 +401,7 @@ router.post('/requests', async (req, res) => {
 
         titleKey = 'NOTIF_TIME_LIMITS_AUTO_APPROVED_TITLE';
         bodyKey = 'NOTIF_TIME_LIMITS_AUTO_APPROVED_BODY';
-        bodyLocalArgs = [userName, actualApproveQuota, appDisplayName];
+        bodyLocalArgs = [userName, actualApproveQuota, appNotificationName];
       }
     }
 
