@@ -946,7 +946,6 @@ class PolicyManager2 {
     let intranetRules = [];
     // oubound/bidirection allow rules
     let outboundAllowRules = [];
-    // let bypassRules = [];
     let otherRules = [];
 
     rules.forEach((rule) => {
@@ -966,8 +965,6 @@ class PolicyManager2 {
         intranetRules.push(rule);
       } else if (rule.isOutboundAllowRule()) {
         outboundAllowRules.push(rule);
-      // } else if (rule.isBypassRule()) {
-      //   bypassRules.push(rule);
       } else {
         otherRules.push(rule);
       }
@@ -1926,7 +1923,7 @@ class PolicyManager2 {
       const chainName = `FW_${policy.pid}_BYPASS`;
       commonOptions.byPassChain = chainName;
       let table = "filter";
-      if (action === "disturb" || table === "qos") {
+      if (action === "disturb" || action === "qos") {
         table = "mangle";
       }
 
@@ -2656,7 +2653,7 @@ class PolicyManager2 {
     if (type === "category" && isBlockOrdisturb) {
       const chainName = `FW_${pid}_BYPASS`;
       let table = "filter";
-      if (action === "disturb" || table === "qos") {
+      if (action === "disturb" || action === "qos") {
         table = "mangle";
       }
       for (const family of [4, 6]) {

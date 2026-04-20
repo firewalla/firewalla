@@ -120,15 +120,20 @@ class AccessRequestSensor extends Sensor {
     if (policy.type === "category" && (policy.action == "block" || policy.action == "disturb" || policy.action == "app_block")) {
 
       const tags = this.tagManager.tags;
-      for (let uid in tags) {
+      for (let tagId of Object.keys(tags)) {
+        const tagObj = tags[tagId];
+        if (!tagObj || !tagObj.getTagType || tagObj.getTagType() !== Constants.TAG_TYPE_USER) {
+          continue;
+        }
+        const uid = tagId;
         const { user, afTag } = getUserRelatedTags(uid);
       
         const ruleTagValues = new Set();
         const addRuleTag = (tag) => {
           if (!tag || !tag.getTagType) return;
           const prefix = Constants.TAG_TYPE_MAP[tag.getTagType()] && Constants.TAG_TYPE_MAP[tag.getTagType()].ruleTagPrefix;
-          const uid = tag.getUniqueId && tag.getUniqueId();
-          if (prefix && uid != null) ruleTagValues.add(prefix + uid);
+          const userid = tag.getUniqueId && tag.getUniqueId();
+          if (prefix && userid != null) ruleTagValues.add(prefix + userid);
         };
         addRuleTag(user);
         addRuleTag(afTag);

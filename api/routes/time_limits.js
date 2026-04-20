@@ -209,7 +209,6 @@ router.get('/', async (req, res) => {
 
       if (rule.targets && rule.targets.length > 1) {
         appQuotaInfo.bestMatchPolicy = rule.pid;
-        appQuotaInfo.app = `policy:${rule.pid}`;
 
         for (const target of rule.targets) {
           const targetApp = getAppFromTarget(target);
@@ -217,31 +216,39 @@ router.get('/', async (req, res) => {
         }
       } else {
         appQuotaInfo.bestMatchPolicy = rule.pid;
-        appQuotaInfo.app = getAppFromTarget(rule.target);
+        const app = getAppFromTarget(rule.target);
         //get app from targets
-        if (!appQuotaInfo.app && rule.targets && rule.targets.length == 1) {
-          appQuotaInfo.app = getAppFromTarget(rule.targets[0]);
+        if (!app && rule.targets && rule.targets.length == 1) {
+          app = getAppFromTarget(rule.targets[0]);
         }
-        appQuotaInfo.apps.push(appQuotaInfo.app);
+        appQuotaInfo.apps.push(app);
       }
       appQuotaInfo.apps.sort();
+      appQuotaInfo.app = appQuotaInfo.apps.join(',');
+
+      const bypassPolicyKey = accessRequestManager.getBypassPolicyKey(userId, appQuotaInfo.apps);
+      const bypassPolicy = appsBypassPolicyMap.get(bypassPolicyKey);
+      if (bypassPolicy) {
+        if (_.isArray(bypassPolicy.affectedPids) && bypassPolicy.affectedPids.includes(rule.pid)) {
+          appQuotaInfo.quota = Number(bypassPolicy.appTimeUsage.quota);
+          if (bypassPolicy.appTimeUsage.extraQuota != null && bypassPolicy.appTimeUsage.extraQuotaUntilTs != null && nowTs < bypassPolicy.appTimeUsage.extraQuotaUntilTs) {
+            appQuotaInfo.extraQuota = Number(bypassPolicy.appTimeUsage.extraQuota);
+          }
+          appQuotaInfo.timeUsed = Number(bypassPolicy.appTimeUsed);
+        }
+      }
 
       if (rule.appTimeUsage) {
-        appQuotaInfo.quota = Number(rule.appTimeUsage.quota);
+        let ruleQuota = Number(rule.appTimeUsage.quota);
+        let ruleExtraQuota = 0;
         if (rule.appTimeUsage.extraQuota != null && rule.appTimeUsage.extraQuotaUntilTs != null && nowTs < rule.appTimeUsage.extraQuotaUntilTs) {
-          appQuotaInfo.extraQuota = Number(rule.appTimeUsage.extraQuota);
+          ruleExtraQuota = Number(rule.appTimeUsage.extraQuota);
         }
-        appQuotaInfo.timeUsed = Number(rule.appTimeUsed);
-      } else {
-        // for non-time-limit rules, get quota from the bypass policy if exists
-        const bypassPolicyKey = accessRequestManager.getBypassPolicyKey(userId, appQuotaInfo.apps);
-        const bypassPolicy = appsBypassPolicyMap.get(bypassPolicyKey);
-        if (bypassPolicy) {
-          if (_.isArray(bypassPolicy.affectedPids) && bypassPolicy.affectedPids.includes(rule.pid)) {
-            appQuotaInfo.quota = Number(bypassPolicy.appTimeUsage.quota);
-            appQuotaInfo.extraQuota = Number(bypassPolicy.appTimeUsage.extraQuota);
-            appQuotaInfo.timeUsed = Number(bypassPolicy.appTimeUsed);
-          }
+        const totalQuota = ruleQuota + ruleExtraQuota;
+        if (totalQuota > appQuotaInfo.quota + appQuotaInfo.extraQuota) {
+          appQuotaInfo.quota = ruleQuota;
+          appQuotaInfo.extraQuota = ruleExtraQuota;
+          appQuotaInfo.timeUsed = Number(rule.appTimeUsed);
         }
       }
 
@@ -334,37 +341,26 @@ router.post('/requests', async (req, res) => {
 
     const userTag = TagManager.getTagByUid(userId);
     const userName = userTag ? userTag.getTagName() : userId;
-    let appDisplayName = app;
+
     const supportedApps = await accessRequestManager.getSupportedApps();
     let multiAppsDisplayNames = [];
-    
-    if (app == "internet") {
-      appDisplayName = "Internet"
-    } else if(app.match(/policy:(\d+)/)) {
-      const policyId = app.match(/policy:(\d+)/)[1];
-      let policy = blockOrDisturbPolicies.find(p => String(p.pid) === policyId);
-      if (policy) {
-        const apps = getAppsFromPolicy(policy);
-        for (const appName of apps) {
-          for (const appInfo of supportedApps) {
-            if (appInfo.app == appName) {
-              multiAppsDisplayNames.push(appInfo.displayName);
-              break;
-            }
+    const apps = app.split(',').map(a => a.trim()).sort(); // appQuotaInfo.app is a string of multiple apps joined by comma, split it to get individual apps
+
+    for (const app of apps) {
+      if (app == "internet") {
+        multiAppsDisplayNames.push("Internet");
+      } else {
+        //get app displayName from supportedApps array
+        for (const appInfo of supportedApps) {
+          if (appInfo.app == app) {
+            multiAppsDisplayNames.push(appInfo.displayName);
+            break;
           }
-        }
-      }
-    } else {
-      //get app displayName from supportedApps array
-      for (const appInfo of supportedApps) {
-        if (appInfo.app == app) {
-          appDisplayName = appInfo.displayName;
-          break;
         }
       }
     }
 
-    let appNotificationName = appDisplayName || app;
+    let appNotificationName = app;
     if (multiAppsDisplayNames.length > 0) {
       appNotificationName = multiAppsDisplayNames.join(', ');
       appNotificationName = `\"${appNotificationName}\"`;

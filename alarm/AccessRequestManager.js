@@ -37,6 +37,9 @@ const STATE_APPROVED = 'approved';
 const STATE_DENIED = 'denied';
 const STATE_EXPIRED = 'expired';
 
+const TARGET_APP_PREFIXES = ['TLX-fw-', 'TLX-dt-']; // target values with these prefixes indicate app/category targets
+const TARGET_PERFIX_LEN = 7; // length of the above prefixes
+
 const ARCHIVE_TTL_SECONDS = 7 * 24 * 3600; // 7 days
 
 function requestKey(requestId) {
@@ -97,8 +100,8 @@ function isInSchedule(policy, includeNonTimeLimitRules = false) {
 }
 
 function getAppFromTarget(target) {
-  if (target.startsWith('TLX-fw-')) {
-    return target.substring('TLX-fw-'.length);
+  if (TARGET_APP_PREFIXES.some(prefix => target.startsWith(prefix))) {
+    return target.substring(TARGET_PERFIX_LEN);
   }
   if (target === 'TAG') {
     return 'internet';
@@ -109,13 +112,13 @@ function getAppFromTarget(target) {
 function getAppsFromPolicy(policy) {
   const appset = new Set();
   if (policy) {
-    if (policy.target && policy.target.startsWith('TLX-fw-')) {
-      appset.add(policy.target.substring('TLX-fw-'.length));
+    if (policy.target && TARGET_APP_PREFIXES.some(prefix => policy.target.startsWith(prefix))) {
+      appset.add(policy.target.substring(TARGET_PERFIX_LEN));
     }
     if (policy.targets && policy.targets.length > 0) {
       for (const target of policy.targets) {
-        if (target.startsWith('TLX-fw-')) {
-          appset.add(target.substring('TLX-fw-'.length));
+        if (TARGET_APP_PREFIXES.some(prefix => target.startsWith(prefix))) {
+          appset.add(target.substring(TARGET_PERFIX_LEN));
         } else if (target === 'TAG') {
           appset.add('internet');
         }
@@ -148,23 +151,24 @@ function matchTarget(policy, app, supportedApps = []) {
     return true;
   }
 
-  // check if the policy targets or target matches the given app
-  if (policy.targets && policy.targets.length > 1) {
-    return false; // currently, multi-targets rules are fetched via specific policy id
-    // for (const target of policy.targets) {
-    //   const targetApp = getAppFromTarget(target);
-    //   if (targetApp == app) {
-    //     return true;
-    //   }
-    // }
-  }
-  if (policy.target) {
-    const targetApp = getAppFromTarget(policy.target);
-    if (targetApp == app) {
-      return true;
+  const apps = app.split(',').map(a => a.trim()).sort();
+  if (apps.length > 1) { // match multi-target rules only when app is specified as multi-apps (comma separated), not when app is 'all'
+    if (!policy.targets || policy.targets.length !== apps.length) {
+      return false;
+    }
+    const policyApps = getAppsFromPolicy(policy);
+    if (!apps.every(a => policyApps.includes(a))) {
+      return false;
+    }
+  } else {
+    if (policy.target) {
+      const targetApp = getAppFromTarget(policy.target);
+      if (targetApp != app) {
+        return false;
+      }
     }
   }
-  return false;
+  return true;
 }
 
 // check if the policy is matched with the given app
@@ -176,7 +180,7 @@ function matchApp(policy, app='all', supportedApps = [], includeNonTimeLimitRule
   if (!matchTarget(policy, app, supportedApps)) return false;
 
   // check if the policy is in schedule
-  // if (!isInSchedule(policy, includeNonTimeLimitRules)) return false;
+  if (!isInSchedule(policy, includeNonTimeLimitRules)) return false;
   return true;
 }
 
@@ -210,37 +214,13 @@ async function findMatchingTimeLimitRules(userId, app, options = {}) {
   const blockOrDisturbPolicies = [];
 
   const accessRequestManager = getInstance();
-  // if app format is "policy:1234", extract the number
-  let policyNumber = null;
-  if(app.match(/policy:(\d+)/)) {
-    policyNumber = app.substring("policy:".length);
-  }
-  if (policyNumber) {
-    const policy = await pm2.getPolicy(parseInt(policyNumber));
-    if (policy) {
-      // check if the policy is related to the user
-      if (policyTargetsUserOrGroup(policy)) {
-        blockOrDisturbPolicies.push(policy);
-        // check if there is a bypass policy
-        const apps = getAppsFromPolicy(policy);
-        const bypassPolicyKey = accessRequestManager.getBypassPolicyKey(userId, apps);
-        const bypassPolicyId = await rclient.getAsync(bypassPolicyKey);
-        if (bypassPolicyId) {
-          const bypassPolicy = await pm2.getPolicy(parseInt(bypassPolicyId));
-          if (bypassPolicy) {
-            bypassPolicies.push(bypassPolicy);
-          }
-        }
-
-        return { bypassPolicies: bypassPolicies, blockOrDisturbPolicies: blockOrDisturbPolicies };
-      }
-    }
-  }
-  
   const supportedApps = await accessRequestManager.getSupportedApps();
-
-  if (app !== 'all' && app !== 'internet' && !supportedApps.some(a => a.app === app)) {
-    return { bypassPolicies: bypassPolicies, blockOrDisturbPolicies: blockOrDisturbPolicies };
+  const apps = app.split(',').map(a => a.trim()).sort();
+  for (const a of apps) {
+    if (a !== 'all' && a !== 'internet' && !supportedApps.some(s => s.app === a)) {
+      log.warn(`App ${a} is not supported for time limit rules, skip fetching policies for it`);
+      return { bypassPolicies: bypassPolicies, blockOrDisturbPolicies: blockOrDisturbPolicies };
+    }
   }
 
   const includeDisabled = options.includeDisabled ? 1 : 0;
@@ -467,8 +447,11 @@ class AccessRequestManager {
 
     // matchingPolices includes paused rules, but extraQuota on these rules can still be updated in case they are resumed after approval
     for (const policy of blockOrDisturbPolicies) {
-      const oldPolicy = policy;
+      affectedPids.add(policy.pid);
+      log.info(`Policy ${policy.pid} is affected by access request ${requestId} approval, will create bypass rule for it`);
+      
       if (policy.appTimeUsage) {
+        const oldPolicy = policy;
         const au = Object.assign({}, policy.appTimeUsage);
         if (au.extraQuotaUntilTs != null && nowTs < au.extraQuotaUntilTs) {
           au.extraQuota = (Number(au.extraQuota) || 0) + minutes;
@@ -482,100 +465,84 @@ class AccessRequestManager {
         if (updatedPolicy) {
           pm2.tryPolicyEnforcement(updatedPolicy, 'reenforce', oldPolicy);
         }
-      } else { // this is a block/disturb rule without time limit.
-        affectedPids.add(policy.pid);
-        log.info(`Policy ${policy.pid} is affected by access request ${requestId} approval, will create bypass rule for it`);
       }
     }
 
     // if there is any block rule affected, create/update the bypass rule
-    let apps = [];
-    if (affectedPids.size > 0) {
-      let policyNumber;
-      if(req.app.match(/policy:(\d+)/)) {
-        policyNumber = req.app.substring("policy:".length);
-        if (policyNumber) {
-          const policy = await pm2.getPolicy(parseInt(policyNumber));
-          if (policy) {
-            apps = getAppsFromPolicy(policy);
-          }
-        } else {
-          log.error('AccessRequestManager approveRequest failed to extract policy number from app field', req.app);
-          return { ok: false, error: 'Bad app format' };
-        }
-      } else {
-        apps.push(req.app);
+    let apps = req.app.split(',').map(a => a.trim()).sort();
+    if (apps.length === 0) {
+        log.warn('AccessRequestManager approveRequest no app found for affected block rules');
+        return { ok: false, error: 'bad app format' };
+    }
+
+    const supportedApps = await this.getSupportedApps();
+    for (const app of apps) {
+      if (app !== 'internet' && !supportedApps.some(s => s.app === app)) {
+        log.warn(`App ${app} is not supported for time limit rules, skip creating/updating bypass policy for it`);
+        return { ok: false, error: `App ${app} is not supported for time limit rules` };
       }
-      
-      if (apps.length === 0) {
-        log.error('AccessRequestManager approveRequest no app found for affected block rules');
-      } else {
+    }
 
-        const bypassPolicyKey = this.getBypassPolicyKey(req.userId, apps);
-        const bypassPolicyId = await rclient.getAsync(bypassPolicyKey);
-        const timeWindows = [{begin: startOfTodayTs, end: endOfTodayTs}];
-        const AppTimeUsageManager = require('./AppTimeUsageManager.js');
-        const appTimeUsed = await AppTimeUsageManager.getTimeUsage(req.userId, apps, timeWindows, true);
+    if (affectedPids.size > 0) {
+      const bypassPolicyKey = this.getBypassPolicyKey(req.userId, apps);
+      const bypassPolicyId = await rclient.getAsync(bypassPolicyKey);
+      const timeWindows = [{begin: startOfTodayTs * 1000, end: endOfTodayTs * 1000}];
+      const AppTimeUsageManager = require('./AppTimeUsageManager.js');
+      const appTimeUsed = await AppTimeUsageManager.getTimeUsage(`tag:${req.userId}`, apps, timeWindows, true);
 
-        const au = {
-          app: apps[0],
-          apps: apps,
-          quota: appTimeUsed,
-          extraQuota: minutes,
-          extraQuotaUntilTs: endOfTodayTs,
-          period: "0 0 * * *",
-          onQuotaReached: "unenforce",
-        };
-        const policy = bypassPolicyId ? await pm2.getPolicy(Number(bypassPolicyId)) : null;
+      const au = {
+        app: apps[0],
+        apps: apps,
+        quota: appTimeUsed,
+        extraQuota: minutes,
+        extraQuotaUntilTs: endOfTodayTs,
+        period: "0 0 * * *",
+        onQuotaReached: "unenforce",
+      };
+      const policy = bypassPolicyId ? await pm2.getPolicy(Number(bypassPolicyId)) : null;
 
-        if (policy) {
-          const oldPolicy = policy;
-          const newPolicy = new Policy(Object.assign({}, policy));
-          if (!newPolicy.appTimeUsage || !newPolicy.appTimeUsage.extraQuota || !newPolicy.appTimeUsage.extraQuotaUntilTs 
-            || newPolicy.appTimeUsage.extraQuotaUntilTs < endOfTodayTs - 10) {
-            newPolicy.appTimeUsage = au;
-          } else {
-            const effectiveQuota = Number(newPolicy.appTimeUsage.extraQuota) || 0;
-
-            if (effectiveQuota < appTimeUsed) { //adjust quota
-              newPolicy.appTimeUsage.quota += appTimeUsed - effectiveQuota;
-            }
-            newPolicy.appTimeUsage.extraQuota += minutes;
-          }
-          newPolicy.affectedPids = Array.from(affectedPids);
-          newPolicy.expire = endOfTodayTs - nowTs;
-
-          await pm2.updatePolicyAsync(newPolicy);
-          const updatedPolicy = await pm2.getPolicy(policy.pid);
-          if (updatedPolicy) {
-            pm2.tryPolicyEnforcement(updatedPolicy, "reenforce", oldPolicy);
-          }
+      if (policy) {
+        const oldPolicy = policy;
+        const newPolicy = new Policy(Object.assign({}, policy));
+        if (!newPolicy.appTimeUsage || !newPolicy.appTimeUsage.extraQuota || !newPolicy.appTimeUsage.extraQuotaUntilTs 
+          || newPolicy.appTimeUsage.extraQuotaUntilTs < endOfTodayTs - 10) {
+          newPolicy.appTimeUsage = au;
         } else {
-          //create a one-time bypass policy with reference to the original block policy, and enforce it immediately
-          let target = `TLX-fw-${apps[0]}`;
-          if (apps[0] === 'internet') {
-            target = 'TAG';
-          }
-          const policyRaw = {
-            action: "bypass",
-            target: target,
-            targets: apps.map(a => a === 'internet' ? 'TAG' : `TLX-fw-${a}`),
-            affectedPids: Array.from(affectedPids),
-            appTimeUsage: au,
-            type: "category",
-            autoDeleteWhenExpires: "1",
-            expire: endOfTodayTs - nowTs,
-            timestamp: nowTs,
-            tag: ["userTag:" + req.userId],
-          };
-
-          const oneTimePolicy = new Policy(policyRaw);
-          const result = await pm2.checkAndSaveAsync(oneTimePolicy);
-
-          await rclient.setAsync(bypassPolicyKey, result.policy.pid);
-          await rclient.expireAsync(bypassPolicyKey, endOfTodayTs - nowTs + 60); // set bypass policy key to expire shortly after the policy expires
-
+          newPolicy.appTimeUsage.extraQuota = (Number(newPolicy.appTimeUsage.extraQuota) || 0) + minutes;
         }
+        newPolicy.affectedPids = Array.from(affectedPids);
+        newPolicy.expire = endOfTodayTs - nowTs;
+
+        await pm2.updatePolicyAsync(newPolicy);
+        const updatedPolicy = await pm2.getPolicy(policy.pid);
+        if (updatedPolicy) {
+          pm2.tryPolicyEnforcement(updatedPolicy, "reenforce", oldPolicy);
+        }
+      } else {
+        //create a one-time bypass policy with reference to the original block policy, and enforce it immediately
+        let target = `TLX-fw-${apps[0]}`;
+        if (apps[0] === 'internet') {
+          target = 'TAG';
+        }
+        const policyRaw = {
+          action: "bypass",
+          target: target,
+          targets: apps.map(a => a === 'internet' ? 'TAG' : `TLX-fw-${a}`),
+          affectedPids: Array.from(affectedPids),
+          appTimeUsage: au,
+          type: "category",
+          autoDeleteWhenExpires: "1",
+          expire: endOfTodayTs - nowTs,
+          timestamp: nowTs,
+          tag: ["userTag:" + req.userId],
+        };
+
+        const oneTimePolicy = new Policy(policyRaw);
+        const result = await pm2.checkAndSaveAsync(oneTimePolicy);
+
+        await rclient.setAsync(bypassPolicyKey, result.policy.pid);
+        await rclient.expireAsync(bypassPolicyKey, endOfTodayTs - nowTs + 60); // set bypass policy key to expire shortly after the policy expires
+
       }
     }
 
