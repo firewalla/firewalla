@@ -187,15 +187,11 @@ function _disableDHCPMode() {
 
 async function toggleCompatibleSpoof(state) {
   if (state) {
-    let cmd = wrapIptables("sudo iptables -w -t nat -A FW_POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE");
-    await execAsync(cmd);
-    cmd = wrapIptables("sudo ip6tables -w -t nat -A FW_POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE");
-    await execAsync(cmd);
+    iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').set('monitored_ip_set', 'src').jmp('MASQUERADE'))
+    iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING').set('monitored_ip_set6', 'src').jmp('MASQUERADE'))
   } else {
-    let cmd = wrapIptables("sudo iptables -w -t nat -D FW_POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE");
-    await execAsync(cmd);
-    cmd = wrapIptables("sudo ip6tables -w -t nat -D FW_POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE");
-    await execAsync(cmd);
+    iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').set('monitored_ip_set', 'src').jmp('MASQUERADE').opr('-D'))
+    iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING').set('monitored_ip_set6', 'src').jmp('MASQUERADE').opr('-D'))
   }
 }
 
