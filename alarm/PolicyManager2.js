@@ -1406,10 +1406,11 @@ class PolicyManager2 {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
-    // for now, targets is only used for multiple category block/app time limit
+    // for now, targets is only used for multiple category block/app time limit/app disturb
     let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit,
       priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids,
       parentRgId, targetRgId, ipttl, resolver, flowIsolation, dscpClass, increaseLatency, dropPacketRate } = policy;
+    const qosRef = { pid, subKey: policy.qosSubKey };
 
     if (action === "app_block")
       action = "block"; // treat app_block same as block, but using a different term for version compatibility, otherwise, block rule will always take effect in previous versions
@@ -1419,14 +1420,6 @@ class PolicyManager2 {
     if (policy.needPolicyDisturb()) {
       action = "qos";  // treat app_disturb same as qos
       qdisc = "netem";
-      if (policy.disableQuic) {
-        const tmpPolicy = Object.assign(Object.create(Policy.prototype), policy);
-        tmpPolicy.action = "block";
-        tmpPolicy.protocol = "udp";
-        tmpPolicy.remotePort = "443";
-        tmpPolicy.dnsmasq_only = false;
-        await this._enforce(tmpPolicy);
-      }
     }
 
     if (!validActions.includes(action)) {
@@ -1482,7 +1475,7 @@ class PolicyManager2 {
     }
 
     if (action === "qos") {
-      qosHandler = await qos.allocateQoSHanderForPolicy(pid);
+      qosHandler = await qos.allocateQoSHanderForPolicy(qosRef);
     }
 
     const devOpts = { tags, intfs, scope, guids };
@@ -2062,6 +2055,7 @@ class PolicyManager2 {
     let { pid, scope, target, targets, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit,
       priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType,
       guids, parentRgId, targetRgId, resolver, flowIsolation, dscpClass, increaseLatency, dropPacketRate } = policy;
+    const qosRef = { pid, subKey: policy.qosSubKey };
 
     if (action === "app_block")
       action = "block";
@@ -2071,14 +2065,6 @@ class PolicyManager2 {
     if (policy.needPolicyDisturb()) {
       action = "qos";  // treat app_disturb same as qos
       qdisc = "netem";
-      if (policy.disableQuic) {
-        const tmpPolicy = Object.assign(Object.create(Policy.prototype), policy);
-        tmpPolicy.action = "block";
-        tmpPolicy.protocol = "udp";
-        tmpPolicy.remotePort = "443";
-        tmpPolicy.dnsmasq_only = false;
-        await this._unenforce(tmpPolicy);
-      }
     }
 
     if (!validActions.includes(action)) {
@@ -2133,7 +2119,7 @@ class PolicyManager2 {
     }
 
     if (action === "qos")
-      qosHandler = await qos.getQoSHandlerForPolicy(pid);
+      qosHandler = await qos.getQoSHandlerForPolicy(qosRef);
 
     switch (type) {
       case "ip":
@@ -2577,7 +2563,7 @@ class PolicyManager2 {
       }
     }
     if (qosHandler)
-      await qos.deallocateQoSHandlerForPolicy(pid);
+      await qos.deallocateQoSHandlerForPolicy({ pid, subKey: policy.qosSubKey });
   }
 
   async match(alarm) {
