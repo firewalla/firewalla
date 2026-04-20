@@ -309,7 +309,7 @@ class CategoryUpdaterBase {
   // Reads the live set's type via Ipset.read(metaOnly) so the temp matches exactly.
   async createTempIpsets(category, isCountry = false) {
     const liveMeta = await Ipset.read(this.getIPSetName(category), true);
-    const dstType = liveMeta && liveMeta.type || this.constructor.name === 'CountryUpdater' ? 'hash:net' : 'hash:ip';
+    const dstType = liveMeta && liveMeta.type || (this.constructor.name === 'CountryUpdater' ? 'hash:net' : 'hash:ip');
     const needComment = this.needIpSetComment(category);
 
     Ipset.create(this.getIPSetName(category, false, false, true), dstType, false, { maxelem: 65536, comment: needComment });
