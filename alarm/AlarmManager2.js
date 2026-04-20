@@ -1194,15 +1194,10 @@ module.exports = class {
     // record security alarm count on hostInfo
     if (alarm['p.device.mac'] && Alarm.isSecurityAlarm(alarm.type)) {
       const mac = alarm['p.device.mac'].toUpperCase();
-      if (hostTool.isMacAddress(mac)) {
-        const macKey = hostTool.getMacKey(mac);
-        try {
-          const keyExists = await rclient.existsAsync(macKey);
-          if (keyExists == 1)
-            await rclient.hincrbyAsync(macKey, 'security_alarm', 1)
-        } catch (err) {
-          log.warn(`Failed to count security alarm ${alarm['p.device.mac']}`, err);
-        }
+      try {
+        await hostTool.incrFieldInMAC(mac, 'security_alarm', 1);
+      } catch (err) {
+        log.warn(`Failed to count security alarm ${alarm['p.device.mac']}`, err);
       }
     }
 
