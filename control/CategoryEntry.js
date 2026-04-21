@@ -203,6 +203,29 @@ class CategoryEntry {
     }
   }
 
+  // Validate a regex expression used in target list / domain_re rules.
+  // Canonical implementation; PolicyManager2.checkValidDomainRE delegates here.
+  static isValidDomainRE(expr) {
+    try {
+      new RegExp(expr);
+    } catch (e) {
+      return false;
+    }
+    // slash is a dnsmasq config separator and not useful for domain matching
+    if (expr.includes("/")) {
+      return false;
+    }
+    // lookaround and non-capturing groups are disallowed
+    if (expr.includes("(?")) {
+      return false;
+    }
+    // back references can induce exponential match time
+    if (/\\[0-9]/.test(expr)) {
+      return false;
+    }
+    return true;
+  }
+
   static toPortStr(portObj) {
     if (portObj.start === portObj.end) {
       return `${portObj.proto}:${portObj.start}`;

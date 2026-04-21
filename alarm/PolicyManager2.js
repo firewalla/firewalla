@@ -42,6 +42,7 @@ const Constants = require('../net2/Constants.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Block = require('../control/Block.js');
+const { CategoryEntry } = require('../control/CategoryEntry.js');
 const qos = require('../control/QoS.js');
 
 const Policy = require('./Policy.js');
@@ -1662,28 +1663,41 @@ class PolicyManager2 {
         break;
 
       case "domain_re":
-        if (["block", "resolve"].includes(action)) {
-          if (direction !== "inbound" && !localPort && !remotePort) {
-            if (this.checkValidDomainRE(target)) {
-              const scheduling = policy.isSchedulingPolicy();
-              const matchType = "re";
-              const flag = await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver, matchType }).catch(() => { });
-              if (flag !== "skip_restart") {
-                dnsmasq.scheduleRestartDNSService();
-              }
-            } else {
-              log.error("Invalid domain regular expression", target);
-              return;
-            }
-          } else {
-            log.error("Port not supported on domain RE");
-            return;
-          }
-        } else {
+        // 1. Validate action type
+        if (!["block", "resolve"].includes(action)) {
           log.error("Only block and resolve actions are supported by domain_re type");
           return;
         }
 
+        // 2. Validate direction and port constraints
+        // Domain RE does not support inbound traffic or specific port filtering
+        if (direction === "inbound" || localPort || remotePort) {
+          log.error("Port or inbound direction not supported on domain RE");
+          return;
+        }
+
+        // 3. Validate the regular expression format
+        if (!this.checkValidDomainRE(target)) {
+          log.error("Invalid domain regular expression", target);
+          return;
+        }
+
+        // 4. Execute core logic: add policy filter entry
+        const scheduling = policy.isSchedulingPolicy();
+        const matchType = "re";
+
+        const flag = await dnsmasq.addPolicyFilterEntry([target], {
+          pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver, matchType
+        }).catch((err) => {
+          log.error("Failed to add dnsmasq policy entry", err);
+        });
+
+        // 5. Restart DNS service unless explicitly skipped
+        if (flag !== "skip_restart") {
+          dnsmasq.scheduleRestartDNSService();
+        }
+
+        // 6. Post-processing flags
         skipFinalApplyRules = true;
         tlsHost = null;
         break;
@@ -3840,25 +3854,7 @@ class PolicyManager2 {
   }
 
   checkValidDomainRE(expr) {
-    try {
-      new RegExp(expr)
-    } catch (e) {
-      return false;
-    }
-    // do not allow slash because it is a separator in dnsmasq config and it is not useful in domain match.
-    if (expr.includes("/")) {
-      return false;
-    }
-    // do not allow lookaround or non-capturing group
-    if (expr.includes("(?")) {
-      return false;
-    }
-    // do not allow back reference, it may induce exponential match time.
-    const backRefExp = /\\[0-9]/;
-    if (backRefExp.test(expr)) {
-      return false
-    }
-    return true;
+    return CategoryEntry.isValidDomainRE(expr);
   }
 
   async deletePoliciesData(policyArray) {
