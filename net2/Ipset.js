@@ -41,7 +41,7 @@ async function read(setName, metaOnly = false) {
     if (Array.isArray(jsonResult))
       return jsonResult
     else if (_.isEmpty(jsonResult)) {
-      log.warn('Read: empty response', setName, result.stderr)
+      log.verbose('Read: empty response', setName, result.stderr.trim())
       if (setName) return null
       else return []
     } else if (setName) return jsonResult
@@ -77,10 +77,15 @@ async function readAllIpsets() {
 }
 
 async function isReferenced(ipset) {
-  const listCommand = `sudo ipset list -t ${ipset} | grep References | cut -d ' ' -f 2`;
-  const result = await exec(listCommand);
-  const referenceCount = result.stdout.trim();
-  return referenceCount !== "0";
+  try {
+    const setMeta = await read(ipset, true);
+    if (!setMeta) return false;
+    const references = Number(_.get(setMeta, 'header.references'))
+    return references != 0;
+  } catch(err) {
+    log.error(`Failed to check if ipset ${ipset} is referenced`, err.message);
+    return false;
+  }
 }
 
 function enqueue(ipsetCmd) {

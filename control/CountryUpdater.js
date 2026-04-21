@@ -90,7 +90,7 @@ class CountryUpdater extends CategoryUpdaterBase {
     const category = this.getCategory(code)
 
     this.activeCountries[code] = 1
-    this.activeCategories[category] = 1
+    this.activeCategories[category] = 'hash:net'
     // use a larger hash size for country ipset since some country ipset may be large and cause performance issue
     await Block.setupCategoryEnv(category, 'hash:net', 32768, false, true);
 

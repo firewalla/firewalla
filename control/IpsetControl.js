@@ -100,6 +100,7 @@ class IpsetControl extends ModuleControl {
         log.verbose('leftover _swp sets', leftoverSwpSets);
     }
 
+    let errorAddDel = 0
     queuedOps.forEach(line => {
       let [ op, setName, newName ] = line.split(' ');
       // for initialization, swap existing sets to avoid interrupting blocking rules
@@ -116,7 +117,8 @@ class IpsetControl extends ModuleControl {
           if (!this.existingSets.has(setName)) {
             this.existingSets.add(setName);
             ops.push(line);
-          }
+          } else
+            log.info(`${setName} already exists, dropping ${line}`);
           break
         case 'flush':
           if (this.existingSets.has(setName)) ops.push(line);
@@ -129,8 +131,9 @@ class IpsetControl extends ModuleControl {
         case 'del':
           if (this.existingSets.has(setName))
             ops.push(line);
-          else
+          else if (errorAddDel++ < 10) {
             log.warn(`${setName} not found, dropping ${line}`);
+          }
           break;
         case 'rename':
           if (this.existingSets.has(setName)) {
