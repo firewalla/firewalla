@@ -3144,6 +3144,15 @@ class PolicyManager2 {
           const domains = await domainBlock.getCategoryDomains(target);
           if (remoteVal && domains.filter(domain => remoteVal === domain || (domain.startsWith("*.") && (remoteVal.endsWith(domain.substring(1)) || remoteVal === domain.substring(2)))).length > 0)
             return true;
+          // Category target lists may contain regex members. Mirror dnsmasq's
+          // re-match enforcement at the app layer so alarm attribution stays
+          // consistent with what dnsmasq actually blocks.
+          if (remoteVal) {
+            const compiledRegexes = await categoryUpdater.getCompiledRegexDomains(target);
+            for (const re of compiledRegexes) {
+              if (re.test(remoteVal)) return true;
+            }
+          }
           const remoteIPSet4 = categoryUpdater.getIPSetName(target, true);
           const remoteIPSet6 = categoryUpdater.getIPSetNameForIPV6(target, true);
           if ((this.ipsetCache[remoteIPSet4] && this.ipsetCache[remoteIPSet4].some(net => remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(new Address4(net))))) ||
