@@ -308,9 +308,14 @@ class CategoryUpdaterBase {
   // They are destroyed after swapIpset completes, so they only exist during the recycle window.
   // Reads the live set's type via Ipset.read(metaOnly) so the temp matches exactly.
   async createTempIpsets(category, isCountry = false) {
-    const liveMeta = await Ipset.read(this.getIPSetName(category), true);
-    const dstType = liveMeta && liveMeta.type || this.constructor.name === 'CountryUpdater' ? 'hash:net' : 'hash:ip';
+    const dstType = this.activeCategories[category]
+    if (!dstType) {
+      log.error('dstType not found for category', category)
+      return
+    }
     const needComment = this.needIpSetComment(category);
+
+    log.verbose('createTempIpsets', category, isCountry, dstType, needComment)
 
     Ipset.create(this.getIPSetName(category, false, false, true), dstType, false, { maxelem: 65536, comment: needComment });
     Ipset.create(this.getIPSetName(category, false, true, true), dstType, true, { maxelem: 65536, comment: needComment });
@@ -328,6 +333,7 @@ class CategoryUpdaterBase {
   }
 
   async swapIpset(category, isCountry = false) {
+    log.verbose('swapIpset', category, isCountry)
     // only dymanic net, and static/dynamic domain:port sets are swapped here
     const ipsetName = this.getIPSetName(category);
     const ipset6Name = this.getIPSetNameForIPV6(category);
@@ -392,7 +398,7 @@ class CategoryUpdaterBase {
 
     await dnsmasq.createCategoryMappingFile(category, [this.getIPSetName(category), `${this.getIPSetNameForIPV6(category)}`]);
     dnsmasq.scheduleRestartDNSService();
-    this.activeCategories[category] = 1
+    this.activeCategories[category] = type
   }
 
   async deactivateCategory(category) {
