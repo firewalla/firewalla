@@ -264,6 +264,15 @@ class CategoryUpdateSensor extends Sensor {
       await categoryUpdater.flushDefaultHashedDomains(category);
       await categoryUpdater.flushIPv4Addresses(category);
       await categoryUpdater.flushIPv6Addresses(category);
+      // Regex entries are not supported under filter/BF strategy. A regex target list should stay small enough
+      // to remain on the default path;
+      // if a list ever transitions from default to filter, flush any prior regex members so matchPolicy does not
+      // keep matching stale entries after dnsmasq stops enforcing them.
+      const prevRegex = await categoryUpdater.getRegexDomains(category);
+      if (prevRegex && prevRegex.length > 0) {
+        log.warn(`Category ${category} entered filter strategy with ${prevRegex.length} regex entries; regex enforcement will be disabled`);
+      }
+      await categoryUpdater.flushRegexDomains(category);
 
       if (!fc.isFeatureOn("category_filter")) {
         log.error(`Category filter feature not turned on. Category ${category} disabled.`);
@@ -558,6 +567,7 @@ class CategoryUpdateSensor extends Sensor {
           await categoryUpdater.flushDefaultHashedDomains(category);
           await categoryUpdater.flushIPv4Addresses(category);
           await categoryUpdater.flushIPv6Addresses(category);
+          await categoryUpdater.flushRegexDomains(category);
           await dnsmasq.deletePolicyCategoryFilterEntry(category);
           // handle related ipset?
         }
