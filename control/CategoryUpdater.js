@@ -560,6 +560,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
           await this.flushIncludedDomains(c);
           await this.flushCategoryData(c);
           await this.flushIncludedElements(c);
+          await this.flushRegexDomains(c);
           await dnsmasq.deletePolicyCategoryFilterEntry(c);
           delete this.activeCategories[c];
           // this will trigger ipset recycle and dnsmasq config change
@@ -797,6 +798,49 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   async flushDefaultHashedDomains(category) {
     return rclient.unlinkAsync(this.getDefaultCategoryKeyHashed(category));
+  }
+
+  async addRegexDomains(category, regexList) {
+    if (!regexList || regexList.length === 0) {
+      return;
+    }
+    await this.addSetMembers(this.getRegexCategoryKey(category), regexList);
+    this._invalidateRegexCache(category);
+  }
+
+  async getRegexDomains(category) {
+    return rclient.smembersAsync(this.getRegexCategoryKey(category));
+  }
+
+  async flushRegexDomains(category) {
+    this._invalidateRegexCache(category);
+    return rclient.unlinkAsync(this.getRegexCategoryKey(category));
+  }
+
+  // Returns compiled RegExp objects for a category's regex members, cached
+  // until flush/add invalidates the entry.
+  async getCompiledRegexDomains(category) {
+    if (!this._compiledRegexCache) this._compiledRegexCache = new Map();
+    if (this._compiledRegexCache.has(category)) {
+      return this._compiledRegexCache.get(category);
+    }
+    const patterns = await this.getRegexDomains(category);
+    const compiled = [];
+    for (const p of patterns) {
+      try {
+        compiled.push(new RegExp(p));
+      } catch (e) {
+        log.error(`Invalid regex in category ${category}: ${p}`, e.message);
+      }
+    }
+    this._compiledRegexCache.set(category, compiled);
+    return compiled;
+  }
+
+  _invalidateRegexCache(category) {
+    if (this._compiledRegexCache) {
+      this._compiledRegexCache.delete(category);
+    }
   }
 
   async getIncludedDomainPatterns(category) {
