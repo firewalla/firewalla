@@ -896,10 +896,26 @@ class PolicyManager2 {
     return rclient.zrevrangeAsync(policyActiveKey, offset, offset + number - 1)
   }
 
+  async loadActiveBypassPolicyIDs(options = {}) {
+    const number = options.number || policyCapacity;
+    const offset = options.offset || 0;
+    return rclient.zrevrangeAsync(activeBypassPolicyKey, offset, offset + number - 1)
+  }
+
   // we may need to limit number of policy rules created by user
   // options: { offset, number }
   async loadActivePoliciesAsync(options = {}) {
     const results = await this.loadActivePolicyIDs(options)
+    const policyRules = await this.idsToPolicies(results)
+    if (options.includingDisabled) {
+      return policyRules
+    } else {
+      return policyRules.filter(r => r.disabled != "1") // remove all disabled/idle ones
+    }
+  }
+
+  async loadActiveBypassPoliciesAsync(options = {}) {
+    const results = await this.loadActiveBypassPolicyIDs(options)
     const policyRules = await this.idsToPolicies(results)
     if (options.includingDisabled) {
       return policyRules
@@ -3842,7 +3858,21 @@ class PolicyManager2 {
 
     if (!this.sortedActiveRulesCache) {
       let activeRules = await this.loadActivePoliciesAsync() || [];
+      let activeBypassRules = await this.loadActiveBypassPoliciesAsync() || [];
+      const isBypassed = (rule) => activeBypassRules.some(bypassRule => {
+        if (bypassRule.affectedPids) {
+          // need to check if still have quota left.
+          const au = bypassRule.appTimeUsage;
+          const effectiveQuota = (Number(au.quota) || 0) + ((au.extraQuota != null && au.extraQuotaUntilTs != null && (Date.now() / 1000) < au.extraQuotaUntilTs) ? (Number(au.extraQuota) || 0) : 0);
+          const appTimeUsed = (Number(bypassRule.appTimeUsed) || 0);
+          if (effectiveQuota > appTimeUsed) {
+            return bypassRule.affectedPids.includes(rule.pid);
+          }
+        }
+        return false;
+      });
       activeRules = activeRules.filter(rule => !rule.action || ["allow", "block", "match_group", "app_block"].includes(rule.action) || rule.type === "match_group").filter(rule => (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
+      activeRules = activeRules.filter(rule => !isBypassed(rule));
       this.sortedActiveRulesCache = this.filterAndSortRule(activeRules);
     }
 
