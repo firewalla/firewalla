@@ -197,7 +197,7 @@ router.get('/', async (req, res) => {
 
     for (const rule of blockOrDisturbPolicies) {
       const appQuotaInfo = {
-        bestMatchPolicy: null,
+        bestMatchPolicy: rule.pid,
         app: null,
         apps: [],
         quota: 0,
@@ -207,23 +207,7 @@ router.get('/', async (req, res) => {
         latestResolved: null,
       };
 
-      if (rule.targets && rule.targets.length > 1) {
-        appQuotaInfo.bestMatchPolicy = rule.pid;
-
-        for (const target of rule.targets) {
-          const targetApp = getAppFromTarget(target);
-          appQuotaInfo.apps.push(targetApp);
-        }
-      } else {
-        appQuotaInfo.bestMatchPolicy = rule.pid;
-        const app = getAppFromTarget(rule.target);
-        //get app from targets
-        if (!app && rule.targets && rule.targets.length == 1) {
-          app = getAppFromTarget(rule.targets[0]);
-        }
-        appQuotaInfo.apps.push(app);
-      }
-      appQuotaInfo.apps.sort();
+      appQuotaInfo.apps = getAppsFromPolicy(rule);
       appQuotaInfo.app = appQuotaInfo.apps.join(',');
 
       const bypassPolicyKey = accessRequestManager.getBypassPolicyKey(userId, appQuotaInfo.apps);
@@ -296,14 +280,15 @@ router.get('/', async (req, res) => {
 // ---------- Access requests (user: create, list mine; admin: list all, approve, deny) ----------
 
 router.post('/requests', async (req, res) => {
-  const { app, requestQuota, reason } = req.body || {};
-  if (!app || requestQuota == null) {
-    res.status(400).json({ error: 'app and requestQuota are required' });
+  const { app, requestQuota, leftQuota, reason } = req.body || {};
+  if (!app || requestQuota == null || leftQuota == null) {
+    res.status(400).json({ error: 'app, requestQuota, and leftQuota are required' });
     return;
   }
   const reqQuota = Number(requestQuota);
-  if (Number.isNaN(reqQuota)) {
-    res.status(400).json({ error: 'requestQuota must be a number' });
+  const leftQuotaNum = Number(leftQuota);
+  if (Number.isNaN(reqQuota) || Number.isNaN(leftQuotaNum)) {
+    res.status(400).json({ error: 'requestQuota and leftQuota must be numbers' });
     return;
   }
   if (reqQuota <= 0 || reqQuota >= 86400) {
@@ -334,7 +319,7 @@ router.post('/requests', async (req, res) => {
       return;
     }
 
-    const request = await accessRequestManager.createOrUpdateRequest(userId, app, reqQuota, {
+    const request = await accessRequestManager.createOrUpdateRequest(userId, app, reqQuota, leftQuotaNum, {
       deviceMac: monitorable.getGUID ? monitorable.getGUID() : null,
       reason: reason || null
     });

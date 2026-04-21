@@ -22,7 +22,7 @@ const domainBlock = require('../control/DomainBlock.js');
 
 
 async function setupTagsRules(options) {
-  const {affectedPids, tags, intfs, action, pid, targets} = options;
+  const {affectedPids, tags, intfs, action, pid, targets, type} = options;
   const PolicyManager2 = require('../alarm/PolicyManager2.js');
   const CategoryUpdater = require('../control/CategoryUpdater.js')
   const categoryUpdater = new CategoryUpdater()
@@ -42,7 +42,7 @@ async function setupTagsRules(options) {
       categories.forEach(category => categoriesWithBfSet.add(category));
     }
 
-    if (policy.type != "category" || (policy.action != "block" && policy.action != "app_block" && policy.action != "disturb")) {
+    if ((policy.type != "category" && policy.type != "mac" && policy.type != "internet") || (policy.action != "block" && policy.action != "app_block" && policy.action != "disturb")) {
       log.info(`skipping to ${action} bypass policy ${pid} for affected policy ${aPid} as it is not a blocking/disturb category policy`);
       continue;
     }
@@ -101,31 +101,33 @@ async function setupTagsRules(options) {
     }
   }
 
+  if (type == "category") {
     // bypass dnsmasq rules
-  if (action == "enforce") {
-    await domainBlock.blockCategory({
-      pid: pid,
-      categories: targets,
-      action: "bypass",
-      tags: tags
-    });
-
-    if (categoriesWithBfSet.size > 0) {
+    if (action == "enforce") {
       await domainBlock.blockCategory({
         pid: pid,
-        categories: Array.from(categoriesWithBfSet).map(target => categoryUpdater.getBfCategoryName(target)),
+        categories: targets,
         action: "bypass",
-        tags: tags,
-        append: true
+        tags: tags
+      });
+
+      if (categoriesWithBfSet.size > 0) {
+        await domainBlock.blockCategory({
+          pid: pid,
+          categories: Array.from(categoriesWithBfSet).map(target => categoryUpdater.getBfCategoryName(target)),
+          action: "bypass",
+          tags: tags,
+          append: true
+        });
+      }
+    } else if (action == "unenforce") {
+      await domainBlock.unblockCategory({
+        pid: pid,
+        categories: targets,
+        action: "bypass",
+        tags: tags
       });
     }
-  } else if (action == "unenforce") {
-    await domainBlock.unblockCategory({
-      pid: pid,
-      categories: targets,
-      action: "bypass",
-      tags: tags
-    });
   }
 
 }

@@ -1289,7 +1289,7 @@ class PolicyManager2 {
   }
 
   async _applyBypass(bypassPolicy, action="enforce") {
-    let { pid, affectedPids, tag } = bypassPolicy;
+    let { pid, affectedPids, tag, type } = bypassPolicy;
     log.info(`${action} bypass policy ${pid} for affected policies ${affectedPids}, tag ${tag}`);
     let { intfs, tags } = this.parseTags(tag)
     // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
@@ -1303,7 +1303,7 @@ class PolicyManager2 {
 
     let targets = bypassPolicy.targets ? bypassPolicy.targets : [bypassPolicy.target];
     // {affectedPids, tags, intfs, action, pid} = options;
-    await Bypass.setupTagsRules({ pid, affectedPids, intfs, tags, action, targets });
+    await Bypass.setupTagsRules({ pid, affectedPids, intfs, tags, action, targets, type });
   }
 
 
@@ -1935,7 +1935,7 @@ class PolicyManager2 {
       subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
     }
 
-    if (type === "category" && isBlockOrdisturb) {
+    if ((type === "category" || type == "mac" || type === "internet") && isBlockOrdisturb) {
       const chainName = `FW_${policy.pid}_BYPASS`;
       commonOptions.byPassChain = chainName;
       let table = "filter";
@@ -2666,7 +2666,7 @@ class PolicyManager2 {
     if (qosHandler)
       await qos.deallocateQoSHandlerForPolicy({ pid, subKey: policy.qosSubKey });
 
-    if (type === "category" && isBlockOrdisturb) {
+    if ((type === "category" || type == "mac" || type === "internet") && isBlockOrdisturb) {
       const chainName = `FW_${pid}_BYPASS`;
       let table = "filter";
       if (action === "disturb" || action === "qos") {
@@ -3858,7 +3858,7 @@ class PolicyManager2 {
 
     if (!this.sortedActiveRulesCache) {
       let activeRules = await this.loadActivePoliciesAsync() || [];
-      let activeBypassRules = await this.loadActiveBypassPoliciesAsync() || [];
+      let activeBypassRules = await this.loadActiveBypassPoliciesAsync({includingDisabled:false}) || [];
       const isBypassed = (rule) => activeBypassRules.some(bypassRule => {
         if (bypassRule.affectedPids) {
           // need to check if still have quota left.
