@@ -19,6 +19,18 @@ const { Address4, Address6 } = require('ip-address');
 
 class CategoryEntry {
   static parse(item) {
+    // Must short-circuit before the colon-based split below, since regex bodies may contain ":"
+    if (item.startsWith("regex:")) {
+      const body = item.slice(6);
+      if (!body) {
+        throw new Error("Empty regex entry");
+      }
+      if (!CategoryEntry.isValidDomainRE(body)) {
+        throw new Error("Invalid regex entry");
+      }
+      return [{ type: "domain_re", id: body, pcount: 0 }];
+    }
+
     const entries = [];
     const entry = {};
     const tokens = item.split(":");
