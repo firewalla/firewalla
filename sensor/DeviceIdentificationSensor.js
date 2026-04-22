@@ -129,6 +129,8 @@ class DeviceIdentificationSensor extends Sensor {
     for (const key in updates)
       entry.updates[key] = Object.assign({}, entry.updates[key], updates[key])
 
+    log.debug('mergeAndSave', mac, entry.updates)
+
     entry.timer = setTimeout(async () => {
       const pending = entry.updates
       delete this.mergeJobs[mac]
@@ -226,11 +228,12 @@ class DeviceIdentificationSensor extends Sensor {
         log.verbose('DetectUpdate', mac, from, source && source.type, detect)
 
         if (mac && detect && from) {
+          const sub = JSON.parse(JSON.stringify(detect))
           if (source) {
-            for (const key in detect)
-              detect[`${key}.source`] = source
+            for (const key in sub)
+              sub[`${key}.source`] = source
           }
-          this.mergeAndSave(mac, { [from]: detect })
+          this.mergeAndSave(mac, { [from]: sub })
         }
       } catch(err) {
         log.error('Error saving result', event, err)
