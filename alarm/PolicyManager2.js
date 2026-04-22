@@ -58,6 +58,7 @@ const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
 const CountryUpdater = require('../control/CountryUpdater.js')
 const countryUpdater = new CountryUpdater()
+const fc = require('../net2/config.js')
 
 const scheduler = require('../extension/scheduler/scheduler.js')
 
@@ -1058,6 +1059,27 @@ class PolicyManager2 {
 
     log.forceInfo(">>>>>==== All policy rules are enforced ====<<<<<", otherRules.length);
     this.allRulesInitialized = true;
+
+    // Wait for category/country data loads (cloud fetch → recycleIPSet) to complete
+    // so the initial atomic ipset swap captures the full state.
+    // Hard cap so a failing remote source doesn't stall startup indefinitely.
+    const initWait = fc.getConfig().timing['policy.category.init_wait'] || 120
+    const initWaitDeadline = Date.now() + initWait * 1000;
+    let pending;
+    while (
+      (pending = [
+        ...categoryUpdater.getUninitializedCategories(),
+        ...countryUpdater.getUninitializedCategories()
+      ]).length > 0
+    ) {
+      const remaining = initWaitDeadline - Date.now();
+      if (remaining <= 0) {
+        log.warn(`Category init wait timeout after ${initWait}s, still pending: ${pending.join(', ')}`);
+        break;
+      }
+      log.info(`Waiting for ${pending.length} category/country init, ${Math.floor(remaining / 1000)}s left: ${pending.join(', ')}`);
+      await delay(Math.min(2000, remaining));
+    }
 
     // Finish initialization - this will process all queued rules (setup script runs, then rules are applied)
     await blockControl.finishInitialization();
