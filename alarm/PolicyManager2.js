@@ -27,6 +27,7 @@ const tm = require('./TrustManager.js');
 let instance = null;
 
 const policyActiveKey = "policy_active";
+const activeBypassPolicyKey = "active_bypass_policy";
 const policyIDKey = "policy:id";
 const policyPrefix = "policy:";
 const policyDisableAllKey = "policy:disable:all";
@@ -43,6 +44,10 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Block = require('../control/Block.js');
 const qos = require('../control/QoS.js');
+const Bypass = require('../control/Bypass.js');
+
+const { Rule } = require('../net2/Iptables.js');
+const iptc = require('../control/IptablesControl.js');
 
 const Policy = require('./Policy.js');
 
@@ -115,7 +120,7 @@ const simpleRuleSetMap = {
   'dns': 'domain_set'
 }
 
-const validActions = ["block", "allow", "qos", "route", "match_group", "alarm", "resolve", "address", "snat"];
+const validActions = ["block", "allow", "qos", "route", "match_group", "alarm", "resolve", "address", "snat", "bypass"];
 
 class PolicyManager2 {
   constructor() {
@@ -212,6 +217,7 @@ class PolicyManager2 {
             log.info("START UNENFORCING POLICY", policy.pid, action);
             // if policy is disabled, skip unenforce
             if (policy.isDisabled()) {
+              this.invalidateExpireTimer(policy);
               log.info("Policy is disabled, skip unenforce", policy.pid, action);
             } else {
               await this.unenforce(policy)
@@ -398,6 +404,9 @@ class PolicyManager2 {
     const score = parseFloat(policy.timestamp);
     const id = policy.pid;
     await rclient.zaddAsync(policyActiveKey, score, id);
+    if (policy.action === "bypass") {
+      await rclient.zaddAsync(activeBypassPolicyKey, score, id);
+    }
   }
 
   // TODO: A better solution will be we always provide full policy data on calling this (requires mobile app update)
@@ -646,6 +655,28 @@ class PolicyManager2 {
     return this.checkAndSaveAsync(policy)
   }
 
+  async removeFromRefrencedBypassPolicies(policy) {
+    if (!policy) return;
+    if (!(policy.type == "category" || policy.type == "mac" || policy.type == "internet")) return; // currently only support category, mac and internet policy as bypass reference, can add more if needed in the future
+
+    if (!(policy.action == "block" || policy.action == "app_block" || policy.action == "disturb")) return; // currently only support blocking and disturb policy as bypass reference, can add more if needed in the future
+
+    const bypassPolicies = await this.loadActiveBypassPoliciesAsync();
+    for (const bypassPolicy of bypassPolicies) {
+      if (bypassPolicy.affectedPids && bypassPolicy.affectedPids.includes(String(policy.pid))) {
+        const newAffectedPids = bypassPolicy.affectedPids.filter(pid => pid !== String(policy.pid));
+        if (newAffectedPids.length === 0) {
+          await this.disableAndDeletePolicy(bypassPolicy.pid);
+        } else {
+          const oldBypassPolicy = Object.assign(Object.create(Policy.prototype), bypassPolicy);
+          bypassPolicy.affectedPids = newAffectedPids;
+          await this.updatePolicyAsync(bypassPolicy);
+          this.tryPolicyEnforcement(bypassPolicy, "reenforce", oldBypassPolicy);
+        }
+      }
+    }
+  }
+
   async disableAndDeletePolicy(policyID) {
     if (!policyID) return;
 
@@ -658,6 +689,10 @@ class PolicyManager2 {
     await this.deletePolicy(policyID); // delete before broadcast
 
     this.tryPolicyEnforcement(policy, "unenforce")
+    // if PolicyID is refrenced by a bypass policy, remove it from the affectedPids list and update the bypass policy. 
+    // If the affectedPids list is empty after removal, unenforce the bypass policy and delete it
+    await this.removeFromRefrencedBypassPolicies(policy);
+
     Bone.submitIntelFeedback('unblock', policy);
   }
 
@@ -687,6 +722,7 @@ class PolicyManager2 {
     const multi = rclient.multi();
     multi.zrem(policyActiveKey, policyID);
     multi.unlink(policyPrefix + policyID);
+    multi.zrem(activeBypassPolicyKey, policyID);
     await multi.execAsync()
   }
 
@@ -781,6 +817,7 @@ class PolicyManager2 {
     if (policyIds.length) { // policyIds & policyKeys should have same length
       await rclient.unlinkAsync(policyKeys);
       await rclient.zremAsync(policyActiveKey, policyIds);
+      await rclient.zremAsync(activeBypassPolicyKey, policyIds);
     }
     log.info('Deleted', mac, 'related policies:', policyKeys);
   }
@@ -825,6 +862,7 @@ class PolicyManager2 {
     if (policyIds.length) {
       await rclient.unlinkAsync(policyKeys);
       await rclient.zremAsync(policyActiveKey, policyIds);
+      await rclient.zremAsync(activeBypassPolicyKey, policyIds);
     }
     log.info('Deleted', tag, 'related policies:', policyKeys);
   }
@@ -886,10 +924,26 @@ class PolicyManager2 {
     return rclient.zrevrangeAsync(policyActiveKey, offset, offset + number - 1)
   }
 
+  async loadActiveBypassPolicyIDs(options = {}) {
+    const number = options.number || policyCapacity;
+    const offset = options.offset || 0;
+    return rclient.zrevrangeAsync(activeBypassPolicyKey, offset, offset + number - 1)
+  }
+
   // we may need to limit number of policy rules created by user
   // options: { offset, number }
   async loadActivePoliciesAsync(options = {}) {
     const results = await this.loadActivePolicyIDs(options)
+    const policyRules = await this.idsToPolicies(results)
+    if (options.includingDisabled) {
+      return policyRules
+    } else {
+      return policyRules.filter(r => r.disabled != "1") // remove all disabled/idle ones
+    }
+  }
+
+  async loadActiveBypassPoliciesAsync(options = {}) {
+    const results = await this.loadActiveBypassPolicyIDs(options)
     const policyRules = await this.idsToPolicies(results)
     if (options.includingDisabled) {
       return policyRules
@@ -908,6 +962,7 @@ class PolicyManager2 {
 
     log.info('Deleting none existing ID from active set:', IDtoDel)
     await rclient.zremAsync(policyActiveKey, IDtoDel)
+    await rclient.zremAsync(activeBypassPolicyKey, IDtoDel)
   }
 
   // cleanup before use
@@ -1276,6 +1331,35 @@ class PolicyManager2 {
     }
   }
 
+
+
+  async _enforceBypass(bypassPolicy) {
+    await this._applyBypass(bypassPolicy, "enforce");
+  }
+
+  async _applyBypass(bypassPolicy, action="enforce") {
+    let { pid, affectedPids, tag, type } = bypassPolicy;
+    log.info(`${action} bypass policy ${pid} for affected policies ${affectedPids}, tag ${tag}`);
+    let { intfs, tags } = this.parseTags(tag)
+    // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
+    const tagExistenceChecks = await Promise.all(tags.map(t => tagManager.tagUidExists(t)))
+    tags = tags.filter((_, index) => tagExistenceChecks[index])
+    // invalid tag should not continue
+    if (tag && tag.length && !tags.length && !intfs.length) {
+      log.verbose(`Unknown policy tags format policy id: ${pid}, stop ${action} policy`);
+      return;
+    }
+
+    let targets = bypassPolicy.targets ? bypassPolicy.targets : [bypassPolicy.target];
+    // {affectedPids, tags, intfs, action, pid} = options;
+    await Bypass.setupTagsRules({ pid, affectedPids, intfs, tags, action, targets, type });
+  }
+
+
+  async _unenforceBypass(bypassPolicy) {
+    await this._applyBypass(bypassPolicy, "unenforce");
+  }
+
   // should be invoked right before the policy is effectively enforced, e.g., regular enforcement, schedule/pause until triggered
   notifyPolicyActivated(policy) {
     sem.emitLocalEvent({
@@ -1448,6 +1532,11 @@ class PolicyManager2 {
       log.error(`Unsupported action ${action} for policy ${pid}`);
       return;
     }
+
+    if (action === "bypass") {
+      return this._enforceBypass(policy);
+    }
+
 
     let { intfs, tags } = this.parseTags(tag)
     // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
@@ -1894,6 +1983,21 @@ class PolicyManager2 {
       wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
       subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
     }
+
+    if ((type === "category" || type == "mac" || type === "internet") && isBlockOrdisturb) {
+      const chainName = `FW_${policy.pid}_BYPASS`;
+      commonOptions.byPassChain = chainName;
+      let table = "filter";
+      if (action === "disturb" || action === "qos") {
+        table = "mangle";
+      }
+
+      for (const family of ['4', '6']) {
+        const rule = new Rule(table).fam(family).chn(chainName).opr('-N');
+        iptc.addRule(rule);
+      }
+    }
+
     if ((tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets))) {
       this.tlsInstalled = true;
       await platform.installTLSModules().catch((err) => {
@@ -2038,9 +2142,23 @@ class PolicyManager2 {
     }
   }
 
-  unenforce(policy) {
+  async unenforce(policy) {
     try {
       this.invalidateExpireTimer(policy) // invalidate timer if exists
+
+      if (policy.action === "bypass" && policy.expire && policy.autoDeleteWhenExpires == "1") {
+        const timeLeft = policy.getExpireDiffFromNow();
+        if (timeLeft > 0) {
+          const policyTimer = setTimeout(async () => {
+            await this.deletePolicy(policy.pid);
+            delete this.enabledTimers[policy.pid];
+          }, timeLeft * 1000);
+           this.enabledTimers[policy.pid] = policyTimer;
+        } else {
+          // already expired, delete immediately
+          await this.deletePolicy(policy.pid);
+        }
+      }
 
       if (this.needDisturbRegister(policy)) {
         // this is a disturb policy, use DisturbManager to manage it
@@ -2092,6 +2210,10 @@ class PolicyManager2 {
     if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);
       return;
+    }
+
+    if (action === "bypass") {
+      return this._unenforceBypass(policy);
     }
 
     let { intfs, tags } = this.parseTags(tag)
@@ -2474,6 +2596,12 @@ class PolicyManager2 {
       wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
       subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
     }
+
+    if (type === "category" && isBlockOrdisturb) {
+      const chainName = `FW_${pid}_BYPASS`;
+      commonOptions.byPassChain = chainName;
+    }
+
     if (!_.isEmpty(remoteSets)) {
       await Promise.all(remoteSets.map(async (setPair) => {
         await this.__applyRules(Object.assign(setPair, commonOptions)).catch((err) => {
@@ -2586,6 +2714,19 @@ class PolicyManager2 {
     }
     if (qosHandler)
       await qos.deallocateQoSHandlerForPolicy({ pid, subKey: policy.qosSubKey });
+
+    if ((type === "category" || type == "mac" || type === "internet") && isBlockOrdisturb) {
+      const chainName = `FW_${pid}_BYPASS`;
+      let table = "filter";
+      if (action === "disturb" || action === "qos") {
+        table = "mangle";
+      }
+      for (const family of [4, 6]) {
+        const rule = new Rule(table).fam(family).chn(chainName).opr('-F');
+        iptc.addRule(rule);
+        iptc.addRule(rule.opr('-X'));
+      }
+    }
   }
 
   async match(alarm) {
@@ -3766,7 +3907,21 @@ class PolicyManager2 {
 
     if (!this.sortedActiveRulesCache) {
       let activeRules = await this.loadActivePoliciesAsync() || [];
+      let activeBypassRules = await this.loadActiveBypassPoliciesAsync({includingDisabled:false}) || [];
+      const isBypassed = (rule) => activeBypassRules.some(bypassRule => {
+        if (bypassRule.affectedPids) {
+          // need to check if still have quota left.
+          const au = bypassRule.appTimeUsage;
+          const effectiveQuota = (Number(au.quota) || 0) + ((au.extraQuota != null && au.extraQuotaUntilTs != null && (Date.now() / 1000) < au.extraQuotaUntilTs) ? (Number(au.extraQuota) || 0) : 0);
+          const appTimeUsed = (Number(bypassRule.appTimeUsed) || 0);
+          if (effectiveQuota > appTimeUsed) {
+            return bypassRule.affectedPids.includes(rule.pid);
+          }
+        }
+        return false;
+      });
       activeRules = activeRules.filter(rule => !rule.action || ["allow", "block", "match_group", "app_block"].includes(rule.action) || rule.type === "match_group").filter(rule => (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
+      activeRules = activeRules.filter(rule => !isBypassed(rule));
       this.sortedActiveRulesCache = this.filterAndSortRule(activeRules);
     }
 
@@ -3887,6 +4042,7 @@ class PolicyManager2 {
     if (policyArray.length) {
       await rclient.unlinkAsync(policyArray.map(p => this.getPolicyKey(p.pid)))
       await rclient.zremAsync(policyActiveKey, policyArray.map(p => p.pid))
+      await rclient.zremAsync(activeBypassPolicyKey, policyArray.map(p => p.pid))
     }
   }
 
