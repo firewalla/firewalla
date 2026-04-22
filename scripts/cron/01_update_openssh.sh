@@ -1,5 +1,6 @@
 #!/bin/bash
 
+: "${FIREWALLA_HOME:=/home/pi/firewalla}"
 TAG="FIREWALLA:PATCH_OPENSSH"
 
 # only patches ubuntu 22
@@ -14,13 +15,14 @@ if [[ -e $openssh_ts_file ]] && (( $(cat $openssh_ts_file) > $(date +%s) - 86400
   exit 0
 fi
 
-sudo timeout 60 apt update
+sudo timeout 90 apt update \
+  || { logger "$TAG:ERROR:APT_UPDATE_FAILED code $?"; exit 1; }
 pkgName="openssh-server"
 
 if apt list $pkgName --upgradable 2>/dev/null | grep -q security; then
   logger "$TAG:START"
-  sudo timeout 10 dpkg --configure -a --force-confold
-  sudo timeout 60 apt install -o Dpkg::Options::="--force-confold" -y $pkgName
+  $FIREWALLA_HOME/scripts/apt-get.sh --no-update --no-reboot install $pkgName \
+    || { logger "$TAG:ERROR:APT_GET_FAILED code $?"; exit 1; }
   sudo systemctl daemon-reload
   sudo systemctl restart sshd
   date +%s > $openssh_ts_file

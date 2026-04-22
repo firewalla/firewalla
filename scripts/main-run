@@ -63,9 +63,10 @@ sudo $FIREWALLA_HOME/scripts/check_reset.sh
 # Enable zram to increase memory
 logger "FIREWALLA:MAIN-RUN:FIREZRAM"
 sudo ${FIREWALLA_HOME}/scripts/sbin/setup_zram.sh
-# Flush iptables & ip6tables before any network involved work
-logger "FIREWALLA:MAIN-RUN:FLUSH_IPTABLES"
-sudo $FIREWALLA_HOME/scripts/flush_iptables.sh
+# assume that we won't break Internet access from box itself
+# no longer flush iptables for minimal downtime, worst case here is to reboot
+# logger "FIREWALLA:MAIN-RUN:FLUSH_IPTABLES"
+# sudo $FIREWALLA_HOME/scripts/flush_iptables.sh
 logger "FIREWALLA:MAIN-RUN:CHECK_FIX_NETWORK"
 sudo $FIREWALLA_HOME/scripts/check_fix_network.sh
 #logger "Broadcast booting"
@@ -90,9 +91,9 @@ sudo $FIREWALLA_HOME/scripts/main-prep
 PRE_MAIN_D="/home/pi/.firewalla/config/pre_main.d"
 
 if [[ -d $PRE_MAIN_D ]]; then
-  for pre_script in $(ls $PRE_MAIN_D/*.sh)
+  for pre_script in "$PRE_MAIN_D"/*.sh
   do
-      bash $pre_script
+      bash "$pre_script" </dev/null
   done
 fi
 
@@ -142,9 +143,9 @@ logger "FIREWALLA:MAIN-RUN:POST_MAIN_D"
 POST_MAIN_D="/home/pi/.firewalla/config/post_main.d"
 
 if [[ -d $POST_MAIN_D ]]; then
-  for post_script in $(ls $POST_MAIN_D/*.sh)
+  for post_script in "$POST_MAIN_D"/*.sh
   do
-      bash $post_script
+      bash "$post_script" </dev/null
   done
 fi
 

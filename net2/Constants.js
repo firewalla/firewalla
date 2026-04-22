@@ -80,12 +80,16 @@ module.exports = {
   REDIS_KEY_DATA_PLAN_SETTINGS: "sys:data:plan",
   REDIS_KEY_MSP_SYNC_OPS: "msp_sync_ops",
 
+  REDIS_CHANNEL_FLOW_BLOCK: "flow:block",
+
   REDIS_HKEY_NSE_DHCP: "dhcp",
   REDIS_HKEY_CONN_OINTF: "oIntf",
   REDIS_HKEY_CONN_HOST: "host",
   REDIS_HKEY_CONN_APID: "apid", // allow rule id
   REDIS_HKEY_CONN_RPID: "rpid", // route rule id
   REDIS_HKEY_CONN_DPID: "dpid", // disturb rule id
+
+  REDIS_KEY_NTP_OFF_SET: "ntp_off_set",
 
   ST_INIT: 'init',
   ST_PENDING: 'pending',
@@ -101,6 +105,7 @@ module.exports = {
   VPN_ROUTE_MARK_KEY_PREFIX: "fwmark:vpn",
 
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
+  NOTIF_CATEGORY_TIME_LIMITS: "com.firewalla.category.time_limits",
 
   STATE_EVENT_NIC_SPEED: "nic_speed",
 
@@ -167,8 +172,6 @@ module.exports = {
 
   IPTABLES_LOG_PREFIX_AUDIT: '[FW_ADT]',
 
-  HOST_MAC_KEY_EXPIRE_SECS: 86400 * 365,
-
   FEATURE_AUDIT_LOG: "acl_audit",
   FEATURE_LOCAL_AUDIT_LOG: "local_audit",
   FEATURE_LOCAL_FLOW: "local_flow",
@@ -183,5 +186,13 @@ module.exports = {
   POLICY_KEY_SSID_PSK: "ssidPSK",
   POLICY_KEY_WIFI_AUTO_GROUP: "wifiAutoGroup",
 
+  QOS_MODE_ADAPTIVE: "adaptive",
+  QOS_MAX_BANDWIDTH_MBPS: 10240, // 10Gbps
+
   LOG_PREFIX_QUIC: '[FW_QUIC]:',
+
+  POLICY_EXTRA_TIME_LIMIT_MODE_AUTO: "auto",
+  POLICY_EXTRA_TIME_LIMIT_MODE_OFF: "off",
+  POLICY_EXTRA_TIME_LIMIT_MODE_MANUAL: "manual",
+
 };
