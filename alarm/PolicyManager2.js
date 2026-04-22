@@ -216,6 +216,7 @@ class PolicyManager2 {
             log.info("START UNENFORCING POLICY", policy.pid, action);
             // if policy is disabled, skip unenforce
             if (policy.isDisabled()) {
+              this.invalidateExpireTimer(policy);
               log.info("Policy is disabled, skip unenforce", policy.pid, action);
             } else {
               await this.unenforce(policy)
@@ -653,6 +654,28 @@ class PolicyManager2 {
     return this.checkAndSaveAsync(policy)
   }
 
+  async removeFromRefrencedBypassPolicies(policy) {
+    if (!policy) return;
+    if (!(policy.type == "category" || policy.type == "mac" || policy.type == "internet")) return; // currently only support category, mac and internet policy as bypass reference, can add more if needed in the future
+
+    if (!(policy.action == "block" || policy.action == "app_block" || policy.action == "disturb")) return; // currently only support blocking and disturb policy as bypass reference, can add more if needed in the future
+
+    const bypassPolicies = await this.loadActiveBypassPoliciesAsync();
+    for (const bypassPolicy of bypassPolicies) {
+      if (bypassPolicy.affectedPids && bypassPolicy.affectedPids.includes(String(policy.pid))) {
+        const newAffectedPids = bypassPolicy.affectedPids.filter(pid => pid !== String(policy.pid));
+        if (newAffectedPids.length === 0) {
+          await this.disableAndDeletePolicy(bypassPolicy.pid);
+        } else {
+          const oldBypassPolicy = Object.assign(Object.create(Policy.prototype), bypassPolicy);
+          bypassPolicy.affectedPids = newAffectedPids;
+          await this.updatePolicyAsync(bypassPolicy);
+          this.tryPolicyEnforcement(bypassPolicy, "reenforce", oldBypassPolicy);
+        }
+      }
+    }
+  }
+
   async disableAndDeletePolicy(policyID) {
     if (!policyID) return;
 
@@ -665,6 +688,10 @@ class PolicyManager2 {
     await this.deletePolicy(policyID); // delete before broadcast
 
     this.tryPolicyEnforcement(policy, "unenforce")
+    // if PolicyID is refrenced by a bypass policy, remove it from the affectedPids list and update the bypass policy. 
+    // If the affectedPids list is empty after removal, unenforce the bypass policy and delete it
+    await this.removeFromRefrencedBypassPolicies(policy);
+
     Bone.submitIntelFeedback('unblock', policy);
   }
 
