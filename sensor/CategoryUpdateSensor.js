@@ -295,6 +295,17 @@ class CategoryUpdateSensor extends Sensor {
         } else {
           log.debug("Skip sending REFRESH_CATEGORY_FILTER event");
         }
+
+        const ipList = await this.loadCategoryFromBone(`ip:app.${category}`);
+        if (ipList && ipList.length > 0) {
+          const ip4List = ipList.filter(d => new Address4(d).isValid());
+          const ip6List = ipList.filter(d => new Address6(d).isValid());
+          log.info(`category ${category} 'bf' IP list has ${ip4List.length} ipv4 addr, ${ip6List.length} ipv6 addr`);
+          if (ip4List.length > 0)
+            await categoryUpdater.addIPv4Addresses(category, ip4List);
+          if (ip6List.length > 0)
+            await categoryUpdater.addIPv6Addresses(category, ip6List);
+        }
       }
     }
 
