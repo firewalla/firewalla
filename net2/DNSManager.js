@@ -47,9 +47,8 @@ module.exports = class DNSManager {
   async resolveMac(mac) {
     if (mac == null) {
       return null
-    } else {
-      return rclient.hgetallAsync("host:mac:" + mac)
     }
+    return hostTool.getMACEntry(mac)
   }
 
   async resolveLocalHostAsync(ip) {

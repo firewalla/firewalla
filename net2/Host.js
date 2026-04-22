@@ -357,9 +357,56 @@ class Host extends Monitorable {
     return obj
   }
 
-  async save(fields) {
-    await super.save(fields)
+  async saveWithCompare(fields) {
+    const LAST_ACTIVE_SKIP_WINDOW_MS = 120
 
+    let obj = this.redisfy();
+    if (fields) {
+      obj = _.pick(obj, fields)
+    }
+
+    const keys = Object.keys(obj)
+    if (!keys.length) {
+      return false
+    }
+
+    let obj2 = await hostTool.getMACEntry(this.o.mac) || {};
+
+    let changed = {}
+    for (const key of keys) {
+      if (obj[key] != obj2[key]) {
+        changed[key] = obj[key]
+      }
+    }
+
+    const changedKeys = Object.keys(changed)
+    if (!changedKeys.length) {
+      return false
+    }
+
+    const onlyLastActive = changedKeys.length === 1 && changedKeys[0] === 'lastActiveTimestamp'
+    const onlyLastActiveAndFrom = changedKeys.length === 2 &&
+      changedKeys.includes('lastActiveTimestamp') && changedKeys.includes('lastFrom')
+    // Only skip heartbeat-style updates when Redis already had lastActiveTimestamp (avoid skipping first persist)
+    if ((onlyLastActive || onlyLastActiveAndFrom) && obj2.lastActiveTimestamp != null) {
+      const lastTs = Number(obj2.lastActiveTimestamp)
+      if (Number.isFinite(lastTs) && (Date.now()/1000 - lastTs) <= LAST_ACTIVE_SKIP_WINDOW_MS) {
+        //keep the last active timestamp in the object be the same as the one in the redis
+        this.o.lastActiveTimestamp = obj2.lastActiveTimestamp;
+        return false
+      }
+    }
+
+    log.debug('Saving', this.getMetaKey(), changed)
+    await hostTool.updateKeysInMAC(this.o.mac, changed)
+    return true
+  }
+
+  async save(fields) {
+    const saved = await this.saveWithCompare(fields)
+    if (!saved) {
+      return
+    }
     if (!fields
       || Array.isArray(fields) && _.intersection(fields, Host.metaFieldsActiveTS)
       || Host.metaFieldsActiveTS.includes(fields) // if string as single key
@@ -488,8 +535,7 @@ class Host extends Monitorable {
 
   async ipAllocation(policy) {
     // those fields should not be used anymore
-    await rclient.hdelAsync(this.getMetaKey(), "intfIp", "staticAltIp", "staticSecIp", "dhcpIgnore")
-
+    await hostTool.deleteKeysInMAC(this.o.mac, ["intfIp", "staticAltIp", "staticSecIp", "dhcpIgnore"]);
     dnsmasq.onDHCPReservationChanged(this)
   }
 
@@ -538,12 +584,18 @@ class Host extends Monitorable {
     }
     // set spoofing data in redis and trigger dnsmasq reload hosts
     if (state === true) {
-      await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
+      await hostTool.updateSpoofingDataInMAC(this.o.mac, {
+        spoofing: true,
+        spoofingTime: new Date() / 1000
+      })
         .catch(err => log.error("Unable to set spoofing in redis", err))
         .then(() => dnsmasq.onSpoofChanged(this));
       this.spoofing = state;
     } else {
-      await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
+      await hostTool.updateSpoofingDataInMAC(this.o.mac, {
+        spoofing: false,
+        unspoofingTime: new Date() / 1000
+      })
         .catch(err => log.error("Unable to set spoofing in redis", err))
         .then(() => dnsmasq.onSpoofChanged(this));
       this.spoofing = false;
@@ -672,10 +724,9 @@ class Host extends Monitorable {
       if (Array.isArray(this.ipv6Addr) && this.ipv6Addr.length) {
         await rclient.unlinkAsync(this.ipv6Addr.map(ip6 => `host:ip6:${ip6}`))
       }
-      await rclient.unlinkAsync(`host:mac:${this.o.mac}`)
+      await hostTool.deleteMac(this.o.mac)
       await rclient.unlinkAsync(`neighbor:${this.getGUID()}`);
       await rclient.unlinkAsync(`host:user_agent2:${this.getGUID()}`);
-      await rclient.zremAsync(Constants.REDIS_KEY_HOST_ACTIVE, this.getGUID())
     }
 
     this.ipCache.reset();
