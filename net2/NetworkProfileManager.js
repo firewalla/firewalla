@@ -90,6 +90,7 @@ class NetworkProfileManager {
       clearTimeout(this.refreshTask);
     this.refreshTask = setTimeout(() => {
       lock.acquire(LOCK_REFRESH, async () => {
+        await sysManager.waitTillInitialized();
         await this.updatePrefixMap()
         await this.refreshNetworkProfiles();
         if (f.isMain()) {

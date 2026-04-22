@@ -55,10 +55,10 @@ class IntelTool {
       // check intel key count every 15mins
       this.intelCount = {}
 
-      // a cache to reduce redis IO thus speed up API calls
+      // a cache to reduce redis IO thus speed up API calls and repeated lookups in FireMain
       // one API query usually gets multiple flows with same intel, this cache aim to cut the extra cost here
       // memory footprint isn't much to worry about, 10000 entries adds ~1MB
-      if (firewalla.isApi()) {
+      if (firewalla.isApi() || firewalla.isMain()) {
         this.intelCache = new LRU({max: 10000, maxAge: 10*60*1000});
       }
 
@@ -282,11 +282,20 @@ class IntelTool {
     return result == 1;
   }
 
+  _invalidateIpIntelCache(ip) {
+    if (!this.intelCache || !ip) return
+    const intel = this.intelCache.get(ip)
+    this.intelCache.del(ip)
+    const host = intel && intel.host
+    if (host)
+      this.intelCache.del(host)
+  }
+
   async getIntel(ip, domains = []) {
     let intel = null
 
     if (ip) {
-      if (firewalla.isApi()) {
+      if (this.intelCache) {
         intel = this.intelCache.get(ip)
       }
       if (!intel) {
@@ -294,7 +303,7 @@ class IntelTool {
         const redisObj = await rclient.hgetallAsync(key);
         intel = this.format('ip', ip, redisObj)
 
-        if (intel && firewalla.isApi()) {
+        if (intel && this.intelCache) {
           this.intelCache.set(ip, intel)
         }
       }
@@ -312,14 +321,14 @@ class IntelTool {
       if (!matchedHost) {
         const subDomains = flowUtil.getSubDomains(domains[0]) || [];
 
-        if (firewalla.isApi()) {
+        if (this.intelCache) {
           for (const sd of subDomains) {
             intel = this.intelCache.get(sd)
             if (intel) break
           }
         }
 
-        if (!firewalla.isApi() || !intel) {
+        if (!this.intelCache || !intel) {
           // either intel:ip does not exist or host in intel:ip does not match with domains,
           // discard cached intel
           intel = {}
@@ -349,7 +358,7 @@ class IntelTool {
             }
           }
 
-          if (firewalla.isApi()) {
+          if (this.intelCache) {
             this.intelCache.set(intel.host, intel)
           }
         }
@@ -406,6 +415,7 @@ class IntelTool {
     } else {
       await this.removeFromSecurityIntelTracking(key);
     }
+    this._invalidateIpIntelCache(ip)
     return rclient.expireAsync(key, expire);
   }
 
@@ -441,9 +451,9 @@ class IntelTool {
     return rclient.expireAsync(key, expire);
   }
 
-  removeIntel(ip) {
-    let key = this.getIntelKey(ip);
-
+  async removeIntel(ip) {
+    const key = this.getIntelKey(ip);
+    this._invalidateIpIntelCache(ip)
     return rclient.unlinkAsync(key);
   }
 

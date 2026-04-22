@@ -207,7 +207,6 @@ class EventSensor extends Sensor {
 
     async cleanEventsByCount() {
         try {
-            log.info("Start cleaning events by count...");
             const currentCount = await ea.getEventsCount();
             log.info("currentCount:", currentCount);
             const cleanCount = currentCount - this.config.eventsLimit;

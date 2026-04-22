@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,8 +27,8 @@ class SSLIntel extends Intel {
     if (ip) {
       try {
         let sslInfo = await intelTool.getSSLCertificate(ip);
-        log.info("Get ssl info of " + ip + ": " + JSON.stringify(sslInfo));
         if (sslInfo) {
+          log.verbose("Got ssl info of " + ip + ": " + JSON.stringify(sslInfo));
           for (var key in sslInfo) {
             let detailKey = "e.dest.ssl." + key;
             alarm[detailKey] = sslInfo[key];

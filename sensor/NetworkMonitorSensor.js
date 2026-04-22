@@ -229,7 +229,7 @@ class NetworkMonitorSensor extends Sensor {
         const runtimeConfig = this.loadRuntimeConfig(config || this.config, intf);
         log.debug("runtimeState: ", runtimeState);
         log.debug("runtimeConfig: ", runtimeConfig);
-        Object.keys(runtimeConfig).forEach(async targetIP => {
+        Object.keys(runtimeConfig).forEach(targetIP => {
           if (targetIP == "GLOBAL") // GLOBAL job was previously used for cleaning legacy data, it is deprecated as clean job is CPU intensive and legacy data will be automatically cleaned by redis ttl
             return;
           if (runtimeState && this.adminSwitch) {
@@ -783,7 +783,7 @@ class NetworkMonitorSensor extends Sensor {
         await rclient.expireAsync(redisKey, 2 * cfg.expirePeriod);
       }
     } catch (err) {
-      log.error("failed to record sample data of ${moitorType} for ${target} :", err);
+      log.error(`failed to record sample data of ${monitorType} for ${target}:`, err);
     }
     return result;
   }
