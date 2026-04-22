@@ -39,7 +39,7 @@ const STATE_DENIED = 'denied';
 const STATE_EXPIRED = 'expired';
 
 const TARGET_APP_PREFIXES = ['TLX-fw-', 'TLX-dt-']; // target values with these prefixes indicate app/category targets
-const TARGET_PERFIX_LEN = 7; // length of the above prefixes
+const TARGET_PREFIX_LEN = 7; // length of the above prefixes
 
 const ARCHIVE_TTL_SECONDS = 7 * 24 * 3600; // 7 days
 
@@ -102,7 +102,7 @@ function isInSchedule(policy, includeNonTimeLimitRules = false) {
 
 function getAppFromTarget(target) {
   if (TARGET_APP_PREFIXES.some(prefix => target.startsWith(prefix))) {
-    return target.substring(TARGET_PERFIX_LEN);
+    return target.substring(TARGET_PREFIX_LEN);
   }
   return null;
 }
@@ -114,12 +114,12 @@ function getAppsFromPolicy(policy) {
       appset.add("internet");
     }
     if (policy.target && TARGET_APP_PREFIXES.some(prefix => policy.target.startsWith(prefix))) {
-      appset.add(policy.target.substring(TARGET_PERFIX_LEN));
+      appset.add(policy.target.substring(TARGET_PREFIX_LEN));
     }
     if (policy.targets && policy.targets.length > 0) {
       for (const target of policy.targets) {
         if (TARGET_APP_PREFIXES.some(prefix => target.startsWith(prefix))) {
-          appset.add(target.substring(TARGET_PERFIX_LEN));
+          appset.add(target.substring(TARGET_PREFIX_LEN));
         }
       }
     }
@@ -455,8 +455,8 @@ class AccessRequestManager {
     const nowTs = Math.floor(Date.now() / 1000);
     const affectedPids = new Set();
 
-    const totoalQuotaLeft = req.leftQuota ? Number(req.leftQuota) + minutes : minutes;
-    const calaculateQuotaLeft = (policy) => {
+    const totalQuotaLeft = req.leftQuota ? Number(req.leftQuota) + minutes : minutes;
+    const calculateQuotaLeft = (policy) => {
       if (!policy.appTimeUsage) return 0;
       const au = policy.appTimeUsage;
       const ruleQuota = Number(au.quota) || 0;
@@ -472,14 +472,14 @@ class AccessRequestManager {
       if (policy.appTimeUsage) {
         const oldPolicy = policy;
         const au = Object.assign({}, policy.appTimeUsage);
-        const quotaLeft = calaculateQuotaLeft(policy);
+        const quotaLeft = calculateQuotaLeft(policy);
 
-        if (quotaLeft >= totoalQuotaLeft) {
+        if (quotaLeft >= totalQuotaLeft) {
           continue; // do nothing if the approved quota is already covered by the existing quota and extraQuota on the rule
         }
 
         au.extraQuota = Number(au.extraQuota) || 0;
-        au.extraQuota += totoalQuotaLeft - quotaLeft;
+        au.extraQuota += totalQuotaLeft - quotaLeft;
 
         au.extraQuotaUntilTs = endOfTodayTs;
         
@@ -533,9 +533,9 @@ class AccessRequestManager {
           || newPolicy.appTimeUsage.extraQuotaUntilTs < nowTs) {
           newPolicy.appTimeUsage = au;
         } else {
-          const quotaLeft = calaculateQuotaLeft(policy);
-          if (quotaLeft < totoalQuotaLeft) {
-            newPolicy.appTimeUsage.extraQuota = Number(newPolicy.appTimeUsage.extraQuota) + totoalQuotaLeft - quotaLeft;
+          const quotaLeft = calculateQuotaLeft(policy);
+          if (quotaLeft < totalQuotaLeft) {
+            newPolicy.appTimeUsage.extraQuota = Number(newPolicy.appTimeUsage.extraQuota) + totalQuotaLeft - quotaLeft;
           }
           newPolicy.appTimeUsage.extraQuotaUntilTs = endOfTodayTs;
         }

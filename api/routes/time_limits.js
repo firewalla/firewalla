@@ -198,6 +198,7 @@ router.get('/', async (req, res) => {
     for (const rule of blockOrDisturbPolicies) {
       const appQuotaInfo = {
         bestMatchPolicy: rule.pid,
+        policyAction: rule.action,
         app: null,
         apps: [],
         quota: 0,
