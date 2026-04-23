@@ -44,14 +44,14 @@ class DeviceIdentificationSensor extends Sensor {
     this.expire = config.get('bro.userAgent.expires')
 
     for (const host of hosts) try {
-      if (!host.o.detect) host.o.detect = {}
-      if (sm.isFirewallaMac(host.o.mac)) {
-        log.debug('Found Firewalla device', host.o.mac)
-        host.o.detect.nameBased = { name: 'Firewalla' }
+      const mac = host.o.mac
+      if (sm.isFirewallaMac(mac)) {
+        log.debug('Found Firewalla device', mac)
+        this.mergeAndSave(mac, { nameBased: { name: 'Firewalla' } })
       } else {
-        host.o.detect.ua = await this.userAgentDetect(host)
+        const ua = await this.userAgentDetect(host)
+        this.mergeAndSave(mac, { ua })
       }
-      await this.mergeAndSave(host)
     } catch(err) {
       log.error('Error identifying device', host.o.mac, err)
     }
@@ -118,22 +118,37 @@ class DeviceIdentificationSensor extends Sensor {
       counter[key] = 1
   }
 
-  mergeAndSave(host) {
-    const mac = host.o.mac
-    if (this.mergeJobs[mac]) clearTimeout(this.mergeJobs[mac])
-    this.mergeJobs[mac] = setTimeout(async () => {
+  mergeAndSave(mac, updates = {}) {
+    let entry = this.mergeJobs[mac]
+    if (entry) {
+      clearTimeout(entry.timer)
+    } else {
+      entry = this.mergeJobs[mac] = { updates: {} }
+    }
+    // accumulate pending updates across debounced calls
+    for (const key in updates)
+      entry.updates[key] = Object.assign({}, entry.updates[key], updates[key])
+
+    log.debug('mergeAndSave', mac, entry.updates)
+
+    entry.timer = setTimeout(async () => {
+      const pending = entry.updates
       delete this.mergeJobs[mac]
       try {
-        await this._mergeAndSave(host)
+        await this._mergeAndSave(mac, pending)
       } catch(err) {
         log.error('Error in mergeAndSave for', mac, err)
       }
     }, 2000)
   }
 
-  async _mergeAndSave(host) {
-    const detect = host.o.detect
-    if (!Object.keys(detect)) return
+  async _mergeAndSave(mac, updates) {
+    const host = hostManager.getHostFastByMAC(mac)
+    if (!host) return
+    const detect = _.get(host, ['o', 'detect'], {})
+    for (const key in updates) {
+      detect[key] = Object.assign({}, detect[key], updates[key])
+    }
 
     // name-based type detection from preferred name
     const name = getPreferredName(host.o)
@@ -142,6 +157,8 @@ class DeviceIdentificationSensor extends Sensor {
       if (nameType)
         detect.nameBased = { type: nameType }
     }
+
+    if (!Object.keys(detect).length) return
 
     const keepsake = _.pick(detect, ['feedback', 'bonjour', 'cloud', 'nameBased', 'ua'])
 
@@ -197,14 +214,13 @@ class DeviceIdentificationSensor extends Sensor {
     for (const eventType of ['NewDeviceFound', 'RegularDeviceInfoUpdate']) {
       sem.on(eventType, (event) => {
         if (!config.isFeatureOn(FEATURE_NAME)) return
-        const host = hostManager.getHostFastByMAC(event.host && event.host.mac)
-        if (!host) return
-        if (!host.o.detect) host.o.detect = {}
-        this.mergeAndSave(host)
+        const mac = event.host && event.host.mac
+        if (!mac) return
+        this.mergeAndSave(mac)
       })
     }
 
-    sem.on('DetectUpdate', async (event) => {
+    sem.on('DetectUpdate', (event) => {
       if (!config.isFeatureOn(FEATURE_NAME)) return
 
       try {
@@ -212,15 +228,12 @@ class DeviceIdentificationSensor extends Sensor {
         log.verbose('DetectUpdate', mac, from, source && source.type, detect)
 
         if (mac && detect && from) {
-          const host = hostManager.getHostFastByMAC(mac)
-          if (!host) return
-          if (!host.o.detect) host.o.detect = {}
-          host.o.detect[from] = Object.assign({}, host.o.detect[from], detect)
+          const sub = JSON.parse(JSON.stringify(detect))
           if (source) {
-            for (const key in detect)
-              host.o.detect[from][`${key}.source`] = source
+            for (const key in sub)
+              sub[`${key}.source`] = source
           }
-          await this.mergeAndSave(host)
+          this.mergeAndSave(mac, { [from]: sub })
         }
       } catch(err) {
         log.error('Error saving result', event, err)
