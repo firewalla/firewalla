@@ -757,13 +757,13 @@ describe('test familyDnsTest', function() {
   });
 
   async function dnsTest(value) {
-    return call({ mtype: 'get', type: 'jsonmsg', data: { item: 'familyDnsTest', value }, target: '0.0.0.0' });
+    return call({ mtype: 'cmd', type: 'jsonmsg', data: { item: 'familyDnsTest', value }, target: '0.0.0.0' });
   }
 
   async function dnsTestRaw(value) {
     return netbot.msgHandler(gid, {
       mtype: 'msg',
-      message: { from: 'test', obj: { mtype: 'get', type: 'jsonmsg', data: { item: 'familyDnsTest', value }, target: '0.0.0.0' }, appInfo: { deviceName: 'test' }, type: 'jsondata', suppressLog: true }
+      message: { from: 'test', obj: { mtype: 'cmd', type: 'jsonmsg', data: { item: 'familyDnsTest', value }, target: '0.0.0.0' }, appInfo: { deviceName: 'test' }, type: 'jsondata', suppressLog: true }
     });
   }
 
