@@ -129,8 +129,13 @@ class FamilyProtectPlugin extends Sensor {
         })
       });
       
-      extensionManager.onGet('familyDnsTest', async (_msg, data) => {
+      extensionManager.onCmd('familyDnsTest', async (msg, data) => {
         const maxServers = 10;
+        const maxDomains = 20;
+        // 64 bytes per server (IPv6+port worst case), 253 bytes per domain (RFC 1035 max FQDN)
+        const maxPayloadBytes = maxServers * 64 + maxDomains * 253 + 1000;
+        if (data && JSON.stringify(data).length > maxPayloadBytes)
+          throw new Error(`payload exceeds limit of ${maxPayloadBytes} bytes`);
         const servers = data && data.servers;
         const domains = data && data.domains;
         if (!Array.isArray(servers) || servers.length === 0)
@@ -139,6 +144,8 @@ class FamilyProtectPlugin extends Sensor {
           throw new Error(`servers exceeds limit of ${maxServers}`);
         if (!Array.isArray(domains) || domains.length === 0)
           throw new Error("domains is required");
+        if (domains.length > maxDomains)
+          throw new Error(`domains exceeds limit of ${maxDomains}`);
 
         const testOne = (server, domain) => new Promise((resolve) => {
           const resolver = new dns.Resolver();
