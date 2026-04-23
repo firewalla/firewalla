@@ -924,6 +924,18 @@ module.exports = class FlowMonitor {
     return true;
   }
 
+  async isActiveProtectStrictMode() {
+    if (!fc.isFeatureOn("dns_proxy")) return false;
+    try {
+      const raw = await rclient.hgetAsync("policy:system", "dns_proxy");
+      if (!raw) return false;
+      const policy = JSON.parse(raw);
+      return "strict" in policy && !!policy["strict"];
+    } catch (e) {
+      return false;
+    }
+  }
+
   async checkIpAlarm(remoteIP, deviceIP, flowObj) {
     log.info("Check IP Alarm for traffic from: ", deviceIP, ", to:", remoteIP);
     const domain = await hostTool.getName(remoteIP);
@@ -994,6 +1006,12 @@ module.exports = class FlowMonitor {
 
     if (flowObj && flowObj.fd !== 'in' && flowObj.intel && flowObj.intel.category === 'intel' && Number(flowObj.intel.t) >= 10) {
       alarm["p.action.block"] = true;
+    }
+
+    if (await this.isActiveProtectStrictMode() && flowObj && flowObj.fd === 'in' &&
+        flowObj.intel && flowObj.intel.category === 'intel') {
+      alarm["p.action.block"] = true;
+      alarm["p.blockby"] = "ip_intel";
     }
 
     if (flowObj && flowObj.categoryArray) {
