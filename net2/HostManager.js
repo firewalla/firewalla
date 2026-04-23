@@ -2207,10 +2207,24 @@ module.exports = class HostManager extends Monitorable {
         });
       }
       await this.setupDefaultQosAutoRules();
+      await this.setupDscpOverride();
       await platform.switchQoS(state, qdisc);
     } 
   }
 
+  async setupDscpOverride() {
+    const qosConfs = await this.getQosConfs();
+    let op = '-D';
+    if (qosConfs && qosConfs.state === true && qosConfs.enableDscpOverride === true) {
+      op = '-A';
+    }
+
+    let rule = new Rule("mangle").chn("FW_POSTROUTING")
+      .jmp(`FW_POSTROUTING_DSCP_OVERRIDE`);
+    iptc.addRule(rule.opr(op));
+    let rule6 = rule.clone().fam(6);
+    iptc.addRule(rule6.opr(op));
+  }
 
   async setupDefaultQosAutoRules() {
     const qosConfs = await this.getQosConfs();
