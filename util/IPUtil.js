@@ -147,17 +147,15 @@ class IPUtil {
     return resultArray
   }
 
-  isPrivate(ipStr) {
-    const fam = net.isIP(ipStr)
-    if (fam == 0) return false
+  isPrivate(ipStr, fam = net.isIP(ipStr)) {
+    if (fam === 0) return false
 
     const ipNum = this.atonBigInt(ipStr)
 
     return this.network[fam].privateNetworks.some(net => ipNum >= net[0] && ipNum <= net[1])
   }
 
-  isPublic(ipStr) {
-    const fam = net.isIP(ipStr)
+  isPublic(ipStr, fam = net.isIP(ipStr)) {
     if (fam == 0) return false
 
     const ipNum = this.atonBigInt(ipStr)

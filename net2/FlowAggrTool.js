@@ -130,7 +130,7 @@ class FlowAggrTool {
       if (fd && entry.fd != fd)
         continue;
 
-      const incr = entry && (entry[measurement] || entry.count) || 0;
+      const incr = entry && (_.has(entry, measurement) ? entry[measurement] : entry.count) || 0;
       const mac = entry.device || uid;
       if (incr) {
         const flowStr = this.getFlowStr(mac, entry);

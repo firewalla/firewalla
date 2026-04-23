@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -55,6 +55,9 @@ const fireRouter = require('./FireRouter.js')
 
 // api/main/monitor all depends on sysManager configuration
 const sysManager = require('./SysManager.js');
+
+// load BlockControl to start timer
+require('../control/BlockControl.js');
 
 const sensorLoader = require('../sensor/SensorLoader.js');
 
@@ -145,6 +148,8 @@ process.on('uncaughtException',(err)=>{
     msg: err.message,
     stack: err.stack,
     err: err
+  }).catch(err => {
+    log.error("Failed to log unhandled exception", err.message);
   });
   setTimeout(()=>{
     try {
@@ -165,6 +170,8 @@ process.on('unhandledRejection', (reason, p)=>{
     msg: msg,
     stack: reason.stack,
     err: reason
+  }).catch(err => {
+    log.error("Failed to log unhandled rejection", err.message);
   });
 });
 
@@ -205,6 +212,7 @@ async function run() {
 
   const HostManager = require('./HostManager.js');
   const hostManager = new HostManager();
+  const Monitorable = require('./Monitorable.js');
 
   const hl = require('../hook/HookLoader.js');
   hl.initHooks();
@@ -246,9 +254,9 @@ async function run() {
     const policyManager = require('./PolicyManager.js');
 
     try {
-      await policyManager.flush(fc.getConfig())
+      await policyManager.flush()
     } catch(err) {
-      log.error("Failed to setup iptables basic rules, skipping applying existing policy rules");
+      log.error("Failed to setup iptables basic rules, skipping applying existing policy rules", err);
       return;
     }
 
@@ -289,6 +297,7 @@ async function run() {
 
     // ensure getHosts is called after Iptables is flushed
     await hostManager.getHostsAsync()
+    Monitorable.startInitLogger()
 
     const qos = require('../control/QoS.js');
     await qos.resetPolicyQoSHandlerMap();

@@ -1,4 +1,4 @@
-/*    Copyright 2019-2024 Firewalla Inc.
+/*    Copyright 2019-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,7 +26,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
-const complexNodes = ['sensors', 'apiSensors', 'features', 'userFeatures', 'bro']
+const complexNodes = ['sensors', 'apiSensors', 'features', 'userFeatures', 'bro', 'timing']
 const dynamicConfigKey = "sys:features"
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();

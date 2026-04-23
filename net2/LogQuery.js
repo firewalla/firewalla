@@ -39,6 +39,7 @@ const _ = require('lodash');
 const firewalla = require('../net2/Firewalla.js');
 const sl = firewalla.isApi() ? require('../sensor/APISensorLoader.js') : firewalla.isMain() ? require('../sensor/SensorLoader.js') : null;
 const DomainTrie = require('../util/DomainTrie.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 class LogQuery {
 
@@ -478,8 +479,17 @@ class LogQuery {
 
         // failed on previous cloud request, try again
         if (intel && intel.cloudFailed || !intel) {
-          // not waiting as that will be too slow for API call
-          destIPFoundHook.processIP(f.ip);
+          if (!firewalla.isApi()) {
+            destIPFoundHook.processIP(f.ip);
+          } else {
+            // in fireapi, send to firemain for async intel check, which can use FastIntelPlugin and cloud
+            sem.sendEventToFireMain({
+              type: 'DestIP',
+              ip: f.ip,
+              skipReadLocalCache: true,
+              suppressEventLogging: true
+            });
+          }
         }
       } else if (f.domain) {
         const intel = await intelTool.getIntel(undefined, [f.domain])

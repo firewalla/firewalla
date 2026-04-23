@@ -94,6 +94,7 @@ const dnscache = require('../vendor_lib/dnscache/dnscache.js')({
 class SysManager {
   constructor() { // loglevel is already ignored
     if (instance == null) {
+      this.startTS = Date.now() / 1000
       log.info('Initializing SysManager')
       rclient.hdel("sys:network:info", "oper");
       this.multicastlow = iptool.toLong("224.0.0.0");
@@ -782,7 +783,10 @@ class SysManager {
   }
 
   isSearchDomain(d) {
-    return this.getMonitoringInterfaces().some(intf => d && _.isArray(intf.searchDomains) && intf.searchDomains.some(sd => d.toLowerCase().endsWith(`.${sd.toLowerCase()}`)));
+    return this.getMonitoringInterfaces()
+      .some(intf => d && _.isArray(intf.searchDomains) &&
+        intf.searchDomains.some(sd => d.toLowerCase().endsWith(`.${sd.toLowerCase()}`))
+      );
   }
 
   myIp2(intf = this.config.monitoringInterface) {
