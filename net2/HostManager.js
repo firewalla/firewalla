@@ -726,8 +726,11 @@ module.exports = class HostManager extends Monitorable {
       extdata['portforward'] = portforwardConfig;
 
     const fpp = await sensorLoader.initSingleSensor('FamilyProtectPlugin');
-    const familyConfig = await fpp.getFamilyConfig()
-    if (familyConfig) extdata.family = familyConfig
+    const familyConfig = await fpp.getFamilyConfig();
+    log.debug(`FamilyConfig: ${JSON.stringify(familyConfig)}`);
+    const effectiveServers = familyConfig && familyConfig.servers && familyConfig.servers.length > 0
+      ? familyConfig.servers : await fpp.familyDnsAddr();
+    extdata.family = Object.assign({}, familyConfig, { servers: effectiveServers });
 
     const ruleStatsPlugin = await sensorLoader.initSingleSensor('RuleStatsPlugin');
     const initTs = await ruleStatsPlugin.getFeatureFirstEnabledTimestamp();
