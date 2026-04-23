@@ -89,6 +89,10 @@ class CategoryUpdaterBase {
     return `category:${category}:hit:domain`;
   }
 
+  getRegexCategoryKey(category) {
+    return `category:${category}:default:regex`;
+  }
+
   getPassthroughCategoryKey(category) {
     return `category:${category}:passthrough:domain`;
   }
