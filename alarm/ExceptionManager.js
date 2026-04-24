@@ -45,6 +45,8 @@ const util = require('util');
 const Constants = require('../net2/Constants.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
 // Create a lock instance for protecting getNextID operations
 const GET_EXCEPTION_ID_LOCK = new AsyncLock();
 
@@ -144,8 +146,17 @@ module.exports = class {
     return util.callbackify(this.loadExceptionsAsync).bind(this)(callback)
   }
 
-  async loadExceptionsAsync() {
-    const EIDs = await rclient.smembersAsync(exceptionQueue)
+  async loadExceptionsAsync(options = {}) {
+    // options: { offset, number }
+    const number = options.number || platform.getExceptionCapacity();
+    const offset = options.offset || 0;
+
+    let EIDs = await rclient.smembersAsync(exceptionQueue)
+    // recent first (higher numeric EID first), mirroring PolicyManager2's zrevrange paging
+    EIDs.sort((a, b) => Number(b) - Number(a));
+    if (number) {
+      EIDs = EIDs.slice(offset, offset + number);
+    }
 
     const multi = rclient.multi();
 
