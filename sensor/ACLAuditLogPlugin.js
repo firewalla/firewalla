@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -326,10 +326,8 @@ class ACLAuditLogPlugin extends Sensor {
       } else if (record.ac == 'block' && record.type == 'ip' && record.pr == 'udp') {
         // blocked UDP flow is always caught by zeek, it extends expiration of conn:udp: on existing connection
         // delete it here to make sure following zeek logs are not recoreded
-        await rclient.unlinkAsync([
-          conntrack.getKey(src, sport, dst, dport, 'udp'),
-          conntrack.getKey(dst, dport, src, sport, 'udp'),
-        ])
+        await conntrack.delConnEntries(src, sport, dst, dport, 'udp');
+        await conntrack.delConnEntries(dst, dport, src, sport, 'udp');
       }
 
     }
