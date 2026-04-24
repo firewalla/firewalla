@@ -188,8 +188,8 @@ class APFeaturesPlugin extends Sensor {
     if (obj instanceof NetworkProfile) {
       const uuid = obj.getUniqueId();
       await obj.constructor.ensureCreateEnforcementEnv(uuid);
-      const set4Name = NetworkProfile.getNetIpsetName(uuid, 4);
-      const set6Name = NetworkProfile.getNetIpsetName(uuid, 6);
+      const set4Name = NetworkProfile.getNetListIpsetName(uuid);
+      const set6Name = NetworkProfile.getNetListIpsetName(uuid);
       const rule = new Rule("filter").chn("FW_FIREWALL_NET_ISOLATION").mdl("conntrack", "--ctdir ORIGINAL").jmp("FW_PLAIN_DROP");
       const ruleLog = new Rule("filter").chn("FW_FIREWALL_NET_ISOLATION").mdl("conntrack", "--ctdir ORIGINAL").jmp(`LOG --log-prefix "[FW_ADT]A=I N=${uuid.substring(0, 8)} "`);
 

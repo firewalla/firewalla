@@ -81,15 +81,14 @@ async function setupTagsRules(options) {
 
     for (const intf of intfs) {
       await NetworkProfile.ensureCreateEnforcementEnv(intf);
-      const intfSet = NetworkProfile.getNetIpsetName(intf, 4);
-      const intfSet6 = NetworkProfile.getNetIpsetName(intf, 6);
+      const intfSet = NetworkProfile.getNetListIpsetName(intf);
   
       // outbound rule to bypass traffic from devices in the interface
       rulesToAdd.push(new Rule(table).chn(bypassChain).mdl("set", `--match-set ${intfSet} src,src`).jmp("RETURN"));
-      rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${intfSet6} src,src`).jmp("RETURN"));
+      rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${intfSet} src,src`).jmp("RETURN"));
       // inbound rule to bypass traffic to devices in the interface
       rulesToAdd.push(new Rule(table).chn(bypassChain).mdl("set", `--match-set ${intfSet} dst,dst`).jmp("RETURN"));
-      rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${intfSet6} dst,dst`).jmp("RETURN"));
+      rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${intfSet} dst,dst`).jmp("RETURN"));
     }
 
     let op = '-I'

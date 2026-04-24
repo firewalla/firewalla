@@ -1942,8 +1942,8 @@ class PolicyManager2 {
       case "network":
         // target is network uuid
         await NetworkProfile.ensureCreateEnforcementEnv(target);
-        remoteSet4 = NetworkProfile.getNetIpsetName(target, 4);
-        remoteSet6 = NetworkProfile.getNetIpsetName(target, 6);
+        remoteSet4 = NetworkProfile.getNetListIpsetName(target);
+        remoteSet6 = NetworkProfile.getNetListIpsetName(target);
         remoteTupleCount = 2;
         break;
 
@@ -2556,8 +2556,8 @@ class PolicyManager2 {
       case "network":
         // target is network uuid
         await NetworkProfile.ensureCreateEnforcementEnv(target);
-        remoteSet4 = NetworkProfile.getNetIpsetName(target, 4);
-        remoteSet6 = NetworkProfile.getNetIpsetName(target, 6);
+        remoteSet4 = NetworkProfile.getNetListIpsetName(target);
+        remoteSet6 = NetworkProfile.getNetListIpsetName(target);
         remoteTupleCount = 2;
         break;
 
