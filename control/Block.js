@@ -1510,8 +1510,8 @@ async function setupIntfsRules(options) {
   for (const uuid of uuids) {
     await NetworkProfile.ensureCreateEnforcementEnv(uuid);
     const local = {
-      set: NetworkProfile.getNetIpsetName(uuid, 4),
-      set6: NetworkProfile.getNetIpsetName(uuid, 6),
+      set: NetworkProfile.getNetListIpsetName(uuid),
+      set6: NetworkProfile.getNetListIpsetName(uuid),
       specs: ["src", "src"],
       positive: true,
       portSet: localPortSet,

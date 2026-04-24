@@ -1641,7 +1641,7 @@ module.exports = class DNSMASQ {
       return;
     }
     await NetworkProfile.ensureCreateEnforcementEnv(uuid);
-    const netSet = NetworkProfile.getNetIpsetName(uuid);
+    const netSet = NetworkProfile.getNetListIpsetName(uuid);
     const redirectRule = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT')
       .set(netSet, 'src,src')
       .set(ipset.CONSTANTS.IPSET_NO_DNS_BOOST, 'src,src', true)
@@ -1660,7 +1660,7 @@ module.exports = class DNSMASQ {
       return;
     }
     await NetworkProfile.ensureCreateEnforcementEnv(uuid);
-    const netSet = NetworkProfile.getNetIpsetName(uuid, 6);
+    const netSet = NetworkProfile.getNetListIpsetName(uuid);
     const ip6 = ip6Addrs.find(i => i.startsWith("fe80")) || ip6Addrs[0]; // prefer to use link local address as DNAT address
     const redirectRule = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT')
       .set(netSet, 'src,src')

@@ -142,13 +142,17 @@ class NetworkProfile extends Monitorable {
     if (state === true) {
       const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
       const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
+      const netLinklocalIpsetName6 = NetworkProfile.getNetLinklocalIpsetName(this.o.uuid);
       Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, netIpsetName);
       Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, netIpsetName6);
+      Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, netLinklocalIpsetName6);
     } else {
       const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
       const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
+      const netLinklocalIpsetName6 = NetworkProfile.getNetLinklocalIpsetName(this.o.uuid);
       Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, netIpsetName);
       Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, netIpsetName6);
+      Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, netLinklocalIpsetName6);
     }
   }
 
@@ -156,13 +160,17 @@ class NetworkProfile extends Monitorable {
     if (state === true) {
       const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
       const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
+      const netLinklocalIpsetName6 = NetworkProfile.getNetLinklocalIpsetName(this.o.uuid);
       Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, netIpsetName);
       Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, netIpsetName6);
+      Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, netLinklocalIpsetName6);
     } else {
       const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
       const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
+      const netLinklocalIpsetName6 = NetworkProfile.getNetLinklocalIpsetName(this.o.uuid);
       Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, netIpsetName);
       Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, netIpsetName6);
+      Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, netLinklocalIpsetName6);
     }
   }
 
@@ -321,16 +329,19 @@ class NetworkProfile extends Monitorable {
     const dnsCaching = policy.dnsCaching;
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
-    if (!netIpsetName || !netIpsetName6) {
+    const netLinklocalIpsetName6 = NetworkProfile.getNetLinklocalIpsetName(this.o.uuid);
+    if (!netIpsetName || !netIpsetName6 || !netLinklocalIpsetName6) {
       log.error(`Failed to get net ipset name for ${this.o.uuid} ${this.o.intf}`);
       return;
     }
     if (dnsCaching === true) {
       Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netIpsetName);
       Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netIpsetName6);
+      Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netLinklocalIpsetName6);
     } else {
       Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netIpsetName);
       Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netIpsetName6);
+      Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netLinklocalIpsetName6);
     }
   }
 
@@ -363,6 +374,20 @@ class NetworkProfile extends Monitorable {
     // TODO: need find a better way to get a unique name from uuid
     if (uuid) {
       return `c_net_${uuid.substring(0, 13)}_set` + (af === 4 ? "" : "6");
+    } else
+      return null;
+  }
+
+  static getNetLinklocalIpsetName(uuid) {
+    if (uuid) {
+      return `c_net_ll6_${uuid.substring(0, 13)}_set6`;
+    } else
+      return null;
+  }
+
+  static getNetListIpsetName(uuid) {
+    if (uuid) {
+      return `c_net_all_${uuid.substring(0, 13)}_set`;
     } else
       return null;
   }
@@ -412,11 +437,23 @@ class NetworkProfile extends Monitorable {
         return;
       const netIpsetName = NetworkProfile.getNetIpsetName(uuid);
       const netIpsetName6 = NetworkProfile.getNetIpsetName(uuid, 6);
-      if (!netIpsetName || !netIpsetName6) {
+      const netLinklocalIpsetName6 = NetworkProfile.getNetLinklocalIpsetName(uuid);
+      if (!netIpsetName || !netIpsetName6 || !netLinklocalIpsetName6) {
         log.error(`Failed to get ipset name for ${uuid}`);
       } else {
         Ipset.create(netIpsetName, 'hash:net', false, { maxelem: 1024 });
         Ipset.create(netIpsetName6, 'hash:net', true, { maxelem: 1024 });
+        Ipset.create(netLinklocalIpsetName6, 'hash:net,iface', true, { maxelem: 1024 });
+      }
+
+      const netListIpsetName = NetworkProfile.getNetListIpsetName(uuid);
+      if (!netListIpsetName) {
+        log.error(`Failed to get net list ipset name for ${uuid}`);
+      } else {
+        Ipset.create(netListIpsetName, 'list:set');
+        Ipset.add(netListIpsetName, netIpsetName);
+        Ipset.add(netListIpsetName, netIpsetName6);
+        Ipset.add(netListIpsetName, netLinklocalIpsetName6);
       }
 
       const GatewayIpsetName = NetworkProfile.getGatewayIpsetName(uuid);
@@ -511,8 +548,9 @@ class NetworkProfile extends Monitorable {
     this.setULALocalOnlyRule();
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
+    const netLinklocalIpsetName6 = NetworkProfile.getNetLinklocalIpsetName(this.o.uuid);
     let hasDefaultRTSubnets = false;
-    if (!netIpsetName || !netIpsetName6) {
+    if (!netIpsetName || !netIpsetName6 || !netLinklocalIpsetName6) {
       log.error(`Failed to get ipset name for ${this.o.uuid}`);
     } else {
       Ipset.flush(netIpsetName);
@@ -530,30 +568,54 @@ class NetworkProfile extends Monitorable {
           }
         }
       }
-      
-      Ipset.flush(netIpsetName6);
+
       if (this.o && this.o.monitoring === true) {
+        const regularSubnets = [];
+        const fe80Subnets = [];
+
+        const isIpv6Fe80Subnet = (subnet) => {
+          return typeof subnet === 'string' && subnet.trim().toLowerCase().startsWith('fe80');
+        };
+
+        const executeIpsetCommands = (ipsetName, subnets, suffix = '') => {
+          Ipset.flush(ipsetName);
+          for (const subnet of subnets) {
+            Ipset.add(ipsetName, `${subnet}${suffix}`);
+          }
+        };
+
         if (_.isArray(this.o.ipv6Subnets)) {
-          for (const subnet6 of this.o.ipv6Subnets)
-            Ipset.add(netIpsetName6, subnet6);
-        }
-        if (_.isArray(this.o.rt6Subnets)) {
-          for (const subnet6 of this.o.rt6Subnets) {
-            if (!sysManager.isDefaultRoute(subnet6))
-              Ipset.add(netIpsetName6, subnet6);
-            else
-              hasDefaultRTSubnets = true;
+          for (const subnet of this.o.ipv6Subnets) {
+            isIpv6Fe80Subnet(subnet) ? fe80Subnets.push(subnet) : regularSubnets.push(subnet);
           }
         }
+
+        if (_.isArray(this.o.rt6Subnets)) {
+          for (const subnet of this.o.rt6Subnets) {
+            if (sysManager.isDefaultRoute(subnet)) {
+              hasDefaultRTSubnets = true;
+            } else {
+              isIpv6Fe80Subnet(subnet) ? fe80Subnets.push(subnet) : regularSubnets.push(subnet);
+            }
+          }
+        }
+
+        executeIpsetCommands(netIpsetName6, regularSubnets);
+        executeIpsetCommands(netLinklocalIpsetName6, fe80Subnets, `,${realIntf}`);
+      } else {
+        Ipset.flush(netIpsetName6);
+        Ipset.flush(netLinklocalIpsetName6);
       }
 
       // add to c_lan_set accordingly, some feature has mandatory to be enabled on lan only, e.g., vpn client
       if (this.o.type === "lan" && this.o.monitoring === true) {
         Ipset.add('c_lan_set', netIpsetName);
         Ipset.add('c_lan_set', netIpsetName6);
+        Ipset.add('c_lan_set', netLinklocalIpsetName6);
       } else {
         Ipset.del('c_lan_set', netIpsetName);
         Ipset.del('c_lan_set', netIpsetName6);
+        Ipset.del('c_lan_set', netLinklocalIpsetName6);
       }
       // add to NAT hairpin chain if it is LAN network
       if (this.o.ipv4Subnets && this.o.ipv4Subnets.length != 0) {
@@ -570,9 +632,11 @@ class NetworkProfile extends Monitorable {
       if (this.o.monitoring === true) {
         Ipset.add(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName);
         Ipset.add(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName6);
+        Ipset.add(Ipset.CONSTANTS.IPSET_MONITORED_NET, netLinklocalIpsetName6);
       } else {
         Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName);
         Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName6);
+        Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netLinklocalIpsetName6);
       }
     }
 
@@ -716,17 +780,29 @@ class NetworkProfile extends Monitorable {
     const rules = [inputRule, inputRuleSec, inputRule6, inputRule6Sec, invalidDropRule, invalidDropRule6];
     rules.forEach(rule => iptc.addRule(rule.opr("-D")));
 
+    const netListIpsetName = NetworkProfile.getNetListIpsetName(this.o.uuid);
+    if (!netListIpsetName) {
+      log.error(`Failed to get net list ipset name for ${this.o.uuid}`);
+    } else {
+      if (options.cleanup) {
+        Ipset.flush(netListIpsetName);
+      }
+    }
+
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
-    if (!netIpsetName || !netIpsetName6) {
+    const netLinklocalIpsetName6 = NetworkProfile.getNetLinklocalIpsetName(this.o.uuid);
+    if (!netIpsetName || !netIpsetName6 || !netLinklocalIpsetName6) {
       log.error(`Failed to get ipset name for ${this.o.uuid}`);
     } else {
       if (options.cleanup) {
         Ipset.flush(netIpsetName);
         Ipset.flush(netIpsetName6);
+        Ipset.flush(netLinklocalIpsetName6);
         // although net ipset is already flushed, still remove it from c_lan_set anyway to keep consistency
         Ipset.del('c_lan_set', netIpsetName);
         Ipset.del('c_lan_set', netIpsetName6);
+        Ipset.del('c_lan_set', netLinklocalIpsetName6);
       }
       // remove from NAT hairpin chain anyway
       if (this.o.ipv4Subnets && this.o.ipv4Subnets.length != 0) {
@@ -739,6 +815,7 @@ class NetworkProfile extends Monitorable {
         // still remove it from monitored net set anyway to keep consistency
         Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName);
         Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName6);
+        Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netLinklocalIpsetName6);
       }
       // do not touch dnsmasq network config directory here, it should only be updated by rule enforcement modules
     }
@@ -812,7 +889,8 @@ class NetworkProfile extends Monitorable {
     this[`_${policyKey}`] = this[`_${policyKey}`] || [];
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
-    if (!netIpsetName || !netIpsetName6) {
+    const netLinklocalIpsetName6 = NetworkProfile.getNetLinklocalIpsetName(this.o.uuid);
+    if (!netIpsetName || !netIpsetName6 || !netLinklocalIpsetName6) {
       log.error(`Failed to get ipset name for network profile ${this.o.uuid}`);
       return;
     }
@@ -824,8 +902,10 @@ class NetworkProfile extends Monitorable {
         await Tag.ensureCreateEnforcementEnv(removedTag);
         Ipset.del(Tag.getTagSetName(removedTag), netIpsetName);
         Ipset.del(Tag.getTagSetName(removedTag), netIpsetName6);
+        Ipset.del(Tag.getTagSetName(removedTag), netLinklocalIpsetName6);
         Ipset.del(Tag.getTagNetSetName(removedTag), netIpsetName);
         Ipset.del(Tag.getTagNetSetName(removedTag), netIpsetName6);
+        Ipset.del(Tag.getTagNetSetName(removedTag), netLinklocalIpsetName6);
         await fs.unlinkAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${removedTag}_${this.o.uuid}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedTag} not found`);
@@ -839,8 +919,10 @@ class NetworkProfile extends Monitorable {
         await Tag.ensureCreateEnforcementEnv(uid);
         Ipset.add(Tag.getTagSetName(uid), netIpsetName);
         Ipset.add(Tag.getTagSetName(uid), netIpsetName6);
+        Ipset.add(Tag.getTagSetName(uid), netLinklocalIpsetName6);
         Ipset.add(Tag.getTagNetSetName(uid), netIpsetName);
         Ipset.add(Tag.getTagNetSetName(uid), netIpsetName6);
+        Ipset.add(Tag.getTagNetSetName(uid), netLinklocalIpsetName6);
         const dnsmasqEntry = `mac-address-group=%00:00:00:00:00:00@${uid}`;
         await dnsmasq.writeConfig(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${uid}_${this.o.uuid}.conf`, dnsmasqEntry).catch((err) => {
           log.error(`Failed to write dnsmasq tag ${uid} on network ${this.o.uuid} ${this.o.intf}`, err);
