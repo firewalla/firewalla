@@ -577,6 +577,74 @@ function postDapDeviceState(mac, state, opts = {}) {
   });
 }
 
+/** Netbot encipher simple endpoint for DAP proxy commands (see curl to :8834). */
+const DAP_ENCIPHER_SIMPLE_QUERY = '/v1/encipher/simple?command=cmd&item=dap';
+
+/**
+ * POST a DAP REST path through {@link DAP_ENCIPHER_SIMPLE_QUERY} (same as
+ * `curl .../v1/encipher/simple?command=cmd&item=dap` with JSON `{ method, path }`).
+ * @param {string} dapRestPath e.g. `/reset-stats-all` or `/reset-stats/AA:BB:CC:DD:EE:FF`
+ * @param {{ host?: string, port?: number }} [opts]
+ * @returns {Promise<{ statusCode: number, body: string }>}
+ */
+function postDapEncipherSimple(dapRestPath, opts = {}) {
+  const host = opts.host || '127.0.0.1';
+  const port = opts.port != null ? opts.port : 8834;
+  const body = JSON.stringify({ method: 'POST', path: dapRestPath });
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: host,
+        port,
+        path: DAP_ENCIPHER_SIMPLE_QUERY,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'Content-Length': Buffer.byteLength(body)
+        }
+      },
+      res => {
+        let data = '';
+        res.on('data', chunk => {
+          data += chunk;
+        });
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve({ statusCode: res.statusCode, body: data });
+          } else {
+            const err = new Error(`postDapEncipherSimple: HTTP ${res.statusCode} ${data}`);
+            err.statusCode = res.statusCode;
+            reject(err);
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+/**
+ * Reset DAP stats for all devices (`path`: `/reset-stats-all`).
+ * @param {{ host?: string, port?: number }} [opts]
+ * @returns {Promise<{ statusCode: number, body: string }>}
+ */
+function postDapResetStatsAllEncipher(opts) {
+  return postDapEncipherSimple('/reset-stats-all', opts);
+}
+
+/**
+ * Reset DAP stats for one device (`path`: `/reset-stats/<mac>`).
+ * @param {string} mac Device MAC (e.g. AA:BB:CC:DD:EE:FF)
+ * @param {{ host?: string, port?: number }} [opts]
+ * @returns {Promise<{ statusCode: number, body: string }>}
+ */
+function postDapResetStatsForMacEncipher(mac, opts) {
+  return postDapEncipherSimple('/reset-stats/' + mac, opts || {});
+}
+
 function parseDapPolicyFromStdout(stdout) {
   const policyTag = '📋 DAP Policy:';
   const internalTag = '📊 DAP Internal:';
@@ -625,7 +693,7 @@ describe('DAP CLI — device analyze & flows', function () {
     });
 
 
-    describe('cleck learnedCount value in learning state of the device', () => {
+    describe('check learnedCount value in learning state of the device', () => {
 
       it.skip('should record learnedCount in dap policy correctly', async () => {
 
@@ -784,6 +852,87 @@ describe('DAP CLI — device analyze & flows', function () {
         // expect(policy4.localAclState).to.equal('optimizing');
       });
     });
+
+    describe('reset learnedCount value in learning state of a device', () => {
+
+      it('should reset learnedCount in dap policy correctly', async () => {
+
+        await createDapDefaultFlowPair(0);
+        // pick a device to analyze
+        let { stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]);
+        const policy = parseDapPolicyFromStdout(stdout);
+        expect(policy.learnedCount).to.equal(2);
+        expect(policy.state).to.equal('learning');
+
+        // add another flow pair to check if learning status is updated
+        await createDapDefaultFlowPair(1);
+        // await new Promise(resolve => setTimeout(resolve, 1000));
+        // ({ stdout } = await runDap(['query-flows', '-m', DAP_TEST_HOST_MAC]));
+        ({ stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]));
+        const policy2 = parseDapPolicyFromStdout(stdout);
+        expect(policy2.learnedCount).to.equal(4);
+        expect(policy2.state).to.equal('learning');
+        expect(policy2.lastUpdated).to.be.a('number');
+        expect(policy2.lastCloudCheck).to.be.a('number');
+
+        const { statusCode, body } = await postDapResetStatsForMacEncipher(DAP_TEST_HOST_MAC);
+        expect(statusCode).to.equal(200);
+
+        ({ stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]));
+        const policy3 = parseDapPolicyFromStdout(stdout);
+        expect(policy3.learnedCount).to.equal(0);
+        expect(policy3.state).to.equal('learning');
+        expect(policy3.lastUpdated).to.be.a('number');
+        expect(policy3.lastCloudCheck).to.be.a('number');
+      });
+
+      it('should return 404 for non-existent device', async () => {
+        const { statusCode, message } = await postDapResetStatsForMacEncipher("AA:BB:CC:DD:EE:00").catch(err => {
+          return { statusCode: err.statusCode, message: err.message };
+        });
+        expect(statusCode).to.equal(500);
+        expect(message).to.match(/Error: DAP API call failed: 404/);
+      });
+    });
+
+
+    describe('reset learnedCount value for all devices', () => {
+      it('should reset learnedCount for all devices correctly', async () => {
+        await createDapDefaultFlowPair(0);
+        // pick a device to analyze
+        let { stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]);
+        const policy = parseDapPolicyFromStdout(stdout);
+        expect(policy.learnedCount).to.equal(2);
+        expect(policy.state).to.equal('learning');
+
+        // add another flow pair to check if learning status is updated
+        await createDapDefaultFlowPair(1);
+        // await new Promise(resolve => setTimeout(resolve, 1000));
+        // ({ stdout } = await runDap(['query-flows', '-m', DAP_TEST_HOST_MAC]));
+        ({ stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]));
+        const policy2 = parseDapPolicyFromStdout(stdout);
+        expect(policy2.learnedCount).to.equal(4);
+        expect(policy2.state).to.equal('learning');
+        expect(policy2.lastUpdated).to.be.a('number');
+        expect(policy2.lastCloudCheck).to.be.a('number');
+
+        const { statusCode, body } = await postDapResetStatsAllEncipher();
+        expect(statusCode).to.equal(200);
+
+        ({ stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]));
+        const policy3 = parseDapPolicyFromStdout(stdout);
+        expect(policy3.learnedCount).to.equal(0);
+        expect(policy3.state).to.equal('learning');
+        expect(policy3.lastUpdated).to.be.a('number');
+        expect(policy3.lastCloudCheck).to.be.a('number');
+      });
+    });
+
+
+
+
+
+    
   });
 
 
