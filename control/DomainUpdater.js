@@ -18,6 +18,7 @@ const log = require("../net2/logger.js")(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Block = require('./Block.js');
+const blockControl = require('./BlockControl.js');
 const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
 const firewalla = require('../net2/Firewalla.js');
@@ -27,7 +28,6 @@ const LRU = require('lru-cache');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Message = require('../net2/Message.js');
 
-const exec = require('util').promisify(require('child_process').exec);
 const Constants = require('../net2/Constants.js');
 
 
@@ -68,7 +68,7 @@ class DomainUpdater {
         log.debug(`_priorityJobQueue.length:${this._priorityJobQueue.length}, _standardJobQueue.length:${this._standardJobQueue.length}`);
         if (this._needRefresh) {
           log.debug("DomainUpdater refreshing connmark for updated ipsets");
-          await this.scheduleRefreshConnmark();
+          blockControl.scheduleRefreshConnmark();
           this._needRefresh = false;
         }
       }, CONNMARK_REFRESH_INTERVAL);
@@ -227,20 +227,6 @@ class DomainUpdater {
       }
     }
 
-  }
-
-  async scheduleRefreshConnmark() {
-    if (this._refreshConnmarkTimeout)
-      clearTimeout(this._refreshConnmarkTimeout);
-    this._refreshConnmarkTimeout = setTimeout(async () => {
-      // use conntrack to clear the first bit of connmark on existing connections
-      await exec(`sudo conntrack -U -m 0x00000000/0x80000000 > /dev/null 2>&1`).catch((err) => {
-        // log.warn(`Failed to clear first bit of connmark on existing IPv4 connections`, err.message);
-      });
-      await exec(`sudo conntrack -U -f ipv6 -m 0x00000000/0x80000000 > /dev/null 2>&1`).catch((err) => {
-        // log.warn(`Failed to clear first bit of connmark on existing IPv6 connections`, err.message);
-      });
-    }, 5000);
   }
 
   _dequeueNextJob() {

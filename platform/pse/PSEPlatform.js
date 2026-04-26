@@ -108,6 +108,10 @@ class PSEPlatform extends Platform {
     return 3000;
   }
 
+  getExceptionCapacity() {
+    return 3000;
+  }
+
   isTLSBlockSupport() {
     return true;
   }

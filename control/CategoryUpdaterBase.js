@@ -28,7 +28,6 @@ const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const firewalla = require("../net2/Firewalla.js");
 const { CategoryEntry } = require("./CategoryEntry.js");
 const dnsmasq = new DNSMASQ();
-
 const redirectHttpPort = 8880;
 const redirectHttpsPort = 8883;
 const blackHoleHttpPort = 8881;
@@ -49,6 +48,10 @@ const blackHoleHttpsPort = 8884;
 const IPSET_HASH_MAXELEM = 1048576 // 2^20
 
 class CategoryUpdaterBase {
+
+  constructor() {
+    this.initializedCategories = {};
+  }
 
   getCategoryKey(category) {
     return `dynamicCategoryDomain:${category}`
@@ -84,6 +87,10 @@ class CategoryUpdaterBase {
 
   getHitCategoryKey(category) {
     return `category:${category}:hit:domain`;
+  }
+
+  getRegexCategoryKey(category) {
+    return `category:${category}:default:regex`;
   }
 
   getPassthroughCategoryKey(category) {
@@ -278,6 +285,11 @@ class CategoryUpdaterBase {
   }
 
   async recycleIPSet(category) { }
+
+  // Returns categories that are activated but not yet initialized (recycleIPSet not completed).
+  getUninitializedCategories() {
+    return this.getActiveCategories().filter(c => !this.initializedCategories[c]);
+  }
 
   // rebuild hash ipset with max size
   // make sure ipset is not referenced before calling this

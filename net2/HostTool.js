@@ -112,8 +112,9 @@ class HostTool {
     const data = await rclient.hgetallAsync(this.getMacKey(mac));
     if (data && Object.keys(data).length > 0) {
       this.macEntryCache.set(mac, data);
+      return { ...data};
     }
-    return data;
+    return null;
   }
 
   getHostname(hostEntry) {

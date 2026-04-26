@@ -22,7 +22,7 @@ const log = require('../../net2/logger.js')(__filename);
 const HostManager = require('../../net2/HostManager.js');
 const sysManager = require('../../net2/SysManager.js');
 const Constants = require('../../net2/Constants.js');
-const { getInstance: getAccessRequestManager, STATE_PENDING, STATE_APPROVED, STATE_DENIED, STATE_EXPIRED, getUserRelatedTags: getManagerUserRelatedTags, findMatchingTimeLimitRules, getAppFromTarget} = require('../../alarm/AccessRequestManager.js');
+const { getInstance: getAccessRequestManager, STATE_PENDING, STATE_APPROVED, STATE_DENIED, STATE_EXPIRED, getUserRelatedTags: getManagerUserRelatedTags, findMatchingTimeLimitRules, getAppFromTarget, getAppsFromPolicy} = require('../../alarm/AccessRequestManager.js');
 const moment = require('moment-timezone/moment-timezone.js');
 try { moment.tz.load(require('../../vendor_lib/moment-tz-data.json')); } catch (_) { /* optional */ }
 
@@ -168,13 +168,37 @@ router.get('/', async (req, res) => {
       icon: "http://fire.walla:8833/time_limits/img/Internet_light@3x.png",
     };
 
-    const matchedRules = await findMatchingTimeLimitRules(userId, "all", { includeNonTimeLimitRules: true, includeDisabled: false });
+    const {bypassPolicies, blockOrDisturbPolicies} = await findMatchingTimeLimitRules(userId, "all", { includeNonTimeLimitRules: true, includeDisabled: false });
 
     const bestMatchAppMap = new Map();
+    const appsBypassPolicyMap = new Map();
+    for (const bypassPolicy of bypassPolicies) {
+      const au = bypassPolicy.appTimeUsage;
+      if (!au || !au.apps) { // should not happen as bypass policy should have appTimeUsage
+        continue;
+      }
+      const apps = au.apps;
+      const bypassPolicyKey = accessRequestManager.getBypassPolicyKey(userId, apps);
+      if (appsBypassPolicyMap.has(bypassPolicyKey)) {
+        log.warn(`Found multiple bypass policies for user ${userId} and apps ${apps.join(',')}, this should not happen`);
+        continue;
+      }
+      if (bypassPolicy.expire) {
+        if (bypassPolicy.isExpired() || bypassPolicy.willExpireSoon()) {
+          continue;
+        }
+      }
+      if (au.extraQuota != null && au.extraQuotaUntilTs != null && nowTs >= au.extraQuotaUntilTs) {
+        continue;
+      }
+      appsBypassPolicyMap.set(bypassPolicyKey, bypassPolicy);
+    }
 
-    for (const rule of matchedRules) {
+
+    for (const rule of blockOrDisturbPolicies) {
       const appQuotaInfo = {
-        bestMatchPolicy: null,
+        bestMatchPolicy: rule.pid,
+        policyAction: rule.action,
         app: null,
         apps: [],
         quota: 0,
@@ -184,38 +208,41 @@ router.get('/', async (req, res) => {
         latestResolved: null,
       };
 
-      if (rule.appTimeUsage) {
-        appQuotaInfo.quota = Number(rule.appTimeUsage.quota);
-        if (rule.appTimeUsage.extraQuota != null && rule.appTimeUsage.extraQuotaUntilTs != null && nowTs < rule.appTimeUsage.extraQuotaUntilTs) {
-          appQuotaInfo.extraQuota = Number(rule.appTimeUsage.extraQuota);
+      appQuotaInfo.apps = getAppsFromPolicy(rule);
+      appQuotaInfo.app = appQuotaInfo.apps.join(',');
+
+      const bypassPolicyKey = accessRequestManager.getBypassPolicyKey(userId, appQuotaInfo.apps);
+      const bypassPolicy = appsBypassPolicyMap.get(bypassPolicyKey);
+      if (bypassPolicy) {
+        if (_.isArray(bypassPolicy.affectedPids) && bypassPolicy.affectedPids.includes(rule.pid)) {
+          appQuotaInfo.quota = Number(bypassPolicy.appTimeUsage.quota);
+          if (bypassPolicy.appTimeUsage.extraQuota != null && bypassPolicy.appTimeUsage.extraQuotaUntilTs != null && nowTs < bypassPolicy.appTimeUsage.extraQuotaUntilTs) {
+            appQuotaInfo.extraQuota = Number(bypassPolicy.appTimeUsage.extraQuota);
+          }
+          appQuotaInfo.timeUsed = Number(bypassPolicy.appTimeUsed);
         }
-        appQuotaInfo.timeUsed = Number(rule.appTimeUsed);
       }
 
-      if (rule.targets && rule.targets.length > 1) {
-        appQuotaInfo.bestMatchPolicy = rule.pid;
-        appQuotaInfo.app = `policy:${rule.pid}`;
-
-        for (const target of rule.targets) {
-          const targetApp = getAppFromTarget(target);
-          appQuotaInfo.apps.push(targetApp);
+      if (rule.appTimeUsage) {
+        let ruleQuota = Number(rule.appTimeUsage.quota);
+        let ruleExtraQuota = 0;
+        if (rule.appTimeUsage.extraQuota != null && rule.appTimeUsage.extraQuotaUntilTs != null && nowTs < rule.appTimeUsage.extraQuotaUntilTs) {
+          ruleExtraQuota = Number(rule.appTimeUsage.extraQuota);
         }
+        const totalQuota = ruleQuota + ruleExtraQuota;
+        if (totalQuota > appQuotaInfo.quota + appQuotaInfo.extraQuota) {
+          appQuotaInfo.quota = ruleQuota;
+          appQuotaInfo.extraQuota = ruleExtraQuota;
+          appQuotaInfo.timeUsed = Number(rule.appTimeUsed);
+        }
+      }
+
+      if (!bestMatchAppMap.has(appQuotaInfo.app)) {
         bestMatchAppMap.set(appQuotaInfo.app, appQuotaInfo);
       } else {
-        appQuotaInfo.bestMatchPolicy = rule.pid;
-        appQuotaInfo.app = getAppFromTarget(rule.target);
-        //get app from targets
-        if (!appQuotaInfo.app && rule.targets && rule.targets.length == 1) {
-          appQuotaInfo.app = getAppFromTarget(rule.targets[0]);
-        }
-        appQuotaInfo.apps.push(appQuotaInfo.app);
-        if (!bestMatchAppMap.has(appQuotaInfo.app)) {
+        const bestMatchApp = bestMatchAppMap.get(appQuotaInfo.app);
+        if (bestMatchApp.quota + bestMatchApp.extraQuota > appQuotaInfo.quota + appQuotaInfo.extraQuota) {
           bestMatchAppMap.set(appQuotaInfo.app, appQuotaInfo);
-        } else {
-          const bestMatchApp = bestMatchAppMap.get(appQuotaInfo.app);
-          if (bestMatchApp.quota + bestMatchApp.extraQuota > appQuotaInfo.quota + appQuotaInfo.extraQuota) {
-            bestMatchAppMap.set(appQuotaInfo.app, appQuotaInfo);
-          }
         }
       }
     }
@@ -254,14 +281,15 @@ router.get('/', async (req, res) => {
 // ---------- Access requests (user: create, list mine; admin: list all, approve, deny) ----------
 
 router.post('/requests', async (req, res) => {
-  const { app, requestQuota, reason } = req.body || {};
-  if (!app || requestQuota == null) {
-    res.status(400).json({ error: 'app and requestQuota are required' });
+  const { app, requestQuota, leftQuota, reason } = req.body || {};
+  if (!app || requestQuota == null || leftQuota == null) {
+    res.status(400).json({ error: 'app, requestQuota, and leftQuota are required' });
     return;
   }
   const reqQuota = Number(requestQuota);
-  if (Number.isNaN(reqQuota)) {
-    res.status(400).json({ error: 'requestQuota must be a number' });
+  const leftQuotaNum = Number(leftQuota);
+  if (Number.isNaN(reqQuota) || Number.isNaN(leftQuotaNum)) {
+    res.status(400).json({ error: 'requestQuota and leftQuota must be numbers' });
     return;
   }
   if (reqQuota <= 0 || reqQuota >= 86400) {
@@ -286,36 +314,47 @@ router.post('/requests', async (req, res) => {
       return;
     }
 
-    const matchingRules = await findMatchingTimeLimitRules(userId, app, { includeNonTimeLimitRules: true, includeDisabled: false });
-    if (matchingRules.length === 0) {
+    const {blockOrDisturbPolicies}  = await findMatchingTimeLimitRules(userId, app, { includeNonTimeLimitRules: true, includeDisabled: false });
+    if (blockOrDisturbPolicies.length === 0) {
       res.status(400).json({ error: `No time limit rule found for this user: ${userId} and app: ${app}` });
       return;
     }
 
-    const request = await accessRequestManager.createOrUpdateRequest(userId, app, reqQuota, {
+    const request = await accessRequestManager.createOrUpdateRequest(userId, app, reqQuota, leftQuotaNum, {
       deviceMac: monitorable.getGUID ? monitorable.getGUID() : null,
       reason: reason || null
     });
 
     const userTag = TagManager.getTagByUid(userId);
     const userName = userTag ? userTag.getTagName() : userId;
-    let appDisplayName = app;
-    if (app == "internet") {
-      appDisplayName = "Internet"
-    } else if(!app.match(/policy:(\d+)/)) {
-      const supportedApps = await accessRequestManager.getSupportedApps();
-      //get app displayName from supportedApps array
-      for (const appInfo of supportedApps) {
-        if (appInfo.app == app) {
-          appDisplayName = appInfo.displayName;
-          break;
+
+    const supportedApps = await accessRequestManager.getSupportedApps();
+    let multiAppsDisplayNames = [];
+    const apps = app.split(',').map(a => a.trim()).sort(); // appQuotaInfo.app is a string of multiple apps joined by comma, split it to get individual apps
+
+    for (const app of apps) {
+      if (app == "internet") {
+        multiAppsDisplayNames.push("Internet");
+      } else {
+        //get app displayName from supportedApps array
+        for (const appInfo of supportedApps) {
+          if (appInfo.app == app) {
+            multiAppsDisplayNames.push(appInfo.displayName);
+            break;
+          }
         }
       }
     }
 
+    let appNotificationName = app;
+    if (multiAppsDisplayNames.length > 0) {
+      appNotificationName = multiAppsDisplayNames.join(', ');
+      appNotificationName = `\"${appNotificationName}\"`;
+    }
+
     let titleKey = 'NOTIF_TIME_LIMITS_NEW_REQUEST_TITLE';
     let bodyKey = 'NOTIF_TIME_LIMITS_NEW_REQUEST_BODY';
-    let bodyLocalArgs = [userName, reqQuota, appDisplayName];
+    let bodyLocalArgs = [userName, reqQuota, appNotificationName];
 
     if (extraTimeLimitPolicy && extraTimeLimitPolicy.mode === Constants.POLICY_EXTRA_TIME_LIMIT_MODE_AUTO && app == "internet") {
       const autoApproveQuota = Number(extraTimeLimitPolicy.autoApproveLimit) || 0;
@@ -344,7 +383,7 @@ router.post('/requests', async (req, res) => {
 
         titleKey = 'NOTIF_TIME_LIMITS_AUTO_APPROVED_TITLE';
         bodyKey = 'NOTIF_TIME_LIMITS_AUTO_APPROVED_BODY';
-        bodyLocalArgs = [userName, actualApproveQuota, appDisplayName];
+        bodyLocalArgs = [userName, actualApproveQuota, appNotificationName];
       }
     }
 

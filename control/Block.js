@@ -445,7 +445,11 @@ async function setupGlobalRules(options) {
     subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
   } = options
   log.verbose(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}, increaseLatency ${increaseLatency}, dropPacketRate ${dropPacketRate}`);
+  const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
+  let markTarget = null;
+  let table = "filter";
+  const rawRules = [];
   const filterPrio = 1;
   let chainSuffix = "";
   switch (seq) {
@@ -514,7 +518,13 @@ async function setupGlobalRules(options) {
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
         const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
         const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
-        parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_GLOBAL`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+        if (!options.byPassChain) {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_GLOBAL`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+        } else {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_GLOBAL`, target: options.byPassChain });
+          table = "mangle";
+          markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+        }
       } else {
         parameters.push({ table: "mangle", chain: `FW_QOS_GLOBAL_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       }
@@ -591,11 +601,26 @@ async function setupGlobalRules(options) {
     }
     case "block":
     default: {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
+      if (!options.byPassChain) {
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
+      } else {
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK" + chainSuffix, target: options.byPassChain });
+        markTarget = `MARK --set-xmark ${Rule.stdMark(pid)}`;
+      }
     }
   }
 
+
+
   const ruleOptions = await prepareOutboundOptions(options)
+  if (options.byPassChain) {
+    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    if (ruleOptions.comment) {
+      rule.comment(ruleOptions.comment);
+    }
+    rawRules.push(rule);
+    rawRules.push(rule.clone().fam(6));
+  }
   const local = {
     set: platform.isFireRouterManaged() ? Ipset.CONSTANTS.IPSET_MONITORED_NET : null,
     specs: platform.isFireRouterManaged() ? ['src','src'] : null,
@@ -612,6 +637,9 @@ async function setupGlobalRules(options) {
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
   }
+  for (const rawRule of rawRules) {
+    iptc.addRule(rawRule);
+  }
 }
 
 async function setupGenericIdentitiesRules(options) {
@@ -625,6 +653,9 @@ async function setupGenericIdentitiesRules(options) {
   // generic identity has the same priority level as device
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
+  let markTarget = null;
+  let table = "filter";
+  const rawRules = [];
   const filterPrio = 1;
   let chainSuffix = "";
   switch (seq) {
@@ -692,7 +723,13 @@ async function setupGenericIdentitiesRules(options) {
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
         const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
         const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
-        parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+        if (!options.byPassChain) {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+        } else {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: options.byPassChain });
+          table = "mangle";
+          markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+        }
       } else {
         parameters.push({ table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       }
@@ -769,12 +806,25 @@ async function setupGenericIdentitiesRules(options) {
     }
     case "block":
     default: {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
+      if (!options.byPassChain) {
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
+      } else {
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: options.byPassChain });
+        markTarget = `MARK --set-xmark ${Rule.stdMark(pid)}`;
+      }
     }
   }
-  const IdentityManager = require('../net2/IdentityManager.js');
-
   const ruleOptions = await prepareOutboundOptions(options)
+  if (options.byPassChain) {
+    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    if (ruleOptions.comment) {
+      rule.comment(ruleOptions.comment);
+    }
+    rawRules.push(rule);
+    rawRules.push(rule.clone().fam(6));
+  }
+
+  const IdentityManager = require('../net2/IdentityManager.js');
 
   const rules = [];
   for (const guid of guids) {
@@ -802,6 +852,9 @@ async function setupGenericIdentitiesRules(options) {
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
   }
+  for (const rawRule of rawRules) {
+    iptc.addRule(rawRule);
+  }
 }
 
 // device-wise rules
@@ -815,6 +868,9 @@ async function setupDevicesRules(options) {
   log.verbose(`${createOrDestroy} device rule, MAC address ${JSON.stringify(macAddresses)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}, increaseLatency ${increaseLatency}, dropPacketRate ${dropPacketRate}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
+  let markTarget = null;
+  let table = "filter";
+  const rawRules = [];
   const filterPrio = 1;
   let chainSuffix = "";
   switch (seq) {
@@ -882,7 +938,13 @@ async function setupDevicesRules(options) {
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
         const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
         const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
-        parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+        if (!options.byPassChain) {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+        } else {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: options.byPassChain });
+          table = "mangle";
+          markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+        }
       } else {
         parameters.push({ table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       }
@@ -959,11 +1021,26 @@ async function setupDevicesRules(options) {
     }
     case "block":
     default: {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
+      if (!options.byPassChain) {
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
+      } else {
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: options.byPassChain });
+        markTarget = `MARK --set-xmark ${Rule.stdMark(pid)}`;
+      }
     }
   }
 
   const ruleOptions = await prepareOutboundOptions(options)
+
+  if (options.byPassChain) {
+    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    if (ruleOptions.comment) {
+      rule.comment(ruleOptions.comment);
+    }
+    rawRules.push(rule);
+    rawRules.push(rule.clone().fam(6));
+  }
+
 
   const rules = [];
   const Host = require('../net2/Host.js');
@@ -984,6 +1061,9 @@ async function setupDevicesRules(options) {
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
   }
+  for (const rawRule of rawRules) {
+    iptc.addRule(rawRule);
+  }
 }
 
 async function setupTagsRules(options) {
@@ -996,6 +1076,9 @@ async function setupTagsRules(options) {
   log.verbose(`${createOrDestroy} group rule, policy id ${pid}, group uid ${JSON.stringify(uids)}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}, increaseLatency ${increaseLatency}, dropPacketRate ${dropPacketRate}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
+  let markTarget = null;
+  let table = "filter";
+  const rawRules= [];
   const filterPrio = 1;
   let chainSuffix = "";
   switch (seq) {
@@ -1068,8 +1151,15 @@ async function setupTagsRules(options) {
           // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
           const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
           const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
-          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV_G`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`, localSet: devSet, localFlagCount: 1 });
-          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET_G`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`, localSet: netSet, localFlagCount: 2 });
+          if (!options.byPassChain) {
+            parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV_G`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET_G`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`, localSet: netSet, localFlagCount: 2 });
+          } else {
+            parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV_G`, target: options.byPassChain, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET_G`, target: options.byPassChain, localSet: netSet, localFlagCount: 2 });
+            table = "mangle";
+            markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+          }
         } else {
           parameters.push({ table: "mangle", chain: `FW_QOS_DEV_G_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: devSet, localFlagCount: 1 });
           parameters.push({ table: "mangle", chain: `FW_QOS_NET_G_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: netSet, localFlagCount: 2 });
@@ -1184,13 +1274,30 @@ async function setupTagsRules(options) {
       }
       case "block":
       default: {
-        parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}`, localSet: devSet, localFlagCount: 1 });
-        parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}`, localSet: netSet, localFlagCount: 2 });
+        if (!options.byPassChain) {
+          parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}`, localSet: devSet, localFlagCount: 1 });
+          parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}`, localSet: netSet, localFlagCount: 2 });
+        } else {
+          parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: options.byPassChain, localSet: devSet, localFlagCount: 1 });
+          parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK" + chainSuffix, target: options.byPassChain, localSet: netSet, localFlagCount: 2 });
+         
+          markTarget = `MARK --set-xmark ${Rule.stdMark(pid)}`;
+        }
       }
     }
   }
 
   const ruleOptions = await prepareOutboundOptions(options)
+
+  if (options.byPassChain) {
+    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    if (ruleOptions.comment) {
+      rule.comment(ruleOptions.comment);
+    }
+    rawRules.push(rule);
+    rawRules.push(rule.clone().fam(6));
+  } 
+
 
   const rules = [];
 
@@ -1209,6 +1316,9 @@ async function setupTagsRules(options) {
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
   }
+  for (const rawRule of rawRules) {
+    iptc.addRule(rawRule);
+  }
 }
 
 async function setupIntfsRules(options) {
@@ -1223,6 +1333,9 @@ async function setupIntfsRules(options) {
     return;
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
+  let markTarget = null;
+  let table = "filter";
+  const rawRules = [];
   const filterPrio = 1;
   let chainSuffix = "";
   switch (seq) {
@@ -1291,7 +1404,13 @@ async function setupIntfsRules(options) {
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
         const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
         const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
-        parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+        if (!options.byPassChain) {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+        } else {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET`, target: options.byPassChain });
+          table = "mangle";
+          markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+        }
       } else {
         parameters.push({ table: "mangle", chain: `FW_QOS_NET_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       }
@@ -1367,19 +1486,32 @@ async function setupIntfsRules(options) {
     }
     case "block":
     default: {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
+      if (!options.byPassChain) {
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
+      } else {
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_BLOCK" + chainSuffix, target: options.byPassChain });
+        markTarget = `MARK --set-xmark ${Rule.stdMark(pid)}`;
+      }
     }
   }
 
   const ruleOptions = await prepareOutboundOptions(options)
+  if (options.byPassChain) {
+    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    if (ruleOptions.comment) {
+      rule.comment(ruleOptions.comment);
+    }
+    rawRules.push(rule);
+    rawRules.push(rule.clone().fam(6));
+  }
 
   const rules = [];
 
   for (const uuid of uuids) {
     await NetworkProfile.ensureCreateEnforcementEnv(uuid);
     const local = {
-      set: NetworkProfile.getNetIpsetName(uuid, 4),
-      set6: NetworkProfile.getNetIpsetName(uuid, 6),
+      set: NetworkProfile.getNetListIpsetName(uuid),
+      set6: NetworkProfile.getNetListIpsetName(uuid),
       specs: ["src", "src"],
       positive: true,
       portSet: localPortSet,
@@ -1391,6 +1523,9 @@ async function setupIntfsRules(options) {
   }
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
+  }
+  for (const rawRule of rawRules) {
+    iptc.addRule(rawRule);
   }
 }
 
@@ -1405,6 +1540,9 @@ async function setupRuleGroupRules(options) {
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const filterPrio = 1;
   const parameters = [];
+  let markTarget = null;
+  let table = "filter";
+  const rawRules = [];
   await ensureCreateRuleGroupChain(ruleGroupUUID);
   let chainSuffix = "";
   switch (seq) {
@@ -1513,10 +1651,25 @@ async function setupRuleGroupRules(options) {
     }
     case "block":
     default: {
-      parameters.push({ table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "block") + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
+      if (!options.byPassChain) {
+        parameters.push({ table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "block") + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
+      } else {
+        parameters.push({ table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "block") + chainSuffix, target: options.byPassChain });
+        markTarget = `MARK --set-xmark ${Rule.stdMark(pid)}`;
+      }
     }
   }
   const ruleOptions = await prepareOutboundOptions(options)
+  if (options.byPassChain) {
+    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    if (ruleOptions.comment) {
+      rule.comment(ruleOptions.comment);
+    }
+    rawRules.push(rule);
+    rawRules.push(rule.clone().fam(6));
+  }
+
+
   const local = {
     set: platform.isFireRouterManaged() ? Ipset.CONSTANTS.IPSET_MONITORED_NET : null,
     specs: platform.isFireRouterManaged() ? ['src','src'] : null,
@@ -1532,6 +1685,9 @@ async function setupRuleGroupRules(options) {
   }
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
+  }
+  for (const rawRule of rawRules) {
+    iptc.addRule(rawRule);
   }
 }
 

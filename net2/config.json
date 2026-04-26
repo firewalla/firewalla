@@ -52,6 +52,7 @@
     "monitor.tick": 900,
     "monitor.window": 14400,
     "monitor.neighbor.max": 20,
+    "policy.category.init_wait": 120,
     "host.active": 604800,
     "host.redis.mackey.expire": 31536000,
     "host.redis.ip4key.expire": 2592000,
