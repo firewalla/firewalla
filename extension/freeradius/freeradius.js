@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla Inc.
+/*    Copyright 2024-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,11 +28,15 @@ const f = require('../../net2/Firewalla.js');
 const fr = require('../../net2/FireRouter.js');
 const log = require('../../net2/logger.js')(__filename);
 const util = require('../../util/util.js');
+const { Rule } = require('../../net2/Iptables.js');
+const iptc = require('../../control/IptablesControl.js');
+const Ipset = require('../../net2/Ipset.js');
 
 const dockerDir = `${f.getRuntimeInfoFolder()}/docker/freeradius`
 const configDir = `${f.getUserConfigFolder()}/freeradius`
 const logDir = `${f.getUserHome()}/.forever/freeradius`
 const certsDir = `${f.getHiddenFolder()}/certs/freeradius`
+const fwrcFile = `${f.getUserHome()}/.fwrc`
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -289,8 +293,9 @@ class FreeRadius {
   async loadOptionsAsync() {
     const options = {};
     // Load environment file if .env` exists in working directory
-    if (await fs.accessAsync(`${dockerDir}/config/.env`).then(() => true).catch(() => false)) {
-      try {
+    try {
+      // ~/.firewalla/run/docker/freeradius/config/.env
+      if (await fs.accessAsync(`${dockerDir}/config/.env`).then(() => true).catch(() => false)) {
         const envContent = await fs.readFileAsync(`${dockerDir}/config/.env`, 'utf8');
         const envLines = envContent.split('\n').filter(line =>
           line.trim() && !line.trim().startsWith('#')
@@ -299,9 +304,24 @@ class FreeRadius {
           const [key, value] = line.split('=');
           if (key && value) options[key] = value;
         }
-      } catch (error) {
-        log.warn(`Warning: Could not read environment file: ${error.message}`);
       }
+
+      // ~/.fwrc
+      if (await fs.accessAsync(fwrcFile, fs.constants.F_OK).then(() => true).catch(() => false)) {
+        const content = await fs.readFileAsync(fwrcFile, 'utf8');
+        const envLines = content.split('\n').filter(line =>
+          line.trim() && !line.trim().startsWith('#')
+        );
+        for (const line of envLines) {
+          const [key, value] = line.split('=');
+          if (key == "RADIUS_REPO" && value) {
+            options.image_repo = value;
+            break;
+          }
+        }
+      }
+    } catch (error) {
+      log.warn(`Warning: Could not read environment file: ${error.message}`);
     }
     return options;
   }
@@ -564,45 +584,28 @@ class FreeRadius {
   async setupIptables(macs = [], subnets = []) {
     log.debug(`setting up iptables rules...`);
     try {
-      await exec(`sudo iptables -D INPUT -m set --match-set ap_subnet_list src -m set --match-set ap_mac_list src -j SET --add-set ap_ip_list src`);
-      await exec(`sudo ipset destroy ap_mac_list`);
-      await exec(`sudo ipset destroy ap_subnet_list`);
+      iptc.addRule(new Rule().chn('INPUT').set('ap_subnet_list', 'src').set('ap_mac_list', 'src').jmp('SET --add-set ap_ip_list src').opr('-D'));
+      await Ipset.destroy('ap_mac_list')
+      await Ipset.destroy('ap_subnet_list')
     } catch (error) {
       log.warn(`failed to remove iptables rules`, error.message);
     }
 
-    await exec(`sudo ipset create ap_mac_list hash:mac --exist`).catch((err) => {
-      log.warn(`failed to create ap_mac_list`, err.message);
-    });
-    await exec(`sudo ipset create ap_subnet_list hash:net --exist`).catch((err) => {
-      log.warn(`failed to create ap_subnet_list`, err.message);
-    });
+    Ipset.create('ap_mac_list', 'hash:mac');
+    Ipset.create('ap_subnet_list', 'hash:net');
     // create ap_ip_list if not exists
-    await exec(`sudo ipset list ap_ip_list`).then(r => r.stdout.trim()).catch(async (err) => {
-      await exec(`sudo ipset create ap_ip_list hash:ip timeout 86400 --exist`).catch((err) => {
-        log.warn(`failed to create ap_ip_list`, err.message);
-      });
-    });
+    Ipset.create('ap_ip_list', 'hash:ip', false, { timeout: 86400 });
 
     for (const mac of macs) {
-      await exec(`sudo ipset add ap_mac_list ${mac}`).catch((err) => {
-        log.warn(`failed to add mac to ap_mac_list`, err.message);
-      });
+      Ipset.add('ap_mac_list', mac);
     }
     for (const subnet of subnets) {
-      await exec(`sudo ipset add ap_subnet_list ${subnet}`).catch((err) => {
-        log.warn(`failed to add subnet to ap_subnet_list`, err.message);
-      });
+      Ipset.add('ap_subnet_list', subnet);
     }
 
-    try {
-      await exec(`sudo iptables -C INPUT -m set --match-set ap_subnet_list src -m set --match-set ap_mac_list src -j SET --add-set ap_ip_list src`);
-    } catch (error) {
-      log.debug(`inserting iptables ap_ip_list rule...`);
-      await exec(`sudo iptables -I INPUT -m set --match-set ap_subnet_list src -m set --match-set ap_mac_list src -j SET --add-set ap_ip_list src`).catch((err) => {
-        log.warn(`failed to add iptables rule`, err.message);
-      });
-    }
+    // Check if rule exists by trying to add it (IptablesControl will deduplicate)
+    log.debug(`inserting iptables ap_ip_list rule...`);
+    iptc.addRule(new Rule().chn('INPUT').set('ap_subnet_list', 'src').set('ap_mac_list', 'src').jmp('SET --add-set ap_ip_list src').opr('-I'));
   }
 
   _getImageTag(options = {}) {
@@ -621,12 +624,16 @@ class FreeRadius {
     if (tag === "dev" || tag === "test") {
       return `public.ecr.aws/a0j1s2e9/freeradius-dev:${tag}`;
     }
+
+    if (options.image_repo) {
+      return `${options.image_repo}:${tag}`;
+    }
     return `public.ecr.aws/a0j1s2e9/freeradius:${tag}`;
   }
 
   async _checkImage(options) {
     const image = this.getImage(options);
-    const result = await exec(`sudo docker images --filter "reference=${image}"`).then(r => r.stdout.trim()).catch((e) => {
+    const result = await exec(`sudo docker images --filter "reference=${image}" --format "{{.Repository}}:{{.Tag}} {{.ID}}"`).then(r => r.stdout.trim()).catch((e) => {
       log.warn("Failed to check image freeradius,", e.message)
       return false;
     });
@@ -832,6 +839,7 @@ class FreeRadius {
     } else {
       log.info("restarting freeradius container to apply new config...");
       await this._stopServer(options);
+      await this.generateDockerCompose(options);
       if (!await this._startServer(options)) {
         return false;
       }

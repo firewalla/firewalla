@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,7 +14,8 @@
  */
 'use strict'
 
-const log = require("./logger.js")(__filename, 'info');
+const log = require("./logger.js")(__filename);
+const Ipset = require('./Ipset.js')
 
 const monitoredKey = "monitored_hosts";
 const unmonitoredKey = "unmonitored_hosts";
@@ -121,8 +122,7 @@ class Spoofer {
     const subMonitoredKey6 = `monitored_hosts6_${iface}`;
     const isMember = await rclient.sismemberAsync(monitoredKey6, address);
     if (!isMember) {
-      const cmd = `sudo ipset add -! monitored_ip_set6 ${address}`;
-      await cp.exec(cmd);
+      Ipset.add('monitored_ip_set6', address);
       await rclient.saddAsync(monitoredKey6, address);
     }
     await rclient.saddAsync(subMonitoredKey6, address);
@@ -141,8 +141,7 @@ class Spoofer {
     const isMember = await rclient.sismemberAsync(monitoredKey6, address);
     if (isMember) {
       await rclient.sremAsync(monitoredKey6, address);
-      const cmd = `sudo ipset del -! monitored_ip_set6 ${address}`;
-      await cp.exec(cmd);
+      Ipset.del('monitored_ip_set6', address);
     }
     await rclient.sremAsync(subMonitoredKey6, address);
   }

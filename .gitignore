@@ -125,3 +125,7 @@ api/db/token.json
 /extension/frp/frpc.ini
 /extension/frp/frpc.support.ini
 /extension/frp/frpc.support.service
+
+.claude/
+CLAUDE.md
+AGENTS.md

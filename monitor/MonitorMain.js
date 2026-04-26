@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -38,8 +38,8 @@ const { timeout } = require('../util/asyncNative.js')
 // api/main/monitor all depends on sysManager configuration
 const sysManager = require('../net2/SysManager.js');
 
-const tick = 60 * 15; // waking up every 15 min
-const monitorWindow = 60 * 60 * 4; // 4 hours window
+const tick = fc.getConfig().timing['monitor.tick'] || 60 * 15; // waking up every 15 min
+const monitorWindow = fc.getConfig().timing['monitor.window'] || 60 * 60 * 4; // 4 hours window
 
 const FlowMonitor = require('./FlowMonitor.js');
 const flowMonitor = new FlowMonitor(tick, monitorWindow);
@@ -88,6 +88,8 @@ process.on('uncaughtException',(err)=>{
     msg: err.message,
     stack: err.stack,
     err: err
+  }).catch(err => {
+    log.error("Failed to log unhandled exception", err.message);
   });
   setTimeout(()=>{
     try {
@@ -108,6 +110,8 @@ process.on('unhandledRejection', (reason, p)=>{
     msg: msg,
     stack: reason.stack,
     err: reason
+  }).catch(err => {
+    log.error("Failed to log unhandled rejection", err.message);
   });
 });
 

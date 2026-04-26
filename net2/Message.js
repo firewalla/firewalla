@@ -60,6 +60,8 @@ const MSG_OSI_TARGET_TAGS_APPLIED = 'osi:target:tags_applied';
 
 const MSG_MAPPING_IP_MAC_DELETED = 'mapping:ip:mac:deleted'
 
+const MSG_HOST_MAC_ENTRY_CACHE_INVALIDATE = 'host:mac_entry_cache:invalidate'
+
 const MSG_ASSETS_UPDATED_CHANNEL = 'assets:updated';
 
 const MSG_FLOW_ENRICHED = "FLOW_ENRICHED";
@@ -74,6 +76,9 @@ const MSG_DEBUG = 'DEBUG'
 const MSG_FWAPC_SSID_STA_UPDATE = "fwapc:ssid_station_update";
 const MSG_FWAPC_CONNTRACK_UPDATE = "fwapc:conntrack_update";
 const MSG_FWAPC_BLOCK_FLOW = "fwapc:block_flow";
+const MSG_FWAPC_SWITCH_ACL_ACCOUNTING = "fwapc:switch_acl_accounting";
+
+const MSG_FLOW_SWITCH_ACCOUNTING = "flow:switch_accounting";
 
 const MSG_HAPD_EVENT = "hostapd.event";
 
@@ -115,6 +120,7 @@ module.exports = {
   MSG_OSI_INBOUND_BLOCK_RULES_DONE,
   MSG_OSI_TARGET_TAGS_APPLIED,
   MSG_MAPPING_IP_MAC_DELETED,
+  MSG_HOST_MAC_ENTRY_CACHE_INVALIDATE,
   MSG_ASSETS_UPDATED_CHANNEL,
   MSG_FLOW_ENRICHED,
   MSG_FLOW_ACL_AUDIT_BLOCKED,
@@ -125,5 +131,7 @@ module.exports = {
   MSG_FWAPC_SSID_STA_UPDATE,
   MSG_FWAPC_CONNTRACK_UPDATE,
   MSG_FWAPC_BLOCK_FLOW,
+  MSG_FWAPC_SWITCH_ACL_ACCOUNTING,
+  MSG_FLOW_SWITCH_ACCOUNTING,
   MSG_HAPD_EVENT,
 }

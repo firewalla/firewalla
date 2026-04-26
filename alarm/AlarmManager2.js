@@ -93,6 +93,7 @@ const TimeUsageTool = require('../flow/TimeUsageTool.js');
 const sysManager = require('../net2/SysManager.js');
 
 const featureName = 'msp_sync_alarm';
+const featureSkipDeviceInfoEnrich = 'alarm_skip_device_info_enrich';
 
 // TODO: Support suppress alarm for a while
 
@@ -439,7 +440,13 @@ module.exports = class {
         return;
       }
       log.info('alarm:create', alarm);
-      await this.enrichDeviceInfo(alarm);
+      await this.enrichDeviceInfo(alarm).catch((err) => {
+        if (fc.isFeatureOn(featureSkipDeviceInfoEnrich)) {
+          log.info('alarm:create skip device info enrich on error by feature flag', featureSkipDeviceInfoEnrich);
+          return;
+        }
+        throw err;
+      });
       this.enqueueAlarm(alarm); // use enqueue to ensure no dup alarms
     } catch (err) {
       log.warn('cannot create alarm', err.message);
@@ -525,7 +532,7 @@ module.exports = class {
     })
 
     this.queue.on('failed', (job, err) => {
-      log.error(`Job ${job.id} ${job.action} failed with error ${err.message}`);
+      log.error(`Job ${job.id} failed with error ${err.message}`, job.data);
     });
 
     this.queue.destroy(() => {
@@ -564,10 +571,11 @@ module.exports = class {
             if (aid > 0) log.info(`Alarm ${aid} is created successfully`);
           } catch (err) {
             if (err.code === 'ERR_DUP_ALARM' ||
+                err.code === 'ERR_NO_RELATED_APP_TIME_USAGE' ||
                 err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY' ||
                 err.code === 'ERR_BLOCKED_BY_TRUST_ALREADY' ||
                 err.code === 'ERR_COVERED_BY_EXCEPTION') {
-              log.info("failed to create alarm:", err.message);
+              log.verbose("failed to create alarm:", err.message);
             } else {
               log.error("failed to create alarm:", err);
             }
@@ -829,6 +837,10 @@ module.exports = class {
   }
 
   async hasRelatedAppTimeUsage(alarm) {
+    const CHECK_TYPES = ["ALARM_VIDEO", "ALARM_GAME"];
+    if (!CHECK_TYPES.includes(alarm.type)) {
+      return true;
+    }
     const appId = alarm['p.dest.app.id'];
     if (!appId) {
       return true;
@@ -861,6 +873,9 @@ module.exports = class {
       );
 
       const totalMins = _.get(stats, ["appTimeUsage", appId, "totalMins"], 0);
+      if (!totalMins) {
+        log.info("Alarm has no related app time usage", alarm.type, alarm["p.device.mac"], appId, alarm["p.dest.name"]);
+      }
       return totalMins > 0;
     } catch (err) {
       log.error("hasRelatedAppTimeUsage error:", err);
@@ -868,30 +883,28 @@ module.exports = class {
     }
   }
 
-  enqueueAlarm(alarm, retry = true, profile) {
+  async enqueueAlarm(alarm, retry = true, profile) {
     if (this.queue) {
       const job = this.queue.createJob({
         alarm,
         profile,
         action: "create"
       })
-      job.timeout(60000).save((err) => {
-        if (err) {
-          log.error("Failed to create alarm job", err.message);
-          if (err.message && err.message.includes("NOSCRIPT")) {
-            // this is usually caused by unexpected redis restart and previously loaded scripts are flushed
-            log.info("Re-creating alarm queue ...");
-            this.queue.close(() => {
-              this.setupAlarmQueue().then(() => {
-                if (retry) {
-                  log.info("Retry creating alarm ...", alarm);
-                  this.enqueueAlarm(alarm, false, profile);
-                }
-              });
-            });
+      try {
+        await job.timeout(60000).save();
+      } catch (err) {
+        log.error("Failed to create alarm job", err.message);
+        if (err.message && err.message.includes("NOSCRIPT")) {
+          // this is usually caused by unexpected redis restart and previously loaded scripts are flushed
+          log.info("Re-creating alarm queue ...");
+          await this.queue.close();
+          await this.setupAlarmQueue();
+          if (retry) {
+            log.info("Retry creating alarm ...", alarm);
+            await this.enqueueAlarm(alarm, false, profile);
           }
         }
-      })
+      }
     }
   }
 
@@ -1036,11 +1049,11 @@ module.exports = class {
       throw new Error("invalid alarm, failed to pass verification");
     }
 
-    log.info("Checking if similar alarms are generated recently");
+    log.verbose("Checking if similar alarms are generated recently");
     const hasDup = await this.dedup(alarm, profile);
 
     if (hasDup) {
-      log.warn("Skipped dup alarm", alarm.type, "dest:", alarm["p.dest.name"], alarm["p.dest.ip"],
+      log.info("Skipped dup alarm", alarm.type, "dest:", alarm["p.dest.name"], alarm["p.dest.ip"],
         "src:", alarm["p.device.name"], alarm["p.device.ip"]);
       let err = new Error("duplicated with existing alarms");
       err.code = 'ERR_DUP_ALARM';
@@ -1051,7 +1064,6 @@ module.exports = class {
 
     if (exceptionManager.isFirewallaCloud(alarm) || matches && matches.length) {
       matches.forEach((e) => {
-        log.info("Matched Exception: " + e.eid);
         exceptionManager.updateMatchCount(e.eid); // async incr the match count for each matched exception
       });
       const err3 = new Error("alarm is covered by exceptions");
@@ -1059,7 +1071,7 @@ module.exports = class {
       throw err3;
     }
 
-    log.info("Checking if alarm has related app time usage");
+    log.verbose("Checking if alarm has related app time usage");
     const hasRelatedAppTimeUsage = await this.hasRelatedAppTimeUsage(alarm);
     if (!hasRelatedAppTimeUsage) {
       const err4 = new Error("alarm has no related app time usage");
@@ -1186,20 +1198,15 @@ module.exports = class {
     // record security alarm count on hostInfo
     if (alarm['p.device.mac'] && Alarm.isSecurityAlarm(alarm.type)) {
       const mac = alarm['p.device.mac'].toUpperCase();
-      if (hostTool.isMacAddress(mac)) {
-        const macKey = hostTool.getMacKey(mac);
-        try {
-          const keyExists = await rclient.existsAsync(macKey);
-          if (keyExists == 1)
-            await rclient.hincrbyAsync(macKey, 'security_alarm', 1)
-        } catch (err) {
-          log.warn(`Failed to count security alarm ${alarm['p.device.mac']}`, err);
-        }
+      try {
+        await hostTool.incrFieldInMAC(mac, 'security_alarm', 1);
+      } catch (err) {
+        log.warn(`Failed to count security alarm ${alarm['p.device.mac']}`, err);
       }
     }
 
     try {
-      log.info("AlarmManager:Check:AutoBlock", alarm.aid);
+      log.verbose("AlarmManager:Check:AutoBlock", alarm.aid);
       const ret = await this.shouldAutoBlock(alarm);
       if (fConfig && fConfig.policy &&
         fConfig.policy.autoBlock &&
@@ -1576,39 +1583,6 @@ module.exports = class {
       })
   }
 
-  async loadAlarmsWithRange(options) {
-    options = options || {};
-    let { begin, end, count, offset, type } = options;
-    end = end || Date.now() / 1000;
-    count = count || 1000;
-    offset = offset || 0;
-    type = type || 'all';
-    let activeAlarms = [], archivedAlarms = [];
-    if (type == 'all' || type == 'active') {
-      const activeAlarmsQuery = rclient.zrevrangebyscoreAsync(alarmActiveKey, '(' + end, begin ? begin + ')' : '-inf', 'limit', offset, count);
-      activeAlarms = await this.idsToAlarmsAsync(await activeAlarmsQuery);
-      activeAlarms = activeAlarms.filter(a => a != null);
-    }
-    if (type == 'all' || type == 'archived') {
-      const archivedAlarmsQuery = rclient.zrevrangebyscoreAsync(alarmArchiveKey, '(' + end, begin ? begin + ')' : '-inf', 'limit', offset, count, 'withscores');
-      const archivedAlarmIdsWithScores = await archivedAlarmsQuery;
-      let archivedAlarmIds = []
-      let idScoreMap = {};
-      for (let i = 0; i < archivedAlarmIdsWithScores.length; i++) {
-        if (i % 2 === 1) {
-          const id = archivedAlarmIdsWithScores[i - 1]
-          const score = Number(archivedAlarmIdsWithScores[i])
-          idScoreMap[id] = score
-          archivedAlarmIds.push(id)
-        }
-      }
-      archivedAlarms = await this.idsToAlarmsAsync(archivedAlarmIds);
-      archivedAlarms = archivedAlarms.filter(a => a != null)
-      archivedAlarms.map((a) => { a['action.time'] = idScoreMap[a.aid] })
-    }
-    return { activeAlarms: activeAlarms, archivedAlarms: archivedAlarms }
-  }
-
   _filterQueryType(alarm, type) {
     switch (type) {
       case 'active':
@@ -1637,20 +1611,14 @@ module.exports = class {
     return ids.map(i => i.aid).slice(0, count);
   }
 
-  async loadActiveAlarmsAsync(options) {
+  async loadActiveAlarmsAsync(options = {}) {
     let count, ts, asc, type, filters, withDetails;
 
     if (_.isNumber(options)) {
-      count = options;
-    } else if (options) {
-      ({ count, ts, asc, type, filters, withDetails } = options);
+      options = { count: options };
     }
 
-    count = count || 50;
-    ts = ts || Date.now() / 1000;
-    asc = asc || false;
-    type = type || 'active';
-    withDetails = withDetails || false;
+    ({ count = 50, ts = Date.now() / 1000, asc = false, type = 'active', filters, withDetails = false } = options);
 
     let ids;
     if (filters && this.indexCache._disabled != 1 && !await this._fallbackAlarmCache(filters.types)) {

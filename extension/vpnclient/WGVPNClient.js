@@ -198,6 +198,10 @@ class WGVPNClient extends VPNClient {
     return config && config.dns || [];
   }
 
+  static getDefaultMTU() {
+    return 1412;
+  }
+
   async _start() {
     await this._generateConfig();
     const intf = this.getInterfaceName();
@@ -217,7 +221,7 @@ class WGVPNClient extends VPNClient {
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
-    const mtu = (config && config.mtu) || 1412;
+    const mtu = (config && config.mtu) || this.constructor.getDefaultMTU();
     await exec(`sudo ip link set ${intf} mtu ${mtu}`);
     const addresses = config.addresses || [];
     for (const addr of addresses) {

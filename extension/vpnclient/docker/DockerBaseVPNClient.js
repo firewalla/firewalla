@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,8 +26,8 @@ const {Address4, Address6} = require('ip-address');
 const {BigInteger} = require('jsbn');
 const sysManager = require('../../../net2/SysManager.js');
 const YAML = require('../../../vendor_lib/yaml');
-const iptables = require('../../../net2/Iptables.js');
-const wrapIptables = iptables.wrapIptables;
+const { Rule } = require('../../../net2/Iptables.js');
+const iptc = require('../../../control/IptablesControl.js');
 const routing = require('../../routing/routing.js');
 const scheduler = require('../../../util/scheduler.js');
 const _ = require('lodash');
@@ -331,12 +331,12 @@ if $programname == 'docker_vpn_${this.profileId}' then {
     const remoteIP = await this._getRemoteIP();
     const remoteIP6 = await this._getRemoteIP6();
     if (remoteIP) {
-      await exec(wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -s ${remoteIP} -j MASQUERADE`));
+      iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').src(remoteIP).jmp('MASQUERADE'))
       // add the container IP to wan_routable so that packets from wan interfaces can be routed to the container
       await routing.addRouteToTable(remoteIP, null, this.getInterfaceName(), "wan_routable", 1024, 4).catch((err) => {});
     }
     if (remoteIP6) {
-      await exec(wrapIptables(`sudo ip6tables -w -t nat -A FW_POSTROUTING -s ${remoteIP6} -j MASQUERADE`));
+      iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING').src(remoteIP6).jmp('MASQUERADE'))
       await routing.addRouteToTable(remoteIP6, null, this.getInterfaceName(), "wan_routable", 1024, 6).catch((err) => {});
     }
     await exec(`sudo systemctl start docker-compose@${this.profileId}`);
@@ -356,9 +356,9 @@ if $programname == 'docker_vpn_${this.profileId}' then {
     const remoteIP = await this._getRemoteIP();
     const remoteIP6 = await this._getRemoteIP6();
     if (remoteIP)
-      await exec(wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${remoteIP} -j MASQUERADE`)).catch((err) => {});
+      iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').src(remoteIP).jmp('MASQUERADE').opr('-D'))
     if (remoteIP6)
-      await exec(wrapIptables(`sudo ip6tables -w -t nat -D FW_POSTROUTING -s ${remoteIP6} -j MASQUERADE`)).catch((err) => {});
+      iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING').src(remoteIP6).jmp('MASQUERADE').opr('-D'))
     await exec(`sudo systemctl stop docker-compose@${this.profileId}`);
     await this._removeNetwork();
     await this._removeRsyslogConf();

@@ -217,7 +217,7 @@ class DNSCryptPlugin extends Sensor {
     const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
     if (this.adminSystemSwitch) {
       const dnsmasqEntry = `server=${dc.getLocalServer()}$${featureName}$*${Constants.DNS_DEFAULT_WAN_TAG}`;
-      await fs.writeFileAsync(configFilePath, dnsmasqEntry);
+      await dnsmasq.writeConfig(configFilePath, dnsmasqEntry);
     } else {
       await fs.unlinkAsync(configFilePath).catch((err) => { });
     }
@@ -294,28 +294,28 @@ class DNSCryptPlugin extends Sensor {
   async systemStart() {
     const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
     const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$${featureName}\n`;
-    await fs.writeFileAsync(configFile, dnsmasqEntry);
+    await dnsmasq.writeConfig(configFile, dnsmasqEntry);
     dnsmasq.scheduleRestartDNSService();
   }
 
   async systemStop() {
     const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
     const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$!${featureName}\n`;
-    await fs.writeFileAsync(configFile, dnsmasqEntry);
+    await dnsmasq.writeConfig(configFile, dnsmasqEntry);
     dnsmasq.scheduleRestartDNSService();
   }
 
   async perTagStart(tagUid) {
     const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
     const dnsmasqEntry = `group-tag=@${tagUid}$${featureName}\n`;
-    await fs.writeFileAsync(configFile, dnsmasqEntry);
+    await dnsmasq.writeConfig(configFile, dnsmasqEntry);
     dnsmasq.scheduleRestartDNSService();
   }
 
   async perTagStop(tagUid) {
     const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
     const dnsmasqEntry = `group-tag=@${tagUid}$!${featureName}\n`; // match negative tag
-    await fs.writeFileAsync(configFile, dnsmasqEntry);
+    await dnsmasq.writeConfig(configFile, dnsmasqEntry);
     dnsmasq.scheduleRestartDNSService();
   }
 
@@ -365,14 +365,14 @@ class DNSCryptPlugin extends Sensor {
   async perDeviceStart(macAddress) {
     const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
     const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$${featureName}\n`;
-    await fs.writeFileAsync(configFile, dnsmasqentry);
+    await dnsmasq.writeConfig(configFile, dnsmasqentry);
     dnsmasq.scheduleRestartDNSService();
   }
 
   async perDeviceStop(macAddress) {
     const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
     const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$!${featureName}\n`;
-    await fs.writeFileAsync(configFile, dnsmasqentry);
+    await dnsmasq.writeConfig(configFile, dnsmasqentry);
     dnsmasq.scheduleRestartDNSService();
   }
 
@@ -389,7 +389,7 @@ class DNSCryptPlugin extends Sensor {
       const uid = identity.getUniqueId();
       const configFile = `${dnsmasqConfigFolder}/${identity.constructor.getDnsmasqConfigFilenamePrefix(uid)}_${featureName}.conf`;
       const dnsmasqEntry = `group-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$${featureName}\n`;
-      await fs.writeFileAsync(configFile, dnsmasqEntry);
+      await dnsmasq.writeConfig(configFile, dnsmasqEntry);
       dnsmasq.scheduleRestartDNSService();
     }
   }
@@ -400,7 +400,7 @@ class DNSCryptPlugin extends Sensor {
       const uid = identity.getUniqueId();
       const configFile = `${dnsmasqConfigFolder}/${identity.constructor.getDnsmasqConfigFilenamePrefix(uid)}_${featureName}.conf`;
       const dnsmasqEntry = `group-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$!${featureName}\n`;
-      await fs.writeFileAsync(configFile, dnsmasqEntry);
+      await dnsmasq.writeConfig(configFile, dnsmasqEntry);
       dnsmasq.scheduleRestartDNSService();
     }
   }

@@ -512,11 +512,15 @@ check_tc_classes() {
         local RATE_LIMIT=$(redis-cli hget policy:${RULE_ID} rateLimit)
         local PRIORITY=$(redis-cli hget policy:${RULE_ID} priority)
         local DISABLED=$(redis-cli hget policy:${RULE_ID} disabled)
+        local parent_classid=1
         echo "PID: ${RULE_ID}, traffic direction: ${TRAFFIC_DIRECTION}, rate limit: ${RATE_LIMIT}, priority: ${PRIORITY}, disabled: ${DISABLED}"
+        if [[ $PLATFORM == "gold" ]]; then
+          parent_classid=10
+        fi
         if [[ $TRAFFIC_DIRECTION == "upload" ]]; then
-          tc class show dev ifb0 classid 1:0x${QOS_HANDLER_ID}
+          tc class show dev ifb0 classid ${parent_classid}:0x${QOS_HANDLER_ID}
         else
-          tc class show dev ifb1 classid 1:0x${QOS_HANDLER_ID}
+          tc class show dev ifb1 classid ${parent_classid}:0x${QOS_HANDLER_ID}
         fi
         echo ""
     done
@@ -532,8 +536,8 @@ check_policies() {
     echo "No.|Target|Type|Scope|Expire|Scheduler|Proto|TosDir|RateLmt|Pri|Dis|Purpose">/tmp/qos_csv
     echo "No.|Target|Type|Scope|Expire|Scheduler|Proto|Dir|wanUUID|Type|Dis|Purpose">/tmp/route_csv
     echo "No.|Target|Action|Scope|Expire|Scheduler|Resolver|Dis|Purpose">/tmp/dns_csv
-    printf "%7s %52s %11s %25s %10s %25s %5s %8s %5s %9s %9s %3s %8s %20s\n" \
-      "No." "Target" "Type" "Scope" "Expire" "Scheduler" "Dir" "Action" "Proto" "LPort" "RPort" "Dis" "Hit" "Purpose"
+    printf "%7s %52s %11s %25s %10s %25s %5s %9s %5s %9s %9s %3s %8s %15s %20s %20s\n" \
+      "No." "Target" "Type" "Scope" "Expire" "Scheduler" "Dir" "Action" "Proto" "LPort" "RPort" "Dis" "Hit" "LastHitTS" "Purpose" "Name"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
         declare -A p
@@ -616,9 +620,13 @@ check_policies() {
         elif [[ $ACTION == 'address' ]] || [[ $ACTION == 'resolve' ]]; then
           echo -e "$RULE_ID|$TARGET|$ACTION|$SCOPE|$EXPIRE|$CRONTIME|${p[resolver]}|$DISABLED|${p[purpose]}">>/tmp/dns_csv
         else
-          printf "$COLOR%7s %52s %11s %25s %10s %25s %5s %8s %5s %9s %9s %3s %8s %20s$UNCOLOR\n" \
+          local TS_STR=""
+          if [[ -n "${p[lastHitTs]}" ]]; then
+            TS_STR="$(date -d "@${p[lastHitTs]}" '+%y-%m-%d %H:%M' 2>/dev/null)"
+          fi
+          printf "$COLOR%7s %52s %11s %25s %10s %25s %5s %9s %5s %9s %9s %3s %8s %15s %20s %20s$UNCOLOR\n" \
             "$RULE_ID" "$(align::right 52 "$TARGET")" "$TYPE" "$(align::right 25 "$SCOPE")" "$EXPIRE" "$CRONTIME" \
-            "$DIRECTION" "$ACTION" "${p[protocol]}" "${p[localPort]}" "${p[remotePort]}" "$DISABLED" "${p[hitCount]}" "${p[purpose]:-${p[app_name]}}"
+            "$DIRECTION" "$ACTION" "${p[protocol]}" "${p[localPort]}" "${p[remotePort]}" "$DISABLED" "${p[hitCount]}" "$TS_STR" "${p[purpose]:-${p[app_name]}}" "${p[_name]}"
         fi;
 
         unset p
@@ -685,16 +693,18 @@ check_hosts() {
     get_system_features
     if [[ "${SF[new_device_tag]}" == "1" ]]; then
       NEW_DEVICE_TAGS=( $(jq "select(.state == true) | .tag" <<< ${SP[newDeviceTag]}) )
-      while read -r POLICY_KEY; do
-        if [ -n "$POLICY_KEY" ]; then
-          local nid=${POLICY_KEY/policy:network:/""}
-          get_network_policy "$nid"
-          NEW_DEVICE_TAGS+=( $(jq "select(.state == true) | .tag" <<< ${NP[$nid,newDeviceTag]}) );
-        fi
-      done < <(redis-cli keys 'policy:network:*')
     else
       NEW_DEVICE_TAGS=( )
     fi
+    while read -r POLICY_KEY; do
+      if [ -n "$POLICY_KEY" ]; then
+        local nid=${POLICY_KEY/policy:network:/""}
+        get_network_policy "$nid"
+        if [[ "${SF[new_device_tag]}" == "1" ]]; then
+          NEW_DEVICE_TAGS+=( $(jq "select(.state == true) | .tag" <<< ${NP[$nid,newDeviceTag]}) );
+        fi
+      fi
+    done < <(redis-cli keys 'policy:network:*')
 
     local B7_Placeholder=
     if [[ $SIMPLE_MODE == "T" ]]; then
@@ -1283,33 +1293,65 @@ check_ap() {
       fi
     done
   
-    mapfile -t ssid_profiles < <(jq -r '.apc.assets_template.ap_default.wifiNetworks?[0]?.ssidProfiles?[]?' /tmp/scc_config)
-    declare -A alias_ssids
-    jq -r '.apc.assets_template.ap_default.wifiNetworks?[0]?.aliasSSIDs?[]? | "\(.id) \(.vlan)"' /tmp/scc_config |
-    while read -r id vlan; do
-      alias_ssids["$id"]="$vlan"
-      #echo "alias_ssids $id = $vlan"
+    # Map SSID IDs to interfaces
+    declare -A ssid_intf_map
+    
+    # Extract all wifiNetworks data in one jq call - format: index|intf|ssidProfiles|aliasSSIDs
+    # ssidProfiles format: profile1,profile2,profile3
+    # aliasSSIDs format: id1,id2,id3
+    jq -r '.apc.assets_template.ap_default.wifiNetworks? // [] | 
+      to_entries[] | 
+      [
+        .key,
+        (.value.intf // ""),
+        ((.value.ssidProfiles // []) | join(",")),
+        ((.value.aliasSSIDs // []) | map(.id) | join(","))
+      ] | join("|")' /tmp/scc_config |
+    while IFS='|' read -r idx network_intf ssid_profiles_str alias_ssids_str; do
+      # Only process entries that have ssidProfiles (making it a valid entry)
+      if [[ -n "$ssid_profiles_str" ]]; then
+        # Map SSID profiles to their interface
+        IFS=',' read -ra network_ssid_profiles <<< "$ssid_profiles_str"
+        for profile_id in "${network_ssid_profiles[@]}"; do
+          if [[ -z "${ssid_intf_map[$profile_id]+x}" ]]; then
+            ssid_intf_map["$profile_id"]="$network_intf"
+          fi
+        done
+        
+        # Process aliasSSIDs (map them to interface too)
+        if [[ -n "$alias_ssids_str" ]]; then
+          IFS=',' read -ra alias_ids <<< "$alias_ssids_str"
+          for id in "${alias_ids[@]}"; do
+            if [[ -z "${ssid_intf_map[$id]+x}" ]]; then
+              ssid_intf_map["$id"]="$network_intf"
+            fi
+          done
+        fi
+      fi
     done
 
-    printf "Profile\tSSID\tBand\tEncryption\tPriSeg\tAddSeg\n" >/tmp/ap_csv
+    printf "Profile\tSSID\tBand\tEncryption\tInterface\tPriSeg\tAddSeg\n" >/tmp/ap_csv
     jq -r '.apc.profile | to_entries[] | [.key, .value.ssid, .value.band, .value.encryption] | @tsv' /tmp/scc_config |
     while read -r LINE; do
       mapfile -td $'\t' COL < <(printf "%s" "$LINE")
       local id="${COL[0]}"
-      # only print profile that included in ssidProfiles and aliasSSIDs
-      if [[ "${ssid_profiles[*]}" =~ "$id" ]] || [[ "${alias_ssids[*]}" =~ "$id" ]]; then
+      # only print profile that has an interface mapping (from ssidProfiles or aliasSSIDs)
+      if [[ -n "${ssid_intf_map[$id]+x}" ]]; then
         local priSeg=""
         local addSeg=""
         for key in "${!ssidVlanUserMap[@]}"; do
           if [[ "$key" == "$id" ]]; then
             priSeg="${ssidVlanUserMap[$key]}"
           elif [[ "$key" == "$id,"* ]]; then
-            # local vlan=${key#*,}
             [[ -n "$addSeg" ]] && addSeg+=","
             addSeg+="${ssidVlanUserMap[$key]}"
           fi
         done
-        printf "%s\t%s\t%s\t%s\t%s\t%s\n" "${COL[0]}" "${COL[1]}" "${COL[2]}" "${COL[3]}" "${priSeg}" "${addSeg}" >>/tmp/ap_csv
+        
+        # Get interface for this SSID from the wifiNetwork entry that contains it
+        local ssid_intf="${ssid_intf_map[$id]:-}"
+        
+        printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "${COL[0]}" "${COL[1]}" "${COL[2]}" "${COL[3]}" "$ssid_intf" "$priSeg" "$addSeg" >>/tmp/ap_csv
       fi
 
     done
@@ -1317,13 +1359,13 @@ check_ap() {
     $COLUMN_OPT -t -s$'\t' /tmp/ap_csv
 
     unset ssidVlanUserMap
-    unset alias_ssids
+    unset ssid_intf_map
 
     D="\e[2m"
     U="\e[0m"
 
     echo ""
-    echo -e "Abbr.: PriSeg${D}(PrimaryMicrosegment)$U AddSeg${D}(AddtionalMicrosegment)$U"
+    echo -e "Abbr.: PriSeg${D}(PrimaryMicrosegment)$U AddSeg${D}(AdditionalMicrosegment)$U"
     echo ""
 }
 

@@ -1,4 +1,4 @@
-/*    Copyright 2019-2025 Firewalla Inc.
+/*    Copyright 2019-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -53,14 +53,6 @@ class CountryUpdater extends CategoryUpdaterBase {
 
       this.resetActiveCountries()
       exec(`mkdir -p ${DISK_CACHE_FOLDER}`);
-      setInterval(async () => {
-        if (firewalla.isMain()) {
-          await Ipset.batchOp(this.batchOps).catch((err) => {
-            log.error(`Failed to update country ipsets`, err.message);
-          });
-        }
-        this.batchOps = [];
-      }, 60000); // update country ipsets once every minute
     }
 
     return instance
@@ -98,7 +90,7 @@ class CountryUpdater extends CategoryUpdaterBase {
     const category = this.getCategory(code)
 
     this.activeCountries[code] = 1
-    this.activeCategories[category] = 1
+    this.activeCategories[category] = 'hash:net'
     // use a larger hash size for country ipset since some country ipset may be large and cause performance issue
     await Block.setupCategoryEnv(category, 'hash:net', 32768, false, true);
 
@@ -116,8 +108,6 @@ class CountryUpdater extends CategoryUpdaterBase {
 
     await Ipset.destroy(this.getIPSetName(category))
     await Ipset.destroy(this.getIPSetNameForIPV6(category))
-    await Ipset.destroy(this.getTempIPSetName(category))
-    await Ipset.destroy(this.getTempIPSetNameForIPV6(category))
 
     delete this.activeCountries[code]
     await this.deactivateCategory(category)
@@ -126,7 +116,6 @@ class CountryUpdater extends CategoryUpdaterBase {
   resetActiveCountries() {
     this.activeCountries = {}
     this.activeCategories = {}
-    this.batchOps = []
   }
 
   async refreshCategoryRecord(category) {
@@ -141,14 +130,13 @@ class CountryUpdater extends CategoryUpdaterBase {
   }
 
   async addDynamicEntries(category, options) {
-    for (let ip6 of [false, true]) try {
+    // v4 space are all static data now, v6 are added dynamically for memory concern
+    for (let ip6 of [/*false,*/ true]) try {
       const key = this.getDynamicKey(category, ip6)
 
       const ipsetName = this.getIPSetName(category, false, ip6, options.useTemp)
       const entries = await rclient.zrangeAsync(key, 0, -1)
-
-      // individual IPs will still be adding to the set until rotated out by CIDRs in updateIP()
-      await Ipset.testAndAdd(entries, ipsetName, 60)
+      entries.forEach(entry => Ipset.add(ipsetName, entry))
     } catch(err) {
       log.error(`Failed adding v${ip6?6:4} dynamic entries to ${category}`, err)
     }
@@ -164,7 +152,8 @@ class CountryUpdater extends CategoryUpdaterBase {
       const countFile = file + '.count'
       const entriesCount = Number(await fsp.readFile(countFile))
       const setMeta = await Ipset.read(ipsetName, true)
-      if (entriesCount > Number(_.get(setMeta, 'header.maxelem'))) {
+      const maxelem = Number(_.get(setMeta, 'header.maxelem'))
+      if (Number.isNaN(maxelem) || entriesCount > maxelem) {
         await this.rebuildIpset(category, ip6, Object.assign({count: entriesCount}, options))
       }
     } catch(err) {
@@ -172,9 +161,11 @@ class CountryUpdater extends CategoryUpdaterBase {
     }
 
     try {
-      await exec(`sudo ipset flush ${ipsetName}`)
-      const cmd4 = `sed 's=^=add ${ipsetName} = ' ${file} | sudo ipset restore -!`
-      await exec(cmd4)
+      Ipset.flush(ipsetName);
+      const fileContent = await fsp.readFile(file, 'utf8');
+      const addresses = fileContent.trim().split('\n').filter(line => line.trim());
+      
+      addresses.forEach(addr => Ipset.add(ipsetName, addr));
     } catch(err) {
       log.error(`Failed to update ipset by category ${category} with ipv${ip6?6:4} addresses`, err.message)
     }
@@ -211,6 +202,8 @@ class CountryUpdater extends CategoryUpdaterBase {
       }
     }
 
+    await this.createTempIpsets(category, true);
+
     // only update v4 persistent set, v6 space is too big for this approach
     await this.updatePersistentIPSets(category, false, {useTemp: true});
 
@@ -218,17 +211,20 @@ class CountryUpdater extends CategoryUpdaterBase {
 
     await this.swapIpset(category, true);
 
+    this.initializedCategories[category] = true;
     log.info(`Successfully recycled ipset for category ${category}`)
   }
 
+  // Incrementally update IPv6 country ipset from observed traffic.
+  // IPv4 is bulk-loaded from disk cache in recycleIPSet; v6 address space is too
+  // large for that approach, so individual IPs/CIDRs are added as they appear.
   async updateIP(ip, code, add = true) {
     if (!ip || ip == 'undefined') {
       return
     }
     const fam = net.isIP(ip)
-    if (fam == 0) {
-      throw new Error(`updateIP: invalid input: ${JSON.stringify(ip)} / ${code}`)
-    }
+    if (fam !== 6)
+      return
 
     let CIDRs = [ ip ]
     const geoip = country.geoip.lookup(ip)
@@ -245,28 +241,20 @@ class CountryUpdater extends CategoryUpdaterBase {
       return
     }
 
-    log.debug(add ? 'add' : 'remove', ip, add ? 'to' : 'from', code)
-
-    let ipset, key;
-
-    if (fam == 4) {
-      ipset = this.getIPSetName(category)
-      key = this.getDynamicIPv4Key(category)
-    } else if (fam == 6) {
-      ipset = this.getIPSetNameForIPV6(category)
-      key = this.getDynamicIPv6Key(category)
-    }
+    const ipset = this.getIPSetNameForIPV6(category)
+    const key = this.getDynamicIPv6Key(category)
 
     if (add) {
       const now = Math.floor(Date.now() / 1000)
-      await rclient.zaddAsync(key, _.flatMap(CIDRs, v=> [now, v]))
+      await rclient.zaddAsync(key, _.flatMap(CIDRs, v => [now, v]))
 
-      // test and add ipset right away to enforce policies
-      await Ipset.testAndAdd(CIDRs, ipset)
-    } else
-      await rclient.zremAsync(key, ip)
-
-      this.batchOps.push(`del ${ipset} ${ip}`);
+      // add ipset right away to enforce policies
+      // as v6 spaces is already standardized to CIDR
+      CIDRs.forEach(entry => Ipset.add(ipset, entry))
+    } else {
+      await rclient.zremAsync(key, CIDRs)
+      CIDRs.forEach(entry => Ipset.del(ipset, entry))
+    }
   }
 }
 

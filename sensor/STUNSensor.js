@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -60,7 +60,8 @@ const extensionManager = require('./ExtensionManager.js');
 const {Address4} = require('ip-address');
 const exec = require('child-process-promise').exec;
 const uuid = require('uuid');
-const {wrapIptables} = require('../net2/Iptables');
+const { Rule} = require('../net2/Iptables');
+const iptc = require('../control/IptablesControl.js');
 
 class STUNSensor extends Sensor {
 
@@ -107,7 +108,7 @@ class STUNSensor extends Sensor {
         const address = socket.address();
         sourcePort = address.port;
         // temporarily accept UDP on source port as a new inbound UDP packet may reach the port in test 2
-        exec(wrapIptables(`sudo iptables -w -A FW_INPUT_ACCEPT -p udp --dport ${sourcePort} -m comment --comment "STUN NAT type test" -j ACCEPT`)).catch((err) => {});
+        iptc.addRule(new Rule('filter').chn('FW_INPUT_ACCEPT').pro('udp').dport(sourcePort).comment('STUN NAT type test').jmp('ACCEPT'))
       });
       const info = {
         addr1: null,
@@ -217,7 +218,7 @@ class STUNSensor extends Sensor {
       socket.send(this.generateBindingRequestBuffer(transId, false, false), dstPort, dstIP);
       scheduleTimeout();
     }).finally(() => {
-      exec(wrapIptables(`sudo iptables -w -D FW_INPUT_ACCEPT -p udp --dport ${sourcePort} -m comment --comment "STUN NAT type test" -j ACCEPT`)).catch((err) => {});
+      iptc.addRule(new Rule('filter').chn('FW_INPUT_ACCEPT').pro('udp').dport(sourcePort).comment('STUN NAT type test').jmp('ACCEPT').opr('-D'))
     });
   }
 

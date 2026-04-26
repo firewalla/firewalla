@@ -19,6 +19,18 @@ const { Address4, Address6 } = require('ip-address');
 
 class CategoryEntry {
   static parse(item) {
+    // Must short-circuit before the colon-based split below, since regex bodies may contain ":"
+    if (item.startsWith("regex:")) {
+      const body = item.slice(6);
+      if (!body) {
+        throw new Error("Empty regex entry");
+      }
+      if (!CategoryEntry.isValidDomainRE(body)) {
+        throw new Error("Invalid regex entry");
+      }
+      return [{ type: "domain_re", id: body, pcount: 0 }];
+    }
+
     const entries = [];
     const entry = {};
     const tokens = item.split(":");
@@ -201,6 +213,29 @@ class CategoryEntry {
     } else {
       return null;
     }
+  }
+
+  // Validate a regex expression used in target list / domain_re rules.
+  // Canonical implementation; PolicyManager2.checkValidDomainRE delegates here.
+  static isValidDomainRE(expr) {
+    try {
+      new RegExp(expr);
+    } catch (e) {
+      return false;
+    }
+    // slash is a dnsmasq config separator and not useful for domain matching
+    if (expr.includes("/")) {
+      return false;
+    }
+    // lookaround and non-capturing groups are disallowed
+    if (expr.includes("(?")) {
+      return false;
+    }
+    // back references can induce exponential match time
+    if (/\\[0-9]/.test(expr)) {
+      return false;
+    }
+    return true;
   }
 
   static toPortStr(portObj) {

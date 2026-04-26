@@ -87,6 +87,10 @@ class RedPlatform extends Platform {
     return 1000;
   }
 
+  getExceptionCapacity() {
+    return 1000;
+  }
+
   isFireRouterManaged() {
     return false;
   }
@@ -132,6 +136,10 @@ class RedPlatform extends Platform {
 
   supportSSHInNmap() {
     return false;
+  }
+
+  async switchQoS(state, qdisc) {
+    return; // do nothing for red
   }
 }
 

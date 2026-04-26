@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -44,6 +44,8 @@ const ruleScheduler = require('../extension/scheduler/scheduler.js')
 const util = require('util');
 const Constants = require('../net2/Constants.js');
 const AsyncLock = require('../vendor_lib/async-lock');
+
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 // Create a lock instance for protecting getNextID operations
 const GET_EXCEPTION_ID_LOCK = new AsyncLock();
@@ -101,7 +103,7 @@ module.exports = class {
       for (const exception of exceptions) {
         const category = exception.getCategory();
         if (category && !newCategoryMap.has(category)) {
-          log.info("New category matcher", category);
+          log.verbose("New category matcher", category);
           newCategoryMap.set(category, await CategoryMatcher.newCategoryMatcher(category));
         }
       }
@@ -144,8 +146,17 @@ module.exports = class {
     return util.callbackify(this.loadExceptionsAsync).bind(this)(callback)
   }
 
-  async loadExceptionsAsync() {
-    const EIDs = await rclient.smembersAsync(exceptionQueue)
+  async loadExceptionsAsync(options = {}) {
+    // options: { offset, number }
+    const number = options.number || platform.getExceptionCapacity();
+    const offset = options.offset || 0;
+
+    let EIDs = await rclient.smembersAsync(exceptionQueue)
+    // recent first (higher numeric EID first), mirroring PolicyManager2's zrevrange paging
+    EIDs.sort((a, b) => Number(b) - Number(a));
+    if (number) {
+      EIDs = EIDs.slice(offset, offset + number);
+    }
 
     const multi = rclient.multi();
 
@@ -470,7 +481,7 @@ module.exports = class {
     const results = await this.loadExceptionsAsync();
     // wait for category data to load;
 
-    log.info("Start to match alarm", alarm.type, alarm['p.device.mac'], alarm['p.dest.name']);
+    log.verbose("Start to match alarm", alarm.type, alarm['p.device.mac'], alarm['p.dest.name']);
     log.verbose(alarm);
     for (let i = 0; i < 30; i++) {
       if (this.categoryMap !== null) {
@@ -490,7 +501,7 @@ module.exports = class {
     // do not match exceptions that are expired, paused or not in scheduled running time
     let matches = results.filter((e) => !e.isExpired() && !e.isIdle() && (!e.cronTime || ruleScheduler.shouldPolicyBeRunning(e)) && e.match(alarm));
     if (matches.length > 0) {
-      log.info("Alarm " + alarm.aid + " is covered by exception " + matches.map((e) => e.eid).join(","));
+      log.info(`Alarm ${alarm.type} ${alarm["p.device.mac"]} ${alarm["p.dest.name"]} is covered by exception ${matches.map((e) => e.eid).join(",")}`);
     }
 
     return matches

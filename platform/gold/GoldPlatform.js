@@ -1,4 +1,4 @@
-/*    Copyright 2019-2024 Firewalla Inc.
+/*    Copyright 2019-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,7 +20,6 @@ const f = require('../../net2/Firewalla.js')
 const exec = require('child-process-promise').exec;
 const fs = require('fs').promises; // available after Node 10
 const log = require('../../net2/logger.js')(__filename);
-const ipset = require('../../net2/Ipset.js');
 const { execSync } = require('child_process');
 
 class GoldPlatform extends Platform {
@@ -111,35 +110,22 @@ class GoldPlatform extends Platform {
     }
   }
 
-  async switchQoS(state, qdisc) {
-    if (state == false) {
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
-        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+  async setQoSBandwidth(upload, download) {
+    if (upload > 0 && download > 0) {
+      upload = Math.floor(upload * 0.98); // leave some margin
+      download = Math.floor(download * 0.98); // leave some margin
+
+      const upload_burst = Math.floor(upload * 1024 / 800); // in KB
+      const download_burst = Math.floor(download * 1024 / 800); // in KB
+
+
+      await exec (`sudo tc class replace dev ifb0 parent 1: classid 1:1 htb rate ${upload}mbit ceil ${upload}mbit burst ${upload_burst}kbit cburst ${upload_burst}kbit`).catch((err) => {
+        log.error(`Failed to set upload bandwidth to ${upload}mbit`, err.message);
       });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
-        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-    } else {
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
-        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
-        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      await exec (`sudo tc class replace dev ifb1 parent 1: classid 1:1 htb rate ${download}mbit ceil ${download}mbit burst ${download_burst}kbit cburst ${download_burst}kbit`).catch((err) => {
+        log.error(`Failed to set download bandwidth to ${download}mbit`, err.message);
       });
     }
-    const supported = await exec(`modinfo sch_${qdisc}`).then(() => true).catch((err) => false);
-    if (!supported) {
-      log.error(`qdisc ${qdisc} is not supported`);
-      return;
-    }
-    // replace the default tc filter
-    const QoS = require('../../control/QoS.js');
-    await exec (`sudo tc filter replace dev ifb0 parent 1: handle 800::0x1 prio 1 u32 match mark 0x800000 0x${QoS.QOS_UPLOAD_MASK.toString(16)} flowid 1:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
-      log.error(`Failed to update tc filter on ifb0`, err.message);
-    });
-    await exec (`sudo tc filter replace dev ifb1 parent 1: handle 800::0x1 prio 1 u32 match mark 0x10000 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)} flowid 1:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
-      log.error(`Failed to update tc filter on ifb1`, err.message);
-    });
   }
 
   getSubnetCapacity() {
@@ -173,6 +159,10 @@ class GoldPlatform extends Platform {
   }
 
   getPolicyCapacity() {
+    return 3000;
+  }
+
+  getExceptionCapacity() {
     return 3000;
   }
 

@@ -76,6 +76,10 @@ class AmneziaWGVPNClient extends WGVPNClient {
             config.s1 = value;
           if (key === "S2")
             config.s2 = value;
+          if (key === "S3")
+            config.s3 = value;
+          if (key === "S4")
+            config.s4 = value;
           if (key === "H1")
             config.h1 = value;
           if (key === "H2")
@@ -84,6 +88,16 @@ class AmneziaWGVPNClient extends WGVPNClient {
             config.h3 = value;
           if (key === "H4")
             config.h4 = value;
+          if (key === "I1")
+            config.i1 = value;
+          if (key === "I2")
+            config.i2 = value;
+          if (key === "I3")
+            config.i3 = value;
+          if (key === "I4")
+            config.i4 = value;
+          if (key === "I5")
+            config.i5 = value;
           break;
         }
         case "[Peer]": {
@@ -108,6 +122,10 @@ class AmneziaWGVPNClient extends WGVPNClient {
     return config;
   }
 
+
+  static getDefaultMTU() {
+    return 1376;
+  }
 
   static getProtocol() {
     return "amneziawg";
@@ -161,8 +179,9 @@ class AmneziaWGVPNClient extends WGVPNClient {
   _addObfuscationOptions(entries, config) {
     const obfuscationKeys = [
       'jc', 'jmin', 'jmax',
-      's1', 's2',
-      'h1', 'h2', 'h3', 'h4'
+      's1', 's2', 's3', 's4',
+      'h1', 'h2', 'h3', 'h4',
+      'i1', 'i2', 'i3', 'i4', "i5"
     ];
     for (const key of obfuscationKeys) {
       if (config[key]) {

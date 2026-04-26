@@ -1,6 +1,6 @@
 #!/bin/bash -
 #
-#    Copyright 2017 Firewalla LLC
+#    Copyright 2017-2026 Firewalla Inc.
 #
 #    This program is free software: you can redistribute it and/or  modify
 #    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,12 +26,12 @@ logger "FIREWALLA.MAIN-PREP.START"
 
 source ${FIREWALLA_HOME}/platform/platform.sh
 
-for prep_script in $(ls ${FIREWALLA_HOME}/scripts/prep/*.sh)
+for prep_script in "$FIREWALLA_HOME"/scripts/prep/*.sh
 do
-    bash $prep_script
+    bash "$prep_script" </dev/null
 done
 
-for prep_script in $(ls ${FW_PLATFORM_CUR_DIR}/hooks/before_main_run/*.sh 2>/dev/null)
+for prep_script in "$FW_PLATFORM_CUR_DIR"/hooks/before_main_run/*.sh
 do
-    bash $prep_script
+    bash "$prep_script" </dev/null
 done

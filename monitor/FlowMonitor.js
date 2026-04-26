@@ -32,6 +32,7 @@ const hostTool = new HostTool()
 let instance = null;
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
+const Host = require('../net2/Host.js');
 const IdentityManager = require('../net2/IdentityManager.js');
 const npm = require('../net2/NetworkProfileManager')
 const tm = require('../net2/TagManager')
@@ -337,112 +338,79 @@ module.exports = class FlowMonitor {
 
   //   '17.253.4.125': '{"neighbor":"17.253.4.125","cts":1481438191.098,"ts":1481990573.168,"count":356,"rb":33984,"ob":33504,"du":27.038723000000005,"name":"time-ios.apple.com"}',
   //  '17.249.9.246': '{"neighbor":"17.249.9.246","cts":1481259330.564,"ts":1482050353.467,"count":348,"rb":1816075,"ob":1307870,"du":10285.943863000004,"name":"api-glb-sjc.smoot.apple.com"}',
-  async summarizeNeighbors(host, flows) {
+  async summarizeNeighbors(host, flows, local = false) {
+    const key = host.getNeighborKey(local);
     try {
-      let key = "neighbor:" + host.getGUID();
-
       const data = await rclient.hgetallAsync(key) || {}
-      let neighborArray = [];
-      for (let n in data) {
+      for (const n in data) {
         try {
           data[n] = JSON.parse(data[n]);
-          data[n].neighbor = n;
-          neighborArray.push(data[n]);
         } catch (e) {
           log.warn('parse neighbor data error', data[n], key);
+          delete data[n];
         }
       }
-      let now = Date.now() / 1000;
-      for (let f in flows) {
-        let flow = flows[f];
-        let neighbor = flow.dh;
-        let ob = flow.ob;
-        let rb = flow.rb;
-        let du = flow.du;
-        let name = flow.dhname;
-        if (flow.lh == flow.dh) {
-          neighbor = flow.sh;
-          ob = flow.rb;
-          rb = flow.ob;
-          name = flow.shname;
-        }
-        if (data[neighbor] != null) {
-          data[neighbor]['ts'] = now;
-          data[neighbor]['count'] += 1;
-          data[neighbor]['rb'] += rb;
-          data[neighbor]['ob'] += ob;
-          data[neighbor]['du'] += du;
-          data[neighbor]['neighbor'] = neighbor;
+
+      // combine flows into existing entries
+      const now = Date.now() / 1000;
+      for (const flow of flows) {
+        let neighbor, ob, rb, name;
+        if (flow.lh == flow.sh) {
+          neighbor = flow.dh; ob = flow.ob; rb = flow.rb; name = flow.dhname;
         } else {
-          data[neighbor] = {};
-          data[neighbor]['neighbor'] = neighbor;
-          data[neighbor]['cts'] = now;
-          data[neighbor]['ts'] = now;
-          data[neighbor]['count'] = 1;
-          data[neighbor]['rb'] = rb;
-          data[neighbor]['ob'] = ob;
-          data[neighbor]['du'] = du;
-          neighborArray.push(data[neighbor]);
+          neighbor = flow.sh; ob = flow.rb; rb = flow.ob; name = flow.shname;
         }
-        if (name) {
-          data[neighbor]['name'] = name;
+        if (local) neighbor = flow.dmac
+
+        const entry = data[neighbor];
+        if (entry) {
+          entry.ts = now;
+          entry.count += flow.ct || 1;
+          entry.rb += rb;
+          entry.ob += ob;
+          entry.du += flow.du;
+          if (!entry.dp) entry.dp = [];
+          if (flow.dp && entry.dp.length < 5 && !entry.dp.includes(flow.dp))
+            entry.dp.push(flow.dp);
+        } else {
+          data[neighbor] = { cts: now, ts: now, count: flow.ct || 1, rb, ob, du: flow.du, dp: flow.dp ? [flow.dp] : [] };
         }
-      }
-      let savedData = {};
-
-      //chop the minor ones
-      neighborArray.sort(function (a, b) {
-        return Number(b.count) - Number(a.count);
-      })
-      let max = 20;
-
-      let deletedArrayCount = neighborArray.slice(max + 1);
-      let neighborArrayCount = neighborArray.slice(0, max);
-
-      neighborArray.sort(function (a, b) {
-        return Number(b.ts) - Number(a.ts);
-      })
-
-      let deletedArrayTs = neighborArray.slice(max + 1);
-      let neighborArrayTs = neighborArray.slice(0, max);
-
-      deletedArrayCount = deletedArrayCount.filter((val) => {
-        return neighborArrayTs.indexOf(val) == -1;
-      });
-      deletedArrayTs = deletedArrayTs.filter((val) => {
-        return neighborArrayCount.indexOf(val) == -1;
-      });
-
-      let deletedArray = deletedArrayCount.concat(deletedArrayTs);
-
-      deletedArray.length && log.debug("Neighbor:Summary:Deleted", deletedArray);
-
-      let addedArray = neighborArrayCount.concat(neighborArrayTs);
-
-      log.debug("Neighbor:Summary", key, deletedArray.length, addedArray.length, deletedArrayTs.length, neighborArrayTs.length, deletedArrayCount.length, neighborArrayCount.length);
-
-      for (let i in deletedArray) {
-        await rclient.hdelAsync(key, deletedArray[i].neighbor);
+        if (name && !local) data[neighbor].name = name;
       }
 
-      for (let i in addedArray) {
-        // need to delete things not here
-        savedData[addedArray[i].neighbor] = addedArray[i];
+      const max = fc.getConfig().timing['monitor.neighbor.max'] || 20;
+      const neighbors = Object.keys(data);
+
+      const topByCount = neighbors
+        .sort((a, b) => Number(data[b].count) - Number(data[a].count))
+        .slice(0, max)
+      const topByTs = neighbors
+        .sort((a, b) => Number(data[b].ts) - Number(data[a].ts))
+        .slice(0, max)
+
+      const keepSet = new Set([...topByCount, ...topByTs]);
+      const deleteKeys = neighbors.filter(n => !keepSet.has(n));
+
+      log.debug("Neighbor:Summary", key, "keep:", keepSet.size, "delete:", deleteKeys.length);
+
+      if (deleteKeys.length) {
+        log.debug("Neighbor:Summary:Deleted", deleteKeys);
+        for (const n of deleteKeys) delete data[n];
+        await rclient.hdelAsync(key, ...deleteKeys);
       }
 
-      for (let i in savedData) {
-        delete savedData[i].neighbor
-        savedData[i].du = Math.round(savedData[i].du * 100) / 100
-        savedData[i] = JSON.stringify(savedData[i]);
+      for (const n of keepSet) {
+        data[n].du = Math.round(data[n].du * 100) / 100;
+        data[n] = JSON.stringify(data[n]);
       }
-      if (Object.keys(savedData).length) {
-        await rclient.hmsetAsync(key, savedData)
-        log.silly("Set Host Summary", key, savedData);
+      if (Object.keys(data).length) {
+        await rclient.hmsetAsync(key, data)
+        log.silly("Set Host Summary", key, data);
         const expiring = fc.getConfig().sensors.OldDataCleanSensor.neighbor.expires || 24 * 60 * 60 * 7;  // seven days
-        await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + expiring);
+        await rclient.expireAsync(key, expiring);
       }
     } catch(err) {
-      log.error('Error summarizing neighbors', host.getGUID(), err)
+      log.error('Error summarizing neighbors', key, err)
     }
   }
 
@@ -451,14 +419,18 @@ module.exports = class FlowMonitor {
     let end = Date.now() / 1000;
     let start = end - period; // in seconds
     //log.info("Detect",listip);
-    let result = await flowManager.summarizeConnections(mac, "in", end, start);
+    const inFlows = await flowManager.summarizeConnections(mac, "in", end, start);
+    this.checkFlowIntel(inFlows.connections, host, profile);
 
-    this.checkFlowIntel(result.connections, host, profile);
-    await this.summarizeNeighbors(host, result.connections);
-    result = await flowManager.summarizeConnections(mac, "out", end, start);
+    const outFlows = await flowManager.summarizeConnections(mac, "out", end, start);
+    this.checkFlowIntel(outFlows.connections, host, profile);
 
-    this.checkFlowIntel(result.connections, host, profile);
-    await this.summarizeNeighbors(host, result.connections);
+    await this.summarizeNeighbors(host, [... inFlows.connections, ... outFlows.connections]);
+
+    if (host instanceof Host) {
+      const localFlows = await flowManager.summarizeConnections(mac, 'local', end, start);
+      await this.summarizeNeighbors(host, localFlows.connections, true);
+    }
   }
 
   async getFlowSpecs(host, profile) {
@@ -934,16 +906,18 @@ module.exports = class FlowMonitor {
       alarm['p.security.tags'] = intelObj.tags;
     }
 
-    log.info(`Cyber alarm for domain '${domain}' has been generated`, alarm);
+    log.debug(`Cyber alarm for domain '${domain}' is generating...`, alarm);
 
     try {
+      alarmManager2.applyConfig(alarm, []);
+      log.info(`Cyber alarm for domain '${domain}' has been generated`, alarm);
       await alarmManager2.checkAndSaveAsync(alarm);
     } catch (err) {
       if (err.code === 'ERR_DUP_ALARM' || err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY' || err.code === 'ERR_COVERED_BY_EXCEPTION') {
         log.info("Skip firing new alarm", err.message);
         return true; // in this case, ip alarm no need to trigger either
       }
-      log.error("Error when save alarm:", err.message);
+      log.error("Error when save alarm:", err);
       return;
     }
 
