@@ -23,7 +23,8 @@ const sysManager = require('../net2/SysManager.js');
 const cronParser = require('cron-parser');
 const Constants = require('../net2/Constants.js');
 const _ = require('lodash');
-const { rrWithErrHandling } = require('../util/requestWrapper.js')
+const { rrWithErrHandling } = require('../util/requestWrapper.js');
+const { include } = require('underscore');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const REQUEST_KEY_PREFIX = 'access_request:';
@@ -36,6 +37,9 @@ const STATE_PENDING = 'pending';
 const STATE_APPROVED = 'approved';
 const STATE_DENIED = 'denied';
 const STATE_EXPIRED = 'expired';
+
+const TARGET_APP_PREFIXES = ['TLX-fw-', 'TLX-dt-']; // target values with these prefixes indicate app/category targets
+const TARGET_PREFIX_LEN = 7; // length of the above prefixes
 
 const ARCHIVE_TTL_SECONDS = 7 * 24 * 3600; // 7 days
 
@@ -97,29 +101,55 @@ function isInSchedule(policy, includeNonTimeLimitRules = false) {
 }
 
 function getAppFromTarget(target) {
-  if (target.startsWith('TLX-fw-')) {
-    return target.substring('TLX-fw-'.length);
-  }
-  if (target === 'TAG') {
-    return 'internet';
+  if (TARGET_APP_PREFIXES.some(prefix => target.startsWith(prefix))) {
+    return target.substring(TARGET_PREFIX_LEN);
   }
   return null;
 }
 
+function getAppsFromPolicy(policy) {
+  const appset = new Set();
+  if (policy) {
+    if (policy.type === "internet" || policy.type === "mac") {
+      appset.add("internet");
+    }
+    if (policy.target && TARGET_APP_PREFIXES.some(prefix => policy.target.startsWith(prefix))) {
+      appset.add(policy.target.substring(TARGET_PREFIX_LEN));
+    }
+    if (policy.targets && policy.targets.length > 0) {
+      for (const target of policy.targets) {
+        if (TARGET_APP_PREFIXES.some(prefix => target.startsWith(prefix))) {
+          appset.add(target.substring(TARGET_PREFIX_LEN));
+        }
+      }
+    }
+  }
+  return Array.from(appset).sort();
+}
+
 function matchTarget(policy, app, supportedApps = []) {
   // check if the policy targets and target are supported time limit apps
+  if (policy.type == "internet" || policy.type == "mac") {
+    if (app === 'internet' || app === 'all') {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+
   if (supportedApps.length > 0) {
     if (policy.targets) {
       for (const target of policy.targets) {
         const targetApp = getAppFromTarget(target);
-        if (targetApp != "internet" && !supportedApps.some(a => a.app === targetApp)) {
+        if (!supportedApps.some(a => a.app === targetApp)) {
           return false;
         }
       }
     }
     if (policy.target) {
       const targetApp = getAppFromTarget(policy.target);
-      if (targetApp != "internet" && !supportedApps.some(a => a.app === targetApp)) {
+      if (!supportedApps.some(a => a.app === targetApp)) {
         return false;
       }
     }
@@ -129,37 +159,36 @@ function matchTarget(policy, app, supportedApps = []) {
     return true;
   }
 
-  // check if the policy targets or target matches the given app
-  if (policy.targets) {
-    for (const target of policy.targets) {
-      const targetApp = getAppFromTarget(target);
-      if (targetApp == app) {
-        return true;
+  const apps = app.split(',').map(a => a.trim()).sort();
+  if (apps.length > 1) { // match multi-target rules only when app is specified as multi-apps (comma separated), not when app is 'all'
+    if (!policy.targets || policy.targets.length !== apps.length) {
+      return false;
+    }
+    const policyApps = getAppsFromPolicy(policy);
+    if (!apps.every(a => policyApps.includes(a))) {
+      return false;
+    }
+  } else {
+    if (policy.target) {
+      const targetApp = getAppFromTarget(policy.target);
+      if (targetApp != app) {
+        return false;
       }
     }
   }
-  if (policy.target) {
-    const targetApp = getAppFromTarget(policy.target);
-    if (targetApp == app) {
-      return true;
-    }
-  }
-  return false;
+  return true;
 }
 
 // check if the policy is matched with the given app
-function matchApp(policy, app='all', supportedApps = [], includeNonTimeLimitRules = false, includeDisabled = false) {
+function matchApp(policy, app='all', supportedApps = [], includeNonTimeLimitRules = false, includeNotInScheduleRules = false) {
   // check tag
   if (!policy.tag || policy.tag.length === 0 ) return false;
-
-  // check action
-  if (policy.action !== 'app_block' && policy.action !== 'block' && policy.action !== 'disturb') return false;
 
   // check target, target|targets should be supported apps and match the given app
   if (!matchTarget(policy, app, supportedApps)) return false;
 
   // check if the policy is in schedule
-  if (!includeDisabled && !isInSchedule(policy, includeNonTimeLimitRules)) return false;
+  if (!includeNotInScheduleRules && !isInSchedule(policy, includeNonTimeLimitRules)) return false;
   return true;
 }
 
@@ -188,33 +217,33 @@ async function findMatchingTimeLimitRules(userId, app, options = {}) {
   addRuleTag(user);
   addRuleTag(afTag);
 
-  // if app format is "policy:1234", extract the number
-  let policyNumber = null;
-  if(app.match(/policy:(\d+)/)) {
-    policyNumber = app.substring("policy:".length);
-  }
-  if (policyNumber) {
-    const policy = await pm2.getPolicy(parseInt(policyNumber));
-    if (policy) {
-      // check if the policy is related to the user
-      if (policy.tag && policy.tag.some(t => ruleTagValues.has(t))) {
-        return [policy];
-      }
-    }
-  }
+  const policyTargetsUserOrGroup = (p) => p.tag && p.tag.some(t => ruleTagValues.has(t));
+  const bypassPolicies = [];
+  const blockOrDisturbPolicies = [];
+
   const accessRequestManager = getInstance();
   const supportedApps = await accessRequestManager.getSupportedApps();
-
-  if (app !== 'all' && app !== 'internet' && !supportedApps.some(a => a.app === app)) {
-    return [];
+  const apps = app.split(',').map(a => a.trim()).sort();
+  for (const a of apps) {
+    if (a !== 'all' && a !== 'internet' && !supportedApps.some(s => s.app === a)) {
+      log.warn(`App ${a} is not supported for time limit rules, skip fetching policies for it`);
+      return { bypassPolicies: bypassPolicies, blockOrDisturbPolicies: blockOrDisturbPolicies };
+    }
   }
 
   const includeDisabled = options.includeDisabled ? 1 : 0;
   const allPolicies = await pm2.loadActivePoliciesAsync({ includingDisabled: includeDisabled });
-  const policyTargetsUserOrGroup = (p) => p.tag && p.tag.some(t => ruleTagValues.has(t));
-
-
-  return allPolicies.filter(p => matchApp(p, app, supportedApps, options.includeNonTimeLimitRules, options.includeDisabled) && policyTargetsUserOrGroup(p));
+  
+  for (const policy of allPolicies) {
+    if (policyTargetsUserOrGroup(policy) && matchApp(policy, app, supportedApps, options.includeNonTimeLimitRules, options.includeNotInScheduleRules)) {
+      if (policy.action === 'bypass') {
+        bypassPolicies.push(policy);
+      } else if ( policy.action == 'app_block' || policy.action == 'block' || policy.action == 'disturb') {
+        blockOrDisturbPolicies.push(policy);
+      }
+    }
+  }
+  return { bypassPolicies: bypassPolicies, blockOrDisturbPolicies: blockOrDisturbPolicies };
 }
 
 
@@ -267,10 +296,11 @@ class AccessRequestManager {
    * @param {string} userId - user tag uid
    * @param {string} app - app/category key
    * @param {number} requestQuota - minutes requested
+   * @param {number} leftQuota - minutes left
    * @param {object} options - { deviceMac, reason }
    * @returns {Promise<object>} request object with requestId
    */
-  async createOrUpdateRequest(userId, app, requestQuota, options = {}) {
+  async createOrUpdateRequest(userId, app, requestQuota, leftQuota, options = {}) {
     const lookupKey = currentLookupKey(userId, app);
     let requestId = await rclient.getAsync(lookupKey);
     if (requestId) {
@@ -287,6 +317,7 @@ class AccessRequestManager {
       userId,
       app,
       requestQuota: Number(requestQuota) || 0,
+      leftQuota: Number(leftQuota) || 0,
       requestTs: now,
       state: STATE_PENDING,
       deviceMac: options.deviceMac || null,
@@ -319,7 +350,14 @@ class AccessRequestManager {
     const raw = await rclient.getAsync(requestKey(requestId));
     if (!raw) return null;
     try {
-      return JSON.parse(raw);
+      const req = JSON.parse(raw);
+      if (!req.note || req.note == 'null') {
+        delete req.note;
+      }
+      if (!req.mac || req.mac == 'null') {
+        delete req.mac;
+      }
+      return req;
     } catch (e) {
       log.error('AccessRequestManager getRequest parse error', requestId, e.message);
       return null;
@@ -388,6 +426,10 @@ class AccessRequestManager {
     return list;
   }
 
+  getBypassPolicyKey(userId, apps) {
+    return `bypass:extraTime:${userId}:${apps.join(',')}`;
+  }
+
   /**
    * Approve an access request: find matching rules, update extraQuota on each, reenforce each, then mark request approved.
    */
@@ -401,26 +443,44 @@ class AccessRequestManager {
     const pm2 = new PolicyManager2();
     const Policy = require('./Policy.js');
 
-    const matchingPolicies = await findMatchingTimeLimitRules(req.userId, req.app, { includeNonTimeLimitRules: true, includeDisabled: false });
-    if (matchingPolicies.length === 0) {
+    const { blockOrDisturbPolicies } = await findMatchingTimeLimitRules(req.userId, req.app, { includeNonTimeLimitRules: true, includeDisabled: true, includeNotInScheduleRules: true });
+    if (blockOrDisturbPolicies.length === 0) {
       return { ok: false, error: 'No time limit rule found for this user and app' };
     }
 
     const minutes = approvedQuota != null ? Number(approvedQuota) : Number(req.requestQuota) || 0;
     const tz = sysManager.getTimezone();
+    const startOfTodayTs = this._getStartOfDayTimestamp(tz);
     const endOfTodayTs = this._getEndOfDayTimestamp(tz);
-    const nowTs = Date.now() / 1000;
+    const nowTs = Math.floor(Date.now() / 1000);
+    const affectedPids = new Set();
+
+    const totalQuotaLeft = req.leftQuota ? Number(req.leftQuota) + minutes : minutes;
+    const calculateQuotaLeft = (policy) => {
+      if (!policy.appTimeUsage) return 0;
+      const au = policy.appTimeUsage;
+      const ruleQuota = Number(au.quota) || 0;
+      let ruleExtraQuota = 0;
+      if (au.extraQuotaUntilTs != null && nowTs < au.extraQuotaUntilTs) {
+        ruleExtraQuota = Number(au.extraQuota) || 0;
+      }
+      return ruleQuota + ruleExtraQuota - Number(policy.appTimeUsed);
+    };
 
     // matchingPolices includes paused rules, but extraQuota on these rules can still be updated in case they are resumed after approval
-    for (const policy of matchingPolicies) {
-      const oldPolicy = policy;
+    for (const policy of blockOrDisturbPolicies) {
       if (policy.appTimeUsage) {
+        const oldPolicy = policy;
         const au = Object.assign({}, policy.appTimeUsage);
-        if (au.extraQuotaUntilTs != null && nowTs < au.extraQuotaUntilTs) {
-          au.extraQuota = (Number(au.extraQuota) || 0) + minutes;
-        } else {
-          au.extraQuota = minutes;
+        const quotaLeft = calculateQuotaLeft(policy);
+
+        if (quotaLeft >= totalQuotaLeft) {
+          continue; // do nothing if the approved quota is already covered by the existing quota and extraQuota on the rule
         }
+
+        au.extraQuota = Number(au.extraQuota) || 0;
+        au.extraQuota += totalQuotaLeft - quotaLeft;
+
         au.extraQuotaUntilTs = endOfTodayTs;
         
         await pm2.updatePolicyAsync({ pid: policy.pid, appTimeUsage: au });
@@ -428,98 +488,101 @@ class AccessRequestManager {
         if (updatedPolicy) {
           pm2.tryPolicyEnforcement(updatedPolicy, 'reenforce', oldPolicy);
         }
-      } else { // this is a block rule
-        // check if there is already a one-time policy exists for this user and app
-        if (policy.shadowPid) {
-          // check if the shadow policy is exists
-          const shadowPolicy = await pm2.getPolicy(policy.shadowPid);
-          if (shadowPolicy && !shadowPolicy.disabled) {
-              continue;
+      }
+      affectedPids.add(policy.pid);
+      log.info(`Policy ${policy.pid} is affected by access request ${requestId} approval, will create bypass rule for it`);
+    }
+
+    // if there is any block rule affected, create/update the bypass rule
+    let apps = req.app.split(',').map(a => a.trim()).sort();
+    if (apps.length === 0) {
+        log.warn('AccessRequestManager approveRequest no app found for affected block rules');
+        return { ok: false, error: 'bad app format' };
+    }
+
+    const supportedApps = await this.getSupportedApps();
+    for (const app of apps) {
+      if (app !== 'internet' && !supportedApps.some(s => s.app === app)) {
+        log.warn(`App ${app} is not supported for time limit rules, skip creating/updating bypass policy for it`);
+        return { ok: false, error: `App ${app} is not supported for time limit rules` };
+      }
+    }
+
+    if (affectedPids.size > 0) {
+      const bypassPolicyKey = this.getBypassPolicyKey(req.userId, apps);
+      const bypassPolicyId = await rclient.getAsync(bypassPolicyKey);
+      const timeWindows = [{begin: startOfTodayTs * 1000, end: endOfTodayTs * 1000}];
+      const AppTimeUsageManager = require('./AppTimeUsageManager.js');
+      const appTimeUsed = await AppTimeUsageManager.getTimeUsage(`tag:${req.userId}`, apps, timeWindows, true);
+
+      const au = {
+        app: apps[0],
+        apps: apps,
+        quota: appTimeUsed + Number(req.leftQuota || 0), // set quota to current usage + leftQuota so that the approved quota can be fully covered
+        extraQuota: minutes,
+        extraQuotaUntilTs: endOfTodayTs,
+        period: "0 0 * * *",
+        onQuotaReached: "unenforce",
+      };
+      const policy = bypassPolicyId ? await pm2.getPolicy(Number(bypassPolicyId)) : null;
+
+      if (policy) {
+        const oldPolicy = policy;
+        const newPolicy = new Policy(Object.assign({}, policy));
+        if (!newPolicy.appTimeUsage || !newPolicy.appTimeUsage.extraQuota || !newPolicy.appTimeUsage.extraQuotaUntilTs 
+          || newPolicy.appTimeUsage.extraQuotaUntilTs < nowTs) {
+          newPolicy.appTimeUsage = au;
+        } else {
+          const quotaLeft = calculateQuotaLeft(policy);
+          if (quotaLeft < totalQuotaLeft) {
+            newPolicy.appTimeUsage.extraQuota = Number(newPolicy.appTimeUsage.extraQuota) + totalQuotaLeft - quotaLeft;
           }
+          newPolicy.appTimeUsage.extraQuotaUntilTs = endOfTodayTs;
         }
-        //build up appTimeUsage object
-        let app = '';
-        let apps = [];
-        if (policy.target.startsWith('TLX-fw-')) {
-          app = policy.target.substring('TLX-fw-'.length);
-        } else if (policy.target === 'TAG') {
-          app = 'internet';
-        }
+        newPolicy.affectedPids = Array.from(affectedPids);
+        newPolicy.expire = endOfTodayTs - nowTs;
 
-        if (policy.targets && policy.targets.length > 0) {
-          for (const target of policy.targets) {
-            if (target.startsWith('TLX-fw-')) {
-              apps.push(target.substring('TLX-fw-'.length));
-            } else if (target === 'TAG') {
-              apps.push('internet');
-            }
-          }
+        await pm2.updatePolicyAsync(newPolicy);
+        const updatedPolicy = await pm2.getPolicy(policy.pid);
+        if (updatedPolicy) {
+          pm2.tryPolicyEnforcement(updatedPolicy, "reenforce", oldPolicy);
         }
-        if (!apps.includes(app)) {
-          apps.push(app);
+      } else {
+        //create a one-time bypass policy with reference to the original block policy, and enforce it immediately
+        let type = "category";
+        let target = `TLX-fw-${apps[0]}`;
+        if (apps[0] === 'internet') {
+          target = 'TAG';
+          type = "mac";
         }
-
-
-        const au = {
-          quota: 0,
-          extraQuota: minutes,
-          extraQuotaUntilTs: endOfTodayTs,
-          period: "0 0 * * *",
-        };
-
-        if (app) {
-          au.app = app;
-        }
-        if (apps && apps.length > 0) {
-          au.apps = apps;
-        }
-        //create a one-time policy to block the app for the duration of the request
+        // no need to add targets for disturb rules, since do not need to update dnsmasq config for distrub rules, 
+        // for iptables rules, we can get the app name from the targets and use the app name to match rules
         const policyRaw = {
-          app_name: policy.app_name,
-          action: "app_block",
-          app_uid: policy.app_uid,
-          type: policy.type,
-          dnsmasq_only: policy.dnsmasq_only,
-          target: policy.target,
-          targets: policy.targets,
+          action: "bypass",
+          target: target,
+          targets: apps.map(a => a === 'internet' ? 'TAG' : `TLX-fw-${a}`),
+          affectedPids: Array.from(affectedPids),
           appTimeUsage: au,
+          type: type,
           autoDeleteWhenExpires: "1",
-          parentPid: policy.pid,
           expire: endOfTodayTs - nowTs,
           timestamp: nowTs,
-          direction: "bidirection",
           tag: ["userTag:" + req.userId],
         };
 
         const oneTimePolicy = new Policy(policyRaw);
         const result = await pm2.checkAndSaveAsync(oneTimePolicy);
-        if (result.alreadyExists == 'duplicated') {
-          log.info('One-time policy already exists for this user and app', oneTimePolicy.pid);
-        } else if (result.alreadyExists == 'duplicated_and_updated') {
-          log.info('duplicated and updated one-time policy', oneTimePolicy.pid);
-          const p = JSON.parse(JSON.stringify(result.policy))
-          p.updated = true // a kind hacky, but works
-          sem.emitEvent({
-            type: "Policy:Updated",
-            pid: p.pid,
-            toProcess: "FireMain"
-          });
-        } else {
-          log.info('One-time policy created for this user and app', oneTimePolicy.pid);
-        }
 
-        //pause this block rule for 1 day
-        await pm2.updatePolicyAsync({ pid: policy.pid, idleTs: endOfTodayTs, disabled: "1", shadowPid: oneTimePolicy.pid });
-        const updatedPolicy = await pm2.getPolicy(policy.pid);
-        if (updatedPolicy) {
-          pm2.tryPolicyEnforcement(updatedPolicy, 'reenforce', oldPolicy);
-        }
+        await rclient.setAsync(bypassPolicyKey, result.policy.pid);
+        await rclient.expireAsync(bypassPolicyKey, endOfTodayTs - nowTs + 60); // set bypass policy key to expire shortly after the policy expires
+
       }
     }
 
     req.state = STATE_APPROVED;
     req.updatedAt = Date.now() / 1000;
     req.approvedQuota = minutes;
+
     await rclient.setAsync(requestKey(requestId), JSON.stringify(req));
     await rclient.expireAsync(requestKey(requestId), ARCHIVE_TTL_SECONDS);
     await rclient.sremAsync(PENDING_SET_KEY, requestId);
@@ -606,6 +669,13 @@ class AccessRequestManager {
     }
     return moment().utc().endOf('day').unix();
   }
+  _getStartOfDayTimestamp(tz) {
+    const tzName = tz || 'UTC';
+    if (moment.tz.zone(tzName)) {
+      return moment().tz(tzName).startOf('day').unix();
+    }
+    return moment().utc().startOf('day').unix();
+  }
 }
 
 let instance = null;
@@ -634,6 +704,7 @@ module.exports = {
   findMatchingTimeLimitRules,
   matchApp,
   getAppFromTarget,
+  getAppsFromPolicy,
   getUserRelatedTags,
   AccessRequestManager,
   STATE_PENDING,

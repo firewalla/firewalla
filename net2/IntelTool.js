@@ -37,6 +37,10 @@ const _ = require('lodash')
 
 const { REDIS_KEY_REDIS_KEY_COUNT } = require('../net2/Constants.js')
 
+const AsyncLock = require('../vendor_lib/async-lock');
+const intelDnsCacheLock = new AsyncLock();
+const LOCK_INTEL_DNS_CACHE = 'intel_dns_cache';
+
 const DEFAULT_INTEL_EXPIRE = 2 * 24 * 3600; // two days
 
 let instance = null;
@@ -54,12 +58,24 @@ class IntelTool {
 
       // check intel key count every 15mins
       this.intelCount = {}
+      this.intelDnsCache = null;
 
       // a cache to reduce redis IO thus speed up API calls and repeated lookups in FireMain
       // one API query usually gets multiple flows with same intel, this cache aim to cut the extra cost here
       // memory footprint isn't much to worry about, 10000 entries adds ~1MB
       if (firewalla.isApi() || firewalla.isMain()) {
         this.intelCache = new LRU({max: 10000, maxAge: 10*60*1000});
+      }
+
+      if (firewalla.isMain()) {
+        // Negative cache for absent inteldns:* keys — populated after startup delay,
+        // Observations on a high-traffic box indicate that the number of keys matching `inteldns:*` is about 1k, consuming around 10 KB of memory.
+        setTimeout(async () => {
+          await this._reloadIntelDnsCache();
+          setInterval(async () => {
+            await this._reloadIntelDnsCache();
+          }, 6 * 3600 * 1000);
+        }, 60 * 1000);
       }
 
       setInterval(async () => {
@@ -213,10 +229,36 @@ class IntelTool {
     return null
   }
 
+  async _reloadIntelDnsCache() {
+    return intelDnsCacheLock.acquire(LOCK_INTEL_DNS_CACHE, async () => {
+      const keys = await rclient.scanResults('inteldns:*');
+      log.info('Reloading intel dns cache with', keys.length, 'items');
+      this.intelDnsCache = new Set(keys);
+    });
+  }
+
   async getDomainIntel(domain) {
     const key = this.getDomainIntelKey(domain);
+
+    if (this.intelDnsCache != null) {
+      if (!this.intelDnsCache.has(key)) {
+        return null;
+      }
+    }
+
     const redisObj = await rclient.hgetallAsync(key);
-    return this.format('dns', domain, redisObj)
+
+    if (this.intelDnsCache != null) {
+      if (!redisObj || Object.keys(redisObj).length === 0) {
+        await intelDnsCacheLock.acquire(LOCK_INTEL_DNS_CACHE, async () => {
+          if (this.intelDnsCache) {
+            this.intelDnsCache.delete(key);
+          }
+        });
+        return null;
+      }
+    }
+    return this.format('dns', domain, redisObj);
   }
 
   async getDomainIntelAll(domain, custom = false) {
@@ -255,7 +297,15 @@ class IntelTool {
     log.debug("Storing intel for domain", domain);
 
     await rclient.hmsetAsync(key, this.redisfy('dns', intel));
-    return rclient.expireAsync(key, expire);
+    const expireResult = await rclient.expireAsync(key, expire);
+    if (this.intelDnsCache != null) {
+      await intelDnsCacheLock.acquire(LOCK_INTEL_DNS_CACHE, async () => {
+        if (this.intelDnsCache) {
+          this.intelDnsCache.add(key);
+        }
+      });
+    }
+    return expireResult;
   }
 
   async urlIntelExists(url) {

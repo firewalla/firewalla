@@ -193,6 +193,8 @@ class Platform {
 
   getPolicyCapacity() {}
 
+  getExceptionCapacity() {}
+
   getAllowCustomizedProfiles(){}
   getRatelimitConfig(){}
 

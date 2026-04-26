@@ -391,12 +391,14 @@ class VPNClient {
   }
 
   async _checkConnectivity(force = false) {
-    if (!this._started || this._restarting || (this._lastStartTime && Date.now() - this._lastStartTime < 70000 && !force)) {
-      if (!this._started) {
-        await this._setCachedState(false);
-      }
+    if (!this._started) {
+      await this._setCachedState(false);
       return;
     }
+    if (this._restarting)
+      return;
+    if (this._lastStartTime && Date.now() - this._lastStartTime < 70000 && !force)
+      return;
     let result = await this._isLinkUp();
     if (result === false) {
       log.error(`VPN client ${this.profileId} underlying link is down.`);
@@ -423,6 +425,11 @@ class VPNClient {
             result = null;
         }
       }
+    }
+    // Re-check after async tests so a stale successful check cannot override stop().
+    if (!this._started) {
+      await this._setCachedState(false);
+      return;
     }
     if (this._restarting)
       return;

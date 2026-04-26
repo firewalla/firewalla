@@ -37,6 +37,8 @@ let FAMILY_DNS = null;
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
+const dns = require('dns');
+const util = require('util');
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const Constants = require('../net2/Constants.js');
@@ -125,6 +127,44 @@ class FamilyProtectPlugin extends Sensor {
         sem.sendEventToFireMain({
           type: 'FAMILY_RESET',
         })
+      });
+      
+      extensionManager.onCmd('familyDnsTest', async (msg, data) => {
+        const maxServers = 10;
+        const maxDomains = 20;
+        // 64 bytes per server (IPv6+port worst case), 253 bytes per domain (RFC 1035 max FQDN)
+        const maxPayloadBytes = maxServers * 64 + maxDomains * 253 + 1000;
+        if (data && JSON.stringify(data).length > maxPayloadBytes)
+          throw new Error(`payload exceeds limit of ${maxPayloadBytes} bytes`);
+        const servers = data && data.servers;
+        const domains = data && data.domains;
+        if (!Array.isArray(servers) || servers.length === 0)
+          throw new Error("servers is required");
+        if (servers.length > maxServers)
+          throw new Error(`servers exceeds limit of ${maxServers}`);
+        if (!Array.isArray(domains) || domains.length === 0)
+          throw new Error("domains is required");
+        if (domains.length > maxDomains)
+          throw new Error(`domains exceeds limit of ${maxDomains}`);
+
+        const testOne = (server, domain) => new Promise((resolve) => {
+          const resolver = new dns.Resolver();
+          resolver.setServers([server]);
+          const resolve4Async = util.promisify(resolver.resolve4.bind(resolver));
+          const timer = setTimeout(() => {
+            resolver.cancel();
+            resolve({ domain, addresses: [], error: 'timeout' });
+          }, 5000);
+          resolve4Async(domain).then(
+            (addresses) => { clearTimeout(timer); resolve({ domain, addresses }); },
+            (err) => { clearTimeout(timer); resolve({ domain, addresses: [], error: err.message }); }
+          );
+        });
+
+        return Promise.all(servers.map(async (server) => {
+          const results = await Promise.all(domains.map(domain => testOne(server, domain)));
+          return { server, results };
+        }));
       });
     }
 

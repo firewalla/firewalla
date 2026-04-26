@@ -752,6 +752,11 @@ module.exports = class DNSMASQ {
                   entries.push(`group-tag=@${tag}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
                   break;
                 }
+                case "bypass": {
+                  entries.push(`group-tag=@${tag}$!${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+
+                  break;
+                }
                 case "allow": {
                   entries.push(`group-tag=@${tag}$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
                   break;
@@ -779,6 +784,10 @@ module.exports = class DNSMASQ {
                 switch (options.action) {
                   case "block": {
                     entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+                    break;
+                  }
+                  case "bypass": {
+                    entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$!${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
                     break;
                   }
                   case "allow": {
@@ -1051,19 +1060,41 @@ module.exports = class DNSMASQ {
   async createCategoryMappingFile(category, ipsets) {
     const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
     const categoryAllowDomainsFile = FILTER_DIR + `/${category}_allow.conf`;
-    await this.writeConfig(categoryBlockDomainsFile, [
+    const blockEntries = [
       `redis-match=/${this._getRedisMatchKey(category, false)}/$${category}_block`,
       `redis-hash-match=/${this._getRedisMatchKey(category, true)}/$${category}_block`,
       `redis-match-high=/${this._getRedisMatchKey(category, false)}/$${category}_block_high`,
       `redis-hash-match-high=/${this._getRedisMatchKey(category, true)}/$${category}_block_high`,
-    ]);
-    await this.writeConfig(categoryAllowDomainsFile, [
+    ];
+    const allowEntries = [
       `redis-match=/${this._getRedisMatchKey(category, false)}/#$${category}_allow`,
       `redis-hash-match=/${this._getRedisMatchKey(category, true)}/#$${category}_allow`,
       `redis-match-high=/${this._getRedisMatchKey(category, false)}/#$${category}_allow_high`,
       `redis-hash-match-high=/${this._getRedisMatchKey(category, true)}/#$${category}_allow_high`,
       `redis-ipset=/${this._getRedisMatchKey(category, false)}/${ipsets.join(',')}$${category}_allow,$${category}_allow_high` // no need to duplicate redis-ipset config in block config file, both use the same ipset and redis set
-    ]);
+    ];
+
+    // Append regex members of the target list as dnsmasq re-match directives.
+    // They bind to the same ${category}_block / ${category}_allow tags, so all
+    // scope/tag/intf/guid plumbing set up by addPolicyCategoryFilterEntry
+    // automatically applies, and cleanup piggybacks on
+    // deletePolicyCategoryFilterEntry removing these files.
+    const CategoryUpdater = require('../../control/CategoryUpdater.js');
+    const categoryUpdater = new CategoryUpdater();
+    try {
+      const regexes = await categoryUpdater.getRegexDomains(category);
+      for (const pattern of regexes) {
+        blockEntries.push(`re-match=/${pattern}/${BLACK_HOLE_IP}$${category}_block`);
+        blockEntries.push(`re-match-high=/${pattern}/${BLACK_HOLE_IP}$${category}_block_high`);
+        allowEntries.push(`re-match=/${pattern}/#$${category}_allow`);
+        allowEntries.push(`re-match-high=/${pattern}/#$${category}_allow_high`);
+      }
+    } catch (err) {
+      log.error(`Failed to load regex entries for category ${category}`, err.message);
+    }
+
+    await this.writeConfig(categoryBlockDomainsFile, blockEntries);
+    await this.writeConfig(categoryAllowDomainsFile, allowEntries);
   }
 
   async deletePolicyCategoryFilterEntry(category) {
@@ -1610,7 +1641,7 @@ module.exports = class DNSMASQ {
       return;
     }
     await NetworkProfile.ensureCreateEnforcementEnv(uuid);
-    const netSet = NetworkProfile.getNetIpsetName(uuid);
+    const netSet = NetworkProfile.getNetListIpsetName(uuid);
     const redirectRule = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT')
       .set(netSet, 'src,src')
       .set(ipset.CONSTANTS.IPSET_NO_DNS_BOOST, 'src,src', true)
@@ -1629,7 +1660,7 @@ module.exports = class DNSMASQ {
       return;
     }
     await NetworkProfile.ensureCreateEnforcementEnv(uuid);
-    const netSet = NetworkProfile.getNetIpsetName(uuid, 6);
+    const netSet = NetworkProfile.getNetListIpsetName(uuid);
     const ip6 = ip6Addrs.find(i => i.startsWith("fe80")) || ip6Addrs[0]; // prefer to use link local address as DNAT address
     const redirectRule = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT')
       .set(netSet, 'src,src')

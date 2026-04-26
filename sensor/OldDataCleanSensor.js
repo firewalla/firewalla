@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,7 +22,6 @@ let Sensor = require('./Sensor.js').Sensor;
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
-const sem = require('./SensorEventManager.js').getInstance();
 const Constants = require('../net2/Constants.js');
 const PolicyManager2 = require('../alarm/PolicyManager2.js')
 const pm2 = new PolicyManager2()
@@ -32,9 +31,6 @@ const em = new ExceptionManager()
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool();
-
-const AlarmManager2 = require('../alarm/AlarmManager2.js');
-const am2 = new AlarmManager2();
 
 const _ = require('lodash');
 
@@ -128,7 +124,6 @@ class OldDataCleanSensor extends Sensor {
   }
 
   async regularClean(fullClean = false) {
-    let wanAuditDropCleaned = false;
     let batch = []
     await rclient.scanAll(null, async (keys) => {
       for (const key of keys) {
@@ -142,15 +137,6 @@ class OldDataCleanSensor extends Sensor {
               } catch(err) {
                 log.error('Error executing customized clean', type, key, err)
               }
-            } else if (type === "auditDrop" && key.startsWith(`audit:drop:${Constants.NS_INTERFACE}:`)) {
-              let cntE = 0;
-              let cntC = 0;
-              if (expireInterval)
-                cntE = await this.cleanByExpireDate(key, Date.now() / 1000 - expireInterval);
-              if (count)
-                cntC = await this.cleanToCount(key, count);
-              if (cntE + cntC > 0)
-                wanAuditDropCleaned = true;
             } else if (type === "api_stats" || type == "dhcp_event") {
               if (expireInterval) {
                 batch.push(['zremrangebyscore', key, "-inf", Date.now() - expireInterval * 1000]);
@@ -179,12 +165,6 @@ class OldDataCleanSensor extends Sensor {
     });
     if (batch.length)
       await rclient.pipelineAndLog(batch)
-    if (wanAuditDropCleaned) {
-      sem.emitLocalEvent({
-        type: "AuditFlowsDrop",
-        suppressEventLogging: false
-      });
-    }
   }
 
   async cleanExceptions() {
@@ -369,6 +349,7 @@ class OldDataCleanSensor extends Sensor {
     if (policyKeys.length == 1 && policyKeys[0] == 'pid') {
       batch.push(
         ['zrem', "policy_active", policy.pid],
+        ['zrem', "active_bypass_policy", policy.pid],
         ['unlink', key],
       )
       log.info("Remove broken policy:", policy.pid);

@@ -32,6 +32,7 @@ class BlockControl {
     this.queuingTimer = null;
     this.queuingTimeout = 5000; // 5 seconds
     this.processingPromise = null;
+    this.needRefreshConnmark = false;
     this.startTS = Date.now()
 
     // Order matters: ipset operations should be applied before iptables rules that may reference sets
@@ -193,6 +194,13 @@ class BlockControl {
       // Enter idle state if no queued rules
       log.verbose('Entering idle state after processing (no queued rules)');
       this.state = 'idle';
+      if (this.needRefreshConnmark) {
+        log.verbose('Refreshing connmark after transferring to idle state');
+        this.refreshConnmark().catch((err) => {
+          log.error(`Failed to refresh connmark`, err.message);
+        });
+        this.needRefreshConnmark = false;
+      }
     }
   }
 
@@ -241,6 +249,20 @@ class BlockControl {
       if (module.flush) {
         module.flush();
       }
+    });
+  }
+
+  scheduleRefreshConnmark() {
+    this.needRefreshConnmark = true;
+  }
+
+  async refreshConnmark() {
+    // use conntrack to clear the first bit of connmark on existing connections
+    await exec(`sudo conntrack -U -m 0x00000000/0x80000000 > /dev/null 2>&1`).catch((err) => {
+      log.verbose(`Failed to clear first bit of connmark on existing IPv4 connections`, err.message);
+    });
+    await exec(`sudo conntrack -U -f ipv6 -m 0x00000000/0x80000000 > /dev/null 2>&1`).catch((err) => {
+      log.verbose(`Failed to clear first bit of connmark on existing IPv6 connections`, err.message);
     });
   }
 }

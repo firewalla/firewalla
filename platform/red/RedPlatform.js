@@ -87,6 +87,10 @@ class RedPlatform extends Platform {
     return 1000;
   }
 
+  getExceptionCapacity() {
+    return 1000;
+  }
+
   isFireRouterManaged() {
     return false;
   }

@@ -1,4 +1,4 @@
-/*    Copyright 2021-2025 Firewalla Inc.
+/*    Copyright 2021-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,7 +24,6 @@ const zlib = require('zlib');
 const extensionManager = require('./ExtensionManager.js')
 const rclient = require('../util/redis_manager').getRedisClient();
 const deflateAsync = util.promisify(zlib.deflate);
-const sem = require('./SensorEventManager.js').getInstance();
 const delay = require('../util/util.js').delay;
 const SPLIT_STRING = "\n";
 const platform = require('../platform/PlatformLoader.js').getPlatform();
@@ -50,17 +49,6 @@ class FlowCompressionSensor extends Sensor {
 
   async run() {
     this.hookFeature(featureName);
-    sem.on('AuditFlowsDrop', async () => {
-      if (!this.featureOn) {
-        return
-      }
-      // re-build wanBlock compressed flows
-      try {
-        await this.buildWanBlockCompressedFlows();
-      } catch (e) {
-        log.warn("re-build wanBlock compressed flows error", e)
-      }
-    })
   }
 
 

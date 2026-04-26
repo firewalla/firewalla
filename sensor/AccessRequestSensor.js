@@ -18,9 +18,24 @@
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 const extensionManager = require('./ExtensionManager.js');
-const AccessRequestManager = require('../alarm/AccessRequestManager.js');
+const { getInstance: getAccessRequestManager, getUserRelatedTags, getAppsFromPolicy } = require('../alarm/AccessRequestManager.js');
+const LOCK_BYPASS_RULE_UPDATE = "LOCK_BYPASS_RULE_UPDATE";
+const _ = require('lodash');
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const sem = require('./SensorEventManager.js').getInstance();
+const rclient = require('../util/redis_manager.js').getRedisClient();
+const PolicyManager2 = require('../alarm/PolicyManager2.js');
+const pm2 = new PolicyManager2();
+const Policy = require('../alarm/Policy.js');
+const Constants = require('../net2/Constants.js');
 
 class AccessRequestSensor extends Sensor {
+  constructor(config) {
+    super(config);
+    this.tagManager = require('../net2/TagManager.js');;
+  }
+
   apiRun() {
     extensionManager.onCmd('approveAccessRequest', async (msg, data) => {
       const requestId = data && data.requestId;
@@ -38,7 +53,7 @@ class AccessRequestSensor extends Sensor {
         }
         approvedQuota = num;
       }
-      const result = await AccessRequestManager.getInstance().approveRequest(requestId, approvedQuota);
+      const result = await getAccessRequestManager().approveRequest(requestId, approvedQuota);
       if (!result.ok) {
         throw { code: 400, msg: result.error || 'Failed to approve' };
       }
@@ -51,7 +66,7 @@ class AccessRequestSensor extends Sensor {
         throw { code: 400, msg: 'requestId is required' };
       }
       const reason = data && data.reason;
-      const result = await AccessRequestManager.getInstance().denyRequest(requestId, reason);
+      const result = await getAccessRequestManager().denyRequest(requestId, reason);
       if (!result.ok) {
         throw { code: 400, msg: result.error || 'Failed to deny' };
       }
@@ -70,7 +85,7 @@ class AccessRequestSensor extends Sensor {
       if (options.userId) {
         filterOpts.userId = new Set([options.userId]);
       }
-      const result = await AccessRequestManager.getInstance().listAllRequests(filterOpts);
+      const result = await getAccessRequestManager().listAllRequests(filterOpts);
       return result;
     });
   }
