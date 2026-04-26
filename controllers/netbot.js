@@ -3431,6 +3431,14 @@ class netBot extends ControllerBot {
         log.info('host:delete', hostMac);
         const macExists = await hostTool.macExists(hostMac);
         if (macExists) {
+          const dapSensor = sl.getSensor('DapSensor');
+          if (dapSensor) {
+            const dapResult = await dapSensor.apiCall("POST", `/reset-dap/${hostMac}`);
+            if (dapResult.code !== 200) {
+              log.warn(`Failed to reset DAP for ${hostMac}`, dapResult.msg || dapResult.code);
+            }
+          }
+
           (async () => {
             await pm2.deleteMacRelatedPolicies(hostMac);
             await em.deleteMacRelatedExceptions(hostMac);
@@ -3452,14 +3460,6 @@ class netBot extends ControllerBot {
               "monitor:flow:" + hostMac,
               "monitor:large:" + hostMac,
             ]);
-
-            // Clean up DAP resources (category + conf files) for the deleted device
-            const dapSensor = sl.getSensor('DapSensor');
-            if (dapSensor) {
-              await dapSensor.apiCall("POST", `/reset-dap/${hostMac}`).catch((err) => {
-                log.warn(`Failed to reset DAP for ${hostMac}`, err.message);
-              });
-            }
           })().catch((err) => {
             log.error(`Failed to delete information of host ${hostMac}`, err);
           });

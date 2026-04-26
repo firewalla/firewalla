@@ -166,7 +166,6 @@ class BroDetect {
 
     let c = require('./MessageBus.js');
     this.publisher = new c();
-    this._needRefresh = false;
 
     this.flowstash = {
       conn: { keys: new Set(['flow:conn:system']), ignore: {} },
@@ -231,14 +230,6 @@ class BroDetect {
           this.activeLongConns.delete(uid)
       }
     }, 60 * 1000)
-
-    setInterval(async () => {
-      if (this._needRefresh) {
-        log.info("refreshing connmark for updated ipsets");
-        await this.scheduleRefreshConnmark();
-        this._needRefresh = false;
-      }
-    }, CONNMARK_REFRESH_INTERVAL);
   }
 
   async _activeMacHeartbeat() {
@@ -2119,19 +2110,6 @@ class BroDetect {
     if (this.outportarray.length > maxsize) {
       this.outportarray.shift();
     }
-  }
-  async scheduleRefreshConnmark() {
-    if (this._refreshConnmarkTimeout)
-      clearTimeout(this._refreshConnmarkTimeout);
-    this._refreshConnmarkTimeout = setTimeout(async () => {
-      // use conntrack to clear the first bit of connmark on existing connections
-      await exec(`sudo conntrack -U -m 0x00000000/0x80000000 > /dev/null 2>&1`).catch((err) => {
-        // log.warn(`Failed to clear first bit of connmark on existing IPv4 connections`, err.message);
-      });
-      await exec(`sudo conntrack -U -f ipv6 -m 0x00000000/0x80000000 > /dev/null 2>&1`).catch((err) => {
-        // log.warn(`Failed to clear first bit of connmark on existing IPv6 connections`, err.message);
-      });
-    }, 5000);
   }
 }
 

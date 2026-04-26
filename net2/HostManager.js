@@ -726,8 +726,11 @@ module.exports = class HostManager extends Monitorable {
       extdata['portforward'] = portforwardConfig;
 
     const fpp = await sensorLoader.initSingleSensor('FamilyProtectPlugin');
-    const familyConfig = await fpp.getFamilyConfig()
-    if (familyConfig) extdata.family = familyConfig
+    const familyConfig = await fpp.getFamilyConfig();
+    log.debug(`FamilyConfig: ${JSON.stringify(familyConfig)}`);
+    const effectiveServers = familyConfig && familyConfig.servers && familyConfig.servers.length > 0
+      ? familyConfig.servers : await fpp.familyDnsAddr();
+    extdata.family = Object.assign({}, familyConfig, { servers: effectiveServers });
 
     const ruleStatsPlugin = await sensorLoader.initSingleSensor('RuleStatsPlugin');
     const initTs = await ruleStatsPlugin.getFeatureFirstEnabledTimestamp();
@@ -1021,7 +1024,7 @@ module.exports = class HostManager extends Monitorable {
     for (const rule of rules) {
       if (rule.action == 'screentime') {
         screentimeRules.push(rule)
-      } else {
+      } else if (rule.action != "bypass") {
         policyRules.push(rule)
       }
     }
@@ -2204,10 +2207,24 @@ module.exports = class HostManager extends Monitorable {
         });
       }
       await this.setupDefaultQosAutoRules();
+      await this.setupDscpOverride();
       await platform.switchQoS(state, qdisc);
     } 
   }
 
+  async setupDscpOverride() {
+    const qosConfs = await this.getQosConfs();
+    let op = '-D';
+    if (qosConfs && qosConfs.state === true && qosConfs.enableDscpOverride === true) {
+      op = '-A';
+    }
+
+    let rule = new Rule("mangle").chn("FW_POSTROUTING")
+      .jmp(`FW_POSTROUTING_DSCP_OVERRIDE`);
+    iptc.addRule(rule.opr(op));
+    let rule6 = rule.clone().fam(6);
+    iptc.addRule(rule6.opr(op));
+  }
 
   async setupDefaultQosAutoRules() {
     const qosConfs = await this.getQosConfs();

@@ -837,6 +837,10 @@ module.exports = class {
   }
 
   async hasRelatedAppTimeUsage(alarm) {
+    const CHECK_TYPES = ["ALARM_VIDEO", "ALARM_GAME"];
+    if (!CHECK_TYPES.includes(alarm.type)) {
+      return true;
+    }
     const appId = alarm['p.dest.app.id'];
     if (!appId) {
       return true;

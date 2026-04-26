@@ -319,9 +319,12 @@ cat << EOF > "$filter_file"
 
 # drop INVALID packets
 -A FW_FORWARD -m conntrack --ctstate INVALID -m set --match-set c_lan_set src,src -j FW_WAN_INVALID_DROP
-# high percentage to bypass firewall rules if the packet belongs to an accepted flow
+# accept non-HTTP/HTTPS tcp/udp packets that belongs to an accepted flow
+-A FW_FORWARD -p udp -m udp ! --dport 443 -m connmark --mark 0x80000000/0x80000000 -j ACCEPT
+-A FW_FORWARD -p tcp -m tcp ! --dport 443 -m tcp ! --dport 80 -m connmark --mark 0x80000000/0x80000000 -j ACCEPT
+# for non-tcp/udp or tcp/udp HTTP/HTTPS packets, high percentage to bypass firewall rules if the packet belongs to an accepted flow
+-A FW_FORWARD -m connbytes --connbytes 7 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
 # set the highest bit in connmark by default, if the connection is blocked, the bit will be cleared before DROP
--A FW_FORWARD -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
 # only set once for NEW connection, for packets that may not fall into FW_ACCEPT_DEFAULT, this rule will set the bit, e.g., rules in FW_UPNP_ACCEPT created by miniupnpd
 -A FW_FORWARD -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x80000000/0x80000000
 
@@ -725,7 +728,6 @@ cat << EOF
 -A FW_POSTROUTING -j CONNMARK --restore-mark --mask 0x3FFF0000
 
 -N FW_POSTROUTING_DSCP_OVERRIDE
--A FW_POSTROUTING -j FW_POSTROUTING_DSCP_OVERRIDE
 
 EOF
 
@@ -760,7 +762,7 @@ create_qos_chains() {
 {
 cat << EOF
 # do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already established before
--A FW_FORWARD -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_QOS_PROBABILITY -j RETURN
+-A FW_FORWARD -m connbytes --connbytes 7 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_QOS_PROBABILITY -j RETURN
 
 # qos chain for App Disturb feature which is not controlled by FW_QOS_SWITCH
 -N FW_DISTURB_QOS

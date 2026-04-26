@@ -213,12 +213,12 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     await NetworkProfile.ensureCreateEnforcementEnv(m.getUniqueId())
 
     const ruleBase = new Rule('nat').chn(NTP_CHAIN)
-      .set(NetworkProfile.getNetIpsetName(m.getUniqueId()), 'src,src')
+      .set(NetworkProfile.getNetListIpsetName(m.getUniqueId()), 'src,src')
     const ruleEnable = ruleBase.clone().jmp(NTP_CHAIN_DNAT)
     const ruleDisable = ruleBase.clone().jmp('RETURN')
 
     const ruleBase6 = new Rule('nat').chn(NTP_CHAIN).fam(6)
-      .set(NetworkProfile.getNetIpsetName(m.getUniqueId(), 6), 'src,src')
+      .set(NetworkProfile.getNetListIpsetName(m.getUniqueId()), 'src,src')
     const ruleEnable6 = ruleBase6.clone().jmp(NTP_CHAIN_DNAT)
     const ruleDisable6 = ruleBase6.clone().jmp('RETURN')
 
