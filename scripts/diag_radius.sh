@@ -11,6 +11,8 @@ VERBOSE=""
 IMAGE=""
 RELEASE_CODE=""
 
+RUNNING=false
+
 function error() {
     echo -e "\033[0;31m$1\033[0m"
 }
@@ -27,6 +29,10 @@ function debug() {
     if [ "$VERBOSE" == "true" ]; then
         echo -e "\033[0;34m$1\033[0m"
     fi
+}
+
+function info() {
+    echo -e "\033[0;35m$1\033[0m"
 }
 
 function get_release_code() {
@@ -137,9 +143,9 @@ function check_radius_assets() {
 
         # check if customized certificates are present
         if [ -f "/home/pi/.firewalla/config/freeradius/certs" ]; then
-            success "OK: customized certificates are present"
+            warn "OK: customized certificates are present"
         else
-            error "Error: customized certificates are not present"
+            warn "OK: customized certificates are not present"
             local cmd="ls -l /home/pi/.firewalla/config/freeradius/certs"
             debug "$cmd"
             eval $cmd
@@ -211,7 +217,7 @@ function check_radius_configure() {
     if [[ -z "$policy" || "$policy" == "null" ]]; then
         warn "Warn: Freeradius policy is not set"
     else
-        success "OK: Freeradius policy is set"
+        success "OK: Freeradius policy already set"
         SECRET=$(echo "$policy" | jq -rc '.radius.options.secret' 2>/dev/null || echo "")
         CLIENTS=$(echo "$policy" | jq -rc '.radius.clients[].ipaddr' 2>/dev/null || echo "")
         TAGS=$(redis-cli keys policy:tag:* | xargs -I {} bash -c 'printf "%s %s\n" {} $(redis-cli hget {} freeradius_server)' | grep -v '^$')
@@ -236,21 +242,26 @@ function check_radius_server_status() {
     fi
 
     if sudo docker ps -q -f "name=freeradius_freeradius_1" | grep -q .; then
+        RUNNING=true
         if [ "$enabled" == "1" ]; then
             success "OK: Freeradius container is running."
             check_radius_assets
             check_radius_configure
         else
             error "Error: Freeradius feature is disabled but container is running"
-            exit 1
+            check_radius_assets
+            check_radius_configure
+            # exit 1
         fi
     else
         if [ "$enabled" == "1" ]; then
             error "Freeradius feature is enabled but container is not running"
             check_radius_assets
+            check_radius_configure
         else
-            success "OK: Freeradius container is running"
+            success "OK: Freeradius container not running"
             sudo docker ps  -f "name=freeradius_freeradius_1"
+            check_radius_configure
         fi
     fi
 }
@@ -337,13 +348,21 @@ function check_clients_config() {
     echo "######### Checking Radius Client Config ###############"
     echo
     echo "clients.conf"
-    sudo docker exec -it freeradius_freeradius_1 sed -n '/#  i.e. The entry from the smallest possible network./,/#############/p' clients.conf | head -n -1
+    # sudo docker exec freeradius_freeradius_1 sed -n '/#  i.e. The entry from the smallest possible network./,/#############/p' clients.conf | head -n -1
+    clients_conf=$(sudo docker exec freeradius_freeradius_1 cat /etc/freeradius/clients.conf | grep -v '^[[:space:]]*#' |  grep -v '^[[:space:]]*$')
+    info "clients_conf: $clients_conf"
 
     get_platform
     get_board_name
     if [[ "$PLATFORM" == "orange" || "$BOARD_NAME" == "orange" ]]; then
         warn "Orange platform detected"
-        sudo docker exec -it freeradius_freeradius_1 sed -n '/client localhost {/,/# IPv6 Client/p' clients.conf | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'
+        local local_secret=$(echo "$clients_conf" | grep -A 5 "localhost {" | grep -oP 'secret\s*=\s*\K.*')
+        if [ "$local_secret" != "$SECRET" ]; then
+            error "Error: local_secret does not match policy $SECRET"
+        else
+            success "OK: local_secret matches policy $SECRET"
+        fi
+        # sudo docker exec freeradius_freeradius_1 sed -n '/client localhost {/,/# IPv6 Client/p' clients.conf | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'
     fi
 }
 
@@ -352,10 +371,12 @@ function check_user_config() {
     echo "######### Checking Radius User Config ###############"
     echo
     echo "wpa3/users"
-    sudo docker exec -it freeradius_freeradius_1 cat /etc/freeradius/wpa3/users
+    users_config=$(sudo docker exec freeradius_freeradius_1 cat /etc/freeradius/wpa3/users)
+    info "users_config: $users_config"
     echo
     echo "wpa3/users-policy"
-    sudo docker exec -it freeradius_freeradius_1 cat /etc/freeradius/wpa3/users-policy
+    users_policy_config=$(sudo docker exec freeradius_freeradius_1 cat /etc/freeradius/wpa3/users-policy)
+    info "users_policy_config: $users_policy_config"
 }
 
 function check_eap_config() {
@@ -363,12 +384,17 @@ function check_eap_config() {
     echo "######### Checking Radius Client Config ###############"
     echo
     echo "mods-available/eap"
-    sudo docker exec -it freeradius_freeradius_1 sed -n '/tls-config tls-common {/,/#  Client certificates can be validated via an/p' mods-available/eap | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'
+    # sudo docker exec freeradius_freeradius_1 sed -n '/tls-config tls-common {/,/#  Client certificates can be validated via an/p' mods-available/eap | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'
+    eap_config=$(sudo docker exec freeradius_freeradius_1 cat /etc/freeradius/mods-available/eap | grep -v '^[[:space:]]*#' |  grep -v '^[[:space:]]*$')
+    info "eap_config: $eap_config"
     echo
 
 }
 
 function check_container_config() {
+    if [[ "$RUNNING" != "true" ]]; then
+        return
+    fi
     check_clients_config
     check_user_config
     check_eap_config
@@ -396,9 +422,13 @@ function check_radius_log() {
     echo '/home/pi/.forever/freeradius/radacct'
     if [ -d "/home/pi/.forever/freeradius/radacct" ]; then
         if [ "$SSID" != "" ]; then
-            find /home/pi/.forever/freeradius/radacct -type f -exec grep -i "$SSID" {} + 2>/dev/null | tail -n 10
+            find /home/pi/.forever/freeradius/radacct -type f -exec grep -i "$SSID" {} + 2>/dev/null | tail -n 10 | while IFS= read -r line; do
+            info "$line"
+        done
         else
-            find /home/pi/.forever/freeradius/radacct -type f -exec grep -i "acct_status_type" {} + 2>/dev/null | tail -n 10
+            find /home/pi/.forever/freeradius/radacct -type f -exec grep -i "acct_status_type" {} + 2>/dev/null | tail -n 10 | while IFS= read -r line; do
+                info "$line"
+            done
         fi
     fi
 }

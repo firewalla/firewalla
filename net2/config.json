@@ -1,5 +1,5 @@
 {
-  "version": 1.982,
+  "version": 1.983,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -48,7 +48,15 @@
     "notification.box_offline.threshold": 900,
     "notification.resend.duration": 86400,
     "notification.resend.maxcount": 50,
-    "alarm.sshPwdGuess.cooldown": 3600
+    "alarm.sshPwdGuess.cooldown": 3600,
+    "monitor.tick": 900,
+    "monitor.window": 14400,
+    "monitor.neighbor.max": 20,
+    "policy.category.init_wait": 120,
+    "host.active": 604800,
+    "host.redis.mackey.expire": 31536000,
+    "host.redis.ip4key.expire": 2592000,
+    "host.redis.ip6key.expire": 345600
   },
   "secondaryInterface": {
     "intf": "eth0:0",
@@ -138,7 +146,8 @@
     "Iperf3Sensor": {},
     "DeviceMonitorSensor": {},
     "DapSensor": {},
-    "ResourcePlugin": {}
+    "ResourcePlugin": {},
+    "AccessRequestSensor": {}
   },
   "intels": [
     "DeviceInfoIntel",
@@ -171,7 +180,8 @@
         "_raop", "_sleep-proxy", "_remotepairing", "_remotepairing-tunnel", "_apple-mobdev2",
         "_asquic", "_dacp", "_spotify-connect", "_spotify-social-listening", "_trel"
       ],
-      "ignoreNames": []
+      "ignoreNames": [],
+      "expire": 2592000
     },
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
@@ -481,7 +491,10 @@
     "DeviceNameUpdateSensor": {},
     "DeviceIdentificationSensor": {
       "intervalListCheck": 86400,
-      "interval": 3600
+      "interval": 3600,
+      "expire": {
+        "bonjour": 2592000
+      }
     },
     "IPv6DiscoverySensor": {},
     "NetworkMonitorSensor": {
@@ -693,6 +706,10 @@
       "sigDetectedServers": {
         "expires": 86400,
         "count": 10000
+      },
+      "ntp_off_set": {
+        "expires": 86400,
+        "count": 1000
       },
       "flow_domain:": {
         "count": 200
@@ -1059,6 +1076,7 @@
     "dnsmasq_log_allow": true,
     "dnsmasq_log_allow_redis": false,
     "dns_flow": true,
+    "dns_flow_record": false,
     "digitalfence": false,
     "compress_flows": false,
     "rekey": false,
@@ -1077,10 +1095,12 @@
     "policy_disturb": true,
     "dap": false,
     "dap_bg_task": true,
-    "record_activity_flow": false
+    "record_activity_flow": false,
+    "alarm_skip_device_info_enrich": false
   },
   "hiddenFeatures": [
-    "naughty_monkey"
+    "naughty_monkey",
+    "alarm_skip_device_info_enrich"
   ],
   "pubKeys": [],
   "firerouter": {

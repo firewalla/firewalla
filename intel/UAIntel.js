@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -29,8 +29,8 @@ class UAIntel extends Intel {
     if (src && dst) {
       try {
         let uaInfo = await intelTool.getUserAgent(src, dst, dstPort);
-        log.info("Get user agent info of " + src + "->" + dst + ":" + dstPort + ": " + uaInfo);
         if (uaInfo) {
+          log.verbose("Got user agent info of " + src + "->" + dst + ":" + dstPort + ": " + uaInfo);
           alarm["e.userAgent"] = uaInfo;
         }
       } catch (err) {

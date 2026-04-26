@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,6 +24,7 @@ const TagManager = require('../net2/TagManager.js');
 const { Rule } = require('../net2/Iptables.js');
 const fireRouter = require('../net2/FireRouter.js');
 const ipset = require('../net2/Ipset.js');
+const iptc = require('../control/IptablesControl.js');
 const fwapc = require('../net2/fwapc.js');
 const Identity = require('../net2/Identity.js');
 const Host = require('../net2/Host.js');
@@ -73,24 +74,24 @@ class APFeaturesPlugin extends Sensor {
     log.info("applyApControl", op);
     const netRule = new Rule("filter").chn("FW_FIREWALL_NET_ISOLATION").comment("network ap acl off").jmp("RETURN");
     const netRule6 = netRule.clone().fam(6);
-    await netRule.exec(op).catch((err) => { log.warn(err.message) });
-    await netRule6.exec(op).catch((err) => { log.warn(err.message) });
+    iptc.addRule(netRule.opr(op));
+    iptc.addRule(netRule6.opr(op));
 
     const groupRule = new Rule("filter").chn("FW_FIREWALL_DEV_G_ISOLATION").comment("group ap acl off").jmp("RETURN");
     const groupRule6 = groupRule.clone().fam(6);
-    await groupRule.exec(op).catch((err) => {  log.warn(err.message) });
-    await groupRule6.exec(op).catch((err) => {  log.warn(err.message) });
+    iptc.addRule(groupRule.opr(op));
+    iptc.addRule(groupRule6.opr(op));
 
     const deviceRule = new Rule("filter").chn("FW_FIREWALL_DEV_ISOLATION").comment("device ap acl off").jmp("RETURN");
     const deviceRule6 = deviceRule.clone().fam(6);
-    await deviceRule.exec(op).catch((err) => {  log.warn(err.message) });
-    await deviceRule6.exec(op).catch((err) => {  log.warn(err.message) });
+    iptc.addRule(deviceRule.opr(op));
+    iptc.addRule(deviceRule6.opr(op));
 
     // handle acl rules to intranet in box
     const monitoredNetRule =new Rule("filter").chn("FW_DROP").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst").comment("ap acl off").jmp("RETURN");
     const monitoredNetRule6 = monitoredNetRule.clone().fam(6);
-    await monitoredNetRule.exec(op).catch((err) => {  log.warn(err.message) });
-    await monitoredNetRule6.exec(op).catch((err) => {  log.warn(err.message) });
+    iptc.addRule(monitoredNetRule.opr(op));
+    iptc.addRule(monitoredNetRule6.opr(op));
   }
 
   async _aclAps(acloff=false) {
@@ -109,7 +110,7 @@ class APFeaturesPlugin extends Sensor {
     }
   }
 
-   _setApAcl(config, op) {
+  _setApAcl(config, op) {
     if (!config.apc || !config.apc.assets || !_.isObject(config.apc.assets)) {
       log.error("Failed to get assets in apc config");
       return;
@@ -164,22 +165,22 @@ class APFeaturesPlugin extends Sensor {
       const opInternal = policy.internal ? "-A" : "-D";
       
       // add LOG rule before DROP rule
-      await ruleTxLog.exec(op).catch((err) => { });
-      await ruleTx.exec(op).catch((err) => { });
-      await ruleTxLog6.exec(op).catch((err) => { });
-      await ruleTx6.exec(op).catch((err) => { });
-      await ruleRxLog.exec(op).catch((err) => { });
-      await ruleRx.exec(op).catch((err) => { });
-      await ruleRxLog6.exec(op).catch((err) => { });
-      await ruleRx6.exec(op).catch((err) => { });
-      await ruleInternalLog.exec(opInternal).catch((err) => { });
-      await ruleInternal.exec(opInternal).catch((err) => { });
-      await ruleInternalLog6.exec(opInternal).catch((err) => { });
-      await ruleInternal6.exec(opInternal).catch((err) => { });
+      iptc.addRule(ruleTxLog.opr(op));
+      iptc.addRule(ruleTx.opr(op));
+      iptc.addRule(ruleTxLog6.opr(op));
+      iptc.addRule(ruleTx6.opr(op));
+      iptc.addRule(ruleRxLog.opr(op));
+      iptc.addRule(ruleRx.opr(op));
+      iptc.addRule(ruleRxLog6.opr(op));
+      iptc.addRule(ruleRx6.opr(op));
+      iptc.addRule(ruleInternalLog.opr(opInternal));
+      iptc.addRule(ruleInternal.opr(opInternal));
+      iptc.addRule(ruleInternalLog6.opr(opInternal));
+      iptc.addRule(ruleInternal6.opr(opInternal));
 
       await lock.acquire(LOCK_FWAPC_ISOLATION, async () => {
         await fwapc.setGroup(tagUid, {config: {isolation: {internal: policy.internal || false, external: policy.external || false}}}).catch((err) => {});
-       }).catch((err) => {
+      }).catch((err) => {
         log.error("Failed to sync fwapc isolation", err.message);
       });
     }
@@ -187,8 +188,8 @@ class APFeaturesPlugin extends Sensor {
     if (obj instanceof NetworkProfile) {
       const uuid = obj.getUniqueId();
       await obj.constructor.ensureCreateEnforcementEnv(uuid);
-      const set4Name = NetworkProfile.getNetIpsetName(uuid, 4);
-      const set6Name = NetworkProfile.getNetIpsetName(uuid, 6);
+      const set4Name = NetworkProfile.getNetListIpsetName(uuid);
+      const set6Name = NetworkProfile.getNetListIpsetName(uuid);
       const rule = new Rule("filter").chn("FW_FIREWALL_NET_ISOLATION").mdl("conntrack", "--ctdir ORIGINAL").jmp("FW_PLAIN_DROP");
       const ruleLog = new Rule("filter").chn("FW_FIREWALL_NET_ISOLATION").mdl("conntrack", "--ctdir ORIGINAL").jmp(`LOG --log-prefix "[FW_ADT]A=I N=${uuid.substring(0, 8)} "`);
 
@@ -203,20 +204,20 @@ class APFeaturesPlugin extends Sensor {
         const ruleInternal = rule.clone().fam(fam).set(setName, "src,src").set(setName, "dst,dst");
         const ruleInternalLog = ruleLog.clone().fam(fam).set(setName, "src,src").set(setName, "dst,dst");
 
-        await ruleTxLog.exec(op).catch((err) => {});
-        await ruleTx.exec(op).catch((err) => {});
-        await ruleRxLog.exec(op).catch((err) => {});
-        await ruleRx.exec(op).catch((err) => {});
-        await ruleInternalLog.exec(opInternal).catch((err) => {});
-        await ruleInternal.exec(opInternal).catch((err) => {});
+        iptc.addRule(ruleTxLog.opr(op));
+        iptc.addRule(ruleTx.opr(op));
+        iptc.addRule(ruleRxLog.opr(op));
+        iptc.addRule(ruleRx.opr(op));
+        iptc.addRule(ruleInternalLog.opr(opInternal));
+        iptc.addRule(ruleInternal.opr(opInternal));
       }
       // there is no ap level API for network isolation, directly set isolation in wifiNetworks in apc config instead
     }
 
     if (obj instanceof Host || obj instanceof Identity) {
       await obj.constructor.ensureCreateEnforcementEnv(obj.getUniqueId());
-      const set4Name = obj instanceof Host ? Host.getDeviceSetName(obj.getUniqueId()) : obj.getEnforcementIPsetName(obj.getUniqueId(), 4);
-      const set6Name = obj instanceof Host ? set4Name : obj.getEnforcementIPsetName(obj.getUniqueId(), 6);
+      const set4Name = obj instanceof Host ? Host.getDeviceSetName(obj.getUniqueId()) : obj.constructor.getEnforcementIPsetName(obj.getUniqueId(), 4);
+      const set6Name = obj instanceof Host ? set4Name : obj.constructor.getEnforcementIPsetName(obj.getUniqueId(), 6);
       const rule = new Rule("filter").chn("FW_FIREWALL_DEV_ISOLATION").mdl("conntrack", "--ctdir ORIGINAL").jmp("FW_PLAIN_DROP");
       const ruleLog = new Rule("filter").chn("FW_FIREWALL_DEV_ISOLATION").mdl("conntrack", "--ctdir ORIGINAL").jmp(`LOG --log-prefix "[FW_ADT]A=I "`);
 
@@ -227,10 +228,10 @@ class APFeaturesPlugin extends Sensor {
         const ruleTxLog = ruleLog.clone().fam(fam).set(setName, "src,src").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst");
         const ruleRx = rule.clone().fam(fam).set(setName, "dst,dst").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src");
         const ruleRxLog = ruleLog.clone().fam(fam).set(setName, "dst,dst").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src");
-        await ruleTxLog.exec(op).catch((err) => {});
-        await ruleTx.exec(op).catch((err) => {});
-        await ruleRxLog.exec(op).catch((err) => {});
-        await ruleRx.exec(op).catch((err) => {});
+        iptc.addRule(ruleTxLog.opr(op));
+        iptc.addRule(ruleTx.opr(op));
+        iptc.addRule(ruleRxLog.opr(op));
+        iptc.addRule(ruleRx.opr(op));
       }
 
       await lock.acquire(LOCK_FWAPC_ISOLATION, async () => {

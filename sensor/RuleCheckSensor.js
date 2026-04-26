@@ -1,4 +1,4 @@
-/*    Copyright 2020-2024 Firewalla Inc.
+/*    Copyright 2020-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,6 +28,7 @@ const {Address4, Address6} = require('ip-address');
 const Constants = require('../net2/Constants.js');
 const _ = require('lodash');
 
+// prevents common IP (that shares between domains) being removed from global sets
 class RuleCheckSensor extends Sensor {
   constructor(config) {
     super(config);

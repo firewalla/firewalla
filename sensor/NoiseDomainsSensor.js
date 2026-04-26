@@ -20,14 +20,14 @@ const Sensor = require('./Sensor.js').Sensor;
 
 const _ = require('lodash');
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const sclient = require('../util/redis_manager.js').getSubscriptionClient();
-const Message = require('../net2/Message.js');
 const Constants = require('../net2/Constants.js');
-const bone = require("../lib/Bone.js");
 const { BloomFilter } = require('../vendor_lib/bloomfilter.js');
-const SysManager = require('../net2/SysManager.js');
 const CLOUD_CONFIG_KEY = Constants.REDIS_KEY_NOISE_DOMAIN_CLOUD_CONFIG;
-const CronJob = require('cron').CronJob;
+const cc = require('../extension/cloudcache/cloudcache.js');
+const fsp = require('fs').promises;
+const f = require('../net2/Firewalla.js');
+const cacheFolder = `${f.getRuntimeInfoFolder()}/cache`;
+const hashKey = "noise_domain";
 
 class NoiseDomainsSensor extends Sensor {
   async run() {
@@ -40,53 +40,49 @@ class NoiseDomainsSensor extends Sensor {
   
   async init() {
     this.bloomfilter = null;
-    await this.reloadDomains(true);
-    await this.scheduleUpdateConfigCronJob();
-    sclient.on("message", async (channel, message) => {
-      if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
-        log.info("System timezone is reloaded, will reschedule update config cron job ...");
-        await this.scheduleUpdateConfigCronJob();
+    await cc.enableCache(hashKey, (data) => {
+      if (data) {
+        this.loadNoiseDomainBFData(data);
+      } else {
+        log.error("No valid bf data. Delete url bf cache data.");
+        this.deleteNoiseDomainBFData();
       }
     });
-    sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
+    await this.removeLegacyNoiseBFfromRedis();
   }
 
-  async scheduleUpdateConfigCronJob() {
-    if (this.reloadJob)
-      this.reloadJob.stop();
-    if (this.reloadTimeout)
-      clearTimeout(this.reloadTimeout);
-    const tz = SysManager.getTimezone();
-    this.reloadJob = new CronJob("30 23 * * *", async () => { // pull cloud config once every day, the request is sent between 23:30 to 00:00 to avoid calling cloud at the same time
-      const delayMins = Math.random() * 30;
-      this.reloadTimeout = setTimeout(async () => {
-        await this.reloadDomains(true).catch((err) => {
-          log.error(`Failed to load noise domains from cloud `, err.message);
-        });
-      }, delayMins * 60 * 1000);
-    }, () => { }, true, tz);
-  }
-
-  async reloadDomains(forceReload = false) {
+  async loadNoiseDomainBFData(content) {
     try {
-      let bf_content = await rclient.getAsync(CLOUD_CONFIG_KEY).then(result => result && JSON.parse(result)).catch(err => null);
-      if (_.isEmpty(bf_content) || forceReload) {
-        let cloud_bf_content = await bone.hashsetAsync(Constants.REDIS_KEY_NOISE_DOMAIN_CONFIG).then(result => result && JSON.parse(result)).catch((err) => null);
-        if (!_.isEmpty(cloud_bf_content) && _.isObject(cloud_bf_content)) {
-          await rclient.setAsync(CLOUD_CONFIG_KEY, JSON.stringify(cloud_bf_content));
-          bf_content = cloud_bf_content;
-        }
-      }
-      if(!_.isEmpty(bf_content) && _.isObject(bf_content)) {
-        this.bloomfilter = new BloomFilter(this._decodeArrayOfIntBase64(bf_content.buckets), bf_content.k);
-      }else{
-        log.warn(`No noise domain config found in cloud, will not load noise domains.`);
-      }
+      if (typeof content !== 'string' || !content.trim()) return;
+      const { buckets, k } = JSON.parse(content);
+      if (buckets == null || k == null) return;
+      this.bloomfilter = new BloomFilter(this._decodeArrayOfIntBase64(buckets), k);
+      log.info('Loaded noise domain bloom filter successfully.');
     } catch (err) {
-      log.error(`Failed to load noise domain config from cloud`, err.message);
+      log.error('Failed to load noise domain bloom filter, err:', err);
     }
   }
- 
+
+  async loadLocalNoiseDomainData4Test() {
+    this.bloomfilter = null;
+    const noiseDomainDataFile = `${cacheFolder}/${hashKey}`;
+    const content = await fsp.readFile(noiseDomainDataFile, 'utf8');
+    if (content) {
+      this.loadNoiseDomainBFData(content);
+    } else {
+      log.error(`No valid noise domain data found in ${noiseDomainDataFile}.`);
+      return;
+    }
+  }
+
+  deleteNoiseDomainBFData() {
+    this.bloomfilter = null;
+  }
+
+  async removeLegacyNoiseBFfromRedis() {
+    await rclient.delAsync(CLOUD_CONFIG_KEY);
+  }
+
   _decodeArrayOfIntBase64(s) {
     const buf = Buffer.from(s, 'base64');
     const arr = [];

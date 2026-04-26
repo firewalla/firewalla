@@ -193,7 +193,19 @@ class LiveStatsPlugin extends Sensor {
       if (queries && queries.throughput) {
         switch (type) {
           case 'host': {
-            const result = await this.getDeviceThroughput(target)
+            const switchMap = await fwapc.getSwitchStatus();
+            let result;
+            if (switchMap && switchMap[target] !== undefined) {
+              const st = switchMap[target];
+              if (this.isSwitchStatusOnline(st)) {
+                result = await this.getSwitchThroughput(target, cache);
+              } else {
+                delete cache.switchMetricsPrev;
+                result = { target, type: 'switch', tx: 0, rx: 0, ports: [], lagPorts: [] };
+              }
+            } else {
+              result = await this.getDeviceThroughput(target);
+            }
             response.throughput = result ? [ result ] : []
             break;
           }
@@ -357,6 +369,132 @@ class LiveStatsPlugin extends Sensor {
     // due to legacy reasons, traffic direction of individual device/identity is flipped on App,
     // reverse it here to get it correctly shown on App
     return {target, tx: cache.rx, rx: cache.tx}
+  }
+
+  /**
+   * Matches switch_base SwitchStatus::is_online (status ts is Unix seconds).
+   */
+  isSwitchStatusOnline(st) {
+    if (!st || st.ts == null)
+      return false;
+    const nowSec = Math.floor(Date.now() / 1000);
+    return nowSec - Number(st.ts) < 60;
+  }
+
+  /**
+   * Totals plus per-port / per-LAG byte maps from a switch metrics NDJSON sample.
+   * @param {object|null|undefined} sample - parsed SwitchMetricsEvent
+   * @returns {{ tx: number, rx: number, ts: number, ports: Record<string, {tx: number, rx: number}>, lags: Record<string, {tx: number, rx: number}> }}
+   */
+  aggregateSwitchMetricBytes(sample) {
+    if (!sample || typeof sample !== 'object') {
+      return { tx: 0, rx: 0, ts: Date.now(), ports: {}, lags: {} };
+    }
+    const portRows = sample.port_statistics || sample.portStatistics || [];
+    const lagRows = sample.lag_statistics || sample.lagStatistics || [];
+    const ports = {};
+    const lags = {};
+    let tx = 0;
+    let rx = 0;
+    for (const p of portRows) {
+      const id = p && p.port != null ? String(p.port) : '';
+      if (!id)
+        continue;
+      const ptx = p.txBytes != null ? Number(p.txBytes) : 0;
+      const prx = p.rxBytes != null ? Number(p.rxBytes) : 0;
+      ports[id] = { tx: ptx, rx: prx };
+      tx += ptx;
+      rx += prx;
+    }
+    for (const p of lagRows) {
+      const id = p && p.port != null ? String(p.port) : '';
+      if (!id)
+        continue;
+      const ptx = p.txBytes != null ? Number(p.txBytes) : 0;
+      const prx = p.rxBytes != null ? Number(p.rxBytes) : 0;
+      lags[id] = { tx: ptx, rx: prx };
+      tx += ptx;
+      rx += prx;
+    }
+    let ts = sample.ts != null ? Number(sample.ts) : NaN;
+    if (!Number.isFinite(ts) || ts <= 0) {
+      ts = Date.now();
+    }
+    return { tx, rx, ts, ports, lags };
+  }
+
+  /**
+   * Bytes/s per id from byte counter maps at two timestamps (same units as getIntfThroughput; no backward jump).
+   */
+  _switchThroughputRatesFromMaps(prevMap, currMap, dtSec) {
+    const rows = [];
+    if (!currMap || dtSec <= 0)
+      return rows;
+    for (const id of Object.keys(currMap)) {
+      const c = currMap[id];
+      const p = prevMap && prevMap[id];
+      let tx = 0;
+      let rx = 0;
+      if (p) {
+        if (c.tx >= p.tx)
+          tx = Math.round((c.tx - p.tx) / dtSec);
+        if (c.rx >= p.rx)
+          rx = Math.round((c.rx - p.rx) / dtSec);
+      }
+      rows.push({ port: id, tx, rx });
+    }
+    rows.sort((a, b) => a.port.localeCompare(b.port, undefined, { numeric: true, sensitivity: 'base' }));
+    return rows;
+  }
+
+  /**
+   * Bytes/s from switch byte counters via fwapc metrics stream (same units as intf/device throughput).
+   * @param {string} target - switch asset uid
+   * @param {object} streamCache - this.streamingCache[streamingId] from liveStats
+   */
+  async getSwitchThroughput(target, streamCache) {
+    const emptySwitchThroughput = () => ({
+      target,
+      type: 'switch',
+      tx: 0,
+      rx: 0,
+      ports: [],
+      lagPorts: [],
+    });
+    let metrics;
+    try {
+      metrics = await fwapc.getSwitchMetricsLast(target);
+    } catch (err) {
+      log.error('getSwitchMetricsLast failed', target, err.message);
+      return emptySwitchThroughput();
+    }
+    const agg = this.aggregateSwitchMetricBytes(metrics && metrics.sample);
+    const prev = streamCache.switchMetricsPrev;
+
+    let tx = 0;
+    let rx = 0;
+    let ports = [];
+    let lagPorts = [];
+    if (prev && agg.ts > prev.ts) {
+      const dtSec = (agg.ts - prev.ts) / 1000;
+      if (dtSec > 0) {
+        if (agg.tx >= prev.tx)
+          tx = Math.round((agg.tx - prev.tx) / dtSec);
+        if (agg.rx >= prev.rx)
+          rx = Math.round((agg.rx - prev.rx) / dtSec);
+        ports = this._switchThroughputRatesFromMaps(prev.ports, agg.ports, dtSec);
+        lagPorts = this._switchThroughputRatesFromMaps(prev.lags, agg.lags, dtSec);
+      }
+    }
+
+    streamCache.switchMetricsPrev = {
+      tx: agg.tx,
+      rx: agg.rx,
+      ts: agg.ts,
+      ports: agg.ports,
+      lags: agg.lags,
+    };
+    return { target, type: 'switch', tx, rx, ports, lagPorts };
   }
 
   getPcapNet(intf, family) {

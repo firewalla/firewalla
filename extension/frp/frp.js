@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -408,6 +408,8 @@ module.exports = class {
       type: this._getServiceName(),
       msg: message,
       stack: syslog
+    }).catch(err => {
+      log.error("Failed to log frp error", err.message);
     });
   }
 

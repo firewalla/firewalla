@@ -237,8 +237,7 @@ class SpooferManager {
   }
 
   async loadManualSpoof(mac) {
-    let key = hostTool.getMacKey(mac)
-    let host = await rclient.hgetallAsync(key)
+    let host = await hostTool.getMACEntry(mac)
     let manualSpoof = (host.manualSpoof === '1' ? true : false)
     if(manualSpoof) {
       await rclient.saddAsync(monitoredKey, host.ipv4Addr)

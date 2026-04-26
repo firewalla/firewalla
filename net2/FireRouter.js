@@ -458,6 +458,11 @@ class FireRouter {
     await lock.acquire(LOCK_INIT, async () => {
       const lastMonitoringIntfNames = monitoringIntfNames;
       const routingWans = [];
+      const tcFilterRefreshNeeded = this.tcFilterRefreshNeeded;
+      this.tcFilterRefreshNeeded = false;
+      const pcapRestartNeeded = this.pcapRestartNeeded;
+      this.pcapRestartNeeded = false;
+
       if (platform.isFireRouterManaged()) {
         // fireroute
         routerConfig = await getConfig()
@@ -498,34 +503,38 @@ class FireRouter {
             case Constants.WAN_TYPE_FAILOVER: {
               const viaIntfs = [];
               if (_.isArray(defaultRoutingConfig.viaIntfs)) {
-                defaultWanIntfName = defaultRoutingConfig.viaIntfs[0];
+                primaryWanIntfName = defaultRoutingConfig.viaIntfs[0]; // primary wan is always the first wan in failover mode
                 viaIntfs.push(...defaultRoutingConfig.viaIntfs);
               } else {
-                defaultWanIntfName = defaultRoutingConfig.viaIntf;
+                primaryWanIntfName = defaultRoutingConfig.viaIntf;
                 viaIntfs.push(defaultRoutingConfig.viaIntf, defaultRoutingConfig.viaIntf2);
               }
-              primaryWanIntfName = defaultWanIntfName; // primary wan is always the first wan in failover mode
               for (const viaIntf of viaIntfs) {
                 routingWans.push(viaIntf);
-                if ((intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true)) {
+                const state = intfNameMap[viaIntf] && intfNameMap[viaIntf].state;
+                if (state && state.wanConnState && state.wanConnState.active === true) {
                   defaultWanIntfName = viaIntf;
                 }
+              }
+              if (!defaultWanIntfName) {
+                const inUseIntf = viaIntfs.find(viaIntf => {
+                  const state = intfNameMap[viaIntf] && intfNameMap[viaIntf].state;
+                  return state && state.wanConnState && state.wanConnState.inUse === true;
+                });
+                defaultWanIntfName = inUseIntf || primaryWanIntfName;
               }
               break;
             }
             case Constants.WAN_TYPE_LB: {
               if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
-                // load balance default route, choose the fisrt one as fallback default WAN
-                defaultWanIntfName = defaultRoutingConfig.nextHops[0].viaIntf;
-                let activeWanFound = false;
+                // load balance default route: first active WAN in nextHops+intfNameMap, else first inUse WAN
                 for (const nextHop of defaultRoutingConfig.nextHops) {
-                  const viaIntf = nextHop.viaIntf;
-                  routingWans.push(viaIntf);
-                  if (intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true && !activeWanFound) {
-                    defaultWanIntfName = viaIntf;
-                    activeWanFound = true;
-                  }
+                  routingWans.push(nextHop.viaIntf);
                 }
+                const getWanConnState = (viaIntf) => intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState;
+                const firstActive = defaultRoutingConfig.nextHops.find(nh => { const s = getWanConnState(nh.viaIntf); return s && s.active === true; });
+                const firstInUse = defaultRoutingConfig.nextHops.find(nh => { const s = getWanConnState(nh.viaIntf); return s && s.inUse === true; });
+                defaultWanIntfName = (firstActive && firstActive.viaIntf) || (firstInUse && firstInUse.viaIntf) || defaultRoutingConfig.nextHops[0].viaIntf;
                 primaryWanIntfName = defaultWanIntfName;
               }
               break;
@@ -735,15 +744,24 @@ class FireRouter {
       this.ready = true
 
       if (f.isMain()) {
-        if (this.pcapRestartNeeded || !platform.isFireRouterManaged() && first || !_.isEqual(monitoringIntfNames, lastMonitoringIntfNames)) {
+        if (pcapRestartNeeded || !platform.isFireRouterManaged() && first || !_.isEqual(monitoringIntfNames, lastMonitoringIntfNames)) {
           sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
-          this.pcapRestartNeeded = false;
         }
-        if (first || this.tcFilterRefreshNeeded) {
+        if (first || tcFilterRefreshNeeded) {
+
+          const model = platform.getName();
+          let qosNetworkType = 'lan';
+
+          const lanIntfs = monitoringIntfNames.filter(iface => intfNameMap[iface] && intfNameMap[iface].config.meta.type === 'lan');
+          const wanIntfs = this.getWanIntfNames();
+          log.info(`Resetting tc filters on ${qosNetworkType} lanIntfs: ${lanIntfs} wanIntfs: ${wanIntfs}`);
+
           const localIntfs = monitoringIntfNames.filter(iface => intfNameMap[iface] && intfNameMap[iface].config.meta.type === 'lan');
-          await this.resetTCFilters(localIntfs);
+          let ret = await this.resetTCFilters(lanIntfs, wanIntfs, qosNetworkType);
+          if (!ret) {
+            this.tcFilterRefreshNeeded = true;
+          }
           this.scheduleResetPcapTap();
-          this.tcFilterRefreshNeeded = false;
         }
         if (platform.isFireRouterManaged()) {
           // overall_wan_state event
@@ -818,10 +836,11 @@ class FireRouter {
     }
   }
 
-  async resetTCFilters(ifaces) {
+  async resetTCFilters(lanIntfs, wanIntfs, qosNetworkType) {
+    let ret = true;
     if (!platform.isIFBSupported()) {
       log.info("Platform does not support ifb, tc filters will not be reset");
-      return;
+      return ret;
     }
     if (this._qosIfaces) {
       log.info("Clearing tc filters ...", this._qosIfaces);
@@ -829,7 +848,14 @@ class FireRouter {
         await exec(`sudo tc qdisc del dev ${iface} root`).catch(() => {});
         await exec(`sudo tc qdisc del dev ${iface} ingress`).catch(() => {});
       }
+    } else {
+      log.info("No existing tc filters, clear both lan and wan interfaces");
+      for (const iface of lanIntfs.concat(wanIntfs)) {
+        await exec(`sudo tc qdisc del dev ${iface} root`).catch(() => { });
+        await exec(`sudo tc qdisc del dev ${iface} ingress`).catch(() => { });
+      }
     }
+    const ifaces = qosNetworkType === 'lan' ? lanIntfs : wanIntfs;
     log.info("Initializing tc filters ...", ifaces);
     for (const iface of ifaces) {
       await exec(`sudo tc qdisc del dev ${iface} root`).catch(() => { });
@@ -841,13 +867,23 @@ class FireRouter {
     for (const iface of ifaces) {
       await exec(`sudo tc qdisc add dev ${iface} ingress`).catch((err) => {
         log.error(`Failed to create ingress qdisc on ${iface}`, err.message);
+        ret = false;
       });
       await exec(`sudo tc qdisc replace dev ${iface} root handle 1: htb default 1`).catch((err) => {
         log.error(`Failed to create default htb qdisc on ${iface}`, err.message);
+        ret = false;
       })
       // only redirect ipv4 and ipv6 traffic to ifb devices, prevent 802.1q packets from being redirected to ifb twice
       // redirect ingress (upload) traffic to ifb0, egress (download) traffic to ifb1
-      for (const {dir, parent, ifb, mask} of [{dir: "upload", parent: "ffff:", ifb: "ifb0", mask: QoS.QOS_UPLOAD_MASK}, {dir: "download", parent: "1:", ifb: "ifb1", mask: QoS.QOS_DOWNLOAD_MASK}]) {
+
+      let uploadSetting = { dir: "upload", parent: "ffff:", ifb: "ifb0", mask: QoS.QOS_UPLOAD_MASK };
+      let downloadSetting = { dir: "download", parent: "1:", ifb: "ifb1", mask: QoS.QOS_DOWNLOAD_MASK };
+      if (qosNetworkType === 'wan') {
+        uploadSetting = { dir: "upload", parent: "1:", ifb: "ifb0", mask: QoS.QOS_UPLOAD_MASK };
+        downloadSetting = { dir: "download", parent: "ffff:", ifb: "ifb1", mask: QoS.QOS_DOWNLOAD_MASK };
+      }
+
+      for (const {dir, parent, ifb, mask} of [uploadSetting, downloadSetting]) {
         for (const {proto, ht, prio} of [{proto: "ip", ht: 800, prio: 1}, {proto: "ipv6", ht: 801, prio: 2}]) {
           const cmds = [
             `sudo tc filter add dev ${iface} parent ${parent} handle ${ht}::0x1 prio ${prio} protocol ${proto} u32 match u32 0 0 action connmark continue`,
@@ -857,12 +893,14 @@ class FireRouter {
           for (const cmd of cmds) {
             await exec(cmd).catch((err) => {
               log.error(`Failed to add tc filter for ${proto} ${dir} traffic on ${iface}, ${cmd}`, err.message);
+              ret = false;
             });
           }
         }
       }
     }
     this._qosIfaces = ifaces;
+    return ret;
   }
 
   async getWanConnectivity(live = false) {
@@ -1136,6 +1174,15 @@ class FireRouter {
       json: true,
       body: config
     };
+    
+    // check if only apc config changes
+    const currentConfigWithoutAPC = _.omit(routerConfig, ['apc']);
+    const newConfigWithoutAPC = _.omit(config, ['apc']);
+    let isOnlyAPCConfigChanged = false;
+    if (_.isEqual(currentConfigWithoutAPC, newConfigWithoutAPC)) {
+      log.info("Only apc config changes, will not send MSG_NETWORK_CHANGED event");
+      isOnlyAPCConfigChanged = true;
+    }
 
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
@@ -1161,7 +1208,9 @@ class FireRouter {
     // do not call this.init in setConfig, make this function pure
     // await this.init()
     // init of FireRouter should be triggered by published message
-    await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");
+    if (!isOnlyAPCConfigChanged) {
+      await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");
+    }
     if (f.isApi()) {
       // reload config from lower layer to reflect change immediately in FireAPI
       routerConfig = await getConfig();

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,6 +26,8 @@ const sm = require('./SpooferManager.js');
 
 const iptables = require('./Iptables.js');
 const wrapIptables = iptables.wrapIptables;
+const { Rule } = require('./Iptables.js');
+const iptc = require('../control/IptablesControl.js');
 const firewalla = require('./Firewalla.js')
 const firerouter = require('./FireRouter.js');
 
@@ -156,14 +158,10 @@ async function enableSecondaryInterface() {
     let { secondaryIpSubnet, legacyIpSubnet } = await secondaryInterface.create(fConfig)
     log.info("Successfully created secondary interface");
     if (legacyIpSubnet) {
-      await iptables.dhcpSubnetChangeAsync(legacyIpSubnet, false).catch((err) => {
-        log.error(`Failed to remove old SNAT rule for ${legacyIpSubnet}`, err.message);
-      });
+      iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').src(legacyIpSubnet).opr('-D'));
     }
     if (secondaryIpSubnet) {
-      await iptables.dhcpSubnetChangeAsync(secondaryIpSubnet, true).catch((err) => {
-        log.error(`Failed to add new SNAT rule for ${secondaryIpSubnet}`, err.message);
-      });
+      iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').src(secondaryIpSubnet));
     }
   } catch (err) {
     log.error("Failed to enable secondary interface, err:", err);
@@ -189,15 +187,11 @@ function _disableDHCPMode() {
 
 async function toggleCompatibleSpoof(state) {
   if (state) {
-    let cmd = wrapIptables("sudo iptables -w -t nat -A FW_POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE");
-    await execAsync(cmd);
-    cmd = wrapIptables("sudo ip6tables -w -t nat -A FW_POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE");
-    await execAsync(cmd);
+    iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').set('monitored_ip_set', 'src').jmp('MASQUERADE'))
+    iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING').set('monitored_ip_set6', 'src').jmp('MASQUERADE'))
   } else {
-    let cmd = wrapIptables("sudo iptables -w -t nat -D FW_POSTROUTING -m set --match-set monitored_ip_set src -j MASQUERADE");
-    await execAsync(cmd);
-    cmd = wrapIptables("sudo ip6tables -w -t nat -D FW_POSTROUTING -m set --match-set monitored_ip_set6 src -j MASQUERADE");
-    await execAsync(cmd);
+    iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').set('monitored_ip_set', 'src').jmp('MASQUERADE').opr('-D'))
+    iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING').set('monitored_ip_set6', 'src').jmp('MASQUERADE').opr('-D'))
   }
 }
 

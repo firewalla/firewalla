@@ -18,6 +18,7 @@ const log = require("../net2/logger.js")(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Block = require('./Block.js');
+const blockControl = require('./BlockControl.js');
 const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
 const firewalla = require('../net2/Firewalla.js');
@@ -27,8 +28,8 @@ const LRU = require('lru-cache');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Message = require('../net2/Message.js');
 
-const exec = require('util').promisify(require('child_process').exec);
 const Constants = require('../net2/Constants.js');
+
 
 let categoryUpdater = null;
 
@@ -42,6 +43,9 @@ class DomainUpdater {
       this.connUpdateOptions = {}; // options for connection ipset update
       instance = this;
       this._needRefresh = false;
+      this._priorityJobQueue = []; // registerUpdate / unregisterUpdate
+      this._standardJobQueue = []; // updateDomainMapping
+      this._processorRunning = false;
 
       sem.on('Domain:Flush', async () => {
         try {
@@ -61,9 +65,10 @@ class DomainUpdater {
       });
 
       setInterval(async () => {
+        log.debug(`_priorityJobQueue.length:${this._priorityJobQueue.length}, _standardJobQueue.length:${this._standardJobQueue.length}`);
         if (this._needRefresh) {
           log.debug("DomainUpdater refreshing connmark for updated ipsets");
-          await this.scheduleRefreshConnmark();
+          blockControl.scheduleRefreshConnmark();
           this._needRefresh = false;
         }
       }, CONNMARK_REFRESH_INTERVAL);
@@ -214,9 +219,7 @@ class DomainUpdater {
           }
 
           log.debug(`DomainUpdater updating connection ipset ${connSet} for domain ${domain}`, connection);
-          await Block.batchBlockConnection([connection], connSet, options).catch((err) => {
-            log.error(`Failed to update domain connection ipset ${connSet} for ${domain}`, err.message);
-          });
+          Block.batchBlockConnection([connection], connSet, options)
 
           this._needRefresh = true;
 
@@ -226,22 +229,106 @@ class DomainUpdater {
 
   }
 
-  async scheduleRefreshConnmark() {
-    if (this._refreshConnmarkTimeout)
-      clearTimeout(this._refreshConnmarkTimeout);
-    this._refreshConnmarkTimeout = setTimeout(async () => {
-      // use conntrack to clear the first bit of connmark on existing connections
-      await exec(`sudo conntrack -U -m 0x00000000/0x80000000`).catch((err) => {
-        // log.warn(`Failed to clear first bit of connmark on existing IPv4 connections`, err.message);
-      });
-      await exec(`sudo conntrack -U -f ipv6 -m 0x00000000/0x80000000`).catch((err) => {
-        // log.warn(`Failed to clear first bit of connmark on existing IPv6 connections`, err.message);
-      });
-    }, 5000);
+  _dequeueNextJob() {
+    if (this._priorityJobQueue.length > 0)
+      return this._priorityJobQueue.shift();
+    if (this._standardJobQueue.length > 0)
+      return this._standardJobQueue.shift();
+    return null;
   }
 
+  _enqueueJob(fn, highPriority) {
+    return new Promise((resolve, reject) => {
+      const entry = { fn, resolve, reject };
+      if (highPriority)
+        this._priorityJobQueue.push(entry);
+      else
+        this._standardJobQueue.push(entry);
+      this._kickJobProcessor();
+    });
+  }
 
-  registerUpdate(domain, options) {
+  _kickJobProcessor() {
+    if (this._processorRunning)
+      return;
+    this._processorRunning = true;
+    const processNext = async () => {
+      let job;
+      while ((job = this._dequeueNextJob()) != null) {
+        const { fn, resolve, reject } = job;
+        try {
+          await fn();
+          resolve();
+        } catch (err) {
+          reject(err);
+        }
+      }
+      this._processorRunning = false;
+      if (this._priorityJobQueue.length > 0 || this._standardJobQueue.length > 0)
+        this._kickJobProcessor();
+    };
+    processNext();
+  }
+
+  async registerDomainOnlyUpdate(domain, options) {
+    log.debug(`DomainUpdater registerDomainOnlyUpdate for domain ${domain} with options`, options);
+    const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
+    if (domain.startsWith("*.")) {
+      options.exactMatch = false;
+      domain = domain.substring(2);
+    }
+    const config = {domain: domain, options: options};
+    if (!this.connUpdateOptions[domainKey])
+      this.connUpdateOptions[domainKey] = {};
+    const key = domainIPTool.getDomainConnMappingKey(domain, options);
+    log.debug(`DomainUpdater registerDomainOnlyUpdate for domain ${domain} with key ${key}, options`, options);
+    this.connUpdateOptions[domainKey][key] = config;
+  }
+
+  async unregisterDomainOnlyUpdate(domain, options) {
+    log.debug(`DomainUpdater unregisterDomainOnlyUpdate for domain ${domain} with options`, options);
+    const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
+    if (domain.startsWith("*.")) {
+      options.exactMatch = false;
+      domain = domain.substring(2);
+    }
+    const key = domainIPTool.getDomainConnMappingKey(domain, options);
+    log.debug(`DomainUpdater unregisterUpdate for domain ${domain} with key:${key}, options`, options);
+    if (this.connUpdateOptions[domainKey] && this.connUpdateOptions[domainKey][key])
+      delete this.connUpdateOptions[domainKey][key];
+  }
+
+  async registerDefaultUpdate(domain, options) {
+    log.debug(`DomainUpdater registerDefaultUpdate for domain ${domain} with options`, options);
+    const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
+    if (domain.startsWith("*.")) {
+      options.exactMatch = false;
+      domain = domain.substring(2);
+    }
+    const config = {domain: domain, options: options};
+    // a secondary index for domain update options
+    if (!this.updateOptions[domainKey])
+      this.updateOptions[domainKey] = {};
+    // use mapping key to uniquely identify each domain mapping settings
+    const key = domainIPTool.getDomainIPMappingKey(domain, options);
+    config.ipCache = new LRU({maxAge: options.ipttl * 1000 / 2 || 0}); // invalidate the entry in lru earlier than its ttl so that it can be re-added to the underlying ipset
+    this.updateOptions[domainKey][key] = config;
+  }
+
+  async unregisterDefaultUpdate(domain, options) {
+    log.debug(`DomainUpdater unregisterDefaultUpdate for domain ${domain} with options`, options);
+    const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
+    if (domain.startsWith("*.")) {
+      options.exactMatch = false;
+      domain = domain.substring(2);
+    }
+
+    const key = domainIPTool.getDomainIPMappingKey(domain, options);
+    if (this.updateOptions[domainKey] && this.updateOptions[domainKey][key])
+      delete this.updateOptions[domainKey][key];
+  }
+
+  async _registerUpdate(domain, options) {
     log.debug(`DomainUpdater registerUpdate for domain ${domain} with options`, options);
     const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
 
@@ -256,24 +343,19 @@ class DomainUpdater {
       domainOnly = true;
     }
     if (!domainOnly) {
-      // a secondary index for domain update options
-      if (!this.updateOptions[domainKey])
-        this.updateOptions[domainKey] = {};
-      // use mapping key to uniquely identify each domain mapping settings
-      const key = domainIPTool.getDomainIPMappingKey(domain, options);
-      config.ipCache = new LRU({maxAge: options.ipttl * 1000 / 2 || 0}); // invalidate the entry in lru earlier than its ttl so that it can be re-added to the underlying ipset
-      this.updateOptions[domainKey][key] = config;
+      await this.registerDefaultUpdate(domain, options);
     }
+
     if (options.connSet) {
-      if (!this.connUpdateOptions[domainKey])
-        this.connUpdateOptions[domainKey] = {};
-      const key = domainIPTool.getDomainConnMappingKey(domain, options);
-      log.debug(`DomainUpdater registerUpdate connection ipset for domain ${domain} with key ${key}, options`, options);
-      this.connUpdateOptions[domainKey][key] = config;
+      await this.registerDomainOnlyUpdate(domain, options);
     }
   }
 
-  unregisterUpdate(domain, options) {
+  registerUpdate(domain, options) {
+    return this._enqueueJob(() => this._registerUpdate(domain, options), true);
+  }
+
+  async _unregisterUpdate(domain, options) {
     const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
     if (domain.startsWith("*.")) {
       options.exactMatch = false;
@@ -286,20 +368,19 @@ class DomainUpdater {
     }
 
     if (!domainOnly) {
-      const key = domainIPTool.getDomainIPMappingKey(domain, options);
-      if (this.updateOptions[domainKey] && this.updateOptions[domainKey][key])
-        delete this.updateOptions[domainKey][key];
+      await this.unregisterDefaultUpdate(domain, options);
     }
     
     if (options.connSet) {
-      const key = domainIPTool.getDomainConnMappingKey(domain, options);
-      log.debug(`DomainUpdater unregisterUpdate for domain ${domain} with key:${key}, options`, options);
-      if (this.connUpdateOptions[domainKey] && this.connUpdateOptions[domainKey][key])
-        delete this.connUpdateOptions[domainKey][key];
+      await this.unregisterDomainOnlyUpdate(domain, options);
     }
   }
 
-  async updateDomainMapping(domain, addresses) {
+  unregisterUpdate(domain, options) {
+    return this._enqueueJob(() => this._unregisterUpdate(domain, options), true);
+  }
+
+  async _updateDomainMapping(domain, addresses) {
     if (!_.isString(domain)) return;
 
     const parentDomains = this.getParentDomains(domain);
@@ -322,46 +403,62 @@ class DomainUpdater {
           if (!options.exactMatch) {
             await dnsTool.addSubDomains(d, [domain]);
           }
+          let blockSet = "block_domain_set";
+          if (options.blockSet)
+            blockSet = options.blockSet;
+
+          let newAddresses = [];
+          for (let i in addresses) {
+            const address = addresses[i];
+            if (firewalla.isReservedBlockingIP(address) === true) {
+              continue;
+            }
+            if (ipCache && ipCache.get(address) === 1) {
+              continue;
+            }
+            newAddresses.push(address);
+          }
+          if (newAddresses.length === 0) {
+            continue;
+          }
+
           const existingAddresses = await domainIPTool.getMappedIPAddresses(d, options);
           const existingSet = {};
           existingAddresses.forEach((addr) => {
             existingSet[addr] = 1;
           });
-          addresses = addresses.filter((addr) => { // ignore reserved blocking ip addresses
-            return firewalla.isReservedBlockingIP(addr) != true;
-          });
-          let blockSet = "block_domain_set";
-          let updateIpsetNeeded = false;
-          if (options.blockSet)
-            blockSet = options.blockSet;
-          const ipttl = options.ipttl || null;
 
-          for (let i in addresses) {
-            const address = addresses[i];
-            if (!existingSet[address] || (Number.isInteger(ipttl) && ipCache && !ipCache.get(address))) {
-              updateIpsetNeeded = true;
-              ipCache && ipCache.set(address, 1);
+          for (let i in newAddresses) {
+            const address = newAddresses[i];
+            if (ipCache) {
+              ipCache.set(address, 1);
+            }
+            if (!existingSet[address]) {
               await rclient.saddAsync(key, address);
             }
           }
-          if (updateIpsetNeeded) {
-            // add comment string to ipset, @ to indicate dynamically updated.
-            if (options.needComment) {
-              options.comment = `${domain}@`;
-            }
-            if (options.port) {
-              await Block.batchBlockNetPort(addresses, options.port, blockSet, options).catch((err) => {
-                log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
-              });
-            } else {
-              await Block.batchBlock(addresses, blockSet, options).catch((err) => {
+          log.debug(`DomainUpdater updateDomainMapping for domain ${domain} with filteredaddresses: ${newAddresses}, original addresses: ${addresses}`);
+          // add comment string to ipset, @ to indicate dynamically updated.
+          if (options.needComment) {
+            options.comment = `${domain}@`;
+          }
+          if (options.port) {
+            await Block.batchBlockNetPort(newAddresses, options.port, blockSet, options).catch((err) => {
               log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
             });
-            }
+          } else {
+            await Block.batchBlock(newAddresses, blockSet, options).catch((err) => {
+              log.error(`Failed to batch block domain ${domain} in ${blockSet}`, err.message);
+            });
           }
+          
         }
       }
     }
+  }
+
+  updateDomainMapping(domain, addresses) {
+    return this._enqueueJob(() => this._updateDomainMapping(domain, addresses), false);
   }
 
   async flush() {
