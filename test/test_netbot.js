@@ -746,3 +746,50 @@ describe('test netbot', function(){
   });
 
 });
+
+describe('test familyDnsTest', function() {
+  this.timeout(30000);
+
+  before(async function() {
+    const sl = require('../sensor/APISensorLoader.js');
+    await sl.initSensors(netbot.eptcloud);
+    sl.run();
+  });
+
+  async function dnsTest(value) {
+    return call({ mtype: 'cmd', type: 'jsonmsg', data: { item: 'familyDnsTest', value }, target: '0.0.0.0' });
+  }
+
+  async function dnsTestRaw(value) {
+    return netbot.msgHandler(gid, {
+      mtype: 'msg',
+      message: { from: 'test', obj: { mtype: 'cmd', type: 'jsonmsg', data: { item: 'familyDnsTest', value }, target: '0.0.0.0' }, appInfo: { deviceName: 'test' }, type: 'jsondata', suppressLog: true }
+    });
+  }
+
+  it('should return results for valid servers and domains', async () => {
+    const resp = await dnsTest({ servers: ['8.8.8.8'], domains: ['www.google.com'] });
+    expect(resp).to.be.an('array').with.lengthOf(1);
+    expect(resp[0].server).to.equal('8.8.8.8');
+    expect(resp[0].results[0].domain).to.equal('www.google.com');
+    expect(resp[0].results[0].addresses).to.be.an('array').that.is.not.empty;
+  });
+
+  it('should reject when servers is missing', async () => {
+    const resp = await dnsTestRaw({ domains: ['www.google.com'] });
+    expect(resp.code).to.equal(500);
+    expect(resp.message).to.include('servers is required');
+  });
+
+  it('should reject when domains is missing', async () => {
+    const resp = await dnsTestRaw({ servers: ['8.8.8.8'] });
+    expect(resp.code).to.equal(500);
+    expect(resp.message).to.include('domains is required');
+  });
+
+  it('should reject when servers exceeds limit', async () => {
+    const resp = await dnsTestRaw({ servers: Array(11).fill('8.8.8.8'), domains: ['www.google.com'] });
+    expect(resp.code).to.equal(500);
+    expect(resp.message).to.include('exceeds limit');
+  });
+});

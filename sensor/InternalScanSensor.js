@@ -623,7 +623,7 @@ class InternalScanSensor extends Sensor {
     const result = await this._applyPolicy(host, ip, policy);
     if (result && result.err) {
       // if apply error, reset to previous saved policy
-      log.error('fail to apply policy,', result.err);
+      log.error('fail to apply policy,', host.constructor.name, ip, policy, result.err);
       if (this.policy) {
         await rclient.hsetAsync('policy:system', policyKeyName, JSON.stringify(this.policy));
       }

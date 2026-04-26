@@ -391,7 +391,7 @@ class Nmap {
   }
 
   async nmapScan(cmdline, requiremac, scriptName = null) {
-    log.info('Running commandline:', cmdline);
+    log.verbose('Running commandline:', cmdline);
     const cp = require('child_process');
     
     // Using child_process.exec directly to maintain process access for cancellation
@@ -401,7 +401,7 @@ class Nmap {
         cmdline,
         (err, stdout, stderr) => {
           if (err) {
-            log.error('Failed to nmap scan:', err, 'stderr:', stderr);
+            log.error('Failed on command:', cmdline, 'err:', err, 'stderr:', stderr);
             reject(err);
             return;
           }
@@ -412,7 +412,7 @@ class Nmap {
             const parsed = this.parseNmapTextOutput(stdout, scriptName);
             hosts = parsed.hosts;
           } catch (parseErr) {
-            log.error('Failed to parse nmap output:', parseErr);
+            log.error('Failed to parse nmap output:', cmdline, parseErr);
             reject(parseErr);
             return;
           }

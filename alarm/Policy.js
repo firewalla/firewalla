@@ -69,6 +69,9 @@ class Policy {
     if (!_.isArray(this.tag) || _.isEmpty(this.tag))
       delete this.tag;
 
+    if (!_.isArray(this.affectedPids) || _.isEmpty(this.affectedPids))
+      delete this.affectedPids;
+
     this.upnp = false;
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
@@ -167,7 +170,7 @@ class Policy {
       "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
       "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
       "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", 
-      "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf"];
+      "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf", "affectedPids"];
 
     for (const field of compareFields) {
       if (!Policy.fieldEqual(this[field], policy[field], field)) {
@@ -475,8 +478,7 @@ class Policy {
       case "dns":
       case "domain":
         if (alarm['p.dest.name']) {
-          return minimatch(alarm['p.dest.name'], `*.${this.target}`) ||
-            alarm['p.dest.name'] === this.target
+          return this.matchDomain(alarm['p.dest.name'])
         } else {
           return false
         }
@@ -553,8 +555,16 @@ class Policy {
 
   isTimeUsageExceeded() {
     const quota = _.get(this.appTimeUsage, 'quota', 0);
+    const extraQuota = _.get(this.appTimeUsage, 'extraQuota');
+    const extraQuotaUntilTs = _.get(this.appTimeUsage, 'extraQuotaUntilTs');
+    const effectiveQuota = (extraQuota != null && extraQuotaUntilTs != null && (Date.now() / 1000) < extraQuotaUntilTs)
+      ? (Number(quota) || 0) + (Number(extraQuota) || 0) : (Number(quota) || 0);
     const used = this.appTimeUsed || 0;
-    return used >= quota;
+    return used >= effectiveQuota;
+  }
+
+  matchDomain(domain) {
+    return minimatch(domain, `*.${this.target}`) || domain === this.target
   }
 
   redisfyObj(p) {
@@ -697,7 +707,7 @@ class Policy {
 
 }
 
-Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules", "targets"];
+Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules", "targets", "affectedPids"];
 Policy.OBJ_VALUE_KEYS = ["appTimeUsage", "disturbMethod"];
 Policy.NUM_VALUE_KEYS = [
   'seq', 'appTimeUsed', 'priority', 'transferredBytes', 'transferredPackets', 'avgPacketBytes', "disturbTimeUsed"

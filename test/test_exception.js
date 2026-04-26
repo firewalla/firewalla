@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,6 +24,7 @@ const Alarm = require('../alarm/Alarm.js');
 // lm.setLogLevel('Exception', 'debug');
 
 describe('Exception', function() {
+  this.timeout(50000);
 
   before(() => {
     const ExcpetionManager = require('../alarm/ExceptionManager.js');
@@ -46,10 +47,44 @@ describe('Exception', function() {
       expect(e.valueMatch("*.test.com", "a.test.com")).to.be.true;
       expect(e.valueMatch("*.test.com", "test.com")).to.be.true;
       expect(e.valueMatch("*.test.com", "a.est.com")).to.be.false;
-      expect(e.valueMatch("1.1.1.0/24", "1.1.1.255")).to.be.true;
-      expect(e.valueMatch("1.1.1.1/16", "1.1.255.255")).to.be.true;
-      expect(e.valueMatch("1.1.1.2/16", "1.2.0.0")).to.be.false;
-    })
+    });
+
+    describe('CIDR match (IPv4)', () => {
+      it('should match IPv4 address inside /24 subnet', () => {
+        expect(e.valueMatch("1.1.1.0/24", "1.1.1.255")).to.be.true;
+        expect(e.valueMatch("1.1.1.1/16", "1.1.255.255")).to.be.true;
+        expect(e.valueMatch("192.168.1.0/24", "192.168.1.0")).to.be.true;
+        expect(e.valueMatch("192.168.1.0/24", "192.168.1.1")).to.be.true;
+        expect(e.valueMatch("192.168.1.0/24", "192.168.1.255")).to.be.true;
+      });
+      it('should not match IPv4 address outside subnet', () => {
+        expect(e.valueMatch("1.1.1.2/16", "1.2.0.0")).to.be.false;
+        expect(e.valueMatch("192.168.1.0/24", "192.168.2.0")).to.be.false;
+        expect(e.valueMatch("192.168.1.0/24", "192.168.0.255")).to.be.false;
+        expect(e.valueMatch("10.0.0.0/8", "11.0.0.1")).to.be.false;
+      });
+      it('should match IPv4 with /32 (single host)', () => {
+        expect(e.valueMatch("203.0.113.50/32", "203.0.113.50")).to.be.true;
+        expect(e.valueMatch("203.0.113.50/32", "203.0.113.51")).to.be.false;
+      });
+    });
+
+    describe('CIDR match (IPv6)', () => {
+      it('should match IPv6 address inside subnet', () => {
+        expect(e.valueMatch("2001:db8::/32", "2001:db8::1")).to.be.true;
+        expect(e.valueMatch("2001:db8::/32", "2001:db8:0:0:0:0:0:1")).to.be.true;
+        expect(e.valueMatch("fd00::/8", "fd12:3456:789a::1")).to.be.true;
+      });
+      it('should not match IPv6 address outside subnet', () => {
+        expect(e.valueMatch("2001:db8::/32", "2001:db9::1")).to.be.false;
+        expect(e.valueMatch("2001:db8::/64", "2001:db8:0:1::1")).to.be.false;
+        expect(e.valueMatch("fd00::/8", "fe80::1")).to.be.false;
+      });
+      it('should match IPv6 with /128 (single host)', () => {
+        expect(e.valueMatch("2001:db8::1/128", "2001:db8::1")).to.be.true;
+        expect(e.valueMatch("2001:db8::1/128", "2001:db8::2")).to.be.false;
+      });
+    });
 
     it('should match number value', () => {
       expect(e.valueMatch(123, 123)).to.be.true;
@@ -58,7 +93,7 @@ describe('Exception', function() {
       expect(e.valueMatch('12.3', 12.3)).to.be.true;
       expect(e.valueMatch('0', 0)).to.be.true;
       const spValues = [0, undefined, null, NaN, ''];
-      for (const i in spValues)
+      for (let i = 0; i < spValues.length; i++)
         for (let j = i + 1; j < spValues.length; j++)
           expect(e.valueMatch(spValues[i], spValues[j]), `${spValues[i]} equals ${spValues[j]}`).to.be.false;
     });

@@ -18,6 +18,7 @@
 const log = require('../net2/logger.js')(__filename);
 const Policy = require('./Policy.js');
 const _ = require('lodash');
+const crypto = require('crypto');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const Message = require('../net2/Message.js');
@@ -25,6 +26,10 @@ const AsyncLock = require('../vendor_lib/async-lock');
 const Constants = require('../net2/Constants.js');
 const lock = new AsyncLock();
 const LOCK_RW = "lock_rw";
+
+function _shortHash(s) {
+  return crypto.createHash('md5').update(String(s)).digest('hex').slice(0, 8);
+}
 
 class PolicyDisturbManager {
 
@@ -48,7 +53,8 @@ class PolicyDisturbManager {
       log.info(`Received ${Message.MSG_APP_DISTURB_VALUE_UPDATED} event, updating app disturb default value`);
       const pids = Object.keys(this.registeredPolicies);
       for (const pid of pids) {
-        const policy = this.registeredPolicies[pid];
+        const state = this.registeredPolicies[pid];
+        const policy = state && state.policy;
         if (!policy) continue;
         try {
           await this.deregisterPolicy(policy);
@@ -91,43 +97,112 @@ class PolicyDisturbManager {
     });
   }
 
-  async _registerPolicy(policy) {
-    const pid = String(policy.pid);
-    log.info(`Registering policy ${pid} ...`);
+  _getPolicyTargets(policy) {
+    return _.uniq(_.compact(_.concat(policy.targets, policy.target)));
+  }
 
-    const appName = policy.app_name || "";
+  _getAppNameFromTarget(target) {
+    if (target && target.startsWith('TLX-fw-'))
+      return target.substring('TLX-fw-'.length);
+    return target || "";
+  }
+
+  _resolveDisturbParams(target, policy) {
+    const appName = this._getAppNameFromTarget(target) || policy.app_name || "";
     const disturbLevel = policy.disturbLevel || "";
-    //set default default values
-    let defaultDisturbVal = { "rateLimit": 10240, "dropPacketRate": 0, "increaseLatency": 0 };
+    const params = { rateLimit: 10240, dropPacketRate: 0, increaseLatency: 0 };
     let disableQuic = false;
 
-    if (this._appConfValue && this._appConfValue.hasOwnProperty(appName)){
+    if (_.has(this._appConfValue, appName)) {
       disableQuic = this._appConfValue[appName].disableQuic || false;
-      if (this._appConfValue[appName].hasOwnProperty(disturbLevel))
-        defaultDisturbVal = Object.assign(defaultDisturbVal, this._appConfValue[appName][disturbLevel]);
-    } else if (this._generalConfValue && this._generalConfValue.hasOwnProperty(disturbLevel)) {
-      defaultDisturbVal = Object.assign(defaultDisturbVal, this._generalConfValue[disturbLevel]);
+      if (_.has(this._appConfValue[appName], disturbLevel))
+        Object.assign(params, this._appConfValue[appName][disturbLevel]);
+    } else if (_.has(this._generalConfValue, disturbLevel)) {
+      Object.assign(params, this._generalConfValue[disturbLevel]);
     }
 
-    if (policy.disturbMethod) {
-      defaultDisturbVal = Object.assign(defaultDisturbVal, policy.disturbMethod);
+    if (policy.disturbMethod)
+      Object.assign(params, policy.disturbMethod);
+
+    return { appName, params, disableQuic };
+  }
+
+  // Split one policy (potentially multi-target) into per-target effective policies,
+  // each with its own resolved QoS params and a stable qosSubKey for QoS handler allocation.
+  // Also collect the subset of targets that need QUIC blocking into a single sub-policy,
+  // so block UDP/443 is delivered at parent pid level (avoids mark/ipset collisions).
+  _buildEffectivePolicies(policy) {
+    const pid = String(policy.pid);
+    const targets = this._getPolicyTargets(policy);
+
+    if (_.isEmpty(targets)) {
+      log.warn(`Policy ${pid} has no valid targets for disturb, skip`);
+      return { effectivePolicies: [], quicBlockTargets: [] };
     }
-    policy = Object.assign(policy, defaultDisturbVal);
-    policy.disableQuic = disableQuic;
-    this.registeredPolicies[pid] = policy;
+
+    const multiTarget = targets.length > 1;
+    const effectivePolicies = [];
+    const quicBlockTargets = [];
+
+    for (const target of targets) {
+      const { appName, params, disableQuic } = this._resolveDisturbParams(target, policy);
+      if (disableQuic) {
+        quicBlockTargets.push(target);
+      }
+
+      const effective = Object.assign(Object.create(Policy.prototype), policy, params, {
+        target,
+        targets: [target],
+        app_name: appName || policy.app_name,
+        disableQuic: false, // handled at parent level via quicBlockTargets
+        qosSubKey: multiTarget ? `disturb_${pid}_${_shortHash(target)}` : undefined,
+      });
+      effectivePolicies.push(effective);
+    }
+
+    return { effectivePolicies, quicBlockTargets };
+  }
+
+  _buildQuicBlockPolicy(policy, quicBlockTargets) {
+    return Object.assign(Object.create(Policy.prototype), policy, {
+      action: "block",
+      protocol: "udp",
+      remotePort: "443",
+      dnsmasq_only: false,
+      target: quicBlockTargets[0],
+      targets: quicBlockTargets.slice(),
+      disableQuic: false,
+      qosSubKey: undefined,
+      disturbPretreatDone: true,
+    });
+  }
+
+  async _registerPolicy(policy) {
+    const pid = String(policy.pid);
+    const { effectivePolicies, quicBlockTargets } = this._buildEffectivePolicies(policy);
+    if (_.isEmpty(effectivePolicies))
+      return;
+    log.info(`Registering policy ${pid} disturbLevel=${policy.disturbLevel || "default"}, targets: ${JSON.stringify(effectivePolicies.map(p => ({ target: p.target, rateLimit: p.rateLimit, dropPacketRate: p.dropPacketRate, increaseLatency: p.increaseLatency })))}, quicBlockTargets=${JSON.stringify(quicBlockTargets)}`);
+    this.registeredPolicies[pid] = { policy: { ...policy }, effectivePolicies, quicBlockTargets };
 
     await this.enforcePolicy(pid);
   }
 
   async enforcePolicy(pid) {
-    if (!this.registeredPolicies[pid])
+    const state = this.registeredPolicies[pid];
+    if (!state)
       return;
-    let p = Object.assign(Object.create(Policy.prototype), this.registeredPolicies[pid]);
-    p.disturbPretreatDone = true;
 
     const PolicyManager2 = require('./PolicyManager2.js');
     const pm2 = new PolicyManager2();
-    await pm2.enforce(p);
+    for (const p of state.effectivePolicies) {
+      p.disturbPretreatDone = true;
+      await pm2.enforce(p);
+    }
+    if (!_.isEmpty(state.quicBlockTargets)) {
+      const quicBlock = this._buildQuicBlockPolicy(state.policy, state.quicBlockTargets);
+      await pm2.enforce(quicBlock);
+    }
   }
 
   async deregisterPolicy(policy) {
@@ -148,14 +223,20 @@ class PolicyDisturbManager {
   }
 
   async unenforcePolicy(pid) {
-    if (!this.registeredPolicies[pid])
+    const state = this.registeredPolicies[pid];
+    if (!state)
       return;
-    let p = Object.assign(Object.create(Policy.prototype), this.registeredPolicies[pid]);
-    p.disturbPretreatDone = true;
 
     const PolicyManager2 = require('./PolicyManager2.js');
     const pm2 = new PolicyManager2();
-    await pm2.unenforce(p);
+    if (!_.isEmpty(state.quicBlockTargets)) {
+      const quicBlock = this._buildQuicBlockPolicy(state.policy, state.quicBlockTargets);
+      await pm2.unenforce(quicBlock);
+    }
+    for (const p of state.effectivePolicies) {
+      p.disturbPretreatDone = true;
+      await pm2.unenforce(p);
+    }
   }
 
 }

@@ -166,9 +166,11 @@ class CategoryUpdateSensor extends Sensor {
         await categoryUpdater.flushDefaultHashedDomains(category);
         await categoryUpdater.flushIPv4Addresses(category);
         await categoryUpdater.flushIPv6Addresses(category);
+        await categoryUpdater.flushRegexDomains(category);
         // with port support
         await categoryUpdater.flushCategoryData(category);
         let categoryEntries = [];
+        const regexEntries = [];
         let totalDomainPortCount = 0;
         let totalIpPortCount = 0;
         for (const item of domains) {
@@ -177,6 +179,10 @@ class CategoryUpdateSensor extends Sensor {
             const entries = CategoryEntry.parse(item);
             log.debug("Category entries", entries);
             for (const entry of entries) {
+              if (entry.type === "domain_re") {
+                regexEntries.push(entry.id); // body
+                continue;
+              }
               if (entry.type === "domain") {
                 totalDomainPortCount += entry.pcount;
               } else if (entry.type === "ipv4" || entry.type === "ipv6") {
@@ -194,19 +200,41 @@ class CategoryUpdateSensor extends Sensor {
           categoryEntries = [];
         }
         await categoryUpdater.addCategoryData(category, categoryEntries);
+        if (regexEntries.length > 0) {
+          await categoryUpdater.addRegexDomains(category, regexEntries);
+        }
       } else {
         // no port support
-        const ip4List = domains.filter(d => new Address4(d).isValid());
-        const ip6List = domains.filter(d => new Address6(d).isValid());
-        const hashDomains = domains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && isHashDomain(d));
-        const leftDomains = domains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && !isHashDomain(d));
+        // Peel off regex entries first so they don't get misclassified as domains by the Address4/6/hash filters below.
+        const regexEntries = [];
+        const nonRegexDomains = [];
+        for (const d of domains) {
+          if (typeof d === "string" && d.startsWith("regex:")) {
+            try {
+              const parsed = CategoryEntry.parse(d);
+              for (const e of parsed) {
+                if (e.type === "domain_re") regexEntries.push(e.id);
+              }
+            } catch (err) {
+              log.error(err.message, d);
+            }
+          } else {
+            nonRegexDomains.push(d);
+          }
+        }
 
-        log.info(`category ${category} has ${ip4List.length} ipv4, ${ip6List.length} ipv6, ${leftDomains.length} domains, ${hashDomains.length} hashed domains`);
+        const ip4List = nonRegexDomains.filter(d => new Address4(d).isValid());
+        const ip6List = nonRegexDomains.filter(d => new Address6(d).isValid());
+        const hashDomains = nonRegexDomains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && isHashDomain(d));
+        const leftDomains = nonRegexDomains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && !isHashDomain(d));
+
+        log.info(`category ${category} has ${ip4List.length} ipv4, ${ip6List.length} ipv6, ${leftDomains.length} domains, ${hashDomains.length} hashed domains, ${regexEntries.length} regex`);
 
         await categoryUpdater.flushDefaultDomains(category);
         await categoryUpdater.flushDefaultHashedDomains(category);
         await categoryUpdater.flushIPv4Addresses(category);
         await categoryUpdater.flushIPv6Addresses(category);
+        await categoryUpdater.flushRegexDomains(category);
 
         if (leftDomains.length > 20000) {
           log.error(`Domain count too large. Disable category ${category} in normal strategy.`);
@@ -224,6 +252,9 @@ class CategoryUpdateSensor extends Sensor {
         if (ip6List && ip6List.length > 0) {
           await categoryUpdater.addIPv6Addresses(category, ip6List);
         }
+        if (regexEntries.length > 0) {
+          await categoryUpdater.addRegexDomains(category, regexEntries);
+        }
       }
       await this.removeData(category);
 
@@ -233,6 +264,15 @@ class CategoryUpdateSensor extends Sensor {
       await categoryUpdater.flushDefaultHashedDomains(category);
       await categoryUpdater.flushIPv4Addresses(category);
       await categoryUpdater.flushIPv6Addresses(category);
+      // Regex entries are not supported under filter/BF strategy. A regex target list should stay small enough
+      // to remain on the default path;
+      // if a list ever transitions from default to filter, flush any prior regex members so matchPolicy does not
+      // keep matching stale entries after dnsmasq stops enforcing them.
+      const prevRegex = await categoryUpdater.getRegexDomains(category);
+      if (prevRegex && prevRegex.length > 0) {
+        log.warn(`Category ${category} entered filter strategy with ${prevRegex.length} regex entries; regex enforcement will be disabled`);
+      }
+      await categoryUpdater.flushRegexDomains(category);
 
       if (!fc.isFeatureOn("category_filter")) {
         log.error(`Category filter feature not turned on. Category ${category} disabled.`);
@@ -294,6 +334,17 @@ class CategoryUpdateSensor extends Sensor {
           sem.emitEvent(filterRefreshEvent);
         } else {
           log.debug("Skip sending REFRESH_CATEGORY_FILTER event");
+        }
+
+        const ipList = await this.loadCategoryFromBone(`ip:app.${category}`);
+        if (ipList && ipList.length > 0) {
+          const ip4List = ipList.filter(d => new Address4(d).isValid());
+          const ip6List = ipList.filter(d => new Address6(d).isValid());
+          log.info(`category ${category} 'bf' IP list has ${ip4List.length} ipv4 addr, ${ip6List.length} ipv6 addr`);
+          if (ip4List.length > 0)
+            await categoryUpdater.addIPv4Addresses(category, ip4List);
+          if (ip6List.length > 0)
+            await categoryUpdater.addIPv6Addresses(category, ip6List);
         }
       }
     }
@@ -527,6 +578,7 @@ class CategoryUpdateSensor extends Sensor {
           await categoryUpdater.flushDefaultHashedDomains(category);
           await categoryUpdater.flushIPv4Addresses(category);
           await categoryUpdater.flushIPv6Addresses(category);
+          await categoryUpdater.flushRegexDomains(category);
           await dnsmasq.deletePolicyCategoryFilterEntry(category);
           // handle related ipset?
         }

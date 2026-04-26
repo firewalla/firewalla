@@ -3,6 +3,13 @@
 # shellcheck source=iptables_common.sh
 source "$(dirname "$0")/iptables_common.sh"
 
+# Check if --dry-run parameter is provided
+DRY_RUN=false
+if [[ "$1" == "--dry-run" ]]; then
+  DRY_RUN=true
+  echo "Running in dry-run mode - no iptables-restore or ipset restore will be executed"
+fi
+
 reset_ipset
 
 if [[ $MANAGED_BY_FIREROUTER != "yes" ]]; then
@@ -166,11 +173,17 @@ cat << EOF
 # redirect blue hole ip 80/443 port to localhost
 -A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 80 -j REDIRECT --to-ports 8880
 -A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 443 -j REDIRECT --to-ports 8883
+# redirect local http request to port 8833
+-A FW_PREROUTING -p tcp -m tcp --dport 80 -m set --match-set monitored_net_set src,src -m addrtype --dst-type LOCAL  -j REDIRECT --to-ports 8833
 EOF
 
 if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
-  echo '-A FW_PREROUTING_DMZ_HOST -j FR_WIREGUARD'
-  echo '-A FW_PREROUTING_DMZ_HOST -j FR_AMNEZIA_WG'
+  if sudo iptables -w -t nat -L FR_WIREGUARD -n &>/dev/null; then
+    echo '-A FW_PREROUTING_DMZ_HOST -j FR_WIREGUARD'
+  fi
+  if sudo iptables -w -t nat -L FR_AMNEZIA_WG -n &>/dev/null; then
+    echo '-A FW_PREROUTING_DMZ_HOST -j FR_AMNEZIA_WG'
+  fi
 fi
 
 echo 'COMMIT'
@@ -219,6 +232,8 @@ cat << EOF
 -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT
 # traverse DNS fallback chain if default chain is not taken
 -A FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK
+# redirect local http request to port 8833
+-A FW_PREROUTING -p tcp -m tcp --dport 80 -m set --match-set monitored_net_set src,src -m addrtype --dst-type LOCAL  -j REDIRECT --to-ports 8833
 
 COMMIT
 EOF
@@ -283,8 +298,12 @@ cat "$qos_file"
 if [[ $XT_TLS_SUPPORTED == "yes" || $XT_UDP_TLS_SUPPORTED == "yes" ]]; then
   # existence of "-m tls" or "-m udp_tls" rules prevents kernel module from being updated, resotre with a tls-clean version first
   module_names=("tls" "udp_tls")
-  grep -vE "\-m tls|\-m udp_tls" "$iptables_file" | sudo iptables-restore
-  grep -vE "\-m tls|\-m udp_tls" "$ip6tables_file" | sudo ip6tables-restore
+
+  sudo iptables-save > "$iptables_file.orig"
+  sudo ip6tables-save > "$ip6tables_file.orig"
+
+  grep -vE "\-m tls|\-m udp_tls" "$iptables_file.orig" | sudo iptables-restore
+  grep -vE "\-m tls|\-m udp_tls" "$ip6tables_file.orig" | sudo ip6tables-restore
   for module_name in "${module_names[@]}"; do
     if lsmod | grep -w "xt_${module_name}"; then
       sudo rmmod "xt_${module_name}"
@@ -296,13 +315,21 @@ if [[ $XT_TLS_SUPPORTED == "yes" || $XT_UDP_TLS_SUPPORTED == "yes" ]]; then
     fi
   done
 
+  sudo iptables-restore "$iptables_file.orig"
+  sudo ip6tables-restore "$ip6tables_file.orig"
 fi
 
 # install out-of-tree sch_cake.ko if applicable
 installSchCakeModule
 
-sudo iptables-restore "$iptables_file"
-sudo ip6tables-restore "$ip6tables_file"
+if [[ "$DRY_RUN" == "false" ]]; then
+  sudo iptables-restore "$iptables_file"
+  sudo ip6tables-restore "$ip6tables_file"
+else
+  echo "Skipping iptables-restore in dry-run mode"
+  echo "Would restore IPv4 rules from: $iptables_file"
+  echo "Would restore IPv6 rules from: $ip6tables_file"
+fi
 
 
 # as allow rules are removed, we remove registered upnp services as well.
@@ -323,20 +350,18 @@ redis-cli hdel sys:scan:nat upnp
   done
 } > "${ipset_destroy_file}"
 
-sudo ipset restore -! --file "${ipset_destroy_file}"
+if [[ "$DRY_RUN" == "false" ]]; then
+  sudo ipset restore -! --file "${ipset_destroy_file}"
+else
+  echo "Skipping ipset restore in dry-run mode"
+  echo "Would restore ipset from: ${ipset_destroy_file}"
+fi
 
 if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
   sudo iptables -w -N DOCKER-USER &>/dev/null
   sudo iptables -w -F DOCKER-USER
   sudo iptables -w -A DOCKER-USER -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
   sudo iptables -w -A DOCKER-USER -j RETURN
-fi
-
-if [[ $ALOG_SUPPORTED == "yes" ]]; then
-  sudo mkdir -p /alog/
-  sudo rm -r -f /alog/*
-  sudo umount -l /alog
-  sudo mount -t tmpfs -o size=20m tmpfs /alog
 fi
 
 create_tc_rules

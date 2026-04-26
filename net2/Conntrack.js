@@ -174,6 +174,10 @@ class Conntrack {
         // connection state
         conn.state = param;
       }
+
+      if (param.startsWith('ENOBUFS')) {
+        log.warn('conntrack ENOBUFS!');
+      }
       const kv = param.split('=')
       // the first group of src/dst indicates the connection direction
       if (kv.length != 2 || !kv[0] || !kv[1]) continue

@@ -1,4 +1,4 @@
-/*    Copyright 2023-2024 Firewalla Inc.
+/*    Copyright 2023-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,6 +24,12 @@ const Constant = require('../net2/Constants.js')
 
 const execAsync = require('child-process-promise').exec
 
+const ipset = require('../net2/Ipset.js');
+const iptc = require('../control/IptablesControl.js');
+
+const IdentityManager = require('../net2/IdentityManager.js');
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
 
 const PREROUTING_CHAIN = 'FW_PREROUTING'
 const NTP_CHAIN = 'FW_PREROUTING_NTP'
@@ -34,11 +40,17 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     super(config)
 
     this.refreshInterval = (this.config.refreshInterval || 60) * 1000;
+    this.ntpOffSet = new Set();
+    this.lastNtpOffSetUpdateTime = 0;
+    this.ntpOffSetUpdateInterval = 1000 * 60 * 60 * 4; // 4 hours
 
     // only request is DNATed
     this.ruleFeature = new Rule('nat').chn(PREROUTING_CHAIN).pro('udp').dport(123)
       .set('monitored_net_set', 'src,src').set('acl_off_set', 'src,src', true).jmp(NTP_CHAIN)
     this.ruleFeature6 = this.ruleFeature.clone().fam(6)
+
+    this.ruleNtpOff = new Rule('nat').chn(NTP_CHAIN_DNAT).set(ipset.CONSTANTS.IPSET_NTP_OFF, 'src,src').jmp('RETURN')
+    this.ruleNtpOff6 = this.ruleNtpOff.clone().fam(6)
 
     // TODO: local NTP traffic is not distinguished here
     this.ruleLog = new Rule('nat').chn(NTP_CHAIN_DNAT).mdl('conntrack', '--ctstate NEW --ctdir ORIGINAL')
@@ -67,6 +79,101 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     await execAsync(String.raw`sudo sed -i -E 's/(^restrict .*)limited(.*$)/\1\2/' /etc/ntp.conf; sudo systemctl restart ntp`).catch(()=>{});
   }
 
+  async updateNtpOff(devId, op='add', updateRedis=false, useTemp=false) {
+    if (!devId) return;
+
+    if (updateRedis === true) {
+      if (op === 'add') {
+        const now = Math.floor(Date.now() / 1000);
+        await rclient.zaddAsync(Constant.REDIS_KEY_NTP_OFF_SET, now, devId).catch((err) => {
+          log.error(`Failed to store ${devId} to NTP off set`, err);
+        });
+      } else if (op === 'del') {
+        await rclient.zremAsync(Constant.REDIS_KEY_NTP_OFF_SET, devId).catch((err) => {
+          log.error(`Failed to remove ${devId} from NTP off set`, err);
+        });
+      }
+    }
+
+    const ipsetName = useTemp ? `${ipset.CONSTANTS.IPSET_NTP_OFF}_TEMP` : ipset.CONSTANTS.IPSET_NTP_OFF;
+    let devIpsets = new Set();
+    if (hostTool.isMacAddress(devId)) {
+      const Host = require('../net2/Host.js');
+      Host.ensureCreateEnforcementEnv(devId);
+
+      const ipSet4 = Host.getIpSetName(devId, 4);
+      const ipSet6 = Host.getIpSetName(devId, 6);
+      const macSet = Host.getMacSetName(devId);
+      devIpsets.add(ipSet4);
+      devIpsets.add(ipSet6);
+      devIpsets.add(macSet);
+    } else if (IdentityManager.isGUID(devId)) {
+      const c = IdentityManager.getIdentityClassByGUID(devId);
+      if (c) {
+        const { ns, uid } = IdentityManager.getNSAndUID(devId);
+        await c.ensureCreateEnforcementEnv(uid);
+        const ipSet4 = c.getEnforcementIPsetName(uid, 4);
+        const ipSet6 = c.getEnforcementIPsetName(uid, 6);
+        devIpsets.add(ipSet4);
+        devIpsets.add(ipSet6);
+      }
+    }
+    if (devIpsets.size === 0) {
+      log.error(`Cannot find remote sets for devId ${devId}`);
+      return;
+    }
+    if (op === 'add') {
+      if (this.ntpOffSet.has(devId))
+        return;
+      this.ntpOffSet.add(devId);
+      for (const ipSet of devIpsets) {
+        ipset.add(ipsetName, ipSet);
+      }
+    } else if (op === 'del') {
+      if (!this.ntpOffSet.has(devId))
+        return;
+      this.ntpOffSet.delete(devId);
+      for (const ipSet of devIpsets) {
+        ipset.del(ipsetName, ipSet);
+      }
+    }
+  }
+
+  async swapIpset() {
+    const ipsetName = ipset.CONSTANTS.IPSET_NTP_OFF;
+    const tmpIPSetName = `${ipsetName}_TEMP`;
+
+    ipset.swap(ipsetName, tmpIPSetName);
+    ipset.flush(tmpIPSetName);
+  }
+
+  async syncNtpOffSet() {
+    const now = Date.now();
+    if (now - this.lastNtpOffSetUpdateTime < this.ntpOffSetUpdateInterval)
+      return;
+
+    const ntpOffSetEntries = await rclient.zrangeAsync(Constant.REDIS_KEY_NTP_OFF_SET, 0, -1).catch((err) => {
+      log.error(`Failed to load NTP off set from redis`, err);
+      return [];
+    });
+    if (ntpOffSetEntries.length === 0)
+      return;
+
+    this.ntpOffSet.clear();
+    for (const devId of ntpOffSetEntries) {
+      await this.updateNtpOff(devId, 'add', false, true);
+    }
+
+    await this.swapIpset();
+    this.lastNtpOffSetUpdateTime = now;
+  }
+
+  async cleanupNtpOffSet() {
+    const ipsetName = ipset.CONSTANTS.IPSET_NTP_OFF;
+    ipset.flush(ipsetName);
+    this.ntpOffSet.clear();
+  }
+
   async job(retry = 5) {
     super.job()
 
@@ -77,10 +184,11 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
         await execAsync('ntpdate -q localhost')
         if (!this.localServerStatus)
           log.info('NTP is back online on localhost')
-        await this.ruleFeature.exec('-A')
-        await this.ruleFeature6.exec('-A')
+        iptc.addRule(this.ruleFeature.opr('-A'));
+        iptc.addRule(this.ruleFeature6.opr('-A'));
         await rclient.setAsync(Constant.REDIS_KEY_NTP_SERVER_STATUS, 1)
         this.localServerStatus = true
+        await this.syncNtpOffSet();
         return
       } catch(err) {
         (this.localServerStatus ? log.warn : log.verbose)('NTP not available on localhost, retries left', retry)
@@ -89,8 +197,8 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
 
     if (this.localServerStatus)
       log.error('Local NTP down, removing redirection')
-    await this.ruleFeature.exec('-D')
-    await this.ruleFeature6.exec('-D')
+    iptc.addRule(this.ruleFeature.opr('-D'));
+    iptc.addRule(this.ruleFeature6.opr('-D'));
     await rclient.setAsync(Constant.REDIS_KEY_NTP_SERVER_STATUS, 0)
     this.localServerStatus = false
   }
@@ -105,57 +213,63 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     await NetworkProfile.ensureCreateEnforcementEnv(m.getUniqueId())
 
     const ruleBase = new Rule('nat').chn(NTP_CHAIN)
-      .set(NetworkProfile.getNetIpsetName(m.getUniqueId()), 'src,src')
+      .set(NetworkProfile.getNetListIpsetName(m.getUniqueId()), 'src,src')
     const ruleEnable = ruleBase.clone().jmp(NTP_CHAIN_DNAT)
     const ruleDisable = ruleBase.clone().jmp('RETURN')
 
     const ruleBase6 = new Rule('nat').chn(NTP_CHAIN).fam(6)
-      .set(NetworkProfile.getNetIpsetName(m.getUniqueId(), 6), 'src,src')
+      .set(NetworkProfile.getNetListIpsetName(m.getUniqueId()), 'src,src')
     const ruleEnable6 = ruleBase6.clone().jmp(NTP_CHAIN_DNAT)
     const ruleDisable6 = ruleBase6.clone().jmp('RETURN')
 
     if (setting == 1) { // positive
-      await ruleEnable.exec('-I')
-      await ruleEnable6.exec('-I')
-      await ruleDisable.exec('-D')
-      await ruleDisable6.exec('-D')
+      iptc.addRule(ruleEnable.opr('-I'));
+      iptc.addRule(ruleEnable6.opr('-I'));
+      iptc.addRule(ruleDisable.opr('-D'));
+      iptc.addRule(ruleDisable6.opr('-D'));
     } else if (setting == -1) { // negative
-      await ruleEnable.exec('-D')
-      await ruleEnable6.exec('-D')
-      await ruleDisable.exec('-I')
-      await ruleDisable6.exec('-I')
+      iptc.addRule(ruleEnable.opr('-D'));
+      iptc.addRule(ruleEnable6.opr('-D'));
+      iptc.addRule(ruleDisable.opr('-I'));
+      iptc.addRule(ruleDisable6.opr('-I'));
     } else if (setting == 0) { // neutral/reset
-      await ruleEnable.exec('-D')
-      await ruleEnable6.exec('-D')
-      await ruleDisable.exec('-D')
-      await ruleDisable6.exec('-D')
+      iptc.addRule(ruleEnable.opr('-D'));
+      iptc.addRule(ruleEnable6.opr('-D'));
+      iptc.addRule(ruleDisable.opr('-D'));
+      iptc.addRule(ruleDisable6.opr('-D'));
     }
   }
 
   async systemStart() {
     const rule = new Rule('nat').chn(NTP_CHAIN).jmp(NTP_CHAIN_DNAT)
-    await rule.exec('-A')
-    await rule.fam('6').exec('-A')
+    iptc.addRule(rule);
+    iptc.addRule(rule.fam(6));
   }
 
   async systemStop() {
     const rule = new Rule('nat').chn(NTP_CHAIN).jmp(NTP_CHAIN_DNAT)
-    await rule.exec('-D')
-    await rule.fam('6').exec('-D')
+    iptc.addRule(rule.opr('-D'));
+    iptc.addRule(rule.fam(6).opr('-D'));
   }
 
   // consider using iptables-restore/scripts if complexity goes up
   async globalOn() {
-    await new Rule('nat').chn(NTP_CHAIN).exec('-N')
-    await new Rule('nat').chn(NTP_CHAIN).fam(6).exec('-N')
-    await new Rule('nat').chn(NTP_CHAIN_DNAT).exec('-N')
-    await new Rule('nat').chn(NTP_CHAIN_DNAT).fam(6).exec('-N')
-    await this.ruleFeature.exec('-A')
-    await this.ruleFeature6.exec('-A')
-    await this.ruleLog.exec('-A')
-    await this.ruleLog6.exec('-A')
-    await this.ruleDNAT.exec('-A')
-    await this.ruleDNAT6.exec('-A')
+    iptc.addRule(new Rule('nat').chn(NTP_CHAIN).opr('-N'));
+    iptc.addRule(new Rule('nat').chn(NTP_CHAIN).fam(6).opr('-N'));
+    iptc.addRule(new Rule('nat').chn(NTP_CHAIN_DNAT).opr('-N'));
+    iptc.addRule(new Rule('nat').chn(NTP_CHAIN_DNAT).fam(6).opr('-N'));
+    iptc.addRule(this.ruleFeature.opr('-A'));
+    iptc.addRule(this.ruleFeature6.opr('-A'));
+    iptc.addRule(this.ruleNtpOff.opr('-A'));
+    iptc.addRule(this.ruleNtpOff6.opr('-A'));
+    iptc.addRule(this.ruleLog.opr('-A'));
+    iptc.addRule(this.ruleLog6.opr('-A'));
+    iptc.addRule(this.ruleDNAT.opr('-A'));
+    iptc.addRule(this.ruleDNAT6.opr('-A'));
+
+    // create temp ipset
+    ipset.create(`${ipset.CONSTANTS.IPSET_NTP_OFF}_TEMP`, 'list:set');
+    await this.syncNtpOffSet();
 
     await super.globalOn()
     // start a quick check right away
@@ -163,10 +277,13 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
   }
 
   async globalOff() {
-    await this.ruleFeature.exec('-D')
-    await this.ruleFeature6.exec('-D')
+    iptc.addRule(this.ruleFeature.opr('-D'));
+    iptc.addRule(this.ruleFeature6.opr('-D'));
     // no need to touch FW_PREROUTING_NTP_DNAT chain here
 
+    if (this.adminSystemSwitch) {
+      ipset.destroy(`${ipset.CONSTANTS.IPSET_NTP_OFF}_TEMP`);
+    }
     await super.globalOff()
   }
 }

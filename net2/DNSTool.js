@@ -144,7 +144,7 @@ class DNSTool {
         updated = true
       }
     }
-    await domainUpdater.updateDomainMapping(domain, validAddresses);
+    domainUpdater.updateDomainMapping(domain, validAddresses);
     const CategoryUpdater = require('../control/CategoryUpdater.js');
     const categoryUpdater = new CategoryUpdater();
     // no need to wait domain pattern update in category

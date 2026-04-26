@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -151,7 +151,8 @@ const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimite
 const RateLimiterRes = require('../vendor_lib/rate-limiter-flexible/RateLimiterRes');
 const cpuProfile = require('../net2/CpuProfile.js');
 const ea = require('../event/EventApi.js');
-const wrapIptables = require('../net2/Iptables.js').wrapIptables;
+const { Rule } = require('../net2/Iptables.js');
+const iptc = require('../control/IptablesControl.js');
 const sl = require('../sensor/APISensorLoader.js');
 
 const Message = require('../net2/Message')
@@ -341,12 +342,6 @@ class netBot extends ControllerBot {
       } catch (e) {
       }
     }, 1000 * 60);
-
-    setTimeout(() => {
-      setInterval(() => {
-        //          this.refreshCache(); // keep cache refreshed every 50 seconds so that app will load data fast
-      }, 50 * 1000);
-    }, 30 * 1000)
 
     this.hostManager = new HostManager();
     this.hostManager.loadPolicy((err, data) => { });  //load policy
@@ -539,6 +534,10 @@ class netBot extends ControllerBot {
       if (category)
         data.category = category;
 
+      if (payload) {
+        Object.assign(data, payload);
+      }
+
       this.tx2(this.primarygid, "", notifyMsg, data);
     });
 
@@ -728,8 +727,6 @@ class netBot extends ControllerBot {
     //
     //       log.info("Set: ",gid,msg);
 
-    // invalidate cache
-    this.invalidateCache();
     if (extMgr.hasSet(msg.data.item)) {
       const result = await extMgr.set(msg.data.item, msg, msg.data.value)
       return result
@@ -1227,11 +1224,13 @@ class netBot extends ControllerBot {
         const flows = await this.hostManager.loadStats({}, msg.target, count);
         return { flows: flows };
       }
-      case "neighbors": {
+      case "neighbors":
+      case "neighborsLocal": {
         if (!msg.target) {
           throw new Error('Invalid target')
         }
-        const neighbors = await rclient.hgetallAsync(`neighbor:${msg.target}`)
+        const redisKey = (msg.data.item === "neighborsLocal" ? `neigh:local:` : `neighbor:`) + msg.target;
+        const neighbors = await rclient.hgetallAsync(redisKey);
         for (const ip in neighbors) try {
           neighbors[ip] = JSON.parse(neighbors[ip])
         } catch(err) {
@@ -1323,8 +1322,6 @@ class netBot extends ControllerBot {
       }
       case "alarmIDs":
         return am2.loadAlarmIDs();
-      case "loadAlarmsWithRange":
-        return am2.loadAlarmsWithRange(value);
       case "fetchNewAlarms": {
         const sinceTS = value.sinceTS;
         const timeout = value.timeout || 60;
@@ -1539,6 +1536,11 @@ class netBot extends ControllerBot {
         if (includeVPNDevices)
           await this.hostManager.identitiesForInit(json)
         return json
+      }
+      case "networkProfiles": {
+        const json = {};
+        await this.hostManager.networkProfilesForInit(json);
+        return json;
       }
       case "vpnProfile":
       case "ovpnProfile": {
@@ -1828,6 +1830,8 @@ class netBot extends ControllerBot {
     if (begin && end) {
       options.begin = begin
       options.end = end
+
+      log.debug(type, "FlowHandler", new Date(begin * 1000).toLocaleTimeString(), '-', new Date(end * 1000).toLocaleTimeString());
     }
     options.limit = msg.data.limit
 
@@ -1835,8 +1839,6 @@ class netBot extends ControllerBot {
     if (msg.data.hourblock != "1" && msg.data.hourblock != "0") {
       options.queryall = true
     }
-
-    log.verbose(type, "FlowHandler", new Date(begin * 1000).toLocaleTimeString(), '-', new Date(end * 1000).toLocaleTimeString());
 
     // await this.hostManager.getHostsAsync();
     let jsonobj = {}
@@ -3391,12 +3393,10 @@ class netBot extends ControllerBot {
         const keyList = Object.keys(savingKeysMap)
         for (const key of Object.keys(host)) {
           if (keyList.includes(key)) {
-            if (!_.isString(host[key]))
-              hostObj[savingKeysMap[key]] = JSON.stringify(host[key]);
-            else
-              hostObj[savingKeysMap[key]] = host[key];
+            hostObj[savingKeysMap[key]] = host[key];
           }
         }
+        log.debug('hostObj', hostObj);
         if (!hostObj.firstFoundTimestamp)
           // set firstFound time as a activeTS for migration, so non-existing device could expire normal
           hostObj.firstFoundTimestamp = Date.now() / 1000;
@@ -3431,6 +3431,14 @@ class netBot extends ControllerBot {
         log.info('host:delete', hostMac);
         const macExists = await hostTool.macExists(hostMac);
         if (macExists) {
+          const dapSensor = sl.getSensor('DapSensor');
+          if (dapSensor) {
+            const dapResult = await dapSensor.apiCall("POST", `/reset-dap/${hostMac}`);
+            if (dapResult.code !== 200) {
+              log.warn(`Failed to reset DAP for ${hostMac}`, dapResult.msg || dapResult.code);
+            }
+          }
+
           (async () => {
             await pm2.deleteMacRelatedPolicies(hostMac);
             await em.deleteMacRelatedExceptions(hostMac);
@@ -3887,58 +3895,6 @@ class netBot extends ControllerBot {
     return datamodel;
   }
 
-  invalidateCache(callback) {
-    callback = callback || function () {
-    }
-
-    rclient.unlink("init.cache", callback);
-  }
-
-  loadInitCache(callback) {
-    callback = callback || function () { }
-
-    rclient.get("init.cache", callback);
-  }
-
-  cacheInitData(json, callback) {
-    callback = callback || function () { }
-
-    let jsonString = JSON.stringify(json);
-    let expireTime = 60; // cache for 1 min
-    rclient.set("init.cache", jsonString, (err) => {
-      if (err) {
-        log.error("Failed to set init cache: " + err);
-        callback(err);
-        return;
-      }
-
-      rclient.expire("init.cache", expireTime, (err) => {
-        if (err) {
-          log.error("Failed to set expire time on init cache: " + err);
-          callback(err);
-          return;
-        }
-
-        log.info("init cache is refreshed, auto-expiring in ", expireTime, "seconds");
-
-        callback(null);
-      });
-
-    });
-  }
-
-  async refreshCache() {
-    if (this.hostManager) {
-      try {
-        const json = await this.hostManager.toJson()
-        this.cacheInitData(json);
-      } catch (err) {
-        log.error("Failed to generate init data", err);
-        return;
-      }
-    }
-  }
-
   async msgHandlerAsync(gid, rawmsg, from = 'app') {
     // msgHandlerAsync is direct callback mode
     // will return value directly, not send to cloud
@@ -3950,13 +3906,13 @@ class netBot extends ControllerBot {
     if (ignoreRate) {
       // log.info('ignore rate limit');
       const response = await this.msgHandler(gid, rawmsg)
-      log.debug('msgHandler returned', response)
+      log.silly('msgHandler returned', response)
       return response
     } else {
       try {
         await this.rateLimiter[from].consume('msg_handler')
         const response = await this.msgHandler(gid, rawmsg)
-        log.debug('msgHandler returned', response)
+        log.silly('msgHandler returned', response)
         return response
       } catch (err) {
         log.error(err)
@@ -3998,11 +3954,11 @@ class netBot extends ControllerBot {
         }
         const item = _.get(rawmsg, 'message.obj.data.item')
         const mtype = _.get(rawmsg, 'message.obj.mtype');
-        if (item !== 'ping' && (mtype === "get" || mtype === "init")) { // other mtype, i.e., set, cmd, is included in trace log
-          rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app",
+        if (item !== 'ping' && (mtype === "get" || mtype === "init") && rawmsg.message && !rawmsg.message.suppressLog) { // other mtype, i.e., set, cmd, is included in trace log
+          log.info("Received jsondata from app",
             item == 'batchAction'
-              ? _.get(rawmsg, 'message.obj.data.value', []).map(c => [c.mtype, c.data && c.data.item, c.target])
-              : `${mtype} ${item} ${msg.target}`
+              ? _.get(rawmsg, 'message.obj.data.value', []).map(c => `mtype: ${c.mtype} item: ${c.data && c.data.item} target: ${c.target}, msgid: ${c.id}`)
+              : `mtype: ${mtype} item: ${item} target: ${msg.target}, msgid: ${msg.id}`
           );
           log.verbose(rawmsg.message)
         }
@@ -4098,6 +4054,7 @@ class netBot extends ControllerBot {
               await sysManager.updateAsync()
               const fwapcOps = data.fwapcOps || [];
               const dapOps = data.dapOps || [];
+              const embeddedOps = data.embeddedOps || [];
               try {
                 const json = {};
                 const tasks = fwapcOps.map(async (op) => {
@@ -4113,6 +4070,27 @@ class netBot extends ControllerBot {
                     const result = await dapSensor.apiCall(method || "GET", path, body).catch((err) => null);
                     if (result && result.code == 200)
                       json[key] = result.body;
+                  }
+                }));
+                // embeddedOps: array of embedded get requests, each dispatched through getHandler
+                // format: { item: string, value?: object, key?: string, target?: string }
+                tasks.push(...embeddedOps.map(async (op) => {
+                  const { item, value, key, target } = op;
+                  if (!item) return;
+                  try {
+                    const getMsg = {
+                      mtype: "get",
+                      target: target,
+                      data: {
+                        item: item,
+                        value: value || {},
+                        apiVer: data.apiVer
+                      }
+                    };
+                    // defaults to item as json key, but allows custom key override
+                    json[key || item] = await this.getHandler(gid, getMsg, appInfo);
+                  } catch (err) {
+                    log.warn(`Failed to execute embeddedOps item ${item}:`, err.message);
                   }
                 }));
                 tasks.push((async () => {
@@ -4161,7 +4139,6 @@ class netBot extends ControllerBot {
                   let end = Date.now();
                   log.info("Took " + (end - begin) + "ms to load init data");
 
-                  this.cacheInitData(json);
                   return this.simpleTxData(msg, json, null, cloudOptions);
                 } else {
                   log.error("json is null when calling init")
@@ -4345,7 +4322,7 @@ class netBot extends ControllerBot {
     const entries = JSON.parse(await rclient.hgetAsync("sys:scan:nat", "upnp") || "[]");
     const newEntries = entries.filter(e => e.public.port != externalPort && e.private.host != internalIP && e.private.port != internalPort && e.protocol != protocol);
     // remove iptables redirect rule
-    await execAsync(wrapIptables(`sudo iptables -w -t nat -D ${chain} -p ${protocol} --dport ${externalPort} -j DNAT --to-destination ${internalIP}:${internalPort}`));
+    iptc.addRule(new Rule('nat').chn(chain).pro(protocol).dport(externalPort).dnat(`${internalIP}:${internalPort}`).opr('-D'));
     // clean up upnp cache in redis
     await rclient.hsetAsync("sys:scan:nat", "upnp", JSON.stringify(newEntries));
     // remove entry from lease file
@@ -4365,7 +4342,7 @@ class netBot extends ControllerBot {
       return intf && intf.name !== intfName;
     });
     // flush iptables UPnP chain
-    await execAsync(`sudo iptables -w -t nat -F ${chain}`).catch((err) => { });
+    iptc.addRule(new Rule('nat').chn(chain).opr('-F'));
     // clean up upnp cache in redis
     await rclient.hsetAsync("sys:scan:nat", "upnp", JSON.stringify(newEntries));
     // remove lease file
@@ -4418,6 +4395,8 @@ process.on('unhandledRejection', (reason, p) => {
     msg: msg,
     stack: reason.stack,
     err: reason
+  }).catch(err => {
+    log.error("Failed to log unhandled rejection", err.message);
   });
 });
 
@@ -4428,6 +4407,8 @@ process.on('uncaughtException', (err) => {
     msg: err.message,
     stack: err.stack,
     err: err
+  }).catch(err => {
+    log.error("Failed to log unhandled exception", err.message);
   });
   setTimeout(() => {
     try {
