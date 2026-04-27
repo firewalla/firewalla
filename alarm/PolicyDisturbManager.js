@@ -152,7 +152,7 @@ class PolicyDisturbManager {
 
       const effective = Object.assign(Object.create(Policy.prototype), policy, params, {
         target,
-        targets: [target],
+        targets: undefined,
         app_name: appName || policy.app_name,
         disableQuic: false, // handled at parent level via quicBlockTargets
         qosSubKey: multiTarget ? `disturb_${pid}_${_shortHash(target)}` : undefined,

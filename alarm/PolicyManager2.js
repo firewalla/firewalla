@@ -1254,7 +1254,9 @@ class PolicyManager2 {
         return // ignore disabled policy rules
       }
 
-      if (this.needDisturbRegister(policy)) {
+      if (policy.cronTime) {
+        return scheduler.registerPolicy(policy);
+      } else if (this.needDisturbRegister(policy)) {
         // this is a disturb policy, use DisturbManager to manage it
         return PolicyDisturbManager.registerPolicy(policy);
       } else if (policy.expire) {
@@ -1306,9 +1308,6 @@ class PolicyManager2 {
           this.invalidateExpireTimer(policy); // remove old one if exists
           this.enabledTimers[pid] = policyTimer;
         }
-      } else if (policy.cronTime) {
-        // this is a reoccuring policy, use scheduler to manage it
-        return scheduler.registerPolicy(policy);
       } else if (this.needAppTimeUsageRegister(policy)) {
         // this is an app time usage policy, use AppTimeUsageManager to manage it
         return AppTimeUsageManager.registerPolicy(policy);
@@ -2174,12 +2173,11 @@ class PolicyManager2 {
         }
       }
 
-      if (this.needDisturbRegister(policy)) {
+      if (policy.cronTime) {
+        return scheduler.deregisterPolicy(policy)
+      } else if (this.needDisturbRegister(policy)) {
         // this is a disturb policy, use DisturbManager to manage it
         return PolicyDisturbManager.deregisterPolicy(policy);
-      } else if (policy.cronTime) {
-        // this is a reoccuring policy, use scheduler to manage it
-        return scheduler.deregisterPolicy(policy)
       } else if (this.needAppTimeUsageRegister(policy)) {
         // this is an app time usage policy, use AppTimeUsageManager to manage it
         return AppTimeUsageManager.deregisterPolicy(policy);
