@@ -2616,18 +2616,6 @@ class PolicyManager2 {
       commonOptions.byPassChain = chainName;
     }
 
-    if (!_.isEmpty(remoteSets)) {
-      await Promise.all(remoteSets.map(async (setPair) => {
-        await this.__applyRules(Object.assign(setPair, commonOptions)).catch((err) => {
-          log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
-        });
-      }));
-    } else {
-      await this.__applyRules(Object.assign({ remoteSet4, remoteSet6 }, commonOptions)).catch((err) => {
-        log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
-      });
-    }
-
     if (tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets)) {
       if (this.tlsInstalled) {
         if (!_.isEmpty(tlsHostSets)) {
@@ -2647,14 +2635,25 @@ class PolicyManager2 {
         if (['domain', 'dns'].includes(type) && action == 'block' && !policy.dnsmasq_only) {
           if (!remotePortSet) {
             remotePortSet = `c_bp_${pid}_remote_port`;
-            await ipset.create(remotePortSet, "bitmap:port");
-            await Block.batchBlock(["443"], remotePortSet);
             commonOptions.remotePortNegate = true;
             commonOptions.remotePortSet = remotePortSet;
           }
         }
       }
     }
+
+    if (!_.isEmpty(remoteSets)) {
+      await Promise.all(remoteSets.map(async (setPair) => {
+        await this.__applyRules(Object.assign(setPair, commonOptions)).catch((err) => {
+          log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
+        });
+      }));
+    } else {
+      await this.__applyRules(Object.assign({ remoteSet4, remoteSet6 }, commonOptions)).catch((err) => {
+        log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
+      });
+    }
+
     let overrideDscp = false;
     if (qosHandler && priority === qos.PRIO_HIGH && policy.overrideDscp !== false) {
       overrideDscp = true;

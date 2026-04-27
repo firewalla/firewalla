@@ -1807,28 +1807,28 @@ async function manipulateFiveTupleRule(options) {
   // sport and dport can be range string, e.g., 10000-20000
   const rule = new Rule(table).fam(af).chn(chain);
   const srcSet = af == 4 ? src.set : src.set6;
+  const dstSet = af == 4 ? dst.set : dst.set6;
   const connSet = af == 4 ? conn.set : conn.set6;
+  if (proto && proto != '')
+    rule.pro(proto);
   if (srcSet)
     rule.set(srcSet, src.specs.join(","), src.negate);
   if (src.portSet)
     rule.set(src.portSet, 'src', src.portNegate);
-  const dstSet = af == 4 ? dst.set : dst.set6;
-  if (dstSet)
-    rule.set(dstSet, dst.specs.join(","), dst.negate);
-  if (connSet)
-    rule.set(connSet, conn.specs.join(","), conn.negate);
-  if (dst.portSet)
-    rule.set(dst.portSet, 'dst', dst.portNegate);
   if (src.ifSet)
     rule.set(src.ifSet, 'src,src');
+  if (dstSet)
+    rule.set(dstSet, dst.specs.join(","), dst.negate);
+  if (dst.portSet)
+    rule.set(dst.portSet, 'dst', dst.portNegate);
   if (dst.ifSet)
     rule.set(dst.ifSet, 'dst,dst');
+  if (connSet)
+    rule.set(connSet, conn.specs.join(","), conn.negate);
   if (origDst)
     rule.mdl("conntrack", `--ctorigdst ${origDst}`);
   if (origDport)
     rule.mdl("conntrack", `--ctorigdstport ${origDport}`);
-  if (proto && proto != '')
-    rule.pro(proto);
   if (ctDir)
     rule.mdl("conntrack", `--ctdir ${ctDir}`);
   if (comment)
