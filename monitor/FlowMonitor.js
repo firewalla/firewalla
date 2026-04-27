@@ -926,14 +926,8 @@ module.exports = class FlowMonitor {
 
   async isActiveProtectStrictMode() {
     if (!fc.isFeatureOn("dns_proxy")) return false;
-    try {
-      const raw = await rclient.hgetAsync("policy:system", "dns_proxy");
-      if (!raw) return false;
-      const policy = JSON.parse(raw);
-      return "strict" in policy && !!policy["strict"];
-    } catch (e) {
-      return false;
-    }
+    const dnsProxy = hostManager.getPolicyFast().dns_proxy;
+    return !!(dnsProxy && dnsProxy.strict);
   }
 
   async checkIpAlarm(remoteIP, deviceIP, flowObj) {
