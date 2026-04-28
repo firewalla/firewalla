@@ -38,6 +38,8 @@ class RuleStatsPlugin extends Sensor {
     this.hookFeature(featureName);
     this.policyRulesMap = null;
     this.recordBuffer = [];
+    this.lastHitFlowMap = new Map(); // pid -> { flow, ts }
+    this.lastHitFlowSyncTs = 0;
     this.cache = new LRU({
       max: 200,
       maxAge: 15 * 1000,
@@ -45,6 +47,10 @@ class RuleStatsPlugin extends Sensor {
     });
     sem.on("PolicyEnforcement", async (event) => {
       await this.loadBlockAllowGlobalRules();
+    });
+    sem.on("Policy:StatsReset", () => {
+      this.clearPendingStats();
+      log.info("Rule stats reset.");
     });
     this.on = false;
     void this.process();
@@ -132,6 +138,26 @@ class RuleStatsPlugin extends Sensor {
       }
     }
     this.policyRulesMap = newPolicyRulesMap;
+  }
+
+  recordLastHitFlow(pid, flow) {
+    if (!this.on || !pid) return;
+    const ts = flow.ts || flow._ts || 0;
+    const existing = this.lastHitFlowMap.get(String(pid));
+    if (!existing || ts > existing.ts) {
+      const f = { ts, sh: flow.sh, dh: flow.dh, sp: flow.sp, dp: flow.dp, pr: flow.pr, fd: flow.fd, mac: flow.mac, dn: flow.dn };
+      const fd = flow.fd || 'out';
+      if (flow.ob != null) { f.upload = fd === 'in' ? flow.ob : flow.rb; f.download = fd === 'in' ? flow.rb : flow.ob; }
+      if (flow.du != null) f.duration = flow.du;
+      if (flow.af && !_.isEmpty(flow.af)) f.appHosts = Object.keys(flow.af);
+      this.lastHitFlowMap.set(String(pid), { flow: f, ts });
+    }
+  }
+
+  clearPendingStats() {
+    this.recordBuffer = [];
+    this.lastHitFlowMap.clear();
+    this.lastHitFlowSyncTs = 0;
   }
 
   accountRule(record) {
@@ -228,7 +254,7 @@ class RuleStatsPlugin extends Sensor {
     const batch = rclient.batch();
     for (const [pid, stat] of ruleStatMap) {
       if (! await rclient.existsAsync(`policy:${pid}`)) {
-        return;
+        continue;
       }
       batch.hincrby(`policy:${pid}`, "hitCount", stat.count);
       const lastHitTs = Number(await rclient.hgetAsync(`policy:${pid}`, "lastHitTs") || "0");
@@ -237,6 +263,18 @@ class RuleStatsPlugin extends Sensor {
       }
     }
     await batch.execAsync();
+
+    const now = Date.now() / 1000;
+    const lastHitFlowSyncThreshold = 60; // seconds
+    if (now - this.lastHitFlowSyncTs >= lastHitFlowSyncThreshold && this.lastHitFlowMap.size > 0) {
+      this.lastHitFlowSyncTs = now;
+      const flowBatch = rclient.batch();
+      for (const [pid, { flow }] of this.lastHitFlowMap) {
+        flowBatch.hset(`policy:${pid}`, "lastHitFlow", JSON.stringify(flow));
+      }
+      await flowBatch.execAsync();
+      this.lastHitFlowMap.clear();
+    }
   }
 
   async getPolicyIds(record) {
@@ -260,6 +298,9 @@ class RuleStatsPlugin extends Sensor {
           }
         }
 
+        if (!this.policyRulesMap) {
+          return [];
+        }
         if (!this.policyRulesMap.has(action)) {
           return [];
         }

@@ -610,11 +610,18 @@ class PolicyManager2 {
       const resetTime = Math.round(Date.now() / 1000)
       const batch = rclient.batch() // we don't really need transaction here
       for (const key of chunk) {
-        batch.hdel(key, "hitCount", "lastHitTs");
+        batch.hdel(key, "hitCount", "lastHitTs", "lastHitFlow");
         batch.hset(key, "statsResetTs", resetTime);
       }
       await batch.execAsync()
     }
+
+    sem.emitEvent({
+      type: "Policy:StatsReset",
+      toProcess: "FireMain",
+      suppressEventLogging: true,
+      policyIDs,
+    });
   }
 
   async getPoliciesByAction(actions) {
