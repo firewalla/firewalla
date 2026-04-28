@@ -24,7 +24,6 @@ const fwapc = require('./fwapc.js');
 const spoofer = require('./Spoofer.js');
 const sysManager = require('./SysManager.js');
 const Mode = require('./Mode.js')
-const routing = require('../extension/routing/routing.js');
 
 const util = require('util')
 const fc = require('./config.js');
@@ -432,92 +431,20 @@ class Host extends Monitorable {
     return list;
   }
 
-  async vpnClient(policy) {
-    try {
-      const state = policy.state;
-      const profileId = policy.profileId;
-      const hostConfPath = `${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`;
-      if (this._profileId && profileId !== this._profileId) {
-        log.info(`Current VPN profile id is different from the previous profile id ${this._profileId}, remove old rule on ${this.o.mac}`);
-        const rule4 = new Rule("mangle").chn("FW_RT_DEVICE_5")
-          .mdl("set", `--match-set ${Host.getDeviceSetName(this.o.mac)} src`)
-          .jmp(`SET --map-set ${this._profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(this._profileId.substring(4)) : VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
-          .comment(`policy:mac:${this.o.mac}`);
-        const rule6 = rule4.clone().fam(6);
-        iptc.addRule(rule4.opr('-D'));
-        iptc.addRule(rule6.opr('-D'));
-        // remove rule that was set by state == null
-        iptc.addRule(rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D'));
-        iptc.addRule(rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D'));
-        
-        const vcConfPath = `${this._profileId.startsWith("VWG:") ? VirtWanGroup.getDNSRouteConfDir(this._profileId.substring(4)) : VPNClient.getDNSRouteConfDir(this._profileId)}/vc_${this.o.mac}.conf`;
-        await fs.unlinkAsync(hostConfPath).catch((err) => {});
-        await fs.unlinkAsync(vcConfPath).catch((err) => {});
-        dnsmasq.scheduleRestartDNSService();
-      }
+  getVPNClientRules(profileId, af = 4) {
+    if (!profileId) return [];
+    const mac = this.getUniqueId();
+    const routeIpset = Monitorable.getVPNClientRouteIpsetName(profileId);
+    return [
+      new Rule("mangle").chn("FW_RT_DEVICE_5")
+        .mdl("set", `--match-set ${Host.getDeviceSetName(mac)} src`)
+        .jmp(`SET --map-set ${routeIpset} dst,dst --map-mark`)
+        .comment(`policy:mac:${mac}`)
+    ];
+  }
 
-      this._profileId = profileId;
-      if (!profileId) {
-        log.verbose(`Profile id is not set on ${this.o.mac}`);
-        return;
-      }
-      const rule4 = new Rule("mangle").chn("FW_RT_DEVICE_5")
-          .mdl("set", `--match-set ${Host.getDeviceSetName(this.o.mac)} src`)
-          .jmp(`SET --map-set ${profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(profileId.substring(4)) : VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
-          .comment(`policy:mac:${this.o.mac}`);
-      const rule6 = rule4.clone().fam(6);
-      const rule4Clear = rule4.clone().jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-      const rule6Clear = rule4Clear.clone().fam(6);
-
-      if (profileId.startsWith("VWG:"))
-        await VirtWanGroup.ensureCreateEnforcementEnv(profileId.substring(4));
-      else
-        await VPNClient.ensureCreateEnforcementEnv(profileId);
-      await Host.ensureCreateEnforcementEnv(this.o.mac);
-
-      const vcConfPath = `${profileId.startsWith("VWG:") ? VirtWanGroup.getDNSRouteConfDir(profileId.substring(4)) : VPNClient.getDNSRouteConfDir(profileId)}/vc_${this.o.mac}.conf`;
-      
-      if (state === true) {
-        iptc.addRule(rule4.opr('-A'));
-        iptc.addRule(rule6.opr('-A'));
-        // remove rule that was set by state == null
-        iptc.addRule(rule4Clear.opr('-D'));
-        iptc.addRule(rule6Clear.opr('-D'));
-
-        const markTag = `${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`;
-        // use two config files, one in network directory, the other in vpn client hard route directory, the second file is controlled by conf-dir in VPNClient.js and will not be included when client is disconnected
-        await dnsmasq.writeConfig(hostConfPath, `mac-address-tag=%${this.o.mac}$vc_${this.o.mac}`).catch((err) => {});
-        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$vc_${this.o.mac}$${markTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
-        dnsmasq.scheduleRestartDNSService();
-      }
-      // null means off
-      if (state === null) {
-        // remove rule that was set by state == true
-        iptc.addRule(rule4.opr('-D'));
-        iptc.addRule(rule6.opr('-D'));
-        // override target and clear vpn client bits in fwmark
-        iptc.addRule(rule4Clear.opr('-A'));
-        iptc.addRule(rule6Clear.opr('-A'));
-
-        await dnsmasq.writeConfig(hostConfPath, `mac-address-tag=%${this.o.mac}$vc_${this.o.mac}`).catch((err) => {});
-        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$vc_${this.o.mac}$${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
-        dnsmasq.scheduleRestartDNSService();
-      }
-      // false means N/A
-      if (state === false) {
-        iptc.addRule(rule4.opr('-D'));
-        iptc.addRule(rule6.opr('-D'));
-
-        // remove rule that was set by state == null
-        iptc.addRule(rule4Clear.opr('-D'));
-        iptc.addRule(rule6Clear.opr('-D'));
-        await fs.unlinkAsync(hostConfPath).catch((err) => {});
-        await fs.unlinkAsync(vcConfPath).catch((err) => {});
-        dnsmasq.scheduleRestartDNSService();
-      }
-    } catch (err) {
-      log.error("Failed to set VPN client access on " + this.o.mac);
-    }
+  getVPNClientTagEntry() {
+    return `mac-address-tag=%${this.getUniqueId()}$${this.getVPNClientTag()}`;
   }
 
   async _dnsmasq(policy) {
