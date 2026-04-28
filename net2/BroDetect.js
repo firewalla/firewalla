@@ -1155,10 +1155,7 @@ class BroDetect {
 
       // Long connection aggregation
       const uid = obj.uid
-      // capture whether this flow has already been counted as a long connection;
-      // used below to avoid double-accounting rule hits across long-conn fragments
-      const wasLongTracked = this.activeLongConns.has(uid)
-      if (long || wasLongTracked && !reverseLocal) {
+      if (long || this.activeLongConns.has(uid) && !reverseLocal) {
         // zeek has a bug that stales connection and keeps popping them in conn_long.log
         if (obj.ts + obj.duration < Date.now() / 1000 - config.connLong.expires) return
 
@@ -1399,17 +1396,18 @@ class BroDetect {
 
       // account rule hits for allow/disturb/route.
       // disturb and allow are mutually exclusive (disturb wins); route is independent.
-      // skip duplicates on long conn fragments and the reverse local pass.
-      if (!reverseLocal && !wasLongTracked && ruleStatsPlugin) {
+      // with emitted flows and only skip the reverse local pass.
+      if (!reverseLocal && ruleStatsPlugin) {
+        const lastHitFlow = Object.assign({}, tmpspec, { mac: localMac }, localFlow ? { local: true } : {});
         const hitPid = tmpspec.dpid || tmpspec.apid;
         const hitAc = tmpspec.dpid ? "disturb" : "allow";
         if (hitPid) {
           ruleStatsPlugin.accountRule({ pid: hitPid, ac: hitAc, ct: 1, ts: tmpspec.ts });
-          ruleStatsPlugin.recordLastHitFlow(hitPid, tmpspec);
+          ruleStatsPlugin.recordLastHitFlow(hitPid, lastHitFlow, 'flow');
         }
         if (tmpspec.rpid) {
           ruleStatsPlugin.accountRule({ pid: tmpspec.rpid, ac: "route", ct: 1, ts: tmpspec.ts });
-          ruleStatsPlugin.recordLastHitFlow(tmpspec.rpid, tmpspec);
+          ruleStatsPlugin.recordLastHitFlow(tmpspec.rpid, lastHitFlow, 'flow');
         }
       }
 

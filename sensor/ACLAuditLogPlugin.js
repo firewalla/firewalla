@@ -791,26 +791,12 @@ class ACLAuditLogPlugin extends Sensor {
                 record.pid = matchedPIDs[0];
             }
 
-            // hit accounting here is only needed for cases that BroDetect will not count directly.
-            // - allow/disturb/route on normal IP flows: accounted in BroDetect at flow generation time
-            // - block: accounted here because blocked connections produce no zeek conn.log
-            // - dns-type block: accounted here because DNS block prevents any follow-up TCP flow
-            // - dns-type allow: accounted here only when enforcement is DNS-only (dnsmasq_only=true),
-            //   or when policy lookup fails and we conservatively avoid missing the hit
-            // - ip-type disturb on DNS ports (53/5353): accounted here because BroDetect skips these flows
-            const broDetectSkipped = [53, 5353].includes(record.dp);
-            let shouldAccountHere = record.ac == 'block' || (broDetectSkipped && record.ac == 'disturb');
-            if (type == 'dns' && record.ac == 'allow' && record.pid) {
-              const policy = await pm2.getPolicy(record.pid, true);
-              if (!policy || policy.dnsmasq_only) shouldAccountHere = true;
-            } else if (type == 'dns') {
-              shouldAccountHere = true;
-            }
-            if (shouldAccountHere)
+            // hit accounting here is only needed for block cases that BroDetect can not count
+            if (record.ac == 'block' && record.pid) {
               this.ruleStatsPlugin.accountRule(record);
-
-            if ((type == 'ip' || type == 'dns') && record.ac == 'block' && record.pid)
-              this.ruleStatsPlugin.recordLastHitFlow(record.pid, record);
+              const lastHitFlow = Object.assign({}, record, { mac }, dir === 'L' ? { local: true } : {});
+              this.ruleStatsPlugin.recordLastHitFlow(record.pid, lastHitFlow, 'audit');
+            }
           }
 
           if (type == 'ip' && record.ac != "block" && record.ac != 'redirect' && record.ac != "isolation" && record.ac != "disturb")

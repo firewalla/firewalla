@@ -38,7 +38,7 @@ class RuleStatsPlugin extends Sensor {
     this.hookFeature(featureName);
     this.policyRulesMap = null;
     this.recordBuffer = [];
-    this.lastHitFlowMap = new Map(); // pid -> { flow, ts }
+    this.lastHitFlowMap = new Map(); // pid -> { value, ts, recordedAt }
     this.lastHitFlowSyncTs = 0;
     this.globalStatsResetTs = 0;
     this.policyStatsResetTs = new Map();
@@ -141,19 +141,22 @@ class RuleStatsPlugin extends Sensor {
     this.policyRulesMap = newPolicyRulesMap;
   }
 
-  recordLastHitFlow(pid, flow) {
-    if (!this.on || !pid) return;
-    const ts = Number(flow.ts || flow._ts || 0);
+  recordLastHitFlow(pid, flow, kind) {
+    if (!this.on || !pid || !flow) return;
+    const ts = Number(flow._ts || flow.ts || 0);
     const recordedAt = Date.now() / 1000;
     const existing = this.lastHitFlowMap.get(String(pid));
     if (!existing || ts > existing.ts || (ts === existing.ts && recordedAt > existing.recordedAt)) {
-      // Keep the persisted payload compact and stable for app/cloud policy views.
-      const f = { ts, sh: flow.sh, dh: flow.dh, sp: flow.sp, dp: flow.dp, pr: flow.pr, fd: flow.fd, mac: flow.mac, dn: flow.dn };
-      const fd = flow.fd || 'out';
-      if (flow.ob != null) { f.upload = fd === 'in' ? flow.ob : flow.rb; f.download = fd === 'in' ? flow.rb : flow.ob; }
-      if (flow.du != null) f.duration = flow.du;
-      if (flow.af && !_.isEmpty(flow.af)) f.appHosts = Object.keys(flow.af);
-      this.lastHitFlowMap.set(String(pid), { flow: f, ts, recordedAt });
+      // Persist a raw log snapshot so policy APIs can reuse the existing
+      // flow/audit formatting and intel enrichment path.
+      this.lastHitFlowMap.set(String(pid), {
+        value: {
+          kind,
+          raw: _.cloneDeep(flow)
+        },
+        ts,
+        recordedAt
+      });
     }
   }
 
@@ -317,12 +320,12 @@ class RuleStatsPlugin extends Sensor {
     if (now - this.lastHitFlowSyncTs >= lastHitFlowSyncThreshold && this.lastHitFlowMap.size > 0) {
       this.lastHitFlowSyncTs = now;
       const flowBatch = rclient.batch();
-      for (const [pid, { flow, recordedAt }] of this.lastHitFlowMap) {
+      for (const [pid, { value, recordedAt }] of this.lastHitFlowMap) {
         const resetTs = await this.getPolicyStatsResetTs(pid, resetTsCache);
         if (recordedAt <= resetTs) {
           continue;
         }
-        flowBatch.hset(`policy:${pid}`, "lastHitFlow", JSON.stringify(flow));
+        flowBatch.hset(`policy:${pid}`, "lastHitFlow", JSON.stringify(value));
       }
       await flowBatch.execAsync();
       this.lastHitFlowMap.clear();
