@@ -26,6 +26,7 @@ const AsyncLock = require('../vendor_lib/async-lock');
 const Constants = require('../net2/Constants.js');
 const lock = new AsyncLock();
 const LOCK_RW = "lock_rw";
+const TARGET_APP_PREFIXES = ['TLX-fw-', 'TLX-dt-'];
 
 function _shortHash(s) {
   return crypto.createHash('md5').update(String(s)).digest('hex').slice(0, 8);
@@ -102,9 +103,13 @@ class PolicyDisturbManager {
   }
 
   _getAppNameFromTarget(target) {
-    if (target && target.startsWith('TLX-fw-'))
-      return target.substring('TLX-fw-'.length);
-    return target || "";
+    if (!target)
+      return "";
+    for (const prefix of TARGET_APP_PREFIXES) {
+      if (target.startsWith(prefix))
+        return target.substring(prefix.length);
+    }
+    return target;
   }
 
   _resolveDisturbParams(target, policy) {
