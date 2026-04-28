@@ -516,9 +516,20 @@ class ACLAuditLogPlugin extends Sensor {
       // middle packets may still hit the allow chain; skip duplicate five-tuples.
       if (!added) return;
     }
+
+    // record route rule id into conntrack for BroDetect to pick up on flow generation
+    if (record.pid && record.ac === "route") {
+      await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_RPID, record.pid, 600);
+    }
+
+    // record disturb rule id into conntrack for BroDetect to pick up on flow generation
+    if (record.pid && record.ac === "disturb") {
+      const added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_DPID, record.pid, 600);
+      if (!added) return
+    }
     
     // try to get host name from conn entries for better timeliness and accuracy
-    if (dir == "O" && ['block', 'allow'].includes(record.ac)) {
+    if (dir == "O" && record.ac === 'block') {
       // delay 10 seconds to process outbound block flow, in case ssl/http host
       // is available in zeek's ssl log and will be saved into conn entries
       let t = 10
@@ -544,17 +555,6 @@ class ACLAuditLogPlugin extends Sensor {
         record.af = {};
         record.af[connEntries.host] = _.pick(connEntries, ["proto", "ip"])
       }
-    }
-
-    // record route rule id into conntrack for BroDetect to pick up on flow generation
-    if (record.pid && record.ac === "route") {
-      await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_RPID, record.pid, 600);
-    }
-
-    // record disturb rule id into conntrack for BroDetect to pick up on flow generation
-    if (record.pid && record.ac === "disturb") {
-      const added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_DPID, record.pid, 600);
-      if (!added) return
     }
 
     this.writeBuffer(record);
