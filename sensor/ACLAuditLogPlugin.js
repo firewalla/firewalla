@@ -510,6 +510,13 @@ class ACLAuditLogPlugin extends Sensor {
       return;
     }
 
+    // write apid immediately when pid is known from MARK (per-device allow)
+    if (record.pid && record.ac === "allow") {
+      const added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid, 600);
+      // middle packets may still hit the allow chain; skip duplicate five-tuples.
+      if (!added) return;
+    }
+    
     // try to get host name from conn entries for better timeliness and accuracy
     if (dir == "O" && ['block', 'allow'].includes(record.ac)) {
       // delay 10 seconds to process outbound block flow, in case ssl/http host
@@ -539,18 +546,12 @@ class ACLAuditLogPlugin extends Sensor {
       }
     }
 
-    // record route rule id
+    // record route rule id into conntrack for BroDetect to pick up on flow generation
     if (record.pid && record.ac === "route") {
       await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_RPID, record.pid, 600);
     }
 
-    // record allow rule id
-    if (record.pid && record.ac === "allow") {
-      const added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid, 600);
-      // 1% middle connection packets are going through block chain, ignore these for rule hit accounting
-      if (!added) return
-    }
-    // record disturb rule id 
+    // record disturb rule id into conntrack for BroDetect to pick up on flow generation
     if (record.pid && record.ac === "disturb") {
       const added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_DPID, record.pid, 600);
       if (!added) return
@@ -784,15 +785,32 @@ class ACLAuditLogPlugin extends Sensor {
                     return
                   }
                 }
-            } else if (!record.pid && (type == 'dns' || ac == 'block' || ac == 'allow' || ac == 'disturb')) {
+            } else if (!record.pid && (type == 'dns' || ac == 'block')) {
               const matchedPIDs = await this.ruleStatsPlugin.getMatchedPids(record);
-              if (matchedPIDs && matchedPIDs.length > 0){
+              if (matchedPIDs && matchedPIDs.length > 0)
                 record.pid = matchedPIDs[0];
-              }
             }
 
-            if (type == 'ip' || record.ac == 'block' || record.ac == 'disturb')
+            // hit accounting here is only needed for cases that BroDetect will not count directly.
+            // - allow/disturb/route on normal IP flows: accounted in BroDetect at flow generation time
+            // - block: accounted here because blocked connections produce no zeek conn.log
+            // - dns-type block: accounted here because DNS block prevents any follow-up TCP flow
+            // - dns-type allow: accounted here only when enforcement is DNS-only (dnsmasq_only=true),
+            //   or when policy lookup fails and we conservatively avoid missing the hit
+            // - ip-type disturb on DNS ports (53/5353): accounted here because BroDetect skips these flows
+            const broDetectSkipped = [53, 5353].includes(record.dp);
+            let shouldAccountHere = record.ac == 'block' || (broDetectSkipped && record.ac == 'disturb');
+            if (type == 'dns' && record.ac == 'allow' && record.pid) {
+              const policy = await pm2.getPolicy(record.pid, true);
+              if (!policy || policy.dnsmasq_only) shouldAccountHere = true;
+            } else if (type == 'dns') {
+              shouldAccountHere = true;
+            }
+            if (shouldAccountHere)
               this.ruleStatsPlugin.accountRule(record);
+
+            if ((type == 'ip' || type == 'dns') && record.ac == 'block' && record.pid)
+              this.ruleStatsPlugin.recordLastHitFlow(record.pid, record);
           }
 
           if (type == 'ip' && record.ac != "block" && record.ac != 'redirect' && record.ac != "isolation" && record.ac != "disturb")

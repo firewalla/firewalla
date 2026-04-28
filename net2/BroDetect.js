@@ -1155,7 +1155,10 @@ class BroDetect {
 
       // Long connection aggregation
       const uid = obj.uid
-      if (long || this.activeLongConns.has(uid) && !reverseLocal) {
+      // capture whether this flow has already been counted as a long connection;
+      // used below to avoid double-accounting rule hits across long-conn fragments
+      const wasLongTracked = this.activeLongConns.has(uid)
+      if (long || wasLongTracked && !reverseLocal) {
         // zeek has a bug that stales connection and keeps popping them in conn_long.log
         if (obj.ts + obj.duration < Date.now() / 1000 - config.connLong.expires) return
 
@@ -1333,7 +1336,7 @@ class BroDetect {
       if (connEntry && connEntry.dpid && Number(connEntry.dpid)) {
         tmpspec.dpid = Number(connEntry.dpid); // disturb rule id
       }
-
+      
       const tags = await hostTool.getTags(monitorable, intfInfo && intfInfo.uuid)
       const dstTags = await hostTool.getTags(dstMonitorable, dstIntfInfo && dstIntfInfo.uuid)
       Object.assign(tmpspec, tags)
@@ -1376,6 +1379,37 @@ class BroDetect {
           if (!tmpspec.af) tmpspec.af = {}
           tmpspec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
           afhost = afobj.host
+        }
+      }
+
+      const ruleStatsPlugin = sl.getSensor("RuleStatsPlugin");
+      if (!tmpspec.apid && ruleStatsPlugin) {
+        const matchedHost = afhost || (connEntry && connEntry.host);
+        if (matchedHost) {
+          const matchedPIDs = await ruleStatsPlugin.getMatchedPids({
+            ac: 'allow', type: 'ip', sh: orig, sp: [orig_p], dh: resp, dp: resp_p,
+            pr: obj.proto, fd: flowdir, af: { [matchedHost]: _.get(tmpspec, ["af", matchedHost], {}) }, sec: 0
+          });
+          if (matchedPIDs && matchedPIDs.length > 0) {
+            log.debug('Conn:MatchedAllowRuleByHost', obj.uid, orig, resp, obj['id.resp_p'], matchedHost, matchedPIDs);
+            tmpspec.apid = matchedPIDs[0];
+          }
+        }
+      }
+
+      // account rule hits for allow/disturb/route.
+      // disturb and allow are mutually exclusive (disturb wins); route is independent.
+      // skip duplicates on long conn fragments and the reverse local pass.
+      if (!reverseLocal && !wasLongTracked && ruleStatsPlugin) {
+        const hitPid = tmpspec.dpid || tmpspec.apid;
+        const hitAc = tmpspec.dpid ? "disturb" : "allow";
+        if (hitPid) {
+          ruleStatsPlugin.accountRule({ pid: hitPid, ac: hitAc, ct: 1, ts: tmpspec.ts });
+          ruleStatsPlugin.recordLastHitFlow(hitPid, tmpspec);
+        }
+        if (tmpspec.rpid) {
+          ruleStatsPlugin.accountRule({ pid: tmpspec.rpid, ac: "route", ct: 1, ts: tmpspec.ts });
+          ruleStatsPlugin.recordLastHitFlow(tmpspec.rpid, tmpspec);
         }
       }
 
