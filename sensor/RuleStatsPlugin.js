@@ -40,6 +40,8 @@ class RuleStatsPlugin extends Sensor {
     this.recordBuffer = [];
     this.lastHitFlowMap = new Map(); // pid -> { flow, ts }
     this.lastHitFlowSyncTs = 0;
+    this.globalStatsResetTs = 0;
+    this.policyStatsResetTs = new Map();
     this.cache = new LRU({
       max: 200,
       maxAge: 15 * 1000,
@@ -48,9 +50,8 @@ class RuleStatsPlugin extends Sensor {
     sem.on("PolicyEnforcement", async (event) => {
       await this.loadBlockAllowGlobalRules();
     });
-    sem.on("Policy:StatsReset", () => {
-      this.clearPendingStats();
-      log.info("Rule stats reset.");
+    sem.on("Policy:StatsReset", (event = {}) => {
+      this.applyStatsReset(event.policyIDs, event.resetTime);
     });
     this.on = false;
     void this.process();
@@ -142,15 +143,17 @@ class RuleStatsPlugin extends Sensor {
 
   recordLastHitFlow(pid, flow) {
     if (!this.on || !pid) return;
-    const ts = flow.ts || flow._ts || 0;
+    const ts = Number(flow.ts || flow._ts || 0);
+    const recordedAt = Date.now() / 1000;
     const existing = this.lastHitFlowMap.get(String(pid));
-    if (!existing || ts > existing.ts) {
+    if (!existing || ts > existing.ts || (ts === existing.ts && recordedAt > existing.recordedAt)) {
+      // Keep the persisted payload compact and stable for app/cloud policy views.
       const f = { ts, sh: flow.sh, dh: flow.dh, sp: flow.sp, dp: flow.dp, pr: flow.pr, fd: flow.fd, mac: flow.mac, dn: flow.dn };
       const fd = flow.fd || 'out';
       if (flow.ob != null) { f.upload = fd === 'in' ? flow.ob : flow.rb; f.download = fd === 'in' ? flow.rb : flow.ob; }
       if (flow.du != null) f.duration = flow.du;
       if (flow.af && !_.isEmpty(flow.af)) f.appHosts = Object.keys(flow.af);
-      this.lastHitFlowMap.set(String(pid), { flow: f, ts });
+      this.lastHitFlowMap.set(String(pid), { flow: f, ts, recordedAt });
     }
   }
 
@@ -158,6 +161,38 @@ class RuleStatsPlugin extends Sensor {
     this.recordBuffer = [];
     this.lastHitFlowMap.clear();
     this.lastHitFlowSyncTs = 0;
+  }
+
+  applyStatsReset(policyIDs, resetTime) {
+    const ts = Number(resetTime || Date.now() / 1000);
+    if (!policyIDs || _.isEmpty(policyIDs)) {
+      this.globalStatsResetTs = Math.max(this.globalStatsResetTs, ts);
+      this.policyStatsResetTs.clear();
+      this.clearPendingStats();
+      return;
+    }
+
+    const resetPidSet = new Set(policyIDs.map(String));
+    for (const pid of resetPidSet) {
+      this.policyStatsResetTs.set(pid, Math.max(this.policyStatsResetTs.get(pid) || 0, ts));
+      this.lastHitFlowMap.delete(pid);
+    }
+
+    this.recordBuffer = this.recordBuffer.filter((record) => !record.pid || !resetPidSet.has(String(record.pid)));
+    log.info(`Rule stats reset for policies: ${policyIDs.join(",")}`);
+  }
+
+  async getPolicyStatsResetTs(pid, resetTsCache) {
+    const key = String(pid);
+    if (resetTsCache.has(key)) {
+      return resetTsCache.get(key);
+    }
+
+    const localResetTs = Math.max(this.globalStatsResetTs, this.policyStatsResetTs.get(key) || 0);
+    const persistedResetTs = Number(await rclient.hgetAsync(`policy:${pid}`, "statsResetTs") || "0");
+    const resetTs = Math.max(localResetTs, persistedResetTs);
+    resetTsCache.set(key, resetTs);
+    return resetTs;
   }
 
   accountRule(record) {
@@ -176,7 +211,7 @@ class RuleStatsPlugin extends Sensor {
 
     // limit buf size to avoid cpu and memory overload
     if (this.recordBuffer.length < 2000) {
-      this.recordBuffer.push(record);
+      this.recordBuffer.push(Object.assign({ _statsTs: Date.now() / 1000 }, record));
     }
   }
 
@@ -219,6 +254,7 @@ class RuleStatsPlugin extends Sensor {
     }
 
     const ruleStatMap = new Map();
+    const resetTsCache = new Map();
 
     // Match record to policy id
     for (const record of recordBuffer) {
@@ -231,6 +267,13 @@ class RuleStatsPlugin extends Sensor {
       }
 
       for (const pid of matchedPids) {
+        const recordStatsTs = Number(record._statsTs || record._ts || record.ts || 0);
+        const resetTs = await this.getPolicyStatsResetTs(pid, resetTsCache);
+        if (recordStatsTs <= resetTs) {
+          continue;
+        }
+
+        const hitTs = Number(record._ts || record.ts || 0);
         log.debug("Matched policy rule: ", pid);
         let stat;
         if (ruleStatMap.has(pid)) {
@@ -243,8 +286,9 @@ class RuleStatsPlugin extends Sensor {
         } else {
           stat.count++;
         }
-        if (record.ts > stat.lastHitTs) {
-          stat.lastHitTs = record.ts;
+        if (hitTs > stat.lastHitTs) {
+          stat.lastHitTs = hitTs;
+          stat.lastHitStatsTs = recordStatsTs;
         }
         ruleStatMap.set(pid, stat);
       }
@@ -254,6 +298,10 @@ class RuleStatsPlugin extends Sensor {
     const batch = rclient.batch();
     for (const [pid, stat] of ruleStatMap) {
       if (! await rclient.existsAsync(`policy:${pid}`)) {
+        continue;
+      }
+      const resetTs = await this.getPolicyStatsResetTs(pid, resetTsCache);
+      if (stat.lastHitStatsTs <= resetTs) {
         continue;
       }
       batch.hincrby(`policy:${pid}`, "hitCount", stat.count);
@@ -269,7 +317,11 @@ class RuleStatsPlugin extends Sensor {
     if (now - this.lastHitFlowSyncTs >= lastHitFlowSyncThreshold && this.lastHitFlowMap.size > 0) {
       this.lastHitFlowSyncTs = now;
       const flowBatch = rclient.batch();
-      for (const [pid, { flow }] of this.lastHitFlowMap) {
+      for (const [pid, { flow, recordedAt }] of this.lastHitFlowMap) {
+        const resetTs = await this.getPolicyStatsResetTs(pid, resetTsCache);
+        if (recordedAt <= resetTs) {
+          continue;
+        }
         flowBatch.hset(`policy:${pid}`, "lastHitFlow", JSON.stringify(flow));
       }
       await flowBatch.execAsync();
@@ -407,6 +459,7 @@ class RuleStat {
   constructor() {
     this.count = 0;
     this.lastHitTs = 0;
+    this.lastHitStatsTs = 0;
   }
 }
 

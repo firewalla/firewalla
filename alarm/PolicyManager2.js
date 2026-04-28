@@ -603,11 +603,11 @@ class PolicyManager2 {
 
     log.info("Trying to reset policy hit count:", policyIDs || 'all');
 
+    const resetTime = Date.now() / 1000;
     const policyKeys = (policyIDs || await this.loadActivePolicyIDs()).map(this.getPolicyKey)
     const existingKeys = await batchKeyExists(policyKeys, 1500)
 
     for (const chunk of _.chunk(existingKeys, 1000)) {
-      const resetTime = Math.round(Date.now() / 1000)
       const batch = rclient.batch() // we don't really need transaction here
       for (const key of chunk) {
         batch.hdel(key, "hitCount", "lastHitTs", "lastHitFlow");
@@ -620,7 +620,8 @@ class PolicyManager2 {
       type: "Policy:StatsReset",
       toProcess: "FireMain",
       suppressEventLogging: true,
-      policyIDs,
+      policyIDs, // null means all policies are reset
+      resetTime,
     });
   }
 
