@@ -1,4 +1,4 @@
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,7 +23,8 @@ const rclient = require('../../util/redis_manager').getRedisClient();
 
 const _ = require('lodash');
 
-const wrapIptables = require('../../net2/Iptables.js').wrapIptables;
+const { Rule } = require('../../net2/Iptables.js');
+const iptc = require('../../control/IptablesControl.js');
 
 const exec = require('child-process-promise').exec;
 
@@ -115,7 +116,7 @@ class WireGuard {
   async _applySNATAndRoutes() {
     const config = this.getConfig();
     const peers = await this.getPeers();
-    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING_WIREGUARD -s ${config.subnet} -j MASQUERADE`)).catch(() => {});
+    iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_WIREGUARD').src(config.subnet).jmp('MASQUERADE'));
     await exec(`sudo ip r add ${config.subnet} dev ${config.intf}`).catch((err) => {});
     for (const peer of peers) {
       const allowedIPs = peer.allowedIPs || [];
@@ -158,7 +159,7 @@ class WireGuard {
     if (!config || !config.intf)
       return;
     log.info(`Stopping wireguard ${config.intf}...`);
-    await exec(wrapIptables(`sudo iptables -w -t nat -F FW_POSTROUTING_WIREGUARD`)).catch(() => undefined);
+    iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_WIREGUARD').opr('-F'));
     await exec(`sudo ip link set down dev ${config.intf}`).catch(() => undefined);
     await exec(`sudo ip link del dev ${config.intf}`).catch(() => undefined);
     log.info(`Wireguard ${config.intf} is stopped successfully.`);

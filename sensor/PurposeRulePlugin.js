@@ -108,7 +108,7 @@ class PurposeRulePlugin extends Sensor {
 
   // will be called only when the global option is enabled
   async applyPolicy(host, id, policy) {
-    if (!host || (host.constructor.name !== "Host" && host.constructor.name !== "WGPeer") || !policy) {
+    if (!host || (host.constructor.name !== "Host" && host.constructor.name !== "WGPeer" && host.constructor.name !== "AWGPeer") || !policy) {
       return;
     }
     const deviceId = host.getGUID();

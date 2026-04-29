@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc.
+/*    Copyright 2021-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,8 +19,8 @@ let instance = null;
 
 const log = require('../../net2/logger.js')(__filename);
 
-const wrapIptables = require('../../net2/Iptables.js').wrapIptables;
-
+const { Rule } = require('../../net2/Iptables.js');
+const iptc = require('../../control/IptablesControl.js');
 const _ = require('lodash');
 
 const exec = require('child-process-promise').exec;
@@ -254,18 +254,18 @@ class ClashTun {
     (async() => {
       const code = "CN";
       await countryUpdater.activateCountry(code);
-      await exec(wrapIptables(`sudo iptables -w -t mangle -I FW_CLASH_CHAIN -p tcp -m set --match-set c_bd_country:CN_set dst -j RETURN`));
+      iptc.addRule(new Rule('mangle').chn('FW_CLASH_CHAIN').pro('tcp').set('c_bd_country:CN_set', 'dst').jmp('RETURN').opr('-I'))
     })()
   }
 
   async redirectTraffic() {
     await this.prepareCHNRoute();
-    await exec(wrapIptables(`sudo iptables -w -t mangle -A FW_RT_GLOBAL_5 -j FW_CLASH_CHAIN`));
+    iptc.addRule(new Rule('mangle').chn('FW_RT_GLOBAL_5').jmp('FW_CLASH_CHAIN'))
     this.shouldRedirect = true;    
   }
 
   async unRedirectTraffic() {
-    await exec(wrapIptables(`sudo iptables -w -t mangle -D FW_RT_GLOBAL_5 -j FW_CLASH_CHAIN`));
+    iptc.addRule(new Rule('mangle').chn('FW_RT_GLOBAL_5').jmp('FW_CLASH_CHAIN').opr('-D'))
     this.shouldRedirect = false;
   }
 

@@ -100,6 +100,10 @@ class OpenVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.subnet${ipFamily === 6 ? '6' : ''}`;
   }
 
+  _getBypassSubnetFilePath(ipFamily=4) {
+    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.subnet${ipFamily === 6 ? '6' : ''}_bypass`;
+  }
+
   _getLocalIPFilePath(ipFamily=4) {
     return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.ip${ipFamily === 6 ? '6' : '4'}`;
   }
@@ -290,7 +294,15 @@ class OpenVPNClient extends VPNClient {
     if (!profileId)
       throw new Error("profileId is not set");
     await this._generateRuntimeProfile();
-    let cmd = util.format("sudo systemctl start \"%s@%s\"", SERVICE_NAME, this.profileId);
+    let cmd;
+    if (this.isFirstLaunch) {
+      //Use `restart` to force the OpenVPN client to reconnect to the server, 
+      //thus enabling it to fetch the new configuration from the server again after an upgrade.
+      log.debug("first launch using restart instead of start.");
+      cmd = util.format("sudo systemctl restart \"%s@%s\"", SERVICE_NAME, this.profileId);
+    } else {
+      cmd = util.format("sudo systemctl start \"%s@%s\"", SERVICE_NAME, this.profileId);
+    }
     await exec(cmd);
   }
 
@@ -332,6 +344,17 @@ class OpenVPNClient extends VPNClient {
     }
   }
 
+  isIpv6RouteEverything(subnet) {
+    // check subnet prefix length, if it is less than or equal to 8, it is route everything
+    const [network, mask] = subnet.split("/", 2);
+    if (!network || !mask)
+      return false;
+    const prefix = parseInt(mask);
+    if (prefix <= 8 && prefix >= 0)
+      return true;
+    return false;
+  }
+
   async getRoutedSubnets() {
     const intf = this.getInterfaceName();
     const cmd = util.format(`ip link show dev ${intf}`);
@@ -365,6 +388,9 @@ class OpenVPNClient extends VPNClient {
 
     if (subnet6s) {
       for (const subnet of subnet6s) {
+        // avoid route everything
+        if (this.isIpv6RouteEverything(subnet))
+          continue;
         const [network, mask] = subnet.split("/", 2);
         if (!network || !mask)
           continue;
@@ -385,78 +411,43 @@ class OpenVPNClient extends VPNClient {
     return results;
   }
 
-  isConflictSubnet6(subnetStr1, subnetStr2) {
-    const subnet1= {}, subnet2={};
-    subnet1.addr = new Address6(subnetStr1);
-    subnet2.addr = new Address6(subnetStr2);
-
-    if (!subnet1.addr.isValid() || !subnet2.addr.isValid()) {
-      return false;
-    }
-    subnet1.firstAddress = subnet1.addr.startAddress().bigInteger();
-    subnet2.firstAddress = subnet2.addr.startAddress().bigInteger();
-    subnet1.lastAddress = subnet1.addr.endAddress().bigInteger();
-    subnet2.lastAddress = subnet2.addr.endAddress().bigInteger();
-
-    if ( (subnet1.firstAddress.compareTo(subnet2.firstAddress) <= 0 && subnet1.lastAddress.compareTo(subnet2.firstAddress) >= 0) ||
-        (subnet2.firstAddress.compareTo(subnet1.firstAddress) <= 0 && subnet2.lastAddress.compareTo(subnet1.firstAddress) >= 0))  {
-      return true;
-    }
-    return false;
-  }
-
-  getSubnetsWithoutConflict(subnets) {
-    const validSubnets = [];
-    if (subnets && Array.isArray(subnets)) {
-      for (let subnet of subnets) {
-        const ipSubnets = subnet.split('/');
-        if (ipSubnets.length != 2 && ipSubnets.length != 3) {
-          continue;
-        }
-        const ipAddr = ipSubnets[0];
-        const maskLength = ipSubnets[1];
-        if (isNaN(maskLength) || !Number.isInteger(Number(maskLength))) {
-          continue;
-        }
-        let maskLenNum = Number(maskLength);
-        // only check conflict of IPv4 addresses here
-        if (iptool.isV4Format(ipAddr)) {
-
-          if (maskLenNum > 32 || maskLenNum < 0) {
-            continue;
-          }
-          const serverSubnetCidr = iptool.cidrSubnet(subnet);
-          const conflict = sysManager.getLogicInterfaces().some((iface) => {
-            const mySubnetCidr = iface.subnet && iptool.cidrSubnet(iface.subnet);
-            return mySubnetCidr && (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress)) || false;
-          });
-          if (!conflict) {
-            validSubnets.push(subnet);
-          }
-        } else if (iptool.isV6Format(ipAddr)) {
-          // Handle IPv6 subnets
-          if (maskLenNum > 128 || maskLenNum < 0) {
-            continue;
-          }
-          
-          const conflict = sysManager.getLogicInterfaces().some((iface) => {
-            if (iface.ip6_subnets && _.isArray(iface.ip6_subnets)) {
-              for (const s of iface.ip6_subnets) {
-                if (this.isConflictSubnet6(subnet, s)) {
-                  log.info(`Conflict found between IPv6 subnets: ${subnet} and ${s}`);
-                  return true;
-                }
-              }
-            }
-            return false;
-          });
-          if (!conflict) {
-            validSubnets.push(subnet);
-          }
-        }
+  async getBypassSubnets() {
+    const results = [];
+    // IPv4 bypass subnets (xx.xx.xx.xx/255.255.255.0 format)
+    const subnets = await fs.readFileAsync(this._getBypassSubnetFilePath(), "utf8")
+      .then((content) => content.trim().split("\n"))
+      .catch(() => []);
+    for (const subnet of subnets) {
+      const [network, mask] = subnet.split("/", 2);
+      if (!network || !mask)
+        continue;
+      try {
+        const ipSubnet = iptool.subnet(network, mask);
+        results.push(`${ipSubnet.networkAddress}/${ipSubnet.subnetMaskLength}`);
+      } catch (err) {
+        log.error(`Failed to parse bypass cidr subnet ${subnet} for profile ${this.profileId}`, err.message);
       }
     }
-    return validSubnets;
+    // IPv6 bypass subnets (CIDR format)
+    const subnet6s = await fs.readFileAsync(this._getBypassSubnetFilePath(6), "utf8")
+      .then((content) => content.trim().split("\n"))
+      .catch(() => []);
+    for (const subnet of subnet6s) {
+      const [network, mask] = subnet.split("/", 2);
+      if (!network || !mask)
+        continue;
+      try {
+        const addr = new Address6(network);
+        if (addr.isValid()) {
+          const prefix = parseInt(mask);
+          if (prefix >= 0 && prefix <= 128)
+            results.push(`${addr.correctForm()}/${prefix}`);
+        }
+      } catch (err) {
+        log.error(`Failed to parse bypass IPv6 subnet ${subnet} for profile ${this.profileId}`, err.message);
+      }
+    }
+    return results;
   }
 
   async _isLinkUp() {
@@ -490,7 +481,8 @@ class OpenVPNClient extends VPNClient {
     const filesToDelete = [
       this._getProfilePath(), this._getRuntimeProfilePath(), this._getUserPassPath(), this._getPasswordPath(), 
       this._getGatewayFilePath(), this._getPushOptionsPath(), this._getSubnetFilePath(), this._getIP4FilePath(),
-      this._getGatewayFilePath(6), this._getSubnetFilePath(6), this._getIP6FilePath()
+      this._getGatewayFilePath(6), this._getSubnetFilePath(6), this._getIP6FilePath(),
+      this._getBypassSubnetFilePath(), this._getBypassSubnetFilePath(6)
     ];
     for (const file of filesToDelete)
       await fs.unlinkAsync(file).catch((err) => {});

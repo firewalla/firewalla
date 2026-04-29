@@ -39,6 +39,7 @@ const _ = require('lodash');
 const firewalla = require('../net2/Firewalla.js');
 const sl = firewalla.isApi() ? require('../sensor/APISensorLoader.js') : firewalla.isMain() ? require('../sensor/SensorLoader.js') : null;
 const DomainTrie = require('../util/DomainTrie.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 class LogQuery {
 
@@ -210,7 +211,7 @@ class LogQuery {
     // query every feed once concurrentyly to reduce io block
     results = _.flatten(await Promise.all(feeds.map(async feed => {
       // use half of the desired count to do initial concurrent query to reduce memory consumption
-      const logs = await feed.base.getDeviceLogs(Object.assign({}, feed.options, {count: Math.floor(options.count/2)}))
+      const logs = await feed.base.getDeviceLogs(Object.assign({}, feed.options, {count: global ? options.count : Math.floor(options.count/2)}))
       if (logs.length) {
         feed.options.ts = logs[logs.length - 1].ts
       } else {
@@ -271,12 +272,15 @@ class LogQuery {
         }
       } else if (global) {
         // when query system logs, stop when any of the feed is exhausted
+        log.debug('System flow exhausted', feed.base.constructor.name,
+          feed.options.local ? 'local' : feed.options.dns ? 'dns' : feed.options.ntp ? 'regular' : 'ntp',
+          feed.options.block ? 'block' : 'accept', feed.options.ts)
         break
       } else {
         // no more elements, remove feed from feeds
         feeds = feeds.filter(f => f != feed)
         log.debug('Removing', feed.base.constructor.name, feed.options.direction,
-          (feed.options.localFlow || feed.options.localAudit) ? 'local' : feed.options.dnsFlow ? 'dns' : feed.options.type,
+          feed.options.local ? 'local' : feed.options.dns ? 'dns' : feed.options.ntp ? 'ntp' : 'regular',
           feed.options.block ? 'block' : 'accept', feed.options.mac, feed.options.ts)
       }
 
@@ -383,7 +387,7 @@ class LogQuery {
       if (!intf) {
         throw new Error('Invalid Interface ' + options.intf)
       }
-      if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
+      if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg") || intf.o.intf.startsWith("awg"))) {
         // add additional macs into options for VPN server network
         const allIdentities = identityManager.getIdentitiesByNicName(intf.o.intf);
         for (const ns of Object.keys(allIdentities)) {
@@ -475,8 +479,17 @@ class LogQuery {
 
         // failed on previous cloud request, try again
         if (intel && intel.cloudFailed || !intel) {
-          // not waiting as that will be too slow for API call
-          destIPFoundHook.processIP(f.ip);
+          if (!firewalla.isApi()) {
+            destIPFoundHook.processIP(f.ip);
+          } else {
+            // in fireapi, send to firemain for async intel check, which can use FastIntelPlugin and cloud
+            sem.sendEventToFireMain({
+              type: 'DestIP',
+              ip: f.ip,
+              skipReadLocalCache: true,
+              suppressEventLogging: true
+            });
+          }
         }
       } else if (f.domain) {
         const intel = await intelTool.getIntel(undefined, [f.domain])

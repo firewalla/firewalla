@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -29,6 +29,7 @@ const Ipset = require('../net2/Ipset.js');
 const Constants = require('../net2/Constants.js');
 
 const { Rule } = require('../net2/Iptables.js');
+const iptc = require('./IptablesControl.js');
 const qos = require('./QoS.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
@@ -46,71 +47,33 @@ const routeLogRateLimitPerSecond = 10;
 async function ensureCreateRuleGroupChain(uuid) {
   if (initializedRuleGroups[uuid] === 1)
     return;
-  const cmds = [
-    `sudo iptables -w -t filter -N ${getRuleGroupChainName(uuid, "allow")} &> /dev/null`,
-    `sudo iptables -w -t filter -N ${getRuleGroupChainName(uuid, "block")} &> /dev/null`,
-    `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "allow")} &> /dev/null`,
-    `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "block")} &> /dev/null`,
-    `sudo iptables -w -t filter -N ${getRuleGroupChainName(uuid, "allow")}_HI &> /dev/null`,
-    `sudo iptables -w -t filter -N ${getRuleGroupChainName(uuid, "block")}_HI &> /dev/null`,
-    `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "allow")}_HI &> /dev/null`,
-    `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "block")}_HI &> /dev/null`,
-    `sudo iptables -w -t filter -N ${getRuleGroupChainName(uuid, "allow")}_LO &> /dev/null`,
-    `sudo iptables -w -t filter -N ${getRuleGroupChainName(uuid, "block")}_LO &> /dev/null`,
-    `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "allow")}_LO &> /dev/null`,
-    `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "block")}_LO &> /dev/null`,
-    `sudo iptables -w -t filter -N ${getRuleGroupChainName(uuid, "alarm")} &> /dev/null`,
-    `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "alarm")} &> /dev/null`,
-    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_1 &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_1 &> /dev/null`,
-    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_2 &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_2 &> /dev/null`,
-    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_3 &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_3 &> /dev/null`,
-    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_4 &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_4 &> /dev/null`,
-    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_5 &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_5 &> /dev/null`,
-    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_1 &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_1 &> /dev/null`,
-    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_2 &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_2 &> /dev/null`,
-    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_3 &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_3 &> /dev/null`,
-    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_4 &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_4 &> /dev/null`,
-    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_5 &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_5 &> /dev/null`,
-    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_1 &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_1 &> /dev/null`,
-    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_2 &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_2 &> /dev/null`,
-    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_3 &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_3 &> /dev/null`,
-    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_4 &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_4 &> /dev/null`,
-    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_5 &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_5 &> /dev/null`,
-    `sudo iptables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_1 &> /dev/null`,
-    `sudo ip6tables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_1 &> /dev/null`,
-    `sudo iptables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_2 &> /dev/null`,
-    `sudo ip6tables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_2 &> /dev/null`,
-    `sudo iptables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_3 &> /dev/null`,
-    `sudo ip6tables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_3 &> /dev/null`,
-    `sudo iptables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_4 &> /dev/null`,
-    `sudo ip6tables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_4 &> /dev/null`,
-    `sudo iptables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_5 &> /dev/null`,
-    `sudo ip6tables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_5 &> /dev/null`,
+  const cmds4 = [
+    new Rule('filter').chn(getRuleGroupChainName(uuid, "allow")),
+    new Rule('filter').chn(getRuleGroupChainName(uuid, "block")),
+    new Rule('filter').chn(getRuleGroupChainName(uuid, "allow") + "_HI"),
+    new Rule('filter').chn(getRuleGroupChainName(uuid, "block") + "_HI"),
+    new Rule('filter').chn(getRuleGroupChainName(uuid, "allow") + "_LO"),
+    new Rule('filter').chn(getRuleGroupChainName(uuid, "block") + "_LO"),
+    new Rule('filter').chn(getRuleGroupChainName(uuid, "alarm")),
   ];
-  let initialized = true;
-  for (const cmd of cmds) {
-    await exec(cmd).catch((err) => {
-      log.error(`Failed to create rule group chain for ${uuid}`, cmd, err.message);
-      initialized = false;
-    });
+  for (let i = 1; i <= 5; i++) {
+    cmds4.push(new Rule('mangle').chn(getRuleGroupChainName(uuid, "qos") + "_" + i));
+    cmds4.push(new Rule('mangle').chn(getRuleGroupChainName(uuid, "route") + "_" + i));
+    cmds4.push(new Rule('mangle').chn(getRuleGroupChainName(uuid, "soft_route") + "_" + i));
+    cmds4.push(new Rule('nat').chn(getRuleGroupChainName(uuid, "snat") + "_" + i));
   }
-  if (initialized)
-    initializedRuleGroups[uuid] = 1;
+
+  const cmds6 = []
+  for (const cmd of cmds4) {
+    cmds6.push(cmd.clone().fam(6))
+  }
+
+  // queue chain creation using action '-N'
+  for (const r of [...cmds4, ...cmds6]) {
+    iptc.addRule(r.opr('-N'));
+  }
+
+  initializedRuleGroups[uuid] = 1;
 }
 
 function getRuleGroupChainName(uuid, action) {
@@ -131,21 +94,6 @@ function getRuleGroupChainName(uuid, action) {
     default:
       return `FW_RG_${uuid.substring(0, 13)}_BLOCK`;
   }
-}
-
-// This function MUST be called at the beginning of main.js
-async function setupBlockChain() {
-  log.info("Setting up iptables for traffic blocking");
-  let cmd = __dirname + "/install_iptables_setup.sh";
-
-  await exec(cmd);
-
-
-  await Promise.all([
-    setupCategoryEnv("default_c", "hash:net", 4096),
-  ])
-
-  log.info("Finished setup for traffic blocking");
 }
 
 function getMacSet(tag) {
@@ -195,12 +143,7 @@ function getDropChain(security, tls) {
   return `FW_${security ? "SEC_" : ""}${tls ? "TLS_" : ""}DROP`;
 }
 
-async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128, needComment = false, isCountry = false) {
-  let commentIndicator = "";
-  if (needComment) {
-    commentIndicator = "comment";
-  }
-
+async function setupCategoryEnv(category, dstType = "hash:ip", hashsize = 128, comment = false, isCountry = false) {
   if (!category) {
     return;
   }
@@ -208,41 +151,24 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128, n
   const CategoryUpdater = require('./CategoryUpdater.js');
   const categoryUpdater = new CategoryUpdater();
 
-  const ipset = categoryUpdater.getIPSetName(category);
-  const tempIpset = categoryUpdater.getTempIPSetName(category);
-  const ipset6 = categoryUpdater.getIPSetNameForIPV6(category);
-  const tempIpset6 = categoryUpdater.getTempIPSetNameForIPV6(category);
+  const ipset4 = categoryUpdater.getIPSetName(category);
+  const ipset6 = categoryUpdater.getIPSetName(category, false, true);
 
-  const cmdCreateCategorySet = `sudo ipset create -! ${ipset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
-  const cmdCreateCategorySet6 = `sudo ipset create -! ${ipset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
-  const cmdCreateTempCategorySet = `sudo ipset create -! ${tempIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
-  const cmdCreateTempCategorySet6 = `sudo ipset create -! ${tempIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
-
-  await exec(cmdCreateCategorySet);
-  await exec(cmdCreateCategorySet6);
-  await exec(cmdCreateTempCategorySet);
-  await exec(cmdCreateTempCategorySet6);
+  Ipset.create(ipset4, dstType, false, { hashsize, maxelem: 65536, comment });
+  Ipset.create(ipset6, dstType, true, { hashsize, maxelem: 65536, comment });
 
   if (!isCountry) { // country does not need following ipsets
     const staticIpset = categoryUpdater.getIPSetName(category, true);
-    const tempStaticIpset = categoryUpdater.getTempIPSetName(category, true);
-    const staticIpset6 = categoryUpdater.getIPSetNameForIPV6(category, true);
-    const tempStaticIpset6 = categoryUpdater.getTempIPSetNameForIPV6(category, true);
-  
+    const staticIpset6 = categoryUpdater.getIPSetName(category, true, true);
+
     const netPortIpset = categoryUpdater.getNetPortIPSetName(category);
-    const tempNetPortIpset = categoryUpdater.getTempNetPortIPSetName(category);
     const netPortIpset6 = categoryUpdater.getNetPortIPSetNameForIPV6(category);
-    const tempNetPortIpset6 = categoryUpdater.getTempNetPortIPSetNameForIPV6(category);
-  
+
     const domainPortIpset = categoryUpdater.getDomainPortIPSetName(category);
-    const tempDomainPortIpset = categoryUpdater.getTempDomainPortIPSetName(category);
-    const domainPortIpset6 = categoryUpdater.getDomainPortIPSetNameForIPV6(category);
-    const tempDomainPortIpset6 = categoryUpdater.getTempDomainPortIPSetNameForIPV6(category);
-  
+    const domainPortIpset6 = categoryUpdater.getDomainPortIPSetName(category, false, true);
+
     const staticDomainPortIpset = categoryUpdater.getDomainPortIPSetName(category, true);
-    const tempStaticDomainPortIpset = categoryUpdater.getTempDomainPortIPSetName(category, true);
-    const staticDomainPortIpset6 = categoryUpdater.getDomainPortIPSetNameForIPV6(category, true);
-    const tempStaticDomainPortIpset6 = categoryUpdater.getTempDomainPortIPSetNameForIPV6(category, true);
+    const staticDomainPortIpset6 = categoryUpdater.getDomainPortIPSetName(category, true, true);
 
     const connIpset = categoryUpdater.getConnectionIPSetName(category);
     const connIpset6 = categoryUpdater.getConnectionIPSetNameForIPV6(category);
@@ -254,119 +180,54 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128, n
     const allowIpset = categoryUpdater.getAllowIPSetName(category);
     const allowIpset6 = categoryUpdater.getAllowIPSetNameForIPV6(category);
 
-    const cmdCreateNetPortCategorySet = `sudo ipset create -! ${netPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-    const cmdCreateNetPortCategorySet6 = `sudo ipset create -! ${netPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-    const cmdCreateTempNetPortCategorySet = `sudo ipset create -! ${tempNetPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-    const cmdCreateTempNetPortCategorySet6 = `sudo ipset create -! ${tempNetPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-    const cmdCreateDomainPortCategorySet = `sudo ipset create -! ${domainPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-    const cmdCreateDomainPortCategorySet6 = `sudo ipset create -! ${domainPortIpset6}  hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-    const cmdCreateTempDomainPortCategorySet = `sudo ipset create -! ${tempDomainPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`;
-    const cmdCreateTempDomainPortCategorySet6 = `sudo ipset create -! ${tempDomainPortIpset6}  hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`;
-    const cmdCreateAggrCategorySet = `sudo ipset create -! ${aggrIpset} list:set`;
-    const cmdCreateAggrCategorySet6 = `sudo ipset create -! ${aggrIpset6} list:set`;
-  
-  
-    const cmdCreateStaticCategorySet = `sudo ipset create -! ${staticIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
-    const cmdCreateStaticCategorySet6 = `sudo ipset create -! ${staticIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
-    const cmdCreateTempStaticCategorySet = `sudo ipset create -! ${tempStaticIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
-    const cmdCreateTempStaticCategorySet6 = `sudo ipset create -! ${tempStaticIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
-    const cmdCreateStaticDomainPortCategorySet = `sudo ipset create -! ${staticDomainPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-    const cmdCreateStaticDomainPortCategorySet6 = `sudo ipset create -! ${staticDomainPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-    const cmdCreateTempStaticDomainPortCategorySet = `sudo ipset create -! ${tempStaticDomainPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-    const cmdCreateTempStaticDomainPortCategorySet6 = `sudo ipset create -! ${tempStaticDomainPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
+    Ipset.create(netPortIpset, 'hash:net,port', false, { hashsize, maxelem: 65536, comment });
+    Ipset.create(netPortIpset6, 'hash:net,port', true, { hashsize, maxelem: 65536, comment });
+    Ipset.create(domainPortIpset, 'hash:net,port', false, { hashsize, maxelem: 65536, comment });
+    Ipset.create(domainPortIpset6, 'hash:net,port', true, { hashsize, maxelem: 65536, comment });
+    Ipset.create(aggrIpset, 'list:set');
+    Ipset.create(aggrIpset6, 'list:set');
 
-    const cmdCreateConnectionSet = `sudo ipset create -! ${connIpset} hash:ip,port,ip family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator} timeout 300`
-    const cmdCreateConnectionSet6 = `sudo ipset create -! ${connIpset6} hash:ip,port,ip family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator} timeout 300`
+    Ipset.create(staticIpset, dstType, false, { hashsize, maxelem: 65536, comment });
+    Ipset.create(staticIpset6, dstType, true, { hashsize, maxelem: 65536, comment });
+    Ipset.create(staticDomainPortIpset, 'hash:net,port', false, { hashsize, maxelem: 65536, comment });
+    Ipset.create(staticDomainPortIpset6, 'hash:net,port', true, { hashsize, maxelem: 65536, comment });
 
-    const cmdCreateStaticAggrCategorySet = `sudo ipset create -! ${staticAggrIpset} list:set`
-    const cmdCreateStaticAggrCategorySet6 = `sudo ipset create -! ${staticAggrIpset6} list:set`
-  
-    const cmdCreateAllowCategorySet = `sudo ipset create -! ${allowIpset} list:set`
-    const cmdCreateAllowCategorySet6 = `sudo ipset create -! ${allowIpset6} list:set`
-  
-    const cmdAddNet = `sudo ipset add -! ${aggrIpset} ${ipset}; sudo ipset add -! ${aggrIpset} ${staticIpset}`; // add both dynamic and static ipset to category default ipset
-    const cmdAddNetPort = `sudo ipset add -! ${aggrIpset} ${netPortIpset}`;
-    const cmdAddDomainPort = `sudo ipset add -! ${aggrIpset} ${staticDomainPortIpset}`;
-    const cmdAddNet6 = `sudo ipset add -! ${aggrIpset6} ${ipset6}; sudo ipset add -! ${aggrIpset6} ${staticIpset6}`;
-    const cmdAddNetPort6 = `sudo ipset add -! ${aggrIpset6} ${netPortIpset6}`;
-    const cmdAddDomainPort6 = `sudo ipset add -! ${aggrIpset6} ${staticDomainPortIpset6}`;
-  
-    const cmdAddStaticNet = `sudo ipset add -! ${staticAggrIpset} ${staticIpset}`; // only add static ipset to category static ipset
-    const cmdAddStaticNetPort = `sudo ipset add -! ${staticAggrIpset} ${netPortIpset}`;
-    const cmdAddStaticDomainPort = `sudo ipset add -! ${staticAggrIpset} ${staticDomainPortIpset}`;
-    const cmdAddStaticNet6 = `sudo ipset add -! ${staticAggrIpset6} ${staticIpset6}`;
-    const cmdAddStaticNetPort6 = `sudo ipset add -! ${staticAggrIpset6} ${netPortIpset6}`;
-    const cmdAddStaticDomainPort6 = `sudo ipset add -! ${staticAggrIpset6} ${staticDomainPortIpset6}`;
-  
-    const cmdAddAllowNet = `sudo ipset add -! ${allowIpset} ${ipset}; sudo ipset add -! ${allowIpset} ${staticIpset}`;
-    const cmdAddAllowNet6 = `sudo ipset add -! ${allowIpset6} ${ipset6}; sudo ipset add -! ${allowIpset6} ${staticIpset6}`;
-    const cmdAddAllowNetPort = `sudo ipset add -! ${allowIpset} ${netPortIpset}`;
-    const cmdAddAllowNetPort6 = `sudo ipset add -! ${allowIpset6} ${netPortIpset6}`;
-    const cmdAddAllowDomainport = `sudo ipset add -! ${allowIpset} ${domainPortIpset}; sudo ipset add -! ${allowIpset} ${staticDomainPortIpset}`;
-    const cmdAddAllowDomainport6 = `sudo ipset add -! ${allowIpset6} ${domainPortIpset6}; sudo ipset add -! ${allowIpset6} ${staticDomainPortIpset6}`;
+    Ipset.create(connIpset, 'hash:ip,port,ip', false, { hashsize, maxelem: 65536, comment, timeout: 300 });
+    Ipset.create(connIpset6, 'hash:ip,port,ip', true, { hashsize, maxelem: 65536, comment, timeout: 300 });
 
-    await exec(cmdCreateNetPortCategorySet);
-    await exec(cmdCreateNetPortCategorySet6);
-    await exec(cmdCreateTempNetPortCategorySet);
-    await exec(cmdCreateTempNetPortCategorySet6);
-    await exec(cmdCreateDomainPortCategorySet);
-    await exec(cmdCreateDomainPortCategorySet6);
-    await exec(cmdCreateTempDomainPortCategorySet);
-    await exec(cmdCreateTempDomainPortCategorySet6);
-    await exec(cmdCreateStaticDomainPortCategorySet);
-    await exec(cmdCreateStaticDomainPortCategorySet6);
-    await exec(cmdCreateTempStaticDomainPortCategorySet);
-    await exec(cmdCreateTempStaticDomainPortCategorySet6);
-
-    await exec(cmdCreateConnectionSet);
-    await exec(cmdCreateConnectionSet6);
-
-    await exec(cmdCreateAggrCategorySet);
-    await exec(cmdCreateAggrCategorySet6); 
+    Ipset.create(staticAggrIpset, 'list:set');
+    Ipset.create(staticAggrIpset6, 'list:set');
   
-    await exec(cmdCreateStaticCategorySet);
-    await exec(cmdCreateStaticCategorySet6);
-    await exec(cmdCreateTempStaticCategorySet);
-    await exec(cmdCreateTempStaticCategorySet6);
+    Ipset.create(allowIpset, 'list:set');
+    Ipset.create(allowIpset6, 'list:set');
   
-    await exec(cmdCreateStaticAggrCategorySet);
-    await exec(cmdCreateStaticAggrCategorySet6);
+    // add both dynamic and static ipset to category default ipset
+    Ipset.add(aggrIpset, ipset4);
+    Ipset.add(aggrIpset, staticIpset);
+    Ipset.add(aggrIpset, netPortIpset);
+    Ipset.add(aggrIpset, staticDomainPortIpset);
+    Ipset.add(aggrIpset6, ipset6);
+    Ipset.add(aggrIpset6, staticIpset6);
+    Ipset.add(aggrIpset6, netPortIpset6);
+    Ipset.add(aggrIpset6, staticDomainPortIpset6);
   
-    await exec(cmdCreateAllowCategorySet);
-    await exec(cmdCreateAllowCategorySet6);
+    Ipset.add(staticAggrIpset, staticIpset); // only add static ipset to category static ipset
+    Ipset.add(staticAggrIpset, netPortIpset);
+    Ipset.add(staticAggrIpset, staticDomainPortIpset);
+    Ipset.add(staticAggrIpset6, staticIpset6);
+    Ipset.add(staticAggrIpset6, netPortIpset6);
+    Ipset.add(staticAggrIpset6, staticDomainPortIpset6);
   
-    await exec(cmdAddNet);
-    await exec(cmdAddNetPort);
-    await exec(cmdAddDomainPort);
-    await exec(cmdAddNet6);
-    await exec(cmdAddNetPort6);
-    await exec(cmdAddDomainPort6);
-    await exec(cmdAddStaticNet);
-    await exec(cmdAddStaticNetPort);
-    await exec(cmdAddStaticDomainPort);
-    await exec(cmdAddStaticNet6);
-    await exec(cmdAddStaticNetPort6);
-    await exec(cmdAddStaticDomainPort6);
-    await exec(cmdAddAllowNet);
-    await exec(cmdAddAllowNet6);
-    await exec(cmdAddAllowNetPort);
-    await exec(cmdAddAllowNetPort6);
-    await exec(cmdAddAllowDomainport);
-    await exec(cmdAddAllowDomainport6);
-  }
-}
-
-async function existsBlockingEnv(tag) {
-  const cmd = `sudo iptables -w -L FW_BLOCK | grep ${getMacSet(tag)} | wc -l`
-  try {
-    let output = await exec(cmd);
-    if (output.stdout == 4) {
-      return true
-    } else {
-      return false
-    }
-  } catch (err) {
-    log.error('Error when check blocking env existence', err);
+    Ipset.add(allowIpset, ipset4);
+    Ipset.add(allowIpset, staticIpset);
+    Ipset.add(allowIpset6, ipset6);
+    Ipset.add(allowIpset6, staticIpset6);
+    Ipset.add(allowIpset, netPortIpset);
+    Ipset.add(allowIpset6, netPortIpset6);
+    Ipset.add(allowIpset, domainPortIpset);
+    Ipset.add(allowIpset, staticDomainPortIpset);
+    Ipset.add(allowIpset6, domainPortIpset6);
+    Ipset.add(allowIpset6, staticDomainPortIpset6);
   }
 }
 
@@ -391,8 +252,7 @@ function unblock(target, ipset) {
   return setupIpset(target, ipset, true)
 }
 
-// this is used only for user defined target list so there is no need to remove from ipset. The ipset will be reset upon category reload or update.
-async function batchBlockNetPort(elements, portObj, ipset, options = {}) {
+async function batchActionNetPort(elements, portObj, ipset, op='add', options = {}) {
   log.debug("Batch block net port of", ipset);
   if (!_.isArray(elements) || elements.length === 0)
     return;
@@ -400,8 +260,6 @@ async function batchBlockNetPort(elements, portObj, ipset, options = {}) {
   const v6Set = ipset + '6';
   const gateway6 = sysManager.myDefaultGateway6();
   const gateway = sysManager.myDefaultGateway();
-  const cmds = [];
-  const op = 'add';
 
   for (const element of elements) {
     const ipSpliterIndex = element.search(/[/,]/)
@@ -411,38 +269,62 @@ async function batchBlockNetPort(elements, portObj, ipset, options = {}) {
     if (gateway == ipAddr || gateway6 == ipAddr) {
       continue;
     }
+    let setName
     if (new Address4(ipAddr).isValid()) {
-      if (options.comment) {
-        cmds.push(`${op} ${v4Set} ${ipAddr},${CategoryEntry.toPortStr(portObj)} comment ${options.comment}`);
-      } else {
-        cmds.push(`${op} ${v4Set} ${ipAddr},${CategoryEntry.toPortStr(portObj)}`);
-      }
+      setName = v4Set;
     } else {
       const ip6 = new Address6(ipAddr);
       if (ip6.isValid() && ip6.correctForm() != '::') {
-        if (options.comment) {
-          cmds.push(`${op} ${v6Set} ${ipAddr},${CategoryEntry.toPortStr(portObj)} comment ${options.comment}`);
-        } else {
-          cmds.push(`${op} ${v6Set} ${ipAddr},${CategoryEntry.toPortStr(portObj)}`);
-        }
+        setName = v6Set;
+      }
+    }
+    if (!setName) continue;
+
+    if (op === 'add') {
+      Ipset.add(setName, `${ipAddr},${CategoryEntry.toPortStr(portObj)}`, { comment: options.comment });
+    } else {
+      Ipset.del(setName, `${ipAddr},${CategoryEntry.toPortStr(portObj)}`);
+    }
+  }
+}
+
+// this is used only for user defined target list so there is no need to remove from ipset. The ipset will be reset upon category reload or update.
+async function batchBlockNetPort(elements, portObj, ipset, options = {}) {
+  return batchActionNetPort(elements, portObj, ipset, 'add', options);
+}
+
+async function batchUnblockNetPort(elements, portObj, ipset, options = {}) {
+  return batchActionNetPort(elements, portObj, ipset, 'del', options);
+}
+
+function isGatewayOrPublicIp(ip) {
+  const gateway6 = sysManager.myDefaultGateway6();
+  const gateway = sysManager.myDefaultGateway();
+  const publicIps = sysManager.getPublicIPs();
+
+  if (ip === gateway || ip === gateway6) {
+    return true;
+  }
+
+  if (publicIps && _.isObject(publicIps)) {
+    for (const [_intf, publicIp] of Object.entries(publicIps)) {
+      if (ip === publicIp) {
+        return true;
       }
     }
   }
-  log.debug(`Batch setup IP set ${op}`, cmds);
-  return Ipset.batchOp(cmds);
+
+  return false;
 }
 
+
 // no need to remove from ipset, record will be cleared when timeout
-async function batchBlockConnection(elements, ipset, options = {}) {
+function batchBlockConnection(elements, ipset, options = {}) {
   log.debug("Batch block connection of", ipset);
   if (!_.isArray(elements) || elements.length === 0)
     return;
   const v4Set = ipset;
   const v6Set = ipset + '6';
-  const gateway6 = sysManager.myDefaultGateway6();
-  const gateway = sysManager.myDefaultGateway();
-  const cmds = [];
-  const op = 'add';
   for (const element of elements) {
     let {localAddr, localPorts, remoteAddr, protocol} = element;
     if (!localAddr || !localPorts || !remoteAddr || !protocol) {
@@ -453,35 +335,29 @@ async function batchBlockConnection(elements, ipset, options = {}) {
       localPorts = [localPorts];
     }
 
-    //Prevent gateway IP from being added into blocking IP set dynamically
-    if (gateway == remoteAddr || gateway6 == remoteAddr) {
+    //Prevent gateway IP and publicIp from being added into blocking IP set dynamically
+    if (isGatewayOrPublicIp(remoteAddr)) {
       continue;
-    }
-
+    } 
+    let setName;
     if (new Address4(remoteAddr).isValid() && new Address4(localAddr).isValid()) {
-      for (const localPort of localPorts) {
-        if (options.comment) {
-          cmds.push(`${op} ${v4Set} ${localAddr},${protocol}:${localPort},${remoteAddr} comment ${options.comment}`);
-        } else {
-          cmds.push(`${op} ${v4Set} ${localAddr},${protocol}:${localPort},${remoteAddr}`);
-        }
-      }
+      setName = v4Set;
     } else {
       const local6 = new Address6(localAddr);
       const remote6 = new Address6(remoteAddr);
       if (local6.isValid() && local6.correctForm() != '::' && remote6.isValid() && remote6.correctForm() != '::') {
-        for (const localPort of localPorts) {
-          if (options.comment) {
-            cmds.push(`${op} ${v6Set} ${localAddr},${protocol}:${localPort},${remoteAddr} comment ${options.comment}`);
-          } else {
-            cmds.push(`${op} ${v6Set} ${localAddr},${protocol}:${localPort},${remoteAddr}`);
-          }
-        }
+        setName = v6Set;
+      } else {
+        log.debug("invalid local address or remote address", localAddr, remoteAddr);
+        continue;
       }
     }
+
+    const { comment, timeout } = options;
+    for (const localPort of localPorts) {
+      Ipset.add(setName, `${localAddr},${protocol}:${localPort},${remoteAddr}`, { comment, timeout });
+    }
   }
-  log.debug(`Batch setup IP set ${op}`, cmds);
-  return Ipset.batchOp(cmds);
 }
 
 async function batchSetupIpset(elements, ipset, remove = false, options = {}) {
@@ -491,8 +367,6 @@ async function batchSetupIpset(elements, ipset, remove = false, options = {}) {
   const v6Set = ipset + '6';
   const gateway6 = sysManager.myDefaultGateway6();
   const gateway = sysManager.myDefaultGateway();
-  const cmds = [];
-  const op = remove ? 'del' : 'add';
 
   for (const element of elements) {
     const ipSpliterIndex = element.search(/[/,]/)
@@ -502,28 +376,27 @@ async function batchSetupIpset(elements, ipset, remove = false, options = {}) {
     if (!remove && (gateway == ipAddr || gateway6 == ipAddr)) {
       continue;
     }
+
+    let setName;
     // check and add v6 suffix
     if (ipAddr.match(/^\d+(-\d+)?$/)) {
       // ports
-      cmds.push(`${op} ${v4Set} ${ipAddr}`);
+      setName = v4Set;
     } else if (new Address4(ipAddr).isValid()) {
-      if (options.comment) {
-        cmds.push(`${op} ${v4Set} ${ipAddr} comment ${options.comment}`);
-      } else {
-        cmds.push(`${op} ${v4Set} ${ipAddr}`);
-      }
+      setName = v4Set;
     } else {
       const ip6 = new Address6(ipAddr);
       if (ip6.isValid() && ip6.correctForm() != '::') {
-        if (options.comment) {
-          cmds.push(`${op} ${v6Set} ${ipAddr} comment ${options.comment}`);
-        } else {
-          cmds.push(`${op} ${v6Set} ${ipAddr}`);
-        }
+        setName = v6Set;
       }
     }
+    if (!setName) continue;
+
+    if (remove)
+      Ipset.del(setName, ipAddr);
+    else
+      Ipset.add(setName, ipAddr, { comment: options.comment });
   }
-  return Ipset.batchOp(cmds);
 }
 
 function setupIpset(element, ipset, remove = false) {
@@ -572,7 +445,11 @@ async function setupGlobalRules(options) {
     subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
   } = options
   log.verbose(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}, increaseLatency ${increaseLatency}, dropPacketRate ${dropPacketRate}`);
+  const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
+  let markTarget = null;
+  let table = "filter";
+  const rawRules = [];
   const filterPrio = 1;
   let chainSuffix = "";
   switch (seq) {
@@ -596,6 +473,11 @@ async function setupGlobalRules(options) {
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       priority = priority || qos.DEFAULT_PRIO;
       qdisc = qdisc || "fq_codel";
+      const model = platform.getName();
+      let rootClassId = "1";
+      if (model === "gold" || model === "goldpro") {
+        rootClassId = "10";
+      }
       if (rateLimit || qdisc === "netem") {
         let parentHTBQdisc = "3";
         let subclassId = "4";
@@ -608,14 +490,15 @@ async function setupGlobalRules(options) {
             subclassId = "7";
           }
         }
+
         if (createOrDestroy === "create") {
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
           await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
         }
       } else {
         let subclassId = qdisc == "fq_codel" ? "5" : "6";
@@ -627,15 +510,21 @@ async function setupGlobalRules(options) {
           }
         }
         if (createOrDestroy === "create")
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
         else
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
       }
       if(qdisc === "netem"){
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
         const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
         const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
-        parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_GLOBAL`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+        if (!options.byPassChain) {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_GLOBAL`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+        } else {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_GLOBAL`, target: options.byPassChain });
+          table = "mangle";
+          markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+        }
       } else {
         parameters.push({ table: "mangle", chain: `FW_QOS_GLOBAL_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       }
@@ -707,16 +596,31 @@ async function setupGlobalRules(options) {
       break;
     }
     case "allow": {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_GLOBAL_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${pid}/0xffff` });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_GLOBAL_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${Rule.stdMark(pid)}` });
       break;
     }
     case "block":
     default: {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff` });
+      if (!options.byPassChain) {
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
+      } else {
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK" + chainSuffix, target: options.byPassChain });
+        markTarget = `MARK --set-xmark ${Rule.stdMark(pid)}`;
+      }
     }
   }
 
+
+
   const ruleOptions = await prepareOutboundOptions(options)
+  if (options.byPassChain) {
+    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    if (ruleOptions.comment) {
+      rule.comment(ruleOptions.comment);
+    }
+    rawRules.push(rule);
+    rawRules.push(rule.clone().fam(6));
+  }
   const local = {
     set: platform.isFireRouterManaged() ? Ipset.CONSTANTS.IPSET_MONITORED_NET : null,
     specs: platform.isFireRouterManaged() ? ['src','src'] : null,
@@ -733,6 +637,9 @@ async function setupGlobalRules(options) {
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
   }
+  for (const rawRule of rawRules) {
+    iptc.addRule(rawRule);
+  }
 }
 
 async function setupGenericIdentitiesRules(options) {
@@ -746,6 +653,9 @@ async function setupGenericIdentitiesRules(options) {
   // generic identity has the same priority level as device
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
+  let markTarget = null;
+  let table = "filter";
+  const rawRules = [];
   const filterPrio = 1;
   let chainSuffix = "";
   switch (seq) {
@@ -769,6 +679,11 @@ async function setupGenericIdentitiesRules(options) {
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       priority = priority || qos.DEFAULT_PRIO;
       qdisc = qdisc || "fq_codel";
+      const model = platform.getName();
+      let rootClassId = "1";
+      if (model === "gold" || model === "goldpro") {
+        rootClassId = "10";
+      }
       if (rateLimit || qdisc === "netem") {
         let parentHTBQdisc = "3";
         let subclassId = "4";
@@ -782,13 +697,13 @@ async function setupGenericIdentitiesRules(options) {
           }
         }
         if (createOrDestroy === "create") {
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
           await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
         }
       } else {
         let subclassId = qdisc == "fq_codel" ? "5" : "6";
@@ -800,15 +715,21 @@ async function setupGenericIdentitiesRules(options) {
           }
         }
         if (createOrDestroy === "create")
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
         else
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
       }
       if(qdisc === "netem"){
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
         const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
         const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
-        parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+        if (!options.byPassChain) {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+        } else {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: options.byPassChain });
+          table = "mangle";
+          markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+        }
       } else {
         parameters.push({ table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       }
@@ -880,17 +801,30 @@ async function setupGenericIdentitiesRules(options) {
       break;
     }
     case "allow": {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${pid}/0xffff` });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${Rule.stdMark(pid)}` });
       break;
     }
     case "block":
     default: {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff` });
+      if (!options.byPassChain) {
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
+      } else {
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: options.byPassChain });
+        markTarget = `MARK --set-xmark ${Rule.stdMark(pid)}`;
+      }
     }
   }
-  const IdentityManager = require('../net2/IdentityManager.js');
-
   const ruleOptions = await prepareOutboundOptions(options)
+  if (options.byPassChain) {
+    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    if (ruleOptions.comment) {
+      rule.comment(ruleOptions.comment);
+    }
+    rawRules.push(rule);
+    rawRules.push(rule.clone().fam(6));
+  }
+
+  const IdentityManager = require('../net2/IdentityManager.js');
 
   const rules = [];
   for (const guid of guids) {
@@ -918,6 +852,9 @@ async function setupGenericIdentitiesRules(options) {
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
   }
+  for (const rawRule of rawRules) {
+    iptc.addRule(rawRule);
+  }
 }
 
 // device-wise rules
@@ -931,6 +868,9 @@ async function setupDevicesRules(options) {
   log.verbose(`${createOrDestroy} device rule, MAC address ${JSON.stringify(macAddresses)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}, increaseLatency ${increaseLatency}, dropPacketRate ${dropPacketRate}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
+  let markTarget = null;
+  let table = "filter";
+  const rawRules = [];
   const filterPrio = 1;
   let chainSuffix = "";
   switch (seq) {
@@ -954,6 +894,11 @@ async function setupDevicesRules(options) {
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       priority = priority || qos.DEFAULT_PRIO;
       qdisc = qdisc || "fq_codel";
+      const model = platform.getName();
+      let rootClassId = "1";
+      if (model === "gold" || model === "goldpro") {
+        rootClassId = "10";
+      }
       if (rateLimit || qdisc === "netem") {
         let parentHTBQdisc = "3";
         let subclassId = "4";
@@ -967,13 +912,13 @@ async function setupDevicesRules(options) {
           }
         }
         if (createOrDestroy === "create") {
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
           await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
         }
       } else {
         let subclassId = qdisc == "fq_codel" ? "5" : "6";
@@ -985,15 +930,21 @@ async function setupDevicesRules(options) {
           }
         }
         if (createOrDestroy === "create")
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
         else
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
       }
       if(qdisc === "netem"){
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
         const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
         const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
-        parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+        if (!options.byPassChain) {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+        } else {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: options.byPassChain });
+          table = "mangle";
+          markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+        }
       } else {
         parameters.push({ table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       }
@@ -1065,16 +1016,31 @@ async function setupDevicesRules(options) {
       break;
     }
     case "allow": {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${pid}/0xffff` });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${Rule.stdMark(pid)}` });
       break;
     }
     case "block":
     default: {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff` });
+      if (!options.byPassChain) {
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
+      } else {
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: options.byPassChain });
+        markTarget = `MARK --set-xmark ${Rule.stdMark(pid)}`;
+      }
     }
   }
 
   const ruleOptions = await prepareOutboundOptions(options)
+
+  if (options.byPassChain) {
+    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    if (ruleOptions.comment) {
+      rule.comment(ruleOptions.comment);
+    }
+    rawRules.push(rule);
+    rawRules.push(rule.clone().fam(6));
+  }
+
 
   const rules = [];
   const Host = require('../net2/Host.js');
@@ -1095,6 +1061,9 @@ async function setupDevicesRules(options) {
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
   }
+  for (const rawRule of rawRules) {
+    iptc.addRule(rawRule);
+  }
 }
 
 async function setupTagsRules(options) {
@@ -1107,6 +1076,9 @@ async function setupTagsRules(options) {
   log.verbose(`${createOrDestroy} group rule, policy id ${pid}, group uid ${JSON.stringify(uids)}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}, dscpClass ${dscpClass}, increaseLatency ${increaseLatency}, dropPacketRate ${dropPacketRate}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
+  let markTarget = null;
+  let table = "filter";
+  const rawRules= [];
   const filterPrio = 1;
   let chainSuffix = "";
   switch (seq) {
@@ -1135,6 +1107,11 @@ async function setupTagsRules(options) {
         const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
         priority = priority || qos.DEFAULT_PRIO;
         qdisc = qdisc || "fq_codel";
+        const model = platform.getName();
+        let rootClassId = "1";
+        if (model === "gold" || model === "goldpro") {
+          rootClassId = "10";
+        }
         if (rateLimit || qdisc === "netem") {
           let parentHTBQdisc = "3";
           let subclassId = "4";
@@ -1148,13 +1125,13 @@ async function setupTagsRules(options) {
             }
           }
           if (createOrDestroy === "create") {
-            await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+            await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
             await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
             await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
           } else {
             await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
             await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-            await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+            await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
           }
         } else {
           let subclassId = qdisc == "fq_codel" ? "5" : "6";
@@ -1166,16 +1143,23 @@ async function setupTagsRules(options) {
             }
           }
           if (createOrDestroy === "create")
-            await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+            await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           else
-            await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+            await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
         }
         if(qdisc === "netem"){
           // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
           const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
           const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
-          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV_G`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`, localSet: devSet, localFlagCount: 1 });
-          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET_G`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`, localSet: netSet, localFlagCount: 2 });
+          if (!options.byPassChain) {
+            parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV_G`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET_G`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`, localSet: netSet, localFlagCount: 2 });
+          } else {
+            parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV_G`, target: options.byPassChain, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET_G`, target: options.byPassChain, localSet: netSet, localFlagCount: 2 });
+            table = "mangle";
+            markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+          }
         } else {
           parameters.push({ table: "mangle", chain: `FW_QOS_DEV_G_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: devSet, localFlagCount: 1 });
           parameters.push({ table: "mangle", chain: `FW_QOS_NET_G_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: netSet, localFlagCount: 2 });
@@ -1279,24 +1263,41 @@ async function setupTagsRules(options) {
         break;
       }
       case "allow": {
-        parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${pid}/0xffff`, localSet: devSet, localFlagCount: 1 });
-        parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_G_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${pid}/0xffff`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${Rule.stdMark(pid)}`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_G_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${Rule.stdMark(pid)}`, localSet: netSet, localFlagCount: 2 });
         break;
       }
       case "snat": {
-        parameters.push({ table: "nat", chain: `FW_PR_SNAT_DEV_G_${subPrio}`, target: `SNAT --to-source ${snatIP}`});
-        parameters.push({ table: "nat", chain: `FW_PR_SNAT_NET_G_${subPrio}`, target: `SNAT --to-source ${snatIP}`});
+        parameters.push({ table: "nat", chain: `FW_PR_SNAT_DEV_G_${subPrio}`, target: `SNAT --to-source ${snatIP}`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "nat", chain: `FW_PR_SNAT_NET_G_${subPrio}`, target: `SNAT --to-source ${snatIP}`, localSet: netSet, localFlagCount: 2 });
         break;
       }
       case "block":
       default: {
-        parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff`, localSet: devSet, localFlagCount: 1 });
-        parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff`, localSet: netSet, localFlagCount: 2 });
+        if (!options.byPassChain) {
+          parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}`, localSet: devSet, localFlagCount: 1 });
+          parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}`, localSet: netSet, localFlagCount: 2 });
+        } else {
+          parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: options.byPassChain, localSet: devSet, localFlagCount: 1 });
+          parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK" + chainSuffix, target: options.byPassChain, localSet: netSet, localFlagCount: 2 });
+         
+          markTarget = `MARK --set-xmark ${Rule.stdMark(pid)}`;
+        }
       }
     }
   }
 
   const ruleOptions = await prepareOutboundOptions(options)
+
+  if (options.byPassChain) {
+    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    if (ruleOptions.comment) {
+      rule.comment(ruleOptions.comment);
+    }
+    rawRules.push(rule);
+    rawRules.push(rule.clone().fam(6));
+  } 
+
 
   const rules = [];
 
@@ -1315,6 +1316,9 @@ async function setupTagsRules(options) {
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
   }
+  for (const rawRule of rawRules) {
+    iptc.addRule(rawRule);
+  }
 }
 
 async function setupIntfsRules(options) {
@@ -1329,6 +1333,9 @@ async function setupIntfsRules(options) {
     return;
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
+  let markTarget = null;
+  let table = "filter";
+  const rawRules = [];
   const filterPrio = 1;
   let chainSuffix = "";
   switch (seq) {
@@ -1342,6 +1349,7 @@ async function setupIntfsRules(options) {
     default:
       chainSuffix = "";
   }
+  const NetworkProfile = require('../net2/NetworkProfile.js');
   switch (action) {
     case "qos": {
       qdisc = qdisc || "fq_codel";
@@ -1352,6 +1360,11 @@ async function setupIntfsRules(options) {
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       priority = priority || qos.DEFAULT_PRIO;
       qdisc = qdisc || "fq_codel";
+      const model = platform.getName();
+      let rootClassId = "1";
+      if (model === "gold" || model === "goldpro") {
+        rootClassId = "10";
+      }
       if (rateLimit || qdisc === "netem") {
         let parentHTBQdisc = "3";
         let subclassId = "4";
@@ -1365,13 +1378,13 @@ async function setupIntfsRules(options) {
           }
         }
         if (createOrDestroy === "create") {
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
           await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
         }
       } else {
         let subclassId = qdisc == "fq_codel" ? "5" : "6";
@@ -1383,15 +1396,21 @@ async function setupIntfsRules(options) {
           }
         }
         if (createOrDestroy === "create")
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
         else
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
       }
       if(qdisc === "netem"){
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
         const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
         const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
-        parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+        if (!options.byPassChain) {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
+        } else {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET`, target: options.byPassChain });
+          table = "mangle";
+          markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+        }
       } else {
         parameters.push({ table: "mangle", chain: `FW_QOS_NET_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       }
@@ -1416,8 +1435,7 @@ async function setupIntfsRules(options) {
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
         } else {
-          const NetworkProfile = require('../net2/NetworkProfile.js');
-          await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
+          NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
         }
@@ -1463,25 +1481,37 @@ async function setupIntfsRules(options) {
       break;
     }
     case "allow": {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${pid}/0xffff` });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${Rule.stdMark(pid)}` });
       break;
     }
     case "block":
     default: {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_BLOCK" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff` });
+      if (!options.byPassChain) {
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_BLOCK" + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
+      } else {
+        parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_BLOCK" + chainSuffix, target: options.byPassChain });
+        markTarget = `MARK --set-xmark ${Rule.stdMark(pid)}`;
+      }
     }
   }
 
   const ruleOptions = await prepareOutboundOptions(options)
+  if (options.byPassChain) {
+    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    if (ruleOptions.comment) {
+      rule.comment(ruleOptions.comment);
+    }
+    rawRules.push(rule);
+    rawRules.push(rule.clone().fam(6));
+  }
 
   const rules = [];
 
-  const NetworkProfile = require('../net2/NetworkProfile.js');
   for (const uuid of uuids) {
     await NetworkProfile.ensureCreateEnforcementEnv(uuid);
     const local = {
-      set: NetworkProfile.getNetIpsetName(uuid, 4),
-      set6: NetworkProfile.getNetIpsetName(uuid, 6),
+      set: NetworkProfile.getNetListIpsetName(uuid),
+      set6: NetworkProfile.getNetListIpsetName(uuid),
       specs: ["src", "src"],
       positive: true,
       portSet: localPortSet,
@@ -1493,6 +1523,9 @@ async function setupIntfsRules(options) {
   }
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
+  }
+  for (const rawRule of rawRules) {
+    iptc.addRule(rawRule);
   }
 }
 
@@ -1507,6 +1540,9 @@ async function setupRuleGroupRules(options) {
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const filterPrio = 1;
   const parameters = [];
+  let markTarget = null;
+  let table = "filter";
+  const rawRules = [];
   await ensureCreateRuleGroupChain(ruleGroupUUID);
   let chainSuffix = "";
   switch (seq) {
@@ -1530,6 +1566,11 @@ async function setupRuleGroupRules(options) {
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       priority = priority || qos.DEFAULT_PRIO;
       qdisc = qdisc || "fq_codel";
+      const model = platform.getName();
+      let rootClassId = "1";
+      if (model === "gold" || model === "goldpro") {
+        rootClassId = "10";
+      }
       if (rateLimit || qdisc === "netem") {
         let parentHTBQdisc = "3";
         let subclassId = "4";
@@ -1543,13 +1584,13 @@ async function setupRuleGroupRules(options) {
           }
         }
         if (createOrDestroy === "create") {
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
           await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
         }
       } else {
         let subclassId = qdisc == "fq_codel" ? "5" : "6";
@@ -1561,9 +1602,9 @@ async function setupRuleGroupRules(options) {
           }
         }
         if (createOrDestroy === "create")
-          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
         else
-          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
       }
       //TODO: Not consider how App Disturb feature use RuleGroup Qos currently.
       parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "qos")}_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
@@ -1605,15 +1646,30 @@ async function setupRuleGroupRules(options) {
       break;
     }
     case "allow": {
-      parameters.push({ table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "allow") + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${pid}/0xffff` });
+      parameters.push({ table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "allow") + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${Rule.stdMark(pid)}` });
       break;
     }
     case "block":
     default: {
-      parameters.push({ table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "block") + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff` });
+      if (!options.byPassChain) {
+        parameters.push({ table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "block") + chainSuffix, target: `MARK --set-xmark ${Rule.stdMark(pid)}` });
+      } else {
+        parameters.push({ table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "block") + chainSuffix, target: options.byPassChain });
+        markTarget = `MARK --set-xmark ${Rule.stdMark(pid)}`;
+      }
     }
   }
   const ruleOptions = await prepareOutboundOptions(options)
+  if (options.byPassChain) {
+    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    if (ruleOptions.comment) {
+      rule.comment(ruleOptions.comment);
+    }
+    rawRules.push(rule);
+    rawRules.push(rule.clone().fam(6));
+  }
+
+
   const local = {
     set: platform.isFireRouterManaged() ? Ipset.CONSTANTS.IPSET_MONITORED_NET : null,
     specs: platform.isFireRouterManaged() ? ['src','src'] : null,
@@ -1630,11 +1686,15 @@ async function setupRuleGroupRules(options) {
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
   }
+  for (const rawRule of rawRules) {
+    iptc.addRule(rawRule);
+  }
 }
 
 async function prepareOutboundOptions(options) {
-  const { pid, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto,
-    direction, createOrDestroy = "create", ctstate = null, 
+  const { pid, remoteSet4, remoteSet6, remoteTupleCount = 1, remoteNegate = false,
+    remotePortSet, remotePortNegate = false, proto,
+    direction, createOrDestroy = "create", ctstate = null,
     transferredBytes, transferredPackets, avgPacketBytes,
     tlsHostSet, tlsHost, upnp, owanUUID, origDst, origDport, dscpClass,
     connSet4 = null, connSet6 = null
@@ -1644,8 +1704,9 @@ async function prepareOutboundOptions(options) {
     set: remoteSet4,
     set6: remoteSet6,
     specs: new Array(remoteTupleCount).fill("dst"),
-    positive: remotePositive,
+    negate: remoteNegate,
     portSet: remotePortSet,
+    portNegate: remotePortNegate,
   }
   const conn = {
     specs: ["src", "src", "dst"],
@@ -1668,6 +1729,7 @@ async function prepareOutboundOptions(options) {
   return {
     direction,
     action: createOrDestroy === 'create' ? '-A' : '-D',
+    isSnat: (options.action && options.action === "snat") || false,
     dst: remote,
     conn: conn,
     proto, af: 4, comment: `rule_${pid}`, ctstate,
@@ -1695,15 +1757,15 @@ function flipSrcDst(options) {
 }
 
 function generateV46Rule(ruleOptions) {
-  const { upnp } = ruleOptions;
+  const { upnp, isSnat } = ruleOptions;
   const rules = []
   rules.push({ ...ruleOptions, af: 4 })
-  if (!upnp) rules.push({ ...ruleOptions, af: 6 })
+  if (!upnp && !isSnat) rules.push({ ...ruleOptions, af: 6 })
   return rules
 }
 
 async function generateRules(ruleOptions) {
-  const { direction, trafficDirection, transferredBytes, transferredPackets, avgPacketBytes, dscpClass } = ruleOptions
+  const { direction, trafficDirection, transferredBytes, transferredPackets, avgPacketBytes, dscpClass, isSnat } = ruleOptions
 
   const rules = []
   // log.debug(`generateRules ${JSON.stringify(ruleOptions)}`)
@@ -1714,7 +1776,7 @@ async function generateRules(ruleOptions) {
     ruleOptions.transferDirection = trafficDirection ? (trafficDirection === 'upload' ? 'original' : 'reply') : null
     if (!dscpClass || !trafficDirection || trafficDirection === "upload")
       rules.push(...generateV46Rule({ ...ruleOptions, ctDir: 'ORIGINAL' }))
-    if (!dscpClass || !trafficDirection || trafficDirection === "download")
+    if ((!dscpClass || !trafficDirection || trafficDirection === "download") && !isSnat)
       rules.push(...generateV46Rule(flipSrcDst({ ...ruleOptions, ctDir: 'REPLY' })))
   }
   if (direction === 'bidirection' && trafficDirection && (transferredBytes || transferredPackets || avgPacketBytes)
@@ -1745,32 +1807,32 @@ async function manipulateFiveTupleRule(options) {
   // sport and dport can be range string, e.g., 10000-20000
   const rule = new Rule(table).fam(af).chn(chain);
   const srcSet = af == 4 ? src.set : src.set6;
-  const connSet = af == 4 ? conn.set : conn.set6;
-  if (srcSet)
-    rule.mdl("set", `${src.positive ? "" : "!"} --match-set ${srcSet} ${src.specs.join(",")}`);
-  if (src.portSet)
-    rule.mdl("set", `--match-set ${src.portSet} src`);
   const dstSet = af == 4 ? dst.set : dst.set6;
-  if (dstSet)
-    rule.mdl("set", `${dst.positive ? "" : "!"} --match-set ${dstSet} ${dst.specs.join(",")}`);
-  if (connSet)
-    rule.mdl("set", `--match-set ${connSet} ${conn.specs.join(",")}`);
-  if (dst.portSet)
-    rule.mdl("set", `--match-set ${dst.portSet} dst`);
+  const connSet = af == 4 ? conn.set : conn.set6;
+  if (proto && proto != '')
+    rule.pro(proto);
+  if (srcSet)
+    rule.set(srcSet, src.specs.join(","), src.negate);
+  if (src.portSet)
+    rule.set(src.portSet, 'src', src.portNegate);
   if (src.ifSet)
-    rule.mdl("set", `--match-set ${src.ifSet} src,src`);
+    rule.set(src.ifSet, 'src,src');
+  if (dstSet)
+    rule.set(dstSet, dst.specs.join(","), dst.negate);
+  if (dst.portSet)
+    rule.set(dst.portSet, 'dst', dst.portNegate);
   if (dst.ifSet)
-    rule.mdl("set", `--match-set ${dst.ifSet} dst,dst`);
+    rule.set(dst.ifSet, 'dst,dst');
+  if (connSet)
+    rule.set(connSet, conn.specs.join(","), conn.negate);
   if (origDst)
     rule.mdl("conntrack", `--ctorigdst ${origDst}`);
   if (origDport)
     rule.mdl("conntrack", `--ctorigdstport ${origDport}`);
-  if (proto && proto != '')
-    rule.pro(proto);
   if (ctDir)
     rule.mdl("conntrack", `--ctdir ${ctDir}`);
   if (comment)
-    rule.mdl("comment", `--comment ${comment}`);
+    rule.comment(comment);
   if (ctstate)
     rule.mdl("conntrack", `--ctstate ${ctstate}`);
   if (transferDirection) {
@@ -1803,15 +1865,15 @@ async function manipulateFiveTupleRule(options) {
     rule.mdl("dscp", `--dscp-class ${dscpClass}`);
   }
   rule.jmp(target);
-  await exec(rule.toCmd(action));
+  iptc.addRule(rule.opr(action));
 }
 
 
 module.exports = {
-  setupBlockChain,
   batchBlock,
   batchUnblock,
   batchBlockNetPort,
+  batchUnblockNetPort,
   batchBlockConnection,
   block,
   unblock,
@@ -1827,7 +1889,6 @@ module.exports = {
   getPredefinedConnSet,
   getPredefinedConnSet6,
   getMacSet,
-  existsBlockingEnv,
   setupTagsRules,
   setupIntfsRules,
   setupRuleGroupRules,

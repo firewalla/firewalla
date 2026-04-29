@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -12,21 +12,29 @@
  *    You should have received a copy of the GNU Affero General Public License
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-'use strict';
+'use strict'
 
-let chai = require('chai');
-let expect = chai.expect;
+const log = require('../net2/logger.js')(__filename);
 
-let NmapSensor = require('../sensor/NmapSensor');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-let sampleJSON = require('../extension/nmap/scripts/example.output.json');
+// wraps a linux tool that we use to implement rules, ipset, iptables, dnsmasq, etc
+class ModuleControl {
+  constructor(name) {
+    this.name = name;
+  }
 
-sampleJSON.nmaprun.host.forEach((h) => {
-  let host = NmapSensor.parseNmapHostResult(h);
-  if(host.ipv4Addr === "192.168.56.101")
-    console.log(host);
-});
+  addRule(rule) {
+    // Emit in-process event via SensorEventManager (no Redis for same-process events)
+    sem.sendEventToFireMain({
+      type: 'Control:RuleAdded',
+      module: this.name,
+      rule,
+      suppressEventLogging: true,
+    });
+  }
 
-setTimeout(() => {
-  process.exit(0);
-}, 3000);
+  
+}
+
+module.exports = ModuleControl;

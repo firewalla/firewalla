@@ -38,7 +38,7 @@ case $service in
 esac
 
 cd $FIREWALLA_HOME
-branch=$(git branch --show-current)
+branch=$(git rev-parse --abbrev-ref HEAD)
 if [[ $branch == "master" && -f /home/pi/.firewalla/config/inspect_${service} ]]; then
   debug_opts="--inspect=0.0.0.0:$dport"
 fi
@@ -55,6 +55,11 @@ then
 fi
 
 redis-cli HINCRBY "stats:systemd:restart" $service 1
+
+jemalloc_so_path=$(readlink -f $(ldconfig -p | grep libjemalloc | awk -F '=> ' '{print $2}'))
+if [[ -n "$jemalloc_so_path" ]]; then
+  export LD_PRELOAD=$jemalloc_so_path
+fi
 
 ( cd $FIREWALLA_HOME/$service_subdir
 

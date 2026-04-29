@@ -27,6 +27,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Sensor = require('./Sensor.js').Sensor;
 const sem = require('./SensorEventManager.js').getInstance();
+const platformLoader = require('../platform/PlatformLoader.js');
 
 const HostTool = require("../net2/HostTool.js");
 const hostTool = new HostTool();
@@ -49,23 +50,28 @@ class FreeRadiusSensor extends Sensor {
     if (f.isMain()) {
       sem.on("StartFreeRadiusServer", async (event) => {
         if (!this.featureOn) return;
-        this.options = await this.loadOptionsAsync();
-        return freeradius.startServer(this._options || {});
+        await lock.acquire(LOCK_APPLY_FREERADIUS_SERVER_POLICY, async () => {
+          await this.startFreeRadiusServer();
+        }).catch((err) => {
+          log.error(`failed to get lock to start freeradius server`, err.message);
+        });
       });
 
       sem.on("StopFreeRadiusServer", async (event) => {
         // if (!this.featureOn) return;
-        this.options = await this.loadOptionsAsync();
-        await freeradius.stopServer(this._options || {});
+        await lock.acquire(LOCK_APPLY_FREERADIUS_SERVER_POLICY, async () => {
+          await this.stopFreeRadiusServer();
+        }).catch((err) => {
+          log.error(`failed to get lock to stop freeradius server`, err.message);
+        });
       });
 
       sem.on("ResetFreeRadiusServer", async (event) => {
-        try {
-          this.options = await this.loadOptionsAsync();
-          await freeradius.resetServer(this._options || {});
-        } catch (err) {
-          log.warn("Failed to reset freeradius server", err.message);
-        }
+        await lock.acquire(LOCK_APPLY_FREERADIUS_SERVER_POLICY, async () => {
+          await this.resetFreeRadiusServer();
+        }).catch((err) => {
+          log.error(`failed to get lock to reset freeradius server`, err.message);
+        });
       });
     }
   }
@@ -137,16 +143,40 @@ class FreeRadiusSensor extends Sensor {
   }
 
   async run() {
-    this.featureOn = false;
+    this.processing = false;
+    this.featureOn = fc.isFeatureOn(featureName);
     this._policy = await this.loadPolicyAsync();
     this._options = await this.loadOptionsAsync();
 
+    const boardName = platformLoader.getBoardName();
+    log.debug(`board name: ${boardName}`);
+    await rclient.setAsync(`board_name`, boardName).catch((err) => {
+      log.error(`Failed to set board name`, err.message);
+    });
+
     // sync ssid sta mapping once every 20 seconds to ensure consistency in case sta update message is missing somehow
     setInterval(async () => {
+      if (!this.featureOn) return;
       this.refreshDeviceTags().catch((err) => {
         log.error(`Failed to refresh radius device tags`, err.message);
       });
     }, 120000); // every 2 minutes
+
+    // need to check feature status
+    setInterval(async () => {
+      this.featureOn = fc.isFeatureOn(featureName);
+
+      // if feature is not on, need to cleanup
+      if (!this.processing && !this.featureOn && await freeradius.isListening()) {
+        log.info("feature is not on, need to cleanup freeradius server");
+        await this._globalOff();
+      }
+
+      if (!this.processing && this.featureOn && !await freeradius.isListening()) {
+        log.info("feature is on, but freeradius server is not listening, need to start server");
+        await this._globalOn();
+      }
+    }, 600000); // every 600s
 
     extensionManager.registerExtension(featureName, this, {
       applyPolicy: this.applyPolicy
@@ -166,6 +196,7 @@ class FreeRadiusSensor extends Sensor {
 
   async refreshDeviceTags(options = {}) {
     log.debug("refresh device tags");
+    if (!this.featureOn) return
     const staStatus = await fwapc.getAllSTAStatus(true).catch((err) => {
       log.error(`Failed to get STA status from fwapc`, err.message);
       return null;
@@ -280,10 +311,31 @@ class FreeRadiusSensor extends Sensor {
     return { "0.0.0.0": hostPolicy, ...tagPolicy };
   }
 
-  // global on/off
+  // global on
   async globalOn() {
+    log.debug("global on", featureName);
     this.featureOn = true;
     freeradius.globalOn();
+    // avoid a race condition between applyPolicy and globalOn
+    await lock.acquire(LOCK_APPLY_FREERADIUS_SERVER_POLICY, async () => {
+      await this._globalOn();
+    }).catch((err) => {
+      log.error(`failed to get lock to apply ${featureName} policy in globalOn`, err.message);
+    });
+  }
+
+  async _globalOn() {
+    try {
+      this.processing = true;
+      await this.__globalOn();
+    } catch (err) {
+      log.error(`failed to set feature ${featureName} on`, err.message);
+    } finally {
+      this.processing = false;
+    }
+  }
+
+  async __globalOn() {
     await this.addCronJobs();
     this._policy = await this.loadPolicyAsync();
     this._options = await this.loadOptionsAsync();
@@ -295,7 +347,6 @@ class FreeRadiusSensor extends Sensor {
       await freeradius.startServer();
     }
   }
-
 
   async addCronJobs() {
     log.info("Adding freeradius image update cron jobs");
@@ -320,14 +371,71 @@ class FreeRadiusSensor extends Sensor {
     return enabled || Object.keys(this._policy).length > 1;
   }
 
+  // global off
   async globalOff() {
+    log.debug("global off", featureName);
     this.featureOn = false;
     freeradius.globalOff();
+
+    // avoid a race condition between applyPolicy and globalOff
+    await lock.acquire(LOCK_APPLY_FREERADIUS_SERVER_POLICY, async () => {
+      await this._globalOff();
+    }).catch((err) => {
+      log.error(`failed to get lock to apply ${featureName} policy in globalOff`, err.message);
+    });
+  }
+
+  async _globalOff() {
+    try {
+      this.processing = true;
+      await this.__globalOff();
+    } catch (err) {
+      log.error(`failed to set feature ${featureName} off`, err.message);
+    } finally {
+      this.processing = false;
+    }
+  }
+
+  async __globalOff() {
     await this.removeCronJobs();
     await freeradius.cleanUp();
-    // if (await freeradius.isListening()) {
-    freeradius.stopServer(this._options || {});  // stop container in background
-    // }
+    await freeradius.stopServer(this._options || {});  // stop container
+  }
+
+  async startFreeRadiusServer() {
+    try {
+      this.processing = true;
+      this.options = await this.loadOptionsAsync();
+      await freeradius.startServer(this._options || {});
+    } catch (err) {
+      log.error("failed to start freeradius server", err.message);
+    } finally {
+      this.processing = false;
+    }
+  }
+
+  async stopFreeRadiusServer() {
+    try {
+      this.processing = true;
+      this.options = await this.loadOptionsAsync();
+      await freeradius.stopServer(this._options || {});
+    } catch (err) {
+      log.error("failed to stop freeradius server", err.message);
+    } finally {
+      this.processing = false;
+    }
+  }
+
+  async resetFreeRadiusServer() {
+    try {
+      this.processing = true;
+      this.options = await this.loadOptionsAsync();
+      await freeradius.resetServer(this._options || {});
+    } catch (err) {
+      log.error("failed to reset freeradius server", err.message);
+    } finally {
+      this.processing = false;
+    }
   }
 
   async generateOptions(options = {}) {
@@ -404,6 +512,8 @@ class FreeRadiusSensor extends Sensor {
   }
 
   async revertPolicy(target = "0.0.0.0") {
+    if (!this.featureOn) return;
+
     if (target == "0.0.0.0") {
       // revert to system-level policy
       if (this._policy[target]) {
@@ -425,11 +535,21 @@ class FreeRadiusSensor extends Sensor {
 
   async _applyPolicy(policy, target = "0.0.0.0") {
     await lock.acquire(LOCK_APPLY_FREERADIUS_SERVER_POLICY, async () => {
+      await this.__applyPolicy(policy, target);
+    }).catch((err) => {
+      log.error(`failed to get lock to apply ${featureName} policy`, err.message);
+    });
+  }
+
+
+  async __applyPolicy(policy, target = "0.0.0.0") {
+    try {
       if (!this.featureOn) {
         log.error(`feature ${featureName} is disabled`);
         return;
       }
 
+      this.processing = true;
       let result = await this._apply(policy, target);
       if (result && result.err) {
         // if apply error, reset to previous saved policy
@@ -448,9 +568,11 @@ class FreeRadiusSensor extends Sensor {
 
       const status = await freeradius.getStatus(this._options);
       log.info("freeradius policy applied, freeradius server status", freeradius.mask(JSON.stringify(status)));
-    }).catch((err) => {
-      log.error(`failed to get lock to apply ${featureName} policy`, err.message);
-    });
+    } catch (err) {
+      log.error("failed to apply policy", err.message);
+    } finally {
+      this.processing = false;
+    }
   }
 }
 

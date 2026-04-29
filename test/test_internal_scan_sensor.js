@@ -337,7 +337,6 @@ const cronPolicy = {cron:"10 10 * * *",state:true,includeVPNNetworks:false};
 
 describe('Test applyPolicy', function(){
   this.timeout(10000);
-  process.title = "FireMain"
   this.plugin = new InternalScanSensor({});
   this.plugin.subTaskMap = {};
   this.plugin.subTaskRunning = {};
@@ -476,7 +475,6 @@ describe('Test scheduledScanTasks', function(){
 
 describe('Test scan hosts', function(){
   this.timeout(10000);
-  process.title = "FireMain"
   this.plugin = new InternalScanSensor({});
   this.plugin.subTaskMap = {};
   this.plugin.subTaskRunning = {};
@@ -556,7 +554,6 @@ describe('Test scan hosts', function(){
   });
 
   it('should global on', async() => {
-    process.title = "FireMain"
     this.plugin.hookFeature('weak_password_scan');
     await fc.enableDynamicFeature('weak_password_scan');
     await delay(500);
@@ -566,7 +563,6 @@ describe('Test scan hosts', function(){
   });
 
   it('should global off', async() => {
-    process.title = "FireMain"
     this.plugin.hookFeature('weak_password_scan');
     await fc.disableDynamicFeature('weak_password_scan');
     await delay(500);

@@ -20,6 +20,9 @@ const log = require('../net2/logger.js')(__filename);
 const exec = require('child-process-promise').exec;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
+const { Rule } = require('../net2/Iptables.js');
+const iptc = require('./IptablesControl.js');
+
 const POLICY_QOS_HANDLER_MAP_KEY = "policy_qos_handler_map";
 const SKIP_QOS_SWITCH =  0x40000000;
 const QOS_UPLOAD_MASK = 0x3f800000;
@@ -34,12 +37,14 @@ const DEFAULT_LOSS_RATE = "0";
 const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 
-async function getQoSHandlerForPolicy(pid) {
+function _policyField({ pid, subKey }) {
+  return subKey ? `policy_${pid}_${subKey}` : `policy_${pid}`;
+}
+
+async function getQoSHandlerForPolicy(ref) {
   const policyHandlerMap = (await rclient.hgetallAsync(POLICY_QOS_HANDLER_MAP_KEY)) || {};
-  if (policyHandlerMap[`policy_${pid}`])
-    return policyHandlerMap[`policy_${pid}`];
-  else
-    return null;
+  const field = _policyField(ref);
+  return policyHandlerMap[field] || null;
 }
 
 async function getPolicyForQosHandler(handlerId) {
@@ -50,26 +55,29 @@ async function getPolicyForQosHandler(handlerId) {
     return null;
 }
 
-async function allocateQoSHanderForPolicy(pid) {
+async function allocateQoSHanderForPolicy(ref) {
   const policyHandlerMap = (await rclient.hgetallAsync(POLICY_QOS_HANDLER_MAP_KEY)) || {};
-  if (policyHandlerMap[`policy_${pid}`])
-    return policyHandlerMap[`policy_${pid}`];
-  else {
-    for (let i = 2; i != 128; i++) {
-      if (!policyHandlerMap[`qos_${i}`]) {
-        await rclient.hmsetAsync(POLICY_QOS_HANDLER_MAP_KEY, `policy_${pid}`, i, `qos_${i}`, pid);
-        return i;
-      }
+  const field = _policyField(ref);
+  if (policyHandlerMap[field])
+    return policyHandlerMap[field];
+  for (let i = 2; i != 127; i++) {
+    if (!policyHandlerMap[`qos_${i}`]) {
+      await rclient.hmsetAsync(
+          POLICY_QOS_HANDLER_MAP_KEY,
+          field, i,
+          `qos_${i}`, ref.pid);
+      return i;
     }
-    return null;
   }
+  return null;
 }
 
-async function deallocateQoSHandlerForPolicy(pid) {
-  const qosHandler = await rclient.hgetAsync(POLICY_QOS_HANDLER_MAP_KEY, `policy_${pid}`);
+async function deallocateQoSHandlerForPolicy(ref) {
+  const field = _policyField(ref);
+  const qosHandler = await rclient.hgetAsync(POLICY_QOS_HANDLER_MAP_KEY, field);
   if (qosHandler) {
     await rclient.hdelAsync(POLICY_QOS_HANDLER_MAP_KEY, `qos_${qosHandler}`);
-    await rclient.hdelAsync(POLICY_QOS_HANDLER_MAP_KEY, `policy_${pid}`);
+    await rclient.hdelAsync(POLICY_QOS_HANDLER_MAP_KEY, field);
   }
 }
 
@@ -271,6 +279,31 @@ async function destroyTCFilter(filterId, parent, direction, prio, fwmark) {
   });
 }
 
+
+async function applyOverrideDscp(opts) {
+  let {qosHandler, op, priority, comments, trafficDirection} = opts;
+
+  const table = "mangle";
+  if (priority != PRIO_HIGH) {
+    return;
+  }
+
+  const fwmark = Number(qosHandler) << (trafficDirection === "upload" ? 23 : 16); // 23-29 bit is reserved for upload mark filter, 16-22 bit is reserved for download mark filter
+  const fwmask = trafficDirection === "upload" ? QOS_UPLOAD_MASK : QOS_DOWNLOAD_MASK;
+  priority = priority || DEFAULT_PRIO;
+
+  let rule = new Rule(table).chn("FW_POSTROUTING_DSCP_OVERRIDE");
+  rule.mark(fwmark, fwmask, false);
+  rule.jmp("DSCP --set-dscp 0x2e");
+  rule.comment(comments);
+  rule.opr(op);
+  rule.fam(4);
+  iptc.addRule(rule);
+  rule.fam(6);
+  iptc.addRule(rule);
+}
+
+
 module.exports = {
   SKIP_QOS_SWITCH,
   QOS_UPLOAD_MASK,
@@ -287,5 +320,6 @@ module.exports = {
   createQoSClass,
   destroyQoSClass,
   createTCFilter,
-  destroyTCFilter
+  destroyTCFilter,
+  applyOverrideDscp
 }

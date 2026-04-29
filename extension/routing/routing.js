@@ -227,11 +227,25 @@ async function removeRouteFromTable(dest, gateway, intf, tableName, preference =
   }
 }
 
-async function flushRoutingTable(tableName, dev = null, proto) {
-  const cmds = [
-    `sudo ip route flush ${dev ? `dev ${dev}` : "" } proto ${proto ? proto : "boot"} table ${tableName}`, 
-    `sudo ip -6 route flush ${dev ? `dev ${dev}` : ""} proto ${proto ? proto : "boot"} table ${tableName}`
-  ];
+async function flushRoutingTable(tableName, dev = null, proto="boot", af = null, type = null) {
+  const cmds = [];
+  if (type) {
+    // flush by route type (e.g. "throw", "unreachable"); dev and proto are irrelevant in this mode
+    if (af === 4 || af === null) {
+      cmds.push(`sudo ip route flush type ${type} table ${tableName}`);
+    }
+    if (af === 6 || af === null) {
+      cmds.push(`sudo ip -6 route flush type ${type} table ${tableName}`);
+    }
+  } else {
+    if (af === 4 || af === null) {
+      cmds.push(`sudo ip route flush ${dev ? `dev ${dev}` : "" } proto ${proto} table ${tableName}`);
+    }
+    if (af === 6 || af === null) {
+      cmds.push(`sudo ip -6 route flush ${dev ? `dev ${dev}` : ""} proto ${proto} table ${tableName}`);
+    }
+  }
+
   for (const cmd of cmds) {
     await exec(cmd).catch((err) => {
       log.error(`Failed to flush routing table ${tableName}`, err.message);

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -36,8 +36,8 @@ const Message = require('../../net2/Message.js');
 const jsonfile = require('jsonfile');
 const writeFileAsync = Promise.promisify(jsonfile.writeFile);
 
-const { wrapIptables } = require('../../net2/Iptables.js')
-
+const { wrapIptables, Rule } = require('../../net2/Iptables.js')
+const iptc = require('../../control/IptablesControl.js');
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
 const platformLoader = require('../../platform/PlatformLoader.js');
@@ -486,6 +486,8 @@ class App {
 
       // should use primitive chains here, since it needs to be working before install_iptables.sh
       log.info(create ? 'creating' : 'removing', `port forwording from 80 to ${server.port} on ${server.ip}`);
+      // use both IptablesControl and exec here in case FireMain is not up
+      iptc.addRule(new Rule('nat').chn('PREROUTING').pro('tcp').dst(server.ip).dport(80).jmp(`REDIRECT --to-ports ${server.port}`).opr(action))
       const cmd = wrapIptables(`sudo iptables -w -t nat ${action} PREROUTING -p tcp --destination ${server.ip} --destination-port 80 -j REDIRECT --to-ports ${server.port}`);
       await exec(cmd);
     }

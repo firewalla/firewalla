@@ -5,18 +5,7 @@
 
 logger 'FIREWALLA.ACLAUDIT Stopping'
 
-sudo iptables -w -F FW_DROP_LOG
-sudo ip6tables -w -F FW_DROP_LOG
-sudo iptables -w -F FW_SEC_DROP_LOG
-sudo ip6tables -w -F FW_SEC_DROP_LOG
-sudo iptables -w -F FW_TLS_DROP_LOG
-sudo ip6tables -w -F FW_TLS_DROP_LOG
-sudo iptables -w -F FW_SEC_TLS_DROP_LOG
-sudo ip6tables -w -F FW_SEC_TLS_DROP_LOG
-sudo iptables -w -F FW_WAN_IN_DROP_LOG
-sudo ip6tables -w -F FW_WAN_IN_DROP_LOG
-sudo iptables -w -t mangle -F FW_DISTURB_LOG
-sudo ip6tables -w -t mangle -F FW_DISTURB_LOG
+# iptables audit chains are flushed by ACLAuditLogPlugin.globalOff() via IptablesControl
 
 sudo rm /etc/rsyslog.d/30-acl-audit.conf
 sudo rm /etc/rsyslog.d/32-quic-log.conf

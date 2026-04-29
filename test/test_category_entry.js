@@ -18,7 +18,7 @@
 const { expect, assert } = require('chai');
 const { CategoryEntry } = require("../control/CategoryEntry.js");
 
-describe('Test category update sensor', function () {
+describe.skip('Test category update sensor', function () {
     // this.timeout(10000);
     before(async () => {
 

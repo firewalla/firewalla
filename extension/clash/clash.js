@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla Inc.
+/*    Copyright 2020-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,8 +19,8 @@ let instance = null;
 
 const log = require('../../net2/logger.js')(__filename);
 
-const wrapIptables = require('../../net2/Iptables.js').wrapIptables;
-
+const { Rule } = require('../../net2/Iptables.js');
+const iptc = require('../../control/IptablesControl.js');
 const _ = require('lodash');
 
 const exec = require('child-process-promise').exec;
@@ -197,18 +197,18 @@ class Clash {
     (async() => {
       const code = "CN";
       await countryUpdater.activateCountry(code);
-      await exec(wrapIptables(`sudo iptables -w -t nat -I FW_CLASH_CHAIN -p tcp -m set --match-set c_bd_country:CN_set dst -j RETURN`));
+      iptc.addRule(new Rule('nat').chn('FW_CLASH_CHAIN').pro('tcp').set('c_bd_country:CN_set', 'dst').jmp('RETURN').opr('-I'))
     })()
   }
 
   async redirectTraffic() {
     await this.prepareCHNRoute();
-    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING -m set --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src -p tcp -j FW_CLASH_CHAIN`));
+    iptc.addRule(new Rule('nat').chn('FW_PREROUTING').set(ipset.CONSTANTS.IPSET_MONITORED_NET, 'src,src').pro('tcp').jmp('FW_CLASH_CHAIN'))
     this.shouldRedirect = true;    
   }
 
   async unRedirectTraffic() {
-    await exec(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING -m set --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src -p tcp -j FW_CLASH_CHAIN`));
+    iptc.addRule(new Rule('nat').chn('FW_PREROUTING').set(ipset.CONSTANTS.IPSET_MONITORED_NET, 'src,src').pro('tcp').jmp('FW_CLASH_CHAIN').opr('-D'))
     this.shouldRedirect = false;
   }
 

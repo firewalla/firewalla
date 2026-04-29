@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -117,7 +117,8 @@ moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
 const Constants = require('./Constants.js');
-const { Rule, wrapIptables } = require('./Iptables.js');
+const { Rule } = require('./Iptables.js');
+const iptc = require('../control/IptablesControl.js');
 const QoS = require('../control/QoS.js');
 const Monitorable = require('./Monitorable.js')
 const AsyncLock = require('../vendor_lib/async-lock');
@@ -136,7 +137,7 @@ module.exports = class HostManager extends Monitorable {
 
       // make sure cached host is created/deleted in all processes
       messageBus.subscribe("DiscoveryEvent", "Device:Create", null, (channel, type, mac, obj) => {
-        this.createHost(obj).catch(err => {
+        this.createHost(obj, !f.isMain()).catch(err => {
           log.error('Error creating host', err, obj)
         })
       })
@@ -199,6 +200,9 @@ module.exports = class HostManager extends Monitorable {
             // global qos config will be applied to default WAN, need to re-apply in case of network change
             if (this.policy && _.has(this.policy, "qos"))
               await this.qos(this.policy.qos);
+
+            if (this.policy && _.has(this.policy, "app"))
+              await this.app(this.policy.app);
           })
 
           setInterval(() => this.validateSpoofs(), 5 * 60 * 1000)
@@ -591,7 +595,7 @@ module.exports = class HostManager extends Monitorable {
         else if (s.length > 60)
           s.shift()
       }
-      if (['intra:lo', 'conn:lo:intra'].includes(metric)) {
+      if (['intra:lo', 'conn:lo:intra', 'ipB:lo:intra'].includes(metric)) {
         // global local bandwidth and connection are being counted twice
         // the result should always be interger, but use Math.floor as a safe guard
         s.forEach((h, i) => s[i][1] = Math.floor(h[1]/2))
@@ -616,7 +620,10 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async monthlyDataUsageForInit(json) {
-    const dataPlan = await this.getDataUsagePlan({});
+    const enable = fc.isFeatureOn('data_plan');
+    const dataPlan = await this.getDataUsagePlan();
+    if (dataPlan && enable)
+      json.dataUsagePlan = dataPlan;
     const globalDate = dataPlan && dataPlan.date || 1;
     json.monthlyDataUsage = _.pick(await this.monthlyDataStats(null, globalDate), [
       'totalDownload', 'totalUpload', 'monthlyBeginTs', 'monthlyEndTs'
@@ -635,7 +642,7 @@ module.exports = class HostManager extends Monitorable {
 
   async monthlyDataStats(mac, date) {
     if (!date) {
-      const dataPlan = await this.getDataUsagePlan({});
+      const dataPlan = await this.getDataUsagePlan();
       date = dataPlan && dataPlan.date || 1;
     }
     const timezone = sysManager.getTimezone();
@@ -719,8 +726,11 @@ module.exports = class HostManager extends Monitorable {
       extdata['portforward'] = portforwardConfig;
 
     const fpp = await sensorLoader.initSingleSensor('FamilyProtectPlugin');
-    const familyConfig = await fpp.getFamilyConfig()
-    if (familyConfig) extdata.family = familyConfig
+    const familyConfig = await fpp.getFamilyConfig();
+    log.debug(`FamilyConfig: ${JSON.stringify(familyConfig)}`);
+    const effectiveServers = familyConfig && familyConfig.servers && familyConfig.servers.length > 0
+      ? familyConfig.servers : await fpp.familyDnsAddr();
+    extdata.family = Object.assign({}, familyConfig, { servers: effectiveServers });
 
     const ruleStatsPlugin = await sensorLoader.initSingleSensor('RuleStatsPlugin');
     const initTs = await ruleStatsPlugin.getFeatureFirstEnabledTimestamp();
@@ -826,8 +836,13 @@ module.exports = class HostManager extends Monitorable {
     const result = await rclient.hgetallAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT);
     if (!result)
       return {};
-    if (_.has(result, "tasks"))
-      result.tasks = JSON.parse(result.tasks);
+    if (_.has(result, "tasks")) {
+      try {
+        result.tasks = JSON.parse(result.tasks);
+      } catch (err) {
+        result.tasks = {};
+      }
+    }
     if (_.has(result, "lastCompletedScanTs"))
       result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
     if (result.tasks) {
@@ -1009,7 +1024,7 @@ module.exports = class HostManager extends Monitorable {
     for (const rule of rules) {
       if (rule.action == 'screentime') {
         screentimeRules.push(rule)
-      } else {
+      } else if (rule.action != "bypass") {
         policyRules.push(rule)
       }
     }
@@ -1321,22 +1336,15 @@ module.exports = class HostManager extends Monitorable {
     json.guardians = result;
   }
 
-  async getDataUsagePlan(json) {
-    const enable = fc.isFeatureOn('data_plan');
+  async getDataUsagePlan() {
     const data = await rclient.getAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS);
-    if(!data || !enable) {
-      return;
-    }
 
     try {
       const result = JSON.parse(data);
-      if(result) {
-        json.dataUsagePlan = result;
-      }
       return result;
     } catch(err) {
       log.error(`Failed to parse ${Constants.REDIS_KEY_DATA_PLAN_SETTINGS}, err: ${err}`);
-      return;
+      return null;
     }
   }
 
@@ -1614,7 +1622,6 @@ module.exports = class HostManager extends Monitorable {
       this.getGuardian(json),
       this.getGuardians(json),
       this.getMspData(json),
-      this.getDataUsagePlan(json),
       this.monthlyDataUsageForInit(json),
       this.networkConfig(json),
       this.powerModeForInit(json),
@@ -1639,6 +1646,8 @@ module.exports = class HostManager extends Monitorable {
       this.getConfigForInit(json),
       this.miscForInit(json),
       this.appConfsForInit(json),
+      this.resourcesForInit(json),
+      this.extraTimeRequestsForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
 
@@ -1660,6 +1669,37 @@ module.exports = class HostManager extends Monitorable {
     log.debug("Promise array finished")
 
     return json
+  }
+
+  async resourcesForInit(json) {
+    if (f.isApi()) {
+      try {
+        const apiSensorLoader = require('../sensor/APISensorLoader.js');
+        const resourcePlugin = await apiSensorLoader.getSensor('ResourcePlugin');
+        if (resourcePlugin) {
+          json.resources = await resourcePlugin.getAllResources();
+        } else {
+          json.resources = [];
+        }
+      } catch (err) {
+        log.error(`Failed to load resources for init: ${err.message}`);
+        json.resources = [];
+      }
+    }
+  }
+
+  async extraTimeRequestsForInit(json) {
+    if (f.isApi()) {
+      try {
+        const accessRequestManager = require('../alarm/AccessRequestManager.js').getInstance();
+
+        const extraTimeRequests = await accessRequestManager.listAllRequests({ todayOnly: true });
+        json.extraTimeRequests = extraTimeRequests;
+      } catch (err) {
+        log.error(`Failed to load extra time requests for init: ${err.message}`);
+        json.extraTimeRequests = [];
+      }
+    }
   }
 
   async miscForInit(json) {
@@ -1731,7 +1771,7 @@ module.exports = class HostManager extends Monitorable {
       monitorable = IdentityManager.getIdentityByGUID(target)
       return monitorable
     } else {
-      monitorable = this.getHostAsync(target, noEnvCreation)
+      monitorable = await this.getHostAsync(target, noEnvCreation)
       if (monitorable) return monitorable
 
       return IdentityManager.getIdentityByIP(target)
@@ -1762,7 +1802,11 @@ module.exports = class HostManager extends Monitorable {
     host = new Host(Host.parse(o), noEnvCreation);
 
     this.hostsdb[`host:mac:${o.mac}`] = host
-    this.hosts.all.push(host);
+    const index = this.hosts.all.findIndex(h => h.o.mac === o.mac)
+    if (index == -1)
+      this.hosts.all.push(host);
+    else
+      this.hosts.all[index] = host;
 
     if (o.ipv4Addr) this.hostsdb[`host:ip4:${o.ipv4Addr}`] = host
     this.syncV6DB(host)
@@ -1770,16 +1814,16 @@ module.exports = class HostManager extends Monitorable {
     return host
   }
 
-  async createHost(o) {
+  async createHost(o, noWrite = false) {
     let host = await this.getHostAsync(o.mac)
     if (host) {
       log.info('createHost: already exist', o.mac)
-      await host.update(o, false, true)
+      await host.update(o, false, !noWrite)
       return host
     }
 
     host = new Host(o)
-    await host.save()
+    !noWrite && await host.save()
 
     this.hostsdb[`host:mac:${o.mac}`] = host
     this.hosts.all.push(host);
@@ -1882,7 +1926,7 @@ module.exports = class HostManager extends Monitorable {
           this.hostsdb[h]._mark = false;
         }
       }
-      const inactiveTS = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
+      const inactiveTS = Date.now()/1000 - fc.getConfig().timing['host.active'] || INACTIVE_TIME_SPAN
       const visibleMACs = new Set()
       for (const mac of await hostTool.getMACsByTime(inactiveTS))
         visibleMACs.add(mac)
@@ -1914,6 +1958,7 @@ module.exports = class HostManager extends Monitorable {
           log.error(`Invalid MAC address: ${o.mac}`);
           return;
         }
+        o.devId = "hosts:" + o.mac;
         const ipv6AddrOld = o.ipv6Addr
         if (o.ipv4) {
           o.ipv4Addr = o.ipv4;
@@ -1944,7 +1989,7 @@ module.exports = class HostManager extends Monitorable {
             // the physical host get a new ipv4 address
             // remove host:ip4 entry from this.hostsdb only if the entry belongs to this mac
             if (hostbyip && hostbyip.o.mac === o.mac)
-              this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
+              delete this.hostsdb['host:ip4:' + hostbymac.o.ipv4]
           }
   
           try {
@@ -1973,9 +2018,7 @@ module.exports = class HostManager extends Monitorable {
   
         hostbymac.stale = !visibleMACs.has(hostbymac.o.mac);
         hostbymac._mark = true;
-        if (hostbyip) {
-          hostbyip._mark = true;
-        }
+
         if (this.wifiSDAddresses.includes(o.mac)) hostbymac.wifiSD = true
         // two mac have the same IP,  pick the latest, until the otherone update itself
         if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
@@ -2060,6 +2103,31 @@ module.exports = class HostManager extends Monitorable {
     return this.spoofing;
   }
 
+  async getQosConfs() {
+    try {
+      const qosString = await rclient.hgetAsync('policy:system', 'qos')
+      if (!qosString) return null
+
+      const qosConfs = JSON.parse(qosString)
+      return qosConfs
+    } catch(err) {
+      log.error('Error reading policy:system => qos', err)
+      return null
+    }
+  }
+  async getAppConfs() {
+    try {
+      const appString = await rclient.hgetAsync('policy:system', 'app')
+      if (!appString) return null
+
+      const appConfs = JSON.parse(appString)
+      return appConfs
+    } catch(err) {
+      log.error('Error reading policy:system => app', err)
+      return null
+    }
+  }
+
   async qos(policy, wanUUID) {
     if (wanUUID) { // per-wan config
       let upload = true;
@@ -2085,12 +2153,8 @@ module.exports = class HostManager extends Monitorable {
         .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_UPLOAD_MASK).toString(16)}/0x${QoS.QOS_UPLOAD_MASK.toString(16)}`)
         .comment(`global-qos`);
       let rule6 = rule4.clone().fam(6);
-      await exec(rule4.toCmd('-A')).catch((err) => {
-        log.error(`Failed to toggle global upload ipv4 qos`, err.message);
-      });
-      await exec(rule6.toCmd('-A')).catch((err) => {
-        log.error(`Failed to toggle global upload ipv6 qos`, err.message);
-      });
+      iptc.addRule(rule4.opr('-A'));
+      iptc.addRule(rule6.opr('-A'));
 
       rule4 = new Rule("mangle").chn("FW_QOS_GLOBAL_FALLBACK")
         .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
@@ -2099,12 +2163,8 @@ module.exports = class HostManager extends Monitorable {
         .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_DOWNLOAD_MASK).toString(16)}/0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`)
         .comment(`global-qos`);
       rule6 = rule4.clone().fam(6);
-      await exec(rule4.toCmd('-A')).catch((err) => {
-        log.error(`Failed to toggle global ipv4 qos`, err.message);
-      });
-      await exec(rule6.toCmd('-A')).catch((err) => {
-        log.error(`Failed to toggle global ipv6 qos`, err.message);
-      });
+      iptc.addRule(rule4.opr('-A'));
+      iptc.addRule(rule6.opr('-A'));
     } else { // global config
       let state = false;
       let qdisc = "fq_codel";
@@ -2119,8 +2179,8 @@ module.exports = class HostManager extends Monitorable {
         default:
           return;
       }
-      await exec(wrapIptables(`sudo iptables -w -t mangle -F FW_QOS_GLOBAL_FALLBACK`)).catch((err) => { });
-      await exec(wrapIptables(`sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL_FALLBACK`)).catch((err) => { });
+      iptc.addRule(new Rule('mangle').chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
+      iptc.addRule(new Rule('mangle').fam(6).chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
       const wanConfs = _.isObject(policy) && policy.wanConfs || {};
       const wanType = sysManager.getWanType();
       const primaryWanIntf = sysManager.getPrimaryWanInterface();
@@ -2137,26 +2197,157 @@ module.exports = class HostManager extends Monitorable {
           }
         }
       }
+      
+      if (!state) {
+        await platform.setQoSBandwidth(Constants.QOS_MAX_BANDWIDTH_MBPS, Constants.QOS_MAX_BANDWIDTH_MBPS);
+      } else {
+        const appConfs = await this.getAppConfs();
+        this.app(appConfs).catch((err) => {
+          log.error(`Failed to set app qos bandwidth`, err.message);
+        });
+      }
+      await this.setupDefaultQosAutoRules();
+      await this.setupDscpOverride();
       await platform.switchQoS(state, qdisc);
     } 
   }
 
-  async acl(state) {
-    if (state == false) {
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
-        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
-      });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
-        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
-      });
-    } else {
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
-        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
-      });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
-        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
+  async setupDscpOverride() {
+    const qosConfs = await this.getQosConfs();
+    let op = '-D';
+    if (qosConfs && qosConfs.state === true && qosConfs.enableDscpOverride === true) {
+      op = '-A';
+    }
+
+    let rule = new Rule("mangle").chn("FW_POSTROUTING")
+      .jmp(`FW_POSTROUTING_DSCP_OVERRIDE`);
+    iptc.addRule(rule.opr(op));
+    let rule6 = rule.clone().fam(6);
+    iptc.addRule(rule6.opr(op));
+  }
+
+  async setupDefaultQosAutoRules() {
+    const qosConfs = await this.getQosConfs();
+    let op = '-D';
+    if (qosConfs && qosConfs.state === true && qosConfs.enableDefaultQosRules === true) {
+      op = '-A';
+    }
+    // setup default qos auto rules to FW_QOS_AUTO chain 
+    let rule4 = new Rule("mangle").chn("FW_QOS_AUTO")
+    .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
+    .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
+    .mdl("dscp", "--dscp 0x2e")
+    .jmp(`CONNMARK --set-xmark 0x${QoS.QOS_UPLOAD_MASK.toString(16)}/0x${QoS.QOS_UPLOAD_MASK.toString(16)}`)
+    .comment(`fw_qos_auto_upload`);
+    let rule6 = rule4.clone().fam(6);
+    iptc.addRule(rule4.opr(op));
+    iptc.addRule(rule6.opr(op));
+
+    rule4 = new Rule("mangle").chn("FW_QOS_AUTO")
+      .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
+      .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
+      .mdl("dscp", "--dscp 0x2e")
+      .jmp(`CONNMARK --set-xmark 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}/0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`)
+      .comment(`fw_qos_auto_download`);
+    rule6 = rule4.clone().fam(6);
+    iptc.addRule(rule4.opr(op));
+    iptc.addRule(rule6.opr(op));
+
+    // setup default qos auto rules to FW_POSTROUTING_DSCP_OVERRIDE chain
+    rule4 = new Rule("mangle").chn("FW_POSTROUTING_DSCP_OVERRIDE")
+      .mdl("mark", `--mark 0x${QoS.QOS_UPLOAD_MASK.toString(16)}/0x${QoS.QOS_UPLOAD_MASK.toString(16)}`)
+      .jmp(`DSCP --set-dscp 0x2e`)
+      .comment(`fw_qos_auto_upload`);
+    rule6 = rule4.clone().fam(6);
+    iptc.addRule(rule4.opr(op));
+    iptc.addRule(rule6.opr(op));
+
+    rule4 = new Rule("mangle").chn("FW_POSTROUTING_DSCP_OVERRIDE")
+      .mdl("mark", `--mark 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}/0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`)
+      .jmp(`DSCP --set-dscp 0x2e`)
+      .comment(`fw_qos_auto_download`);
+    rule6 = rule4.clone().fam(6);
+    iptc.addRule(rule4.opr(op));
+    iptc.addRule(rule6.opr(op));
+
+
+    // setup default tc rules auto redirect these packets which are marked by FW_QOS_AUTO chain to high priority queue
+    for (const direction of ['upload', 'download']) {
+      const device = direction === 'upload' ? 'ifb0' : 'ifb1';
+      const fwmask = direction === 'upload' ? QoS.QOS_UPLOAD_MASK : QoS.QOS_DOWNLOAD_MASK;
+      const filterId = Number(127).toString(16);
+      const classId = Number(2).toString(16);
+      const parentId = platform.getQosParentClassid();
+      let tcCmd = `sudo tc filter replace dev ${device} parent ${parentId}: handle 800::0x${filterId} prio 1 u32 match mark 0x${fwmask.toString(16)} 0x${fwmask.toString(16)} flowid ${parentId}:0x${classId}`;
+      await exec(tcCmd).catch((err) => {
+        log.error(`Failed to create tc filter ${tcCmd}`, err.message);
       });
     }
+
+  }
+
+  async acl(state) {
+    if (state == false) {
+      ipset.add(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
+      ipset.add(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
+    } else {
+      ipset.del(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
+      ipset.del(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
+    }
+  }
+
+  async app(policy) {
+    if (!policy) {
+      return;
+    }
+    //following part should be executed when app conf changes or WAN changes
+    //only set the speed limit base on config when qos is adaptive mode otherwise set to max speed
+
+    // get current qos mode
+    const qosConfs = await this.getQosConfs();
+    if (!qosConfs || !qosConfs.state || qosConfs.mode !== Constants.QOS_MODE_ADAPTIVE) {
+      log.info("Set app Qos to max speed since qos is not in adaptive mode");
+      await platform.setQoSBandwidth(Constants.QOS_MAX_BANDWIDTH_MBPS, Constants.QOS_MAX_BANDWIDTH_MBPS);
+      return;
+    }
+
+    // for load balance mode, set the speed rate limit to sum of all WANs
+    // for failover mode, set the speed to primary WAN only
+    // const appConfs = await this.getAppConfs();
+    const wanType = sysManager.getWanType();
+    const bandwidth = policy && policy.bandwidth || {};
+    let uploadSpeed = parseInt(bandwidth.upload) || 0;
+    let downloadSpeed = parseInt(bandwidth.download) || 0;
+    if (bandwidth.wanConfs) {
+      let totalUpload = 0;
+      let totalDownload = 0;
+      const activeWanIntf = sysManager.getDefaultWanInterface();
+      const activeWanUUID = activeWanIntf && activeWanIntf.uuid;
+      for (const [wanId, wanConf] of Object.entries(bandwidth.wanConfs)) {
+        if (wanType === Constants.WAN_TYPE_FAILOVER) {
+          if (wanId === activeWanUUID) {
+            totalUpload = parseInt(wanConf.upload) || 0;
+            totalDownload = parseInt(wanConf.download) || 0;
+            break;
+          }
+        } else if (wanType === Constants.WAN_TYPE_SINGLE) {
+          totalUpload = parseInt(wanConf.upload) || 0;
+          totalDownload = parseInt(wanConf.download) || 0;
+          break;
+        } else if (wanType === Constants.WAN_TYPE_LB) {
+          const intf = sysManager.getInterfaceViaUUID(wanId);
+          if (!intf || intf.type !== "wan" || !intf.ready)
+            continue;
+          totalUpload += parseInt(wanConf.upload) || 0;
+          totalDownload += parseInt(wanConf.download) || 0;
+        }
+      }
+      uploadSpeed = totalUpload;
+      downloadSpeed = totalDownload;
+    }
+    log.info(`Set app QoS bandwidth to upload: ${uploadSpeed} mbps, download: ${downloadSpeed} mbps`);
+
+    await platform.setQoSBandwidth(uploadSpeed, downloadSpeed);
   }
 
   async aclTimer(policy = {}) {

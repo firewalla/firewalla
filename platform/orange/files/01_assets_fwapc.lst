@@ -1,1 +1,1 @@
-/home/pi/.firewalla/run/assets/fwapc /orange/fwapc 755 "sudo systemctl stop fwapc" "sudo systemctl start fwapc"
+/home/pi/.firewalla/run/assets/fwapc /orange/fwapc 755 "sudo systemctl stop fwapc" "sudo systemctl start fwapc; timeout 30 curl http://localhost:8837/v1/config/apply_current_config -XPOST"

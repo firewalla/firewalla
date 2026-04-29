@@ -116,12 +116,20 @@ class NavyPlatform extends Platform {
     return 3000;
   }
 
+  getExceptionCapacity() {
+    return 3000;
+  }
+
   isFireRouterManaged() {
     return false;
   }
 
   isWireguardSupported() {
     return true;
+  }
+
+  isAmneziaWgSupported() {
+    return false;
   }
 
   getAllowCustomizedProfiles(){

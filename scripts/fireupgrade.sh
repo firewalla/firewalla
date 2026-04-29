@@ -188,6 +188,15 @@ function map_target_branch {
     "goldpro:beta_7_0")
       echo "beta_19_0"
       ;;
+    "orange:release_6_0")
+      echo "release_13_0"
+      ;;
+    "orange:beta_6_0")
+      echo "beta_20_0"
+      ;;
+    "orange:beta_7_0")
+      echo "beta_21_0"
+      ;;
     "*:master")
       echo "master"
       ;;

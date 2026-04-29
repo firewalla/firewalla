@@ -60,6 +60,7 @@ class VIPProfile extends Identity {
             result.push(
                 {
                     uid: key,
+                    devId: this.getKeyOfInitData() + ":" + key,
                     name: profile.o.name,
                     ip: profile.o.ip,
                     lastActiveTimestamp: lastActiveTimestamp,

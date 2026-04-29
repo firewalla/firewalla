@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -47,21 +47,21 @@ describe('Test InternalScanSensor', function() {
     })();
   });
 
-  describe('Test hostManager', async() => {
+  describe('Test TagManager', async() => {
     it('should get tag', () => {
-       expect(tagManager.getTag(88).getUniqueId()).to.be.equal(88);
-       expect(tagManager.getTag('tag99').getUniqueId()).to.be.equal(99);
+      expect(tagManager.getTag(88).getUniqueId()).to.be.equal(88);
+      expect(tagManager.getTag('tag99').getUniqueId()).to.be.equal(99);
     });
 
-    it('should check has policy', async() => {
-       expect(await tagManager.tags['88'].hasPolicyAsync('feature1')).to.be.true;
-       expect(await tagManager.tags['88'].hasPolicyAsync('feature2')).to.be.false;
+    it('should check has policy', async () => {
+      expect(await tagManager.tags['88'].hasPolicyAsync('feature1')).to.be.true;
+      expect(await tagManager.tags['88'].hasPolicyAsync('feature2')).to.be.false;
     });
 
-    it('should get policy tags', async() => {
+    it('should get policy tags', async () => {
       const tags = await tagManager.getPolicyTags('feature1');
-       expect(tags.length).to.be.equal(1);
-       expect(tags[0].o.uid).to.be.equal(88);
+      expect(tags.length).to.be.equal(1);
+      expect(tags[0].o.uid).to.be.equal(88);
     });
 
     it ('should get policy', async() => {
@@ -70,6 +70,37 @@ describe('Test InternalScanSensor', function() {
 
       const feature2 = await tagManager.tags['99'].getPolicyAsync('feature1');
       expect(feature2).to.be.null;
+    });
+  });
+
+  describe('_getNextTagUid', function() {
+    beforeEach(async() => {
+      const currentUid = await rclient.getAsync('tag:uid');
+      this.currentUid = currentUid;
+    });
+
+    afterEach(async() => {
+      await rclient.setAsync('tag:uid', this.currentUid);
+    });
+
+    it('should return the value stored in tag:uid and increment the counter', async() => {
+      const uid = await tagManager._getNextTagUid();
+      expect(uid).to.equal(this.currentUid, 'return value should equal the value that was in tag:uid');
+      const afterValue = await rclient.getAsync('tag:uid');
+      expect(Number(afterValue)).to.equal(Number(this.currentUid) + 1, 'tag:uid should be incremented by 1 after the call');
+    });
+
+    it('_getNextTagUid should always return different uids even called concurrently', async() => {
+      const concurrency = 100;
+      const promises = Array(concurrency).fill(null).map(() => tagManager._getNextTagUid());
+      const uids = await Promise.all(promises);
+
+      const uniqueUids = new Set(uids);
+      expect(uniqueUids.size).to.equal(concurrency, 'all concurrent _getNextTagUid() calls should return different values');
+      expect(uids.length).to.equal(concurrency);
+
+      const currentUid = await rclient.getAsync('tag:uid');
+      expect(Number(currentUid)).to.equal(Number(this.currentUid) + concurrency);
     });
   });
 

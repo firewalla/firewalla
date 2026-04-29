@@ -1,4 +1,4 @@
-/*    Copyright 2019-2025 Firewalla Inc.
+/*    Copyright 2019-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,7 +32,7 @@ class IpInfo {
 
     try {
       log.info("Request ipinfo for ip:", ip);
-      const resp = await rrWithErrHandling(options);
+      const resp = await rrWithErrHandling(options, true, false, true);
       log.debug("ipInfo from ipinfo is:", resp.body);
       return resp.body;
     } catch (err) {

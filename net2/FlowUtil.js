@@ -241,7 +241,9 @@ function getUniqueTs(ts) {
 
   // logs only on fractional part equals
   if (tsMonotonic - ts > 1 && (tsMonotonic - ts) % 1 < 0.0001) {
-    log.warn(new Error('Unique TS getting choked, ' + ts + ', ' + tsMonotonic))
+    const err = new Error('Unique TS getting choked, ' + ts + ', ' + tsMonotonic)
+    log.warn(err.message)
+    log.verbose(err.stack)
   }
   return tsMonotonic
 }

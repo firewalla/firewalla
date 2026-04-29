@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,13 +19,11 @@ const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js');
 const exec = require('child-process-promise').exec;
 const log = require('../../net2/logger.js')(__filename);
-const ipset = require('../../net2/Ipset.js');
 const rp = require('request-promise');
 
 const fs = require('fs');
 const util = require('util');
 const readFileAsync = util.promisify(fs.readFile);
-const _ = require('lodash');
 const fsp = fs.promises
 
 const firestatusBaseURL = "http://127.0.0.1:9966";
@@ -84,35 +82,8 @@ class GSEPlatform extends Platform {
     ];
   }
 
-  async switchQoS(state, qdisc) {
-    if (state == false) {
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
-        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
-        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-    } else {
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
-        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
-        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-    }
-    const supported = await exec(`modinfo sch_${qdisc}`).then(() => true).catch((err) => false);
-    if (!supported) {
-      log.error(`qdisc ${qdisc} is not supported`);
-      return;
-    }
-    // replace the default tc filter
-    const QoS = require('../../control/QoS.js');
-    await exec (`sudo tc filter replace dev ifb0 parent 1: handle 800::0x1 prio 1 u32 match mark 0x800000 0x${QoS.QOS_UPLOAD_MASK.toString(16)} flowid 1:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
-      log.error(`Failed to update tc filter on ifb0`, err.message);
-    });
-    await exec (`sudo tc filter replace dev ifb1 parent 1: handle 800::0x1 prio 1 u32 match mark 0x10000 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)} flowid 1:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
-      log.error(`Failed to update tc filter on ifb1`, err.message);
-    });
+  getQosParentClassid() {
+    return 1;
   }
 
   getSubnetCapacity() {
@@ -138,6 +109,10 @@ class GSEPlatform extends Platform {
     return 3000;
   }
 
+  getExceptionCapacity() {
+    return 3000;
+  }
+
   isTLSBlockSupport() {
     return true;
   }
@@ -147,6 +122,10 @@ class GSEPlatform extends Platform {
   }
 
   isWireguardSupported() {
+    return true;
+  }
+
+  isAmneziaWgSupported() {
     return true;
   }
 
@@ -416,7 +395,7 @@ class GSEPlatform extends Platform {
     // check if the kernel module is already loaded
     let koPath = `${await this.getKernelModulesPath()}/${module_name}.ko`;
     const emmcDev = await exec("df /media/root-ro | grep -o '/dev/mmcblk[0-9]*'").then(result => result.stdout.trim());
-    const kernelChecksum = await exec("sudo dd if=$EMMC_DEV bs=512 count=75536 skip=73728 status=none | md5sum | awk '{print $1}'").then(result => result.stdout.trim());
+    const kernelChecksum = await exec(`sudo dd if=${emmcDev} bs=512 count=75536 skip=73728 status=none | md5sum | awk '{print $1}'`).then(result => result.stdout.trim());
 
     const compiler = await exec("grep -o 'aarch64.*-linux-gnu-gcc' /proc/version").then(result => result.stdout.trim());
     const fileExists = await fsp.access(`${koPath}.${kernelChecksum}`, fs.constants.F_OK).then(() => true).catch(() => false);

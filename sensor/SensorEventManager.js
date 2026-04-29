@@ -128,7 +128,7 @@ class SensorEventManager extends EventEmitter {
 
   emitLocalEvent(event, from) {
     (event.suppressEventLogging || event.type === "DeviceUpdate" ? log.verbose : log.info)(
-      `New Event: ${event.type} -- ${event.message || "(no message)"}${from ? ' -- from ' + from : ""}`
+      `New Event: ${event.type}${event.message ? ' -- '+event.message : ''}${from ? ' -- from ' + from : ""}`
     )
     log.debug(JSON.stringify(event));
 
