@@ -831,98 +831,34 @@ echo ""
 } > "$qos_file"
 }
 
-create_tc_rules_original() {
-  # ifb module is for QoS
-  if [[ $IFB_SUPPORTED == "yes" ]]; then
-    sudo modprobe ifb &> /dev/null || true
-  else
-    sudo rmmod ifb &> /dev/null || true
-  fi
-
-  if ip link show dev ifb0; then
-    sudo tc filter delete dev ifb0 &> /dev/null || true
-    sudo tc qdisc delete dev ifb0 root &> /dev/null || true
-    sudo ip link set ifb0 up
-    sudo tc qdisc replace dev ifb0 root handle 1: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
-    sudo tc qdisc add dev ifb0 parent 1:1 handle 2: htb # htb tree for high priority rate limit upload rules
-    sudo tc qdisc add dev ifb0 parent 1:2 fq_codel
-    sudo tc qdisc add dev ifb0 parent 1:3 cake unlimited triple-isolate no-split-gso conservative
-    sudo tc qdisc add dev ifb0 parent 1:4 handle 3: htb # htb tree for regular priority rate limit upload rules
-    sudo tc qdisc add dev ifb0 parent 1:5 fq_codel
-    sudo tc qdisc add dev ifb0 parent 1:6 cake unlimited triple-isolate no-split-gso conservative
-    sudo tc qdisc add dev ifb0 parent 1:7 handle 4: htb # htb tree for low priority rate limit upload rules
-    sudo tc qdisc add dev ifb0 parent 1:8 fq_codel
-    sudo tc qdisc add dev ifb0 parent 1:9 cake unlimited triple-isolate no-split-gso conservative
-  fi
-
-  if ip link show dev ifb1; then
-    sudo tc filter delete dev ifb1 &> /dev/null || true
-    sudo tc qdisc delete dev ifb1 root &> /dev/null || true
-    sudo ip link set ifb1 up
-    sudo tc qdisc replace dev ifb1 root handle 1: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
-    sudo tc qdisc add dev ifb1 parent 1:1 handle 2: htb # htb tree for high priority rate limit download rules
-    sudo tc qdisc add dev ifb1 parent 1:2 fq_codel
-    sudo tc qdisc add dev ifb1 parent 1:3 cake unlimited triple-isolate no-split-gso conservative
-    sudo tc qdisc add dev ifb1 parent 1:4 handle 3: htb # htb tree for regular priority rate limit download rules
-    sudo tc qdisc add dev ifb1 parent 1:5 fq_codel
-    sudo tc qdisc add dev ifb1 parent 1:6 cake unlimited triple-isolate no-split-gso conservative
-    sudo tc qdisc add dev ifb1 parent 1:7 handle 4: htb # htb tree for low priority rate limit download rules
-    sudo tc qdisc add dev ifb1 parent 1:8 fq_codel
-    sudo tc qdisc add dev ifb1 parent 1:9 cake unlimited triple-isolate no-split-gso conservative
-  fi
-}
-
-create_tc_rules_new() {
-  # ifb module is for QoS
-  if [[ $IFB_SUPPORTED == "yes" ]]; then
-    sudo modprobe ifb &> /dev/null || true
-  else
-    sudo rmmod ifb &> /dev/null || true
-  fi
-
-  if ip link show dev ifb0; then
-    sudo tc filter delete dev ifb0 &> /dev/null || true
-    sudo tc qdisc delete dev ifb0 root &> /dev/null || true
-    sudo ip link set ifb0 up
-    sudo tc qdisc add dev ifb0 root handle 1: htb default 1
-    sudo tc class add dev ifb0 parent 1: classid 1:1 htb rate 10240Mbit ceil 10240Mbit burst 1250000 cburst 1250000 # default to 10G will be replaced later
-    sudo tc qdisc add dev ifb0 parent 1:1 handle 10: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
-    sudo tc qdisc add dev ifb0 parent 10:1 handle 2: htb # htb tree for high priority rate limit upload rules
-    sudo tc qdisc add dev ifb0 parent 10:2 fq_codel
-    sudo tc qdisc add dev ifb0 parent 10:3 cake unlimited triple-isolate no-split-gso conservative
-    sudo tc qdisc add dev ifb0 parent 10:4 handle 3: htb # htb tree for regular priority rate limit upload rules
-    sudo tc qdisc add dev ifb0 parent 10:5 fq_codel
-    sudo tc qdisc add dev ifb0 parent 10:6 cake unlimited triple-isolate no-split-gso conservative
-    sudo tc qdisc add dev ifb0 parent 10:7 handle 4: htb # htb tree for low priority rate limit upload rules
-    sudo tc qdisc add dev ifb0 parent 10:8 fq_codel
-    sudo tc qdisc add dev ifb0 parent 10:9 cake unlimited triple-isolate no-split-gso conservative
-  fi
-
-  if ip link show dev ifb1; then
-    sudo tc filter delete dev ifb1 &> /dev/null || true
-    sudo tc qdisc delete dev ifb1 root &> /dev/null || true
-    sudo ip link set ifb1 up
-    sudo tc qdisc add dev ifb1 root handle 1: htb default 1
-    sudo tc class add dev ifb1 parent 1: classid 1:1 htb rate 10240Mbit ceil 10240Mbit burst 1250000 cburst 1250000
-    sudo tc qdisc add dev ifb1 parent 1:1 handle 10: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
-    sudo tc qdisc add dev ifb1 parent 10:1 handle 2: htb # htb tree for high priority rate limit download rules
-    sudo tc qdisc add dev ifb1 parent 10:2 fq_codel
-    sudo tc qdisc add dev ifb1 parent 10:3 cake unlimited triple-isolate no-split-gso conservative
-    sudo tc qdisc add dev ifb1 parent 10:4 handle 3: htb # htb tree for regular priority rate limit download rules
-    sudo tc qdisc add dev ifb1 parent 10:5 fq_codel
-    sudo tc qdisc add dev ifb1 parent 10:6 cake unlimited triple-isolate no-split-gso conservative
-    sudo tc qdisc add dev ifb1 parent 10:7 handle 4: htb # htb tree for low priority rate limit download rules
-    sudo tc qdisc add dev ifb1 parent 10:8 fq_codel
-    sudo tc qdisc add dev ifb1 parent 10:9 cake unlimited triple-isolate no-split-gso conservative
-  fi
-}
-
 create_tc_rules() {
-  # for gold and goldpro platforms, use new tc rules
-  if [[ $FIREWALLA_PLATFORM == "gold" || $FIREWALLA_PLATFORM == "goldpro" ]]; then
-    create_tc_rules_new
+  # ifb module is for QoS
+  if [[ $IFB_SUPPORTED == "yes" ]]; then
+    sudo modprobe ifb &> /dev/null || true
   else
-    create_tc_rules_original
+    sudo rmmod ifb &> /dev/null || true
+  fi
+
+  if ip link show dev ifb0; then
+    sudo tc filter delete dev ifb0 &> /dev/null || true
+    sudo tc qdisc delete dev ifb0 root &> /dev/null || true
+    sudo ip link set ifb0 up
+    sudo tc qdisc add dev ifb0 root handle 1: htb default 0x1002
+    sudo tc class add dev ifb0 parent 1: classid 1:1 htb rate 10240Mbit ceil 10240Mbit burst 1250000 cburst 1250000 # default to 10G will be replaced later
+    sudo tc class add dev ifb0 parent 1:1 classid 1:0x1001 htb prio 2 rate 1kbit ceil 10240Mbit burst 1250000 cburst 1250000 # htb class for high priority no rate limit rules
+    sudo tc class add dev ifb0 parent 1:1 classid 1:0x1002 htb prio 4 rate 1kbit ceil 10240Mbit burst 1250000 cburst 1250000 # htb class for default priority no rate limit rules
+    sudo tc class add dev ifb0 parent 1:1 classid 1:0x1003 htb prio 6 rate 1kbit ceil 10240Mbit burst 1250000 cburst 1250000 # htb class for low priority no rate limit rules
+  fi
+
+  if ip link show dev ifb1; then
+    sudo tc filter delete dev ifb1 &> /dev/null || true
+    sudo tc qdisc delete dev ifb1 root &> /dev/null || true
+    sudo ip link set ifb1 up
+    sudo tc qdisc add dev ifb1 root handle 1: htb default 0x1002
+    sudo tc class add dev ifb1 parent 1: classid 1:1 htb rate 10240Mbit ceil 10240Mbit burst 1250000 cburst 1250000
+    sudo tc class add dev ifb1 parent 1:1 classid 1:0x1001 htb prio 2 rate 1kbit ceil 10240Mbit burst 1250000 cburst 1250000 # htb class for high priority no rate limit rules
+    sudo tc class add dev ifb1 parent 1:1 classid 1:0x1002 htb prio 4 rate 1kbit ceil 10240Mbit burst 1250000 cburst 1250000 # htb class for default priority no rate limit rules
+    sudo tc class add dev ifb1 parent 1:1 classid 1:0x1003 htb prio 6 rate 1kbit ceil 10240Mbit burst 1250000 cburst 1250000 # htb class for low priority no rate limit rules
   fi
 }
 
