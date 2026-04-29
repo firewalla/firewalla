@@ -96,6 +96,8 @@ const dnsTool = new DNSTool();
 const IdentityManager = require('../net2/IdentityManager.js');
 const Message = require('../net2/Message.js');
 const AppTimeUsageManager = require('./AppTimeUsageManager.js');
+const flowTool = require('../net2/FlowTool.js');
+const auditTool = require('../net2/AuditTool.js');
 
 const PolicyDisturbManager = require('./PolicyDisturbManager.js');
 
@@ -560,6 +562,17 @@ class PolicyManager2 {
     return results[0]
   }
 
+  async getPolicyForApp(policyID, useCache = false, options = {}) {
+    const policy = await this.getPolicy(policyID, useCache);
+    if (!policy) {
+      return null;
+    }
+
+    const formattedPolicy = useCache ? _.cloneDeep(policy) : policy;
+    await this.formatPolicyLastHitFlowForApp(formattedPolicy, options);
+    return formattedPolicy;
+  }
+
   async getSamePolicies(policy) {
     const count = await this.countActivePolicyNumber()
     let policies = await this.loadActivePoliciesAsync({ includingDisabled: true, number: count });
@@ -603,18 +616,26 @@ class PolicyManager2 {
 
     log.info("Trying to reset policy hit count:", policyIDs || 'all');
 
+    const resetTime = Date.now() / 1000;
     const policyKeys = (policyIDs || await this.loadActivePolicyIDs()).map(this.getPolicyKey)
     const existingKeys = await batchKeyExists(policyKeys, 1500)
 
     for (const chunk of _.chunk(existingKeys, 1000)) {
-      const resetTime = Math.round(Date.now() / 1000)
       const batch = rclient.batch() // we don't really need transaction here
       for (const key of chunk) {
-        batch.hdel(key, "hitCount", "lastHitTs");
+        batch.hdel(key, "hitCount", "lastHitTs", "lastHitFlow");
         batch.hset(key, "statsResetTs", resetTime);
       }
       await batch.execAsync()
     }
+
+    sem.emitEvent({
+      type: "Policy:StatsReset",
+      toProcess: "FireMain",
+      suppressEventLogging: true,
+      policyIDs, // null means all policies are reset
+      resetTime,
+    });
   }
 
   async getPoliciesByAction(actions) {
@@ -898,6 +919,87 @@ class PolicyManager2 {
     })
 
     return rr
+  }
+
+  async formatPolicyLastHitFlowForApp(policy, options = {}) {
+    const lastHitFlow = _.get(policy, 'lastHitFlow');
+    if (!policy || !_.isObject(lastHitFlow) || _.isEmpty(lastHitFlow) || lastHitFlow.ltype) {
+      return policy;
+    }
+
+    const kind = lastHitFlow.kind;
+    const raw = _.isObject(lastHitFlow.raw) ? lastHitFlow.raw : null;
+    if (!raw || !kind) {
+      delete policy.lastHitFlow;
+      return policy;
+    }
+
+    let simpleLog = null;
+    if (kind === 'audit') {
+      simpleLog = auditTool.toSimpleFormat(raw, {
+        block: true,
+        local: !!(raw.local || raw.dmac || raw.dir === 'L')
+      });
+      if (simpleLog && raw.mac) {
+        simpleLog.device = raw.mac;
+      }
+      const formatted = await auditTool.enrichSimpleLog(simpleLog, options)
+        .catch((err) => {
+          log.warn('Failed to enrich policy lastHitFlow', _.get(policy, 'pid'), err.message);
+          return simpleLog;
+        });
+      if (formatted) {
+        policy.lastHitFlow = formatted;
+      } else {
+        delete policy.lastHitFlow;
+      }
+      return policy;
+    }
+
+    if (kind === 'flow') {
+      simpleLog = flowTool.toSimpleFormat(raw, {
+        local: !!(raw.local || raw.dmac || raw.drl || raw.dstTags || raw.fd === 'lo')
+      });
+      if (simpleLog && raw.mac) {
+        simpleLog.device = raw.mac;
+      }
+      const formatted = await flowTool.enrichSimpleLog(simpleLog, options)
+        .catch((err) => {
+          log.warn('Failed to enrich policy lastHitFlow', _.get(policy, 'pid'), err.message);
+          return simpleLog;
+        });
+      if (formatted) {
+        policy.lastHitFlow = formatted;
+      } else {
+        delete policy.lastHitFlow;
+      }
+      return policy;
+    }
+
+    delete policy.lastHitFlow;
+    return policy;
+  }
+
+  async formatPoliciesForApp(policies, options = {}) {
+    if (!_.isArray(policies) || _.isEmpty(policies)) {
+      return policies;
+    }
+
+    await Promise.all(policies.map(async (policy) => {
+      try {
+        await this.formatPolicyLastHitFlowForApp(policy, options);
+      } catch (err) {
+        log.error(`Failed to format lastHitFlow for policy ${_.get(policy, 'pid')}:`, err.message);
+      }
+    }));
+
+    return policies;
+  }
+
+  async loadActivePoliciesForApp(options = {}) {
+    const policies = await this.loadActivePoliciesAsync(options);
+    await this.formatPoliciesForApp(policies, options);
+    return policies;
   }
 
   numberOfPolicies(callback) {

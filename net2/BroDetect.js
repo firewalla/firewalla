@@ -1333,7 +1333,7 @@ class BroDetect {
       if (connEntry && connEntry.dpid && Number(connEntry.dpid)) {
         tmpspec.dpid = Number(connEntry.dpid); // disturb rule id
       }
-
+      
       const tags = await hostTool.getTags(monitorable, intfInfo && intfInfo.uuid)
       const dstTags = await hostTool.getTags(dstMonitorable, dstIntfInfo && dstIntfInfo.uuid)
       Object.assign(tmpspec, tags)
@@ -1376,6 +1376,42 @@ class BroDetect {
           if (!tmpspec.af) tmpspec.af = {}
           tmpspec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
           afhost = afobj.host
+        }
+      }
+
+      const ruleStatsPlugin = sl.getSensor("RuleStatsPlugin");
+      // account rule hits for allow/disturb/route.
+      // disturb and allow are mutually exclusive (disturb wins); route is independent.
+      // with emitted flows and only skip the reverse local pass.
+      if (!reverseLocal && ruleStatsPlugin) {
+        if (tmpspec.apid && tmpspec.apid === Constants.GLOBAL_ALLOW_DOMAIN_RULE_HIT) {
+          const matchedHost = afhost || (connEntry && connEntry.host);
+          if (matchedHost) {
+            const matchedPIDs = await ruleStatsPlugin.getMatchedPids({
+              ac: 'allow', type: 'ip', sh: orig, sp: [orig_p], dh: resp, dp: resp_p,
+              pr: obj.proto, fd: flowdir, af: { [matchedHost]: _.get(tmpspec, ["af", matchedHost], {}) }, sec: 0
+            });
+            if (matchedPIDs && matchedPIDs.length > 0) {
+              log.debug('Conn:MatchedAllowRuleByHost', obj.uid, orig, resp, obj['id.resp_p'], matchedHost, matchedPIDs);
+              tmpspec.apid = matchedPIDs[0];
+            }
+          }
+          if (tmpspec.apid === Constants.GLOBAL_ALLOW_DOMAIN_RULE_HIT) {
+            log.error(`failed to match any allow rule pid for connection with host ${afhost} and five tuple ${orig}:${orig_p} -> ${resp}:${resp_p}`);
+            tmpspec.apid = undefined;
+          }
+        }
+
+        const lastHitFlow = Object.assign({}, tmpspec, { mac: localMac }, localFlow ? { local: true } : {});
+        const hitPid = tmpspec.dpid || tmpspec.apid;
+        const hitAc = tmpspec.dpid ? "disturb" : "allow";
+        if (hitPid) {
+          ruleStatsPlugin.accountRule({ pid: hitPid, ac: hitAc, ct: 1, ts: tmpspec.ts });
+          ruleStatsPlugin.recordLastHitFlow(hitPid, lastHitFlow, 'flow');
+        }
+        if (tmpspec.rpid) {
+          ruleStatsPlugin.accountRule({ pid: tmpspec.rpid, ac: "route", ct: 1, ts: tmpspec.ts });
+          ruleStatsPlugin.recordLastHitFlow(tmpspec.rpid, lastHitFlow, 'flow');
         }
       }
 
