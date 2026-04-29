@@ -187,6 +187,14 @@ case "$UNAME" in
         export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
         export FIREWALLA_PLATFORM=orange
         ;;
+      goldplus2)
+        source $FW_PLATFORM_DIR/goldplus2/platform.sh
+        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/goldplus2
+        BRO_PROC_NAME="zeek"
+        BRO_PROC_COUNT=2
+        export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
+        export FIREWALLA_PLATFORM=goldplus2
+        ;;
       blue)
         source $FW_PLATFORM_DIR/blue/platform.sh
         FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/blue
@@ -249,11 +257,19 @@ function installTLSModule() {
 
     if [[ -f $ko_path ]]; then
       sudo insmod ${ko_path} max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
+    else
+      sudo modprobe ${module_name} max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
     fi
+    arch=$(uname -m)
     so_path=${FW_PLATFORM_CUR_DIR}/files/shared_objects/$(lsb_release -cs)/lib${module_name}.so
+    so_path_alt="/media/root-ro/usr/lib/${arch}-linux-gnu/xtables/lib${module_name}.so"
+
     if [[ -f $so_path ]]; then
-      sudo install -D -v -m 644 ${so_path} /usr/lib/$(uname -m)-linux-gnu/xtables
+      sudo install -D -v -m 644 ${so_path} /usr/lib/${arch}-linux-gnu/xtables
+    elif [[ -f $so_path_alt ]]; then
+      sudo install -D -v -m 644 ${so_path_alt} /usr/lib/${arch}-linux-gnu/xtables
     fi
+    
   fi
   return
 }
