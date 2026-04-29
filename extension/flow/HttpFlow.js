@@ -188,7 +188,7 @@ class HttpFlow {
       const destIP = obj["id.resp_h"];
       const host = obj.host;
       const uri = obj.uri;
-      let localIP, remoteIP, remotePort, flowDirection
+      let localIP, remoteIP, remotePort, flowDirection, mac;
 
       if (ipUtil.isPrivate(srcIP) && ipUtil.isPrivate(destIP))
         return;
@@ -197,22 +197,24 @@ class HttpFlow {
       if (intf) {
         flowDirection = "outbound";
         localIP = srcIP;
-        remoteIP = destIP
-        remotePort = obj['id.resp_p']
+        remoteIP = destIP;
+        remotePort = obj['id.resp_p'];
+        mac = obj.orig_l2_addr && (obj.orig_l2_addr.length == 17 ? obj.orig_l2_addr.toUpperCase() : obj.orig_l2_addr);
       } else {
         intf = sysManager.getInterfaceViaIP(destIP);
         if (intf) {
           flowDirection = "inbound";
           localIP = destIP;
-          remoteIP = srcIP
-          remotePort = obj['id.orig_p']
+          remoteIP = srcIP;
+          remotePort = obj['id.orig_p'];
+          mac = obj.resp_l2_addr && (obj.resp_l2_addr.length == 17 ? obj.resp_l2_addr.toUpperCase() : obj.resp_l2_addr);
         } else {
           log.error("HTTP:Error:Drop", obj);
           return;
         }
       }
-
-      let mac = await hostTool.getMacByIPWithCache(localIP);
+      if (!mac)
+        mac = await hostTool.getMacByIPWithCache(localIP);
       if (!mac) {
         const identity = IdentityManager.getIdentityByIP(localIP);
         if (identity)

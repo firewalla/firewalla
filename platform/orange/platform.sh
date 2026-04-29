@@ -9,7 +9,7 @@ MAX_NUM_OF_THREADS=20000
 MANAGED_BY_FIREBOOT=yes
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab.gold
 REAL_PLATFORM='real.orange'
-FW_PROBABILITY="0.99"
+FW_PROBABILITY="0.999"
 FW_QOS_PROBABILITY="0.999"
 ALOG_SUPPORTED=yes
 FW_SCHEDULE_BRO=false
@@ -21,7 +21,7 @@ MANAGED_BY_FIREROUTER=yes
 RAMFS_ROOT_PARTITION=yes
 MAX_OLD_SPACE_SIZE=384
 HAVE_FWAPC=yes
-HAVE_FWDAP=no
+HAVE_FWDAP=yes
 WAN_INPUT_DROP_RATE_LIMIT=8
 
 function get_openssl_cnf_file {
@@ -65,13 +65,13 @@ function get_node_bin_path {
 function map_target_branch {
   case "$1" in
   "release_6_0")
-    echo "release_9_0"
+    echo "release_13_0"
     ;;
   "beta_6_0")
-    echo "beta_12_0"
+    echo "beta_20_0"
     ;;
   "beta_7_0")
-    echo "beta_13_0"
+    echo "beta_21_0"
     ;;
   *)
     echo $1

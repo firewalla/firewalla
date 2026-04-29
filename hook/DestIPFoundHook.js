@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,8 +14,8 @@
  */
 'use strict';
 
-const log = require('../net2/logger.js')(__filename, 'info');
-
+const net = require('net');
+const log = require('../net2/logger.js')(__filename);
 const Hook = require('./Hook.js');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -33,6 +33,9 @@ const sl = require('../sensor/SensorLoader.js');
 const m = require('../extension/metrics/metrics.js');
 
 const rp = require('request-promise');
+
+const DNSTool = require('../net2/DNSTool.js');
+const dnsTool = new DNSTool();
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
@@ -292,7 +295,8 @@ class DestIPFoundHook extends Hook {
     options = options || {};
 
     try {
-      if (ipUtil.isPrivate(ip)) {
+      const fam = net.isIP(ip);
+      if (ipUtil.isPrivate(ip, fam)) {
         return
       }
 
@@ -319,12 +323,16 @@ class DestIPFoundHook extends Hook {
           // (relatively loose condition to avoid calling intel API too frequently)
           if (!domain || intel.host && isSimilarHost(domain, intel.host)) {
             await this.updateCategoryDomain(intel);
-            await this.updateCountryIP(intel);
+            if (fam === 6)
+              await this.updateCountryIP(intel);
             if (intel.category === "intel")
               this.shouldTriggerDetectionImmediately(mac);
             log.debug('return cached intel:', intel)
             if (enrichedFlow)
               enrichedFlow.intel = intel;
+            if(intel.host) {
+              await dnsTool.addReverseDns(intel.host, [ip]);
+            }
             return intel;
           }
         }
@@ -398,8 +406,8 @@ class DestIPFoundHook extends Hook {
         await intelTool.addIntel(ip, aggrIntelInfo);
       }
 
-      // update country with geoip-lite after writting to intel:ip so geoip data doesn't go there
-      await this.updateCountryIP(aggrIntelInfo);
+      if (fam === 6)
+        await this.updateCountryIP(aggrIntelInfo);
 
       // check if detection should be triggered on this flow/mac immediately to speed up detection
       if(aggrIntelInfo.category === 'intel') {

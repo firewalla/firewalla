@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -86,8 +86,11 @@ const { getUniqueTs, extractIP } = require('./FlowUtil.js')
 const LRU = require('lru-cache');
 const Constants = require('./Constants.js');
 
+const exec = require('util').promisify(require('child_process').exec);
+
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
+const CONNMARK_REFRESH_INTERVAL = 15 * 1000; // 15 seconds
 
 /*
  *
@@ -148,13 +151,14 @@ class BroDetect {
 
   constructor() {
     log.info('Initializing BroDetect')
-    if (!firewalla.isMain())
+    if (!firewalla.isMain() && !firewalla.isTest())
       return;
     this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 10800 * 1000});
     this.sigmap = new LRU({max: SIG_MAP_SIZE, maxAge: 10800 * 1000});
     this.proxyConn = new LRU({max: PROXY_CONN_SIZE, maxAge: 60 * 1000});
     this.dnsCache = new LRU({max: DNS_CACHE_SIZE, maxAge: 3600 * 1000});
     this.bridgeLocalFlow = new LRU({max: 1000, maxAge: 10 * 1000});
+    this.oIntfCache = new LRU({max: 1000, maxAge: 10 * 1000}); // for rate limited A=C log
     this.dnsCount = 0
     this.dnsHit = 0
     this.dnsMatch = 0
@@ -203,15 +207,23 @@ class BroDetect {
     }, this.tsWriteInterval)
 
     this.activeLongConns = new Map();
+    this.lastActiveLongConnPrintTsMap = new Map();
     setInterval(() => {
       const now = Date.now() / 1000
       const connCount = this.activeLongConns.size
-      if (connCount > 1000)
-        log.warn('Active long conn:', connCount);
-      else if (connCount > 500)
-        log.info('Active long conn:', connCount);
-      else
+      if (connCount > 1000) {
+        if (now - (this.lastActiveLongConnPrintTsMap.get("warn") || 0) > 300) {
+          log.warn('Active long conn:', connCount);
+          this.lastActiveLongConnPrintTsMap.set("warn", now);
+        }
+      } else if (connCount > 500) {
+        if (now - (this.lastActiveLongConnPrintTsMap.get("info") || 0) > 300) {
+          log.info('Active long conn:', connCount);
+          this.lastActiveLongConnPrintTsMap.set("info", now);
+        }
+      } else {
         log.debug('Active long conn:', connCount);
+      }
       for (const uid of this.activeLongConns.keys()) {
         const lastTick = this.activeLongConns.get(uid).ts + this.activeLongConns.get(uid).duration
         if (lastTick + config.connLong.expires < now)
@@ -419,7 +431,7 @@ class BroDetect {
   }
 
   isIdentityLAN(intfInfo) {
-    return intfInfo && intfInfo.name && (intfInfo.name == "tun_fwvpn" || intfInfo.name.startsWith("wg"))
+    return intfInfo && intfInfo.name && (intfInfo.name == "tun_fwvpn" || intfInfo.name.startsWith("wg") || intfInfo.name.startsWith("awg"))
   }
 
   recordDeviceHeartbeat(mac, ts, ip, fam = 4) {
@@ -531,6 +543,7 @@ class BroDetect {
         }
       }
 
+      if (!fc.isFeatureOn('dns_flow_record')) return;
       const key = "flow:dns:" + localMac;
       this.flowstash.dns.keys.add(key)
       const commands = [ ['zadd', key, dnsFlow._ts, JSON.stringify(dnsFlow)] ]
@@ -796,10 +809,10 @@ class BroDetect {
     }
 
     if (obj.orig_bytes > threshold.logLargeBytesOrig) {
-      log.warn("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj.uid, obj['id.orig_h'], obj['id.resp_h']);
+      log.verbose("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj.uid, obj['id.orig_h'], obj['id.resp_h']);
     }
     if (obj.resp_bytes > threshold.logLargeBytesResp) {
-      log.warn("Conn:Debug:Resp_bytes:", obj.resp_bytes, obj.uid, obj['id.orig_h'], obj['id.resp_h']);
+      log.verbose("Conn:Debug:Resp_bytes:", obj.resp_bytes, obj.uid, obj['id.orig_h'], obj['id.resp_h']);
     }
 
     return true;
@@ -863,7 +876,7 @@ class BroDetect {
         return;
       }
 
-      if (obj.service && obj.service == "dns" || resp_p == 53 || orig_p == 53) {
+      if (obj.service && obj.service == "dns" || [53, 5353].includes(resp_p) || [53, 5353].includes(orig_p)) {
         return;
       }
 
@@ -920,7 +933,7 @@ class BroDetect {
           return;
         }
 
-        if (["RSTR", "RSTO", "S1", "S3", "SF"].includes(obj.conn_state) && obj.orig_pkts <= 10 && obj.resp_bytes == 0) {
+        if (["RSTR", "RSTO", "S1", "S3", "SF"].includes(obj.conn_state) && obj.orig_pkts <= 10 && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
           log.debug("Conn:Drop:TLS", obj.conn_state, data);
           // Likely blocked by TLS. In normal cases, the first packet is SYN, the second packet is ACK, the third packet is SSL client hello. conn_state will be "RSTR"
           // However, if zeek is listening on bridge interface, it will not capture tcp-reset from iptables due to br_netfilter kernel module.
@@ -1001,10 +1014,14 @@ class BroDetect {
         return
       }
 
+      // exclude traffic to gateway from local flow (bridge mode)
+      if (localFlow && (sysManager.myGateways(fam).includes(orig) || sysManager.myGateways(fam).includes(resp)))
+        return
+
       let intfInfo = sysManager.getInterfaceViaIP(lhost, fam);
       let dstIntfInfo = localFlow && sysManager.getInterfaceViaIP(dhost, fam);
-      // do not process traffic between devices in the same network unless bridge flag is set in log
-      if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid && !bridge)
+      // do not process traffic between devices in the same network unless bridge flag is set (from fwap) or integrated AP is enabled (orange platform)
+      if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid && !bridge && !await platform.hasIntegratedAPAssets())
         return;
       // ignore multicast IP
       try {
@@ -1221,17 +1238,17 @@ class BroDetect {
             return;
           }
         }
-        if (!bridge && intfInfo.uuid == dstIntfInfo.uuid)
+        if (!bridge && intfInfo.uuid == dstIntfInfo.uuid && !await platform.hasIntegratedAPAssets())
           return
         if (obj.proto === "udp" && accounting.isBlockedDevice(dstMac)) {
           return
         }
 
         // zeek records inter-network local flow multiple times, on each involving interface that zeek listens to
-        // only bridge mode is considered here, as route mode duplicats are dropped earlier
+        // only bridge mode or integrated APs are considered here, as router mode duplicates are dropped earlier
         // if source is a VPN client, IP is NATed on the other interface and zeek sees it from Firewalla itself thus dropped already
         // don't drop in this case. also connection going to VPN client is not possible in bridge mode
-        if (!reverseLocal && !isIdentityIntf && await sysManager.isBridgeMode()) {
+        if (!reverseLocal && !isIdentityIntf && (await sysManager.isBridgeMode() || await platform.hasIntegratedAPAssets())) {
           const pcapZeekPlugin = sl.getSensor("PcapZeekPlugin");
 
           if (pcapZeekPlugin.listenOnParentIntf) {
@@ -1277,13 +1294,16 @@ class BroDetect {
         intf: intfId, // intf id
         du: obj.duration,
         pr: obj.proto,
-        uids: [],
         ltype: localType
       };
 
+      // id.orig_p can be an array in local flow
+      if (obj['id.orig_p']) tmpspec.sp = _.isArray(obj['id.orig_p']) ? obj['id.orig_p'] : [obj['id.orig_p']];
+      if (obj['id.resp_p']) tmpspec.dp = obj['id.resp_p'];
+
       // uids is only used to correlate with uri in http.log
       if (obj.service === "http")
-        tmpspec.uids.push(obj.uid);
+        tmpspec.uids = [obj.uid];
 
       if (localFlow) {
         tmpspec.dmac = dstMac
@@ -1291,9 +1311,16 @@ class BroDetect {
         if (dstRealLocal)
           tmpspec.drl = extractIP(dstRealLocal)
       } else {
-        tmpspec.oIntf = outIntfId // egress intf id
+        if (outIntfId) {
+          tmpspec.oIntf = outIntfId // egress intf id
+          if (tmpspec.pr == 'tcp')
+            this.oIntfCache.set(`${tmpspec.sh}:${tmpspec.dh}:${tmpspec.dp}`, outIntfId);
+        } else if (tmpspec.pr == 'tcp') {
+          const oIntf = this.oIntfCache.get(`${tmpspec.sh}:${tmpspec.dh}:${tmpspec.dp}`);
+          if (oIntf)
+            tmpspec.oIntf = oIntf;
+        }
       }
-      tmpspec.af = {} //application flows
 
       if (connEntry && connEntry.apid && Number(connEntry.apid)) {
         tmpspec.apid = Number(connEntry.apid); // allow rule id
@@ -1310,16 +1337,12 @@ class BroDetect {
       const tags = await hostTool.getTags(monitorable, intfInfo && intfInfo.uuid)
       const dstTags = await hostTool.getTags(dstMonitorable, dstIntfInfo && dstIntfInfo.uuid)
       Object.assign(tmpspec, tags)
-      tmpspec.dstTags = dstTags
+      if (Object.keys(dstTags).length) tmpspec.dstTags = dstTags;
 
       if (monitorable instanceof Identity)
         tmpspec.guid = IdentityManager.getGUID(monitorable);
       if (realLocal)
         tmpspec.rl = extractIP(realLocal);
-
-      // id.orig_p can be an array in local flow
-      if (obj['id.orig_p']) tmpspec.sp = _.isArray(obj['id.orig_p']) ? obj['id.orig_p'] : [obj['id.orig_p']];
-      if (obj['id.resp_p']) tmpspec.dp = obj['id.resp_p'];
 
       // might be blocked UDP packets, checking conntrack
       // blocked connections don't leave a trace in conntrack
@@ -1350,6 +1373,7 @@ class BroDetect {
 
         // only use information in app map for outbound flow, af describes remote site
         if (afobj && afobj.host && (flowdir === "in" || localFlow)) {
+          if (!tmpspec.af) tmpspec.af = {}
           tmpspec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
           afhost = afobj.host
         }
@@ -1363,29 +1387,28 @@ class BroDetect {
       const tuple = { download: traffic[0], upload: traffic[1] }
       if (localFlow) {
         const tupleConn = {conn: tmpspec.ct}
-        const tupleIntra = { intra: tmpspec.ob + tmpspec.rb }
 
-        this.recordTraffic(tupleIntra, 'lo:global')
+        this.recordLocalTraffic({
+          mac: localMac, upload: tuple.upload, download: tuple.download,
+          intf: intfInfo && intfInfo.uuid,
+          dIntf: dstIntfInfo && dstIntfInfo.uuid,
+          tags, dstTags
+        })
+
         this.recordTraffic(tupleConn, 'lo:intra:global')
-
-        this.recordTraffic(tuple, 'lo:' + localMac)
         this.recordTraffic(tupleConn, `lo:${flowdir}:${localMac}`)
 
         if (dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid) {
-          this.recordTraffic(tupleIntra, 'lo:intf:' + intfInfo.uuid)
           this.recordTraffic(tupleConn, 'lo:intra:intf:' + intfInfo.uuid)
         } else {
-          this.recordTraffic(tuple, 'lo:intf:' + intfInfo.uuid)
           this.recordTraffic(tupleConn, `lo:${flowdir}:intf:${intfInfo.uuid}`)
         }
 
         for (const key in tags) {
           for (const tag of tags[key]) {
             if (dstTags[key] && dstTags[key].includes(tag)) {
-              this.recordTraffic(tupleIntra, 'lo:tag:' + tag)
               this.recordTraffic(tupleConn, 'lo:intra:tag:' + tag)
             } else {
-              this.recordTraffic(tuple, 'lo:tag:' + tag)
               this.recordTraffic(tupleConn, `lo:${flowdir}:tag:${tag}`)
             }
           }
@@ -1469,12 +1492,6 @@ class BroDetect {
             });
           }
         }
-        sem.emitLocalEvent({
-          type: "Flow2Stream",
-          suppressEventLogging: true,
-          raw: tmpspec,
-          audit: false
-        })
       }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
     } catch (e) {
@@ -1509,7 +1526,7 @@ class BroDetect {
               ? `${f.sh}:${f.dh}:${f.dn}`
               : `${f.sh}:${f.dh}:${f.oIntf || ""}:${f.dp || ""}`)
 
-          if (type == 'conn' && f.uids[0] && f.fd === "in" && !Object.keys(f.af).length) try {
+          if (type == 'conn' && f.uids && f.uids.length && f.fd === "in" && !f.af) try {
             // try resolve host info for previous flows again here
             // have to do this before flow aggregation as source port does matter
             const uid = f.uids[0];
@@ -1517,7 +1534,7 @@ class BroDetect {
             if (!flowstash.ignore[ipPairKey] || !flowstash.ignore[ipPairKey].has(uid)) {
               const afobj = this.withdrawAppMap(f.sh, f.sp[0] || 0, f.dh, f.dp, this.activeLongConns.has(uid)) || await conntrack.getConnEntries(f.sh, f.sp[0] || 0, f.dh, f.dp, f.pr, 600);;
               if (afobj && afobj.host) {
-                f.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
+                f.af = { [afobj.host]: _.pick(afobj, ["proto", "ip"]) };
               }
             }
           } catch (e) {
@@ -1547,15 +1564,23 @@ class BroDetect {
               // Fow now, we use the length of period from to keep it consistent with app time usage calculation
               const ets = Math.max(flowspec.ts + flowspec.du, f.ts + f.du)
               flowspec.du = Math.round((ets - flowspec.ts) * 100) / 100;
-              const uid = f.uids[0];
-              if (uid && !flowspec.uids.includes(uid)) flowspec.uids.push(uid)
+              const uid = f.uids && f.uids[0]
+              if (uid) {
+                if (!flowspec.uids)
+                  flowspec.uids = [uid]
+                else if (!flowspec.uids.includes(uid))
+                  flowspec.uids.push(uid)
+              }
 
               if (f.sp) {
                 flowspec.sp = _.union(flowspec.sp, f.sp)
               }
               if (!_.isEmpty(f.sigs))
                 flowspec.sigs = _.union(flowspec.sigs, f.sigs);
-              Object.assign(flowspec.af, f.af);
+              if (f.af) {
+                if (!flowspec.af) flowspec.af = {}
+                Object.assign(flowspec.af, f.af);
+              }
             }
           }
         }
@@ -1609,6 +1634,26 @@ class BroDetect {
       if (obj == null) {
         log.error("SSL:Drop", obj);
         return;
+      }
+
+      if (obj.orig_alpn && obj.orig_alpn.includes("ntske/1")
+        && obj['id.orig_h'] && obj['id.resp_p'] && obj['id.resp_p'] == 4460) { // NTS KE exchange, add related device to ignore NTP intercept list
+        let devId = await hostTool.getMacByIPWithCache(obj['id.orig_h']);
+        if (!devId) {
+          const identity = await this.waitAndGetIdentity(obj['id.orig_h']);
+          if (identity)
+            devId = identity.getGUID();
+        }
+
+        if (devId) {
+          const ntpRedPlugin = sl.getSensor("NTPRedirectPlugin");
+          if (ntpRedPlugin) {
+            log.debug(`NTS KE exchange detected, local devId: ${devId}, server IP: ${obj['id.resp_h']}, server port: ${obj['id.resp_p']}`);
+            await ntpRedPlugin.updateNtpOff(devId, 'add', true).catch((err) => {
+              log.error(`Failed to add ${devId} to NTP off set`, err);
+            });
+          }
+        }
       }
 
       if (this.proxyConn.get(obj.uid)) {
@@ -1831,11 +1876,6 @@ class BroDetect {
 
       log.debug("Notice:Processing", obj);
       if (config.notice.ignore[obj.note] == null) {
-        let strdata = JSON.stringify(obj);
-        let key = "notice:" + obj.src;
-        let redisObj = [key, obj.ts, strdata];
-        log.debug("Notice:Save", redisObj);
-        await rclient.zaddAsync(redisObj);
         let lh = null;
         let dh = null;
 
@@ -1879,33 +1919,42 @@ class BroDetect {
 
   async processSignatureData(data) {
     const obj = JSON.parse(data);
-    const {uid, sig_id, src_addr, src_port} = obj;
+    const {uid, sig_id, src_addr, src_port, dst_addr, dst_port} = obj;
     if (!uid || !sig_id)
       return;
     this.addConnSignature(uid, sig_id);
 
-    let isVPNSignature = false;
+    const sigDataObj = {
+      localAddr: src_addr,
+      remoteAddr: dst_addr,
+      localPorts: src_port,
+      remotePorts: dst_port,
+      sigId: sig_id,
+    };
 
-    if (sig_id == "wireguard-second-msg-sig") {
-      log.info("Wireguard handshake signature detected", uid, sig_id, src_addr, src_port);
-      isVPNSignature = true;
-      
-    } else if (sig_id.startsWith("openvpn-server-")) {
-      log.info("openVPN handshake signature detected", uid, sig_id, src_addr, src_port);
-      isVPNSignature = true;
+
+    if (!sysManager.isLocalIP(src_addr)) {
+      sigDataObj.localAddr = dst_addr;
+      sigDataObj.remoteAddr = src_addr;
+      sigDataObj.localPorts = dst_port;
+      sigDataObj.remotePorts = src_port;
     }
+    log.debug(`Signature ${sig_id} sigDataObj:`, sigDataObj);
 
-    if (isVPNSignature) {
-      if (!src_addr || !src_port) {
-        return;
+    const publicIPs = sysManager.getPublicIPs();
+    if (publicIPs && _.isObject(publicIPs)) {
+      for (const [_intf, ip] of Object.entries(publicIPs)) {
+        if (ip === sigDataObj.remoteAddr) {
+          log.debug(`Signature ${sig_id} is detected on public IP ${ip}, skipping signature data processing`);
+          return;
+        }
       }
-      let portObj = {};
-
-      portObj.proto = "udp";
-      portObj.start = src_port;
-      portObj.end = src_port;
-      categoryUpdater.blockAddress("vpn", src_addr, portObj, true);
+    } else {
+      log.error("Failed to get public IPs");
+      return;
     }
+
+    await categoryUpdater.processSignatureData(sigDataObj);
   }
 
   async getWanNicStats() {
@@ -2001,6 +2050,30 @@ class BroDetect {
     }
 
     timeSeries.exec()
+  }
+
+  recordLocalTraffic({ mac, upload, download, intf, dIntf, tags, dstTags }) {
+    const tuple = { upload, download };
+    const tupleIntra = { intra: (upload || 0) + (download || 0) };
+
+    this.recordTraffic(tupleIntra, 'lo:global')
+    this.recordTraffic(tuple, 'lo:' + mac)
+
+    if (intf) {
+      if (intf === dIntf)
+        this.recordTraffic(tupleIntra, 'lo:intf:' + intf)
+      else
+        this.recordTraffic(tuple, 'lo:intf:' + intf)
+    }
+
+    for (const key in tags) {
+      for (const tag of tags[key]) {
+        if (dstTags && dstTags[key] && dstTags[key].includes(tag))
+          this.recordTraffic(tupleIntra, 'lo:tag:' + tag)
+        else
+          this.recordTraffic(tuple, 'lo:tag:' + tag)
+      }
+    }
   }
 
   recordTraffic(tuple, key) {

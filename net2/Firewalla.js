@@ -388,6 +388,10 @@ function getProcessName() {
   return process.title;
 }
 
+function isTest() {
+  return process.env.NODE_ENV === 'test'
+}
+
 async function getBoxName() {
   return rclient.getAsync(Constants.REDIS_KEY_GROUP_NAME);
 }
@@ -437,16 +441,15 @@ module.exports = {
   getProdBranch: getProdBranch,
   getReleaseType: getReleaseType,
   isReservedBlockingIP: isReservedBlockingIP,
+  getRedHoleIP,
 
   isMain:isMain,
   isMonitor:isMonitor,
   isApi:isApi,
+  getProcessName,
+  isTest,
+
   getLastCommitDate:getLastCommitDate,
-
-  getProcessName:getProcessName,
-
-  getRedHoleIP:getRedHoleIP,
-
   getLatestCommitHash:getLatestCommitHash,
   getLocalCommitHash,
   getRemoteCommitHash,

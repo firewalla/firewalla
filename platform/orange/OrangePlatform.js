@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,7 +19,6 @@ const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js');
 const exec = require('child-process-promise').exec;
 const log = require('../../net2/logger.js')(__filename);
-const ipset = require('../../net2/Ipset.js');
 const rp = require('request-promise');
 
 const fs = require('fs');
@@ -28,6 +27,8 @@ const readFileAsync = util.promisify(fs.readFile);
 const _ = require('lodash');
 
 const firestatusBaseURL = "http://127.0.0.1:9966";
+
+const MIN_ETHERNET_LAN_COUNT_FOR_PCAP_TAP = 2;
 
 class OrangePlatform extends Platform {
   constructor() {
@@ -82,35 +83,8 @@ class OrangePlatform extends Platform {
     ];
   }
 
-  async switchQoS(state, qdisc) {
-    if (state == false) {
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
-        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
-        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-    } else {
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
-        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
-        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-    }
-    const supported = await exec(`modinfo sch_${qdisc}`).then(() => true).catch((err) => false);
-    if (!supported) {
-      log.error(`qdisc ${qdisc} is not supported`);
-      return;
-    }
-    // replace the default tc filter
-    const QoS = require('../../control/QoS.js');
-    await exec (`sudo tc filter replace dev ifb0 parent 1: handle 800::0x1 prio 1 u32 match mark 0x800000 0x${QoS.QOS_UPLOAD_MASK.toString(16)} flowid 1:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
-      log.error(`Failed to update tc filter on ifb0`, err.message);
-    });
-    await exec (`sudo tc filter replace dev ifb1 parent 1: handle 800::0x1 prio 1 u32 match mark 0x10000 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)} flowid 1:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
-      log.error(`Failed to update tc filter on ifb1`, err.message);
-    });
+  getQosParentClassid() {
+    return 1;
   }
 
   getSubnetCapacity() {
@@ -132,6 +106,10 @@ class OrangePlatform extends Platform {
     return 3000;
   }
 
+  getExceptionCapacity() {
+    return 3000;
+  }
+
   isTLSBlockSupport() {
     return true;
   }
@@ -145,6 +123,10 @@ class OrangePlatform extends Platform {
   }
 
   isWireguardSupported() {
+    return true;
+  }
+
+  isAmneziaWgSupported() {
     return true;
   }
 
@@ -512,6 +494,50 @@ class OrangePlatform extends Platform {
 
   isPDOSupported() {
     return true;
+  }
+
+  getZeekPcapBufsize() {
+    return {
+      eth: 24,
+      tun_fwvpn: 16,
+      wg: 16,
+      wlan: 16,
+    }
+  }
+
+  getInterfacesRedirectedToPcapTap(intfNameMap) {
+    const resultMap = {};
+    const candidateIntfs = []
+    let numEthernetLANs = 0;
+    const sysManager = require('../../net2/SysManager.js');
+    const monitoringIntfNames = sysManager.getMonitoringInterfaces().map(intf => intf.name);
+    for (const intfName of Object.keys(intfNameMap)) {
+      const intf = intfNameMap[intfName];
+      if (!monitoringIntfNames.includes(intfName))
+        continue;
+      const subIntfs = _.get(intf, "config.intf", []);
+      if (!_.isArray(subIntfs))
+        continue;
+      if (intfName.startsWith("eth") || intfName.startsWith("bond") || intfName.startsWith("br"))
+        numEthernetLANs++;
+      for (const subIntf of subIntfs) {
+        if (subIntf.startsWith("wlan")) {
+          // resultMap holds all candidate interfaces that can be redirected to pcap tap, will be set to true in the end according to the number of ethernet LANs
+          resultMap[subIntf] = false;
+          candidateIntfs.push(subIntf);
+        }
+      }
+    }
+    // do not redirect to pcap tap if number of ethernet LANs is less than MIN_ETHERNET_LAN_COUNT_FOR_PCAP_TAP as redirection has performance penalty
+    if (numEthernetLANs > MIN_ETHERNET_LAN_COUNT_FOR_PCAP_TAP) {
+      log.info(`Number of ethernet LANs ${numEthernetLANs} is greater than ${MIN_ETHERNET_LAN_COUNT_FOR_PCAP_TAP}, redirect interfaces to pcap tap: ${candidateIntfs}`);
+      for (const intf of candidateIntfs) {
+        resultMap[intf] = true;
+      }
+    } else {
+      log.info(`Number of ethernet LANs ${numEthernetLANs} is not greater than ${MIN_ETHERNET_LAN_COUNT_FOR_PCAP_TAP}, do not redirect to pcap tap`);
+    }
+    return resultMap;
   }
 }
 

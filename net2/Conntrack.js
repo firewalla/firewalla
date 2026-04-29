@@ -43,7 +43,7 @@ class Conntrack {
       return stub
     }
 
-    if (!f.isMain())
+    if (!f.isMain() && !f.isTest())
       return this
 
     this.scheduledJob = {}
@@ -173,6 +173,10 @@ class Conntrack {
       if (param === "CLOSE" || param === "TIME_WAIT") {
         // connection state
         conn.state = param;
+      }
+
+      if (param.startsWith('ENOBUFS')) {
+        log.warn('conntrack ENOBUFS!');
       }
       const kv = param.split('=')
       // the first group of src/dst indicates the connection direction

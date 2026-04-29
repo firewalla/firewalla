@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,7 +23,6 @@ let bro, conntrack
 const execAsync = require('child-process-promise').exec;
 const fireRouter = require('../net2/FireRouter.js')
 const sysManager = require('../net2/SysManager.js');
-const { delay } = require('../util/util.js')
 const IntelTool = require('../net2/IntelTool.js')
 const intelTool = new IntelTool()
 const DNSTool = require('../net2/DNSTool.js')
@@ -39,8 +38,6 @@ describe('test process conn data', function(){
   this.timeout(35000);
 
   before(async() => {
-    process.title = "FireMain";
-
     bro = require("../net2/BroDetect.js");
     conntrack = require('../net2/Conntrack.js');
     categoryUpdater.domainPatternTrie = new DomainTrie();
@@ -114,13 +111,6 @@ describe('test process conn data', function(){
     expect(JSON.parse(flows).dh).to.equal('44.242.88.88');
     expect(JSON.parse(flows).apid).to.be.undefined;
     expect(JSON.parse(flows).rpid).to.be.undefined;
-  });
-
-  it('extractIP should correctly parse IP string', async() => {
-    expect(bro.extractIP('fe80::')).to.equal('fe80::')
-    expect(bro.extractIP('[fe80::]')).to.equal('fe80::')
-    expect(bro.extractIP('[fe80::]:123')).to.equal('fe80::')
-    expect(bro.extractIP('192.168.0.1:123')).to.equal('192.168.0.1')
   });
 
   it('processHttpData should remove domain info on http connect', async() => {

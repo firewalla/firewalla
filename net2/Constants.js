@@ -19,6 +19,7 @@
 module.exports = {
   NS_VPN_PROFILE: "vpn_profile",
   NS_WG_PEER: "wg_peer",
+  NS_AMNEZIAWG_PEER: "awg_peer",
   NS_VIP_PROFILE: "vip",
   NS_INTERFACE: "if",
   RULE_SEQ_HI: 1,
@@ -30,8 +31,10 @@ module.exports = {
 
   VPN_TYPE_OVPN: "ovpn",
   VPN_TYPE_WG: "wg",
+  VPN_TYPE_AMNEZIAWG: "awg",
 
   INTF_AP_CTRL: "wg_ap",
+  INTF_PCAP_TAP: "ifb_pcap_tap",
 
   TRUST_IP_SET: "trust:ip",
   TRUST_DOMAIN_SET: "trust:domain",
@@ -56,6 +59,7 @@ module.exports = {
   REDIS_KEY_NSE_RESULT: "sys:scan:nse",
   REDIS_KEY_NTP_SERVER_STATUS: "sys:ntp:status", // updated only when ntp_redirect is enabled
   REDIS_KEY_VPN_WG_PEER: 'vpn:wg:peer:', // vpn:wg:peer:{intf}:{pubkey}
+  REDIS_KEY_VPN_AMNEZIAWG_PEER: 'vpn:awg:peer:', // vpn:awg:peer:{intf}:{pubkey}
   REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG: "app_time_usage_cloud_config",
   REDIS_KEY_APP_TIME_USAGE_CONFIG: "app_time_usage_config",
   REDIS_KEY_INTERNET_TIME_USAGE_CONFIG: "internet_time_usage_config",
@@ -76,12 +80,16 @@ module.exports = {
   REDIS_KEY_DATA_PLAN_SETTINGS: "sys:data:plan",
   REDIS_KEY_MSP_SYNC_OPS: "msp_sync_ops",
 
+  REDIS_CHANNEL_FLOW_BLOCK: "flow:block",
+
   REDIS_HKEY_NSE_DHCP: "dhcp",
   REDIS_HKEY_CONN_OINTF: "oIntf",
   REDIS_HKEY_CONN_HOST: "host",
   REDIS_HKEY_CONN_APID: "apid", // allow rule id
   REDIS_HKEY_CONN_RPID: "rpid", // route rule id
   REDIS_HKEY_CONN_DPID: "dpid", // disturb rule id
+
+  REDIS_KEY_NTP_OFF_SET: "ntp_off_set",
 
   ST_INIT: 'init',
   ST_PENDING: 'pending',
@@ -97,6 +105,7 @@ module.exports = {
   VPN_ROUTE_MARK_KEY_PREFIX: "fwmark:vpn",
 
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
+  NOTIF_CATEGORY_TIME_LIMITS: "com.firewalla.category.time_limits",
 
   STATE_EVENT_NIC_SPEED: "nic_speed",
 
@@ -163,8 +172,6 @@ module.exports = {
 
   IPTABLES_LOG_PREFIX_AUDIT: '[FW_ADT]',
 
-  HOST_MAC_KEY_EXPIRE_SECS: 86400 * 365,
-
   FEATURE_AUDIT_LOG: "acl_audit",
   FEATURE_LOCAL_AUDIT_LOG: "local_audit",
   FEATURE_LOCAL_FLOW: "local_flow",
@@ -179,5 +186,13 @@ module.exports = {
   POLICY_KEY_SSID_PSK: "ssidPSK",
   POLICY_KEY_WIFI_AUTO_GROUP: "wifiAutoGroup",
 
+  QOS_MODE_ADAPTIVE: "adaptive",
+  QOS_MAX_BANDWIDTH_MBPS: 10240, // 10Gbps
+
   LOG_PREFIX_QUIC: '[FW_QUIC]:',
+
+  POLICY_EXTRA_TIME_LIMIT_MODE_AUTO: "auto",
+  POLICY_EXTRA_TIME_LIMIT_MODE_OFF: "off",
+  POLICY_EXTRA_TIME_LIMIT_MODE_MANUAL: "manual",
+
 };

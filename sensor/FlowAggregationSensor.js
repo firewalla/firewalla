@@ -41,8 +41,6 @@ const sysManager = require('../net2/SysManager.js');
 const Message = require('../net2/Message.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
-const LOCK_TRAFFIC_CACHE = "LOCK_TRAFFIC_CACHE";
-const LOCK_BLOCK_CACHE = "LOCK_BLOCK_CACHE";
 const LOCK_SCHEDULED_JOB = "LOCK_SCHEDULED_JOB";
 
 const { compactTime } = require('../util/util')
@@ -65,23 +63,19 @@ class FlowAggregationSensor extends Sensor {
     let ifBlockCache = null;
     let categoryFlowCache = null;
     let appFlowCache = null;
-    // minimize critical section, retrieve global cache reference and set global cache to a new empty object
-    await lock.acquire(LOCK_TRAFFIC_CACHE, async () => {
-      trafficCache = this.trafficCache;
-      this.trafficCache = {};
-      categoryFlowCache = this.categoryFlowCache;
-      this.categoryFlowCache = {};
-      appFlowCache = this.appFlowCache;
-      this.appFlowCache = {};
-    }).catch((err) => {});
-    await lock.acquire(LOCK_BLOCK_CACHE, async () => {
-      ipBlockCache = this.ipBlockCache;
-      dnsBlockCache = this.dnsBlockCache;
-      ifBlockCache = this.ifBlockCache;
-      this.ipBlockCache = {};
-      this.dnsBlockCache = {};
-      this.ifBlockCache = {};
-    }).catch((err) => {});
+    // retrieve global cache reference and set global cache to a new empty object
+    trafficCache = this.trafficCache;
+    this.trafficCache = {};
+    categoryFlowCache = this.categoryFlowCache;
+    this.categoryFlowCache = {};
+    appFlowCache = this.appFlowCache;
+    this.appFlowCache = {};
+    ipBlockCache = this.ipBlockCache;
+    dnsBlockCache = this.dnsBlockCache;
+    ifBlockCache = this.ifBlockCache;
+    this.ipBlockCache = {};
+    this.dnsBlockCache = {};
+    this.ifBlockCache = {};
 
 
     let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
@@ -123,6 +117,12 @@ class FlowAggregationSensor extends Sensor {
 
       setInterval(() => {
         // serialize scheduled job to avoid stressing the system when redis is busy
+        if (lock.isBusy(LOCK_SCHEDULED_JOB)) {
+          // this may happen if system is under extremely heavy load and the scheduled job takes longer than the interval
+          // no need to queue the job because the job itself is stateless
+          log.warn('Last scheduled job is still running, skipping current scheduled job');
+          return;
+        }
         lock.acquire(LOCK_SCHEDULED_JOB, async () => {
           await this.scheduledJob();
         }).catch((err) => {
@@ -140,23 +140,27 @@ class FlowAggregationSensor extends Sensor {
     this.ifBlockCache = {};
 
     // BroDetect -> DestIPFoundHook -> here
-    sem.on(Message.MSG_FLOW_ENRICHED, async (event) => {
-      if (event && event.flow) {
-        await lock.acquire(LOCK_TRAFFIC_CACHE, async () => {
-          this.processEnrichedFlow(event.flow);
-        }).catch((err) => {
-          log.error(`Failed to process enriched flow`, event.flow, err.message);
-        });
+    sem.on(Message.MSG_FLOW_ENRICHED, (event) => {
+      if (event && event.flow) try {
+        this.processEnrichedFlow(event.flow)
+      } catch (err) {
+        log.error(`Failed to process enriched flow`, event.flow, err.message);
       }
     });
 
-    sem.on(Message.MSG_FLOW_ACL_AUDIT_BLOCKED, async (event) => {
-      if (event && event.flow) {
-        await lock.acquire(LOCK_BLOCK_CACHE, async () => {
-          this.processBlockFlow(event.flow);
-        }).catch((err) => {
-          log.error(`Failed to process audit flow`, event.flow, err.message);
-        });
+    sem.on(Message.MSG_FLOW_ACL_AUDIT_BLOCKED, (event) => {
+      if (event && event.flow) try {
+        this.processBlockFlow(event.flow)
+      } catch (err) {
+        log.error(`Failed to process audit flow`, event.flow, err.message);
+      }
+    });
+
+    sem.on(Message.MSG_FLOW_SWITCH_ACCOUNTING, (event) => {
+      if (event && event.flow) try {
+        this.processSwitchAccountingFlow(event.flow);
+      } catch (err) {
+        log.error(`Failed to process switch accounting flow`, event.flow, err.message);
       }
     });
   }
@@ -350,8 +354,6 @@ class FlowAggregationSensor extends Sensor {
           let t = this.dnsBlockCache[uidTickKey][key];
           if (!t) {
             t = {device: mac, domain, count: 0};
-            if (flow.dp)
-              t.port = [ String(flow.dp) ];
             if (reason)
               t.reason = reason;
             this.dnsBlockCache[uidTickKey][key] = t;
@@ -361,6 +363,54 @@ class FlowAggregationSensor extends Sensor {
         break;
       }
       default:
+    }
+  }
+
+  processSwitchAccountingFlow(flow) {
+    const { mac, dstMac, upload, download, ts, intf, dIntf, tags, dstTags } = flow;
+    if (!mac || !dstMac || !ts || (!upload && !download)) return;
+
+    const tick = flowAggrTool.getIntervalTick(ts, this.config.keySpan) + this.config.keySpan;
+
+    const srcTagList = [];
+    const dstTagList = [];
+    for (const type of ['group', 'user']) {
+      const config = Constants.TAG_TYPE_MAP[type];
+      srcTagList.push(...(tags && tags[config.flowKey] || []));
+      dstTagList.push(...(dstTags && dstTags[config.flowKey] || []));
+    }
+
+    const uidTickKeys = [];
+    uidTickKeys.push(mac);
+    if (intf) uidTickKeys.push(`intf:${intf}`);
+    if (!_.isEmpty(srcTagList))
+      Array.prototype.push.apply(uidTickKeys, srcTagList.map(tag => `tag:${tag}`));
+    uidTickKeys.push('global');
+
+    // all switch accounting flows are local (MAC-to-MAC on the switch)
+    uidTickKeys.forEach((key, i) => uidTickKeys[i] = `${key}:local`);
+    uidTickKeys.forEach((key, i) => uidTickKeys[i] = `${key}@${tick}`);
+
+    const key = `${mac}:${dstMac}:switch`;
+    for (const uidTickKey of uidTickKeys) {
+      if (!this.trafficCache[uidTickKey])
+        this.trafficCache[uidTickKey] = {};
+
+      let t = this.trafficCache[uidTickKey][key];
+      if (!t) {
+        t = { device: mac, upload: 0, download: 0, dstMac };
+        if (uidTickKey.startsWith('intf:') && intf && intf === dIntf) {
+          t.intra = 1;
+        } else if (uidTickKey.startsWith('tag:')) {
+          const tagID = uidTickKey.split(':')[1];
+          if (dstTagList.includes(tagID)) t.intra = 1;
+        } else if (uidTickKey.startsWith('global')) {
+          t.intra = 1;
+        }
+        this.trafficCache[uidTickKey][key] = t;
+      }
+      if (upload) t.upload += upload;
+      if (download) t.download += download;
     }
   }
 

@@ -36,8 +36,6 @@ const LogReader = require('../util/LogReader.js');
 const exec = require('child-process-promise').exec;
 const _ = require('lodash');
 const LRU = require('lru-cache');
-const sem = require('./SensorEventManager.js').getInstance();
-const {getPreferredName} = require('../util/util.js');
 const HostManager = require('../net2/HostManager.js');
 const hostManager = new HostManager();
 const mustache = require("mustache");
@@ -51,7 +49,6 @@ class ACLAlarmLogPlugin extends Sensor {
     super(config);
     this.featureName = "acl_alarm";
     this.recentMatchCache = new LRU({maxAge: 600 * 1000, max: 512});
-    this.policyCache = new LRU({max: 256});
   }
 
   hookFeature() {
@@ -66,13 +63,6 @@ class ACLAlarmLogPlugin extends Sensor {
 
   async job() {
     super.job();
-
-    sem.on('Policy:Updated', (event) => {
-      const pid = event && event.pid;
-      if (!isNaN(pid)) {
-        this.policyCache.del(Number(pid));
-      }
-    });
 
     this.alarmLogReader = new LogReader(alarmLogFile);
     this.alarmLogReader.on('line', this._processAlarmLog.bind(this));
@@ -154,18 +144,6 @@ class ACLAlarmLogPlugin extends Sensor {
     }, 10000);
   }
 
-  async _getPolicy(pid) {
-    if (this.policyCache.has(pid))
-      return this.policyCache.get(pid);
-    
-    const policy = await pm2.getPolicy(pid);
-    if (policy) {
-      this.policyCache.set(pid, policy);
-      return policy;
-    }
-    return null;
-  }
-
   _portInRange(p, r) {
     if (p == r)
       return true;
@@ -180,7 +158,7 @@ class ACLAlarmLogPlugin extends Sensor {
   async _populateAlarm(record) {
     const {pid, src, dst, sport, dport, proto} = record;
     let localIP, remoteIP, localPort, remotePort, dir, remoteUID, localUID;
-    const policy = await this._getPolicy(pid);
+    const policy = await pm2.getPolicy(pid, true);
     if (!policy) {
       log.error(`Cannot find policy with pid ${pid}`);
       return;

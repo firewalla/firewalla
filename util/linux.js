@@ -25,20 +25,14 @@ async function trim_exec_async(cmd) {
   }
 }
 
-exports.ping6= function(ipv6addr,cb) {
-  let pcmd = "ping6 -c 3 "+ipv6addr;
-  require('child_process').exec(pcmd,(err)=>{
-      if (cb)
-         cb();
-  });
+exports.ping6 = async function(ipv6addr) {
+  let pcmd = `ping6 -c3 -W1 -w5 ${ipv6addr}`;
+  return execAsync(pcmd, { timeout: 6000 }).catch(err => {});
 };
 
-exports.ping4 = function(ipv4Addr, cb) {
-  const cmd = `ping -c 1 -W 1 ${ipv4Addr}`;
-  require('child_process').exec(cmd, (err) => {
-    if (cb)
-      cb(err);
-  });
+exports.ping4 = async function(ipv4Addr) {
+  const cmd = `ping -c1 -W1 -w2 ${ipv4Addr}`;
+  return execAsync(cmd, { timeout: 3000 }).catch(err => {});
 }
 
 function trim_exec_sync(cmd) {
