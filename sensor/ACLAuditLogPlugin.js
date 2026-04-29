@@ -510,23 +510,21 @@ class ACLAuditLogPlugin extends Sensor {
       return;
     }
 
+    let added;
     // write apid immediately when pid is known from MARK (per-device allow)
-    if (record.pid && record.ac === "allow") {
-      const added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid, 600);
-      // middle packets may still hit the allow chain; skip duplicate five-tuples.
-      if (!added) return;
+    if (record.ac === "allow") {
+      added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid ? record.pid : Constants.GLOBAL_ALLOW_DOMAIN_RULE_HIT, 600);
     }
-
     // record route rule id into conntrack for BroDetect to pick up on flow generation
     if (record.pid && record.ac === "route") {
       await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_RPID, record.pid, 600);
     }
-
     // record disturb rule id into conntrack for BroDetect to pick up on flow generation
     if (record.pid && record.ac === "disturb") {
-      const added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_DPID, record.pid, 600);
-      if (!added) return
+      added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_DPID, record.pid, 600);
     }
+    // middle packets may still hit the allow chain; skip duplicate five-tuples.
+    if (!added) return
     
     // try to get host name from conn entries for better timeliness and accuracy
     if (dir == "O" && record.ac === 'block') {
