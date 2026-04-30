@@ -845,9 +845,9 @@ create_tc_rules() {
     sudo ip link set ifb0 up
     sudo tc qdisc add dev ifb0 root handle 1: htb default 0x1002
     sudo tc class add dev ifb0 parent 1: classid 1:1 htb rate 10240Mbit ceil 10240Mbit burst 1250000 cburst 1250000 # default to 10G will be replaced later
-    sudo tc class add dev ifb0 parent 1:1 classid 1:0x1001 htb prio 2 rate 1kbit ceil 10240Mbit burst 1250000 cburst 1250000 # htb class for high priority no rate limit rules
-    sudo tc class add dev ifb0 parent 1:1 classid 1:0x1002 htb prio 4 rate 1kbit ceil 10240Mbit burst 1250000 cburst 1250000 # htb class for default priority no rate limit rules
-    sudo tc class add dev ifb0 parent 1:1 classid 1:0x1003 htb prio 6 rate 1kbit ceil 10240Mbit burst 1250000 cburst 1250000 # htb class for low priority no rate limit rules
+    sudo tc class add dev ifb0 parent 1:1 classid 1:0x1001 htb prio 2 rate 1kbit ceil 10240Mbit burst 1kbit cburst 1250000 # htb class for high priority no rate limit rules
+    sudo tc class add dev ifb0 parent 1:1 classid 1:0x1002 htb prio 4 rate 1kbit ceil 10240Mbit burst 1kbit cburst 1250000 # htb class for default priority no rate limit rules
+    sudo tc class add dev ifb0 parent 1:1 classid 1:0x1003 htb prio 6 rate 1kbit ceil 10240Mbit burst 1kbit cburst 1250000 # htb class for low priority no rate limit rules
   fi
 
   if ip link show dev ifb1; then
@@ -856,9 +856,9 @@ create_tc_rules() {
     sudo ip link set ifb1 up
     sudo tc qdisc add dev ifb1 root handle 1: htb default 0x1002
     sudo tc class add dev ifb1 parent 1: classid 1:1 htb rate 10240Mbit ceil 10240Mbit burst 1250000 cburst 1250000
-    sudo tc class add dev ifb1 parent 1:1 classid 1:0x1001 htb prio 2 rate 1kbit ceil 10240Mbit burst 1250000 cburst 1250000 # htb class for high priority no rate limit rules
-    sudo tc class add dev ifb1 parent 1:1 classid 1:0x1002 htb prio 4 rate 1kbit ceil 10240Mbit burst 1250000 cburst 1250000 # htb class for default priority no rate limit rules
-    sudo tc class add dev ifb1 parent 1:1 classid 1:0x1003 htb prio 6 rate 1kbit ceil 10240Mbit burst 1250000 cburst 1250000 # htb class for low priority no rate limit rules
+    sudo tc class add dev ifb1 parent 1:1 classid 1:0x1001 htb prio 2 rate 1kbit ceil 10240Mbit burst 1kbit cburst 1250000 # htb class for high priority no rate limit rules
+    sudo tc class add dev ifb1 parent 1:1 classid 1:0x1002 htb prio 4 rate 1kbit ceil 10240Mbit burst 1kbit cburst 1250000 # htb class for default priority no rate limit rules
+    sudo tc class add dev ifb1 parent 1:1 classid 1:0x1003 htb prio 6 rate 1kbit ceil 10240Mbit burst 1kbit cburst 1250000 # htb class for low priority no rate limit rules
   fi
 }
 

@@ -140,9 +140,9 @@ class Platform {
     classId = Number(classId).toString(16);
     let cmd;
     if (qdisc == "fq_codel") {
-      cmd = `sudo tc qdisc replace dev ifb0 parent 1:${classId} ${qdisc}`;
+      cmd = `sudo tc qdisc replace dev ${device} parent 1:${classId} ${qdisc}`;
     } else if (qdisc == "cake") {
-      cmd = `sudo tc qdisc replace dev ${device} parent 1:${classId}: ${qdisc} unlimited triple-isolate no-split-gso conservative`;
+      cmd = `sudo tc qdisc replace dev ${device} parent 1:${classId} ${qdisc} unlimited triple-isolate no-split-gso conservative`;
     } else {
       log.error(`not support qdisc ${qdisc}`);
       return;
@@ -211,8 +211,8 @@ class Platform {
       let uploadLimit = `${Math.floor(upload * 0.98)}mbit`; // leave some margin
       let downloadLimit = `${Math.floor(download * 0.98)}mbit`; // leave some margin
 
-      const uploadBurst = `${Math.floor(upload * 1024 / 800)}kb`; // in KB
-      const downloadBurst = `${Math.floor(download * 1024 / 800)}kb`; // in KB
+      const uploadBurst = `${Math.floor(upload * 1024 / 800)}kbit`; // in KB
+      const downloadBurst = `${Math.floor(download * 1024 / 800)}kbit`; // in KB
 
       let executes = [];
 
