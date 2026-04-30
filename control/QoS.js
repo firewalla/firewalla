@@ -33,6 +33,8 @@ const PRIO_LOW = 6;
 const DEFAULT_PRIO = PRIO_REG;
 const DEFAULT_RATE_LIMIT = "1kbit";
 const DEFAULT_CEIL_LIMIT = "10240mbit";
+const DEFAULT_BURST_LIMIT = "1kbit";
+const DEFAULT_CBURST_LIMIT = "1250000";
 const DEFAULT_DELAY = "0";
 const DEFAULT_LOSS_RATE = "0";
 const pl = require('../platform/PlatformLoader.js');
@@ -101,15 +103,22 @@ async function createQoSClass(classId, parent, direction, rateLimit, priority, q
 
   const rateNum = Number(rateLimit);
   let ceilLimit;
+  let burstLimit;
+  let cburstLimit;
   if (Number.isNaN(rateNum) || rateNum <= 0 || rateNum > 10240) {
     rateLimit = DEFAULT_RATE_LIMIT;
     ceilLimit = DEFAULT_CEIL_LIMIT;
+    burstLimit = DEFAULT_BURST_LIMIT;
+    cburstLimit = DEFAULT_CBURST_LIMIT;
   } else {
     rateLimit = `${rateNum}mbit`;
     ceilLimit = rateLimit;
+    const burst = Math.floor(rateNum * 1024 / 800); // in KB
+    burstLimit = `${burst}kbit`;
+    cburstLimit = `${burst}kbit`;
   }
 
-  const burst = Math.floor(rateNum * 1024 / 800); // in KB
+  
 
   const latencyNum = Number(increaseLatency);
   if (Number.isNaN(latencyNum) || latencyNum < 0 || latencyNum > 1000) {
@@ -135,7 +144,7 @@ async function createQoSClass(classId, parent, direction, rateLimit, priority, q
   classId = Number(classId).toString(16);
   switch (qdisc) {
     case "fq_codel": {
-      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burst}kbit cburst ${burst}kbit`).then(() => {
+      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burstLimit} cburst ${cburstLimit}`).then(() => {
         return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc}`);
       }).catch((err) => {
         log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
@@ -143,7 +152,7 @@ async function createQoSClass(classId, parent, direction, rateLimit, priority, q
       break;
     }
     case "netem": {
-      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burst}kbit cburst ${burst}kbit`).then(() => {
+      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burstLimit} cburst ${cburstLimit}`).then(() => {
         return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc} delay ${increaseLatency}ms loss ${dropPacketRate}%`);
       }).catch((err) => {
         log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
@@ -159,8 +168,8 @@ async function createQoSClass(classId, parent, direction, rateLimit, priority, q
         default:
           isolation = "triple-isolate";
       }
-      // use htb rate limit, donot use cake's built in rate limit, which might not cowork well with htb rate limit
-      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burst}kbit cburst ${burst}kbit`).then(() => {
+      // use htb rate limit, do not use cake's built in rate limit, which might not co-work well with htb rate limit
+      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burstLimit} cburst ${cburstLimit}`).then(() => {
         return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc} "unlimited" ${isolation} no-split-gso conservative`);
       }).catch((err) => {
         log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);

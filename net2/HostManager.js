@@ -2278,7 +2278,7 @@ module.exports = class HostManager extends Monitorable {
       const device = direction === 'upload' ? 'ifb0' : 'ifb1';
       const fwmask = direction === 'upload' ? QoS.QOS_UPLOAD_MASK : QoS.QOS_DOWNLOAD_MASK;
       const filterId = Number(127).toString(16);
-      const classId = Number(2).toString(16);
+      const classId = Number(Constants.NO_LIMIT_HIGH_PRIO_CLASS_ID).toString(16);
       let tcCmd = `sudo tc filter replace dev ${device} parent 1: handle 800::0x${filterId} prio 1 u32 match mark 0x${fwmask.toString(16)} 0x${fwmask.toString(16)} flowid 1:0x${classId}`;
       await exec(tcCmd).catch((err) => {
         log.error(`Failed to create tc filter ${tcCmd}`, err.message);
