@@ -478,7 +478,11 @@ class AccessRequestManager {
           continue; // do nothing if the approved quota is already covered by the existing quota and extraQuota on the rule
         }
 
-        au.extraQuota = Number(au.extraQuota) || 0;
+        if (au.extraQuota && au.extraQuotaUntilTs && nowTs < au.extraQuotaUntilTs) {
+          au.extraQuota = Number(au.extraQuota) || 0;
+        } else {
+          au.extraQuota = 0;
+        }
         au.extraQuota += totalQuotaLeft - quotaLeft;
 
         au.extraQuotaUntilTs = endOfTodayTs;

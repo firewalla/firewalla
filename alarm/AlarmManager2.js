@@ -1778,6 +1778,10 @@ module.exports = class {
       p.dnsmasq_only = true;
     }
 
+    if (alarm["p.blockby"] === 'ip_intel') {
+      p.blockby = 'ip_intel';
+    }
+
     //BLOCK
     switch (alarm.type) {
       case "ALARM_NEW_DEVICE":
@@ -1829,7 +1833,10 @@ module.exports = class {
 
       default:
 
-        if (alarm["p.dest.name"] === alarm["p.dest.ip"]) {
+        if (p.blockby === 'ip_intel') {
+          p.type = "ip";
+          p.target = alarm["p.dest.ip"];
+        } else if (alarm["p.dest.name"] === alarm["p.dest.ip"]) {
           p.type = "ip";
           p.target = alarm["p.dest.ip"];
         } else {
