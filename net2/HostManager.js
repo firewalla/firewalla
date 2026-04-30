@@ -1665,6 +1665,8 @@ module.exports = class HostManager extends Monitorable {
 
     json.policyRules = this.filterPolicyRules(json.policyRules, json.hosts);
     json.exceptionRules = this.filterExceptions(json.exceptionRules, json.hosts);
+    
+    await policyManager2.formatPoliciesForApp(json.policyRules);
 
     log.debug("Promise array finished")
 

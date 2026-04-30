@@ -111,6 +111,15 @@ class EventRequestHandler {
             const queue = this.queueMap.get(requestKey);
             if (queue.getState() !== 'ready') {
                 log.info(`event queue ${requestKey} is not ready, state ${queue.state}, recreate the queue`);
+                if (queue.queue) {
+                    try {
+                        await queue.queue.close(3000);
+                    } catch (err) {
+                        log.error(`event queue ${requestKey} failed to close before re-setup, ${err.message}`);
+                    } finally {
+                        queue.queue = null;
+                    }
+                }
                 await queue.setupEventQueue(1, this.processStateEvent.bind(this));
             }
         });
