@@ -31,10 +31,10 @@ const PRIO_HIGH = 2;
 const PRIO_REG = 4;
 const PRIO_LOW = 6;
 const DEFAULT_PRIO = PRIO_REG;
-const DEFAULT_RATE_LIMIT = "1kbit";
+const DEFAULT_RATE_LIMIT = "200kbit";
 const DEFAULT_CEIL_LIMIT = "10240mbit";
-const DEFAULT_BURST_LIMIT = "1kbit";
-const DEFAULT_CBURST_LIMIT = "1250000";
+const DEFAULT_BURST_LIMIT = "15360kbit";
+const DEFAULT_QUANTUM = 60000;
 const DEFAULT_DELAY = "0";
 const DEFAULT_LOSS_RATE = "0";
 const pl = require('../platform/PlatformLoader.js');
@@ -104,21 +104,28 @@ async function createQoSClass(classId, parent, direction, rateLimit, priority, q
   const rateNum = Number(rateLimit);
   let ceilLimit;
   let burstLimit;
-  let cburstLimit;
+  let quantum;
+
+  rateLimit = DEFAULT_RATE_LIMIT; //always use a very low default rate limit, the actual limit will be enforced by the ceil limit.
   if (Number.isNaN(rateNum) || rateNum <= 0 || rateNum > 10240) {
-    rateLimit = DEFAULT_RATE_LIMIT;
     ceilLimit = DEFAULT_CEIL_LIMIT;
     burstLimit = DEFAULT_BURST_LIMIT;
-    cburstLimit = DEFAULT_CBURST_LIMIT;
+    quantum = DEFAULT_QUANTUM;
   } else {
-    rateLimit = `${rateNum}mbit`;
-    ceilLimit = rateLimit;
-    const burst = Math.floor(rateNum * 1024 / 800); // in KB
+    ceilLimit = `${rateNum}mbit`;
+    let burst = rateNum * 1.5; // in KB
+    if (burst < 15) {
+      burst = 15;
+    }
     burstLimit = `${burst}kbit`;
-    cburstLimit = `${burst}kbit`;
+      
+    quantum = rateNum * 150; // in bytes
+    if (quantum < 3000) {
+      quantum = 3000;
+    } else if (quantum > 60000) {
+      quantum = 60000;
+    }
   }
-
-  
 
   const latencyNum = Number(increaseLatency);
   if (Number.isNaN(latencyNum) || latencyNum < 0 || latencyNum > 1000) {
@@ -144,7 +151,7 @@ async function createQoSClass(classId, parent, direction, rateLimit, priority, q
   classId = Number(classId).toString(16);
   switch (qdisc) {
     case "fq_codel": {
-      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burstLimit} cburst ${cburstLimit}`).then(() => {
+      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burstLimit} cburst ${burstLimit} quantum ${quantum}`).then(() => {
         return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc}`);
       }).catch((err) => {
         log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
@@ -152,7 +159,7 @@ async function createQoSClass(classId, parent, direction, rateLimit, priority, q
       break;
     }
     case "netem": {
-      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burstLimit} cburst ${cburstLimit}`).then(() => {
+      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burstLimit} cburst ${burstLimit} quantum ${quantum}`).then(() => {
         return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc} delay ${increaseLatency}ms loss ${dropPacketRate}%`);
       }).catch((err) => {
         log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
@@ -169,7 +176,7 @@ async function createQoSClass(classId, parent, direction, rateLimit, priority, q
           isolation = "triple-isolate";
       }
       // use htb rate limit, do not use cake's built in rate limit, which might not co-work well with htb rate limit
-      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burstLimit} cburst ${cburstLimit}`).then(() => {
+      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burstLimit} cburst ${burstLimit} quantum ${quantum}`).then(() => {
         return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc} "unlimited" ${isolation} no-split-gso conservative`);
       }).catch((err) => {
         log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
@@ -212,7 +219,7 @@ async function destroyQoSClass(classId, parent, direction, rateLimit) {
   });
   // there is a bug in 4.15 kernel which will cause failure to add a filter with the same handle that was used by a deleted filter: https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1797669
   // if the filter cannot be solely deleted, the class cannot be deleted either. We have to replace it with a dummy class
-  await exec(`sudo tc class replace dev ${device} classid ${parent}:0x${classId} htb rate ${DEFAULT_RATE_LIMIT} ceil ${DEFAULT_CEIL_LIMIT} prio ${DEFAULT_PRIO}`).catch((err) => {
+  await exec(`sudo tc class replace dev ${device} classid ${parent}:0x${classId} htb rate ${DEFAULT_RATE_LIMIT} ceil ${DEFAULT_CEIL_LIMIT} prio ${DEFAULT_PRIO} quantum ${DEFAULT_QUANTUM}`).catch((err) => {
     log.error(`Failed to destroy QoS class ${classId}, direction ${direction}`, err.message);
   });
 }
