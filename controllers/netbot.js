@@ -1385,7 +1385,7 @@ class netBot extends ControllerBot {
       }
       case "policy": {
         const pid = value.pid
-        const policy = await pm2.getPolicy(pid)
+        const policy = await pm2.getPolicyForApp(pid)
         if (!policy) {
           throw { code: 404, msg: "Policy not found", data: value}
         }
@@ -1517,7 +1517,7 @@ class netBot extends ControllerBot {
         const number = await pm2.countActivePolicyNumber();
         const options = Object.assign({}, value);
         options.number = value && value.limit;
-        const list = await pm2.loadActivePoliciesAsync(options);
+        const list = await pm2.loadActivePoliciesForApp(options);
         let alarmIDs = list.map((p) => p.aid);
         const alarms = await am2.idsToAlarmsAsync(alarmIDs);
 

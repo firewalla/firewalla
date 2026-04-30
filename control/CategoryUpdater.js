@@ -1670,7 +1670,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
           if(!domainMap.has(key)) { // if the domain is not in the new domain map, unblock the domain
             await domainBlock.unblockDomain(domainSuffix, options);
           } else if (!domainObj.isStatic && lastRecyclemode === "default" && currentRecyclemode === "domainOnly") {
-              //TODO:mode change from default to domainOnly, need unregister the domain updater
+              //mode change from default to domainOnly, need unregister the domain updater
               await domainUpdater.unregisterDefaultUpdate(domainSuffix, options);
           }
         }
@@ -1688,7 +1688,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
           if(!domainMap.has(key)) { // if the domain is not in the new domain map, unblock the domain
             await domainBlock.unblockDomain(domainSuffix, options);
           } else if (!domainObj.isStatic && lastRecyclemode === "default" && currentRecyclemode === "domainOnly") {
-            //TODO:mode change from default to domainOnly, need unregister the domain updater
+            //mode change from default to domainOnly, need unregister the domain updater
             await domainUpdater.unregisterDefaultUpdate(domainSuffix, options);
 
           }
@@ -1696,8 +1696,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
     }
 
-    if (lastRecyclemode === "default" && currentRecyclemode === "domainOnly") {
-      //TODO: flush the _dm ipset
+    if (currentRecyclemode === "domainOnly") {
+      // flush the _dm ipset
       Ipset.flush(this.getIPSetName(category, false, false));
       Ipset.flush(this.getIPSetName(category, false, true));
     }
@@ -1813,7 +1813,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
           if(!previousEffectiveDomains.has(key)) { // if the domain is not in the new domain map, block the domain
             await domainBlock.blockDomain(domainSuffix, options);
           } else if (!domainObj.isStatic && lastRecyclemode === "domainOnly" && currentRecyclemode === "default") {
-            //TODO:mode change from domainOnly to default, need register the domain updater
+            //mode change from domainOnly to default, need register the domain updater
             await domainUpdater.registerDefaultUpdate(domainSuffix, options);
           }
         }
@@ -1831,7 +1831,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
           if(!previousEffectiveDomains.has(key)) { // if the domain is not in the new domain map, block the domain
             await domainBlock.blockDomain(domainSuffix, options);
           } else if (!domainObj.isStatic && lastRecyclemode === "domainOnly" && currentRecyclemode === "default") {
-            //TODO:mode change from domainOnly to default, need register the domain updater
+            //mode change from domainOnly to default, need register the domain updater
             await domainUpdater.registerDefaultUpdate(domainSuffix, options);
           }
         }
