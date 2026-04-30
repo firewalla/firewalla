@@ -185,8 +185,9 @@ class Platform {
     await Promise.all(executes);
   }
 
-  async replaceClassRateLimit(device, classId, rateLimit, ceilLimit, burstLimit, cburstLimit, priority) {
+  async replaceClassRateLimit(device, classId, rateLimit, ceilLimit, burstLimit, cburstLimit, priority, quantum) {
     classId = Number(classId).toString(16);
+
     let cmd = `sudo tc class replace dev ${device} parent 1: classid 1:${classId} htb rate ${rateLimit} ceil ${ceilLimit}`;
 
     if (burstLimit) {
@@ -200,6 +201,10 @@ class Platform {
       cmd += ` prio ${priority}`;
     }
 
+    if (quantum) {
+      cmd += ` quantum ${quantum}`;
+    }
+
     await exec(cmd).catch((err) => {
       log.error(`Failed to set rate limit on ${device} parent 1:${classId}`, err.message);
     });
@@ -208,25 +213,37 @@ class Platform {
 
   async setQoSBandwidth(upload, download) {
     if (upload > 0 && download > 0) {
-      let uploadLimit = `${Math.floor(upload * 0.98)}mbit`; // leave some margin
-      let downloadLimit = `${Math.floor(download * 0.98)}mbit`; // leave some margin
+      let uploadLimit = Math.floor(upload * 0.98); // in Mb, leave some margin
+      let downloadLimit = Math.floor(download * 0.98); // in Mb, leave some margin
 
-      const uploadBurst = `${Math.floor(upload * 1024 / 800)}kbit`; // in KB
-      const downloadBurst = `${Math.floor(download * 1024 / 800)}kbit`; // in KB
+      const uploadBurst = Math.floor(upload * 1.5); // in KB
+      const downloadBurst = Math.floor(download * 1.5); // in KB
+      let uploadQuantum = Math.floor(upload * 150) ; // in bytes
+      let downloadQuantum = Math.floor(download * 150) ; // in bytes
 
       let executes = [];
 
       for (const device of ['ifb0', 'ifb1']) {
-        let rateLimit = `${device == 'ifb0' ? uploadLimit : downloadLimit}`;
+        let rateLimit = `${device == 'ifb0' ? uploadLimit : downloadLimit}mbit`;
         let ceilLimit = rateLimit;
         let burstLimit = device == 'ifb0' ? uploadBurst : downloadBurst;
+        if (burstLimit < 15) {
+          burstLimit = "15kbit";
+        } else {
+          burstLimit = `${burstLimit}kbit`;
+        }
         let cburstLimit = burstLimit;
         let priority = 4; // default priority for regular traffic
+        let quantum = device == 'ifb0' ? uploadQuantum : downloadQuantum;
+        if (quantum < 1500) {
+          quantum = 1500;
+        } else if (quantum > 60000) {
+          quantum = 60000;
+        }
 
-        executes.push(this.replaceClassRateLimit(device, 1, rateLimit, ceilLimit, burstLimit, cburstLimit));
+        executes.push(this.replaceClassRateLimit(device, 1, rateLimit, ceilLimit, burstLimit, cburstLimit, null, quantum)); // don't set priority for the root class
         for (const classId of [Constants.NO_LIMIT_HIGH_PRIO_CLASS_ID, Constants.NO_LIMIT_REG_PRIO_CLASS_ID, Constants.NO_LIMIT_LOW_PRIO_CLASS_ID]) {
-          burstLimit = "1kbit";
-          rateLimit = "1kbit";
+          rateLimit = "200kbit";
 
           switch (classId) {
             case Constants.NO_LIMIT_HIGH_PRIO_CLASS_ID:
@@ -239,7 +256,7 @@ class Platform {
               priority = 6;
               break;
           }
-          executes.push(this.replaceClassRateLimit(device, classId, rateLimit, ceilLimit, burstLimit, cburstLimit, priority));
+          executes.push(this.replaceClassRateLimit(device, classId, rateLimit, ceilLimit, burstLimit, cburstLimit, priority, quantum));
         }
       }
       await Promise.all(executes);
