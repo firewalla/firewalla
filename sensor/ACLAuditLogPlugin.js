@@ -510,8 +510,24 @@ class ACLAuditLogPlugin extends Sensor {
       return;
     }
 
+    let added;
+    // write apid immediately when pid is known from MARK (per-device allow)
+    if (record.ac === "allow") {
+      added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid ? record.pid : Constants.GLOBAL_ALLOW_DOMAIN_RULE_HIT, 600);
+    }
+    // record route rule id into conntrack for BroDetect to pick up on flow generation
+    if (record.pid && record.ac === "route") {
+      await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_RPID, record.pid, 600);
+    }
+    // record disturb rule id into conntrack for BroDetect to pick up on flow generation
+    if (record.pid && record.ac === "disturb") {
+      added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_DPID, record.pid, 600);
+    }
+    // middle packets may still hit the allow chain; skip duplicate five-tuples.
+    if (!added) return
+    
     // try to get host name from conn entries for better timeliness and accuracy
-    if (dir == "O" && ['block', 'allow'].includes(record.ac)) {
+    if (dir == "O" && record.ac === 'block') {
       // delay 10 seconds to process outbound block flow, in case ssl/http host
       // is available in zeek's ssl log and will be saved into conn entries
       let t = 10
@@ -537,23 +553,6 @@ class ACLAuditLogPlugin extends Sensor {
         record.af = {};
         record.af[connEntries.host] = _.pick(connEntries, ["proto", "ip"])
       }
-    }
-
-    // record route rule id
-    if (record.pid && record.ac === "route") {
-      await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_RPID, record.pid, 600);
-    }
-
-    // record allow rule id
-    if (record.pid && record.ac === "allow") {
-      const added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid, 600);
-      // 1% middle connection packets are going through block chain, ignore these for rule hit accounting
-      if (!added) return
-    }
-    // record disturb rule id 
-    if (record.pid && record.ac === "disturb") {
-      const added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_DPID, record.pid, 600);
-      if (!added) return
     }
 
     this.writeBuffer(record);
@@ -784,15 +783,18 @@ class ACLAuditLogPlugin extends Sensor {
                     return
                   }
                 }
-            } else if (!record.pid && (type == 'dns' || ac == 'block' || ac == 'allow' || ac == 'disturb')) {
+            } else if (!record.pid && (type == 'dns' || ac == 'block')) {
               const matchedPIDs = await this.ruleStatsPlugin.getMatchedPids(record);
-              if (matchedPIDs && matchedPIDs.length > 0){
+              if (matchedPIDs && matchedPIDs.length > 0)
                 record.pid = matchedPIDs[0];
-              }
             }
 
-            if (type == 'ip' || record.ac == 'block' || record.ac == 'disturb')
+            // hit accounting here is only needed for block cases that BroDetect can not count
+            if (record.ac == 'block' && record.pid) {
               this.ruleStatsPlugin.accountRule(record);
+              const lastHitFlow = Object.assign({}, record, { mac }, dir === 'L' ? { local: true } : {});
+              this.ruleStatsPlugin.recordLastHitFlow(record.pid, lastHitFlow, 'audit');
+            }
           }
 
           if (type == 'ip' && record.ac != "block" && record.ac != 'redirect' && record.ac != "isolation" && record.ac != "disturb")
