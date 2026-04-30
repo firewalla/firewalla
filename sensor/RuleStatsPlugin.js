@@ -38,6 +38,10 @@ class RuleStatsPlugin extends Sensor {
     this.hookFeature(featureName);
     this.policyRulesMap = null;
     this.recordBuffer = [];
+    this.lastHitFlowMap = new Map(); // pid -> { value, ts, recordedAt }
+    this.lastHitFlowSyncTs = 0;
+    this.globalStatsResetTs = 0;
+    this.policyStatsResetTs = new Map();
     this.cache = new LRU({
       max: 200,
       maxAge: 15 * 1000,
@@ -45,6 +49,9 @@ class RuleStatsPlugin extends Sensor {
     });
     sem.on("PolicyEnforcement", async (event) => {
       await this.loadBlockAllowGlobalRules();
+    });
+    sem.on("Policy:StatsReset", (event = {}) => {
+      this.applyStatsReset(event.policyIDs, event.resetTime);
     });
     this.on = false;
     void this.process();
@@ -134,6 +141,63 @@ class RuleStatsPlugin extends Sensor {
     this.policyRulesMap = newPolicyRulesMap;
   }
 
+  recordLastHitFlow(pid, flow, kind) {
+    if (!this.on || !pid || !flow) return;
+    const ts = Number(flow._ts || flow.ts || 0);
+    const recordedAt = Date.now() / 1000;
+    const existing = this.lastHitFlowMap.get(String(pid));
+    if (!existing || ts > existing.ts || (ts === existing.ts && recordedAt > existing.recordedAt)) {
+      // Persist a raw log snapshot so policy APIs can reuse the existing
+      // flow/audit formatting and intel enrichment path.
+      this.lastHitFlowMap.set(String(pid), {
+        value: {
+          kind,
+          raw: _.cloneDeep(flow)
+        },
+        ts,
+        recordedAt
+      });
+    }
+  }
+
+  clearPendingStats() {
+    this.recordBuffer = [];
+    this.lastHitFlowMap.clear();
+    this.lastHitFlowSyncTs = 0;
+  }
+
+  applyStatsReset(policyIDs, resetTime) {
+    const ts = Number(resetTime || Date.now() / 1000);
+    if (!policyIDs || _.isEmpty(policyIDs)) {
+      this.globalStatsResetTs = Math.max(this.globalStatsResetTs, ts);
+      this.policyStatsResetTs.clear();
+      this.clearPendingStats();
+      return;
+    }
+
+    const resetPidSet = new Set(policyIDs.map(String));
+    for (const pid of resetPidSet) {
+      this.policyStatsResetTs.set(pid, Math.max(this.policyStatsResetTs.get(pid) || 0, ts));
+      this.lastHitFlowMap.delete(pid);
+    }
+
+    this.recordBuffer = this.recordBuffer.filter((record) => !record.pid || !resetPidSet.has(String(record.pid)));
+    log.info(`Rule stats reset for policies: ${policyIDs.join(",")}`);
+  }
+
+  async getPolicyStatsResetTs(pid, resetTsCache) {
+    const key = String(pid);
+    if (resetTsCache.has(key)) {
+      return resetTsCache.get(key);
+    }
+
+    const localResetTs = Math.max(this.globalStatsResetTs, this.policyStatsResetTs.get(key) || 0);
+    const persistedResetTs = Number(await rclient.hgetAsync(`policy:${pid}`, "statsResetTs") || "0");
+    const resetTs = Math.max(localResetTs, persistedResetTs);
+    resetTsCache.set(key, resetTs);
+    return resetTs;
+  }
+
   accountRule(record) {
     if (!this.on) {
       return;
@@ -150,7 +214,7 @@ class RuleStatsPlugin extends Sensor {
 
     // limit buf size to avoid cpu and memory overload
     if (this.recordBuffer.length < 2000) {
-      this.recordBuffer.push(record);
+      this.recordBuffer.push(Object.assign({ _statsTs: Date.now() / 1000 }, record));
     }
   }
 
@@ -193,6 +257,7 @@ class RuleStatsPlugin extends Sensor {
     }
 
     const ruleStatMap = new Map();
+    const resetTsCache = new Map();
 
     // Match record to policy id
     for (const record of recordBuffer) {
@@ -205,6 +270,13 @@ class RuleStatsPlugin extends Sensor {
       }
 
       for (const pid of matchedPids) {
+        const recordStatsTs = Number(record._statsTs || record._ts || record.ts || 0);
+        const resetTs = await this.getPolicyStatsResetTs(pid, resetTsCache);
+        if (recordStatsTs <= resetTs) {
+          continue;
+        }
+
+        const hitTs = Number(record._ts || record.ts || 0);
         log.debug("Matched policy rule: ", pid);
         let stat;
         if (ruleStatMap.has(pid)) {
@@ -217,8 +289,9 @@ class RuleStatsPlugin extends Sensor {
         } else {
           stat.count++;
         }
-        if (record.ts > stat.lastHitTs) {
-          stat.lastHitTs = record.ts;
+        if (hitTs > stat.lastHitTs) {
+          stat.lastHitTs = hitTs;
+          stat.lastHitStatsTs = recordStatsTs;
         }
         ruleStatMap.set(pid, stat);
       }
@@ -228,7 +301,11 @@ class RuleStatsPlugin extends Sensor {
     const batch = rclient.batch();
     for (const [pid, stat] of ruleStatMap) {
       if (! await rclient.existsAsync(`policy:${pid}`)) {
-        return;
+        continue;
+      }
+      const resetTs = await this.getPolicyStatsResetTs(pid, resetTsCache);
+      if (stat.lastHitStatsTs <= resetTs) {
+        continue;
       }
       batch.hincrby(`policy:${pid}`, "hitCount", stat.count);
       const lastHitTs = Number(await rclient.hgetAsync(`policy:${pid}`, "lastHitTs") || "0");
@@ -237,6 +314,22 @@ class RuleStatsPlugin extends Sensor {
       }
     }
     await batch.execAsync();
+
+    const now = Date.now() / 1000;
+    const lastHitFlowSyncThreshold = 60; // seconds
+    if (now - this.lastHitFlowSyncTs >= lastHitFlowSyncThreshold && this.lastHitFlowMap.size > 0) {
+      this.lastHitFlowSyncTs = now;
+      const flowBatch = rclient.batch();
+      for (const [pid, { value, recordedAt }] of this.lastHitFlowMap) {
+        const resetTs = await this.getPolicyStatsResetTs(pid, resetTsCache);
+        if (recordedAt <= resetTs) {
+          continue;
+        }
+        flowBatch.hset(`policy:${pid}`, "lastHitFlow", JSON.stringify(value));
+      }
+      await flowBatch.execAsync();
+      this.lastHitFlowMap.clear();
+    }
   }
 
   async getPolicyIds(record) {
@@ -260,6 +353,9 @@ class RuleStatsPlugin extends Sensor {
           }
         }
 
+        if (!this.policyRulesMap) {
+          return [];
+        }
         if (!this.policyRulesMap.has(action)) {
           return [];
         }
@@ -366,6 +462,7 @@ class RuleStat {
   constructor() {
     this.count = 0;
     this.lastHitTs = 0;
+    this.lastHitStatsTs = 0;
   }
 }
 
