@@ -715,6 +715,21 @@ class PolicyManager2 {
     // If the affectedPids list is empty after removal, unenforce the bypass policy and delete it
     await this.removeFromRefrencedBypassPolicies(policy);
 
+    const { type, action } = policy;
+
+    if ((type === "category" || type == "mac" || type === "internet") && (action === "block" || action === "app_block" || action === "disturb")) {
+      const chainName = `FW_${policyID}_BYPASS`;
+      let table = "filter";
+      if (action === "disturb" || action === "qos") {
+        table = "mangle";
+      }
+      for (const family of [4, 6]) {
+        const rule = new Rule(table).fam(family).chn(chainName).opr('-F');
+        iptc.addRule(rule);
+        iptc.addRule(rule.opr('-X'));
+      }
+    }
+
     Bone.submitIntelFeedback('unblock', policy);
   }
 
@@ -2711,7 +2726,7 @@ class PolicyManager2 {
       subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
     }
 
-    if (type === "category" && isBlockOrdisturb) {
+    if ((type === "category" || type == "mac" || type === "internet") && isBlockOrdisturb) {
       const chainName = `FW_${pid}_BYPASS`;
       commonOptions.byPassChain = chainName;
     }
@@ -2827,19 +2842,6 @@ class PolicyManager2 {
     }
     if (qosHandler)
       await qos.deallocateQoSHandlerForPolicy({ pid, subKey: policy.qosSubKey });
-
-    if ((type === "category" || type == "mac" || type === "internet") && isBlockOrdisturb) {
-      const chainName = `FW_${pid}_BYPASS`;
-      let table = "filter";
-      if (action === "disturb" || action === "qos") {
-        table = "mangle";
-      }
-      for (const family of [4, 6]) {
-        const rule = new Rule(table).fam(family).chn(chainName).opr('-F');
-        iptc.addRule(rule);
-        iptc.addRule(rule.opr('-X'));
-      }
-    }
   }
 
   async match(alarm) {
