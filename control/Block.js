@@ -518,7 +518,7 @@ async function setupGlobalRules(options) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
         await VPNClient.ensureCreateEnforcementEnv(profileId);
         parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_GLOBAL_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
+        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_GLOBAL_${subPrio}`, target: `SET --map-set ${VPNClient.getPBRRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
@@ -701,7 +701,7 @@ async function setupGenericIdentitiesRules(options) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
         await VPNClient.ensureCreateEnforcementEnv(profileId);
         parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
+        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getPBRRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
@@ -894,7 +894,7 @@ async function setupDevicesRules(options) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
         await VPNClient.ensureCreateEnforcementEnv(profileId);
         parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
+        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getPBRRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
@@ -1089,8 +1089,8 @@ async function setupTagsRules(options) {
           await VPNClient.ensureCreateEnforcementEnv(profileId);
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: devSet, localFlagCount: 1 });
           parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: netSet, localFlagCount: 2 });
-          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
-          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getPBRRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getPBRRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
         } else {
           if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
             const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
@@ -1328,7 +1328,7 @@ async function setupIntfsRules(options) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
         await VPNClient.ensureCreateEnforcementEnv(profileId);
         parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
+        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getPBRRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
@@ -1500,7 +1500,7 @@ async function setupRuleGroupRules(options) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
         await VPNClient.ensureCreateEnforcementEnv(profileId);
         parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, hardRoute ? "route" : "soft_route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-        parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, hardRoute ? "route" : "soft_route")}_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
+        parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, hardRoute ? "route" : "soft_route")}_${subPrio}`, target: `SET --map-set ${VPNClient.getPBRRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);

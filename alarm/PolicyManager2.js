@@ -3782,7 +3782,9 @@ class PolicyManager2 {
     return false;
   }
 
-  async checkVPN(allVpnClients, resultMap, vpnClientId, remoteIpsToCheck, routeType = "hard") {
+  // options.forPBR: when checking an explicit route rule (PBR), skip the "Internet: Direct" gate
+  // since PBR has its own ipset that is always populated regardless of overrideDefaultRoute.
+  async checkVPN(allVpnClients, resultMap, vpnClientId, remoteIpsToCheck, routeType = "hard", options = {}) {
     let isEnabled = false;
     let isConnected = false;
     let isStrictVPN = false;
@@ -3834,7 +3836,7 @@ class PolicyManager2 {
     log.debug(`VPN client ${vpnClientId} is enabled: ${isEnabled}, connected: ${isConnected}, strictVPN: ${isStrictVPN}, direct: ${isDirect}`);
     log.debug(`VPN client ${vpnClientId} server subnets: ${serverSubnets.join(", ")}`);
     log.debug(`Remote IPs to check: ${remoteIpsToCheck.join(", ")}`);
-    if (isDirect) { // direct internet access, if remoteIpsToCheck is not in the server subnets, return false
+    if (isDirect && !options.forPBR) { // direct internet access, if remoteIpsToCheck is not in the server subnets, return false
       if (serverSubnets && serverSubnets.length > 0) {
         // check if the remote ips are in the server subnets
         for (const subnet of serverSubnets) {
@@ -3986,7 +3988,8 @@ class PolicyManager2 {
     for (const rule of this.sortedRoutesCache) {
       if (rule.wanUUID.startsWith(Block.VPN_CLIENT_WAN_PREFIX)) {
         const vpnID = rule.wanUUID.substring(Block.VPN_CLIENT_WAN_PREFIX.length);
-        const vpnCheckRsult = await this.checkVPN(allVpnClients, checkedVpnMap, vpnID, remoteIpsToCheck, rule.routeType);
+        // using forPBR: true !
+        const vpnCheckRsult = await this.checkVPN(allVpnClients, checkedVpnMap, vpnID, remoteIpsToCheck, rule.routeType, { forPBR: true });
         if (!vpnCheckRsult) {
           continue;
         }
