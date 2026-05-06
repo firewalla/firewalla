@@ -704,6 +704,10 @@ module.exports = class DNSMASQ {
                   entries.push(`mac-address-tag=%${mac}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
                   break;
                 }
+                case "bypass": {
+                  entries.push(`mac-address-tag=%${mac}$!${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+                  break;
+                }
                 case "allow": {
                   entries.push(`mac-address-tag=%${mac}$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
                   break;
@@ -728,6 +732,10 @@ module.exports = class DNSMASQ {
               switch (options.action) {
                 case "block": {
                   entries.push(`mac-address-tag=%00:00:00:00:00:00$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+                  break;
+                }
+                case "bypass": {
+                  entries.push(`mac-address-tag=%00:00:00:00:00:00$!${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
                   break;
                 }
                 case "allow": {
@@ -825,6 +833,10 @@ module.exports = class DNSMASQ {
           switch (options.action) {
             case "block": {
               entries.push(`mac-address-tag=%${systemLevelMac}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+              break;
+            }
+            case "bypass": {
+              entries.push(`mac-address-tag=%${systemLevelMac}$!${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
               break;
             }
             case "allow": {
