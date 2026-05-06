@@ -81,10 +81,6 @@ class PSEPlatform extends Platform {
     ];
   }
 
-  getQosParentClassid() {
-    return 1;
-  }
-
   getSubnetCapacity() {
     return 19;
   }
