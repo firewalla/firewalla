@@ -30,10 +30,17 @@ const Constants = require('./Constants.js');
 const uuid = require('uuid');
 const POLICY_KEYS_SYNC_TO_MSP = ["tags", "userTags"];
 const fc = require('./config.js');
+const iptc = require('../control/IptablesControl.js');
+const routing = require('../extension/routing/routing.js');
+const VPNClient = require('../extension/vpnclient/VPNClient.js');
+const VirtWanGroup = require('./VirtWanGroup.js');
+const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new Dnsmasq();
+const { fileRemove } = require('../util/util.js');
 
 const POLICY_KEYS_DEBUG_LOG = {dap: 1}
 
-// TODO: extract common methods like vpnClient() _dnsmasq() from Host, Identity, NetworkProfile, Tag
+// TODO: extract common methods like _dnsmasq() from Host, Identity, NetworkProfile, Tag
 class Monitorable {
 
   static metaFieldsJson = []
@@ -384,6 +391,131 @@ class Monitorable {
   async ipAllocation(policy) { }
 
   async _dnsmasq(policy) { }
+
+  // ---- vpnClient policy ----
+  // Subclasses provide the small variable parts via the hooks below.
+  // If a subclass doesn't implement `getVPNClientRules`, the shared
+  // `vpnClient()` method is a no-op for that subclass.
+
+  // Return an array of Iptables Rule objects for the given address family
+  // (af = 4 or 6). Most subclasses can ignore `af` — only those whose match
+  // ipset name varies by family (e.g. NetworkProfile's `c_net_<uuid>_set` vs
+  // `..._set6`) need to thread it through. Subclasses do NOT call `.fam(...)`
+  // themselves; `_buildVPNClientRules` calls this once per family and stamps
+  // `.fam(6)` on the v6 rules, then synthesizes "clear" variants by replacing
+  // the jump target with `MARK --set-xmark 0x0000/${routing.MASK_VC}`.
+  getVPNClientRules(profileId, af = 4) { return [] }
+
+  _buildVPNClientRules(profileId) {
+    const v4Rules = this.getVPNClientRules(profileId, 4);
+    const v6Rules = this.getVPNClientRules(profileId, 6).map(r => r.fam(6));
+    const rules = [...v4Rules, ...v6Rules];
+    const rulesClear = rules.map(r => r.clone().jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`));
+    return { rules, rulesClear };
+  }
+
+
+  static getDnsmasqConfigDirectory() {
+    return dnsmasq.getConfigDirectory()
+  }
+
+  getDnsmasqConfigFilenamePrefix() {
+    return `${this.constructor.getClassName().toLowerCase()}_${this.getUniqueId()}`;
+  }
+
+  getVPNClientTagPath() {
+    return `${this.constructor.getDnsmasqConfigDirectory()}/${this.getDnsmasqConfigFilenamePrefix()}_vc.conf`;
+  }
+
+  getVPNClientTagTagPath(profileId) {
+    const dir = profileId.startsWith("VWG:")
+      ? VirtWanGroup.getDNSRouteConfDir(profileId.substring(4), "hard")
+      : VPNClient.getDNSRouteConfDir(profileId, "hard");
+    return `${dir}/${this.getDnsmasqConfigFilenamePrefix()}_vc.conf`;
+  }
+
+  // local dnsmasq entry that binds this entity to its `vc` tag
+  // e.g. `mac-address-tag=%<mac>$vc_<mac>` or `group-tag=@<uid>$vc_tag_<uid>`
+  getVPNClientTagEntry() { throw new Error('Not Implemented') }
+
+  // the dnsmasq tag referenced by the local entry above (e.g. `vc_<mac>`)
+  getVPNClientTag() {
+    return `vc_${this.getUniqueId()}`;
+  }
+
+  static getVPNClientRouteIpsetName(profileId) {
+    return profileId.startsWith("VWG:")
+      ? VirtWanGroup.getRouteIpsetName(profileId.substring(4))
+      : VPNClient.getRouteIpsetName(profileId);
+  }
+
+  async vpnClient(policy) {
+    // opt-out: subclass didn't wire the hooks
+    if (this.getVPNClientRules === Monitorable.prototype.getVPNClientRules)
+      return;
+    try {
+      const state = policy.state;
+      const profileId = policy.profileId;
+
+      if (this._profileId && profileId !== this._profileId) {
+        log.info(`Current VPN profile id is different from the previous profile id ${this._profileId}, remove old rule on ${this.constructor.getClassName()} ${this.getGUID()}`);
+        const { rules, rulesClear } = this._buildVPNClientRules(this._profileId);
+        rules.forEach(rule => iptc.addRule(rule.opr('-D')));
+        rulesClear.forEach(rule => iptc.addRule(rule.opr('-D')));
+        await fileRemove(this.getVPNClientTagPath()).catch(() => { });
+        await fileRemove(this.getVPNClientTagTagPath(this._profileId)).catch(() => { });
+        dnsmasq.scheduleRestartDNSService();
+      }
+
+      this._profileId = profileId;
+      if (!profileId) {
+        log.verbose(`Profile id is not set on ${this.getGUID()}`);
+        return;
+      }
+
+      if (profileId.startsWith("VWG:"))
+        await VirtWanGroup.ensureCreateEnforcementEnv(profileId.substring(4));
+      else
+        await VPNClient.ensureCreateEnforcementEnv(profileId);
+      await this.constructor.ensureCreateEnforcementEnv(this.getUniqueId());
+
+      const { rules, rulesClear } = this._buildVPNClientRules(profileId);
+      const tagPath = this.getVPNClientTagPath();
+      const tagEntry = this.getVPNClientTagEntry();
+      const vcConfPath = this.getVPNClientTagTagPath(profileId);
+      const vcTag = this.getVPNClientTag();
+
+      if (state === true) {
+        rules.forEach(rule => iptc.addRule(rule.opr('-A')));
+        // remove rule that was set by state == null
+        rulesClear.forEach(rule => iptc.addRule(rule.opr('-D')));
+        const markTag = profileId.startsWith("VWG:")
+          ? VirtWanGroup.getDnsMarkTag(profileId.substring(4))
+          : VPNClient.getDnsMarkTag(profileId);
+
+        // two config files: one in local dnsmasq dir, one in VPN-client hard-route dir (gated by conf-dir in VPNClient.js so it disappears when the client is disconnected)
+        await dnsmasq.writeConfig(tagPath, tagEntry).catch(() => {});
+        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$${vcTag}$${markTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch(() => {});
+        dnsmasq.scheduleRestartDNSService();
+      } else if (state === null) {
+        // null means off: remove rule that was set by state == true, then override target and clear VPN client bits in fwmark
+        rules.forEach(rule => iptc.addRule(rule.opr('-D')));
+        rulesClear.forEach(rule => iptc.addRule(rule.opr('-A')));
+        await dnsmasq.writeConfig(tagPath, tagEntry).catch(() => {});
+        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$${vcTag}$${Constants.DNS_DEFAULT_WAN_TAG}`).catch(() => {});
+        dnsmasq.scheduleRestartDNSService();
+      } else if (state === false) {
+        // false means N/A
+        rules.forEach(rule => iptc.addRule(rule.opr('-D')));
+        rulesClear.forEach(rule => iptc.addRule(rule.opr('-D')));
+        await fileRemove(tagPath).catch(() => {});
+        await fileRemove(vcConfPath).catch(() => {});
+        dnsmasq.scheduleRestartDNSService();
+      }
+    } catch (err) {
+      log.error(`Failed to set VPN client access on ${this.constructor.getClassName()} ${this.getGUID()}`, err.message);
+    }
+  }
 
   async aclTimer(policy = {}) {
     if (this._aclTimer)

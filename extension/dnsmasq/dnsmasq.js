@@ -221,6 +221,10 @@ module.exports = class DNSMASQ {
     return instance;
   }
 
+  getConfigDirectory() {
+    return FILTER_DIR;
+  }
+
   scheduleStart() {
     if (this.startTask)
       clearTimeout(this.startTask);
@@ -259,7 +263,7 @@ module.exports = class DNSMASQ {
     }, 5000);
   }
 
-    scheduleRestartDNSService(ignoreFileCheck = false) {
+  scheduleRestartDNSService(ignoreFileCheck = false) {
     if (this.reloadDNSTask) {
       clearTimeout(this.reloadDNSTask);
       delete this.reloadDNSTask;

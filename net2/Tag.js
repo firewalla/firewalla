@@ -28,7 +28,6 @@ const { Rule } = require('./Iptables.js');
 const fs = require('fs');
 const Promise = require('bluebird');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-const routing = require('../extension/routing/routing.js');
 const freeradius = require('../extension/freeradius/freeradius.js');
 const dnsmasq = new DNSMASQ();
 const Monitorable = require('./Monitorable');
@@ -215,96 +214,29 @@ class Tag extends Monitorable {
     return null;
   }
 
-  async vpnClient(policy) {
-    try {
-      const state = policy.state;
-      const profileId = policy.profileId;
-      const tagConfPath = `${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_vc.conf`;
-      if (this._profileId && profileId !== this._profileId) {
-        log.info(`Current VPN profile id is different from the previous profile id ${this._profileId}, remove old rule on tag ${this.o.uid}`);
-        const rule = new Rule("mangle")
-          .jmp(`SET --map-set ${this._profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(this._profileId.substring(4)) : VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
-          .comment(`policy:tag:${this.o.uid}`);
-        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
-        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
-        const netRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5");
-        const netRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5").fam(6);
+  getVPNClientRules(profileId, af = 4) {
+    if (!profileId) return [];
+    const uid = this.getUniqueId();
+    const routeIpset = Monitorable.getVPNClientRouteIpsetName(profileId);
+    return [
+      new Rule("mangle").chn("FW_RT_TAG_DEVICE_5")
+        .mdl("set", `--match-set ${Tag.getTagDeviceSetName(uid)} src`)
+        .jmp(`SET --map-set ${routeIpset} dst,dst --map-mark`)
+        .comment(`policy:tag:${uid}`),
+      new Rule("mangle").chn("FW_RT_TAG_NETWORK_5")
+        .mdl("set", `--match-set ${Tag.getTagNetSetName(uid)} src,src`)
+        .jmp(`SET --map-set ${routeIpset} dst,dst --map-mark`)
+        .comment(`policy:tag:${uid}`)
+    ];
+  }
 
-        iptc.addRule(devRule4.opr('-D'));
-        iptc.addRule(devRule6.opr('-D'));
-        iptc.addRule(netRule4.opr('-D'));
-        iptc.addRule(netRule6.opr('-D'));
+  getVPNClientTagEntry() {
+    const uid = this.getUniqueId();
+    return `group-tag=@${uid}$vc_tag_${uid}`;
+  }
 
-        // remove rule that was set by state == null
-        iptc.addRule(devRule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D'));
-        iptc.addRule(devRule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D'));
-        iptc.addRule(netRule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D'));
-        iptc.addRule(netRule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D'));
-
-        const vcConfPath = this._profileId.startsWith("VWG:") ? `${VirtWanGroup.getDNSRouteConfDir(this._profileId.substring(4), "hard")}/tag_${this.o.uid}_vc.conf` : `${VPNClient.getDNSRouteConfDir(this._profileId, "hard")}/tag_${this.o.uid}_vc.conf`;
-        await fs.unlinkAsync(tagConfPath).catch((err) => {});
-        await fs.unlinkAsync(vcConfPath).catch((err) => {});
-        dnsmasq.scheduleRestartDNSService();
-      }
-
-      this._profileId = profileId;
-      if (!profileId) {
-        log.verbose(`Profile id is not set on ${this.o.uid}`);
-        return;
-      }
-      const rule = new Rule("mangle")
-          .jmp(`SET --map-set ${profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(profileId.substring(4)) : VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
-          .comment(`policy:tag:${this.o.uid}`);
-
-      if (profileId.startsWith("VWG:"))
-        await VirtWanGroup.ensureCreateEnforcementEnv(profileId.substring(4));
-      else
-        await VPNClient.ensureCreateEnforcementEnv(profileId);
-      await Tag.ensureCreateEnforcementEnv(this.o.uid); // just in case
-
-      const vcConfPath = profileId.startsWith("VWG:") ? `${VirtWanGroup.getDNSRouteConfDir(profileId.substring(4), "hard")}/tag_${this.o.uid}_vc.conf` : `${VPNClient.getDNSRouteConfDir(profileId, "hard")}/tag_${this.o.uid}_vc.conf`;
-
-      const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
-      const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
-      const netRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5");
-      const netRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5").fam(6);
-      const rules = [devRule4, devRule6, netRule4, netRule6];
-
-      if (state === true) {
-        rules.forEach(rule => iptc.addRule(rule.opr('-A')));
-        // remove rule that was set by state == null
-        rules.forEach(rule => iptc.addRule(rule.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D')));
-
-        const markTag = `${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`;
-        // use two config files, one in network directory, the other in vpn client hard route directory, the second file is controlled by conf-dir in VPNClient.js and will not be included when client is disconnected
-        await dnsmasq.writeConfig(tagConfPath, `group-tag=@${this.o.uid}$vc_tag_${this.o.uid}`).catch((err) => {});
-        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$vc_tag_${this.o.uid}$${markTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
-        dnsmasq.scheduleRestartDNSService();
-      }
-      // null means off
-      if (state === null) {
-        // remove rule that was set by state == true
-        rules.forEach(rule => iptc.addRule(rule.opr('-D')));
-        // override target and clear vpn client bits in fwmark
-        rules.forEach(rule => iptc.addRule(rule.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-A')));
-
-        await dnsmasq.writeConfig(tagConfPath, `group-tag=@${this.o.uid}$vc_tag_${this.o.uid}`).catch((err) => {});
-        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$vc_tag_${this.o.uid}$${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
-        dnsmasq.scheduleRestartDNSService();
-      }
-      // false means N/A
-      if (state === false) {
-        rules.forEach(rule => iptc.addRule(rule.opr('-D')));
-        // remove rule that was set by state == null
-        rules.forEach(rule => iptc.addRule(rule.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D')));
-
-        await fs.unlinkAsync(tagConfPath).catch((err) => {});
-        await fs.unlinkAsync(vcConfPath).catch((err) => {});
-        dnsmasq.scheduleRestartDNSService();
-      }
-    } catch (err) {
-      log.error(`Failed to set VPN client access on tag ${this.o.uid} ${this.o.name}`, err.message);
-    }
+  getVPNClientTag() {
+    return `vc_tag_${this.getUniqueId()}`;
   }
 
   async tags(tags, type = Constants.TAG_TYPE_GROUP) {
