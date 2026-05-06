@@ -1397,7 +1397,7 @@ class BroDetect {
             }
           }
           if (tmpspec.apid === Constants.GLOBAL_ALLOW_DOMAIN_RULE_HIT) {
-            log.error(`failed to match any allow rule pid for connection with host ${afhost} and five tuple ${orig}:${orig_p} -> ${resp}:${resp_p}`);
+            log.verbose(`failed to match any allow rule pid for connection with host ${afhost} and five tuple ${orig}:${orig_p} -> ${resp}:${resp_p}`);
             tmpspec.apid = undefined;
           }
         }
