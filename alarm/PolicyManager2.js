@@ -2726,7 +2726,7 @@ class PolicyManager2 {
       subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
     }
 
-    if (type === "category" && isBlockOrdisturb) {
+    if ((type === "category" || type == "mac" || type === "internet") && isBlockOrdisturb) {
       const chainName = `FW_${pid}_BYPASS`;
       commonOptions.byPassChain = chainName;
     }
