@@ -24,6 +24,7 @@ const cp = require('child_process');
 
 const { exec } = require('child-process-promise');
 const _ = require('lodash');
+const Constants = require('../net2/Constants.js');
 
 class Platform {
   getAllNicNames() {
@@ -135,8 +136,20 @@ class Platform {
     }
   }
 
-  getQosParentClassid() {
-    return 10;
+  async replaceQdisc(device, classId, qdisc) {
+    classId = Number(classId).toString(16);
+    let cmd;
+    if (qdisc == "fq_codel") {
+      cmd = `sudo tc qdisc replace dev ${device} parent 1:${classId} ${qdisc}`;
+    } else if (qdisc == "cake") {
+      cmd = `sudo tc qdisc replace dev ${device} parent 1:${classId} ${qdisc} unlimited triple-isolate no-split-gso conservative`;
+    } else {
+      log.error(`not support qdisc ${qdisc}`);
+      return;
+    }
+    await exec(cmd).catch((err) => {
+      log.error(`Failed to set ${qdisc} on ${device} parent 1:${classId}`, err.message);
+    });
   }
 
   async switchQoS(state, qdisc) {
@@ -155,18 +168,99 @@ class Platform {
     }
     // replace the default tc filter
     const QoS = require('../control/QoS.js');
-    const classid = this.getQosParentClassid();
-    await exec (`sudo tc filter replace dev ifb0 parent ${classid}: handle 800::0x1 prio 1 u32 match mark 0x800000 0x${QoS.QOS_UPLOAD_MASK.toString(16)} flowid ${classid}:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
+    const classid = 1;
+    await exec (`sudo tc filter replace dev ifb0 parent ${classid}: handle 800::0x1 prio 1 u32 match mark 0x800000 0x${QoS.QOS_UPLOAD_MASK.toString(16)} flowid ${classid}:0x1002`).catch((err) => {
       log.error(`Failed to update tc filter on ifb0`, err.message);
     });
-    await exec (`sudo tc filter replace dev ifb1 parent ${classid}: handle 800::0x1 prio 1 u32 match mark 0x10000 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)} flowid ${classid}:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
+    await exec (`sudo tc filter replace dev ifb1 parent ${classid}: handle 800::0x1 prio 1 u32 match mark 0x10000 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)} flowid ${classid}:0x1002`).catch((err) => {
       log.error(`Failed to update tc filter on ifb1`, err.message);
+    });
+
+    let executes = [];
+    for (const device of ['ifb0', 'ifb1']) {
+      for (const classId of [Constants.NO_LIMIT_HIGH_PRIO_CLASS_ID, Constants.NO_LIMIT_REG_PRIO_CLASS_ID, Constants.NO_LIMIT_LOW_PRIO_CLASS_ID]) {
+        executes.push(this.replaceQdisc(device, classId, qdisc));
+      }
+    }
+    await Promise.all(executes);
+  }
+
+  async replaceClassRateLimit(device, classId, rateLimit, ceilLimit, burstLimit, cburstLimit, priority, quantum) {
+    classId = Number(classId).toString(16);
+
+    let cmd = `sudo tc class replace dev ${device} parent 1: classid 1:${classId} htb rate ${rateLimit} ceil ${ceilLimit}`;
+
+    if (burstLimit) {
+      cmd += ` burst ${burstLimit}`;
+    }
+    if (cburstLimit ) {
+      cmd += ` cburst ${cburstLimit}`;
+    }
+
+    if (priority) {
+      cmd += ` prio ${priority}`;
+    }
+
+    if (quantum) {
+      cmd += ` quantum ${quantum}`;
+    }
+
+    await exec(cmd).catch((err) => {
+      log.error(`Failed to set rate limit on ${device} parent 1:${classId}`, err.message);
     });
 
   }
 
   async setQoSBandwidth(upload, download) {
+    if (upload > 0 && download > 0) {
+      let uploadLimit = Math.floor(upload * 0.98); // in Mb, leave some margin
+      let downloadLimit = Math.floor(download * 0.98); // in Mb, leave some margin
 
+      const uploadBurst = Math.floor(upload * 1.5); // in KB
+      const downloadBurst = Math.floor(download * 1.5); // in KB
+      let uploadQuantum = Math.floor(upload * 150) ; // in bytes
+      let downloadQuantum = Math.floor(download * 150) ; // in bytes
+
+      let executes = [];
+
+      for (const device of ['ifb0', 'ifb1']) {
+        let rateLimit = `${device == 'ifb0' ? uploadLimit : downloadLimit}mbit`;
+        let ceilLimit = rateLimit;
+        let burstLimit = device == 'ifb0' ? uploadBurst : downloadBurst;
+        if (burstLimit < 15) {
+          burstLimit = "15kbit";
+        } else {
+          burstLimit = `${burstLimit}kbit`;
+        }
+        let cburstLimit = burstLimit;
+        let priority = 4; // default priority for regular traffic
+        let quantum = device == 'ifb0' ? uploadQuantum : downloadQuantum;
+        if (quantum < 1500) {
+          quantum = 1500;
+        } else if (quantum > 60000) {
+          quantum = 60000;
+        }
+
+        executes.push(this.replaceClassRateLimit(device, 1, rateLimit, ceilLimit, burstLimit, cburstLimit, null, quantum)); // don't set priority for the root class
+        for (const classId of [Constants.NO_LIMIT_HIGH_PRIO_CLASS_ID, Constants.NO_LIMIT_REG_PRIO_CLASS_ID, Constants.NO_LIMIT_LOW_PRIO_CLASS_ID]) {
+          rateLimit = "200kbit";
+
+          switch (classId) {
+            case Constants.NO_LIMIT_HIGH_PRIO_CLASS_ID:
+              priority = 2;
+              break;
+            case Constants.NO_LIMIT_REG_PRIO_CLASS_ID:
+              priority = 4;
+              break;
+            case Constants.NO_LIMIT_LOW_PRIO_CLASS_ID:
+              priority = 6;
+              break;
+          }
+          executes.push(this.replaceClassRateLimit(device, classId, rateLimit, ceilLimit, burstLimit, cburstLimit, priority, quantum));
+        }
+      }
+      await Promise.all(executes);
+    }
   }
 
   getDNSServiceName() {

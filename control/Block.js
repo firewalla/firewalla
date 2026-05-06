@@ -475,40 +475,18 @@ async function setupGlobalRules(options) {
       qdisc = qdisc || "fq_codel";
       const model = platform.getName();
       let rootClassId = "1";
-      if (model === "gold" || model === "goldpro") {
-        rootClassId = "10";
-      }
       if (rateLimit || qdisc === "netem") {
-        let parentHTBQdisc = "3";
-        let subclassId = "4";
-        if (priority <= qos.PRIO_HIGH) {
-          parentHTBQdisc = "2";
-          subclassId = "1";
-        } else {
-          if (priority > qos.PRIO_REG) {
-            parentHTBQdisc = "4";
-            subclassId = "7";
-          }
-        }
+        let parentHTBQdisc = "1";
 
         if (createOrDestroy === "create") {
-          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
           await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
         }
       } else {
-        let subclassId = qdisc == "fq_codel" ? "5" : "6";
-        if (priority <= qos.PRIO_HIGH) {
-          subclassId = qdisc == "fq_codel" ? "2" : "3";
-        } else {
-          if (priority > qos.PRIO_REG) {
-            subclassId = qdisc == "fq_codel" ? "8" : "9";
-          }
-        }
+        let subclassId = getNoLimitQoSClassId(priority);
         if (createOrDestroy === "create")
           await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
         else
@@ -681,39 +659,17 @@ async function setupGenericIdentitiesRules(options) {
       qdisc = qdisc || "fq_codel";
       const model = platform.getName();
       let rootClassId = "1";
-      if (model === "gold" || model === "goldpro") {
-        rootClassId = "10";
-      }
       if (rateLimit || qdisc === "netem") {
-        let parentHTBQdisc = "3";
-        let subclassId = "4";
-        if (priority <= qos.PRIO_HIGH) {
-          parentHTBQdisc = "2";
-          subclassId = "1";
-        } else {
-          if (priority > qos.PRIO_REG) {
-            parentHTBQdisc = "4";
-            subclassId = "7";
-          }
-        }
+        let parentHTBQdisc = "1";
         if (createOrDestroy === "create") {
-          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
           await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
         }
       } else {
-        let subclassId = qdisc == "fq_codel" ? "5" : "6";
-        if (priority <= qos.PRIO_HIGH) {
-          subclassId = qdisc == "fq_codel" ? "2" : "3";
-        } else {
-          if (priority > qos.PRIO_REG) {
-            subclassId = qdisc == "fq_codel" ? "8" : "9";
-          }
-        }
+        let subclassId = getNoLimitQoSClassId(priority);
         if (createOrDestroy === "create")
           await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
         else
@@ -896,39 +852,17 @@ async function setupDevicesRules(options) {
       qdisc = qdisc || "fq_codel";
       const model = platform.getName();
       let rootClassId = "1";
-      if (model === "gold" || model === "goldpro") {
-        rootClassId = "10";
-      }
       if (rateLimit || qdisc === "netem") {
-        let parentHTBQdisc = "3";
-        let subclassId = "4";
-        if (priority <= qos.PRIO_HIGH) {
-          parentHTBQdisc = "2";
-          subclassId = "1";
-        } else {
-          if (priority > qos.PRIO_REG) {
-            parentHTBQdisc = "4";
-            subclassId = "7";
-          }
-        }
+        let parentHTBQdisc = "1";
         if (createOrDestroy === "create") {
-          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
           await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
         }
       } else {
-        let subclassId = qdisc == "fq_codel" ? "5" : "6";
-        if (priority <= qos.PRIO_HIGH) {
-          subclassId = qdisc == "fq_codel" ? "2" : "3";
-        } else {
-          if (priority > qos.PRIO_REG) {
-            subclassId = qdisc == "fq_codel" ? "8" : "9";
-          }
-        }
+        let subclassId = getNoLimitQoSClassId(priority);
         if (createOrDestroy === "create")
           await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
         else
@@ -1109,39 +1043,17 @@ async function setupTagsRules(options) {
         qdisc = qdisc || "fq_codel";
         const model = platform.getName();
         let rootClassId = "1";
-        if (model === "gold" || model === "goldpro") {
-          rootClassId = "10";
-        }
         if (rateLimit || qdisc === "netem") {
-          let parentHTBQdisc = "3";
-          let subclassId = "4";
-          if (priority <= qos.PRIO_HIGH) {
-            parentHTBQdisc = "2";
-            subclassId = "1";
-          } else {
-            if (priority > qos.PRIO_REG) {
-              parentHTBQdisc = "4";
-              subclassId = "7";
-            }
-          }
+          let parentHTBQdisc = "1";
           if (createOrDestroy === "create") {
-            await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
             await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
             await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
           } else {
             await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
             await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-            await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
           }
         } else {
-          let subclassId = qdisc == "fq_codel" ? "5" : "6";
-          if (priority <= qos.PRIO_HIGH) {
-            subclassId = qdisc == "fq_codel" ? "2" : "3";
-          } else {
-            if (priority > qos.PRIO_REG) {
-              subclassId = qdisc == "fq_codel" ? "8" : "9";
-            }
-          }
+          let subclassId = getNoLimitQoSClassId(priority);
           if (createOrDestroy === "create")
             await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           else
@@ -1321,6 +1233,18 @@ async function setupTagsRules(options) {
   }
 }
 
+function getNoLimitQoSClassId(priority) {
+  let subclassId = Constants.NO_LIMIT_REG_PRIO_CLASS_ID;
+  if (priority <= qos.PRIO_HIGH) {
+    subclassId = Constants.NO_LIMIT_HIGH_PRIO_CLASS_ID;
+  } else {
+    if (priority > qos.PRIO_REG) {
+      subclassId = Constants.NO_LIMIT_LOW_PRIO_CLASS_ID;
+    }
+  }
+  return subclassId;
+}
+
 async function setupIntfsRules(options) {
   let { pid, uuids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto,
     action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null,
@@ -1362,39 +1286,17 @@ async function setupIntfsRules(options) {
       qdisc = qdisc || "fq_codel";
       const model = platform.getName();
       let rootClassId = "1";
-      if (model === "gold" || model === "goldpro") {
-        rootClassId = "10";
-      }
       if (rateLimit || qdisc === "netem") {
-        let parentHTBQdisc = "3";
-        let subclassId = "4";
-        if (priority <= qos.PRIO_HIGH) {
-          parentHTBQdisc = "2";
-          subclassId = "1";
-        } else {
-          if (priority > qos.PRIO_REG) {
-            parentHTBQdisc = "4";
-            subclassId = "7";
-          }
-        }
+        let parentHTBQdisc = "1";
         if (createOrDestroy === "create") {
-          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
           await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
         }
       } else {
-        let subclassId = qdisc == "fq_codel" ? "5" : "6";
-        if (priority <= qos.PRIO_HIGH) {
-          subclassId = qdisc == "fq_codel" ? "2" : "3";
-        } else {
-          if (priority > qos.PRIO_REG) {
-            subclassId = qdisc == "fq_codel" ? "8" : "9";
-          }
-        }
+        let subclassId = getNoLimitQoSClassId(priority);
         if (createOrDestroy === "create")
           await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
         else
@@ -1568,39 +1470,17 @@ async function setupRuleGroupRules(options) {
       qdisc = qdisc || "fq_codel";
       const model = platform.getName();
       let rootClassId = "1";
-      if (model === "gold" || model === "goldpro") {
-        rootClassId = "10";
-      }
       if (rateLimit || qdisc === "netem") {
-        let parentHTBQdisc = "3";
-        let subclassId = "4";
-        if (priority <= qos.PRIO_HIGH) {
-          parentHTBQdisc = "2";
-          subclassId = "1";
-        } else {
-          if (priority > qos.PRIO_REG) {
-            parentHTBQdisc = "4";
-            subclassId = "7";
-          }
-        }
+        let parentHTBQdisc = "1";
         if (createOrDestroy === "create") {
-          await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
           await qos.createQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit, priority, qdisc, flowIsolation, increaseLatency, dropPacketRate);
           await qos.createTCFilter(qosHandler, parentHTBQdisc, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, parentHTBQdisc, trafficDirection, filterPrio, fwmark);
           await qos.destroyQoSClass(qosHandler, parentHTBQdisc, trafficDirection, rateLimit);
-          await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
         }
       } else {
-        let subclassId = qdisc == "fq_codel" ? "5" : "6";
-        if (priority <= qos.PRIO_HIGH) {
-          subclassId = qdisc == "fq_codel" ? "2" : "3";
-        } else {
-          if (priority > qos.PRIO_REG) {
-            subclassId = qdisc == "fq_codel" ? "8" : "9";
-          }
-        }
+        let subclassId = getNoLimitQoSClassId(priority);
         if (createOrDestroy === "create")
           await qos.createTCFilter(qosHandler, rootClassId, subclassId, trafficDirection, filterPrio, fwmark);
         else
