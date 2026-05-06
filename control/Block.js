@@ -1487,7 +1487,13 @@ async function setupRuleGroupRules(options) {
           await qos.destroyTCFilter(qosHandler, rootClassId, trafficDirection, filterPrio, fwmark);
       }
       //TODO: Not consider how App Disturb feature use RuleGroup Qos currently.
-      parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "qos")}_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
+      if (options.byPassChain) {
+        parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "qos")}_${subPrio}`, target: options.byPassChain });
+        table = "mangle";
+        markTarget = `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`;
+      } else {
+        parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "qos")}_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
+      }
       break;
     }
     case "route": {
