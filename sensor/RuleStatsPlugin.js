@@ -333,6 +333,10 @@ class RuleStatsPlugin extends Sensor {
         if (recordedAt <= resetTs) {
           continue;
         }
+        if (! await rclient.existsAsync(`policy:${pid}`)) {
+          this.lastHitFlowMap.delete(pid);
+          continue;
+        }
         flowBatch.hset(`policy:${pid}`, "lastHitFlow", JSON.stringify(value));
       }
       await flowBatch.execAsync();
