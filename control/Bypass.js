@@ -109,6 +109,8 @@ async function setupTagsRules(options) {
     }
   }
 
+  let shouldAppend = false;
+
   if (type == "category") {
     // bypass dnsmasq rules
     if (action == "enforce") {
@@ -119,8 +121,9 @@ async function setupTagsRules(options) {
           action: "bypass",
           tags: tags,
           seq: Constants.RULE_SEQ_HI,
-          append: true
+          append: shouldAppend,
         });
+        shouldAppend = true;
         if (categoriesWithBfSet.size > 0) {
           await domainBlock.blockCategory({
             pid: pid,
@@ -128,8 +131,9 @@ async function setupTagsRules(options) {
             action: "bypass",
             tags: tags,
             seq: Constants.RULE_SEQ_HI,
-            append: true
+            append: shouldAppend,
           });
+          shouldAppend = true;
         }
       }
       if (hasNonHiSeq) {
@@ -137,16 +141,19 @@ async function setupTagsRules(options) {
           pid: pid,
           categories: targets,
           action: "bypass",
-          tags: tags
+          tags: tags,
+          append: shouldAppend,
         });
+        shouldAppend = true;
         if (categoriesWithBfSet.size > 0) {
           await domainBlock.blockCategory({
             pid: pid,
             categories: Array.from(categoriesWithBfSet).map(target => categoryUpdater.getBfCategoryName(target)),
             action: "bypass",
             tags: tags,
-            append: true
+            append: shouldAppend,
           });
+          shouldAppend = true;
         }
       }
     } else if (action == "unenforce") {
@@ -338,6 +345,8 @@ async function setupDevicesRules(options) {
     }
   }
 
+  let shouldAppend = false;
+
   if (type == "category") {
     if (action == "enforce") {
       if (hasHiSeq) {
@@ -347,8 +356,9 @@ async function setupDevicesRules(options) {
           action: "bypass",
           scope: macAddresses,
           seq: Constants.RULE_SEQ_HI,
-          append: true
+          append: shouldAppend,
         });
+        shouldAppend = true;
         if (categoriesWithBfSet.size > 0) {
           await domainBlock.blockCategory({
             pid: pid,
@@ -356,8 +366,9 @@ async function setupDevicesRules(options) {
             action: "bypass",
             scope: macAddresses,
             seq: Constants.RULE_SEQ_HI,
-            append: true
+            append: shouldAppend,
           });
+          shouldAppend = true;
         }
       }
       if (hasNonHiSeq) {
@@ -365,16 +376,19 @@ async function setupDevicesRules(options) {
           pid: pid,
           categories: targets,
           action: "bypass",
-          scope: macAddresses
+          scope: macAddresses,
+          append: shouldAppend,
         });
+        shouldAppend = true;
         if (categoriesWithBfSet.size > 0) {
           await domainBlock.blockCategory({
             pid: pid,
             categories: Array.from(categoriesWithBfSet).map(target => categoryUpdater.getBfCategoryName(target)),
             action: "bypass",
             scope: macAddresses,
-            append: true
+            append: shouldAppend,
           });
+          shouldAppend = true;
         }
       }
     } else if (action == "unenforce") {
@@ -452,6 +466,8 @@ async function setupGenericIdentitiesRules(options) {
     }
   }
 
+  let shouldAppend = false;
+
   if (type == "category") {
     if (action == "enforce") {
       if (hasHiSeq) {
@@ -461,8 +477,9 @@ async function setupGenericIdentitiesRules(options) {
           action: "bypass",
           guids: guids,
           seq: Constants.RULE_SEQ_HI,
-          append: true
+          append: shouldAppend,
         });
+        shouldAppend = true;
         if (categoriesWithBfSet.size > 0) {
           await domainBlock.blockCategory({
             pid: pid,
@@ -470,8 +487,9 @@ async function setupGenericIdentitiesRules(options) {
             action: "bypass",
             guids: guids,
             seq: Constants.RULE_SEQ_HI,
-            append: true
+            append: shouldAppend,
           });
+          shouldAppend = true;
         }
       }
       if (hasNonHiSeq) {
@@ -479,16 +497,19 @@ async function setupGenericIdentitiesRules(options) {
           pid: pid,
           categories: targets,
           action: "bypass",
-          guids: guids
+          guids: guids,
+          append: shouldAppend,
         });
+        shouldAppend = true;
         if (categoriesWithBfSet.size > 0) {
           await domainBlock.blockCategory({
             pid: pid,
             categories: Array.from(categoriesWithBfSet).map(target => categoryUpdater.getBfCategoryName(target)),
             action: "bypass",
             guids: guids,
-            append: true
+            append: shouldAppend,
           });
+          shouldAppend = true;
         }
       }
     } else if (action == "unenforce") {
@@ -550,6 +571,8 @@ async function setupGlobalRules(options) {
     }
   }
 
+  let shouldAppend = false;
+
   if (type == "category") {
     if (action == "enforce") {
       if (hasHiSeq) {
@@ -558,31 +581,36 @@ async function setupGlobalRules(options) {
           categories: targets,
           action: "bypass",
           seq: Constants.RULE_SEQ_HI,
-          append: true
+          append: shouldAppend,
         });
+        shouldAppend = true;
         if (categoriesWithBfSet.size > 0) {
           await domainBlock.blockCategory({
             pid: pid,
             categories: Array.from(categoriesWithBfSet).map(target => categoryUpdater.getBfCategoryName(target)),
             action: "bypass",
             seq: Constants.RULE_SEQ_HI,
-            append: true
+            append: shouldAppend,
           });
+          shouldAppend = true;
         }
       }
       if (hasNonHiSeq) {
         await domainBlock.blockCategory({
           pid: pid,
           categories: targets,
-          action: "bypass"
+          action: "bypass",
+          append: shouldAppend,
         });
+        shouldAppend = true;
         if (categoriesWithBfSet.size > 0) {
           await domainBlock.blockCategory({
             pid: pid,
             categories: Array.from(categoriesWithBfSet).map(target => categoryUpdater.getBfCategoryName(target)),
             action: "bypass",
-            append: true
+            append: shouldAppend,
           });
+          shouldAppend = true;
         }
       }
     } else if (action == "unenforce") {
