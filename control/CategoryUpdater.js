@@ -362,11 +362,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
         lastRecyclemode: "domainOnly",
         numDefaultPolicies: 0,
         numDomainOnlyPolicies: 0,
-        policies: new Map() // policyId to domainOnly};
+        policies: new Map() // cacheKey to domainOnly};
       }
     }
+
+    const cacheKey = `${policyId}:${domainOnly}`;
     if (isAdd) {
-      if (categoryPolicies.policies.has(policyId)) { // policy already exists
+      if (categoryPolicies.policies.has(cacheKey)) { // cacheKey already exists
         return;
       }
       if (domainOnly) {
@@ -377,11 +379,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
         }
         categoryPolicies.numDefaultPolicies++;
       }
-      categoryPolicies.policies.set(policyId, domainOnly);
+      categoryPolicies.policies.set(cacheKey, domainOnly);
       this.activeCategoryPolicyMap.set(category, categoryPolicies);
 
     } else {
-      if (!categoryPolicies.policies.has(policyId)) { // policy not found
+      if (!categoryPolicies.policies.has(cacheKey)) { // cacheKey not found
         return;
       }
       if (domainOnly) {
@@ -392,7 +394,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         }
         categoryPolicies.numDefaultPolicies--;
       }
-      categoryPolicies.policies.delete(policyId);
+      categoryPolicies.policies.delete(cacheKey);
       this.activeCategoryPolicyMap.set(category, categoryPolicies);
     }
 
