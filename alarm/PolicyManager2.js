@@ -1468,7 +1468,7 @@ class PolicyManager2 {
   }
 
   async _applyBypass(bypassPolicy, action="enforce") {
-    let { pid, affectedPids, tag, type, scope, guids } = bypassPolicy;
+    let {affectedPids, tags, intfs, action, pid, targets, type} = options;
     log.info(`${action} bypass policy ${pid} for affected policies ${affectedPids}, tag ${tag}`);
     let { intfs, tags } = this.parseTags(tag)
     // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
@@ -1483,17 +1483,11 @@ class PolicyManager2 {
     let targets = bypassPolicy.targets ? bypassPolicy.targets : [bypassPolicy.target];
     const commonOptions = { pid, affectedPids, action, targets, type };
 
-    if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids)) {
-      if (!_.isEmpty(tags))
-        await Bypass.setupTagsRules({ ...commonOptions, tags, intfs: [] });
-      if (!_.isEmpty(intfs))
-        await Bypass.setupIntfsRules({ ...commonOptions, uuids: intfs });
-      if (!_.isEmpty(scope))
-        await Bypass.setupDevicesRules({ ...commonOptions, macAddresses: scope });
-      if (!_.isEmpty(guids))
-        await Bypass.setupGenericIdentitiesRules({ ...commonOptions, guids });
-    } else {
-      await Bypass.setupGlobalRules(commonOptions);
+    switch (type) {
+      case "category":
+        await Bypass.bypassDNSRules(commonOptions);
+        await Bypass.bypassIptablesRules(commonOptions);
+        break;
     }
   }
 
