@@ -49,6 +49,11 @@ class RuleStatsPlugin extends Sensor {
     });
     sem.on("PolicyEnforcement", async (event) => {
       await this.loadBlockAllowGlobalRules();
+      if (event.action === 'unenforce' && event.policy) {
+        const pid = String(event.policy.pid);
+        this.lastHitFlowMap.delete(pid);
+        this.policyStatsResetTs.delete(pid);
+      }
     });
     sem.on("Policy:StatsReset", (event = {}) => {
       this.applyStatsReset(event.policyIDs, event.resetTime);
@@ -143,7 +148,7 @@ class RuleStatsPlugin extends Sensor {
 
   recordLastHitFlow(pid, flow, kind) {
     if (!this.on || !pid || !flow) return;
-    const ts = Number(flow._ts || flow.ts || 0);
+    const ts = Number(flow.ts || flow._ts || 0);
     const recordedAt = Date.now() / 1000;
     const existing = this.lastHitFlowMap.get(String(pid));
     if (!existing || ts > existing.ts || (ts === existing.ts && recordedAt > existing.recordedAt)) {
@@ -182,6 +187,9 @@ class RuleStatsPlugin extends Sensor {
     }
 
     this.recordBuffer = this.recordBuffer.filter((record) => !record.pid || !resetPidSet.has(String(record.pid)));
+    for (const pid of resetPidSet) {
+      this.policyStatsResetTs.delete(pid);
+    }
     log.info(`Rule stats reset for policies: ${policyIDs.join(",")}`);
   }
 
@@ -328,7 +336,7 @@ class RuleStatsPlugin extends Sensor {
         flowBatch.hset(`policy:${pid}`, "lastHitFlow", JSON.stringify(value));
       }
       await flowBatch.execAsync();
-      this.lastHitFlowMap.clear();
+      // this.lastHitFlowMap.clear();
     }
   }
 
