@@ -360,6 +360,16 @@ class VPNClient {
       Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4)
       Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6)
     }
+    // PBR ipset is always populated with match_all regardless of overrideDefaultRoute,
+    // so route rules pointing to this VPN client work in both VPN and Direct Internet modes.
+    if (rtId) {
+      Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+      Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+      if (!settings.strictVPN) {
+        Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+        Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+      }
+    }
 
     if (rtId) {
       Ipset.add(VPNClient.getRouteIpsetName(this.profileId), VPNClient.getNetIpsetName(this.profileId), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
@@ -506,10 +516,12 @@ class VPNClient {
           // clear soft route ipset
           await VPNClient.ensureCreateEnforcementEnv(this.profileId);
           Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+          Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
           await this._disableDNSRoute("soft");
           // clear hard route ipset if strictVPN (kill-switch) is not enabled
           if (!this.settings.strictVPN) {
             Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+            Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
             await this._disableDNSRoute("hard");
             await this._resetRouteMarkInRedis();
           }
@@ -571,10 +583,12 @@ class VPNClient {
           // clear soft route ipset
           await VPNClient.ensureCreateEnforcementEnv(this.profileId);
           Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+          Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
           await this._disableDNSRoute("soft");
           // clear hard route ipset if strictVPN (kill-switch) is not enabled
           if (!this.settings.strictVPN) {
             Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+            Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
             await this._disableDNSRoute("hard");
             await this._resetRouteMarkInRedis();
           }
@@ -956,11 +970,21 @@ class VPNClient {
         Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
         Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
       }
+      // PBR ipset is independent of overrideDefaultRoute. Pre-populate hard so kill-switch covers PBR-routed traffic too.
+      if (rtId) {
+        Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+        Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+      } else {
+        Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
+        Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
+      }
       await vpnClientEnforcer.enforceStrictVPN(this.getInterfaceName());
       await this._setRouteMarkInRedis();
     } else {
       Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
       Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+      Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
+      Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
       await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
       await this._resetRouteMarkInRedis();
     }
@@ -1114,6 +1138,8 @@ class VPNClient {
     await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
     Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
     Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+    Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
+    Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
     Ipset.flush(VPNClient.getSelfIpsetName(this.profileId, 4));
     iptc.addRule(new Rule('nat').chn('FW_PREROUTING_EXT_IP').set(VPNClient.getSelfIpsetName(this.profileId, 4), 'dst').iif(this.getInterfaceName()).jmp('FW_PRERT_PORT_FORWARD').opr('-D'));
     await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => { });
@@ -1193,6 +1219,16 @@ class VPNClient {
       return null;
   }
 
+  // PBR (route rule) ipset is independent of the "Internet: VPN/Direct" toggle (overrideDefaultRoute).
+  // It is always populated with match_all so that route rules pointing to this VPN client work
+  // regardless of whether Apply To devices are routing all traffic via VPN.
+  static getPBRRouteIpsetName(uid, hard = true) {
+    if (uid) {
+      return `c_rt_pbr_${hard ? "hard" : "soft"}_${uid.substring(0, 13)}_set`;
+    } else
+      return null;
+  }
+
   static getNetIpsetName(uid, af = 4) {
     if (uid) {
       return `c_net_${uid.substring(0, 13)}_set${af}`;
@@ -1222,6 +1258,12 @@ class VPNClient {
 
       const softRouteIpsetName = VPNClient.getRouteIpsetName(uid, false);
       Ipset.create(softRouteIpsetName, 'list:set', false, { skbinfo: true });
+
+      const hardPBRRouteIpsetName = VPNClient.getPBRRouteIpsetName(uid);
+      Ipset.create(hardPBRRouteIpsetName, 'list:set', false, { skbinfo: true });
+
+      const softPBRRouteIpsetName = VPNClient.getPBRRouteIpsetName(uid, false);
+      Ipset.create(softPBRRouteIpsetName, 'list:set', false, { skbinfo: true });
 
       const selfIpsetName = VPNClient.getSelfIpsetName(uid, 4);
       Ipset.create(selfIpsetName, 'hash:ip', false, { hashsize: 1024 });
