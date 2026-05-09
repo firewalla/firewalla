@@ -218,10 +218,10 @@ class TLSSetControl extends ModuleControl {
    * @param {string} proto - 'tcp' | 'udp' | '' (both)
    */
   activateTLSSet(tlsHostSet, proto = '') {
-    if (proto === 'tcp' || proto === '') {
+    if (platform.isTLSBlockSupport() && (proto === 'tcp' || proto === '')) {
       this.activeTCPSets[tlsHostSet] = 1;
     }
-    if (proto === 'udp' || proto === '') {
+    if (platform.isUdpTLSBlockSupport() && (proto === 'udp' || proto === '')) {
       this.activeUDPSets[tlsHostSet] = 1;
     }
   }

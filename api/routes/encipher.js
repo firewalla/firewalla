@@ -256,7 +256,8 @@ router.post('/complex', async (req, res, next) => {
   } catch(err) {
     // netbot controller is not ready yet, waiting for init complete
     log.error(err);
-    res.status(err.code || 500).send({
+    const code = !isNaN(err.code) ? err.code : 500;
+    res.status(code).send({
       error: err.message,
       stack: err.stack
     })
