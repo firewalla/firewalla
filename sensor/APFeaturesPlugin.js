@@ -44,7 +44,9 @@ class APFeaturesPlugin extends Sensor {
     const policyHandlers = {
       "isolation": this.applyIsolation,
       "ssidPSK": this.applySSIDPSK,
-      "apControl": this.applyApControl,
+      // acl controls both internet and intranet acl, 
+      // only applicable to global acl, device/network acl change is monitored in fwapc
+      "acl": this.applyLocalAcl,
     };
     for (const key of Object.keys(policyHandlers))
       extensionManager.registerExtension(key, this, {
@@ -59,49 +61,46 @@ class APFeaturesPlugin extends Sensor {
     }, 900 * 1000);
   }
 
-  async applyApControl(obj, ip, policy) {
-    if (!policy || !_.isObject(policy)) {
-      log.warn("invalid ap control policy", policy);
-      return;
-    }
+  async applyLocalAcl(obj, ip, policy) {
     if (ip == "0.0.0.0") {
-      await this._aclIptables(policy.aclOff === true ? "-I" : "-D");
-      await this._aclAps(policy.aclOff);
+      const aclOff = Boolean(policy) ? false : true;
+      await this._aclIptables(aclOff ? "-I" : "-D");
+      await this._aclAssets(aclOff);
     }
   }
 
   async _aclIptables(op) {
     log.info("applyApControl", op);
-    const netRule = new Rule("filter").chn("FW_FIREWALL_NET_ISOLATION").comment("network ap acl off").jmp("RETURN");
+    const netRule = new Rule("filter").chn("FW_FIREWALL_NET_ISOLATION").comment("network_local_acl_off").jmp("RETURN");
     const netRule6 = netRule.clone().fam(6);
     iptc.addRule(netRule.opr(op));
     iptc.addRule(netRule6.opr(op));
 
-    const groupRule = new Rule("filter").chn("FW_FIREWALL_DEV_G_ISOLATION").comment("group ap acl off").jmp("RETURN");
+    const groupRule = new Rule("filter").chn("FW_FIREWALL_DEV_G_ISOLATION").comment("group_local_acl_off").jmp("RETURN");
     const groupRule6 = groupRule.clone().fam(6);
     iptc.addRule(groupRule.opr(op));
     iptc.addRule(groupRule6.opr(op));
 
-    const deviceRule = new Rule("filter").chn("FW_FIREWALL_DEV_ISOLATION").comment("device ap acl off").jmp("RETURN");
+    const deviceRule = new Rule("filter").chn("FW_FIREWALL_DEV_ISOLATION").comment("device_local_acl_off").jmp("RETURN");
     const deviceRule6 = deviceRule.clone().fam(6);
     iptc.addRule(deviceRule.opr(op));
     iptc.addRule(deviceRule6.opr(op));
 
     // handle acl rules to intranet in box
-    const monitoredNetRule =new Rule("filter").chn("FW_DROP").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst").comment("ap acl off").jmp("RETURN");
+    const monitoredNetRule =new Rule("filter").chn("FW_DROP").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst").comment("local_acl_off").jmp("RETURN");
     const monitoredNetRule6 = monitoredNetRule.clone().fam(6);
     iptc.addRule(monitoredNetRule.opr(op));
     iptc.addRule(monitoredNetRule6.opr(op));
   }
 
-  async _aclAps(acloff=false) {
+  async _aclAssets(acloff=false) {
     // set disableAcl to APs
     const config = await fireRouter.getConfig();
     if (!config || !config.apc) {
       log.error("Failed to get apc config");
       return;
     }
-    const changed = this._setApAcl(config, acloff);
+    const changed = this._setAssetAcl(config, acloff);
     if (changed === true) {
       log.info("acl changed, reapply networkConfig", acloff);
       await fireRouter.setConfig(config).catch((err) => {
@@ -110,7 +109,7 @@ class APFeaturesPlugin extends Sensor {
     }
   }
 
-  _setApAcl(config, op) {
+  _setAssetAcl(config, aclOff) {
     if (!config.apc || !config.apc.assets || !_.isObject(config.apc.assets)) {
       log.error("Failed to get assets in apc config");
       return;
@@ -122,10 +121,10 @@ class APFeaturesPlugin extends Sensor {
         log.error(`Failed to get sysConfig in apc config for asset ${uid}`);
         continue;
       }
-      if (asset.sysConfig.disableAcl === op) {
+      if (asset.sysConfig.disableAcl === aclOff) {
         continue;
       } else {
-        asset.sysConfig.disableAcl = op;
+        asset.sysConfig.disableAcl = aclOff;
         changed = true;
       }
     }
