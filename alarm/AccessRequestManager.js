@@ -65,7 +65,7 @@ function getUserRelatedTags(userId) {
   return { user, afTag };
 }
 
-function isInSchedule(policy, includeNonTimeLimitRules = false) {
+function isInSchedule(policy) {
   // check if the policy is paused
   const now = Date.now() / 1000;
   if (policy.idleTs != null && policy.idleTs > 0) {
@@ -80,11 +80,6 @@ function isInSchedule(policy, includeNonTimeLimitRules = false) {
     if (policy.isExpired() || policy.willExpireSoon()) {
       return false;
     }
-  }
-
-  const au = policy.appTimeUsage;
-  if (!au && !includeNonTimeLimitRules) {
-    return false;
   }
 
   const cronTime = policy.cronTime;
@@ -187,8 +182,10 @@ function matchApp(policy, app='all', supportedApps = [], includeNonTimeLimitRule
   // check target, target|targets should be supported apps and match the given app
   if (!matchTarget(policy, app, supportedApps)) return false;
 
+  if (!includeNonTimeLimitRules && !policy.appTimeUsage) return false;
+
   // check if the policy is in schedule
-  if (!includeNotInScheduleRules && !isInSchedule(policy, includeNonTimeLimitRules)) return false;
+  if (!includeNotInScheduleRules && !isInSchedule(policy)) return false;
   return true;
 }
 
