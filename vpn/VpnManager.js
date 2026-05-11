@@ -886,6 +886,9 @@ class VpnManager {
     await execAsync(cmd).catch((err) => {
       log.error("Failed to revoke VPN profile " + commonName, err);
     });
+    await execAsync(`echo "kill ${commonName}" | nc -w 5 -q 2 localhost 5194`).catch((err) => {
+      log.warn(`Failed to kill VPN client ${commonName} after revocation`, err.message);
+    });
     const event = {
       type: Message.MSG_OVPN_PROFILES_UPDATED,
       cn: commonName
