@@ -427,11 +427,11 @@ class VpnManager {
     };
   }
 
-  async killClient(addr) {
-    if (!addr) return;
-    const cmd = `echo "kill ${addr}" | nc -w 5 -q 2 localhost 5194`;
+  async killClient(cnOrAddr) {
+    if (!cnOrAddr) return;
+    const cmd = `echo "kill ${cnOrAddr}" | nc -w 5 -q 2 localhost 5194`;
     await execAsync(cmd).catch((err) => {
-      log.warn(`Failed to kill client with address ${addr}`, err);
+      log.warn(`Failed to kill client ${cnOrAddr}`, err);
     });
   }
 
@@ -885,6 +885,9 @@ class VpnManager {
     log.info("VPNManager:Revoke", cmd);
     await execAsync(cmd).catch((err) => {
       log.error("Failed to revoke VPN profile " + commonName, err);
+    });
+    await execAsync(`echo "kill ${commonName}" | nc -w 5 -q 2 localhost 5194`).catch((err) => {
+      log.warn(`Failed to kill VPN client ${commonName} after revocation`, err.message);
     });
     const event = {
       type: Message.MSG_OVPN_PROFILES_UPDATED,
