@@ -835,6 +835,15 @@ create_tc_rules_original() {
   # ifb module is for QoS
   if [[ $IFB_SUPPORTED == "yes" ]]; then
     sudo modprobe ifb &> /dev/null || true
+    # Kernel 6.6+ loads ifb but no longer auto-creates ifb0/ifb1; create them explicitly.
+    if ! ip link show dev ifb0 &>/dev/null; then
+      sudo ip link add ifb0 type ifb &>/dev/null || true
+    fi
+    if ! ip link show dev ifb1 &>/dev/null; then
+      sudo ip link add ifb1 type ifb &>/dev/null || true
+    fi
+    sudo ip link set ifb0 up &>/dev/null || true
+    sudo ip link set ifb1 up &>/dev/null || true
   else
     sudo rmmod ifb &> /dev/null || true
   fi
@@ -876,6 +885,15 @@ create_tc_rules_new() {
   # ifb module is for QoS
   if [[ $IFB_SUPPORTED == "yes" ]]; then
     sudo modprobe ifb &> /dev/null || true
+    # Kernel 6.6+ loads ifb but no longer auto-creates ifb0/ifb1; create them explicitly.
+    if ! ip link show dev ifb0 &>/dev/null; then
+      sudo ip link add ifb0 type ifb &>/dev/null || true
+    fi
+    if ! ip link show dev ifb1 &>/dev/null; then
+      sudo ip link add ifb1 type ifb &>/dev/null || true
+    fi
+    sudo ip link set ifb0 up &>/dev/null || true
+    sudo ip link set ifb1 up &>/dev/null || true
   else
     sudo rmmod ifb &> /dev/null || true
   fi
