@@ -4,6 +4,8 @@
 : ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
 source ${FIREWALLA_HOME}/platform/platform.sh
 
+EXPECTED_CONTAINER_NAME="freeradius_freeradius_1"
+
 if [ -f ~/.fwrc ]; then
   source ~/.fwrc
 fi
@@ -16,14 +18,25 @@ if [ -n "$1" ]; then
   image_tag=$1
 fi
 
+# get expected container name
+function get_expected_container_name() {
+    if sudo docker compose version &>/dev/null; then
+    EXPECTED_CONTAINER_NAME="freeradius-freeradius-1"
+  else
+    EXPECTED_CONTAINER_NAME="freeradius_freeradius_1"
+  fi
+}
+
+get_expected_container_name
+
 function cleanup_dangling_images() {
-    sudo docker images --filter "reference=public.ecr.aws/a0j1s2e9/freeradius*" -f "dangling=true" -q | xargs -r sudo docker rmi
+    sudo docker images --filter "reference=public.ecr.aws/a0j1s2e9/freeradius*" -f "dangling=true" -q | xargs -t -r sudo docker rmi
 }
 
 function wait_for_freeradius_start() {
     local timeout=60
     local start_time=$(date +%s)
-    while ! sudo docker ps -q -f "name=freeradius_freeradius_1" | grep -q .; do
+    while ! sudo docker ps -q -f "name=$EXPECTED_CONTAINER_NAME" | grep -q .; do
         local current_time=$(date +%s)
         local elapsed=$((current_time - start_time))
         if [ $elapsed -ge $timeout ]; then
@@ -32,7 +45,7 @@ function wait_for_freeradius_start() {
         fi
         sleep 5
     done
-    if ! sudo docker ps -q -f "name=freeradius_freeradius_1" | grep -q .; then
+    if ! sudo docker ps -q -f "name=$EXPECTED_CONTAINER_NAME" | grep -q .; then
         echo "Freeradius server is not running"
         return 1
     else
@@ -102,8 +115,8 @@ feature_on=$(redis-cli hget sys:features freeradius_server)
 
 # check if freeradius server is running on latest image
 if [[ "$feature_on" == "1" ]]; then
-    running_image_name=$(sudo docker ps --format='{{.Image}}' --filter "name=freeradius_freeradius_1" 2>/dev/null)
-    running_image_full=$(sudo docker inspect --format='{{.Image}}' freeradius_freeradius_1 2>/dev/null)
+    running_image_name=$(sudo docker ps --format='{{.Image}}' --filter "name=$EXPECTED_CONTAINER_NAME" 2>/dev/null)
+    running_image_full=$(sudo docker inspect --format='{{.Image}}' "$EXPECTED_CONTAINER_NAME" 2>/dev/null)
     running_image=$(echo "$running_image_full" | sed 's/sha256://' | cut -c1-12)
     if [[ -n "$running_image" && "$running_image" != "$new_image" ]]; then
       echo "running freeradius container is not on latest image (running on ${running_image}), updating to ${new_image}"
@@ -132,21 +145,22 @@ else
     echo "feature disabled, checking to delete running freeradius container"
     tags=$(sudo docker images --filter "reference=public.ecr.aws/a0j1s2e9/freeradius*" --format "{{.Repository}}:{{.Tag}}")
     for tag in $tags; do
-        sudo docker ps -a -q -f "ancestor=$img" | xargs -r sudo docker rm -f
+        sudo docker ps -a -q -f "ancestor=$img" | xargs -t -r sudo docker rm -f
     done
     echo "remaining freeradius containers cleaned up"
 fi
 
 # cleanup unexpected containers
-sudo docker ps -a --format "{{.Names}}" -f "ancestor=${image}" | grep -v "^freeradius_freeradius_1$" | xargs -r sudo docker rm -f
+sudo docker ps -a --format "{{.Names}}" -f "ancestor=${image}" | grep -vFx "${EXPECTED_CONTAINER_NAME}" | xargs -t -r sudo docker rm -f
 echo "unexpected containers cleaned up"
 
 # remove other freeradius images except the current image
+echo "cleaning up image tags"
 tags=$(sudo docker images --filter "reference=public.ecr.aws/a0j1s2e9/freeradius*" --format "{{.Repository}}:{{.Tag}}" | grep -v ${image} | grep -v "none")
 for tag in $tags; do
+  echo "docker rmi ${tag}"
   sudo docker rmi $tag
 done
-echo "image tags ${tags} cleaned up"
 
 # remove all dangling images
 cleanup_dangling_images
