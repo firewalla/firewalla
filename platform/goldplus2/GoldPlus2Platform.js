@@ -78,7 +78,7 @@ class GoldPlus2Platform extends Platform {
 
   getLedPaths() {
     return [
-      "/sys/class/leds/sys_led/trigger"
+      "/sys/class/leds/status:blue/trigger"
     ];
   }
 
@@ -202,8 +202,8 @@ class GoldPlus2Platform extends Platform {
 
   async setLED(color, state) {
     const LED_PATH = '/sys/class/leds'
-    const LED_TRIGGER_ERROR = `${LED_PATH}/red_led/trigger`;
-    const LED_TRIGGER_STATUS = `${LED_PATH}/sys_led/trigger`;
+    const LED_TRIGGER_ERROR = `${LED_PATH}/status:red/trigger`;
+    const LED_TRIGGER_STATUS = `${LED_PATH}/status:blue/trigger`;
     const LED_STATE_ON = 'default-on'
     const LED_STATE_OFF = 'none'
     const LED_STATE_BLINK = 'timer'
