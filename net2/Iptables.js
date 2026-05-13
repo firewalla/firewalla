@@ -101,6 +101,7 @@ class Rule {
     this.table = table;
     this.options = [];
     this.modules = [];
+    this.operation = '-A'
   }
 
   fam(v) { this.family = v; return this }

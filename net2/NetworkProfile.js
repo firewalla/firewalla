@@ -24,11 +24,9 @@ const exec = require('child-process-promise').exec;
 const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
 const _ = require('lodash');
-const fs = require('fs');
-const Promise = require('bluebird');
+const fsp = require('fs').promises;
 const HostTool = require('./HostTool.js');
 const hostTool = new HostTool();
-Promise.promisifyAll(fs);
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
 const Mode = require('./Mode.js');
@@ -143,16 +141,16 @@ class NetworkProfile extends Monitorable {
       const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
       const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
       const netLinklocalIpsetName6 = NetworkProfile.getNetLinklocalIpsetName(this.o.uuid);
-      Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, netIpsetName);
-      Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, netIpsetName6);
-      Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, netLinklocalIpsetName6);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, netIpsetName);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, netIpsetName6);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, netLinklocalIpsetName6);
     } else {
       const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
       const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
       const netLinklocalIpsetName6 = NetworkProfile.getNetLinklocalIpsetName(this.o.uuid);
-      Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, netIpsetName);
-      Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, netIpsetName6);
-      Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, netLinklocalIpsetName6);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, netIpsetName);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, netIpsetName6);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, netLinklocalIpsetName6);
     }
   }
 
@@ -161,16 +159,16 @@ class NetworkProfile extends Monitorable {
       const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
       const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
       const netLinklocalIpsetName6 = NetworkProfile.getNetLinklocalIpsetName(this.o.uuid);
-      Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, netIpsetName);
-      Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, netIpsetName6);
-      Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, netLinklocalIpsetName6);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, netIpsetName);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, netIpsetName6);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, netLinklocalIpsetName6);
     } else {
       const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
       const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
       const netLinklocalIpsetName6 = NetworkProfile.getNetLinklocalIpsetName(this.o.uuid);
-      Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, netIpsetName);
-      Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, netIpsetName6);
-      Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, netLinklocalIpsetName6);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, netIpsetName);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, netIpsetName6);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, netLinklocalIpsetName6);
     }
   }
 
@@ -264,32 +262,32 @@ class NetworkProfile extends Monitorable {
       return;
     }
     if (dnsCaching === true) {
-      Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netIpsetName);
-      Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netIpsetName6);
-      Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netLinklocalIpsetName6);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netIpsetName);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netIpsetName6);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netLinklocalIpsetName6);
     } else {
-      Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netIpsetName);
-      Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netIpsetName6);
-      Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netLinklocalIpsetName6);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netIpsetName);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netIpsetName6);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netLinklocalIpsetName6);
     }
   }
 
   static async destroyBakChains() {
     // Remove jump rules from INPUT chain
-    iptc.addRule(new Rule().chn("INPUT").jmp("FW_INPUT_ACCEPT_BAK").opr('-D'));
-    iptc.addRule(new Rule().fam(6).chn("INPUT").jmp("FW_INPUT_ACCEPT_BAK").opr('-D'));
-    iptc.addRule(new Rule().chn("INPUT").jmp("FW_INPUT_DROP_BAK").opr('-D'));
-    iptc.addRule(new Rule().fam(6).chn("INPUT").jmp("FW_INPUT_DROP_BAK").opr('-D'));
+    await iptc.addRule(new Rule().chn("INPUT").jmp("FW_INPUT_ACCEPT_BAK").opr('-D'));
+    await iptc.addRule(new Rule().fam(6).chn("INPUT").jmp("FW_INPUT_ACCEPT_BAK").opr('-D'));
+    await iptc.addRule(new Rule().chn("INPUT").jmp("FW_INPUT_DROP_BAK").opr('-D'));
+    await iptc.addRule(new Rule().fam(6).chn("INPUT").jmp("FW_INPUT_DROP_BAK").opr('-D'));
     // Flush chains
-    iptc.addRule(new Rule().chn("FW_INPUT_ACCEPT_BAK").opr('-F'));
-    iptc.addRule(new Rule().fam(6).chn("FW_INPUT_ACCEPT_BAK").opr('-F'));
-    iptc.addRule(new Rule().chn("FW_INPUT_DROP_BAK").opr('-F'));
-    iptc.addRule(new Rule().fam(6).chn("FW_INPUT_DROP_BAK").opr('-F'));
+    await iptc.addRule(new Rule().chn("FW_INPUT_ACCEPT_BAK").opr('-F'));
+    await iptc.addRule(new Rule().fam(6).chn("FW_INPUT_ACCEPT_BAK").opr('-F'));
+    await iptc.addRule(new Rule().chn("FW_INPUT_DROP_BAK").opr('-F'));
+    await iptc.addRule(new Rule().fam(6).chn("FW_INPUT_DROP_BAK").opr('-F'));
     // Delete chains
-    iptc.addRule(new Rule().chn("FW_INPUT_ACCEPT_BAK").opr('-X'));
-    iptc.addRule(new Rule().fam(6).chn("FW_INPUT_ACCEPT_BAK").opr('-X'));
-    iptc.addRule(new Rule().chn("FW_INPUT_DROP_BAK").opr('-X'));
-    iptc.addRule(new Rule().fam(6).chn("FW_INPUT_DROP_BAK").opr('-X'));
+    await iptc.addRule(new Rule().chn("FW_INPUT_ACCEPT_BAK").opr('-X'));
+    await iptc.addRule(new Rule().fam(6).chn("FW_INPUT_ACCEPT_BAK").opr('-X'));
+    await iptc.addRule(new Rule().chn("FW_INPUT_DROP_BAK").opr('-X'));
+    await iptc.addRule(new Rule().fam(6).chn("FW_INPUT_DROP_BAK").opr('-X'));
   }
 
   static getSelfIpsetName(uuid, af = 4) {
@@ -370,19 +368,19 @@ class NetworkProfile extends Monitorable {
       if (!netIpsetName || !netIpsetName6 || !netLinklocalIpsetName6) {
         log.error(`Failed to get ipset name for ${uuid}`);
       } else {
-        Ipset.create(netIpsetName, 'hash:net', false, { maxelem: 1024 });
-        Ipset.create(netIpsetName6, 'hash:net', true, { maxelem: 1024 });
-        Ipset.create(netLinklocalIpsetName6, 'hash:net,iface', true, { maxelem: 1024 });
+        await Ipset.create(netIpsetName, 'hash:net', false, { maxelem: 1024 });
+        await Ipset.create(netIpsetName6, 'hash:net', true, { maxelem: 1024 });
+        await Ipset.create(netLinklocalIpsetName6, 'hash:net,iface', true, { maxelem: 1024 });
       }
 
       const netListIpsetName = NetworkProfile.getNetListIpsetName(uuid);
       if (!netListIpsetName) {
         log.error(`Failed to get net list ipset name for ${uuid}`);
       } else {
-        Ipset.create(netListIpsetName, 'list:set');
-        Ipset.add(netListIpsetName, netIpsetName);
-        Ipset.add(netListIpsetName, netIpsetName6);
-        Ipset.add(netListIpsetName, netLinklocalIpsetName6);
+        await Ipset.create(netListIpsetName, 'list:set');
+        await Ipset.add(netListIpsetName, netIpsetName);
+        await Ipset.add(netListIpsetName, netIpsetName6);
+        await Ipset.add(netListIpsetName, netLinklocalIpsetName6);
       }
 
       const GatewayIpsetName = NetworkProfile.getGatewayIpsetName(uuid);
@@ -390,40 +388,40 @@ class NetworkProfile extends Monitorable {
       if (!GatewayIpsetName || !GatewayIpsetName6) {
         log.error(`Failed to get gateway ipset name for ${uuid}`);
       } else {
-        Ipset.create(GatewayIpsetName, 'hash:ip', false, { maxelem: 32 });
-        Ipset.add(Ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET, GatewayIpsetName);
-        Ipset.create(GatewayIpsetName6, 'hash:ip', true, { maxelem: 32 });
-        Ipset.add(Ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET, GatewayIpsetName6);
+        await Ipset.create(GatewayIpsetName, 'hash:ip', false, { maxelem: 32 });
+        await Ipset.add(Ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET, GatewayIpsetName);
+        await Ipset.create(GatewayIpsetName6, 'hash:ip', true, { maxelem: 32 });
+        await Ipset.add(Ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET, GatewayIpsetName6);
       }
       const selfIpsetName = NetworkProfile.getSelfIpsetName(uuid);
       const selfIpsetName6 = NetworkProfile.getSelfIpsetName(uuid, 6);
       if (!selfIpsetName || !selfIpsetName6) {
         log.error(`Failed to get self ipset name for ${uuid}`);
       } else {
-        Ipset.create(selfIpsetName, 'hash:ip', false, { maxelem: 32 });
-        Ipset.create(selfIpsetName6, 'hash:ip', true, { maxelem: 32 });
+        await Ipset.create(selfIpsetName, 'hash:ip', false, { maxelem: 32 });
+        await Ipset.create(selfIpsetName6, 'hash:ip', true, { maxelem: 32 });
       }
       // routing ipset with skbmark extensions
       const hardRouteIpsetName = NetworkProfile.getRouteIpsetName(uuid);
       const hardRouteIpsetName4 = `${hardRouteIpsetName}4`;
       const hardRouteIpsetName6 = `${hardRouteIpsetName}6`;
-      Ipset.create(hardRouteIpsetName, 'list:set', false, { skbinfo: true });
-      Ipset.create(hardRouteIpsetName4, 'hash:net', false, { maxelem: 1024 });
-      Ipset.create(hardRouteIpsetName6, 'hash:net', true, { maxelem: 1024 });
+      await Ipset.create(hardRouteIpsetName, 'list:set', false, { skbinfo: true });
+      await Ipset.create(hardRouteIpsetName4, 'hash:net', false, { maxelem: 1024 });
+      await Ipset.create(hardRouteIpsetName6, 'hash:net', true, { maxelem: 1024 });
 
       const softRouteIpsetName = NetworkProfile.getRouteIpsetName(uuid, false);
       const softRouteIpsetName4 = `${softRouteIpsetName}4`;
       const softRouteIpsetName6 = `${softRouteIpsetName}6`;
-      Ipset.create(softRouteIpsetName, 'list:set', false, { skbinfo: true });
-      Ipset.create(softRouteIpsetName4, 'hash:net', false, { maxelem: 1024 });
-      Ipset.create(softRouteIpsetName6, 'hash:net', true, { maxelem: 1024 });
+      await Ipset.create(softRouteIpsetName, 'list:set', false, { skbinfo: true });
+      await Ipset.create(softRouteIpsetName4, 'hash:net', false, { maxelem: 1024 });
+      await Ipset.create(softRouteIpsetName6, 'hash:net', true, { maxelem: 1024 });
 
       const oifIpsetName = NetworkProfile.getOifIpsetName(uuid);
       const oifIpsetName4 = `${oifIpsetName}4`;
       const oifIpsetName6 = `${oifIpsetName}6`;
-      Ipset.create(oifIpsetName, 'list:set');
-      Ipset.create(oifIpsetName4, 'hash:net,iface', false, { maxelem: 10 });
-      Ipset.create(oifIpsetName6, 'hash:net,iface', true, { maxelem: 10 });
+      await Ipset.create(oifIpsetName, 'list:set');
+      await Ipset.create(oifIpsetName4, 'hash:net,iface', false, { maxelem: 10 });
+      await Ipset.create(oifIpsetName6, 'hash:net,iface', true, { maxelem: 10 });
 
       // ensure existence of dnsmasq per-network config directory
       if (uuid) {
@@ -431,15 +429,15 @@ class NetworkProfile extends Monitorable {
           log.error(`Failed to create dnsmasq config directory for ${uuid}`);
         });
       }
-      await fs.mkdirAsync(NetworkProfile.getDNSRouteConfDir(uuid, "hard")).catch((err) => { });
-      await fs.mkdirAsync(NetworkProfile.getDNSRouteConfDir(uuid, "soft")).catch((err) => { });
+      await fsp.mkdir(NetworkProfile.getDNSRouteConfDir(uuid, "hard")).catch((err) => { });
+      await fsp.mkdir(NetworkProfile.getDNSRouteConfDir(uuid, "soft")).catch((err) => { });
       envCreatedMap[uuid] = 1;
     }).catch((err) => {
       log.error(`Failed to create enforcement env for network ${uuid}`, err.message);
     });
   }
 
-  setULALocalOnlyRule(cleanup = false) {
+  async setULALocalOnlyRule(cleanup = false) {
     if (this.o.type !== "wan") return;
 
     const chain = "FW_ULA_LOCAL_ONLY";
@@ -448,9 +446,7 @@ class NetworkProfile extends Monitorable {
       new Rule().chn(chain).iif(this.o.intf).fam(6).jmp("RETURN"),
       new Rule().chn(chain).oif(this.o.intf).fam(6).jmp("RETURN")
     ];
-    for (const rule of rules) {
-      iptc.addRule(rule.opr(action));
-    }
+    await iptc.addRuleBatch(rules, action);
   }
 
   async createEnv() {
@@ -468,13 +464,12 @@ class NetworkProfile extends Monitorable {
 
     const commands = [inputRule, inputRuleSec, inputRule6, inputRule6Sec, invalidDropRule, invalidDropRule6];
 
-    if (this.o.type === "wan" && await Mode.isRouterModeOn()) {
+    const operation = (this.o.type === "wan" && await Mode.isRouterModeOn()) ? '-A' : '-D';
       // add DROP rule on WAN interface in router mode
-      commands.forEach(command => iptc.addRule(command.opr('-A')));
-    } else {
-      commands.forEach(command => iptc.addRule(command.opr('-D')));
+    for (const command of commands) {
+      await iptc.addRule(command.opr(operation));
     }
-    this.setULALocalOnlyRule();
+    await this.setULALocalOnlyRule();
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
     const netLinklocalIpsetName6 = NetworkProfile.getNetLinklocalIpsetName(this.o.uuid);
@@ -482,16 +477,16 @@ class NetworkProfile extends Monitorable {
     if (!netIpsetName || !netIpsetName6 || !netLinklocalIpsetName6) {
       log.error(`Failed to get ipset name for ${this.o.uuid}`);
     } else {
-      Ipset.flush(netIpsetName);
+      await Ipset.flush(netIpsetName);
       if (this.o && this.o.monitoring === true) {
         if (_.isArray(this.o.ipv4Subnets)) {
           for (const subnet of this.o.ipv4Subnets)
-            Ipset.add(netIpsetName, subnet);
+            await Ipset.add(netIpsetName, subnet);
         }
         if (_.isArray(this.o.rt4Subnets)) {
           for (const subnet of this.o.rt4Subnets) {
             if (!sysManager.isDefaultRoute(subnet))
-              Ipset.add(netIpsetName, subnet);
+              await Ipset.add(netIpsetName, subnet);
             else
               hasDefaultRTSubnets = true;
           }
@@ -506,10 +501,10 @@ class NetworkProfile extends Monitorable {
           return typeof subnet === 'string' && subnet.trim().toLowerCase().startsWith('fe80');
         };
 
-        const executeIpsetCommands = (ipsetName, subnets, suffix = '') => {
-          Ipset.flush(ipsetName);
+        const executeIpsetCommands = async (ipsetName, subnets, suffix = '') => {
+          await Ipset.flush(ipsetName);
           for (const subnet of subnets) {
-            Ipset.add(ipsetName, `${subnet}${suffix}`);
+            await Ipset.add(ipsetName, `${subnet}${suffix}`);
           }
         };
 
@@ -529,43 +524,43 @@ class NetworkProfile extends Monitorable {
           }
         }
 
-        executeIpsetCommands(netIpsetName6, regularSubnets);
-        executeIpsetCommands(netLinklocalIpsetName6, fe80Subnets, `,${realIntf}`);
+        await executeIpsetCommands(netIpsetName6, regularSubnets);
+        await executeIpsetCommands(netLinklocalIpsetName6, fe80Subnets, `,${realIntf}`);
       } else {
-        Ipset.flush(netIpsetName6);
-        Ipset.flush(netLinklocalIpsetName6);
+        await Ipset.flush(netIpsetName6);
+        await Ipset.flush(netLinklocalIpsetName6);
       }
 
       // add to c_lan_set accordingly, some feature has mandatory to be enabled on lan only, e.g., vpn client
       if (this.o.type === "lan" && this.o.monitoring === true) {
-        Ipset.add('c_lan_set', netIpsetName);
-        Ipset.add('c_lan_set', netIpsetName6);
-        Ipset.add('c_lan_set', netLinklocalIpsetName6);
+        await Ipset.add('c_lan_set', netIpsetName);
+        await Ipset.add('c_lan_set', netIpsetName6);
+        await Ipset.add('c_lan_set', netLinklocalIpsetName6);
       } else {
-        Ipset.del('c_lan_set', netIpsetName);
-        Ipset.del('c_lan_set', netIpsetName6);
-        Ipset.del('c_lan_set', netLinklocalIpsetName6);
+        await Ipset.del('c_lan_set', netIpsetName);
+        await Ipset.del('c_lan_set', netIpsetName6);
+        await Ipset.del('c_lan_set', netLinklocalIpsetName6);
       }
       // add to NAT hairpin chain if it is LAN network
       if (this.o.ipv4Subnets && this.o.ipv4Subnets.length != 0) {
         for (const subnet of this.o.ipv4Subnets) {
           const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").src(subnet).jmp("MASQUERADE");
           if (this.o.type === "lan" && this.o.monitoring === true) {
-            iptc.addRule(rule.opr('-A'));
+            await iptc.addRule(rule.opr('-A'));
           } else {
-            iptc.addRule(rule.opr('-D'));
+            await iptc.addRule(rule.opr('-D'));
           }
         }
       }
       // add to monitored net ipset accordingly
       if (this.o.monitoring === true) {
-        Ipset.add(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName);
-        Ipset.add(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName6);
-        Ipset.add(Ipset.CONSTANTS.IPSET_MONITORED_NET, netLinklocalIpsetName6);
+        await Ipset.add(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName);
+        await Ipset.add(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName6);
+        await Ipset.add(Ipset.CONSTANTS.IPSET_MONITORED_NET, netLinklocalIpsetName6);
       } else {
-        Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName);
-        Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName6);
-        Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netLinklocalIpsetName6);
+        await Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName);
+        await Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName6);
+        await Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netLinklocalIpsetName6);
       }
     }
 
@@ -575,18 +570,18 @@ class NetworkProfile extends Monitorable {
       if (!GatewayIpsetName || !GatewayIpsetName6) {
         log.error(`Failed to get gateway ipset name for ${this.o.uuid}`);
       } else {
-        Ipset.flush(GatewayIpsetName);
+        await Ipset.flush(GatewayIpsetName);
         if (this.o && this.o.gateway && typeof this.o.gateway === 'string') {
-          Ipset.add(GatewayIpsetName, this.o.gateway);
+          await Ipset.add(GatewayIpsetName, this.o.gateway);
         }
-        Ipset.flush(GatewayIpsetName6);
+        await Ipset.flush(GatewayIpsetName6);
         if (this.o && this.o.gateway6 && typeof this.o.gateway6 === 'string') {
-          Ipset.add(GatewayIpsetName6, this.o.gateway6);
+          await Ipset.add(GatewayIpsetName6, this.o.gateway6);
         }
         //Add DNS6 to the gateway set since IPv6 gateways typically use Link-Local addresses.
         if(this.o && _.isArray(this.o.dns6)) {
           for (const dns6 of this.o.dns6) {
-            Ipset.add(GatewayIpsetName6, dns6);
+            await Ipset.add(GatewayIpsetName6, dns6);
           }
         }
       }
@@ -597,24 +592,24 @@ class NetworkProfile extends Monitorable {
     if (!selfIpsetName || !selfIpsetName6) {
       log.error(`Failed to get self ipset name for ${this.o.uuid}`);
     } else {
-      Ipset.flush(selfIpsetName);
+      await Ipset.flush(selfIpsetName);
       if (this.o && _.isArray(this.o.ipv4s)) {
         for (const ip4 of this.o.ipv4s)
-          Ipset.add(selfIpsetName, ip4);
+          await Ipset.add(selfIpsetName, ip4);
       }
-      Ipset.flush(selfIpsetName6);
+      await Ipset.flush(selfIpsetName6);
       if (this.o && _.isArray(this.o.ipv6)) {
         for (const ip6 of this.o.ipv6)
-          Ipset.add(selfIpsetName6, ip6);
+          await Ipset.add(selfIpsetName6, ip6);
       }
     }
 
     const oifIpsetName = NetworkProfile.getOifIpsetName(this.o.uuid);
     const oifIpsetName4 = `${oifIpsetName}4`;
     const oifIpsetName6 = `${oifIpsetName}6`;
-    Ipset.flush(oifIpsetName);
-    Ipset.flush(oifIpsetName4);
-    Ipset.flush(oifIpsetName6);
+    await Ipset.flush(oifIpsetName);
+    await Ipset.flush(oifIpsetName4);
+    await Ipset.flush(oifIpsetName6);
 
     const hardRouteIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid);
     const hardRouteIpsetName4 = `${hardRouteIpsetName}4`;
@@ -622,64 +617,64 @@ class NetworkProfile extends Monitorable {
     const softRouteIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid, false);
     const softRouteIpsetName4 = `${softRouteIpsetName}4`;
     const softRouteIpsetName6 = `${softRouteIpsetName}6`;
-    Ipset.flush(hardRouteIpsetName);
-    Ipset.flush(hardRouteIpsetName4);
-    Ipset.flush(hardRouteIpsetName6);
-    Ipset.flush(softRouteIpsetName);
-    Ipset.flush(softRouteIpsetName4);
-    Ipset.flush(softRouteIpsetName6);
+    await Ipset.flush(hardRouteIpsetName);
+    await Ipset.flush(hardRouteIpsetName4);
+    await Ipset.flush(hardRouteIpsetName6);
+    await Ipset.flush(softRouteIpsetName);
+    await Ipset.flush(softRouteIpsetName4);
+    await Ipset.flush(softRouteIpsetName6);
     await this._disableDNSRoute("soft");
     await this._disableDNSRoute("hard");
 
     if (this.o.type === "wan" || !_.isEmpty(this.o.rt4Subnets) || !_.isEmpty(this.o.rt6Subnets)) {
-      Ipset.add(oifIpsetName4, `0.0.0.0/1,${realIntf}`);
-      Ipset.add(oifIpsetName4, `128.0.0.0/1,${realIntf}`);
-      Ipset.add(oifIpsetName, oifIpsetName4);
-      Ipset.add(oifIpsetName6, `::/1,${realIntf}`);
-      Ipset.add(oifIpsetName6, `8000::/1,${realIntf}`);
-      Ipset.add(oifIpsetName, oifIpsetName6);
+      await Ipset.add(oifIpsetName4, `0.0.0.0/1,${realIntf}`);
+      await Ipset.add(oifIpsetName4, `128.0.0.0/1,${realIntf}`);
+      await Ipset.add(oifIpsetName, oifIpsetName4);
+      await Ipset.add(oifIpsetName6, `::/1,${realIntf}`);
+      await Ipset.add(oifIpsetName6, `8000::/1,${realIntf}`);
+      await Ipset.add(oifIpsetName, oifIpsetName6);
       const rtIdHex = Number(this.o.rtid).toString(16);
       if (this.o.type === "wan" || hasDefaultRTSubnets) {
         // since hash:net does not allow /0 as cidr subnet, need to add two complementary entries to the ipset
-        Ipset.add(hardRouteIpsetName4, `0.0.0.0/1`);
-        Ipset.add(hardRouteIpsetName4, `128.0.0.0/1`);
-        Ipset.add(hardRouteIpsetName6, `::/1`);
-        Ipset.add(hardRouteIpsetName6, `8000::/1`);
+        await Ipset.add(hardRouteIpsetName4, `0.0.0.0/1`);
+        await Ipset.add(hardRouteIpsetName4, `128.0.0.0/1`);
+        await Ipset.add(hardRouteIpsetName6, `::/1`);
+        await Ipset.add(hardRouteIpsetName6, `8000::/1`);
         await this._enableDNSRoute("hard");
       }
       if (!_.isEmpty(this.o.rt4Subnets)) {
         for (const subnet of this.o.rt4Subnets)
           if (!sysManager.isDefaultRoute(subnet))
-            Ipset.add(hardRouteIpsetName4, subnet);
+            await Ipset.add(hardRouteIpsetName4, subnet);
       }
       if (!_.isEmpty(this.o.rt6Subnets)) {
         for (const subnet of this.o.rt6Subnets)
           if (!sysManager.isDefaultRoute(subnet))
-            Ipset.add(hardRouteIpsetName6, subnet);
+            await Ipset.add(hardRouteIpsetName6, subnet);
       }
-      Ipset.add(hardRouteIpsetName, hardRouteIpsetName4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
-      Ipset.add(hardRouteIpsetName, hardRouteIpsetName6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+      await Ipset.add(hardRouteIpsetName, hardRouteIpsetName4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+      await Ipset.add(hardRouteIpsetName, hardRouteIpsetName6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
 
       if (this.o.ready) {
         if (this.o.type === "wan" || hasDefaultRTSubnets) {
-          Ipset.add(softRouteIpsetName4, `0.0.0.0/1`);
-          Ipset.add(softRouteIpsetName4, `128.0.0.0/1`);
-          Ipset.add(softRouteIpsetName6, `::/1`);
-          Ipset.add(softRouteIpsetName6, `8000::/1`);
+          await Ipset.add(softRouteIpsetName4, `0.0.0.0/1`);
+          await Ipset.add(softRouteIpsetName4, `128.0.0.0/1`);
+          await Ipset.add(softRouteIpsetName6, `::/1`);
+          await Ipset.add(softRouteIpsetName6, `8000::/1`);
           await this._enableDNSRoute("soft");
         }
         if (!_.isEmpty(this.o.rt4Subnets)) {
           for (const subnet of this.o.rt4Subnets)
             if (!sysManager.isDefaultRoute(subnet))
-              Ipset.add(softRouteIpsetName4, subnet);
+              await Ipset.add(softRouteIpsetName4, subnet);
         }
         if (!_.isEmpty(this.o.rt6Subnets)) {
           for (const subnet of this.o.rt6Subnets)
             if (!sysManager.isDefaultRoute(subnet))
-              Ipset.add(softRouteIpsetName6, subnet);
+              await Ipset.add(softRouteIpsetName6, subnet);
         }
-        Ipset.add(softRouteIpsetName, softRouteIpsetName4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
-        Ipset.add(softRouteIpsetName, softRouteIpsetName6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+        await Ipset.add(softRouteIpsetName, softRouteIpsetName4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+        await Ipset.add(softRouteIpsetName, softRouteIpsetName6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
       }
     }
     // add server and mark directive for VPN interface with default route
@@ -690,7 +685,7 @@ class NetworkProfile extends Monitorable {
       }
       await dnsmasq.writeConfig(this._getDnsmasqConfigPath(), entries).catch((err) => {});
     } else {
-      await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
+      await fsp.unlink(this._getDnsmasqConfigPath()).catch((err) => {});
     }
   }
 
@@ -707,14 +702,14 @@ class NetworkProfile extends Monitorable {
     const invalidDropRule6 = invalidDropRule.clone().fam(6);
 
     const rules = [inputRule, inputRuleSec, inputRule6, inputRule6Sec, invalidDropRule, invalidDropRule6];
-    rules.forEach(rule => iptc.addRule(rule.opr("-D")));
+    await iptc.addRuleBatch(rules, '-D');
 
     const netListIpsetName = NetworkProfile.getNetListIpsetName(this.o.uuid);
     if (!netListIpsetName) {
       log.error(`Failed to get net list ipset name for ${this.o.uuid}`);
     } else {
       if (options.cleanup) {
-        Ipset.flush(netListIpsetName);
+        await Ipset.flush(netListIpsetName);
       }
     }
 
@@ -725,26 +720,26 @@ class NetworkProfile extends Monitorable {
       log.error(`Failed to get ipset name for ${this.o.uuid}`);
     } else {
       if (options.cleanup) {
-        Ipset.flush(netIpsetName);
-        Ipset.flush(netIpsetName6);
-        Ipset.flush(netLinklocalIpsetName6);
+        await Ipset.flush(netIpsetName);
+        await Ipset.flush(netIpsetName6);
+        await Ipset.flush(netLinklocalIpsetName6);
         // although net ipset is already flushed, still remove it from c_lan_set anyway to keep consistency
-        Ipset.del('c_lan_set', netIpsetName);
-        Ipset.del('c_lan_set', netIpsetName6);
-        Ipset.del('c_lan_set', netLinklocalIpsetName6);
+        await Ipset.del('c_lan_set', netIpsetName);
+        await Ipset.del('c_lan_set', netIpsetName6);
+        await Ipset.del('c_lan_set', netLinklocalIpsetName6);
       }
       // remove from NAT hairpin chain anyway
       if (this.o.ipv4Subnets && this.o.ipv4Subnets.length != 0) {
         for (const subnet of this.o.ipv4Subnets) {
           const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").src(subnet).jmp("MASQUERADE");
-          iptc.addRule(rule.opr('-D'));
+          await iptc.addRule(rule.opr('-D'));
         }
       }
       if (options.cleanup) {
         // still remove it from monitored net set anyway to keep consistency
-        Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName);
-        Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName6);
-        Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netLinklocalIpsetName6);
+        await Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName);
+        await Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netIpsetName6);
+        await Ipset.del(Ipset.CONSTANTS.IPSET_MONITORED_NET, netLinklocalIpsetName6);
       }
       // do not touch dnsmasq network config directory here, it should only be updated by rule enforcement modules
     }
@@ -754,12 +749,12 @@ class NetworkProfile extends Monitorable {
     if (!GatewayIpsetName || !GatewayIpsetName6) {
       log.error(`Failed to get gateway ipset name for ${this.o.uuid}`);
     } else {
-      Ipset.flush(GatewayIpsetName);
-      Ipset.flush(GatewayIpsetName6);
+      await Ipset.flush(GatewayIpsetName);
+      await Ipset.flush(GatewayIpsetName6);
       if (options.cleanup) {
         // remove from c_network_gateway_set
-        Ipset.del(Ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET, GatewayIpsetName);
-        Ipset.del(Ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET, GatewayIpsetName6);
+        await Ipset.del(Ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET, GatewayIpsetName);
+        await Ipset.del(Ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET, GatewayIpsetName6);
       }
     }
 
@@ -768,31 +763,31 @@ class NetworkProfile extends Monitorable {
     if (!selfIpsetName || !selfIpsetName6) {
       log.error(`Failed to get self ipset name for ${this.o.uuid}`);
     } else {
-      Ipset.flush(selfIpsetName);
-      Ipset.flush(selfIpsetName6);
+      await Ipset.flush(selfIpsetName);
+      await Ipset.flush(selfIpsetName6);
     }
 
     const oifIpsetName = NetworkProfile.getOifIpsetName(this.o.uuid);
     const oifIpsetName4 = `${oifIpsetName}4`;
     const oifIpsetName6 = `${oifIpsetName}6`;
-    Ipset.flush(oifIpsetName);
-    Ipset.flush(oifIpsetName4);
-    Ipset.flush(oifIpsetName6);
+    await Ipset.flush(oifIpsetName);
+    await Ipset.flush(oifIpsetName4);
+    await Ipset.flush(oifIpsetName6);
     const hardRouteIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid);
     const hardRouteIpsetName4 = `${hardRouteIpsetName}4`;
     const hardRouteIpsetName6 = `${hardRouteIpsetName}6`;
     const softRouteIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid, false);
     const softRouteIpsetName4 = `${softRouteIpsetName}4`;
     const softRouteIpsetName6 = `${softRouteIpsetName}6`;
-    Ipset.flush(hardRouteIpsetName);
-    Ipset.flush(hardRouteIpsetName4);
-    Ipset.flush(hardRouteIpsetName6);
-    Ipset.flush(softRouteIpsetName);
-    Ipset.flush(softRouteIpsetName4);
-    Ipset.flush(softRouteIpsetName6);
+    await Ipset.flush(hardRouteIpsetName);
+    await Ipset.flush(hardRouteIpsetName4);
+    await Ipset.flush(hardRouteIpsetName6);
+    await Ipset.flush(softRouteIpsetName);
+    await Ipset.flush(softRouteIpsetName4);
+    await Ipset.flush(softRouteIpsetName6);
     await this._disableDNSRoute("hard");
     await this._disableDNSRoute("soft");
-    await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
+    await fsp.unlink(this._getDnsmasqConfigPath()).catch((err) => {});
     this.oper = {}; // clear oper cache used in PolicyManager.js
     // disable spoof instances
     // use wildcard to deregister all spoof instances on this interface
@@ -805,7 +800,7 @@ class NetworkProfile extends Monitorable {
     }
     await sm.emptySpoofSet(this.o.intf);
     await dnsmasq.writeAllocationOption(this.o.intf, {})
-    this.setULALocalOnlyRule(true);
+    await this.setULALocalOnlyRule(true);
   }
 
   async tags(tags, type = Constants.TAG_TYPE_GROUP) {
@@ -829,13 +824,13 @@ class NetworkProfile extends Monitorable {
       const tagExists = await TagManager.tagUidExists(removedTag, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedTag);
-        Ipset.del(Tag.getTagSetName(removedTag), netIpsetName);
-        Ipset.del(Tag.getTagSetName(removedTag), netIpsetName6);
-        Ipset.del(Tag.getTagSetName(removedTag), netLinklocalIpsetName6);
-        Ipset.del(Tag.getTagNetSetName(removedTag), netIpsetName);
-        Ipset.del(Tag.getTagNetSetName(removedTag), netIpsetName6);
-        Ipset.del(Tag.getTagNetSetName(removedTag), netLinklocalIpsetName6);
-        await fs.unlinkAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${removedTag}_${this.o.uuid}.conf`).catch((err) => {});
+        await Ipset.del(Tag.getTagSetName(removedTag), netIpsetName);
+        await Ipset.del(Tag.getTagSetName(removedTag), netIpsetName6);
+        await Ipset.del(Tag.getTagSetName(removedTag), netLinklocalIpsetName6);
+        await Ipset.del(Tag.getTagNetSetName(removedTag), netIpsetName);
+        await Ipset.del(Tag.getTagNetSetName(removedTag), netIpsetName6);
+        await Ipset.del(Tag.getTagNetSetName(removedTag), netLinklocalIpsetName6);
+        await fsp.unlink(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${removedTag}_${this.o.uuid}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedTag} not found`);
       }
@@ -846,12 +841,12 @@ class NetworkProfile extends Monitorable {
       const tagExists = await TagManager.tagUidExists(uid, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(uid);
-        Ipset.add(Tag.getTagSetName(uid), netIpsetName);
-        Ipset.add(Tag.getTagSetName(uid), netIpsetName6);
-        Ipset.add(Tag.getTagSetName(uid), netLinklocalIpsetName6);
-        Ipset.add(Tag.getTagNetSetName(uid), netIpsetName);
-        Ipset.add(Tag.getTagNetSetName(uid), netIpsetName6);
-        Ipset.add(Tag.getTagNetSetName(uid), netLinklocalIpsetName6);
+        await Ipset.add(Tag.getTagSetName(uid), netIpsetName);
+        await Ipset.add(Tag.getTagSetName(uid), netIpsetName6);
+        await Ipset.add(Tag.getTagSetName(uid), netLinklocalIpsetName6);
+        await Ipset.add(Tag.getTagNetSetName(uid), netIpsetName);
+        await Ipset.add(Tag.getTagNetSetName(uid), netIpsetName6);
+        await Ipset.add(Tag.getTagNetSetName(uid), netLinklocalIpsetName6);
         const dnsmasqEntry = `mac-address-group=%00:00:00:00:00:00@${uid}`;
         await dnsmasq.writeConfig(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${uid}_${this.o.uuid}.conf`, dnsmasqEntry).catch((err) => {
           log.error(`Failed to write dnsmasq tag ${uid} on network ${this.o.uuid} ${this.o.intf}`, err);
@@ -888,7 +883,7 @@ class NetworkProfile extends Monitorable {
   }
 
   async _disableDNSRoute(routeType = "hard") {
-    await fs.unlinkAsync(this._getDnsmasqRouteConfigPath(routeType)).catch((err) => {});
+    await fsp.unlink(this._getDnsmasqRouteConfigPath(routeType)).catch((err) => {});
     dnsmasq.scheduleRestartDNSService();
   }
 

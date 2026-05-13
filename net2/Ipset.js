@@ -157,12 +157,12 @@ function enqueue(ipsetCmd) {
 
 async function destroy(setName) {
   if (setName && !await isReferenced(setName))
-    ipsetControl.addRule(`destroy ${setName}`);
+    return ipsetControl.addRule(`destroy ${setName}`);
 }
 
 function flush(setName) {
   if (setName)
-    ipsetControl.addRule(`flush ${setName}`);
+    return ipsetControl.addRule(`flush ${setName}`);
 }
 
 // seems that maxelem doesn't really effect memory usage
@@ -188,7 +188,7 @@ function create(name, type, v6 = false, options = {}) {
     cmd += ` timeout ${timeout}`;
   if (options.skbinfo) cmd += ' skbinfo';
   if (comment) cmd += ` comment`;
-  ipsetControl.addRule(cmd);
+  return ipsetControl.addRule(cmd);
 }
 
 function add(name, target, options = {}) {
@@ -199,15 +199,19 @@ function add(name, target, options = {}) {
   if (skbmark) cmd += ` skbmark ${skbmark}`;
   if (skbprio) cmd += ` skbprio ${skbprio}`;
   if (skbqueue) cmd += ` skbqueue ${skbqueue}`;
-  ipsetControl.addRule(cmd);
+  return ipsetControl.addRule(cmd);
 }
 
 function del(name, target) {
-  ipsetControl.addRule(`del ${name} ${target}`);
+  return ipsetControl.addRule(`del ${name} ${target}`);
 }
 
 function swap(name1, name2) {
-  ipsetControl.addRule(`swap ${name1} ${name2}`);
+  return ipsetControl.addRule(`swap ${name1} ${name2}`);
+}
+
+function restore(ops) {
+  return ipsetControl.restore(ops);
 }
 
 async function list(name) {
@@ -394,6 +398,7 @@ module.exports = {
   add,
   del,
   swap,
+  restore,
   list,
   batchOp,
   batchTest,
