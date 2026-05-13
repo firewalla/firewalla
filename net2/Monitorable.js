@@ -460,8 +460,8 @@ class Monitorable {
       if (this._profileId && profileId !== this._profileId) {
         log.info(`Current VPN profile id is different from the previous profile id ${this._profileId}, remove old rule on ${this.constructor.getClassName()} ${this.getGUID()}`);
         const { rules, rulesClear } = this._buildVPNClientRules(this._profileId);
-        rules.forEach(rule => iptc.addRule(rule.opr('-D')));
-        rulesClear.forEach(rule => iptc.addRule(rule.opr('-D')));
+        await iptc.addRuleBatch(rules, '-D');
+        await iptc.addRuleBatch(rulesClear, '-D');
         await fileRemove(this.getVPNClientTagPath()).catch(() => { });
         await fileRemove(this.getVPNClientTagTagPath(this._profileId)).catch(() => { });
         dnsmasq.scheduleRestartDNSService();
@@ -486,9 +486,9 @@ class Monitorable {
       const vcTag = this.getVPNClientTag();
 
       if (state === true) {
-        rules.forEach(rule => iptc.addRule(rule.opr('-A')));
+        await iptc.addRuleBatch(rules, '-A');
         // remove rule that was set by state == null
-        rulesClear.forEach(rule => iptc.addRule(rule.opr('-D')));
+        await iptc.addRuleBatch(rulesClear, '-D');
         const markTag = profileId.startsWith("VWG:")
           ? VirtWanGroup.getDnsMarkTag(profileId.substring(4))
           : VPNClient.getDnsMarkTag(profileId);
@@ -499,15 +499,15 @@ class Monitorable {
         dnsmasq.scheduleRestartDNSService();
       } else if (state === null) {
         // null means off: remove rule that was set by state == true, then override target and clear VPN client bits in fwmark
-        rules.forEach(rule => iptc.addRule(rule.opr('-D')));
-        rulesClear.forEach(rule => iptc.addRule(rule.opr('-A')));
+        await iptc.addRuleBatch(rules, '-D');
+        await iptc.addRuleBatch(rulesClear, '-A');
         await dnsmasq.writeConfig(tagPath, tagEntry).catch(() => {});
         await dnsmasq.writeConfig(vcConfPath, `tag-tag=$${vcTag}$${Constants.DNS_DEFAULT_WAN_TAG}`).catch(() => {});
         dnsmasq.scheduleRestartDNSService();
       } else if (state === false) {
         // false means N/A
-        rules.forEach(rule => iptc.addRule(rule.opr('-D')));
-        rulesClear.forEach(rule => iptc.addRule(rule.opr('-D')));
+        await iptc.addRuleBatch(rules, '-D');
+        await iptc.addRuleBatch(rulesClear, '-D');
         await fileRemove(tagPath).catch(() => {});
         await fileRemove(vcConfPath).catch(() => {});
         dnsmasq.scheduleRestartDNSService();

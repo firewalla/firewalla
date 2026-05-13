@@ -131,17 +131,17 @@ class Tag extends Monitorable {
       return;
     log.verbose(`Creating env for Tag: ${uid}`)
     // create related ipsets
-    Ipset.create(Tag.getTagSetName(uid), 'list:set');
-    Ipset.create(Tag.getTagDeviceMacSetName(uid), 'hash:mac', false, { hashsize: 1024 });
-    Ipset.create(Tag.getTagDeviceIPSetName(uid, 4), 'hash:net', false, { hashsize: 1024, timeout: 900 });
-    Ipset.create(Tag.getTagDeviceIPSetName(uid, 6), 'hash:net', true, { hashsize: 1024, timeout: 900 });
-    Ipset.add(Tag.getTagSetName(uid), Tag.getTagDeviceMacSetName(uid));
+    await Ipset.create(Tag.getTagSetName(uid), 'list:set');
+    await Ipset.create(Tag.getTagDeviceMacSetName(uid), 'hash:mac', false, { hashsize: 1024 });
+    await Ipset.create(Tag.getTagDeviceIPSetName(uid, 4), 'hash:net', false, { hashsize: 1024, timeout: 900 });
+    await Ipset.create(Tag.getTagDeviceIPSetName(uid, 6), 'hash:net', true, { hashsize: 1024, timeout: 900 });
+    await Ipset.add(Tag.getTagSetName(uid), Tag.getTagDeviceMacSetName(uid));
     // you may think this tag net set is redundant? 
     // it is needed to apply fine-grained policy on tag level. e.g., customized wan, QoS
-    Ipset.create(Tag.getTagNetSetName(uid), 'list:set');
+    await Ipset.create(Tag.getTagNetSetName(uid), 'list:set');
     // it can be used to match src,dst on devices in the group
-    Ipset.create(Tag.getTagDeviceSetName(uid), 'list:set');
-    Ipset.add(Tag.getTagDeviceSetName(uid), Tag.getTagDeviceMacSetName(uid));
+    await Ipset.create(Tag.getTagDeviceSetName(uid), 'list:set');
+    await Ipset.add(Tag.getTagDeviceSetName(uid), Tag.getTagDeviceMacSetName(uid));
     envCreatedMap[uid] = 1;
   }
 
@@ -172,12 +172,12 @@ class Tag extends Monitorable {
     await flowAggrTool.removeAggrFlowsAllTag(this.o.uid);
 
     // flush related ipsets
-    Ipset.flush(Tag.getTagSetName(this.o.uid));
-    Ipset.flush(Tag.getTagDeviceMacSetName(this.o.uid));
-    Ipset.flush(Tag.getTagDeviceIPSetName(this.o.uid, 4));
-    Ipset.flush(Tag.getTagDeviceIPSetName(this.o.uid, 6));
-    Ipset.flush(Tag.getTagNetSetName(this.o.uid));
-    Ipset.flush(Tag.getTagDeviceSetName(this.o.uid));
+    await Ipset.flush(Tag.getTagSetName(this.o.uid));
+    await Ipset.flush(Tag.getTagDeviceMacSetName(this.o.uid));
+    await Ipset.flush(Tag.getTagDeviceIPSetName(this.o.uid, 4));
+    await Ipset.flush(Tag.getTagDeviceIPSetName(this.o.uid, 6));
+    await Ipset.flush(Tag.getTagNetSetName(this.o.uid));
+    await Ipset.flush(Tag.getTagDeviceSetName(this.o.uid));
     // delete related dnsmasq config files
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in global effective directory
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/*/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in network-wise effective directories
@@ -256,9 +256,9 @@ class Tag extends Monitorable {
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedTag);
         for (const setName of [Tag.getTagDeviceSetName(removedTag), Tag.getTagSetName(removedTag)]) {
-          Ipset.del(setName, Tag.getTagDeviceMacSetName(this.o.uid));
-          Ipset.del(setName, Tag.getTagDeviceIPSetName(this.o.uid, 4));
-          Ipset.del(setName, Tag.getTagDeviceIPSetName(this.o.uid, 6));
+          await Ipset.del(setName, Tag.getTagDeviceMacSetName(this.o.uid));
+          await Ipset.del(setName, Tag.getTagDeviceIPSetName(this.o.uid, 4));
+          await Ipset.del(setName, Tag.getTagDeviceIPSetName(this.o.uid, 6));
         }
       }
     }
@@ -270,9 +270,9 @@ class Tag extends Monitorable {
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(uid);
         for (const setName of [Tag.getTagDeviceSetName(uid), Tag.getTagSetName(uid)]) {
-          Ipset.add(setName, Tag.getTagDeviceMacSetName(this.o.uid));
-          Ipset.add(setName, Tag.getTagDeviceIPSetName(this.o.uid, 4));
-          Ipset.add(setName, Tag.getTagDeviceIPSetName(this.o.uid, 6));
+          await Ipset.add(setName, Tag.getTagDeviceMacSetName(this.o.uid));
+          await Ipset.add(setName, Tag.getTagDeviceIPSetName(this.o.uid, 4));
+          await Ipset.add(setName, Tag.getTagDeviceIPSetName(this.o.uid, 6));
         }
         updatedTags.push(uid);
       }

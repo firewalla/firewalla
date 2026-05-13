@@ -94,8 +94,8 @@ class Identity extends Monitorable {
     if (envCreatedMap[instanceKey])
       return;
     // create related ipsets
-    Ipset.create(this.getEnforcementIPsetName(uid), 'hash:net', false);
-    Ipset.create(this.getEnforcementIPsetName(uid, 6), 'hash:net', true);
+    await Ipset.create(this.getEnforcementIPsetName(uid), 'hash:net', false);
+    await Ipset.create(this.getEnforcementIPsetName(uid, 6), 'hash:net', true);
     envCreatedMap[instanceKey] = 1;
   }
 
@@ -112,8 +112,8 @@ class Identity extends Monitorable {
   }
 
   async destroyEnv() {
-    Ipset.flush(this.constructor.getEnforcementIPsetName(this.getUniqueId()));
-    Ipset.flush(this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6));
+    await Ipset.flush(this.constructor.getEnforcementIPsetName(this.getUniqueId()));
+    await Ipset.flush(this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6));
     // delete related dnsmasq config files
     const uid = this.getUniqueId();
     await exec(`sudo rm -f ${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}.conf`).catch((err) => { });
@@ -141,29 +141,29 @@ class Identity extends Monitorable {
         // remove old ips from tag ipset
         if (new Address4(ip).isValid()) {
           for (const uid of tags)
-            Ipset.del(Tag.getTagDeviceIPSetName(uid, 4), ip);
+            await Ipset.del(Tag.getTagDeviceIPSetName(uid, 4), ip);
         } else {
           if (new Address6(ip).isValid()) {
             for (const uid of tags)
-              Ipset.del(Tag.getTagDeviceIPSetName(uid, 6), ip);
+              await Ipset.del(Tag.getTagDeviceIPSetName(uid, 6), ip);
           }
         }
       }
     }
     const setName4 = this.constructor.getEnforcementIPsetName(this.getUniqueId());
     const setName6 = this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6);
-    Ipset.flush(setName4);
-    Ipset.flush(setName6);
+    await Ipset.flush(setName4);
+    await Ipset.flush(setName6);
     for (const ip of ips) {
       if (new Address4(ip).isValid()) {
-        Ipset.add(setName4, ip);
+        await Ipset.add(setName4, ip);
         for (const uid of tags)
-          Ipset.add(Tag.getTagDeviceIPSetName(uid, 4), ip, { timeout: 0 });
+          await Ipset.add(Tag.getTagDeviceIPSetName(uid, 4), ip, { timeout: 0 });
       } else {
         if (new Address6(ip).isValid()) {
-          Ipset.add(setName6, ip);
+          await Ipset.add(setName6, ip);
           for (const uid of tags)
-            Ipset.add(Tag.getTagDeviceIPSetName(uid, 6), ip, { timeout: 0 });
+            await Ipset.add(Tag.getTagDeviceIPSetName(uid, 6), ip, { timeout: 0 });
         }
       }
     }
@@ -284,15 +284,15 @@ class Identity extends Monitorable {
         await Tag.ensureCreateEnforcementEnv(removedUid);
         for (const ip of ips) {
           if (new Address4(ip).isValid()) {
-            Ipset.del(Tag.getTagDeviceIPSetName(removedUid, 4), ip);
+            await Ipset.del(Tag.getTagDeviceIPSetName(removedUid, 4), ip);
           } else {
             if (new Address6(ip).isValid()) {
-              Ipset.del(Tag.getTagDeviceIPSetName(removedUid, 6), ip);
+              await Ipset.del(Tag.getTagDeviceIPSetName(removedUid, 6), ip);
             }
           }
         }
-        Ipset.del(Tag.getTagDeviceSetName(removedUid), this.constructor.getEnforcementIPsetName(this.getUniqueId()));
-        Ipset.del(Tag.getTagDeviceSetName(removedUid), this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6));
+        await Ipset.del(Tag.getTagDeviceSetName(removedUid), this.constructor.getEnforcementIPsetName(this.getUniqueId()));
+        await Ipset.del(Tag.getTagDeviceSetName(removedUid), this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6));
         await fs.promises.unlink(`${this.getDnsmasqConfigDirectory()}/tag_${removedUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedUid} not found`);
@@ -305,15 +305,15 @@ class Identity extends Monitorable {
         await Tag.ensureCreateEnforcementEnv(tagUid);
         for (const ip of ips) {
           if (new Address4(ip).isValid()) {
-            Ipset.add(Tag.getTagDeviceIPSetName(tagUid, 4), ip, { timeout: 0 });
+            await Ipset.add(Tag.getTagDeviceIPSetName(tagUid, 4), ip, { timeout: 0 });
           } else {
             if (new Address6(ip).isValid()) {
-              Ipset.add(Tag.getTagDeviceIPSetName(tagUid, 6), ip, { timeout: 0 });
+              await Ipset.add(Tag.getTagDeviceIPSetName(tagUid, 6), ip, { timeout: 0 });
             }
           }
         }
-        Ipset.add(Tag.getTagDeviceSetName(tagUid), this.constructor.getEnforcementIPsetName(this.getUniqueId()));
-        Ipset.add(Tag.getTagDeviceSetName(tagUid), this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6));
+        await Ipset.add(Tag.getTagDeviceSetName(tagUid), this.constructor.getEnforcementIPsetName(this.getUniqueId()));
+        await Ipset.add(Tag.getTagDeviceSetName(tagUid), this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6));
         const dnsmasqEntry = `group-group=@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}@${tagUid}`;
         await dnsmasq.writeConfig(`${this.getDnsmasqConfigDirectory()}/tag_${tagUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, dnsmasqEntry).catch((err) => {
           log.error(`Failed to write dnsmasq tag ${tagUid} on ${this.getGUID()}`, err);
@@ -348,11 +348,11 @@ class Identity extends Monitorable {
     const identityIpsetName = this.constructor.getEnforcementIPsetName(this.getUniqueId());
     const identityIpsetName6 = this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6);
     if (state === true) {
-      Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, identityIpsetName);
-      Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, identityIpsetName6);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, identityIpsetName);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, identityIpsetName6);
     } else {
-      Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, identityIpsetName);
-      Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, identityIpsetName6);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, identityIpsetName);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, identityIpsetName6);
     }
   }
 
@@ -360,11 +360,11 @@ class Identity extends Monitorable {
     const identityIpsetName = this.constructor.getEnforcementIPsetName(this.getUniqueId());
     const identityIpsetName6 = this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6);
     if (state === true) {
-      Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, identityIpsetName);
-      Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, identityIpsetName6);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, identityIpsetName);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, identityIpsetName6);
     } else {
-      Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, identityIpsetName);
-      Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, identityIpsetName6);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, identityIpsetName);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, identityIpsetName6);
     }
   }
 
@@ -388,11 +388,11 @@ class Identity extends Monitorable {
     const identityIpsetName = this.constructor.getEnforcementIPsetName(this.getUniqueId());
     const identityIpsetName6 = this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6);
     if (dnsCaching === true) {
-      Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, identityIpsetName);
-      Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, identityIpsetName6);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, identityIpsetName);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, identityIpsetName6);
     } else {
-      Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, identityIpsetName);
-      Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, identityIpsetName6);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, identityIpsetName);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, identityIpsetName6);
     }
   }
 

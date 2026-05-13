@@ -73,24 +73,24 @@ class APFeaturesPlugin extends Sensor {
     log.info("applyApControl", op);
     const netRule = new Rule("filter").chn("FW_FIREWALL_NET_ISOLATION").comment("network_local_acl_off").jmp("RETURN");
     const netRule6 = netRule.clone().fam(6);
-    iptc.addRule(netRule.opr(op));
-    iptc.addRule(netRule6.opr(op));
+    await iptc.addRule(netRule.opr(op));
+    await iptc.addRule(netRule6.opr(op));
 
     const groupRule = new Rule("filter").chn("FW_FIREWALL_DEV_G_ISOLATION").comment("group_local_acl_off").jmp("RETURN");
     const groupRule6 = groupRule.clone().fam(6);
-    iptc.addRule(groupRule.opr(op));
-    iptc.addRule(groupRule6.opr(op));
+    await iptc.addRule(groupRule.opr(op));
+    await iptc.addRule(groupRule6.opr(op));
 
     const deviceRule = new Rule("filter").chn("FW_FIREWALL_DEV_ISOLATION").comment("device_local_acl_off").jmp("RETURN");
     const deviceRule6 = deviceRule.clone().fam(6);
-    iptc.addRule(deviceRule.opr(op));
-    iptc.addRule(deviceRule6.opr(op));
+    await iptc.addRule(deviceRule.opr(op));
+    await iptc.addRule(deviceRule6.opr(op));
 
     // handle acl rules to intranet in box
     const monitoredNetRule =new Rule("filter").chn("FW_DROP").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst").comment("local_acl_off").jmp("RETURN");
     const monitoredNetRule6 = monitoredNetRule.clone().fam(6);
-    iptc.addRule(monitoredNetRule.opr(op));
-    iptc.addRule(monitoredNetRule6.opr(op));
+    await iptc.addRule(monitoredNetRule.opr(op));
+    await iptc.addRule(monitoredNetRule6.opr(op));
   }
 
   async _aclAssets(acloff=false) {
@@ -164,18 +164,18 @@ class APFeaturesPlugin extends Sensor {
       const opInternal = policy.internal ? "-A" : "-D";
       
       // add LOG rule before DROP rule
-      iptc.addRule(ruleTxLog.opr(op));
-      iptc.addRule(ruleTx.opr(op));
-      iptc.addRule(ruleTxLog6.opr(op));
-      iptc.addRule(ruleTx6.opr(op));
-      iptc.addRule(ruleRxLog.opr(op));
-      iptc.addRule(ruleRx.opr(op));
-      iptc.addRule(ruleRxLog6.opr(op));
-      iptc.addRule(ruleRx6.opr(op));
-      iptc.addRule(ruleInternalLog.opr(opInternal));
-      iptc.addRule(ruleInternal.opr(opInternal));
-      iptc.addRule(ruleInternalLog6.opr(opInternal));
-      iptc.addRule(ruleInternal6.opr(opInternal));
+      await iptc.addRule(ruleTxLog.opr(op));
+      await iptc.addRule(ruleTx.opr(op));
+      await iptc.addRule(ruleTxLog6.opr(op));
+      await iptc.addRule(ruleTx6.opr(op));
+      await iptc.addRule(ruleRxLog.opr(op));
+      await iptc.addRule(ruleRx.opr(op));
+      await iptc.addRule(ruleRxLog6.opr(op));
+      await iptc.addRule(ruleRx6.opr(op));
+      await iptc.addRule(ruleInternalLog.opr(opInternal));
+      await iptc.addRule(ruleInternal.opr(opInternal));
+      await iptc.addRule(ruleInternalLog6.opr(opInternal));
+      await iptc.addRule(ruleInternal6.opr(opInternal));
 
       await lock.acquire(LOCK_FWAPC_ISOLATION, async () => {
         await fwapc.setGroup(tagUid, {config: {isolation: {internal: policy.internal || false, external: policy.external || false}}}).catch((err) => {});
@@ -203,12 +203,12 @@ class APFeaturesPlugin extends Sensor {
         const ruleInternal = rule.clone().fam(fam).set(setName, "src,src").set(setName, "dst,dst");
         const ruleInternalLog = ruleLog.clone().fam(fam).set(setName, "src,src").set(setName, "dst,dst");
 
-        iptc.addRule(ruleTxLog.opr(op));
-        iptc.addRule(ruleTx.opr(op));
-        iptc.addRule(ruleRxLog.opr(op));
-        iptc.addRule(ruleRx.opr(op));
-        iptc.addRule(ruleInternalLog.opr(opInternal));
-        iptc.addRule(ruleInternal.opr(opInternal));
+        await iptc.addRule(ruleTxLog.opr(op));
+        await iptc.addRule(ruleTx.opr(op));
+        await iptc.addRule(ruleRxLog.opr(op));
+        await iptc.addRule(ruleRx.opr(op));
+        await iptc.addRule(ruleInternalLog.opr(opInternal));
+        await iptc.addRule(ruleInternal.opr(opInternal));
       }
       // there is no ap level API for network isolation, directly set isolation in wifiNetworks in apc config instead
     }
@@ -227,10 +227,10 @@ class APFeaturesPlugin extends Sensor {
         const ruleTxLog = ruleLog.clone().fam(fam).set(setName, "src,src").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst");
         const ruleRx = rule.clone().fam(fam).set(setName, "dst,dst").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src");
         const ruleRxLog = ruleLog.clone().fam(fam).set(setName, "dst,dst").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src");
-        iptc.addRule(ruleTxLog.opr(op));
-        iptc.addRule(ruleTx.opr(op));
-        iptc.addRule(ruleRxLog.opr(op));
-        iptc.addRule(ruleRx.opr(op));
+        await iptc.addRule(ruleTxLog.opr(op));
+        await iptc.addRule(ruleTx.opr(op));
+        await iptc.addRule(ruleRxLog.opr(op));
+        await iptc.addRule(ruleRx.opr(op));
       }
 
       await lock.acquire(LOCK_FWAPC_ISOLATION, async () => {
@@ -241,7 +241,7 @@ class APFeaturesPlugin extends Sensor {
   }
 
   async applySSIDPSK(obj, ip, policy) {
-    if (!obj instanceof Tag) {
+    if (!(obj instanceof Tag)) {
       log.error(`${Constants.POLICY_KEY_SSID_PSK} is not supported on ${obj.constructor.name} object`);
       return;
     }

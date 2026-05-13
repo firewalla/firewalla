@@ -1514,7 +1514,7 @@ module.exports = class DNSMASQ {
       return;
     if (oldSubnet != newSubnet || force === true) {
       // remove iptables rule for old vpn subnet
-      iptc.addRule(new Rule('nat').chn(getDNSRedirectChain(srcType)).opr('-F'));
+      await iptc.addRule(new Rule('nat').chn(getDNSRedirectChain(srcType)).opr('-F'));
     }
     // then add new iptables rule for new vpn subnet. If newVpnSubnet is null, no new rule is added
     if (newSubnet) {
@@ -1525,16 +1525,16 @@ module.exports = class DNSMASQ {
           .set(ipset.CONSTANTS.IPSET_NO_DNS_BOOST, 'src,src', true).dport(53).dnat(dns);
         if (!newSubnet.includes("0.0.0.0"))
           dnsRule.src(newSubnet);
-        iptc.addRule(dnsRule.pro('tcp'));
-        iptc.addRule(dnsRule.pro('udp'));
+        await iptc.addRule(dnsRule.pro('tcp'));
+        await iptc.addRule(dnsRule.pro('udp'));
       }
       this[subnetKey] = newSubnet;
     }
   }
 
   async _update_dns_fallback_rules() {
-    iptc.addRule(new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').opr('-F'));
-    iptc.addRule(new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_FALLBACK').opr('-F'));
+    await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').opr('-F'));
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_FALLBACK').opr('-F'));
     const interfaces = sysManager.getMonitoringInterfaces();
     const NetworkProfile = require('../../net2/NetworkProfile.js');
     for (const intf of interfaces) {
@@ -1556,8 +1556,8 @@ module.exports = class DNSMASQ {
             .set(netSet, 'src,src').dst(myIp4).dport(53)
             .mdl("statistic", `--mode nth --every ${resolver4.length - i} --packet 0`)
             .jmp(`DNAT --to-destination ${resolver4[i]}:53`);
-          iptc.addRule(redirectRule.pro('tcp'));
-          iptc.addRule(redirectRule.pro('udp'));
+          await iptc.addRule(redirectRule.pro('tcp'));
+          await iptc.addRule(redirectRule.pro('udp'));
         }
       }
       if (!_.isEmpty(myIp6) && resolver6 && resolver6.length > 0) {
@@ -1566,24 +1566,24 @@ module.exports = class DNSMASQ {
             .set(netSet, 'src,src').dst(myIp6.join(",")).dport(53)
             .mdl("statistic", `--mode nth --every ${resolver6.length - i} --packet 0`)
             .jmp(`DNAT --to-destination [${resolver6[i].split('%')[0]}]:53`);
-          iptc.addRule(redirectRule.pro('tcp'));
-          iptc.addRule(redirectRule.pro('udp'));
+          await iptc.addRule(redirectRule.pro('tcp'));
+          await iptc.addRule(redirectRule.pro('udp'));
         }
       }
     }
     for (const dns6_server of FALLBACK_DNS6_SERVERS) {
       const dns6Rule = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_FALLBACK')
         .pro('tcp').dport(53).dnat(`[${dns6_server}]:53`);
-      iptc.addRule(dns6Rule);
-      iptc.addRule(dns6Rule.pro('udp'));
+      await iptc.addRule(dns6Rule);
+      await iptc.addRule(dns6Rule.pro('udp'));
     }
     const acceptRule4 = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK')
       .pro('tcp').dport(53).jmp('ACCEPT');
-    iptc.addRule(acceptRule4);
-    iptc.addRule(acceptRule4.pro('udp'));
+    await iptc.addRule(acceptRule4);
+    await iptc.addRule(acceptRule4.pro('udp'));
     const acceptRule6 = acceptRule4.fam(6);
-    iptc.addRule(acceptRule6);
-    iptc.addRule(acceptRule6.pro('udp'));
+    await iptc.addRule(acceptRule6);
+    await iptc.addRule(acceptRule6.pro('udp'));
   }
 
   async _add_all_iptables_rules() {
@@ -1651,8 +1651,8 @@ module.exports = class DNSMASQ {
       .set(ipset.CONSTANTS.IPSET_NO_DNS_BOOST, 'src,src', true)
       .dport(53)
       .jmp(`DNAT --to-destination ${intf.ip_address}:${MASQ_PORT}`)
-    iptc.addRule(redirectRule.pro('tcp').opr(action));
-    iptc.addRule(redirectRule.pro('udp').opr(action));
+    await iptc.addRule(redirectRule.pro('tcp').opr(action));
+    await iptc.addRule(redirectRule.pro('udp').opr(action));
   }
 
   async _manipulate_ipv6_iptables_rule(intf, action) {
@@ -1671,8 +1671,8 @@ module.exports = class DNSMASQ {
       .set(ipset.CONSTANTS.IPSET_NO_DNS_BOOST, 'src,src', true)
       .dport(53)
       .jmp(`DNAT --to-destination [${ip6}]:${MASQ_PORT}`);
-    iptc.addRule(redirectRule.pro('tcp').opr(action));
-    iptc.addRule(redirectRule.pro('udp').opr(action));
+    await iptc.addRule(redirectRule.pro('tcp').opr(action));
+    await iptc.addRule(redirectRule.pro('udp').opr(action));
   }
 
   async _remove_all_iptables_rules() {
@@ -1682,17 +1682,17 @@ module.exports = class DNSMASQ {
     if (this.wgSubnet) {
       await this.updateWGIptablesRules(null, true);
     }
-    this._remove_iptables_rules();
-    this._remove_ip6tables_rules();
+    await this._remove_iptables_rules();
+    await this._remove_ip6tables_rules();
     this.networkFailCountMap = {};
   }
 
-  _remove_iptables_rules() {
-    iptc.addRule(new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT').opr('-F'));
+  async _remove_iptables_rules() {
+    await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT').opr('-F'));
   }
 
-  _remove_ip6tables_rules() {
-    iptc.addRule(new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').opr('-F'));
+  async _remove_ip6tables_rules() {
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').opr('-F'));
   }
 
   async _writeHashIntoRedis(type, hashes) {
