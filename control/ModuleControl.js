@@ -22,6 +22,11 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 class ModuleControl {
   constructor(name) {
     this.name = name;
+    this.phase = 'init';
+  }
+
+  setPhase(phase) {
+    this.phase = phase;
   }
 
   addRule(rule) {

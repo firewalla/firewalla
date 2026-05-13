@@ -55,7 +55,7 @@ async function setupTagsRules(options) {
       //ensure bypass chain exists
       for (const family of ['4', '6']) {
         const rule = new Rule(table).fam(family).chn(bypassChain).opr('-N');
-        iptc.addRule(rule);
+        await iptc.addRule(rule);
       }
     } else if (action === "unenforce") {
       // should do some check here?
@@ -96,7 +96,7 @@ async function setupTagsRules(options) {
       op = '-D'
     }
     for (const rule of rulesToAdd) {
-      iptc.addRule(rule.opr(op)); // insert rule to the top of bypass chain
+      await iptc.addRule(rule.opr(op)); // insert rule to the top of bypass chain
     }
   }
 

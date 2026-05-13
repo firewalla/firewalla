@@ -48,11 +48,22 @@ class IptablesControl extends ModuleControl {
    * Add a rule to the iptables queue
    * @param {Rule} rule - The Rule object representing an iptables rule
    */
-  addRule(rule) {
+  async addRule(rule) {
     if (!(rule instanceof Rule)) {
       rule = new Rule().from(rule);
     }
 
+    if (this.phase === 'autonomous') {
+      await this._execOne(rule);
+      return;
+    }
+
+    if (!f.isMain()) {
+      super.addRule(JSON.stringify(rule));
+      return;
+    }
+
+    // init phase: queue for batch processing
     const family = rule.family || 4;
     const table = rule.table || 'filter';
 
@@ -62,8 +73,24 @@ class IptablesControl extends ModuleControl {
     }
 
     this.queuedRules[family][table].push(rule.clone());
+  }
 
-    super.addRule(JSON.stringify(rule));
+  async addRuleBatch(rules, opr) {
+    for (const rule of rules) {
+      if (opr) rule.opr(opr);
+      await this.addRule(rule);
+    }
+  }
+
+  /**
+   * Execute a single iptables rule inline (autonomous phase).
+   * @param {Rule} rule
+   */
+  async _execOne(rule) {
+    if (!(rule instanceof Rule)) rule = new Rule().from(rule);
+    await rule.exec().catch(err => {
+      log.error(`Failed to execute iptables rule`, err.message);
+    });
   }
 
   /**
@@ -117,7 +144,7 @@ class IptablesControl extends ModuleControl {
       for (const table of TABLES) {
         for (const rule of queued[family][table]) try {
           if (!(rule instanceof Rule)) continue;
-          await rule.exec(rule.operation || '-A');
+          await rule.exec();
         } catch (err) {
           log.error(`Failed to execute individual rule`, err.message);
         }
@@ -330,7 +357,7 @@ class IptablesControl extends ModuleControl {
 
     for (const rule of (queued[family][table] || [])) {
       if (!(rule instanceof Rule)) continue;
-      const operation = rule.operation || '-A';
+      const operation = rule.operation;
       const essential = rule.essential();
       log.debug(`Merging v${family} ${table}: ${operation} ${essential}`);
 
