@@ -72,6 +72,13 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
   }
 
   async run() {
+    // create chains no matter feature is enabled or not
+    // simple and minimal change as there's no feature guard on other iptables operations
+    await iptc.addRule(new Rule('nat').chn(NTP_CHAIN).opr('-N'));
+    await iptc.addRule(new Rule('nat').chn(NTP_CHAIN).fam(6).opr('-N'));
+    await iptc.addRule(new Rule('nat').chn(NTP_CHAIN_DNAT).opr('-N'));
+    await iptc.addRule(new Rule('nat').chn(NTP_CHAIN_DNAT).fam(6).opr('-N'));
+
     await super.run();
     // keep ntpd working in orphan mode even if external peers are not available, in most cases the time on the box should be accurate
     // this is to avoid suspending NTP intercept, which may cause NTP flows being blocked if there is another internet block rule
@@ -254,10 +261,6 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
 
   // consider using iptables-restore/scripts if complexity goes up
   async globalOn() {
-    await iptc.addRule(new Rule('nat').chn(NTP_CHAIN).opr('-N'));
-    await iptc.addRule(new Rule('nat').chn(NTP_CHAIN).fam(6).opr('-N'));
-    await iptc.addRule(new Rule('nat').chn(NTP_CHAIN_DNAT).opr('-N'));
-    await iptc.addRule(new Rule('nat').chn(NTP_CHAIN_DNAT).fam(6).opr('-N'));
     await iptc.addRule(this.ruleFeature.opr('-A'));
     await iptc.addRule(this.ruleFeature6.opr('-A'));
     await iptc.addRule(this.ruleNtpOff.opr('-A'));
