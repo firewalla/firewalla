@@ -91,11 +91,20 @@ class QuicLogPlugin extends Sensor {
   }
 
   // process quic log line
-  // line format: [FW_QUIC]:{"src_addr":"192.168.169.166", "dst_addr":"142.250.189.14", "src_port":60956, "dst_port":443, "protocol":"UDP", "hostname":"calendar.google.com"}
+  // line format: 2026-05-12T19:04:48.484446+08:00 localhost kernel: [FW_QUIC]:{"src_addr":"192.168.169.166", "dst_addr":"142.250.189.14", "src_port":60956, "dst_port":443, "protocol":"UDP", "hostname":"calendar.google.com"}
+  // for repeated log, it will be like: 2026-05-12T18:48:55.197681+08:00 localhost kernel: message repeated 2 times: [ [FW_QUIC]:{"src_addr":"10.0.1.68", "dst_addr":"142.251.45.14", "src_port":51055, "dst_port":443, "protocol":"UDP", "hostname":"play.google.com"}]
   async _processQuicLog(line) {
     if (_.isEmpty(line)) return;
     // extract content after log prefix
-    const content = line.substring(line.indexOf(LOG_PREFIX) + LOG_PREFIX.length);
+    const prefixIndex = line.indexOf(LOG_PREFIX);
+    if (prefixIndex < 0) return;
+    const startIndex = prefixIndex + LOG_PREFIX.length;
+    let endIndex = line.length;
+    if (line.indexOf('message repeated') > 0) {
+      endIndex -= 1;
+    }
+
+    const content = line.substring(startIndex, endIndex).trim();
     if (!content || content.length == 0)
       return;
     const obj = JSON.parse(content);
