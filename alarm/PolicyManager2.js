@@ -2122,7 +2122,7 @@ class PolicyManager2 {
         table = "mangle";
       }
 
-      for (const family of ['4', '6']) {
+      for (const family of [4, 6]) {
         const rule = new Rule(table).fam(family).chn(chainName).opr('-N');
         await iptc.addRule(rule);
       }

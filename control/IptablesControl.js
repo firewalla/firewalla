@@ -89,7 +89,7 @@ class IptablesControl extends ModuleControl {
   async _execOne(rule) {
     if (!(rule instanceof Rule)) rule = new Rule().from(rule);
     await rule.exec().catch(err => {
-      log.error(`Failed to execute iptables rule`, err.message);
+      log.error(`Failed to execute iptables rule`, err.message, new Error().stack);
     });
   }
 
