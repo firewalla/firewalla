@@ -111,6 +111,7 @@ module.exports = {
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
   NOTIF_CATEGORY_TIME_LIMITS: "com.firewalla.category.time_limits",
 
+  STATE_EVENT_DNS_SERVICE: "dns_service",
   STATE_EVENT_NIC_SPEED: "nic_speed",
 
   ACL_VPN_CLIENT_WAN_PREFIX: "VC:",

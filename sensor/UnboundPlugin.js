@@ -46,6 +46,8 @@ const featureName = "unbound";
 const scheduler = require('../util/scheduler');
 const unbound = require('../extension/unbound/unbound');
 const Constants = require('../net2/Constants.js');
+const dnsHealth = require('../util/DNSUpstreamHealthCheck.js');
+const era = require('../event/EventRequestApi.js');
 
 class UnboundPlugin extends Sensor {
   async run() {
@@ -55,6 +57,19 @@ class UnboundPlugin extends Sensor {
     this.tagSettings = {};
     this.macAddressSettings = {};
     this.identitySettings = {};
+    this.healthCheckInterval = (this.config.healthCheckInterval || 60) * 1000;
+    this.healthCheckTimeout = this.config.healthCheckTimeout || 2;
+    this.healthCheckTries = this.config.healthCheckTries || 1;
+    this.healthCheckFailThreshold = this.config.healthCheckFailThreshold || 3;
+    this.healthCheckRecoverThreshold = this.config.healthCheckRecoverThreshold || 1;
+    this.healthState = {
+      healthy: true,
+      bypassActive: false,
+      failCount: 0,
+      recoverCount: 0,
+      lastError: null,
+      lastCheckedAt: null
+    };
     this.applyUnboundSync = new scheduler.UpdateJob(this.applyUnbound.bind(this), 0);
 
     extensionManager.registerExtension(featureName, this, {
@@ -69,7 +84,7 @@ class UnboundPlugin extends Sensor {
     this.hookFeature(featureName);
 
     sem.on('UNBOUND_REFRESH', (event) => {
-      void this.applyUnboundSync.exec(true);
+      void this.applyUnboundSync.exec(true, true, true);
     });
 
     sem.on('UNBOUND_RESET', async (event) => {
@@ -79,19 +94,31 @@ class UnboundPlugin extends Sensor {
         for (const uuid in this.networkSettings) this.networkSettings[uuid] = 0
         for (const mac in this.macAddressSettings) this.macAddressSettings[mac] = 0
         for (const guid in this.identitySettings) this.identitySettings[guid] = 0
-        await this.applyUnboundSync.exec(true)
         await unbound.reset();
+        this.resetHealthState();
+        await this.applyUnboundSync.exec(true, true, true)
       } catch(err) {
         log.error('Error reseting unbound', err)
       }
     });
+
+    if (this.healthCheckTask)
+      clearInterval(this.healthCheckTask);
+    this.healthCheckTask = setInterval(() => {
+      this.applyUnboundSync.exec(false, false, true).catch((err) => {
+        log.error('Failed to run Unbound health check', err);
+      });
+    }, this.healthCheckInterval);
   }
 
   async apiRun() {
     extensionManager.onSet("unboundConfig", async (msg, data) => {
-      try {await extensionManager._precedeRecord(msg.id, {origin: await unbound.getUserConfig()})} catch(err) {};
+      try {await extensionManager._precedeRecord(msg.id, {origin: await unbound.getConfig()})} catch(err) {};
       if (data) {
-        await unbound.updateUserConfig(data);
+        const sanitized = Object.assign({}, data);
+        if ('killSwitch' in sanitized && typeof sanitized.killSwitch !== 'boolean')
+          delete sanitized.killSwitch;
+        await unbound.updateUserConfig(sanitized);
         sem.sendEventToFireMain({
           type: 'UNBOUND_REFRESH'
         });
@@ -99,16 +126,172 @@ class UnboundPlugin extends Sensor {
     });
 
     extensionManager.onGet("unboundConfig", async (msg, data) => {
-      const config = await unbound.getUserConfig();
+      const config = await unbound.getConfig();
       return config;
     });
 
     extensionManager.onCmd("unboundReset", async (msg, data) => {
-      try {await extensionManager._precedeRecord(msg.id, {origin: {config: await unbound.getUserConfig(), enabled: fc.isFeatureOn(featureName)}})} catch(err) {};
+      try {await extensionManager._precedeRecord(msg.id, {origin: {config: await unbound.getConfig(), enabled: fc.isFeatureOn(featureName)}})} catch(err) {};
       sem.sendEventToFireMain({
         type: 'UNBOUND_RESET'
       });
     });
+  }
+
+  resetHealthState() {
+    this.healthState = Object.assign({}, this.healthState, {
+      healthy: true,
+      bypassActive: false,
+      failCount: 0,
+      recoverCount: 0,
+      lastError: null,
+      lastCheckedAt: null
+    });
+  }
+
+  isFeatureActive() {
+    return this.featureSwitch === true && fc.isFeatureOn(featureName);
+  }
+
+  shouldRouteFeatureDns() {
+    return this.isFeatureActive() && this.healthState.bypassActive !== true;
+  }
+
+  async getKillSwitchEnabled() {
+    const config = await unbound.getConfig();
+    return config.killSwitch !== false;
+  }
+
+  getHealthCheckDomains() {
+    return this.config.healthCheckDomains;
+  }
+
+  async probeUnboundHealth() {
+    return dnsHealth.probeLocalServer('127.0.0.1', unbound.getLocalPort(), {
+      domains: this.getHealthCheckDomains(),
+      timeout: this.healthCheckTimeout,
+      tries: this.healthCheckTries
+    });
+  }
+
+  updateStableHealth(nextProbeHealthy) {
+    if (nextProbeHealthy) {
+      this.healthState.failCount = 0;
+      if (this.healthState.healthy === true) {
+        return true;
+      }
+      this.healthState.recoverCount += 1;
+      if (this.healthState.recoverCount >= this.healthCheckRecoverThreshold) {
+        this.healthState.recoverCount = 0;
+        return true;
+      }
+      return false;
+    }
+
+    this.healthState.recoverCount = 0;
+    this.healthState.failCount += 1;
+    if (this.healthState.healthy === false)
+      return false;
+    if (this.healthState.failCount >= this.healthCheckFailThreshold)
+      return false;
+    return true;
+  }
+
+  async emitHealthState({ healthy, enabled, bypassActive, reason, target }) {
+    const stateValue = enabled === false ? 2 : (healthy ? 0 : 1);
+    await era.addStateEvent(Constants.STATE_EVENT_DNS_SERVICE, featureName, stateValue, {
+      service: featureName,
+      enabled,
+      killSwitch: await this.getKillSwitchEnabled(),
+      bypassActive,
+      reason,
+      target,
+      error_value: 1
+    });
+  }
+
+  async syncDnsmasqUpstreamConfig() {
+    const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
+    const killSwitchEnabled = await this.getKillSwitchEnabled();
+    const shouldAdvertise = this.isFeatureActive() && (this.healthState.healthy || killSwitchEnabled);
+    if (shouldAdvertise) {
+      const dnsmasqEntry = `server=${unbound.getLocalServer()}$${featureName}$*${Constants.DNS_DEFAULT_WAN_TAG}`;
+      await dnsmasq.writeConfig(configFilePath, dnsmasqEntry);
+    } else {
+      await fs.unlinkAsync(configFilePath).catch((err) => { });
+    }
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async refreshUnboundHealthState() {
+    if (!this.isFeatureActive()) {
+      this.resetHealthState();
+      await this.emitHealthState({
+        healthy: true,
+        enabled: false,
+        bypassActive: false,
+        reason: 'feature_disabled',
+        target: ''
+      });
+      await this.syncDnsmasqUpstreamConfig();
+      return;
+    }
+
+    const probeResult = await this.probeUnboundHealth();
+    const stableHealthy = this.updateStableHealth(probeResult.healthy);
+    const killSwitchEnabled = await this.getKillSwitchEnabled();
+    const bypassActive = !stableHealthy && !killSwitchEnabled;
+    this.healthState.healthy = stableHealthy;
+    this.healthState.bypassActive = bypassActive;
+    this.healthState.lastError = stableHealthy ? null : probeResult.error;
+    this.healthState.lastCheckedAt = Date.now();
+
+    await this.emitHealthState({
+      healthy: stableHealthy,
+      enabled: true,
+      bypassActive,
+      reason: stableHealthy ? 'ok' : (probeResult.error || 'unbound_unhealthy'),
+      target: probeResult.server || unbound.getLocalServer()
+    });
+
+    await this.syncDnsmasqUpstreamConfig();
+  }
+
+  async checkUnboundHealth() {
+    await this.applyUnboundSync.exec(false, false, true);
+  }
+
+  async applyDnsmasqPolicyBindings() {
+    await this.applySystemUnbound();
+
+    for (const macAddress in this.macAddressSettings) {
+      await this.applyDeviceUnbound(macAddress);
+    }
+
+    for (const tagUid in this.tagSettings) {
+      const tagExists = await TagManager.tagUidExists(tagUid);
+      if (!tagExists)
+        this.tagSettings[tagUid] = 0;
+      await this.applyTagUnbound(tagUid);
+      if (!tagExists)
+        delete this.tagSettings[tagUid];
+    }
+
+    for (const uuid in this.networkSettings) {
+      const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+      if (!networkProfile)
+        delete this.networkSettings[uuid];
+      else
+        await this.applyNetworkUnbound(uuid);
+    }
+
+    for (const guid in this.identitySettings) {
+      const identity = IdentityManager.getIdentityByGUID(guid);
+      if (!identity)
+        delete this.identitySettings[guid];
+      else
+        await this.applyIdentityUnbound(guid);
+    }
   }
 
   // global policy apply
@@ -185,62 +368,35 @@ class UnboundPlugin extends Sensor {
     }
   }
 
-  async applyUnbound(reCheckConfig = false) {
+  async applyUnbound(reCheckConfig = false, refreshPolicy = true, refreshHealth = true) {
     log.debug("Apply unbound");
-    if (!this.featureSwitch) {
-      await unbound.stop();
-    } else {
-      const result = await unbound.prepareConfigFile(reCheckConfig);
-      if (result) {
-        log.info("Unbound configuration file changed. Restart");
-        unbound.restart();
+    if (refreshPolicy) {
+      if (!this.isFeatureActive()) {
+        await unbound.stop();
       } else {
-        await unbound.start();
+        const result = await unbound.prepareConfigFile(reCheckConfig);
+        if (result) {
+          log.info("Unbound configuration file changed. Restart");
+          unbound.restart();
+        } else {
+          await unbound.start();
+        }
       }
     }
-    const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
-    if (this.featureSwitch) {
-      const dnsmasqEntry = `server=${unbound.getLocalServer()}$${featureName}$*${Constants.DNS_DEFAULT_WAN_TAG}`;
-      await dnsmasq.writeConfig(configFilePath, dnsmasqEntry);
-    } else {
-      await fs.unlinkAsync(configFilePath).catch((err) => { });
-    }
 
-    await this.applySystemUnbound();
+    const prevBypassActive = this.healthState.bypassActive;
+    if (refreshHealth)
+      await this.refreshUnboundHealthState();
+    else
+      await this.syncDnsmasqUpstreamConfig();
 
-    for (const macAddress in this.macAddressSettings) {
-      await this.applyDeviceUnbound(macAddress);
-    }
-
-    for (const tagUid in this.tagSettings) {
-      const tagExists = await TagManager.tagUidExists(tagUid);
-      if (!tagExists)
-        // reset tag if it is already deleted
-        this.tagSettings[tagUid] = 0;
-      await this.applyTagUnbound(tagUid);
-      if (!tagExists)
-        delete this.tagSettings[tagUid];
-    }
-
-    for (const uuid in this.networkSettings) {
-      const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
-      if (!networkProfile)
-        delete this.networkSettings[uuid];
-      else
-        await this.applyNetworkUnbound(uuid);
-    }
-
-    for (const guid in this.identitySettings) {
-      const identity = IdentityManager.getIdentityByGUID(guid);
-      if (!identity)
-        delete this.identitySettings[guid];
-      else
-        await this.applyIdentityUnbound(guid);
-    }
+    const bypassChanged = this.healthState.bypassActive !== prevBypassActive;
+    if (refreshPolicy || bypassChanged)
+      await this.applyDnsmasqPolicyBindings();
   }
 
   async applySystemUnbound() {
-    if (this.systemSwitch) {
+    if (this.systemSwitch && this.shouldRouteFeatureDns()) {
       return this.systemStart();
     } else {
       return this.systemStop();
@@ -249,7 +405,7 @@ class UnboundPlugin extends Sensor {
 
   async applyTagUnbound(tagUid) {
     if (this.tagSettings[tagUid] == 1)
-      return this.perTagStart(tagUid);
+      return this.shouldRouteFeatureDns() ? this.perTagStart(tagUid) : this.perTagStop(tagUid);
     if (this.tagSettings[tagUid] == -1)
       return this.perTagStop(tagUid);
     return this.perTagReset(tagUid);
@@ -257,7 +413,7 @@ class UnboundPlugin extends Sensor {
 
   async applyNetworkUnbound(uuid) {
     if (this.networkSettings[uuid] == 1)
-      return this.perNetworkStart(uuid);
+      return this.shouldRouteFeatureDns() ? this.perNetworkStart(uuid) : this.perNetworkStop(uuid);
     if (this.networkSettings[uuid] == -1)
       return this.perNetworkStop(uuid);
     return this.perNetworkReset(uuid);
@@ -265,7 +421,7 @@ class UnboundPlugin extends Sensor {
 
   async applyDeviceUnbound(macAddress) {
     if (this.macAddressSettings[macAddress] == 1)
-      return this.perDeviceStart(macAddress);
+      return this.shouldRouteFeatureDns() ? this.perDeviceStart(macAddress) : this.perDeviceStop(macAddress);
     if (this.macAddressSettings[macAddress] == -1)
       return this.perDeviceStop(macAddress);
     return this.perDeviceReset(macAddress);
@@ -273,7 +429,7 @@ class UnboundPlugin extends Sensor {
 
   async applyIdentityUnbound(guid) {
     if (this.identitySettings[guid] == 1)
-      return this.perIdentityStart(guid);
+      return this.shouldRouteFeatureDns() ? this.perIdentityStart(guid) : this.perIdentityStop(guid);
     if (this.identitySettings[guid] == -1)
       return this.perIdentityStop(guid);
     return this.perIdentityReset(guid);
@@ -407,13 +563,14 @@ class UnboundPlugin extends Sensor {
   async globalOn() {
     await super.globalOn();
     this.featureSwitch = true;
-    await this.applyUnboundSync.exec(true);
+    await this.applyUnboundSync.exec(true, true, true);
   }
 
   async globalOff() {
     await super.globalOff();
     this.featureSwitch = false;
-    await this.applyUnboundSync.exec(true);
+    this.resetHealthState();
+    await this.applyUnboundSync.exec(true, true, true);
   }
 }
 

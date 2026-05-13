@@ -39,6 +39,9 @@ const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
 const exec = require('child-process-promise').exec;
+const scheduler = require('../util/scheduler');
+const dnsHealth = require('../util/DNSUpstreamHealthCheck.js');
+const era = require('../event/EventRequestApi.js');
 
 const featureName = "doh";
 const fc = require('../net2/config.js');
@@ -49,12 +52,26 @@ const Constants = require('../net2/Constants.js');
 class DNSCryptPlugin extends Sensor {
   async run() {
     this.refreshInterval = (this.config.refreshInterval || 24 * 60) * 60 * 1000;
+    this.healthCheckInterval = (this.config.healthCheckInterval || 60) * 1000;
+    this.healthCheckTimeout = this.config.healthCheckTimeout || 5;
+    this.healthCheckTries = this.config.healthCheckTries || 1;
+    this.healthCheckFailThreshold = this.config.healthCheckFailThreshold || 3;
+    this.healthCheckRecoverThreshold = this.config.healthCheckRecoverThreshold || 1;
     this.systemSwitch = false;
     this.adminSystemSwitch = false;
     this.networkSettings = {};
     this.tagSettings = {};
     this.macAddressSettings = {};
     this.identitySettings = {};
+    this.healthState = {
+      healthy: true,
+      bypassActive: false,
+      failCount: 0,
+      recoverCount: 0,
+      lastError: null,
+      lastCheckedAt: null
+    };
+    this.applyDoHSync = new scheduler.UpdateJob(this.applyDoH.bind(this), 0);
 
     extensionManager.registerExtension(featureName, this, {
       applyPolicy: this.applyPolicy,
@@ -67,7 +84,7 @@ class DNSCryptPlugin extends Sensor {
     this.hookFeature(featureName);
 
     sem.on('DOH_REFRESH', (event) => {
-      this.applyDoH();
+      void this.applyDoHSync.exec(true, true, true);
     });
 
     sem.on('DOH_RESET', async () => {
@@ -77,23 +94,41 @@ class DNSCryptPlugin extends Sensor {
         for (const uuid in this.networkSettings) this.networkSettings[uuid] = 0
         for (const mac in this.macAddressSettings) this.macAddressSettings[mac] = 0
         for (const guid in this.identitySettings) this.identitySettings[guid] = 0
-        await this.applyDoH();
         await dc.resetSettings()
+        this.resetHealthState();
+        await this.applyDoHSync.exec(true, true, true);
       } catch(err) {
         log.error('Error reseting DoH', err)
       }
     });
+
+    if (this.healthCheckTask)
+      clearInterval(this.healthCheckTask);
+    this.healthCheckTask = setInterval(() => {
+      this.checkDoHHealth().catch((err) => {
+        log.error('Failed to run DoH health check', err);
+      });
+    }, this.healthCheckInterval);
   }
 
   async job() {
-    await this.applyDoH(true);
+    await this.applyDoHSync.exec(true, true, true);
   }
 
   async apiRun() {
     extensionManager.onSet("dohConfig", async (msg, data) => {
-      try {await extensionManager._precedeRecord(msg.id, {origin:{servers: await dc.getServers()}})} catch(err) {};
-      if (data && data.servers) {
-        await dc.setServers(data.servers, false)
+      try {await extensionManager._precedeRecord(msg.id, {origin:{
+        servers: await dc.getServers(),
+        killSwitch: (await dc.getSettings()).killSwitch
+      }})} catch(err) {};
+
+      if (data) {
+        if (Array.isArray(data.servers)) {
+          await dc.setServers(data.servers, false);
+        }
+        if (Object.prototype.hasOwnProperty.call(data, 'killSwitch') && typeof data.killSwitch === 'boolean') {
+          await dc.updateSettings({ killSwitch: data.killSwitch });
+        }
         sem.sendEventToFireMain({
           type: 'DOH_REFRESH'
         });
@@ -102,8 +137,11 @@ class DNSCryptPlugin extends Sensor {
 
     extensionManager.onSet("customizedDohServers", async (msg, data) => {
       try {await extensionManager._precedeRecord(msg.id, {origin:{customizedServers: await dc.getCustomizedServers()}})} catch(err) {};
-      if (data && data.servers) {
+      if (data && Array.isArray(data.servers)) {
         await dc.setServers(data.servers, true);
+        sem.sendEventToFireMain({
+          type: 'DOH_REFRESH'
+        });
       }
     });
 
@@ -111,20 +149,174 @@ class DNSCryptPlugin extends Sensor {
       const selectedServers = await dc.getServers();
       const customizedServers = await dc.getCustomizedServers();
       const allServers = await dc.getAllServerNames();
+      const settings = await dc.getSettings();
       return {
-        selectedServers, allServers, customizedServers
+        selectedServers, allServers, customizedServers, killSwitch: settings.killSwitch
       }
     });
 
     extensionManager.onCmd("dohReset", async (msg, data) => {
       try {await extensionManager._precedeRecord(msg.id, {origin: {
         servers: await dc.getServers(), customizedServers: await dc.getCustomizedServers(), allServers: await dc.getAllServerNames(),
+        killSwitch: (await dc.getSettings()).killSwitch,
         enabled: fc.isFeatureOn(featureName)}})
       } catch(err) {};
       sem.sendEventToFireMain({
         type: 'DOH_RESET'
       });
     });
+  }
+
+  resetHealthState() {
+    this.healthState = Object.assign({}, this.healthState, {
+      healthy: true,
+      bypassActive: false,
+      failCount: 0,
+      recoverCount: 0,
+      lastError: null,
+      lastCheckedAt: null
+    });
+  }
+
+  isFeatureActive() {
+    return this.adminSystemSwitch === true && fc.isFeatureOn(featureName);
+  }
+
+  shouldRouteFeatureDns() {
+    return this.isFeatureActive() && this.healthState.bypassActive !== true;
+  }
+
+  async getKillSwitchEnabled() {
+    const settings = await dc.getSettings();
+    return settings.killSwitch !== false;
+  }
+
+  getHealthCheckDomains() {
+    return this.config.healthCheckDomains;
+  }
+
+  async probeDoHHealth() {
+    return dnsHealth.probeLocalServer('127.0.0.1', dc.getLocalPort(), {
+      domains: this.getHealthCheckDomains(),
+      timeout: this.healthCheckTimeout,
+      tries: this.healthCheckTries
+    });
+  }
+
+  updateStableHealth(nextProbeHealthy) {
+    if (nextProbeHealthy) {
+      this.healthState.failCount = 0;
+      if (this.healthState.healthy === true) {
+        return true;
+      }
+      this.healthState.recoverCount += 1;
+      if (this.healthState.recoverCount >= this.healthCheckRecoverThreshold) {
+        this.healthState.recoverCount = 0;
+        return true;
+      }
+      return false;
+    }
+
+    this.healthState.recoverCount = 0;
+    this.healthState.failCount += 1;
+    if (this.healthState.healthy === false)
+      return false;
+    if (this.healthState.failCount >= this.healthCheckFailThreshold)
+      return false;
+    return true;
+  }
+
+  async emitHealthState({ healthy, enabled, bypassActive, reason, target }) {
+    const stateValue = enabled === false ? 2 : (healthy ? 0 : 1);
+    await era.addStateEvent(Constants.STATE_EVENT_DNS_SERVICE, featureName, stateValue, {
+      service: featureName,
+      enabled,
+      killSwitch: await this.getKillSwitchEnabled(),
+      bypassActive,
+      reason,
+      target,
+      error_value: 1
+    });
+  }
+
+  async syncDnsmasqUpstreamConfig() {
+    const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
+    const killSwitchEnabled = await this.getKillSwitchEnabled();
+    const shouldAdvertise = this.isFeatureActive() && (this.healthState.healthy || killSwitchEnabled);
+    if (shouldAdvertise) {
+      const dnsmasqEntry = `server=${dc.getLocalServer()}$${featureName}$*${Constants.DNS_DEFAULT_WAN_TAG}`;
+      await dnsmasq.writeConfig(configFilePath, dnsmasqEntry);
+    } else {
+      await fs.unlinkAsync(configFilePath).catch((err) => { });
+    }
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async refreshDoHHealthState() {
+    if (!this.isFeatureActive()) {
+      this.resetHealthState();
+      await this.emitHealthState({
+        healthy: true,
+        enabled: false,
+        bypassActive: false,
+        reason: 'feature_disabled',
+        target: ''
+      });
+      await this.syncDnsmasqUpstreamConfig();
+      return;
+    }
+
+    const probeResult = await this.probeDoHHealth();
+    const stableHealthy = this.updateStableHealth(probeResult.healthy);
+    const killSwitchEnabled = await this.getKillSwitchEnabled();
+    const bypassActive = !stableHealthy && !killSwitchEnabled;
+    this.healthState.healthy = stableHealthy;
+    this.healthState.bypassActive = bypassActive;
+    this.healthState.lastError = stableHealthy ? null : probeResult.error;
+    this.healthState.lastCheckedAt = Date.now();
+
+    await this.emitHealthState({
+      healthy: stableHealthy,
+      enabled: true,
+      bypassActive,
+      reason: stableHealthy ? 'ok' : (probeResult.error || 'doh_unhealthy'),
+      target: probeResult.server || dc.getLocalServer()
+    });
+
+    await this.syncDnsmasqUpstreamConfig();
+  }
+
+  async checkDoHHealth() {
+    await this.applyDoHSync.exec(false, false, true);
+  }
+
+  async applyDnsmasqPolicyBindings() {
+    await this.applySystemDoH();
+    for (const macAddress in this.macAddressSettings) {
+      await this.applyDeviceDoH(macAddress);
+    }
+    for (const tagUid in this.tagSettings) {
+      const tagExists = await TagManager.tagUidExists(tagUid);
+      if (!tagExists)
+        this.tagSettings[tagUid] = 0;
+      await this.applyTagDoH(tagUid);
+      if (!tagExists)
+        delete this.tagSettings[tagUid];
+    }
+    for (const uuid in this.networkSettings) {
+      const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+      if (!networkProfile)
+        delete this.networkSettings[uuid];
+      else
+        await this.applyNetworkDoH(uuid);
+    }
+    for (const guid in this.identitySettings) {
+      const identity = IdentityManager.getIdentityByGUID(guid);
+      if (!identity)
+        delete this.identitySettings[guid];
+      else
+        await this.applyIdentityDoH(guid);
+    }
   }
 
   // global policy apply
@@ -203,56 +395,34 @@ class DNSCryptPlugin extends Sensor {
     }
   }
 
-  async applyDoH(reCheckConfig = false) {
-    if (!fc.isFeatureOn(featureName)) {
-      await dc.stop();
-    } else {
-      const result = await dc.prepareConfig({}, reCheckConfig);
-      if (result) {
-        await dc.restart();
+  async applyDoH(reCheckConfig = false, refreshPolicy = true, refreshHealth = true) {
+    if (refreshPolicy) {
+      if (!fc.isFeatureOn(featureName)) {
+        await dc.stop();
       } else {
-        await dc.start();
+        const result = await dc.prepareConfig({}, reCheckConfig);
+        if (result) {
+          dc.restart();
+        } else {
+          await dc.start();
+        }
       }
     }
-    const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
-    if (this.adminSystemSwitch) {
-      const dnsmasqEntry = `server=${dc.getLocalServer()}$${featureName}$*${Constants.DNS_DEFAULT_WAN_TAG}`;
-      await dnsmasq.writeConfig(configFilePath, dnsmasqEntry);
-    } else {
-      await fs.unlinkAsync(configFilePath).catch((err) => { });
-    }
 
-    await this.applySystemDoH();
-    for (const macAddress in this.macAddressSettings) {
-      await this.applyDeviceDoH(macAddress);
-    }
-    for (const tagUid in this.tagSettings) {
-      const tagExists = await TagManager.tagUidExists(tagUid);
-      if (!tagExists)
-        // reset tag if it is already deleted
-        this.tagSettings[tagUid] = 0;
-      await this.applyTagDoH(tagUid);
-      if (!tagExists)
-        delete this.tagSettings[tagUid];
-    }
-    for (const uuid in this.networkSettings) {
-      const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
-      if (!networkProfile)
-        delete this.networkSettings[uuid];
-      else
-        await this.applyNetworkDoH(uuid);
-    }
-    for (const guid in this.identitySettings) {
-      const identity = IdentityManager.getIdentityByGUID(guid);
-      if (!identity)
-        delete this.identitySettings[guid];
-      else
-        await this.applyIdentityDoH(guid);
-    }
+    // dnscrypt delayed restart may cause falsy health check once (same to unbound)
+    const prevBypassActive = this.healthState.bypassActive;
+    if (refreshHealth)
+      await this.refreshDoHHealthState();
+    else
+      await this.syncDnsmasqUpstreamConfig();
+
+    const bypassChanged = this.healthState.bypassActive !== prevBypassActive;
+    if (refreshPolicy || bypassChanged)
+      await this.applyDnsmasqPolicyBindings();
   }
 
   async applySystemDoH() {
-    if (this.systemSwitch) {
+    if (this.systemSwitch && this.shouldRouteFeatureDns()) {
       return this.systemStart();
     } else {
       return this.systemStop();
@@ -261,7 +431,7 @@ class DNSCryptPlugin extends Sensor {
 
   async applyTagDoH(tagUid) {
     if (this.tagSettings[tagUid] == 1)
-      return this.perTagStart(tagUid);
+      return this.shouldRouteFeatureDns() ? this.perTagStart(tagUid) : this.perTagStop(tagUid);
     if (this.tagSettings[tagUid] == -1)
       return this.perTagStop(tagUid);
     return this.perTagReset(tagUid);
@@ -269,7 +439,7 @@ class DNSCryptPlugin extends Sensor {
 
   async applyNetworkDoH(uuid) {
     if (this.networkSettings[uuid] == 1)
-      return this.perNetworkStart(uuid);
+      return this.shouldRouteFeatureDns() ? this.perNetworkStart(uuid) : this.perNetworkStop(uuid);
     if (this.networkSettings[uuid] == -1)
       return this.perNetworkStop(uuid);
     return this.perNetworkReset(uuid);
@@ -277,7 +447,7 @@ class DNSCryptPlugin extends Sensor {
 
   async applyDeviceDoH(macAddress) {
     if (this.macAddressSettings[macAddress] == 1)
-      return this.perDeviceStart(macAddress);
+      return this.shouldRouteFeatureDns() ? this.perDeviceStart(macAddress) : this.perDeviceStop(macAddress);
     if (this.macAddressSettings[macAddress] == -1)
       return this.perDeviceStop(macAddress);
     return this.perDeviceReset(macAddress);
@@ -285,7 +455,7 @@ class DNSCryptPlugin extends Sensor {
 
   async applyIdentityDoH(guid) {
     if (this.identitySettings[guid] == 1)
-      return this.perIdentityStart(guid);
+      return this.shouldRouteFeatureDns() ? this.perIdentityStart(guid) : this.perIdentityStop(guid);
     if (this.identitySettings[guid] == -1)
       return this.perIdentityStop(guid);
     return this.perIdentityReset(guid);
@@ -333,7 +503,7 @@ class DNSCryptPlugin extends Sensor {
     }
     const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${uuid}.conf`;
     const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$${featureName}\n`;
-    await fs.writeFileAsync(configFile, dnsmasqEntry);
+    await dnsmasq.writeConfig(configFile, dnsmasqEntry);
     dnsmasq.scheduleRestartDNSService();
   }
 
@@ -346,7 +516,7 @@ class DNSCryptPlugin extends Sensor {
     const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${uuid}.conf`;
     // explicit disable family protect
     const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$!${featureName}\n`;
-    await fs.writeFileAsync(configFile, dnsmasqEntry);
+    await dnsmasq.writeConfig(configFile, dnsmasqEntry);
     dnsmasq.scheduleRestartDNSService();
   }
 
@@ -418,12 +588,13 @@ class DNSCryptPlugin extends Sensor {
   // global on/off
   async globalOn() {
     this.adminSystemSwitch = true;
-    await this.applyDoH();
+    await this.applyDoHSync.exec(true, true, true);
   }
 
   async globalOff() {
     this.adminSystemSwitch = false;
-    await this.applyDoH();
+    this.resetHealthState();
+    await this.applyDoHSync.exec(true, true, true);
   }
 }
 

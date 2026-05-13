@@ -43,6 +43,9 @@ const util = require('util');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const Constants = require('../net2/Constants.js');
 const dnsmasq = new DNSMASQ();
+const scheduler = require('../util/scheduler');
+const dnsHealth = require('../util/DNSUpstreamHealthCheck.js');
+const era = require('../event/EventRequestApi.js');
 
 const featureName = "family_protect";
 const policyKeyName = "family";
@@ -57,6 +60,21 @@ class FamilyProtectPlugin extends Sensor {
         this.networkSettings = {};
         this.tagSettings = {};
         this.identitySettings = {};
+        this.healthCheckInterval = (this.config.healthCheckInterval || 60) * 1000;
+        this.healthCheckTimeout = this.config.healthCheckTimeout || 3;
+        this.healthCheckTries = this.config.healthCheckTries || 2;
+        this.healthCheckFailThreshold = this.config.healthCheckFailThreshold || 4;
+        this.healthCheckRecoverThreshold = this.config.healthCheckRecoverThreshold || 1;
+        this.healthState = {
+          healthy: true,
+          bypassActive: false,
+          failCount: 0,
+          recoverCount: 0,
+          lastError: null,
+          lastCheckedAt: null,
+          selectedServer: null
+        };
+        this.applyFamilyProtectSync = new scheduler.UpdateJob(this.applyFamilyProtect.bind(this), 0);
         extensionManager.registerExtension(policyKeyName, this, {
             applyPolicy: this.applyPolicy,
             start: this.globalOn,
@@ -66,9 +84,7 @@ class FamilyProtectPlugin extends Sensor {
         this.hookFeature(featureName);
 
         sem.on('FAMILY_REFRESH', (event) => {
-          if (event.config)
-            this.applyFamilyConfig(event.config)
-          this.applyFamilyProtect()
+          void this.applyFamilyProtectSync.exec(true, true, event.config || null)
         });
 
         sem.on('FAMILY_RESET', async () => {
@@ -78,32 +94,59 @@ class FamilyProtectPlugin extends Sensor {
             for (const uuid in this.networkSettings) this.networkSettings[uuid] = 0
             for (const mac in this.macAddressSettings) this.macAddressSettings[mac] = 0
             for (const guid in this.identitySettings) this.identitySettings[guid] = 0
-            this.applyFamilyProtect()
             FAMILY_DNS = null
             await rclient.unlinkAsync(configKey)
+            this.resetHealthState()
+            await this.applyFamilyProtectSync.exec(true, true, null)
           } catch(err) {
             log.error('Error resetting family', err)
           }
         });
+
+        if (this.healthCheckTask)
+          clearInterval(this.healthCheckTask);
+        this.healthCheckTask = setInterval(() => {
+          this.applyFamilyProtectSync.exec(false, true, null).catch((err) => {
+            log.error('Failed to run family health check', err);
+          });
+        }, this.healthCheckInterval);
     }
 
     async job() {
-        await this.applyFamilyProtect();
+        await this.applyFamilyProtectSync.exec(true, true, null);
+    }
+
+    getDefaultFamilyConfig() {
+      return {
+        killSwitch: true
+      };
     }
 
     async getFamilyConfig() {
       const str = await rclient.getAsync(configKey)
-      return JSON.parse(str)
+      try {
+        const config = str ? JSON.parse(str) : null;
+        return Object.assign({}, this.getDefaultFamilyConfig(), config || {});
+      } catch (err) {
+        log.error('Failed to parse family config', err);
+        return this.getDefaultFamilyConfig();
+      }
     }
 
     applyFamilyConfig(config) {
-      if (config && Array.isArray(config.servers))
-        FAMILY_DNS = config.servers
+      const mergedConfig = Object.assign({}, this.getDefaultFamilyConfig(), config || {});
+      FAMILY_DNS = Array.isArray(mergedConfig.servers) ? mergedConfig.servers.filter(Boolean) : null;
+      return mergedConfig;
     }
 
     async setFamilyConfig(config) {
-      this.applyFamilyConfig(config)
-      await rclient.setAsync(configKey, JSON.stringify(config))
+      const sanitized = Object.assign({}, config);
+      if ('killSwitch' in sanitized && typeof sanitized.killSwitch !== 'boolean')
+        delete sanitized.killSwitch;
+      const currentConfig = await this.getFamilyConfig();
+      const nextConfig = Object.assign({}, currentConfig, sanitized);
+      this.applyFamilyConfig(nextConfig)
+      await rclient.setAsync(configKey, JSON.stringify(nextConfig))
     }
 
     async apiRun() {
@@ -166,6 +209,158 @@ class FamilyProtectPlugin extends Sensor {
           return { server, results };
         }));
       });
+    }
+
+    resetHealthState() {
+      this.healthState = Object.assign({}, this.healthState, {
+        healthy: true,
+        bypassActive: false,
+        failCount: 0,
+        recoverCount: 0,
+        lastError: null,
+        lastCheckedAt: null,
+        selectedServer: null
+      });
+    }
+
+    isFeatureActive() {
+      return this.adminSystemSwitch === true && fc.isFeatureOn(featureName);
+    }
+
+    shouldRouteFeatureDns() {
+      return this.isFeatureActive() && this.healthState.bypassActive !== true;
+    }
+
+    async getKillSwitchEnabled() {
+      const config = await this.getFamilyConfig();
+      return config.killSwitch !== false;
+    }
+
+    async getEffectiveFamilyServers() {
+      const servers = await this.familyDnsAddr();
+      return Array.isArray(servers) ? servers.filter(Boolean) : [];
+    }
+
+    getHealthCheckDomains() {
+      return this.config.healthCheckDomains;
+    }
+
+    async probeFamilyHealth() {
+      const servers = await this.getEffectiveFamilyServers();
+      const results = await dnsHealth.probeServers(servers, {
+        domains: this.getHealthCheckDomains(),
+        timeout: this.healthCheckTimeout,
+        tries: this.healthCheckTries
+      });
+      const summary = dnsHealth.summarizeProbeResults(results);
+      return {
+        servers,
+        results,
+        healthy: summary.healthy,
+        selectedServer: summary.firstHealthy && summary.firstHealthy.server || null,
+        error: summary.error || (servers.length === 0 ? 'no family dns server configured' : 'family dns health check failed')
+      };
+    }
+
+    updateStableHealth(nextProbeHealthy) {
+      if (nextProbeHealthy) {
+        this.healthState.failCount = 0;
+        if (this.healthState.healthy === true) {
+          return true;
+        }
+        this.healthState.recoverCount += 1;
+        if (this.healthState.recoverCount >= this.healthCheckRecoverThreshold) {
+          this.healthState.recoverCount = 0;
+          return true;
+        }
+        return false;
+      }
+
+      this.healthState.recoverCount = 0;
+      this.healthState.failCount += 1;
+      if (this.healthState.healthy === false)
+        return false;
+      if (this.healthState.failCount >= this.healthCheckFailThreshold)
+        return false;
+      return true;
+    }
+
+    async emitHealthState({ healthy, enabled, bypassActive, reason, target }) {
+      const stateValue = enabled === false ? 2 : (healthy ? 0 : 1);
+      await era.addStateEvent(Constants.STATE_EVENT_DNS_SERVICE, featureName, stateValue, {
+        service: featureName,
+        enabled,
+        killSwitch: await this.getKillSwitchEnabled(),
+        bypassActive,
+        reason,
+        target,
+        error_value: 1
+      });
+    }
+
+    async refreshFamilyHealthState() {
+      if (!this.isFeatureActive()) {
+        this.resetHealthState();
+        await this.emitHealthState({
+          healthy: true,
+          enabled: false,
+          bypassActive: false,
+          reason: 'feature_disabled',
+          target: ''
+        });
+        return;
+      }
+
+      const probeResult = await this.probeFamilyHealth();
+      const stableHealthy = this.updateStableHealth(probeResult.healthy);
+      const killSwitchEnabled = await this.getKillSwitchEnabled();
+      const bypassActive = !stableHealthy && !killSwitchEnabled;
+      this.healthState.healthy = stableHealthy;
+      this.healthState.bypassActive = bypassActive;
+      this.healthState.lastError = stableHealthy ? null : probeResult.error;
+      this.healthState.lastCheckedAt = Date.now();
+      this.healthState.selectedServer = probeResult.selectedServer;
+
+      await this.emitHealthState({
+        healthy: stableHealthy,
+        enabled: true,
+        bypassActive,
+        reason: stableHealthy ? 'ok' : (probeResult.error || 'family_dns_unhealthy'),
+        target: probeResult.selectedServer || probeResult.servers[0] || ''
+      });
+    }
+
+    async checkFamilyHealth() {
+      await this.applyFamilyProtectSync.exec(false, true, null);
+    }
+
+    async applyDnsmasqPolicyBindings() {
+      await this.applySystemFamilyProtect();
+      for (const macAddress in this.macAddressSettings) {
+        await this.applyDeviceFamilyProtect(macAddress);
+      }
+      for (const tagUid in this.tagSettings) {
+        const tagExists = await TagManager.tagUidExists(tagUid);
+        if (!tagExists)
+          this.tagSettings[tagUid] = 0;
+        await this.applyTagFamilyProtect(tagUid);
+        if (!tagExists)
+          delete this.tagSettings[tagUid];
+      }
+      for (const uuid in this.networkSettings) {
+        const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+        if (!networkProfile)
+          delete this.networkSettings[uuid];
+        else
+          await this.applyNetworkFamilyProtect(uuid);
+      }
+      for (const guid in this.identitySettings) {
+        const identity = IdentityManager.getIdentityByGUID(guid);
+        if (!identity)
+          delete this.identitySettings[guid];
+        else
+          await this.applyIdentityFamilyProtect(guid);
+      }
     }
 
     async applyPolicy(host, ip, policy) {
@@ -244,52 +439,45 @@ class FamilyProtectPlugin extends Sensor {
         }
     }
 
-    async applyFamilyProtect() {
+    async applyFamilyProtect(applyPolicies = true, refreshHealth = true, config = null) {
       try {
+        if (config)
+          this.applyFamilyConfig(config);
+
+        const prevBypassActive = this.healthState.bypassActive;
+        if (refreshHealth)
+          await this.refreshFamilyHealthState();
+
         const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
-        if (this.adminSystemSwitch) {
-          const dnsaddrs = await this.familyDnsAddr();
-          const dnsmasqEntry = `server=${dnsaddrs[0]}$${featureName}$*${Constants.DNS_DEFAULT_WAN_TAG}`;
-          log.info(`Using dns ${dnsaddrs[0]}`)
-          await fs.writeFileAsync(configFilePath, dnsmasqEntry);
+        const killSwitchEnabled = await this.getKillSwitchEnabled();
+        const dnsaddrs = await this.getEffectiveFamilyServers();
+        let selectedServer = null;
+        if (this.isFeatureActive()) {
+          if (this.healthState.bypassActive) {
+            selectedServer = null;
+          } else {
+            selectedServer = this.healthState.selectedServer || dnsaddrs[0] || null;
+          }
+        }
+
+        if (selectedServer) {
+          const dnsmasqEntry = `server=${selectedServer}$${featureName}$*${Constants.DNS_DEFAULT_WAN_TAG}`;
+          log.info(`Using family dns ${selectedServer}`)
+          await dnsmasq.writeConfig(configFilePath, dnsmasqEntry);
         } else {
           await fs.unlinkAsync(configFilePath).catch((err) => {});
         }
 
-        await this.applySystemFamilyProtect();
-        for (const macAddress in this.macAddressSettings) {
-          await this.applyDeviceFamilyProtect(macAddress);
-        }
-        for (const tagUid in this.tagSettings) {
-          const tagExists = await TagManager.tagUidExists(tagUid);
-          if (!tagExists)
-            // reset tag if it is already deleted
-            this.tagSettings[tagUid] = 0;
-          await this.applyTagFamilyProtect(tagUid);
-          if (!tagExists)
-            delete this.tagSettings[tagUid];
-        }
-        for (const uuid in this.networkSettings) {
-          const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
-          if (!networkProfile)
-            delete this.networkSettings[uuid];
-          else
-            await this.applyNetworkFamilyProtect(uuid);
-        }
-        for (const guid in this.identitySettings) {
-          const identity = IdentityManager.getIdentityByGUID(guid);
-          if (!identity)
-            delete this.identitySettings[guid];
-          else
-            await this.applyIdentityFamilyProtect(guid);
-        }
+        const bypassChanged = this.healthState.bypassActive !== prevBypassActive;
+        if (applyPolicies || bypassChanged)
+          await this.applyDnsmasqPolicyBindings();
       } catch(err) {
         log.error('Failed to apply family policy', err)
       }
     }
 
     async applySystemFamilyProtect() {
-      if (this.systemSwitch) {
+      if (this.systemSwitch && this.shouldRouteFeatureDns()) {
         return this.systemStart();
       } else {
         return this.systemStop();
@@ -298,7 +486,7 @@ class FamilyProtectPlugin extends Sensor {
 
     async applyTagFamilyProtect(tagUid) {
       if (this.tagSettings[tagUid] == 1)
-        return this.perTagStart(tagUid);
+        return this.shouldRouteFeatureDns() ? this.perTagStart(tagUid) : this.perTagStop(tagUid);
       if (this.tagSettings[tagUid] == -1)
         return this.perTagStop(tagUid);
       return this.perTagReset(tagUid);
@@ -306,7 +494,7 @@ class FamilyProtectPlugin extends Sensor {
 
     async applyNetworkFamilyProtect(uuid) {
       if (this.networkSettings[uuid] == 1)
-        return this.perNetworkStart(uuid);
+        return this.shouldRouteFeatureDns() ? this.perNetworkStart(uuid) : this.perNetworkStop(uuid);
       if (this.networkSettings[uuid] == -1)
         return this.perNetworkStop(uuid);
       return this.perNetworkReset(uuid);
@@ -314,7 +502,7 @@ class FamilyProtectPlugin extends Sensor {
 
     async applyDeviceFamilyProtect(macAddress) {
       if (this.macAddressSettings[macAddress] == 1)
-        return this.perDeviceStart(macAddress);
+        return this.shouldRouteFeatureDns() ? this.perDeviceStart(macAddress) : this.perDeviceStop(macAddress);
       if (this.macAddressSettings[macAddress] == -1)
         return this.perDeviceStop(macAddress);
       return this.perDeviceReset(macAddress);
@@ -322,7 +510,7 @@ class FamilyProtectPlugin extends Sensor {
 
     async applyIdentityFamilyProtect(guid) {
       if (this.identitySettings[guid] == 1)
-        return this.perIdentityStart(guid);
+        return this.shouldRouteFeatureDns() ? this.perIdentityStart(guid) : this.perIdentityStop(guid);
       if (this.identitySettings[guid] == -1)
         return this.perIdentityStop(guid);
       return this.perIdentityReset(guid);
@@ -455,26 +643,27 @@ class FamilyProtectPlugin extends Sensor {
     // global on/off
     async globalOn() {
         this.adminSystemSwitch = true;
-        await this.applyFamilyProtect();
+        await this.applyFamilyProtectSync.exec(true, true, null);
     }
 
     async globalOff() {
         this.adminSystemSwitch = false;
-        await this.applyFamilyProtect();
+        this.resetHealthState();
+        await this.applyFamilyProtectSync.exec(true, true, null);
     }
 
   async familyDnsAddr() {
     if (FAMILY_DNS && FAMILY_DNS.length != 0) {
-      return FAMILY_DNS;
+      return FAMILY_DNS.filter(Boolean);
     }
     const customConfig = await this.getFamilyConfig()
-    if (customConfig && customConfig.servers) {
-      FAMILY_DNS = customConfig.servers
+    if (customConfig && Array.isArray(customConfig.servers) && customConfig.servers.length > 0) {
+      FAMILY_DNS = customConfig.servers.filter(Boolean)
       return FAMILY_DNS
     }
     const data = await f.getBoneInfoAsync()
-    if (data && data.config && data.config.dns && data.config.dns.familymode) {
-      FAMILY_DNS = data.config.dns.familymode
+    if (data && data.config && data.config.dns && Array.isArray(data.config.dns.familymode) && data.config.dns.familymode.length > 0) {
+      FAMILY_DNS = data.config.dns.familymode.filter(Boolean)
       return FAMILY_DNS
     } else {
       return FALLBACK_FAMILY_DNS
