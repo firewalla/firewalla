@@ -118,7 +118,7 @@ class TLSSetControl extends ModuleControl {
     }
 
     // init phase: queue for batch processing
-    const modules = this.getModulesForDomain(domain, tlsHostSet);
+    const modules = domain ? this.getModulesForDomain(domain, tlsHostSet) : this.getModulesToUpdate({ tlsHostSet });
     for (const module of modules) {
       if (action === 'add') {
         this._queueWrite(module, tlsHostSet, `+${domain}`);
