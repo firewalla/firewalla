@@ -116,7 +116,7 @@ class WireGuard {
   async _applySNATAndRoutes() {
     const config = this.getConfig();
     const peers = await this.getPeers();
-    iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_WIREGUARD').src(config.subnet).jmp('MASQUERADE'));
+    await iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_WIREGUARD').src(config.subnet).jmp('MASQUERADE'));
     await exec(`sudo ip r add ${config.subnet} dev ${config.intf}`).catch((err) => {});
     for (const peer of peers) {
       const allowedIPs = peer.allowedIPs || [];
@@ -159,7 +159,7 @@ class WireGuard {
     if (!config || !config.intf)
       return;
     log.info(`Stopping wireguard ${config.intf}...`);
-    iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_WIREGUARD').opr('-F'));
+    await iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_WIREGUARD').opr('-F'));
     await exec(`sudo ip link set down dev ${config.intf}`).catch(() => undefined);
     await exec(`sudo ip link del dev ${config.intf}`).catch(() => undefined);
     log.info(`Wireguard ${config.intf} is stopped successfully.`);

@@ -212,13 +212,13 @@ class VPNClient {
   async _bypassDNSRedirect() {
     const chain = VPNClient.getDNSRedirectChainName(this.profileId);
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
-    iptc.addRule(new Rule('nat').chn(chain).opr('-F'));
-    iptc.addRule(new Rule('nat').fam(6).chn(chain).opr('-F'));
+    await iptc.addRule(new Rule('nat').chn(chain).opr('-F'));
+    await iptc.addRule(new Rule('nat').fam(6).chn(chain).opr('-F'));
 
     for (const fam of [4, 6]) {
       const tcpCmd = new Rule('nat').fam(fam).chn(chain).mark(rtId, routing.MASK_VC).pro('tcp').dport('53').jmp('ACCEPT').opr('-I');
-      iptc.addRule(tcpCmd);
-      iptc.addRule(tcpCmd.pro('udp'));
+      await iptc.addRule(tcpCmd);
+      await iptc.addRule(tcpCmd.pro('udp'));
     }
   }
 
@@ -228,8 +228,8 @@ class VPNClient {
 
     const chain = VPNClient.getDNSRedirectChainName(this.profileId);
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
-    iptc.addRule(new Rule('nat').chn(chain).opr('-F'));
-    iptc.addRule(new Rule('nat').fam(6).chn(chain).opr('-F'));
+    await iptc.addRule(new Rule('nat').chn(chain).opr('-F'));
+    await iptc.addRule(new Rule('nat').fam(6).chn(chain).opr('-F'));
     
     for (let i in dnsServers) {
       const dnsServer = dnsServers[i];
@@ -240,8 +240,8 @@ class VPNClient {
       // no need to use statistic module for the first rule
       if (Number(i) != 0)
         tcpRule.mdl('statistic', `--mode nth --every ${Number(i) + 1} --packet 0`);
-      iptc.addRule(tcpRule);
-      iptc.addRule(tcpRule.pro('udp'));
+      await iptc.addRule(tcpRule);
+      await iptc.addRule(tcpRule.pro('udp'));
     }
   }
 
@@ -268,16 +268,16 @@ class VPNClient {
     const snatNeeded = await this.isSNATNeeded();
     let baseRule = new Rule('nat').chn('FW_VC_SNAT').jmp('RETURN')
     if (settings.c2sSNATDisabled) {
-      iptc.addRule(baseRule.clone().set(VPNClient.getNetIpsetName(this.profileId, 4), 'dst').opr('-I'))
-      iptc.addRule(baseRule.clone().fam(6).set(VPNClient.getNetIpsetName(this.profileId, 6), 'dst').opr('-I'))
+      await iptc.addRule(baseRule.clone().set(VPNClient.getNetIpsetName(this.profileId, 4), 'dst').opr('-I'))
+      await iptc.addRule(baseRule.clone().fam(6).set(VPNClient.getNetIpsetName(this.profileId, 6), 'dst').opr('-I'))
     } else {
-      iptc.addRule(baseRule.clone().set(VPNClient.getNetIpsetName(this.profileId, 4), 'dst').opr('-D'))
-      iptc.addRule(baseRule.clone().fam(6).set(VPNClient.getNetIpsetName(this.profileId, 6), 'dst').opr('-D'))
+      await iptc.addRule(baseRule.clone().set(VPNClient.getNetIpsetName(this.profileId, 4), 'dst').opr('-D'))
+      await iptc.addRule(baseRule.clone().fam(6).set(VPNClient.getNetIpsetName(this.profileId, 6), 'dst').opr('-D'))
     }
     if (snatNeeded) {
       baseRule = new Rule('nat').chn('FW_VC_SNAT').oif(intf).jmp('MASQUERADE')
-      iptc.addRule(baseRule)
-      iptc.addRule(baseRule.fam(6))
+      await iptc.addRule(baseRule)
+      await iptc.addRule(baseRule.fam(6))
     }
     log.verbose(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
     // remove routes from main table which is inserted by VPN client automatically,
@@ -324,10 +324,10 @@ class VPNClient {
     // redirect dns to vpn channel
     if (settings.routeDNS) {
       if (rtId) {
-        Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+        await Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
         await this._enableDNSRoute("soft");
         if (!settings.strictVPN) {
-          Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+          await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
           await this._enableDNSRoute("hard");
         }
       }
@@ -336,9 +336,9 @@ class VPNClient {
       }
       dnsmasq.scheduleRestartDNSService();
     } else {
-      Ipset.del(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET)
+      await Ipset.del(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET)
       if (!settings.strictVPN)
-        Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET)
+        await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET)
       if (dnsServers.length > 0)
         await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, dnsRedirectChain);
       await this._disableDNSRoute("hard");
@@ -347,46 +347,46 @@ class VPNClient {
     }
     if (settings.overrideDefaultRoute) {
       if (rtId) {
-        Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
-        Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+        await Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+        await Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
         if (!settings.strictVPN) {
-          Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
-          Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+          await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+          await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
         }
       }
     } else {
-      Ipset.del(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4)
-      Ipset.del(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6)
-      Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4)
-      Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6)
+      await Ipset.del(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4)
+      await Ipset.del(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6)
+      await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4)
+      await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6)
     }
 
     if (rtId) {
-      Ipset.add(VPNClient.getRouteIpsetName(this.profileId), VPNClient.getNetIpsetName(this.profileId), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
-      Ipset.add(VPNClient.getRouteIpsetName(this.profileId), VPNClient.getNetIpsetName(this.profileId, 6), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
-      Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), VPNClient.getNetIpsetName(this.profileId), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
-      Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), VPNClient.getNetIpsetName(this.profileId, 6), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+      await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), VPNClient.getNetIpsetName(this.profileId), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+      await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), VPNClient.getNetIpsetName(this.profileId, 6), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+      await Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), VPNClient.getNetIpsetName(this.profileId), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+      await Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), VPNClient.getNetIpsetName(this.profileId, 6), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
     }
-    Ipset.flush(VPNClient.getNetIpsetName(this.profileId))
-    Ipset.flush(VPNClient.getNetIpsetName(this.profileId, 6))
+    await Ipset.flush(VPNClient.getNetIpsetName(this.profileId))
+    await Ipset.flush(VPNClient.getNetIpsetName(this.profileId, 6))
     for (const routedSubnet of routedSubnets) {
       const fam = net.isIP(routedSubnet && routedSubnet.split('/')[0]);
       if (!fam) continue
-      Ipset.add(VPNClient.getNetIpsetName(this.profileId, fam), routedSubnet)
+      await Ipset.add(VPNClient.getNetIpsetName(this.profileId, fam), routedSubnet)
     }
     const ip4s = await this.getVpnIP4s();
-    Ipset.flush(VPNClient.getSelfIpsetName(this.profileId, 4))
+    await Ipset.flush(VPNClient.getSelfIpsetName(this.profileId, 4))
     if (_.isArray(ip4s)) {
       for (const ip4 of ip4s) {
-        Ipset.add(VPNClient.getSelfIpsetName(this.profileId, 4), ip4)
+        await Ipset.add(VPNClient.getSelfIpsetName(this.profileId, 4), ip4)
       }
     }
     // port forward on VPN client will be enabled by default, the port forward rule will decide if it takes effect on specific VPN client
     baseRule = new Rule('nat').chn('FW_PREROUTING_VC_EXT_IP').set(VPNClient.getSelfIpsetName(this.profileId, 4), 'dst').iif(intf).jmp('FW_PRERT_VC_PORT_FORWARD')
     if (!settings.hasOwnProperty("enablePortforward") || settings.enablePortforward) {
-      iptc.addRule(baseRule.opr('-A'))
+      await iptc.addRule(baseRule.opr('-A'))
     } else {
-      iptc.addRule(baseRule.opr('-D'))
+      await iptc.addRule(baseRule.opr('-D'))
     }
   }
 
@@ -505,11 +505,11 @@ class VPNClient {
         if (this._currentState !== false) {
           // clear soft route ipset
           await VPNClient.ensureCreateEnforcementEnv(this.profileId);
-          Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+          await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
           await this._disableDNSRoute("soft");
           // clear hard route ipset if strictVPN (kill-switch) is not enabled
           if (!this.settings.strictVPN) {
-            Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+            await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
             await this._disableDNSRoute("hard");
             await this._resetRouteMarkInRedis();
           }
@@ -570,11 +570,11 @@ class VPNClient {
         if (this._currentState !== false) {
           // clear soft route ipset
           await VPNClient.ensureCreateEnforcementEnv(this.profileId);
-          Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+          await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
           await this._disableDNSRoute("soft");
           // clear hard route ipset if strictVPN (kill-switch) is not enabled
           if (!this.settings.strictVPN) {
-            Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+            await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
             await this._disableDNSRoute("hard");
             await this._resetRouteMarkInRedis();
           }
@@ -943,24 +943,24 @@ class VPNClient {
     const oifIpsetName = VPNClient.getOifIpsetName(this.profileId);
     const oifIpsetName4 = `${oifIpsetName}4`;
     const oifIpsetName6 = `${oifIpsetName}6`;
-    Ipset.add(oifIpsetName4, `0.0.0.0/1,${this.getInterfaceName()}`);
-    Ipset.add(oifIpsetName4, `128.0.0.0/1,${this.getInterfaceName()}`);
-    Ipset.add(oifIpsetName6, `::/1,${this.getInterfaceName()}`);
-    Ipset.add(oifIpsetName6, `8000::/1,${this.getInterfaceName()}`);
+    await Ipset.add(oifIpsetName4, `0.0.0.0/1,${this.getInterfaceName()}`);
+    await Ipset.add(oifIpsetName4, `128.0.0.0/1,${this.getInterfaceName()}`);
+    await Ipset.add(oifIpsetName6, `::/1,${this.getInterfaceName()}`);
+    await Ipset.add(oifIpsetName6, `8000::/1,${this.getInterfaceName()}`);
     // do not need to populate route ipset if strictVPN (kill-switch) is not enabled, it will be populated after link is established
     if (settings.strictVPN) {
       if (settings.overrideDefaultRoute && rtId) {
-        Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
-        Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+        await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+        await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
       } else {
-        Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
-        Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+        await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
+        await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
       }
       await vpnClientEnforcer.enforceStrictVPN(this.getInterfaceName());
       await this._setRouteMarkInRedis();
     } else {
-      Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
-      Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+      await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
+      await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
       await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
       await this._resetRouteMarkInRedis();
     }
@@ -976,20 +976,20 @@ class VPNClient {
     await dnsmasq.writeConfig(this._getDnsmasqConfigPath(), dnsmasqEntries).catch((err) => { });
     if (settings.routeDNS && settings.strictVPN) {
       if (rtId) {
-        Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+        await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
         await this._enableDNSRoute("hard"); // enable hard route PBR rules, they will take effect immediately
       }
     } else {
-      Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET);
-      Ipset.del(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET);
+      await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET);
+      await Ipset.del(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET);
       await this._disableDNSRoute("hard");
     }
     dnsmasq.scheduleRestartDNSService();
     if (rtId) {
-      Ipset.add(VPNClient.getRouteIpsetName(this.profileId), VPNClient.getNetIpsetName(this.profileId, 4), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
-      Ipset.add(VPNClient.getRouteIpsetName(this.profileId), VPNClient.getNetIpsetName(this.profileId, 6), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
-      Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), VPNClient.getNetIpsetName(this.profileId, 4), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
-      Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), VPNClient.getNetIpsetName(this.profileId, 6), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+      await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), VPNClient.getNetIpsetName(this.profileId, 4), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+      await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), VPNClient.getNetIpsetName(this.profileId, 6), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+      await Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), VPNClient.getNetIpsetName(this.profileId, 4), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+      await Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), VPNClient.getNetIpsetName(this.profileId, 6), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
     }
     await vpnClientEnforcer.addVPNClientIPRules(this.getInterfaceName());
   }
@@ -1096,11 +1096,11 @@ class VPNClient {
     await vpnClientEnforcer.flushVPNClientRoutes(intf);
     await vpnClientEnforcer.removeVPNClientIPRules(intf);
 
-    iptc.addRule(new Rule('nat').chn('FW_VC_SNAT').set(VPNClient.getNetIpsetName(this.profileId, 4), 'dst').jmp('RETURN').opr('-D'));
-    iptc.addRule(new Rule('nat').fam(6).chn('FW_VC_SNAT').set(VPNClient.getNetIpsetName(this.profileId, 6), 'dst').jmp('RETURN').opr('-D'));
+    await iptc.addRule(new Rule('nat').chn('FW_VC_SNAT').set(VPNClient.getNetIpsetName(this.profileId, 4), 'dst').jmp('RETURN').opr('-D'));
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_VC_SNAT').set(VPNClient.getNetIpsetName(this.profileId, 6), 'dst').jmp('RETURN').opr('-D'));
 
-    iptc.addRule(new Rule('nat').chn('FW_VC_SNAT').oif(intf).jmp('MASQUERADE').opr('-D'));
-    iptc.addRule(new Rule('nat').fam(6).chn('FW_VC_SNAT').oif(intf).jmp('MASQUERADE').opr('-D'));
+    await iptc.addRule(new Rule('nat').chn('FW_VC_SNAT').oif(intf).jmp('MASQUERADE').opr('-D'));
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_VC_SNAT').oif(intf).jmp('MASQUERADE').opr('-D'));
     await this.loadSettings();
     const dnsServers = await this._getDNSServers() || [];
     if (dnsServers.length > 0) {
@@ -1112,10 +1112,10 @@ class VPNClient {
       log.error(`Failed to exec _stop of VPN client ${this.profileId}`, err.message);
     });
     await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
-    Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
-    Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
-    Ipset.flush(VPNClient.getSelfIpsetName(this.profileId, 4));
-    iptc.addRule(new Rule('nat').chn('FW_PREROUTING_EXT_IP').set(VPNClient.getSelfIpsetName(this.profileId, 4), 'dst').iif(this.getInterfaceName()).jmp('FW_PRERT_PORT_FORWARD').opr('-D'));
+    await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
+    await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+    await Ipset.flush(VPNClient.getSelfIpsetName(this.profileId, 4));
+    await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_EXT_IP').set(VPNClient.getSelfIpsetName(this.profileId, 4), 'dst').iif(this.getInterfaceName()).jmp('FW_PRERT_PORT_FORWARD').opr('-D'));
     await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => { });
     await this._disableDNSRoute("hard");
     await this._disableDNSRoute("soft");
@@ -1218,30 +1218,30 @@ class VPNClient {
       if (envCreatedMap[uid])
         return;
       const hardRouteIpsetName = VPNClient.getRouteIpsetName(uid);
-      Ipset.create(hardRouteIpsetName, 'list:set', false, { skbinfo: true });
+      await Ipset.create(hardRouteIpsetName, 'list:set', false, { skbinfo: true });
 
       const softRouteIpsetName = VPNClient.getRouteIpsetName(uid, false);
-      Ipset.create(softRouteIpsetName, 'list:set', false, { skbinfo: true });
+      await Ipset.create(softRouteIpsetName, 'list:set', false, { skbinfo: true });
 
       const selfIpsetName = VPNClient.getSelfIpsetName(uid, 4);
-      Ipset.create(selfIpsetName, 'hash:ip', false, { hashsize: 1024 });
+      await Ipset.create(selfIpsetName, 'hash:ip', false, { hashsize: 1024 });
 
-      Ipset.create(VPNClient.getNetIpsetName(uid, 4), 'hash:net', false, { hashsize: 1024, maxelem: 16 });
-      Ipset.create(VPNClient.getNetIpsetName(uid, 6), 'hash:net', true, { hashsize: 1024, maxelem: 16 });
+      await Ipset.create(VPNClient.getNetIpsetName(uid, 4), 'hash:net', false, { hashsize: 1024, maxelem: 16 });
+      await Ipset.create(VPNClient.getNetIpsetName(uid, 6), 'hash:net', true, { hashsize: 1024, maxelem: 16 });
 
       const oifIpsetName = VPNClient.getOifIpsetName(uid);
       const oifIpsetName4 = `${oifIpsetName}4`;
       const oifIpsetName6 = `${oifIpsetName}6`;
-      Ipset.create(oifIpsetName, 'list:set');
+      await Ipset.create(oifIpsetName, 'list:set');
       // vpn interface name is unique and will not conflict with others, so ipset can be populated here and leave it unchanged in start/stop
-      Ipset.create(oifIpsetName4, 'hash:net,iface', false, { hashsize: 1024, maxelem: 10 });
-      Ipset.create(oifIpsetName6, 'hash:net,iface', true, { hashsize: 1024, maxelem: 10 });
-      Ipset.add(oifIpsetName, oifIpsetName4);
-      Ipset.add(oifIpsetName, oifIpsetName6);
+      await Ipset.create(oifIpsetName4, 'hash:net,iface', false, { hashsize: 1024, maxelem: 10 });
+      await Ipset.create(oifIpsetName6, 'hash:net,iface', true, { hashsize: 1024, maxelem: 10 });
+      await Ipset.add(oifIpsetName, oifIpsetName4);
+      await Ipset.add(oifIpsetName, oifIpsetName6);
 
       const dnsRedirectChain = VPNClient.getDNSRedirectChainName(uid);
-      iptc.addRule(new Rule('nat').chn(dnsRedirectChain).opr('-N'));
-      iptc.addRule(new Rule('nat').fam(6).chn(dnsRedirectChain).opr('-N'));
+      await iptc.addRule(new Rule('nat').chn(dnsRedirectChain).opr('-N'));
+      await iptc.addRule(new Rule('nat').fam(6).chn(dnsRedirectChain).opr('-N'));
 
       await fs.mkdirAsync(VPNClient.getDNSRouteConfDir(uid, "hard")).catch((err) => { });
       await fs.mkdirAsync(VPNClient.getDNSRouteConfDir(uid, "soft")).catch((err) => { });
