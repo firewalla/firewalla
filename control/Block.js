@@ -42,6 +42,41 @@ const UPNP_ACCEPT_CHAIN = "FR_UPNP_ACCEPT";
 const initializedRuleGroups = {};
 const routeLogRateLimitPerSecond = 10;
 
+function addDisturbBypassJumpRules(rawRules, { chain, target, op, comment, set4, set6 = set4, specs = [] }) {
+  for (const family of [4, 6]) {
+    const setName = family === 4 ? set4 : set6;
+    for (const spec of specs) {
+      const rule = new Rule("mangle").fam(family).chn(chain);
+      if (setName)
+        rule.set(setName, spec);
+      if (comment)
+        rule.comment(comment);
+      rawRules.push(rule.jmp(target).opr(op));
+    }
+  }
+}
+
+function addGlobalDisturbBypassJumpRules(rawRules, { target, op, comment }) {
+  if (platform.isFireRouterManaged()) {
+    addDisturbBypassJumpRules(rawRules, {
+      chain: "FW_DISTURB_QOS_GLOBAL",
+      target,
+      op,
+      comment,
+      set4: Ipset.CONSTANTS.IPSET_MONITORED_NET,
+      specs: ["src,src", "dst,dst"],
+    });
+  } else {
+    addDisturbBypassJumpRules(rawRules, {
+      chain: "FW_DISTURB_QOS_GLOBAL",
+      target,
+      op,
+      comment,
+      specs: [""],
+    });
+  }
+}
+
 // =============== block @ connection level ==============
 
 async function ensureCreateRuleGroupChain(uuid) {
@@ -494,12 +529,20 @@ async function setupGlobalRules(options) {
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
         const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
         const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
+        const connmarkCmd = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
         if (!options.byPassChain) {
-          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_GLOBAL`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
-        } else {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_GLOBAL`, target: connmarkCmd });
+        } else if (!options.qosSubKey) {
           parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_GLOBAL`, target: options.byPassChain });
           table = "mangle";
-          markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+          markTarget = connmarkCmd;
+        } else {
+          // multi-target disturb: per-app match lands in BYPASS and jumps to per-subkey MARK chain;
+          // CONNMARK lives in the MARK chain so each app keeps its own qos handler bits.
+          addGlobalDisturbBypassJumpRules(rawRules, { target: options.byPassChain, op, comment: `rule_${pid}` });
+          parameters.push({ table: "mangle", chain: options.byPassChain, target: `FW_${pid}_${options.qosSubKey}_MARK` });
+          table = "mangle";
+          markTarget = connmarkCmd;
         }
       } else {
         parameters.push({ table: "mangle", chain: `FW_QOS_GLOBAL_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
@@ -590,7 +633,8 @@ async function setupGlobalRules(options) {
 
   const ruleOptions = await prepareOutboundOptions(options)
   if (options.byPassChain) {
-    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    const writeChain = options.qosSubKey ? `FW_${pid}_${options.qosSubKey}_MARK` : options.byPassChain;
+    const rule = new Rule(table).chn(writeChain).jmp(markTarget).opr(op);
     if (ruleOptions.comment) {
       rule.comment(ruleOptions.comment);
     }
@@ -675,12 +719,17 @@ async function setupGenericIdentitiesRules(options) {
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
         const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
         const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
+        const connmarkCmd = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
         if (!options.byPassChain) {
-          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
-        } else {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: connmarkCmd });
+        } else if (!options.qosSubKey) {
           parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: options.byPassChain });
           table = "mangle";
-          markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+          markTarget = connmarkCmd;
+        } else {
+          parameters.push({ table: "mangle", chain: options.byPassChain, target: `FW_${pid}_${options.qosSubKey}_MARK` });
+          table = "mangle";
+          markTarget = connmarkCmd;
         }
       } else {
         parameters.push({ table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
@@ -768,7 +817,8 @@ async function setupGenericIdentitiesRules(options) {
   }
   const ruleOptions = await prepareOutboundOptions(options)
   if (options.byPassChain) {
-    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    const writeChain = options.qosSubKey ? `FW_${pid}_${options.qosSubKey}_MARK` : options.byPassChain;
+    const rule = new Rule(table).chn(writeChain).jmp(markTarget).opr(op);
     if (ruleOptions.comment) {
       rule.comment(ruleOptions.comment);
     }
@@ -795,6 +845,17 @@ async function setupGenericIdentitiesRules(options) {
     if (!local.set) {
       log.error(`Cannot find localSet of guid ${guid}`);
       continue;
+    }
+    if (options.byPassChain && options.qosSubKey && action === "qos" && qdisc === "netem") {
+      addDisturbBypassJumpRules(rawRules, {
+        chain: "FW_DISTURB_QOS_DEV",
+        target: options.byPassChain,
+        op,
+        comment: `rule_${pid}`,
+        set4: local.set,
+        set6: local.set6,
+        specs: ["src", "dst"],
+      });
     }
     ruleOptions.src = local;
     for (const parameter of parameters) {
@@ -866,12 +927,17 @@ async function setupDevicesRules(options) {
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
         const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
         const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
+        const connmarkCmd = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
         if (!options.byPassChain) {
-          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
-        } else {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: connmarkCmd });
+        } else if (!options.qosSubKey) {
           parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: options.byPassChain });
           table = "mangle";
-          markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+          markTarget = connmarkCmd;
+        } else {
+          parameters.push({ table: "mangle", chain: options.byPassChain, target: `FW_${pid}_${options.qosSubKey}_MARK` });
+          table = "mangle";
+          markTarget = connmarkCmd;
         }
       } else {
         parameters.push({ table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
@@ -961,7 +1027,8 @@ async function setupDevicesRules(options) {
   const ruleOptions = await prepareOutboundOptions(options)
 
   if (options.byPassChain) {
-    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    const writeChain = options.qosSubKey ? `FW_${pid}_${options.qosSubKey}_MARK` : options.byPassChain;
+    const rule = new Rule(table).chn(writeChain).jmp(markTarget).opr(op);
     if (ruleOptions.comment) {
       rule.comment(ruleOptions.comment);
     }
@@ -981,6 +1048,17 @@ async function setupDevicesRules(options) {
       portSet: localPortSet,
     }
     local.set6 = local.set;
+    if (options.byPassChain && options.qosSubKey && action === "qos" && qdisc === "netem") {
+      addDisturbBypassJumpRules(rawRules, {
+        chain: "FW_DISTURB_QOS_DEV",
+        target: options.byPassChain,
+        op,
+        comment: `rule_${pid}`,
+        set4: local.set,
+        set6: local.set6,
+        specs: ["src", "dst"],
+      });
+    }
     ruleOptions.src = local;
     for (const parameter of parameters) {
       rules.push(... await generateRules(Object.assign({}, ruleOptions, parameter)))
@@ -1055,14 +1133,37 @@ async function setupTagsRules(options) {
           // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
           const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
           const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
+          const connmarkCmd = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
           if (!options.byPassChain) {
-            parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV_G`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`, localSet: devSet, localFlagCount: 1 });
-            parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET_G`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`, localSet: netSet, localFlagCount: 2 });
-          } else {
+            parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV_G`, target: connmarkCmd, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET_G`, target: connmarkCmd, localSet: netSet, localFlagCount: 2 });
+          } else if (!options.qosSubKey) {
             parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV_G`, target: options.byPassChain, localSet: devSet, localFlagCount: 1 });
             parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET_G`, target: options.byPassChain, localSet: netSet, localFlagCount: 2 });
             table = "mangle";
-            markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+            markTarget = connmarkCmd;
+          } else {
+            const markChain = `FW_${pid}_${options.qosSubKey}_MARK`;
+            addDisturbBypassJumpRules(rawRules, {
+              chain: "FW_DISTURB_QOS_DEV_G",
+              target: options.byPassChain,
+              op,
+              comment: `rule_${pid}`,
+              set4: devSet,
+              specs: ["src", "dst"],
+            });
+            addDisturbBypassJumpRules(rawRules, {
+              chain: "FW_DISTURB_QOS_NET_G",
+              target: options.byPassChain,
+              op,
+              comment: `rule_${pid}`,
+              set4: netSet,
+              specs: ["src,src", "dst,dst"],
+            });
+            parameters.push({ table: "mangle", chain: options.byPassChain, target: markChain, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: options.byPassChain, target: markChain, localSet: netSet, localFlagCount: 2 });
+            table = "mangle";
+            markTarget = connmarkCmd;
           }
         } else {
           parameters.push({ table: "mangle", chain: `FW_QOS_DEV_G_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: devSet, localFlagCount: 1 });
@@ -1194,7 +1295,8 @@ async function setupTagsRules(options) {
   const ruleOptions = await prepareOutboundOptions(options)
 
   if (options.byPassChain) {
-    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    const writeChain = options.qosSubKey ? `FW_${pid}_${options.qosSubKey}_MARK` : options.byPassChain;
+    const rule = new Rule(table).chn(writeChain).jmp(markTarget).opr(op);
     if (ruleOptions.comment) {
       rule.comment(ruleOptions.comment);
     }
@@ -1296,12 +1398,17 @@ async function setupIntfsRules(options) {
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
         const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
         const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
+        const connmarkCmd = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
         if (!options.byPassChain) {
-          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
-        } else {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET`, target: connmarkCmd });
+        } else if (!options.qosSubKey) {
           parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET`, target: options.byPassChain });
           table = "mangle";
-          markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+          markTarget = connmarkCmd;
+        } else {
+          parameters.push({ table: "mangle", chain: options.byPassChain, target: `FW_${pid}_${options.qosSubKey}_MARK` });
+          table = "mangle";
+          markTarget = connmarkCmd;
         }
       } else {
         parameters.push({ table: "mangle", chain: `FW_QOS_NET_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
@@ -1389,7 +1496,8 @@ async function setupIntfsRules(options) {
 
   const ruleOptions = await prepareOutboundOptions(options)
   if (options.byPassChain) {
-    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    const writeChain = options.qosSubKey ? `FW_${pid}_${options.qosSubKey}_MARK` : options.byPassChain;
+    const rule = new Rule(table).chn(writeChain).jmp(markTarget).opr(op);
     if (ruleOptions.comment) {
       rule.comment(ruleOptions.comment);
     }
@@ -1407,6 +1515,17 @@ async function setupIntfsRules(options) {
       specs: ["src", "src"],
       positive: true,
       portSet: localPortSet,
+    }
+    if (options.byPassChain && options.qosSubKey && action === "qos" && qdisc === "netem") {
+      addDisturbBypassJumpRules(rawRules, {
+        chain: "FW_DISTURB_QOS_NET",
+        target: options.byPassChain,
+        op,
+        comment: `rule_${pid}`,
+        set4: local.set,
+        set6: local.set6,
+        specs: ["src,src", "dst,dst"],
+      });
     }
     ruleOptions.src = local;
     for (const parameter of parameters) {

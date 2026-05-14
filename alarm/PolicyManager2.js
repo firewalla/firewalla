@@ -2111,7 +2111,8 @@ class PolicyManager2 {
       action, direction, createOrDestroy: "create", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
       wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
-      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
+      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate,
+      qosSubKey: policy.qosSubKey
     }
 
     if ((type === "category" || type == "mac" || type === "internet") && isBlockOrdisturb) {
@@ -2723,7 +2724,8 @@ class PolicyManager2 {
       action, direction, createOrDestroy: "destroy", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
       wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
-      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
+      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate,
+      qosSubKey: policy.qosSubKey
     }
 
     if ((type === "category" || type == "mac" || type === "internet") && isBlockOrdisturb) {
