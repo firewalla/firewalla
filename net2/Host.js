@@ -175,27 +175,27 @@ class Host extends Monitorable {
     return `c_${mac}_set`;
   }
 
-  static ensureCreateEnforcementEnv(mac) {
+  static async ensureCreateEnforcementEnv(mac) {
     if (envCreatedMap[mac])
       return;
     // host set doesn't have many elements, leave hashsize to 128
-    Ipset.create(Host.getIpSetName(mac, 4), 'hash:ip', false, { maxelem: 10, timeout: 900 });
-    Ipset.create(Host.getIpSetName(mac, 6), 'hash:ip', true, { maxelem: 30, timeout: 900 });
-    Ipset.create(Host.getMacSetName(mac), 'hash:mac', false, { maxelem: 1 });
-    Ipset.add(Host.getMacSetName(mac), mac);
-    Ipset.create(Host.getDeviceSetName(mac), 'list:set');
-    Ipset.add(Host.getDeviceSetName(mac), Host.getMacSetName(mac));
-    Ipset.add(Host.getDeviceSetName(mac), Host.getIpSetName(mac, 4));
-    Ipset.add(Host.getDeviceSetName(mac), Host.getIpSetName(mac, 6));
+    await Ipset.create(Host.getIpSetName(mac, 4), 'hash:ip', false, { maxelem: 10, timeout: 900 });
+    await Ipset.create(Host.getIpSetName(mac, 6), 'hash:ip', true, { maxelem: 30, timeout: 900 });
+    await Ipset.create(Host.getMacSetName(mac), 'hash:mac', false, { maxelem: 1 });
+    await Ipset.add(Host.getMacSetName(mac), mac);
+    await Ipset.create(Host.getDeviceSetName(mac), 'list:set');
+    await Ipset.add(Host.getDeviceSetName(mac), Host.getMacSetName(mac));
+    await Ipset.add(Host.getDeviceSetName(mac), Host.getIpSetName(mac, 4));
+    await Ipset.add(Host.getDeviceSetName(mac), Host.getIpSetName(mac, 6));
     envCreatedMap[mac] = 1;
   }
 
-  destroyEnv() {
+  async destroyEnv() {
     log.info('Flushing ipset for', this.o.mac)
-    Ipset.flush(Host.getIpSetName(this.o.mac, 4))
-    Ipset.flush(Host.getIpSetName(this.o.mac, 6))
-    Ipset.flush(Host.getMacSetName(this.o.mac))
-    Ipset.flush(Host.getDeviceSetName(this.o.mac))
+    await Ipset.flush(Host.getIpSetName(this.o.mac, 4))
+    await Ipset.flush(Host.getIpSetName(this.o.mac, 6))
+    await Ipset.flush(Host.getMacSetName(this.o.mac))
+    await Ipset.flush(Host.getDeviceSetName(this.o.mac))
   }
 
   /* example of ipv6Host
@@ -444,11 +444,11 @@ class Host extends Monitorable {
           .jmp(`SET --map-set ${this._profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(this._profileId.substring(4)) : VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
           .comment(`policy:mac:${this.o.mac}`);
         const rule6 = rule4.clone().fam(6);
-        iptc.addRule(rule4.opr('-D'));
-        iptc.addRule(rule6.opr('-D'));
+        await iptc.addRule(rule4.opr('-D'));
+        await iptc.addRule(rule6.opr('-D'));
         // remove rule that was set by state == null
-        iptc.addRule(rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D'));
-        iptc.addRule(rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D'));
+        await iptc.addRule(rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D'));
+        await iptc.addRule(rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D'));
         
         const vcConfPath = `${this._profileId.startsWith("VWG:") ? VirtWanGroup.getDNSRouteConfDir(this._profileId.substring(4)) : VPNClient.getDNSRouteConfDir(this._profileId)}/vc_${this.o.mac}.conf`;
         await fs.unlinkAsync(hostConfPath).catch((err) => {});
@@ -478,11 +478,11 @@ class Host extends Monitorable {
       const vcConfPath = `${profileId.startsWith("VWG:") ? VirtWanGroup.getDNSRouteConfDir(profileId.substring(4)) : VPNClient.getDNSRouteConfDir(profileId)}/vc_${this.o.mac}.conf`;
       
       if (state === true) {
-        iptc.addRule(rule4.opr('-A'));
-        iptc.addRule(rule6.opr('-A'));
+        await iptc.addRule(rule4.opr('-A'));
+        await iptc.addRule(rule6.opr('-A'));
         // remove rule that was set by state == null
-        iptc.addRule(rule4Clear.opr('-D'));
-        iptc.addRule(rule6Clear.opr('-D'));
+        await iptc.addRule(rule4Clear.opr('-D'));
+        await iptc.addRule(rule6Clear.opr('-D'));
 
         const markTag = `${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`;
         // use two config files, one in network directory, the other in vpn client hard route directory, the second file is controlled by conf-dir in VPNClient.js and will not be included when client is disconnected
@@ -493,11 +493,11 @@ class Host extends Monitorable {
       // null means off
       if (state === null) {
         // remove rule that was set by state == true
-        iptc.addRule(rule4.opr('-D'));
-        iptc.addRule(rule6.opr('-D'));
+        await iptc.addRule(rule4.opr('-D'));
+        await iptc.addRule(rule6.opr('-D'));
         // override target and clear vpn client bits in fwmark
-        iptc.addRule(rule4Clear.opr('-A'));
-        iptc.addRule(rule6Clear.opr('-A'));
+        await iptc.addRule(rule4Clear.opr('-A'));
+        await iptc.addRule(rule6Clear.opr('-A'));
 
         await dnsmasq.writeConfig(hostConfPath, `mac-address-tag=%${this.o.mac}$vc_${this.o.mac}`).catch((err) => {});
         await dnsmasq.writeConfig(vcConfPath, `tag-tag=$vc_${this.o.mac}$${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
@@ -505,12 +505,12 @@ class Host extends Monitorable {
       }
       // false means N/A
       if (state === false) {
-        iptc.addRule(rule4.opr('-D'));
-        iptc.addRule(rule6.opr('-D'));
+        await iptc.addRule(rule4.opr('-D'));
+        await iptc.addRule(rule6.opr('-D'));
 
         // remove rule that was set by state == null
-        iptc.addRule(rule4Clear.opr('-D'));
-        iptc.addRule(rule6Clear.opr('-D'));
+        await iptc.addRule(rule4Clear.opr('-D'));
+        await iptc.addRule(rule6Clear.opr('-D'));
         await fs.unlinkAsync(hostConfPath).catch((err) => {});
         await fs.unlinkAsync(vcConfPath).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
@@ -524,9 +524,9 @@ class Host extends Monitorable {
     try {
       const dnsCaching = policy.dnsCaching;
       if (dnsCaching === true) {
-        Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST_MAC, this.o.mac);
+        await Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST_MAC, this.o.mac);
       } else {
-        Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST_MAC, this.o.mac);
+        await Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST_MAC, this.o.mac);
       }
     } catch (err) {
       log.error("Failed to set dnsmasq policy on " + this.o.mac, err);
@@ -554,25 +554,25 @@ class Host extends Monitorable {
         state = policy.state;
     }
     if (state === true) {
-      Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF_MAC, this.o.mac);
-      Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, Host.getIpSetName(this.o.mac, 4));
-      Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, Host.getIpSetName(this.o.mac, 6));
+      await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF_MAC, this.o.mac);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, Host.getIpSetName(this.o.mac, 4));
+      await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, Host.getIpSetName(this.o.mac, 6));
     } else {
-      Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF_MAC, this.o.mac);
-      Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, Host.getIpSetName(this.o.mac, 4));
-      Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, Host.getIpSetName(this.o.mac, 6));
+      await Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF_MAC, this.o.mac);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, Host.getIpSetName(this.o.mac, 4));
+      await Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, Host.getIpSetName(this.o.mac, 6));
     }
   }
 
   async acl(state) {
     if (state === true) {
-      Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF_MAC, this.o.mac);
-      Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, Host.getIpSetName(this.o.mac, 4));
-      Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, Host.getIpSetName(this.o.mac, 6));
+      await Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF_MAC, this.o.mac);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, Host.getIpSetName(this.o.mac, 4));
+      await Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, Host.getIpSetName(this.o.mac, 6));
     } else {
-      Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF_MAC, this.o.mac);
-      Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, Host.getIpSetName(this.o.mac, 4));
-      Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, Host.getIpSetName(this.o.mac, 6));
+      await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF_MAC, this.o.mac);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, Host.getIpSetName(this.o.mac, 4));
+      await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, Host.getIpSetName(this.o.mac, 6));
     }
   }
 
@@ -750,11 +750,11 @@ class Host extends Monitorable {
         if (ipv4Addr) {
           const recentlyAdded = this.ipCache.peek(ipv4Addr);
           if (!recentlyAdded) {
-            Ipset.add(Host.getIpSetName(this.o.mac, 4), ipv4Addr);
+            await Ipset.add(Host.getIpSetName(this.o.mac, 4), ipv4Addr);
             // flatten device IP addresses into tag's ipset
             // in practice, this ipset will be added to another tag's list:set if the device group belongs to a user group
             for (const tag of tags)
-              Ipset.add(Tag.getTagDeviceIPSetName(tag, 4), ipv4Addr);
+              await Ipset.add(Tag.getTagDeviceIPSetName(tag, 4), ipv4Addr);
             this.ipCache.set(ipv4Addr, 1);
           }
         }
@@ -763,9 +763,9 @@ class Host extends Monitorable {
           for (const addr of ipv6Addr) {
             const recentlyAdded = this.ipCache.peek(addr);
             if (!recentlyAdded) {
-              Ipset.add(Host.getIpSetName(this.o.mac, 6), addr);
+              await Ipset.add(Host.getIpSetName(this.o.mac, 6), addr);
               for (const tag of tags)
-                Ipset.add(Tag.getTagDeviceIPSetName(tag, 6), addr);
+                await Ipset.add(Tag.getTagDeviceIPSetName(tag, 6), addr);
               this.ipCache.set(addr, 1);
             }
           }
@@ -1263,17 +1263,17 @@ class Host extends Monitorable {
       const tagExists = await TagManager.tagUidExists(removedTag, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedTag);
-        Ipset.del(Tag.getTagDeviceMacSetName(removedTag), this.o.mac);
+        await Ipset.del(Tag.getTagDeviceMacSetName(removedTag), this.o.mac);
         if (ipv4Addr)
-          Ipset.del(Tag.getTagDeviceIPSetName(removedTag, 4), ipv4Addr);
+          await Ipset.del(Tag.getTagDeviceIPSetName(removedTag, 4), ipv4Addr);
         if (_.isArray(ipv6Addrs)) {
           for (const ipv6Addr of ipv6Addrs)
-            Ipset.del(Tag.getTagDeviceIPSetName(removedTag, 6), ipv6Addr);
+            await Ipset.del(Tag.getTagDeviceIPSetName(removedTag, 6), ipv6Addr);
         }
-        Ipset.del(Tag.getTagSetName(removedTag), Host.getIpSetName(this.o.mac, 4));
-        Ipset.del(Tag.getTagSetName(removedTag), Host.getIpSetName(this.o.mac, 6));
-        Ipset.del(Tag.getTagDeviceSetName(removedTag), Host.getIpSetName(this.o.mac, 4));
-        Ipset.del(Tag.getTagDeviceSetName(removedTag), Host.getIpSetName(this.o.mac, 6));
+        await Ipset.del(Tag.getTagSetName(removedTag), Host.getIpSetName(this.o.mac, 4));
+        await Ipset.del(Tag.getTagSetName(removedTag), Host.getIpSetName(this.o.mac, 6));
+        await Ipset.del(Tag.getTagDeviceSetName(removedTag), Host.getIpSetName(this.o.mac, 4));
+        await Ipset.del(Tag.getTagDeviceSetName(removedTag), Host.getIpSetName(this.o.mac, 6));
         await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${removedTag}_${this.o.mac.toUpperCase()}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedTag} not found`);
@@ -1286,17 +1286,17 @@ class Host extends Monitorable {
       const tagExists = await TagManager.tagUidExists(uid, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(uid);
-        Ipset.add(Tag.getTagDeviceMacSetName(uid), this.o.mac);
+        await Ipset.add(Tag.getTagDeviceMacSetName(uid), this.o.mac);
         if (ipv4Addr)
-          Ipset.add(Tag.getTagDeviceIPSetName(uid, 4), ipv4Addr);
+          await Ipset.add(Tag.getTagDeviceIPSetName(uid, 4), ipv4Addr);
         if (_.isArray(ipv6Addrs)) {
           for (const ipv6Addr of ipv6Addrs)
-            Ipset.add(Tag.getTagDeviceIPSetName(uid, 6), ipv6Addr);
+            await Ipset.add(Tag.getTagDeviceIPSetName(uid, 6), ipv6Addr);
         }
-        Ipset.add(Tag.getTagSetName(uid), Host.getIpSetName(this.o.mac, 4));
-        Ipset.add(Tag.getTagSetName(uid), Host.getIpSetName(this.o.mac, 6));
-        Ipset.add(Tag.getTagDeviceSetName(uid), Host.getIpSetName(this.o.mac, 4));
-        Ipset.add(Tag.getTagDeviceSetName(uid), Host.getIpSetName(this.o.mac, 6));
+        await Ipset.add(Tag.getTagSetName(uid), Host.getIpSetName(this.o.mac, 4));
+        await Ipset.add(Tag.getTagSetName(uid), Host.getIpSetName(this.o.mac, 6));
+        await Ipset.add(Tag.getTagDeviceSetName(uid), Host.getIpSetName(this.o.mac, 4));
+        await Ipset.add(Tag.getTagDeviceSetName(uid), Host.getIpSetName(this.o.mac, 6));
         const dnsmasqEntry = `mac-address-group=%${this.o.mac.toUpperCase()}@${uid}`;
         await dnsmasq.writeConfig(`${f.getUserConfigFolder()}/dnsmasq/tag_${uid}_${this.o.mac.toUpperCase()}.conf`, dnsmasqEntry).catch((err) => {
           log.error(`Failed to write dnsmasq tag ${uid} on mac ${this.o.mac}`, err);

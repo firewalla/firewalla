@@ -197,18 +197,18 @@ class Clash {
     (async() => {
       const code = "CN";
       await countryUpdater.activateCountry(code);
-      iptc.addRule(new Rule('nat').chn('FW_CLASH_CHAIN').pro('tcp').set('c_bd_country:CN_set', 'dst').jmp('RETURN').opr('-I'))
+      await iptc.addRule(new Rule('nat').chn('FW_CLASH_CHAIN').pro('tcp').set('c_bd_country:CN_set', 'dst').jmp('RETURN').opr('-I'))
     })()
   }
 
   async redirectTraffic() {
     await this.prepareCHNRoute();
-    iptc.addRule(new Rule('nat').chn('FW_PREROUTING').set(ipset.CONSTANTS.IPSET_MONITORED_NET, 'src,src').pro('tcp').jmp('FW_CLASH_CHAIN'))
+    await iptc.addRule(new Rule('nat').chn('FW_PREROUTING').set(ipset.CONSTANTS.IPSET_MONITORED_NET, 'src,src').pro('tcp').jmp('FW_CLASH_CHAIN'))
     this.shouldRedirect = true;    
   }
 
   async unRedirectTraffic() {
-    iptc.addRule(new Rule('nat').chn('FW_PREROUTING').set(ipset.CONSTANTS.IPSET_MONITORED_NET, 'src,src').pro('tcp').jmp('FW_CLASH_CHAIN').opr('-D'))
+    await iptc.addRule(new Rule('nat').chn('FW_PREROUTING').set(ipset.CONSTANTS.IPSET_MONITORED_NET, 'src,src').pro('tcp').jmp('FW_CLASH_CHAIN').opr('-D'))
     this.shouldRedirect = false;
   }
 

@@ -1304,13 +1304,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const categoryIps = await rclient.zrangeAsync(mapping, 0, -1).then(ips => ips.filter(ip => !firewalla.isReservedBlockingIP(ip)));
     if (categoryIps.length == 0) return;
     
-    const opt = options.needComment ? { comment: domain } : {};
-    // Filter IPv4 addresses (no colons)
-    const ipv4Ips = categoryIps.filter(ip => !ip.includes(':'));
-    ipv4Ips.forEach(ip => Ipset.add(ipsetName, ip, opt));
-    // Filter IPv6 addresses (contain colons)
-    const ipv6Ips = categoryIps.filter(ip => ip.includes(':'));
-    ipv6Ips.forEach(ip => Ipset.add(ipset6Name, ip, opt));
+    const commentSuffix = options.needComment ? ` comment ${domain}` : '';
+    await Ipset.restore(categoryIps.map(ip => 
+      `add ${ip.includes(':') ? ipset6Name : ipsetName} ${ip}${commentSuffix}`
+    ))
   }
 
   async updateIPSetByDomainPort(category, domainObj, options) {
@@ -1337,18 +1334,17 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const portObj = domainObj.port;
     const portStr = CategoryEntry.toPortStr(portObj);
     
-    const opt = options.needComment ? { comment: domain } : {};
-    // Filter IPv4 addresses (no colons)
-    if (!portObj || portObj.proto !== 'icmpv6') {
-      const ipv4Ips = categoryIps.filter(ip => !ip.includes(':'));
-      ipv4Ips.forEach(ip => Ipset.add(ipsetName, `${ip},${portStr}`, opt));
-    }
-    
-    // Filter IPv6 addresses (contain colons)
-    if (!portObj || portObj.proto !== 'icmp') {
-      const ipv6Ips = categoryIps.filter(ip => ip.includes(':'));
-      ipv6Ips.forEach(ip => Ipset.add(ipset6Name, `${ip},${portStr}`, opt));
-    }
+    const commentSuffix = options.needComment ? ` comment ${domain}` : '';
+    const ops = [];
+    if (!portObj || portObj.proto !== 'icmpv6')
+      ops.push(...categoryIps.filter(ip => !ip.includes(':'))
+        .map(ip => `add ${ipsetName} ${ip},${portStr}${commentSuffix}`)
+      );
+    if (!portObj || portObj.proto !== 'icmp')
+      ops.push(...categoryIps.filter(ip => ip.includes(':'))
+        .map(ip => `add ${ipset6Name} ${ip},${portStr}${commentSuffix}`)
+      )
+    await Ipset.restore(ops);
   }
 
   async filterIPSetByDomain(category, options) {
@@ -1382,16 +1378,12 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     const categoryFilterIps = await rclient.zrangeAsync(mapping, 0, -1);
     if (categoryFilterIps.length == 0) return;
-    
-    // Filter IPv4 addresses (no colons)
-    const ipv4Ips = categoryFilterIps.filter(ip => !ip.includes(':'));
-    ipv4Ips.forEach(ip => Ipset.del(ipsetName, ip));
-    // Filter IPv6 addresses (contain colons)
-    const ipv6Ips = categoryFilterIps.filter(ip => ip.includes(':'));
-    ipv6Ips.forEach(ip => Ipset.del(ipset6Name, ip));
+
+    await Ipset.restore(categoryFilterIps.map(ip =>
+      `del ${ip.includes(':') ? ipset6Name : ipsetName} ${ip}`
+    ));
     const categoryIpMappingKey = this.getCategoryIpMapping(category);
     await rclient.sremAsync(categoryIpMappingKey, categoryFilterIps);
-
   }
 
   async _filterIPSetByDomainPattern(category, domain, options) {
@@ -1421,13 +1413,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
       const categoryFilterIps = await rclient.zrangeAsync(smappings, 0, -1);
       if (categoryFilterIps.length == 0) return;
-      
-      // Filter IPv4 addresses (no colons)
-      const ipv4Ips = categoryFilterIps.filter(ip => !ip.includes(':'));
-      ipv4Ips.forEach(ip => Ipset.del(ipsetName, ip));
-      // Filter IPv6 addresses (contain colons)
-      const ipv6Ips = categoryFilterIps.filter(ip => ip.includes(':'));
-      ipv6Ips.forEach(ip => Ipset.del(ipset6Name, ip));
+
+      await Ipset.restore(categoryFilterIps.map(ip =>
+        `del ${ip.includes(':') ? ipset6Name : ipsetName} ${ip}`
+      ));
       const categoryIpMappingKey = this.getCategoryIpMapping(category);
       await rclient.sremAsync(categoryIpMappingKey, categoryFilterIps);
     }
@@ -1467,14 +1456,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
       const categoryIps = await rclient.zrangeAsync(smappings, 0, -1).then(ips => ips.filter(ip => !firewalla.isReservedBlockingIP(ip)));
       if (categoryIps.length == 0) return;
       
-      const opt = options.needComment ? { comment: domain } : {};
-      // Filter IPv4 addresses (no colons)
-      const ipv4Ips = categoryIps.filter(ip => !ip.includes(':'));
-      ipv4Ips.forEach(ip => Ipset.add(ipsetName, ip, opt));
-      // Filter IPv6 addresses (contain colons)
-      const ipv6Ips = categoryIps.filter(ip => ip.includes(':'));
-      ipv6Ips.forEach(ip => Ipset.add(ipset6Name, ip, opt));
-      
+      const commentSuffix = options.needComment ? ` comment ${domain}` : '';
+      await Ipset.restore(categoryIps.map(ip => 
+        `add ${ip.includes(':') ? ipset6Name : ipsetName} ${ip}${commentSuffix}`
+      ))
     }
   }
 
@@ -1515,19 +1500,17 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
       const portObj = domainObj.port;
       const portStr = CategoryEntry.toPortStr(portObj);
-      const opt = options.needComment ? { comment: domain } : {};
-      
-      // Filter IPv4 addresses (no colons)
-      if (!portObj || portObj.proto !== 'icmpv6') {
-        const ipv4Ips = categoryIps.filter(ip => !ip.includes(':'));
-        ipv4Ips.forEach(ip => Ipset.add(ipsetName, `${ip},${portStr}`, opt));
-      }
-      
-      // Filter IPv6 addresses (contain colons)
-      if (!portObj || portObj.proto !== 'icmp') {
-        const ipv6Ips = categoryIps.filter(ip => ip.includes(':'));
-        ipv6Ips.forEach(ip => Ipset.add(ipset6Name, `${ip},${portStr}`, opt));
-      }
+      const commentSuffix = options.needComment ? ` comment ${domain}` : '';
+      const ops = [];
+      if (!portObj || portObj.proto !== 'icmpv6')
+        ops.push(...categoryIps.filter(ip => !ip.includes(':'))
+          .map(ip => `add ${ipsetName} ${ip},${portStr}${commentSuffix}`)
+        );
+      if (!portObj || portObj.proto !== 'icmp')
+        ops.push(...categoryIps.filter(ip => ip.includes(':'))
+          .map(ip => `add ${ipset6Name} ${ip},${portStr}${commentSuffix}`)
+        );
+      await Ipset.restore(ops);
     }
   }
 
@@ -1700,8 +1683,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     if (currentRecyclemode === "domainOnly") {
       // flush the _dm ipset
-      Ipset.flush(this.getIPSetName(category, false, false));
-      Ipset.flush(this.getIPSetName(category, false, true));
+      await Ipset.flush(this.getIPSetName(category, false, false));
+      await Ipset.flush(this.getIPSetName(category, false, true));
     }
 
     await this.updateFlowSignatureList();
@@ -2121,7 +2104,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
           if (sigConfig.timeout != null) {
             options.timeout = sigConfig.timeout;
           }
-          Block.batchBlockConnection([sigData], connSet, options)
+          await Block.batchBlockConnection([sigData], connSet, options)
           break;
         case "ipPort":
           await this.addSigDetectedServer(category, sigData).catch((err) => {

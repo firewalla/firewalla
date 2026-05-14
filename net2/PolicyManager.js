@@ -76,10 +76,10 @@ class PolicyManager {
     const secondarySubnet = sysManager.mySubnet2();
     if (platform.getDHCPCapacity() && secondarySubnet) {
       const overlayMasquerade = new Rule('nat').chn('FW_POSTROUTING').src(secondarySubnet).jmp('MASQUERADE');
-      iptc.addRule(overlayMasquerade);
+      await iptc.addRule(overlayMasquerade);
     }
     const icmpv6Redirect = new Rule().fam(6).chn('OUTPUT').icmp6('redirect').jmp('DROP');
-    iptc.addRule(icmpv6Redirect);
+    await iptc.addRule(icmpv6Redirect);
 
     // setup global blocking redis match rule
     await dnsmasq.createGlobalRedisMatchRule();

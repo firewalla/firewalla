@@ -257,24 +257,39 @@ class CategoryUpdaterBase {
     let ipsetName = this.getIPSetName(category, true, ip6);
 
     const categoryIps = ip6 ? await this.getIPv6Addresses(category) : await this.getIPv4Addresses(category);
-    Ipset.flush(ipsetName);
 
-    if (categoryIps.length == 0) return;
-    
-    categoryIps.forEach(ip => Ipset.add(ipsetName, ip, { comment: options.comment }));
+    if (categoryIps.length == 0) {
+      await Ipset.flush(ipsetName);
+      return;
+    }
+
+    const comment = options.comment;
+    const addLines = categoryIps.map(ip => {
+      let line = `add ${ipsetName} ${ip}`;
+      if (comment) line += ` comment ${comment}`;
+      return line;
+    });
+    await Ipset.restore([`flush ${ipsetName}`, ...addLines]);
   }
 
   // add entries from category:{category}:ip:domain to ipset
   async updateNetportIpset(category, ip6 = false, options) {
     const ipsetName = ip6 ? this.getNetPortIPSetNameForIPV6(category) : this.getNetPortIPSetName(category);
-  
-    const categoryIps = ip6 ? await this.getIPv6AddressesWithPort(category) : await this.getIPv4AddressesWithPort(category);
-    Ipset.flush(ipsetName);
 
-    if (categoryIps.length === 0) return;
-    categoryIps.forEach(ipObj =>
-      Ipset.add(ipsetName, `${ipObj.id},${CategoryEntry.toPortStr(ipObj.port)}`, { comment: options.comment })
-    )
+    const categoryIps = ip6 ? await this.getIPv6AddressesWithPort(category) : await this.getIPv4AddressesWithPort(category);
+
+    if (categoryIps.length === 0) {
+      await Ipset.flush(ipsetName);
+      return;
+    }
+
+    const comment = options.comment;
+    const addLines = categoryIps.map(ipObj => {
+      let line = `add ${ipsetName} ${ipObj.id},${CategoryEntry.toPortStr(ipObj.port)}`;
+      if (comment) line += ` comment ${comment}`;
+      return line;
+    });
+    await Ipset.restore([`flush ${ipsetName}`, ...addLines]);
   }
 
   async updatePersistentIPSets(category, ip6 = false, options) {
@@ -329,18 +344,18 @@ class CategoryUpdaterBase {
 
     log.verbose('createTempIpsets', category, isCountry, dstType, needComment)
 
-    Ipset.create(this.getIPSetName(category, false, false, true), dstType, false, { maxelem: 65536, comment: needComment });
-    Ipset.create(this.getIPSetName(category, false, true, true), dstType, true, { maxelem: 65536, comment: needComment });
+    await Ipset.create(this.getIPSetName(category, false, false, true), dstType, false, { maxelem: 65536, comment: needComment });
+    await Ipset.create(this.getIPSetName(category, false, true, true), dstType, true, { maxelem: 65536, comment: needComment });
 
     if (!isCountry) {
-      Ipset.create(this.getIPSetName(category, true, false, true), dstType, false, { maxelem: 65536, comment: needComment });
-      Ipset.create(this.getIPSetName(category, true, true, true), dstType, true, { maxelem: 65536, comment: needComment });
+      await Ipset.create(this.getIPSetName(category, true, false, true), dstType, false, { maxelem: 65536, comment: needComment });
+      await Ipset.create(this.getIPSetName(category, true, true, true), dstType, true, { maxelem: 65536, comment: needComment });
 
-      Ipset.create(this.getDomainPortIPSetName(category, false, false, true), 'hash:net,port', false, { maxelem: 65536, comment: needComment });
-      Ipset.create(this.getDomainPortIPSetName(category, false, true, true), 'hash:net,port', true, { maxelem: 65536, comment: needComment });
+      await Ipset.create(this.getDomainPortIPSetName(category, false, false, true), 'hash:net,port', false, { maxelem: 65536, comment: needComment });
+      await Ipset.create(this.getDomainPortIPSetName(category, false, true, true), 'hash:net,port', true, { maxelem: 65536, comment: needComment });
 
-      Ipset.create(this.getDomainPortIPSetName(category, true, false, true), 'hash:net,port', false, { maxelem: 65536, comment: needComment });
-      Ipset.create(this.getDomainPortIPSetName(category, true, true, true), 'hash:net,port', true, { maxelem: 65536, comment: needComment });
+      await Ipset.create(this.getDomainPortIPSetName(category, true, false, true), 'hash:net,port', false, { maxelem: 65536, comment: needComment });
+      await Ipset.create(this.getDomainPortIPSetName(category, true, true, true), 'hash:net,port', true, { maxelem: 65536, comment: needComment });
     }
   }
 
@@ -353,14 +368,14 @@ class CategoryUpdaterBase {
     const tmpIPSet6Name = this.getTempIPSetNameForIPV6(category);
 
     // swap temp ipset with ipset
-    Ipset.swap(ipsetName, tmpIPSetName);
-    Ipset.swap(ipset6Name, tmpIPSet6Name);
+    await Ipset.swap(ipsetName, tmpIPSetName);
+    await Ipset.swap(ipset6Name, tmpIPSet6Name);
 
-    Ipset.flush(tmpIPSetName);
-    Ipset.flush(tmpIPSet6Name);
+    await Ipset.flush(tmpIPSetName);
+    await Ipset.flush(tmpIPSet6Name);
 
-    Ipset.destroy(tmpIPSetName);
-    Ipset.destroy(tmpIPSet6Name);
+    await Ipset.destroy(tmpIPSetName);
+    await Ipset.destroy(tmpIPSet6Name);
 
     if (!isCountry) { // country does not have following ipsets, this can greatly save kernel memory usage
       const domainportIpsetName = this.getDomainPortIPSetName(category);
@@ -373,23 +388,23 @@ class CategoryUpdaterBase {
       const tmpStaticDomainportIpsetName = this.getTempDomainPortIPSetName(category, true);
       const tmpStaticDomainportIpset6Name = this.getTempDomainPortIPSetNameForIPV6(category, true);
 
-      Ipset.swap(domainportIpsetName, tmpDomainportIpsetName);
-      Ipset.swap(domainportIpset6Name, tmpDomainportIpset6Name);
+      await Ipset.swap(domainportIpsetName, tmpDomainportIpsetName);
+      await Ipset.swap(domainportIpset6Name, tmpDomainportIpset6Name);
 
-      Ipset.swap(staticDomainportIpsetName, tmpStaticDomainportIpsetName);
-      Ipset.swap(staticDomainportIpset6Name, tmpStaticDomainportIpset6Name);
+      await Ipset.swap(staticDomainportIpsetName, tmpStaticDomainportIpsetName);
+      await Ipset.swap(staticDomainportIpset6Name, tmpStaticDomainportIpset6Name);
 
-      Ipset.flush(tmpDomainportIpsetName);
-      Ipset.flush(tmpDomainportIpset6Name);
+      await Ipset.flush(tmpDomainportIpsetName);
+      await Ipset.flush(tmpDomainportIpset6Name);
 
-      Ipset.flush(tmpStaticDomainportIpsetName);
-      Ipset.flush(tmpStaticDomainportIpset6Name);
+      await Ipset.flush(tmpStaticDomainportIpsetName);
+      await Ipset.flush(tmpStaticDomainportIpset6Name);
 
-      Ipset.destroy(tmpDomainportIpsetName);
-      Ipset.destroy(tmpDomainportIpset6Name);
+      await Ipset.destroy(tmpDomainportIpsetName);
+      await Ipset.destroy(tmpDomainportIpset6Name);
 
-      Ipset.destroy(tmpStaticDomainportIpsetName);
-      Ipset.destroy(tmpStaticDomainportIpset6Name);
+      await Ipset.destroy(tmpStaticDomainportIpsetName);
+      await Ipset.destroy(tmpStaticDomainportIpset6Name);
     }
   }
 
