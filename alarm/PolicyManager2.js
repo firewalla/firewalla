@@ -1309,6 +1309,8 @@ class PolicyManager2 {
 
   needDisturbRegister(policy) {
     if (policy && policy.disturbPretreatDone) return false;
+    // Time usage owns the outer lifecycle; disturb is applied only after quota state changes.
+    if (this.needAppTimeUsageRegister(policy)) return false;
 
     const isDisturbAction = policy && policy.action === 'disturb';
     const hasQuota = policy && policy.appTimeUsage && policy.appTimeUsage.disturbQuota != undefined;
