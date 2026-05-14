@@ -70,7 +70,7 @@ class APFeaturesPlugin extends Sensor {
   }
 
   async _aclIptables(op) {
-    log.info("applyApControl", op);
+    log.info("Apply Local ACL iptables", op);
     const netRule = new Rule("filter").chn("FW_FIREWALL_NET_ISOLATION").comment("network_local_acl_off").jmp("RETURN");
     const netRule6 = netRule.clone().fam(6);
     await iptc.addRule(netRule.opr(op));
@@ -95,14 +95,14 @@ class APFeaturesPlugin extends Sensor {
 
   async _aclAssets(acloff=false) {
     // set disableAcl to APs
-    const config = await fireRouter.getConfig();
+    const config = await fireRouter.getConfig(true);
     if (!config || !config.apc) {
       log.error("Failed to get apc config");
       return;
     }
     const changed = this._setAssetAcl(config, acloff);
     if (changed === true) {
-      log.info("acl changed, reapply networkConfig", acloff);
+      log.info("ACL changed, reapply networkConfig to assets", acloff);
       await fireRouter.setConfig(config).catch((err) => {
         log.warn("Failed to set apc config to change acl status", err.message);
       });
