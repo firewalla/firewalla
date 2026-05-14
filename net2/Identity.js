@@ -380,7 +380,7 @@ class Identity extends Monitorable {
           .comment(this._getPolicyKey());
         const rule4 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} src`);
         const rule6 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)} src`).fam(6);
-        await addRule(rule4.opr('-D'));
+        await iptc.addRule(rule4.opr('-D'));
         await iptc.addRule(rule6.opr('-D'));
 
         // remove rule that was set by state == null
