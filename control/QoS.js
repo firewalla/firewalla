@@ -320,9 +320,9 @@ async function applyOverrideDscp(opts) {
   rule.comment(comments);
   rule.opr(op);
   rule.fam(4);
-  iptc.addRule(rule);
+  await iptc.addRule(rule);
   rule.fam(6);
-  iptc.addRule(rule);
+  await iptc.addRule(rule);
 }
 
 

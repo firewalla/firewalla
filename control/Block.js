@@ -42,6 +42,41 @@ const UPNP_ACCEPT_CHAIN = "FR_UPNP_ACCEPT";
 const initializedRuleGroups = {};
 const routeLogRateLimitPerSecond = 10;
 
+function addDisturbBypassJumpRules(rawRules, { chain, target, op, comment, set4, set6 = set4, specs = [] }) {
+  for (const family of [4, 6]) {
+    const setName = family === 4 ? set4 : set6;
+    for (const spec of specs) {
+      const rule = new Rule("mangle").fam(family).chn(chain);
+      if (setName)
+        rule.set(setName, spec);
+      if (comment)
+        rule.comment(comment);
+      rawRules.push(rule.jmp(target).opr(op));
+    }
+  }
+}
+
+function addGlobalDisturbBypassJumpRules(rawRules, { target, op, comment }) {
+  if (platform.isFireRouterManaged()) {
+    addDisturbBypassJumpRules(rawRules, {
+      chain: "FW_DISTURB_QOS_GLOBAL",
+      target,
+      op,
+      comment,
+      set4: Ipset.CONSTANTS.IPSET_MONITORED_NET,
+      specs: ["src,src", "dst,dst"],
+    });
+  } else {
+    addDisturbBypassJumpRules(rawRules, {
+      chain: "FW_DISTURB_QOS_GLOBAL",
+      target,
+      op,
+      comment,
+      specs: [""],
+    });
+  }
+}
+
 // =============== block @ connection level ==============
 
 async function ensureCreateRuleGroupChain(uuid) {
@@ -69,9 +104,7 @@ async function ensureCreateRuleGroupChain(uuid) {
   }
 
   // queue chain creation using action '-N'
-  for (const r of [...cmds4, ...cmds6]) {
-    iptc.addRule(r.opr('-N'));
-  }
+  await iptc.addRuleBatch([...cmds4, ...cmds6], '-N');
 
   initializedRuleGroups[uuid] = 1;
 }
@@ -154,8 +187,8 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashsize = 128, c
   const ipset4 = categoryUpdater.getIPSetName(category);
   const ipset6 = categoryUpdater.getIPSetName(category, false, true);
 
-  Ipset.create(ipset4, dstType, false, { hashsize, maxelem: 65536, comment });
-  Ipset.create(ipset6, dstType, true, { hashsize, maxelem: 65536, comment });
+  await Ipset.create(ipset4, dstType, false, { hashsize, maxelem: 65536, comment });
+  await Ipset.create(ipset6, dstType, true, { hashsize, maxelem: 65536, comment });
 
   if (!isCountry) { // country does not need following ipsets
     const staticIpset = categoryUpdater.getIPSetName(category, true);
@@ -180,54 +213,54 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashsize = 128, c
     const allowIpset = categoryUpdater.getAllowIPSetName(category);
     const allowIpset6 = categoryUpdater.getAllowIPSetNameForIPV6(category);
 
-    Ipset.create(netPortIpset, 'hash:net,port', false, { hashsize, maxelem: 65536, comment });
-    Ipset.create(netPortIpset6, 'hash:net,port', true, { hashsize, maxelem: 65536, comment });
-    Ipset.create(domainPortIpset, 'hash:net,port', false, { hashsize, maxelem: 65536, comment });
-    Ipset.create(domainPortIpset6, 'hash:net,port', true, { hashsize, maxelem: 65536, comment });
-    Ipset.create(aggrIpset, 'list:set');
-    Ipset.create(aggrIpset6, 'list:set');
+    await Ipset.create(netPortIpset, 'hash:net,port', false, { hashsize, maxelem: 65536, comment });
+    await Ipset.create(netPortIpset6, 'hash:net,port', true, { hashsize, maxelem: 65536, comment });
+    await Ipset.create(domainPortIpset, 'hash:net,port', false, { hashsize, maxelem: 65536, comment });
+    await Ipset.create(domainPortIpset6, 'hash:net,port', true, { hashsize, maxelem: 65536, comment });
+    await Ipset.create(aggrIpset, 'list:set');
+    await Ipset.create(aggrIpset6, 'list:set');
 
-    Ipset.create(staticIpset, dstType, false, { hashsize, maxelem: 65536, comment });
-    Ipset.create(staticIpset6, dstType, true, { hashsize, maxelem: 65536, comment });
-    Ipset.create(staticDomainPortIpset, 'hash:net,port', false, { hashsize, maxelem: 65536, comment });
-    Ipset.create(staticDomainPortIpset6, 'hash:net,port', true, { hashsize, maxelem: 65536, comment });
+    await Ipset.create(staticIpset, dstType, false, { hashsize, maxelem: 65536, comment });
+    await Ipset.create(staticIpset6, dstType, true, { hashsize, maxelem: 65536, comment });
+    await Ipset.create(staticDomainPortIpset, 'hash:net,port', false, { hashsize, maxelem: 65536, comment });
+    await Ipset.create(staticDomainPortIpset6, 'hash:net,port', true, { hashsize, maxelem: 65536, comment });
 
-    Ipset.create(connIpset, 'hash:ip,port,ip', false, { hashsize, maxelem: 65536, comment, timeout: 300 });
-    Ipset.create(connIpset6, 'hash:ip,port,ip', true, { hashsize, maxelem: 65536, comment, timeout: 300 });
+    await Ipset.create(connIpset, 'hash:ip,port,ip', false, { hashsize, maxelem: 65536, comment, timeout: 300 });
+    await Ipset.create(connIpset6, 'hash:ip,port,ip', true, { hashsize, maxelem: 65536, comment, timeout: 300 });
 
-    Ipset.create(staticAggrIpset, 'list:set');
-    Ipset.create(staticAggrIpset6, 'list:set');
+    await Ipset.create(staticAggrIpset, 'list:set');
+    await Ipset.create(staticAggrIpset6, 'list:set');
   
-    Ipset.create(allowIpset, 'list:set');
-    Ipset.create(allowIpset6, 'list:set');
+    await Ipset.create(allowIpset, 'list:set');
+    await Ipset.create(allowIpset6, 'list:set');
   
     // add both dynamic and static ipset to category default ipset
-    Ipset.add(aggrIpset, ipset4);
-    Ipset.add(aggrIpset, staticIpset);
-    Ipset.add(aggrIpset, netPortIpset);
-    Ipset.add(aggrIpset, staticDomainPortIpset);
-    Ipset.add(aggrIpset6, ipset6);
-    Ipset.add(aggrIpset6, staticIpset6);
-    Ipset.add(aggrIpset6, netPortIpset6);
-    Ipset.add(aggrIpset6, staticDomainPortIpset6);
+    await Ipset.add(aggrIpset, ipset4);
+    await Ipset.add(aggrIpset, staticIpset);
+    await Ipset.add(aggrIpset, netPortIpset);
+    await Ipset.add(aggrIpset, staticDomainPortIpset);
+    await Ipset.add(aggrIpset6, ipset6);
+    await Ipset.add(aggrIpset6, staticIpset6);
+    await Ipset.add(aggrIpset6, netPortIpset6);
+    await Ipset.add(aggrIpset6, staticDomainPortIpset6);
   
-    Ipset.add(staticAggrIpset, staticIpset); // only add static ipset to category static ipset
-    Ipset.add(staticAggrIpset, netPortIpset);
-    Ipset.add(staticAggrIpset, staticDomainPortIpset);
-    Ipset.add(staticAggrIpset6, staticIpset6);
-    Ipset.add(staticAggrIpset6, netPortIpset6);
-    Ipset.add(staticAggrIpset6, staticDomainPortIpset6);
+    await Ipset.add(staticAggrIpset, staticIpset); // only add static ipset to category static ipset
+    await Ipset.add(staticAggrIpset, netPortIpset);
+    await Ipset.add(staticAggrIpset, staticDomainPortIpset);
+    await Ipset.add(staticAggrIpset6, staticIpset6);
+    await Ipset.add(staticAggrIpset6, netPortIpset6);
+    await Ipset.add(staticAggrIpset6, staticDomainPortIpset6);
   
-    Ipset.add(allowIpset, ipset4);
-    Ipset.add(allowIpset, staticIpset);
-    Ipset.add(allowIpset6, ipset6);
-    Ipset.add(allowIpset6, staticIpset6);
-    Ipset.add(allowIpset, netPortIpset);
-    Ipset.add(allowIpset6, netPortIpset6);
-    Ipset.add(allowIpset, domainPortIpset);
-    Ipset.add(allowIpset, staticDomainPortIpset);
-    Ipset.add(allowIpset6, domainPortIpset6);
-    Ipset.add(allowIpset6, staticDomainPortIpset6);
+    await Ipset.add(allowIpset, ipset4);
+    await Ipset.add(allowIpset, staticIpset);
+    await Ipset.add(allowIpset6, ipset6);
+    await Ipset.add(allowIpset6, staticIpset6);
+    await Ipset.add(allowIpset, netPortIpset);
+    await Ipset.add(allowIpset6, netPortIpset6);
+    await Ipset.add(allowIpset, domainPortIpset);
+    await Ipset.add(allowIpset, staticDomainPortIpset);
+    await Ipset.add(allowIpset6, domainPortIpset6);
+    await Ipset.add(allowIpset6, staticDomainPortIpset6);
   }
 }
 
@@ -281,9 +314,9 @@ async function batchActionNetPort(elements, portObj, ipset, op='add', options = 
     if (!setName) continue;
 
     if (op === 'add') {
-      Ipset.add(setName, `${ipAddr},${CategoryEntry.toPortStr(portObj)}`, { comment: options.comment });
+      await Ipset.add(setName, `${ipAddr},${CategoryEntry.toPortStr(portObj)}`, { comment: options.comment });
     } else {
-      Ipset.del(setName, `${ipAddr},${CategoryEntry.toPortStr(portObj)}`);
+      await Ipset.del(setName, `${ipAddr},${CategoryEntry.toPortStr(portObj)}`);
     }
   }
 }
@@ -319,7 +352,7 @@ function isGatewayOrPublicIp(ip) {
 
 
 // no need to remove from ipset, record will be cleared when timeout
-function batchBlockConnection(elements, ipset, options = {}) {
+async function batchBlockConnection(elements, ipset, options = {}) {
   log.debug("Batch block connection of", ipset);
   if (!_.isArray(elements) || elements.length === 0)
     return;
@@ -355,7 +388,7 @@ function batchBlockConnection(elements, ipset, options = {}) {
 
     const { comment, timeout } = options;
     for (const localPort of localPorts) {
-      Ipset.add(setName, `${localAddr},${protocol}:${localPort},${remoteAddr}`, { comment, timeout });
+      await Ipset.add(setName, `${localAddr},${protocol}:${localPort},${remoteAddr}`, { comment, timeout });
     }
   }
 }
@@ -393,9 +426,9 @@ async function batchSetupIpset(elements, ipset, remove = false, options = {}) {
     if (!setName) continue;
 
     if (remove)
-      Ipset.del(setName, ipAddr);
+      await Ipset.del(setName, ipAddr);
     else
-      Ipset.add(setName, ipAddr, { comment: options.comment });
+      await Ipset.add(setName, ipAddr, { comment: options.comment });
   }
 }
 
@@ -496,12 +529,20 @@ async function setupGlobalRules(options) {
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
         const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
         const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
+        const connmarkCmd = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
         if (!options.byPassChain) {
-          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_GLOBAL`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
-        } else {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_GLOBAL`, target: connmarkCmd });
+        } else if (!options.qosSubKey) {
           parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_GLOBAL`, target: options.byPassChain });
           table = "mangle";
-          markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+          markTarget = connmarkCmd;
+        } else {
+          // multi-target disturb: per-app match lands in BYPASS and jumps to per-subkey MARK chain;
+          // CONNMARK lives in the MARK chain so each app keeps its own qos handler bits.
+          addGlobalDisturbBypassJumpRules(rawRules, { target: options.byPassChain, op, comment: `rule_${pid}` });
+          parameters.push({ table: "mangle", chain: options.byPassChain, target: `FW_${pid}_${options.qosSubKey}_MARK` });
+          table = "mangle";
+          markTarget = connmarkCmd;
         }
       } else {
         parameters.push({ table: "mangle", chain: `FW_QOS_GLOBAL_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
@@ -592,7 +633,8 @@ async function setupGlobalRules(options) {
 
   const ruleOptions = await prepareOutboundOptions(options)
   if (options.byPassChain) {
-    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    const writeChain = options.qosSubKey ? `FW_${pid}_${options.qosSubKey}_MARK` : options.byPassChain;
+    const rule = new Rule(table).chn(writeChain).jmp(markTarget).opr(op);
     if (ruleOptions.comment) {
       rule.comment(ruleOptions.comment);
     }
@@ -615,9 +657,7 @@ async function setupGlobalRules(options) {
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
   }
-  for (const rawRule of rawRules) {
-    iptc.addRule(rawRule);
-  }
+  await iptc.addRuleBatch(rawRules)
 }
 
 async function setupGenericIdentitiesRules(options) {
@@ -679,12 +719,17 @@ async function setupGenericIdentitiesRules(options) {
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
         const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
         const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
+        const connmarkCmd = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
         if (!options.byPassChain) {
-          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
-        } else {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: connmarkCmd });
+        } else if (!options.qosSubKey) {
           parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: options.byPassChain });
           table = "mangle";
-          markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+          markTarget = connmarkCmd;
+        } else {
+          parameters.push({ table: "mangle", chain: options.byPassChain, target: `FW_${pid}_${options.qosSubKey}_MARK` });
+          table = "mangle";
+          markTarget = connmarkCmd;
         }
       } else {
         parameters.push({ table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
@@ -772,7 +817,8 @@ async function setupGenericIdentitiesRules(options) {
   }
   const ruleOptions = await prepareOutboundOptions(options)
   if (options.byPassChain) {
-    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    const writeChain = options.qosSubKey ? `FW_${pid}_${options.qosSubKey}_MARK` : options.byPassChain;
+    const rule = new Rule(table).chn(writeChain).jmp(markTarget).opr(op);
     if (ruleOptions.comment) {
       rule.comment(ruleOptions.comment);
     }
@@ -800,6 +846,17 @@ async function setupGenericIdentitiesRules(options) {
       log.error(`Cannot find localSet of guid ${guid}`);
       continue;
     }
+    if (options.byPassChain && options.qosSubKey && action === "qos" && qdisc === "netem") {
+      addDisturbBypassJumpRules(rawRules, {
+        chain: "FW_DISTURB_QOS_DEV",
+        target: options.byPassChain,
+        op,
+        comment: `rule_${pid}`,
+        set4: local.set,
+        set6: local.set6,
+        specs: ["src", "dst"],
+      });
+    }
     ruleOptions.src = local;
     for (const parameter of parameters) {
       rules.push(... await generateRules(Object.assign({}, ruleOptions, parameter)))
@@ -808,9 +865,7 @@ async function setupGenericIdentitiesRules(options) {
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
   }
-  for (const rawRule of rawRules) {
-    iptc.addRule(rawRule);
-  }
+  await iptc.addRuleBatch(rawRules)
 }
 
 // device-wise rules
@@ -872,12 +927,17 @@ async function setupDevicesRules(options) {
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
         const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
         const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
+        const connmarkCmd = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
         if (!options.byPassChain) {
-          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
-        } else {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: connmarkCmd });
+        } else if (!options.qosSubKey) {
           parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV`, target: options.byPassChain });
           table = "mangle";
-          markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+          markTarget = connmarkCmd;
+        } else {
+          parameters.push({ table: "mangle", chain: options.byPassChain, target: `FW_${pid}_${options.qosSubKey}_MARK` });
+          table = "mangle";
+          markTarget = connmarkCmd;
         }
       } else {
         parameters.push({ table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
@@ -967,7 +1027,8 @@ async function setupDevicesRules(options) {
   const ruleOptions = await prepareOutboundOptions(options)
 
   if (options.byPassChain) {
-    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    const writeChain = options.qosSubKey ? `FW_${pid}_${options.qosSubKey}_MARK` : options.byPassChain;
+    const rule = new Rule(table).chn(writeChain).jmp(markTarget).opr(op);
     if (ruleOptions.comment) {
       rule.comment(ruleOptions.comment);
     }
@@ -987,6 +1048,17 @@ async function setupDevicesRules(options) {
       portSet: localPortSet,
     }
     local.set6 = local.set;
+    if (options.byPassChain && options.qosSubKey && action === "qos" && qdisc === "netem") {
+      addDisturbBypassJumpRules(rawRules, {
+        chain: "FW_DISTURB_QOS_DEV",
+        target: options.byPassChain,
+        op,
+        comment: `rule_${pid}`,
+        set4: local.set,
+        set6: local.set6,
+        specs: ["src", "dst"],
+      });
+    }
     ruleOptions.src = local;
     for (const parameter of parameters) {
       rules.push(... await generateRules(Object.assign({}, ruleOptions, parameter)))
@@ -995,9 +1067,7 @@ async function setupDevicesRules(options) {
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
   }
-  for (const rawRule of rawRules) {
-    iptc.addRule(rawRule);
-  }
+  await iptc.addRuleBatch(rawRules)
 }
 
 async function setupTagsRules(options) {
@@ -1063,14 +1133,37 @@ async function setupTagsRules(options) {
           // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
           const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
           const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
+          const connmarkCmd = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
           if (!options.byPassChain) {
-            parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV_G`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`, localSet: devSet, localFlagCount: 1 });
-            parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET_G`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`, localSet: netSet, localFlagCount: 2 });
-          } else {
+            parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV_G`, target: connmarkCmd, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET_G`, target: connmarkCmd, localSet: netSet, localFlagCount: 2 });
+          } else if (!options.qosSubKey) {
             parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_DEV_G`, target: options.byPassChain, localSet: devSet, localFlagCount: 1 });
             parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET_G`, target: options.byPassChain, localSet: netSet, localFlagCount: 2 });
             table = "mangle";
-            markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+            markTarget = connmarkCmd;
+          } else {
+            const markChain = `FW_${pid}_${options.qosSubKey}_MARK`;
+            addDisturbBypassJumpRules(rawRules, {
+              chain: "FW_DISTURB_QOS_DEV_G",
+              target: options.byPassChain,
+              op,
+              comment: `rule_${pid}`,
+              set4: devSet,
+              specs: ["src", "dst"],
+            });
+            addDisturbBypassJumpRules(rawRules, {
+              chain: "FW_DISTURB_QOS_NET_G",
+              target: options.byPassChain,
+              op,
+              comment: `rule_${pid}`,
+              set4: netSet,
+              specs: ["src,src", "dst,dst"],
+            });
+            parameters.push({ table: "mangle", chain: options.byPassChain, target: markChain, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: options.byPassChain, target: markChain, localSet: netSet, localFlagCount: 2 });
+            table = "mangle";
+            markTarget = connmarkCmd;
           }
         } else {
           parameters.push({ table: "mangle", chain: `FW_QOS_DEV_G_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: devSet, localFlagCount: 1 });
@@ -1202,7 +1295,8 @@ async function setupTagsRules(options) {
   const ruleOptions = await prepareOutboundOptions(options)
 
   if (options.byPassChain) {
-    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    const writeChain = options.qosSubKey ? `FW_${pid}_${options.qosSubKey}_MARK` : options.byPassChain;
+    const rule = new Rule(table).chn(writeChain).jmp(markTarget).opr(op);
     if (ruleOptions.comment) {
       rule.comment(ruleOptions.comment);
     }
@@ -1228,9 +1322,7 @@ async function setupTagsRules(options) {
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
   }
-  for (const rawRule of rawRules) {
-    iptc.addRule(rawRule);
-  }
+  await iptc.addRuleBatch(rawRules)
 }
 
 function getNoLimitQoSClassId(priority) {
@@ -1306,12 +1398,17 @@ async function setupIntfsRules(options) {
         // currently, only App Disturb will use netem and app disturb not controlled by FW_QOS_SWITCH
         const fwmark_disturb = qos.SKIP_QOS_SWITCH | fwmark;
         const fwmask_disturb = qos.SKIP_QOS_SWITCH | fwmask;
+        const connmarkCmd = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
         if (!options.byPassChain) {
-          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET`, target: `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}` });
-        } else {
+          parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET`, target: connmarkCmd });
+        } else if (!options.qosSubKey) {
           parameters.push({ table: "mangle", chain: `FW_DISTURB_QOS_NET`, target: options.byPassChain });
           table = "mangle";
-          markTarget = `CONNMARK --set-xmark 0x${fwmark_disturb.toString(16)}/0x${fwmask_disturb.toString(16)}`;
+          markTarget = connmarkCmd;
+        } else {
+          parameters.push({ table: "mangle", chain: options.byPassChain, target: `FW_${pid}_${options.qosSubKey}_MARK` });
+          table = "mangle";
+          markTarget = connmarkCmd;
         }
       } else {
         parameters.push({ table: "mangle", chain: `FW_QOS_NET_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
@@ -1399,7 +1496,8 @@ async function setupIntfsRules(options) {
 
   const ruleOptions = await prepareOutboundOptions(options)
   if (options.byPassChain) {
-    const rule = new Rule(table).chn(options.byPassChain).jmp(markTarget).opr(op);
+    const writeChain = options.qosSubKey ? `FW_${pid}_${options.qosSubKey}_MARK` : options.byPassChain;
+    const rule = new Rule(table).chn(writeChain).jmp(markTarget).opr(op);
     if (ruleOptions.comment) {
       rule.comment(ruleOptions.comment);
     }
@@ -1418,6 +1516,17 @@ async function setupIntfsRules(options) {
       positive: true,
       portSet: localPortSet,
     }
+    if (options.byPassChain && options.qosSubKey && action === "qos" && qdisc === "netem") {
+      addDisturbBypassJumpRules(rawRules, {
+        chain: "FW_DISTURB_QOS_NET",
+        target: options.byPassChain,
+        op,
+        comment: `rule_${pid}`,
+        set4: local.set,
+        set6: local.set6,
+        specs: ["src,src", "dst,dst"],
+      });
+    }
     ruleOptions.src = local;
     for (const parameter of parameters) {
       rules.push(... await generateRules(Object.assign({}, ruleOptions, parameter)))
@@ -1426,9 +1535,7 @@ async function setupIntfsRules(options) {
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
   }
-  for (const rawRule of rawRules) {
-    iptc.addRule(rawRule);
-  }
+  await iptc.addRuleBatch(rawRules)
 }
 
 async function setupRuleGroupRules(options) {
@@ -1566,9 +1673,7 @@ async function setupRuleGroupRules(options) {
   for (const ruleOpt of rules) {
     await manipulateFiveTupleRule(ruleOpt)
   }
-  for (const rawRule of rawRules) {
-    iptc.addRule(rawRule);
-  }
+  await iptc.addRuleBatch(rawRules)
 }
 
 async function prepareOutboundOptions(options) {
@@ -1745,7 +1850,7 @@ async function manipulateFiveTupleRule(options) {
     rule.mdl("dscp", `--dscp-class ${dscpClass}`);
   }
   rule.jmp(target);
-  iptc.addRule(rule.opr(action));
+  await iptc.addRule(rule.opr(action));
 }
 
 

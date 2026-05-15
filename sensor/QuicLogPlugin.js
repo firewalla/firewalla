@@ -150,8 +150,8 @@ class QuicLogPlugin extends Sensor {
     rule.pro('udp');
     rule.dport(443);
     rule.jmp('LOG --log-level 7');
-    iptc.addRule(rule);
-    iptc.addRule(rule.fam(6));
+    await iptc.addRule(rule);
+    await iptc.addRule(rule.fam(6));
     
   }
 
@@ -172,8 +172,8 @@ class QuicLogPlugin extends Sensor {
     rule.dport(443);
     rule.jmp('LOG --log-level 7');
     rule.opr('-D');
-    iptc.addRule(rule);
-    iptc.addRule(rule.fam(6));
+    await iptc.addRule(rule);
+    await iptc.addRule(rule.fam(6));
   }
 
 }

@@ -143,10 +143,10 @@ class VpnManager {
       return;
     const localPort = this.localPort;
     const protocol = this.protocol;
-    iptc.addRule(new Rule('nat').chn('FW_PREROUTING_VPN_OVERLAY').opr('-F'));
+    await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_VPN_OVERLAY').opr('-F'));
     for (const wanIp of allWanIps) {
       if (wanIp !== primaryIp)
-        iptc.addRule(new Rule('nat').chn('FW_PREROUTING_VPN_OVERLAY').dst(wanIp).pro(protocol).dport(localPort).dnat(primaryIp+':'+localPort));
+        await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_VPN_OVERLAY').dst(wanIp).pro(protocol).dport(localPort).dnat(primaryIp+':'+localPort));
     }
   }
 
@@ -160,11 +160,11 @@ class VpnManager {
     if (overlayIp === this._dnatOverlayIp && primaryIp === this._dnatPrimaryIp && localPort === this._dnatLocalPort && protocol === this._dnatProtocol)
       return;
     if (this._dnatOverlayIp && this._dnatPrimaryIp && this._dnatLocalPort && this._dnatProtocol)
-      iptc.addRule(new Rule('nat').chn('FW_PREROUTING_VPN_OVERLAY').dst(this._dnatOverlayIp).pro(this._dnatProtocol).dport(this._dnatLocalPort).dnat(this._dnatPrimaryIp+':'+this._dnatLocalPort).opr('-D'));
+      await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_VPN_OVERLAY').dst(this._dnatOverlayIp).pro(this._dnatProtocol).dport(this._dnatLocalPort).dnat(this._dnatPrimaryIp+':'+this._dnatLocalPort).opr('-D'));
     const cidr1 = ip.cidrSubnet(sysManager.mySubnet());
     const cidr2 = ip.cidrSubnet(sysManager.mySubnet2());
     if (cidr1.networkAddress === cidr2.networkAddress && cidr1.subnetMask === cidr2.subnetMask) {
-      iptc.addRule(new Rule('nat').chn('FW_PREROUTING_VPN_OVERLAY').dst(overlayIp).pro(protocol).dport(localPort).dnat(primaryIp+':'+localPort));
+      await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_VPN_OVERLAY').dst(overlayIp).pro(protocol).dport(localPort).dnat(primaryIp+':'+localPort));
       this._dnatOverlayIp = overlayIp;
       this._dnatPrimaryIp = primaryIp;
       this._dnatLocalPort = localPort;
@@ -188,19 +188,19 @@ class VpnManager {
     log.info("VpnManager:SetIptables", serverNetwork);
 
     // clean up
-    iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_OPENVPN').opr('-F'));
+    await iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_OPENVPN').opr('-F'));
     
     if (platform.isFireRouterManaged()) {
       const wanNames = this.getEffectiveWANNames();
       for (const name of wanNames) {
-        iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_OPENVPN').src(`${serverNetwork}/24`).oif(name).jmp('MASQUERADE').opr('-I'));
+        await iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_OPENVPN').src(`${serverNetwork}/24`).oif(name).jmp('MASQUERADE').opr('-I'));
       }
     } else {
       // delete this rule if it exists (IptablesControl handles deduplication)
       const rule = new Rule('nat').chn('FW_POSTROUTING').src(`${serverNetwork}/24`).jmp('MASQUERADE')
-      iptc.addRule(rule.opr('-D'));
+      await iptc.addRule(rule.opr('-D'));
       // insert back as top rule in table
-      iptc.addRule(rule.opr('-I'));
+      await iptc.addRule(rule.opr('-I'));
     }
 
     this._currentServerNetwork = serverNetwork;
@@ -213,18 +213,18 @@ class VpnManager {
     }
     log.info("VpnManager:setIp6tables", serverNetwork6);
     // clean up ipv6
-    iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING_OPENVPN').opr('-F'));
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING_OPENVPN').opr('-F'));
     if (platform.isFireRouterManaged()) {
       const wanNames = this.getEffectiveWANNames();
       for (const name of wanNames) {
-        iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING_OPENVPN').src(serverNetwork6).oif(name).jmp('MASQUERADE').opr('-I'));
+        await iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING_OPENVPN').src(serverNetwork6).oif(name).jmp('MASQUERADE').opr('-I'));
       }
     } else {
       // delete this rule if it exists (IptablesControl handles deduplication)
       const rule = new Rule('nat').fam(6).chn('FW_POSTROUTING').src(serverNetwork6).jmp('MASQUERADE')
-      iptc.addRule(rule.opr('-D'));
+      await iptc.addRule(rule.opr('-D'));
       // insert back as top rule in table
-      iptc.addRule(rule.opr('-I'));
+      await iptc.addRule(rule.opr('-I'));
     }
 
     this._currentServerNetwork6 = serverNetwork6;
@@ -241,7 +241,7 @@ class VpnManager {
     log.info("VpnManager:UnsetIptables", serverNetwork);
 
     // clean up
-    iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_OPENVPN').opr('-F'));
+    await iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_OPENVPN').opr('-F'));
     this._currentServerNetwork = null;
   }
 
@@ -255,7 +255,7 @@ class VpnManager {
     log.info("VpnManager:UnsetIp6tables", serverNetwork6);
 
     // clean up
-    iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING_OPENVPN').opr('-F'));
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING_OPENVPN').opr('-F'));
     this._currentServerNetwork6 = null;
   }
 
@@ -885,6 +885,9 @@ class VpnManager {
     log.info("VPNManager:Revoke", cmd);
     await execAsync(cmd).catch((err) => {
       log.error("Failed to revoke VPN profile " + commonName, err);
+    });
+    await execAsync(`echo "kill ${commonName}" | nc -w 5 -q 2 localhost 5194`).catch((err) => {
+      log.warn(`Failed to kill VPN client ${commonName} after revocation`, err.message);
     });
     const event = {
       type: Message.MSG_OVPN_PROFILES_UPDATED,

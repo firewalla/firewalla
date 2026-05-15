@@ -725,8 +725,8 @@ class PolicyManager2 {
       }
       for (const family of [4, 6]) {
         const rule = new Rule(table).fam(family).chn(chainName).opr('-F');
-        iptc.addRule(rule);
-        iptc.addRule(rule.opr('-X'));
+        await iptc.addRule(rule);
+        await iptc.addRule(rule.opr('-X'));
       }
     }
 
@@ -1309,6 +1309,8 @@ class PolicyManager2 {
 
   needDisturbRegister(policy) {
     if (policy && policy.disturbPretreatDone) return false;
+    // Time usage owns the outer lifecycle; disturb is applied only after quota state changes.
+    if (this.needAppTimeUsageRegister(policy)) return false;
 
     const isDisturbAction = policy && policy.action === 'disturb';
     const hasQuota = policy && policy.appTimeUsage && policy.appTimeUsage.disturbQuota != undefined;
@@ -1832,8 +1834,8 @@ class PolicyManager2 {
           || Number.isInteger(ipttl) || (seq !== Constants.RULE_SEQ_REG && !security)
         ) {
           if (!policy.dnsmasq_only) {
-            ipset.create(remoteSet4, "hash:ip", false, { timeout: ipttl });
-            ipset.create(remoteSet6, "hash:ip", true, { timeout: ipttl });
+            await ipset.create(remoteSet4, "hash:ip", false, { timeout: ipttl });
+            await ipset.create(remoteSet6, "hash:ip", true, { timeout: ipttl });
             // register ipset update in dnsmasq config so that it will immediately take effect in ip level
             await dnsmasq.addIpsetUpdateEntry([target], [remoteSet4, remoteSet6], pid);
             dnsmasq.scheduleRestartDNSService();
@@ -1841,8 +1843,8 @@ class PolicyManager2 {
               if (isBlockOrdisturb) {
                 connSet4 = Block.getConnSet(pid);
                 connSet6 = Block.getConnSet6(pid);
-                ipset.create(connSet4, "hash:ip,port,ip", false, {timeout: 300})
-                ipset.create(connSet6, "hash:ip,port,ip", true, {timeout: 300})
+                await ipset.create(connSet4, "hash:ip,port,ip", false, {timeout: 300})
+                await ipset.create(connSet6, "hash:ip,port,ip", true, {timeout: 300})
               }
           }
           
@@ -2111,7 +2113,8 @@ class PolicyManager2 {
       action, direction, createOrDestroy: "create", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
       wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
-      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
+      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate,
+      qosSubKey: policy.qosSubKey
     }
 
     if ((type === "category" || type == "mac" || type === "internet") && isBlockOrdisturb) {
@@ -2122,9 +2125,9 @@ class PolicyManager2 {
         table = "mangle";
       }
 
-      for (const family of ['4', '6']) {
+      for (const family of [4, 6]) {
         const rule = new Rule(table).fam(family).chn(chainName).opr('-N');
-        iptc.addRule(rule);
+        await iptc.addRule(rule);
       }
     }
 
@@ -2723,7 +2726,8 @@ class PolicyManager2 {
       action, direction, createOrDestroy: "destroy", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
       wanUUID, security, targetRgId, seq, // tlsHostSet, tlsHost,
-      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate
+      subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass, increaseLatency, dropPacketRate,
+      qosSubKey: policy.qosSubKey
     }
 
     if ((type === "category" || type == "mac" || type === "internet") && isBlockOrdisturb) {
@@ -2792,17 +2796,17 @@ class PolicyManager2 {
     }
 
     if (localPortSet) {
-      ipset.flush(localPortSet);
+      await ipset.flush(localPortSet);
       await ipset.destroy(localPortSet);
     }
     if (remotePortSet) {
-      ipset.flush(remotePortSet);
+      await ipset.flush(remotePortSet);
       await ipset.destroy(remotePortSet);
     }
     if (remoteSet4) {
       if (type === "ip" || type === "net" || type === "remoteIpPort" || type === "remoteNetPort" || type === "domain" || type === "dns") {
         if (!policy.dnsmasq_only) {
-          ipset.flush(remoteSet4);
+          await ipset.flush(remoteSet4);
           await ipset.destroy(remoteSet4);
         }
       }
@@ -2810,7 +2814,7 @@ class PolicyManager2 {
     if (remoteSet6) {
       if (type === "ip" || type === "net" || type === "remoteIpPort" || type === "remoteNetPort" || type === "domain" || type === "dns") {
         if (!policy.dnsmasq_only) {
-          ipset.flush(remoteSet6);
+          await ipset.flush(remoteSet6);
           await ipset.destroy(remoteSet6);
         }
       }
@@ -2821,21 +2825,21 @@ class PolicyManager2 {
         await Promise.all(connSets.map(async (connSet) => {
           const { connSet4, connSet6 } = connSet;
           if (connSet4) {
-            ipset.flush(connSet4)
+            await ipset.flush(connSet4)
             await ipset.destroy(connSet4).catch((_err) => {});
           }
           if (connSet6) {
-            ipset.flush(connSet6)
+            await ipset.flush(connSet6)
             await ipset.destroy(connSet6).catch((_err) => {});
           }
         }));
       } else {
         if (connSet4) {
-          ipset.flush(connSet4)
+          await ipset.flush(connSet4)
           await ipset.destroy(connSet4).catch((_err) => {});
         }
         if (connSet6) {
-          ipset.flush(connSet6)
+          await ipset.flush(connSet6)
           await ipset.destroy(connSet6).catch((_err) => {});
         }
       }
