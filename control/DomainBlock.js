@@ -52,9 +52,9 @@ class DomainBlock {
 
   }
 
-  updateHostset(tlsHostSet, action, domain, options={}) {
+  async updateHostset(tlsHostSet, action, domain, options={}) {
     const finalDomain = options.exactMatch || domain.startsWith("*.") ? domain : `*.${domain}`; // check domain.startsWith just for double check
-    tlsc.addRule(tlsHostSet, action, finalDomain);
+    await tlsc.addRule(tlsHostSet, action, finalDomain);
   }
 
   // a mapping from domain to ip is tracked in redis, so that we can apply block at ip level, which is more secure
@@ -108,7 +108,7 @@ class DomainBlock {
     }
     const tlsHostSet = options.tlsHostSet;
     if (tlsHostSet) {
-      this.updateHostset(tlsHostSet, "add", domain, options);
+      await this.updateHostset(tlsHostSet, "add", domain, options);
     }
   }
 
@@ -125,7 +125,7 @@ class DomainBlock {
     }
     const tlsHostSet = options.tlsHostSet;
     if (tlsHostSet) {
-      this.updateHostset(tlsHostSet, "rm", domain, options);
+      await this.updateHostset(tlsHostSet, "rm", domain, options);
     }
   }
 
@@ -319,7 +319,7 @@ class DomainBlock {
 
   async appendDomainToCategoryTLSHostSet(category, domain) {
     const tlsHostSet = Block.getTLSHostSet(category);
-    this.updateHostset(tlsHostSet, "add", domain, {exactMatch:true});
+    await this.updateHostset(tlsHostSet, "add", domain, {exactMatch:true});
   }
 
   // flush and re-create from redis
@@ -331,10 +331,10 @@ class DomainBlock {
     const tlsHostSet = Block.getTLSHostSet(category);
 
     // flush first
-    tlsc.flushHostset(tlsHostSet);
+    await tlsc.flushHostset(tlsHostSet);
 
     for (const domain of domains) {
-      tlsc.addRule(tlsHostSet, "add", domain);
+      await tlsc.addRule(tlsHostSet, "add", domain);
     }
 
     const domainsWithPort = await this.getCategoryDomainsWithPort(category);
@@ -343,7 +343,7 @@ class DomainBlock {
       const portObj = domainObj.port;
       const entry = `${domainObj.id},${CategoryEntry.toPortStr(portObj)}`;
       log.debug("Tls port entry:", entry);
-      tlsc.addRule(tlsHostSet, "add", entry);
+      await tlsc.addRule(tlsHostSet, "add", entry);
     }
   }
 

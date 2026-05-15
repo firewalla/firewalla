@@ -96,3 +96,39 @@ describe('Test vpnClient getAttributes', function(){
 
     })
   });
+
+describe('Test vpnClient connectivity state cache race', function() {
+  this.timeout(3000);
+
+  it('should not overwrite stopped client cached state with stale true result', async() => {
+    const client = Object.create(VPNClient.prototype);
+    client.profileId = `test_${Date.now()}`;
+    client.settings = { overrideDefaultRoute: false };
+    client._started = true;
+    client._restarting = false;
+    client._lastStartTime = null;
+
+    const cachedStates = [];
+    client._setCachedState = async(state) => cachedStates.push(state);
+
+    let releaseLinkCheck;
+    const linkCheckStarted = new Promise((resolve) => {
+      client._isLinkUp = async() => {
+        resolve();
+        await new Promise((release) => {
+          releaseLinkCheck = release;
+        });
+        return true;
+      };
+    });
+
+    const checkPromise = client._checkConnectivity();
+    await linkCheckStarted;
+
+    client._started = false;
+    releaseLinkCheck();
+    await checkPromise;
+
+    expect(cachedStates).to.eql([false]);
+  });
+});

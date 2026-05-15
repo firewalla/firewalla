@@ -122,7 +122,7 @@ class Spoofer {
     const subMonitoredKey6 = `monitored_hosts6_${iface}`;
     const isMember = await rclient.sismemberAsync(monitoredKey6, address);
     if (!isMember) {
-      Ipset.add('monitored_ip_set6', address);
+      await Ipset.add('monitored_ip_set6', address);
       await rclient.saddAsync(monitoredKey6, address);
     }
     await rclient.saddAsync(subMonitoredKey6, address);
@@ -141,7 +141,7 @@ class Spoofer {
     const isMember = await rclient.sismemberAsync(monitoredKey6, address);
     if (isMember) {
       await rclient.sremAsync(monitoredKey6, address);
-      Ipset.del('monitored_ip_set6', address);
+      await Ipset.del('monitored_ip_set6', address);
     }
     await rclient.sremAsync(subMonitoredKey6, address);
   }

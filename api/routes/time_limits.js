@@ -196,9 +196,11 @@ router.get('/', async (req, res) => {
 
 
     for (const rule of blockOrDisturbPolicies) {
+      let action = rule.action;
+      if (action === "app_block") action = "block";
       const appQuotaInfo = {
         bestMatchPolicy: rule.pid,
-        policyAction: rule.action,
+        policyAction: action,
         app: null,
         apps: [],
         quota: 0,
@@ -243,6 +245,11 @@ router.get('/', async (req, res) => {
         const bestMatchApp = bestMatchAppMap.get(appQuotaInfo.app);
         if (bestMatchApp.quota + bestMatchApp.extraQuota > appQuotaInfo.quota + appQuotaInfo.extraQuota) {
           bestMatchAppMap.set(appQuotaInfo.app, appQuotaInfo);
+        } else if (bestMatchApp.quota + bestMatchApp.extraQuota === appQuotaInfo.quota + appQuotaInfo.extraQuota) {
+          // if the total quota is the same, prefer the one with block action over disturb action
+          if (bestMatchApp.policyAction === "disturb" && appQuotaInfo.policyAction === "block") {
+            bestMatchAppMap.set(appQuotaInfo.app, appQuotaInfo);
+          }
         }
       }
     }

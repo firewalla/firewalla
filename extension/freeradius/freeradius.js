@@ -584,28 +584,28 @@ class FreeRadius {
   async setupIptables(macs = [], subnets = []) {
     log.debug(`setting up iptables rules...`);
     try {
-      iptc.addRule(new Rule().chn('INPUT').set('ap_subnet_list', 'src').set('ap_mac_list', 'src').jmp('SET --add-set ap_ip_list src').opr('-D'));
+      await iptc.addRule(new Rule().chn('INPUT').set('ap_subnet_list', 'src').set('ap_mac_list', 'src').jmp('SET --add-set ap_ip_list src').opr('-D'));
       await Ipset.destroy('ap_mac_list')
       await Ipset.destroy('ap_subnet_list')
     } catch (error) {
       log.warn(`failed to remove iptables rules`, error.message);
     }
 
-    Ipset.create('ap_mac_list', 'hash:mac');
-    Ipset.create('ap_subnet_list', 'hash:net');
+    await Ipset.create('ap_mac_list', 'hash:mac');
+    await Ipset.create('ap_subnet_list', 'hash:net');
     // create ap_ip_list if not exists
-    Ipset.create('ap_ip_list', 'hash:ip', false, { timeout: 86400 });
+    await Ipset.create('ap_ip_list', 'hash:ip', false, { timeout: 86400 });
 
     for (const mac of macs) {
-      Ipset.add('ap_mac_list', mac);
+      await Ipset.add('ap_mac_list', mac);
     }
     for (const subnet of subnets) {
-      Ipset.add('ap_subnet_list', subnet);
+      await Ipset.add('ap_subnet_list', subnet);
     }
 
     // Check if rule exists by trying to add it (IptablesControl will deduplicate)
     log.debug(`inserting iptables ap_ip_list rule...`);
-    iptc.addRule(new Rule().chn('INPUT').set('ap_subnet_list', 'src').set('ap_mac_list', 'src').jmp('SET --add-set ap_ip_list src').opr('-I'));
+    await iptc.addRule(new Rule().chn('INPUT').set('ap_subnet_list', 'src').set('ap_mac_list', 'src').jmp('SET --add-set ap_ip_list src').opr('-I'));
   }
 
   _getImageTag(options = {}) {

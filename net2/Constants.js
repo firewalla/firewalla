@@ -89,6 +89,10 @@ module.exports = {
   REDIS_HKEY_CONN_RPID: "rpid", // route rule id
   REDIS_HKEY_CONN_DPID: "dpid", // disturb rule id
 
+  NO_LIMIT_HIGH_PRIO_CLASS_ID: 0x1001,
+  NO_LIMIT_REG_PRIO_CLASS_ID: 0x1002,
+  NO_LIMIT_LOW_PRIO_CLASS_ID: 0x1003,
+
   REDIS_KEY_NTP_OFF_SET: "ntp_off_set",
 
   ST_INIT: 'init',
@@ -195,4 +199,5 @@ module.exports = {
   POLICY_EXTRA_TIME_LIMIT_MODE_OFF: "off",
   POLICY_EXTRA_TIME_LIMIT_MODE_MANUAL: "manual",
 
+  GLOBAL_ALLOW_DOMAIN_RULE_HIT: -2,
 };

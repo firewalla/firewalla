@@ -19,6 +19,7 @@ const ModuleControl = require('./ModuleControl.js');
 const f = require('../net2/Firewalla.js');
 const path = require('path');
 const fsp = require('fs').promises;
+const uuid = require('uuid');
 
 const { exec } = require('child-process-promise');
 
@@ -49,9 +50,23 @@ class IpsetControl extends ModuleControl {
    * Add an ipset command string.
    * @param {string|string[]} cmd
    */
-  addRule(cmd) {
+  async addRule(cmd) {
+    if (this.phase === 'autonomous') {
+      const cmds = Array.isArray(cmd) ? cmd : [cmd];
+      for (const line of cmds) {
+        await this._execOne(line);
+      }
+      return;
+    }
+
+    if (!f.isMain()) {
+      super.addRule(cmd);
+      return;
+    }
+
+    // init phase: queue for batch processing
     if (Array.isArray(cmd)) {
-      this.queuedRules.push(...cmd);
+      for (const line of cmd) this.queuedRules.push(line);
     } else if (typeof cmd === 'string') {
       this.queuedRules.push(cmd);
     } else {
@@ -59,8 +74,36 @@ class IpsetControl extends ModuleControl {
     }
 
     log.debug(cmd);
+  }
 
-    super.addRule(cmd);
+  /**
+   * Execute a single ipset command inline (autonomous phase).
+   * @param {string} line - ipset command line (without 'ipset' prefix)
+   */
+  async _execOne(line) {
+    await exec(`sudo ipset -! ${line}`, { timeout: 10000 }).catch(err => {
+      log.error(`Failed to execute ipset command: ${line}`, err.message);
+    });
+  }
+
+  /**
+   * Bulk-apply ipset operations.
+   * @param {string[]} ops - array of ipset-restore lines
+   */
+  async restore(ops) {
+    if (!ops || !ops.length) return;
+    if (this.phase !== 'autonomous') {
+      return this.addRule(ops);
+    }
+    // Autonomous: write to a unique temp file and restore immediately
+    const restoreFile = `/tmp/ipset-${uuid.v4()}`;
+    try {
+      await fsp.mkdir(path.dirname(restoreFile), { recursive: true });
+      await fsp.writeFile(restoreFile, ops.join('\n') + '\n', 'utf8');
+      await exec(`sudo ipset restore -! -f "${restoreFile}"`, { timeout: 300000 });
+    } finally {
+      await fsp.unlink(restoreFile).catch(() => {});
+    }
   }
 
   getSwapSetName(setName) {
@@ -102,7 +145,7 @@ class IpsetControl extends ModuleControl {
 
     let errorAddDel = 0
     queuedOps.forEach(line => {
-      let [ op, setName, newName ] = line.split(' ');
+      let [op, setName, newName] = line.split(' ');
       // for initialization, swap existing sets to avoid interrupting blocking rules
       // temporary sets are not swapped, leave the flush job to CategoryUpdater
       // this is mainly to workaround the set name length limit

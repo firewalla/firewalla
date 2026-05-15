@@ -18,19 +18,15 @@
 const log = require('../net2/logger.js')(__filename);
 const Policy = require('./Policy.js');
 const _ = require('lodash');
-const crypto = require('crypto');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const Message = require('../net2/Message.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const Constants = require('../net2/Constants.js');
+const DisturbDispatch = require('../control/DisturbDispatch.js');
 const lock = new AsyncLock();
 const LOCK_RW = "lock_rw";
-const TARGET_APP_PREFIXES = ['TLX-fw-', 'TLX-dt-'];
-
-function _shortHash(s) {
-  return crypto.createHash('md5').update(String(s)).digest('hex').slice(0, 8);
-}
+const DISTURB_TARGET_PREFIX = 'TLX-dt-';
 
 class PolicyDisturbManager {
 
@@ -103,39 +99,35 @@ class PolicyDisturbManager {
   }
 
   _getAppNameFromTarget(target) {
-    if (!target)
-      return "";
-    for (const prefix of TARGET_APP_PREFIXES) {
-      if (target.startsWith(prefix))
-        return target.substring(prefix.length);
-    }
+    if (!target) return "";
+    if (target.startsWith(DISTURB_TARGET_PREFIX))
+      return target.substring(DISTURB_TARGET_PREFIX.length);
     return target;
   }
 
-  _resolveDisturbParams(target, policy) {
-    const appName = this._getAppNameFromTarget(target) || policy.app_name || "";
-    const disturbLevel = policy.disturbLevel || "";
+  // TODO: support per-target disturbLevel / disturbMethod after the frontend schema lands.
+  //       The caller is expected to pick the per-target slice (if any) before calling.
+  _resolveDisturbParams(target, { fallbackAppName, disturbLevel, disturbMethod }) {
+    const appName = this._getAppNameFromTarget(target) || fallbackAppName || "";
+
+    // 1. defaults
     const params = { rateLimit: 10240, dropPacketRate: 0, increaseLatency: 0 };
     let disableQuic = false;
 
-    if (_.has(this._appConfValue, appName)) {
-      disableQuic = this._appConfValue[appName].disableQuic || false;
-      if (_.has(this._appConfValue[appName], disturbLevel))
-        Object.assign(params, this._appConfValue[appName][disturbLevel]);
-    } else if (_.has(this._generalConfValue, disturbLevel)) {
-      Object.assign(params, this._generalConfValue[disturbLevel]);
-    }
+    // 2. cloud config
+    const appConf = this._appConfValue[appName];
+    const levelConf = appConf
+      ? appConf[disturbLevel]
+      : this._generalConfValue[disturbLevel];
+    if (appConf) disableQuic = appConf.disableQuic || false;
+    if (levelConf) Object.assign(params, levelConf);
 
-    if (policy.disturbMethod)
-      Object.assign(params, policy.disturbMethod);
+    // 3. policy-level override
+    if (disturbMethod) Object.assign(params, disturbMethod);
 
     return { appName, params, disableQuic };
   }
 
-  // Split one policy (potentially multi-target) into per-target effective policies,
-  // each with its own resolved QoS params and a stable qosSubKey for QoS handler allocation.
-  // Also collect the subset of targets that need QUIC blocking into a single sub-policy,
-  // so block UDP/443 is delivered at parent pid level (avoids mark/ipset collisions).
   _buildEffectivePolicies(policy) {
     const pid = String(policy.pid);
     const targets = this._getPolicyTargets(policy);
@@ -150,7 +142,11 @@ class PolicyDisturbManager {
     const quicBlockTargets = [];
 
     for (const target of targets) {
-      const { appName, params, disableQuic } = this._resolveDisturbParams(target, policy);
+      const { appName, params, disableQuic } = this._resolveDisturbParams(target, {
+        fallbackAppName: policy.app_name,
+        disturbLevel: policy.disturbLevel,
+        disturbMethod: policy.disturbMethod,
+      });
       if (disableQuic) {
         quicBlockTargets.push(target);
       }
@@ -158,9 +154,9 @@ class PolicyDisturbManager {
       const effective = Object.assign(Object.create(Policy.prototype), policy, params, {
         target,
         targets: undefined,
-        app_name: appName || policy.app_name,
+        app_name: appName,
         disableQuic: false, // handled at parent level via quicBlockTargets
-        qosSubKey: multiTarget ? `disturb_${pid}_${_shortHash(target)}` : undefined,
+        qosSubKey: multiTarget ? DisturbDispatch.subKeyFor(target) : undefined,
       });
       effectivePolicies.push(effective);
     }
@@ -194,18 +190,21 @@ class PolicyDisturbManager {
   }
 
   async enforcePolicy(pid) {
-    const state = this.registeredPolicies[pid];
-    if (!state)
+    const registeredPolicy = this.registeredPolicies[pid];
+    if (!registeredPolicy)
       return;
+
+    // Prepare iptables for multiple app disturb.
+    await DisturbDispatch.setupDispatchForPolicy(registeredPolicy.policy);
 
     const PolicyManager2 = require('./PolicyManager2.js');
     const pm2 = new PolicyManager2();
-    for (const p of state.effectivePolicies) {
+    for (const p of registeredPolicy.effectivePolicies) {
       p.disturbPretreatDone = true;
       await pm2.enforce(p);
     }
-    if (!_.isEmpty(state.quicBlockTargets)) {
-      const quicBlock = this._buildQuicBlockPolicy(state.policy, state.quicBlockTargets);
+    if (!_.isEmpty(registeredPolicy.quicBlockTargets)) {
+      const quicBlock = this._buildQuicBlockPolicy(registeredPolicy.policy, registeredPolicy.quicBlockTargets);
       await pm2.enforce(quicBlock);
     }
   }
@@ -242,6 +241,8 @@ class PolicyDisturbManager {
       p.disturbPretreatDone = true;
       await pm2.unenforce(p);
     }
+
+    await DisturbDispatch.teardownDispatchForPolicy(state.policy);
   }
 
 }
