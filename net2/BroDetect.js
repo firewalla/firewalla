@@ -2038,28 +2038,29 @@ class BroDetect {
     let wanNicRxBytes = 0;
     let wanNicTxBytes = 0;
     const wanTraffic = {};
+    // a safe-check to filter abnormal rx/tx bytes spikes that may be caused by hardware bugs
+    const threshold = config.threshold;
+    const maxBytes = threshold.maxSpeed / 8 * duration;
     for (const iface of Object.keys(wanNicStats)) {
       if (this.wanNicStatsCache && this.wanNicStatsCache[iface]) {
         const uuid = wanNicStats[iface].uuid;
         // 1 mega bytes buffer in case there are multiple VLANs on a physical WAN port and bytes deduction may result in a negative result because statistics on different interfaces are not read at the same time
-        const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes - 1000000 ? Math.max(0, wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes) : wanNicStats[iface].rxBytes;
-        const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes - 1000000 ? Math.max(0, wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes) : wanNicStats[iface].txBytes;
+        let rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes - 1000000 ? Math.max(0, wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes) : wanNicStats[iface].rxBytes;
+        let txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes - 1000000 ? Math.max(0, wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes) : wanNicStats[iface].txBytes;
+        if (rxBytes >= maxBytes) {
+          log.warn('WAN rx exceeded', uuid, rxBytes, '>', threshold.maxSpeed, '/', duration);
+          rxBytes = 0;
+        }
+        if (txBytes >= maxBytes) {
+          log.warn('WAN tx exceeded', uuid, txBytes, '>', threshold.maxSpeed, '/', duration);
+          txBytes = 0;
+        }
         if (uuid) {
           wanTraffic[uuid] = {rxBytes, txBytes};
         }
         wanNicRxBytes += rxBytes;
         wanNicTxBytes += txBytes;
       }
-    }
-    // a safe-check to filter abnormal rx/tx bytes spikes that may be caused by hardware bugs
-    const threshold = config.threshold;
-    if (wanNicRxBytes >= threshold.maxSpeed / 8 * duration) {
-      log.warn('WAN rx exceeded', wanNicRxBytes, '>', threshold.maxSpeed, '/', duration)
-      wanNicRxBytes = 0;
-    }
-    if (wanNicTxBytes >= threshold.maxSpeed / 8 * duration) {
-      log.warn('WAN tx exceeded', wanNicRxBytes, '>', threshold.maxSpeed, '/', duration)
-      wanNicTxBytes = 0;
     }
     this.wanNicStatsCache = wanNicStats;
 
