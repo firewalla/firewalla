@@ -158,10 +158,10 @@ async function enableSecondaryInterface() {
     let { secondaryIpSubnet, legacyIpSubnet } = await secondaryInterface.create(fConfig)
     log.info("Successfully created secondary interface");
     if (legacyIpSubnet) {
-      iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').src(legacyIpSubnet).opr('-D'));
+      await iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').src(legacyIpSubnet).opr('-D'));
     }
     if (secondaryIpSubnet) {
-      iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').src(secondaryIpSubnet));
+      await iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').src(secondaryIpSubnet));
     }
   } catch (err) {
     log.error("Failed to enable secondary interface, err:", err);
@@ -187,11 +187,11 @@ function _disableDHCPMode() {
 
 async function toggleCompatibleSpoof(state) {
   if (state) {
-    iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').set('monitored_ip_set', 'src').jmp('MASQUERADE'))
-    iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING').set('monitored_ip_set6', 'src').jmp('MASQUERADE'))
+    await iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').set('monitored_ip_set', 'src').jmp('MASQUERADE'))
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING').set('monitored_ip_set6', 'src').jmp('MASQUERADE'))
   } else {
-    iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').set('monitored_ip_set', 'src').jmp('MASQUERADE').opr('-D'))
-    iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING').set('monitored_ip_set6', 'src').jmp('MASQUERADE').opr('-D'))
+    await iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').set('monitored_ip_set', 'src').jmp('MASQUERADE').opr('-D'))
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING').set('monitored_ip_set6', 'src').jmp('MASQUERADE').opr('-D'))
   }
 }
 

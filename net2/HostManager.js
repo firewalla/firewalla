@@ -2155,8 +2155,8 @@ module.exports = class HostManager extends Monitorable {
         .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_UPLOAD_MASK).toString(16)}/0x${QoS.QOS_UPLOAD_MASK.toString(16)}`)
         .comment(`global-qos`);
       let rule6 = rule4.clone().fam(6);
-      iptc.addRule(rule4.opr('-A'));
-      iptc.addRule(rule6.opr('-A'));
+      await iptc.addRule(rule4.opr('-A'));
+      await iptc.addRule(rule6.opr('-A'));
 
       rule4 = new Rule("mangle").chn("FW_QOS_GLOBAL_FALLBACK")
         .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
@@ -2165,8 +2165,8 @@ module.exports = class HostManager extends Monitorable {
         .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_DOWNLOAD_MASK).toString(16)}/0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`)
         .comment(`global-qos`);
       rule6 = rule4.clone().fam(6);
-      iptc.addRule(rule4.opr('-A'));
-      iptc.addRule(rule6.opr('-A'));
+      await iptc.addRule(rule4.opr('-A'));
+      await iptc.addRule(rule6.opr('-A'));
     } else { // global config
       let state = false;
       let qdisc = "fq_codel";
@@ -2181,8 +2181,8 @@ module.exports = class HostManager extends Monitorable {
         default:
           return;
       }
-      iptc.addRule(new Rule('mangle').chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
-      iptc.addRule(new Rule('mangle').fam(6).chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
+      await iptc.addRule(new Rule('mangle').chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
+      await iptc.addRule(new Rule('mangle').fam(6).chn('FW_QOS_GLOBAL_FALLBACK').opr('-F'));
       const wanConfs = _.isObject(policy) && policy.wanConfs || {};
       const wanType = sysManager.getWanType();
       const primaryWanIntf = sysManager.getPrimaryWanInterface();
@@ -2223,9 +2223,9 @@ module.exports = class HostManager extends Monitorable {
 
     let rule = new Rule("mangle").chn("FW_POSTROUTING")
       .jmp(`FW_POSTROUTING_DSCP_OVERRIDE`);
-    iptc.addRule(rule.opr(op));
+    await iptc.addRule(rule.opr(op));
     let rule6 = rule.clone().fam(6);
-    iptc.addRule(rule6.opr(op));
+    await iptc.addRule(rule6.opr(op));
   }
 
   async setupDefaultQosAutoRules() {
@@ -2242,8 +2242,8 @@ module.exports = class HostManager extends Monitorable {
     .jmp(`CONNMARK --set-xmark 0x${QoS.QOS_UPLOAD_MASK.toString(16)}/0x${QoS.QOS_UPLOAD_MASK.toString(16)}`)
     .comment(`fw_qos_auto_upload`);
     let rule6 = rule4.clone().fam(6);
-    iptc.addRule(rule4.opr(op));
-    iptc.addRule(rule6.opr(op));
+    await iptc.addRule(rule4.opr(op));
+    await iptc.addRule(rule6.opr(op));
 
     rule4 = new Rule("mangle").chn("FW_QOS_AUTO")
       .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
@@ -2252,8 +2252,8 @@ module.exports = class HostManager extends Monitorable {
       .jmp(`CONNMARK --set-xmark 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}/0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`)
       .comment(`fw_qos_auto_download`);
     rule6 = rule4.clone().fam(6);
-    iptc.addRule(rule4.opr(op));
-    iptc.addRule(rule6.opr(op));
+    await iptc.addRule(rule4.opr(op));
+    await iptc.addRule(rule6.opr(op));
 
     // setup default qos auto rules to FW_POSTROUTING_DSCP_OVERRIDE chain
     rule4 = new Rule("mangle").chn("FW_POSTROUTING_DSCP_OVERRIDE")
@@ -2261,16 +2261,16 @@ module.exports = class HostManager extends Monitorable {
       .jmp(`DSCP --set-dscp 0x2e`)
       .comment(`fw_qos_auto_upload`);
     rule6 = rule4.clone().fam(6);
-    iptc.addRule(rule4.opr(op));
-    iptc.addRule(rule6.opr(op));
+    await iptc.addRule(rule4.opr(op));
+    await iptc.addRule(rule6.opr(op));
 
     rule4 = new Rule("mangle").chn("FW_POSTROUTING_DSCP_OVERRIDE")
       .mdl("mark", `--mark 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}/0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`)
       .jmp(`DSCP --set-dscp 0x2e`)
       .comment(`fw_qos_auto_download`);
     rule6 = rule4.clone().fam(6);
-    iptc.addRule(rule4.opr(op));
-    iptc.addRule(rule6.opr(op));
+    await iptc.addRule(rule4.opr(op));
+    await iptc.addRule(rule6.opr(op));
 
 
     // setup default tc rules auto redirect these packets which are marked by FW_QOS_AUTO chain to high priority queue
@@ -2289,11 +2289,11 @@ module.exports = class HostManager extends Monitorable {
 
   async acl(state) {
     if (state == false) {
-      ipset.add(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
-      ipset.add(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
+      await ipset.add(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
+      await ipset.add(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
     } else {
-      ipset.del(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
-      ipset.del(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
+      await ipset.del(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
+      await ipset.del(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
     }
   }
 
