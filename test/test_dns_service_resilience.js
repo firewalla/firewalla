@@ -18,53 +18,82 @@ const chai = require('chai');
 const expect = chai.expect;
 const proxyquire = require('proxyquire').noPreserveCache().noCallThru();
 
-function makeFsMock() {
-  return {
-    unlink(path, cb) {
-      cb(null);
-    },
-    writeFile(path, content, cb) {
-      cb(null);
-    }
-  };
-}
+const DNSMASQ_DIR = '/tmp/firewalla/dnsmasq';
+const logger = () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} });
+const sem = { getInstance: () => ({ on: () => {}, sendEventToFireMain: () => {} }) };
+const extensionManager = { registerExtension: () => {}, onSet: () => {}, onGet: () => {}, onCmd: () => {}, _precedeRecord: async () => {} };
+const constants = { DNS_DEFAULT_WAN_TAG: 'wan', STATE_EVENT_DNS_SERVICE: 'dns_service' };
 
 function makeBaseSensor() {
   return class {
     constructor(config) {
       this.config = config || {};
     }
+    hookFeature() {}
     async globalOn() {}
     async globalOff() {}
   };
+}
+
+function makeFsMock() {
+  return {
+    unlink(path, cb) {
+      cb(null);
+    }
+  };
+}
+
+function loadBase() {
+  return proxyquire('../sensor/base/DnsServicePluginBase.js', {
+    '../Sensor.js': { Sensor: makeBaseSensor() },
+    '../ExtensionManager.js': extensionManager,
+    '../../net2/logger.js': logger,
+    '../../net2/NetworkProfileManager.js': { getNetworkProfile: () => null },
+    '../../net2/NetworkProfile.js': { getDnsmasqConfigDirectory: () => '/tmp/dns' },
+    '../../net2/TagManager.js': { tagUidExists: async () => true },
+    '../../net2/IdentityManager.js': { getIdentityByGUID: () => null },
+    '../../net2/Constants.js': constants,
+    '../../net2/config.js': { isFeatureOn: () => true, disableDynamicFeature: async () => {} },
+    fs: makeFsMock(),
+    '../../extension/dnsmasq/dnsmasq.js': class {
+      async writeConfig() {}
+      scheduleRestartDNSService() {}
+    }
+  });
+}
+
+function loadHealthMixin(stateEvents = []) {
+  return proxyquire('../sensor/base/HealthCheckMixin.js', {
+    '../../net2/logger.js': logger,
+    '../../net2/Constants.js': constants,
+    '../../event/EventRequestApi.js': {
+      addStateEvent: async (stateType, stateKey, stateValue, labels) => {
+        stateEvents.push({ stateType, stateKey, stateValue, labels });
+      }
+    }
+  });
+}
+
+function initPlugin(plugin, featureName) {
+  plugin._initServiceState(featureName, DNSMASQ_DIR);
+  plugin.featureSwitch = true;
+  return plugin;
 }
 
 describe('DNS service config resilience', () => {
   it('should emit a distinct disabled DNS service state value', async () => {
     const stateEvents = [];
     const DNSCryptPlugin = proxyquire('../sensor/DNSCryptPlugin.js', {
-      '../net2/logger.js': () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }),
-      './Sensor.js': { Sensor: makeBaseSensor() },
-      './ExtensionManager.js': { registerExtension: () => {}, onSet: () => {}, onGet: () => {}, onCmd: () => {}, _precedeRecord: async () => {} },
-      '../sensor/SensorEventManager.js': { getInstance: () => ({ on: () => {}, sendEventToFireMain: () => {} }) },
+      '../net2/logger.js': logger,
+      './base/DnsServicePluginBase.js': loadBase(),
+      './base/HealthCheckMixin.js': loadHealthMixin(stateEvents),
+      './ExtensionManager.js': extensionManager,
+      '../sensor/SensorEventManager.js': sem,
       '../net2/Firewalla.js': { getUserConfigFolder: () => '/tmp/firewalla' },
-      '../net2/NetworkProfileManager.js': { getNetworkProfile: () => null },
-      '../net2/NetworkProfile.js': { getDnsmasqConfigDirectory: () => '/tmp/dns' },
-      '../net2/TagManager.js': { tagUidExists: async () => true },
       '../net2/IdentityManager.js': { isIdentity: () => false, getGUID: () => null, getIdentityByGUID: () => null },
-      fs: makeFsMock(),
-      '../extension/dnsmasq/dnsmasq.js': class {
-        async writeConfig() {}
-        scheduleRestartDNSService() {}
-      },
       'child-process-promise': { exec: async () => ({}) },
       '../util/scheduler': { UpdateJob: class { constructor(fn) { this.fn = fn; } async exec(...args) { return this.fn(...args); } } },
       '../util/DNSUpstreamHealthCheck.js': {},
-      '../event/EventRequestApi.js': {
-        addStateEvent: async (stateType, stateKey, stateValue, labels) => {
-          stateEvents.push({ stateType, stateKey, stateValue, labels });
-        }
-      },
       '../net2/config.js': { isFeatureOn: () => true, disableDynamicFeature: async () => {} },
       '../extension/dnscrypt/dnscrypt': {
         getSettings: async () => ({ killSwitch: true }),
@@ -80,11 +109,10 @@ describe('DNS service config resilience', () => {
         setServers: async () => {},
         updateSettings: async () => {},
         resetSettings: async () => {}
-      },
-      '../net2/Constants.js': { DNS_DEFAULT_WAN_TAG: 'wan', STATE_EVENT_DNS_SERVICE: 'dns_service' }
+      }
     });
 
-    const plugin = new DNSCryptPlugin({});
+    const plugin = initPlugin(new DNSCryptPlugin({}), 'doh');
     await plugin.emitHealthState({
       healthy: true,
       enabled: false,
@@ -94,18 +122,20 @@ describe('DNS service config resilience', () => {
     });
 
     expect(stateEvents).to.have.lengthOf(1);
+    expect(stateEvents[0].stateType).to.equal('dns_service');
+    expect(stateEvents[0].stateKey).to.equal('doh');
     expect(stateEvents[0].stateValue).to.equal(2);
     expect(stateEvents[0].labels.error_value).to.equal(1);
   });
 
   it('should reload Family Protect servers from persisted config when refresh config omits servers', async () => {
     const FamilyProtectPlugin = proxyquire('../sensor/FamilyProtectPlugin.js', {
-      '../net2/logger.js': () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }),
-      './Sensor.js': { Sensor: makeBaseSensor() },
-      './ExtensionManager.js': { registerExtension: () => {}, onSet: () => {}, onGet: () => {}, onCmd: () => {}, _precedeRecord: async () => {} },
-      '../net2/NetworkProfileManager.js': { getNetworkProfile: () => null },
-      '../net2/NetworkProfile.js': { getDnsmasqConfigDirectory: () => '/tmp/dns' },
-      '../net2/TagManager.js': { tagUidExists: async () => true },
+      '../net2/logger.js': logger,
+      './base/DnsServicePluginBase.js': loadBase(),
+      './base/HealthCheckMixin.js': loadHealthMixin(),
+      './ExtensionManager.js': extensionManager,
+      '../sensor/SensorEventManager.js': sem,
+      '../net2/Firewalla.js': { getUserConfigFolder: () => '/tmp/firewalla', getBoneInfoAsync: async () => null },
       '../net2/IdentityManager.js': { isIdentity: () => false, getGUID: () => null, getIdentityByGUID: () => null },
       '../util/redis_manager.js': {
         getRedisClient: () => ({
@@ -114,21 +144,12 @@ describe('DNS service config resilience', () => {
           unlinkAsync: async () => {}
         })
       },
-      '../sensor/SensorEventManager.js': { getInstance: () => ({ on: () => {}, sendEventToFireMain: () => {} }) },
-      '../net2/Firewalla.js': { getUserConfigFolder: () => '/tmp/firewalla', getBoneInfoAsync: async () => null },
       '../net2/config.js': { isFeatureOn: () => true, disableDynamicFeature: async () => {} },
-      fs: makeFsMock(),
-      '../extension/dnsmasq/dnsmasq.js': class {
-        async writeConfig() {}
-        scheduleRestartDNSService() {}
-      },
-      '../net2/Constants.js': { DNS_DEFAULT_WAN_TAG: 'wan', STATE_EVENT_DNS_SERVICE: 'dns_service' },
       '../util/scheduler': { UpdateJob: class { constructor(fn) { this.fn = fn; } async exec(...args) { return this.fn(...args); } } },
-      '../util/DNSUpstreamHealthCheck.js': {},
-      '../event/EventRequestApi.js': { addStateEvent: async () => {} }
+      '../util/DNSUpstreamHealthCheck.js': {}
     });
 
-    const plugin = new FamilyProtectPlugin({});
+    const plugin = initPlugin(new FamilyProtectPlugin({}), 'family_protect');
 
     plugin.applyFamilyConfig({ servers: ['1.1.1.1'] });
     expect(await plugin.getEffectiveFamilyServers()).to.deep.equal(['1.1.1.1']);
@@ -139,7 +160,7 @@ describe('DNS service config resilience', () => {
 
   it('should ignore malformed Unbound redis entries and keep defaults', async () => {
     const unbound = proxyquire('../extension/unbound/unbound.js', {
-      '../../net2/logger': () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }),
+      '../../net2/logger': logger,
       '../../util/redis_manager': {
         getRedisClient: () => ({
           hgetallAsync: async () => ({

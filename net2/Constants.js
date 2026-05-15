@@ -17,6 +17,9 @@
 
 // NS: namespace
 module.exports = {
+  LOCALHOST: "127.0.0.1",
+  INADDR_ANY: "0.0.0.0",
+  
   NS_VPN_PROFILE: "vpn_profile",
   NS_WG_PEER: "wg_peer",
   NS_AMNEZIAWG_PEER: "awg_peer",
