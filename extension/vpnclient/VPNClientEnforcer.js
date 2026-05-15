@@ -207,8 +207,8 @@ class VPNClientEnforcer {
     }
     // add inbound connmark rule for vpn client interface
     const connmarkRule = new Rule('nat').chn('FW_PREROUTING_VC_INBOUND').iif(vpnIntf).jmp(`CONNMARK --set-xmark ${Rule.stdMark(rtId, routing.MASK_ALL)}`).opr('-A');
-    iptc.addRule(connmarkRule);
-    iptc.addRule(connmarkRule.fam(6));
+    await iptc.addRule(connmarkRule);
+    await iptc.addRule(connmarkRule.fam(6));
   }
 
   async flushVPNClientRoutes(vpnIntf) {
@@ -238,8 +238,8 @@ class VPNClientEnforcer {
     });
     // remove inbound connmark rule for vpn client interface
     const connmarkRule = new Rule('nat').chn('FW_PREROUTING_VC_INBOUND').iif(vpnIntf).jmp(`CONNMARK --set-xmark ${Rule.stdMark(rtId, routing.MASK_ALL)}`).opr('-D');
-    iptc.addRule(connmarkRule);
-    iptc.addRule(connmarkRule.fam(6));
+    await iptc.addRule(connmarkRule);
+    await iptc.addRule(connmarkRule.fam(6));
   }
 
   _getVPNClientIPSetName(vpnIntf) {
@@ -250,16 +250,16 @@ class VPNClientEnforcer {
     if (!vpnIntf || !dnsServers || dnsServers.length == 0)
       return;
     const dnsRule = new Rule('nat').chn('FW_PREROUTING_DNS_VPN_CLIENT').jmp(dnsRedirectChain).opr('-A');
-    iptc.addRule(dnsRule);
-    iptc.addRule(dnsRule.fam(6));
+    await iptc.addRule(dnsRule);
+    await iptc.addRule(dnsRule.fam(6));
   }
 
   async unenforceDNSRedirect(vpnIntf, dnsServers, dnsRedirectChain) {
     if (!vpnIntf || !dnsServers || dnsServers.length == 0)
       return;
     const dnsRule = new Rule('nat').chn('FW_PREROUTING_DNS_VPN_CLIENT').jmp(dnsRedirectChain).opr('-D');
-    iptc.addRule(dnsRule);
-    iptc.addRule(dnsRule.fam(6));
+    await iptc.addRule(dnsRule);
+    await iptc.addRule(dnsRule.fam(6));
   }
 }
 

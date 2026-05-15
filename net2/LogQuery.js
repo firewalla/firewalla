@@ -526,6 +526,22 @@ class LogQuery {
     })
   }
 
+  async enrichSimpleLogs(logs, options = {}) {
+    const filtered = (logs || []).filter(Boolean);
+    if (_.isEmpty(filtered)) return filtered;
+
+    if (options.enrich === false)
+      return filtered;
+
+    return this.enrichWithIntel(filtered, options.enrichIP);
+  }
+
+  async enrichSimpleLog(log, options = {}) {
+    if (!log) return null;
+    const logs = await this.enrichSimpleLogs([log], options);
+    return logs[0] || null;
+  }
+
   // override this
   getLogKey(target, options) {
     throw new Error('not implemented')

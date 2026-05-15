@@ -82,10 +82,6 @@ class PurplePlatform extends Platform {
     ];
   }
 
-  getQosParentClassid() {
-    return 1;
-  }
-
   getSubnetCapacity() {
     return 19;
   }

@@ -68,7 +68,7 @@ const DAP_TEST_LOCAL_PEER_MAC2 = '11:22:33:44:55:66';
 const dapFlowTimestamp = Math.floor(new Date() / 1000);
 
 // set env DAP_BIN
-// process.env.DAP_BIN = "/data/dapenv/dap";
+process.env.DAP_BIN = "/data/dapenv/dap";
 
 /**
  * Build the same four flow objects sample_data uses for the first host (in/out × two dests).
@@ -121,7 +121,35 @@ function buildDapDefaultFlowObjects(ts, hostIP, destIP, destIP2) {
   flow4.ob = 300;
   flow4.rb = 400;
   flow4.fd = 'out';
-  return { flow1, flow2, flow3, flow4 };
+
+  const flow5 = {
+    ts : ts - 1,
+    _ts: ts - 1,
+    __ts: ts -1,
+    sh: hostIP,
+    dh: "0.0.0.0",
+    ob: 100,
+    rb: 200,
+    ct: 1,
+    fd: 'in',
+    lh: hostIP,
+    du: 100,
+    pf: { 'udp.8000': { ob: 262, rb: 270, ct: 1 } },
+    af: {},
+    pr: 'tcp',
+    f: null,
+    flows: [[1500975078, 1500975078, 262, 270]]
+  };
+
+  const flow6 = JSON.parse(JSON.stringify(flow5));
+  flow6.sh = "0.0.0.0";
+  flow6.dh = hostIP;
+  flow6.ob = 300;
+  flow6.rb = 400;
+  flow6.fd = 'out';
+
+
+  return { flow1, flow2, flow3, flow4, flow5, flow6 };
 }
 
 /**
@@ -235,7 +263,7 @@ async function removeDapTestHost() {
  * @param {0|1} pairIndex
  */
 async function createDapDefaultFlowPair(pairIndex) {
-  const { flow1, flow2, flow3, flow4 } = buildDapDefaultFlowObjects(
+  const { flow1, flow2, flow3, flow4, flow5, flow6 } = buildDapDefaultFlowObjects(
     dapFlowTimestamp,
     DAP_TEST_HOST_IP,
     DAP_TEST_DEST_IP,
@@ -244,9 +272,12 @@ async function createDapDefaultFlowPair(pairIndex) {
   if (pairIndex === 0) {
     await flowTool.addFlow(DAP_TEST_HOST_MAC, 'in', flow1);
     await flowTool.addFlow(DAP_TEST_HOST_MAC, 'out', flow3);
-  } else {
+  } else if(pairIndex === 1) {
     await flowTool.addFlow(DAP_TEST_HOST_MAC, 'in', flow2);
     await flowTool.addFlow(DAP_TEST_HOST_MAC, 'out', flow4);
+  } else if (pairIndex === 2){
+    await flowTool.addFlow(DAP_TEST_HOST_MAC, 'in', flow5);
+    await flowTool.addFlow(DAP_TEST_HOST_MAC, 'out', flow6);
   }
 }
 
@@ -421,6 +452,7 @@ function ensureAclAuditLogPluginRuleStatsForTest(plugin) {
   }
   plugin.ruleStatsPlugin = {
     accountRule() {},
+    recordLastHitFlow() {},
     getMatchedPids: async () => [],
     getPolicyIds: async () => []
   };
@@ -928,13 +960,55 @@ describe('DAP CLI — device analyze & flows', function () {
       });
     });
 
+    describe('Only retain unicast IP addresses in flows/block flows', () => {
+      let aclAuditLogPlugin;
 
+      before(() => {
+        sysManager.iptablesReady = true;
+        aclAuditLogPlugin = new ACLAuditLogPlugin({});
+        ensureAclAuditLogPluginRuleStatsForTest(aclAuditLogPlugin);
+      });
 
+      it('should record learnedCount in dap policy correctly ', async () => {
 
+        await createDapDefaultFlowPair(0);
+        // pick a device to analyze
+        let { stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]);
+        const policy = parseDapPolicyFromStdout(stdout);
+        expect(policy.learnedCount).to.equal(2);
+        expect(policy.state).to.equal('learning');
 
-    
+        //create flows with non-unicast IPs and check they are not counted in learning or optimizing state
+        await createDapDefaultFlowPair(2);
+        ({ stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]));
+        const policy1 = parseDapPolicyFromStdout(stdout);
+        expect(policy1.learnedCount).to.equal(4);
+        expect(policy1.state).to.equal('learning');
+
+        ({ stdout } = await runDap(['transfer-to-optimizing', '-m', DAP_TEST_HOST_MAC]));
+        const policy2 = parseDapPolicyFromStdout(stdout);
+        expect(policy2.learnedCount).to.equal(4);
+
+        const blockRuleId = policy2.finalRuleSet.blockRuleId || '';
+        expect(blockRuleId).to.not.be.empty;
+        const blockPid = Number(blockRuleId);
+        expect(blockPid).to.be.finite;
+
+        const flowSpecs = [
+          { dh: '192.168.1.69', sp: [50002], dp: 8009, pr: 'tcp', fd: 'in' },
+          { sh: '0.0.0.0', dh: '172.17.0.10', sp: [40001], dp: 53, pr: 'udp', fd: 'out' },
+        ];
+        createDapAuditDropBlockedFlows(aclAuditLogPlugin, blockPid, flowSpecs);
+        await flushDapAuditDropBuffer(aclAuditLogPlugin);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        ({ stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]));
+        const policy3 = parseDapPolicyFromStdout(stdout);
+        expect(policy3.learnedCount).to.equal(policy2.learnedCount + 1);
+        expect(policy3.state).to.equal('optimizing');
+
+      });
+    });
+     
   });
-
-
 
 });

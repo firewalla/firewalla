@@ -53,9 +53,9 @@ async function setupTagsRules(options) {
 
     if (action === "enforce") {
       //ensure bypass chain exists
-      for (const family of ['4', '6']) {
+      for (const family of [4, 6]) {
         const rule = new Rule(table).fam(family).chn(bypassChain).opr('-N');
-        iptc.addRule(rule);
+        await iptc.addRule(rule);
       }
     } else if (action === "unenforce") {
       // should do some check here?
@@ -69,7 +69,7 @@ async function setupTagsRules(options) {
       await Tag.ensureCreateEnforcementEnv(uid);
       const devSet = Tag.getTagDeviceSetName(uid);
       const netSet = Tag.getTagNetSetName(uid);
-      for (const family of ['4', '6']) {
+      for (const family of [4, 6]) {
         // outbound rule to bypass traffic from devices in the tag
         rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${devSet} src`).jmp("RETURN"));
         rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${netSet} src,src`).jmp("RETURN"));
@@ -96,7 +96,7 @@ async function setupTagsRules(options) {
       op = '-D'
     }
     for (const rule of rulesToAdd) {
-      iptc.addRule(rule.opr(op)); // insert rule to the top of bypass chain
+      await iptc.addRule(rule.opr(op)); // insert rule to the top of bypass chain
     }
   }
 

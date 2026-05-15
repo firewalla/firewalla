@@ -44,7 +44,9 @@ class APFeaturesPlugin extends Sensor {
     const policyHandlers = {
       "isolation": this.applyIsolation,
       "ssidPSK": this.applySSIDPSK,
-      "apControl": this.applyApControl,
+      // acl controls both internet and intranet acl, 
+      // only applicable to global acl, device/network acl change is monitored in fwapc
+      "acl": this.applyLocalAcl,
     };
     for (const key of Object.keys(policyHandlers))
       extensionManager.registerExtension(key, this, {
@@ -59,58 +61,55 @@ class APFeaturesPlugin extends Sensor {
     }, 900 * 1000);
   }
 
-  async applyApControl(obj, ip, policy) {
-    if (!policy || !_.isObject(policy)) {
-      log.warn("invalid ap control policy", policy);
-      return;
-    }
+  async applyLocalAcl(obj, ip, policy) {
     if (ip == "0.0.0.0") {
-      await this._aclIptables(policy.aclOff === true ? "-I" : "-D");
-      await this._aclAps(policy.aclOff);
+      const aclOff = Boolean(policy) ? false : true;
+      await this._aclIptables(aclOff ? "-I" : "-D");
+      await this._aclAssets(aclOff);
     }
   }
 
   async _aclIptables(op) {
-    log.info("applyApControl", op);
-    const netRule = new Rule("filter").chn("FW_FIREWALL_NET_ISOLATION").comment("network ap acl off").jmp("RETURN");
+    log.info("Apply Local ACL iptables", op);
+    const netRule = new Rule("filter").chn("FW_FIREWALL_NET_ISOLATION").comment("network_local_acl_off").jmp("RETURN");
     const netRule6 = netRule.clone().fam(6);
-    iptc.addRule(netRule.opr(op));
-    iptc.addRule(netRule6.opr(op));
+    await iptc.addRule(netRule.opr(op));
+    await iptc.addRule(netRule6.opr(op));
 
-    const groupRule = new Rule("filter").chn("FW_FIREWALL_DEV_G_ISOLATION").comment("group ap acl off").jmp("RETURN");
+    const groupRule = new Rule("filter").chn("FW_FIREWALL_DEV_G_ISOLATION").comment("group_local_acl_off").jmp("RETURN");
     const groupRule6 = groupRule.clone().fam(6);
-    iptc.addRule(groupRule.opr(op));
-    iptc.addRule(groupRule6.opr(op));
+    await iptc.addRule(groupRule.opr(op));
+    await iptc.addRule(groupRule6.opr(op));
 
-    const deviceRule = new Rule("filter").chn("FW_FIREWALL_DEV_ISOLATION").comment("device ap acl off").jmp("RETURN");
+    const deviceRule = new Rule("filter").chn("FW_FIREWALL_DEV_ISOLATION").comment("device_local_acl_off").jmp("RETURN");
     const deviceRule6 = deviceRule.clone().fam(6);
-    iptc.addRule(deviceRule.opr(op));
-    iptc.addRule(deviceRule6.opr(op));
+    await iptc.addRule(deviceRule.opr(op));
+    await iptc.addRule(deviceRule6.opr(op));
 
     // handle acl rules to intranet in box
-    const monitoredNetRule =new Rule("filter").chn("FW_DROP").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst").comment("ap acl off").jmp("RETURN");
+    const monitoredNetRule =new Rule("filter").chn("FW_DROP").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst").comment("local_acl_off").jmp("RETURN");
     const monitoredNetRule6 = monitoredNetRule.clone().fam(6);
-    iptc.addRule(monitoredNetRule.opr(op));
-    iptc.addRule(monitoredNetRule6.opr(op));
+    await iptc.addRule(monitoredNetRule.opr(op));
+    await iptc.addRule(monitoredNetRule6.opr(op));
   }
 
-  async _aclAps(acloff=false) {
+  async _aclAssets(acloff=false) {
     // set disableAcl to APs
-    const config = await fireRouter.getConfig();
+    const config = await fireRouter.getConfig(true);
     if (!config || !config.apc) {
       log.error("Failed to get apc config");
       return;
     }
-    const changed = this._setApAcl(config, acloff);
+    const changed = this._setAssetAcl(config, acloff);
     if (changed === true) {
-      log.info("acl changed, reapply networkConfig", acloff);
+      log.info("ACL changed, reapply networkConfig to assets", acloff);
       await fireRouter.setConfig(config).catch((err) => {
         log.warn("Failed to set apc config to change acl status", err.message);
       });
     }
   }
 
-  _setApAcl(config, op) {
+  _setAssetAcl(config, aclOff) {
     if (!config.apc || !config.apc.assets || !_.isObject(config.apc.assets)) {
       log.error("Failed to get assets in apc config");
       return;
@@ -122,10 +121,10 @@ class APFeaturesPlugin extends Sensor {
         log.error(`Failed to get sysConfig in apc config for asset ${uid}`);
         continue;
       }
-      if (asset.sysConfig.disableAcl === op) {
+      if (asset.sysConfig.disableAcl === aclOff) {
         continue;
       } else {
-        asset.sysConfig.disableAcl = op;
+        asset.sysConfig.disableAcl = aclOff;
         changed = true;
       }
     }
@@ -165,18 +164,18 @@ class APFeaturesPlugin extends Sensor {
       const opInternal = policy.internal ? "-A" : "-D";
       
       // add LOG rule before DROP rule
-      iptc.addRule(ruleTxLog.opr(op));
-      iptc.addRule(ruleTx.opr(op));
-      iptc.addRule(ruleTxLog6.opr(op));
-      iptc.addRule(ruleTx6.opr(op));
-      iptc.addRule(ruleRxLog.opr(op));
-      iptc.addRule(ruleRx.opr(op));
-      iptc.addRule(ruleRxLog6.opr(op));
-      iptc.addRule(ruleRx6.opr(op));
-      iptc.addRule(ruleInternalLog.opr(opInternal));
-      iptc.addRule(ruleInternal.opr(opInternal));
-      iptc.addRule(ruleInternalLog6.opr(opInternal));
-      iptc.addRule(ruleInternal6.opr(opInternal));
+      await iptc.addRule(ruleTxLog.opr(op));
+      await iptc.addRule(ruleTx.opr(op));
+      await iptc.addRule(ruleTxLog6.opr(op));
+      await iptc.addRule(ruleTx6.opr(op));
+      await iptc.addRule(ruleRxLog.opr(op));
+      await iptc.addRule(ruleRx.opr(op));
+      await iptc.addRule(ruleRxLog6.opr(op));
+      await iptc.addRule(ruleRx6.opr(op));
+      await iptc.addRule(ruleInternalLog.opr(opInternal));
+      await iptc.addRule(ruleInternal.opr(opInternal));
+      await iptc.addRule(ruleInternalLog6.opr(opInternal));
+      await iptc.addRule(ruleInternal6.opr(opInternal));
 
       await lock.acquire(LOCK_FWAPC_ISOLATION, async () => {
         await fwapc.setGroup(tagUid, {config: {isolation: {internal: policy.internal || false, external: policy.external || false}}}).catch((err) => {});
@@ -204,12 +203,12 @@ class APFeaturesPlugin extends Sensor {
         const ruleInternal = rule.clone().fam(fam).set(setName, "src,src").set(setName, "dst,dst");
         const ruleInternalLog = ruleLog.clone().fam(fam).set(setName, "src,src").set(setName, "dst,dst");
 
-        iptc.addRule(ruleTxLog.opr(op));
-        iptc.addRule(ruleTx.opr(op));
-        iptc.addRule(ruleRxLog.opr(op));
-        iptc.addRule(ruleRx.opr(op));
-        iptc.addRule(ruleInternalLog.opr(opInternal));
-        iptc.addRule(ruleInternal.opr(opInternal));
+        await iptc.addRule(ruleTxLog.opr(op));
+        await iptc.addRule(ruleTx.opr(op));
+        await iptc.addRule(ruleRxLog.opr(op));
+        await iptc.addRule(ruleRx.opr(op));
+        await iptc.addRule(ruleInternalLog.opr(opInternal));
+        await iptc.addRule(ruleInternal.opr(opInternal));
       }
       // there is no ap level API for network isolation, directly set isolation in wifiNetworks in apc config instead
     }
@@ -228,10 +227,10 @@ class APFeaturesPlugin extends Sensor {
         const ruleTxLog = ruleLog.clone().fam(fam).set(setName, "src,src").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "dst,dst");
         const ruleRx = rule.clone().fam(fam).set(setName, "dst,dst").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src");
         const ruleRxLog = ruleLog.clone().fam(fam).set(setName, "dst,dst").set(ipset.CONSTANTS.IPSET_MONITORED_NET, "src,src");
-        iptc.addRule(ruleTxLog.opr(op));
-        iptc.addRule(ruleTx.opr(op));
-        iptc.addRule(ruleRxLog.opr(op));
-        iptc.addRule(ruleRx.opr(op));
+        await iptc.addRule(ruleTxLog.opr(op));
+        await iptc.addRule(ruleTx.opr(op));
+        await iptc.addRule(ruleRxLog.opr(op));
+        await iptc.addRule(ruleRx.opr(op));
       }
 
       await lock.acquire(LOCK_FWAPC_ISOLATION, async () => {
@@ -242,7 +241,7 @@ class APFeaturesPlugin extends Sensor {
   }
 
   async applySSIDPSK(obj, ip, policy) {
-    if (!obj instanceof Tag) {
+    if (!(obj instanceof Tag)) {
       log.error(`${Constants.POLICY_KEY_SSID_PSK} is not supported on ${obj.constructor.name} object`);
       return;
     }

@@ -1385,7 +1385,7 @@ class netBot extends ControllerBot {
       }
       case "policy": {
         const pid = value.pid
-        const policy = await pm2.getPolicy(pid)
+        const policy = await pm2.getPolicyForApp(pid)
         if (!policy) {
           throw { code: 404, msg: "Policy not found", data: value}
         }
@@ -1517,7 +1517,7 @@ class netBot extends ControllerBot {
         const number = await pm2.countActivePolicyNumber();
         const options = Object.assign({}, value);
         options.number = value && value.limit;
-        const list = await pm2.loadActivePoliciesAsync(options);
+        const list = await pm2.loadActivePoliciesForApp(options);
         let alarmIDs = list.map((p) => p.aid);
         const alarms = await am2.idsToAlarmsAsync(alarmIDs);
 
@@ -4322,7 +4322,7 @@ class netBot extends ControllerBot {
     const entries = JSON.parse(await rclient.hgetAsync("sys:scan:nat", "upnp") || "[]");
     const newEntries = entries.filter(e => e.public.port != externalPort && e.private.host != internalIP && e.private.port != internalPort && e.protocol != protocol);
     // remove iptables redirect rule
-    iptc.addRule(new Rule('nat').chn(chain).pro(protocol).dport(externalPort).dnat(`${internalIP}:${internalPort}`).opr('-D'));
+    await iptc.addRule(new Rule('nat').chn(chain).pro(protocol).dport(externalPort).dnat(`${internalIP}:${internalPort}`).opr('-D'));
     // clean up upnp cache in redis
     await rclient.hsetAsync("sys:scan:nat", "upnp", JSON.stringify(newEntries));
     // remove entry from lease file
@@ -4342,7 +4342,7 @@ class netBot extends ControllerBot {
       return intf && intf.name !== intfName;
     });
     // flush iptables UPnP chain
-    iptc.addRule(new Rule('nat').chn(chain).opr('-F'));
+    await iptc.addRule(new Rule('nat').chn(chain).opr('-F'));
     // clean up upnp cache in redis
     await rclient.hsetAsync("sys:scan:nat", "upnp", JSON.stringify(newEntries));
     // remove lease file

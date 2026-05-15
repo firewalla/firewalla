@@ -136,7 +136,7 @@ class CountryUpdater extends CategoryUpdaterBase {
 
       const ipsetName = this.getIPSetName(category, false, ip6, options.useTemp)
       const entries = await rclient.zrangeAsync(key, 0, -1)
-      entries.forEach(entry => Ipset.add(ipsetName, entry))
+      await Ipset.restore(entries.map(entry => `add ${ipsetName} ${entry}`))
     } catch(err) {
       log.error(`Failed adding v${ip6?6:4} dynamic entries to ${category}`, err)
     }
@@ -161,11 +161,10 @@ class CountryUpdater extends CategoryUpdaterBase {
     }
 
     try {
-      Ipset.flush(ipsetName);
       const fileContent = await fsp.readFile(file, 'utf8');
-      const addresses = fileContent.trim().split('\n').filter(line => line.trim());
-      
-      addresses.forEach(addr => Ipset.add(ipsetName, addr));
+      const addresses = fileContent.split('\n').filter(Boolean);
+      const ops = [`flush ${ipsetName}`].concat(addresses.map(addr => `add ${ipsetName} ${addr}`));
+      await Ipset.restore(ops);
     } catch(err) {
       log.error(`Failed to update ipset by category ${category} with ipv${ip6?6:4} addresses`, err.message)
     }

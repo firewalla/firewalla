@@ -331,12 +331,12 @@ if $programname == 'docker_vpn_${this.profileId}' then {
     const remoteIP = await this._getRemoteIP();
     const remoteIP6 = await this._getRemoteIP6();
     if (remoteIP) {
-      iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').src(remoteIP).jmp('MASQUERADE'))
+      await iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').src(remoteIP).jmp('MASQUERADE'))
       // add the container IP to wan_routable so that packets from wan interfaces can be routed to the container
       await routing.addRouteToTable(remoteIP, null, this.getInterfaceName(), "wan_routable", 1024, 4).catch((err) => {});
     }
     if (remoteIP6) {
-      iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING').src(remoteIP6).jmp('MASQUERADE'))
+      await iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING').src(remoteIP6).jmp('MASQUERADE'))
       await routing.addRouteToTable(remoteIP6, null, this.getInterfaceName(), "wan_routable", 1024, 6).catch((err) => {});
     }
     await exec(`sudo systemctl start docker-compose@${this.profileId}`);
@@ -356,9 +356,9 @@ if $programname == 'docker_vpn_${this.profileId}' then {
     const remoteIP = await this._getRemoteIP();
     const remoteIP6 = await this._getRemoteIP6();
     if (remoteIP)
-      iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').src(remoteIP).jmp('MASQUERADE').opr('-D'))
+      await iptc.addRule(new Rule('nat').chn('FW_POSTROUTING').src(remoteIP).jmp('MASQUERADE').opr('-D'))
     if (remoteIP6)
-      iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING').src(remoteIP6).jmp('MASQUERADE').opr('-D'))
+      await iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING').src(remoteIP6).jmp('MASQUERADE').opr('-D'))
     await exec(`sudo systemctl stop docker-compose@${this.profileId}`);
     await this._removeNetwork();
     await this._removeRsyslogConf();

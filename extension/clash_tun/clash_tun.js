@@ -254,18 +254,18 @@ class ClashTun {
     (async() => {
       const code = "CN";
       await countryUpdater.activateCountry(code);
-      iptc.addRule(new Rule('mangle').chn('FW_CLASH_CHAIN').pro('tcp').set('c_bd_country:CN_set', 'dst').jmp('RETURN').opr('-I'))
+      await iptc.addRule(new Rule('mangle').chn('FW_CLASH_CHAIN').pro('tcp').set('c_bd_country:CN_set', 'dst').jmp('RETURN').opr('-I'))
     })()
   }
 
   async redirectTraffic() {
     await this.prepareCHNRoute();
-    iptc.addRule(new Rule('mangle').chn('FW_RT_GLOBAL_5').jmp('FW_CLASH_CHAIN'))
+    await iptc.addRule(new Rule('mangle').chn('FW_RT_GLOBAL_5').jmp('FW_CLASH_CHAIN'))
     this.shouldRedirect = true;    
   }
 
   async unRedirectTraffic() {
-    iptc.addRule(new Rule('mangle').chn('FW_RT_GLOBAL_5').jmp('FW_CLASH_CHAIN').opr('-D'))
+    await iptc.addRule(new Rule('mangle').chn('FW_RT_GLOBAL_5').jmp('FW_CLASH_CHAIN').opr('-D'))
     this.shouldRedirect = false;
   }
 

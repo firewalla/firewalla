@@ -33,6 +33,7 @@ class BlockControl {
     this.queuingTimeout = 5000; // 5 seconds
     this.processingPromise = null;
     this.needRefreshConnmark = false;
+    this.connmarkRefreshTimer = null;
     this.startTS = Date.now()
 
     // Order matters: ipset operations should be applied before iptables rules that may reference sets
@@ -57,25 +58,32 @@ class BlockControl {
         if (fromProcess && fromProcess !== 'FireMain') {
           const control = this.moduleMap[module];
           if (control && typeof control.addRule === 'function') {
-            try {
-              control.addRule(rule);
-            } catch (err) {
+            control.addRule(rule).catch(err => {
               log.error(`Error calling addRule on ${control}:`, err);
-            }
+            });
           }
         }
 
-        // Always coordinate timing
-        if (this.state === 'idle')
-          this.enterQueuingState();
-        else
-          this.refreshQueuingTimer();
+        // Always coordinate timing (skip in autonomous state — addRule executes inline)
+        if (this.state !== 'autonomous') {
+          if (this.state === 'idle')
+            this.enterQueuingState();
+          else
+            this.refreshQueuingTimer();
+        }
         // If in 'processing' or 'initializing' state, rules will be processed when state changes
       });
     }
 
     // start in 'initializing' state so rules queued before startInitialization() are preserved
     this.state = 'initializing';
+  }
+
+  /**
+   * Propagate phase change to all modules
+   */
+  setPhase(phase) {
+    this.modules.forEach(m => m.setPhase(phase));
   }
 
   /**
@@ -113,7 +121,7 @@ class BlockControl {
     }
 
     log.verbose('All modules completed processing');
-    this.enterIdleState();
+    this.enterAutonomousState();
   }
 
   /**
@@ -125,8 +133,8 @@ class BlockControl {
       clearTimeout(this.queuingTimer);
     }
 
-    // Only refresh timer if not in processing or initializing state
-    if (this.state === 'processing' || this.state === 'initializing')
+    // Only refresh timer if not in processing, initializing, or autonomous state
+    if (this.state === 'processing' || this.state === 'initializing' || this.state === 'autonomous')
       return
     
     // Set new timer
@@ -173,29 +181,31 @@ class BlockControl {
   /**
    * Enter idle state
    */
-  enterIdleState() {
+  enterAutonomousState() {
     // Clear timers and promises
     if (this.queuingTimer) {
       clearTimeout(this.queuingTimer);
       this.queuingTimer = null;
     }
-    
+
     this.processingPromise = null;
-    
+
     // Check if any module has queued rules
     const totalQueuedRules = this.modules.reduce((sum, module) => {
       return sum + (module.getQueuedRuleCount ? module.getQueuedRuleCount() : 0);
     }, 0);
-    
+
     if (totalQueuedRules > 0) {
       // Enter queuing state if there are queued rules
       this.enterQueuingState();
     } else {
-      // Enter idle state if no queued rules
-      log.verbose('Entering idle state after processing (no queued rules)');
-      this.state = 'idle';
+      // Transition modules to inline-execution mode
+      // go 'idle' state here if we want the original queue -> process -> idle state machine
+      log.verbose('Entering autonomous state');
+      this.state = 'autonomous';
+      this.setPhase('autonomous');
       if (this.needRefreshConnmark) {
-        log.verbose('Refreshing connmark after transferring to idle state');
+        log.verbose('Refreshing connmark after transferring to autonomous state');
         this.refreshConnmark().catch((err) => {
           log.error(`Failed to refresh connmark`, err.message);
         });
@@ -253,7 +263,19 @@ class BlockControl {
   }
 
   scheduleRefreshConnmark() {
-    this.needRefreshConnmark = true;
+    if (this.state === 'autonomous') {
+      if (this.connmarkRefreshTimer) {
+        clearTimeout(this.connmarkRefreshTimer);
+      }
+      this.connmarkRefreshTimer = setTimeout(() => {
+        this.connmarkRefreshTimer = null;
+        this.refreshConnmark().catch(err => {
+          log.error('Failed to refresh connmark', err.message);
+        });
+      }, this.queuingTimeout);
+    } else {
+      this.needRefreshConnmark = true;
+    }
   }
 
   async refreshConnmark() {
