@@ -219,7 +219,7 @@ class DomainUpdater {
           }
 
           log.debug(`DomainUpdater updating connection ipset ${connSet} for domain ${domain}`, connection);
-          Block.batchBlockConnection([connection], connSet, options)
+          await Block.batchBlockConnection([connection], connSet, options)
 
           this._needRefresh = true;
 

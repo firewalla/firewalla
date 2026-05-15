@@ -20,6 +20,7 @@ const fs = require('fs');
 
 const ModuleControl = require('./ModuleControl.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
+const f = require('../net2/Firewalla.js');
 
 const TLS_MODULES = ['xt_tls', 'xt_udp_tls'];
 const TLS_HOSTSET_BASE_PATH = '/proc/net';
@@ -92,30 +93,65 @@ class TLSSetControl extends ModuleControl {
    * Queue a hostset update (add/rm) for one domain entry.
    *
    * @param {string} tlsHostSet
-   * @param {string} action - 'add' or 'rm'
-   * @param {string} domain - already finalized by application layer (e.g. exact match vs suffix match)
+   * @param {string} action - 'add', 'rm', or 'flush'
+   * @param {string} [domain] - already finalized by application layer (e.g. exact match vs suffix match), optional
    */
   // @ts-ignore
-  addRule(tlsHostSet, action, domain) {
+  async addRule(tlsHostSet, action, domain) {
     // Determine which modules to update based on domain protocol and platform support
     if (!action && !domain && typeof tlsHostSet === 'string') {
       [ tlsHostSet, action, domain ] = tlsHostSet.split(':');
     }
-    if (!tlsHostSet || !action || !domain) {
+    if (!tlsHostSet || !action || !domain && action !== 'flush') {
       throw new Error(`invalid parameters: set: ${tlsHostSet}, action: ${action}, domain: ${domain}`);
     }
     log.debug(`addRule: ${tlsHostSet}, ${action}, ${domain}`);
-    const modules = this.getModulesForDomain(domain, tlsHostSet);
 
+    if (this.phase === 'autonomous') {
+      await this._execOne(tlsHostSet, action, domain);
+      return;
+    }
+
+    if (!f.isMain()) {
+      super.addRule(`${action}:${tlsHostSet}:${domain}`);
+      return;
+    }
+
+    // init phase: queue for batch processing
+    const modules = domain ? this.getModulesForDomain(domain, tlsHostSet) : this.getModulesToUpdate({ tlsHostSet });
     for (const module of modules) {
       if (action === 'add') {
         this._queueWrite(module, tlsHostSet, `+${domain}`);
       } else if (action === 'rm') {
         this._queueWrite(module, tlsHostSet, `-${domain}`);
+      } else if (action === 'flush') {
+        this.queuedRules[module][tlsHostSet] = [];
+        this._queueWrite(module, tlsHostSet, '/'); // kernel interface: "/" => flush
       }
     }
+  }
 
-    super.addRule(`${action}:${tlsHostSet}:${domain}`);
+  /**
+   * Execute a single TLS hostset add/rm inline (autonomous phase).
+   */
+  async _execOne(tlsHostSet, action, domain) {
+    const modules = this.getModulesForDomain(domain, tlsHostSet);
+    let payload;
+    if (action === 'add') {
+      payload = `+${domain}`;
+    } else if (action === 'rm') {
+      payload = `-${domain}`;
+    } else if (action === 'flush') {
+      payload = '/';
+    } else {
+      throw new Error(`invalid action: ${action}`);
+    }
+    for (const module of modules) {
+      const filePath = this._tlsFilePath(tlsHostSet, module);
+      await fs.promises.appendFile(filePath, payload).catch(err => {
+        log.error('Failed to write TLS hostset', filePath, payload, err);
+      });
+    }
   }
 
   /**
@@ -123,15 +159,7 @@ class TLSSetControl extends ModuleControl {
    * @param {string} tlsHostSet
    */
   flushHostset(tlsHostSet) {
-    // Determine which modules to update based on platform support and set activation
-    const modules = this.getModulesToUpdate({ tlsHostSet });
-    
-    for (const module of modules) {
-      this.queuedRules[module][tlsHostSet] = [];
-      this._queueWrite(module, tlsHostSet, '/'); // kernel interface: "/" => flush
-    }
-
-    super.addRule(`flush:${tlsHostSet}`);
+    return this.addRule(tlsHostSet, 'flush');
   }
 
   /**
