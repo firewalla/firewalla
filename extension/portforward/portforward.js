@@ -167,9 +167,9 @@ class PortForward {
   }
 
   async updateExtIPChain(extIPs) {
-    iptc.addRule(new Rule('nat').chn('FW_PREROUTING_EXT_IP').opr('-F'));
+    await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_EXT_IP').opr('-F'));
     for (const extIP of extIPs) {
-      iptc.addRule(new Rule('nat').chn('FW_PREROUTING_EXT_IP').dst(extIP).jmp('FW_PRERT_PORT_FORWARD'));
+      await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_EXT_IP').dst(extIP).jmp('FW_PRERT_PORT_FORWARD'));
     }
   }
 
@@ -507,9 +507,9 @@ class PortForward {
         return;
     }
     for (const chain of chains) {
-      iptc.addRule(baseRule.chn(chain));
+      await iptc.addRule(baseRule.chn(chain));
     }
-    iptc.addRule(hairpinRule);
+    await iptc.addRule(hairpinRule);
   }
 }
 

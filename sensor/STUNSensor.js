@@ -109,6 +109,7 @@ class STUNSensor extends Sensor {
         sourcePort = address.port;
         // temporarily accept UDP on source port as a new inbound UDP packet may reach the port in test 2
         iptc.addRule(new Rule('filter').chn('FW_INPUT_ACCEPT').pro('udp').dport(sourcePort).comment('STUN NAT type test').jmp('ACCEPT'))
+          .catch(err => {})
       });
       const info = {
         addr1: null,
@@ -219,6 +220,7 @@ class STUNSensor extends Sensor {
       scheduleTimeout();
     }).finally(() => {
       iptc.addRule(new Rule('filter').chn('FW_INPUT_ACCEPT').pro('udp').dport(sourcePort).comment('STUN NAT type test').jmp('ACCEPT').opr('-D'))
+        .catch(err => {})
     });
   }
 

@@ -155,11 +155,11 @@ class Platform {
   async switchQoS(state, qdisc) {
     const ipset = require('../net2/Ipset.js');
     if (state == false) {
-      ipset.add(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
-      ipset.add(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
+      await ipset.add(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
+      await ipset.add(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
     } else {
-      ipset.del(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
-      ipset.del(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
+      await ipset.del(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
+      await ipset.del(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
     }
     const supported = await exec(`modinfo sch_${qdisc}`).then(() => true).catch((err) => false);
     if (!supported) {
