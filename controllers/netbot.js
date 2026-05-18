@@ -3047,6 +3047,9 @@ class netBot extends ControllerBot {
         return
       }
       case "boneMessage": {
+        if (value.control === "script" || value.control === "raw" || value.control === "cloud") {
+          throw { code: 403, msg: `'${value.control}' control is not allowed via app API` };
+        }
         this.boneMsgHandler(value);
         return
       }
