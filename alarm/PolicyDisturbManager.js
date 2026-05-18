@@ -245,6 +245,20 @@ class PolicyDisturbManager {
     await DisturbDispatch.teardownDispatchForPolicy(state.policy);
   }
 
+  checkIfNeedDisableQuic(policy) {
+    const targets = this._getPolicyTargets(policy);
+    if (_.isEmpty(targets)) return false;
+
+    for (const target of targets) {
+      const appName = this._getAppNameFromTarget(target) || policy.app_name || "";
+      const appConf = this._appConfValue[appName];
+      if (appConf && appConf.disableQuic) {
+        return true;
+      }
+    }
+    return false;
+  }
+
 }
 
 module.exports = new PolicyDisturbManager();
