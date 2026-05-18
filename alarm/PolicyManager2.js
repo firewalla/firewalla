@@ -49,6 +49,7 @@ const Bypass = require('../control/Bypass.js');
 
 const { Rule } = require('../net2/Iptables.js');
 const iptc = require('../control/IptablesControl.js');
+const tlsc = require('../control/TLSSetControl.js');
 
 const Policy = require('./Policy.js');
 
@@ -2748,7 +2749,11 @@ class PolicyManager2 {
             log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
           });
         }
-        // TLS hostset state is refreshed at the start of each BlockControl processing session.
+        // hostset in /proc filesystem is removed after the last iptables reference is gone;
+        // scheduleRefresh() coalesces bursts and lets the kernel purge the file first.
+        if (tlsHostSet || !_.isEmpty(tlsHostSets)) {
+          tlsc.scheduleRefresh();
+        }
 
         // Mirror enforcement behavior: exclude 443 via inverted bitmap:port set
         if (['domain', 'dns'].includes(type) && action == 'block' && !policy.dnsmasq_only) {
