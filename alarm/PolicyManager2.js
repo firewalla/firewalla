@@ -49,6 +49,7 @@ const Bypass = require('../control/Bypass.js');
 
 const { Rule } = require('../net2/Iptables.js');
 const iptc = require('../control/IptablesControl.js');
+const tlsc = require('../control/TLSSetControl.js');
 
 const Policy = require('./Policy.js');
 
@@ -224,6 +225,23 @@ class PolicyManager2 {
               log.info("Policy is disabled, skip unenforce", policy.pid, action);
             } else {
               await this.unenforce(policy)
+            }
+
+            // check if policy is disturb or block policy with bypass reference, 
+            // if yes, check if policy is removed from redis, then remove related bypass chain
+            if ((policy.type == "category" || policy.type == "mac" || policy.type == "internet") && (policy.action == "block" || policy.action == "app_block" || policy.action == "disturb")) {
+              if (!(await this.policyExists(policy.pid))) {
+                const chainName = `FW_${policy.pid}_BYPASS`;
+                const tables = ["filter", "mangle"];
+                for (const table of tables) {
+                  if (!Bypass.isBypassChainExist(table, policy.pid)) {
+                    continue;
+                  }
+                  await Bypass.removeBypassChain(table, policy.pid).catch((err) => {
+                    log.error(`Failed to remove bypass chain for policy ${policy.pid} on table ${table}`, err.message);
+                  });
+                }
+              }
             }
           } catch (err) {
             log.error("unenforce policy failed:", err, policy)
@@ -714,21 +732,6 @@ class PolicyManager2 {
     // if PolicyID is refrenced by a bypass policy, remove it from the affectedPids list and update the bypass policy. 
     // If the affectedPids list is empty after removal, unenforce the bypass policy and delete it
     await this.removeFromRefrencedBypassPolicies(policy);
-
-    const { type, action } = policy;
-
-    if ((type === "category" || type == "mac" || type === "internet") && (action === "block" || action === "app_block" || action === "disturb")) {
-      const chainName = `FW_${policyID}_BYPASS`;
-      let table = "filter";
-      if (action === "disturb" || action === "qos") {
-        table = "mangle";
-      }
-      for (const family of [4, 6]) {
-        const rule = new Rule(table).fam(family).chn(chainName).opr('-F');
-        await iptc.addRule(rule);
-        await iptc.addRule(rule.opr('-X'));
-      }
-    }
 
     Bone.submitIntelFeedback('unblock', policy);
   }
@@ -2124,11 +2127,9 @@ class PolicyManager2 {
       if (action === "disturb" || action === "qos") {
         table = "mangle";
       }
-
-      for (const family of [4, 6]) {
-        const rule = new Rule(table).fam(family).chn(chainName).opr('-N');
-        await iptc.addRule(rule);
-      }
+      await Bypass.ensureCreateBypassChain(table, pid).catch((err) => {
+        log.error(`Failed to create bypass chain for policy ${pid}`, err.message);
+      });
     }
 
     if ((tlsHostSet || tlsHost || !_.isEmpty(tlsHostSets))) {
@@ -2748,7 +2749,11 @@ class PolicyManager2 {
             log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
           });
         }
-        // TLS hostset state is refreshed at the start of each BlockControl processing session.
+        // hostset in /proc filesystem is removed after the last iptables reference is gone;
+        // scheduleRefresh() coalesces bursts and lets the kernel purge the file first.
+        if (tlsHostSet || !_.isEmpty(tlsHostSets)) {
+          tlsc.scheduleRefresh();
+        }
 
         // Mirror enforcement behavior: exclude 443 via inverted bitmap:port set
         if (['domain', 'dns'].includes(type) && action == 'block' && !policy.dnsmasq_only) {
