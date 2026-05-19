@@ -130,11 +130,30 @@ class NetworkMonitorSensor extends Sensor {
                 runtimeConfig[gw] = {...runtimeConfig[gw], ...cfg[key]};
               }
               break;
-            case "MY_DNSES":
-              for (const dns of (intf ? sysManager.myDNS(intf) : sysManager.myDefaultDns())) {
-                runtimeConfig[dns] = {...runtimeConfig[dns], ...cfg[key]};
+            case "MY_DNSES": {
+              const dnsList = intf ? sysManager.myDNS(intf) : sysManager.myDefaultDns();
+              if (dnsList.length > 1) {
+                runtimeConfig["MY_DNSES"] = {...runtimeConfig["MY_DNSES"], ...cfg[key]};
+                for (const monitorType of Object.keys(runtimeConfig["MY_DNSES"])) {
+                  const mtCfg = runtimeConfig["MY_DNSES"][monitorType];
+                  if (mtCfg && typeof mtCfg === 'object') {
+                    let targets;
+                    switch (mtCfg.groupMode) {
+                      case "primary":   targets = [dnsList[0]]; break;
+                      case "secondary": targets = dnsList.slice(1).length > 0 ? dnsList.slice(1) : dnsList; break;
+                      case "combine":
+                      default:          targets = dnsList; break;
+                    }
+                    runtimeConfig["MY_DNSES"][monitorType] = {...mtCfg, groupTargets: targets};
+                  }
+                }
+              } else {
+                for (const dns of dnsList) {
+                  runtimeConfig[dns] = {...runtimeConfig[dns], ...cfg[key]};
+                }
               }
               break;
+            }
             default:
               runtimeConfig[key] = {...runtimeConfig[key], ...cfg[key]};
               break;
@@ -289,6 +308,9 @@ class NetworkMonitorSensor extends Sensor {
   async samplePing(target, cfg, opts) {
     log.debug(`sample PING to ${target}`, opts);
     log.debug("config: ", cfg);
+    if (cfg.groupTargets && cfg.groupTargets.length >= 1) {
+      return this.sampleCombined(MONITOR_PING, target, cfg, opts);
+    }
     try {
       const timeNow = Math.floor(Date.now()/1000);
       const timeSlot = ('sampleInterval' in cfg) ?  (timeNow - timeNow % (cfg.sampleInterval)) : timeNow ;
@@ -327,6 +349,9 @@ class NetworkMonitorSensor extends Sensor {
   async sampleDNS(target, cfg, opts) {
     log.debug(`sample DNS to ${target}`);
     log.debug("config: ", cfg);
+    if (cfg.groupTargets && cfg.groupTargets.length >= 1) {
+      return this.sampleCombined(MONITOR_DNS, target, cfg, opts);
+    }
     try {
       const timeNow = Math.floor(Date.now()/1000);
       const timeSlot = ('sampleInterval' in cfg) ?  (timeNow - timeNow % (cfg.sampleInterval)) : timeNow ;
@@ -362,9 +387,57 @@ class NetworkMonitorSensor extends Sensor {
     }
   }
 
+  async sampleCombined(monitorType, groupKey, cfg, opts) {
+    log.debug(`sample ${monitorType} group with key ${groupKey}, targets: ${cfg.groupTargets}`);
+    try {
+      const timeNow = Math.floor(Date.now() / 1000);
+      const timeSlot = ('sampleInterval' in cfg) ? (timeNow - timeNow % cfg.sampleInterval) : timeNow;
+      const singleCfg = Object.assign({}, cfg);
+      delete singleCfg.groupTargets;
+      const singleOpts = Object.assign({}, opts, { saveResult: false });
+
+      let combinedLossrate = 1;
+      let bestData = [];
+      let bestMedian = Infinity;
+
+      for (const target of cfg.groupTargets) {
+        let result;
+        switch (monitorType) {
+          case MONITOR_PING:
+            result = await this.samplePing(target, Object.assign({}, singleCfg), singleOpts);
+            break;
+          case MONITOR_DNS:
+            result = await this.sampleDNS(target, Object.assign({}, singleCfg), singleOpts);
+            break;
+          case MONITOR_HTTP:
+            result = await this.sampleHTTP(target, Object.assign({}, singleCfg), singleOpts);
+            break;
+        }
+        const stat = result && result.data && result.data.stat;
+        const lossrate = (stat && stat.lossrate !== undefined) ? stat.lossrate : 1;
+        combinedLossrate = parseFloat((combinedLossrate * lossrate).toFixed(4));
+        if (stat && stat.median !== undefined && stat.median < bestMedian) {
+          bestMedian = stat.median;
+          bestData = (result.data && result.data.data) || [];
+        }
+      }
+
+      return {
+        "status": "OK",
+        "data": await this.recordSampleDataInRedis(monitorType, groupKey, timeSlot, bestData, cfg, opts, combinedLossrate)
+      };
+    } catch (err) {
+      log.error(`failed to sample ${monitorType} group:`, err.message);
+      return { "status": `ERROR: ${err.message}`, "data": {} };
+    }
+  }
+
   async sampleHTTP(target, cfg, opts) {
     log.debug(`sample HTTP to ${target}`);
     log.debug("config: ", cfg);
+    if (cfg.groupTargets && cfg.groupTargets.length >= 1) {
+      return this.sampleCombined(MONITOR_HTTP, target, cfg, opts);
+    }
     try {
       const timeNow = Math.floor(Date.now()/1000);
       const timeSlot = ('sampleInterval' in cfg) ?  (timeNow - timeNow % (cfg.sampleInterval)) : timeNow ;
@@ -728,7 +801,7 @@ class NetworkMonitorSensor extends Sensor {
     }
   }
 
-  async recordSampleDataInRedis(monitorType, target, timeSlot, data, cfg, opts) {
+  async recordSampleDataInRedis(monitorType, target, timeSlot, data, cfg, opts, lossrateOverride = undefined) {
     const count = cfg.sampleCount;
     let intfObj = null;
     if (opts.intf) {
@@ -747,21 +820,24 @@ class NetworkMonitorSensor extends Sensor {
       })
       const l = dataSorted.length;
       if (l === 0) {
-        // no data, 100% loss
+        // no data, 100% loss (or combined lossrate if overridden)
+        const lossrate = (lossrateOverride !== undefined) ? parseFloat(lossrateOverride.toFixed(4)) : 1;
         if (!opts || opts.saveResult !== false)
-          this.checkLossrate(monitorType,target,cfg,1, intfObj);
+          this.checkLossrate(monitorType, target, cfg, lossrate, intfObj);
         result = {
           "data": data,
           "manual": (opts && opts.manual) ? opts.manual : false,
           "stat" : {
-            "lossrate"  : 1
+            "lossrate"  : lossrate
           }
         }
       } else {
         const [mean,mdev] = this.getMeanMdev(data);
         if (!opts || opts.saveResult !== false)
           this.checkRTT(monitorType, target, cfg, mean, intfObj);
-        const lossrate = parseFloat(Number((count-data.length)/count).toFixed(4));
+        const lossrate = (lossrateOverride !== undefined)
+          ? parseFloat(lossrateOverride.toFixed(4))
+          : parseFloat(Number((count-data.length)/count).toFixed(4));
         if (!opts || opts.saveResult !== false)
           this.checkLossrate(monitorType, target, cfg, lossrate, intfObj);
         result = {
