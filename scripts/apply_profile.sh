@@ -175,6 +175,155 @@ set_iplink() {
     done
 }
 
+# Parse cpu_spec as a comma-separated CPU list (order preserved, duplicates allowed).
+# Example: "0,1,2,3,2" -> 0 1 2 3 2
+parse_cpu_list() {
+    local spec=$1 part
+    spec="${spec// /}"
+    [[ -z "$spec" ]] && return 1
+    local IFS=','
+    for part in $spec; do
+        part="${part// /}"
+        [[ -z "$part" ]] && continue
+        if [[ "$part" =~ ^[0-9]+$ ]]; then
+            echo "$part"
+        else
+            logerror "parse_cpu_list: invalid CPU '$part' in '$spec' (use comma-separated integers)"
+            return 1
+        fi
+    done
+}
+
+# PIDs for kernel threads [napi/<intf>-<q>] one per line, sorted by queue index ascending.
+list_napi_thread_pids_sorted() {
+    local intf=$1
+    ps -eo pid,cmd --no-headers |
+        awk -v d="$intf" '
+            {
+                key = "[napi/" d "-"
+                i = index($0, key)
+                if (i == 0) next
+                rest = substr($0, i + length(key))
+                if (match(rest, /^[0-9]+/)) {
+                    qidx = substr(rest, RSTART, RLENGTH)
+                    print qidx, $1
+                }
+            }' | sort -n | awk '{ print $2 }'
+}
+
+normalize_bool() {
+    case "${1,,}" in
+        1|true|yes|on) echo 1 ;;
+        *) echo 0 ;;
+    esac
+}
+
+# threaded_napi rows: interface enable [cpu_list]
+#   interface: name or glob (e.g. eth1, eth*)
+#   enable: 1/true/on or 0/false/off — writes /sys/class/net/<if>/threaded
+#   cpu_list: optional when enable=1 — comma-separated CPUs (e.g. "0,1,2,3");
+#             sorted NAPI threads map to list positions; shorter lists wrap, extra CPUs ignored.
+set_threaded_napi() {
+    local intf enable cpu_spec threaded_path en matched_nic
+    local -a cpu_arr=()
+    local -a pids=()
+    local i n k pid cpu max_cpu
+
+    while read -r intf enable cpu_spec
+    do
+        en=$(normalize_bool "$enable")
+        if [[ "$intf" == *"*"* ]]; then
+            shopt -s nullglob
+            for matched_nic in /sys/class/net/$intf; do
+                matched_nic=$(basename "$matched_nic")
+                threaded_path="/sys/class/net/$matched_nic/threaded"
+                [[ -e "$threaded_path" ]] || continue
+                if $PROFILE_CHECK; then
+                    loginfo "threaded_napi check $matched_nic: $(cat "$threaded_path" 2>/dev/null)"
+                    while read -r pid; do
+                        [[ -n "$pid" ]] && taskset -acp "$pid" 2>/dev/null | head -1
+                    done < <(list_napi_thread_pids_sorted "$matched_nic")
+                else
+                    echo "$en" >"$threaded_path" || logerror "failed to write $threaded_path"
+                    if [[ "$en" == 1 ]] && [[ -n "${cpu_spec// /}" ]]; then
+                        mapfile -t cpu_arr < <(parse_cpu_list "$cpu_spec") || cpu_arr=()
+                        n=${#cpu_arr[@]}
+                        if (( n == 0 )); then
+                            logerror "threaded_napi: no CPUs parsed from '$cpu_spec' for $matched_nic"
+                            continue
+                        fi
+                        max_cpu=$(($(nproc) - 1))
+                        for (( k = 0; k < 40; k++ )); do
+                            mapfile -t pids < <(list_napi_thread_pids_sorted "$matched_nic")
+                            ((${#pids[@]} > 0)) && break
+                            sleep 0.05
+                        done
+                        if ((${#pids[@]} == 0)); then
+                            logerror "threaded_napi: no napi threads found for $matched_nic after enable"
+                            continue
+                        fi
+                        i=0
+                        for pid in "${pids[@]}"; do
+                            cpu=${cpu_arr[$((i % n))]}
+                            if (( cpu > max_cpu )); then
+                                logerror "threaded_napi: cpu $cpu out of range (0-$max_cpu) for pid $pid"
+                            else
+                                taskset -cp "$cpu" "$pid" || logerror "taskset failed for napi pid $pid cpu $cpu"
+                            fi
+                            ((i++)) || true
+                        done
+                        loginfo "threaded_napi: $matched_nic pinned ${#pids[@]} threads on CPUs ${cpu_spec}"
+                    fi
+                fi
+            done
+            shopt -u nullglob
+        else
+            threaded_path="/sys/class/net/$intf/threaded"
+            if [[ ! -e "$threaded_path" ]]; then
+                logerror "threaded_napi: missing $threaded_path (skip $intf)"
+                continue
+            fi
+            if $PROFILE_CHECK; then
+                loginfo "threaded_napi check $intf: $(cat "$threaded_path" 2>/dev/null)"
+                while read -r pid; do
+                    [[ -n "$pid" ]] && taskset -acp "$pid" 2>/dev/null | head -1
+                done < <(list_napi_thread_pids_sorted "$intf")
+            else
+                echo "$en" >"$threaded_path" || logerror "failed to write $threaded_path"
+                if [[ "$en" == 1 ]] && [[ -n "${cpu_spec// /}" ]]; then
+                    mapfile -t cpu_arr < <(parse_cpu_list "$cpu_spec") || cpu_arr=()
+                    n=${#cpu_arr[@]}
+                    if (( n == 0 )); then
+                        logerror "threaded_napi: no CPUs parsed from '$cpu_spec' for $intf"
+                        continue
+                    fi
+                    max_cpu=$(($(nproc) - 1))
+                    for (( k = 0; k < 40; k++ )); do
+                        mapfile -t pids < <(list_napi_thread_pids_sorted "$intf")
+                        ((${#pids[@]} > 0)) && break
+                        sleep 0.05
+                    done
+                    if ((${#pids[@]} == 0)); then
+                        logerror "threaded_napi: no napi threads found for $intf after enable"
+                        continue
+                    fi
+                    i=0
+                    for pid in "${pids[@]}"; do
+                        cpu=${cpu_arr[$((i % n))]}
+                        if (( cpu > max_cpu )); then
+                            logerror "threaded_napi: cpu $cpu out of range (0-$max_cpu) for pid $pid"
+                        else
+                            taskset -cp "$cpu" "$pid" || logerror "taskset failed for napi pid $pid cpu $cpu"
+                        fi
+                        ((i++)) || true
+                    done
+                    loginfo "threaded_napi: $intf pinned ${#pids[@]} threads on CPUs ${cpu_spec}"
+                fi
+            fi
+        fi
+    done
+}
+
 # examples
 #
 # "tc": [
@@ -261,6 +410,9 @@ process_profile() {
                 ;;
             tc)
                 echo "$input_json" | jq -r '.tc[]|@tsv' | set_tc
+                ;;
+            threaded_napi)
+                echo "$input_json" | jq -r '.threaded_napi[] | [.[0], .[1], (.[2] // "")] | @tsv' | set_threaded_napi
                 ;;
             *)
                 echo "unknown key '$key'"
