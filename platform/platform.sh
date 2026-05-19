@@ -6,6 +6,7 @@ UNAME=$(uname -m)
 
 # by default no
 MANAGED_BY_FIREBOOT=no
+NTP_SVC="ntp"
 export FIREWALLA_PLATFORM=unknown
 TCP_BBR=no
 FW_PROBABILITY="0.9"

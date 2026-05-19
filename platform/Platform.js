@@ -263,6 +263,10 @@ class Platform {
     }
   }
 
+  getNtpServiceName() {
+    return "ntp";
+  }
+
   getDNSServiceName() {
     return "firemasq";
   }
