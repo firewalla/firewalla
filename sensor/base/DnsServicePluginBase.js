@@ -215,9 +215,18 @@ class DnsServicePluginBase extends Sensor {
 
   async applyPolicy(host, ip, policy) { log.error('applyPolicy() not implemented by subclass!'); }
 
-  async globalOn(featureName) { log.error(`globalOn not implemented for ${featureName}`); }
+  async globalOn() {
+    this.featureSwitch = true;
+    await this._runApply();
+  }
 
-  async globalOff(featureName) { log.error(`globalOff not implemented for ${featureName}`); }
+  async globalOff() {
+    this.featureSwitch = false;
+    await this._runApply();
+  }
+
+  // Subclass hook: trigger this plugin's apply scheduler (e.g. applyDoHSync.exec(...)).
+  async _runApply() { log.error(`_runApply() not implemented for ${this.featureName}`); }
 }
 
 module.exports = DnsServicePluginBase;

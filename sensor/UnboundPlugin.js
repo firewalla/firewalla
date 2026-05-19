@@ -28,6 +28,7 @@ const exec = require('child-process-promise').exec;
 const scheduler = require('../util/scheduler');
 const unbound = require('../extension/unbound/unbound');
 const dnsHealth = require('../util/DNSUpstreamHealthCheck.js');
+const Constants = require('../net2/Constants.js');
 
 const featureName = "unbound";
 
@@ -89,7 +90,7 @@ class UnboundPlugin extends HealthCheckMixin(DnsServicePluginBase) {
   }
 
   async probeHealth() {
-    const result = await dnsHealth.probeLocalServer('127.0.0.1', unbound.getLocalPort(), {
+    const result = await dnsHealth.probeLocalServer(Constants.LOCALHOST, unbound.getLocalPort(), {
       domains: this.getHealthCheckDomains(),
       timeout: this.healthCheckTimeout,
       tries: this.healthCheckTries
@@ -117,7 +118,7 @@ class UnboundPlugin extends HealthCheckMixin(DnsServicePluginBase) {
   async applyPolicy(host, ip, policy) {
     log.info("Applying Unbound policy:", ip, policy);
     try {
-      if (ip === '0.0.0.0') {
+      if (ip === Constants.INADDR_ANY) {
         this.systemSwitch = !!(policy && policy.state);
         return this.applySystemPolicy();
       }
@@ -169,15 +170,7 @@ class UnboundPlugin extends HealthCheckMixin(DnsServicePluginBase) {
     }
   }
 
-  // global on/off
-  async globalOn() {
-    this.featureSwitch = true;
-    await this.applyUnboundSync.exec(true);
-  }
-
-  async globalOff() {
-    this.featureSwitch = false;
-    this.resetHealthState();
+  async _runApply() {
     await this.applyUnboundSync.exec(true);
   }
 }
