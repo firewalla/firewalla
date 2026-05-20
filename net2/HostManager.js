@@ -125,6 +125,7 @@ const AsyncLock = require('../vendor_lib/async-lock');
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
 const NetworkProfile = require('./NetworkProfile.js');
 const lock = new AsyncLock();
+const blockControl = require('../control/BlockControl.js');
 
 module.exports = class HostManager extends Monitorable {
   constructor() {
@@ -730,7 +731,7 @@ module.exports = class HostManager extends Monitorable {
     log.debug(`FamilyConfig: ${JSON.stringify(familyConfig)}`);
     const effectiveServers = familyConfig && familyConfig.servers && familyConfig.servers.length > 0
       ? familyConfig.servers : await fpp.familyDnsAddr();
-    extdata.family = Object.assign({}, familyConfig, { servers: effectiveServers });
+    extdata.family = Object.assign({}, familyConfig, { servers: effectiveServers, killSwitch: !familyConfig || familyConfig.killSwitch !== false });
 
     const ruleStatsPlugin = await sensorLoader.initSingleSensor('RuleStatsPlugin');
     const initTs = await ruleStatsPlugin.getFeatureFirstEnabledTimestamp();
@@ -749,7 +750,8 @@ module.exports = class HostManager extends Monitorable {
     const selectedServers = await dc.getServers();
     const customizedServers = await dc.getCustomizedServers();
     const allServers = await dc.getAllServerNames();
-    json.dohConfig = {selectedServers, allServers, customizedServers};
+    const settings = await dc.getSettings();
+    json.dohConfig = {selectedServers, allServers, customizedServers, killSwitch: settings.killSwitch};
   }
 
   async unboundConfigDataForInit(json) {
@@ -2295,6 +2297,8 @@ module.exports = class HostManager extends Monitorable {
       await ipset.del(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
       await ipset.del(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
     }
+    // refresh connmark to ensure the acl takes effect immediately on established connections
+    blockControl.scheduleRefreshConnmark();
   }
 
   async app(policy) {

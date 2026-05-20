@@ -25,6 +25,8 @@ const f = require('../net2/Firewalla.js');
 const TLS_MODULES = ['xt_tls', 'xt_udp_tls'];
 const TLS_HOSTSET_BASE_PATH = '/proc/net';
 const TLS_HOSTSET_FOLDER = 'hostset';
+const AUTONOMOUS_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+const REFRESH_BACKOFF_MS = 2000;
 
 /**
  * TLSIpset
@@ -48,6 +50,41 @@ class TLSSetControl extends ModuleControl {
         this.activateTLSSet(setName);
       }
     }
+
+    this.refreshTimer = null;
+    this.refreshBackoffTimer = null;
+  }
+
+  setPhase(phase) {
+    super.setPhase(phase);
+    // In autonomous mode processRules() is no longer driven by BlockControl,
+    // so we periodically reconcile the in-memory active set maps with /proc.
+    // PolicyManager2 also triggers a refresh after each TLS unenforce; this
+    // timer is a safety net for hostsets that drain through other paths.
+    if (phase === 'autonomous') {
+      if (!this.refreshTimer) {
+        this.refreshTimer = setInterval(() => this.scheduleRefresh(), AUTONOMOUS_REFRESH_INTERVAL_MS);
+      }
+    } else if (this.refreshTimer) {
+      clearInterval(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+  }
+
+  /**
+   * Coalesced refresh: defers refreshTLSCategoryActivated() by REFRESH_BACKOFF_MS.
+   * Calls arriving while a refresh is pending are no-ops, so a burst of TLS
+   * rule unenforces produces a single filesystem scan. The delay also gives the
+   * kernel time to purge a /proc hostset file after its last iptables reference
+   * is removed.
+   */
+  scheduleRefresh() {
+    if (this.phase !== 'autonomous') return;
+    if (this.refreshBackoffTimer) clearTimeout(this.refreshBackoffTimer);
+    this.refreshBackoffTimer = setTimeout(() => {
+      this.refreshBackoffTimer = null;
+      this.refreshTLSCategoryActivated()
+    }, REFRESH_BACKOFF_MS);
   }
 
   /**
@@ -260,6 +297,7 @@ class TLSSetControl extends ModuleControl {
    */
   async refreshTLSCategoryActivated() {
     try {
+      log.debug('refreshTLSCategoryActivated');
       const refreshForModule = async (module) => {
         const dirPath = `${TLS_HOSTSET_BASE_PATH}/${module}/${TLS_HOSTSET_FOLDER}`;
         let entries = [];

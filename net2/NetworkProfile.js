@@ -42,6 +42,7 @@ const { Address4, Address6 } = require('ip-address');
 const sysManager = require('./SysManager.js');
 
 const envCreatedMap = {};
+const blockControl = require('../control/BlockControl.js');
 
 class NetworkProfile extends Monitorable {
   static metaFieldsJson = ['dns', 'dns6', 'ipv4s', 'ipv4Subnets', 'ipv6', 'ipv6Subnets', 'monitoring', 'ready', 'active', 'pendingTest', 'rtid', 'origDns', 'origDns6', 'rt4Subnets', 'rt6Subnets', 'pds'];
@@ -170,6 +171,8 @@ class NetworkProfile extends Monitorable {
       await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, netIpsetName6);
       await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, netLinklocalIpsetName6);
     }
+    // refresh connmark to ensure the acl takes effect immediately on established connections
+    blockControl.scheduleRefreshConnmark();
   }
 
   async spoof(state) {
@@ -378,9 +381,6 @@ class NetworkProfile extends Monitorable {
         log.error(`Failed to get net list ipset name for ${uuid}`);
       } else {
         await Ipset.create(netListIpsetName, 'list:set');
-        await Ipset.add(netListIpsetName, netIpsetName);
-        await Ipset.add(netListIpsetName, netIpsetName6);
-        await Ipset.add(netListIpsetName, netLinklocalIpsetName6);
       }
 
       const GatewayIpsetName = NetworkProfile.getGatewayIpsetName(uuid);
@@ -389,9 +389,7 @@ class NetworkProfile extends Monitorable {
         log.error(`Failed to get gateway ipset name for ${uuid}`);
       } else {
         await Ipset.create(GatewayIpsetName, 'hash:ip', false, { maxelem: 32 });
-        await Ipset.add(Ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET, GatewayIpsetName);
         await Ipset.create(GatewayIpsetName6, 'hash:ip', true, { maxelem: 32 });
-        await Ipset.add(Ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET, GatewayIpsetName6);
       }
       const selfIpsetName = NetworkProfile.getSelfIpsetName(uuid);
       const selfIpsetName6 = NetworkProfile.getSelfIpsetName(uuid, 6);
@@ -473,11 +471,15 @@ class NetworkProfile extends Monitorable {
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
     const netLinklocalIpsetName6 = NetworkProfile.getNetLinklocalIpsetName(this.o.uuid);
+    const netListIpsetName = NetworkProfile.getNetListIpsetName(this.o.uuid);
     let hasDefaultRTSubnets = false;
-    if (!netIpsetName || !netIpsetName6 || !netLinklocalIpsetName6) {
+    if (!netListIpsetName || !netIpsetName || !netIpsetName6 || !netLinklocalIpsetName6) {
       log.error(`Failed to get ipset name for ${this.o.uuid}`);
     } else {
-      await Ipset.flush(netIpsetName);
+      Ipset.flush(netListIpsetName);
+      Ipset.add(netListIpsetName, netIpsetName);
+      Ipset.add(netListIpsetName, netIpsetName6);
+      Ipset.add(netListIpsetName, netLinklocalIpsetName6);
       if (this.o && this.o.monitoring === true) {
         if (_.isArray(this.o.ipv4Subnets)) {
           for (const subnet of this.o.ipv4Subnets)
@@ -570,6 +572,10 @@ class NetworkProfile extends Monitorable {
       if (!GatewayIpsetName || !GatewayIpsetName6) {
         log.error(`Failed to get gateway ipset name for ${this.o.uuid}`);
       } else {
+        Ipset.del(Ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET, GatewayIpsetName);
+        Ipset.del(Ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET, GatewayIpsetName6);
+        Ipset.add(Ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET, GatewayIpsetName);
+        Ipset.add(Ipset.CONSTANTS.IPSET_NETWORK_GATEWAY_SET, GatewayIpsetName6);
         await Ipset.flush(GatewayIpsetName);
         if (this.o && this.o.gateway && typeof this.o.gateway === 'string') {
           await Ipset.add(GatewayIpsetName, this.o.gateway);

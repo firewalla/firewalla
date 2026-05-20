@@ -2374,7 +2374,7 @@ class netBot extends ControllerBot {
             toProcess: "FireMain"
           });
           this._scheduleRedisBackgroundSave();
-          return newPolicy
+          return await pm2.formatPolicyLastHitFlowForApp(newPolicy)
         }
       }
       case "policy:delete": {
@@ -2428,7 +2428,7 @@ class netBot extends ControllerBot {
           let policy = await pm2.getPolicy(value.policyID)
           if (policy) {
             await pm2.enablePolicy(policy)
-            return policy
+            return await pm2.formatPolicyLastHitFlowForApp(policy)
           } else {
             throw new Error("invalid policy");
           }
@@ -2442,7 +2442,7 @@ class netBot extends ControllerBot {
           let policy = await pm2.getPolicy(value.policyID)
           if (policy) {
             await pm2.disablePolicy(policy)
-            return policy
+            return await pm2.formatPolicyLastHitFlowForApp(policy)
           } else {
             throw new Error("invalid policy");
           }
@@ -3047,6 +3047,9 @@ class netBot extends ControllerBot {
         return
       }
       case "boneMessage": {
+        if (value.control === "script" || value.control === "raw" || value.control === "cloud") {
+          throw { code: 403, msg: `'${value.control}' control is not allowed via app API` };
+        }
         this.boneMsgHandler(value);
         return
       }

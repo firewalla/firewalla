@@ -39,9 +39,6 @@ const NTP_CHAIN_DNAT = 'FW_PREROUTING_NTP_DNAT'
 const NTP_SVC_CHRONY = 'chrony'
 const NTP_SVC_NTP = 'ntp'
 
-// Send a minimal NTP client request (48 bytes, LI=0 VN=4 Mode=3) to localhost:123
-// and verify at least 1 byte is returned, confirming the local NTP server is responding.
-const NTP_LOCAL_HEALTH_CHECK = 'bash -c \'exec 3<>/dev/udp/127.0.0.1/123 2>/dev/null && printf "\\x23\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00" >&3 && timeout 2 dd bs=1 count=1 <&3 2>/dev/null | wc -c | grep -q 1\''
 
 class NTPRedirectPlugin extends MonitorablePolicyPlugin {
   constructor(config) {
@@ -82,23 +79,35 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
   async run() {
     // create chains no matter feature is enabled or not
     // simple and minimal change as there's no feature guard on other iptables operations
-    await iptc.addRule(new Rule('nat').chn(NTP_CHAIN).opr('-N'));
-    await iptc.addRule(new Rule('nat').chn(NTP_CHAIN).fam(6).opr('-N'));
-    await iptc.addRule(new Rule('nat').chn(NTP_CHAIN_DNAT).opr('-N'));
-    await iptc.addRule(new Rule('nat').chn(NTP_CHAIN_DNAT).fam(6).opr('-N'));
+    for (const chain of [NTP_CHAIN, NTP_CHAIN_DNAT])
+      for (const fam of [4, 6])
+        await iptc.addRule(new Rule('nat').chn(chain).fam(fam).opr('-N'));
 
     await super.run();
     this.ntpService = platform.getNtpServiceName();
     log.info('NTP service:', this.ntpService);
     // keep NTP daemon working in orphan/local mode even if external peers are not available, in most cases the time on the box should be accurate
     // this is to avoid suspending NTP intercept, which may cause NTP flows being blocked if there is another internet block rule
-    if (this.ntpService === NTP_SVC_CHRONY) {
+    if (this.ntpService === NTP_SVC_CHRONY) { 
       await execAsync(String.raw`sudo bash -c 'grep -q "^local stratum" /etc/chrony/chrony.conf || echo "local stratum 10" >> /etc/chrony/chrony.conf'`).catch(() => { });
       // bare "allow" permits all IPs; WAN exposure is mitigated by FW_WAN_IN_DROP blocking new inbound connections not matching DNAT
       await execAsync(String.raw`sudo bash -c 'grep -qE "^allow\s*$" /etc/chrony/chrony.conf || echo "allow" >> /etc/chrony/chrony.conf'; sudo systemctl restart chrony`).catch(() => { });
     } else if (this.ntpService === NTP_SVC_NTP) {
-      await execAsync(String.raw`sudo bash -c 'grep -q "^tos orphan" /etc/ntp.conf || echo "tos orphan 10" >> /etc/ntp.conf'`).catch(() => { });
-      await execAsync(String.raw`sudo sed -i -E 's/(^restrict .*)limited(.*$)/\1\2/' /etc/ntp.conf; sudo systemctl restart ntp`).catch(() => { });
+      // /etc/ntp.conf adjustments:
+      // - tos orphan 10: keep ntpd working in orphan mode even if external peers are not available, in most cases
+      //   the time on the box should be accurate. this is to avoid suspending NTP intercept, which may cause NTP
+      //   flows being blocked if there is another internet block rule
+      // - server 127.127.1.0 / fudge 127.127.1.0 stratum 10: enable local clock as fallback reference so ntpd
+      //   stays synchronized in orphan mode
+      // - strip `limited` from restrict lines so the local server answers redirected NTP queries without rate
+      //   limiting
+      await execAsync(String.raw`sudo bash -c '
+        grep -q "^tos orphan" /etc/ntp.conf || echo "tos orphan 10" >> /etc/ntp.conf
+        grep -q "^server 127.127.1.0" /etc/ntp.conf || echo "server 127.127.1.0" >> /etc/ntp.conf
+        grep -q "^fudge 127.127.1.0" /etc/ntp.conf || echo "fudge 127.127.1.0 stratum 10" >> /etc/ntp.conf
+        sed -i -E "s/(^restrict .*)limited(.*$)/\1\2/" /etc/ntp.conf
+        systemctl restart ntp
+      '`).catch(()=>{});
     } else {
       log.warn(`NTP service: ${this.ntpService}`);
     }
@@ -206,7 +215,7 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
 
     while (retry--)
       try {
-        await execAsync(NTP_LOCAL_HEALTH_CHECK)
+        await execAsync(this.ntpService === NTP_SVC_CHRONY ? "chronyd -Q 'server 127.0.0.1 iburst'" : 'ntpdate -q 127.0.0.1')
         if (!this.localServerStatus)
           log.info('NTP is back online on localhost')
         await iptc.addRule(this.ruleFeature.opr('-A'));

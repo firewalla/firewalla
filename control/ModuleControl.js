@@ -17,12 +17,24 @@
 const log = require('../net2/logger.js')(__filename);
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const Message = require('../net2/Message.js');
+
+const _ = require('lodash');
 
 // wraps a linux tool that we use to implement rules, ipset, iptables, dnsmasq, etc
 class ModuleControl {
   constructor(name) {
     this.name = name;
     this.phase = 'init';
+
+    sem.on(Message.MSG_DEBUG, event => {
+      if (event.name == this.constructor.name) {
+        if (event.data == 'state') {
+          log.info('Current state:', _.get(this, event.path))
+        }
+      }
+    })
+
   }
 
   setPhase(phase) {

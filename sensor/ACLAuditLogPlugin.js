@@ -545,13 +545,11 @@ class ACLAuditLogPlugin extends Sensor {
         }
       }
     } else {
-      let added;
-
+      let added = true;
       // write apid immediately when pid is known from MARK (per-device allow)
       if (record.ac === "allow") {
         added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid ? record.pid : Constants.GLOBAL_ALLOW_DOMAIN_RULE_HIT, 600);
       }
-
       // record disturb rule id into conntrack for BroDetect to pick up on flow generation
       if (record.pid && record.ac === "disturb") {
         added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_DPID, record.pid, 600);
