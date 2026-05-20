@@ -65,8 +65,7 @@ class DNSCrypt {
     this.config = config;
     let content = await fs.readFileAsync(templatePath, { encoding: 'utf8' });
     content = content.replace("%DNSCRYPT_FALLBACK_DNS%", config.fallbackDNS || "1.1.1.1");
-    content = content.replace("%DNSCRYPT_LOCAL_PORT%", config.localPort || 8854);
-    content = content.replace("%DNSCRYPT_LOCAL_PORT%", config.localPort || 8854);
+    content = content.replace(/%DNSCRYPT_LOCAL_PORT%/g, config.localPort || 8854);
     content = content.replace("%DNSCRYPT_IPV6%", "false");
 
     const allServers = [].concat(await this.getAllServersFromCloud(), await this.getCustomizedServers()); // get servers from cloud and customized
@@ -76,6 +75,9 @@ class DNSCrypt {
     content = content.replace("%DNSCRYPT_ALL_SERVER_LIST%", this.allServersToToml(allServers));
     let serverList = await this.getServers();
     serverList = serverList.filter((n) => allServerNames.includes(n));
+    if (serverList.length === 0) {
+      log.warn("None of selected servers found in available list, falling back to all servers");
+    }
     content = content.replace("%DNSCRYPT_SERVER_LIST%", JSON.stringify(serverList));
 
     if (reCheckConfig) {

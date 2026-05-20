@@ -42,6 +42,7 @@ const { Address4, Address6 } = require('ip-address');
 const sysManager = require('./SysManager.js');
 
 const envCreatedMap = {};
+const blockControl = require('../control/BlockControl.js');
 
 class NetworkProfile extends Monitorable {
   static metaFieldsJson = ['dns', 'dns6', 'ipv4s', 'ipv4Subnets', 'ipv6', 'ipv6Subnets', 'monitoring', 'ready', 'active', 'pendingTest', 'rtid', 'origDns', 'origDns6', 'rt4Subnets', 'rt6Subnets', 'pds'];
@@ -170,6 +171,8 @@ class NetworkProfile extends Monitorable {
       await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, netIpsetName6);
       await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, netLinklocalIpsetName6);
     }
+    // refresh connmark to ensure the acl takes effect immediately on established connections
+    blockControl.scheduleRefreshConnmark();
   }
 
   async spoof(state) {

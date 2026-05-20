@@ -47,15 +47,7 @@ const HealthCheckMixin = (Base) => class extends Base {
     this.healthCheckTries = this.config.healthCheckTries || this._defaultHealthCheckTries;
     this.healthCheckFailThreshold = this.config.healthCheckFailThreshold || this._defaultHealthCheckFailThreshold;
     this.healthCheckRecoverThreshold = this.config.healthCheckRecoverThreshold || 1;
-    this.healthState = {
-      healthy: true,
-      bypassActive: false,
-      failCount: 0,
-      recoverCount: 0,
-      lastError: null,
-      lastCheckedAt: null,
-      server: null,
-    };
+    this.resetHealthState();
   }
 
   // ── health state ──────────────────────────────────────────────────────────
@@ -120,15 +112,32 @@ const HealthCheckMixin = (Base) => class extends Base {
     return true;
   }
 
-  _init(featureName, dnsmasqConfigFolder, extensionKey) {
-    super._init(featureName, dnsmasqConfigFolder, extensionKey);
-    if (this.healthCheckTask)
-      clearInterval(this.healthCheckTask);
+  // ── health-check timer lifecycle ──────────────────────────────────────────
+
+  _startHealthCheckTask() {
+    if (this.healthCheckTask) return;
     this.healthCheckTask = setInterval(() => {
       this.healthCheck().catch((err) => {
         log.error(`Failed to run ${this.featureName} health check`, err);
       });
     }, this.healthCheckInterval);
+  }
+
+  _stopHealthCheckTask() {
+    if (!this.healthCheckTask) return;
+    clearInterval(this.healthCheckTask);
+    this.healthCheckTask = null;
+  }
+
+  async globalOn() {
+    await super.globalOn();
+    this._startHealthCheckTask();
+  }
+
+  async globalOff() {
+    this._stopHealthCheckTask();
+    await super.globalOff();
+    await this.refreshHealthState();
   }
 
   async _resetState() {
@@ -148,6 +157,7 @@ const HealthCheckMixin = (Base) => class extends Base {
   }
 
   async healthCheck() {
+    if (!this.featureSwitch) return;
     const prevBypassActive = this.healthState.bypassActive;
     await this.refreshHealthState();
     await this.syncDnsmasqUpstreamConfig();

@@ -74,16 +74,27 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
   async run() {
     // create chains no matter feature is enabled or not
     // simple and minimal change as there's no feature guard on other iptables operations
-    await iptc.addRule(new Rule('nat').chn(NTP_CHAIN).opr('-N'));
-    await iptc.addRule(new Rule('nat').chn(NTP_CHAIN).fam(6).opr('-N'));
-    await iptc.addRule(new Rule('nat').chn(NTP_CHAIN_DNAT).opr('-N'));
-    await iptc.addRule(new Rule('nat').chn(NTP_CHAIN_DNAT).fam(6).opr('-N'));
+    for (const chain of [NTP_CHAIN, NTP_CHAIN_DNAT])
+      for (const fam of [4, 6])
+        await iptc.addRule(new Rule('nat').chn(chain).fam(fam).opr('-N'));
 
     await super.run();
-    // keep ntpd working in orphan mode even if external peers are not available, in most cases the time on the box should be accurate
-    // this is to avoid suspending NTP intercept, which may cause NTP flows being blocked if there is another internet block rule
-    await execAsync(String.raw`sudo bash -c 'grep -q "^tos orphan" /etc/ntp.conf || echo "tos orphan 10" >> /etc/ntp.conf'`).catch(()=>{});
-    await execAsync(String.raw`sudo sed -i -E 's/(^restrict .*)limited(.*$)/\1\2/' /etc/ntp.conf; sudo systemctl restart ntp`).catch(()=>{});
+
+    // /etc/ntp.conf adjustments:
+    // - tos orphan 10: keep ntpd working in orphan mode even if external peers are not available, in most cases
+    //   the time on the box should be accurate. this is to avoid suspending NTP intercept, which may cause NTP
+    //   flows being blocked if there is another internet block rule
+    // - server 127.127.1.0 / fudge 127.127.1.0 stratum 10: enable local clock as fallback reference so ntpd
+    //   stays synchronized in orphan mode
+    // - strip `limited` from restrict lines so the local server answers redirected NTP queries without rate
+    //   limiting
+    await execAsync(String.raw`sudo bash -c '
+      grep -q "^tos orphan" /etc/ntp.conf || echo "tos orphan 10" >> /etc/ntp.conf
+      grep -q "^server 127.127.1.0" /etc/ntp.conf || echo "server 127.127.1.0" >> /etc/ntp.conf
+      grep -q "^fudge 127.127.1.0" /etc/ntp.conf || echo "fudge 127.127.1.0 stratum 10" >> /etc/ntp.conf
+      sed -i -E "s/(^restrict .*)limited(.*$)/\1\2/" /etc/ntp.conf
+      systemctl restart ntp
+    '`).catch(()=>{});
   }
 
   async updateNtpOff(devId, op='add', updateRedis=false, useTemp=false) {

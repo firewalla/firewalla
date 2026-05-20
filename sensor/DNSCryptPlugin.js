@@ -30,6 +30,7 @@ const dnsHealth = require('../util/DNSUpstreamHealthCheck.js');
 const featureName = "doh";
 const fc = require('../net2/config.js');
 const dc = require('../extension/dnscrypt/dnscrypt');
+const Constants = require('../net2/Constants.js');
 
 class DNSCryptPlugin extends HealthCheckMixin(DnsServicePluginBase) {
 
@@ -115,7 +116,7 @@ class DNSCryptPlugin extends HealthCheckMixin(DnsServicePluginBase) {
   }
 
   async probeHealth() {
-    const result = await dnsHealth.probeLocalServer('127.0.0.1', dc.getLocalPort(), {
+    const result = await dnsHealth.probeLocalServer(Constants.LOCALHOST, dc.getLocalPort(), {
       domains: this.getHealthCheckDomains(),
       timeout: this.healthCheckTimeout,
       tries: this.healthCheckTries
@@ -137,7 +138,7 @@ class DNSCryptPlugin extends HealthCheckMixin(DnsServicePluginBase) {
   async applyPolicy(host, ip, policy) {
     log.info("Applying DoH policy:", ip, policy);
     try {
-      if (ip === '0.0.0.0') {
+      if (ip === Constants.INADDR_ANY) {
         this.systemSwitch = !!(policy && policy.state);
         return this.applySystemPolicy();
       }
@@ -189,15 +190,7 @@ class DNSCryptPlugin extends HealthCheckMixin(DnsServicePluginBase) {
     }
   }
 
-  // global on/off
-  async globalOn() {
-    this.featureSwitch = true;
-    await this.applyDoHSync.exec(true);
-  }
-
-  async globalOff() {
-    this.featureSwitch = false;
-    this.resetHealthState();
+  async _runApply() {
     await this.applyDoHSync.exec(true);
   }
 }
