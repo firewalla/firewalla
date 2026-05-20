@@ -125,6 +125,7 @@ const AsyncLock = require('../vendor_lib/async-lock');
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
 const NetworkProfile = require('./NetworkProfile.js');
 const lock = new AsyncLock();
+const blockControl = require('../control/BlockControl.js');
 
 module.exports = class HostManager extends Monitorable {
   constructor() {
@@ -2296,6 +2297,8 @@ module.exports = class HostManager extends Monitorable {
       await ipset.del(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
       await ipset.del(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
     }
+    // refresh connmark to ensure the acl takes effect immediately on established connections
+    blockControl.scheduleRefreshConnmark();
   }
 
   async app(policy) {
