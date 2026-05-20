@@ -396,23 +396,20 @@ class NetworkMonitorSensor extends Sensor {
       delete singleCfg.groupTargets;
       const singleOpts = Object.assign({}, opts, { saveResult: false });
 
+      const sampleFn = (target) => {
+        switch (monitorType) {
+          case MONITOR_PING: return this.samplePing(target, Object.assign({}, singleCfg), singleOpts);
+          case MONITOR_DNS:  return this.sampleDNS(target, Object.assign({}, singleCfg), singleOpts);
+          case MONITOR_HTTP: return this.sampleHTTP(target, Object.assign({}, singleCfg), singleOpts);
+        }
+      };
+      const results = await Promise.all(cfg.groupTargets.map(sampleFn));
+
       let combinedLossrate = 1;
       let bestData = [];
       let bestMedian = Infinity;
 
-      for (const target of cfg.groupTargets) {
-        let result;
-        switch (monitorType) {
-          case MONITOR_PING:
-            result = await this.samplePing(target, Object.assign({}, singleCfg), singleOpts);
-            break;
-          case MONITOR_DNS:
-            result = await this.sampleDNS(target, Object.assign({}, singleCfg), singleOpts);
-            break;
-          case MONITOR_HTTP:
-            result = await this.sampleHTTP(target, Object.assign({}, singleCfg), singleOpts);
-            break;
-        }
+      for (const result of results) {
         const stat = result && result.data && result.data.stat;
         const lossrate = (stat && stat.lossrate !== undefined) ? stat.lossrate : 1;
         combinedLossrate = parseFloat((combinedLossrate * lossrate).toFixed(4));
@@ -475,8 +472,8 @@ class NetworkMonitorSensor extends Sensor {
     }
   }
 
-  scheduleSampleJob(monitorType, ip, cfg, intf) {
-    log.info(`schedule a sample job ${monitorType}${intf ? ` on ${intf}` : ""} with ip(${ip})`);
+  scheduleSampleJob(monitorType, target, cfg, intf) {
+    log.info(`schedule a sample job ${monitorType}${intf ? ` on ${intf}` : ""} with target(${target})`);
     log.debug("config:",cfg);
     let scheduledJob = null;
     // prevent too low value in sample interval
@@ -490,19 +487,19 @@ class NetworkMonitorSensor extends Sensor {
     switch (monitorType) {
       case MONITOR_PING: {
         scheduledJob = setInterval(() => {
-          this.samplePing(ip, cfg, opts);
+          this.samplePing(target, cfg, opts);
         }, 1000*cfg.sampleInterval);
         break;
       }
       case MONITOR_DNS: {
         scheduledJob = setInterval(() => {
-          this.sampleDNS(ip, cfg, opts);
+          this.sampleDNS(target, cfg, opts);
         }, 1000*cfg.sampleInterval);
         break;
       }
       case MONITOR_HTTP: {
         scheduledJob = setInterval(() => {
-          this.sampleHTTP(ip, cfg, opts);
+          this.sampleHTTP(target, cfg, opts);
         }, 1000*cfg.sampleInterval);
         break;
       }
@@ -510,8 +507,26 @@ class NetworkMonitorSensor extends Sensor {
     return scheduledJob;
   }
 
-  async sampleOnce(monitorType, ip ,cfg, saveResult, intf) {
-    log.info(`run a sample job ${monitorType}${intf ? ` on ${intf}` : ""} with ip(${ip})`);
+  async sampleOnce(monitorType, target, cfg, saveResult, intf) {
+    if (target === "MY_DNSES") {
+      const dnsList = intf ? sysManager.myDNS(intf) : sysManager.myDefaultDns();
+      if (!dnsList || dnsList.length === 0)
+        return { status: "ERROR: no DNS configured", data: {} };
+      if (dnsList.length === 1) {
+        target = dnsList[0];
+      } else {
+        const groupMode = cfg && cfg.groupMode;
+        let groupTargets;
+        switch (groupMode) {
+          case "primary":   groupTargets = [dnsList[0]]; break;
+          case "secondary": groupTargets = dnsList.slice(1).length > 0 ? dnsList.slice(1) : dnsList; break;
+          case "combine":
+          default:          groupTargets = dnsList; break;
+        }
+        cfg = {...(cfg || {}), groupTargets};
+      }
+    }
+    log.info(`run a sample job ${monitorType}${intf ? ` on ${intf}` : ""} with target(${target})`);
     log.debug("config:",cfg);
     await hostManager.loadPolicyAsync();
     const hostPolicy = hostManager.policy;
@@ -519,13 +534,13 @@ class NetworkMonitorSensor extends Sensor {
     let mcfg = cfg;
     if ( hostPolicy && hostPolicy[POLICY_KEYNAME] &&
          hostPolicy[POLICY_KEYNAME]['config'] &&
-         hostPolicy[POLICY_KEYNAME]['config'][ip] &&
-         hostPolicy[POLICY_KEYNAME]['config'][ip][monitorType] ) {
-      mcfg = { ...hostPolicy[POLICY_KEYNAME]['config'][ip][monitorType], ...cfg};
+         hostPolicy[POLICY_KEYNAME]['config'][target] &&
+         hostPolicy[POLICY_KEYNAME]['config'][target][monitorType] ) {
+      mcfg = { ...hostPolicy[POLICY_KEYNAME]['config'][target][monitorType], ...cfg};
       log.info(`input config merged with system policy:`,mcfg);
     } else {
       mcfg = cfg;
-      log.warn(`NO applicable system policy on ${ip} for ${monitorType}, use input config:`,mcfg);
+      log.warn(`NO applicable system policy on ${target} for ${monitorType}, use input config:`,mcfg);
     }
     const opts = SAMPLE_DEFAULT_OPTS;
     opts.manual = true;
@@ -536,20 +551,20 @@ class NetworkMonitorSensor extends Sensor {
     let result = {status:"unknown", data:{}};
     switch (monitorType) {
       case MONITOR_PING:
-        result = await this.samplePing(ip,mcfg,opts);
+        result = await this.samplePing(target, mcfg, opts);
         break;
       case MONITOR_DNS:
-        result = await this.sampleDNS(ip,mcfg,opts);
+        result = await this.sampleDNS(target, mcfg, opts);
         break;
       case MONITOR_HTTP:
-        result = await this.sampleHTTP(ip,mcfg,opts);
+        result = await this.sampleHTTP(target, mcfg, opts);
         break;
     }
     return result;
   }
 
-  startMonitorDevice(key, ip, cfg, intf = null) {
-    log.info(`start monitoring ${key}${intf ? ` on ${intf}` : ""} with ip(${ip})`);
+  startMonitorDevice(key, target, cfg, intf = null) {
+    log.info(`start monitoring ${key}${intf ? ` on ${intf}` : ""} with target(${target})`);
     log.debug("config: ", cfg);
     if (!cfg) return;
     for ( const monitorType of Object.keys(cfg) ) {
@@ -558,9 +573,9 @@ class NetworkMonitorSensor extends Sensor {
         log.warn(`${monitorType} on ${key} already started`);
       } else {
         log.debug(`scheduling sample job ${monitorType} on ${key} ...`);
-        this.sampleJobs[scheduledKey] = this.scheduleSampleJob(monitorType, ip, cfg[monitorType], intf);
+        this.sampleJobs[scheduledKey] = this.scheduleSampleJob(monitorType, target, cfg[monitorType], intf);
         log.debug(`scheduling process job ${monitorType} on ${key} ...`);
-        this.processJobs[scheduledKey] = this.scheduleProcessJob(monitorType, ip, cfg[monitorType], intf);
+        this.processJobs[scheduledKey] = this.scheduleProcessJob(monitorType, target, cfg[monitorType], intf);
       }
     }
   }
@@ -941,11 +956,11 @@ class NetworkMonitorSensor extends Sensor {
     }
   }
 
-  scheduleProcessJob(monitorType, ip, cfg, intf) {
-    log.info(`scheduling process job for ${monitorType}${intf ? ` on ${intf}` : ""} with ip(${ip})`);
+  scheduleProcessJob(monitorType, target, cfg, intf) {
+    log.info(`scheduling process job for ${monitorType}${intf ? ` on ${intf}` : ""} with target(${target})`);
     log.debug("config: ",cfg);
     const scheduledJob = setInterval(() => {
-      this.processJob(monitorType, ip, cfg, intf);
+      this.processJob(monitorType, target, cfg, intf);
     }, 1000*cfg.processInterval);
     return scheduledJob;
   }
