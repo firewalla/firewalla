@@ -196,9 +196,20 @@
       "hashsetConfigInterval": 86400
     },
     "DNSCryptPlugin": {
-      "refreshInterval": 1440
+      "refreshInterval": 1440,
+      "healthCheckInterval": 60,
+      "healthCheckTimeout": 5,
+      "healthCheckTries": 1,
+      "healthCheckFailThreshold": 3,
+      "healthCheckRecoverThreshold": 1
     },
-    "UnboundPlugin": {},
+    "UnboundPlugin": {
+      "healthCheckInterval": 60,
+      "healthCheckTimeout": 2,
+      "healthCheckTries": 1,
+      "healthCheckFailThreshold": 3,
+      "healthCheckRecoverThreshold": 1
+    },
     "SlackSensor": {},
     "SysPatchSensor": {},
     "RuntimeConfigSensor": {},
@@ -482,7 +493,13 @@
         "duckduckgo": "on"
       }
     },
-    "FamilyProtectPlugin": {},
+    "FamilyProtectPlugin": {
+      "healthCheckInterval": 60,
+      "healthCheckTimeout": 3,
+      "healthCheckTries": 2,
+      "healthCheckFailThreshold": 4,
+      "healthCheckRecoverThreshold": 1
+    },
     "NTPRedirectPlugin": {
       "featureName": "ntp_redirect",
       "policyName": "ntp_redirect"

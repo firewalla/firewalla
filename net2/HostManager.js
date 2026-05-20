@@ -730,7 +730,7 @@ module.exports = class HostManager extends Monitorable {
     log.debug(`FamilyConfig: ${JSON.stringify(familyConfig)}`);
     const effectiveServers = familyConfig && familyConfig.servers && familyConfig.servers.length > 0
       ? familyConfig.servers : await fpp.familyDnsAddr();
-    extdata.family = Object.assign({}, familyConfig, { servers: effectiveServers });
+    extdata.family = Object.assign({}, familyConfig, { servers: effectiveServers, killSwitch: !familyConfig || familyConfig.killSwitch !== false });
 
     const ruleStatsPlugin = await sensorLoader.initSingleSensor('RuleStatsPlugin');
     const initTs = await ruleStatsPlugin.getFeatureFirstEnabledTimestamp();
@@ -749,7 +749,8 @@ module.exports = class HostManager extends Monitorable {
     const selectedServers = await dc.getServers();
     const customizedServers = await dc.getCustomizedServers();
     const allServers = await dc.getAllServerNames();
-    json.dohConfig = {selectedServers, allServers, customizedServers};
+    const settings = await dc.getSettings();
+    json.dohConfig = {selectedServers, allServers, customizedServers, killSwitch: settings.killSwitch};
   }
 
   async unboundConfigDataForInit(json) {

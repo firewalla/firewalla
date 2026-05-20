@@ -511,8 +511,25 @@ class FreeRadiusSensor extends Sensor {
     }
   }
 
+  async checkPolicy() {
+    const policy = await this.loadPolicyAsync();
+    try {
+      JSON.stringify(policy);
+    } catch (e) {
+      log.warn("freeradius policy is not JSON-serializable", e.message);
+      return false;
+    }
+    return true;
+  }
+
   async revertPolicy(target = "0.0.0.0") {
     if (!this.featureOn) return;
+
+    // check if current policy is valid, skip revert policy
+    if (await this.checkPolicy()) {
+      log.warn("current policy is valid, will not revert policy");
+      return;
+    }
 
     if (target == "0.0.0.0") {
       // revert to system-level policy

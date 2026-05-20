@@ -805,19 +805,19 @@ class FreeRadius {
   async cleanupConfig(options = {}) {
     // cleanup certificates
     log.info("Cleaning up freeradius certificates...");
-    await exec(`sudo rm -rf ${certsDir}/*`).catch((e) => {
+    await exec(`sudo find ${certsDir} -mindepth 1 -maxdepth 1 -exec rm -rf {} +`).catch((e) => {
       log.warn("Failed to cleanup certificates,", e.message);
     });
 
     // cleanup config
     log.info("Cleaning up freeradius config...");
-    await exec(`sudo rm -rf ${configDir}/*`).catch((e) => {
+    await exec(`sudo find ${configDir} -mindepth 1 -maxdepth 1 -exec rm -rf {} +`).catch((e) => {
       log.warn("Failed to cleanup freeradius config,", e.message);
     });
 
     // cleanup docker compose folder
     log.info("Cleaning up freeradius docker files...");
-    await exec(`sudo rm -rf ${dockerDir}/*`).catch((e) => {
+    await exec(`sudo find ${dockerDir} -mindepth 1 -maxdepth 1 -exec rm -rf {} +`).catch((e) => {
       log.warn("Failed to cleanup docker compose folder,", e.message);
     });
     log.info("Finished to cleanup freeradius server.");
