@@ -268,7 +268,6 @@ module.exports = class DNSMASQ {
       clearTimeout(this.reloadDNSTask);
       delete this.reloadDNSTask;
     }
-      clearTimeout(this.reloadDNSTask);
     if (this.restartDNSTask)
       clearTimeout(this.restartDNSTask);
     this.restartDNSIgnoreFileCheck = this.restartDNSIgnoreFileCheck || ignoreFileCheck

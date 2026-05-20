@@ -20,6 +20,44 @@ const { Rule } = require('../net2/Iptables.js');
 const iptc = require('../control/IptablesControl.js');
 const domainBlock = require('../control/DomainBlock.js');
 
+const initializedBypassChain = {};
+
+async function ensureCreateBypassChain(table, pid) {
+  const bypassChain = `FW_${pid}_BYPASS`;
+  const key = `${table}_${bypassChain}`;
+  if (initializedBypassChain[key]) {
+    return ;
+  }
+  for (const family of [4, 6]) {
+    const rule = new Rule(table).fam(family).chn(bypassChain).opr('-N');
+    await iptc.addRule(rule);
+  }
+  initializedBypassChain[key] = 1;
+}
+
+async function removeBypassChain(table, pid) {
+  const bypassChain = `FW_${pid}_BYPASS`;
+  const key = `${table}_${bypassChain}`;
+  if (!initializedBypassChain[key]) {
+    return ;
+  }
+  for (const family of [4, 6]) {
+    const rule = new Rule(table).fam(family).chn(bypassChain).opr('-F');
+    await iptc.addRule(rule);
+    await iptc.addRule(rule.opr('-X'));
+  }
+  delete initializedBypassChain[key];
+}
+
+function isBypassChainExist(table, pid) {
+  const bypassChain = `FW_${pid}_BYPASS`;
+  const key = `${table}_${bypassChain}`;
+  if (initializedBypassChain[key]) {
+    return true;
+  }
+  return false;
+}
+
 
 async function setupTagsRules(options) {
   const {affectedPids, tags, intfs, action, pid, targets, type} = options;
@@ -49,13 +87,21 @@ async function setupTagsRules(options) {
 
 
     const bypassChain = `FW_${aPid}_BYPASS`;
-    const table = policy.action == "disturb" ? "mangle" : "filter";
+    const tables = [];
+    const PolicyDisturbManager = require('../alarm/PolicyDisturbManager.js');
+    if (policy.action == "disturb") {
+      tables.push('mangle');
+      if (PolicyDisturbManager.checkIfNeedDisableQuic(policy)) {
+        tables.push('filter');
+      }
+    } else {
+      tables.push('filter');
+    }
 
     if (action === "enforce") {
       //ensure bypass chain exists
-      for (const family of [4, 6]) {
-        const rule = new Rule(table).fam(family).chn(bypassChain).opr('-N');
-        await iptc.addRule(rule);
+      for (const table of tables) {
+        await ensureCreateBypassChain(table, aPid);
       }
     } else if (action === "unenforce") {
       // should do some check here?
@@ -64,31 +110,32 @@ async function setupTagsRules(options) {
     const Tag = require('../net2/Tag.js');
     const NetworkProfile = require('../net2/NetworkProfile.js');
     const rulesToAdd = [];
-    
-    for (const uid of tags) {
-      await Tag.ensureCreateEnforcementEnv(uid);
-      const devSet = Tag.getTagDeviceSetName(uid);
-      const netSet = Tag.getTagNetSetName(uid);
-      for (const family of [4, 6]) {
-        // outbound rule to bypass traffic from devices in the tag
-        rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${devSet} src`).jmp("RETURN"));
-        rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${netSet} src,src`).jmp("RETURN"));
-        // inbound rule to bypass traffic to devices in the tag
-        rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${devSet} dst`).jmp("RETURN"));
-        rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${netSet} dst,dst`).jmp("RETURN"));
+    for (const table of tables) {
+      for (const uid of tags) {
+        await Tag.ensureCreateEnforcementEnv(uid);
+        const devSet = Tag.getTagDeviceSetName(uid);
+        const netSet = Tag.getTagNetSetName(uid);
+          for (const family of [4, 6]) {
+            // outbound rule to bypass traffic from devices in the tag
+            rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${devSet} src`).jmp("RETURN"));
+            rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${netSet} src,src`).jmp("RETURN"));
+            // inbound rule to bypass traffic to devices in the tag
+            rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${devSet} dst`).jmp("RETURN"));
+            rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${netSet} dst,dst`).jmp("RETURN"));
+          }
       }
-    }
 
-    for (const intf of intfs) {
-      await NetworkProfile.ensureCreateEnforcementEnv(intf);
-      const intfSet = NetworkProfile.getNetListIpsetName(intf);
-  
-      // outbound rule to bypass traffic from devices in the interface
-      rulesToAdd.push(new Rule(table).chn(bypassChain).mdl("set", `--match-set ${intfSet} src,src`).jmp("RETURN"));
-      rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${intfSet} src,src`).jmp("RETURN"));
-      // inbound rule to bypass traffic to devices in the interface
-      rulesToAdd.push(new Rule(table).chn(bypassChain).mdl("set", `--match-set ${intfSet} dst,dst`).jmp("RETURN"));
-      rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${intfSet} dst,dst`).jmp("RETURN"));
+      for (const intf of intfs) {
+        await NetworkProfile.ensureCreateEnforcementEnv(intf);
+        const intfSet = NetworkProfile.getNetListIpsetName(intf);
+    
+        // outbound rule to bypass traffic from devices in the interface
+        rulesToAdd.push(new Rule(table).chn(bypassChain).mdl("set", `--match-set ${intfSet} src,src`).jmp("RETURN"));
+        rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${intfSet} src,src`).jmp("RETURN"));
+        // inbound rule to bypass traffic to devices in the interface
+        rulesToAdd.push(new Rule(table).chn(bypassChain).mdl("set", `--match-set ${intfSet} dst,dst`).jmp("RETURN"));
+        rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${intfSet} dst,dst`).jmp("RETURN"));
+      }
     }
 
     let op = '-I'
@@ -132,5 +179,8 @@ async function setupTagsRules(options) {
 }
 
 module.exports = {
-    setupTagsRules
+    setupTagsRules,
+    ensureCreateBypassChain,
+    isBypassChainExist,
+    removeBypassChain
 }

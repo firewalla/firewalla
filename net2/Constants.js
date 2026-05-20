@@ -17,6 +17,9 @@
 
 // NS: namespace
 module.exports = {
+  LOCALHOST: "127.0.0.1",
+  INADDR_ANY: "0.0.0.0",
+  
   NS_VPN_PROFILE: "vpn_profile",
   NS_WG_PEER: "wg_peer",
   NS_AMNEZIAWG_PEER: "awg_peer",
@@ -111,6 +114,7 @@ module.exports = {
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
   NOTIF_CATEGORY_TIME_LIMITS: "com.firewalla.category.time_limits",
 
+  STATE_EVENT_DNS_SERVICE: "dns_service",
   STATE_EVENT_NIC_SPEED: "nic_speed",
 
   ACL_VPN_CLIENT_WAN_PREFIX: "VC:",

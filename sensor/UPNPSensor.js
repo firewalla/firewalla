@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -176,6 +176,7 @@ class UPNPSensor extends Sensor {
 
           if (!firewallaRegistered) {
             const now = Math.ceil(Date.now() / 1000);
+            const deviceIface = sysManager.getInterfaceViaIP(current.private.host);
             let alarm = new Alarm.UpnpAlarm(
               now,
               current.private.host,
@@ -193,7 +194,8 @@ class UPNPSensor extends Sensor {
                 'p.upnp.expire': current.expire ? current.expire.toString() : null,
                 'p.upnp.local': current.local.toString(),
                 'p.device.port': current.private.port.toString(),
-                'p.protocol': current.protocol
+                'p.protocol': current.protocol,
+                ...(deviceIface && deviceIface.uuid && { 'p.intf.id': deviceIface.uuid })
               }
             );
             am2.enqueueAlarm(alarm);

@@ -485,10 +485,10 @@ class App {
       if (!server || !server.ip || !server.port) continue;
 
       // should use primitive chains here, since it needs to be working before install_iptables.sh
-      log.info(create ? 'creating' : 'removing', `port forwording from 80 to ${server.port} on ${server.ip}`);
+      log.info(create ? 'creating' : 'removing', `port forwording from 8080 to ${server.port} on ${server.ip}`);
       // use both IptablesControl and exec here in case FireMain is not up
-      await iptc.addRule(new Rule('nat').chn('PREROUTING').pro('tcp').dst(server.ip).dport(80).jmp(`REDIRECT --to-ports ${server.port}`).opr(action))
-      const cmd = wrapIptables(`sudo iptables -w -t nat ${action} PREROUTING -p tcp --destination ${server.ip} --destination-port 80 -j REDIRECT --to-ports ${server.port}`);
+      await iptc.addRule(new Rule('nat').chn('PREROUTING').pro('tcp').dst(server.ip).dport(8080).jmp(`REDIRECT --to-ports ${server.port}`).opr(action))
+      const cmd = wrapIptables(`sudo iptables -w -t nat ${action} PREROUTING -p tcp --destination ${server.ip} --destination-port 8080 -j REDIRECT --to-ports ${server.port}`);
       await exec(cmd);
     }
   }
