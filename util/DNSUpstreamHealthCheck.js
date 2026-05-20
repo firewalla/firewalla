@@ -83,7 +83,7 @@ function buildDigCommand({ host, port, domain, timeout = DEFAULT_TIMEOUT, tries 
   const args = [
     'dig',
     port ? `-p ${Number(port)}` : '',
-    shellQuote(`@${host}`),
+    shellQuote(`@${net.isIP(host) === 6 ? `[${host}]` : host}`),
     shellQuote(domain),
     'A',
     '+short',
@@ -172,7 +172,7 @@ function summarizeProbeResults(results) {
     healthy: Boolean(firstHealthy),
     firstHealthy,
     firstError,
-    error: firstError ? (typeof firstError.error === 'undefined' ? null : firstError.error) : null
+    error: firstHealthy ? null : (firstError ? (firstError.error !== undefined ? firstError.error : null) : null)
   };
 }
 

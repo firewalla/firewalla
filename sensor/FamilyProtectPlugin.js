@@ -31,6 +31,7 @@ const dnsHealth = require('../util/DNSUpstreamHealthCheck.js');
 const dns = require('dns');
 const util = require('util');
 const Promise = require('bluebird');
+const Constants = require('../net2/Constants.js');
 
 const featureName = "family_protect";
 const policyKeyName = "family";
@@ -202,7 +203,7 @@ class FamilyProtectPlugin extends HealthCheckMixin(DnsServicePluginBase) {
   async applyPolicy(host, ip, policy) {
     log.info("Applying family protect policy:", ip, policy);
     try {
-      if (ip === '0.0.0.0') {
+      if (ip === Constants.INADDR_ANY) {
         this.systemSwitch = policy == true;
         return this.applySystemPolicy();
       }
@@ -254,15 +255,7 @@ class FamilyProtectPlugin extends HealthCheckMixin(DnsServicePluginBase) {
     }
   }
 
-  // global on/off
-  async globalOn() {
-    this.featureSwitch = true;
-    await this.applyFamilyProtectSync.exec(null);
-  }
-
-  async globalOff() {
-    this.featureSwitch = false;
-    this.resetHealthState();
+  async _runApply() {
     await this.applyFamilyProtectSync.exec(null);
   }
 
