@@ -47,6 +47,10 @@ class GoldPlus2Platform extends Platform {
     return ["eth0", "eth1", "eth2", "eth3", "wlan0", "wlan1"];
   }
 
+  getNtpServiceName() {
+    return "chrony";
+  }
+
   getDNSServiceName() {
     return "firerouter_dns";
   }

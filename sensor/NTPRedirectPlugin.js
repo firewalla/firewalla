@@ -17,6 +17,7 @@
 const log = require('../net2/logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const fc = require('../net2/config.js')
+const platform = require('../platform/PlatformLoader.js').getPlatform()
 const MonitorablePolicyPlugin = require('./MonitorablePolicyPlugin.js')
 const NetworkProfile = require('../net2/NetworkProfile.js')
 const { Rule } = require('../net2/Iptables.js');
@@ -34,6 +35,10 @@ const hostTool = new HostTool();
 const PREROUTING_CHAIN = 'FW_PREROUTING'
 const NTP_CHAIN = 'FW_PREROUTING_NTP'
 const NTP_CHAIN_DNAT = 'FW_PREROUTING_NTP_DNAT'
+
+const NTP_SVC_CHRONY = 'chrony'
+const NTP_SVC_NTP = 'ntp'
+
 
 class NTPRedirectPlugin extends MonitorablePolicyPlugin {
   constructor(config) {
@@ -79,22 +84,33 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
         await iptc.addRule(new Rule('nat').chn(chain).fam(fam).opr('-N'));
 
     await super.run();
-
-    // /etc/ntp.conf adjustments:
-    // - tos orphan 10: keep ntpd working in orphan mode even if external peers are not available, in most cases
-    //   the time on the box should be accurate. this is to avoid suspending NTP intercept, which may cause NTP
-    //   flows being blocked if there is another internet block rule
-    // - server 127.127.1.0 / fudge 127.127.1.0 stratum 10: enable local clock as fallback reference so ntpd
-    //   stays synchronized in orphan mode
-    // - strip `limited` from restrict lines so the local server answers redirected NTP queries without rate
-    //   limiting
-    await execAsync(String.raw`sudo bash -c '
-      grep -q "^tos orphan" /etc/ntp.conf || echo "tos orphan 10" >> /etc/ntp.conf
-      grep -q "^server 127.127.1.0" /etc/ntp.conf || echo "server 127.127.1.0" >> /etc/ntp.conf
-      grep -q "^fudge 127.127.1.0" /etc/ntp.conf || echo "fudge 127.127.1.0 stratum 10" >> /etc/ntp.conf
-      sed -i -E "s/(^restrict .*)limited(.*$)/\1\2/" /etc/ntp.conf
-      systemctl restart ntp
-    '`).catch(()=>{});
+    this.ntpService = platform.getNtpServiceName();
+    log.info('NTP service:', this.ntpService);
+    // keep NTP daemon working in orphan/local mode even if external peers are not available, in most cases the time on the box should be accurate
+    // this is to avoid suspending NTP intercept, which may cause NTP flows being blocked if there is another internet block rule
+    if (this.ntpService === NTP_SVC_CHRONY) { 
+      await execAsync(String.raw`sudo bash -c 'grep -q "^local stratum" /etc/chrony/chrony.conf || echo "local stratum 10" >> /etc/chrony/chrony.conf'`).catch(() => { });
+      // bare "allow" permits all IPs; WAN exposure is mitigated by FW_WAN_IN_DROP blocking new inbound connections not matching DNAT
+      await execAsync(String.raw`sudo bash -c 'grep -qE "^allow\s*$" /etc/chrony/chrony.conf || echo "allow" >> /etc/chrony/chrony.conf'; sudo systemctl restart chrony`).catch(() => { });
+    } else if (this.ntpService === NTP_SVC_NTP) {
+      // /etc/ntp.conf adjustments:
+      // - tos orphan 10: keep ntpd working in orphan mode even if external peers are not available, in most cases
+      //   the time on the box should be accurate. this is to avoid suspending NTP intercept, which may cause NTP
+      //   flows being blocked if there is another internet block rule
+      // - server 127.127.1.0 / fudge 127.127.1.0 stratum 10: enable local clock as fallback reference so ntpd
+      //   stays synchronized in orphan mode
+      // - strip `limited` from restrict lines so the local server answers redirected NTP queries without rate
+      //   limiting
+      await execAsync(String.raw`sudo bash -c '
+        grep -q "^tos orphan" /etc/ntp.conf || echo "tos orphan 10" >> /etc/ntp.conf
+        grep -q "^server 127.127.1.0" /etc/ntp.conf || echo "server 127.127.1.0" >> /etc/ntp.conf
+        grep -q "^fudge 127.127.1.0" /etc/ntp.conf || echo "fudge 127.127.1.0 stratum 10" >> /etc/ntp.conf
+        sed -i -E "s/(^restrict .*)limited(.*$)/\1\2/" /etc/ntp.conf
+        systemctl restart ntp
+      '`).catch(()=>{});
+    } else {
+      log.warn(`NTP service: ${this.ntpService}`);
+    }
   }
 
   async updateNtpOff(devId, op='add', updateRedis=false, useTemp=false) {
@@ -199,7 +215,7 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
 
     while (retry--)
       try {
-        await execAsync('ntpdate -q localhost')
+        await execAsync(this.ntpService === NTP_SVC_CHRONY ? "chronyd -Q 'server 127.0.0.1 iburst'" : 'ntpdate -q 127.0.0.1')
         if (!this.localServerStatus)
           log.info('NTP is back online on localhost')
         await iptc.addRule(this.ruleFeature.opr('-A'));
