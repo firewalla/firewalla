@@ -1,15 +1,29 @@
 {
   "smp_affinity": [
-    ["eth0", 1 ],
-    ["eth1", 2 ],
-    ["eth2", 4 ],
+    ["114:", 1 ],
+    ["115:", 1 ],
+    ["116:", 1 ],
+    ["117:", 1 ],
+    ["119:", 1 ],
+    ["eth1", 8 ],
+    ["eth2", 8 ],
     ["eth3", 8 ]
   ],
   "rps_cpus": [
-    [ "eth0", "rx-0", "6" ],
-    [ "eth1", "rx-0", "6" ],
-    [ "eth2", "rx-0", "6" ],
-    [ "eth3", "rx-0", "6" ],
+    [ "eth0", "rx-0", "e" ],
+    [ "eth1", "rx-0", "e" ],
+    [ "eth1", "rx-1", "e" ],
+    [ "eth1", "rx-2", "e" ],
+    [ "eth1", "rx-3", "e" ],
+    [ "eth2", "rx-0", "e" ],
+    [ "eth2", "rx-1", "e" ],
+    [ "eth2", "rx-2", "e" ],
+    [ "eth2", "rx-3", "e" ],
+    [ "eth3", "rx-0", "e" ],
+    [ "eth3", "rx-1", "e" ],
+    [ "eth3", "rx-2", "e" ],
+    [ "eth3", "rx-3", "e" ],
+    [ "eth4", "rx-0", "e" ],
     [ "vpn_*", "rx-0", 9 ],
     [ "tun_fwvpn", "rx-0", 9 ]
   ],
@@ -27,14 +41,15 @@
       [ 0, 816000, 1800000, "ondemand" ]
     ],
     "ARM:0": [
-      [ 0, 816000, 1992000, "ondemand" ]
+      [ 0, 816000, 1800000, "ondemand" ]
     ]
   },
   "nic_feature": [
-    [ "eth0", "sg", "on" ],
-    [ "eth0", "tso", "on"],
-    [ "eth3", "sg", "on" ],
-    [ "eth3", "tso", "on"]
+    [ "eth0", "rx-gro-list", "off" ],
+    [ "eth1", "rx-gro-list", "off" ],
+    [ "eth2", "rx-gro-list", "off" ],
+    [ "eth3", "rx-gro-list", "off" ],
+    [ "eth4", "rx-gro-list", "off" ]
   ],
   "priority": [
     ["ovpn-server", 0, "match"],
