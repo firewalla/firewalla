@@ -175,6 +175,25 @@ class PolicyManager2 {
     return false;
   }
 
+  async removeBypassChainForPolicy(policy) {
+    // check if policy type/action can have a related bypass chain
+    // if yes, check if policy is removed from redis, then remove related bypass chain
+    if ((policy.type == "category" || policy.type == "mac" || policy.type == "internet") && (policy.action == "block" || policy.action == "app_block" || policy.action == "disturb")) {
+      if (!(await this.policyExists(policy.pid))) {
+        const chainName = `FW_${policy.pid}_BYPASS`;
+        const tables = ["filter", "mangle"];
+        for (const table of tables) {
+          if (!Bypass.isBypassChainExist(table, policy.pid)) {
+            continue;
+          }
+          await Bypass.removeBypassChain(table, policy.pid).catch((err) => {
+            log.error(`Failed to remove bypass chain for policy ${policy.pid} on table ${table}`, err.message);
+          });
+        }
+      }
+    }
+  }
+
   async setupPolicyQueue() {
     this.queue = new Queue('policy', {
       removeOnFailure: true,
@@ -226,23 +245,7 @@ class PolicyManager2 {
             } else {
               await this.unenforce(policy)
             }
-
-            // check if policy is disturb or block policy with bypass reference, 
-            // if yes, check if policy is removed from redis, then remove related bypass chain
-            if ((policy.type == "category" || policy.type == "mac" || policy.type == "internet") && (policy.action == "block" || policy.action == "app_block" || policy.action == "disturb")) {
-              if (!(await this.policyExists(policy.pid))) {
-                const chainName = `FW_${policy.pid}_BYPASS`;
-                const tables = ["filter", "mangle"];
-                for (const table of tables) {
-                  if (!Bypass.isBypassChainExist(table, policy.pid)) {
-                    continue;
-                  }
-                  await Bypass.removeBypassChain(table, policy.pid).catch((err) => {
-                    log.error(`Failed to remove bypass chain for policy ${policy.pid} on table ${table}`, err.message);
-                  });
-                }
-              }
-            }
+            await this.removeBypassChainForPolicy(policy);
           } catch (err) {
             log.error("unenforce policy failed:", err, policy)
           } finally {
@@ -1357,8 +1360,10 @@ class PolicyManager2 {
             if (policy.willExpireSoon()) {
               if (timeout > 0)
                 await delay(timeout * 1000);
-              if (policy.autoDeleteWhenExpires)
+              if (policy.autoDeleteWhenExpires) {
                 await this.deletePolicy(policy.pid);
+                await this.removeBypassChainForPolicy(policy);
+              }
             } else {
               // only need to handle timeout of a manually disabled one-time only policy here
               // for a policy that is natually expired when enabled, it will be auto removed in another timeout created in enforce function
@@ -1366,6 +1371,7 @@ class PolicyManager2 {
                 log.info(`Will auto delete paused policy ${policy.pid} in ${Math.floor(timeout)} seconds`);
                 const deleteTimeout = setTimeout(async () => {
                   await this.deletePolicy(policy.pid);
+                  await this.removeBypassChainForPolicy(policy);
                 }, timeout * 1000);
                 this.invalidateExpireTimer(policy); // remove old one if exists
                 this.enabledTimers[policy.pid] = deleteTimeout;
@@ -1397,6 +1403,7 @@ class PolicyManager2 {
           }
           if (policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
             await this.deletePolicy(policy.pid);
+            await this.removeBypassChainForPolicy(policy);
           }
           log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
         } else {
@@ -1424,6 +1431,7 @@ class PolicyManager2 {
 
             if (policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
               await this.deletePolicy(pid);
+              await this.removeBypassChainForPolicy(policy);
             }
           }, policy.getExpireDiffFromNow() * 1000); // in milli seconds, will be set to 1 if it is a negative number
 

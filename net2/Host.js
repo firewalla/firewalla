@@ -74,6 +74,8 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
 
+const blockControl = require('../control/BlockControl.js');
+
 const envCreatedMap = {};
 
 class Host extends Monitorable {
@@ -501,6 +503,8 @@ class Host extends Monitorable {
       await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, Host.getIpSetName(this.o.mac, 4));
       await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, Host.getIpSetName(this.o.mac, 6));
     }
+    // refresh connmark to ensure the acl takes effect immediately on established connections
+    blockControl.scheduleRefreshConnmark();
   }
 
   async spoof(state) {

@@ -1,5 +1,13 @@
 #!/bin/bash
 
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+if [ -f ~/.fwrc ]; then
+  source ~/.fwrc
+fi
+
 SSID=""
 VERSION=""
 SSIDS=""
@@ -9,7 +17,9 @@ PLATFORM=""
 BOARD_NAME=""
 VERBOSE=""
 IMAGE=""
+EXPECTED_IMAGE=""
 RELEASE_CODE=""
+EXPECTED_CONTAINER_NAME="freeradius_freeradius_1"
 
 RUNNING=false
 
@@ -32,7 +42,7 @@ function debug() {
 }
 
 function info() {
-    echo -e "\033[0;35m$1\033[0m"
+    echo -e "\033[1;34m$1\033[0m"
 }
 
 function get_release_code() {
@@ -78,6 +88,42 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+
+# get image tag
+function get_image_tag() {
+  image_tag=$(redis-cli hget policy:system freeradius_server | jq -r '.options.image_tag // empty')
+  if [ -z "$image_tag" ]; then
+      image_tag=$(get_release_type|tail -n 1)
+      if [[ "$image_tag" == "dev" || "$image_tag" == "unknown" ]]; then
+        image_tag="dev"
+      fi
+  fi
+}
+
+function get_image() {
+  if [[ "$image_tag" == "dev" || "$image_tag" == "test" ]]; then
+    EXPECTED_IMAGE="public.ecr.aws/a0j1s2e9/freeradius-dev:${image_tag}"
+  elif [[ -n "$RADIUS_REPO" ]]; then
+    EXPECTED_IMAGE="${RADIUS_REPO}:${image_tag}"
+  else
+    EXPECTED_IMAGE="public.ecr.aws/a0j1s2e9/freeradius:${image_tag}"
+  fi
+}
+
+if [ -z "$image_tag" ]; then
+  get_image_tag
+fi
+get_image
+
+function get_expected_container_name() {
+    if sudo docker compose version &>/dev/null; then
+        EXPECTED_CONTAINER_NAME="freeradius-freeradius-1"
+    else
+        EXPECTED_CONTAINER_NAME="freeradius_freeradius_1"
+    fi
+}
+get_expected_container_name
 
 function frcc() {
     curl "http://localhost:8837/v1/config/active" 2>/dev/null | jq "$@"
@@ -184,12 +230,26 @@ function check_radius_assets() {
         error "Error: docker compose file does not exist"
     fi
 
+    if [[ "$IMAGE" != "$EXPECTED_IMAGE" ]]; then
+        warn "Warn: docker-compose.yml image does not match policy expected image: $IMAGE != $EXPECTED_IMAGE"
+    else
+        success "OK: docker-compose.yml image matches policy expected image: $IMAGE"
+    fi
+
     # check if radius image is present
     if sudo docker images -q --filter "reference=$IMAGE" | grep -q .; then
-        success "OK:radius image exists: $IMAGE"
+        success "OK: docker-compose.yml image exists: $IMAGE"
         sudo docker images --filter "reference=$IMAGE"
     else
-        error "Error: radius image does not exist: $IMAGE"
+        warn "Error: docker-compose.yml image does not exist: $IMAGE"
+    fi
+
+    # check if radius image is present
+    if sudo docker images -q --filter "reference=$EXPECTED_IMAGE" | grep -q .; then
+        success "OK: image exists: $EXPECTED_IMAGE"
+        sudo docker images --filter "reference=$EXPECTED_IMAGE"
+    else
+        error "Error: policy expected image does not exist: $EXPECTED_IMAGE"
     fi
 
     sys_cert_dir="/home/pi/.firewalla/certs/freeradius"
@@ -241,7 +301,7 @@ function check_radius_server_status() {
         warn "Warn: Freeradius feature is disabled"
     fi
 
-    if sudo docker ps -q -f "name=freeradius_freeradius_1" | grep -q .; then
+    if sudo docker ps -q -f "name=$EXPECTED_CONTAINER_NAME" | grep -q .; then
         RUNNING=true
         if [ "$enabled" == "1" ]; then
             success "OK: Freeradius container is running."
@@ -260,7 +320,7 @@ function check_radius_server_status() {
             check_radius_configure
         else
             success "OK: Freeradius container not running"
-            sudo docker ps  -f "name=freeradius_freeradius_1"
+            sudo docker ps  -f "name=$EXPECTED_CONTAINER_NAME"
             check_radius_configure
         fi
     fi
@@ -348,8 +408,8 @@ function check_clients_config() {
     echo "######### Checking Radius Client Config ###############"
     echo
     echo "clients.conf"
-    # sudo docker exec freeradius_freeradius_1 sed -n '/#  i.e. The entry from the smallest possible network./,/#############/p' clients.conf | head -n -1
-    clients_conf=$(sudo docker exec freeradius_freeradius_1 cat /etc/freeradius/clients.conf | grep -v '^[[:space:]]*#' |  grep -v '^[[:space:]]*$')
+    # sudo docker exec $EXPECTED_CONTAINER_NAME sed -n '/#  i.e. The entry from the smallest possible network./,/#############/p' clients.conf | head -n -1
+    clients_conf=$(sudo docker exec $EXPECTED_CONTAINER_NAME cat /etc/freeradius/clients.conf | grep -v '^[[:space:]]*#' |  grep -v '^[[:space:]]*$')
     info "clients_conf: $clients_conf"
 
     get_platform
@@ -362,7 +422,7 @@ function check_clients_config() {
         else
             success "OK: local_secret matches policy $SECRET"
         fi
-        # sudo docker exec freeradius_freeradius_1 sed -n '/client localhost {/,/# IPv6 Client/p' clients.conf | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'
+        # sudo docker exec $EXPECTED_CONTAINER_NAME sed -n '/client localhost {/,/# IPv6 Client/p' clients.conf | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'
     fi
 }
 
@@ -371,11 +431,11 @@ function check_user_config() {
     echo "######### Checking Radius User Config ###############"
     echo
     echo "wpa3/users"
-    users_config=$(sudo docker exec freeradius_freeradius_1 cat /etc/freeradius/wpa3/users)
+    users_config=$(sudo docker exec $EXPECTED_CONTAINER_NAME cat /etc/freeradius/wpa3/users)
     info "users_config: $users_config"
     echo
     echo "wpa3/users-policy"
-    users_policy_config=$(sudo docker exec freeradius_freeradius_1 cat /etc/freeradius/wpa3/users-policy)
+    users_policy_config=$(sudo docker exec $EXPECTED_CONTAINER_NAME cat /etc/freeradius/wpa3/users-policy)
     info "users_policy_config: $users_policy_config"
 }
 
@@ -384,8 +444,8 @@ function check_eap_config() {
     echo "######### Checking Radius Client Config ###############"
     echo
     echo "mods-available/eap"
-    # sudo docker exec freeradius_freeradius_1 sed -n '/tls-config tls-common {/,/#  Client certificates can be validated via an/p' mods-available/eap | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'
-    eap_config=$(sudo docker exec freeradius_freeradius_1 cat /etc/freeradius/mods-available/eap | grep -v '^[[:space:]]*#' |  grep -v '^[[:space:]]*$')
+    # sudo docker exec $EXPECTED_CONTAINER_NAME sed -n '/tls-config tls-common {/,/#  Client certificates can be validated via an/p' mods-available/eap | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$'
+    eap_config=$(sudo docker exec $EXPECTED_CONTAINER_NAME cat /etc/freeradius/mods-available/eap | grep -v '^[[:space:]]*#' |  grep -v '^[[:space:]]*$')
     info "eap_config: $eap_config"
     echo
 
