@@ -776,18 +776,16 @@ class ACLAuditLogPlugin extends Sensor {
             if (record.pid && type == 'ip' && record.ac == 'allow' && record.af) {
               const policy = await pm2.getPolicy(record.pid, true);
               // domain allow that uses IP-based matching
-              if (policy && ['dns', 'domain'].includes(policy.type) && !policy.dnsmasq_only && policy.target)
-                for (const domain in record.af) {
-                  // found ssl host that doesn't match the policy target
-                  // return here to skip rule accounting and log writing
+              if (policy && ['dns', 'domain'].includes(policy.type) && !policy.dnsmasq_only && policy.target
+                // skip rule accounting and log writing if any ssl host doesn't match the policy target
 
-                  // NOTE: ssl host is very accurate for a specific flow, but there's a corner case
-                  // that flows with multiple domains are recorded in the same buffer write interval,
-                  // ignore this for now
-                  if (record.af[domain].proto == 'ssl' && !policy.matchDomain(domain)) {
-                    return
-                  }
-                }
+                // NOTE: ssl host is very accurate for a specific flow, but there's a corner case
+                // that flows with multiple domains are recorded in the same buffer write interval,
+                // ignore this for now
+                && Object.keys(record.af).some(domain =>
+                  record.af[domain].proto == 'ssl' && !policy.matchDomain(domain)
+                )
+              ) continue
             } else if (!record.pid && (type == 'dns' || ac == 'block')) {
               const matchedPIDs = await this.ruleStatsPlugin.getMatchedPids(record);
               if (matchedPIDs && matchedPIDs.length > 0)
