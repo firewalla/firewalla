@@ -89,7 +89,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       this.origBfCategoryMap = {};
       this.loadCategoryBfParts();
       this.flowSignatureConfig = {};
-      this.recycleCategoryJobMap = {};
+      this.recycleCategoryJob = new scheduler.UpdateJob(this.recycleIPSet.bind(this), 1000);
       // key: category, value: map of sigId to map of hashkey string to sig detected server entry
       // {category: {sigId: {hashkey: sigEntry}, ...}, ...}
       this.effectiveCategorySigDtSrvs = new Map();
@@ -164,12 +164,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
                       this.categoryWithPattern.add(event.category);
                   }
                   if (strategy.ipset.enabled) {
-                    if (!this.recycleCategoryJobMap[event.category]) {
-                      this.recycleCategoryJobMap[event.category] = new scheduler.UpdateJob(async () => {
-                        await this.recycleIPSet(event.category);
-                      }, 1000);
-                    }
-                    await this.recycleCategoryJobMap[event.category].exec();
+                    await this.recycleCategoryJob.exec(event.category);
                   }
                 } catch (err) {
                   log.error(`Failed to update category domain ${event.category}`, err.message);
@@ -216,12 +211,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
                     await this.refreshCategoryRecord(event.category);
                     // no need to update dnsmasq because it directly takes effect on hit set update
                     if (strategy.ipset.enabled && strategy.ipset.useHitSet) {
-                      if (!this.recycleCategoryJobMap[event.category]) {
-                        this.recycleCategoryJobMap[event.category] = new scheduler.UpdateJob(async () => {
-                          await this.recycleIPSet(event.category);
-                        }, 1000);
-                      }
-                      await this.recycleCategoryJobMap[event.category].exec();
+                      await this.recycleCategoryJob.exec(event.category);
                     }
                   } catch (err) {
                     log.error(`Failed to update category domain ${event.category} on hit set update`, err.message);
@@ -411,13 +401,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     if (isRecycleRequired) {
       // add the ip of related domains to _dm ipset
-      // await this.recycleIPSet(category);
-      if (!this.recycleCategoryJobMap[category]) {
-        this.recycleCategoryJobMap[category] = new scheduler.UpdateJob(async () => {
-          await this.recycleIPSet(category);
-        }, 1000);
-      }
-      await this.recycleCategoryJobMap[category].exec();
+      await this.recycleCategoryJob.exec(category);
     }
   }
 
