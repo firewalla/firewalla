@@ -2336,9 +2336,11 @@ module.exports = class HostManager extends Monitorable {
             break;
           }
         } else if (wanType === Constants.WAN_TYPE_SINGLE) {
-          totalUpload = parseInt(wanConf.upload) || 0;
-          totalDownload = parseInt(wanConf.download) || 0;
-          break;
+          if (wanId === activeWanUUID) {
+            totalUpload = parseInt(wanConf.upload) || 0;
+            totalDownload = parseInt(wanConf.download) || 0;
+            break;
+          }
         } else if (wanType === Constants.WAN_TYPE_LB) {
           const intf = sysManager.getInterfaceViaUUID(wanId);
           if (!intf || intf.type !== "wan" || !intf.ready)
