@@ -402,7 +402,7 @@ class LiveStatsPlugin extends Sensor {
         continue;
       const ptx = p.txBytes != null ? Number(p.txBytes) : 0;
       const prx = p.rxBytes != null ? Number(p.rxBytes) : 0;
-      ports[id] = { tx: ptx, rx: prx };
+      ports[id] = Object.assign({}, p, { tx: ptx, rx: prx });
       tx += ptx;
       rx += prx;
     }
@@ -412,7 +412,7 @@ class LiveStatsPlugin extends Sensor {
         continue;
       const ptx = p.txBytes != null ? Number(p.txBytes) : 0;
       const prx = p.rxBytes != null ? Number(p.rxBytes) : 0;
-      lags[id] = { tx: ptx, rx: prx };
+      lags[id] = Object.assign({}, p, { tx: ptx, rx: prx });
       tx += ptx;
       rx += prx;
     }
@@ -441,7 +441,7 @@ class LiveStatsPlugin extends Sensor {
         if (c.rx >= p.rx)
           rx = Math.round((c.rx - p.rx) / dtSec);
       }
-      rows.push({ port: id, tx, rx });
+      rows.push(Object.assign({}, c, { port: id, tx, rx }));
     }
     rows.sort((a, b) => a.port.localeCompare(b.port, undefined, { numeric: true, sensitivity: 'base' }));
     return rows;
