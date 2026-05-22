@@ -16,7 +16,7 @@
 'use strict';
 
 const net = require('net')
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const log = require('../../net2/logger.js')(__filename);
 const fc = require('../../net2/config.js');
 const f = require('../../net2/Firewalla.js');
@@ -1425,18 +1425,31 @@ class VPNClient {
 
   async _runPingTest(target, count = 8) {
     const result = { target, totalCount: count };
-    const af = new Address4(target).isValid() ? 4 : 6;
-    const ping = af == 4 ? "ping" : "ping6";
-    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName()); // rt id will be used as mark of ping packets
-    const ips = af == 4 ? await this.getVpnIP4s() : await this.getVpnIP6s();
-    let optI = "";
-    if (_.isArray(ips) && ips.length > 0) {
-      const srcIp = af == 4 ? new Address4(ips[0]) : new Address6(ips[0]);
-      optI = `-I ${srcIp.addressMinusSuffix}`;
+    // Validate target: must be a real IPv4 or IPv6 address
+    const isV4 = new Address4(target).isValid();
+    const isV6 = !isV4 && new Address6(target).isValid();
+    if (!isV4 && !isV6) {
+      log.warn(`VPN ${this.profileId} ping test: invalid target address: ${target}`);
+      result.successCount = 0;
+      return result;
     }
-    const cmd = `sudo ${ping} -n -q -m ${rtId} -c ${count} ${optI} -W 1 -i 1 ${target} | grep "received" | awk '{print $4}'`;
-    await exec(cmd).then((output) => {
-      result.successCount = Number(output.stdout.trim());
+    // Validate count
+    if (!Number.isInteger(count) || count <= 0) {
+      count = 8;
+    }
+    const ping = isV4 ? "ping" : "ping6";
+    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName()); // rt id will be used as mark of ping packets
+    const ips = isV4 ? await this.getVpnIP4s() : await this.getVpnIP6s();
+    const args = [ping, '-n', '-q', '-m', String(rtId), '-c', String(count)];
+    if (_.isArray(ips) && ips.length > 0) {
+      const srcIp = isV4 ? new Address4(ips[0]) : new Address6(ips[0]);
+      args.push('-I', srcIp.addressMinusSuffix);
+    }
+    args.push('-W', '1', '-i', '1', target);
+    await execFile('sudo', args).then((output) => {
+      // parse "N received" or "N packets received" from ping statistics line
+      const match = output.stdout.match(/(\d+)\s+(?:packets\s+)?received/);
+      result.successCount = match ? Number(match[1]) : 0;
     }).catch((err) => {
       result.successCount = 0;
     });
