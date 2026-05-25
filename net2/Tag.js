@@ -230,7 +230,7 @@ class Tag extends Monitorable {
         const netRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5");
         const netRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5").fam(6);
 
-        await addRule(devRule4.opr('-D'));
+        await iptc.addRule(devRule4.opr('-D'));
         await iptc.addRule(devRule6.opr('-D'));
         await iptc.addRule(netRule4.opr('-D'));
         await iptc.addRule(netRule6.opr('-D'));
