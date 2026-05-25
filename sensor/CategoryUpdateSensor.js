@@ -581,6 +581,7 @@ class CategoryUpdateSensor extends Sensor {
           await categoryUpdater.flushRegexDomains(category);
           await dnsmasq.deletePolicyCategoryFilterEntry(category);
           // handle related ipset?
+          categoryUpdater.recycleCategoryJobs.delete(category);
         }
       })
 
