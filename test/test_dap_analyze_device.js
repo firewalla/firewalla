@@ -677,6 +677,69 @@ function postDapResetStatsForMacEncipher(mac, opts) {
   return postDapEncipherSimple('/reset-stats/' + mac, opts || {});
 }
 
+/** Global DAP feature name for encipher enableFeature / disableFeature. */
+const DAP_GLOBAL_FEATURE_NAME = 'dap';
+
+/**
+ * POST enableFeature or disableFeature via encipher simple (same as curl to :8834).
+ * @param {'enableFeature'|'disableFeature'} item
+ * @param {string} featureName
+ * @param {{ host?: string, port?: number, target?: string }} [opts]
+ * @returns {Promise<{ statusCode: number, body: string }>}
+ */
+function postEncipherSimpleFeature(item, featureName, opts = {}) {
+  const host = opts.host || '127.0.0.1';
+  const port = opts.port != null ? opts.port : 8834;
+  const target = opts.target || '0.0.0.0';
+  const body = JSON.stringify({ featureName });
+  const pathName = '/v1/encipher/simple?command=cmd&item=' +
+    encodeURIComponent(item) + '&target=' + encodeURIComponent(target);
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: host,
+        port,
+        path: pathName,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'Content-Length': Buffer.byteLength(body)
+        }
+      },
+      res => {
+        let data = '';
+        res.on('data', chunk => {
+          data += chunk;
+        });
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve({ statusCode: res.statusCode, body: data });
+          } else {
+            const err = new Error(`postEncipherSimpleFeature: HTTP ${res.statusCode} ${data}`);
+            err.statusCode = res.statusCode;
+            reject(err);
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+/**
+ * Enable or disable global DAP state (`featureName`: {@link DAP_GLOBAL_FEATURE_NAME}).
+ * @param {boolean} enabled
+ * @param {{ host?: string, port?: number, target?: string }} [opts]
+ * @returns {Promise<{ statusCode: number, body: string }>}
+ */
+function setGlobalDapState(enabled, opts) {
+  const item = enabled ? 'enableFeature' : 'disableFeature';
+  return postEncipherSimpleFeature(item, DAP_GLOBAL_FEATURE_NAME, opts);
+}
+
 function parseDapPolicyFromStdout(stdout) {
   const policyTag = '📋 DAP Policy:';
   const internalTag = '📊 DAP Internal:';
@@ -705,16 +768,21 @@ describe('DAP CLI — device analyze & flows', function () {
 
   describe('with DAP test host in learning & default flows', () => {
     beforeEach(async () => {
-      await createDapTestHost();
-      await addDapTestIntelInfo();
-    });
-
-    afterEach(async () => {
       await removeDapAnalysisTestData();
       await removeDapDefaultFlows();
       await removeDapAuditDropFlows();
       await removeDapTestIntelInfo();
       await removeDapTestHost();
+      await createDapTestHost();
+      await addDapTestIntelInfo();
+    });
+
+    afterEach(async () => {
+      // await removeDapAnalysisTestData();
+      // await removeDapDefaultFlows();
+      // await removeDapAuditDropFlows();
+      // await removeDapTestIntelInfo();
+      // await removeDapTestHost();
     });
 
     describe('fixtures', () => {
@@ -734,6 +802,9 @@ describe('DAP CLI — device analyze & flows', function () {
         let { stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]);
         const policy = parseDapPolicyFromStdout(stdout);
         expect(policy.learnedCount).to.equal(2);
+        expect(policy.learnedLastUpdated).to.be.a('number');
+        expect(policy.localLearnedCount).to.equal(0);
+        expect(policy.localLearnedLastUpdated).to.equal(undefined);
         expect(policy.state).to.equal('learning');
 
         // repeat analyze to check if learning status is consistent
@@ -741,17 +812,21 @@ describe('DAP CLI — device analyze & flows', function () {
         ({ stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]));
         const policy2 = parseDapPolicyFromStdout(stdout);
         expect(policy2.learnedCount).to.equal(2);
+        expect(policy2.learnedLastUpdated).to.be.a('number');
+        expect(policy2.learnedLastUpdated).to.equal(policy.learnedLastUpdated);
         expect(policy2.state).to.equal('learning');
 
 
         // add another flow pair to check if learning status is updated
         await createDapDefaultFlowPair(1);
-        // await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 1000));
         // ({ stdout } = await runDap(['query-flows', '-m', DAP_TEST_HOST_MAC]));
         ({ stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]));
         const policy3 = parseDapPolicyFromStdout(stdout);
         expect(policy3.learnedCount).to.equal(4);
         expect(policy3.state).to.equal('learning');
+        expect(policy3.learnedLastUpdated).to.be.a('number');
+        expect(policy3.learnedLastUpdated).to.be.above(policy2.learnedLastUpdated);
         expect(policy3.lastUpdated).to.be.a('number');
         expect(policy3.lastCloudCheck).to.be.a('number');
       });
@@ -759,13 +834,15 @@ describe('DAP CLI — device analyze & flows', function () {
 
     describe('check localLearnedCount value in learning state of the device', () => {
       it.skip('should record localLearnedCount in dap policy correctly', async () => {
-
         await runDap(['transfer-to-learning', '-m', DAP_TEST_HOST_MAC]);
         await createDapLocalFlowPair(0);
         // pick a device to analyze
         let { stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]);
         let policy = parseDapPolicyFromStdout(stdout);
         expect(policy.localLearnedCount).to.equal(2);
+        expect(policy.localLearnedLastUpdated).to.be.a('number');
+        expect(policy.learnedCount).to.equal(0);
+        expect(policy.learnedLastUpdated).to.equal(undefined);
         expect(policy.localAclState).to.equal('learning');
         ({ stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]));
         policy = parseDapPolicyFromStdout(stdout);
@@ -775,6 +852,8 @@ describe('DAP CLI — device analyze & flows', function () {
     });
 
     describe('check learnedCount value in optimizing state of the device', () => {
+
+
       let aclAuditLogPlugin;
 
       before(() => {
@@ -783,17 +862,20 @@ describe('DAP CLI — device analyze & flows', function () {
         ensureAclAuditLogPluginRuleStatsForTest(aclAuditLogPlugin);
       });
 
-      it.skip('should record learnedCount in dap policy correctly ', async () => {
+      it('should record learnedCount in dap policy correctly ', async () => {
 
         await createDapDefaultFlowPair(0);
         // pick a device to analyze
         let { stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]);
         const policy = parseDapPolicyFromStdout(stdout);
         expect(policy.learnedCount).to.equal(2);
+        expect(policy.learnedLastUpdated).to.be.a('number');
         expect(policy.state).to.equal('learning');
 
         ({ stdout } = await runDap(['transfer-to-optimizing', '-m', DAP_TEST_HOST_MAC]));
         const policy2 = parseDapPolicyFromStdout(stdout);
+        expect(policy2.learnedLastUpdated).to.be.a('number');
+        expect(policy2.learnedLastUpdated).to.equal(policy.learnedLastUpdated);
         expect(policy2.learnedCount).to.equal(2);
 
         const blockRuleId = policy2.finalRuleSet.blockRuleId || '';
@@ -810,6 +892,7 @@ describe('DAP CLI — device analyze & flows', function () {
         ({ stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]));
         const policy3 = parseDapPolicyFromStdout(stdout);
         expect(policy3.learnedCount).to.equal(policy2.learnedCount + 1);
+        expect(policy3.learnedLastUpdated).to.be.above(policy2.learnedLastUpdated);
         expect(policy3.state).to.equal('optimizing');
 
         //same domain will only be counted once
@@ -822,19 +905,20 @@ describe('DAP CLI — device analyze & flows', function () {
         ({ stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]));
         const policy4 = parseDapPolicyFromStdout(stdout);
         expect(policy4.learnedCount).to.equal(policy2.learnedCount + 1);
+        expect(policy4.learnedLastUpdated).to.equal(policy3.learnedLastUpdated);
 
         await postDapDeviceState(DAP_TEST_HOST_MAC, 'not_applicable');
         ({ stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]));
         const policy5 = parseDapPolicyFromStdout(stdout);
         expect(policy5.state).to.equal('not_applicable');
-        expect(policy5.learnedCount).to.equal(policy2.learnedCount + 1);
+        expect(policy5.learnedCount).to.equal(policy4.learnedCount);
 
         // when device transfer to learning state, learnedCount should be reset to 0
         // but localLearnedCount should not be reset
         ({ stdout } = await runDap(['transfer-to-learning', '-m', DAP_TEST_HOST_MAC]));
         const policy6 = parseDapPolicyFromStdout(stdout);
         expect(policy6.learnedCount).to.equal(0);
-
+        expect(policy6.learnedLastUpdated).to.equal(undefined);
       });
     });
 
@@ -846,7 +930,7 @@ describe('DAP CLI — device analyze & flows', function () {
         apcSensor = new APCMsgSensor({});
       });
 
-      it.skip('should record localLearnedCount in dap policy correctly ', async () => {
+      it('should record localLearnedCount in dap policy correctly ', async () => {
 
         // await createDapDefaultFlowPair(0);
         // pick a device to analyze
@@ -894,6 +978,8 @@ describe('DAP CLI — device analyze & flows', function () {
         let { stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]);
         const policy = parseDapPolicyFromStdout(stdout);
         expect(policy.learnedCount).to.equal(2);
+        expect(policy.learnedLastUpdated).to.be.a('number');
+        expect(policy.localLearnedLastUpdated).to.equal(undefined);
         expect(policy.state).to.equal('learning');
 
         // add another flow pair to check if learning status is updated
@@ -903,6 +989,7 @@ describe('DAP CLI — device analyze & flows', function () {
         ({ stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]));
         const policy2 = parseDapPolicyFromStdout(stdout);
         expect(policy2.learnedCount).to.equal(4);
+        expect(policy2.learnedLastUpdated).to.be.a('number');
         expect(policy2.state).to.equal('learning');
         expect(policy2.lastUpdated).to.be.a('number');
         expect(policy2.lastCloudCheck).to.be.a('number');
@@ -913,6 +1000,7 @@ describe('DAP CLI — device analyze & flows', function () {
         ({ stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]));
         const policy3 = parseDapPolicyFromStdout(stdout);
         expect(policy3.learnedCount).to.equal(0);
+        expect(policy3.learnedLastUpdated).to.equal(undefined);
         expect(policy3.state).to.equal('learning');
         expect(policy3.lastUpdated).to.be.a('number');
         expect(policy3.lastCloudCheck).to.be.a('number');
@@ -1008,7 +1096,87 @@ describe('DAP CLI — device analyze & flows', function () {
 
       });
     });
-     
+
+    describe('should count flows for ready device as learning flows when global dap state is disabled.', () => {
+
+      before(async () => {
+        await setGlobalDapState(false);
+      });
+
+      after(async () => {
+        await setGlobalDapState(true);
+      });
+
+      it('should record learnedCount in dap policy when global dap state is disabled', async () => {
+        // pick a device to analyze
+        let { stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]);
+        const policy = parseDapPolicyFromStdout(stdout);
+        expect(policy.learnedCount).to.equal(0);
+        expect(policy.learnedLastUpdated).to.equal(undefined);
+        expect(policy.state).to.equal('learning');
+
+        ({ stdout } = await runDap(['transfer-to-optimizing', '-m', DAP_TEST_HOST_MAC]));
+        const policy2 = parseDapPolicyFromStdout(stdout);
+        expect(policy2.learnedLastUpdated).to.equal(undefined);
+        expect(policy2.learnedCount).to.equal(0);
+        expect(policy2.state).to.equal('optimizing');
+
+        await createDapDefaultFlowPair(0);
+        // add another flow pair to check if learning status is updated
+        // await createDapDefaultFlowPair(1);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        ({ stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]));
+        const policy3 = parseDapPolicyFromStdout(stdout);
+        expect(policy3.learnedCount).to.equal(2);
+        expect(policy3.state).to.equal('optimizing');
+        expect(policy3.learnedLastUpdated).to.be.a('number');
+        expect(policy3.lastUpdated).to.be.a('number');
+        expect(policy3.lastCloudCheck).to.be.a('number');
+      });
+
+      it('should record localLearnedCount in dap policy when global dap state is disabled', async () => {
+        let { stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]);
+        const policy = parseDapPolicyFromStdout(stdout);
+        // expect(policy.learnedCount).to.equal(2);
+        expect(policy.state).to.equal('learning');
+
+        ({ stdout } = await runDap(['transfer-to-optimizing', '-m', DAP_TEST_HOST_MAC]));
+        const policy2 = parseDapPolicyFromStdout(stdout);
+        expect(policy2.state).to.equal('optimizing');
+
+        const blockRuleId = policy2.finalRuleSet.blockRuleId || '';
+        expect(blockRuleId).to.not.be.empty;
+        const blockPid = Number(blockRuleId);
+        expect(blockPid).to.be.finite;
+
+        // dap set-local-ci -m <MAC> -v <数值>
+        ({ stdout } = await runDap(['set-local-ci', '-m', DAP_TEST_HOST_MAC, '-v', '1441']));
+        ({ stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]));
+        const policy3 = parseDapPolicyFromStdout(stdout);
+        expect(policy3.localAclState).to.equal('optimizing');
+
+        await createDapLocalFlowPair(0);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        ({ stdout } = await runDap(['analyze', '-m', DAP_TEST_HOST_MAC]));
+        const policy4 = parseDapPolicyFromStdout(stdout);
+        expect(policy4.localAclState).to.equal('optimizing');
+        expect(policy4.localLearnedCount).to.equal(2);
+        expect(policy4.localLearnedLastUpdated).to.be.a('number');
+        expect(policy4.localNeighbors.length).to.equal(2);
+        expect(policy4.localNeighbors).to.include.members([
+          "00:22:44:66:88:11",
+          "11:22:33:44:55:66",
+        ]);
+        expect(policy4.last24LocalNeighbors.length).to.equal(2);
+        expect(policy4.last24LocalNeighbors).to.include.members([
+          "00:22:44:66:88:11",
+          "11:22:33:44:55:66",
+        ]);
+      });
+
+
+    });
+    
   });
 
 });
