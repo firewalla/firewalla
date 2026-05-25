@@ -72,7 +72,7 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const pclient = require('../util/redis_manager.js').getPublishClient();
 
 const execAsync = require('child-process-promise').exec;
-const { exec, execSync } = require('child_process');
+const { exec, execSync, execFile } = require('child_process');
 
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -161,6 +161,71 @@ const {logApiStats, getApiStats, API_STATS_KEY_EXCLUDE_LIST} = require('./stats.
 const util = require('util')
 
 const restartUPnPTask = {};
+
+const VALID_APT_ACTIONS = ['install', 'remove', 'purge', 'autoremove'];
+const VALID_PKG_NAME = /^[a-zA-Z0-9][a-zA-Z0-9.+\-:]*$/;
+// only allow simple script names under the firewalla scripts directory, no path separators or traversal
+const VALID_HOOK_SCRIPT = /^[a-zA-Z0-9_.\-]+$/;
+const APT_LOG_FILE = '/var/log/fwapt.log';
+
+function validateHookScript(name, label) {
+  if (typeof name !== 'string' || !VALID_HOOK_SCRIPT.test(name)) {
+    throw new Error(`Invalid ${label} value`);
+  }
+  const path = require('path');
+  const scriptsDir = `${f.getFirewallaHome()}/scripts`;
+  const resolved = path.resolve(scriptsDir, name);
+  if (!resolved.startsWith(scriptsDir + '/')) {
+    throw new Error(`Invalid ${label} value`);
+  }
+  return resolved;
+}
+
+async function runAptGet(value) {
+  if (!value.action || typeof value.action !== 'string') throw new Error('Missing parameter "action"');
+
+  const actionTokens = value.action.trim().split(/\s+/);
+  if (!VALID_APT_ACTIONS.includes(actionTokens[0])) {
+    throw new Error(`Invalid action: ${actionTokens[0]}`);
+  }
+  for (let i = 1; i < actionTokens.length; i++) {
+    if (!VALID_PKG_NAME.test(actionTokens[i])) {
+      throw new Error(`Invalid package name: ${actionTokens[i]}`);
+    }
+  }
+
+  const args = [];
+  if (value.execPreUpgrade) {
+    const resolved = validateHookScript(value.execPreUpgrade, 'execPreUpgrade');
+    args.push('-pre', resolved);
+  }
+  if (value.execPostUpgrade) {
+    const resolved = validateHookScript(value.execPostUpgrade, 'execPostUpgrade');
+    args.push('-pst', resolved);
+  }
+  if (value.noUpdate) args.push('-nu');
+  if (value.noReboot) args.push('-nr');
+  if (value.forceReboot) args.push('-fr');
+  args.push(...actionTokens);
+
+  const scriptPath = `${f.getFirewallaHome()}/scripts/apt-get.sh`;
+  log.info('Running apt-get', scriptPath, args);
+  return new Promise((resolve, reject) => {
+    const fsp = require('fs');
+    const logStream = fsp.createWriteStream(APT_LOG_FILE, { flags: 'a' });
+    const child = execFile(scriptPath, args, { timeout: 1200000 }, (err, stdout, stderr) => {
+      logStream.end();
+      if (err) {
+        log.error('apt-get failed', err.message, stderr);
+        reject(err);
+      } else {
+        resolve(stdout);
+      }
+    });
+    if (child.stdout) child.stdout.pipe(logStream, { end: false });
+    if (child.stderr) child.stderr.pipe(logStream, { end: false });
+  });
+}
 
 class netBot extends ControllerBot {
 
@@ -3758,19 +3823,7 @@ class netBot extends ControllerBot {
         return result
       }
       case "apt-get": {
-        let cmd = `${f.getFirewallaHome()}/scripts/apt-get.sh`;
-        if (value.execPreUpgrade) cmd = `${cmd} -pre "${value.execPreUpgrade}"`;
-        if (value.execPostUpgrade) cmd = `${cmd} -pst "${value.execPostUpgrade}"`;
-        if (value.noUpdate) cmd = cmd + ' -nu';
-        if (value.noReboot) cmd = cmd + ' -nr';
-        if (value.forceReboot) cmd = cmd + ' -fr';
-
-        if (!value.action) throw new Error('Missing parameter "action"')
-
-        cmd = `${cmd} ${value.action}`;
-
-        log.info('Running apt-get', cmd)
-        await execAsync(`(${cmd}) 2>&1 | sudo tee -a /var/log/fwapt.log `);
+        await runAptGet(value);
         return
       }
       case "ble:control":
