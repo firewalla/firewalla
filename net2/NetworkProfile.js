@@ -243,7 +243,7 @@ class NetworkProfile extends Monitorable {
           .comment(`policy:network:${this.o.uuid}`);
         const rule4 = rule.clone().set(NetworkProfile.getNetIpsetName(this.o.uuid, 4), 'src,src')
         const rule6 = rule.clone().set(NetworkProfile.getNetIpsetName(this.o.uuid, 6), 'src,src').fam(6);
-        await addRule(rule4.opr('-D'));
+        await iptc.addRule(rule4.opr('-D'));
         await iptc.addRule(rule6.opr('-D'));
 
         // remove rule that was set by state == null
