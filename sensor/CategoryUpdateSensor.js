@@ -570,6 +570,7 @@ class CategoryUpdateSensor extends Sensor {
       sem.on('Category:Delete', async (event) => {
         log.info("Deactivate category", event.category);
         const category = event.category;
+        await categoryUpdater.clearRecycleTask(category);
         if (!categoryUpdater.isCustomizedCategory(category) &&
           categoryUpdater.activeCategories[category]) {
           delete categoryUpdater.activeCategories[category];
@@ -581,7 +582,6 @@ class CategoryUpdateSensor extends Sensor {
           await categoryUpdater.flushRegexDomains(category);
           await dnsmasq.deletePolicyCategoryFilterEntry(category);
           // handle related ipset?
-          categoryUpdater.recycleCategoryJobs.delete(category);
         }
       })
 

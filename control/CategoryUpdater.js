@@ -1521,6 +1521,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return this.recycleCategoryJobs.get(category);
   }
 
+  async clearRecycleTask(category) {
+    if (!this.recycleCategoryJobs.has(category)) {
+      return;
+    }
+    await this.recycleCategoryJobs.get(category).clearScheduleAndWaitDone();
+    this.recycleCategoryJobs.delete(category);
+  }
+
   // rebuild category ipset
   async recycleIPSet(category) {
     if (this.recycleTasks[category]) {
