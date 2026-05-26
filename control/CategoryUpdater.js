@@ -89,7 +89,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       this.origBfCategoryMap = {};
       this.loadCategoryBfParts();
       this.flowSignatureConfig = {};
-      this.recycleCategoryJob = new scheduler.UpdateJob(this.recycleIPSet.bind(this), 1000);
+      this.recycleCategoryJobs = new Map();
       // key: category, value: map of sigId to map of hashkey string to sig detected server entry
       // {category: {sigId: {hashkey: sigEntry}, ...}, ...}
       this.effectiveCategorySigDtSrvs = new Map();
@@ -164,7 +164,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
                       this.categoryWithPattern.add(event.category);
                   }
                   if (strategy.ipset.enabled) {
-                    await this.recycleCategoryJob.exec(event.category);
+                    await this._getRecycleJob(event.category).exec();
                   }
                 } catch (err) {
                   log.error(`Failed to update category domain ${event.category}`, err.message);
@@ -211,7 +211,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
                     await this.refreshCategoryRecord(event.category);
                     // no need to update dnsmasq because it directly takes effect on hit set update
                     if (strategy.ipset.enabled && strategy.ipset.useHitSet) {
-                      await this.recycleCategoryJob.exec(event.category);
+                      await this._getRecycleJob(event.category).exec();
                     }
                   } catch (err) {
                     log.error(`Failed to update category domain ${event.category} on hit set update`, err.message);
@@ -401,7 +401,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     if (isRecycleRequired) {
       // add the ip of related domains to _dm ipset
-      await this.recycleCategoryJob.exec(category);
+      await this._getRecycleJob(category).exec();
     }
   }
 
@@ -1512,6 +1512,21 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   isRecycleTaskRunning(category) {
     return this.recycleTasks[category];
+  }
+
+  _getRecycleJob(category) {
+    if (!this.recycleCategoryJobs.has(category)) {
+      this.recycleCategoryJobs.set(category, new scheduler.UpdateJob(() => this.recycleIPSet(category), 1000));
+    }
+    return this.recycleCategoryJobs.get(category);
+  }
+
+  async clearRecycleTask(category) {
+    if (!this.recycleCategoryJobs.has(category)) {
+      return;
+    }
+    await this.recycleCategoryJobs.get(category).clearScheduleAndWaitDone();
+    this.recycleCategoryJobs.delete(category);
   }
 
   // rebuild category ipset
