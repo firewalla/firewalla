@@ -253,8 +253,8 @@ class NetworkProfile extends Monitorable {
         await iptc.addRule(rule6.opr('-D'));
         
         const vcConfPath = `${this._profileId.startsWith("VWG:") ? VirtWanGroup.getDNSRouteConfDir(this._profileId.substring(4)) : VPNClient.getDNSRouteConfDir(this._profileId)}/vc_${this.o.uuid}.conf`;
-        await fs.unlinkAsync(networkConfPath).catch((err) => {});
-        await fs.unlinkAsync(vcConfPath).catch((err) => {});
+        await fsp.unlink(networkConfPath).catch((err) => {});
+        await fsp.unlink(vcConfPath).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
 
@@ -313,8 +313,8 @@ class NetworkProfile extends Monitorable {
         // remove rule that was set by state == null
         await iptc.addRule(rule4Clear.opr('-D'));
         await iptc.addRule(rule6Clear.opr('-D'));
-        await fs.unlinkAsync(networkConfPath).catch((err) => {});
-        await fs.unlinkAsync(vcConfPath).catch((err) => {});
+        await fsp.unlink(networkConfPath).catch((err) => {});
+        await fsp.unlink(vcConfPath).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
     } catch (err) {
