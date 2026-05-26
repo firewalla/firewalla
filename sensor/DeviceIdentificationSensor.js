@@ -27,6 +27,7 @@ const sm = require('../net2/SysManager.js')
 const sem = require('./SensorEventManager.js').getInstance();
 const { getPreferredName } = require('../util/util.js')
 const { nameToType } = require('../extension/detect/common.js')
+const bonjourDetect = require('../extension/detect/bonjour.js')
 
 const _ = require('lodash')
 
@@ -116,6 +117,38 @@ class DeviceIdentificationSensor extends Sensor {
       counter[key] ++
     else
       counter[key] = 1
+  }
+
+  // Drop fields from a pending bonjour update whose existing source (already
+  // persisted, or pending in the debounce queue) was emitted by a higher-priority
+  // bonjour service type. Priorities are resolved from the asset at call time so
+  // bumping the table takes effect immediately — nothing about the priority
+  // number is persisted, only `source.type` (the bonjour service type).
+  async _filterByBonjourPriority(mac, sub) {
+    const sourceKeys = Object.keys(sub).filter(k => k.endsWith('.source'))
+    if (!sourceKeys.length) return
+    const newSource = sub[sourceKeys[0]]
+    if (!newSource || !newSource.type) return
+    const newPriority = await bonjourDetect.getPriority(newSource.type)
+
+    const pending = _.get(this.mergeJobs, [mac, 'updates', 'bonjour'], {})
+    const host = hostManager.getHostFastByMAC(mac)
+    const persisted = _.get(host, ['o', 'detect', 'bonjour'], {})
+    const now = Date.now() / 1000
+
+    for (const key of Object.keys(sub)) {
+      if (key.endsWith('.source')) continue
+      const sourceKey = key + '.source'
+      const existingSource = pending[sourceKey] || persisted[sourceKey]
+      if (!existingSource || !existingSource.type) continue
+      if (existingSource.type === newSource.type) continue
+      if (existingSource.expire && existingSource.expire < now) continue
+      const existingPriority = await bonjourDetect.getPriority(existingSource.type)
+      if (existingPriority > newPriority) {
+        delete sub[key]
+        delete sub[sourceKey]
+      }
+    }
   }
 
   mergeAndSave(mac, updates = {}) {
@@ -220,7 +253,7 @@ class DeviceIdentificationSensor extends Sensor {
       })
     }
 
-    sem.on('DetectUpdate', (event) => {
+    sem.on('DetectUpdate', async (event) => {
       if (!config.isFeatureOn(FEATURE_NAME)) return
 
       try {
@@ -233,6 +266,8 @@ class DeviceIdentificationSensor extends Sensor {
             for (const key in sub)
               sub[`${key}.source`] = source
           }
+          if (from === 'bonjour')
+            await this._filterByBonjourPriority(mac, sub)
           this.mergeAndSave(mac, { [from]: sub })
         }
       } catch(err) {
