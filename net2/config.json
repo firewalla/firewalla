@@ -481,16 +481,35 @@
           "safe.duckduckgo.com": [
             "duckduckgo.com"
           ]
+        },
+        "brave": {
+          "forcesafe.search.brave.com": [
+            "search.brave.com"
+          ]
+        },
+        "startpage": {
+          "safe.startpage.com": [
+            "startpage.com",
+            "eu.startpage.com"
+          ]
         }
       },
       "mappingConfig": {
-        "safe.duckduckgo.com": 5
+        "forcesafesearch.google.com": 5,
+        "strict.bing.com": 5,
+        "restrict.youtube.com": 5,
+        "restrictmoderate.youtube.com": 5,
+        "safe.duckduckgo.com": 5,
+        "forcesafe.search.brave.com": 5,
+        "safe.startpage.com": 5
       },
       "defaultConfig": {
         "youtube": "off",
         "google": "on",
         "bing": "on",
-        "duckduckgo": "on"
+        "duckduckgo": "on",
+        "brave": "on",
+        "startpage": "on"
       }
     },
     "FamilyProtectPlugin": {
