@@ -737,6 +737,12 @@ module.exports = class {
     await rclient.lpushAsync(REDIS_KEY_MSP_SYNC_OPS, JSON.stringify(op));
   }
 
+  async pushOps(ops) {
+    if (ops.length === 0) return;
+    const serialized = ops.slice().reverse().map(op => JSON.stringify(op));
+    await rclient.lpushAsync(REDIS_KEY_MSP_SYNC_OPS, ...serialized);
+  }
+
   async dequeueOp() {
     const op = await rclient.lpopAsync(REDIS_KEY_MSP_SYNC_OPS);
     if (op) {
@@ -745,53 +751,61 @@ module.exports = class {
     return null;
   }
 
+  async dequeueOps(count) {
+    const ops = [];
+    for (let i = 0; i < count; i++) {
+      // LPOP key count not support on redis 6.0.16
+      const op = await rclient.lpopAsync(REDIS_KEY_MSP_SYNC_OPS);
+      if (op == null) break;
+      ops.push(JSON.parse(op));
+    }
+    return ops;
+  }
+
   async syncOpsToMsp() {
-    if (this.socket) {
+    if (this.socket && this.isSocketConnected()) {
       const msgCount = await rclient.llenAsync(REDIS_KEY_MSP_SYNC_OPS);
       if (msgCount == 0) {
         return;
       }
-      let count = 0;
       const gid = await et.getGID();
       const mspId = await this.getMspId();
       if (!gid || !mspId) {
         return;
       }
       const encryptMessageAsync = util.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
-      while (this.isSocketConnected()) {
-        const op = await this.dequeueOp();
-        if (!op)
-          break;
-        try {
-          log.debug("syncOpsToMsp: sync op to msp", op);
-          const msg = {
-            data: op,
-            replyid: "sync_op_from_box"
-          }
-          const buffer = Buffer.from(JSON.stringify(msg), 'utf8');
-          const compressedData = await deflateAsync(buffer);
-          const compressedMsg = JSON.stringify({
-            compressed: 1,
-            compressMode: 1,
-            data: compressedData.toString('base64')
-          });
-          const encryptedMsg = await encryptMessageAsync(gid, compressedMsg);
-          this.socket.emit("send_from_box", {
-            message: encryptedMsg,
-            gid: gid,
-            mspId: mspId
-          });
-          count++;
-        } catch (err) {
-          log.error(`Failed to sync op to msp`, err);
-          // push back to the queue
-          log.debug("syncOpsToMsp: push op back to the queue", op);
-          await this.pushOp(op);
-          break;
+      const MAX_OPS_PER_TIME = 100;
+
+      const ops = await this.dequeueOps(MAX_OPS_PER_TIME);
+      if (ops.length === 0)
+        return;
+
+      // compress, encrypt and emit all ops in one batch
+      try {
+        // log.debug("syncOpsToMsp: sync ops to msp", ops);
+        log.debug(`syncOpsToMsp: sync ${ops.length} ops to msp`);
+        const msg = {
+          data: ops,
+          replyid: "sync_op_from_box"
         }
+        const buffer = Buffer.from(JSON.stringify(msg), 'utf8');
+        const compressedData = await deflateAsync(buffer);
+        const compressedMsg = JSON.stringify({
+          compressed: 1,
+          compressMode: 1,
+          data: compressedData.toString('base64')
+        });
+        const encryptedMsg = await encryptMessageAsync(gid, compressedMsg);
+        this.socket.emit("send_from_box", {
+          message: encryptedMsg,
+          gid: gid,
+          mspId: mspId
+        });
+        log.info(`Synced ${ops.length} ops to msp`);
+      } catch (err) {
+        log.error(`Failed to sync ops to msp`, err);
+        await this.pushOps(ops).catch(e => log.error(`Failed to push ops back`, e, ops.length));
       }
-      if (count > 0)
-        log.info(`Synced ${count} ops to msp`);
     }
   }
 }

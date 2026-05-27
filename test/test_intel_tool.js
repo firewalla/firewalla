@@ -189,7 +189,7 @@ describe.skip('IntelTool', () => {
         expect(r.ip).to.equal(sample.hostIP);
         expect(r.host).to.equal('www.google.com')
         expect(JSON.parse(r.apps).search_engine).to.equal('100');
-        intelTool.removeIntel(sample.hostIP)
+        await intelTool.removeIntel(sample.hostIP)
         done();
       })();
     })

@@ -1,4 +1,4 @@
-/*    Copyright 2020-2025 Firewalla Inc.
+/*    Copyright 2020-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -130,6 +130,19 @@ class APCMsgSensor extends Sensor {
           };
           break;
         }
+        case Message.MSG_FWAPC_SWITCH_ACL_ACCOUNTING: {
+          let msg = null;
+          try {
+            msg = JSON.parse(message);
+          } catch (err) {
+            log.error(`Malformed JSON in ${channel} message: ${message}`, err.message);
+          }
+          if (msg)
+            this.processSwitchACLAccountingMessage(msg).catch((err) => {
+              log.error(`Failed to process ${channel} message`, err.message);
+            });
+          break;
+        }
         default:
       }
     });
@@ -137,6 +150,7 @@ class APCMsgSensor extends Sensor {
     sclient.subscribe(Message.MSG_FR_CHANGE_APPLIED);
     sclient.subscribe(Message.MSG_FWAPC_CONNTRACK_UPDATE);
     sclient.subscribe(Message.MSG_FWAPC_BLOCK_FLOW);
+    sclient.subscribe(Message.MSG_FWAPC_SWITCH_ACL_ACCOUNTING);
     // wait for iptables ready in case Host object and its ipsets are created in HostManager.getHostAsync
     await sysManager.waitTillIptablesReady();
     sclient.subscribe(Message.MSG_FWAPC_SSID_STA_UPDATE);
@@ -231,6 +245,7 @@ class APCMsgSensor extends Sensor {
   }
 
   async syncRules() {
+    log.info("Starting to sync rules to fwapc...");
     await lock.acquire(LOCK_RULE_UPDATE, async () => {
       const rules = (await pm2.loadActivePoliciesAsync() || []).filter(rule => this.isAPCSupportedRule(rule) && (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
       for (const rule of rules) {
@@ -625,10 +640,15 @@ class APCMsgSensor extends Sensor {
       orig: 'ap',
     };
     record.ac = msg.action
+
+    // ignore blocks from Firewalla
+    if (sysManager.isMyMac(record.mac) && ['isolation', 'block'].includes(record.ac))
+      return
+
     if (msg.pid) record.pid = msg.pid
     if (msg.proto) record.pr = msg.proto
     if (msg.iso_lvl && msg.action == "block") record.ac = "isolation"
-    if (msg.gid) record.isoGID = msg.gid
+    if (msg.gid !== undefined && msg.gid !== null) record.isoGID = String(msg.gid)
     if (msg.ap) record.ap = msg.ap
     if (msg.hasOwnProperty('iso_ext')) record.isoExt = msg.iso_ext
     if (msg.hasOwnProperty('iso_int')) record.isoInt = msg.iso_int
@@ -643,12 +663,87 @@ class APCMsgSensor extends Sensor {
       const reverseRecord = this.aclAuditLogPlugin.getReverseRecord(record);
       if (reverseRecord)
         this.aclAuditLogPlugin.writeBuffer(reverseRecord);
+    } else
+      log.verbose('ACLAuditPlugin not initialized')
+  }
+
+  async processSwitchACLAccountingMessage(msg) {
+    /*
+      {
+        "switch_mac": "20:6D:31:AF:00:51",
+        "records": [
+          {
+            "mac1": "04:EE:CD:11:AA:8A",
+            "mac2": "04:EE:CD:D4:5F:86",
+            "tx_bytes": 234940,
+            "rx_bytes": 2233510
+          }
+        ],
+        "ts": 1776091034039
+      }
+      mac1 uploads tx_bytes to mac2, and downloads rx_bytes from mac2.
+    */
+    const { records, ts } = msg;
+    if (!_.isArray(records) || _.isEmpty(records)) return;
+
+    const tsInSeconds = ts / 1000;
+
+    for (const record of records) {
+      const { mac1, mac2, tx_bytes, rx_bytes } = record;
+      if (!mac1 || !mac2) continue;
+
+      const mac1Upper = mac1.toUpperCase();
+      const mac2Upper = mac2.toUpperCase();
+
+      if (mac1Upper === mac2Upper) continue;
+      if (sysManager.isMyMac(mac1Upper) || sysManager.isMyMac(mac2Upper)) continue;
+
+      const host1 = hostManager.getHostFastByMAC(mac1Upper);
+      const host2 = hostManager.getHostFastByMAC(mac2Upper);
+      const intf1 = host1 && host1.o && host1.o.intf;
+      const intf2 = host2 && host2.o && host2.o.intf;
+      const tags1 = await hostTool.getTags(host1, intf1);
+      const tags2 = await hostTool.getTags(host2, intf2);
+
+      // mac1's perspective: uploaded tx_bytes, downloaded rx_bytes
+      bro.recordLocalTraffic({
+        mac: mac1Upper, upload: tx_bytes || 0, download: rx_bytes || 0,
+        intf: intf1, dIntf: intf2, tags: tags1, dstTags: tags2
+      });
+      sem.emitEvent({
+        type: Message.MSG_FLOW_SWITCH_ACCOUNTING,
+        suppressEventLogging: true,
+        flow: {
+          mac: mac1Upper, dstMac: mac2Upper,
+          upload: tx_bytes || 0, download: rx_bytes || 0,
+          ts: tsInSeconds,
+          intf: intf1, dIntf: intf2,
+          tags: tags1, dstTags: tags2
+        }
+      });
+
+      // mac2's perspective: uploaded rx_bytes, downloaded tx_bytes
+      bro.recordLocalTraffic({
+        mac: mac2Upper, upload: rx_bytes || 0, download: tx_bytes || 0,
+        intf: intf2, dIntf: intf1, tags: tags2, dstTags: tags1
+      });
+      sem.emitEvent({
+        type: Message.MSG_FLOW_SWITCH_ACCOUNTING,
+        suppressEventLogging: true,
+        flow: {
+          mac: mac2Upper, dstMac: mac1Upper,
+          upload: rx_bytes || 0, download: tx_bytes || 0,
+          ts: tsInSeconds,
+          intf: intf2, dIntf: intf1,
+          tags: tags2, dstTags: tags1
+        }
+      });
     }
   }
 
   /**
    * first try to get wlan vendor from cache, if not found, get from fwapc and store in cache
-   * @param {string} mac 
+   * @param {string} mac
    * @returns [vendor_string, ...] or null if not found
    */
   async getWlanVendor(mac) {
