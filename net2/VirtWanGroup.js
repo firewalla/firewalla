@@ -18,7 +18,7 @@
 const log = require('./logger.js')(__filename);
 
 const net = require('net');
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -46,6 +46,10 @@ class VirtWanGroup {
     const uuid = o.uuid;
     if (!uuid)
       return null;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid)) {
+      log.error(`VirtWanGroup: invalid uuid format: ${uuid}`);
+      return null;
+    }
     if (!instances[uuid]) {
       this.uuid = uuid;
       this.name = o.name;
@@ -587,8 +591,8 @@ class VirtWanGroup {
     await this._disableDNSRoute("soft");
     await this._resetRouteMarkInRedis();
     await fs.promises.unlink(this._getDnsmasqConfigPath()).catch((err) => { });
-    await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "hard")}`).catch((err) => { });
-    await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "soft")}`).catch((err) => { });
+    await execFile('rm', ['-rf', VirtWanGroup.getDNSRouteConfDir(this.uuid, "hard")]).catch((err) => { });
+    await execFile('rm', ['-rf', VirtWanGroup.getDNSRouteConfDir(this.uuid, "soft")]).catch((err) => { });
   }
 
   async toJson() {
