@@ -214,6 +214,11 @@ function isDomainValid(domain) {
   return validDomainRegex.test(domain);
 }
 
+function isValidCommonName(cn) {
+  if (!cn || typeof cn !== 'string') return false;
+  return /^[a-zA-Z0-9]{1,32}$/.test(cn);
+}
+
 function generateStrictDateTs(ts) {
   const now = ts ? new Date(ts) : new Date();
   const offset = now.getTimezoneOffset(); // in mins
@@ -393,4 +398,5 @@ module.exports = {
   batchKeyExists,
   waitFor,
   withTimeout,
+  isValidCommonName,
 };

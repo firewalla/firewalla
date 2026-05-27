@@ -15,7 +15,8 @@
 
 'use strict';
 
-const exec = require('child-process-promise').exec;
+const path = require('path');
+const { exec, execFile } = require('child-process-promise');
 const _ = require('lodash');
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -329,13 +330,18 @@ class FreeRadius {
   // policy in format: { "0.0.0.0": { "options": {}, "radius": {} }, "tag":{"radius":{"users":[]}} }
   async processCommand(script, cmd, options) {
     log.info(`Processing ${script} with command ${cmd}`);
+    if (!script || !/^[A-Za-z0-9_.-]+$/.test(script)) {
+      log.warn("Invalid script name:", script);
+      return false;
+    }
     try {
       // check if container is running
       if (!await this._checkContainer(options)) {
         log.warn("container freeradius-server is not running, cannot process radius command");
         return false;
       }
-      return await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml exec -T freeradius bash -c "/usr/bin/node /root/freeradius/${script} ${cmd}"`).then((r) => {
+      const cmdArgs = cmd ? String(cmd).split(/\s+/).filter(Boolean) : [];
+      return await execFile('sudo', ['docker-compose', '-f', `${dockerDir}/docker-compose.yml`, 'exec', '-T', 'freeradius', '/usr/bin/node', `/root/freeradius/${script}`, ...cmdArgs]).then((r) => {
         return r.stdout.trim()
       }).catch((e) => { return e.message });
     } catch (err) {
@@ -344,40 +350,51 @@ class FreeRadius {
   }
 
   async saveFile(filepath, content) {
-    // Prevent directory traversal attacks
-    if (filepath.includes('../')) {
-      return { ok: false, error: "Invalid filepath: directory traversal not allowed" };
+    if (!filepath || typeof filepath !== 'string') {
+      return { ok: false, error: "Invalid filepath: must be a non-empty string" };
     }
     filepath = filepath.replace(/^\//, ''); // remove leading slash
-    const baseFolder = filepath.split('/').slice(0, -1).join('/'); // get base folder
+
+    // Validate: only allow safe path characters
+    if (!filepath || !/^[A-Za-z0-9_./-]+$/.test(filepath)) {
+      return { ok: false, error: "Invalid filepath: contains disallowed characters" };
+    }
+
+    // Prevent directory traversal: resolved path must stay within configDir
+    const resolvedPath = path.resolve(configDir, filepath);
+    if (!resolvedPath.startsWith(configDir + path.sep)) {
+      return { ok: false, error: "Invalid filepath: directory traversal not allowed" };
+    }
+
+    const baseFolder = path.dirname(resolvedPath);
 
     // Ensure base configDir exists with proper permissions
-    await exec(`mkdir -p ${configDir}`).catch((e) => {
+    await fs.mkdirAsync(configDir, { recursive: true }).catch((e) => {
       log.warn(`Failed to create config directory ${configDir}`, e.message);
     });
-    await exec(`chmod 755 ${configDir}`).catch((e) => {
+    await fs.chmodAsync(configDir, 0o755).catch((e) => {
       log.warn(`Failed to set permissions on ${configDir}`, e.message);
     });
 
     // Create subdirectory if needed
-    if (baseFolder) {
-      await exec(`mkdir -p ${configDir}/${baseFolder}`).catch((e) => {
-        log.warn(`Failed to create config directory ${baseFolder}`, e.message);
+    if (baseFolder !== configDir) {
+      await fs.mkdirAsync(baseFolder, { recursive: true }).catch((e) => {
+        log.warn(`Failed to create directory ${baseFolder}`, e.message);
       });
-      await exec(`chmod 755 ${configDir}/${baseFolder}`).catch((e) => {
-        log.warn(`Failed to set permissions on ${configDir}/${baseFolder}`, e.message);
+      await fs.chmodAsync(baseFolder, 0o755).catch((e) => {
+        log.warn(`Failed to set permissions on ${baseFolder}`, e.message);
       });
     }
 
-    log.info(`Saving file to ${configDir}/${filepath}...`);
-    return await fs.writeFileAsync(`${configDir}/${filepath}`, content, 'utf8').then(async (r) => {
-      await exec(`chmod 644 ${configDir}/${filepath}`).catch((e) => {
-        log.warn(`Failed to set permissions on ${configDir}/${filepath}`, e.message);
+    log.info(`Saving file to ${resolvedPath}...`);
+    return await fs.writeFileAsync(resolvedPath, content, 'utf8').then(async () => {
+      await fs.chmodAsync(resolvedPath, 0o644).catch((e) => {
+        log.warn(`Failed to set permissions on ${resolvedPath}`, e.message);
       });
-      log.info(`File ${configDir}/${filepath} saved successfully.`);
+      log.info(`File ${resolvedPath} saved successfully.`);
       return { ok: true };
     }).catch((e) => {
-      log.warn(`Failed to save file to ${configDir}/${filepath},`, e.message);
+      log.warn(`Failed to save file to ${resolvedPath},`, e.message);
       return { ok: false, error: e.message };
     });
   }
