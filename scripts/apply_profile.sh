@@ -168,6 +168,41 @@ set_sysctl() {
     done
 }
 
+# systemd_cpuquota rows: service cpuquota
+#   cpuquota: empty (CPUQuota=, clear quota), number (20 -> 20%), or number% (20%)
+normalize_cpuquota() {
+    local raw="${1// /}"
+    if [[ -z "$raw" ]]; then
+        echo ""
+        return 0
+    fi
+    local num="$raw"
+    if [[ "$num" == *% ]]; then
+        num="${num%%%}"
+    fi
+    if [[ "$num" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+        echo "${num}%"
+        return 0
+    fi
+    logerror "systemd_cpuquota: invalid cpuquota '$1' (use empty, number, or number%)"
+    return 1
+}
+
+set_systemd_cpuquota() {
+    while read service cpuquota
+    do
+        cpuquota=$(normalize_cpuquota "$cpuquota") || continue
+        if $PROFILE_CHECK; then
+            systemctl show "$service" -p CPUQuotaPerSecUSec --no-pager 2>/dev/null ||
+                logerror "systemd_cpuquota: failed to show $service"
+        else
+            loginfo "systemd_cpuquota: set $service CPUQuota=$cpuquota"
+            systemctl set-property "$service" "CPUQuota=${cpuquota}" ||
+                logerror "systemd_cpuquota: failed to set $service CPUQuota=$cpuquota"
+        fi
+    done
+}
+
 set_iplink() {
     while read intf pname pvalue
     do
@@ -404,6 +439,9 @@ process_profile() {
                 ;;
             sysctl)
                 echo "$input_json" | jq -r '.sysctl[]|@tsv' | set_sysctl
+                ;;
+            systemd_cpuquota)
+                echo "$input_json" | jq -r '.systemd_cpuquota[]|@tsv' | set_systemd_cpuquota
                 ;;
             iplink)
                 echo "$input_json" | jq -r '.iplink[]|@tsv' | set_iplink
