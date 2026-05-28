@@ -1531,6 +1531,44 @@ module.exports = class DNSMASQ {
     }
   }
 
+  async _update_dns_firewalla_rules() {
+    await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_DNS_FIRE_WALLA').opr('-F'));
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_FIRE_WALLA').opr('-F'));
+    const interfaces = sysManager.getMonitoringInterfaces();
+    const NetworkProfile = require('../../net2/NetworkProfile.js');
+    for (const intf of interfaces) {
+      const uuid = intf.uuid;
+      if (!uuid) {
+        log.error(`uuid is not defined for ${intf.name}`);
+        continue;
+      }
+      const myIp4 = sysManager.myIp(intf.name);
+      const myIp6 = sysManager.myIp6(intf.name);
+      await NetworkProfile.ensureCreateEnforcementEnv(uuid);
+      if (myIp4) {
+        const netSet4 = NetworkProfile.getNetIpsetName(uuid, 4);
+        const rule4 = new Rule('nat').chn('FW_PREROUTING_DNS_FIRE_WALLA')
+          .set(netSet4, 'src,src')
+          .dport(53)
+          .mdl('string', '--hex-string "|04|fire|05|walla" --algo bm --icase')
+          .jmp(`DNAT --to-destination ${myIp4}:${MASQ_PORT}`);
+        await iptc.addRule(rule4.pro('udp'));
+        await iptc.addRule(rule4.pro('tcp'));
+      }
+      if (!_.isEmpty(myIp6)) {
+        const netSet6 = NetworkProfile.getNetIpsetName(uuid, 6);
+        const ip6 = myIp6.find(i => i.startsWith('fe80')) || myIp6[0];
+        const rule6 = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_FIRE_WALLA')
+          .set(netSet6, 'src,src')
+          .dport(53)
+          .mdl('string', '--hex-string "|04|fire|05|walla" --algo bm --icase')
+          .jmp(`DNAT --to-destination [${ip6}]:${MASQ_PORT}`);
+        await iptc.addRule(rule6.pro('udp'));
+        await iptc.addRule(rule6.pro('tcp'));
+      }
+    }
+  }
+
   async _update_dns_fallback_rules() {
     await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').opr('-F'));
     await iptc.addRule(new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_FALLBACK').opr('-F'));
@@ -1547,7 +1585,7 @@ module.exports = class DNSMASQ {
       const myIp4 = sysManager.myIp(intf.name);
       const myIp6 = sysManager.myIp6(intf.name);
       await NetworkProfile.ensureCreateEnforcementEnv(uuid);
-      const netSet = ipset.CONSTANTS.IPSET_MONITORED_NET
+      const netSet = ipset.CONSTANTS.IPSET_MONITORED_NET;
       if (myIp4 && resolver4 && resolver4.length > 0) {
         // redirect dns request that is originally sent to box itself to the upstream resolver
         for (const i in resolver4) {
@@ -1688,10 +1726,12 @@ module.exports = class DNSMASQ {
 
   async _remove_iptables_rules() {
     await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT').opr('-F'));
+    await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_DNS_FIRE_WALLA').opr('-F'));
   }
 
   async _remove_ip6tables_rules() {
     await iptc.addRule(new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').opr('-F'));
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_FIRE_WALLA').opr('-F'));
   }
 
   async _writeHashIntoRedis(type, hashes) {
@@ -2093,6 +2133,7 @@ module.exports = class DNSMASQ {
         try {
           await this._remove_all_iptables_rules();
           await this._add_all_iptables_rules();
+          await this._update_dns_firewalla_rules();
           await this._update_dns_fallback_rules();
         } catch (err) {
           log.error('Error when add iptables rules', err);
