@@ -509,7 +509,7 @@
         "bing": "on",
         "duckduckgo": "on",
         "brave": "on",
-        "startpage": "on"
+        "startpage": "off"
       }
     },
     "FamilyProtectPlugin": {
