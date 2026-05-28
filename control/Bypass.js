@@ -19,6 +19,9 @@ const log = require("../net2/logger.js")(__filename);
 const { Rule } = require('../net2/Iptables.js');
 const iptc = require('../control/IptablesControl.js');
 const domainBlock = require('../control/DomainBlock.js');
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
+const Constants = require('../net2/Constants.js');
 
 const initializedBypassChain = {};
 
@@ -57,21 +60,18 @@ function isBypassChainExist(table, pid) {
   }
   return false;
 }
-const Constants = require('../net2/Constants.js');
-const { action } = require('commander');
 
 
 async function bypassDNSRules(options) {
 
-  const {affectedPids, tags, intfs, action, pid, targets, type} = options;
+  const {affectedPids, tags, intfs, scope, guids, action, pid, targets, type} = options;
   const PolicyManager2 = require('../alarm/PolicyManager2.js');
-  const CategoryUpdater = require('../control/CategoryUpdater.js')
-  const categoryUpdater = new CategoryUpdater()
+  const CategoryUpdater = require('../control/CategoryUpdater.js');
+  const categoryUpdater = new CategoryUpdater();
   const pm2 = new PolicyManager2();
-  const categoriesWithBfSet = new Set();
-  let hasHiSeq = false;
-  let hasNonHiSeq = false;
-  let optionsArray = [];
+  let shouldAppend = false;
+  let restartDNS = false;
+  const categoryMap = new Map(); // key: category${seqHigh}, value: {category, seq}
 
   for (const aPid of affectedPids) {
     const policy = await pm2.getPolicy(aPid);
@@ -79,87 +79,80 @@ async function bypassDNSRules(options) {
       log.warn(`Failed to ${action} bypass policy ${pid} for affected policy ${aPid} as it doesn't exist`);
       continue;
     }
-    if (policy.useBf) {
+    if (type == "category") {
       const categories = policy.targets || [policy.target];
-      categories.forEach(category => categoriesWithBfSet.add(category));
-    }
-
-    if (policy.seq === Constants.RULE_SEQ_HI) {
-      hasHiSeq = true;
+      for (let category of categories) {
+        if (policy.useBf) {
+          category = categoryUpdater.getBfCategoryName(category);
+        }
+        const key = `${category}${policy.seq == Constants.RULE_SEQ_HI ? 'Hi' : 'Normal'}`;
+        if (!categoryMap.has(key)) {
+          categoryMap.set(key, {category, seq: policy.seq});
+        }
+      }
     } else {
-      hasNonHiSeq = true;
+      // if type is not category, need add bypass entries for each affected policy
+      // for bypass device: mac-address-tag=%${mac}$!policy_${options.apid}&${options.pid}
+      // for bypass intfs: mac-address-tag=%00:00:00:00:00:00$!policy_${options.apid}&${options.pid}
+      // for bypass tags: group-tag=@${tag}$!policy_${options.apid}&${options.pid}
+      // for bypass guid: group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$!policy_${options.apid}&${options.pid}
+      if (action == "enforce") {
+        await dnsmasq.addPolicyFilterEntry([policy.target], { pid, scope, intfs, tags, guids, action: "bypass", aPid,
+          append: shouldAppend}).catch(err => {
+          log.error(`Failed to add policy filter entry for ${pid} when processing affected policy ${aPid}: ${err}`);
+        });
+      }
+      shouldAppend = true;
+      restartDNS = true;
     }
+  }
 
-    let shouldAppend = false;
-    
-    // bypass dnsmasq rules
-    if (action == "enforce") {
-      if (hasHiSeq) {
-        optionsArray.push({
+  // bypass dnsmasq rules
+  if (action == "enforce") {
+    if (type === "category") { // other type already handled in the loop above
+      for (const {category, seq} of categoryMap.values()) {
+        await dnsmasq.addPolicyCategoryFilterEntry({
           pid: pid,
-          categories: targets,
+          categories: [category],
           action: "bypass",
           tags: tags,
-          seq: Constants.RULE_SEQ_HI,
-          append: shouldAppend,
+          scope: scope,
+          guids: guids,
+          intfs: intfs,
+          seq: seq,
+          append: shouldAppend
+        }).catch(err => {
+          log.error(`Failed to add policy category filter entry for ${pid} and category ${category}: ${err}`);
         });
         shouldAppend = true;
-        if (categoriesWithBfSet.size > 0) {
-          optionsArray.push({
-            pid: pid,
-            categories: Array.from(categoriesWithBfSet).map(target => categoryUpdater.getBfCategoryName(target)),
-            action: "bypass",
-            tags: tags,
-            seq: Constants.RULE_SEQ_HI,
-            append: shouldAppend,
-          });
-          shouldAppend = true;
-        }
+        restartDNS = true;
       }
-      if (hasNonHiSeq) {
-        optionsArray.push({
-          pid: pid,
-          categories: targets,
-          action: "bypass",
-          tags: tags,
-          append: shouldAppend,
-        });
-        shouldAppend = true;
-        if (categoriesWithBfSet.size > 0) {
-          optionsArray.push({
-            pid: pid,
-            categories: Array.from(categoriesWithBfSet).map(target => categoryUpdater.getBfCategoryName(target)),
-            action: "bypass",
-            tags: tags,
-            append: shouldAppend,
-          });
-          shouldAppend = true;
-        }
-      }
-    } else if (action == "unenforce") {
-      optionsArray.push({
+    }
+  } else if (action == "unenforce") {
+    if (type === "category") {
+      await dnsmasq.removePolicyCategoryFilterEntry({
         pid: pid,
         categories: targets,
         action: "bypass",
-        tags: tags
+        tags: tags,
+        scope: scope,
+        guids: guids,
+        intfs: intfs
+      }).catch(err => {
+        log.error(`Failed to remove policy category filter entry for ${pid} and category ${targets}: ${err}`);
+      });
+    } else {
+      await dnsmasq.removePolicyFilterEntry(targets, {
+        pid: pid,
+        scope, intfs, tags, guids, action: "bypass"
+      }).catch(err => {
+        log.error(`Failed to remove policy filter entry for ${pid} when processing affected policies ${affectedPids}: ${err}`);
       });
     }
+    restartDNS = true;
   }
-
-  const asyncOps = [];
-  for (const opts of optionsArray) {
-    if (action == "enforce") {
-      asyncOps.push(addPolicyCategoryFilterEntry(opts).catch(err => {
-        log.error(`Failed to add policy category filter entry for ${opts.pid}: ${err}`);
-      }));
-    } else if (action == "unenforce") {
-      asyncOps.push(removePolicyCategoryFilterEntry(opts).catch(err => {
-        log.error(`Failed to remove policy category filter entry for ${opts.pid}: ${err}`);
-      }));
-    }
-  }
-  if (optionsArray.length > 0) {
-    await Promise.all(asyncOps);
+  
+  if (restartDNS) {
     await dnsmasq.scheduleRestartDNSService();
   }
 }
@@ -169,6 +162,7 @@ async function bypassIptablesRules(options) {
   const PolicyManager2 = require('../alarm/PolicyManager2.js');
   const pm2 = new PolicyManager2();
   const categoriesWithBfSet = new Set();
+  const PolicyDisturbManager = require('../alarm/PolicyDisturbManager.js');
 
   // try to inject exception to all affected policies
   for (const aPid of affectedPids) {
@@ -182,15 +176,22 @@ async function bypassIptablesRules(options) {
       categories.forEach(category => categoriesWithBfSet.add(category));
     }
 
+    const tables = [];
+    if (policy.action == "disturb") {
+      tables.push('mangle');
+      if (PolicyDisturbManager.checkIfNeedDisableQuic(policy)) {
+        tables.push('filter');
+      }
+    } else {
+      tables.push('filter');
+    }
 
     const bypassChain = `FW_${aPid}_BYPASS`;
-    const table = policy.action == "disturb" ? "mangle" : "filter";
     const op = action === "unenforce" ? '-D' : '-I';
 
     if (action === "enforce") {
-      for (const family of ['4', '6']) {
-        const rule = new Rule(table).fam(family).chn(bypassChain).opr('-N');
-        iptc.addRule(rule);
+      for (const table of tables) {
+        await ensureCreateBypassChain(table, aPid);
       }
     }
 
@@ -205,38 +206,43 @@ async function bypassIptablesRules(options) {
           await Tag.ensureCreateEnforcementEnv(uid);
           const devSet = Tag.getTagDeviceSetName(uid);
           const netSet = Tag.getTagNetSetName(uid);
-          for (const family of ['4', '6']) {
-            // outbound rule to bypass traffic from devices in the tag
-            rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${devSet} src`).jmp("RETURN"));
-            rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${netSet} src,src`).jmp("RETURN"));
-            // inbound rule to bypass traffic to devices in the tag
-            rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${devSet} dst`).jmp("RETURN"));
-            rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${netSet} dst,dst`).jmp("RETURN"));
+          for (const table of tables) {
+            for (const family of [4, 6]) {
+              // outbound rule to bypass traffic from devices in the tag
+              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${devSet} src`).jmp("RETURN"));
+              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${netSet} src,src`).jmp("RETURN"));
+              // inbound rule to bypass traffic to devices in the tag
+              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${devSet} dst`).jmp("RETURN"));
+              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${netSet} dst,dst`).jmp("RETURN"));
+            }
           }
         }
       }
 
       if (!_.isEmpty(intfs)) {
         const NetworkProfile = require('../net2/NetworkProfile.js');
-        for (const uuid of uuids) {
+        for (const uuid of intfs) {
           await NetworkProfile.ensureCreateEnforcementEnv(uuid);
           const intfSet = NetworkProfile.getNetListIpsetName(uuid);
-          rulesToAdd.push(new Rule(table).chn(bypassChain).mdl("set", `--match-set ${intfSet} src,src`).jmp("RETURN"));
-          rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${intfSet} src,src`).jmp("RETURN"));
-          rulesToAdd.push(new Rule(table).chn(bypassChain).mdl("set", `--match-set ${intfSet} dst,dst`).jmp("RETURN"));
-          rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${intfSet} dst,dst`).jmp("RETURN"));
+          for (const table of tables) {
+            rulesToAdd.push(new Rule(table).chn(bypassChain).mdl("set", `--match-set ${intfSet} src,src`).jmp("RETURN"));
+            rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${intfSet} src,src`).jmp("RETURN"));
+            rulesToAdd.push(new Rule(table).chn(bypassChain).mdl("set", `--match-set ${intfSet} dst,dst`).jmp("RETURN"));
+            rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${intfSet} dst,dst`).jmp("RETURN"));
+          }
         }
       }
 
       if (!_.isEmpty(scope)) {
         const Host = require('../net2/Host.js');
-        
-        for (const mac of macAddresses) {
+        for (const mac of scope) {
           await Host.ensureCreateEnforcementEnv(mac);
           const devSet = Host.getDeviceSetName(mac);
-          for (const family of ['4', '6']) {
-            rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${devSet} src`).jmp("RETURN"));
-            rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${devSet} dst`).jmp("RETURN"));
+          for (const table of tables) {
+            for (const family of [4, 6]) {
+              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${devSet} src`).jmp("RETURN"));
+              rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).mdl("set", `--match-set ${devSet} dst`).jmp("RETURN"));
+            }
           }
         }
       }
@@ -250,20 +256,24 @@ async function bypassIptablesRules(options) {
           await identityClass.ensureCreateEnforcementEnv(uid);
           const set4 = identityClass.getEnforcementIPsetName(uid, 4);
           const set6 = identityClass.getEnforcementIPsetName(uid, 6);
-          rulesToAdd.push(new Rule(table).fam(4).chn(bypassChain).mdl("set", `--match-set ${set4} src`).jmp("RETURN"));
-          rulesToAdd.push(new Rule(table).fam(4).chn(bypassChain).mdl("set", `--match-set ${set4} dst`).jmp("RETURN"));
-          rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${set6} src`).jmp("RETURN"));
-          rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${set6} dst`).jmp("RETURN"));
+          for (const table of tables) {
+            rulesToAdd.push(new Rule(table).fam(4).chn(bypassChain).mdl("set", `--match-set ${set4} src`).jmp("RETURN"));
+            rulesToAdd.push(new Rule(table).fam(4).chn(bypassChain).mdl("set", `--match-set ${set4} dst`).jmp("RETURN"));
+            rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${set6} src`).jmp("RETURN"));
+            rulesToAdd.push(new Rule(table).fam(6).chn(bypassChain).mdl("set", `--match-set ${set6} dst`).jmp("RETURN"));
+          }
         }
       }
     } else { // global bypass without specific match criteria, just jump to RETURN for all traffic in the bypass chain
-      for (const family of ['4', '6']) {
-        rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).jmp("RETURN").opr(op));
+      for (const table of tables) {
+        for (const family of [4, 6]) {
+          rulesToAdd.push(new Rule(table).fam(family).chn(bypassChain).jmp("RETURN").opr(op));
+        }
       }
     }
       
     for (const rule of rulesToAdd) {
-      iptc.addRule(rule.opr(op));
+      await iptc.addRule(rule.opr(op));
     }
   }
 }
@@ -271,14 +281,10 @@ async function bypassIptablesRules(options) {
 
 
 module.exports = {
-  setupTagsRules,
   ensureCreateBypassChain,
   isBypassChainExist,
   removeBypassChain,
-  setupIntfsRules,
-  setupDevicesRules,
-  setupGenericIdentitiesRules,
-  setupGlobalRules,
   bypassDNSRules,
   bypassIptablesRules
 }
+
