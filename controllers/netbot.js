@@ -71,7 +71,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const pclient = require('../util/redis_manager.js').getPublishClient();
 
-const execAsync = require('child-process-promise').exec;
+const { exec: execAsync, execFile } = require('child-process-promise');
 const { exec, execSync } = require('child_process');
 
 const AM2 = require('../alarm/AlarmManager2.js');
@@ -143,7 +143,7 @@ const fwapc = require('../net2/fwapc.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
-const { delay, difference, versionCompare } = require('../util/util.js');
+const { delay, difference, versionCompare, isValidCommonName } = require('../util/util.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -3067,8 +3067,7 @@ class netBot extends ControllerBot {
         if (!cn) {
           throw { code: 400, msg: "'cn' is not specified." }
         }
-        const matches = cn.match(/^[a-zA-Z0-9]+/g);
-        if (cn.length > 32 || matches == null || matches.length != 1 || matches[0] !== cn) {
+        if (!isValidCommonName(cn)) {
           throw { code: 400, msg: "'cn' should only contain alphanumeric letters and no longer than 32 characters." }
         }
         const settings = value.settings || {};
@@ -3098,6 +3097,9 @@ class netBot extends ControllerBot {
         if (!cn) {
           throw { code: 400, msg: "'cn' is not specified." }
         }
+        if (!isValidCommonName(cn)) {
+          throw { code: 400, msg: "'cn' should only contain alphanumeric letters and no longer than 32 characters." }
+        }
         await VpnManager.revokeOvpnFile(cn);
         return
       }
@@ -3105,6 +3107,9 @@ class netBot extends ControllerBot {
         const cn = value.cn;
         if (!cn) {
           throw { code: 400, msg: "'cn' is not specified." }
+        }
+        if (!isValidCommonName(cn)) {
+          throw { code: 400, msg: "'cn' should only contain alphanumeric letters and no longer than 32 characters." }
         }
         const settings = await VpnManager.getSettings(cn);
         if (!settings) {
@@ -4315,6 +4320,23 @@ class netBot extends ControllerBot {
   }
 
   async _removeSingleUPnP(protocol, externalPort, internalIP, internalPort) {
+    // Validate inputs to prevent command injection
+    if (!['tcp', 'udp'].includes(String(protocol).toLowerCase())) {
+      log.error(`_removeSingleUPnP: invalid protocol: ${protocol}`);
+      return;
+    }
+    const extPort = Number(externalPort);
+    const intPort = Number(internalPort);
+    if (!Number.isInteger(extPort) || extPort < 1 || extPort > 65535 ||
+        !Number.isInteger(intPort) || intPort < 1 || intPort > 65535) {
+      log.error(`_removeSingleUPnP: invalid port(s): ${externalPort}, ${internalPort}`);
+      return;
+    }
+    if (!iptool.isV4Format(String(internalIP))) {
+      log.error(`_removeSingleUPnP: invalid internalIP: ${internalIP}`);
+      return;
+    }
+    const proto = protocol.toUpperCase();
     const intf = sysManager.getInterfaceViaIP(internalIP);
     if (!intf)
       return;
@@ -4323,14 +4345,16 @@ class netBot extends ControllerBot {
     const leaseFile = `/var/run/upnp.${intfName}.leases`;
     const lockFile = `/tmp/upnp.${intfName}.lock`;
     const entries = JSON.parse(await rclient.hgetAsync("sys:scan:nat", "upnp") || "[]");
-    const newEntries = entries.filter(e => e.public.port != externalPort && e.private.host != internalIP && e.private.port != internalPort && e.protocol != protocol);
+    const newEntries = entries.filter(e => !(e.public.port == extPort && e.private.host == internalIP && e.private.port == intPort && e.protocol.toLowerCase() == protocol.toLowerCase()));
     // remove iptables redirect rule
-    await iptc.addRule(new Rule('nat').chn(chain).pro(protocol).dport(externalPort).dnat(`${internalIP}:${internalPort}`).opr('-D'));
+    await iptc.addRule(new Rule('nat').chn(chain).pro(proto).dport(extPort).dnat(`${internalIP}:${intPort}`).opr('-D'));
     // clean up upnp cache in redis
     await rclient.hsetAsync("sys:scan:nat", "upnp", JSON.stringify(newEntries));
-    // remove entry from lease file
-    await execAsync(`flock ${lockFile} -c "sudo sed -i '/^${protocol.toUpperCase()}:${externalPort}:${internalIP}:${internalPort}:.*/d' ${leaseFile}"`).catch((err) => {
-      log.error(`Failed to remove upnp lease, external port ${externalPort}, internal ${internalIP}:${internalPort}, protocol ${protocol}`, err.message);
+    // remove entry from lease file — use execFile to avoid outer shell interpolation;
+    // inputs are validated above so the sed pattern contains only [A-Z0-9.:] characters
+    const sedPattern = `/^${proto}:${extPort}:${internalIP}:${intPort}:.*/d`;
+    await execFile('flock', [lockFile, 'sudo', 'sed', '-i', sedPattern, leaseFile]).catch((err) => {
+      log.error(`Failed to remove upnp lease, external port ${extPort}, internal ${internalIP}:${intPort}, protocol ${proto}`, err.message);
     });
     this.scheduleRestartFirerouterUPnP(intfName);
   }
