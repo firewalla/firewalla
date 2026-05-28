@@ -18,6 +18,7 @@
 const log = require("../net2/logger.js")(__filename);
 
 const Constants = require("../net2/Constants.js");
+const conntrack = require('../net2/Conntrack.js');
 const fwapc = require('../net2/fwapc.js');
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
@@ -646,6 +647,9 @@ class APCMsgSensor extends Sensor {
       return
 
     if (msg.pid) record.pid = msg.pid
+    if (msg.action === 'allow' && msg.pid && msg.src && msg.sport && msg.dst && msg.dport && msg.proto) {
+      conntrack.setConnEntry(msg.src, msg.sport, msg.dst, msg.dport, msg.proto, Constants.REDIS_HKEY_CONN_APID, msg.pid, 600);
+    }
     if (msg.proto) record.pr = msg.proto
     if (msg.iso_lvl && msg.action == "block") record.ac = "isolation"
     if (msg.gid !== undefined && msg.gid !== null) record.isoGID = String(msg.gid)
