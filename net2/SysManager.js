@@ -40,7 +40,7 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const Mode = require('./Mode.js');
 
-const exec = require('child-process-promise').exec
+const { exec, execFile } = require('child-process-promise')
 
 const serialFiles = ["/sys/block/mmcblk0/device/serial", "/sys/block/mmcblk1/device/serial","/sys/block/sda/device/wwid"];
 
@@ -395,12 +395,17 @@ class SysManager {
     if (this.timezone == timezone) {
       return null;
     }
+    // Validate IANA timezone format: e.g. UTC, America/New_York, America/Argentina/Buenos_Aires, Etc/GMT+5
+    if (!timezone || !/^[A-Za-z_][A-Za-z0-9_-]*(?:\/[A-Za-z0-9_+-]+){0,2}$/.test(timezone)) {
+      log.error("setTimezone: invalid timezone value:", timezone);
+      return new Error(`Invalid timezone: ${timezone}`);
+    }
     this.timezone = timezone;
     try {
       await rclient.hsetAsync("sys:config", "timezone", timezone);
       pclient.publish("System:TimezoneChange", timezone);
 
-      await exec(`sudo timedatectl set-timezone ${timezone}`);
+      await execFile('sudo', ['timedatectl', 'set-timezone', timezone]);
       await exec('sudo systemctl restart cron.service');
       await exec('sudo systemctl restart rsyslog');
 

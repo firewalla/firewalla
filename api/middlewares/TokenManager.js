@@ -34,8 +34,9 @@ class TokenManager {
   }
 
   validateToken(token) {
+    if (!token) return null;
     for (let gid in this.tokens) {
-      if (this.tokens[gid] == token) {
+      if (this.tokens[gid] && this.tokens[gid] === token) {
         return gid;
       }
     }
@@ -43,7 +44,7 @@ class TokenManager {
   }
 
   revokeToken(gid) {
-    this.tokens[gid] = null;
+    delete this.tokens[gid];
   }
 }
 
