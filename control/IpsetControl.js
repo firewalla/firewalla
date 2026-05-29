@@ -82,7 +82,7 @@ class IpsetControl extends ModuleControl {
    */
   async _execOne(line) {
     await exec(`sudo ipset -! ${line}`, { timeout: 10000 }).catch(err => {
-      log.error(`Failed to execute ipset command: ${line}`, err.message);
+      log.error('Failed to execute command:', err.stack);
     });
   }
 
