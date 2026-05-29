@@ -69,5 +69,6 @@
     [ "eth3", 1, "0,1,2,3,2" ]
   ],
   "systemd_cpuquota": [
+    [ "brofish.service", "25" ]
   ]
 }
