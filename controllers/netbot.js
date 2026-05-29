@@ -4060,18 +4060,20 @@ class netBot extends ControllerBot {
               }
 
               await sysManager.updateAsync()
-              const fwapcOps = data.fwapcOps || [];
-              const dapOps = data.dapOps || [];
-              const embeddedOps = data.embeddedOps || [];
+              const fwapcOps = Array.isArray(data.fwapcOps) ? data.fwapcOps : [];
+              const dapOps = Array.isArray(data.dapOps) ? data.dapOps : [];
+              const embeddedOps = Array.isArray(data.embeddedOps) ? data.embeddedOps : [];
               try {
                 const json = {};
                 const tasks = fwapcOps.map(async (op) => {
+                  if (!op || typeof op !== 'object') return;
                   const {key, method, path, body} = op;
                   const result = await fwapc.apiCall(method || "GET", path, body).catch((err) => null);
                   if (result && result.code == 200)
                     json[key] = result.body;
                 });
                 tasks.push(...dapOps.map(async (op) => {
+                  if (!op || typeof op !== 'object') return;
                   const {key, method, path, body} = op;
                   const dapSensor = sl.getSensor('DapSensor');
                   if (dapSensor) {
@@ -4083,9 +4085,10 @@ class netBot extends ControllerBot {
                 // embeddedOps: array of embedded get requests, each dispatched through getHandler
                 // format: { item: string, value?: object, key?: string, target?: string }
                 tasks.push(...embeddedOps.map(async (op) => {
-                  const { item, value, key, target } = op;
-                  if (!item) return;
                   try {
+                    if (!op || typeof op !== 'object') return;
+                    const { item, value, key, target } = op;
+                    if (!item) return;
                     const getMsg = {
                       mtype: "get",
                       target: target,
@@ -4095,7 +4098,7 @@ class netBot extends ControllerBot {
                         apiVer: data.apiVer
                       }
                     };
-                    // defaults to item as json key, but allows custom key override
+                    // defaults to item as json key; avoid core init fields (e.g. hosts) — they get overwritten below
                     json[key || item] = await this.getHandler(gid, getMsg, appInfo);
                   } catch (err) {
                     log.warn(`Failed to execute embeddedOps item ${item}:`, err.message);
