@@ -534,13 +534,16 @@ module.exports = class DNSMASQ {
                   entries.push(`mac-address-tag=%${mac}$policy_${options.pid}&${options.pid}`);
                 else
                   entries.push(`mac-address-tag=/${domain}/%${mac}$policy_${options.pid}&${options.pid}`);
+              } else if (options.action === "bypass") {
+                entries.push(`mac-address-tag=%${mac}$!policy_${options.aPid}&${options.pid}`);
               } else {
                 entries.push(`mac-address-tag=%${mac}$policy_${options.pid}&${options.pid}`);
+
               }
             }
             Array.prototype.push.apply(entries, commonEntries);
             const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
-            await this.writeConfig(filePath, entries);
+            await this.writeConfig(filePath, entries, options.append);
           }
 
           if (!_.isEmpty(options.intfs)) {
@@ -553,12 +556,14 @@ module.exports = class DNSMASQ {
                   entries.push(`mac-address-tag=%00:00:00:00:00:00$policy_${options.pid}&${options.pid}`);
                 else
                   entries.push(`mac-address-tag=/${domain}/%00:00:00:00:00:00$policy_${options.pid}&${options.pid}`);
+              } else if (options.action === "bypass") {
+                entries.push(`mac-address-tag=%00:00:00:00:00:00$!policy_${options.aPid}&${options.pid}`);
               } else {
                 entries.push(`mac-address-tag=%00:00:00:00:00:00$policy_${options.pid}&${options.pid}`);
               }
               Array.prototype.push.apply(entries, commonEntries);
               const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
-              await this.writeConfig(filePath, entries);
+              await this.writeConfig(filePath, entries, options.append);
             }
           }
 
@@ -571,12 +576,14 @@ module.exports = class DNSMASQ {
                   entries.push(`group-tag=@${tag}$policy_${options.pid}`);
                 else
                   entries.push(`group-tag=/${domain}/@${tag}$policy_${options.pid}`);
+              } else if (options.action === "bypass") {
+                entries.push(`group-tag=@${tag}$!policy_${options.aPid}&${options.pid}`);
               } else {
                 entries.push(`group-tag=@${tag}$policy_${options.pid}&${options.pid}`);
               }
               Array.prototype.push.apply(entries, commonEntries);
               const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
-              await this.writeConfig(filePath, entries);
+              await this.writeConfig(filePath, entries, options && options.append);
             }
           }
 
@@ -593,11 +600,13 @@ module.exports = class DNSMASQ {
                     entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$policy_${options.pid}&${options.pid}`);
                   else
                     entries.push(`group-tag=/${domain}/@${identityClass.getEnforcementDnsmasqGroupId(uid)}$policy_${options.pid}&${options.pid}`);
+                } else if (options.action === "bypass") {
+                  entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$!policy_${options.aPid}&${options.pid}`);
                 } else {
                   entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$policy_${options.pid}&${options.pid}`);
                 }
                 Array.prototype.push.apply(entries, commonEntries);
-                await this.writeConfig(filePath, entries);
+                await this.writeConfig(filePath, entries, options.append);
               }
             }
           }
@@ -620,7 +629,7 @@ module.exports = class DNSMASQ {
               default:
             }
             const filePath = this._getRuleGroupConfigPath(options.pid, uuid);
-            await this.writeConfig(filePath, entries);
+            await this.writeConfig(filePath, entries,  options.append);
           }
         } else {
           // global effective policy
@@ -639,6 +648,7 @@ module.exports = class DNSMASQ {
                 entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
                 break;
               case "allow":
+              case "bypass":
                 entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
                 break;
               case "resolve":
@@ -648,7 +658,7 @@ module.exports = class DNSMASQ {
               default:
             }
             const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
-            await this.writeConfig(filePath, entries);
+            await this.writeConfig(filePath, entries, options.append);
           } else { // a new way to block without restarting dnsmasq, only for non-scheduling
             await this.addGlobalPolicyFilterEntry(domain, options);
             return "skip_restart"; // tell function caller that no need to restart dnsmasq to take effect
@@ -704,6 +714,10 @@ module.exports = class DNSMASQ {
                   entries.push(`mac-address-tag=%${mac}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
                   break;
                 }
+                case "bypass": {
+                  entries.push(`mac-address-tag=%${mac}$!${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+                  break;
+                }
                 case "allow": {
                   entries.push(`mac-address-tag=%${mac}$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
                   break;
@@ -728,6 +742,10 @@ module.exports = class DNSMASQ {
               switch (options.action) {
                 case "block": {
                   entries.push(`mac-address-tag=%00:00:00:00:00:00$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+                  break;
+                }
+                case "bypass": {
+                  entries.push(`mac-address-tag=%00:00:00:00:00:00$!${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
                   break;
                 }
                 case "allow": {
@@ -825,6 +843,10 @@ module.exports = class DNSMASQ {
           switch (options.action) {
             case "block": {
               entries.push(`mac-address-tag=%${systemLevelMac}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+              break;
+            }
+            case "bypass": {
+              entries.push(`mac-address-tag=%${systemLevelMac}$!${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
               break;
             }
             case "allow": {
