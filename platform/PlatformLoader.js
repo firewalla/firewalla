@@ -118,6 +118,11 @@ class PlatformLoader {
             this.platform = new GoldProPlatform();
             break;
           }
+          case "crystal": {
+            const crystalPlatform = require('./crystal/CrystalPlatform');
+            this.platform = new crystalPlatform();
+            break;
+          }
           default: {
             const GoldPlatform = require('./gold/GoldPlatform.js');
             this.platform = new GoldPlatform();
