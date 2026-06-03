@@ -1434,6 +1434,19 @@ run_lsusb() {
   echo ""
 }
 
+check_iptables() {
+  local output
+  local rc
+  output=$(sudo iptables -S 2>&1)
+  rc=$?
+  if [[ $rc -ne 0 ]]; then
+    echo -e "\e[41m>>>>>> iptables -S failed (exit $rc), blocking & routing might not working correctly <<<<<<\e[0m"
+    echo "$output"
+    echo ""
+    echo ""
+  fi
+}
+
 check_eth_count() {
   ports=$(find /sys/class/net/ | grep -c "\\eth[0-3]$")
 
@@ -1484,6 +1497,7 @@ usage() {
     echo "  -f  | --fast | --host"
     echo "  -e  | --events"
     echo "  -c  | --connection"
+    echo "        --iptables"
     echo "  -h  | --help"
     return
 }
@@ -1562,6 +1576,11 @@ while [ "$1" != "" ]; do
         FAST=true
         check_connection
         ;;
+    --iptables)
+        shift
+        FAST=true
+        check_iptables
+        ;;
     -e | --events)
         shift
         FAST=true
@@ -1602,6 +1621,7 @@ if [ "$FAST" == false ]; then
     check_docker
     run_lsusb
     check_eth_count
+    check_iptables
     check_connection
     test -z $SPEED || check_speed
 fi
