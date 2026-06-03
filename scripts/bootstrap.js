@@ -1,8 +1,9 @@
 'use strict';
 
-// VM box activation bootstrap.
+// Box activation bootstrap (used by the auto-install image; currently
+// exercised in Proxmox VMs but not VM-specific by design).
 // Reports identifiers to the provisioning service, polls encipher rendezvous for the MSP-injected payload,
-// then installs the license, joins the MSP web  eid into the box group, configures Guardian, and restarts fireapi.
+// then installs the license, joins the MSP web eid into the box group, configures Guardian, and restarts fireapi.
 
 const { exec } = require('child_process');
 const util = require('util');
@@ -180,6 +181,73 @@ async function restartFireApi() {
   await execAsync('sudo systemctl restart fireapi');
 }
 
+const STATE_FILE = '/home/pi/.firewalla/bootstrap.json';
+const state = { created_at: new Date().toISOString() };
+
+async function persistState(patch) {
+  Object.assign(state, patch, { updated_at: new Date().toISOString() });
+  try {
+    await fs.promises.mkdir(require('path').dirname(STATE_FILE), { recursive: true });
+    await fs.promises.writeFile(STATE_FILE, JSON.stringify(state, null, 2) + '\n', 'utf8');
+  } catch (e) { /* best-effort */ }
+}
+
+// QR rendering: try qrcode-terminal -> system qrencode -> just print URL.
+// Every layer is isolated so any error stays contained.
+function renderQr(url) {
+  try {
+    const qrcode = require('qrcode-terminal');
+    qrcode.generate(url, { small: true });
+    return true;
+  } catch (e1) {
+    try {
+      const { execSync } = require('child_process');
+      const out = execSync('qrencode -t UTF8 -- ' + JSON.stringify(url), { encoding: 'utf8' });
+      process.stdout.write(out);
+      return true;
+    } catch (e2) {
+      console.log('  (no QR renderer available — qrcode-terminal or qrencode missing)');
+      console.log('  URL: ' + url);
+      return false;
+    }
+  }
+}
+
+// readline-based "qr" listener: while bootstrap is polling for activation
+// the user can type "qr" + Enter to render a QR code of the activate URL.
+// Defensive: any error inside the line handler is swallowed so it can't
+// kill the bootstrap process via uncaughtException.
+let qrRl = null;
+let qrCount = 0;
+function startQrListener(url) {
+  // process.stdin may be paused by default with terminal:false on Node 12.
+  try { process.stdin.setEncoding('utf8'); } catch (_) {}
+  try { process.stdin.resume(); } catch (_) {}
+  const readline = require('readline');
+  qrRl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false });
+  qrRl.on('line', (raw) => {
+    try {
+      if (raw.trim().toLowerCase() !== 'qr') return;
+      qrCount++;
+      console.log('');
+      console.log('  Rendering QR for: ' + url);
+      console.log('');
+      if (qrCount === 1) {
+        renderQr(url);
+      } else {
+        console.log('  (QR already rendered above — scroll up in noVNC to see it.)');
+        console.log('  URL: ' + url);
+      }
+      console.log('');
+    } catch (e) {
+      try { console.log('  (qr command failed: ' + e.message + ')'); } catch (_) {}
+    }
+  });
+}
+function stopQrListener() {
+  if (qrRl) { try { qrRl.close(); } catch (_) {} qrRl = null; }
+}
+
 async function main() {
   ui.banner('  Firewalla Software Activation  ');
 
@@ -203,13 +271,31 @@ async function main() {
   ui.step(3, 'Register with provisioning service');
   await registerBootstrap({ bootstrapId, rid, gid });
   ui.ok('Registered');
-  ui.url('Open this URL to activate:', `${ACTIVATE_BASE}/?bid=${bootstrapId}`);
+  const activateUrl = `${ACTIVATE_BASE}/?bid=${bootstrapId}`;
+  ui.url('Open this URL to activate:', activateUrl);
+  console.log('  ' + c.dim + 'Type ' + c.reset + c.bold + '"qr" + Enter' + c.reset + c.dim +
+              ' on this console to render a QR code of the URL above.' + c.reset);
+  console.log('');
+
+  await persistState({
+    stage: 'awaiting_activation',
+    bootstrap_id: bootstrapId,
+    rid, gid, mac,
+    activate_url: activateUrl,
+  });
+  startQrListener(activateUrl);
 
   ui.step(4, 'Wait for MSP payload');
   ui.info(`Polling rendezvous every ${POLL_INTERVAL_SEC}s (timeout ${POLL_TIMEOUT_SEC}s)`);
   ui.note('Waiting for activation to be confirmed in the browser...');
   const { value: webEid, evalue } = await waitForInvitation(rid);
+  stopQrListener();
   const payload = parsePayload(evalue);
+  await persistState({
+    stage: 'activating',
+    web_eid: webEid,
+    payload_received_at: new Date().toISOString(),
+  });
   ui.ok('Invitation received');
   ui.kv('Web eid', webEid);
   ui.kv('License', payload.license);
@@ -242,18 +328,31 @@ async function main() {
   await restartFireApi();
   ui.ok('FireAPI restarting');
 
+  await persistState({
+    stage: 'completed',
+    license_uuid: license.DATA.UUID,
+    license_type: license.DATA.LICENSE,
+    bound_mac: license.DATA.MAC,
+    business: payload.business,
+    server: payload.server,
+    activated_at: new Date().toISOString(),
+  });
+
   ui.banner('  Activation Complete  ');
   ui.note(`Connected to MSP: ${payload.server}`);
+  ui.note(`State saved to ${STATE_FILE}`);
   console.log('');
 }
 
-main().catch(err => {
+main().catch(async (err) => {
   console.log('');
   ui.err(`bootstrap failed: ${err.message}`);
   if (err.stack) console.log(c.dim + err.stack + c.reset);
   console.log('');
+  try { await persistState({ stage: 'failed', error: err.message, failed_at: new Date().toISOString() }); } catch (_) {}
   process.exitCode = 1;
 }).finally(async () => {
-  try { await rclient.quitAsync(); } catch (e) { /* ignore */ }
+  try { stopQrListener(); } catch (_) { /* ignore */ }
+  try { await rclient.quitAsync(); } catch (_) { /* ignore */ }
   process.exit(process.exitCode || 0);
 });
