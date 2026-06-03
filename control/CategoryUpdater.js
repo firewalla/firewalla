@@ -1299,6 +1299,29 @@ class CategoryUpdater extends CategoryUpdaterBase {
     ))
   }
 
+  _buildDomainPortIpsetOps(categoryIps, ipsetName, ipset6Name, portObj, portStr, commentSuffix) {
+    const ops = [];
+    const isIcmpFamily = portObj && (portObj.proto === 'icmp' || portObj.proto === 'icmpv6');
+    if (isIcmpFamily) {
+      const icmpPortStr = CategoryEntry.toPortStr({ ...portObj, proto: 'icmp' });
+      const icmpv6PortStr = CategoryEntry.toPortStr({ ...portObj, proto: 'icmpv6' });
+      ops.push(...categoryIps.filter(ip => !ip.includes(':'))
+        .map(ip => `add -! ${ipsetName} ${ip},${icmpPortStr}${commentSuffix}`)
+      );
+      ops.push(...categoryIps.filter(ip => ip.includes(':'))
+        .map(ip => `add -! ${ipset6Name} ${ip},${icmpv6PortStr}${commentSuffix}`)
+      );
+      return ops;
+    }
+    ops.push(...categoryIps.filter(ip => !ip.includes(':'))
+      .map(ip => `add ${ipsetName} ${ip},${portStr}${commentSuffix}`)
+    );
+    ops.push(...categoryIps.filter(ip => ip.includes(':'))
+      .map(ip => `add ${ipset6Name} ${ip},${portStr}${commentSuffix}`)
+    );
+    return ops;
+  }
+
   async updateIPSetByDomainPort(category, domainObj, options) {
     if (!this.inited) return;
     log.debug(`About to update category ${category} with domain object ${domainObj}`);
@@ -1322,18 +1345,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
     
     const portObj = domainObj.port;
     const portStr = CategoryEntry.toPortStr(portObj);
-    
     const commentSuffix = options.needComment ? ` comment ${domain}` : '';
-    const ops = [];
-    if (!portObj || portObj.proto !== 'icmpv6')
-      ops.push(...categoryIps.filter(ip => !ip.includes(':'))
-        .map(ip => `add ${ipsetName} ${ip},${portStr}${commentSuffix}`)
-      );
-    if (!portObj || portObj.proto !== 'icmp')
-      ops.push(...categoryIps.filter(ip => ip.includes(':'))
-        .map(ip => `add ${ipset6Name} ${ip},${portStr}${commentSuffix}`)
-      )
-    await Ipset.restore(ops);
+    await Ipset.restore(this._buildDomainPortIpsetOps(categoryIps, ipsetName, ipset6Name, portObj, portStr, commentSuffix));
   }
 
   async filterIPSetByDomain(category, options) {
@@ -1490,16 +1503,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       const portObj = domainObj.port;
       const portStr = CategoryEntry.toPortStr(portObj);
       const commentSuffix = options.needComment ? ` comment ${domain}` : '';
-      const ops = [];
-      if (!portObj || portObj.proto !== 'icmpv6')
-        ops.push(...categoryIps.filter(ip => !ip.includes(':'))
-          .map(ip => `add ${ipsetName} ${ip},${portStr}${commentSuffix}`)
-        );
-      if (!portObj || portObj.proto !== 'icmp')
-        ops.push(...categoryIps.filter(ip => ip.includes(':'))
-          .map(ip => `add ${ipset6Name} ${ip},${portStr}${commentSuffix}`)
-        );
-      await Ipset.restore(ops);
+      await Ipset.restore(this._buildDomainPortIpsetOps(categoryIps, ipsetName, ipset6Name, portObj, portStr, commentSuffix));
     }
   }
 
