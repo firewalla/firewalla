@@ -131,6 +131,11 @@ case "$UNAME" in
         FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/goldpro
         export FIREWALLA_PLATFORM=goldpro
         ;;
+      crystal)
+        source $FW_PLATFORM_DIR/crystal/platform.sh
+        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/crystal
+        export FIREWALLA_PLATFORM=crystal
+        ;;
       *)
         source $FW_PLATFORM_DIR/gold/platform.sh
         FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/gold
