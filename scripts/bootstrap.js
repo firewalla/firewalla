@@ -5,6 +5,13 @@
 // Reports identifiers to the provisioning service, polls encipher rendezvous for the MSP-injected payload,
 // then installs the license, joins the MSP web eid into the box group, configures Guardian, and restarts fireapi.
 
+// TODO: too fragile when launched at firstboot. The fw-firstboot.sh gate uses
+// a wall-clock timer (breaks on the no-RTC box's NTP step), proceeds even on
+// timeout, and never waits for node_modules or the network. Result: this runs
+// before things are ready -> require('uuid') fails, eth0 IP shows none, etc.
+// Don't assume the env is ready: verify deps/redis/network up front and exit
+// non-zero with a clear message instead of crashing on a require.
+
 const { exec } = require('child_process');
 const util = require('util');
 const execAsync = util.promisify(exec);
