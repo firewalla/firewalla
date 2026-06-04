@@ -144,7 +144,7 @@ class FreeRadiusSensor extends Sensor {
 
   async run() {
     this.processing = false;
-    this.featureOn = false;
+    this.featureOn = fc.isFeatureOn(featureName);
     this._policy = await this.loadPolicyAsync();
     this._options = await this.loadOptionsAsync();
 
@@ -164,6 +164,8 @@ class FreeRadiusSensor extends Sensor {
 
     // need to check feature status
     setInterval(async () => {
+      this.featureOn = fc.isFeatureOn(featureName);
+
       // if feature is not on, need to cleanup
       if (!this.processing && !this.featureOn && await freeradius.isListening()) {
         log.info("feature is not on, need to cleanup freeradius server");
@@ -311,6 +313,7 @@ class FreeRadiusSensor extends Sensor {
 
   // global on
   async globalOn() {
+    log.debug("global on", featureName);
     this.featureOn = true;
     freeradius.globalOn();
     // avoid a race condition between applyPolicy and globalOn
@@ -345,7 +348,6 @@ class FreeRadiusSensor extends Sensor {
     }
   }
 
-
   async addCronJobs() {
     log.info("Adding freeradius image update cron jobs");
     await fsp.unlink(`${f.getUserConfigFolder()}/freeradius_crontab`).catch((err) => { });
@@ -371,6 +373,7 @@ class FreeRadiusSensor extends Sensor {
 
   // global off
   async globalOff() {
+    log.debug("global off", featureName);
     this.featureOn = false;
     freeradius.globalOff();
 

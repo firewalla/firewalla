@@ -66,6 +66,18 @@ class UpdateJob {
 
   }
 
+  async clearScheduleAndWaitDone(timeoutMs = 10000) {
+    this._scheduleArgsList = [];
+    let waitedTime = 0;
+    while (this._running && waitedTime < timeoutMs) {
+      await delay(100);
+      waitedTime += 100;
+    }
+    if (this._running) {
+      log.warn(`clearScheduleAndWaitDone timed out after ${timeoutMs}ms`);
+    }
+  }
+
 }
 
 module.exports = {
