@@ -184,6 +184,10 @@ async function configureGuardian({ server, business }) {
   return writes;
 }
 
+async function markBootingComplete() {
+  await rclient.setAsync('bootingComplete', '1');
+}
+
 async function restartFireApi() {
   await execAsync('sudo systemctl restart fireapi');
 }
@@ -331,6 +335,9 @@ async function main() {
   for (const [k, v] of Object.entries(writes)) {
     ui.kv(k, v.length > 60 ? v.slice(0, 60) + '...' : v);
   }
+
+  await markBootingComplete();
+  ui.ok('Marked booting complete');
 
   await restartFireApi();
   ui.ok('FireAPI restarting');
