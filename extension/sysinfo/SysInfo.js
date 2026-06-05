@@ -215,7 +215,7 @@ async function getDiskInfo() {
 
 async function getEmmcLife() {
   try {
-    const result = await exec("sudo bash -c 'cat /sys/kernel/debug/mmc*/mmc*:*/ext_csd 2>/dev/null | head -n 1'");
+    const result = await exec("sudo bash -c 'cat /sys/kernel/debug/*mmc*/*mmc*:*/ext_csd 2>/dev/null | head -n 1'");
     const hex = result.stdout.trim();
     if (hex.length < 540) return;
     emmcLife = {
