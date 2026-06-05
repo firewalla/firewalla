@@ -48,6 +48,7 @@ const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
 
 const _ = require('lodash');
+const Message = require('../net2/Message.js');
 const { CategoryEntry } = require('../control/CategoryEntry.js');
 
 const INTEL_PROXY_CHANNEL = "intel_proxy";
@@ -66,6 +67,18 @@ class CategoryUpdateSensor extends Sensor {
     super(config)
 
     this.resetCategoryHashsetMapping()
+
+    sem.on(Message.MSG_DEBUG, event => {
+      if (event.name !== this.constructor.name) return;
+      switch (event.data) {
+        case 'regularJob':
+          this.regularJob().catch(err => log.error('Failed to run regularJob', err)); break;
+        case 'securityJob':
+          this.securityJob().catch(err => log.error('Failed to run securityJob', err)); break;
+        case 'countryJob':
+          this.countryJob().catch(err => log.error('Failed to run countryJob', err)); break;
+      }
+    })
   }
 
   async regularJob() {
