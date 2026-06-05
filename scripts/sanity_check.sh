@@ -1468,10 +1468,19 @@ check_events() {
 }
 
 check_connection() {
-  URLs=("firewalla.encipher.io" "api.firewalla.com" "connect.firewalla.com" "ota.firewalla.com" "fireupgrade.s3.us-west-2.amazonaws.com" "firewalla-ap-update-xyz.s3.us-west-2.amazonaws.com" "github.com" "firewalla.com")
+  URLs=(
+    "https://firewalla.encipher.io"
+    "https://api.firewalla.com"
+    "https://connect.firewalla.com"
+    "https://ota.firewalla.com"
+    "https://fireupgrade.s3.us-west-2.amazonaws.com"
+    "https://firewalla-ap-update-xyz.s3.us-west-2.amazonaws.com"
+    "https://github.com"
+    "http://firewalla.com"
+  )
 
   for url in "${URLs[@]}"; do
-    code=$(curl -s -o /dev/null -w "%{http_code}" "https://$url")
+    code=$(curl -s -o /dev/null -w "%{http_code}" "$url")
     if [[ $code -eq 000 ]]; then
       echo -e "\e[41m>>> $url is NOT reachable <<<\e[0m"
     else
