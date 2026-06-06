@@ -91,6 +91,8 @@ let diskUsage = {};
 
 let releaseInfo = {};
 
+let emmcLife = null;
+
 
 getMultiProfileSupportFlag();
 
@@ -122,6 +124,7 @@ async function update() {
       .then(getReleaseInfo)
       .then(getCPUModel)
       .then(getDistributionCodename)
+      .then(getEmmcLife)
   ]);
 
   if(updateFlag) {
@@ -207,6 +210,21 @@ async function getDiskInfo() {
     diskInfo = disks;
   } catch(err) {
     log.error("Failed to get disk info", err);
+  }
+}
+
+async function getEmmcLife() {
+  try {
+    const result = await exec("sudo bash -c 'cat /sys/kernel/debug/*mmc*/*mmc*:*/ext_csd 2>/dev/null | head -n 1'");
+    const hex = result.stdout.trim();
+    if (hex.length < 540) return;
+    emmcLife = {
+      preEolInfo: parseInt(hex.substr(267 * 2, 2), 16),
+      lifeTimeEstA: parseInt(hex.substr(268 * 2, 2), 16),
+      lifeTimeEstB: parseInt(hex.substr(269 * 2, 2), 16),
+    };
+  } catch (err) {
+    log.debug("Failed to read eMMC ext_csd:", err.message);
   }
 }
 
@@ -461,6 +479,10 @@ async function getSysInfo() {
 
   if(rateLimitInfo) {
     sysinfo.rateLimitInfo = rateLimitInfo;
+  }
+
+  if (emmcLife) {
+    sysinfo.emmcLife = emmcLife;
   }
 
   if (platform.isDockerSupported()) {
