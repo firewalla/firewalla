@@ -1306,10 +1306,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
       const icmpPortStr = CategoryEntry.toPortStr({ ...portObj, proto: 'icmp' });
       const icmpv6PortStr = CategoryEntry.toPortStr({ ...portObj, proto: 'icmpv6' });
       ops.push(...categoryIps.filter(ip => !ip.includes(':'))
-        .map(ip => `add -! ${ipsetName} ${ip},${icmpPortStr}${commentSuffix}`)
+        .map(ip => `add ${ipsetName} ${ip},${icmpPortStr}${commentSuffix}`)
       );
       ops.push(...categoryIps.filter(ip => ip.includes(':'))
-        .map(ip => `add -! ${ipset6Name} ${ip},${icmpv6PortStr}${commentSuffix}`)
+        .map(ip => `add ${ipset6Name} ${ip},${icmpv6PortStr}${commentSuffix}`)
       );
       return ops;
     }
