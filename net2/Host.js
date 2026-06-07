@@ -678,29 +678,32 @@ class Host extends Monitorable {
           const typeTags = await this.getTags(type) || [];
           Array.prototype.push.apply(tags, typeTags);
         }
+        const ipv6Addr = this.o.ipv6Addr;
+        // flatten device IP addresses into tag's ipset
+        // in practice, this ipset will be added to another tag's list:set if the device group belongs to a user group
+        const ops = [];
         if (ipv4Addr) {
           const recentlyAdded = this.ipCache.peek(ipv4Addr);
           if (!recentlyAdded) {
-            await Ipset.add(Host.getIpSetName(this.o.mac, 4), ipv4Addr);
-            // flatten device IP addresses into tag's ipset
-            // in practice, this ipset will be added to another tag's list:set if the device group belongs to a user group
+            ops.push(`add ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`);
             for (const tag of tags)
-              await Ipset.add(Tag.getTagDeviceIPSetName(tag, 4), ipv4Addr);
+              ops.push(`add ${Tag.getTagDeviceIPSetName(tag, 4)} ${ipv4Addr}`);
             this.ipCache.set(ipv4Addr, 1);
           }
         }
-        const ipv6Addr = this.o.ipv6Addr
         if (Array.isArray(ipv6Addr)) {
           for (const addr of ipv6Addr) {
             const recentlyAdded = this.ipCache.peek(addr);
             if (!recentlyAdded) {
-              await Ipset.add(Host.getIpSetName(this.o.mac, 6), addr);
+              ops.push(`add ${Host.getIpSetName(this.o.mac, 6)} ${addr}`);
               for (const tag of tags)
-                await Ipset.add(Tag.getTagDeviceIPSetName(tag, 6), addr);
+                ops.push(`add ${Tag.getTagDeviceIPSetName(tag, 6)} ${addr}`);
               this.ipCache.set(addr, 1);
             }
           }
         }
+        if (ops.length)
+          await Ipset.restore(ops, true);
 
         await this.identifyDevice(false)
       } catch (err) {
