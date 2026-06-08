@@ -31,7 +31,7 @@ if (program.host == null) {
 
     hostManager.getHost(ip, (err, result) => {
         console.log(result);
-        result.packageTopNeighbors(60,(err,neighborArray)=>{
+        result.packageTopNeighbors(60).then(neighborArray => {
             // by count
             console.log("==== by count ====");
             console.log(neighborArray);
