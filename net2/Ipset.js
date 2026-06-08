@@ -210,8 +210,8 @@ function swap(name1, name2) {
   return ipsetControl.addRule(`swap ${name1} ${name2}`);
 }
 
-function restore(ops) {
-  return ipsetControl.restore(ops);
+function restore(ops, allowDeferredExec = false) {
+  return ipsetControl.restore(ops, allowDeferredExec);
 }
 
 async function list(name) {
@@ -232,43 +232,8 @@ async function list(name) {
   }
 }
 
-let interactiveIpset = null;
-let interactiveIpsetStartTs = null;
-
-function initInteractiveIpset() {
-  log.info(`Starting interactive ipset for batch operations`)
-  interactiveIpset = spawn("sudo", ["ipset", "-", "-!"]);
-  interactiveIpsetStartTs = Date.now();
-  interactiveIpset.stderr.on('data', (data) => {
-    log.error(`Error in interactive ipset stderr`, data.toString());
-  });
-  interactiveIpset.on('error', (err) => {
-    log.error(`Error in interactive ipset`, err);
-    initInteractiveIpset();
-  });
-  interactiveIpset.stdout.on('data', (data) => {});
-}
-// this spawn eats all CR from node cli output for some reason
-if (f.isMain()) initInteractiveIpset();
-
-// deprecated
-// with exclusive set to true, the interactive process stalls other requests until the current batch
-async function batchOp(operations) {
-  if (!Array.isArray(operations) || operations.length === 0)
-    return;
-  try {
-    if (Date.now() - interactiveIpsetStartTs > 600000 && interactiveIpset) {
-      log.info(`Interactive ipset is living for more than 600 seconds, restart it to avoid potential memory leak`)
-      interactiveIpset.stdin.write("quit\n");
-      initInteractiveIpset();
-    }
-    log.verbose('batchOp:', operations)
-    interactiveIpset.stdin.write(operations.join('\n') + '\n');
-  } catch (err) {
-    log.error("Failed to write to ipset stream, will restart ipset stream process", err.message);
-    initInteractiveIpset();
-    await batchOp(operations);
-  }
+function batchOp(operations) {
+  return ipsetControl.restore(operations, true);
 }
 
 let testProcess, testResolve, testResults, testCount, remainingBuffer, testProcessStartTs
