@@ -701,6 +701,20 @@ class Platform {
   getInterfacesRedirectedToPcapTap(intfNameMap) {
     return {};
   }
+
+  getRedisSaveConfig(rdbSize) {
+    // 900 seconds (15min) for 10 key change
+    // 600 seconds (10min) for 1000 keys change
+    // 5 mins for 100000 keys change
+    if (rdbSize > 209715200) {
+      // rdb size is greater than 200MB
+      return "3600 40 2400 4000 1200 400000";
+    } else if (rdbSize > 52428800) {
+      // rdb size is between 50MB and 200MB
+      return "1800 20 1200 2000 600 200000";
+    }
+    return "900 10 600 1000 300 100000";
+  }
 }
 
 module.exports = Platform;
