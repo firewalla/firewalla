@@ -669,7 +669,6 @@ async function getSlabInfo() {
 }
 
 // parse a per-device value from a Redis daily entry to BigInt sectors.
-// new format: string (raw sectors); old format: number (MB, pre-BigInt migration).
 function _parseSectorsFromRedis(val) {
   if (typeof val === 'string') return BigInt(val);
 }
@@ -707,19 +706,20 @@ async function getDiskWriteStats() {
       deviceSectors[dev] = savedSectors + delta;
     }
 
-    // write today's daily snapshot only once (at startup or when today's entry is absent)
+    // write today's daily snapshot
     const dayTs = Math.floor(now / 86400) * 86400;
     if (diskStatsTodayTs !== dayTs) {
       const todayExisting = await rclient.zrangebyscoreAsync(REDIS_DISKSTATS_DAILY_KEY, dayTs, dayTs);
-      if (!todayExisting || todayExisting.length === 0) {
-        // store sector counts as strings to preserve 64-bit precision
-        const devicesForRedis = {};
-        for (const [dev, sectors] of Object.entries(deviceSectors)) {
-          devicesForRedis[dev] = sectors.toString();
-        }
-        await rclient.zaddAsync(REDIS_DISKSTATS_DAILY_KEY, dayTs, JSON.stringify({ t: dayTs, devices: devicesForRedis }));
-        await rclient.zremrangebyrankAsync(REDIS_DISKSTATS_DAILY_KEY, 0, -(366 + 1)); // keep last 366 days
+      // store sector counts as strings to preserve 64-bit precision
+      const devicesForRedis = {};
+      for (const [dev, sectors] of Object.entries(deviceSectors)) {
+        devicesForRedis[dev] = sectors.toString();
       }
+      if (todayExisting && todayExisting.length > 0) {
+        await rclient.zremAsync(REDIS_DISKSTATS_DAILY_KEY, todayExisting[0]);
+      }
+      await rclient.zaddAsync(REDIS_DISKSTATS_DAILY_KEY, dayTs, JSON.stringify({ t: dayTs, devices: devicesForRedis }));
+      await rclient.zremrangebyrankAsync(REDIS_DISKSTATS_DAILY_KEY, 0, -(366 + 1)); // keep last 366 days
       diskStatsTodayTs = dayTs;
     }
 
