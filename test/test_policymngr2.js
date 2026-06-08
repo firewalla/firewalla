@@ -20,6 +20,7 @@ let expect = chai.expect;
 
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const Policy = require('../alarm/Policy.js');
+const Alarm = require('../alarm/Alarm.js');
 
 const domainBlock = require('../control/DomainBlock.js');
 const cloudcache = require('../extension/cloudcache/cloudcache');
@@ -166,6 +167,40 @@ describe('Test policy filter', function(){
       expect(rules).to.not.be.null;
     })
 
+});
+
+describe('Test remotePort policy protocol match', function(){
+  this.timeout(30000);
+
+  function pornAlarm(protocol) {
+    const alarm = new Alarm.PornAlarm(1648018597, 'OLIVER1', 'hentaijuggs.com', {
+      'p.device.mac': '98:59:7A:48:46:08',
+      'p.dest.name': 'hentaijuggs.com',
+      'p.dest.port': '443',
+    });
+    if (protocol) alarm['p.protocol'] = protocol;
+    return alarm;
+  }
+
+  it('should not match when protocol differs (udp rule vs tcp flow)', () => {
+    const policy = new Policy({ type: 'remotePort', target: '443', protocol: 'udp', action: 'block' });
+    expect(policy.match(pornAlarm('tcp'))).to.be.false;
+  });
+
+  it('should match when protocol is the same', () => {
+    const policy = new Policy({ type: 'remotePort', target: '443', protocol: 'tcp', action: 'block' });
+    expect(policy.match(pornAlarm('tcp'))).to.be.true;
+  });
+
+  it('should match regardless of protocol when rule omits protocol', () => {
+    const policy = new Policy({ type: 'remotePort', target: '443', action: 'block' });
+    expect(policy.match(pornAlarm('tcp'))).to.be.true;
+  });
+
+  it('should enforce protocol on remotePort used as an extra condition', () => {
+    const policy = new Policy({ type: 'domain', target: 'hentaijuggs.com', remotePort: '443', protocol: 'udp', action: 'block' });
+    expect(policy.match(pornAlarm('tcp'))).to.be.false;
+  });
 });
 
 describe('Test policy filter', function(){
