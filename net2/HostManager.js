@@ -1331,7 +1331,7 @@ module.exports = class HostManager extends Monitorable {
     let aliases = await rclient.zrangeAsync("guardian:alias:list", 0, -1);
     aliases = _.uniq((aliases || []).concat("default"));
     await Promise.all(aliases.map(async alias => {
-      const guardian = new Guardian(alias);
+      const guardian = new Guardian(alias, {}, false);
       const guardianInfo = await guardian.getGuardianInfo();
       result.push(guardianInfo);
     }))
