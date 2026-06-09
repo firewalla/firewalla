@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""
+Browse history:networkConfig redis zset.
+
+Usage:
+  nchist                    list all entries (latest first), seq: oldest=0
+  nchist <ref>              print config JSON for ref (seq or ts)
+  nchist <ref1> <ref2>      path-based JSON diff between two configs
+  nchist -u <ref1> <ref2>   unified text diff of pretty-printed JSON
+
+<ref> is a seq number if < zset size, otherwise treated as a unix ts (score).
+"""
+
+import json
+import subprocess
+import sys
+import time
+import difflib
+
+KEY = "history:networkConfig"
+
+
+def redis(*args):
+    r = subprocess.run(["redis-cli", *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+    return r.stdout.decode()
+
+
+def load_entries():
+    # ZRANGE ... WITHSCORES gives alternating value/score lines (ascending order)
+    out = redis("zrange", KEY, "0", "-1", "WITHSCORES").splitlines()
+    entries = []  # list of (score, value) ascending
+    for i in range(0, len(out), 2):
+        val = out[i]
+        score = int(out[i + 1])
+        entries.append((score, val))
+    return entries
+
+
+def resolve(entries, ref):
+    try:
+        n = int(ref)
+    except ValueError:
+        sys.exit(f"invalid ref: {ref}")
+    # seq: oldest=0, latest=len-1
+    if 0 <= n < len(entries):
+        return entries[n]
+    # else treat as timestamp
+    for score, val in entries:
+        if score == n:
+            return (score, val)
+    sys.exit(f"no entry with seq/ts {n}")
+
+
+def fmt_time(ts):
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+
+
+def diff_paths(a, b, prefix=""):
+    if a == b:
+        return []
+    if not (isinstance(a, dict) and isinstance(b, dict)):
+        return [prefix or "."]
+    out = []
+    for k in sorted(set(a) | set(b)):
+        p = f"{prefix}.{k}" if prefix else k
+        if k not in a or k not in b:
+            out.append(p)
+        else:
+            out.extend(diff_paths(a[k], b[k], p))
+    return out
+
+
+def digest(prev_val, cur_val, max_items=4, depth=2):
+    paths = diff_paths(json.loads(prev_val), json.loads(cur_val))
+    # collapse to the first `depth` components
+    seen = []
+    for p in paths:
+        c = ".".join(p.split(".")[:depth])
+        if c not in seen:
+            seen.append(c)
+    if len(seen) <= max_items:
+        return ", ".join(seen)
+    return ", ".join(seen[:max_items]) + f" +{len(seen) - max_items} more"
+
+
+def cmd_list(entries):
+    # print latest first; seq = index in ascending order
+    for seq in range(len(entries) - 1, -1, -1):
+        score, val = entries[seq]
+        d = digest(entries[seq - 1][1], val) if seq > 0 else ""
+        print(f"{seq:>3}  {score}  {fmt_time(score)}  {d}")
+
+
+def cmd_show(entries, ref):
+    _, val = resolve(entries, ref)
+    print(val)
+
+
+def fmt_value(v, indent_len):
+    s = json.dumps(v, sort_keys=True)
+    if len(s) <= 100:
+        return s
+    # multi-line: newline + indented pretty JSON
+    pretty = json.dumps(v, sort_keys=True, indent=2)
+    pad = " " * indent_len
+    return "\n" + "\n".join(pad + line for line in pretty.splitlines())
+
+
+def print_json_diff(a, b, path=""):
+    if a == b:
+        return
+    if isinstance(a, dict) and isinstance(b, dict):
+        for k in sorted(set(a) | set(b)):
+            p = f"{path}.{k}" if path else k
+            if k not in a:
+                print(f"+ {p}: {fmt_value(b[k], 4)}")
+            elif k not in b:
+                print(f"- {p}: {fmt_value(a[k], 4)}")
+            else:
+                print_json_diff(a[k], b[k], p)
+    else:
+        # leaf or array change — show old/new values
+        ov, nv = fmt_value(a, 4), fmt_value(b, 4)
+        if "\n" in ov or "\n" in nv:
+            print(f"~ {path}:")
+            print(f"  - {ov.lstrip()}" if not ov.startswith("\n") else f"  -{ov}")
+            print(f"  + {nv.lstrip()}" if not nv.startswith("\n") else f"  +{nv}")
+        else:
+            print(f"~ {path}: {ov} -> {nv}")
+
+
+def cmd_diff(entries, ref1, ref2, unified=False):
+    s1, v1 = resolve(entries, ref1)
+    s2, v2 = resolve(entries, ref2)
+    label1 = f"{ref1} ({s1} {fmt_time(s1)})"
+    label2 = f"{ref2} ({s2} {fmt_time(s2)})"
+    if unified:
+        j1 = json.dumps(json.loads(v1), indent=2, sort_keys=True).splitlines(keepends=True)
+        j2 = json.dumps(json.loads(v2), indent=2, sort_keys=True).splitlines(keepends=True)
+        sys.stdout.writelines(difflib.unified_diff(j1, j2, fromfile=label1, tofile=label2))
+    else:
+        print(f"--- {label1}")
+        print(f"+++ {label2}")
+        print_json_diff(json.loads(v1), json.loads(v2))
+
+
+def main(argv):
+    if argv and argv[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return
+    unified = False
+    if argv and argv[0] in ("-u", "--unified"):
+        unified = True
+        argv = argv[1:]
+    entries = load_entries()
+    if not entries:
+        sys.exit(f"{KEY} is empty")
+    if len(argv) == 0:
+        cmd_list(entries)
+    elif len(argv) == 1:
+        cmd_show(entries, argv[0])
+    elif len(argv) == 2:
+        cmd_diff(entries, argv[0], argv[1], unified)
+    else:
+        sys.exit(__doc__)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
