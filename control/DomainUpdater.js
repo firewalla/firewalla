@@ -311,7 +311,7 @@ class DomainUpdater {
       this.updateOptions[domainKey] = {};
     // use mapping key to uniquely identify each domain mapping settings
     const key = domainIPTool.getDomainIPMappingKey(domain, options);
-    config.ipCache = new LRU({maxAge: options.ipttl * 1000 / 2 || 0}); // invalidate the entry in lru earlier than its ttl so that it can be re-added to the underlying ipset
+    config.ipCache = new LRU({maxAge: options.ipttl * 1000 / 2 || 600000}); // invalidate the entry in lru earlier than its ttl so that it can be re-added to the underlying ipset
     this.updateOptions[domainKey][key] = config;
   }
 
@@ -326,6 +326,24 @@ class DomainUpdater {
     const key = domainIPTool.getDomainIPMappingKey(domain, options);
     if (this.updateOptions[domainKey] && this.updateOptions[domainKey][key])
       delete this.updateOptions[domainKey][key];
+  }
+  
+  clearIPCacheForDomain(domain, options) {
+    return this._enqueueJob(() => this._clearIPCacheForDomain(domain, options), false);
+  }
+
+  // Clear ipCache for a specific domain registration so that DomainUpdater
+  // re-adds IPs after the underlying ipset has been flushed or swapped out by
+  // recycleIPSet without going through DomainUpdater.
+  // Mirrors registerDefaultUpdate: exactMatch is derived from the domain pattern.
+  _clearIPCacheForDomain(domain, options) {
+    const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
+    const exactMatch = !domain.startsWith("*.");
+    const key = domainIPTool.getDomainIPMappingKey(domainKey, { ...options, exactMatch });
+    const config = this.updateOptions[domainKey] && this.updateOptions[domainKey][key];
+    if (config && config.ipCache) {
+      config.ipCache.reset();
+    }
   }
 
   async _registerUpdate(domain, options) {

@@ -1150,6 +1150,11 @@ class BroDetect {
           }
         }
       }
+      // for local flows, fetch connEntry to get apid written by ACLAuditLogPlugin or APCMsgSensor
+      if (!connEntry && localFlow && orig && resp && orig_p && resp_p && obj['proto']) {
+        connEntry = await conntrack.getConnEntries(orig, orig_p, resp, resp_p, obj['proto'], 600);
+      }
+
       if (flowdir == "in" && !localFlow)
         conntrack.setConnRemote(obj['proto'], resp, resp_p);
 
