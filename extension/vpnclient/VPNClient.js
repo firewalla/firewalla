@@ -199,6 +199,10 @@ class VPNClient {
     return `${f.getUserConfigFolder()}/dnsmasq/vc_${this.profileId}_${routeType}.conf`;
   }
 
+  _getDnsmasqPBRRouteConfigPath(routeType = "hard") {
+    return `${f.getUserConfigFolder()}/dnsmasq/vc_pbr_${this.profileId}_${routeType}.conf`;
+  }
+
   _scheduleRefreshRoutes() {
     if (this.refreshRoutesTask)
       clearTimeout(this.refreshRoutesTask);
@@ -321,6 +325,15 @@ class VPNClient {
     if (dnsServers.length > 0)
       dnsmasqEntries.push(`server=${dnsServers[0]}$${VPNClient.getDnsMarkTag(this.profileId)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`);
     await dnsmasq.writeConfig(this._getDnsmasqConfigPath(), dnsmasqEntries).catch((err) => { });
+    // PBR DNS route is independent of the "Force DNS over VPN" (routeDNS) toggle
+    if (rtId) {
+      await this._enablePBRDNSRoute("soft");
+      if (!settings.strictVPN)
+        await this._enablePBRDNSRoute("hard");
+    } else {
+      await this._disablePBRDNSRoute("soft");
+      await this._disablePBRDNSRoute("hard");
+    }
     // redirect dns to vpn channel
     if (settings.routeDNS) {
       if (rtId) {
@@ -518,11 +531,13 @@ class VPNClient {
           await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
           await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
           await this._disableDNSRoute("soft");
+          await this._disablePBRDNSRoute("soft");
           // clear hard route ipset if strictVPN (kill-switch) is not enabled
           if (!this.settings.strictVPN) {
             await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
             await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
             await this._disableDNSRoute("hard");
+            await this._disablePBRDNSRoute("hard");
             await this._resetRouteMarkInRedis();
           }
           if (fc.isFeatureOn(Constants.FEATURE_VPN_DISCONNECT)) {
@@ -585,11 +600,13 @@ class VPNClient {
           await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
           await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
           await this._disableDNSRoute("soft");
+          await this._disablePBRDNSRoute("soft");
           // clear hard route ipset if strictVPN (kill-switch) is not enabled
           if (!this.settings.strictVPN) {
             await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
             await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
             await this._disableDNSRoute("hard");
+            await this._disablePBRDNSRoute("hard");
             await this._resetRouteMarkInRedis();
           }
         }
@@ -907,6 +924,10 @@ class VPNClient {
     return `${f.getUserConfigFolder()}/dnsmasq/VC:${profileId}_${routeType}`;
   }
 
+  static getPBRDNSRouteConfDir(profileId, routeType = "hard") {
+    return `${f.getUserConfigFolder()}/dnsmasq/VC_PBR:${profileId}_${routeType}`;
+  }
+
   async _enableDNSRoute(routeType = "hard") {
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
@@ -918,6 +939,20 @@ class VPNClient {
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
     await fs.unlinkAsync(this._getDnsmasqRouteConfigPath(routeType)).catch((err) => { });
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async _enablePBRDNSRoute(routeType = "hard") {
+    const DNSMASQ = require('../dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
+    await dnsmasq.writeConfig(this._getDnsmasqPBRRouteConfigPath(routeType), `conf-dir=${VPNClient.getPBRDNSRouteConfDir(this.profileId, routeType)}`).catch((err) => { });
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async _disablePBRDNSRoute(routeType = "hard") {
+    const DNSMASQ = require('../dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
+    await fs.unlinkAsync(this._getDnsmasqPBRRouteConfigPath(routeType)).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
   }
 
@@ -998,6 +1033,12 @@ class VPNClient {
       dnsmasqEntries.push(`server=${dnsServers[0]}$${VPNClient.getDnsMarkTag(this.profileId)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`);
     }
     await dnsmasq.writeConfig(this._getDnsmasqConfigPath(), dnsmasqEntries).catch((err) => { });
+    // PBR DNS route is independent of routeDNS; enable hard PBR DNS route so kill-switch covers PBR-routed DNS too.
+    if (rtId) {
+      await this._enablePBRDNSRoute("hard");
+    } else {
+      await this._disablePBRDNSRoute("hard");
+    }
     if (settings.routeDNS && settings.strictVPN) {
       if (rtId) {
         await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
@@ -1145,6 +1186,8 @@ class VPNClient {
     await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => { });
     await this._disableDNSRoute("hard");
     await this._disableDNSRoute("soft");
+    await this._disablePBRDNSRoute("hard");
+    await this._disablePBRDNSRoute("soft");
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
     dnsmasq.scheduleRestartDNSService();
@@ -1287,6 +1330,8 @@ class VPNClient {
 
       await fs.mkdirAsync(VPNClient.getDNSRouteConfDir(uid, "hard")).catch((err) => { });
       await fs.mkdirAsync(VPNClient.getDNSRouteConfDir(uid, "soft")).catch((err) => { });
+      await fs.mkdirAsync(VPNClient.getPBRDNSRouteConfDir(uid, "hard")).catch((err) => { });
+      await fs.mkdirAsync(VPNClient.getPBRDNSRouteConfDir(uid, "soft")).catch((err) => { });
       envCreatedMap[uid] = 1;
     }).catch((err) => {
       log.error(`Failed to create enforcement env for VPN client ${uid}`, err.message);
