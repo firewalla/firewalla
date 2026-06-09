@@ -407,6 +407,17 @@ class GSEPlatform extends Platform {
     }
     return koPath;
   }
+
+  getRedisSaveConfig(rdbSize) {
+    if (rdbSize > 104857600) {
+      // rdb size is greater than 100MB
+      return "7200 40 4800 4000 2400 400000";
+    } else if (rdbSize > 26214400) {
+      // rdb size is between 25MB and 100MB
+      return "3600 20 2400 2000 1200 200000";
+    }
+    return "1800 10 1200 1000 600 100000";
+  }
 }
 
 module.exports = GSEPlatform;
