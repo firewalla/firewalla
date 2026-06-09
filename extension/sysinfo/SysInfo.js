@@ -101,8 +101,6 @@ let diskStatsBootBaseline = null;
 let diskStatsSavedCumulative = {};
 // unix seconds when cumulative tracking first began
 let diskStatsStartTime = 0;
-// dayTs (floor to day) for which we've already written a Redis entry
-let diskStatsTodayTs = 0;
 // reported stats: { startTime, devices: {dev: Mbytes}, yearlyWriteGB }
 let diskWriteStats = {};
 
@@ -166,7 +164,7 @@ async function update() {
 
 
 
-async function startUpdating() {
+async function startUpdating(options = {}) {
   updateFlag = 1;
   await update();
 }
@@ -704,11 +702,12 @@ async function getDiskWriteStats() {
       const savedSectors = diskStatsSavedCumulative[dev] || 0n;
       const delta = currentSectors >= bootSectors ? currentSectors - bootSectors : 0n;
       deviceSectors[dev] = savedSectors + delta;
+      log.debug(`diskstats: device ${dev}, current sectors ${currentSectors}, boot baseline ${bootSectors}, saved cumulative ${savedSectors}, delta ${delta}, total ${deviceSectors[dev]}`);
     }
 
     // write today's daily snapshot
     const dayTs = Math.floor(now / 86400) * 86400;
-    if (diskStatsTodayTs !== dayTs) {
+    if (f.isMain()) {
       const todayExisting = await rclient.zrangebyscoreAsync(REDIS_DISKSTATS_DAILY_KEY, dayTs, dayTs);
       // store sector counts as strings to preserve 64-bit precision
       const devicesForRedis = {};
@@ -720,7 +719,6 @@ async function getDiskWriteStats() {
       }
       await rclient.zaddAsync(REDIS_DISKSTATS_DAILY_KEY, dayTs, JSON.stringify({ t: dayTs, devices: devicesForRedis }));
       await rclient.zremrangebyrankAsync(REDIS_DISKSTATS_DAILY_KEY, 0, -(366 + 1)); // keep last 366 days
-      diskStatsTodayTs = dayTs;
     }
 
     // yearly estimate: deviceSectors (today) minus the entry from exactly 365 days ago
@@ -737,12 +735,12 @@ async function getDiskWriteStats() {
         }
       }
     } else {
-      log.warn(`diskstats: no entry from 365 days ago (ts ${day365AgoTs}), use (current - oldest)/days * 365 as estimate`);
+      log.debug(`diskstats: no entry from 365 days ago (ts ${day365AgoTs}), use (current - oldest)/days * 365 as estimate`);
       const oldestEntries = await rclient.zrangeAsync(REDIS_DISKSTATS_DAILY_KEY, 0, 0);
       if (oldestEntries && oldestEntries.length > 0) {
         const oldest = JSON.parse(oldestEntries[0]);
         if (oldest.t === dayTs) {
-          log.warn(`diskstats: oldest entry is from today, not enough history data to make yearly estimate`);
+          log.debug(`diskstats: oldest entry is from today, not enough history data to make yearly estimate`);
         } else {
           const days = (now - oldest.t) / 86400 + 1; // add 1 day to avoid under-estimate
           for (const dev of Object.keys(deviceSectors)) {
