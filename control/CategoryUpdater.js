@@ -1540,7 +1540,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
       return;
     }
     this.recycleTasks[category] = true;
+    try {
+      await this._recycleIPSet(category);
+    } finally {
+      this.recycleTasks[category] = false;
+    }
+  }
 
+  async _recycleIPSet(category) {
     let ondemand = false;
 
     const ipsetNeedComment = this.needIpSetComment(category);
@@ -1861,7 +1868,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
     }
 
-    this.recycleTasks[category] = false;
     this.initializedCategories[category] = true;
     this.activeCategoryPolicyMap.get(category).lastRecyclemode = currentRecyclemode;
   }

@@ -886,12 +886,12 @@ class PolicyManager2 {
             this.tryPolicyEnforcement(rule, 'unenforce');
           } else {
             let reducedTag = _.without(rule.tag, tagUid);
-            await rclient.hsetAsync('policy:' + rule.pid, 'scope', JSON.stringify(reducedTag));
+            await rclient.hsetAsync('policy:' + rule.pid, 'tag', JSON.stringify(reducedTag));
             const newRule = await this.getPolicy(rule.pid)
 
             this.tryPolicyEnforcement(newRule, 'reenforce', rule);
 
-            log.info('remove scope from policy:' + rule.pid, tag);
+            log.info('remove tag from policy:' + rule.pid, tag);
           }
         }
       }
@@ -2948,7 +2948,7 @@ class PolicyManager2 {
       const p = matchedPolicies[0]
       // still match allow policy with ip/domain, in other words
       // allow policy on a very specific target is considered as an exception for alarm
-      if (p.action == 'allow' && !(p.type in ['ip', 'remoteIpPort', 'domain', 'dns'])) {
+      if (p.action == 'allow' && !['ip', 'remoteIpPort', 'domain', 'dns'].includes(p.type)) {
         log.info('ignore matched allow policy:', p.pid, p.action, p.type, p.target)
         return false
       } else {
