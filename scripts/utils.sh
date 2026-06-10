@@ -27,6 +27,7 @@ function setup_folders() {
     mkdir -p ~/.firewalla/run/ipsec_profile
     mkdir -p ~/.firewalla/run/zeek/scripts
     mkdir -p ~/.firewalla/run/assets
+    mkdir -p ~/.firewalla/run/assets/views
     mkdir -p ~/.firewalla/run/mesh_vpn
     mkdir -p ~/.firewalla/config/post_alarm_generated.d
     mkdir -p ~/.firewalla/run/zeek_signatures

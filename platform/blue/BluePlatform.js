@@ -94,6 +94,10 @@ class BluePlatform extends Platform {
     return 3000;
   }
 
+  getExceptionCapacity() {
+    return 3000;
+  }
+
   isFireRouterManaged() {
     return false;
   }
@@ -138,6 +142,10 @@ class BluePlatform extends Platform {
 
   supportSSHInNmap() {
     return false;
+  }
+
+  async switchQoS(state, qdisc) {
+    return; // do nothing for blue
   }
 }
 

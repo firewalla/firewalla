@@ -40,7 +40,7 @@ describe('Test NoiseDomainsSensor', function () {
     const noiseDomainManager = new NoiseDomainsSensor();
 
     console.log('\n--- Step 1: Loading domains from File ---');
-    await noiseDomainManager.apiRun();
+    await noiseDomainManager.loadLocalNoiseDomainData4Test();
 
     expect(noiseDomainManager.find('0-000.store').has("noise")).to.be.equal(true);
     expect(noiseDomainManager.find('test.0-000.store').has("noise")).to.be.equal(true);
