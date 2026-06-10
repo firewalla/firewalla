@@ -690,17 +690,18 @@ class Platform {
   }
 
   getRedisSaveConfig(rdbSize) {
-    // 900 seconds (15min) for 10 key change
-    // 600 seconds (10min) for 1000 keys change
-    // 5 mins for 100000 keys change
-    if (rdbSize > 209715200) {
-      // rdb size is greater than 200MB
-      return "3600 40 2400 4000 1200 400000";
-    } else if (rdbSize > 52428800) {
-      // rdb size is between 50MB and 200MB
-      return "1800 20 1200 2000 600 200000";
+    if (rdbSize > 251658240) {
+      // > 240MB: primary save every 80 minutes
+      return "14400 80 9600 8000 4800 800000";
+    } else if (rdbSize > 125829120) {
+      // 120-240MB: primary save every 40 minutes
+      return "7200 40 4800 4000 2400 400000";
+    } else if (rdbSize > 62914560) {
+      // 60-120MB: primary save every 20 minutes
+      return "3600 20 2400 2000 1200 200000";
     }
-    return "900 10 600 1000 300 100000";
+    // <= 60MB: primary save every 10 minutes
+    return "1800 10 1200 1000 600 100000";
   }
 }
 
