@@ -409,14 +409,18 @@ class GSEPlatform extends Platform {
   }
 
   getRedisSaveConfig(rdbSize) {
-    if (rdbSize > 104857600) {
-      // rdb size is greater than 100MB
-      return "7200 40 4800 4000 2400 400000";
-    } else if (rdbSize > 26214400) {
-      // rdb size is between 25MB and 100MB
-      return "3600 20 2400 2000 1200 200000";
+    if (rdbSize > 251658240) {
+      // > 240MB: primary save every 2 hours
+      return "14400 40 9600 4000 7200 400000";
+    } else if (rdbSize > 125829120) {
+      // 120-240MB: primary save every 1 hour
+      return "7200 20 4800 2000 3600 200000";
+    } else if (rdbSize > 62914560) {
+      // 60-120MB: primary save every 30 minutes
+      return "3600 10 2400 1000 1800 100000";
     }
-    return "1800 10 1200 1000 600 100000";
+    // <= 60MB: primary save every 15 minutes
+    return "1800 10 1200 1000 900 100000";
   }
 }
 
