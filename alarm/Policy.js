@@ -675,6 +675,7 @@ class Policy {
         allInRange = allInRange && portRange[0] * 1 <= p && p <= portRange[1] * 1;
         if (!allInRange) return false;
       }
+      return allInRange;
     } else {
       return portRange[0] * 1 <= port && port <= portRange[1] * 1;
     }
