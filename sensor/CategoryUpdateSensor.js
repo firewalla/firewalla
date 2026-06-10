@@ -220,7 +220,10 @@ class CategoryUpdateSensor extends Sensor {
         // no port support
         // Peel off regex entries first so they don't get misclassified as domains by the Address4/6/hash filters below.
         const regexEntries = [];
-        const nonRegexDomains = [];
+        const ip4List = [];
+        const ip6List = [];
+        const hashDomains = [];
+        const leftDomains = [];
         for (const d of domains) {
           if (typeof d === "string" && d.startsWith("regex:")) {
             try {
@@ -232,14 +235,21 @@ class CategoryUpdateSensor extends Sensor {
               log.error(err.message, d);
             }
           } else {
-            nonRegexDomains.push(d);
+            const address4 = new Address4(d);
+            if (address4.isValid()) {
+              ip4List.push(d);
+            } else {
+              const address6 = new Address6(d);
+              if (address6.isValid()) {
+                ip6List.push(d);
+              } else if (isHashDomain(d)) {
+                hashDomains.push(d);
+              } else {
+                leftDomains.push(d);
+              }
+            }
           }
         }
-
-        const ip4List = nonRegexDomains.filter(d => new Address4(d).isValid());
-        const ip6List = nonRegexDomains.filter(d => new Address6(d).isValid());
-        const hashDomains = nonRegexDomains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && isHashDomain(d));
-        const leftDomains = nonRegexDomains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && !isHashDomain(d));
 
         log.info(`category ${category} has ${ip4List.length} ipv4, ${ip6List.length} ipv6, ${leftDomains.length} domains, ${hashDomains.length} hashed domains, ${regexEntries.length} regex`);
 
