@@ -281,6 +281,7 @@ class CategoryUpdaterBase {
       }
       const dstType = this.activeCategories[category] || 'hash:net';
       const tmpIpsetName = this.getIPSetName(category, true, ip6, true);
+      await Ipset.flush(tmpIpsetName);
       await Ipset.destroy(tmpIpsetName);
       await Ipset.create(tmpIpsetName, dstType, ip6, { hashsize: maxelem / 4, maxelem, comment: this.needIpSetComment(category) });
       const addLines = categoryIps.slice(0, maxelem).map(ip => {
@@ -290,6 +291,7 @@ class CategoryUpdaterBase {
       });
       await Ipset.restore(addLines);
       await Ipset.swap(ipsetName, tmpIpsetName);
+      await Ipset.flush(tmpIpsetName);
       await Ipset.destroy(tmpIpsetName);
       return;
     }
