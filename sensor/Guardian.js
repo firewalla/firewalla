@@ -50,7 +50,7 @@ const { REDIS_KEY_MSP_DATA, REDIS_KEY_MSP_SYNC_OPS, FEATURE_MSP_SYNC_OPS } = req
 const execAsync = require('child-process-promise').exec;
 
 module.exports = class {
-  constructor(name, config = {}) {
+  constructor(name, config = {}, daemon = true) {
     this.name = name;
     const suffix = this.getKeySuffix(name);
     this.configServerKey = `ext.guardian.socketio.server${suffix}`;
@@ -60,12 +60,14 @@ module.exports = class {
     this.mspDataKey = `${REDIS_KEY_MSP_DATA}${suffix}`; // this key save msp user's info, e.g. targetlists
     this.liveTransportCache = {};
     this.socketConnected = false; // Track socket.io connectivity status
-    setInterval(() => {
-      this.cleanupLiveTransport()
-      this.truncateOpQueue().catch((err) => {
-        log.error(`Failed to truncate op queue`, err);
-      });
-    }, (config.cleanInterval || 30) * 1000);
+    if (daemon) {
+      setInterval(() => {
+        this.cleanupLiveTransport()
+        this.truncateOpQueue().catch((err) => {
+          log.error(`Failed to truncate op queue`, err);
+        });
+      }, (config.cleanInterval || 30) * 1000);
+    }
   }
 
   cleanupLiveTransport() {
