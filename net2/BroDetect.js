@@ -1565,7 +1565,7 @@ class BroDetect {
           const descriptor = (systemFlow ? f.mac+':' : '')
             + (type == 'dns'
               ? `${f.sh}:${f.dh}:${f.dn}`
-              : `${f.sh}:${f.dh}:${f.oIntf || ""}:${f.dp || ""}`)
+              : `${f.sh}:${f.dh}:${f.oIntf || ""}:${f.dp || ""}:${f.pr || ""}`)
 
           if (type == 'conn' && f.uids && f.uids.length && f.fd === "in" && !f.af) try {
             // try resolve host info for previous flows again here
