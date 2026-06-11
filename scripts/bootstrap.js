@@ -5,6 +5,13 @@
 // Reports identifiers to the provisioning service, polls encipher rendezvous for the MSP-injected payload,
 // then installs the license, joins the MSP web eid into the box group, configures Guardian, and restarts fireapi.
 
+// TODO: too fragile when launched at firstboot. The fw-firstboot.sh gate uses
+// a wall-clock timer (breaks on the no-RTC box's NTP step), proceeds even on
+// timeout, and never waits for node_modules or the network. Result: this runs
+// before things are ready -> require('uuid') fails, eth0 IP shows none, etc.
+// Don't assume the env is ready: verify deps/redis/network up front and exit
+// non-zero with a clear message instead of crashing on a require.
+
 const { exec } = require('child_process');
 const util = require('util');
 const execAsync = util.promisify(exec);
@@ -177,6 +184,10 @@ async function configureGuardian({ server, business }) {
   return writes;
 }
 
+async function markBootingComplete() {
+  await rclient.setAsync('bootingComplete', '1');
+}
+
 async function restartFireApi() {
   await execAsync('sudo systemctl restart fireapi');
 }
@@ -324,6 +335,9 @@ async function main() {
   for (const [k, v] of Object.entries(writes)) {
     ui.kv(k, v.length > 60 ? v.slice(0, 60) + '...' : v);
   }
+
+  await markBootingComplete();
+  ui.ok('Marked booting complete');
 
   await restartFireApi();
   ui.ok('FireAPI restarting');
