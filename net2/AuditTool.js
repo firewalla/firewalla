@@ -152,8 +152,10 @@ class AuditTool extends LogQuery {
           f.port = Number(entry.sp[0]);
           f.devicePort = Number(entry.dp);
         }
-      } else {
-        f.port = Number(entry.dp);
+      } else if (entry.type == 'dns') {
+        f.port = 53
+      } else if (entry.type == 'ntp') {
+        f.port = 123
       }
     } catch(err) {
       log.debug('Failed to parse port', err)
