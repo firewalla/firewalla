@@ -1689,6 +1689,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
       // flush the _dm ipset
       await Ipset.flush(this.getIPSetName(category, false, false));
       await Ipset.flush(this.getIPSetName(category, false, true));
+      // ipset was flushed directly; clear ipCache so DomainUpdater re-adds IPs on next DNS update
+      for (const domainObj of domainMap.values()) {
+        if (!domainObj.isStatic && !domainObj.port)
+          domainUpdater.clearIPCacheForDomain(domainObj.id, { blockSet: this.getIPSetName(category, false) });
+      }
     }
 
     await this.updateFlowSignatureList();
@@ -1734,14 +1739,16 @@ class CategoryUpdater extends CategoryUpdaterBase {
           log.verbose(`Found a new domain for ${category} with rdns: ${domainSuffix}`)
           await domainBlock.resolveDomain(domainSuffix)
         }
+        const blockSet = v.port ? this.getDomainPortIPSetName(category, v.isStatic) : this.getIPSetName(category, v.isStatic);
+        const port = v.port || null;
         // regenerate ipmapping set in redis
         await domainBlock.syncDomainIPMapping(domainSuffix,
           {
-            blockSet: v.port ? this.getDomainPortIPSetName(category, v.isStatic) : this.getIPSetName(category, v.isStatic),
+            blockSet: blockSet,
             exactMatch: (domain.startsWith("*.") ? false : true),
             overwrite: true,
             ondemand: true, // do not try to resolve domain in syncDomainIPMapping
-            port: v.port || null
+            port: port
           }
         );
         const options = { useTemp: true, isStatic: v.isStatic, needComment: ipsetNeedComment };
@@ -1753,6 +1760,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
         } else {
           await this.updateIPSetByDomainPort(category, v, options);
         }
+
+        // ipsets were fully rebuilt via swap; clear ipCache so DomainUpdater re-adds any
+        // IPs that are no longer present in the new ipset on the next DNS update
+        domainUpdater.clearIPCacheForDomain(v.id, { blockSet, port });
       }
       this.effectiveCategorySigDtSrvs.set(category, new Map());
       for (const se of newSigDtSrvMap.values()) {
