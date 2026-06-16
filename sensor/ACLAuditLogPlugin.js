@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,6 +18,7 @@ const net = require('net')
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const pclient = require('../util/redis_manager.js').getPublishClient();
 const f = require('../net2/Firewalla.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const sysManager = require('../net2/SysManager.js');
@@ -38,15 +39,21 @@ const { getUniqueTs } = require('../net2/FlowUtil.js')
 const FireRouter = require('../net2/FireRouter.js');
 const sl = require('./SensorLoader.js');
 const Message = require('../net2/Message.js');
+const PolicyManager2 = require('../alarm/PolicyManager2.js');
+const pm2 = new PolicyManager2();
+const DNSTool = require('../net2/DNSTool.js');
+const dnsTool = new DNSTool();
 
 const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
 const _ = require('lodash');
 const LRU = require('lru-cache');
-const DNSTool = require('../net2/DNSTool.js');
-const dnsTool = new DNSTool();
+const { Rule } = require('../net2/Iptables.js');
+const iptc = require('../control/IptablesControl.js');
+const ipset = require('../net2/Ipset.js');
 
 const LOG_PREFIX = Constants.IPTABLES_LOG_PREFIX_AUDIT
+const MONITORED_NET_SET = ipset.CONSTANTS.IPSET_MONITORED_NET;
 
 const auditLogFile = "/alog/acl-audit.log";
 const dnsmasqLog = "/alog/dnsmasq-acl.log"
@@ -69,7 +76,6 @@ class ACLAuditLogPlugin extends Sensor {
     this.buffer = {}
     this.touchedKeys = {'audit:drop:system': 1, 'audit:accept:system': 1, 'audit:local:drop:system': 1};
     this.incTs = 0;
-    this.udpBlocks = new LRU({max: 1000, maxAge: 300 * 1000});
   }
 
   hookFeature() {
@@ -320,17 +326,14 @@ class ACLAuditLogPlugin extends Sensor {
       } else if (record.ac == 'block' && record.type == 'ip' && record.pr == 'udp') {
         // blocked UDP flow is always caught by zeek, it extends expiration of conn:udp: on existing connection
         // delete it here to make sure following zeek logs are not recoreded
-        const cacheKey = `${src}:${sport}:${dst}:${dport}`;
-        if (!this.udpBlocks.get(cacheKey)) {
-          await rclient.unlinkAsync([
-            conntrack.getKey(src, sport, dst, dport, 'udp'),
-            conntrack.getKey(dst, dport, src, sport, 'udp'),
-          ])
-          this.udpBlocks.set(cacheKey, true);
-        }
+        await conntrack.delConnEntries(src, sport, dst, dport, 'udp');
+        await conntrack.delConnEntries(dst, dport, src, sport, 'udp');
       }
 
     }
+
+    // there should be no conn log without port info, but just in case
+    if (record.ac === 'conn') return
 
     if (record.ac === 'redirect') {
       if (dport == '123') record.type = 'ntp'
@@ -506,44 +509,52 @@ class ACLAuditLogPlugin extends Sensor {
       log.info('Skip line, invalid source port info in acl audit log.', line);
       return;
     }
-
-    // try to get host name from conn entries for better timeliness and accuracy
-    if (dir === "O" && record.ac === "block") {
-      // delay 8 seconds to process outbound block flow, in case ssl/http host is available in zeek's ssl log and will be saved into conn entries
-      let t = 8
-      // if flow is blocked by tls kernel module and zeek listens on bridge, zeek won't see the tcp RST packet due to br_netfilter. This introduces another 20 seconds before ssl/http log is generated
-      if (record.pr == "tcp" && (record.dp === 443 || record.dp === 80) && this.isPcapOnBridge(inIntf))
-        t += 20;
-      await delay(t * 1000);
-      let connEntries = await conntrack.getConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr, 600);
-
-      if (!connEntries || !connEntries.host) {
-        if (this.isDNATedOnBridge(inIntf)) {
-          await delay(10000)
-        }
-        connEntries = await conntrack.getConnEntries(mac, "", record.dh, "", "dns", 600);
-      }
-
-      if (connEntries && connEntries.host) {
-        record.af = {};
-        record.af[connEntries.host] = _.pick(connEntries, ["proto", "ip"])
-      }
-    }
-
-    // record route rule id
+    
+    // record route rule id into conntrack for BroDetect to pick up on flow generation
     if (record.pid && record.ac === "route") {
       await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_RPID, record.pid, 600);
     }
 
-    // record allow rule id
-    if (record.pid && record.ac === "allow") {
-      const added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid, 600);
-      // 1% middle connection packets are going through block chain, ignore these for rule hit accounting
-      if (!added) return
-    }
-    // record disturb rule id 
-    if (record.pid && record.ac === "disturb") {
-      const added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_DPID, record.pid, 600);
+    // try to get host name from conn entries for better timeliness and accuracy
+    if (record.ac === 'block') {
+      if (dir == "O") {
+        // delay 10 seconds to process outbound block flow, in case ssl/http host
+        // is available in zeek's ssl log and will be saved into conn entries
+        let t = 10
+        // if flow is blocked by tls kernel module and zeek listens on bridge,
+        // zeek won't see the tcp RST packet due to br_netfilter. This introduces another
+        // 20 seconds before ssl/http log is generated
+        // now we only care about http block, for ssl additional log will be generated by ssl-alpn-logging.zeek once get clientHello.
+        if (record.ac == 'block' && record.pr == "tcp"
+          && (record.dp == 80) && this.isPcapOnBridge(inIntf)
+        )
+          t += 20;
+        await delay(t * 1000);
+        let connEntries = await conntrack.getConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr, 600);
+
+        if (!connEntries || !connEntries.host) {
+          if (this.isDNATedOnBridge(inIntf)) {
+            await delay(10000)
+          }
+          connEntries = await conntrack.getConnEntries(mac, "", record.dh, "", "dns", 600);
+        }
+
+        if (connEntries && connEntries.host) {
+          record.af = {};
+          record.af[connEntries.host] = _.pick(connEntries, ["proto", "ip"])
+        }
+      }
+    } else {
+      let added = true;
+      // write apid immediately when pid is known from MARK (per-device allow)
+      if (record.ac === "allow") {
+        added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid ? record.pid : Constants.GLOBAL_ALLOW_DOMAIN_RULE_HIT, 600);
+      }
+      // record disturb rule id into conntrack for BroDetect to pick up on flow generation
+      if (record.pid && record.ac === "disturb") {
+        added = await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_DPID, record.pid, 600);
+      }
+      // middle packets may still hit the allow chain; skip duplicate five-tuples.
       if (!added) return
     }
 
@@ -657,7 +668,6 @@ class ACLAuditLogPlugin extends Sensor {
     if (line) {
       let recordArr;
       const record = {};
-      record.dp = 53;
 
       const iBlocked = line.indexOf('[Blocked]')
       if (iBlocked >= 0) {
@@ -761,15 +771,31 @@ class ACLAuditLogPlugin extends Sensor {
           // ntp has nothing to do with rules
           // for local flow, only account for 'in' flows
           if (type != 'ntp' && !(record.dmac && fd == 'out')) {
-            if (!record.pid && (type == 'dns' || ac == 'block' || ac == 'allow' || ac == 'disturb')) {
+            if (record.pid && type == 'ip' && record.ac == 'allow' && record.af) {
+              const policy = await pm2.getPolicy(record.pid, true);
+              // domain allow that uses IP-based matching
+              if (policy && ['dns', 'domain'].includes(policy.type) && !policy.dnsmasq_only && policy.target
+                // skip rule accounting and log writing if any ssl host doesn't match the policy target
+
+                // NOTE: ssl host is very accurate for a specific flow, but there's a corner case
+                // that flows with multiple domains are recorded in the same buffer write interval,
+                // ignore this for now
+                && Object.keys(record.af).some(domain =>
+                  record.af[domain].proto == 'ssl' && !policy.matchDomain(domain)
+                )
+              ) continue
+            } else if (!record.pid && (type == 'dns' || ac == 'block')) {
               const matchedPIDs = await this.ruleStatsPlugin.getMatchedPids(record);
-              if (matchedPIDs && matchedPIDs.length > 0){
+              if (matchedPIDs && matchedPIDs.length > 0)
                 record.pid = matchedPIDs[0];
-              }
             }
 
-            if (type == 'ip' || record.ac == 'block' || record.ac == 'disturb')
+            // hit accounting here is only needed for block cases that BroDetect can not count
+            if (record.ac == 'block' && record.pid) {
               this.ruleStatsPlugin.accountRule(record);
+              const lastHitFlow = Object.assign({}, record, { mac }, dir === 'L' ? { local: true } : {});
+              this.ruleStatsPlugin.recordLastHitFlow(record.pid, lastHitFlow, 'audit');
+            }
           }
 
           if (type == 'ip' && record.ac != "block" && record.ac != 'redirect' && record.ac != "isolation" && record.ac != "disturb")
@@ -851,6 +877,7 @@ class ACLAuditLogPlugin extends Sensor {
           if (type == 'dns' && !block && !fc.isFeatureOn('dnsmasq_log_allow_redis')) continue
 
           delete record.dir
+          if (type == 'ntp') delete record.dp
 
           if (dir != 'L' || fd == 'in') {
             const systemKey = this._getAuditKey('system', type, dir, block)
@@ -859,7 +886,8 @@ class ACLAuditLogPlugin extends Sensor {
 
           const key = this._getAuditKey(mac, type, dir, block)
           delete record.mac
-          multi.zadd(key, _ts, JSON.stringify(record));
+          const recordJson = JSON.stringify(record);
+          multi.zadd(key, _ts, recordJson);
           if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
             multi.zadd("deviceLastFlowTs", _ts, mac);
           this.touchedKeys[key] = 1;
@@ -871,6 +899,13 @@ class ACLAuditLogPlugin extends Sensor {
             suppressEventLogging: true,
             flow: Object.assign({}, record, {mac, _ts, intf, dir})
           });
+
+          // publish block flow to Redis channel (same JSON string as written to zset), this will be consumed by other components, e.g., DAP
+          if (block) {
+            pclient.publishAsync(Constants.REDIS_CHANNEL_FLOW_BLOCK, recordJson).catch(err => {
+              log.error("Failed to publish block flow to Redis", err);
+            });
+          }
         }
         await multi.execAsync()
       }
@@ -940,9 +975,83 @@ class ACLAuditLogPlugin extends Sensor {
     }
   }
 
+  async addAuditLogRule(table, chain, r, logSuffix = '') {
+    const rule = new Rule(table).chn(chain);
+    rule.set(MONITORED_NET_SET, 'src,src', !r.src);
+    rule.set(MONITORED_NET_SET, 'dst,dst', !r.dst);
+    rule.mdl('conntrack', `--ctdir ${r.ctdir}`);
+    logSuffix = LOG_PREFIX + logSuffix
+    logSuffix += `D=${r.d} CD=${r.ctdir[0]} `
+    if (chain.includes('_TLS_')) logSuffix += 'TLS=1 ';
+    if (chain.includes('_SEC_')) logSuffix += 'SEC=1 ';
+    rule.log(logSuffix);
+
+    await iptc.addRule(rule);
+    await iptc.addRule(rule.fam(6));
+  }
+
+  async addIptablesLogging() {
+    // 3 packet directions (outbound, inbound, local) × 2 conntrack (original, reply)
+    // Each: src (in monitored set), dst (in monitored set), ctdir (ORIGINAL|REPLY), d (O/I/L) Outbound/Inbound/Local
+    const DIR_CTDIR_RULES = [
+      { src: true, dst: false, ctdir: 'ORIGINAL', d: 'O' },
+      { src: false, dst: true, ctdir: 'REPLY', d: 'O' },
+      { src: true, dst: false, ctdir: 'REPLY', d: 'I' },
+      { src: false, dst: true, ctdir: 'ORIGINAL', d: 'I' },
+      { src: true, dst: true, ctdir: 'ORIGINAL', d: 'L' },
+      { src: true, dst: true, ctdir: 'REPLY', d: 'L' },
+    ];
+
+    // ====== filter =======
+    // blocks
+    const filterChains = [ 'FW_DROP_LOG', 'FW_SEC_DROP_LOG', 'FW_TLS_DROP_LOG', 'FW_SEC_TLS_DROP_LOG' ];
+    for (const chain of filterChains) {
+      for (const r of DIR_CTDIR_RULES)
+        await this.addAuditLogRule('filter', chain, r);
+    }
+    // WAN inbound drop
+    const wanDropRule = new Rule('filter').chn('FW_WAN_IN_DROP_LOG').log(`${LOG_PREFIX}D=W CD=O SEC=1 `);
+    await iptc.addRule(wanDropRule);
+    await iptc.addRule(wanDropRule.fam(6));
+
+    // accept
+    for (const r of DIR_CTDIR_RULES.filter(r => r.ctdir == 'ORIGINAL'))
+      await this.addAuditLogRule('filter', 'FW_ACCEPT_LOG', r, `A=A `);
+
+    // ====== mangle =======
+    // QoS
+    const qosMarkRule = new Rule('mangle').chn('FW_QOS_LOG').jmp('CONNMARK --restore-mark --mask 0x3fff0000');
+    await iptc.addRule(qosMarkRule);
+    await iptc.addRule(qosMarkRule.fam(6));
+    for (const r of DIR_CTDIR_RULES.filter(r => r.ctdir == 'REPLY'))
+      await this.addAuditLogRule('mangle', 'FW_QOS_LOG', r, `A=Q `);
+
+    // distrub
+    const disturbMarkRule = new Rule('mangle').chn('FW_DISTURB_LOG').jmp('CONNMARK --restore-mark --mask 0x3fff0000');
+    await iptc.addRule(disturbMarkRule);
+    await iptc.addRule(disturbMarkRule.fam(6));
+    for (const r of DIR_CTDIR_RULES.filter(r => r.ctdir == 'ORIGINAL' && r.d != 'L'))
+      await this.addAuditLogRule('mangle', 'FW_DISTURB_LOG', r, `A=D `);
+  }
+
+  async flushAuditChains() {
+    const filterChains = ['FW_DROP_LOG', 'FW_SEC_DROP_LOG', 'FW_TLS_DROP_LOG', 'FW_SEC_TLS_DROP_LOG', 'FW_WAN_IN_DROP_LOG', 'FW_ACCEPT_LOG'];
+    const mangleChains = ['FW_QOS_LOG', 'FW_DISTURB_LOG'];
+    for (const chain of filterChains) {
+      await iptc.addRule(new Rule('filter').chn(chain).opr('-F').fam(4));
+      await iptc.addRule(new Rule('filter').chn(chain).opr('-F').fam(6));
+    }
+    for (const chain of mangleChains) {
+      await iptc.addRule(new Rule('mangle').chn(chain).opr('-F').fam(4));
+      await iptc.addRule(new Rule('mangle').chn(chain).opr('-F').fam(6));
+    }
+  }
+
   async globalOn() {
     super.globalOn()
 
+    await this.flushAuditChains();
+    await this.addIptablesLogging();
     await exec(`${f.getFirewallaHome()}/scripts/audit-run`)
 
     this.bufferDumper = this.bufferDumper || setInterval(this.writeLogs.bind(this), (this.config.buffer || 30) * 1000)
@@ -954,6 +1063,7 @@ class ACLAuditLogPlugin extends Sensor {
   async globalOff() {
     super.globalOff()
 
+    await this.flushAuditChains();
     await exec(`${f.getFirewallaHome()}/scripts/audit-stop`)
 
     clearInterval(this.bufferDumper)
