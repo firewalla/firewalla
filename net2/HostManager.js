@@ -1599,6 +1599,12 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async toJson(options = {}) {
+    const json = await this.toJson2(options);
+    delete json._partialInit;
+    return json;
+  }
+
+  async toJson2(options = {}) {
     const json = {};
 
     let requiredPromises = [
@@ -1670,7 +1676,12 @@ module.exports = class HostManager extends Monitorable {
         log.debug(`promise ${i} finished`, (Date.now() - ts)/1000)
       })()
     }
-    await Promise.all(requiredPromises.map(p => p.catch(log.error)))
+    const results = await Promise.allSettled(requiredPromises);
+    const failures = results.filter(r => r.status === 'rejected');
+    if (failures.length > 0) {
+      for (const f of failures) log.error("Required init section failed:", f.reason);
+      json._partialInit = true;
+    }
 
     json.policyRules = this.filterPolicyRules(json.policyRules, json.hosts);
     json.exceptionRules = this.filterExceptions(json.exceptionRules, json.hosts);

@@ -173,36 +173,48 @@ class netBot extends ControllerBot {
     });
   }
 
+  _enqueueResetRequest() {
+    this.initQueue.unshift({ reset: true });
+    this._drainInitQueue();
+  }
+
   async _drainInitQueue() {
     if (this.initQueueDraining) return;
     this.initQueueDraining = true;
     while (this.initQueue.length > 0) {
-      const { options, data, gid, appInfo, resolve, reject } = this.initQueue.shift();
-
-      // Cache key covers everything that affects the shared (non-caller-specific) result:
-      // data payload, derived options (including appInfo/platform flags), and config version.
-      // embeddedOps, rkey, cloudConnected, and device are intentionally excluded from the
-      // cached payload because they depend on gid or are volatile runtime state.
-      const { embeddedOps: _embeddedOps, ...cacheableData } = data;
-      const cacheKey = crypto.createHash('md5')
-        .update(JSON.stringify({ data: cacheableData, options, v: this.initConfigVersion }))
-        .digest('hex');
+      const entry = this.initQueue.shift();
+      if (entry.reset) {
+        this.initResultCache.reset();
+        continue;
+      }
+      const { options, data, gid, appInfo, resolve, reject } = entry;
 
       try {
+        // Cache key covers everything that affects the shared (non-caller-specific) result:
+        // data payload, derived options (including appInfo/platform flags), and config version.
+        // embeddedOps, rkey, cloudConnected, and device are intentionally excluded from the
+        // cached payload because they depend on gid or are volatile runtime state.
+        const { embeddedOps: _embeddedOps, ...cacheableData } = data;
+        const cacheKey = crypto.createHash('md5')
+          .update(JSON.stringify({ data: cacheableData, options, v: this.initConfigVersion }))
+          .digest('hex');
+
         let sharedJson = this.initResultCache.get(cacheKey);
         if (sharedJson === undefined) {
           const json = {};
           await sysManager.updateAsync();
+
+          // fwapcOps and dapOps are optional; individual .catch(() => null) already absorbs failures.
           const fwapcOps = Array.isArray(data.fwapcOps) ? data.fwapcOps : [];
           const dapOps = Array.isArray(data.dapOps) ? data.dapOps : [];
-          const tasks = fwapcOps.map(async (op) => {
+          const optionalTasks = fwapcOps.map(async (op) => {
             if (!op || typeof op !== 'object') return;
             const { key, method, path, body } = op;
             const result = await fwapc.apiCall(method || "GET", path, body).catch(() => null);
             if (result && result.code == 200)
               json[key] = result.body;
           });
-          tasks.push(...dapOps.map(async (op) => {
+          optionalTasks.push(...dapOps.map(async (op) => {
             if (!op || typeof op !== 'object') return;
             const { key, method, path, body } = op;
             const dapSensor = sl.getSensor('DapSensor');
@@ -212,16 +224,23 @@ class netBot extends ControllerBot {
                 json[key] = result.body;
             }
           }));
-          tasks.push((async () => {
-            const result = await this.hostManager.toJson(options);
-            Object.assign(json, result);
-          })());
-          await Promise.all(tasks).catch((err) => {
-            log.error("Failed to run multiple tasks in init", err.message);
+          await Promise.all(optionalTasks).catch((err) => {
+            log.error("Failed to run optional tasks in init", err.message);
             log.debug(err.stack);
           });
-          sharedJson = json;
-          this.initResultCache.set(cacheKey, sharedJson);
+
+          const hostResult = await this.hostManager.toJson2(options);
+          Object.assign(json, hostResult);
+
+          // Do not cache if any required init section failed; the partial result is still
+          // returned to the caller so app init degrades gracefully rather than returning 500.
+          if (!json._partialInit) {
+            sharedJson = json;
+            this.initResultCache.set(cacheKey, sharedJson);
+          } else {
+            delete json._partialInit;
+            sharedJson = json;
+          }
         } else {
           log.info("Init request served from cache");
         }
@@ -230,18 +249,26 @@ class netBot extends ControllerBot {
         const json = Object.assign({}, sharedJson);
 
         // embeddedOps are processed per-request because getHandler uses gid.
+        // Keys already present in sharedJson are reserved for core init fields and
+        // cannot be overwritten by caller-supplied embeddedOps.
+        const coreKeys = new Set(Object.keys(sharedJson));
         const embeddedOps = Array.isArray(data.embeddedOps) ? data.embeddedOps : [];
         await Promise.all(embeddedOps.map(async (op) => {
           try {
             if (!op || typeof op !== 'object') return;
             const { item, value, key, target } = op;
             if (!item) return;
+            const outputKey = key || item;
+            if (coreKeys.has(outputKey)) {
+              log.warn(`embeddedOps key "${outputKey}" conflicts with a core init field; skipping`);
+              return;
+            }
             const getMsg = {
               mtype: "get",
               target: target,
               data: { item, value: value || {}, apiVer: data.apiVer }
             };
-            json[key || item] = await this.getHandler(gid, getMsg, appInfo);
+            json[outputKey] = await this.getHandler(gid, getMsg, appInfo);
           } catch (err) {
             log.warn(`Failed to execute embeddedOps item ${op.item}:`, err.message);
           }
@@ -4204,9 +4231,9 @@ class netBot extends ControllerBot {
               // data.value = {'block':1},
               //
               log.info("Process set event for item", msg.data.item, "target", msg.target, "reset init cache");
-              this.initConfigVersion++;
-              this.initResultCache.reset();
               const result = await this.setHandler(gid, msg);
+              this.initConfigVersion++;
+              this._enqueueResetRequest();
               // by default sync to msp for set and cmd operations
               let syncToMspDefaultVal = aplt != "web" && aplt != "msp";
               const syncToMsp = _.has(msg, 'syncToMsp') ? msg.syncToMsp : syncToMspDefaultVal;
@@ -4227,8 +4254,7 @@ class netBot extends ControllerBot {
             }
             case "cmd": {
               log.info("Process cmd event for item", msg.data.item, "target", msg.target, "reset init cache");
-              this.initConfigVersion++;
-              this.initResultCache.reset();
+              let txResponse;
               if (msg.data.item == 'fwapc') {
                 const value = msg.data.value;
 
@@ -4238,15 +4264,15 @@ class netBot extends ControllerBot {
 
                 const result = await fwapc.apiCall(value.method || "GET", value.path, value.body);
                 if (result.code == 200) {
-                  return this.simpleTxData(msg, result.body, null, cloudOptions);
+                  txResponse = this.simpleTxData(msg, result.body, null, cloudOptions);
                 } else {
                   const errmsg = result.body && typeof result.body === 'object' ? JSON.stringify(result.body) : result.body ||  result.code;
-                  return this.simpleTxData(msg, null, {code: result.code, data: result.body, msg: result.msg || errmsg}, cloudOptions);
+                  txResponse = this.simpleTxData(msg, null, {code: result.code, data: result.body, msg: result.msg || errmsg}, cloudOptions);
                 }
 
               } else if (msg.data.item == 'batchAction') {
                 const result = await this.batchHandler(gid, rawmsg);
-                return this.simpleTxData(msg, result, null, cloudOptions);
+                txResponse = this.simpleTxData(msg, result, null, cloudOptions);
               } else {
                 const result = await this.cmdHandler(gid, msg);
                 // by default sync to msp for set and cmd operations
@@ -4263,8 +4289,11 @@ class netBot extends ControllerBot {
                     });
                   }
                 }
-                return this.simpleTxData(msg, result, null, cloudOptions);
+                txResponse = this.simpleTxData(msg, result, null, cloudOptions);
               }
+              this.initConfigVersion++;
+              this._enqueueResetRequest();
+              return txResponse;
             }
             default: {
               const err = { code: 400, msg: "Unsupported operation " + rawmsg.message.obj.mtype }
