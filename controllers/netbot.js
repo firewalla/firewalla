@@ -159,10 +159,95 @@ const Message = require('../net2/Message')
 
 const {logApiStats, getApiStats, API_STATS_KEY_EXCLUDE_LIST} = require('./stats.js');
 const util = require('util')
+const crypto = require('crypto')
+const LRU = require('lru-cache')
 
 const restartUPnPTask = {};
 
 class netBot extends ControllerBot {
+
+  _enqueueInitRequest(req) {
+    return new Promise((resolve, reject) => {
+      this.initQueue.push(Object.assign({}, req, { resolve, reject }));
+      this._drainInitQueue();
+    });
+  }
+
+  async _drainInitQueue() {
+    if (this.initQueueDraining) return;
+    this.initQueueDraining = true;
+    while (this.initQueue.length > 0) {
+      const { options, data, gid, appInfo, resolve, reject } = this.initQueue.shift();
+      const cacheKey = crypto.createHash('md5')
+        .update(JSON.stringify({ data, v: this.initConfigVersion }))
+        .digest('hex');
+      const cached = this.initResultCache.get(cacheKey);
+      if (cached !== undefined) {
+        log.info("Init request served from cache");
+        resolve(cached);
+        continue;
+      }
+      try {
+        const json = {};
+        await sysManager.updateAsync();
+        const fwapcOps = Array.isArray(data.fwapcOps) ? data.fwapcOps : [];
+        const dapOps = Array.isArray(data.dapOps) ? data.dapOps : [];
+        const embeddedOps = Array.isArray(data.embeddedOps) ? data.embeddedOps : [];
+        const tasks = fwapcOps.map(async (op) => {
+          if (!op || typeof op !== 'object') return;
+          const { key, method, path, body } = op;
+          const result = await fwapc.apiCall(method || "GET", path, body).catch(() => null);
+          if (result && result.code == 200)
+            json[key] = result.body;
+        });
+        tasks.push(...dapOps.map(async (op) => {
+          if (!op || typeof op !== 'object') return;
+          const { key, method, path, body } = op;
+          const dapSensor = sl.getSensor('DapSensor');
+          if (dapSensor) {
+            const result = await dapSensor.apiCall(method || "GET", path, body).catch(() => null);
+            if (result && result.code == 200)
+              json[key] = result.body;
+          }
+        }));
+        tasks.push(...embeddedOps.map(async (op) => {
+          try {
+            if (!op || typeof op !== 'object') return;
+            const { item, value, key, target } = op;
+            if (!item) return;
+            const getMsg = {
+              mtype: "get",
+              target: target,
+              data: { item, value: value || {}, apiVer: data.apiVer }
+            };
+            json[key || item] = await this.getHandler(gid, getMsg, appInfo);
+          } catch (err) {
+            log.warn(`Failed to execute embeddedOps item ${op.item}:`, err.message);
+          }
+        }));
+        tasks.push((async () => {
+          const result = await this.hostManager.toJson(options);
+          Object.assign(json, result);
+        })());
+        await Promise.all(tasks).catch((err) => {
+          log.error("Failed to run multiple tasks in init", err.message);
+          log.debug(err.stack);
+        });
+
+        if (this.eptcloud) {
+          json.rkey = this.eptcloud.getMaskedRKey(gid);
+          json.cloudConnected = !this.eptcloud.disconnectCloud;
+        }
+        json.device = this.getDeviceName();
+
+        this.initResultCache.set(cacheKey, json);
+        resolve(json);
+      } catch (err) {
+        reject(err);
+      }
+    }
+    this.initQueueDraining = false;
+  }
 
   /*
    *   {
@@ -345,6 +430,11 @@ class netBot extends ControllerBot {
 
     this.hostManager = new HostManager();
     this.hostManager.loadPolicy((err, data) => { });  //load policy
+
+    this.initConfigVersion = 0;
+    this.initResultCache = new LRU({ max: 20, maxAge: 60 * 1000 });
+    this.initQueue = [];
+    this.initQueueDraining = false;
 
     this.networkProfileManager = require('../net2/NetworkProfileManager.js');
     this.tagManager = require('../net2/TagManager.js');
@@ -4016,9 +4106,10 @@ class netBot extends ControllerBot {
             case "init": {
               log.info("Process Init load event");
 
-              let begin = Date.now();
+              const begin = Date.now();
+              const data = _.get(rawmsg, ['message', 'obj', 'data'], {});
 
-              let options = {
+              const options = {
                 forceReload: true,
                 includePinnedHosts: true,
                 includePrivateMac: true,
@@ -4026,12 +4117,8 @@ class netBot extends ControllerBot {
                 includeAppTimeSlots: true,
                 includeAppTimeIntervals: true,
                 appInfo,
-              }
+              };
 
-              const data = _.get(rawmsg, ['message', 'obj', 'data'], {})
-              if (data.simulator) {
-                // options.simulator = 1
-              }
               if (data.includeInactiveHosts)
                 options.includeInactiveHosts = true;
               if (data.hasOwnProperty("includePrivateMac"))
@@ -4044,124 +4131,58 @@ class netBot extends ControllerBot {
                 options.timeUsageApps = data.timeUsageApps;
 
               if (!data.apiVer || data.apiVer <= 2) {
-                options.legacyLocalBlock = true
-                options.legacySystemFlows = true
+                options.legacyLocalBlock = true;
+                options.legacySystemFlows = true;
               } else {
-                const metrics = []
+                const metrics = [];
                 if (data.stats) {
-                  if (data.stats.regular) metrics.push('upload', 'download', 'conn')
-                  if (data.stats.dns && platform.isDNSFlowSupported()) metrics.push('dns')
-                  if (data.stats.audit && platform.isAuditLogSupported()) metrics.push('ipB', 'dnsB')
-                  if (data.stats.ntp) metrics.push('ntp')
-                  if (data.stats.local) metrics.push('intra:lo', 'conn:lo:intra')
-                  if (data.stats.localAudit) metrics.push('ipB:lo:intra')
+                  if (data.stats.regular) metrics.push('upload', 'download', 'conn');
+                  if (data.stats.dns && platform.isDNSFlowSupported()) metrics.push('dns');
+                  if (data.stats.audit && platform.isAuditLogSupported()) metrics.push('ipB', 'dnsB');
+                  if (data.stats.ntp) metrics.push('ntp');
+                  if (data.stats.local) metrics.push('intra:lo', 'conn:lo:intra');
+                  if (data.stats.localAudit) metrics.push('ipB:lo:intra');
                 }
-                options.tsMetrics = metrics
+                options.tsMetrics = metrics;
               }
 
-              await sysManager.updateAsync()
-              const fwapcOps = Array.isArray(data.fwapcOps) ? data.fwapcOps : [];
-              const dapOps = Array.isArray(data.dapOps) ? data.dapOps : [];
-              const embeddedOps = Array.isArray(data.embeddedOps) ? data.embeddedOps : [];
+              let initResult;
               try {
-                const json = {};
-                const tasks = fwapcOps.map(async (op) => {
-                  if (!op || typeof op !== 'object') return;
-                  const {key, method, path, body} = op;
-                  const result = await fwapc.apiCall(method || "GET", path, body).catch((err) => null);
-                  if (result && result.code == 200)
-                    json[key] = result.body;
-                });
-                tasks.push(...dapOps.map(async (op) => {
-                  if (!op || typeof op !== 'object') return;
-                  const {key, method, path, body} = op;
-                  const dapSensor = sl.getSensor('DapSensor');
-                  if (dapSensor) {
-                    const result = await dapSensor.apiCall(method || "GET", path, body).catch((err) => null);
-                    if (result && result.code == 200)
-                      json[key] = result.body;
-                  }
-                }));
-                // embeddedOps: array of embedded get requests, each dispatched through getHandler
-                // format: { item: string, value?: object, key?: string, target?: string }
-                tasks.push(...embeddedOps.map(async (op) => {
-                  try {
-                    if (!op || typeof op !== 'object') return;
-                    const { item, value, key, target } = op;
-                    if (!item) return;
-                    const getMsg = {
-                      mtype: "get",
-                      target: target,
-                      data: {
-                        item: item,
-                        value: value || {},
-                        apiVer: data.apiVer
-                      }
-                    };
-                    // defaults to item as json key; avoid core init fields (e.g. hosts) — they get overwritten below
-                    json[key || item] = await this.getHandler(gid, getMsg, appInfo);
-                  } catch (err) {
-                    log.warn(`Failed to execute embeddedOps item ${item}:`, err.message);
-                  }
-                }));
-                tasks.push((async () => {
-                  const result = await this.hostManager.toJson(options);
-                  Object.assign(json, result)
-                })());
-                await Promise.all(tasks).catch((err) => {
-                  log.error("Failed to run multiple tasks in init", err.message);
-                  log.debug(err.stack);
-                });
-
-                if (this.eptcloud) {
-                  json.rkey = this.eptcloud.getMaskedRKey(gid);
-                  json.cloudConnected = !this.eptcloud.disconnectCloud
-                }
-
-                // skip acl for old app for backward compatibility
-                if (appInfo && appInfo.version && ["1.35", "1.36"].includes(appInfo.version)) {
-                  if (json && json.policy) {
-                    delete json.policy.acl;
-                  }
-
-                  if (json && json.hosts) {
-                    for (const host of json.hosts) {
-                      if (host && host.policy) {
-                        delete host.policy.acl;
-                      }
-                    }
-                  }
-                }
-
-                let datamodel = {
-                  type: 'jsonmsg',
-                  mtype: 'init',
-                  id: uuid.v4(),
-                  expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                  replyid: msg.id,
-                }
-                if (json != null) {
-
-                  json.device = this.getDeviceName();
-
-                  datamodel.code = 200;
-                  datamodel.data = json;
-
-                  let end = Date.now();
-                  log.info("Took " + (end - begin) + "ms to load init data");
-
-                  return this.simpleTxData(msg, json, null, cloudOptions);
-                } else {
-                  log.error("json is null when calling init")
-                  const errModel = { code: 500, msg: "json is null when calling init" }
-                  return this.simpleTxData(msg, null, errModel, cloudOptions)
-                }
+                initResult = await this._enqueueInitRequest({ options, data, gid, appInfo });
               } catch (err) {
                 log.error("Error calling hostManager.toJson():", err);
-                const errModel = { code: 500, msg: "got error when calling hostManager.toJson: " + err }
-                return this.simpleTxData(msg, null, errModel, cloudOptions)
+                return this.simpleTxData(msg, null, { code: 500, msg: "got error when calling hostManager.toJson: " + err }, cloudOptions);
               }
 
+              const end = Date.now();
+              log.info("Took " + (end - begin) + "ms to load init data");
+
+              if (initResult == null) {
+                log.error("json is null when calling init");
+                return this.simpleTxData(msg, null, { code: 500, msg: "json is null when calling init" }, cloudOptions);
+              }
+
+              // skip acl for old app for backward compatibility — applied per-caller on a
+              // shallow copy to avoid mutating the shared cached result
+              if (appInfo && appInfo.version && ["1.35", "1.36"].includes(appInfo.version)) {
+                const patched = Object.assign({}, initResult);
+                if (patched.policy) {
+                  patched.policy = Object.assign({}, patched.policy);
+                  delete patched.policy.acl;
+                }
+                if (patched.hosts) {
+                  patched.hosts = patched.hosts.map(host => {
+                    if (host && host.policy && host.policy.acl != null) {
+                      host = Object.assign({}, host, { policy: Object.assign({}, host.policy) });
+                      delete host.policy.acl;
+                    }
+                    return host;
+                  });
+                }
+                return this.simpleTxData(msg, patched, null, cloudOptions);
+              }
+
+              return this.simpleTxData(msg, initResult, null, cloudOptions);
             }
             case "set": {
               // mtype: set
@@ -4169,6 +4190,9 @@ class netBot extends ControllerBot {
               // data.item = policy
               // data.value = {'block':1},
               //
+              log.info("Process set event for item", msg.data.item, "target", msg.target, "reset init cache");
+              this.initConfigVersion++;
+              this.initResultCache.reset();
               const result = await this.setHandler(gid, msg);
               // by default sync to msp for set and cmd operations
               let syncToMspDefaultVal = aplt != "web" && aplt != "msp";
@@ -4189,6 +4213,9 @@ class netBot extends ControllerBot {
               return this.simpleTxData(msg, result, null, cloudOptions);
             }
             case "cmd": {
+              log.info("Process cmd event for item", msg.data.item, "target", msg.target, "reset init cache");
+              this.initConfigVersion++;
+              this.initResultCache.reset();
               if (msg.data.item == 'fwapc') {
                 const value = msg.data.value;
 

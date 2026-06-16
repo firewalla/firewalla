@@ -92,7 +92,7 @@ class Platform {
 
   async getNetworkSpeed() {
     try {
-      const output = await fsp.readFile(`/sys/class/net/${this.getAllNicNames[0]}/speed`, {encoding: 'utf8'});
+      const output = await fsp.readFile(`/sys/class/net/${this.getAllNicNames()[0]}/speed`, {encoding: 'utf8'});
       return output.trim();
     } catch(err) {
       log.debug('Error getting network speed', err)

@@ -472,10 +472,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   async getCustomizedCategories() {
     const result = {};
-    for (const c in this.customizedCategories) {
+    await Promise.all(Object.keys(this.customizedCategories).map(async c => {
       const elements = await this.getIncludedElements(c);
       result[c] = Object.assign({}, this.customizedCategories[c], { elements: elements });
-    }
+    }));
     return result;
   }
 
