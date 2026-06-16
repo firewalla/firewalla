@@ -178,39 +178,60 @@ class netBot extends ControllerBot {
     this.initQueueDraining = true;
     while (this.initQueue.length > 0) {
       const { options, data, gid, appInfo, resolve, reject } = this.initQueue.shift();
+
+      // Cache key covers everything that affects the shared (non-caller-specific) result:
+      // data payload, derived options (including appInfo/platform flags), and config version.
+      // embeddedOps, rkey, cloudConnected, and device are intentionally excluded from the
+      // cached payload because they depend on gid or are volatile runtime state.
+      const { embeddedOps: _embeddedOps, ...cacheableData } = data;
       const cacheKey = crypto.createHash('md5')
-        .update(JSON.stringify({ data, v: this.initConfigVersion }))
+        .update(JSON.stringify({ data: cacheableData, options, v: this.initConfigVersion }))
         .digest('hex');
-      const cached = this.initResultCache.get(cacheKey);
-      if (cached !== undefined) {
-        log.info("Init request served from cache");
-        resolve(cached);
-        continue;
-      }
+
       try {
-        const json = {};
-        await sysManager.updateAsync();
-        const fwapcOps = Array.isArray(data.fwapcOps) ? data.fwapcOps : [];
-        const dapOps = Array.isArray(data.dapOps) ? data.dapOps : [];
-        const embeddedOps = Array.isArray(data.embeddedOps) ? data.embeddedOps : [];
-        const tasks = fwapcOps.map(async (op) => {
-          if (!op || typeof op !== 'object') return;
-          const { key, method, path, body } = op;
-          const result = await fwapc.apiCall(method || "GET", path, body).catch(() => null);
-          if (result && result.code == 200)
-            json[key] = result.body;
-        });
-        tasks.push(...dapOps.map(async (op) => {
-          if (!op || typeof op !== 'object') return;
-          const { key, method, path, body } = op;
-          const dapSensor = sl.getSensor('DapSensor');
-          if (dapSensor) {
-            const result = await dapSensor.apiCall(method || "GET", path, body).catch(() => null);
+        let sharedJson = this.initResultCache.get(cacheKey);
+        if (sharedJson === undefined) {
+          const json = {};
+          await sysManager.updateAsync();
+          const fwapcOps = Array.isArray(data.fwapcOps) ? data.fwapcOps : [];
+          const dapOps = Array.isArray(data.dapOps) ? data.dapOps : [];
+          const tasks = fwapcOps.map(async (op) => {
+            if (!op || typeof op !== 'object') return;
+            const { key, method, path, body } = op;
+            const result = await fwapc.apiCall(method || "GET", path, body).catch(() => null);
             if (result && result.code == 200)
               json[key] = result.body;
-          }
-        }));
-        tasks.push(...embeddedOps.map(async (op) => {
+          });
+          tasks.push(...dapOps.map(async (op) => {
+            if (!op || typeof op !== 'object') return;
+            const { key, method, path, body } = op;
+            const dapSensor = sl.getSensor('DapSensor');
+            if (dapSensor) {
+              const result = await dapSensor.apiCall(method || "GET", path, body).catch(() => null);
+              if (result && result.code == 200)
+                json[key] = result.body;
+            }
+          }));
+          tasks.push((async () => {
+            const result = await this.hostManager.toJson(options);
+            Object.assign(json, result);
+          })());
+          await Promise.all(tasks).catch((err) => {
+            log.error("Failed to run multiple tasks in init", err.message);
+            log.debug(err.stack);
+          });
+          sharedJson = json;
+          this.initResultCache.set(cacheKey, sharedJson);
+        } else {
+          log.info("Init request served from cache");
+        }
+
+        // Shallow copy so per-request fields do not mutate the cached object.
+        const json = Object.assign({}, sharedJson);
+
+        // embeddedOps are processed per-request because getHandler uses gid.
+        const embeddedOps = Array.isArray(data.embeddedOps) ? data.embeddedOps : [];
+        await Promise.all(embeddedOps.map(async (op) => {
           try {
             if (!op || typeof op !== 'object') return;
             const { item, value, key, target } = op;
@@ -225,22 +246,14 @@ class netBot extends ControllerBot {
             log.warn(`Failed to execute embeddedOps item ${op.item}:`, err.message);
           }
         }));
-        tasks.push((async () => {
-          const result = await this.hostManager.toJson(options);
-          Object.assign(json, result);
-        })());
-        await Promise.all(tasks).catch((err) => {
-          log.error("Failed to run multiple tasks in init", err.message);
-          log.debug(err.stack);
-        });
 
+        // rkey and volatile runtime fields are always set per-request.
         if (this.eptcloud) {
           json.rkey = this.eptcloud.getMaskedRKey(gid);
           json.cloudConnected = !this.eptcloud.disconnectCloud;
         }
         json.device = this.getDeviceName();
 
-        this.initResultCache.set(cacheKey, json);
         resolve(json);
       } catch (err) {
         reject(err);
