@@ -1674,6 +1674,17 @@ class netBot extends ControllerBot {
         await this.hostManager.networkProfilesForInit(json);
         return json;
       }
+      case "tags": {
+        const types = (value && _.isArray(value.types)) ? value.types : [Constants.TAG_TYPE_GROUP, Constants.TAG_TYPE_USER];
+        const allTags = await this.tagManager.toJson();
+        const tags = {};
+        for (const uid in allTags) {
+          const type = allTags[uid].type || Constants.TAG_TYPE_GROUP;
+          if (types.includes(type))
+            tags[uid] = allTags[uid];
+        }
+        return { tags };
+      }
       case "vpnProfile":
       case "ovpnProfile": {
         const type = (value && value.type) || "openvpn";
