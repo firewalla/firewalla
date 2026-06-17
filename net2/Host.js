@@ -66,7 +66,7 @@ const Monitorable = require('./Monitorable');
 const Constants = require('./Constants.js');
 
 const AsyncLock = require('../vendor_lib/async-lock');
-const lock = new AsyncLock(); 
+const lock = new AsyncLock();
 
 const iptool = require('ip');
 
@@ -96,6 +96,7 @@ class Host extends Monitorable {
       // Host object should only be created after initial setup of iptables to avoid racing condition
       if (f.isMain() && !noEnvCreation) (async () => {
         this.spoofing = false;
+        await this.initAutoGroup();
 
         await Host.ensureCreateEnforcementEnv(this.o.mac)
 
@@ -251,6 +252,101 @@ class Host extends Monitorable {
     return super.setPolicyAsync(name, policy, syncToMsp)
   }
 
+  // options: { dvlanId: dvlanId, wpax: wpax }
+  async setAutoGroupAsync(tag, ssid, options = {}) {
+    log.info(`Setting auto group for ${this.o.mac}`, tag, ssid, options);
+    await hostTool.setWirelessAutoGroup(this.o.mac, String(tag), ssid, options);
+    this.o.autoGroup = {
+      tag: tag,
+      ssid: ssid,
+      ts: Date.now(),
+      ...options,
+    };
+    return await this.save(["autoGroup"]);
+  }
+
+  async resetAutoGroupAsync() {
+    log.info(`Resetting auto group for ${this.o.mac}`);
+    await hostTool.resetWirelessAutoGroup(this.o.mac);
+    this.o.autoGroup = null;
+    return await this.save(["autoGroup"]);
+  }
+
+  async initAutoGroup() {
+    if (this.o.autoGroup)
+      return;
+    const autoGroup = await hostTool.getWirelessAutoGroup(this.o.mac);
+    if (!autoGroup)
+      return;
+    try {
+      const parsed = JSON.parse(autoGroup);
+      if (!parsed || !parsed.tag || !parsed.ssid)
+        return;
+      this.o.autoGroup = parsed;
+      await this.save(["autoGroup"]);
+    } catch (err) {
+      log.warn(`Invalid wireless auto group cache for ${this.o.mac}`, err.message);
+    }
+  }
+
+  // 1. if not connected (no staStatus), reset autoGroup after a short grace to prevent flapping
+  // 2. if a dot1x group, reset only when the station is no longer 802.1x authenticated
+  // 3. otherwise (ppsk/default), reset if connected on a different ssid
+  async getHostAutoGroup(staStatus) {
+    if (!this.o.autoGroup)
+      return null;
+    const autoGroup = this.o.autoGroup;
+    if (!_.isObject(autoGroup) || !autoGroup.tag || !autoGroup.ssid) {
+      await this.resetAutoGroupAsync();
+      return null;
+    }
+
+    if (!staStatus) {
+      if (!autoGroup.ts || autoGroup.ts < Date.now() - 10000) { // 10s grace window
+        await this.resetAutoGroupAsync();
+        return null;
+      }
+      return autoGroup;
+    }
+
+    // dot1x group is keyed on enterprise authentication, not the broadcast ssid
+    // string. The RADIUS auth event may report ssid as the Called-Station-Id
+    // (e.g. "AA-BB-CC-DD-EE-FF:MyWifi"), which won't match fwapc's plain ssid
+    // name, so validate by the station still being 802.1x authenticated instead.
+    if (autoGroup.auth === "dot1x") {
+      if (!staStatus.dot1xUserName) {
+        await this.resetAutoGroupAsync();
+        return null;
+      }
+      return autoGroup;
+    }
+
+    // connected but on a different ssid, reset autoGroup
+    if (autoGroup.ssid && staStatus.ssid && staStatus.ssid !== autoGroup.ssid) {
+      await this.resetAutoGroupAsync();
+      return null;
+    }
+
+    // // check if tag matches, "tags": ["14"] means tag 14
+    // if (this.o.tags && _.isArray(this.o.tags) && this.o.tags.length > 0 && !this.o.tags.includes(autoGroup.tag)) {
+    //   await this.resetAutoGroupAsync();
+    //   return null;
+    // } else if (!this.o.tags || !_.isArray(this.o.tags) || this.o.tags.length === 0) {
+    //   await this.resetAutoGroupAsync();
+    //   return null;
+    // }
+
+    return autoGroup;
+  }
+
+  async touchAutoGroup(autoGroup) {
+    if (!autoGroup)
+      return;
+    autoGroup.ts = Date.now();
+    this.o.autoGroup = autoGroup;
+    await this.save(["autoGroup"]);
+  }
+
   keepalive() {
     if (this.o.ipv4Addr) // this may trigger arp request to the device, the reply from the device will be captured in ARPSensor
       linux.ping4(this.o.ipv4Addr)
@@ -344,7 +440,7 @@ class Host extends Monitorable {
     return "host:mac:" + this.o.mac
   }
 
-  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect', 'openports', 'screenTime', 'wlanVendor' ]
+  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect', 'openports', 'screenTime', 'wlanVendor', 'autoGroup' ]
   static metaFieldsNumber = [ 'firstFoundTimestamp', 'lastActiveTimestamp', 'bnameCheckTime', 'spoofingTime', '_identifyExpiration' ]
   static metaFieldsActiveTS = ['lastActiveTimestamp', 'firstFoundTimestamp']
 
@@ -1101,6 +1197,9 @@ class Host extends Monitorable {
     for (const f of pickAssignment) {
       json[f] = this.o[f]
     }
+
+    if (this.o.autoGroup)
+      json.autoGroup = this.o.autoGroup;
 
     const preferredBName = getPreferredBName(this.o)
 

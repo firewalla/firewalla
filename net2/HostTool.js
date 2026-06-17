@@ -727,6 +727,29 @@ class HostTool {
     }
   }
 
+  async getWirelessAutoGroup(mac) {
+    if (_.isEmpty(mac))
+      return null;
+    const key = `${Constants.REDIS_KEY_WIRELESS_AUTO_GROUP}${mac}`;
+    return rclient.getAsync(key);
+  }
+
+  async setWirelessAutoGroup(mac, tagUid, ssid, options = {}) {
+    if (_.isEmpty(mac))
+      return;
+    const key = `${Constants.REDIS_KEY_WIRELESS_AUTO_GROUP}${mac}`;
+    let val = JSON.stringify({tag: tagUid, ssid: ssid, ts: Date.now(), ...options})
+    await rclient.setAsync(key, val);
+    await rclient.expireAsync(key, 3600);
+  }
+
+  async resetWirelessAutoGroup(mac) {
+    if (_.isEmpty(mac))
+      return;
+    const key = `${Constants.REDIS_KEY_WIRELESS_AUTO_GROUP}${mac}`;
+    await rclient.delAsync(key);
+  }
+
   async setWirelessDeviceTagCandidate(mac, tagUid) {
     if (_.isEmpty(mac))
       return;

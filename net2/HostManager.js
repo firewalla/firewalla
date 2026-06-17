@@ -472,11 +472,24 @@ module.exports = class HostManager extends Monitorable {
       log.error(`Failed to get STA status from fwapc`, err.message);
       return null;
     });
+
+    // if staStatus is unavailable, no changes to avoid flapping on transient failures
     if (_.isObject(staStatus)) {
       for (const host of hosts) {
         const mac = host.mac;
         if (mac && staStatus[mac])
           host.staInfo = staStatus[mac];
+        if (host.autoGroup) {
+          const hostObj = this.getHostFastByMAC(mac);
+          const autoGroup = hostObj && await hostObj.getHostAutoGroup(staStatus[mac]);
+          if (autoGroup) {
+            host.autoGroup = autoGroup;
+            if (staStatus[mac]) // refresh autoGroup ts if still connected
+              await hostObj.touchAutoGroup(autoGroup);
+          } else {
+            delete host.autoGroup;
+          }
+        }
       }
     }
   }
