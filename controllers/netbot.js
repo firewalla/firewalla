@@ -472,7 +472,7 @@ class netBot extends ControllerBot {
     this.hostManager.loadPolicy((err, data) => { });  //load policy
 
     this.initConfigVersion = 0;
-    this.initResultCache = new LRU({ max: 20, maxAge: 60 * 1000 });
+    this.initResultCache = new LRU({ max: 20, maxAge: 15 * 1000 });
     this.initQueue = [];
     this.initQueueDraining = false;
 
@@ -4230,7 +4230,7 @@ class netBot extends ControllerBot {
               // data.item = policy
               // data.value = {'block':1},
               //
-              log.info("Process set event for item", msg.data.item, "target", msg.target, "reset init cache");
+              log.debug("Process set event for item", msg.data.item, "target", msg.target, "reset init cache");
               const result = await this.setHandler(gid, msg);
               this.initConfigVersion++;
               this._enqueueResetRequest();
@@ -4253,7 +4253,6 @@ class netBot extends ControllerBot {
               return this.simpleTxData(msg, result, null, cloudOptions);
             }
             case "cmd": {
-              log.info("Process cmd event for item", msg.data.item, "target", msg.target, "reset init cache");
               let txResponse;
               if (msg.data.item == 'fwapc') {
                 const value = msg.data.value;
@@ -4291,8 +4290,11 @@ class netBot extends ControllerBot {
                 }
                 txResponse = this.simpleTxData(msg, result, null, cloudOptions);
               }
-              this.initConfigVersion++;
-              this._enqueueResetRequest();
+              if (msg.data.item != "ping") { // ignore ping for resetting cache
+                log.debug("Process cmd event for item", msg.data.item, "target", msg.target, "reset init cache");
+                this.initConfigVersion++;
+                this._enqueueResetRequest();
+              }
               return txResponse;
             }
             default: {
