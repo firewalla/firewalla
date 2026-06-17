@@ -154,7 +154,7 @@ class ICMP6Sensor extends Sensor {
   }
 
   async pingIPv6(ipv6) {
-    await execAsync(`ping6 -c 1 -W 0.5 ${ipv6}`).catch((err) => {});
+    await execAsync(`ping6 -c1 -W1 -w2 ${ipv6}`, { timeout: 3000 }).catch((err) => {});
   }
 }
 
