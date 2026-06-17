@@ -100,6 +100,84 @@ describe.skip('Test freeradius service', function () {
 
 });
 
+
+describe('Test freeradius certs', function () {
+  this.timeout(30000);
+
+  const rootCAContent = `-----BEGIN CERTIFICATE-----
+MIICBDCCAYqgAwIBAgIUJMNsSGxaSSyIQn/yxx+ydIBuXBUwCgYIKoZIzj0EAwMw
+OTELMAkGA1UEBhMCVVMxEjAQBgNVBAoMCUZpcmV3YWxsYTEWMBQGA1UEAwwNZmly
+ZXdhbGxhLmNvbTAeFw0yNjAzMzAxMTEzMTRaFw0zNjAzMjcxMTEzMTRaMDkxCzAJ
+BgNVBAYTAlVTMRIwEAYDVQQKDAlGaXJld2FsbGExFjAUBgNVBAMMDWZpcmV3YWxs
+YS5jb20wdjAQBgcqhkjOPQIBBgUrgQQAIgNiAARnzF1oSBI73iHD1rdb3BzCrHH6
+V6wXReJGyPJLvzwND00Mj8zS0UZkdqldj87UbuCTGbmTa+gteMskfOlP+SaNj47d
+Ax/HSp+Uof0c/5mgO1MRld2u45JKrPI2NYp+5dyjUzBRMB0GA1UdDgQWBBSMyIKW
+UOYGsg9gLbiZYBXYFxjO8jAfBgNVHSMEGDAWgBSMyIKWUOYGsg9gLbiZYBXYFxjO
+8jAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMDA2gAMGUCMQDFPhfJdreja4VV
+MwtVchXFnSnaZE6byk1BywJf1bPLIOQivGjLSYbCxiSzCNyYbKECMC2vCt+yEM3T
+VQ8t5UrTtcxrQsyChRdw2JHwv59rpHoLZk69QpVzE31/MrhL6aXJfQ==
+-----END CERTIFICATE-----`;
+
+  const serverKeyContent = `-----BEGIN EC PARAMETERS-----
+BgUrgQQAIg==
+-----END EC PARAMETERS-----
+-----BEGIN EC PRIVATE KEY-----
+MIGkAgEBBDCBxdKvSeH3NXly5lPX2IvtK6/L750sOjnfs13WmU+RhLavqgTsDxCa
+XxhXCAvl5xKgBwYFK4EEACKhZANiAAQEEqOEZMSScKE7hIF7MMpROapzBzAbf5PF
+95L1Fvi7OvDple0Vj4G8E6aTQtxRmBOr6cI1z1kN/V2o+ld1bbGTNq58qZmaavog
+zXAYexS5gYC6EvYCp/9iuKMENAln/qI=
+-----END EC PRIVATE KEY-----`;
+
+  const serverCAContent = `-----BEGIN CERTIFICATE-----
+MIIB8jCCAXigAwIBAgIUQ4zlSijSWbhjNaX2UyzvObTsy2MwCgYIKoZIzj0EAwMw
+OTELMAkGA1UEBhMCVVMxEjAQBgNVBAoMCUZpcmV3YWxsYTEWMBQGA1UEAwwNZmly
+ZXdhbGxhLmNvbTAeFw0yNjAzMzAxMTE0MTdaFw0yNzAzMzAxMTE0MTdaMHwxCzAJ
+BgNVBAYTAlVTMQswCQYDVQQIDAJDQTERMA8GA1UEBwwIU2FuIEpvc2UxEjAQBgNV
+BAoMCUZpcmV3YWxsYTEhMB8GCSqGSIb3DQEJARYSaGVscEBmaXJld2FsbGEuY29t
+MRYwFAYDVQQDDA1maXJld2FsbGEuY29tMHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE
+BBKjhGTEknChO4SBezDKUTmqcwcwG3+TxfeS9Rb4uzrw6ZXtFY+BvBOmk0LcUZgT
+q+nCNc9ZDf1dqPpXdW2xkzaufKmZmmr6IM1wGHsUuYGAuhL2Aqf/YrijBDQJZ/6i
+MAoGCCqGSM49BAMDA2gAMGUCMH2gNCEsj7BtOG1NU4m4JIYIdnn4uPvq0g55iJIR
+YPlf5Ic3nsUheRIFyCciXv2pWwIxAPMTGdKBdN4ktB3Z1CjE/JEPglomiSmEjZfq
+vb8caklM8vVkoVYLXmgox/ZyXZhndg==
+-----END CERTIFICATE-----`;
+
+  before(async () => {
+    await exec(`mkdir -p /tmp/certs`).catch(e => { });
+  });
+
+  after(async () => {
+    await exec(`rm -rf /tmp/certs`).catch(e => { });
+  });
+
+
+  it('should save certs', async () => {
+    const certs = await freeradius._saveCerts({
+      ca: rootCAContent,
+      serverCA: serverCAContent,
+      serverKey: serverKeyContent,
+      keypass: "test",
+    }, "/tmp/certs");
+    expect(certs).to.be.true;
+  });
+
+  it('should verify certs', async () => {
+    const verified = await freeradius._verifyCerts("/tmp/certs");
+    expect(verified).to.be.true;
+  });
+
+  it('should get certs', async () => {
+    const certs = await freeradius._getCerts("/tmp/certs");
+    expect(certs).to.not.be.null;
+    expect(certs.keypass).to.be.equal("test");
+    expect(certs.ca).to.be.equal(rootCAContent);
+    expect(certs.serverCA).to.be.equal(serverCAContent);
+    expect(certs.serverKey).to.be.equal(serverKeyContent);
+    expect(certs.hash).to.be.equal("9942234dd0fe31771218eb2286fa384739d7187adfb0a4937ebf580dcb0dac57");
+  });
+
+});
+
 describe('Test freeradius sensor', function () {
   this.timeout(1200000);
   this.plugin = new FreeRadiusSensor({});
