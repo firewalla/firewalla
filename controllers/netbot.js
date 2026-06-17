@@ -187,16 +187,18 @@ class netBot extends ControllerBot {
         this.initResultCache.reset();
         continue;
       }
-      const { options, data, gid, appInfo, resolve, reject } = entry;
+      const { options, data, gid, resolve, reject } = entry;
+      const { appInfo } = options;
 
       try {
         // Cache key covers everything that affects the shared (non-caller-specific) result:
-        // data payload, derived options (including appInfo/platform flags), and config version.
-        // embeddedOps, rkey, cloudConnected, and device are intentionally excluded from the
-        // cached payload because they depend on gid or are volatile runtime state.
+        // data payload, derived options, and config version.
+        // appInfo (caller identity), embeddedOps, rkey, cloudConnected, and device are
+        // intentionally excluded because they are caller-specific or volatile runtime state.
         const { embeddedOps: _embeddedOps, ...cacheableData } = data;
+        const { appInfo: _appInfo, ...cacheableOptions } = options;
         const cacheKey = crypto.createHash('md5')
-          .update(JSON.stringify({ data: cacheableData, options, v: this.initConfigVersion }))
+          .update(JSON.stringify({ data: cacheableData, options: cacheableOptions, v: this.initConfigVersion }))
           .digest('hex');
 
         let sharedJson = this.initResultCache.get(cacheKey);
@@ -4188,7 +4190,7 @@ class netBot extends ControllerBot {
 
               let initResult;
               try {
-                initResult = await this._enqueueInitRequest({ options, data, gid, appInfo });
+                initResult = await this._enqueueInitRequest({ options, data, gid });
               } catch (err) {
                 log.error("Error calling hostManager.toJson():", err);
                 return this.simpleTxData(msg, null, { code: 500, msg: "got error when calling hostManager.toJson: " + err }, cloudOptions);
