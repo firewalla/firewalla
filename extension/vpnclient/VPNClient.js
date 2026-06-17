@@ -328,11 +328,9 @@ class VPNClient {
     // PBR DNS route is independent of the "Force DNS over VPN" (routeDNS) toggle
     if (rtId) {
       await this._enablePBRDNSRoute("soft");
-      if (!settings.strictVPN)
-        await this._enablePBRDNSRoute("hard");
+      // PBR hard DNS route is owned by _prepareRoutes (enabled unconditionally, persists across disconnects)
     } else {
       await this._disablePBRDNSRoute("soft");
-      await this._disablePBRDNSRoute("hard");
     }
     // redirect dns to vpn channel
     if (settings.routeDNS) {
@@ -373,15 +371,11 @@ class VPNClient {
       await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4)
       await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6)
     }
-    // PBR ipset is always populated with match_all regardless of overrideDefaultRoute,
-    // so route rules pointing to this VPN client work in both VPN and Direct Internet modes.
+    // PBR soft ipset is populated here, after the link is up. Soft route rules fall back to the default WAN when the tunnel is down, so this set is flushed on disconnect.
+    // PBR hard ipset is the kill-switch bucket and is owned by _prepareRoutes (always populated, never flushed on disconnect, independent of strictVPN), so it is intentionally not touched here.
     if (rtId) {
       await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
       await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
-      if (!settings.strictVPN) {
-        await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
-        await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
-      }
     }
 
     if (rtId) {
@@ -526,18 +520,18 @@ class VPNClient {
     sem.on('link_broken', async (event) => {
       if (this._started === true && this.profileId === event.profileId) {
         if (this._currentState !== false) {
-          // clear soft route ipset
+          // clear soft route ipsets (soft routes fall back to the default WAN when the tunnel is down)
           await VPNClient.ensureCreateEnforcementEnv(this.profileId);
           await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
           await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
           await this._disableDNSRoute("soft");
           await this._disablePBRDNSRoute("soft");
-          // clear hard route ipset if strictVPN (kill-switch) is not enabled
+          // PBR hard ipset / DNS route are intentionally NOT cleared here: a hard route rule keeps its kill-switch
+          // on disconnect, independent of the VPN client's strictVPN setting. They are cleared only in stop().
+          // clear the device-level hard route ipset only if strictVPN (kill-switch) is not enabled
           if (!this.settings.strictVPN) {
-            await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
-            await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
+            await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
             await this._disableDNSRoute("hard");
-            await this._disablePBRDNSRoute("hard");
             await this._resetRouteMarkInRedis();
           }
           if (fc.isFeatureOn(Constants.FEATURE_VPN_DISCONNECT)) {
@@ -595,18 +589,18 @@ class VPNClient {
     sem.on('link_wan_switched', async (event) => {
       if (this._started === true && this.profileId === event.profileId) {
         if (this._currentState !== false) {
-          // clear soft route ipset
+          // clear soft route ipsets (soft routes fall back to the default WAN when the tunnel is down)
           await VPNClient.ensureCreateEnforcementEnv(this.profileId);
           await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
           await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
           await this._disableDNSRoute("soft");
           await this._disablePBRDNSRoute("soft");
-          // clear hard route ipset if strictVPN (kill-switch) is not enabled
+          // PBR hard ipset / DNS route are intentionally NOT cleared here: a hard route rule keeps its kill-switch
+          // on disconnect, independent of the VPN client's strictVPN setting. They are cleared only in stop().
+          // clear the device-level hard route ipset only if strictVPN (kill-switch) is not enabled
           if (!this.settings.strictVPN) {
-            await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
-            await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
+            await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
             await this._disableDNSRoute("hard");
-            await this._disablePBRDNSRoute("hard");
             await this._resetRouteMarkInRedis();
           }
         }
@@ -996,7 +990,9 @@ class VPNClient {
     await Ipset.add(oifIpsetName4, `128.0.0.0/1,${this.getInterfaceName()}`);
     await Ipset.add(oifIpsetName6, `::/1,${this.getInterfaceName()}`);
     await Ipset.add(oifIpsetName6, `8000::/1,${this.getInterfaceName()}`);
-    // do not need to populate route ipset if strictVPN (kill-switch) is not enabled, it will be populated after link is established
+    // Device-level VPN assignment uses the regular route ipset (hard). Its kill-switch behavior is governed by
+    // the VPN client's strictVPN setting: under strictVPN the hard set is pre-populated here (before the link is
+    // up) and kept on disconnect; otherwise it is populated later in _refreshRoutes and flushed on disconnect.
     if (settings.strictVPN) {
       if (settings.overrideDefaultRoute && rtId) {
         await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
@@ -1005,24 +1001,28 @@ class VPNClient {
         await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
         await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
       }
-      // PBR ipset is independent of overrideDefaultRoute. Pre-populate hard so kill-switch covers PBR-routed traffic too.
-      if (rtId) {
-        await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
-        await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
-      } else {
-        await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
-        await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
-      }
-      await vpnClientEnforcer.enforceStrictVPN(this.getInterfaceName());
       await this._setRouteMarkInRedis();
     } else {
       await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
       await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
-      await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
-      await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
-      await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
       await this._resetRouteMarkInRedis();
     }
+    // PBR hard ipset is the kill-switch bucket for route rules with routeType=hard. It is decoupled from the VPN
+    // client's strictVPN setting: always populated here (independent of overrideDefaultRoute), never flushed on
+    // disconnect, so a hard route rule keeps blocking when the tunnel is down
+    // regardless of strictVPN. It is cleared only in stop(). PBR soft ipset is (re)populated in _refreshRoutes
+    // once the link is up, so clear it here for a clean slate.
+    if (rtId) {
+      await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+      await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+    } else {
+      await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
+    }
+    await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
+    // The unreachable default route in the VPN routing table drops any traffic that is still marked when the
+    // tunnel is down. It must exist whenever the client is enabled (not only under strictVPN) so that hard route
+    // rules actually drop instead of leaking to the default WAN. It is removed only in stop().
+    await vpnClientEnforcer.enforceStrictVPN(this.getInterfaceName());
     const dnsServers = await this._getDNSServers() || [];
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
