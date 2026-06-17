@@ -94,7 +94,10 @@ class AutoBlocksRevalidationSensor extends Sensor {
     if (intel.action === 'block')
       return true;
 
-    if (policyRule["blockby"] === 'fastdns') // active protect strict mode auto block rule
+    if (policyRule["blockby"] === 'fastdns') // active protect strict mode DNS auto block rule
+      return true;
+
+    if (policyRule["blockby"] === 'ip_intel') // active protect strict mode IP auto block rule
       return true;
 
     if (Number(intel.t) >= 10) {
