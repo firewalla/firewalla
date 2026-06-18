@@ -313,10 +313,15 @@ async function batchActionNetPort(elements, portObj, ipset, op='add', options = 
     }
     if (!setName) continue;
 
+    let effectivePortObj = portObj;
+    if (portObj && (portObj.proto === 'icmp' || portObj.proto === 'icmpv6')) {
+      effectivePortObj = { ...portObj, proto: setName === v6Set ? 'icmpv6' : 'icmp' };
+    }
+    const portStr = CategoryEntry.toPortStr(effectivePortObj);
     if (op === 'add') {
-      await Ipset.add(setName, `${ipAddr},${CategoryEntry.toPortStr(portObj)}`, { comment: options.comment });
+      await Ipset.add(setName, `${ipAddr},${portStr}`, { comment: options.comment });
     } else {
-      await Ipset.del(setName, `${ipAddr},${CategoryEntry.toPortStr(portObj)}`);
+      await Ipset.del(setName, `${ipAddr},${portStr}`);
     }
   }
 }
