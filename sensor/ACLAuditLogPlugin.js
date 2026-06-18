@@ -369,7 +369,7 @@ class ACLAuditLogPlugin extends Sensor {
     }
 
     if (record.ac === "qos" || record.ac === "disturb") {
-      record.qmark = Number(mark) & 0x3fff000;
+      record.qmark = Number(mark) & 0x3fff0000;
       const matchedPids = (await this.ruleStatsPlugin.getPolicyIds(record)).map(Number);
       if (matchedPids && matchedPids.length > 0){
         record.pid = matchedPids[0];
