@@ -158,6 +158,10 @@ cat << EOF
 # initialize nat dns fallback chain, which is traversed if acl is off
 -N FW_PREROUTING_DNS_FALLBACK
 
+# fire.walla must always resolve via dnsmasq regardless of bypass status
+-N FW_PREROUTING_DNS_FIRE_WALLA
+-A FW_PREROUTING -j FW_PREROUTING_DNS_FIRE_WALLA
+
 # create regular dns redirect chain in FW_PREROUTING
 -N FW_PREROUTING_DNS_VPN
 -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN
@@ -222,12 +226,17 @@ cat << EOF
 # initialize nat dns fallback chain, which is traversed if acl is off
 -N FW_PREROUTING_DNS_FALLBACK
 
+# fire.walla must always resolve via dnsmasq regardless of bypass status
+-N FW_PREROUTING_DNS_FIRE_WALLA
+-A FW_PREROUTING -j FW_PREROUTING_DNS_FIRE_WALLA
+
 # create regular dns redirect chain in FW_PREROUTING
 -N FW_PREROUTING_DNS_VPN
 -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN
 -N FW_PREROUTING_DNS_WG
 -A FW_PREROUTING -j FW_PREROUTING_DNS_WG
 -N FW_PREROUTING_DNS_DEFAULT
+# skip FW_PREROUTING_DNS_DEFAULT chain if acl or dns booster is off
 -A FW_PREROUTING -m set ! --match-set acl_off_set src,src -m set ! --match-set no_dns_caching_set src,src -j FW_PREROUTING_DNS_DEFAULT
 -A FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT
 # traverse DNS fallback chain if default chain is not taken

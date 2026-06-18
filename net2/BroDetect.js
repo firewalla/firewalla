@@ -1150,6 +1150,11 @@ class BroDetect {
           }
         }
       }
+      // for local flows, fetch connEntry to get apid written by ACLAuditLogPlugin or APCMsgSensor
+      if (!connEntry && localFlow && orig && resp && orig_p && resp_p && obj['proto']) {
+        connEntry = await conntrack.getConnEntries(orig, orig_p, resp, resp_p, obj['proto'], 600);
+      }
+
       if (flowdir == "in" && !localFlow)
         conntrack.setConnRemote(obj['proto'], resp, resp_p);
 
@@ -1560,7 +1565,7 @@ class BroDetect {
           const descriptor = (systemFlow ? f.mac+':' : '')
             + (type == 'dns'
               ? `${f.sh}:${f.dh}:${f.dn}`
-              : `${f.sh}:${f.dh}:${f.oIntf || ""}:${f.dp || ""}`)
+              : `${f.sh}:${f.dh}:${f.oIntf || ""}:${f.dp || ""}:${f.pr || ""}`)
 
           if (type == 'conn' && f.uids && f.uids.length && f.fd === "in" && !f.af) try {
             // try resolve host info for previous flows again here

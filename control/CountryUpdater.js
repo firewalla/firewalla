@@ -182,6 +182,11 @@ class CountryUpdater extends CategoryUpdaterBase {
     await fsp.writeFile(countFile, addresses.length);
   }
 
+  async updatePersistentIPSets(category, ip6 = false, options) {
+    if (this.isActivated(category))
+      await this.updateIpset(category, ip6, options);
+  }
+
   async checkActivationStatus(category) {
     const v4Active = await Ipset.isReferenced(this.getIPSetName(category))
     const v6Active = await Ipset.isReferenced(this.getIPSetNameForIPV6(category))

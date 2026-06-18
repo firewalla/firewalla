@@ -24,10 +24,12 @@ const Constants = require('../net2/Constants.js');
 const { BloomFilter } = require('../vendor_lib/bloomfilter.js');
 const CLOUD_CONFIG_KEY = Constants.REDIS_KEY_NOISE_DOMAIN_CLOUD_CONFIG;
 const cc = require('../extension/cloudcache/cloudcache.js');
+const sem = require('./SensorEventManager.js').getInstance();
 const fsp = require('fs').promises;
 const f = require('../net2/Firewalla.js');
 const cacheFolder = `${f.getRuntimeInfoFolder()}/cache`;
 const hashKey = "noise_domain";
+const EVENT_NOISE_DOMAIN_BF_UPDATED = "NOISE_DOMAIN_BF_UPDATED";
 
 class NoiseDomainsSensor extends Sensor {
   async run() {
@@ -40,18 +42,20 @@ class NoiseDomainsSensor extends Sensor {
   
   async init() {
     this.bloomfilter = null;
+
+    sem.on(EVENT_NOISE_DOMAIN_BF_UPDATED, async () => {
+      await this.reloadNoiseDomainBFFromLocal();
+    });
+
     await cc.enableCache(hashKey, (data) => {
-      if (data) {
-        this.loadNoiseDomainBFData(data);
-      } else {
-        log.error("No valid bf data. Delete url bf cache data.");
-        this.deleteNoiseDomainBFData();
-      }
+      sem.sendEventToAll({
+        type: EVENT_NOISE_DOMAIN_BF_UPDATED,
+      });
     });
     await this.removeLegacyNoiseBFfromRedis();
   }
 
-  async loadNoiseDomainBFData(content) {
+  loadNoiseDomainBFData(content) {
     try {
       if (typeof content !== 'string' || !content.trim()) return;
       const { buckets, k } = JSON.parse(content);
@@ -63,16 +67,30 @@ class NoiseDomainsSensor extends Sensor {
     }
   }
 
-  async loadLocalNoiseDomainData4Test() {
+  async reloadNoiseDomainBFFromLocal() {
     this.bloomfilter = null;
     const noiseDomainDataFile = `${cacheFolder}/${hashKey}`;
-    const content = await fsp.readFile(noiseDomainDataFile, 'utf8');
-    if (content) {
-      this.loadNoiseDomainBFData(content);
-    } else {
-      log.error(`No valid noise domain data found in ${noiseDomainDataFile}.`);
-      return;
+    log.info(`Reloading noise domain bf from local file: ${noiseDomainDataFile}`);
+    try {
+      const content = await fsp.readFile(noiseDomainDataFile, 'utf8');
+      if (content) {
+        this.loadNoiseDomainBFData(content);
+      } else {
+        log.error(`No valid noise domain data found in ${noiseDomainDataFile}.`);
+        this.deleteNoiseDomainBFData();
+      }
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        log.error("No valid bf data. Delete noise domain bf cache data.");
+        this.deleteNoiseDomainBFData();
+      } else {
+        log.error('Failed to reload noise domain bloom filter from local file, err:', err);
+      }
     }
+  }
+
+  async loadLocalNoiseDomainData4Test() {
+    return this.reloadNoiseDomainBFFromLocal();
   }
 
   deleteNoiseDomainBFData() {

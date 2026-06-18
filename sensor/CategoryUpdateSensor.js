@@ -48,6 +48,7 @@ const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
 
 const _ = require('lodash');
+const Message = require('../net2/Message.js');
 const { CategoryEntry } = require('../control/CategoryEntry.js');
 
 const INTEL_PROXY_CHANNEL = "intel_proxy";
@@ -66,6 +67,18 @@ class CategoryUpdateSensor extends Sensor {
     super(config)
 
     this.resetCategoryHashsetMapping()
+
+    sem.on(Message.MSG_DEBUG, event => {
+      if (event.name !== this.constructor.name) return;
+      switch (event.data) {
+        case 'regularJob':
+          this.regularJob().catch(err => log.error('Failed to run regularJob', err)); break;
+        case 'securityJob':
+          this.securityJob().catch(err => log.error('Failed to run securityJob', err)); break;
+        case 'countryJob':
+          this.countryJob().catch(err => log.error('Failed to run countryJob', err)); break;
+      }
+    })
   }
 
   async regularJob() {
@@ -207,7 +220,10 @@ class CategoryUpdateSensor extends Sensor {
         // no port support
         // Peel off regex entries first so they don't get misclassified as domains by the Address4/6/hash filters below.
         const regexEntries = [];
-        const nonRegexDomains = [];
+        const ip4List = [];
+        const ip6List = [];
+        const hashDomains = [];
+        const leftDomains = [];
         for (const d of domains) {
           if (typeof d === "string" && d.startsWith("regex:")) {
             try {
@@ -219,14 +235,21 @@ class CategoryUpdateSensor extends Sensor {
               log.error(err.message, d);
             }
           } else {
-            nonRegexDomains.push(d);
+            const address4 = new Address4(d);
+            if (address4.isValid()) {
+              ip4List.push(d);
+            } else {
+              const address6 = new Address6(d);
+              if (address6.isValid()) {
+                ip6List.push(d);
+              } else if (isHashDomain(d)) {
+                hashDomains.push(d);
+              } else {
+                leftDomains.push(d);
+              }
+            }
           }
         }
-
-        const ip4List = nonRegexDomains.filter(d => new Address4(d).isValid());
-        const ip6List = nonRegexDomains.filter(d => new Address6(d).isValid());
-        const hashDomains = nonRegexDomains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && isHashDomain(d));
-        const leftDomains = nonRegexDomains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && !isHashDomain(d));
 
         log.info(`category ${category} has ${ip4List.length} ipv4, ${ip6List.length} ipv6, ${leftDomains.length} domains, ${hashDomains.length} hashed domains, ${regexEntries.length} regex`);
 

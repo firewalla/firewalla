@@ -452,6 +452,14 @@ class Policy {
       if (!notInRange) return false;
     }
 
+    // a port-based rule only applies to the protocol it specifies
+    if (this.protocol && alarm['p.protocol'] &&
+      String(this.protocol).toLowerCase() !== String(alarm['p.protocol']).toLowerCase()
+    ) {
+      log.debug(`protocol doesn't match`)
+      return false;
+    }
+
     if (alarm instanceof Alarm.BroNoticeAlarm &&
       alarm['p.noticeType'] == 'SSH::Password_Guessing' &&
       sysManager.isMyIP(alarm['p.dest.ip'])
@@ -667,6 +675,7 @@ class Policy {
         allInRange = allInRange && portRange[0] * 1 <= p && p <= portRange[1] * 1;
         if (!allInRange) return false;
       }
+      return allInRange;
     } else {
       return portRange[0] * 1 <= port && port <= portRange[1] * 1;
     }

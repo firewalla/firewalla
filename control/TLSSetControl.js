@@ -137,7 +137,11 @@ class TLSSetControl extends ModuleControl {
   async addRule(tlsHostSet, action, domain) {
     // Determine which modules to update based on domain protocol and platform support
     if (!action && !domain && typeof tlsHostSet === 'string') {
-      [ tlsHostSet, action, domain ] = tlsHostSet.split(':');
+      // encoded as "<action>:<set>[:<domain>]"; domain may itself contain colons (e.g. "example.com,tcp:443-443")
+      const parts = tlsHostSet.split(':');
+      action = parts.shift();
+      tlsHostSet = parts.shift();
+      domain = parts.length > 0 ? parts.join(':') : undefined;
     }
     if (!tlsHostSet || !action || !domain && action !== 'flush') {
       throw new Error(`invalid parameters: set: ${tlsHostSet}, action: ${action}, domain: ${domain}`);
@@ -150,7 +154,7 @@ class TLSSetControl extends ModuleControl {
     }
 
     if (!f.isMain()) {
-      super.addRule(`${action}:${tlsHostSet}:${domain}`);
+      super.addRule(domain !== undefined ? `${action}:${tlsHostSet}:${domain}` : `${action}:${tlsHostSet}`);
       return;
     }
 
@@ -172,7 +176,8 @@ class TLSSetControl extends ModuleControl {
    * Execute a single TLS hostset add/rm inline (autonomous phase).
    */
   async _execOne(tlsHostSet, action, domain) {
-    const modules = this.getModulesForDomain(domain, tlsHostSet);
+    // flush carries no domain, it applies to all modules where the set is active
+    const modules = domain ? this.getModulesForDomain(domain, tlsHostSet) : this.getModulesToUpdate({ tlsHostSet });
     let payload;
     if (action === 'add') {
       payload = `+${domain}`;

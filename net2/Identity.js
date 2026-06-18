@@ -154,19 +154,20 @@ class Identity extends Monitorable {
     const setName6 = this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6);
     await Ipset.flush(setName4);
     await Ipset.flush(setName6);
+    const ops = [];
     for (const ip of ips) {
       if (new Address4(ip).isValid()) {
-        await Ipset.add(setName4, ip);
+        ops.push(`add ${setName4} ${ip}`);
         for (const uid of tags)
-          await Ipset.add(Tag.getTagDeviceIPSetName(uid, 4), ip, { timeout: 0 });
-      } else {
-        if (new Address6(ip).isValid()) {
-          await Ipset.add(setName6, ip);
-          for (const uid of tags)
-            await Ipset.add(Tag.getTagDeviceIPSetName(uid, 6), ip, { timeout: 0 });
-        }
+          ops.push(`add ${Tag.getTagDeviceIPSetName(uid, 4)} ${ip}`);
+      } else if (new Address6(ip).isValid()) {
+        ops.push(`add ${setName6} ${ip}`);
+        for (const uid of tags)
+          ops.push(`add ${Tag.getTagDeviceIPSetName(uid, 6)} ${ip}`);
       }
     }
+    if (ops.length)
+      await Ipset.restore(ops, true);
 
     // update IP addresses in redis set
     // TODO: only supports IPv4 address here

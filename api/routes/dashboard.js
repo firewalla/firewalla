@@ -28,9 +28,7 @@ const getPreferredName = require('../../util/util.js').getPreferredName
 const CloudWrapper = require('../lib/CloudWrapper');
 const cloudWrapper = new CloudWrapper();
 
-const util = require('util')
-const jsonfile = require('jsonfile');
-const jsReadFile = util.promisify(jsonfile.readFile)
+const getGid = require('../lib/getGid.js')
 
 const FireRouter = require('../../net2/FireRouter.js');
 
@@ -130,7 +128,7 @@ router.get('/json/vip_stats.json', async (req, res, next) => {
 
 router.get('/json/stats.json', async (req, res, next) => {
     if (!gid)
-        gid = (await jsReadFile("/home/pi/.firewalla/ui.conf")).gid;
+        gid = await getGid();
 
     const devices = [];
     const staStatus = await FireRouter.getAllSTAStatus().catch((err) => {

@@ -40,7 +40,7 @@ const UPNP = require('../extension/upnp/upnp.js');
 const upnp = new UPNP();
 
 const cfg = require('../net2/config.js');
-
+const { delay } = require('../util/util.js');
 const sysManager = require('../net2/SysManager.js');
 const Message = require('../net2/Message.js');
 const Alarm = require('../alarm/Alarm.js');
@@ -119,25 +119,35 @@ class UPNPSensor extends Sensor {
         if (iface.name && iface.name.endsWith(":0"))
           continue;
         const leaseFile = `/var/run/upnp.${iface.name}.leases`;
-        await exec(`sudo touch ${leaseFile}`).then(() => {
-          const watcher = fs.watch(leaseFile, {}, (e, filename) => {
-            if (e === "change") {
-              log.info(`UPnP lease file ${leaseFile} is changed, schedule checking UPnP leases ...`);
-              this.scheduleCheckUPnPLeases();
-            }
-            if (e === "rename") {
-              log.info(`UPnP lease file ${leaseFile} is renamed, schedule reload UPNPSensor ...`);
-              this.scheduleReload();
-            }
-          });
-          log.info(`Watching UPnP lease file change on ${leaseFile} ...`);
-          this.upnpLeaseFileWatchers.push(watcher);
-        }).catch((err) => {
-          log.error(`Failed to watch file change ${leaseFile}`, err.message);
-        });
+        await this._watchLeaseFile(leaseFile);
       }
       this.scheduleCheckUPnPLeases();
     }, 5000);
+  }
+
+  async _watchLeaseFile(leaseFile) {
+    try {
+      await exec(`sudo touch ${leaseFile}`);
+      const watcher = fs.watch(leaseFile, {}, (e) => {
+        if (e === "change") {
+          log.info(`UPnP lease file ${leaseFile} is changed, schedule checking UPnP leases ...`);
+          this.scheduleCheckUPnPLeases();
+        }
+        if (e === "rename") {
+          log.info(`UPnP lease file ${leaseFile} is renamed, schedule reload UPNPSensor ...`);
+          this.scheduleReload();
+        }
+      });
+      log.verbose(`Watching UPnP lease file change on ${leaseFile} ...`);
+      this.upnpLeaseFileWatchers.push(watcher);
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        await delay(5000);
+        await this._watchLeaseFile(leaseFile);
+      } else {
+        log.error(`Failed to watch file change ${leaseFile}`, err.message);
+      }
+    }
   }
 
   scheduleCheckUPnPLeases() {
