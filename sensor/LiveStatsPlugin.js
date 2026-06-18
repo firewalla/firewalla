@@ -468,6 +468,9 @@ class LiveStatsPlugin extends Sensor {
       log.error('getSwitchMetricsLast failed', target, err.message);
       return emptySwitchThroughput();
     }
+    if (!metrics || !metrics.sample) {
+      return emptySwitchThroughput();
+    }
     const agg = this.aggregateSwitchMetricBytes(metrics && metrics.sample);
     const prev = streamCache.switchMetricsPrev;
 

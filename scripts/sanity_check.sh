@@ -1434,6 +1434,19 @@ run_lsusb() {
   echo ""
 }
 
+check_iptables() {
+  local output
+  local rc
+  output=$(sudo iptables -S 2>&1)
+  rc=$?
+  if [[ $rc -ne 0 ]]; then
+    echo -e "\e[41m>>>>>> iptables -S failed (exit $rc), blocking & routing might not working correctly <<<<<<\e[0m"
+    echo "$output"
+    echo ""
+    echo ""
+  fi
+}
+
 check_eth_count() {
   ports=$(find /sys/class/net/ | grep -c "\\eth[0-3]$")
 
@@ -1455,10 +1468,19 @@ check_events() {
 }
 
 check_connection() {
-  URLs=("firewalla.encipher.io" "api.firewalla.com" "connect.firewalla.com" "ota.firewalla.com" "fireupgrade.s3.us-west-2.amazonaws.com" "firewalla-ap-update-xyz.s3.us-west-2.amazonaws.com" "github.com" "firewalla.com")
+  URLs=(
+    "https://firewalla.encipher.io"
+    "https://api.firewalla.com"
+    "https://connect.firewalla.com"
+    "https://ota.firewalla.com"
+    "https://fireupgrade.s3.us-west-2.amazonaws.com"
+    "https://firewalla-ap-update-xyz.s3.us-west-2.amazonaws.com"
+    "https://github.com"
+    "http://firewalla.com"
+  )
 
   for url in "${URLs[@]}"; do
-    code=$(curl -s -o /dev/null -w "%{http_code}" "https://$url")
+    code=$(curl -s -o /dev/null -w "%{http_code}" "$url")
     if [[ $code -eq 000 ]]; then
       echo -e "\e[41m>>> $url is NOT reachable <<<\e[0m"
     else
@@ -1484,6 +1506,7 @@ usage() {
     echo "  -f  | --fast | --host"
     echo "  -e  | --events"
     echo "  -c  | --connection"
+    echo "        --iptables"
     echo "  -h  | --help"
     return
 }
@@ -1562,6 +1585,11 @@ while [ "$1" != "" ]; do
         FAST=true
         check_connection
         ;;
+    --iptables)
+        shift
+        FAST=true
+        check_iptables
+        ;;
     -e | --events)
         shift
         FAST=true
@@ -1602,6 +1630,7 @@ if [ "$FAST" == false ]; then
     check_docker
     run_lsusb
     check_eth_count
+    check_iptables
     check_connection
     test -z $SPEED || check_speed
 fi

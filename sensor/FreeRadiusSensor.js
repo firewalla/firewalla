@@ -205,15 +205,22 @@ class FreeRadiusSensor extends Sensor {
       return;
     for (const [mac, staInfo] of Object.entries(staStatus)) {
       if (staInfo.dot1xUserName) {
-        await this.setDeviceTag(mac, staInfo.dot1xUserName);
+        const options = { wpax: staInfo.wpax, auth: "dot1x" };
+        if (staInfo.dvlanVlanId != null)
+          options.dvlanId = String(staInfo.dvlanVlanId);
+        await this.setDeviceTag(mac, staInfo.dot1xUserName, staInfo.ssid, options);
       }
     }
   }
 
-  async setDeviceTag(mac, username) {
+  async setDeviceTag(mac, username, ssid, options = {}) {
+    const monitorable = await hostManager.getHostAsync(mac);
     const userTag = tagManager.getTagByRadiusUser(username);
     if (!userTag) {
       log.info(`skip set device tag ${mac} with username ${username}, user tag not found`);
+      if (monitorable) {
+        await monitorable.resetAutoGroupAsync();
+      }
       return;
     }
 
@@ -224,13 +231,16 @@ class FreeRadiusSensor extends Sensor {
 
     if (!tagId) {
       log.info(`skip set device tag ${mac} with username ${username}, tag ${tagId} of ${userTag.getTagType()} ${userTag.getUniqueId()} not found`);
+      if (monitorable) {
+        await monitorable.resetAutoGroupAsync();
+      }
       return;
     }
 
-    let monitorable = await hostManager.getHostAsync(mac);
     if (!monitorable) {
       log.info(`New device ${mac} set candidate tag to ${tagId}`);
       await hostTool.setWirelessDeviceTagCandidate(mac, String(tagId));
+      await hostTool.setWirelessAutoGroup(mac, String(tagId), ssid, options);
       return;
     }
 
@@ -241,11 +251,15 @@ class FreeRadiusSensor extends Sensor {
     const wifiAutoGroup = monitorable.getPolicyFast(Constants.POLICY_KEY_WIFI_AUTO_GROUP);
     if (_.get(wifiAutoGroup, "state") === false) {
       log.debug(`${Constants.POLICY_KEY_WIFI_AUTO_GROUP} is not enabled on device ${mac}`);
+      if (monitorable)
+        await monitorable.resetAutoGroupAsync();
       return;
     }
 
     const origPolicy = await monitorable.loadPolicyAsync();
     const policyKey = _.get(Constants.TAG_TYPE_MAP, [Constants.TAG_TYPE_GROUP, "policyKey"]);
+
+    await monitorable.setAutoGroupAsync(tagId, ssid, options);
 
     if (_.isEqual(origPolicy[policyKey], [tagId])) {
       log.debug(`${mac} already has tag ${username} ${tagId}`);
@@ -263,7 +277,7 @@ class FreeRadiusSensor extends Sensor {
       const msg = JSON.parse(message);
       if (msg) {
         const mac = msg.mac.replace(/-/g, ':').toUpperCase();
-        await this.setDeviceTag(mac, msg.user_name);
+        await this.setDeviceTag(mac, msg.user_name, msg.ssid, { auth: "dot1x" });
       }
     } catch (err) {
       log.error("parse radius_auth_event message error", err.message, message);

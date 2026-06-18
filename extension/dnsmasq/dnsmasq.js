@@ -469,12 +469,12 @@ module.exports = class DNSMASQ {
           return;
         if (options.wanUUID.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
           const dnsMarkTag = VirtWanGroup.getDnsMarkTag(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length));
-          const routeConfPath = `${VirtWanGroup.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
+          const routeConfPath = `${VirtWanGroup.getPBRDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
           await this.writeConfig(routeConfPath, `tag-tag=$policy_${options.pid}$${dnsMarkTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
         } else {
           if (options.wanUUID.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX)) {
             const dnsMarkTag = VPNClient.getDnsMarkTag(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length));
-            const routeConfPath = `${VPNClient.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
+            const routeConfPath = `${VPNClient.getPBRDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
             await this.writeConfig(routeConfPath, `tag-tag=$policy_${options.pid}$${dnsMarkTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
           } else {
             const NetworkProfile = require('../../net2/NetworkProfile.js');
@@ -534,13 +534,16 @@ module.exports = class DNSMASQ {
                   entries.push(`mac-address-tag=%${mac}$policy_${options.pid}&${options.pid}`);
                 else
                   entries.push(`mac-address-tag=/${domain}/%${mac}$policy_${options.pid}&${options.pid}`);
+              } else if (options.action === "bypass") {
+                entries.push(`mac-address-tag=%${mac}$!policy_${options.aPid}&${options.pid}`);
               } else {
                 entries.push(`mac-address-tag=%${mac}$policy_${options.pid}&${options.pid}`);
+
               }
             }
             Array.prototype.push.apply(entries, commonEntries);
             const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
-            await this.writeConfig(filePath, entries);
+            await this.writeConfig(filePath, entries, options.append);
           }
 
           if (!_.isEmpty(options.intfs)) {
@@ -553,12 +556,14 @@ module.exports = class DNSMASQ {
                   entries.push(`mac-address-tag=%00:00:00:00:00:00$policy_${options.pid}&${options.pid}`);
                 else
                   entries.push(`mac-address-tag=/${domain}/%00:00:00:00:00:00$policy_${options.pid}&${options.pid}`);
+              } else if (options.action === "bypass") {
+                entries.push(`mac-address-tag=%00:00:00:00:00:00$!policy_${options.aPid}&${options.pid}`);
               } else {
                 entries.push(`mac-address-tag=%00:00:00:00:00:00$policy_${options.pid}&${options.pid}`);
               }
               Array.prototype.push.apply(entries, commonEntries);
               const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
-              await this.writeConfig(filePath, entries);
+              await this.writeConfig(filePath, entries, options.append);
             }
           }
 
@@ -571,12 +576,14 @@ module.exports = class DNSMASQ {
                   entries.push(`group-tag=@${tag}$policy_${options.pid}`);
                 else
                   entries.push(`group-tag=/${domain}/@${tag}$policy_${options.pid}`);
+              } else if (options.action === "bypass") {
+                entries.push(`group-tag=@${tag}$!policy_${options.aPid}&${options.pid}`);
               } else {
                 entries.push(`group-tag=@${tag}$policy_${options.pid}&${options.pid}`);
               }
               Array.prototype.push.apply(entries, commonEntries);
               const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
-              await this.writeConfig(filePath, entries);
+              await this.writeConfig(filePath, entries, options && options.append);
             }
           }
 
@@ -593,11 +600,13 @@ module.exports = class DNSMASQ {
                     entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$policy_${options.pid}&${options.pid}`);
                   else
                     entries.push(`group-tag=/${domain}/@${identityClass.getEnforcementDnsmasqGroupId(uid)}$policy_${options.pid}&${options.pid}`);
+                } else if (options.action === "bypass") {
+                  entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$!policy_${options.aPid}&${options.pid}`);
                 } else {
                   entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$policy_${options.pid}&${options.pid}`);
                 }
                 Array.prototype.push.apply(entries, commonEntries);
-                await this.writeConfig(filePath, entries);
+                await this.writeConfig(filePath, entries, options.append);
               }
             }
           }
@@ -620,7 +629,7 @@ module.exports = class DNSMASQ {
               default:
             }
             const filePath = this._getRuleGroupConfigPath(options.pid, uuid);
-            await this.writeConfig(filePath, entries);
+            await this.writeConfig(filePath, entries,  options.append);
           }
         } else {
           // global effective policy
@@ -639,6 +648,7 @@ module.exports = class DNSMASQ {
                 entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
                 break;
               case "allow":
+              case "bypass":
                 entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
                 break;
               case "resolve":
@@ -648,7 +658,7 @@ module.exports = class DNSMASQ {
               default:
             }
             const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
-            await this.writeConfig(filePath, entries);
+            await this.writeConfig(filePath, entries, options.append);
           } else { // a new way to block without restarting dnsmasq, only for non-scheduling
             await this.addGlobalPolicyFilterEntry(domain, options);
             return "skip_restart"; // tell function caller that no need to restart dnsmasq to take effect
@@ -676,12 +686,12 @@ module.exports = class DNSMASQ {
           return;
         if (options.wanUUID.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
           const dnsMarkTag = VirtWanGroup.getDnsMarkTag(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length));
-          const routeConfPath = `${VirtWanGroup.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
+          const routeConfPath = `${VirtWanGroup.getPBRDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
           await this.writeConfig(routeConfPath, `tag-tag=$policy_${options.pid}$${dnsMarkTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
         } else {
           if (options.wanUUID.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX)) {
             const dnsMarkTag = VPNClient.getDnsMarkTag(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length));
-            const routeConfPath = `${VPNClient.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
+            const routeConfPath = `${VPNClient.getPBRDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
             await this.writeConfig(routeConfPath, `tag-tag=$policy_${options.pid}$${dnsMarkTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
           } else {
             const NetworkProfile = require('../../net2/NetworkProfile.js');
@@ -702,6 +712,10 @@ module.exports = class DNSMASQ {
               switch (options.action) {
                 case "block": {
                   entries.push(`mac-address-tag=%${mac}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+                  break;
+                }
+                case "bypass": {
+                  entries.push(`mac-address-tag=%${mac}$!${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
                   break;
                 }
                 case "allow": {
@@ -728,6 +742,10 @@ module.exports = class DNSMASQ {
               switch (options.action) {
                 case "block": {
                   entries.push(`mac-address-tag=%00:00:00:00:00:00$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+                  break;
+                }
+                case "bypass": {
+                  entries.push(`mac-address-tag=%00:00:00:00:00:00$!${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
                   break;
                 }
                 case "allow": {
@@ -827,6 +845,10 @@ module.exports = class DNSMASQ {
               entries.push(`mac-address-tag=%${systemLevelMac}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
               break;
             }
+            case "bypass": {
+              entries.push(`mac-address-tag=%${systemLevelMac}$!${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+              break;
+            }
             case "allow": {
               entries.push(`mac-address-tag=%${systemLevelMac}$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
               break;
@@ -909,11 +931,11 @@ module.exports = class DNSMASQ {
         if (!options.wanUUID)
           return;
         if (options.wanUUID.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
-          const routeConfPath = `${VirtWanGroup.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
+          const routeConfPath = `${VirtWanGroup.getPBRDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
           await fileRemove(routeConfPath).catch((err) => {});
         } else {
           if (options.wanUUID.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX)) {
-            const routeConfPath = `${VPNClient.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
+            const routeConfPath = `${VPNClient.getPBRDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
             await fileRemove(routeConfPath).catch((err) => {});
           } else {
             const NetworkProfile = require('../../net2/NetworkProfile.js');
@@ -1155,11 +1177,11 @@ module.exports = class DNSMASQ {
         if (!options.wanUUID)
           return;
         if (options.wanUUID.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
-          const routeConfPath = `${VirtWanGroup.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
+          const routeConfPath = `${VirtWanGroup.getPBRDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
           await fileRemove(routeConfPath).catch((err) => {});
         } else {
           if (options.wanUUID.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX)) {
-            const routeConfPath = `${VPNClient.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
+            const routeConfPath = `${VPNClient.getPBRDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
             await fileRemove(routeConfPath).catch((err) => {});
           } else {
             const NetworkProfile = require('../../net2/NetworkProfile.js');
@@ -1531,6 +1553,44 @@ module.exports = class DNSMASQ {
     }
   }
 
+  async _update_dns_firewalla_rules() {
+    await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_DNS_FIRE_WALLA').opr('-F'));
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_FIRE_WALLA').opr('-F'));
+    const interfaces = sysManager.getMonitoringInterfaces();
+    const NetworkProfile = require('../../net2/NetworkProfile.js');
+    for (const intf of interfaces) {
+      const uuid = intf.uuid;
+      if (!uuid) {
+        log.error(`uuid is not defined for ${intf.name}`);
+        continue;
+      }
+      const myIp4 = sysManager.myIp(intf.name);
+      const myIp6 = sysManager.myIp6(intf.name);
+      await NetworkProfile.ensureCreateEnforcementEnv(uuid);
+      if (myIp4) {
+        const netSet4 = NetworkProfile.getNetIpsetName(uuid, 4);
+        const rule4 = new Rule('nat').chn('FW_PREROUTING_DNS_FIRE_WALLA')
+          .set(netSet4, 'src,src')
+          .dport(53)
+          .mdl('string', '--hex-string "|04|fire|05|walla" --algo bm --icase')
+          .jmp(`DNAT --to-destination ${myIp4}:${MASQ_PORT}`);
+        await iptc.addRule(rule4.pro('udp'));
+        await iptc.addRule(rule4.pro('tcp'));
+      }
+      if (!_.isEmpty(myIp6)) {
+        const netSet6 = NetworkProfile.getNetIpsetName(uuid, 6);
+        const ip6 = myIp6.find(i => i.startsWith('fe80')) || myIp6[0];
+        const rule6 = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_FIRE_WALLA')
+          .set(netSet6, 'src,src')
+          .dport(53)
+          .mdl('string', '--hex-string "|04|fire|05|walla" --algo bm --icase')
+          .jmp(`DNAT --to-destination [${ip6}]:${MASQ_PORT}`);
+        await iptc.addRule(rule6.pro('udp'));
+        await iptc.addRule(rule6.pro('tcp'));
+      }
+    }
+  }
+
   async _update_dns_fallback_rules() {
     await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').opr('-F'));
     await iptc.addRule(new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_FALLBACK').opr('-F'));
@@ -1547,7 +1607,7 @@ module.exports = class DNSMASQ {
       const myIp4 = sysManager.myIp(intf.name);
       const myIp6 = sysManager.myIp6(intf.name);
       await NetworkProfile.ensureCreateEnforcementEnv(uuid);
-      const netSet = ipset.CONSTANTS.IPSET_MONITORED_NET
+      const netSet = ipset.CONSTANTS.IPSET_MONITORED_NET;
       if (myIp4 && resolver4 && resolver4.length > 0) {
         // redirect dns request that is originally sent to box itself to the upstream resolver
         for (const i in resolver4) {
@@ -1688,10 +1748,12 @@ module.exports = class DNSMASQ {
 
   async _remove_iptables_rules() {
     await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT').opr('-F'));
+    await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_DNS_FIRE_WALLA').opr('-F'));
   }
 
   async _remove_ip6tables_rules() {
     await iptc.addRule(new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').opr('-F'));
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_FIRE_WALLA').opr('-F'));
   }
 
   async _writeHashIntoRedis(type, hashes) {
@@ -2093,6 +2155,7 @@ module.exports = class DNSMASQ {
         try {
           await this._remove_all_iptables_rules();
           await this._add_all_iptables_rules();
+          await this._update_dns_firewalla_rules();
           await this._update_dns_fallback_rules();
         } catch (err) {
           log.error('Error when add iptables rules', err);

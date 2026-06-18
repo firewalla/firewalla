@@ -299,7 +299,8 @@ class SafeSearchPlugin extends Sensor {
   }
 
   generateCnameEntry(safeDomain, targetDomains) {
-    return [`cname=${targetDomains.join(',')},${safeDomain}$${featureName}`];
+    // One entry per domain to avoid lines exceeding dnsmasq's read buffer
+    return targetDomains.map(domain => `cname=${domain},${safeDomain}$${featureName}`);
   }
 
   async patchHostRecordEntry(safeDomain) {
