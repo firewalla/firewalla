@@ -105,7 +105,7 @@ const HOSTFILE_PATH = platform.isFireRouterManaged() ?
   f.getRuntimeInfoFolder() + "/dnsmasq-hosts-dir/";
 const MASQ_PORT = platform.isFireRouterManaged() ? 53 : 8853;
 const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
-const {Address4} = require('ip-address');
+const {Address4, Address6} = require('ip-address');
 
 const flowUtil = require('../../net2/FlowUtil.js');
 const Constants = require('../../net2/Constants.js');
@@ -1619,12 +1619,13 @@ module.exports = class DNSMASQ {
           await iptc.addRule(redirectRule.pro('udp'));
         }
       }
-      if (!_.isEmpty(myIp6) && resolver6 && resolver6.length > 0) {
-        for (const i in resolver6) {
+      const routableResolver6 = (resolver6 || []).filter(r => !new Address6(r).isLinkLocal());
+      if (!_.isEmpty(myIp6) && routableResolver6.length > 0) {
+        for (const i in routableResolver6) {
           const redirectRule = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_FALLBACK')
             .set(netSet, 'src,src').dst(myIp6.join(",")).dport(53)
-            .mdl("statistic", `--mode nth --every ${resolver6.length - i} --packet 0`)
-            .jmp(`DNAT --to-destination [${resolver6[i].split('%')[0]}]:53`);
+            .mdl("statistic", `--mode nth --every ${routableResolver6.length - i} --packet 0`)
+            .jmp(`DNAT --to-destination [${routableResolver6[i].split('%')[0]}]:53`);
           await iptc.addRule(redirectRule.pro('tcp'));
           await iptc.addRule(redirectRule.pro('udp'));
         }
