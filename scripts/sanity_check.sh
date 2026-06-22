@@ -53,10 +53,70 @@ read_hash() {
   done
 }
 
-# https://stackoverflow.com/questions/73742856/printing-and-padding-strings-with-bash-printf
-# this doesn't work for chinese or japanese but deals with emoji pretty well
-#
-# Space pad align string to width
+# Terminal display width (number of columns) of a single Unicode code point,
+# returned in $REPLY. Wide CJK characters and most emoji occupy 2 columns;
+# combining marks, zero-width joiners, variation selectors and emoji skin-tone
+# modifiers occupy 0. Everything else is 1.
+# Note: still imperfect for emoji ZWJ sequences (e.g. family emoji), which
+# terminals render inconsistently anyway.
+charwidth() {
+  local -i code=$1
+  # zero-width: combining marks (0300-036F etc.), zero-width space/joiner
+  # (200B-200F), variation selectors (FE00-FE0F), emoji skin-tone modifiers
+  # (1F3FB-1F3FF), BOM (FEFF)
+  if (( code == 0 ||
+        (code >= 0x0300 && code <= 0x036F) ||
+        (code >= 0x0483 && code <= 0x0489) ||
+        (code >= 0x0591 && code <= 0x05BD) ||
+        (code >= 0x0610 && code <= 0x061A) ||
+        (code >= 0x064B && code <= 0x065F) ||
+        (code >= 0x200B && code <= 0x200F) ||
+        (code >= 0xFE00 && code <= 0xFE0F) ||
+        (code >= 0xFE20 && code <= 0xFE2F) ||
+        code == 0xFEFF ||
+        (code >= 0x1F3FB && code <= 0x1F3FF) )); then
+    REPLY=0
+  # wide (2 columns): Hangul, CJK ideographs/kana/compat, fullwidth forms, emoji
+  elif (( (code >= 0x1100 && code <= 0x115F) ||
+          code == 0x2329 || code == 0x232A ||
+          code == 0x231A || code == 0x231B ||
+          (code >= 0x23E9 && code <= 0x23EC) || code == 0x23F0 || code == 0x23F3 ||
+          (code >= 0x25FD && code <= 0x25FE) ||
+          (code >= 0x2614 && code <= 0x2615) ||
+          (code >= 0x2648 && code <= 0x2653) ||
+          code == 0x267F || code == 0x2693 || code == 0x26A1 ||
+          (code >= 0x26AA && code <= 0x26AB) ||
+          (code >= 0x26BD && code <= 0x26BE) ||
+          (code >= 0x26C4 && code <= 0x26C5) ||
+          code == 0x26CE || code == 0x26D4 || code == 0x26EA ||
+          (code >= 0x26F2 && code <= 0x26F3) || code == 0x26F5 || code == 0x26FA || code == 0x26FD ||
+          code == 0x2705 || (code >= 0x270A && code <= 0x270B) || code == 0x2728 ||
+          code == 0x274C || code == 0x274E ||
+          (code >= 0x2753 && code <= 0x2755) || code == 0x2757 ||
+          (code >= 0x2795 && code <= 0x2797) || code == 0x27B0 || code == 0x27BF ||
+          (code >= 0x2B1B && code <= 0x2B1C) || code == 0x2B50 || code == 0x2B55 ||
+          (code >= 0x2E80 && code <= 0x303E) ||
+          (code >= 0x3041 && code <= 0x33FF) ||
+          (code >= 0x3400 && code <= 0x4DBF) ||
+          (code >= 0x4E00 && code <= 0x9FFF) ||
+          (code >= 0xA000 && code <= 0xA4CF) ||
+          (code >= 0xAC00 && code <= 0xD7A3) ||
+          (code >= 0xF900 && code <= 0xFAFF) ||
+          (code >= 0xFE10 && code <= 0xFE19) ||
+          (code >= 0xFE30 && code <= 0xFE6F) ||
+          (code >= 0xFF00 && code <= 0xFF60) ||
+          (code >= 0xFFE0 && code <= 0xFFE6) ||
+          (code >= 0x1F300 && code <= 0x1FAFF) ||
+          (code >= 0x20000 && code <= 0x3FFFD) )); then
+    REPLY=2
+  else
+    REPLY=1
+  fi
+}
+
+# Space-pad/right-align $2 to a display width of $1 columns, measuring by
+# terminal columns (not code points) so CJK and emoji don't break the table.
+# Truncates with "..." when too wide.
 # @params
 # $1: The alignment width
 # $2: The string to align
@@ -64,17 +124,51 @@ read_hash() {
 # aligned string
 align::right() {
   local -i width=$1 # Mandatory column width
+  # Force byte-wise string ops so we can decode UTF-8 ourselves; this is
+  # locale-independent (bash's `printf "'c"` does not portably yield a code
+  # point for multibyte chars, but does yield the byte value here).
+  local LC_ALL=C
   local -- str=$2 # Mandatory input string
-  local -i length
-  if (( ${#str} > width )); then
-    length=$width
-    str="${str:0:width-3}..."
+  local -i n=${#str} i=0 j clen val cp prev=0
+  local -a parts=() pw=()  # per-character byte sequence and its column width
+  local -i total=0
+  while (( i < n )); do
+    printf -v val "%d" "'${str:i:1}"; (( val < 0 )) && (( val += 256 ))
+    if   (( val < 0x80 )); then cp=$val;            clen=1
+    elif (( val < 0xC0 )); then cp=$val;            clen=1  # stray continuation byte
+    elif (( val < 0xE0 )); then cp=$((val & 0x1F)); clen=2
+    elif (( val < 0xF0 )); then cp=$((val & 0x0F)); clen=3
+    else                        cp=$((val & 0x07)); clen=4
+    fi
+    (( i + clen > n )) && clen=$(( n - i ))  # guard against truncated input
+    for (( j=1; j < clen; j++ )); do
+      printf -v val "%d" "'${str:i+j:1}"; (( val < 0 )) && (( val += 256 ))
+      cp=$(( (cp << 6) | (val & 0x3F) ))
+    done
+    charwidth "$cp"
+    # ZWJ emoji sequence (e.g. 👨‍💻): a glyph joined by U+200D renders as a
+    # single cell, so the part following the joiner adds no extra columns
+    (( prev == 0x200D )) && REPLY=0
+    prev=$cp
+    parts+=( "${str:i:clen}" )
+    pw+=( "$REPLY" )
+    (( total += REPLY ))
+    (( i += clen ))
+  done
+
+  local -- out=""
+  local -i w=0 k
+  if (( total <= width )); then
+    out=$str; w=$total
   else
-    length=${#str}
+    # truncate to leave 3 columns for the "..." marker
+    for (( k=0; k < ${#parts[@]}; k++ )); do
+      (( w + pw[k] > width - 3 )) && break
+      out+=${parts[k]}; (( w += pw[k] ))
+    done
+    out+="..."; (( w += 3 ))
   fi
-  local -i offset=$((${#str} - length))
-  local -i pad_left=$((width - length))
-  printf '%*s%s' $pad_left '' "${str:offset:length}"
+  printf '%*s%s' $(( width - w )) '' "$out"
 }
 
 element_in() {
@@ -91,7 +185,8 @@ ip_to_num() {
 declare -A NETWORK_UUID_NAME
 declare -A WGPEER_IP
 declare -A WGPEER_NAME
-declare WGPEER_NID
+declare -A WGPEER_NID
+declare -A WGPEER_NS # redis namespace per peer: wg_peer (wireguard) or awg_peer (amneziawg)
 frcc_done=0
 frcc() {
     if [[ $ROUTER_MANAGED == "no" ]]; then
@@ -105,14 +200,20 @@ frcc() {
             NETWORK_UUID_NAME[${ARY[0]}]=${ARY[1]}
         done
 
-        WGPEER_NID=$(jq -r '.interface.wireguard.wg0.meta.uuid' /tmp/scc_config)
-
-        jq -r '.interface.wireguard.wg0.peers[]? | .publicKey, [.allowedIPs[] | select(endswith("/32"))][0]' /tmp/scc_config |
-        while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
-            WGPEER_IP[${ARY[0]}]=${ARY[1]}
+        # amneziawg uses the same schema as wireguard, just under a different key (and a
+        # different redis peer namespace: wg_peer vs awg_peer); pull peers from both
+        jq -r '
+          (.interface.wireguard.wg0  | select(.) | {ns:"wg_peer",  v:.}),
+          (.interface.amneziawg.awg0 | select(.) | {ns:"awg_peer", v:.})
+          | .ns as $ns | .v.meta.uuid as $uuid
+          | .v.peers[]? | .publicKey, $ns, $uuid, ([.allowedIPs[] | select(endswith("/32"))][0])' /tmp/scc_config |
+        while mapfile -t -n 4 ARY && ((${#ARY[@]})); do
+            WGPEER_NS[${ARY[0]}]=${ARY[1]}
+            WGPEER_NID[${ARY[0]}]=${ARY[2]}
+            WGPEER_IP[${ARY[0]}]=${ARY[3]}
         done
 
-        jq -r '.interface.wireguard.wg0.extra.peers[]? | .publicKey, .name' /tmp/scc_config |
+        jq -r '(.interface.wireguard.wg0, .interface.amneziawg.awg0) | select(.) | .extra.peers[]? | .publicKey, .name' /tmp/scc_config |
         while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
             WGPEER_NAME[${ARY[0]}]=${ARY[1]}
         done
@@ -588,8 +689,8 @@ check_policies() {
             fi
         elif [[ -n ${p[guids]} ]]; then
             GUID="${p[guids]:2:-2}"
-            if [[ "$GUID" == "wg_peer:"* ]]; then
-                SCOPE="wg:${WGPEER_NAME[${GUID:8}]}"
+            if [[ "$GUID" == "wg_peer:"* || "$GUID" == "awg_peer:"* ]]; then
+                SCOPE="${GUID%%_peer:*}:${WGPEER_NAME[${GUID#*_peer:}]}"
             fi
         elif [[ -z $SCOPE ]]; then
             SCOPE="All Devices"
@@ -760,10 +861,10 @@ check_hosts() {
 
         if [[ -n ${WGPEER_NAME[$MAC]+x} ]]; then
           local NAME="${WGPEER_NAME[$MAC]}"
-          local nid=$WGPEER_NID
-          local POLICY_MAC="policy:wg_peer:${MAC}"
+          local nid=${WGPEER_NID[$MAC]}
+          local POLICY_MAC="policy:${WGPEER_NS[$MAC]}:${MAC}"
           local IP=${WGPEER_IP[$MAC]/\/32/""}
-          local taggedMac="wg_peer:$MAC"
+          local taggedMac="${WGPEER_NS[$MAC]}:$MAC"
           local ONLINE=" "
         else
           declare -A h
@@ -946,7 +1047,7 @@ check_hosts() {
         fi
 
         printf "$BGC$FC%35s %15s %16s $MAC_COLOR%18s$FC %3s$B7_Placeholder %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s ${fcv[vql,c]}%3s$UC ${fcv[iso,c]}%3s$UC ${fcv[acl,c]}%3s$UC %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC ${fcv[ntp_redirect,c]}%3s$UC$BGUC\n" \
-          "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$IP" "$(align::right 18 "$MAC")" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$(align::right 11 $VPN)" "$FLOWINCOUNT" \
+          "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$IP" "$(align::right 17 "$MAC")" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$(align::right 11 $VPN)" "$FLOWINCOUNT" \
           "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "${fcv[vql,v]}" "${fcv[iso,v]}" "${fcv[acl,v]}" "$DNS_BOOST" "${fcv[adblock,v]}" "${fcv[family,v]}" "${fcv[safeSearch,v]}" "${fcv[doh,v]}" "${fcv[unbound,v]}" "${fcv[ntp_redirect,v]}"
 
         unset h
@@ -1302,7 +1403,7 @@ check_ap() {
     jq -r '.apc.assets_template.ap_default.wifiNetworks? // [] | 
       to_entries[] | 
       [
-        .key,
+        (.key|tostring),
         (.value.intf // ""),
         ((.value.ssidProfiles // []) | join(",")),
         ((.value.aliasSSIDs // []) | map(.id) | join(","))
