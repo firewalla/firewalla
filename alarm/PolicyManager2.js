@@ -39,6 +39,8 @@ const LOCK_POLICY_ID = "LOCK_POLICY_ID";
 const { Address4, Address6 } = require('ip-address');
 const Host = require('../net2/Host.js');
 const Constants = require('../net2/Constants.js');
+// pids reserved for synthetic rules (e.g. adblock TLS); getNextID never hands these out
+const RESERVED_PIDS = new Set([Constants.RESERVED_PID_ADBLOCK_TLS]);
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -413,6 +415,8 @@ class PolicyManager2 {
           }
           if (next === prev)
             throw new Error(`No free pid is available`);
+          if (RESERVED_PIDS.has(next))
+            continue;
           if (await rclient.existsAsync(`policy:${next}`))
             continue;
           return next;
