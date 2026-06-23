@@ -88,13 +88,14 @@ class TagManager {
   }
 
   async _getNextTagUid() {
-    let uid = await rclient.getAsync("tag:uid");
-    if (!uid) {
-      uid = 1;
-      await rclient.setAsync("tag:uid", uid);
-    }
-    await rclient.incrAsync("tag:uid");
-    return String(uid);
+    // use incr to make sure the uid is unique, as it's a single command without race condition
+    let uid = await rclient.incrAsync("tag:uid")
+    // incr returns the result of increment, which is different then what it used to be (get/use/set)
+    // this is a compatibility fix uid won't flip if box switch version back to earlier version
+    if (uid && uid == 1)
+      uid = await rclient.incrAsync("tag:uid")
+
+    return String(uid-1);
   }
 
   async createTag(name, obj, affiliatedName, affiliatedObj) {
@@ -353,14 +354,16 @@ class TagManager {
     });
     for (const uid in removedTags) {
       if (f.isMain()) {
-        (async () => {
+        try {
           await sysManager.waitTillIptablesReady()
           log.info(`Destroying environment for tag ${uid} ${removedTags[uid].name} ...`);
           await removedTags[uid].resetPolicies();
           await removedTags[uid].destroyEnv();
           await removedTags[uid].destroy();
           await dnsmasq.writeAllocationOption(uid, {})
-        })()
+        } catch (err) {
+          log.error(`Error destroying environment for tag ${uid} ${removedTags[uid].name}`, err);
+        }
       }
       delete this.tags[uid];
     }

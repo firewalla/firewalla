@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,6 +26,7 @@ const intelTool = new IntelTool();
 const Hashes = require('../util/Hashes.js');
 const f = require('./Firewalla.js');
 const Constants = require('./Constants.js');
+const fc = require('./config.js');
 
 let instance = null;
 
@@ -45,6 +46,7 @@ class HostTool {
       instance = this;
 
       this.ipMacMapping = new LRU({max: 500, maxAge: 600 * 1000});
+      this.macEntryCache = new LRU({max: 500, maxAge: 3600 * 1000});
       sem.on(Message.MSG_MAPPING_IP_MAC_DELETED, (event) => {
         const { ip, mac } = event
         if (ip && mac) {
@@ -53,11 +55,27 @@ class HostTool {
         }
       })
 
+      sem.on(Message.MSG_HOST_MAC_ENTRY_CACHE_INVALIDATE, (event) => {
+        const mac = event && event.mac
+        if (mac) {
+          this.macEntryCache.del(mac)
+        }
+      })
+
       if (f.isMain()) {
         this.nmap = require('../net2/Nmap.js');
       }
     }
     return instance;
+  }
+
+  invalidateMacEntryCache(mac) {
+    if (!mac) return
+    sem.sendEventToAll({
+      type: Message.MSG_HOST_MAC_ENTRY_CACHE_INVALIDATE,
+      mac,
+      suppressEventLogging: true
+    })
   }
 
   async macExists(mac) {
@@ -78,11 +96,25 @@ class HostTool {
     return rclient.hgetallAsync(key);
   }
 
-  getMACEntry(mac) {
+  pruneExpiredMacEntryCache() {
+    this.macEntryCache.prune()
+  }
+
+  async getMACEntry(mac) {
     if(!mac)
       return Promise.reject("invalid mac address");
 
-    return rclient.hgetallAsync(this.getMacKey(mac));
+    const cached = this.macEntryCache.peek(mac);
+    if (cached) {
+      return { ...cached };
+    }
+
+    const data = await rclient.hgetallAsync(this.getMacKey(mac));
+    if (data && Object.keys(data).length > 0) {
+      this.macEntryCache.set(mac, data);
+      return { ...data};
+    }
+    return null;
   }
 
   getHostname(hostEntry) {
@@ -107,7 +139,10 @@ class HostTool {
   updateBackupName(mac, name) {
     log.info("Updating backup name", name, "for mac:", mac);
     let key = "host:mac:" + mac;
-    return rclient.hsetAsync(key, "bname", name)
+    return rclient.hsetAsync(key, "bname", name).then((result) => {
+      this.invalidateMacEntryCache(mac);
+      return result;
+    })
   }
 
   async updateIPv4Host(host) {
@@ -128,7 +163,7 @@ class HostTool {
 
     this.cleanupData(hostCopy);
     await rclient.hmsetAsync(key, hostCopy)
-    await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 30); // auto expire after 30 days
+    await rclient.expireatAsync(key, Math.floor(Date.now() / 1000) + fc.getConfig().timing['host.redis.ip4key.expire'])
   }
 
   async updateMACKey(host, skipUpdatingExpireTime) {
@@ -149,13 +184,14 @@ class HostTool {
 
     let key = this.getMacKey(hostCopy.mac);
     await rclient.hmsetAsync(key, hostCopy)
+    this.invalidateMacEntryCache(hostCopy.mac);
     const ts = hostCopy.lastActiveTimestamp || hostCopy.firstFoundTimestamp
     if (ts) await rclient.zaddAsync(Constants.REDIS_KEY_HOST_ACTIVE, ts, hostCopy.mac)
 
     if(skipUpdatingExpireTime) {
       return;
     } else {
-      return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 365); // auto expire after 365 days
+      return rclient.expireatAsync(key, Math.floor(Date.now() / 1000) + fc.getConfig().timing['host.redis.mackey.expire'])
     }
   }
 
@@ -167,13 +203,46 @@ class HostTool {
 
   updateKeysInMAC(mac, hash) {
     let key = this.getMacKey(mac);
+    return rclient.hmsetAsync(key, hash).then((result) => {
+      this.invalidateMacEntryCache(mac);
+      return result;
+    });
+  }
 
-    return rclient.hmsetAsync(key, hash);
+  updateSpoofingDataInMAC(mac, hash) {
+    const booleanFieldEqual = (cachedVal, hashVal) => {
+      if (cachedVal === hashVal)
+        return true;
+      const isTrue = (v) => v === true || v === 'true';
+      const isFalse = (v) => v === false || v === 'false';
+      return (isTrue(cachedVal) && isTrue(hashVal)) || (isFalse(cachedVal) && isFalse(hashVal));
+    };
+
+    const cached = this.macEntryCache.peek(mac);
+    if (cached && hash && hash.spoofing !== undefined && booleanFieldEqual(cached.spoofing, hash.spoofing))
+      return Promise.resolve();
+    return this.updateKeysInMAC(mac, hash);
   }
 
   deleteKeysInMAC(mac, keys) {
     const key = this.getMacKey(mac);
-    return rclient.hdelAsync(key, keys);
+    return rclient.hdelAsync(key, keys).then((result) => {
+      this.invalidateMacEntryCache(mac);
+      return result;
+    });
+  }
+
+  async incrFieldInMAC(mac, field, increment = 1) {
+    if (!mac || !field || !this.isMacAddress(mac))
+      return null;
+    const macKey = this.getMacKey(mac);
+    const keyExists = await rclient.existsAsync(macKey);
+    if (keyExists != 1)
+      return null;
+    return rclient.hincrbyAsync(macKey, field, increment).then((result) => {
+      this.invalidateMacEntryCache(mac);
+      return result;
+    });
   }
 
   getHostKey(ipv4) {
@@ -202,6 +271,7 @@ class HostTool {
 
   async deleteMac(mac) {
     await rclient.unlinkAsync(this.getMacKey(mac));
+    this.invalidateMacEntryCache(mac);
     await rclient.zremAsync(Constants.REDIS_KEY_HOST_ACTIVE, mac)
     return
   }
@@ -344,8 +414,10 @@ class HostTool {
 
     let key = this.getMacKey(mac)
     let string = JSON.stringify(activity)
-
-    return rclient.hsetAsync(key, "recentActivity", string)
+    return rclient.hsetAsync(key, "recentActivity", string).then((result) => {
+      this.invalidateMacEntryCache(mac);
+      return result;
+    })
   }
 
   async removeDupIPv4FromMacEntry(mac, ip, newMac) {
@@ -362,7 +434,8 @@ class HostTool {
     if (macEntry.ipv4 == ip) trans.hdel(this.getMacKey(mac), "ipv4");
     if (macEntry.ipv4Addr == ip) trans.hdel(this.getMacKey(mac), "ipv4Addr");
 
-    return trans.execAsync()
+    await trans.execAsync();
+    this.invalidateMacEntryCache(mac);
   }
 
   ////////////// IPV6 /////////////////////
@@ -416,7 +489,7 @@ class HostTool {
 
       if (data) {
         await rclient.hmsetAsync(key, data)
-        await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 4)
+        await rclient.expireatAsync(key, Math.floor(Date.now() / 1000) + fc.getConfig().timing['host.redis.ip6key.expire'])
       }
     }
   }
@@ -455,10 +528,10 @@ class HostTool {
   }
 
   async linkMacWithIPv6(v6addr, mac, intf) {
-    await require('child-process-promise').exec(`ping6 -c 3 -I ${intf} ` + v6addr).catch((err) => {});
+    await require('child-process-promise').exec(`ping6 -c3 -W1 -I ${intf} ` + v6addr, { timeout: 5000 }).catch((err) => {});
     log.info("Discovery:AddV6Host:", v6addr, mac);
     mac = mac.toUpperCase();
-    let v6key = "host:ip6:" + v6addr;
+    let v6key = this.getIPv6HostKey(v6addr);
     log.debug("============== Discovery:v6Neighbor:Scan", v6key, mac);
     let ip6Host = await rclient.hgetallAsync(v6key)
     log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, ip6Host);
@@ -474,7 +547,7 @@ class HostTool {
     let result = await rclient.hmsetAsync(v6key, ip6Host)
     log.debug("++++++ Discover:v6Neighbor:Scan:find", result);
     let mackey = "host:mac:" + mac;
-    await rclient.expireatAsync(v6key, parseInt((+new Date) / 1000) + 604800); // 7 days
+    await rclient.expireatAsync(v6key, Math.floor(Date.now() / 1000) + fc.getConfig().timing['host.redis.ip6key.expire']);
     let macHost = await rclient.hgetallAsync(mackey)
     log.info("============== Discovery:v6Neighbor:Scan:mac", v6key, mac, mackey, macHost);
     if (macHost != null) {
@@ -504,6 +577,7 @@ class HostTool {
       await rclient.zaddAsync(Constants.REDIS_KEY_HOST_ACTIVE, macHost.lastActiveTimestamp, macHost.mac)
     }
 
+    this.invalidateMacEntryCache(mac);
   }
 
   async getIPv6AddressesByMAC(mac) {
