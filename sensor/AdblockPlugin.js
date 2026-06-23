@@ -57,7 +57,13 @@ const policyExtKeyName = "adblock_ext";
 const CategoryUpdater = require('../control/CategoryUpdater');
 const categoryUpdater = new CategoryUpdater();
 
+const Block = require('../control/Block.js');
+const tlsc = require('../control/TLSSetControl.js');
+
+const Constants = require('../net2/Constants.js');
+
 const ADBLOCK_STRICT_BF_CATEGORY_ID = "adblock_strict";
+const ADBLOCK_TLS_RULE_PID = Constants.RESERVED_PID_ADBLOCK_TLS;
 class AdblockPlugin extends Sensor {
     async run() {
         this.systemSwitch = false;
@@ -92,6 +98,8 @@ class AdblockPlugin extends Sensor {
             const filterKeys = await rclient.scanResults(adBlockRedisKeyPrefix + '*')
             filterKeys.length && await rclient.unlinkAsync(filterKeys)
             this._cleanUpFilter();
+            // clear default-mode TLS hostset entries left from the cleared lists
+            await this._flushDefaultTlsHostSet();
           } catch(err) {
             log.error('Error reseting ADBlock', err)
           }
@@ -214,6 +222,7 @@ class AdblockPlugin extends Sensor {
         log.error("Got error when applying adblock policy", err);
       }
     }
+
     _scheduleNextReload(oldNextState, curNextState) {
       if (oldNextState === curNextState) {
         // no need immediate reload when next state not changed during reloading
@@ -232,14 +241,21 @@ class AdblockPlugin extends Sensor {
 
     async updateFilter() {
       const config = await this.getAdblockConfig();
-      if (config["ads-adv"] === "on") {
+      const strict = config["ads-adv"] === "on";
+      if (strict) {
         // enable bloom filter for strict mode only.
         await this._updateBloomFilter();
         this._cleanUpFilter();
+        // strict TLS hostset is fed from the hit set; clear default-mode entries
+        await this._flushDefaultTlsHostSet();
       } else {
         await this._updateFilter(config);
         await this._cleanupBloomFilter();
+        // refresh default-mode TLS hostset from the new hash list
+        await this._syncDefaultTlsHostSet();
       }
+      // mode may have changed; re-point active scopes' TLS rules at the current hostset
+      await this._reapplyTlsRules();
     }
 
     async _cleanupBloomFilter() {
@@ -376,6 +392,7 @@ class AdblockPlugin extends Sensor {
         this._scheduleNextReload(nextState, this.nextState);
       }
     }
+
     controlFilter(state) {
       this.nextState = state;
       log.info(`adblock nextState is: ${this.nextState}`);
@@ -470,12 +487,155 @@ class AdblockPlugin extends Sensor {
       return this.perIdentityReset(guid);
     }
 
+    _getSupportedTlsProtos() {
+      const protos = [];
+      if (platform.isTLSBlockSupport()) {
+        protos.push("tcp");
+      }
+      if (platform.isUdpTLSBlockSupport()) {
+        protos.push("udp");
+      }
+      return protos;
+    }
+
+    // Dispatch a Block rule op to the right setupXxxRules by target type.
+    // target: { macAddresses } | { uids } | { uuids } | { guids } | {} (global)
+    _setupRuleForTarget(target, options) {
+      if (target.macAddresses) {
+        return Block.setupDevicesRules({ ...options, macAddresses: target.macAddresses });
+      }
+      if (target.uids) {
+        return Block.setupTagsRules({ ...options, uids: target.uids });
+      }
+      if (target.uuids) {
+        return Block.setupIntfsRules({ ...options, uuids: target.uuids });
+      }
+      if (target.guids) {
+        return Block.setupGenericIdentitiesRules({ ...options, guids: target.guids });
+      }
+      return Block.setupGlobalRules(options);
+    }
+
+    // Remove adblock TLS rules for a target. Clears both modes' hostsets so a
+    // strict<->default switch leaves no stale rule.
+    async _removeTlsRules(target) {
+      const hostSets = [
+        Block.getTLSHostSet(ADBLOCK_STRICT_BF_CATEGORY_ID),
+        Block.getTLSHostSet(featureName),
+      ];
+      for (const proto of this._getSupportedTlsProtos()) {
+        for (const tlsHostSet of hostSets) {
+          try {
+            await this._setupRuleForTarget(target, { pid: ADBLOCK_TLS_RULE_PID, action: "block", direction: "bidirection", proto, tlsHostSet, createOrDestroy: "destroy" });
+          } catch (err) {
+            log.error("Failed to remove adblock TLS rule", JSON.stringify(target), proto, err.message);
+          }
+        }
+      }
+    }
+
+    // Add adblock TLS/SNI block for a target, pointing at the current mode's hostset.
+    // Catches what DNS adblock misses (DNS cache / encrypted DNS).
+    async _addTlsRules(target) {
+      // feature off: an "add" should tear down instead
+      if (!this.adminSystemSwitch) {
+        await this._removeTlsRules(target);
+        return;
+      }
+      const protos = this._getSupportedTlsProtos();
+      if (protos.length === 0) {
+        return;
+      }
+      // clean slate first so a mode switch leaves no stale rule
+      await this._removeTlsRules(target);
+      try {
+        await platform.installTLSModules();
+      } catch (err) {
+        log.error("Failed to install TLS modules for adblock", err.message);
+      }
+      const strict = this.userconfig && this.userconfig["ads-adv"] === "on";
+      const tlsHostSet = Block.getTLSHostSet(strict ? ADBLOCK_STRICT_BF_CATEGORY_ID : featureName);
+      for (const proto of protos) {
+        try {
+          await this._setupRuleForTarget(target, { pid: ADBLOCK_TLS_RULE_PID, action: "block", direction: "bidirection", proto, tlsHostSet, createOrDestroy: "create" });
+          // activate hostset only after the rule exists, so the /proc file is generated
+          if (strict) {
+            await categoryUpdater.activateTLSCategory(ADBLOCK_STRICT_BF_CATEGORY_ID, proto);
+          } else {
+            await tlsc.activateTLSSet(tlsHostSet, proto);
+          }
+        } catch (err) {
+          log.error("Failed to add adblock TLS rule", JSON.stringify(target), proto, err.message);
+        }
+      }
+    }
+
+    // Fill default-mode TLS hostset from adblock_list:* (strict uses the hit set instead).
+    async _syncDefaultTlsHostSet() {
+      if (this._getSupportedTlsProtos().length === 0) {
+        return;
+      }
+      const tlsHostSet = Block.getTLSHostSet(featureName);
+      try {
+        await tlsc.activateTLSSet(tlsHostSet);
+        await tlsc.flushHostset(tlsHostSet);
+        const keys = await rclient.scanResults(adBlockRedisKeyPrefix + '*');
+        for (const key of keys) {
+          const hashes = await rclient.smembersAsync(key);
+          for (const hash of hashes) {
+            await tlsc.addRule(tlsHostSet, "add", hash);
+          }
+        }
+      } catch (err) {
+        log.error("Failed to sync default adblock TLS hostset", err.message);
+      }
+    }
+
+    async _flushDefaultTlsHostSet() {
+      if (this._getSupportedTlsProtos().length === 0) {
+        return;
+      }
+      try {
+        await tlsc.flushHostset(Block.getTLSHostSet(featureName));
+      } catch (err) {
+        log.error("Failed to flush default adblock TLS hostset", err.message);
+      }
+    }
+
+    // Re-point every active scope's TLS rules at the current mode's hostset.
+    async _reapplyTlsRules() {
+      if (this.systemSwitch) {
+        await this._addTlsRules({});
+      }
+      for (const mac in this.macAddressSettings) {
+        if (this.macAddressSettings[mac] == 1) {
+          await this._addTlsRules({ macAddresses: [mac] });
+        }
+      }
+      for (const tagUid in this.tagSettings) {
+        if (this.tagSettings[tagUid] == 1) {
+          await this._addTlsRules({ uids: [tagUid] });
+        }
+      }
+      for (const uuid in this.networkSettings) {
+        if (this.networkSettings[uuid] == 1) {
+          await this._addTlsRules({ uuids: [uuid] });
+        }
+      }
+      for (const guid in this.identitySettings) {
+        if (this.identitySettings[guid] == 1) {
+          await this._addTlsRules({ guids: [guid] });
+        }
+      }
+    }
+
     async systemStart() {
       log.info("apply adblock globally");
       const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
       const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$${featureName}\nmac-address-tag=%FF:FF:FF:FF:FF:FF$${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
       dnsmasq.scheduleRestartDNSService();
+      await this._addTlsRules({});
     }
   
     async systemStop() {
@@ -484,6 +644,7 @@ class AdblockPlugin extends Sensor {
       const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$!${featureName}\nmac-address-tag=%FF:FF:FF:FF:FF:FF$!${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
       dnsmasq.scheduleRestartDNSService();
+      await this._removeTlsRules({});
     }
   
     async perTagStart(tagUid) {
@@ -492,6 +653,7 @@ class AdblockPlugin extends Sensor {
       const dnsmasqEntry = `group-tag=@${tagUid}$${featureName}\ngroup-tag=@${tagUid}$${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
       dnsmasq.scheduleRestartDNSService();
+      await this._addTlsRules({ uids: [tagUid] });
     }
   
     async perTagStop(tagUid) {
@@ -499,6 +661,7 @@ class AdblockPlugin extends Sensor {
       const dnsmasqEntry = `group-tag=@${tagUid}$!${featureName}\ngroup-tag=@${tagUid}$!${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`; // match negative tag
       await fs.writeFileAsync(configFile, dnsmasqEntry);
       dnsmasq.scheduleRestartDNSService();
+      await this._removeTlsRules({ uids: [tagUid] });
     }
   
     async perTagReset(tagUid) {
@@ -506,6 +669,7 @@ class AdblockPlugin extends Sensor {
       const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
       await fs.unlinkAsync(configFile).catch((err) => {});
       dnsmasq.scheduleRestartDNSService();
+      await this._removeTlsRules({ uids: [tagUid] });
     }
   
     async perNetworkStart(uuid) {
@@ -520,6 +684,7 @@ class AdblockPlugin extends Sensor {
         const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$${featureName}\nmac-address-tag=%00:00:00:00:00:00$${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
         await fs.writeFileAsync(configFile, dnsmasqEntry);
         dnsmasq.scheduleRestartDNSService();
+        await this._addTlsRules({ uuids: [uuid] });
     }
   
     async perNetworkStop(uuid) {
@@ -534,6 +699,7 @@ class AdblockPlugin extends Sensor {
       const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$!${featureName}\nmac-address-tag=%00:00:00:00:00:00$!${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
       dnsmasq.scheduleRestartDNSService();
+      await this._removeTlsRules({ uuids: [uuid] });
     }
   
     async perNetworkReset(uuid) {
@@ -548,6 +714,7 @@ class AdblockPlugin extends Sensor {
       // remove config file
       await fs.unlinkAsync(configFile).catch((err) => {});
       dnsmasq.scheduleRestartDNSService();
+      await this._removeTlsRules({ uuids: [uuid] });
     }
   
     async perDeviceStart(macAddress) {
@@ -556,6 +723,7 @@ class AdblockPlugin extends Sensor {
       const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$${featureName}\nmac-address-tag=%${macAddress.toUpperCase()}$${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
       await fs.writeFileAsync(configFile, dnsmasqentry);
       dnsmasq.scheduleRestartDNSService();
+      await this._addTlsRules({ macAddresses: [macAddress] });
     }
   
     async perDeviceStop(macAddress) {
@@ -563,6 +731,7 @@ class AdblockPlugin extends Sensor {
       const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$!${featureName}\nmac-address-tag=%${macAddress.toUpperCase()}$!${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
       await fs.writeFileAsync(configFile, dnsmasqentry);
       dnsmasq.scheduleRestartDNSService();
+      await this._removeTlsRules({ macAddresses: [macAddress] });
     }
   
     async perDeviceReset(macAddress) {
@@ -571,6 +740,7 @@ class AdblockPlugin extends Sensor {
       // remove config file
       await fs.unlinkAsync(configFile).catch((err) => {});
       dnsmasq.scheduleRestartDNSService();
+      await this._removeTlsRules({ macAddresses: [macAddress] });
     }
 
     async perIdentityStart(guid) {
@@ -582,6 +752,7 @@ class AdblockPlugin extends Sensor {
         const dnsmasqEntry = `group-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$${featureName}\ngroup-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
         await fs.writeFileAsync(configFile, dnsmasqEntry);
         dnsmasq.scheduleRestartDNSService();
+        await this._addTlsRules({ guids: [guid] });
       }
     }
   
@@ -593,6 +764,7 @@ class AdblockPlugin extends Sensor {
         const dnsmasqEntry = `group-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$!${featureName}\ngroup-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$!${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
         await fs.writeFileAsync(configFile, dnsmasqEntry);
         dnsmasq.scheduleRestartDNSService();
+        await this._removeTlsRules({ guids: [guid] });
       }
     }
   
@@ -604,6 +776,7 @@ class AdblockPlugin extends Sensor {
         const configFile = `${dnsmasqConfigFolder}/${identity.constructor.getDnsmasqConfigFilenamePrefix(uid)}_${featureName}.conf`;
         await fs.unlinkAsync(configFile).catch((err) => { });
         dnsmasq.scheduleRestartDNSService();
+        await this._removeTlsRules({ guids: [guid] });
       }
     }
 
