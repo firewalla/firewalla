@@ -39,7 +39,7 @@ class GoldPlus2Platform extends Platform {
   }
 
   getLicenseTypes() {
-    return ["b1", "b2"];
+    return ["m1"];
   }
 
   // reserved wlan interfaces in case it supports USB wifi in future
