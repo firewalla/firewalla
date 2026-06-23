@@ -254,7 +254,7 @@ class Host extends Monitorable {
 
   // options: { dvlanId: dvlanId, wpax: wpax }
   async setAutoGroupAsync(tag, ssid, options = {}) {
-    log.info(`Setting auto group for ${this.o.mac}`, tag, ssid, options);
+    log.debug(`Setting auto group for ${this.o.mac}`, tag, ssid, options);
     await hostTool.setWirelessAutoGroup(this.o.mac, String(tag), ssid, options);
     this.o.autoGroup = {
       tag: tag,
@@ -266,7 +266,7 @@ class Host extends Monitorable {
   }
 
   async resetAutoGroupAsync() {
-    log.info(`Resetting auto group for ${this.o.mac}`);
+    log.debug(`Resetting auto group for ${this.o.mac}`);
     await hostTool.resetWirelessAutoGroup(this.o.mac);
     this.o.autoGroup = null;
     return await this.save(["autoGroup"]);
