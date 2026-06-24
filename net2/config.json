@@ -75,6 +75,7 @@
     "leaseTime": "24h"
   },
   "dns": {
+    "useDnsmasqReloadForRestart": true,
     "defaultDNSServer": "8.8.8.8",
     "fallbackDNSServers": [
       "8.8.8.8",

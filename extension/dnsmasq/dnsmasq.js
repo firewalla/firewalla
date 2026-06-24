@@ -96,6 +96,10 @@ const FALLBACK_DNS6_SERVERS = (fConfig.dns && fConfig.dns.fallbackDNS6Servers) |
 const VERIFICATION_DOMAINS = (fConfig.dns && fConfig.dns.verificationDomains) || ["firewalla.encipher.io"];
 const VERIFICATION_WHILELIST_PATH = FILTER_DIR + "/verification_whitelist.conf";
 
+function useDnsmasqReloadForRestart() {
+  return _.get(Config.getConfig(), "dns.useDnsmasqReloadForRestart", false);
+}
+
 const SERVICE_NAME = platform.getDNSServiceName();
 const DHCP_SERVICE_NAME = platform.getDHCPServiceName();
 const ROUTER_DHCP_PATH = f.getUserHome() + fConfig.firerouter.hiddenFolder + '/config/dhcp'
@@ -167,6 +171,7 @@ module.exports = class DNSMASQ {
 
       this.counter = {
         reloadDnsmasq: 0,
+        reloadConfig: 0,
         writeHostsFile: {},
         restart: 0,
         restartDHCP: 0
@@ -263,7 +268,72 @@ module.exports = class DNSMASQ {
     }, 5000);
   }
 
-  scheduleRestartDNSService(ignoreFileCheck = false) {
+  _parsePid(content) {
+    const value = Number(String(content || "").trim());
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+
+  async _readPidFile(pidFile) {
+    return await fsp.readFile(pidFile, "utf8").then((content) => {
+      return this._parsePid(content);
+    }).catch(() => null);
+  }
+
+  async getFireRouterDNSServicePids() {
+    const hiddenFolder = _.get(Config.getConfig(), "firerouter.hiddenFolder", "/.router");
+    const pidDir = `${f.getUserHome()}${hiddenFolder}/run/dnsmasq`;
+    const pidFiles = await fsp.readdir(pidDir).then((entries) => {
+      return entries.filter(entry => entry.startsWith("dnsmasq.") && entry.endsWith(".pid"));
+    }).catch(() => []);
+    if (!pidFiles.length)
+      return [];
+
+    const pids = await Promise.all(pidFiles.map(pidFile => this._readPidFile(`${pidDir}/${pidFile}`)));
+    const uniquePids = _.uniq(pids.filter(pid => pid));
+    // Guard against stale pid files: SIGRTMIN's default action terminates a process,
+    // so verify each PID still belongs to a dnsmasq process before signaling.
+    const checked = await Promise.all(uniquePids.map(async (pid) => {
+      const cmdline = await fsp.readFile(`/proc/${pid}/cmdline`, "utf8").catch(() => null);
+      return (cmdline && cmdline.includes("dnsmasq")) ? pid : null;
+    }));
+    return checked.filter(pid => pid);
+  }
+
+  async reloadFireRouterDNSService() {
+    const pids = await this.getFireRouterDNSServicePids();
+    if (!pids.length) {
+      log.warn(`Failed to reload ${SERVICE_NAME} config, no dnsmasq pid found`);
+      return false;
+    }
+
+    let reloaded = true;
+    for (const pid of pids) {
+      const ok = await execAsync(`sudo kill -RTMIN ${pid}`).then(() => true).catch((err) => {
+        // ESRCH means the process already exited — not a failure, the service will restart a fresh instance
+        if (err.code === 1 && err.stderr && err.stderr.includes("No such process"))
+          return true;
+        log.error(`Failed to reload ${SERVICE_NAME} config on pid ${pid}`, err.message);
+        return false;
+      });
+      reloaded = reloaded && ok;
+    }
+
+    return reloaded;
+  }
+
+  async restartDNSService() {
+    await execAsync(`sudo systemctl stop ${SERVICE_NAME}`).catch((err) => { });
+    this.counter.restart++;
+    log.info(`Restarting ${SERVICE_NAME}`, this.counter.restart);
+    const cmd = `sudo systemctl restart ${SERVICE_NAME}`;
+    await execAsync(cmd).then(() => {
+      log.verbose(`${SERVICE_NAME} has been restarted`, this.counter.restart);
+    }).catch((err) => {
+      log.error(`Failed to restart ${SERVICE_NAME} service`, err.message);
+    });
+  }
+
+  scheduleRestartDNSService(ignoreFileCheck = false, forceServiceRestart = false) {
     if (this.reloadDNSTask) {
       clearTimeout(this.reloadDNSTask);
       delete this.reloadDNSTask;
@@ -271,22 +341,32 @@ module.exports = class DNSMASQ {
     if (this.restartDNSTask)
       clearTimeout(this.restartDNSTask);
     this.restartDNSIgnoreFileCheck = this.restartDNSIgnoreFileCheck || ignoreFileCheck
+    this.forceServiceRestart = this.forceServiceRestart || forceServiceRestart;
     this.restartDNSTask = setTimeout(async () => {
       // checkConfsChange will update md5sum in redis, call it before checking ignoreFileCheck to keep md5sum consistent with config files
       const confChanged = await this.checkConfsChange();
       if (!this.restartDNSIgnoreFileCheck && !confChanged) {
+        delete this.restartDNSIgnoreFileCheck;
+        delete this.forceServiceRestart;
+        delete this.restartDNSTask;
         return;
       }
       delete this.restartDNSIgnoreFileCheck
-      await execAsync(`sudo systemctl stop ${SERVICE_NAME}`).catch((err) => { });
-      this.counter.restart++;
-      log.info(`Restarting ${SERVICE_NAME}`, this.counter.restart);
-      const cmd = `sudo systemctl restart ${SERVICE_NAME}`;
-      await execAsync(cmd).then(() => {
-        log.verbose(`${SERVICE_NAME} has been restarted`, this.counter.restart);
-      }).catch((err) => {
-        log.error(`Failed to restart ${SERVICE_NAME} service`, err.message);
-      });
+
+      if (!this.forceServiceRestart && platform.isFireRouterManaged() && useDnsmasqReloadForRestart()) {
+        const reloaded = await this.reloadFireRouterDNSService();
+        if (reloaded) {
+          this.counter.reloadConfig++;
+          log.verbose(`${SERVICE_NAME} config has been reloaded`, this.counter.reloadConfig);
+        } else {
+          log.warn(`${SERVICE_NAME} config reload failed, falling back to service restart`);
+          await this.restartDNSService();
+        }
+      } else {
+        await this.restartDNSService();
+      }
+
+      delete this.forceServiceRestart;
       delete this.restartDNSTask
     }, 5000);
   }
@@ -1096,7 +1176,7 @@ module.exports = class DNSMASQ {
       `redis-hash-match=/${this._getRedisMatchKey(category, true)}/#$${category}_allow`,
       `redis-match-high=/${this._getRedisMatchKey(category, false)}/#$${category}_allow_high`,
       `redis-hash-match-high=/${this._getRedisMatchKey(category, true)}/#$${category}_allow_high`,
-      `redis-ipset=/${this._getRedisMatchKey(category, false)}/${ipsets.join(',')}$${category}_allow,$${category}_allow_high` // no need to duplicate redis-ipset config in block config file, both use the same ipset and redis set
+      `redis-ipset=/${this._getRedisMatchKey(category, false)}/${ipsets.join(',')}$${category}_allow$${category}_allow_high` // tag conditions use $ separator (not comma); comma would make parse_labels() treat "allow," as the tag name and never match
     ];
 
     // Append regex members of the target list as dnsmasq re-match directives.
@@ -2316,8 +2396,8 @@ module.exports = class DNSMASQ {
           }
 
           this.networkFailCountMap[uuid]++;
-          needRestart = true;
           if (this.networkFailCountMap[uuid] > 2) {
+            needRestart = true;
             log.warn(`DNS of network ${intf.name} is unreachable, remove DNS redirect rules ...`);
             await this._manipulate_ipv4_iptables_rule(intf, '-D');
             // only remove conntrack entries once on status change
@@ -2334,7 +2414,7 @@ module.exports = class DNSMASQ {
     }
 
     if (needRestart) {
-      this.scheduleRestartDNSService(true);
+      this.scheduleRestartDNSService(true, true);
     }
   }
 
