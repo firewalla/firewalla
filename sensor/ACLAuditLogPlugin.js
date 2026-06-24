@@ -90,6 +90,7 @@ class ACLAuditLogPlugin extends Sensor {
     this.dnsmasqLogReader = null
     this.aggregator = null
     this.ruleStatsPlugin = sl.getSensor("RuleStatsPlugin");
+    this.adblockPlugin = sl.getSensor("AdblockPlugin");
   }
 
   async job() {
@@ -660,6 +661,11 @@ class ACLAuditLogPlugin extends Sensor {
     record.mac = mac;
     record.ct = record.ct || 1;
 
+    if (record.ac === 'block' && record.reason === 'adblock') {
+      this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
+      this.adblockPlugin && this.adblockPlugin.recordAdblockHit(record);
+    }
+
     this.writeBuffer(record);
   }
 
@@ -912,6 +918,9 @@ class ACLAuditLogPlugin extends Sensor {
         await multi.execAsync()
       }
       timeSeries.exec()
+      this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
+      if (this.adblockPlugin)
+        await this.adblockPlugin.flushAdblockStats();
     } catch (err) {
       log.error("Failed to write audit logs", err)
     }

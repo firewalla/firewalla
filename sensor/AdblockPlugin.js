@@ -39,10 +39,15 @@ const TagManager = require('../net2/TagManager.js');
 const IdentityManager = require('../net2/IdentityManager.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const mclient = require('../util/redis_manager.js').getMetricsRedisClient();
 
 const bone = require("../lib/Bone.js");
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const util = require('util');
+const _ = require('lodash');
+const timeSeries = require('../util/TimeSeries.js').getTimeSeries();
+const getHitsAsync = util.promisify(timeSeries.getHits).bind(timeSeries);
+const auditTool = require('../net2/AuditTool.js');
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
@@ -58,7 +63,105 @@ const CategoryUpdater = require('../control/CategoryUpdater');
 const categoryUpdater = new CategoryUpdater();
 
 const ADBLOCK_STRICT_BF_CATEGORY_ID = "adblock_strict";
+
+class AdblockStats {
+  constructor() {
+    this.lastHitFlow = null;
+    this.lastHitTs = 0;
+    this.lastFlushTs = 0;
+    this.resetTs = 0;
+    this.persistPromise = null;
+  }
+
+  recordHit(record) {
+    if (!record || record.ac !== 'block' || record.reason !== 'adblock')
+      return;
+
+    const recordTs = Number(record.ts || 0);
+    if (recordTs <= this.resetTs)
+      return;
+
+    timeSeries.recordHit('feature:adblock:block', record._ts, record.ct);
+    if (!this.lastHitTs || record._ts >= this.lastHitTs) {
+      const flow = _.cloneDeep(record);
+      if (record.dir === 'L')
+        flow.local = true;
+      this.lastHitTs = record._ts;
+      this.lastHitFlow = flow;
+    }
+  }
+
+  async flush() {
+    if (this.persistPromise)
+      await this.persistPromise;
+
+    const now = Date.now() / 1000;
+    if (!this.lastHitFlow || now - this.lastFlushTs < 60)
+      return;
+
+    this.lastFlushTs = now;
+    const payload = {
+      kind: 'audit',
+      raw: _.cloneDeep(this.lastHitFlow)
+    };
+    const persistPromise = rclient.hmsetAsync('ext.adblock.stats', {
+      lastHitTs: String(this.lastHitTs),
+      lastHitFlow: JSON.stringify(payload)
+    }).catch((err) => {
+      log.error('Failed to persist adblock lastHitFlow', err);
+    }).finally(() => {
+      if (this.persistPromise === persistPromise)
+        this.persistPromise = null;
+    });
+    this.persistPromise = persistPromise;
+    await persistPromise;
+  }
+
+  async reset() {
+    this.resetTs = Math.floor(Date.now() / 1000);
+    this.lastHitFlow = null;
+    this.lastHitTs = 0;
+    this.lastFlushTs = 0;
+    if (this.persistPromise)
+      await this.persistPromise;
+    await mclient.snapAndFlushMetricsBatch();
+    const keys = await mclient.scanResults('timedTraffic:feature:adblock:block:*');
+    if (keys.length) {
+      await mclient.unlinkAsync(keys);
+      mclient.forgetExpireAt(keys);
+    }
+    await rclient.unlinkAsync('ext.adblock.stats').catch(() => {});
+  }
+
+  async getStats() {
+    const [buckets24h, buckets7d, stored] = await Promise.all([
+      getHitsAsync('feature:adblock:block', '1hour', 24).catch(() => []),
+      getHitsAsync('feature:adblock:block', '1day', 7).catch(() => []),
+      rclient.hgetallAsync('ext.adblock.stats').catch(() => null)
+    ]);
+    const total24h = (buckets24h || []).reduce((sum, bucket) => sum + (bucket[1] || 0), 0);
+    const total7d = (buckets7d || []).reduce((sum, bucket) => sum + (bucket[1] || 0), 0);
+    let lastHitTs = null;
+    let lastHitFlow = null;
+    if (stored) {
+      lastHitTs = stored.lastHitTs ? Number(stored.lastHitTs) : null;
+      try {
+        const payload = stored.lastHitFlow ? JSON.parse(stored.lastHitFlow) : null;
+        lastHitFlow = payload ? await auditTool.formatHitFlow(payload) : null;
+      } catch (err) {
+        log.warn('Failed to format adblock lastHitFlow', err.message);
+      }
+    }
+    return { total24h, total7d, lastHitTs, lastHitFlow };
+  }
+}
+
 class AdblockPlugin extends Sensor {
+    constructor(config) {
+      super(config);
+      this.adblockStats = new AdblockStats();
+    }
+
     async run() {
         this.systemSwitch = false;
         this.adminSystemSwitch = false;
@@ -96,6 +199,9 @@ class AdblockPlugin extends Sensor {
             log.error('Error reseting ADBlock', err)
           }
         });
+        sem.on('ADBLOCK_STATS_RESET', () => {
+          this.resetAdblockStats().catch(err => log.error('Failed to reset adblock stats', err));
+        });
     }
 
     async job() {
@@ -108,6 +214,10 @@ class AdblockPlugin extends Sensor {
         sem.sendEventToFireMain({
           type: 'ADBLOCK_RESET'
         });
+      });
+
+      extensionManager.onCmd('adblockStatsReset', async (msg, data) => {
+        sem.sendEventToFireMain({ type: 'ADBLOCK_STATS_RESET' });
       });
     }
 
@@ -605,6 +715,22 @@ class AdblockPlugin extends Sensor {
         await fs.unlinkAsync(configFile).catch((err) => { });
         dnsmasq.scheduleRestartDNSService();
       }
+    }
+
+    recordAdblockHit(record) {
+      return this.adblockStats.recordHit(record);
+    }
+
+    async flushAdblockStats() {
+      return this.adblockStats.flush();
+    }
+
+    async resetAdblockStats() {
+      return this.adblockStats.reset();
+    }
+
+    async getAdblockStats() {
+      return this.adblockStats.getStats();
     }
 
     // global on/off
