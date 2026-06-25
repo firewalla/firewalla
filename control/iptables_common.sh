@@ -207,7 +207,7 @@ cat << EOF > "$filter_file"
 -A INPUT -j FW_INPUT_DROP
 
 -N FW_PLAIN_DROP
--A FW_PLAIN_DROP -j CONNMARK --set-xmark 0x0/0x80000000
+-A FW_PLAIN_DROP -j CONNMARK --set-xmark 0x200/0x80000200
 -A FW_PLAIN_DROP -p tcp -m set ! --match-set monitored_net_set src,src -j DROP
 -A FW_PLAIN_DROP -p tcp -m set --match-set monitored_net_set src,src -j REJECT --reject-with tcp-reset
 -A FW_PLAIN_DROP -p udp -m set ! --match-set monitored_net_set src,src -j DROP
@@ -319,11 +319,14 @@ cat << EOF > "$filter_file"
 
 # drop INVALID packets
 -A FW_FORWARD -m conntrack --ctstate INVALID -m set --match-set c_lan_set src,src -j FW_WAN_INVALID_DROP
-# accept non-HTTP/HTTPS tcp/udp packets that belongs to an accepted flow, skip the first 6 packets
--A FW_FORWARD -p udp -m udp ! --dport 443 -m connbytes --connbytes 7 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -j ACCEPT
--A FW_FORWARD -p tcp -m tcp ! --dport 443 -m tcp ! --dport 80 -m connbytes --connbytes 7 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -j ACCEPT
+# drop packet that already marked as DROP
+-A FW_FORWARD -m connmark --mark 0x200/0x200 -j FW_DROP
+
+# accept non-HTTP/HTTPS tcp/udp packets that belongs to an accepted flow, skip the first 9 packets
+-A FW_FORWARD -p udp -m udp ! --dport 443 -m connbytes --connbytes 10 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -j ACCEPT
+-A FW_FORWARD -p tcp -m tcp ! --dport 443 -m tcp ! --dport 80 -m connbytes --connbytes 10 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -j ACCEPT
 # for non-tcp/udp or tcp/udp HTTP/HTTPS packets, high percentage to bypass firewall rules if the packet belongs to an accepted flow
--A FW_FORWARD -m connbytes --connbytes 7 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
+-A FW_FORWARD -m connbytes --connbytes 10 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
 # set the highest bit in connmark by default, if the connection is blocked, the bit will be cleared before DROP
 # only set once for NEW connection, for packets that may not fall into FW_ACCEPT_DEFAULT, this rule will set the bit, e.g., rules in FW_UPNP_ACCEPT created by miniupnpd
 -A FW_FORWARD -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x80000000/0x80000000
