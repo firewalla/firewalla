@@ -298,7 +298,12 @@ class BonjourSensor extends Sensor {
           if (irobotmcs.mac) mac = irobotmcs.mac.toUpperCase()
         }
         break
+      case '_arduino':
+        detect.type = 'iot_default'
+        break
       case '_http':
+      case '_http-alt':
+      case '_https':
         // ignore _http on comprehensive devices even type is not from bonjour
         if (['phone', 'tablet', 'desktop', 'laptop'].includes(_.get(hostObj, 'o.detect.type'))) {
           return
@@ -332,7 +337,8 @@ class BonjourSensor extends Sensor {
       from: "bonjour"
     };
 
-    if (name && name.length && !(await this.isServiceInList(name, 'ignoreNames')) && type != '_mi-connect')
+    if (name && name.length && type != '_mi-connect'
+      && !(await bonjourDetect.getList('ignoreNames') || []).some(n => name.includes(n)))
       host.bname = name
 
     if (ipv4Addr) {
