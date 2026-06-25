@@ -26,7 +26,7 @@ const config = require('../net2/config.js')
 const sm = require('../net2/SysManager.js')
 const sem = require('./SensorEventManager.js').getInstance();
 const { getPreferredName } = require('../util/util.js')
-const { nameToType } = require('../extension/detect/common.js')
+const { nameToType, getMacVendorAllowedTypes } = require('../extension/detect/common.js')
 const bonjourDetect = require('../extension/detect/bonjour.js')
 
 const _ = require('lodash')
@@ -51,6 +51,7 @@ class DeviceIdentificationSensor extends Sensor {
         this.mergeAndSave(mac, { nameBased: { name: 'Firewalla' } })
       } else {
         const ua = await this.userAgentDetect(host)
+        if (!(await this.vendorTypeValid(mac, ua))) continue
         this.mergeAndSave(mac, { ua })
       }
     } catch(err) {
@@ -151,6 +152,23 @@ class DeviceIdentificationSensor extends Sensor {
     }
   }
 
+  // Returns true when this source update's `type` is consistent with the host's
+  // macVendor constraint (or when no constraint applies). A false return tells
+  // the caller to drop the whole sub-update — a wrong type usually means the
+  // whole source misidentified the device, so brand/model/name from it are
+  // equally suspect. Called only for ua/bonjour/nameBased; cloud and feedback
+  // bypass by not invoking this.
+  async vendorTypeValid(mac, sub) {
+    if (!sub || !sub.type) return true
+    const host = hostManager.getHostFastByMAC(mac)
+    const macVendor = host && host.o.macVendor
+    if (!macVendor) return true
+    const allowed = await getMacVendorAllowedTypes(macVendor)
+    if (!Array.isArray(allowed) || !allowed.length || allowed.includes(sub.type)) return true
+    log.verbose(`MAC vendor constraint: ${macVendor} disallows type='${sub.type}', dropping source`)
+    return false
+  }
+
   mergeAndSave(mac, updates = {}) {
     let entry = this.mergeJobs[mac]
     if (entry) {
@@ -183,12 +201,26 @@ class DeviceIdentificationSensor extends Sensor {
       detect[key] = Object.assign({}, detect[key], updates[key])
     }
 
+    // MAC vendor constraint sweep: macVendor may arrive after a source emitted
+    // (DetectUpdate races OUI lookup), or get corrected later (e.g. cloud
+    // overwrites "Unknown" via _vendor).
+    if (host.o.macVendor) {
+      for (const from of ['ua', 'bonjour', 'nameBased']) {
+        const sub = detect[from]
+        if (sub && sub.type && !(await this.vendorTypeValid(mac, sub)))
+          delete detect[from]
+      }
+    }
+
     // name-based type detection from preferred name
     const name = getPreferredName(host.o)
     if (name) {
       const nameType = await nameToType(name)
-      if (nameType)
-        detect.nameBased = { type: nameType }
+      if (nameType) {
+        const nameBased = { type: nameType }
+        if (await this.vendorTypeValid(mac, nameBased))
+          detect.nameBased = nameBased
+      }
     }
 
     if (!Object.keys(detect).length) return
@@ -266,8 +298,10 @@ class DeviceIdentificationSensor extends Sensor {
             for (const key in sub)
               sub[`${key}.source`] = source
           }
-          if (from === 'bonjour')
+          if (from === 'bonjour') {
+            if (!(await this.vendorTypeValid(mac, sub))) return
             await this._filterByBonjourPriority(mac, sub)
+          }
           this.mergeAndSave(mac, { [from]: sub })
         }
       } catch(err) {
