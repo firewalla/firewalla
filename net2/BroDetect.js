@@ -66,6 +66,9 @@ const categoryUpdater = new CategoryUpdater()
 
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 
+const FlowAggrTool = require('./FlowAggrTool')
+const flowAggrTool = new FlowAggrTool()
+
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
 const config = fc.getConfig().bro
@@ -1491,7 +1494,8 @@ class BroDetect {
         multi.zadd(systemKey, tmpspec._ts, JSON.stringify(tmpspec))
       }
       // no need to set ttl here, OldDataCleanSensor will take care of it
-      multi.zadd("deviceLastFlowTs", now, localMac);
+      if (flowAggrTool.shouldUpdateDeviceLastFlowTs(localMac, now))
+        multi.zadd("deviceLastFlowTs", now, localMac);
       await multi.execAsync().catch(
         err => log.error("Failed to save tmpspec: ", tmpspec, err)
       )
@@ -1565,7 +1569,7 @@ class BroDetect {
           const descriptor = (systemFlow ? f.mac+':' : '')
             + (type == 'dns'
               ? `${f.sh}:${f.dh}:${f.dn}`
-              : `${f.sh}:${f.dh}:${f.oIntf || ""}:${f.dp || ""}`)
+              : `${f.sh}:${f.dh}:${f.oIntf || ""}:${f.dp || ""}:${f.pr || ""}`)
 
           if (type == 'conn' && f.uids && f.uids.length && f.fd === "in" && !f.af) try {
             // try resolve host info for previous flows again here
@@ -2043,28 +2047,29 @@ class BroDetect {
     let wanNicRxBytes = 0;
     let wanNicTxBytes = 0;
     const wanTraffic = {};
+    // a safe-check to filter abnormal rx/tx bytes spikes that may be caused by hardware bugs
+    const threshold = config.threshold;
+    const maxBytes = threshold.maxSpeed / 8 * duration;
     for (const iface of Object.keys(wanNicStats)) {
       if (this.wanNicStatsCache && this.wanNicStatsCache[iface]) {
         const uuid = wanNicStats[iface].uuid;
         // 1 mega bytes buffer in case there are multiple VLANs on a physical WAN port and bytes deduction may result in a negative result because statistics on different interfaces are not read at the same time
-        const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes - 1000000 ? Math.max(0, wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes) : wanNicStats[iface].rxBytes;
-        const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes - 1000000 ? Math.max(0, wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes) : wanNicStats[iface].txBytes;
+        let rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes - 1000000 ? Math.max(0, wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes) : wanNicStats[iface].rxBytes;
+        let txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes - 1000000 ? Math.max(0, wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes) : wanNicStats[iface].txBytes;
+        if (rxBytes >= maxBytes) {
+          log.warn('WAN rx exceeded', uuid, rxBytes, '>', threshold.maxSpeed, '/', duration);
+          rxBytes = 0;
+        }
+        if (txBytes >= maxBytes) {
+          log.warn('WAN tx exceeded', uuid, txBytes, '>', threshold.maxSpeed, '/', duration);
+          txBytes = 0;
+        }
         if (uuid) {
           wanTraffic[uuid] = {rxBytes, txBytes};
         }
         wanNicRxBytes += rxBytes;
         wanNicTxBytes += txBytes;
       }
-    }
-    // a safe-check to filter abnormal rx/tx bytes spikes that may be caused by hardware bugs
-    const threshold = config.threshold;
-    if (wanNicRxBytes >= threshold.maxSpeed / 8 * duration) {
-      log.warn('WAN rx exceeded', wanNicRxBytes, '>', threshold.maxSpeed, '/', duration)
-      wanNicRxBytes = 0;
-    }
-    if (wanNicTxBytes >= threshold.maxSpeed / 8 * duration) {
-      log.warn('WAN tx exceeded', wanNicRxBytes, '>', threshold.maxSpeed, '/', duration)
-      wanNicTxBytes = 0;
     }
     this.wanNicStatsCache = wanNicStats;
 

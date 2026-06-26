@@ -91,6 +91,37 @@ let diskUsage = {};
 
 let releaseInfo = {};
 
+let emmcLife = null;
+
+const REDIS_DISKSTATS_DAILY_KEY = 'sys:diskstats:daily';
+
+// sectors written from /proc/diskstats at process start (boot baseline), BigInt per device
+let diskStatsBootBaseline = null;
+// cumulative sectors written loaded from Redis (covers prior boots), BigInt per device
+let diskStatsSavedCumulative = {};
+// unix seconds when cumulative tracking first began
+let diskStatsStartTime = 0;
+// reported stats: { startTime, devices: {dev: Mbytes}, yearlyWriteGB }
+let diskWriteStats = {};
+
+function isDiskStatsDevice(name) {
+  // whole eMMC/SD device or numbered partition, exclude boot/rpmb partitions
+  return /^mmcblk\d+(p\d+)?$/.test(name) || /^sda\d*$/.test(name);
+}
+
+async function readRawDiskStats() {
+  const content = await fs.promises.readFile('/proc/diskstats', 'utf8');
+  const result = {};
+  for (const line of content.trim().split('\n')) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 10) continue;
+    const name = parts[2];
+    if (!isDiskStatsDevice(name)) continue;
+    result[name] = BigInt(parts[9]); // raw write sectors as 64-bit BigInt
+  }
+  return result;
+}
+
 
 getMultiProfileSupportFlag();
 
@@ -119,9 +150,11 @@ async function update() {
       .then(getWlanInfo)
       .then(getSlabInfo)
       .then(getDiskUsage)
+      .then(getDiskWriteStats)
       .then(getReleaseInfo)
       .then(getCPUModel)
       .then(getDistributionCodename)
+      .then(getEmmcLife)
   ]);
 
   if(updateFlag) {
@@ -131,7 +164,7 @@ async function update() {
 
 
 
-async function startUpdating() {
+async function startUpdating(options = {}) {
   updateFlag = 1;
   await update();
 }
@@ -207,6 +240,21 @@ async function getDiskInfo() {
     diskInfo = disks;
   } catch(err) {
     log.error("Failed to get disk info", err);
+  }
+}
+
+async function getEmmcLife() {
+  try {
+    const result = await exec("sudo bash -c 'cat /sys/kernel/debug/*mmc*/*mmc*:*/ext_csd 2>/dev/null | head -n 1'");
+    const hex = result.stdout.trim();
+    if (hex.length < 540) return;
+    emmcLife = {
+      preEolInfo: parseInt(hex.substr(267 * 2, 2), 16),
+      lifeTimeEstA: parseInt(hex.substr(268 * 2, 2), 16),
+      lifeTimeEstB: parseInt(hex.substr(269 * 2, 2), 16),
+    };
+  } catch (err) {
+    log.debug("Failed to read eMMC ext_csd:", err.message);
   }
 }
 
@@ -445,6 +493,7 @@ async function getSysInfo() {
     wlanInfo,
     slabInfo,
     diskUsage: diskUsage,
+    diskWriteStats: diskWriteStats,
     processes : getTop10RSSProcesses(),
     releaseInfo: releaseInfo
   }
@@ -461,6 +510,10 @@ async function getSysInfo() {
 
   if(rateLimitInfo) {
     sysinfo.rateLimitInfo = rateLimitInfo;
+  }
+
+  if (emmcLife) {
+    sysinfo.emmcLife = emmcLife;
   }
 
   if (platform.isDockerSupported()) {
@@ -613,6 +666,107 @@ async function getSlabInfo() {
   });
 }
 
+// parse a per-device value from a Redis daily entry to BigInt sectors.
+function _parseSectorsFromRedis(val) {
+  if (typeof val === 'string') return BigInt(val);
+}
+
+async function getDiskWriteStats() {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+
+    if (diskStatsBootBaseline === null) {
+      // load saved cumulative from the most recent Redis daily entry
+      const newestEntries = await rclient.zrangeAsync(REDIS_DISKSTATS_DAILY_KEY, -1, -1);
+      if (newestEntries && newestEntries.length > 0) {
+        const newest = JSON.parse(newestEntries[0]);
+        diskStatsSavedCumulative = {};
+        for (const [dev, val] of Object.entries(newest.devices || {})) {
+          diskStatsSavedCumulative[dev] = _parseSectorsFromRedis(val);
+        }
+        if (now - newest.t >= 2 * 86400) {
+          log.warn(`diskstats: latest Redis entry is ${Math.round((now - newest.t) / 86400)} day(s) old`);
+        }
+      }
+      // startTime = timestamp of the oldest recorded entry
+      const oldestEntries = await rclient.zrangeAsync(REDIS_DISKSTATS_DAILY_KEY, 0, 0);
+      diskStatsStartTime = oldestEntries && oldestEntries.length > 0 ? JSON.parse(oldestEntries[0]).t : now;
+      diskStatsBootBaseline = await readRawDiskStats();
+    }
+
+    const current = await readRawDiskStats();
+    const deviceSectors = {}; // BigInt sectors per device
+
+    for (const [dev, currentSectors] of Object.entries(current)) {
+      const bootSectors = diskStatsBootBaseline[dev] || 0n;
+      const savedSectors = diskStatsSavedCumulative[dev] || 0n;
+      const delta = currentSectors >= bootSectors ? currentSectors - bootSectors : 0n;
+      deviceSectors[dev] = savedSectors + delta;
+      log.debug(`diskstats: device ${dev}, current sectors ${currentSectors}, boot baseline ${bootSectors}, saved cumulative ${savedSectors}, delta ${delta}, total ${deviceSectors[dev]}`);
+    }
+
+    // write today's daily snapshot
+    const dayTs = Math.floor(now / 86400) * 86400;
+    if (f.isMain()) {
+      const todayExisting = await rclient.zrangebyscoreAsync(REDIS_DISKSTATS_DAILY_KEY, dayTs, dayTs);
+      // store sector counts as strings to preserve 64-bit precision
+      const devicesForRedis = {};
+      for (const [dev, sectors] of Object.entries(deviceSectors)) {
+        devicesForRedis[dev] = sectors.toString();
+      }
+      if (todayExisting && todayExisting.length > 0) {
+        await rclient.zremAsync(REDIS_DISKSTATS_DAILY_KEY, todayExisting[0]);
+      }
+      await rclient.zaddAsync(REDIS_DISKSTATS_DAILY_KEY, dayTs, JSON.stringify({ t: dayTs, devices: devicesForRedis }));
+      await rclient.zremrangebyrankAsync(REDIS_DISKSTATS_DAILY_KEY, 0, -(366 + 1)); // keep last 366 days
+    }
+
+    // yearly estimate: deviceSectors (today) minus the entry from exactly 365 days ago
+    let yearlyWriteGB = {};
+    const day365AgoTs = dayTs - 365 * 86400;
+    const day365Entries = await rclient.zrangebyscoreAsync(REDIS_DISKSTATS_DAILY_KEY, day365AgoTs, day365AgoTs);
+    if (day365Entries && day365Entries.length > 0) {
+      const day365ago = JSON.parse(day365Entries[0]);
+      for (const dev of Object.keys(deviceSectors)) {
+        if (day365ago.devices[dev] != null) {
+          const oldSectors = _parseSectorsFromRedis(day365ago.devices[dev]);
+          const deltaSectors = deviceSectors[dev] > oldSectors ? deviceSectors[dev] - oldSectors : 0n;
+          yearlyWriteGB[dev] = Number(deltaSectors / 2048n) / 1024; // sectors → MB → GB
+        }
+      }
+    } else {
+      log.debug(`diskstats: no entry from 365 days ago (ts ${day365AgoTs}), use (current - oldest)/days * 365 as estimate`);
+      const oldestEntries = await rclient.zrangeAsync(REDIS_DISKSTATS_DAILY_KEY, 0, 0);
+      if (oldestEntries && oldestEntries.length > 0) {
+        const oldest = JSON.parse(oldestEntries[0]);
+        if (oldest.t === dayTs) {
+          log.debug(`diskstats: oldest entry is from today, not enough history data to make yearly estimate`);
+        } else {
+          const days = (now - oldest.t) / 86400 + 1; // add 1 day to avoid under-estimate
+          for (const dev of Object.keys(deviceSectors)) {
+            if (oldest.devices[dev] != null) {
+              const oldSectors = _parseSectorsFromRedis(oldest.devices[dev]);
+              const deltaSectors = deviceSectors[dev] > oldSectors ? deviceSectors[dev] - oldSectors : 0n;
+              yearlyWriteGB[dev] = Number(deltaSectors / 2048n) / days * 365 / 1024; // sectors → MB → GB
+            }
+          }
+        }
+      }
+    }
+
+    // convert BigInt sectors to integer MB for the external API
+    const devices = {};
+    for (const [dev, sectors] of Object.entries(deviceSectors)) {
+      devices[dev] = Number(sectors / 2048n); // integer MB
+    }
+
+    diskWriteStats = { startTime: diskStatsStartTime, devices, yearlyWriteGB };
+    return diskWriteStats;
+  } catch (err) {
+    log.error("Failed to get disk write stats", err);
+  }
+}
+
 async function getDiskUsage(path) {
   try {
     const resultFW = await exec("du -sk /home/pi/firewalla|awk '{print $1}'", {encoding: 'utf8'});
@@ -646,5 +800,6 @@ module.exports = {
   getRecentLogs: getRecentLogs,
   getPerfStats: getPerfStats,
   getHeapDump: getHeapDump,
-  getAutoUpgrade
+  getAutoUpgrade,
+  getDiskWriteStats,
 };

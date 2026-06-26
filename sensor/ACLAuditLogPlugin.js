@@ -33,6 +33,8 @@ const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const Constants = require('../net2/Constants.js');
 const fc = require('../net2/config.js')
 const conntrack = require('../net2/Conntrack.js')
+const FlowAggrTool = require('../net2/FlowAggrTool')
+const flowAggrTool = new FlowAggrTool()
 const LogReader = require('../util/LogReader.js');
 const { delay } = require('../util/util.js');
 const { getUniqueTs } = require('../net2/FlowUtil.js')
@@ -369,7 +371,7 @@ class ACLAuditLogPlugin extends Sensor {
     }
 
     if (record.ac === "qos" || record.ac === "disturb") {
-      record.qmark = Number(mark) & 0x3fff000;
+      record.qmark = Number(mark) & 0x3fff0000;
       const matchedPids = (await this.ruleStatsPlugin.getPolicyIds(record)).map(Number);
       if (matchedPids && matchedPids.length > 0){
         record.pid = matchedPids[0];
@@ -888,7 +890,7 @@ class ACLAuditLogPlugin extends Sensor {
           delete record.mac
           const recordJson = JSON.stringify(record);
           multi.zadd(key, _ts, recordJson);
-          if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
+          if (!mac.startsWith(Constants.NS_INTERFACE + ":") && flowAggrTool.shouldUpdateDeviceLastFlowTs(mac, _ts))
             multi.zadd("deviceLastFlowTs", _ts, mac);
           this.touchedKeys[key] = 1;
           // no need to set ttl here, OldDataCleanSensor will take care of it

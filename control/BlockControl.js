@@ -51,7 +51,7 @@ class BlockControl {
     if (f.isMain()) {
       SensorEventManager.on('Control:RuleAdded', (event) => {
         const { module, rule, fromProcess } = event;
-        
+
         log.debug(`Rule:Added ${module}${fromProcess ? ` (from ${fromProcess})` : ''} ${rule}`);
 
         // Only call addRule if event is coming from another process
@@ -73,10 +73,43 @@ class BlockControl {
         }
         // If in 'processing' or 'initializing' state, rules will be processed when state changes
       });
+
+      // Broadcast initial phase so non-main processes reset their submodule phase
+      // when FireMain (re)starts — they should route rules via SEM until FireMain is autonomous.
+      this.broadcastPhase('init');
+
+      // Respond to non-main processes asking for current phase (e.g. they restarted
+      // and missed the original broadcast).
+      SensorEventManager.on('Control:StateRequest', () => {
+        this.broadcastPhase(this.state);
+      });
+    } else {
+      // Non-main: don't maintain a state machine. Just mirror FireMain's phase onto submodules
+      // so addRule() can choose between inline _execOne (autonomous) and SEM routing (init).
+      SensorEventManager.on('Control:StateChanged', (event) => {
+        const { phase } = event;
+        log.info(`Control:StateChanged received: phase=${phase}`);
+        this.setPhase(phase);
+      });
+
+      // Ask FireMain for its current phase in case it's already autonomous
+      // and we missed the original broadcast.
+      SensorEventManager.sendEventToFireMain({
+        type: 'Control:StateRequest',
+        suppressEventLogging: true,
+      });
     }
 
     // start in 'initializing' state so rules queued before startInitialization() are preserved
     this.state = 'initializing';
+  }
+
+  broadcastPhase(phase) {
+    SensorEventManager.sendEventToAll({
+      type: 'Control:StateChanged',
+      phase,
+      suppressEventLogging: true,
+    });
   }
 
   /**
@@ -203,6 +236,7 @@ class BlockControl {
       log.verbose('Entering autonomous state');
       this.state = 'autonomous';
       this.setPhase('autonomous');
+      this.broadcastPhase('autonomous');
       if (this.needRefreshConnmark) {
         log.verbose('Refreshing connmark after transferring to autonomous state');
         this.refreshConnmark().catch((err) => {

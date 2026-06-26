@@ -404,18 +404,19 @@ class APCMsgSensor extends Sensor {
           continue;
         }
 
+        const ssid = _.get(ssidProfiles, [uuid, "ssid"]);
         for (const key of Object.keys(status)) {
           if (!_.isArray(status[key]))
             continue;
           if (key === "phy") { // STA MACs that do not belong to a PSK group
             for (const mac of status[key])
-              await this.updateHostSSID(mac.toUpperCase(), uuid, ssidGroupMap[uuid] && ssidGroupMap[uuid].getUniqueId());
+              await this.updateHostSSID(mac.toUpperCase(), uuid, ssidGroupMap[uuid] && ssidGroupMap[uuid].getUniqueId(), ssid);
           } else {
             if (key.startsWith("vlan:")) { // STA MACs that belong to a PSK group
               const vid = key.substring("vlan:".length);
               const ssidVlanId = `${uuid}::${vid}`;
               for (const mac of status[key])
-                await this.updateHostSSID(mac.toUpperCase(), uuid, ssidVlanGroupMap[ssidVlanId] && ssidVlanGroupMap[ssidVlanId].getUniqueId());
+                await this.updateHostSSID(mac.toUpperCase(), uuid, ssidVlanGroupMap[ssidVlanId] && ssidVlanGroupMap[ssidVlanId].getUniqueId(), ssid, vid);
             }
           }
         }
@@ -475,14 +476,14 @@ class APCMsgSensor extends Sensor {
         // map to a group of a default segment if sta does not belong to a dynamic vlan
         if (!groupId && !dvlanId)
           groupId = this.ssidGroupMap[uuid] && this.ssidGroupMap[uuid].getUniqueId();
-        await this.updateHostSSID(mac, uuid, groupId);
+        await this.updateHostSSID(mac, uuid, groupId, ssid, dvlanId);
       }
     }).catch((err) => {
       log.error(`Failed to process STA update message: ${msg}`, err.message);
     });
   }
 
-  async updateHostSSID(mac, uuid, groupId) {
+  async updateHostSSID(mac, uuid, groupId, ssid, dvlanId = null) {
     const host = await hostManager.getHostAsync(mac.toUpperCase());
     if (!host) {
       log.warn(`Unknown mac address ${mac}`);
@@ -506,14 +507,27 @@ class APCMsgSensor extends Sensor {
         newTagId = groupId;
     }
 
+    const options = {};
+    if (dvlanId) {
+      options.dvlanId = String(dvlanId);
+      options.auth = "ppsk";
+    }
+
     if (!_.isEmpty(newTagId) && host) {
       await host.setPolicyAsync(_.get(Constants.TAG_TYPE_MAP, [Constants.TAG_TYPE_GROUP, "policyKey"]), [newTagId], true);
       await hostTool.deleteWirelessDeviceTagCandidate(mac.toUpperCase());
+      await host.setAutoGroupAsync(newTagId, ssid, options);
     } else {
       if (!host) {
         // this may be a new device yet to be discovered
         log.info(`A new device ${mac} is yet to be discovered in DeviceHook, tag id candidate is set to ${newTagId}`);
         await hostTool.setWirelessDeviceTagCandidate(mac.toUpperCase(), String(newTagId));
+        if (!_.isEmpty(newTagId)) {
+          await hostTool.setWirelessAutoGroup(mac.toUpperCase(), String(newTagId), ssid, options);
+        }
+      }
+      if (_.isEmpty(newTagId) && host) {
+        await host.resetAutoGroupAsync();
       }
     }
   }
