@@ -491,7 +491,12 @@ class VpnManager {
                     clientDesc.cn = values[j];
                     break;
                   case "Real Address":
-                    clientDesc.addr = values[j];
+                    let realAddr = values[j];
+                    // Starting from OpenVPn 2.6, the real address is prepended with <protocol><af>-<role>, e.g., tcp6-server:100.100.100.100:41914
+                    if (realAddr.startsWith("tcp") || realAddr.startsWith("udp")) {
+                      realAddr = realAddr.substring(realAddr.indexOf(":") + 1);
+                    }
+                    clientDesc.addr = realAddr;
                     break;
                   case "Bytes Received":
                     clientDesc.rxBytes = !isNaN(values[j]) && Number(values[j]) || 0;
@@ -539,7 +544,12 @@ class VpnManager {
                     clientDesc.cn = values[j];
                     break;
                   case "Real Address":
-                    clientDesc.addr = values[j];
+                    let realAddr = values[j];
+                    // Starting from OpenVPn 2.6, the real address is prepended with <protocol><af>-<role>, e.g., tcp6-server:100.100.100.100:41914
+                    if (realAddr.startsWith("tcp") || realAddr.startsWith("udp")) {
+                      realAddr = realAddr.substring(realAddr.indexOf(":") + 1);
+                    }
+                    clientDesc.addr = realAddr;
                     break;
                   case "Last Ref":
                     clientDesc.lastActive = Math.floor(new Date(values[j]).getTime() / 1000);
