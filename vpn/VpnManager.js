@@ -102,16 +102,14 @@ class VpnManager {
   }
 
   install(instance, callback) {
-    let install1_cmd = util.format('cd %s/vpn; sudo -E ./install1.sh %s', fHome, instance);
+    let install1_cmd = util.format('cd %s/vpn; sudo ./install1.sh %s', fHome, instance);
     exec(install1_cmd, (err, out, code) => {
       if (err) {
         log.error("VPNManager:INSTALL:Error", "Unable to install1.sh for " + instance, err);
       }
       if (err == null) {
-        // !! Pay attention to the parameter "-E" which is used to preserve the
-        // enviornment variables when running sudo commands
         const installLockFile = "/dev/shm/vpn_install2_lock_file";
-        let install2_cmd = `cd ${fHome}/vpn; flock -n ${installLockFile} -c 'ENCRYPT=${platform.getDHKeySize()} sudo -E ./install2.sh ${instance}'; sync`;
+        let install2_cmd = `cd ${fHome}/vpn; flock -n ${installLockFile} -c 'sudo ENCRYPT=${platform.getDHKeySize()} ./install2.sh ${instance}'; sync`;
         log.info("VPNManager:INSTALL:cmd", install2_cmd);
         exec(install2_cmd, (err, out, code) => {
           if (err) {
@@ -413,7 +411,7 @@ class VpnManager {
       this.needRestart = true;
     this.mydns = mydns;
     const confGenLockFile = "/dev/shm/vpn_confgen_lock_file";
-    const cmd = `cd ${fHome}/vpn; flock -n ${confGenLockFile} -c 'ENCRYPT=${platform.getDHKeySize()} sudo -E ./confgen.sh ${this.instanceName} ${mydns} ${this.serverNetwork} ${this.netmask} ${this.localPort} ${this.protocol} ${mydns6} ${this.serverNetwork6}'; sync`
+    const cmd = `cd ${fHome}/vpn; flock -n ${confGenLockFile} -c 'sudo ENCRYPT=${platform.getDHKeySize()} ./confgen.sh ${this.instanceName} ${mydns} ${this.serverNetwork} ${this.netmask} ${this.localPort} ${this.protocol} ${mydns6} ${this.serverNetwork6}'; sync`
     log.info("VPNManager:CONFIGURE:cmd", cmd);
     await execAsync(cmd).catch((err) => {
       log.error("VPNManager:CONFIGURE:Error", "Unable to generate server config for " + this.instanceName, err);
@@ -886,7 +884,7 @@ class VpnManager {
       return;
     }
     const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
-    const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpnrevoke.sh %s %s; sync'", fHome, vpnLockFile, commonName, INSTANCE_NAME);
+    const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo ./ovpnrevoke.sh %s %s; sync'", fHome, vpnLockFile, commonName, INSTANCE_NAME);
     log.info("VPNManager:Revoke", cmd);
     await execAsync(cmd).catch((err) => {
       log.error("Failed to revoke VPN profile " + commonName, err);
@@ -943,7 +941,7 @@ class VpnManager {
 
     const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
 
-    await execFileAsync('flock', ['-n', vpnLockFile, 'sudo', '-E', './ovpngen.sh', commonName, String(password), ip, String(externalPort), protocol], {
+    await execFileAsync('flock', ['-n', vpnLockFile, './ovpngen.sh', commonName, String(password), ip, String(externalPort), protocol], {
       cwd: `${fHome}/vpn`
     }).catch(err => {
       log.error("VPNManager:GEN:Error", "Unable to ovpngen.sh", err);
