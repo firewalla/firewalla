@@ -49,7 +49,18 @@
     [ "eth1", "rx-gro-list", "off" ],
     [ "eth2", "rx-gro-list", "off" ],
     [ "eth3", "rx-gro-list", "off" ],
-    [ "eth4", "rx-gro-list", "off" ]
+    [ "eth4", "rx-gro-list", "off" ],
+    [ "eth0", "rx-udp-gro-forwarding", "on" ],
+    [ "eth1", "rx-udp-gro-forwarding", "on" ],
+    [ "eth2", "rx-udp-gro-forwarding", "on" ],
+    [ "eth3", "rx-udp-gro-forwarding", "on" ],
+    [ "eth4", "rx-udp-gro-forwarding", "on" ]
+  ],
+  "rx_flow_hash": [
+    [ "eth1", "udp4", "sdfn" ],
+    [ "eth1", "udp6", "sdfn" ],
+    [ "eth2", "udp4", "sdfn" ],
+    [ "eth2", "udp6", "sdfn" ]
   ],
   "priority": [
     ["ovpn-server", 0, "match"],
