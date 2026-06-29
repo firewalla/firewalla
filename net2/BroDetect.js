@@ -66,6 +66,9 @@ const categoryUpdater = new CategoryUpdater()
 
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 
+const FlowAggrTool = require('./FlowAggrTool')
+const flowAggrTool = new FlowAggrTool()
+
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
 const config = fc.getConfig().bro
@@ -1491,7 +1494,8 @@ class BroDetect {
         multi.zadd(systemKey, tmpspec._ts, JSON.stringify(tmpspec))
       }
       // no need to set ttl here, OldDataCleanSensor will take care of it
-      multi.zadd("deviceLastFlowTs", now, localMac);
+      if (flowAggrTool.shouldUpdateDeviceLastFlowTs(localMac, now))
+        multi.zadd("deviceLastFlowTs", now, localMac);
       await multi.execAsync().catch(
         err => log.error("Failed to save tmpspec: ", tmpspec, err)
       )

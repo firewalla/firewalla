@@ -584,9 +584,10 @@ class NetworkProfile extends Monitorable {
         if (this.o && this.o.gateway6 && typeof this.o.gateway6 === 'string') {
           await Ipset.add(GatewayIpsetName6, this.o.gateway6);
         }
-        //Add DNS6 to the gateway set since IPv6 gateways typically use Link-Local addresses.
+        // Add global unicast DNS6 to gateway set; skip link-local (not routable via FW_FORWARD).
         if(this.o && _.isArray(this.o.dns6)) {
           for (const dns6 of this.o.dns6) {
+            if (new Address6(dns6).isLinkLocal()) continue;
             await Ipset.add(GatewayIpsetName6, dns6);
           }
         }

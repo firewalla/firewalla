@@ -140,6 +140,26 @@ class FreeRadiusSensor extends Sensor {
         policy: (JSON.parse(freeradius.mask(JSON.stringify(policy)))),
       };
     });
+
+    extensionManager.onGet("getFreeRadiusCerts", async (msg, data) => {
+      const result = await freeradius.getCerts().then(r => r || { ok: false, error: "Failed to get certs" }).catch((e) => { return { ok: false, error: e.message } });
+      const resp = {
+        success: result.ok ? true : false,
+        certs: result.certs,
+        customCerts: result.customCerts,
+      };
+      if (result.error) { resp.error = result.error; }
+      return resp;
+    });
+
+    extensionManager.onCmd("saveFreeRadiusCerts", async (msg, data) => {
+      const result = await freeradius.saveCerts(data).then(r => r || { ok: false, error: "Failed to save certs" }).catch((e) => { return { ok: false, error: e.message } });
+      const resp = {
+        success: result.ok ? true : false,
+      };
+      if (result.error) { resp.error = result.error; }
+      return resp;
+    });
   }
 
   async run() {
