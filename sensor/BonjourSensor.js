@@ -28,6 +28,7 @@ const hostTool = new HostTool();
 const sysManager = require('../net2/SysManager.js')
 const Message = require('../net2/Message.js');
 const { modelToType, boardToModel, hapCiToType } = require('../extension/detect/appleModel.js')
+const bonjourDetect = require('../extension/detect/bonjour.js')
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 
@@ -70,8 +71,7 @@ class BonjourSensor extends Sensor {
       let bound = false;
       // create new bonjour listeners
       for (const iface of sysManager.getMonitoringInterfaces().filter(i => i.ip_address)) {
-        for (const vpnPrefix of ['wg', 'awg', 'tun'])
-          if (iface.name.startsWith(vpnPrefix)) continue
+        if (['wg', 'awg', 'tun'].some(vpnPrefix => iface.name.startsWith(vpnPrefix))) continue
         const opts = {interface: iface.ip_address};
         if (!bound) {
           // only bind to INADDR_ANY once, otherwise duplicate dgrams will be received on multiple instances
@@ -103,6 +103,13 @@ class BonjourSensor extends Sensor {
         }
       }, 1000 * 10);
     }, 5000);
+  }
+
+  // asset takes precedence; sensor config is fallback when asset is missing the list
+  async isServiceInList(serviceType, listName) {
+    if (!serviceType) return false
+    const list = await bonjourDetect.getList(listName) || this.config[listName]
+    return Array.isArray(list) && list.includes(serviceType)
   }
 
   run() {
@@ -224,15 +231,13 @@ class BonjourSensor extends Sensor {
       case '_printer':
       case '_pdl-datastream':
         // https://developer.apple.com/bonjour/printing-specification/bonjourprinting-1.2.1.pdf
-
-        // printer could be added as service via airprint as well,
-        if (!detected.type) {
-          detect.type = 'printer'
-          if (txt) {
-            if (txt.ty) detect.name = txt.ty
-            if (txt.usb_MDL) detect.model = txt.usb_MDL
-            if (txt.usb_MFG) detect.brand = txt.usb_MFG
-          }
+        // printer could be added as service via airprint as well; give _printer
+        // a low priority in the bonjour asset so airplay/etc. won't be overwritten.
+        detect.type = 'printer'
+        if (txt) {
+          if (txt.ty) detect.name = txt.ty
+          if (txt.usb_MDL) detect.model = txt.usb_MDL
+          if (txt.usb_MFG) detect.brand = txt.usb_MFG
         }
         break
       case '_amzn-wplay':
@@ -293,7 +298,12 @@ class BonjourSensor extends Sensor {
           if (irobotmcs.mac) mac = irobotmcs.mac.toUpperCase()
         }
         break
+      case '_arduino':
+        detect.type = 'iot_default'
+        break
       case '_http':
+      case '_http-alt':
+      case '_https':
         // ignore _http on comprehensive devices even type is not from bonjour
         if (['phone', 'tablet', 'desktop', 'laptop'].includes(_.get(hostObj, 'o.detect.type'))) {
           return
@@ -327,7 +337,8 @@ class BonjourSensor extends Sensor {
       from: "bonjour"
     };
 
-    if (name && name.length && !this.config.ignoreNames.some(n => name.includes(n)) && type != '_mi-connect')
+    if (name && name.length && type != '_mi-connect'
+      && !(await bonjourDetect.getList('ignoreNames') || []).some(n => name.includes(n)))
       host.bname = name
 
     if (ipv4Addr) {
@@ -350,7 +361,7 @@ class BonjourSensor extends Sensor {
     return host.replace(".local", "")
   }
 
-  getFriendlyDeviceName(service) {
+  async getFriendlyDeviceName(service) {
     // doubt that we are still using this
     let bypassList = [/eph:devhi:netbot/]
 
@@ -358,7 +369,7 @@ class BonjourSensor extends Sensor {
 
     if (!service.name ||
       service.fqdn && bypassList.some((x) => service.fqdn.match(x)) ||
-      this.config.nonReadableNameServices.includes(service.type)
+      await this.isServiceInList(service.type, 'nonReadableNameServices')
     ) {
       name = this.getHostName(service.host)
     } else {
@@ -369,7 +380,7 @@ class BonjourSensor extends Sensor {
     return name
   }
 
-  bonjourParse(service) {
+  async bonjourParse(service) {
     log.debug("Discover:Bonjour:Parsing:Received", service);
     if (service == null) {
       return;
@@ -380,7 +391,7 @@ class BonjourSensor extends Sensor {
       return;
 
     // not really helpful on recognizing name & type
-    if (this.config.ignoreServices.includes(service.type)) {
+    if (await this.isServiceInList(service.type, 'ignoreServices')) {
       return
     }
 
@@ -405,7 +416,7 @@ class BonjourSensor extends Sensor {
     }
 
     let s = {
-      name: this.getFriendlyDeviceName(service),
+      name: await this.getFriendlyDeviceName(service),
       ipv4Addr: ipv4addr,
       ipv6Addrs: ipv6addr,
       hostName: service.host,

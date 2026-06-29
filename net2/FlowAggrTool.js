@@ -23,9 +23,15 @@ const util = require('util');
 
 const _ = require('lodash')
 
+const LRU = require('lru-cache')
+
 let instance = null;
 
 const MAX_FLOW_PER_SUM = 400
+
+// deviceLastFlowTs is read only at coarse granularity, so collapse sub-resolution updates to
+// cut the per-flow zadd. Seconds.
+const DEVICE_LAST_FLOW_TS_RESOLUTION = 60
 
 const COMMON_SUMFLOW_KEYS = [ 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason', 'intra' ]
 const FLOW_STR_KEYS = COMMON_SUMFLOW_KEYS.concat('destIP')
@@ -37,8 +43,19 @@ class FlowAggrTool {
   constructor() {
     if(!instance) {
       instance = this;
+      this.deviceLastFlowTsCache = new LRU({max: 4096, maxAge: 3600 * 1000});
     }
     return instance;
+  }
+
+  // Throttle deviceLastFlowTs updates: a skip only delays a device's last-seen score by at most
+  // DEVICE_LAST_FLOW_TS_RESOLUTION seconds, and the key has no TTL, so it is harmless.
+  shouldUpdateDeviceLastFlowTs(mac, ts) {
+    const last = this.deviceLastFlowTsCache.get(mac);
+    if (last && ts - last < DEVICE_LAST_FLOW_TS_RESOLUTION)
+      return false;
+    this.deviceLastFlowTsCache.set(mac, ts);
+    return true;
   }
 
   toFloorInt(n) {
@@ -477,7 +494,8 @@ class FlowAggrTool {
   }
 
   async recordDeviceLastFlowTs(uid, ts) {
-    await rclient.zaddAsync("deviceLastFlowTs", ts, uid);
+    if (this.shouldUpdateDeviceLastFlowTs(uid, ts))
+      await rclient.zaddAsync("deviceLastFlowTs", ts, uid);
   }
 
   async getDevicesWithFlowTs(begin, end) {

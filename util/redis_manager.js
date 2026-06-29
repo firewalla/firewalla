@@ -22,6 +22,7 @@ const Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 const _ = require('lodash');
+const LRU = require('lru-cache');
 
 // helper functions for scan
 redis.RedisClient.prototype.scanAll = async function(pattern, handler, count = 1000) {
@@ -119,6 +120,12 @@ class RedisManager {
       })
       this.mclientHincrbyBuffer = {};
       this.mclientHincrbyMultiBuffer = {};
+
+      // Skip redundant EXPIREAT: a TS key's expire target is constant, so set it once; an LRU eviction just costs one extra EXPIREAT.
+      this.mclientExpireAtCache = new LRU({max: 100000, maxAge: 7 * 24 * 3600 * 1000});
+      const expireAtChanged = (key, expr) => this.mclientExpireAtCache.get(key) !== expr;
+      const rememberExpireAt = (key, expr) => this.mclientExpireAtCache.set(key, expr);
+
       // a helper function to merge multiple hincrby operations on the same key
       this.mclient.hincrbyAndExpireatBulk = async (key, hkey, incr, expr, multi = false) => {
         const bufferKey = `${key}::${hkey}`;
@@ -134,16 +141,23 @@ class RedisManager {
           const tempBuf = buffer[bufferKey];
           delete buffer[bufferKey];
           await this.mclient.hincrbyAsync(key, hkey, tempBuf.incr);
-          await this.mclient.expireatAsync(key, expr);
+          if (expireAtChanged(key, tempBuf.expr)) {
+            await this.mclient.expireatAsync(key, tempBuf.expr);
+            rememberExpireAt(key, tempBuf.expr);
+          }
         }
       };
+
       this.mclient.execBatch = async () => {
         try {
           const batch = this.mclient.batch()
           for (const k in this.mclientHincrbyMultiBuffer) {
             const {key, hkey, incr, expr} = this.mclientHincrbyMultiBuffer[k];
             batch.hincrby(key, hkey, incr);
-            batch.expireat(key, expr);
+            if (expireAtChanged(key, expr)) {
+              batch.expireat(key, expr);
+              rememberExpireAt(key, expr);
+            }
             delete this.mclientHincrbyMultiBuffer[k];
           }
           await batch.execAsync()
@@ -158,7 +172,10 @@ class RedisManager {
             const {key, hkey, incr, expr} = this.mclientHincrbyBuffer[k];
             delete this.mclientHincrbyBuffer[k];
             await this.mclient.hincrbyAsync(key, hkey, incr);
-            await this.mclient.expireatAsync(key, expr);
+            if (expireAtChanged(key, expr)) {
+              await this.mclient.expireatAsync(key, expr);
+              rememberExpireAt(key, expr);
+            }
           }
         }
       }, 60000);

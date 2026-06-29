@@ -297,6 +297,22 @@ class TLSSetControl extends ModuleControl {
   }
 
   /**
+   * Clear the "active" mark for a TLS set. Call this when the rule referencing the set
+   * is removed (kernel drops the /proc hostset file), so isSetActive reflects reality and
+   * a later activate will re-populate it.
+   * @param {string} tlsHostSet - TLS set name
+   * @param {string} proto - 'tcp' | 'udp' | '' (both)
+   */
+  deactivateTLSSet(tlsHostSet, proto = '') {
+    if (proto === 'tcp' || proto === '') {
+      delete this.activeTCPSets[tlsHostSet];
+    }
+    if (proto === 'udp' || proto === '') {
+      delete this.activeUDPSets[tlsHostSet];
+    }
+  }
+
+  /**
    * Refresh active TLS sets by probing hostset files under /proc/net.
    * This discovers which sets actually exist in the filesystem.
    */
