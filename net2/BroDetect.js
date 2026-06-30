@@ -1382,7 +1382,7 @@ class BroDetect {
         // only use information in app map for outbound flow, af describes remote site
         if (afobj && afobj.host && (flowdir === "in" || localFlow)) {
           if (!tmpspec.af) tmpspec.af = {}
-          tmpspec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
+          tmpspec.af[afobj.host] = _.pick(afobj, ["proto"]);
           afhost = afobj.host
         }
       }
@@ -1579,7 +1579,7 @@ class BroDetect {
             if (!flowstash.ignore[ipPairKey] || !flowstash.ignore[ipPairKey].has(uid)) {
               const afobj = this.withdrawAppMap(f.sh, f.sp[0] || 0, f.dh, f.dp, this.activeLongConns.has(uid)) || await conntrack.getConnEntries(f.sh, f.sp[0] || 0, f.dh, f.dp, f.pr, 600);;
               if (afobj && afobj.host) {
-                f.af = { [afobj.host]: _.pick(afobj, ["proto", "ip"]) };
+                f.af = { [afobj.host]: _.pick(afobj, ["proto"]) };
               }
             }
           } catch (e) {

@@ -543,7 +543,7 @@ class ACLAuditLogPlugin extends Sensor {
 
         if (connEntries && connEntries.host) {
           record.af = {};
-          record.af[connEntries.host] = _.pick(connEntries, ["proto", "ip"])
+          record.af[connEntries.host] = _.pick(connEntries, ["proto"])
         }
       }
     } else {
