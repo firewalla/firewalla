@@ -146,6 +146,9 @@ class QuicLogPlugin extends Sensor {
       return;
     }
     const rule = new Rule().chn('FW_FORWARD_LOG');
+    rule.set('monitored_net_set', 'src,src');
+    rule.set('monitored_net_set', 'dst,dst', true);
+    rule.mdl("conntrack", "--ctdir ORIGINAL");
     rule.mdl("udp_tls", '--log-tls');
     rule.pro('udp');
     rule.dport(443);
@@ -167,6 +170,9 @@ class QuicLogPlugin extends Sensor {
     await this._flushConnEntryCache();
 
     const rule = new Rule().chn('FW_FORWARD_LOG');
+    rule.set('monitored_net_set', 'src,src');
+    rule.set('monitored_net_set', 'dst,dst', true);
+    rule.mdl("conntrack", "--ctdir ORIGINAL");
     rule.mdl("udp_tls", '--log-tls');
     rule.pro('udp');
     rule.dport(443);
