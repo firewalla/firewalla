@@ -103,6 +103,7 @@ const dnsmasq = new Dnsmasq();
 
 const fs = require('fs');
 
+const freeradius = require("../extension/freeradius/freeradius.js");
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
@@ -896,6 +897,13 @@ module.exports = class HostManager extends Monitorable {
     json.nseScanResult = result;
   }
 
+  async freeradiusForInit(json, options) {
+    const freeradiusData = await freeradius.getFreeRadiusDataForInit(options);
+    if (freeradiusData) {
+      json.freeradius = freeradiusData;
+    }
+  }
+
   async hostsInfoForInit(json, options) {
     log.debug("Reading host stats");
 
@@ -1627,6 +1635,7 @@ module.exports = class HostManager extends Monitorable {
 
     let requiredPromises = [
       this.hostsInfoForInit(json, options),
+      this.freeradiusForInit(json, options),
       this.newLast24StatsForInit(json, null, options.tsMetrics, options),
       this.last60MinStatsForInit(json, null, options.tsMetrics, options),
       this.extensionDataForInit(json),
