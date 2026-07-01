@@ -1768,9 +1768,10 @@ function generateV46Rule(ruleOptions) {
 }
 
 async function generateRules(ruleOptions) {
-  const { direction, trafficDirection, transferredBytes, transferredPackets, avgPacketBytes, dscpClass, isSnat } = ruleOptions
+  const { direction, trafficDirection, transferredBytes, transferredPackets, avgPacketBytes, dscpClass, isSnat, tlsHostSet, tlsHost } = ruleOptions
 
   const rules = []
+  const hasTlsMatcher = tlsHostSet || tlsHost
   // log.debug(`generateRules ${JSON.stringify(ruleOptions)}`)
 
   if (direction === 'bidirection' && trafficDirection && (transferredBytes || transferredPackets || avgPacketBytes)
@@ -1779,14 +1780,14 @@ async function generateRules(ruleOptions) {
     ruleOptions.transferDirection = trafficDirection ? (trafficDirection === 'upload' ? 'original' : 'reply') : null
     if (!dscpClass || !trafficDirection || trafficDirection === "upload")
       rules.push(...generateV46Rule({ ...ruleOptions, ctDir: 'ORIGINAL' }))
-    if ((!dscpClass || !trafficDirection || trafficDirection === "download") && !isSnat)
+    if ((!dscpClass || !trafficDirection || trafficDirection === "download") && !isSnat && !hasTlsMatcher)
       rules.push(...generateV46Rule(flipSrcDst({ ...ruleOptions, ctDir: 'REPLY' })))
   }
   if (direction === 'bidirection' && trafficDirection && (transferredBytes || transferredPackets || avgPacketBytes)
     || direction === 'inbound'
   ) {
     ruleOptions.transferDirection = trafficDirection ? (trafficDirection === 'upload' ? 'reply' : 'original') : null
-    if (!dscpClass || !trafficDirection || trafficDirection === "upload")
+    if ((!dscpClass || !trafficDirection || trafficDirection === "upload") && !hasTlsMatcher)
       rules.push(...generateV46Rule({ ...ruleOptions, ctDir: 'REPLY' }))
     if (!dscpClass || !trafficDirection || trafficDirection === "download")
       rules.push(...generateV46Rule(flipSrcDst({ ...ruleOptions, ctDir: 'ORIGINAL' })))
@@ -1794,7 +1795,7 @@ async function generateRules(ruleOptions) {
   if (direction === 'bidirection' && (!trafficDirection || (!transferredBytes && !transferredPackets && !avgPacketBytes))) {
     if (!dscpClass || !trafficDirection || trafficDirection === "upload")
       rules.push(...generateV46Rule(ruleOptions))
-    if (!dscpClass || !trafficDirection || trafficDirection === "download")
+    if ((!dscpClass || !trafficDirection || trafficDirection === "download") && !hasTlsMatcher)
       rules.push(...generateV46Rule(flipSrcDst(ruleOptions)))
   }
 
