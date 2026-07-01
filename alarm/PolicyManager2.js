@@ -39,6 +39,8 @@ const LOCK_POLICY_ID = "LOCK_POLICY_ID";
 const { Address4, Address6 } = require('ip-address');
 const Host = require('../net2/Host.js');
 const Constants = require('../net2/Constants.js');
+// pids reserved for synthetic rules (e.g. adblock TLS); getNextID never hands these out
+const RESERVED_PIDS = new Set([Constants.RESERVED_PID_ADBLOCK_TLS]);
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -413,6 +415,8 @@ class PolicyManager2 {
           }
           if (next === prev)
             throw new Error(`No free pid is available`);
+          if (RESERVED_PIDS.has(next))
+            continue;
           if (await rclient.existsAsync(`policy:${next}`))
             continue;
           return next;
@@ -2187,7 +2191,7 @@ class PolicyManager2 {
     }
 
     const commonOptions = {
-      pid, tags, intfs, scope, guids, parentRgId,
+      pid, type, tags, intfs, scope, guids, parentRgId,
       localPortSet, /*remoteSet4, remoteSet6,*/ remoteTupleCount, remoteNegate, remotePortSet, proto: protocol,
       action, direction, createOrDestroy: "create", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
@@ -2305,14 +2309,21 @@ class PolicyManager2 {
   }
 
   async _applyRules(options) {
-    const { tags, intfs, scope, guids, parentRgId } = options || {};
+    const { tags, intfs, scope, guids, parentRgId, type } = options || {};
     const ruleOptions = _.omit(options, 'tags', 'intfs', 'scope', 'guids', 'parentRgId')
+
+    const DEVICE = 1, GROUP = 2, NETWORK = 3;
+    const targetLevel = { device: DEVICE, tag: GROUP, network: NETWORK }[type];
+    const targetScope = { [DEVICE]: "DEV", [GROUP]: "DEV_G", [NETWORK]: "NET" }[targetLevel];
+
+    const targetScopeIfMoreSpecificThan = (applyToLevel) =>
+      targetLevel && targetLevel < applyToLevel ? targetScope : undefined;
 
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || !_.isEmpty(parentRgId)) {
       if (!_.isEmpty(tags))
-        await Block.setupTagsRules({ ...ruleOptions, uids: tags });
+        await Block.setupTagsRules({ ...ruleOptions, uids: tags, fwScope: targetScopeIfMoreSpecificThan(GROUP) });
       if (!_.isEmpty(intfs))
-        await Block.setupIntfsRules({ ...ruleOptions, uuids: intfs });
+        await Block.setupIntfsRules({ ...ruleOptions, uuids: intfs, fwScope: targetScopeIfMoreSpecificThan(NETWORK) });
       if (!_.isEmpty(scope))
         await Block.setupDevicesRules({ ...ruleOptions, macAddresses: scope });
       if (!_.isEmpty(guids))
@@ -2320,8 +2331,8 @@ class PolicyManager2 {
       if (!_.isEmpty(parentRgId))
         await Block.setupRuleGroupRules({ ...ruleOptions, ruleGroupUUID: parentRgId });
     } else {
-      // apply to global
-      await Block.setupGlobalRules(ruleOptions);
+      // apply to global; a local-network target raises the chain to that target's scope
+      await Block.setupGlobalRules({ ...ruleOptions, fwScope: targetScope });
     }
   }
 
@@ -2798,7 +2809,7 @@ class PolicyManager2 {
     }
 
     const commonOptions = {
-      pid, tags, intfs, scope, guids, parentRgId,
+      pid, type, tags, intfs, scope, guids, parentRgId,
       localPortSet, /*remoteSet4, remoteSet6,*/ remoteTupleCount, remoteNegate, remotePortSet, proto: protocol,
       action, direction, createOrDestroy: "destroy", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,

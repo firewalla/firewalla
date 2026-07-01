@@ -28,6 +28,8 @@ module.exports = {
   RULE_SEQ_HI: 1,
   RULE_SEQ_REG: 2,
   RULE_SEQ_LO: 3,
+  // policy ids reserved for synthetic (non-user) iptables rules.
+  RESERVED_PID_ADBLOCK_TLS: 65500,
   DEFAULT_VPN_PROFILE_CN: "fishboneVPN1",
 
   DNS_DEFAULT_WAN_TAG: "wan",
