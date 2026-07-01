@@ -286,7 +286,8 @@ async function getMultiProfileSupportFlag() {
 }
 
 async function getIntelQueueSize() {
-  intelQueueSize = await rclient.zcountAsync("ip_set_to_be_processed", "-inf", "+inf");
+  // DestIPFoundHook now keeps the work queue in node memory and publishes its size here
+  intelQueueSize = Number(await rclient.getAsync("metric:intel:queue:size")) || 0;
 }
 
 async function getRealMemoryUsage() {
