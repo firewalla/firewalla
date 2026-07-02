@@ -461,11 +461,11 @@ class DomainUpdater {
             options.comment = `${domain}@`;
           }
           if (options.port) {
-            await Block.batchBlockNetPort(newAddresses, options.port, blockSet, options).catch((err) => {
+            await Block.batchBlockNetPort(newAddresses, options.port, blockSet, options, true).catch((err) => {
               log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
             });
           } else {
-            await Block.batchBlock(newAddresses, blockSet, options).catch((err) => {
+            await Block.batchBlock(newAddresses, blockSet, options, true).catch((err) => {
               log.error(`Failed to batch block domain ${domain} in ${blockSet}`, err.message);
             });
           }
