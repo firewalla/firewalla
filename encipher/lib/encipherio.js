@@ -754,8 +754,10 @@ let legoEptCloud = class {
   }
 
   keygen() {
-    let k = uuid.v4();
-    return k.replace('-', '');
+    // 24 CSPRNG bytes -> exactly 32 base64 chars (192 bits of entropy). The 32-char
+    // ASCII string keeps the wire contract (bkey = utf8(key.substring(0,32))) while
+    // replacing the old uuid.v4() source, which only had ~112-122 bits of real entropy.
+    return crypto.randomBytes(24).toString('base64');
   }
 
   // This is to encrypt message for direct communication between app and pi.
