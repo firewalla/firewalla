@@ -83,7 +83,7 @@ class AdblockStats {
     if (!record || record.ac !== 'block' || record.reason !== 'adblock')
       return;
 
-    const recordTs = Number(record.ts || 0);
+    const recordTs = Number(record._ts || record.ts || 0);
     if (recordTs <= this.resetTs)
       return;
 
