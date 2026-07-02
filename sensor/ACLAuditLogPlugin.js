@@ -133,6 +133,12 @@ class ACLAuditLogPlugin extends Sensor {
     }
   }
 
+  isAdblockTlsAuditRecord(record) {
+    return record
+      && record.ac === 'block'
+      && record.pid === Constants.RESERVED_PID_ADBLOCK_TLS;
+  }
+
   // dns on bridge interface is not the LAN IP, zeek will see different src/dst IP in DNS packets due to br_netfilter,
   // and an additional 10 seconds timeout is introduced before it is recorded in zeek's dns log
   isDNATedOnBridge(inIntf) {
@@ -804,6 +810,12 @@ class ACLAuditLogPlugin extends Sensor {
               const lastHitFlow = Object.assign({}, record, { mac }, dir === 'L' ? { local: true } : {});
               this.ruleStatsPlugin.recordLastHitFlow(record.pid, lastHitFlow, 'audit');
             }
+          }
+
+          if (this.isAdblockTlsAuditRecord(record)) {
+            record.reason = 'adblock';
+            this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
+            this.adblockPlugin && this.adblockPlugin.recordAdblockHit(Object.assign({}, record, { mac }));
           }
 
           if (type == 'ip' && record.ac != "block" && record.ac != 'redirect' && record.ac != "isolation" && record.ac != "disturb")
