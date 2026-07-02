@@ -952,56 +952,12 @@ class PolicyManager2 {
       return policy;
     }
 
-    const kind = lastHitFlow.kind;
-    const raw = _.isObject(lastHitFlow.raw) ? lastHitFlow.raw : null;
-    if (!raw || !kind) {
-      delete policy.lastHitFlow;
-      return policy;
-    }
+    const { kind } = lastHitFlow;
+    let formatted = null;
+    if (kind === 'audit') formatted = await auditTool.formatHitFlow(lastHitFlow, options);
+    else if (kind === 'flow') formatted = await flowTool.formatHitFlow(lastHitFlow, options);
 
-    let simpleLog = null;
-    if (kind === 'audit') {
-      simpleLog = auditTool.toSimpleFormat(raw, {
-        block: true,
-        local: !!(raw.local || raw.dmac || raw.dir === 'L')
-      });
-      if (simpleLog && raw.mac) {
-        simpleLog.device = raw.mac;
-      }
-      const formatted = await auditTool.enrichSimpleLog(simpleLog, options)
-        .catch((err) => {
-          log.warn('Failed to enrich policy lastHitFlow', _.get(policy, 'pid'), err.message);
-          return simpleLog;
-        });
-      if (formatted) {
-        policy.lastHitFlow = formatted;
-      } else {
-        delete policy.lastHitFlow;
-      }
-      return policy;
-    }
-
-    if (kind === 'flow') {
-      simpleLog = flowTool.toSimpleFormat(raw, {
-        local: !!(raw.local || raw.dmac || raw.drl || raw.dstTags || raw.fd === 'lo')
-      });
-      if (simpleLog && raw.mac) {
-        simpleLog.device = raw.mac;
-      }
-      const formatted = await flowTool.enrichSimpleLog(simpleLog, options)
-        .catch((err) => {
-          log.warn('Failed to enrich policy lastHitFlow', _.get(policy, 'pid'), err.message);
-          return simpleLog;
-        });
-      if (formatted) {
-        policy.lastHitFlow = formatted;
-      } else {
-        delete policy.lastHitFlow;
-      }
-      return policy;
-    }
-
-    delete policy.lastHitFlow;
+    formatted ? (policy.lastHitFlow = formatted) : delete policy.lastHitFlow;
     return policy;
   }
 

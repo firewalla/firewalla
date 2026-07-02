@@ -90,6 +90,7 @@ class ACLAuditLogPlugin extends Sensor {
     this.dnsmasqLogReader = null
     this.aggregator = null
     this.ruleStatsPlugin = sl.getSensor("RuleStatsPlugin");
+    this.adblockPlugin = sl.getSensor("AdblockPlugin");
   }
 
   async job() {
@@ -130,6 +131,12 @@ class ACLAuditLogPlugin extends Sensor {
     } else {
       this.buffer[mac][descriptor] = record
     }
+  }
+
+  isAdblockTlsAuditRecord(record) {
+    return record
+      && record.ac === 'block'
+      && record.pid === Constants.RESERVED_PID_ADBLOCK_TLS;
   }
 
   // dns on bridge interface is not the LAN IP, zeek will see different src/dst IP in DNS packets due to br_netfilter,
@@ -660,6 +667,11 @@ class ACLAuditLogPlugin extends Sensor {
     record.mac = mac;
     record.ct = record.ct || 1;
 
+    if (record.ac === 'block' && record.reason === 'adblock') {
+      this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
+      this.adblockPlugin && this.adblockPlugin.recordAdblockHit(record);
+    }
+
     this.writeBuffer(record);
   }
 
@@ -800,6 +812,12 @@ class ACLAuditLogPlugin extends Sensor {
             }
           }
 
+          if (this.isAdblockTlsAuditRecord(record)) {
+            record.reason = 'adblock';
+            this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
+            this.adblockPlugin && this.adblockPlugin.recordAdblockHit(Object.assign({}, record, { mac }));
+          }
+
           if (type == 'ip' && record.ac != "block" && record.ac != 'redirect' && record.ac != "isolation" && record.ac != "disturb")
             continue
 
@@ -912,6 +930,9 @@ class ACLAuditLogPlugin extends Sensor {
         await multi.execAsync()
       }
       timeSeries.exec()
+      this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
+      if (this.adblockPlugin)
+        await this.adblockPlugin.flushAdblockStats();
     } catch (err) {
       log.error("Failed to write audit logs", err)
     }
