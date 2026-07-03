@@ -40,6 +40,7 @@ class Platform {
       if (!dirExists)
         return
       const address = await fsp.readFile(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch(() => "");
+      const permAddress = await this.getPermanentMac(nic) || address;
       let speed = await fsp.readFile(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
       const carrier = await fsp.readFile(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
       let duplex = await fsp.readFile(`/sys/class/net/${nic}/duplex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
@@ -47,9 +48,21 @@ class Platform {
         duplex = "unknown";
         speed = "-1";
       }
-      result[nic] = {address, speed, carrier, duplex};
+      result[nic] = {address, permAddress, speed, carrier, duplex};
     }))
     return result;
+  }
+
+  // Read the hardware permanent MAC of a NIC via ethtool. Returns "" if unavailable
+  // (e.g. all-zero permanent address or ethtool failure), so callers can fall back.
+  async getPermanentMac(nic) {
+    const mac = await exec(`ethtool -P ${nic}`).then(result => {
+      const match = result.stdout.match(/Permanent address:\s*([0-9a-fA-F:]+)/);
+      return match ? match[1].trim().toUpperCase() : "";
+    }).catch(() => "");
+    if (!mac || mac === "00:00:00:00:00:00")
+      return "";
+    return mac;
   }
 
   async getMaxLinkSpeed(iface) {
@@ -79,7 +92,7 @@ class Platform {
 
   async getNetworkSpeed() {
     try {
-      const output = await fsp.readFile(`/sys/class/net/${this.getAllNicNames[0]}/speed`, {encoding: 'utf8'});
+      const output = await fsp.readFile(`/sys/class/net/${this.getAllNicNames()[0]}/speed`, {encoding: 'utf8'});
       return output.trim();
     } catch(err) {
       log.debug('Error getting network speed', err)

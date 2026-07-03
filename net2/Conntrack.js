@@ -25,6 +25,10 @@ const readline = require('readline');
 
 const LRU = require('lru-cache');
 const { Address6 } = require('ip-address');
+
+// conn TTL refresh throttle: one EXPIRE per key per period; throttled refreshes are deferred
+// (not dropped) and flushed by _drainConnTTL, bounding any TTL-less window to one period.
+const CONN_TTL_REFRESH_PERIOD = 100 * 1000;
 const f = require('./Firewalla.js');
 const Constants = require('./Constants.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
@@ -51,6 +55,11 @@ class Conntrack {
     this.connCache = {};
     this.connRemoteDB = new LRU({max: 2048, maxAge: 600 * 1000});
     this.connEntriesCache = new LRU({max: 10000, maxAge: 600 * 1000});
+    // last EXPIRE time per conn key, to rate-limit redundant TTL refreshes
+    this.connExpireTs = new LRU({max: 10000, maxAge: 600 * 1000});
+    // keys whose TTL refresh was throttled; _drainConnTTL flushes them within one period
+    this.connExpirePending = new Map();
+    setInterval(() => this._drainConnTTL(), CONN_TTL_REFRESH_PERIOD);
 
     sem.once('IPTABLES_READY', () => {
       this.parseEstablishedConnections().catch((err) => {
@@ -293,6 +302,34 @@ class Conntrack {
     return `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
   }
 
+  // Returns true if the caller should EXPIRE inline (leading edge). When throttled, defers the
+  // refresh into connExpirePending so _drainConnTTL still issues it within one period.
+  tryRefreshConnTTL(key, expr) {
+    const now = Date.now();
+    const last = this.connExpireTs.get(key);
+    if (!last || now - last >= CONN_TTL_REFRESH_PERIOD) {
+      this.connExpireTs.set(key, now);
+      this.connExpirePending.delete(key);
+      return true;
+    }
+    this.connExpirePending.set(key, expr);
+    return false;
+  }
+
+  async _drainConnTTL() {
+    if (this.connExpirePending.size === 0)
+      return;
+    const pending = this.connExpirePending;
+    this.connExpirePending = new Map();
+    const now = Date.now();
+    const multi = rclient.multi();
+    for (const [key, expr] of pending) {
+      multi.expire(key, expr);
+      this.connExpireTs.set(key, now);
+    }
+    await multi.execAsync().catch((err) => log.error("Failed to flush deferred conn TTL refreshes", err.message));
+  }
+
   async setConnEntry(src, sport, dst, dport, protocol, subKey, value, expr = 600) {
     const key = this.getKey(src, sport, dst, dport, protocol);
     let entries = this.connEntriesCache.get(key);
@@ -301,10 +338,10 @@ class Conntrack {
     entries[subKey] = value;
     // refresh expiration time in cache and redis
     this.connEntriesCache.set(key, entries, expr * 1000);
-    const results = await rclient.multi()
-      .hset(key, subKey, value)
-      .expire(key, expr)
-      .execAsync()
+    const multi = rclient.multi().hset(key, subKey, value);
+    if (this.tryRefreshConnTTL(key, expr))
+      multi.expire(key, expr);
+    const results = await multi.execAsync()
     return results && results[0]
   }
 
@@ -317,10 +354,10 @@ class Conntrack {
     // refresh expiration time in cache and redis
     this.connEntriesCache.set(key, entries, expr * 1000);
     if (!_.isEmpty(obj)) {
-      await rclient.multi()
-        .hmset(key, obj)
-        .expire(key, expr)
-        .execAsync()
+      const multi = rclient.multi().hmset(key, obj);
+      if (this.tryRefreshConnTTL(key, expr))
+        multi.expire(key, expr);
+      await multi.execAsync()
     }
   }
 
@@ -336,7 +373,8 @@ class Conntrack {
         // refresh expiration time in cache and redis
         this.connEntriesCache.set(key, entries, expr * 1000);
         pipeline.hset(key, entry.data);
-        pipeline.expire(key, expr);
+        if (this.tryRefreshConnTTL(key, expr))
+          pipeline.expire(key, expr);
       });
       await pipeline.execAsync();
     }
@@ -345,6 +383,8 @@ class Conntrack {
   async delConnEntries(src, sport, dst, dport, protocol) {
     const key = this.getKey(src, sport, dst, dport, protocol)
     this.connEntriesCache.del(key);
+    this.connExpireTs.del(key);
+    this.connExpirePending.delete(key);
     await rclient.unlinkAsync(key)
   }
 
@@ -355,7 +395,8 @@ class Conntrack {
     if (entries && expr) {
       // refresh expiration time in cache and redis
       this.connEntriesCache.set(key, entries, expr * 1000);
-      rclient.expireAsync(key, expr).catch(()=>{})
+      if (this.tryRefreshConnTTL(key, expr))
+        rclient.expireAsync(key, expr).catch(()=>{})
     }
     return result;
   }
@@ -366,7 +407,8 @@ class Conntrack {
     if (entries && expr) {
       // refresh expiration time in cache and redis
       this.connEntriesCache.set(key, entries, expr * 1000);
-      rclient.expireAsync(key, expr).catch(()=>{})
+      if (this.tryRefreshConnTTL(key, expr))
+        rclient.expireAsync(key, expr).catch(()=>{})
     }
     return entries;
   }

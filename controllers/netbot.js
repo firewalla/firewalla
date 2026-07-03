@@ -71,7 +71,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const pclient = require('../util/redis_manager.js').getPublishClient();
 
-const execAsync = require('child-process-promise').exec;
+const { exec: execAsync, execFile } = require('child-process-promise');
 const { exec, execSync } = require('child_process');
 
 const AM2 = require('../alarm/AlarmManager2.js');
@@ -143,7 +143,7 @@ const fwapc = require('../net2/fwapc.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
-const { delay, difference, versionCompare } = require('../util/util.js');
+const { delay, difference, versionCompare, isValidCommonName } = require('../util/util.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -159,10 +159,137 @@ const Message = require('../net2/Message')
 
 const {logApiStats, getApiStats, API_STATS_KEY_EXCLUDE_LIST} = require('./stats.js');
 const util = require('util')
+const crypto = require('crypto')
+const LRU = require('lru-cache')
 
 const restartUPnPTask = {};
 
 class netBot extends ControllerBot {
+
+  _enqueueInitRequest(req) {
+    return new Promise((resolve, reject) => {
+      this.initQueue.push(Object.assign({}, req, { resolve, reject }));
+      this._drainInitQueue();
+    });
+  }
+
+  _enqueueResetRequest() {
+    this.initQueue.unshift({ reset: true });
+    this._drainInitQueue();
+  }
+
+  async _drainInitQueue() {
+    if (this.initQueueDraining) return;
+    this.initQueueDraining = true;
+    while (this.initQueue.length > 0) {
+      const entry = this.initQueue.shift();
+      if (entry.reset) {
+        this.initResultCache.reset();
+        continue;
+      }
+      const { options, data, gid, resolve, reject } = entry;
+      const { appInfo } = options;
+
+      try {
+        // Cache key covers everything that affects the shared (non-caller-specific) result:
+        // data payload, derived options, and config version.
+        // appInfo (caller identity), embeddedOps, rkey, cloudConnected, and device are
+        // intentionally excluded because they are caller-specific or volatile runtime state.
+        const { embeddedOps: _embeddedOps, ...cacheableData } = data;
+        const { appInfo: _appInfo, ...cacheableOptions } = options;
+        const cacheKey = crypto.createHash('md5')
+          .update(JSON.stringify({ data: cacheableData, options: cacheableOptions, v: this.initConfigVersion }))
+          .digest('hex');
+
+        let sharedJson = this.initResultCache.get(cacheKey);
+        if (sharedJson === undefined) {
+          const json = {};
+          await sysManager.updateAsync();
+
+          // fwapcOps and dapOps are optional; individual .catch(() => null) already absorbs failures.
+          const fwapcOps = Array.isArray(data.fwapcOps) ? data.fwapcOps : [];
+          const dapOps = Array.isArray(data.dapOps) ? data.dapOps : [];
+          const optionalTasks = fwapcOps.map(async (op) => {
+            if (!op || typeof op !== 'object') return;
+            const { key, method, path, body } = op;
+            const result = await fwapc.apiCall(method || "GET", path, body).catch(() => null);
+            if (result && result.code == 200)
+              json[key] = result.body;
+          });
+          optionalTasks.push(...dapOps.map(async (op) => {
+            if (!op || typeof op !== 'object') return;
+            const { key, method, path, body } = op;
+            const dapSensor = sl.getSensor('DapSensor');
+            if (dapSensor) {
+              const result = await dapSensor.apiCall(method || "GET", path, body).catch(() => null);
+              if (result && result.code == 200)
+                json[key] = result.body;
+            }
+          }));
+          await Promise.all(optionalTasks).catch((err) => {
+            log.error("Failed to run optional tasks in init", err.message);
+            log.debug(err.stack);
+          });
+
+          const hostResult = await this.hostManager.toJson2(options);
+          Object.assign(json, hostResult);
+
+          // Do not cache if any required init section failed; the partial result is still
+          // returned to the caller so app init degrades gracefully rather than returning 500.
+          if (!json._partialInit) {
+            sharedJson = json;
+            this.initResultCache.set(cacheKey, sharedJson);
+          } else {
+            delete json._partialInit;
+            sharedJson = json;
+          }
+        } else {
+          log.info("Init request served from cache");
+        }
+
+        // Shallow copy so per-request fields do not mutate the cached object.
+        const json = Object.assign({}, sharedJson);
+
+        // embeddedOps are processed per-request because getHandler uses gid.
+        // Keys already present in sharedJson are reserved for core init fields and
+        // cannot be overwritten by caller-supplied embeddedOps.
+        const coreKeys = new Set(Object.keys(sharedJson));
+        const embeddedOps = Array.isArray(data.embeddedOps) ? data.embeddedOps : [];
+        await Promise.all(embeddedOps.map(async (op) => {
+          try {
+            if (!op || typeof op !== 'object') return;
+            const { item, value, key, target } = op;
+            if (!item) return;
+            const outputKey = key || item;
+            if (coreKeys.has(outputKey)) {
+              log.warn(`embeddedOps key "${outputKey}" conflicts with a core init field; skipping`);
+              return;
+            }
+            const getMsg = {
+              mtype: "get",
+              target: target,
+              data: { item, value: value || {}, apiVer: data.apiVer }
+            };
+            json[outputKey] = await this.getHandler(gid, getMsg, appInfo);
+          } catch (err) {
+            log.warn(`Failed to execute embeddedOps item ${op.item}:`, err.message);
+          }
+        }));
+
+        // rkey and volatile runtime fields are always set per-request.
+        if (this.eptcloud) {
+          json.rkey = this.eptcloud.getMaskedRKey(gid);
+          json.cloudConnected = !this.eptcloud.disconnectCloud;
+        }
+        json.device = this.getDeviceName();
+
+        resolve(json);
+      } catch (err) {
+        reject(err);
+      }
+    }
+    this.initQueueDraining = false;
+  }
 
   /*
    *   {
@@ -345,6 +472,11 @@ class netBot extends ControllerBot {
 
     this.hostManager = new HostManager();
     this.hostManager.loadPolicy((err, data) => { });  //load policy
+
+    this.initConfigVersion = 0;
+    this.initResultCache = new LRU({ max: 20, maxAge: 15 * 1000 });
+    this.initQueue = [];
+    this.initQueueDraining = false;
 
     this.networkProfileManager = require('../net2/NetworkProfileManager.js');
     this.tagManager = require('../net2/TagManager.js');
@@ -1541,6 +1673,17 @@ class netBot extends ControllerBot {
         const json = {};
         await this.hostManager.networkProfilesForInit(json);
         return json;
+      }
+      case "tags": {
+        const types = (value && _.isArray(value.types)) ? value.types : [Constants.TAG_TYPE_GROUP, Constants.TAG_TYPE_USER];
+        const allTags = await this.tagManager.toJson();
+        const tags = {};
+        for (const uid in allTags) {
+          const type = allTags[uid].type || Constants.TAG_TYPE_GROUP;
+          if (types.includes(type))
+            tags[uid] = allTags[uid];
+        }
+        return { tags };
       }
       case "vpnProfile":
       case "ovpnProfile": {
@@ -3067,8 +3210,7 @@ class netBot extends ControllerBot {
         if (!cn) {
           throw { code: 400, msg: "'cn' is not specified." }
         }
-        const matches = cn.match(/^[a-zA-Z0-9]+/g);
-        if (cn.length > 32 || matches == null || matches.length != 1 || matches[0] !== cn) {
+        if (!isValidCommonName(cn)) {
           throw { code: 400, msg: "'cn' should only contain alphanumeric letters and no longer than 32 characters." }
         }
         const settings = value.settings || {};
@@ -3098,6 +3240,9 @@ class netBot extends ControllerBot {
         if (!cn) {
           throw { code: 400, msg: "'cn' is not specified." }
         }
+        if (!isValidCommonName(cn)) {
+          throw { code: 400, msg: "'cn' should only contain alphanumeric letters and no longer than 32 characters." }
+        }
         await VpnManager.revokeOvpnFile(cn);
         return
       }
@@ -3105,6 +3250,9 @@ class netBot extends ControllerBot {
         const cn = value.cn;
         if (!cn) {
           throw { code: 400, msg: "'cn' is not specified." }
+        }
+        if (!isValidCommonName(cn)) {
+          throw { code: 400, msg: "'cn' should only contain alphanumeric letters and no longer than 32 characters." }
         }
         const settings = await VpnManager.getSettings(cn);
         if (!settings) {
@@ -4011,9 +4159,10 @@ class netBot extends ControllerBot {
             case "init": {
               log.info("Process Init load event");
 
-              let begin = Date.now();
+              const begin = Date.now();
+              const data = _.get(rawmsg, ['message', 'obj', 'data'], {});
 
-              let options = {
+              const options = {
                 forceReload: true,
                 includePinnedHosts: true,
                 includePrivateMac: true,
@@ -4021,12 +4170,8 @@ class netBot extends ControllerBot {
                 includeAppTimeSlots: true,
                 includeAppTimeIntervals: true,
                 appInfo,
-              }
+              };
 
-              const data = _.get(rawmsg, ['message', 'obj', 'data'], {})
-              if (data.simulator) {
-                // options.simulator = 1
-              }
               if (data.includeInactiveHosts)
                 options.includeInactiveHosts = true;
               if (data.hasOwnProperty("includePrivateMac"))
@@ -4039,121 +4184,58 @@ class netBot extends ControllerBot {
                 options.timeUsageApps = data.timeUsageApps;
 
               if (!data.apiVer || data.apiVer <= 2) {
-                options.legacyLocalBlock = true
-                options.legacySystemFlows = true
+                options.legacyLocalBlock = true;
+                options.legacySystemFlows = true;
               } else {
-                const metrics = []
+                const metrics = [];
                 if (data.stats) {
-                  if (data.stats.regular) metrics.push('upload', 'download', 'conn')
-                  if (data.stats.dns && platform.isDNSFlowSupported()) metrics.push('dns')
-                  if (data.stats.audit && platform.isAuditLogSupported()) metrics.push('ipB', 'dnsB')
-                  if (data.stats.ntp) metrics.push('ntp')
-                  if (data.stats.local) metrics.push('intra:lo', 'conn:lo:intra')
-                  if (data.stats.localAudit) metrics.push('ipB:lo:intra')
+                  if (data.stats.regular) metrics.push('upload', 'download', 'conn');
+                  if (data.stats.dns && platform.isDNSFlowSupported()) metrics.push('dns');
+                  if (data.stats.audit && platform.isAuditLogSupported()) metrics.push('ipB', 'dnsB');
+                  if (data.stats.ntp) metrics.push('ntp');
+                  if (data.stats.local) metrics.push('intra:lo', 'conn:lo:intra');
+                  if (data.stats.localAudit) metrics.push('ipB:lo:intra');
                 }
-                options.tsMetrics = metrics
+                options.tsMetrics = metrics;
               }
 
-              await sysManager.updateAsync()
-              const fwapcOps = data.fwapcOps || [];
-              const dapOps = data.dapOps || [];
-              const embeddedOps = data.embeddedOps || [];
+              let initResult;
               try {
-                const json = {};
-                const tasks = fwapcOps.map(async (op) => {
-                  const {key, method, path, body} = op;
-                  const result = await fwapc.apiCall(method || "GET", path, body).catch((err) => null);
-                  if (result && result.code == 200)
-                    json[key] = result.body;
-                });
-                tasks.push(...dapOps.map(async (op) => {
-                  const {key, method, path, body} = op;
-                  const dapSensor = sl.getSensor('DapSensor');
-                  if (dapSensor) {
-                    const result = await dapSensor.apiCall(method || "GET", path, body).catch((err) => null);
-                    if (result && result.code == 200)
-                      json[key] = result.body;
-                  }
-                }));
-                // embeddedOps: array of embedded get requests, each dispatched through getHandler
-                // format: { item: string, value?: object, key?: string, target?: string }
-                tasks.push(...embeddedOps.map(async (op) => {
-                  const { item, value, key, target } = op;
-                  if (!item) return;
-                  try {
-                    const getMsg = {
-                      mtype: "get",
-                      target: target,
-                      data: {
-                        item: item,
-                        value: value || {},
-                        apiVer: data.apiVer
-                      }
-                    };
-                    // defaults to item as json key, but allows custom key override
-                    json[key || item] = await this.getHandler(gid, getMsg, appInfo);
-                  } catch (err) {
-                    log.warn(`Failed to execute embeddedOps item ${item}:`, err.message);
-                  }
-                }));
-                tasks.push((async () => {
-                  const result = await this.hostManager.toJson(options);
-                  Object.assign(json, result)
-                })());
-                await Promise.all(tasks).catch((err) => {
-                  log.error("Failed to run multiple tasks in init", err.message);
-                  log.debug(err.stack);
-                });
-
-                if (this.eptcloud) {
-                  json.rkey = this.eptcloud.getMaskedRKey(gid);
-                  json.cloudConnected = !this.eptcloud.disconnectCloud
-                }
-
-                // skip acl for old app for backward compatibility
-                if (appInfo && appInfo.version && ["1.35", "1.36"].includes(appInfo.version)) {
-                  if (json && json.policy) {
-                    delete json.policy.acl;
-                  }
-
-                  if (json && json.hosts) {
-                    for (const host of json.hosts) {
-                      if (host && host.policy) {
-                        delete host.policy.acl;
-                      }
-                    }
-                  }
-                }
-
-                let datamodel = {
-                  type: 'jsonmsg',
-                  mtype: 'init',
-                  id: uuid.v4(),
-                  expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                  replyid: msg.id,
-                }
-                if (json != null) {
-
-                  json.device = this.getDeviceName();
-
-                  datamodel.code = 200;
-                  datamodel.data = json;
-
-                  let end = Date.now();
-                  log.info("Took " + (end - begin) + "ms to load init data");
-
-                  return this.simpleTxData(msg, json, null, cloudOptions);
-                } else {
-                  log.error("json is null when calling init")
-                  const errModel = { code: 500, msg: "json is null when calling init" }
-                  return this.simpleTxData(msg, null, errModel, cloudOptions)
-                }
+                initResult = await this._enqueueInitRequest({ options, data, gid });
               } catch (err) {
                 log.error("Error calling hostManager.toJson():", err);
-                const errModel = { code: 500, msg: "got error when calling hostManager.toJson: " + err }
-                return this.simpleTxData(msg, null, errModel, cloudOptions)
+                return this.simpleTxData(msg, null, { code: 500, msg: "got error when calling hostManager.toJson: " + err }, cloudOptions);
               }
 
+              const end = Date.now();
+              log.info("Took " + (end - begin) + "ms to load init data");
+
+              if (initResult == null) {
+                log.error("json is null when calling init");
+                return this.simpleTxData(msg, null, { code: 500, msg: "json is null when calling init" }, cloudOptions);
+              }
+
+              // skip acl for old app for backward compatibility — applied per-caller on a
+              // shallow copy to avoid mutating the shared cached result
+              if (appInfo && appInfo.version && ["1.35", "1.36"].includes(appInfo.version)) {
+                const patched = Object.assign({}, initResult);
+                if (patched.policy) {
+                  patched.policy = Object.assign({}, patched.policy);
+                  delete patched.policy.acl;
+                }
+                if (patched.hosts) {
+                  patched.hosts = patched.hosts.map(host => {
+                    if (host && host.policy && host.policy.acl != null) {
+                      host = Object.assign({}, host, { policy: Object.assign({}, host.policy) });
+                      delete host.policy.acl;
+                    }
+                    return host;
+                  });
+                }
+                return this.simpleTxData(msg, patched, null, cloudOptions);
+              }
+
+              return this.simpleTxData(msg, initResult, null, cloudOptions);
             }
             case "set": {
               // mtype: set
@@ -4161,7 +4243,10 @@ class netBot extends ControllerBot {
               // data.item = policy
               // data.value = {'block':1},
               //
+              log.debug("Process set event for item", msg.data.item, "target", msg.target, "reset init cache");
               const result = await this.setHandler(gid, msg);
+              this.initConfigVersion++;
+              this._enqueueResetRequest();
               // by default sync to msp for set and cmd operations
               let syncToMspDefaultVal = aplt != "web" && aplt != "msp";
               const syncToMsp = _.has(msg, 'syncToMsp') ? msg.syncToMsp : syncToMspDefaultVal;
@@ -4181,6 +4266,7 @@ class netBot extends ControllerBot {
               return this.simpleTxData(msg, result, null, cloudOptions);
             }
             case "cmd": {
+              let txResponse;
               if (msg.data.item == 'fwapc') {
                 const value = msg.data.value;
 
@@ -4190,15 +4276,15 @@ class netBot extends ControllerBot {
 
                 const result = await fwapc.apiCall(value.method || "GET", value.path, value.body);
                 if (result.code == 200) {
-                  return this.simpleTxData(msg, result.body, null, cloudOptions);
+                  txResponse = this.simpleTxData(msg, result.body, null, cloudOptions);
                 } else {
                   const errmsg = result.body && typeof result.body === 'object' ? JSON.stringify(result.body) : result.body ||  result.code;
-                  return this.simpleTxData(msg, null, {code: result.code, data: result.body, msg: result.msg || errmsg}, cloudOptions);
+                  txResponse = this.simpleTxData(msg, null, {code: result.code, data: result.body, msg: result.msg || errmsg}, cloudOptions);
                 }
 
               } else if (msg.data.item == 'batchAction') {
                 const result = await this.batchHandler(gid, rawmsg);
-                return this.simpleTxData(msg, result, null, cloudOptions);
+                txResponse = this.simpleTxData(msg, result, null, cloudOptions);
               } else {
                 const result = await this.cmdHandler(gid, msg);
                 // by default sync to msp for set and cmd operations
@@ -4215,8 +4301,14 @@ class netBot extends ControllerBot {
                     });
                   }
                 }
-                return this.simpleTxData(msg, result, null, cloudOptions);
+                txResponse = this.simpleTxData(msg, result, null, cloudOptions);
               }
+              if (msg.data.item != "ping") { // ignore ping for resetting cache
+                log.debug("Process cmd event for item", msg.data.item, "target", msg.target, "reset init cache");
+                this.initConfigVersion++;
+                this._enqueueResetRequest();
+              }
+              return txResponse;
             }
             default: {
               const err = { code: 400, msg: "Unsupported operation " + rawmsg.message.obj.mtype }
@@ -4315,6 +4407,23 @@ class netBot extends ControllerBot {
   }
 
   async _removeSingleUPnP(protocol, externalPort, internalIP, internalPort) {
+    // Validate inputs to prevent command injection
+    if (!['tcp', 'udp'].includes(String(protocol).toLowerCase())) {
+      log.error(`_removeSingleUPnP: invalid protocol: ${protocol}`);
+      return;
+    }
+    const extPort = Number(externalPort);
+    const intPort = Number(internalPort);
+    if (!Number.isInteger(extPort) || extPort < 1 || extPort > 65535 ||
+        !Number.isInteger(intPort) || intPort < 1 || intPort > 65535) {
+      log.error(`_removeSingleUPnP: invalid port(s): ${externalPort}, ${internalPort}`);
+      return;
+    }
+    if (!iptool.isV4Format(String(internalIP))) {
+      log.error(`_removeSingleUPnP: invalid internalIP: ${internalIP}`);
+      return;
+    }
+    const proto = protocol.toUpperCase();
     const intf = sysManager.getInterfaceViaIP(internalIP);
     if (!intf)
       return;
@@ -4323,14 +4432,16 @@ class netBot extends ControllerBot {
     const leaseFile = `/var/run/upnp.${intfName}.leases`;
     const lockFile = `/tmp/upnp.${intfName}.lock`;
     const entries = JSON.parse(await rclient.hgetAsync("sys:scan:nat", "upnp") || "[]");
-    const newEntries = entries.filter(e => e.public.port != externalPort && e.private.host != internalIP && e.private.port != internalPort && e.protocol != protocol);
+    const newEntries = entries.filter(e => !(e.public.port == extPort && e.private.host == internalIP && e.private.port == intPort && e.protocol.toLowerCase() == protocol.toLowerCase()));
     // remove iptables redirect rule
-    await iptc.addRule(new Rule('nat').chn(chain).pro(protocol).dport(externalPort).dnat(`${internalIP}:${internalPort}`).opr('-D'));
+    await iptc.addRule(new Rule('nat').chn(chain).pro(proto).dport(extPort).dnat(`${internalIP}:${intPort}`).opr('-D'));
     // clean up upnp cache in redis
     await rclient.hsetAsync("sys:scan:nat", "upnp", JSON.stringify(newEntries));
-    // remove entry from lease file
-    await execAsync(`flock ${lockFile} -c "sudo sed -i '/^${protocol.toUpperCase()}:${externalPort}:${internalIP}:${internalPort}:.*/d' ${leaseFile}"`).catch((err) => {
-      log.error(`Failed to remove upnp lease, external port ${externalPort}, internal ${internalIP}:${internalPort}, protocol ${protocol}`, err.message);
+    // remove entry from lease file — use execFile to avoid outer shell interpolation;
+    // inputs are validated above so the sed pattern contains only [A-Z0-9.:] characters
+    const sedPattern = `/^${proto}:${extPort}:${internalIP}:${intPort}:.*/d`;
+    await execFile('flock', [lockFile, 'sudo', 'sed', '-i', sedPattern, leaseFile]).catch((err) => {
+      log.error(`Failed to remove upnp lease, external port ${extPort}, internal ${internalIP}:${intPort}, protocol ${proto}`, err.message);
     });
     this.scheduleRestartFirerouterUPnP(intfName);
   }
