@@ -32,13 +32,13 @@ const getGid = require('../lib/getGid.js')
 
 const FireRouter = require('../../net2/FireRouter.js');
 
-let gid = null;
-
 async function get_latency(mac) {
     const cache = latencyCache.get(mac);
     if (cache) {
         return cache;
     }
+
+    const gid = await getGid();
 
     const body = {
         "message": {
@@ -127,9 +127,6 @@ router.get('/json/vip_stats.json', async (req, res, next) => {
 });
 
 router.get('/json/stats.json', async (req, res, next) => {
-    if (!gid)
-        gid = await getGid();
-
     const devices = [];
     const staStatus = await FireRouter.getAllSTAStatus().catch((err) => {
       log.error(`Failed to get sta status from firerouter`, err.message);
