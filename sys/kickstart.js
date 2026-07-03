@@ -353,7 +353,17 @@ async function inviteAdmin(gid) {
 
 
 async function launchService2(gid) {
-  await writeFileAsync('/home/pi/.firewalla/ui.conf', JSON.stringify({gid:gid}), 'utf8');
+  // atomic write: temp file + fsync + rename, so a crash/power-loss mid-write can never leave a truncated ui.conf
+  const uiConfPath = '/home/pi/.firewalla/ui.conf';
+  const tmpPath = `${uiConfPath}.tmp`;
+  const fh = await fs.promises.open(tmpPath, 'w');
+  try {
+    await fh.writeFile(JSON.stringify({gid:gid}), 'utf8');
+    await fh.sync();
+  } finally {
+    await fh.close();
+  }
+  await fs.promises.rename(tmpPath, uiConfPath);
   
   /* bro is taken care of in FireMain now
   // don't start bro until app is linked

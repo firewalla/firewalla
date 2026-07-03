@@ -264,8 +264,8 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashsize = 128, c
   }
 }
 
-function batchBlock(elements, ipset, options) {
-  return batchSetupIpset(elements, ipset, false, options);
+function batchBlock(elements, ipset, options, allowDeferredExec = false) {
+  return batchSetupIpset(elements, ipset, false, options, allowDeferredExec);
 }
 
 function batchUnblock(elements, ipset) {
@@ -285,7 +285,7 @@ function unblock(target, ipset) {
   return setupIpset(target, ipset, true)
 }
 
-async function batchActionNetPort(elements, portObj, ipset, op='add', options = {}) {
+async function batchActionNetPort(elements, portObj, ipset, op='add', options = {}, allowDeferredExec = false) {
   log.debug("Batch block net port of", ipset);
   if (!_.isArray(elements) || elements.length === 0)
     return;
@@ -319,16 +319,16 @@ async function batchActionNetPort(elements, portObj, ipset, op='add', options = 
     }
     const portStr = CategoryEntry.toPortStr(effectivePortObj);
     if (op === 'add') {
-      await Ipset.add(setName, `${ipAddr},${portStr}`, { comment: options.comment });
+      await Ipset.add(setName, `${ipAddr},${portStr}`, { comment: options.comment }, allowDeferredExec);
     } else {
-      await Ipset.del(setName, `${ipAddr},${portStr}`);
+      await Ipset.del(setName, `${ipAddr},${portStr}`, allowDeferredExec);
     }
   }
 }
 
 // this is used only for user defined target list so there is no need to remove from ipset. The ipset will be reset upon category reload or update.
-async function batchBlockNetPort(elements, portObj, ipset, options = {}) {
-  return batchActionNetPort(elements, portObj, ipset, 'add', options);
+async function batchBlockNetPort(elements, portObj, ipset, options = {}, allowDeferredExec = false) {
+  return batchActionNetPort(elements, portObj, ipset, 'add', options, allowDeferredExec);
 }
 
 async function batchUnblockNetPort(elements, portObj, ipset, options = {}) {
@@ -357,7 +357,7 @@ function isGatewayOrPublicIp(ip) {
 
 
 // no need to remove from ipset, record will be cleared when timeout
-async function batchBlockConnection(elements, ipset, options = {}) {
+async function batchBlockConnection(elements, ipset, options = {}, allowDeferredExec = true) {
   log.debug("Batch block connection of", ipset);
   if (!_.isArray(elements) || elements.length === 0)
     return;
@@ -393,12 +393,13 @@ async function batchBlockConnection(elements, ipset, options = {}) {
 
     const { comment, timeout } = options;
     for (const localPort of localPorts) {
-      await Ipset.add(setName, `${localAddr},${protocol}:${localPort},${remoteAddr}`, { comment, timeout });
+      // allow deferred execution to avoid forking a new ipset process for each operation
+      await Ipset.add(setName, `${localAddr},${protocol}:${localPort},${remoteAddr}`, { comment, timeout }, allowDeferredExec);
     }
   }
 }
 
-async function batchSetupIpset(elements, ipset, remove = false, options = {}) {
+async function batchSetupIpset(elements, ipset, remove = false, options = {}, allowDeferredExec = false) {
   if (!_.isArray(elements) || elements.length === 0)
     return;
   const v4Set = ipset;
@@ -431,9 +432,9 @@ async function batchSetupIpset(elements, ipset, remove = false, options = {}) {
     if (!setName) continue;
 
     if (remove)
-      await Ipset.del(setName, ipAddr);
+      await Ipset.del(setName, ipAddr, allowDeferredExec);
     else
-      await Ipset.add(setName, ipAddr, { comment: options.comment });
+      await Ipset.add(setName, ipAddr, { comment: options.comment }, allowDeferredExec);
   }
 }
 
@@ -1768,9 +1769,10 @@ function generateV46Rule(ruleOptions) {
 }
 
 async function generateRules(ruleOptions) {
-  const { direction, trafficDirection, transferredBytes, transferredPackets, avgPacketBytes, dscpClass, isSnat } = ruleOptions
+  const { direction, trafficDirection, transferredBytes, transferredPackets, avgPacketBytes, dscpClass, isSnat, tlsHostSet, tlsHost } = ruleOptions
 
   const rules = []
+  const hasTlsMatcher = tlsHostSet || tlsHost
   // log.debug(`generateRules ${JSON.stringify(ruleOptions)}`)
 
   if (direction === 'bidirection' && trafficDirection && (transferredBytes || transferredPackets || avgPacketBytes)
@@ -1779,14 +1781,14 @@ async function generateRules(ruleOptions) {
     ruleOptions.transferDirection = trafficDirection ? (trafficDirection === 'upload' ? 'original' : 'reply') : null
     if (!dscpClass || !trafficDirection || trafficDirection === "upload")
       rules.push(...generateV46Rule({ ...ruleOptions, ctDir: 'ORIGINAL' }))
-    if ((!dscpClass || !trafficDirection || trafficDirection === "download") && !isSnat)
+    if ((!dscpClass || !trafficDirection || trafficDirection === "download") && !isSnat && !hasTlsMatcher)
       rules.push(...generateV46Rule(flipSrcDst({ ...ruleOptions, ctDir: 'REPLY' })))
   }
   if (direction === 'bidirection' && trafficDirection && (transferredBytes || transferredPackets || avgPacketBytes)
     || direction === 'inbound'
   ) {
     ruleOptions.transferDirection = trafficDirection ? (trafficDirection === 'upload' ? 'reply' : 'original') : null
-    if (!dscpClass || !trafficDirection || trafficDirection === "upload")
+    if ((!dscpClass || !trafficDirection || trafficDirection === "upload") && !hasTlsMatcher)
       rules.push(...generateV46Rule({ ...ruleOptions, ctDir: 'REPLY' }))
     if (!dscpClass || !trafficDirection || trafficDirection === "download")
       rules.push(...generateV46Rule(flipSrcDst({ ...ruleOptions, ctDir: 'ORIGINAL' })))
@@ -1794,7 +1796,7 @@ async function generateRules(ruleOptions) {
   if (direction === 'bidirection' && (!trafficDirection || (!transferredBytes && !transferredPackets && !avgPacketBytes))) {
     if (!dscpClass || !trafficDirection || trafficDirection === "upload")
       rules.push(...generateV46Rule(ruleOptions))
-    if (!dscpClass || !trafficDirection || trafficDirection === "download")
+    if ((!dscpClass || !trafficDirection || trafficDirection === "download") && !hasTlsMatcher)
       rules.push(...generateV46Rule(flipSrcDst(ruleOptions)))
   }
 

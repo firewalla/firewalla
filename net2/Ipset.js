@@ -191,7 +191,7 @@ function create(name, type, v6 = false, options = {}) {
   return ipsetControl.addRule(cmd);
 }
 
-function add(name, target, options = {}) {
+function add(name, target, options = {}, allowDeferredExec = false) {
   const { timeout, comment, skbmark, skbprio, skbqueue } = options;
   let cmd = `add ${name} ${target}`;
   if (timeout) cmd += ` timeout ${timeout}`;
@@ -199,11 +199,11 @@ function add(name, target, options = {}) {
   if (skbmark) cmd += ` skbmark ${skbmark}`;
   if (skbprio) cmd += ` skbprio ${skbprio}`;
   if (skbqueue) cmd += ` skbqueue ${skbqueue}`;
-  return ipsetControl.addRule(cmd);
+  return ipsetControl.addRule(cmd, allowDeferredExec);
 }
 
-function del(name, target) {
-  return ipsetControl.addRule(`del ${name} ${target}`);
+function del(name, target, allowDeferredExec = false) {
+  return ipsetControl.addRule(`del ${name} ${target}`, allowDeferredExec);
 }
 
 function swap(name1, name2) {

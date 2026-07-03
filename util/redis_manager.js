@@ -166,6 +166,29 @@ class RedisManager {
         }
       }
 
+      this.mclient.forgetExpireAt = (keys) => {
+        for (const key of keys) this.mclientExpireAtCache.del(key);
+      };
+
+      this.mclient.snapAndFlushMetricsBatch = async () => {
+        const snapshot = this.mclientHincrbyMultiBuffer;
+        this.mclientHincrbyMultiBuffer = {};
+        try {
+          const batch = this.mclient.batch();
+          for (const k in snapshot) {
+            const { key, hkey, incr, expr } = snapshot[k];
+            batch.hincrby(key, hkey, incr);
+            if (expireAtChanged(key, expr)) {
+              batch.expireat(key, expr);
+              rememberExpireAt(key, expr);
+            }
+          }
+          await batch.execAsync();
+        } catch (err) {
+          log.error('Error flushing metrics batch snapshot', err);
+        }
+      };
+
       setInterval(async () => {
         for (const k of Object.keys(this.mclientHincrbyBuffer)) {
           if (this.mclientHincrbyBuffer.hasOwnProperty(k)) {

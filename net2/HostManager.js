@@ -751,6 +751,11 @@ module.exports = class HostManager extends Monitorable {
     const initTs = await ruleStatsPlugin.getFeatureFirstEnabledTimestamp();
     extdata.ruleStats = { "initTs": initTs };
 
+    const adblockPlugin = await sensorLoader.initSingleSensor('AdblockPlugin');
+    if (adblockPlugin) {
+      extdata.adblockStats = await adblockPlugin.getAdblockStats();
+    }
+
     extdata.ntp = {
       localServerStatus: fc.isFeatureOn('ntp_redirect') ?
         Number(await rclient.getAsync(Constants.REDIS_KEY_NTP_SERVER_STATUS)) : null
