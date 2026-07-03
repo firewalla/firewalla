@@ -22,6 +22,7 @@ const fsp = require('fs').promises;
 const uuid = require('uuid');
 
 const { exec } = require('child-process-promise');
+const { spawn } = require('child_process');
 
 /**
  * - Queues ipset operations as ipset-restore lines (e.g. "create -! ...", "add -! ...")
@@ -33,6 +34,35 @@ class IpsetControl extends ModuleControl {
     super('ipset');
     this.queuedRules = []; // array of ipset-restore lines
     this.existingSets = new Set(); // maintain a set of existing ipset set names to filter out invalid operations
+    this.interactiveIpset = null;
+    this.interactiveIpsetStartTs = null;
+    if (f.isMain()) this._initInteractiveIpset();
+  }
+
+  _initInteractiveIpset() {
+    log.info('Starting interactive ipset for batch operations');
+    this.interactiveIpset = spawn('sudo', ['ipset', '-', '-!']);
+    this.interactiveIpsetStartTs = Date.now();
+    this.interactiveIpset.stderr.on('data', data => log.error('Error in interactive ipset stderr', data.toString()));
+    this.interactiveIpset.on('error', err => { log.error('Error in interactive ipset', err); this._initInteractiveIpset(); });
+    this.interactiveIpset.stdout.on('data', () => {});
+  }
+
+  async _batchWrite(ops) {
+    if (!Array.isArray(ops) || !ops.length) return;
+    try {
+      if (Date.now() - this.interactiveIpsetStartTs > 600000 && this.interactiveIpset) {
+        log.info('Interactive ipset living > 600s, restarting to avoid potential memory leak');
+        this.interactiveIpset.stdin.write('quit\n');
+        this._initInteractiveIpset();
+      }
+      log.verbose('batchWrite:', ops);
+      this.interactiveIpset.stdin.write(ops.join('\n') + '\n');
+    } catch (err) {
+      log.error('Failed to write to ipset stream, will restart ipset stream process', err.message);
+      this._initInteractiveIpset();
+      await this._batchWrite(ops);
+    }
   }
 
   getIpsetRestoreFile(script = false) {
@@ -50,9 +80,12 @@ class IpsetControl extends ModuleControl {
    * Add an ipset command string.
    * @param {string|string[]} cmd
    */
-  async addRule(cmd) {
+  async addRule(cmd, allowDeferredExec = false) {
     if (this.phase === 'autonomous') {
       const cmds = Array.isArray(cmd) ? cmd : [cmd];
+      if (allowDeferredExec) {
+        return this._batchWrite(cmds);
+      }
       for (const line of cmds) {
         await this._execOne(line);
       }
@@ -82,18 +115,22 @@ class IpsetControl extends ModuleControl {
    */
   async _execOne(line) {
     await exec(`sudo ipset -! ${line}`, { timeout: 10000 }).catch(err => {
-      log.error(`Failed to execute ipset command: ${line}`, err.message);
+      log.error('Failed to execute command:', err.stack);
     });
   }
 
   /**
    * Bulk-apply ipset operations.
    * @param {string[]} ops - array of ipset-restore lines
+   * @param {boolean} allowDeferredExec - if true and autonomous, write to interactive shell stdin (no fork)
    */
-  async restore(ops) {
+  async restore(ops, allowDeferredExec = false) {
     if (!ops || !ops.length) return;
     if (this.phase !== 'autonomous') {
       return this.addRule(ops);
+    }
+    if (allowDeferredExec) {
+      return this._batchWrite(ops);
     }
     // Autonomous: write to a unique temp file and restore immediately
     const restoreFile = `/tmp/ipset-${uuid.v4()}`;

@@ -94,6 +94,13 @@ rclient.hget("sys:config", "language", (err, result) => {
 });
 
 async function run() {
+  // proactively ensure ui.conf exists on every FireApi (re)start
+  try {
+    await require('../lib/getGid.js')();
+  } catch (err) {
+    log.error("Failed to ensure ui.conf on startup:", err.message);
+  }
+
   const app = require('../app.js');
   app.set('port', PORT);
 
