@@ -28,6 +28,7 @@ const ipUtil = require("../util/IPUtil.js");
 const sysManager = require('./SysManager.js');
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
+const fwapc = require('./fwapc.js');
 const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -731,6 +732,15 @@ class BroDetect {
     return this.isMonitoring(intf, monitorable)
   }
 
+  // a same-network local flow is only a duplicate of an AP report when one of its ends is behind an AP.
+  // pure wired flows switched by Firewalla itself have no AP to report them, so they must be kept.
+  async isFlowBehindAP(mac1, mac2) {
+    const macsBehindAP = await fwapc.getMacsBehindAP();
+    if (!macsBehindAP)
+      return false;
+    return Boolean(mac1 && macsBehindAP.has(mac1) || mac2 && macsBehindAP.has(mac2));
+  }
+
   async validateConnData(obj) {
     const threshold = config.threshold;
     const iptcpRatio = threshold.IPTCPRatio || 10000;
@@ -1023,8 +1033,11 @@ class BroDetect {
 
       let intfInfo = sysManager.getInterfaceViaIP(lhost, fam);
       let dstIntfInfo = localFlow && sysManager.getInterfaceViaIP(dhost, fam);
-      // do not process traffic between devices in the same network unless bridge flag is set (from fwap) or integrated AP is enabled (orange platform)
-      if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid && !bridge && !await platform.hasIntegratedAPAssets())
+      // do not process traffic between devices in the same network unless bridge flag is set (from fwap) or integrated AP is enabled (orange platform).
+      // a same-network flow is only a duplicate when it traverses an AP that also reports it; if neither end is behind an AP the flow is
+      // switched by Firewalla itself (pure wired, same VLAN across eth ports) and zeek's copy is the only record, so keep it.
+      if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid && !bridge && !await platform.hasIntegratedAPAssets()
+        && await this.isFlowBehindAP(origMac, respMac))
         return;
       // ignore multicast IP
       try {
@@ -1246,7 +1259,8 @@ class BroDetect {
             return;
           }
         }
-        if (!bridge && intfInfo.uuid == dstIntfInfo.uuid && !await platform.hasIntegratedAPAssets())
+        if (!bridge && intfInfo.uuid == dstIntfInfo.uuid && !await platform.hasIntegratedAPAssets()
+          && await this.isFlowBehindAP(localMac, dstMac))
           return
         if (obj.proto === "udp" && accounting.isBlockedDevice(dstMac)) {
           return

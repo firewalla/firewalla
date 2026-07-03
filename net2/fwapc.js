@@ -201,6 +201,8 @@ async function getInterface(intf) {
 let fwapcInterface = null
 let staStatus = null
 let staStatusTs = 0;
+let macsBehindAP = null;
+let macsBehindAPTs = 0;
 
 class FWAPC {
   constructor() {
@@ -309,6 +311,29 @@ class FWAPC {
 
   async getAssetsStatus() {
     return localGet("/status/ap", 1).then(resp => resp.info);
+  }
+
+  // Upper-case MACs of every device connected behind an AP: wireless stations plus
+  // devices wired into an AP downlink port. A same-network flow with either end in this
+  // set is also reported by the AP, so Firewalla drops its own zeek copy to avoid double-counting.
+  async getMacsBehindAP(live = false) {
+    if (live || Date.now() / 1000 - macsBehindAPTs > 15) {
+      const macs = new Set();
+      const sta = await this.getAllSTAStatus(live).catch(() => null);
+      if (_.isObject(sta))
+        for (const mac of Object.keys(sta))
+          if (mac) macs.add(mac.toUpperCase());
+      const assets = await this.getAssetsStatus().catch(() => null);
+      if (_.isObject(assets))
+        for (const uid of Object.keys(assets)) {
+          const etherMacs = _.get(assets, [uid, "downlink_ether_macs"], []);
+          for (const mac of etherMacs)
+            if (mac) macs.add(mac.toUpperCase());
+        }
+      macsBehindAP = macs;
+      macsBehindAPTs = Date.now() / 1000;
+    }
+    return macsBehindAP;
   }
 
   /**
