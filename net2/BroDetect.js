@@ -1045,8 +1045,8 @@ class BroDetect {
       if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid && !await platform.hasIntegratedAPAssets()) {
         const srcHost = hostManager.getHostFast(lhost, fam);
         const dstHost = hostManager.getHostFast(dhost, fam);
-        const srcStpPort = srcHost && srcHost.o.stpPort;
-        const dstStpPort = dstHost && dstHost.o.stpPort;
+        const srcStpPort = srcHost && srcHost.getStpPort();
+        const dstStpPort = dstHost && dstHost.getStpPort();
         // Only early-drop when both stpPorts are known; otherwise defer to the authoritative gate.
         if (srcStpPort && dstStpPort && this._dropLocalSameNetworkFlow(bridge, srcStpPort, dstStpPort))
           return;
@@ -1271,9 +1271,9 @@ class BroDetect {
             return;
           }
         }
-        if (intfInfo.uuid == dstIntfInfo.uuid && !await platform.hasIntegratedAPAssets()) {
-          const srcStpPort = monitorable && monitorable.o.stpPort;
-          const dstStpPort = dstMonitorable && dstMonitorable.o.stpPort;
+        if (intfInfo.uuid == dstIntfInfo.uuid && !await platform.hasIntegratedAPAssets() && !isIdentityIntf && !isDstIdentityIntf) {
+          const srcStpPort = monitorable && monitorable.getStpPort && monitorable.getStpPort();
+          const dstStpPort = dstMonitorable && dstMonitorable.getStpPort && dstMonitorable.getStpPort();
           if (this._dropLocalSameNetworkFlow(bridge, srcStpPort, dstStpPort))
             return;
         }
