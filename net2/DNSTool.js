@@ -26,6 +26,12 @@ const _ = require('lodash');
 
 const util = require('util');
 
+const LRU = require('lru-cache');
+
+// rdns TTL refresh throttle: one EXPIRE per key per period; throttled refreshes are deferred
+// (not dropped) and flushed by _drainDnsTTL, bounding any TTL-less window to one period.
+const RDNS_TTL_REFRESH_PERIOD = 1800 * 1000;
+
 const firewalla = require('../net2/Firewalla.js');
 
 let instance = null;
@@ -42,8 +48,41 @@ class DNSTool {
       } else {
         this.debugMode = true;
       }
+      // last EXPIRE time per rdns key, to rate-limit redundant TTL refreshes
+      this.dnsExpireTs = new LRU({max: 50000, maxAge: 24 * 3600 * 1000});
+      // keys whose TTL refresh was throttled; _drainDnsTTL flushes them within one period
+      this.dnsExpirePending = new Map();
+      setInterval(() => this._drainDnsTTL(), RDNS_TTL_REFRESH_PERIOD);
     }
     return instance;
+  }
+
+  // Returns true if the caller should EXPIRE inline (leading edge). When throttled, defers the
+  // refresh into dnsExpirePending so _drainDnsTTL still issues it within one period.
+  tryRefreshDnsTTL(key, expr) {
+    const now = Date.now();
+    const last = this.dnsExpireTs.get(key);
+    if (!last || now - last >= RDNS_TTL_REFRESH_PERIOD) {
+      this.dnsExpireTs.set(key, now);
+      this.dnsExpirePending.delete(key);
+      return true;
+    }
+    this.dnsExpirePending.set(key, expr);
+    return false;
+  }
+
+  async _drainDnsTTL() {
+    if (this.dnsExpirePending.size === 0)
+      return;
+    const pending = this.dnsExpirePending;
+    this.dnsExpirePending = new Map();
+    const now = Date.now();
+    const multi = rclient.multi();
+    for (const [key, expr] of pending) {
+      multi.expire(key, expr);
+      this.dnsExpireTs.set(key, now);
+    }
+    await multi.execAsync().catch((err) => log.error("Failed to flush deferred rdns TTL refreshes", err.message));
   }
 
   getDNSKey(ip) {
@@ -110,7 +149,8 @@ class DNSTool {
     let key = this.getDNSKey(ip);
     const now = Math.ceil(Date.now() / 1000);
     await rclient.zaddAsync(key, now, domain);
-    await rclient.expireAsync(key, expire);
+    if (this.tryRefreshDnsTTL(key, expire))
+      await rclient.expireAsync(key, expire);
   }
 
   // doesn't have to keep it long, it's only used for instant blocking
@@ -157,7 +197,8 @@ class DNSTool {
       await rclient.zaddAsync(key, new Date() / 1000, firewalla.getRedHoleIP()); // red hole is a placeholder ip for non-existing domain
     }
 
-    await rclient.expireAsync(key, expire)
+    if (this.tryRefreshDnsTTL(key, expire))
+      await rclient.expireAsync(key, expire)
   }
 
   async getSubDomains(domainSuffix) {
@@ -207,11 +248,16 @@ class DNSTool {
 
   async removeDns(ip, domain) {
     let key = this.getDNSKey(ip);
+    // drop throttle state so a later re-add re-issues EXPIRE instead of deferring on a stale ts
+    this.dnsExpireTs.del(key);
+    this.dnsExpirePending.delete(key);
     await rclient.zremAsync(key, domain);
   }
 
   async removeReverseDns(domain, ip) {
     let key = this.getReverseDNSKey(domain);
+    this.dnsExpireTs.del(key);
+    this.dnsExpirePending.delete(key);
     await rclient.zremAsync(key, ip);
   }
 

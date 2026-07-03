@@ -66,6 +66,9 @@ const categoryUpdater = new CategoryUpdater()
 
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 
+const FlowAggrTool = require('./FlowAggrTool')
+const flowAggrTool = new FlowAggrTool()
+
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
 const config = fc.getConfig().bro
@@ -983,6 +986,9 @@ class BroDetect {
           localMac = origMac;
           dstMac = respMac;
         }
+        // Switch ACL accounting has no initiator/responder concept; use 'lo' so
+        // these flows do not contribute to directional (in/out) sumflow buckets.
+        if (obj.switch) flowdir = 'lo'
         localFlow = true
       } else if (localOrig == true && localResp == false) {
         flowdir = "in";
@@ -1312,7 +1318,16 @@ class BroDetect {
 
       if (localFlow) {
         tmpspec.dmac = dstMac
-        tmpspec.dIntf = dstIntfInfo.uuid.substring(0, 8)
+        if (dstIntfInfo) tmpspec.dIntf = dstIntfInfo.uuid.substring(0, 8)
+        if (obj.switch) {
+          tmpspec.switch = true
+          // Reverse pass: swap ob/rb so this entry represents mac2's own perspective
+          // (mac2.ob = what mac2 sent = resp_bytes; mac2.rb = what mac2 received = orig_bytes).
+          if (reverseLocal) {
+            tmpspec.ob = Number(obj.resp_bytes)
+            tmpspec.rb = Number(obj.orig_bytes)
+          }
+        }
         if (dstRealLocal)
           tmpspec.drl = extractIP(dstRealLocal)
       } else {
@@ -1423,12 +1438,10 @@ class BroDetect {
       this.indicateNewFlowSpec(tmpspec);
 
       const traffic = [tmpspec.ob, tmpspec.rb]
-      if (tmpspec.fd == 'in') traffic.reverse()
+      if (tmpspec.fd == 'in' || tmpspec.fd == 'lo') traffic.reverse()
 
       const tuple = { download: traffic[0], upload: traffic[1] }
       if (localFlow) {
-        const tupleConn = {conn: tmpspec.ct}
-
         this.recordLocalTraffic({
           mac: localMac, upload: tuple.upload, download: tuple.download,
           intf: intfInfo && intfInfo.uuid,
@@ -1436,21 +1449,27 @@ class BroDetect {
           tags, dstTags
         })
 
-        this.recordTraffic(tupleConn, 'lo:intra:global')
-        this.recordTraffic(tupleConn, `lo:${flowdir}:${localMac}`)
+        // Switch accounting records represent aggregated bytes over an interval, not
+        // individual connections — skip the connection-count timeseries.
+        if (!obj.switch) {
+          const tupleConn = {conn: tmpspec.ct}
 
-        if (dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid) {
-          this.recordTraffic(tupleConn, 'lo:intra:intf:' + intfInfo.uuid)
-        } else {
-          this.recordTraffic(tupleConn, `lo:${flowdir}:intf:${intfInfo.uuid}`)
-        }
+          this.recordTraffic(tupleConn, 'lo:intra:global')
+          this.recordTraffic(tupleConn, `lo:${flowdir}:${localMac}`)
 
-        for (const key in tags) {
-          for (const tag of tags[key]) {
-            if (dstTags[key] && dstTags[key].includes(tag)) {
-              this.recordTraffic(tupleConn, 'lo:intra:tag:' + tag)
-            } else {
-              this.recordTraffic(tupleConn, `lo:${flowdir}:tag:${tag}`)
+          if (dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid) {
+            this.recordTraffic(tupleConn, 'lo:intra:intf:' + intfInfo.uuid)
+          } else {
+            this.recordTraffic(tupleConn, `lo:${flowdir}:intf:${intfInfo.uuid}`)
+          }
+
+          for (const key in tags) {
+            for (const tag of tags[key]) {
+              if (dstTags[key] && dstTags[key].includes(tag)) {
+                this.recordTraffic(tupleConn, 'lo:intra:tag:' + tag)
+              } else {
+                this.recordTraffic(tupleConn, `lo:${flowdir}:tag:${tag}`)
+              }
             }
           }
         }
@@ -1491,7 +1510,8 @@ class BroDetect {
         multi.zadd(systemKey, tmpspec._ts, JSON.stringify(tmpspec))
       }
       // no need to set ttl here, OldDataCleanSensor will take care of it
-      multi.zadd("deviceLastFlowTs", now, localMac);
+      if (flowAggrTool.shouldUpdateDeviceLastFlowTs(localMac, now))
+        multi.zadd("deviceLastFlowTs", now, localMac);
       await multi.execAsync().catch(
         err => log.error("Failed to save tmpspec: ", tmpspec, err)
       )
@@ -1507,7 +1527,7 @@ class BroDetect {
         sem.emitLocalEvent({
           type: Message.MSG_FLOW_ENRICHED,
           suppressEventLogging: true,
-          flow: Object.assign({}, tmpspec, {intf: intfInfo.uuid, dIntf: dstIntfInfo.uuid}),
+          flow: Object.assign({}, tmpspec, {intf: intfInfo.uuid, dIntf: dstIntfInfo && dstIntfInfo.uuid}),
         });
       }
 
@@ -1565,7 +1585,7 @@ class BroDetect {
           const descriptor = (systemFlow ? f.mac+':' : '')
             + (type == 'dns'
               ? `${f.sh}:${f.dh}:${f.dn}`
-              : `${f.sh}:${f.dh}:${f.oIntf || ""}:${f.dp || ""}`)
+              : `${f.sh}:${f.dh}:${f.oIntf || ""}:${f.dp || ""}:${f.pr || ""}`)
 
           if (type == 'conn' && f.uids && f.uids.length && f.fd === "in" && !f.af) try {
             // try resolve host info for previous flows again here
@@ -2043,28 +2063,29 @@ class BroDetect {
     let wanNicRxBytes = 0;
     let wanNicTxBytes = 0;
     const wanTraffic = {};
+    // a safe-check to filter abnormal rx/tx bytes spikes that may be caused by hardware bugs
+    const threshold = config.threshold;
+    const maxBytes = threshold.maxSpeed / 8 * duration;
     for (const iface of Object.keys(wanNicStats)) {
       if (this.wanNicStatsCache && this.wanNicStatsCache[iface]) {
         const uuid = wanNicStats[iface].uuid;
         // 1 mega bytes buffer in case there are multiple VLANs on a physical WAN port and bytes deduction may result in a negative result because statistics on different interfaces are not read at the same time
-        const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes - 1000000 ? Math.max(0, wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes) : wanNicStats[iface].rxBytes;
-        const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes - 1000000 ? Math.max(0, wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes) : wanNicStats[iface].txBytes;
+        let rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes - 1000000 ? Math.max(0, wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes) : wanNicStats[iface].rxBytes;
+        let txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes - 1000000 ? Math.max(0, wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes) : wanNicStats[iface].txBytes;
+        if (rxBytes >= maxBytes) {
+          log.warn('WAN rx exceeded', uuid, rxBytes, '>', threshold.maxSpeed, '/', duration);
+          rxBytes = 0;
+        }
+        if (txBytes >= maxBytes) {
+          log.warn('WAN tx exceeded', uuid, txBytes, '>', threshold.maxSpeed, '/', duration);
+          txBytes = 0;
+        }
         if (uuid) {
           wanTraffic[uuid] = {rxBytes, txBytes};
         }
         wanNicRxBytes += rxBytes;
         wanNicTxBytes += txBytes;
       }
-    }
-    // a safe-check to filter abnormal rx/tx bytes spikes that may be caused by hardware bugs
-    const threshold = config.threshold;
-    if (wanNicRxBytes >= threshold.maxSpeed / 8 * duration) {
-      log.warn('WAN rx exceeded', wanNicRxBytes, '>', threshold.maxSpeed, '/', duration)
-      wanNicRxBytes = 0;
-    }
-    if (wanNicTxBytes >= threshold.maxSpeed / 8 * duration) {
-      log.warn('WAN tx exceeded', wanNicRxBytes, '>', threshold.maxSpeed, '/', duration)
-      wanNicTxBytes = 0;
     }
     this.wanNicStatsCache = wanNicStats;
 

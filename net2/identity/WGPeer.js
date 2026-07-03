@@ -27,6 +27,7 @@ const FireRouter = require('../FireRouter.js');
 const exec = require('child-process-promise').exec;
 
 const Identity = require('../Identity.js');
+const country = require('../../extension/country/country.js');
 const _ = require('lodash');
 
 class WGPeer extends Identity {
@@ -143,7 +144,7 @@ class WGPeer extends Identity {
         const endpointIp = obj.endpoint.startsWith("[") && obj.endpoint.includes("]:") ? obj.endpoint.substring(1, obj.endpoint.indexOf("]:")) : obj.endpoint.split(':')[0];
         const intel = await intelTool.getIntel(endpointIp);
         const loc = await intelManager.ipinfo(endpointIp, true);
-        obj.country = (intel && intel.country) || (loc && loc.country) || undefined;
+        obj.country = country.getCountry(endpointIp) || (intel && intel.country) || (loc && loc.country) || undefined;
         if (intel && intel.latitude && intel.longitude) {
           obj.latitude = intel.latitude;
           obj.longitude = intel.longitude;

@@ -131,8 +131,8 @@ class BitBridge {
 
     try {
       if(firewalla.isDocker() || firewalla.isTravis()) {
-        await exec("sudo pkill bitbridge7");
-        await exec("sudo pkill bitbridge6");
+        await exec("sudo pkill -x bitbridge7");
+        await exec("sudo pkill -x bitbridge6");
       } else {
         if (!this.isV6) {
           // remove corresponding rc file

@@ -24,7 +24,6 @@ const fwapc = require('./fwapc.js');
 const spoofer = require('./Spoofer.js');
 const sysManager = require('./SysManager.js');
 const Mode = require('./Mode.js')
-const routing = require('../extension/routing/routing.js');
 
 const util = require('util')
 const fc = require('./config.js');
@@ -67,7 +66,7 @@ const Monitorable = require('./Monitorable');
 const Constants = require('./Constants.js');
 
 const AsyncLock = require('../vendor_lib/async-lock');
-const lock = new AsyncLock(); 
+const lock = new AsyncLock();
 
 const iptool = require('ip');
 
@@ -97,6 +96,7 @@ class Host extends Monitorable {
       // Host object should only be created after initial setup of iptables to avoid racing condition
       if (f.isMain() && !noEnvCreation) (async () => {
         this.spoofing = false;
+        await this.initAutoGroup();
 
         await Host.ensureCreateEnforcementEnv(this.o.mac)
 
@@ -252,6 +252,101 @@ class Host extends Monitorable {
     return super.setPolicyAsync(name, policy, syncToMsp)
   }
 
+  // options: { dvlanId: dvlanId, wpax: wpax }
+  async setAutoGroupAsync(tag, ssid, options = {}) {
+    log.debug(`Setting auto group for ${this.o.mac}`, tag, ssid, options);
+    await hostTool.setWirelessAutoGroup(this.o.mac, String(tag), ssid, options);
+    this.o.autoGroup = {
+      tag: tag,
+      ssid: ssid,
+      ts: Date.now(),
+      ...options,
+    };
+    return await this.save(["autoGroup"]);
+  }
+
+  async resetAutoGroupAsync() {
+    log.debug(`Resetting auto group for ${this.o.mac}`);
+    await hostTool.resetWirelessAutoGroup(this.o.mac);
+    this.o.autoGroup = null;
+    return await this.save(["autoGroup"]);
+  }
+
+  async initAutoGroup() {
+    if (this.o.autoGroup)
+      return;
+    const autoGroup = await hostTool.getWirelessAutoGroup(this.o.mac);
+    if (!autoGroup)
+      return;
+    try {
+      const parsed = JSON.parse(autoGroup);
+      if (!parsed || !parsed.tag || !parsed.ssid)
+        return;
+      this.o.autoGroup = parsed;
+      await this.save(["autoGroup"]);
+    } catch (err) {
+      log.warn(`Invalid wireless auto group cache for ${this.o.mac}`, err.message);
+    }
+  }
+
+  // 1. if not connected (no staStatus), reset autoGroup after a short grace to prevent flapping
+  // 2. if a dot1x group, reset only when the station is no longer 802.1x authenticated
+  // 3. otherwise (ppsk/default), reset if connected on a different ssid
+  async getHostAutoGroup(staStatus) {
+    if (!this.o.autoGroup)
+      return null;
+    const autoGroup = this.o.autoGroup;
+    if (!_.isObject(autoGroup) || !autoGroup.tag || !autoGroup.ssid) {
+      await this.resetAutoGroupAsync();
+      return null;
+    }
+
+    if (!staStatus) {
+      if (!autoGroup.ts || autoGroup.ts < Date.now() - 10000) { // 10s grace window
+        await this.resetAutoGroupAsync();
+        return null;
+      }
+      return autoGroup;
+    }
+
+    // dot1x group is keyed on enterprise authentication, not the broadcast ssid
+    // string. The RADIUS auth event may report ssid as the Called-Station-Id
+    // (e.g. "AA-BB-CC-DD-EE-FF:MyWifi"), which won't match fwapc's plain ssid
+    // name, so validate by the station still being 802.1x authenticated instead.
+    if (autoGroup.auth === "dot1x") {
+      if (!staStatus.dot1xUserName) {
+        await this.resetAutoGroupAsync();
+        return null;
+      }
+      return autoGroup;
+    }
+
+    // connected but on a different ssid, reset autoGroup
+    if (autoGroup.ssid && staStatus.ssid && staStatus.ssid !== autoGroup.ssid) {
+      await this.resetAutoGroupAsync();
+      return null;
+    }
+
+    // // check if tag matches, "tags": ["14"] means tag 14
+    // if (this.o.tags && _.isArray(this.o.tags) && this.o.tags.length > 0 && !this.o.tags.includes(autoGroup.tag)) {
+    //   await this.resetAutoGroupAsync();
+    //   return null;
+    // } else if (!this.o.tags || !_.isArray(this.o.tags) || this.o.tags.length === 0) {
+    //   await this.resetAutoGroupAsync();
+    //   return null;
+    // }
+
+    return autoGroup;
+  }
+
+  async touchAutoGroup(autoGroup) {
+    if (!autoGroup)
+      return;
+    autoGroup.ts = Date.now();
+    this.o.autoGroup = autoGroup;
+    await this.save(["autoGroup"]);
+  }
+
   keepalive() {
     if (this.o.ipv4Addr) // this may trigger arp request to the device, the reply from the device will be captured in ARPSensor
       linux.ping4(this.o.ipv4Addr)
@@ -345,7 +440,7 @@ class Host extends Monitorable {
     return "host:mac:" + this.o.mac
   }
 
-  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect', 'openports', 'screenTime', 'wlanVendor' ]
+  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect', 'openports', 'screenTime', 'wlanVendor', 'autoGroup' ]
   static metaFieldsNumber = [ 'firstFoundTimestamp', 'lastActiveTimestamp', 'bnameCheckTime', 'spoofingTime', '_identifyExpiration' ]
   static metaFieldsActiveTS = ['lastActiveTimestamp', 'firstFoundTimestamp']
 
@@ -434,92 +529,20 @@ class Host extends Monitorable {
     return list;
   }
 
-  async vpnClient(policy) {
-    try {
-      const state = policy.state;
-      const profileId = policy.profileId;
-      const hostConfPath = `${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`;
-      if (this._profileId && profileId !== this._profileId) {
-        log.info(`Current VPN profile id is different from the previous profile id ${this._profileId}, remove old rule on ${this.o.mac}`);
-        const rule4 = new Rule("mangle").chn("FW_RT_DEVICE_5")
-          .mdl("set", `--match-set ${Host.getDeviceSetName(this.o.mac)} src`)
-          .jmp(`SET --map-set ${this._profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(this._profileId.substring(4)) : VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
-          .comment(`policy:mac:${this.o.mac}`);
-        const rule6 = rule4.clone().fam(6);
-        await iptc.addRule(rule4.opr('-D'));
-        await iptc.addRule(rule6.opr('-D'));
-        // remove rule that was set by state == null
-        await iptc.addRule(rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D'));
-        await iptc.addRule(rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D'));
-        
-        const vcConfPath = `${this._profileId.startsWith("VWG:") ? VirtWanGroup.getDNSRouteConfDir(this._profileId.substring(4)) : VPNClient.getDNSRouteConfDir(this._profileId)}/vc_${this.o.mac}.conf`;
-        await fs.unlinkAsync(hostConfPath).catch((err) => {});
-        await fs.unlinkAsync(vcConfPath).catch((err) => {});
-        dnsmasq.scheduleRestartDNSService();
-      }
+  getVPNClientRules(profileId, af = 4) {
+    if (!profileId) return [];
+    const mac = this.getUniqueId();
+    const routeIpset = Monitorable.getVPNClientRouteIpsetName(profileId);
+    return [
+      new Rule("mangle").chn("FW_RT_DEVICE_5")
+        .mdl("set", `--match-set ${Host.getDeviceSetName(mac)} src`)
+        .jmp(`SET --map-set ${routeIpset} dst,dst --map-mark`)
+        .comment(`policy:mac:${mac}`)
+    ];
+  }
 
-      this._profileId = profileId;
-      if (!profileId) {
-        log.verbose(`Profile id is not set on ${this.o.mac}`);
-        return;
-      }
-      const rule4 = new Rule("mangle").chn("FW_RT_DEVICE_5")
-          .mdl("set", `--match-set ${Host.getDeviceSetName(this.o.mac)} src`)
-          .jmp(`SET --map-set ${profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(profileId.substring(4)) : VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
-          .comment(`policy:mac:${this.o.mac}`);
-      const rule6 = rule4.clone().fam(6);
-      const rule4Clear = rule4.clone().jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-      const rule6Clear = rule4Clear.clone().fam(6);
-
-      if (profileId.startsWith("VWG:"))
-        await VirtWanGroup.ensureCreateEnforcementEnv(profileId.substring(4));
-      else
-        await VPNClient.ensureCreateEnforcementEnv(profileId);
-      await Host.ensureCreateEnforcementEnv(this.o.mac);
-
-      const vcConfPath = `${profileId.startsWith("VWG:") ? VirtWanGroup.getDNSRouteConfDir(profileId.substring(4)) : VPNClient.getDNSRouteConfDir(profileId)}/vc_${this.o.mac}.conf`;
-      
-      if (state === true) {
-        await iptc.addRule(rule4.opr('-A'));
-        await iptc.addRule(rule6.opr('-A'));
-        // remove rule that was set by state == null
-        await iptc.addRule(rule4Clear.opr('-D'));
-        await iptc.addRule(rule6Clear.opr('-D'));
-
-        const markTag = `${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`;
-        // use two config files, one in network directory, the other in vpn client hard route directory, the second file is controlled by conf-dir in VPNClient.js and will not be included when client is disconnected
-        await dnsmasq.writeConfig(hostConfPath, `mac-address-tag=%${this.o.mac}$vc_${this.o.mac}`).catch((err) => {});
-        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$vc_${this.o.mac}$${markTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
-        dnsmasq.scheduleRestartDNSService();
-      }
-      // null means off
-      if (state === null) {
-        // remove rule that was set by state == true
-        await iptc.addRule(rule4.opr('-D'));
-        await iptc.addRule(rule6.opr('-D'));
-        // override target and clear vpn client bits in fwmark
-        await iptc.addRule(rule4Clear.opr('-A'));
-        await iptc.addRule(rule6Clear.opr('-A'));
-
-        await dnsmasq.writeConfig(hostConfPath, `mac-address-tag=%${this.o.mac}$vc_${this.o.mac}`).catch((err) => {});
-        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$vc_${this.o.mac}$${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
-        dnsmasq.scheduleRestartDNSService();
-      }
-      // false means N/A
-      if (state === false) {
-        await iptc.addRule(rule4.opr('-D'));
-        await iptc.addRule(rule6.opr('-D'));
-
-        // remove rule that was set by state == null
-        await iptc.addRule(rule4Clear.opr('-D'));
-        await iptc.addRule(rule6Clear.opr('-D'));
-        await fs.unlinkAsync(hostConfPath).catch((err) => {});
-        await fs.unlinkAsync(vcConfPath).catch((err) => {});
-        dnsmasq.scheduleRestartDNSService();
-      }
-    } catch (err) {
-      log.error("Failed to set VPN client access on " + this.o.mac);
-    }
+  getVPNClientTagEntry() {
+    return `mac-address-tag=%${this.getUniqueId()}$${this.getVPNClientTag()}`;
   }
 
   async _dnsmasq(policy) {
@@ -751,29 +774,32 @@ class Host extends Monitorable {
           const typeTags = await this.getTags(type) || [];
           Array.prototype.push.apply(tags, typeTags);
         }
+        const ipv6Addr = this.o.ipv6Addr;
+        // flatten device IP addresses into tag's ipset
+        // in practice, this ipset will be added to another tag's list:set if the device group belongs to a user group
+        const ops = [];
         if (ipv4Addr) {
           const recentlyAdded = this.ipCache.peek(ipv4Addr);
           if (!recentlyAdded) {
-            await Ipset.add(Host.getIpSetName(this.o.mac, 4), ipv4Addr);
-            // flatten device IP addresses into tag's ipset
-            // in practice, this ipset will be added to another tag's list:set if the device group belongs to a user group
+            ops.push(`add ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`);
             for (const tag of tags)
-              await Ipset.add(Tag.getTagDeviceIPSetName(tag, 4), ipv4Addr);
+              ops.push(`add ${Tag.getTagDeviceIPSetName(tag, 4)} ${ipv4Addr}`);
             this.ipCache.set(ipv4Addr, 1);
           }
         }
-        const ipv6Addr = this.o.ipv6Addr
         if (Array.isArray(ipv6Addr)) {
           for (const addr of ipv6Addr) {
             const recentlyAdded = this.ipCache.peek(addr);
             if (!recentlyAdded) {
-              await Ipset.add(Host.getIpSetName(this.o.mac, 6), addr);
+              ops.push(`add ${Host.getIpSetName(this.o.mac, 6)} ${addr}`);
               for (const tag of tags)
-                await Ipset.add(Tag.getTagDeviceIPSetName(tag, 6), addr);
+                ops.push(`add ${Tag.getTagDeviceIPSetName(tag, 6)} ${addr}`);
               this.ipCache.set(addr, 1);
             }
           }
         }
+        if (ops.length)
+          await Ipset.restore(ops, true);
 
         await this.identifyDevice(false)
       } catch (err) {
@@ -1171,6 +1197,9 @@ class Host extends Monitorable {
     for (const f of pickAssignment) {
       json[f] = this.o[f]
     }
+
+    if (this.o.autoGroup)
+      json.autoGroup = this.o.autoGroup;
 
     const preferredBName = getPreferredBName(this.o)
 

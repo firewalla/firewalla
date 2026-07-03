@@ -404,18 +404,19 @@ class APCMsgSensor extends Sensor {
           continue;
         }
 
+        const ssid = _.get(ssidProfiles, [uuid, "ssid"]);
         for (const key of Object.keys(status)) {
           if (!_.isArray(status[key]))
             continue;
           if (key === "phy") { // STA MACs that do not belong to a PSK group
             for (const mac of status[key])
-              await this.updateHostSSID(mac.toUpperCase(), uuid, ssidGroupMap[uuid] && ssidGroupMap[uuid].getUniqueId());
+              await this.updateHostSSID(mac.toUpperCase(), uuid, ssidGroupMap[uuid] && ssidGroupMap[uuid].getUniqueId(), ssid);
           } else {
             if (key.startsWith("vlan:")) { // STA MACs that belong to a PSK group
               const vid = key.substring("vlan:".length);
               const ssidVlanId = `${uuid}::${vid}`;
               for (const mac of status[key])
-                await this.updateHostSSID(mac.toUpperCase(), uuid, ssidVlanGroupMap[ssidVlanId] && ssidVlanGroupMap[ssidVlanId].getUniqueId());
+                await this.updateHostSSID(mac.toUpperCase(), uuid, ssidVlanGroupMap[ssidVlanId] && ssidVlanGroupMap[ssidVlanId].getUniqueId(), ssid, vid);
             }
           }
         }
@@ -475,14 +476,14 @@ class APCMsgSensor extends Sensor {
         // map to a group of a default segment if sta does not belong to a dynamic vlan
         if (!groupId && !dvlanId)
           groupId = this.ssidGroupMap[uuid] && this.ssidGroupMap[uuid].getUniqueId();
-        await this.updateHostSSID(mac, uuid, groupId);
+        await this.updateHostSSID(mac, uuid, groupId, ssid, dvlanId);
       }
     }).catch((err) => {
       log.error(`Failed to process STA update message: ${msg}`, err.message);
     });
   }
 
-  async updateHostSSID(mac, uuid, groupId) {
+  async updateHostSSID(mac, uuid, groupId, ssid, dvlanId = null) {
     const host = await hostManager.getHostAsync(mac.toUpperCase());
     if (!host) {
       log.warn(`Unknown mac address ${mac}`);
@@ -506,14 +507,27 @@ class APCMsgSensor extends Sensor {
         newTagId = groupId;
     }
 
+    const options = {};
+    if (dvlanId) {
+      options.dvlanId = String(dvlanId);
+      options.auth = "ppsk";
+    }
+
     if (!_.isEmpty(newTagId) && host) {
       await host.setPolicyAsync(_.get(Constants.TAG_TYPE_MAP, [Constants.TAG_TYPE_GROUP, "policyKey"]), [newTagId], true);
       await hostTool.deleteWirelessDeviceTagCandidate(mac.toUpperCase());
+      await host.setAutoGroupAsync(newTagId, ssid, options);
     } else {
       if (!host) {
         // this may be a new device yet to be discovered
         log.info(`A new device ${mac} is yet to be discovered in DeviceHook, tag id candidate is set to ${newTagId}`);
         await hostTool.setWirelessDeviceTagCandidate(mac.toUpperCase(), String(newTagId));
+        if (!_.isEmpty(newTagId)) {
+          await hostTool.setWirelessAutoGroup(mac.toUpperCase(), String(newTagId), ssid, options);
+        }
+      }
+      if (_.isEmpty(newTagId) && host) {
+        await host.resetAutoGroupAsync();
       }
     }
   }
@@ -709,39 +723,40 @@ class APCMsgSensor extends Sensor {
       const tags1 = await hostTool.getTags(host1, intf1);
       const tags2 = await hostTool.getTags(host2, intf2);
 
-      // mac1's perspective: uploaded tx_bytes, downloaded rx_bytes
-      bro.recordLocalTraffic({
-        mac: mac1Upper, upload: tx_bytes || 0, download: rx_bytes || 0,
-        intf: intf1, dIntf: intf2, tags: tags1, dstTags: tags2
-      });
-      sem.emitEvent({
-        type: Message.MSG_FLOW_SWITCH_ACCOUNTING,
-        suppressEventLogging: true,
-        flow: {
-          mac: mac1Upper, dstMac: mac2Upper,
-          upload: tx_bytes || 0, download: rx_bytes || 0,
-          ts: tsInSeconds,
-          intf: intf1, dIntf: intf2,
-          tags: tags1, dstTags: tags2
-        }
-      });
-
-      // mac2's perspective: uploaded rx_bytes, downloaded tx_bytes
-      bro.recordLocalTraffic({
-        mac: mac2Upper, upload: rx_bytes || 0, download: tx_bytes || 0,
-        intf: intf2, dIntf: intf1, tags: tags2, dstTags: tags1
-      });
-      sem.emitEvent({
-        type: Message.MSG_FLOW_SWITCH_ACCOUNTING,
-        suppressEventLogging: true,
-        flow: {
-          mac: mac2Upper, dstMac: mac1Upper,
-          upload: rx_bytes || 0, download: tx_bytes || 0,
-          ts: tsInSeconds,
-          intf: intf2, dIntf: intf1,
-          tags: tags2, dstTags: tags1
-        }
-      });
+      // Record a local flow so the minute-level timeline is populated on both peers.
+      // Requires L3 IPs; fall back gracefully if either device has no known IP.
+      const ip1 = host1 && host1.o && host1.o.ipv4Addr;
+      const ip2 = host2 && host2.o && host2.o.ipv4Addr;
+      if (ip1 && ip2 && tx_bytes + rx_bytes > 0) {
+        // Use a 30-second accounting window so validateConnData maxSpeed guard is safe.
+        const du = 30;
+        const origPackets = Math.max(Math.floor((tx_bytes || 0) / 1000), 1);
+        const respPackets = Math.max(Math.floor((rx_bytes || 0) / 1000), 1);
+        const connLog = {
+          "id.orig_h": ip1,
+          "id.resp_h": ip2,
+          "orig_l2_addr": mac1Upper,
+          "resp_l2_addr": mac2Upper,
+          "orig_bytes": tx_bytes || 0,
+          "resp_bytes": rx_bytes || 0,
+          "orig_pkts": origPackets,
+          "resp_pkts": respPackets,
+          "orig_ip_bytes": (tx_bytes || 0) + origPackets * 20,
+          "resp_ip_bytes": (rx_bytes || 0) + respPackets * 20,
+          "missed_bytes": 0,
+          "local_orig": true,
+          "local_resp": true,
+          "conn_state": "SF",
+          "duration": du,
+          "ts": tsInSeconds - du,
+          "uid": uuid.v4().substring(0, 8),
+          "bridge": true,
+          "switch": true,
+        };
+        bro.processConnData(JSON.stringify(connLog)).catch((err) => {
+          log.error(`Failed to process switch acl accounting conn log`, connLog, err.message);
+        });
+      }
     }
   }
 

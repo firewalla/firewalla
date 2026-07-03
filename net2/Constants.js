@@ -17,6 +17,9 @@
 
 // NS: namespace
 module.exports = {
+  LOCALHOST: "127.0.0.1",
+  INADDR_ANY: "0.0.0.0",
+  
   NS_VPN_PROFILE: "vpn_profile",
   NS_WG_PEER: "wg_peer",
   NS_AMNEZIAWG_PEER: "awg_peer",
@@ -25,6 +28,8 @@ module.exports = {
   RULE_SEQ_HI: 1,
   RULE_SEQ_REG: 2,
   RULE_SEQ_LO: 3,
+  // policy ids reserved for synthetic (non-user) iptables rules.
+  RESERVED_PID_ADBLOCK_TLS: 65500,
   DEFAULT_VPN_PROFILE_CN: "fishboneVPN1",
 
   DNS_DEFAULT_WAN_TAG: "wan",
@@ -70,6 +75,7 @@ module.exports = {
   REDIS_KEY_HOST_PINNED: 'host:pinned:mac',
   REDIS_KEY_HOST_DHCPCONF: 'host:dhcpconf:mac',
   REDIS_KEY_WIRELESS_TAG_CANDIDATE: "wireless_tag_candidate:", // wireless_tag_candidate:${mac}
+  REDIS_KEY_WIRELESS_AUTO_GROUP: "wireless_auto_group:", // wireless_auto_group:${mac}
   REDIS_KEY_POLICY_DISTURB_CLOUD_CONFIG: "policy_disturb_cloud_config",
   REDIS_KEY_POLICY_DISTURB_CONFIG: "policy_disturb_config",
   REDIS_KEY_NOISE_DOMAIN_CLOUD_CONFIG: "noise_domain_cloud_config",
@@ -111,6 +117,7 @@ module.exports = {
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
   NOTIF_CATEGORY_TIME_LIMITS: "com.firewalla.category.time_limits",
 
+  STATE_EVENT_DNS_SERVICE: "dns_service",
   STATE_EVENT_NIC_SPEED: "nic_speed",
 
   ACL_VPN_CLIENT_WAN_PREFIX: "VC:",
