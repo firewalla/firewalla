@@ -731,6 +731,17 @@ class BroDetect {
     return this.isMonitoring(intf, monitorable)
   }
 
+  // Decide whether a same-network local flow should be dropped.
+  // Different stpPort => router is the common ancestor: keep zeek's own flow (bridge=false),
+  // drop the AP/switch duplicate (bridge=true).
+  // Same or unknown stpPort => switch/AP is the common ancestor: keep only the bridge flow,
+  // drop zeek's copy (current behavior).
+  _dropLocalSameNetworkFlow(bridge, srcStpPort, dstStpPort) {
+    if (srcStpPort && dstStpPort && srcStpPort !== dstStpPort)
+      return bridge;   // different physical port — only drop the bridge copy
+    return !bridge;    // same/unknown port — only drop the zeek (non-bridge) copy
+  }
+
   async validateConnData(obj) {
     const threshold = config.threshold;
     const iptcpRatio = threshold.IPTCPRatio || 10000;
@@ -1027,8 +1038,19 @@ class BroDetect {
       let intfInfo = sysManager.getInterfaceViaIP(lhost, fam);
       let dstIntfInfo = localFlow && sysManager.getInterfaceViaIP(dhost, fam);
       // do not process traffic between devices in the same network unless bridge flag is set (from fwap) or integrated AP is enabled (orange platform)
-      if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid && !bridge && !await platform.hasIntegratedAPAssets())
-        return;
+      // stpPort refinement: if both hosts have different stpPorts the router is the common ancestor —
+      // keep zeek's own flow and drop the AP bridge duplicate (see _dropLocalSameNetworkFlow).
+      // When stpPort is unknown for either host, defer to the authoritative gate below after host
+      // objects are fully resolved.
+      if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid && !await platform.hasIntegratedAPAssets()) {
+        const srcHost = hostManager.getHostFast(lhost, fam);
+        const dstHost = hostManager.getHostFast(dhost, fam);
+        const srcStpPort = srcHost && srcHost.getStpPort();
+        const dstStpPort = dstHost && dstHost.getStpPort();
+        // Only early-drop when both stpPorts are known; otherwise defer to the authoritative gate.
+        if (srcStpPort && dstStpPort && this._dropLocalSameNetworkFlow(bridge, srcStpPort, dstStpPort))
+          return;
+      }
       // ignore multicast IP
       try {
         // zeek has problem recognizeing multicast addresses as local, so direction could be wrong
@@ -1249,8 +1271,12 @@ class BroDetect {
             return;
           }
         }
-        if (!bridge && intfInfo.uuid == dstIntfInfo.uuid && !await platform.hasIntegratedAPAssets())
-          return
+        if (intfInfo.uuid == dstIntfInfo.uuid && !await platform.hasIntegratedAPAssets() && !isIdentityIntf && !isDstIdentityIntf) {
+          const srcStpPort = monitorable && monitorable.getStpPort && monitorable.getStpPort();
+          const dstStpPort = dstMonitorable && dstMonitorable.getStpPort && dstMonitorable.getStpPort();
+          if (this._dropLocalSameNetworkFlow(bridge, srcStpPort, dstStpPort))
+            return;
+        }
         if (obj.proto === "udp" && accounting.isBlockedDevice(dstMac)) {
           return
         }
