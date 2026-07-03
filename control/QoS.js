@@ -22,6 +22,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const { Rule } = require('../net2/Iptables.js');
 const iptc = require('./IptablesControl.js');
+const { versionCompare } = require('../util/util.js');
 
 const POLICY_QOS_HANDLER_MAP_KEY = "policy_qos_handler_map";
 const SKIP_QOS_SWITCH =  0x40000000;
@@ -39,6 +40,52 @@ const DEFAULT_DELAY = "0";
 const DEFAULT_LOSS_RATE = "0";
 const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
+// detected once per process
+let _tcDeletionBuggy = null; 
+let _tcFilterReplaceBuggy = null;
+
+// https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1797669
+async function isTCDeletionBuggy() {
+  if (_tcDeletionBuggy !== null)
+    return _tcDeletionBuggy;
+  const release = await exec("uname -r").then(r => r.stdout.trim()).catch((err) => {
+    log.error("Failed to get kernel version via uname -r", err.message);
+    return null;
+  });
+  if (!release || typeof release !== 'string' || !/^\d+\.\d+/.test(release)) {
+    _tcDeletionBuggy = true; // unparseable -> fall back to buggy
+  } else if (versionCompare(release, "4.15.0")) {
+    _tcDeletionBuggy = false; // < 4.15.0: not affected
+  } else if (!versionCompare(release, "4.16.2")) {
+    _tcDeletionBuggy = false; // >= 4.16.2: upstream fix
+  } else {
+    // Ubuntu backport: 4.15.0-<abi>, abi >= 36 -> fixed
+    const m = release.match(/^(\d+)\.(\d+)\.(\d+)-(\d+)/);
+    _tcDeletionBuggy = !(m && Number(m[1]) === 4 && Number(m[2]) === 15 && Number(m[3]) === 0 && Number(m[4]) >= 36);
+  }
+  log.info(`TC deletion buggy kernel = ${_tcDeletionBuggy} (release: ${release})`);
+  return _tcDeletionBuggy;
+}
+
+// CVE-2023-4207: cls_u32 double-unbind on tc filter replace.
+// 5.10.x < 5.10.190 (confirmed via kernel.org), 4.9.x (EOL, no fix available).
+async function isTCFilterReplaceBuggy() {
+  if (_tcFilterReplaceBuggy !== null)
+    return _tcFilterReplaceBuggy;
+
+  const PURPLE = '4.9';
+  const GSE = '5.10';
+  const release = await exec("uname -r").then(r => r.stdout.trim()).catch((err) => {
+    log.error("Failed to get kernel version via uname -r", err.message);
+    return null;
+  });
+  const branchMatch = release && release.match(/^(\d+\.\d+)/);
+  const branch = branchMatch && branchMatch[1];
+  _tcFilterReplaceBuggy = !!(branch === PURPLE ||
+    (branch === GSE && versionCompare(release, `${GSE}.190`)));
+  log.info(`TC filter replace buggy (CVE-2023-4207) = ${_tcFilterReplaceBuggy} (release: ${release})`);
+  return _tcFilterReplaceBuggy;
+}
 
 function _policyField({ pid, subKey }) {
   return subKey ? `policy_${pid}_${subKey}` : `policy_${pid}`;
@@ -213,15 +260,19 @@ async function destroyQoSClass(classId, parent, direction, rateLimit) {
   }
   const device = direction === 'upload' ? 'ifb0' : 'ifb1';
   classId = Number(classId).toString(16);
-  
+
   await exec(`sudo tc qdisc del dev ${device} parent ${parent}:0x${classId} 2>/dev/null || true`).catch((err) => {
     log.error(`Failed to destroy child qdisc for ${parent}:0x${classId}, direction ${direction}`, err.message);
   });
-  // there is a bug in 4.15 kernel which will cause failure to add a filter with the same handle that was used by a deleted filter: https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1797669
-  // if the filter cannot be solely deleted, the class cannot be deleted either. We have to replace it with a dummy class
-  await exec(`sudo tc class replace dev ${device} classid ${parent}:0x${classId} htb rate ${DEFAULT_RATE_LIMIT} ceil ${DEFAULT_CEIL_LIMIT} prio ${DEFAULT_PRIO} quantum ${DEFAULT_QUANTUM}`).catch((err) => {
-    log.error(`Failed to destroy QoS class ${classId}, direction ${direction}`, err.message);
-  });
+  if (await isTCDeletionBuggy()) {
+    await exec(`sudo tc class replace dev ${device} classid ${parent}:0x${classId} htb rate ${DEFAULT_RATE_LIMIT} ceil ${DEFAULT_CEIL_LIMIT} prio ${DEFAULT_PRIO} quantum ${DEFAULT_QUANTUM}`).catch((err) => {
+      log.error(`Failed to replace QoS class ${classId} with stub, direction ${direction}`, err.message);
+    });
+  } else {
+    await exec(`sudo tc class del dev ${device} classid ${parent}:0x${classId} 2>/dev/null || true`).catch((err) => {
+      log.error(`Failed to destroy QoS class ${classId}, direction ${direction}`, err.message);
+    });
+  }
 }
 
 async function createTCFilter(filterId, parent, classId, direction, prio, fwmark) {
@@ -259,9 +310,20 @@ async function createTCFilter(filterId, parent, classId, direction, prio, fwmark
   filterId = Number(filterId).toString(16);
   fwmark = Number(fwmark).toString(16);
   classId = Number(classId).toString(16);
-  await exec(`sudo tc filter replace dev ${device} parent ${parent}: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid ${parent}:0x${classId}`).catch((err) => {
-    log.error(`Failed to create tc filter ${filterId} for class ${classId}, direction ${direction}, prio ${prio}, fwmark ${fwmark}`, err.message);
-  });
+
+  if (await isTCFilterReplaceBuggy()) {
+    // CVE-2023-4207: del+add keeps filter_cnt at 1 so tc class del works in destroyQoSClass.
+    await exec(`sudo tc filter del dev ${device} parent ${parent}: handle 800::0x${filterId} prio ${prio} u32 2>/dev/null || true`).catch((err) => {
+      log.error(`Failed to delete tc filter ${filterId} before re-add, direction ${direction}, prio ${prio}`, err.message);
+    });
+    await exec(`sudo tc filter add dev ${device} parent ${parent}: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid ${parent}:0x${classId}`).catch((err) => {
+      log.error(`Failed to create tc filter ${filterId} for class ${classId}, direction ${direction}, prio ${prio}, fwmark ${fwmark}`, err.message);
+    });
+  } else {
+    await exec(`sudo tc filter replace dev ${device} parent ${parent}: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid ${parent}:0x${classId}`).catch((err) => {
+      log.error(`Failed to create tc filter ${filterId} for class ${classId}, direction ${direction}, prio ${prio}, fwmark ${fwmark}`, err.message);
+    });
+  }
 }
 
 async function destroyTCFilter(filterId, parent, direction, prio, fwmark) {
@@ -294,11 +356,17 @@ async function destroyTCFilter(filterId, parent, direction, prio, fwmark) {
   const fwmask = direction === 'upload' ? QOS_UPLOAD_MASK : QOS_DOWNLOAD_MASK;
   filterId = Number(filterId).toString(16);
   fwmark = Number(fwmark).toString(16);
-  // there is a bug in 4.15 kernel which will cause failure to add a filter with the same handle that was used by a deleted filter: https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1797669
-  // so we have to replace the filter with a dummy one
-  await exec(`sudo tc filter replace dev ${device} parent ${parent}: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid ${parent}:1`).catch((err) => {
-    log.error(`Failed to destory tc filter ${filterId}, direction ${direction}, prio ${prio}`, err.message);
-  });
+
+  // https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1797669
+  if (await isTCDeletionBuggy()) {
+    await exec(`sudo tc filter replace dev ${device} parent ${parent}: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid ${parent}:1`).catch((err) => {
+      log.error(`Failed to replace tc filter ${filterId} with stub, direction ${direction}, prio ${prio}`, err.message);
+    });
+  } else {
+    await exec(`sudo tc filter del dev ${device} parent ${parent}: handle 800::0x${filterId} prio ${prio} u32 2>/dev/null || true`).catch((err) => {
+      log.error(`Failed to destroy tc filter ${filterId}, direction ${direction}, prio ${prio}`, err.message);
+    });
+  }
 }
 
 

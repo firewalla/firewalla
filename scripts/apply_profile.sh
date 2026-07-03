@@ -61,6 +61,39 @@ set_nic_feature() {
     done
 }
 
+# examples
+#
+# "rx_flow_hash": [
+#     [ "eth1", "udp4", "sdfn" ],
+#     [ "eth1", "udp6", "sdfn" ]
+# ]
+#
+# fields: <interface> <flow-type> <hash-opts>
+#   flow-type: tcp4|udp4|tcp6|udp6|ah4|esp4|sctp4|...
+#   hash-opts: combination of m v t s d f n r (e.g. sd, sdfn)
+set_rx_flow_hash() {
+    while read nic flow_type hash_opts
+    do
+        local nics=
+        if [[ "$nic" == *"*"* ]]; then
+            shopt -s nullglob
+            for matched_nic in /sys/class/net/$nic; do
+                nics="$nics $(basename "$matched_nic")"
+            done
+            shopt -u nullglob
+        else
+            nics=$nic
+        fi
+        for n in $nics; do
+            if $PROFILE_CHECK; then
+                ethtool -n $n rx-flow-hash $flow_type
+            else
+                ethtool -N $n rx-flow-hash $flow_type $hash_opts
+            fi
+        done
+    done
+}
+
 set_smp_affinity() {
     while read intf smp_affinity
     do
@@ -227,6 +260,9 @@ process_profile() {
         case $key in
             nic_feature)
                 echo "$input_json" | jq -r '.nic_feature[]|@tsv' | set_nic_feature
+                ;;
+            rx_flow_hash)
+                echo "$input_json" | jq -r '.rx_flow_hash[]|@tsv' | set_rx_flow_hash
                 ;;
             smp_affinity)
                 echo "$input_json" | jq -r '.smp_affinity[]|@tsv' | set_smp_affinity

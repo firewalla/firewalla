@@ -203,17 +203,33 @@ class Policy {
       return (this.seq || Constants.RULE_SEQ_REG) - (policy.seq || Constants.RULE_SEQ_REG)
     }
 
+    // specificity level, smaller is more specific: device=1, group=2, network=3, all=4
+    const DEVICE_LEVEL = 1, TAG_LEVEL = 2, NETWORK_LEVEL = 3, ALL_LEVEL = 4;
+
+    // specificity of the "apply to" dimension (scope / guids / tag)
     const scopeLevel = (policy) => {
-      if (!_.isEmpty(policy.scope) || !_.isEmpty(policy.guids)) return 1
-      if (!_.isEmpty(policy.tags)) {
-        if (policy.tags.some(tag => tag.startsWith(Policy.TAG_PREFIX))) return 2
-        if (policy.tags.some(tag => tag.startsWith(Policy.INTF_PREFIX))) return 3
+      if (!_.isEmpty(policy.scope) || !_.isEmpty(policy.guids)) return DEVICE_LEVEL
+      if (!_.isEmpty(policy.tag)) {
+        if (policy.tag.some(t => t.startsWith(Policy.TAG_PREFIX))) return TAG_LEVEL
+        if (policy.tag.some(t => t.startsWith(Policy.INTF_PREFIX))) return NETWORK_LEVEL
       }
-      return 4
+      return ALL_LEVEL
     }
 
-    const levelThis = scopeLevel(this)
-    const levelThat = scopeLevel(policy)
+    // specificity of the "target" dimension; only local network types add specificity,
+    // others fall through to ALL_LEVEL so the scope dimension decides
+    const targetLevel = (policy) => {
+      switch (policy.type) {
+        case "device": return DEVICE_LEVEL
+        case "tag": return TAG_LEVEL
+        case "network": return NETWORK_LEVEL
+        default: return ALL_LEVEL
+      }
+    }
+
+    // follow the more specific (smaller) one of either scope or target
+    const levelThis = Math.min(scopeLevel(this), targetLevel(this))
+    const levelThat = Math.min(scopeLevel(policy), targetLevel(policy))
     if (levelThis != levelThat)
       return levelThis - levelThat
 
@@ -452,6 +468,14 @@ class Policy {
       if (!notInRange) return false;
     }
 
+    // a port-based rule only applies to the protocol it specifies
+    if (this.protocol && alarm['p.protocol'] &&
+      String(this.protocol).toLowerCase() !== String(alarm['p.protocol']).toLowerCase()
+    ) {
+      log.debug(`protocol doesn't match`)
+      return false;
+    }
+
     if (alarm instanceof Alarm.BroNoticeAlarm &&
       alarm['p.noticeType'] == 'SSH::Password_Guessing' &&
       sysManager.isMyIP(alarm['p.dest.ip'])
@@ -667,6 +691,7 @@ class Policy {
         allInRange = allInRange && portRange[0] * 1 <= p && p <= portRange[1] * 1;
         if (!allInRange) return false;
       }
+      return allInRange;
     } else {
       return portRange[0] * 1 <= port && port <= portRange[1] * 1;
     }

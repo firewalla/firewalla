@@ -39,6 +39,8 @@ const LOCK_POLICY_ID = "LOCK_POLICY_ID";
 const { Address4, Address6 } = require('ip-address');
 const Host = require('../net2/Host.js');
 const Constants = require('../net2/Constants.js');
+// pids reserved for synthetic rules (e.g. adblock TLS); getNextID never hands these out
+const RESERVED_PIDS = new Set([Constants.RESERVED_PID_ADBLOCK_TLS]);
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -178,7 +180,7 @@ class PolicyManager2 {
   async removeBypassChainForPolicy(policy) {
     // check if policy type/action can have a related bypass chain
     // if yes, check if policy is removed from redis, then remove related bypass chain
-    if ((policy.type == "category" || policy.type == "mac" || policy.type == "internet") && (policy.action == "block" || policy.action == "app_block" || policy.action == "disturb")) {
+    if ((policy.action == "block" || policy.action == "app_block" || policy.action == "disturb")) {
       if (!(await this.policyExists(policy.pid))) {
         const chainName = `FW_${policy.pid}_BYPASS`;
         const tables = ["filter", "mangle"];
@@ -413,6 +415,8 @@ class PolicyManager2 {
           }
           if (next === prev)
             throw new Error(`No free pid is available`);
+          if (RESERVED_PIDS.has(next))
+            continue;
           if (await rclient.existsAsync(`policy:${next}`))
             continue;
           return next;
@@ -886,12 +890,12 @@ class PolicyManager2 {
             this.tryPolicyEnforcement(rule, 'unenforce');
           } else {
             let reducedTag = _.without(rule.tag, tagUid);
-            await rclient.hsetAsync('policy:' + rule.pid, 'scope', JSON.stringify(reducedTag));
+            await rclient.hsetAsync('policy:' + rule.pid, 'tag', JSON.stringify(reducedTag));
             const newRule = await this.getPolicy(rule.pid)
 
             this.tryPolicyEnforcement(newRule, 'reenforce', rule);
 
-            log.info('remove scope from policy:' + rule.pid, tag);
+            log.info('remove tag from policy:' + rule.pid, tag);
           }
         }
       }
@@ -948,56 +952,12 @@ class PolicyManager2 {
       return policy;
     }
 
-    const kind = lastHitFlow.kind;
-    const raw = _.isObject(lastHitFlow.raw) ? lastHitFlow.raw : null;
-    if (!raw || !kind) {
-      delete policy.lastHitFlow;
-      return policy;
-    }
+    const { kind } = lastHitFlow;
+    let formatted = null;
+    if (kind === 'audit') formatted = await auditTool.formatHitFlow(lastHitFlow, options);
+    else if (kind === 'flow') formatted = await flowTool.formatHitFlow(lastHitFlow, options);
 
-    let simpleLog = null;
-    if (kind === 'audit') {
-      simpleLog = auditTool.toSimpleFormat(raw, {
-        block: true,
-        local: !!(raw.local || raw.dmac || raw.dir === 'L')
-      });
-      if (simpleLog && raw.mac) {
-        simpleLog.device = raw.mac;
-      }
-      const formatted = await auditTool.enrichSimpleLog(simpleLog, options)
-        .catch((err) => {
-          log.warn('Failed to enrich policy lastHitFlow', _.get(policy, 'pid'), err.message);
-          return simpleLog;
-        });
-      if (formatted) {
-        policy.lastHitFlow = formatted;
-      } else {
-        delete policy.lastHitFlow;
-      }
-      return policy;
-    }
-
-    if (kind === 'flow') {
-      simpleLog = flowTool.toSimpleFormat(raw, {
-        local: !!(raw.local || raw.dmac || raw.drl || raw.dstTags || raw.fd === 'lo')
-      });
-      if (simpleLog && raw.mac) {
-        simpleLog.device = raw.mac;
-      }
-      const formatted = await flowTool.enrichSimpleLog(simpleLog, options)
-        .catch((err) => {
-          log.warn('Failed to enrich policy lastHitFlow', _.get(policy, 'pid'), err.message);
-          return simpleLog;
-        });
-      if (formatted) {
-        policy.lastHitFlow = formatted;
-      } else {
-        delete policy.lastHitFlow;
-      }
-      return policy;
-    }
-
-    delete policy.lastHitFlow;
+    formatted ? (policy.lastHitFlow = formatted) : delete policy.lastHitFlow;
     return policy;
   }
 
@@ -1468,7 +1428,7 @@ class PolicyManager2 {
   }
 
   async _applyBypass(bypassPolicy, action="enforce") {
-    let { pid, affectedPids, tag, type } = bypassPolicy;
+    let {affectedPids, tag, pid, type, target, targets, scope, guids} = bypassPolicy;
     log.info(`${action} bypass policy ${pid} for affected policies ${affectedPids}, tag ${tag}`);
     let { intfs, tags } = this.parseTags(tag)
     // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
@@ -1480,9 +1440,77 @@ class PolicyManager2 {
       return;
     }
 
-    let targets = bypassPolicy.targets ? bypassPolicy.targets : [bypassPolicy.target];
-    // {affectedPids, tags, intfs, action, pid} = options;
-    await Bypass.setupTagsRules({ pid, affectedPids, intfs, tags, action, targets, type });
+    if (_.isEmpty(targets)) {
+      targets = [target];
+    }
+
+    const commonOptions = { pid, affectedPids, targets, type, tags, intfs, scope, guids, action };
+
+    let needBypassDNS = false;
+    let needBypassIptables = false;
+
+    switch (type) {
+      case "ip":
+      case "net":
+      case "remotePort":
+      case "remoteIpPort":
+      case "remoteNetPort":
+        needBypassIptables = true;
+        break;
+      case "mac":
+      case "internet":
+        if (target && ht.isMacAddress(target)) {
+          commonOptions.scope = [target];
+        }
+        needBypassIptables = true;
+        break;
+      case "dns":
+      case "domain":
+        needBypassDNS = true;
+        needBypassIptables = true;
+        break;
+      case "domain_re":
+        needBypassDNS = true;
+        break;
+      case "devicePort":
+        let data = this.parseDevicePortRule(target);
+        if (data && data.mac) {
+          commonOptions.scope = [data.mac];
+        }
+        needBypassIptables = true;
+        break;
+      case "category":
+        const derivedAppTargets = [];
+        for (const catTarget of targets) {
+          const derived = await this._getDerivedAppTargetsForCategory(catTarget);
+          derivedAppTargets.push(...derived);
+        }
+        if (!_.isEmpty(derivedAppTargets)) {
+          commonOptions.targets.push(...derivedAppTargets);
+        }
+
+        needBypassIptables = true;
+        needBypassDNS = true;
+        break;
+
+      case "country":
+      case "intranet":
+      case "network":
+      case "tag":
+      case "device":
+        needBypassIptables = true;
+        break;
+      default:
+        throw new Error(`Unsupported bypass policy type ${type} for policy ${pid}`);
+    }
+
+    if (needBypassDNS) {
+      await Bypass.bypassDNSRules(commonOptions);
+    }
+    
+    if (needBypassIptables) {
+      await Bypass.bypassIptablesRules(commonOptions);
+    }
   }
 
 
@@ -2119,7 +2147,7 @@ class PolicyManager2 {
     }
 
     const commonOptions = {
-      pid, tags, intfs, scope, guids, parentRgId,
+      pid, type, tags, intfs, scope, guids, parentRgId,
       localPortSet, /*remoteSet4, remoteSet6,*/ remoteTupleCount, remoteNegate, remotePortSet, proto: protocol,
       action, direction, createOrDestroy: "create", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
@@ -2128,7 +2156,7 @@ class PolicyManager2 {
       qosSubKey: policy.qosSubKey
     }
 
-    if ((type === "category" || type == "mac" || type === "internet") && isBlockOrdisturb) {
+    if (isBlockOrdisturb) {
       const chainName = `FW_${policy.pid}_BYPASS`;
       commonOptions.byPassChain = chainName;
       let table = "filter";
@@ -2237,14 +2265,21 @@ class PolicyManager2 {
   }
 
   async _applyRules(options) {
-    const { tags, intfs, scope, guids, parentRgId } = options || {};
+    const { tags, intfs, scope, guids, parentRgId, type } = options || {};
     const ruleOptions = _.omit(options, 'tags', 'intfs', 'scope', 'guids', 'parentRgId')
+
+    const DEVICE = 1, GROUP = 2, NETWORK = 3;
+    const targetLevel = { device: DEVICE, tag: GROUP, network: NETWORK }[type];
+    const targetScope = { [DEVICE]: "DEV", [GROUP]: "DEV_G", [NETWORK]: "NET" }[targetLevel];
+
+    const targetScopeIfMoreSpecificThan = (applyToLevel) =>
+      targetLevel && targetLevel < applyToLevel ? targetScope : undefined;
 
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || !_.isEmpty(parentRgId)) {
       if (!_.isEmpty(tags))
-        await Block.setupTagsRules({ ...ruleOptions, uids: tags });
+        await Block.setupTagsRules({ ...ruleOptions, uids: tags, fwScope: targetScopeIfMoreSpecificThan(GROUP) });
       if (!_.isEmpty(intfs))
-        await Block.setupIntfsRules({ ...ruleOptions, uuids: intfs });
+        await Block.setupIntfsRules({ ...ruleOptions, uuids: intfs, fwScope: targetScopeIfMoreSpecificThan(NETWORK) });
       if (!_.isEmpty(scope))
         await Block.setupDevicesRules({ ...ruleOptions, macAddresses: scope });
       if (!_.isEmpty(guids))
@@ -2252,8 +2287,8 @@ class PolicyManager2 {
       if (!_.isEmpty(parentRgId))
         await Block.setupRuleGroupRules({ ...ruleOptions, ruleGroupUUID: parentRgId });
     } else {
-      // apply to global
-      await Block.setupGlobalRules(ruleOptions);
+      // apply to global; a local-network target raises the chain to that target's scope
+      await Block.setupGlobalRules({ ...ruleOptions, fwScope: targetScope });
     }
   }
 
@@ -2730,7 +2765,7 @@ class PolicyManager2 {
     }
 
     const commonOptions = {
-      pid, tags, intfs, scope, guids, parentRgId,
+      pid, type, tags, intfs, scope, guids, parentRgId,
       localPortSet, /*remoteSet4, remoteSet6,*/ remoteTupleCount, remoteNegate, remotePortSet, proto: protocol,
       action, direction, createOrDestroy: "destroy", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
@@ -2739,7 +2774,7 @@ class PolicyManager2 {
       qosSubKey: policy.qosSubKey
     }
 
-    if ((type === "category" || type == "mac" || type === "internet") && isBlockOrdisturb) {
+    if (isBlockOrdisturb) {
       const chainName = `FW_${pid}_BYPASS`;
       commonOptions.byPassChain = chainName;
     }
@@ -2880,7 +2915,7 @@ class PolicyManager2 {
       const p = matchedPolicies[0]
       // still match allow policy with ip/domain, in other words
       // allow policy on a very specific target is considered as an exception for alarm
-      if (p.action == 'allow' && !(p.type in ['ip', 'remoteIpPort', 'domain', 'dns'])) {
+      if (p.action == 'allow' && !['ip', 'remoteIpPort', 'domain', 'dns'].includes(p.type)) {
         log.info('ignore matched allow policy:', p.pid, p.action, p.type, p.target)
         return false
       } else {
@@ -3799,7 +3834,9 @@ class PolicyManager2 {
     return false;
   }
 
-  async checkVPN(allVpnClients, resultMap, vpnClientId, remoteIpsToCheck, routeType = "hard") {
+  // options.forPBR: when checking an explicit route rule (PBR), skip the "Internet: Direct" gate
+  // since PBR has its own ipset that is always populated regardless of overrideDefaultRoute.
+  async checkVPN(allVpnClients, resultMap, vpnClientId, remoteIpsToCheck, routeType = "hard", options = {}) {
     let isEnabled = false;
     let isConnected = false;
     let isStrictVPN = false;
@@ -3851,7 +3888,7 @@ class PolicyManager2 {
     log.debug(`VPN client ${vpnClientId} is enabled: ${isEnabled}, connected: ${isConnected}, strictVPN: ${isStrictVPN}, direct: ${isDirect}`);
     log.debug(`VPN client ${vpnClientId} server subnets: ${serverSubnets.join(", ")}`);
     log.debug(`Remote IPs to check: ${remoteIpsToCheck.join(", ")}`);
-    if (isDirect) { // direct internet access, if remoteIpsToCheck is not in the server subnets, return false
+    if (isDirect && !options.forPBR) { // direct internet access, if remoteIpsToCheck is not in the server subnets, return false
       if (serverSubnets && serverSubnets.length > 0) {
         // check if the remote ips are in the server subnets
         for (const subnet of serverSubnets) {
@@ -4003,7 +4040,8 @@ class PolicyManager2 {
     for (const rule of this.sortedRoutesCache) {
       if (rule.wanUUID.startsWith(Block.VPN_CLIENT_WAN_PREFIX)) {
         const vpnID = rule.wanUUID.substring(Block.VPN_CLIENT_WAN_PREFIX.length);
-        const vpnCheckRsult = await this.checkVPN(allVpnClients, checkedVpnMap, vpnID, remoteIpsToCheck, rule.routeType);
+        // using forPBR: true !
+        const vpnCheckRsult = await this.checkVPN(allVpnClients, checkedVpnMap, vpnID, remoteIpsToCheck, rule.routeType, { forPBR: true });
         if (!vpnCheckRsult) {
           continue;
         }

@@ -33,6 +33,8 @@ const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const Constants = require('../net2/Constants.js');
 const fc = require('../net2/config.js')
 const conntrack = require('../net2/Conntrack.js')
+const FlowAggrTool = require('../net2/FlowAggrTool')
+const flowAggrTool = new FlowAggrTool()
 const LogReader = require('../util/LogReader.js');
 const { delay } = require('../util/util.js');
 const { getUniqueTs } = require('../net2/FlowUtil.js')
@@ -88,6 +90,7 @@ class ACLAuditLogPlugin extends Sensor {
     this.dnsmasqLogReader = null
     this.aggregator = null
     this.ruleStatsPlugin = sl.getSensor("RuleStatsPlugin");
+    this.adblockPlugin = sl.getSensor("AdblockPlugin");
   }
 
   async job() {
@@ -128,6 +131,12 @@ class ACLAuditLogPlugin extends Sensor {
     } else {
       this.buffer[mac][descriptor] = record
     }
+  }
+
+  isAdblockTlsAuditRecord(record) {
+    return record
+      && record.ac === 'block'
+      && record.pid === Constants.RESERVED_PID_ADBLOCK_TLS;
   }
 
   // dns on bridge interface is not the LAN IP, zeek will see different src/dst IP in DNS packets due to br_netfilter,
@@ -369,7 +378,7 @@ class ACLAuditLogPlugin extends Sensor {
     }
 
     if (record.ac === "qos" || record.ac === "disturb") {
-      record.qmark = Number(mark) & 0x3fff000;
+      record.qmark = Number(mark) & 0x3fff0000;
       const matchedPids = (await this.ruleStatsPlugin.getPolicyIds(record)).map(Number);
       if (matchedPids && matchedPids.length > 0){
         record.pid = matchedPids[0];
@@ -658,6 +667,11 @@ class ACLAuditLogPlugin extends Sensor {
     record.mac = mac;
     record.ct = record.ct || 1;
 
+    if (record.ac === 'block' && record.reason === 'adblock') {
+      this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
+      this.adblockPlugin && this.adblockPlugin.recordAdblockHit(record);
+    }
+
     this.writeBuffer(record);
   }
 
@@ -798,6 +812,12 @@ class ACLAuditLogPlugin extends Sensor {
             }
           }
 
+          if (this.isAdblockTlsAuditRecord(record)) {
+            record.reason = 'adblock';
+            this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
+            this.adblockPlugin && this.adblockPlugin.recordAdblockHit(Object.assign({}, record, { mac }));
+          }
+
           if (type == 'ip' && record.ac != "block" && record.ac != 'redirect' && record.ac != "isolation" && record.ac != "disturb")
             continue
 
@@ -888,7 +908,7 @@ class ACLAuditLogPlugin extends Sensor {
           delete record.mac
           const recordJson = JSON.stringify(record);
           multi.zadd(key, _ts, recordJson);
-          if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
+          if (!mac.startsWith(Constants.NS_INTERFACE + ":") && flowAggrTool.shouldUpdateDeviceLastFlowTs(mac, _ts))
             multi.zadd("deviceLastFlowTs", _ts, mac);
           this.touchedKeys[key] = 1;
           // no need to set ttl here, OldDataCleanSensor will take care of it
@@ -910,6 +930,9 @@ class ACLAuditLogPlugin extends Sensor {
         await multi.execAsync()
       }
       timeSeries.exec()
+      this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
+      if (this.adblockPlugin)
+        await this.adblockPlugin.flushAdblockStats();
     } catch (err) {
       log.error("Failed to write audit logs", err)
     }
