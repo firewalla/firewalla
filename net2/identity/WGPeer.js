@@ -107,6 +107,7 @@ class WGPeer extends Identity {
               if (hashCopy.hasOwnProperty(pubKey) && _.isObject(hashCopy[pubKey])) {
                 const obj = hashCopy[pubKey];
                 obj.uid = pubKey;
+                obj.devId = this.getKeyOfInitData() + ":" + pubKey;
                 obj.lastActiveTimestamp = !isNaN(latestHandshake) && Number(latestHandshake) || null;
                 if (!obj.lastActiveTimestamp || obj.lastActiveTimestamp == 0) {
                   const redisKey = this.getRedisKeyVPNWGPeer();

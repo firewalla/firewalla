@@ -87,7 +87,7 @@ class NmapSensor extends Sensor {
     }, 1000 * 60 * 120); // every 120 minutes, slow scan
     setInterval(() => {
       this.checkAndRunOnce(true);
-    }, 1000 * 60 * 5); // every 5 minutes, fast scan
+    }, 1000 * 60 * 15); // every 15 minutes, fast scan, it is reduced from 5 minutes to 15 minutes because nmap scan is no longer essential for device discovery, we already have flow, ARPSensor, DHCPSensor, and ICMP6Sensor
 
     /* nmap scan is no longer essential for device discovery, we have flow, ARPSensor, DHCPSensor, and ICMP6Sensor
        so we don't need to run it immediately after network info is reloaded to reduce CPU overhead

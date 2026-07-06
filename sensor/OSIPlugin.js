@@ -25,6 +25,8 @@ const extensionManager = require('./ExtensionManager.js')
 const Constants = require('../net2/Constants.js');
 const HostManager = require('../net2/HostManager.js');
 const hostManager = new HostManager();
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
 
 const tagManager = require('../net2/TagManager');
 const networkProfileManager = require('../net2/NetworkProfileManager.js');
@@ -452,8 +454,10 @@ class OSIPlugin extends Sensor {
   }
 
   async processRule(policy) {
-    if (!_.isEmpty(policy.scope)) {
-      await rclient.saddAsync(OSI_RULES_KEY, policy.scope.map((x) => `mac,${x}`));
+    // legacy device level internet access rule uses target to specify MAC address
+    if (!_.isEmpty(policy.scope) || (policy.type === "mac" && policy.target &&hostTool.isMacAddress(policy.target))) {
+      const macs = (policy.type === "mac" && policy.target && hostTool.isMacAddress(policy.target)) ? [policy.target] : policy.scope;
+      await rclient.saddAsync(OSI_RULES_KEY, macs.map((x) => `mac,${x}`));
     } else if (!_.isEmpty(policy.tag)) {
       for (const tag of policy.tag) {
         // tag
@@ -489,7 +493,9 @@ class OSIPlugin extends Sensor {
       }
     } else { // all devices, add all networks in
       for (const network of Object.values(networkProfileManager.networkProfiles)) {
-        this.processNetwork(network, OSI_RULES_KEY);
+        if (network.isMonitoring()) {
+          this.processNetwork(network, OSI_RULES_KEY);
+        }
       }
     }
   }
