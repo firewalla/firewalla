@@ -171,14 +171,11 @@ async function writeUiConf(gid) {
   await fs.promises.writeFile('/home/pi/.firewalla/ui.conf', JSON.stringify({ gid }), 'utf8');
 }
 
-async function configureGuardian({ server, business }) {
-  const writes = {
-    'ext.guardian.socketio.server':      server,
-    'ext.guardian.business':             JSON.stringify(business),
-    'ext.guardian.socketio.adminStatus': '1'
-  };
-  for (const [k, v] of Object.entries(writes)) await rclient.setAsync(k, v);
-  return writes;
+async function configureGuardian({ server, region, business }) {
+  await rclient.setAsync('ext.guardian.socketio.server', server);
+  if (region) await rclient.setAsync('ext.guardian.socketio.region', region);
+  await rclient.setAsync('ext.guardian.socketio.adminStatus', '1');
+  await rclient.setAsync('ext.guardian.business', JSON.stringify(business));
 }
 
 async function markBootingComplete() {
@@ -286,7 +283,7 @@ async function main(onboard) {
     const memberCount = await joinWebEidToGroup(gid, webEid);
     await writeUiConf(gid);
     await configureGuardian(payload);
-    log(`msp joined: members=${memberCount} server=${payload.server}`);
+    log(`msp joined: members=${memberCount} server=${payload.server}${payload.region ? ` region=${payload.region}` : ''}`);
   }
 
   // addPeers uses the fireapi that came up on boot, so it must run before restartFireApi; non-fatal.
@@ -314,6 +311,7 @@ async function main(onboard) {
     stage: 'completed',
     business: _.get(payload, 'business'),
     server: payload.server,
+    region: payload.region,
     activated_at: new Date().toISOString(),
   });
   log('onboard done');
