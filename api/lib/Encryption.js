@@ -21,6 +21,7 @@ let instance = null;
 const log = require("../../net2/logger.js")(__filename);
 
 const _ = require('lodash')
+const crypto = require('crypto')
 
 module.exports = class {
   constructor() {
@@ -34,6 +35,11 @@ module.exports = class {
     let gid = req.params.gid;
     let message = req.body.message;
     let rkeyts = req.body.rkeyts;
+    // Optional per-request IV (base64) from the client. Its presence signals a
+    // client that understands the random-IV scheme, so the reply will echo a
+    // fresh IV. Absent => legacy fixed zero IV, fully backward compatible.
+    const iv = req.body.iv;
+    req.reqUsedIV = iv != null;
 
     if(gid == null) {
       res.status(400);
@@ -56,19 +62,17 @@ module.exports = class {
       }
     }
 
-    cloudWrapper.getCloud().receiveMessage(gid, message, (err, decryptedMessage) => {
+    cloudWrapper.getCloud().decryptRequest(gid, message, iv).then((decryptedMessage) => {
+      decryptedMessage.mtype = decryptedMessage.message.mtype;
+      req.body = decryptedMessage;
+      req.id = _.get(decryptedMessage, [ 'message', 'obj', 'id' ], undefined)
+      log.debug(req.id, 'Message decrypted')
+      next();
+    }).catch((err) => {
       if(err && err.message === "decrypt_error") {
         res.status(412).json({"error" : err});
-        return;
-      } else if(err) {
-        res.status(400).json({"error" : err});
-        return;
       } else {
-        decryptedMessage.mtype = decryptedMessage.message.mtype;
-        req.body = decryptedMessage;
-        req.id = _.get(decryptedMessage, [ 'message', 'obj', 'id' ], undefined)
-        log.debug(req.id, 'Message decrypted')
-        next();
+        res.status(400).json({"error" : err});
       }
     });
   }
@@ -87,22 +91,28 @@ module.exports = class {
       return;
     }
 
+    // Only use a random IV in the reply when the client negotiated one on the
+    // request (req.reqUsedIV) and this is not a streaming response. Streaming
+    // stays on the legacy zero IV for now (its SSE frame carries no IV field).
+    const useIV = req.reqUsedIV && !streaming;
+    const ivBuf = useIV ? crypto.randomBytes(16) : null;
+
     // log.info('Response Data:', JSON.parse(body));
     const time = process.hrtime();
-    cloudWrapper.getCloud().encryptMessage(gid, body, (err, encryptedResponse) => {
+    cloudWrapper.getCloud().encryptResponse(gid, body, ivBuf).then((encryptedResponse) => {
       log.debug(`${req.id} Encrypt Cost Time: ${process.hrtime(time)[1]/1e6} ms`);
 
-      if(err) {
-        res.json({error: err});
-        return;
+      if(streaming){
+        res.body = encryptedResponse;
+        next();
       } else {
-        if(streaming){
-          res.body = encryptedResponse;
-          next();
-        }else{
-          res.json({ message : encryptedResponse });
-        }
+        const payload = { message: encryptedResponse };
+        if(ivBuf)
+          payload.iv = ivBuf.toString('base64');
+        res.json(payload);
       }
+    }).catch((err) => {
+      res.json({error: err});
     });
   }
 }

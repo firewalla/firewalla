@@ -711,11 +711,26 @@ let legoEptCloud = class {
     return this.groupCache[gid];
   }
 
-  encrypt(text, key) {
-    let iv = Buffer.alloc(16);
-    iv.fill(0);
+  // Normalize an optional IV argument to a 16-byte Buffer. Accepts a Buffer or
+  // a base64 string; when none is given, returns the legacy fixed all-zero IV so
+  // existing callers keep their current behavior. Throws if a provided IV is not
+  // 16 bytes.
+  _normalizeIV(iv) {
+    if (iv == null) {
+      const zero = Buffer.alloc(16);
+      zero.fill(0);
+      return zero;
+    }
+    const ivBuf = Buffer.isBuffer(iv) ? iv : Buffer.from(iv, 'base64');
+    if (ivBuf.length !== 16) {
+      throw new Error(`Invalid IV length ${ivBuf.length}, expected 16 bytes`);
+    }
+    return ivBuf;
+  }
+
+  encrypt(text, key, iv) {
     let bkey = Buffer.from(key.substring(0, 32), "utf8");
-    let cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, iv);
+    let cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, this._normalizeIV(iv));
     let crypted = cipher.update(text, 'utf8', 'base64');
     crypted += cipher.final('base64');
     return crypted;
@@ -738,12 +753,10 @@ let legoEptCloud = class {
     return crypted;
   }
 
-  decrypt(text, key) {
+  decrypt(text, key, iv) {
     try {
-      let iv = Buffer.alloc(16);
-      iv.fill(0);
       let bkey = Buffer.from(key.substring(0, 32), "utf8");
-      let decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, iv);
+      let decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, this._normalizeIV(iv));
       let dec = decipher.update(text, 'base64', 'utf8');
       dec += decipher.final('utf8');
       return dec;
@@ -751,6 +764,50 @@ let legoEptCloud = class {
       log.error("Failed to decrypt message, err:", err);
       return null;
     }
+  }
+
+  // IV-aware request decryption for the netbot req/response path. Mirrors
+  // receiveMessage but takes an optional per-request IV (base64) from the client
+  // and returns a promise. When iv is absent, the legacy zero IV is used, so old
+  // clients are unaffected.
+  decryptRequest(gid, msg, iv) {
+    return new Promise((resolve, reject) => {
+      this.getKey(gid, false, (err, key) => {
+        if (key == null) {
+          reject(err || new Error("key not found, invalid group?"));
+          return;
+        }
+        const decrypted = this.decrypt(msg, key, iv);
+        if (decrypted === null) {
+          reject(new Error("decrypt_error"));
+          return;
+        }
+        const msgJson = this._parseJsonSafe(decrypted);
+        if (msgJson != null)
+          resolve(msgJson);
+        else
+          reject(new Error("Malformed JSON"));
+      });
+    });
+  }
+
+  // IV-aware response encryption for the netbot req/response path. Encrypts body
+  // with the given IV (Buffer or base64) and returns a promise of the base64
+  // ciphertext. When iv is absent, the legacy zero IV is used.
+  encryptResponse(gid, body, iv) {
+    return new Promise((resolve, reject) => {
+      this.getKey(gid, false, (err, key) => {
+        if (key == null) {
+          reject(err || new Error("key not found, invalid group?"));
+          return;
+        }
+        try {
+          resolve(this.encrypt(body, key, iv));
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
   }
 
   keygen() {

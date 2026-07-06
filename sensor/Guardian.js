@@ -32,6 +32,7 @@ const CloudWrapper = require('../api/lib/CloudWrapper.js');
 const cw = new CloudWrapper();
 
 const zlib = require('zlib');
+const crypto = require('crypto');
 const deflateAsync = util.promisify(zlib.deflate);
 const rp = require('request-promise');
 
@@ -666,11 +667,12 @@ module.exports = class {
     if (controller && this.socket) {
       const encryptedMessage = message.message;
       const replyid = message.replyid; // replyid will not encrypted
+      const reqIV = message.iv; // optional per-request IV (base64), not encrypted
       let response, decryptedMessage, code = 200, encryptedResponse;
+      // Only echo a fresh IV when the client (MSP) negotiated one on the request.
+      const replyIVBuf = reqIV != null ? crypto.randomBytes(16) : null;
       try {
-        const receicveMessageAsync = util.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
-        const encryptMessageAsync = util.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
-        decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
+        decryptedMessage = await cw.getCloud().decryptRequest(gid, encryptedMessage, reqIV);
         decryptedMessage.mtype = decryptedMessage.message.mtype;
         const obj = decryptedMessage.message.obj;
         const item = obj.data.item;
@@ -703,7 +705,7 @@ module.exports = class {
           compressMode: 1,
           data: output.toString('base64')
         });
-        encryptedResponse = await encryptMessageAsync(gid, compressedResponse);
+        encryptedResponse = await cw.getCloud().encryptResponse(gid, compressedResponse, replyIVBuf);
       } catch (err) {
         log.warn(`Process web message error`, err);
         if (err && err.message == "decrypt_error") {
@@ -720,7 +722,8 @@ module.exports = class {
             gid: gid,
             mspId: mspId,
             replyid: replyid,
-            code: code
+            code: code,
+            ...(replyIVBuf ? { iv: replyIVBuf.toString('base64') } : {})
           });
         }
         log.debug("response sent to back web cloud, req id:", decryptedMessage ? decryptedMessage.message.obj.id : "decryption error", this.name);
