@@ -20,6 +20,7 @@ let expect = chai.expect;
 
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const Policy = require('../alarm/Policy.js');
+const Alarm = require('../alarm/Alarm.js');
 
 const domainBlock = require('../control/DomainBlock.js');
 const cloudcache = require('../extension/cloudcache/cloudcache');
@@ -166,6 +167,88 @@ describe('Test policy filter', function(){
       expect(rules).to.not.be.null;
     })
 
+});
+
+describe('Test remotePort policy protocol match', function(){
+  this.timeout(30000);
+
+  function pornAlarm(protocol) {
+    const alarm = new Alarm.PornAlarm(1648018597, 'OLIVER1', 'hentaijuggs.com', {
+      'p.device.mac': '98:59:7A:48:46:08',
+      'p.dest.name': 'hentaijuggs.com',
+      'p.dest.port': '443',
+    });
+    if (protocol) alarm['p.protocol'] = protocol;
+    return alarm;
+  }
+
+  it('should not match when protocol differs (udp rule vs tcp flow)', () => {
+    const policy = new Policy({ type: 'remotePort', target: '443', protocol: 'udp', action: 'block' });
+    expect(policy.match(pornAlarm('tcp'))).to.be.false;
+  });
+
+  it('should match when protocol is the same', () => {
+    const policy = new Policy({ type: 'remotePort', target: '443', protocol: 'tcp', action: 'block' });
+    expect(policy.match(pornAlarm('tcp'))).to.be.true;
+  });
+
+  it('should match regardless of protocol when rule omits protocol', () => {
+    const policy = new Policy({ type: 'remotePort', target: '443', action: 'block' });
+    expect(policy.match(pornAlarm('tcp'))).to.be.true;
+  });
+
+  it('should enforce protocol on remotePort used as an extra condition', () => {
+    const policy = new Policy({ type: 'domain', target: 'hentaijuggs.com', remotePort: '443', protocol: 'udp', action: 'block' });
+    expect(policy.match(pornAlarm('tcp'))).to.be.false;
+  });
+});
+
+describe('Test priorityCompare', function(){
+  // returns <0 if `this` outranks the arg, >0 if arg wins, 0 if equal
+
+  const intranetScopedToDevice = new Policy({
+    pid: '101', type: 'intranet', action: 'block', direction: 'bidirection',
+    scope: ['20:6D:31:01:2B:43'],
+  });
+  const deviceTargetAllScope = new Policy({
+    pid: '102', type: 'device', action: 'block', direction: 'bidirection',
+    target: '20:6D:31:01:2B:43',
+  });
+  const intranetAllScope = new Policy({
+    pid: '103', type: 'intranet', action: 'block', direction: 'bidirection',
+  });
+
+  it('treats device-scoped and device-target local rules as equal priority', () => {
+    expect(intranetScopedToDevice.priorityCompare(deviceTargetAllScope)).to.equal(0);
+    expect(deviceTargetAllScope.priorityCompare(intranetScopedToDevice)).to.equal(0);
+  });
+
+  it('ranks a device-specific local rule above an all-scope one', () => {
+    expect(deviceTargetAllScope.priorityCompare(intranetAllScope)).to.be.below(0);
+    expect(intranetAllScope.priorityCompare(deviceTargetAllScope)).to.be.above(0);
+  });
+
+  it('reads tag scope from the `tag` field (device group = level 2)', () => {
+    const tagGroupRule = new Policy({
+      pid: '104', type: 'intranet', action: 'block', tag: ['tag:8'],
+    });
+    expect(deviceTargetAllScope.priorityCompare(tagGroupRule)).to.be.below(0);
+    expect(tagGroupRule.priorityCompare(intranetAllScope)).to.be.below(0);
+  });
+
+  it('lets seq band override specificity', () => {
+    const highSeqAllScope = new Policy({
+      pid: '105', type: 'intranet', action: 'block', seq: 1,
+    });
+    expect(highSeqAllScope.priorityCompare(deviceTargetAllScope)).to.be.below(0);
+  });
+
+  it('prefers allow over block at the same specificity', () => {
+    const allowDevice = new Policy({ pid: '106', type: 'device', target: 'AA:BB:CC:DD:EE:FF', action: 'allow' });
+    const blockDevice = new Policy({ pid: '107', type: 'device', target: 'AA:BB:CC:DD:EE:FF', action: 'block' });
+    expect(allowDevice.priorityCompare(blockDevice)).to.equal(-1);
+    expect(blockDevice.priorityCompare(allowDevice)).to.equal(1);
+  });
 });
 
 describe('Test policy filter', function(){

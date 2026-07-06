@@ -20,6 +20,7 @@ const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const Identity = require('../net2/Identity.js')
+const IdentityManager = require('../net2/IdentityManager.js')
 const util = require('util');
 const getHitsAsync = util.promisify(timeSeries.getHits).bind(timeSeries);
 const flowTool = require('../net2/FlowTool');
@@ -258,7 +259,7 @@ class DataUsageSensor extends Sensor {
             "p.device.mac": mac,
             "p.device.id": name,
             "p.device.name": name,
-            "p.device.ip": host.o.ipv4Addr,
+            "p.device.ip": host instanceof Identity ? (host.getIPs()[0] || '').split('/')[0] || undefined : host.o.ipv4Addr,
             "p.intf.id": intfId,
             "p.totalUsage": totalUsage,
             "p.begin.ts": begin,
@@ -270,7 +271,14 @@ class DataUsageSensor extends Sensor {
             "p.duration": this.smWindow,
             "p.percentage": percentage.toFixed(2) + '%',
         });
-        if (host instanceof Identity) alarm['p.device.guid'] = mac
+        if (host instanceof Identity) {
+            alarm['p.device.guid'] = mac;
+            const tunnelIp = (host.getIPs()[0] || '').split('/')[0];
+            if (tunnelIp) {
+                const endpoint = IdentityManager.getEndpointByIP(tunnelIp);
+                if (endpoint) alarm['p.device.real.ip'] = endpoint;
+            }
+        }
         alarmManager2.enqueueAlarm(alarm);
     }
     async getSumFlows(mac, begin, end) {

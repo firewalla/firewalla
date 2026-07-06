@@ -53,10 +53,70 @@ read_hash() {
   done
 }
 
-# https://stackoverflow.com/questions/73742856/printing-and-padding-strings-with-bash-printf
-# this doesn't work for chinese or japanese but deals with emoji pretty well
-#
-# Space pad align string to width
+# Terminal display width (number of columns) of a single Unicode code point,
+# returned in $REPLY. Wide CJK characters and most emoji occupy 2 columns;
+# combining marks, zero-width joiners, variation selectors and emoji skin-tone
+# modifiers occupy 0. Everything else is 1.
+# Note: still imperfect for emoji ZWJ sequences (e.g. family emoji), which
+# terminals render inconsistently anyway.
+charwidth() {
+  local -i code=$1
+  # zero-width: combining marks (0300-036F etc.), zero-width space/joiner
+  # (200B-200F), variation selectors (FE00-FE0F), emoji skin-tone modifiers
+  # (1F3FB-1F3FF), BOM (FEFF)
+  if (( code == 0 ||
+        (code >= 0x0300 && code <= 0x036F) ||
+        (code >= 0x0483 && code <= 0x0489) ||
+        (code >= 0x0591 && code <= 0x05BD) ||
+        (code >= 0x0610 && code <= 0x061A) ||
+        (code >= 0x064B && code <= 0x065F) ||
+        (code >= 0x200B && code <= 0x200F) ||
+        (code >= 0xFE00 && code <= 0xFE0F) ||
+        (code >= 0xFE20 && code <= 0xFE2F) ||
+        code == 0xFEFF ||
+        (code >= 0x1F3FB && code <= 0x1F3FF) )); then
+    REPLY=0
+  # wide (2 columns): Hangul, CJK ideographs/kana/compat, fullwidth forms, emoji
+  elif (( (code >= 0x1100 && code <= 0x115F) ||
+          code == 0x2329 || code == 0x232A ||
+          code == 0x231A || code == 0x231B ||
+          (code >= 0x23E9 && code <= 0x23EC) || code == 0x23F0 || code == 0x23F3 ||
+          (code >= 0x25FD && code <= 0x25FE) ||
+          (code >= 0x2614 && code <= 0x2615) ||
+          (code >= 0x2648 && code <= 0x2653) ||
+          code == 0x267F || code == 0x2693 || code == 0x26A1 ||
+          (code >= 0x26AA && code <= 0x26AB) ||
+          (code >= 0x26BD && code <= 0x26BE) ||
+          (code >= 0x26C4 && code <= 0x26C5) ||
+          code == 0x26CE || code == 0x26D4 || code == 0x26EA ||
+          (code >= 0x26F2 && code <= 0x26F3) || code == 0x26F5 || code == 0x26FA || code == 0x26FD ||
+          code == 0x2705 || (code >= 0x270A && code <= 0x270B) || code == 0x2728 ||
+          code == 0x274C || code == 0x274E ||
+          (code >= 0x2753 && code <= 0x2755) || code == 0x2757 ||
+          (code >= 0x2795 && code <= 0x2797) || code == 0x27B0 || code == 0x27BF ||
+          (code >= 0x2B1B && code <= 0x2B1C) || code == 0x2B50 || code == 0x2B55 ||
+          (code >= 0x2E80 && code <= 0x303E) ||
+          (code >= 0x3041 && code <= 0x33FF) ||
+          (code >= 0x3400 && code <= 0x4DBF) ||
+          (code >= 0x4E00 && code <= 0x9FFF) ||
+          (code >= 0xA000 && code <= 0xA4CF) ||
+          (code >= 0xAC00 && code <= 0xD7A3) ||
+          (code >= 0xF900 && code <= 0xFAFF) ||
+          (code >= 0xFE10 && code <= 0xFE19) ||
+          (code >= 0xFE30 && code <= 0xFE6F) ||
+          (code >= 0xFF00 && code <= 0xFF60) ||
+          (code >= 0xFFE0 && code <= 0xFFE6) ||
+          (code >= 0x1F300 && code <= 0x1FAFF) ||
+          (code >= 0x20000 && code <= 0x3FFFD) )); then
+    REPLY=2
+  else
+    REPLY=1
+  fi
+}
+
+# Space-pad/right-align $2 to a display width of $1 columns, measuring by
+# terminal columns (not code points) so CJK and emoji don't break the table.
+# Truncates with "..." when too wide.
 # @params
 # $1: The alignment width
 # $2: The string to align
@@ -64,17 +124,51 @@ read_hash() {
 # aligned string
 align::right() {
   local -i width=$1 # Mandatory column width
+  # Force byte-wise string ops so we can decode UTF-8 ourselves; this is
+  # locale-independent (bash's `printf "'c"` does not portably yield a code
+  # point for multibyte chars, but does yield the byte value here).
+  local LC_ALL=C
   local -- str=$2 # Mandatory input string
-  local -i length
-  if (( ${#str} > width )); then
-    length=$width
-    str="${str:0:width-3}..."
+  local -i n=${#str} i=0 j clen val cp prev=0
+  local -a parts=() pw=()  # per-character byte sequence and its column width
+  local -i total=0
+  while (( i < n )); do
+    printf -v val "%d" "'${str:i:1}"; (( val < 0 )) && (( val += 256 ))
+    if   (( val < 0x80 )); then cp=$val;            clen=1
+    elif (( val < 0xC0 )); then cp=$val;            clen=1  # stray continuation byte
+    elif (( val < 0xE0 )); then cp=$((val & 0x1F)); clen=2
+    elif (( val < 0xF0 )); then cp=$((val & 0x0F)); clen=3
+    else                        cp=$((val & 0x07)); clen=4
+    fi
+    (( i + clen > n )) && clen=$(( n - i ))  # guard against truncated input
+    for (( j=1; j < clen; j++ )); do
+      printf -v val "%d" "'${str:i+j:1}"; (( val < 0 )) && (( val += 256 ))
+      cp=$(( (cp << 6) | (val & 0x3F) ))
+    done
+    charwidth "$cp"
+    # ZWJ emoji sequence (e.g. 👨‍💻): a glyph joined by U+200D renders as a
+    # single cell, so the part following the joiner adds no extra columns
+    (( prev == 0x200D )) && REPLY=0
+    prev=$cp
+    parts+=( "${str:i:clen}" )
+    pw+=( "$REPLY" )
+    (( total += REPLY ))
+    (( i += clen ))
+  done
+
+  local -- out=""
+  local -i w=0 k
+  if (( total <= width )); then
+    out=$str; w=$total
   else
-    length=${#str}
+    # truncate to leave 3 columns for the "..." marker
+    for (( k=0; k < ${#parts[@]}; k++ )); do
+      (( w + pw[k] > width - 3 )) && break
+      out+=${parts[k]}; (( w += pw[k] ))
+    done
+    out+="..."; (( w += 3 ))
   fi
-  local -i offset=$((${#str} - length))
-  local -i pad_left=$((width - length))
-  printf '%*s%s' $pad_left '' "${str:offset:length}"
+  printf '%*s%s' $(( width - w )) '' "$out"
 }
 
 element_in() {
@@ -91,7 +185,8 @@ ip_to_num() {
 declare -A NETWORK_UUID_NAME
 declare -A WGPEER_IP
 declare -A WGPEER_NAME
-declare WGPEER_NID
+declare -A WGPEER_NID
+declare -A WGPEER_NS # redis namespace per peer: wg_peer (wireguard) or awg_peer (amneziawg)
 frcc_done=0
 frcc() {
     if [[ $ROUTER_MANAGED == "no" ]]; then
@@ -105,14 +200,20 @@ frcc() {
             NETWORK_UUID_NAME[${ARY[0]}]=${ARY[1]}
         done
 
-        WGPEER_NID=$(jq -r '.interface.wireguard.wg0.meta.uuid' /tmp/scc_config)
-
-        jq -r '.interface.wireguard.wg0.peers[]? | .publicKey, [.allowedIPs[] | select(endswith("/32"))][0]' /tmp/scc_config |
-        while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
-            WGPEER_IP[${ARY[0]}]=${ARY[1]}
+        # amneziawg uses the same schema as wireguard, just under a different key (and a
+        # different redis peer namespace: wg_peer vs awg_peer); pull peers from both
+        jq -r '
+          (.interface.wireguard.wg0  | select(.) | {ns:"wg_peer",  v:.}),
+          (.interface.amneziawg.awg0 | select(.) | {ns:"awg_peer", v:.})
+          | .ns as $ns | .v.meta.uuid as $uuid
+          | .v.peers[]? | .publicKey, $ns, $uuid, ([.allowedIPs[] | select(endswith("/32"))][0])' /tmp/scc_config |
+        while mapfile -t -n 4 ARY && ((${#ARY[@]})); do
+            WGPEER_NS[${ARY[0]}]=${ARY[1]}
+            WGPEER_NID[${ARY[0]}]=${ARY[2]}
+            WGPEER_IP[${ARY[0]}]=${ARY[3]}
         done
 
-        jq -r '.interface.wireguard.wg0.extra.peers[]? | .publicKey, .name' /tmp/scc_config |
+        jq -r '(.interface.wireguard.wg0, .interface.amneziawg.awg0) | select(.) | .extra.peers[]? | .publicKey, .name' /tmp/scc_config |
         while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
             WGPEER_NAME[${ARY[0]}]=${ARY[1]}
         done
@@ -133,44 +234,49 @@ declare -A SF
 system_features_done=0
 get_system_features() {
   if [ "$system_features_done" -eq "0" ]; then
-    local FILE="$FIREWALLA_HOME/net2/config.json"
+    local DEFAULTFILE="$FIREWALLA_HOME/net2/config.json"
+    local PLATFORMFILE="$FIREWALLA_HOME/platform/$PLATFORM/files/config.json"
     local USERFILE="$HOME/.firewalla/config/config.json"
+    # config priority low -> high, mirrors net2/config.js aggregateConfig().
+    # version/hashset/cloud/msp configs are cloud/redis-sourced and not available
+    # offline, so they are skipped here.
+    local CONFIG_FILES=("$DEFAULTFILE" "$PLATFORMFILE" "$USERFILE")
+    local FILE
 
+    # 1. base userFeatures from config files, later files override earlier ones
     # use jq where available
     if [[ "$PLATFORM" != 'red' && "$PLATFORM" != 'blue' ]]; then
-      if [[ -f "$FILE" ]]; then
+      for FILE in "${CONFIG_FILES[@]}"; do
+        [[ -f "$FILE" ]] || continue
         jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' "$FILE" |
           while read key value; do
             SF["$key"]="$value"
           done
-      fi
-
-      if [[ -f "$USERFILE" ]]; then
-        jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' "$USERFILE" |
-          while read key value; do
-            SF["$key"]="$value"
-          done
-      fi
+      done
     else
       # lagacy python 2.7 solution
-      if [[ -f "$FILE" ]]; then
-        local JSON=$(python -c "import json; obj=json.load(open('$FILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]); print obj2;")
-        while IFS="=" read -r key value; do
-          SF["$key"]="$value"
-        done <<<"$JSON"
-      fi
-
-      if [[ -f "$USERFILE" ]]; then
-        local JSON=$(python -c "import json; obj=json.load(open('$USERFILE')); obj2='\n'.join([key + '=' + str(value) for key,value in obj['userFeatures'].items()]) if obj.has_key('userFeatures') else ''; print obj2;")
+      for FILE in "${CONFIG_FILES[@]}"; do
+        [[ -f "$FILE" ]] || continue
+        local JSON=$(python -c "import json; obj=json.load(open('$FILE')); print('\n'.join([key + '=' + str(value) for key,value in obj.get('userFeatures',{}).items()]));")
         if [[ "$JSON" != "" ]]; then
           while IFS="=" read -r key value; do
             SF["$key"]="$value"
           done <<<"$JSON"
         fi
-      fi
+      done
     fi
 
-    read_hash SF sys:features
+    # 2. dynamicFeatures override (sys:features redis hash): '1' => true, anything
+    #    else => false. Mirrors net2/config.js reloadFeatures().
+    declare -A DF
+    read_hash DF sys:features
+    for key in "${!DF[@]}"; do
+      if [[ "${DF[$key]}" == "1" ]]; then
+        SF["$key"]=1
+      else
+        SF["$key"]=0
+      fi
+    done
 
     system_features_done=1
   fi
@@ -588,8 +694,8 @@ check_policies() {
             fi
         elif [[ -n ${p[guids]} ]]; then
             GUID="${p[guids]:2:-2}"
-            if [[ "$GUID" == "wg_peer:"* ]]; then
-                SCOPE="wg:${WGPEER_NAME[${GUID:8}]}"
+            if [[ "$GUID" == "wg_peer:"* || "$GUID" == "awg_peer:"* ]]; then
+                SCOPE="${GUID%%_peer:*}:${WGPEER_NAME[${GUID#*_peer:}]}"
             fi
         elif [[ -z $SCOPE ]]; then
             SCOPE="All Devices"
@@ -760,10 +866,10 @@ check_hosts() {
 
         if [[ -n ${WGPEER_NAME[$MAC]+x} ]]; then
           local NAME="${WGPEER_NAME[$MAC]}"
-          local nid=$WGPEER_NID
-          local POLICY_MAC="policy:wg_peer:${MAC}"
+          local nid=${WGPEER_NID[$MAC]}
+          local POLICY_MAC="policy:${WGPEER_NS[$MAC]}:${MAC}"
           local IP=${WGPEER_IP[$MAC]/\/32/""}
-          local taggedMac="wg_peer:$MAC"
+          local taggedMac="${WGPEER_NS[$MAC]}:$MAC"
           local ONLINE=" "
         else
           declare -A h
@@ -946,7 +1052,7 @@ check_hosts() {
         fi
 
         printf "$BGC$FC%35s %15s %16s $MAC_COLOR%18s$FC %3s$B7_Placeholder %2s %11s %7s %6s $TAG_COLOR%3s$FC %3s %3s ${fcv[vql,c]}%3s$UC ${fcv[iso,c]}%3s$UC ${fcv[acl,c]}%3s$UC %3s ${fcv[adblock,c]}%3s$UC ${fcv[family,c]}%3s$UC ${fcv[safeSearch,c]}%3s$UC ${fcv[doh,c]}%3s$UC ${fcv[unbound,c]}%3s$UC ${fcv[ntp_redirect,c]}%3s$UC$BGUC\n" \
-          "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$IP" "$(align::right 18 "$MAC")" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$(align::right 11 $VPN)" "$FLOWINCOUNT" \
+          "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$IP" "$(align::right 17 "$MAC")" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$(align::right 11 $VPN)" "$FLOWINCOUNT" \
           "$FLOWOUTCOUNT" "$TAGS" "$USER_TAGS" "$DEVICE_TAGS" "${fcv[vql,v]}" "${fcv[iso,v]}" "${fcv[acl,v]}" "$DNS_BOOST" "${fcv[adblock,v]}" "${fcv[family,v]}" "${fcv[safeSearch,v]}" "${fcv[doh,v]}" "${fcv[unbound,v]}" "${fcv[ntp_redirect,v]}"
 
         unset h
@@ -991,81 +1097,111 @@ check_sys_features() {
 
     get_system_features
 
-    keyList=( "ipv6" "local_domain" "family_protect" "adblock" "doh" "unbound" "dns_proxy" "safe_search" "external_scan" "device_online" "device_offline" "dual_wan" "single_wan_conn_check" "video" "porn" "game" "vpn" "cyber_security" "cyber_security.autoBlock" "cyber_security.autoUnblock" "large_upload" "large_upload_2" "abnormal_bandwidth_usage" "vulnerability" "new_device" "new_device_tag" "new_device_block" "alarm_subnet" "alarm_upnp" "alarm_openport" "acl_alarm" "vpn_client_connection" "vpn_disconnect" "vpn_restore" "spoofing_device" "sys_patch" "device_service_scan" "acl_audit" "dnsmasq_log_allow" "data_plan" "data_plan_alarm" "country" "category_filter" "fast_intel" "network_monitor" "network_monitor_alarm" "network_stats" "network_status" "network_speed_test" "network_metrics" "link_stats" "rekey" "rule_stats" "internal_scan" "accounting" "wireguard" "pcap_zeek" "pcap_suricata" "compress_flows" "event_collect" "mesh_vpn" "redirect_httpd" "upstream_dns" )
+    # ordered list of "feature_key|display name"; controls both naming and display order
+    local featureList=(
+        "ipv6|Simple mode IPv6 Support"
+        "local_domain|Local Domain"
+        "family_protect|Family Protect"
+        "adblock|AD Block"
+        "doh|DNS over HTTPS"
+        "unbound|Unbound"
+        "dns_proxy|DNS Proxy"
+        "safe_search|Safe Search"
+        "external_scan|External Scan"
+        "device_online|Device Online Alarm"
+        "device_offline|Device Offline Alarm"
+        "dual_wan|Internet Connectivity Alarm Dual WAN"
+        "single_wan_conn_check|Internet Connectivity Alarm Single WAN"
+        "video|Auido/Video Alarm"
+        "porn|Porn Alarm"
+        "game|Gaming Alarm"
+        "vpn|VPN Traffic Alarm"
+        "cyber_security|Security Alarm"
+        "cyber_security.autoBlock|Malicious Traffic Autoblock"
+        "cyber_security.autoUnblock|Malicious Traffic Autoblock Validation"
+        "large_upload|Abnormal Upload Alarm"
+        "large_upload_2|Large Upload Alarm"
+        "abnormal_bandwidth_usage|Abnormal Bandwidth Alarm"
+        "vulnerability|Vulnerability Alarm"
+        "new_device|New Device Alarm"
+        "new_device_tag|Quarantine"
+        "new_device_block|New Device Alarm Auto Block"
+        "alarm_subnet|Subnet Alarm"
+        "alarm_upnp|uPnP Alarm"
+        "alarm_openport|Open Port Alarm"
+        "acl_alarm|Customized Alarm"
+        "vpn_client_connection|VPN Activity Alarm"
+        "vpn_disconnect|VPN Connectivity Disconnection Alarm"
+        "vpn_restore|VPN Connectivity Restoration Alarm"
+        "spoofing_device|Spoofing Device Alarm"
+        "sys_patch|System Patch"
+        "device_service_scan|Device Service Scan"
+        "acl_audit|Blocked Flows"
+        "dnsmasq_log_allow|Nonblock DNS Flows"
+        "data_plan|Data Plan"
+        "data_plan_alarm|Data Plan Alarm"
+        "country|Country Data Update"
+        "category_filter|Category Bloomfilter"
+        "fast_intel|Intel Bloomfilter"
+        "network_monitor|Internet Quality Test"
+        "network_monitor_alarm|Internet Quality Alarm"
+        "network_stats|Network Ping Test"
+        "network_status|DNS Server Ping Test"
+        "network_speed_test|Auto Speed Test"
+        "network_metrics|Network Traffic Metrics"
+        "link_stats|dmesg LinkDown Check"
+        "rekey|Renew Group Key"
+        "rule_stats|Rule Stats"
+        "internal_scan|Internal Scan"
+        "accounting|Screen Time"
+        "wireguard|WireGuard"
+        "pcap_zeek|Zeek"
+        "pcap_suricata|Suricate"
+        "compress_flows|Compress Flow"
+        "event_collect|Events"
+        "mesh_vpn|Mesh VPN"
+        "redirect_httpd|Legacy block service"
+        "upstream_dns|Legacy DNS -should be off-"
+        "device_detect|Device Identification"
+        "local_flow|Local Flow Capture"
+        "dns_flow|DNS Flow Capture"
+        "dns_flow_record|DNS Flow Record"
+        "quic_log_reader|QUIC Log Reader"
+        "record_activity_flow|Record Activity Flow"
+        "app_time_usage|App Time Usage"
+        "local_audit|Local Block Flow"
+        "dnsmasq_log_allow_redis|Nonblock DNS Flows Record"
+        "fast_speedtest|Capture Speed Test Traffic with conntrack"
+        "ntp_redirect|NTP Intercept"
+        "weak_password_scan|Weak Password Scan"
+        "digitalfence|Digital Fence -WiFi/BT detection-"
+        "policy_disturb|Disturb Rules"
+        "dap|Device Auto Protect"
+        "dap_bg_task|DAP Background Task"
+        "clash|Clash Proxy"
+        "clashdns|Clash DNS"
+        "vpn_relay|VPN Relay"
+        "api_relay|API Relay"
+        "alarm_vpnclient_internet_pause|VPN Client Alarm Transition Switch"
+        "alarm_skip_device_info_enrich|Skip Alarm Device Info Enrich"
+        "insane_mode|Insane Mode -lower alarm thresholds-"
+        "naughty_monkey|Naughty Monkey"
+    )
 
     declare -A nameMap
-    nameMap[ipv6]="Simple mode IPv6 Support"
-    nameMap[local_domain]="Local Domain"
-    nameMap[family_protect]="Family Protect"
-    nameMap[adblock]="AD Block"
-    nameMap[doh]="DNS over HTTPS"
-    nameMap[unbound]="Unbound"
-    nameMap[dns_proxy]="DNS Proxy"
-    nameMap[safe_search]="Safe Search"
-    nameMap[external_scan]="External Scan"
-    nameMap[device_online]="Device Online Alarm"
-    nameMap[device_offline]="Device Offline Alarm"
-    nameMap[dual_wan]="Internet Connectivity Alarm Dual WAN"
-    nameMap[single_wan_conn_check]="Internet Connectivity Alarm Single WAN"
-    nameMap[video]="Auido/Video Alarm"
-    nameMap[porn]="Porn Alarm"
-    nameMap[game]="Gaming Alarm"
-    nameMap[vpn]="VPN Traffic Alarm"
-    nameMap[cyber_security]="Security Alarm"
-    nameMap[cyber_security.autoBlock]="Malicious Traffic Autoblock"
-    nameMap[cyber_security.autoUnblock]="Malicious Traffic Autoblock Validation"
-    nameMap[large_upload]="Abnormal Upload Alarm"
-    nameMap[large_upload_2]="Large Upload Alarm"
-    nameMap[abnormal_bandwidth_usage]="Abnormal Bandwidth Alarm"
-    nameMap[vulnerability]="Vulnerability Alarm"
-    nameMap[new_device]="New Device Alarm"
-    nameMap[new_device_tag]="Quarantine"
-    nameMap[new_device_block]="New Device Alarm Auto Block"
-    nameMap[alarm_subnet]="Subnet Alarm"
-    nameMap[alarm_upnp]="uPnP Alarm"
-    nameMap[alarm_openport]="Open Port Alarm"
-    nameMap[acl_alarm]="Customized Alarm"
-    nameMap[vpn_client_connection]="VPN Activity Alarm"
-    nameMap[vpn_disconnect]="VPN Connectivity Disconnection Alarm"
-    nameMap[vpn_restore]="VPN Connectivity Restoration Alarm"
-    nameMap[spoofing_device]="Spoofing Device Alarm"
-    nameMap[sys_patch]="System Patch"
-    nameMap[device_service_scan]="Device Service Scan"
-    nameMap[acl_audit]="Blocked Flows"
-    nameMap[dnsmasq_log_allow]="Nonblock DNS Flows"
-    nameMap[data_plan]="Data Plan"
-    nameMap[data_plan_alarm]="Data Plan Alarm"
-    nameMap[country]="Country Data Update"
-    nameMap[category_filter]="Category Bloomfilter"
-    nameMap[fast_intel]="Intel Bloomfilter"
-    nameMap[network_monitor]="Internet Quality Test"
-    nameMap[network_monitor_alarm]="Internet Quality Alarm"
-    nameMap[network_stats]="Network Ping Test"
-    nameMap[network_status]="DNS Server Ping Test"
-    nameMap[network_speed_test]="Auto Speed Test"
-    nameMap[network_metrics]="Network Traffic Metrics"
-    nameMap[link_stats]="dmesg LinkDown Check"
-    nameMap[rekey]="Renew Group Key"
-    nameMap[rule_stats]="Rule Stats"
-    nameMap[internal_scan]="Internal Scan"
-    nameMap[accounting]="Screen Time"
-    nameMap[wireguard]="WireGuard"
-    nameMap[pcap_zeek]="Zeek"
-    nameMap[pcap_suricata]="Suricate"
-    nameMap[compress_flows]="Compress Flow"
-    nameMap[event_collect]="Events"
-    nameMap[mesh_vpn]="Mesh VPN"
-    nameMap[redirect_httpd]="Legacy block service"
-    nameMap[upstream_dns]="Legacy DNS -should be off-"
-
-    for key in "${keyList[@]}"; do
-        if [[ -n "${nameMap[$key]+x}" ]] && [[ -n "${SF[$key]+x}" ]]; then
-            print_config "${nameMap[$key]}" "${SF[$key]}" "$key"
-        fi
+    for entry in "${featureList[@]}"; do
+        nameMap["${entry%%|*}"]="${entry#*|}"
     done
 
-    for key in "${!SF[@]}"; do
-        [ -z "${nameMap[$key]+x}" ] && print_config "" "${SF[$key]}" "$key"
+    # print known features in the order above
+    for entry in "${featureList[@]}"; do
+        local key="${entry%%|*}"
+        [[ -n "${SF[$key]+x}" ]] && print_config "${nameMap[$key]}" "${SF[$key]}" "$key"
+    done
+
+    # print any remaining features not listed above (e.g. dynamic features)
+    for key in $(printf '%s\n' "${!SF[@]}" | sort); do
+        [[ -z "${nameMap[$key]+x}" ]] && print_config "" "${SF[$key]}" "$key"
     done
 
     echo ""
@@ -1302,7 +1438,7 @@ check_ap() {
     jq -r '.apc.assets_template.ap_default.wifiNetworks? // [] | 
       to_entries[] | 
       [
-        .key,
+        (.key|tostring),
         (.value.intf // ""),
         ((.value.ssidProfiles // []) | join(",")),
         ((.value.aliasSSIDs // []) | map(.id) | join(","))
@@ -1434,6 +1570,19 @@ run_lsusb() {
   echo ""
 }
 
+check_iptables() {
+  local output
+  local rc
+  output=$(sudo iptables -S 2>&1)
+  rc=$?
+  if [[ $rc -ne 0 ]]; then
+    echo -e "\e[41m>>>>>> iptables -S failed (exit $rc), blocking & routing might not working correctly <<<<<<\e[0m"
+    echo "$output"
+    echo ""
+    echo ""
+  fi
+}
+
 check_eth_count() {
   ports=$(find /sys/class/net/ | grep -c "\\eth[0-3]$")
 
@@ -1455,10 +1604,19 @@ check_events() {
 }
 
 check_connection() {
-  URLs=("firewalla.encipher.io" "api.firewalla.com" "connect.firewalla.com" "ota.firewalla.com" "fireupgrade.s3.us-west-2.amazonaws.com" "firewalla-ap-update-xyz.s3.us-west-2.amazonaws.com" "github.com" "firewalla.com")
+  URLs=(
+    "https://firewalla.encipher.io"
+    "https://api.firewalla.com"
+    "https://connect.firewalla.com"
+    "https://ota.firewalla.com"
+    "https://fireupgrade.s3.us-west-2.amazonaws.com"
+    "https://firewalla-ap-update-xyz.s3.us-west-2.amazonaws.com"
+    "https://github.com"
+    "http://firewalla.com"
+  )
 
   for url in "${URLs[@]}"; do
-    code=$(curl -s -o /dev/null -w "%{http_code}" "https://$url")
+    code=$(curl -s -o /dev/null -w "%{http_code}" "$url")
     if [[ $code -eq 000 ]]; then
       echo -e "\e[41m>>> $url is NOT reachable <<<\e[0m"
     else
@@ -1484,6 +1642,7 @@ usage() {
     echo "  -f  | --fast | --host"
     echo "  -e  | --events"
     echo "  -c  | --connection"
+    echo "        --iptables"
     echo "  -h  | --help"
     return
 }
@@ -1562,6 +1721,11 @@ while [ "$1" != "" ]; do
         FAST=true
         check_connection
         ;;
+    --iptables)
+        shift
+        FAST=true
+        check_iptables
+        ;;
     -e | --events)
         shift
         FAST=true
@@ -1602,6 +1766,7 @@ if [ "$FAST" == false ]; then
     check_docker
     run_lsusb
     check_eth_count
+    check_iptables
     check_connection
     test -z $SPEED || check_speed
 fi
