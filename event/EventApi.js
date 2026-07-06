@@ -178,7 +178,7 @@ class EventApi {
     async getEventsCount(begin="-inf", end="inf") {
       let result = null;
       try {
-        log.info(`get events count from ${begin} to ${end}`);
+        log.verbose(`get events count from ${begin} to ${end}`);
         const result_str = await rclient.zcountAsync(KEY_EVENT_LOG,begin,end);
         result = parseInt(result_str);
       } catch (err) {

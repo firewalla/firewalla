@@ -68,7 +68,7 @@ class DeviceHook extends Hook {
     let ipv6Addr = host.ipv6Addr
 
     if (!mac) { // ignore if no mac
-      log.warn("Invalid MAC address for process device update:", event);
+      log.warn("Invalid MAC address for process device update:", event.message);
       return;
     }
 
@@ -76,7 +76,7 @@ class DeviceHook extends Hook {
      * Filter out IPv4 broadcast address for any monitoring interface
      */
     if (ipv4Addr && sysManager.isMulticastIP4(ipv4Addr)) {
-      log.warn(`Ignore IP address ${ipv4Addr} as broadcast/multicast address`, event);
+      log.warn(`Ignore IP address ${ipv4Addr} as broadcast/multicast address`, event.message);
       return
     }
 
@@ -409,7 +409,7 @@ class DeviceHook extends Hook {
                 if (enabled) {
                   await this.createAlarm(enrichedHost, 'device_online');
                 } else {
-                  log.info("Device presence is disabled for " + host.mac);
+                  log.verbose("Device presence is disabled for " + host.mac);
                 }
               } catch (err) {
                 log.error("Failed to load device presence settings", err);
@@ -498,7 +498,7 @@ class DeviceHook extends Hook {
                 if (enabled) {
                   await this.createAlarm(enrichedHost, 'device_online');
                 } else {
-                  log.info("Device presence is disabled for " + host.mac);
+                  log.verbose("Device presence is disabled for " + host.mac);
                 }
               } catch (err) {
                 log.error("Failed to load device presence settings", err);
@@ -590,7 +590,7 @@ class DeviceHook extends Hook {
                 if (enabled) {
                   await this.createAlarm(enrichedHost, 'device_online');
                 } else {
-                  log.info("Device presence is disabled for " + host.mac);
+                  log.verbose("Device presence is disabled for " + host.mac);
                 }
               } catch (err) {
                 log.error("Failed to load device presence settings", err);
@@ -632,7 +632,7 @@ class DeviceHook extends Hook {
             if (enabled) {
               await this.createAlarm(host, 'device_offline');
             } else {
-              log.info("Device presence is disabled for " + host.mac);
+              log.verbose("Device presence is disabled for " + host.mac);
             }
           } catch (err) {
             log.error("Failed to load device presence settings", err);

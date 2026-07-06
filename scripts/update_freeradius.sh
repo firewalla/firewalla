@@ -55,6 +55,8 @@ function get_image_tag() {
 function get_image() {
   if [[ "$image_tag" == "dev" || "$image_tag" == "test" ]]; then
     image="public.ecr.aws/a0j1s2e9/freeradius-dev:${image_tag}"
+  elif [[ -n "$RADIUS_REPO" ]]; then
+    image="${RADIUS_REPO}:${image_tag}"
   else
     image="public.ecr.aws/a0j1s2e9/freeradius:${image_tag}"
   fi
@@ -62,8 +64,8 @@ function get_image() {
 
 if [ -z "$image_tag" ]; then
   get_image_tag
-  get_image
 fi
+get_image
 
 cleanup_dangling_images
 
