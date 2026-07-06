@@ -425,6 +425,14 @@ class Platform {
     if (module_name == "xt_udp_tls" && !this.isUdpTLSBlockSupport()) {
       return;
     }
+    if (module_name == "xt_udp_tls") {
+      const kernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
+      const disabled = await kernelCrashMonitor.shouldDisableUdpTls();
+      if (disabled) {
+        log.warn("Skipping xt_udp_tls installation: disabled due to prior kernel crash with same module version");
+        return;
+      }
+    }
     const installed = await this.isTLSModuleInstalled(module_name);
     if (installed) return;
     const codename = await exec(`lsb_release -cs`).then((result) => result.stdout.trim()).catch((err) => {
@@ -475,6 +483,10 @@ class Platform {
       return;
     }
     this.installedModules[module_name] = true;
+    if (module_name == "xt_udp_tls") {
+      const kernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
+      await kernelCrashMonitor.onUdpTlsModuleLoaded(koExists ? koPath : 'xt_udp_tls');
+    }
   }
   async installTLSModules() {
     await this.installTLSModule("xt_tls");
