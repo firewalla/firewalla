@@ -191,7 +191,8 @@ async function initializeGroup() {
   let meta = JSON.stringify({
     'type': config.serviceType,
     'member': config.memberType,
-    'model': platform.getName()
+    'model': platform.getName(),
+    'iv': 1
   });
   const result = await eptcloud.eptCreateGroup(config.service, meta, config.endpoint_name)
   log.info(result);
