@@ -2288,6 +2288,12 @@ class netBot extends ControllerBot {
       case "rekey":
         await this.eptcloud.reKeyForAll(gid);
         return
+      case "upgradeIv": {
+        // Back-fill the "iv" marker into the group info via the cloud
+        // update-group API. No-op if the group already has iv configured.
+        const ivVersion = (value && value.iv) || 1;
+        return await this.eptcloud.upgradeGroupInfoIV(gid, ivVersion);
+      }
       case "syncLegacyKeyToNewKey":
         await this.eptcloud.syncLegacyKeyToNewKey(gid);
         return
