@@ -17,11 +17,36 @@
 const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const { exec } = require('child-process-promise');
+const uuid = require('uuid');
 
 const REDIS_KEY = "kernel_crash_info";
+const LOCK_KEY = "kernel_crash_info:lock";
+const LOCK_TTL_SEC = 60;
 const PSTORE_PATH = "/sys/fs/pstore";
 const PSTORE_ARCHIVE_PATH = "/log/system/pstore";
 const PSTORE_ARCHIVE_MAX_DIRS = 3;
+
+// FireMain and FireApi both call checkPstoreAndUpdateRedis on startup; guard the
+// pstore scan/archive/delete with a cross-process redis lock so they don't race.
+async function acquireLock(token) {
+  const result = await rclient.setAsync(LOCK_KEY, token, 'NX', 'EX', LOCK_TTL_SEC);
+  return result === 'OK';
+}
+
+async function releaseLock(token) {
+  const releaseLockLua = `
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+      return redis.call("del", KEYS[1])
+    else
+      return 0
+    end
+  `;
+  try {
+    await rclient.evalAsync(releaseLockLua, 1, LOCK_KEY, token);
+  } catch (err) {
+    log.warn("Failed to release kernel_crash_info lock:", err.message);
+  }
+}
 
 // parse "version:" and "srcversion:" lines from modinfo output
 async function getModuleVersion(koPathOrName) {
@@ -90,8 +115,16 @@ async function archiveAndClearPstore(crashTS) {
   }
 }
 
-// Called at FireMain startup. koPath is the path to xt_udp_tls.ko (may not exist yet).
+// Called at FireMain and FireApi startup. koPath is the path to xt_udp_tls.ko (may not exist yet).
 async function checkPstoreAndUpdateRedis(koPath) {
+  const token = uuid.v4();
+  if (!await acquireLock(token).catch((err) => {
+    log.error("Failed to acquire kernel_crash_info lock:", err.message);
+    return false;
+  })) {
+    log.info("Another process is already checking pstore, skipping");
+    return;
+  }
   try {
     const crashInfo = await readCrashInfo();
     // find dmesg-* pstore files newest first
@@ -178,6 +211,7 @@ async function checkPstoreAndUpdateRedis(koPath) {
         
     if (!crashInfo.monitorStartedAt) {
       crashInfo.monitorStartedAt = Math.round(Date.now() / 1000);
+      updateCrashInfoNeed = true;
     }
 
 
@@ -191,6 +225,8 @@ async function checkPstoreAndUpdateRedis(koPath) {
       await archiveAndClearPstore(latestCrashTSSec);
   } catch (err) {
     log.error("Error in checkPstoreAndUpdateRedis:", err.message);
+  } finally {
+    await releaseLock(token);
   }
 }
 
