@@ -25,8 +25,8 @@
  * Usage (run on the box):
  *   node scripts/test_encipher_iv.js              # auto (default): decide from group info.iv
  *   node scripts/test_encipher_iv.js --auto       # same as default
- *   node scripts/test_encipher_iv.js --iv         # force random IV (sends iv field)
- *   node scripts/test_encipher_iv.js --no-iv      # force legacy zero IV (no iv field)
+ *   node scripts/test_encipher_iv.js --iv         # force random IV (embedded in { iv, message } envelope)
+ *   node scripts/test_encipher_iv.js --no-iv      # force legacy zero IV (bare base64)
  *   node scripts/test_encipher_iv.js --gid <gid>  # override group id
  *
  * Auto mode reads the group's encrypted info and uses a random IV only when
@@ -57,15 +57,30 @@ const IV_ENABLED_VALUE = 1;
 const gidArgIdx = process.argv.indexOf('--gid');
 const gidArg = gidArgIdx >= 0 ? process.argv[gidArgIdx + 1] : null;
 
-function enc(text, key, iv) {
+// Encrypt to the wire format: { iv, message } JSON envelope when ivBuf is given,
+// else legacy bare base64 (zero IV). Mirrors encipher encrypt().
+function enc(text, key, ivBuf) {
   const bkey = Buffer.from(key.substring(0, 32), 'utf8');
+  const iv = ivBuf || ZERO;
   const c = crypto.createCipheriv(ALGO, bkey, iv);
-  return c.update(text, 'utf8', 'base64') + c.final('base64');
+  const ct = c.update(text, 'utf8', 'base64') + c.final('base64');
+  return ivBuf ? JSON.stringify({ iv: ivBuf.toString('base64'), message: ct }) : ct;
 }
-function dec(text, key, iv) {
+// Decrypt a wire value; the IV (if any) is embedded in the { iv, message }
+// envelope. Returns { plaintext, usedIv }. Mirrors encipher _parseEnvelope + decrypt.
+function decEnvelope(text, key) {
+  let iv = ZERO, ct = text, usedIv = false;
+  try {
+    const p = JSON.parse(text);
+    if (typeof p === 'string') { ct = p; }
+    else if (p && typeof p === 'object' && !Array.isArray(p) && p.message != null) {
+      ct = p.message;
+      if (p.iv != null) { iv = Buffer.from(p.iv, 'base64'); usedIv = true; }
+    }
+  } catch (e) { /* raw base64, legacy */ }
   const bkey = Buffer.from(key.substring(0, 32), 'utf8');
   const d = crypto.createDecipheriv(ALGO, bkey, iv);
-  return d.update(text, 'base64', 'utf8') + d.final('utf8');
+  return { plaintext: d.update(ct, 'base64', 'utf8') + d.final('utf8'), usedIv };
 }
 // Response may be compressed (compressMode); best-effort inflate for display.
 function maybeInflate(s) {
@@ -110,7 +125,7 @@ function maybeInflate(s) {
     try {
       const g = cloud.getGroupFromCache(gid);
       if (g && g.group && g.group.info && g.key) {
-        const infoObj = JSON.parse(dec(g.group.info, g.key, ZERO));
+        const infoObj = JSON.parse(decEnvelope(g.group.info, g.key).plaintext);
         infoIv = infoObj.iv;
       }
     } catch (e) { /* leave infoIv undefined */ }
@@ -127,13 +142,13 @@ function maybeInflate(s) {
     }
   });
 
-  const reqIvBuf = useIV ? crypto.randomBytes(16) : ZERO;
+  // IV (when used) is embedded in the message envelope; no top-level iv field.
+  const reqIvBuf = useIV ? crypto.randomBytes(16) : null;
   const body = { message: enc(plaintext, key, reqIvBuf) };
-  if (useIV) body.iv = reqIvBuf.toString('base64');
 
   console.log('== REQUEST ==');
   console.log('mode        :', modeLabel);
-  console.log('sending     :', useIV ? 'random IV + iv field' : 'legacy zero IV, no iv field');
+  console.log('sending     :', useIV ? 'random IV embedded in { iv, message } envelope' : 'legacy zero IV, bare base64');
   console.log('key (masked):', key.slice(0, 8) + '...(' + key.length + ' chars)');
   console.log('endpoint    : POST http://127.0.0.1:' + PORT + '/v1/encipher/message/' + gid);
 
@@ -151,13 +166,12 @@ function maybeInflate(s) {
   let reply; try { reply = JSON.parse(res.body); } catch (e) { reply = null; }
   if (!reply) { console.log('raw reply   :', res.body.slice(0, 300)); process.exit(0); }
 
-  const replyHasIv = reply.iv != null;
-  console.log('reply.iv    :', replyHasIv ? reply.iv : '(none)');
-  console.log('>> IV USAGE : box is ' + (replyHasIv ? 'USING a per-request IV (new scheme)' : 'NOT using IV (legacy zero IV)'));
-
   if (reply.message) {
-    const replyIv = replyHasIv ? Buffer.from(reply.iv, 'base64') : ZERO;
-    let out; try { out = maybeInflate(dec(reply.message, key, replyIv)); } catch (e) { out = '<decrypt failed: ' + e.message + '>'; }
+    let out, replyUsedIv = false;
+    try { const r = decEnvelope(reply.message, key); out = maybeInflate(r.plaintext); replyUsedIv = r.usedIv; }
+    catch (e) { out = '<decrypt failed: ' + e.message + '>'; }
+    console.log('reply embeds iv:', replyUsedIv);
+    console.log('>> IV USAGE : box is ' + (replyUsedIv ? 'USING a per-request IV (new scheme)' : 'NOT using IV (legacy zero IV)'));
     console.log('== DECRYPTED REPLY (first 400 chars) ==');
     console.log(out.slice(0, 400));
   } else {

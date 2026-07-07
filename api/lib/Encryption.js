@@ -35,11 +35,6 @@ module.exports = class {
     let gid = req.params.gid;
     let message = req.body.message;
     let rkeyts = req.body.rkeyts;
-    // Optional per-request IV (base64) from the client. Its presence signals a
-    // client that understands the random-IV scheme, so the reply will echo a
-    // fresh IV. Absent => legacy fixed zero IV, fully backward compatible.
-    const iv = req.body.iv;
-    req.reqUsedIV = iv != null;
 
     if(gid == null) {
       res.status(400);
@@ -53,6 +48,16 @@ module.exports = class {
       return;
     }
 
+    // The IV (if any) is embedded in the message envelope ({ iv, message }).
+    // A request that carries an iv signals a client that understands the scheme,
+    // so the reply mirrors it with a fresh iv. Absent => legacy zero IV.
+    try {
+      const env = cloudWrapper.getCloud()._parseEnvelope(message);
+      req.reqUsedIV = !!(env && env.iv != null);
+    } catch (e) {
+      req.reqUsedIV = false;
+    }
+
     if(rkeyts) {
       const localRkeyts = cloudWrapper.getCloud().getRKeyTimestamp(gid);
       if(rkeyts !== localRkeyts) {
@@ -62,7 +67,7 @@ module.exports = class {
       }
     }
 
-    cloudWrapper.getCloud().decryptRequest(gid, message, iv).then((decryptedMessage) => {
+    cloudWrapper.getCloud().decryptRequest(gid, message).then((decryptedMessage) => {
       decryptedMessage.mtype = decryptedMessage.message.mtype;
       req.body = decryptedMessage;
       req.id = _.get(decryptedMessage, [ 'message', 'obj', 'id' ], undefined)
@@ -106,10 +111,9 @@ module.exports = class {
         res.body = encryptedResponse;
         next();
       } else {
-        const payload = { message: encryptedResponse };
-        if(ivBuf)
-          payload.iv = ivBuf.toString('base64');
-        res.json(payload);
+        // encryptedResponse is the { iv, message } envelope when useIV, else
+        // legacy bare base64; the iv travels inside message, not a top-level field.
+        res.json({ message: encryptedResponse });
       }
     }).catch((err) => {
       res.json({error: err});

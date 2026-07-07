@@ -67,18 +67,21 @@ describe('encipher per-request IV', function () {
   });
 
   describe('encrypt/decrypt round-trip', () => {
-    it('legacy zero IV round-trips (no iv on either side)', () => {
+    it('legacy: encrypt() with no iv returns bare base64 and round-trips', () => {
       const c = ept.encrypt(msg, key);
+      expect(c[0]).to.not.equal('{'); // not the JSON envelope
       expect(ept.decrypt(c, key)).to.equal(msg);
     });
 
-    it('random IV round-trips (Buffer encrypt, base64 decrypt)', () => {
-      const iv = crypto.randomBytes(16);
-      const c = ept.encrypt(msg, key, iv);
-      expect(ept.decrypt(c, key, iv.toString('base64'))).to.equal(msg);
+    it('encrypt() with an iv returns a { iv, message } envelope that round-trips', () => {
+      const c = ept.encrypt(msg, key, crypto.randomBytes(16));
+      const env = JSON.parse(c);
+      expect(env).to.have.property('iv');
+      expect(env).to.have.property('message');
+      expect(ept.decrypt(c, key)).to.equal(msg); // iv read from envelope, not passed
     });
 
-    it('random IV makes ciphertext non-deterministic', () => {
+    it('random IV makes the envelope non-deterministic', () => {
       const c1 = ept.encrypt(msg, key, crypto.randomBytes(16));
       const c2 = ept.encrypt(msg, key, crypto.randomBytes(16));
       expect(c1).to.not.equal(c2);
@@ -88,18 +91,54 @@ describe('encipher per-request IV', function () {
       expect(ept.encrypt(msg, key)).to.equal(ept.encrypt(msg, key));
     });
 
-    it('a random-IV ciphertext does not decrypt back to the plaintext under the zero IV', () => {
-      const c = ept.encrypt(msg, key, crypto.randomBytes(16));
-      expect(ept.decrypt(c, key)).to.not.equal(msg);
+    it('decrypt accepts a JSON-encoded legacy string', () => {
+      const bare = ept.encrypt(msg, key);
+      expect(ept.decrypt(JSON.stringify(bare), key)).to.equal(msg);
     });
 
-    it('decrypt returns null (does not throw) on a malformed IV', () => {
-      const c = ept.encrypt(msg, key, crypto.randomBytes(16));
-      expect(ept.decrypt(c, key, 'not-a-valid-iv')).to.equal(null);
+    it('decrypt treats { message } without iv as legacy zero IV', () => {
+      const bare = ept.encrypt(msg, key);
+      expect(ept.decrypt(JSON.stringify({ message: bare }), key)).to.equal(msg);
+    });
+
+    it('decrypt returns null on an envelope missing message', () => {
+      expect(ept.decrypt(JSON.stringify({}), key)).to.equal(null);
+      expect(ept.decrypt(JSON.stringify({ iv: crypto.randomBytes(16).toString('base64') }), key)).to.equal(null);
+    });
+
+    it('decrypt returns null (does not throw) on a malformed iv in the envelope', () => {
+      expect(ept.decrypt(JSON.stringify({ iv: 'not-a-valid-iv', message: 'AAAAAAAAAAAAAAAAAAAAAA==' }), key)).to.equal(null);
     });
 
     it('encrypt throws on a malformed IV', () => {
       expect(() => ept.encrypt(msg, key, 'not-a-valid-iv')).to.throw();
+    });
+  });
+
+  describe('_parseEnvelope', () => {
+    it('raw base64 (not JSON) -> legacy, no iv', () => {
+      const e = ept._parseEnvelope('uJPZ6RTZAAWR1Wmc');
+      expect(e.iv).to.equal(null);
+      expect(e.ct).to.equal('uJPZ6RTZAAWR1Wmc');
+    });
+    it('JSON string -> legacy, no iv', () => {
+      const e = ept._parseEnvelope('"uJPZ6RTZAAWR1Wmc"');
+      expect(e.iv).to.equal(null);
+      expect(e.ct).to.equal('uJPZ6RTZAAWR1Wmc');
+    });
+    it('{ iv, message } -> both parsed', () => {
+      const e = ept._parseEnvelope(JSON.stringify({ iv: 'AA==', message: 'BB' }));
+      expect(e.iv).to.equal('AA==');
+      expect(e.ct).to.equal('BB');
+    });
+    it('{ message } -> legacy fallback', () => {
+      const e = ept._parseEnvelope(JSON.stringify({ message: 'BB' }));
+      expect(e.iv).to.equal(null);
+      expect(e.ct).to.equal('BB');
+    });
+    it('object without message -> invalid', () => {
+      expect(ept._parseEnvelope(JSON.stringify({})).invalid).to.equal(true);
+      expect(ept._parseEnvelope(JSON.stringify({ iv: 'AA==' })).invalid).to.equal(true);
     });
   });
 });

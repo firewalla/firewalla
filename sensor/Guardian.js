@@ -667,12 +667,14 @@ module.exports = class {
     if (controller && this.socket) {
       const encryptedMessage = message.message;
       const replyid = message.replyid; // replyid will not encrypted
-      const reqIV = message.iv; // optional per-request IV (base64), not encrypted
       let response, decryptedMessage, code = 200, encryptedResponse;
-      // Only echo a fresh IV when the client (MSP) negotiated one on the request.
-      const replyIVBuf = reqIV != null ? crypto.randomBytes(16) : null;
+      // The IV (if any) is embedded in the message envelope ({ iv, message }).
+      // Only echo a fresh IV when the client (MSP) used one on the request.
+      let reqUsedIV = false;
+      try { const env = cw.getCloud()._parseEnvelope(encryptedMessage); reqUsedIV = !!(env && env.iv != null); } catch (e) {}
+      const replyIVBuf = reqUsedIV ? crypto.randomBytes(16) : null;
       try {
-        decryptedMessage = await cw.getCloud().decryptRequest(gid, encryptedMessage, reqIV);
+        decryptedMessage = await cw.getCloud().decryptRequest(gid, encryptedMessage);
         decryptedMessage.mtype = decryptedMessage.message.mtype;
         const obj = decryptedMessage.message.obj;
         const item = obj.data.item;
@@ -718,15 +720,13 @@ module.exports = class {
       try {
         if (this.socket) {
           this.socket.emit("send_from_box", {
+            // The reply IV (if any) is embedded in the message envelope, so no
+            // top-level iv field. On error frames encryptedResponse is undefined.
             message: encryptedResponse,
             gid: gid,
             mspId: mspId,
             replyid: replyid,
-            code: code,
-            // Only advertise the reply IV when we actually produced an encrypted
-            // response with it; error frames (no encryptedResponse) must not
-            // carry an iv the client would try to decrypt with.
-            ...(replyIVBuf && code === 200 && encryptedResponse ? { iv: replyIVBuf.toString('base64') } : {})
+            code: code
           });
         }
         log.debug("response sent to back web cloud, req id:", decryptedMessage ? decryptedMessage.message.obj.id : "decryption error", this.name);

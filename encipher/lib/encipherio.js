@@ -829,12 +829,48 @@ let legoEptCloud = class {
     return ivBuf;
   }
 
+  // Parse the on-the-wire message value into { iv, ct, invalid }.
+  // The value is one of:
+  //   - a raw base64 ciphertext string (not JSON)     -> legacy, zero IV
+  //   - a JSON-encoded string "<base64>"              -> legacy, zero IV
+  //   - a JSON object { message, iv }                 -> use iv
+  //   - a JSON object { message } (no iv)             -> legacy fallback, zero IV
+  //   - a JSON object without message                 -> invalid
+  // The base64 alphabet has no '{' or '"', so a legacy bare-base64 string never
+  // collides with the JSON forms. Keeping iv inside the message keeps the
+  // envelope extensible (e.g. a future auth tag can be added as another field).
+  _parseEnvelope(text) {
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      return { iv: null, ct: text }; // not JSON -> raw base64 (legacy)
+    }
+    if (typeof parsed === 'string') {
+      return { iv: null, ct: parsed }; // JSON-encoded string (legacy)
+    }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      if (parsed.message != null) {
+        return { iv: parsed.iv != null ? parsed.iv : null, ct: parsed.message };
+      }
+      return { invalid: true }; // object without a message field
+    }
+    return { iv: null, ct: text }; // number/boolean/array/null -> treat as legacy base64
+  }
+
+  // Encrypt utf8 text. When iv is provided, returns a JSON envelope string
+  // { iv, message } (both base64) so the IV travels with the ciphertext; when
+  // iv is absent, returns the legacy bare base64 ciphertext (zero IV).
   encrypt(text, key, iv) {
+    const ivBuf = this._normalizeIV(iv);
     let bkey = Buffer.from(key.substring(0, 32), "utf8");
-    let cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, this._normalizeIV(iv));
+    let cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, ivBuf);
     let crypted = cipher.update(text, 'utf8', 'base64');
     crypted += cipher.final('base64');
-    return crypted;
+    if (iv == null) {
+      return crypted; // legacy: bare base64
+    }
+    return JSON.stringify({ iv: ivBuf.toString('base64'), message: crypted });
   }
 
   encryptBinary(data, key) {
@@ -854,11 +890,18 @@ let legoEptCloud = class {
     return crypted;
   }
 
-  decrypt(text, key, iv) {
+  // Decrypt a message value. The IV (if any) is carried inside the value via
+  // the { iv, message } envelope; see _parseEnvelope for the accepted forms.
+  decrypt(text, key) {
     try {
+      const env = this._parseEnvelope(text);
+      if (env.invalid) {
+        log.error("Failed to decrypt message: invalid envelope (no message field)");
+        return null;
+      }
       let bkey = Buffer.from(key.substring(0, 32), "utf8");
-      let decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, this._normalizeIV(iv));
-      let dec = decipher.update(text, 'base64', 'utf8');
+      let decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, this._normalizeIV(env.iv));
+      let dec = decipher.update(env.ct, 'base64', 'utf8');
       dec += decipher.final('utf8');
       return dec;
     } catch(err) {
@@ -867,18 +910,18 @@ let legoEptCloud = class {
     }
   }
 
-  // IV-aware request decryption for the netbot req/response path. Mirrors
-  // receiveMessage but takes an optional per-request IV (base64) from the client
-  // and returns a promise. When iv is absent, the legacy zero IV is used, so old
-  // clients are unaffected.
-  decryptRequest(gid, msg, iv) {
+  // Request decryption for the netbot req/response path. Mirrors receiveMessage
+  // and returns a promise. The IV (if any) is carried inside the message
+  // envelope ({ iv, message }); legacy bare-base64 messages decrypt with the
+  // zero IV, so old clients are unaffected.
+  decryptRequest(gid, msg) {
     return new Promise((resolve, reject) => {
       this.getKey(gid, false, (err, key) => {
         if (key == null) {
           reject(err || new Error("key not found, invalid group?"));
           return;
         }
-        const decrypted = this.decrypt(msg, key, iv);
+        const decrypted = this.decrypt(msg, key);
         if (decrypted === null) {
           reject(new Error("decrypt_error"));
           return;
