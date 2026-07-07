@@ -26,63 +26,66 @@ const PSTORE_ARCHIVE_PATH = '/log/system/pstore';
 class FakeRedis {
   constructor() { this._store = {}; }
   async getAsync(key) { return this._store[key] !== undefined ? this._store[key] : null; }
-  async setAsync(key, val) { this._store[key] = val; }
+  // emulates SET key val [NX] [EX seconds]: NX fails (returns null) if the key is already set
+  async setAsync(key, val, ...opts) {
+    if (opts[0] === 'NX' && this._store[key] !== undefined) return null;
+    this._store[key] = val;
+    return 'OK';
+  }
+  // emulates the compare-and-delete lua script used by releaseLock()
+  async evalAsync(script, numKeys, key, token) {
+    if (this._store[key] === token) {
+      delete this._store[key];
+      return 1;
+    }
+    return 0;
+  }
   seed(obj) { this._store[REDIS_KEY] = JSON.stringify(obj); }
 }
 
-// ─── quoted-path extraction (skips the fixed grep/pattern literals) ────────
-
-function extractPaths(cmd) {
-  const quoted = cmd.match(/"([^"]*)"/g) || [];
-  return quoted
-    .map(s => s.slice(1, -1))
-    .filter(s => s !== 'Kernel panic' && s !== 'Modules linked in:.*xt_udp_tls');
-}
-
-// ─── fake exec: routes on command shape, records every call ───────────────
+// ─── fake execFile: routes on (file, args) shape, records every call ──────
 //
 // fixtures:
-//   modinfoOutput: string | null            -- stdout for `modinfo ...` (null => reject)
-//   dmesgFindOutput: string                 -- stdout for the pstore `find ... dmesg-*` scan
+//   modinfoOutput: string | null            -- stdout for `modinfo <arg>` (null => reject)
+//   dmesgFindOutput: string                 -- stdout for the pstore `find ... -name dmesg-*` scan
 //   fileContents: { path: content }         -- backing content for grep/cat over dmesg files
-//   archiveDirs: string[]                   -- stdout lines for `ls -1 ARCHIVE_PATH | sort -n`
-//   failOn: (cmd) => boolean                -- force a command to reject
-function makeExec(fixtures) {
+//   archiveDirs: string[]                   -- stdout lines for `ls -1 ARCHIVE_PATH`
+//   failOn: (cmd) => boolean                -- force a command to reject (cmd = "file arg1 arg2 ...")
+function makeExecFile(fixtures) {
   const execLog = [];
-  const exec = async (cmd) => {
+  const execFile = async (file, args = []) => {
+    const cmd = [file, ...args].join(' ');
     execLog.push(cmd);
     if (fixtures.failOn && fixtures.failOn(cmd)) {
       throw new Error(`forced failure: ${cmd}`);
     }
-    if (cmd.startsWith('modinfo ')) {
+    if (file === 'modinfo') {
       if (fixtures.modinfoOutput == null) throw new Error('modinfo: command not found');
       return { stdout: fixtures.modinfoOutput };
     }
-    if (cmd.includes('-name "dmesg-*"')) {
+    if (file === 'sudo' && args[0] === 'find' && args.includes('-name')) {
       return { stdout: fixtures.dmesgFindOutput || '' };
     }
-    if (cmd.includes('grep -l "Kernel panic"')) {
-      const paths = extractPaths(cmd);
+    if (file === 'sudo' && args[0] === 'grep' && args[1] === '-l') {
+      const paths = args.slice(3); // ['grep', '-l', 'Kernel panic', ...paths]
       const matches = paths.filter(p => (fixtures.fileContents[p] || '').includes('Kernel panic'));
       if (matches.length === 0) throw new Error('grep: no match'); // grep -l exits 1 on no match
       return { stdout: matches.join('\n') };
     }
-    if (cmd.includes('grep -Eq "Modules linked in:.*xt_udp_tls"')) {
-      const paths = extractPaths(cmd);
-      const matched = paths.some(p => /Modules linked in:.*xt_udp_tls/.test(fixtures.fileContents[p] || ''));
-      if (!matched) throw new Error('grep -q: no match');
-      return { stdout: '' };
+    if (file === 'sudo' && args[0] === 'cat') {
+      const paths = args.slice(1);
+      return { stdout: paths.map(p => fixtures.fileContents[p] || '').join('') };
     }
-    if (cmd.startsWith(`ls -1 ${PSTORE_ARCHIVE_PATH}`)) {
+    if (file === 'ls') {
       return { stdout: (fixtures.archiveDirs || []).join('\n') };
     }
     // mkdir / rm / cp / find -delete and anything else: succeed silently
     return { stdout: '' };
   };
-  return { exec, execLog };
+  return { execFile, execLog };
 }
 
-function loadKCM(fakeRedis, execImpl) {
+function loadKCM(fakeRedis, execFileImpl) {
   const logs = { info: [], debug: [], warn: [], error: [] };
   const mod = proxyquire('../net2/KernelCrashMonitor.js', {
     '../util/redis_manager.js': { getRedisClient: () => fakeRedis, '@noCallThru': true },
@@ -92,7 +95,7 @@ function loadKCM(fakeRedis, execImpl) {
       warn: (...a) => logs.warn.push(a.join(' ')),
       error: (...a) => logs.error.push(a.join(' ')),
     }),
-    'child-process-promise': { exec: execImpl, '@noCallThru': true },
+    'child-process-promise': { execFile: execFileImpl, '@noCallThru': true },
   });
   mod._logs = logs;
   return mod;
@@ -112,22 +115,22 @@ describe('KernelCrashMonitor', function () {
 
   describe('getCrashInfo', function () {
     it('returns {} when redis has no entry', async function () {
-      const { exec } = makeExec({});
-      const kcm = loadKCM(fakeRedis, exec);
+      const { execFile } = makeExecFile({});
+      const kcm = loadKCM(fakeRedis, execFile);
       expect(await kcm.getCrashInfo()).to.deep.equal({});
     });
 
     it('returns the parsed object when redis has valid JSON', async function () {
       fakeRedis.seed({ crashesCount: 2, shouldDisableUdpTls: true });
-      const { exec } = makeExec({});
-      const kcm = loadKCM(fakeRedis, exec);
+      const { execFile } = makeExecFile({});
+      const kcm = loadKCM(fakeRedis, execFile);
       expect(await kcm.getCrashInfo()).to.deep.equal({ crashesCount: 2, shouldDisableUdpTls: true });
     });
 
     it('resets to {} and warns when the stored value is invalid JSON', async function () {
       fakeRedis._store[REDIS_KEY] = '{not json';
-      const { exec } = makeExec({});
-      const kcm = loadKCM(fakeRedis, exec);
+      const { execFile } = makeExecFile({});
+      const kcm = loadKCM(fakeRedis, execFile);
       const info = await kcm.getCrashInfo();
       expect(info).to.deep.equal({});
       expect(kcm._logs.warn.some(m => m.includes('kernel_crash_info'))).to.be.true;
@@ -139,21 +142,21 @@ describe('KernelCrashMonitor', function () {
   describe('shouldDisableUdpTls', function () {
     it('returns true when crashInfo.shouldDisableUdpTls is true', async function () {
       fakeRedis.seed({ shouldDisableUdpTls: true });
-      const { exec } = makeExec({});
-      const kcm = loadKCM(fakeRedis, exec);
+      const { execFile } = makeExecFile({});
+      const kcm = loadKCM(fakeRedis, execFile);
       expect(await kcm.shouldDisableUdpTls()).to.be.true;
     });
 
     it('returns false when unset', async function () {
-      const { exec } = makeExec({});
-      const kcm = loadKCM(fakeRedis, exec);
+      const { execFile } = makeExecFile({});
+      const kcm = loadKCM(fakeRedis, execFile);
       expect(await kcm.shouldDisableUdpTls()).to.be.false;
     });
 
     it('returns false and logs an error when redis fails', async function () {
-      const { exec } = makeExec({});
+      const { execFile } = makeExecFile({});
       const brokenRedis = { getAsync: async () => { throw new Error('redis down'); } };
-      const kcm = loadKCM(brokenRedis, exec);
+      const kcm = loadKCM(brokenRedis, execFile);
       expect(await kcm.shouldDisableUdpTls()).to.be.false;
       expect(kcm._logs.error.length).to.equal(1);
     });
@@ -164,8 +167,8 @@ describe('KernelCrashMonitor', function () {
   describe('onUdpTlsModuleLoaded', function () {
     it('records the module version and clears shouldDisableUdpTls', async function () {
       fakeRedis.seed({ shouldDisableUdpTls: true, udpTlsDisabledOn: 12345 });
-      const { exec } = makeExec({ modinfoOutput: modinfoStdout('1.0', 'abc123') });
-      const kcm = loadKCM(fakeRedis, exec);
+      const { execFile } = makeExecFile({ modinfoOutput: modinfoStdout('1.0', 'abc123') });
+      const kcm = loadKCM(fakeRedis, execFile);
 
       await kcm.onUdpTlsModuleLoaded('/lib/modules/xt_udp_tls.ko');
 
@@ -175,8 +178,8 @@ describe('KernelCrashMonitor', function () {
     });
 
     it('defaults to the module name "xt_udp_tls" when no path is given', async function () {
-      const { exec, execLog } = makeExec({ modinfoOutput: modinfoStdout('2.0', 'def456') });
-      const kcm = loadKCM(fakeRedis, exec);
+      const { execFile, execLog } = makeExecFile({ modinfoOutput: modinfoStdout('2.0', 'def456') });
+      const kcm = loadKCM(fakeRedis, execFile);
 
       await kcm.onUdpTlsModuleLoaded();
 
@@ -185,8 +188,8 @@ describe('KernelCrashMonitor', function () {
 
     it('still clears shouldDisableUdpTls when modinfo fails, without clobbering stored version', async function () {
       fakeRedis.seed({ shouldDisableUdpTls: true, udpModuleVersion: { version: '1.0', srcversion: 'abc' } });
-      const { exec } = makeExec({ modinfoOutput: null });
-      const kcm = loadKCM(fakeRedis, exec);
+      const { execFile } = makeExecFile({ modinfoOutput: null });
+      const kcm = loadKCM(fakeRedis, execFile);
 
       await kcm.onUdpTlsModuleLoaded('xt_udp_tls');
 
@@ -196,12 +199,12 @@ describe('KernelCrashMonitor', function () {
     });
 
     it('logs an error and does not throw when redis save fails', async function () {
-      const { exec } = makeExec({ modinfoOutput: modinfoStdout('1.0', 'abc') });
+      const { execFile } = makeExecFile({ modinfoOutput: modinfoStdout('1.0', 'abc') });
       const brokenRedis = {
         getAsync: async () => null,
         setAsync: async () => { throw new Error('redis write failed'); },
       };
-      const kcm = loadKCM(brokenRedis, exec);
+      const kcm = loadKCM(brokenRedis, execFile);
 
       await kcm.onUdpTlsModuleLoaded('xt_udp_tls');
       expect(kcm._logs.error.length).to.equal(1);
@@ -212,38 +215,43 @@ describe('KernelCrashMonitor', function () {
 
   describe('checkPstoreAndUpdateRedis', function () {
     it('does nothing when no dmesg files exist in pstore', async function () {
-      const { exec, execLog } = makeExec({ dmesgFindOutput: '' });
-      const kcm = loadKCM(fakeRedis, exec);
+      const { execFile, execLog } = makeExecFile({ dmesgFindOutput: '' });
+      const kcm = loadKCM(fakeRedis, execFile);
 
       await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
 
-      expect(await kcm.getCrashInfo()).to.deep.equal({});
+      const info = await kcm.getCrashInfo();
+      expect(info.crashesCount).to.be.undefined;
+      // monitorStartedAt is always recorded on first run, crash-related fields or not
+      expect(info.monitorStartedAt).to.be.a('number').and.above(0);
       expect(execLog.some(c => c.startsWith('sudo cp -a'))).to.be.false;
     });
 
     it('archives pstore but leaves crash info untouched when no "Kernel panic" is found', async function () {
       const dmesgFindOutput = `100.0 ${PSTORE_PATH}/dmesg-a\n`;
-      const { exec, execLog } = makeExec({
+      const { execFile, execLog } = makeExecFile({
         dmesgFindOutput,
         fileContents: { [`${PSTORE_PATH}/dmesg-a`]: 'some unrelated log output' },
       });
-      const kcm = loadKCM(fakeRedis, exec);
+      const kcm = loadKCM(fakeRedis, execFile);
 
       await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
 
-      expect(await kcm.getCrashInfo()).to.deep.equal({});
+      const info = await kcm.getCrashInfo();
+      expect(info.crashesCount).to.be.undefined;
+      expect(info.monitorStartedAt).to.be.a('number').and.above(0);
       // still archives to free up pstore space, using the newest dmesg file's ts (100)
-      expect(execLog.some(c => c.startsWith(`sudo mkdir -p "${PSTORE_ARCHIVE_PATH}/100"`))).to.be.true;
+      expect(execLog.some(c => c.startsWith(`sudo mkdir -p ${PSTORE_ARCHIVE_PATH}/100`))).to.be.true;
       expect(execLog.some(c => c.includes(`find ${PSTORE_PATH} -mindepth 1 -delete`))).to.be.true;
     });
 
     it('archives pstore but does not touch crashesCount for a non-udp-tls kernel panic', async function () {
       const dmesgFindOutput = `200.0 ${PSTORE_PATH}/dmesg-a\n`;
-      const { exec } = makeExec({
+      const { execFile } = makeExecFile({
         dmesgFindOutput,
         fileContents: { [`${PSTORE_PATH}/dmesg-a`]: 'Kernel panic - not syncing\nModules linked in: ext4 usb_storage' },
       });
-      const kcm = loadKCM(fakeRedis, exec);
+      const kcm = loadKCM(fakeRedis, execFile);
 
       await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
 
@@ -254,14 +262,14 @@ describe('KernelCrashMonitor', function () {
 
     it('records a udp-tls crash: bumps crashesCount and sets shouldDisableUdpTls', async function () {
       const dmesgFindOutput = `300.0 ${PSTORE_PATH}/dmesg-a\n`;
-      const { exec } = makeExec({
+      const { execFile } = makeExecFile({
         dmesgFindOutput,
         modinfoOutput: modinfoStdout('1.0', 'abc'),
         fileContents: {
           [`${PSTORE_PATH}/dmesg-a`]: 'Kernel panic - not syncing\nModules linked in: xt_udp_tls ext4',
         },
       });
-      const kcm = loadKCM(fakeRedis, exec);
+      const kcm = loadKCM(fakeRedis, execFile);
 
       await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
 
@@ -275,13 +283,13 @@ describe('KernelCrashMonitor', function () {
     it('does not double-count a udp-tls crash that is not newer than the last recorded one', async function () {
       fakeRedis.seed({ lastCrashTS: 500, crashesCount: 1, shouldDisableUdpTls: true });
       const dmesgFindOutput = `500.0 ${PSTORE_PATH}/dmesg-a\n`;
-      const { exec } = makeExec({
+      const { execFile } = makeExecFile({
         dmesgFindOutput,
         fileContents: {
           [`${PSTORE_PATH}/dmesg-a`]: 'Kernel panic - not syncing\nModules linked in: xt_udp_tls ext4',
         },
       });
-      const kcm = loadKCM(fakeRedis, exec);
+      const kcm = loadKCM(fakeRedis, execFile);
 
       await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
 
@@ -293,13 +301,13 @@ describe('KernelCrashMonitor', function () {
     it('bumps crashesCount again for a newer udp-tls crash', async function () {
       fakeRedis.seed({ lastCrashTS: 100, crashesCount: 1, shouldDisableUdpTls: true });
       const dmesgFindOutput = `600.0 ${PSTORE_PATH}/dmesg-a\n`;
-      const { exec } = makeExec({
+      const { execFile } = makeExecFile({
         dmesgFindOutput,
         fileContents: {
           [`${PSTORE_PATH}/dmesg-a`]: 'Kernel panic - not syncing\nModules linked in: xt_udp_tls ext4',
         },
       });
-      const kcm = loadKCM(fakeRedis, exec);
+      const kcm = loadKCM(fakeRedis, execFile);
 
       await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
 
@@ -312,14 +320,14 @@ describe('KernelCrashMonitor', function () {
       const dmesgFindOutput =
         `700.0 ${PSTORE_PATH}/dmesg-old\n` +
         `900.0 ${PSTORE_PATH}/dmesg-new\n`;
-      const { exec } = makeExec({
+      const { execFile } = makeExecFile({
         dmesgFindOutput,
         fileContents: {
           [`${PSTORE_PATH}/dmesg-old`]: 'Kernel panic - not syncing\nModules linked in: xt_udp_tls',
           [`${PSTORE_PATH}/dmesg-new`]: 'Kernel panic - not syncing\nModules linked in: xt_udp_tls',
         },
       });
-      const kcm = loadKCM(fakeRedis, exec);
+      const kcm = loadKCM(fakeRedis, execFile);
 
       await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
 
@@ -332,11 +340,11 @@ describe('KernelCrashMonitor', function () {
         udpTlsDisabledOn: 111,
         udpModuleVersion: { version: '1.0', srcversion: 'old' },
       });
-      const { exec } = makeExec({
+      const { execFile } = makeExecFile({
         dmesgFindOutput: '', // no new crash this run
         modinfoOutput: modinfoStdout('2.0', 'new'),
       });
-      const kcm = loadKCM(fakeRedis, exec);
+      const kcm = loadKCM(fakeRedis, execFile);
 
       await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
 
@@ -351,11 +359,11 @@ describe('KernelCrashMonitor', function () {
         udpTlsDisabledOn: 111,
         udpModuleVersion: { version: '1.0', srcversion: 'same' },
       });
-      const { exec } = makeExec({
+      const { execFile } = makeExecFile({
         dmesgFindOutput: '',
         modinfoOutput: modinfoStdout('1.0', 'same'),
       });
-      const kcm = loadKCM(fakeRedis, exec);
+      const kcm = loadKCM(fakeRedis, execFile);
 
       await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
 
@@ -369,11 +377,11 @@ describe('KernelCrashMonitor', function () {
         udpTlsDisabledOn: 111,
         udpModuleVersion: { version: '1.0', srcversion: 'old' },
       });
-      const { exec } = makeExec({
+      const { execFile } = makeExecFile({
         dmesgFindOutput: '',
         modinfoOutput: null, // koPath doesn't exist yet -> unknown version
       });
-      const kcm = loadKCM(fakeRedis, exec);
+      const kcm = loadKCM(fakeRedis, execFile);
 
       await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
 
@@ -383,38 +391,43 @@ describe('KernelCrashMonitor', function () {
 
     it('cleans up old pstore archives, keeping only the most recent ones, before writing the new one', async function () {
       const dmesgFindOutput = `400.0 ${PSTORE_PATH}/dmesg-a\n`;
-      const { exec, execLog } = makeExec({
+      const { execFile, execLog } = makeExecFile({
         dmesgFindOutput,
         fileContents: { [`${PSTORE_PATH}/dmesg-a`]: 'no panic here' },
         archiveDirs: ['100', '200', '300'], // 3 existing archives, PSTORE_ARCHIVE_MAX_DIRS=3 keeps 2
       });
-      const kcm = loadKCM(fakeRedis, exec);
+      const kcm = loadKCM(fakeRedis, execFile);
 
       await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
 
-      expect(execLog.some(c => c === `sudo rm -rf "${PSTORE_ARCHIVE_PATH}/100"`)).to.be.true;
-      expect(execLog.some(c => c === `sudo rm -rf "${PSTORE_ARCHIVE_PATH}/200"`)).to.be.false;
-      expect(execLog.some(c => c === `sudo rm -rf "${PSTORE_ARCHIVE_PATH}/300"`)).to.be.false;
-      expect(execLog.some(c => c.startsWith(`sudo mkdir -p "${PSTORE_ARCHIVE_PATH}/400"`))).to.be.true;
+      expect(execLog.some(c => c === `sudo rm -rf ${PSTORE_ARCHIVE_PATH}/100`)).to.be.true;
+      expect(execLog.some(c => c === `sudo rm -rf ${PSTORE_ARCHIVE_PATH}/200`)).to.be.false;
+      expect(execLog.some(c => c === `sudo rm -rf ${PSTORE_ARCHIVE_PATH}/300`)).to.be.false;
+      expect(execLog.some(c => c.startsWith(`sudo mkdir -p ${PSTORE_ARCHIVE_PATH}/400`))).to.be.true;
     });
 
     it('does not throw when pstore archiving fails', async function () {
       const dmesgFindOutput = `400.0 ${PSTORE_PATH}/dmesg-a\n`;
-      const { exec } = makeExec({
+      const { execFile } = makeExecFile({
         dmesgFindOutput,
         fileContents: { [`${PSTORE_PATH}/dmesg-a`]: 'no panic here' },
         failOn: (cmd) => cmd.startsWith(`sudo mkdir -p ${PSTORE_ARCHIVE_PATH}`),
       });
-      const kcm = loadKCM(fakeRedis, exec);
+      const kcm = loadKCM(fakeRedis, execFile);
 
       await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
       expect(kcm._logs.error.some(m => m.includes('archive/clear pstore'))).to.be.true;
     });
 
     it('does not throw when redis is unavailable', async function () {
-      const { exec } = makeExec({ dmesgFindOutput: '' });
-      const brokenRedis = { getAsync: async () => { throw new Error('redis down'); } };
-      const kcm = loadKCM(brokenRedis, exec);
+      const { execFile } = makeExecFile({ dmesgFindOutput: '' });
+      const brokenRedis = {
+        getAsync: async () => { throw new Error('redis down'); },
+        // lock acquisition must still succeed so the failure below is actually exercised
+        setAsync: async () => 'OK',
+        evalAsync: async () => 0,
+      };
+      const kcm = loadKCM(brokenRedis, execFile);
 
       await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
       expect(kcm._logs.error.some(m => m.includes('checkPstoreAndUpdateRedis'))).to.be.true;

@@ -16,7 +16,7 @@
 
 const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const { exec } = require('child-process-promise');
+const { execFile } = require('child-process-promise');
 const uuid = require('uuid');
 
 const REDIS_KEY = "kernel_crash_info";
@@ -50,7 +50,7 @@ async function releaseLock(token) {
 
 // parse "version:" and "srcversion:" lines from modinfo output
 async function getModuleVersion(koPathOrName) {
-  const result = await exec(`modinfo ${koPathOrName}`).catch((err) => {
+  const result = await execFile('modinfo', [koPathOrName]).catch((err) => {
     log.error("Failed to run modinfo for", koPathOrName, err.message);
     return null;
   });
@@ -85,11 +85,12 @@ async function saveCrashInfo(info) {
 
 // keep at most PSTORE_ARCHIVE_MAX_DIRS-1 previous archives so the new one always fits
 async function cleanupOldPstoreArchives() {
-  const result = await exec(`ls -1 ${PSTORE_ARCHIVE_PATH} 2>/dev/null | sort -n`).catch(() => ({ stdout: '' }));
-  const dirs = result.stdout.trim().split('\n').filter(Boolean);
+  const result = await execFile('ls', ['-1', PSTORE_ARCHIVE_PATH]).catch(() => ({ stdout: '' }));
+  const dirs = result.stdout.trim().split('\n').filter(Boolean)
+    .sort((a, b) => Number(a) - Number(b));
   const toRemove = dirs.slice(0, Math.max(0, dirs.length - (PSTORE_ARCHIVE_MAX_DIRS - 1)));
   for (const dir of toRemove) {
-    await exec(`sudo rm -rf "${PSTORE_ARCHIVE_PATH}/${dir}"`).catch((err) => {
+    await execFile('sudo', ['rm', '-rf', `${PSTORE_ARCHIVE_PATH}/${dir}`]).catch((err) => {
       log.error(`Failed to remove old pstore archive ${dir}:`, err.message);
     });
   }
@@ -100,15 +101,15 @@ async function cleanupOldPstoreArchives() {
 // space is available for the next crash.
 async function archiveAndClearPstore(crashTS) {
   try {
-    await exec(`sudo mkdir -p ${PSTORE_ARCHIVE_PATH}`);
+    await execFile('sudo', ['mkdir', '-p', PSTORE_ARCHIVE_PATH]);
     await cleanupOldPstoreArchives();
 
     const archiveDir = `${PSTORE_ARCHIVE_PATH}/${crashTS}`;
-    await exec(`sudo mkdir -p "${archiveDir}"`);
-    await exec(`sudo cp -a ${PSTORE_PATH}/. "${archiveDir}/"`);
+    await execFile('sudo', ['mkdir', '-p', archiveDir]);
+    await execFile('sudo', ['cp', '-a', `${PSTORE_PATH}/.`, `${archiveDir}/`]);
     log.info(`Archived pstore files to ${archiveDir}`);
 
-    await exec(`sudo find ${PSTORE_PATH} -mindepth 1 -delete`);
+    await execFile('sudo', ['find', PSTORE_PATH, '-mindepth', '1', '-delete']);
     log.info("Cleared pstore directory after archiving");
   } catch (err) {
     log.error("Failed to archive/clear pstore:", err.message);
@@ -127,12 +128,13 @@ async function checkPstoreAndUpdateRedis(koPath) {
   }
   try {
     const crashInfo = await readCrashInfo();
-    // find dmesg-* pstore files newest first
-    const findResult = await exec(
-      `sudo find ${PSTORE_PATH} -name "dmesg-*" -type f -printf '%T@ %p\\n' 2>/dev/null | sort -rn`
-    ).catch(() => ({ stdout: '' }));
+    // find dmesg-* pstore files, sorted newest first (mirrors `| sort -rn` on the printf'd mtime)
+    const findResult = await execFile('sudo',
+      ['find', PSTORE_PATH, '-name', 'dmesg-*', '-type', 'f', '-printf', '%T@ %p\n']
+    ).catch((err) => ({ stdout: (err && err.stdout) || '' }));
 
-    const lines = findResult.stdout.trim().split('\n').filter(Boolean);
+    const lines = findResult.stdout.trim().split('\n').filter(Boolean)
+      .sort((a, b) => parseFloat(b) - parseFloat(a));
 
     const currentVersion = await getModuleVersion(koPath).catch(() => null);
     const storedVersion = crashInfo.udpModuleVersion;
@@ -171,12 +173,12 @@ async function checkPstoreAndUpdateRedis(koPath) {
         const spaceIdx = line.indexOf(' ');
         tsByPath.set(line.substring(spaceIdx + 1).trim(), parseFloat(line.substring(0, spaceIdx)));
       }
-      const quotedPaths = [...tsByPath.keys()].map(p => `"${p}"`).join(' ');
+      const paths = [...tsByPath.keys()];
       // default archive timestamp: newest dmesg file overall, used when none of them
       // matched "Kernel panic" below (still archived so pstore space is freed up)
       latestCrashTSSec = Math.round(Math.max(...tsByPath.values()));
 
-      const panicFiles = await exec(`sudo grep -l "Kernel panic" ${quotedPaths}`)
+      const panicFiles = await execFile('sudo', ['grep', '-l', 'Kernel panic', ...paths])
         .then(r => r.stdout.trim().split('\n').filter(Boolean))
         .catch(() => []);
 
@@ -185,9 +187,10 @@ async function checkPstoreAndUpdateRedis(koPath) {
       } else {
         latestCrashTSSec = Math.round(Math.max(...panicFiles.map(p => tsByPath.get(p) || 0)));
 
-        const isUdpTlsCrash = await exec(`sudo cat ${quotedPaths} | grep -Eq "Modules linked in:.*xt_udp_tls"`)
-          .then(() => true)
-          .catch(() => false);
+        // pull the concatenated content and test in JS instead of piping through a second grep
+        const isUdpTlsCrash = await execFile('sudo', ['cat', ...paths])
+          .catch((err) => ({ stdout: (err && err.stdout) || '' }))
+          .then(r => /Modules linked in:.*xt_udp_tls/.test(r.stdout));
 
         log.warn(`Kernel panic detected in pstore, ts=${latestCrashTSSec}, udpTlsRelated=${isUdpTlsCrash}`);
 

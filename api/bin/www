@@ -59,16 +59,7 @@ let language = 'en';
 
 log.info("Waiting for cloud token...");
 
-checkPstore();
 run0();
-
-// check pstore for recent kernel crashes and update Redis; FireMain also calls this
-// on startup, checkPstoreAndUpdateRedis uses a redis lock to avoid running twice at once
-async function checkPstore() {
-  const kernelCrashMonitor = require('../../net2/KernelCrashMonitor.js');
-  const udpTlsKoPath = await platform.getTlsKoPath('xt_udp_tls').catch(() => 'xt_udp_tls');
-  await kernelCrashMonitor.checkPstoreAndUpdateRedis(udpTlsKoPath);
-}
 
 async function run0() {
   log.forceInfo("Waiting for first app to connect...");
@@ -80,6 +71,11 @@ async function run0() {
       // this is to ensure sysManager is already initliazed when called in API code
       sysManager.isConfigInitialized()) {
     log.info("Firewalla initialization complete");
+
+    const kernelCrashMonitor = require('../../net2/KernelCrashMonitor.js');
+    const udpTlsKoPath = await platform.getTlsKoPath('xt_udp_tls').catch(() => 'xt_udp_tls');
+    await kernelCrashMonitor.checkPstoreAndUpdateRedis(udpTlsKoPath);
+    
     run();
   } else {
     setTimeout(()=>{
