@@ -802,6 +802,16 @@ let legoEptCloud = class {
     return crypted;
   }
 
+  // Decrypt a parsed envelope { iv, ct }. Throws on bad IV/padding; callers that
+  // want null-on-error (decrypt) wrap this in try/catch.
+  _decryptWithEnvelope(env, key) {
+    const bkey = Buffer.from(key.substring(0, 32), "utf8");
+    const decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, this._normalizeIV(env.iv));
+    let dec = decipher.update(env.ct, 'base64', 'utf8');
+    dec += decipher.final('utf8');
+    return dec;
+  }
+
   // Decrypt a message value. The IV (if any) is carried inside the value via
   // the { iv, message } envelope; see _parseEnvelope for the accepted forms.
   decrypt(text, key) {
@@ -811,21 +821,16 @@ let legoEptCloud = class {
         log.error("Failed to decrypt message: invalid envelope (no message field)");
         return null;
       }
-      let bkey = Buffer.from(key.substring(0, 32), "utf8");
-      let decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, this._normalizeIV(env.iv));
-      let dec = decipher.update(env.ct, 'base64', 'utf8');
-      dec += decipher.final('utf8');
-      return dec;
+      return this._decryptWithEnvelope(env, key);
     } catch(err) {
       log.error("Failed to decrypt message, err:", err);
       return null;
     }
   }
 
-  // Request decryption for the netbot req/response path. Mirrors receiveMessage
-  // and returns a promise. The IV (if any) is carried inside the message
-  // envelope ({ iv, message }); legacy bare-base64 messages decrypt with the
-  // zero IV, so old clients are unaffected.
+  // Request decryption for the netbot req/response path. Parses the envelope
+  // once and resolves { decrypted, usedIv } — usedIv tells the caller whether
+  // the request carried an IV so the reply can mirror it (avoids re-parsing).
   decryptRequest(gid, msg) {
     return new Promise((resolve, reject) => {
       this.getKey(gid, false, (err, key) => {
@@ -833,14 +838,22 @@ let legoEptCloud = class {
           reject(err || new Error("key not found, invalid group?"));
           return;
         }
-        const decrypted = this.decrypt(msg, key);
-        if (decrypted === null) {
+        const env = this._parseEnvelope(msg);
+        if (env.invalid) {
+          reject(new Error("decrypt_error"));
+          return;
+        }
+        let decrypted;
+        try {
+          decrypted = this._decryptWithEnvelope(env, key);
+        } catch (e) {
+          log.error("Failed to decrypt message, err:", e);
           reject(new Error("decrypt_error"));
           return;
         }
         const msgJson = this._parseJsonSafe(decrypted);
         if (msgJson != null)
-          resolve(msgJson);
+          resolve({ decrypted: msgJson, usedIv: env.iv != null });
         else
           reject(new Error("Malformed JSON"));
       });

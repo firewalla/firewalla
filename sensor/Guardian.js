@@ -669,12 +669,12 @@ module.exports = class {
       const replyid = message.replyid; // replyid will not encrypted
       let response, decryptedMessage, code = 200, encryptedResponse;
       // The IV (if any) is embedded in the message envelope ({ iv, message }).
-      // Only echo a fresh IV when the client (MSP) used one on the request.
-      let reqUsedIV = false;
-      try { const env = cw.getCloud()._parseEnvelope(encryptedMessage); reqUsedIV = !!(env && env.iv != null); } catch (e) {}
-      const replyIVBuf = reqUsedIV ? crypto.randomBytes(16) : null;
+      // decryptRequest reports usedIv so we can echo a fresh IV on the reply.
+      let replyIVBuf = null;
       try {
-        decryptedMessage = await cw.getCloud().decryptRequest(gid, encryptedMessage);
+        const { decrypted, usedIv } = await cw.getCloud().decryptRequest(gid, encryptedMessage);
+        decryptedMessage = decrypted;
+        replyIVBuf = usedIv ? crypto.randomBytes(16) : null;
         decryptedMessage.mtype = decryptedMessage.message.mtype;
         const obj = decryptedMessage.message.obj;
         const item = obj.data.item;

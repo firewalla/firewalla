@@ -48,16 +48,6 @@ module.exports = class {
       return;
     }
 
-    // The IV (if any) is embedded in the message envelope ({ iv, message }).
-    // A request that carries an iv signals a client that understands the scheme,
-    // so the reply mirrors it with a fresh iv. Absent => legacy zero IV.
-    try {
-      const env = cloudWrapper.getCloud()._parseEnvelope(message);
-      req.reqUsedIV = !!(env && env.iv != null);
-    } catch (e) {
-      req.reqUsedIV = false;
-    }
-
     if(rkeyts) {
       const localRkeyts = cloudWrapper.getCloud().getRKeyTimestamp(gid);
       if(rkeyts !== localRkeyts) {
@@ -67,7 +57,10 @@ module.exports = class {
       }
     }
 
-    cloudWrapper.getCloud().decryptRequest(gid, message).then((decryptedMessage) => {
+    // decryptRequest parses the { iv, message } envelope once and returns usedIv;
+    // a request that carried an iv gets its reply mirrored with a fresh iv.
+    cloudWrapper.getCloud().decryptRequest(gid, message).then(({ decrypted: decryptedMessage, usedIv }) => {
+      req.reqUsedIV = usedIv;
       decryptedMessage.mtype = decryptedMessage.message.mtype;
       req.body = decryptedMessage;
       req.id = _.get(decryptedMessage, [ 'message', 'obj', 'id' ], undefined)
