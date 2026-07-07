@@ -2298,6 +2298,10 @@ class netBot extends ControllerBot {
         // Disable it by removing the "iv" marker from the group info. No-op if unset.
         return await this.eptcloud.disableGroupInfoIV(gid);
       }
+      case "getIv": {
+        // Read the current "iv" marker from the group info.
+        return await this.eptcloud.getGroupInfoIV(gid);
+      }
       case "syncLegacyKeyToNewKey":
         await this.eptcloud.syncLegacyKeyToNewKey(gid);
         return

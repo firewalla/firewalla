@@ -448,6 +448,13 @@ let legoEptCloud = class {
     return { updated: true, removed };
   }
 
+  // Read the current "iv" marker from the group's encrypted info.
+  // Returns { iv } where iv is null when not set.
+  async getGroupInfoIV(gid) {
+    const { infoObj } = await this._getGroupInfoForUpdate(gid);
+    return { iv: infoObj.iv === undefined ? null : infoObj.iv };
+  }
+
   async eptCreateGroup(name, info, alias) {
     let symmetricKey = this.keygen();
     let group = {};
