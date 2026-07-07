@@ -520,10 +520,7 @@ class Platform {
   }
 
   isUdpTLSBlockSupport() {
-    if (this.isDevMode()) {
-      return true;
-    }
-    return false;
+    return true;
   }
 
   async getKernelModulesPath() {
