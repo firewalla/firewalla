@@ -723,7 +723,10 @@ module.exports = class {
             mspId: mspId,
             replyid: replyid,
             code: code,
-            ...(replyIVBuf ? { iv: replyIVBuf.toString('base64') } : {})
+            // Only advertise the reply IV when we actually produced an encrypted
+            // response with it; error frames (no encryptedResponse) must not
+            // carry an iv the client would try to decrypt with.
+            ...(replyIVBuf && code === 200 && encryptedResponse ? { iv: replyIVBuf.toString('base64') } : {})
           });
         }
         log.debug("response sent to back web cloud, req id:", decryptedMessage ? decryptedMessage.message.obj.id : "decryption error", this.name);

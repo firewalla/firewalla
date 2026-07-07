@@ -721,9 +721,22 @@ let legoEptCloud = class {
       zero.fill(0);
       return zero;
     }
-    const ivBuf = Buffer.isBuffer(iv) ? iv : Buffer.from(iv, 'base64');
-    if (ivBuf.length !== 16) {
-      throw new Error(`Invalid IV length ${ivBuf.length}, expected 16 bytes`);
+    if (Buffer.isBuffer(iv)) {
+      if (iv.length !== 16) {
+        throw new Error(`Invalid IV length ${iv.length}, expected 16 bytes`);
+      }
+      return iv;
+    }
+    // A 16-byte IV is exactly 24 canonical base64 chars ("...=="). Validate the
+    // shape explicitly since Buffer.from(.,'base64') silently ignores invalid
+    // characters, and require a byte-exact round-trip so malformed client input
+    // is rejected rather than quietly reinterpreted.
+    if (typeof iv !== 'string' || !/^[A-Za-z0-9+/]{22}==$/.test(iv)) {
+      throw new Error('Invalid IV: expected base64 of 16 bytes');
+    }
+    const ivBuf = Buffer.from(iv, 'base64');
+    if (ivBuf.length !== 16 || ivBuf.toString('base64') !== iv) {
+      throw new Error('Invalid IV: expected base64 of 16 bytes');
     }
     return ivBuf;
   }
