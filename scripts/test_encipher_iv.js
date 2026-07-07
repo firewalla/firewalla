@@ -23,16 +23,12 @@
  * firecommit#8590 follow-up). Prints the decrypted reply.
  *
  * Usage (run on the box):
- *   node scripts/test_encipher_iv.js              # auto (default): decide from group info.iv
- *   node scripts/test_encipher_iv.js --auto       # same as default
- *   node scripts/test_encipher_iv.js --iv         # force random IV (embedded in { iv, message } envelope)
- *   node scripts/test_encipher_iv.js --no-iv      # force legacy zero IV (bare base64)
+ *   node scripts/test_encipher_iv.js              # legacy zero IV (bare base64)
+ *   node scripts/test_encipher_iv.js --iv         # random IV (embedded in { iv, message } envelope)
  *   node scripts/test_encipher_iv.js --gid <gid>  # override group id
  *
- * Auto mode reads the group's encrypted info and uses a random IV only when
- * info.iv === 1 (the marker that random IV is enabled for the group); otherwise
- * it falls back to the legacy zero IV. Forcing --iv against a box that does not
- * support per-request IV yields HTTP 400/412 (it decrypts with the zero IV).
+ * --iv against a box that does not support the envelope yields HTTP 400/412
+ * (it decrypts the envelope with the zero IV and gets garbage).
  */
 
 const path = require('path');
@@ -48,12 +44,8 @@ const ALGO = 'aes-256-cbc';
 const ZERO = Buffer.alloc(16);
 const PORT = 8833;
 
-// Mode: --iv forces on, --no-iv forces off, otherwise auto (decide from info.iv).
-const forceIV = process.argv.includes('--iv');
-const forceNoIV = process.argv.includes('--no-iv');
-const autoMode = !forceIV && !forceNoIV;
-// info.iv value that means "random IV enabled" for the group.
-const IV_ENABLED_VALUE = 1;
+// --iv sends the random-IV envelope; default is the legacy zero IV.
+const useIV = process.argv.includes('--iv');
 const gidArgIdx = process.argv.indexOf('--gid');
 const gidArg = gidArgIdx >= 0 ? process.argv[gidArgIdx + 1] : null;
 
@@ -112,26 +104,7 @@ function maybeInflate(s) {
     process.exit(1);
   }
 
-  // Resolve whether to use a per-request IV.
-  let useIV;
-  let modeLabel;
-  if (forceIV) {
-    useIV = true; modeLabel = 'forced (--iv)';
-  } else if (forceNoIV) {
-    useIV = false; modeLabel = 'forced (--no-iv)';
-  } else {
-    // auto: read group info.iv (info is encrypted with the base key, not the rkey)
-    let infoIv;
-    try {
-      const g = cloud.getGroupFromCache(gid);
-      if (g && g.group && g.group.info && g.key) {
-        const infoObj = JSON.parse(decEnvelope(g.group.info, g.key).plaintext);
-        infoIv = infoObj.iv;
-      }
-    } catch (e) { /* leave infoIv undefined */ }
-    useIV = infoIv === IV_ENABLED_VALUE;
-    modeLabel = `auto (info.iv=${infoIv === undefined ? 'absent' : infoIv} => ${useIV ? 'iv' : 'no-iv'})`;
-  }
+  const modeLabel = useIV ? 'random IV (--iv)' : 'legacy zero IV';
 
   const id = 'ivtest-' + Date.now();
   const plaintext = JSON.stringify({
