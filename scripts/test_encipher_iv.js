@@ -23,13 +23,16 @@
  * firecommit#8590 follow-up). Prints the decrypted reply.
  *
  * Usage (run on the box):
- *   node scripts/test_encipher_iv.js            # legacy mode: zero IV, no iv field
- *   node scripts/test_encipher_iv.js --iv       # new mode: random IV, sends iv field
+ *   node scripts/test_encipher_iv.js              # auto (default): decide from group info.iv
+ *   node scripts/test_encipher_iv.js --auto       # same as default
+ *   node scripts/test_encipher_iv.js --iv         # force random IV (sends iv field)
+ *   node scripts/test_encipher_iv.js --no-iv      # force legacy zero IV (no iv field)
  *   node scripts/test_encipher_iv.js --gid <gid>  # override group id
  *
- * Legacy mode works against any box. --iv mode requires a box that supports the
- * per-request IV change; an older box rejects it (HTTP 400/412) because it
- * decrypts with the zero IV.
+ * Auto mode reads the group's encrypted info and uses a random IV only when
+ * info.iv === 1 (the marker that random IV is enabled for the group); otherwise
+ * it falls back to the legacy zero IV. Forcing --iv against a box that does not
+ * support per-request IV yields HTTP 400/412 (it decrypts with the zero IV).
  */
 
 const path = require('path');
@@ -45,7 +48,12 @@ const ALGO = 'aes-256-cbc';
 const ZERO = Buffer.alloc(16);
 const PORT = 8833;
 
-const useIV = process.argv.includes('--iv');
+// Mode: --iv forces on, --no-iv forces off, otherwise auto (decide from info.iv).
+const forceIV = process.argv.includes('--iv');
+const forceNoIV = process.argv.includes('--no-iv');
+const autoMode = !forceIV && !forceNoIV;
+// info.iv value that means "random IV enabled" for the group.
+const IV_ENABLED_VALUE = 1;
 const gidArgIdx = process.argv.indexOf('--gid');
 const gidArg = gidArgIdx >= 0 ? process.argv[gidArgIdx + 1] : null;
 
@@ -83,10 +91,31 @@ function maybeInflate(s) {
   }
 
   await cloud.groupFind(gid); // load group into cache so getKeyAsync returns the key
-  const key = await cloud.getKeyAsync(gid, false);
+  const key = await cloud.getKeyAsync(gid, false); // current (possibly rotated) message key
   if (!key) {
     console.error('Could not obtain group key for gid', gid);
     process.exit(1);
+  }
+
+  // Resolve whether to use a per-request IV.
+  let useIV;
+  let modeLabel;
+  if (forceIV) {
+    useIV = true; modeLabel = 'forced (--iv)';
+  } else if (forceNoIV) {
+    useIV = false; modeLabel = 'forced (--no-iv)';
+  } else {
+    // auto: read group info.iv (info is encrypted with the base key, not the rkey)
+    let infoIv;
+    try {
+      const g = cloud.getGroupFromCache(gid);
+      if (g && g.group && g.group.info && g.key) {
+        const infoObj = JSON.parse(dec(g.group.info, g.key, ZERO));
+        infoIv = infoObj.iv;
+      }
+    } catch (e) { /* leave infoIv undefined */ }
+    useIV = infoIv === IV_ENABLED_VALUE;
+    modeLabel = `auto (info.iv=${infoIv === undefined ? 'absent' : infoIv} => ${useIV ? 'iv' : 'no-iv'})`;
   }
 
   const id = 'ivtest-' + Date.now();
@@ -103,7 +132,8 @@ function maybeInflate(s) {
   if (useIV) body.iv = reqIvBuf.toString('base64');
 
   console.log('== REQUEST ==');
-  console.log('mode        :', useIV ? 'NEW (random IV, iv field sent)' : 'LEGACY (zero IV, no iv field)');
+  console.log('mode        :', modeLabel);
+  console.log('sending     :', useIV ? 'random IV + iv field' : 'legacy zero IV, no iv field');
   console.log('key (masked):', key.slice(0, 8) + '...(' + key.length + ' chars)');
   console.log('endpoint    : POST http://127.0.0.1:' + PORT + '/v1/encipher/message/' + gid);
 
