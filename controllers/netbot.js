@@ -2294,6 +2294,10 @@ class netBot extends ControllerBot {
         const ivVersion = (value && value.iv) || 1;
         return await this.eptcloud.upgradeGroupInfoIV(gid, ivVersion);
       }
+      case "downgradeIv": {
+        // Debugging: remove the "iv" marker from the group info. No-op if unset.
+        return await this.eptcloud.downgradeGroupInfoIV(gid);
+      }
       case "syncLegacyKeyToNewKey":
         await this.eptcloud.syncLegacyKeyToNewKey(gid);
         return

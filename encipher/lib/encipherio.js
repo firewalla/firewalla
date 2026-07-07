@@ -370,13 +370,14 @@ let legoEptCloud = class {
   // Back-fill the "iv" marker into the group's encrypted info via the cloud
   // update-group API. No-op if the group info already carries an "iv" field.
   // Returns { updated, iv }.
-  async upgradeGroupInfoIV(gid, ivVersion = 1) {
+  // Fetch the raw group record plus the decrypted info object for an
+  // info-update. Does not go through groupFind() since parseGroup() rewrites
+  // group.name to the decrypted value. info is encrypted with the base
+  // symmetric key (legacy zero IV), not the rotated rkey.
+  async _getGroupInfoForUpdate(gid) {
     if (this.appId === undefined || gid === undefined) {
       throw new Error("parameter error");
     }
-
-    // Fetch the raw group record (pristine name/xname/info); do not go through
-    // groupFind() since parseGroup() rewrites group.name to the decrypted value.
     const resp = await this.rrWithEptRelogin({
       uri: `${this.endpoint}/group/${this.appId}/${gid}`,
       family: 4,
@@ -388,31 +389,24 @@ let legoEptCloud = class {
     if (!group || _.isString(group) || !_.isArray(group.symmetricKeys)) {
       throw new Error("invalid group id " + gid);
     }
-
     const sk = group.symmetricKeys.find(s => s.eid == this.eid);
     if (!sk) {
       throw new Error("not a member of group " + gid);
     }
-    // info is encrypted with the base symmetric key (legacy zero IV), not the
-    // rotated rkey, so decrypt/re-encrypt with the base key here.
     const baseKey = this.privateDecrypt(this.myPrivateKey, sk.key);
-
     let infoObj = {};
     if (group.info) {
       const dec = this.decrypt(group.info, baseKey);
       infoObj = (dec && this._parseJsonSafe(dec)) || {};
     }
+    return { group, baseKey, infoObj };
+  }
 
-    if (infoObj.iv != null) {
-      log.info(`upgradeGroupInfoIV: group ${gid} already has iv=${infoObj.iv}, skip`);
-      return { updated: false, iv: infoObj.iv };
-    }
-
-    infoObj.iv = ivVersion;
+  // Write an updated info object back via the update-group API. name and xname
+  // are required even when only info changes; pass the current values back
+  // unchanged.
+  async _writeGroupInfo(gid, group, baseKey, infoObj) {
     const newInfo = this.encrypt(JSON.stringify(infoObj), baseKey);
-
-    // name and xname are required by the update-group API even when only info
-    // changes; pass the group's current stored values back unchanged.
     await this.rrWithEptRelogin({
       uri: `${this.endpoint}/group/${this.appId}/${gid}`,
       family: 4,
@@ -420,9 +414,41 @@ let legoEptCloud = class {
       json: { name: group.name, xname: group.xname, info: newInfo },
       maxAttempts: 3
     });
+  }
 
+  // Back-fill the "iv" marker into the group's encrypted info via the cloud
+  // update-group API. No-op if the group info already carries an "iv" field.
+  // Returns { updated, iv }.
+  async upgradeGroupInfoIV(gid, ivVersion = 1) {
+    const { group, baseKey, infoObj } = await this._getGroupInfoForUpdate(gid);
+
+    if (infoObj.iv != null) {
+      log.info(`upgradeGroupInfoIV: group ${gid} already has iv=${infoObj.iv}, skip`);
+      return { updated: false, iv: infoObj.iv };
+    }
+
+    infoObj.iv = ivVersion;
+    await this._writeGroupInfo(gid, group, baseKey, infoObj);
     log.info(`upgradeGroupInfoIV: group ${gid} info updated with iv=${ivVersion}`);
     return { updated: true, iv: ivVersion };
+  }
+
+  // Debugging helper: remove the "iv" marker from the group's encrypted info
+  // via the cloud update-group API. No-op if there is no "iv" field.
+  // Returns { updated, removed }.
+  async downgradeGroupInfoIV(gid) {
+    const { group, baseKey, infoObj } = await this._getGroupInfoForUpdate(gid);
+
+    if (infoObj.iv == null) {
+      log.info(`downgradeGroupInfoIV: group ${gid} has no iv, skip`);
+      return { updated: false, removed: null };
+    }
+
+    const removed = infoObj.iv;
+    delete infoObj.iv;
+    await this._writeGroupInfo(gid, group, baseKey, infoObj);
+    log.info(`downgradeGroupInfoIV: group ${gid} info iv removed (was ${removed})`);
+    return { updated: true, removed };
   }
 
   async eptCreateGroup(name, info, alias) {
