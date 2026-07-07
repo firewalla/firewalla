@@ -367,9 +367,6 @@ let legoEptCloud = class {
     return name
   }
 
-  // Back-fill the "iv" marker into the group's encrypted info via the cloud
-  // update-group API. No-op if the group info already carries an "iv" field.
-  // Returns { updated, iv }.
   // Fetch the raw group record plus the decrypted info object for an
   // info-update. Does not go through groupFind() since parseGroup() rewrites
   // group.name to the decrypted value. info is encrypted with the base
@@ -416,38 +413,38 @@ let legoEptCloud = class {
     });
   }
 
-  // Back-fill the "iv" marker into the group's encrypted info via the cloud
+  // Enable the "iv" marker in the group's encrypted info via the cloud
   // update-group API. No-op if the group info already carries an "iv" field.
   // Returns { updated, iv }.
-  async upgradeGroupInfoIV(gid, ivVersion = 1) {
+  async enableGroupInfoIV(gid, ivVersion = 1) {
     const { group, baseKey, infoObj } = await this._getGroupInfoForUpdate(gid);
 
     if (infoObj.iv != null) {
-      log.info(`upgradeGroupInfoIV: group ${gid} already has iv=${infoObj.iv}, skip`);
+      log.info(`enableGroupInfoIV: group ${gid} already has iv=${infoObj.iv}, skip`);
       return { updated: false, iv: infoObj.iv };
     }
 
     infoObj.iv = ivVersion;
     await this._writeGroupInfo(gid, group, baseKey, infoObj);
-    log.info(`upgradeGroupInfoIV: group ${gid} info updated with iv=${ivVersion}`);
+    log.info(`enableGroupInfoIV: group ${gid} info updated with iv=${ivVersion}`);
     return { updated: true, iv: ivVersion };
   }
 
   // Debugging helper: remove the "iv" marker from the group's encrypted info
   // via the cloud update-group API. No-op if there is no "iv" field.
   // Returns { updated, removed }.
-  async downgradeGroupInfoIV(gid) {
+  async disableGroupInfoIV(gid) {
     const { group, baseKey, infoObj } = await this._getGroupInfoForUpdate(gid);
 
     if (infoObj.iv == null) {
-      log.info(`downgradeGroupInfoIV: group ${gid} has no iv, skip`);
+      log.info(`disableGroupInfoIV: group ${gid} has no iv, skip`);
       return { updated: false, removed: null };
     }
 
     const removed = infoObj.iv;
     delete infoObj.iv;
     await this._writeGroupInfo(gid, group, baseKey, infoObj);
-    log.info(`downgradeGroupInfoIV: group ${gid} info iv removed (was ${removed})`);
+    log.info(`disableGroupInfoIV: group ${gid} info iv removed (was ${removed})`);
     return { updated: true, removed };
   }
 
