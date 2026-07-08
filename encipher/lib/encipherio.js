@@ -711,14 +711,78 @@ let legoEptCloud = class {
     return this.groupCache[gid];
   }
 
-  encrypt(text, key) {
-    let iv = Buffer.alloc(16);
-    iv.fill(0);
+  // Normalize an optional IV argument to a 16-byte Buffer. Accepts a Buffer or
+  // a base64 string; when none is given, returns the legacy fixed all-zero IV so
+  // existing callers keep their current behavior. Throws if a provided IV is not
+  // 16 bytes.
+  _normalizeIV(iv) {
+    if (iv == null) {
+      const zero = Buffer.alloc(16);
+      zero.fill(0);
+      return zero;
+    }
+    if (Buffer.isBuffer(iv)) {
+      if (iv.length !== 16) {
+        throw new Error(`Invalid IV length ${iv.length}, expected 16 bytes`);
+      }
+      return iv;
+    }
+    // A 16-byte IV is exactly 24 canonical base64 chars ("...=="). Validate the
+    // shape explicitly since Buffer.from(.,'base64') silently ignores invalid
+    // characters, and require a byte-exact round-trip so malformed client input
+    // is rejected rather than quietly reinterpreted.
+    if (typeof iv !== 'string' || !/^[A-Za-z0-9+/]{22}==$/.test(iv)) {
+      throw new Error('Invalid IV: expected base64 of 16 bytes');
+    }
+    const ivBuf = Buffer.from(iv, 'base64');
+    if (ivBuf.length !== 16 || ivBuf.toString('base64') !== iv) {
+      throw new Error('Invalid IV: expected base64 of 16 bytes');
+    }
+    return ivBuf;
+  }
+
+  // Parse the on-the-wire message value into { iv, ct, invalid }.
+  // The value is one of:
+  //   - a raw base64 ciphertext string (not JSON)     -> legacy, zero IV
+  //   - a JSON-encoded string "<base64>"              -> legacy, zero IV
+  //   - a JSON object { message, iv }                 -> use iv
+  //   - a JSON object { message } (no iv)             -> legacy fallback, zero IV
+  //   - a JSON object without message                 -> invalid
+  // The base64 alphabet has no '{' or '"', so a legacy bare-base64 string never
+  // collides with the JSON forms. Keeping iv inside the message keeps the
+  // envelope extensible (e.g. a future auth tag can be added as another field).
+  _parseEnvelope(text) {
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      return { iv: null, ct: text }; // not JSON -> raw base64 (legacy)
+    }
+    if (typeof parsed === 'string') {
+      return { iv: null, ct: parsed }; // JSON-encoded string (legacy)
+    }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      if (parsed.message != null) {
+        return { iv: parsed.iv != null ? parsed.iv : null, ct: parsed.message };
+      }
+      return { invalid: true }; // object without a message field
+    }
+    return { iv: null, ct: text }; // number/boolean/array/null -> treat as legacy base64
+  }
+
+  // Encrypt utf8 text. When iv is provided, returns a JSON envelope string
+  // { iv, message } (both base64) so the IV travels with the ciphertext; when
+  // iv is absent, returns the legacy bare base64 ciphertext (zero IV).
+  encrypt(text, key, iv) {
+    const ivBuf = this._normalizeIV(iv);
     let bkey = Buffer.from(key.substring(0, 32), "utf8");
-    let cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, iv);
+    let cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, ivBuf);
     let crypted = cipher.update(text, 'utf8', 'base64');
     crypted += cipher.final('base64');
-    return crypted;
+    if (iv == null) {
+      return crypted; // legacy: bare base64
+    }
+    return JSON.stringify({ iv: ivBuf.toString('base64'), message: crypted });
   }
 
   encryptBinary(data, key) {
@@ -738,19 +802,81 @@ let legoEptCloud = class {
     return crypted;
   }
 
+  // Decrypt a parsed envelope { iv, ct }. Throws on bad IV/padding; callers that
+  // want null-on-error (decrypt) wrap this in try/catch.
+  _decryptWithEnvelope(env, key) {
+    const bkey = Buffer.from(key.substring(0, 32), "utf8");
+    const decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, this._normalizeIV(env.iv));
+    let dec = decipher.update(env.ct, 'base64', 'utf8');
+    dec += decipher.final('utf8');
+    return dec;
+  }
+
+  // Decrypt a message value. The IV (if any) is carried inside the value via
+  // the { iv, message } envelope; see _parseEnvelope for the accepted forms.
   decrypt(text, key) {
     try {
-      let iv = Buffer.alloc(16);
-      iv.fill(0);
-      let bkey = Buffer.from(key.substring(0, 32), "utf8");
-      let decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, iv);
-      let dec = decipher.update(text, 'base64', 'utf8');
-      dec += decipher.final('utf8');
-      return dec;
+      const env = this._parseEnvelope(text);
+      if (env.invalid) {
+        log.error("Failed to decrypt message: invalid envelope (no message field)");
+        return null;
+      }
+      return this._decryptWithEnvelope(env, key);
     } catch(err) {
       log.error("Failed to decrypt message, err:", err);
       return null;
     }
+  }
+
+  // Request decryption for the netbot req/response path. Parses the envelope
+  // once and resolves { decrypted, usedIv } — usedIv tells the caller whether
+  // the request carried an IV so the reply can mirror it (avoids re-parsing).
+  decryptRequest(gid, msg) {
+    return new Promise((resolve, reject) => {
+      this.getKey(gid, false, (err, key) => {
+        if (key == null) {
+          reject(err || new Error("key not found, invalid group?"));
+          return;
+        }
+        const env = this._parseEnvelope(msg);
+        if (env.invalid) {
+          reject(new Error("decrypt_error"));
+          return;
+        }
+        let decrypted;
+        try {
+          decrypted = this._decryptWithEnvelope(env, key);
+        } catch (e) {
+          log.error("Failed to decrypt message, err:", e);
+          reject(new Error("decrypt_error"));
+          return;
+        }
+        const msgJson = this._parseJsonSafe(decrypted);
+        if (msgJson != null)
+          resolve({ decrypted: msgJson, usedIv: env.iv != null });
+        else
+          reject(new Error("Malformed JSON"));
+      });
+    });
+  }
+
+  // IV-aware response encryption for the netbot req/response path. Encrypts body
+  // with the given IV (Buffer or base64) and returns a promise of the base64
+  // ciphertext. When iv is absent, the legacy zero IV is used.
+  encryptResponse(gid, body, iv) {
+    return new Promise((resolve, reject) => {
+      this.getKey(gid, false, (err, key) => {
+        if (key == null) {
+          reject(err || new Error("key not found, invalid group?"));
+          return;
+        }
+        try {
+          resolve(this.encrypt(body, key, iv));
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
   }
 
   keygen() {
