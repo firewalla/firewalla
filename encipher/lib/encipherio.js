@@ -317,11 +317,18 @@ let legoEptCloud = class {
   async rrWithEptRelogin(options) {
     options.auth = { bearer: this.token }
     try {
-      return rrWithErrHandling(options)
+      // await so the catch can handle 401 (a bare return bypasses this try/catch)
+      return await rrWithErrHandling(options)
     } catch(err) {
       if (err && err.statusCode == 401) {
         log.verbose('401, re-login')
         await this.eptRelogin();
+        // persist so redis-backed consumers (e.g. Bone checkin) heal, not just this instance
+        try {
+          await rclient.hmsetAsync("sys:ept", { eid: this.eid, token: this.token });
+        } catch (e) {
+          log.error("Failed to persist refreshed ept token to sys:ept", e);
+        }
         return rrWithErrHandling(Object.assign({}, options, { auth: { bearer: this.token } }));
       } else
         throw err;
