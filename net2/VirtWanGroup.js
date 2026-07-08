@@ -653,6 +653,7 @@ class VirtWanGroup {
       this._linkStateEventListener = null;
     }
     if (this._refreshRTListener) {
+      sem.removeListener("VPNClient:Started", this._refreshRTListener);
       sem.removeListener("VPNClient:Stopped", this._refreshRTListener);
       sem.removeListener("VPNClient:SettingsChanged", this._refreshRTListener);
       this._refreshRTListener = null;
@@ -667,6 +668,10 @@ class VirtWanGroup {
     await execFile('rm', ['-rf', VirtWanGroup.getDNSRouteConfDir(this.uuid, "soft")]).catch((err) => { });
     await execFile('rm', ['-rf', VirtWanGroup.getPBRDNSRouteConfDir(this.uuid, "hard")]).catch((err) => { });
     await execFile('rm', ['-rf', VirtWanGroup.getPBRDNSRouteConfDir(this.uuid, "soft")]).catch((err) => { });
+    if (instances[this.uuid] === this) {
+      delete envCreatedMap[this.uuid];
+      delete instances[this.uuid];
+    }
   }
 
   async toJson() {
