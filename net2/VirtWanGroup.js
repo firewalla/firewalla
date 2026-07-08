@@ -423,6 +423,52 @@ class VirtWanGroup {
     }
   }
 
+  _hasValidDefaultForDev(routeOutput, intf) {
+    const lines = routeOutput.trim().split('\n');
+    let inDefaultRoute = false;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('default ')) {
+        inDefaultRoute = !trimmed.includes(' unreachable ');
+        if (inDefaultRoute && trimmed.includes(` dev ${intf}`))
+          return true;
+      } else if (inDefaultRoute) {
+        if (trimmed.includes(` dev ${intf}`))
+          return true;
+        // non-indented line ends a multipath default block
+        if (trimmed && line === trimmed)
+          inDefaultRoute = false;
+      }
+    }
+    return false;
+  }
+
+  async _memberRoutesMissing(profileId) {
+    const c = VPNClient.getInstance(profileId);
+    if (!c || !c.isStarted())
+      return false;
+    // Only check shortly after (re)start just happened.
+    if (c._lastStartTime && Date.now() - c._lastStartTime > 300000)
+      return false;
+    const intf = c.getInterfaceName();
+    if (!intf)
+      return false;
+    const tableName = this._getRTName();
+    try {
+      for (const af of [4, 6]) {
+        const { stdout } = await exec(`ip -${af} route show table ${tableName}`);
+        if (!stdout || !stdout.trim())
+          continue;
+        if (this._hasValidDefaultForDev(stdout, intf))
+          return false;
+      }
+      return true;
+    } catch (err) {
+      log.error(`Failed to check routing table of virtual wan group ${this.uuid} for ${profileId}`, err.message);
+      return false;
+    }
+  }
+
   async processLinkStateEvent(e) {
     let refreshRTNeeded = false;
     let generateAlarmNeeded = false;
@@ -445,7 +491,7 @@ class VirtWanGroup {
           // routeUpdated will be set if link_established event is trigger by route update message from underlying vpn client
           // this may imply the VPN client has been reset and reconnected immediately and is not detected by periodical connectivity test, this usually happens on openvpn
           // so always refresh routing table in this case as previous routes may be removed when openvpn is reset
-          if (e.routeUpdated === true)
+          if (e.routeUpdated === true || await this._memberRoutesMissing(profileId))
             refreshRTNeeded = true;
           break;
         }
