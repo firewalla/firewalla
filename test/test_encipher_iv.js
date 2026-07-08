@@ -140,5 +140,56 @@ describe('encipher per-request IV', function () {
       expect(ept._parseEnvelope(JSON.stringify({})).invalid).to.equal(true);
       expect(ept._parseEnvelope(JSON.stringify({ iv: 'AA==' })).invalid).to.equal(true);
     });
+    it('{ alg:"gcm", iv, message, tag } -> surfaces alg + tag', () => {
+      const e = ept._parseEnvelope(JSON.stringify({ alg: 'gcm', iv: 'AA==', message: 'BB', tag: 'CC==' }));
+      expect(e.alg).to.equal('gcm');
+      expect(e.tag).to.equal('CC==');
+      expect(ept._schemeOf(e)).to.equal('gcm');
+    });
+  });
+
+  describe('AES-256-GCM', () => {
+    const gid = 'group-1234';
+
+    it('round-trips via envelope (AAD = gid)', () => {
+      const env = ept._encryptGcm(msg, key, gid);
+      const o = JSON.parse(env);
+      expect(o.alg).to.equal('gcm');
+      expect(Buffer.from(o.iv, 'base64').length).to.equal(12);   // 12-byte nonce
+      expect(Buffer.from(o.tag, 'base64').length).to.equal(16);  // 16-byte tag
+      expect(ept.decrypt(env, key, gid)).to.equal(msg);
+    });
+
+    it('nonce is non-deterministic', () => {
+      expect(ept._encryptGcm(msg, key, gid)).to.not.equal(ept._encryptGcm(msg, key, gid));
+    });
+
+    it('rejects a tampered ciphertext (auth tag fails)', () => {
+      const o = JSON.parse(ept._encryptGcm(msg, key, gid));
+      const m = Buffer.from(o.message, 'base64'); m[0] ^= 1; o.message = m.toString('base64');
+      expect(ept.decrypt(JSON.stringify(o), key, gid)).to.equal(null);
+    });
+
+    it('rejects a tampered tag', () => {
+      const o = JSON.parse(ept._encryptGcm(msg, key, gid));
+      const t = Buffer.from(o.tag, 'base64'); t[0] ^= 1; o.tag = t.toString('base64');
+      expect(ept.decrypt(JSON.stringify(o), key, gid)).to.equal(null);
+    });
+
+    it('rejects a wrong AAD (different gid)', () => {
+      const env = ept._encryptGcm(msg, key, gid);
+      expect(ept.decrypt(env, key, 'other-gid')).to.equal(null);
+    });
+
+    it('rejects when gid is missing (no AAD)', () => {
+      const env = ept._encryptGcm(msg, key, gid);
+      expect(ept.decrypt(env, key)).to.equal(null);
+    });
+
+    it('rejects a wrong-length nonce / tag', () => {
+      expect(() => ept._normalizeNonce(crypto.randomBytes(16).toString('base64'))).to.throw();
+      expect(() => ept._normalizeTag(crypto.randomBytes(12).toString('base64'))).to.throw();
+      expect(ept._normalizeNonce(crypto.randomBytes(12)).length).to.equal(12);
+    });
   });
 });

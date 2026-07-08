@@ -763,11 +763,51 @@ let legoEptCloud = class {
     }
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       if (parsed.message != null) {
-        return { iv: parsed.iv != null ? parsed.iv : null, ct: parsed.message };
+        return {
+          alg: parsed.alg,                              // "gcm" or undefined (CBC)
+          iv: parsed.iv != null ? parsed.iv : null,     // CBC IV or GCM nonce (base64)
+          ct: parsed.message,
+          tag: parsed.tag != null ? parsed.tag : null   // GCM auth tag (base64)
+        };
       }
       return { invalid: true }; // object without a message field
     }
     return { iv: null, ct: text }; // number/boolean/array/null -> treat as legacy base64
+  }
+
+  // The scheme a parsed envelope represents: 'gcm' | 'cbc-iv' | 'legacy'.
+  _schemeOf(env) {
+    if (env.alg === 'gcm') return 'gcm';
+    if (env.iv != null) return 'cbc-iv';
+    return 'legacy';
+  }
+
+  // Normalize a GCM nonce to a 12-byte Buffer (canonical base64 = 16 chars).
+  _normalizeNonce(nonce) {
+    if (Buffer.isBuffer(nonce)) {
+      if (nonce.length !== 12) throw new Error(`Invalid GCM nonce length ${nonce.length}, expected 12 bytes`);
+      return nonce;
+    }
+    if (typeof nonce !== 'string' || !/^[A-Za-z0-9+/]{16}$/.test(nonce)) {
+      throw new Error('Invalid GCM nonce: expected base64 of 12 bytes');
+    }
+    const b = Buffer.from(nonce, 'base64');
+    if (b.length !== 12 || b.toString('base64') !== nonce) {
+      throw new Error('Invalid GCM nonce: expected base64 of 12 bytes');
+    }
+    return b;
+  }
+
+  // Normalize a GCM auth tag to a 16-byte Buffer (canonical base64 = "...==").
+  _normalizeTag(tag) {
+    if (typeof tag !== 'string' || !/^[A-Za-z0-9+/]{22}==$/.test(tag)) {
+      throw new Error('Invalid GCM tag: expected base64 of 16 bytes');
+    }
+    const b = Buffer.from(tag, 'base64');
+    if (b.length !== 16 || b.toString('base64') !== tag) {
+      throw new Error('Invalid GCM tag: expected base64 of 16 bytes');
+    }
+    return b;
   }
 
   // Encrypt utf8 text. When iv is provided, returns a JSON envelope string
@@ -804,24 +844,48 @@ let legoEptCloud = class {
 
   // Decrypt a parsed envelope { iv, ct }. Throws on bad IV/padding; callers that
   // want null-on-error (decrypt) wrap this in try/catch.
-  _decryptWithEnvelope(env, key) {
+  _decryptWithEnvelope(env, key, gid) {
     const bkey = Buffer.from(key.substring(0, 32), "utf8");
+    if (env.alg === 'gcm') {
+      // GCM: authenticated. Requires gid for AAD; final() throws on tag mismatch.
+      if (gid == null) throw new Error('gcm decrypt requires gid for AAD');
+      const decipher = crypto.createDecipheriv('aes-256-gcm', bkey, this._normalizeNonce(env.iv));
+      decipher.setAAD(Buffer.from(gid, 'utf8'));
+      decipher.setAuthTag(this._normalizeTag(env.tag));
+      let dec = decipher.update(env.ct, 'base64', 'utf8');
+      dec += decipher.final('utf8');
+      return dec;
+    }
     const decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, this._normalizeIV(env.iv));
     let dec = decipher.update(env.ct, 'base64', 'utf8');
     dec += decipher.final('utf8');
     return dec;
   }
 
+  // Encrypt with AES-256-GCM into a { alg:"gcm", iv, message, tag } envelope.
+  // A fresh 12-byte nonce is generated per call; gid is bound as AAD.
+  _encryptGcm(text, key, gid) {
+    if (gid == null) throw new Error('gcm encrypt requires gid for AAD');
+    const bkey = Buffer.from(key.substring(0, 32), "utf8");
+    const nonce = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', bkey, nonce);
+    cipher.setAAD(Buffer.from(gid, 'utf8'));
+    let ct = cipher.update(text, 'utf8', 'base64');
+    ct += cipher.final('base64');
+    const tag = cipher.getAuthTag();
+    return JSON.stringify({ alg: 'gcm', iv: nonce.toString('base64'), message: ct, tag: tag.toString('base64') });
+  }
+
   // Decrypt a message value. The IV (if any) is carried inside the value via
   // the { iv, message } envelope; see _parseEnvelope for the accepted forms.
-  decrypt(text, key) {
+  decrypt(text, key, gid) {
     try {
       const env = this._parseEnvelope(text);
       if (env.invalid) {
         log.error("Failed to decrypt message: invalid envelope (no message field)");
         return null;
       }
-      return this._decryptWithEnvelope(env, key);
+      return this._decryptWithEnvelope(env, key, gid);
     } catch(err) {
       log.error("Failed to decrypt message, err:", err);
       return null;
@@ -845,7 +909,7 @@ let legoEptCloud = class {
         }
         let decrypted;
         try {
-          decrypted = this._decryptWithEnvelope(env, key);
+          decrypted = this._decryptWithEnvelope(env, key, gid);
         } catch (e) {
           log.error("Failed to decrypt message, err:", e);
           reject(new Error("decrypt_error"));
@@ -853,7 +917,7 @@ let legoEptCloud = class {
         }
         const msgJson = this._parseJsonSafe(decrypted);
         if (msgJson != null)
-          resolve({ decrypted: msgJson, usedIv: env.iv != null });
+          resolve({ decrypted: msgJson, scheme: this._schemeOf(env) });
         else
           reject(new Error("Malformed JSON"));
       });
@@ -863,7 +927,11 @@ let legoEptCloud = class {
   // IV-aware response encryption for the netbot req/response path. Encrypts body
   // with the given IV (Buffer or base64) and returns a promise of the base64
   // ciphertext. When iv is absent, the legacy zero IV is used.
-  encryptResponse(gid, body, iv) {
+  // Encrypt a reply in the given scheme so it mirrors the request:
+  //   'gcm'     -> { alg:"gcm", iv, message, tag } (AAD=gid)
+  //   'cbc-iv'  -> { iv, message } with a fresh random IV
+  //   'legacy'  -> bare base64 (zero IV)
+  encryptResponse(gid, body, scheme) {
     return new Promise((resolve, reject) => {
       this.getKey(gid, false, (err, key) => {
         if (key == null) {
@@ -871,7 +939,12 @@ let legoEptCloud = class {
           return;
         }
         try {
-          resolve(this.encrypt(body, key, iv));
+          if (scheme === 'gcm')
+            resolve(this._encryptGcm(body, key, gid));
+          else if (scheme === 'cbc-iv')
+            resolve(this.encrypt(body, key, crypto.randomBytes(16)));
+          else
+            resolve(this.encrypt(body, key)); // legacy zero IV
         } catch (e) {
           reject(e);
         }
