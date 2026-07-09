@@ -448,7 +448,7 @@ class VirtWanGroup {
     if (!c || !c.isStarted())
       return false;
     // Only check shortly after (re)start just happened.
-    if (c._lastStartTime && Date.now() - c._lastStartTime > 300000)
+    if (c._lastStartTime && Date.now() - c._lastStartTime > 120000)
       return false;
     const intf = c.getInterfaceName();
     if (!intf)
