@@ -952,56 +952,12 @@ class PolicyManager2 {
       return policy;
     }
 
-    const kind = lastHitFlow.kind;
-    const raw = _.isObject(lastHitFlow.raw) ? lastHitFlow.raw : null;
-    if (!raw || !kind) {
-      delete policy.lastHitFlow;
-      return policy;
-    }
+    const { kind } = lastHitFlow;
+    let formatted = null;
+    if (kind === 'audit') formatted = await auditTool.formatHitFlow(lastHitFlow, options);
+    else if (kind === 'flow') formatted = await flowTool.formatHitFlow(lastHitFlow, options);
 
-    let simpleLog = null;
-    if (kind === 'audit') {
-      simpleLog = auditTool.toSimpleFormat(raw, {
-        block: true,
-        local: !!(raw.local || raw.dmac || raw.dir === 'L')
-      });
-      if (simpleLog && raw.mac) {
-        simpleLog.device = raw.mac;
-      }
-      const formatted = await auditTool.enrichSimpleLog(simpleLog, options)
-        .catch((err) => {
-          log.warn('Failed to enrich policy lastHitFlow', _.get(policy, 'pid'), err.message);
-          return simpleLog;
-        });
-      if (formatted) {
-        policy.lastHitFlow = formatted;
-      } else {
-        delete policy.lastHitFlow;
-      }
-      return policy;
-    }
-
-    if (kind === 'flow') {
-      simpleLog = flowTool.toSimpleFormat(raw, {
-        local: !!(raw.local || raw.dmac || raw.drl || raw.dstTags || raw.fd === 'lo')
-      });
-      if (simpleLog && raw.mac) {
-        simpleLog.device = raw.mac;
-      }
-      const formatted = await flowTool.enrichSimpleLog(simpleLog, options)
-        .catch((err) => {
-          log.warn('Failed to enrich policy lastHitFlow', _.get(policy, 'pid'), err.message);
-          return simpleLog;
-        });
-      if (formatted) {
-        policy.lastHitFlow = formatted;
-      } else {
-        delete policy.lastHitFlow;
-      }
-      return policy;
-    }
-
-    delete policy.lastHitFlow;
+    formatted ? (policy.lastHitFlow = formatted) : delete policy.lastHitFlow;
     return policy;
   }
 
@@ -2191,7 +2147,7 @@ class PolicyManager2 {
     }
 
     const commonOptions = {
-      pid, tags, intfs, scope, guids, parentRgId,
+      pid, type, tags, intfs, scope, guids, parentRgId,
       localPortSet, /*remoteSet4, remoteSet6,*/ remoteTupleCount, remoteNegate, remotePortSet, proto: protocol,
       action, direction, createOrDestroy: "create", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
@@ -2309,14 +2265,21 @@ class PolicyManager2 {
   }
 
   async _applyRules(options) {
-    const { tags, intfs, scope, guids, parentRgId } = options || {};
+    const { tags, intfs, scope, guids, parentRgId, type } = options || {};
     const ruleOptions = _.omit(options, 'tags', 'intfs', 'scope', 'guids', 'parentRgId')
+
+    const DEVICE = 1, GROUP = 2, NETWORK = 3;
+    const targetLevel = { device: DEVICE, tag: GROUP, network: NETWORK }[type];
+    const targetScope = { [DEVICE]: "DEV", [GROUP]: "DEV_G", [NETWORK]: "NET" }[targetLevel];
+
+    const targetScopeIfMoreSpecificThan = (applyToLevel) =>
+      targetLevel && targetLevel < applyToLevel ? targetScope : undefined;
 
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || !_.isEmpty(parentRgId)) {
       if (!_.isEmpty(tags))
-        await Block.setupTagsRules({ ...ruleOptions, uids: tags });
+        await Block.setupTagsRules({ ...ruleOptions, uids: tags, fwScope: targetScopeIfMoreSpecificThan(GROUP) });
       if (!_.isEmpty(intfs))
-        await Block.setupIntfsRules({ ...ruleOptions, uuids: intfs });
+        await Block.setupIntfsRules({ ...ruleOptions, uuids: intfs, fwScope: targetScopeIfMoreSpecificThan(NETWORK) });
       if (!_.isEmpty(scope))
         await Block.setupDevicesRules({ ...ruleOptions, macAddresses: scope });
       if (!_.isEmpty(guids))
@@ -2324,8 +2287,8 @@ class PolicyManager2 {
       if (!_.isEmpty(parentRgId))
         await Block.setupRuleGroupRules({ ...ruleOptions, ruleGroupUUID: parentRgId });
     } else {
-      // apply to global
-      await Block.setupGlobalRules(ruleOptions);
+      // apply to global; a local-network target raises the chain to that target's scope
+      await Block.setupGlobalRules({ ...ruleOptions, fwScope: targetScope });
     }
   }
 
@@ -2802,7 +2765,7 @@ class PolicyManager2 {
     }
 
     const commonOptions = {
-      pid, tags, intfs, scope, guids, parentRgId,
+      pid, type, tags, intfs, scope, guids, parentRgId,
       localPortSet, /*remoteSet4, remoteSet6,*/ remoteTupleCount, remoteNegate, remotePortSet, proto: protocol,
       action, direction, createOrDestroy: "destroy", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,

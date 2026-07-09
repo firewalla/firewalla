@@ -32,6 +32,7 @@ const CloudWrapper = require('../api/lib/CloudWrapper.js');
 const cw = new CloudWrapper();
 
 const zlib = require('zlib');
+const crypto = require('crypto');
 const deflateAsync = util.promisify(zlib.deflate);
 const rp = require('request-promise');
 
@@ -667,10 +668,13 @@ module.exports = class {
       const encryptedMessage = message.message;
       const replyid = message.replyid; // replyid will not encrypted
       let response, decryptedMessage, code = 200, encryptedResponse;
+      // The IV (if any) is embedded in the message envelope ({ iv, message }).
+      // decryptRequest reports usedIv so we can echo a fresh IV on the reply.
+      let replyIVBuf = null;
       try {
-        const receicveMessageAsync = util.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
-        const encryptMessageAsync = util.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
-        decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
+        const { decrypted, usedIv } = await cw.getCloud().decryptRequest(gid, encryptedMessage);
+        decryptedMessage = decrypted;
+        replyIVBuf = usedIv ? crypto.randomBytes(16) : null;
         decryptedMessage.mtype = decryptedMessage.message.mtype;
         const obj = decryptedMessage.message.obj;
         const item = obj.data.item;
@@ -703,7 +707,7 @@ module.exports = class {
           compressMode: 1,
           data: output.toString('base64')
         });
-        encryptedResponse = await encryptMessageAsync(gid, compressedResponse);
+        encryptedResponse = await cw.getCloud().encryptResponse(gid, compressedResponse, replyIVBuf);
       } catch (err) {
         log.warn(`Process web message error`, err);
         if (err && err.message == "decrypt_error") {
@@ -716,6 +720,8 @@ module.exports = class {
       try {
         if (this.socket) {
           this.socket.emit("send_from_box", {
+            // The reply IV (if any) is embedded in the message envelope, so no
+            // top-level iv field. On error frames encryptedResponse is undefined.
             message: encryptedResponse,
             gid: gid,
             mspId: mspId,

@@ -18,7 +18,9 @@
 let instance = null;
 const log = require("../../net2/logger.js")(__filename);
 
+const crypto = require('crypto');
 const _ = require('lodash');
+const pathModule = require('path');
 const util = require('util');
 const net = require('net');
 const f = require('../../net2/Firewalla.js');
@@ -1901,7 +1903,6 @@ module.exports = class DNSMASQ {
 
 
   computeHash(content) {
-    const crypto = require('crypto');
     return crypto.createHash('md5').update(content).digest("hex");
   }
 
@@ -2490,13 +2491,140 @@ module.exports = class DNSMASQ {
     }, cooldown)
   }
 
+  // `find <path>` (no -L) never follows symlinks, including on the starting
+  // path itself, so any fs errno here (ENOENT, EACCES, ELOOP, ...) is treated
+  // like "find" hitting nothing it can traverse: contribute no files rather
+  // than aborting the whole checkConfsChange() call.
+  _isRecoverableFsError(err) {
+    return err && typeof err.code === 'string';
+  }
+
+  async _expandCheckConfsRoots(pathSpec) {
+    if (!pathSpec.includes('*'))
+      return [pathSpec];
+
+    if (pathSpec.endsWith('/*')) {
+      const parentDir = pathSpec.slice(0, -2);
+      try {
+        // matches dnsmasq's own conf-dir/addn-hosts directory scan, which
+        // skips dotfile entries (option.c) rather than loading them
+        return (await fsp.readdir(parentDir))
+          .filter(entry => !entry.startsWith('.'))
+          .map(entry => pathModule.join(parentDir, entry));
+      } catch (err) {
+        if (this._isRecoverableFsError(err))
+          return [];
+        throw err;
+      }
+    }
+
+    if (pathSpec.endsWith('*')) {
+      const prefixPath = pathSpec.slice(0, -1);
+      const parentDir = pathModule.dirname(prefixPath);
+      const prefix = pathModule.basename(prefixPath);
+      try {
+        return (await fsp.readdir(parentDir))
+          .filter(entry => entry.startsWith(prefix))
+          .map(entry => pathModule.join(parentDir, entry));
+      } catch (err) {
+        if (this._isRecoverableFsError(err))
+          return [];
+        throw err;
+      }
+    }
+
+    throw new Error(`Unsupported checkConfsChange path pattern: ${pathSpec}`);
+  }
+
+  async _collectCheckConfsFiles(rootPath, files) {
+    let stat;
+    try {
+      stat = await fsp.lstat(rootPath);
+    } catch (err) {
+      if (this._isRecoverableFsError(err))
+        return;
+      throw err;
+    }
+
+    // matches `find <path> -type f` (default -P mode): symlinks are type
+    // 'l', never 'f', and are not followed into even as the starting path
+    if (stat.isSymbolicLink())
+      return;
+
+    if (stat.isFile()) {
+      files.push(rootPath);
+      return;
+    }
+
+    if (!stat.isDirectory())
+      return;
+
+    await this._walkCheckConfsDir(rootPath, files);
+  }
+
+  async _walkCheckConfsDir(dirPath, files) {
+    let entries;
+    try {
+      entries = await fsp.readdir(dirPath, { withFileTypes: true });
+    } catch (err) {
+      if (this._isRecoverableFsError(err))
+        return;
+      throw err;
+    }
+
+    for (const entry of entries) {
+      // matches dnsmasq's own conf-dir/addn-hosts directory scan, which
+      // skips dotfile entries (option.c) rather than loading them
+      if (entry.name.startsWith('.'))
+        continue;
+
+      // dirent type comes from the directory entry itself (no extra stat
+      // syscall) and, like `find` without -L, never follows symlinks
+      if (entry.isSymbolicLink())
+        continue;
+
+      const entryPath = pathModule.join(dirPath, entry.name);
+      if (entry.isDirectory())
+        await this._walkCheckConfsDir(entryPath, files);
+      else if (entry.isFile())
+        files.push(entryPath);
+      else
+        log.warn(`Skipping non-file, non-directory entry in ${dirPath}: ${entry.name}`);
+    }
+  }
+
+  async _hashCheckConfsGroup(pathSpec) {
+    const roots = await this._expandCheckConfsRoots(pathSpec);
+    const files = [];
+    for (const rootPath of roots)
+      await this._collectCheckConfsFiles(rootPath, files);
+
+    files.sort();
+
+    const hash = crypto.createHash('md5');
+    for (const file of files) {
+      hash.update(file);
+      hash.update('\n');
+      try {
+        // a failed read (file deleted mid-scan, permission error, ...) maps
+        // to `cat` failing silently to stdout in the old shell pipeline:
+        // the path + empty content + trailing separator are still hashed
+        hash.update(await fsp.readFile(file));
+      } catch (err) {
+        if (!this._isRecoverableFsError(err))
+          throw err;
+      }
+      hash.update('\n');
+    }
+
+    return hash.digest('hex');
+  }
+
   async checkConfsChange(dnsmasqConfKey = "dnsmasq:conf", paths = [`${FILTER_DIR}*`, resolvFile, startScriptFile, configFile]) {
     try {
       let md5sumNow = '';
-      for (const confs of paths) {
-        const stdout = await execAsync(`find ${confs} -type f | sort | (while read FILE; do echo "\${FILE}"; cat "\${FILE}"; echo; done;) | md5sum | awk '{print $1}'`).then(r => r.stdout).catch((err) => null);
-        md5sumNow = md5sumNow + (stdout ? stdout.split('\n').join('') : '');
-      }
+      for (const confs of paths)
+        md5sumNow += await this._hashCheckConfsGroup(confs);
       const md5sumBefore = await rclient.getAsync(dnsmasqConfKey);
       if (md5sumNow != md5sumBefore) {
         log.verbose(`dnsmasq confs ${dnsmasqConfKey} md5sum, before: ${md5sumBefore} now: ${md5sumNow}`)

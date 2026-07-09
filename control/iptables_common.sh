@@ -669,29 +669,29 @@ if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
 # these sets are not ipset and contain only domain names, use same set for both v4 & v6
 # check /proc/net/xt_tls/hostset/sec_block_domain_set
 cat << EOF >> "$iptables_file"
--A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
--A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m tls --tls-hostset allow_domain_set -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m tls --tls-hostset block_domain_set -j FW_TLS_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
+-A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m tls --tls-hostset allow_domain_set -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m tls --tls-hostset block_domain_set -j FW_TLS_DROP
 EOF
 
 cat << EOF >> "$ip6tables_file"
--A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
--A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m tls --tls-hostset allow_domain_set -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m tls --tls-hostset block_domain_set -j FW_TLS_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
+-A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m tls --tls-hostset allow_domain_set -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m tls --tls-hostset block_domain_set -j FW_TLS_DROP
 EOF
 fi
 
 if [[ $XT_UDP_TLS_SUPPORTED == "yes" ]]; then
 cat << EOF >> "$iptables_file"
--A FW_FIREWALL_GLOBAL_BLOCK_HI -p udp -m udp_tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
--A FW_FIREWALL_GLOBAL_ALLOW -p udp -m udp_tls --tls-hostset allow_domain_set -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_BLOCK -p udp -m udp_tls --tls-hostset block_domain_set -j FW_TLS_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK_HI -p udp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m udp_tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
+-A FW_FIREWALL_GLOBAL_ALLOW -p udp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m udp_tls --tls-hostset allow_domain_set -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_BLOCK -p udp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m udp_tls --tls-hostset block_domain_set -j FW_TLS_DROP
 EOF
 
 cat << EOF >> "$ip6tables_file"
--A FW_FIREWALL_GLOBAL_BLOCK_HI -p udp -m udp_tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
--A FW_FIREWALL_GLOBAL_ALLOW -p udp -m udp_tls --tls-hostset allow_domain_set -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_BLOCK -p udp -m udp_tls --tls-hostset block_domain_set -j FW_TLS_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK_HI -p udp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m udp_tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
+-A FW_FIREWALL_GLOBAL_ALLOW -p udp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m udp_tls --tls-hostset allow_domain_set -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_BLOCK -p udp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m udp_tls --tls-hostset block_domain_set -j FW_TLS_DROP
 EOF
 fi
 

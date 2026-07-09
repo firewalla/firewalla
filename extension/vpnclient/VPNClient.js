@@ -57,8 +57,8 @@ class VPNClient {
       instances[profileId] = this;
       this.profileId = profileId;
       if (f.isMain()) {
-        this.internetFailureCount = 0;
-        this.internetSuccessCount = 0;
+        this.internetFailureCount = INTERNET_ON_OFF_THRESHOLD - 1;
+        this.internetSuccessCount = INTERNET_ON_OFF_THRESHOLD - 1;
         this.hookLinkStateChange();
         this.hookSettingsChange();
 
