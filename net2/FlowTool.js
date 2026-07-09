@@ -439,6 +439,17 @@ class FlowTool extends LogQuery {
 
     return super.getDeviceLogs(options)
   }
+
+  async formatHitFlow(payload, options = {}) {
+    const { kind, raw } = payload || {};
+    if (kind !== 'flow' || !raw) return null;
+    const simpleLog = this.toSimpleFormat(raw, {
+      local: !!(raw.local || raw.dmac || raw.drl || raw.dstTags || raw.fd === 'lo')
+    });
+    if (!simpleLog) return null;
+    if (raw.mac) simpleLog.device = raw.mac;
+    return this.enrichSimpleLog(simpleLog, options).catch((err) => { log.warn('Failed to enrich lastHitFlow', err.message); return simpleLog; });
+  }
 }
 
 module.exports = new FlowTool();
