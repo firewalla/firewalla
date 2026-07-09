@@ -94,6 +94,9 @@ let legoEptCloud = class {
       }
       this.token = null;
       rclient.hgetAsync('sys:ept:me', 'eid').then(eid => this.eid = eid)
+      // cache the box's own group id locally; used as the GCM AAD so it doesn't
+      // depend on the (client-supplied) gid in the request URL.
+      rclient.hgetAsync('sys:ept', 'gid').then(gid => this.gid = gid).catch(() => {})
       this.groupCache = {};
       this.cryptoalgorithem = 'aes-256-cbc';
       this.name = name;
@@ -855,13 +858,20 @@ let legoEptCloud = class {
 
   // Decrypt a parsed envelope { iv, ct }. Throws on bad IV/padding; callers that
   // want null-on-error (decrypt) wrap this in try/catch.
-  _decryptWithEnvelope(env, key, gid) {
+  // The box's own group id (loaded locally, not from the request). Used as the
+  // GCM AAD so authentication binds to the box's group, independent of the
+  // client-supplied URL gid.
+  _localGid() {
+    if (!this.gid) throw new Error('local gid not available for GCM AAD');
+    return Buffer.from(this.gid, 'utf8');
+  }
+
+  _decryptWithEnvelope(env, key) {
     const bkey = Buffer.from(key.substring(0, 32), "utf8");
     if (env.alg === 'gcm') {
-      // GCM: authenticated. Requires gid for AAD; final() throws on tag mismatch.
-      if (gid == null) throw new Error('gcm decrypt requires gid for AAD');
+      // GCM: authenticated. AAD = the box's local gid; final() throws on mismatch.
       const decipher = crypto.createDecipheriv('aes-256-gcm', bkey, this._normalizeNonce(env.iv));
-      decipher.setAAD(Buffer.from(gid, 'utf8'));
+      decipher.setAAD(this._localGid());
       decipher.setAuthTag(this._normalizeTag(env.tag));
       let dec = decipher.update(env.ct, 'base64', 'utf8');
       dec += decipher.final('utf8');
@@ -874,13 +884,12 @@ let legoEptCloud = class {
   }
 
   // Encrypt with AES-256-GCM into a { alg:"gcm", iv, message, tag } envelope.
-  // A fresh 12-byte nonce is generated per call; gid is bound as AAD.
-  _encryptGcm(text, key, gid) {
-    if (gid == null) throw new Error('gcm encrypt requires gid for AAD');
+  // A fresh 12-byte nonce is generated per call; the box's local gid is AAD.
+  _encryptGcm(text, key) {
     const bkey = Buffer.from(key.substring(0, 32), "utf8");
     const nonce = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv('aes-256-gcm', bkey, nonce);
-    cipher.setAAD(Buffer.from(gid, 'utf8'));
+    cipher.setAAD(this._localGid());
     let ct = cipher.update(text, 'utf8', 'base64');
     ct += cipher.final('base64');
     const tag = cipher.getAuthTag();
@@ -889,14 +898,14 @@ let legoEptCloud = class {
 
   // Decrypt a message value. The IV (if any) is carried inside the value via
   // the { iv, message } envelope; see _parseEnvelope for the accepted forms.
-  decrypt(text, key, gid) {
+  decrypt(text, key) {
     try {
       const env = this._parseEnvelope(text);
       if (env.invalid) {
         log.error("Failed to decrypt message: invalid envelope (no message field)");
         return null;
       }
-      return this._decryptWithEnvelope(env, key, gid);
+      return this._decryptWithEnvelope(env, key);
     } catch(err) {
       log.error("Failed to decrypt message, err:", err);
       return null;
@@ -920,7 +929,7 @@ let legoEptCloud = class {
         }
         let decrypted;
         try {
-          decrypted = this._decryptWithEnvelope(env, key, gid);
+          decrypted = this._decryptWithEnvelope(env, key);
         } catch (e) {
           log.error("Failed to decrypt message, err:", e);
           reject(new Error("decrypt_error"));
@@ -951,7 +960,7 @@ let legoEptCloud = class {
         }
         try {
           if (scheme === 'gcm')
-            resolve(this._encryptGcm(body, key, gid));
+            resolve(this._encryptGcm(body, key));
           else if (scheme === 'cbc-iv')
             resolve(this.encrypt(body, key, crypto.randomBytes(16)));
           else

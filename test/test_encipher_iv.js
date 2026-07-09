@@ -162,40 +162,43 @@ describe('encipher per-request IV', function () {
   });
 
   describe('AES-256-GCM', () => {
-    const gid = 'group-1234';
+    // AAD is the box's local gid (this.gid), not a per-call argument.
+    beforeEach(() => { ept.gid = 'group-1234'; });
 
-    it('round-trips via envelope (AAD = gid)', () => {
-      const env = ept._encryptGcm(msg, key, gid);
+    it('round-trips via envelope (AAD = local gid)', () => {
+      const env = ept._encryptGcm(msg, key);
       const o = JSON.parse(env);
       expect(o.alg).to.equal('gcm');
       expect(Buffer.from(o.iv, 'base64').length).to.equal(12);   // 12-byte nonce
       expect(Buffer.from(o.tag, 'base64').length).to.equal(16);  // 16-byte tag
-      expect(ept.decrypt(env, key, gid)).to.equal(msg);
+      expect(ept.decrypt(env, key)).to.equal(msg);
     });
 
     it('nonce is non-deterministic', () => {
-      expect(ept._encryptGcm(msg, key, gid)).to.not.equal(ept._encryptGcm(msg, key, gid));
+      expect(ept._encryptGcm(msg, key)).to.not.equal(ept._encryptGcm(msg, key));
     });
 
     it('rejects a tampered ciphertext (auth tag fails)', () => {
-      const o = JSON.parse(ept._encryptGcm(msg, key, gid));
+      const o = JSON.parse(ept._encryptGcm(msg, key));
       const m = Buffer.from(o.message, 'base64'); m[0] ^= 1; o.message = m.toString('base64');
-      expect(ept.decrypt(JSON.stringify(o), key, gid)).to.equal(null);
+      expect(ept.decrypt(JSON.stringify(o), key)).to.equal(null);
     });
 
     it('rejects a tampered tag', () => {
-      const o = JSON.parse(ept._encryptGcm(msg, key, gid));
+      const o = JSON.parse(ept._encryptGcm(msg, key));
       const t = Buffer.from(o.tag, 'base64'); t[0] ^= 1; o.tag = t.toString('base64');
-      expect(ept.decrypt(JSON.stringify(o), key, gid)).to.equal(null);
+      expect(ept.decrypt(JSON.stringify(o), key)).to.equal(null);
     });
 
-    it('rejects a wrong AAD (different gid)', () => {
-      const env = ept._encryptGcm(msg, key, gid);
-      expect(ept.decrypt(env, key, 'other-gid')).to.equal(null);
+    it('rejects when the local gid differs from the one used to encrypt (AAD mismatch)', () => {
+      const env = ept._encryptGcm(msg, key);   // encrypted with gid group-1234
+      ept.gid = 'other-gid';                    // box now on a different gid
+      expect(ept.decrypt(env, key)).to.equal(null);
     });
 
-    it('rejects when gid is missing (no AAD)', () => {
-      const env = ept._encryptGcm(msg, key, gid);
+    it('rejects when the local gid is unavailable', () => {
+      const env = ept._encryptGcm(msg, key);
+      ept.gid = null;
       expect(ept.decrypt(env, key)).to.equal(null);
     });
 
