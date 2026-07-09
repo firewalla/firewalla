@@ -146,6 +146,19 @@ describe('encipher per-request IV', function () {
       expect(e.tag).to.equal('CC==');
       expect(ept._schemeOf(e)).to.equal('gcm');
     });
+    it('accepts an already-parsed object (message sent as a nested object)', () => {
+      const e = ept._parseEnvelope({ iv: 'AA==', message: 'BB' });
+      expect(e.iv).to.equal('AA==');
+      expect(e.ct).to.equal('BB');
+    });
+  });
+
+  describe('lenient message shape', () => {
+    it('decrypt accepts message as a nested object, not just a JSON string', () => {
+      const env = JSON.parse(ept.encrypt(msg, key, crypto.randomBytes(16))); // { iv, message } object
+      expect(env).to.be.an('object');
+      expect(ept.decrypt(env, key)).to.equal(msg);
+    });
   });
 
   describe('AES-256-GCM', () => {
