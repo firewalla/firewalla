@@ -753,10 +753,21 @@ let legoEptCloud = class {
   // envelope extensible (e.g. a future auth tag can be added as another field).
   _parseEnvelope(text) {
     let parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch (e) {
-      return { iv: null, ct: text }; // not JSON -> raw base64 (legacy)
+    if (text !== null && typeof text === 'object' && !Buffer.isBuffer(text)) {
+      // Already-parsed envelope object (a client that put `message` as a nested
+      // JSON object rather than a JSON string). Accept it directly.
+      parsed = text;
+    } else if (typeof text === 'string' && (text[0] === '{' || text[0] === '"')) {
+      // Only the JSON envelope forms start with '{' or '"'. A legacy bare-base64
+      // string never does (base64 alphabet), so skip JSON.parse and its
+      // exception entirely for the common legacy case.
+      try {
+        parsed = JSON.parse(text);
+      } catch (e) {
+        return { iv: null, ct: text }; // malformed JSON -> treat as legacy base64
+      }
+    } else {
+      return { iv: null, ct: text }; // bare base64 (legacy) or non-string
     }
     if (typeof parsed === 'string') {
       return { iv: null, ct: parsed }; // JSON-encoded string (legacy)

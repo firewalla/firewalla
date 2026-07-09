@@ -140,5 +140,18 @@ describe('encipher per-request IV', function () {
       expect(ept._parseEnvelope(JSON.stringify({})).invalid).to.equal(true);
       expect(ept._parseEnvelope(JSON.stringify({ iv: 'AA==' })).invalid).to.equal(true);
     });
+    it('accepts an already-parsed object (message sent as a nested object)', () => {
+      const e = ept._parseEnvelope({ iv: 'AA==', message: 'BB' });
+      expect(e.iv).to.equal('AA==');
+      expect(e.ct).to.equal('BB');
+    });
+  });
+
+  describe('lenient message shape', () => {
+    it('decrypt accepts message as a nested object, not just a JSON string', () => {
+      const env = JSON.parse(ept.encrypt(msg, key, crypto.randomBytes(16))); // { iv, message } object
+      expect(env).to.be.an('object');
+      expect(ept.decrypt(env, key)).to.equal(msg);
+    });
   });
 });
