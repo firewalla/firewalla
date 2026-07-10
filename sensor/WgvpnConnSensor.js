@@ -94,10 +94,6 @@ class WgvpnConnSensor extends Sensor {
 
     if (_.isArray(peers)) {
       const pubKeys = peers.map(peer => peer.publicKey);
-      // "wg show all dump" returns latest-handshake and endpoint for every peer on every
-      // interface in one call, replacing the old "latest-handshakes" call plus a separate
-      // "<intf> endpoints" call per reconnecting peer (which serialized N sudo+shell spawns
-      // whenever multiple peers re-handshook within the same CHECK_INTERVAL window).
       const dumpLines = await execFile('sudo', [this.wgCmd, 'show', 'all', 'dump']).then(result => result.stdout.trim().split('\n')).catch((err) => {
         log.error(`Failed to show dump using ${this.wgCmd} command`, err.message);
         return [];
