@@ -413,7 +413,9 @@ async function login() {
     process.exit();
   }
 
-  // NOTE: This should be the only code to update sys:ept to avoid race condition
+  // NOTE: FireKick is the primary writer of sys:ept. Token-only refreshers also
+  // write it (FWCloudWrapper.refreshToken, encipherio.rrWithEptRelogin) to heal
+  // expiry on long-uptime boxes.
   log.info("Storing Firewalla Cloud Token info to redis");
   // log.info("EID:", eptcloud.eid);
   // log.info("GID:", gid);
