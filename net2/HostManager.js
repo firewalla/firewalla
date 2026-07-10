@@ -125,6 +125,7 @@ const Monitorable = require('./Monitorable.js')
 const AsyncLock = require('../vendor_lib/async-lock');
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
 const NetworkProfile = require('./NetworkProfile.js');
+const KernelCrashMonitor = require('./KernelCrashMonitor.js');
 const lock = new AsyncLock();
 const blockControl = require('../control/BlockControl.js');
 
@@ -1228,6 +1229,7 @@ module.exports = class HostManager extends Monitorable {
       this.pairingAssetsForInit(json),
       this.addMsp2CheckIn(json),
       this.basicDataForInit(json, {}),
+      this.kernelCrashInfoForInit(json),
     ]
 
     await Promise.all(requiredPromises);
@@ -1773,6 +1775,10 @@ module.exports = class HostManager extends Monitorable {
     const noForward = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD);
     json.localDomainNoForward = noForward && JSON.parse(noForward) || false;
     json.cpuProfile = await this.getCpuProfile();
+  }
+
+  async kernelCrashInfoForInit(json) {
+    json.kernelCrashInfo = await KernelCrashMonitor.getCrashInfo();
   }
 
   getHostsFast() {
