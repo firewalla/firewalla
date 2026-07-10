@@ -15,7 +15,7 @@ MANAGED_BY_FIREROUTER=no
 REDIS_MAXMEMORY=300mb
 RAMFS_ROOT_PARTITION=no
 XT_TLS_SUPPORTED=no
-XT_UDP_TLS_SUPPORTED=no
+XT_UDP_TLS_SUPPORTED=yes
 MAX_OLD_SPACE_SIZE=256
 HAVE_FWAPC=no
 HAVE_FWDAP=no
@@ -239,6 +239,14 @@ function installTLSModule() {
     # xt_udp_tls is not supported on this platform ingore
     return 0
   fi
+  if [[ ${module_name} = "xt_udp_tls" ]]; then
+    local should_disable
+    should_disable=$(redis-cli --raw get kernel_crash_info 2>/dev/null | jq -r '.shouldDisableUdpTls // false' 2>/dev/null)
+    if [[ "$should_disable" == "true" ]]; then
+      echo "Skipping xt_udp_tls: disabled due to prior kernel crash with same module version"
+      return 0
+    fi
+  fi
   if ! lsmod | grep -wq "${module_name}"; then
 
     ko_path=$(get_tls_ko_path ${module_name})
@@ -261,7 +269,24 @@ function installTLSModule() {
     elif [[ -f $so_path_alt ]]; then
       sudo install -D -v -m 644 ${so_path_alt} /usr/lib/${arch}-linux-gnu/xtables
     fi
-    
+
+  fi
+  if [[ ${module_name} = "xt_udp_tls" ]] && lsmod | grep -wq "xt_udp_tls"; then
+    local ko_path version srcversion crash_info updated
+    ko_path=$(get_tls_ko_path xt_udp_tls)
+    if [[ -f "$ko_path" ]]; then
+      version=$(modinfo "$ko_path" 2>/dev/null | awk '/^version:/{print $2}')
+      srcversion=$(modinfo "$ko_path" 2>/dev/null | awk '/^srcversion:/{print $2}')
+    else
+      version=$(modinfo xt_udp_tls 2>/dev/null | awk '/^version:/{print $2}')
+      srcversion=$(modinfo xt_udp_tls 2>/dev/null | awk '/^srcversion:/{print $2}')
+    fi
+    crash_info=$(redis-cli --raw get kernel_crash_info 2>/dev/null)
+    [[ -z "$crash_info" ]] && crash_info='{}'
+    updated=$(echo "$crash_info" | jq \
+      --arg v "$version" --arg sv "$srcversion" \
+      '.udpModuleVersion = {"version": $v, "srcversion": $sv} | .shouldDisableUdpTls = false' 2>/dev/null)
+    [[ -n "$updated" ]] && redis-cli set kernel_crash_info "$updated" > /dev/null
   fi
   return
 }
