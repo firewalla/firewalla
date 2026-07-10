@@ -1156,7 +1156,7 @@ class netBot extends ControllerBot {
       case "autoUpgrade":
         return upgradeManager.setAutoUpgradeState(value)
       default:
-        throw new Error("Unsupported set action")
+        throw new Error("Unsupported set action: " + msg.data.item)
     }
   }
 
@@ -1897,7 +1897,7 @@ class netBot extends ControllerBot {
         return result
       }
       default:
-        throw new Error("unsupported action");
+        throw new Error("Unsupported get action: " + msg.data.item);
     }
   }
 

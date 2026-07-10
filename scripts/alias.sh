@@ -289,6 +289,15 @@ function lap_support() {
 alias dap='/home/pi/.firewalla/run/assets/dap'
 alias fwapc='/home/pi/.firewalla/run/assets/fwapc'
 
+case "$(uname -m)" in
+  x86_64)
+    alias awg='/home/pi/firewalla/platform/gold/files/awg'
+    ;;
+  aarch64)
+    alias awg='/home/pi/firewalla/platform/gse/files/awg'
+    ;;
+esac
+
 function sef() {
   local featureName=$1
   if [[ "x$featureName" == "x" ]]; then
