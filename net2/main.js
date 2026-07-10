@@ -85,6 +85,11 @@ async function run0() {
 
   await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'init')
 
+  // check pstore for recent kernel crashes and update Redis before any module loading
+  const kernelCrashMonitor = require('./KernelCrashMonitor.js');
+  const udpTlsKoPath = await platform.getTlsKoPath('xt_udp_tls').catch(() => 'xt_udp_tls');
+  await kernelCrashMonitor.checkPstoreAndUpdateRedis(udpTlsKoPath);
+
   const isModeConfigured = await mode.isModeConfigured();
   await sysManager.waitTillInitialized();
 
