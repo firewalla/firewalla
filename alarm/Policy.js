@@ -52,6 +52,9 @@ class Policy {
 
     this.parseRedisfyArray(raw);
     this.parseRedisfyObj(raw);
+    for (const key of Policy.NUM_VALUE_KEYS) {
+      if (raw[key]) this[key] = Number(raw[key])
+    }
 
     if (this.scope) {
       // convert guids in "scope" field to "guids" field
@@ -66,28 +69,12 @@ class Policy {
     if (!_.isArray(this.tag) || _.isEmpty(this.tag))
       delete this.tag;
 
+    if (!_.isArray(this.affectedPids) || _.isEmpty(this.affectedPids))
+      delete this.affectedPids;
+
     this.upnp = false;
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
-
-    if (raw.seq) {
-      this.seq = Number(raw.seq);
-    }
-
-    if (raw.appTimeUsed)
-      this.appTimeUsed = Number(raw.appTimeUsed);
-
-    if (raw.priority)
-      this.priority = Number(raw.priority);
-
-    if (raw.transferredBytes)
-      this.transferredBytes = Number(raw.transferredBytes);
-
-    if (raw.transferredPackets)
-      this.transferredPackets = Number(raw.transferredPackets);
-
-    if (raw.avgPacketBytes)
-      this.avgPacketBytes = Number(raw.avgPacketBytes);
 
     if (!_.isEmpty(raw.ipttl))
       this.ipttl = Number(raw.ipttl);
@@ -99,6 +86,9 @@ class Policy {
     this.trust = false;
     if (raw.trust)
       this.trust = JSON.parse(raw.trust);
+
+    if (raw.useBf)
+      this.useBf = JSON.parse(raw.useBf);
 
     if (!raw.direction)
       this.direction = "bidirection";
@@ -179,7 +169,8 @@ class Policy {
     const compareFields = ["type", "target", "expire", "cronTime", "remotePort",
       "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
       "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
-      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", "snatIP", "flowIsolation", "dscpClass", "appTimeUsage"];
+      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", 
+      "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf", "affectedPids"];
 
     for (const field of compareFields) {
       if (!Policy.fieldEqual(this[field], policy[field], field)) {
@@ -191,6 +182,7 @@ class Policy {
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&
+      arraysEqual(this.targets, policy.targets) && 
       arraysEqual(this.guids, policy.guids)
     ) {
       return true
@@ -359,7 +351,7 @@ class Policy {
     const duration = parseFloat(this.duration); // in seconds
     const interval = cronParser.parseExpression(cronTime, { tz: sysManager.getTimezone() });
     const lastDate = interval.prev().getTime() / 1000;
-    log.info(`lastDate: ${lastDate}, duration: ${duration}, alarmTimestamp:${alarmTimestamp}`);
+    log.debug(`lastDate: ${lastDate}, duration: ${duration}, alarmTimestamp:${alarmTimestamp}`);
 
     if (alarmTimestamp > lastDate && alarmTimestamp < lastDate + duration) {
       return true
@@ -387,6 +379,11 @@ class Policy {
     }
     if (this.cronTime && this.duration && !this.inSchedule(alarm.alarmTimestamp)) {
       log.debug(`mismatch, policy not on schedule`)
+      return false;
+    }
+
+    if (this.appTimeUsage && !this.isTimeUsageExceeded()) {
+      log.debug(`mismatch, time usage not exceeded, rule ${this.pid} is not in effect`)
       return false;
     }
 
@@ -434,7 +431,9 @@ class Policy {
       let tagMatched = false;
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const config = Constants.TAG_TYPE_MAP[type];
-        if (_.has(alarm, config.alarmIdKey) && alarm[config.alarmIdKey].some(tid => this.tag.includes(`${config.ruleTagPrefix}${tid}`)))
+        if (_.has(alarm, config.alarmIdKey) && _.isArray(alarm[config.alarmIdKey]) &&
+          alarm[config.alarmIdKey].some(tid => this.tag.includes(`${config.ruleTagPrefix}${tid}`))
+        )
           tagMatched = true;
       }
       if (!intfMatched && !tagMatched) {
@@ -479,8 +478,7 @@ class Policy {
       case "dns":
       case "domain":
         if (alarm['p.dest.name']) {
-          return minimatch(alarm['p.dest.name'], `*.${this.target}`) ||
-            alarm['p.dest.name'] === this.target
+          return this.matchDomain(alarm['p.dest.name'])
         } else {
           return false
         }
@@ -553,6 +551,20 @@ class Policy {
       default:
         return false
     }
+  }
+
+  isTimeUsageExceeded() {
+    const quota = _.get(this.appTimeUsage, 'quota', 0);
+    const extraQuota = _.get(this.appTimeUsage, 'extraQuota');
+    const extraQuotaUntilTs = _.get(this.appTimeUsage, 'extraQuotaUntilTs');
+    const effectiveQuota = (extraQuota != null && extraQuotaUntilTs != null && (Date.now() / 1000) < extraQuotaUntilTs)
+      ? (Number(quota) || 0) + (Number(extraQuota) || 0) : (Number(quota) || 0);
+    const used = this.appTimeUsed || 0;
+    return used >= effectiveQuota;
+  }
+
+  matchDomain(domain) {
+    return minimatch(domain, `*.${this.target}`) || domain === this.target
   }
 
   redisfyObj(p) {
@@ -659,10 +671,47 @@ class Policy {
       return portRange[0] * 1 <= port && port <= portRange[1] * 1;
     }
   }
+
+  needPolicyDisturb() {
+    if(this.action === "disturb")
+      return true;
+
+    const disturbQuota = this.appTimeUsage && this.appTimeUsage.disturbQuota;
+    if((this.action !== "app_block" || disturbQuota == null))
+      return false;
+
+    this.disturbTimeUsed = this.disturbTimeUsed || 0;
+    return Number(disturbQuota) > Number(this.disturbTimeUsed);
+  }
+
+  static getMathcedTarget(policy) {
+    let target = "";
+    if (policy.scope) {
+      target = policy.scope[0];
+    }
+    if (policy.guids) {
+      target = policy.guids[0];
+    }
+
+    if (policy.tag && _.isArray(policy.tag) && !_.isEmpty(policy.tag)) {
+      if (policy.tag[0].startsWith(Policy.TAG_PREFIX)) {
+        target = policy.tag[0];
+      }
+
+      if (policy.tag[0].startsWith(Policy.INTF_PREFIX)) {
+        target = "network:" + policy.tag[0].substring(Policy.INTF_PREFIX.length);
+      }
+    }
+    return target;
+  }
+
 }
 
-Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules"];
-Policy.OBJ_VALUE_KEYS = ["appTimeUsage"];
+Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules", "targets", "affectedPids"];
+Policy.OBJ_VALUE_KEYS = ["appTimeUsage", "disturbMethod", "lastHitFlow"];
+Policy.NUM_VALUE_KEYS = [
+  'seq', 'appTimeUsed', 'priority', 'transferredBytes', 'transferredPackets', 'avgPacketBytes', "disturbTimeUsed"
+]
 Policy.INTF_PREFIX = "intf:";
 Policy.TAG_PREFIX = "tag:";
 

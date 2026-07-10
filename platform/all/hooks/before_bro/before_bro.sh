@@ -10,9 +10,13 @@ mkdir -p /home/pi/.firewalla/run/zeek/scripts/heartbeat-flow
 cp $CUR_DIR/heartbeat-flow/* /home/pi/.firewalla/run/zeek/scripts/heartbeat-flow/
 mkdir -p /home/pi/.firewalla/run/zeek/scripts/zeek-conn-log-filter
 cp $CUR_DIR/zeek-conn-log-filter/* /home/pi/.firewalla/run/zeek/scripts/zeek-conn-log-filter/
+mkdir -p /home/pi/.firewalla/run/zeek/scripts/zeek-ssl-clear-state
+cp $CUR_DIR/zeek-ssl-clear-state/* /home/pi/.firewalla/run/zeek/scripts/zeek-ssl-clear-state/
 mkdir -p /home/pi/.firewalla/run/zeek/scripts/well-known-server-ports
 cp $CUR_DIR/well-known-server-ports/* /home/pi/.firewalla/run/zeek/scripts/well-known-server-ports/
 cp $CUR_DIR/dns-mac-logging.zeek /home/pi/.firewalla/run/zeek/scripts/
+cp $CUR_DIR/http-fast-logging.zeek /home/pi/.firewalla/run/zeek/scripts/
+cp $CUR_DIR/ssl-alpn-logging.zeek /home/pi/.firewalla/run/zeek/scripts/
 
 [[ -e $PLATFORM_HOOK_DIR/broctl.cfg ]] && sudo cp $PLATFORM_HOOK_DIR/broctl.cfg /usr/local/$BRO_PROC_NAME/etc/${BRO_PROC_NAME}ctl.cfg
 

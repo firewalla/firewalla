@@ -30,8 +30,6 @@ const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
 const CountryUpdater = require('../control/CountryUpdater.js');
 const countryUpdater = new CountryUpdater();
-const DomainUpdater = require('../control/DomainUpdater.js');
-const domainUpdater = new DomainUpdater();
 
 const { Address4, Address6 } = require('ip-address');
 
@@ -54,14 +52,15 @@ const { CategoryEntry } = require('../control/CategoryEntry.js');
 
 const INTEL_PROXY_CHANNEL = "intel_proxy";
 
-const MAX_PORT_COUNT = 1000;
+const MAX_DOMAIN_PORT_COUNT = 1000;
+const MAX_IP_PORT_COUNT = 20000;
 
 const securityHashMapping = {
   "default_c": "blockset:default:consumer"
 }
 
 const CATEGORY_DATA_KEY = "intel_proxy.data";
-
+const Constants = require('../net2/Constants.js');
 class CategoryUpdateSensor extends Sensor {
   constructor(config) {
     super(config)
@@ -76,30 +75,14 @@ class CategoryUpdateSensor extends Sensor {
       for (const category of categories) {
         await this.updateCategory(category);
       }
+      await this.updateFlowSignatureList(true);
     } catch (err) {
       log.error("Failed to update categories", err)
     }
   }
 
   resetCategoryHashsetMapping() {
-    this.categoryHashsetMapping = {
-      "games": "app.gaming",
-      "games_bf": "app.gaming_bf",
-      "social": "app.social",
-      "social_bf": "app.social_bf",
-      "av": "app.video",
-      "av_bf": "app.video_bf",
-      "porn": "app.porn",  // dnsmasq redirect to blue hole if porn
-      "porn_bf": "app.porn_bf",
-      "gamble": "app.gamble",
-      "gamble_bf": "app.gamble_bf",
-      "shopping": "app.shopping",
-      "shopping_bf": "app.shopping_bf",
-      "p2p": "app.p2p",
-      "p2p_bf": "app.p2p_bf",
-      "vpn": "app.vpn",
-      "vpn_bf": "app.vpn_bf"
-    }
+    this.categoryHashsetMapping = CategoryUpdater.getCategoryHashsetMapping();
   }
 
   async securityJob() {
@@ -146,11 +129,12 @@ class CategoryUpdateSensor extends Sensor {
 
     const hashset = this.getCategoryHashset(category);
 
-    let domains;
+    let domains, info;
     if (category === "adblock_strict") {
       await categoryUpdater.updateStrategy(category, "adblock");
+      info = {use_bf: true};
     } else if (categoryUpdater.isManagedTargetList(category)) {
-      const info = await this.getManagedTargetListInfo(category);
+      info = await this.getManagedTargetListInfo(category);
       log.debug(category, info);
 
       if (info && _.isObject(info) && (info.domain_count > 20000 || info.use_bf)) {
@@ -159,7 +143,7 @@ class CategoryUpdateSensor extends Sensor {
         await categoryUpdater.updateStrategy(category, "default");
       }
     } else {
-      await categoryUpdater.updateStrategy(category, !category.endsWith('_bf') ? "default": "filter");
+      await categoryUpdater.updateStrategy(category, "default");
     }
 
     let categoryStrategy = await categoryUpdater.getStrategy(category);
@@ -175,43 +159,82 @@ class CategoryUpdateSensor extends Sensor {
         log.error("Fail to fetch category list from cloud", category);
         return;
       }
-      if (categoryUpdater.isUserTargetList(category) || categoryUpdater.isSmallExtendedTargetList(category)) {
+
+      if (categoryUpdater.isUserTargetList(category) || categoryUpdater.isSmallExtendedTargetList(category) || (info && info.enable_v2))  {
+        // in case of some categorys, such as doh, being converted to support tagret list with ports
+        await categoryUpdater.flushDefaultDomains(category);
+        await categoryUpdater.flushDefaultHashedDomains(category);
+        await categoryUpdater.flushIPv4Addresses(category);
+        await categoryUpdater.flushIPv6Addresses(category);
+        await categoryUpdater.flushRegexDomains(category);
         // with port support
         await categoryUpdater.flushCategoryData(category);
         let categoryEntries = [];
-        let totalPortCount = 0;
+        const regexEntries = [];
+        let totalDomainPortCount = 0;
+        let totalIpPortCount = 0;
         for (const item of domains) {
           try {
             log.debug("Parse category entry:", item);
             const entries = CategoryEntry.parse(item);
             log.debug("Category entries", entries);
             for (const entry of entries) {
-              totalPortCount += entry.pcount;
+              if (entry.type === "domain_re") {
+                regexEntries.push(entry.id); // body
+                continue;
+              }
+              if (entry.type === "domain") {
+                totalDomainPortCount += entry.pcount;
+              } else if (entry.type === "ipv4" || entry.type === "ipv6") {
+                totalIpPortCount += entry.pcount;
+              }
               categoryEntries.push(entry);
             }
           } catch (err) {
             log.error(err.message, item);
           }
         }
-        log.debug("Total port count", totalPortCount);
-        if (totalPortCount > MAX_PORT_COUNT) {
+        log.debug(`Total domain port count: ${totalDomainPortCount}, total IP port count: ${totalIpPortCount}`);
+        if (totalDomainPortCount > MAX_DOMAIN_PORT_COUNT  || totalIpPortCount > MAX_IP_PORT_COUNT) {
           log.error("Too much port match, disable category", category);
           categoryEntries = [];
         }
         await categoryUpdater.addCategoryData(category, categoryEntries);
+        if (regexEntries.length > 0) {
+          await categoryUpdater.addRegexDomains(category, regexEntries);
+        }
       } else {
         // no port support
-        const ip4List = domains.filter(d => new Address4(d).isValid());
-        const ip6List = domains.filter(d => new Address6(d).isValid());
-        const hashDomains = domains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && isHashDomain(d));
-        const leftDomains = domains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && !isHashDomain(d));
+        // Peel off regex entries first so they don't get misclassified as domains by the Address4/6/hash filters below.
+        const regexEntries = [];
+        const nonRegexDomains = [];
+        for (const d of domains) {
+          if (typeof d === "string" && d.startsWith("regex:")) {
+            try {
+              const parsed = CategoryEntry.parse(d);
+              for (const e of parsed) {
+                if (e.type === "domain_re") regexEntries.push(e.id);
+              }
+            } catch (err) {
+              log.error(err.message, d);
+            }
+          } else {
+            nonRegexDomains.push(d);
+          }
+        }
 
-        log.info(`category ${category} has ${ip4List.length} ipv4, ${ip6List.length} ipv6, ${leftDomains.length} domains, ${hashDomains.length} hashed domains`);
+        const ip4List = nonRegexDomains.filter(d => new Address4(d).isValid());
+        const ip6List = nonRegexDomains.filter(d => new Address6(d).isValid());
+        const hashDomains = nonRegexDomains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && isHashDomain(d));
+        const leftDomains = nonRegexDomains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && !isHashDomain(d));
+
+        log.info(`category ${category} has ${ip4List.length} ipv4, ${ip6List.length} ipv6, ${leftDomains.length} domains, ${hashDomains.length} hashed domains, ${regexEntries.length} regex`);
 
         await categoryUpdater.flushDefaultDomains(category);
         await categoryUpdater.flushDefaultHashedDomains(category);
         await categoryUpdater.flushIPv4Addresses(category);
         await categoryUpdater.flushIPv6Addresses(category);
+        await categoryUpdater.flushRegexDomains(category);
 
         if (leftDomains.length > 20000) {
           log.error(`Domain count too large. Disable category ${category} in normal strategy.`);
@@ -229,6 +252,9 @@ class CategoryUpdateSensor extends Sensor {
         if (ip6List && ip6List.length > 0) {
           await categoryUpdater.addIPv6Addresses(category, ip6List);
         }
+        if (regexEntries.length > 0) {
+          await categoryUpdater.addRegexDomains(category, regexEntries);
+        }
       }
       await this.removeData(category);
 
@@ -238,43 +264,87 @@ class CategoryUpdateSensor extends Sensor {
       await categoryUpdater.flushDefaultHashedDomains(category);
       await categoryUpdater.flushIPv4Addresses(category);
       await categoryUpdater.flushIPv6Addresses(category);
+      // Regex entries are not supported under filter/BF strategy. A regex target list should stay small enough
+      // to remain on the default path;
+      // if a list ever transitions from default to filter, flush any prior regex members so matchPolicy does not
+      // keep matching stale entries after dnsmasq stops enforcing them.
+      const prevRegex = await categoryUpdater.getRegexDomains(category);
+      if (prevRegex && prevRegex.length > 0) {
+        log.warn(`Category ${category} entered filter strategy with ${prevRegex.length} regex entries; regex enforcement will be disabled`);
+      }
+      await categoryUpdater.flushRegexDomains(category);
 
       if (!fc.isFeatureOn("category_filter")) {
         log.error(`Category filter feature not turned on. Category ${category} disabled.`);
         await categoryUpdater.updateStrategy(category, "default");
       } else {
         log.debug("Try to get filter data for category", category);
-        const hashsetName = `bf:app.${category}`;
-        let currentCacheItem = cloudcache.getCacheItem(hashsetName);
-        if (currentCacheItem) {
-          await currentCacheItem.download();
-        } else {
-          log.debug("Add category data item to cloud cache:", category);
-          await cloudcache.enableCache(hashsetName);
-          currentCacheItem = cloudcache.getCacheItem(hashsetName);
-        }
-        try {
-          const content = await currentCacheItem.getLocalCacheContent();
-          if (content) {
-            const updated = await this.updateData(category, content);
-            if (updated) {
-              const filterRefreshEvent = {
-                type: "REFRESH_CATEGORY_FILTER",
-                category: category,
-                toProcess: "FireMain"
-              };
-              sem.emitEvent(filterRefreshEvent);
-            } else {
-              log.debug("Skip sending REFRESH_CATEGORY_FILTER event");
-            }
-          } else {
-            // remove obselete category data
-            log.error(`Category ${category} data is invalid. Remove it`);
-            await this.removeData(category);
-          }
-        } catch (e) {
-          log.error(`Fail to update filter data for ${category}.`, e);
+        if (!_.isObject(info)) {
+          log.error(`Target list info of ${category} is unavailable, ignore it`);
           return;
+        }
+        // category may have multiple bloomfilter files, bf names are returned in "parts"
+        const parts = _.isArray(info.parts) ? info.parts : [category];
+        const prevParts = categoryUpdater.getCategoryBfParts(category);
+        if (_.isEmpty(prevParts))
+          prevParts.push(category); // this is for backward compatibility, parts is not supported before 1.981, so legacy data using category as bf name can be deleted if it is not included in parts now
+        const removedParts = _.difference(prevParts, parts);
+        log.info(`Current parts of category ${category} bf:`, parts);
+        log.info(`Previous parts of category ${category} bf:`, prevParts);
+        log.info(`Removed parts of category ${category} bf:`, removedParts);
+        let updated = false;
+        for (const part of removedParts) {
+          const hashsetName = `bf:app.${part}`;
+          await cloudcache.disableCache(hashsetName);
+          await this.removeData(category).catch((err) => { });
+          updated = true;
+        }
+        await categoryUpdater.setCategoryBfParts(category, parts);
+        for (const part of parts) {
+          const hashsetName = `bf:app.${part}`;
+          let currentCacheItem = cloudcache.getCacheItem(hashsetName);
+          if (currentCacheItem) {
+            await currentCacheItem.download();
+          } else {
+            log.debug("Add category data item to cloud cache:", part);
+            await cloudcache.enableCache(hashsetName);
+            currentCacheItem = cloudcache.getCacheItem(hashsetName);
+          }
+          try {
+            const content = await currentCacheItem.getLocalCacheContent();
+            if (content) {
+              updated = await this.updateData(part, content) || updated;
+            } else {
+              // remove obselete category data
+              log.error(`Category ${category} part ${part} data is invalid. Remove it`);
+              await this.removeData(part);
+              updated = true;
+            }
+          } catch (e) {
+            log.error(`Fail to update filter data for ${category}.`, e);
+            return;
+          }
+        }
+        if (updated) {
+          const filterRefreshEvent = {
+            type: "REFRESH_CATEGORY_FILTER",
+            category: category,
+            toProcess: "FireMain"
+          };
+          sem.emitEvent(filterRefreshEvent);
+        } else {
+          log.debug("Skip sending REFRESH_CATEGORY_FILTER event");
+        }
+
+        const ipList = await this.loadCategoryFromBone(`ip:app.${category}`);
+        if (ipList && ipList.length > 0) {
+          const ip4List = ipList.filter(d => new Address4(d).isValid());
+          const ip6List = ipList.filter(d => new Address6(d).isValid());
+          log.info(`category ${category} 'bf' IP list has ${ip4List.length} ipv4 addr, ${ip6List.length} ipv6 addr`);
+          if (ip4List.length > 0)
+            await categoryUpdater.addIPv4Addresses(category, ip4List);
+          if (ip6List.length > 0)
+            await categoryUpdater.addIPv6Addresses(category, ip6List);
         }
       }
     }
@@ -345,12 +415,20 @@ class CategoryUpdateSensor extends Sensor {
   async updateDnsmasqConfig(category) {
     const strategy = await categoryUpdater.getStrategy(category);
     if (strategy.dnsmasq.useFilter) {
-      const uid = `category:${category}`;
-      const meta = await rclient.hgetAsync(CATEGORY_DATA_KEY, uid);
-      if (meta) {
-        await dnsmasq.createCategoryFilterMappingFile(category, JSON.parse(meta));
+      const parts = categoryUpdater.getCategoryBfParts(category);
+      const meta = {};
+      for (const part of parts) {
+        const key = `category:${part}`;
+        const partMeta = await rclient.hgetAsync(CATEGORY_DATA_KEY, key);
+        if (partMeta)
+          meta[part] = JSON.parse(partMeta);
+        else
+          log.error(`No bf data found for part ${part} of category ${category}`);
+      }
+      if (!_.isEmpty(meta)) {
+        await dnsmasq.createCategoryFilterMappingFile(category, meta);
       } else {
-        log.error("No bf data. Delete dns filter config for category:", category);
+        log.error(`No bf data. Delete dns filter config for category: ${category}`);
         await dnsmasq.deletePolicyCategoryFilterEntry(category);
       }
     } else {
@@ -492,6 +570,7 @@ class CategoryUpdateSensor extends Sensor {
       sem.on('Category:Delete', async (event) => {
         log.info("Deactivate category", event.category);
         const category = event.category;
+        await categoryUpdater.clearRecycleTask(category);
         if (!categoryUpdater.isCustomizedCategory(category) &&
           categoryUpdater.activeCategories[category]) {
           delete categoryUpdater.activeCategories[category];
@@ -500,6 +579,7 @@ class CategoryUpdateSensor extends Sensor {
           await categoryUpdater.flushDefaultHashedDomains(category);
           await categoryUpdater.flushIPv4Addresses(category);
           await categoryUpdater.flushIPv6Addresses(category);
+          await categoryUpdater.flushRegexDomains(category);
           await dnsmasq.deletePolicyCategoryFilterEntry(category);
           // handle related ipset?
         }
@@ -597,6 +677,26 @@ class CategoryUpdateSensor extends Sensor {
       await rclient.saddAsync('country:list', countryList);
     }
   }
+
+  async updateFlowSignatureList(forceReload = false) {
+    const pervFlowSignatureConfig = this.flowSignatureConfig || {};
+    let flowSignatureConfig = await rclient.getAsync(Constants.REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG).then(result => result && JSON.parse(result)).catch(err => null);
+    this.flowSignatureConfig = flowSignatureConfig;
+    if (_.isEmpty(flowSignatureConfig) || forceReload) {
+      flowSignatureConfig = await bone.hashsetAsync(Constants.REDIS_KEY_FLOW_SIGNATURE_CONFIG).then(result => result && JSON.parse(result)).catch((err) => null);
+      if (!_.isEmpty(flowSignatureConfig) && _.isObject(flowSignatureConfig)) {
+        await rclient.setAsync(Constants.REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG, JSON.stringify(flowSignatureConfig));
+        this.flowSignatureConfig = flowSignatureConfig;
+      }
+    }
+    if (this.flowSignatureConfig && !_.isEqual(pervFlowSignatureConfig, this.flowSignatureConfig)){
+      sem.emitEvent({
+        type: "FlowSignatureListUpdated",
+        toProcess: "FireMain"
+      });
+    }
+  }
+
 }
 
 module.exports = CategoryUpdateSensor;

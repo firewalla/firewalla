@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -43,6 +43,12 @@ const ruleScheduler = require('../extension/scheduler/scheduler.js')
 
 const util = require('util');
 const Constants = require('../net2/Constants.js');
+const AsyncLock = require('../vendor_lib/async-lock');
+
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
+// Create a lock instance for protecting getNextID operations
+const GET_EXCEPTION_ID_LOCK = new AsyncLock();
 
 module.exports = class {
   constructor() {
@@ -97,7 +103,7 @@ module.exports = class {
       for (const exception of exceptions) {
         const category = exception.getCategory();
         if (category && !newCategoryMap.has(category)) {
-          log.info("New category matcher", category);
+          log.verbose("New category matcher", category);
           newCategoryMap.set(category, await CategoryMatcher.newCategoryMatcher(category));
         }
       }
@@ -109,48 +115,48 @@ module.exports = class {
     return exceptionPrefix + exceptionID
   }
 
-  getException(exceptionID) {
-    return new Promise((resolve, reject) => {
-      this.idsToExceptions([exceptionID], (err, results) => {
-        if (err) {
-          reject(err);
-          return;
-        }
+  async getException(exceptionID) {
+    const results = await this.idsToExceptions([exceptionID])
 
-        if (results == null || results.length === 0) {
-          reject(new Error("exception not exists"));
-          return;
-        }
+    if (results == null || results.length === 0) {
+      throw new Error("exception not exists")
+    }
 
-        resolve(results[0]);
-      });
-    });
+    return results[0]
   }
 
 
-  idsToExceptions(ids, callback) {
+  async idsToExceptions(ids) {
     let multi = rclient.multi();
 
     ids.forEach((eid) => {
       multi.hgetall(exceptionPrefix + eid)
     });
 
-    multi.exec((err, results) => {
-      if (err) {
-        log.error("Failed to load active exceptions (hgetall): " + err);
-        callback(err);
-        return;
-      }
-      callback(null, results.map((r) => this.jsonToException(r)));
-    });
+    try {
+      const results = await multi.execAsync()
+      return results.map((r) => this.jsonToException(r))
+
+    } catch(err) {
+      log.error("Failed to load active exceptions (hgetall)", err);
+    }
   }
 
   loadExceptions(callback = function() {}) {
     return util.callbackify(this.loadExceptionsAsync).bind(this)(callback)
   }
 
-  async loadExceptionsAsync() {
-    const EIDs = await rclient.smembersAsync(exceptionQueue)
+  async loadExceptionsAsync(options = {}) {
+    // options: { offset, number }
+    const number = options.number || platform.getExceptionCapacity();
+    const offset = options.offset || 0;
+
+    let EIDs = await rclient.smembersAsync(exceptionQueue)
+    // recent first (higher numeric EID first), mirroring PolicyManager2's zrevrange paging
+    EIDs.sort((a, b) => Number(b) - Number(a));
+    if (number) {
+      EIDs = EIDs.slice(offset, offset + number);
+    }
 
     const multi = rclient.multi();
 
@@ -173,42 +179,30 @@ module.exports = class {
     return rr
   }
 
-  createExceptionIDKey(callback) {
-    rclient.set(exceptionIDKey, initID, callback);
+  async getNextIDAsync() {
+    return GET_EXCEPTION_ID_LOCK.acquire('exception_id', async () => {
+      try {
+        const result = await rclient.getAsync(exceptionIDKey);
+        
+        if (result) {
+          await rclient.incrAsync(exceptionIDKey);
+          return result;
+        } else {
+          await rclient.setAsync(exceptionIDKey, initID);
+          await rclient.incrAsync(exceptionIDKey);
+          return initID;
+        }
+      } catch (err) {
+        log.error("Failed to get next ID: " + err);
+        throw err;
+      }
+    });
   }
 
   getNextID(callback) {
-    rclient.get(exceptionIDKey, (err, result) => {
-      if (err) {
-        log.error("Failed to get exceptionIDKey: " + err);
-        callback(err);
-        return;
-      }
-
-      if (result) {
-        rclient.incr(exceptionIDKey, (err) => {
-          if (err) {
-            log.error("Failed to incr exceptionIDKey: " + err);
-          }
-          callback(null, result);
-        });
-      } else {
-        this.createExceptionIDKey((err) => {
-          if (err) {
-            log.error("Failed to create exceptionIDKey: " + err);
-            callback(err);
-            return;
-          }
-
-          rclient.incr(exceptionIDKey, (err) => {
-            if (err) {
-              log.error("Failed to incr exceptionIDKey: " + err);
-            }
-            callback(null, initID);
-          });
-        });
-      }
-    });
+    this.getNextIDAsync()
+      .then(result => callback(null, result))
+      .catch(err => callback(err));
   }
 
   enqueue(exception, callback) {
@@ -436,18 +430,18 @@ module.exports = class {
 
   async updateException(json) {
     if (!json) {
-      return Promise.reject(new Error("Invalid Exception"));
+      throw new Error("Invalid Exception")
     }
 
     if (!json.eid) {
-      return Promise.reject(new Error("Invalid Exception ID"));
+      throw new Error("Invalid Exception ID")
     }
 
     if (!json.timestamp) {
       json.timestamp = new Date() / 1000;
     }
 
-    const e = this.jsonToException(json);
+    const e = json instanceof Exception ? json : this.jsonToException(json);
     if (e) {
       const oldException = await this.getException(e.eid).catch((err) => null);
       // delete old data before writing new one in case some key only exists in old data
@@ -487,7 +481,8 @@ module.exports = class {
     const results = await this.loadExceptionsAsync();
     // wait for category data to load;
 
-    log.info("Start to match alarm", alarm);
+    log.verbose("Start to match alarm", alarm.type, alarm['p.device.mac'], alarm['p.dest.name']);
+    log.verbose(alarm);
     for (let i = 0; i < 30; i++) {
       if (this.categoryMap !== null) {
         for (const result of results) {
@@ -506,7 +501,7 @@ module.exports = class {
     // do not match exceptions that are expired, paused or not in scheduled running time
     let matches = results.filter((e) => !e.isExpired() && !e.isIdle() && (!e.cronTime || ruleScheduler.shouldPolicyBeRunning(e)) && e.match(alarm));
     if (matches.length > 0) {
-      log.info("Alarm " + alarm.aid + " is covered by exception " + matches.map((e) => e.eid).join(","));
+      log.info(`Alarm ${alarm.type} ${alarm["p.device.mac"]} ${alarm["p.dest.name"]} is covered by exception ${matches.map((e) => e.eid).join(",")}`);
     }
 
     return matches

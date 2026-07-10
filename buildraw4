@@ -139,7 +139,7 @@ function install_walla()
     sudo mkdir -p /firewalla && sudo chmod 777 /firewalla || perr_and_exit "Failed to create /firewalla."
 
     echo "Setting up brofish and firewalla services..."
-    sudo cp $basedir/etc/brofish.service /etc/systemd/system/. || perr_and_exit "Failed to copy brofish.servie."
+    sudo cp $basedir/etc/brofish.service /etc/systemd/system/. || perr_and_exit "Failed to copy brofish.service."
     sudo cp $basedir/etc/firewalla.service /etc/systemd/system/. || perr_and_exit "Failed to copy firewalla service."
     sudo cp $basedir/etc/fireupgrade.service /etc/systemd/system/. || perr_and_exit "Failed to copy fireupgrade service."
 

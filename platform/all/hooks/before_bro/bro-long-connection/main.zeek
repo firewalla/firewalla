@@ -94,7 +94,7 @@ function long_callback(c: connection, cnt: count): interval
 
 event new_connection(c: connection)
 {
-    ConnPolling::watch(c, long_callback, 1, 5min);
+    ConnPolling::watch(c, long_callback, 1, 2min);
     # local check = get_durations(c);
     # if ( |check| > 0 )
     #     {

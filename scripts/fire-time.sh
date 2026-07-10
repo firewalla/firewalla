@@ -27,7 +27,7 @@ logger "FIREWALLA.DATE.SYNC"
 TIME_THRESHOLD="2020-03-27"
 
 tsThreshold=$(date -d "$TIME_THRESHOLD" +%s)
-tsFakeHwclock=$(date -u -d "$(cat /etc/fake-hwclock.data)" +%s)
+tsFakeHwclock=$(date -u -d "$(cat /data/fake-hwclock.data)" +%s)
 if [ $tsFakeHwclock -ge $tsThreshold ]; then tsThreshold=$tsFakeHwclock; fi
 
 function sync_time() {

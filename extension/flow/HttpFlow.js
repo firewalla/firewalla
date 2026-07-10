@@ -1,4 +1,4 @@
-/*    Copyright 2019-2023 Firewalla Inc.
+/*    Copyright 2019-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,6 +15,7 @@
 
 'use strict';
 
+const net = require('net')
 const log = require('../../net2/logger.js')(__filename);
 const rclient = require('../../util/redis_manager.js').getRedisClient();
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
@@ -25,7 +26,7 @@ const hostTool = new HostTool();
 const IdentityManager = require('../../net2/IdentityManager.js');
 const DNSTool = require('../../net2/DNSTool.js');
 const dnsTool = new DNSTool();
-const iptool = require('ip');
+const ipUtil = require('../../util/IPUtil.js');
 const {formulateHostname, isDomainValid} = require('../../util/util.js');
 
 const sysManager = require('../../net2/SysManager.js');
@@ -169,7 +170,7 @@ class HttpFlow {
       return;
     }
 
-    if ((iptool.isV4Format(destIP) || iptool.isV6Format(destIP)) && isDomainValid(host)) {
+    if ((net.isIPv4(destIP) || net.isIPv6(destIP)) && isDomainValid(host)) {
       const domain = formulateHostname(host);
       await dnsTool.addDns(destIP, domain, config.get('dns.expires'));
       await dnsTool.addReverseDns(domain, [destIP], config.get('dns.expires'));
@@ -187,31 +188,33 @@ class HttpFlow {
       const destIP = obj["id.resp_h"];
       const host = obj.host;
       const uri = obj.uri;
-      let localIP, remoteIP, remotePort, flowDirection
+      let localIP, remoteIP, remotePort, flowDirection, mac;
 
-      if (iptool.isPrivate(srcIP) && iptool.isPrivate(destIP))
+      if (ipUtil.isPrivate(srcIP) && ipUtil.isPrivate(destIP))
         return;
 
       let intf = sysManager.getInterfaceViaIP(srcIP);
       if (intf) {
         flowDirection = "outbound";
         localIP = srcIP;
-        remoteIP = destIP
-        remotePort = obj['id.resp_p']
+        remoteIP = destIP;
+        remotePort = obj['id.resp_p'];
+        mac = obj.orig_l2_addr && (obj.orig_l2_addr.length == 17 ? obj.orig_l2_addr.toUpperCase() : obj.orig_l2_addr);
       } else {
         intf = sysManager.getInterfaceViaIP(destIP);
         if (intf) {
           flowDirection = "inbound";
           localIP = destIP;
-          remoteIP = srcIP
-          remotePort = obj['id.orig_p']
+          remoteIP = srcIP;
+          remotePort = obj['id.orig_p'];
+          mac = obj.resp_l2_addr && (obj.resp_l2_addr.length == 17 ? obj.resp_l2_addr.toUpperCase() : obj.resp_l2_addr);
         } else {
           log.error("HTTP:Error:Drop", obj);
           return;
         }
       }
-
-      let mac = await hostTool.getMacByIPWithCache(localIP);
+      if (!mac)
+        mac = await hostTool.getMacByIPWithCache(localIP);
       if (!mac) {
         const identity = IdentityManager.getIdentityByIP(localIP);
         if (identity)

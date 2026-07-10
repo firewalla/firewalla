@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -30,7 +30,6 @@ const sem = require('../../sensor/SensorEventManager.js').getInstance()
 
 const bone = require("../../lib/Bone.js");
 
-//const spawn = require('child-process-promise').spawn;
 const spawn = require('child_process').spawn
 const spawnSync = require('child_process').spawnSync
 const execSync = require('child_process').execSync
@@ -203,15 +202,6 @@ module.exports = class {
     return `${frpDirectory}/frpc.${this.name}.ini`;
   }
 
-  _getPidPath() {
-    if (this.name !== "support") {
-      return `${frpDirectory}/frpc.customized.${this.name}.pid`;
-    } else {
-      // use default pid file
-      return pidFile;
-    }
-  }
-
   _getServiceName() {
     return `frpc.${this.name}`;
   }
@@ -235,7 +225,7 @@ module.exports = class {
 
   async _prepareConfiguration(config) {
     let templateFile = configTemplateFile // default is the support config template file
-    const userToken = null;
+    let userToken = null;
     if (config) {
       userToken = config.userToken;
     }
@@ -418,6 +408,8 @@ module.exports = class {
       type: this._getServiceName(),
       msg: message,
       stack: syslog
+    }).catch(err => {
+      log.error("Failed to log frp error", err.message);
     });
   }
 

@@ -1,4 +1,4 @@
-/*    Copyright 2020-2021 Firewalla Inc.
+/*    Copyright 2020-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -36,9 +36,11 @@ const MSG_ACL_DNS = "ACL:DNS";
 const MSG_WG_SUBNET_CHANGED = "System:WGSubnetChanged";
 const MSG_OVPN_CONN_ACCEPTED = "VPNConnectionAccepted";
 const MSG_WG_CONN_ACCEPTED = "WGVPNConnectionAccepted";
+const MSG_AMNEZIAWG_CONN_ACCEPTED = "AmneziaWGVPNConnectionAccepted";
 const MSG_OVPN_PROFILES_UPDATED = "VPNProfiles:Updated";
 const MSG_VIP_PROFILES_UPDATED = "VIPProfiles:Updated";
 const MSG_WG_PEER_REFRESHED = "WG_PEER_REFRESHED";
+const MSG_AMNEZIAWG_PEER_REFRESHED = "AMNEZIAWG_PEER_REFRESHED";
 const MSG_OVPN_CLIENT_CONNECTED = "ovpn.client_connected";
 
 const MSG_VIRT_WAN_GROUP_UPDATED = "VWG_UPDATED";
@@ -56,15 +58,29 @@ const MSG_OSI_VERIFIED= 'osi:verified';
 const MSG_OSI_UPDATE_NOW = 'osi:update_now';
 const MSG_OSI_TARGET_TAGS_APPLIED = 'osi:target:tags_applied';
 
+const MSG_MAPPING_IP_MAC_DELETED = 'mapping:ip:mac:deleted'
+
+const MSG_HOST_MAC_ENTRY_CACHE_INVALIDATE = 'host:mac_entry_cache:invalidate'
+
 const MSG_ASSETS_UPDATED_CHANNEL = 'assets:updated';
 
 const MSG_FLOW_ENRICHED = "FLOW_ENRICHED";
 const MSG_FLOW_ACL_AUDIT_BLOCKED = "FLOW_ACL_AUDIT_BLOCKED";
 const MSG_APP_TIME_USAGE_BUCKET_INCR = "APP_TIME_USAGE_BUCKET_INCR";
 const MSG_APP_INTEL_CONFIG_UPDATED = "APP_INTEL_CONFIG_UPDATED";
+const MSG_APP_DISTURB_VALUE_UPDATED = "APP_DISTURB_VALUE_UPDATED";
 
 const MSG_TRACE = "sys:trace";
 const MSG_DEBUG = 'DEBUG'
+
+const MSG_FWAPC_SSID_STA_UPDATE = "fwapc:ssid_station_update";
+const MSG_FWAPC_CONNTRACK_UPDATE = "fwapc:conntrack_update";
+const MSG_FWAPC_BLOCK_FLOW = "fwapc:block_flow";
+const MSG_FWAPC_SWITCH_ACL_ACCOUNTING = "fwapc:switch_acl_accounting";
+
+const MSG_FLOW_SWITCH_ACCOUNTING = "flow:switch_accounting";
+
+const MSG_HAPD_EVENT = "hostapd.event";
 
 module.exports = {
   MSG_TRACE,
@@ -85,9 +101,11 @@ module.exports = {
   MSG_WG_SUBNET_CHANGED,
   MSG_OVPN_CONN_ACCEPTED,
   MSG_WG_CONN_ACCEPTED,
+  MSG_AMNEZIAWG_CONN_ACCEPTED,
   MSG_OVPN_PROFILES_UPDATED,
   MSG_VIP_PROFILES_UPDATED,
   MSG_WG_PEER_REFRESHED,
+  MSG_AMNEZIAWG_PEER_REFRESHED,
   MSG_OVPN_CLIENT_CONNECTED,
   MSG_SYS_STATES_CHANNEL,
   MSG_FIRERESET_BLE_CONTROL_CHANNEL,
@@ -101,10 +119,19 @@ module.exports = {
   MSG_OSI_RULES_DONE,
   MSG_OSI_INBOUND_BLOCK_RULES_DONE,
   MSG_OSI_TARGET_TAGS_APPLIED,
+  MSG_MAPPING_IP_MAC_DELETED,
+  MSG_HOST_MAC_ENTRY_CACHE_INVALIDATE,
   MSG_ASSETS_UPDATED_CHANNEL,
   MSG_FLOW_ENRICHED,
   MSG_FLOW_ACL_AUDIT_BLOCKED,
   MSG_APP_TIME_USAGE_BUCKET_INCR,
   MSG_APP_INTEL_CONFIG_UPDATED,
+  MSG_APP_DISTURB_VALUE_UPDATED,
   MSG_DEBUG,
+  MSG_FWAPC_SSID_STA_UPDATE,
+  MSG_FWAPC_CONNTRACK_UPDATE,
+  MSG_FWAPC_BLOCK_FLOW,
+  MSG_FWAPC_SWITCH_ACL_ACCOUNTING,
+  MSG_FLOW_SWITCH_ACCOUNTING,
+  MSG_HAPD_EVENT,
 }

@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC
+/*    Copyright 2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -45,8 +45,6 @@ const socket = io2(
     transports: ['websocket'],
     'upgrade': false }
 );
-const Promise = require('bluebird');
-Promise.promisifyAll(fs);
 
 process.title = 'FireHB';
 const launchTime = Math.floor(new Date() / 1000);
@@ -86,7 +84,7 @@ async function getShellOutput(cmd) {
 async function isBooted() {
   const fwHeartbeatFile = '/dev/shm/fw_heartbeat';
   try{
-    await fs.accessAsync(fwHeartbeatFile, fs.constants.F_OK);
+    await fs.promises.access(fwHeartbeatFile, fs.constants.F_OK);
     return false;
   } catch (err) {
     log("System was booted.");
@@ -96,7 +94,8 @@ async function isBooted() {
 }
 
 async function getCpuTemperature() {
-  return await getShellOutput("cat /sys/class/thermal/thermal_zone0/temp");
+  const temp = await getShellOutput("cat /sys/class/thermal/thermal_zone0/temp");
+  return Number(temp);
 }
 
 async function getIPLinks() {
@@ -177,15 +176,39 @@ async function getRedisInfoMemory() {
     },{} )
 }
 
+const MAX_IPV6_COUNT = 100;
+
 async function getSysinfo(status) {
   const ifs = os.networkInterfaces();
+  for (const intfName in ifs) {
+    const intf = ifs[intfName];
+    if (intf.filter(addr => addr.family == "IPv6").length > MAX_IPV6_COUNT) {
+      log(`WARNING: ${intfName} has more than ${MAX_IPV6_COUNT} IPv6 addresses, discarding...`);
+      const capped = []
+      let ipv6Count = 0;
+      for (const addr of intf) {
+        if (addr.family == "IPv6") {
+          if (ipv6Count < MAX_IPV6_COUNT) {
+            capped.push(addr);
+            ipv6Count++;
+          }
+        } else
+          capped.push(addr);
+      }
+      ifs[intfName] = capped;
+    }
+  }
   const memory = os.totalmem()
   const timestamp = Date.now();
   const uptime = os.uptime();
-  const [arch, booted, btMac, cpuTemp, diskFree, ethSpeed, gatewayMacPrefix, gitBranchName, hashRouter, hashWalla, licenseInfo, mac, mode, serviceActiveSince, redisEid, redisInfoMemory] =
+  const [
+    arch, booted, boxName, btMac, cpuTemp, diskFree, ethSpeed, gatewayMacPrefix, gitBranchName, hashRouter,
+    hashWalla, licenseInfo, mac, mode, serviceActiveSince, redisEid, redisInfoMemory, procVersion,
+  ] =
     await Promise.all([
       getShellOutput("uname -m"),
       isBooted(),
+      getShellOutput("redis-cli get groupName"),
       getShellOutput("hcitool dev | awk '/hci0/ {print $2}'"),
       getCpuTemperature(),
       getDiskFree(),
@@ -199,7 +222,8 @@ async function getSysinfo(status) {
       getShellOutput("redis-cli get mode"),
       getServiceActiveSince(),
       getShellOutput("redis-cli hget sys:ept eid"),
-      getRedisInfoMemory()
+      getRedisInfoMemory(),
+      getShellOutput('cat /proc/version'),
     ]);
 
   if(!uid) {
@@ -209,6 +233,7 @@ async function getSysinfo(status) {
   return {
     arch,
     booted,
+    boxName,
     btMac,
     cpuTemp,
     ifs,
@@ -228,7 +253,8 @@ async function getSysinfo(status) {
     status,
     timestamp,
     uptime,
-    uid
+    uid,
+    procVersion,
   };
 }
 
@@ -237,7 +263,9 @@ async function update(status, extra) {
   if(extra) {
     info = Object.assign({}, info, extra);
   }
-  //log(`DEBUG: ${JSON.stringify(info,null,2)}`);
+  if (process.env.DEBUG) {
+    log(`DEBUG: ${JSON.stringify(info,null,2)}`);
+  }
   socket.emit('update', info);
   return info;
 }

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -33,9 +33,7 @@ let resolve4Async;
 let resolve6Async;
 const fc = require('../net2/config.js');
 const dc = require('../extension/dnscrypt/dnscrypt');
-
-const fs = require('fs');
-const appendFileAsync = util.promisify(fs.appendFile);
+const tlsc = require('./TLSSetControl.js');
 
 const sysManager = require("../net2/SysManager.js")
 
@@ -47,12 +45,16 @@ const { CategoryEntry } = require('./CategoryEntry');
 
 const _ = require('lodash');
 
-const tlsHostSetPath = "/proc/net/xt_tls/hostset/";
 
 class DomainBlock {
 
   constructor() {
 
+  }
+
+  async updateHostset(tlsHostSet, action, domain, options={}) {
+    const finalDomain = options.exactMatch || domain.startsWith("*.") ? domain : `*.${domain}`; // check domain.startsWith just for double check
+    await tlsc.addRule(tlsHostSet, action, finalDomain);
   }
 
   // a mapping from domain to ip is tracked in redis, so that we can apply block at ip level, which is more secure
@@ -61,8 +63,8 @@ class DomainBlock {
     domain = domain && domain.toLowerCase();
     log.debug(`Implementing Block on ${domain}`);
 
-    if (!options.noIpsetUpdate) {
-      domainUpdater.registerUpdate(domain, options);
+    domainUpdater.registerUpdate(domain, options);
+    if (!options.domainOnly) {
       // do not execute full update on ipset if ondemand is set
       if (!options.ondemand) {
         await this.syncDomainIPMapping(domain, options)
@@ -89,7 +91,7 @@ class DomainBlock {
   }
 
   async applyBlock(domain, options) {
-    if (!options.noIpsetUpdate) {
+    if (!options.domainOnly) {
       const blockSet = options.blockSet || "block_domain_set";
       const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
       if (addresses) {
@@ -106,16 +108,12 @@ class DomainBlock {
     }
     const tlsHostSet = options.tlsHostSet;
     if (tlsHostSet) {
-      const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
-      const finalDomain = options.exactMatch || domain.startsWith("*.") ? domain : `*.${domain}`; // check domain.startsWith just for double check
-      await appendFileAsync(tlsFilePath, `+${finalDomain}`).catch((err) => {
-        log.error(`Failed to add ${finalDomain} to tls host set ${tlsFilePath}`, err.message);
-      });
+      await this.updateHostset(tlsHostSet, "add", domain, options);
     }
   }
 
   async unapplyBlock(domain, options) {
-    if (!options.noIpsetUpdate) {
+    if (!options.domainOnly) {
       const blockSet = options.blockSet || "block_domain_set"
 
       const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
@@ -127,11 +125,7 @@ class DomainBlock {
     }
     const tlsHostSet = options.tlsHostSet;
     if (tlsHostSet) {
-      const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
-      const finalDomain = options.exactMatch || domain.startsWith("*.") ? domain : `*.${domain}`; // check domain.startsWith just for double check
-      await appendFileAsync(tlsFilePath, `-${finalDomain}`).catch((err) => {
-        log.error(`Failed to remove ${finalDomain} from tls host set ${tlsFilePath}`, err.message);
-      });
+      await this.updateHostset(tlsHostSet, "rm", domain, options);
     }
   }
 
@@ -297,16 +291,12 @@ class DomainBlock {
     }
   }
 
-  async blockCategory(category, options) {
-    if (!options.category)
-      options.category = category;
+  async blockCategory(options) {
     await dnsmasq.addPolicyCategoryFilterEntry(options).catch((err) => undefined);
     dnsmasq.scheduleRestartDNSService();
   }
 
-  async unblockCategory(category, options) {
-    if (!options.category)
-      options.category = category;
+  async unblockCategory(options) {
     await dnsmasq.removePolicyCategoryFilterEntry(options).catch((err) => undefined);
     dnsmasq.scheduleRestartDNSService();
   }
@@ -329,30 +319,22 @@ class DomainBlock {
 
   async appendDomainToCategoryTLSHostSet(category, domain) {
     const tlsHostSet = Block.getTLSHostSet(category);
-    const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
-
-    try {
-      await appendFileAsync(tlsFilePath, `+${domain}`); // + => add
-    } catch (err) {
-      log.error(`Failed to add domain ${domain} to tls ${tlsFilePath}, err: ${err}`);
-    }
-
+    await this.updateHostset(tlsHostSet, "add", domain, {exactMatch:true});
   }
 
   // flush and re-create from redis
-  async refreshTLSCategory(category) {
+  async refreshTLSCategory(category, protocol = '') {
     const CategoryUpdater = require("./CategoryUpdater.js");
-    const strategy = await (new CategoryUpdater()).getStrategy(category);
+    const categoryUpdater = new CategoryUpdater();
+    const strategy = await categoryUpdater.getStrategy(category);
     const domains = await this.getCategoryDomains(category, strategy.tls.useHitSet);
     const tlsHostSet = Block.getTLSHostSet(category);
-    const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
 
     // flush first
-    await appendFileAsync(tlsFilePath, "/").catch((err) => log.error(`got error when flushing ${tlsFilePath}, err: ${err}`)); // / => flush
+    await tlsc.flushHostset(tlsHostSet);
 
-    // use fs.writeFile intead of bash -c "echo +domain > ..." to avoid too many process forks
     for (const domain of domains) {
-      await appendFileAsync(tlsFilePath, `+${domain}`).catch((err) => log.error(`got error when adding ${domain} to ${tlsFilePath}, err: ${err}`));
+      await tlsc.addRule(tlsHostSet, "add", domain);
     }
 
     const domainsWithPort = await this.getCategoryDomainsWithPort(category);
@@ -361,11 +343,11 @@ class DomainBlock {
       const portObj = domainObj.port;
       const entry = `${domainObj.id},${CategoryEntry.toPortStr(portObj)}`;
       log.debug("Tls port entry:", entry);
-      await appendFileAsync(tlsFilePath, `+${entry}`).catch((err) => log.error(`got error when adding ${entry} to ${tlsFilePath}, err: ${err}`));
+      await tlsc.addRule(tlsHostSet, "add", entry);
     }
   }
 
-  // dynamic + default + defaultDomainOnly - exclude + include + hashed
+  // dynamic + default + defaultDomainOnly + pattern match - exclude + include + hashed
   async getCategoryDomains(category, useHitSet = null) {
     const CategoryUpdater = require("./CategoryUpdater.js");
     const categoryUpdater = new CategoryUpdater();
@@ -374,6 +356,7 @@ class DomainBlock {
     }
 
     const domains = await categoryUpdater.getDomains(category);
+    const patternMatchedDomains = await categoryUpdater.getPatternMatchedDomains(category);
     const excludedDomains = await categoryUpdater.getExcludedDomains(category);
     const defaultDomains = useHitSet
       ? await categoryUpdater.getHitDomains(category)
@@ -383,9 +366,7 @@ class DomainBlock {
     const includedDomains = await categoryUpdater.getIncludedDomains(category);
     // exclude domains work as a simple remover for default/dynamic set, it has lower priority than include domain as
     // user could only manage include domains on client now
-    const superSetDomains = domains.concat(defaultDomains, defaultDomainsOnly)
-      .filter(d => !excludedDomains.some(ed => ed === d))
-      .concat(includedDomains)
+    const superSetDomains = _.union(_.union(domains, defaultDomains, defaultDomainsOnly, patternMatchedDomains).filter(d => !excludedDomains.some(ed => ed === d)), includedDomains)
 
     // *.domain and domain has different semantic in category domains, one for suffix match and the other for exact match
     const wildcardDomains = superSetDomains.filter(d => d.startsWith("*."));
@@ -398,7 +379,7 @@ class DomainBlock {
   async getCategoryDomainsWithPort(category) {
     const CategoryUpdater = require("./CategoryUpdater.js");
     const categoryUpdater = new CategoryUpdater();
-    return await categoryUpdater.getAllDomainsWithPort(category);
+    return _.union(await categoryUpdater.getAllDomainsWithPort(category), await categoryUpdater.getPatternMatchedDomainsWithPort(category));
   }
 
   patternDomain(domain) {

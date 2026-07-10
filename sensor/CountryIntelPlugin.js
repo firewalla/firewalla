@@ -23,6 +23,7 @@ const fsp = require('fs').promises
 const countryDataFolder = require('../extension/country/country.js').countryDataFolder
 const inflateAsync = require('util').promisify(zlib.inflate);
 const Buffer = require('buffer').Buffer;
+const crypto = require('crypto');
 
 const hashData = [{
     hashKey: "mmdb:ipv4",
@@ -42,14 +43,14 @@ class CountryIntelPlugin extends Sensor {
         const geoDatChangeEvent = {
             type: 'GEO_DAT_CHANGE',
             dir: countryDataFolder,
-            suppressEventLogging: false
+            message: countryDataFolder,
         }
         sem.emitLocalEvent(geoDatChangeEvent);
         sem.sendEventToFireApi(geoDatChangeEvent);
         for (const item of hashData) {
             try {
-                await cc.enableCache(item.hashKey, (data) => {
-                    this.updateCountryData(item, data);
+                await cc.enableCache(item.hashKey, (data, meta) => {
+                    this.updateCountryData(item, data, meta);
                 });
             } catch (err) {
                 log.error("Failed to process country data:", item.hashKey);
@@ -57,7 +58,7 @@ class CountryIntelPlugin extends Sensor {
         }
     }
     // update country data and use in geoip-lite
-    async updateCountryData(item, content) {
+    async updateCountryData(item, content, meta) {
         try {
             if (!content || content.length < 10) {
                 // likely invalid, return null for protection
@@ -67,16 +68,26 @@ class CountryIntelPlugin extends Sensor {
             const buf = Buffer.from(content, 'base64');
             const data = await inflateAsync(buf);
             await fsp.writeFile(item.dataPath, data);
+            if (meta.sha256sumOrigin) {
+              const written = await fsp.readFile(item.dataPath);
+              const sha256 = crypto.createHash('sha256').update(written).digest('hex');
+              if (sha256 != meta.sha256sumOrigin) {
+                throw new Error(`Orignal sha256 doesn't match, written:${sha256}, expected:${meta.sha256sumOrigin}`)
+              }
+            }
             log.info(`Loaded Country Data ${item.hashKey} successfully.`);
             const geoRefreshEvent = {
                 type: 'GEO_REFRESH',
                 dataType: item.type,
-                suppressEventLogging: false
+                message: item.type,
             }
             sem.emitLocalEvent(geoRefreshEvent);
             sem.sendEventToFireApi(geoRefreshEvent);
         } catch (err) {
             log.error("Failed to update country data, err:", err);
+            await fsp.unlink(item.dataPath).catch(err => {
+              log.error('Error removing cache file', item.dataPath, err)
+            })
         }
     }
     async globalOff() {
@@ -86,14 +97,14 @@ class CountryIntelPlugin extends Sensor {
         const geoDatChangeEvent = {
             type: 'GEO_DAT_CHANGE',
             dir: null,
-            suppressEventLogging: false
+            message: 'repo default',
         }
         sem.emitLocalEvent(geoDatChangeEvent);
         sem.sendEventToFireApi(geoDatChangeEvent);
         const geoRefreshEvent = {
             type: 'GEO_REFRESH',
             dataType: null,
-            suppressEventLogging: false
+            message: 'all',
         }
         sem.emitLocalEvent(geoRefreshEvent);
         sem.sendEventToFireApi(geoRefreshEvent);

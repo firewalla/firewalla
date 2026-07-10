@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -36,20 +36,28 @@ const SysManager = require('../net2/SysManager.js');
 const CLOUD_CONFIG_KEY = Constants.REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG;
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
+const CategoryUpdater = require('../control/CategoryUpdater.js');
+const categoryUpdater = new CategoryUpdater();
+const sl = require('../sensor/SensorLoader.js');
+const pclient = require('../util/redis_manager.js').getPublishClient()
+const firewalla = require("../net2/Firewalla.js");
+const CIDRTrie = require('../util/CIDRTrie.js');
+const { Address4, Address6 } = require('ip-address');
 
 class AppTimeUsageSensor extends Sensor {
   
   async run() {
     this.hookFeature(featureName);
     this.enabled = fc.isFeatureOn(featureName);
-    this.cloudConfig = null;
+    this.cloudConfig = null; // for app time usage config
+    this.internetTimeUsageCfg = null;
     this.appConfs = {};
-    await this.loadConfig();
+    await this.loadConfig(true);
 
     await this.scheduleUpdateConfigCronJob();
 
     sem.on(Message.MSG_FLOW_ENRICHED, async (event) => {
-      if (event && !_.isEmpty(event.flow))
+      if (event && !_.isEmpty(event.flow) && !event.flow.local)
         await this.processEnrichedFlow(event.flow).catch((err) => {
           log.error(`Failed to process enriched flow`, event.flow, err.message);
         });
@@ -57,10 +65,8 @@ class AppTimeUsageSensor extends Sensor {
 
     sclient.on("message", async (channel, message) => {
       if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
-        if (this._policy) {
-          log.info("System timezone is reloaded, will reschedule update config cron job ...");
-          await this.scheduleUpdateConfigCronJob();
-        }
+        log.info("System timezone is reloaded, will reschedule update config cron job ...");
+        await this.scheduleUpdateConfigCronJob();
       }
     });
     sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
@@ -108,13 +114,29 @@ class AppTimeUsageSensor extends Sensor {
   }
 
   async loadCloudConfig(reload = false) {
-    let data = await rclient.getAsync(CLOUD_CONFIG_KEY).then(result => result && JSON.parse(result)).catch(err => null);
-    this.cloudConfig = data;
-    if (_.isEmpty(data) || reload)
-      data = await bone.hashsetAsync("app_time_usage_config").then(result => result && JSON.parse(result)).catch((err) => null);
-    if (!_.isEmpty(data) && _.isObject(data)) {
-      await rclient.setAsync(CLOUD_CONFIG_KEY, JSON.stringify(data));
-      this.cloudConfig = data;
+    let isCloudConfigUpdated = false;
+    let appTimeUsageConfig = await rclient.getAsync(CLOUD_CONFIG_KEY).then(result => result && JSON.parse(result)).catch(err => null);
+    this.cloudConfig = appTimeUsageConfig;
+    if (_.isEmpty(appTimeUsageConfig) || reload) {
+      appTimeUsageConfig = await bone.hashsetAsync(Constants.REDIS_KEY_APP_TIME_USAGE_CONFIG).then(result => result && JSON.parse(result)).catch((err) => null);
+      if (!_.isEmpty(appTimeUsageConfig) && _.isObject(appTimeUsageConfig)) {
+        await rclient.setAsync(CLOUD_CONFIG_KEY, JSON.stringify(appTimeUsageConfig));
+        this.cloudConfig = appTimeUsageConfig;
+        isCloudConfigUpdated = true;
+      }
+    }
+    let internetTimeUsageCfg = await rclient.getAsync(Constants.REDIS_KEY_INTERNET_TIME_USAGE_CONFIG).then(result => result && JSON.parse(result)).catch(err => null);
+    this.internetTimeUsageCfg = internetTimeUsageCfg;
+    if (_.isEmpty(internetTimeUsageCfg) || reload) {
+      internetTimeUsageCfg = await bone.hashsetAsync(Constants.REDIS_KEY_INTERNET_TIME_USAGE_CONFIG).then(result => result && JSON.parse(result)).catch((err) => null);
+      if (!_.isEmpty(internetTimeUsageCfg) && _.isObject(internetTimeUsageCfg)) {
+        await rclient.setAsync(Constants.REDIS_KEY_INTERNET_TIME_USAGE_CONFIG, JSON.stringify(internetTimeUsageCfg));
+        this.internetTimeUsageCfg = internetTimeUsageCfg;
+        isCloudConfigUpdated = true;
+      }
+    }
+
+    if (isCloudConfigUpdated) {
       sem.sendEventToAll({type: Message.MSG_APP_INTEL_CONFIG_UPDATED});
     }
   }
@@ -136,22 +158,40 @@ class AppTimeUsageSensor extends Sensor {
   rebuildTrie() {
     const appConfs = this.appConfs;
     const domainTrie = new DomainTrie();
+    const cidr4Trie = new CIDRTrie(4);
+    const cidr6Trie = new CIDRTrie(6);
+    const sigMap = new Map();
+
     for (const key of Object.keys(appConfs)) {
       const includedDomains = appConfs[key].includedDomains || [];
       const category = appConfs[key].category;
       for (const value of includedDomains) {
-        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold"]);
+        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold", "ulDlRatioThreshold", "portInfo", "backgroundDownload"]);
         obj.app = key;
         if (category)
           obj.category = category;
-        if (value.domain) {
-          if (value.domain.startsWith("*.")) {
-            obj.domain = value.domain.substring(2);
-            domainTrie.add(value.domain.substring(2), obj);
+
+        const id = value.domain || value.cidr;
+        if (id) {
+          if (new Address4(id).isValid()) {
+            obj.domain = id;
+            cidr4Trie.add(id, obj);
+          } else if (new Address6(id).isValid()) {
+            obj.domain = id;
+            cidr6Trie.add(id, obj);
           } else {
-            obj.domain = value.domain;
-            domainTrie.add(value.domain, obj, false);
+            if (id.startsWith("*.")) {
+              obj.domain = id.substring(2);
+              domainTrie.add(id.substring(2), obj);
+            } else {
+              obj.domain = id;
+              domainTrie.add(id, obj, false);
+            }
           }
+        }
+        const sigId = value.sigId;
+        if (sigId) {
+          sigMap.set(sigId, obj);
         }
       }
 
@@ -166,45 +206,296 @@ class AppTimeUsageSensor extends Sensor {
       }
     }
     this._domainTrie = domainTrie;
+    this._cidr4Trie = cidr4Trie;
+    this._cidr6Trie = cidr6Trie;
+    this._sigMap = sigMap;
   }
+
+  getCategoryBytesThreshold(category) {
+    if (this.internetTimeUsageCfg) {
+      if (category && this.internetTimeUsageCfg[category] && 
+        typeof this.internetTimeUsageCfg[category].bytesThreshold === "number") {
+        return this.internetTimeUsageCfg[category].bytesThreshold;
+      }
+      if (this.internetTimeUsageCfg["default"] && 
+        typeof this.internetTimeUsageCfg["default"].bytesThreshold === "number") {
+        return this.internetTimeUsageCfg["default"].bytesThreshold;
+      }
+    }
+    return 200 * 1024; // default threshold is 200KB
+  }
+
+  getCategoryUlDlRatioThreshold(category) {
+    if (this.internetTimeUsageCfg) {
+      if (category && this.internetTimeUsageCfg[category] && 
+        typeof this.internetTimeUsageCfg[category].ulDlRatioThreshold === "number") {
+        return this.internetTimeUsageCfg[category].ulDlRatioThreshold;
+      }
+      if (this.internetTimeUsageCfg["default"] && 
+        typeof this.internetTimeUsageCfg["default"].ulDlRatioThreshold === "number") {
+        return this.internetTimeUsageCfg["default"].ulDlRatioThreshold;
+      }
+    }
+    return 5; // default threshold is 5
+  }
+
+  getCategoryBackgroundDownload(category) {
+    if (this.internetTimeUsageCfg) {
+      if (category &&
+        this.internetTimeUsageCfg[category] &&
+        typeof this.internetTimeUsageCfg[category].backgroundDownload === "object") {
+        return this.internetTimeUsageCfg[category].backgroundDownload;
+      }
+      if (this.internetTimeUsageCfg["default"] &&
+        typeof this.internetTimeUsageCfg["default"].backgroundDownload === "object") {
+        return this.internetTimeUsageCfg["default"].backgroundDownload;
+      }
+    }
+    return {};
+  }
+
+  getInternetOptions() {
+    const defaultCfg = (this.internetTimeUsageCfg && this.internetTimeUsageCfg["default"]) || {};
+    const {
+      occupyMins = 1,
+      lingerMins = 10,
+      minsThreshold = 1
+    } = defaultCfg;
+  
+    return {
+      app: "internet",
+      occupyMins,
+      lingerMins,
+      minsThreshold
+    };
+  }
+
+  recordFlow(flow) {
+    pclient.publishAsync("internet.activity.flow", JSON.stringify({flow}));
+  }
+
+  async recordDomain2Redis(flow, app) {
+    if (!flow || !flow.mac || !flow.du || !flow.ts) {
+      return;
+    }
+    
+    const domain = flow.host || (flow.intel && flow.intel.host) || "";
+    
+    // Check if domain is an IPv4 or IPv6 address
+    const isIPv4 = new Address4(domain).isValid();
+    const isIPv6 = new Address6(domain).isValid();
+    
+    const appName = app || "internet";
+    if (!domain || appName !== "internet" || isIPv4 || isIPv6 ) {
+      return;
+    }
+    
+    const deviceMac = flow.mac;
+ 
+    const flowDate = new Date(flow.ts * 1000);
+    flowDate.setMinutes(0, 0, 0); // Set minutes, seconds, and milliseconds to 0
+    const hourKey = Math.floor(flowDate.getTime() / 1000); // Convert back to seconds timestamp
+    
+    // Key format: flow_domain:{app}:{device_mac}:{hour_timestamp}
+    const redisKey = `flow_domain:${appName}:${deviceMac}:${hourKey}`;
+    
+    // Use ZINCRBY to increment the score (frequency) for the domain
+    await rclient.zincrbyAsync(redisKey, 1, domain);
+
+    // Set TTL to 26 hours (93600 seconds) to ensure 24-hour data is still available during aggregation
+    await rclient.expireAsync(redisKey, 93600);
+  }
+  
+  async recordFlow2Redis(flow, app) {
+    await this.recordDomain2Redis(flow, app);
+    if (!fc.isFeatureOn("record_activity_flow")){
+      return;
+    }
+    const date = new Date(flow.ts * 1000);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const formattedDate = `${year}${month}${day}`;
+    const appName =  app || "internet";
+    const key = `internet_flows:${appName}:${flow.mac}:${formattedDate}`;
+    const host = flow.host || flow.intel && flow.intel.host;
+    const ip = flow.ip || flow.intel && flow.intel.ip;
+ 
+    const jobj = JSON.stringify({
+      begin: flow.ts,
+      dur: flow.du,
+      intf: flow.intf,
+      mac: flow.mac,
+      destination: host || ip,
+      sourceIp: flow.sh,
+      destinationIp: flow.dh,
+      sourcePort: _.isArray(flow.sp) ? flow.sp[0] : flow.sp,
+      destinationPort: flow.dp,
+      protocol: flow.pr || "",
+      category: _.get(flow, ["intel", "category"]) || "",
+      upload: flow.ob,
+      download: flow.rb,
+      app: app
+    });
+
+    await rclient.zaddAsync(key, flow.ts, jobj);
+  }
+
+  isBackgroundDownload(flow, backgroundDownload) {
+    if (_.isEmpty(backgroundDownload) || !backgroundDownload.minDuration || !backgroundDownload.minDownloadRate)
+      return false;
+    const duration = flow.du || 0.1;
+    const downloadRate = (flow.rb || 0) / duration;
+    const uploadRate = (flow.ob || 0) / duration;
+    if (duration >= backgroundDownload.minDuration
+      && downloadRate >= backgroundDownload.minDownloadRate
+      && uploadRate <= backgroundDownload.maxUploadRate) {
+      this.recordFlow2Redis(flow, "background");
+      return true;
+    }
+    return false;
+  }
+
+
+  _isMatchPortInfo(portInfo, port, proto) {
+    // if portInfo is empty, it means no port restriction
+    if (!portInfo || _.isEmpty(portInfo)) return true;
+
+    return _.some(portInfo, (pinfo) => {
+      const startPort = parseInt(pinfo.start);
+      const endPort = parseInt(pinfo.end);
+      if (isNaN(startPort) || isNaN(endPort) || startPort < 0 || endPort < 0 || startPort > endPort)
+        return false;
+      return (!pinfo.proto || pinfo.proto === proto) && port >= startPort && port <= endPort;
+    });
+  }
+
 
   // returns an array with matched app criterias
   // [{"app": "youtube", "occupyMins": 1, "lingerMins": 1, "bytesThreshold": 1000000}]
   lookupAppMatch(flow) {
     const host = flow.host || flow.intel && flow.intel.host;
+    const ip = flow.ip || (flow.intel && flow.intel.ip) || "";
+    const sigs = flow.sigs || [];
     const result = [];
-    if (!this._domainTrie || !host)
+    let internet_options = this.getInternetOptions()
+    if ((!this._domainTrie && !this._cidr4Trie && !this._cidr6Trie && !this._sigMap) || (!host && !ip))
       return result;
+    // check domain trie
     const values = this._domainTrie.find(host);
+    let isAppMatch = false;
     if (_.isSet(values)) {
       for (const value of values) {
-        if (_.isObject(value) && value.app && !values.has(`!${value.app}`))
-          result.push(value);
+        if (_.isObject(value) && value.app && !values.has(`!${value.app}`)) {
+          if (!this._isMatchPortInfo(value.portInfo, flow.dp, flow.pr))
+            continue;
+          isAppMatch = true;
+          if ((!value.bytesThreshold || flow.ob + flow.rb >= value.bytesThreshold)
+            && (!value.ulDlRatioThreshold || flow.ob <= value.ulDlRatioThreshold * flow.rb)
+            && !this.isBackgroundDownload(flow, value.backgroundDownload)) {
+            result.push(value);
+            // keep internet options same as the matched app
+            Object.assign(internet_options, {
+              occupyMins: value.occupyMins,
+              lingerMins: value.lingerMins,
+              minsThreshold: value.minsThreshold
+            });
+            break;
+          }
+        }
       }
+    }
+
+    // check cidr trie
+    let cidrTrie = new Address4(ip).isValid() ? this._cidr4Trie : this._cidr6Trie;
+    if (_.isEmpty(result) && cidrTrie){
+      const entry = cidrTrie.find(ip);
+      if (_.isObject(entry)) {
+        if (this._isMatchPortInfo(entry.portInfo, flow.dp, flow.pr)) {
+          isAppMatch = true;
+          if ((!entry.bytesThreshold || flow.ob + flow.rb >= entry.bytesThreshold)
+            && (!entry.ulDlRatioThreshold || flow.ob <= entry.ulDlRatioThreshold * flow.rb)
+            && !this.isBackgroundDownload(flow, entry.backgroundDownload)){
+              result.push(entry);
+              // keep internet options same as the matched app
+              Object.assign(internet_options, {
+                occupyMins: entry.occupyMins,
+                lingerMins: entry.lingerMins,
+                minsThreshold: entry.minsThreshold
+              });
+            }
+        }
+      }
+    }
+
+    // check sigs
+    if (_.isEmpty(result) && this._sigMap.size > 0) {
+      for (const sigId of sigs) {
+        const entry = this._sigMap.get(sigId);
+        if (_.isObject(entry)) {
+          isAppMatch = true;
+          if ((!entry.bytesThreshold || flow.ob + flow.rb >= entry.bytesThreshold)
+            && (!entry.ulDlRatioThreshold || flow.ob <= entry.ulDlRatioThreshold * flow.rb)
+            && (!this.isBackgroundDownload(flow, entry.backgroundDownload))){
+              result.push(entry);
+              // keep internet options same as the matched app
+              Object.assign(internet_options, {
+                occupyMins: entry.occupyMins,
+                lingerMins: entry.lingerMins,
+                minsThreshold: entry.minsThreshold
+              });
+            }
+        }
+      }
+    }
+
+    if (isAppMatch && _.isEmpty(result)) {
+      return result;
+    }
+    // match internet activity on flow
+    const category = _.get(flow, ["intel", "category"]);
+    const bytesThreshold = this.getCategoryBytesThreshold(category);
+    // ignore flows with large upload/download ratio, e.g., a flow with large ul/dl ratio may happen if device is backing up data
+    const ulDlRatioThreshold = this.getCategoryUlDlRatioThreshold(category);
+    const backgroundDownload = this.getCategoryBackgroundDownload(category);
+    const nds = sl.getSensor("NoiseDomainsSensor");
+    let flowNoiseTags = nds ? nds.find(host) : null;
+    if ((flow.ob + flow.rb >= bytesThreshold && flow.ob <= ulDlRatioThreshold * flow.rb && _.isEmpty(flowNoiseTags) && !this.isBackgroundDownload(flow, backgroundDownload)) || !_.isEmpty(result)) {
+      log.debug("match internet activity on flow", flow, `bytesThresold: ${bytesThreshold}`);
+      result.push(internet_options);
     }
     return result;
   }
 
-  async processEnrichedFlow(enrichedFlow) {
+  async processEnrichedFlow(f) {
     if (!this.enabled)
       return;
-    const host = enrichedFlow.host || enrichedFlow.intel && enrichedFlow.intel.host;
-    const appMatches = this.lookupAppMatch(enrichedFlow);
+    const host = f.host || f.intel && f.intel.host;
+    if (f.du > 300) {
+      // long connection should be sliced into partial flows in zeek and BroDetect, in normal cases, duration should be no more than 3 minutes,
+      //  a flow with long duration may happen if firemain is restarted
+      log.warn("Unexpected flow with long duration, ignore", f.ts, f.du, f.sh, f.sp, '->', f.dh, f.dp);
+      return;
+    }
+    if (fc.isFeatureOn("record_activity_flow")){
+      this.recordFlow(f);
+    }
+
+    const appMatches = this.lookupAppMatch(f);
     if (_.isEmpty(appMatches))
       return;
     for (const match of appMatches) {
-      const {app, category, domain, occupyMins, lingerMins, bytesThreshold, minsThreshold} = match;
+      const {app, category, domain, occupyMins, lingerMins, minsThreshold} = match;
+      await this.recordFlow2Redis(f, app);
       if (host && domain)
         await dnsTool.addSubDomains(domain, [host]);
-      if (enrichedFlow.ob + enrichedFlow.rb < bytesThreshold)
-        continue;
       let tags = []
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
         const config = Constants.TAG_TYPE_MAP[type];
-        tags.push(...(enrichedFlow[config.flowKey] || []));
+        tags.push(...(f[config.flowKey] || []));
       }
       tags = _.uniq(tags);
-      await this.markBuckets(enrichedFlow.mac, tags, enrichedFlow.intf, app, category, enrichedFlow.ts, enrichedFlow.ts + enrichedFlow.du, occupyMins, lingerMins, minsThreshold);
+      await this.markBuckets(f.mac, tags, f.intf, app, category, f.ts, f.ts + f.du, occupyMins, lingerMins, minsThreshold);
     }
   }
 
@@ -275,6 +566,7 @@ class AppTimeUsageSensor extends Sensor {
     await lock.acquire(`LOCK_${mac}`, async () => {
       let extended = false;
       // set leading consecutive minute buckets with explicit "0" to "1", because they are in a linger window of a previous session
+      const leadingBuckets = [];
       for (let min = beginMin - 1; min >= 0; min--) {
         const hour = Math.floor(min / 60);
         const minOfHour = min % 60;
@@ -284,9 +576,10 @@ class AppTimeUsageSensor extends Sensor {
             extended = true;
           break;
         }
-        extended = true;
-        await this._incrBucketHierarchy(mac, tags, intf, app, category, hour, minOfHour, oldValue);
+        leadingBuckets.push({hour: hour, minOfHour: minOfHour, value: oldValue});
       }
+
+      const trailingBuckets = [];
       // look ahead trailing lingerMins buckets and set them to "0" or "1" accordingly
       let hour = Math.floor((endMin + lingerMins + 1) / 60);
       let minOfHour = (endMin + lingerMins + 1) % 60;
@@ -302,13 +595,22 @@ class AppTimeUsageSensor extends Sensor {
           } else
             nextVal = oldValue;
         } else {
-          await this._incrBucketHierarchy(mac, tags, intf, app, category, hour, minOfHour, oldValue);
           nextVal = "1";
           extended = true;
+          trailingBuckets.push({hour: hour, minOfHour: minOfHour, value: oldValue});
         }
       }
 
-      const effective = endMin - beginMin + 1 >= minsThreshold || extended; // do not record interval less than minsThreshold unless it is adjacent to linger minutes of other intervals
+      // do not record interval less than minsThreshold unless extended or total minutes (including leading/trailing) exceed threshold
+      const effective = extended || (endMin - beginMin + 1 + trailingBuckets.length + leadingBuckets.length >= minsThreshold);
+      if (effective) {
+        for (const bucket of leadingBuckets) {
+          await this._incrBucketHierarchy(mac, tags, intf, app, category, bucket.hour, bucket.minOfHour, bucket.value);
+        }
+        for (const bucket of trailingBuckets) {
+          await this._incrBucketHierarchy(mac, tags, intf, app, category, bucket.hour, bucket.minOfHour, bucket.value);
+        }
+      } 
       const beginHour = Math.floor(beginMin / 60);
       const endHour = Math.floor(endMin / 60);
       for (let hour = beginHour; hour <= endHour; hour++) {

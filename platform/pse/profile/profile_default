@@ -4,8 +4,8 @@
     ["xhci-hcd:usb4", 2 ]
   ],
   "rps_cpus": [
-    [ "eth0", "rx-0", "d" ],
-    [ "eth1", "rx-0", "b" ],
+    [ "eth0", "rx-0", "f" ],
+    [ "eth1", "rx-0", "c" ],
     [ "vpn_*", "rx-0", 9 ],
     [ "tun_fwvpn", "rx-0", 9 ]
   ],

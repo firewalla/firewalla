@@ -1,4 +1,4 @@
-/*    Copyright 2020-2021 Firewalla Inc.
+/*    Copyright 2020-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -39,6 +39,8 @@ const networkProfileManager = require('../net2/NetworkProfileManager.js');
 const tagManager = require('../net2/TagManager.js');
 const xml2jsonBinary = firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + firewalla.getPlatform();
 const httpBruteScript = firewalla.getHiddenFolder() + "/run/assets/http-brute.nse";
+const mysqlBruteScript = firewalla.getHiddenFolder() + "/run/assets/mysql-brute.nse";
+const libmysqlclientSO = firewalla.getHiddenFolder() + "/run/assets/libmysqlclient.so.21"
 const _ = require('lodash');
 const bruteConfig = require('../extension/nmap/bruteConfig.json');
 const AsyncLock = require('../vendor_lib/async-lock');
@@ -64,6 +66,7 @@ const STATE_QUEUED = "queued";
 const featureName = 'weak_password_scan';
 const policyKeyName = 'weak_password_scan';
 const MIN_CRON_INTERVAL = 86400; // at most one job every 24 hours, to avoid job queue congestion
+const TTL_SEC = 2678400; // expire in 86400 * 31 seconds
 
 class InternalScanSensor extends Sensor {
   constructor(config) {
@@ -142,7 +145,7 @@ class InternalScanSensor extends Sensor {
     this.hookFeature(featureName);
     const previousScanResult = await this.getScanResult();
     if (_.has(previousScanResult, "tasks"))
-      this.scheduledScanTasks = previousScanResult.tasks;
+      this.scheduledScanTasks = previousScanResult.tasks || {};
     // set state of previous pending/running tasks to "stopped" on service restart
     for (const key of Object.keys(this.scheduledScanTasks)) {
       const task = this.scheduledScanTasks[key];
@@ -163,7 +166,7 @@ class InternalScanSensor extends Sensor {
       this.checkDictionary().catch((err) => {
         log.error(`Failed to fetch dictionary from cloud`, err.message);
       });
-    }, 3600 * 1000);
+    }, 3600 * 1000 * 24);
     await this.checkDictionary().catch((err) => {
       log.error(`Failed to fetch dictionary from cloud`, err.message);
     });
@@ -484,11 +487,12 @@ class InternalScanSensor extends Sensor {
   }
 
   getTasks() {
-    return this.scheduledScanTasks;
+    return this.scheduledScanTasks || {};
   }
 
   async saveToRedis(hostId, result) {
     await rclient.setAsync(`weak_password_scan:${hostId}`, JSON.stringify(result));
+    await rclient.expireAsync(`weak_password_scan:${hostId}`, TTL_SEC);
   }
 
   async saveScanTasks() {
@@ -511,10 +515,20 @@ class InternalScanSensor extends Sensor {
 
   async getScanResult(latestNum=-1, maxResult=-1) { // -1 for all
     const result = await rclient.hgetallAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT);
-    if (!result)
+    if (!result) {
+      await this._updateRunningStatus(STATE_COMPLETE);
       return {};
+    }
     if (_.has(result, "tasks"))
-      result.tasks = JSON.parse(result.tasks);
+      try {
+        result.tasks = JSON.parse(result.tasks);
+      } catch (err) {
+        log.warn("failed to parse tasks", err.message);
+        result.tasks = {};
+      }
+      if (Object.keys(result.tasks).length == 0) {
+        await this._updateRunningStatus(STATE_COMPLETE);
+      }
     if (_.has(result, "lastCompletedScanTs"))
       result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
 
@@ -609,7 +623,7 @@ class InternalScanSensor extends Sensor {
     const result = await this._applyPolicy(host, ip, policy);
     if (result && result.err) {
       // if apply error, reset to previous saved policy
-      log.error('fail to apply policy,', result.err);
+      log.error('fail to apply policy,', host.constructor.name, ip, policy, result.err);
       if (this.policy) {
         await rclient.hsetAsync('policy:system', policyKeyName, JSON.stringify(this.policy));
       }
@@ -619,7 +633,7 @@ class InternalScanSensor extends Sensor {
   }
 
   async _updateRunningStatus(status) {
-    log.info("update running status set to", status)
+    log.verbose("update running status set to", status)
     return await rclient.evalAsync('if redis.call("get", KEYS[1]) == ARGV[1] then return 0 else redis.call("set", KEYS[1], ARGV[1]) return 1 end', 1, 'weak_password_scan:status', status);
   }
 
@@ -696,12 +710,18 @@ class InternalScanSensor extends Sensor {
           log.error("Error when mkdir:", err);
           return;
         }
-
-        const dictData = JSON.parse(data);
+        let dictData = {};
+        try {
+          dictData = JSON.parse(data);
+        } catch (err) {
+            log.warn("failed to parse scan config", err.message);
+            return;
+        }
         if (!dictData) {
           log.error("Error to parse scan config");
           return;
         }
+
         // process customCreds, commonCreds
         await this._process_dict_creds(dictData);
 
@@ -857,7 +877,7 @@ class InternalScanSensor extends Sensor {
       cmdArg.push(util.format('--script-args %s', scriptArgs.join(',')));
     }
     // a bit longer than unpwdb.timelimit in script args
-    return util.format('sudo timeout 5430s nmap -p %s %s %s -oX - | %s', port, cmdArg.join(' '), ipAddr, xml2jsonBinary);
+    return util.format('sudo timeout 5430s nmap -n -p %s %s %s -oX - | %s', port, cmdArg.join(' '), ipAddr, xml2jsonBinary);
   }
 
   async _genNmapCmd_default(ipAddr, port, scripts) {
@@ -866,13 +886,24 @@ class InternalScanSensor extends Sensor {
       let cmdArg = [];
       // customized http-brute
       let customHttpBrute = false;
+      let customMysqlBrute = false;
       if (this.config.strict_http === true && bruteScript.scriptName == 'http-brute') {
         if (await fsp.access(httpBruteScript, fs.constants.F_OK).then(() => true).catch((err) => false)) {
           customHttpBrute = true;
         }
       }
+      if (this.config.mysql8 === true && bruteScript.scriptName == 'mysql-brute') {
+        if (await fsp.access(libmysqlclientSO, fs.constants.F_OK).then(() => true).catch((err) => false)) {
+          if (await fsp.access(mysqlBruteScript, fs.constants.F_OK).then(() => true).catch((err) => false)) {
+            customMysqlBrute = true;
+          }
+        }
+      }
+
       if (customHttpBrute === true) {
         cmdArg.push(util.format('--script %s', httpBruteScript));
+      } else if (customMysqlBrute === true) {
+        cmdArg.push(util.format('--script %s', mysqlBruteScript));
       } else {
         cmdArg.push(util.format('--script %s', bruteScript.scriptName));
       }
@@ -991,7 +1022,13 @@ class InternalScanSensor extends Sensor {
 
     // prepare extra configs in advance (http-form-brute)
     const data = await rclient.hgetAsync('sys:config', 'weak_password_scan');
-    const extraConfig = JSON.parse(data);
+    let extraConfig = {};
+    try {
+      extraConfig = JSON.parse(data);
+    } catch (err) {
+      log.warn("failed to parse extra config", err.message);
+      return nmapCmdList;
+    }
 
     // 1. compose default userdb/passdb (NO apply extra configs)
     const defaultCmds = await this._genNmapCmd_default(ipAddr, port, scripts);
@@ -1141,7 +1178,7 @@ class InternalScanSensor extends Sensor {
       }
     }
 
-    const cmd = `sudo nmap -p ${port} --script ${scriptName} --script-args unpwdb.timelimit=10s,brute.mode=creds,brute.credfile=${credfile} ${ipAddr} | grep "Valid credentials" | wc -l`
+    const cmd = `sudo nmap -n -p ${port} --script ${scriptName} --script-args unpwdb.timelimit=10s,brute.mode=creds,brute.credfile=${credfile} ${ipAddr} | grep "Valid credentials" | wc -l`
     const result = await execAsync(cmd);
     if (result.stderr) {
       log.warn(`fail to running command: ${cmd} (user/pass=${username}/${password}), err: ${result.stderr}`);

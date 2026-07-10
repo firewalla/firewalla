@@ -1,4 +1,4 @@
-/*    Copyright 2020-2022 Firewalla Inc.
+/*    Copyright 2020-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -90,17 +90,17 @@ router.post('/message/:gid',
 //     "msg": "",
 //     "type": "jsondata",
 //     "compressMode": 1,
-//     "mtype": "msg"
 //   },
 //   "mtype": "msg"
 // }
 
-const simple = (req, res, next) => {
+const simple = async (req, res, next) => {
   const command = req.query.command || "init"
   const item = req.query.item || ""
   const content = req.body || {}
   const target = req.query.target || "0.0.0.0"
   const streaming = req.query.streaming || false;
+  const sync_to_msp = req.query.sync_to_msp || false;
 
   let body = {
     "message": {
@@ -125,15 +125,19 @@ const simple = (req, res, next) => {
       "msg": "",
       "type": "jsondata",
       "compressMode": 1,
-      "mtype": "msg"
     },
     "mtype": "msg"
   }
 
   body.message.obj.mtype = command
+  if (body.message.obj.mtype == "get")
+    body.message.suppressLog = true
   body.message.obj.data.item = item
   body.message.obj.target = target
   body.message.obj.id = req.query.id || body.message.obj.id
+  if (sync_to_msp) {
+    body.message.obj.syncToMsp = true;
+  }
   const data = body.message.obj.data
   if (req.query.start) data.start = parseInt(req.query.start)
   if (req.query.end) data.end = parseInt(req.query.end)
@@ -152,52 +156,43 @@ const simple = (req, res, next) => {
       res.is_closed = true;
     });
 
-    (async() => {
+    const gid = (await jsReadFile("/home/pi/.firewalla/ui.conf")).gid
 
-      const gid = (await jsReadFile("/home/pi/.firewalla/ui.conf")).gid
-
-      if(streaming) {
-        res.set({
-          'Cache-Control': 'no-cache',
-          'Content-Type': 'text/event-stream',
-          'Connection': 'keep-alive'
-        });
-        res.flushHeaders();
-
-        body.message.obj.data.value.streaming = {id: body.message.obj.id};
-
-        while(streaming && !res.is_closed) {
-          try {
-            let controller = await cloudWrapper.getNetBotController(gid);
-            let response = await controller.msgHandlerAsync(gid, body, "streaming");
-
-            const reply = `id: ${body.message.obj.id}\nevent: ${item}\ndata: ${JSON.stringify(response)}\n\n`;
-            res.write(reply);
-            await delay(1500); // self protection
-            body.message.suppressLog = true; // suppressLog after first call
-          } catch(err) {
-            log.error("Got error when handling request, err:", err);
-            break;
-          }
-        }
-      } else {
-        let controller = await cloudWrapper.getNetBotController(gid);
-        let response = await controller.msgHandlerAsync(gid, body);
-        res.body = JSON.stringify(response);
-        res.type('json');
-        res.send(res.body);
-      }
-
-    })()
-      .catch((err) => {
-        // netbot controller is not ready yet, waiting for init complete
-        log.error(err);
-        res.status(503);
-        res.json({error: 'Initializing Firewalla Device, please try later'});
+    if(streaming) {
+      res.set({
+        'Cache-Control': 'no-cache',
+        'Content-Type': 'text/event-stream',
+        'Connection': 'keep-alive'
       });
+      res.flushHeaders();
 
+      body.message.obj.data.value.streaming = {id: body.message.obj.id};
+
+      while(streaming && !res.is_closed) {
+        try {
+          let controller = await cloudWrapper.getNetBotController(gid);
+          let response = await controller.msgHandlerAsync(gid, body, "streaming");
+
+          const reply = `id: ${body.message.obj.id}\nevent: ${item}\ndata: ${JSON.stringify(response)}\n\n`;
+          res.write(reply);
+          await delay(2000); // self protection
+          body.message.suppressLog = true; // suppressLog after first call
+        } catch(err) {
+          log.error("Got error when handling request, err:", err);
+          break;
+        }
+      }
+    } else {
+      let controller = await cloudWrapper.getNetBotController(gid);
+      let response = await controller.msgHandlerAsync(gid, body);
+      res.body = JSON.stringify(response);
+      res.type('json');
+      res.status(response.code || 200)
+      res.send(res.body);
+    }
   } catch(err) {
-    res.status(400).send({
+    log.error(err);
+    res.status(err.code || 500).send({
       error: err.message,
       stack: err.stack
     })
@@ -207,10 +202,11 @@ const simple = (req, res, next) => {
 router.post('/simple', simple);
 router.get('/simple', simple);
 
-router.post('/complex', (req, res, next) => {
+router.post('/complex', async (req, res, next) => {
   const command = req.query.command || "init"
   const content = req.body || {}
   const target = req.query.target || "0.0.0.0"
+  const sync_to_msp = req.query.sync_to_msp || false;
 
   let body = {
     "message": {
@@ -235,34 +231,33 @@ router.post('/complex', (req, res, next) => {
       "msg": "",
       "type": "jsondata",
       "compressMode": 1,
-      "mtype": "msg"
     },
     "mtype": "msg"
   }
 
   body.message.obj.mtype = command
+  if (body.message.obj.mtype == "get")
+    body.message.suppressLog = true
   body.message.obj.target = target
   body.message.obj.data = content;
+  if (sync_to_msp) {
+    body.message.obj.syncToMsp = true;
+  }
 
   try {
-    (async() =>{
-      const gid = (await jsReadFile("/home/pi/.firewalla/ui.conf")).gid;
+    const gid = (await jsReadFile("/home/pi/.firewalla/ui.conf")).gid;
 
-      let controller = await cloudWrapper.getNetBotController(gid)
-      let response = await controller.msgHandlerAsync(gid, body)
-      res.body = JSON.stringify(response);
-      res.type('json');
-      res.send(res.body);
-    })()
-      .catch((err) => {
-        // netbot controller is not ready yet, waiting for init complete
-        log.error(err);
-        res.status(503);
-        res.json({error: 'Initializing Firewalla Device, please try later'});
-      });
-
+    let controller = await cloudWrapper.getNetBotController(gid)
+    let response = await controller.msgHandlerAsync(gid, body)
+    res.body = JSON.stringify(response);
+    res.type('json');
+    res.status(response.code || 200)
+    res.send(res.body);
   } catch(err) {
-    res.status(400).send({
+    // netbot controller is not ready yet, waiting for init complete
+    log.error(err);
+    const code = !isNaN(err.code) ? err.code : 500;
+    res.status(code).send({
       error: err.message,
       stack: err.stack
     })

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,10 +20,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 const Message = require('./Message.js');
 const fc = require('../net2/config.js');
-
+const f = require('./Firewalla.js');
 const _ = require('lodash');
-const iptable = require('./Iptables.js');
-const ip6table = require('./Ip6tables.js');
 
 const Block = require('../control/Block.js');
 
@@ -48,6 +46,8 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
+const blockControl = require('../control/BlockControl.js');
+const iptc = require('../control/IptablesControl.js');
 
 const { Rule } = require('../net2/Iptables.js');
 
@@ -62,10 +62,8 @@ class PolicyManager {
       return;
     }
 
-    await ip6table.prepare();
-    await iptable.prepare();
-    await ip6table.flush()
-    await iptable.flush()
+    await this.prepareOsiIpset();
+    await blockControl.callInitScript();
 
     // In case diag service is running, immediate adds redirection back to prevent pairing failure
     sem.emitEvent({
@@ -78,20 +76,13 @@ class PolicyManager {
     const secondarySubnet = sysManager.mySubnet2();
     if (platform.getDHCPCapacity() && secondarySubnet) {
       const overlayMasquerade = new Rule('nat').chn('FW_POSTROUTING').src(secondarySubnet).jmp('MASQUERADE');
-      await overlayMasquerade.exec('-A')
+      await iptc.addRule(overlayMasquerade);
     }
-    const icmpv6Redirect = new Rule().fam(6).chn('OUTPUT').pro('icmpv6').opt('--icmpv6-type', 'redirect').jmp('DROP');
-    await icmpv6Redirect.exec('-D');
-    await icmpv6Redirect.exec('-I');
-
-    // Setup iptables so that it's ready for blocking
-    await Block.setupBlockChain();
+    const icmpv6Redirect = new Rule().fam(6).chn('OUTPUT').icmp6('redirect').jmp('DROP');
+    await iptc.addRule(icmpv6Redirect);
 
     // setup global blocking redis match rule
     await dnsmasq.createGlobalRedisMatchRule();
-
-    // setup active protect category mapping file
-    await dnsmasq.createCategoryMappingFile("default_c", [categoryUpdater.getIPSetName("default_c"), categoryUpdater.getIPSetNameForIPV6("default_c")]);
 
     // device ipsets are created on creation of Host(), mostly happens on the first call of HostManager.getHostsAsync()
     // PolicyManager2 will ensure device sets are created before policy enforcement. nothing needs to be done here
@@ -140,15 +131,15 @@ class PolicyManager {
       return;
     switch (target.constructor.name) {
       case "HostManager": {
-        const result = await target.vpnClient(policy); // result optionally contains value of state and running
-        const latestPolicy = target.getPolicyFast() || {}; // in case latest policy has changed before the vpnClient function returns
-        const updatedPolicy = Object.assign({}, latestPolicy.vpnClient || policy, result); // this may trigger an extra system policy apply but the result should be idempotent
-        await target.setPolicyAsync("vpnClient", updatedPolicy);
+        await target.vpnClient(policy);
         break;
       }
       default: {
         await target.vpnClient(policy);
-
+        // if vpn client is not enabled, not need to send verified event to OSI
+        if(! policy.state || !policy.profileId) {
+          break;
+        }
         sem.sendEventToFireMain({
           type: Message.MSG_OSI_VERIFIED,
           message: "",
@@ -159,6 +150,10 @@ class PolicyManager {
         break;
       }
     }
+    sem.sendEventToFireMain({
+      type: Message.MSG_OSI_UPDATE_NOW,
+      message: ""
+    });
 
   }
 
@@ -194,7 +189,7 @@ class PolicyManager {
   }
 
   async vpn(host, config, policies) {
-    if(host.constructor.name !== 'HostManager') {
+    if (host.constructor.name !== 'HostManager') {
       log.error("vpn doesn't support per device policy", host);
       return; // doesn't support per-device policy
     }
@@ -228,7 +223,7 @@ class PolicyManager {
   }
 
   async shadowsocks(host, config) {
-    if(host.constructor.name !== 'HostManager') {
+    if (host.constructor.name !== 'HostManager') {
       log.error("shadowsocks doesn't support per device policy", host);
       return; // doesn't support per-device policy
     }
@@ -262,7 +257,7 @@ class PolicyManager {
   }
 
   async dnsmasq(host, config) {
-    if(host.constructor.name !== 'HostManager') {
+    if (host.constructor.name !== 'HostManager') {
       // per-device or per-network dnsmasq policy
       await host._dnsmasq(config);
       return;
@@ -320,7 +315,7 @@ class PolicyManager {
   }
 
   externalAccess(host, config) {
-    if(host.constructor.name !== 'HostManager') {
+    if (host.constructor.name !== 'HostManager') {
       log.error("externalAccess doesn't support per device policy", host);
       return; // doesn't support per-device policy
     }
@@ -335,7 +330,7 @@ class PolicyManager {
   }
 
   async apiInterface(host, config) {
-    if(host.constructor.name !== 'HostManager') {
+    if (host.constructor.name !== 'HostManager') {
       log.error("apiInterface doesn't support per device policy", host);
       return;
     }
@@ -359,7 +354,7 @@ class PolicyManager {
 
     const tags = (config || []).map(String);
 
-    if (! _.isEmpty(tags)) { // ignore if no tags added to this target
+    if (!_.isEmpty(tags)) { // ignore if no tags added to this target
       sem.sendEventToFireMain({
         type: Message.MSG_OSI_TARGET_TAGS_APPLIED,
         message: "",
@@ -396,11 +391,20 @@ class PolicyManager {
     if (!policy.hasOwnProperty('ipAllocation'))
       policy['ipAllocation'] = {};
 
-    for (let p in policy) try {
+    const policyKeys = Object.keys(policy);
+    const tagPolicyKeys = Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].policyKey);
+    // vpnClient and tag policy enforcement may affect OSI verification, so they should be applied first, check OSIPlugin.js for more details.
+    const prioritizedPolicyKeys = ["vpnClient", ...tagPolicyKeys, "dnsmasq", "acl", "aclTimer"].filter(p => policyKeys.includes(p));
+    const otherPolicyKeys = policyKeys.filter(p => !prioritizedPolicyKeys.includes(p));
+    const sortedPolicyKeys = [...prioritizedPolicyKeys, ...otherPolicyKeys];
+
+    let t1;
+    // apply policy in prioritized order
+    for (const p of sortedPolicyKeys) try {
       // keep a clone of the policy object to make sure the original policy data is not changed
       // the original data will be used for comparison to know if configured policy is updated,
       // if not updated, the applyPolicy below will not be changed
-
+      t1 = Date.now() / 1000;
       const policyDataClone = JSON.parse(JSON.stringify(policy[p]));
 
       if (target.oper[p] !== undefined && JSON.stringify(target.oper[p]) === JSON.stringify(policy[p])) {
@@ -453,6 +457,8 @@ class PolicyManager {
         await this.ipAllocation(target, policyDataClone);
       } else if (p === "dnsmasq") {
         // do nothing here, will handle dnsmasq at the end
+      } else if (p === "app") {
+        await target.app(policyDataClone);
       } else {
         for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
           const config = Constants.TAG_TYPE_MAP[type];
@@ -466,8 +472,11 @@ class PolicyManager {
         target.oper[p] = policy[p]; // use original policy data instead of the possible-changed clone
       }
 
-    } catch(err) {
+    } catch (err) {
       log.error('Error executing policy on', target.constructor.getClassName(), target.getReadableName(), p, policy[p], err)
+    } finally {
+      const t2 = Date.now() / 1000;
+      log.verbose(`Time taken to apply policy ${p} on ${target.getReadableName()}: ${(t2 - t1).toFixed(2)}s`);
     }
 
     // put dnsmasq logic at the end, as it is foundation feature
@@ -497,6 +506,20 @@ class PolicyManager {
         message: ""
       });
     }
+  }
+
+  async prepareOsiIpset() {
+    const osiInitDone = await rclient.getAsync("osi:init:done").catch((err) => { })
+    if (!osiInitDone) {
+      log.info("OSI ipset is not initialized, begin to prepareOsiIpset...");
+      const homePath = f.getFirewallaHome();
+      let cmdline = `${homePath}/scripts/fullfil_osi_ipset.sh`;
+      await exec(cmdline).catch(err => {
+        log.error("failed to prepare osi ipset", err.message);
+      })
+    }
+    await rclient.delAsync("osi:init:done").catch((err) => { });
+    return;
   }
 }
 

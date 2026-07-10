@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,6 +14,8 @@
  */
 'use strict';
 
+const net = require('net')
+
 const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
@@ -21,12 +23,9 @@ const Sensor = require('./Sensor.js').Sensor;
 const sem = require('./SensorEventManager.js').getInstance();
 
 const Bonjour = require('../vendor_lib/bonjour');
-
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
 const sysManager = require('../net2/SysManager.js')
-const Nmap = require('../net2/Nmap.js');
-const nmap = new Nmap();
-const l2 = require('../util/Layer2.js');
-const { Address4, Address6 } = require('ip-address')
 const Message = require('../net2/Message.js');
 const { modelToType, boardToModel, hapCiToType } = require('../extension/detect/appleModel.js')
 const HostManager = require("../net2/HostManager.js");
@@ -34,7 +33,6 @@ const hostManager = new HostManager();
 
 const _ = require('lodash')
 
-const ipMacCache = {};
 const lastProcessTimeMap = {};
 
 // BonjourSensor is used to two purposes:
@@ -72,6 +70,8 @@ class BonjourSensor extends Sensor {
       let bound = false;
       // create new bonjour listeners
       for (const iface of sysManager.getMonitoringInterfaces().filter(i => i.ip_address)) {
+        for (const vpnPrefix of ['wg', 'awg', 'tun'])
+          if (iface.name.startsWith(vpnPrefix)) continue
         const opts = {interface: iface.ip_address};
         if (!bound) {
           // only bind to INADDR_ANY once, otherwise duplicate dgrams will be received on multiple instances
@@ -107,8 +107,11 @@ class BonjourSensor extends Sensor {
 
   run() {
     sem.once('IPTABLES_READY', () => {
-      log.info("Bonjour Watch Starting");
-      this.scheduleReload();
+      // delay a bit for interface to be ready
+      setTimeout(() => {
+        log.info("Bonjour Watch Starting");
+        this.scheduleReload();
+      }, 10000);
 
       sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
         log.info("Schedule reload BonjourSensor since network info is reloaded");
@@ -117,69 +120,18 @@ class BonjourSensor extends Sensor {
     });
   }
 
-  async _getMacFromIP(ipAddr) {
-    if (!ipAddr)
-      return null;
-    if (ipMacCache[ipAddr]) {
-      const entry = ipMacCache[ipAddr];
-      if (entry.lastSeen > Date.now() / 1000 - 1800) { // cache is valid for 1800 seconds
-        return entry.mac;
-      } else {
-        delete ipMacCache[ipAddr];
-      }
-    }
-    if (new Address4(ipAddr).isValid()) {
-      return new Promise((resolve, reject) => {
-        l2.getMAC(ipAddr, (err, mac) => {
-          if (err) {
-            log.warn("Not able to find mac address for host:", ipAddr, mac);
-            resolve(null);
-          } else {
-            if (!mac) {
-              const myMac = sysManager.myMACViaIP4(ipAddr) || null;
-              if (!myMac)
-                log.warn("Not able to find mac address for host:", ipAddr, mac);
-              resolve(myMac);
-            } else {
-              ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };
-              resolve(mac);
-            }
-          }
-        })
-      })
-    } else if (new Address6(ipAddr).isValid() && !ipAddr.startsWith("fe80:")) { // nmap neighbor solicit is not accurate for link-local addresses
-      let mac = await nmap.neighborSolicit(ipAddr).catch((err) => {
-        log.warn("Not able to find mac address for host:", ipAddr, err);
-        return null;
-      })
-      if (mac && sysManager.isMyMac(mac))
-      // should not get neighbor advertisement of Firewalla itself, this is mainly caused by IPv6 spoof
-        mac = null;
-      if (!mac) {
-        const myMac = sysManager.myMACViaIP6(ipAddr) || null;
-        if (!myMac)
-          log.warn("Not able to find mac address for host:", ipAddr, mac);
-        return myMac
-      } else {
-        ipMacCache[ipAddr] = { mac: mac, lastSeen: Date.now() / 1000 };
-        return mac;
-      }
-    }
-    return null;
-  }
-
   async processService(service) {
     const ipv4Addr = service.ipv4Addr;
     const ipv6Addrs = service.ipv6Addrs;
 
     let mac = null
     if (!mac && ipv4Addr) {
-      mac = await this._getMacFromIP(ipv4Addr);
+      mac = await hostTool.getMacByIPWithCache(ipv4Addr);
     }
     if (!mac && ipv6Addrs && ipv6Addrs.length !== 0) {
       for (let i in ipv6Addrs) {
         const ipv6Addr = ipv6Addrs[i];
-        mac = await this._getMacFromIP(ipv6Addr);
+        mac = await hostTool.getMacByIPWithCache(ipv6Addr);
         if (mac)
           break;
       }
@@ -211,28 +163,37 @@ class BonjourSensor extends Sensor {
       //   detect.brand = 'Apple'
       //   break
       case '_airplay':
+        // airplay almost always has a good readable name, let's use it
+        if (name) detect.name = name
+        // falls through
+      case '_rfb':        // apple-screen-share
+      case '_sftp-ssh':   // apple-remote-login
+      case '_eppc':       // apple-remote-events 
       case '_mediaremotetv': {
         const result = await modelToType(txt && txt.model)
         if (result) {
           detect.type = result
           detect.brand = 'Apple'
           detect.model = txt.model
+          detect.name = name
         } else if (type == '_airplay' && txt) {
-          // airplay only https://openairplay.github.io/airplay-spec/service_discovery.html
+          // none apple device airplay https://openairplay.github.io/airplay-spec/service_discovery.html
           if (txt.manufacturer) detect.brand = txt.manufacturer
           if (txt.model) detect.model = txt.model
         }
 
-        // airplay almost always has a good readable name, let's use it
-        detect.name = name
         break
       }
       case '_raop': { // Remote Audio Output Protocol
-        const result = await modelToType(txt && txt.am)
+        const result = await modelToType(txt && txt.am) || await modelToType(txt && txt.model)
         if (result) {
           detect.type = result
           detect.brand = 'Apple'
-        }
+          const indexAt = name.indexOf('@')
+          if (indexAt != -1)
+            detect.name = name.substring(indexAt + 1)
+        } else
+          service.name = this.getHostName(service.hostName)
         break
       }
       case '_sleep-proxy':
@@ -277,10 +238,20 @@ class BonjourSensor extends Sensor {
       case '_amzn-wplay':
         if (txt && txt.sn == 'DeviceManager') break
 
+        // this is not accurate, TBD: amazon play model to type mapping
         detect.type = 'tv'
         if (txt && txt.n) {
           detect.name = txt.n
+          if (txt.n.includes('Echo') || txt.n.includes('echo'))
+            detect.type = 'smart speaker'
         }
+        break
+      case '_tivo-videos':
+      case '_tivo-videostream':
+        detect.type = 'tv'
+        detect.brand = 'TiVo'
+        detect.name = name
+        if (txt && txt.platform) detect.model = txt.platform
         break
       case '_sonos':
         detect.type = 'smart speaker'
@@ -297,8 +268,14 @@ class BonjourSensor extends Sensor {
       case '_googlecast':
         // googlecast supports both video(TV) and audio(Speaker)
         if (txt) {
-          if (txt.fn) detect.name = txt.fn
-          if (txt.md) detect.model = txt.md
+          // a standalone service for chromecast group
+          if (txt.md == 'Google Cast Group') {
+            // this is the group name
+            if (txt.fn && !detected.name) detect.name = txt.fn
+          } else {
+            if (txt.fn) detect.name = txt.fn
+            if (txt.md) detect.model = txt.md
+          }
         }
         break
       case '_meshcop': // https://www.threadgroup.org/ThreadSpec
@@ -307,21 +284,40 @@ class BonjourSensor extends Sensor {
           if (txt.mn) detect.model = txt.mn
         }
         break
+      case '_mqtt':
+        if (txt && txt.irobotmcs) {
+          const irobotmcs = JSON.parse(txt.irobotmcs)
+          detect.brand = 'iRobot'
+          detect.type = 'appliance'
+          detect.name = irobotmcs.robotname
+          if (irobotmcs.mac) mac = irobotmcs.mac.toUpperCase()
+        }
+        break
       case '_http':
         // ignore _http on comprehensive devices even type is not from bonjour
         if (['phone', 'tablet', 'desktop', 'laptop'].includes(_.get(hostObj, 'o.detect.type'))) {
           return
         }
         break
+      // case '_psia': // Physical Security Interoperability Alliance
+      // case '_CGI':
+      //   detect.type = 'camera'
+      //   break
+      // case '_amzn-alexa':
+      //   // detect.type = 'smart speaker'
+      //   break
     }
 
     if (Object.keys(detect).length) {
       log.verbose('Bonjour', mac, detect)
+      const source = _.pick(service, ['type', 'name', 'ipv4Addr'])
+      source.expire = Date.now() / 1000 + (this.config.expire || 30 * 24 * 3600)
       sem.emitLocalEvent({
         type: 'DetectUpdate',
         from: 'bonjour',
         mac,
         detect,
+        source,
         suppressEventLogging: true,
       })
     }
@@ -331,7 +327,7 @@ class BonjourSensor extends Sensor {
       from: "bonjour"
     };
 
-    if (name && name.length && type != '_mi-connect')
+    if (name && name.length && !this.config.ignoreNames.some(n => name.includes(n)) && type != '_mi-connect')
       host.bname = name
 
     if (ipv4Addr) {
@@ -350,9 +346,8 @@ class BonjourSensor extends Sensor {
     })
   }
 
-  getHostName(service) {
-    let name = service.host.replace(".local", "");
-    return name;
+  getHostName(host) {
+    return host.replace(".local", "")
   }
 
   getFriendlyDeviceName(service) {
@@ -365,7 +360,7 @@ class BonjourSensor extends Sensor {
       service.fqdn && bypassList.some((x) => service.fqdn.match(x)) ||
       this.config.nonReadableNameServices.includes(service.type)
     ) {
-      name = this.getHostName(service)
+      name = this.getHostName(service.host)
     } else {
       name = service.name
     }
@@ -379,28 +374,28 @@ class BonjourSensor extends Sensor {
     if (service == null) {
       return;
     }
-    if (service.addresses == null ||
-      service.addresses.length == 0 ||
-      service.referer.address == null) {
+
+    const addresses = service.addresses
+    if (!addresses.length)
       return;
-    }
 
     // not really helpful on recognizing name & type
-    if (this.config.ignoredServices.includes(service.type)) {
+    if (this.config.ignoreServices.includes(service.type)) {
       return
     }
 
     let ipv4addr = null;
     let ipv6addr = [];
 
-    for (const addr of service.addresses) {
-      if (new Address4(addr).isValid()) {
+    for (const addr of addresses) {
+      const fam = net.isIP(addr)
+      if (fam == 4) {
         if (sysManager.isLocalIP(addr)) {
           ipv4addr = addr;
         } else {
           log.debug("Discover:Bonjour:Parsing:NotLocalV4Adress", addr);
         }
-      } else if (new Address6(addr).isValid()) {
+      } else if (fam == 6) {
         ipv6addr.push(addr);
       }
     }

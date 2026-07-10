@@ -1,6 +1,6 @@
 #!/bin/env node
 
-/*    Copyright 2019 Firewalla INC
+/*    Copyright 2019-2025 Firewalla INC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,10 +19,9 @@
 
 let hash = require('../util/Hashes.js');
 let util = require('util');
-let argv = require('minimist')(process.argv.slice(2));
 let blackholeIP = "0.0.0.0";
 
-let domains = argv._;
+let domains = process.argv.slice(2)
 
 domains.forEach((domain) => {
   if(!domain.endsWith("/")) {

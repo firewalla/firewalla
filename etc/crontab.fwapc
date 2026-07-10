@@ -1,0 +1,1 @@
+0 3 * * * ( sleep $(( ${RANDOM} * 120 / 32768 ))m ; ASSETSD_PATH=/home/pi/.firewalla/config/assets.fwapc /home/pi/firewalla/scripts/update_assets.sh >/tmp/fwapcupgrade.log 2>&1 )

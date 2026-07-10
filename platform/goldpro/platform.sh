@@ -11,7 +11,7 @@ USB_DEV=/dev/sdb1
 MANAGED_BY_FIREBOOT=yes
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab.gold
 REAL_PLATFORM='real.x86_64'
-FW_PROBABILITY="0.99"
+FW_PROBABILITY="0.999"
 FW_QOS_PROBABILITY="0.999"
 ALOG_SUPPORTED=yes
 FW_SCHEDULE_BRO=false
@@ -22,6 +22,9 @@ REDIS_MAXMEMORY=600mb
 RAMFS_ROOT_PARTITION=yes
 FW_ZEEK_RSS_THRESHOLD=800000
 MAX_OLD_SPACE_SIZE=512
+HAVE_FWAPC=yes
+HAVE_FWDAP=yes
+WAN_INPUT_DROP_RATE_LIMIT=16
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
@@ -89,17 +92,6 @@ function map_target_branch {
     echo $1
     ;;
   esac
-}
-
-function installTLSModule {
-  uid=$(id -u pi)
-  gid=$(id -g pi)
-  if ! lsmod | grep -wq "xt_tls"; then
-    if [[ $(lsb_release -cs) == "jammy" ]]; then
-      sudo insmod ${FW_PLATFORM_CUR_DIR}/files/$(uname -r)/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
-      sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/TLS/u22/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables
-    fi
-  fi
 }
 
 function beep {

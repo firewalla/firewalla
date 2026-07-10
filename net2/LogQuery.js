@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -39,6 +39,7 @@ const _ = require('lodash');
 const firewalla = require('../net2/Firewalla.js');
 const sl = firewalla.isApi() ? require('../sensor/APISensorLoader.js') : firewalla.isMain() ? require('../sensor/SensorLoader.js') : null;
 const DomainTrie = require('../util/DomainTrie.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 class LogQuery {
 
@@ -80,11 +81,11 @@ class LogQuery {
   }
 
   optionsToFilter(options) {
-    const filter = JSON.parse(JSON.stringify(options));
-    const logicFilterKeys = ["include", "exclude"]; // include and exclude can contain multiple filters in logic OR relationship
-    for (const logicFilterKey of logicFilterKeys) {
-      if (_.isArray(filter[logicFilterKey])) {
-        for (const logicFilter of filter[logicFilterKey]) {
+    const filterKeys = ["include", "exclude"];
+    const filter = JSON.parse(JSON.stringify(_.pick(options, filterKeys)));
+    for (const key of filterKeys) {
+      if (_.isArray(filter[key])) {
+        for (const logicFilter of filter[key]) {
           for (const key of Object.keys(logicFilter)) {
             switch (key) {
               case "host":
@@ -109,10 +110,7 @@ class LogQuery {
         }
       }
     }
-    // don't filter logs with intf & tag here to keep the behavior same as before
-    // it only makes sense to filter intf & tag when we query all devices
-    // instead of simply expending intf and tag to mac addresses
-    return _.omit(filter, ['mac', 'macs', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag', 'enrich']);
+    return filter
   }
 
   isLogValid(logObj, filter) {
@@ -134,7 +132,7 @@ class LogQuery {
           return false;
         continue;
       }
-      if (!logObj.hasOwnProperty(key))
+      if (!logObj.hasOwnProperty(key) && filter[key] !== false)
         return false;
       switch (filter[key].constructor.name) {
         case "DomainTrie": { // domain in log is always literal string, no need to take array of string into consideration
@@ -191,16 +189,20 @@ class LogQuery {
    * @param {function} feeds[].query - function that gets log
    * @param {Object} feeds[].options - unique options for the query
    */
-  async logFeeder(options, feeds) {
-    log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(_.omit(options, 'macs')))
+  async logFeeder(options, feeds, global = false) {
     options = this.checkArguments(options)
-    // filter calculation is not related to options in each feed, only need to call optionsToFilter once here
-    const filter = this.optionsToFilter(options);
+    const commonOptions = _.pick(options, ['ts', 'ets', 'asc', 'count'])
+    log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(_.omit(options, 'macs')))
     feeds.forEach(f => {
       f.options = f.options || {};
-      Object.assign(f.options, options)
-      const filterFunc = f.filter // save pointer as var to avoid stackoverflow
-      f.filter = log => filterFunc(log, filter)
+      // feed based filter is only added in optionsToFeeds(), and we are only dealing with exclude for now
+      // both include and exclude can only be array, check optionsToFilter()
+      if (!_.isEmpty(f.options.exclude) || !_.isEmpty(options.exclude))
+        f.options.exclude = [].concat(f.options.exclude || [], options.exclude || [])
+      if (!_.isEmpty(options.include))
+        f.options.include = options.include
+      f.filter = this.optionsToFilter(f.options)
+      Object.assign(f.options, commonOptions)
     })
     // log.debug( feeds.map(f => JSON.stringify(f) + '\n') )
     let results = []
@@ -208,35 +210,44 @@ class LogQuery {
     const toRemove = []
     // query every feed once concurrentyly to reduce io block
     results = _.flatten(await Promise.all(feeds.map(async feed => {
-      const logs = await feed.query(feed.options)
+      // use half of the desired count to do initial concurrent query to reduce memory consumption
+      const logs = await feed.base.getDeviceLogs(Object.assign({}, feed.options, {count: global ? options.count : Math.floor(options.count/2)}))
       if (logs.length) {
-        feed.options.ts = logs[logs.length - 1]._ts
+        feed.options.ts = logs[logs.length - 1].ts
       } else {
         // no more elements, remove feed from feeds
         toRemove.push(feed)
       }
-      return logs.filter(log => feed.filter(log))
+      // log.silly(JSON.stringify(_.omit(feed.options, 'exclude')), feed.filter)
+      return logs.filter(log => feed.base.isLogValid(log, feed.filter))
     })))
 
     // the following code could be optimized further by using a heap
     results = _.orderBy(results, 'ts', options.asc ? 'asc' : 'desc')
     feeds = feeds.filter(f => !toRemove.includes(f))
-    log.verbose(this.constructor.name, `Removed ${toRemove.length} feeds, ${feeds.length} remaining`, JSON.stringify(_.omit(options, 'macs')))
+    log.verbose(this.constructor.name, `Removed ${toRemove.length} feeds, ${feeds.length} remaining`, JSON.stringify(options))
 
     // always query the feed moves slowest
     let feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
+    if (!feed) return results
     let prevFeed, prevTS
 
-    while (feed && this.validResultCount(feed.options, results) < options.count) {
+    let validResultCount = this.validResultCount(feed.options, results)
+
+    while (validResultCount < options.count) {
 
       prevFeed = feed
       prevTS = feed.options.ts
 
-      let logs = await feed.query(feed.options)
+      let logs = await feed.base.getDeviceLogs(
+        // cuts query count when there's no filter
+        Object.assign(feed.options, {count: options.count - (Object.keys(feed.filter).length ? 0 : validResultCount)})
+      )
       if (logs.length) {
-        feed.options.ts = logs[logs.length - 1]._ts || logs[logs.length - 1].ts // _ts is newly added into block flows, in case it does not exist, use ts as a fallback
+        feed.options.ts = logs[logs.length - 1].ts // this is simple formatted data
 
-        logs = logs.filter(log => feed.filter(log))
+        // log.silly(JSON.stringify(_.omit(feed.options, 'exclude')), feed.filter)
+        logs = logs.filter(log => feed.base.isLogValid(log, feed.filter))
         if (logs.length) {
           // a more complicated but faster ordered merging without accessing elements via index.
           // result should be the same as
@@ -259,30 +270,38 @@ class LogQuery {
           // leaving merging for front-end
           // results = this.mergeLogs(results, options);
         }
+      } else if (global) {
+        // when query system logs, stop when any of the feed is exhausted
+        log.debug('System flow exhausted', feed.base.constructor.name,
+          feed.options.local ? 'local' : feed.options.dns ? 'dns' : feed.options.ntp ? 'regular' : 'ntp',
+          feed.options.block ? 'block' : 'accept', feed.options.ts)
+        break
       } else {
         // no more elements, remove feed from feeds
         feeds = feeds.filter(f => f != feed)
-        log.debug('Removing', feed.query.name, feed.options.direction || (feed.options.block ? 'block':'accept'), feed.options.mac, feed.options.ts)
+        log.debug('Removing', feed.base.constructor.name, feed.options.direction,
+          feed.options.local ? 'local' : feed.options.dns ? 'dns' : feed.options.ntp ? 'ntp' : 'regular',
+          feed.options.block ? 'block' : 'accept', feed.options.mac, feed.options.ts)
       }
 
       feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
+      if (!feed) break
       if (feed == prevFeed && feed.options.ts == prevTS) {
-        log.error("Looping!!", feed.query.name, feed.options)
+        log.error("Looping!!", feed.base.constructor.name, feed.options)
         break
       }
+
+      validResultCount = this.validResultCount(feed.options, results)
     }
 
     return results.slice(0, options.count)
   }
 
-  checkCount(options) {
-    if (!options.count) options.count = DEFAULT_QUERY_COUNT
-    if (options.count > MAX_QUERY_COUNT) options.count = MAX_QUERY_COUNT
-  }
-
   checkArguments(options) {
     options = options || {}
-    this.checkCount(options)
+
+    if (!options.count) options.count = DEFAULT_QUERY_COUNT
+    if (options.count > MAX_QUERY_COUNT) options.count = MAX_QUERY_COUNT
     if (!options.asc) options.asc = false;
     if (!options.ts) {
       options.ts = options.asc ?
@@ -316,7 +335,7 @@ class LogQuery {
       }
       return identityManager.getGUID(identity)
     } else if (mac.startsWith(Constants.NS_INTERFACE + ':')) {
-      const intf = networkProfileManager.getNetworkProfile(mac.split(Constants.NS_INTERFACE + ':')[1]);
+      const intf = networkProfileManager.getNetworkProfile(mac.substring(Constants.NS_INTERFACE.length + 1));
       if (!intf) {
         return null;
       }
@@ -339,7 +358,7 @@ class LogQuery {
         }
       }
     }
-    const includedMacs = null;
+    let includedMacs = null;
     if (_.isArray(options.include) && options.include.every(f => f.device)) { // only consider included devices before redis query to reduce unnecessary IO overhead
       includedMacs = new Set();
       for (const inFilter of options.include) {
@@ -368,7 +387,7 @@ class LogQuery {
       if (!intf) {
         throw new Error('Invalid Interface ' + options.intf)
       }
-      if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
+      if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg") || intf.o.intf.startsWith("awg"))) {
         // add additional macs into options for VPN server network
         const allIdentities = identityManager.getIdentitiesByNicName(intf.o.intf);
         for (const ns of Object.keys(allIdentities)) {
@@ -401,7 +420,7 @@ class LogQuery {
     allMacs = allMacs.filter(mac => !excludedMacs.has(mac));
     if (_.isSet(includedMacs))
       allMacs = allMacs.filter(mac => includedMacs.has(mac));
-    log.debug('Expended mac addresses', allMacs)
+    log.silly('Expended mac addresses', allMacs)
 
     return allMacs
   }
@@ -421,8 +440,7 @@ class LogQuery {
 
     const feeds = allMacs.map(mac => {
       return {
-        query: this.getDeviceLogs.bind(this),
-        filter: this.isLogValid.bind(this),
+        base: this, // returning base class directly so member functions are all accessible
         options: Object.assign({mac}, options)
       }
     })
@@ -434,9 +452,10 @@ class LogQuery {
   }
 
 
-  async enrichWithIntel(logs) {
+  async enrichWithIntel(logs, enrichIP = false) {
     return mapLimit(logs, 50, async f => {
-      if (f.ip) {
+      // ignore dns and ntp here as ip intel doesn't make sense for intercepted flows
+      if (f.ip && f.type == 'ip' && !f.local || enrichIP) {
         const intel = await intelTool.getIntel(f.ip, f.appHosts)
 
         // lodash/assign appears to be x4 times less efficient
@@ -445,8 +464,10 @@ class LogQuery {
           if (intel.country) f.country = intel.country
           if (intel.category) f.category = intel.category
           if (intel.app) f.app = intel.app
-          if (intel.host) f.host = intel.host
         }
+
+        const host = f.appHosts && f.appHosts[0] || intel && intel.host
+        if (host) f.host = host
 
         // getIntel should always return host if at least 1 domain is provided
         delete f.appHosts
@@ -458,33 +479,33 @@ class LogQuery {
 
         // failed on previous cloud request, try again
         if (intel && intel.cloudFailed || !intel) {
-          // not waiting as that will be too slow for API call
-          destIPFoundHook.processIP(f.ip);
+          if (!firewalla.isApi()) {
+            destIPFoundHook.processIP(f.ip);
+          } else {
+            // in fireapi, send to firemain for async intel check, which can use FastIntelPlugin and cloud
+            sem.sendEventToFireMain({
+              type: 'DestIP',
+              ip: f.ip,
+              skipReadLocalCache: true,
+              suppressEventLogging: true
+            });
+          }
         }
-      }
-
-      if (f.domain) {
+      } else if (f.domain) {
         const intel = await intelTool.getIntel(undefined, [f.domain])
 
-        // Object.assign(f, _.pick(intel, ['category', 'app', 'host']))
         if (intel) {
           if (intel.category) f.category = intel.category
           if (intel.app) f.app = intel.app
-          if (intel.host) f.host = intel.host
         }
       }
 
-      if (f.rl) {
-        const rlIp = f.rl.startsWith("[") && f.rl.includes("]:") ? f.rl.substring(1, f.rl.indexOf("]:")) : f.rl.split(":")[0];
-        const rlIntel = await intelTool.getIntel(rlIp);
-        if (rlIntel && rlIntel.country) {
-          f.rlCountry = rlIntel.country;
-        } else {
-          const c = country.getCountry(rlIp);
+      for (const rlKey in ['rl', 'drl'])
+        if (f[rlKey]) {
+          const c = country.getCountry(f[rlKey].split(':')[0]);
           if (c)
-            f.rlCountry = c;
+            f[rlKey+'Country'] = c;
         }
-      }
 
       // special handling of flows blocked by adblock, ensure category is ad,
       // better do this by consolidating cloud data for domain intel and adblock list
@@ -505,16 +526,31 @@ class LogQuery {
     })
   }
 
+  async enrichSimpleLogs(logs, options = {}) {
+    const filtered = (logs || []).filter(Boolean);
+    if (_.isEmpty(filtered)) return filtered;
+
+    if (options.enrich === false)
+      return filtered;
+
+    return this.enrichWithIntel(filtered, options.enrichIP);
+  }
+
+  async enrichSimpleLog(log, options = {}) {
+    if (!log) return null;
+    const logs = await this.enrichSimpleLogs([log], options);
+    return logs[0] || null;
+  }
+
   // override this
   getLogKey(target, options) {
     throw new Error('not implemented')
   }
 
+  // Don't call this outside of LogQuery
   // note that some fields are added with intel enrichment
   // options should not contains filters with these fields when called with enrich = false
   async getDeviceLogs(options) {
-    options = this.checkArguments(options)
-
     const target = options.mac
     if (!target) throw new Error('Invalid device')
 
@@ -523,13 +559,12 @@ class LogQuery {
     const zrange = (options.asc ? rclient.zrangebyscoreAsync : rclient.zrevrangebyscoreAsync).bind(rclient);
     const results = await zrange(key, '(' + options.ts, options.ets, "LIMIT", 0 , options.count);
 
+    log.silly(key, '(' + options.ts, options.ets, "LIMIT", 0 , options.count)
     if(results === null || results.length === 0)
       return [];
 
-    const enrich = 'enrich' in options ? options.enrich : true
+    const { enrich = true } = options
     delete options.enrich
-
-    log.debug(this.constructor.name, 'getDeviceLogs', options.direction || (options.block ? 'block':'accept'), target, options.ts)
 
     let logObjects = results
       .map(str => {
@@ -537,7 +572,7 @@ class LogQuery {
         if (!obj) return null
 
         const s = this.toSimpleFormat(obj, options)
-        s.device = target; // record the mac address here
+        s.device = target == 'system' ? obj.mac : target; // record the mac address here
         return s;
       })
 

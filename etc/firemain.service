@@ -7,6 +7,7 @@ User=pi
 Restart=always
 LimitNOFILE=65535
 WorkingDirectory=/home/pi/firewalla/net2
+OOMScoreAdjust=-600
 ExecStart=/bin/bash -c '/home/pi/firewalla/scripts/start_service.sh FireMain 2>&1 | tee -a /home/pi/.forever/main.log &>/dev/null'
 
 [Install]

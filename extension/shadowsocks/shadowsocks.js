@@ -30,7 +30,7 @@ const jsonfile = require('jsonfile');
 const jsReadFile = util.promisify(jsonfile.readFile)
 const jsWriteFile = util.promisify(jsonfile.writeFile)
 const fs = require('fs')
-const configFileLocation = fHome + '/etc/shadowsocks.config.json';
+let configFileLocation = fHome + '/etc/shadowsocks.config.json';
 
 const externalPort = 8388;
 const localPort = 8388;

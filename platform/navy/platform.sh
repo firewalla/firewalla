@@ -11,12 +11,14 @@ ALOG_SUPPORTED=yes
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab
 REAL_PLATFORM='real.navy'
 XT_TLS_SUPPORTED=yes
+XT_UDP_TLS_SUPPORTED=yes
 FW_PROBABILITY="0.98"
 FW_SCHEDULE_BRO=false
 FW_ZEEK_CPU_THRESHOLD=98
 FW_ZEEK_RSS_THRESHOLD=200000
 MAX_OLD_SPACE_SIZE=384
 OVERLAY_RESET_ON_BOOT=false
+WAN_INPUT_DROP_RATE_LIMIT=4
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
@@ -98,13 +100,4 @@ rcvbuf 0
 EOS
   }
 
-}
-
-function installTLSModule {
-  uid=$(id -u pi)
-  gid=$(id -g pi)
-  if ! lsmod | grep -wq "xt_tls"; then
-    sudo insmod ${FW_PLATFORM_CUR_DIR}/files/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
-    sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/libxt_tls.so /usr/lib/aarch64-linux-gnu/xtables
-  fi
 }

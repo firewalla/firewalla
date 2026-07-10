@@ -108,8 +108,18 @@ redef restrict_filters += [["random-pick-ssl-ipv6"] = "not (ip6 and tcp and port
 @load /home/pi/.firewalla/run/zeek/scripts/bro-heartbeat
 @load /home/pi/.firewalla/run/zeek/scripts/heartbeat-flow
 @load /home/pi/.firewalla/run/zeek/scripts/zeek-conn-log-filter
+@load /home/pi/.firewalla/run/zeek/scripts/zeek-ssl-clear-state
 @load /home/pi/.firewalla/run/zeek/scripts/well-known-server-ports
 @load /home/pi/.firewalla/run/zeek/scripts/dns-mac-logging.zeek
+@load /home/pi/.firewalla/run/zeek/scripts/http-fast-logging.zeek
+@load /home/pi/.firewalla/run/zeek/scripts/ssl-alpn-logging.zeek
 
 # make udp inactivity timeout consistent with net.netfilter.nf_conntrack_udp_timeout_stream
 redef udp_inactivity_timeout = 3 min;
+
+redef dpd_buffer_size = 65536;
+
+# this variable is introduced in zeek 6.0 and default value is T, indicating whether Zeek should automatically consider private address ranges "local".
+@if (Version::at_least("6.0.0"))
+redef Site::private_address_space_is_local = F;
+@endif

@@ -18,12 +18,12 @@ const fsp = require('fs').promises
 
 const _ = require('lodash');
 const stream = require('stream');
-const moment = require('moment')
+const moment = require('moment');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
-let incTs = 0;
 
 const validDomainRegex = /^[a-zA-Z0-9-_.]+$/
+const validVersionRegex = /^[0-9.]+/
 
 function extend(target) {
   var sources = [].slice.call(arguments, 1);
@@ -36,7 +36,7 @@ function extend(target) {
 }
 
 function getPreferredName(hostObject) {
-  if (hostObject == null) {
+  if (!hostObject) {
     return null
   }
 
@@ -47,10 +47,15 @@ function getPreferredName(hostObject) {
   return getPreferredBName(hostObject);
 }
 
+// priority list of names on App (legacy) goes:
+// hostname, name, bname, bonjourName, dhcpName
+//
+// we should be avoiding setting anything used here as 'Unknown' (for easier checking)
+// except on serializing to JSON before returning to App
 
 function getPreferredBName(hostObject) {
 
-  if (hostObject == null) {
+  if (!hostObject) {
     return null;
   }
 
@@ -58,59 +63,54 @@ function getPreferredBName(hostObject) {
     return hostObject.cloudName
   }
 
+  let detectName
+  let modelName
   if (hostObject.detect) {
     let detect = hostObject.detect
     if (_.isString(detect)) try {
       detect = JSON.parse(detect)
     } catch(err) { }
 
-    if (_.get(detect, 'bonjour.name')) {
-      return detect.bonjour.name
-    }
+    detectName = _.get(detect, 'cloud.name') || _.get(detect, 'bonjour.name')
+    if (detectName)
+      return detectName
+    else
+      detectName = detect.name
+
+    modelName = detect.model
   }
 
+  const name = hostObject.dhcpName
+    || hostObject['dnsmasq.dhcp.leaseName']
+    || hostObject.bonjourName
+    || hostObject.sambaName
+    // hostname doesn't seem to be assigned anywhere, on App, this actually has the highest priority
+    || hostObject.hostname
+    || hostObject.nbtName
+    // below 2 mostly from user-agent now
+    || detectName
+    || modelName
+    || hostObject.modelName // from SSDP
 
-  if (hostObject.dhcpName) {
-    return hostObject.dhcpName
-  }
+  if (name) return name
 
-  if (hostObject['dnsmasq.dhcp.leaseName']) {
-    return hostObject['dnsmasq.dhcp.leaseName']
-  }
-
-  if (hostObject.bonjourName) {
-    return hostObject.bonjourName
-  }
-
-  if (hostObject.bname) {
-    return hostObject.bname
-  }
-
-  /* predict name is inaccurate, not suitable to use it at the moment
-  if (hostObject.pname) {
-    return hostObject.pname
-  }
-  */
-  if (hostObject.hostname) {
-    return hostObject.hostname
-  }
-  if (hostObject.macVendor != null) {
-    let name = hostObject.macVendor
-    return name
+  if (hostObject.macVendor != null && hostObject.macVendor !== 'Unknown') {
+    return hostObject.macVendor
   }
 
-  if (hostObject.ipv4Addr)
-    return hostObject.ipv4Addr
+  // all of the clients we have show IP together with name, this doesn't make sense anymore
+  // if (hostObject.ipv4Addr)
+  //   return hostObject.ipv4Addr
 
-  if (hostObject.ipv6Addr) {
-    let v6Addrs = hostObject.ipv6Addr || [];
-    if (_.isString(v6Addrs)) {
-      try {
-        v6Addrs = JSON.parse(v6Addrs);
-      } catch (err) { }
-    }
-    return v6Addrs[0]
-  }
+  // if (hostObject.ipv6Addr) {
+  //   let v6Addrs = hostObject.ipv6Addr || [];
+  //   if (_.isString(v6Addrs)) {
+  //     try {
+  //       v6Addrs = JSON.parse(v6Addrs);
+  //     } catch (err) { }
+  //   }
+  //   return v6Addrs[0]
+  // }
 
   return undefined;
 }
@@ -121,16 +121,49 @@ function delay(t) {
   });
 }
 
+const keysToRedact = new Set(["password", "passwd", "psk", "key", "psks", "secret", "private_key_pass"]);
+function redactLog(obj, redactRequired = false, depth) {
+  if (!obj || depth > 6)
+    return obj;
+  // obj should be either object or array
+  const objCopy = _.isArray(obj) ? [] : _.clone(obj);
+  try {
+    for (const key of Object.keys(obj)) {
+      if (_.isFunction(obj[key]))
+        continue;
+      if (key === "freeradius_server") {
+        depth = 0; // need more depth for freeradius_server
+      }
+      if (_.isPlainObject(obj[key]) || _.isArray(obj[key]))
+        objCopy[key] = redactLog(obj[key], redactRequired || keysToRedact.has(key), depth + 1);
+      else {
+        if (redactRequired || keysToRedact.has(key))
+          objCopy[key] = "*** redacted ***";
+        else
+          objCopy[key] = obj[key];
+      }
+    }
+  } catch (err) {}
+  return objCopy;
+}
+
 // pass in function arguments object and returns string with whitespaces
 function argumentsToString(v) {
   // convert arguments object to real array
   var args = Array.prototype.slice.call(v);
-  for (var k in args) {
-    if (typeof args[k] === "object") {
-      // args[k] = JSON.stringify(args[k]);
-      args[k] = require('util').inspect(args[k], false, null, true);
+  let depth = 0;
+  try {
+    for (var k in args) {
+      if (typeof args[k] === "object") {
+        // args[k] = JSON.stringify(args[k]);
+        if (_.isFunction(args[k]))
+          continue;
+        if (_.isArray(args[k]) || _.isPlainObject(args[k]))
+          args[k] = redactLog(args[k], false, depth + 1);
+        args[k] = require('util').inspect(args[k], false, null, true);
+      }
     }
-  }
+  } catch (err) {}
   var str = args.join(" ");
   return str;
 }
@@ -273,11 +306,69 @@ async function batchKeyExists(keys, batchSize) {
   return _.flatten(validChunks)
 }
 
-async function getUniqueTs(ts) {
-  return lock.acquire("unique_ts_lock", async () => {
-    incTs = (incTs + 1) % 1000;
-    return Math.round(ts * 100) / 100 + (incTs / 100000);
-  });
+function difference(obj1, obj2) {
+  return _.uniq(_diff(obj1, obj2).concat(_diff(obj2, obj1)));
+}
+
+function _diff(obj1, obj2) {
+  if (!obj1 || !_.isObject(obj1)) {
+    return [];
+  }
+  if (!obj2 || !_.isObject(obj2)) {
+    return Object.keys(obj1);
+  }
+  return _.reduce(obj1, function(result, value, key) {
+    return _.isEqual(value, obj2[key]) ?
+        result : result.concat(key);
+  }, []);
+}
+
+function _extractVersion(ver) {
+  let v = ver.match(validVersionRegex);
+  if (!v) return "";
+  return v[0];
+}
+
+// check if ver1 < ver2
+function versionCompare(ver1, ver2) {
+  const v1 = _extractVersion(ver1).split('.');
+  const v2 = _extractVersion(ver2).split('.');
+
+  for (let i = 0; i < v1.length && i < v2.length; i++){
+    if (parseInt(v1[i]) > parseInt(v2[i])) return false;
+    if (parseInt(v1[i]) < parseInt(v2[i])) return true;
+  }
+  if (v1.length >= v2.length) return false;
+  return true;
+}
+
+// wait for condition till timeout
+function waitFor(condition, timeout=3000) {
+  const deadline = Date.now() + timeout;
+  const poll = (resolve, reject) => {
+    if(condition()) resolve();
+    else if (Date.now() >= deadline) reject(`exceeded timeout of ${timeout} ms`); // timeout reject
+    else setTimeout( _ => poll(resolve, reject), 800);
+  }
+  return new Promise(poll);
+}
+
+/* wrap a promise with timeout
+ * reject with error if timeout
+ * example:
+ *   withTimeout(exampleAsyncFunction(), 2000).then(result => {
+ *     console.log(result);
+ *   }).catch(err => {
+ *     console.error(err);
+ *   });
+ */
+async function withTimeout(promise, timeout) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Operation timed out')), timeout)
+    ),
+  ]);
 }
 
 module.exports = {
@@ -285,6 +376,8 @@ module.exports = {
   getPreferredBName,
   getPreferredName,
   delay,
+  difference,
+  versionCompare,
   argumentsToString,
   isSimilarHost,
   isSameOrSubDomain,
@@ -298,5 +391,6 @@ module.exports = {
   fileTouch,
   fileRemove,
   batchKeyExists,
-  getUniqueTs
+  waitFor,
+  withTimeout,
 };

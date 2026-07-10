@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,8 +16,8 @@
 
 var instance = null;
 const log = require("../net2/logger.js")(__filename)
-const iptable = require("../net2/Iptables");
-const wrapIptables = iptable.wrapIptables;
+const { Rule } = require("../net2/Iptables");
+const iptc = require('../control/IptablesControl.js');
 const cp = require('child_process');
 const exec = require('child_process').exec
 const sysManager = require('../net2/SysManager.js');
@@ -26,6 +26,8 @@ const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 const fHome = firewalla.getFirewallaHome();
 const ip = require('ip');
+const net = require('net')
+const ipUtil = require('../util/IPUtil.js')
 const mode = require('../net2/Mode.js');
 
 const fireRouter = require('../net2/FireRouter.js')
@@ -41,14 +43,14 @@ const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
 const readdirAsync = util.promisify(fs.readdir);
 const statAsync = util.promisify(fs.stat);
-const {Address4} = require('ip-address');
+const {Address4, Address6} = require('ip-address');
 const {BigInteger} = require('jsbn');
-const {fileExist} = require('../util/util.js');
 
 const pclient = require('../util/redis_manager.js').getPublishClient();
 
 const UPNP = require('../extension/upnp/upnp.js');
 const Message = require('../net2/Message.js');
+const crypto = require('crypto');
 
 const moment = require('moment');
 
@@ -141,13 +143,11 @@ class VpnManager {
       return;
     const localPort = this.localPort;
     const protocol = this.protocol;
-    const commands = [];
-    commands.push(wrapIptables(`sudo iptables -w -t nat -F FW_PREROUTING_VPN_OVERLAY`));
+    await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_VPN_OVERLAY').opr('-F'));
     for (const wanIp of allWanIps) {
       if (wanIp !== primaryIp)
-        commands.push(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VPN_OVERLAY -d ${wanIp} -p ${protocol} --dport ${localPort} -j DNAT --to-destination ${primaryIp}:${localPort}`));
+        await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_VPN_OVERLAY').dst(wanIp).pro(protocol).dport(localPort).dnat(primaryIp+':'+localPort));
     }
-    await iptable.run(commands);
   }
 
   async updateOverlayNetworkDNAT() {
@@ -159,20 +159,17 @@ class VpnManager {
     const protocol = this.protocol;
     if (overlayIp === this._dnatOverlayIp && primaryIp === this._dnatPrimaryIp && localPort === this._dnatLocalPort && protocol === this._dnatProtocol)
       return;
-    const commands = [];
     if (this._dnatOverlayIp && this._dnatPrimaryIp && this._dnatLocalPort && this._dnatProtocol)
-      commands.push(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_VPN_OVERLAY -d ${this._dnatOverlayIp} -p ${this._dnatProtocol} --dport ${this._dnatLocalPort} -j DNAT --to-destination ${this._dnatPrimaryIp}:${this._dnatLocalPort}`));
+      await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_VPN_OVERLAY').dst(this._dnatOverlayIp).pro(this._dnatProtocol).dport(this._dnatLocalPort).dnat(this._dnatPrimaryIp+':'+this._dnatLocalPort).opr('-D'));
     const cidr1 = ip.cidrSubnet(sysManager.mySubnet());
     const cidr2 = ip.cidrSubnet(sysManager.mySubnet2());
     if (cidr1.networkAddress === cidr2.networkAddress && cidr1.subnetMask === cidr2.subnetMask) {
-      commands.push(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VPN_OVERLAY -d ${overlayIp} -p ${protocol} --dport ${localPort} -j DNAT --to-destination ${primaryIp}:${localPort}`));
+      await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_VPN_OVERLAY').dst(overlayIp).pro(protocol).dport(localPort).dnat(primaryIp+':'+localPort));
       this._dnatOverlayIp = overlayIp;
       this._dnatPrimaryIp = primaryIp;
       this._dnatLocalPort = localPort;
       this._dnatProtocol = protocol;
     }
-    if (commands.length > 0)
-      await iptable.run(commands);
   }
 
   getEffectiveWANNames() {
@@ -191,23 +188,47 @@ class VpnManager {
     log.info("VpnManager:SetIptables", serverNetwork);
 
     // clean up
-    await iptable.run(["sudo iptables -w -t nat -F FW_POSTROUTING_OPENVPN"]);
+    await iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_OPENVPN').opr('-F'));
     
     if (platform.isFireRouterManaged()) {
       const wanNames = this.getEffectiveWANNames();
-      const commands = wanNames.map((name) => `sudo iptables -w -t nat -I FW_POSTROUTING_OPENVPN -s ${serverNetwork}/24 -o ${name} -j MASQUERADE`);
-      await iptable.run(commands);
+      for (const name of wanNames) {
+        await iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_OPENVPN').src(`${serverNetwork}/24`).oif(name).jmp('MASQUERADE').opr('-I'));
+      }
     } else {
-      const commands =[
-        // delete this rule if it exists, logical opertion ensures correct execution
-        wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${serverNetwork}/24 -j MASQUERADE`),
-        // insert back as top rule in table
-        `sudo iptables -w -t nat -I FW_POSTROUTING 1 -s ${serverNetwork}/24 -j MASQUERADE`
-      ];
-      await iptable.run(commands);
+      // delete this rule if it exists (IptablesControl handles deduplication)
+      const rule = new Rule('nat').chn('FW_POSTROUTING').src(`${serverNetwork}/24`).jmp('MASQUERADE')
+      await iptc.addRule(rule.opr('-D'));
+      // insert back as top rule in table
+      await iptc.addRule(rule.opr('-I'));
     }
 
     this._currentServerNetwork = serverNetwork;
+  }
+
+  async setIp6tables() {
+    const serverNetwork6 = this.serverNetwork6;
+    if (!serverNetwork6) {
+      return;
+    }
+    log.info("VpnManager:setIp6tables", serverNetwork6);
+    // clean up ipv6
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING_OPENVPN').opr('-F'));
+    if (platform.isFireRouterManaged()) {
+      const wanNames = this.getEffectiveWANNames();
+      for (const name of wanNames) {
+        await iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING_OPENVPN').src(serverNetwork6).oif(name).jmp('MASQUERADE').opr('-I'));
+      }
+    } else {
+      // delete this rule if it exists (IptablesControl handles deduplication)
+      const rule = new Rule('nat').fam(6).chn('FW_POSTROUTING').src(serverNetwork6).jmp('MASQUERADE')
+      await iptc.addRule(rule.opr('-D'));
+      // insert back as top rule in table
+      await iptc.addRule(rule.opr('-I'));
+    }
+
+    this._currentServerNetwork6 = serverNetwork6;
+
   }
 
   async unsetIptables() {
@@ -220,12 +241,26 @@ class VpnManager {
     log.info("VpnManager:UnsetIptables", serverNetwork);
 
     // clean up
-    await iptable.run(["sudo iptables -w -t nat -F FW_POSTROUTING_OPENVPN"]);
+    await iptc.addRule(new Rule('nat').chn('FW_POSTROUTING_OPENVPN').opr('-F'));
     this._currentServerNetwork = null;
   }
 
+  async unsetIp6tables() {
+    let serverNetwork6 = this.serverNetwork6;
+    if (this._currentServerNetwork6)
+      serverNetwork6 = this._currentServerNetwork6;
+    if (!serverNetwork6) {
+      return;
+    }
+    log.info("VpnManager:UnsetIp6tables", serverNetwork6);
+
+    // clean up
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_POSTROUTING_OPENVPN').opr('-F'));
+    this._currentServerNetwork6 = null;
+  }
+
   async removeUpnpPortMapping() {
-    if (!sysManager.myDefaultWanIp() || !ip.isPrivate(sysManager.myDefaultWanIp())) {
+    if (!sysManager.myDefaultWanIp() || !ipUtil.isPrivate(sysManager.myDefaultWanIp())) {
       log.info(`Defautl WAN IP ${sysManager.myDefaultWanIp()} is not a private IP, no need to remove upnp port mapping`);
       return false;
     }
@@ -257,7 +292,7 @@ class VpnManager {
   }
 
   async addUpnpPortMapping(protocol, localPort, externalPort, description) {
-    if (!sysManager.myDefaultWanIp() || !ip.isPrivate(sysManager.myDefaultWanIp())) {
+    if (!sysManager.myDefaultWanIp() || !ipUtil.isPrivate(sysManager.myDefaultWanIp())) {
       log.info(`Defautl WAN IP ${sysManager.myDefaultWanIp()} is not a private IP, no need to add upnp port mapping`);
       return false;
     }
@@ -327,12 +362,12 @@ class VpnManager {
         }
       }
     }
-    if (this.listenIp !== sysManager.myDefaultWanIp()) {
-      this.needRestart = true;
-      this.listenIp = sysManager.myDefaultWanIp();
-    }
     if (this.serverNetwork == null) {
       this.serverNetwork = this.generateNetwork();
+      this.needRestart = true;
+    }
+    if (this.serverNetwork6 == null) {
+      this.serverNetwork6 = this.generateLocalIpv6Network();
       this.needRestart = true;
     }
     if (this.netmask == null) {
@@ -355,20 +390,27 @@ class VpnManager {
       this.needRestart = true;
     }
     var mydns = (sysManager.myResolver("tun_fwvpn") && sysManager.myResolver("tun_fwvpn")[0]) || sysManager.myDefaultDns()[0];
+    var mydns6 = (sysManager.myResolver6("tun_fwvpn") && sysManager.myResolver6("tun_fwvpn")[0]) || sysManager.myDefaultDns6()[0];
     const myip  = ip.subnet(this.serverNetwork, this.netmask).firstAddress;
+    this.ipv6Addr = this.firstIpv6Address(this.serverNetwork6);
+
     const vpnIntf = sysManager.getInterface("tun_fwvpn");
     // push vpn local IP as DNS option if resolver is from WAN, i.e. no dedicated DNS server specified on vpn network
-    if (vpnIntf && vpnIntf.resolverFromWan)
+    if (vpnIntf && vpnIntf.resolverFromWan) {
       mydns = myip;
+      mydns6 = this.ipv6Addr;
+    }
     if (mydns == null || mydns === "127.0.0.1") {
       mydns = "8.8.8.8"; // use google DNS as default
+    }
+    if (mydns6 == null || mydns6 === "::1") {
+      mydns6 = "2001:4860:4860::8888"; // use google DNS as default
     }
     if (this.mydns !== mydns)
       this.needRestart = true;
     this.mydns = mydns;
     const confGenLockFile = "/dev/shm/vpn_confgen_lock_file";
-    // sysManager.myIp() is not used in the below command
-    const cmd = `cd ${fHome}/vpn; flock -n ${confGenLockFile} -c 'ENCRYPT=${platform.getDHKeySize()} sudo -E ./confgen.sh ${this.instanceName} ${this.listenIp} ${mydns} ${this.serverNetwork} ${this.netmask} ${this.localPort} ${this.protocol}'; sync`
+    const cmd = `cd ${fHome}/vpn; flock -n ${confGenLockFile} -c 'ENCRYPT=${platform.getDHKeySize()} sudo -E ./confgen.sh ${this.instanceName} ${mydns} ${this.serverNetwork} ${this.netmask} ${this.localPort} ${this.protocol} ${mydns6} ${this.serverNetwork6}'; sync`
     log.info("VPNManager:CONFIGURE:cmd", cmd);
     await execAsync(cmd).catch((err) => {
       log.error("VPNManager:CONFIGURE:Error", "Unable to generate server config for " + this.instanceName, err);
@@ -378,6 +420,7 @@ class VpnManager {
     return {
       serverNetwork: this.serverNetwork,
       netmask: this.netmask,
+      serverNetwork6: this.serverNetwork6,
       localPort: this.localPort,
       externalPort: this.externalPort,
       protocol: this.protocol
@@ -399,12 +442,13 @@ class VpnManager {
       cmd = `echo "status" | nc -w 5 -q 0 localhost 5194 | tail -n +2`;
       /*
       OpenVPN CLIENT LIST
-      Updated,Fri Aug  9 12:08:18 2019
+      Updated,2025-08-22 14:50:18
       Common Name,Real Address,Bytes Received,Bytes Sent,Connected Since
-      fishboneVPN1,192.168.7.92:57235,271133,174599,Fri Aug  9 12:06:03 2019
+      fishboneVPN1,192.168.169.166:56390,32900,31202,2025-08-22 14:50:14
       ROUTING TABLE
       Virtual Address,Common Name,Real Address,Last Ref
-      10.115.61.6,fishboneVPN1,192.168.7.92:57235,Fri Aug  9 12:08:17 2019
+      fd9b:7a55:a878:ae29::1000,fishboneVPN1,192.168.169.166:56390,2025-08-22 14:50:14
+      10.119.105.6,fishboneVPN1,192.168.169.166:56390,2025-08-22 14:50:18
       GLOBAL STATS
       Max bcast/mcast queue length,1
       END
@@ -481,8 +525,14 @@ class VpnManager {
                         clientDesc.vAddr = [values[j]];
                       else
                         clientDesc.vAddr.push(values[j]);
+                    } else if (new Address6(values[j]).isValid()) {
+                      if (!clientDesc.vAddr6)
+                        clientDesc.vAddr6 = [values[j]];
+                      else
+                        clientDesc.vAddr6.push(values[j]);
                     }
                     clientDesc.vAddr = clientDesc.vAddr || [];
+                    clientDesc.vAddr6 = clientDesc.vAddr6 || [];
                     break;
                   case "Common Name":
                     clientDesc.cn = values[j];
@@ -499,6 +549,7 @@ class VpnManager {
               const key =`${clientDesc.cn}::${clientDesc.addr}`;
               if (clientMap[key]) {
                 Array.prototype.push.apply(clientDesc.vAddr, clientMap[key].vAddr || []);
+                Array.prototype.push.apply(clientDesc.vAddr6, clientMap[key].vAddr6 || []);
                 clientMap[key] = Object.assign({}, clientMap[key], clientDesc);
               } else {
                 clientMap[key] = clientDesc;
@@ -527,6 +578,7 @@ class VpnManager {
       await execAsync("sudo systemctl stop openvpn@" + this.instanceName);
       this.started = false;
       await this.unsetIptables();
+      await this.unsetIp6tables();
     } catch (err) {
       log.error("Failed to stop OpenVPN", err);
     }
@@ -534,6 +586,7 @@ class VpnManager {
       state: false,
       serverNetwork: this.serverNetwork,
       netmask: this.netmask,
+      serverNetwork6: this.serverNetwork6,
       localPort: this.localPort,
       externalPort: this.externalPort,
       portmapped: this.portmapped,
@@ -555,6 +608,7 @@ class VpnManager {
         state: true,
         serverNetwork: this.serverNetwork,
         netmask: this.netmask,
+        serverNetwork6: this.serverNetwork6,
         localPort: this.localPort,
         externalPort: this.externalPort,
         portmapped: this.portmapped,
@@ -599,6 +653,7 @@ class VpnManager {
       }
       this.started = true;
       await this.setIptables();
+      await this.setIp6tables();
       this.portmapped = await this.addUpnpPortMapping(this.protocol, this.localPort, this.externalPort, "Firewalla VPN").catch((err) => {
         log.error("Failed to set Upnp port mapping", err);
         return false;
@@ -618,6 +673,7 @@ class VpnManager {
         state: true,
         serverNetwork: this.serverNetwork,
         netmask: this.netmask,
+        serverNetwork6: this.serverNetwork6,
         localPort: this.localPort,
         externalPort: this.externalPort,
         portmapped: this.portmapped,
@@ -630,6 +686,7 @@ class VpnManager {
         state: false,
         serverNetwork: this.serverNetwork,
         netmask: this.netmask,
+        serverNetwork6: this.serverNetwork6,
         localPort: this.localPort,
         externalPort: this.externalPort,
         portmapped: this.portmapped
@@ -654,7 +711,8 @@ class VpnManager {
       "192.168.0.0/16": 8
     };
     let index = 0;
-    while (true) {
+    let stop = false;
+    while (!stop) {
       index = index % 3;
       const startAddress = Object.keys(ipRangeRandomMap)[index]
       const randomBits = ipRangeRandomMap[startAddress];
@@ -665,6 +723,56 @@ class VpnManager {
       else
         index++;
     }
+  }
+
+  generateLocalIpv6Network() {
+    /**
+     * 7 bits | 1 | 40 bits   | 16 bits
+     * --------------------------------
+     * prefix | L | Global ID | Subnet ID
+     */
+    // generate global ID
+    // step1, obtain current time in NTP format
+    const ntpEpoch = BigInt(Date.now());
+    const ntpTime = Buffer.alloc(8);
+    ntpTime.writeBigUInt64BE(ntpEpoch);
+    //step2, Obtain an EUI-64 identifier from the system 
+    const randomBytes = crypto.randomBytes(8);
+    //step3, concatenate the NTP time and EUI-64 identifier
+    const data = Buffer.concat([ntpTime, randomBytes]);
+    //step4, Compute an SHA-1 digest on the key
+    const sha1 = crypto.createHash('sha1').update(data).digest();
+    //step5, take the first 40 bits of the SHA-1 digest
+    const gid = sha1.subarray(0, 5);
+
+    let subnet = null;
+    let stop = false;
+    while (!stop) {
+      // generate subnet ID
+      const subnetId = crypto.randomBytes(2);
+
+      // generate local IPv6 network
+      const h1 = (0xfd00 | gid[0]).toString(16).padStart(4, '0');
+      const h2 = ((gid[1] << 8) | gid[2]).toString(16).padStart(4, '0');
+      const h3 = ((gid[3] << 8) | gid[4]).toString(16).padStart(4, '0');
+      const h4 = ((subnetId[0] << 8) | subnetId[1]).toString(16).padStart(4, '0');
+
+      subnet =  `${h1}:${h2}:${h3}:${h4}::/64`;
+      if (!sysManager.inMySubnet6(subnet)) {
+        stop = true;
+      }
+    }
+    return subnet;
+  }
+
+  firstIpv6Address(subnet) {
+    const addr = new Address6(subnet);
+    if (!addr.isValid()) {
+      log.error(`VPNManager:CONFIGURE:Invalid IPv6 address: ${subnet}`);
+      return null;
+    }
+    let first = addr.startAddress().bigInteger().add(BigInteger.ONE);
+    return Address6.fromBigInteger(first).correctForm();
   }
 
   static getSettingsDirectoryPath(commonName) {
@@ -691,7 +799,7 @@ class VpnManager {
               throw `${clientSubnet} is not a valid CIDR subnet`;
             const ipAddr = ipSubnets[0];
             const maskLength = ipSubnets[1];
-            if (!ip.isV4Format(ipAddr))
+            if (!net.isIPv4(ipAddr))
               throw `${clientSubnet} is not a valid CIDR subnet`;
             if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0)
               throw `${clientSubnet} is not a valid CIDR subnet`;

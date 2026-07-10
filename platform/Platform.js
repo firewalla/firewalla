@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,6 +23,8 @@ const fsp = fs.promises
 const cp = require('child_process');
 
 const { exec } = require('child-process-promise');
+const _ = require('lodash');
+const Constants = require('../net2/Constants.js');
 
 class Platform {
   getAllNicNames() {
@@ -33,10 +35,10 @@ class Platform {
   async getNicStates() {
     const nics = this.getAllNicNames();
     const result = {};
-    for (const nic of nics) {
+    await Promise.all(nics.map(async nic => {
       const dirExists = await fsp.access(`/sys/class/net/${nic}`, fs.constants.F_OK).then(() => true).catch(() => false);
       if (!dirExists)
-        continue;
+        return
       const address = await fsp.readFile(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch(() => "");
       let speed = await fsp.readFile(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
       const carrier = await fsp.readFile(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
@@ -46,7 +48,7 @@ class Platform {
         speed = "-1";
       }
       result[nic] = {address, speed, carrier, duplex};
-    }
+    }))
     return result;
   }
 
@@ -134,8 +136,131 @@ class Platform {
     }
   }
 
-  async switchQoS(state, qdisc) {
+  async replaceQdisc(device, classId, qdisc) {
+    classId = Number(classId).toString(16);
+    let cmd;
+    if (qdisc == "fq_codel") {
+      cmd = `sudo tc qdisc replace dev ${device} parent 1:${classId} ${qdisc}`;
+    } else if (qdisc == "cake") {
+      cmd = `sudo tc qdisc replace dev ${device} parent 1:${classId} ${qdisc} unlimited triple-isolate no-split-gso conservative`;
+    } else {
+      log.error(`not support qdisc ${qdisc}`);
+      return;
+    }
+    await exec(cmd).catch((err) => {
+      log.error(`Failed to set ${qdisc} on ${device} parent 1:${classId}`, err.message);
+    });
+  }
 
+  async switchQoS(state, qdisc) {
+    const ipset = require('../net2/Ipset.js');
+    if (state == false) {
+      await ipset.add(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
+      await ipset.add(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
+    } else {
+      await ipset.del(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
+      await ipset.del(ipset.CONSTANTS.IPSET_QOS_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
+    }
+    const supported = await exec(`modinfo sch_${qdisc}`).then(() => true).catch((err) => false);
+    if (!supported) {
+      log.error(`qdisc ${qdisc} is not supported`);
+      return;
+    }
+    // replace the default tc filter
+    const QoS = require('../control/QoS.js');
+    const classid = 1;
+    await exec (`sudo tc filter replace dev ifb0 parent ${classid}: handle 800::0x1 prio 1 u32 match mark 0x800000 0x${QoS.QOS_UPLOAD_MASK.toString(16)} flowid ${classid}:0x1002`).catch((err) => {
+      log.error(`Failed to update tc filter on ifb0`, err.message);
+    });
+    await exec (`sudo tc filter replace dev ifb1 parent ${classid}: handle 800::0x1 prio 1 u32 match mark 0x10000 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)} flowid ${classid}:0x1002`).catch((err) => {
+      log.error(`Failed to update tc filter on ifb1`, err.message);
+    });
+
+    let executes = [];
+    for (const device of ['ifb0', 'ifb1']) {
+      for (const classId of [Constants.NO_LIMIT_HIGH_PRIO_CLASS_ID, Constants.NO_LIMIT_REG_PRIO_CLASS_ID, Constants.NO_LIMIT_LOW_PRIO_CLASS_ID]) {
+        executes.push(this.replaceQdisc(device, classId, qdisc));
+      }
+    }
+    await Promise.all(executes);
+  }
+
+  async replaceClassRateLimit(device, classId, rateLimit, ceilLimit, burstLimit, cburstLimit, priority, quantum) {
+    classId = Number(classId).toString(16);
+
+    let cmd = `sudo tc class replace dev ${device} parent 1: classid 1:${classId} htb rate ${rateLimit} ceil ${ceilLimit}`;
+
+    if (burstLimit) {
+      cmd += ` burst ${burstLimit}`;
+    }
+    if (cburstLimit ) {
+      cmd += ` cburst ${cburstLimit}`;
+    }
+
+    if (priority) {
+      cmd += ` prio ${priority}`;
+    }
+
+    if (quantum) {
+      cmd += ` quantum ${quantum}`;
+    }
+
+    await exec(cmd).catch((err) => {
+      log.error(`Failed to set rate limit on ${device} parent 1:${classId}`, err.message);
+    });
+
+  }
+
+  async setQoSBandwidth(upload, download) {
+    if (upload > 0 && download > 0) {
+      let uploadLimit = Math.floor(upload * 0.98); // in Mb, leave some margin
+      let downloadLimit = Math.floor(download * 0.98); // in Mb, leave some margin
+
+      const uploadBurst = Math.floor(upload * 1.5); // in KB
+      const downloadBurst = Math.floor(download * 1.5); // in KB
+      let uploadQuantum = Math.floor(upload * 150) ; // in bytes
+      let downloadQuantum = Math.floor(download * 150) ; // in bytes
+
+      let executes = [];
+
+      for (const device of ['ifb0', 'ifb1']) {
+        let rateLimit = `${device == 'ifb0' ? uploadLimit : downloadLimit}mbit`;
+        let ceilLimit = rateLimit;
+        let burstLimit = device == 'ifb0' ? uploadBurst : downloadBurst;
+        if (burstLimit < 15) {
+          burstLimit = "15kbit";
+        } else {
+          burstLimit = `${burstLimit}kbit`;
+        }
+        let cburstLimit = burstLimit;
+        let priority = 4; // default priority for regular traffic
+        let quantum = device == 'ifb0' ? uploadQuantum : downloadQuantum;
+        if (quantum < 1500) {
+          quantum = 1500;
+        } else if (quantum > 60000) {
+          quantum = 60000;
+        }
+
+        executes.push(this.replaceClassRateLimit(device, 1, rateLimit, ceilLimit, burstLimit, cburstLimit, null, quantum)); // don't set priority for the root class
+        for (const classId of [Constants.NO_LIMIT_HIGH_PRIO_CLASS_ID, Constants.NO_LIMIT_REG_PRIO_CLASS_ID, Constants.NO_LIMIT_LOW_PRIO_CLASS_ID]) {
+          rateLimit = "200kbit";
+
+          switch (classId) {
+            case Constants.NO_LIMIT_HIGH_PRIO_CLASS_ID:
+              priority = 2;
+              break;
+            case Constants.NO_LIMIT_REG_PRIO_CLASS_ID:
+              priority = 4;
+              break;
+            case Constants.NO_LIMIT_LOW_PRIO_CLASS_ID:
+              priority = 6;
+              break;
+          }
+          executes.push(this.replaceClassRateLimit(device, classId, rateLimit, ceilLimit, burstLimit, cburstLimit, priority, quantum));
+        }
+      }
+      await Promise.all(executes);
+    }
   }
 
   getDNSServiceName() {
@@ -162,6 +287,8 @@ class Platform {
 
   getPolicyCapacity() {}
 
+  getExceptionCapacity() {}
+
   getAllowCustomizedProfiles(){}
   getRatelimitConfig(){}
 
@@ -173,6 +300,10 @@ class Platform {
   }
 
   isWireguardSupported() {
+    return false;
+  }
+
+  isAmneziaWgSupported() {
     return false;
   }
 
@@ -209,6 +340,14 @@ class Platform {
   }
 
   getRetentionCountMultiplier() {
+    return 1;
+  }
+
+  getDNSFlowRetentionTimeMultiplier() {
+    return 1;
+  }
+
+  getDNSFlowRetentionCountMultiplier() {
     return 1;
   }
 
@@ -260,10 +399,116 @@ class Platform {
     return [];
   }
 
-  async installTLSModule() {}
+  async getTlsKoPath(module_name) {
+    const koPath = `${await this.getKernelModulesPath()}/${module_name}.ko`;
+    return koPath;
+  }
+
+  async installTLSModule(module_name) {
+    if (!module_name) return;
+    if (module_name == "xt_tls" && !this.isTLSBlockSupport()) {
+      return;
+    }
+    if (module_name == "xt_udp_tls" && !this.isUdpTLSBlockSupport()) {
+      return;
+    }
+    const installed = await this.isTLSModuleInstalled(module_name);
+    if (installed) return;
+    const codename = await exec(`lsb_release -cs`).then((result) => result.stdout.trim()).catch((err) => {
+      log.error("Failed to get codename of OS distribution", err.message);
+      return null;
+    });
+    if (!codename)
+      return;
+    const koPath = `${await this.getTlsKoPath(module_name)}`
+    const koExists = await fsp.access(koPath, fs.constants.F_OK).then(() => true).catch((err) => false);
+    if (koExists) {
+      await exec(`sudo insmod ${koPath} max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`).catch((err) => {
+        log.error(`Failed to install tls.ko`, err.message);
+      });
+    } else {
+      await exec(`sudo modprobe ${module_name} max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`).catch((err) => {
+        log.error(`Failed to install ${module_name}.ko`, err.message);
+      });
+    }
+
+    const arch = await exec(`uname -m`).then((result) => result.stdout.trim()).catch((err) => {
+      log.error("Failed to get architecture of OS", err.message);
+      return null;
+    });
+    if (!arch)
+      return;
+
+    const soPath = `${await this.getSharedObjectsPath()}/lib${module_name}.so`;
+    const soPathAlt = `/usr/lib/${arch}-linux-gnu/xtables/lib${module_name}.so`;
+    const soExists = await fsp.access(soPath, fs.constants.F_OK).then(() => true).catch((err) => false);
+    if (soExists) {
+      await exec(`sudo install -D -v -m 644 ${soPath} /usr/lib/${arch}-linux-gnu/xtables`).catch((err) => {
+        log.error(`Failed to install lib${module_name}.so`, err.message);
+      });
+    } else {
+      const soExistsAlt = await fsp.access(soPathAlt, fs.constants.F_OK).then(() => true).catch((err) => false);
+      if (soExistsAlt) {
+        await exec(`sudo install -D -v -m 644 ${soPathAlt} /usr/lib/${arch}-linux-gnu/xtables`).catch((err) => {
+          log.error(`Failed to install lib${module_name}.so`, err.message);
+        });
+      } else {
+        log.error(`Failed to install lib${module_name}.so`, `soPath: ${soPath}, soPathAlt: ${soPathAlt}`);
+      }
+    }
+    const installedAfter = await this.isTLSModuleInstalled(module_name);
+    if (!installedAfter) {
+      log.error(`TLS module ${module_name} is still not installed after installation attempt`);
+      return;
+    }
+    this.installedModules[module_name] = true;
+  }
+  async installTLSModules() {
+    await this.installTLSModule("xt_tls");
+    await this.installTLSModule("xt_udp_tls");
+  }
+
+  async isTLSModuleInstalled(module_name) {
+    if (!this.installedModules) {
+      this.installedModules = {};
+    }
+    if (this.installedModules[module_name]) {
+      return this.installedModules[module_name];
+    }
+    const cmdResult = await exec(`lsmod | grep ${module_name} | awk '{print $1}'`);
+    const results = cmdResult.stdout.toString().trim().split('\n');
+    for (const result of results) {
+      if (result == module_name) {
+        this.installedModules[module_name] = true;
+        return true;
+      }
+    }
+    return false;
+  }
 
   isTLSBlockSupport() {
     return false;
+  }
+
+  isDevMode() {
+    return f.getBranch() == "master";
+  }
+
+  isUdpTLSBlockSupport() {
+    if (this.isDevMode()) {
+      return true;
+    }
+    return false;
+  }
+
+  async getKernelModulesPath() {
+    const kernelRelease = await exec("uname -r").then(result => result.stdout.trim());
+    return `${this.getPlatformFilesPath()}/kernel_modules/${kernelRelease}`;
+  }
+
+  async getSharedObjectsPath() {
+    const codename = await exec(`lsb_release -cs`).then((result) => result.stdout.trim());
+    return `${this.__dirname}/files/shared_objects/${codename}`;
   }
 
   getDnsmasqBinaryPath() {
@@ -370,7 +615,19 @@ class Platform {
   }
 
   async reloadActMirredKernelModule() {
-    // do nothing by default
+    const koPath = `${await this.getKernelModulesPath()}/act_mirred.ko`;
+    const koExists = await fsp.access(koPath, fs.constants.F_OK).then(() => true).catch(() => false);
+    if (koExists) {
+      log.info("Reloading act_mirred.ko...");
+      try {
+        const loaded = await exec(`sudo lsmod | grep act_mirred`).then(() => true).catch(() => false);
+        if (loaded)
+          await exec(`sudo rmmod act_mirred`);
+        await exec(`sudo insmod ${koPath}`);
+      } catch (err) {
+        log.error("Failed to reload act_mirred.ko", err.message);
+      }
+    }
   }
 
   isNicCalibrationApplicable() {
@@ -400,6 +657,50 @@ class Platform {
 
   supportOSI() {
     return true;
+  }
+
+  isDNSFlowSupported() { return false }
+
+  async isSuricataFromAssetsSupported() {
+    return false;
+  }
+
+  hasIntegratedFWAPC() {
+    return false;
+  }
+
+  isPDOSupported() {
+    return false;
+  }
+
+  async hasIntegratedAPAssets() {
+    if (!this.hasIntegratedFWAPC()) {
+      return false;
+    }
+    const firerouter = require('../net2/FireRouter.js');
+    // will read cached config instead of reloading from firerouter, low overhead
+    const networkConfig = await firerouter.getConfig(false, false);
+    const assets = _.get(networkConfig, ["apc", "assets"], {});
+    const integratedAssets = _.pickBy(assets, (value, key) => value.integrated === true);
+    return !_.isEmpty(integratedAssets);
+  }
+
+  getInterfacesRedirectedToPcapTap(intfNameMap) {
+    return {};
+  }
+
+  getRedisSaveConfig(rdbSize) {
+    // 900 seconds (15min) for 10 key change
+    // 600 seconds (10min) for 1000 keys change
+    // 5 mins for 100000 keys change
+    if (rdbSize > 209715200) {
+      // rdb size is greater than 200MB
+      return "3600 40 2400 4000 1200 400000";
+    } else if (rdbSize > 52428800) {
+      // rdb size is between 50MB and 200MB
+      return "1800 20 1200 2000 600 200000";
+    }
+    return "900 10 600 1000 300 100000";
   }
 }
 

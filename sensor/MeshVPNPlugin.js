@@ -73,6 +73,7 @@ class MeshVPNPlugin extends Sensor {
       };
       await this.loadLocalConfig();
       const oldConfig = this.localConfig;
+      try {await extensionManager._precedeRecord(msg.id, {origin: oldConfig})} catch(err) {};
       this.localConfig = newConfig;
       await this.saveLocalConfig();
       if (!_.isEqual(oldConfig, newConfig)) {
@@ -252,6 +253,7 @@ class MeshVPNPlugin extends Sensor {
       uri: url,
       family: 4,
       method: "GET",
+      followRedirect: false,
       auth: {
         bearer: Bone.getToken()
       },

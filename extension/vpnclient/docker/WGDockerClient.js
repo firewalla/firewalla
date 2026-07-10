@@ -206,6 +206,7 @@ class WGDockerClient extends DockerBaseVPNClient {
 
   // use same directory as WGVPNClient.js, so that different implementations for the same protocol can be interchanged
   static getConfigDirectory() {
+    const f = require('../../../net2/Firewalla.js');
     return `${f.getHiddenFolder()}/run/wg_profile`;
   }
 

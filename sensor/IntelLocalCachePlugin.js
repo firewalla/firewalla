@@ -71,7 +71,7 @@ class IntelLocalCachePlugin extends Sensor {
     try {
       if(!content || content.length < 10) {
         // likely invalid, return null for protection
-        log.error(`Invalid bf data content for ${prefix}, ignored`);
+        log.error(`Invalid bf data content for ${content}, ignored`);
         return;
       }
 

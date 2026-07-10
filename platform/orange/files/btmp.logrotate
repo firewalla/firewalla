@@ -1,0 +1,7 @@
+/var/log/btmp {
+    missingok
+    daily
+    maxsize 2M
+    create 0660 root utmp
+    rotate 1
+}

@@ -14,7 +14,7 @@
  */
 'use strict';
 const log = require('./logger.js')(__filename);
-const Nmap = require('./Nmap.js');
+const nmap = require('./Nmap.js');
 var instances = {};
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -101,17 +101,14 @@ module.exports = class {
       if (found) {
         break;
       }
-      if (intf != null && intf.name && intf.name !== "tun_fwvpn" && !intf.name.startsWith("wg")) {
+      if (intf != null && intf.name && intf.name !== "tun_fwvpn" && !intf.name.startsWith("wg") && !intf.name.startsWith("awg")) {
         log.debug("Prepare to scan subnet", intf);
-        if (this.nmap == null) {
-          this.nmap = new Nmap(intf.subnet, false);
-        }
 
         log.info("Start scanning network ", intf.subnet, "to look for mac", mac);
 
         // intf.subnet is in v4 CIDR notation
         try {
-          let hosts = await this.nmap.scanAsync(intf.subnet, true)
+          let hosts = await nmap.scanAsync(intf.subnet, { fast: true, requiremac: true })
 
           this.hosts = [];
 

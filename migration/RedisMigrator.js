@@ -31,12 +31,14 @@
     "alarm:id",
     "_alarm:*",
     "_alarmDetail:*",
+    "alarm_pending",
     "alarm_active",
     "alarm_archive"
   ],
   "rules": [
     "policy:id",
     "policy_active",
+    "active_bypass_policy",
     "policy:*"
   ],
   "exceptions": [

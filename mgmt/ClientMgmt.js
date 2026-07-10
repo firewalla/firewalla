@@ -102,7 +102,7 @@ class ClientMgmt {
   }
 
   isAdmin(client) {
-    return client && (client.type === "admin" || cilent.type === undefined); //backward compatible
+    return client && (client.type === "admin" || client.type === undefined); //backward compatible
   }
 
   isWeb(client) {

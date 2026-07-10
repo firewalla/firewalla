@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,15 +15,15 @@
 'use strict';
 const _ = require('lodash');
 
-const log = require('../net2/logger.js')(__filename, 'info');
+const log = require('../net2/logger.js')(__filename);
 
 const Hook = require('./Hook.js');
-
+const Message = require('../net2/Message.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
-const ipTool = require('ip');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const extend = require('../util/util.js').extend;
 const util = require('util');
@@ -32,6 +32,7 @@ const bone = require("../lib/Bone.js");
 const flowUtil = require("../net2/FlowUtil.js");
 
 const fc = require('../net2/config.js')
+const FireRouter = require('../net2/FireRouter.js');
 
 const Samba = require('../extension/samba/samba.js');
 const samba = new Samba();
@@ -41,13 +42,15 @@ const HostManager = require('../net2/HostManager.js');
 const sysManager = require('../net2/SysManager.js');
 
 const l2 = require('../util/Layer2.js');
-const { getPreferredBName } = require('../util/util.js')
+const { getPreferredBName, withTimeout } = require('../util/util.js')
 
 const MAX_IPV6_ADDRESSES = 10
 const MAX_LINKLOCAL_IPV6_ADDRESSES = 3
 const MessageBus = require('../net2/MessageBus.js');
 const VipManager = require('../net2/VipManager.js');
-const Constants = require('../net2/Constants.js');
+
+const WlanVendorInfo = require('../util/WlanVendorInfo.js');
+
 
 const HOST_UPDATED = 'Host:Updated'
 
@@ -65,31 +68,36 @@ class DeviceHook extends Hook {
     let ipv6Addr = host.ipv6Addr
 
     if (!mac) { // ignore if no mac
-      log.warn("Invalid MAC address for process device update:", event);
+      log.warn("Invalid MAC address for process device update:", event.message);
       return;
     }
 
     /*
      * Filter out IPv4 broadcast address for any monitoring interface
      */
-    if (ipv4Addr) {
-      let monInterfaces = sysManager.getMonitoringInterfaces();
-      let foundInterface = monInterfaces.find(e => e.subnet && ipTool.cidrSubnet(e.subnet).broadcastAddress === ipv4Addr)
-      if (foundInterface) {
-        log.warn(`Ignore IP address ${ipv4Addr} as broadcast address of interface ${foundInterface.name}:`, event);
-        return;
-      }
+    if (ipv4Addr && sysManager.isMulticastIP4(ipv4Addr)) {
+      log.warn(`Ignore IP address ${ipv4Addr} as broadcast/multicast address`, event.message);
+      return
     }
 
     mac = mac.toUpperCase()
     host.mac = mac // make sure the MAC is upper case
+
+    if (mac) {
+      if (ipv4Addr)
+        hostTool.setIPMacCache(ipv4Addr, mac);
+      if (_.isArray(ipv6Addr)) {
+        for (const ip6 of ipv6Addr)
+          hostTool.setIPMacCache(ip6, mac);
+      }
+    }
 
     try {
 
       // 0. update a special name key for source
       if (host.from) {
         let skey = `${host.from}Name`;
-        host[skey] = host.bname;
+        host[skey] = host.bname;  // TODO: not every DeviceUpdate event has bname
         host.lastFrom = host.from;
         delete host.from
       }
@@ -137,6 +145,8 @@ class DeviceHook extends Hook {
           return
         }
 
+        log.verbose(event.message, host)
+
         // 4. if this is an existing mac address, and it has a different ipv4 address, (the ipv4 is owned by nobody in redis) => OldDeviceChangedToNewIP
         // it may update redis ip6 keys if additional ip addresses are added
         if (!ip4Entry) {
@@ -172,9 +182,9 @@ class DeviceHook extends Hook {
           let newHost = extend({}, host, { ipv6Addr: newIPv6Addr, lastActiveTimestamp: new Date() / 1000 })
 
           log.debug("DeviceHook:IPv6Update:", JSON.stringify(newIPv6Addr));
-          await hostTool.updateMACKey(newHost) // mac
-
-          this.messageBus.publish(HOST_UPDATED, host.mac, newHost);
+          const hostManager = new HostManager();
+          const h = await hostManager.getHostAsync(newHost.mac)
+          await h.update(newHost, true, true)
         }
       }
 
@@ -194,7 +204,7 @@ class DeviceHook extends Hook {
 
       // DeviceUpdate may be triggered by nmap scan, bonjour monitor,
       // dhcp monitor and etc...
-      sem.on("DeviceUpdate", (event) => {
+      sem.on("DeviceUpdate", async (event) => {
         let host = event.host
         let mac = host.mac;
         let ip = host.ipv4 || host.ipv4Addr;
@@ -232,22 +242,20 @@ class DeviceHook extends Hook {
           }
         }
 
-        if (mac != null) {
-          this.processDeviceUpdate(event);
-        } else {
+        if (!mac) {
           let ip = host.ipv4 || host.ipv4Addr
-          if (ip) {
+          if (ip) try {
             // need to get mac address first
-            (async () => {
-              let theMac = await l2.getMACAsync(ip)
-              host.mac = theMac
-              this.processDeviceUpdate(event)
-            })().catch((err) => {
-              log.error(`Failed to get mac address for ip ${ip}`, err)
-            })
+            let theMac = await l2.getMACAsync(ip)
+            host.mac = theMac
+          } catch(err) {
+            log.error(`Failed to get mac address for ip ${ip}`, err)
           }
         }
 
+        if (host.mac) {
+          this.processDeviceUpdate(event);
+        }
       });
 
       sem.on("IPv6DeviceInfoUpdate", async (event) => {
@@ -299,63 +307,64 @@ class DeviceHook extends Hook {
 
           if (!mac)
             return; // ignore if mac is undefined
-
           let vendor = null;
 
-          try {
-            vendor = await this.getVendorInfoAsync(mac);
-          } catch (err) {
-            // do nothing
-            log.error("Failed to get vendor info from cloud", err);
-          }
+          vendor = await this.getVendorInfo(mac);
 
-          let v = vendor || host.macVendor || "Unknown";
+          enrichedHost.macVendor = vendor || host.macVendor
 
+          // doesn't seem to be working, macVendor is set in NmapSensor but it's unlikely to be first event
           if (host.macVendor && host.macVendor != "Unknown") {
             enrichedHost.defaultMacVendor = host.macVendor
           }
 
-          enrichedHost.macVendor = v;
-
-          if (!enrichedHost.bname && host.ipv4Addr) {
+          if (!enrichedHost.sambaName && host.ipv4Addr) {
             let sambaName = await samba.getSambaName(host.ipv4Addr);
             if (sambaName)
-              enrichedHost.bname = sambaName;
+              enrichedHost.sambaNname = sambaName;
+            enrichedHost.bnameCheckTime = Math.floor(new Date() / 1000);
           }
 
-          if (!enrichedHost.bname && enrichedHost.macVendor !== "Unknown") {
-            // finally, use macVendor if no name
-            // if macVendor is not available, don't set the bname
-            enrichedHost.bname = enrichedHost.macVendor;
+          if (platform.isFireRouterManaged()) {
+            const networkConfig = await FireRouter.getConfig();
+            if (_.has(networkConfig, ["apc", "assets", mac, "sysConfig", "name"]))
+              enrichedHost.name = _.get(networkConfig, ["apc", "assets", mac, "sysConfig", "name"]);
           }
 
-          enrichedHost.bnameCheckTime = Math.floor(new Date() / 1000);
+          if (!enrichedHost.wlanVendor) {
+            log.debug(`Try to get vlanVendor info for ${mac}`);
+            const wlanVendors = await hostTool.getWlanVendorFromCache(host.mac)
+              .catch(err => log.error("Failed to get vendor info for " + mac, err));
 
-          await hostTool.updateMACKey(enrichedHost);
+            if (wlanVendors && wlanVendors.length > 0) {
+              log.info(`Got wlanVendor info for ${mac}: ${wlanVendors}`);
+              enrichedHost.wlanVendor = wlanVendors;
+            }
+          }
 
+          enrichedHost.bname = getPreferredBName(enrichedHost)
+
+          const hostManager = new HostManager();
+          const h = await hostManager.createHost(enrichedHost)
+          if (!sysManager.isMyMac(mac)) {
+            await h.spoof(true);
+          }
           if (!event.suppressAlarm) {
             await this.createAlarm(enrichedHost);
           } else {
             log.info("Alarm is suppressed for new device", hostTool.getHostname(enrichedHost));
           }
-          const hostManager = new HostManager();
-          const h = await hostManager.getHostAsync(mac).catch(err => {
-            log.error("Failed to get host after it is detected.");
-          })
-          if (!sysManager.isMyMac(mac)) {
-            h.spoof(true);
-          }
-          await this.setupLocalDeviceDomain(mac, 'new_device');
 
           this.messageBus.publish("DiscoveryEvent", "Device:Create", mac, enrichedHost);
         } catch (err) {
           log.error("Failed to handle NewDeviceFound event:", err);
+          log.error(err.stack);
         }
       });
 
       sem.on("OldDeviceChangedToNewIP", async (event) => {
         try {
-          // this is typically old ip is taken by some device else, not going to delete the old ip entry
+          // Old IP might still be used by this one or something else, not going to delete the old IP entry
           const host = event.host;
 
           log.info(util.format("Device %s (%s) has a new IP: %s", host.bname, host.mac, host.ipv4Addr));
@@ -365,6 +374,14 @@ class DeviceHook extends Hook {
 
           const firstFoundTimestamp = macData.firstFoundTimestamp || currentTimestamp;
           const lastActiveTimestamp = macData.lastActiveTimestamp;
+
+          sem.emitEvent({
+            type: Message.MSG_MAPPING_IP_MAC_DELETED,
+            suppressEventLogging: true,
+            mac: macData.mac,
+            fam: 4,
+            ip: macData.ipv4Addr,
+          })
 
           const enrichedHost = extend({}, host, {
             uid: host.ipv4Addr,
@@ -392,7 +409,7 @@ class DeviceHook extends Hook {
                 if (enabled) {
                   await this.createAlarm(enrichedHost, 'device_online');
                 } else {
-                  log.info("Device presence is disabled for " + host.mac);
+                  log.verbose("Device presence is disabled for " + host.mac);
                 }
               } catch (err) {
                 log.error("Failed to load device presence settings", err);
@@ -400,21 +417,26 @@ class DeviceHook extends Hook {
             }
           }
 
-          await hostTool.updateMACKey(enrichedHost); // mac
+          const hostManager = new HostManager()
+          const h = await hostManager.getHostAsync(host.mac)
 
-
-          log.info("MAC entry is updated with new IP");
-
-          log.info(`Reload host info for new ip address ${host.ipv4Addr}`)
-          let hostManager = new HostManager()
-          hostManager.getHost(host.mac, (err, h) => {
-            if (!err && h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
-              h.spoof(true);
+          if (!h.wlanVendor && !enrichedHost.wlanVendor) {
+            log.debug(`Try to get vlanVendor info for ${host.mac}`);
+            const wlanVendors = await hostTool.getWlanVendorFromCache(host.mac)
+              .catch(err => log.error("Failed to get vendor info for " + host.mac, err));
+            
+            if (wlanVendors && wlanVendors.length > 0) {
+              log.info(`Got wlanVendor info for ${host.mac}: ${wlanVendors}`);
+              enrichedHost.wlanVendor = wlanVendors;
             }
-          });
-          await this.setupLocalDeviceDomain(host.mac, 'ip_change');
+          }
 
-          this.messageBus.publish(HOST_UPDATED, host.mac, enrichedHost);
+          await h.update(enrichedHost, true, true)
+          log.info("MAC entry is updated with new IP", host.ipv4Addr);
+
+          if (h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
+            await h.spoof(true);
+          }
         } catch (err) {
           log.error("Failed to process OldDeviceChangedToNewIP event:", err);
         }
@@ -431,6 +453,21 @@ class DeviceHook extends Hook {
 
           const firstFoundTimestamp = macData.firstFoundTimestamp || currentTimestamp;
           const lastActiveTimestamp = macData.lastActiveTimestamp;
+
+          sem.emitEvent({
+            type: Message.MSG_MAPPING_IP_MAC_DELETED,
+            suppressEventLogging: true,
+            mac: macData.mac,
+            fam: 4,
+            ip: macData.ipv4Addr,
+          })
+          sem.emitEvent({
+            type: Message.MSG_MAPPING_IP_MAC_DELETED,
+            suppressEventLogging: true,
+            mac: event.oldMac,
+            fam: 4,
+            ip: host.ipv4Addr,
+          })
 
           const enrichedHost = extend({}, host, {
             uid: host.ipv4Addr,
@@ -461,15 +498,13 @@ class DeviceHook extends Hook {
                 if (enabled) {
                   await this.createAlarm(enrichedHost, 'device_online');
                 } else {
-                  log.info("Device presence is disabled for " + host.mac);
+                  log.verbose("Device presence is disabled for " + host.mac);
                 }
               } catch (err) {
                 log.error("Failed to load device presence settings", err);
               }
             }
           }
-
-          await hostTool.updateMACKey(enrichedHost);
 
           // Fix to firewalla/firewalla.ios#991
           //
@@ -480,18 +515,25 @@ class DeviceHook extends Hook {
           // which could only be fix once flow is associated with mac address
           await hostTool.removeDupIPv4FromMacEntry(event.oldMac, host.ipv4Addr, host.mac);
 
-          log.info("MAC entry is updated with new IP");
+          const hostManager = new HostManager();
+          const h = await hostManager.getHostAsync(host.mac)
 
-          log.info(`Reload host info for new ip address ${host.ipv4Addr}`);
-          let hostManager = new HostManager();
-          hostManager.getHost(host.mac, (err, h) => {
-            if (!err && h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
-              h.spoof(true);
+          if (!h.wlanVendor && !enrichedHost.wlanVendor) {
+            log.debug(`Try to get vlanVendor info for ${host.mac}`);
+            const wlanVendors = await hostTool.getWlanVendorFromCache(host.mac)
+              .catch(err => log.error("Failed to get vendor info for " + host.mac, err));
+            
+            if (wlanVendors && wlanVendors.length > 0) {
+              log.info(`Got wlanVendor info for ${host.mac}: ${wlanVendors}`);
+              enrichedHost.wlanVendor = wlanVendors;
             }
-          });
-          await this.setupLocalDeviceDomain(host.mac, 'ip_change');
+          }
 
-          this.messageBus.publish(HOST_UPDATED, host.mac, enrichedHost);
+          await h.update(enrichedHost, true, true)
+          if (h && h.isMonitoring() && !sysManager.isMyMac(host.mac)) {
+            await h.spoof(true);
+          }
+          log.info("MAC entry is updated with new IP", host.ipv4Addr);
         } catch (err) {
           log.error("Failed to process OldDeviceTakenOverOtherDeviceIP event:", err);
         }
@@ -539,8 +581,6 @@ class DeviceHook extends Hook {
             enrichedHost.ipv6Addr = await this.updateIPv6EntriesForMAC(enrichedHost.ipv6Addr, mac);
           }
 
-          log.debug("Host entry is updated for this device");
-
           if (!lastActiveTimestamp || lastActiveTimestamp < currentTimestamp - this.config.hostExpirationSecs) {
             // Become active again after a while, create a DeviceBackOnlineAlarm
             log.info("Device is back on line, mac: " + host.mac + ", ip: " + host.ipv4Addr);
@@ -550,7 +590,7 @@ class DeviceHook extends Hook {
                 if (enabled) {
                   await this.createAlarm(enrichedHost, 'device_online');
                 } else {
-                  log.info("Device presence is disabled for " + host.mac);
+                  log.verbose("Device presence is disabled for " + host.mac);
                 }
               } catch (err) {
                 log.error("Failed to load device presence settings", err);
@@ -558,38 +598,24 @@ class DeviceHook extends Hook {
             }
           }
 
-          await hostTool.updateMACKey(enrichedHost); // host:mac:.....
-          let hostManager = new HostManager();
-          hostManager.getHost(mac, (err, h) => {
-            if (!err && h && h.isMonitoring() && !sysManager.isMyMac(mac)) {
-              h.spoof(true);
-            }
-          });
-          // publish device updated event to trigger
-          await this.setupLocalDeviceDomain(host.mac, 'info_change');
-          this.messageBus.publish(HOST_UPDATED, host.mac, enrichedHost);
-          // log.info("RegularDeviceInfoUpdate MAC entry is updated, checking V6",host.ipv6Addr,enrichedHost.ipv6Addr);
-          // if (host.ipv6Addr == null || host.ipv6Addr.length == 0) {
-          //         return;
-          //       }
-          // if (host.ipv6Addr.length == enrichedHost.ipv6Addr.length
-          //     && host.ipv6Addr.every(function(u, i) {
-          //             return u === enrichedHost.ipv6Addr[i];
-          //           })
-          //          ) {
-          //       } else {
-          //         sem.emitEvent({
-          //           type: "IPv6DeviceInfoUpdate",
-          //           message: "IPv6 Device Update @ DeviceHook",
-          //           suppressEventLogging: true,
-          //           host: host
-          //         });
-          //       }
-          //     }).catch((err) => {
-          //       log.error("Failed to create mac entry:", err, err.stack);
-          //     })
+          const hostManager = new HostManager();
+          const h = await hostManager.getHostAsync(mac)
 
-          // })
+          if (!h.wlanVendor && !enrichedHost.wlanVendor) {
+            log.debug(`Try to get vlanVendor info for ${mac}`);
+            const wlanVendors = await hostTool.getWlanVendorFromCache(mac)
+              .catch(err => log.error("Failed to get vendor info for " + mac, err));
+            
+            if (wlanVendors && wlanVendors.length > 0) {
+              log.info(`Got wlanVendor info for ${mac}: ${wlanVendors}`);
+              enrichedHost.wlanVendor = wlanVendors;
+            }
+          }
+
+          await h.update(enrichedHost, true, true)
+          if (h && h.isMonitoring() && !sysManager.isMyMac(mac)) {
+            await h.spoof(true);
+          }
         })().catch((err) => {
           log.error("Failed to create host entry:", err, err.stack);
         });
@@ -606,7 +632,7 @@ class DeviceHook extends Hook {
             if (enabled) {
               await this.createAlarm(host, 'device_offline');
             } else {
-              log.info("Device presence is disabled for " + host.mac);
+              log.verbose("Device presence is disabled for " + host.mac);
             }
           } catch (err) {
             log.error("Failed to load device presence settings", err);
@@ -699,8 +725,6 @@ class DeviceHook extends Hook {
     const am2 = new AM2();
 
     const name = getPreferredBName(host) || "Unknown"
-    const hostManager = new HostManager();
-    const hostInstance = hostManager.getHostFastByMAC(host.mac);
 
     let alarm = null;
     switch (type) {
@@ -773,46 +797,30 @@ class DeviceHook extends Hook {
     }
   }
 
-  getVendorInfoAsync(mac) {
-    return new Promise((resolve, reject) => {
-      this.getVendorInfo(mac, (err, vendorInfo) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(vendorInfo);
-        }
-      })
-    })
-  }
-
-  getVendorInfo(mac, callback) {
-    mac = mac.toUpperCase();
-    let rawData = {
-      ou: mac.slice(0, 13), // use 0,13 for better OU compatibility
-      uuid: flowUtil.hashMac(mac)
-    };
-    bone.device("identify", rawData, (err, enrichedData) => {
-      if (err) {
-        log.error("Failed to get vendor info for mac " + mac + ": " + err);
-        callback(err);
-        return;
-      }
+  async getVendorInfo(mac) {
+    try {
+      mac = mac.toUpperCase();
+      let rawData = {
+        ou: mac.slice(0, 13), // use 0,13 for better OU compatibility
+        uuid: flowUtil.hashMac(mac)
+      };
+      const enrichedData = await bone.deviceAsync("identify", rawData)
 
       if (enrichedData && enrichedData._vendor) {
         let v = enrichedData._vendor;
         if (v.startsWith('"'))
           v = v.slice(1); // workaround for buggy code, vendor has a unless prefix "
-        callback(null, v);
-      } else {
-        callback(null, null);
+        return v
       }
-    });
-  }
-  async setupLocalDeviceDomain(mac, type) {
-    if (!mac) return;
-    if (type == 'new_device' || type == 'info_change') {
-      await hostTool.generateLocalDomain(mac);
+    } catch (err) {
+      log.error("Failed to get vendor info from cloud", err);
     }
+    let vendor = null;
+    // fallback to local lookup
+    await withTimeout(WlanVendorInfo.lookupMacVendor(mac), 3000)
+      .then(result => vendor = result)
+      .catch(err => log.error("Failed to get vendor info for " + mac + " from local lookup", err));
+    return vendor;
   }
 }
 

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,7 +24,7 @@ const SSDPClient = require('node-ssdp').Client
 
 const request = require('request')
 
-const parseString = require('xml2js').parseString;
+const xml2json = require('../extension/xml2json/xml2json.js')
 
 const l2 = require('../util/Layer2.js');
 
@@ -74,6 +74,7 @@ class SSDPSensor extends Sensor {
   notify(ip, ssdpResult) {
     if (sm.isMyIP(ip)) return
 
+    // node-ssdp defaults v4 only
     l2.getMAC(ip, (err, mac) => {
 
       if(err) {
@@ -106,7 +107,8 @@ class SSDPSensor extends Sensor {
   parseURL(ip, location, callback) {
     let options = {
       uri: location,
-      method: 'GET'
+      method: 'GET',
+      followRedirect: false,
     }
     request(options, (err, response, body) => {
       if(err) {
@@ -115,21 +117,20 @@ class SSDPSensor extends Sensor {
         return
       }
 
-      parseString(body, (err, result) => {
-        if(err) {
+      xml2json.parse(body)
+        .then(result => {
+          const rr = this.parseContent(result)
+
+          if(rr && rr.deviceName) {
+            this.notify(ip, rr)
+          }
+
+          callback(null)
+        })
+        .catch(err => {
           log.error(`Invalid SSDP XML for location ${location}, err: ${err}`)
           callback(err)
-          return
-        }
-
-        const rr = this.parseContent(result)
-
-        if(rr && rr.deviceName) {
-          this.notify(ip, rr)
-        }
-
-        callback(null)
-      })
+        })
     });
   }
 

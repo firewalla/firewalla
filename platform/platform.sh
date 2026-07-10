@@ -15,7 +15,11 @@ MANAGED_BY_FIREROUTER=no
 REDIS_MAXMEMORY=300mb
 RAMFS_ROOT_PARTITION=no
 XT_TLS_SUPPORTED=no
+XT_UDP_TLS_SUPPORTED=no
 MAX_OLD_SPACE_SIZE=256
+HAVE_FWAPC=no
+HAVE_FWDAP=no
+WAN_INPUT_DROP_RATE_LIMIT=10
 
 hook_server_route_up() {
   echo nothing > /dev/null
@@ -47,6 +51,15 @@ function get_assets_prefix {
     echo "https://fireupgrade.s3.us-west-2.amazonaws.com/alpha"
   else
     echo "https://fireupgrade.s3.us-west-2.amazonaws.com"
+  fi
+}
+
+function get_cloud_endpoint {
+  RELEASE_TYPE=$(get_release_type)
+  if [ "$RELEASE_TYPE" = "dev" -o "$RELEASE_TYPE" = "unknown" ]; then
+    echo "https://ota.firewalla.com/dev"
+  else
+    echo "https://ota.firewalla.com"
   fi
 }
 
@@ -82,14 +95,6 @@ function led_boot_state() {
   return 0
 }
 
-function installTLSModule {
-  return
-}
-
-function installSchCakeModule {
-  return
-}
-
 function get_dynamic_assets_list {
   echo ""
 }
@@ -100,6 +105,16 @@ function get_profile_default_name {
 
 function beep {
   return
+}
+
+function get_tls_ko_path {
+  module_name=$1
+  if [[ -z $module_name ]]; then
+    echo "Error: module_name is empty"
+    return 1
+  fi
+  ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/${module_name}.ko
+  echo $ko_path
 }
 
 case "$UNAME" in
@@ -164,6 +179,14 @@ case "$UNAME" in
         export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
         export FIREWALLA_PLATFORM=gse
         ;;
+      orange)
+        source $FW_PLATFORM_DIR/orange/platform.sh
+        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/orange
+        BRO_PROC_NAME="zeek"
+        BRO_PROC_COUNT=2
+        export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
+        export FIREWALLA_PLATFORM=orange
+        ;;
       blue)
         source $FW_PLATFORM_DIR/blue/platform.sh
         FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/blue
@@ -198,6 +221,69 @@ case "$UNAME" in
     ;;
 esac
 
+branch=$(cd /home/pi/firewalla;git rev-parse --abbrev-ref HEAD)
+if [ "$branch" = "master" ]; then
+  XT_UDP_TLS_SUPPORTED=yes # it's development branch, enable xt_udp_tls for testing
+fi
+
+
+function installTLSModule() {
+  uid=$(id -u pi)
+  gid=$(id -g pi)
+  module_name=$1
+  if [[ ${module_name} = "xt_tls" && ${XT_TLS_SUPPORTED} != "yes" ]]; then
+    # xt_tls is not supported on this platform ingore
+    return 0
+  fi
+  if [[ ${module_name} = "xt_udp_tls" && ${XT_UDP_TLS_SUPPORTED} != "yes" ]]; then
+    # xt_udp_tls is not supported on this platform ingore
+    return 0
+  fi
+  if ! lsmod | grep -wq "${module_name}"; then
+
+    ko_path=$(get_tls_ko_path ${module_name})
+    if [[ -z $ko_path ]]; then
+      echo "Error: ko_path is empty"
+      return 1
+    fi
+
+    if [[ -f $ko_path ]]; then
+      sudo insmod ${ko_path} max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
+    else
+      sudo modprobe ${module_name} max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
+    fi
+    arch=$(uname -m)
+    so_path=${FW_PLATFORM_CUR_DIR}/files/shared_objects/$(lsb_release -cs)/lib${module_name}.so
+    so_path_alt="/media/root-ro/usr/lib/${arch}-linux-gnu/xtables/lib${module_name}.so"
+
+    if [[ -f $so_path ]]; then
+      sudo install -D -v -m 644 ${so_path} /usr/lib/${arch}-linux-gnu/xtables
+    elif [[ -f $so_path_alt ]]; then
+      sudo install -D -v -m 644 ${so_path_alt} /usr/lib/${arch}-linux-gnu/xtables
+    fi
+    
+  fi
+  return
+}
+
+function installSchCakeModule {
+  ko_path=${FW_PLATFORM_CUR_DIR}/files/kernel_modules/$(uname -r)/sch_cake.ko
+  if [[ -f $ko_path ]]; then
+    if ! modinfo sch_cake > /dev/null || [[ $(sha256sum /lib/modules/$(uname -r)/kernel/net/sched/sch_cake.ko | awk '{print $1}') != $(sha256sum $ko_path | awk '{print $1}') ]]; then
+      sudo cp ${ko_path} /lib/modules/$(uname -r)/kernel/net/sched/
+      sudo depmod -a
+    fi
+  fi
+
+  tc_path=${FW_PLATFORM_CUR_DIR}/files/executables/$(lsb_release -cs)/tc
+  tc_dst_path=$(which tc || echo "/sbin/tc")
+  if [[ -f $tc_path ]]; then
+    if [[ $(sha256sum $tc_dst_path | awk '{print $1}') != $(sha256sum $tc_path | awk '{print $1}') ]]; then
+      sudo cp $tc_path $tc_dst_path
+    fi
+  fi
+  return
+}
 
 function before_bro {
   if [[ -d ${FW_PLATFORM_DIR}/all/hooks/before_bro ]]; then
