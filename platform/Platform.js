@@ -55,13 +55,22 @@ class Platform {
 
   // Read the hardware permanent MAC of a NIC via ethtool. Returns "" if unavailable
   // (e.g. all-zero permanent address or ethtool failure), so callers can fall back.
+  // Cached per-nic since the permanent MAC is burned into hardware and never changes at
+  // runtime; failures/all-zero are not cached so a transient ethtool error just retries later.
   async getPermanentMac(nic) {
-    const mac = await exec(`ethtool -P ${nic}`).then(result => {
+    if (!this._permanentMacCache)
+      this._permanentMacCache = {};
+    if (this._permanentMacCache[nic] !== undefined)
+      return this._permanentMacCache[nic];
+
+    const mac = await execFile('ethtool', ['-P', nic]).then(result => {
       const match = result.stdout.match(/Permanent address:\s*([0-9a-fA-F:]+)/);
       return match ? match[1].trim().toUpperCase() : "";
     }).catch(() => "");
     if (!mac || mac === "00:00:00:00:00:00")
       return "";
+
+    this._permanentMacCache[nic] = mac;
     return mac;
   }
 
