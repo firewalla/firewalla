@@ -22,7 +22,7 @@ const fs = require('fs');
 const fsp = fs.promises
 const cp = require('child_process');
 
-const { exec } = require('child-process-promise');
+const { exec, execFile } = require('child-process-promise');
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
 
@@ -66,9 +66,16 @@ class Platform {
   }
 
   async getMaxLinkSpeed(iface) {
+    if (!this._maxLinkSpeedCache)
+      this._maxLinkSpeedCache = {};
+    if (this._maxLinkSpeedCache[iface] !== undefined)
+      return this._maxLinkSpeedCache[iface];
+
     let max = 0;
-    await exec(`ethtool ${iface} | tr -d '\\n' | sed -e 's/.*Supported link modes:\\(.*\\)Supported pause.*/\\1/' | xargs`).then((result) => {
-      const modes = result.stdout.split(' ');
+    await execFile('ethtool', [iface]).then((result) => {
+      const flat = result.stdout.replace(/\n/g, '');
+      const match = flat.match(/Supported link modes:\s*(.*?)\s*Supported pause.*/);
+      const modes = (match ? match[1] : '').split(/\s+/).filter(Boolean);
       for (const mode of modes) {
         const speed = Number(mode.split("base")[0]);
         if (speed > max)
@@ -77,6 +84,9 @@ class Platform {
     }).catch((err) => {
       log.info(`Failed to get supported link modes of ${iface}`, err.message);
     });
+    
+    if (max > 0)
+      this._maxLinkSpeedCache[iface] = max;
     return max;
   }
 
