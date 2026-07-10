@@ -32,7 +32,6 @@ const CloudWrapper = require('../api/lib/CloudWrapper.js');
 const cw = new CloudWrapper();
 
 const zlib = require('zlib');
-const crypto = require('crypto');
 const deflateAsync = util.promisify(zlib.deflate);
 const rp = require('request-promise');
 
@@ -668,13 +667,13 @@ module.exports = class {
       const encryptedMessage = message.message;
       const replyid = message.replyid; // replyid will not encrypted
       let response, decryptedMessage, code = 200, encryptedResponse;
-      // The IV (if any) is embedded in the message envelope ({ iv, message }).
-      // decryptRequest reports usedIv so we can echo a fresh IV on the reply.
-      let replyIVBuf = null;
+      // decryptRequest reports the request scheme (gcm/cbc-iv/legacy) so the
+      // reply mirrors it; the iv/tag travel inside the message envelope.
+      let replyScheme = 'legacy';
       try {
-        const { decrypted, usedIv } = await cw.getCloud().decryptRequest(gid, encryptedMessage);
+        const { decrypted, scheme } = await cw.getCloud().decryptRequest(gid, encryptedMessage);
         decryptedMessage = decrypted;
-        replyIVBuf = usedIv ? crypto.randomBytes(16) : null;
+        replyScheme = scheme;
         decryptedMessage.mtype = decryptedMessage.message.mtype;
         const obj = decryptedMessage.message.obj;
         const item = obj.data.item;
@@ -707,7 +706,7 @@ module.exports = class {
           compressMode: 1,
           data: output.toString('base64')
         });
-        encryptedResponse = await cw.getCloud().encryptResponse(gid, compressedResponse, replyIVBuf);
+        encryptedResponse = await cw.getCloud().encryptResponse(gid, compressedResponse, replyScheme);
       } catch (err) {
         log.warn(`Process web message error`, err);
         if (err && err.message == "decrypt_error") {
