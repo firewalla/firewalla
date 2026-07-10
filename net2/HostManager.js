@@ -81,9 +81,7 @@ const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 
 const tokenManager = require('../util/FWTokenManager.js');
-
-const flowTool = require('./FlowTool.js');
-
+const country = require('../extension/country/country.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 
@@ -2853,7 +2851,10 @@ module.exports = class HostManager extends Monitorable {
 
       const traffic = await flowAggrTool.getTopSumFlowByKeyAndDestination(realSumKey, key, count);
 
-      const enriched = (await flowTool.enrichWithIntel(traffic, key != 'dnsB')).sort((a, b) => {
+      const enriched = (await asyncNative.mapLimit(traffic, 50, (flow) => {
+        if (key != 'dnsB')
+          flow.country = country.getCountry(flow.ip);
+      })).sort((a, b) => {
         return b.count - a.count;
       });
 

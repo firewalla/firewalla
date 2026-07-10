@@ -19,6 +19,7 @@ const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const pclient = require('../util/redis_manager.js').getPublishClient();
 
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
@@ -77,18 +78,24 @@ class DataMigrationSensor extends Sensor {
   }
 
   async _is_migration_done(codeName) {
+    // value is the epoch seconds when the migration ran (legacy value was "1"); any
+    // non-empty value means done
     const result = await rclient.getAsync("migration:" + codeName);
-    if (result && result === "1") {
-      return true;
-    } else return false;
+    return result ? true : false;
   }
 
   async _set_migration_done(codeName) {
-    await rclient.setAsync("migration:" + codeName, "1");
+    // record the time the migration ran so consumers can reason about it (e.g. LogQuery
+    // waits bro.conn.expires past this before trusting baked flow intel)
+    const ts = Math.floor(Date.now() / 1000);
+    await rclient.setAsync("migration:" + codeName, ts);
+    // let config.js update its in-memory migration state without a redis re-scan
+    await pclient.publishAsync("migration:updated", JSON.stringify({ codeName, ts }));
   }
 
   async _unset_migration_done(codeName) {
     await rclient.delAsync("migration:" + codeName);
+    await pclient.publishAsync("migration:updated", JSON.stringify({ codeName, ts: null }));
   }
 
   async _migrate(codeName) {
@@ -199,6 +206,12 @@ class DataMigrationSensor extends Sensor {
         }
         break;
       }
+      case "flow_inline_intel":
+        // no-op: only records when inline flow-intel baking became active (see
+        // _set_migration_done). LogQuery uses this timestamp to decide when every stored
+        // flow is guaranteed to carry a baked intel snapshot and query-time enrichment
+        // can be skipped.
+        break;
       default:
         log.warn("Unrecognized code name: " + codeName);
     }

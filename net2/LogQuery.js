@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -453,17 +453,26 @@ class LogQuery {
 
 
   async enrichWithIntel(logs, enrichIP = false) {
+    const inlineIntelReady = intelTool.isInlineIntelReady();
+
     return mapLimit(logs, 50, async f => {
       // ignore dns and ntp here as ip intel doesn't make sense for intercepted flows
       if (f.ip && f.type == 'ip' && !f.local || enrichIP) {
-        const intel = await intelTool.getIntel(f.ip, f.appHosts)
+        // flows that already carry a baked category snapshot (decoded from c/a in
+        // toSimpleFormat) skip the per-flow intel:ip lookup. Callers without a snapshot
+        // (e.g. aggregated top-sum flows in NetBotTool/HostManager) still resolve it.
+        const getIntel = inlineIntelReady || f.category != null
+        let intel
+        if (!getIntel) {
+          intel = await intelTool.getIntel(f.ip, f.appHosts)
 
-        // lodash/assign appears to be x4 times less efficient
-        // Object.assign(f, _.pick(intel, ['country', 'category', 'app', 'host']))
-        if (intel) {
-          if (intel.country) f.country = intel.country
-          if (intel.category) f.category = intel.category
-          if (intel.app) f.app = intel.app
+          // lodash/assign appears to be x4 times less efficient
+          // Object.assign(f, _.pick(intel, ['country', 'category', 'app', 'host']))
+          if (intel) {
+            if (intel.country) f.country = intel.country
+            if (intel.category) f.category = intel.category
+            if (intel.app) f.app = intel.app
+          }
         }
 
         const host = f.appHosts && f.appHosts[0] || intel && intel.host
@@ -477,8 +486,8 @@ class LogQuery {
           if (c) f.country = c
         }
 
-        // failed on previous cloud request, try again
-        if (intel && intel.cloudFailed || !intel) {
+        // failed on previous cloud request, try again (only when we actually looked up)
+        if (!getIntel && (!intel || intel.cloudFailed)) {
           if (!firewalla.isApi()) {
             destIPFoundHook.processIP(f.ip);
           } else {
@@ -500,7 +509,7 @@ class LogQuery {
         }
       }
 
-      for (const rlKey in ['rl', 'drl'])
+      for (const rlKey of ['rl', 'drl'])
         if (f[rlKey]) {
           const c = country.getCountry(f[rlKey].split(':')[0]);
           if (c)

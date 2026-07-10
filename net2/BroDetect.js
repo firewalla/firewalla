@@ -88,12 +88,11 @@ const { getUniqueTs, extractIP } = require('./FlowUtil.js')
 
 const LRU = require('lru-cache');
 const Constants = require('./Constants.js');
-
-const exec = require('util').promisify(require('child_process').exec);
+const DestIPFoundHook = require('../hook/DestIPFoundHook.js');
+const destIPFoundHook = new DestIPFoundHook();
 
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
-const CONNMARK_REFRESH_INTERVAL = 15 * 1000; // 15 seconds
 
 /*
  *
@@ -1469,8 +1468,48 @@ class BroDetect {
         }
       }
 
-      // Single flow is written to redis first to prevent data loss
-      // will be aggregated on flow stash expiration and removed in most cases
+      const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
+      let remoteHost = null;
+      if (afhost && _.isObject(afobj) && afobj.ip === remoteIPAddress) {
+        remoteHost = afhost;
+      }
+
+      // For non-local flows, resolve intel BEFORE persisting so a minimal snapshot is
+      // baked onto the record (single write; reflects what was known at process time).
+      // processIP also writes intel:ip and emits MSG_FLOW_ENRICHED, so this replaces the
+      // former async DestIPFound hop. Bounded by the hook's worker pool.
+      if (!localFlow) {
+        const enrichFlow = Object.assign({}, tmpspec, {
+          ip: remoteIPAddress,
+          host: remoteHost,
+          intf: intfInfo.uuid, // intf in tmpspec is truncated
+          from: "flow",
+          mac: localMac
+        });
+        try {
+          // resolves null (without blocking) when the enrich backlog is saturated
+          const intel = await destIPFoundHook.appendNewFlow(enrichFlow, true);
+          if (intel) {
+            // compact keys to save memory: c = category (coded)
+            if (intel.category)
+              tmpspec.c = await intelTool.categoryToNumber(intel.category);
+            // per-flow app is deprecated by app time usage, which accounts app activity
+            // by domain with its own dedicated config
+            // if (intel.app)
+            //   tmpspec.a = intel.app;
+            // zeek didn't capture a host for this flow (no af) but processIP resolved one
+            // (SSL cert / reverse DNS): persist it in af so the read path still gets
+            // f.host now that intel:ip is no longer read at query time
+            if (intel.host && _.isEmpty(tmpspec.af))
+              tmpspec.af = { [intel.host]: {} };
+          }
+        } catch (err) {
+          log.error("Failed to resolve inline intel for", remoteIPAddress, err);
+        }
+      }
+
+      // Single flow written to redis (carries the intel snapshot when resolved above);
+      // aggregated on flow stash expiration and removed in most cases
       const key = flowTool.getLogKey(localMac, {direction: tmpspec.fd, local: localFlow})
       let strdata = JSON.stringify(tmpspec);
 
@@ -1500,12 +1539,6 @@ class BroDetect {
         err => log.error("Failed to save tmpspec: ", tmpspec, err)
       )
 
-      const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
-      let remoteHost = null;
-      if (afhost && _.isObject(afobj) && afobj.ip === remoteIPAddress) {
-        remoteHost = afhost;
-      }
-
       if (localFlow) {
         // no need to go through DestIPFoundHook
         sem.emitLocalEvent({
@@ -1514,30 +1547,6 @@ class BroDetect {
           flow: Object.assign({}, tmpspec, {intf: intfInfo.uuid, dIntf: dstIntfInfo.uuid}),
         });
       }
-
-      setTimeout(() => {
-        // no need to go through DestIPFoundHook for localFlow
-        if (!localFlow) {
-          sem.emitEvent({
-            type: 'DestIPFound',
-            ip: remoteIPAddress,
-            host: remoteHost,
-            fd: tmpspec.fd,
-            flow: Object.assign({}, tmpspec, { ip: remoteIPAddress, host: remoteHost, intf: intfInfo.uuid }),
-            from: "flow",
-            suppressEventLogging: true,
-            mac: localMac
-          });
-          if (realLocal) {
-            sem.emitEvent({
-              type: 'DestIPFound',
-              from: "VPN_endpoint",
-              ip: tmpspec.rl,
-              suppressEventLogging: true
-            });
-          }
-        }
-      }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
     } catch (e) {
       log.error("Conn:Error Unable to save", e, data);

@@ -96,34 +96,22 @@ module.exports = class DNSManager {
   { address: '2400:cb00:2048:1::6814:172e', family: 6 } ]
 */
 
-  // Need to write code to drop the noise before calling this function.
-  // this is a bit expensive due to the lookup part
-  async query(list, ipsrc, ipdst, deviceMac, hostIndicatorsKeyName) {
-
-    if (list == null || list.length == 0) {
-      return;
-    }
+  // Enrich aggregated flows (from FlowManager.summarizeConnections) in place with the
+  // local device name, remote host name and intel. Flows are in raw format (sh/dh/fd/
+  // mac/appHosts). This is only called from FlowMonitor
+  async enrichFlows(flows) {
+    if (_.isEmpty(flows)) return;
 
     const HostManager = require("../net2/HostManager.js");
     const hostManager = new HostManager();
 
-    // this is now only called in FlowMonitor to enrich flow info
-    return asyncNative.eachLimit(list, DNSQUERYBATCHSIZE, async(o) => {
-
-      const _ipsrc = o[ipsrc]
-      const _ipdst = o[ipdst]
-      const _deviceMac = deviceMac && o[deviceMac];
-      const _hostIndicators = hostIndicatorsKeyName && o[hostIndicatorsKeyName];
+    return asyncNative.eachLimit(flows, DNSQUERYBATCHSIZE, async o => {
       try {
-        let monitorable
-        if (_deviceMac && hostTool.isMacAddress(_deviceMac)) {
-          monitorable = hostManager.getHostFastByMAC(_deviceMac);
-        } else {
-          if (_deviceMac && IdentityManager.isGUID(_deviceMac))
-            monitorable = IdentityManager.getIdentityByGUID(_deviceMac);
-          else {
-            monitorable = hostManager.getHostFastByMAC(o.fd == 'in' ? _ipsrc : _ipdst);
-          }
+        let monitorable;
+        if (o.mac && hostTool.isMacAddress(o.mac)) {
+          monitorable = hostManager.getHostFastByMAC(o.mac);
+        } else if (o.mac && IdentityManager.isGUID(o.mac)) {
+          monitorable = IdentityManager.getIdentityByGUID(o.mac);
         }
 
         if (monitorable) {
@@ -132,57 +120,66 @@ module.exports = class DNSManager {
           } else {
             o.dhname = monitorable.getReadableName();
           }
-          o.mac == monitorable.getGUID()
+          // o.mac == monitorable.getGUID()
         }
-
-        await this.enrichDestIP(o.fd == 'in' ? _ipdst : _ipsrc, o, _hostIndicators);
-
+        await this.enrichDestIP(o);
         this.enrichHttpFlow(o);
-
-      } catch(err) {
-        log.error(`Failed to enrich ip: ${_ipsrc}, ${_ipdst}`, err);
+      } catch (err) {
+        log.error('Failed to enrich flow', o.sh, o.dh, err);
       }
     })
   }
 
+  // if any related URL of the flow is flagged as intel, override flow intel with it
   enrichHttpFlow(conn) {
     delete conn.uids;
     const urls = conn.urls;
-    if (!_.isEmpty(urls) && conn.intel && conn.intel.c !== 'intel') {
-      for (const url of urls) {
-        if (url && url.category === 'intel') {
-          for (const key of ["category", "cc", "cs", "t", "v", "s", "updateTime"]) {
-            conn.intel[key] = url[key];
-          }
-          const parsedInfo = URL.parse(url.url);
-          if (parsedInfo && parsedInfo.hostname) {
-            conn.intel.host = parsedInfo.hostname;
-          }
-          conn.intel.fromURL = "1";
-          break;
+    const category = conn.intel && conn.intel.category || conn.c
+    if (_.isEmpty(urls) || category === 'intel') return;
+    for (const url of urls) {
+      if (url && url.category === 'intel') {
+        for (const key of ["category", "cc", "cs", "t", "v", "s", "updateTime"]) {
+          conn.intel[key] = url[key];
         }
+        const parsedInfo = URL.parse(url.url);
+        if (parsedInfo && parsedInfo.hostname) {
+          conn.intel.host = parsedInfo.hostname;
+        }
+        conn.intel.fromURL = "1";
+        break;
       }
     }
   }
 
-  async enrichDestIP(ip, flowObject, hostIndicators) {
-    try {
-      const intel = await intelTool.getIntel(ip, hostIndicators)
+  async enrichDestIP(flow) {
+    const ip = flow.fd == 'in' ? flow.dh : flow.sh;
+    const setRemoteName = (host) => {
+      if (!host) return;
+      if (flow.fd == 'out')
+        flow.shname = host;
+      else
+        flow.dhname = host;
+    };
 
-      const host = hostIndicators && hostIndicators[0] || intel && intel.host
-      if (host) {
-        if (flowObject.fd == 'out') {
-          flowObject["shname"] = host
-        } else {
-          flowObject["dhname"] = host
-        }
+    try {
+      if (intelTool.isInlineIntelReady()) {
+        // the flow record carries an intel snapshot baked at write time: c = coded
+        // category, af (-> appHosts) = resolved remote host. Decode locally
+        // instead of reading intel:ip; FlowMonitor fetches the full intel:ip record on
+        // demand right before generating an alarm (prepareAlarmIntel)
+        const category = intelTool.numberToCategory(flow.c);
+        if (category) flow.category = category;
+        // if (flow.a) flow.app = flow.a;
+        setRemoteName(flow.appHosts && flow.appHosts[0]);
+        return;
       }
 
-      flowObject.intel = intel
-      Object.assign(flowObject, _.pick(intel, ['category', 'app', 'org']))
-
-    } catch(err) {
-      // do nothing
+      const intel = await intelTool.getIntel(ip, flow.appHosts);
+      setRemoteName(flow.appHosts && flow.appHosts[0] || intel && intel.host);
+      flow.intel = intel;
+      Object.assign(flow, _.pick(intel, ['category', 'app', 'org']));
+    } catch (err) {
+      log.error('Failed to enrich remote', ip, err.message);
     }
   }
 }
