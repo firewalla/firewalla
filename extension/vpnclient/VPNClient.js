@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,6 +15,7 @@
 
 'use strict';
 
+const net = require('net')
 const exec = require('child-process-promise').exec;
 const log = require('../../net2/logger.js')(__filename);
 const fc = require('../../net2/config.js');
@@ -27,31 +28,37 @@ const _ = require('lodash');
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 const vpnClientEnforcer = require('./VPNClientEnforcer.js');
 const routing = require('../routing/routing.js');
-const iptables = require('../../net2/Iptables.js');
-const {Address4} = require('ip-address');
+const { Rule } = require('../../net2/Iptables.js');
+const iptc = require('../../control/IptablesControl.js');
+const { Address4, Address6 } = require('ip-address');
 const sysManager = require('../../net2/SysManager');
 const ipTool = require('ip');
-const ipset = require('../../net2/Ipset.js');
+const Ipset = require('../../net2/Ipset.js');
 const PlatformLoader = require('../../platform/PlatformLoader.js');
 const { rclient } = require('../../util/redis_manager.js');
 const Constants = require('../../net2/Constants.js');
 const AsyncLock = require('../../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const platform = PlatformLoader.getPlatform()
+const fireRouter = require('../../net2/FireRouter.js');
+const scheduler = require('../../util/scheduler.js');
 const envCreatedMap = {};
+const INTERNET_ON_OFF_THRESHOLD = 2;
 
 const instances = {};
 
-const VPN_ROUTE_MARK_KEY_PREFIX = "fwmark:vpn";
 class VPNClient {
   constructor(options) {
     const profileId = options.profileId;
+    this.isFirstLaunch = true; // should be only true when first created
     if (!profileId)
       return null;
     if (!instances[profileId]) {
       instances[profileId] = this;
       this.profileId = profileId;
       if (f.isMain()) {
+        this.internetFailureCount = 0;
+        this.internetSuccessCount = 0;
         this.hookLinkStateChange();
         this.hookSettingsChange();
 
@@ -72,6 +79,7 @@ class VPNClient {
                 sem.emitEvent({
                   type: "link_established",
                   profileId: this.profileId,
+                  routeUpdated: true,
                   suppressEventLogging: true,
                 });
               }
@@ -91,17 +99,19 @@ class VPNClient {
       return null;
   }
 
-  static async getVPNProfilesForInit(json) {
-    const types = ["openvpn", "wireguard", "ssl", "zerotier", "nebula", "trojan", "clash", "hysteria", "ipsec", "ts"];
+  static async getVPNProfilesForInit() {
+    const types = ["openvpn", "wireguard", "amneziawg", "ssl", "zerotier", "nebula", "trojan", "clash", "hysteria", "gost", "ipsec", "ts"];
+    const results = {}
     await Promise.all(types.map(async (type) => {
       const c = this.getClass(type);
       if (c) {
         let profiles = [];
         const profileIds = await c.listProfileIds();
-        Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
-        json[c.getKeyNameForInit()] = profiles;
+        Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({ profileId: profileId }).getAttributes())));
+        results[c.getKeyNameForInit()] = profiles;
       }
     }));
+    return results
   }
 
   static getClass(type) {
@@ -110,68 +120,50 @@ class VPNClient {
     }
     switch (type) {
       case "openvpn": {
-        const c = require('./OpenVPNClient.js');
-        return c;
-        break;
+        return require('./OpenVPNClient.js');
       }
       case "wireguard": {
-        const c = require('./WGVPNClient.js');
-        return c;
-        break;
+        return require('./WGVPNClient.js');
+      }
+      case "amneziawg": {
+        return require('./AmneziaWGVPNClient.js');
       }
       case "ssl": {
         if (platform.isDockerSupported()) {
-          const c = require('./docker/OCDockerClient.js');
-          return c;
+          return require('./docker/OCDockerClient.js');
         } else {
-          const c = require('./OCVPNClient.js');
-          return c;
+          return require('./OCVPNClient.js');
         }
-        break;
       }
       //case "ssl": {
-      //  const c = require('./OCVPNClient.js');
-      //  return c;
-      //  break;
+      //  return require('./OCVPNClient.js');
       //}
       case "zerotier": {
-        const c = require('./docker/ZTDockerClient.js');
-        return c;
-        break;
+        return require('./docker/ZTDockerClient.js');
       }
       case "trojan": {
-        const c = require('./docker/TrojanDockerClient.js');
-        return c;
-        break;
+        return require('./docker/TrojanDockerClient.js');
       }
       case "nebula": {
-        const c = require('./docker/NebulaDockerClient.js');
-        return c;
-        break;
+        return require('./docker/NebulaDockerClient.js');
       }
       case "ipsec": {
-        const c = require('./docker/IPSecDockerClient.js');
-        return c;
-        break;
+        return require('./docker/IPSecDockerClient.js');
       }
       case "clash": {
-        const c = require('./docker/ClashDockerClient.js');
-        return c;
-        break;
+        return require('./docker/ClashDockerClient.js');
       }
       case "hysteria": {
-        const c = require('./docker/HysteriaDockerClient.js');
-        return c;
-        break;
+        return require('./docker/HysteriaDockerClient.js');
+      }
+      case "gost": {
+        return require('./docker/GostDockerClient.js');
       }
       case "ts": {
-        const c = require('./docker/TSDockerClient.js');
-        return c;
-        break;
+        return require('./docker/TSDockerClient.js');
       }
       default:
-        log.error(`Unrecognized VPN client type: ${type}`);
-        return null;
+        throw new Error(`Unrecognized VPN client type: ${type}`);
     }
   }
 
@@ -192,6 +184,10 @@ class VPNClient {
   }
 
   async getVpnIP4s() {
+    return null;
+  }
+
+  async getVpnIP6s() {
     return null;
   }
 
@@ -216,60 +212,36 @@ class VPNClient {
   async _bypassDNSRedirect() {
     const chain = VPNClient.getDNSRedirectChainName(this.profileId);
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
-    const rtIdHex = rtId && Number(rtId).toString(16);
-    await exec(`sudo iptables -w -t nat -F ${chain}`).catch((err) => {});
-    await exec(`sudo ip6tables -w -t nat -F ${chain}`).catch((err) => {});
+    await iptc.addRule(new Rule('nat').chn(chain).opr('-F'));
+    await iptc.addRule(new Rule('nat').fam(6).chn(chain).opr('-F'));
 
-    const bins = ["iptables", "ip6tables"];
-
-    for(const bin of bins) {
-      const tcpCmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p tcp --dport 53 -j ACCEPT`);
-      await exec(tcpCmd).catch((err) => {
-        log.error(`Failed to bypass DNS tcp53 redirect: ${cmd}, err:`, err.message);
-      });
-      const udpCmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p udp --dport 53 -j ACCEPT`);
-      await exec(udpCmd).catch((err) => {
-        log.error(`Failed to bypass DNS udp53 redirect: ${cmd}, err:`, err.message);
-      });
+    for (const fam of [4, 6]) {
+      const tcpCmd = new Rule('nat').fam(fam).chn(chain).mark(rtId, routing.MASK_VC).pro('tcp').dport('53').jmp('ACCEPT').opr('-I');
+      await iptc.addRule(tcpCmd);
+      await iptc.addRule(tcpCmd.pro('udp'));
     }
   }
 
   async _updateDNSRedirectChain() {
     const dnsServers = await this._getDNSServers() || [];
-    log.info("Updating dns redirect chain on servers:", dnsServers);
+    log.verbose("Updating dns redirect chain on servers:", dnsServers);
 
     const chain = VPNClient.getDNSRedirectChainName(this.profileId);
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
-    const rtIdHex = rtId && Number(rtId).toString(16);
-    await exec(`sudo iptables -w -t nat -F ${chain}`).catch((err) => {});
-    await exec(`sudo ip6tables -w -t nat -F ${chain}`).catch((err) => {});
+    await iptc.addRule(new Rule('nat').chn(chain).opr('-F'));
+    await iptc.addRule(new Rule('nat').fam(6).chn(chain).opr('-F'));
+    
     for (let i in dnsServers) {
       const dnsServer = dnsServers[i];
-      let bin = "iptables";
-      if (!ipTool.isV4Format(dnsServer) && ipTool.isV6Format(dnsServer)) {
-        bin = "ip6tables";
-      }
+      const fam = net.isIP(dnsServer);
+      if (!fam) continue
       // round robin rule for multiple dns servers
-      if (i == 0) {
-        // no need to use statistic module for the first rule
-        let cmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p tcp --dport 53 -j DNAT --to-destination ${dnsServer}`);
-        await exec(cmd).catch((err) => {
-          log.error(`Failed to update DNS redirect chain: ${cmd}, dnsServer: ${dnsServer}`, err);
-        });
-        cmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p udp --dport 53 -j DNAT --to-destination ${dnsServer}`);
-        await exec(cmd).catch((err) => {
-          log.error(`Failed to update DNS redirect chain: ${cmd}, dnsServer: ${dnsServer}`, err);
-        });
-      } else {
-        let cmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC}  -p tcp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
-        await exec(cmd).catch((err) => {
-          log.error(`Failed to update DNS redirect chain: ${cmd}, dnsServer: ${dnsServer}`, err);
-        });
-        cmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC}  -p udp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
-        await exec(cmd).catch((err) => {
-          log.error(`Failed to update DNS redirect chain: ${cmd}, dnsServer: ${dnsServer}`, err);
-        });
-      }
+      const tcpRule = new Rule('nat').fam(fam).chn(chain).mark(rtId, routing.MASK_VC).pro('tcp').dport('53').dnat(dnsServer).opr('-I');
+      // no need to use statistic module for the first rule
+      if (Number(i) != 0)
+        tcpRule.mdl('statistic', `--mode nth --every ${Number(i) + 1} --packet 0`);
+      await iptc.addRule(tcpRule);
+      await iptc.addRule(tcpRule.pro('udp'));
     }
   }
 
@@ -294,33 +266,39 @@ class VPNClient {
     const localIP6 = await this._getLocalIP6();
     const intf = this.getInterfaceName();
     const snatNeeded = await this.isSNATNeeded();
-    if (snatNeeded) {
-      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
-      await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
+    let baseRule = new Rule('nat').chn('FW_VC_SNAT').jmp('RETURN')
+    if (settings.c2sSNATDisabled) {
+      await iptc.addRule(baseRule.clone().set(VPNClient.getNetIpsetName(this.profileId, 4), 'dst').opr('-I'))
+      await iptc.addRule(baseRule.clone().fam(6).set(VPNClient.getNetIpsetName(this.profileId, 6), 'dst').opr('-I'))
+    } else {
+      await iptc.addRule(baseRule.clone().set(VPNClient.getNetIpsetName(this.profileId, 4), 'dst').opr('-D'))
+      await iptc.addRule(baseRule.clone().fam(6).set(VPNClient.getNetIpsetName(this.profileId, 6), 'dst').opr('-D'))
     }
-    log.info(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
+    if (snatNeeded) {
+      baseRule = new Rule('nat').chn('FW_VC_SNAT').oif(intf).jmp('MASQUERADE')
+      await iptc.addRule(baseRule)
+      await iptc.addRule(baseRule.fam(6))
+    }
+    log.verbose(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
     // remove routes from main table which is inserted by VPN client automatically,
     // otherwise tunnel will be enabled globally
-    await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.info("No need to remove 0.0.0.0/1 for " + this.profileId) });
-    await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.info("No need to remove 128.0.0.0/1 for " + this.profileId) });
-    await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => { log.info("No need to remove default route for " + this.profileId) });
-    if (localIP6)
-      await routing.removeRouteFromTable("default", remoteIP, intf, "main", null, 6).catch((err) => { log.info("No need to remove IPv6 default route for " + this.profileId) });
-    let routedSubnets = settings.serverSubnets || [];
-    // add vpn client specific routes
-    try {
-      const vpnSubnets = await this.getRoutedSubnets();
-      if (vpnSubnets && _.isArray(vpnSubnets))
-        routedSubnets = routedSubnets.concat(vpnSubnets);
-    } catch (err) {
-      log.error('Failed to parse VPN subnet', err.message);
+    await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove 0.0.0.0/1 for " + this.profileId) });
+    await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove 128.0.0.0/1 for " + this.profileId) });
+    await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => { log.verbose("No need to remove default route for " + this.profileId) });
+    if (localIP6) {
+      await routing.flushRoutingTable("main", intf, "boot", 6).catch((err) => { log.verbose("No need to remove IPv6 routes for " + this.profileId) });
+      await routing.removeRouteFromTable("default", remoteIP, intf, "main", null, 6).catch((err) => { log.verbose("No need to remove IPv6 default route for " + this.profileId) });
     }
-    routedSubnets = this.getSubnetsWithoutConflict(_.uniq(routedSubnets));
+    const routedSubnets = await this.getEffectiveRoutedSubnets();
+    const bypassSubnets = await this.getBypassSubnets();
     const dnsServers = await this._getDNSServers() || [];
 
-    log.info(`Adding routes for vpn ${this.profileId}`, routedSubnets);
+    if (routedSubnets.length)
+      log.info(`Adding routes for vpn ${this.profileId}`, routedSubnets);
+    if (bypassSubnets.length)
+      log.info(`Adding throw routes for vpn ${this.profileId}`, bypassSubnets);
     // always add default route into VPN client's routing table, the switch is implemented in ipset, so no need to implement it in routing tables
-    await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, remoteIP6, intf, routedSubnets, dnsServers, true, Boolean(localIP6));
+    await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, remoteIP6, intf, routedSubnets, bypassSubnets, dnsServers, true, Boolean(localIP6));
     // loosen reverse path filter
     await exec(`sudo sysctl -w net.ipv4.conf.${intf}.rp_filter=2`).catch((err) => { });
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
@@ -342,14 +320,14 @@ class VPNClient {
     const dnsmasqEntries = [`mark=${rtId}$${VPNClient.getDnsMarkTag(this.profileId)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`];
     if (dnsServers.length > 0)
       dnsmasqEntries.push(`server=${dnsServers[0]}$${VPNClient.getDnsMarkTag(this.profileId)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`);
-    await fs.writeFileAsync(this._getDnsmasqConfigPath(), dnsmasqEntries.join('\n')).catch((err) => {});
+    await dnsmasq.writeConfig(this._getDnsmasqConfigPath(), dnsmasqEntries).catch((err) => { });
     // redirect dns to vpn channel
     if (settings.routeDNS) {
       if (rtId) {
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+        await Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
         await this._enableDNSRoute("soft");
         if (!settings.strictVPN) {
-          await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+          await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
           await this._enableDNSRoute("hard");
         }
       }
@@ -358,84 +336,116 @@ class VPNClient {
       }
       dnsmasq.scheduleRestartDNSService();
     } else {
-      await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => { });
+      await Ipset.del(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET)
       if (!settings.strictVPN)
-        await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => { });
+        await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET)
       if (dnsServers.length > 0)
         await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, dnsRedirectChain);
-      await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
       await this._disableDNSRoute("hard");
       await this._disableDNSRoute("soft");
       dnsmasq.scheduleRestartDNSService();
     }
     if (settings.overrideDefaultRoute) {
       if (rtId) {
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+        await Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+        await Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
         if (!settings.strictVPN) {
-          await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
-          await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+          await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+          await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
         }
       }
     } else {
-      await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => { });
-      await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => { });
-      await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => { });
-      await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => { });
+      await Ipset.del(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4)
+      await Ipset.del(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6)
+      await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4)
+      await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6)
     }
 
     if (rtId) {
-      await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getNetIpsetName(this.profileId)}4 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
-      await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getNetIpsetName(this.profileId)}6 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
-      await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getNetIpsetName(this.profileId)}4 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
-      await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getNetIpsetName(this.profileId)}6 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
+      await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), VPNClient.getNetIpsetName(this.profileId), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+      await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), VPNClient.getNetIpsetName(this.profileId, 6), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+      await Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), VPNClient.getNetIpsetName(this.profileId), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
+      await Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), VPNClient.getNetIpsetName(this.profileId, 6), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
     }
-    await exec(`sudo ipset flush -! ${VPNClient.getNetIpsetName(this.profileId)}4`).catch((err) => {});
-    await exec(`sudo ipset flush -! ${VPNClient.getNetIpsetName(this.profileId)}6`).catch((err) => {});
+    await Ipset.flush(VPNClient.getNetIpsetName(this.profileId))
+    await Ipset.flush(VPNClient.getNetIpsetName(this.profileId, 6))
     for (const routedSubnet of routedSubnets) {
-      await exec(`sudo ipset add -! ${VPNClient.getNetIpsetName(this.profileId)}${new Address4(routedSubnet).isValid() ? "4" : "6"} ${routedSubnet}`).catch((err) => {});
+      const fam = net.isIP(routedSubnet && routedSubnet.split('/')[0]);
+      if (!fam) continue
+      await Ipset.add(VPNClient.getNetIpsetName(this.profileId, fam), routedSubnet)
     }
     const ip4s = await this.getVpnIP4s();
-    await exec(`sudo ipset flush -! ${VPNClient.getSelfIpsetName(this.profileId, 4)}`).catch((err) => {});
+    await Ipset.flush(VPNClient.getSelfIpsetName(this.profileId, 4))
     if (_.isArray(ip4s)) {
       for (const ip4 of ip4s) {
-        await exec(`sudo ipset add -! ${VPNClient.getSelfIpsetName(this.profileId, 4)} ${ip4}`).catch((err) => {});
+        await Ipset.add(VPNClient.getSelfIpsetName(this.profileId, 4), ip4)
       }
     }
     // port forward on VPN client will be enabled by default, the port forward rule will decide if it takes effect on specific VPN client
+    baseRule = new Rule('nat').chn('FW_PREROUTING_VC_EXT_IP').set(VPNClient.getSelfIpsetName(this.profileId, 4), 'dst').iif(intf).jmp('FW_PRERT_VC_PORT_FORWARD')
     if (!settings.hasOwnProperty("enablePortforward") || settings.enablePortforward) {
-      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VC_EXT_IP -m set --match-set ${VPNClient.getSelfIpsetName(this.profileId, 4)} dst -i ${this.getInterfaceName()} -j FW_PRERT_VC_PORT_FORWARD`)).catch((err) => {});
+      await iptc.addRule(baseRule.opr('-A'))
     } else {
-      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_VC_EXT_IP -m set --match-set ${VPNClient.getSelfIpsetName(this.profileId, 4)} dst -i ${this.getInterfaceName()} -j FW_PRERT_VC_PORT_FORWARD`)).catch((err) => {});
+      await iptc.addRule(baseRule.opr('-D'))
     }
   }
 
   async _checkConnectivity(force = false) {
-    if (!this._started || this._restarting || (this._lastStartTime && Date.now() - this._lastStartTime < 60000 && !force)) {
+    if (!this._started) {
+      await this._setCachedState(false);
       return;
     }
+    if (this._restarting)
+      return;
+    if (this._lastStartTime && Date.now() - this._lastStartTime < 70000 && !force)
+      return;
     let result = await this._isLinkUp();
     if (result === false) {
       log.error(`VPN client ${this.profileId} underlying link is down.`);
     } else {
       log.debug(`VPN client ${this.profileId} underlying link is up.`);
       if (this.settings.overrideDefaultRoute) {
-        result = await this._isInternetAvailable();
-        if (!result)
+        const internetAvailability = await this._isInternetAvailable();
+        if (!internetAvailability) {
           log.error(`Internet is unavailable via VPN client ${this.profileId}`);
-        else
+          this.internetFailureCount++;
+          this.internetSuccessCount = 0;
+        } else {
           log.debug(`Internet is available via VPN client ${this.profileId}`);
+          this.internetFailureCount = 0;
+          this.internetSuccessCount++;
+        }
+        // update result if consecutive internet connectivity tests return same results
+        if (this.internetSuccessCount >= INTERNET_ON_OFF_THRESHOLD)
+          result = true;
+        else {
+          if (this.internetFailureCount >= INTERNET_ON_OFF_THRESHOLD)
+            result = false;
+          else // internet success/failure count is within switching threshold, pending another consecutive result to decide
+            result = null;
+        }
       }
+    }
+    // Re-check after async tests so a stale successful check cannot override stop().
+    if (!this._started) {
+      await this._setCachedState(false);
+      return;
     }
     if (this._restarting)
       return;
+    // result is null means internet connectivity is still pending another consecutive result to decide, do not emit event in this round
+    if (result === null)
+      return;
     if (result) {
+      await this._setCachedState(true);
       sem.emitEvent({
         type: "link_established",
         profileId: this.profileId,
+        routeUpdated: force,
         suppressEventLogging: true,
       });
     } else {
+      await this._setCachedState(false);
       sem.emitEvent({
         type: "link_broken",
         profileId: this.profileId,
@@ -444,8 +454,39 @@ class VPNClient {
     }
   }
 
+  async getEffectiveRoutedSubnets() {
+    const settings = await this.loadSettings();
+    const subnets = {};
+    const serverSubnets = _.get(settings, "serverSubnets");
+    if (!_.isEmpty(serverSubnets)) {
+      for (const s of serverSubnets) {
+        let addr = new Address4(s);
+        if (!addr.isValid()) {
+          addr = new Address6(s);
+          if (!addr.isValid())
+            continue;
+        }
+        // convert to network address and subnet mask length, it is required before being added to routing table
+        subnets[`${addr.startAddress().correctForm()}/${addr.subnetMask}`] = 1;
+      }
+    }
+    const routedSubnets = await this.getRoutedSubnets();
+    if (!_.isEmpty(routedSubnets)) {
+      for (const s of routedSubnets) {
+        subnets[s] = 1;
+      }
+    }
+    return this.getSubnetsWithoutConflict(Object.keys(subnets));
+  }
+
   async getRoutedSubnets() {
     return null;
+  }
+
+  // returns subnets that should bypass the VPN tunnel (go through ISP)
+  // subclasses override this when the VPN protocol provides bypass route info
+  async getBypassSubnets() {
+    return [];
   }
 
   async _isLinkUp() {
@@ -464,15 +505,15 @@ class VPNClient {
         if (this._currentState !== false) {
           // clear soft route ipset
           await VPNClient.ensureCreateEnforcementEnv(this.profileId);
-          await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
+          await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
           await this._disableDNSRoute("soft");
           // clear hard route ipset if strictVPN (kill-switch) is not enabled
           if (!this.settings.strictVPN) {
-            await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}`).catch((err) => {});
+            await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
             await this._disableDNSRoute("hard");
             await this._resetRouteMarkInRedis();
           }
-          if (fc.isFeatureOn("vpn_disconnect")) {
+          if (fc.isFeatureOn(Constants.FEATURE_VPN_DISCONNECT)) {
             const Alarm = require('../../alarm/Alarm.js');
             const AlarmManager2 = require('../../alarm/AlarmManager2.js');
             const alarmManager2 = new AlarmManager2();
@@ -484,6 +525,7 @@ class VPNClient {
               'p.vpn.subtype': this.settings && this.settings.subtype,
               'p.vpn.devicecount': deviceCount,
               'p.vpn.displayname': this.getDisplayName(),
+              'p.vpn.overrideDefaultRoute': this.settings && this.settings.overrideDefaultRoute,
               'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false,
               'p.vpn.protocol': this.constructor.getProtocol()
             });
@@ -501,7 +543,7 @@ class VPNClient {
       if (this._started === true && this._currentState === false && this.profileId === event.profileId) {
         // populate soft route ipset
         this._scheduleRefreshRoutes();
-        if (fc.isFeatureOn("vpn_restore")) {
+        if (fc.isFeatureOn(Constants.FEATURE_VPN_RESTORE)) {
           const Alarm = require('../../alarm/Alarm.js');
           const AlarmManager2 = require('../../alarm/AlarmManager2.js');
           const alarmManager2 = new AlarmManager2();
@@ -513,6 +555,7 @@ class VPNClient {
             'p.vpn.subtype': this.settings && this.settings.subtype,
             'p.vpn.devicecount': deviceCount,
             'p.vpn.displayname': this.getDisplayName(),
+            'p.vpn.overrideDefaultRoute': this.settings && this.settings.overrideDefaultRoute,
             'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false,
             'p.vpn.protocol': this.constructor.getProtocol()
           });
@@ -521,6 +564,26 @@ class VPNClient {
         this._currentState = true;
       }
     });
+
+    sem.on('link_wan_switched', async (event) => {
+      if (this._started === true && this.profileId === event.profileId) {
+        if (this._currentState !== false) {
+          // clear soft route ipset
+          await VPNClient.ensureCreateEnforcementEnv(this.profileId);
+          await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+          await this._disableDNSRoute("soft");
+          // clear hard route ipset if strictVPN (kill-switch) is not enabled
+          if (!this.settings.strictVPN) {
+            await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+            await this._disableDNSRoute("hard");
+            await this._resetRouteMarkInRedis();
+          }
+        }
+        this.scheduleRestart();
+        this._currentState = false;
+      }
+    });
+
   }
 
   hookSettingsChange() {
@@ -544,6 +607,14 @@ class VPNClient {
       if (profileId === this.profileId)
         this._started = false;
     })
+
+    sem.on("VPNClient:Started", async (event) => {
+      const profileId = event.profileId;
+      if (profileId === this.profileId) {
+        this._started = true;
+        this._lastStartTime = Date.now();
+      }
+    })
   }
 
   _isSettingsChanged(c1, c2) {
@@ -563,14 +634,26 @@ class VPNClient {
   scheduleRestart() {
     if (this.restartTask)
       clearTimeout(this.restartTask)
-    this.restartTask = setTimeout(() => {
+    this.restartTask = setTimeout(async () => {
       if (!this._started)
         return;
+      // if fireRouter is reloading, repeate to check until it is finished and then restart
+      let count = 0;
+      while (fireRouter.reloadTaskOngoing){
+        log.info(`FireRouter is reloading, waiting for it to finish...`);
+        await scheduler.delay(1000);
+        count++;
+        if (count > 20){
+          log.warn(`FireRouter is reloading, but it is taking too long, force restarting ${this.constructor.getProtocol()} vpn client ${this.profileId}`);
+          break;
+        }
+      }
       // use _stop instead of stop() here, this will only re-establish connection, but will not remove other settings, e.g., kill-switch
       this._restarting = true;
       this.setup().then(() => this._stop()).then(() => this.start()).catch((err) => {
         log.error(`Failed to restart ${this.constructor.getProtocol()} vpn client ${this.profileId}`, err.message);
       }).finally(() => {
+        log.info(`Restart ${this.constructor.getProtocol()} vpn client ${this.profileId} complete`);
         this._restarting = false;
       });
     }, 5000);
@@ -613,21 +696,21 @@ class VPNClient {
         if (endpoint.ip && new Address4(endpoint.ip).isValid()) {
           const wanIntf = this.getWanInterface();
           await routing.addRouteToTable(endpoint.ip, wanIntf && wanIntf.gateway, wanIntf && wanIntf.name, "main", rtId, 4).catch((err) => { });
-          routes.push({ip: endpoint.ip, gw: wanIntf && wanIntf.gateway, dev: wanIntf && wanIntf.name, pref: rtId});
+          routes.push({ ip: endpoint.ip, gw: wanIntf && wanIntf.gateway, dev: wanIntf && wanIntf.name, pref: rtId });
         }
       }
-      await fs.writeFileAsync(this._getEndpointRoutesPath(), JSON.stringify(routes), {encoding: "utf8"}).catch((err) => {}); // save remote endpoints to file to guarantee it survives over the service restart
+      await fs.writeFileAsync(this._getEndpointRoutesPath(), JSON.stringify(routes), { encoding: "utf8" }).catch((err) => { }); // save remote endpoints to file to guarantee it survives over the service restart
     }
   }
 
   async flushRemoteEndpointRoutes() {
-    const routes = await fs.readFileAsync(this._getEndpointRoutesPath(), {encoding: "utf8"}).then((content) => JSON.parse(content)).catch((err) => null);
+    const routes = await fs.readFileAsync(this._getEndpointRoutesPath(), { encoding: "utf8" }).then((content) => JSON.parse(content)).catch((err) => null);
     if (_.isArray(routes) && !_.isEmpty(routes)) {
       for (const route of routes) {
-        await routing.removeRouteFromTable(route.ip, route.gw, route.dev, "main", route.pref, 4).catch((err) => {});
+        await routing.removeRouteFromTable(route.ip, route.gw, route.dev, "main", route.pref, 4).catch((err) => { });
       }
     }
-    await fs.unlinkAsync(this._getEndpointRoutesPath()).catch((err) => {});
+    await fs.unlinkAsync(this._getEndpointRoutesPath()).catch((err) => { });
   }
 
   _getEndpointRoutesPath() {
@@ -684,12 +767,12 @@ class VPNClient {
 
   async saveJSONConfig(config) {
     const configPath = this._getJSONConfigPath();
-    await fs.writeFileAsync(configPath, JSON.stringify(config), {encoding: "utf8"});
+    await fs.writeFileAsync(configPath, JSON.stringify(config), { encoding: "utf8" });
   }
 
   async loadJSONConfig() {
     const configPath = this._getJSONConfigPath();
-    return fs.readFileAsync(configPath, {encoding: "utf8"}).then(content => JSON.parse(content)).catch((err) => {
+    return fs.readFileAsync(configPath, { encoding: "utf8" }).then(content => JSON.parse(content)).catch((err) => {
       log.error(`Failed to read JSON config of ${this.constructor.getProtocol()} vpn client ${this.profileId}`, err.message);
       return null;
     });
@@ -701,11 +784,12 @@ class VPNClient {
       serverSubnets: [],
       overrideDefaultRoute: true,
       routeDNS: true,
+      c2sSNATDisabled: false,
       strictVPN: false
     }; // default settings
     const mergedSettings = Object.assign({}, defaultSettings, settings);
     this.settings = mergedSettings;
-    await fs.writeFileAsync(settingsPath, JSON.stringify(mergedSettings), {encoding: 'utf8'});
+    await fs.writeFileAsync(settingsPath, JSON.stringify(mergedSettings), { encoding: 'utf8' });
     sem.emitEvent({
       type: "VPNClient:SettingsChanged",
       profileId: this.profileId,
@@ -719,15 +803,36 @@ class VPNClient {
     let settings = {
       serverSubnets: [],
       overrideDefaultRoute: true,
+      c2sSNATDisabled: false,
       routeDNS: true,
       strictVPN: false
     }; // default settings
-    if (await fs.accessAsync(settingsPath, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
-      const settingsContent = await fs.readFileAsync(settingsPath, {encoding: 'utf8'});
+    if (await fs.accessAsync(settingsPath, fs.constants.R_OK).then(() => { return true; }).catch(() => { return false; })) {
+      const settingsContent = await fs.readFileAsync(settingsPath, { encoding: 'utf8' });
       settings = Object.assign({}, settings, JSON.parse(settingsContent));
     }
     this.settings = settings;
     return settings;
+  }
+
+  isConflictSubnet6(subnetStr1, subnetStr2) {
+    const subnet1= {}, subnet2={};
+    subnet1.addr = new Address6(subnetStr1);
+    subnet2.addr = new Address6(subnetStr2);
+
+    if (!subnet1.addr.isValid() || !subnet2.addr.isValid()) {
+      return false;
+    }
+    subnet1.firstAddress = subnet1.addr.startAddress().bigInteger();
+    subnet2.firstAddress = subnet2.addr.startAddress().bigInteger();
+    subnet1.lastAddress = subnet1.addr.endAddress().bigInteger();
+    subnet2.lastAddress = subnet2.addr.endAddress().bigInteger();
+
+    if ( (subnet1.firstAddress.compareTo(subnet2.firstAddress) <= 0 && subnet1.lastAddress.compareTo(subnet2.firstAddress) >= 0) ||
+        (subnet2.firstAddress.compareTo(subnet1.firstAddress) <= 0 && subnet2.lastAddress.compareTo(subnet1.firstAddress) >= 0))  {
+      return true;
+    }
+    return false;
   }
 
   getSubnetsWithoutConflict(subnets) {
@@ -735,24 +840,50 @@ class VPNClient {
     if (subnets && Array.isArray(subnets)) {
       for (let subnet of subnets) {
         const ipSubnets = subnet.split('/');
-        if (ipSubnets.length != 2) {
+        if (ipSubnets.length != 2 && ipSubnets.length != 3) {
           continue;
         }
         const ipAddr = ipSubnets[0];
         const maskLength = ipSubnets[1];
-        // only check conflict of IPv4 addresses here
-        if (!ipTool.isV4Format(ipAddr))
-          continue;
-        if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0) {
+        if (isNaN(maskLength) || !Number.isInteger(Number(maskLength))) {
           continue;
         }
-        const serverSubnetCidr = ipTool.cidrSubnet(subnet);
-        const conflict = sysManager.getLogicInterfaces().some((iface) => {
-          const mySubnetCidr = iface.subnet && ipTool.cidrSubnet(iface.subnet);
-          return mySubnetCidr && (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress)) || false;
-        });
-        if (!conflict)
-          validSubnets.push(subnet)
+        let maskLenNum = Number(maskLength);
+        // only check conflict of IPv4 addresses here
+        if (ipTool.isV4Format(ipAddr)) {
+
+          if (maskLenNum > 32 || maskLenNum < 0) {
+            continue;
+          }
+          const serverSubnetCidr = ipTool.cidrSubnet(subnet);
+          const conflict = sysManager.getLogicInterfaces().some((iface) => {
+            const mySubnetCidr = iface.subnet && ipTool.cidrSubnet(iface.subnet);
+            return mySubnetCidr && (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress)) || false;
+          });
+          if (!conflict) {
+            validSubnets.push(subnet);
+          }
+        } else if (ipTool.isV6Format(ipAddr)) {
+          // Handle IPv6 subnets
+          if (maskLenNum > 128 || maskLenNum < 0) {
+            continue;
+          }
+
+          const conflict = sysManager.getLogicInterfaces().some((iface) => {
+            if (iface.ip6_subnets && _.isArray(iface.ip6_subnets)) {
+              for (const s of iface.ip6_subnets) {
+                if (this.isConflictSubnet6(subnet, s)) {
+                  log.info(`Conflict found between IPv6 subnets: ${subnet} and ${s}`);
+                  return true;
+                }
+              }
+            }
+            return false;
+          });
+          if (!conflict) {
+            validSubnets.push(subnet);
+          }
+        }
       }
     }
     return validSubnets;
@@ -765,14 +896,14 @@ class VPNClient {
   async _enableDNSRoute(routeType = "hard") {
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
-    await fs.writeFileAsync(this._getDnsmasqRouteConfigPath(routeType), `conf-dir=${VPNClient.getDNSRouteConfDir(this.profileId, routeType)}`).catch((err) => {});
+    await dnsmasq.writeConfig(this._getDnsmasqRouteConfigPath(routeType), `conf-dir=${VPNClient.getDNSRouteConfDir(this.profileId, routeType)}`).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
   }
 
   async _disableDNSRoute(routeType = "hard") {
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
-    await fs.unlinkAsync(this._getDnsmasqRouteConfigPath(routeType)).catch((err) => {});
+    await fs.unlinkAsync(this._getDnsmasqRouteConfigPath(routeType)).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
   }
 
@@ -812,24 +943,24 @@ class VPNClient {
     const oifIpsetName = VPNClient.getOifIpsetName(this.profileId);
     const oifIpsetName4 = `${oifIpsetName}4`;
     const oifIpsetName6 = `${oifIpsetName}6`;
-    await exec(`sudo ipset add -! ${oifIpsetName4} 0.0.0.0/1,${this.getInterfaceName()}`).catch((err) => {});
-    await exec(`sudo ipset add -! ${oifIpsetName4} 128.0.0.0/1,${this.getInterfaceName()}`).catch((err) => {});
-    await exec(`sudo ipset add -! ${oifIpsetName6} ::/1,${this.getInterfaceName()}`).catch((err) => {});
-    await exec(`sudo ipset add -! ${oifIpsetName6} 8000::/1,${this.getInterfaceName()}`).catch((err) => {});
+    await Ipset.add(oifIpsetName4, `0.0.0.0/1,${this.getInterfaceName()}`);
+    await Ipset.add(oifIpsetName4, `128.0.0.0/1,${this.getInterfaceName()}`);
+    await Ipset.add(oifIpsetName6, `::/1,${this.getInterfaceName()}`);
+    await Ipset.add(oifIpsetName6, `8000::/1,${this.getInterfaceName()}`);
     // do not need to populate route ipset if strictVPN (kill-switch) is not enabled, it will be populated after link is established
     if (settings.strictVPN) {
       if (settings.overrideDefaultRoute && rtId) {
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+        await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+        await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
       } else {
-        await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}`).catch((err) => {});
-        await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
+        await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
+        await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
       }
       await vpnClientEnforcer.enforceStrictVPN(this.getInterfaceName());
       await this._setRouteMarkInRedis();
     } else {
-      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}`).catch((err) => {});
-      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
+      await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
+      await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
       await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
       await this._resetRouteMarkInRedis();
     }
@@ -842,69 +973,117 @@ class VPNClient {
     } else {
       dnsmasqEntries.push(`server=${dnsServers[0]}$${VPNClient.getDnsMarkTag(this.profileId)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`);
     }
-    await fs.writeFileAsync(this._getDnsmasqConfigPath(), dnsmasqEntries.join('\n')).catch((err) => {});
+    await dnsmasq.writeConfig(this._getDnsmasqConfigPath(), dnsmasqEntries).catch((err) => { });
     if (settings.routeDNS && settings.strictVPN) {
       if (rtId) {
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
+        await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
         await this._enableDNSRoute("hard"); // enable hard route PBR rules, they will take effect immediately
       }
     } else {
-      await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => {});
-      await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => {});
+      await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET);
+      await Ipset.del(VPNClient.getRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET);
       await this._disableDNSRoute("hard");
     }
     dnsmasq.scheduleRestartDNSService();
     if (rtId) {
-      await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getNetIpsetName(this.profileId)}4 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
-      await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getNetIpsetName(this.profileId)}6 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
-      await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getNetIpsetName(this.profileId)}4 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
-      await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getNetIpsetName(this.profileId)}6 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
+      await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), VPNClient.getNetIpsetName(this.profileId, 4), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+      await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), VPNClient.getNetIpsetName(this.profileId, 6), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+      await Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), VPNClient.getNetIpsetName(this.profileId, 4), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+      await Ipset.add(VPNClient.getRouteIpsetName(this.profileId, false), VPNClient.getNetIpsetName(this.profileId, 6), { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
     }
     await vpnClientEnforcer.addVPNClientIPRules(this.getInterfaceName());
   }
 
+
   async start() {
-    this._started = true;
+    if (!this._started) {
+      this._started = true;
+      sem.emitEvent({
+        type: "VPNClient:Started",
+        profileId: this.profileId,
+        toProcess: "FireMain"
+      });
+    }
+
     this._lastStartTime = Date.now();
     await this._prepareRoutes();
-    await this.flushRemoteEndpointRoutes().catch((err) => {});
+    await this.flushRemoteEndpointRoutes().catch((err) => { });
     await this._start().catch((err) => {
       log.error(`Failed to exec _start of VPN client ${this.profileId}`, err.message);
     });
+    this.isFirstLaunch = false;
+
     return new Promise((resolve, reject) => {
-      const startTime = Date.now();
-      const establishmentTask = setInterval(() => {
-        (async () => {
-          const isUp = await this._isLinkUp();
-          if (isUp) {
-            clearInterval(establishmentTask);
-            this._scheduleRefreshRoutes();
-            await this.addRemoteEndpointRoutes().catch((err) => {});
-            if (f.isMain()) {
-              // check connectivity and emit link_established or link_broken later, before which routes are already added and ping test using fwmark will work properly
-              setTimeout(() => {
-                this._checkConnectivity(true).catch((err) => {
-                  log.error(`Failed to check connectivity on VPN client ${this.profileId}`, err.message);
-                });
-              }, 20000);
-            }
-            resolve({result: true});
-          } else {
-            const now = Date.now();
-            if (now - startTime > 30000) {
-              log.error(`Failed to establish tunnel for VPN client ${this.profileId} in 30 seconds`);
-              clearInterval(establishmentTask);
-              const errMsg = await this.getMessage();
-              resolve({result: false, errMsg: errMsg});
-            }
-          }
-        })().catch(async (err) => {
-          log.error(`Failed to start VPN client ${this.profileId}`, err.message);
+      let establishmentTask = null;
+      // function to handle successful tunnel establishment
+      const handleSuccessfulEstablishment = async () => {
+        if (establishmentTask) {
           clearInterval(establishmentTask);
-          const errMsg = await this.getMessage();
-          resolve({result: false, errMsg: errMsg});
-        });
-      }, 2000);
+          establishmentTask = null;
+        }
+        await this._setCachedState(true);
+        this._scheduleRefreshRoutes();
+        await this.addRemoteEndpointRoutes().catch((err) => { });
+        if (f.isMain()) {
+          // check connectivity and emit link_established or link_broken later, before which routes are already added and ping test using fwmark will work properly
+          setTimeout(() => {
+            this._checkConnectivity(true).catch((err) => {
+              log.error(`Failed to check connectivity on VPN client ${this.profileId}`, err.message);
+            });
+          }, 20000);
+        }
+        if (!f.isMain()) {
+          sem.emitEvent({
+            type: "VPNClient:Started",
+            profileId: this.profileId,
+            toProcess: "FireMain"
+          });
+        }
+        const timeElapsed = (Date.now() - this._lastStartTime) / 1000;
+        log.info(`Time elapsed to start ${this.constructor.getProtocol()} client ${this.profileId}: ${timeElapsed} seconds`);
+        resolve({ result: true });
+      };
+
+      // function to handle failed tunnel establishment
+      const handleFailedEstablishment = async (reason) => {
+        if (establishmentTask) {
+          clearInterval(establishmentTask);
+          establishmentTask = null;
+        }
+        const errMsg = await this.getMessage();
+        log.error(`Failed to establish tunnel for VPN client ${this.profileId}. Reason: ${reason || 'Unknown error'}`, errMsg ? `Details: ${errMsg}` : '');
+        resolve({ result: false, errMsg: errMsg });
+      };
+
+      setTimeout(async () => {
+        try {
+          const isUpInitial = await this._isLinkUp();
+          if (isUpInitial) {
+            await handleSuccessfulEstablishment();
+            return;
+          }
+        } catch (err) {
+          await handleFailedEstablishment(`Initial link check failed: ${err.message}`);
+          return;
+        }
+
+        const startTime = Date.now();
+        establishmentTask = setInterval(async () => {
+          try {
+            const isUp = await this._isLinkUp();
+            if (isUp) {
+              await handleSuccessfulEstablishment();
+            } else {
+              const now = Date.now();
+              if (now - startTime > 60000) { // 60 seconds timeout
+                await handleFailedEstablishment(`Timed out after 60 seconds`);
+              }
+            }
+          } catch (err) {
+            await handleFailedEstablishment(`Link check during interval failed: ${err.message}`);
+          }
+        }, 2000);
+      }, 500);
     });
   }
 
@@ -916,30 +1095,35 @@ class VPNClient {
     await VPNClient.ensureCreateEnforcementEnv(this.profileId);
     await vpnClientEnforcer.flushVPNClientRoutes(intf);
     await vpnClientEnforcer.removeVPNClientIPRules(intf);
-    await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
-    await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -D FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
+
+    await iptc.addRule(new Rule('nat').chn('FW_VC_SNAT').set(VPNClient.getNetIpsetName(this.profileId, 4), 'dst').jmp('RETURN').opr('-D'));
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_VC_SNAT').set(VPNClient.getNetIpsetName(this.profileId, 6), 'dst').jmp('RETURN').opr('-D'));
+
+    await iptc.addRule(new Rule('nat').chn('FW_VC_SNAT').oif(intf).jmp('MASQUERADE').opr('-D'));
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_VC_SNAT').oif(intf).jmp('MASQUERADE').opr('-D'));
     await this.loadSettings();
     const dnsServers = await this._getDNSServers() || [];
     if (dnsServers.length > 0) {
       // always attempt to remove dns redirect rule, no matter whether 'routeDNS' in set in settings
       await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, VPNClient.getDNSRedirectChainName(this.profileId));
     }
-    await this.flushRemoteEndpointRoutes().catch((err) => {});
+    await this.flushRemoteEndpointRoutes().catch((err) => { });
     await this._stop().catch((err) => {
       log.error(`Failed to exec _stop of VPN client ${this.profileId}`, err.message);
     });
     await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
-    await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}`).catch((err) => {});
-    await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
-    await exec(`sudo ipset flush -! ${VPNClient.getSelfIpsetName(this.profileId, 4)}`).catch((err) => {});
-    await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_EXT_IP -m set --match-set ${VPNClient.getSelfIpsetName(this.profileId, 4)} dst -i ${this.getInterfaceName()} -j FW_PRERT_PORT_FORWARD`)).catch((err) => {});
-    await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
+    await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
+    await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+    await Ipset.flush(VPNClient.getSelfIpsetName(this.profileId, 4));
+    await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_EXT_IP').set(VPNClient.getSelfIpsetName(this.profileId, 4), 'dst').iif(this.getInterfaceName()).jmp('FW_PRERT_PORT_FORWARD').opr('-D'));
+    await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => { });
     await this._disableDNSRoute("hard");
     await this._disableDNSRoute("soft");
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
     dnsmasq.scheduleRestartDNSService();
-    
+    await this._setCachedState(false);
+
     if (!f.isMain()) {
       sem.emitEvent({
         type: "VPNClient:Stopped",
@@ -958,7 +1142,15 @@ class VPNClient {
   }
 
   async status() {
-    return this._isLinkUp();
+    // cached state is usually set by checkConnectivity in firemain process
+    let status = await this._getCachedState();
+    // if not set, it is not managed by firemain, and fireapi will populate the cached state
+    if (status === null) {
+      status = await this._isLinkUp();
+      await this._setCachedState(status);
+      return status;
+    } else
+      return status;
   }
 
   async getStatistics() {
@@ -969,13 +1161,14 @@ class VPNClient {
     const intf = this.getInterfaceName();
     const rxBytes = await fs.readFileAsync(`/sys/class/net/${intf}/statistics/rx_bytes`, 'utf8').then(r => Number(r.trim())).catch(() => 0);
     const txBytes = await fs.readFileAsync(`/sys/class/net/${intf}/statistics/tx_bytes`, 'utf8').then(r => Number(r.trim())).catch(() => 0);
-    return {bytesIn: rxBytes, bytesOut: txBytes};
+    return { bytesIn: rxBytes, bytesOut: txBytes };
   }
 
   async destroy() {
     await vpnClientEnforcer.destroyRtId(this.getInterfaceName());
-    await fs.unlinkAsync(this._getSettingsPath()).catch((err) => {});
-    await fs.unlinkAsync(this._getJSONConfigPath()).catch((err) => {});
+    await fs.unlinkAsync(this._getSettingsPath()).catch((err) => { });
+    await fs.unlinkAsync(this._getJSONConfigPath()).catch((err) => { });
+    await this._deleteCachedState();
     delete instances[this.profileId];
   }
 
@@ -1000,9 +1193,9 @@ class VPNClient {
       return null;
   }
 
-  static getNetIpsetName(uid) {
+  static getNetIpsetName(uid, af = 4) {
     if (uid) {
-      return `c_net_${uid.substring(0, 13)}_set`;
+      return `c_net_${uid.substring(0, 13)}_set${af}`;
     } else
       return null;
   }
@@ -1025,45 +1218,30 @@ class VPNClient {
       if (envCreatedMap[uid])
         return;
       const hardRouteIpsetName = VPNClient.getRouteIpsetName(uid);
-      await exec(`sudo ipset create -! ${hardRouteIpsetName} list:set skbinfo`).catch((err) => {
-        log.error(`Failed to create vpn client routing ipset ${hardRouteIpsetName}`, err.message);
-      });
+      await Ipset.create(hardRouteIpsetName, 'list:set', false, { skbinfo: true });
 
       const softRouteIpsetName = VPNClient.getRouteIpsetName(uid, false);
-      await exec(`sudo ipset create -! ${softRouteIpsetName} list:set skbinfo`).catch((err) => {
-        log.error(`Failed to create vpn client routing ipset ${softRouteIpsetName}`, err.message);
-      });
+      await Ipset.create(softRouteIpsetName, 'list:set', false, { skbinfo: true });
 
       const selfIpsetName = VPNClient.getSelfIpsetName(uid, 4);
-      await exec(`sudo ipset create -! ${selfIpsetName} hash:ip family inet`).catch((err) => {
-        log.error(`Failed to create vpn client self IPv4 ipset ${selfIpsetName}`, err.message);
-      });
+      await Ipset.create(selfIpsetName, 'hash:ip', false, { hashsize: 1024 });
 
-      const netIpsetName = VPNClient.getNetIpsetName(uid);
-      const netIpsetName4 = `${netIpsetName}4`;
-      const netIpsetName6 = `${netIpsetName}6`;
-      await exec(`sudo ipset create -! ${netIpsetName4} hash:net maxelem 16`).catch((err) => { });
-      await exec(`sudo ipset create -! ${netIpsetName6} hash:net family inet6 maxelem 16`).catch((err) => { });
+      await Ipset.create(VPNClient.getNetIpsetName(uid, 4), 'hash:net', false, { hashsize: 1024, maxelem: 16 });
+      await Ipset.create(VPNClient.getNetIpsetName(uid, 6), 'hash:net', true, { hashsize: 1024, maxelem: 16 });
 
       const oifIpsetName = VPNClient.getOifIpsetName(uid);
       const oifIpsetName4 = `${oifIpsetName}4`;
       const oifIpsetName6 = `${oifIpsetName}6`;
-      await exec(`sudo ipset create -! ${oifIpsetName} list:set`).catch((err) => {
-        log.error(`Failed to create vpn client oif ipset ${oifIpsetName}`, err.message);
-      });
+      await Ipset.create(oifIpsetName, 'list:set');
       // vpn interface name is unique and will not conflict with others, so ipset can be populated here and leave it unchanged in start/stop
-      await exec(`sudo ipset create -! ${oifIpsetName4} hash:net,iface maxelem 10`).catch((err) => { });
-      await exec(`sudo ipset create -! ${oifIpsetName6} hash:net,iface family inet6 maxelem 10`).catch((err) => { });
-      await exec(`sudo ipset add -! ${oifIpsetName} ${oifIpsetName4}`).catch((err) => { });
-      await exec(`sudo ipset add -! ${oifIpsetName} ${oifIpsetName6}`).catch((err) => { });
+      await Ipset.create(oifIpsetName4, 'hash:net,iface', false, { hashsize: 1024, maxelem: 10 });
+      await Ipset.create(oifIpsetName6, 'hash:net,iface', true, { hashsize: 1024, maxelem: 10 });
+      await Ipset.add(oifIpsetName, oifIpsetName4);
+      await Ipset.add(oifIpsetName, oifIpsetName6);
 
       const dnsRedirectChain = VPNClient.getDNSRedirectChainName(uid);
-      await exec(`sudo iptables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
-        log.error(`Failed to create vpn client DNS redirect chain ${dnsRedirectChain}`, err.message);
-      });
-      await exec(`sudo ip6tables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
-        log.error(`Failed to create ipv6 vpn client DNS redirect chain ${dnsRedirectChain}`, err.message);
-      });
+      await iptc.addRule(new Rule('nat').chn(dnsRedirectChain).opr('-N'));
+      await iptc.addRule(new Rule('nat').fam(6).chn(dnsRedirectChain).opr('-N'));
 
       await fs.mkdirAsync(VPNClient.getDNSRouteConfDir(uid, "hard")).catch((err) => { });
       await fs.mkdirAsync(VPNClient.getDNSRouteConfDir(uid, "soft")).catch((err) => { });
@@ -1096,20 +1274,11 @@ class VPNClient {
 
   async getAttributes(includeContent = false) {
     const promises = [];
-    const result = {profileId: this.profileId};
+    const result = { profileId: this.profileId };
     promises.push((async () => {
       const settings = await this.loadSettings();
       result.settings = settings;
-      let routedSubnets = settings.serverSubnets || [];
-      // add vpn client specific routes
-      try {
-        const vpnSubnets = await this.getRoutedSubnets();
-        if (vpnSubnets && _.isArray(vpnSubnets))
-          routedSubnets = routedSubnets.concat(vpnSubnets);
-      } catch (err) {
-        log.error('Failed to parse VPN subnet', err.message);
-      }
-      routedSubnets = this.getSubnetsWithoutConflict(_.uniq(routedSubnets));
+      const routedSubnets = await this.getEffectiveRoutedSubnets();
       result.routedSubnets = routedSubnets;
     })());
     promises.push((async () => {
@@ -1207,13 +1376,23 @@ class VPNClient {
     const results = await Promise.all(targets.map(target => this._runPingTest(target, count)));
     // TODO: evaluate ping test results and return false if it is lower than the threshold
 
+    const ratio = results.reduce((total, item) => total + item.successCount, 0) * 100 / (results.length * count);
+    log.verbose(`VPN ${this.profileId} tests [${targets}] success ratio ${ratio}%`);
     return await this._checkInternetAvailability();
   }
 
   async _runPingTest(target, count = 8) {
-    const result = {target, totalCount: count};
+    const result = { target, totalCount: count };
+    const af = new Address4(target).isValid() ? 4 : 6;
+    const ping = af == 4 ? "ping" : "ping6";
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName()); // rt id will be used as mark of ping packets
-    const cmd = `sudo ping -n -q -m ${rtId} -c ${count} -W 1 -i 1 ${target} | grep "received" | awk '{print $4}'`;
+    const ips = af == 4 ? await this.getVpnIP4s() : await this.getVpnIP6s();
+    let optI = "";
+    if (_.isArray(ips) && ips.length > 0) {
+      const srcIp = af == 4 ? new Address4(ips[0]) : new Address6(ips[0]);
+      optI = `-I ${srcIp.addressMinusSuffix}`;
+    }
+    const cmd = `sudo ${ping} -n -q -m ${rtId} -c ${count} ${optI} -W 1 -i 1 ${target} | grep "received" | awk '{print $4}'`;
     await exec(cmd).then((output) => {
       result.successCount = Number(output.stdout.trim());
     }).catch((err) => {
@@ -1233,11 +1412,48 @@ class VPNClient {
   }
 
   static getRouteMarkKey(profileId) {
-    return `${VPN_ROUTE_MARK_KEY_PREFIX}:${profileId}`;
+    return `${Constants.VPN_ROUTE_MARK_KEY_PREFIX}:${profileId}`;
   }
 
   async getLatestSessionLog() {
     return null;
+  }
+
+  static getStateCacheKey(profileId) {
+    return `VC:${profileId}:connState`;
+  }
+
+  async _setCachedState(state) {
+    await rclient.setAsync(VPNClient.getStateCacheKey(this.profileId), state);
+    await rclient.expireAsync(VPNClient.getStateCacheKey(this.profileId), 86400 * 7);
+  }
+
+  async _getCachedState() {
+    const state = await rclient.getAsync(VPNClient.getStateCacheKey(this.profileId));
+    switch (state) {
+      case "true":
+        return true;
+      case "false":
+        return false;
+      default:
+        return null;
+    }
+  }
+
+  async _deleteCachedState() {
+    await rclient.delAsync(VPNClient.getStateCacheKey(this.profileId));
+  }
+
+  static async notifyWanSwitched() {
+    const profileIds = Object.keys(instances);
+    profileIds.forEach(id => {
+      log.info(`VPN client ${id} need to execute lan switched ...`);
+      sem.emitEvent({
+        type: "link_wan_switched",
+        profileId: id,
+        suppressEventLogging: true,
+      });
+    });
   }
 }
 

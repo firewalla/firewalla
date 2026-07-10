@@ -1,4 +1,4 @@
-/*    Copyright 2021-2022 Firewalla Inc.
+/*    Copyright 2021-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -29,6 +29,8 @@ const identityManager = require('../net2/IdentityManager');
 const sem = require('./SensorEventManager.js').getInstance();
 const Mode = require('../net2/Mode.js');
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const fwapc = require('../net2/fwapc.js');
+const VPNClient = require('../extension/vpnclient/VPNClient.js')
 
 const fsp = require('fs').promises;
 const exec = require('child-process-promise').exec;
@@ -106,17 +108,21 @@ class LiveStatsPlugin extends Sensor {
     this.streamingCache = {};
 
     sem.on('LiveStatsPlugin', message => {
-      if (!message.id)
-        log.verbose(Object.keys(this.streamingCache))
-      else {
-        const logObject = this.streamingCache[message.id]
-        for (const key in logObject) {
-          if (logObject[key] instanceof ChildProcess)
-            logObject[key] = _.pick(logObject[key], ['pid', 'spawnargs'])
-          if (logObject[key] instanceof Interface)
-            logObject[key] = 'readline.Interface { ... }'
+      try {
+        if (!message.id)
+          log.verbose(Object.keys(this.streamingCache))
+        else {
+          const logObject = this.streamingCache[message.id]
+          for (const key in logObject || {}) {
+            if (logObject[key] instanceof ChildProcess)
+              logObject[key] = _.pick(logObject[key], ['pid', 'spawnargs'])
+            if (logObject[key] instanceof Interface)
+              logObject[key] = 'readline.Interface { ... }'
+          }
+          log.verbose(message.id, logObject)
         }
-        log.verbose(message.id, logObject)
+      } catch(err) {
+        log.error('Error logging', message, err)
       }
     })
 
@@ -144,8 +150,19 @@ class LiveStatsPlugin extends Sensor {
       if (queries && queries.latency) {
         // only support device ping latency
         if (type === "host") {
-          const result = await this.getDeviceLatency(target);
-          response.latency = result ? [ result ] : [];
+          const latency = await this.getDeviceLatency(target);
+          response.latency = latency ? [ latency ] : [];
+        }
+      }
+
+      if (queries && queries.staInfo) {
+        // only support device sta information
+        if (type === "host") {
+          const staStatus = await fwapc.getAllSTAStatus(true);
+          if (staStatus && staStatus[target])
+            response.staInfo = [Object.assign({ target }, staStatus[target])];
+          else
+            response.staInfo = [];
         }
       }
 
@@ -176,26 +193,63 @@ class LiveStatsPlugin extends Sensor {
       if (queries && queries.throughput) {
         switch (type) {
           case 'host': {
-            const result = await this.getDeviceThroughput(target)
+            const switchMap = await fwapc.getSwitchStatus();
+            let result;
+            if (switchMap && switchMap[target] !== undefined) {
+              const st = switchMap[target];
+              if (this.isSwitchStatusOnline(st)) {
+                result = await this.getSwitchThroughput(target, cache);
+              } else {
+                delete cache.switchMetricsPrev;
+                result = { target, type: 'switch', tx: 0, rx: 0, ports: [], lagPorts: [] };
+              }
+            } else {
+              result = await this.getDeviceThroughput(target);
+            }
             response.throughput = result ? [ result ] : []
             break;
           }
-          case 'intf':
+          case 'vpnClient': {
+            const vpnClient = VPNClient.getInstance(target)
+            if (!vpnClient) {
+              throw new Error(`Invalid VPN client ${target}`)
+            }
+            const name = vpnClient.getInterfaceName()
+            response.throughput = [ Object.assign( {name, target, type}, await this.getIntfThroughput(vpnClient.name) ) ]
+            break
+          }
+          case 'intf': {
+            const intf = sysManager.getInterfaceViaUUID(target)
+            if (!intf) {
+              throw new Error(`Invalid Interface ${target}`)
+            }
+            const name = intf.name
+            response.throughput = [ Object.assign( {name, target, type}, await this.getIntfThroughput(name) ) ]
+            break
+          }
           case 'system': {
-            if (type == 'intf') {
-              const intf = sysManager.getInterfaceViaUUID(target)
-              if (!intf) {
-                throw new Error(`Invalid Interface ${target}`)
-              }
-              response.throughput = [ { name: intf.name, target } ]
-            } else {
-              const interfaces = _.union(platform.getAllNicNames(), fireRouter.getLogicIntfNames())
-              _.remove(interfaces, name => name.endsWith(':0') || !sysManager.getInterface(name))
-              response.throughput = interfaces
-                .map(name => ({ name, target: sysManager.getInterface(name).uuid }))
+            const interfaces = _.union(platform.getAllNicNames(), fireRouter.getLogicIntfNames())
+            _.remove(interfaces, name => name.endsWith(':0') || !sysManager.getInterface(name))
+            response.throughput = interfaces
+            .map(name => ({ name, target: sysManager.getInterface(name).uuid, type: 'intf' }))
+
+            if (queries.throughput.vpnClient) {
+              const policy = await hostManager.getPolicyAsync('vpnClient') || {}
+              const vpnClients = await Promise.all(
+                // policy:system should have all enabled VPN clients
+                (policy.multiClients || [ policy ])
+                  .map( vc => vc && vc.state && hostManager.getVPNClientInstance(vc).catch(err => log.debug(err.message)) )
+              )
+              response.throughput.push(... vpnClients
+                .filter(Boolean)
+                .map(c => ({name: c.getInterfaceName(), target: c.profileId, type: 'vpnClient'}) )
+              )
             }
 
-            response.throughput.forEach(intf => Object.assign(intf, this.getIntfThroughput(intf.name)))
+            for (const intf of response.throughput) {
+              Object.assign(intf, await this.getIntfThroughput(intf.name))
+            }
+
             if (queries.throughput.devices) {
               for (const intf of sysManager.getMonitoringInterfaces()) {
                 // exclude primary network in DHCP mode, this is mainly for old models that have different subnets
@@ -221,7 +275,7 @@ class LiveStatsPlugin extends Sensor {
         const intfs = fireRouter.getLogicIntfNames();
         const intfStats = [];
         const promises = intfs.map( async (intf) => {
-          const rate = await this.getRate(intf);
+          const rate = await this.getIntfThroughput(intf);
           intfStats.push(rate);
         });
         promises.push(delay(1000)); // at least wait for 1 sec
@@ -317,6 +371,135 @@ class LiveStatsPlugin extends Sensor {
     return {target, tx: cache.rx, rx: cache.tx}
   }
 
+  /**
+   * Matches switch_base SwitchStatus::is_online (status ts is Unix seconds).
+   */
+  isSwitchStatusOnline(st) {
+    if (!st || st.ts == null)
+      return false;
+    const nowSec = Math.floor(Date.now() / 1000);
+    return nowSec - Number(st.ts) < 60;
+  }
+
+  /**
+   * Totals plus per-port / per-LAG byte maps from a switch metrics NDJSON sample.
+   * @param {object|null|undefined} sample - parsed SwitchMetricsEvent
+   * @returns {{ tx: number, rx: number, ts: number, ports: Record<string, {tx: number, rx: number}>, lags: Record<string, {tx: number, rx: number}> }}
+   */
+  aggregateSwitchMetricBytes(sample) {
+    if (!sample || typeof sample !== 'object') {
+      return { tx: 0, rx: 0, ts: Date.now(), ports: {}, lags: {} };
+    }
+    const portRows = sample.port_statistics || sample.portStatistics || [];
+    const lagRows = sample.lag_statistics || sample.lagStatistics || [];
+    const ports = {};
+    const lags = {};
+    let tx = 0;
+    let rx = 0;
+    for (const p of portRows) {
+      const id = p && p.port != null ? String(p.port) : '';
+      if (!id)
+        continue;
+      const ptx = p.txBytes != null ? Number(p.txBytes) : 0;
+      const prx = p.rxBytes != null ? Number(p.rxBytes) : 0;
+      ports[id] = Object.assign({}, p, { tx: ptx, rx: prx });
+      tx += ptx;
+      rx += prx;
+    }
+    for (const p of lagRows) {
+      const id = p && p.port != null ? String(p.port) : '';
+      if (!id)
+        continue;
+      const ptx = p.txBytes != null ? Number(p.txBytes) : 0;
+      const prx = p.rxBytes != null ? Number(p.rxBytes) : 0;
+      lags[id] = Object.assign({}, p, { tx: ptx, rx: prx });
+      tx += ptx;
+      rx += prx;
+    }
+    let ts = sample.ts != null ? Number(sample.ts) : NaN;
+    if (!Number.isFinite(ts) || ts <= 0) {
+      ts = Date.now();
+    }
+    return { tx, rx, ts, ports, lags };
+  }
+
+  /**
+   * Bytes/s per id from byte counter maps at two timestamps (same units as getIntfThroughput; no backward jump).
+   */
+  _switchThroughputRatesFromMaps(prevMap, currMap, dtSec) {
+    const rows = [];
+    if (!currMap || dtSec <= 0)
+      return rows;
+    for (const id of Object.keys(currMap)) {
+      const c = currMap[id];
+      const p = prevMap && prevMap[id];
+      let tx = 0;
+      let rx = 0;
+      if (p) {
+        if (c.tx >= p.tx)
+          tx = Math.round((c.tx - p.tx) / dtSec);
+        if (c.rx >= p.rx)
+          rx = Math.round((c.rx - p.rx) / dtSec);
+      }
+      rows.push(Object.assign({}, c, { port: id, tx, rx }));
+    }
+    rows.sort((a, b) => a.port.localeCompare(b.port, undefined, { numeric: true, sensitivity: 'base' }));
+    return rows;
+  }
+
+  /**
+   * Bytes/s from switch byte counters via fwapc metrics stream (same units as intf/device throughput).
+   * @param {string} target - switch asset uid
+   * @param {object} streamCache - this.streamingCache[streamingId] from liveStats
+   */
+  async getSwitchThroughput(target, streamCache) {
+    const emptySwitchThroughput = () => ({
+      target,
+      type: 'switch',
+      tx: 0,
+      rx: 0,
+      ports: [],
+      lagPorts: [],
+    });
+    let metrics;
+    try {
+      metrics = await fwapc.getSwitchMetricsLast(target);
+    } catch (err) {
+      log.error('getSwitchMetricsLast failed', target, err.message);
+      return emptySwitchThroughput();
+    }
+    if (!metrics || !metrics.sample) {
+      return emptySwitchThroughput();
+    }
+    const agg = this.aggregateSwitchMetricBytes(metrics && metrics.sample);
+    const prev = streamCache.switchMetricsPrev;
+
+    let tx = 0;
+    let rx = 0;
+    let ports = [];
+    let lagPorts = [];
+    if (prev && agg.ts > prev.ts) {
+      const dtSec = (agg.ts - prev.ts) / 1000;
+      if (dtSec > 0) {
+        if (agg.tx >= prev.tx)
+          tx = Math.round((agg.tx - prev.tx) / dtSec);
+        if (agg.rx >= prev.rx)
+          rx = Math.round((agg.rx - prev.rx) / dtSec);
+        ports = this._switchThroughputRatesFromMaps(prev.ports, agg.ports, dtSec);
+        lagPorts = this._switchThroughputRatesFromMaps(prev.lags, agg.lags, dtSec);
+      }
+    }
+
+    streamCache.switchMetricsPrev = {
+      tx: agg.tx,
+      rx: agg.rx,
+      ts: agg.ts,
+      ports: agg.ports,
+      lags: agg.lags,
+    };
+    return { target, type: 'switch', tx, rx, ports, lagPorts };
+  }
+
   getPcapNet(intf, family) {
     let subnet = family == 4 ? intf.subnetAddress4 : (intf.subnetAddress6 && intf.subnetAddress6[0])
     if (!subnet) return null
@@ -346,7 +529,7 @@ class LiveStatsPlugin extends Sensor {
     if (!cache.iftop || !cache.rl) try {
       const intf = sysManager.getInterfaceViaUUID(intfUUID)
       if (!intf) {
-        throw new Error(`Invalid interface`, intfUUID)
+        throw new Error(`Invalid interface ${intfUUID}`)
       }
 
       log.verbose('(Re)Creating interface device throughput cache ...', intfUUID, intf.name)
@@ -485,23 +668,35 @@ class LiveStatsPlugin extends Sensor {
       cache.iftop = iftop
       cache.rl = rl
     } catch(err) {
-      log.error('Failed to get device throughput', err)
+      log.error('Failed to get device throughput for', intfUUID, err)
     }
 
     cache.ts = Date.now() / 1000
     return { intf: intfUUID, devices: _.mapValues(cache.devices, d => { return { tx: d.tx, rx: d.rx } } ) }
   }
 
-  getIntfThroughput(intf) {
+  async getIntfThroughput(intf) {
     let intfCache = this.streamingCache[intf]
+    const interval = 2 // get nic stats every 2 sec to align with iftop
     if (!intfCache) {
       intfCache = this.streamingCache[intf] = {}
-      intfCache.interval = setInterval(() => {
-        this.getRate(intf)
-          .then(res => Object.assign(intfCache, res))
-      }, 1000)
+      intfCache.prev = await this.getIntfStats(intf)
+      intfCache.interval = setInterval(async () => {
+        try {
+          const c = await this.getIntfStats(intf)
+          const p = intfCache.prev || { tx: 0, rx: 0 }
+          Object.assign(intfCache, {
+            name: intf,
+            rx: c.rx > p.rx ? (c.rx - p.rx) / interval : 0,
+            tx: c.tx > p.tx ? (c.tx - p.tx) / interval : 0,
+            prev: c
+          })
+        } catch (err) {
+          log.error('failed to fetch stats for', intf, err.message)
+        }
+      }, interval * 1000)
     }
-    intfCache.ts = Math.floor(new Date() / 1000)
+    intfCache.ts = Math.floor(Date.now() / 1000)
 
     return { name: intf, rx: intfCache.rx || 0, tx: intfCache.tx || 0 }
   }
@@ -509,26 +704,11 @@ class LiveStatsPlugin extends Sensor {
   async getIntfStats(intf) {
     const rx = await fsp.readFile(`/sys/class/net/${intf}/statistics/rx_bytes`, 'utf8').catch(() => 0);
     const tx = await fsp.readFile(`/sys/class/net/${intf}/statistics/tx_bytes`, 'utf8').catch(() => 0);
-    return {rx, tx};
-  }
-
-  async getRate(intf) {
-    try {
-      const s1 = await this.getIntfStats(intf);
-      await delay(1000);
-      const s2 = await this.getIntfStats(intf);
-      return {
-        name: intf,
-        rx: s2.rx > s1.rx ? s2.rx - s1.rx : 0,
-        tx: s2.tx > s1.tx ? s2.tx - s1.tx : 0
-      }
-    } catch(err) {
-      log.error('failed to fetch stats for', intf, err.message)
-    }
+    return {rx: Number(rx), tx: Number(tx)};
   }
 
   async getFlows(type, target, ts, opts) {
-    const now = Math.floor(new Date() / 1000);
+    const now = Math.floor(Date.now() / 1000);
     const ets = ts ? now - 2 : now
     ts = ts || now - 60
     const options = {
@@ -540,7 +720,8 @@ class LiveStatsPlugin extends Sensor {
     if (Object.keys(opts).length) {
       Object.assign(options, opts)
     } else {
-      options.auditDNSSuccess = true
+      options.regular = true
+      options.dns = true
       options.audit = true
     }
 
@@ -563,7 +744,7 @@ class LiveStatsPlugin extends Sensor {
       }
 
     }
-    const flows = await flowTool.prepareRecentFlows({}, options);
+    const flows = await flowTool.prepareRecentFlows(options);
     return flows;
   }
 

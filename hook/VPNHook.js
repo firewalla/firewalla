@@ -41,6 +41,9 @@ class VPNHook extends Hook {
     sem.on(Message.MSG_WG_CONN_ACCEPTED, (event) => {
       this._processEvent(event);
     });
+    sem.on(Message.MSG_AMNEZIAWG_CONN_ACCEPTED, (event) => {
+      this._processEvent(event);
+    });
   }
 
   _processEvent(event) {
@@ -90,6 +93,13 @@ class VPNHook extends Hook {
         alarmPayload["p.dest.wg.peer"] = profile;
         const WGPeer = require('../net2/identity/WGPeer.js');
         alarmPayload["p.device.mac"] = `${WGPeer.getNamespace()}:${profile}`;
+        break;
+      case Constants.VPN_TYPE_AMNEZIAWG:
+        alarmPayload["p.dest.awg.peerIP4"] = peerIP4;
+        alarmPayload["p.dest.awg.peerIP6"] = peerIP6;
+        alarmPayload["p.dest.awg.peer"] = profile;
+        const AWGPeer = require('../net2/identity/AWGPeer.js');
+        alarmPayload["p.device.mac"] = `${AWGPeer.getNamespace()}:${profile}`;
         break;
       default:
     }

@@ -1,4 +1,4 @@
-/*    Copyright 2020-2024 Firewalla Inc.
+/*    Copyright 2020-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -173,15 +173,25 @@ class DeviceServiceScanSensor extends Sensor {
         if (this.globalSettings === null)
           continue;
       }
-      for (const host of hostsToScan) {
-        log.info("Scanning device: ", host.o.ipv4Addr);
-        const scanResult = await this._scan(host.o.ipv4Addr);
+      for (const host of hostsToScan) try {
+        let ipAddr = null;
+        let mac = null;
+        if (host && host.o && host.o.ipv4Addr && host.o.mac) { // double check host object is valid
+          ipAddr = host.o.ipv4Addr;
+          mac = host.o.mac;
+        } else {
+          log.debug("Skipping host with invalid or missing IPv4 address or MAC address:", host);
+          continue;
+        }
+        const scanResult = await this._scan(ipAddr);
         if (scanResult) {
-          const hostKeyExists = await rclient.existsAsync(`host:mac:${host.o.mac}`);
+          const hostKeyExists = await rclient.existsAsync(`host:mac:${mac}`);
           // in case host entry is deleted when the scan is in progress
           if (hostKeyExists == 1)
-            await rclient.hsetAsync("host:mac:" + host.o.mac, "openports", JSON.stringify(scanResult));
+            await host.update({"openports": JSON.stringify(scanResult)}, true, true);
         }
+      } catch (err) {
+        log.error("Failed to scan host: " + host.o.ipv4Addr, host.o.mac, err);
       }
     } catch (err) {
       log.error("Failed to scan: " + err);
@@ -191,7 +201,7 @@ class DeviceServiceScanSensor extends Sensor {
   }
 
   _scan(ipAddr) {
-    let cmd = util.format('sudo timeout 1200s nmap -Pn --top-ports 3000 %s -oX - | %s', ipAddr, xml2jsonBinary);
+    let cmd = util.format('sudo timeout 1200s nmap -Pn -n --top-ports 3000 %s -oX - | %s', ipAddr, xml2jsonBinary);
 
     log.verbose("Running command:", cmd);
     return new Promise((resolve, reject) => {

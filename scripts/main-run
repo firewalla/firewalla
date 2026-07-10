@@ -63,9 +63,10 @@ sudo $FIREWALLA_HOME/scripts/check_reset.sh
 # Enable zram to increase memory
 logger "FIREWALLA:MAIN-RUN:FIREZRAM"
 sudo ${FIREWALLA_HOME}/scripts/sbin/setup_zram.sh
-# Flush iptables & ip6tables before any network involved work
-logger "FIREWALLA:MAIN-RUN:FLUSH_IPTABLES"
-sudo $FIREWALLA_HOME/scripts/flush_iptables.sh
+# assume that we won't break Internet access from box itself
+# no longer flush iptables for minimal downtime, worst case here is to reboot
+# logger "FIREWALLA:MAIN-RUN:FLUSH_IPTABLES"
+# sudo $FIREWALLA_HOME/scripts/flush_iptables.sh
 logger "FIREWALLA:MAIN-RUN:CHECK_FIX_NETWORK"
 sudo $FIREWALLA_HOME/scripts/check_fix_network.sh
 #logger "Broadcast booting"
@@ -78,6 +79,11 @@ $FIREWALLA_HOME/scripts/update_crontab.sh
 fire_time_out=$($FIREWALLA_HOME/scripts/fire-time.sh)
 logger "FIREWALLA:MAIN-RUN:FIRETIME:END"+"set time to $fire_time_out"
 
+$FIREWALLA_HOME/scripts/prepare_assets_list.sh
+sudo rm -r -f /tmp/*
+timeout 1200 $FIREWALLA_HOME/scripts/update_assets.sh &>/dev/null &
+UPDATE_ASSETS_PID=$!
+
 # prepare Firewalla run time environment
 logger "FIREWALLA:MAIN-RUN:PREP"
 sudo $FIREWALLA_HOME/scripts/main-prep
@@ -85,15 +91,18 @@ sudo $FIREWALLA_HOME/scripts/main-prep
 PRE_MAIN_D="/home/pi/.firewalla/config/pre_main.d"
 
 if [[ -d $PRE_MAIN_D ]]; then
-  for pre_script in $(ls $PRE_MAIN_D/*.sh)
+  for pre_script in "$PRE_MAIN_D"/*.sh
   do
-      bash $pre_script
+      bash "$pre_script" </dev/null
   done
 fi
 
 logger "FIREWALLA:MAIN-RUN:MAIN-START"
 redis-cli del sys:upgrade >/dev/null
 redis-cli publish FIREWALLA:HEARTBEAT:UPDATE '{"invoked-by":"firewalla"}' >/dev/null
+mkdir -p $FIREWALLA_HIDDEN/config/assets_extra
+rm -rf $FIREWALLA_HIDDEN/config/assets_extra/*
+ASSETSD_PATH=$FIREWALLA_HIDDEN/config/assets.fwapc timeout 90 $FIREWALLA_HOME/scripts/update_assets.sh > /tmp/fwapcupgrade.log
 $FIREWALLA_HOME/scripts/main-start
 
 # cleanup overlay backups from a previous reset
@@ -115,9 +124,9 @@ else
     sudo service watchdog stop
     echo "WatchDog Stopped"
     $FIREWALLA_HOME/scripts/fire-ping.sh
-    sleep 3
-
+    
     if [[ $MANAGED_BY_FIREROUTER != "yes" ]]; then
+      sleep 3
       sudo service watchdog start
       echo "WatchDog Started"
       logger "FIREWALLA:WATCHDOG:ENABLED"
@@ -134,13 +143,13 @@ logger "FIREWALLA:MAIN-RUN:POST_MAIN_D"
 POST_MAIN_D="/home/pi/.firewalla/config/post_main.d"
 
 if [[ -d $POST_MAIN_D ]]; then
-  for post_script in $(ls $POST_MAIN_D/*.sh)
+  for post_script in "$POST_MAIN_D"/*.sh
   do
-      bash $post_script
+      bash "$post_script" </dev/null
   done
 fi
 
 sudo $FIREWALLA_HOME/scripts/apply_profile.sh -f &> /tmp/apply_profile-main-run.log
-timeout 1200 $FIREWALLA_HOME/scripts/update_assets.sh &>/dev/null
+wait $UPDATE_ASSETS_PID
 
 logger "FIREWALLA:MAIN-RUN:DONE"

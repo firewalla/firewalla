@@ -67,7 +67,7 @@ class AssetsManager {
       if (err.code == 'ENOENT')
         log.verbose('File not exist', path)
       else
-        log.error('Error loading', fileName, err)
+        log.error('Error loading', path, err)
 
       return {}
     }

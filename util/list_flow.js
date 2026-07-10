@@ -32,7 +32,7 @@ if(!mac) {
 }
 
 (async() =>{
-  let conns = await flowTool.prepareRecentFlows({}, {
+  let conns = await flowTool.prepareRecentFlows({
     mac,
     end: new Date() / 1000,
     begin: new Date() / 1000 - 86400,

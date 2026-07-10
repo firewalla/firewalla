@@ -108,7 +108,7 @@ Client.prototype.getMappings = function getMappings(options, callback) {
         try {
           var key;
           var match = Object.keys(data).some(function(k) {
-            if (!/:GetGenericPortMappingEntryResponse/.test(k)) return false;
+            if (!/^GetGenericPortMappingEntryResponse/.test(k)) return false;
 
             key = k;
             return true;
@@ -178,7 +178,7 @@ Client.prototype.externalIp = function externalIp(callback) {
 
       if (data) {
         Object.keys(data).some(function(k) {
-          if (!/:GetExternalIPAddressResponse$/.test(k)) return false;
+          if (!/^GetExternalIPAddressResponse$/.test(k)) return false;
 
           key = k;
           return true;

@@ -27,6 +27,8 @@ const ip = cp.execSync(cmd).toString().replace(/\n$/, '')
 const cmd3 = "redis-cli hget sys:ept gid"
 const gid = cp.execSync(cmd3).toString().replace(/\n$/, '')
 
+const log = require('../net2/logger.js')(__filename);
+
 function exitBooting() {
   bonjour.unpublishAll((err) => {
     process.exit(0)

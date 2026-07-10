@@ -18,12 +18,17 @@
 let log = require("./logger.js")(__filename);
 
 let fc = require('./config.js')
+const _ = require('lodash');
 
 // Note that this is not userFeatures
 
 exports.isOn = (feature) => {
   const c = exports.getConfig(feature)
-  return c === true || c.enabled;
+  if (_.isBoolean(c))
+    return c;
+  if (_.isObject(c))
+    return c.enabled;
+  return false;
 };
 
 exports.getConfig = feature => {

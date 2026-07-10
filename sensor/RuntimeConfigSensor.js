@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2026 Firewalla Inc
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,19 +17,18 @@
 const firewalla = require('../net2/Firewalla.js')
 const log = require("../net2/logger.js")(__filename)
 
-const fs = require('fs')
+const fsp = require('fs').promises;
 const exec = require('child-process-promise').exec
 
-const Promise = require('bluebird');
-
 const Sensor = require('./Sensor.js').Sensor;
-
-const sem = require('../sensor/SensorEventManager.js').getInstance();
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
 
 class RuntimeConfigSensor extends Sensor {
   async run() {
     try {
       await this.updateRedisConfig();
+      this.runCronScripts();
       await this.schedule();
     } catch(err) {
       log.error("Failed to update redis config:", err);
@@ -41,23 +40,24 @@ class RuntimeConfigSensor extends Sensor {
   }
 
   async updateRedisConfig() {
-    // 900 seconds (15min) for one key change
-    // 500 seconds (8.3min) for 10 keys change
-    // 2 mins for 10000 keys change
-    const saveConfig = "900 10 500 100 120 100000"
+    const rdbSize = (await fsp.stat('/data/redis/dump.rdb').then(stat => stat.size)) || 0;
+    const saveConfig = platform.getRedisSaveConfig(rdbSize);
     return exec(`redis-cli config set save "${saveConfig}"`)
   }
 
+  runCronScripts() {
+    // do not await/block on this
+    exec(`sudo ${firewalla.getFirewallaHome()}/scripts/run_cron_scripts.sh`)
+      .catch(err => log.error("Failed to run cron scripts:", err.message));
+  }
+
   async schedule() {
-    try {
-      await this.updateFakeClock();
-    } catch(err) {
-      log.error("Failed to record latest time to fake-hwlock:", err.message);
-    }
+    await this.updateFakeClock().catch(err => log.error("Failed to record latest time to fake-hwlock:", err.message));
+    await this.updateRedisConfig().catch(err => log.error("Failed to update redis RDB save config:", err.message));
   }
 
   async updateFakeClock() {
-    return exec('sudo fake-hwclock');
+    return exec('sudo FILE=/data/fake-hwclock.data fake-hwclock');
   }
 }
 

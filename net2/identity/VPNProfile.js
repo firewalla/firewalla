@@ -70,6 +70,7 @@ class VPNProfile extends Identity {
       const lastActiveTimestamps = statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn).map(c => c.lastActive) || [];
       vpnProfiles.push({
         uid: cn,
+        devId: this.getKeyOfInitData() + ":" + cn,
         cn: cn,
         settings: allSettings[cn],
         connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || [],
@@ -114,10 +115,14 @@ class VPNProfile extends Identity {
     if (statistics && _.isArray(statistics.clients)) {
       const clients = statistics.clients;
       for (const client of clients) {
-        if (!client.vAddr || !client.cn)
+        if ((!client.vAddr && !client.vAddr6) || !client.addr || !client.cn)
           continue;
         for (const addr of client.vAddr) {
           if (new Address4(addr).isValid())
+            ipUidCache.set(addr, client.cn);
+        }
+        for (const addr of client.vAddr6) {
+          if (new Address6(addr).isValid())
             ipUidCache.set(addr, client.cn);
         }
       }
@@ -137,10 +142,14 @@ class VPNProfile extends Identity {
     const clients = statistics.clients;
     const ipEndpointMap = {};
     for (const client of clients) {
-      if (!client.vAddr || !client.addr)
+      if ((!client.vAddr && !client.vAddr6) || !client.addr)
         continue;
       for (const addr of client.vAddr) {
         if (new Address4(addr).isValid())
+          ipEndpointMap[addr] = client.addr;
+      }
+      for (const addr of client.vAddr6) {
+        if (new Address6(addr).isValid())
           ipEndpointMap[addr] = client.addr;
       }
     }

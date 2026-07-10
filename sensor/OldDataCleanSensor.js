@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,7 +22,6 @@ let Sensor = require('./Sensor.js').Sensor;
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
-const sem = require('./SensorEventManager.js').getInstance();
 const Constants = require('../net2/Constants.js');
 const PolicyManager2 = require('../alarm/PolicyManager2.js')
 const pm2 = new PolicyManager2()
@@ -32,11 +31,6 @@ const em = new ExceptionManager()
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool();
-
-const AlarmManager2 = require('../alarm/AlarmManager2.js');
-const am2 = new AlarmManager2();
-
-const Promise = require('bluebird');
 
 const _ = require('lodash');
 
@@ -52,6 +46,10 @@ const exec = require('child-process-promise').exec;
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const { REDIS_KEY_REDIS_KEY_COUNT, REDIS_KEY_CPU_USAGE } = require('../net2/Constants.js')
+const fsp = require('fs').promises;
+const f = require('../net2/Firewalla.js');
+const sysManager = require('../net2/SysManager.js');
+const Policy = require('../alarm/Policy.js');
 
 function arrayDiff(a, b) {
   return a.filter(function(i) {return b.indexOf(i) < 0;});
@@ -62,10 +60,16 @@ class OldDataCleanSensor extends Sensor {
     let platformRetentionTimeMultiplier = 1;
     switch (type) {
       case "conn":
-      case "audit":
+      case "flowDNS":
+      case "flowLocal":
+      case "auditDrop":
+      case "auditLocalDrop":
       case "categoryflow":
       case "appflow":
         platformRetentionTimeMultiplier = platform.getRetentionTimeMultiplier();
+        break;
+      case "auditAccept":
+        platformRetentionTimeMultiplier = platform.getDNSFlowRetentionTimeMultiplier();
         break;
     }
     let expireInterval = (this.config[type] && this.config[type].expires * platformRetentionTimeMultiplier) || 0;
@@ -83,9 +87,16 @@ class OldDataCleanSensor extends Sensor {
     let platformRetentionCountMultiplier = 1;
     switch (type) {
       case "conn":
+      case "flowDNS":
+      case "flowLocal":
+      case "auditDrop":
+      case "auditLocalDrop":
       case "categoryflow":
       case "appflow":
         platformRetentionCountMultiplier = platform.getRetentionCountMultiplier();
+        break;
+      case "auditAccept":
+        platformRetentionCountMultiplier = platform.getDNSFlowRetentionCountMultiplier();
         break;
     }
     let count = (this.config[type] && this.config[type].count * platformRetentionCountMultiplier) || 10000;
@@ -100,6 +111,7 @@ class OldDataCleanSensor extends Sensor {
     if(count > 10) {
       log.verbose(util.format("%d entries in %s are cleaned by expired date", count, key));
     }
+    await rclient.persistAsync(key)
     return count;
   }
 
@@ -111,39 +123,48 @@ class OldDataCleanSensor extends Sensor {
     return count;
   }
 
-  getKeys(keyPattern) {
-    return rclient.scanResults(keyPattern);
-  }
-
   async regularClean(fullClean = false) {
-    const counts = {}
-    let wanAuditDropCleaned = false;
+    let batch = []
     await rclient.scanAll(null, async (keys) => {
       for (const key of keys) {
-        for (const {type, filterFunc, count, expireInterval, fullCleanOnly} of this.filterFunctions) {
+        for (const {type, filterFunc, count, expireInterval, fullCleanOnly, customCleanerFunc} of this.filterFunctions) {
           if (fullCleanOnly && !fullClean)
             continue;
           if (filterFunc(key)) {
-            let cntE = 0;
-            let cntC = 0;
-            if (expireInterval != null) {
-              cntE = await this.cleanByExpireDate(key, Date.now() / 1000 - expireInterval);
+            if (customCleanerFunc) {
+              try {
+                await customCleanerFunc(type, key, batch)
+              } catch(err) {
+                log.error('Error executing customized clean', type, key, err)
+              }
+            } else if (type === "api_stats" || type == "dhcp_event") {
+              if (expireInterval) {
+                batch.push(['zremrangebyscore', key, "-inf", Date.now() - expireInterval * 1000]);
+              }
+              if (count) {
+                batch.push(['zremrangebyrank', key, 0, -count])
+              }
+            } else {
+              if (expireInterval) {
+                batch.push(['zremrangebyscore', key, "-inf", Date.now() / 1000 - expireInterval]);
+                // remove expire on those keys as they are now managed by OldDataCleanSensor
+                batch.push(['persist', key]);
+              }
+              if (count) {
+                batch.push(['zremrangebyrank', key, 0, -count])
+              }
             }
-            if (count != null) {
-              cntC = await this.cleanToCount(key, count);
-            }
-            if (type === "auditDrop" && key.startsWith(`audit:drop:${Constants.NS_INTERFACE}:`) && cntE + cntC > 0)
-              wanAuditDropCleaned = true;
           }
+        }
+
+        if (batch.length > 200) {
+          await rclient.pipelineAndLog(batch)
+          batch = []
         }
       }
     });
-    if (wanAuditDropCleaned) {
-      sem.emitLocalEvent({
-        type: "AuditFlowsDrop",
-        suppressEventLogging: false
-      });
-    }
+    if (batch.length)
+      await rclient.pipelineAndLog(batch)
   }
 
   async cleanExceptions() {
@@ -168,21 +189,10 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
-  cleanSumFlow() {
-
-  }
-
-  cleanHourlyFlow() {
-
-  }
-
-  async cleanFlowGraph() {
-    const keys = await rclient.scanResults("flowgraph:*");
-    for(const key of keys) {
-      const ttl = await rclient.ttlAsync(key);
-      if(ttl === -1) {
-        await rclient.unlinkAsync(key);
-      }
+  async cleanFlowGraph(type, key, batch) {
+    const ttl = await rclient.ttlAsync(key);
+    if(ttl === -1) {
+      batch.push(['unlink', key]);
     }
   }
 
@@ -209,37 +219,29 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
-  async cleanFlowX509() {
-    const flows = await rclient.scanResults("flow:x509:*");
-    for(const flow of flows) {
-      const ttl = await rclient.ttlAsync(flow);
-      if(ttl === -1) {
-        await rclient.expireAsync(flow, 600); // 600 is default expire time if expire is not set
-      }
+  async cleanFlowX509(type, key, batch) {
+    const ttl = await rclient.ttlAsync(key);
+    if(ttl === -1) {
+      batch.push(['expire', key, this.config[type].expires || 600]);
     }
   }
 
-  async cleanHostData(type, keyPattern, defaultExpireInterval) {
-    let expireInterval = (this.config[type] && this.config[type].expires) ||
-      defaultExpireInterval;
-
-    let expireDate = Date.now() / 1000 - expireInterval;
-
-    let keys = await this.getKeys(keyPattern)
-
-    return Promise.all(
-      keys.map(async (key) => {
-        let data = await rclient.hgetallAsync(key)
-        if (data && data.lastActiveTimestamp) {
-          if (data.lastActiveTimestamp < expireDate) {
-            log.info(key, "Deleting due to timeout ", expireDate, data);
-            await rclient.unlinkAsync(key);
-          }
-        }
-      })
-    ).then(() => {
-      // log.info("CleanHostData on", keys, "is completed");
-    })
+  async cleanHostData(type, key, batch) {
+    const expireInterval = this.config[type] && this.config[type].expires
+    const expireTS = Date.now() / 1000 - expireInterval;
+    const results = await rclient.hmgetAsync(key, 'lastActiveTimestamp', 'firstFoundTimestamp')
+    if (!results) return
+    const activeTS = results[0] || results[1]
+    if (!activeTS) return
+    if (activeTS < expireTS) {
+      log.info(key, "Deleting due to timeout", activeTS);
+      batch.push(['unlink', key])
+      if (type == 'host:mac')
+        batch.push(['zrem', Constants.REDIS_KEY_HOST_ACTIVE, key.substring(9)])
+    } else {
+      if (type == 'host:mac')
+        batch.push(['zadd', Constants.REDIS_KEY_HOST_ACTIVE, activeTS, key.substring(9)])
+    }
   }
 
   async cleanDuplicatedPolicy() {
@@ -306,16 +308,15 @@ class OldDataCleanSensor extends Sensor {
   }
 
   async cleanupAlarmExtendedKeys() {
-    log.info("Cleaning up alarm extended keys");
-
-    const basicAlarms = await am2.listBasicAlarms();
-    const extendedAlarms = await am2.listExtendedAlarms();
+    // scan _alarm and _alarmDetail together
+    const keys = await rclient.scanResults('_alarm*');
+    const basicAlarms = keys.filter(key => key.startsWith('_alarm:')).map(key => Number(key.substring(7)));
+    const extendedAlarms = keys.filter(key => key.startsWith('_alarmDetail:')).map(key => Number(key.substring(13)));
 
     const diff = arrayDiff(extendedAlarms, basicAlarms);
-
-    for (let index = 0; index < diff.length; index++) {
-      const alarmID = diff[index];
-      await am2.deleteExtendedAlarm(alarmID);
+    if (diff.length) {
+      log.info("Cleaning up alarm extended keys", diff);
+      await rclient.unlinkAsync(diff.map(id => '_alarmDetail:' + id));
     }
   }
 
@@ -325,33 +326,33 @@ class OldDataCleanSensor extends Sensor {
     try {
       let activeIndex = await rclient.zrangebyscoreAsync(activeKey, '-inf', '+inf');
       let archiveIndex = await rclient.zrangebyscoreAsync(archiveKey, '-inf', '+inf');
-      let aliveAlarms = await rclient.scanResults("_alarm:*");
-      let aliveIdSet = new Set(aliveAlarms.map(key => key.substring(7))); // remove "_alarm:" prefix
+      const batch = []
 
-      let activeToRemove = activeIndex.filter(i => !aliveIdSet.has(i));
-      if (activeToRemove.length) await rclient.zremAsync(activeKey, activeToRemove);
-      let archiveToRemove = archiveIndex.filter(i => !aliveIdSet.has(i));
-      if (archiveToRemove.length) await rclient.zremAsync(archiveKey, archiveToRemove);
-    }
-    catch(err) {
+      // exists returns a numbers of all existing with provided list, so this has to be done separately
+      const activeData = await rclient.pipelineAndLog(activeIndex.map(id => ['exists', '_alarm:'+id]))
+      for (let i in activeIndex) {
+        if (!activeData[i]) batch.push(['zrem', activeKey, activeIndex[i]])
+      }
+      const archiveData = await rclient.pipelineAndLog(archiveIndex.map(id => ['exists', '_alarm:'+id]))
+      for (let i in archiveIndex) {
+        if (!archiveData[i]) batch.push(['zrem', archiveKey, archiveIndex[i]])
+      }
+      await rclient.pipelineAndLog(batch)
+    } catch(err) {
       log.error("Error cleaning alarm indexes", err);
     }
   }
 
-  async cleanBrokenPolicies() {
-    try {
-      let keys = await rclient.scanResults("policy:[0-9]*");
-      for (const key of keys) {
-        let policy = await rclient.hgetallAsync(key);
-        let policyKeys = Object.keys(policy);
-        if (policyKeys.length == 1 && policyKeys[0] == 'pid') {
-          await rclient.zremAsync("policy_active", policy.pid);
-          await rclient.unlinkAsync(key);
-          log.info("Remove broken policy:", policy.pid);
-        }
-      }
-    } catch(err) {
-      log.error("Failed to clean broken policies", err);
+  async cleanBrokenPolicy(type, key, batch) {
+    let policy = await rclient.hgetallAsync(key);
+    let policyKeys = Object.keys(policy);
+    if (policyKeys.length == 1 && policyKeys[0] == 'pid') {
+      batch.push(
+        ['zrem', "policy_active", policy.pid],
+        ['zrem', "active_bypass_policy", policy.pid],
+        ['unlink', key],
+      )
+      log.info("Remove broken policy:", policy.pid);
     }
   }
 
@@ -419,19 +420,15 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean(fullClean);
 
       await this.cleanUserAgents();
-      await this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30);
-      await this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30);
-      await this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365);
-      await this.cleanHostData("digitalfence", "digitalfence:*", 3600);
-      await this.cleanFlowX509();
-      await this.cleanFlowGraph();
       await this.cleanupAlarmExtendedKeys();
       await this.cleanAlarmIndex();
       await this.cleanExceptions();
       await this.cleanSecurityIntelTracking();
-      await this.cleanBrokenPolicies();
 
       await this.countIntelData()
+
+      if (fullClean)
+        await this.cleanupLegacyNetworkUUIDs();
 
       // await this.cleanBlueRecords()
       log.info("scheduledJob is executed successfully");
@@ -491,14 +488,16 @@ class OldDataCleanSensor extends Sensor {
   }
 
   async deleteObsoletedData() {
-    await rclient.unlinkAsync('flow:global:recent');
+    const patterns = [/^flow:tag:.*:recent$/, /^flow:intf:.*:recent$/, /^stats:hour:/]
 
-    const patterns = ['flow:tag:*:recent', 'flow:intf:*:recent', 'stats:hour:*']
-    for (const pattern of patterns) {
-      const keys = await rclient.scanResults(pattern)
-      if (keys.length)
-        await rclient.unlinkAsync(keys)
-    }
+    const batch = [ ['unlink', 'flow:global:recent'] ]
+    await rclient.scanAll(null, async (keys) => {
+      for (const key of keys) {
+        if (patterns.some(p => key.match(p)))
+          batch.push(['unlink', key])
+      }
+    })
+    await rclient.pipelineAndLog(batch)
   }
 
   async cleanupRedisSetCache(key, maxCount) {
@@ -508,12 +507,85 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
+  async cleanupLegacyNetworkUUIDs() {
+    const networkConfigs = (await rclient.zrangeAsync("history:networkConfig", 0, -1) || []).map(data => {
+      try {
+        const json = JSON.parse(data);
+        return json;
+      } catch (err) {
+        return null;
+      }
+    }).filter(o => _.isObject(o));
+
+    const uuids = new Set();
+    for (const networkConfig of networkConfigs) {
+      const intfConfig = _.get(networkConfig, "interface", {});      
+      for (const typeKey of Object.keys(intfConfig)) {
+        const intfs = intfConfig[typeKey];
+        for (const name of Object.keys(intfs)) {
+          const uuid = _.get(intfs, [name, "meta", "uuid"]);
+          if (uuid)
+            uuids.add(uuid);
+        }
+      }
+    }
+    const currentIntfs = sysManager.getLogicInterfaces() || [];
+    for (const intf of currentIntfs) {
+      if (intf.uuid)
+        uuids.add(intf.uuid);
+    }
+
+    // remove rules that use a legacy network uuid
+    const rules = await pm2.loadActivePoliciesAsync({includingDisabled: true});
+    for (const rule of rules) {
+      if (rule.pid && _.isArray(rule.tag) && rule.tag.every(s => s.startsWith(Policy.INTF_PREFIX) && !uuids.has(s.substring(Policy.INTF_PREFIX.length)))) {
+        log.info(`Rule ${rule.pid} is applied to a legacy network, will be deleted`, rule);
+        await pm2.disableAndDeletePolicy(rule.pid).catch((err) => {});
+      }
+    }
+
+    // remove leftover network uuid directory that are no longer used in historical network config data from dnsmasq config directory
+    const files = await fsp.readdir(`${f.getUserConfigFolder()}/dnsmasq`, {withFileTypes: true}).catch((err) => {
+      log.error("Failed to readdir on dnsmasq config folder", err.message);
+      return [];
+    });
+
+    for (const file of files) {
+      if (file.isDirectory() && file.name) {
+        let shouldRemove = false;
+        // VPN client config directory
+        if (file.name.startsWith("VC:") || file.name.startsWith("VWG:")) {
+          // TODO
+        } else {
+          if (file.name.startsWith("WAN:") && file.name.length === 45 && (file.name.endsWith("_hard") || file.name.endsWith("_soft"))) {
+            // WAN PBR config directory
+            if (!uuids.has(file.name.substring(4, 40)))
+              shouldRemove = true;
+          } else {
+            // network uuid config directory
+            if (file.name.length === 36 && !uuids.has(file.name))
+              shouldRemove = true;
+          }
+        }
+        if (shouldRemove) {
+          log.info(`Directory ${file.name} under ${f.getUserConfigFolder()}/dnsmasq is no longer used in any historical network config, delete it`);
+          await exec(`rm -rf ${f.getUserConfigFolder()}/dnsmasq/${file.name}`).catch((err) => {});
+        }
+      }
+    }
+  }
+
   registerFilterFunctions() {
     // need to take into consideration the time complexity of the filter function, it will be applied on all keys
     this._registerFilterFunction("conn", (key) => key.startsWith("flow:conn:"));
+    this._registerFilterFunction("flowDNS", (key) => key.startsWith("flow:dns:"));
+    this._registerFilterFunction("flowLocal", (key) => key.startsWith("flow:local:"));
     this._registerFilterFunction("auditDrop", (key) => key.startsWith("audit:drop:"));
     this._registerFilterFunction("auditAccept", (key) => key.startsWith("audit:accept:"));
+    this._registerFilterFunction("auditLocalDrop", (key) => key.startsWith("audit:local:drop"));
     this._registerFilterFunction("http", (key) => key.startsWith("flow:http:"));
+    this._registerFilterFunction("x509", key => key.startsWith("flow:x509:"), false, this.cleanFlowX509.bind(this));
+    this._registerFilterFunction("flowgraph", key => key.startsWith("flowgraph:"), false, this.cleanFlowGraph);
     this._registerFilterFunction("notice", (key) => key.startsWith("notice:"));
     this._registerFilterFunction("monitor", (key) => key.startsWith("monitor:flow:"));
     this._registerFilterFunction("categoryflow", (key) => key.startsWith("categoryflow:"));
@@ -532,13 +604,30 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("cpu_usage", (key) => key === REDIS_KEY_CPU_USAGE);
     this._registerFilterFunction("device_flow_ts", (key) => key === "deviceLastFlowTs");
     this._registerFilterFunction("user_agent2", key => key.startsWith('host:user_agent2:'))
+    this._registerFilterFunction("dm", (key) => key.startsWith("dm:host:"), true);
+    this._registerFilterFunction("host:ip4", key => key.startsWith('host:ip4:'), false, this.cleanHostData.bind(this))
+    this._registerFilterFunction("host:ip6", key => key.startsWith('host:ip6:'), false, this.cleanHostData.bind(this))
+    this._registerFilterFunction("host:mac", key => key.startsWith('host:mac:'), false, this.cleanHostData.bind(this))
+    this._registerFilterFunction("digitalfence", key => key.startsWith('digitalfence:'), false, this.cleanHostData.bind(this))
+    this._registerFilterFunction("policy", key => key.match(/^policy:[0-9]+/), false, this.cleanBrokenPolicy.bind(this))
+    this._registerFilterFunction("internet_flows", (key) => key.startsWith("internet_flows:"));
+    this._registerFilterFunction("dhcp_event", (key) => key.startsWith("dnsmasq.dhcp.event:"));
+    this._registerFilterFunction("api_stats", (key) => key.startsWith("api:stats:"));
+    this._registerFilterFunction("sigDetectedServers", (key) => key.startsWith("category:") && key.endsWith(":sigDetectedServers"));
+    this._registerFilterFunction("ntp_off_set", (key) => key === Constants.REDIS_KEY_NTP_OFF_SET);
+    this._registerFilterFunction("flow_domain:", (key) => key.startsWith("flow_domain:"));
   }
 
-  _registerFilterFunction(type, filterFunc, fullCleanOnly = false) {
+  _registerFilterFunction(type, filterFunc, fullCleanOnly = false, customCleanerFunc) {
     let platformRetentionCountMultiplier = 1;
     let platformRetentionTimeMultiplier = 1;
     switch (type) {
       case "conn":
+      case "flowDNS":
+      case "flowLocal":
+      case "auditDrop":
+      case "auditAccept":
+      case "auditLocalDrop":
       case "categoryflow":
       case "appflow":
         platformRetentionCountMultiplier = platform.getRetentionCountMultiplier();
@@ -551,7 +640,7 @@ class OldDataCleanSensor extends Sensor {
       count = null;
     if (expireInterval < 0)
       expireInterval = null;
-    this.filterFunctions.push({type, filterFunc, count, expireInterval, fullCleanOnly});
+    this.filterFunctions.push({type, filterFunc, count, expireInterval, fullCleanOnly, customCleanerFunc});
   }
 
   run() {
@@ -575,7 +664,7 @@ class OldDataCleanSensor extends Sensor {
       this.oneTimeJob();
       setInterval(() => {
         this.scheduledJob();
-      }, 1000 * 60 * 60); // cleanup every hour
+      }, 1000 * 60 * 45); // cleanup every 45 minutes
     }, 1000 * 60 * 5); // first time in 5 mins
   }
 }

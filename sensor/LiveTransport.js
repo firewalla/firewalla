@@ -23,7 +23,6 @@ const delay = require('../util/util.js').delay;
 
 const CloudWrapper = require('../api/lib/CloudWrapper.js');
 const cw = new CloudWrapper();
-const encryptMessageAsync = Promise.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
 
 const zlib = require('zlib');
 const deflateAsync = Promise.promisify(zlib.deflate);
@@ -67,6 +66,7 @@ class LiveTransport {
       const mspId = this.mspId;
       const replyid = this.replyid;
       this.livetimeRunning = true;
+      const encryptMessageAsync = Promise.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
       if (controller && this.socket) {
         while (this.isLivetimeValid()) {
           try {

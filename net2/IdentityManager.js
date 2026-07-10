@@ -1,4 +1,4 @@
-/*    Copyright 2021-2023 Firewalla Inc.
+/*    Copyright 2021-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,8 +15,9 @@
 
 'use strict';
 
-const log = require('./logger.js')(__filename);
+const net = require('net');
 
+const log = require('./logger.js')(__filename);
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const f = require('./Firewalla.js');
 const { Address4, Address6 } = require('ip-address');
@@ -76,14 +77,16 @@ class IdentityManager {
       let events = c.getRefreshIdentitiesHookEvents() || [];
       for (const e of events) {
         sem.on(e, async (event) => {
-          log.info(`Schedule refreshing identity ${ns} on receiving event`, event);
+          log.info(`Schedule refreshing ${ns} on event`,
+            event.type, event.client && `${event.client.profile} ${event.client.peerIP4}`);
           this.scheduleRefreshIdentities([ns]);
         });
       }
       events = c.getRefreshIPMappingsHookEvents() || [];
       for (const e of events) {
         sem.on(e, async (event) => {
-          log.info(`Schedule refreshing IP mappings of identity ${ns} on receiving event`, event);
+          log.info(`Schedule refreshing IP mappings of ${ns} on event`,
+            event.type, event.client && `${event.client.profile} ${event.client.peerIP4}`);
           this.scheduleRefreshIPMappings([ns]);
         });
       }
@@ -258,7 +261,6 @@ class IdentityManager {
     for (const cidr of allCidrs) {
       const uid = ipUidMap[cidr];
       const endpoint = ipEndpointMap[cidr];
-      if (endpoint == '(none)') continue
       if (new Address4(cidr).isValid()) {
         cidr4Trie.add(cidr, {uid, endpoint});
       } else {
@@ -295,8 +297,10 @@ class IdentityManager {
       if (uid && this.allIdentities[ns] && this.allIdentities[ns][uid])
         return this.allIdentities[ns][uid];
     }
+
+    const fam = net.isIP(ip);
     // Slow path. Match argument ip using CIDRTrie
-    if (new Address4(ip).isValid()) {
+    if (fam == 4) {
       for (const ns of Object.keys(this.cidr4TrieMap)) {
         const cidr4Trie = this.cidr4TrieMap[ns];
         const val = cidr4Trie.find(ip);
@@ -304,14 +308,12 @@ class IdentityManager {
           return this.getIdentity(ns, val.uid);
         }
       }
-    } else {
-      if (new Address6(ip).isValid()) {
-        for (const ns of Object.keys(this.cidr6TrieMap)) {
-          const cidr6Trie = this.cidr6TrieMap[ns];
-          const val = cidr6Trie.find(ip);
-          if (val && val.uid) {
-            return this.getIdentity(ns, val.uid);
-          }
+    } else if (fam == 6) {
+      for (const ns of Object.keys(this.cidr6TrieMap)) {
+        const cidr6Trie = this.cidr6TrieMap[ns];
+        const val = cidr6Trie.find(ip);
+        if (val && val.uid) {
+          return this.getIdentity(ns, val.uid);
         }
       }
     }
@@ -322,16 +324,19 @@ class IdentityManager {
     // Quick path. In most cases, key in this.ipEndpointMap is bare IP address and can be directly compared with argument ip
     for (const ns of Object.keys(this.ipEndpointMap)) {
       const ipEndpointMap = this.ipEndpointMap[ns];
-      const endpoint = ipEndpointMap && (ipEndpointMap[ip] || ipEndpointMap[`${ip}/32`] || ipEndpointMap[`${ip}/128`]);
-      if (endpoint)
-        return endpoint;
+      if (_.has(ipEndpointMap, ip))
+        return ipEndpointMap[ip];
+      if (_.has(ipEndpointMap, `${ip}/32`))
+        return ipEndpointMap[`${ip}/32`];
+      if (_.has(ipEndpointMap, `${ip}/128`))
+        return ipEndpointMap[`${ip}/128`];
     }
     // Slow path. Match argument ip using CIDRTrie
     if (new Address4(ip).isValid()) {
       for (const ns of Object.keys(this.cidr4TrieMap)) {
         const cidr4Trie = this.cidr4TrieMap[ns];
         const val = cidr4Trie.find(ip);
-        if (val && val.endpoint) {
+        if (val && _.has(val, "endpoint")) {
           return val.endpoint;
         }
       }
@@ -340,7 +345,7 @@ class IdentityManager {
         for (const ns of Object.keys(this.cidr6TrieMap)) {
           const cidr6Trie = this.cidr6TrieMap[ns];
           const val = cidr6Trie.find(ip);
-          if (val && val.endpoint) {
+          if (val && _.has(val, "endpoint")) {
             return val.endpoint;
           }
         }
@@ -404,8 +409,10 @@ class IdentityManager {
     await Promise.all(nss.map(async ns => {
       const c = this.nsClassMap[ns];
       const key = c.getKeyOfInitData();
+      const ts = Date.now()
+      log.debug('init data started', ns, ts)
       const data = await c.getInitData();
-      log.debug('init data finished for', ns)
+      log.debug('init data finished', ns, (Date.now() - ts)/1000)
       if (_.isArray(data)) {
         await asyncNative.eachLimit(data, 30, async e => {
           if (e.uid) {

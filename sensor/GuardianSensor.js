@@ -23,6 +23,8 @@ const extensionManager = require('./ExtensionManager.js')
 const guardianListKey = "guardian:alias:list";
 const Guardian = require('./Guardian');
 const _ = require('lodash');
+const fc = require('../net2/config.js');
+const Constants = require('../net2/Constants.js');
 
 class GuardianSensor extends Sensor {
   constructor(config) {
@@ -36,6 +38,7 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onSet("guardianSocketioServer", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await this.getServer({alias: data.alias})})} catch(err) {};
       return this.setServer(data);
     });
 
@@ -44,10 +47,12 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onSet("guardian.business", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await this.getBusiness({alias: data.alias})})} catch(err) {};
       return this.setBusiness(data);
     });
 
     extensionManager.onSet("msp.data", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await this.getMspData({alias: data.alias})})} catch(err) {};
       return this.setMspData(data);
     });
 
@@ -72,6 +77,7 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onCmd("setAndStartGuardianService", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await this.getGuardianByAlias(data.alias)})} catch(err) {};
       return this.setAndStartGuardianService(data);
     });
 
@@ -141,7 +147,7 @@ class GuardianSensor extends Sensor {
   }
 
   async setMspData(data = {}) {
-    await pclient.publishAsync('config:msp:updated', JSON.stringify(data.list))
+    await pclient.publishAsync('config:msp:updated', JSON.stringify(data.list)) // for compatible purpose, keep it there, be careful when set msp.data, the value should be {list:data}
     const guardian = await this.getGuardianByAlias(data.alias);
     return guardian.setMspData(data.list);
   }
@@ -174,6 +180,7 @@ class GuardianSensor extends Sensor {
       throw err;
     }
     await guardian.reset();
+    await pclient.publishAsync('config:msp:updated', JSON.stringify(null));
     await rclient.zremAsync(guardianListKey, guardian.name);
     delete this.guardianMap[guardian.name];
   }
@@ -196,6 +203,21 @@ class GuardianSensor extends Sensor {
   async getGuardian(data) {
     const guardian = await this.getGuardianByAlias(data.alias);
     return guardian.getGuardianInfo();
+  }
+
+  async enqueueOpToMsp(op) {
+    const guardian = _.get(this.guardianMap, "default");
+    if (guardian) {
+      if (!fc.isFeatureOn(Constants.FEATURE_MSP_SYNC_OPS))
+        return;
+      const mspId = await guardian.getMspId();
+      if (!mspId)
+        return;
+      if (await guardian.isAdminStatusOn()) {
+        log.debug("enqueueOpToMsp: admin status is on, enqueue op", op);
+        return guardian.enqueueOp(op);
+      }
+    }
   }
 }
 

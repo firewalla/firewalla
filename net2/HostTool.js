@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,15 +15,18 @@
 'use strict';
 
 const log = require('./logger.js')(__filename);
-
+const net = require('net')
 const rclient = require('../util/redis_manager.js').getRedisClient()
-
+const Message = require('../net2/Message.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 const sysManager = require('./SysManager.js');
-
+const l2 = require('../util/Layer2.js');
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
-
 const Hashes = require('../util/Hashes.js');
+const f = require('./Firewalla.js');
+const Constants = require('./Constants.js');
+const fc = require('./config.js');
 
 let instance = null;
 
@@ -31,11 +34,10 @@ const maxV6Addr = 8;
 
 const asyncNative = require('../util/asyncNative.js');
 
-const iptool = require('ip');
-
 const {getPreferredBName,getPreferredName} = require('../util/util.js')
-const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
 const firewalla = require('./Firewalla.js');
+
+const LRU = require('lru-cache')
 const _ = require('lodash');
 
 class HostTool {
@@ -43,12 +45,37 @@ class HostTool {
     if(!instance) {
       instance = this;
 
-      this.ipMacMapping = {};
-      setInterval(() => {
-        this._flushIPMacMapping();
-      }, 600000); // reset all ip mac mapping once every 10 minutes in case of ip change
+      this.ipMacMapping = new LRU({max: 500, maxAge: 600 * 1000});
+      this.macEntryCache = new LRU({max: 500, maxAge: 3600 * 1000});
+      sem.on(Message.MSG_MAPPING_IP_MAC_DELETED, (event) => {
+        const { ip, mac } = event
+        if (ip && mac) {
+          if (this.ipMacMapping.peek(ip) == mac)
+            this.ipMacMapping.del(ip)
+        }
+      })
+
+      sem.on(Message.MSG_HOST_MAC_ENTRY_CACHE_INVALIDATE, (event) => {
+        const mac = event && event.mac
+        if (mac) {
+          this.macEntryCache.del(mac)
+        }
+      })
+
+      if (f.isMain()) {
+        this.nmap = require('../net2/Nmap.js');
+      }
     }
     return instance;
+  }
+
+  invalidateMacEntryCache(mac) {
+    if (!mac) return
+    sem.sendEventToAll({
+      type: Message.MSG_HOST_MAC_ENTRY_CACHE_INVALIDATE,
+      mac,
+      suppressEventLogging: true
+    })
   }
 
   async macExists(mac) {
@@ -65,15 +92,29 @@ class HostTool {
     if(!ip)
       return Promise.reject("invalid ip addr");
 
-    let key = "host:ip4:" + ip;
+    const key = this.getHostKey(ip)
     return rclient.hgetallAsync(key);
   }
 
-  getMACEntry(mac) {
+  pruneExpiredMacEntryCache() {
+    this.macEntryCache.prune()
+  }
+
+  async getMACEntry(mac) {
     if(!mac)
       return Promise.reject("invalid mac address");
 
-    return rclient.hgetallAsync(this.getMacKey(mac));
+    const cached = this.macEntryCache.peek(mac);
+    if (cached) {
+      return { ...cached };
+    }
+
+    const data = await rclient.hgetallAsync(this.getMacKey(mac));
+    if (data && Object.keys(data).length > 0) {
+      this.macEntryCache.set(mac, data);
+      return { ...data};
+    }
+    return null;
   }
 
   getHostname(hostEntry) {
@@ -98,11 +139,14 @@ class HostTool {
   updateBackupName(mac, name) {
     log.info("Updating backup name", name, "for mac:", mac);
     let key = "host:mac:" + mac;
-    return rclient.hsetAsync(key, "bname", name)
+    return rclient.hsetAsync(key, "bname", name).then((result) => {
+      this.invalidateMacEntryCache(mac);
+      return result;
+    })
   }
 
   async updateIPv4Host(host) {
-    let uid = host.uid;
+    let uid = host.ipv4Addr;
     let key = this.getHostKey(uid);
 
     let hostCopy = JSON.parse(JSON.stringify(host))
@@ -119,7 +163,7 @@ class HostTool {
 
     this.cleanupData(hostCopy);
     await rclient.hmsetAsync(key, hostCopy)
-    await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 30); // auto expire after 30 days
+    await rclient.expireatAsync(key, Math.floor(Date.now() / 1000) + fc.getConfig().timing['host.redis.ip4key.expire'])
   }
 
   async updateMACKey(host, skipUpdatingExpireTime) {
@@ -140,11 +184,14 @@ class HostTool {
 
     let key = this.getMacKey(hostCopy.mac);
     await rclient.hmsetAsync(key, hostCopy)
+    this.invalidateMacEntryCache(hostCopy.mac);
+    const ts = hostCopy.lastActiveTimestamp || hostCopy.firstFoundTimestamp
+    if (ts) await rclient.zaddAsync(Constants.REDIS_KEY_HOST_ACTIVE, ts, hostCopy.mac)
 
     if(skipUpdatingExpireTime) {
       return;
     } else {
-      return rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 365); // auto expire after 365 days
+      return rclient.expireatAsync(key, Math.floor(Date.now() / 1000) + fc.getConfig().timing['host.redis.mackey.expire'])
     }
   }
 
@@ -156,13 +203,46 @@ class HostTool {
 
   updateKeysInMAC(mac, hash) {
     let key = this.getMacKey(mac);
+    return rclient.hmsetAsync(key, hash).then((result) => {
+      this.invalidateMacEntryCache(mac);
+      return result;
+    });
+  }
 
-    return rclient.hmsetAsync(key, hash);
+  updateSpoofingDataInMAC(mac, hash) {
+    const booleanFieldEqual = (cachedVal, hashVal) => {
+      if (cachedVal === hashVal)
+        return true;
+      const isTrue = (v) => v === true || v === 'true';
+      const isFalse = (v) => v === false || v === 'false';
+      return (isTrue(cachedVal) && isTrue(hashVal)) || (isFalse(cachedVal) && isFalse(hashVal));
+    };
+
+    const cached = this.macEntryCache.peek(mac);
+    if (cached && hash && hash.spoofing !== undefined && booleanFieldEqual(cached.spoofing, hash.spoofing))
+      return Promise.resolve();
+    return this.updateKeysInMAC(mac, hash);
   }
 
   deleteKeysInMAC(mac, keys) {
     const key = this.getMacKey(mac);
-    return rclient.hdelAsync(key, keys);
+    return rclient.hdelAsync(key, keys).then((result) => {
+      this.invalidateMacEntryCache(mac);
+      return result;
+    });
+  }
+
+  async incrFieldInMAC(mac, field, increment = 1) {
+    if (!mac || !field || !this.isMacAddress(mac))
+      return null;
+    const macKey = this.getMacKey(mac);
+    const keyExists = await rclient.existsAsync(macKey);
+    if (keyExists != 1)
+      return null;
+    return rclient.hincrbyAsync(macKey, field, increment).then((result) => {
+      this.invalidateMacEntryCache(mac);
+      return result;
+    });
   }
 
   getHostKey(ipv4) {
@@ -178,7 +258,7 @@ class HostTool {
   }
 
   deleteHost(ip) {
-    if (iptool.isV4Format(ip)) {
+    if (net.isIPv4(ip)) {
       return rclient.unlinkAsync(this.getHostKey(ip));
     } else {
       return rclient.unlinkAsync(this.getIPv6HostKey(ip));
@@ -189,8 +269,11 @@ class HostTool {
     return "host:mac:" + mac;
   }
 
-  deleteMac(mac) {
-    return rclient.unlinkAsync(this.getMacKey(mac));
+  async deleteMac(mac) {
+    await rclient.unlinkAsync(this.getMacKey(mac));
+    this.invalidateMacEntryCache(mac);
+    await rclient.zremAsync(Constants.REDIS_KEY_HOST_ACTIVE, mac)
+    return
   }
 
   mergeHosts(oldhost, newhost) {
@@ -230,42 +313,54 @@ class HostTool {
     return ips;
   }
 
-  async getMacByIP(ip, monitoringOnly = true) {
-    let host = null
-    if (sysManager.isMyIP(ip, monitoringOnly) || sysManager.isMyIP6(ip, monitoringOnly)) {
-      // shortcut for Firewalla's self IP
-      const myMac = sysManager.myMACViaIP4(ip) || sysManager.myMACViaIP6(ip);
-      if (myMac)
-        return myMac;
-    }
+  // not reading host:ip here as it's used DeviceHook for IP change check
+  async getMacByIP(ip) {
+    const fam = net.isIP(ip)
+    if (!fam) return null
 
-    if (iptool.isV4Format(ip)) {
-      host = await this.getIPv4Entry(ip);
-    } else if(iptool.isV6Format(ip)) {
-      host = await this.getIPv6Entry(ip);
-    } else {
+    try {
+      // shortcut for Firewalla's self IP
+      const myMac = fam == 4 ? sysManager.myMACViaIP4(ip) : sysManager.myMACViaIP6(ip);
+      if (myMac) return myMac;
+
+      if (fam == 4) {
+        return l2.getMACAsync(ip)
+      } else if (fam == 6) {
+        let mac = await rclient.hgetAsync(this.getIPv6HostKey(ip), 'mac');
+        if (mac || sysManager.isLinkLocal(ip, 6)) { // nmap neighbor solicit is not accurate for link-local addresses
+          return mac;
+        } else {
+          mac = await this.nmap.neighborSolicit(ip)
+          if (mac && sysManager.isMyMac(mac))
+            // should not get neighbor advertisement of Firewalla itself, this is mainly caused by IPv6 spoof
+            return null;
+          else
+            return mac
+        }
+      }
+    } catch(err) {
+      log.warn("Not able to find mac address for host:", ip, err);
       return null
     }
-
-    return host && host.mac;
   }
 
-  async getMacByIPWithCache(ip, monitoringOnly = true) {
-    if (this.ipMacMapping[ip]) {
-      return this.ipMacMapping[ip];
+  setIPMacCache(ip, mac) {
+    this.ipMacMapping.set(ip, mac);
+  }
+
+  async getMacByIPWithCache(ip) {
+    const cached = this.ipMacMapping.peek(ip)
+    if (cached) {
+      return cached
     } else {
-      const mac = await this.getMacByIP(ip, monitoringOnly);
+      const mac = await this.getMacByIP(ip);
       if (mac) {
-        this.ipMacMapping[ip] = mac;
+        this.ipMacMapping.set(ip, mac);
         return mac;
       } else {
         return null;
       }
     }
-  }
-
-  _flushIPMacMapping() {
-    this.ipMacMapping = {};
   }
 
   async getMacEntryByIP(ip) {
@@ -276,6 +371,11 @@ class HostTool {
   async getAllMACs() {
     const keys = await rclient.scanResults("host:mac:*");
     return keys.map(key => key.substring(9)).filter(Boolean);
+  }
+
+  async getMACsByTime(ts) {
+    const MACs = await rclient.zrevrangebyscoreAsync(Constants.REDIS_KEY_HOST_ACTIVE, '+inf', ts);
+    return MACs.filter(Boolean);
   }
 
   async getAllMACEntries() {
@@ -314,27 +414,28 @@ class HostTool {
 
     let key = this.getMacKey(mac)
     let string = JSON.stringify(activity)
-
-    return rclient.hsetAsync(key, "recentActivity", string)
+    return rclient.hsetAsync(key, "recentActivity", string).then((result) => {
+      this.invalidateMacEntryCache(mac);
+      return result;
+    })
   }
 
   async removeDupIPv4FromMacEntry(mac, ip, newMac) {
-    // Keep uid for now as it's used as keys in a lot of places
-    // TODO: use mac as uid should be a true fix to this
-
     let macEntry = await this.getMACEntry(mac);
     if (!macEntry) {
       log.error('removeDupIPv4FromMacEntry:', mac, 'not found')
       return Promise.resolve();
     }
-    log.info('removeDupIPv4FromMacEntry:', ip, 'old:', mac, 'new:', newMac, macEntry);
+    log.info('removeDupIPv4FromMacEntry:', ip, 'old:', mac, 'new:', newMac)
+    log.verbose(macEntry)
 
     let trans = rclient.multi()
 
     if (macEntry.ipv4 == ip) trans.hdel(this.getMacKey(mac), "ipv4");
     if (macEntry.ipv4Addr == ip) trans.hdel(this.getMacKey(mac), "ipv4Addr");
 
-    return trans.execAsync()
+    await trans.execAsync();
+    this.invalidateMacEntryCache(mac);
   }
 
   ////////////// IPV6 /////////////////////
@@ -388,18 +489,12 @@ class HostTool {
 
       if (data) {
         await rclient.hmsetAsync(key, data)
-        await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 4)
+        await rclient.expireatAsync(key, Math.floor(Date.now() / 1000) + fc.getConfig().timing['host.redis.ip6key.expire'])
       }
     }
   }
 
   ////////////////// END OF IPV6 ////////////////
-
-  //pi@raspbNetworkScan:~/encipher.iot/net2 $ ip -6 neighbor show
-  //2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
-  // 2601:646:a380:5511:9912:25e1:f991:4cb2 dev eth0 lladdr 00:0c:29:f4:1a:e3 STALE
-  // 2601:646:a380:5511:385f:66ff:fe7a:79f0 dev eth0 lladdr 3a:5f:66:7a:79:f0 router STALE
-  // 2601:646:9100:74e0:8849:1ba4:352d:919f dev eth0  FAILED  (there are two spaces between eth0 and Failed)
 
   /*
    * ipv6 differs from ipv4, which it will randomly generate IP addresses, and use them
@@ -433,10 +528,10 @@ class HostTool {
   }
 
   async linkMacWithIPv6(v6addr, mac, intf) {
-    await require('child-process-promise').exec(`ping6 -c 3 -I ${intf} ` + v6addr).catch((err) => {});
+    await require('child-process-promise').exec(`ping6 -c3 -W1 -I ${intf} ` + v6addr, { timeout: 5000 }).catch((err) => {});
     log.info("Discovery:AddV6Host:", v6addr, mac);
     mac = mac.toUpperCase();
-    let v6key = "host:ip6:" + v6addr;
+    let v6key = this.getIPv6HostKey(v6addr);
     log.debug("============== Discovery:v6Neighbor:Scan", v6key, mac);
     let ip6Host = await rclient.hgetallAsync(v6key)
     log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, ip6Host);
@@ -452,7 +547,7 @@ class HostTool {
     let result = await rclient.hmsetAsync(v6key, ip6Host)
     log.debug("++++++ Discover:v6Neighbor:Scan:find", result);
     let mackey = "host:mac:" + mac;
-    await rclient.expireatAsync(v6key, parseInt((+new Date) / 1000) + 604800); // 7 days
+    await rclient.expireatAsync(v6key, Math.floor(Date.now() / 1000) + fc.getConfig().timing['host.redis.ip6key.expire']);
     let macHost = await rclient.hgetallAsync(mackey)
     log.info("============== Discovery:v6Neighbor:Scan:mac", v6key, mac, mackey, macHost);
     if (macHost != null) {
@@ -461,21 +556,13 @@ class HostTool {
         ipv6array = JSON.parse(macHost.ipv6Addr);
       }
 
-      // only keep around 5 ipv6 around
-      /*
-      ipv6array = ipv6array.slice(0,8)
-      let oldindex = ipv6array.indexOf(v6addr);
-      if (oldindex != -1) {
-        ipv6array.splice(oldindex,1);
-      }
-      ipv6array.unshift(v6addr);
-      */
       await this.ipv6Insert(ipv6array, v6addr, true)
       macHost.mac = mac.toUpperCase();
       macHost.ipv6Addr = JSON.stringify(ipv6array);
       macHost.lastActiveTimestamp = Date.now() / 1000;
       log.info("HostTool:Writing macHost:", mackey, macHost);
       await rclient.hmsetAsync(mackey, macHost)
+      await rclient.zaddAsync(Constants.REDIS_KEY_HOST_ACTIVE, macHost.lastActiveTimestamp, macHost.mac)
       //v6 at times will discver neighbors that not there ...
       //so we don't update last active here
       //macHost.lastActiveTimestamp = Date.now() / 1000;
@@ -487,8 +574,10 @@ class HostTool {
       macHost.firstFoundTimestamp = macHost.lastActiveTimestamp;
       log.info("HostTool:Writing macHost:", mackey, macHost);
       await rclient.hmsetAsync(mackey, macHost)
+      await rclient.zaddAsync(Constants.REDIS_KEY_HOST_ACTIVE, macHost.lastActiveTimestamp, macHost.mac)
     }
 
+    this.invalidateMacEntryCache(mac);
   }
 
   async getIPv6AddressesByMAC(mac) {
@@ -581,27 +670,79 @@ class HostTool {
     return Object.values(activeHosts).filter((host, index, array) => array.indexOf(host) == index)
   }
 
-  async generateLocalDomain(mac) {
-    if(!this.isMacAddress(mac)) {
+  // during firemain start and new device discovery, there's a small window that host object is
+  // not created in memory thus no tag info.
+  async getTags(monitorable, intfUUID) {
+    if (!monitorable) return {}
+
+    const transitiveTags = await monitorable.getTransitiveTags()
+
+    const result = {}
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)){
+      const flowKey = Constants.TAG_TYPE_MAP[type].flowKey;
+      const tags = [];
+      if (_.has(transitiveTags, type)) {
+        tags.push(...Object.keys(transitiveTags[type]));
+        if (intfUUID && intfUUID !== '') {
+          const networkProfile = require('./NetworkProfileManager.js').getNetworkProfile(intfUUID);
+          if (networkProfile)
+            tags.push(... await networkProfile.getTags(type));
+        }
+      }
+      result[flowKey] = _.uniq(tags);
+      // remove empty tag key to save memory, this cuts 4%+ from flow:conn
+      if (!result[flowKey].length) delete result[flowKey]
+    }
+
+    return result
+  }
+
+  async setWlanVendorToCache(mac, wlanVendors) {
+    const key = `wlanVendor:${mac.toUpperCase()}`;
+    let value = wlanVendors;
+    if (!_.isString(value)) {
+      value = JSON.stringify(wlanVendors);
+    }
+    await rclient.setAsync(key, value);
+  }
+
+  /**
+   * get wlan vendor from cache and refresh expire time
+   * @param {string} mac 
+   * @returns [vendor_string, ...] or null if not found
+   */
+  async getWlanVendorFromCache(mac) {
+    const key = `wlanVendor:${mac.toUpperCase()}`;
+    const value = await rclient.getAsync(key);
+    if (value) {
+      try {
+        const wlanVendors = JSON.parse(value);
+        return wlanVendors;
+      } catch (err) {
+        log.error(`Failed to parse wlan vendor for ${mac}`, err.message);
+        return null;
+      }
+    } else {
+      return null;
+    }
+  }
+
+  async setWirelessDeviceTagCandidate(mac, tagUid) {
+    if (_.isEmpty(mac))
       return;
-    }
-    const macEntry = await this.getMACEntry(mac);
-    // customizeDomainName actually specifies hostname, domain corresponds to suffix
-    let customizedHostname = macEntry.customizeDomainName;
-    let ipv4Addr = macEntry.ipv4Addr;
-    let name = getPreferredName(macEntry);
-    if (!ipv4Addr || (!name && !customizedHostname)) return;
-    name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."));
-    customizedHostname = customizedHostname && getCanonicalizedDomainname(customizedHostname.replace(/\s+/g, "."));
-    await this.updateMACKey({
-      localDomain: name || "",
-      userLocalDomain: customizedHostname || "",
-      mac: mac
-    }, true);
-    return {
-      localDomain: name,
-      userLocalDomain: customizedHostname
-    }
+    const key = `${Constants.REDIS_KEY_WIRELESS_TAG_CANDIDATE}${mac}`;
+    await rclient.setAsync(key, tagUid);
+    await rclient.expireAsync(key, 3600);
+  }
+
+  async getWirelessDeviceTagCandidate(mac) {
+    const key = `${Constants.REDIS_KEY_WIRELESS_TAG_CANDIDATE}${mac}`;
+    return rclient.getAsync(key);
+  }
+
+  async deleteWirelessDeviceTagCandidate(mac) {
+    const key = `${Constants.REDIS_KEY_WIRELESS_TAG_CANDIDATE}${mac}`;
+    await rclient.delAsync(key);
   }
 }
 

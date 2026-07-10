@@ -143,11 +143,15 @@ class FWInvitation {
         if (Number(invite.ts) >= procStartTime) {
           // Only process local payload if the generation time of the payload is older than firekick process
           // this is to ensure the existing running firekick won't process the payload
+          // app may restart firekick in the future to pick up this payload record
+          log.warn("firekick local payload timestamp is newer than pairing process, ignore.", Number(invite.ts));
           return null;
         }
       }
 
-      await rclient.delAsync(key); // this should always be used only once
+      log.forceInfo("Processing local payload with payload timestamp:", invite.ts);
+      // when flag is set, should clean after processing
+      await rclient.setAsync("firereset:local:payload:flag", 1, "EX", 7200);
 
       if(invite.eid && invite.license) {
         const isValid = await this.isLocalLicenseValid(invite.license);

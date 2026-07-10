@@ -16,11 +16,15 @@ FW_SCHEDULE_BRO=false
 STATUS_LED_PATH='/sys/class/leds/sys_led/'
 IFB_SUPPORTED=yes
 XT_TLS_SUPPORTED=yes
+XT_UDP_TLS_SUPPORTED=no
 MANAGED_BY_FIREROUTER=yes
 REDIS_MAXMEMORY=400mb
 RAMFS_ROOT_PARTITION=yes
 FW_ZEEK_RSS_THRESHOLD=800000
 MAX_OLD_SPACE_SIZE=512
+HAVE_FWAPC=yes
+HAVE_FWDAP=yes
+WAN_INPUT_DROP_RATE_LIMIT=8
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
@@ -123,11 +127,20 @@ EOS
 
 }
 
-function installTLSModule {
-  uid=$(id -u pi)
-  gid=$(id -g pi)
-  if ! lsmod | grep -wq "xt_tls"; then
-    sudo insmod ${FW_PLATFORM_CUR_DIR}/files/$(uname -r)/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
-    sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/libxt_tls.so /usr/lib/aarch64-linux-gnu/xtables
+function get_tls_ko_path() {
+  module_name=$1
+  if [[ -z $module_name ]]; then
+    echo "Module name is required"
+    return 1
   fi
+  EMMC_DEV=$(df /media/root-ro | grep -o '/dev/mmcblk[0-9]*')
+  kernel_checksum=$(sudo dd if=$EMMC_DEV bs=512 count=75536 skip=73728 status=none | md5sum | awk '{print $1}')
+  ko_path=${CURRENT_DIR}/files/kernel_modules/$(uname -r)/${module_name}.ko
+  compiler=$(grep -o 'aarch64.*-linux-gnu-gcc' /proc/version)
+  if [[ -f ${ko_path}.${kernel_checksum} ]]; then
+    ko_path=${ko_path}.${kernel_checksum}
+  elif [ "$compiler" == "aarch64-none-linux-gnu-gcc" ] && [ -f ${ko_path}.aarch64-none-linux-gnu-gcc ]; then
+    ko_path=${ko_path}.aarch64-none-linux-gnu-gcc
+  fi
+  echo $ko_path
 }

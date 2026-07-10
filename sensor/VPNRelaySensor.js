@@ -62,7 +62,8 @@ class VPNRelaySensor extends Sensor {
       return this.getRelayConfig()
     })
 
-    extensionManager.onSet("vpnRelayService", (msg, data) => {
+    extensionManager.onSet("vpnRelayService", async (msg, data) => {
+      try {await extensionManager._precedeRecord(msg.id, {origin: await this.getRelayConfig()})} catch(err) {};
       return this.setRelayConfig(data)
     })
   }

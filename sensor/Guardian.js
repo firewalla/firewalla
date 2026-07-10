@@ -1,4 +1,4 @@
-/*    Copyright 2019-2023 Firewalla Inc.
+/*    Copyright 2019-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -30,8 +30,6 @@ const et = new EncipherTool();
 const upgradeManager = require('../net2/UpgradeManager.js');
 const CloudWrapper = require('../api/lib/CloudWrapper.js');
 const cw = new CloudWrapper();
-const receicveMessageAsync = util.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
-const encryptMessageAsync = util.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
 
 const zlib = require('zlib');
 const deflateAsync = util.promisify(zlib.deflate);
@@ -48,20 +46,28 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
 const tokenManager = require('../util/FWTokenManager.js');
+const { REDIS_KEY_MSP_DATA, REDIS_KEY_MSP_SYNC_OPS, FEATURE_MSP_SYNC_OPS } = require('../net2/Constants.js');
+const execAsync = require('child-process-promise').exec;
 
 module.exports = class {
-  constructor(name, config = {}) {
+  constructor(name, config = {}, daemon = true) {
     this.name = name;
     const suffix = this.getKeySuffix(name);
     this.configServerKey = `ext.guardian.socketio.server${suffix}`;
     this.configRegionKey = `ext.guardian.socketio.region${suffix}`;
     this.configBizModeKey = `ext.guardian.business${suffix}`; // this key save msp instance basic info, e.g. id/name/plan
     this.configAdminStatusKey = `ext.guardian.socketio.adminStatus${suffix}`;
-    this.mspDataKey = `ext.guardian.data${suffix}`; // this key save msp user's info, e.g. targetlists
+    this.mspDataKey = `${REDIS_KEY_MSP_DATA}${suffix}`; // this key save msp user's info, e.g. targetlists
     this.liveTransportCache = {};
-    setInterval(() => {
-      this.cleanupLiveTransport()
-    }, (config.cleanInterval || 30) * 1000);
+    this.socketConnected = false; // Track socket.io connectivity status
+    if (daemon) {
+      setInterval(() => {
+        this.cleanupLiveTransport()
+        this.truncateOpQueue().catch((err) => {
+          log.error(`Failed to truncate op queue`, err);
+        });
+      }, (config.cleanInterval || 30) * 1000);
+    }
   }
 
   cleanupLiveTransport() {
@@ -70,6 +76,17 @@ module.exports = class {
       if (!liveTransport.isLivetimeValid()) {
         log.info("Destory live transport for", alias);
         delete this.liveTransportCache[alias];
+      }
+    }
+  }
+
+  async truncateOpQueue() {
+    if (this.name == "default") {
+      if (fc.isFeatureOn(FEATURE_MSP_SYNC_OPS)) {
+        // keep the latest 100 ops
+        await rclient.ltrimAsync(REDIS_KEY_MSP_SYNC_OPS, -100, -1);
+      } else {
+        await rclient.delAsync(REDIS_KEY_MSP_SYNC_OPS);
       }
     }
   }
@@ -220,7 +237,8 @@ module.exports = class {
       } else {
         await rclient.unlinkAsync(this.configRegionKey);
       }
-      return rclient.setAsync(this.configServerKey, server);
+      await rclient.setAsync(this.configServerKey, server);
+      this._scheduleRedisBackgroundSave();
     } else {
       throw new Error("invalid server");
     }
@@ -235,8 +253,8 @@ module.exports = class {
     return false;
   }
 
-  async setMspData(list = []) {
-    return rclient.setAsync(this.mspDataKey, JSON.stringify(list));
+  async setMspData(data = {}) {
+    return rclient.setAsync(this.mspDataKey, JSON.stringify(data));
   }
 
   async getMspData() {
@@ -303,6 +321,10 @@ module.exports = class {
     return { server, region, business, alias: this.name };
   }
 
+  isSocketConnected() {
+    return this.socketConnected;
+  }
+
   async setAndStartGuardianService(data) {
     const socketioServer = data.server;
     if (!socketioServer) {
@@ -316,6 +338,9 @@ module.exports = class {
 
   async start() {
     this.scheduleCheck();
+    if (this.name == "default") {
+      this.scheduleSyncOpsToMsp();
+    }
     const server = await this.getServer();
     if (!server) {
       throw new Error("socketio server not set");
@@ -340,8 +365,9 @@ module.exports = class {
     }
 
     this.socket.on('connect', () => {
+      this.socketConnected = true;
       log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", " + region : ""} is connected.`);
-      this.socket.emit("box_registration", {
+      this.socket && this.socket.emit("box_registration", {
         gid: gid,
         eid: eid,
         mspId: mspId
@@ -349,6 +375,7 @@ module.exports = class {
     });
 
     this.socket.on('disconnect', (reason) => {
+      this.socketConnected = false;
       log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", " + region : ""} is disconnected. reason:`, reason);
     });
 
@@ -381,14 +408,30 @@ module.exports = class {
     })
   }
 
+  scheduleSyncOpsToMsp() {
+    if (this.syncOpsTask) {
+      clearInterval(this.syncOpsTask);
+    }
+    this.syncOpsTask = setInterval(async () => {
+      if (fc.isFeatureOn(FEATURE_MSP_SYNC_OPS)) {
+        await this.syncOpsToMsp();
+      }
+    }, 5 * 1000);
+  }
+
   _stop() {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
     }
+    this.socketConnected = false;
   }
 
   async stop() {
+    if (this.syncOpsTask) {
+      clearInterval(this.syncOpsTask);
+      this.syncOpsTask = null;
+    }
     await this.adminStatusOff();
     this._stop();
   }
@@ -399,7 +442,7 @@ module.exports = class {
   // in this case, once box remove from msp, box should use the flag to clean up msp related rules
   async isMspRelatedRule(rule, { mspData }) {
     const mspId = await this.getMspId();
-    if (rule.msp_id == mspId && (p.msp_rid || p.purpose == 'mesh')) return true; // msp global rule or vpn mesh rule
+    if (rule.msp_id == mspId && (rule.msp_rid || rule.purpose == 'mesh')) return true; // msp global rule or vpn mesh rule
     if (mspData && mspData.targetlists) {
       if (_.find(mspData.targetlists, { id: rule.target })) { // if it is msp target list rule
         return true;
@@ -409,14 +452,16 @@ module.exports = class {
   }
 
   async reset() {
-    log.info("Reset guardian settings", this.name);
+    log.warn("Reset guardian settings", this.name);
     const mspId = await this.getMspId();
     try {
       // remove all msp related rules
-      const policies = await pm2.loadActivePoliciesAsync();
+      const count = await pm2.countActivePolicyNumber()
+      const policies = await pm2.loadActivePoliciesAsync({ number: count });
       const mspData = await this.getMspData();
       await Promise.all(policies.map(async p => {
         if (await this.isMspRelatedRule(p, { mspData })) {
+          log.info("Remove msp policy", p.pid);
           await pm2.disableAndDeletePolicy(p.pid);
         }
       }))
@@ -467,10 +512,12 @@ module.exports = class {
         }
       }
 
-      // disable msp features
-      const features = Object.keys(fc.getFeatures()).filter(i => i.startsWith('msp_'));
-      for ( const f of features) {
-        await fc.disableDynamicFeature(f);
+      // disable msp features if not support msp
+      if (this.name != "support") {
+        const features = Object.keys(fc.getFeatures()).filter(i => i.startsWith('msp_'));
+        for (const f of features) {
+          await fc.disableDynamicFeature(f);
+        }
       }
     } catch (e) {
       log.warn('Clean msp rules failed', e);
@@ -488,6 +535,11 @@ module.exports = class {
 
     // stop schedule check
     clearInterval(this.checkId);
+    if (this.syncOpsTask) {
+      clearInterval(this.syncOpsTask);
+      this.syncOpsTask = null;
+    }
+    await rclient.unlinkAsync(REDIS_KEY_MSP_SYNC_OPS);
   }
 
   async enable_key_rotation() {
@@ -495,6 +547,8 @@ module.exports = class {
     const gid = await et.getGID();
     await fc.enableDynamicFeature("rekey");
     await cw.getCloud().reKeyForAll(gid);
+    // make sure the rekey config is saved to local storage
+    this._scheduleRedisBackgroundSave();
   }
 
   isRealtimeValid() {
@@ -507,6 +561,34 @@ module.exports = class {
 
   resetRealtimeExpirationDate() {
     this.realtimeExpireDate = 0;
+  }
+
+  // copy from netbot.js
+  _scheduleRedisBackgroundSave() {
+    if (this.bgsaveTask)
+      clearTimeout(this.bgsaveTask);
+
+    this.bgsaveTask = setTimeout(async () => {
+      try {
+        await platform.ledSaving().catch(() => undefined);
+        const ts = Math.floor(Date.now() / 1000);
+        await rclient.bgsaveAsync();
+        const maxCount = 15;
+        let count = 0;
+        while (count < maxCount) {
+          count++;
+          await delay(1000);
+          const syncTS = await rclient.lastsaveAsync();
+          if (syncTS >= ts) {
+            break;
+          }
+        }
+        await execAsync("sync");
+      } catch (err) {
+        log.error("Redis background save returns error", err.message);
+      }
+      await platform.ledDoneSaving().catch(() => undefined);
+    }, 5000);
   }
 
   async onRealTimeMessage(gid, message) {
@@ -531,6 +613,8 @@ module.exports = class {
         }
       }
 
+      const receicveMessageAsync = util.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
+      const encryptMessageAsync = util.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
       const decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
       decryptedMessage.mtype = decryptedMessage.message.mtype;
       decryptedMessage.obj.data.value.streaming = { id: decryptedMessage.message.obj.id };
@@ -584,6 +668,8 @@ module.exports = class {
       const replyid = message.replyid; // replyid will not encrypted
       let response, decryptedMessage, code = 200, encryptedResponse;
       try {
+        const receicveMessageAsync = util.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
+        const encryptMessageAsync = util.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
         decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
         decryptedMessage.mtype = decryptedMessage.message.mtype;
         const obj = decryptedMessage.message.obj;
@@ -640,6 +726,87 @@ module.exports = class {
         log.debug("response sent to back web cloud, req id:", decryptedMessage ? decryptedMessage.message.obj.id : "decryption error", this.name);
       } catch (err) {
         log.error('Socket IO connection error', err);
+      }
+    }
+  }
+
+  async enqueueOp(op) {
+    op.ts = Date.now() / 1000;
+    await rclient.rpushAsync(REDIS_KEY_MSP_SYNC_OPS, JSON.stringify(op));
+  }
+
+  async pushOp(op) {
+    await rclient.lpushAsync(REDIS_KEY_MSP_SYNC_OPS, JSON.stringify(op));
+  }
+
+  async pushOps(ops) {
+    if (ops.length === 0) return;
+    const serialized = ops.slice().reverse().map(op => JSON.stringify(op));
+    await rclient.lpushAsync(REDIS_KEY_MSP_SYNC_OPS, ...serialized);
+  }
+
+  async dequeueOp() {
+    const op = await rclient.lpopAsync(REDIS_KEY_MSP_SYNC_OPS);
+    if (op) {
+      return JSON.parse(op);
+    }
+    return null;
+  }
+
+  async dequeueOps(count) {
+    const ops = [];
+    for (let i = 0; i < count; i++) {
+      // LPOP key count not support on redis 6.0.16
+      const op = await rclient.lpopAsync(REDIS_KEY_MSP_SYNC_OPS);
+      if (op == null) break;
+      ops.push(JSON.parse(op));
+    }
+    return ops;
+  }
+
+  async syncOpsToMsp() {
+    if (this.socket && this.isSocketConnected()) {
+      const msgCount = await rclient.llenAsync(REDIS_KEY_MSP_SYNC_OPS);
+      if (msgCount == 0) {
+        return;
+      }
+      const gid = await et.getGID();
+      const mspId = await this.getMspId();
+      if (!gid || !mspId) {
+        return;
+      }
+      const encryptMessageAsync = util.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
+      const MAX_OPS_PER_TIME = 100;
+
+      const ops = await this.dequeueOps(MAX_OPS_PER_TIME);
+      if (ops.length === 0)
+        return;
+
+      // compress, encrypt and emit all ops in one batch
+      try {
+        // log.debug("syncOpsToMsp: sync ops to msp", ops);
+        log.debug(`syncOpsToMsp: sync ${ops.length} ops to msp`);
+        const msg = {
+          data: ops,
+          replyid: "sync_op_from_box"
+        }
+        const buffer = Buffer.from(JSON.stringify(msg), 'utf8');
+        const compressedData = await deflateAsync(buffer);
+        const compressedMsg = JSON.stringify({
+          compressed: 1,
+          compressMode: 1,
+          data: compressedData.toString('base64')
+        });
+        const encryptedMsg = await encryptMessageAsync(gid, compressedMsg);
+        this.socket.emit("send_from_box", {
+          message: encryptedMsg,
+          gid: gid,
+          mspId: mspId
+        });
+        log.info(`Synced ${ops.length} ops to msp`);
+      } catch (err) {
+        log.error(`Failed to sync ops to msp`, err);
+        await this.pushOps(ops).catch(e => log.error(`Failed to push ops back`, e, ops.length));
       }
     }
   }

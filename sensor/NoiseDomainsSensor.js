@@ -18,16 +18,18 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const fs = require('fs');
-const scheduler = require('../util/scheduler.js');
-const f = require('../net2/Firewalla.js');
 const _ = require('lodash');
-const readline = require('readline');
-const {Address4, Address6} = require('ip-address');
-const DomainTrie = require('../util/DomainTrie.js');
-const { exec } = require('child-process-promise')
-
-let DOMAINS_DIR = `${f.getRuntimeInfoFolder()}/noise_domains`;
+const rclient = require('../util/redis_manager.js').getRedisClient();
+const Constants = require('../net2/Constants.js');
+const { BloomFilter } = require('../vendor_lib/bloomfilter.js');
+const CLOUD_CONFIG_KEY = Constants.REDIS_KEY_NOISE_DOMAIN_CLOUD_CONFIG;
+const cc = require('../extension/cloudcache/cloudcache.js');
+const sem = require('./SensorEventManager.js').getInstance();
+const fsp = require('fs').promises;
+const f = require('../net2/Firewalla.js');
+const cacheFolder = `${f.getRuntimeInfoFolder()}/cache`;
+const hashKey = "noise_domain";
+const EVENT_NOISE_DOMAIN_BF_UPDATED = "NOISE_DOMAIN_BF_UPDATED";
 
 class NoiseDomainsSensor extends Sensor {
   async run() {
@@ -39,50 +41,90 @@ class NoiseDomainsSensor extends Sensor {
   }
   
   async init() {
-    if (this.config.domainsDirectory)
-      DOMAINS_DIR = this.config.domainsDirectory;
-    await exec(`mkdir -p ${DOMAINS_DIR}`)
-    this.domainsTrie = new DomainTrie();
-    this.ipMap = new Map();
-    const reloadJob = new scheduler.UpdateJob(this.reloadDomains.bind(this), 5000);
-    await reloadJob.exec();
-    fs.watch(DOMAINS_DIR, (eventType, filename) => {
-      log.info(`${filename} under ${DOMAINS_DIR} is ${eventType}, will reload noise domains ...`);
-      reloadJob.exec();
+    this.bloomfilter = null;
+
+    sem.on(EVENT_NOISE_DOMAIN_BF_UPDATED, async () => {
+      await this.reloadNoiseDomainBFFromLocal();
     });
+
+    await cc.enableCache(hashKey, (data) => {
+      sem.sendEventToAll({
+        type: EVENT_NOISE_DOMAIN_BF_UPDATED,
+      });
+    });
+    await this.removeLegacyNoiseBFfromRedis();
   }
 
-  async reloadDomains() {
-    const files = await fs.promises.readdir(DOMAINS_DIR).catch((err) => {
-      log.error(`Failed to read noise domains directory ${DOMAINS_DIR}`, err.message);
-      return null;
-    });
-    if (_.isArray(files)) {
-      this.domainsTrie.clear();
-      this.ipMap.clear();
-      for (const file of files) {
-        await new Promise((resolve, reject) => {
-          const reader = readline.createInterface({
-            input: fs.createReadStream(`${DOMAINS_DIR}/${file}`)
-          });
-          reader.on('line', (data) => {
-            if (new Address4(data).isValid() || new Address6(data).isValid())
-              this.ipMap.set(data, file);
-            else
-              this.domainsTrie.add(data, file); // filename is the value of the domain
-          });
-          reader.on('close', () => {
-            resolve();
-          });
-        });
-        log.info(`Noise config file ${file} is reloaded`);
+  loadNoiseDomainBFData(content) {
+    try {
+      if (typeof content !== 'string' || !content.trim()) return;
+      const { buckets, k } = JSON.parse(content);
+      if (buckets == null || k == null) return;
+      this.bloomfilter = new BloomFilter(this._decodeArrayOfIntBase64(buckets), k);
+      log.info('Loaded noise domain bloom filter successfully.');
+    } catch (err) {
+      log.error('Failed to load noise domain bloom filter, err:', err);
+    }
+  }
+
+  async reloadNoiseDomainBFFromLocal() {
+    this.bloomfilter = null;
+    const noiseDomainDataFile = `${cacheFolder}/${hashKey}`;
+    log.info(`Reloading noise domain bf from local file: ${noiseDomainDataFile}`);
+    try {
+      const content = await fsp.readFile(noiseDomainDataFile, 'utf8');
+      if (content) {
+        this.loadNoiseDomainBFData(content);
+      } else {
+        log.error(`No valid noise domain data found in ${noiseDomainDataFile}.`);
+        this.deleteNoiseDomainBFData();
+      }
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        log.error("No valid bf data. Delete noise domain bf cache data.");
+        this.deleteNoiseDomainBFData();
+      } else {
+        log.error('Failed to reload noise domain bloom filter from local file, err:', err);
       }
     }
-    log.info(`Noise domain trie reconstruction complete`);
+  }
+
+  async loadLocalNoiseDomainData4Test() {
+    return this.reloadNoiseDomainBFFromLocal();
+  }
+
+  deleteNoiseDomainBFData() {
+    this.bloomfilter = null;
+  }
+
+  async removeLegacyNoiseBFfromRedis() {
+    await rclient.delAsync(CLOUD_CONFIG_KEY);
+  }
+
+  _decodeArrayOfIntBase64(s) {
+    const buf = Buffer.from(s, 'base64');
+    const arr = [];
+    for (let i = 0; i < buf.length; i += 4) {
+      arr.push(buf.readInt32LE(i));
+    }
+    return arr;
   }
 
   find(domain, isIP = false) {
-    return isIP ? this.ipMap.get(domain) : this.domainsTrie.find(domain);
+    if(!domain || !this.bloomfilter) {
+      return new Set();
+    }
+    if (isIP) {
+      return this.bloomfilter.test(domain) ? new Set(["noise"]) : new Set();
+    }
+    const reversedParts = domain.split('.').reverse();
+    for (let i = reversedParts.length - 1; i >= 0; i--) {
+      const subDomain = reversedParts.slice(0, i + 1).reverse().join('.');
+      if(this.bloomfilter.test(subDomain)) {
+        return new Set(["noise"]);
+      }
+    }
+    return new Set();
   }
 }
 

@@ -1,4 +1,4 @@
-/*    Copyright 2018-2022 Firewalla Inc.
+/*    Copyright 2018-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,7 +23,6 @@ const path = require('path');
 const logger = require('morgan');
 const cookieParser = require('cookie-parser');
 const bodyParser = require('body-parser');
-const argv = require('minimist')(process.argv.slice(2));
 const swagger = require("swagger-node-express");
 
 const firewalla = require('../net2/Firewalla.js');
@@ -55,9 +54,10 @@ app.set('json spaces', 2);
 // uncomment after placing your favicon in /public
 //app.use(favicon(path.join(__dirname, 'public', 'favicon.ico')));
 app.use(logger('dev'));
-app.use(bodyParser.json());
+app.use(bodyParser.json({limit: '5mb'}));
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cookieParser());
+app.use('/dashboard', require('./routes/dashboard.js'));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use(function (req, res, next) {
@@ -67,7 +67,7 @@ app.use(function (req, res, next) {
 
 var subpath_v1 = express();
 app.use("/v1", subpath_v1);
-subpath_v1.use(bodyParser.json());
+subpath_v1.use(bodyParser.json({limit: '5mb'}));
 subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 
 function enableSubPath(path, lib) {
@@ -78,6 +78,7 @@ function enableSubPath(path, lib) {
 
 // encipher api is enabled even for production enviornment
 enableSubPath('encipher');
+subpath_v1.use('/host', host);
 
 if(!firewalla.isProductionOrBeta()) {
   // apis for development purpose only, do NOT enable them in production
@@ -86,7 +87,6 @@ if(!firewalla.isProductionOrBeta()) {
   subpath_v1.use('/dns', dnsmasq);
   subpath_v1.use('/alarm', alarm);
   subpath_v1.use('/flow', flow);
-  subpath_v1.use('/host', host);
   subpath_v1.use('/mode', mode);
   subpath_v1.use('/test', test);
 
@@ -109,8 +109,6 @@ if(!firewalla.isProductionOrBeta()) {
   });
 
   let domain = require('ip').address;
-  if(argv.domain !== undefined)
-    domain = argv.domain;
 
   if(firewalla.isDocker()) {
     domain = "127.0.0.1"

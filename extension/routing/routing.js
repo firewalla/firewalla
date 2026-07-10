@@ -35,12 +35,17 @@ const MASK_ALL = "0xffff";
 const LOCK_RT_TABLES = "LOCK_RT_TABLES";
 const LOCK_FILE = "/tmp/rt_tables.lock";
 
+const rtIdCache = {};
+
 async function removeCustomizedRoutingTable(tableName) {
   let cmd = `sudo bash -c 'flock ${LOCK_FILE} -c "sed -i -e \\"s/^[[:digit:]]\\+\\s\\+${tableName}$//g\\" /etc/iproute2/rt_tables"'`;
   await exec(cmd);
+  delete rtIdCache[tableName];
 }
 
 async function createCustomizedRoutingTable(tableName, type = RT_TYPE_REG) {
+  if (_.has(rtIdCache, tableName))
+    return rtIdCache[tableName];
   return new Promise((resolve, reject) => {
     lock.acquire(LOCK_RT_TABLES, async function(done) {
       // separate bits in fwmark for vpn client and regular WAN
@@ -96,8 +101,10 @@ async function createCustomizedRoutingTable(tableName, type = RT_TYPE_REG) {
     }, function(err, ret) {
       if (err)
         reject(err);
-      else
+      else {
+        rtIdCache[tableName] = ret;
         resolve(ret);
+      }
     });
   });
 }
@@ -220,11 +227,25 @@ async function removeRouteFromTable(dest, gateway, intf, tableName, preference =
   }
 }
 
-async function flushRoutingTable(tableName, dev = null, proto) {
-  const cmds = [
-    `sudo ip route flush ${dev ? `dev ${dev}` : "" } proto ${proto ? proto : "boot"} table ${tableName}`, 
-    `sudo ip -6 route flush ${dev ? `dev ${dev}` : ""} proto ${proto ? proto : "boot"} table ${tableName}`
-  ];
+async function flushRoutingTable(tableName, dev = null, proto="boot", af = null, type = null) {
+  const cmds = [];
+  if (type) {
+    // flush by route type (e.g. "throw", "unreachable"); dev and proto are irrelevant in this mode
+    if (af === 4 || af === null) {
+      cmds.push(`sudo ip route flush type ${type} table ${tableName}`);
+    }
+    if (af === 6 || af === null) {
+      cmds.push(`sudo ip -6 route flush type ${type} table ${tableName}`);
+    }
+  } else {
+    if (af === 4 || af === null) {
+      cmds.push(`sudo ip route flush ${dev ? `dev ${dev}` : "" } proto ${proto} table ${tableName}`);
+    }
+    if (af === 6 || af === null) {
+      cmds.push(`sudo ip -6 route flush ${dev ? `dev ${dev}` : ""} proto ${proto} table ${tableName}`);
+    }
+  }
+
   for (const cmd of cmds) {
     await exec(cmd).catch((err) => {
       log.error(`Failed to flush routing table ${tableName}`, err.message);
@@ -265,12 +286,12 @@ async function testRoute(dstIp, srcIp, srcIntf) {
   }
 }
 
-async function addMultiPathRouteToTable(dest, tableName, af = 4, ...multipathDesc) {
+async function addMultiPathRouteToTable(dest, tableName, af = 4, metric, ...multipathDesc) {
   let cmd = null;
   dest = dest || "default";
   cmd =  `sudo ip -${af} route add ${dest}`;
   tableName = tableName || "main";
-  cmd = `${cmd} table ${tableName}`;
+  cmd = `${cmd} table ${tableName} metric ${metric}`;
   for (let desc of multipathDesc) {
     const nextHop = desc.nextHop;
     const dev = desc.dev;

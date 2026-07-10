@@ -1,4 +1,4 @@
-/*    Copyright 2019-2024 Firewalla Inc.
+/*    Copyright 2019-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,10 +19,8 @@ const Platform = require('../Platform.js');
 const firestatusBaseURL = "http://127.0.0.1:9966";
 const f = require('../../net2/Firewalla.js')
 const exec = require('child-process-promise').exec;
-const fs = require('fs');
 const fsp = require('fs').promises;
 const log = require('../../net2/logger.js')(__filename);
-const ipset = require('../../net2/Ipset.js');
 const rp = require('request-promise');
 const { execSync } = require('child_process');
 
@@ -71,7 +69,7 @@ class GoldProPlatform extends Platform {
   }
 
   getGCMemoryForMain() {
-    return 200;
+    return 350;
   }
 
   getLSBCodeName() {
@@ -124,37 +122,6 @@ class GoldProPlatform extends Platform {
     });
   }
 
-  async switchQoS(state, qdisc) {
-    if (state == false) {
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
-        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
-        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-    } else {
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
-        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
-        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-    }
-    const supported = await exec(`modinfo sch_${qdisc}`).then(() => true).catch((err) => false);
-    if (!supported) {
-      log.error(`qdisc ${qdisc} is not supported`);
-      return;
-    }
-    // replace the default tc filter
-    const QoS = require('../../control/QoS.js');
-    await exec (`sudo tc filter replace dev ifb0 parent 1: handle 800::0x1 prio 1 u32 match mark 0x800000 0x${QoS.QOS_UPLOAD_MASK.toString(16)} flowid 1:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
-      log.error(`Failed to update tc filter on ifb0`, err.message);
-    });
-    await exec (`sudo tc filter replace dev ifb1 parent 1: handle 800::0x1 prio 1 u32 match mark 0x10000 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)} flowid 1:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
-      log.error(`Failed to update tc filter on ifb1`, err.message);
-    });
-  }
-
   getSubnetCapacity() {
     return 18;
   }
@@ -189,6 +156,10 @@ class GoldProPlatform extends Platform {
     return 3000;
   }
 
+  getExceptionCapacity() {
+    return 3000;
+  }
+
   getDHCPCapacity() {
     return false
   }
@@ -198,6 +169,10 @@ class GoldProPlatform extends Platform {
   }
 
   isWireguardSupported() {
+    return true;
+  }
+
+  isAmneziaWgSupported() {
     return true;
   }
 
@@ -240,6 +215,14 @@ class GoldProPlatform extends Platform {
     return 1;
   }
 
+  getDNSFlowRetentionTimeMultiplier() {
+    return 24;
+  }
+
+  getDNSFlowRetentionCountMultiplier() {
+    return 10;
+  }
+
   getCompresseCountMultiplier(){
     return 1;
   }
@@ -267,28 +250,6 @@ class GoldProPlatform extends Platform {
       hits: 72,
       stat: '3d'
     }]
-  }
-
-  async installTLSModule() {
-    const installed = await this.isTLSModuleInstalled();
-    if (installed) return;
-    let TLSmodulePathPrefix = __dirname+"/files/TLS/u22";
-    
-    await exec(`sudo insmod ${__dirname}/files/$(uname -r)/xt_tls.ko max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`);
-    await exec(`sudo install -D -v -m 644 ${TLSmodulePathPrefix}/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables`);
-  }
-
-  async isTLSModuleInstalled() {
-    if (this.tlsInstalled) return true;
-    const cmdResult = await exec(`lsmod| grep xt_tls| awk '{print $1}'`);
-    const results = cmdResult.stdout.toString().trim().split('\n');
-    for(const result of results) {
-      if (result == 'xt_tls') {
-        this.tlsInstalled = true;
-        break;
-      }
-    }
-    return this.tlsInstalled;
   }
 
   isTLSBlockSupport() {
@@ -324,23 +285,7 @@ class GoldProPlatform extends Platform {
     return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
   }
 
-  async reloadActMirredKernelModule() {
-    log.info("Reloading act_mirred.ko...");
-    const kernelRelease = await exec(`uname -r`).then(result => result.stdout.trim()).catch((err) => null);
-    if (kernelRelease) {
-      const koExists = await fsp.access(`${__dirname}/files/${kernelRelease}/act_mirred.ko`, fs.constants.F_OK).then(() => true).catch((err) => false);
-      if (koExists) {
-        try {
-          const loaded = await exec(`sudo lsmod | grep act_mirred`).then(result => true).catch(err => false);
-          if (loaded)
-            await exec(`sudo rmmod act_mirred`);
-          await exec(`sudo insmod ${__dirname}/files/${kernelRelease}/act_mirred.ko`);
-        } catch (err) {
-          log.error("Failed to unload act_mirred, err:", err.message);
-        }
-      }
-    }
-  }
+  isDNSFlowSupported() { return true }
 }
 
 module.exports = GoldProPlatform;

@@ -1,4 +1,4 @@
-/*    Copyright 2022-2023 Firewalla Inc.
+/*    Copyright 2022-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,7 +20,7 @@ const pm2 = new PolicyManager2();
 const DomainIPTool = require('../control/DomainIPTool');
 const domainIpTool = new DomainIPTool();
 const Sensor = require('./Sensor.js').Sensor;
-
+const conntrack = require('../net2/Conntrack.js')
 
 const sem = require('../sensor/SensorEventManager').getInstance();
 const _ = require('lodash');
@@ -38,6 +38,10 @@ class RuleStatsPlugin extends Sensor {
     this.hookFeature(featureName);
     this.policyRulesMap = null;
     this.recordBuffer = [];
+    this.lastHitFlowMap = new Map(); // pid -> { value, ts, recordedAt }
+    this.lastHitFlowSyncTs = 0;
+    this.globalStatsResetTs = 0;
+    this.policyStatsResetTs = new Map();
     this.cache = new LRU({
       max: 200,
       maxAge: 15 * 1000,
@@ -45,6 +49,14 @@ class RuleStatsPlugin extends Sensor {
     });
     sem.on("PolicyEnforcement", async (event) => {
       await this.loadBlockAllowGlobalRules();
+      if (event.action === 'unenforce' && event.policy) {
+        const pid = String(event.policy.pid);
+        this.lastHitFlowMap.delete(pid);
+        this.policyStatsResetTs.delete(pid);
+      }
+    });
+    sem.on("Policy:StatsReset", (event = {}) => {
+      this.applyStatsReset(event.policyIDs, event.resetTime);
     });
     this.on = false;
     void this.process();
@@ -90,7 +102,7 @@ class RuleStatsPlugin extends Sensor {
           await this.updateRuleStats();
         }
       } catch (e) {
-        log.debug(e);
+        log.error(e);
       }
       await scheduler.delay(1000);
     }
@@ -134,11 +146,71 @@ class RuleStatsPlugin extends Sensor {
     this.policyRulesMap = newPolicyRulesMap;
   }
 
+  recordLastHitFlow(pid, flow, kind) {
+    if (!this.on || !pid || !flow) return;
+    const ts = Number(flow.ts || flow._ts || 0);
+    const recordedAt = Date.now() / 1000;
+    const existing = this.lastHitFlowMap.get(String(pid));
+    if (!existing || ts > existing.ts || (ts === existing.ts && recordedAt > existing.recordedAt)) {
+      // Persist a raw log snapshot so policy APIs can reuse the existing
+      // flow/audit formatting and intel enrichment path.
+      this.lastHitFlowMap.set(String(pid), {
+        value: {
+          kind,
+          raw: _.cloneDeep(flow)
+        },
+        ts,
+        recordedAt
+      });
+    }
+  }
+
+  clearPendingStats() {
+    this.recordBuffer = [];
+    this.lastHitFlowMap.clear();
+    this.lastHitFlowSyncTs = 0;
+  }
+
+  applyStatsReset(policyIDs, resetTime) {
+    const ts = Number(resetTime || Date.now() / 1000);
+    if (!policyIDs || _.isEmpty(policyIDs)) {
+      this.globalStatsResetTs = Math.max(this.globalStatsResetTs, ts);
+      this.policyStatsResetTs.clear();
+      this.clearPendingStats();
+      return;
+    }
+
+    const resetPidSet = new Set(policyIDs.map(String));
+    for (const pid of resetPidSet) {
+      this.policyStatsResetTs.set(pid, Math.max(this.policyStatsResetTs.get(pid) || 0, ts));
+      this.lastHitFlowMap.delete(pid);
+    }
+
+    this.recordBuffer = this.recordBuffer.filter((record) => !record.pid || !resetPidSet.has(String(record.pid)));
+    for (const pid of resetPidSet) {
+      this.policyStatsResetTs.delete(pid);
+    }
+    log.info(`Rule stats reset for policies: ${policyIDs.join(",")}`);
+  }
+
+  async getPolicyStatsResetTs(pid, resetTsCache) {
+    const key = String(pid);
+    if (resetTsCache.has(key)) {
+      return resetTsCache.get(key);
+    }
+
+    const localResetTs = Math.max(this.globalStatsResetTs, this.policyStatsResetTs.get(key) || 0);
+    const persistedResetTs = Number(await rclient.hgetAsync(`policy:${pid}`, "statsResetTs") || "0");
+    const resetTs = Math.max(localResetTs, persistedResetTs);
+    resetTsCache.set(key, resetTs);
+    return resetTs;
+  }
+
   accountRule(record) {
     if (!this.on) {
       return;
     }
-    // ignore 
+    // input drop is different than ingress firewall rule
     if (record.dir === "W") {
       return;
     }
@@ -150,21 +222,24 @@ class RuleStatsPlugin extends Sensor {
 
     // limit buf size to avoid cpu and memory overload
     if (this.recordBuffer.length < 2000) {
-      this.recordBuffer.push(record);
+      this.recordBuffer.push(Object.assign({ _statsTs: Date.now() / 1000 }, record));
     }
   }
 
   static cachekeyRecord(record) {
-     // use cache to reduce computation and redis operation.
-     const hash = crypto.createHash("md5");
-     hash.update(String(record.ac));
-     hash.update(String(record.type));
-     hash.update(String(record.fd));
-     hash.update(String(record.sec));
-     hash.update(String(record.dn));
-     hash.update(String(record.dh));
-     hash.update(String(record.qmark));
-     return hash.digest("hex");
+    // use cache to reduce computation and redis operation.
+    const hash = crypto.createHash("md5");
+    hash.update(String(record.ac));
+    hash.update(String(record.type));
+    hash.update(String(record.fd));
+    hash.update(String(record.sec));
+    if (record.type == 'dns') {
+      hash.update(String(record.dn));
+    } else {
+      hash.update(String(record.dh));
+    }
+    hash.update(String(record.qmark));
+    return hash.digest("hex");
   }
 
   async getMatchedPids(record){
@@ -173,10 +248,9 @@ class RuleStatsPlugin extends Sensor {
     const v = this.cache.get(key);
     let matchedPids;
     if (v) {
-      log.debug("Hit rule stat cache");
       matchedPids = v;
     } else {
-      matchedPids = await this.getPolicyIds(record);
+      matchedPids = (await this.getPolicyIds(record)).map(Number)
       this.cache.set(key, matchedPids);
     }
     return matchedPids;
@@ -191,6 +265,7 @@ class RuleStatsPlugin extends Sensor {
     }
 
     const ruleStatMap = new Map();
+    const resetTsCache = new Map();
 
     // Match record to policy id
     for (const record of recordBuffer) {
@@ -203,6 +278,13 @@ class RuleStatsPlugin extends Sensor {
       }
 
       for (const pid of matchedPids) {
+        const recordStatsTs = Number(record._statsTs || record._ts || record.ts || 0);
+        const resetTs = await this.getPolicyStatsResetTs(pid, resetTsCache);
+        if (recordStatsTs <= resetTs) {
+          continue;
+        }
+
+        const hitTs = Number(record._ts || record.ts || 0);
         log.debug("Matched policy rule: ", pid);
         let stat;
         if (ruleStatMap.has(pid)) {
@@ -215,25 +297,50 @@ class RuleStatsPlugin extends Sensor {
         } else {
           stat.count++;
         }
-        if (record.ts > stat.lastHitTs) {
-          stat.lastHitTs = record.ts;
+        if (hitTs > stat.lastHitTs) {
+          stat.lastHitTs = hitTs;
+          stat.lastHitStatsTs = recordStatsTs;
         }
         ruleStatMap.set(pid, stat);
       }
     }
 
     // update rule status to redis
+    const batch = rclient.batch();
     for (const [pid, stat] of ruleStatMap) {
       if (! await rclient.existsAsync(`policy:${pid}`)) {
-        return;
+        continue;
       }
-      const multi = rclient.multi();
-      multi.hincrby(`policy:${pid}`, "hitCount", stat.count);
+      const resetTs = await this.getPolicyStatsResetTs(pid, resetTsCache);
+      if (stat.lastHitStatsTs <= resetTs) {
+        continue;
+      }
+      batch.hincrby(`policy:${pid}`, "hitCount", stat.count);
       const lastHitTs = Number(await rclient.hgetAsync(`policy:${pid}`, "lastHitTs") || "0");
       if (stat.lastHitTs > lastHitTs) {
-        multi.hset(`policy:${pid}`, "lastHitTs", String(stat.lastHitTs));
+        batch.hset(`policy:${pid}`, "lastHitTs", String(stat.lastHitTs));
       }
-      await multi.execAsync();
+    }
+    await batch.execAsync();
+
+    const now = Date.now() / 1000;
+    const lastHitFlowSyncThreshold = 60; // seconds
+    if (now - this.lastHitFlowSyncTs >= lastHitFlowSyncThreshold && this.lastHitFlowMap.size > 0) {
+      this.lastHitFlowSyncTs = now;
+      const flowBatch = rclient.batch();
+      for (const [pid, { value, recordedAt }] of this.lastHitFlowMap) {
+        const resetTs = await this.getPolicyStatsResetTs(pid, resetTsCache);
+        if (recordedAt <= resetTs) {
+          continue;
+        }
+        if (! await rclient.existsAsync(`policy:${pid}`)) {
+          this.lastHitFlowMap.delete(pid);
+          continue;
+        }
+        flowBatch.hset(`policy:${pid}`, "lastHitFlow", JSON.stringify(value));
+      }
+      await flowBatch.execAsync();
+      // this.lastHitFlowMap.clear();
     }
   }
 
@@ -242,7 +349,7 @@ class RuleStatsPlugin extends Sensor {
       case "allow":
       case "block": {
         log.debug("Match policy id for allow/block record", record);
-        let recordIp, recordDomain;
+        let recordIp, addr4, addr6, connHost, recordDomain;
         const action = record.ac;
         let lookupSets = [];
 
@@ -258,52 +365,61 @@ class RuleStatsPlugin extends Sensor {
           }
         }
 
-        if (record.type === "dns") {
-          recordDomain = record.dn;
-        } else {
-          recordIp = record.dh;
+        if (!this.policyRulesMap) {
+          return [];
         }
-
         if (!this.policyRulesMap.has(action)) {
           return [];
         }
 
-        for (const policy of this.policyRulesMap.get(action)) {
-          if (record.sec && !policy.isSecurityBlockPolicy()) {
-            continue;
-          }
-          if (!record.sec && policy.isSecurityBlockPolicy()) {
-            continue;
-          }
+        if (record.type === "dns") {
+          recordDomain = record.dn;
+        } else {
+          recordIp = record.dh;
+          addr4 = new Address4(recordIp);
+          addr6 = new Address6(recordIp);
+          connHost = await conntrack.getConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, 'host')
+        }
 
-          const needToMatchDomainIpset = (action === "allow" || !policy.dnsmasq_only) && policy.type == "dns";
+
+        for (const policy of this.policyRulesMap.get(action)) {
+          if (record.sec ^ policy.isSecurityBlockPolicy()) {
+            continue;
+          }
 
           const target = policy.target;
 
-          // domain match
-          if (recordDomain && this.matchWildcardDomain(recordDomain, target)) {
-            return [policy.pid];
+          switch (policy.type) {
+            case 'dns':
+            case 'domain':
+              if (recordDomain && this.matchWildcardDomain(recordDomain, target)
+                || record.af && this.matchWildcardDomain(Object.keys(record.af)[0], target)
+                || connHost && this.matchWildcardDomain(connHost, target))
+              {
+                return [policy.pid];
+              }
+              break
+            case 'ip':
+              if (recordIp && recordIp === target) {
+                return [policy.pid];
+              }
+              break
+            case 'net':
+              if (!recordIp) break
+              if (addr4.isValid()) {
+                const targetNet4 = new Address4(target);
+                if (targetNet4.isValid() && addr4.isInSubnet(targetNet4))
+                  return [policy.pid];
+              } else if (addr6.isValid()) {
+                const targetNet6 = new Address6(target);
+                if (targetNet6.isValid() && addr6.isInSubnet(targetNet6))
+                  return [policy.pid];
+              }
+              break
           }
 
-          if (recordIp) {
-            // exact ip match
-            if (recordIp === target) {
-              return [policy.pid];
-            }
-            // ip subnet match
-            const addr4 = new Address4(recordIp);
-            const targetNet4 = new Address4(target);
-            if (addr4.isValid() && targetNet4.isValid() && addr4.isInSubnet(targetNet4)) {
-              return [policy.pid];
-            }
-            const addr6 = new Address6(recordIp);
-            const targetNet6 = new Address6(target);
-            if (addr6.isValid() && targetNet6.isValid() && addr6.isInSubnet(targetNet6)) {
-              return [policy.pid];
-            }
-          }
-
-          // domain ipset match
+          const needToMatchDomainIpset = (action === "allow" || !policy.dnsmasq_only)
+            && ['dns', 'domain'].includes(policy.type) && record.type == 'ip';
           if (needToMatchDomainIpset) {
             for (const lookupSet of lookupSets) {
               log.debug(`Match ${recordIp} to domain ipset ${lookupSet}`);
@@ -317,19 +433,25 @@ class RuleStatsPlugin extends Sensor {
         return [];
 
       }
+      case "disturb":
       case "qos": {
         const downloadHandlerId = (record.qmark & qos.QOS_DOWNLOAD_MASK) >> 16;
         const uploadHandlerId = (record.qmark & qos.QOS_UPLOAD_MASK) >> 23;
         const downloadPolicyId = await qos.getPolicyForQosHandler(downloadHandlerId);
         const uploadPolicyId = await qos.getPolicyForQosHandler(uploadHandlerId);
-        const result = [];
+        let result = [];
         if (downloadPolicyId) {
           result.push(downloadPolicyId);
         }
         if (uploadPolicyId) {
           result.push(uploadPolicyId);
         }
+        // disturb rule may cause multiple policy ids, we need to remove duplicate
+        result = [...new Set(result)];
         return result;
+      }
+      default: {
+        return [];
       }
     }
   }
@@ -352,6 +474,7 @@ class RuleStat {
   constructor() {
     this.count = 0;
     this.lastHitTs = 0;
+    this.lastHitStatsTs = 0;
   }
 }
 

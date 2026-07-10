@@ -28,6 +28,12 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 const { getPreferredBName } = require('../util/util.js')
+const _ = require('lodash');
+const Constants = require('../net2/Constants.js');
+const TagManager = require('../net2/TagManager.js');
+const delay = require('../util/util.js').delay;
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
 
 // const PM2 = require('../alarm/PolicyManager2.js');
 // const pm2 = new PM2();
@@ -100,13 +106,46 @@ class NewDeviceTagSensor extends Sensor {
         networkPolicy.key = networkProfile._getPolicyKey()
       }
 
-      const policy = networkPolicy.state && networkPolicy || systemPolicy.state && systemPolicy || null
+      let policy = networkPolicy.state && networkPolicy || systemPolicy.state && systemPolicy || null
 
       log.debug(networkPolicy)
 
-      if (policy) {
-        await hostObj.setPolicyAsync('tags', [ policy.tag ])
-        log.info(`Added new device ${host.ipv4Addr} - ${host.mac} to group ${policy.tag} per ${policy.key}`)
+      const isFWAP = this.isFirewallaAP(hostObj);
+      let isQuarantine = 0
+
+      if (!isFWAP && policy) {
+        const ssidPSKTags = await TagManager.getPolicyTags("ssidPSK");  
+        if (policy) {
+          if (!_.isEmpty(ssidPSKTags))
+            // there is ssid/PSK group mapping configured, hold for a while and see if the device is already assigned to another group.
+            // SSID STA status is updated once every 2 seconds in fwapc in the first 10 minutes after a wireless STA is connected. So, 10 seconds should be enough.
+            await delay(10000);
+          const tags = await hostObj.getTags();
+          if (!_.isEmpty(tags)) {
+            log.warn(`Device ${mac} is already added to another group, new device tag will not be enforced`, tags);
+            policy = null;
+          } else {
+            const tagCandidate = await hostTool.getWirelessDeviceTagCandidate(mac);
+            if (!_.isEmpty(tagCandidate)) {
+              if (tagCandidate !== "null") {
+                log.warn(`Device ${mac} should be added to group ${tagCandidate}, new device tag will not be enforced`);
+                policy = null;
+                await hostObj.setPolicyAsync('tags', [tagCandidate]);
+              }
+              // delete cached tag uid candidate from redis immediately after it is used, in case the device is deleted and discovered as a new device again, new candidate will be regenerated
+              await hostTool.deleteWirelessDeviceTagCandidate(mac);
+            }
+          }
+          // check again and see if the new device needs to be put into quarantine group
+          if (policy) {
+            await hostObj.setPolicyAsync('tags', [policy.tag])
+            log.info(`Added new device ${host.ipv4Addr} - ${host.mac} to group ${policy.tag} per ${policy.key}`)
+            const tagExists = await TagManager.tagUidExists(policy.tag);
+            if (tagExists) {
+              isQuarantine = 1
+            }
+          }
+        }
       }
       if (fc.isFeatureOn(ALARM_FEATURE_KEY)) {
         const name = getPreferredBName(host) || "Unknown"
@@ -119,8 +158,10 @@ class NewDeviceTagSensor extends Sensor {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": policy && [ policy.tag ].map(String) || []
+            "p.quarantine": isQuarantine
           });
+        if (!isFWAP && policy && [policy.tag].map(String))
+          alarm["p.tag.ids"] = [policy.tag].map(String);
         am2.enqueueAlarm(alarm);
       }
     } catch(err) {
@@ -130,6 +171,15 @@ class NewDeviceTagSensor extends Sensor {
 
   enqueueEvent(event) {
     this.queue.push(event)
+  }
+
+  isFirewallaAP(hostObj) {
+    const mac = _.get(hostObj, ["o", "mac"], "").toUpperCase();
+
+    if (mac.startsWith(Constants.FW_AP_MAC_PREFIX) || mac.startsWith(Constants.FW_AP_CEILING_MAC_PREFIX))
+      return true;
+    
+    return false;
   }
 
   run() {

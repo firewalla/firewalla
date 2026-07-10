@@ -155,7 +155,7 @@ class OCVPNClient extends VPNClient {
             if (cidr !== "::/0")
               results.push(cidr);
           } else {
-            log.error(`Failed to parse cidr subnet ${subnet} for profile ${this.profileId}`, err.message);
+            log.error(`Failed to parse cidr subnet ${subnet} for profile ${this.profileId}`);
           }
         }
       }

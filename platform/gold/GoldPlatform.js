@@ -1,4 +1,4 @@
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,7 +20,6 @@ const f = require('../../net2/Firewalla.js')
 const exec = require('child-process-promise').exec;
 const fs = require('fs').promises; // available after Node 10
 const log = require('../../net2/logger.js')(__filename);
-const ipset = require('../../net2/Ipset.js');
 const { execSync } = require('child_process');
 
 class GoldPlatform extends Platform {
@@ -111,37 +110,6 @@ class GoldPlatform extends Platform {
     }
   }
 
-  async switchQoS(state, qdisc) {
-    if (state == false) {
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
-        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
-        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-    } else {
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
-        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
-        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-    }
-    const supported = await exec(`modinfo sch_${qdisc}`).then(() => true).catch((err) => false);
-    if (!supported) {
-      log.error(`qdisc ${qdisc} is not supported`);
-      return;
-    }
-    // replace the default tc filter
-    const QoS = require('../../control/QoS.js');
-    await exec (`sudo tc filter replace dev ifb0 parent 1: handle 800::0x1 prio 1 u32 match mark 0x800000 0x${QoS.QOS_UPLOAD_MASK.toString(16)} flowid 1:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
-      log.error(`Failed to update tc filter on ifb0`, err.message);
-    });
-    await exec (`sudo tc filter replace dev ifb1 parent 1: handle 800::0x1 prio 1 u32 match mark 0x10000 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)} flowid 1:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
-      log.error(`Failed to update tc filter on ifb1`, err.message);
-    });
-  }
-
   getSubnetCapacity() {
     return 18;
   }
@@ -176,6 +144,10 @@ class GoldPlatform extends Platform {
     return 3000;
   }
 
+  getExceptionCapacity() {
+    return 3000;
+  }
+
   getDHCPCapacity() {
     return false
   }
@@ -185,6 +157,10 @@ class GoldPlatform extends Platform {
   }
 
   isWireguardSupported() {
+    return true;
+  }
+
+  isAmneziaWgSupported() {
     return true;
   }
 
@@ -227,6 +203,14 @@ class GoldPlatform extends Platform {
     return 1;
   }
 
+  getDNSFlowRetentionTimeMultiplier() {
+    return 24;
+  }
+
+  getDNSFlowRetentionCountMultiplier() {
+    return 10;
+  }
+
   getCompresseCountMultiplier(){
     return 1;
   }
@@ -254,34 +238,6 @@ class GoldPlatform extends Platform {
       hits: 72,
       stat: '3d'
     }]
-  }
-
-  async installTLSModule() {
-    const installed = await this.isTLSModuleInstalled();
-    if (installed) return;
-    let TLSmodulePathPrefix = null;
-    if (this.isUbuntu20()) {
-      TLSmodulePathPrefix = __dirname+"/files/TLS/u20";
-    } else if (this.isUbuntu22()) {
-      TLSmodulePathPrefix = __dirname+"/files/TLS/u22";
-    } else {
-      TLSmodulePathPrefix = __dirname+"/files/TLS/u18";
-    }
-    await exec(`sudo insmod ${TLSmodulePathPrefix}/xt_tls.ko max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`);
-    await exec(`sudo install -D -v -m 644 ${TLSmodulePathPrefix}/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables`);
-  }
-
-  async isTLSModuleInstalled() {
-    if (this.tlsInstalled) return true;
-    const cmdResult = await exec(`lsmod| grep xt_tls| awk '{print $1}'`);
-    const results = cmdResult.stdout.toString().trim().split('\n');
-    for(const result of results) {
-      if (result == 'xt_tls') {
-        this.tlsInstalled = true;
-        break;
-      }
-    }
-    return this.tlsInstalled;
   }
 
   isTLSBlockSupport() {
@@ -317,19 +273,21 @@ class GoldPlatform extends Platform {
     return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
   }
 
-  async reloadActMirredKernelModule() {
-    log.info("Reloading act_mirred.ko...");
-    if (this.isUbuntu22()) {
-      try {
-        const loaded = await exec(`sudo lsmod | grep act_mirred`).then(result => true).catch(err => false);
-        if (loaded)
-          await exec(`sudo rmmod act_mirred`);
-        await exec(`sudo insmod ${__dirname}/files/$(uname -r)/act_mirred.ko`);
-      } catch (err) {
-        log.error("Failed to unload act_mirred, err:", err.message);
-      }
+  isDNSFlowSupported() { return true }
+
+  async isSuricataFromAssetsSupported() {
+    try {
+      // 6.5 kernel image has built-in suricata directory, but cannot run on gold platform due to unsupported instructions
+      const kernelVersion = await exec("uname -r").then(result => result.stdout.trim());
+      return kernelVersion === "6.5.0-25-generic";
+    } catch(err) {
+      log.error("Failed to get kernel version, err:", err);
+      return false;
     }
+    return false;
   }
+
+
 }
 
 module.exports = GoldPlatform;

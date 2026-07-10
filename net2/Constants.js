@@ -1,4 +1,4 @@
-/*    Copyright 2020-2024 Firewalla Inc.
+/*    Copyright 2020-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,6 +19,7 @@
 module.exports = {
   NS_VPN_PROFILE: "vpn_profile",
   NS_WG_PEER: "wg_peer",
+  NS_AMNEZIAWG_PEER: "awg_peer",
   NS_VIP_PROFILE: "vip",
   NS_INTERFACE: "if",
   RULE_SEQ_HI: 1,
@@ -30,9 +31,15 @@ module.exports = {
 
   VPN_TYPE_OVPN: "ovpn",
   VPN_TYPE_WG: "wg",
+  VPN_TYPE_AMNEZIAWG: "awg",
+
+  INTF_AP_CTRL: "wg_ap",
+  INTF_PCAP_TAP: "ifb_pcap_tap",
 
   TRUST_IP_SET: "trust:ip",
   TRUST_DOMAIN_SET: "trust:domain",
+
+  PORT_DNS_TEST_SRC: 8855,
 
   REDIS_KEY_EID_REVOKE_SET: "sys:ept:members:revoked",
   REDIS_KEY_GROUP_NAME: "groupName",
@@ -44,19 +51,49 @@ module.exports = {
   REDIS_KEY_ETH_INFO: "sys:ethInfo",
   REDIS_KEY_APP_TIME_USAGE_APPS: "app_time_usage_apps",
   REDIS_KEY_APP_TIME_USAGE_CATEGORY: "app_time_usage_category",
+  REDIS_KEY_RUN_REBOOT: "run:reboot",
+  REDIS_KEY_POLICY_ENFORCE_SPENT: 'policy:enforce:spend',
   REDIS_KEY_POLICY_STATE: 'policy:state',
   REDIS_KEY_EXT_SCAN_RESULT: "sys:scan:external",
   REDIS_KEY_WEAK_PWD_RESULT: "sys:scan:weak_password",
   REDIS_KEY_NSE_RESULT: "sys:scan:nse",
   REDIS_KEY_NTP_SERVER_STATUS: "sys:ntp:status", // updated only when ntp_redirect is enabled
   REDIS_KEY_VPN_WG_PEER: 'vpn:wg:peer:', // vpn:wg:peer:{intf}:{pubkey}
+  REDIS_KEY_VPN_AMNEZIAWG_PEER: 'vpn:awg:peer:', // vpn:awg:peer:{intf}:{pubkey}
   REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG: "app_time_usage_cloud_config",
+  REDIS_KEY_APP_TIME_USAGE_CONFIG: "app_time_usage_config",
+  REDIS_KEY_INTERNET_TIME_USAGE_CONFIG: "internet_time_usage_config",
+  REDIS_KEY_HISTORY_MSG_PREFIX: "_hx:msg:",
+  REDIS_KEY_ALARM_CACHED: "_alarm:cached", // 0 to disable alarm cache, default on
+  REDIS_KEY_PLUGIN_RUNENV: '_plugin:runenv',
+  REDIS_KEY_HOST_ACTIVE: 'host:active:mac',
+  REDIS_KEY_HOST_PINNED: 'host:pinned:mac',
+  REDIS_KEY_HOST_DHCPCONF: 'host:dhcpconf:mac',
+  REDIS_KEY_WIRELESS_TAG_CANDIDATE: "wireless_tag_candidate:", // wireless_tag_candidate:${mac}
+  REDIS_KEY_POLICY_DISTURB_CLOUD_CONFIG: "policy_disturb_cloud_config",
+  REDIS_KEY_POLICY_DISTURB_CONFIG: "policy_disturb_config",
+  REDIS_KEY_NOISE_DOMAIN_CLOUD_CONFIG: "noise_domain_cloud_config",
+  REDIS_KEY_NOISE_DOMAIN_CONFIG: "noise_domain",
+  REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG: "flow_signature_cloud_config",
+  REDIS_KEY_FLOW_SIGNATURE_CONFIG: "flow_signature_config",
+  REDIS_KEY_MSP_DATA: "ext.guardian.data",
+  REDIS_KEY_DATA_PLAN_SETTINGS: "sys:data:plan",
+  REDIS_KEY_MSP_SYNC_OPS: "msp_sync_ops",
+
+  REDIS_CHANNEL_FLOW_BLOCK: "flow:block",
 
   REDIS_HKEY_NSE_DHCP: "dhcp",
   REDIS_HKEY_CONN_OINTF: "oIntf",
   REDIS_HKEY_CONN_HOST: "host",
   REDIS_HKEY_CONN_APID: "apid", // allow rule id
   REDIS_HKEY_CONN_RPID: "rpid", // route rule id
+  REDIS_HKEY_CONN_DPID: "dpid", // disturb rule id
+
+  NO_LIMIT_HIGH_PRIO_CLASS_ID: 0x1001,
+  NO_LIMIT_REG_PRIO_CLASS_ID: 0x1002,
+  NO_LIMIT_LOW_PRIO_CLASS_ID: 0x1003,
+
+  REDIS_KEY_NTP_OFF_SET: "ntp_off_set",
 
   ST_INIT: 'init',
   ST_PENDING: 'pending',
@@ -65,7 +102,14 @@ module.exports = {
   ST_IGNORE: 'ignore',
   ST_TIMEOUT: 'timeout',
 
+  FW_OUI: "20:6D:31",
+  FW_AP_MAC_PREFIX: "20:6D:31:6",
+  FW_AP_CEILING_MAC_PREFIX: "20:6D:31:7",
+  FW_AP_DEFAULT_DHCP_HOSTNAME: "FirewallaAP",
+  VPN_ROUTE_MARK_KEY_PREFIX: "fwmark:vpn",
+
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
+  NOTIF_CATEGORY_TIME_LIMITS: "com.firewalla.category.time_limits",
 
   STATE_EVENT_NIC_SPEED: "nic_speed",
 
@@ -81,9 +125,11 @@ module.exports = {
   TAG_TYPE_DEVICE: "device",
   TAG_TYPE_USER: "user",
   TAG_TYPE_GROUP: "group",
+  TAG_TYPE_SSID: "ssid",
 
   TAG_TYPE_MAP: {
     device: {
+      redisIndexKey: "tag:device:active",
       redisKeyPrefix: "deviceTag:uid:",
       initDataKey: "deviceTags",
       policyKey: "deviceTags",
@@ -94,6 +140,7 @@ module.exports = {
       needAppTimeInInitData: false,
     },
     user: {
+      redisIndexKey: "tag:user:active",
       redisKeyPrefix: "userTag:uid:",
       initDataKey: "userTags",
       policyKey: "userTags",
@@ -104,6 +151,7 @@ module.exports = {
       needAppTimeInInitData: true,
     },
     group: {
+      redisIndexKey: "tag:group:active",
       redisKeyPrefix: "tag:uid:",
       initDataKey: "tags",
       policyKey: "tags",
@@ -112,10 +160,44 @@ module.exports = {
       alarmNameKey: "p.tag.names",
       ruleTagPrefix: "tag:",
       needAppTimeInInitData: false
+    },
+    ssid: {
+      redisIndexKey: "tag:ssid:active",
+      redisKeyPrefix: "ssidTag:uid:",
+      initDataKey: "ssidTags",
+      policyKey: "ssidTags",
+      flowKey: "ssidTags",
+      alarmIdKey: "p.ssidtag.ids",
+      alarmNameKey: "p.ssidtag.names",
+      ruleTagPrefix: "ssidTag:",
+      needAppTimeInInitData: false
     }
   },
 
   IPTABLES_LOG_PREFIX_AUDIT: '[FW_ADT]',
 
-  HOST_MAC_KEY_EXPIRE_SECS: 86400 * 365,
+  FEATURE_AUDIT_LOG: "acl_audit",
+  FEATURE_LOCAL_AUDIT_LOG: "local_audit",
+  FEATURE_LOCAL_FLOW: "local_flow",
+  FEATURE_VPN_DISCONNECT: "vpn_disconnect",
+  FEATURE_VPN_RESTORE: "vpn_restore",
+  FEATURE_QUIC_LOG: "quic_log_reader",
+  
+  // all features starting with msp_ will be automatically disabled when box has left msp
+  FEATURE_MSP_SYNC_OPS: "msp_sync_ops",
+
+  POLICY_KEY_ISOLATION: "isolation",
+  POLICY_KEY_SSID_PSK: "ssidPSK",
+  POLICY_KEY_WIFI_AUTO_GROUP: "wifiAutoGroup",
+
+  QOS_MODE_ADAPTIVE: "adaptive",
+  QOS_MAX_BANDWIDTH_MBPS: 10240, // 10Gbps
+
+  LOG_PREFIX_QUIC: '[FW_QUIC]:',
+
+  POLICY_EXTRA_TIME_LIMIT_MODE_AUTO: "auto",
+  POLICY_EXTRA_TIME_LIMIT_MODE_OFF: "off",
+  POLICY_EXTRA_TIME_LIMIT_MODE_MANUAL: "manual",
+
+  GLOBAL_ALLOW_DOMAIN_RULE_HIT: -2,
 };

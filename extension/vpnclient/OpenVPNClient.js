@@ -28,6 +28,8 @@ Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const iptool = require('ip');
 const crypto = require('crypto');
+const Address6 = require('ip-address').Address6;
+const sysManager = require('../../net2/SysManager');
 
 const SERVICE_NAME = "openvpn_client";
 
@@ -48,6 +50,15 @@ class OpenVPNClient extends VPNClient {
     const ip4File = this._getIP4FilePath();
     const ips = await fs.readFileAsync(ip4File, "utf8").then((content) => content.trim().split('\n')).catch((err) => {
       log.error(`Failed to read IPv4 address file of vpn ${this.profileId}`, err.message);
+      return null;
+    });
+    return ips;
+  }
+
+  async getVpnIP6s() {
+    const ip6File = this._getIP6FilePath();
+    const ips = await fs.readFileAsync(ip6File, "utf8").then((content) => content.trim().split('\n')).catch((err) => {
+      log.error(`Failed to read IPv6 address file of vpn ${this.profileId}`, err.message);
       return null;
     });
     return ips;
@@ -81,16 +92,37 @@ class OpenVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.push_options`;
   }
 
-  _getGatewayFilePath() {
-    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.gateway`;
+  _getGatewayFilePath(ipFamily=4) {
+    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.gateway${ipFamily === 6 ? '6' : ''}`;
   }
 
-  _getSubnetFilePath() {
-    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.subnet`;
+  _getSubnetFilePath(ipFamily=4) {
+    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.subnet${ipFamily === 6 ? '6' : ''}`;
+  }
+
+  _getBypassSubnetFilePath(ipFamily=4) {
+    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.subnet${ipFamily === 6 ? '6' : ''}_bypass`;
+  }
+
+  _getLocalIPFilePath(ipFamily=4) {
+    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.ip${ipFamily === 6 ? '6' : '4'}`;
   }
 
   _getIP4FilePath() {
-    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.ip4`;
+    return this._getLocalIPFilePath(4);
+  }
+
+  _getIP6FilePath() {
+    return this._getLocalIPFilePath(6);
+  }
+
+  async _getRemoteIP6() {
+    const gw6File = this._getGatewayFilePath(6);
+    const gw6 = await fs.readFileAsync(gw6File, "utf8").then((content) => content.trim().split('\n')).catch((err) => {
+      log.error(`Failed to read Gateway6 address file of vpn ${this.profileId}`, err.message);
+      return null;
+    });
+    return gw6;
   }
 
   async _cleanupLogFiles() {
@@ -262,7 +294,15 @@ class OpenVPNClient extends VPNClient {
     if (!profileId)
       throw new Error("profileId is not set");
     await this._generateRuntimeProfile();
-    let cmd = util.format("sudo systemctl start \"%s@%s\"", SERVICE_NAME, this.profileId);
+    let cmd;
+    if (this.isFirstLaunch) {
+      //Use `restart` to force the OpenVPN client to reconnect to the server, 
+      //thus enabling it to fetch the new configuration from the server again after an upgrade.
+      log.debug("first launch using restart instead of start.");
+      cmd = util.format("sudo systemctl restart \"%s@%s\"", SERVICE_NAME, this.profileId);
+    } else {
+      cmd = util.format("sudo systemctl start \"%s@%s\"", SERVICE_NAME, this.profileId);
+    }
     await exec(cmd);
   }
 
@@ -283,7 +323,8 @@ class OpenVPNClient extends VPNClient {
     const user = value.user;
     const pass = value.pass;
     if (!content) {
-      throw new Error("'content' should be specidied");
+      log.error("'content' should be specified");
+      return;
     }
     if (content.match(/^auth-user-pass\s*/gm)) {
       // username password is required for this profile
@@ -301,6 +342,17 @@ class OpenVPNClient extends VPNClient {
       const userPassPath = this._getUserPassPath();
       await fs.writeFileAsync(userPassPath, `${user}\n${pass}`, 'utf8');
     }
+  }
+
+  isIpv6RouteEverything(subnet) {
+    // check subnet prefix length, if it is less than or equal to 8, it is route everything
+    const [network, mask] = subnet.split("/", 2);
+    if (!network || !mask)
+      return false;
+    const prefix = parseInt(mask);
+    if (prefix <= 8 && prefix >= 0)
+      return true;
+    return false;
   }
 
   async getRoutedSubnets() {
@@ -325,6 +377,74 @@ class OpenVPNClient extends VPNClient {
         } catch (err) {
           log.error(`Failed to parse cidr subnet ${subnet} for profile ${this.profileId}`, err.message);
         }
+      }
+    }
+
+    const subnet6s = await fs.readFileAsync(this._getSubnetFilePath(6), "utf8").then((content) => content.trim().split("\n")).catch((err) => {
+      log.error(`Failed to read IPv6 subnet file of vpn ${this.profileId}`, err.message);
+      return null;
+    });
+    log.info("subnet6s:", subnet6s);
+
+    if (subnet6s) {
+      for (const subnet of subnet6s) {
+        // avoid route everything
+        if (this.isIpv6RouteEverything(subnet))
+          continue;
+        const [network, mask] = subnet.split("/", 2);
+        if (!network || !mask)
+          continue;
+        try {
+          const addr = new Address6(network);
+          if (addr.isValid()) {
+            const prefix = parseInt(mask);
+            if (prefix >= 0 && prefix <= 128) {
+              results.push(`${addr.correctForm()}/${prefix}`);
+            }
+          }
+        } catch (err) {
+          log.error(`Failed to parse cidr subnet ${subnet} for profile ${this.profileId}`, err.message);
+        }
+      }
+    }
+
+    return results;
+  }
+
+  async getBypassSubnets() {
+    const results = [];
+    // IPv4 bypass subnets (xx.xx.xx.xx/255.255.255.0 format)
+    const subnets = await fs.readFileAsync(this._getBypassSubnetFilePath(), "utf8")
+      .then((content) => content.trim().split("\n"))
+      .catch(() => []);
+    for (const subnet of subnets) {
+      const [network, mask] = subnet.split("/", 2);
+      if (!network || !mask)
+        continue;
+      try {
+        const ipSubnet = iptool.subnet(network, mask);
+        results.push(`${ipSubnet.networkAddress}/${ipSubnet.subnetMaskLength}`);
+      } catch (err) {
+        log.error(`Failed to parse bypass cidr subnet ${subnet} for profile ${this.profileId}`, err.message);
+      }
+    }
+    // IPv6 bypass subnets (CIDR format)
+    const subnet6s = await fs.readFileAsync(this._getBypassSubnetFilePath(6), "utf8")
+      .then((content) => content.trim().split("\n"))
+      .catch(() => []);
+    for (const subnet of subnet6s) {
+      const [network, mask] = subnet.split("/", 2);
+      if (!network || !mask)
+        continue;
+      try {
+        const addr = new Address6(network);
+        if (addr.isValid()) {
+          const prefix = parseInt(mask);
+          if (prefix >= 0 && prefix <= 128)
+            results.push(`${addr.correctForm()}/${prefix}`);
+        }
+      } catch (err) {
+        log.error(`Failed to parse bypass IPv6 subnet ${subnet} for profile ${this.profileId}`, err.message);
       }
     }
     return results;
@@ -358,7 +478,12 @@ class OpenVPNClient extends VPNClient {
 
   async destroy() {
     await super.destroy();
-    const filesToDelete = [this._getProfilePath(), this._getRuntimeProfilePath(), this._getUserPassPath(), this._getPasswordPath(), this._getGatewayFilePath(), this._getPushOptionsPath(), this._getSubnetFilePath(), this._getIP4FilePath()];
+    const filesToDelete = [
+      this._getProfilePath(), this._getRuntimeProfilePath(), this._getUserPassPath(), this._getPasswordPath(), 
+      this._getGatewayFilePath(), this._getPushOptionsPath(), this._getSubnetFilePath(), this._getIP4FilePath(),
+      this._getGatewayFilePath(6), this._getSubnetFilePath(6), this._getIP6FilePath(),
+      this._getBypassSubnetFilePath(), this._getBypassSubnetFilePath(6)
+    ];
     for (const file of filesToDelete)
       await fs.unlinkAsync(file).catch((err) => {});
     await this._cleanupLogFiles();
@@ -437,6 +562,7 @@ class OpenVPNClient extends VPNClient {
       endpoints.push({ip: result[0], port: result[1]});
     return endpoints;
   }
+
 }
 
 module.exports = OpenVPNClient;
