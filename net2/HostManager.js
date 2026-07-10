@@ -125,6 +125,7 @@ const Monitorable = require('./Monitorable.js')
 const AsyncLock = require('../vendor_lib/async-lock');
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
 const NetworkProfile = require('./NetworkProfile.js');
+const KernelCrashMonitor = require('./KernelCrashMonitor.js');
 const lock = new AsyncLock();
 const blockControl = require('../control/BlockControl.js');
 
@@ -1690,6 +1691,7 @@ module.exports = class HostManager extends Monitorable {
       this.appConfsForInit(json),
       this.resourcesForInit(json),
       this.extraTimeRequestsForInit(json),
+      this.kernelCrashInfoForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
 
@@ -1773,6 +1775,10 @@ module.exports = class HostManager extends Monitorable {
     const noForward = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD);
     json.localDomainNoForward = noForward && JSON.parse(noForward) || false;
     json.cpuProfile = await this.getCpuProfile();
+  }
+
+  async kernelCrashInfoForInit(json) {
+    json.kernelCrashInfo = await KernelCrashMonitor.getCrashInfo();
   }
 
   getHostsFast() {
