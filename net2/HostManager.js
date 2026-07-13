@@ -1391,8 +1391,16 @@ module.exports = class HostManager extends Monitorable {
 
       if(mm && mm.length > 0) {
         const names = await rclient.hgetallAsync("sys:ept:memberNames")
+        const emails = await rclient.hgetallAsync(Constants.REDIS_KEY_EPT_MEMBER_EMAILS)
         const lastVisits = await rclient.hgetallAsync("sys:ept:member:lastvisit")
         const history = await rclient.hgetallAsync("sys:ept:members:history")
+
+        if(emails) {
+          mm.forEach((m) => {
+            if (m.eid && emails[m.eid])
+              m.name = emails[m.eid]
+          })
+        }
 
         if(names) {
           mm.forEach((m) => {

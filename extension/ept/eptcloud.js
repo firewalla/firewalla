@@ -51,8 +51,9 @@ class EptCloudExtension {
     //clear members info which is not in the group
     const names = (await rclient.hgetallAsync("sys:ept:memberNames")) || {};
     const lastVisits = (await rclient.hgetallAsync("sys:ept:member:lastvisit")) || {};
+    const emails = (await rclient.hgetallAsync(Constants.REDIS_KEY_EPT_MEMBER_EMAILS)) || {};
 
-    const allEids = new Set([...Object.keys(names), ...Object.keys(lastVisits)])
+    const allEids = new Set([...Object.keys(names), ...Object.keys(lastVisits), ...Object.keys(emails)])
     const clientsEidList = clients.map(client => client.eid);
     const eidsToDelete = Array.from(allEids).filter(eid => !clientsEidList.includes(eid));
 
@@ -60,6 +61,7 @@ class EptCloudExtension {
       log.info(`Deleting unpaired eid ${eid} from group ${gid}`);
       await rclient.hdelAsync("sys:ept:memberNames", eid);
       await rclient.hdelAsync("sys:ept:member:lastvisit", eid);
+      await rclient.hdelAsync(Constants.REDIS_KEY_EPT_MEMBER_EMAILS, eid);
 
       // sync op to msp
       const sl = require('../../sensor/APISensorLoader.js');
