@@ -730,6 +730,17 @@ class BroDetect {
     return this.isMonitoring(intf, monitorable)
   }
 
+  // Decide whether a same-network local flow should be dropped.
+  // Different stpPort => router is the common ancestor: keep zeek's own flow (bridge=false),
+  // drop the AP/switch duplicate (bridge=true).
+  // Same or unknown stpPort => switch/AP is the common ancestor: keep only the bridge flow,
+  // drop zeek's copy (current behavior).
+  _dropLocalSameNetworkFlow(bridge, srcStpPort, dstStpPort) {
+    if (srcStpPort && dstStpPort && srcStpPort !== dstStpPort)
+      return bridge;   // different physical port — only drop the bridge copy
+    return !bridge;    // same/unknown port — only drop the zeek (non-bridge) copy
+  }
+
   async validateConnData(obj) {
     const threshold = config.threshold;
     const iptcpRatio = threshold.IPTCPRatio || 10000;
@@ -985,6 +996,9 @@ class BroDetect {
           localMac = origMac;
           dstMac = respMac;
         }
+        // Switch ACL accounting has no initiator/responder concept; use 'lo' so
+        // these flows do not contribute to directional (in/out) sumflow buckets.
+        if (obj.switch) flowdir = 'lo'
         localFlow = true
       } else if (localOrig == true && localResp == false) {
         flowdir = "in";
@@ -1023,8 +1037,19 @@ class BroDetect {
       let intfInfo = sysManager.getInterfaceViaIP(lhost, fam);
       let dstIntfInfo = localFlow && sysManager.getInterfaceViaIP(dhost, fam);
       // do not process traffic between devices in the same network unless bridge flag is set (from fwap) or integrated AP is enabled (orange platform)
-      if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid && !bridge && !await platform.hasIntegratedAPAssets())
-        return;
+      // stpPort refinement: if both hosts have different stpPorts the router is the common ancestor —
+      // keep zeek's own flow and drop the AP bridge duplicate (see _dropLocalSameNetworkFlow).
+      // When stpPort is unknown for either host, defer to the authoritative gate below after host
+      // objects are fully resolved.
+      if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid && !await platform.hasIntegratedAPAssets()) {
+        const srcHost = hostManager.getHostFast(lhost, fam);
+        const dstHost = hostManager.getHostFast(dhost, fam);
+        const srcStpPort = srcHost && srcHost.getStpPort();
+        const dstStpPort = dstHost && dstHost.getStpPort();
+        // Only early-drop when both stpPorts are known; otherwise defer to the authoritative gate.
+        if (srcStpPort && dstStpPort && this._dropLocalSameNetworkFlow(bridge, srcStpPort, dstStpPort))
+          return;
+      }
       // ignore multicast IP
       try {
         // zeek has problem recognizeing multicast addresses as local, so direction could be wrong
@@ -1245,8 +1270,12 @@ class BroDetect {
             return;
           }
         }
-        if (!bridge && intfInfo.uuid == dstIntfInfo.uuid && !await platform.hasIntegratedAPAssets())
-          return
+        if (intfInfo.uuid == dstIntfInfo.uuid && !await platform.hasIntegratedAPAssets() && !isIdentityIntf && !isDstIdentityIntf) {
+          const srcStpPort = monitorable && monitorable.getStpPort && monitorable.getStpPort();
+          const dstStpPort = dstMonitorable && dstMonitorable.getStpPort && dstMonitorable.getStpPort();
+          if (this._dropLocalSameNetworkFlow(bridge, srcStpPort, dstStpPort))
+            return;
+        }
         if (obj.proto === "udp" && accounting.isBlockedDevice(dstMac)) {
           return
         }
@@ -1314,7 +1343,16 @@ class BroDetect {
 
       if (localFlow) {
         tmpspec.dmac = dstMac
-        tmpspec.dIntf = dstIntfInfo.uuid.substring(0, 8)
+        if (dstIntfInfo) tmpspec.dIntf = dstIntfInfo.uuid.substring(0, 8)
+        if (obj.switch) {
+          tmpspec.switch = true
+          // Reverse pass: swap ob/rb so this entry represents mac2's own perspective
+          // (mac2.ob = what mac2 sent = resp_bytes; mac2.rb = what mac2 received = orig_bytes).
+          if (reverseLocal) {
+            tmpspec.ob = Number(obj.resp_bytes)
+            tmpspec.rb = Number(obj.orig_bytes)
+          }
+        }
         if (dstRealLocal)
           tmpspec.drl = extractIP(dstRealLocal)
       } else {
@@ -1425,12 +1463,10 @@ class BroDetect {
       this.indicateNewFlowSpec(tmpspec);
 
       const traffic = [tmpspec.ob, tmpspec.rb]
-      if (tmpspec.fd == 'in') traffic.reverse()
+      if (tmpspec.fd == 'in' || tmpspec.fd == 'lo') traffic.reverse()
 
       const tuple = { download: traffic[0], upload: traffic[1] }
       if (localFlow) {
-        const tupleConn = {conn: tmpspec.ct}
-
         this.recordLocalTraffic({
           mac: localMac, upload: tuple.upload, download: tuple.download,
           intf: intfInfo && intfInfo.uuid,
@@ -1438,21 +1474,27 @@ class BroDetect {
           tags, dstTags
         })
 
-        this.recordTraffic(tupleConn, 'lo:intra:global')
-        this.recordTraffic(tupleConn, `lo:${flowdir}:${localMac}`)
+        // Switch accounting records represent aggregated bytes over an interval, not
+        // individual connections — skip the connection-count timeseries.
+        if (!obj.switch) {
+          const tupleConn = {conn: tmpspec.ct}
 
-        if (dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid) {
-          this.recordTraffic(tupleConn, 'lo:intra:intf:' + intfInfo.uuid)
-        } else {
-          this.recordTraffic(tupleConn, `lo:${flowdir}:intf:${intfInfo.uuid}`)
-        }
+          this.recordTraffic(tupleConn, 'lo:intra:global')
+          this.recordTraffic(tupleConn, `lo:${flowdir}:${localMac}`)
 
-        for (const key in tags) {
-          for (const tag of tags[key]) {
-            if (dstTags[key] && dstTags[key].includes(tag)) {
-              this.recordTraffic(tupleConn, 'lo:intra:tag:' + tag)
-            } else {
-              this.recordTraffic(tupleConn, `lo:${flowdir}:tag:${tag}`)
+          if (dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid) {
+            this.recordTraffic(tupleConn, 'lo:intra:intf:' + intfInfo.uuid)
+          } else {
+            this.recordTraffic(tupleConn, `lo:${flowdir}:intf:${intfInfo.uuid}`)
+          }
+
+          for (const key in tags) {
+            for (const tag of tags[key]) {
+              if (dstTags[key] && dstTags[key].includes(tag)) {
+                this.recordTraffic(tupleConn, 'lo:intra:tag:' + tag)
+              } else {
+                this.recordTraffic(tupleConn, `lo:${flowdir}:tag:${tag}`)
+              }
             }
           }
         }
@@ -1544,7 +1586,7 @@ class BroDetect {
         sem.emitLocalEvent({
           type: Message.MSG_FLOW_ENRICHED,
           suppressEventLogging: true,
-          flow: Object.assign({}, tmpspec, {intf: intfInfo.uuid, dIntf: dstIntfInfo.uuid}),
+          flow: Object.assign({}, tmpspec, {intf: intfInfo.uuid, dIntf: dstIntfInfo && dstIntfInfo.uuid}),
         });
       }
 

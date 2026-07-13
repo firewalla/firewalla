@@ -158,13 +158,6 @@ class FlowAggregationSensor extends Sensor {
       }
     });
 
-    sem.on(Message.MSG_FLOW_SWITCH_ACCOUNTING, (event) => {
-      if (event && event.flow) try {
-        this.processSwitchAccountingFlow(event.flow);
-      } catch (err) {
-        log.error(`Failed to process switch accounting flow`, event.flow, err.message);
-      }
-    });
   }
 
   async processEnrichedFlow(flow) {
@@ -178,7 +171,7 @@ class FlowAggregationSensor extends Sensor {
       if (local && dstTags)
         dTags.push(...(dstTags[config.flowKey] || []))
     }
-    if (!dp || !ip && !local || !mac || !_ts || (fd !== "in" && fd !== "out"))
+    if ((!dp && !local) || (!ip && !local) || !mac || !_ts || (fd !== "in" && fd !== "out" && fd !== "lo"))
       return;
     const tick = flowAggrTool.getIntervalTick(_ts, this.config.keySpan) + this.config.keySpan;
     const uidTickKeys = [];
@@ -200,7 +193,7 @@ class FlowAggregationSensor extends Sensor {
     // so top-flow queries can decode it instead of resolving intel:ip at read time
     const categoryCode = !local && flow.intel && flow.intel.category ?
       await intelTool.categoryToNumber(flow.intel.category) : undefined;
-    const key = `${mac}:${local ? dmac : ip}:${fd}:${dp}${domain ? `:${domain}` : ""}`;
+    const key = `${mac}:${local ? dmac : ip}:${fd}${dp ? `:${dp}` : ""}${domain ? `:${domain}` : ""}`;
     for (const uidTickKey of uidTickKeys) {
       if (!this.trafficCache[uidTickKey])
         this.trafficCache[uidTickKey] = {};
@@ -226,10 +219,12 @@ class FlowAggregationSensor extends Sensor {
             t.domain = domain;
         }
         // lagacy app only compatible with port number as string
-        if (fd === "out")
-          t.devicePort = [ String(dp) ];
-        else
-          t.port = [ String(dp) ];
+        if (dp) {
+          if (fd === "out")
+            t.devicePort = [ String(dp) ];
+          else
+            t.port = [ String(dp) ];
+        }
 
         this.trafficCache[uidTickKey][key] = t;
       }
@@ -375,54 +370,6 @@ class FlowAggregationSensor extends Sensor {
         break;
       }
       default:
-    }
-  }
-
-  processSwitchAccountingFlow(flow) {
-    const { mac, dstMac, upload, download, ts, intf, dIntf, tags, dstTags } = flow;
-    if (!mac || !dstMac || !ts || (!upload && !download)) return;
-
-    const tick = flowAggrTool.getIntervalTick(ts, this.config.keySpan) + this.config.keySpan;
-
-    const srcTagList = [];
-    const dstTagList = [];
-    for (const type of ['group', 'user']) {
-      const config = Constants.TAG_TYPE_MAP[type];
-      srcTagList.push(...(tags && tags[config.flowKey] || []));
-      dstTagList.push(...(dstTags && dstTags[config.flowKey] || []));
-    }
-
-    const uidTickKeys = [];
-    uidTickKeys.push(mac);
-    if (intf) uidTickKeys.push(`intf:${intf}`);
-    if (!_.isEmpty(srcTagList))
-      Array.prototype.push.apply(uidTickKeys, srcTagList.map(tag => `tag:${tag}`));
-    uidTickKeys.push('global');
-
-    // all switch accounting flows are local (MAC-to-MAC on the switch)
-    uidTickKeys.forEach((key, i) => uidTickKeys[i] = `${key}:local`);
-    uidTickKeys.forEach((key, i) => uidTickKeys[i] = `${key}@${tick}`);
-
-    const key = `${mac}:${dstMac}:switch`;
-    for (const uidTickKey of uidTickKeys) {
-      if (!this.trafficCache[uidTickKey])
-        this.trafficCache[uidTickKey] = {};
-
-      let t = this.trafficCache[uidTickKey][key];
-      if (!t) {
-        t = { device: mac, upload: 0, download: 0, dstMac };
-        if (uidTickKey.startsWith('intf:') && intf && intf === dIntf) {
-          t.intra = 1;
-        } else if (uidTickKey.startsWith('tag:')) {
-          const tagID = uidTickKey.split(':')[1];
-          if (dstTagList.includes(tagID)) t.intra = 1;
-        } else if (uidTickKey.startsWith('global')) {
-          t.intra = 1;
-        }
-        this.trafficCache[uidTickKey][key] = t;
-      }
-      if (upload) t.upload += upload;
-      if (download) t.download += download;
     }
   }
 

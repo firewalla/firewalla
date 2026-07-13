@@ -19,6 +19,7 @@ const path = require('path');
 const { exec, execFile } = require('child-process-promise');
 const _ = require('lodash');
 const fs = require('fs');
+const crypto = require('crypto');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const yaml = require('../../api/dist/lib/js-yaml.min.js');
@@ -32,6 +33,7 @@ const util = require('../../util/util.js');
 const { Rule } = require('../../net2/Iptables.js');
 const iptc = require('../../control/IptablesControl.js');
 const Ipset = require('../../net2/Ipset.js');
+const openssl = require('../../util/openssl.js');
 
 const dockerDir = `${f.getRuntimeInfoFolder()}/docker/freeradius`
 const configDir = `${f.getUserConfigFolder()}/freeradius`
@@ -71,6 +73,12 @@ class FreeRadius {
     } catch (err) {
       log.warn(`failed to prepare freeradius`, err.message);
     }
+  }
+
+  async getFreeRadiusDataForInit(options = {}) {
+    return {
+      certHash: await this.getCertsHash(false),
+    };
   }
 
   async _prepare(options = {}) {
@@ -189,6 +197,243 @@ class FreeRadius {
       return false;
     });
     return true;
+  }
+
+  async _getCertsFile(filePath) {
+    try {
+      const stats = await fs.statAsync(filePath);
+      if (stats.isFile()) {
+        return await fs.readFileAsync(filePath, 'utf8');
+      }
+      return null;
+    } catch (e) {
+      log.warn(`Failed to get certs file ${filePath},`, e.message);
+      return null;
+    }
+  }
+
+  async getCertsHash(default_only = false) {
+
+    let checkSum = "";
+    const certs = await this._getCerts(certsDir, true);
+    if (!certs || !certs.hash) {
+      log.warn("Failed to get default certs hash");
+      return null;
+    }
+    checkSum += certs.hash;
+
+    if (!default_only) {
+      const customCerts = await this._getCerts(`${configDir}/certs`, true);
+      if (customCerts && customCerts.hash) {
+        checkSum += ":" + customCerts.hash;
+      }
+    }
+
+    return checkSum;
+  }
+
+  async _getCerts(path = null, hash_only = false) {
+    const targetPath = path || certsDir;
+    if (!await fs.accessAsync(targetPath, fs.constants.F_OK).then(() => true).catch(() => false)) {
+      return null;
+    }
+    // keypass
+    const keypass = await this._getCertsFile(`${targetPath}/.keypass`);
+    const ca = await this._getCertsFile(`${targetPath}/ca.pem`);
+    const serverCA = await this._getCertsFile(`${targetPath}/server.pem`);
+    const serverKey = await this._getCertsFile(`${targetPath}/server.key`);
+
+    const hash = crypto.createHash('sha256');
+    for (const content of [keypass, ca, serverCA, serverKey]) {
+      const value = content == null ? '' : content;
+      hash.update(`${Buffer.byteLength(value)}:`);
+      hash.update(value);
+    }
+    const digest = hash.digest('hex');
+
+    const certs = {
+      hash: digest,
+    };
+    if (!hash_only) {
+      certs.keypass = keypass;
+      certs.ca = ca;
+      certs.serverCA = serverCA;
+      certs.serverKey = serverKey;
+    }
+    return certs;
+  }
+
+  async getCerts() {
+    await this.checkCertsPermission();
+    // default certs are required
+    const certs = await this._getCerts(certsDir).catch((e) => { return null });
+    if (!certs) {
+      return {
+        ok: false,
+        error: "Failed to get certs",
+      };
+    }
+    // custom certs are optional: absent (null) must not fail the export
+    const customCerts = await this._getCerts(`${configDir}/certs`).catch((e) => { return null });
+    return {
+      ok: true,
+      certs: certs,
+      customCerts: customCerts || null,
+    };
+  }
+
+  async _getLegacyKepass() {
+    const eid = await exec(`redis-cli hget sys:ept eid`).then(r => r.stdout.trim()).catch((err) => {
+      log.warn(`legacy keypass: failed to get seed,`, err.message);
+      return;
+    });
+
+    if (!eid || eid === '') {
+      log.warn(`legacy keypass: no eid found`);
+      return;
+    }
+
+    // Convert EID to a 8-character alphanumeric hash
+    const hash = await exec(`echo -n "${eid}" | sha256sum | xxd -r -p | base64 | tr -cd 'a-zA-Z0-9' | cut -c1-8`).then(r => r.stdout.trim()).catch((err) => {
+      log.error(`legacy keypass: failed to hash seed,`, err.message);
+      return null;
+    });
+
+    return hash;
+  }
+
+  async _verifyCerts(path = null) {
+    const targetPath = path || certsDir;
+
+    const certPath = `${targetPath}/server.pem`;
+    const keyPath = `${targetPath}/server.key`;
+    const caPath = `${targetPath}/ca.pem`;
+    const keypassFile = await this._getCertsFile(`${targetPath}/.keypass`).catch((err) => { return null });
+    const keypass = (keypassFile && keypassFile.trim()) || await this._getLegacyKepass().catch((err) => { return null }) || null;
+
+    const keyType = await openssl.getKeyType(keyPath, keypass).catch((err) => {
+      log.warn("Failed to get key type,", err.message);
+      return null;
+    });
+
+    if (keyType !== 'rsa' && keyType !== 'ec') {
+      log.warn(`Unsupported or invalid key type for ${keyPath}`);
+      return false;
+    }
+
+    const signedByCA = await openssl.isSignedByRootCA(caPath, certPath).catch((err) => {
+      log.warn("Failed to verify cert is signed by ca,", err.message);
+      return false;
+    });
+    if (!signedByCA) {
+      return false;
+    }
+
+    const keyMatchesCert = await openssl.isKeyMatchCert(certPath, keyPath, keyType, keypass).catch((err) => {
+      log.warn("Failed to verify key matches cert,", err.message);
+      return false;
+    });
+    if (!keyMatchesCert) {
+      log.warn(`Private key ${keyPath} does not match certificate ${certPath}`);
+      return false;
+    }
+    return true;
+  }
+
+  // copy to /tmp and move to target path if verified
+  async _saveCerts(certs, path = null) {
+    if (!certs || !_.isObject(certs)) {
+      return false;
+    }
+
+    log.info(`Start to save certs to path ${path}...`);
+
+    let tmpPath;
+    try {
+      tmpPath = await fs.mkdtempAsync('/tmp/radius_certs_');
+      if (certs.keypass) { await this.saveFile(`${tmpPath}/.keypass`, certs.keypass, true, 0o600); }
+      if (certs.ca) { await this.saveFile(`${tmpPath}/ca.pem`, certs.ca, true, 0o644); }
+      if (certs.serverCA) { await this.saveFile(`${tmpPath}/server.pem`, certs.serverCA, true, 0o644); }
+      if (certs.serverKey) { await this.saveFile(`${tmpPath}/server.key`, certs.serverKey, true, 0o600); }
+
+      const verified = await this._verifyCerts(tmpPath);
+      if (!verified) {
+        log.warn("Failed to verify certs, stop migrating certificates");
+        return false;
+      }
+
+      const targetPath = path || certsDir;
+      log.info(`Moving certs to target path ${targetPath}...`);
+
+      // ensure old stale files are deleted
+      await exec(`sudo find ${targetPath} -mindepth 1 -delete`).catch((err) => {
+        log.warn(`Failed to delete stale certs in ${targetPath},`, err.message);
+      });
+
+      // ensure target dir exists, then move all files from tmpPath into it
+      await fs.mkdirAsync(targetPath, { recursive: true }).catch(() => { });
+      const moved = await exec(`find ${tmpPath} -mindepth 1 -maxdepth 1 -exec mv -f {} ${targetPath}/ \\;`).then(() => true).catch((e) => {
+        log.warn("Failed to move certs to target path,", e.message);
+        return false;
+      });
+      if (!moved) {
+        log.warn(`Failed to move certs to ${targetPath}`);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      log.warn("Failed to save certs,", err.message);
+      return false;
+    } finally {
+      if (tmpPath) {
+        log.info("Removing temp directory...", tmpPath);
+        await exec(`rm -rf ${tmpPath}`).catch(() => { });
+      }
+    }
+  }
+
+  async saveCerts(data) {
+    if (!data || !_.isObject(data)) {
+      return {
+        ok: false,
+        error: "Invalid certs data",
+      };
+    }
+    if (!data.certs && !data.customCerts) {
+      return {
+        ok: false,
+        error: "No certs to save",
+      };
+    }
+
+    const msgs = [];
+    if (data.certs && _.isObject(data.certs)) {
+      log.info("Saving default certs...");
+      const result = await this._saveCerts(data.certs, certsDir).then(r => r).catch((e) => {
+        log.warn("Failed to migrate default certs", e.message);
+        return false;
+      });
+      if (!result) { msgs.push("Failed to save default certs"); }
+    }
+
+    if (data.customCerts && _.isObject(data.customCerts)) {
+      log.info("Saving custom certs...");
+      const result = await this._saveCerts(data.customCerts, `${f.getUserConfigFolder()}/freeradius/certs`).then(r => r).catch((e) => {
+        log.warn("Failed to migrate custom certs", e.message);
+        return false;
+      });
+      if (!result) { msgs.push("Failed to save custom certs"); }
+    } else {
+      // delete custom certs files
+      await exec(`sudo find ${f.getUserConfigFolder()}/freeradius/certs -mindepth 1 -delete`).catch((err) => {
+        log.warn(`Failed to delete custom certs files,`, err.message);
+      });
+    }
+
+    return {
+      ok: msgs.length == 0,
+      error: msgs.join(";"),
+    };
   }
 
   // fallback for old iamge
@@ -349,11 +594,13 @@ class FreeRadius {
     }
   }
 
-  async saveFile(filepath, content) {
+  // skip configDir check if force is true
+  async saveFile(filepath, content, force = false, mode = 0o644) {
     if (!filepath || typeof filepath !== 'string') {
       return { ok: false, error: "Invalid filepath: must be a non-empty string" };
     }
-    filepath = filepath.replace(/^\//, ''); // remove leading slash
+    if (!force)
+      filepath = filepath.replace(/^\//, ''); // treat user input as relative to configDir
 
     // Validate: only allow safe path characters
     if (!filepath || !/^[A-Za-z0-9_./-]+$/.test(filepath)) {
@@ -361,23 +608,25 @@ class FreeRadius {
     }
 
     // Prevent directory traversal: resolved path must stay within configDir
-    const resolvedPath = path.resolve(configDir, filepath);
-    if (!resolvedPath.startsWith(configDir + path.sep)) {
+    const resolvedPath = force ? path.resolve(filepath) : path.resolve(configDir, filepath);
+    if (!force && !resolvedPath.startsWith(configDir + path.sep)) {
       return { ok: false, error: "Invalid filepath: directory traversal not allowed" };
     }
 
     const baseFolder = path.dirname(resolvedPath);
 
-    // Ensure base configDir exists with proper permissions
-    await fs.mkdirAsync(configDir, { recursive: true }).catch((e) => {
-      log.warn(`Failed to create config directory ${configDir}`, e.message);
-    });
-    await fs.chmodAsync(configDir, 0o755).catch((e) => {
-      log.warn(`Failed to set permissions on ${configDir}`, e.message);
-    });
+    if (!force) {
+      // Ensure base configDir exists with proper permissions
+      await fs.mkdirAsync(configDir, { recursive: true }).catch((e) => {
+        log.warn(`Failed to create config directory ${configDir}`, e.message);
+      });
+      await fs.chmodAsync(configDir, 0o755).catch((e) => {
+        log.warn(`Failed to set permissions on ${configDir}`, e.message);
+      });
+    }
 
     // Create subdirectory if needed
-    if (baseFolder !== configDir) {
+    if (force || baseFolder !== configDir) {
       await fs.mkdirAsync(baseFolder, { recursive: true }).catch((e) => {
         log.warn(`Failed to create directory ${baseFolder}`, e.message);
       });
@@ -388,7 +637,7 @@ class FreeRadius {
 
     log.info(`Saving file to ${resolvedPath}...`);
     return await fs.writeFileAsync(resolvedPath, content, 'utf8').then(async () => {
-      await fs.chmodAsync(resolvedPath, 0o644).catch((e) => {
+      await fs.chmodAsync(resolvedPath, mode).catch((e) => {
         log.warn(`Failed to set permissions on ${resolvedPath}`, e.message);
       });
       log.info(`File ${resolvedPath} saved successfully.`);
@@ -820,7 +1069,6 @@ class FreeRadius {
   }
 
   async cleanupConfig(options = {}) {
-    // cleanup certificates
     log.info("Cleaning up freeradius certificates...");
     await exec(`sudo find ${certsDir} -mindepth 1 -maxdepth 1 -exec rm -rf {} +`).catch((e) => {
       log.warn("Failed to cleanup certificates,", e.message);
@@ -866,7 +1114,8 @@ class FreeRadius {
   // set proper permission for certificates
   async checkCertsPermission() {
     await exec(`sudo chown -R pi:pi ${certsDir}`).catch(() => { });
-    await exec(`sudo find ${certsDir} -maxdepth 2 -name "*.key" -exec chmod 640 {} +`).catch(() => { });
+    await exec(`sudo find ${certsDir} -maxdepth 2 -name "*.key" -exec chmod 600 {} +`).catch(() => { });
+    await exec(`sudo find ${certsDir} -maxdepth 2 -name ".keypass" -exec chmod 600 {} +`).catch(() => { });
     await exec(`sudo find ${certsDir} -maxdepth 2 -name "*.pem" -exec chmod 644 {} +`).catch(() => { });
   }
 

@@ -2011,7 +2011,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
           }
         };
       case "adblock":
-      // only enable dnsmasq for adblock strict mode.
+      // enable dnsmasq + tls for adblock strict mode.
       return {
         needOptimization: true,
 
@@ -2020,7 +2020,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
         useHitSetDefault: true,
         tls: {
-          enabled: false,
+          enabled: true,
           useHitSet: true
         },
         dnsmasq: {

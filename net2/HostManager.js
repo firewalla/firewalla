@@ -101,6 +101,7 @@ const dnsmasq = new Dnsmasq();
 
 const fs = require('fs');
 
+const freeradius = require("../extension/freeradius/freeradius.js");
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
@@ -122,6 +123,7 @@ const Monitorable = require('./Monitorable.js')
 const AsyncLock = require('../vendor_lib/async-lock');
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
 const NetworkProfile = require('./NetworkProfile.js');
+const KernelCrashMonitor = require('./KernelCrashMonitor.js');
 const lock = new AsyncLock();
 const blockControl = require('../control/BlockControl.js');
 
@@ -748,6 +750,11 @@ module.exports = class HostManager extends Monitorable {
     const initTs = await ruleStatsPlugin.getFeatureFirstEnabledTimestamp();
     extdata.ruleStats = { "initTs": initTs };
 
+    const adblockPlugin = await sensorLoader.initSingleSensor('AdblockPlugin');
+    if (adblockPlugin) {
+      extdata.adblockStats = await adblockPlugin.getAdblockStats();
+    }
+
     extdata.ntp = {
       localServerStatus: fc.isFeatureOn('ntp_redirect') ?
         Number(await rclient.getAsync(Constants.REDIS_KEY_NTP_SERVER_STATUS)) : null
@@ -887,6 +894,13 @@ module.exports = class HostManager extends Monitorable {
       }
     }
     json.nseScanResult = result;
+  }
+
+  async freeradiusForInit(json, options) {
+    const freeradiusData = await freeradius.getFreeRadiusDataForInit(options);
+    if (freeradiusData) {
+      json.freeradius = freeradiusData;
+    }
   }
 
   async hostsInfoForInit(json, options) {
@@ -1213,6 +1227,7 @@ module.exports = class HostManager extends Monitorable {
       this.pairingAssetsForInit(json),
       this.addMsp2CheckIn(json),
       this.basicDataForInit(json, {}),
+      this.kernelCrashInfoForInit(json),
     ]
 
     await Promise.all(requiredPromises);
@@ -1620,6 +1635,7 @@ module.exports = class HostManager extends Monitorable {
 
     let requiredPromises = [
       this.hostsInfoForInit(json, options),
+      this.freeradiusForInit(json, options),
       this.newLast24StatsForInit(json, null, options.tsMetrics, options),
       this.last60MinStatsForInit(json, null, options.tsMetrics, options),
       this.extensionDataForInit(json),
@@ -1757,6 +1773,10 @@ module.exports = class HostManager extends Monitorable {
     const noForward = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD);
     json.localDomainNoForward = noForward && JSON.parse(noForward) || false;
     json.cpuProfile = await this.getCpuProfile();
+  }
+
+  async kernelCrashInfoForInit(json) {
+    json.kernelCrashInfo = await KernelCrashMonitor.getCrashInfo();
   }
 
   getHostsFast() {

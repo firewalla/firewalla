@@ -414,8 +414,37 @@ class netBot extends ControllerBot {
     this.messageBus.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
   }
 
-  async _precedeRecord(msgid, data) {
-    await extMgr._precedeRecord(msgid, data);
+  async _precedeNetworkConfig(msgid, orig, value) {
+    try {
+      const data = {};
+      if (value !== undefined && _.isObject(orig) && _.isObject(value)) {
+        // keys whose values differ between orig and value (union of both directions)
+        const diffKeys = difference(value, orig);
+        // record both the original and new value for each changed key
+        data.origin = _.pick(orig, diffKeys);
+        data.diff = _.pick(value, diffKeys);
+      } else {
+        data.origin = orig;
+      }
+      await extMgr._precedeRecord(msgid, data);
+    } catch (err) {
+      log.debug("Failed to record preceding network config for", msgid, err.message);
+    }
+  }
+
+  async _precedeRecord(msgid, orig, value) {
+    try {
+      const data = {};
+      if (value !== undefined && _.isObject(orig) && _.isObject(value)) {
+        data.origin = _.pick(orig, Object.keys(value));
+        data.diff = difference(value, data.origin);
+      } else {
+        data.origin = orig;
+      }
+      await extMgr._precedeRecord(msgid, data);
+    } catch (err) {
+      log.debug("Failed to record preceding state for", msgid, err.message);
+    }
   }
 
   setupRateLimit() {
@@ -891,7 +920,7 @@ class netBot extends ControllerBot {
         if (!monitorable) throw new Error(`Unknow target ${target}`)
 
         const orig = await monitorable.loadPolicyAsync();
-        try{await this._precedeRecord(msg.id, {origin: orig, diff: difference(value, orig)})} catch(err){};
+        await this._precedeRecord(msg.id, orig, value);
 
         let skipBgSave = false;
         const valueKeys = Object.keys(value);
@@ -1102,6 +1131,9 @@ class netBot extends ControllerBot {
         return
       }
       case "networkConfig": {
+        // record preceding config so the change can be traced
+        const origConfig = await FireRouter.getConfig();
+        await this._precedeNetworkConfig(msg.id, origConfig, value.config);
         await FireRouter.setConfig(value.config);
         // successfully set config, save config to history
         const latestConfig = await FireRouter.getConfig();
@@ -1156,7 +1188,7 @@ class netBot extends ControllerBot {
       case "autoUpgrade":
         return upgradeManager.setAutoUpgradeState(value)
       default:
-        throw new Error("Unsupported set action")
+        throw new Error("Unsupported set action: " + msg.data.item)
     }
   }
 
@@ -1897,7 +1929,7 @@ class netBot extends ControllerBot {
         return result
       }
       default:
-        throw new Error("unsupported action");
+        throw new Error("Unsupported get action: " + msg.data.item);
     }
   }
 
@@ -2506,7 +2538,7 @@ class netBot extends ControllerBot {
         if (_.isArray(samePolicies) && samePolicies.filter(p => p.pid != pid).length > 0) {
           throw { code: 409, msg: "policy already exists", data: samePolicies[0] }
         } else {
-          await this._precedeRecord(msg.id, {origin: oldPolicy, diff: difference(policy, oldPolicy)});
+          await this._precedeRecord(msg.id, oldPolicy, policy);
           policy.updatedTime = Date.now() / 1000;
           await pm2.updatePolicyAsync(policy)
           const newPolicy = await pm2.getPolicy(pid)
@@ -2536,12 +2568,12 @@ class netBot extends ControllerBot {
               results[policyID] = "invalid policy";
             }
           }
-          await this._precedeRecord(msg.id, {origin: orig});
+          await this._precedeRecord(msg.id, orig);
           this._scheduleRedisBackgroundSave();
           return results
         } else {
           let policy = await pm2.getPolicy(value.policyID)
-          await this._precedeRecord(msg.id, {origin: policy});
+          await this._precedeRecord(msg.id, policy);
           if (policy) {
             await pm2.disableAndDeletePolicy(value.policyID)
             policy.deleted = true // policy is marked ask deleted
@@ -3004,7 +3036,7 @@ class netBot extends ControllerBot {
       case "enableFeature": {
         const featureName = value.featureName;
         if (featureName) {
-          try{await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)})} catch(err){};
+          await this._precedeRecord(msg.id, fc.isFeatureOn(featureName));
           await fc.enableDynamicFeature(featureName)
         }
         return
@@ -3012,7 +3044,7 @@ class netBot extends ControllerBot {
       case "disableFeature": {
         const featureName = value.featureName;
         if (featureName) {
-          try{await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)})} catch(err){};
+          await this._precedeRecord(msg.id, fc.isFeatureOn(featureName));
           await fc.disableDynamicFeature(featureName)
         }
         return
@@ -3020,7 +3052,7 @@ class netBot extends ControllerBot {
       case "clearFeatureDynamicFlag": {
         const featureName = value.featureName;
         if (featureName) {
-          try{await this._precedeRecord(msg.id, {origin: fc.isFeatureOn(featureName)})} catch(err){};
+          await this._precedeRecord(msg.id, fc.isFeatureOn(featureName));
           await fc.clearDynamicFeature(featureName)
         }
         return

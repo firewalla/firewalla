@@ -80,9 +80,12 @@ class IpsetControl extends ModuleControl {
    * Add an ipset command string.
    * @param {string|string[]} cmd
    */
-  async addRule(cmd) {
+  async addRule(cmd, allowDeferredExec = false) {
     if (this.phase === 'autonomous') {
       const cmds = Array.isArray(cmd) ? cmd : [cmd];
+      if (allowDeferredExec) {
+        return this._batchWrite(cmds);
+      }
       for (const line of cmds) {
         await this._execOne(line);
       }

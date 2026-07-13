@@ -96,7 +96,7 @@ class QuicLogPlugin extends Sensor {
   async _processQuicLog(line) {
     if (_.isEmpty(line)) return;
     // extract content after log prefix
-    const prefixIndex = line.indexOf(LOG_PREFIX);
+    const prefixIndex = line.lastIndexOf(LOG_PREFIX);
     if (prefixIndex < 0) return;
     const startIndex = prefixIndex + LOG_PREFIX.length;
     let endIndex = line.length;
@@ -107,7 +107,12 @@ class QuicLogPlugin extends Sensor {
     const content = line.substring(startIndex, endIndex).trim();
     if (!content || content.length == 0)
       return;
-    const obj = JSON.parse(content);
+    let obj;
+    try {
+      obj = JSON.parse(content);
+    } catch (e) {
+      log.info(`Failed to process quic log line: ${line} err: ${e}`);
+    }
     if (!obj || typeof obj !== 'object')
         return;
     const {src_addr, src_port, dst_addr, dst_port, protocol, hostname} = obj;
@@ -135,7 +140,6 @@ class QuicLogPlugin extends Sensor {
       await this._setConnEntryWithCache(connEntry);
     }
     this.localCache.set(connKey, true);
-    
   }
 
   async globalOn() { // relay on ACLAuditLogPlugin.globalOn
@@ -146,6 +150,9 @@ class QuicLogPlugin extends Sensor {
       return;
     }
     const rule = new Rule().chn('FW_FORWARD_LOG');
+    rule.set('monitored_net_set', 'src,src');
+    rule.set('monitored_net_set', 'dst,dst', true);
+    rule.mdl("conntrack", "--ctdir ORIGINAL");
     rule.mdl("udp_tls", '--log-tls');
     rule.pro('udp');
     rule.dport(443);
@@ -167,6 +174,9 @@ class QuicLogPlugin extends Sensor {
     await this._flushConnEntryCache();
 
     const rule = new Rule().chn('FW_FORWARD_LOG');
+    rule.set('monitored_net_set', 'src,src');
+    rule.set('monitored_net_set', 'dst,dst', true);
+    rule.mdl("conntrack", "--ctdir ORIGINAL");
     rule.mdl("udp_tls", '--log-tls');
     rule.pro('udp');
     rule.dport(443);

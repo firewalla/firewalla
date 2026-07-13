@@ -188,6 +188,18 @@ class AuditTool extends LogQuery {
         : options.auditDNSSuccess ? `audit:dns:${mac}`
         : `audit:accept:${mac}`
   }
+
+  async formatHitFlow(payload, options = {}) {
+    const { kind, raw } = payload || {};
+    if (kind !== 'audit' || !raw) return null;
+    const simpleLog = this.toSimpleFormat(raw, {
+      block: true,
+      local: !!(raw.local || raw.dmac || raw.dir === 'L')
+    });
+    if (!simpleLog) return null;
+    if (raw.mac) simpleLog.device = raw.mac;
+    return this.enrichSimpleLog(simpleLog, options).catch((err) => { log.warn('Failed to enrich lastHitFlow', err.message); return simpleLog; });
+  }
 }
 
 module.exports = new AuditTool()

@@ -207,7 +207,7 @@ cat << EOF > "$filter_file"
 -A INPUT -j FW_INPUT_DROP
 
 -N FW_PLAIN_DROP
--A FW_PLAIN_DROP -j CONNMARK --set-xmark 0x0/0x80000000
+-A FW_PLAIN_DROP -j CONNMARK --set-xmark 0x200/0x80000200
 -A FW_PLAIN_DROP -p tcp -m set ! --match-set monitored_net_set src,src -j DROP
 -A FW_PLAIN_DROP -p tcp -m set --match-set monitored_net_set src,src -j REJECT --reject-with tcp-reset
 -A FW_PLAIN_DROP -p udp -m set ! --match-set monitored_net_set src,src -j DROP
@@ -319,6 +319,9 @@ cat << EOF > "$filter_file"
 
 # drop INVALID packets
 -A FW_FORWARD -m conntrack --ctstate INVALID -m set --match-set c_lan_set src,src -j FW_WAN_INVALID_DROP
+# drop packet that already marked as DROP
+-A FW_FORWARD -m connmark --mark 0x200/0x200 -j FW_DROP
+
 # accept non-HTTP/HTTPS tcp/udp packets that belongs to an accepted flow, skip the first 6 packets
 -A FW_FORWARD -p udp -m udp ! --dport 443 -m connbytes --connbytes 7 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -j ACCEPT
 -A FW_FORWARD -p tcp -m tcp ! --dport 443 -m tcp ! --dport 80 -m connbytes --connbytes 7 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -j ACCEPT
@@ -666,29 +669,29 @@ if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
 # these sets are not ipset and contain only domain names, use same set for both v4 & v6
 # check /proc/net/xt_tls/hostset/sec_block_domain_set
 cat << EOF >> "$iptables_file"
--A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
--A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m tls --tls-hostset allow_domain_set -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m tls --tls-hostset block_domain_set -j FW_TLS_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
+-A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m tls --tls-hostset allow_domain_set -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m tls --tls-hostset block_domain_set -j FW_TLS_DROP
 EOF
 
 cat << EOF >> "$ip6tables_file"
--A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
--A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m tls --tls-hostset allow_domain_set -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m tls --tls-hostset block_domain_set -j FW_TLS_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
+-A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m tls --tls-hostset allow_domain_set -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m tls --tls-hostset block_domain_set -j FW_TLS_DROP
 EOF
 fi
 
 if [[ $XT_UDP_TLS_SUPPORTED == "yes" ]]; then
 cat << EOF >> "$iptables_file"
--A FW_FIREWALL_GLOBAL_BLOCK_HI -p udp -m udp_tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
--A FW_FIREWALL_GLOBAL_ALLOW -p udp -m udp_tls --tls-hostset allow_domain_set -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_BLOCK -p udp -m udp_tls --tls-hostset block_domain_set -j FW_TLS_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK_HI -p udp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m udp_tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
+-A FW_FIREWALL_GLOBAL_ALLOW -p udp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m udp_tls --tls-hostset allow_domain_set -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_BLOCK -p udp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m udp_tls --tls-hostset block_domain_set -j FW_TLS_DROP
 EOF
 
 cat << EOF >> "$ip6tables_file"
--A FW_FIREWALL_GLOBAL_BLOCK_HI -p udp -m udp_tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
--A FW_FIREWALL_GLOBAL_ALLOW -p udp -m udp_tls --tls-hostset allow_domain_set -j FW_ACCEPT
--A FW_FIREWALL_GLOBAL_BLOCK -p udp -m udp_tls --tls-hostset block_domain_set -j FW_TLS_DROP
+-A FW_FIREWALL_GLOBAL_BLOCK_HI -p udp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m udp_tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
+-A FW_FIREWALL_GLOBAL_ALLOW -p udp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m udp_tls --tls-hostset allow_domain_set -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_BLOCK -p udp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m udp_tls --tls-hostset block_domain_set -j FW_TLS_DROP
 EOF
 fi
 

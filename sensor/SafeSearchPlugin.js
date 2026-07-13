@@ -85,6 +85,7 @@ class SafeSearchPlugin extends Sensor {
     sem.on('SAFESEARCH_RESET', async (event) => {
       try {
         await fc.disableDynamicFeature(featureName)
+        this.adminSystemSwitch = false;
         for (const tag in this.tagSettings) this.tagSettings[tag] = 0
         for (const uuid in this.networkSettings) this.networkSettings[uuid] = 0
         for (const mac in this.macAddressSettings) this.macAddressSettings[mac] = 0

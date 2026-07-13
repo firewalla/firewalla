@@ -1350,6 +1350,10 @@ class Host extends Monitorable {
     return this.o.intf
   }
 
+  getStpPort() {
+    return _.get(this.o, 'stpPort', null);
+  }
+
   async _get24HoursInternetActivity() {
     const app = ["internet"];
     const mac = this.o.mac || this.getUniqueId();
