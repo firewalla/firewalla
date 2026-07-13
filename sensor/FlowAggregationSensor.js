@@ -38,6 +38,8 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 const IdentityManager = require('../net2/IdentityManager.js');
 const Constants = require('../net2/Constants.js');
 const sysManager = require('../net2/SysManager.js');
+const IntelTool = require('../net2/IntelTool.js');
+const intelTool = new IntelTool();
 const Message = require('../net2/Message.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
@@ -140,9 +142,9 @@ class FlowAggregationSensor extends Sensor {
     this.ifBlockCache = {};
 
     // BroDetect -> DestIPFoundHook -> here
-    sem.on(Message.MSG_FLOW_ENRICHED, (event) => {
+    sem.on(Message.MSG_FLOW_ENRICHED, async event => {
       if (event && event.flow) try {
-        this.processEnrichedFlow(event.flow)
+        await this.processEnrichedFlow(event.flow)
       } catch (err) {
         log.error(`Failed to process enriched flow`, event.flow, err.message);
       }
@@ -165,7 +167,7 @@ class FlowAggregationSensor extends Sensor {
     });
   }
 
-  processEnrichedFlow(flow) {
+  async processEnrichedFlow(flow) {
     const {fd, ip, _ts, intf, mac, ob, rb, dp, du, ts, local, dmac, dIntf, dstTags} = flow;
     const tags = [];
     const dTags = []
@@ -194,6 +196,10 @@ class FlowAggregationSensor extends Sensor {
     uidTickKeys.forEach((key, i) => uidTickKeys[i] = `${key}@${tick}`)
 
     const domain = flow.host || flow.intel && flow.intel.host;
+    // carry the coded category snapshot into sumflows, same as regular flow records,
+    // so top-flow queries can decode it instead of resolving intel:ip at read time
+    const categoryCode = !local && flow.intel && flow.intel.category ?
+      await intelTool.categoryToNumber(flow.intel.category) : undefined;
     const key = `${mac}:${local ? dmac : ip}:${fd}:${dp}${domain ? `:${domain}` : ""}`;
     for (const uidTickKey of uidTickKeys) {
       if (!this.trafficCache[uidTickKey])
@@ -227,6 +233,8 @@ class FlowAggregationSensor extends Sensor {
 
         this.trafficCache[uidTickKey][key] = t;
       }
+      if (categoryCode && !t.c)
+        t.c = categoryCode;
       t.upload += (fd === "out" ? rb : ob);
       t.download += (fd === "out" ? ob : rb);
 
@@ -335,6 +343,8 @@ class FlowAggregationSensor extends Sensor {
                 t.port = [ String(dp) ];
                 t.destIP = flow.dh;
               }
+              if (flow.c)
+                t.c = flow.c;
               this.ipBlockCache[uidTickKey][key] = t;
             }
             t.count += flow.ct;
@@ -356,6 +366,8 @@ class FlowAggregationSensor extends Sensor {
             t = {device: mac, domain, count: 0};
             if (reason)
               t.reason = reason;
+            if (flow.c)
+              t.c = flow.c;
             this.dnsBlockCache[uidTickKey][key] = t;
           }
           t.count += flow.ct;

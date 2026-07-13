@@ -453,17 +453,23 @@ class LogQuery {
 
 
   async enrichWithIntel(logs, enrichIP = false) {
+    // once the flow_inline_intel migration matures, every stored record was written with
+    // its intel snapshot baked in — absence of a category then means the flow simply has
+    // no intel, so query-time intel:ip lookups are skipped across the board
     const inlineIntelReady = intelTool.isInlineIntelReady();
 
     return mapLimit(logs, 50, async f => {
+      // sumflow records (incl. ipB/dnsB) carry the coded category as-is; regular flows
+      // are decoded in toSimpleFormat
+      if (f.category == null && f.c != null) {
+        const category = intelTool.numberToCategory(f.c);
+        if (category) f.category = category;
+      }
+      const skipIntel = inlineIntelReady || f.category != null
       // ignore dns and ntp here as ip intel doesn't make sense for intercepted flows
       if (f.ip && f.type == 'ip' && !f.local || enrichIP) {
-        // flows that already carry a baked category snapshot (decoded from c/a in
-        // toSimpleFormat) skip the per-flow intel:ip lookup. Callers without a snapshot
-        // (e.g. aggregated top-sum flows in NetBotTool/HostManager) still resolve it.
-        const getIntel = inlineIntelReady || f.category != null
         let intel
-        if (!getIntel) {
+        if (!skipIntel) {
           intel = await intelTool.getIntel(f.ip, f.appHosts)
 
           // lodash/assign appears to be x4 times less efficient
@@ -471,7 +477,7 @@ class LogQuery {
           if (intel) {
             if (intel.country) f.country = intel.country
             if (intel.category) f.category = intel.category
-            if (intel.app) f.app = intel.app
+            // if (intel.app) f.app = intel.app
           }
         }
 
@@ -487,7 +493,7 @@ class LogQuery {
         }
 
         // failed on previous cloud request, try again (only when we actually looked up)
-        if (!getIntel && (!intel || intel.cloudFailed)) {
+        if (!skipIntel && (!intel || intel.cloudFailed)) {
           if (!firewalla.isApi()) {
             destIPFoundHook.processIP(f.ip);
           } else {
@@ -501,11 +507,13 @@ class LogQuery {
           }
         }
       } else if (f.domain) {
-        const intel = await intelTool.getIntel(undefined, [f.domain])
+        if (!skipIntel) {
+          const intel = await intelTool.getIntel(undefined, [f.domain])
 
-        if (intel) {
-          if (intel.category) f.category = intel.category
-          if (intel.app) f.app = intel.app
+          if (intel) {
+            if (intel.category) f.category = intel.category
+            // if (intel.app) f.app = intel.app
+          }
         }
       }
 
@@ -521,8 +529,6 @@ class LogQuery {
       if (f.reason == "adblock") {
           f.category = "ad";
       }
-      if (f.category === "x") // x is a placeholder generated in DNSProxyPlugin
-        delete f.category;
       if (sl && !f.flowTags && (f.host || f.domain || f.ip)) {
         const nds = sl.getSensor("NoiseDomainsSensor");
         if (nds) {

@@ -2854,6 +2854,7 @@ module.exports = class HostManager extends Monitorable {
       const enriched = (await asyncNative.mapLimit(traffic, 50, (flow) => {
         if (key != 'dnsB')
           flow.country = country.getCountry(flow.ip);
+        return flow
       })).sort((a, b) => {
         return b.count - a.count;
       });

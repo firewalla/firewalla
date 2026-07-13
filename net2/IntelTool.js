@@ -523,6 +523,12 @@ class IntelTool {
       }
     }
 
+    // 'x' is a checked-clean placeholder written to inteldns by DNSProxyPlugin, not a
+    // real category. It still participates in the domain walk above (shadowing parent
+    // domain categories) but should never surface to callers
+    if (intel && intel.category === 'x')
+      delete intel.category
+
     return intel
   }
 

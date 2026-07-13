@@ -134,12 +134,14 @@ module.exports = class DNSManager {
   enrichHttpFlow(conn) {
     delete conn.uids;
     const urls = conn.urls;
-    const category = conn.intel && conn.intel.category || conn.c
+    const category = conn.intel && conn.intel.category || intelTool.numberToCategory(conn.c)
     if (_.isEmpty(urls) || category === 'intel') return;
     for (const url of urls) {
       if (url && url.category === 'intel') {
+        if (!conn.intel) conn.intel = {};
         for (const key of ["category", "cc", "cs", "t", "v", "s", "updateTime"]) {
-          conn.intel[key] = url[key];
+          if (url[key])
+            conn.intel[key] = url[key];
         }
         const parsedInfo = URL.parse(url.url);
         if (parsedInfo && parsedInfo.hostname) {
