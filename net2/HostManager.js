@@ -1229,6 +1229,7 @@ module.exports = class HostManager extends Monitorable {
       this.pairingAssetsForInit(json),
       this.addMsp2CheckIn(json),
       this.basicDataForInit(json, {}),
+      this.kernelCrashInfoForInit(json),
     ]
 
     await Promise.all(requiredPromises);
@@ -1691,7 +1692,6 @@ module.exports = class HostManager extends Monitorable {
       this.appConfsForInit(json),
       this.resourcesForInit(json),
       this.extraTimeRequestsForInit(json),
-      this.kernelCrashInfoForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
 
