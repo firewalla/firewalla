@@ -18,10 +18,15 @@ const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const { execFile } = require('child-process-promise');
 const uuid = require('uuid');
+const { delay } = require('../util/util.js');
 
 const REDIS_KEY = "kernel_crash_info";
 const LOCK_KEY = "kernel_crash_info:lock";
 const LOCK_TTL_SEC = 60;
+// how long a lock-losing process waits for the lock holder to finish its pstore
+// scan before giving up and refreshing the cache with whatever Redis holds.
+const LOCK_WAIT_POLL_MS = 500;
+const LOCK_WAIT_TIMEOUT_MS = (LOCK_TTL_SEC + 5) * 1000;
 const PSTORE_PATH = "/sys/fs/pstore";
 const PSTORE_ARCHIVE_PATH = "/log/system/pstore";
 const PSTORE_ARCHIVE_MAX_DIRS = 3;
@@ -53,6 +58,25 @@ async function releaseLock(token) {
   } catch (err) {
     log.warn("Failed to release kernel_crash_info lock:", err.message);
   }
+}
+
+// When another process holds the lock, it is the one scanning pstore and may set
+// shouldDisableUdpTls after we read Redis. Wait for it to release the lock, then
+// re-read kernel_crash_info so our in-memory cache reflects the settled decision
+// before rule builders (which read shouldDisableUdpTls synchronously) run.
+async function waitForLockReleaseAndRefreshCache() {
+  const deadline = Date.now() + LOCK_WAIT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await delay(LOCK_WAIT_POLL_MS);
+    const holder = await rclient.getAsync(LOCK_KEY).catch(() => null);
+    if (!holder)
+      break; // lock released (or its TTL expired) — the decision is settled
+  }
+  const crashInfo = await readCrashInfo().catch((err) => {
+    log.error("Error refreshing crash info after waiting for lock:", err.message);
+    return {};
+  });
+  cachedShouldDisableUdpTls = crashInfo.shouldDisableUdpTls === true;
 }
 
 // parse "version:" and "srcversion:" lines from modinfo output
@@ -135,7 +159,8 @@ async function checkPstoreAndUpdateRedis(koPath) {
     log.error("Failed to acquire kernel_crash_info lock:", err.message);
     return false;
   })) {
-    log.info("Another process is already checking pstore, skipping");
+    log.info("Another process is already checking pstore, waiting for it to finish before refreshing cache");
+    await waitForLockReleaseAndRefreshCache();
     return;
   }
   try {

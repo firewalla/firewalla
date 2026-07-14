@@ -429,6 +429,33 @@ describe('KernelCrashMonitor', function () {
       expect(kcm._logs.error.some(m => m.includes('archive/clear pstore'))).to.be.true;
     });
 
+    it('waits for the lock holder and refreshes the cache with the settled decision when it loses the lock', async function () {
+      // Redis says "not disabled" at read time; another process holds the lock and
+      // is still scanning pstore. This reproduces the FireMain/FireApi startup race.
+      fakeRedis.seed({ shouldDisableUdpTls: false });
+      const LOCK_KEY = 'kernel_crash_info:lock';
+      fakeRedis._store[LOCK_KEY] = 'other-process-token';
+
+      const { execFile } = makeExecFile({ dmesgFindOutput: '' });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      // On the first poll of the wait loop, simulate the lock holder finishing:
+      // it records shouldDisableUdpTls=true in Redis and releases the lock.
+      const origGet = fakeRedis.getAsync.bind(fakeRedis);
+      fakeRedis.getAsync = async (key) => {
+        if (key === LOCK_KEY) {
+          fakeRedis.seed({ shouldDisableUdpTls: true });
+          delete fakeRedis._store[LOCK_KEY];
+        }
+        return origGet(key);
+      };
+
+      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+
+      // The losing process must observe the winner's decision, not the stale false.
+      expect(kcm.shouldDisableUdpTls()).to.be.true;
+    });
+
     it('does not throw when redis is unavailable', async function () {
       const { execFile } = makeExecFile({ dmesgFindOutput: '' });
       const brokenRedis = {
