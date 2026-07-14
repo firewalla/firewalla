@@ -22,7 +22,7 @@ const fs = require('fs');
 const fsp = fs.promises
 const cp = require('child_process');
 
-const { exec } = require('child-process-promise');
+const { exec, execFile } = require('child-process-promise');
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
 
@@ -55,20 +55,36 @@ class Platform {
 
   // Read the hardware permanent MAC of a NIC via ethtool. Returns "" if unavailable
   // (e.g. all-zero permanent address or ethtool failure), so callers can fall back.
+  // Cached per-nic since the permanent MAC is burned into hardware and never changes at
+  // runtime; failures/all-zero are not cached so a transient ethtool error just retries later.
   async getPermanentMac(nic) {
-    const mac = await exec(`ethtool -P ${nic}`).then(result => {
+    if (!this._permanentMacCache)
+      this._permanentMacCache = {};
+    if (this._permanentMacCache[nic] !== undefined)
+      return this._permanentMacCache[nic];
+
+    const mac = await execFile('ethtool', ['-P', nic]).then(result => {
       const match = result.stdout.match(/Permanent address:\s*([0-9a-fA-F:]+)/);
       return match ? match[1].trim().toUpperCase() : "";
     }).catch(() => "");
     if (!mac || mac === "00:00:00:00:00:00")
       return "";
+
+    this._permanentMacCache[nic] = mac;
     return mac;
   }
 
   async getMaxLinkSpeed(iface) {
+    if (!this._maxLinkSpeedCache)
+      this._maxLinkSpeedCache = {};
+    if (this._maxLinkSpeedCache[iface] !== undefined)
+      return this._maxLinkSpeedCache[iface];
+
     let max = 0;
-    await exec(`ethtool ${iface} | tr -d '\\n' | sed -e 's/.*Supported link modes:\\(.*\\)Supported pause.*/\\1/' | xargs`).then((result) => {
-      const modes = result.stdout.split(' ');
+    await execFile('ethtool', [iface]).then((result) => {
+      const flat = result.stdout.replace(/\n/g, '');
+      const match = flat.match(/Supported link modes:\s*(.*?)\s*Supported pause.*/);
+      const modes = (match ? match[1] : '').split(/\s+/).filter(Boolean);
       for (const mode of modes) {
         const speed = Number(mode.split("base")[0]);
         if (speed > max)
@@ -77,6 +93,9 @@ class Platform {
     }).catch((err) => {
       log.info(`Failed to get supported link modes of ${iface}`, err.message);
     });
+    
+    if (max > 0)
+      this._maxLinkSpeedCache[iface] = max;
     return max;
   }
 
