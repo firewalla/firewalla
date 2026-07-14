@@ -21,6 +21,7 @@ const fs = require('fs');
 const ModuleControl = require('./ModuleControl.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const f = require('../net2/Firewalla.js');
+const KernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
 
 const TLS_MODULES = ['xt_tls', 'xt_udp_tls'];
 const TLS_HOSTSET_BASE_PATH = '/proc/net';
@@ -101,7 +102,7 @@ class TLSSetControl extends ModuleControl {
     if ((protocol === 'tcp' || protocol === '') && platform.isTLSBlockSupport() && (!tlsHostSet || this.isSetActiveTCP(tlsHostSet))) {
       modules.push('xt_tls');
     }
-    if ((protocol === 'udp' || protocol === '') && platform.isUdpTLSBlockSupport() && (!tlsHostSet || this.isSetActiveUDP(tlsHostSet))) {
+    if ((protocol === 'udp' || protocol === '') && platform.isUdpTLSBlockSupport() && !KernelCrashMonitor.shouldDisableUdpTls() && (!tlsHostSet || this.isSetActiveUDP(tlsHostSet))) {
       modules.push('xt_udp_tls');
     }
     return modules;
@@ -291,7 +292,7 @@ class TLSSetControl extends ModuleControl {
     if (platform.isTLSBlockSupport() && (proto === 'tcp' || proto === '')) {
       this.activeTCPSets[tlsHostSet] = 1;
     }
-    if (platform.isUdpTLSBlockSupport() && (proto === 'udp' || proto === '')) {
+    if (platform.isUdpTLSBlockSupport() && !KernelCrashMonitor.shouldDisableUdpTls() && (proto === 'udp' || proto === '')) {
       this.activeUDPSets[tlsHostSet] = 1;
     }
   }
@@ -340,7 +341,7 @@ class TLSSetControl extends ModuleControl {
       if (platform.isTLSBlockSupport()) {
         this.activeTCPSets = await refreshForModule('xt_tls');
       }
-      if (platform.isUdpTLSBlockSupport()) {
+      if (platform.isUdpTLSBlockSupport() && !KernelCrashMonitor.shouldDisableUdpTls()) {
         this.activeUDPSets = await refreshForModule('xt_udp_tls');
       }
     } catch (err) {

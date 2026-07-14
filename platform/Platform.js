@@ -427,7 +427,7 @@ class Platform {
     }
     if (module_name == "xt_udp_tls") {
       const kernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
-      const disabled = await kernelCrashMonitor.shouldDisableUdpTls();
+      const disabled = kernelCrashMonitor.shouldDisableUdpTls();
       if (disabled) {
         log.warn("Skipping xt_udp_tls installation: disabled due to prior kernel crash with same module version");
         return;

@@ -35,6 +35,7 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const { CategoryEntry } = require('./CategoryEntry.js');
+const KernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
 const VPN_CLIENT_WAN_PREFIX = Constants.ACL_VPN_CLIENT_WAN_PREFIX;
 const VIRT_WAN_GROUP_PREFIX = Constants.ACL_VIRT_WAN_GROUP_PREFIX;
 const UPNP_ACCEPT_CHAIN = "FR_UPNP_ACCEPT";
@@ -1848,16 +1849,17 @@ async function manipulateFiveTupleRule(options) {
     if (avgPacketBytes)
       rule.mdl("connbytes", `--connbytes ${avgPacketBytes} --connbytes-dir ${transferDirection} --connbytes-mode avgpkt`);
   }
+  const shouldDisableUdpTls = KernelCrashMonitor.shouldDisableUdpTls();
   if (tlsHostSet) {
     if (proto === "tcp" && platform.isTLSBlockSupport())
       rule.mdl("tls", `--tls-hostset ${tlsHostSet}`);
-    else if (proto === "udp" && platform.isUdpTLSBlockSupport())
+    else if (proto === "udp" && platform.isUdpTLSBlockSupport() && !shouldDisableUdpTls)
       rule.mdl("udp_tls", `--tls-hostset ${tlsHostSet}`);
   }
   if (tlsHost) {
     if (proto === "tcp" && platform.isTLSBlockSupport())
       rule.mdl("tls", `--tls-host ${tlsHost}`)
-    else if (proto === "udp" && platform.isUdpTLSBlockSupport())
+    else if (proto === "udp" && platform.isUdpTLSBlockSupport() && !shouldDisableUdpTls)
       rule.mdl("udp_tls", `--tls-host ${tlsHost}`)
   }
   if (limit) {

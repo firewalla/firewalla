@@ -139,26 +139,36 @@ describe('KernelCrashMonitor', function () {
 
   // ── shouldDisableUdpTls ────────────────────────────────────────────────────
 
+  // shouldDisableUdpTls() is a synchronous accessor over the in-memory cache;
+  // the cache is populated by checkPstoreAndUpdateRedis / onUdpTlsModuleLoaded,
+  // not by reading Redis on each call.
   describe('shouldDisableUdpTls', function () {
-    it('returns true when crashInfo.shouldDisableUdpTls is true', async function () {
+    it('returns false by default before checkPstoreAndUpdateRedis has run', function () {
+      const { execFile } = makeExecFile({});
+      const kcm = loadKCM(fakeRedis, execFile);
+      expect(kcm.shouldDisableUdpTls()).to.be.false;
+    });
+
+    it('returns true after checkPstoreAndUpdateRedis populates the cache from a prior crash-disable', async function () {
       fakeRedis.seed({ shouldDisableUdpTls: true });
-      const { execFile } = makeExecFile({});
+      const { execFile } = makeExecFile({ dmesgFindOutput: '' });
       const kcm = loadKCM(fakeRedis, execFile);
-      expect(await kcm.shouldDisableUdpTls()).to.be.true;
+
+      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+
+      expect(kcm.shouldDisableUdpTls()).to.be.true;
     });
 
-    it('returns false when unset', async function () {
-      const { execFile } = makeExecFile({});
+    it('returns false once onUdpTlsModuleLoaded clears the cache', async function () {
+      fakeRedis.seed({ shouldDisableUdpTls: true });
+      const { execFile } = makeExecFile({ dmesgFindOutput: '', modinfoOutput: modinfoStdout('1.0', 'abc') });
       const kcm = loadKCM(fakeRedis, execFile);
-      expect(await kcm.shouldDisableUdpTls()).to.be.false;
-    });
 
-    it('returns false and logs an error when redis fails', async function () {
-      const { execFile } = makeExecFile({});
-      const brokenRedis = { getAsync: async () => { throw new Error('redis down'); } };
-      const kcm = loadKCM(brokenRedis, execFile);
-      expect(await kcm.shouldDisableUdpTls()).to.be.false;
-      expect(kcm._logs.error.length).to.equal(1);
+      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+      expect(kcm.shouldDisableUdpTls()).to.be.true;
+
+      await kcm.onUdpTlsModuleLoaded('/lib/modules/xt_udp_tls.ko');
+      expect(kcm.shouldDisableUdpTls()).to.be.false;
     });
   });
 
