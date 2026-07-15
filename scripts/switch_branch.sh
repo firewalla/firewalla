@@ -7,6 +7,7 @@ set -e
 MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 CMD=$(basename $0)
 source ${FIREWALLA_HOME}/platform/platform.sh
+source ${FIREWALLA_HOME}/scripts/upgrade_verify.sh
 
 usage() {
     cat <<EOU
@@ -52,17 +53,32 @@ switch_branch() {
     remote_branch=$(map_target_branch $branch)
     # walla repo
     ( cd $FIREWALLA_HOME
+    uv_ensure_release_key
+    uv_update_version_floor
     git config remote.origin.fetch "+refs/heads/$remote_branch:refs/remotes/origin/$remote_branch"
     $MGIT fetch origin $remote_branch
+    if ! uv_verify_release_commit "origin/$remote_branch"; then
+        err "target branch $remote_branch failed release verification, abort"
+        exit 1
+    fi
     git checkout -f -B $tgt_branch origin/$remote_branch
     )
 
-    # node modules repo
-    ( cd ~/.node_modules
-    git config remote.origin.fetch "+refs/heads/$tgt_branch:refs/remotes/origin/$tgt_branch"
-    $MGIT fetch origin $tgt_branch
-    git checkout -f -B $tgt_branch origin/$tgt_branch
-    )
+    # node modules repo; the pin file comes from the target branch tree
+    # checked out (and verified) above
+    NM_PIN_FILE=$(uv_node_modules_pin_file 2>/dev/null)
+    if type -t uv_sync_node_modules &>/dev/null && [[ -s $NM_PIN_FILE ]]; then
+      if ! UV_GIT=$MGIT uv_sync_node_modules ~/.node_modules "$(get_node_modules_url)" $tgt_branch $NM_PIN_FILE; then
+        err "node modules pin sync failed, node modules unchanged"
+      fi
+    else
+      err "no node modules pin for platform $FIREWALLA_PLATFORM, legacy update"
+      ( cd ~/.node_modules
+      git config remote.origin.fetch "+refs/heads/$tgt_branch:refs/remotes/origin/$tgt_branch"
+      $MGIT fetch origin $tgt_branch
+      git checkout -f -B $tgt_branch origin/$tgt_branch
+      )
+    fi
 }
 
 set_redis_flag() {
