@@ -31,13 +31,12 @@ class CrystalPlatform extends Platform {
     return "crystal";
   }
 
-  // TODO: persistent device identity (UUID) for license binding; approach/persist location TBD
   getBoardSerial() {
+    return this.getSignatureMac();
   }
 
-  // TODO: confirm the real license type string(s) with the license/cloud team
   getLicenseTypes() {
-    return [];
+    return ["z1"];
   }
 
   // physical NICs are dynamic on Crystal; enumerate what's actually present
