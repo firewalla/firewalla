@@ -258,6 +258,7 @@ if eval $GIT_FETCH ||
         sudo -u pi $MGIT reset --hard FETCH_HEAD || (date >> ~/.fireupgrade.failed; exit 1)
     else
         $FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) REJECTED unverified update on $remote_branch"
+        exit 1
     fi
 else
     (date >> ~/.fireupgrade.failed; exit 1)
