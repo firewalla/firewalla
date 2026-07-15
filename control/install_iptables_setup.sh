@@ -295,28 +295,93 @@ cat "$qos_file"
   echo 'COMMIT'
 } >> "$ip6tables_file"
 
+# Return 0 (need install/update) only when the module is supported on this platform AND
+# it is not loaded yet, or the loaded ko srcversion / installed .so checksum differs from
+# the bundled version. Return 1 otherwise so we can skip the disruptive rmmod/restore cycle.
+function tlsModuleNeedsUpdate() {
+  local module_name=$1
+  if [[ ${module_name} = "xt_tls" && ${XT_TLS_SUPPORTED} != "yes" ]]; then
+    return 1
+  fi
+  if [[ ${module_name} = "xt_udp_tls" && ${XT_UDP_TLS_SUPPORTED} != "yes" ]]; then
+    return 1
+  fi
+
+  # not loaded yet -> needs install
+  if ! lsmod | grep -wq "${module_name}"; then
+    return 0
+  fi
+
+  # loaded but its hostset proc directory is missing -> module is not working, needs reinstall
+  if [[ ! -d "/proc/net/${module_name}/hostset" ]]; then
+    return 0
+  fi
+
+  # compare ko srcversion between the bundled ko and the currently loaded module
+  local ko_path ko_srcversion loaded_srcversion
+  ko_path=$(get_tls_ko_path "${module_name}")
+  if [[ -f $ko_path ]]; then
+    ko_srcversion=$(modinfo "$ko_path" 2>/dev/null | awk '/^srcversion:/{print $2}')
+    loaded_srcversion=$(cat "/sys/module/${module_name}/srcversion" 2>/dev/null)
+    if [[ -n "$ko_srcversion" && "$ko_srcversion" != "$loaded_srcversion" ]]; then
+      return 0
+    fi
+  fi
+
+  # compare the checksum between the bundled .so and the installed .so
+  local arch so_path so_path_alt src_so installed_so
+  arch=$(uname -m)
+  so_path=${FW_PLATFORM_CUR_DIR}/files/shared_objects/$(lsb_release -cs)/lib${module_name}.so
+  so_path_alt="/media/root-ro/usr/lib/${arch}-linux-gnu/xtables/lib${module_name}.so"
+  installed_so="/usr/lib/${arch}-linux-gnu/xtables/lib${module_name}.so"
+  if [[ -f $so_path ]]; then
+    src_so=$so_path
+  elif [[ -f $so_path_alt ]]; then
+    src_so=$so_path_alt
+  fi
+  if [[ -n "$src_so" ]]; then
+    if [[ ! -f $installed_so ]] || [[ $(sha256sum "$installed_so" | awk '{print $1}') != $(sha256sum "$src_so" | awk '{print $1}') ]]; then
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
 if [[ $XT_TLS_SUPPORTED == "yes" || $XT_UDP_TLS_SUPPORTED == "yes" ]]; then
-  # existence of "-m tls" or "-m udp_tls" rules prevents kernel module from being updated, resotre with a tls-clean version first
   module_names=("tls" "udp_tls")
 
-  sudo iptables-save > "$iptables_file.orig"
-  sudo ip6tables-save > "$ip6tables_file.orig"
-
-  grep -vE "\-m tls|\-m udp_tls" "$iptables_file.orig" | sudo iptables-restore
-  grep -vE "\-m tls|\-m udp_tls" "$ip6tables_file.orig" | sudo ip6tables-restore
+  # only (re)install modules that are supported and whose ko version or .so checksum changed
+  modules_to_update=()
   for module_name in "${module_names[@]}"; do
-    if lsmod | grep -w "xt_${module_name}"; then
-      sudo rmmod "xt_${module_name}"
-      if [[ $? -eq 0 ]]; then
-        installTLSModule "xt_${module_name}"
-      fi
-    else
-      installTLSModule "xt_${module_name}"
+    if tlsModuleNeedsUpdate "xt_${module_name}"; then
+      modules_to_update+=("$module_name")
     fi
   done
 
-  sudo iptables-restore "$iptables_file.orig"
-  sudo ip6tables-restore "$ip6tables_file.orig"
+  echo "Modules to update: ${modules_to_update[*]}"
+
+  if [[ ${#modules_to_update[@]} -gt 0 ]]; then
+    # existence of "-m tls" or "-m udp_tls" rules prevents kernel module from being updated, resotre with a tls-clean version first
+    sudo iptables-save > "$iptables_file.orig"
+    sudo ip6tables-save > "$ip6tables_file.orig"
+
+    grep -vE "\-m tls|\-m udp_tls" "$iptables_file.orig" | sudo iptables-restore
+    grep -vE "\-m tls|\-m udp_tls" "$ip6tables_file.orig" | sudo ip6tables-restore
+    for module_name in "${modules_to_update[@]}"; do
+      if lsmod | grep -w "xt_${module_name}"; then
+        sudo rmmod "xt_${module_name}"
+        if [[ $? -eq 0 ]]; then
+          installTLSModule "xt_${module_name}"
+        fi
+      else
+        installTLSModule "xt_${module_name}"
+      fi
+    done
+
+    sudo iptables-restore "$iptables_file.orig"
+    sudo ip6tables-restore "$ip6tables_file.orig"
+  fi
 fi
 
 # install out-of-tree sch_cake.ko if applicable
