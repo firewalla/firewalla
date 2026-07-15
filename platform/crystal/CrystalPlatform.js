@@ -17,7 +17,6 @@
 
 const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js');
-const exec = require('child-process-promise').exec;
 const fs = require('fs');
 const log = require('../../net2/logger.js')(__filename);
 const { execSync } = require('child_process');
@@ -156,15 +155,6 @@ class CrystalPlatform extends Platform {
 
   isAccountingSupported() {
     return true;
-  }
-
-  async applyProfile() {
-    try {
-      log.info("apply profile to optimize performance");
-      await exec(`sudo ${f.getFirewallaHome()}/scripts/apply_profile.sh`);
-    } catch (err) {
-      log.error("Error applying profile", err);
-    }
   }
 
   getStatsSpecs() {
