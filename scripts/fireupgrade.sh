@@ -225,13 +225,13 @@ echo $current_tag > /tmp/REPO_TAG
 echo $branch > /tmp/REPO_BRANCH
 
 if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
-  $FIRELOG -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
+  $FIRELOG -t debug -m "FIREWALLA.UPGRADE NO AUTO UPGRADE"
   echo '======= SKIP UPGRADING BECAUSE OF FLAG /home/pi/.firewalla/config/.no_auto_upgrade ======='
   exit 0
 fi
 
 if [[ -e "/home/pi/.router/config/.no_auto_upgrade" ]]; then
-  $FIRELOG -t debug -m "FIREWALLA.UPGRADE NO UPGRADE -- ON FIREROUTER"
+  $FIRELOG -t debug -m "FIREWALLA.UPGRADE NO AUTO UPGRADE -- ON FIREROUTER"
   echo '======= SKIP UPGRADING BECAUSE OF FIREROUTER FLAG /home/pi/.router/config/.no_auto_upgrade ======='
   exit 0
 fi

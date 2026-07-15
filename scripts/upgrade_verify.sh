@@ -19,12 +19,11 @@
 # Release verification for upgrade/switch paths. Sourced by fireupgrade.sh
 # and switch_branch.sh, and by the firerouter counterparts. Before a fetched
 # commit is applied (reset/checkout), it must carry a tag signed by a trusted
-# key, and its version must be at or above the floor. See git-protection.md
-# at repo root for the design.
+# key, and its version must be at or above the minimal version
 #
 # All UV_ variables can be preset before sourcing; the defaults below apply
 # to the firewalla repo. firerouter presets UV_OFFICIAL_REPO and
-# UV_RELEASE_PUBKEY; the release key, keyring, version floor and its
+# UV_RELEASE_PUBKEY; the release key, keyring, minimal version and its
 # fw_min_version asset are shared by both repos.
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
@@ -35,7 +34,7 @@
 : ${UV_TEST_GNUPGHOME:=/home/pi/.upgrade-gnupg-test}
 : ${UV_OFFICIAL_REPO:=firewalla}
 : ${UV_RELEASE_PUBKEY:=$FIREWALLA_HOME/etc/keys/release_pub.key}
-: ${UV_FLOOR_FILE:=/home/pi/.firewalla/config/upgrade_version_floor}
+: ${UV_FLOOR_FILE:=/home/pi/.firewalla/config/upgrade_min_version}
 : ${UV_FLOOR_ASSET:=/home/pi/.firewalla/run/assets/fw_min_version}
 : ${UV_LOGGER:="/usr/bin/logger -t FWUPGRADE.VERIFY"}
 
@@ -98,9 +97,9 @@ uv_get_version_floor() {
   [[ -s $UV_FLOOR_FILE ]] && cat $UV_FLOOR_FILE
 }
 
-# refresh the floor from the assets pipeline (update_assets.sh downloads and
-# signature-verifies /all/fw_min_version); monotonic - only ever raised, a
-# lower or missing asset value never lowers the cached one
+# refresh the minimal version from the assets pipeline (update_assets.sh
+# downloads and signature-verifies /all/fw_min_version); monotonic - only
+# ever raised, a lower or missing asset value never lowers the cached one
 uv_update_version_floor() {
   [[ -s $UV_FLOOR_ASSET ]] || return 0
   local asset cached
@@ -109,7 +108,7 @@ uv_update_version_floor() {
   cached=$(uv_get_version_floor)
   if [[ -z "$cached" ]] || ! uv_version_ge "$cached" "$asset"; then
     echo "$asset" > $UV_FLOOR_FILE
-    uv_log "version floor raised to $asset"
+    uv_log "minimal version raised to $asset"
   fi
 }
 
@@ -182,7 +181,7 @@ uv_sync_node_modules() {
 }
 
 # core check: does <commit-ish> carry a tag signed by a trusted key, with
-# version >= floor. Return 0 = verified (or exempt), 1 = failed.
+# version >= the minimal version. Return 0 = verified (or exempt), 1 = failed.
 uv_verify_release_commit() {
   local commit keyring floor tag tags t ver sigout fprs
   # ^{commit} peels any ref (branch, annotated tag) to its commit hash
@@ -249,7 +248,7 @@ uv_verify_release_commit() {
           # version comes from the tag name, which the signature covers
           ver=$(echo "$tag" | sed -n 's/.*v\([0-9][0-9.]*\)$/\1/p')
           if [[ -z "$ver" ]] || ! uv_version_ge "$ver" "$floor"; then
-            uv_log "tag $tag verified but version '$ver' below floor $floor"
+            uv_log "tag $tag verified but version '$ver' below minimal version $floor"
             continue 2
           fi
         fi
