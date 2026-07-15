@@ -77,6 +77,10 @@ uv_version_ge() {
 # into the keyring outside the repo; re-import when the file changes so a
 # signed release can rotate the key
 uv_ensure_release_key() {
+  # only maintain the release keyring when the box tracks the official repo;
+  # a test box (non-official remote) uses the test keyring only, keeping the
+  # two environments separate
+  uv_is_official_remote "$(git remote get-url origin 2>/dev/null)" || return 0
   [[ -s $UV_RELEASE_PUBKEY ]] || return 0
   local sum marker
   sum=$(sha256sum $UV_RELEASE_PUBKEY | cut -d' ' -f1)
@@ -107,8 +111,14 @@ uv_update_version_floor() {
   [[ "$asset" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 0
   cached=$(uv_get_version_floor)
   if [[ -z "$cached" ]] || ! uv_version_ge "$cached" "$asset"; then
-    echo "$asset" > $UV_FLOOR_FILE
-    uv_log "minimal version raised to $asset"
+    # dir may not exist on a new/recovery box; write failure must not abort
+    # callers running under set -e
+    mkdir -p "$(dirname $UV_FLOOR_FILE)" 2>/dev/null || true
+    if echo "$asset" > $UV_FLOOR_FILE 2>/dev/null; then
+      uv_log "minimal version raised to $asset"
+    else
+      uv_log "cannot write minimal version cache to $UV_FLOOR_FILE"
+    fi
   fi
 }
 
@@ -229,7 +239,7 @@ uv_verify_release_commit() {
   do
     echo "$tags" | grep -qx "$t" && continue
     git rev-parse -q --verify "refs/tags/$t" >/dev/null ||
-      git fetch --no-tags origin "refs/tags/$t:refs/tags/$t" &>/dev/null || continue
+      uv_as_pi git fetch --no-tags origin "refs/tags/$t:refs/tags/$t" &>/dev/null || continue
     tags="$tags"$'\n'"$t"
   done
 
