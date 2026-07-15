@@ -54,15 +54,17 @@ class Platform {
     return result;
   }
 
-  // Read the hardware permanent MAC of a NIC via ethtool. Returns "" if unavailable
-  // (e.g. all-zero permanent address or ethtool failure), so callers can fall back.
-  // Cached per-nic since the permanent MAC is burned into hardware and never changes at
-  // runtime; failures/all-zero are not cached so a transient ethtool error just retries later.
+  // Read the hardware permanent MAC of a NIC via ethtool. Returns "" if unavailable.
+  // Cached per-nic keyed on ifindex, not just name, since a USB wlan dongle can be swapped
+  // while keeping the same nic name (udev pins name to port); ifindex changes when that happens.
   async getPermanentMac(nic) {
     if (!this._permanentMacCache)
       this._permanentMacCache = {};
-    if (this._permanentMacCache[nic] !== undefined)
-      return this._permanentMacCache[nic];
+
+    const ifindex = await fsp.readFile(`/sys/class/net/${nic}/ifindex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => null);
+    const cached = this._permanentMacCache[nic];
+    if (cached !== undefined && ifindex !== null && cached.ifindex === ifindex)
+      return cached.mac;
 
     const mac = await execFile('ethtool', ['-P', nic]).then(result => {
       const match = result.stdout.match(/Permanent address:\s*([0-9a-fA-F:]+)/);
@@ -71,15 +73,21 @@ class Platform {
     if (!mac || mac === "00:00:00:00:00:00")
       return "";
 
-    this._permanentMacCache[nic] = mac;
+    if (ifindex !== null)
+      this._permanentMacCache[nic] = {mac, ifindex};
     return mac;
   }
 
+  // Cached per-iface keyed on ifindex, not just name, since a USB wlan dongle can be swapped
+  // while keeping the same iface name (udev pins name to port); ifindex changes when that happens.
   async getMaxLinkSpeed(iface) {
     if (!this._maxLinkSpeedCache)
       this._maxLinkSpeedCache = {};
-    if (this._maxLinkSpeedCache[iface] !== undefined)
-      return this._maxLinkSpeedCache[iface];
+
+    const ifindex = await fsp.readFile(`/sys/class/net/${iface}/ifindex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => null);
+    const cached = this._maxLinkSpeedCache[iface];
+    if (cached !== undefined && ifindex !== null && cached.ifindex === ifindex)
+      return cached.max;
 
     let max = 0;
     await execFile('ethtool', [iface]).then((result) => {
@@ -94,9 +102,9 @@ class Platform {
     }).catch((err) => {
       log.info(`Failed to get supported link modes of ${iface}`, err.message);
     });
-    
-    if (max > 0)
-      this._maxLinkSpeedCache[iface] = max;
+
+    if (max > 0 && ifindex !== null)
+      this._maxLinkSpeedCache[iface] = {max, ifindex};
     return max;
   }
 
