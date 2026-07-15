@@ -64,7 +64,6 @@ const categoryUpdater = new CategoryUpdater();
 
 const Block = require('../control/Block.js');
 const tlsc = require('../control/TLSSetControl.js');
-const KernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
 
 const Constants = require('../net2/Constants.js');
 
@@ -599,7 +598,7 @@ class AdblockPlugin extends Sensor {
       if (platform.isTLSBlockSupport()) {
         protos.push("tcp");
       }
-      if (platform.isUdpTLSBlockSupport() && !KernelCrashMonitor.shouldDisableUdpTls()) {
+      if (platform.isUdpTLSBlockSupport()) {
         protos.push("udp");
       }
       return protos;

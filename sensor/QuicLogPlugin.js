@@ -28,7 +28,6 @@ const AsyncLock = require('../vendor_lib/async-lock');
 const { Rule } = require('../net2/Iptables.js');
 const iptc = require('../control/IptablesControl.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
-const KernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
 
 const lock = new AsyncLock();
 
@@ -145,7 +144,7 @@ class QuicLogPlugin extends Sensor {
   async globalOn() { // relay on ACLAuditLogPlugin.globalOn
     super.globalOn();
 
-    if (!platform.isUdpTLSBlockSupport() || KernelCrashMonitor.shouldDisableUdpTls()) {
+    if (!platform.isUdpTLSBlockSupport()) {
       log.info("UDP TLS block is not supported or should be disabled on this platform, skip setting up quic log iptables rule");
       return;
     }
@@ -165,7 +164,7 @@ class QuicLogPlugin extends Sensor {
   async globalOff() { // relay on ACLAuditLogPlugin.globalOff
     super.globalOff();
 
-    if (!platform.isUdpTLSBlockSupport() || KernelCrashMonitor.shouldDisableUdpTls()) {
+    if (!platform.isUdpTLSBlockSupport()) {
       log.info("UDP TLS block is not supported or should be disabled on this platform, skip removing quic log iptables rule");
       return;
     }
