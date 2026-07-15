@@ -44,7 +44,7 @@ class GoldPlus2Platform extends Platform {
 
   // reserved wlan interfaces in case it supports USB wifi in future
   getAllNicNames() {
-    return ["eth0", "eth1", "eth2", "eth3", "wlan0", "wlan1"];
+    return ["eth0", "eth1", "eth2", "eth3", "eth4", "wlan0", "wlan1"];
   }
 
   getNtpServiceName() {
