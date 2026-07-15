@@ -159,9 +159,10 @@ uv_sync_node_modules() {
   (
     cd $dir || exit 1
     rm -f .git/*.lock
-    # already exactly on the pin with a clean tree
+    # already exactly on the pin with a clean tree, nothing to do (exit 2 so
+    # the caller stays quiet)
     if [[ $(git rev-parse HEAD 2>/dev/null) == "$pin" && -z $(git status -uno --porcelain 2>/dev/null) ]]; then
-      exit 0
+      exit 2
     fi
     if ! git cat-file -e "$pin^{commit}" 2>/dev/null; then
       $git_cmd fetch origin $branch || $git_cmd fetch origin $branch
@@ -178,6 +179,8 @@ uv_sync_node_modules() {
     exit 0
   )
   rc=$?
+  # already on the pin, no change, no log
+  [[ $rc -eq 2 ]] && return 0
   if [[ $rc -ne 0 && $fresh -eq 1 ]]; then
     # never leave an unpinned fresh clone behind
     rm -rf $dir
