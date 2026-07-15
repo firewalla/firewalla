@@ -17,7 +17,6 @@
 
 const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js');
-const exec = require('child-process-promise').exec;
 const fs = require('fs');
 const log = require('../../net2/logger.js')(__filename);
 const { execSync } = require('child_process');
@@ -32,13 +31,12 @@ class CrystalPlatform extends Platform {
     return "crystal";
   }
 
-  // TODO: persistent device identity (UUID) for license binding; approach/persist location TBD
   getBoardSerial() {
+    return this.getSignatureMac();
   }
 
-  // TODO: confirm the real license type string(s) with the license/cloud team
   getLicenseTypes() {
-    return [];
+    return ["z1"];
   }
 
   // physical NICs are dynamic on Crystal; enumerate what's actually present
@@ -156,15 +154,6 @@ class CrystalPlatform extends Platform {
 
   isAccountingSupported() {
     return true;
-  }
-
-  async applyProfile() {
-    try {
-      log.info("apply profile to optimize performance");
-      await exec(`sudo ${f.getFirewallaHome()}/scripts/apply_profile.sh`);
-    } catch (err) {
-      log.error("Error applying profile", err);
-    }
   }
 
   getStatsSpecs() {
