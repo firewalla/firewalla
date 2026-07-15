@@ -92,6 +92,7 @@ function await_ip_assigned() {
 LOGGER=logger
 ERR=logger
 [ -s $SCRIPTS_DIR/network_settings.sh ] && source $SCRIPTS_DIR/network_settings.sh || source $FIREWALLA_HOME/scripts/network_settings.sh
+[ -s $SCRIPTS_DIR/upgrade_verify.sh ] && source $SCRIPTS_DIR/upgrade_verify.sh || source $FIREWALLA_HOME/scripts/upgrade_verify.sh
 
 if [[ $MANAGED_BY_FIREROUTER == "no" ]]; then
   await_ip_assigned || restore_values
@@ -237,14 +238,30 @@ fi
 
 if $(/bin/systemctl -q is-active watchdog.service) ; then sudo /bin/systemctl stop watchdog.service ; fi
 sudo rm -f $FIREWALLA_HOME/.git/*.lock
+
+# release verification setup: key import reads the currently installed tree,
+# must run before the fetched commit is applied
+if type -t uv_ensure_release_key &>/dev/null; then
+    uv_ensure_release_key
+    uv_update_version_floor
+fi
+
 # ensure the remote fetch branch is up-to-date
 git config remote.origin.fetch "+refs/heads/$remote_branch:refs/remotes/origin/$remote_branch"
 git config "branch.$branch.merge" "refs/heads/$remote_branch"
-GIT_COMMAND="(sudo -u pi $MGIT fetch origin $remote_branch && sudo -u pi $MGIT reset --hard FETCH_HEAD)"
-eval $GIT_COMMAND ||
-  (sleep 3; eval $GIT_COMMAND) ||
-  (sleep 3; eval $GIT_COMMAND) ||
-  (sleep 3; eval $GIT_COMMAND) || (date >> ~/.fireupgrade.failed; exit 1)
+GIT_FETCH="(sudo -u pi $MGIT fetch origin $remote_branch)"
+if eval $GIT_FETCH ||
+  (sleep 3; eval $GIT_FETCH) ||
+  (sleep 3; eval $GIT_FETCH) ||
+  (sleep 3; eval $GIT_FETCH); then
+    if ! type -t uv_verify_release_commit &>/dev/null || uv_verify_release_commit FETCH_HEAD; then
+        sudo -u pi $MGIT reset --hard FETCH_HEAD || (date >> ~/.fireupgrade.failed; exit 1)
+    else
+        $FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) REJECTED unverified update on $remote_branch"
+    fi
+else
+    (date >> ~/.fireupgrade.failed; exit 1)
+fi
 
 commit_after=$(git rev-parse HEAD)
 current_tag=$(git describe --tags)
