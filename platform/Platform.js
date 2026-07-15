@@ -25,6 +25,7 @@ const cp = require('child_process');
 const { exec, execFile } = require('child-process-promise');
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
+let kernelCrashMonitor = null;
 
 class Platform {
   getAllNicNames() {
@@ -444,14 +445,6 @@ class Platform {
     if (module_name == "xt_udp_tls" && !this.isUdpTLSBlockSupport()) {
       return;
     }
-    if (module_name == "xt_udp_tls") {
-      const kernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
-      const disabled = await kernelCrashMonitor.shouldDisableUdpTls();
-      if (disabled) {
-        log.warn("Skipping xt_udp_tls installation: disabled due to prior kernel crash with same module version");
-        return;
-      }
-    }
     const installed = await this.isTLSModuleInstalled(module_name);
     if (installed) return;
     const codename = await exec(`lsb_release -cs`).then((result) => result.stdout.trim()).catch((err) => {
@@ -503,7 +496,9 @@ class Platform {
     }
     this.installedModules[module_name] = true;
     if (module_name == "xt_udp_tls") {
-      const kernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
+      if (!kernelCrashMonitor) {
+        kernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
+      }
       await kernelCrashMonitor.onUdpTlsModuleLoaded(koExists ? koPath : 'xt_udp_tls');
     }
   }
@@ -539,6 +534,14 @@ class Platform {
   }
 
   isUdpTLSBlockSupport() {
+    if (!kernelCrashMonitor) {
+      kernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
+    }
+    const disabled = kernelCrashMonitor.shouldDisableUdpTls();
+    if (disabled) {
+      log.warn("Skipping xt_udp_tls installation: disabled due to prior kernel crash with same module version");
+      return false;
+    }
     return true;
   }
 
