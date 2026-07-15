@@ -205,8 +205,6 @@ class AppTimeUsageManager {
 
     if (this.enforcedPolicies[pid]) {
       delete this.enforcedPolicies[pid][uid];
-      if (_.isEmpty(this.enforcedPolicies[pid]))
-         delete this.enforcedPolicies[pid];
     }
   }
 
