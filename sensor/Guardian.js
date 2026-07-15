@@ -71,11 +71,11 @@ module.exports = class {
   }
 
   cleanupLiveTransport() {
-    for (const alias in this.liveTransportCache) {
-      const liveTransport = this.liveTransportCache[alias];
+    for (const key in this.liveTransportCache) {
+      const liveTransport = this.liveTransportCache[key];
       if (!liveTransport.isLivetimeValid()) {
-        log.info("Destory live transport for", alias);
-        delete this.liveTransportCache[alias];
+        log.info("Destory live transport for", key);
+        delete this.liveTransportCache[key];
       }
     }
   }
@@ -91,13 +91,16 @@ module.exports = class {
     }
   }
 
-  registerLiveTransport(options) {
-    const alias = options.alias;
-    if (!(alias in this.liveTransportCache)) {
-      this.liveTransportCache[alias] = new LiveTransport(options);
+  registerLiveTransport(key, options) {
+    let liveTransport = this.liveTransportCache[key];
+    if (!liveTransport) {
+      liveTransport = new LiveTransport(options);
+      this.liveTransportCache[key] = liveTransport;
+    } else {
+      // refresh stored request so a re-subscribe is not pinned to the first caller's message/replyid
+      liveTransport.updateSubscription(options);
     }
-
-    return this.liveTransportCache[alias];
+    return liveTransport;
   }
 
   getKeySuffix(name) {
@@ -679,7 +682,9 @@ module.exports = class {
         const item = obj.data.item;
         const value = JSON.parse(JSON.stringify(obj.data.value || {}))
         if (value.streaming) {
-          const liveTransport = this.registerLiveTransport({
+          // key by item + streaming.id so concurrent same-item queries get separate transports
+          const key = value.streaming.id ? `${item}:${value.streaming.id}` : item;
+          const liveTransport = this.registerLiveTransport(key, {
             alias: item,
             gid: gid,
             mspId: mspId,
