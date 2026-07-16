@@ -21,7 +21,6 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const era = require('../event/EventRequestApi.js');
 const Constants = require('../net2/Constants.js');
-const exec = require('child-process-promise').exec;
 const fsp = require('fs').promises;
 const _ = require('lodash');
 const rclient = require('../util/redis_manager.js').getRedisClient();
@@ -70,8 +69,14 @@ class NicStateSensor extends Sensor {
         switch (item) {
           case "tx_timeout": {
             key = `${nic}_tx_timeout`;
-            result = await exec(`cat /sys/class/net/${nic}/queues/tx-*/tx_timeout`)
-              .then((output) => output.stdout && output.stdout.trim().split('\n').filter(line => !isNaN(line)).reduce((sum, line) => sum + Number(line), 0))
+            result = await fsp.readdir(`/sys/class/net/${nic}/queues`)
+              .then(entries => Promise.all(
+                entries.filter(entry => entry.startsWith('tx-'))
+                  .map(entry => fsp.readFile(`/sys/class/net/${nic}/queues/${entry}/tx_timeout`, {encoding: "utf8"})
+                    .then(content => Number(content.trim()))
+                    .catch(() => NaN))
+              ))
+              .then(values => values.filter(v => !isNaN(v)).reduce((sum, v) => sum + v, 0))
               .catch((err) => 0);
             break;
           }

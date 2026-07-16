@@ -27,6 +27,7 @@ const f = require('../../net2/Firewalla.js');
 const userID = f.getUserID();
 const childProcess = require('child_process');
 const execAsync = util.promisify(childProcess.exec);
+const execFileAsync = util.promisify(childProcess.execFile);
 const Promise = require('bluebird');
 const redis = require('../../util/redis_manager.js').getRedisClient();
 const fs = Promise.promisifyAll(require("fs"));
@@ -2293,10 +2294,10 @@ module.exports = class DNSMASQ {
       let resolved = false;
       for (const domain of VERIFICATION_DOMAINS) {
         // if there are 3 verification domains and each takes at most 6 seconds to fail the test, it will take 18 seconds to fail the test on one network interface
-        let cmd = `dig -4 A +short +time=3 +tries=2 -p ${MASQ_PORT} -b ${intfIP}#${Constants.PORT_DNS_TEST_SRC} @${intfIP} ${domain}`;
+        const digArgs = ['-4', 'A', '+short', '+time=3', '+tries=2', '-p', String(MASQ_PORT), '-b', `${intfIP}#${Constants.PORT_DNS_TEST_SRC}`, `@${intfIP}`, domain];
         log.debug(`Verifying DNS resolution to ${domain} on ${intfIP} ...`);
         try {
-          let { stdout, stderr } = await execAsync(cmd);
+          let { stdout, stderr } = await execFileAsync('dig', digArgs);
           if (!stdout || !stdout.trim().split('\n').some(line => new Address4(line).isValid())) {
             log.warn(`Error verifying dns resolution to ${domain} on ${intfIP}`, stderr, stdout);
           } else {
@@ -2337,17 +2338,17 @@ module.exports = class DNSMASQ {
       let cmds = [];
       // check all dns servers, if any works normal, return up status
       for (const dnsServer of resolver4) {
-        let cmd = `dig -4 A +short +time=3 +tries=2 @${dnsServer} ${domain}`;
-        cmds.push({dnsServer, cmd});
+        const args = ['-4', 'A', '+short', '+time=3', '+tries=2', `@${dnsServer}`, domain];
+        cmds.push({dnsServer, args});
       }
       for (const dnsServer of resolver6) {
-        cmds.push({dnsServer:dnsServer, cmd:`dig -6 A +short +time=3 +tries=2 @${dnsServer} ${domain}`});
+        cmds.push({dnsServer, args: ['-6', 'A', '+short', '+time=3', '+tries=2', `@${dnsServer}`, domain]});
       }
 
-      for (const {dnsServer, cmd} of cmds) {
+      for (const {dnsServer, args} of cmds) {
         log.debug(`DNS upstream check, verifying DNS resolution to ${domain} on ${dnsServer} ...`);
         try {
-          let { stdout, stderr } = await execAsync(cmd);
+          let { stdout, stderr } = await execFileAsync('dig', args);
           if (!stdout || !stdout.trim().split('\n').some(line => new Address4(line).isValid())) {
             log.warn(`DNS upstream check, error verifying dns resolution to ${domain} on ${dnsServer}`, stderr, stdout);
           } else {

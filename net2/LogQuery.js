@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -453,17 +453,32 @@ class LogQuery {
 
 
   async enrichWithIntel(logs, enrichIP = false) {
+    // once the flow_inline_intel migration matures, every stored record was written with
+    // its intel snapshot baked in — absence of a category then means the flow simply has
+    // no intel, so query-time intel:ip lookups are skipped across the board
+    const inlineIntelReady = intelTool.isInlineIntelReady();
+
     return mapLimit(logs, 50, async f => {
+      // sumflow records (incl. ipB/dnsB) carry the coded category as-is; regular flows
+      // are decoded in toSimpleFormat
+      if (f.category == null && f.c != null) {
+        const category = intelTool.numberToCategory(f.c);
+        if (category) f.category = category;
+      }
+      const skipIntel = inlineIntelReady || f.category != null
       // ignore dns and ntp here as ip intel doesn't make sense for intercepted flows
       if (f.ip && f.type == 'ip' && !f.local || enrichIP) {
-        const intel = await intelTool.getIntel(f.ip, f.appHosts)
+        let intel
+        if (!skipIntel) {
+          intel = await intelTool.getIntel(f.ip, f.appHosts)
 
-        // lodash/assign appears to be x4 times less efficient
-        // Object.assign(f, _.pick(intel, ['country', 'category', 'app', 'host']))
-        if (intel) {
-          if (intel.country) f.country = intel.country
-          if (intel.category) f.category = intel.category
-          if (intel.app) f.app = intel.app
+          // lodash/assign appears to be x4 times less efficient
+          // Object.assign(f, _.pick(intel, ['country', 'category', 'app', 'host']))
+          if (intel) {
+            if (intel.country) f.country = intel.country
+            if (intel.category) f.category = intel.category
+            // if (intel.app) f.app = intel.app
+          }
         }
 
         const host = f.appHosts && f.appHosts[0] || intel && intel.host
@@ -477,8 +492,8 @@ class LogQuery {
           if (c) f.country = c
         }
 
-        // failed on previous cloud request, try again
-        if (intel && intel.cloudFailed || !intel) {
+        // failed on previous cloud request, try again (only when we actually looked up)
+        if (!skipIntel && (!intel || intel.cloudFailed)) {
           if (!firewalla.isApi()) {
             destIPFoundHook.processIP(f.ip);
           } else {
@@ -492,15 +507,17 @@ class LogQuery {
           }
         }
       } else if (f.domain) {
-        const intel = await intelTool.getIntel(undefined, [f.domain])
+        if (!skipIntel) {
+          const intel = await intelTool.getIntel(undefined, [f.domain])
 
-        if (intel) {
-          if (intel.category) f.category = intel.category
-          if (intel.app) f.app = intel.app
+          if (intel) {
+            if (intel.category) f.category = intel.category
+            // if (intel.app) f.app = intel.app
+          }
         }
       }
 
-      for (const rlKey in ['rl', 'drl'])
+      for (const rlKey of ['rl', 'drl'])
         if (f[rlKey]) {
           const c = country.getCountry(f[rlKey].split(':')[0]);
           if (c)
@@ -512,8 +529,6 @@ class LogQuery {
       if (f.reason == "adblock") {
           f.category = "ad";
       }
-      if (f.category === "x") // x is a placeholder generated in DNSProxyPlugin
-        delete f.category;
       if (sl && !f.flowTags && (f.host || f.domain || f.ip)) {
         const nds = sl.getSensor("NoiseDomainsSensor");
         if (nds) {

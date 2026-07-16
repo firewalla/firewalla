@@ -18,6 +18,8 @@ const log = require('./logger.js')(__filename);
 const networkProfileManager = require('../net2/NetworkProfileManager.js');
 const Constants = require('./Constants.js');
 const LogQuery = require('./LogQuery.js')
+const IntelTool = require('./IntelTool.js');
+const intelTool = new IntelTool();
 
 const _ = require('lodash');
 
@@ -139,6 +141,12 @@ class AuditTool extends LogQuery {
     } else {
       if (entry.tls) f.type = 'tls'
       f.fd = entry.fd
+    }
+
+    // decode the intel snapshot baked at record-write time (c = coded category)
+    if (entry.c != null) {
+      const category = intelTool.numberToCategory(entry.c);
+      if (category) f.category = category;
     }
     if (options.local)
       f.local = true
