@@ -1,4 +1,4 @@
-/*    Copyright 2019-2024 Firewalla Inc.
+/*    Copyright 2019-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -281,34 +281,37 @@ class DataUsageSensor extends Sensor {
         }
         alarmManager2.enqueueAlarm(alarm);
     }
+
     async getSumFlows(mac, begin, end) {
-        const rawFlows = [].concat(await flowTool.queryFlows(mac, "out", begin, end), await flowTool.queryFlows(mac, "in", begin, end))
-        let flows = [];
-        for (const rawFlow of rawFlows) {
-            flows.push({
-                count: rawFlow.ob + rawFlow.rb,
-                ip: flowTool.getDestIP(rawFlow),
-                device: mac
-            })
+      const baseOptions = { mac, ts: begin, ets: end, count: 5000, asc: true };
+      const flows = [].concat(
+        await flowTool.getDeviceLogs(Object.assign({}, baseOptions, { direction: "in" })),
+        await flowTool.getDeviceLogs(Object.assign({}, baseOptions, { direction: "out" }))
+      );
+
+      const flowsCache = {};
+      for (const flow of flows) {
+        const count = (flow.upload || 0) + (flow.download || 0);
+        const destHost = (flow.host && validator.isFQDN(flow.host)) ? suffixList.getDomain(flow.host) : flow.ip;
+        if (flowsCache[destHost]) {
+          flowsCache[destHost].count += count;
+        } else {
+          flowsCache[destHost] = Object.assign(
+            { count },
+            _.pick(flow, ['device', 'ip', 'host', 'category', 'app', 'country'])
+          );
         }
-        flows = await flowTool.enrichWithIntel(flows, true);
-        let flowsCache = {};
-        for (const flow of flows) {
-            const destHost = (flow.host && validator.isFQDN(flow.host)) ? suffixList.getDomain(flow.host) : flow.ip;
-            if (flowsCache[destHost]) {
-                flowsCache[destHost].count += flow.count
-            } else {
-                flowsCache[destHost] = flow
-            }
-        }
-        let flowsGroupByDestHost = [];
-        for (const destHost in flowsCache) {
-            flowsCache[destHost].aggregationHost = destHost;
-            flowsGroupByDestHost.push(flowsCache[destHost]);
-        }
-        return flowsGroupByDestHost.sort((a, b) => b.count - a.count).slice(0, this.topXflows)
-          .filter(flow => flow.count > 10 * 1000 * 1000) //return flows bigger than 10MB
+      }
+
+      let flowsGroupByDestHost = [];
+      for (const destHost in flowsCache) {
+        flowsCache[destHost].aggregationHost = destHost;
+        flowsGroupByDestHost.push(flowsCache[destHost]);
+      }
+      return flowsGroupByDestHost.sort((a, b) => b.count - a.count).slice(0, this.topXflows)
+        .filter(flow => flow.count > 10 * 1000 * 1000) //return flows bigger than 10MB
     }
+
     async checkMonthlyDataUsage(date, total, wanUUID) {
         log.info(`Start check monthly data usage ${wanUUID ? `on wan ${wanUUID}` : ""}`);
         const { totalDownload, totalUpload, monthlyBeginTs,

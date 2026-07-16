@@ -18,13 +18,25 @@ const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const { execFile } = require('child-process-promise');
 const uuid = require('uuid');
+const { delay } = require('../util/util.js');
 
 const REDIS_KEY = "kernel_crash_info";
 const LOCK_KEY = "kernel_crash_info:lock";
 const LOCK_TTL_SEC = 60;
+// how long a lock-losing process waits for the lock holder to finish its pstore
+// scan before giving up and refreshing the cache with whatever Redis holds.
+const LOCK_WAIT_POLL_MS = 500;
+const LOCK_WAIT_TIMEOUT_MS = (LOCK_TTL_SEC + 5) * 1000;
 const PSTORE_PATH = "/sys/fs/pstore";
 const PSTORE_ARCHIVE_PATH = "/log/system/pstore";
 const PSTORE_ARCHIVE_MAX_DIRS = 3;
+
+// In-memory cache of the "disable UDP TLS" decision so hot-path rule builders
+// (Block/TLSSetControl/AdblockPlugin/QuicLogPlugin) can read it synchronously
+// without a Redis round-trip. Populated at startup by checkPstoreAndUpdateRedis
+// (awaited before module loading in net2/main.js) and refreshed whenever the
+// async accessors below run. default to false
+let cachedShouldDisableUdpTls = false;
 
 // FireMain and FireApi both call checkPstoreAndUpdateRedis on startup; guard the
 // pstore scan/archive/delete with a cross-process redis lock so they don't race.
@@ -46,6 +58,25 @@ async function releaseLock(token) {
   } catch (err) {
     log.warn("Failed to release kernel_crash_info lock:", err.message);
   }
+}
+
+// When another process holds the lock, it is the one scanning pstore and may set
+// shouldDisableUdpTls after we read Redis. Wait for it to release the lock, then
+// re-read kernel_crash_info so our in-memory cache reflects the settled decision
+// before rule builders (which read shouldDisableUdpTls synchronously) run.
+async function waitForLockReleaseAndRefreshCache() {
+  const deadline = Date.now() + LOCK_WAIT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await delay(LOCK_WAIT_POLL_MS);
+    const holder = await rclient.getAsync(LOCK_KEY).catch(() => null);
+    if (!holder)
+      break; // lock released (or its TTL expired) — the decision is settled
+  }
+  const crashInfo = await readCrashInfo().catch((err) => {
+    log.error("Error refreshing crash info after waiting for lock:", err.message);
+    return {};
+  });
+  cachedShouldDisableUdpTls = crashInfo.shouldDisableUdpTls === true;
 }
 
 // parse "version:" and "srcversion:" lines from modinfo output
@@ -118,16 +149,21 @@ async function archiveAndClearPstore(crashTS) {
 
 // Called at FireMain and FireApi startup. koPath is the path to xt_udp_tls.ko (may not exist yet).
 async function checkPstoreAndUpdateRedis(koPath) {
+  const crashInfo = await readCrashInfo().catch((err) => {
+    log.error("Error in checkPstoreAndUpdateRedis reading crash info:", err.message);
+    return {};
+  });
+  cachedShouldDisableUdpTls = crashInfo.shouldDisableUdpTls === true;
   const token = uuid.v4();
   if (!await acquireLock(token).catch((err) => {
     log.error("Failed to acquire kernel_crash_info lock:", err.message);
     return false;
   })) {
-    log.info("Another process is already checking pstore, skipping");
+    log.info("Another process is already checking pstore, waiting for it to finish before refreshing cache");
+    await waitForLockReleaseAndRefreshCache();
     return;
   }
   try {
-    const crashInfo = await readCrashInfo();
     // find dmesg-* pstore files, sorted newest first (mirrors `| sort -rn` on the printf'd mtime)
     const findResult = await execFile('sudo',
       ['find', PSTORE_PATH, '-name', 'dmesg-*', '-type', 'f', '-printf', '%T@ %p\n']
@@ -218,6 +254,7 @@ async function checkPstoreAndUpdateRedis(koPath) {
     }
 
 
+    cachedShouldDisableUdpTls = crashInfo.shouldDisableUdpTls === true;
     log.debug("Updated kernel_crash_info in Redis:", JSON.stringify(crashInfo));
     if (updateCrashInfoNeed) {
       await saveCrashInfo(crashInfo);
@@ -233,15 +270,10 @@ async function checkPstoreAndUpdateRedis(koPath) {
   }
 }
 
-// Called by Platform.installTLSModule before attempting to load xt_udp_tls.
-async function shouldDisableUdpTls() {
-  try {
-    const crashInfo = await readCrashInfo();
-    return crashInfo.shouldDisableUdpTls === true;
-  } catch (err) {
-    log.error("Failed to read shouldDisableUdpTls:", err.message);
-    return false;
-  }
+// Returns true if UDP TLS should be disabled due to a previous crash, false otherwise.
+// checkPstoreAndUpdateRedis must be called first to populate the in-memory cache (awaited before module loading in net2/main.js).
+function shouldDisableUdpTls() {
+  return cachedShouldDisableUdpTls;
 }
 
 // Called by Platform.installTLSModule after xt_udp_tls is successfully loaded.
@@ -257,6 +289,7 @@ async function onUdpTlsModuleLoaded(koPathOrName) {
     // record when this load happened (udpTlsDisabledOn in struct corresponds to disabled state;
     // reset shouldDisableUdpTls since the module just loaded successfully)
     crashInfo.shouldDisableUdpTls = false;
+    cachedShouldDisableUdpTls = false;
 
     await saveCrashInfo(crashInfo);
     log.info("Updated udpModuleVersion after successful xt_udp_tls load:", JSON.stringify(version));
