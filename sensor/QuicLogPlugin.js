@@ -29,7 +29,6 @@ const { Rule } = require('../net2/Iptables.js');
 const iptc = require('../control/IptablesControl.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
-
 const lock = new AsyncLock();
 
 const LOG_PREFIX = Constants.LOG_PREFIX_QUIC;
@@ -146,7 +145,7 @@ class QuicLogPlugin extends Sensor {
     super.globalOn();
 
     if (!platform.isUdpTLSBlockSupport()) {
-      log.info("UDP TLS block is not supported on this platform, skip setting up quic log iptables rule");
+      log.info("UDP TLS block is not supported or should be disabled on this platform, skip setting up quic log iptables rule");
       return;
     }
     const rule = new Rule().chn('FW_FORWARD_LOG');
@@ -166,7 +165,7 @@ class QuicLogPlugin extends Sensor {
     super.globalOff();
 
     if (!platform.isUdpTLSBlockSupport()) {
-      log.info("UDP TLS block is not supported on this platform, skip removing quic log iptables rule");
+      log.info("UDP TLS block is not supported or should be disabled on this platform, skip removing quic log iptables rule");
       return;
     }
 
