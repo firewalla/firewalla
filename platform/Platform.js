@@ -22,9 +22,10 @@ const fs = require('fs');
 const fsp = fs.promises
 const cp = require('child_process');
 
-const { exec } = require('child-process-promise');
+const { exec, execFile } = require('child-process-promise');
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
+let kernelCrashMonitor = null;
 
 class Platform {
   getAllNicNames() {
@@ -53,22 +54,46 @@ class Platform {
     return result;
   }
 
-  // Read the hardware permanent MAC of a NIC via ethtool. Returns "" if unavailable
-  // (e.g. all-zero permanent address or ethtool failure), so callers can fall back.
+  // Read the hardware permanent MAC of a NIC via ethtool. Returns "" if unavailable.
+  // Cached per-nic keyed on ifindex, not just name, since a USB wlan dongle can be swapped
+  // while keeping the same nic name (udev pins name to port); ifindex changes when that happens.
   async getPermanentMac(nic) {
-    const mac = await exec(`ethtool -P ${nic}`).then(result => {
+    if (!this._permanentMacCache)
+      this._permanentMacCache = {};
+
+    const ifindex = await fsp.readFile(`/sys/class/net/${nic}/ifindex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => null);
+    const cached = this._permanentMacCache[nic];
+    if (cached !== undefined && ifindex !== null && cached.ifindex === ifindex)
+      return cached.mac;
+
+    const mac = await execFile('ethtool', ['-P', nic]).then(result => {
       const match = result.stdout.match(/Permanent address:\s*([0-9a-fA-F:]+)/);
       return match ? match[1].trim().toUpperCase() : "";
     }).catch(() => "");
     if (!mac || mac === "00:00:00:00:00:00")
       return "";
+
+    if (ifindex !== null)
+      this._permanentMacCache[nic] = {mac, ifindex};
     return mac;
   }
 
+  // Cached per-iface keyed on ifindex, not just name, since a USB wlan dongle can be swapped
+  // while keeping the same iface name (udev pins name to port); ifindex changes when that happens.
   async getMaxLinkSpeed(iface) {
+    if (!this._maxLinkSpeedCache)
+      this._maxLinkSpeedCache = {};
+
+    const ifindex = await fsp.readFile(`/sys/class/net/${iface}/ifindex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => null);
+    const cached = this._maxLinkSpeedCache[iface];
+    if (cached !== undefined && ifindex !== null && cached.ifindex === ifindex)
+      return cached.max;
+
     let max = 0;
-    await exec(`ethtool ${iface} | tr -d '\\n' | sed -e 's/.*Supported link modes:\\(.*\\)Supported pause.*/\\1/' | xargs`).then((result) => {
-      const modes = result.stdout.split(' ');
+    await execFile('ethtool', [iface]).then((result) => {
+      const flat = result.stdout.replace(/\n/g, '');
+      const match = flat.match(/Supported link modes:\s*(.*?)\s*Supported pause.*/);
+      const modes = (match ? match[1] : '').split(/\s+/).filter(Boolean);
       for (const mode of modes) {
         const speed = Number(mode.split("base")[0]);
         if (speed > max)
@@ -77,6 +102,9 @@ class Platform {
     }).catch((err) => {
       log.info(`Failed to get supported link modes of ${iface}`, err.message);
     });
+
+    if (max > 0 && ifindex !== null)
+      this._maxLinkSpeedCache[iface] = {max, ifindex};
     return max;
   }
 
@@ -425,14 +453,6 @@ class Platform {
     if (module_name == "xt_udp_tls" && !this.isUdpTLSBlockSupport()) {
       return;
     }
-    if (module_name == "xt_udp_tls") {
-      const kernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
-      const disabled = await kernelCrashMonitor.shouldDisableUdpTls();
-      if (disabled) {
-        log.warn("Skipping xt_udp_tls installation: disabled due to prior kernel crash with same module version");
-        return;
-      }
-    }
     const installed = await this.isTLSModuleInstalled(module_name);
     if (installed) return;
     const codename = await exec(`lsb_release -cs`).then((result) => result.stdout.trim()).catch((err) => {
@@ -484,7 +504,9 @@ class Platform {
     }
     this.installedModules[module_name] = true;
     if (module_name == "xt_udp_tls") {
-      const kernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
+      if (!kernelCrashMonitor) {
+        kernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
+      }
       await kernelCrashMonitor.onUdpTlsModuleLoaded(koExists ? koPath : 'xt_udp_tls');
     }
   }
@@ -520,6 +542,14 @@ class Platform {
   }
 
   isUdpTLSBlockSupport() {
+    if (!kernelCrashMonitor) {
+      kernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
+    }
+    const disabled = kernelCrashMonitor.shouldDisableUdpTls();
+    if (disabled) {
+      log.warn("Skipping xt_udp_tls installation: disabled due to prior kernel crash with same module version");
+      return false;
+    }
     return true;
   }
 

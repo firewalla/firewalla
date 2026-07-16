@@ -112,10 +112,6 @@ class PSEPlatform extends Platform {
     return true;
   }
 
-  isUdpTLSBlockSupport() {
-    return true;
-  }
-
   isFireRouterManaged() {
     return true;
   }
