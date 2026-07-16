@@ -50,8 +50,7 @@ const IP_SET_TO_BE_PROCESSED = "ip_set_to_be_processed"; // legacy redis key, cl
 const INTEL_QUEUE_SIZE_KEY = "metric:intel:queue:size"; // published for SysInfo (cross-process diagnostic)
 
 const MAX_CONCURRENCY = 100; // max concurrent processIP calls (was batch size of the redis-backed queue)
-const QUEUE_SIZE_PAUSE = 2000;
-const QUEUE_SIZE_RESUME = 1000;
+const QUEUE_SIZE_PAUSE = 2000; // drop new flows once the enrich backlog reaches this
 
 const TRUST_THRESHOLD = 10 // to be updated
 
@@ -79,8 +78,13 @@ class DestIPFoundHook extends Hook {
     });
   }
 
-  appendNewFlow(flow) {
-    this.flowQueue.push(flow);
+  // returns a promise with enrichment result if wait is true
+  async appendNewFlow(flow, wait = false) {
+    if (!flow || !flow.ip || f.isReservedBlockingIP(flow.ip) || this.flowQueue.size >= QUEUE_SIZE_PAUSE)
+      return null
+    if (!flow.fd)
+      flow.fd = 'in';
+    return wait ? this.flowQueue.pushAndWait(flow) : this.flowQueue.push(flow);
   }
 
   isFirewalla(host) {
@@ -281,7 +285,6 @@ class DestIPFoundHook extends Hook {
 
   async processIP(flow, options) {
     let enrichedFlow = {};
-    let requeued = false;
     if (flow) {
       if (_.isString(flow)) {
         try {
@@ -434,7 +437,7 @@ class DestIPFoundHook extends Hook {
       log.error(`Failed to process${ip ? ` IP : ${ip}` : ""}${host ? ` host: ${host}` : ""}, error:`, err);
       return null;
     } finally {
-      if (enrichedFlow && enrichedFlow.from === "flow" && !requeued) {
+      if (enrichedFlow && enrichedFlow.from === "flow") {
         sem.emitLocalEvent({
           type: Message.MSG_FLOW_ENRICHED,
           suppressEventLogging: true,
@@ -465,28 +468,10 @@ class DestIPFoundHook extends Hook {
 
   run() {
     sem.on('DestIPFound', (event) => {
-      let ip = event.ip;
-
-      // ignore reserved ip address
-      if (f.isReservedBlockingIP(ip)) {
-        return;
-      }
-
-      let fd = event.fd;
-      if (fd == null) {
-        fd = 'in'
-      }
-
-      if (!ip)
-        return;
-
-      if (this.paused)
-        return;
-
       const flow = event.flow || _.pick(event, ["mac", "ip", "host", "fd"]);
       if (event.from)
         flow.from = event.from;
-      this.appendNewFlow(flow);
+      this.appendNewFlow(flow); // shared filters (reserved/empty IP, backlog cap) applied here
     });
 
     sem.on('DestIP', (event) => {
@@ -504,15 +489,8 @@ class DestIPFoundHook extends Hook {
   }
 
   async monitorQueue() {
-    const count = this.flowQueue.size;
-    if (count > QUEUE_SIZE_PAUSE) {
-      this.paused = true;
-    }
-    if (count < QUEUE_SIZE_RESUME) {
-      this.paused = false;
-    }
-    // publish queue size so SysInfo (possibly another process) can still report it
-    await rclient.setAsync(INTEL_QUEUE_SIZE_KEY, count).catch(() => {});
+    // publish queue size so SysInfo (possibly another process) can report it
+    await rclient.setAsync(INTEL_QUEUE_SIZE_KEY, this.flowQueue.size).catch(() => {});
   }
 }
 

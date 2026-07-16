@@ -68,14 +68,15 @@ async function isTCDeletionBuggy() {
 }
 
 // CVE-2023-4207: cls_u32 double-unbind on tc filter replace.
-// 5.10.x < 5.10.190 (confirmed via kernel.org).
-// 4.9.x, 4.15.x, 5.4.x, 5.15.x confirmed buggy on real hardware (Purple/Gold U18/Gold U20/PSE)
+// 4.9.x (Purple), 5.4.x (Gold v2), 5.15.x (PSE/Gold Pro) confirmed buggy on real hardware.
+// 5.10.x (Gold SE) is fixed at 5.10.190+; below that it's buggy.
 async function isTCFilterReplaceBuggy() {
   if (_tcFilterReplaceBuggy !== null)
     return _tcFilterReplaceBuggy;
 
-  const ALWAYS_BUGGY_BRANCHES = ['4.9', '4.15', '5.4', '5.15'];
+  const ALWAYS_BUGGY_BRANCHES = ['4.9', '5.4', '5.15'];
   const GSE = '5.10';
+  const GSE_FIXED_VERSION = `${GSE}.190`;
   const release = await exec("uname -r").then(r => r.stdout.trim()).catch((err) => {
     log.error("Failed to get kernel version via uname -r", err.message);
     return null;
@@ -83,7 +84,7 @@ async function isTCFilterReplaceBuggy() {
   const branchMatch = release && release.match(/^(\d+\.\d+)/);
   const branch = branchMatch && branchMatch[1];
   _tcFilterReplaceBuggy = !!(ALWAYS_BUGGY_BRANCHES.includes(branch) ||
-    (branch === GSE && versionCompare(release, `${GSE}.190`)));
+    (branch === GSE && versionCompare(release, GSE_FIXED_VERSION)));
   log.info(`TC filter replace buggy (CVE-2023-4207) = ${_tcFilterReplaceBuggy} (release: ${release})`);
   return _tcFilterReplaceBuggy;
 }

@@ -32,7 +32,6 @@ const CloudWrapper = require('../api/lib/CloudWrapper.js');
 const cw = new CloudWrapper();
 
 const zlib = require('zlib');
-const crypto = require('crypto');
 const deflateAsync = util.promisify(zlib.deflate);
 const rp = require('request-promise');
 
@@ -72,11 +71,11 @@ module.exports = class {
   }
 
   cleanupLiveTransport() {
-    for (const alias in this.liveTransportCache) {
-      const liveTransport = this.liveTransportCache[alias];
+    for (const key in this.liveTransportCache) {
+      const liveTransport = this.liveTransportCache[key];
       if (!liveTransport.isLivetimeValid()) {
-        log.info("Destory live transport for", alias);
-        delete this.liveTransportCache[alias];
+        log.info("Destory live transport for", key);
+        delete this.liveTransportCache[key];
       }
     }
   }
@@ -92,13 +91,16 @@ module.exports = class {
     }
   }
 
-  registerLiveTransport(options) {
-    const alias = options.alias;
-    if (!(alias in this.liveTransportCache)) {
-      this.liveTransportCache[alias] = new LiveTransport(options);
+  registerLiveTransport(key, options) {
+    let liveTransport = this.liveTransportCache[key];
+    if (!liveTransport) {
+      liveTransport = new LiveTransport(options);
+      this.liveTransportCache[key] = liveTransport;
+    } else {
+      // refresh stored request so a re-subscribe is not pinned to the first caller's message/replyid
+      liveTransport.updateSubscription(options);
     }
-
-    return this.liveTransportCache[alias];
+    return liveTransport;
   }
 
   getKeySuffix(name) {
@@ -668,19 +670,21 @@ module.exports = class {
       const encryptedMessage = message.message;
       const replyid = message.replyid; // replyid will not encrypted
       let response, decryptedMessage, code = 200, encryptedResponse;
-      // The IV (if any) is embedded in the message envelope ({ iv, message }).
-      // decryptRequest reports usedIv so we can echo a fresh IV on the reply.
-      let replyIVBuf = null;
+      // decryptRequest reports the request scheme (gcm/cbc-iv/legacy) so the
+      // reply mirrors it; the iv/tag travel inside the message envelope.
+      let replyScheme = 'legacy';
       try {
-        const { decrypted, usedIv } = await cw.getCloud().decryptRequest(gid, encryptedMessage);
+        const { decrypted, scheme } = await cw.getCloud().decryptRequest(gid, encryptedMessage);
         decryptedMessage = decrypted;
-        replyIVBuf = usedIv ? crypto.randomBytes(16) : null;
+        replyScheme = scheme;
         decryptedMessage.mtype = decryptedMessage.message.mtype;
         const obj = decryptedMessage.message.obj;
         const item = obj.data.item;
         const value = JSON.parse(JSON.stringify(obj.data.value || {}))
         if (value.streaming) {
-          const liveTransport = this.registerLiveTransport({
+          // key by item + streaming.id so concurrent same-item queries get separate transports
+          const key = value.streaming.id ? `${item}:${value.streaming.id}` : item;
+          const liveTransport = this.registerLiveTransport(key, {
             alias: item,
             gid: gid,
             mspId: mspId,
@@ -707,7 +711,7 @@ module.exports = class {
           compressMode: 1,
           data: output.toString('base64')
         });
-        encryptedResponse = await cw.getCloud().encryptResponse(gid, compressedResponse, replyIVBuf);
+        encryptedResponse = await cw.getCloud().encryptResponse(gid, compressedResponse, replyScheme);
       } catch (err) {
         log.warn(`Process web message error`, err);
         if (err && err.message == "decrypt_error") {
