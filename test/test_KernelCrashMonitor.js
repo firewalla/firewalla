@@ -47,6 +47,7 @@ class FakeRedis {
 //
 // fixtures:
 //   modinfoOutput: string | null            -- stdout for `modinfo <arg>` (null => reject)
+//   koMtime: number | undefined             -- mtime (sec) returned for `stat -c %Y <koPath>`
 //   dmesgFindOutput: string                 -- stdout for the pstore `find ... -name dmesg-*` scan
 //   fileContents: { path: content }         -- backing content for grep/cat over dmesg files
 //   archiveDirs: string[]                   -- stdout lines for `ls -1 ARCHIVE_PATH`
@@ -62,6 +63,10 @@ function makeExecFile(fixtures) {
     if (file === 'modinfo') {
       if (fixtures.modinfoOutput == null) throw new Error('modinfo: command not found');
       return { stdout: fixtures.modinfoOutput };
+    }
+    if (file === 'stat' && args[0] === '-c' && args[1] === '%Y') {
+      if (fixtures.koMtime === undefined) return { stdout: '' }; // unknown mtime => null
+      return { stdout: String(fixtures.koMtime) };
     }
     if (file === 'sudo' && args[0] === 'find' && args.includes('-name')) {
       return { stdout: fixtures.dmesgFindOutput || '' };
@@ -288,6 +293,47 @@ describe('KernelCrashMonitor', function () {
       expect(info.crashesCount).to.equal(1);
       expect(info.shouldDisableUdpTls).to.be.true;
       expect(info.udpTlsDisabledOn).to.be.a('number').and.above(0);
+    });
+
+    it('does NOT disable on first run when a stale pstore crash predates the current (upgraded) module', async function () {
+      // first run after an upgrade: no stored crash info, pstore still holds an old
+      // udp-tls crash from the previous module, but the .ko was rebuilt/installed later.
+      const dmesgFindOutput = `300.0 ${PSTORE_PATH}/dmesg-a\n`;
+      const { execFile } = makeExecFile({
+        dmesgFindOutput,
+        modinfoOutput: modinfoStdout('2.0', 'new'),
+        koMtime: 500, // module installed at ts=500, after the crash at ts=300
+        fileContents: {
+          [`${PSTORE_PATH}/dmesg-a`]: 'Kernel panic - not syncing\nModules linked in: xt_udp_tls ext4',
+        },
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+
+      const info = await kcm.getCrashInfo();
+      expect(info.shouldDisableUdpTls).to.not.equal(true);
+      expect(info.lastCrashTS).to.be.undefined;
+      expect(info.crashesCount).to.be.undefined;
+    });
+
+    it('DOES disable when the crash is newer than the current module build time', async function () {
+      const dmesgFindOutput = `700.0 ${PSTORE_PATH}/dmesg-a\n`;
+      const { execFile } = makeExecFile({
+        dmesgFindOutput,
+        modinfoOutput: modinfoStdout('2.0', 'new'),
+        koMtime: 500, // module installed at ts=500, crash happened later at ts=700
+        fileContents: {
+          [`${PSTORE_PATH}/dmesg-a`]: 'Kernel panic - not syncing\nModules linked in: xt_udp_tls ext4',
+        },
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+
+      const info = await kcm.getCrashInfo();
+      expect(info.shouldDisableUdpTls).to.be.true;
+      expect(info.lastCrashTS).to.equal(700);
     });
 
     it('does not double-count a udp-tls crash that is not newer than the last recorded one', async function () {
