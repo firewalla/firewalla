@@ -52,20 +52,23 @@ while IFS= read -r line; do
     echo "$file_path is locked, skip check update"
     continue
   fi
-  expected_hash=$(curl $hash_url -s)
-  if [[ $? -ne 0 ]]; then
-    echo "Failed to get hash of $file_path from $hash_url"
-    continue
-  fi
+  # retry with backoff: at boot the network (WAN/DNS) may still be settling
+  expected_hash=""
+  for attempt in 1 2 3 4 5; do
+    expected_hash=$(curl -sf --connect-timeout 10 -m 30 "$hash_url")
+    [ ${#expected_hash} = 64 ] && break
+    echo "Attempt $attempt: failed to get valid hash from $hash_url, retry in $((attempt*5))s"
+    sleep $((attempt * 5))
+  done
   if [ ${#expected_hash} != 64 ]; then
-    echo "Invalid hash from $hash_url"
+    echo "Failed to get valid hash of $file_path from $hash_url after retries"
     continue
   fi
 
   # verify signature
   if [ "$VERIFY_SIGNATURE" = "true" ]; then
     signature_file="$TEMP_DIR"/$(cat /dev/urandom | tr -dc '[:alpha:]' |  head -c 20)
-    wget -qO "$signature_file" "$signature_url"
+    wget -qO "$signature_file" --tries=3 --waitretry=10 --retry-connrefused --timeout=30 "$signature_url"
     if [ "$?" != 0 ]; then
       echo "No signature file found: $signature_url"
       continue
@@ -88,7 +91,7 @@ while IFS= read -r line; do
 
     sudo mkdir -p $(dirname "${file_path}")
     temp_file="$file_path".download
-    sudo wget "$bin_url" -O "$temp_file"
+    sudo wget --tries=3 --waitretry=10 --retry-connrefused --timeout=30 "$bin_url" -O "$temp_file"
     verify_hash=$(sha256sum $temp_file | awk '{print $1}')
     if [[ "$verify_hash" != "$expected_hash" ]]; then
       echo "Incomplete file downloaded"

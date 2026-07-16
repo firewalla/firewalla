@@ -4,11 +4,13 @@
 # Launched in the background by fireonboard.service on first boot, fully silent: nothing is shown
 # on the console; all output goes to /home/pi/.firewalla/fireonboard.log (for dev troubleshooting).
 #
-# Does three things:
+# Does two things:
 #   1) Wait for the app stack (FireMain + sys:ept.gid)
-#   2) Unconditionally translate onboard-config.network into FireRouter config and apply it
-#   3) Run bootstrap.js (onboard mode): write license unconditionally; if msp/app was selected,
+#   2) Run bootstrap.js (onboard mode): write license unconditionally; if msp/app was selected,
 #      register(bid) -> wait for the user to click activate -> join MSP / join App
+#
+# Network is applied by FireRouter itself on first boot (it reads onboard-config.network as its
+# initial config), so this script no longer touches the network.
 #
 # /data/.fireonboard-done is written only after bootstrap.js succeeds (exit 0); otherwise retry next boot.
 
@@ -17,9 +19,6 @@ set -u
 ONBOARD_CONFIG="${FW_ONBOARD_CONFIG:-/home/pi/.firewalla/onboard-config.json}"
 LOG="${FW_ONBOARD_LOG:-/home/pi/.firewalla/fireonboard.log}"
 DONE=/data/.fireonboard-done
-FRR_BASE=http://localhost:8837
-FRR_SET="$FRR_BASE/v1/config/set"
-FRR_GET="$FRR_BASE/v1/config/active"   # read endpoint, used only as a readiness probe
 NODE=/home/pi/firewalla/bin/node
 SCRIPTS_DIR=/home/pi/firewalla/scripts
 
@@ -27,40 +26,6 @@ mkdir -p "$(dirname "$LOG")" 2>/dev/null
 # Send all stdout/stderr to the log — keep the console silent for the user.
 exec >>"$LOG" 2>&1
 log(){ printf '[fireonboard %s] %s\n' "$(date -Is 2>/dev/null || date)" "$*"; }
-
-# ── network ───────────────────────────────────────────────────────────────────
-# FireRouter owns :8837 and can come up a bit AFTER FireMain (the stack wait below only checks
-# FireMain). apply_network POSTs to it, so block until it actually answers — otherwise the POST hits
-# connection-refused and the network config is silently dropped while we'd still log "applied".
-wait_firerouter(){
-  local i=0
-  while [ $i -lt 90 ]; do   # up to ~3 min
-    curl -s -o /dev/null --max-time 2 "$FRR_GET" && return 0
-    sleep 2; i=$((i+1))
-  done
-  return 1
-}
-
-# onboard-config.network is already a ready-made FireRouter network_config (translated by the
-# cloud). POST the whole block to /v1/config/set as-is; the box does no translation.
-apply_network(){
-  if [ "$(jq -r 'has("network")' "$ONBOARD_CONFIG" 2>/dev/null)" != "true" ]; then
-    log "network: no .network in onboard-config — skip"; return 0
-  fi
-  if [ "$(jq -r '.network | has("interface")' "$ONBOARD_CONFIG" 2>/dev/null)" != "true" ]; then
-    log "ERROR: .network is not a FireRouter config (missing 'interface') — skip network"; return 1
-  fi
-  if ! wait_firerouter; then
-    log "ERROR: FireRouter (:8837) not ready after ~3min — skip network apply (retry next boot)"; return 1
-  fi
-  log "network: FireRouter ready; posting ready-made FireRouter config as-is (.network)"
-  local payload rc; payload=$(jq -c '.network' "$ONBOARD_CONFIG")
-  curl -sS -X POST "$FRR_SET" -H 'Content-Type: application/json' -d "$payload" | head -c 800
-  rc=${PIPESTATUS[0]}
-  echo
-  [ "$rc" -eq 0 ] && log "network: applied" || log "ERROR: network POST failed (curl rc=$rc)"
-  return "$rc"
-}
 
 # Show a single "SSH here" banner on tty1 (visible on bare-metal VGA / noVNC console); silent otherwise.
 # Don't hardcode eth0: take the IP of the default-route interface (WAN may not be eth0); fall back to
@@ -96,7 +61,6 @@ log "=== fireonboard start ==="
 if [ ! -f "$ONBOARD_CONFIG" ]; then
   log "no onboard-config at $ONBOARD_CONFIG — nothing to do"; exit 0
 fi
-command -v jq >/dev/null 2>&1 || { log "ERROR: jq not installed"; exit 1; }
 
 # 1) Wait for the stack (monotonic clock, safe on no-RTC boxes), up to 7 minutes.
 read t0 _ < /proc/uptime; t0=${t0%.*}; up=0
@@ -113,10 +77,7 @@ if [ $up -ne 1 ]; then
 fi
 log "stack ready"
 
-# 2) Apply network unconditionally (failure does not block license/activation).
-apply_network || log "WARN: network apply failed, continuing"
-
-# 2.5) Show the "SSH here" banner on tty1 (this one line only; silent otherwise).
+# 2) Show the "SSH here" banner on tty1 (this one line only; silent otherwise).
 show_ssh_banner
 
 # 3) license + activation (node, onboard mode; bootstrap.js reads onboard-config itself).
