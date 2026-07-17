@@ -25,7 +25,8 @@ const firewalla = require('../../net2/Firewalla.js');
 const platform = require('../../platform/PlatformLoader').getPlatform();
 const _ = require('lodash');
 const { findPathByMac, buildHops } = require('./meTopology.js');
-const { exec } = require('child-process-promise');
+const { execFile } = require('child-process-promise');
+const net = require('net');
 const LRU = require('lru-cache');
 
 
@@ -44,9 +45,10 @@ function getClientIP(req) {
 
 // ping the given IP from the box running /v1/me and return the average RTT in ms (null on failure)
 async function pingLatency(ip) {
-  if (!ip) return null;
+  // only ping validated IP literals; never interpolate untrusted input into a shell
+  if (!ip || !net.isIP(ip)) return null;
   try {
-    const result = await exec(`ping -c 5 -W 1 -w 1 -i 0.1 ${ip}`, { timeout: 2000 });
+    const result = await execFile('ping', ['-c', '5', '-W', '1', '-w', '1', '-i', '0.1', ip], { timeout: 2000 });
     const stdout = result && result.stdout || '';
     // rtt min/avg/max/mdev = 0.123/0.456/0.789/0.111 ms
     const m = stdout.match(/=\s*[\d.]+\/([\d.]+)\//);
@@ -109,7 +111,7 @@ async function buildTopology(target) {
     if (!switchStatus || !_.isObject(switchStatus) ) {
       topologyError = 'Failed to fetch network topology';
     }
-    for (const hop of hops) {
+    for (const hop of (Array.isArray(hops) ? hops : [])) {
       const hmac = hop.mac;
       if (!hmac) continue;
       switch (hop.type) {
@@ -121,7 +123,7 @@ async function buildTopology(target) {
           }
           break;
         case 'ap':
-          if (apStatus[hmac]) {
+          if (apStatus && apStatus[hmac]) {
             const assetInfo = apStatus[hmac];
             if (assetInfo.model) {
               hop.model = assetInfo.model;
@@ -135,7 +137,7 @@ async function buildTopology(target) {
           }
           break;
         case 'switch':
-          if (switchStatus[hmac]) {
+          if (switchStatus && switchStatus[hmac]) {
             const assetInfo = switchStatus[hmac];
             if (assetInfo.model) {
               hop.model = assetInfo.model;
