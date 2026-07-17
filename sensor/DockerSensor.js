@@ -21,7 +21,7 @@ const routing = require('../extension/routing/routing')
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const sysManager = require('../net2/SysManager')
 
-const { exec } = require('child-process-promise');
+const { exec, execFile } = require('child-process-promise');
 const _ = require('lodash')
 
 const { IPSET_DOCKER_WAN_ROUTABLE, IPSET_DOCKER_LAN_ROUTABLE, IPSET_MONITORED_NET } = ipset.CONSTANTS
@@ -37,21 +37,12 @@ class DockerSensor extends Sensor {
   }
 
   async listNetworks() {
-    const listOutput = await exec('sudo docker network list')
-    const lines = listOutput.stdout
-      .split('\n')
-      .slice(1, -1)
-      .map(s => s.split(/\s+/)) // NETWORK ID, NAME, DRIVER, SCOPE
-      // .filter(n => n[2] == 'bridge') // only taking care of bridge network for now
+    const listOutput = await execFile('sudo', ['docker', 'network', 'ls', '--format', '{{.Name}}'])
+    const names = listOutput.stdout.split('\n').map(s => s.trim()).filter(Boolean)
+    if (!names.length) return []
 
-    const networks = []
-    for (const line of lines) {
-      const inspect = await exec(`sudo docker network inspect ${line[1]}`)
-      const network = JSON.parse(inspect.stdout)
-      networks.push(network[0])
-    }
-
-    return networks
+    const inspectOutput = await execFile('sudo', ['docker', 'network', 'inspect', ...names])
+    return JSON.parse(inspectOutput.stdout)
   }
 
   async getInterface(network) {
