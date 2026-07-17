@@ -356,9 +356,9 @@ async function run() {
     }
   },1000*60);
 
-  process.on('SIGUSR1', () => {
+  process.on('SIGUSR1', async () => {
     log.info('Received SIGUSR1. Trigger check.');
-    const dnsmasqCount = dnsmasq.getCounterInfo();
+    const dnsmasqCount = await dnsmasq.getCounterInfo();
     log.warn(dnsmasqCount);
   });
 }
