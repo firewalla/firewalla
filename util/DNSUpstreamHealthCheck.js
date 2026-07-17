@@ -17,16 +17,12 @@
 const log = require('../net2/logger.js')(__filename);
 
 const net = require('net');
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const fc = require('../net2/config.js');
 
 const DEFAULT_TIMEOUT = 3;
 const DEFAULT_TRIES = 2;
 const DEFAULT_VERIFICATION_DOMAINS = ["firewalla.encipher.io", "github.com", "api.firewalla.com"];
-
-function shellQuote(value) {
-  return `'${String(value).replace(/'/g, `'\\''`)}'`;
-}
 
 function getVerificationDomains(domains) {
   if (Array.isArray(domains) && domains.length > 0)
@@ -79,18 +75,18 @@ function normalizeServerSpec(serverSpec) {
   return { raw, host, port };
 }
 
-function buildDigCommand({ host, port, domain, timeout = DEFAULT_TIMEOUT, tries = DEFAULT_TRIES }) {
-  const args = [
-    'dig',
-    port ? `-p ${Number(port)}` : '',
-    shellQuote(`@${net.isIP(host) === 6 ? `[${host}]` : host}`),
-    shellQuote(domain),
+function buildDigArgs({ host, port, domain, timeout = DEFAULT_TIMEOUT, tries = DEFAULT_TRIES }) {
+  const args = [];
+  if (port) args.push('-p', String(Number(port)));
+  args.push(
+    `@${host}`,
+    domain,
     'A',
     '+short',
     `+time=${Number(timeout)}`,
     `+tries=${Number(tries)}`
-  ].filter(Boolean);
-  return args.join(' ');
+  );
+  return args;
 }
 
 function parseAddresses(stdout) {
@@ -121,7 +117,7 @@ async function probeServer(serverSpec, options = {}) {
   }
 
   for (const domain of domains) {
-    const cmd = buildDigCommand({
+    const args = buildDigArgs({
       host: normalized.host,
       port: normalized.port,
       domain,
@@ -129,7 +125,7 @@ async function probeServer(serverSpec, options = {}) {
       tries
     });
     try {
-      const { stdout, stderr } = await exec(cmd);
+      const { stdout, stderr } = await execFile('dig', args);
       const addresses = parseAddresses(stdout);
       if (addresses.length > 0) {
         result.healthy = true;
@@ -180,7 +176,7 @@ module.exports = {
   DEFAULT_TIMEOUT,
   DEFAULT_TRIES,
   DEFAULT_VERIFICATION_DOMAINS,
-  buildDigCommand,
+  buildDigArgs,
   getVerificationDomains,
   normalizeServerSpec,
   parseAddresses,
