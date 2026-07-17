@@ -15,6 +15,7 @@
 'use strict';
 
 const fsp = require('fs').promises
+const { spawn } = require('child_process');
 
 const _ = require('lodash');
 const stream = require('stream');
@@ -387,6 +388,22 @@ async function withTimeout(promise, timeout) {
   ]);
 }
 
+// run a command whose stdout/stderr is not needed and may be large enough to
+// exceed child_process's maxBuffer if captured (exec/execFile always buffer
+// output in memory); stdio is fully ignored so it's discarded at the OS level
+function spawnQuiet(command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: 'ignore' });
+    child.on('error', reject);
+    child.on('exit', (code, signal) => {
+      if (code === 0)
+        resolve();
+      else
+        reject(new Error(`${command} ${args.join(' ')} exited with code ${code}${signal ? `, signal ${signal}` : ''}`));
+    });
+  });
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -409,5 +426,6 @@ module.exports = {
   batchKeyExists,
   waitFor,
   withTimeout,
+  spawnQuiet,
   isValidCommonName,
 };

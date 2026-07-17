@@ -24,6 +24,7 @@ const SensorEventManager = require('../sensor/SensorEventManager.js').getInstanc
 const sysManager = require('../net2/SysManager.js');
 
 const { exec } = require('child-process-promise');
+const { spawnQuiet } = require('../util/util.js');
 
 // BlockControl class coordinates multiple modules (ipset, iptables, tlsset) to apply networking rules efficiently.
 // It maintains a state machine to align changes across modules
@@ -313,10 +314,10 @@ class BlockControl {
 
   async refreshConnmark() {
     // use conntrack to clear the first bit of connmark on existing connections
-    await exec(`sudo conntrack -U -m 0x00000000/0x80000000 > /dev/null 2>&1`).catch((err) => {
+    await spawnQuiet('sudo', ['conntrack', '-U', '-m', '0x00000000/0x80000000']).catch((err) => {
       log.verbose(`Failed to clear first bit of connmark on existing IPv4 connections`, err.message);
     });
-    await exec(`sudo conntrack -U -f ipv6 -m 0x00000000/0x80000000 > /dev/null 2>&1`).catch((err) => {
+    await spawnQuiet('sudo', ['conntrack', '-U', '-f', 'ipv6', '-m', '0x00000000/0x80000000']).catch((err) => {
       log.verbose(`Failed to clear first bit of connmark on existing IPv6 connections`, err.message);
     });
   }
