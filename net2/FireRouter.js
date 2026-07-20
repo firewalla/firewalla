@@ -400,11 +400,32 @@ class FireRouter {
           this.pcapRestartNeeded = true;
           break;
         }
-        case Message.MSG_FR_CHANGE_APPLIED:
-        case Message.MSG_NETWORK_CHANGED: {
-          // these two message types should cover all proactive and reactive network changes
-          log.info("Network is changed, schedule reload from FireRouter ...");
+        // below two message types should cover all proactive and reactive network changes
+        case Message.MSG_FR_CHANGE_APPLIED: {
+          log.info("FireRouter config change is applied, schedule reload from FireRouter ...");
           reloadNeeded = true;
+          break;
+        }
+        case Message.MSG_NETWORK_CHANGED: {
+          let changedKeys = null;
+          try {
+            const obj = JSON.parse(message);
+            changedKeys = obj.changedKeys;
+          } catch (err) {}
+          if (changedKeys === null) {
+            log.info("Network config is changed, schedule reload from FireRouter ...");
+            reloadNeeded = true;
+          } else {
+            const essentialKeys = ["interface", "routing", "dns", "dhcp", "hostapd"];
+            const changedEssentialKeys = changedKeys.filter(key => essentialKeys.includes(key));
+            if (changedEssentialKeys.length > 0) {
+              log.info("Essential network config is changed, schedule reload from FireRouter ...");
+              reloadNeeded = true;
+            } else {
+              log.info("Non-essential network config is changed, will only load config from FireRouter ...");
+              routerConfig = await getConfig(true);
+            }
+          }
           break;
         }
         case Message.MSG_HAPD_EVENT: {
@@ -1175,15 +1196,18 @@ class FireRouter {
       body: config
     };
     
-    // check if only apc config changes
-    const currentConfigWithoutAPC = _.omit(routerConfig, ['apc']);
-    const newConfigWithoutAPC = _.omit(config, ['apc']);
-    let isOnlyAPCConfigChanged = false;
-    if (_.isEqual(currentConfigWithoutAPC, newConfigWithoutAPC)) {
-      log.info("Only apc config changes, will not send MSG_NETWORK_CHANGED event");
-      isOnlyAPCConfigChanged = true;
-    }
+    const commonKeys = _.intersection(Object.keys(routerConfig), Object.keys(config));
+    const changedKeys = _.difference(
+      _.union(Object.keys(routerConfig), Object.keys(config)), 
+      commonKeys
+    );
 
+    for (const key of commonKeys) {
+      if (!_.isEqual(routerConfig[key], config[key])) {
+        changedKeys.push(key);
+      }
+    }
+    
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
       const errors = _.get(resp.body, "errors");
@@ -1208,9 +1232,7 @@ class FireRouter {
     // do not call this.init in setConfig, make this function pure
     // await this.init()
     // init of FireRouter should be triggered by published message
-    if (!isOnlyAPCConfigChanged) {
-      await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");
-    }
+    await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, JSON.stringify({changedKeys}));
     if (f.isApi()) {
       // reload config from lower layer to reflect change immediately in FireAPI
       routerConfig = await getConfig();

@@ -681,7 +681,10 @@ cat << EOF >> "$ip6tables_file"
 EOF
 fi
 
-if [[ $XT_UDP_TLS_SUPPORTED == "yes" ]]; then
+local should_disable
+should_disable=$(redis-cli --raw get kernel_crash_info 2>/dev/null | jq -r '.shouldDisableUdpTls // false' 2>/dev/null)
+
+if [[ $XT_UDP_TLS_SUPPORTED == "yes" && ${should_disable} != "true" ]]; then
 cat << EOF >> "$iptables_file"
 -A FW_FIREWALL_GLOBAL_BLOCK_HI -p udp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m udp_tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
 -A FW_FIREWALL_GLOBAL_ALLOW -p udp -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -m udp_tls --tls-hostset allow_domain_set -j FW_ACCEPT

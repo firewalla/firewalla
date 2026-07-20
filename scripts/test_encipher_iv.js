@@ -24,11 +24,12 @@
  *
  * Usage (run on the box):
  *   node scripts/test_encipher_iv.js              # legacy zero IV (bare base64)
- *   node scripts/test_encipher_iv.js --iv         # random IV (embedded in { iv, message } envelope)
+ *   node scripts/test_encipher_iv.js --iv         # random-IV CBC ({ iv, message } envelope)
+ *   node scripts/test_encipher_iv.js --gcm        # AES-256-GCM ({ alg, iv, message, tag }, AAD=gid)
  *   node scripts/test_encipher_iv.js --gid <gid>  # override group id
  *
- * --iv against a box that does not support the envelope yields HTTP 400/412
- * (it decrypts the envelope with the zero IV and gets garbage).
+ * The box mirrors the request scheme on its reply. --iv/--gcm against a box that
+ * does not support them yields HTTP 400/412.
  */
 
 const path = require('path');
@@ -44,35 +45,54 @@ const ALGO = 'aes-256-cbc';
 const ZERO = Buffer.alloc(16);
 const PORT = 8833;
 
-// --iv sends the random-IV envelope; default is the legacy zero IV.
+// Scheme: --gcm (authenticated), --iv (random-IV CBC), else legacy zero IV.
+const useGCM = process.argv.includes('--gcm');
 const useIV = process.argv.includes('--iv');
 const gidArgIdx = process.argv.indexOf('--gid');
 const gidArg = gidArgIdx >= 0 ? process.argv[gidArgIdx + 1] : null;
 
-// Encrypt to the wire format: { iv, message } JSON envelope when ivBuf is given,
-// else legacy bare base64 (zero IV). Mirrors encipher encrypt().
-function enc(text, key, ivBuf) {
+// Encrypt to the wire format. scheme: 'gcm' | 'cbc-iv' | 'legacy'. Mirrors encipher.
+function enc(text, key, scheme, gid) {
   const bkey = Buffer.from(key.substring(0, 32), 'utf8');
-  const iv = ivBuf || ZERO;
-  const c = crypto.createCipheriv(ALGO, bkey, iv);
-  const ct = c.update(text, 'utf8', 'base64') + c.final('base64');
-  return ivBuf ? JSON.stringify({ iv: ivBuf.toString('base64'), message: ct }) : ct;
+  if (scheme === 'gcm') {
+    const nonce = crypto.randomBytes(12);
+    const c = crypto.createCipheriv('aes-256-gcm', bkey, nonce);
+    c.setAAD(Buffer.from(gid, 'utf8'));
+    const ct = c.update(text, 'utf8', 'base64') + c.final('base64');
+    return JSON.stringify({ alg: 'gcm', iv: nonce.toString('base64'), message: ct, tag: c.getAuthTag().toString('base64') });
+  }
+  if (scheme === 'cbc-iv') {
+    const iv = crypto.randomBytes(16);
+    const c = crypto.createCipheriv(ALGO, bkey, iv);
+    const ct = c.update(text, 'utf8', 'base64') + c.final('base64');
+    return JSON.stringify({ iv: iv.toString('base64'), message: ct });
+  }
+  const c = crypto.createCipheriv(ALGO, bkey, ZERO);
+  return c.update(text, 'utf8', 'base64') + c.final('base64');
 }
-// Decrypt a wire value; the IV (if any) is embedded in the { iv, message }
-// envelope. Returns { plaintext, usedIv }. Mirrors encipher _parseEnvelope + decrypt.
-function decEnvelope(text, key) {
-  let iv = ZERO, ct = text, usedIv = false;
+// Decrypt a wire value; iv/tag are embedded in the envelope. Returns { plaintext, scheme }.
+function decEnvelope(text, key, gid) {
+  const bkey = Buffer.from(key.substring(0, 32), 'utf8');
+  let scheme = 'legacy', iv = ZERO, ct = text, tag = null, alg = null;
   try {
     const p = JSON.parse(text);
     if (typeof p === 'string') { ct = p; }
     else if (p && typeof p === 'object' && !Array.isArray(p) && p.message != null) {
-      ct = p.message;
-      if (p.iv != null) { iv = Buffer.from(p.iv, 'base64'); usedIv = true; }
+      ct = p.message; alg = p.alg;
+      if (p.iv != null) iv = Buffer.from(p.iv, 'base64');
+      if (p.tag != null) tag = Buffer.from(p.tag, 'base64');
     }
   } catch (e) { /* raw base64, legacy */ }
-  const bkey = Buffer.from(key.substring(0, 32), 'utf8');
+  if (alg === 'gcm') {
+    scheme = 'gcm';
+    const d = crypto.createDecipheriv('aes-256-gcm', bkey, iv);
+    d.setAAD(Buffer.from(gid, 'utf8'));
+    d.setAuthTag(tag);
+    return { plaintext: d.update(ct, 'base64', 'utf8') + d.final('utf8'), scheme };
+  }
+  if (iv !== ZERO) scheme = 'cbc-iv';
   const d = crypto.createDecipheriv(ALGO, bkey, iv);
-  return { plaintext: d.update(ct, 'base64', 'utf8') + d.final('utf8'), usedIv };
+  return { plaintext: d.update(ct, 'base64', 'utf8') + d.final('utf8'), scheme };
 }
 // Response may be compressed (compressMode); best-effort inflate for display.
 function maybeInflate(s) {
@@ -104,7 +124,7 @@ function maybeInflate(s) {
     process.exit(1);
   }
 
-  const modeLabel = useIV ? 'random IV (--iv)' : 'legacy zero IV';
+  const scheme = useGCM ? 'gcm' : useIV ? 'cbc-iv' : 'legacy';
 
   const id = 'ivtest-' + Date.now();
   const plaintext = JSON.stringify({
@@ -115,13 +135,11 @@ function maybeInflate(s) {
     }
   });
 
-  // IV (when used) is embedded in the message envelope; no top-level iv field.
-  const reqIvBuf = useIV ? crypto.randomBytes(16) : null;
-  const body = { message: enc(plaintext, key, reqIvBuf) };
+  // iv/tag (when used) are embedded in the message envelope; no top-level fields.
+  const body = { message: enc(plaintext, key, scheme, gid) };
 
   console.log('== REQUEST ==');
-  console.log('mode        :', modeLabel);
-  console.log('sending     :', useIV ? 'random IV embedded in { iv, message } envelope' : 'legacy zero IV, bare base64');
+  console.log('scheme      :', scheme);
   console.log('key (masked):', key.slice(0, 8) + '...(' + key.length + ' chars)');
   console.log('endpoint    : POST http://127.0.0.1:' + PORT + '/v1/encipher/message/' + gid);
 
@@ -140,11 +158,11 @@ function maybeInflate(s) {
   if (!reply) { console.log('raw reply   :', res.body.slice(0, 300)); process.exit(0); }
 
   if (reply.message) {
-    let out, replyUsedIv = false;
-    try { const r = decEnvelope(reply.message, key); out = maybeInflate(r.plaintext); replyUsedIv = r.usedIv; }
+    let out, replyScheme = '?';
+    try { const r = decEnvelope(reply.message, key, gid); out = maybeInflate(r.plaintext); replyScheme = r.scheme; }
     catch (e) { out = '<decrypt failed: ' + e.message + '>'; }
-    console.log('reply embeds iv:', replyUsedIv);
-    console.log('>> IV USAGE : box is ' + (replyUsedIv ? 'USING a per-request IV (new scheme)' : 'NOT using IV (legacy zero IV)'));
+    console.log('reply scheme:', replyScheme);
+    console.log('>> box replied with:', replyScheme, replyScheme === scheme ? '(mirrors request)' : '(does NOT mirror request!)');
     console.log('== DECRYPTED REPLY (first 400 chars) ==');
     console.log(out.slice(0, 400));
   } else {

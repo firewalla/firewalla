@@ -21,7 +21,6 @@ let instance = null;
 const log = require("../../net2/logger.js")(__filename);
 
 const _ = require('lodash')
-const crypto = require('crypto')
 
 module.exports = class {
   constructor() {
@@ -59,8 +58,8 @@ module.exports = class {
 
     // decryptRequest parses the { iv, message } envelope once and returns usedIv;
     // a request that carried an iv gets its reply mirrored with a fresh iv.
-    cloudWrapper.getCloud().decryptRequest(gid, message).then(({ decrypted: decryptedMessage, usedIv }) => {
-      req.reqUsedIV = usedIv;
+    cloudWrapper.getCloud().decryptRequest(gid, message).then(({ decrypted: decryptedMessage, scheme }) => {
+      req.reqScheme = scheme;
       decryptedMessage.mtype = decryptedMessage.message.mtype;
       req.body = decryptedMessage;
       req.id = _.get(decryptedMessage, [ 'message', 'obj', 'id' ], undefined)
@@ -89,23 +88,21 @@ module.exports = class {
       return;
     }
 
-    // Only use a random IV in the reply when the client negotiated one on the
-    // request (req.reqUsedIV) and this is not a streaming response. Streaming
-    // stays on the legacy zero IV for now (its SSE frame carries no IV field).
-    const useIV = req.reqUsedIV && !streaming;
-    const ivBuf = useIV ? crypto.randomBytes(16) : null;
+    // Mirror the request scheme (gcm / cbc-iv / legacy) on the reply. Streaming
+    // stays on the legacy zero IV for now (its SSE frame carries no envelope).
+    const scheme = streaming ? 'legacy' : (req.reqScheme || 'legacy');
 
     // log.info('Response Data:', JSON.parse(body));
     const time = process.hrtime();
-    cloudWrapper.getCloud().encryptResponse(gid, body, ivBuf).then((encryptedResponse) => {
+    cloudWrapper.getCloud().encryptResponse(gid, body, scheme).then((encryptedResponse) => {
       log.debug(`${req.id} Encrypt Cost Time: ${process.hrtime(time)[1]/1e6} ms`);
 
       if(streaming){
         res.body = encryptedResponse;
         next();
       } else {
-        // encryptedResponse is the { iv, message } envelope when useIV, else
-        // legacy bare base64; the iv travels inside message, not a top-level field.
+        // encryptedResponse is the scheme envelope (gcm/cbc-iv) or legacy bare
+        // base64; iv/tag travel inside message, not as top-level fields.
         res.json({ message: encryptedResponse });
       }
     }).catch((err) => {

@@ -909,7 +909,11 @@ class SysManager {
     const wanIfType = await fsp.readFile(`/sys/class/net/${intf}/type`, {encoding: "utf8"}).then(result => result.trim()).catch((err) => null);
     // arp is only applicable to interfaces with type ethernet (1)
     if (wanIfType === "1") {
-      mac = await exec(`arp -a -n -i ${intf} ${ip}`).then(result => result.stdout.trim().split(" ")[3].toUpperCase()).catch((err) => null);
+      mac = await fsp.readFile("/proc/net/arp", { encoding: "utf8" }).then(content => {
+        const row = content.split('\n').slice(1).map(l => l.trim().split(/\s+/)).find(cols => cols[0] === ip && cols[5] === intf);
+        const hwAddr = row && row[3];
+        return hwAddr && hwAddr !== "00:00:00:00:00:00" ? hwAddr.toUpperCase() : null;
+      }).catch((err) => null);
     }
     return mac;
   }

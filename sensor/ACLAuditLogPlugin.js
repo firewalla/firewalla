@@ -45,6 +45,8 @@ const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PolicyManager2();
 const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
+const IntelTool = require('../net2/IntelTool.js');
+const intelTool = new IntelTool();
 
 const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
@@ -550,7 +552,7 @@ class ACLAuditLogPlugin extends Sensor {
 
         if (connEntries && connEntries.host) {
           record.af = {};
-          record.af[connEntries.host] = _.pick(connEntries, ["proto", "ip"])
+          record.af[connEntries.host] = _.pick(connEntries, ["proto"])
         }
       }
     } else {
@@ -895,6 +897,20 @@ class ACLAuditLogPlugin extends Sensor {
 
           // use a dedicated switch for saving to audit:accpet as we still want rule stats
           if (type == 'dns' && !block && !fc.isFeatureOn('dnsmasq_log_allow_redis')) continue
+
+          // bake the coded category snapshot (c) onto the block record, same as regular
+          // flow records: downstream consumers (audit:drop:* queries, FlowAggregationSensor
+          // sumflows) inherit it without doing their own intel lookups. Records here are
+          // already merged by descriptor so it's one lookup per destination per flush
+          if (block && dir != 'L' && !mac.startsWith(Constants.NS_INTERFACE + ':')) try {
+            const intel = type == 'dns'
+              ? await intelTool.getIntel(undefined, [record.dn])
+              : await intelTool.getIntel(fd == 'out' ? record.sh : record.dh, record.af && Object.keys(record.af));
+            if (intel && intel.category)
+              record.c = await intelTool.categoryToNumber(intel.category);
+          } catch (err) {
+            log.error('Failed to resolve intel for block record', record.dh || record.dn, err.message);
+          }
 
           delete record.dir
           if (type == 'ntp') delete record.dp

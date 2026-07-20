@@ -1,4 +1,4 @@
-/*    Copyright 2016-2024 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,6 +17,8 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 
 const bone = require('../lib/Bone.js');
 
@@ -26,6 +28,7 @@ const { mapLimit } = require('../util/asyncNative.js')
 const flowUtil = require('../net2/FlowUtil.js');
 
 const firewalla = require('../net2/Firewalla.js');
+const fc = require('../net2/config.js');
 
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
@@ -40,6 +43,23 @@ const { REDIS_KEY_REDIS_KEY_COUNT } = require('../net2/Constants.js')
 const AsyncLock = require('../vendor_lib/async-lock');
 const intelDnsCacheLock = new AsyncLock();
 const LOCK_INTEL_DNS_CACHE = 'intel_dns_cache';
+
+const categoryEnumLock = new AsyncLock();
+const LOCK_CATEGORY_ENUM = 'category_enum';
+const CATEGORY_ENUM_KEY = 'intel:enum:category';
+const CATEGORY_ENUM_CHANNEL = 'intel:enum:category:updated';
+// Default category <-> code enum. Seeds intel:enum:category on a fresh box; once that
+// redis key exists it is authoritative and grows as new categories are seen. Never
+// renumber existing entries — flow records on disk carry the old codes.
+const DEFAULT_CATEGORY_ENUM = {
+  av: 1,
+  games: 2,
+  porn: 3,
+  shopping: 4,
+  social: 5,
+  vpn: 6,
+  intel: 7,
+};
 
 const DEFAULT_INTEL_EXPIRE = 2 * 24 * 3600; // two days
 
@@ -59,6 +79,14 @@ class IntelTool {
       // check intel key count every 15mins
       this.intelCount = {}
       this.intelDnsCache = null;
+
+      // category <-> code enum, redis-backed (see categoryToNumber/numberToCategory).
+      // Start from defaults so it's usable synchronously; load once from redis at startup
+      // and stay in sync across processes via pub/sub. Run in every process — all intel
+      // consumers (FireMain, FireApi, FireMon, ...) may encode/decode categories.
+      this.categoryEnum = Object.assign({}, DEFAULT_CATEGORY_ENUM);
+      this.rebuildCategoryReverse();
+      this.initCategoryEnum();
 
       // a cache to reduce redis IO thus speed up API calls and repeated lookups in FireMain
       // one API query usually gets multiple flows with same intel, this cache aim to cut the extra cost here
@@ -98,6 +126,86 @@ class IntelTool {
     if (this.intelCount.all > 200000) return DEFAULT_INTEL_EXPIRE / 4
     else if (this.intelCount.all > 100000) return DEFAULT_INTEL_EXPIRE / 2
     else return DEFAULT_INTEL_EXPIRE
+  }
+
+  rebuildCategoryReverse() {
+    this.categoryEnumReverse = {};
+    for (const name in this.categoryEnum)
+      this.categoryEnumReverse[this.categoryEnum[name]] = name;
+  }
+
+  // read the enum once at startup, then keep in sync across processes via pub/sub.
+  // subscribe before loading so an update published during the load isn't missed.
+  initCategoryEnum() {
+    sclient.on('message', (channel, message) => {
+      if (channel !== CATEGORY_ENUM_CHANNEL) return;
+      try {
+        const entry = JSON.parse(message); // delta: { categoryName: code }
+        if (_.isObject(entry) && !_.isEmpty(entry)) {
+          Object.assign(this.categoryEnum, entry);
+          this.rebuildCategoryReverse();
+        }
+      } catch (err) {
+        log.error('Failed to apply category enum update', err);
+      }
+    });
+    sclient.subscribe(CATEGORY_ENUM_CHANNEL);
+    this.loadCategoryEnum();
+  }
+
+  async loadCategoryEnum() {
+    await categoryEnumLock.acquire(LOCK_CATEGORY_ENUM, async () => {
+      try {
+        const str = await rclient.getAsync(CATEGORY_ENUM_KEY);
+        if (str) {
+          const parsed = JSON.parse(str);
+          if (_.isObject(parsed) && !_.isEmpty(parsed)) {
+            this.categoryEnum = parsed;
+            this.rebuildCategoryReverse();
+          }
+        }
+      } catch (err) {
+        log.error('Failed to load category enum, using defaults', err);
+      }
+    });
+  }
+
+  // category name -> numeric code. An unseen category is assigned the next code and
+  // persisted to redis under lock. Returns undefined for empty input.
+  async categoryToNumber(category) {
+    if (!category) return undefined;
+    if (this.categoryEnum[category] != null)
+      return this.categoryEnum[category];
+    return categoryEnumLock.acquire(LOCK_CATEGORY_ENUM, async () => {
+      if (this.categoryEnum[category] != null) // re-check inside the lock
+        return this.categoryEnum[category];
+      let next = 0;
+      for (const name in this.categoryEnum)
+        next = Math.max(next, Number(this.categoryEnum[name]) || 0);
+      next += 1;
+      this.categoryEnum[category] = next;
+      this.categoryEnumReverse[next] = category;
+      await rclient.setAsync(CATEGORY_ENUM_KEY, JSON.stringify(this.categoryEnum));
+      // publish only the new entry; subscribers merge it into their map
+      pclient.publish(CATEGORY_ENUM_CHANNEL, JSON.stringify({ [category]: next }));
+      log.info('Assigned new intel category code', category, '=>', next);
+      return next;
+    });
+  }
+
+  numberToCategory(code) {
+    if (code == null) return undefined;
+    return this.categoryEnumReverse[code]
+  }
+
+  // Once the flow_inline_intel migration is older than the flow retention window
+  // (bro.conn.expires), every stored flow was written with a baked intel snapshot
+  // (c/a fields), so query-time intel enrichment can be skipped.
+  isInlineIntelReady() {
+    const migratedTs = fc.isMigrationComplete('flow_inline_intel');
+    if (!migratedTs) return false;
+    const expires = _.get(fc.getConfig(), ['bro', 'conn', 'expires'], 24 * 60 * 60);
+    return (Date.now() / 1000 - migratedTs) > expires;
   }
 
   getUnblockKey(ip) {
@@ -414,6 +522,12 @@ class IntelTool {
         }
       }
     }
+
+    // 'x' is a checked-clean placeholder written to inteldns by DNSProxyPlugin, not a
+    // real category. It still participates in the domain walk above (shadowing parent
+    // domain categories) but should never surface to callers
+    if (intel && intel.category === 'x')
+      delete intel.category
 
     return intel
   }

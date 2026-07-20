@@ -1,4 +1,4 @@
-/*    Copyright 2016-2025 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,6 +32,8 @@ const auditTool = require('./AuditTool')
 
 const _ = require('lodash');
 const Constants = require('./Constants.js');
+const IntelTool = require('./IntelTool.js');
+const intelTool = new IntelTool();
 
 const LOOK_AHEAD_INTERVAL = 3600
 
@@ -264,6 +266,15 @@ class FlowTool extends LogQuery {
         f.dstTags = flow.dstTags;
     }
 
+    // decode the intel snapshot baked at flow-write time (c = coded category).
+    // enrichWithIntel runs after this and overrides with live intel:ip when available, so
+    // this is the fallback for flows whose intel:ip has since expired.
+    if (flow.c != null) {
+      const category = intelTool.numberToCategory(flow.c);
+      if (category) f.category = category;
+    }
+    // if (flow.a) f.app = flow.a;
+
     return f;
   }
 
@@ -373,16 +384,6 @@ class FlowTool extends LogQuery {
     }
 
     return rclient.zremAsync(key, JSON.stringify(flow))
-  }
-
-  // legacy api, returns raw redis data
-  queryFlows(mac, type, begin, end) {
-    let key = this.getLogKey(mac, {direction: type});
-
-    return rclient.zrangebyscoreAsync(key, "(" + begin, end) // char '(' means open interval
-      .then(flowStrings =>
-        flowStrings.map(JSON.parse).filter(x => ('ob' in x) && ('rb' in x) && (x.ob != 0 || x.rb != 0))
-      )
   }
 
   getDestIP(flow) {
