@@ -99,6 +99,18 @@ async function getModuleVersion(koPathOrName) {
   return { version, srcversion };
 }
 
+// mtime (in seconds) of the current xt_udp_tls module file. Used to tell whether a
+// pstore crash predates the currently-installed module: an upgrade replaces the .ko
+// with a fresh mtime, so a crash older than the .ko belongs to a previous (already
+// replaced) module version and must not disable the current one. Returns null when
+// the mtime cannot be determined (e.g. koPath does not exist).
+async function getModuleFileMtimeSec(koPath) {
+  const r = await execFile('stat', ['-c', '%Y', koPath]).catch(() => null);
+  if (!r) return null;
+  const sec = parseInt(r.stdout.trim(), 10);
+  return Number.isFinite(sec) ? sec : null;
+}
+
 async function readCrashInfo() {
   const raw = await rclient.getAsync(REDIS_KEY);
   if (!raw) return {};
@@ -214,12 +226,13 @@ async function checkPstoreAndUpdateRedis(koPath) {
       // matched "Kernel panic" below (still archived so pstore space is freed up)
       latestCrashTSSec = Math.round(Math.max(...tsByPath.values()));
 
-      const panicFiles = await execFile('sudo', ['grep', '-l', 'Kernel panic', ...paths])
+      // treat both a "Kernel panic" and an "Oops" in pstore as a kernel crash
+      const panicFiles = await execFile('sudo', ['grep', '-l', '-e', 'Kernel panic', '-e', 'Oops', ...paths])
         .then(r => r.stdout.trim().split('\n').filter(Boolean))
         .catch(() => []);
 
       if (panicFiles.length === 0) {
-        log.debug("No Kernel panic found in recent pstore files");
+        log.debug("No Kernel panic or Oops found in recent pstore files");
       } else {
         latestCrashTSSec = Math.round(Math.max(...panicFiles.map(p => tsByPath.get(p) || 0)));
 
@@ -230,7 +243,17 @@ async function checkPstoreAndUpdateRedis(koPath) {
 
         log.warn(`Kernel panic detected in pstore, ts=${latestCrashTSSec}, udpTlsRelated=${isUdpTlsCrash}`);
 
-        if (isUdpTlsCrash) {
+        // ignore crashes that predate the currently-installed module: on the first run
+        // after an upgrade, pstore may still hold a crash from a previous (already fixed)
+        // module version. The version-change guard above can't catch this because there is
+        // no stored udpModuleVersion to compare against yet, so fall back to the module
+        // file's build/install time.
+        const koMtimeSec = await getModuleFileMtimeSec(koPath).catch(() => null);
+        const crashPredatesCurrentModule = koMtimeSec !== null && latestCrashTSSec < koMtimeSec;
+
+        if (isUdpTlsCrash && crashPredatesCurrentModule) {
+          log.info(`UDP TLS crash (ts=${latestCrashTSSec}) predates current module build time (${koMtimeSec}); module has been upgraded since, not disabling UDP TLS.`);
+        } else if (isUdpTlsCrash) {
           if (!crashInfo.lastCrashTS || latestCrashTSSec > crashInfo.lastCrashTS) {
             crashInfo.lastCrashTS = latestCrashTSSec;
             crashInfo.crashesCount = (crashInfo.crashesCount || 0) + 1;
