@@ -265,6 +265,8 @@ class PolicyManager2 {
 
               // if oldPolicy is disabled, skip unenforce
               if (oldPolicy.isDisabled()) {
+                //still need to clear timer for policy(example idle policy)
+                this.invalidateExpireTimer(oldPolicy);
                 log.info("Old policy is disabled, skip unenforce", oldPolicy.pid, action);
               } else {
                 await this.unenforce(oldPolicy).catch((err) => {
