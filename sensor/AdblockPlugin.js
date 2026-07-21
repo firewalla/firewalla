@@ -76,6 +76,8 @@ class AdblockStats {
     this.lastHitTs = 0;
     this.lastFlushTs = 0;
     this.resetTs = 0;
+    this.pendingHits = 0;
+    this.resetGeneration = 0;
     this.persistPromise = null;
   }
 
@@ -88,6 +90,7 @@ class AdblockStats {
       return;
 
     timeSeries.recordHit('feature:adblock:block', record._ts, record.ct);
+    this.pendingHits += Math.floor(Number(record.ct) || 1);
     if (!this.lastHitTs || record._ts >= this.lastHitTs) {
       const flow = _.cloneDeep(record);
       if (record.dir === 'L')
@@ -110,11 +113,18 @@ class AdblockStats {
       kind: 'audit',
       raw: _.cloneDeep(this.lastHitFlow)
     };
-    const persistPromise = rclient.hmsetAsync('ext.adblock.stats', {
-      lastHitTs: String(this.lastHitTs),
-      lastHitFlow: JSON.stringify(payload)
-    }).catch((err) => {
-      log.error('Failed to persist adblock lastHitFlow', err);
+    const hitsToFlush = this.pendingHits;
+    const flushGeneration = this.resetGeneration;
+    this.pendingHits = 0;
+    const batch = rclient.batch();
+    batch.hset('ext.adblock.stats', 'lastHitTs', String(this.lastHitTs));
+    batch.hset('ext.adblock.stats', 'lastHitFlow', JSON.stringify(payload));
+    if (hitsToFlush > 0)
+      batch.hincrby('ext.adblock.stats', 'totalHits', hitsToFlush);
+    const persistPromise = batch.execAsync().catch((err) => {
+      log.error('Failed to persist adblock stats', err);
+      if (flushGeneration === this.resetGeneration)
+        this.pendingHits += hitsToFlush;
     }).finally(() => {
       if (this.persistPromise === persistPromise)
         this.persistPromise = null;
@@ -128,6 +138,8 @@ class AdblockStats {
     this.lastHitFlow = null;
     this.lastHitTs = 0;
     this.lastFlushTs = 0;
+    this.pendingHits = 0;
+    this.resetGeneration++;
     if (this.persistPromise)
       await this.persistPromise;
     await mclient.snapAndFlushMetricsBatch();
@@ -136,7 +148,10 @@ class AdblockStats {
       await mclient.unlinkAsync(keys);
       mclient.forgetExpireAt(keys);
     }
-    await rclient.unlinkAsync('ext.adblock.stats').catch(() => {});
+    const batch = rclient.batch();
+    batch.hdel('ext.adblock.stats', 'totalHits', 'lastHitTs', 'lastHitFlow');
+    batch.hset('ext.adblock.stats', 'lastResetTs', String(this.resetTs));
+    await batch.execAsync().catch(() => {});
   }
 
   async getStats() {
@@ -147,9 +162,13 @@ class AdblockStats {
     ]);
     const total24h = (buckets24h || []).reduce((sum, bucket) => sum + (bucket[1] || 0), 0);
     const total7d = (buckets7d || []).reduce((sum, bucket) => sum + (bucket[1] || 0), 0);
+    let totalHits = 0;
+    let lastResetTs = null;
     let lastHitTs = null;
     let lastHitFlow = null;
     if (stored) {
+      totalHits = Number(stored.totalHits) || 0;
+      lastResetTs = stored.lastResetTs ? Number(stored.lastResetTs) : null;
       lastHitTs = stored.lastHitTs ? Number(stored.lastHitTs) : null;
       try {
         const payload = stored.lastHitFlow ? JSON.parse(stored.lastHitFlow) : null;
@@ -158,7 +177,7 @@ class AdblockStats {
         log.warn('Failed to format adblock lastHitFlow', err.message);
       }
     }
-    return { total24h, total7d, lastHitTs, lastHitFlow };
+    return { total24h, total7d, totalHits, lastResetTs, lastHitTs, lastHitFlow };
   }
 }
 
