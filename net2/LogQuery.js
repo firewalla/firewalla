@@ -368,7 +368,10 @@ class LogQuery {
 
     let allMacs = [];
     if (options.mac) {
-      const mac = this.validMacGUID(hostManager, options.mac)
+      // options.macValidated is set by callers that have already validated the
+      // target mac/GUID against redis or a manager, so trust it directly instead
+      // of doing an in-memory hostsdb lookup that may transiently miss inactive devices
+      const mac = options.macValidated ? options.mac : this.validMacGUID(hostManager, options.mac)
       if (mac) {
         allMacs.push(mac)
       } else {
