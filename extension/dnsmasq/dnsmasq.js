@@ -338,7 +338,7 @@ module.exports = class DNSMASQ {
   }
 
   scheduleRestartDNSService(ignoreFileCheck = false, forceServiceRestart = false) {
-    if (this.reloadDNSTask) {
+    if (this.reloadDNSTask && forceServiceRestart) {
       clearTimeout(this.reloadDNSTask);
       delete this.reloadDNSTask;
     }
@@ -376,7 +376,7 @@ module.exports = class DNSMASQ {
   }
 
   scheduleReloadDNSService() {
-    if (this.restartDNSTask)
+    if (this.restartDNSTask && this.forceServiceRestart)
       return
     if (this.reloadDNSTask)
       clearTimeout(this.reloadDNSTask);
