@@ -2092,6 +2092,13 @@ class netBot extends ControllerBot {
         throw new Error('Invalid target type: ' + type)
     }
 
+    // options.mac has already been validated above (getHostAsync / identity /
+    // network profile), so mark it as validated. This lets downstream expendMacs
+    // trust it and skip the in-memory hostsdb lookup (getHostFastByMAC), which may
+    // transiently miss an inactive device right after a getHosts() rebuild and
+    // throw "Invalid mac value".
+    if (options.mac) options.macValidated = true;
+
     let { regular, audit, dns, ntp, local, localAudit, nonLocal } = msg.data
     let legacyLocalBlock = false
 

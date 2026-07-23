@@ -194,7 +194,7 @@ function create(name, type, v6 = false, options = {}) {
 function add(name, target, options = {}, allowDeferredExec = false) {
   const { timeout, comment, skbmark, skbprio, skbqueue } = options;
   let cmd = `add ${name} ${target}`;
-  if (timeout) cmd += ` timeout ${timeout}`;
+  if (timeout !== undefined && timeout !== null && Number.isInteger(Number(timeout))) cmd += ` timeout ${timeout}`;
   if (comment) cmd += ` comment ${comment}`;
   if (skbmark) cmd += ` skbmark ${skbmark}`;
   if (skbprio) cmd += ` skbprio ${skbprio}`;
