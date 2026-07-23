@@ -247,22 +247,22 @@ class Rule {
     switch (operation) {
       case '-I':
       case '-A':
-        return `bash -c '${checkRule} &>/dev/null || ${rule}'`;
+        return `${checkRule} &>/dev/null || ${rule}`;
 
       case '-D':
-        return `bash -c '${checkRule} &>/dev/null && ${rule}; true'`;
+        return `${checkRule} &>/dev/null && ${rule}; true`;
 
       case '-F':
       case '-N':
       case '-X':
-        return `bash -c '${rule}; true'`;
+        return `${rule}; true`;
     }
   }
 
   async exec(operation) {
     const cmd = this.toCmd(operation)
-    log.debug('excuting', cmd)
-    await execAsync(cmd)
+    log.debug('executing', cmd)
+    await execAsync(cmd, { shell: '/bin/bash' })
   }
 }
 exports.Rule = Rule

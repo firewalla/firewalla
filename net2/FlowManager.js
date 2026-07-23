@@ -426,7 +426,7 @@ module.exports = class FlowManager {
 
     await this.enrichHttpFlowsInfo(sorted);
 
-    await dnsManager.query(sorted, "sh", "dh", "mac", "appHosts")
+    await dnsManager.enrichFlows(sorted)
       .catch(err => log.error("flow:conn unable to map dns", err))
 
     const _sorted = sorted.filter(this.isAggregatedFlowValid)

@@ -82,7 +82,28 @@ async function login() {
   }
 }
 
+// Re-login and rewrite the ept token in sys:ept, to heal expiry on boxes up
+// longer than the token TTL (~1000 days). Reuses stored gid, skips group creation.
+async function refreshToken() {
+  const gid = await rclient.hgetAsync("sys:ept", "gid");
+  if (!gid) {
+    throw new Error("Cannot refresh ept token: gid missing in sys:ept, box not paired");
+  }
+
+  await eptcloud.eptLogin(config.appId, config.appSecret, null, config.endpoint_name);
+
+  await rclient.hmsetAsync("sys:ept", {
+    eid: eptcloud.eid,
+    token: eptcloud.token,
+    gid: gid
+  });
+  log.info("Refreshed ept token in sys:ept", eptcloud.eid, gid);
+
+  return eptcloud.token;
+}
+
 module.exports = {
   login: login,
+  refreshToken: refreshToken,
   getCloud: getCloud
 }

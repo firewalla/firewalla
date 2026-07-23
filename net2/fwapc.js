@@ -311,6 +311,10 @@ class FWAPC {
     return localGet("/status/ap", 1).then(resp => resp.info);
   }
 
+  async getWiredStationTree() {
+    return localGet("/status/wired_station", 1).then(resp => resp && resp.info);
+  }
+
   /**
    * All switch runtime statuses keyed by asset uid (same shape as fwapc GET /v1/status/switch).
    * @returns {Promise<object|null>} map of uid -> status, or null on error
@@ -357,13 +361,20 @@ class FWAPC {
     return {code: resp.statusCode, body: resp.body};
   }
 
+  get_timeout(path) {
+    if(path.includes("/control/speedtest")) {
+      return 120000; // speedtest timeout is 120 seconds in App side
+    }
+    return 10000;
+  }
+
   async apiCall(method, path, body) {
     const options = {
       method: method,
       headers: {
         "Accept": "application/json"
       },
-      timeout: 10000,
+      timeout: this.get_timeout(path),
       url: fwapcInterface + path,
       json: true
     };
@@ -379,6 +390,9 @@ class FWAPC {
       }
       return r;
     } catch (e) {
+      if (e.message === 'ESOCKETTIMEDOUT' || e.message === 'ETIMEDOUT') {
+        return {code: 504, msg: e.message}; // 504 Gateway Timeout
+      }
       return {code: 503, msg: e.message};
     }
   }

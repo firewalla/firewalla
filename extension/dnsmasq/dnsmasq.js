@@ -18,13 +18,16 @@
 let instance = null;
 const log = require("../../net2/logger.js")(__filename);
 
+const crypto = require('crypto');
 const _ = require('lodash');
+const pathModule = require('path');
 const util = require('util');
 const net = require('net');
 const f = require('../../net2/Firewalla.js');
 const userID = f.getUserID();
 const childProcess = require('child_process');
 const execAsync = util.promisify(childProcess.exec);
+const execFileAsync = util.promisify(childProcess.execFile);
 const Promise = require('bluebird');
 const redis = require('../../util/redis_manager.js').getRedisClient();
 const fs = Promise.promisifyAll(require("fs"));
@@ -174,7 +177,8 @@ module.exports = class DNSMASQ {
         reloadConfig: 0,
         writeHostsFile: {},
         restart: 0,
-        restartDHCP: 0
+        restartDHCP: 0,
+        reloadDHCP: 0
       }
       this.dnsTag = {
         adblock: "$adblock"
@@ -334,7 +338,7 @@ module.exports = class DNSMASQ {
   }
 
   scheduleRestartDNSService(ignoreFileCheck = false, forceServiceRestart = false) {
-    if (this.reloadDNSTask) {
+    if (this.reloadDNSTask && forceServiceRestart) {
       clearTimeout(this.reloadDNSTask);
       delete this.reloadDNSTask;
     }
@@ -372,14 +376,16 @@ module.exports = class DNSMASQ {
   }
 
   scheduleReloadDNSService() {
-    if (this.restartDNSTask)
+    if (this.restartDNSTask && this.forceServiceRestart)
       return
     if (this.reloadDNSTask)
       clearTimeout(this.reloadDNSTask);
     this.reloadDNSTask = setTimeout(async () => {
       const confChanged = await this.checkConfsChange("dnsmasq:hosts", [`${HOSTS_DIR}/*`]);
-      if (!confChanged)
+      if (!confChanged) {
+        delete this.reloadDNSTask;
         return;
+      }
       this.counter.reloadDnsmasq++;
       log.info(`Reloading ${SERVICE_NAME}`, this.counter.reloadDnsmasq);
       await execAsync(`sudo systemctl reload ${SERVICE_NAME}`).then(() => {
@@ -392,6 +398,10 @@ module.exports = class DNSMASQ {
   }
 
   scheduleRestartDHCPService(ignoreFileCheck = false) {
+    if (this.reloadDHCPTask) {
+      clearTimeout(this.reloadDHCPTask);
+      delete this.reloadDHCPTask;
+    }
     if (this.restartDHCPTask)
       clearTimeout(this.restartDHCPTask);
     this.restartDHCPIgnoreFileCheck = this.restartDHCPIgnoreFileCheck || ignoreFileCheck
@@ -399,6 +409,8 @@ module.exports = class DNSMASQ {
       // checkConfsChange will update md5sum in redis, call it before checking ignoreFileCheck to keep md5sum consistent with config files
       const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH]);
       if (!this.restartDHCPIgnoreFileCheck && !confChanged) {
+        delete this.restartDHCPIgnoreFileCheck;
+        delete this.restartDHCPTask;
         return;
       }
       delete this.restartDHCPIgnoreFileCheck
@@ -410,6 +422,29 @@ module.exports = class DNSMASQ {
       }).catch((err) => {
         log.error(`Failed to restart ${DHCP_SERVICE_NAME} service`, err.message);
       });
+      delete this.restartDHCPTask
+    }, 5000);
+  }
+
+  scheduleReloadDHCPService() {
+    if (this.restartDHCPTask)
+      return
+    if (this.reloadDHCPTask)
+      clearTimeout(this.reloadDHCPTask);
+    this.reloadDHCPTask = setTimeout(async () => {
+      const confChanged = await this.checkConfsChange('dnsmasq:dhcphosts', [HOSTFILE_PATH]);
+      if (!confChanged) {
+        delete this.reloadDHCPTask;
+        return;
+      }
+      this.counter.reloadDHCP++;
+      log.info(`Reloading ${DHCP_SERVICE_NAME}`, this.counter.reloadDHCP);
+      await execAsync(`sudo systemctl reload ${DHCP_SERVICE_NAME}`).then(() => {
+        log.verbose(`${DHCP_SERVICE_NAME} has been reloaded`, this.counter.reloadDHCP);
+      }).catch((err) => {
+        log.error(`Failed to reload ${DHCP_SERVICE_NAME} service`, err.message);
+      });
+      delete this.reloadDHCPTask
     }, 5000);
   }
 
@@ -1901,7 +1936,6 @@ module.exports = class DNSMASQ {
 
 
   computeHash(content) {
-    const crypto = require('crypto');
     return crypto.createHash('md5').update(content).digest("hex");
   }
 
@@ -2024,7 +2058,10 @@ module.exports = class DNSMASQ {
     log.verbose("Hosts file has been updated:", mac, ++this.counter.writeHostsFile[mac], 'times')
 
     // reload or not is check with config hash
-    this.scheduleRestartDHCPService()
+    if (platform.isFireRouterManaged())
+      this.scheduleReloadDHCPService()
+    else
+      this.scheduleRestartDHCPService()
   }
 
   async removeHostsFile(host) {
@@ -2044,7 +2081,10 @@ module.exports = class DNSMASQ {
       }
     }
 
-    this.scheduleRestartDHCPService(true)
+    if (platform.isFireRouterManaged())
+      this.scheduleReloadDHCPService()
+    else
+      this.scheduleRestartDHCPService(true)
   }
 
   async removeIPFromHost(host, ip) {
@@ -2292,10 +2332,10 @@ module.exports = class DNSMASQ {
       let resolved = false;
       for (const domain of VERIFICATION_DOMAINS) {
         // if there are 3 verification domains and each takes at most 6 seconds to fail the test, it will take 18 seconds to fail the test on one network interface
-        let cmd = `dig -4 A +short +time=3 +tries=2 -p ${MASQ_PORT} -b ${intfIP}#${Constants.PORT_DNS_TEST_SRC} @${intfIP} ${domain}`;
+        const digArgs = ['-4', 'A', '+short', '+time=3', '+tries=2', '-p', String(MASQ_PORT), '-b', `${intfIP}#${Constants.PORT_DNS_TEST_SRC}`, `@${intfIP}`, domain];
         log.debug(`Verifying DNS resolution to ${domain} on ${intfIP} ...`);
         try {
-          let { stdout, stderr } = await execAsync(cmd);
+          let { stdout, stderr } = await execFileAsync('dig', digArgs);
           if (!stdout || !stdout.trim().split('\n').some(line => new Address4(line).isValid())) {
             log.warn(`Error verifying dns resolution to ${domain} on ${intfIP}`, stderr, stdout);
           } else {
@@ -2336,17 +2376,17 @@ module.exports = class DNSMASQ {
       let cmds = [];
       // check all dns servers, if any works normal, return up status
       for (const dnsServer of resolver4) {
-        let cmd = `dig -4 A +short +time=3 +tries=2 @${dnsServer} ${domain}`;
-        cmds.push({dnsServer, cmd});
+        const args = ['-4', 'A', '+short', '+time=3', '+tries=2', `@${dnsServer}`, domain];
+        cmds.push({dnsServer, args});
       }
       for (const dnsServer of resolver6) {
-        cmds.push({dnsServer:dnsServer, cmd:`dig -6 A +short +time=3 +tries=2 @${dnsServer} ${domain}`});
+        cmds.push({dnsServer, args: ['-6', 'A', '+short', '+time=3', '+tries=2', `@${dnsServer}`, domain]});
       }
 
-      for (const {dnsServer, cmd} of cmds) {
+      for (const {dnsServer, args} of cmds) {
         log.debug(`DNS upstream check, verifying DNS resolution to ${domain} on ${dnsServer} ...`);
         try {
-          let { stdout, stderr } = await execAsync(cmd);
+          let { stdout, stderr } = await execFileAsync('dig', args);
           if (!stdout || !stdout.trim().split('\n').some(line => new Address4(line).isValid())) {
             log.warn(`DNS upstream check, error verifying dns resolution to ${domain} on ${dnsServer}`, stderr, stdout);
           } else {
@@ -2490,13 +2530,140 @@ module.exports = class DNSMASQ {
     }, cooldown)
   }
 
+  // `find <path>` (no -L) never follows symlinks, including on the starting
+  // path itself, so any fs errno here (ENOENT, EACCES, ELOOP, ...) is treated
+  // like "find" hitting nothing it can traverse: contribute no files rather
+  // than aborting the whole checkConfsChange() call.
+  _isRecoverableFsError(err) {
+    return err && typeof err.code === 'string';
+  }
+
+  async _expandCheckConfsRoots(pathSpec) {
+    if (!pathSpec.includes('*'))
+      return [pathSpec];
+
+    if (pathSpec.endsWith('/*')) {
+      const parentDir = pathSpec.slice(0, -2);
+      try {
+        // matches dnsmasq's own conf-dir/addn-hosts directory scan, which
+        // skips dotfile entries (option.c) rather than loading them
+        return (await fsp.readdir(parentDir))
+          .filter(entry => !entry.startsWith('.'))
+          .map(entry => pathModule.join(parentDir, entry));
+      } catch (err) {
+        if (this._isRecoverableFsError(err))
+          return [];
+        throw err;
+      }
+    }
+
+    if (pathSpec.endsWith('*')) {
+      const prefixPath = pathSpec.slice(0, -1);
+      const parentDir = pathModule.dirname(prefixPath);
+      const prefix = pathModule.basename(prefixPath);
+      try {
+        return (await fsp.readdir(parentDir))
+          .filter(entry => entry.startsWith(prefix))
+          .map(entry => pathModule.join(parentDir, entry));
+      } catch (err) {
+        if (this._isRecoverableFsError(err))
+          return [];
+        throw err;
+      }
+    }
+
+    throw new Error(`Unsupported checkConfsChange path pattern: ${pathSpec}`);
+  }
+
+  async _collectCheckConfsFiles(rootPath, files) {
+    let stat;
+    try {
+      stat = await fsp.lstat(rootPath);
+    } catch (err) {
+      if (this._isRecoverableFsError(err))
+        return;
+      throw err;
+    }
+
+    // matches `find <path> -type f` (default -P mode): symlinks are type
+    // 'l', never 'f', and are not followed into even as the starting path
+    if (stat.isSymbolicLink())
+      return;
+
+    if (stat.isFile()) {
+      files.push(rootPath);
+      return;
+    }
+
+    if (!stat.isDirectory())
+      return;
+
+    await this._walkCheckConfsDir(rootPath, files);
+  }
+
+  async _walkCheckConfsDir(dirPath, files) {
+    let entries;
+    try {
+      entries = await fsp.readdir(dirPath, { withFileTypes: true });
+    } catch (err) {
+      if (this._isRecoverableFsError(err))
+        return;
+      throw err;
+    }
+
+    for (const entry of entries) {
+      // matches dnsmasq's own conf-dir/addn-hosts directory scan, which
+      // skips dotfile entries (option.c) rather than loading them
+      if (entry.name.startsWith('.'))
+        continue;
+
+      // dirent type comes from the directory entry itself (no extra stat
+      // syscall) and, like `find` without -L, never follows symlinks
+      if (entry.isSymbolicLink())
+        continue;
+
+      const entryPath = pathModule.join(dirPath, entry.name);
+      if (entry.isDirectory())
+        await this._walkCheckConfsDir(entryPath, files);
+      else if (entry.isFile())
+        files.push(entryPath);
+      else
+        log.warn(`Skipping non-file, non-directory entry in ${dirPath}: ${entry.name}`);
+    }
+  }
+
+  async _hashCheckConfsGroup(pathSpec) {
+    const roots = await this._expandCheckConfsRoots(pathSpec);
+    const files = [];
+    for (const rootPath of roots)
+      await this._collectCheckConfsFiles(rootPath, files);
+
+    files.sort();
+
+    const hash = crypto.createHash('md5');
+    for (const file of files) {
+      hash.update(file);
+      hash.update('\n');
+      try {
+        // a failed read (file deleted mid-scan, permission error, ...) maps
+        // to `cat` failing silently to stdout in the old shell pipeline:
+        // the path + empty content + trailing separator are still hashed
+        hash.update(await fsp.readFile(file));
+      } catch (err) {
+        if (!this._isRecoverableFsError(err))
+          throw err;
+      }
+      hash.update('\n');
+    }
+
+    return hash.digest('hex');
+  }
+
   async checkConfsChange(dnsmasqConfKey = "dnsmasq:conf", paths = [`${FILTER_DIR}*`, resolvFile, startScriptFile, configFile]) {
     try {
       let md5sumNow = '';
-      for (const confs of paths) {
-        const stdout = await execAsync(`find ${confs} -type f | sort | (while read FILE; do echo "\${FILE}"; cat "\${FILE}"; echo; done;) | md5sum | awk '{print $1}'`).then(r => r.stdout).catch((err) => null);
-        md5sumNow = md5sumNow + (stdout ? stdout.split('\n').join('') : '');
-      }
+      for (const confs of paths)
+        md5sumNow += await this._hashCheckConfsGroup(confs);
       const md5sumBefore = await rclient.getAsync(dnsmasqConfKey);
       if (md5sumNow != md5sumBefore) {
         log.verbose(`dnsmasq confs ${dnsmasqConfKey} md5sum, before: ${md5sumBefore} now: ${md5sumNow}`)

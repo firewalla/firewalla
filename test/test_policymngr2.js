@@ -203,6 +203,54 @@ describe('Test remotePort policy protocol match', function(){
   });
 });
 
+describe('Test priorityCompare', function(){
+  // returns <0 if `this` outranks the arg, >0 if arg wins, 0 if equal
+
+  const intranetScopedToDevice = new Policy({
+    pid: '101', type: 'intranet', action: 'block', direction: 'bidirection',
+    scope: ['20:6D:31:01:2B:43'],
+  });
+  const deviceTargetAllScope = new Policy({
+    pid: '102', type: 'device', action: 'block', direction: 'bidirection',
+    target: '20:6D:31:01:2B:43',
+  });
+  const intranetAllScope = new Policy({
+    pid: '103', type: 'intranet', action: 'block', direction: 'bidirection',
+  });
+
+  it('treats device-scoped and device-target local rules as equal priority', () => {
+    expect(intranetScopedToDevice.priorityCompare(deviceTargetAllScope)).to.equal(0);
+    expect(deviceTargetAllScope.priorityCompare(intranetScopedToDevice)).to.equal(0);
+  });
+
+  it('ranks a device-specific local rule above an all-scope one', () => {
+    expect(deviceTargetAllScope.priorityCompare(intranetAllScope)).to.be.below(0);
+    expect(intranetAllScope.priorityCompare(deviceTargetAllScope)).to.be.above(0);
+  });
+
+  it('reads tag scope from the `tag` field (device group = level 2)', () => {
+    const tagGroupRule = new Policy({
+      pid: '104', type: 'intranet', action: 'block', tag: ['tag:8'],
+    });
+    expect(deviceTargetAllScope.priorityCompare(tagGroupRule)).to.be.below(0);
+    expect(tagGroupRule.priorityCompare(intranetAllScope)).to.be.below(0);
+  });
+
+  it('lets seq band override specificity', () => {
+    const highSeqAllScope = new Policy({
+      pid: '105', type: 'intranet', action: 'block', seq: 1,
+    });
+    expect(highSeqAllScope.priorityCompare(deviceTargetAllScope)).to.be.below(0);
+  });
+
+  it('prefers allow over block at the same specificity', () => {
+    const allowDevice = new Policy({ pid: '106', type: 'device', target: 'AA:BB:CC:DD:EE:FF', action: 'allow' });
+    const blockDevice = new Policy({ pid: '107', type: 'device', target: 'AA:BB:CC:DD:EE:FF', action: 'block' });
+    expect(allowDevice.priorityCompare(blockDevice)).to.equal(-1);
+    expect(blockDevice.priorityCompare(allowDevice)).to.equal(1);
+  });
+});
+
 describe('Test policy filter', function(){
   this.timeout(30000);
 

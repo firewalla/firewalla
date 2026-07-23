@@ -21,8 +21,22 @@ const routing = require('../extension/routing/routing')
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const sysManager = require('../net2/SysManager')
 
-const { exec } = require('child-process-promise');
+const fsp = require('fs').promises;
+const { execFile } = require('child-process-promise');
 const _ = require('lodash')
+
+// /proc/net/route stores Destination/Mask as 32-bit hex in the platform's native
+// byte order; reverse the byte pairs to get the usual dotted-decimal form
+function procRouteHexToIp(hex) {
+  const bytes = [];
+  for (let i = 0; i < 8; i += 2) bytes.unshift(parseInt(hex.substr(i, 2), 16));
+  return bytes.join('.');
+}
+function procRouteMaskToPrefixLen(hex) {
+  const bytes = [];
+  for (let i = 0; i < 8; i += 2) bytes.push(parseInt(hex.substr(i, 2), 16));
+  return bytes.reduce((bits, b) => bits + b.toString(2).split('1').length - 1, 0);
+}
 
 const { IPSET_DOCKER_WAN_ROUTABLE, IPSET_DOCKER_LAN_ROUTABLE, IPSET_MONITORED_NET } = ipset.CONSTANTS
 
@@ -37,33 +51,27 @@ class DockerSensor extends Sensor {
   }
 
   async listNetworks() {
-    const listOutput = await exec('sudo docker network list')
-    const lines = listOutput.stdout
-      .split('\n')
-      .slice(1, -1)
-      .map(s => s.split(/\s+/)) // NETWORK ID, NAME, DRIVER, SCOPE
-      // .filter(n => n[2] == 'bridge') // only taking care of bridge network for now
+    const listOutput = await execFile('sudo', ['docker', 'network', 'ls', '--format', '{{.Name}}'])
+    const names = listOutput.stdout.split('\n').map(s => s.trim()).filter(Boolean)
+    if (!names.length) return []
 
-    const networks = []
-    for (const line of lines) {
-      const inspect = await exec(`sudo docker network inspect ${line[1]}`)
-      const network = JSON.parse(inspect.stdout)
-      networks.push(network[0])
-    }
-
-    return networks
+    const inspectOutput = await execFile('sudo', ['docker', 'network', 'inspect', ...names])
+    return JSON.parse(inspectOutput.stdout)
   }
 
-  async getInterface(network) {
-    const routes = await exec(`ip route`)
-    const route = routes.stdout.split('\n').slice(0, -1).find(l => l.startsWith(network))
-    if (!route) return null
+  async getRouteLines() {
+    const content = await fsp.readFile('/proc/net/route', { encoding: 'utf8' })
+    return content.split('\n').slice(1).map(l => l.trim().split(/\s+/)).filter(cols => cols.length >= 8)
+  }
 
-    return route.match(/dev ([^ ]+) /)[1]
+  async getInterface(network, routeLines) {
+    const lines = routeLines || await this.getRouteLines()
+    const row = lines.find(cols => `${procRouteHexToIp(cols[1])}/${procRouteMaskToPrefixLen(cols[7])}` === network)
+    return row ? row[0] : null
   }
 
   async addRoute() {
-    const active = await exec(`sudo systemctl -q is-active docker`).then(() => true).catch((err) => false);
+    const active = await execFile('sudo', ['systemctl', '-q', 'is-active', 'docker']).then(() => true).catch((err) => false);
     if (!active) {
       log.info(`Docker service is not enabled yet`);
       return;
@@ -72,13 +80,14 @@ class DockerSensor extends Sensor {
       const dockerNetworks = await this.listNetworks()
       const userLanNetworks = await ipset.list(IPSET_DOCKER_LAN_ROUTABLE)
       const userWanNetworks = await ipset.list(IPSET_DOCKER_WAN_ROUTABLE)
+      const routeLines = await this.getRouteLines()
 
       for (const network of dockerNetworks) {
         try {
           const subnet = _.get(network, 'IPAM.Config[0].Subnet', null)
           if (!subnet) continue
 
-          const intf = await this.getInterface(subnet)
+          const intf = await this.getInterface(subnet, routeLines)
 
           if (userLanNetworks.includes(subnet)) {
             await routing.addRouteToTable(subnet, undefined, intf, 'lan_routable')

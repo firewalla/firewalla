@@ -32,7 +32,7 @@ const url = require('url');
 const Firewalla = require('../net2/Firewalla.js');
 
 /** Decode one URL path segment (+ as space). Invalid encoding or traversal token -> null */
-function decodeTimeLimitsPathSegment(segment) {
+function decodeSpaPathSegment(segment) {
   try {
     const s = decodeURIComponent(segment.replace(/\+/g, ' '));
     if (s === '..' || s.includes('\0') || s.includes('/') || s.includes('\\')) return null;
@@ -43,22 +43,22 @@ function decodeTimeLimitsPathSegment(segment) {
 }
 
 /**
- * Relative file path under time_limits from the request (handles %20, %40, Unicode, etc.).
+ * Relative file path under the given SPA mount name from the request (handles %20, %40, Unicode, etc.).
  * Prefer originalUrl pathname so percent-encoding is applied per segment.
  */
-function timeLimitsRelativePath(req) {
+function spaRelativePath(req, name) {
   const pathname = (url.parse(req.originalUrl || '', false, true).pathname || req.path || '')
     .replace(/^\/+/, '/');
-  if (!pathname.toLowerCase().startsWith('/time_limits')) {
+  if (!pathname.toLowerCase().startsWith(`/${name}`)) {
     return { err: 404 };
   }
-  let suffix = pathname.replace(/^\/time_limits\/?/i, '');
+  let suffix = pathname.replace(new RegExp(`^/${name}/?`, 'i'), '');
   const trailingSlash = suffix.endsWith('/') && suffix.length > 0;
   suffix = suffix.replace(/\/+$/, '');
   if (!suffix) {
     return { rel: 'index.html' };
   }
-  const segments = suffix.split('/').filter(Boolean).map(decodeTimeLimitsPathSegment);
+  const segments = suffix.split('/').filter(Boolean).map(decodeSpaPathSegment);
   if (segments.some(s => s == null)) {
     return { err: 403 };
   }
@@ -86,37 +86,44 @@ app.set('query parser', 'simple');
 app.use(logger('combined'));
 app.use(bodyParser.json({limit: '5mb'}));
 
-const handleTimeLimits = (req, res) => {
-  const timeLimitPath = path.join(__dirname, 'public', 'time_limits');
-  const hotPatchDir = path.join(Firewalla.getHiddenFolder(), 'run', 'assets', 'views', 'time_limits');
+function createSpaHandler(name) {
+  const basePath = path.join(__dirname, 'public', name);
+  const hotPatchDir = path.join(Firewalla.getHiddenFolder(), 'run', 'assets', 'views', name);
 
-  const parsed = timeLimitsRelativePath(req);
-  if (parsed.err) {
-    res.status(parsed.err).send('');
-    return;
-  }
-  const rel = parsed.rel;
-  const resolved = path.resolve(timeLimitPath, rel);
-  if (path.relative(timeLimitPath, resolved).startsWith('..')) {
-    res.status(403).send('');
-    return;
-  }
+  return (req, res) => {
+    const parsed = spaRelativePath(req, name);
+    if (parsed.err) {
+      res.status(parsed.err).send('');
+      return;
+    }
+    const rel = parsed.rel;
+    const resolved = path.resolve(basePath, rel);
+    if (path.relative(basePath, resolved).startsWith('..')) {
+      res.status(403).send('');
+      return;
+    }
 
-  const hotResolved = path.resolve(hotPatchDir, rel);
-  const hotBase = path.resolve(hotPatchDir);
-  if (!path.relative(hotBase, hotResolved).startsWith('..') &&
-      fs.existsSync(hotResolved) && fs.statSync(hotResolved).isFile()) {
-    res.sendFile(hotResolved);
-    return;
-  }
-  if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
-    res.sendFile(resolved);
-    return;
-  }
-  res.status(404).send('');
+    const hotResolved = path.resolve(hotPatchDir, rel);
+    const hotBase = path.resolve(hotPatchDir);
+    if (!path.relative(hotBase, hotResolved).startsWith('..') &&
+        fs.existsSync(hotResolved) && fs.statSync(hotResolved).isFile()) {
+      res.sendFile(hotResolved);
+      return;
+    }
+    if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
+      res.sendFile(resolved);
+      return;
+    }
+    res.status(404).send('');
+  };
 }
+const handleTimeLimits = createSpaHandler('time_limits');
 app.get('/time_limits', handleTimeLimits);
 app.get('/time_limits/*', handleTimeLimits);
+
+const handleMe = createSpaHandler('me');
+app.get('/me', handleMe);
+app.get('/me/*', handleMe);
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use("/ss", require('./routes/ss.js'));
@@ -135,6 +142,7 @@ subpath_v1.use(bodyParser.json({limit: '5mb'}));
 subpath_v1.use('/encipher', encipher);
 subpath_v1.use('/encipher_raw', require('./routes/raw_encipher.js'));
 subpath_v1.use('/time_limits', require('./routes/time_limits.js'));
+subpath_v1.use('/me', require('./routes/me.js'));
 
 
 

@@ -364,11 +364,14 @@ class FreeRadius {
 
       const targetPath = path || certsDir;
       log.info(`Moving certs to target path ${targetPath}...`);
-      // ensure target dir exists, remove stale files, then move all files from tmpPath into it
+
+      // ensure old stale files are deleted
+      await exec(`sudo find ${targetPath} -mindepth 1 -delete`).catch((err) => {
+        log.warn(`Failed to delete stale certs in ${targetPath},`, err.message);
+      });
+
+      // ensure target dir exists, then move all files from tmpPath into it
       await fs.mkdirAsync(targetPath, { recursive: true }).catch(() => { });
-      for (const name of ['.keypass', 'ca.pem', 'server.pem', 'server.key']) {
-        await fs.unlinkAsync(`${targetPath}/${name}`).catch(() => { });
-      }
       const moved = await exec(`find ${tmpPath} -mindepth 1 -maxdepth 1 -exec mv -f {} ${targetPath}/ \\;`).then(() => true).catch((e) => {
         log.warn("Failed to move certs to target path,", e.message);
         return false;
@@ -416,10 +419,15 @@ class FreeRadius {
     if (data.customCerts && _.isObject(data.customCerts)) {
       log.info("Saving custom certs...");
       const result = await this._saveCerts(data.customCerts, `${f.getUserConfigFolder()}/freeradius/certs`).then(r => r).catch((e) => {
-        log.warn("Failed to migrate default certs", e.message);
+        log.warn("Failed to migrate custom certs", e.message);
         return false;
       });
       if (!result) { msgs.push("Failed to save custom certs"); }
+    } else {
+      // delete custom certs files
+      await exec(`sudo find ${f.getUserConfigFolder()}/freeradius/certs -mindepth 1 -delete`).catch((err) => {
+        log.warn(`Failed to delete custom certs files,`, err.message);
+      });
     }
 
     return {
