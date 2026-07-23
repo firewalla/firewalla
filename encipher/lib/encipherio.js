@@ -94,6 +94,9 @@ let legoEptCloud = class {
       }
       this.token = null;
       rclient.hgetAsync('sys:ept:me', 'eid').then(eid => this.eid = eid)
+      // cache the box's own group id locally; used as the GCM AAD so it doesn't
+      // depend on the (client-supplied) gid in the request URL.
+      rclient.hgetAsync('sys:ept', 'gid').then(gid => this.gid = gid).catch(() => {})
       this.groupCache = {};
       this.cryptoalgorithem = 'aes-256-cbc';
       this.name = name;
@@ -317,11 +320,18 @@ let legoEptCloud = class {
   async rrWithEptRelogin(options) {
     options.auth = { bearer: this.token }
     try {
-      return rrWithErrHandling(options)
+      // await so the catch can handle 401 (a bare return bypasses this try/catch)
+      return await rrWithErrHandling(options)
     } catch(err) {
       if (err && err.statusCode == 401) {
         log.verbose('401, re-login')
         await this.eptRelogin();
+        // persist so redis-backed consumers (e.g. Bone checkin) heal, not just this instance
+        try {
+          await rclient.hmsetAsync("sys:ept", { eid: this.eid, token: this.token });
+        } catch (e) {
+          log.error("Failed to persist refreshed ept token to sys:ept", e);
+        }
         return rrWithErrHandling(Object.assign({}, options, { auth: { bearer: this.token } }));
       } else
         throw err;
@@ -711,14 +721,129 @@ let legoEptCloud = class {
     return this.groupCache[gid];
   }
 
-  encrypt(text, key) {
-    let iv = Buffer.alloc(16);
-    iv.fill(0);
+  // Normalize an optional IV argument to a 16-byte Buffer. Accepts a Buffer or
+  // a base64 string; when none is given, returns the legacy fixed all-zero IV so
+  // existing callers keep their current behavior. Throws if a provided IV is not
+  // 16 bytes.
+  _normalizeIV(iv) {
+    if (iv == null) {
+      const zero = Buffer.alloc(16);
+      zero.fill(0);
+      return zero;
+    }
+    if (Buffer.isBuffer(iv)) {
+      if (iv.length !== 16) {
+        throw new Error(`Invalid IV length ${iv.length}, expected 16 bytes`);
+      }
+      return iv;
+    }
+    // A 16-byte IV is exactly 24 canonical base64 chars ("...=="). Validate the
+    // shape explicitly since Buffer.from(.,'base64') silently ignores invalid
+    // characters, and require a byte-exact round-trip so malformed client input
+    // is rejected rather than quietly reinterpreted.
+    if (typeof iv !== 'string' || !/^[A-Za-z0-9+/]{22}==$/.test(iv)) {
+      throw new Error('Invalid IV: expected base64 of 16 bytes');
+    }
+    const ivBuf = Buffer.from(iv, 'base64');
+    if (ivBuf.length !== 16 || ivBuf.toString('base64') !== iv) {
+      throw new Error('Invalid IV: expected base64 of 16 bytes');
+    }
+    return ivBuf;
+  }
+
+  // Parse the on-the-wire message value into { iv, ct, invalid }.
+  // The value is one of:
+  //   - a raw base64 ciphertext string (not JSON)     -> legacy, zero IV
+  //   - a JSON-encoded string "<base64>"              -> legacy, zero IV
+  //   - a JSON object { message, iv }                 -> use iv
+  //   - a JSON object { message } (no iv)             -> legacy fallback, zero IV
+  //   - a JSON object without message                 -> invalid
+  // The base64 alphabet has no '{' or '"', so a legacy bare-base64 string never
+  // collides with the JSON forms. Keeping iv inside the message keeps the
+  // envelope extensible (e.g. a future auth tag can be added as another field).
+  _parseEnvelope(text) {
+    let parsed;
+    if (text !== null && typeof text === 'object' && !Buffer.isBuffer(text)) {
+      // Already-parsed envelope object (a client that put `message` as a nested
+      // JSON object rather than a JSON string). Accept it directly.
+      parsed = text;
+    } else if (typeof text === 'string' && (text[0] === '{' || text[0] === '"')) {
+      // Only the JSON envelope forms start with '{' or '"'. A legacy bare-base64
+      // string never does (base64 alphabet), so skip JSON.parse and its
+      // exception entirely for the common legacy case.
+      try {
+        parsed = JSON.parse(text);
+      } catch (e) {
+        return { iv: null, ct: text }; // malformed JSON -> treat as legacy base64
+      }
+    } else {
+      return { iv: null, ct: text }; // bare base64 (legacy) or non-string
+    }
+    if (typeof parsed === 'string') {
+      return { iv: null, ct: parsed }; // JSON-encoded string (legacy)
+    }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      if (parsed.message != null) {
+        return {
+          alg: parsed.alg,                              // "gcm" or undefined (CBC)
+          iv: parsed.iv != null ? parsed.iv : null,     // CBC IV or GCM nonce (base64)
+          ct: parsed.message,
+          tag: parsed.tag != null ? parsed.tag : null   // GCM auth tag (base64)
+        };
+      }
+      return { invalid: true }; // object without a message field
+    }
+    return { iv: null, ct: text }; // number/boolean/array/null -> treat as legacy base64
+  }
+
+  // The scheme a parsed envelope represents: 'gcm' | 'cbc-iv' | 'legacy'.
+  _schemeOf(env) {
+    if (env.alg === 'gcm') return 'gcm';
+    if (env.iv != null) return 'cbc-iv';
+    return 'legacy';
+  }
+
+  // Normalize a GCM nonce to a 12-byte Buffer (canonical base64 = 16 chars).
+  _normalizeNonce(nonce) {
+    if (Buffer.isBuffer(nonce)) {
+      if (nonce.length !== 12) throw new Error(`Invalid GCM nonce length ${nonce.length}, expected 12 bytes`);
+      return nonce;
+    }
+    if (typeof nonce !== 'string' || !/^[A-Za-z0-9+/]{16}$/.test(nonce)) {
+      throw new Error('Invalid GCM nonce: expected base64 of 12 bytes');
+    }
+    const b = Buffer.from(nonce, 'base64');
+    if (b.length !== 12 || b.toString('base64') !== nonce) {
+      throw new Error('Invalid GCM nonce: expected base64 of 12 bytes');
+    }
+    return b;
+  }
+
+  // Normalize a GCM auth tag to a 16-byte Buffer (canonical base64 = "...==").
+  _normalizeTag(tag) {
+    if (typeof tag !== 'string' || !/^[A-Za-z0-9+/]{22}==$/.test(tag)) {
+      throw new Error('Invalid GCM tag: expected base64 of 16 bytes');
+    }
+    const b = Buffer.from(tag, 'base64');
+    if (b.length !== 16 || b.toString('base64') !== tag) {
+      throw new Error('Invalid GCM tag: expected base64 of 16 bytes');
+    }
+    return b;
+  }
+
+  // Encrypt utf8 text. When iv is provided, returns a JSON envelope string
+  // { iv, message } (both base64) so the IV travels with the ciphertext; when
+  // iv is absent, returns the legacy bare base64 ciphertext (zero IV).
+  encrypt(text, key, iv) {
+    const ivBuf = this._normalizeIV(iv);
     let bkey = Buffer.from(key.substring(0, 32), "utf8");
-    let cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, iv);
+    let cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, ivBuf);
     let crypted = cipher.update(text, 'utf8', 'base64');
     crypted += cipher.final('base64');
-    return crypted;
+    if (iv == null) {
+      return crypted; // legacy: bare base64
+    }
+    return JSON.stringify({ iv: ivBuf.toString('base64'), message: crypted });
   }
 
   encryptBinary(data, key) {
@@ -738,24 +863,127 @@ let legoEptCloud = class {
     return crypted;
   }
 
-  decrypt(text, key) {
-    try {
-      let iv = Buffer.alloc(16);
-      iv.fill(0);
-      let bkey = Buffer.from(key.substring(0, 32), "utf8");
-      let decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, iv);
-      let dec = decipher.update(text, 'base64', 'utf8');
+  // Decrypt a parsed envelope { iv, ct }. Throws on bad IV/padding; callers that
+  // want null-on-error (decrypt) wrap this in try/catch.
+  // The box's own group id (loaded locally, not from the request). Used as the
+  // GCM AAD so authentication binds to the box's group, independent of the
+  // client-supplied URL gid.
+  _localGid() {
+    if (!this.gid) throw new Error('local gid not available for GCM AAD');
+    return Buffer.from(this.gid, 'utf8');
+  }
+
+  _decryptWithEnvelope(env, key) {
+    const bkey = Buffer.from(key.substring(0, 32), "utf8");
+    if (env.alg === 'gcm') {
+      // GCM: authenticated. AAD = the box's local gid; final() throws on mismatch.
+      const decipher = crypto.createDecipheriv('aes-256-gcm', bkey, this._normalizeNonce(env.iv));
+      decipher.setAAD(this._localGid());
+      decipher.setAuthTag(this._normalizeTag(env.tag));
+      let dec = decipher.update(env.ct, 'base64', 'utf8');
       dec += decipher.final('utf8');
       return dec;
+    }
+    const decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, this._normalizeIV(env.iv));
+    let dec = decipher.update(env.ct, 'base64', 'utf8');
+    dec += decipher.final('utf8');
+    return dec;
+  }
+
+  // Encrypt with AES-256-GCM into a { alg:"gcm", iv, message, tag } envelope.
+  // A fresh 12-byte nonce is generated per call; the box's local gid is AAD.
+  _encryptGcm(text, key) {
+    const bkey = Buffer.from(key.substring(0, 32), "utf8");
+    const nonce = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', bkey, nonce);
+    cipher.setAAD(this._localGid());
+    let ct = cipher.update(text, 'utf8', 'base64');
+    ct += cipher.final('base64');
+    const tag = cipher.getAuthTag();
+    return JSON.stringify({ alg: 'gcm', iv: nonce.toString('base64'), message: ct, tag: tag.toString('base64') });
+  }
+
+  // Decrypt a message value. The IV (if any) is carried inside the value via
+  // the { iv, message } envelope; see _parseEnvelope for the accepted forms.
+  decrypt(text, key) {
+    try {
+      const env = this._parseEnvelope(text);
+      if (env.invalid) {
+        log.error("Failed to decrypt message: invalid envelope (no message field)");
+        return null;
+      }
+      return this._decryptWithEnvelope(env, key);
     } catch(err) {
       log.error("Failed to decrypt message, err:", err);
       return null;
     }
   }
 
+  // Request decryption for the netbot req/response path. Parses the envelope
+  // once and resolves { decrypted, usedIv } — usedIv tells the caller whether
+  // the request carried an IV so the reply can mirror it (avoids re-parsing).
+  decryptRequest(gid, msg) {
+    return new Promise((resolve, reject) => {
+      this.getKey(gid, false, (err, key) => {
+        if (key == null) {
+          reject(err || new Error("key not found, invalid group?"));
+          return;
+        }
+        const env = this._parseEnvelope(msg);
+        if (env.invalid) {
+          reject(new Error("decrypt_error"));
+          return;
+        }
+        let decrypted;
+        try {
+          decrypted = this._decryptWithEnvelope(env, key);
+        } catch (e) {
+          log.error("Failed to decrypt message, err:", e);
+          reject(new Error("decrypt_error"));
+          return;
+        }
+        const msgJson = this._parseJsonSafe(decrypted);
+        if (msgJson != null)
+          resolve({ decrypted: msgJson, scheme: this._schemeOf(env) });
+        else
+          reject(new Error("Malformed JSON"));
+      });
+    });
+  }
+
+  // IV-aware response encryption for the netbot req/response path. Encrypts body
+  // with the given IV (Buffer or base64) and returns a promise of the base64
+  // ciphertext. When iv is absent, the legacy zero IV is used.
+  // Encrypt a reply in the given scheme so it mirrors the request:
+  //   'gcm'     -> { alg:"gcm", iv, message, tag } (AAD=gid)
+  //   'cbc-iv'  -> { iv, message } with a fresh random IV
+  //   'legacy'  -> bare base64 (zero IV)
+  encryptResponse(gid, body, scheme) {
+    return new Promise((resolve, reject) => {
+      this.getKey(gid, false, (err, key) => {
+        if (key == null) {
+          reject(err || new Error("key not found, invalid group?"));
+          return;
+        }
+        try {
+          if (scheme === 'gcm')
+            resolve(this._encryptGcm(body, key));
+          else if (scheme === 'cbc-iv')
+            resolve(this.encrypt(body, key, crypto.randomBytes(16)));
+          else
+            resolve(this.encrypt(body, key)); // legacy zero IV
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+  }
+
   keygen() {
-    let k = uuid.v4();
-    return k.replace('-', '');
+    // 24 CSPRNG bytes -> exactly 32 base64 chars (192 bits of entropy). The 32-char
+    // ASCII string keeps the wire contract (bkey = utf8(key.substring(0,32))) while
+    // replacing the old uuid.v4() source, which only had ~112-122 bits of real entropy.
+    return crypto.randomBytes(24).toString('base64');
   }
 
   // This is to encrypt message for direct communication between app and pi.

@@ -21,7 +21,7 @@ const path = require('path');
 const fsp = require('fs').promises;
 const uuid = require('uuid');
 
-const { exec } = require('child-process-promise');
+const { exec, execFile } = require('child-process-promise');
 const { spawn } = require('child_process');
 
 /**
@@ -80,9 +80,12 @@ class IpsetControl extends ModuleControl {
    * Add an ipset command string.
    * @param {string|string[]} cmd
    */
-  async addRule(cmd) {
+  async addRule(cmd, allowDeferredExec = false) {
     if (this.phase === 'autonomous') {
       const cmds = Array.isArray(cmd) ? cmd : [cmd];
+      if (allowDeferredExec) {
+        return this._batchWrite(cmds);
+      }
       for (const line of cmds) {
         await this._execOne(line);
       }
@@ -108,10 +111,12 @@ class IpsetControl extends ModuleControl {
 
   /**
    * Execute a single ipset command inline (autonomous phase).
-   * @param {string} line - ipset command line (without 'ipset' prefix)
+   * @param {string} line - ipset command line (without 'ipset' prefix); tokens are
+   *   whitespace-separated with no quoting, so callers must not pass values
+   *   containing spaces (e.g. ipset comment text)
    */
   async _execOne(line) {
-    await exec(`sudo ipset -! ${line}`, { timeout: 10000 }).catch(err => {
+    await execFile('sudo', ['ipset', '-!', ...line.trim().split(/\s+/)], { timeout: 10000 }).catch(err => {
       log.error('Failed to execute command:', err.stack);
     });
   }

@@ -92,9 +92,12 @@ TimeSeries.prototype.recordHit = function(key, timestamp, increment, callback=()
       hitTimestamp = getRoundedTime(properties.duration, timestamp);
 
     if (typeof self.redis.hincrbyAndExpireatBulk === "function") {
-      self.redis.hincrbyAndExpireatBulk(tmpKey, hitTimestamp, Math.floor(increment || 1), keyTimestamp + 2 * properties.ttl, !self.noMulti)
-        .catch(err => callback(err))
-        .then(() => callback())
+      const pending = self.redis.hincrbyAndExpireatBulk(tmpKey, hitTimestamp, Math.floor(increment || 1), keyTimestamp + 2 * properties.ttl, !self.noMulti)
+      if (pending) {
+        pending.then(() => callback()).catch(err => callback(err))
+      } else {
+        callback()
+      }
     } else {
       if (self.noMulti) {
         self.redis.hincrby(tmpKey, hitTimestamp, Math.floor(increment || 1), (err) => {

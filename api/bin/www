@@ -63,7 +63,7 @@ run0();
 
 async function run0() {
   log.forceInfo("Waiting for first app to connect...");
-  
+
   await sysManager.waitTillInitialized();
   if (bone.cloudready() &&
       bone.isAppConnected() &&
@@ -71,6 +71,11 @@ async function run0() {
       // this is to ensure sysManager is already initliazed when called in API code
       sysManager.isConfigInitialized()) {
     log.info("Firewalla initialization complete");
+
+    const kernelCrashMonitor = require('../../net2/KernelCrashMonitor.js');
+    const udpTlsKoPath = await platform.getTlsKoPath('xt_udp_tls').catch(() => 'xt_udp_tls');
+    await kernelCrashMonitor.checkPstoreAndUpdateRedis(udpTlsKoPath);
+    
     run();
   } else {
     setTimeout(()=>{

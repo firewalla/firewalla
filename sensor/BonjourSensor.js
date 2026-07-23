@@ -92,7 +92,7 @@ class BonjourSensor extends Sensor {
         log.info("Bonjour Watch Updating");
         // remove all detected servcies in bonjour browser internally, otherwise BonjourBrowser would do dedup based on service name, and ip changes would be ignored
         for (const listener of this.bonjourListeners) {
-          Object.keys(listener.browser._serviceMap).forEach(fqdn => listener.browser._removeService(fqdn));
+          listener.browser.services.slice().forEach(s => listener.browser._removeService(s.fqdn));
           listener.browser.update();
         }
       }, 1000 * 60 * 5);

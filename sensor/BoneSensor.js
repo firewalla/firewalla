@@ -17,6 +17,7 @@
 const log = require('../net2/logger.js')(__filename);
 
 const Bone = require('../lib/Bone');
+const cloudWrapper = require('../net2/FWCloudWrapper.js');
 
 const extensionManager = require('./ExtensionManager.js')
 
@@ -46,6 +47,25 @@ const Constants = require('../net2/Constants.js');
 
 const CLOUD_URL_KEY = "sys:bone:url";
 const FORCED_CLOUD_URL_KEY = "sys:bone:url:forced";
+
+const DEFAULT_EPT_TOKEN_REFRESH_ADVANCE = 30 * 24 * 3600; // refresh 30d before expiry
+
+// read `exp` (unix sec) from an ept token without verifying; null if not a JWT
+function decodeTokenExp(token) {
+  if (!token || typeof token !== 'string')
+    return null;
+  const parts = token.split('.');
+  if (parts.length < 2)
+    return null;
+  try {
+    // base64url -> base64 (Node 12 can't decode base64url)
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
+    return _.isNumber(payload.exp) ? payload.exp : null;
+  } catch (err) {
+    return null;
+  }
+}
 
 
 class BoneSensor extends Sensor {
@@ -159,7 +179,28 @@ class BoneSensor extends Sensor {
     }
   }
 
+  // Refresh sys:ept before the ept token expires, so checkin never hits an expired one.
+  async refreshEptTokenIfNeeded() {
+    const token = await rclient.hgetAsync("sys:ept", "token");
+    const exp = decodeTokenExp(token);
+    if (!exp) // not a JWT; rely on the reactive 401 path in checkIn
+      return;
+
+    const advance = this.config.eptTokenRefreshAdvance || DEFAULT_EPT_TOKEN_REFRESH_ADVANCE;
+    const now = Date.now() / 1000;
+    if (exp - now > advance)
+      return;
+
+    log.warn(`ept token expires in ${Math.round((exp - now) / 86400)} day(s), refreshing`);
+    await cloudWrapper.refreshToken();
+    await Bone.checkCloud(); // let Bone pick up the fresh token now
+  }
+
   async checkIn(useOriginalEndpoint = false) {
+    await this.refreshEptTokenIfNeeded().catch((err) => {
+      log.error("Failed to proactively refresh ept token", err);
+    });
+
     const url = await this.getForcedCloudInstanceURL();
 
     if (url) {
@@ -195,7 +236,20 @@ class BoneSensor extends Sensor {
       log.error("BoneCheckIn Error fetching hostInfo", e);
     }
 
-    const data = await Bone.checkinAsync(fc.getConfig().version, license, sysInfo, useOriginalEndpoint);
+    let data;
+    try {
+      data = await Bone.checkinAsync(fc.getConfig().version, license, sysInfo, useOriginalEndpoint);
+    } catch (err) {
+      // expired ept token -> cloud rejects; refresh and retry once
+      if (err && (err.statusCode === 401 || err.statusCode === 403)) {
+        log.warn("Checkin rejected with", err.statusCode, "- refreshing ept token and retrying");
+        await cloudWrapper.refreshToken();
+        await Bone.checkCloud(); // pick up fresh token before retry
+        data = await Bone.checkinAsync(fc.getConfig().version, license, sysInfo, useOriginalEndpoint);
+      } else {
+        throw err;
+      }
+    }
     this.lastCheckedIn = Date.now() / 1000;
 
     log.info("Cloud checked in successfully")//, JSON.stringify(data));

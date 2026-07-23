@@ -33,7 +33,8 @@ const MAX_FLOW_PER_SUM = 400
 // cut the per-flow zadd. Seconds.
 const DEVICE_LAST_FLOW_TS_RESOLUTION = 60
 
-const COMMON_SUMFLOW_KEYS = [ 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason', 'intra' ]
+// c is the coded category snapshot carried over from flow records, see FlowAggregationSensor
+const COMMON_SUMFLOW_KEYS = [ 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason', 'intra', 'c' ]
 const FLOW_STR_KEYS = COMMON_SUMFLOW_KEYS.concat('destIP')
 const TOPFLOW_KEYS = COMMON_SUMFLOW_KEYS.concat('device')
 
