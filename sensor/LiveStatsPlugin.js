@@ -267,6 +267,17 @@ class LiveStatsPlugin extends Sensor {
             }
             break;
           }
+          case 'phyIntf': {
+            if (!await this.validIntfName(target)) {
+              throw new Error(`Invalid interface ${target}`)
+            }
+            response.throughput = [ Object.assign( {name: target, target, type}, await this.getIntfThroughput(target) ) ]
+            break
+          }
+          case 'wlanIntfs': {
+            response.throughput = await this.getWlanThroughput()
+            break
+          }
         }
       }
 
@@ -705,6 +716,113 @@ class LiveStatsPlugin extends Sensor {
     const rx = await fsp.readFile(`/sys/class/net/${intf}/statistics/rx_bytes`, 'utf8').catch(() => 0);
     const tx = await fsp.readFile(`/sys/class/net/${intf}/statistics/tx_bytes`, 'utf8').catch(() => 0);
     return {rx: Number(rx), tx: Number(tx)};
+  }
+
+  /**
+   * Live throughput of every broadcasting Wi-Fi (LAN) interface on this box, one entry per (ssid, band).
+   * Integrated-AP boxes (Orange) enumerate via the fwapc controller; others probe local wlan with `iw dev`.
+   * @returns {Promise<Array<{name,target,type,ssid,band,tx,rx}>>}
+   */
+  async getWlanThroughput() {
+    const aps = await platform.hasIntegratedAPAssets()
+      ? await this.getApcWlanAps()
+      : await this.getLocalWlanAps()
+    const result = []
+    for (const ap of aps) {
+      const { tx, rx } = await this.getIntfThroughput(ap.name)
+      result.push({ name: ap.name, target: ap.name, type: 'wlanIntf', ssid: ap.ssid, band: ap.band, tx, rx })
+    }
+    return result
+  }
+
+  /**
+   * AP-mode wlan interfaces from the fwapc controller status (integrated-AP boxes).
+   * Keeps only local AP interfaces; in a mesh, box and AP7s share an ssid -> same intf name, count once.
+   * @returns {Promise<Array<{name,ssid,band}>>}
+   */
+  async getApcWlanAps() {
+    const assets = await fwapc.getAssetsStatus() || {}
+    const aps = []
+    const seen = new Set()
+    for (const uid of Object.keys(assets)) {
+      const apsMap = _.get(assets, [uid, 'aps'], {})
+      for (const key of Object.keys(apsMap)) {
+        const ap = apsMap[key]
+        if (!ap || ap.mode !== 'ap' || !ap.intf || seen.has(ap.intf) || !await this.validIntfName(ap.intf))
+          continue
+        seen.add(ap.intf)
+        aps.push({ name: ap.intf, ssid: ap.ssid || null, band: ap.band || null })
+      }
+    }
+    return aps
+  }
+
+  /**
+   * AP-mode wlan interfaces on this box from `iw dev`, cached briefly since ssid/band rarely change.
+   * @returns {Promise<Array<{name,ssid,band}>>}
+   */
+  async getLocalWlanAps() {
+    const now = Date.now()
+    if (this.wlanApsCache && now - this.wlanApsCache.ts < 30000)
+      return this.wlanApsCache.aps
+    let aps = []
+    try {
+      const { stdout } = await exec('sudo iw dev')
+      aps = this.parseWlanAps(stdout)
+    } catch (err) {
+      log.error('Failed to list wlan interfaces', err.message)
+    }
+    this.wlanApsCache = { aps, ts: now }
+    return aps
+  }
+
+  /**
+   * Parse `iw dev` output into AP-mode wlan interfaces; sta (wifi-WAN) and scan interfaces are dropped.
+   * @param {string} output
+   * @returns {Array<{name,ssid,band}>}
+   */
+  parseWlanAps(output) {
+    const aps = []
+    let cur = null
+    const flush = () => {
+      if (cur && cur.type === 'AP')
+        aps.push({ name: cur.name, ssid: cur.ssid, band: cur.band })
+    }
+    for (const line of String(output).split('\n')) {
+      const t = line.trim()
+      if (t.startsWith('Interface ')) {
+        flush()
+        cur = { name: t.substring(10).trim(), ssid: null, band: null, type: null }
+        continue
+      }
+      if (!cur)
+        continue
+      const idx = t.indexOf(' ')
+      if (idx <= 0)
+        continue
+      const key = t.substring(0, idx)
+      const value = t.substring(idx + 1).trim()
+      if (key === 'ssid')
+        cur.ssid = value
+      else if (key === 'type')
+        cur.type = value
+      else if (key === 'channel') {
+        const m = value.match(/\((\d+)\s*MHz\)/) // e.g. "36 (5180 MHz), width: 160 MHz"
+        const freq = m && Number(m[1]) // band from frequency, channel numbers collide across bands
+        if (freq >= 2400 && freq < 2500) cur.band = '2g'
+        else if (freq >= 4900 && freq < 5925) cur.band = '5g'
+        else if (freq >= 5925 && freq <= 7125) cur.band = '6g'
+      }
+    }
+    flush()
+    return aps
+  }
+
+  // guard against shell injection and confirm the nic exists on the box
+  async validIntfName(name) {
+    if (!name || !/^[a-zA-Z0-9._-]+$/.test(name))
+      return false
+    return fsp.access(`/sys/class/net/${name}`).then(() => true).catch(() => false)
   }
 
   async getFlows(type, target, ts, opts) {
