@@ -1993,6 +1993,21 @@ module.exports = class HostManager extends Monitorable {
         for (const mac of await rclient.smembersAsync(Constants.REDIS_KEY_HOST_PINNED))
           visibleMACs.add(mac)
 
+      if (platform.isFireRouterManaged()) {
+        try {
+          const networkConfig = await FireRouter.getConfig();
+          const assets = _.get(networkConfig, ["apc", "assets"]);
+          if (_.isObject(assets)) {
+            for (const assetMac of Object.keys(assets)) {
+              if (hostTool.isMacAddress(assetMac))
+                visibleMACs.add(assetMac.toUpperCase());
+            }
+          }
+        } catch (err) {
+          log.error("Failed to get APC assets from FireRouter config", err.message);
+        }
+      }
+
       // TODO: replace getAllMACs with getMACsByTime(0) after a year of 1.981
       const MACs = includeInactiveHosts ? new Set(await hostTool.getAllMACs()) : visibleMACs
       this._totalHosts = MACs.size;
