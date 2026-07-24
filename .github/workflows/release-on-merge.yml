@@ -1,0 +1,99 @@
+name: Release on merge
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - release_7_0
+      - release_8_0
+      - release_9_0
+      - release_10_0
+      - release_11_0
+      - release_12_0
+      - release_13_0
+      - beta_8_0
+      - beta_9_0
+      - beta_10_0
+      - beta_11_0
+      - beta_12_0
+      - beta_13_0
+      - beta_14_0
+      - beta_15_0
+      - beta_16_0
+      - beta_17_0
+      - beta_18_0
+      - beta_19_0
+      - beta_20_0
+      - beta_21_0
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Create release tag
+        env:
+          BRANCH: ${{ github.event.pull_request.base.ref }}
+          TARGET: ${{ github.event.pull_request.merge_commit_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # actual branch -> "<model>-<channel>" (reverse of the model:template mapping;
+          # release_6_0=production, beta_6_0=beta, beta_7_0=alpha)
+          case "$BRANCH" in
+            release_7_0)  LABEL="gold-production" ;;
+            beta_8_0)     LABEL="gold-beta" ;;
+            beta_9_0)     LABEL="gold-alpha" ;;
+            release_8_0)  LABEL="navy-production" ;;
+            beta_10_0)    LABEL="navy-beta" ;;
+            beta_11_0)    LABEL="navy-alpha" ;;
+            release_9_0)  LABEL="purple-production" ;;
+            beta_12_0)    LABEL="purple-beta" ;;
+            beta_13_0)    LABEL="purple-alpha" ;;
+            release_10_0) LABEL="pse-production" ;;
+            beta_14_0)    LABEL="pse-beta" ;;
+            beta_15_0)    LABEL="pse-alpha" ;;
+            release_11_0) LABEL="gse-production" ;;
+            beta_16_0)    LABEL="gse-beta" ;;
+            beta_17_0)    LABEL="gse-alpha" ;;
+            release_12_0) LABEL="goldpro-production" ;;
+            beta_18_0)    LABEL="goldpro-beta" ;;
+            beta_19_0)    LABEL="goldpro-alpha" ;;
+            release_13_0) LABEL="orange-production" ;;
+            beta_20_0)    LABEL="orange-beta" ;;
+            beta_21_0)    LABEL="orange-alpha" ;;
+            master)       LABEL="master" ;;
+            *) echo "::error::no model/channel mapping for branch '$BRANCH'"; exit 1 ;;
+          esac
+
+          VER=$(jq -r '.version' net2/config.json)
+          [ -n "$VER" ] && [ "$VER" != null ] || { echo "::error::no .version in net2/config.json"; exit 1; }
+          PREFIX="${LABEL}-v${VER}"
+
+          # patch auto-increments per (label, version); retry guards against tag races
+          for attempt in 1 2 3 4 5; do
+            git fetch --tags --force --quiet
+            max=0
+            for t in $(git tag -l "${PREFIX}-*"); do
+              n=${t#${PREFIX}-}
+              case "$n" in ''|*[!0-9]*) continue ;; esac
+              n=$((10#$n)); [ "$n" -gt "$max" ] && max=$n
+            done
+            TAG="${PREFIX}-$(printf '%03d' $((max + 1)))"
+            if gh release create "$TAG" --target "$TARGET" --title "$TAG" --generate-notes; then
+              echo "Created release $TAG"
+              exit 0
+            fi
+            echo "create failed for $TAG (likely tag race), retrying..."; sleep $((attempt * 2))
+          done
+          echo "::error::failed to create release after retries"; exit 1
