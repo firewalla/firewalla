@@ -23,4 +23,7 @@ sudo bash -c 'cat >> /usr/local/bro/share/bro/site/local.bro' <<EOS
 redef restrict_filters += [["not-icmp"] = "not icmp and not icmp6"];
 EOS
 
+# Clear CPUQuota so zeekctl deploy can use full CPU
+sudo systemctl set-property brofish.service CPUQuota=
+
 sync

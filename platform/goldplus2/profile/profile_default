@@ -78,8 +78,5 @@
     [ "eth1", 1, "0,1,2,3" ],
     [ "eth2", 1, "0,2" ],
     [ "eth3", 1, "0,1,2,3,2" ]
-  ],
-  "systemd_cpuquota": [
-    [ "brofish.service", "25" ]
   ]
 }
