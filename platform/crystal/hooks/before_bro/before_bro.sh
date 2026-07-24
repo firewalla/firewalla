@@ -1,1 +1,0 @@
-../../../goldpro/hooks/before_bro/before_bro.sh

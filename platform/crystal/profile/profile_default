@@ -1,6 +1,0 @@
-{
-  "nic_feature": [
-    [ "eth0", "rx-udp-gro-forwarding", "on"],
-    [ "eth1", "rx-udp-gro-forwarding", "on"]
-  ]
-}
