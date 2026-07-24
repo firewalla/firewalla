@@ -4,7 +4,6 @@ on:
     types: [closed]
     branches:
       - release_7_0
-      - release_8_0
       - release_9_0
       - release_10_0
       - release_11_0
@@ -12,8 +11,6 @@ on:
       - release_13_0
       - beta_8_0
       - beta_9_0
-      - beta_10_0
-      - beta_11_0
       - beta_12_0
       - beta_13_0
       - beta_14_0
@@ -53,9 +50,6 @@ jobs:
             release_7_0)  LABEL="gold-production" ;;
             beta_8_0)     LABEL="gold-beta" ;;
             beta_9_0)     LABEL="gold-alpha" ;;
-            release_8_0)  LABEL="navy-production" ;;
-            beta_10_0)    LABEL="navy-beta" ;;
-            beta_11_0)    LABEL="navy-alpha" ;;
             release_9_0)  LABEL="purple-production" ;;
             beta_12_0)    LABEL="purple-beta" ;;
             beta_13_0)    LABEL="purple-alpha" ;;
