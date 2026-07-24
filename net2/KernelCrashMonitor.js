@@ -79,13 +79,28 @@ async function waitForLockReleaseAndRefreshCache() {
   cachedShouldDisableUdpTls = crashInfo.shouldDisableUdpTls === true;
 }
 
-// parse "version:" and "srcversion:" lines from modinfo output
-async function getModuleVersion(koPathOrName) {
-  const result = await execFile('modinfo', [koPathOrName]).catch((err) => {
-    log.error("Failed to run modinfo for", koPathOrName, err.message);
+// parse "version:" and "srcversion:" lines from modinfo output.
+// try `modinfo koPath` first; when that fails (koPath may not exist yet), fall
+// back to `modinfo modName` so the version can still be resolved from an
+// already-loaded/installed module by name.
+async function getModuleVersion(modName, koPath) {
+  let result = null;
+  if (koPath) {
+    result = await execFile('modinfo', [koPath]).catch((err) => {
+      log.debug("Failed to run modinfo for", koPath, err.message);
+      return null;
+    });
+  }
+  if (!result && modName) {
+    result = await execFile('modinfo', [modName]).catch((err) => {
+      log.debug("Failed to run modinfo for", modName, err.message);
+      return null;
+    });
+  }
+  if (!result) {
+    log.warn("Failed to get module version for", modName, koPath);
     return null;
-  });
-  if (!result) return null;
+  }
 
   let version = '';
   let srcversion = '';
@@ -159,8 +174,9 @@ async function archiveAndClearPstore(crashTS) {
   }
 }
 
-// Called at FireMain and FireApi startup. koPath is the path to xt_udp_tls.ko (may not exist yet).
-async function checkPstoreAndUpdateRedis(koPath) {
+// Called at FireMain and FireApi startup. modName is the module name (e.g. "xt_udp_tls")
+// and koPath is the path to xt_udp_tls.ko (may not exist yet).
+async function checkPstoreAndUpdateRedis(modName, koPath) {
   const crashInfo = await readCrashInfo().catch((err) => {
     log.error("Error in checkPstoreAndUpdateRedis reading crash info:", err.message);
     return {};
@@ -184,7 +200,7 @@ async function checkPstoreAndUpdateRedis(koPath) {
     const lines = findResult.stdout.trim().split('\n').filter(Boolean)
       .sort((a, b) => parseFloat(b) - parseFloat(a));
 
-    const currentVersion = await getModuleVersion(koPath).catch(() => null);
+    const currentVersion = await getModuleVersion(modName, koPath).catch(() => null);
     const storedVersion = crashInfo.udpModuleVersion;
     let updateCrashInfoNeed = false;
     let dumpPstoreNeeded = false;
@@ -300,10 +316,11 @@ function shouldDisableUdpTls() {
 }
 
 // Called by Platform.installTLSModule after xt_udp_tls is successfully loaded.
-// koPath is the .ko file path if insmod was used, otherwise pass the module name.
-async function onUdpTlsModuleLoaded(koPathOrName) {
+// modName is the module name (e.g. "xt_udp_tls"); koPath is the .ko file path if
+// insmod was used (may be null when loaded by name).
+async function onUdpTlsModuleLoaded(modName, koPath) {
   try {
-    const version = await getModuleVersion(koPathOrName || 'xt_udp_tls');
+    const version = await getModuleVersion(modName || 'xt_udp_tls', koPath);
     const crashInfo = await readCrashInfo();
 
     if (version) {

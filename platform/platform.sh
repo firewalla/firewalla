@@ -285,7 +285,7 @@ function installTLSModule() {
     [[ -z "$crash_info" ]] && crash_info='{}'
     updated=$(echo "$crash_info" | jq \
       --arg v "$version" --arg sv "$srcversion" \
-      '.udpModuleVersion = {"version": $v, "srcversion": $sv} | .shouldDisableUdpTls = false' 2>/dev/null)
+      '.udpModuleVersion = {"version": $v, "srcversion": $sv} | .shouldDisableUdpTls = false' 2>/dev/null | jq -c )
     [[ -n "$updated" ]] && redis-cli set kernel_crash_info "$updated" > /dev/null
   fi
   return

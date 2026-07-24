@@ -507,7 +507,7 @@ class Platform {
       if (!kernelCrashMonitor) {
         kernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
       }
-      await kernelCrashMonitor.onUdpTlsModuleLoaded(koExists ? koPath : 'xt_udp_tls');
+      await kernelCrashMonitor.onUdpTlsModuleLoaded('xt_udp_tls', koExists ? koPath : null);
     }
   }
   async installTLSModules() {
