@@ -1031,8 +1031,8 @@ class SysManager {
     if (!f.isDocker() && !f.isTravis()) {
       if (platform.hasMultipleCPUs()) {
         const list = await platform.getCpuTemperature();
-        cpuTemperature = list[0]
-        cpuTemperatureList = list
+        cpuTemperature = list && list[0]
+        cpuTemperatureList = list || [];
       } else {
         cpuTemperature = await platform.getCpuTemperature();
         cpuTemperatureList = [cpuTemperature]

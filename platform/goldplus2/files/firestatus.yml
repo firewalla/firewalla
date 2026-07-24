@@ -1,0 +1,36 @@
+init_state: normal
+booting_threshold: 120
+booted_duration: 60
+leds:
+  - /sys/class/leds/status:blue/trigger
+  - /sys/class/leds/status:red/trigger
+  - /sys/class/leds/status:green/trigger
+states:
+  - state: force_blue_on
+    leds: ["default-on", "none", "none"]
+  - state: force_red_on
+    leds: ["none", "default-on", "none"]
+  - state: force_off
+    leds: ["none", "none", "none"]
+  - state: critical_error
+    leds: ["none", "default-on", "none"]
+  - state: reset
+    leds: ["none", "timer", "none"]
+  - state: network_down
+    leds: ["none", "timer", "none"]
+  - state: bluetooth_connected
+    leds: ["heartbeat", "none", "none"]
+  - state: writing_disk
+    leds: ["heartbeat", "none", "none"]
+  - state: booted
+    leds: ["default-on", "none", "none"]
+  - state: booting
+    leds: ["timer", "none", "none"]
+  - state: normal_visible
+    leds: ["default-on", "none", "none"]
+  - state: ready_for_pairing
+    leds: ["none", "none", "none"]
+  - state: normal
+    leds: ["none", "none", "none"]
+  - state: force_green_on
+    leds: ["none", "none", "default-on"]

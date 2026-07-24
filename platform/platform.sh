@@ -6,6 +6,7 @@ UNAME=$(uname -m)
 
 # by default no
 MANAGED_BY_FIREBOOT=no
+NTP_SVC="ntp"
 export FIREWALLA_PLATFORM=unknown
 TCP_BBR=no
 FW_PROBABILITY="0.9"
@@ -186,6 +187,14 @@ case "$UNAME" in
         BRO_PROC_COUNT=2
         export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
         export FIREWALLA_PLATFORM=orange
+        ;;
+      goldplus2)
+        source $FW_PLATFORM_DIR/goldplus2/platform.sh
+        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/goldplus2
+        BRO_PROC_NAME="zeek"
+        BRO_PROC_COUNT=2
+        export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
+        export FIREWALLA_PLATFORM=goldplus2
         ;;
       blue)
         source $FW_PLATFORM_DIR/blue/platform.sh
