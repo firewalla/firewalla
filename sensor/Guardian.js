@@ -473,42 +473,39 @@ module.exports = class {
       await upgradeManager.setAutoUpgradeState()
 
       if (platform.isFireRouterManaged()) {
-        // delete related mesh settings
+        // delete related mesh settings (WireGuard and AmneziaWG)
         const networkConfig = await FireRouter.getConfig(true);
-
-        const wireguard = networkConfig.interface.wireguard || {};
         let updateNetworkConfig = false;
-        Object.keys(wireguard).map(intf => {
-          if (wireguard[intf] && wireguard[intf].mspId == mspId) {
-            networkConfig.interface.wireguard = _.omit(wireguard, intf);
+        for (const ncKey of ['wireguard', 'amneziawg']) {
+          const ifaces = networkConfig.interface[ncKey] || {};
+          for (const intf of Object.keys(ifaces)) {
+            if (ifaces[intf] && ifaces[intf].mspId == mspId) {
+              networkConfig.interface[ncKey] = _.omit(networkConfig.interface[ncKey], intf);
 
-            // delete dns config
-            const dns = networkConfig.dns || {};
-            networkConfig.dns = _.omit(dns, intf);
+              // delete dns config
+              networkConfig.dns = _.omit(networkConfig.dns || {}, intf);
 
-            // delete icmp config
-            const icmp = networkConfig.icmp || {};
-            networkConfig.icmp = _.omit(icmp, intf);
+              // delete icmp config
+              networkConfig.icmp = _.omit(networkConfig.icmp || {}, intf);
 
-            // delete mdns_reflector config
-            const mdns_reflector = networkConfig.mdns_reflector || {};
-            networkConfig.mdns_reflector = _.omit(mdns_reflector, intf);
+              // delete mdns_reflector config
+              networkConfig.mdns_reflector = _.omit(networkConfig.mdns_reflector || {}, intf);
 
-            // delete sshd config
-            const sshd = networkConfig.sshd || {};
-            networkConfig.sshd = _.omit(sshd, intf);
+              // delete sshd config
+              networkConfig.sshd = _.omit(networkConfig.sshd || {}, intf);
 
-            // delete nat config
-            const nat = networkConfig.nat || {};
-            for (const key in nat) {
-              if (key.startsWith(`${intf}-`)) {
-                delete nat[key];
+              // delete nat config
+              const nat = networkConfig.nat || {};
+              for (const key in nat) {
+                if (key.startsWith(`${intf}-`)) {
+                  delete nat[key];
+                }
               }
+              networkConfig.nat = nat;
+              updateNetworkConfig = true;
             }
-            networkConfig.nat = nat;
-            updateNetworkConfig = true;
           }
-        })
+        }
         if (updateNetworkConfig) {
           networkConfig.ts = Date.now();
           await FireRouter.setConfig(networkConfig);

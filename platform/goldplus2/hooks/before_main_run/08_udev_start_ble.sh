@@ -1,0 +1,1 @@
+../../../gold/hooks/before_main_run/08_udev_start_ble.sh

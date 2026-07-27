@@ -19,7 +19,7 @@ const expect = chai.expect;
 const proxyquire = require('proxyquire').noPreserveCache().noCallThru();
 
 describe('DNSUpstreamHealthCheck', () => {
-  function loadHelper(execImpl, config = { dns: { verificationDomains: ['health.firewalla.test'] } }) {
+  function loadHelper(execFileImpl, config = { dns: { verificationDomains: ['health.firewalla.test'] } }) {
     return proxyquire('../util/DNSUpstreamHealthCheck.js', {
       '../net2/logger.js': () => ({
         debug: () => {},
@@ -28,7 +28,7 @@ describe('DNSUpstreamHealthCheck', () => {
         error: () => {}
       }),
       'child-process-promise': {
-        exec: execImpl
+        execFile: execFileImpl
       },
       '../net2/config.js': {
         getConfig: () => config
@@ -64,22 +64,32 @@ describe('DNSUpstreamHealthCheck', () => {
     ]);
   });
 
-  it('should build dig commands with port and query type', () => {
+  it('should build dig args with port and query type', () => {
     const helper = loadHelper(async () => ({ stdout: '' }));
-    const command = helper.buildDigCommand({
+    const args = helper.buildDigArgs({
       host: '127.0.0.1',
       port: 8854,
       domain: 'example.com',
       timeout: 4,
       tries: 3
     });
-    expect(command).to.equal("dig -p 8854 '@127.0.0.1' 'example.com' A +short +time=4 +tries=3");
+    expect(args).to.deep.equal(['-p', '8854', '@127.0.0.1', 'example.com', 'A', '+short', '+time=4', '+tries=3']);
+  });
+
+  it('should build dig args for an IPv6 host without brackets (dig does not accept @[ipv6])', () => {
+    const helper = loadHelper(async () => ({ stdout: '' }));
+    const args = helper.buildDigArgs({
+      host: '2606:4700:4700::1111',
+      port: null,
+      domain: 'example.com'
+    });
+    expect(args).to.deep.equal(['@2606:4700:4700::1111', 'example.com', 'A', '+short', '+time=3', '+tries=2']);
   });
 
   it('should probe a server successfully when dig returns addresses', async () => {
-    let seenCommand = null;
-    const helper = loadHelper(async (cmd) => {
-      seenCommand = cmd;
+    let seenArgs = null;
+    const helper = loadHelper(async (cmd, args) => {
+      seenArgs = args;
       return { stdout: '104.18.0.1\n104.18.0.2\n', stderr: '' };
     });
 
@@ -89,7 +99,7 @@ describe('DNSUpstreamHealthCheck', () => {
       tries: 2
     });
 
-    expect(seenCommand).to.include("@1.1.1.1");
+    expect(seenArgs).to.include("@1.1.1.1");
     expect(result.healthy).to.equal(true);
     expect(result.domain).to.equal('example.com');
     expect(result.addresses).to.deep.equal(['104.18.0.1', '104.18.0.2']);
