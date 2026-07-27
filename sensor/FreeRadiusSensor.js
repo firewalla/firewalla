@@ -332,7 +332,11 @@ class FreeRadiusSensor extends Sensor {
   async loadOptionsAsync() {
     try {
       const policyOpts = this._policy && this._policy["0.0.0.0"] && this._policy["0.0.0.0"].options || {};
-      return Object.assign({}, await freeradius.loadOptionsAsync(), policyOpts);
+      const options = Object.assign({}, await freeradius.loadOptionsAsync(), policyOpts);
+      if (!policyOpts.image_tag) {
+        delete options.image_tag;
+      }
+      return options;
     } catch (err) {
       log.error("failed to load options", err.message);
       return {};
@@ -506,6 +510,9 @@ class FreeRadiusSensor extends Sensor {
 
       const { radius } = policy;
       const options = Object.assign({}, await this.loadOptionsAsync(), policy.options || {});
+      if (target === "0.0.0.0" && !(policy.options && policy.options.image_tag)) {
+        delete options.image_tag;
+      }
 
       // 1. apply to radius-server
       log.info("start to apply freeradius policy", freeradius.mask(JSON.stringify(radius)), options);
