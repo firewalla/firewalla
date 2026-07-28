@@ -36,6 +36,7 @@
 : ${UV_RELEASE_PUBKEY:=$FIREWALLA_HOME/etc/keys/release_pub.key}
 : ${UV_FLOOR_FILE:=/home/pi/.firewalla/config/upgrade_min_version}
 : ${UV_FLOOR_ASSET:=/home/pi/.firewalla/run/assets/fw_min_version}
+: ${UV_OTA_CONFIG_URL:=https://ota.firewalla.com/fapp/fbox.json}
 : ${UV_LOGGER:="/usr/bin/logger -t FWUPGRADE.VERIFY"}
 
 uv_log() {
@@ -274,4 +275,28 @@ uv_verify_release_commit() {
 
   uv_log "no trusted signed tag found for commit $commit"
   return 1
+}
+
+# enforcement is opt-in via cloud config: real only when fbox.json has
+# "verify_release_tag" set to true or 1. Any other value, a missing key, or
+# an unreachable/invalid config -> not enforced (dry-run), so verification
+# never blocks upgrades until it is explicitly turned on.
+uv_is_enforced() {
+  local val
+  val=$(curl -m10 -s "$UV_OTA_CONFIG_URL" 2>/dev/null | jq -r '.verify_release_tag // empty' 2>/dev/null)
+  [[ "$val" == "true" || "$val" == "1" ]]
+}
+
+# gate for the update paths: verify the commit, then honor enforcement.
+# Return 0 = proceed with the update, 1 = block. When not enforced, a failed
+# verification is logged as dry-run and the update proceeds.
+# usage: uv_gate <commit-ish> <branch>
+uv_gate() {
+  local commit=${1:-FETCH_HEAD} branch=$2
+  uv_verify_release_commit "$commit" && return 0
+  if uv_is_enforced; then
+    return 1
+  fi
+  uv_log "DRY-RUN would reject $commit on branch '$branch'; upgrade allowed (verify_release_tag not enabled)"
+  return 0
 }
