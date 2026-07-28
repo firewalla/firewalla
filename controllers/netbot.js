@@ -1152,6 +1152,13 @@ class netBot extends ControllerBot {
           throw new Error("rename failed")
         }
       }
+      case "eptMemberEmail": {
+        const { eid, email } = value;
+        if (!eid || !email)
+          throw { code: 400, msg: "both eid and email are required" };
+        await rclient.hsetAsync(Constants.REDIS_KEY_EPT_MEMBER_EMAILS, eid, email);
+        return
+      }
       case "intelAdvice": {
         const { target, ip, intel } = value
         intel.localIntel = await intelTool.getIntel(ip)
@@ -2091,6 +2098,13 @@ class netBot extends ControllerBot {
       default:
         throw new Error('Invalid target type: ' + type)
     }
+
+    // options.mac has already been validated above (getHostAsync / identity /
+    // network profile), so mark it as validated. This lets downstream expendMacs
+    // trust it and skip the in-memory hostsdb lookup (getHostFastByMAC), which may
+    // transiently miss an inactive device right after a getHosts() rebuild and
+    // throw "Invalid mac value".
+    if (options.mac) options.macValidated = true;
 
     let { regular, audit, dns, ntp, local, localAudit, nonLocal } = msg.data
     let legacyLocalBlock = false

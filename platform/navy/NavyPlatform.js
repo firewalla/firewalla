@@ -199,10 +199,6 @@ class NavyPlatform extends Platform {
     return true;
   }
 
-  isUdpTLSBlockSupport() {
-    return true;
-  }
-
   _getDnsmasqBinaryPath() {
     return `${__dirname}/files/dnsmasq`;
   }

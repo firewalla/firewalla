@@ -9,3 +9,4 @@
 /home/pi/.firewalla/run/assets/nmap-mac-prefixes /all/nmap-mac-prefixes 644 ':' 'sudo cp -f /home/pi/.firewalla/run/assets/nmap-mac-prefixes /usr/share/nmap/nmap-mac-prefixes'
 /home/pi/.firewalla/run/assets/views/time_limits.tar.gz /all/time_limits.tar.gz 644 ':' 'cd /home/pi/.firewalla/run/assets/views/; mkdir -p time_limits && rm -rf time_limits/* && tar -xzf time_limits.tar.gz -C time_limits --strip-components=1'
 /home/pi/.firewalla/run/assets/fw_min_version /all/fw_min_version 644
+/home/pi/.firewalla/run/assets/views/me.tar.gz /all/me.tar.gz 644 ':' 'cd /home/pi/.firewalla/run/assets/views/; mkdir -p me && rm -rf me/* && tar -xzf me.tar.gz -C me --strip-components=1'

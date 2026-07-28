@@ -311,6 +311,10 @@ class FWAPC {
     return localGet("/status/ap", 1).then(resp => resp.info);
   }
 
+  async getWiredStationTree() {
+    return localGet("/status/wired_station", 1).then(resp => resp && resp.info);
+  }
+
   /**
    * All switch runtime statuses keyed by asset uid (same shape as fwapc GET /v1/status/switch).
    * @returns {Promise<object|null>} map of uid -> status, or null on error

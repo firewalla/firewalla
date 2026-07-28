@@ -18,13 +18,25 @@ const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const { execFile } = require('child-process-promise');
 const uuid = require('uuid');
+const { delay } = require('../util/util.js');
 
 const REDIS_KEY = "kernel_crash_info";
 const LOCK_KEY = "kernel_crash_info:lock";
 const LOCK_TTL_SEC = 60;
+// how long a lock-losing process waits for the lock holder to finish its pstore
+// scan before giving up and refreshing the cache with whatever Redis holds.
+const LOCK_WAIT_POLL_MS = 500;
+const LOCK_WAIT_TIMEOUT_MS = (LOCK_TTL_SEC + 5) * 1000;
 const PSTORE_PATH = "/sys/fs/pstore";
 const PSTORE_ARCHIVE_PATH = "/log/system/pstore";
 const PSTORE_ARCHIVE_MAX_DIRS = 3;
+
+// In-memory cache of the "disable UDP TLS" decision so hot-path rule builders
+// (Block/TLSSetControl/AdblockPlugin/QuicLogPlugin) can read it synchronously
+// without a Redis round-trip. Populated at startup by checkPstoreAndUpdateRedis
+// (awaited before module loading in net2/main.js) and refreshed whenever the
+// async accessors below run. default to false
+let cachedShouldDisableUdpTls = false;
 
 // FireMain and FireApi both call checkPstoreAndUpdateRedis on startup; guard the
 // pstore scan/archive/delete with a cross-process redis lock so they don't race.
@@ -48,13 +60,47 @@ async function releaseLock(token) {
   }
 }
 
-// parse "version:" and "srcversion:" lines from modinfo output
-async function getModuleVersion(koPathOrName) {
-  const result = await execFile('modinfo', [koPathOrName]).catch((err) => {
-    log.error("Failed to run modinfo for", koPathOrName, err.message);
-    return null;
+// When another process holds the lock, it is the one scanning pstore and may set
+// shouldDisableUdpTls after we read Redis. Wait for it to release the lock, then
+// re-read kernel_crash_info so our in-memory cache reflects the settled decision
+// before rule builders (which read shouldDisableUdpTls synchronously) run.
+async function waitForLockReleaseAndRefreshCache() {
+  const deadline = Date.now() + LOCK_WAIT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await delay(LOCK_WAIT_POLL_MS);
+    const holder = await rclient.getAsync(LOCK_KEY).catch(() => null);
+    if (!holder)
+      break; // lock released (or its TTL expired) — the decision is settled
+  }
+  const crashInfo = await readCrashInfo().catch((err) => {
+    log.error("Error refreshing crash info after waiting for lock:", err.message);
+    return {};
   });
-  if (!result) return null;
+  cachedShouldDisableUdpTls = crashInfo.shouldDisableUdpTls === true;
+}
+
+// parse "version:" and "srcversion:" lines from modinfo output.
+// try `modinfo koPath` first; when that fails (koPath may not exist yet), fall
+// back to `modinfo modName` so the version can still be resolved from an
+// already-loaded/installed module by name.
+async function getModuleVersion(modName, koPath) {
+  let result = null;
+  if (koPath) {
+    result = await execFile('modinfo', [koPath]).catch((err) => {
+      log.debug("Failed to run modinfo for", koPath, err.message);
+      return null;
+    });
+  }
+  if (!result && modName) {
+    result = await execFile('modinfo', [modName]).catch((err) => {
+      log.debug("Failed to run modinfo for", modName, err.message);
+      return null;
+    });
+  }
+  if (!result) {
+    log.warn("Failed to get module version for", modName, koPath);
+    return null;
+  }
 
   let version = '';
   let srcversion = '';
@@ -66,6 +112,18 @@ async function getModuleVersion(koPathOrName) {
     }
   }
   return { version, srcversion };
+}
+
+// mtime (in seconds) of the current xt_udp_tls module file. Used to tell whether a
+// pstore crash predates the currently-installed module: an upgrade replaces the .ko
+// with a fresh mtime, so a crash older than the .ko belongs to a previous (already
+// replaced) module version and must not disable the current one. Returns null when
+// the mtime cannot be determined (e.g. koPath does not exist).
+async function getModuleFileMtimeSec(koPath) {
+  const r = await execFile('stat', ['-c', '%Y', koPath]).catch(() => null);
+  if (!r) return null;
+  const sec = parseInt(r.stdout.trim(), 10);
+  return Number.isFinite(sec) ? sec : null;
 }
 
 async function readCrashInfo() {
@@ -116,18 +174,24 @@ async function archiveAndClearPstore(crashTS) {
   }
 }
 
-// Called at FireMain and FireApi startup. koPath is the path to xt_udp_tls.ko (may not exist yet).
-async function checkPstoreAndUpdateRedis(koPath) {
+// Called at FireMain and FireApi startup. modName is the module name (e.g. "xt_udp_tls")
+// and koPath is the path to xt_udp_tls.ko (may not exist yet).
+async function checkPstoreAndUpdateRedis(modName, koPath) {
+  const crashInfo = await readCrashInfo().catch((err) => {
+    log.error("Error in checkPstoreAndUpdateRedis reading crash info:", err.message);
+    return {};
+  });
+  cachedShouldDisableUdpTls = crashInfo.shouldDisableUdpTls === true;
   const token = uuid.v4();
   if (!await acquireLock(token).catch((err) => {
     log.error("Failed to acquire kernel_crash_info lock:", err.message);
     return false;
   })) {
-    log.info("Another process is already checking pstore, skipping");
+    log.info("Another process is already checking pstore, waiting for it to finish before refreshing cache");
+    await waitForLockReleaseAndRefreshCache();
     return;
   }
   try {
-    const crashInfo = await readCrashInfo();
     // find dmesg-* pstore files, sorted newest first (mirrors `| sort -rn` on the printf'd mtime)
     const findResult = await execFile('sudo',
       ['find', PSTORE_PATH, '-name', 'dmesg-*', '-type', 'f', '-printf', '%T@ %p\n']
@@ -136,7 +200,7 @@ async function checkPstoreAndUpdateRedis(koPath) {
     const lines = findResult.stdout.trim().split('\n').filter(Boolean)
       .sort((a, b) => parseFloat(b) - parseFloat(a));
 
-    const currentVersion = await getModuleVersion(koPath).catch(() => null);
+    const currentVersion = await getModuleVersion(modName, koPath).catch(() => null);
     const storedVersion = crashInfo.udpModuleVersion;
     let updateCrashInfoNeed = false;
     let dumpPstoreNeeded = false;
@@ -178,12 +242,13 @@ async function checkPstoreAndUpdateRedis(koPath) {
       // matched "Kernel panic" below (still archived so pstore space is freed up)
       latestCrashTSSec = Math.round(Math.max(...tsByPath.values()));
 
-      const panicFiles = await execFile('sudo', ['grep', '-l', 'Kernel panic', ...paths])
+      // treat both a "Kernel panic" and an "Oops" in pstore as a kernel crash
+      const panicFiles = await execFile('sudo', ['grep', '-l', '-e', 'Kernel panic', '-e', 'Oops', ...paths])
         .then(r => r.stdout.trim().split('\n').filter(Boolean))
         .catch(() => []);
 
       if (panicFiles.length === 0) {
-        log.debug("No Kernel panic found in recent pstore files");
+        log.debug("No Kernel panic or Oops found in recent pstore files");
       } else {
         latestCrashTSSec = Math.round(Math.max(...panicFiles.map(p => tsByPath.get(p) || 0)));
 
@@ -194,7 +259,17 @@ async function checkPstoreAndUpdateRedis(koPath) {
 
         log.warn(`Kernel panic detected in pstore, ts=${latestCrashTSSec}, udpTlsRelated=${isUdpTlsCrash}`);
 
-        if (isUdpTlsCrash) {
+        // ignore crashes that predate the currently-installed module: on the first run
+        // after an upgrade, pstore may still hold a crash from a previous (already fixed)
+        // module version. The version-change guard above can't catch this because there is
+        // no stored udpModuleVersion to compare against yet, so fall back to the module
+        // file's build/install time.
+        const koMtimeSec = await getModuleFileMtimeSec(koPath).catch(() => null);
+        const crashPredatesCurrentModule = koMtimeSec !== null && latestCrashTSSec < koMtimeSec;
+
+        if (isUdpTlsCrash && crashPredatesCurrentModule) {
+          log.info(`UDP TLS crash (ts=${latestCrashTSSec}) predates current module build time (${koMtimeSec}); module has been upgraded since, not disabling UDP TLS.`);
+        } else if (isUdpTlsCrash) {
           if (!crashInfo.lastCrashTS || latestCrashTSSec > crashInfo.lastCrashTS) {
             crashInfo.lastCrashTS = latestCrashTSSec;
             crashInfo.crashesCount = (crashInfo.crashesCount || 0) + 1;
@@ -218,6 +293,7 @@ async function checkPstoreAndUpdateRedis(koPath) {
     }
 
 
+    cachedShouldDisableUdpTls = crashInfo.shouldDisableUdpTls === true;
     log.debug("Updated kernel_crash_info in Redis:", JSON.stringify(crashInfo));
     if (updateCrashInfoNeed) {
       await saveCrashInfo(crashInfo);
@@ -233,22 +309,18 @@ async function checkPstoreAndUpdateRedis(koPath) {
   }
 }
 
-// Called by Platform.installTLSModule before attempting to load xt_udp_tls.
-async function shouldDisableUdpTls() {
-  try {
-    const crashInfo = await readCrashInfo();
-    return crashInfo.shouldDisableUdpTls === true;
-  } catch (err) {
-    log.error("Failed to read shouldDisableUdpTls:", err.message);
-    return false;
-  }
+// Returns true if UDP TLS should be disabled due to a previous crash, false otherwise.
+// checkPstoreAndUpdateRedis must be called first to populate the in-memory cache (awaited before module loading in net2/main.js).
+function shouldDisableUdpTls() {
+  return cachedShouldDisableUdpTls;
 }
 
 // Called by Platform.installTLSModule after xt_udp_tls is successfully loaded.
-// koPath is the .ko file path if insmod was used, otherwise pass the module name.
-async function onUdpTlsModuleLoaded(koPathOrName) {
+// modName is the module name (e.g. "xt_udp_tls"); koPath is the .ko file path if
+// insmod was used (may be null when loaded by name).
+async function onUdpTlsModuleLoaded(modName, koPath) {
   try {
-    const version = await getModuleVersion(koPathOrName || 'xt_udp_tls');
+    const version = await getModuleVersion(modName || 'xt_udp_tls', koPath);
     const crashInfo = await readCrashInfo();
 
     if (version) {
@@ -257,6 +329,7 @@ async function onUdpTlsModuleLoaded(koPathOrName) {
     // record when this load happened (udpTlsDisabledOn in struct corresponds to disabled state;
     // reset shouldDisableUdpTls since the module just loaded successfully)
     crashInfo.shouldDisableUdpTls = false;
+    cachedShouldDisableUdpTls = false;
 
     await saveCrashInfo(crashInfo);
     log.info("Updated udpModuleVersion after successful xt_udp_tls load:", JSON.stringify(version));

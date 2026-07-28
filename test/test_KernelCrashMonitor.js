@@ -47,6 +47,7 @@ class FakeRedis {
 //
 // fixtures:
 //   modinfoOutput: string | null            -- stdout for `modinfo <arg>` (null => reject)
+//   koMtime: number | undefined             -- mtime (sec) returned for `stat -c %Y <koPath>`
 //   dmesgFindOutput: string                 -- stdout for the pstore `find ... -name dmesg-*` scan
 //   fileContents: { path: content }         -- backing content for grep/cat over dmesg files
 //   archiveDirs: string[]                   -- stdout lines for `ls -1 ARCHIVE_PATH`
@@ -62,6 +63,10 @@ function makeExecFile(fixtures) {
     if (file === 'modinfo') {
       if (fixtures.modinfoOutput == null) throw new Error('modinfo: command not found');
       return { stdout: fixtures.modinfoOutput };
+    }
+    if (file === 'stat' && args[0] === '-c' && args[1] === '%Y') {
+      if (fixtures.koMtime === undefined) return { stdout: '' }; // unknown mtime => null
+      return { stdout: String(fixtures.koMtime) };
     }
     if (file === 'sudo' && args[0] === 'find' && args.includes('-name')) {
       return { stdout: fixtures.dmesgFindOutput || '' };
@@ -139,26 +144,36 @@ describe('KernelCrashMonitor', function () {
 
   // ── shouldDisableUdpTls ────────────────────────────────────────────────────
 
+  // shouldDisableUdpTls() is a synchronous accessor over the in-memory cache;
+  // the cache is populated by checkPstoreAndUpdateRedis / onUdpTlsModuleLoaded,
+  // not by reading Redis on each call.
   describe('shouldDisableUdpTls', function () {
-    it('returns true when crashInfo.shouldDisableUdpTls is true', async function () {
+    it('returns false by default before checkPstoreAndUpdateRedis has run', function () {
+      const { execFile } = makeExecFile({});
+      const kcm = loadKCM(fakeRedis, execFile);
+      expect(kcm.shouldDisableUdpTls()).to.be.false;
+    });
+
+    it('returns true after checkPstoreAndUpdateRedis populates the cache from a prior crash-disable', async function () {
       fakeRedis.seed({ shouldDisableUdpTls: true });
-      const { execFile } = makeExecFile({});
+      const { execFile } = makeExecFile({ dmesgFindOutput: '' });
       const kcm = loadKCM(fakeRedis, execFile);
-      expect(await kcm.shouldDisableUdpTls()).to.be.true;
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      expect(kcm.shouldDisableUdpTls()).to.be.true;
     });
 
-    it('returns false when unset', async function () {
-      const { execFile } = makeExecFile({});
+    it('returns false once onUdpTlsModuleLoaded clears the cache', async function () {
+      fakeRedis.seed({ shouldDisableUdpTls: true });
+      const { execFile } = makeExecFile({ dmesgFindOutput: '', modinfoOutput: modinfoStdout('1.0', 'abc') });
       const kcm = loadKCM(fakeRedis, execFile);
-      expect(await kcm.shouldDisableUdpTls()).to.be.false;
-    });
 
-    it('returns false and logs an error when redis fails', async function () {
-      const { execFile } = makeExecFile({});
-      const brokenRedis = { getAsync: async () => { throw new Error('redis down'); } };
-      const kcm = loadKCM(brokenRedis, execFile);
-      expect(await kcm.shouldDisableUdpTls()).to.be.false;
-      expect(kcm._logs.error.length).to.equal(1);
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+      expect(kcm.shouldDisableUdpTls()).to.be.true;
+
+      await kcm.onUdpTlsModuleLoaded('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+      expect(kcm.shouldDisableUdpTls()).to.be.false;
     });
   });
 
@@ -170,7 +185,7 @@ describe('KernelCrashMonitor', function () {
       const { execFile } = makeExecFile({ modinfoOutput: modinfoStdout('1.0', 'abc123') });
       const kcm = loadKCM(fakeRedis, execFile);
 
-      await kcm.onUdpTlsModuleLoaded('/lib/modules/xt_udp_tls.ko');
+      await kcm.onUdpTlsModuleLoaded('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
 
       const info = await kcm.getCrashInfo();
       expect(info.udpModuleVersion).to.deep.equal({ version: '1.0', srcversion: 'abc123' });
@@ -184,6 +199,22 @@ describe('KernelCrashMonitor', function () {
       await kcm.onUdpTlsModuleLoaded();
 
       expect(execLog.some(c => c === 'modinfo xt_udp_tls')).to.be.true;
+    });
+
+    it('falls back to `modinfo <modName>` when modinfo on the koPath fails', async function () {
+      const { execFile, execLog } = makeExecFile({
+        modinfoOutput: modinfoStdout('3.0', 'xyz789'),
+        failOn: (cmd) => cmd === 'modinfo /lib/modules/xt_udp_tls.ko',
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.onUdpTlsModuleLoaded('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      // tried the koPath first, then fell back to the module name
+      expect(execLog).to.include('modinfo /lib/modules/xt_udp_tls.ko');
+      expect(execLog).to.include('modinfo xt_udp_tls');
+      const info = await kcm.getCrashInfo();
+      expect(info.udpModuleVersion).to.deep.equal({ version: '3.0', srcversion: 'xyz789' });
     });
 
     it('still clears shouldDisableUdpTls when modinfo fails, without clobbering stored version', async function () {
@@ -218,7 +249,7 @@ describe('KernelCrashMonitor', function () {
       const { execFile, execLog } = makeExecFile({ dmesgFindOutput: '' });
       const kcm = loadKCM(fakeRedis, execFile);
 
-      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
 
       const info = await kcm.getCrashInfo();
       expect(info.crashesCount).to.be.undefined;
@@ -235,7 +266,7 @@ describe('KernelCrashMonitor', function () {
       });
       const kcm = loadKCM(fakeRedis, execFile);
 
-      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
 
       const info = await kcm.getCrashInfo();
       expect(info.crashesCount).to.be.undefined;
@@ -253,7 +284,7 @@ describe('KernelCrashMonitor', function () {
       });
       const kcm = loadKCM(fakeRedis, execFile);
 
-      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
 
       const info = await kcm.getCrashInfo();
       expect(info.crashesCount).to.be.undefined;
@@ -271,13 +302,54 @@ describe('KernelCrashMonitor', function () {
       });
       const kcm = loadKCM(fakeRedis, execFile);
 
-      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
 
       const info = await kcm.getCrashInfo();
       expect(info.lastCrashTS).to.equal(300);
       expect(info.crashesCount).to.equal(1);
       expect(info.shouldDisableUdpTls).to.be.true;
       expect(info.udpTlsDisabledOn).to.be.a('number').and.above(0);
+    });
+
+    it('does NOT disable on first run when a stale pstore crash predates the current (upgraded) module', async function () {
+      // first run after an upgrade: no stored crash info, pstore still holds an old
+      // udp-tls crash from the previous module, but the .ko was rebuilt/installed later.
+      const dmesgFindOutput = `300.0 ${PSTORE_PATH}/dmesg-a\n`;
+      const { execFile } = makeExecFile({
+        dmesgFindOutput,
+        modinfoOutput: modinfoStdout('2.0', 'new'),
+        koMtime: 500, // module installed at ts=500, after the crash at ts=300
+        fileContents: {
+          [`${PSTORE_PATH}/dmesg-a`]: 'Kernel panic - not syncing\nModules linked in: xt_udp_tls ext4',
+        },
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      const info = await kcm.getCrashInfo();
+      expect(info.shouldDisableUdpTls).to.not.equal(true);
+      expect(info.lastCrashTS).to.be.undefined;
+      expect(info.crashesCount).to.be.undefined;
+    });
+
+    it('DOES disable when the crash is newer than the current module build time', async function () {
+      const dmesgFindOutput = `700.0 ${PSTORE_PATH}/dmesg-a\n`;
+      const { execFile } = makeExecFile({
+        dmesgFindOutput,
+        modinfoOutput: modinfoStdout('2.0', 'new'),
+        koMtime: 500, // module installed at ts=500, crash happened later at ts=700
+        fileContents: {
+          [`${PSTORE_PATH}/dmesg-a`]: 'Kernel panic - not syncing\nModules linked in: xt_udp_tls ext4',
+        },
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      const info = await kcm.getCrashInfo();
+      expect(info.shouldDisableUdpTls).to.be.true;
+      expect(info.lastCrashTS).to.equal(700);
     });
 
     it('does not double-count a udp-tls crash that is not newer than the last recorded one', async function () {
@@ -291,7 +363,7 @@ describe('KernelCrashMonitor', function () {
       });
       const kcm = loadKCM(fakeRedis, execFile);
 
-      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
 
       const info = await kcm.getCrashInfo();
       expect(info.crashesCount).to.equal(1);
@@ -309,7 +381,7 @@ describe('KernelCrashMonitor', function () {
       });
       const kcm = loadKCM(fakeRedis, execFile);
 
-      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
 
       const info = await kcm.getCrashInfo();
       expect(info.crashesCount).to.equal(2);
@@ -329,7 +401,7 @@ describe('KernelCrashMonitor', function () {
       });
       const kcm = loadKCM(fakeRedis, execFile);
 
-      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
 
       expect((await kcm.getCrashInfo()).lastCrashTS).to.equal(900);
     });
@@ -346,7 +418,7 @@ describe('KernelCrashMonitor', function () {
       });
       const kcm = loadKCM(fakeRedis, execFile);
 
-      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
 
       const info = await kcm.getCrashInfo();
       expect(info.shouldDisableUdpTls).to.be.false;
@@ -365,7 +437,7 @@ describe('KernelCrashMonitor', function () {
       });
       const kcm = loadKCM(fakeRedis, execFile);
 
-      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
 
       const info = await kcm.getCrashInfo();
       expect(info.shouldDisableUdpTls).to.be.true;
@@ -383,7 +455,7 @@ describe('KernelCrashMonitor', function () {
       });
       const kcm = loadKCM(fakeRedis, execFile);
 
-      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
 
       const info = await kcm.getCrashInfo();
       expect(info.shouldDisableUdpTls).to.be.true;
@@ -398,7 +470,7 @@ describe('KernelCrashMonitor', function () {
       });
       const kcm = loadKCM(fakeRedis, execFile);
 
-      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
 
       expect(execLog.some(c => c === `sudo rm -rf ${PSTORE_ARCHIVE_PATH}/100`)).to.be.true;
       expect(execLog.some(c => c === `sudo rm -rf ${PSTORE_ARCHIVE_PATH}/200`)).to.be.false;
@@ -415,8 +487,35 @@ describe('KernelCrashMonitor', function () {
       });
       const kcm = loadKCM(fakeRedis, execFile);
 
-      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
       expect(kcm._logs.error.some(m => m.includes('archive/clear pstore'))).to.be.true;
+    });
+
+    it('waits for the lock holder and refreshes the cache with the settled decision when it loses the lock', async function () {
+      // Redis says "not disabled" at read time; another process holds the lock and
+      // is still scanning pstore. This reproduces the FireMain/FireApi startup race.
+      fakeRedis.seed({ shouldDisableUdpTls: false });
+      const LOCK_KEY = 'kernel_crash_info:lock';
+      fakeRedis._store[LOCK_KEY] = 'other-process-token';
+
+      const { execFile } = makeExecFile({ dmesgFindOutput: '' });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      // On the first poll of the wait loop, simulate the lock holder finishing:
+      // it records shouldDisableUdpTls=true in Redis and releases the lock.
+      const origGet = fakeRedis.getAsync.bind(fakeRedis);
+      fakeRedis.getAsync = async (key) => {
+        if (key === LOCK_KEY) {
+          fakeRedis.seed({ shouldDisableUdpTls: true });
+          delete fakeRedis._store[LOCK_KEY];
+        }
+        return origGet(key);
+      };
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      // The losing process must observe the winner's decision, not the stale false.
+      expect(kcm.shouldDisableUdpTls()).to.be.true;
     });
 
     it('does not throw when redis is unavailable', async function () {
@@ -429,7 +528,7 @@ describe('KernelCrashMonitor', function () {
       };
       const kcm = loadKCM(brokenRedis, execFile);
 
-      await kcm.checkPstoreAndUpdateRedis('/lib/modules/xt_udp_tls.ko');
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
       expect(kcm._logs.error.some(m => m.includes('checkPstoreAndUpdateRedis'))).to.be.true;
     });
   });

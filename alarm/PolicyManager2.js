@@ -265,6 +265,8 @@ class PolicyManager2 {
 
               // if oldPolicy is disabled, skip unenforce
               if (oldPolicy.isDisabled()) {
+                //still need to clear timer for policy(example idle policy)
+                this.invalidateExpireTimer(oldPolicy);
                 log.info("Old policy is disabled, skip unenforce", oldPolicy.pid, action);
               } else {
                 await this.unenforce(oldPolicy).catch((err) => {
@@ -1387,11 +1389,15 @@ class PolicyManager2 {
 
             log.info(`Revoke policy ${policy.pid}, since it's expired`)
             await this.unenforce(policy);
-            await this._disablePolicy(policy);
 
             if (policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
+              // unenforce() may have already deleted the policy (e.g. expired bypass rule),
+              // so do not _disablePolicy here as updatePolicyAsync would throw "Policy not exist".
+              // deletePolicy is idempotent, so calling it again is safe.
               await this.deletePolicy(pid);
               await this.removeBypassChainForPolicy(policy);
+            } else {
+              await this._disablePolicy(policy);
             }
           }, policy.getExpireDiffFromNow() * 1000); // in milli seconds, will be set to 1 if it is a negative number
 

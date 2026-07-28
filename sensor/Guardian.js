@@ -71,11 +71,11 @@ module.exports = class {
   }
 
   cleanupLiveTransport() {
-    for (const alias in this.liveTransportCache) {
-      const liveTransport = this.liveTransportCache[alias];
+    for (const key in this.liveTransportCache) {
+      const liveTransport = this.liveTransportCache[key];
       if (!liveTransport.isLivetimeValid()) {
-        log.info("Destory live transport for", alias);
-        delete this.liveTransportCache[alias];
+        log.info("Destory live transport for", key);
+        delete this.liveTransportCache[key];
       }
     }
   }
@@ -91,13 +91,16 @@ module.exports = class {
     }
   }
 
-  registerLiveTransport(options) {
-    const alias = options.alias;
-    if (!(alias in this.liveTransportCache)) {
-      this.liveTransportCache[alias] = new LiveTransport(options);
+  registerLiveTransport(key, options) {
+    let liveTransport = this.liveTransportCache[key];
+    if (!liveTransport) {
+      liveTransport = new LiveTransport(options);
+      this.liveTransportCache[key] = liveTransport;
+    } else {
+      // refresh stored request so a re-subscribe is not pinned to the first caller's message/replyid
+      liveTransport.updateSubscription(options);
     }
-
-    return this.liveTransportCache[alias];
+    return liveTransport;
   }
 
   getKeySuffix(name) {
@@ -470,42 +473,39 @@ module.exports = class {
       await upgradeManager.setAutoUpgradeState()
 
       if (platform.isFireRouterManaged()) {
-        // delete related mesh settings
+        // delete related mesh settings (WireGuard and AmneziaWG)
         const networkConfig = await FireRouter.getConfig(true);
-
-        const wireguard = networkConfig.interface.wireguard || {};
         let updateNetworkConfig = false;
-        Object.keys(wireguard).map(intf => {
-          if (wireguard[intf] && wireguard[intf].mspId == mspId) {
-            networkConfig.interface.wireguard = _.omit(wireguard, intf);
+        for (const ncKey of ['wireguard', 'amneziawg']) {
+          const ifaces = networkConfig.interface[ncKey] || {};
+          for (const intf of Object.keys(ifaces)) {
+            if (ifaces[intf] && ifaces[intf].mspId == mspId) {
+              networkConfig.interface[ncKey] = _.omit(networkConfig.interface[ncKey], intf);
 
-            // delete dns config
-            const dns = networkConfig.dns || {};
-            networkConfig.dns = _.omit(dns, intf);
+              // delete dns config
+              networkConfig.dns = _.omit(networkConfig.dns || {}, intf);
 
-            // delete icmp config
-            const icmp = networkConfig.icmp || {};
-            networkConfig.icmp = _.omit(icmp, intf);
+              // delete icmp config
+              networkConfig.icmp = _.omit(networkConfig.icmp || {}, intf);
 
-            // delete mdns_reflector config
-            const mdns_reflector = networkConfig.mdns_reflector || {};
-            networkConfig.mdns_reflector = _.omit(mdns_reflector, intf);
+              // delete mdns_reflector config
+              networkConfig.mdns_reflector = _.omit(networkConfig.mdns_reflector || {}, intf);
 
-            // delete sshd config
-            const sshd = networkConfig.sshd || {};
-            networkConfig.sshd = _.omit(sshd, intf);
+              // delete sshd config
+              networkConfig.sshd = _.omit(networkConfig.sshd || {}, intf);
 
-            // delete nat config
-            const nat = networkConfig.nat || {};
-            for (const key in nat) {
-              if (key.startsWith(`${intf}-`)) {
-                delete nat[key];
+              // delete nat config
+              const nat = networkConfig.nat || {};
+              for (const key in nat) {
+                if (key.startsWith(`${intf}-`)) {
+                  delete nat[key];
+                }
               }
+              networkConfig.nat = nat;
+              updateNetworkConfig = true;
             }
-            networkConfig.nat = nat;
-            updateNetworkConfig = true;
           }
-        })
+        }
         if (updateNetworkConfig) {
           networkConfig.ts = Date.now();
           await FireRouter.setConfig(networkConfig);
@@ -679,7 +679,9 @@ module.exports = class {
         const item = obj.data.item;
         const value = JSON.parse(JSON.stringify(obj.data.value || {}))
         if (value.streaming) {
-          const liveTransport = this.registerLiveTransport({
+          // key by item + streaming.id so concurrent same-item queries get separate transports
+          const key = value.streaming.id ? `${item}:${value.streaming.id}` : item;
+          const liveTransport = this.registerLiveTransport(key, {
             alias: item,
             gid: gid,
             mspId: mspId,

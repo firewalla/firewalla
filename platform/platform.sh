@@ -6,6 +6,7 @@ UNAME=$(uname -m)
 
 # by default no
 MANAGED_BY_FIREBOOT=no
+NTP_SVC="ntp"
 export FIREWALLA_PLATFORM=unknown
 TCP_BBR=no
 FW_PROBABILITY="0.9"
@@ -187,6 +188,14 @@ case "$UNAME" in
         export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
         export FIREWALLA_PLATFORM=orange
         ;;
+      goldplus2)
+        source $FW_PLATFORM_DIR/goldplus2/platform.sh
+        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/goldplus2
+        BRO_PROC_NAME="zeek"
+        BRO_PROC_COUNT=2
+        export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
+        export FIREWALLA_PLATFORM=goldplus2
+        ;;
       blue)
         source $FW_PLATFORM_DIR/blue/platform.sh
         FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/blue
@@ -285,7 +294,7 @@ function installTLSModule() {
     [[ -z "$crash_info" ]] && crash_info='{}'
     updated=$(echo "$crash_info" | jq \
       --arg v "$version" --arg sv "$srcversion" \
-      '.udpModuleVersion = {"version": $v, "srcversion": $sv} | .shouldDisableUdpTls = false' 2>/dev/null)
+      '.udpModuleVersion = {"version": $v, "srcversion": $sv} | .shouldDisableUdpTls = false' 2>/dev/null | jq -c )
     [[ -n "$updated" ]] && redis-cli set kernel_crash_info "$updated" > /dev/null
   fi
   return
