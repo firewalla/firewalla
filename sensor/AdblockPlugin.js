@@ -162,6 +162,7 @@ class AdblockStats {
     ]);
     const total24h = (buckets24h || []).reduce((sum, bucket) => sum + (bucket[1] || 0), 0);
     const total7d = (buckets7d || []).reduce((sum, bucket) => sum + (bucket[1] || 0), 0);
+    const daily7d = buckets7d || [];
     let totalHits = 0;
     let lastResetTs = null;
     let lastHitTs = null;
@@ -177,7 +178,7 @@ class AdblockStats {
         log.warn('Failed to format adblock lastHitFlow', err.message);
       }
     }
-    return { total24h, total7d, totalHits, lastResetTs, lastHitTs, lastHitFlow };
+    return { total24h, total7d, daily7d, totalHits, lastResetTs, lastHitTs, lastHitFlow };
   }
 }
 
