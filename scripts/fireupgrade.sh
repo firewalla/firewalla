@@ -263,7 +263,7 @@ if eval $GIT_FETCH ||
   (sleep 3; eval $GIT_FETCH) ||
   (sleep 3; eval $GIT_FETCH) ||
   (sleep 3; eval $GIT_FETCH); then
-    if ! type -t uv_verify_release_commit &>/dev/null || uv_verify_release_commit FETCH_HEAD; then
+    if ! type -t uv_gate &>/dev/null || uv_gate FETCH_HEAD "$branch"; then
         sudo -u pi $MGIT reset --hard FETCH_HEAD || (date >> ~/.fireupgrade.failed; exit 1)
     else
         $FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) REJECTED unverified update on $remote_branch"

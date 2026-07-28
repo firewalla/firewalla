@@ -188,6 +188,25 @@ uv_sync_node_modules $NM $T/nm-origin rel $PINF >/dev/null
 check "fresh clone with unreachable pin rejected" 1 $?
 [[ ! -d $NM ]]; check "unpinned fresh clone removed" 0 $?
 
+# --- e2e: dry-run gate (uv_gate) honors per-branch enforcement ---
+# stub uv_is_enforced so the test needs no network; the origin here is a
+# file:// (non-official) remote, so verification of the unsigned tip fails
+UV_FLOOR_FILE=$T/floor-gate         # fresh, no minimal version constraint
+git -C $T/origin reset -q --hard rel   # move tip back to the unsigned commit
+git fetch -q origin rel
+
+uv_is_enforced() { return 1; }         # not enforced -> dry-run
+uv_gate FETCH_HEAD rel >/dev/null; check "dry-run: failed verify still proceeds" 0 $?
+
+uv_is_enforced() { return 0; }         # enforced -> block
+uv_gate FETCH_HEAD rel >/dev/null; check "enforced: failed verify blocks" 1 $?
+
+# a passing verification proceeds regardless of enforcement state
+git -C $T/origin reset -q --hard 'goldse-alph-v1.983.001^{commit}'
+git fetch -q origin rel
+uv_is_enforced() { return 0; }
+uv_gate FETCH_HEAD rel >/dev/null; check "enforced: passing verify proceeds" 0 $?
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 cd /
