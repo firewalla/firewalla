@@ -172,17 +172,13 @@ class DNSTool {
 
     const existing = await this.reverseDNSKeyExists(domain)
 
+    const validAddresses = addresses.filter((addr) => this.isValidIP(addr));
     let updated = false
-    const validAddresses = [];
 
-    for (let i = 0; i < addresses.length; i++) {
-      const addr = addresses[i];
-
-      if (this.isValidIP(addr)) {
-        await rclient.zaddAsync(key, new Date() / 1000, addr)
-        validAddresses.push(addr);
-        updated = true
-      }
+    if (validAddresses.length > 0) {
+      const now = Date.now() / 1000;
+      await rclient.zaddAsync(key, _.flatMap(validAddresses, (addr) => [now, addr]))
+      updated = true
     }
     domainUpdater.updateDomainMapping(domain, validAddresses);
     const CategoryUpdater = require('../control/CategoryUpdater.js');
