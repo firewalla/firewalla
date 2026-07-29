@@ -18,6 +18,7 @@ const log = require('../net2/logger.js')(__filename)
 
 const Sensor = require('./Sensor.js').Sensor
 const extensionManager = require('./ExtensionManager.js')
+const f = require('../net2/Firewalla.js')
 const fireRouter = require('../net2/FireRouter.js')
 const delay = require('../util/util.js').delay;
 const flowTool = require('../net2/FlowTool');
@@ -718,104 +719,97 @@ class LiveStatsPlugin extends Sensor {
     return {rx: Number(rx), tx: Number(tx)};
   }
 
-  /**
-   * Live throughput of every broadcasting Wi-Fi (LAN) interface on this box, one entry per (ssid, band).
-   * Integrated-AP boxes (Orange) enumerate via the fwapc controller; others probe local wlan with `iw dev`.
-   * @returns {Promise<Array<{name,target,type,ssid,band,tx,rx}>>}
-   */
   async getWlanThroughput() {
-    const aps = await platform.hasIntegratedAPAssets()
-      ? await this.getApcWlanAps()
-      : await this.getLocalWlanAps()
+    const intfs = await this.getWlanIntfs() // include wan and lan
     const result = []
-    for (const ap of aps) {
-      const { tx, rx } = await this.getIntfThroughput(ap.name)
-      result.push({ name: ap.name, target: ap.name, type: 'wlanIntf', ssid: ap.ssid, band: ap.band, tx, rx })
+    for (const intf of intfs) {
+      const { ssid, band } = await this.getWlanIdentity(intf)
+      const { tx, rx } = await this.getIntfThroughput(intf.name)
+      result.push({ name: intf.name, target: intf.name, type: 'wlanIntf', role: intf.role, ssid, band, tx, rx })
     }
     return result
   }
 
-  /**
-   * AP-mode wlan interfaces from the fwapc controller status (integrated-AP boxes).
-   * Keeps only local AP interfaces; in a mesh, box and AP7s share an ssid -> same intf name, count once.
-   * @returns {Promise<Array<{name,ssid,band}>>}
-   */
-  async getApcWlanAps() {
-    const assets = await fwapc.getAssetsStatus() || {}
-    const aps = []
-    const seen = new Set()
-    for (const uid of Object.keys(assets)) {
-      const apsMap = _.get(assets, [uid, 'aps'], {})
-      for (const key of Object.keys(apsMap)) {
-        const ap = apsMap[key]
-        if (!ap || ap.mode !== 'ap' || !ap.intf || seen.has(ap.intf) || !await this.validIntfName(ap.intf))
-          continue
-        seen.add(ap.intf)
-        aps.push({ name: ap.intf, ssid: ap.ssid || null, band: ap.band || null })
-      }
+  async getWlanIntfs() {
+    const apDir = `${f.getFireRouterRuntimeInfoFolder()}/hostapd`
+    const wanNames = fireRouter.getWanIntfNames() || []
+    const intfs = []
+
+    for (const path of await this.listCtrlSockets()) {
+      const name = path.substring(path.lastIndexOf('/') + 1)
+      const role = path.startsWith(`${apDir}/`) ? 'ap' : 'wan'
+      if (role == 'wan' && !wanNames.includes(name))
+        continue
+      if (await this.validIntfName(name))
+        intfs.push({ name, role })
     }
-    return aps
+    return intfs
   }
 
-  /**
-   * AP-mode wlan interfaces on this box from `iw dev`, cached briefly since ssid/band rarely change.
-   * @returns {Promise<Array<{name,ssid,band}>>}
-   */
-  async getLocalWlanAps() {
+  async listCtrlSockets() {
+    const runDir = f.getFireRouterRuntimeInfoFolder()
+    const dirs = `${runDir}/hostapd ${runDir}/wpa_supplicant` // one dir per station intf, hence maxdepth 2
+    const { stdout } = await exec(`sudo find ${dirs} -maxdepth 2 -type s -printf "%p\\n" 2>/dev/null || true`)
+      .catch(err => { log.error('Failed to list wlan ctrl sockets', err.message); return { stdout: '' } })
+    return stdout.split('\n').map(path => path.trim()).filter(Boolean)
+  }
+
+  async getWlanIdentity(intf) {
+    if (!this.wlanIdentityCache)
+      this.wlanIdentityCache = {}
+    const cached = this.wlanIdentityCache[intf.name]
     const now = Date.now()
-    if (this.wlanApsCache && now - this.wlanApsCache.ts < 30000)
-      return this.wlanApsCache.aps
-    let aps = []
-    try {
-      const { stdout } = await exec('sudo iw dev')
-      aps = this.parseWlanAps(stdout)
-    } catch (err) {
-      log.error('Failed to list wlan interfaces', err.message)
-    }
-    this.wlanApsCache = { aps, ts: now }
-    return aps
+    if (cached && now - cached.ts < 30000)
+      return cached
+
+    const runDir = f.getFireRouterRuntimeInfoFolder()
+    const ctrlDir = intf.role == 'ap' ? `${runDir}/hostapd` : `${runDir}/wpa_supplicant/${intf.name}`
+    const identity = await exec(`sudo wpa_cli -p ${ctrlDir} -i ${intf.name} status`)
+      .then(result => this.parseWpaStatus(result.stdout, intf.name))
+      .catch(err => {
+        log.error('Failed to get wpa status of', intf.name, err.message)
+        return { ssid: null, band: null }
+      })
+
+    identity.ts = now
+    this.wlanIdentityCache[intf.name] = identity
+    return identity
   }
 
-  /**
-   * Parse `iw dev` output into AP-mode wlan interfaces; sta (wifi-WAN) and scan interfaces are dropped.
-   * @param {string} output
-   * @returns {Array<{name,ssid,band}>}
-   */
-  parseWlanAps(output) {
-    const aps = []
-    let cur = null
-    const flush = () => {
-      if (cur && cur.type === 'AP')
-        aps.push({ name: cur.name, ssid: cur.ssid, band: cur.band })
-    }
+  parseWpaStatus(output, intf) {
+    const kv = {}
     for (const line of String(output).split('\n')) {
-      const t = line.trim()
-      if (t.startsWith('Interface ')) {
-        flush()
-        cur = { name: t.substring(10).trim(), ssid: null, band: null, type: null }
-        continue
-      }
-      if (!cur)
-        continue
-      const idx = t.indexOf(' ')
-      if (idx <= 0)
-        continue
-      const key = t.substring(0, idx)
-      const value = t.substring(idx + 1).trim()
-      if (key === 'ssid')
-        cur.ssid = value
-      else if (key === 'type')
-        cur.type = value
-      else if (key === 'channel') {
-        const m = value.match(/\((\d+)\s*MHz\)/) // e.g. "36 (5180 MHz), width: 160 MHz"
-        const freq = m && Number(m[1]) // band from frequency, channel numbers collide across bands
-        if (freq >= 2400 && freq < 2500) cur.band = '2g'
-        else if (freq >= 4900 && freq < 5925) cur.band = '5g'
-        else if (freq >= 5925 && freq <= 7125) cur.band = '6g'
+      const idx = line.indexOf('=')
+      if (idx > 0)
+        kv[line.substring(0, idx).trim()] = line.substring(idx + 1).trim()
+    }
+
+    let ssid = kv.ssid // station
+    if (ssid === undefined) {
+      for (const key of Object.keys(kv)) { // ap, e.g. bss[1]=wlan5g_7e4c3d -> ssid[1]
+        if (key.startsWith('bss[') && kv[key] === intf) {
+          ssid = kv[`ssid${key.substring(3)}`]
+          break
+        }
       }
     }
-    flush()
-    return aps
+    if (ssid === undefined)
+      ssid = null
+    else if (ssid.includes('\\x')) // hostap escapes non-printable bytes, a UTF-8 ssid comes as \xe4\xb8\xad
+      ssid = Buffer.from(
+          ssid.replace(/\\x([0-9a-f]{2})/gi, (_, hex) =>
+              String.fromCharCode(parseInt(hex, 16))
+          ),
+          'latin1'
+      ).toString('utf8');
+
+    const freq = Number(kv.freq) // band from frequency, channel numbers collide across bands
+    let band = null
+    if (freq >= 2400 && freq < 2500) band = '2g'
+    else if (freq >= 4900 && freq < 5925) band = '5g'
+    else if (freq >= 5925 && freq <= 7125) band = '6g'
+
+    return { ssid, band }
   }
 
   // guard against shell injection and confirm the nic exists on the box
