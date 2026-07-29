@@ -1152,6 +1152,13 @@ class netBot extends ControllerBot {
           throw new Error("rename failed")
         }
       }
+      case "eptMemberEmail": {
+        const { eid, email } = value;
+        if (!eid || !email)
+          throw { code: 400, msg: "both eid and email are required" };
+        await rclient.hsetAsync(Constants.REDIS_KEY_EPT_MEMBER_EMAILS, eid, email);
+        return
+      }
       case "intelAdvice": {
         const { target, ip, intel } = value
         intel.localIntel = await intelTool.getIntel(ip)
