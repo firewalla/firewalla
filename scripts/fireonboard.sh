@@ -1,18 +1,8 @@
 #!/bin/bash
 # fireonboard.sh — unattended onboard dispatcher (replaces the interactive fw-firstboot path).
 #
-# Launched in the background by fireonboard.service on first boot, fully silent: nothing is shown
-# on the console; all output goes to /home/pi/.firewalla/fireonboard.log (for dev troubleshooting).
-#
-# Does two things:
-#   1) Wait for the app stack (FireMain + sys:ept.gid)
-#   2) Run bootstrap.js (onboard mode): write license unconditionally; if msp/app was selected,
-#      register(bid) -> wait for the user to click activate -> join MSP / join App
-#
-# Network is applied by FireRouter itself on first boot (it reads onboard-config.network as its
-# initial config), so this script no longer touches the network.
-#
-# /data/.fireonboard-done is written only after bootstrap.js succeeds (exit 0); otherwise retry next boot.
+# Waits for what bootstrap.js needs (FireKick's sys:ept + internet), then runs it.
+# Output goes to ~/.firewalla/fireonboard.log; /data/.fireonboard-done marks success.
 
 set -u
 
@@ -21,37 +11,50 @@ LOG="${FW_ONBOARD_LOG:-/home/pi/.firewalla/fireonboard.log}"
 DONE=/data/.fireonboard-done
 NODE=/home/pi/firewalla/bin/node
 SCRIPTS_DIR=/home/pi/firewalla/scripts
+PROVISION_HOST="${FW_PROVISION_HOST:-msp.dd.firewalla.net}"
+WARN_AFTER="${FW_ONBOARD_WARN_AFTER:-80}"   # seconds offline before warning on the console
 
 mkdir -p "$(dirname "$LOG")" 2>/dev/null
-# Send all stdout/stderr to the log — keep the console silent for the user.
 exec >>"$LOG" 2>&1
 log(){ printf '[fireonboard %s] %s\n' "$(date -Is 2>/dev/null || date)" "$*"; }
 
-# Show a single "SSH here" banner on tty1 (visible on bare-metal VGA / noVNC console); silent otherwise.
-# Don't hardcode eth0: take the IP of the default-route interface (WAN may not be eth0); fall back to
-# the first global IPv4. Write the banner to /etc/issue (getty renders it on every login screen) and
-# restart getty@tty1 to force a redraw, so it shows immediately on first boot instead of next refresh.
-show_ssh_banner(){
-  local ip="" dev="" i=0   # set -u: must init, else $ip is undefined when no default route is found
-  while [ $i -lt 15 ]; do      # DHCP may take a few seconds; wait up to ~30s
-    dev=$(ip -4 route show default 2>/dev/null | awk '{print $5; exit}')
-    [ -n "$dev" ] && ip=$(ip -4 -br addr show "$dev" 2>/dev/null | awk '{print $3}' | cut -d/ -f1)
-    [ -z "$ip" ] && ip=$(ip -4 -br addr show scope global 2>/dev/null | awk 'NR==1{print $3}' | cut -d/ -f1)
-    [ -n "$ip" ] && break
-    sleep 2; i=$((i+1))
-  done
-  ip=${ip:-<no-ip-yet>}
-  # /etc/issue: rendered by getty at the login screen (visible on both bare metal and VM consoles).
+# Echoes "<ip> [note]": the default-route address, else any global one — reachable from the LAN side
+# only, so it gets labelled. Empty when the box has no address at all.
+current_ip(){
+  local dev="" ip=""
+  dev=$(ip -4 route show default 2>/dev/null | awk '{print $5; exit}')
+  [ -n "$dev" ] && ip=$(ip -4 -br addr show "$dev" 2>/dev/null | awk '{print $3}' | cut -d/ -f1)
+  [ -n "$ip" ] && { echo "$ip"; return; }
+  ip=$(ip -4 -br addr show scope global 2>/dev/null | awk 'NR==1{print $3}' | cut -d/ -f1)
+  [ -n "$ip" ] && echo "$ip LAN port"
+}
+
+# banner <headline> [detail] — the console is the only channel when the box is unreachable.
+banner(){
+  local ip="" note=""
+  read -r ip note <<< "$(current_ip)"
   {
     printf '\n'
     printf '  ============================================================\n'
-    printf '    Firewalla is ready\n'
-    printf '    SSH:  ssh pi@%s    (password: firewalla)\n' "$ip"
+    printf '    %s\n' "$1"
+    [ -n "${2:-}" ] && printf '    %s\n' "$2"
+    [ -n "$ip" ] && printf '    SSH:  ssh pi@%s   (password: firewalla)%s\n' "$ip" "${note:+   [$note]}"
     printf '  ============================================================\n\n'
   } > /etc/issue 2>/dev/null
-  # Force getty to redraw so the first-boot console shows /etc/issue with the IP immediately.
-  systemctl restart getty@tty1 2>/dev/null || true
-  log "console banner shown (dev=${dev:-?} ip=$ip)"
+  systemctl restart getty@tty1 2>/dev/null || true   # force getty to redraw /etc/issue now
+  log "console banner: $1 (ip=${ip:-none}${note:+ $note})"
+}
+
+# FireKick's hmset: gid gates bootstrap's waitForGid(), token gates bone.cloudready(). Not FireMain.
+ept_ready(){ [ -n "$(redis-cli hget sys:ept token 2>/dev/null)" ]; }
+
+# Any one is enough: upstreams may drop ICMP or hijack DNS. No TLS — a stale clock breaks handshakes.
+net_ready(){
+  timeout 3 bash -c "exec 3<>/dev/tcp/$PROVISION_HOST/443" 2>/dev/null && { NET_VIA="tcp:$PROVISION_HOST"; return 0; }
+  curl -sf -m 5 -o /dev/null http://connectivitycheck.gstatic.com/generate_204 && { NET_VIA="http:gstatic"; return 0; }
+  ping -c1 -W2 1.1.1.1 >/dev/null 2>&1 && { NET_VIA="ping:1.1.1.1"; return 0; }
+  ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 && { NET_VIA="ping:8.8.8.8"; return 0; }
+  return 1
 }
 
 # ── main ───────────────────────────────────────────────────────────────────────
@@ -62,25 +65,23 @@ if [ ! -f "$ONBOARD_CONFIG" ]; then
   log "no onboard-config at $ONBOARD_CONFIG — nothing to do"; exit 0
 fi
 
-# 1) Wait for the stack (monotonic clock, safe on no-RTC boxes), up to 7 minutes.
-read t0 _ < /proc/uptime; t0=${t0%.*}; up=0
+# Wait indefinitely: without internet there is nothing to do but keep trying.
+read t0 _ < /proc/uptime; t0=${t0%.*}; warned=0; NET_VIA=""
 while :; do
-  if pgrep -f FireMain >/dev/null 2>&1 && [ -n "$(redis-cli hget sys:ept gid 2>/dev/null)" ]; then
-    up=1; break
-  fi
+  net=0; net_ready && net=1
+  [ "$net" = 1 ] && ept_ready && break
   read now _ < /proc/uptime
-  [ $(( ${now%.*} - t0 )) -gt 420 ] && break
+  if [ "$warned" -eq 0 ] && [ "$net" = 0 ] && [ $(( ${now%.*} - t0 )) -gt "$WARN_AFTER" ]; then
+    banner "Firewalla is starting - no internet yet" \
+           "Check the cable and your WAN settings (DHCP / PPPoE / static IP)."
+    warned=1
+  fi
   sleep 2
 done
-if [ $up -ne 1 ]; then
-  log "stack NOT ready after 420s - exit (will retry next boot)"; exit 1
-fi
-log "stack ready"
+log "ready: sys:ept published, internet confirmed via $NET_VIA"
 
-# 2) Show the "SSH here" banner on tty1 (this one line only; silent otherwise).
-show_ssh_banner
+banner "Firewalla is up and ready to activate" "Activate this box from the MSP web console."
 
-# 3) license + activation (node, onboard mode; bootstrap.js reads onboard-config itself).
 log "launching bootstrap.js (onboard) ..."
 HOME=/home/pi FW_ONBOARD_CONFIG="$ONBOARD_CONFIG" runuser -u pi -- bash -c "
   cd '$SCRIPTS_DIR' && '$NODE' bootstrap.js
