@@ -18,6 +18,7 @@ const log = require('../net2/logger.js')(__filename)
 
 const Sensor = require('./Sensor.js').Sensor
 const extensionManager = require('./ExtensionManager.js')
+const f = require('../net2/Firewalla.js')
 const fireRouter = require('../net2/FireRouter.js')
 const delay = require('../util/util.js').delay;
 const flowTool = require('../net2/FlowTool');
@@ -266,6 +267,17 @@ class LiveStatsPlugin extends Sensor {
               }
             }
             break;
+          }
+          case 'phyIntf': {
+            if (!await this.validIntfName(target)) {
+              throw new Error(`Invalid interface ${target}`)
+            }
+            response.throughput = [ Object.assign( {name: target, target, type}, await this.getIntfThroughput(target) ) ]
+            break
+          }
+          case 'wlanIntfs': {
+            response.throughput = await this.getWlanThroughput()
+            break
           }
         }
       }
@@ -705,6 +717,106 @@ class LiveStatsPlugin extends Sensor {
     const rx = await fsp.readFile(`/sys/class/net/${intf}/statistics/rx_bytes`, 'utf8').catch(() => 0);
     const tx = await fsp.readFile(`/sys/class/net/${intf}/statistics/tx_bytes`, 'utf8').catch(() => 0);
     return {rx: Number(rx), tx: Number(tx)};
+  }
+
+  async getWlanThroughput() {
+    const intfs = await this.getWlanIntfs() // include wan and lan
+    const result = []
+    for (const intf of intfs) {
+      const { ssid, band } = await this.getWlanIdentity(intf)
+      const { tx, rx } = await this.getIntfThroughput(intf.name)
+      result.push({ name: intf.name, target: intf.name, type: 'wlanIntf', role: intf.role, ssid, band, tx, rx })
+    }
+    return result
+  }
+
+  async getWlanIntfs() {
+    const apDir = `${f.getFireRouterRuntimeInfoFolder()}/hostapd`
+    const wanNames = fireRouter.getWanIntfNames() || []
+    const intfs = []
+
+    for (const path of await this.listCtrlSockets()) {
+      const name = path.substring(path.lastIndexOf('/') + 1)
+      const role = path.startsWith(`${apDir}/`) ? 'ap' : 'wan'
+      if (role == 'wan' && !wanNames.includes(name))
+        continue
+      if (await this.validIntfName(name))
+        intfs.push({ name, role })
+    }
+    return intfs
+  }
+
+  async listCtrlSockets() {
+    const runDir = f.getFireRouterRuntimeInfoFolder()
+    const dirs = `${runDir}/hostapd ${runDir}/wpa_supplicant` // one dir per station intf, hence maxdepth 2
+    const { stdout } = await exec(`sudo find ${dirs} -maxdepth 2 -type s -printf "%p\\n" 2>/dev/null || true`)
+      .catch(err => { log.error('Failed to list wlan ctrl sockets', err.message); return { stdout: '' } })
+    return stdout.split('\n').map(path => path.trim()).filter(Boolean)
+  }
+
+  async getWlanIdentity(intf) {
+    if (!this.wlanIdentityCache)
+      this.wlanIdentityCache = {}
+    const cached = this.wlanIdentityCache[intf.name]
+    const now = Date.now()
+    if (cached && now - cached.ts < 30000)
+      return cached
+
+    const runDir = f.getFireRouterRuntimeInfoFolder()
+    const ctrlDir = intf.role == 'ap' ? `${runDir}/hostapd` : `${runDir}/wpa_supplicant/${intf.name}`
+    const identity = await exec(`sudo wpa_cli -p ${ctrlDir} -i ${intf.name} status`)
+      .then(result => this.parseWpaStatus(result.stdout, intf.name))
+      .catch(err => {
+        log.error('Failed to get wpa status of', intf.name, err.message)
+        return { ssid: null, band: null }
+      })
+
+    identity.ts = now
+    this.wlanIdentityCache[intf.name] = identity
+    return identity
+  }
+
+  parseWpaStatus(output, intf) {
+    const kv = {}
+    for (const line of String(output).split('\n')) {
+      const idx = line.indexOf('=')
+      if (idx > 0)
+        kv[line.substring(0, idx).trim()] = line.substring(idx + 1).trim()
+    }
+
+    let ssid = kv.ssid // station
+    if (ssid === undefined) {
+      for (const key of Object.keys(kv)) { // ap, e.g. bss[1]=wlan5g_7e4c3d -> ssid[1]
+        if (key.startsWith('bss[') && kv[key] === intf) {
+          ssid = kv[`ssid${key.substring(3)}`]
+          break
+        }
+      }
+    }
+    if (ssid === undefined)
+      ssid = null
+    else if (ssid.includes('\\x')) // hostap escapes non-printable bytes, a UTF-8 ssid comes as \xe4\xb8\xad
+      ssid = Buffer.from(
+          ssid.replace(/\\x([0-9a-f]{2})/gi, (_, hex) =>
+              String.fromCharCode(parseInt(hex, 16))
+          ),
+          'latin1'
+      ).toString('utf8');
+
+    const freq = Number(kv.freq) // band from frequency, channel numbers collide across bands
+    let band = null
+    if (freq >= 2400 && freq < 2500) band = '2g'
+    else if (freq >= 4900 && freq < 5925) band = '5g'
+    else if (freq >= 5925 && freq <= 7125) band = '6g'
+
+    return { ssid, band }
+  }
+
+  // guard against shell injection and confirm the nic exists on the box
+  async validIntfName(name) {
+    if (!name || !/^[a-zA-Z0-9._-]+$/.test(name))
+      return false
+    return fsp.access(`/sys/class/net/${name}`).then(() => true).catch(() => false)
   }
 
   async getFlows(type, target, ts, opts) {
