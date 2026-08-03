@@ -320,7 +320,7 @@ cat << EOF > "$filter_file"
 # drop INVALID packets
 -A FW_FORWARD -m conntrack --ctstate INVALID -m set --match-set c_lan_set src,src -j FW_WAN_INVALID_DROP
 # drop packet that already marked as DROP
--A FW_FORWARD -m connmark --mark 0x200/0x200 -j FW_DROP
+-A FW_FORWARD -m connmark --mark 0x200/0x200 -j FW_PLAIN_DROP
 
 # accept non-HTTP/HTTPS tcp/udp packets that belongs to an accepted flow, skip the first 6 packets
 -A FW_FORWARD -p udp -m udp ! --dport 443 -m connbytes --connbytes 7 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -j ACCEPT
