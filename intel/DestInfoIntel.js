@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,10 +25,17 @@ const IntelManager = require('../net2/IntelManager.js')
 const intelManager = new IntelManager();
 
 const sysManager = require('../net2/SysManager.js');
-const DNSManager = require('../net2/DNSManager.js');
-const dnsManager = new DNSManager('info');
-const getPreferredName = require('../util/util.js').getPreferredName
+const Host = require('../net2/Host.js');
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
 const f = require('../net2/Firewalla.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+const Message = require('../net2/Message.js');
+const Constants = require('../net2/Constants.js');
+const rclient = require('../util/redis_manager.js').getRedisClient();
+const DomainTrie = require('../util/DomainTrie.js');
+const _ = require('lodash');
+const suffixList = require('../vendor_lib/publicsuffixlist/suffixList');
 
 function formatBytes(bytes, decimals) {
   if (bytes == 0) return '0 Bytes';
@@ -40,6 +47,49 @@ function formatBytes(bytes, decimals) {
 }
 
 class DestInfoIntel extends Intel {
+
+  constructor() {
+    super();
+    this.reloadAppIntelConfig().catch((err) => {
+      log.error(`Failed to reload app intel config`, err.message);
+    });
+    sem.on(Message.MSG_APP_INTEL_CONFIG_UPDATED, async (event) => {
+      this.reloadAppIntelConfig().catch((err) => {
+        log.error(`Failed to reload app intel config`, err.message);
+      });  
+    });
+  }
+
+  async reloadAppIntelConfig() {
+    const data = await rclient.getAsync(Constants.REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG).then(result => result && JSON.parse(result)).catch(err => null);
+    this.appConfig = data;
+    this.rebuildTrie();
+  }
+
+  rebuildTrie() {
+    const appConfs = _.get(this.appConfig, "appConfs", {});
+    const domainTrie = new DomainTrie();
+    for (const app of Object.keys(appConfs)) {
+      const intelDomains = appConfs[app].intelDomains || [];
+      for (const domain of intelDomains) {
+        if (domain.startsWith("*.")) {
+          domainTrie.add(domain.substring(2), app);
+        } else {
+          domainTrie.add(domain, app, false);
+        }
+      }
+    }
+    this._domainTrie = domainTrie;
+  }
+
+  lookupApp(domain) {
+    if (!domain || !this._domainTrie)
+      return null;
+    const values = this._domainTrie.find(domain);
+    if (_.isSet(values) && !_.isEmpty(values))
+      return values.values().next().value;
+    return null;
+  }
 
   async enrichAlarm(alarm) {
     if (alarm["p.ignoreDestIntel"] == "1")
@@ -59,6 +109,12 @@ class DestInfoIntel extends Intel {
     }
 
     let destIP = alarm["p.dest.ip"];
+    const destName = alarm["p.dest.name"];
+    if (destName) {
+      const domainSuffix = suffixList.getDomain(destName);
+      if (domainSuffix)
+        alarm["p.dest.name.suffix"] = domainSuffix;
+    }
 
     if (!destIP) {
       return alarm;
@@ -72,14 +128,18 @@ class DestInfoIntel extends Intel {
             "p.dest.isLocal": "1"
           })
         } else {
-          const result = await dnsManager.resolveLocalHostAsync(destIP);
-          Object.assign(alarm, {
-            "p.dest.name": getPreferredName(result),
-            "p.dest.id": result.mac,
-            "p.dest.mac": result.mac,
-            "p.dest.macVendor": result.macVendor || "Unknown",
-            "p.dest.isLocal": "1"
-          });
+          const host = await hostManager.getIdentityOrHost(destIP);
+          if (host) {
+            Object.assign(alarm, {
+              "p.dest.name": host.getReadableName(),
+              "p.dest.id": host.getGUID(),
+              "p.dest.mac": host.getGUID(),
+              "p.dest.isLocal": "1"
+            });
+
+            if (host instanceof Host)
+              alarm["p.dest.macVendor"] = host.o.macVendor
+          }
         }
       } catch (err) {
         log.error("Failed to find host " + destIP + " in database: " + err);
@@ -87,11 +147,14 @@ class DestInfoIntel extends Intel {
       return alarm;
     }
 
-    // intel
-    const intel = await intelTool.getIntel(destIP)
-    if (intel && intel.app) {
-      alarm["p.dest.app"] = intel.app
+    const app = this.lookupApp(destName);
+    if (app) {
+      alarm["p.dest.app"] = _.get(this.appConfig, ["appConfs", app, "displayName"]);
+      alarm["p.dest.app.id"] = app;
     }
+
+    // intel
+    const intel = await intelTool.getIntel(destIP, (destName && destName !== destIP) ? [destName] : []);
 
     switch (alarm["type"]) {
       case 'ALARM_VIDEO':

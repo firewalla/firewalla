@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,26 +16,24 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const sclient = require('../util/redis_manager.js').getSubscriptionClient()
-
-const exec = require('child-process-promise').exec
+const MessageBus = require('./MessageBus.js');
+const messageBus = new MessageBus('info')
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+const fwapc = require('./fwapc.js');
 
 const spoofer = require('./Spoofer.js');
 const sysManager = require('./SysManager.js');
-
-const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const Mode = require('./Mode.js')
 const routing = require('../extension/routing/routing.js');
 
 const util = require('util')
-
+const fc = require('./config.js');
 const f = require('./Firewalla.js');
 
-const getPreferredBName = require('../util/util.js').getPreferredBName
+const { getPreferredName, getPreferredBName } = require('../util/util.js')
 
 const bone = require("../lib/Bone.js");
-
-const MobileDetect = require('mobile-detect');
-
+const urlHash = require('../util/UrlHash.js')
 const flowUtil = require('../net2/FlowUtil.js');
 
 const linux = require('../util/linux.js');
@@ -51,8 +49,6 @@ const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCan
 const TagManager = require('./TagManager.js');
 const Tag = require('./Tag.js');
 
-const ipset = require('./Ipset.js');
-
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
@@ -62,87 +58,111 @@ const dnsmasq = new Dnsmasq();
 const _ = require('lodash');
 const {Address4, Address6} = require('ip-address');
 const LRU = require('lru-cache');
-const Constants = require('./Constants.js');
+const Ipset = require('./Ipset.js');
 
 const {Rule} = require('./Iptables.js');
+const iptc = require('../control/IptablesControl.js');
 
-const Monitorable = require('./Monitorable')
+const Monitorable = require('./Monitorable');
+const Constants = require('./Constants.js');
 
-const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once.
-                      // it is necessary because each object will subscribe HostPolicy:Changed message.
-                      // this can guarantee the event handler function is run on the correct and unique object.
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock(); 
+
+const iptool = require('ip');
+
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+const TimeUsageTool = require('../flow/TimeUsageTool.js');
+
+const blockControl = require('../control/BlockControl.js');
 
 const envCreatedMap = {};
 
 class Host extends Monitorable {
-  constructor(obj) {
-    if (!instances[obj.mac]) {
+  constructor(obj, noEnvCreation = false) {
+    if (!Monitorable.instances[obj.mac]) {
       super(obj)
-      this.callbacks = {};
       if (this.o.ipv4) {
         this.o.ipv4Addr = this.o.ipv4;
       }
 
       this.ipCache = new LRU({max: 50, maxAge: 150 * 1000}); // IP timeout in lru cache is 150 seconds
       this._mark = false;
-      this.o = Host.parse(this.o);
       if (this.o.ipv6Addr) {
         this.ipv6Addr = this.o.ipv6Addr
       }
 
       // Waiting for IPTABLES_READY event is not necessary here
       // Host object should only be created after initial setup of iptables to avoid racing condition
-      if (f.isMain()) (async () => {
+      if (f.isMain() && !noEnvCreation) (async () => {
         this.spoofing = false;
-        sclient.on("message", (channel, message) => {
-          this.processNotifications(channel, message);
-        });
 
-        if (obj && obj.mac) {
-          this.subscribe(this.o.mac, "HostPolicy:Changed");
-        }
+        await Host.ensureCreateEnforcementEnv(this.o.mac)
 
-        await this.predictHostNameUsingUserAgent();
+        messageBus.subscribeOnce(this.constructor.getUpdateCh(), this.getGUID(), this.onUpdate.bind(this))
 
-        await Host.ensureCreateDeviceIpset(this.o.mac)
-        this.subscribe(this.o.mac, "Device:Updated");
-        this.subscribe(this.o.mac, "Device:Delete");
         await this.applyPolicy()
-        await this.identifyDevice()
       })().catch(err => {
         log.error(`Error initializing Host ${this.o.mac}`, err);
       })
 
-      this.dnsmasq = new DNSMASQ();
-      instances[obj.mac] = this;
+      Monitorable.instances[obj.mac] = this;
       log.info('Created new Host', obj.mac)
     }
-    return instances[obj.mac];
+    return Monitorable.instances[obj.mac];
   }
 
   getUniqueId() {
     return this.o.mac
   }
 
-  getGUID() {
-    return this.o.mac
-  }
+  async update(obj, partial = false, save = false) {
+    await lock.acquire(`UPDATE_${this.getGUID()}`, async () => {
+      const updatedKeys = await super.update(obj, partial)
 
-  async update(obj) {
-    await super.update(obj)
-    if (this.o.ipv4) {
-      this.o.ipv4Addr = this.o.ipv4;
-    }
+      if (this.o.ipv4 && this.o.ipv4Addr != this.o.ipv4 ) {
+        this.o.ipv4Addr = this.o.ipv4;
+        updatedKeys.push('ipv4Addr')
+      }
 
-    if (f.isMain()) {
-      await this.predictHostNameUsingUserAgent();
-      await this.loadPolicyAsync();
-    }
+      const bname = getPreferredBName(this.o)
+      if (bname && bname != this.o.bname) {
+        this.o.bname = bname
+        updatedKeys.push('bname')
+      }
 
-    this.o = Host.parse(this.o);
-    for (const f of Host.metaFieldsJson) {
-      this[f] = this.o[f]
-    }
+      const name = this.o.name || bname;
+      if (name) {
+        const localDomain = getCanonicalizedDomainname(name.replace(/\s+/g, "."))
+        if (localDomain != this.o.localDomain) {
+          log.verbose('localDomain updated', name, localDomain)
+          this.o.localDomain = localDomain
+          updatedKeys.push('localDomain')
+        }
+      }
+      if (this.o.customizeDomainName) {
+        const userLocalDomain = getCanonicalizedDomainname(this.o.customizeDomainName.replace(/\s+/g, "."));
+        if (userLocalDomain != this.o.userLocalDomain) {
+          this.o.userLocalDomain = userLocalDomain
+          updatedKeys.push('userLocalDomain')
+        }
+      }
+
+      for (const f of Host.metaFieldsJson) {
+        if (this.o[f]) this[f] = this.o[f]
+      }
+
+      // TODO: compare before saving and publishing to redis
+      if (save) {
+        await this.save(updatedKeys)
+        messageBus.publish(Host.getUpdateCh(), this.getGUID(), this.o)
+      }
+
+      return updatedKeys
+    }).catch((err) => {
+      log.error(`Failed to update Host ${this.o.mac}`, err.message, obj);
+    });
   }
 
   static getIpSetName(mac, af = 4) {
@@ -157,26 +177,27 @@ class Host extends Monitorable {
     return `c_${mac}_set`;
   }
 
-  static async ensureCreateDeviceIpset(mac) {
+  static async ensureCreateEnforcementEnv(mac) {
     if (envCreatedMap[mac])
       return;
-    await exec(`sudo ipset create -! ${Host.getIpSetName(mac, 4)} hash:ip family inet maxelem 10 timeout 900`);
-    await exec(`sudo ipset create -! ${Host.getIpSetName(mac, 6)} hash:ip family inet6 maxelem 30 timeout 900`);
-    await exec(`sudo ipset create -! ${Host.getMacSetName(mac)} hash:mac maxelem 1`);
-    await exec(`sudo ipset add -! ${Host.getMacSetName(mac)} ${mac}`);
-    await exec(`sudo ipset create -! ${Host.getDeviceSetName(mac)} list:set`);
-    await exec(`sudo ipset add -! ${Host.getDeviceSetName(mac)} ${Host.getMacSetName(mac)}`);
-    await exec(`sudo ipset add -! ${Host.getDeviceSetName(mac)} ${Host.getIpSetName(mac, 4)}`);
-    await exec(`sudo ipset add -! ${Host.getDeviceSetName(mac)} ${Host.getIpSetName(mac, 6)}`);
+    // host set doesn't have many elements, leave hashsize to 128
+    await Ipset.create(Host.getIpSetName(mac, 4), 'hash:ip', false, { maxelem: 10, timeout: 900 });
+    await Ipset.create(Host.getIpSetName(mac, 6), 'hash:ip', true, { maxelem: 30, timeout: 900 });
+    await Ipset.create(Host.getMacSetName(mac), 'hash:mac', false, { maxelem: 1 });
+    await Ipset.add(Host.getMacSetName(mac), mac);
+    await Ipset.create(Host.getDeviceSetName(mac), 'list:set');
+    await Ipset.add(Host.getDeviceSetName(mac), Host.getMacSetName(mac));
+    await Ipset.add(Host.getDeviceSetName(mac), Host.getIpSetName(mac, 4));
+    await Ipset.add(Host.getDeviceSetName(mac), Host.getIpSetName(mac, 6));
     envCreatedMap[mac] = 1;
   }
 
-  async flushIpsets() {
+  async destroyEnv() {
     log.info('Flushing ipset for', this.o.mac)
-    await ipset.flush(Host.getIpSetName(this.o.mac, 4))
-    await ipset.flush(Host.getIpSetName(this.o.mac, 6))
-    await ipset.flush(Host.getMacSetName(this.o.mac))
-    await ipset.flush(Host.getDeviceSetName(this.o.mac))
+    await Ipset.flush(Host.getIpSetName(this.o.mac, 4))
+    await Ipset.flush(Host.getIpSetName(this.o.mac, 6))
+    await Ipset.flush(Host.getMacSetName(this.o.mac))
+    await Ipset.flush(Host.getDeviceSetName(this.o.mac))
   }
 
   /* example of ipv6Host
@@ -189,7 +210,51 @@ class Host extends Monitorable {
 
   */
 
+  async saveSinglePolicy(name, policy) {
+    await super.saveSinglePolicy(name, policy)
+
+    if (name == 'ipAllocation') {
+      let add = false
+      if (policy.dhcpIgnore) add = true
+      if (platform.isFireRouterManaged()) {
+        if (policy.allocations && Object.keys(policy.allocations).some(
+          uuid => policy.allocations[uuid].type === "static" && sysManager.getInterfaceViaUUID(uuid)
+        ))
+          add = true;
+      } else {
+        if (policy.type === "static")
+          add = true;
+      }
+      if (add)
+        await rclient.saddAsync(Constants.REDIS_KEY_HOST_DHCPCONF, this.getGUID());
+      else
+        await rclient.sremAsync(Constants.REDIS_KEY_HOST_DHCPCONF, this.getGUID());
+    }
+  }
+
+  async setPolicyAsync(name, policy, syncToMsp = false) {
+    if (!this.policy) await this.loadPolicyAsync();
+    if (name == 'dnsmasq') {
+      if (policy.alternativeIp && policy.type === "static") {
+        const mySubnet = sysManager.mySubnet();
+        if (!iptool.cidrSubnet(mySubnet).contains(policy.alternativeIp)) {
+          throw new Error(`Alternative IP address should be in ${mySubnet}`)
+        }
+      }
+      if (policy.secondaryIp && policy.type === "static") {
+        const mySubnet2 = sysManager.mySubnet2();
+        if (!iptool.cidrSubnet(mySubnet2).contains(policy.secondaryIp)) {
+          throw new Error(`Secondary IP address should be in ${mySubnet2}`)
+        }
+      }
+    }
+
+    return super.setPolicyAsync(name, policy, syncToMsp)
+  }
+
   keepalive() {
+    if (this.o.ipv4Addr) // this may trigger arp request to the device, the reply from the device will be captured in ARPSensor
+      linux.ping4(this.o.ipv4Addr)
     for (let i in this.ipv6Addr) {
       log.debug("keep alive ", this.o.mac,this.ipv6Addr[i]);
       setTimeout(() => {
@@ -230,7 +295,8 @@ class Host extends Monitorable {
       for (let ip6 in _ipv6Hosts) {
         let ip6Host = _ipv6Hosts[ip6];
         if (ip6Host.lastActiveTimestamp < lastActive - 60*30 || ip6Host.lastActiveTimestamp < ts-60*40) {
-          log.info("Host:"+this.o.mac+","+ts+","+ip6Host.lastActiveTimestamp+","+lastActive+" Remove Old Address "+ip6,JSON.stringify(ip6Host));
+          if (f.isMain())
+            log.info("Host:"+this.o.mac+", "+lastActive+" Remove Old Address "+ip6,JSON.stringify(ip6Host));
         } else {
           this.ipv6Addr.push(ip6);
         }
@@ -249,96 +315,24 @@ class Host extends Monitorable {
   }
 
   async predictHostNameUsingUserAgent() {
-    if (this.hasBeenGivenName()) return
+    if (this.hasBeenGivenName()) return []
 
-    const results = await rclient.smembersAsync("host:user_agent_m:" + this.o.mac)
-    if (!results || !results.length) return
-
-    let mobile = false;
-    let md_osdb = {};
-    let md_name = {};
-
-    for (let i in results) {
-      let r = JSON.parse(results[i]);
-      if (r.ua) {
-        let md = new MobileDetect(r.ua);
-        if (md == null) {
-          log.info("MD Null");
-          continue;
-        }
-        let name = null;
-        if (md.mobile()) {
-          mobile = true;
-          name = md.mobile();
-        }
-        let os = md.os();
-        if (os != null) {
-          if (md_osdb[os]) {
-            md_osdb[os] += 1;
-          } else {
-            md_osdb[os] = 1;
-          }
-        }
-        if (name != null) {
-          if (md_name[name]) {
-            md_name[name] += 1;
-          } else {
-            md_name[name] = 1;
-          }
-        }
-      }
-    }
-    log.debug("Sorting", JSON.stringify(md_name), JSON.stringify(md_osdb))
-    let osarray = [];
-    let namearray = [];
-    for (let i in md_osdb) {
-      osarray.push({
-        name: i,
-        rank: md_osdb[i]
-      });
-    }
-    for (let i in md_name) {
-      namearray.push({
-        name: i,
-        rank: md_name[i]
-      });
-    }
-    osarray.sort(function (a, b) {
-      return Number(b.rank) - Number(a.rank);
-    })
-    namearray.sort(function (a, b) {
-      return Number(b.rank) - Number(a.rank);
-    })
-    if (namearray.length > 0) {
-      this.o.ua_name = namearray[0].name;
-      this.predictedName = "(?)" + this.o.ua_name;
-
-      if (osarray.length > 0) {
-        this.o.ua_os_name = osarray[0].name;
-        this.predictedName += "/" + this.o.ua_os_name;
-      }
-      this.o.pname = this.predictedName;
-      log.debug(">>>>>>>>>>>> ", this.predictedName, JSON.stringify(this.o.ua_os_name));
-    }
+    const detect = this.o.detect
     const toSave = []
-    if (mobile == true) {
-      this.o.deviceClass = "mobile";
-      toSave.push("deviceClass");
+    if (detect) {
+      const nameElements = [detect.brand, detect.model].filter(Boolean)
+      if (nameElements.length) {
+        this.o.pname = "(?) " + nameElements.join(' ')
+        toSave.push("pname")
+        log.debug(">>>>>>>>>>>> ", this.o.mac, this.o.pname)
+      }
     }
-    if (this.o.ua_os_name) {
-      toSave.push("ua_os_name");
-    }
-    if (this.o.ua_name) {
-      toSave.push("ua_name");
-    }
-    if (this.o.pname) {
-      toSave.push("pname");
-    }
-    await this.save(toSave)
+
+    return toSave
   }
 
   hasBeenGivenName() {
-    if (this.o.name == null) {
+    if (!this.o.name) {
       return false;
     }
     if (this.o.name == this.o.ipv4Addr || this.o.name.indexOf("(?)") != -1 || this.o.name == "undefined") {
@@ -351,14 +345,9 @@ class Host extends Monitorable {
     return "host:mac:" + this.o.mac
   }
 
-  setScreenTime(screenTime = {}) {
-    this.o.screenTime = JSON.stringify(screenTime);
-    rclient.hmset("host:mac:" + this.o.mac, {
-      'screenTime': this.o.screenTime
-    });
-  }
-
-  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities' ]
+  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect', 'openports', 'screenTime', 'wlanVendor' ]
+  static metaFieldsNumber = [ 'firstFoundTimestamp', 'lastActiveTimestamp', 'bnameCheckTime', 'spoofingTime', '_identifyExpiration' ]
+  static metaFieldsActiveTS = ['lastActiveTimestamp', 'firstFoundTimestamp']
 
   redisfy() {
     const obj = super.redisfy()
@@ -370,17 +359,68 @@ class Host extends Monitorable {
     return obj
   }
 
-  touch(date) {
-    if (date != null || date <= this.o.lastActiveTimestamp) {
-      return;
+  async saveWithCompare(fields) {
+    const LAST_ACTIVE_SKIP_WINDOW_MS = 120
+
+    let obj = this.redisfy();
+    if (fields) {
+      obj = _.pick(obj, fields)
     }
-    if (date == null) {
-      date = Date.now() / 1000;
+
+    const keys = Object.keys(obj)
+    if (!keys.length) {
+      return false
     }
-    this.o.lastActiveTimestamp = date;
-    rclient.hmset("host:mac:" + this.o.mac, {
-      'lastActiveTimestamp': this.o.lastActiveTimestamp
-    });
+
+    let obj2 = await hostTool.getMACEntry(this.o.mac) || {};
+
+    let changed = {}
+    for (const key of keys) {
+      if (obj[key] != obj2[key]) {
+        changed[key] = obj[key]
+      }
+    }
+
+    const changedKeys = Object.keys(changed)
+    if (!changedKeys.length) {
+      return false
+    }
+
+    const onlyLastActive = changedKeys.length === 1 && changedKeys[0] === 'lastActiveTimestamp'
+    const onlyLastActiveAndFrom = changedKeys.length === 2 &&
+      changedKeys.includes('lastActiveTimestamp') && changedKeys.includes('lastFrom')
+    // Only skip heartbeat-style updates when Redis already had lastActiveTimestamp (avoid skipping first persist)
+    if ((onlyLastActive || onlyLastActiveAndFrom) && obj2.lastActiveTimestamp != null) {
+      const lastTs = Number(obj2.lastActiveTimestamp)
+      if (Number.isFinite(lastTs) && (Date.now()/1000 - lastTs) <= LAST_ACTIVE_SKIP_WINDOW_MS) {
+        //keep the last active timestamp in the object be the same as the one in the redis
+        this.o.lastActiveTimestamp = obj2.lastActiveTimestamp;
+        return false
+      }
+    }
+
+    log.debug('Saving', this.getMetaKey(), changed)
+    await hostTool.updateKeysInMAC(this.o.mac, changed)
+    return true
+  }
+
+  async save(fields) {
+    const saved = await this.saveWithCompare(fields)
+    if (!saved) {
+      return
+    }
+    if (!fields
+      || Array.isArray(fields) && _.intersection(fields, Host.metaFieldsActiveTS)
+      || Host.metaFieldsActiveTS.includes(fields) // if string as single key
+    ) {
+      const ts = this.o.lastActiveTimestamp || this.o.firstFoundTimestamp
+      if (ts) {
+        await rclient.pipelineAndLog([
+          [ 'zadd', Constants.REDIS_KEY_HOST_ACTIVE, ts, this.getGUID() ],
+          [ 'expire', this.getMetaKey(), fc.getConfig().timing['host.redis.mackey.expire'] ],
+        ])
+      }
+    }
   }
 
   getAllIPs() {
@@ -398,6 +438,7 @@ class Host extends Monitorable {
     try {
       const state = policy.state;
       const profileId = policy.profileId;
+      const hostConfPath = `${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`;
       if (this._profileId && profileId !== this._profileId) {
         log.info(`Current VPN profile id is different from the previous profile id ${this._profileId}, remove old rule on ${this.o.mac}`);
         const rule4 = new Rule("mangle").chn("FW_RT_DEVICE_5")
@@ -405,109 +446,75 @@ class Host extends Monitorable {
           .jmp(`SET --map-set ${this._profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(this._profileId.substring(4)) : VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
           .comment(`policy:mac:${this.o.mac}`);
         const rule6 = rule4.clone().fam(6);
-        await exec(rule4.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
-        });
-        await exec(rule6.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
-        });
-
+        await iptc.addRule(rule4.opr('-D'));
+        await iptc.addRule(rule6.opr('-D'));
         // remove rule that was set by state == null
-        rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-        rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-        await exec(rule4.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
-        });
-        await exec(rule6.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
-        });
-        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`).catch((err) => {});
+        await iptc.addRule(rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D'));
+        await iptc.addRule(rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D'));
+        
+        const vcConfPath = `${this._profileId.startsWith("VWG:") ? VirtWanGroup.getDNSRouteConfDir(this._profileId.substring(4)) : VPNClient.getDNSRouteConfDir(this._profileId)}/vc_${this.o.mac}.conf`;
+        await fs.unlinkAsync(hostConfPath).catch((err) => {});
+        await fs.unlinkAsync(vcConfPath).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
 
       this._profileId = profileId;
       if (!profileId) {
-        log.warn(`Profile id is not set on ${this.o.mac}`);
+        log.verbose(`Profile id is not set on ${this.o.mac}`);
         return;
       }
-      const rule = new Rule("mangle").chn("FW_RT_DEVICE_5")
+      const rule4 = new Rule("mangle").chn("FW_RT_DEVICE_5")
           .mdl("set", `--match-set ${Host.getDeviceSetName(this.o.mac)} src`)
           .jmp(`SET --map-set ${profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(profileId.substring(4)) : VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
           .comment(`policy:mac:${this.o.mac}`);
+      const rule6 = rule4.clone().fam(6);
+      const rule4Clear = rule4.clone().jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+      const rule6Clear = rule4Clear.clone().fam(6);
 
       if (profileId.startsWith("VWG:"))
         await VirtWanGroup.ensureCreateEnforcementEnv(profileId.substring(4));
       else
         await VPNClient.ensureCreateEnforcementEnv(profileId);
-      await Host.ensureCreateDeviceIpset(this.o.mac);
+      await Host.ensureCreateEnforcementEnv(this.o.mac);
 
+      const vcConfPath = `${profileId.startsWith("VWG:") ? VirtWanGroup.getDNSRouteConfDir(profileId.substring(4)) : VPNClient.getDNSRouteConfDir(profileId)}/vc_${this.o.mac}.conf`;
+      
       if (state === true) {
-        const rule4 = rule.clone();
-        const rule6 = rule.clone().fam(6);
-        await exec(rule4.toCmd('-A')).catch((err) => {
-          log.error(`Failed to add ipv4 vpn client rule for ${this.o.mac} ${profileId}`, err.message);
-        });
-        await exec(rule6.toCmd('-A')).catch((err) => {
-          log.error(`Failed to add ipv6 vpn client rule for ${this.o.mac} ${profileId}`, err.message);
-        });
-
+        await iptc.addRule(rule4.opr('-A'));
+        await iptc.addRule(rule6.opr('-A'));
         // remove rule that was set by state == null
-        rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-        rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-        await exec(rule4.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
-        });
-        await exec(rule6.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
-        });
+        await iptc.addRule(rule4Clear.opr('-D'));
+        await iptc.addRule(rule6Clear.opr('-D'));
 
-        await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`, `mac-address-tag=%${this.o.mac}$${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`).catch((err) => {});
+        const markTag = `${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`;
+        // use two config files, one in network directory, the other in vpn client hard route directory, the second file is controlled by conf-dir in VPNClient.js and will not be included when client is disconnected
+        await dnsmasq.writeConfig(hostConfPath, `mac-address-tag=%${this.o.mac}$vc_${this.o.mac}`).catch((err) => {});
+        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$vc_${this.o.mac}$${markTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
       // null means off
       if (state === null) {
         // remove rule that was set by state == true
-        const rule4 = rule.clone();
-        const rule6 = rule.clone().fam(6);
-        await exec(rule4.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
-        });
-        await exec(rule6.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
-        });
+        await iptc.addRule(rule4.opr('-D'));
+        await iptc.addRule(rule6.opr('-D'));
         // override target and clear vpn client bits in fwmark
-        rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-        rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-        await exec(rule4.toCmd('-A')).catch((err) => {
-          log.error(`Failed to add ipv4 vpn client rule for ${this.o.mac} ${profileId}`, err.message);
-        });
-        await exec(rule6.toCmd('-A')).catch((err) => {
-          log.error(`Failed to add ipv6 vpn client rule for ${this.o.mac} ${profileId}`, err.message);
-        });
-        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`).catch((err) => {});
+        await iptc.addRule(rule4Clear.opr('-A'));
+        await iptc.addRule(rule6Clear.opr('-A'));
+
+        await dnsmasq.writeConfig(hostConfPath, `mac-address-tag=%${this.o.mac}$vc_${this.o.mac}`).catch((err) => {});
+        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$vc_${this.o.mac}$${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
       // false means N/A
       if (state === false) {
-        const rule4 = rule.clone();
-        const rule6 = rule.clone().fam(6);
-        await exec(rule4.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.mac} ${profileId}`, err.message);
-        });
-        await exec(rule6.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${profileId}`, err.message);
-        });
+        await iptc.addRule(rule4.opr('-D'));
+        await iptc.addRule(rule6.opr('-D'));
 
         // remove rule that was set by state == null
-        rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-        rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-        await exec(rule4.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
-        });
-        await exec(rule6.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
-        });
-        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`).catch((err) => {});
+        await iptc.addRule(rule4Clear.opr('-D'));
+        await iptc.addRule(rule6Clear.opr('-D'));
+        await fs.unlinkAsync(hostConfPath).catch((err) => {});
+        await fs.unlinkAsync(vcConfPath).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
     } catch (err) {
@@ -519,11 +526,9 @@ class Host extends Monitorable {
     try {
       const dnsCaching = policy.dnsCaching;
       if (dnsCaching === true) {
-        const cmd = `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST_MAC} ${this.o.mac}`;
-        await exec(cmd);
+        await Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST_MAC, this.o.mac);
       } else {
-        const cmd = `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST_MAC} ${this.o.mac}`;
-        await exec(cmd);
+        await Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST_MAC, this.o.mac);
       }
     } catch (err) {
       log.error("Failed to set dnsmasq policy on " + this.o.mac, err);
@@ -531,47 +536,9 @@ class Host extends Monitorable {
   }
 
   async ipAllocation(policy) {
-    // to ensure policy set by different client won't conflict each other.
-    // delete fields in host:mac for all versions
-    await rclient.hdelAsync("host:mac:" + this.o.mac, "intfIp");
-    await rclient.hdelAsync("host:mac:" + this.o.mac, "staticAltIp");
-    await rclient.hdelAsync("host:mac:" + this.o.mac, "staticSecIp");
-    await rclient.hdelAsync("host:mac:" + this.o.mac, "dhcpIgnore");
-
-    if (policy.dhcpIgnore === true) {
-      await rclient.hsetAsync("host:mac:" + this.o.mac, "dhcpIgnore", "true");
-    }
-
-    if (policy.allocations) {
-      const intfIp = {}
-      for (const uuid of Object.keys(policy.allocations)) {
-        const allocation = policy.allocations[uuid]
-        if (allocation.type == 'static') {
-          intfIp[uuid] = {
-            ipv4: allocation.ipv4
-          }
-        }
-      }
-      await rclient.hsetAsync("host:mac:" + this.o.mac, "intfIp", JSON.stringify(intfIp));
-    }
-    else if (policy.type) {
-      const type = policy.type;
-
-      if (type === "dynamic") {
-        // nothing to do now
-      }
-      else if (type === "static") {
-        // Red/Blue
-        const alternativeIp = policy.alternativeIp;
-        const secondaryIp = policy.secondaryIp;
-        if (alternativeIp)
-          await rclient.hsetAsync("host:mac:" + this.o.mac, "staticAltIp", alternativeIp);
-        if (secondaryIp)
-          await rclient.hsetAsync("host:mac:" + this.o.mac, "staticSecIp", secondaryIp);
-      }
-    }
-
-    this.dnsmasq.onDHCPReservationChanged();
+    // those fields should not be used anymore
+    await hostTool.deleteKeysInMAC(this.o.mac, ["intfIp", "staticAltIp", "staticSecIp", "dhcpIgnore"]);
+    dnsmasq.onDHCPReservationChanged(this)
   }
 
   isMonitoring() {
@@ -579,52 +546,38 @@ class Host extends Monitorable {
     return this.spoofing;
   }
 
-  async qos(state) {
+  async qos(policy) {
+    let state = true;
+    switch (typeof policy) {
+      case "boolean":
+        state = policy;
+        break;
+      case "object":
+        state = policy.state;
+    }
     if (state === true) {
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF_MAC} ${this.o.mac}`).catch((err) => {
-        log.error(`Failed to remove ${this.o.mac} from ${ipset.CONSTANTS.IPSET_QOS_OFF_MAC}`, err.message);
-      });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
-        log.error(`Failed to remove ${Host.getIpSetName(this.o.mac, 4)} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
-      });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
-        log.error(`Failed to remove ${Host.getIpSetName(this.o.mac, 6)} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
-      });
+      await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF_MAC, this.o.mac);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, Host.getIpSetName(this.o.mac, 4));
+      await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, Host.getIpSetName(this.o.mac, 6));
     } else {
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF_MAC} ${this.o.mac}`).catch((err) => {
-        log.error(`Failed to add ${this.o.mac} to ${ipset.CONSTANTS.IPSET_QOS_OFF_MAC}`, err);
-      });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
-        log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 4)} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
-        log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 6)} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
+      await Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF_MAC, this.o.mac);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, Host.getIpSetName(this.o.mac, 4));
+      await Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, Host.getIpSetName(this.o.mac, 6));
     }
   }
 
   async acl(state) {
     if (state === true) {
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF_MAC} ${this.o.mac}`).catch((err) => {
-        log.error(`Failed to remove ${this.o.mac} from ${ipset.CONSTANTS.IPSET_ACL_OFF_MAC}`, err.message);
-      });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
-        log.error(`Failed to remove ${Host.getIpSetName(this.o.mac, 4)} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
-      });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
-        log.error(`Failed to remove ${Host.getIpSetName(this.o.mac, 6)} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
-      });
+      await Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF_MAC, this.o.mac);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, Host.getIpSetName(this.o.mac, 4));
+      await Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, Host.getIpSetName(this.o.mac, 6));
     } else {
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF_MAC} ${this.o.mac}`).catch((err) => {
-        log.error(`Failed to add ${this.o.mac} to ${ipset.CONSTANTS.IPSET_ACL_OFF_MAC}`, err);
-      });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
-        log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 4)} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
-      });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
-        log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 6)} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
-      });
+      await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF_MAC, this.o.mac);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, Host.getIpSetName(this.o.mac, 4));
+      await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, Host.getIpSetName(this.o.mac, 6));
     }
+    // refresh connmark to ensure the acl takes effect immediately on established connections
+    blockControl.scheduleRefreshConnmark();
   }
 
   async spoof(state) {
@@ -635,16 +588,24 @@ class Host extends Monitorable {
     }
     // set spoofing data in redis and trigger dnsmasq reload hosts
     if (state === true) {
-      await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
+      await hostTool.updateSpoofingDataInMAC(this.o.mac, {
+        spoofing: true,
+        spoofingTime: new Date() / 1000
+      })
         .catch(err => log.error("Unable to set spoofing in redis", err))
-        .then(() => this.dnsmasq.onSpoofChanged());
+        .then(() => dnsmasq.onSpoofChanged(this));
       this.spoofing = state;
     } else {
-      await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
+      await hostTool.updateSpoofingDataInMAC(this.o.mac, {
+        spoofing: false,
+        unspoofingTime: new Date() / 1000
+      })
         .catch(err => log.error("Unable to set spoofing in redis", err))
-        .then(() => this.dnsmasq.onSpoofChanged());
+        .then(() => dnsmasq.onSpoofChanged(this));
       this.spoofing = false;
     }
+
+    if (!await Mode.isSpoofModeOn()) return
 
     if (this.o.ipv4Addr == null) {
       log.info("Host:Spoof:NoIP", this.o);
@@ -675,7 +636,7 @@ class Host extends Monitorable {
       return;
     }
     if(state === true) {
-      hostTool.getMacByIP(gateway).then((gatewayMac) => {
+      hostTool.getMacByIPWithCache(gateway).then((gatewayMac) => {
         if (gatewayMac && gatewayMac === this.o.mac) {
           // ignore devices that has same mac address as gateway
           log.info(this.o.ipv4Addr + " has same mac address as gateway. Skip spoofing...");
@@ -731,58 +692,51 @@ class Host extends Monitorable {
   async shield(policy) {
   }
 
-  // Notice
-  processNotifications(channel, message) {
-    if (channel.toLowerCase().indexOf("notice") >= 0) {
-      if (this.callbacks.notice != null) {
-    log.debug("RX Notifcaitons", channel, message);
-        this.callbacks.notice(this, channel, message);
-      }
-    }
+  onUpdate(channel, mac, id, host) {
+    this.update(host, true)
+
+    // Most policies are iptables based, change device related ipset should be good enough, to update
+    // policies that leverage mechanism other than iptables, should register handler within its own domain
+    this.scheduleUpdateHostData();
   }
 
-  /*
-    {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
-    .indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
-    */
-  subscribe(mac, e) {
-    this.subscriber.subscribeOnce("DiscoveryEvent", e, mac, async (channel, type, ip, obj) => {
-      log.debug("Host:Subscriber", channel, type, ip, obj);
-      if (type === "HostPolicy:Changed" && f.isMain()) {
-        this.scheduleApplyPolicy();
-        log.info("HostPolicy:Changed", channel, mac, ip, type, obj);
-      } else if (type === "Device:Updated" && f.isMain()) {
-        // Most policies are iptables based, change device related ipset should be good enough, to update
-        // policies that leverage mechanism other than iptables, should register handler within its own domain
-        this.scheduleUpdateHostData();
-      } else if (type === "Device:Delete") {
-        log.info('Deleting Host', this.o.mac)
-        this.subscriber.unsubscribe('DiscoveryEvent', 'HostPolicy:Changed', this.o.mac);
-        this.subscriber.unsubscribe('DiscoveryEvent', 'Device:Updated',     this.o.mac);
-        this.subscriber.unsubscribe('DiscoveryEvent', 'Device:Delete',      this.o.mac);
+  async destroy() {
+    log.info('Deleting Host', this.o.mac)
+    await super.destroy()
 
-        if (f.isMain()) {
-          // this effectively stops all iptables rules against this device
-          // PolicyManager2 should be dealing with iptables entries alone
-          await this.flushIpsets();
+    messageBus.unsubscribe(this.constructor.getUpdateCh(), this.getGUID())
 
-          await this.resetPolicies()
+    if (f.isMain()) {
+      // this effectively stops all iptables rules against this device
+      // PolicyManager2 should be dealing with iptables entries alone
+      this.destroyEnv();
 
-          // delete redis host keys
-          if (this.o.ipv4Addr) {
-            await rclient.unlinkAsync(`host:ip4:${this.o.ipv4Addr}`)
-          }
-          if (Array.isArray(this.ipv6Addr) && this.ipv6Addr.length) {
-            await rclient.unlinkAsync(this.ipv6Addr.map(ip6 => `host:ip6:${ip6}`))
-          }
-          await rclient.unlinkAsync(`host:mac:${mac}`)
-        }
+      await this.resetPolicies().catch(err => { log.error('Error reseting policy', err) });
 
-        this.ipCache.reset();
-        delete envCreatedMap[this.o.mac];
-        delete instances[this.o.mac]
+      if (this.invalidateHostsFileTask)
+        clearTimeout(this.invalidateHostsFileTask);
+      const hostsFile = Host.getHostsFilePath(this.o.mac);
+      await fs.unlinkAsync(hostsFile).then(() => {
+        dnsmasq.scheduleReloadDNSService();
+        this._lastHostfileEntries = null;
+      }).catch((err) => {});
+
+      // delete redis host keys
+      if (this.o.ipv4Addr) {
+        await rclient.unlinkAsync(`host:ip4:${this.o.ipv4Addr}`)
       }
-    });
+      if (Array.isArray(this.ipv6Addr) && this.ipv6Addr.length) {
+        await rclient.unlinkAsync(this.ipv6Addr.map(ip6 => `host:ip6:${ip6}`))
+      }
+      await hostTool.deleteMac(this.o.mac)
+      await rclient.unlinkAsync(`neighbor:${this.getGUID()}`);
+      await rclient.unlinkAsync(`host:user_agent2:${this.getGUID()}`);
+    }
+
+    this.ipCache.reset();
+    delete envCreatedMap[this.o.mac];
+    await fwapc.deleteDeviceAcl(this.o.mac);
+    delete Monitorable.instances[this.o.mac]
   }
 
   scheduleUpdateHostData() {
@@ -791,31 +745,37 @@ class Host extends Monitorable {
     this.updateHostDataTask = setTimeout(async () => {
       try {
         // update tracking ipset
-        const macEntry = await hostTool.getMACEntry(this.o.mac);
-        const ipv4Addr = macEntry && macEntry.ipv4Addr;
+        const ipv4Addr = this.o.ipv4Addr;
+        const tags = [];
+        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+          const typeTags = await this.getTags(type) || [];
+          Array.prototype.push.apply(tags, typeTags);
+        }
         if (ipv4Addr) {
-          const recentlyAdded = this.ipCache.get(ipv4Addr);
+          const recentlyAdded = this.ipCache.peek(ipv4Addr);
           if (!recentlyAdded) {
-            await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`).catch((err) => {
-              log.error(`Failed to add ${ipv4Addr} to ${Host.getIpSetName(this.o.mac, 4)}`, err.message);
-            });
+            await Ipset.add(Host.getIpSetName(this.o.mac, 4), ipv4Addr);
+            // flatten device IP addresses into tag's ipset
+            // in practice, this ipset will be added to another tag's list:set if the device group belongs to a user group
+            for (const tag of tags)
+              await Ipset.add(Tag.getTagDeviceIPSetName(tag, 4), ipv4Addr);
             this.ipCache.set(ipv4Addr, 1);
           }
         }
-        let ipv6Addr = null;
-        ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
+        const ipv6Addr = this.o.ipv6Addr
         if (Array.isArray(ipv6Addr)) {
           for (const addr of ipv6Addr) {
-            const recentlyAdded = this.ipCache.get(addr);
+            const recentlyAdded = this.ipCache.peek(addr);
             if (!recentlyAdded) {
-              await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`).catch((err) => {
-                log.error(`Failed to add ${addr} to ${Host.getIpSetName(this.o.mac, 6)}`, err.message);
-              });
+              await Ipset.add(Host.getIpSetName(this.o.mac, 6), addr);
+              for (const tag of tags)
+                await Ipset.add(Tag.getTagDeviceIPSetName(tag, 6), addr);
               this.ipCache.set(addr, 1);
             }
           }
         }
-        await this.updateHostsFile();
+
+        await this.identifyDevice(false)
       } catch (err) {
         log.error('Error update host data', err)
       }
@@ -827,8 +787,8 @@ class Host extends Monitorable {
     // update hosts file in dnsmasq
     const hostsFile = Host.getHostsFilePath(this.o.mac);
     const lastActiveTimestamp = Number((macEntry && macEntry.lastActiveTimestamp) || 0);
-    if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 1800) {
-      // remove hosts file if it is not active in the last 30 minutes or it is already removed from host:mac:*
+    if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 86400 * 3 * 1000) {
+      // remove hosts file if it is not active in the last 3 days or it is already removed from host:mac:*
       if (this._lastHostfileEntries !== null) {
         await fs.unlinkAsync(hostsFile).catch((err) => { });
         dnsmasq.scheduleReloadDNSService();
@@ -864,9 +824,8 @@ class Host extends Monitorable {
       }
       return;
     }
-    const suffixes = (iface.searchDomains || []).concat([suffix]).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
-      return a.indexOf(v) === i;
-    });
+    const localDomains = sysManager.getInterfaces().flatMap((intf) => intf.localDomains || []);
+    const suffixes = _.uniq((iface.searchDomains || []).concat([suffix]).concat(localDomains).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))));
     const entries = [];
     for (const suffix of suffixes) {
       for (const alias of aliases) {
@@ -890,7 +849,7 @@ class Host extends Monitorable {
     }
     if (entries.length !== 0) {
       if (this._lastHostfileEntries !== entries.sort().join("\n")) {
-        await fs.writeFileAsync(hostsFile, entries.join("\n")).catch((err) => {
+        await dnsmasq.writeConfig(hostsFile, entries).catch((err) => {
           log.error(`Failed to write hosts file ${hostsFile}`, err.message);
         });
         dnsmasq.scheduleReloadDNSService();
@@ -909,48 +868,34 @@ class Host extends Monitorable {
   scheduleInvalidateHostsFile() {
     if (this.invalidateHostsFileTask)
       clearTimeout(this.invalidateHostsFileTask);
+    const ipAllocation = this.policy && this.policy.ipAllocation;
+    // do not invalidate hosts file if device has DHCP reservation
+    if (platform.isFireRouterManaged()) {
+      if (_.isObject(ipAllocation) && _.has(ipAllocation, "allocations") && Object.keys(ipAllocation.allocations).some(uuid => ipAllocation.allocations[uuid].type === "static" && sysManager.getInterfaceViaUUID(uuid)))
+        return;
+    } else {
+      if (_.isObject(ipAllocation) && _.get(ipAllocation, "type") === "static")
+        return;
+    }
     this.invalidateHostsFileTask = setTimeout(() => {
       const hostsFile = Host.getHostsFilePath(this.o.mac);
-      log.info(`Host ${this.o.mac} remains inactive for 30 minutes, removing hosts file ${hostsFile} ...`);
+      log.info(`Host ${this.o.mac} remains inactive for three days, removing hosts file ${hostsFile} ...`);
       fs.unlinkAsync(hostsFile).then(() => {
         dnsmasq.scheduleReloadDNSService();
         this._lastHostfileEntries = null;
       }).catch((err) => {});
-    }, 1800 * 1000);
+    }, 86400 * 3 * 1000);
   }
 
   static getHostsFilePath(mac) {
     return `${f.getRuntimeInfoFolder()}/hosts/${mac}`;
   }
 
-  async applyPolicy() {
-    try {
-      await this.loadPolicyAsync()
-      log.debug("HostPolicy:Loaded", JSON.stringify(this.policy));
-      const policy = JSON.parse(JSON.stringify(this.policy));
-
-      const policyManager = require('./PolicyManager.js');
-      await policyManager.executeAsync(this, this.o.ipv4Addr, policy)
-    } catch(err) {
-      log.error('Failed to apply host policy', this.o.mac, this.policy, err)
-    }
-  }
-
   async resetPolicies() {
     // don't use setPolicy() here as event listener has been unsubscribed
-    const defaultPolicy = {
-      tags: [],
-      vpnClient: {state: false},
-      acl: true,
-      dnsmasq: {dnsCaching: true},
-      adblock: false,
-      safeSearch: {state: false},
-      family: false,
-      unbound: {state: false},
-      doh: {state: false},
-      monitor: true
-    };
+    const defaultPolicy = this.constructor.defaultPolicy()
     const policy = {};
+    await this.loadPolicyAsync();
     // override keys in this.policy with default value
     for (const key of Object.keys(this.policy)) {
       if (defaultPolicy.hasOwnProperty(key))
@@ -959,9 +904,9 @@ class Host extends Monitorable {
         policy[key] = this.policy[key];
     }
     const policyManager = require('./PolicyManager.js');
-    await policyManager.executeAsync(this, this.o.ipv4Addr, policy);
+    await policyManager.execute(this, this.o.ipv4Addr, policy);
 
-    this.subscriber.publish("FeaturePolicy", "Extension:PortForwarding", null, {
+    messageBus.publish("FeaturePolicy", "Extension:PortForwarding", null, {
       "applyToAll": "*",
       "wanUUID": "*",
       "extIP": "*",
@@ -974,18 +919,16 @@ class Host extends Monitorable {
     })
 
     await rclient.unlinkAsync('policy:mac:' + this.o.mac);
+
+    await dnsmasq.removeHostsFile(this)
   }
 
   // type:
   //  { 'human': 0-100
-  //    'type': 'Phone','desktop','server','thing'
-  //    'subtype: 'ipad', 'iphone', 'nest'
-  //
   async calculateDType() {
-    let results = await rclient.smembersAsync("host:user_agent:" + this.o.ipv4Addr);
-    if (!results) return null
+    const uaCount = await rclient.zcountAsync("host:user_agent2:" + this.o.mac, 0, -1);
 
-    let human = results.length / 100.0;
+    const human = uaCount / 100.0;
     this.o.dtype = {
       'human': human
     }
@@ -993,85 +936,76 @@ class Host extends Monitorable {
     return this.o.dtype
   }
 
-  /*
-    {
-       deviceClass: mobile, thing, computer, other, unknown
-       human: score
-    }
-    */
-  /* produce following
-   *
-   * .o._identifyExpiration : time stamp
-   * .o._devicePhoto: "http of photo"
-   * .o._devicePolicy: <future>
-   * .o._deviceType:
-   * .o._deviceClass:
-   *
-   * this is for device identification only.
-   */
+  async packageTopNeighbors(count, local = false) {
+    const nkey = this.getNeighborKey(local);
+    const neighbors = await rclient.hgetallAsync(nkey);
 
-  packageTopNeighbors(count, callback) {
-    let nkey = "neighbor:"+this.o.mac;
-    rclient.hgetall(nkey,(err,neighbors)=> {
-      if (neighbors) {
-        let neighborArray = [];
-        for (let i in neighbors) {
-          try {
-            let obj = JSON.parse(neighbors[i]);
-            obj['ip'] = i;
-            neighborArray.push(obj);
-            count--;
-          } catch (e) {
-            log.warn('parse neighbor data error', neighbors[i], nkey);
-          }
-        }
-        neighborArray.sort(function (a, b) {
-          return Number(b.count) - Number(a.count);
-        })
-        callback(err, neighborArray.slice(0,count));
-      } else {
-        callback(err, null);
+    if (!neighbors) return null;
+
+    let neighborArray = [];
+    for (let i in neighbors) {
+      try {
+        let obj = JSON.parse(neighbors[i]);
+        if (local)
+          obj.dmac = i;
+        else
+          obj.ip = i;
+        neighborArray.push(obj);
+      } catch (e) {
+        log.warn('parse neighbor data error', neighbors[i], nkey);
       }
+    }
+    neighborArray.sort(function (a, b) {
+      return Number(b.count) - Number(a.count);
     });
-
+    return neighborArray.slice(0, count);
   }
 
   //'17.249.9.246': '{"neighbor":"17.249.9.246","cts":1481259330.564,"ts":1482050353.467,"count":348,"rb":1816075,"ob":1307870,"du":10285.943863000004,"name":"api-glb-sjc.smoot.apple.com"}
 
 
-  hashNeighbors(neighbors) {
+  hashNeighbors(neighbors, local = false) {
     let _neighbors = JSON.parse(JSON.stringify(neighbors));
     let debug =  sysManager.isSystemDebugOn() || !f.isProduction();
     for (let i in _neighbors) {
       let neighbor = _neighbors[i];
-      neighbor._neighbor = flowUtil.hashIp(neighbor.neighbor);
-      neighbor._name = flowUtil.hashIp(neighbor.name);
+      if (neighbor.ip) neighbor._neighbor = flowUtil.hashIp(neighbor.ip);
+      if (neighbor.name) {
+        const hashes = urlHash.canonicalizeAndHashExpressions(neighbor.name)
+        neighbor._name = hashes.length ? hashes[0][2] : null
+        if (hashes.length)
+          neighbor._nameFull = hashes[hashes.length-1][2]
+      }
+      if (neighbor.dmac)
+        neighbor._dmac = flowUtil.hashMac(neighbor.dmac);
       if (debug == false) {
         delete neighbor.neighbor;
         delete neighbor.name;
         delete neighbor.ip;
+        delete neighbor.dmac;
       }
     }
 
     return _neighbors;
   }
 
-  async identifyDevice(force) {
-    if (!f.isMain()) {
-      return;
+  async identifyDevice(force, classifyDetails = false) {
+    const activeTS = this.o.lastActiveTimestamp || this.o.firstFoundTimestamp
+    if (activeTS && activeTS < Date.now()/1000 - 60 * 60 * 24 * 7) {
+      log.verbose('HOST:IDENTIFY, inactive for long, skip')
+      return
     }
     if (!force && this.o._identifyExpiration != null && this.o._identifyExpiration > Date.now() / 1000) {
       log.silly("HOST:IDENTIFY too early", this.o.mac, this.o._identifyExpiration);
       return;
     }
-    log.info("HOST:IDENTIFY",this.o.mac);
+    log.verbose("HOST:IDENTIFY",this.o.mac);
     // need to have if condition, not sending too much info if the device is ...
     // this may be used initially _identifyExpiration
 
     await this.calculateDType();
 
     let obj = {
-      deviceClass: 'unknown',
       human: this.o.dtype,
       vendor: this.o.macVendor,
       ou: this.o.mac.slice(0,13),
@@ -1085,11 +1019,10 @@ class Host extends Monitorable {
       ssdpName: this.o.ssdpName,
       bname: this.o.bname,
       pname: this.o.pname,
-      ua_name : this.o.ua_name,
-      ua_os_name : this.o.ua_os_name,
-      name : this.name(),
+      name : this.o.name,
       monitored: this.policy['monitor'],
-      vpnClient: this.policy['vpnClient']
+      vpnClient: this.policy['vpnClient'],
+      detect: this.o.detect,
     };
 
     // Do not pass vendor info to cloud if vendor is unknown, this can force cloud to validate vendor oui info again.
@@ -1097,75 +1030,76 @@ class Host extends Monitorable {
       delete obj.vendor;
     }
 
-    if (this.o.deviceClass == "mobile") {
-      obj.deviceClass = "mobile";
-    }
     try {
       obj.flowInCount = await rclient.zcountAsync("flow:conn:in:" + this.o.mac, "-inf", "+inf");
       obj.flowOutCount = await rclient.zcountAsync("flow:conn:out:" + this.o.mac, "-inf", "+inf");
 
-      let neighbors = await util.promisify(this.packageTopNeighbors).bind(this)(60)
+      let neighbors = await this.packageTopNeighbors(60)
       if (neighbors) {
         obj.neighbors = this.hashNeighbors(neighbors);
       }
-      let results = await rclient.smembersAsync("host:user_agent:" + this.o.ipv4Addr)
+      let neighborsLocal = await this.packageTopNeighbors(60, true);
+      if (neighborsLocal) {
+        obj.neighborsLocal = this.hashNeighbors(neighborsLocal, true);
+      }
+      // old data clean sensor should have cleaned most of obsolated entries
+      const results = await rclient.zrangeAsync(`host:user_agent2:${this.o.mac}`, 0, -1)
+      if (results.length) obj.agents = results.map(str => JSON.parse(str).ua)
 
-      if (!results) return obj;
       if (this.ipv6Addr) {
         obj.ipv6Addr = this.ipv6Addr.filter(currentIp => !currentIp.startsWith("fe80::"));
       }
-      obj.agents = results;
 
       // assign policy values just before request to give it enough time to load policy from constructor
       obj.monitored = this.policy.monitor
       obj.vpnClient = this.policy.vpnClient
+      obj.internetActivityStats = await this.fetch24HoursInternetActivityStats();
 
-      let data = await bone.deviceAsync("identify", obj)
-      if (data != null) {
+      const data = await bone.deviceAsync(classifyDetails ? 'classify_details' : "identify", obj).catch(err => {
+        // http error, no need to log host data
+        log.error('Error identify host', obj.ipv4, obj.name || obj.bname, err)
+      })
+      if (data && !classifyDetails) {
         log.debug("HOST:IDENTIFY:RESULT", this.name(), data);
 
-        // pretty much set everything from cloud to local
-        // _identifyExpiration is set here
-        for (let field in data) {
-          let value = data[field]
-          if(value.constructor.name === 'Array' ||
-            value.constructor.name === 'Object') {
-            this.o[field] = JSON.stringify(value)
-          } else {
-            this.o[field] = value
-          }
+        if (data._identifyExpiration) {
+          this.o._identifyExpiration = data._identifyExpiration
+          delete data._identifyExpiration
+        } else {
+          this.o._identifyExpiration = Date.now()/1000 + 3600*24*3
         }
 
-        if (data._vendor!=null && (this.o.macVendor == null || this.o.macVendor === 'Unknown')) {
+        if (data._vendor && (!this.o.macVendor || this.o.macVendor === 'Unknown')) {
           this.o.macVendor = data._vendor;
         }
-        if (data._name!=null) {
-          this.o.pname = data._name;
-        }
-        if (data._deviceType) {
-          this.o._deviceType = data._deviceType
-        }
-        await this.save();
+
+        if (!this.o.detect) this.o.detect = {}
+        this.o.detect.cloud = data
+        await this.save('_identifyExpiration')
+        sem.emitEvent({
+          type: 'DetectUpdate',
+          from: 'cloud',
+          toProcess: 'FireMain',
+          mac: this.o.mac,
+          detect: data,
+          suppressEventLogging: true,
+        })
       }
 
+      return data
     } catch (e) {
       log.error("HOST:IDENTIFY:ERROR", obj, e);
+      return null
     }
-    return obj;
-  }
-
-  clean() {
-    this.callbacks = {};
-  }
-
-  on(event, callback) {
-    this.callbacks[event] = callback;
   }
 
   name() {
-    return getPreferredBName(this.o)
+    return this.getReadableName()
   }
 
+  getReadableName() {
+    return getPreferredName(this.o) || super.getReadableName()
+  }
 
   toShortString() {
     let name = this.name();
@@ -1214,9 +1148,10 @@ class Host extends Monitorable {
       ip: this.o.ipv4Addr,
       ipv6: this.ipv6Addr,
       mac: this.o.mac,
+      devId: this.o.devId,
       lastActive: this.o.lastActiveTimestamp,
       firstFound: this.o.firstFoundTimestamp,
-      macVendor: this.o.macVendor,
+      macVendor: this.o.macVendor || 'Unknown',
       recentActivity: this.o.recentActivity,
       manualSpoof: this.o.manualSpoof,
       dhcpName: this.o.dhcpName,
@@ -1226,11 +1161,15 @@ class Host extends Monitorable {
       userLocalDomain: this.o.userLocalDomain,
       localDomain: this.o.localDomain,
       intf: this.o.intf ? this.o.intf : 'Unknown',
-      stpPort: this.o.stpPort
+      stpPort: this.o.stpPort,
     }
 
-    if (this.o.ipv4Addr == null) {
-      json.ip = this.o.ipv4;
+    const pickAssignment = [
+      'activities', 'name', 'modelName', 'manufacturer', 'openports', 'screenTime', 'pinned', 'detect'
+    ]
+    // undefined fields won't be serialized in HTTP response, don't bother checking
+    for (const f of pickAssignment) {
+      json[f] = this.o[f]
     }
 
     const preferredBName = getPreferredBName(this.o)
@@ -1241,98 +1180,48 @@ class Host extends Monitorable {
 
     json.names = this.getNameCandidates()
 
-    if (this.o.activities) {
-      json.activities= this.o.activities;
-    }
-
-    if (this.o.name) {
-      json.name = this.o.name;
-    }
-
-    if (this.o._deviceType) {
-      json._deviceType = this.o._deviceType
-    }
-
-    if (this.o._deviceType_p) {
-      json._deviceType_p = this.o._deviceType_p
-    }
-
-    if (this.o._deviceType_top3) {
-      try {
-        json._deviceType_top3 = JSON.parse(this.o._deviceType_top3)
-      } catch(err) {
-        log.error("Failed to parse device type top 3 info:", err)
-      }
-    }
-
-    if(this.o.modelName) {
-      json.modelName = this.o.modelName
-    }
-
-    if(this.o.manufacturer) {
-      json.manufacturer = this.o.manufacturer
-    }
-
     if (this.hostname) {
       json._hostname = this.hostname
     }
     if (this.policy) {
-      json.policy = this.policy;
-
-      if (this.policy.tags) {
-        json.tags = this.policy.tags
+      const policy = Object.assign({}, this.policy); // a copy of this.policy
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const config = Constants.TAG_TYPE_MAP[type];
+        const policyKey = config.policyKey;
+        const tags = policy[policyKey];
+        policy[policyKey] = [];
+        json[policyKey] = policy[policyKey];
+        if (_.isArray(tags)) {
+          for (const uid of tags) {
+            const tag = TagManager.getTagByUid(uid);
+            if (tag)
+              policy[policyKey].push(uid);
+          }
+        }
       }
+      json.policy = policy;
     }
     if (this.flowsummary) {
       json.flowsummary = this.flowsummary;
     }
+    if (this.hasOwnProperty("stale"))
+      json.stale = this.stale;
 
-    if(this.o.openports) {
+    json.wifiSD = this.wifiSD
+
+    if (this.o.wlanVendor) {
       try {
-        json.openports = JSON.parse(this.o.openports);
-      } catch(err) {
-        log.error("Failed to parse openports:", err);
+        json.wlanVendor = JSON.parse(this.o.wlanVendor);
+      } catch (e) {
+        json.wlanVendor = [this.o.wlanVendor];
       }
     }
-    if (this.o.screenTime) {
-      try {
-        json.screenTime = JSON.parse(this.o.screenTime);
-      } catch (err) {
-        log.error("Failed to parse screenTime:", err);
-      }
-    }
-
-    // json.macVendor = this.name();
 
     return json;
   }
 
   _getPolicyKey() {
     return `policy:mac:${this.getUniqueId()}`;
-  }
-
-  setPolicy(name, data, callback) {
-    callback = callback || function() {}
-    return util.callbackify(this.setPolicyAsync).bind(this)(name, data, callback)
-  }
-
-  // policy:mac:xxxxx
-  async setPolicyAsync(name, data) {
-    if (!this.policy)
-      await this.loadPolicyAsync();
-    if (this.policy[name] != null && this.policy[name] == data) {
-      log.debug("Host:setPolicy:Nochange", this.o.ipv4Addr, name, data);
-      return;
-    }
-    log.debug("Host:setPolicy:Changed", this.o.ipv4Addr, name, data);
-    await this.saveSinglePolicy(name, data)
-
-    const obj = {};
-    obj[name] = data;
-    if (this.subscriber) {
-      this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.mac, obj);
-    }
-    return obj
   }
 
   policyToString() {
@@ -1347,31 +1236,6 @@ class Host extends Monitorable {
     }
   }
 
-  async saveSinglePolicy(name, policy) {
-    this.policy[name] = policy
-    let key = "policy:mac:" + this.o.mac;
-    await rclient.hmsetAsync(key, name, JSON.stringify(policy))
-  }
-
-  async loadPolicyAsync() {
-    const key = "policy:mac:" + this.o.mac;
-
-    const data = await rclient.hgetallAsync(key)
-    log.debug("Host:Policy:Load:Debug", key, data);
-    this.policy = {};
-    if (data) {
-      for (const k in data) {
-        this.policy[k] = JSON.parse(data[k]);
-      }
-    }
-
-    return this.policy
-  }
-
-  loadPolicy(callback) {
-    return util.callbackify(this.loadPolicyAsync).bind(this)(callback || function(){})
-  }
-
   async getVpnClientProfileId() {
     if (!this.policy)
       await this.loadPolicyAsync();
@@ -1382,73 +1246,245 @@ class Host extends Monitorable {
     return null;
   }
 
-  async getTags() {
-    if (!this.policy) await this.loadPolicyAsync()
-
-    return this.policy.tags && this.policy.tags.map(String) || [];
-  }
-
-  async tags(tags) {
+  async tags(tags, type = Constants.TAG_TYPE_GROUP) {
+    const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
+    if (!policyKey) {
+      log.error(`Unknown tag type ${type}, ignore tags`, tags);
+      return;
+    }
     tags = (tags || []).map(String);
-    this._tags = this._tags || [];
+    this[`_${policyKey}`] = this[`_${policyKey}`] || [];
     if (!this.o || !this.o.mac) {
       log.error(`Mac address is not defined`);
       return;
     }
+    const macEntry = await hostTool.getMACEntry(this.o.mac);
+    const ipv4Addr = macEntry && macEntry.ipv4Addr;
+    const ipv6Addrs = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
     // remove old tags that are not in updated tags
-    const removedTags = this._tags.filter(uid => !tags.includes(uid));
+    const removedTags = this[`_${policyKey}`].filter(uid => !tags.includes(uid));
     for (let removedTag of removedTags) {
-      const tag = TagManager.getTagByUid(removedTag);
-      if (tag) {
+      const tagExists = await TagManager.tagUidExists(removedTag, type);
+      if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedTag);
-        await exec(`sudo ipset del -! ${Tag.getTagDeviceMacSetName(removedTag)} ${this.o.mac}`).catch((err) => {});
-        await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {});
-        await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {});
-        await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {});
-        await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {});
+        await Ipset.del(Tag.getTagDeviceMacSetName(removedTag), this.o.mac);
+        if (ipv4Addr)
+          await Ipset.del(Tag.getTagDeviceIPSetName(removedTag, 4), ipv4Addr);
+        if (_.isArray(ipv6Addrs)) {
+          for (const ipv6Addr of ipv6Addrs)
+            await Ipset.del(Tag.getTagDeviceIPSetName(removedTag, 6), ipv6Addr);
+        }
+        await Ipset.del(Tag.getTagSetName(removedTag), Host.getIpSetName(this.o.mac, 4));
+        await Ipset.del(Tag.getTagSetName(removedTag), Host.getIpSetName(this.o.mac, 6));
+        await Ipset.del(Tag.getTagDeviceSetName(removedTag), Host.getIpSetName(this.o.mac, 4));
+        await Ipset.del(Tag.getTagDeviceSetName(removedTag), Host.getIpSetName(this.o.mac, 6));
         await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${removedTag}_${this.o.mac.toUpperCase()}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedTag} not found`);
       }
+      Tag.scheduleFwapcSetGroupMACs(removedTag, type);
     }
     // filter updated tags in case some tag is already deleted from system
     const updatedTags = [];
     for (let uid of tags) {
-      const tag = TagManager.getTagByUid(uid);
-      if (tag) {
+      const tagExists = await TagManager.tagUidExists(uid, type);
+      if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(uid);
-        await exec(`sudo ipset add -! ${Tag.getTagDeviceMacSetName(uid)} ${this.o.mac}`).catch((err) => {
-          log.error(`Failed to add tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
-        });
-        await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
-          log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 4)} to tag ipset ${Tag.getTagSetName(uid)}`, err.message);
-        });
-        await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
-          log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 6)} to tag ipset ${Tag.getTagSetName(uid)}`, err.message);
-        });
-        await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(uid)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
-          log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 4)} to tag ipset ${Tag.getTagDeviceSetName(uid)}`, err.message);
-        });
-        await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(uid)} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
-          log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 6)} to tag ipset ${Tag.getTagDeviceSetName(uid)}`, err.message);
-        });
+        await Ipset.add(Tag.getTagDeviceMacSetName(uid), this.o.mac);
+        if (ipv4Addr)
+          await Ipset.add(Tag.getTagDeviceIPSetName(uid, 4), ipv4Addr);
+        if (_.isArray(ipv6Addrs)) {
+          for (const ipv6Addr of ipv6Addrs)
+            await Ipset.add(Tag.getTagDeviceIPSetName(uid, 6), ipv6Addr);
+        }
+        await Ipset.add(Tag.getTagSetName(uid), Host.getIpSetName(this.o.mac, 4));
+        await Ipset.add(Tag.getTagSetName(uid), Host.getIpSetName(this.o.mac, 6));
+        await Ipset.add(Tag.getTagDeviceSetName(uid), Host.getIpSetName(this.o.mac, 4));
+        await Ipset.add(Tag.getTagDeviceSetName(uid), Host.getIpSetName(this.o.mac, 6));
         const dnsmasqEntry = `mac-address-group=%${this.o.mac.toUpperCase()}@${uid}`;
-        await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${uid}_${this.o.mac.toUpperCase()}.conf`, dnsmasqEntry).catch((err) => {
-          log.error(`Failed to write dnsmasq tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
+        await dnsmasq.writeConfig(`${f.getUserConfigFolder()}/dnsmasq/tag_${uid}_${this.o.mac.toUpperCase()}.conf`, dnsmasqEntry).catch((err) => {
+          log.error(`Failed to write dnsmasq tag ${uid} on mac ${this.o.mac}`, err);
         })
         updatedTags.push(uid);
+        Tag.scheduleFwapcSetGroupMACs(uid, type);
       } else {
         log.warn(`Tag ${uid} not found`);
       }
     }
-    this._tags = updatedTags;
-    await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
     dnsmasq.scheduleRestartDNSService();
+    dnsmasq.onDHCPReservationChanged(this)
+    this[`_${policyKey}`] = updatedTags;
+    await this.setPolicyAsync(policyKey, this[`_${policyKey}`]); // keep tags in policy data up-to-date
   }
 
   getNicUUID() {
     return this.o.intf
   }
+
+  async _get24HoursInternetActivity() {
+    const app = ["internet"];
+    const mac = this.o.mac || this.getUniqueId();
+    if (!mac) {
+      return null;
+    }
+
+    // Calculate time range: past 24 hours
+    const now = Math.floor(Date.now() / 1000);
+    const startTimestamp = now - 24 * 3600; // 24 hours ago
+    const endTimestamp = now; // current time
+
+    const stats = await TimeUsageTool.getAppTimeUsageStats(
+      mac,
+      null,   // containerUid is null because we are querying for a single device
+      app,
+      startTimestamp,
+      endTimestamp,
+      "hour",
+      true,  // uidIsDevice
+      true, // includeSlots
+      false  // includeIntervals
+    );
+
+    if (!stats || !stats.appTimeUsage || !stats.appTimeUsage.internet || !stats.appTimeUsage.internet.slots) {
+      return {
+        last24HoursTotal: 0,
+        last24HoursMidnight: 0
+      };
+    }
+
+    const slots = stats.appTimeUsage.internet.slots;
+    const last24HoursStart = now - 24 * 3600;
+
+    let last24HoursTotal = 0;
+    let last24HoursMidnightTotal = 0;
+
+    // Iterate through all slots
+    for (const [slotTimestampStr, slotData] of Object.entries(slots)) {
+      const slotTimestamp = parseInt(slotTimestampStr, 10);
+      const totalMins = slotData.totalMins || 0;
+
+      // Check if slot is within last 24 hours
+      if (slotTimestamp >= last24HoursStart && slotTimestamp < now) {
+        last24HoursTotal += totalMins;
+
+        // Check if slot is in midnight hours (1:00-5:00)
+        const slotDate = new Date(slotTimestamp * 1000);
+        const hour = slotDate.getHours();
+        if (hour >= 1 && hour < 5) {
+          last24HoursMidnightTotal += totalMins;
+        }
+      }
+    }
+    return {
+      last24HoursTotal: last24HoursTotal,
+      last24HoursMidnight: last24HoursMidnightTotal
+    };
+  }
+
+  async _get24HoursTopDomains(appName) {
+
+    const app = appName || "internet";
+    const mac = this.o.mac || this.getUniqueId();
+    if (!mac) {
+      return {
+        last24Hours: [],
+        last24HoursMidnight: []
+      };
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    
+    // Calculate all hour timestamps in the past 24 hours
+    const hourTimestampsSet = new Set();
+    const currentHour = new Date(now * 1000);
+    currentHour.setMinutes(0, 0, 0);
+    currentHour.setSeconds(0, 0, 0);
+    currentHour.setMilliseconds(0);
+    const currentHourTs = Math.floor(currentHour.getTime() / 1000);
+    
+    for (let hourTs = currentHourTs - 23 * 3600; hourTs <= currentHourTs; hourTs += 3600) {
+      if (hourTs < now) {
+        hourTimestampsSet.add(hourTs);
+      }
+    }
+
+    // Calculate midnight hour timestamps (1:00-5:00, excluding 5:00) in the past 24 hours
+    const midnightHourTimestampsSet = new Set();
+    for (let hourTs = currentHourTs - 23 * 3600; hourTs <= currentHourTs; hourTs += 3600) {
+      const date = new Date(hourTs * 1000);
+      const hour = date.getHours();
+      // 1:00-4:00 (excluding 5:00)
+      if (hour >= 1 && hour < 5 && hourTs < now) {
+        midnightHourTimestampsSet.add(hourTs);
+      }
+    }
+
+    // Aggregate domain counts from all hour keys
+    const last24HoursMap = new Map();
+    const midnightMap = new Map();
+
+    // Fetch data for last 24 hours
+    for (const hourTs of hourTimestampsSet) {
+      const key = `flow_domain:${app}:${mac}:${hourTs}`;
+      try {
+        const domainScores = await rclient.zrangeAsync(key, 0, -1, 'withscores');
+        for (let i = 0; i < domainScores.length; i += 2) {
+          const domain = domainScores[i];
+          const count = parseFloat(domainScores[i + 1]) || 0;
+          if (domain && count > 0) {
+            const current = last24HoursMap.get(domain) || 0;
+            last24HoursMap.set(domain, current + count);
+          }
+        }
+      } catch (err) {
+        // Key might not exist, skip silently
+      }
+    }
+
+    // Fetch data for midnight hours
+    for (const hourTs of midnightHourTimestampsSet) {
+      const key = `flow_domain:${app}:${mac}:${hourTs}`;
+      try {
+        const domainScores = await rclient.zrangeAsync(key, 0, -1, 'withscores');
+        for (let i = 0; i < domainScores.length; i += 2) {
+          const domain = domainScores[i];
+          const count = parseFloat(domainScores[i + 1]) || 0;
+          if (domain && count > 0) {
+            const current = midnightMap.get(domain) || 0;
+            midnightMap.set(domain, current + count);
+          }
+        }
+      } catch (err) {
+        // Key might not exist, skip silently
+      }
+    }
+
+    // Convert maps to arrays, sort by count (descending), and take top 10
+    const last24Hours = Array.from(last24HoursMap.entries())
+      .map(([domain, count]) => ({ domain, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    const last24HoursMidnight = Array.from(midnightMap.entries())
+      .map(([domain, count]) => ({ domain, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    return {
+      "last24Hours": last24Hours,
+      "last24HoursMidnight": last24HoursMidnight
+    };
+  }
+
+  async fetch24HoursInternetActivityStats() {
+    const activity = await this._get24HoursInternetActivity();
+    const topDomains = await this._get24HoursTopDomains();
+    return {
+      "activityMinutes": activity,
+      "topDomains": topDomains
+    };
+  }
+
 }
 
 module.exports = Host

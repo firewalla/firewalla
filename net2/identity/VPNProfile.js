@@ -28,6 +28,9 @@ const NetworkProfile = require('../NetworkProfile.js');
 const Message = require('../Message.js');
 
 const Identity = require('../Identity.js');
+const LRU = require('lru-cache');
+const ipUidCache = new LRU({ maxAge: 1800 * 1000 }); // this cache maintains the last-seen mapping between IP and profile ID, ip of a disconnected client may still appear in zeek log due to timeout
+const _ = require('lodash');
 
 const vpnProfiles = {};
 
@@ -67,6 +70,7 @@ class VPNProfile extends Identity {
       const lastActiveTimestamps = statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn).map(c => c.lastActive) || [];
       vpnProfiles.push({
         uid: cn,
+        devId: this.getKeyOfInitData() + ":" + cn,
         cn: cn,
         settings: allSettings[cn],
         connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || [],
@@ -93,32 +97,39 @@ class VPNProfile extends Identity {
       vpnProfiles[cn].active = true;
     }
 
-    for (const cn of Object.keys(vpnProfiles)) {
+    await Promise.all(Object.keys(vpnProfiles).map(async cn => {
       if (vpnProfiles[cn].active === false) {
         delete vpnProfiles[cn]
-        continue
+        return;
       }
 
       const redisMeta = await rclient.hgetallAsync(vpnProfiles[cn].getMetaKey())
       Object.assign(vpnProfiles[cn].o, VPNProfile.parse(redisMeta))
-    }
+    }))
     return vpnProfiles;
   }
 
   static async getIPUniqueIdMappings() {
+    ipUidCache.prune();
     const statistics = await new VpnManager().getStatistics();
-    if (!statistics || !statistics.clients) {
-      return {};
-    }
-    const clients = statistics.clients;
-    const ipUidMap = {};
-    for (const client of clients) {
-      if (!client.vAddr || !client.cn)
-        continue;
-      for (const addr of client.vAddr) {
-        if (new Address4(addr).isValid())
-          ipUidMap[addr] = client.cn;
+    if (statistics && _.isArray(statistics.clients)) {
+      const clients = statistics.clients;
+      for (const client of clients) {
+        if ((!client.vAddr && !client.vAddr6) || !client.addr || !client.cn)
+          continue;
+        for (const addr of client.vAddr) {
+          if (new Address4(addr).isValid())
+            ipUidCache.set(addr, client.cn);
+        }
+        for (const addr of client.vAddr6) {
+          if (new Address6(addr).isValid())
+            ipUidCache.set(addr, client.cn);
+        }
       }
+    }
+    const ipUidMap = {};
+    for (const key of ipUidCache.keys()) {
+      ipUidMap[key] = ipUidCache.peek(key); // peek will not update timestamp in LRU cache
     }
     return ipUidMap;
   }
@@ -131,10 +142,14 @@ class VPNProfile extends Identity {
     const clients = statistics.clients;
     const ipEndpointMap = {};
     for (const client of clients) {
-      if (!client.vAddr || !client.addr)
+      if ((!client.vAddr && !client.vAddr6) || !client.addr)
         continue;
       for (const addr of client.vAddr) {
         if (new Address4(addr).isValid())
+          ipEndpointMap[addr] = client.addr;
+      }
+      for (const addr of client.vAddr6) {
+        if (new Address6(addr).isValid())
           ipEndpointMap[addr] = client.addr;
       }
     }
@@ -150,7 +165,8 @@ class VPNProfile extends Identity {
   }
 
   getLocalizedNotificationKeySuffix() {
-    return ".ovpn";
+    const obj = this.toJson();
+    return `.vpn.${_.isArray(obj.clientSubnets) && obj.clientSubnets.length > 1 ? "s2s": "cs"}.ovpn`;
   }
 
   getDeviceNameInNotificationContent(alarm) {

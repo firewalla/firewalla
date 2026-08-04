@@ -4,6 +4,6 @@ services:
   trojan:
     image: public.ecr.aws/a0j1s2e9/trojan:latest
     volumes:
-      - ./config.json:/etc/trojan-go/config.json
+      - ./:/etc/trojan-go/
     cap_add:
       - NET_ADMIN

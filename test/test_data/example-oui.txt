@@ -1,0 +1,13 @@
+001018 Broadcom
+0017F0 SZCOM Broadband Network Technology Co.,Ltd
+0017F1 Renu Electronics Pvt Ltd
+0017F2 Apple, Inc.
+0017F3 Harris Corporation
+0050F2 MICROSOFT CORP.
+00904C Epigram, Inc.
+206D31 FIREWALLA INC
+
+FCA47A0 Broadcom Inc.
+FCA47AA Shenzhen Elebao Technology Co., Ltd
+
+70B3D593F Vision Sensing Co., Ltd.

@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -135,12 +135,8 @@ module.exports = class {
     });
   }
 
-    getPrivateKey(callback) {
-      fs.readFile(fileRSAKey, function(err, data) {
-        if(err) throw err;
-
-        callback(err, data.toString('utf8'));
-      });
+    async getPrivateKey() {
+      return fs.promises.readFile(fileRSAKey, 'utf8')
     }
 
     keyExists() {

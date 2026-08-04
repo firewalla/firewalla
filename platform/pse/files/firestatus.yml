@@ -1,4 +1,6 @@
 init_state: normal
+booting_threshold: 120
+booted_duration: 120
 leds:
   - /sys/class/leds/sys_led/trigger
   - /sys/class/leds/red_led/trigger
@@ -8,7 +10,7 @@ states:
   - state: force_red_on
     leds: ["none", "default-on"]
   - state: force_off
-    leds: ["non", "none"]
+    leds: ["none", "none"]
   - state: critical_error
     leds: ["none", "default-on"]
   - state: reset
@@ -19,11 +21,13 @@ states:
     leds: ["heartbeat", "none"]
   - state: writing_disk
     leds: ["heartbeat", "none"]
+  - state: booted
+    leds: ["default-on", "none"]
+  - state: booting
+    leds: ["timer", "none"]
   - state: normal_visible
     leds: ["default-on", "none"]
   - state: ready_for_pairing
     leds: ["none", "none"]
   - state: normal
     leds: ["none", "none"]
-  - state: booting
-    leds: ["timer", "none"]

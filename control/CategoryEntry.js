@@ -19,6 +19,18 @@ const { Address4, Address6 } = require('ip-address');
 
 class CategoryEntry {
   static parse(item) {
+    // Must short-circuit before the colon-based split below, since regex bodies may contain ":"
+    if (item.startsWith("regex:")) {
+      const body = item.slice(6);
+      if (!body) {
+        throw new Error("Empty regex entry");
+      }
+      if (!CategoryEntry.isValidDomainRE(body)) {
+        throw new Error("Invalid regex entry");
+      }
+      return [{ type: "domain_re", id: body, pcount: 0 }];
+    }
+
     const entries = [];
     const entry = {};
     const tokens = item.split(":");
@@ -74,7 +86,7 @@ class CategoryEntry {
     entry.type = type;
     entry.id = id;
 
-    if (proto && !["tcp", "udp"].includes(proto)) {
+    if (proto && !["tcp", "udp", "icmp", "icmpv6"].includes(proto)) {
       throw new Error("Invalid protocol");
     }
 
@@ -85,13 +97,13 @@ class CategoryEntry {
         if (extra.length !== 0) {
           throw new Error("Invalid port format");
         }
-        const startPort = this.validatePort(portStartStr);
+        const startPort = (proto === "tcp" || proto === "udp") ? this.validatePort(portStartStr) : portStartStr;
         if (startPort === null) {
           throw new Error("Invalid port format");
         }
         let endPort;
         if (portEndStr) {
-          endPort = this.validatePort(portEndStr);
+          endPort = (proto === "tcp" || proto === "udp") ? this.validatePort(portEndStr) : portEndStr;
           if (endPort === null || endPort < startPort) {
             throw new Error("Invalid port format");
           }
@@ -126,28 +138,46 @@ class CategoryEntry {
         let startPort = portObj.start;
         let endPort = portObj.end;
         let proto = portObj.proto;
-        if (proto === "udp") {
-          entries.push(this.composeEntry(entry, portObj, false));
-        } else if (proto === "tcp") {
-          while (true) {
-            let hit = false;
-            for (const tlsPort of domainOnlyPorts) {
-              if (tlsPort >= startPort && tlsPort <= endPort) {
-                hit = true;
-                if (startPort < tlsPort) {
-                  entries.push(this.composeEntry(entry, { start: startPort, end: tlsPort - 1, proto: "tcp" }, false));
+        switch (proto) {
+          case "udp": {
+            if ( startPort <= 443 && endPort >= 443) {
+              // if (startPort < 443)
+              //   entries.push(this.composeEntry(entry, { start: startPort, end: 442, proto: "udp" }));
+              entries.push(this.composeEntry(entry, { start: 443, end: 443, proto: "udp" }, true));
+              // if (endPort > 443)
+              //   entries.push(this.composeEntry(entry, { start: 444, end: endPort, proto: "udp" }));
+              // entries.push(this.composeEntry(entry, { start: startPort, end: endPort, proto: "udp" }));
+            }
+            entries.push(this.composeEntry(entry, portObj, false));
+            break;
+          }
+          case "tcp": {
+            while (true) {
+              let hit = false;
+              for (const tlsPort of domainOnlyPorts) {
+                if (tlsPort >= startPort && tlsPort <= endPort) {
+                  hit = true;
+                  if (startPort < tlsPort) {
+                    entries.push(this.composeEntry(entry, { start: startPort, end: tlsPort - 1, proto: "tcp" }, false));
+                  }
+                  entries.push(this.composeEntry(entry, { start: tlsPort, end: tlsPort, proto: "tcp" }, true));
+                  startPort = tlsPort + 1;
+                  break;
                 }
-                entries.push(this.composeEntry(entry, { start: tlsPort, end: tlsPort, proto: "tcp" }, true));
-                startPort = tlsPort + 1;
+              }
+              if (!hit) {
+                if (endPort >= startPort) {
+                  entries.push(this.composeEntry(entry, { start: startPort, end: endPort, proto: "tcp" }, false));
+                }
                 break;
               }
             }
-            if (!hit) {
-              if (endPort >= startPort) {
-                entries.push(this.composeEntry(entry, { start: startPort, end: endPort, proto: "tcp" }, false));
-              }
-              break;
-            }
+            break;
+          }
+          case "icmp":
+          case "icmpv6": {
+            entries.push(this.composeEntry(entry, portObj, false));
+            break;
           }
         }
       }
@@ -183,6 +213,29 @@ class CategoryEntry {
     } else {
       return null;
     }
+  }
+
+  // Validate a regex expression used in target list / domain_re rules.
+  // Canonical implementation; PolicyManager2.checkValidDomainRE delegates here.
+  static isValidDomainRE(expr) {
+    try {
+      new RegExp(expr);
+    } catch (e) {
+      return false;
+    }
+    // slash is a dnsmasq config separator and not useful for domain matching
+    if (expr.includes("/")) {
+      return false;
+    }
+    // lookaround and non-capturing groups are disallowed
+    if (expr.includes("(?")) {
+      return false;
+    }
+    // back references can induce exponential match time
+    if (/\\[0-9]/.test(expr)) {
+      return false;
+    }
+    return true;
   }
 
   static toPortStr(portObj) {

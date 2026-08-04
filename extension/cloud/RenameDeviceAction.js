@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC
+/*    Copyright 2019-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -42,13 +42,9 @@ class RenameDeviceAction extends CloudAction {
       return false;
     }
 
-    if(host.o) {
-      host.o.cloudName = info.targetName;
-    }
-
     const cloudName = info.targetName;
 
-    await hostTool.updateMACKey({mac, cloudName});
+    await host.update({cloudName}, true, true);
 
     return true;
   }

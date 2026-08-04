@@ -1,0 +1,9 @@
+version: '3'
+
+services:
+  gost:
+    image: public.ecr.aws/a0j1s2e9/gost:latest
+    volumes:
+      - ./:/etc/gost
+    cap_add:
+      - NET_ADMIN

@@ -42,12 +42,12 @@ logger "FIREWALLA: Deployed $BRO_PROC_NAME using ${BRO_PROC_NAME}ctl"
 sudo cp $(get_sysctl_conf_path) /etc/sysctl.conf
 sudo sysctl -p
 
-cd $FIREWALLA_HOME
-branch=$(sudo -u pi git rev-parse --abbrev-ref HEAD)
-if [[ $branch = "master" ]]; then
+#cd $FIREWALLA_HOME
+#branch=$(sudo -u pi git rev-parse --abbrev-ref HEAD)
+#if [[ $branch = "master" ]]; then
   # enable core_dump for development branch
-  sudo sysctl -w kernel.core_pattern="/home/pi/core.%e"
-fi
+#  sudo sysctl -w kernel.core_pattern="/home/pi/core.%e"
+#fi
 
 after_bro
 

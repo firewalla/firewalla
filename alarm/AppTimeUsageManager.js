@@ -1,0 +1,475 @@
+/*    Copyright 2016-2023 Firewalla Inc.
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+'use strict'
+
+const log = require('../net2/logger.js')(__filename);
+const Policy = require('./Policy.js');
+const TimeUsageTool = require('../flow/TimeUsageTool.js');
+const _ = require('lodash');
+const sysManager = require('../net2/SysManager.js');
+const cronParser = require('cron-parser');
+const CronJob = require('cron').CronJob;
+const IdentityManager = require('../net2/IdentityManager.js');
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+const Message = require('../net2/Message.js');
+const AsyncLock = require('../vendor_lib/async-lock');
+const Constants = require('../net2/Constants.js');
+const TagManager = require('../net2/TagManager.js');
+const lock = new AsyncLock();
+const LOCK_RW = "lock_rw";
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const POLICY_STATE_DOMAIN_ONLY = 2;
+const DISTURB_INTERVAL = 30;
+
+function getEffectiveQuota(quota, extraQuota, extraQuotaUntilTs) {
+  const base = Number(quota) || 0;
+  const extra = (extraQuota != null && extraQuotaUntilTs != null && (Date.now() / 1000) < extraQuotaUntilTs)
+    ? (Number(extraQuota) || 0) : 0;
+  return base + extra;
+}
+
+class AppTimeUsageManager {
+  constructor() {
+    this.watchList = {};
+    this.jobs = {};
+    this.registeredPolicies = {};
+    this.enforcedPolicies = {};
+    this.activeDisturbPolicies = {};
+
+    this._changedAppUIDs = {};
+    sem.on(Message.MSG_APP_TIME_USAGE_BUCKET_INCR, (event) => {
+      lock.acquire(LOCK_RW, async() => {
+        const {app, uids} = event;
+        for (const uid of uids) {
+          if (!this._changedAppUIDs[app])
+            this._changedAppUIDs[app] = {};
+          this._changedAppUIDs[app][uid] = 1;
+        }
+      }).catch((err) => {
+        log.error(`Failed to process ${Message.MSG_APP_TIME_USAGE_BUCKET_INCR} event`, err.message);
+      });
+    });
+    sclient.on("message", async (channel, message) => {
+      if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
+        log.info("System timezone is reloaded, schedule refresh app time usage rules ...");
+        const pids = Object.keys(this.registeredPolicies);
+        for (const pid of pids) {
+          const policy = this.registeredPolicies[pid];
+          if (policy) {
+            await this.deregisterPolicy(policy);
+            await this.registerPolicy(policy);
+          }
+        }
+      }
+    });
+
+    setInterval(async () => {
+      await this.refreshAppPolicyQuotaUsage();
+    }, 60 * 1000);
+
+    setInterval(async () => {
+      await this.refreshAppDistubTimeUsage();
+    }, DISTURB_INTERVAL * 1000);
+  }
+
+  async refreshAppPolicyQuotaUsage() {
+    await lock.acquire(LOCK_RW, async () => {
+      for (const app of Object.keys(this._changedAppUIDs)) {
+        if (!this.watchList[app])
+          continue;
+        for (const uid of Object.keys(this._changedAppUIDs[app])) {
+          if (!this.watchList[app][uid])
+            continue;
+          for (const pid of Object.keys(this.watchList[app][uid])) {
+            const {timeWindows, quota, extraQuota, extraQuotaUntilTs, keys, uniqueMinute, onQuotaReached} = this.watchList[app][uid][pid];
+            const usage = await this.getTimeUsage(uid, keys, timeWindows, uniqueMinute);
+            this.watchList[app][uid][pid].usage = usage;
+            const effectiveQuota = getEffectiveQuota(quota, extraQuota, extraQuotaUntilTs);
+            log.debug(`Effective quota for policy ${pid}: ${effectiveQuota}, usage: ${usage}`);
+            try {
+              await this.updateAppTimeUsedInPolicy(pid, usage);
+              if (usage >= effectiveQuota) {
+                if (onQuotaReached === "unenforce") {
+                  if (this.enforcedPolicies[pid] && this.enforcedPolicies[pid][uid] === POLICY_STATE_DOMAIN_ONLY) {
+                    log.info(`${uid} reached ${keys} time usage quota, quota: ${effectiveQuota}, used: ${usage}, will unenforce policy ${pid}`);
+                    await this.unapplyPolicy(pid, uid);
+                  }
+                } else {
+                  switch (this.enforcedPolicies[pid][uid]) {
+                    case POLICY_STATE_DOMAIN_ONLY: {
+                      log.info(`${uid} is still generating ${app} activity after domain-only mode rule ${pid} is applied`);
+                      break;
+                    }
+                    default: {
+                      log.info(`${uid} reached ${keys} time usage quota, quota: ${effectiveQuota}, used: ${usage}, will apply policy ${pid}`);
+                      await this.applyPolicy(pid, uid);
+                    }
+                  }
+                }
+              }
+            } catch (err) {
+              log.error(`Failed to update app time used in policy ${pid}`, err.message);
+            }
+          }
+        }
+      }
+      this._changedAppUIDs = {};
+    }).catch((err) => {
+      log.error(`Failed to refresh time usage`, err.message);
+    });
+  }
+
+  async refreshAppDistubTimeUsage() {
+    await lock.acquire(LOCK_RW, async () => {
+      for (const pid of Object.keys(this.activeDisturbPolicies)) {
+        if (!this.registeredPolicies[pid]) {
+          log.warn(`Cannot find policy with ${pid}, just remove from activeDisturbPolicies list`);
+          delete this.activeDisturbPolicies[pid];
+          continue;
+        }
+
+        for (const uid of Object.keys(this.activeDisturbPolicies[pid])) {
+          let timeElapse = Math.floor((Date.now() - this.activeDisturbPolicies[pid][uid]) / 1000);
+          timeElapse = timeElapse < DISTURB_INTERVAL ? timeElapse : DISTURB_INTERVAL;
+          let disturbTimeUsed = Number(this.registeredPolicies[pid].disturbTimeUsed) + timeElapse;
+          try {
+            if (disturbTimeUsed >= Number(this.registeredPolicies[pid].appTimeUsage.disturbQuota)) {
+              log.info(`Disturb time limit of Policy ${pid} is reached, will change to block mode`);
+              await this.unenforcePolicy(this.registeredPolicies[pid], uid);
+              // update policy disturbTimeUsed here to let unenforcePolicy to clear disturb rules.
+              this.registeredPolicies[pid].disturbTimeUsed = disturbTimeUsed;
+              await this.updateDisturbTimeUsedInPolicy(pid, this.registeredPolicies[pid].disturbTimeUsed);
+              await this.applyPolicy(pid, uid);
+              delete this.activeDisturbPolicies[pid][uid];
+            }else {
+              this.registeredPolicies[pid].disturbTimeUsed = disturbTimeUsed;
+              await this.updateDisturbTimeUsedInPolicy(pid, this.registeredPolicies[pid].disturbTimeUsed);
+            }
+          } catch (err) {
+            log.error(`Failed to update disturb time used in policy ${pid}`, err.message);
+          }
+        }
+      }
+    }).catch((err) => {
+      log.error(`Failed to refresh App disturb time usage`, err.message);
+    });
+  }
+
+  async applyPolicy(pid, uid) {
+    const p = this.registeredPolicies[pid];
+    if (!p) {
+      log.error(`Policy ${pid} not found`);
+      return;
+    }
+    const policy = Object.assign(Object.create(Policy.prototype), p);
+    const needDisturb = policy.needPolicyDisturb();
+    // a default mode policy will be applied first, and will be updated to domain only after a certain timeout
+    // if the policy is in disturb mode, it will not be updated to domain only mode
+    // always apply domain only mode, new machnism to handle existing connections
+    await this.enforcePolicy(policy, uid);
+    if (needDisturb) {
+      this.registeredPolicies[pid].disturbTimeUsed = policy.disturbTimeUsed;
+      log.info(`The policy has been in disturb mode for ${policy.disturbTimeUsed} seconds.`);
+      await this.updateDisturbTimeUsedInPolicy(pid, policy.disturbTimeUsed);
+      this.activeDisturbPolicies[pid] = {};
+      this.activeDisturbPolicies[pid][uid] = Date.now();
+    }
+
+    this.enforcedPolicies[pid][uid] = POLICY_STATE_DOMAIN_ONLY;
+  }
+
+  async unapplyPolicy(pid, uid) {
+    const p = this.registeredPolicies[pid];
+    if (!p) {
+      log.error(`Policy ${pid} not found`);
+      return;
+    }
+    const policy = Object.assign(Object.create(Policy.prototype), p);
+
+    await this.unenforcePolicy(policy, uid);
+
+    if (this.enforcedPolicies[pid]) {
+      delete this.enforcedPolicies[pid][uid];
+      if (_.isEmpty(this.enforcedPolicies[pid]))
+         delete this.enforcedPolicies[pid];
+    }
+  }
+
+  calculateTimeWindows(period, intervals) {
+    const periodExpr = cronParser.parseExpression(period, {tz: sysManager.getTimezone()});
+    const periodBeginTs = periodExpr.prev().getTime(); // in milliseconds
+    const periodEndTs = periodExpr.next().getTime();
+    const timeWindows = [];
+    if (_.isArray(intervals)) {
+      for (const interval of intervals) {
+        const {begin, end} = interval;
+        const beginExpr = cronParser.parseExpression(begin, {tz: sysManager.getTimezone()});
+        const endExpr = cronParser.parseExpression(end, {tz: sysManager.getTimezone()});
+        const prevBeginTs = beginExpr.prev().getTime();
+        const nextBeginTs = beginExpr.next().getTime();
+        const prevEndTs = endExpr.prev().getTime();
+        const nextEndTs = endExpr.next().getTime();
+        if (prevBeginTs >= periodBeginTs && prevBeginTs <= periodEndTs && prevEndTs >= periodBeginTs && prevEndTs <= periodEndTs && prevBeginTs <= prevEndTs)
+          timeWindows.push({begin: prevBeginTs, end: prevEndTs});
+        if (prevBeginTs >= periodBeginTs && prevBeginTs <= periodEndTs && nextEndTs >= periodBeginTs && nextEndTs <= periodEndTs && prevBeginTs <= nextEndTs)
+          timeWindows.push({begin: prevBeginTs, end: nextEndTs});
+        if (nextBeginTs >= periodBeginTs && nextBeginTs <= periodEndTs && nextEndTs >= periodBeginTs && nextEndTs <= periodEndTs && nextBeginTs <= nextEndTs)
+          timeWindows.push({begin: nextBeginTs, end: nextEndTs});
+      }
+    } else {
+      timeWindows.push({begin: periodBeginTs, end: periodEndTs});
+    }
+    return timeWindows;
+  }
+
+  async getTimeUsage(uid, apps, timeWindows, uniqueMinute) {
+    let result = 0;
+    for (const timeWindow of timeWindows) {
+      const {begin, end} = timeWindow;
+      result += await TimeUsageTool.getFilledBucketsCount(uid, apps, begin / 1000, end / 1000, uniqueMinute);
+    }
+    return result;
+  }
+
+  getUIDs(policy) {
+    const uids = [];
+    if (_.isArray(policy.scope))
+      Array.prototype.push.apply(uids, policy.scope);
+    if (_.isArray(policy.tag)) {
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const ruleTagPrefix = _.get(Constants.TAG_TYPE_MAP, [type, "ruleTagPrefix"]);
+        // convert all tag types to tag: prefix, matching uids in MSG_APP_TIME_USAGE_BUCKET_INCR event
+        if (ruleTagPrefix)
+          Array.prototype.push.apply(uids, policy.tag.filter(t => t.startsWith(ruleTagPrefix)).map(uid => `tag:${uid.substring(ruleTagPrefix.length)}`));
+      }
+    }
+    if (_.isArray(policy.guids))
+      Array.prototype.push.apply(uids, policy.guids);
+    if (_.isEmpty(uids))
+      uids.push("global");
+    return uids;
+  }
+
+  async refreshPolicy(policy) {
+    const pid = String(policy.pid);
+    log.info(`Refreshing time usage on policy ${pid} ...`);
+    const {app, apps, category, period, intervals, quota, extraQuota, extraQuotaUntilTs, uniqueMinute = true, onQuotaReached} = policy.appTimeUsage;
+    const keys = _.isArray(apps) ? apps : [app || category];
+    for (const key of keys) {
+      if (!this.watchList.hasOwnProperty(key))
+        this.watchList[key] = {};
+    }
+    const uids = this.getUIDs(policy);
+
+    for (const uid of Object.keys(this.enforcedPolicies[pid])) {
+      await this.unenforcePolicy(policy, uid);
+    }
+    this.enforcedPolicies[pid] = {};
+    const timeWindows = this.calculateTimeWindows(period, intervals);
+    for (const uid of uids) {
+      const usage = await this.getTimeUsage(uid, keys, timeWindows, uniqueMinute);
+      for (const key of keys) {
+        if (!this.watchList[key].hasOwnProperty(uid))
+          this.watchList[key][uid] = {};
+        this.watchList[key][uid][pid] = {quota, extraQuota, extraQuotaUntilTs, usage, keys, timeWindows, uniqueMinute, onQuotaReached};
+      }
+      await this.updateAppTimeUsedInPolicy(pid, usage);
+      const effectiveQuota = getEffectiveQuota(quota, extraQuota, extraQuotaUntilTs);
+      log.debug(`Effective quota for policy ${pid}: ${effectiveQuota}, usage: ${usage}`);
+      if (usage >= effectiveQuota) {
+        if (onQuotaReached === "unenforce") {
+          log.info(`${uid} reached ${keys} time usage quota, quota: ${effectiveQuota}, used: ${usage}, will unenforce policy ${pid}`);
+          await this.unapplyPolicy(pid, uid);
+        } else {
+          log.info(`${uid} reached ${keys} time usage quota, quota: ${effectiveQuota}, used: ${usage}, will apply policy ${pid}`);
+          await this.applyPolicy(pid, uid);
+        }
+      } else {
+        if (onQuotaReached === "unenforce") {
+          log.info(`${uid} has not reached ${keys} time usage quota, quota: ${effectiveQuota}, used: ${usage}, will enforce policy ${pid}`);
+          await this.applyPolicy(pid, uid);
+        } else {
+          if (this.registeredPolicies[pid] && this.registeredPolicies[pid].appTimeUsage && this.registeredPolicies[pid].appTimeUsage.disturbQuota) {
+            this.registeredPolicies[pid].disturbTimeUsed = 0;
+            await this.updateDisturbTimeUsedInPolicy(pid, this.registeredPolicies[pid].disturbTimeUsed);
+          }
+        }
+      }
+    }
+  }
+
+  async registerPolicy(policy) {
+    await lock.acquire(LOCK_RW, async () => {
+      const pid = String(policy.pid);
+      if (pid && _.has(this.registeredPolicies, pid)) {
+        log.warn(`Policy ${pid} is registered again before being deregistered, suspected cron/timeout execution sequence problem, deregister the policy anyway before register ...`)
+        await this._deregisterPolicy(policy).catch((err) => {
+          log.error(`Failed to deregister policy before register`, policy, err.message);
+        });
+      }
+      await this._registerPolicy(policy);
+    }).catch((err) => {
+      log.error(`Failed to register policy`, policy, err.message);
+    });
+  }
+
+  async _registerPolicy(policy) {
+    const pid = String(policy.pid);
+    log.info(`Registering policy ${pid} ...`);
+    const { period } = policy.appTimeUsage;
+    const tz = sysManager.getTimezone();
+
+    this.enforcedPolicies[pid] = {};
+    this.registeredPolicies[pid] = policy;
+    const periodJob = new CronJob(period, async () => {
+      await lock.acquire(LOCK_RW, async () => {
+        if (this.jobs[pid] !== periodJob) {
+          log.warn(`This period job on policy ${pid} should already be stopped, stop it anyway ...`);
+          periodJob.stop();
+          return;
+        }
+        log.info(`Running period job on policy ${pid}`);
+        await this.refreshPolicy(policy);
+      }).catch((err) => {
+        log.error(`Failed to refresh policy period`, policy, err.message);
+      });
+    }, () => { }, true, tz);
+    this.jobs[pid] = periodJob;
+
+    await this.refreshPolicy(policy);
+  }
+
+  async deregisterPolicy(policy) {
+    await lock.acquire(LOCK_RW, async () => {
+      await this._deregisterPolicy(policy);
+    }).catch((err) => {
+      log.error(`Failed to deregister policy`, policy, err.message);
+    });
+  }
+
+  async _deregisterPolicy(policy) {
+    const pid = String(policy.pid);
+    log.info(`Deregistering policy ${pid} ...`);
+    const job = this.jobs[pid];
+    if (job) {
+      job.stop();
+      delete this.jobs[pid];
+    }
+    const { app, apps, category } = policy.appTimeUsage;
+    const keys = _.isArray(apps) ? apps : [app || category];
+    const uids = this.getUIDs(policy);
+    for (const key of keys) {
+      for (const uid of uids) {
+        if (this.watchList[key] && this.watchList[key][uid])
+          delete this.watchList[key][uid][pid];
+      }
+    }
+    if (this.activeDisturbPolicies[pid]) {
+      delete this.activeDisturbPolicies[pid];
+    }
+    if (_.isObject(this.enforcedPolicies[pid])) {
+      for (const uid of Object.keys(this.enforcedPolicies[pid]))
+        await this.unenforcePolicy(policy, uid);
+      delete this.enforcedPolicies[pid];
+    }
+    delete this.registeredPolicies[pid];
+  }
+
+  async enforcePolicy(policy, uid, domainOnly = true) {
+    let p = Object.assign(Object.create(Policy.prototype), policy);
+    // delete p.appTimeUsage;
+    p.appTimeUsageRegisterDone = true;
+    delete p.scope;
+    delete p.guids;
+    delete p.tag;
+    if (uid && uid.startsWith(Policy.INTF_PREFIX))
+      p.tag = [uid];
+    else if (uid && uid.startsWith("tag:")) {
+      const tag = await TagManager.getTagByUid(uid.substring("tag:".length));
+      const tagType = tag && tag.getTagType() || Constants.TAG_TYPE_GROUP;
+      p.tag = [`${Constants.TAG_TYPE_MAP[tagType].ruleTagPrefix}${uid.substring("tag:".length)}`];
+    } else if (uid && IdentityManager.isGUID(uid))
+      p.guids = [uid];
+    else if (uid && hostTool.isMacAddress(uid))
+      p.scope = [uid];
+    p.managedBy = "AppTimeUsageManager";
+
+    if (p.type === "dns" || p.type === "category")
+      p.dnsmasq_only = domainOnly;
+    const PolicyManager2 = require('./PolicyManager2.js');
+    const pm2 = new PolicyManager2();
+    await pm2.enforce(p);
+  }
+
+  async unenforcePolicy(policy, uid, domainOnly = true) {
+    let p = Object.assign(Object.create(Policy.prototype), policy);
+    // delete p.appTimeUsage;
+    p.appTimeUsageRegisterDone = true;
+    delete p.scope;
+    delete p.guids;
+    delete p.tag;
+    if (uid && uid.startsWith(Policy.INTF_PREFIX))
+      p.tag = [uid];
+    else if (uid && uid.startsWith("tag:")) {
+      const tag = await TagManager.getTagByUid(uid.substring("tag:".length));
+      const tagType = tag && tag.getTagType() || Constants.TAG_TYPE_GROUP;
+      p.tag = [`${Constants.TAG_TYPE_MAP[tagType].ruleTagPrefix}${uid.substring("tag:".length)}`];
+    } else if (uid && IdentityManager.isGUID(uid))
+      p.guids = [uid];
+    else if (uid && hostTool.isMacAddress(uid))
+      p.scope = [uid];
+
+    if(this.registeredPolicies[p.pid] && this.registeredPolicies[p.pid].disturbTimeUsed) {
+      p.disturbTimeUsed = this.registeredPolicies[p.pid].disturbTimeUsed;
+    }
+
+    p.managedBy = "AppTimeUsageManager";
+
+    if (p.type === "dns" || p.type === "category")
+      p.dnsmasq_only = domainOnly;
+    const PolicyManager2 = require('./PolicyManager2.js');
+    const pm2 = new PolicyManager2();
+    await pm2.unenforce(p);
+  }
+
+  async updateAppTimeUsedInPolicy(pid, used) {
+    const PolicyManager2 = require('./PolicyManager2.js');
+    const pm2 = new PolicyManager2();
+    await pm2.updatePolicyAsync({pid, appTimeUsed: used});
+  }
+
+  async updateDisturbTimeUsedInPolicy(pid, used) {
+    const PolicyManager2 = require('./PolicyManager2.js');
+    const pm2 = new PolicyManager2();
+    await pm2.updatePolicyAsync({pid, disturbTimeUsed: used});
+  }
+
+  async getAppTimeUsage(policy) {
+    const {app, apps, category, period, intervals, uniqueMinute = true} = policy.appTimeUsage;
+    const keys = _.isArray(apps) ? apps : [app || category];
+    const timeWindows = this.calculateTimeWindows(period, intervals);
+    const uids = this.getUIDs(policy);
+    let usage = 0;
+    if (_.isArray(uids) && uids.length > 0) {
+      usage = await this.getTimeUsage(uids[0], keys, timeWindows, uniqueMinute);
+    }
+    return usage;
+  }
+}
+
+module.exports = new AppTimeUsageManager();

@@ -1,4 +1,4 @@
-/*    Copyright 2021-2022 Firewalla Inc.
+/*    Copyright 2021-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -60,6 +60,7 @@ class VIPProfile extends Identity {
             result.push(
                 {
                     uid: key,
+                    devId: this.getKeyOfInitData() + ":" + key,
                     name: profile.o.name,
                     ip: profile.o.ip,
                     lastActiveTimestamp: lastActiveTimestamp,
@@ -130,7 +131,7 @@ class VIPProfile extends Identity {
     }
 
     getNicName() {
-        return sysManager.getInterfaceViaIP(this.o.ip, true);
+        return sysManager.getInterfaceViaIP(this.o.ip);
     }
 }
 

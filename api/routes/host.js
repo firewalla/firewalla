@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,17 +32,15 @@ const NetBotTool = require('../../net2/NetBotTool');
 const netBotTool = new NetBotTool();
 
 router.get('/all',
-           (req, res, next) => {
-             let json = {};
-             hostManager.getHosts(() => {
-               hostManager.legacyHostsStats(json)
-                 .then(() => {
-                   res.json(json);
-                 }).catch((err) => {
-                   res.status(500).send('');
-                 });
-             });
-           });
+  (req, res, next) => {
+    let json = {};
+    hostManager.hostsInfoForInit(json)
+      .then(() => {
+        res.json(json);
+      }).catch((err) => {
+        res.status(500).send('');
+      });
+  });
 
 router.get('/:host',
            (req, res, next) => {
@@ -57,7 +55,6 @@ router.get('/:host',
                })
              } else {
                hostManager.getHostAsync(host).then(h => {
-                 h.flowsummary = flowsummary
                  h.loadPolicy((err) => {
                    if(err) {
                      res.status(500).send("");
@@ -68,29 +65,25 @@ router.get('/:host',
                    const options = { mac: h.o.mac }
 
                    Promise.all([
-                     flowTool.prepareRecentFlows(jsonObj, options),
+                     flowTool.prepareRecentFlows(options).then( res => { jsonObj.flows = {recent: res}; }),
                      netBotTool.prepareTopUploadFlows(jsonObj, options),
                      netBotTool.prepareTopDownloadFlows(jsonObj, options),
                      netBotTool.prepareDetailedFlows(jsonObj, 'app', options),
                      netBotTool.prepareDetailedFlows(jsonObj, 'category', options),
                    ]).then(() => {
                      res.json(jsonObj);
-                   });
+                   }).catch(err => {
+                     log.error(err)
+                     res.status(500).send()
+                   })
                  })
                }).catch((err) => {
+                 log.error(err)
                  res.status(404);
                  res.send("");
                });
              }
            });
-
-router.get('/:host',
-  (req, res, next) => {
-    let host = req.params.host;
-
-
-  }
-)
 
 router.post('/:host/manualSpoofOn',
            (req, res, next) => {

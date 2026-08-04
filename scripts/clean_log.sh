@@ -12,12 +12,13 @@
 # /log/blog//files.gz
 # /log/forever/main.log
 # /log/forever/main_last.log
+# /log/apt/cache/*
 # any files under /log/firewalla that is older than one day
 # hard (/log is over 95%)
 # remove
 # all files under soft
 # /var/log/syslog
-# /log/apt/cache/*
+# /log/apt/lib/*
 # /log/forever/*
 # /log/firewalla/*
 
@@ -43,11 +44,12 @@ soft_clean() {
     loginfo "do SOFT cleaning ..."
     sudo journalctl --vacuum-size=40M
     sudo rm -f /var/log/*.gz
-    sudo find /log/blog/ -type f -name "*.gz" -mtime +1 -exec rm -f {} \;
+    sudo find /log/blog/ -type f -name "*.gz" -mmin +720 -exec rm -f {} \; # only retain zeek logs in the past 12 hours
     rm -f /log/forever/main_last.log
     : > /log/forever/main.log
     # any files under /log/firewalla that is older than one day
     find /log/firewalla -mtime +1 -exec truncate -s 0 {} \;
+    sudo \apt clean
 }
 
 hard_clean() {
@@ -71,6 +73,8 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 blog_dir=$(get_zeek_log_dir)
 # remove old files
 sudo find "$blog_dir" -type f -regex '.*/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/.*$' -mmin +1440 -delete
+# remove conn_long logs older than 8 hours, conn_long log generation interval is reduced to 1 min and may generate as many as conn logs
+sudo find "$blog_dir" -type f -regex '.*/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/conn_long.*$' -mmin +480 -delete
 # remove old directories, non-empty directories will not be removed by rmdir
 sudo find "$blog_dir" -type d -regex '.*/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$' ! -name $(date +"%Y-%m-%d") -exec rmdir '{}' ';' 2>/dev/null
 

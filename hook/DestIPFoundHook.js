@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,8 +14,8 @@
  */
 'use strict';
 
-const log = require('../net2/logger.js')(__filename, 'info');
-
+const net = require('net');
+const log = require('../net2/logger.js')(__filename);
 const Hook = require('./Hook.js');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -24,8 +24,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const f = require("../net2/Firewalla.js");
 const fc = require('../net2/config.js');
-
-const Promise = require('bluebird');
 
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
@@ -36,12 +34,13 @@ const m = require('../extension/metrics/metrics.js');
 
 const rp = require('request-promise');
 
+const DNSTool = require('../net2/DNSTool.js');
+const dnsTool = new DNSTool();
+
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
 const CountryUpdater = require('../control/CountryUpdater.js')
 const countryUpdater = new CountryUpdater()
-
-const country = require('../extension/country/country.js');
 
 const _ = require('lodash')
 
@@ -57,7 +56,8 @@ const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
 const { isSimilarHost } = require('../util/util');
 const flowUtil = require('../net2/FlowUtil');
 const validator = require('validator');
-const iptool = require('ip');
+const ipUtil = require('../util/IPUtil.js');
+const Message = require('../net2/Message.js');
 
 const fastIntelFeature = "fast_intel";
 const LRU = require('lru-cache');
@@ -73,19 +73,7 @@ class DestIPFoundHook extends Hook {
     });
   }
 
-  appendNewIP(ip) {
-    log.debug("Enqueue new ip for intels", ip);
-    return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, ip);
-  }
-
-  appendNewFlow(ip, host, fd, mac, retryCount) {
-    let flow = {
-      ip: ip,
-      host: host,
-      fd: fd,
-      mac,
-      retryCount: retryCount || 0
-    };
+  appendNewFlow(flow) {
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, JSON.stringify(flow));
   }
 
@@ -100,31 +88,16 @@ class DestIPFoundHook extends Hook {
     return patterns.filter(p => host.match(p)).length > 0;
   }
 
-  aggregateIntelResult(ip, host, sslInfo, dnsInfo, intelSources) {
+  aggregateIntelResult(ip, host, intelSources) {
     let intel = {
       ip: ip
     };
 
-    // sslInfo is an object, dnsInfo is a string
-    if (dnsInfo) {
-      intel.host = dnsInfo;
-      intel.dnsHost = dnsInfo;
-    }
-
-    if (sslInfo) {
-      if (sslInfo.server_name) {
-        intel.host = sslInfo.server_name
-        intel.sslHost = sslInfo.server_name
-      }
-      if (sslInfo.org)
-        intel.org = sslInfo.O
-    }
-
     if (host)
       intel.host = host;
 
-    log.debug('sources', intelSources)
-    intelSources.forEach((info) => {
+    log.debug('sources', intelSources);
+    (intelSources || []).forEach((info) => {
 
       if (info.failed) {
         intel.cloudFailed = true;
@@ -171,9 +144,7 @@ class DestIPFoundHook extends Hook {
       Object.assign(intel, _.pick(info, ['s', 't', 'cc', 'cs', 'v', 'a', 'originIP', 'msg', 'reference', 'e', 'country', 'category']))
     });
 
-    const domain = this.getDomain(sslInfo, dnsInfo);
-
-    if (intel.originIP && domain != intel.originIP && ip != intel.originIP) {
+    if (intel.originIP && host != intel.originIP && ip != intel.originIP) {
       // it's a pattern
       intel.isOriginIPAPattern = true
     }
@@ -185,9 +156,13 @@ class DestIPFoundHook extends Hook {
     return intel;
   }
 
-  getDomain(sslInfo, dnsInfo) {
-    // sslInfo is an object, dnsInfo is a string
-    return sslInfo && sslInfo.server_name || dnsInfo;
+  async getDomain(ip) {
+    const sslInfo = await intelTool.getSSLCertificate(ip);
+    if (sslInfo && sslInfo.server_name) {
+      return sslInfo.server_name;
+    }
+    const dnsInfo = await intelTool.getDNS(ip);
+    return dnsInfo;
   }
 
   async updateCategoryDomain(intel) {
@@ -201,8 +176,10 @@ class DestIPFoundHook extends Hook {
   }
 
   async updateCountryIP(intel) {
-    if (intel.ip && intel.country) {
-      await countryUpdater.updateIP(intel.country, intel.ip)
+    if (intel.ip) try {
+      await countryUpdater.updateIP(intel.ip, intel.country)
+    } catch(err) {
+      log.error('Error updating country IP', intel, err)
     }
   }
 
@@ -244,7 +221,7 @@ class DestIPFoundHook extends Hook {
       }
 
       const domains = flowUtil.getSubDomains(domain) || [];
-      const query = [ip, ...domains].join(",");
+      const query = (ip ? [ip, ...domains] : domains).join(",");
 
       const baseURL = fip.getIntelProxyBaseUrl();
 
@@ -253,7 +230,8 @@ class DestIPFoundHook extends Hook {
         qs: { d: query },
         family: 4,
         method: "GET",
-        json: true
+        json: true,
+        timeout: 3000
       };
 
       const rpResult = await rp(options).catch((err) => {
@@ -261,7 +239,8 @@ class DestIPFoundHook extends Hook {
         return { result: true };
       });
 
-      const matched = rpResult && rpResult.result; // { "result": true }
+      const matched = rpResult && rpResult.result; // { "result": true, "match": "facebook.com" }
+      const match = rpResult && rpResult.match;
 
       const maxLucky = (this.config && this.config.maxLucky) || 50;
 
@@ -275,7 +254,14 @@ class DestIPFoundHook extends Hook {
       // use lucky to randomly send domains to cloud
       if (matched || lucky) { // need to check cloud
         await m.incr("fast_intel_positive_cnt");
-        return await intelTool.checkIntelFromCloud(ip, domain, { fd, lucky });
+        const intels = await intelTool.checkIntelFromCloud(ip, domain, { fd, lucky, match });
+        if (matched) { // update statistics for fast intel true/false positive
+          if (_.isArray(intels) && intels.some(intel => !_.isEmpty(intel.c) || !_.isEmpty(intel.category)))
+            await m.incr("fast_intel_positive_cloud_with_category");
+          else
+            await m.incr("fast_intel_positive_cloud_without_category");
+        }
+        return intels;
       } else { // safe, just return empty array
         await m.incr("fast_intel_negative_cnt");
         return [];
@@ -288,73 +274,65 @@ class DestIPFoundHook extends Hook {
   }
 
   async processIP(flow, options) {
-    let ip = null;
-    let fd = 'in';
-    let host = null;
-    let mac = null;
-    let retryCount = 0;
-
+    let enrichedFlow = {};
+    let requeued = false;
     if (flow) {
       let parsed = null;
       try {
         parsed = JSON.parse(flow);
-        if (parsed.fd) {
-          fd = parsed.fd;
-          ip = parsed.ip;
-          host = parsed.host;
-          mac = parsed.mac;
-          retryCount = parsed.retryCount || 0;
-        } else {
-          ip = flow;
-          fd = 'in';
-        }
+        enrichedFlow = Object.assign(enrichedFlow, parsed);
+        enrichedFlow.fd = parsed.fd || "in";
       } catch (e) {
-        ip = flow;
+        // base IP address as argument
+        enrichedFlow.ip = flow;
+        enrichedFlow.fd = "in";
       }
     }
+    if (_.isEmpty(enrichedFlow))
+      return;
+
+    const {ip, fd, host, mac} = enrichedFlow;
     options = options || {};
 
-    if (iptool.isPrivate(ip)) {
-      return
-    }
-
-    const skipReadLocalCache = options.skipReadLocalCache;
-    const skipWriteLocalCache = options.skipWriteLocalCache;
-    let sslInfo = await intelTool.getSSLCertificate(ip);
-    let dnsInfo = await intelTool.getDNS(ip);
-    let domain = host || this.getDomain(sslInfo, dnsInfo);
-    if (!domain && retryCount < 5) {
-      // domain is not fetched from either dns or ssl entries, retry in next job() schedule
-      this.appendNewFlow(ip, host, fd, mac, retryCount + 1);
-    }
-
-    // Update category filter set
-    if (domain) {
-      const event = {
-        type: "DOMAIN_DETECTED",
-        domain: domain,
-        suppressEventLogging: true
-      };
-      sem.emitLocalEvent(event);
-    }
-
     try {
+      const fam = net.isIP(ip);
+      if (ipUtil.isPrivate(ip, fam)) {
+        return
+      }
+
+      const skipReadLocalCache = options.skipReadLocalCache;
+      const skipWriteLocalCache = options.skipWriteLocalCache;
+      let domain = host || await this.getDomain(ip);
+
+      // Update category filter set
+      if (domain) {
+        const event = {
+          type: "DOMAIN_DETECTED",
+          domain: domain,
+          suppressEventLogging: true
+        };
+        sem.emitLocalEvent(event);
+      }
+    
       let intel;
-      if (!skipReadLocalCache) {
+      if (!skipReadLocalCache && ip) {
         intel = await intelTool.getIntel(ip);
 
         if (intel && !intel.cloudFailed) {
-          // use cache data if host is similar or ssl org is identical
+          // use cache data if host is similar
           // (relatively loose condition to avoid calling intel API too frequently)
-          if (!domain
-            || sslInfo && intel.org && sslInfo.O === intel.org
-            || intel.host && isSimilarHost(domain, intel.host)
-          ) {
+          if (!domain || intel.host && isSimilarHost(domain, intel.host)) {
             await this.updateCategoryDomain(intel);
-            await this.updateCountryIP(intel);
+            if (fam === 6)
+              await this.updateCountryIP(intel);
             if (intel.category === "intel")
               this.shouldTriggerDetectionImmediately(mac);
             log.debug('return cached intel:', intel)
+            if (enrichedFlow)
+              enrichedFlow.intel = intel;
+            if(intel.host) {
+              await dnsTool.addReverseDns(intel.host, [ip]);
+            }
             return intel;
           }
         }
@@ -367,10 +345,10 @@ class DestIPFoundHook extends Hook {
       // ignore if domain contain firewalla domain
       if (!this.isFirewalla(domain)) {
         try {
-          const result = await intelTool.getDomainIntelAll(domain);
+          const result = (await intelTool.getDomainIntelAll(domain)).filter(intel => intel.ts || intel.hash); // CategoryUpdater may directly add inteldns entries with only 'c' field, other fields from cloud are missing, e.g, app, hash, need to sync from cloud
           if (result.length != 0) {
             log.debug('cached domain intel:', result)
-            intelSources = result;
+            intelSources = result.reverse();
           } else {
             intelSources = await this.loadIntel(ip, domain, fd);
             log.debug('got cloud intel:', intelSources)
@@ -398,8 +376,7 @@ class DestIPFoundHook extends Hook {
       }
 
       // Update intel rdns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
-      let aggrIntelInfo = this.aggregateIntelResult(ip, domain, sslInfo, dnsInfo, intelSources);
-      aggrIntelInfo.country = aggrIntelInfo.country || country.getCountry(ip) || ""; // empty string for unidentified country
+      let aggrIntelInfo = this.aggregateIntelResult(ip, domain, intelSources);
 
       for (const key in aggrIntelInfo) {
         // NONE is a reseved word for custom intel to state a specific field to be empty
@@ -409,42 +386,56 @@ class DestIPFoundHook extends Hook {
 
       // update category pool if necessary
       await this.updateCategoryDomain(aggrIntelInfo);
-      await this.updateCountryIP(aggrIntelInfo);
 
-      if (skipReadLocalCache) {
+      if (skipReadLocalCache && ip) {
         intel = await intelTool.getIntel(ip);
 
         if (!aggrIntelInfo.action &&
           aggrIntelInfo.category !== 'intel' && // only reset action when category is no longer intel
           !aggrIntelInfo.cloudFailed &&
-          intel.category === 'intel'
+          intel && intel.category === 'intel'
         ) {
-          log.info("Reset local intel action since it's not intel categary anymore.");
+          log.info("Reset local intel action since it's not intel categary anymore.", ip);
           aggrIntelInfo.action = "none";
         }
       }
 
-      if (!skipWriteLocalCache) {
+      if (!skipWriteLocalCache && ip) {
         // remove intel in case some keys in old intel doesn't exist in new one
         await intelTool.removeIntel(ip);
         await intelTool.addIntel(ip, aggrIntelInfo);
       }
+
+      if (fam === 6)
+        await this.updateCountryIP(aggrIntelInfo);
 
       // check if detection should be triggered on this flow/mac immediately to speed up detection
       if(aggrIntelInfo.category === 'intel') {
         this.shouldTriggerDetectionImmediately(mac);
       }
 
+      if (enrichedFlow)
+        enrichedFlow.intel = aggrIntelInfo;
       log.debug('result intel:', aggrIntelInfo)
       return aggrIntelInfo;
 
     } catch (err) {
-      log.error(`Failed to process IP ${ip}, error:`, err);
+      log.error(`Failed to process${ip ? ` IP : ${ip}` : ""}${host ? ` host: ${host}` : ""}, error:`, err);
       return null;
+    } finally {
+      if (enrichedFlow && enrichedFlow.from === "flow" && !requeued) {
+        sem.emitLocalEvent({
+          type: Message.MSG_FLOW_ENRICHED,
+          suppressEventLogging: true,
+          flow: enrichedFlow
+        });
+      }
     }
   }
 
   shouldTriggerDetectionImmediately(mac) {
+    if (!mac)
+      return;
     if(this.triggerCache.get(mac) !== undefined) {
       // skip if duplicate in 5 minutes
       return;
@@ -511,9 +502,10 @@ class DestIPFoundHook extends Hook {
       if (this.paused)
         return;
 
-      const host = event.host;
-
-      this.appendNewFlow(ip, host, fd, event.mac);
+      const flow = event.flow || _.pick(event, ["mac", "ip", "host", "fd"]);
+      if (event.from)
+        flow.from = event.from;
+      this.appendNewFlow(flow);
     });
 
     sem.on('DestIP', (event) => {

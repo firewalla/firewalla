@@ -3,9 +3,10 @@
 const sysManager = require('../net2/SysManager.js');
 
 sysManager.waitTillInitialized().then(() => {
+  process.title = 'FireMain'
   const UPNP = require('../extension/upnp/upnp.js');
   const upnp = new UPNP();
-  
+
   setInterval(() => {
     upnp.getExternalIP().then((ip) => {
       console.log(ip);

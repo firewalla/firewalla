@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,13 +19,10 @@ let instance = null;
 const log = require('../../net2/logger.js')(__filename)
 
 const f = require('../../net2/Firewalla.js')
-const fHome = f.getFirewallaHome()
 
 const fConfig = require('../../net2/config.js').getConfig()
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
-
-const Promise = require('bluebird')
 
 const sysManager = require('../../net2/SysManager')
 
@@ -34,8 +31,8 @@ const rp = require('request-promise')
 const exec = require('child-process-promise').exec
 
 const fs = require('fs')
-const readFileAsync = Promise.promisify(fs.readFile)
-const writeFileAsync = Promise.promisify(fs.writeFile)
+const readFileAsync = fs.promises.readFile
+const writeFileAsync = fs.promises.writeFile
 
 // Configurations
 const configKey = 'extension.ipv6in4.config'
@@ -103,6 +100,7 @@ class IPV6In4 {
 
     const options = {
       uri: tunnelBrokerUpdateURL,
+      followRedirect: false,
       auth: {
         user: this.config.username,
         pass: this.config.password
@@ -112,10 +110,10 @@ class IPV6In4 {
       }
     }
 
-    console.log(options)
-    
+    log.debug(options)
+
     const response = await rp.get(options)
-    console.log(response)
+    log.debug(response)
   }
 
   async enableTunnel() {

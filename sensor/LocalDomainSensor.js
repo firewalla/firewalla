@@ -1,4 +1,4 @@
-/*    Copyright 2020-2021 Firewalla Inc.
+/*    Copyright 2020-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -67,12 +67,12 @@ class LocalDomainSensor extends Sensor {
 
     async globalOn() {
         await exec(`mkdir -p ${HOSTS_DIR}`);
-        await fs.writeFileAsync(ADDN_HOSTS_CONF, "addn-hosts=" + HOSTS_DIR);
+        await dnsmasq.writeConfig(ADDN_HOSTS_CONF, "addn-hosts=" + HOSTS_DIR);
         const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX) || "lan";
         let noForward = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD);
         noForward = noForward && JSON.parse(noForward) || false;
         if (noForward)
-          await fs.writeFileAsync(LOCAL_DOMAIN_BLOCK_CONF, `server-uhigh=/${suffix}/${BLACK_HOLE}`);
+          await dnsmasq.writeConfig(LOCAL_DOMAIN_BLOCK_CONF, `server-uhigh=/${suffix}/${BLACK_HOLE}`);
         else
           await fs.unlinkAsync(LOCAL_DOMAIN_BLOCK_CONF).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();

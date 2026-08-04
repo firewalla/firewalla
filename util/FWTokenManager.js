@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -35,6 +35,7 @@ class FWTokenManager {
       instance = this;
       this.pubKeys = [];
       this.localFolder = null;
+      this.loadPubKeys();
     }
 
     return instance;
@@ -108,20 +109,22 @@ class FWTokenManager {
   // TOKEN VERIFICATION
   verify(token) {
     if(this.pubKeys.length > 0) {
+      const errors = [];
       const results = this.pubKeys.map((key) => {
         try {
           const decoded = jwtlib.verify(token, key);
           return decoded;
         } catch(err) {
-          log.info("Failed to verify token with key:", err.message);
+          errors.push(err.message);
           return null;
-        }        
+        }
       });
 
       const validTokens = results.filter((result) => result !== null);
       if(validTokens.length > 0) {
         return validTokens[0];
       } else {
+        log.error("Failed to verify token:", errors);
         return null;
       }
     } else {

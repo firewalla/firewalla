@@ -1,6 +1,7 @@
 [Unit]
 Description=Firewalla Intel Proxy
 After=network.target
+StartLimitIntervalSec=0
 
 [Service]
 User=pi

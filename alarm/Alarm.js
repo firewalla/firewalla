@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,11 +21,16 @@ const util = require('util');
 
 const i18n = require('../util/i18n.js');
 const fc = require('../net2/config.js');
-const moment = require('moment-timezone');
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const sysManager = require('../net2/SysManager.js');
 const IdentityManager = require('../net2/IdentityManager.js');
 const validator = require('validator');
-
+const Constants = require('../net2/Constants.js');
+const exec = require('child-process-promise').exec;
+const f = require('../net2/Firewalla.js');
+const HostTool = require('../net2/HostTool.js')
+const hostTool = new HostTool()
 
 // Alarm structure
 //   type (alarm type, each type has corresponding alarm template, one2one mapping)
@@ -37,6 +42,8 @@ const validator = require('validator');
 //      p:  primary     required to rander alarm list
 //      e:  extended    required to rander alarm detail
 //      r:  ?           required in neither scenarios above
+//   state: init, pending, ready, active, ignore (to delete)
+//          undefined as ready for backforward compatibility
 
 function suffixAutoBlock(alarm, category) {
   if (alarm.result === "block" &&
@@ -59,6 +66,22 @@ function suffixDirection(alarm, category) {
   return category;
 }
 
+function getCountryName(code) {
+  if (code) {
+    let locale = i18n.getLocale()
+    try {
+      const countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
+      const map = require(countryCodeFile)
+      return map[code];
+    } catch (error) {
+      log.error("Failed to parse country code file:", error)
+    }
+  }
+
+  return null;
+}
+
+
 function GetOpenPortAlarmCompareValue(alarm) {
   if (alarm.type == 'ALARM_OPENPORT') {
     return alarm['p.device.ip'] + alarm['p.open.protocol'] + alarm['p.open.port'];
@@ -76,13 +99,50 @@ class Alarm {
     this.device = device;
     this.alarmTimestamp = new Date() / 1000;
     this.timestamp = timestamp;
+    this.state = Constants.ST_INIT;
 
     if (info) {
       Object.assign(this, info);
     }
     //    this.validate(type);
-
   }
+
+  apply(config) {
+    Object.assign(this, config);
+  }
+
+  isAppSupported() {
+    return false;
+  }
+
+  getAppName() {
+    return this["p.dest.app"];
+  }
+
+  isUserSuffixSupportedInNotification() {
+    return true;
+  }
+
+  getUserName() {
+    if (_.isArray(this["p.utag.names"]) && !_.isEmpty(this["p.utag.names"]))
+      return this["p.utag.names"][0].name;
+    return null;
+  }
+
+  getNotifKeyPrefix() {
+    return this.type;
+  }
+
+  getIdentitySuffix() {
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      const suffix = identity && identity.getLocalizedNotificationKeySuffix();
+      if (suffix)
+        return suffix
+    }
+    return null;
+  }
+
   needPolicyMatch() {
     return false;
   }
@@ -120,14 +180,7 @@ class Alarm {
 
 
   localizedNotificationTitleKey() {
-    let key = `notif.title.${this.type}`;
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      const suffix = identity && identity.getLocalizedNotificationKeySuffix();
-      if (suffix)
-        key = `${key}${suffix}`;
-    }
-    return key;
+    return `notif.title.${this.type}`;
   }
 
   localizedNotificationTitleArray() {
@@ -135,13 +188,18 @@ class Alarm {
   }
 
   localizedNotificationContentKey() {
-    let key = `notif.content.${this.type}`;
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      const suffix = identity && identity.getLocalizedNotificationKeySuffix();
-      if (suffix)
-        key = `${key}${suffix}`;
+    let key = `notif.content.${this.getNotifKeyPrefix()}`;
+    const username = this.getUserName();
+    if (username && this.isUserSuffixSupportedInNotification())
+      key = `${key}.user`;
+    if (this.isAppSupported()) {
+      const appName = this.getAppName();
+      if (appName)
+        key = `${key}.app`;
     }
+    const suffix = this.getIdentitySuffix();
+    if (suffix)
+      key = `${key}${suffix}`;
     return key;
   }
 
@@ -194,8 +252,6 @@ class Alarm {
     return ["p.device.name", "p.device.id", "p.device.mac"];
   }
 
-
-
   // check schema, minimal required key/value pairs in payloads
   validate(type) {
 
@@ -229,7 +285,8 @@ class Alarm {
         if (!_.isEqual(idsA, idsB)) {
           return false;
         }
-      } else if (alarm[k] && alarm2[k] && _.isEqual(alarm[k], alarm2[k])) {
+      } else if (alarm[k] && alarm2[k] && _.isEqual(alarm[k], alarm2[k]) ||
+        (!_.has(alarm, k) || alarm[k] === undefined) && (!_.has(alarm2, k) || alarm2[k] === undefined)) {
 
       } else {
         return false;
@@ -274,14 +331,42 @@ class Alarm {
 
   redisfy() {
     const obj = Object.assign({}, this)
+
     for (const f in obj) {
       // this deletes '', null, undefined
-      if (!obj[f] && obj[f] !== false) delete obj[f]
+      if (!obj[f] && obj[f] !== false && obj[f] !== 0) delete obj[f]
 
       if (obj[f] instanceof Object) obj[f] = JSON.stringify(obj[f])
     }
 
     return obj
+  }
+
+  async onGenerated() {
+    await exec(`export ALARM_ID=${this.aid}; run-parts ${f.getUserConfigFolder()}/post_alarm_generated.d/`);
+  }
+
+  async getDevice() {
+    if (this['p.device.guid']) {
+      const IdentityManager = require('../net2/IdentityManager.js');
+      return IdentityManager.getIdentityByGUID(this['p.device.guid']);
+    } else if (this['p.device.mac']) {
+      const HostManager = require('../net2/HostManager.js')
+      const hm = new HostManager()
+      const host = await hm.getHostAsync(this["p.device.mac"], true)
+      if (host)
+        await host.loadPolicyAsync();
+      return host
+    } else
+      return null
+  }
+
+  getNotifPolicyKey() {
+    return this.type;
+  }
+
+  getExceptionAlarmType() {
+    return this.type;
   }
 }
 
@@ -291,12 +376,36 @@ class NewDeviceAlarm extends Alarm {
     super("ALARM_NEW_DEVICE", timestamp, device, info);
   }
 
+  isUserSuffixSupportedInNotification() {
+    return false;
+  }
+
   keysToCompareForDedup() {
     return ["p.device.mac"];
   }
+  
+  localizedNotificationContentKey() {
+    //default key: newalarm.message.ALARM_NEW_DEVICE
+    //in case added to the Quarantine Group: newalarm.message.ALARM_NEW_DEVICE.block
+    //in case the device is using Private Address: newalarm.message.ALARM_NEW_DEVICE.private
+    //in case the device is using Private address and added into the Quarantine Group: newalarm.message.ALARM_NEW_DEVICE.block.private
+    let key = super.localizedNotificationContentKey();
+    const isPrivateMac = this["p.device.mac"] && hostTool.isPrivateMacAddress(this["p.device.mac"]);
+
+    // it should be a number, but converted to a string after retrieved from redis
+    if (this["p.quarantine"] == "1") {
+      key += ".block";
+      if (isPrivateMac) {
+        key += ".private"
+      }
+    } else if(isPrivateMac) {
+      key += ".private";
+    }
+    return key
+  }
 
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.device.ip"]];
+    return [this["p.device.name"], this["p.device.ip"], this["p.intf.desc"] || "" ];
   }
 }
 
@@ -309,8 +418,16 @@ class DeviceBackOnlineAlarm extends Alarm {
     return ["p.device.mac"];
   }
 
+  getNotifKeyPrefix() {
+    return `${super.getNotifKeyPrefix()}.v2`;
+  }
+
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.device.ip"]];
+    const result = [this["p.device.name"], this["p.device.ip"], moment(this.timestamp * 1000).tz(sysManager.getTimezone()).format('LT')];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
@@ -327,7 +444,11 @@ class DeviceOfflineAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.device.ip"], this["p.device.lastSeenTimezone"]];
+    const result = [this["p.device.name"], this["p.device.ip"], this["p.device.lastSeenTimezone"]];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
@@ -337,7 +458,7 @@ class SpoofingDeviceAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.device.name", "p.device.ip", "p.intf.id", "p.tag.ids"];
+    return ["p.device.mac", "p.device.name", "p.device.ip", "p.intf.id", Constants.TAG_TYPE_MAP.user.alarmIdKey];
   }
 
   localizedNotificationContentArray() {
@@ -382,6 +503,10 @@ class CustomizedAlarm extends Alarm {
 class CustomizedSecurityAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_CUSTOMIZED_SECURITY", timestamp, device, info);
+    if (this['p.event.ts']) {
+      this["p.event.timestampTimezone"] = moment(this['p.event.ts'] * 1000).tz(sysManager.getTimezone()).format("LT")
+    }
+    this["p.showMap"] = false;
   }
 
   keysToCompareForDedup() {
@@ -389,11 +514,110 @@ class CustomizedSecurityAlarm extends Alarm {
   }
 
   requiredKeys() {
-    return ["p.device.ip", "p.dest.ip", "p.description"];
+    return ["p.device.ip", "p.dest.name", "p.description"];
+  }
+
+  getExpirationTime() {
+    return this["p.cooldown"] || 900;
+  }
+
+  isSecurityAlarm() {
+    if (this["p.msp.type"] || this["p.noticeType"]) return true; // created by msp
+    return false;
+  }
+
+  localizedNotificationContentKey() {
+    let key = `notif.content.${this.getNotifKeyPrefix()}`;
+    const username = this.getUserName();
+    if (username)
+      key = `${key}.user`;
+    const suffix = this.getIdentitySuffix();
+    if (suffix)
+      key = `${key}${suffix}`;
+    return key;
   }
 
   localizedNotificationContentArray() {
-    return [this["p.description"], this["p.device.ip"], this["p.device.name"], this["p.device.port"], this["p.dest.ip"], this["p.dest.name"], this["p.dest.port"], this["p.protocol"], this["p.app.protocol"]];
+    const result = [ this["p.device.name"],  this["p.dest.name"], this["p.event.timestampTimezone"]];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
+  }
+}
+
+class SuricataNoticeAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_SURICATA_NOTICE", timestamp, device, info);
+    if (this['p.event.ts']) {
+      this["p.event.timestampTimezone"] = moment(this['p.event.ts'] * 1000).tz(sysManager.getTimezone()).format("LT")
+    }
+    this["p.showMap"] = false;
+  }
+
+  needPolicyMatch() {
+    return true;
+  }
+
+  keysToCompareForDedup() {
+    return ["p.message"];
+  }
+
+  requiredKeys() {
+    return ["p.device.ip", "p.dest.name", "p.message", "p.suricata.extra.classtype", "p.suricata.extra.classtypeDesc", "p.suricata.extra.cause"];
+  }
+
+  getExpirationTime() {
+    return this["p.cooldown"] || 900;
+  }
+
+  // suricata notice alarm will be muted by ALARM_INTEL exception
+  isSecurityAlarm() {
+    return true;
+  }
+  
+  getNotifKeyPrefix() {
+    let prefix = super.getNotifKeyPrefix();
+
+    if (this.isInbound()) {
+      prefix += ".INBOUND";
+    } else if (this.isOutbound()) {
+      prefix += ".OUTBOUND";
+    }
+
+    if (this.isAutoBlock()) {
+      prefix += ".AUTOBLOCK";
+    }
+    return prefix;
+  }
+
+  localizedNotificationContentArray() {
+    let deviceName = this["p.device.name"];
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      if (identity) {
+        deviceName = identity.getDeviceNameInNotificationContent(this);
+      }
+    }
+    const result = [ deviceName,  this["p.dest.name"], this["p.suricata.extra.classtypeDesc"], this["p.event.timestampTimezone"]];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
+  }
+
+  localizedMessage() {
+    return this["p.message"]; // p.message is rendered by mustache in SuricataDetect
+  }
+
+  // mute from suricata notice alarm will create an exception for ALARM_INTEL
+  getExceptionAlarmType() {
+    return "ALARM_INTEL";
+  }
+
+  // suppress notification of intel alarm should also apply to suricata notice alarm
+  getNotifPolicyKey() {
+    return "ALARM_INTEL";
   }
 }
 
@@ -416,9 +640,19 @@ class VPNClientConnectionAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.dest.ip"]];
+    const result = [this["p.dest.ip"], this["p.device.name"] === Constants.DEFAULT_VPN_PROFILE_CN ? "" : this["p.device.name"]];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
+
+const VPN_PROTOCOL_SUFFIX_MAPPING = {
+  "openvpn": "ovpn",
+  "wireguard": "wgvpn",
+  "amneziawg": "awgvpn"
+};
 
 class VPNRestoreAlarm extends Alarm {
   constructor(timestamp, device, info) {
@@ -444,10 +678,43 @@ class VPNRestoreAlarm extends Alarm {
     return fc.getTimingConfig("alarm.vpn_connect.cooldown") || 60 * 5;
   }
 
+  localizedNotificationTitleKey() {
+    let key = super.localizedNotificationTitleKey();
+
+    if (fc.isFeatureOn('alarm_vpnclient_internet_pause')
+      && (this['p.vpn.overrideDefaultRoute'] === true || this['p.vpn.overrideDefaultRoute'] == 'true')
+    ) {
+      key += '.RESUME';
+    }
+
+
+    return key;
+  }
+
   localizedNotificationContentKey() {
     let key = super.localizedNotificationContentKey();
 
-    key += "." + this["p.vpn.subtype"];
+    const protocol = this["p.vpn.protocol"];
+    let suffix = null;
+    if (protocol) {
+      if (VPN_PROTOCOL_SUFFIX_MAPPING[protocol]) {
+        key += ".vpn"
+        suffix = VPN_PROTOCOL_SUFFIX_MAPPING[protocol];
+      } else {
+        key += ".vpn";
+        suffix = protocol;
+      }
+    }
+    key += "." + (this["p.vpn.subtype"] || "cs");
+
+    if (fc.isFeatureOn('alarm_vpnclient_internet_pause')
+      && (this['p.vpn.overrideDefaultRoute'] === true || this['p.vpn.overrideDefaultRoute'] == 'true')
+    ) {
+      key += '.RESUME';
+    }
+
+    if (suffix)
+      key += "." + suffix;
 
     return key;
   }
@@ -471,17 +738,11 @@ class VPNDisconnectAlarm extends Alarm {
 
   getI18NCategory() {
     let category = super.getI18NCategory();
-    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
-      category = category + "_KILLSWITCH";
-    }
     return category;
   }
 
   getNotifType() {
     let notify_type = super.getNotifType();
-    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
-      notify_type = notify_type + "_KILLSWITCH";
-    }
     return notify_type;
   }
 
@@ -500,10 +761,31 @@ class VPNDisconnectAlarm extends Alarm {
   localizedNotificationContentKey() {
     let key = super.localizedNotificationContentKey();
 
-    key += "." + this["p.vpn.subtype"];
-    if (this["p.vpn.strictvpn"] == false || this["p.vpn.strictvpn"] == "false") {
-      key += ".FALLBACK";
+    const protocol = this["p.vpn.protocol"];
+    let suffix = null;
+    if (protocol) {
+      if (VPN_PROTOCOL_SUFFIX_MAPPING[protocol]) {
+        key += ".vpn"
+        suffix = VPN_PROTOCOL_SUFFIX_MAPPING[protocol];
+      } else {
+        key += ".vpn";
+        suffix = protocol;
+      }
     }
+    key += "." + (this["p.vpn.subtype"] || "cs");
+
+    if (fc.isFeatureOn('alarm_vpnclient_internet_pause')
+      && (this['p.vpn.overrideDefaultRoute'] === true || this['p.vpn.overrideDefaultRoute'] == 'true')
+    ) {
+      if (this['p.vpn.strictvpn'] === true || this['p.vpn.strictvpn'] == 'true') {
+        key += '.PAUSE';
+      } else {
+        key += '.FALLBACK';
+      }
+    }
+
+    if (suffix)
+      key += "." + suffix;
 
     return key;
   }
@@ -511,8 +793,14 @@ class VPNDisconnectAlarm extends Alarm {
   localizedNotificationTitleKey() {
     let key = super.localizedNotificationTitleKey();
 
-    if (this["p.vpn.strictvpn"] == false || this["p.vpn.strictvpn"] == "false") {
-      key += ".FALLBACK";
+    if (fc.isFeatureOn('alarm_vpnclient_internet_pause')
+      && (this['p.vpn.overrideDefaultRoute'] === true || this['p.vpn.overrideDefaultRoute'] == 'true')
+    ) {
+      if (this['p.vpn.strictvpn'] === true || this['p.vpn.strictvpn'] == 'true') {
+        key += '.PAUSE';
+      } else {
+        key += '.FALLBACK';
+      }
     }
 
     return key;
@@ -615,30 +903,26 @@ class BroNoticeAlarm extends Alarm {
     return category;
   }
 
-  localizedNotificationContentKey() {
+  getNotifKeyPrefix() {
     if (this["p.noticeType"]) {
-      let key = `notif.content.${this.type}.${this["p.noticeType"]}`;
+      let prefix = `${super.getNotifKeyPrefix()}.${this["p.noticeType"]}`;
+      if (this["p.noticeType"] === "TeamCymruMalwareHashRegistry::Match")
+        prefix += ".v2";
       if (this["p.local_is_client"] != undefined) {
         if (this["p.local_is_client"] != "1") {
-          key += ".inbound";
+          prefix += ".inbound";
         } else {
-          key += ".outbound";
+          prefix += ".outbound";
         }
       }
       if (this["p.noticeType"] == "Scan::Port_Scan") {
         if (this["p.dest.name"] != this["p.dest.ip"]) {
-          key += ".internal";
+          prefix += ".internal";
         }
       }
-      if (this["p.device.guid"]) {
-        const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-        const suffix = identity && identity.getLocalizedNotificationKeySuffix();
-        if (suffix)
-          key = `${key}${suffix}`;
-      }
-      return key;
+      return prefix;
     } else {
-      return super.localizedNotificationContentKey();
+      return super.getNotifKeyPrefix();
     }
   }
 
@@ -650,7 +934,12 @@ class BroNoticeAlarm extends Alarm {
         deviceName = identity.getDeviceNameInNotificationContent(this);
       }
     }
-    return [deviceName, this["p.device.ip"], this["p.dest.name"]];
+    const result = [deviceName, this["p.device.ip"], this["p.dest.name"]];
+    const username = this.getUserName();
+    result.push(username);
+    if (this["p.message.noticeType"] === "TeamCymruMalwareHashRegistry::Match")
+      result.push(this["p.file.type"]);
+    return result;
   }
 }
 
@@ -734,33 +1023,26 @@ class IntelAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
+    const keys = ["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", Constants.TAG_TYPE_MAP.user.alarmIdKey];
     const url = this["p.dest.url"];
-    if (url) {
-      return ["p.device.mac", "p.dest.name", "p.dest.url", "p.dest.port", "p.intf.id", "p.tag.ids"];
-    }
-    return ["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", "p.tag.ids"];
+    if (url) keys.push(url)
+
+    return keys
   }
 
-  localizedNotificationContentKey() {
-    let key = `notif.content.${this.type}`;
+  getNotifKeyPrefix() {
+    let prefix = super.getNotifKeyPrefix();
 
     if (this.isInbound()) {
-      key += ".INBOUND";
+      prefix += ".INBOUND";
     } else if (this.isOutbound()) {
-      key += ".OUTBOUND";
+      prefix += ".OUTBOUND";
     }
 
     if (this.isAutoBlock()) {
-      key += ".AUTOBLOCK";
+      prefix += ".AUTOBLOCK";
     }
-
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      const suffix = identity && identity.getLocalizedNotificationKeySuffix();
-      if (suffix)
-        key = `${key}${suffix}`;
-    }
-    return key;
+    return prefix;
   }
 
   localizedNotificationContentArray() {
@@ -777,11 +1059,15 @@ class IntelAlarm extends Alarm {
       }
     }
 
-    return [deviceName,
+    const result = [deviceName,
     this.getReadableDestination(),
     this["p.security.primaryReason"] || "malicious",
     this["p.device.port"],
     this["p.device.url"]];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
@@ -830,52 +1116,15 @@ class OutboundAlarm extends Alarm {
     return this["p.dest.ip"];
   }
 
-
-  keysToCompareForDedup() {
-    return ["p.device.mac", "p.dest.name", "p.intf.id", "p.tag.ids"];
+  getDomainSuffixKey() {
+    if (this["p.dest.name.suffix"]) return "p.dest.name.suffix";
+    if (this["p.dest.domain"]) return "p.dest.domain";
+    return "p.dest.name";
   }
 
-  isDup(alarm) {
-    let alarm2 = this;
-
-    if (alarm.type !== alarm2.type) {
-      return false;
-    }
-
-    const macKey = "p.device.mac";
-    const destDomainKey = "p.dest.domain";
-    const destNameKey = "p.dest.name";
-
-    // Mac
-    if (!alarm[macKey] ||
-      !alarm2[macKey] ||
-      alarm[macKey] !== alarm2[macKey]) {
-      return false;
-    }
-
-    // Interface
-    const intfKey = "p.intf.id";
-    if (!_.has(alarm, intfKey) || !_.has(alarm2, intfKey) || alarm[intfKey] !== alarm2[intfKey]) {
-      return false;
-    }
-
-    // now these two alarms have same device MAC
-
-    // Destination
-    if (destDomainKey in alarm &&
-      destDomainKey in alarm2 &&
-      alarm[destDomainKey] === alarm2[destDomainKey]) {
-      return true;
-    }
-
-
-    if (!alarm[destNameKey] ||
-      !alarm2[destNameKey] ||
-      alarm[destNameKey] !== alarm2[destNameKey]) {
-      return false;
-    }
-
-    return true;
+  keysToCompareForDedup() {
+    return ["p.device.mac", this.isAppSupported() && this.getAppName() ? "p.dest.app" : this.getDomainSuffixKey(),
+            "p.intf.id", Constants.TAG_TYPE_MAP.user.alarmIdKey];
   }
 }
 
@@ -884,11 +1133,16 @@ class AbnormalBandwidthUsageAlarm extends Alarm {
     super("ALARM_ABNORMAL_BANDWIDTH_USAGE", timestamp, device, info);
   }
   localizedNotificationContentArray() {
-    return [this["p.device.name"],
-    this["p.totalUsage.humansize"],
-    this["p.duration"],
-    this["p.percentage"]
+    const result = [
+      this["p.device.name"],
+      this["p.totalUsage.humansize"],
+      this["p.duration"],
+      this["p.percentage"]
     ];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
@@ -912,11 +1166,20 @@ class OverDataPlanUsageAlarm extends Alarm {
   requiredKeys() {
     return [];
   }
+
+  localizedNotificationContentKey() {
+    return `notif.content.ALARM_OVER_DATA_PLAN_USAGE${this["p.wan.name"] ? ".multi.wan" : ""}`;
+  }
+
   localizedNotificationContentArray() {
-    return [this["p.percentage"],
-    this["p.totalUsage.humansize"],
-    this["p.planUsage.humansize"]
+    const result = [this["p.percentage"],
+      this["p.totalUsage.humansize"],
+      this["p.planUsage.humansize"]
     ];
+    if (this["p.wan.name"]) {
+      result.push(this["p.wan.name"]);
+    }
+    return result;
   }
 }
 
@@ -937,37 +1200,14 @@ class AbnormalUploadAlarm extends OutboundAlarm {
     let category = super.getNotificationCategory()
 
     if (this["p.dest.name"] === this["p.dest.ip"]) {
-      if (this["p.dest.country"]) {
-        let country = this["p.dest.country"]
-        let locale = i18n.getLocale()
-        try {
-          let countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
-          let code = require(countryCodeFile)
-          this["p.dest.countryLocalized"] = code[country]
-          category = category + "_COUNTRY"
-        } catch (error) {
-          log.error("Failed to parse country code file:", error)
-        }
+      const countryName = getCountryName(this["p.dest.country"])
+      if (countryName) {
+        this["p.dest.countryLocalized"] = countryName
+        category = category + "_COUNTRY"
       }
     }
 
     return category
-  }
-
-  getCountryName() {
-    if (this["p.dest.country"]) {
-      let country = this["p.dest.country"]
-      let locale = i18n.getLocale()
-      try {
-        let countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
-        let code = require(countryCodeFile)
-        return code[country];
-      } catch (error) {
-        log.error("Failed to parse country code file:", error)
-      }
-    }
-
-    return null;
   }
 
   getExpirationTime() {
@@ -975,27 +1215,32 @@ class AbnormalUploadAlarm extends OutboundAlarm {
     return fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4
   }
 
-  // dedup implemented before generation @ FlowMonitor
-  isDup() {
-    return false;
-  }
-
-  localizedNotificationContentKey() {
-    if (this["p.dest.name"] === this["p.dest.ip"] && this["p.dest.country"]) {
-      return super.localizedNotificationContentKey() + "_COUNTRY";
-    } else {
-      return super.localizedNotificationContentKey();
-    }
+  getNotifKeyPrefix() {
+    if (this["p.local_is_client"] === "0")
+      return `${super.getNotifKeyPrefix()}.inbound`;
+    else
+      return super.getNotifKeyPrefix();
   }
 
   localizedNotificationContentArray() {
-    return [
-      this["p.device.name"],
+    let deviceName = this["p.device.name"];
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      if (identity) {
+        deviceName = identity.getDeviceNameInNotificationContent(this);
+      }
+    }
+    const result = [
+      deviceName,
       this["p.transfer.outbound.humansize"],
       this["p.dest.name"],
       this["p.timestampTimezone"],
-      this.getCountryName()
+      getCountryName(this["p.dest.country"]),
     ];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 
 }
@@ -1017,65 +1262,48 @@ class LargeUploadAlarm extends OutboundAlarm {
     let category = super.getNotificationCategory()
 
     if (this["p.dest.name"] === this["p.dest.ip"]) {
-      if (this["p.dest.country"]) {
-        let country = this["p.dest.country"]
-        let locale = i18n.getLocale()
-        try {
-          let countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
-          let code = require(countryCodeFile)
-          this["p.dest.countryLocalized"] = code[country]
-          category = category + "_COUNTRY"
-        } catch (error) {
-          log.error("Failed to parse country code file:", error)
-        }
+      const countryName = getCountryName(this["p.dest.country"])
+      if (countryName) {
+        this["p.dest.countryLocalized"] = countryName
+        category = category + "_COUNTRY"
       }
     }
 
     return category
   }
 
-  getCountryName() {
-    if (this["p.dest.country"]) {
-      let country = this["p.dest.country"]
-      let locale = i18n.getLocale()
-      try {
-        let countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
-        let code = require(countryCodeFile)
-        return code[country];
-      } catch (error) {
-        log.error("Failed to parse country code file:", error)
-      }
-    }
-
-    return null;
-  }
 
   getExpirationTime() {
     // for upload activity, only generate one alarm every 4 hours.
     return fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4
   }
 
-  // dedup implemented before generation @ FlowMonitor
-  isDup() {
-    return false;
-  }
-
-  localizedNotificationContentKey() {
-    if (this["p.dest.name"] === this["p.dest.ip"] && this["p.dest.country"]) {
-      return super.localizedNotificationContentKey() + "_COUNTRY";
-    } else {
-      return super.localizedNotificationContentKey();
-    }
+  getNotifKeyPrefix() {
+    if (this["p.local_is_client"] === "0")
+      return `${super.getNotifKeyPrefix()}.inbound`;
+    else
+      return super.getNotifKeyPrefix();
   }
 
   localizedNotificationContentArray() {
-    return [
-      this["p.device.name"],
+    let deviceName = this["p.device.name"];
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      if (identity) {
+        deviceName = identity.getDeviceNameInNotificationContent(this);
+      }
+    }
+    const result = [
+      deviceName,
       this["p.transfer.outbound.humansize"],
       this["p.dest.name"],
       this["p.timestampTimezone"],
-      this.getCountryName()
+      getCountryName(this["p.dest.country"]),
     ];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 
 }
@@ -1094,7 +1322,17 @@ class VideoAlarm extends OutboundAlarm {
         deviceName = identity.getDeviceNameInNotificationContent(this);
       }
     }
-    return [deviceName, this["p.dest.name"]];
+    const result = [deviceName];
+    const dest = this.getAppName() || this["p.dest.name"];
+    result.push(dest);
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
+  }
+
+  isAppSupported() {
+    return true;
   }
 }
 
@@ -1112,7 +1350,17 @@ class GameAlarm extends OutboundAlarm {
         deviceName = identity.getDeviceNameInNotificationContent(this);
       }
     }
-    return [deviceName, this["p.dest.name"]];
+    const result = [deviceName];
+    const dest = this.getAppName() || this["p.dest.name"];
+    result.push(dest);
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
+  }
+
+  isAppSupported() {
+    return true;
   }
 }
 
@@ -1130,7 +1378,14 @@ class PornAlarm extends OutboundAlarm {
         deviceName = identity.getDeviceNameInNotificationContent(this);
       }
     }
-    return [deviceName, this["p.dest.name"]];
+    const result = [deviceName];
+    // although there is no application for porn, but still follow the same logic
+    const dest = this.getAppName() || this["p.dest.name"];
+    result.push(dest);
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
@@ -1258,10 +1513,23 @@ class UpnpAlarm extends Alarm {
     return fc.getTimingConfig('alarm.upnp.cooldown') || super.getExpirationTime();
   }
 
+  getNotifKeyPrefix() {
+    if (this["p.upnp.expire"] == null)
+      return `${super.getNotifKeyPrefix()}.v2.permanently`;
+    return `${super.getNotifKeyPrefix()}.v2`;
+  }
+
   localizedNotificationContentArray() {
-    return [this["p.upnp.protocol"],
-    this["p.upnp.private.port"],
-    this["p.device.name"]];
+    const result = [this["p.upnp.protocol"],
+      this["p.upnp.private.port"],
+      this["p.device.name"],
+      this["p.upnp.ttl"],
+      this["p.upnp.description"]
+    ];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 
   isDup(alarm) {
@@ -1336,7 +1604,7 @@ class DualWanAlarm extends Alarm {
         key += ".lost.remain";
       }
     } else {
-      if (wan && wan.length > 1) {
+      if (wan && (!this["p.wan.total"] && wan.length > 1 || this["p.wan.total"] && wan.length === this["p.wan.total"])) {
         key += ".restore.all";
       } else {
         if (this["p.wan.switched"] == "true") {
@@ -1354,6 +1622,91 @@ class DualWanAlarm extends Alarm {
     return false;
   }
 }
+
+// Internet always routes through Virtual WAN Group (overrideDefaultRoute implicitly true)
+class VWGConnAlarm extends DualWanAlarm {
+  constructor(timestamp, device, info) {
+    super(timestamp, device, info);
+    this.type = "ALARM_VWG_CONN";
+    this['p.showMap'] = false;
+    if (info && info["p.vpn.subtype"]) {
+      let subtype = (['s2s', 'cs', 'openvpn'].indexOf(info["p.vpn.subtype"]) !== -1) ? info["p.vpn.subtype"] : 'openvpn';
+      this['p.vpn.subtypename'] = i18n.__(`VPN_SUBTYPE_${subtype}`);
+    }
+    if (this.timestamp) {
+      this["p.timestampTimezone"] = moment(this.timestamp * 1000).tz(sysManager.getTimezone()).format("LT")
+    }
+  }
+
+  getExpirationTime() {
+    return fc.getTimingConfig('alarm.vwg_conn.cooldown') || super.getExpirationTime();
+  }
+
+  getI18NCategory() {
+    let category = super.getI18NCategory();
+    if (this["p.vwg.strictvpn"] == true || this["p.vwg.strictvpn"] == "true") {
+      category = category + "_KILLSWITCH";
+    }
+    return category;
+  }
+
+  localizedNotificationTitleKey() {
+    let key = super.localizedNotificationTitleKey() + (this["p.ready"] == "true" ? "_RESTORE" : "_DISCONNECT");
+
+    if (this["p.vwg.strictvpn"] == false || this["p.vwg.strictvpn"] == "false") {
+      key += ".FALLBACK";
+    }
+
+    return key;
+  }
+
+  getNotifType() {
+    let notify_type = super.getNotifType();
+    if (this["p.vwg.strictvpn"] == true || this["p.vwg.strictvpn"] == "true") {
+      notify_type = notify_type + "_KILLSWITCH";
+    }
+    return notify_type;
+  }
+
+  localizedNotificationContentKey() {
+    let key = super.localizedNotificationContentKey();
+
+    const protocol = this["p.vpn.protocol"];
+    let suffix = null;
+    if (protocol && VPN_PROTOCOL_SUFFIX_MAPPING[protocol]) {
+      key += ".vpn"
+      suffix = VPN_PROTOCOL_SUFFIX_MAPPING[protocol];
+    }
+    key += "." + this["p.vpn.subtype"];
+
+    let wan = this["p.active.wans"];
+    if (_.isString(wan) && validator.isJSON(wan))
+      wan = JSON.parse(this["p.active.wans"]);
+    if (wan.length == 0 && (this["p.vwg.strictvpn"] == false || this["p.vwg.strictvpn"] == "false")) {
+      key += ".FALLBACK";
+    }
+    if (suffix)
+      key += "." + suffix;
+
+    return key;
+  }
+
+  localizedNotificationContentArray() {
+    const result = super.localizedNotificationContentArray();
+    result.push(...[this["p.timestampTimezone"], this["p.vwg.devicecount"]], this["p.vwg.name"]);
+    return result;
+  }
+
+  getNotifPolicyKey() {
+    // use the same key as vpn client disconnect/restore alarm to control whether notification should be sent
+    if (this["p.ready"] == "true") {
+      return "ALARM_VPN_RESTORE";
+    } else {
+      return "ALARM_VPN_DISCONNECT";
+    }
+  }
+}
+
 class ScreenTimeAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super('ALARM_SCREEN_TIME', timestamp, device, info);
@@ -1371,6 +1724,32 @@ class ScreenTimeAlarm extends Alarm {
   localizedNotificationContentArray() {
     return [this["p.scope.names"],
     this["p.target"]];
+  }
+}
+
+class FwApcAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super('ALARM_FW_APC', timestamp, device, info);
+    if (this['p.connection.begin'] && this['p.connection.end']) {
+      this["p.connection.durationTime"] = moment.duration((this['p.connection.end'] - this['p.connection.begin']) * 1000).humanize({m:80});
+    }
+    this['p.showMap'] = false;
+  }
+
+  keysToCompareForDedup() {
+    return ['p.description', 'p.subtype'];
+  }
+
+  requiredKeys(){
+    return this.keysToCompareForDedup()
+  }
+
+  getExpirationTime() {
+    return this['p.cooldown'] || 3600;
+  }
+
+  localizedNotificationContentArray() {
+    return [ this["p.device.name"], this["p.connection.durationTime"]];
   }
 }
 
@@ -1418,6 +1797,20 @@ class NetworkMonitorLossrateAlarm extends Alarm {
   }
 }
 
+// ALARM_ABC_12 -> abc_12
+function alarmType2alias(type) {
+  return type.slice(6).toLowerCase();
+}
+
+// abc_12 -> ALARM_ABC_12
+function alias2alarmType(alias) {
+  return 'ALARM_' + alias.toUpperCase();
+}
+
+function isSecurityAlarm(alarmType) {
+  return ['ALARM_SPOOFING_DEVICE', 'ALARM_VULNERABILITY', 'ALARM_BRO_NOTICE', 'ALARM_INTEL', 'ALARM_CUSTOMIZED_SECURITY'].includes(alarmType);
+}
+
 const classMapping = {
   ALARM_PORN: PornAlarm.prototype,
   ALARM_VIDEO: VideoAlarm.prototype,
@@ -1443,15 +1836,19 @@ const classMapping = {
   ALARM_OPENPORT: OpenPortAlarm.prototype,
   ALARM_UPNP: UpnpAlarm.prototype,
   ALARM_DUAL_WAN: DualWanAlarm.prototype,
+  ALARM_VWG_CONN: VWGConnAlarm.prototype,
   ALARM_SCREEN_TIME: ScreenTimeAlarm.prototype,
+  ALARM_FW_APC: FwApcAlarm.prototype,
   ALARM_NETWORK_MONITOR_RTT: NetworkMonitorRTTAlarm.prototype,
   ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype,
+  ALARM_SURICATA_NOTICE: SuricataNoticeAlarm.prototype,
   ALARM_CUSTOMIZED: CustomizedAlarm.prototype,
   ALARM_CUSTOMIZED_SECURITY: CustomizedSecurityAlarm.prototype
 }
 
 module.exports = {
   Alarm,
+  FwApcAlarm,
   OutboundAlarm,
   VideoAlarm,
   GameAlarm,
@@ -1471,6 +1868,7 @@ module.exports = {
   VPNRestoreAlarm,
   VPNDisconnectAlarm,
   BroNoticeAlarm,
+  SuricataNoticeAlarm,
   IntelAlarm,
   VulnerabilityAlarm,
   IntelReportAlarm,
@@ -1479,8 +1877,10 @@ module.exports = {
   OpenPortAlarm,
   UpnpAlarm,
   DualWanAlarm,
+  VWGConnAlarm,
   ScreenTimeAlarm,
   NetworkMonitorRTTAlarm,
   NetworkMonitorLossrateAlarm,
+  alarmType2alias, alias2alarmType, isSecurityAlarm,
   mapping: classMapping
 }

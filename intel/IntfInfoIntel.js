@@ -31,6 +31,8 @@ class IntfInfoIntel extends Intel {
                     'p.intf.subnet6': intfInfo.ip6_subnets,
                     'p.intf.name': intfInfo.name
                 });
+                if (intfInfo.desc)
+                  alarm["p.intf.desc"] = intfInfo.desc;
             } else {
                 log.error(`Unable to find nif uuid, ${alarm['p.intf.id']}`);
             }

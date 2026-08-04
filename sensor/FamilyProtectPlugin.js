@@ -27,6 +27,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const f = require('../net2/Firewalla.js');
+const fc = require('../net2/config.js');
 
 const userConfigFolder = f.getUserConfigFolder();
 const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
@@ -36,8 +37,11 @@ let FAMILY_DNS = null;
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
+const dns = require('dns');
+const util = require('util');
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const Constants = require('../net2/Constants.js');
 const dnsmasq = new DNSMASQ();
 
 const featureName = "family_protect";
@@ -55,8 +59,8 @@ class FamilyProtectPlugin extends Sensor {
         this.identitySettings = {};
         extensionManager.registerExtension(policyKeyName, this, {
             applyPolicy: this.applyPolicy,
-            start: this.start,
-            stop: this.stop
+            start: this.globalOn,
+            stop: this.globalOff,
         });
 
         this.hookFeature(featureName);
@@ -65,6 +69,21 @@ class FamilyProtectPlugin extends Sensor {
           if (event.config)
             this.applyFamilyConfig(event.config)
           this.applyFamilyProtect()
+        });
+
+        sem.on('FAMILY_RESET', async () => {
+          try {
+            await fc.disableDynamicFeature(featureName)
+            for (const tag in this.tagSettings) this.tagSettings[tag] = 0
+            for (const uuid in this.networkSettings) this.networkSettings[uuid] = 0
+            for (const mac in this.macAddressSettings) this.macAddressSettings[mac] = 0
+            for (const guid in this.identitySettings) this.identitySettings[guid] = 0
+            this.applyFamilyProtect()
+            FAMILY_DNS = null
+            await rclient.unlinkAsync(configKey)
+          } catch(err) {
+            log.error('Error resetting family', err)
+          }
         });
     }
 
@@ -94,6 +113,7 @@ class FamilyProtectPlugin extends Sensor {
       });
 
       extensionManager.onSet(configName, async (msg, data) => {
+        try {await extensionManager._precedeRecord(msg.id, {origin: await this.getFamilyConfig()})} catch(err) {};
         if (data) {
           await this.setFamilyConfig(data)
           sem.sendEventToFireMain({
@@ -101,6 +121,50 @@ class FamilyProtectPlugin extends Sensor {
             config: data,
           });
         }
+      });
+
+      extensionManager.onCmd('familyReset', async () => {
+        sem.sendEventToFireMain({
+          type: 'FAMILY_RESET',
+        })
+      });
+      
+      extensionManager.onCmd('familyDnsTest', async (msg, data) => {
+        const maxServers = 10;
+        const maxDomains = 20;
+        // 64 bytes per server (IPv6+port worst case), 253 bytes per domain (RFC 1035 max FQDN)
+        const maxPayloadBytes = maxServers * 64 + maxDomains * 253 + 1000;
+        if (data && JSON.stringify(data).length > maxPayloadBytes)
+          throw new Error(`payload exceeds limit of ${maxPayloadBytes} bytes`);
+        const servers = data && data.servers;
+        const domains = data && data.domains;
+        if (!Array.isArray(servers) || servers.length === 0)
+          throw new Error("servers is required");
+        if (servers.length > maxServers)
+          throw new Error(`servers exceeds limit of ${maxServers}`);
+        if (!Array.isArray(domains) || domains.length === 0)
+          throw new Error("domains is required");
+        if (domains.length > maxDomains)
+          throw new Error(`domains exceeds limit of ${maxDomains}`);
+
+        const testOne = (server, domain) => new Promise((resolve) => {
+          const resolver = new dns.Resolver();
+          resolver.setServers([server]);
+          const resolve4Async = util.promisify(resolver.resolve4.bind(resolver));
+          const timer = setTimeout(() => {
+            resolver.cancel();
+            resolve({ domain, addresses: [], error: 'timeout' });
+          }, 5000);
+          resolve4Async(domain).then(
+            (addresses) => { clearTimeout(timer); resolve({ domain, addresses }); },
+            (err) => { clearTimeout(timer); resolve({ domain, addresses: [], error: err.message }); }
+          );
+        });
+
+        return Promise.all(servers.map(async (server) => {
+          const results = await Promise.all(domains.map(domain => testOne(server, domain)));
+          return { server, results };
+        }));
       });
     }
 
@@ -185,7 +249,7 @@ class FamilyProtectPlugin extends Sensor {
         const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
         if (this.adminSystemSwitch) {
           const dnsaddrs = await this.familyDnsAddr();
-          const dnsmasqEntry = `server=${dnsaddrs[0]}$${featureName}`;
+          const dnsmasqEntry = `server=${dnsaddrs[0]}$${featureName}$*${Constants.DNS_DEFAULT_WAN_TAG}`;
           log.info(`Using dns ${dnsaddrs[0]}`)
           await fs.writeFileAsync(configFilePath, dnsmasqEntry);
         } else {
@@ -197,12 +261,12 @@ class FamilyProtectPlugin extends Sensor {
           await this.applyDeviceFamilyProtect(macAddress);
         }
         for (const tagUid in this.tagSettings) {
-          const tag = TagManager.getTagByUid(tagUid);
-          if (!tag)
+          const tagExists = await TagManager.tagUidExists(tagUid);
+          if (!tagExists)
             // reset tag if it is already deleted
             this.tagSettings[tagUid] = 0;
           await this.applyTagFamilyProtect(tagUid);
-          if (!tag)
+          if (!tagExists)
             delete this.tagSettings[tagUid];
         }
         for (const uuid in this.networkSettings) {

@@ -19,30 +19,24 @@
 
 const log = require('../net2/logger.js')(__filename);
 
-const util = require('util');
-
 const Sensor = require('./Sensor.js').Sensor;
 
 const networkTool = require('../net2/NetworkTool')();
 
 const scriptConfig = require('../extension/nmap/scriptsConfig.json');
 
-const NmapSensor = require('../sensor/NmapSensor');
+const nmap = require('../net2/Nmap.js');
 
 const spt = require('../net2/SystemPolicyTool')();
+
+const Firewalla = require('../net2/Firewalla');
+const util = require('util');
 
 const Alarm = require('../alarm/Alarm');
 const AlarmManager2 = require('../alarm/AlarmManager2');
 const am2 = new AlarmManager2();
 
 const sysManager = require('../net2/SysManager.js')
-
-const Firewalla = require('../net2/Firewalla');
-
-const xml2jsonBinary =
-  Firewalla.getFirewallaHome() +
-  '/extension/xml2json/xml2json.' +
-  Firewalla.getPlatform();
 
 class AdvancedNmapSensor extends Sensor {
   constructor(config) {
@@ -69,8 +63,8 @@ class AdvancedNmapSensor extends Sensor {
   createVulnerabilityAlarm(host, script) {
     try {
       const ip = host.ipv4Addr;
-      const vid = script.key;
-      const alarm = new Alarm.VulnerabilityAlarm(new Date() / 1000, ip, vid, {
+      const vid = script.id;
+      const alarm = new Alarm.VulnerabilityAlarm(Date.now() / 1000, ip, vid, {
         'p.device.ip': ip,
         'p.vuln.key': vid,
         'p.vuln.title': script.title,
@@ -118,51 +112,48 @@ class AdvancedNmapSensor extends Sensor {
         throw new Error('Network range is required');
 
       for (const range of networkRanges) {
-        let hosts = await this._scan(range, [scriptName], ports)
+        let hosts = await this._scan(range, scriptName, ports)
         log.info('Analyzing scan result...');
 
-        // ignore any hosts
-        hosts = (hosts || []).filter(x => x.scripts && x.scripts.length > 0);
+        // Filter hosts that have script results
+        hosts = (hosts || []).filter(x => x.script && Object.keys(x.script).length > 0);
 
         if (hosts.length === 0) {
           log.info('No vulnerability is found');
-          return;
+          continue;
         }
         hosts.forEach(h => {
-          if (h.scripts) {
-            h.scripts.forEach(script => {
-              if (script.state === 'VULNERABLE') {
-                log.info( 'Found vulnerability', script.key, 'on host', h.ipv4Addr);
-                this.createVulnerabilityAlarm(h, script);
+          if (h.script) {
+            // Check each script key in the script object
+            for (const scriptId in h.script) {
+              const scriptData = h.script[scriptId];
+              // Check if it's vulnerable (could be boolean true or object with vulnerable: true)
+              if (scriptData && scriptData.vulnerable) {
+                log.info( 'Found vulnerability', scriptId, 'on host', h.ipv4Addr);
+                // Pass script data with id, title, state, disclosure
+                const scriptInfo = { ...scriptData, id: scriptId }
+                this.createVulnerabilityAlarm(h, scriptInfo);
               }
-            });
+            }
           }
         });
       }
     }
   }
 
-  _scan(range, scripts, ports) {
-    const portString = ports.join(',');
-
-    const scriptPaths = scripts.map(scriptName =>
-      util.format(
-        '--script %s/extension/nmap/scripts/%s',
-        Firewalla.getFirewallaHome(),
-        scriptName
-      )
+  async _scan(range, scriptName, ports) {
+    // Build full script path - caller passes full path
+    const scriptPath = util.format(
+      '%s/extension/nmap/scripts/%s',
+      Firewalla.getFirewallaHome(),
+      scriptName
     );
-
-    // nmap -Pn -p445 -n --script ~/Downloads/smb-vuln-ms17-010.nse 10.0.1.0/24 -oX - | ./xml2json
-    const cmd = util.format(
-      'sudo timeout 1200s nmap -n -Pn -p%s --host-timeout 60s %s %s -oX - | %s',
-      portString,
-      scriptPaths.join(' '),
-      range,
-      xml2jsonBinary
-    );
-
-    return NmapSensor.scan(cmd);
+    
+    return nmap.scanAsync(range, {
+      ports: ports,
+      script: scriptPath,
+      hostTimeout: '60s'
+    });
   }
 }
 

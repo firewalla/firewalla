@@ -115,6 +115,10 @@ module.exports = class {
   async init() {
     log.info("Initializing Cloud Wrapper...");
 
+    log.info("Try to reload group info from redis...");
+    await this.eptcloud.reloadGroupInfoFromRedis({onlyWhenEmpty: true})
+
+    log.info("Try to login cloud...");
     await this.eptcloud.eptLogin(this.config.appId, this.config.appSecret, null, this.config.endpoint_name)
 
     log.info("Success logged in Firewalla Cloud");

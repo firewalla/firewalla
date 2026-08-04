@@ -44,14 +44,14 @@ class IPv6DiscoverySensor extends Sensor {
 
       setInterval(() => {
         this.checkAndRunOnce(true);
-      }, 1000 * 60 * 5); // every 5 minutes, fast scan
+      }, 1000 * 60 * 15); // every 15 minutes, fast scan, it is reduced from 5 minutes to 15 minutes because nmap scan is no longer essential for device discovery, we already have flow, ARPSensor, DHCPSensor, and ICMP6Sensor
 
     }, 1000 * 60 * 5); // start the first run in 5 minutes
   }
 
   async checkAndRunOnce() {
     if (this.isSensorEnabled()) {
-      log.info("Starting IPv6DiscoverySensor Scanning", new Date() / 1000);
+      log.info("Starting Scanning");
       await this.neighborDiscoveryV6();
     }
   }
@@ -61,11 +61,11 @@ class IPv6DiscoverySensor extends Sensor {
   }
 
   async ping6ForDiscovery(intf, obj) {
-    await execAsync(`ping6 -c2 -I ${intf} ff02::1`).catch((err) => { });
+    await execAsync(`ping6 -c2 -w5 -I ${intf} ff02::1%${intf}`, { timeout: 6000 }).catch((err) => { });
     return asyncNative.eachLimit(obj.ip6_addresses, 5, async (o) => {
-      let pcmd = `ping6 -B -c 2 -I ${intf} -I ${o} ff02::1`;
-      log.info("Discovery:v6Neighbor:Ping6", pcmd);
-      return execAsync(pcmd).catch((err) => { });
+      let pcmd = `ping6 -B -c 2 -w5 -I ${intf} -I ${o} ff02::1%${intf}`;
+      log.debug("Discovery:v6Neighbor:Ping6", pcmd);
+      return execAsync(pcmd, { timeout: 6000 }).catch((err) => { });
     })
   }
 
@@ -80,7 +80,8 @@ class IPv6DiscoverySensor extends Sensor {
         intf_mac: intf.mac_address,
         intf_uuid: intf.uuid,
         from: "ip6neighbor"
-      }
+      },
+      suppressEventLogging: true,
     });
   }
 
@@ -94,7 +95,7 @@ class IPv6DiscoverySensor extends Sensor {
       await this.ping6ForDiscovery(intf.name, intf);
     }
     let cmdline = 'ip -6 neighbor show';
-    log.info("Running commandline: ", cmdline);
+    log.verbose("Running commandline: ", cmdline);
     const { stdout } = await execAsync(cmdline)
     let lines = stdout.split("\n");
     for (const intf of interfaces) {
@@ -130,7 +131,7 @@ class IPv6DiscoverySensor extends Sensor {
       //Removing learned entries from the ARP cache with ip neighbor flush
       try {
         const flushCommand = `sudo ip -6 neighbor flush dev ${intf.name}`
-        log.info("Running commandline: ", flushCommand);
+        log.verbose("Running commandline: ", flushCommand);
         await execAsync(flushCommand);
       } catch (e) {
         log.warn('Removing learned entries from the ARP cache with ip neighbor flush error', e);
@@ -142,7 +143,8 @@ class IPv6DiscoverySensor extends Sensor {
     // several seconds is necessary to ensure new ip addresses are added
     setTimeout(() => {
       log.info("IPv6 Scan:Done");
-      this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
+      // Scan:Done message will be emiited in NmapSensor
+      // this.publisher.publishCompressed("DiscoveryEvent", "Scan:Done", '0', {});
     }, 5000)
 
   }

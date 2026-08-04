@@ -1,5 +1,7 @@
 'use strict'
 
+const log = require('../../../net2/logger.js')(__filename);
+
 var util = require('util')
 var EventEmitter = require('events').EventEmitter
 var serviceName = require('multicast-dns-service-types')
@@ -37,7 +39,7 @@ function Browser (mdns, opts, onup) {
   this._serviceMap = {}
   this._txt = dnsTxt(opts.txt)
 
-  if (!opts || !opts.type) {
+  if (!opts || (!opts.type && !opts.protocol)) {
     this._name = WILDCARD
     this._wildcard = true
   } else {
@@ -82,8 +84,10 @@ Browser.prototype.start = function () {
       if (matches.length === 0) return
 
       matches.forEach(function (service) {
-        if (self._serviceMap[service.fqdn]) return // ignore already registered services
-        self._addService(service)
+        if (self._serviceMap[service.fqdn])
+          self._updateService(service)
+        else
+          self._addService(service)
       })
     })
   }
@@ -101,6 +105,34 @@ Browser.prototype.stop = function () {
 
 Browser.prototype.update = function () {
   this._mdns.query(this._name, 'PTR')
+}
+
+function equalTxt(a, b) {
+  if (!a && !b) return true
+  if (!a || !b) return false
+  const aKeys = Object.keys(a)
+  const bKeys = Object.keys(b)
+  if(aKeys.length != bKeys.length) return false
+  for(let key of aKeys) {
+    if(a[key] != b[key]) return false
+  }
+  return true
+}
+
+Browser.prototype._updateService = function (service) {
+  const sIndex = this.services.findIndex(s => dnsEqual(s.fqdn, service.fqdn))
+  if (sIndex == -1) return
+
+  let shouldUpdate = false
+  if (!equalTxt(service.txt, this.services[sIndex].txt))
+    shouldUpdate = true
+  if (JSON.stringify(service.addresses) != JSON.stringify(service.addresses))
+    shouldUpdate = true
+
+  if (shouldUpdate) {
+    this.services[sIndex] = service
+    this.emit('up', service);
+  }
 }
 
 Browser.prototype._addService = function (service) {
@@ -157,39 +189,36 @@ function buildServicesFor (name, packet, txt, referer) {
         addresses: []
       }
 
-      records
-        .filter(function (rr) {
-          return (rr.type === 'SRV' || rr.type === 'TXT') && dnsEqual(rr.name, ptr.data)
-        })
-        .forEach(function (rr) {
-          if (rr.type === 'SRV') {
-            var parts = rr.name.split('.')
-            var name = parts[0]
-            var types = serviceName.parse(parts.slice(1, -1).join('.'))
-            service.name = name
-            service.fqdn = rr.name
-            service.host = rr.data.target
-            service.referer = referer
-            service.port = rr.data.port
-            service.type = types.name
-            service.protocol = types.protocol
-            service.subtypes = types.subtypes
-          } else if (rr.type === 'TXT') {
-            service.rawTxt = rr.data
-            service.txt = txt.decode(rr.data)
-          }
-        })
+      for (const rr of records) {
+        if (!['SRV', 'TXT'].includes(rr.type)) continue
+
+        const result = serviceName.parse(rr.name)
+        if (rr.type == 'SRV' && dnsEqual(rr.name, ptr.data)) {
+          service.name = result.instance
+          service.fqdn = rr.name
+          service.host = rr.data.target || `${result.instance}.${result.domain}`
+          service.referer = referer
+          service.port = rr.data.port
+          service.type = result.name
+          service.protocol = result.protocol
+          service.subtype = result.subtype
+        } else if (rr.type == 'TXT' && (result.name == '_device-info' || dnsEqual(rr.name, ptr.data))) {
+          // service.rawTxt = service.rawTxt ? Buffer.concat([service.rawTxt, rr.data]) : rr.data
+          service.txt = Object.assign({}, service.txt, txt.decode(rr.data))
+        }
+      }
 
       if (!service.name) return
 
       records
         .filter(function (rr) {
-          return (rr.type === 'A' || rr.type === 'AAAA') && dnsEqual(rr.name, service.host)
+          return (rr.type === 'A' || rr.type === 'AAAA') && service.host && dnsEqual(rr.name, service.host)
         })
         .forEach(function (rr) {
           service.addresses.push(rr.data)
         })
 
+      service.addresses.sort()
       return service
     })
     .filter(function (rr) {

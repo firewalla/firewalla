@@ -1,4 +1,4 @@
-/*    Copyright 2021-2022 Firewalla Inc.
+/*    Copyright 2021-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,9 +22,10 @@ const sysManager = require('./SysManager.js');
 const f = require('./Firewalla.js');
 const exec = require('child-process-promise').exec;
 const { Rule } = require('./Iptables.js');
+const iptc = require('../control/IptablesControl.js');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
-const ipset = require('./Ipset.js');
+const Ipset = require('./Ipset.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const VirtWanGroup = require('./VirtWanGroup.js');
 const routing = require('../extension/routing/routing.js');
@@ -35,28 +36,22 @@ const _ = require('lodash');
 const fs = require('fs');
 const { Address4, Address6 } = require('ip-address');
 const Tag = require('./Tag.js');
+const Constants = require('./Constants.js');
 
 const envCreatedMap = {};
-const instances = {};
 
 class Identity extends Monitorable {
   constructor(o) {
     super(o)
-    const instanceKey = `${this.constructor.getNamespace()}:${this.getUniqueId()}`
-    if (!instances[instanceKey]) {
+    const instanceKey = this.getGUID()
+    if (!Monitorable.instances[instanceKey]) {
       if (f.isMain()) {
         this.monitoring = false;
-        const uid = this.getUniqueId();
-        if (uid) {
-          this.subscriber.subscribeOnce("DiscoveryEvent", "IdentityPolicy:Changed", uid, (channel, type, id, obj) => {
-            log.info(`Identity policy is changed on ${uid}`, obj);
-            this.scheduleApplyPolicy();
-          })
-        }
       }
-      instances[instanceKey] = this;
+      Monitorable.instances[instanceKey] = this;
+      log.info('Created new Identity:', this.getGUID())
     }
-    return instances[instanceKey];
+    return Monitorable.instances[instanceKey];
   }
 
   static metaFieldsJson = [ 'activities' ]
@@ -72,14 +67,6 @@ class Identity extends Monitorable {
 
   _getPolicyKey() {
     return `policy:${this.constructor.getNamespace()}:${this.getUniqueId()}`;
-  }
-
-  async setPolicy(name, data) {
-    this.policy[name] = data;
-    await this.savePolicy();
-    if (this.subscriber) {
-      this.subscriber.publish("DiscoveryEvent", "IdentityPolicy:Changed", this.getUniqueId(), { name, data });
-    }
   }
 
   static getEnforcementIPsetName(uid, af = 4) {
@@ -107,12 +94,8 @@ class Identity extends Monitorable {
     if (envCreatedMap[instanceKey])
       return;
     // create related ipsets
-    await exec(`sudo ipset create -! ${this.getEnforcementIPsetName(uid)} hash:net`).catch((err) => {
-      log.error(`Failed to create identity ipset ${this.getEnforcementIPsetName(uid)}`, err.message);
-    });
-    await exec(`sudo ipset create -! ${this.getEnforcementIPsetName(uid, 6)} hash:net family inet6`).catch((err) => {
-      log.error(`Failed to create identity ipset ${this.getEnforcementIPsetName(uid, 6)}`, err.message);
-    });
+    await Ipset.create(this.getEnforcementIPsetName(uid), 'hash:net', false);
+    await Ipset.create(this.getEnforcementIPsetName(uid, 6), 'hash:net', true);
     envCreatedMap[instanceKey] = 1;
   }
 
@@ -121,7 +104,7 @@ class Identity extends Monitorable {
     await this.constructor.ensureCreateEnforcementEnv(uid);
     if (this.constructor.isAddressInRedis()) {
       const content = `redis-src-address-group=%${this.constructor.getRedisSetName(uid)}@${this.constructor.getEnforcementDnsmasqGroupId(uid)}`;
-      await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}.conf`, content, { encoding: 'utf8' }).catch((err) => {
+      await dnsmasq.writeConfig(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}.conf`, content).catch((err) => {
         log.error(`Failed to create dnsmasq config for identity ${uid}`, err.message);
       });
       dnsmasq.scheduleRestartDNSService();
@@ -129,19 +112,15 @@ class Identity extends Monitorable {
   }
 
   async destroyEnv() {
-    await exec(`sudo ipset flush -! ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {
-      log.error(`Failed to flush identity ipset ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`, err.message);
-    });
-    await exec(`sudo ipset flush -! ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)}`).catch((err) => {
-      log.error(`Failed to flush identity ipset ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)}`, err.message);
-    });
+    await Ipset.flush(this.constructor.getEnforcementIPsetName(this.getUniqueId()));
+    await Ipset.flush(this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6));
     // delete related dnsmasq config files
     const uid = this.getUniqueId();
     await exec(`sudo rm -f ${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}.conf`).catch((err) => { });
     await exec(`sudo rm -f ${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}_*.conf`).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
     const redisKey = this.constructor.getRedisSetName(this.getUniqueId());
-    await rclient.delAsync(redisKey);
+    await rclient.unlinkAsync(redisKey);
     delete this._ips;
   }
 
@@ -152,25 +131,43 @@ class Identity extends Monitorable {
       return;
     }
     log.info(`IP addresses of identity ${this.getUniqueId()} is changed`, this._ips, ips);
-    await exec(`sudo ipset flush ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {
-      log.error(`Failed to flush ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`, err.message);
-    });
-    await exec(`sudo ipset flush ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)}`).catch((err) => {
-      log.error(`Failed to flush ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)}`, err.message);
-    });
-    const cmds = [];
-    for (const ip of ips) {
-      if (new Address4(ip).isValid()) {
-        cmds.push(`add ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} ${ip}`);
-      } else {
-        if (new Address6(ip).isValid()) {
-          cmds.push(`add ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)} ${ip}`);
+    const tags = [];
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const typeTags = await this.getTags(type) || [];
+      Array.prototype.push.apply(tags, typeTags);
+    }
+    if (_.isArray(this._ips)) {
+      for (const ip of this._ips) {
+        // remove old ips from tag ipset
+        if (new Address4(ip).isValid()) {
+          for (const uid of tags)
+            await Ipset.del(Tag.getTagDeviceIPSetName(uid, 4), ip);
+        } else {
+          if (new Address6(ip).isValid()) {
+            for (const uid of tags)
+              await Ipset.del(Tag.getTagDeviceIPSetName(uid, 6), ip);
+          }
         }
       }
     }
-    await ipset.batchOp(cmds).catch((err) => {
-      log.error(`Failed to populate ipset of identity ${this.getUniqueId()}`, err.message);
-    });
+    const setName4 = this.constructor.getEnforcementIPsetName(this.getUniqueId());
+    const setName6 = this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6);
+    await Ipset.flush(setName4);
+    await Ipset.flush(setName6);
+    for (const ip of ips) {
+      if (new Address4(ip).isValid()) {
+        await Ipset.add(setName4, ip);
+        for (const uid of tags)
+          await Ipset.add(Tag.getTagDeviceIPSetName(uid, 4), ip, { timeout: 0 });
+      } else {
+        if (new Address6(ip).isValid()) {
+          await Ipset.add(setName6, ip);
+          for (const uid of tags)
+            await Ipset.add(Tag.getTagDeviceIPSetName(uid, 6), ip, { timeout: 0 });
+        }
+      }
+    }
+
     // update IP addresses in redis set
     // TODO: only supports IPv4 address here
     if (this.constructor.isAddressInRedis()) {
@@ -183,10 +180,10 @@ class Identity extends Monitorable {
         await rclient.saddAsync(redisKey, newIPs);
     } else {
       const content = ips.map((ip) => `src-address-group=%${ip.endsWith('/32') || ip.endsWith('/128') ? ip.split('/')[0] : ip}@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}`).join('\n');
-      await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, content, { encoding: "utf8" }).catch((err) => {
-        log.error(`Failed to update dnsmasq config for identity ${uid}`, err.message);
+      await dnsmasq.writeConfig(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, content).catch((err) => {
+        log.error(`Failed to update dnsmasq config for identity ${this.getUniqueId()}`, err.message);
       });
-      dnsmasq.scheduleReloadDNSService();
+      dnsmasq.scheduleRestartDNSService();
     }
     this._ips = ips;
   }
@@ -195,34 +192,28 @@ class Identity extends Monitorable {
     return true;
   }
 
-  getUniqueId() {
-
-  }
+  getUniqueId() { throw new Error('Not Implemented!') }
 
   getGUID() {
     return `${this.constructor.getNamespace()}:${this.getUniqueId()}`;
   }
 
-  static getKeyOfUIDInAlarm() {
-
-  }
+  static getKeyOfUIDInAlarm() { }
 
   // return a string, length of which should not exceed 8
-  static getNamespace() {
+  static getNamespace() { throw new Error('Not Implemented!') }
 
-  }
+  static getClassName() { return 'Identity' }
 
-  static getKeyOfInitData() {
-
-  }
+  static getKeyOfInitData() { throw new Error('Not Implemented!') }
 
   static async getInitData() {
     const json = {};
     const identities = await this.getIdentities();
-    for (const uid of Object.keys(identities)) {
-      await identities[uid].loadPolicy();
+    await Promise.all(Object.keys(identities).map(async uid => {
+      await identities[uid].loadPolicyAsync();
       json[uid] = identities[uid].toJson();
-    }
+    }));
     return json;
   }
 
@@ -276,23 +267,32 @@ class Identity extends Monitorable {
     return null;
   }
 
-  async getTags() {
-    if (!this.policy) await this.loadPolicyAsync()
-
-    return this.policy.tags && this.policy.tags.map(String) || [];
-  }
-
-  async tags(tags) {
+  async tags(tags, type = Constants.TAG_TYPE_GROUP) {
+    const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
+    if (!policyKey) {
+      log.error(`Unknown tag type ${type}, ignore tags`, tags);
+      return;
+    }
     tags = (tags || []).map(String);
-    this._tags = this._tags || [];
+    this[`_${policyKey}`] = this[`_${policyKey}`] || [];
+    const ips = this.getIPs();
     // remove old tags that are not in updated tags
-    const removedUids = this._tags.filter(uid => !tags.includes(uid));
+    const removedUids = this[`_${policyKey}`].filter(uid => !tags.includes(uid));
     for (let removedUid of removedUids) {
-      const tag = TagManager.getTagByUid(removedUid);
-      if (tag) {
+      const tagExists = await TagManager.tagUidExists(removedUid, type);
+      if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedUid);
-        await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {});
-        await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)}`).catch((err) => {});
+        for (const ip of ips) {
+          if (new Address4(ip).isValid()) {
+            await Ipset.del(Tag.getTagDeviceIPSetName(removedUid, 4), ip);
+          } else {
+            if (new Address6(ip).isValid()) {
+              await Ipset.del(Tag.getTagDeviceIPSetName(removedUid, 6), ip);
+            }
+          }
+        }
+        await Ipset.del(Tag.getTagDeviceSetName(removedUid), this.constructor.getEnforcementIPsetName(this.getUniqueId()));
+        await Ipset.del(Tag.getTagDeviceSetName(removedUid), this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6));
         await fs.promises.unlink(`${this.getDnsmasqConfigDirectory()}/tag_${removedUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedUid} not found`);
@@ -300,26 +300,31 @@ class Identity extends Monitorable {
     }
     const updatedTags = [];
     for (const tagUid of tags) {
-      const tag = TagManager.getTagByUid(tagUid);
-      if (tag) {
+      const tagExists = await TagManager.tagUidExists(tagUid, type);
+      if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(tagUid);
-        await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(tagUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {
-          log.error(`Failed to add ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} to tag ipset ${Tag.getTagDeviceSetName(tagUid)}`);
-        });
-        await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(tagUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)}`).catch((err) => {
-          log.error(`Failed to add ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)} to tag ipset ${Tag.getTagDeviceSetName(tagUid)}`);
-        });
+        for (const ip of ips) {
+          if (new Address4(ip).isValid()) {
+            await Ipset.add(Tag.getTagDeviceIPSetName(tagUid, 4), ip, { timeout: 0 });
+          } else {
+            if (new Address6(ip).isValid()) {
+              await Ipset.add(Tag.getTagDeviceIPSetName(tagUid, 6), ip, { timeout: 0 });
+            }
+          }
+        }
+        await Ipset.add(Tag.getTagDeviceSetName(tagUid), this.constructor.getEnforcementIPsetName(this.getUniqueId()));
+        await Ipset.add(Tag.getTagDeviceSetName(tagUid), this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6));
         const dnsmasqEntry = `group-group=@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}@${tagUid}`;
-        await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory()}/tag_${tagUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, dnsmasqEntry).catch((err) => {
-          log.error(`Failed to write dnsmasq tag ${tagUid} ${tag.o.name} on ${this.getGUID()}`, err);
+        await dnsmasq.writeConfig(`${this.getDnsmasqConfigDirectory()}/tag_${tagUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, dnsmasqEntry).catch((err) => {
+          log.error(`Failed to write dnsmasq tag ${tagUid} on ${this.getGUID()}`, err);
         });
         updatedTags.push(tagUid);
       } else {
         log.warn(`Tag ${tagUid} not found`);
       }
     }
-    this._tags = updatedTags;
-    await this.setPolicy("tags", this._tags);
+    this[`_${policyKey}`] = updatedTags;
+    await this.setPolicyAsync(policyKey, this[`_${policyKey}`]); // keep tags in policy data up-to-date
     dnsmasq.scheduleRestartDNSService();
   }
 
@@ -331,23 +336,23 @@ class Identity extends Monitorable {
     return this.monitoring;
   }
 
-  async qos(state) {
+  async qos(policy) {
+    let state = true;
+    switch (typeof policy) {
+      case "boolean":
+        state = policy;
+        break;
+      case "object":
+        state = policy.state;
+    }
     const identityIpsetName = this.constructor.getEnforcementIPsetName(this.getUniqueId());
     const identityIpsetName6 = this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6);
     if (state === true) {
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${identityIpsetName}`).catch((err) => {
-        log.error(`Failed to remove ${identityIpsetName} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${identityIpsetName6}`).catch((err) => {
-        log.error(`Failed to remove ${identityIpsetName6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
+      await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, identityIpsetName);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_QOS_OFF, identityIpsetName6);
     } else {
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${identityIpsetName}`).catch((err) => {
-        log.error(`Failed to add ${identityIpsetName} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${identityIpsetName6}`).catch((err) => {
-        log.error(`Failed to add ${identityIpsetName6} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
-      });
+      await Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, identityIpsetName);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_QOS_OFF, identityIpsetName6);
     }
   }
 
@@ -355,19 +360,11 @@ class Identity extends Monitorable {
     const identityIpsetName = this.constructor.getEnforcementIPsetName(this.getUniqueId());
     const identityIpsetName6 = this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6);
     if (state === true) {
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${identityIpsetName}`).catch((err) => {
-        log.error(`Failed to remove ${identityIpsetName} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
-      });
-      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${identityIpsetName6}`).catch((err) => {
-        log.error(`Failed to remove ${identityIpsetName6} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
-      });
+      await Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, identityIpsetName);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_ACL_OFF, identityIpsetName6);
     } else {
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${identityIpsetName}`).catch((err) => {
-        log.error(`Failed to add ${identityIpsetName} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
-      });
-      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${identityIpsetName6}`).catch((err) => {
-        log.error(`Failed to add ${identityIpsetName6} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
-      });
+      await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, identityIpsetName);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, identityIpsetName6);
     }
   }
 
@@ -375,6 +372,7 @@ class Identity extends Monitorable {
     try {
       const state = policy.state;
       const profileId = policy.profileId;
+      const idConfPath = `${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`;
       if (this._profileId && profileId !== this._profileId) {
         log.info(`Current VPN profile id id different from the previous profile id ${this._profileId}, remove old rule on identity ${this.getUniqueId()}`);
         const rule = new Rule("mangle").chn("FW_RT_TAG_DEVICE_5")
@@ -382,29 +380,21 @@ class Identity extends Monitorable {
           .comment(this._getPolicyKey());
         const rule4 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} src`);
         const rule6 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)} src`).fam(6);
-        await exec(rule4.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv4 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
-        });
-        await exec(rule6.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv6 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
-        });
+        await iptc.addRule(rule4.opr('-D'));
+        await iptc.addRule(rule6.opr('-D'));
 
         // remove rule that was set by state == null
-        rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-        rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-        await exec(rule4.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv4 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
-        });
-        await exec(rule6.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv6 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
-        });
-        await fs.promises.unlink(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`).catch((err) => {});
+        await iptc.addRule(rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D'));
+        await iptc.addRule(rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`).opr('-D'));
+        const vcConfPath = this._profileId.startsWith("VWG:") ? `${VirtWanGroup.getDNSRouteConfDir(this._profileId.substring(4), "hard")}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf` : `${VPNClient.getDNSRouteConfDir(this._profileId, "hard")}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`;
+        await fs.promises.unlink(idConfPath).catch((err) => {});
+        await fs.promises.unlink(vcConfPath).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
 
       this._profileId = profileId;
       if (!profileId) {
-        log.warn("VPN client profileId is not specified for " + this.getUniqueId());
+        log.verbose("VPN client profileId is not specified for " + this.getUniqueId());
         return;
       }
       const rule = new Rule("mangle").chn("FW_RT_TAG_DEVICE_5")
@@ -417,76 +407,50 @@ class Identity extends Monitorable {
         await VPNClient.ensureCreateEnforcementEnv(profileId);
       await this.constructor.ensureCreateEnforcementEnv(this.getUniqueId());
 
+      const vcConfPath = profileId.startsWith("VWG:") ? `${VirtWanGroup.getDNSRouteConfDir(profileId.substring(4), "hard")}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf` : `${VPNClient.getDNSRouteConfDir(profileId, "hard")}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`;
+
+      const rule4 = rule.clone().set(this.constructor.getEnforcementIPsetName(this.getUniqueId()), 'src');
+      const rule6 = rule.clone().set(this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6), 'src').fam(6);
+      const rule4Clear = rule4.clone().jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+      const rule6Clear = rule6.clone().jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
       if (state === true) {
-        const rule4 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} src`);
-        const rule6 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)} src`).fam(6);
-        await exec(rule4.toCmd('-A')).catch((err) => {
-          log.error(`Failed to add ipv4 vpn client rule for ${this.getUniqueId()} ${profileId}`, err.message);
-        });
-        await exec(rule6.toCmd('-A')).catch((err) => {
-          log.error(`Failed to add ipv6 vpn client rule for ${this.getUniqueId()} ${profileId}`, err.message);
-        });
+        await iptc.addRule(rule4.opr('-A'));
+        await iptc.addRule(rule6.opr('-A'));
 
         // remove rule that was set by state == null
-        rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-        rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-        await exec(rule4.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv4 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
-        });
-        await exec(rule6.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv6 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
-        });
-        await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`, `group-tag=@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}$${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`).catch((err) => {});
+        await iptc.addRule(rule4Clear.opr('-D'));
+        await iptc.addRule(rule6Clear.opr('-D'));
+        const markTag = `${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`;
+        await dnsmasq.writeConfig(idConfPath, `group-tag=@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}$vc_${this.getUniqueId()}`).catch((err) => {});
+        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$vc_${this.getUniqueId()}$${markTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
       // null means off
       if (state === null) {
         // remove rule that was set by state == true
-        const rule4 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} src`);
-        const rule6 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)} src`).fam(6);
-        await exec(rule4.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv4 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
-        });
-        await exec(rule6.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv6 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
-        });
+        await iptc.addRule(rule4.opr('-D'));
+        await iptc.addRule(rule6.opr('-D'));
         // override target and clear vpn client bits in fwmark
-        rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-        rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-        await exec(rule4.toCmd('-A')).catch((err) => {
-          log.error(`Failed to add ipv4 vpn client rule for ${this.getUniqueId()} ${profileId}`, err.message);
-        });
-        await exec(rule6.toCmd('-A')).catch((err) => {
-          log.error(`Failed to add ipv6 vpn client rule for ${this.getUniqueId()} ${profileId}`, err.message);
-        });
-        await fs.promises.unlink(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`).catch((err) => {});
+        await iptc.addRule(rule4Clear.opr('-A'));
+        await iptc.addRule(rule6Clear.opr('-A'));
+        await dnsmasq.writeConfig(idConfPath, `group-tag=@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}$vc_${this.getUniqueId()}`).catch((err) => {});
+        await dnsmasq.writeConfig(vcConfPath, `tag-tag=$vc_${this.getUniqueId()}$${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
       // false means N/A
       if (state === false) {
-        const rule4 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} src`);
-        const rule6 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)} src`).fam(6);
-        await exec(rule4.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv4 vpn client rule for ${this.getUniqueId()} ${profileId}`, err.message);
-        });
-        await exec(rule6.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv6 vpn client rule for ${this.getUniqueId()} ${profileId}`, err.message);
-        });
+        await iptc.addRule(rule4.opr('-D'));
+        await iptc.addRule(rule6.opr('-D'));
 
         // remove rule that was set by state == null
-        rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-        rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
-        await exec(rule4.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv4 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
-        });
-        await exec(rule6.toCmd('-D')).catch((err) => {
-          log.error(`Failed to remove ipv6 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
-        });
-        await fs.promises.unlink(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`).catch((err) => {});
+        await iptc.addRule(rule4Clear.opr('-D'));
+        await iptc.addRule(rule6Clear.opr('-D'));
+        await fs.promises.unlink(idConfPath).catch((err) => {});
+        await fs.promises.unlink(vcConfPath).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
     } catch (err) {
-      log.error("Failed to set VPN client access on " + this.getUniqueId());
+      log.error("Failed to set VPN client access on " + this.getUniqueId(), err.message);
     }
   }
 
@@ -495,23 +459,11 @@ class Identity extends Monitorable {
     const identityIpsetName = this.constructor.getEnforcementIPsetName(this.getUniqueId());
     const identityIpsetName6 = this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6);
     if (dnsCaching === true) {
-      let cmd = `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${identityIpsetName}`;
-      await exec(cmd).catch((err) => {
-        log.error(`Failed to enable dns cache on ${identityIpsetName} ${this.getUniqueId()}`, err);
-      });
-      cmd = `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${identityIpsetName6}`;
-      await exec(cmd).catch((err) => {
-        log.error(`Failed to enable dns cache on ${identityIpsetName6} ${this.getUniqueId()}`, err);
-      });
+      await Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, identityIpsetName);
+      await Ipset.del(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, identityIpsetName6);
     } else {
-      let cmd = `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${identityIpsetName}`;
-      await exec(cmd).catch((err) => {
-        log.error(`Failed to disable dns cache on ${identityIpsetName} ${this.getUniqueId()}`, err);
-      });
-      cmd = `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${identityIpsetName6}`;
-      await exec(cmd).catch((err) => {
-        log.error(`Failed to disable dns cache on ${identityIpsetName6} ${this.getUniqueId()}`, err);
-      });
+      await Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, identityIpsetName);
+      await Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, identityIpsetName6);
     }
   }
 

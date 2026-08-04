@@ -1,4 +1,6 @@
 #!/bin/bash
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
 
 NUM=${1:-'1'}
 
@@ -6,6 +8,9 @@ test $NUM -gt 10 && exit 0
 
 if [[ $NUM -eq 1 ]]; then
     time_bt=$(dmesg -T | sed -n '/ CSR8510 / s/\[\(.*\)\].*/\1/p'|tail -1)
+    if [[ -z "$time_bt" ]]; then
+      time_bt=$(dmesg -T | sed -n '/ Bluetooth 5.3 / s/\[\(.*\)\].*/\1/p'|tail -1)
+    fi
     if [[ -n "$time_bt" ]]; then
         time_now_s=$(date +%s)
         time_bt_s=$(date -d "$time_bt" +%s)
@@ -20,6 +25,5 @@ fi
 
 test $(redis-cli type sys:nobeep) != "none" && redis-cli del sys:nobeep && exit 0
 
-sudo modprobe pcspkr
-sudo su -l root -c "beep -r $NUM"
-sudo rmmod pcspkr
+beep $NUM
+exit 0

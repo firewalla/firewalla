@@ -1,4 +1,4 @@
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -33,7 +33,7 @@ class VirtWanGroupManager {
   constructor() {
     this.virtWanGroups = {};
 
-    this.refreshJob = new scheduler.UpdateJob(this.refreshVirtWanGroups.bind(this), 5000);
+    this.refreshJob = new scheduler.UpdateJob(this.refreshVirtWanGroups.bind(this), 3000);
     this.refreshJob.exec().catch((err) => {
       log.error("Failed to refresh virtual wan groups", err.message);
     });
@@ -102,7 +102,7 @@ class VirtWanGroupManager {
     if (!o.uuid) {
       o.uuid = require('uuid').v4();
     }
-    await rclient.hmset(VirtWanGroup.getRedisKeyName(o.uuid), this.redisfy(o));
+    await rclient.hmsetAsync(VirtWanGroup.getRedisKeyName(o.uuid), this.redisfy(o));
     if (!o.hasOwnProperty("failback"))
       await rclient.hdelAsync(VirtWanGroup.getRedisKeyName(o.uuid), "failback");
     if (!o.hasOwnProperty("strictVPN"))
@@ -111,7 +111,6 @@ class VirtWanGroupManager {
       type: Message.MSG_VIRT_WAN_GROUP_UPDATED
     };
     sem.sendEventToAll(event);
-    sem.emitLocalEvent(event);
   }
 
   async removeVirtWanGroup(uuid) {
@@ -119,8 +118,10 @@ class VirtWanGroupManager {
     const event = {
       type: Message.MSG_VIRT_WAN_GROUP_UPDATED
     };
+    // make virtual wan group removal take effect immediately in fireapi
+    if (f.isApi())
+      delete this.virtWanGroups[uuid];
     sem.sendEventToAll(event);
-    sem.emitLocalEvent(event);
   }
 
   async refreshVirtWanGroups() {
@@ -137,31 +138,22 @@ class VirtWanGroupManager {
           const vwg = new VirtWanGroup(o);
           this.virtWanGroups[uuid] = vwg;
           if (f.isMain()) {
-            if (sysManager.isIptablesReady()) {
+            (async () => {
+              await sysManager.waitTillIptablesReady()
               log.info(`Creating environment for virtual wan group ${uuid} ...`);
               await vwg.createEnv();
               await vwg.refreshRT();
-            } else {
-              sem.once('IPTABLES_READY', async () => {
-                log.info(`Creating environment for virtual wan group ${uuid} ...`);
-                await vwg.createEnv();
-                await vwg.refreshRT();
-              });
-            }
+            })()
           }
         } else {
           const vwg = this.virtWanGroups[uuid];
           const updated = vwg.update(o);
           if (updated && f.isMain()) {
-            if (sysManager.isIptablesReady()) {
+            (async () => {
+              await sysManager.waitTillIptablesReady()
               log.info(`Updating routing for virtual wan group ${uuid} ...`, o);
               await vwg.refreshRT();
-            } else {
-              sem.once('IPTABLES_READY', async () => {
-                log.info(`Updating routing for virtual wan group ${uuid} ...`, o);
-                await vwg.refreshRT();
-              });
-            }
+            })()
           }
         }
         markMap[uuid] = true;
@@ -170,15 +162,11 @@ class VirtWanGroupManager {
       for (const vwg of removedVwgs) {
         if (f.isMain()) {
           await rclient.unlinkAsync(VirtWanGroup.getRedisKeyName(vwg.uuid));
-          if (sysManager.isIptablesReady()) {
+          (async () => {
+            await sysManager.waitTillIptablesReady()
             log.info(`Destroying environment for virtual wan group ${vwg.uuid} ...`);
             await vwg.destroyEnv();
-          } else {
-            sem.once('IPTABLES_READY', async () => {
-              log.info(`Destroying environment for virtual wan group ${vwg.uuid} ...`);
-              await vwg.destroyEnv();
-            });
-          }
+          })()
         }
         delete this.virtWanGroups[vwg.uuid];
       }
@@ -186,6 +174,22 @@ class VirtWanGroupManager {
       log.error("Failed to refresh virtual wan groups", err);
     });
   }
+
+  // return a list of profile id
+  async getAllEnabledStrictVPNClients(uuid) {
+    const list = [];
+    const vwg = this.virtWanGroups[uuid];
+    if (vwg && vwg.strictVPN == true && vwg.connState) {
+      for (const client of Object.keys(vwg.connState)) {
+        const clientState = vwg.connState[client];
+        if (clientState && clientState.enabled == true && clientState.profileId) {
+          list.push(clientState.profileId)
+        }
+      }
+    }
+    return list;
+  }
+
 }
 
 module.exports = new VirtWanGroupManager();

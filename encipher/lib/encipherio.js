@@ -110,6 +110,7 @@ let legoEptCloud = class {
       this.offlineEventFired = false;
 
       this.disconnectCloud = true;
+      this.ledUpdateChain = Promise.resolve();
     }
     return instance[name];
     // NO LONGER create keypair in sync node during constructor
@@ -415,6 +416,41 @@ let legoEptCloud = class {
     return resp.body
   }
 
+  async reloadGroupInfoFromRedis(options = {}) {
+    try {
+      let gid = options.gid;
+
+      if (!gid) {
+        log.info("Reading gid from redis sys:ept ...");
+        gid = await rclient.hgetAsync("sys:ept", "gid");
+      }
+
+      if (!gid) {
+        log.warn("GID not found");
+        return;
+      }
+
+      if(options.onlyWhenEmpty && this.groupCache[gid]) {
+        log.info("Skip reloading group from redis because group cache is already there for gid", gid);
+        return;
+      }
+
+      let groupString = await rclient.hgetAsync('sys:ept:me', 'group');
+      if (!groupString) {
+        log.warn("sys:ept:me Group info not found in redis");
+        return;
+      }
+
+      const redisCache = JSON.parse(groupString);
+      const group = this.parseGroup(redisCache);
+
+      log.info("Using group info cache from sys:ept:me", gid);
+      this.groupCache[gid] = group;
+    } catch(err) {
+      log.error("Got error when reloading group info from redis", err);
+    }
+  }
+
   async eptGroupList() {
     if (!this.eid) throw new Error('Invalid Instance Eid')
 
@@ -650,10 +686,7 @@ let legoEptCloud = class {
       }
 
       if (!group && !forceCloudCheck) {
-        // box is aware of every single key change, it's safe to use cache here
-        const redisCache = JSON.parse(await rclient.hgetAsync('sys:ept:me', 'group'))
-        group = this.parseGroup(redisCache)
-        this.groupCache[gid] = group
+        await this.reloadGroupInfoFromRedis({gid});
       }
 
       if(config.isFeatureOn("rekey") &&
@@ -1079,9 +1112,12 @@ let legoEptCloud = class {
 
           if(!this.ledNetworkDownJob) {
             this.ledNetworkDownJob = setTimeout(() => {
-              // set led to notify user
-              platform.ledNetworkDown();
               this.ledNetworkDownJob = null;
+              // cloud already reconnected; skip stale network_down
+              if (!this.disconnectCloud) return;
+              this.ledUpdateChain = this.ledUpdateChain
+                .then(() => platform.ledNetworkDown())
+                .catch(err => log.error('ledNetworkDown failed:', err && err.message));
             }, LED_NETWORK_DOWN_THRESHOLD * 1000);
           }
 
@@ -1103,6 +1139,8 @@ let legoEptCloud = class {
         });
         this.socket.on('reconnect', async ()=>{
           log.info('--== Cloud reconnected ==--')
+          // flip state synchronously so any pending ledNetworkDown timer bails out
+          this.disconnectCloud = false;
           // if (this.lastDisconnection
           //   && Date.now() / 1000 - this.lastDisconnection > NOTIF_OFFLINE_THRESHOLD
           //   && Date.now() / 1000 - this.lastReconnection > NOTIF_ONLINE_INTERVAL
@@ -1128,15 +1166,16 @@ let legoEptCloud = class {
             clearTimeout(this.ledNetworkDownJob);
             this.ledNetworkDownJob = null;
           }
-          // always reset led
-          platform.ledNetworkUp();
+          // always reset led; chained so firestatus receives it after any in-flight network_down
+          this.ledUpdateChain = this.ledUpdateChain
+            .then(() => platform.ledNetworkUp())
+            .catch(err => log.error('ledNetworkUp failed:', err && err.message));
 
           // fire box re-connect event ONLY when previously fired an offline event
           if ( this.offlineEventFired ) {
             await era.addStateEvent("box_state","websocket",0);
             this.offlineEventFired = false;
           }
-          this.disconnectCloud = false;
           const now = Math.floor(new Date() / 1000)
           const ts = now - notificationResendDuration;
           const results = await rclient.zrangebyscoreAsync(notificationResendKey, '(' + ts, '+inf', 'limit', 0, notificationResendMaxCount);
@@ -1162,8 +1201,12 @@ let legoEptCloud = class {
 
         // this event fires on reconnect as well
         this.socket.on('connect', async ()=>{
-          // always reset led on connect
-          platform.ledNetworkUp();
+          // flip state synchronously so any pending ledNetworkDown timer bails out
+          this.disconnectCloud = false;
+          // always reset led on connect; chained so firestatus receives it after any in-flight network_down
+          this.ledUpdateChain = this.ledUpdateChain
+            .then(() => platform.ledNetworkUp())
+            .catch(err => log.error('ledNetworkUp failed:', err && err.message));
 
           if (!platform.isFireRouterManaged()) {
             if (this.wanDownEventJob)
@@ -1193,7 +1236,6 @@ let legoEptCloud = class {
             await era.addStateEvent("box_state", "websocket", 0);
             this.offlineEventFired = false;
           }
-          this.disconnectCloud = false;
           // this.lastReconnection = this.lastReconnection || Date.now() / 1000
           log.info("[Web Socket] Connected to Firewalla Cloud: ",group.group.name, this.sioURL);
           if (this.notifyGids.length>0) {

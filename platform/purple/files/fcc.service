@@ -1,0 +1,7 @@
+[Unit]
+Description=Fire Cron Check
+
+[Service]
+Type=oneshot
+ExecStart=/home/pi/firewalla/scripts/fcc.sh
+

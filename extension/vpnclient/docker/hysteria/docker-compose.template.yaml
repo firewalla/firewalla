@@ -1,0 +1,9 @@
+version: '3'
+
+services:
+  hysteria:
+    image: public.ecr.aws/a0j1s2e9/hysteria:latest
+    volumes:
+      - ./:/etc/hysteria
+    cap_add:
+      - NET_ADMIN

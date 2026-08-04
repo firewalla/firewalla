@@ -83,6 +83,10 @@
   "NOTIF_REVERT_AUTOBLOCK_TITLE": "Active Protect Revalidation",
   "NOTIF_REVERT_AUTOBLOCK_BODY": "{{{count}}} active protect rules are removed.",
 
+  "NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_TITLE": "漏洞扫描完成",
+  "NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_NOT_FOUND_BODY": "系统漏洞扫描完成于{{{time}}}， 没有发现漏洞。",
+  "NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_FOUND_BODY": "Firewalla于{{{time}}}在您的设备上发现了{{{weakPasswordCount}}}个漏洞，点击查看扫描结果。",
+
   "NOTIF_ALARM_BRO_NOTICE_TeamCymruMalwareHashRegistry::Match": "设备{{{p.device.name}}}从{{{p.dest.name}}}下载了一个文件{{{p.file.type}}}文件，该文件可能包含可疑蠕虫代码。",
   "NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE": "VPN客户端连接中断",
   "NOTIF_VPN_CLIENT_LINK_BROKEN_BODY": "VPN客户端{{{profileId}}}和服务器之间的连接意外中断了。",

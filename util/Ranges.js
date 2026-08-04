@@ -72,7 +72,39 @@ function parseRanges(formatted) {
   }, []);
 }
 
+
+function limitInternalScanResult(tasks, maxResult=100) {
+  let count = 0;
+  let overlimit = false;
+  let limitedTasks = {};
+  for (const key in tasks) {
+    if ( !tasks[key] || !_.isArray(tasks[key].results)) {
+      continue;
+    }
+    for (let i = 0; i < tasks[key].results.length; i++) {
+      if (!tasks[key].results[i].result || !_.isArray(tasks[key].results[i].result)) {
+        continue;
+      }
+
+      if (count + tasks[key].results[i].result.length >= maxResult) {
+        overlimit = true;
+        tasks[key].results[i].result = tasks[key].results[i].result.splice(0, maxResult - count);
+        tasks[key].results = tasks[key].results.splice(0, i+1);
+        break;
+      }
+      count += tasks[key].results[i].result.length;
+    }
+    limitedTasks[key] = tasks[key];
+    if (overlimit) {
+      limitedTasks[key].overlimit = true;
+      break;
+    }
+  }
+  return limitedTasks;
+}
+
 var Ranges = {
+  limitInternalScanResult,
   getRangesForNumbers,
   getNumbersForRanges,
   formatRanges,

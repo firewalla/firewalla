@@ -23,7 +23,6 @@ const delay = require('../util/util.js').delay;
 
 const CloudWrapper = require('../api/lib/CloudWrapper.js');
 const cw = new CloudWrapper();
-const encryptMessageAsync = Promise.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
 
 const zlib = require('zlib');
 const deflateAsync = Promise.promisify(zlib.deflate);
@@ -47,7 +46,7 @@ class LiveTransport {
 
   setLivetimeExpirationDate() {
     const now = Date.now() / 1000;
-    log.info(`Extend live time for ${this.expire} seconds`);
+    log.debug(`Extend live time for ${this.expire} seconds`);
     this.livetimeExpireDate = Math.floor(now) + this.expire; // extend expire date
   }
 
@@ -67,6 +66,7 @@ class LiveTransport {
       const mspId = this.mspId;
       const replyid = this.replyid;
       this.livetimeRunning = true;
+      const encryptMessageAsync = Promise.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
       if (controller && this.socket) {
         while (this.isLivetimeValid()) {
           try {
@@ -90,7 +90,7 @@ class LiveTransport {
                   replyid: replyid
                 });
               }
-              log.info("response sent to back web cloud via live transport, req id:", this.replyid, this.guardianAlias);
+              log.debug("response sent to back web cloud via live transport, req id:", this.replyid, this.guardianAlias);
             } catch (err) {
               log.error('Socket IO connection error', err);
             }

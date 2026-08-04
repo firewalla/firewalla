@@ -14,7 +14,6 @@
 const log = require("../../net2/logger.js")(__filename);
 var dgram = require('dgram');
 var assert = require('assert');
-var debug = require('debug')('nat-pmp');
 var inherits = require('util').inherits;
 var EventEmitter = require('events').EventEmitter;
 
@@ -67,7 +66,7 @@ function Client (gateway, listenAddr) {
   if (!(this instanceof Client)) {
     return new Client(gateway, listenAddr);
   }
-  debug('creating new Client instance for gateway', gateway);
+  log.debug('creating new Client instance for gateway', gateway);
   EventEmitter.call(this);
 
   this._queue = [];
@@ -89,7 +88,7 @@ exports.Client = Client;
  */
 
 Client.prototype.connect = function () {
-  debug('Client#connect()');
+  log.debug('Client#connect()');
   if (this._connecting) {
     return false;
   }
@@ -109,7 +108,7 @@ Client.prototype.request = function (op, obj, cb) {
     cb = obj;
     obj = null;
   }
-  debug('Client#request()', [op, obj, cb]);
+  log.debug('Client#request()', [op, obj, cb]);
   var buf;
   var size;
   var pos = 0;
@@ -131,7 +130,7 @@ Client.prototype.request = function (op, obj, cb) {
       var ttl = +(obj.ttl);
       if (ttl !== (ttl | 0)) {
         // The RECOMMENDED Port Mapping Lifetime is 7200 seconds (two hours).
-        debug('using default "ttl" value of 7200');
+        log.debug('using default "ttl" value of 7200');
         ttl = 7200;
       }
       size = 12;
@@ -146,7 +145,7 @@ Client.prototype.request = function (op, obj, cb) {
     case exports.OP_EXTERNAL_IP:
     default:
       if (op !== exports.OP_EXTERNAL_IP) {
-        debug('WARN: invalid opcode given', op);
+        log.warn('WARN: invalid opcode given', op);
       }
       size = 2;
       buf = Buffer.alloc(size);
@@ -201,21 +200,21 @@ Client.prototype.portUnmapping = function (opts, cb) {
  */
 
 Client.prototype._next = function () {
-  debug('Client#_next()');
+  log.debug('Client#_next()');
   var req = this._queue[0];
   if (!req) {
-    debug('_next: nothing to process');
+    log.debug('_next: nothing to process');
     return;
   }
   if (!this.listening) {
-    debug('_next: not "listening" yet, cannot send out request yet');
+    log.debug('_next: not "listening" yet, cannot send out request yet');
     if (!this._connecting) {
       this.connect();
     }
     return;
   }
   if (this._reqActive) {
-    debug('_next: already an active request so waiting...');
+    log.debug('_next: already an active request so waiting...');
     return;
   }
   this._reqActive = true;
@@ -227,7 +226,7 @@ Client.prototype._next = function () {
   var port = exports.SERVER_PORT;
   var gateway = this.gateway;
 
-  debug('_next: sending request', buf, gateway);
+  log.debug('_next: sending request', buf, gateway);
   this.socket.send(buf, 0, size, port, gateway, function (err, bytes) {
     if (err) {
       self.onerror(err);
@@ -242,7 +241,7 @@ Client.prototype._next = function () {
  */
 
 Client.prototype.close = function () {
-  debug('Client#close()');
+  log.debug('Client#close()');
   if (this.socket) {
     this.socket.close();
   }
@@ -253,7 +252,7 @@ Client.prototype.close = function () {
  */
 
 Client.prototype.onlistening = function () {
-  debug('Client#onlistening()');
+  log.debug('Client#onlistening()');
   this.listening = true;
   this._connecting = false;
   this.emit('listening');
@@ -268,10 +267,10 @@ Client.prototype.onmessage = function (msg, rinfo) {
   // Ignore message if we're not expecting it
   if (this._queue.length === 0) return;
 
-  debug('Client#onmessage()', [msg, rinfo]);
+  log.debug('Client#onmessage()', [msg, rinfo]);
 
   function cb (err) {
-    debug('invoking "req" callback');
+    log.debug('invoking "req" callback');
     self._reqActive = false;
     if (err) {
       if (req.cb) {
@@ -293,13 +292,13 @@ Client.prototype.onmessage = function (msg, rinfo) {
   parsed.op = msg.readUInt8(pos); pos++;
 
   if (parsed.op - exports.SERVER_DELTA !== req.op) {
-    debug('onmessage: WARN: got unexpected message opcode; ignoring', parsed.op);
+    log.warn('onmessage: WARN: got unexpected message opcode; ignoring', parsed.op);
     return;
   }
 
   // if we got here, then we're gonna invoke the request's callback,
   // so shift this request off of the queue.
-  debug('removing "req" off of the queue');
+  log.debug('removing "req" off of the queue');
   this._queue.shift();
 
   if (parsed.vers !== 0) {
@@ -347,7 +346,7 @@ Client.prototype.onmessage = function (msg, rinfo) {
  */
 
 Client.prototype.onclose = function () {
-  debug('Client#onclose()');
+  log.debug('Client#onclose()');
   this.listening = false;
   this.socket = null;
 };
@@ -357,7 +356,7 @@ Client.prototype.onclose = function () {
  */
 
 Client.prototype.onerror = function (err) {
-  debug('Client#onerror()', [err]);
+  log.debug('Client#onerror()', [err]);
   if (this._req && this._req.cb) {
     this._req.cb(err);
   } else {
@@ -368,7 +367,7 @@ Client.prototype.onerror = function (err) {
 
 function on (name, target) {
   target.socket.on(name, function () {
-    debug('on: socket event %j', name);
+    log.debug('on: socket event %j', name);
     try {
       return target['on' + name].apply(target, arguments);
     } catch (e) {

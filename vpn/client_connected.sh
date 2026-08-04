@@ -26,4 +26,4 @@ if [[ -n $CLIENT_SUBNETS ]]; then # CLIENT_SUBNETS are cidr subnets separated wi
   done
 fi
 
-redis-cli publish "ovpn.client_connected" "$common_name,$trusted_ip,$trusted_ip6,$trusted_port,$ifconfig_pool_remote_ip,$ifconfig_pool_remote_ip6"
+redis-cli publish "ovpn.client_connected" "$common_name,$trusted_ip,$trusted_ip6,$trusted_port,$ifconfig_pool_remote_ip,$ifconfig_pool_remote_ip6,$dev"

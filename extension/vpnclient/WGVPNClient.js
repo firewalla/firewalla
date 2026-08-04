@@ -24,8 +24,11 @@ Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const {Address4, Address6} = require('ip-address');
 const _ = require('lodash');
-
 class WGVPNClient extends VPNClient {
+  constructor(options) {
+    super(options);
+    this.wgCmd = "wg";
+  }
 
   static convertPlainTextToJson(content) {
     let addresses = [];
@@ -56,7 +59,7 @@ class WGVPNClient extends VPNClient {
           if (key === "PrivateKey")
             config.privateKey = value;
           if (key === "DNS")
-            dns = dns.concat(value.split(',').map(v => v.trim()));
+            dns = dns.concat(value.split(',').map(v => v.trim())).filter(v => v != '');
           if (key === "MTU")
             config.mtu = value;
           break;
@@ -91,6 +94,16 @@ class WGVPNClient extends VPNClient {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
     return (config && config.addresses || []).filter(ip => new Address4(ip).isValid());
+  }
+
+  async getVpnIP6s() {
+    let config = null;
+    try {
+      config = await this.loadJSONConfig();
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
+    return (config && config.addresses || []).filter(ip => new Address6(ip).isValid());
   }
 
   async getRoutedSubnets() {
@@ -136,6 +149,10 @@ class WGVPNClient extends VPNClient {
     entries.push(`[Interface]`);
     const privateKey = config.privateKey;
     entries.push(`PrivateKey = ${privateKey}`);
+    const fwmark = this.getFwMark();
+    if (fwmark)
+      entries.push(`FwMark = ${fwmark}`);
+    this._addObfuscationOptions(entries, config);
     const peers = config.peers || [];
     for (const peer of peers) {
       entries.push(`[Peer]`);
@@ -181,25 +198,30 @@ class WGVPNClient extends VPNClient {
     return config && config.dns || [];
   }
 
+  static getDefaultMTU() {
+    return 1412;
+  }
+
   async _start() {
     await this._generateConfig();
     const intf = this.getInterfaceName();
-    await exec(`sudo ip link add dev ${intf} type wireguard`).catch((err) => {
-      log.error(`Failed to create wireguard interface ${intf}`, err.message);
+    await exec(`sudo ip link add dev ${intf} type ${this.constructor.getProtocol()}`).catch((err) => {
+      log.warn(`Failed to create ${this.constructor.getProtocol()} interface ${intf}`, err.message);
     });
     await exec(`sudo ip link set ${intf} up`).catch((err) => {});
     await exec(`sudo ip addr flush dev ${intf}`).catch((err) => {});
     await exec(`sudo ip -6 addr flush dev ${intf}`).catch((err) => {});
-    await exec(`sudo wg setconf ${intf} ${this._getConfigPath()}`).catch((err) => {
+    await exec(`sudo ${this.wgCmd} setconf ${intf} ${this._getConfigPath()}`).catch((err) => {
       log.error(`Failed to set interface config ${this._getConfigPath()} on ${intf}`, err.message);
     });
+    await exec(`sudo bash -c 'echo f > /sys/class/net/${intf}/queues/rx-0/rps_cpus'`).catch((err) => {});
     let config = null;
     try {
       config = await this.loadJSONConfig();
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
-    const mtu = (config && config.mtu) || 1412;
+    const mtu = (config && config.mtu) || this.constructor.getDefaultMTU();
     await exec(`sudo ip link set ${intf} mtu ${mtu}`);
     const addresses = config.addresses || [];
     for (const addr of addresses) {
@@ -224,7 +246,7 @@ class WGVPNClient extends VPNClient {
     let config = value.config || {};
     if (content) {
       // merge JSON config and plain text config file together, JSON config takes higher precedence
-      const convertedConfig = WGVPNClient.convertPlainTextToJson(content);
+      const convertedConfig = this.constructor.convertPlainTextToJson(content);
       config = Object.assign({}, convertedConfig, config);
     }
     if (Object.keys(config).length === 0) {
@@ -246,7 +268,7 @@ class WGVPNClient extends VPNClient {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
       return false;
     }
-    const handshakeDetected = await exec(`sudo wg show ${intf} latest-handshakes`).then(result => result.stdout.trim().split('\n').some(line => {
+    const handshakeDetected = await exec(`sudo ${this.wgCmd} show ${intf} latest-handshakes`).then(result => result.stdout.trim().split('\n').some(line => {
       const [pubKey, handshakeTimestamp] = line.split('\t');
       const peer = config && config.peers.find(p => p.publicKey === pubKey);
       // consider as connected if latest handshake happens no more than (120 + 2 x persistentKeepalive) seconds ago
@@ -271,6 +293,68 @@ class WGVPNClient extends VPNClient {
   static getConfigDirectory() {
     return `${f.getHiddenFolder()}/run/wg_profile`;
   }
+
+  async getRemoteEndpoints() {
+    const results = await exec(`sudo ${this.wgCmd} show ${this.getInterfaceName()} endpoints | awk '{print $2}' | grep -v none`).then(result => result.stdout.trim().split('\n')).catch((err) => []);
+    const endpoints = [];
+    for (const result of results) {
+      if (result.startsWith("[") && result.includes("]:")) {
+        const ip = result.substring(1, result.indexOf("]:"));
+        const port = result.substring(result.indexOf("]:") + 2);
+        endpoints.push({ip, port});
+      } else {
+        const [ip, port] = result.split(':', 2);
+        endpoints.push({ip, port});
+      }
+    }
+    return endpoints;
+  }
+
+  // return at most last N_SESS sessions
+  async getLatestSessionLog() {
+    const N_SESS = 3; // retrieve last 3 sessions
+
+    // TODO: make VPNClient.logDir configurable, NEVER defined here
+    const logPath = `${this.logDir || "/var/log/wg"}/vpn_${this.profileId}.log`;
+    const content = await exec(`sudo tail -n 100 ${logPath}`).then(result => result.stdout.trim()).catch((err) => null);
+    if (content) {
+      return WGVPNClient._getLastNSession(content, "Interface created", N_SESS);
+    }
+    return null;
+  }
+
+  static _getLastNSession(content, pattern, count) {
+    const lines = content.split('\n');
+    let beginIdx = -1;
+    let hit = 0;
+    for (let i=lines.length-1; i >= 0 && hit < count;  i--){
+      if (lines[i].includes(pattern)) {
+        hit++
+        beginIdx = i;
+      }
+    }
+    if (beginIdx >= 0) {
+      return lines.slice(beginIdx).join("\n");
+    }
+
+    // no pattern found, return last 30 lines of log
+    // maybe pattern line failed to sync at startup.
+    return lines.slice(Math.max(lines.length-30, 0)).join("\n");
+  }
+
+  _addObfuscationOptions(entries, config) {
+    // for wireguard, no obfuscation options
+  }
+
+  async _getRemoteIP6() {
+    //For a Layer 3 tunnel like WireGuard,
+    //the kernel doesn't actually care about the specific MAC address of the next hop (because it doesn't need ARP/NDP).
+    //It only needs a syntactically valid IP address that conforms to the link specifications
+    //to satisfy the "nexthop via..." format requirement.
+    // return null;
+    return "fe80::1"
+  }
+
 }
 
 module.exports = WGVPNClient;

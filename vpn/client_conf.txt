@@ -1,2 +1,2 @@
-comp-lzo no
-push "comp-lzo no"
+#comp-lzo no
+#push "comp-lzo no"

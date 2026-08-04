@@ -1,0 +1,19 @@
+/var/log/wg/vpn_*.log {
+  su root syslog
+  size 256k
+  rotate 5
+  firstaction
+    if [ $(df /var/log/wg | tail -n +2 | awk '{ print $5 }' | tr -d '%') -gt 10 ] ; then sudo rm -rf /var/log/wg/* ; fi
+  endscript
+  postrotate
+    /usr/lib/rsyslog/rsyslog-rotate
+  endscript
+  lastaction
+    if [ $(df /var/log/wg | tail -n +2 | awk '{ print $5 }' | tr -d '%') -gt 20 ] ; then sudo rm -rf /var/log/wg/* && sudo systemctl restart rsyslog; fi
+  endscript
+  copytruncate
+  compress
+  delaycompress
+  missingok
+  notifempty
+}

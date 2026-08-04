@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,9 +32,14 @@ const dnsTool = new DNSTool()
 
 const country = require('../extension/country/country.js');
 
+const LRU = require('lru-cache');
 const _ = require('lodash')
 
 const { REDIS_KEY_REDIS_KEY_COUNT } = require('../net2/Constants.js')
+
+const AsyncLock = require('../vendor_lib/async-lock');
+const intelDnsCacheLock = new AsyncLock();
+const LOCK_INTEL_DNS_CACHE = 'intel_dns_cache';
 
 const DEFAULT_INTEL_EXPIRE = 2 * 24 * 3600; // two days
 
@@ -53,6 +58,26 @@ class IntelTool {
 
       // check intel key count every 15mins
       this.intelCount = {}
+      this.intelDnsCache = null;
+
+      // a cache to reduce redis IO thus speed up API calls and repeated lookups in FireMain
+      // one API query usually gets multiple flows with same intel, this cache aim to cut the extra cost here
+      // memory footprint isn't much to worry about, 10000 entries adds ~1MB
+      if (firewalla.isApi() || firewalla.isMain()) {
+        this.intelCache = new LRU({max: 10000, maxAge: 10*60*1000});
+      }
+
+      if (firewalla.isMain()) {
+        // Negative cache for absent inteldns:* keys — populated after startup delay,
+        // Observations on a high-traffic box indicate that the number of keys matching `inteldns:*` is about 1k, consuming around 10 KB of memory.
+        setTimeout(async () => {
+          await this._reloadIntelDnsCache();
+          setInterval(async () => {
+            await this._reloadIntelDnsCache();
+          }, 6 * 3600 * 1000);
+        }, 60 * 1000);
+      }
+
       setInterval(async () => {
         try {
           const results = await rclient.hmgetAsync(REDIS_KEY_REDIS_KEY_COUNT, 'intel:ip:', 'intel:url:', 'inteldns:')
@@ -192,7 +217,7 @@ class IntelTool {
   }
 
   async getCustomIntel(type, target) {
-    try {
+    if (target) try {
       const key = this.getCustomIntelKey(type, target)
       const intel = await rclient.getAsync(key)
       if (intel)
@@ -204,15 +229,41 @@ class IntelTool {
     return null
   }
 
+  async _reloadIntelDnsCache() {
+    return intelDnsCacheLock.acquire(LOCK_INTEL_DNS_CACHE, async () => {
+      const keys = await rclient.scanResults('inteldns:*');
+      log.info('Reloading intel dns cache with', keys.length, 'items');
+      this.intelDnsCache = new Set(keys);
+    });
+  }
+
   async getDomainIntel(domain) {
     const key = this.getDomainIntelKey(domain);
+
+    if (this.intelDnsCache != null) {
+      if (!this.intelDnsCache.has(key)) {
+        return null;
+      }
+    }
+
     const redisObj = await rclient.hgetallAsync(key);
-    return this.format('dns', domain, redisObj)
+
+    if (this.intelDnsCache != null) {
+      if (!redisObj || Object.keys(redisObj).length === 0) {
+        await intelDnsCacheLock.acquire(LOCK_INTEL_DNS_CACHE, async () => {
+          if (this.intelDnsCache) {
+            this.intelDnsCache.delete(key);
+          }
+        });
+        return null;
+      }
+    }
+    return this.format('dns', domain, redisObj);
   }
 
   async getDomainIntelAll(domain, custom = false) {
     const result = [];
-    const domains = flowUtil.getSubDomains(domain) || [];
+    const domains = Array.isArray(domain) ? domain : (flowUtil.getSubDomains(domain) || [])
     for (const d of domains) {
       const domainIntel = custom
         ? await this.getCustomIntel('dns', d)
@@ -246,7 +297,15 @@ class IntelTool {
     log.debug("Storing intel for domain", domain);
 
     await rclient.hmsetAsync(key, this.redisfy('dns', intel));
-    return rclient.expireAsync(key, expire);
+    const expireResult = await rclient.expireAsync(key, expire);
+    if (this.intelDnsCache != null) {
+      await intelDnsCacheLock.acquire(LOCK_INTEL_DNS_CACHE, async () => {
+        if (this.intelDnsCache) {
+          this.intelDnsCache.add(key);
+        }
+      });
+    }
+    return expireResult;
   }
 
   async urlIntelExists(url) {
@@ -273,16 +332,34 @@ class IntelTool {
     return result == 1;
   }
 
+  _invalidateIpIntelCache(ip) {
+    if (!this.intelCache || !ip) return
+    const intel = this.intelCache.get(ip)
+    this.intelCache.del(ip)
+    const host = intel && intel.host
+    if (host)
+      this.intelCache.del(host)
+  }
+
   async getIntel(ip, domains = []) {
     let intel = null
 
     if (ip) {
-      const key = this.getIntelKey(ip);
-      const redisObj = await rclient.hgetallAsync(key);
-      intel = this.format('ip', ip, redisObj)
+      if (this.intelCache) {
+        intel = this.intelCache.get(ip)
+      }
+      if (!intel) {
+        const key = this.getIntelKey(ip);
+        const redisObj = await rclient.hgetallAsync(key);
+        intel = this.format('ip', ip, redisObj)
+
+        if (intel && this.intelCache) {
+          this.intelCache.set(ip, intel)
+        }
+      }
     }
 
-    if (_.isArray(domains) && domains.length) {
+    if (domains && domains.length) {
       let matchedHost = null
       if (intel) {
         // domain in query matches with ip intel
@@ -291,28 +368,48 @@ class IntelTool {
           intel.host = matchedHost
         }
       }
-      if (!matchedHost) { // either intel:ip does not exist or host in intel:ip does not match with domains, need to discard cached intel
-        intel = {}
-      }
       if (!matchedHost) {
-        intel.host = domains[0]
-        const domainIntels = await this.getDomainIntelAll(intel.host);
-        for (const domainIntel of domainIntels) {
-          if (domainIntel.category && !intel.category) {
-            // NONE is a reseved word for custom intel to state a specific field to be empty
-            if (domainIntel.category === 'NONE')
-              delete intel.category
-            else
-              intel.category = domainIntel.category;
+        const subDomains = flowUtil.getSubDomains(domains[0]) || [];
+
+        if (this.intelCache) {
+          for (const sd of subDomains) {
+            intel = this.intelCache.get(sd)
+            if (intel) break
           }
-          if (domainIntel.app && !intel.app) {
-            // no JSON parsing required here. there was a bug not properly dealing with app
-            // array from the cloud, and app is saved as string
-            // furthermore, intel:ip only saves the first element of app, should keep it consistent
-            if (domainIntel.app === 'NONE')
-              delete intel.app
-            else
-              intel.app = domainIntel.app
+        }
+
+        if (!this.intelCache || !intel) {
+          // either intel:ip does not exist or host in intel:ip does not match with domains,
+          // discard cached intel
+          intel = {}
+          intel.host = domains[0]
+
+          const domainIntels = await this.getDomainIntelAll(subDomains);
+          const cDomainIntels = await this.getDomainIntelAll(subDomains, true);
+          const allDomainIntels = domainIntels.reverse()
+          while (cDomainIntels.length) allDomainIntels.push(cDomainIntels.pop())
+
+          for (const domainIntel of allDomainIntels) {
+            if (domainIntel.category && !intel.category) {
+              // NONE is a reseved word for custom intel to state a specific field to be empty
+              if (domainIntel.category === 'NONE')
+                delete intel.category
+              else
+                intel.category = domainIntel.category;
+            }
+            if (domainIntel.app && !intel.app) {
+              // no JSON parsing required here. there was a bug not properly dealing with app
+              // array from the cloud, and app is saved as string
+              // furthermore, intel:ip only saves the first element of app, should keep it consistent
+              if (domainIntel.app === 'NONE')
+                delete intel.app
+              else
+                intel.app = domainIntel.app
+            }
+          }
+
+          if (this.intelCache) {
+            this.intelCache.set(intel.host, intel)
           }
         }
       }
@@ -345,6 +442,9 @@ class IntelTool {
   }
 
   async addIntel(ip, intel, expire) {
+    if (!ip || ip == 'undefined')
+      throw new Error('Invalid intel', ip, intel, expire)
+
     intel = intel || {}
     expire = intel.e || this.getIntelExpiration()
 
@@ -355,7 +455,7 @@ class IntelTool {
     intel.updateTime = `${new Date() / 1000}`
 
     await rclient.hmsetAsync(key, this.redisfy('ip', intel));
-    if(intel.host && intel.ip) {
+    if(intel.host && ip) {
       // sync reverse dns info when adding intel
       await dnsTool.addReverseDns(intel.host, [intel.ip])
     }
@@ -365,6 +465,7 @@ class IntelTool {
     } else {
       await this.removeFromSecurityIntelTracking(key);
     }
+    this._invalidateIpIntelCache(ip)
     return rclient.expireAsync(key, expire);
   }
 
@@ -400,9 +501,9 @@ class IntelTool {
     return rclient.expireAsync(key, expire);
   }
 
-  removeIntel(ip) {
-    let key = this.getIntelKey(ip);
-
+  async removeIntel(ip) {
+    const key = this.getIntelKey(ip);
+    this._invalidateIpIntelCache(ip)
     return rclient.unlinkAsync(key);
   }
 
@@ -452,7 +553,7 @@ class IntelTool {
   }
 
   async checkIntelFromCloud(ip, domain, options = {}) {
-    let {fd, lucky} = options;
+    let {fd, lucky, match} = options;
 
     log.debug("Checking intel for", ip, domain, ', dir:', fd);
     if (fd == null) {
@@ -464,11 +565,16 @@ class IntelTool {
     const hashCache = {}
 
     const hds = flowUtil.hashHost(domain, { keepOriginal: true }) || [];
-    _ipList.push.apply(_ipList, hds);
 
-    _ipList.forEach((hash) => {
-      this.updateHashMapping(hashCache, hash)
-    })
+    // tell the cloud which hashed domain triggers the intel check
+    let hashedMatch = null;
+    for (const list of [_ipList, hds]) {
+      list.forEach((hash) => {
+        this.updateHashMapping(hashCache, hash)
+        if (match && hash[0] === match)
+          hashedMatch = hash[2];
+      })
+    }
 
     const _ips = _ipList.map((x) => x.slice(1, 3)); // remove the origin domains
     const _hList = hds.map((x) => x.slice(1, 3));
@@ -493,6 +599,9 @@ class IntelTool {
     const data = { flowlist: flowList, hashed: 1 };
     if(lucky) {
       data.lucky = 1;
+    }
+    if (hashedMatch) {
+      data.hashedMatch = hashedMatch;
     }
     log.debug(require('util').inspect(data, { depth: null }));
 

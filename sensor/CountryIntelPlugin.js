@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc
+/*    Copyright 2021-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,13 +19,11 @@ const Sensor = require('./Sensor.js').Sensor;
 const cc = require('../extension/cloudcache/cloudcache.js');
 const sem = require('./SensorEventManager.js').getInstance();
 const zlib = require('zlib');
-const fs = require('fs');
-const f = require('../net2/Firewalla.js');
-const countryDataFolder = `${f.getRuntimeInfoFolder()}/countryData`;
-const Promise = require('bluebird');
-const inflateAsync = Promise.promisify(zlib.inflate);
-Promise.promisifyAll(fs);
+const fsp = require('fs').promises
+const countryDataFolder = require('../extension/country/country.js').countryDataFolder
+const inflateAsync = require('util').promisify(zlib.inflate);
 const Buffer = require('buffer').Buffer;
+const crypto = require('crypto');
 
 const hashData = [{
     hashKey: "mmdb:ipv4",
@@ -45,14 +43,14 @@ class CountryIntelPlugin extends Sensor {
         const geoDatChangeEvent = {
             type: 'GEO_DAT_CHANGE',
             dir: countryDataFolder,
-            suppressEventLogging: false
+            message: countryDataFolder,
         }
         sem.emitLocalEvent(geoDatChangeEvent);
         sem.sendEventToFireApi(geoDatChangeEvent);
         for (const item of hashData) {
             try {
-                await cc.enableCache(item.hashKey, (data) => {
-                    this.updateCountryData(item, data);
+                await cc.enableCache(item.hashKey, (data, meta) => {
+                    this.updateCountryData(item, data, meta);
                 });
             } catch (err) {
                 log.error("Failed to process country data:", item.hashKey);
@@ -60,7 +58,7 @@ class CountryIntelPlugin extends Sensor {
         }
     }
     // update country data and use in geoip-lite
-    async updateCountryData(item, content) {
+    async updateCountryData(item, content, meta) {
         try {
             if (!content || content.length < 10) {
                 // likely invalid, return null for protection
@@ -69,17 +67,27 @@ class CountryIntelPlugin extends Sensor {
             }
             const buf = Buffer.from(content, 'base64');
             const data = await inflateAsync(buf);
-            await fs.writeFileAsync(item.dataPath, data);
+            await fsp.writeFile(item.dataPath, data);
+            if (meta.sha256sumOrigin) {
+              const written = await fsp.readFile(item.dataPath);
+              const sha256 = crypto.createHash('sha256').update(written).digest('hex');
+              if (sha256 != meta.sha256sumOrigin) {
+                throw new Error(`Orignal sha256 doesn't match, written:${sha256}, expected:${meta.sha256sumOrigin}`)
+              }
+            }
             log.info(`Loaded Country Data ${item.hashKey} successfully.`);
             const geoRefreshEvent = {
                 type: 'GEO_REFRESH',
                 dataType: item.type,
-                suppressEventLogging: false
+                message: item.type,
             }
             sem.emitLocalEvent(geoRefreshEvent);
             sem.sendEventToFireApi(geoRefreshEvent);
         } catch (err) {
             log.error("Failed to update country data, err:", err);
+            await fsp.unlink(item.dataPath).catch(err => {
+              log.error('Error removing cache file', item.dataPath, err)
+            })
         }
     }
     async globalOff() {
@@ -89,14 +97,14 @@ class CountryIntelPlugin extends Sensor {
         const geoDatChangeEvent = {
             type: 'GEO_DAT_CHANGE',
             dir: null,
-            suppressEventLogging: false
+            message: 'repo default',
         }
         sem.emitLocalEvent(geoDatChangeEvent);
         sem.sendEventToFireApi(geoDatChangeEvent);
         const geoRefreshEvent = {
             type: 'GEO_REFRESH',
             dataType: null,
-            suppressEventLogging: false
+            message: 'all',
         }
         sem.emitLocalEvent(geoRefreshEvent);
         sem.sendEventToFireApi(geoRefreshEvent);

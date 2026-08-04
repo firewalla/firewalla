@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC.
+/*    Copyright 2020-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -138,7 +138,7 @@ class Tracking {
         continue;
       }
       const begin = flow.ts * 1000;
-      const end = flow.ets * 1000;
+      const end = (flow.ts + flow.du) * 1000;
       await this.recordDestination(mac, destIP, begin, end);
       await this.recordTraffic(mac, flow, begin, end);
     }

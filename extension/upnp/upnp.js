@@ -1,4 +1,4 @@
-/*    Copyright 2017 - 2020 Firewalla Inc
+/*    Copyright 2017-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -40,7 +40,7 @@ const natpmpTimeout = 86400;
 
 const Message = require('../../net2/Message.js');
 const f = require('../../net2/Firewalla.js');
-const ip = require('ip');
+const ipUtil = require('../../util/IPUtil.js');
 const mode = require('../../net2/Mode.js');
 
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
@@ -66,7 +66,7 @@ module.exports = class {
         this.upnpIntervalHandler = setInterval(
           async () => {
             log.info("UPnP periodical check starts")
-            if (registeredUpnpMappings.isEmpty) {
+            if (!registeredUpnpMappings.length) {
               log.info("No mapping registered.")
               return;
             }
@@ -75,7 +75,7 @@ module.exports = class {
               return null;
             });
             if (results) {
-              log.info("Current mappings: ", results);
+              results.forEach(r => r.enabled && log.info(r.protocol, r.public.host, r.public.port, r.private.host, r.private.port, ', ttl', r.ttl, r.description))
               registeredUpnpMappings.forEach((check) => {
                 log.info("Checking registered mapping:", check);
                 if (_.isEmpty(
@@ -120,7 +120,7 @@ module.exports = class {
       registeredUpnpMappings = [];
       // check availability of UPnP
       const defaultWanIp = sysManager.myDefaultWanIp();
-      if (defaultWanIp && ip.isPrivate(defaultWanIp) && !(await mode.isRouterModeOn())) {
+      if (defaultWanIp && ipUtil.isPrivate(defaultWanIp) && !(await mode.isRouterModeOn())) {
         const wanUpnpClient = natupnp.createClient({listenAddr: defaultWanIp});
         wanUpnpClient.externalIp((err, ip) => {
           if (err || ip == null) {
@@ -131,7 +131,7 @@ module.exports = class {
       }
       // check availability of NATPMP
       const defaultGateway = sysManager.myDefaultGateway();
-      if (defaultGateway && ip.isPrivate(defaultWanIp) && !(await mode.isRouterModeOn())) {
+      if (defaultGateway && ipUtil.isPrivate(defaultWanIp) && !(await mode.isRouterModeOn())) {
         const wanNatPmpClient = natpmp.connect(defaultGateway, defaultWanIp);
         wanNatPmpClient.on('error', (err) => {
           log.error(`NATPMP write clien does not work on gw ${defaultGateway}`, err);

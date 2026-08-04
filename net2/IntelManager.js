@@ -144,8 +144,6 @@ module.exports = class {
   }
 
   async whois(target) {
-    log.info("Looking whois:", target);
-
     let cached = await this.cacheLookup(target, "whois");
 
     if (cached === "none") {
@@ -160,6 +158,7 @@ module.exports = class {
       }
     }
 
+    log.info("Looking whois:", target);
     let whois = await Whois.lookup(target, {useOwnParser: true});
 
     if (whois) {

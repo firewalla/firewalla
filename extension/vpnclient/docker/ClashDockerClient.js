@@ -17,6 +17,7 @@
 
 const log = require('../../../net2/logger.js')(__filename);
 const fs = require('fs');
+const sem = require('../../../sensor/SensorEventManager.js').getInstance();
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
@@ -25,6 +26,8 @@ const YAML = require('../../../vendor_lib/yaml/dist');
 const f = require('../../../net2/Firewalla.js');
 const sysManager = require('../../../net2/SysManager.js')
 const _ = require('lodash');
+
+const vpnClientEnforcer = require('../VPNClientEnforcer.js');
 
 class ClashDockerClient extends DockerBaseVPNClient {
 
@@ -70,6 +73,18 @@ class ClashDockerClient extends DockerBaseVPNClient {
     await this.prepareConfig(config);
   }
 
+  async _checkInternetAvailability() {
+    // temporarily comment out
+    return true;
+    const script = `${f.getFirewallaHome()}/scripts/test_vpn_docker.sh`;
+    const intf = this.getInterfaceName();
+    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
+    // triple backslash to escape the dollar sign on sudo bash
+    const cmd = `sudo ${script} ${intf} ${rtId} "test 200 -eq \\\$(curl -s -m 5 -o /dev/null -I -w '%{http_code}' https://1.1.1.1)"`
+    const result = await exec(cmd).then(() => true).catch((err) => false);
+    return result;
+  }
+
   static getProtocol() {
     return "clash";
   }
@@ -85,6 +100,43 @@ class ClashDockerClient extends DockerBaseVPNClient {
 
   static getConfigDirectory() {
     return `${f.getHiddenFolder()}/run/clash_profile`;
+  }
+
+  async getStatistics() {
+    // a self-made hy_stats.sh script to get the stats
+    const result = await exec(`sudo docker exec ${this.getContainerName()} clash_stats.sh`)
+    .then(output => output.stdout.trim())
+    .catch((err) => {
+      log.error(`Failed to check clash stats on ${this.profileId}`, err.message);
+      return super.getStatistics();
+    });
+
+    if (_.isObject(result)) {
+      return result;
+    }
+
+    if (!result)
+      return {bytesIn: 0, bytesOut: 0};
+
+    let items = result.split(" ");
+    if (items.length < 2) {
+      log.error(`Invalid clash stats on ${this.profileId}`, result);
+      return {bytesIn: 0, bytesOut: 0};
+    }
+
+    let txBytes = Number(items[0]);
+    let rxBytes = Number(items[1]);
+    if (items[2]) {
+      let activeConn = Number(items[2]);
+      return {bytesIn: rxBytes, bytesOut: txBytes, activeConn: activeConn};
+    } else {
+      return {bytesIn: rxBytes, bytesOut: txBytes};
+    }
+  }
+
+  isIPv6Enabled() {
+    // only enable in dev, may change in the future
+    return f.isDevelopmentVersion();
   }
 }
 

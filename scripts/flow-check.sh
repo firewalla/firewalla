@@ -9,7 +9,7 @@ now=$(date +%s)
 idleTime=$(($now - ${latest%.*}))
 echo 'Latest flow recorded '$idleTime' sec ago'
 if [[ $idleTime -gt $THRESHOLD_IN_SEC ]]; then
-  echo 'Threshold exceeded, restarting firemain'
-  $FIREWALLA_HOME/scripts/firelog -t local -m "FLOWCHECK Latest flow recorded ${idleTime}s ago, restarting firemain"
-  sudo systemctl restart firemain
+  echo 'Threshold exceeded, restarting brofish'
+  $FIREWALLA_HOME/scripts/firelog -t local -m "FLOWCHECK Latest flow recorded ${idleTime}s ago, restarting brofish"
+  sudo systemctl restart brofish
 fi

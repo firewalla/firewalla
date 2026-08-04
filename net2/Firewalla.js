@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,6 +16,7 @@
 const log = require("../net2/logger.js")(__filename)
 
 const cp = require('child_process');
+const { exec } = require('child-process-promise')
 
 const util = require('util');
 const _ = require('lodash')
@@ -23,6 +24,7 @@ const Constants = require('./Constants.js');
 
 // TODO: Read this from config file
 let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
+let firerouterHome = process.env.FIREROUTER_HOME || "/home/pi/firerouter"
 let _isDocker = null;
 let _platform = null;
 let _isOverlayFS = null;
@@ -234,6 +236,10 @@ function getEncipherConfigFolder() {
   return "/encipher.config";
 }
 
+function getFireRouterHome() {
+  return firerouterHome
+}
+
 function getFireRouterHiddenFolder() {
   return `${getUserHome()}/.router`;
 }
@@ -329,6 +335,19 @@ function getLatestCommitHash() {
   return latestCommitHash;
 }
 
+async function getLocalCommitHash() {
+  const cmd = await exec("git rev-parse @")
+  return cmd.stdout.trim()
+}
+
+async function getRemoteCommitHash() {
+  // @{u}: remote-tracking branch
+  // https://www.git-scm.com/docs/gitrevisions
+  await exec("timeout 20s git fetch origin")
+  const cmd = await exec("git rev-parse @{u}")
+  return cmd.stdout.trim()
+}
+
 var __constants = {
   "MAX_V6_PERHOST":6
 };
@@ -369,8 +388,16 @@ function getProcessName() {
   return process.title;
 }
 
+function isTest() {
+  return process.env.NODE_ENV === 'test'
+}
+
 async function getBoxName() {
   return rclient.getAsync(Constants.REDIS_KEY_GROUP_NAME);
+}
+
+function getExtraAssetsDir() {
+  return `${getUserConfigFolder()}/assets_extra`;
 }
 
 module.exports = {
@@ -381,6 +408,7 @@ module.exports = {
   getLogFolder: getLogFolder,
   getRuntimeInfoFolder: getRuntimeInfoFolder,
   getUserConfigFolder: getUserConfigFolder,
+  getFireRouterHome,
   getFireRouterRuntimeInfoFolder: getFireRouterRuntimeInfoFolder,
   getFireRouterConfigFolder: getFireRouterConfigFolder,
   getUserID: getUserID,
@@ -413,16 +441,18 @@ module.exports = {
   getProdBranch: getProdBranch,
   getReleaseType: getReleaseType,
   isReservedBlockingIP: isReservedBlockingIP,
+  getRedHoleIP,
 
   isMain:isMain,
   isMonitor:isMonitor,
   isApi:isApi,
+  getProcessName,
+  isTest,
+
   getLastCommitDate:getLastCommitDate,
-
-  getProcessName:getProcessName,
-
-  getRedHoleIP:getRedHoleIP,
-
   getLatestCommitHash:getLatestCommitHash,
-  getBoxName: getBoxName
+  getLocalCommitHash,
+  getRemoteCommitHash,
+  getBoxName: getBoxName,
+  getExtraAssetsDir: getExtraAssetsDir
 }

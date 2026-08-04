@@ -20,20 +20,34 @@ const log = require('../net2/logger.js')(__filename);
 const exec = require('child-process-promise').exec;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
+const { Rule } = require('../net2/Iptables.js');
+const iptc = require('./IptablesControl.js');
+
 const POLICY_QOS_HANDLER_MAP_KEY = "policy_qos_handler_map";
+const SKIP_QOS_SWITCH =  0x40000000;
 const QOS_UPLOAD_MASK = 0x3f800000;
 const QOS_DOWNLOAD_MASK = 0x7f0000;
-const DEFAULT_PRIO = 4;
-const DEFAULT_RATE_LIMIT = "10240mbit";
+const PRIO_HIGH = 2;
+const PRIO_REG = 4;
+const PRIO_LOW = 6;
+const DEFAULT_PRIO = PRIO_REG;
+const DEFAULT_RATE_LIMIT = "200kbit";
+const DEFAULT_CEIL_LIMIT = "10240mbit";
+const DEFAULT_BURST_LIMIT = "15360kbit";
+const DEFAULT_QUANTUM = 60000;
+const DEFAULT_DELAY = "0";
+const DEFAULT_LOSS_RATE = "0";
 const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 
-async function getQoSHandlerForPolicy(pid) {
+function _policyField({ pid, subKey }) {
+  return subKey ? `policy_${pid}_${subKey}` : `policy_${pid}`;
+}
+
+async function getQoSHandlerForPolicy(ref) {
   const policyHandlerMap = (await rclient.hgetallAsync(POLICY_QOS_HANDLER_MAP_KEY)) || {};
-  if (policyHandlerMap[`policy_${pid}`])
-    return policyHandlerMap[`policy_${pid}`];
-  else
-    return null;
+  const field = _policyField(ref);
+  return policyHandlerMap[field] || null;
 }
 
 async function getPolicyForQosHandler(handlerId) {
@@ -44,40 +58,87 @@ async function getPolicyForQosHandler(handlerId) {
     return null;
 }
 
-async function allocateQoSHanderForPolicy(pid) {
+async function allocateQoSHanderForPolicy(ref) {
   const policyHandlerMap = (await rclient.hgetallAsync(POLICY_QOS_HANDLER_MAP_KEY)) || {};
-  if (policyHandlerMap[`policy_${pid}`])
-    return policyHandlerMap[`policy_${pid}`];
-  else {
-    for (let i = 2; i != 128; i++) {
-      if (!policyHandlerMap[`qos_${i}`]) {
-        await rclient.hmsetAsync(POLICY_QOS_HANDLER_MAP_KEY, `policy_${pid}`, i, `qos_${i}`, pid);
-        return i;
-      }
+  const field = _policyField(ref);
+  if (policyHandlerMap[field])
+    return policyHandlerMap[field];
+  for (let i = 2; i != 127; i++) {
+    if (!policyHandlerMap[`qos_${i}`]) {
+      await rclient.hmsetAsync(
+          POLICY_QOS_HANDLER_MAP_KEY,
+          field, i,
+          `qos_${i}`, ref.pid);
+      return i;
     }
-    return null;
   }
+  return null;
 }
 
-async function deallocateQoSHandlerForPolicy(pid) {
-  const qosHandler = await rclient.hgetAsync(POLICY_QOS_HANDLER_MAP_KEY, `policy_${pid}`);
+async function deallocateQoSHandlerForPolicy(ref) {
+  const field = _policyField(ref);
+  const qosHandler = await rclient.hgetAsync(POLICY_QOS_HANDLER_MAP_KEY, field);
   if (qosHandler) {
     await rclient.hdelAsync(POLICY_QOS_HANDLER_MAP_KEY, `qos_${qosHandler}`);
-    await rclient.hdelAsync(POLICY_QOS_HANDLER_MAP_KEY, `policy_${pid}`);
+    await rclient.hdelAsync(POLICY_QOS_HANDLER_MAP_KEY, field);
   }
 }
 
-async function createQoSClass(classId, direction, rateLimit, priority, qdisc, isolation) {
+async function resetPolicyQoSHandlerMap() {
+  await rclient.delAsync(POLICY_QOS_HANDLER_MAP_KEY).catch(() => undefined);
+  log.info("QoSHandler map is reseted");
+}
+
+async function createQoSClass(classId, parent, direction, rateLimit, priority, qdisc, isolation, increaseLatency, dropPacketRate) {
   if (!platform.isIFBSupported()) {
     log.error("ifb is not supported on this platform");
     return;
   }
+  if (!parent) {
+    log.error("parent is not defined");
+    return;
+  }
+
   qdisc = qdisc || "fq_codel";
-  rateLimit = rateLimit || DEFAULT_RATE_LIMIT;
-  if (!isNaN(rateLimit)) // default unit of rate limit is mbit
-    rateLimit = `${rateLimit}mbit`;
+
+  const rateNum = Number(rateLimit);
+  let ceilLimit;
+  let burstLimit;
+  let quantum;
+
+  rateLimit = DEFAULT_RATE_LIMIT; //always use a very low default rate limit, the actual limit will be enforced by the ceil limit.
+  if (Number.isNaN(rateNum) || rateNum <= 0 || rateNum > 10240) {
+    ceilLimit = DEFAULT_CEIL_LIMIT;
+    burstLimit = DEFAULT_BURST_LIMIT;
+    quantum = DEFAULT_QUANTUM;
+  } else {
+    ceilLimit = `${rateNum}mbit`;
+    let burst = rateNum * 1.5; // in KB
+    if (burst < 15) {
+      burst = 15;
+    }
+    burstLimit = `${burst}kbit`;
+      
+    quantum = rateNum * 150; // in bytes
+    if (quantum < 3000) {
+      quantum = 3000;
+    } else if (quantum > 60000) {
+      quantum = 60000;
+    }
+  }
+
+  const latencyNum = Number(increaseLatency);
+  if (Number.isNaN(latencyNum) || latencyNum < 0 || latencyNum > 1000) {
+    increaseLatency = DEFAULT_DELAY;
+  }
+
+  const dropNum = Number(dropPacketRate);
+  if (Number.isNaN(dropNum) || dropNum < 0 || dropNum > 100) {
+    dropPacketRate = DEFAULT_LOSS_RATE;
+  }
+
   priority = priority || DEFAULT_PRIO;
-  log.info(`Creating QoS class for classid ${classId}, direction ${direction}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}`);
+  log.info(`Creating QoS class for classid ${classId}, parent ${parent}, direction ${direction}, rate limit ${rateLimit}, ceil limit ${ceilLimit}, priority ${priority}, qdisc ${qdisc}`);
   if (!classId) {
     log.error(`class id is not specified`);
     return;
@@ -90,8 +151,16 @@ async function createQoSClass(classId, direction, rateLimit, priority, qdisc, is
   classId = Number(classId).toString(16);
   switch (qdisc) {
     case "fq_codel": {
-      await exec(`sudo tc class replace dev ${device} parent 1: classid 1:0x${classId} htb prio ${priority} rate ${rateLimit}`).then(() => {
-        return exec(`sudo tc qdisc replace dev ${device} parent 1:0x${classId} ${qdisc}`);
+      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burstLimit} cburst ${burstLimit} quantum ${quantum}`).then(() => {
+        return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc}`);
+      }).catch((err) => {
+        log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
+      });
+      break;
+    }
+    case "netem": {
+      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burstLimit} cburst ${burstLimit} quantum ${quantum}`).then(() => {
+        return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc} delay ${increaseLatency}ms loss ${dropPacketRate}%`);
       }).catch((err) => {
         log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
       });
@@ -106,9 +175,9 @@ async function createQoSClass(classId, direction, rateLimit, priority, qdisc, is
         default:
           isolation = "triple-isolate";
       }
-      // use bandwidth param on cake qdisc instead of rate param on htb class
-      await exec(`sudo tc class replace dev ${device} parent 1: classid 1:0x${classId} htb prio ${priority} rate ${DEFAULT_RATE_LIMIT}`).then(() => {
-        return exec(`sudo tc qdisc replace dev ${device} parent 1:0x${classId} ${qdisc} ${rateLimit == DEFAULT_RATE_LIMIT ? "unlimited" : `bandwidth ${rateLimit}`} ${isolation}`);
+      // use htb rate limit, do not use cake's built in rate limit, which might not co-work well with htb rate limit
+      await exec(`sudo tc class replace dev ${device} parent ${parent}:1 classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit} ceil ${ceilLimit} burst ${burstLimit} cburst ${burstLimit} quantum ${quantum}`).then(() => {
+        return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc} "unlimited" ${isolation} no-split-gso conservative`);
       }).catch((err) => {
         log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
       });
@@ -120,7 +189,7 @@ async function createQoSClass(classId, direction, rateLimit, priority, qdisc, is
   }
 }
 
-async function destroyQoSClass(classId, direction) {
+async function destroyQoSClass(classId, parent, direction, rateLimit) {
   if (!platform.isIFBSupported()) {
     log.error("ifb is not supported on this platform");
     return;
@@ -130,27 +199,43 @@ async function destroyQoSClass(classId, direction) {
     log.error(`class id is not specified`);
     return;
   }
+  if (!parent) {
+    log.error(`parent is not specified`);
+    return;
+  }
   if (!direction) {
     log.error(`direction is not specified`);
     return;
   }
+  if (!rateLimit) {
+    log.info("rateLimit is not defined, but is not used in destroyQoSClass");
+    //return;
+  }
   const device = direction === 'upload' ? 'ifb0' : 'ifb1';
   classId = Number(classId).toString(16);
+  
+  await exec(`sudo tc qdisc del dev ${device} parent ${parent}:0x${classId} 2>/dev/null || true`).catch((err) => {
+    log.error(`Failed to destroy child qdisc for ${parent}:0x${classId}, direction ${direction}`, err.message);
+  });
   // there is a bug in 4.15 kernel which will cause failure to add a filter with the same handle that was used by a deleted filter: https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1797669
   // if the filter cannot be solely deleted, the class cannot be deleted either. We have to replace it with a dummy class
-  await exec(`sudo tc class replace dev ${device} classid 1:0x${classId} htb rate ${DEFAULT_RATE_LIMIT} prio ${DEFAULT_PRIO}`).catch((err) => {
+  await exec(`sudo tc class replace dev ${device} classid ${parent}:0x${classId} htb rate ${DEFAULT_RATE_LIMIT} ceil ${DEFAULT_CEIL_LIMIT} prio ${DEFAULT_PRIO} quantum ${DEFAULT_QUANTUM}`).catch((err) => {
     log.error(`Failed to destroy QoS class ${classId}, direction ${direction}`, err.message);
   });
 }
 
-async function createTCFilter(filterId, classId, direction, prio, fwmark) {
+async function createTCFilter(filterId, parent, classId, direction, prio, fwmark) {
   if (!platform.isIFBSupported()) {
     log.error("ifb is not supported on this platform");
     return;
   }
-  log.info(`Creating tc filter for filter id ${filterId}, classid ${classId}, direction ${direction}, prio ${prio}`)
+  log.info(`Creating tc filter for filter id ${filterId}, parent ${parent}, classid ${classId}, direction ${direction}, prio ${prio}, fwmark ${fwmark}`)
   if (!filterId) {
     log.error(`filter id is not specified`);
+    return;
+  }
+  if (!parent) {
+    log.error(`parent is not specified`);
     return;
   }
   if (!classId) {
@@ -174,19 +259,23 @@ async function createTCFilter(filterId, classId, direction, prio, fwmark) {
   filterId = Number(filterId).toString(16);
   fwmark = Number(fwmark).toString(16);
   classId = Number(classId).toString(16);
-  await exec(`sudo tc filter replace dev ${device} parent 1: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid 1:0x${classId}`).catch((err) => {
+  await exec(`sudo tc filter replace dev ${device} parent ${parent}: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid ${parent}:0x${classId}`).catch((err) => {
     log.error(`Failed to create tc filter ${filterId} for class ${classId}, direction ${direction}, prio ${prio}, fwmark ${fwmark}`, err.message);
   });
 }
 
-async function destroyTCFilter(filterId, direction, prio, fwmark) {
+async function destroyTCFilter(filterId, parent, direction, prio, fwmark) {
   if (!platform.isIFBSupported()) {
     log.error("ifb is not supported on this platform");
     return;
   }
-  log.info(`Destroying tc filter for filter id ${filterId}, direction ${direction}, prio ${prio}`);
+  log.info(`Destroying tc filter for filter id ${filterId}, parent ${parent}, direction ${direction}, prio ${prio}`);
   if (!filterId) {
     log.error(`filter id is not specified`);
+    return;
+  }
+  if (!parent) {
+    log.error(`parent is not specified`);
     return;
   }
   if (!direction) {
@@ -207,20 +296,52 @@ async function destroyTCFilter(filterId, direction, prio, fwmark) {
   fwmark = Number(fwmark).toString(16);
   // there is a bug in 4.15 kernel which will cause failure to add a filter with the same handle that was used by a deleted filter: https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1797669
   // so we have to replace the filter with a dummy one
-  await exec(`sudo tc filter replace dev ${device} parent 1: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid 1:1`).catch((err) => {
+  await exec(`sudo tc filter replace dev ${device} parent ${parent}: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid ${parent}:1`).catch((err) => {
     log.error(`Failed to destory tc filter ${filterId}, direction ${direction}, prio ${prio}`, err.message);
   });
 }
 
+
+async function applyOverrideDscp(opts) {
+  let {qosHandler, op, priority, comments, trafficDirection} = opts;
+
+  const table = "mangle";
+  if (priority != PRIO_HIGH) {
+    return;
+  }
+
+  const fwmark = Number(qosHandler) << (trafficDirection === "upload" ? 23 : 16); // 23-29 bit is reserved for upload mark filter, 16-22 bit is reserved for download mark filter
+  const fwmask = trafficDirection === "upload" ? QOS_UPLOAD_MASK : QOS_DOWNLOAD_MASK;
+  priority = priority || DEFAULT_PRIO;
+
+  let rule = new Rule(table).chn("FW_POSTROUTING_DSCP_OVERRIDE");
+  rule.mark(fwmark, fwmask, false);
+  rule.jmp("DSCP --set-dscp 0x2e");
+  rule.comment(comments);
+  rule.opr(op);
+  rule.fam(4);
+  await iptc.addRule(rule);
+  rule.fam(6);
+  await iptc.addRule(rule);
+}
+
+
 module.exports = {
+  SKIP_QOS_SWITCH,
   QOS_UPLOAD_MASK,
   QOS_DOWNLOAD_MASK,
+  PRIO_HIGH,
+  PRIO_REG,
+  PRIO_LOW,
+  DEFAULT_PRIO,
   getQoSHandlerForPolicy,
   getPolicyForQosHandler,
   allocateQoSHanderForPolicy,
   deallocateQoSHandlerForPolicy,
+  resetPolicyQoSHandlerMap,
   createQoSClass,
   destroyQoSClass,
   createTCFilter,
-  destroyTCFilter
+  destroyTCFilter,
+  applyOverrideDscp
 }

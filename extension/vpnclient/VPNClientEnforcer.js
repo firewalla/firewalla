@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,9 +20,9 @@ const cp = require('child_process');
 const util = require('util');
 const routing = require('../routing/routing.js');
 
-const iptables = require('../../net2/Iptables.js');
-const wrapIptables = iptables.wrapIptables;
+const { Rule } = require('../../net2/Iptables.js');
 const ipset = require('../../net2/Ipset.js');
+const iptc = require('../../control/IptablesControl.js');
 const platformLoader = require('../../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const Mode = require('../../net2/Mode.js');
@@ -93,13 +93,15 @@ class VPNClientEnforcer {
     });
   }
 
-  async enforceVPNClientRoutes(remoteIP, vpnIntf, routedSubnets = [], dnsServers = [], overrideDefaultRoute = true) {
+  async enforceVPNClientRoutes(remoteIP, remoteIP6, vpnIntf, routedSubnets = [], bypassSubnets = [], dnsServers = [], overrideDefaultRoute = true, v6Enabled = false) {
     if (!vpnIntf)
       throw "Interface is not specified";
     const tableName = this._getRoutingTableName(vpnIntf);
     // ensure customized routing table is created
     const rtId = await routing.createCustomizedRoutingTable(tableName, routing.RT_TYPE_VC);
     await routing.flushRoutingTable(tableName, vpnIntf); // do not touch unreachable route, which is used for kill-switch
+    // flush throw routes (bypass subnets)
+    await routing.flushRoutingTable(tableName, null, null, null, "throw");
     if (!platform.isFireRouterManaged())
       await routing.flushRoutingTable(tableName, FireRouter.getDefaultWanIntfName());
     await routing.flushRoutingTable("main", vpnIntf); // flush routes in main RT using vpnIntf as outgoing interface
@@ -108,9 +110,12 @@ class VPNClientEnforcer {
       // but need to grant access to wan_routable table for packets from vpn interface
       await routing.createPolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 4);
       await routing.createPolicyRoutingRule("all", vpnIntf, "global_default", 10000, null, 4);
+      await routing.createPolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 6);
+      await routing.createPolicyRoutingRule("all", vpnIntf, "global_default", 10000, null, 6);
       // vpn client interface needs to lookup WAN interface local network routes in DHCP mode
       if (await Mode.isDHCPModeOn()) {
         await routing.createPolicyRoutingRule("all", vpnIntf, "global_local", 5000, null, 4);
+        await routing.createPolicyRoutingRule("all", vpnIntf, "global_local", 5000, null, 6);
       }
     } else {
       // copy all routes from main routing table on non-firerouter-managed platform
@@ -144,7 +149,12 @@ class VPNClientEnforcer {
         log.error(`Malformed route subnet ${routedSubnet}`);
         continue;
       }
-      await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, tableName, null, af).catch((err) => {});
+      if (af == 4)
+        await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, tableName, null, af).catch((err) => {});
+      else {
+        if (v6Enabled)
+          await routing.addRouteToTable(formattedSubnet, null, vpnIntf, tableName, null, af).catch((err) => {});
+      }
       // make routed subnets reachable from all lan networks
       let maskNum = Number(routing.MASK_VC);
       let offset = 0;
@@ -155,23 +165,50 @@ class VPNClientEnforcer {
       const pref = rtId >>> offset;
       // add routes with different metrics for different vpn client interface
       // in case multiple VPN clients have overlapped subnets, turning off one vpn client will not affect routes of others
-      await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, "main", pref, af).catch((err) => {});
+      if (af == 4)
+        await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, "main", pref, af).catch((err) => {});
+      else {
+        if (v6Enabled)
+          await routing.addRouteToTable(formattedSubnet, null, vpnIntf, "main", pref, af).catch((err) => {});
+      }
     }
     for (const dnsServer of dnsServers) {
       // add dns server to vpn client table
-      await routing.addRouteToTable(dnsServer, remoteIP, vpnIntf, tableName, null, new Address4(dnsServer).isValid() ? 4 : 6).catch((err) => {});
+      if (new Address4(dnsServer).isValid())
+        await routing.addRouteToTable(dnsServer, remoteIP, vpnIntf, tableName, null, 4).catch((err) => {});
+      else {
+        if (v6Enabled)
+          await routing.addRouteToTable(dnsServer, null, vpnIntf, tableName, null, 6).catch((err) => {});
+      }
+    }
+    // add throw routes for bypass subnets before the default route
+    for (const bypassSubnet of bypassSubnets) {
+      let af = 4;
+      let addr = new Address4(bypassSubnet);
+      if (!addr.isValid()) {
+        addr = new Address6(bypassSubnet);
+        if (addr.isValid())
+          af = 6;
+        else {
+          log.error(`Malformed bypass subnet ${bypassSubnet}`);
+          continue;
+        }
+      }
+      if (af === 4)
+        await routing.addRouteToTable(bypassSubnet, null, null, tableName, null, 4, "throw").catch((err) => {});
+      else if (v6Enabled)
+        await routing.addRouteToTable(bypassSubnet, null, null, tableName, null, 6, "throw").catch((err) => {});
     }
     if (overrideDefaultRoute) {
       // then add remote IP as gateway of default route to vpn client table
       await routing.addRouteToTable("default", remoteIP, vpnIntf, tableName).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
+      if (v6Enabled)
+        await routing.addRouteToTable("default", null, vpnIntf, tableName, null, 6).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
     }
     // add inbound connmark rule for vpn client interface
-    await execAsync(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
-      log.error(`Failed to add VPN client ipv4 inbound connmark rule for ${vpnIntf}`, err.message);
-    });
-    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
-      log.error(`Failed to add VPN client ipv6 inbound connmark rule for ${vpnIntf}`, err.message);
-    });
+    const connmarkRule = new Rule('nat').chn('FW_PREROUTING_VC_INBOUND').iif(vpnIntf).jmp(`CONNMARK --set-xmark ${Rule.stdMark(rtId, routing.MASK_ALL)}`).opr('-A');
+    await iptc.addRule(connmarkRule);
+    await iptc.addRule(connmarkRule.fam(6));
   }
 
   async flushVPNClientRoutes(vpnIntf) {
@@ -188,35 +225,41 @@ class VPNClientEnforcer {
       log.error(`Failed to remove policy routing rule`, err.message);
     });
     await routing.removePolicyRoutingRule("all", vpnIntf, "global_default", 10000, null, 4).catch((err) => {
-      log.error(`Failed tp remove policy routing rule`, err.message);
+      log.error(`Failed to remove policy routing rule`, err.message);
+    });
+    await routing.removePolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 6).catch((err) => {
+      log.error(`Failed to remove policy routing rule`, err.message);
+    });
+    await routing.removePolicyRoutingRule("all", vpnIntf, "global_local", 5000, null, 6).catch((err) => {
+      log.error(`Failed to remove policy routing rule`, err.message);
+    });
+    await routing.removePolicyRoutingRule("all", vpnIntf, "global_default", 10000, null, 6).catch((err) => {
+      log.error(`Failed to remove policy routing rule`, err.message);
     });
     // remove inbound connmark rule for vpn client interface
-    await execAsync(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
-      log.error(`Failed to remove VPN client ipv4 inbound connmark rule for ${vpnIntf}`, err.message);
-    });
-    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -D FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
-      log.error(`Failed to remove VPN client ipv6 inbound connmark rule for ${vpnIntf}`, err.message);
-    });
+    const connmarkRule = new Rule('nat').chn('FW_PREROUTING_VC_INBOUND').iif(vpnIntf).jmp(`CONNMARK --set-xmark ${Rule.stdMark(rtId, routing.MASK_ALL)}`).opr('-D');
+    await iptc.addRule(connmarkRule);
+    await iptc.addRule(connmarkRule.fam(6));
   }
 
   _getVPNClientIPSetName(vpnIntf) {
     return `vpn_client_${vpnIntf}_set`;
   }
 
-  async enforceDNSRedirect(vpnIntf, dnsServers, remoteIP, dnsRedirectChain) {
+  async enforceDNSRedirect(vpnIntf, dnsServers, dnsRedirectChain) {
     if (!vpnIntf || !dnsServers || dnsServers.length == 0)
       return;
-    const tableName = this._getRoutingTableName(vpnIntf);
-    await execAsync(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_VPN_CLIENT -j ${dnsRedirectChain}`)).catch((err) => {});
-    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_DNS_VPN_CLIENT -j ${dnsRedirectChain}`)).catch((err) => {});
+    const dnsRule = new Rule('nat').chn('FW_PREROUTING_DNS_VPN_CLIENT').jmp(dnsRedirectChain).opr('-A');
+    await iptc.addRule(dnsRule);
+    await iptc.addRule(dnsRule.fam(6));
   }
 
-  async unenforceDNSRedirect(vpnIntf, dnsServers, remoteIP, dnsRedirectChain) {
+  async unenforceDNSRedirect(vpnIntf, dnsServers, dnsRedirectChain) {
     if (!vpnIntf || !dnsServers || dnsServers.length == 0)
       return;
-    const tableName = this._getRoutingTableName(vpnIntf);
-    await execAsync(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_DNS_VPN_CLIENT -j ${dnsRedirectChain}`)).catch((err) => {});
-    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -D FW_PREROUTING_DNS_VPN_CLIENT -j ${dnsRedirectChain}`)).catch((err) => {});
+    const dnsRule = new Rule('nat').chn('FW_PREROUTING_DNS_VPN_CLIENT').jmp(dnsRedirectChain).opr('-D');
+    await iptc.addRule(dnsRule);
+    await iptc.addRule(dnsRule.fam(6));
   }
 }
 

@@ -16,11 +16,16 @@ utils.aton6 = function(a) {
 	}
 
 	if (l < 7) {
-		a.length = 8;
+    const omitted = 8 - a.length
+    const omitStart = a.indexOf('')
+    const omitEnd = omitStart + 8 - a.length
 
-		for (i = l; i >= 0 && a[i] !== ''; i--) {
-			a[7-l+i] = a[i];
-		}
+    for (let i = 7; i >= omitStart; i--) {
+      if (i > omitEnd)
+        a[i] = a[i - omitted]
+      else
+        a[i] = 0
+    }
 	}
 
 	for (i = 0; i < 8; i++) {
@@ -53,7 +58,7 @@ utils.cmp = function(a, b) {
 };
 
 utils.cmp6 = function(a, b) {
-	for (var ii = 0; ii < 2; ii++) {
+	for (var ii = 0; ii < 4; ii++) {
 		if (a[ii] < b[ii]) {
 			return -1;
 		}
@@ -64,17 +69,6 @@ utils.cmp6 = function(a, b) {
 	}
 
 	return 0;
-};
-
-utils.isPrivateIP = function(addr) {
-	addr = addr.toString();
-
-	return addr.match(/^10\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})/) != null ||
-    addr.match(/^192\.168\.([0-9]{1,3})\.([0-9]{1,3})/) != null ||
-    addr.match(/^172\.16\.([0-9]{1,3})\.([0-9]{1,3})/) != null ||
-    addr.match(/^127\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})/) != null ||
-    addr.match(/^169\.254\.([0-9]{1,3})\.([0-9]{1,3})/) != null ||
-    addr.match(/^fc00:/) != null || addr.match(/^fe80:/) != null;
 };
 
 utils.ntoa4 = function(n) {

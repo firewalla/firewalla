@@ -1,5 +1,5 @@
 var VpnManager = require('./VpnManager.js');
-vpnManager = new VpnManager('info');
+var vpnManager = new VpnManager('info');
 
 setTimeout(() => {
     vpnManager.install("server", (err) => {
@@ -22,4 +22,4 @@ setTimeout(() => {
             });
         }
     });
-}, 0000);
+}, 1);

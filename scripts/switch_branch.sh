@@ -3,6 +3,7 @@
 set -e
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
 MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 CMD=$(basename $0)
 source ${FIREWALLA_HOME}/platform/platform.sh
@@ -32,6 +33,22 @@ switch_branch() {
     if [[ "$cur_branch" == "$tgt_branch" ]]; then
       exit 0
     fi
+    if [[ -e /etc/firewalla-release ]]; then
+      BOARD=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
+    else
+      BOARD='unknown'
+    fi
+    arch=$(uname -m)
+    if [[ $BOARD == "orange" ]]; then
+      # restore the libxt_tls.so and libxt_udp_tls.so
+      for module_name in "xt_tls" "xt_udp_tls"; do
+        so_path_alt="/media/root-ro/usr/lib/${arch}-linux-gnu/xtables/lib${module_name}.so"
+        if [[ -f $so_path_alt ]]; then
+          sudo install -D -v -m 644 ${so_path_alt} /usr/lib/${arch}-linux-gnu/xtables
+        fi
+      done
+    fi
+
     remote_branch=$(map_target_branch $branch)
     # walla repo
     ( cd $FIREWALLA_HOME
@@ -82,6 +99,7 @@ test $# -gt 0 || {
 branch=$1
 cur_branch=$(git rev-parse --abbrev-ref HEAD)
 switch_branch $cur_branch $branch || exit 1
+rm -f "$FIREWALLA_HIDDEN/config/.no_auto_upgrade"
 set_redis_flag $branch || exit 2
 
 # although main_start includes following code, it may not be executed if current branch and target branch have the same latest hash

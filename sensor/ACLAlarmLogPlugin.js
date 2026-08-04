@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -36,10 +36,8 @@ const LogReader = require('../util/LogReader.js');
 const exec = require('child-process-promise').exec;
 const _ = require('lodash');
 const LRU = require('lru-cache');
-const sem = require('./SensorEventManager.js').getInstance();
-const {getPreferredName} = require('../util/util.js');
-const DNSManager = require('../net2/DNSManager.js');
-const dnsManager = new DNSManager();
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
 const mustache = require("mustache");
 
 const LOG_PREFIX = "[FW_ALM]";
@@ -51,7 +49,6 @@ class ACLAlarmLogPlugin extends Sensor {
     super(config);
     this.featureName = "acl_alarm";
     this.recentMatchCache = new LRU({maxAge: 600 * 1000, max: 512});
-    this.policyCache = new LRU({max: 256});
   }
 
   hookFeature() {
@@ -66,13 +63,6 @@ class ACLAlarmLogPlugin extends Sensor {
 
   async job() {
     super.job();
-
-    sem.on('Policy:Updated', (event) => {
-      const pid = event && event.pid;
-      if (!isNaN(pid)) {
-        this.policyCache.del(Number(pid));
-      }
-    });
 
     this.alarmLogReader = new LogReader(alarmLogFile);
     this.alarmLogReader.on('line', this._processAlarmLog.bind(this));
@@ -154,18 +144,6 @@ class ACLAlarmLogPlugin extends Sensor {
     }, 10000);
   }
 
-  async _getPolicy(pid) {
-    if (this.policyCache.has(pid))
-      return this.policyCache.get(pid);
-    
-    const policy = await pm2.getPolicy(pid);
-    if (policy) {
-      this.policyCache.set(pid, policy);
-      return policy;
-    }
-    return null;
-  }
-
   _portInRange(p, r) {
     if (p == r)
       return true;
@@ -180,7 +158,7 @@ class ACLAlarmLogPlugin extends Sensor {
   async _populateAlarm(record) {
     const {pid, src, dst, sport, dport, proto} = record;
     let localIP, remoteIP, localPort, remotePort, dir, remoteUID, localUID;
-    const policy = await this._getPolicy(pid);
+    const policy = await pm2.getPolicy(pid, true);
     if (!policy) {
       log.error(`Cannot find policy with pid ${pid}`);
       return;
@@ -193,9 +171,9 @@ class ACLAlarmLogPlugin extends Sensor {
       remoteIP = dst;
       remotePort = dport;
       dir = "outbound";
-      const device = await dnsManager.resolveLocalHostAsync(localIP);
-      if (device)
-        srcName = getPreferredName(device);
+      const host = await hostManager.getIdentityOrHost(localIP);
+      if (host)
+        srcName = host.getReadableName()
     } else {
       if (sysManager.isLocalIP(dst)) {
         localIP = dst;
@@ -203,9 +181,9 @@ class ACLAlarmLogPlugin extends Sensor {
         remoteIP = src;
         remotePort = sport;
         dir = "inbound";
-        const device = await dnsManager.resolveLocalHostAsync(localIP);
-        if (device)
-          dstName = getPreferredName(device);
+        const host = await hostManager.getIdentityOrHost(localIP);
+        if (host)
+          dstName = host.getReadableName()
       } else return;
     }
 

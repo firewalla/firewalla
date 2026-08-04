@@ -5,6 +5,7 @@ Description=FireOnBoot
 User=pi
 Type=forking
 ExecStart=/home/pi/firewalla/scripts/fireonboot.sh
+TimeoutSec=1200
 
 [Install]
 WantedBy=multi-user.target

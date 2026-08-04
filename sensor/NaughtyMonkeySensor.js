@@ -19,11 +19,8 @@ const log = require("../net2/logger.js")(__filename)
 const fc = require("../net2/config.js")
 const f = require("../net2/Firewalla.js")
 
-const fs = require('fs')
+const fsp = require('fs').promises
 const exec = require('child-process-promise').exec
-
-const Promise = require('bluebird');
-Promise.promisifyAll(fs);
 
 const Sensor = require('./Sensor.js').Sensor
 
@@ -45,6 +42,7 @@ const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const { delay } = require('../util/util.js')
 
 const monkeyPrefix = "monkey";
 
@@ -57,7 +55,7 @@ class NaughtyMonkeySensor extends Sensor {
     }
 
     if (fc.isFeatureOn("naughty_monkey")) {
-      await this.delay(this.getRandomTime())
+      await delay(this.getRandomTime())
       await this.release({
         monkeyType: "malware"
       })
@@ -177,7 +175,7 @@ class NaughtyMonkeySensor extends Sensor {
 
   async appendNotice(payload) {
     const tmpfile = "/tmp/monkey";
-    await fs.writeFileAsync(tmpfile, JSON.stringify(payload) + "\n");
+    await fsp.writeFile(tmpfile, JSON.stringify(payload) + "\n");
 
     const file = "/blog/current/notice.log";
     const cmd = `sudo bash -c 'cat ${tmpfile} >> ${file}'`;

@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc
+/*    Copyright 2021-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,7 +32,10 @@ function randomString(len) {
 
 class VipManager {
     constructor() {
-
+      this.configMap = new Map();
+      sem.on(Message.MSG_VIP_PROFILES_UPDATED, async () => {
+        this.configMap = await this.load();
+      });
     }
 
     async load() {
@@ -84,11 +87,10 @@ class VipManager {
             cn: ""
         };
         sem.sendEventToAll(event);
-        sem.emitLocalEvent(event);
     }
 
     async isVip(ipv4Addr) {
-        const profiles = await this.load();
+        const profiles = this.configMap;
         for (const [k, profile] of profiles) {
             if (profile.ip === ipv4Addr) {
                 return true;

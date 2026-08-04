@@ -1,0 +1,2 @@
+ACTION=="add", SUBSYSTEM=="usb", ATTRS{idProduct}=="0001", ATTRS{idVendor}=="0a12", RUN+="/bin/bash /home/pi/firewalla/platform/gold/files/udev/start_ble.sh"
+ACTION=="add", SUBSYSTEM=="usb", ATTRS{idProduct}=="a729", ATTRS{idVendor}=="0bda", RUN+="/bin/bash /home/pi/firewalla/platform/gold/files/udev/start_ble.sh"

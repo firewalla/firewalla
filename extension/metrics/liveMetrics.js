@@ -1,4 +1,4 @@
-/*    Copyright 2022 Firewalla INC
+/*    Copyright 2022-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,12 +18,15 @@
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 const log = require('../../net2/logger.js')(__filename);
 
-const NetworkProfileManager = require('../../net2/NetworkProfileManager');
+const sysManager = require('../../net2/SysManager');
 const SysInfo = require('../sysinfo/SysInfo.js');
 const HostManager = require('../../net2/HostManager.js');
 const hostManager = new HostManager();
 const Constants = require('../../net2/Constants.js');
 const uuid = require('uuid');
+
+const PlatformLoader = require('../../platform/PlatformLoader.js');
+const platform = PlatformLoader.getPlatform();
 
 const _ = require('lodash');
 
@@ -50,8 +53,8 @@ class LiveMetrics {
       queries: { throughput: true },
       streaming: { id: this.streamingId }
     })).throughput;
-    const activeWans = NetworkProfileManager.getActiveWans().map(intf => intf.uuid);
-    const wanStats = intfStats.filter(x => activeWans.includes(x.target))
+    const wans = sysManager.getWanInterfaces().map(intf => intf.uuid);
+    const wanStats = intfStats.filter(x => wans.includes(x.target))
     let rx = 0, tx = 0;
     wanStats.forEach(w => { rx += w.rx; tx += w.tx });
     metrics.throughput = {
@@ -61,10 +64,10 @@ class LiveMetrics {
     // data usage
     metrics.dataUsage = await extensionManager.get("monthlyUsageStats");
 
-    const sysInfo = SysInfo.getSysInfo();
+    const sysInfo = await SysInfo.getSysInfo();
 
     // disk usage
-    const homeMount = _.find(sysInfo.diskInfo, { mount: "/home" })
+    const homeMount = _.find(sysInfo.diskInfo, { mount: platform.isFireRouterManaged() ? "/home" : "/" });
     metrics.diskUsage = homeMount ? parseFloat((homeMount.used / homeMount.size).toFixed(4)) : null;
 
     // os uptime
@@ -84,12 +87,12 @@ class LiveMetrics {
     metrics.memUsage = parseFloat(sysInfo.realMem.toFixed(4));
 
     // flows 
-    const flowStats = await hostManager.getStats({ granularities: '1hour', hits: 24 }, "0.0.0.0", ['conn', 'ipB', 'dns', 'dnsB']);
+    const flowStats = await hostManager.getStats({ granularities: '1hour', hits: 24 }, "0.0.0.0", ['conn', 'ipB', 'dns', 'dnsB', 'ntp']);
     metrics.flows = {
       total: flowStats.totalConn + flowStats.totalDns + flowStats.totalDnsB + flowStats.totalIpB,
       blocked: flowStats.totalDnsB + flowStats.totalIpB
     }
-    log.info("Collect live mode metrics cost ", (Date.now() / 1000 - begin).toFixed(2));
+    log.debug("Collect live mode metrics cost ", (Date.now() / 1000 - begin).toFixed(2));
     return metrics;
   }
 }

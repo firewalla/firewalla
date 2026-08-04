@@ -24,6 +24,11 @@ const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
 
 const ipTool = require('ip');
+const _ = require('lodash');
+const Constants = require('../net2/Constants.js');
+const sysManager = require('../net2/SysManager.js');
+const mode = require('../net2/Mode.js');
+const fc = require('../net2/config.js');
 
 class DataMigrationSensor extends Sensor {
   async run() {
@@ -164,6 +169,36 @@ class DataMigrationSensor extends Sensor {
           }
         }
         break;
+      case "per_wan_data_usage": {
+        try {
+          if (!await mode.isRouterModeOn() || !fc.isFeatureOn("data_plan"))
+            break;
+          const dataPlan = await rclient.getAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS);
+          if (dataPlan) {
+            const dataPlanObj = JSON.parse(dataPlan);
+            const {date, total} = dataPlanObj;
+            // on upgrade, fill wanConfs with all WAN interfaces if wan uuid is not defined in wanConfs
+            if (!_.has(dataPlanObj, 'wanConfs')) {
+              dataPlanObj.wanConfs = {};
+            }
+            const wanIntfs = sysManager.getWanInterfaces();
+            for (const wanIntf of wanIntfs) {
+              const wanUUID = wanIntf.uuid;
+              if (!_.has(dataPlanObj.wanConfs, wanUUID)) {
+                dataPlanObj.wanConfs[wanUUID] = {
+                  date: date,
+                  total: total,
+                  enable: true,
+                };
+              }
+            }
+            await rclient.setAsync(Constants.REDIS_KEY_DATA_PLAN_SETTINGS,JSON.stringify(dataPlanObj));
+          }
+        } catch (err) {
+          log.error(`Failed to migrate per_wan_data_usage, err: ${err}`);
+        }
+        break;
+      }
       default:
         log.warn("Unrecognized code name: " + codeName);
     }

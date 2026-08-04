@@ -4,5 +4,6 @@
 # a power failure or other crash
 
 if (command -v fake-hwclock >/dev/null 2>&1) ; then
+  export FILE=/data/fake-hwclock.data
   fake-hwclock save
 fi

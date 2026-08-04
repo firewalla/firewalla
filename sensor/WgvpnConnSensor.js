@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc 
+/*    Copyright 2021-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,23 +24,48 @@ const _ = require('lodash');
 const {Address4, Address6} = require('ip-address');
 const Constants = require('../net2/Constants.js');
 const Message = require('../net2/Message.js');
+const rclient = require('../util/redis_manager.js').getRedisClient();
 const HostManager = require('../net2/HostManager.js');
 
-const peerLastEndpointMap = {};
+// const peerLastEndpointMap = {};
 
 const CHECK_INTERVAL = 20;
 
 class WgvpnConnSensor extends Sensor {
 
+  static peerLastEndpointMap = {};
+
+  constructor(config) {
+    super(config);
+    this.wgCmd = "wg";
+    this.protocol = "wireguard";
+  }
+
   run() {
-    if (!platform.isWireguardSupported())
+    if (!this.isSupported())
       return;
 
     setInterval(() => {
       this._checkWgPeersActivity().catch((err) => {
-        log.error(`Failed to check wireguard peers activity`, err.message);
+        log.error(`Failed to check ${this.protocol} peers activity`, err.message);
       })
     }, CHECK_INTERVAL * 1000);
+  }
+
+  isSupported() {
+    return platform.isWireguardSupported();
+  }
+
+  getRedisKeyVPNWGPeer() {
+    return Constants.REDIS_KEY_VPN_WG_PEER;
+  }
+
+  getConnAcceptedMessageType() {
+    return Message.MSG_WG_CONN_ACCEPTED;
+  }
+
+  getVpnType() {
+    return Constants.VPN_TYPE_WG;
   }
 
   async _checkWgPeersActivity() {
@@ -48,9 +73,15 @@ class WgvpnConnSensor extends Sensor {
     let enabled = false;
     if (platform.isFireRouterManaged()) {
       const networkConfig = await FireRouter.getConfig();
-      peers = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.peers || [];
-      enabled = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.enabled || false;
-    } else {
+      if (networkConfig && networkConfig.interface && networkConfig.interface[this.protocol]) {
+        for (const intf of Object.keys(networkConfig.interface[this.protocol])) {
+          if (_.get(networkConfig, ["interface", this.protocol, intf, "assetsController"], false) || _.get(networkConfig, ["interface", this.protocol, intf, "fwapc"], false))
+            continue;
+          Array.prototype.push.apply(peers, networkConfig.interface[this.protocol][intf].peers);
+          enabled = enabled || networkConfig.interface[this.protocol][intf].enabled;
+        }
+      }
+    } else if (this.protocol === "wireguard") {
       const wireguard = require('../extension/wireguard/wireguard.js');
       peers = await wireguard.getPeers();
       const hostManager = new HostManager();
@@ -63,14 +94,21 @@ class WgvpnConnSensor extends Sensor {
 
     if (_.isArray(peers)) {
       const pubKeys = peers.map(peer => peer.publicKey);
-      const results = await exec(`sudo wg show all latest-handshakes`).then(result => result.stdout.trim().split('\n')).catch((err) => {
-        log.error(`Failed to show latest-handshakes using wg command`, err.message);
+      const results = await exec(`sudo ${this.wgCmd} show all latest-handshakes`).then(result => result.stdout.trim().split('\n')).catch((err) => {
+        log.error(`Failed to show latest-handshakes using ${this.wgCmd} command`, err.message);
         return [];
       });
+
       for (const result of results) {
         const [intf, pubKey, latestHandshake] = result.split(/\s+/g);
         if (!pubKeys.includes(pubKey))
           continue;
+        if (latestHandshake && latestHandshake != '0') {
+          const rpeerkey = `${this.getRedisKeyVPNWGPeer()}${intf}:${pubKey}`;
+          await rclient.hsetAsync(rpeerkey, "lastActiveTimestamp", latestHandshake);
+          await rclient.expireAsync(rpeerkey, 2592000); // only available for 30 days
+        }
+
         if (Number(latestHandshake) > Date.now() / 1000 - CHECK_INTERVAL) {
           let peerIP4s = [];
           let peerIP6s = [];
@@ -83,10 +121,13 @@ class WgvpnConnSensor extends Sensor {
           }
           let remoteIP = null;
           let remotePort = null;
-          const endpointsResults = (await exec(`sudo wg show ${intf} endpoints`).then(result => result.stdout.trim().split('\n')).catch((err) => {
-            log.error(`Failed to show endpoints using wg command`, err.message);
+          const endpointsResults = (await exec(`sudo ${this.wgCmd} show ${intf} endpoints`).then(result => result.stdout.trim().split('\n')).catch((err) => {
+            log.error(`Failed to show endpoints using ${this.wgCmd} command`, err.message);
             return [];
           })).map(result => result.split(/\s+/g));
+          if (!Array.isArray(endpointsResults) || endpointsResults.length === 0) {
+            continue;
+          }
           for (const endpointsResult of endpointsResults) {
             if (endpointsResult[0] === pubKey) {
               let endpoint = endpointsResult[1];
@@ -101,25 +142,27 @@ class WgvpnConnSensor extends Sensor {
               }
             }
           }
-          if (peerLastEndpointMap[pubKey] === `${remoteIP}:${remotePort}`) {
-            return;
+          if (!remoteIP || !remotePort || this.constructor.peerLastEndpointMap[pubKey] === `${remoteIP}:${remotePort}`) {
+            continue;
           }
-          peerLastEndpointMap[pubKey] = `${remoteIP}:${remotePort}`;
-          log.info(`Wireguard VPN client connection accepted, remote ${remoteIP}:${remotePort}, peer ipv4: ${peerIP4s.length > 0 ? peerIP4s[0] : null}, peer ipv6: ${peerIP6s.length > 0 ? peerIP6s[0] : null}, public key: ${pubKey}`);
+          this.constructor.peerLastEndpointMap[pubKey] = `${remoteIP}:${remotePort}`;
+          const peerIP4 = peerIP4s.find(ip => ip.endsWith('/32')) || peerIP4s[0] || null;
+          const peerIP6 = peerIP6s.find(ip => ip.endsWith('/128')) || peerIP6s[0] || null;
+          log.info(`Wireguard VPN client connection accepted, remote ${remoteIP}:${remotePort}, peer ipv4: ${peerIP4}, peer ipv6: ${peerIP6}, public key: ${pubKey}`);
           const event = {
-            type: Message.MSG_WG_CONN_ACCEPTED,
-            message: "A new wireguard VPN connection was accepted",
+            type: this.getConnAcceptedMessageType(),
+            message: `A new ${this.protocol} VPN connection was accepted`,
             client: {
               remoteIP: remoteIP,
               remotePort: remotePort,
-              peerIP4: peerIP4s.length > 0 ? peerIP4s[0] : null,
-              peerIP6: peerIP6s.length > 0 ? peerIP6s[0] : null,
+              peerIP4: peerIP4,
+              peerIP6: peerIP6,
               profile: pubKey,
-              vpnType: Constants.VPN_TYPE_WG
+              intf,
+              vpnType: this.getVpnType()
             }
           };
           sem.sendEventToAll(event);
-          sem.emitLocalEvent(event);
         }
       }
     }

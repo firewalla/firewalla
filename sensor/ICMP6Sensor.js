@@ -1,4 +1,4 @@
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,24 +18,29 @@ const log = require('../net2/logger.js')(__filename);
 
 const util = require('util');
 const readline = require('readline');
-const ip = require('ip');
+const net = require('net')
 
+const ipUtil = require('../util/IPUtil.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-
 const Sensor = require('./Sensor.js').Sensor;
 const sysManager = require('../net2/SysManager.js');
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 const spawn = cp.spawn;
 const Message = require('../net2/Message.js');
+const LRU = require('lru-cache');
+const scheduler = require('../util/scheduler.js');
+const asyncNative = require('../util/asyncNative.js');
 
 class ICMP6Sensor extends Sensor {
   constructor(config) {
     super(config);
     this.intfPidMap = {};
+    this.cache = new LRU({max: 600, maxAge: 1000 * 60 * 5});
   }
 
   async restart() {
+    this.cache.reset();
     for (const intf in this.intfPidMap) {
       const pid = this.intfPidMap[intf];
       const childPid = await execAsync(`ps -ef| awk '$3 == '${pid}' { print $2 }'`).then(result => result.stdout.trim()).catch(() => null);
@@ -49,6 +54,10 @@ class ICMP6Sensor extends Sensor {
       if (!intf.name || !intf.mac_address) continue;
       if (intf.name.endsWith(":0")) continue; // do not listen on interface alias since it is not a real interface
       if (intf.name.includes("vpn")) continue; // do not listen on vpn interface
+      if (intf.name.startsWith("wg")) continue; // do not listen on wireguard interface
+      if (intf.name.startsWith("awg")) continue; // do not listen on amnezia interface
+      await execAsync(`sudo sysctl -w net.ipv6.neigh.${intf.name.replace(/\./gi, "/")}.base_reachable_time_ms=600000`).catch((err) => {});
+      await execAsync(`sudo sysctl -w net.ipv6.neigh.${intf.name.replace(/\./gi, "/")}.gc_stale_time=240`).catch((err) => {});
       // listen on icmp6 neighbor-advertisement which is not sent from firewalla
       const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', intf.name, '-enl', `!(ether src ${intf.mac_address}) && icmp6 && ip6[40] == 136 && !vlan`]);
       const pid = tcpdumpSpawn.pid;
@@ -61,27 +70,22 @@ class ICMP6Sensor extends Sensor {
         this.processNeighborAdvertisement(line, intf);
       });
       tcpdumpSpawn.on('close', (code) => {
-        if (code) log.warn("TCPDump icmp6 exited with code: ", code);
+        if (code) log.warn("TCPDump icmp6 exited with code: ", code, '\n  cmd:', tcpdumpSpawn.spawnargs.join(' '));
       });
     }
   }
 
-  scheduleReload() {
-    if (this.reloadTask)
-      clearTimeout(this.reloadTask);
-    this.reloadTask = setTimeout(() => {
-      this.restart().catch((err) => {
-        log.error("Failed to start tcpdump for ICMP6", err);
-      });
-    }, 5000);
-  }
-
   run() {
-    this.scheduleReload();
+    const reloadJob = new scheduler.UpdateJob(this.restart.bind(this), 5000);
+    reloadJob.exec();
     sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
       log.info("Schedule reload ICMP6Sensor since network info is reloaded");
-      this.scheduleReload();
+      reloadJob.exec();
     })
+    // ping known public IPv6 addresses to keep OS ipv6 neighbor cache up-to-date
+    setInterval(() => {
+      this.pingKnownIPv6s().catch((err) => {});
+    }, 240000);
   }
 
   processNeighborAdvertisement(line, intf) {
@@ -99,8 +103,11 @@ class ICMP6Sensor extends Sensor {
       if (!dstIp)
         return;
       dstIp = dstIp.substring(0, dstIp.length - 1);
-      if (sysManager.isMulticastIP6(dstIp))
-        // do not process ICMP6 packet sent to multicast IP, the source mac not be the real mac
+      const srcIp = tokens[pos - 3];
+      if (!srcIp)
+        return;
+      if (sysManager.isMulticastIP6(dstIp) || sysManager.isMulticastIP6(srcIp))
+        // do not process ICMP6 packet sent from/to multicast IP, the source mac not be the real mac
         return;
       pos = tokens.indexOf("is");
       if (pos < 0)
@@ -111,7 +118,16 @@ class ICMP6Sensor extends Sensor {
       // strip trailing comma
       tgtIp = tgtIp.substring(0, tgtIp.length - 1);
       log.verbose("Neighbor advertisement detected: " + dstMac + ", " + tgtIp);
-      if (dstMac && ip.isV6Format(tgtIp)) {
+      if (dstMac && net.isIPv6(tgtIp)) {
+        let newlyFound = true;
+        if (this.cache.get(tgtIp) === dstMac)
+          newlyFound = false;
+        this.cache.set(tgtIp, dstMac);
+        if (!newlyFound)
+          return;
+        // ping newly found public ipv6 to refresh neighbor cache on the box
+        if (ipUtil.isPublic(tgtIp))
+          this.pingIPv6(tgtIp);
         sem.emitEvent({
           type: "DeviceUpdate",
           message: `A new ipv6 is found @ ICMP6Sensor ${tgtIp} ${dstMac}`,
@@ -120,12 +136,25 @@ class ICMP6Sensor extends Sensor {
             mac: dstMac.toUpperCase(),
             intf_mac: intf.mac_address,
             intf_uuid: intf.uuid
-          }
+          },
+          suppressEventLogging: true,
         });
       }
     } catch (err) {
       log.error("Failed to parse output: " + line + '\n', err);
     }
+  }
+
+  async pingKnownIPv6s() {
+    this.cache.prune();
+    await asyncNative.eachLimit(this.cache.keys(), 10, async (ipv6) => {
+      if (ipUtil.isPublic(ipv6))
+        await this.pingIPv6(ipv6).catch((err) => {});
+    });
+  }
+
+  async pingIPv6(ipv6) {
+    await execAsync(`ping6 -c1 -W1 -w2 ${ipv6}`, { timeout: 3000 }).catch((err) => {});
   }
 }
 

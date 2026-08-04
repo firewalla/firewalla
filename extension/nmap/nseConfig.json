@@ -1,0 +1,17 @@
+{
+    "dhcp-discover": {
+        "protocol": "dhcp",
+        "port": 67,
+        "script": "dhcp-discover.nse"
+    },
+    "broadcast-dhcp-discover": {
+        "protocol": "dhcp",
+        "port": 67,
+        "script": "broadcast-dhcp-discover.nse",
+        "scriptArgs": "broadcast-dhcp-discover.timeout=20"
+    },
+    "broadcast-dhcp6-discover": {
+        "protocol": "dhcp",
+        "port": 67
+    }
+}

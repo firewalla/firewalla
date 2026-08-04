@@ -1,0 +1,7 @@
+/var/log/wtmp {
+    missingok
+    daily
+    maxsize 2M
+    create 0664 root utmp
+    rotate 1
+}

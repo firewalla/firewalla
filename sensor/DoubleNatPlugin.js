@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2019-2025 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,23 +17,10 @@
 const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
-
-const sem = require('../sensor/SensorEventManager.js').getInstance();
-
-const extensionManager = require('./ExtensionManager.js')
-
-const f = require('../net2/Firewalla.js');
-
-const config = require('../net2/config.js').getConfig();
-
 const UPNP = require('../extension/upnp/upnp.js');
 const upnp = new UPNP();
-
-const iptool = require('ip');
-
+const ipUtil = require('../util/IPUtil.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
-
-const api = config.firewallaVPNCheckURL || "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping";
 
 const expireTime = 35 * 60;
 const checkTime = 60 * 15;
@@ -57,7 +44,7 @@ class DoubleNatPlugin extends Sensor {
         await rclient.expireAsync(key, expireTime);
 
         const key2 = "ext.doublenat";
-        if(iptool.isPrivate(ip)) {
+        if(ipUtil.isPrivate(ip)) {
           log.info("This network has double nat");
           await rclient.setAsync(key2, 1);
         } else {

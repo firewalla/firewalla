@@ -269,7 +269,7 @@ transpose() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-branch=$(git branch --show-current)
+branch=$(git rev-parse --abbrev-ref HEAD)
 test $branch == 'master' || { exit 1; }
 
 while getopts ":f:h" opt

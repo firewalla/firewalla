@@ -27,8 +27,12 @@ function sync_website() {
 
 function sync_time() {
     tsWebsite=$(sync_website status.github.com || sync_website google.com || sync_website live.com || sync_website facebook.com)
+    if [[ -z $tsWebsite ]]; then
+      tsWebsite = 0
+    fi
     tsSystem=$(date +%s)
-    if [ "0$tsWebsite" -ge "0$tsSystem" ]; # prefix 0 as tsWebsite could be empty
+    tsDiff=$((tsWebsite - tsSystem))
+    if [[ $tsDiff -ge -30 ]];
     then
         logger "Sync time to $tsWebsite($(date -d @$tsWebsite))"
         sudo date +%s -s "@$tsWebsite";

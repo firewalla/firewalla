@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -29,6 +29,7 @@ const Alarm = require('./Alarm.js')
 const _ = require('lodash');
 const flat = require('flat');
 const iptool = require('ip');
+const Constants = require('../net2/Constants.js');
 const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds, don't bother to enforce it.
 
 function arraysEqual(a, b) {
@@ -50,6 +51,10 @@ class Policy {
     Object.assign(this, raw);
 
     this.parseRedisfyArray(raw);
+    this.parseRedisfyObj(raw);
+    for (const key of Policy.NUM_VALUE_KEYS) {
+      if (raw[key]) this[key] = Number(raw[key])
+    }
 
     if (this.scope) {
       // convert guids in "scope" field to "guids" field
@@ -64,25 +69,12 @@ class Policy {
     if (!_.isArray(this.tag) || _.isEmpty(this.tag))
       delete this.tag;
 
+    if (!_.isArray(this.affectedPids) || _.isEmpty(this.affectedPids))
+      delete this.affectedPids;
+
     this.upnp = false;
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
-
-    if (raw.seq) {
-      this.seq = Number(raw.seq);
-    }
-
-    if (raw.priority)
-      this.priority = Number(raw.priority);
-
-    if (raw.transferredBytes)
-      this.transferredBytes = Number(raw.transferredBytes);
-
-    if (raw.transferredPackets)
-      this.transferredPackets = Number(raw.transferredPackets);
-
-    if (raw.avgPacketBytes)
-      this.avgPacketBytes = Number(raw.avgPacketBytes);
 
     if (!_.isEmpty(raw.ipttl))
       this.ipttl = Number(raw.ipttl);
@@ -94,6 +86,9 @@ class Policy {
     this.trust = false;
     if (raw.trust)
       this.trust = JSON.parse(raw.trust);
+
+    if (raw.useBf)
+      this.useBf = JSON.parse(raw.useBf);
 
     if (!raw.direction)
       this.direction = "bidirection";
@@ -151,16 +146,20 @@ class Policy {
     return this.expire || this.cronTime;
   }
 
-  isEqual(val1, val2) {
+  static fieldEqual(val1, val2, name) {
+    if (name == 'seq')
+      return (val1 || Constants.RULE_SEQ_REG) == (val2 || Constants.RULE_SEQ_REG)
     if (val1 === val2) return true;
     // undefined and "" should be consider as equal for compatible purpose
     // "" will be undefined when get it from redis
     if (val1 === undefined && val2 === "") return true;
     if (val2 === undefined && val1 === "") return true;
+    if (_.isObject(val1) && _.isObject(val2))
+      return _.isEqual(val1, val2);
     return false;
   }
 
-  isEqualToPolicy(policy) {
+  isEqual(policy) {
     if (!policy) {
       return false
     }
@@ -170,10 +169,11 @@ class Policy {
     const compareFields = ["type", "target", "expire", "cronTime", "remotePort",
       "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
       "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
-      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", "snatIP", "flowIsolation"];
+      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", 
+      "snatIP", "flowIsolation", "dscpClass", "appTimeUsage", "useBf", "affectedPids"];
 
     for (const field of compareFields) {
-      if (!this.isEqual(this[field], policy[field])) {
+      if (!Policy.fieldEqual(this[field], policy[field], field)) {
         return false;
       }
     }
@@ -182,6 +182,7 @@ class Policy {
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&
+      arraysEqual(this.targets, policy.targets) && 
       arraysEqual(this.guids, policy.guids)
     ) {
       return true
@@ -189,6 +190,40 @@ class Policy {
 
     return false
   }
+
+  getSeq() {
+    return this.seq
+      || (this.isSecurityBlockPolicy() || this.isActiveProtectRule()) && Constants.RULE_SEQ_HI
+      || (this.isInboundAllowRule() || this.isInboundFirewallRule()) && Constants.RULE_SEQ_LO
+      || Constants.RULE_SEQ_REG
+  }
+
+  priorityCompare(policy) {
+    if ((this.seq || Constants.RULE_SEQ_REG) != (policy.seq || Constants.RULE_SEQ_REG)) {
+      return (this.seq || Constants.RULE_SEQ_REG) - (policy.seq || Constants.RULE_SEQ_REG)
+    }
+
+    const scopeLevel = (policy) => {
+      if (!_.isEmpty(policy.scope) || !_.isEmpty(policy.guids)) return 1
+      if (!_.isEmpty(policy.tags)) {
+        if (policy.tags.some(tag => tag.startsWith(Policy.TAG_PREFIX))) return 2
+        if (policy.tags.some(tag => tag.startsWith(Policy.INTF_PREFIX))) return 3
+      }
+      return 4
+    }
+
+    const levelThis = scopeLevel(this)
+    const levelThat = scopeLevel(policy)
+    if (levelThis != levelThat)
+      return levelThis - levelThat
+
+    if (this.action == policy.action) return 0
+    if (this.action == 'allow' && ['block', 'app_block'].includes(policy.action)) return -1
+    if (['block', 'app_block'].includes(this.action) && policy.action == 'allow') return 1
+
+    return NaN
+  }
+
   getIdleInfo() {
     if (this.idleTs) {
       const idleTs = Number(this.idleTs);
@@ -237,6 +272,76 @@ class Policy {
     return isSecurityPolicy || isAutoBlockPolicy;
   }
 
+  // x is the rule being checked
+  isRouteRuleToVPN() {
+    return this.action === "route" &&
+      this.routeType === "hard" &&
+      this.wanUUID;
+  }
+
+  isBlockingInternetRule() {
+    return this.action == "block" &&
+      this.type === "mac" &&
+      ["outbound", "bidirection"].includes(this.direction);
+  }
+
+  isBlockingIntranetRule() {
+    return this.action == "block" &&
+      this.type === "intranet" &&
+      ["outbound", "bidirection"].includes(this.direction);
+  }
+
+  isInboundInternetBlockRule() {
+    return this.action == "block" &&
+      this.direction === "inbound" &&
+      this.type == "mac";
+  }
+
+  isInboundInternetAllowRule() {
+    return this.action == "allow" &&
+      this.direction === "inbound" &&
+      this.type == "mac";
+  }
+
+  isInboundIntranetBlockRule() {
+    return this.action == "block" &&
+      this.direction === "inbound" &&
+      this.type == "intranet";
+  }
+
+  isInboundIntranetAllowRule() {
+    return this.action == "allow" &&
+      this.direction === "inbound" &&
+      this.type == "intranet";
+  }
+
+  isOutboundAllowRule() {
+    return this.action == "allow" &&
+      ["outbound", "bidirection"].includes(this.direction) &&
+      ["mac", "intranet"].includes(this.type);
+  }
+
+  isActiveProtectRule() {
+    return this.target == "default_c" && this.type === "category" && this.action == "block";
+  }
+
+  isInboundAllowRule() {
+    return this && this.direction === "inbound"
+      && this.action === "allow"
+      // exclude local rules
+      && this.type !== "intranet" && this.type !== "network" && this.type !== "tag" && this.type !== "device";
+  }
+
+  isInboundFirewallRule() {
+    return this && this.direction === "inbound"
+      && this.action === "block"
+      && (_.isEmpty(this.target) || this.target === 'TAG') // TAG was used as a placeholder for internet block
+      && _.isEmpty(this.scope)
+      && _.isEmpty(this.tag)
+      && _.isEmpty(this.guids)
+      && (this.type === 'mac' || this.type === 'internet')
+  }
+
   isDisabled() {
     return this.disabled && this.disabled == '1'
   }
@@ -246,7 +351,7 @@ class Policy {
     const duration = parseFloat(this.duration); // in seconds
     const interval = cronParser.parseExpression(cronTime, { tz: sysManager.getTimezone() });
     const lastDate = interval.prev().getTime() / 1000;
-    log.info(`lastDate: ${lastDate}, duration: ${duration}, alarmTimestamp:${alarmTimestamp}`);
+    log.debug(`lastDate: ${lastDate}, duration: ${duration}, alarmTimestamp:${alarmTimestamp}`);
 
     if (alarmTimestamp > lastDate && alarmTimestamp < lastDate + duration) {
       return true
@@ -268,11 +373,6 @@ class Policy {
       return false;
     }
 
-    if ((this.action || "block") != "block") {
-      log.debug(`mismatch, non block policy`)
-      return false;
-    }
-
     if (this.isExpired()) {
       log.debug(`mismatch, policy expired`)
       return false // always return unmatched if policy is already expired
@@ -282,11 +382,17 @@ class Policy {
       return false;
     }
 
+    if (this.appTimeUsage && !this.isTimeUsageExceeded()) {
+      log.debug(`mismatch, time usage not exceeded, rule ${this.pid} is not in effect`)
+      return false;
+    }
+
     if (this.direction === "inbound") {
       // default to outbound alarm
-      if ((alarm["p.local_is_client"] || "1") === "1")
+      if ((alarm["p.local_is_client"] || "1") === "1") {
         log.debug(`direction mismatch`)
         return false;
+      }
     }
 
     if (
@@ -320,20 +426,20 @@ class Policy {
     if (
       this.tag &&
       _.isArray(this.tag) &&
-      !_.isEmpty(this.tag) &&
-      !this.tag.some(t => _.has(alarm, 'p.intf.id') && t === Policy.INTF_PREFIX + alarm['p.intf.id'])
-    ) {
-      log.debug(`interface doesn't match`)
-      return false; // tag not match
-    }
-    if (
-      this.tag &&
-      _.isArray(this.tag) &&
-      !_.isEmpty(this.tag) &&
-      !this.tag.some(t => _.has(alarm, 'p.tag.ids') && !_.isEmpty(alarm['p.tag.ids']) && alarm['p.tag.ids'].some(tid => t === Policy.TAG_PREFIX + tid))
-    ) {
-      log.debug(`tag doesn't match`)
-      return false;
+      !_.isEmpty(this.tag)) {
+      const intfMatched = this.tag.some(t => _.has(alarm, 'p.intf.id') && t === Policy.INTF_PREFIX + alarm['p.intf.id']);
+      let tagMatched = false;
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const config = Constants.TAG_TYPE_MAP[type];
+        if (_.has(alarm, config.alarmIdKey) && _.isArray(alarm[config.alarmIdKey]) &&
+          alarm[config.alarmIdKey].some(tid => this.tag.includes(`${config.ruleTagPrefix}${tid}`))
+        )
+          tagMatched = true;
+      }
+      if (!intfMatched && !tagMatched) {
+        log.debug(`interface/tag doesn't match`)
+        return false; // tag not match
+      }
     }
 
     if (this.localPort && alarm['p.device.port']) {
@@ -372,8 +478,7 @@ class Policy {
       case "dns":
       case "domain":
         if (alarm['p.dest.name']) {
-          return minimatch(alarm['p.dest.name'], `*.${this.target}`) ||
-            alarm['p.dest.name'] === this.target
+          return this.matchDomain(alarm['p.dest.name'])
         } else {
           return false
         }
@@ -388,7 +493,7 @@ class Policy {
         } else {
           // type:mac target: TAG 
           // block internet on group/network
-          // already matched p.tag.ids/p.intf.id above, return true directly here
+          // already matched tag/intf above, return true directly here
           if (alarm['p.device.mac'] && !sysManager.isMyMac(alarm['p.device.mac'])) // rules do not take effect on the box itself. This check can prevent alarms that do not have p.device.mac from being suppressed, e.g., SSH password guess on WAN
             return true
           else
@@ -396,10 +501,13 @@ class Policy {
         }
 
       case "category":
-        if (alarm['p.dest.category']) {
+        if (alarm['p.dest.category'] && !this.matchAppId) {
           return alarm['p.dest.category'] === this.target;
         } else {
-          return false;
+          if (this.matchAppId && (alarm['p.dest.app.id'] || alarm['p.dest.app'])) {
+            return alarm['p.dest.app.id'] === this.matchAppId || alarm['p.dest.app'].toLowerCase() === this.matchAppId;
+          } else
+            return false;
         }
 
       case "devicePort":
@@ -445,6 +553,50 @@ class Policy {
     }
   }
 
+  isTimeUsageExceeded() {
+    const quota = _.get(this.appTimeUsage, 'quota', 0);
+    const extraQuota = _.get(this.appTimeUsage, 'extraQuota');
+    const extraQuotaUntilTs = _.get(this.appTimeUsage, 'extraQuotaUntilTs');
+    const effectiveQuota = (extraQuota != null && extraQuotaUntilTs != null && (Date.now() / 1000) < extraQuotaUntilTs)
+      ? (Number(quota) || 0) + (Number(extraQuota) || 0) : (Number(quota) || 0);
+    const used = this.appTimeUsed || 0;
+    return used >= effectiveQuota;
+  }
+
+  matchDomain(domain) {
+    return minimatch(domain, `*.${this.target}`) || domain === this.target
+  }
+
+  redisfyObj(p) {
+    for (const key of Policy.OBJ_VALUE_KEYS) {
+      if (!_.isEmpty(p[key]))
+        p[key] = JSON.stringify(p[key]);
+      else
+        delete p[key];
+    }
+  }
+
+  parseRedisfyObj(raw) {
+    for (const key of Policy.OBJ_VALUE_KEYS) {
+      if (raw[key]) {
+        if (_.isString(raw[key])) {
+          try {
+            this[key] = JSON.parse(raw[key]);
+          } catch (e) {
+            log.error(`Failed to parse policy ${key} string:`, raw[key], e);
+          }
+        } else if (_.isObject(raw[key])) {
+          this[key] = Object.assign({}, raw[key]);
+        } else {
+          log.error(`Unsupported ${key}`, raw[key]);
+        }
+
+        if (!_.isObject(this[key]) || _.isEmpty(this[key]))
+          delete this[key];
+      }
+    }
+  }
+
   redisfyArray(p) {
     for (const key of Policy.ARRAR_VALUE_KEYS) {
       if (p[key]) {
@@ -481,8 +633,9 @@ class Policy {
   redisfy() {
     let p = JSON.parse(JSON.stringify(this))
 
-    // convert array to string so that redis can store it as value
+    // convert array and object to string so that redis can store it as value
     this.redisfyArray(p);
+    this.redisfyObj(p);
 
     if (p.expire === "") {
       delete p.expire;
@@ -518,9 +671,47 @@ class Policy {
       return portRange[0] * 1 <= port && port <= portRange[1] * 1;
     }
   }
+
+  needPolicyDisturb() {
+    if(this.action === "disturb")
+      return true;
+
+    const disturbQuota = this.appTimeUsage && this.appTimeUsage.disturbQuota;
+    if((this.action !== "app_block" || disturbQuota == null))
+      return false;
+
+    this.disturbTimeUsed = this.disturbTimeUsed || 0;
+    return Number(disturbQuota) > Number(this.disturbTimeUsed);
+  }
+
+  static getMathcedTarget(policy) {
+    let target = "";
+    if (policy.scope) {
+      target = policy.scope[0];
+    }
+    if (policy.guids) {
+      target = policy.guids[0];
+    }
+
+    if (policy.tag && _.isArray(policy.tag) && !_.isEmpty(policy.tag)) {
+      if (policy.tag[0].startsWith(Policy.TAG_PREFIX)) {
+        target = policy.tag[0];
+      }
+
+      if (policy.tag[0].startsWith(Policy.INTF_PREFIX)) {
+        target = "network:" + policy.tag[0].substring(Policy.INTF_PREFIX.length);
+      }
+    }
+    return target;
+  }
+
 }
 
-Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules"];
+Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules", "targets", "affectedPids"];
+Policy.OBJ_VALUE_KEYS = ["appTimeUsage", "disturbMethod", "lastHitFlow"];
+Policy.NUM_VALUE_KEYS = [
+  'seq', 'appTimeUsed', 'priority', 'transferredBytes', 'transferredPackets', 'avgPacketBytes', "disturbTimeUsed"
+]
 Policy.INTF_PREFIX = "intf:";
 Policy.TAG_PREFIX = "tag:";
 

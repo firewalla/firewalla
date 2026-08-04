@@ -56,16 +56,13 @@
 ## Firewalla Box Install Guide
 https://firewalla.com/install
 
-## Contributions
+## Contributing
 
-* origin/master:  latest / greatest
-* Please do a pull request for features
+* Please submit a pull request for any bugfix or improvement
+* Latest development happens on master branch
 
 ## Router Compatibility
 
 * For router compatibility, please check out detail information at https://help.firewalla.com/hc/en-us/articles/360009401874-Router-Compatibility
-
-
-
 
 

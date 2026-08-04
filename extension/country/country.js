@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla INC
+/*    Copyright 2021-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,11 +14,17 @@
  */
 
 'use strict';
+const log = require('../../net2/logger.js')(__filename);
+const f = require('../../net2/Firewalla.js');
+const fc = require('../../net2/config.js');
 global.geodatadir = `${__dirname}/data`;
 const geoip = require('../../vendor_lib/geoip-lite/geoip');
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
+const { fileExist } = require('../../util/util.js')
 let instance = null;
 class Country {
+    countryDataFolder = `${f.getRuntimeInfoFolder()}/countryData`;
+
     constructor() {
         if (instance == null) {
             instance = this;
@@ -29,21 +35,49 @@ class Country {
             sem.on('GEO_REFRESH', (event) => {
                 this.reloadDataSync(event.dataType)
             });
+
+            this.init()
         }
         return instance;
     }
+
+    async checkDBFiles() {
+      return await fileExist(`${this.countryDataFolder}/geoip-country.dat`)
+          && await fileExist(`${this.countryDataFolder}/geoip-country6.dat`)
+    }
+
+    async init() {
+      try {
+        // make sure features are loaded
+        await fc.getConfig(true)
+
+        if (fc.isFeatureOn('country') && await this.checkDBFiles()) {
+          this.updateGeodatadir(this.countryDataFolder)
+          this.reloadDataSync()
+        }
+      } catch(err) {
+        log.error('Error init geoip data', err)
+      }
+    }
+
     getCountry(ip) {
-        const result = this.geoip.lookup(ip);
-        if (result) {
-            return result.country;
+        try {
+            const result = this.geoip.lookup(ip);
+            if (result) {
+                return result.country;
+            }
+        } catch (err) {
+            log.error(`Error occured while looking up country data of ${ip}`, err.message);
         }
         return null;
     }
     reloadDataSync(type) {
+        log.info('Reloading database', type)
         this.geoip.reloadDataSync(type)
     }
     updateGeodatadir(dir) {
-        this.geoip.updateGeodatadir(dir ? dir : `${__dirname}/data`)
+        if (!dir) return
+        this.geoip.updateGeodatadir(dir)
     }
 }
 
