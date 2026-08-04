@@ -9,6 +9,7 @@ on:
       - release_11_0
       - release_12_0
       - release_13_0
+      - release_14_0
       - beta_8_0
       - beta_9_0
       - beta_12_0
@@ -21,6 +22,8 @@ on:
       - beta_19_0
       - beta_20_0
       - beta_21_0
+      - beta_22_0
+      - beta_23_0
 
 permissions:
   contents: write
