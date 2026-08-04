@@ -68,6 +68,9 @@ jobs:
             release_13_0) LABEL="orange-production" ;;
             beta_20_0)    LABEL="orange-beta" ;;
             beta_21_0)    LABEL="orange-alpha" ;;
+            release_14_0) LABEL="goldplussfp-production" ;;
+            beta_22_0)    LABEL="goldplussfp-beta" ;;
+            beta_23_0)    LABEL="goldplussfp-alpha" ;;            
             *) echo "::error::no model/channel mapping for branch '$BRANCH'"; exit 1 ;;
           esac
 
