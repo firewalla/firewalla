@@ -215,10 +215,14 @@ class FreeRadius {
   async _generateRadiusConfig(options = {}) {
     log.info("Generating radius config from config scripts...");
     try {
-      const configPath = `${configDir}/freeradius.js`;
-      if (!await fs.accessAsync(configPath, fs.constants.F_OK).then(() => true).catch(_err => false)) {
-        log.warn("freeradius config scripts not exist");
-        return false;
+      await exec(`mkdir -p ${dockerDir}/config`).catch((e) => {
+        log.warn("Failed to create config directory,", e.message);
+      });
+      await this.prepareIptables().catch((e) => {
+        log.warn("Failed to prepare ap ipset iptables,", e.message);
+      });
+      if (!await fs.accessAsync(`${dockerDir}/docker-compose.yml`).then(() => true).catch(() => false)) {
+        await this.generateDockerCompose(options);
       }
 
       const nodePath = await this._getNodePath();
