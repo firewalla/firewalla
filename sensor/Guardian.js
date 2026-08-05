@@ -49,6 +49,9 @@ const tokenManager = require('../util/FWTokenManager.js');
 const { REDIS_KEY_MSP_DATA, REDIS_KEY_MSP_SYNC_OPS, FEATURE_MSP_SYNC_OPS } = require('../net2/Constants.js');
 const execAsync = require('child-process-promise').exec;
 
+const RECONNECT_DELAY_MAX = 5 * 60 * 1000; // socket.io defaults to 5s, way too aggressive for a server that is gone for good
+const SESSION_TTL = 24 * 60 * 60 * 1000; // idle lifetime of a non-msp (my.firewalla) session
+
 module.exports = class {
   constructor(name, config = {}, daemon = true) {
     this.name = name;
@@ -57,6 +60,7 @@ module.exports = class {
     this.configRegionKey = `ext.guardian.socketio.region${suffix}`;
     this.configBizModeKey = `ext.guardian.business${suffix}`; // this key save msp instance basic info, e.g. id/name/plan
     this.configAdminStatusKey = `ext.guardian.socketio.adminStatus${suffix}`;
+    this.configActiveTsKey = `ext.guardian.socketio.activeTs${suffix}`; // last time this session was known to be alive
     this.mspDataKey = `${REDIS_KEY_MSP_DATA}${suffix}`; // this key save msp user's info, e.g. targetlists
     this.liveTransportCache = {};
     this.socketConnected = false; // Track socket.io connectivity status
@@ -126,6 +130,9 @@ module.exports = class {
   }
 
   async handlLegacy() {
+    // a my.firewalla session gets no membership check from the cloud, the only
+    // sign it ended is the close command, which is lost when the box is offline
+    if (await this.expireIdleSession()) return;
     // box might be removed from msp but it was offline before
     // remove legacy settings to avoid the box been locked forever
     const mspResult = await this.checkBoxWithMsp();
@@ -241,6 +248,7 @@ module.exports = class {
         await rclient.unlinkAsync(this.configRegionKey);
       }
       await rclient.setAsync(this.configServerKey, server);
+      await this.touchActiveTs();
       this._scheduleRedisBackgroundSave();
     } else {
       throw new Error("invalid server");
@@ -316,6 +324,38 @@ module.exports = class {
     return rclient.setAsync(this.configAdminStatusKey, '0');
   }
 
+  // a session that predates this key starts its ttl now, so an upgrade never
+  // expires a session that is still in use
+  async getActiveTs() {
+    const ts = Number(await rclient.getAsync(this.configActiveTsKey));
+    if (ts) return ts;
+    const now = Date.now();
+    await rclient.setAsync(this.configActiveTsKey, now);
+    return now;
+  }
+
+  async touchActiveTs() {
+    await rclient.setAsync(this.configActiveTsKey, Date.now());
+  }
+
+  // a session carrying an msp business id, msp or support, has its own lifecycle
+  // and its own membership check; a bare my.firewalla session only stays alive as
+  // long as messages keep coming, so silence past the ttl means it is over
+  async expireIdleSession() {
+    const mspId = await this.getMspId();
+    if (mspId) return false;
+    const isAdminStatusOn = await this.isAdminStatusOn();
+    if (!isAdminStatusOn) return false;
+    const activeTs = await this.getActiveTs();
+    if (Date.now() - activeTs < SESSION_TTL) return false;
+    log.forceInfo(`No message from ${this.name} since ${new Date(activeTs).toISOString()}, treat the session as ended and close the socket io connection`);
+    await this.stop();
+    await rclient.unlinkAsync(this.configServerKey);
+    await rclient.unlinkAsync(this.configRegionKey);
+    await rclient.unlinkAsync(this.configActiveTsKey);
+    return true;
+  }
+
   async getGuardianInfo() {
     const server = await this.getServer();
     const region = await this.getRegion();
@@ -361,7 +401,8 @@ module.exports = class {
     const socketPath = region ? `/${region}/socket.io` : '/socket.io'
     this.socket = io(server, {
       path: socketPath,
-      transports: ['websocket']
+      transports: ['websocket'],
+      reconnectionDelayMax: RECONNECT_DELAY_MAX
     });
     if (!this.socket) {
       throw new Error("failed to init socket io");
@@ -431,6 +472,10 @@ module.exports = class {
   }
 
   async stop() {
+    if (this.checkId) {
+      clearInterval(this.checkId);
+      this.checkId = null;
+    }
     if (this.syncOpsTask) {
       clearInterval(this.syncOpsTask);
       this.syncOpsTask = null;
@@ -527,6 +572,7 @@ module.exports = class {
     await rclient.unlinkAsync(this.configRegionKey);
     await rclient.unlinkAsync(this.configBizModeKey);
     await rclient.unlinkAsync(this.configAdminStatusKey);
+    await rclient.unlinkAsync(this.configActiveTsKey);
     await rclient.unlinkAsync(this.mspDataKey);
     this._stop();
 
@@ -661,6 +707,7 @@ module.exports = class {
 
   async onMessage(gid, message) {
     this.scheduleCheck(); // every time recived message, clean job and restart the check job
+    this.touchActiveTs().catch((err) => log.error("Failed to refresh session active timestamp", err, this.name));
     const controller = await cw.getNetBotController(gid);
     const mspId = await this.getMspId();
     if (controller && this.socket) {
