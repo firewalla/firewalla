@@ -29,6 +29,7 @@ const platform = PlatformLoader.getPlatform()
 const f = require('../../net2/Firewalla.js');
 const fr = require('../../net2/FireRouter.js');
 const log = require('../../net2/logger.js')(__filename);
+const rclient = require('../../util/redis_manager.js').getRedisClient();
 const util = require('../../util/util.js');
 const { Rule } = require('../../net2/Iptables.js');
 const iptc = require('../../control/IptablesControl.js');
@@ -40,6 +41,11 @@ const configDir = `${f.getUserConfigFolder()}/freeradius`
 const logDir = `${f.getUserHome()}/.forever/freeradius`
 const certsDir = `${f.getHiddenFolder()}/certs/freeradius`
 const fwrcFile = `${f.getUserHome()}/.fwrc`
+
+// shared with scripts/update_freeradius.sh so cron and firemain honor the same backoff window
+const PULL_BACKOFF_KEY = "freeradius:image:pull:backoff";
+// local disk / overlayfs faults: back off
+const DISK_FAULT_RE = /(failed to extract layer|failed to convert whiteout|failed to register layer|operation not permitted|no space left on device|input\/output error|read-only file system)/i;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -54,6 +60,7 @@ class FreeRadius {
       this.watcher = null;
       this.pid = null;
       this.featureOn = false;
+      this.pullBackoff = null; // in-memory backoff, survives redis/disk failure within this process
     }
     return instance;
   }
@@ -698,6 +705,56 @@ class FreeRadius {
     return "cgroup1";
   }
 
+  // in-memory backoff state: {attempts: number, diskFault: boolean, nextTs: number}
+  async _inPullBackoff() {
+    const now = Date.now();
+    if (this.pullBackoff && now < this.pullBackoff.nextTs) return true;
+    const raw = await rclient.getAsync(PULL_BACKOFF_KEY).catch(() => null);
+    if (!raw) return false;
+    try {
+      return now < (JSON.parse(raw).nextTs || 0);
+    } catch (err) {
+      return false;
+    }
+  }
+
+  // backoff state: {"attempts": number, "diskFault": boolean, "nextTs": number, "lastError": string}
+  async _recordPullFailure(stderr = "") {
+    const diskFault = DISK_FAULT_RE.test(stderr);
+    const attempts = ((this.pullBackoff && this.pullBackoff.attempts) || 0) + 1;
+    const base = diskFault ? 3600000 : 300000;   // 1h vs 5m
+    const cap = diskFault ? 86400000 : 3600000;  // 24h vs 1h
+    const delay = Math.min(base * (2 ** (attempts - 1)), cap);
+    const nextTs = Date.now() + delay;
+    this.pullBackoff = { attempts, diskFault, nextTs };
+    // best-effort persist for cron/cross-process; may itself fail when disk is the culprit
+    await rclient.setAsync(PULL_BACKOFF_KEY, JSON.stringify({ attempts, diskFault, nextTs, lastError: stderr.slice(0, 500) })).catch((e) => {
+      log.warn("Failed to persist image pull backoff state (redis/disk?),", e.message);
+    });
+    log.warn(`freeradius image pull failed (${diskFault ? "disk fault" : "transient"}), backing off ${Math.round(delay / 60000)}min`, stderr.slice(0, 200));
+  }
+
+  async _clearPullBackoff() {
+    this.pullBackoff = null;
+    await rclient.delAsync(PULL_BACKOFF_KEY).catch(() => { });
+  }
+
+  // wraps docker pull with a shared backoff so a failing disk stops re-downloading the image
+  async _dockerPull(cmd) {
+    if (await this._inPullBackoff()) {
+      log.warn("Skip freeradius image pull, in backoff window.");
+      return { ok: false, skipped: true };
+    }
+    return await exec(cmd).then(async () => {
+      await this._clearPullBackoff();
+      return { ok: true };
+    }).catch(async (e) => {
+      const stderr = e.stderr || e.message || "";
+      await this._recordPullFailure(stderr);
+      return { ok: false, stderr };
+    });
+  }
+
   async prepareImage(options = {}) {
     try {
       if (await this._checkImage(options) && !await this.upgradeImage(options)) {
@@ -710,10 +767,11 @@ class FreeRadius {
         log.info("freeradius docker compose file not exist, skip pulling image freeradius-server");
         return;
       }
-      await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml pull`).catch((e) => {
-        log.warn("Failed to pull image freeradius,", e.message)
-        return;
-      });
+      const pull = await this._dockerPull(`sudo docker-compose -f ${dockerDir}/docker-compose.yml pull`);
+      if (!pull.ok) {
+        log.warn("Failed to pull image freeradius.");
+        return false;
+      }
       if (await this._checkImage(options)) {
         log.info("Image freeradius-server is pulled.");
         return;
@@ -738,10 +796,11 @@ class FreeRadius {
       }
 
       // pull latest image
-      await exec(`sudo docker pull ${image}`).catch((e) => {
-        log.warn("Failed to pull image for comparison,", e.message);
+      const pull = await this._dockerPull(`sudo docker pull ${image}`);
+      if (!pull.ok) {
+        if (!pull.skipped) log.warn("Failed to pull image for comparison.");
         return false;
-      });
+      }
 
       await sleep(2000);
 
@@ -1102,6 +1161,12 @@ class FreeRadius {
       log.info("reloading freeradius server to apply new config...");
       return await this._reloadServer(options);
     } else {
+      // skip stop/restart when image fails (e.g. disk issue / backoff skip pull)
+      // avoids container churn and a compose-triggered re-pull
+      if (!await this._checkImage(options)) {
+        log.warn("freeradius image not pulled (disk issue / backoff skip pull), skip restart.");
+        return false;
+      }
       log.info("restarting freeradius container to apply new config...");
       await this._stopServer(options);
       await this.generateDockerCompose(options);

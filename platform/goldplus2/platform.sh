@@ -96,13 +96,13 @@ function get_profile_default_name {
 function map_target_branch {
   case "$1" in
   "release_6_0")
-    echo "release_11_0"
+    echo "release_14_0"
     ;;
   "beta_6_0")
-    echo "beta_16_0"
+    echo "beta_22_0"
     ;;
   "beta_7_0")
-    echo "beta_17_0"
+    echo "beta_23_0"
     ;;
   *)
     echo $1

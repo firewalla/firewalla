@@ -302,9 +302,16 @@ class FWInvitation {
 
           // record license error
           await rclient.setAsync("firereset:error", "invalid_license");
-          
-          return {
-            status: "pending"
+          // all kinds of errors, unreachable server, license activation limit reached, should not retry infinitely
+          if (this.leftCheckCount <= 0) {
+            log.info("Invitation is expired! No App Linked");
+            return {
+              status: "expired",
+            };
+          } else {
+            return {
+              status: "pending"
+            };
           }
         }
 

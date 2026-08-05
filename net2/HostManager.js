@@ -1391,8 +1391,16 @@ module.exports = class HostManager extends Monitorable {
 
       if(mm && mm.length > 0) {
         const names = await rclient.hgetallAsync("sys:ept:memberNames")
+        const emails = await rclient.hgetallAsync(Constants.REDIS_KEY_EPT_MEMBER_EMAILS)
         const lastVisits = await rclient.hgetallAsync("sys:ept:member:lastvisit")
         const history = await rclient.hgetallAsync("sys:ept:members:history")
+
+        if(emails) {
+          mm.forEach((m) => {
+            if (m.eid && emails[m.eid])
+              m.name = emails[m.eid]
+          })
+        }
 
         if(names) {
           mm.forEach((m) => {
@@ -1992,6 +2000,21 @@ module.exports = class HostManager extends Monitorable {
       if (includePinnedHosts)
         for (const mac of await rclient.smembersAsync(Constants.REDIS_KEY_HOST_PINNED))
           visibleMACs.add(mac)
+
+      if (platform.isFireRouterManaged()) {
+        try {
+          const networkConfig = await FireRouter.getConfig();
+          const assets = _.get(networkConfig, ["apc", "assets"]);
+          if (_.isObject(assets)) {
+            for (const assetMac of Object.keys(assets)) {
+              if (hostTool.isMacAddress(assetMac))
+                visibleMACs.add(assetMac.toUpperCase());
+            }
+          }
+        } catch (err) {
+          log.error("Failed to get APC assets from FireRouter config", err.message);
+        }
+      }
 
       // TODO: replace getAllMACs with getMACsByTime(0) after a year of 1.981
       const MACs = includeInactiveHosts ? new Set(await hostTool.getAllMACs()) : visibleMACs
