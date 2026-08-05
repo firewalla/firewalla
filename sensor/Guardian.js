@@ -408,8 +408,22 @@ module.exports = class {
       throw new Error("failed to init socket io");
     }
 
+    // a failing handshake never reaches the connect/disconnect handlers, these
+    // are the only trace of a relay we keep dialing without ever getting in
+    let lastAttemptTs = Date.now();
+    this.socket.io.on('reconnect_attempt', (attempt) => {
+      const now = Date.now();
+      log.info(`Socket IO reconnecting to ${this.name} ${server}, attempt ${attempt}, ${Math.round((now - lastAttemptTs) / 1000)}s since last attempt`);
+      lastAttemptTs = now;
+    });
+
+    this.socket.on('connect_error', (err) => {
+      log.info(`Socket IO connection to ${this.name} ${server} failed:`, err && err.message || err);
+    });
+
     this.socket.on('connect', () => {
       this.socketConnected = true;
+      lastAttemptTs = Date.now();
       log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", " + region : ""} is connected.`);
       this.socket && this.socket.emit("box_registration", {
         gid: gid,
