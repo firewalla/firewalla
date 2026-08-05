@@ -1354,6 +1354,18 @@ class Host extends Monitorable {
     return _.get(this.o, 'stpPort', null);
   }
 
+  setLastSeenOnWifi(ts) {
+    this._lastSeenOnWifi = ts;
+  }
+
+  getLastSeenOnWifi() {
+    return this._lastSeenOnWifi || null;
+  }
+
+  isWirelessDevice(ttlMs = 2 * 60 * 1000) {
+    return !!this._lastSeenOnWifi && (Date.now() - this._lastSeenOnWifi) < ttlMs;
+  }
+
   async _get24HoursInternetActivity() {
     const app = ["internet"];
     const mac = this.o.mac || this.getUniqueId();

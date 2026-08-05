@@ -342,6 +342,8 @@ async function generateNetworkInfo() {
 let routerInterface = null
 let routerConfig = null
 let monitoringIntfNames = [];
+let rspanIntfNames = [];
+let rspanVids = new Set();
 let logicIntfNames = [];
 let wanIntfNames = null
 let defaultWanIntfName = null
@@ -478,6 +480,7 @@ class FireRouter {
   async init(first = false) {
     await lock.acquire(LOCK_INIT, async () => {
       const lastMonitoringIntfNames = monitoringIntfNames;
+      const lastRspanIntfNames = rspanIntfNames;
       const routingWans = [];
       const tcFilterRefreshNeeded = this.tcFilterRefreshNeeded;
       this.tcFilterRefreshNeeded = false;
@@ -508,6 +511,14 @@ class FireRouter {
             await delay(2000);
           }
         }
+
+        // extract RSPAN VLAN interface names and VIDs from config
+        rspanIntfNames = Object.keys(_.get(routerConfig, "interface.vlan", {}))
+          .filter(name => _.get(routerConfig, ["interface", "vlan", name, "rspan"]) === true);
+        rspanVids = new Set(rspanIntfNames
+          .map(name => _.get(routerConfig, ["interface", "vlan", name, "vid"]))
+          .filter(vid => vid != null)
+          .map(Number));
 
         // extract WAN interface names
         wanIntfNames = Object.values(intfNameMap)
@@ -757,6 +768,8 @@ class FireRouter {
 
       monitoringIntfNames.sort();
       lastMonitoringIntfNames.sort();
+      rspanIntfNames.sort();
+      lastRspanIntfNames.sort();
 
       // this will ensure SysManger on each process will be updated with correct info
       sem.emitLocalEvent({ type: Message.MSG_FW_FR_RELOADED });
@@ -765,10 +778,10 @@ class FireRouter {
       this.ready = true
 
       if (f.isMain()) {
-        if (pcapRestartNeeded || !platform.isFireRouterManaged() && first || !_.isEqual(monitoringIntfNames, lastMonitoringIntfNames)) {
+        if (pcapRestartNeeded || !platform.isFireRouterManaged() && first || !_.isEqual(monitoringIntfNames, lastMonitoringIntfNames) || !_.isEqual(rspanIntfNames, lastRspanIntfNames)) {
           sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
         }
-        if (first || tcFilterRefreshNeeded) {
+        if (first || tcFilterRefreshNeeded || !_.isEqual(rspanIntfNames, lastRspanIntfNames)) {
 
           const model = platform.getName();
           let qosNetworkType = 'lan';
@@ -783,6 +796,7 @@ class FireRouter {
             this.tcFilterRefreshNeeded = true;
           }
           this.scheduleResetPcapTap();
+          this.scheduleResetPcapRspan();
         }
         if (platform.isFireRouterManaged()) {
           // overall_wan_state event
@@ -853,6 +867,43 @@ class FireRouter {
       });
       await exec(`sudo tc filter add dev ${intf} egress u32 match u32 0 0 action mirred egress redirect dev ${Constants.INTF_PCAP_TAP}`).catch((err) => {
         log.error(`Failed to add pcap tap tc egress redirect filter for ${intf}`, err.message);
+      });
+    }
+  }
+
+  scheduleResetPcapRspan() {
+    if (this.resetPcapRspanTask) {
+      clearTimeout(this.resetPcapRspanTask);
+    }
+    this.resetPcapRspanTask = setTimeout(() => {
+      this.resetPcapRspan().catch((err) => {
+        log.error(`Failed to reset pcap rspan`, err.message);
+      });
+    }, 3000);
+  }
+
+  async resetPcapRspan() {
+    if (!platform.isIFBSupported()) {
+      return;
+    }
+    // clear tc filters on interfaces that are no longer RSPAN
+    const prevRspanIntfNames = this._rspanIntfNames || [];
+    for (const intf of prevRspanIntfNames) {
+      if (!rspanIntfNames.includes(intf)) {
+        await exec(`sudo tc qdisc del dev ${intf} clsact`).catch(() => {});
+      }
+    }
+    this._rspanIntfNames = rspanIntfNames.slice();
+    if (_.isEmpty(rspanIntfNames)) {
+      return;
+    }
+    for (const intf of rspanIntfNames) {
+      // add tc filter to redirect ingress traffic to the rspan ifb (RSPAN is receive-only, no egress redirect)
+      await exec(`sudo tc qdisc replace dev ${intf} clsact`).catch((err) => {
+        log.error(`Failed to create clsact qdisc on ${intf}`, err.message);
+      });
+      await exec(`sudo tc filter add dev ${intf} ingress u32 match u32 0 0 action mirred egress redirect dev ${Constants.INTF_PCAP_RSPAN}`).catch((err) => {
+        log.error(`Failed to add rspan tc ingress redirect filter for ${intf}`, err.message);
       });
     }
   }
@@ -985,6 +1036,14 @@ class FireRouter {
   // should always be an array
   getMonitoringIntfNames() {
     return JSON.parse(JSON.stringify(monitoringIntfNames))
+  }
+
+  getRspanIntfNames() {
+    return JSON.parse(JSON.stringify(rspanIntfNames));
+  }
+
+  getRspanVids() {
+    return new Set(rspanVids);
   }
 
   getWanIntfNames() {

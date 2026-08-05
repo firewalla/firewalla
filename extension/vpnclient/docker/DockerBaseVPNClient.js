@@ -327,6 +327,9 @@ if $programname == 'docker_vpn_${this.profileId}' then {
     await this._createNetwork();
     await this._updateComposeYAML();
     await this._createRsyslogConf();
+    // some vpn client container still uses iptables-legacy, need to load ko in advance
+    await exec(`sudo modprobe ip_tables`).catch((err) => {});
+    await exec(`sudo modprobe ip6_tables`).catch((err) => {});
     // docker network is already created, add ip route and SNAT rule before container is started by docker-compose
     const remoteIP = await this._getRemoteIP();
     const remoteIP6 = await this._getRemoteIP6();

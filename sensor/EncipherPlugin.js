@@ -90,6 +90,7 @@ class EncipherPlugin extends Sensor {
     await this.deleteEidEntryFromLocalRedis(eid);
     await rclient.hdelAsync("sys:ept:memberNames", eid);
     await rclient.hdelAsync("sys:ept:member:lastvisit", eid);
+    await rclient.hdelAsync(Constants.REDIS_KEY_EPT_MEMBER_EMAILS, eid);
     await rclient.saddAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
 
     try {

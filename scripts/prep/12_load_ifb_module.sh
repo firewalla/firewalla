@@ -17,6 +17,8 @@ if [[ $IFB_SUPPORTED == "yes" ]]; then
   sudo ip link set ifb1 up &>/dev/null || true
   sudo ip link add ifb_pcap_tap type ifb &>/dev/null || true
   sudo ip link set ifb_pcap_tap up &>/dev/null || true
+  sudo ip link add ifb_pcap_rspan type ifb &>/dev/null || true
+  sudo ip link set ifb_pcap_rspan up &>/dev/null || true
 else
   sudo rmmod ifb &> /dev/null || true
 fi
