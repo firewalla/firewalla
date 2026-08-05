@@ -47,7 +47,12 @@ class FakeRedis {
 //
 // fixtures:
 //   modinfoOutput: string | null            -- stdout for `modinfo <arg>` (null => reject)
-//   koMtime: number | undefined             -- mtime (sec) returned for `stat -c %Y <koPath>`
+//   koDescribe: string | undefined          -- stdout for `tls_module_id.sh describe <koPath>`,
+//                                              e.g. "version=1.0\nsrcversion=abc\nid=buildid:x"
+//                                              (undefined => reject, i.e. the .ko yields nothing)
+//   koMtime: number | undefined             -- mtime (sec) of the .ko itself, for `stat -L -c %Y`
+//   koLinkMtime: number | undefined         -- mtime (sec) of the koPath symlink, for `stat -c %Y`
+//                                              (defaults to koMtime, i.e. koPath is a plain file)
 //   dmesgFindOutput: string                 -- stdout for the pstore `find ... -name dmesg-*` scan
 //   fileContents: { path: content }         -- backing content for grep/cat over dmesg files
 //   archiveDirs: string[]                   -- stdout lines for `ls -1 ARCHIVE_PATH`
@@ -64,9 +69,16 @@ function makeExecFile(fixtures) {
       if (fixtures.modinfoOutput == null) throw new Error('modinfo: command not found');
       return { stdout: fixtures.modinfoOutput };
     }
-    if (file === 'stat' && args[0] === '-c' && args[1] === '%Y') {
-      if (fixtures.koMtime === undefined) return { stdout: '' }; // unknown mtime => null
-      return { stdout: String(fixtures.koMtime) };
+    if (file.endsWith('/tls_module_id.sh')) {
+      if (fixtures.koDescribe === undefined) throw new Error(`tls_module_id.sh: nothing for ${args[1]}`);
+      return { stdout: `${fixtures.koDescribe}\n` };
+    }
+    if (file === 'stat' && args.includes('%Y')) {
+      // `stat -L` dereferences the symlink (the real .ko), plain `stat` reports koPath itself
+      const mtime = args.includes('-L') ? fixtures.koMtime
+        : (fixtures.koLinkMtime !== undefined ? fixtures.koLinkMtime : fixtures.koMtime);
+      if (mtime === undefined) return { stdout: '' }; // unknown mtime => null
+      return { stdout: String(mtime) };
     }
     if (file === 'sudo' && args[0] === 'find' && args.includes('-name')) {
       return { stdout: fixtures.dmesgFindOutput || '' };
@@ -100,6 +112,7 @@ function loadKCM(fakeRedis, execFileImpl) {
       warn: (...a) => logs.warn.push(a.join(' ')),
       error: (...a) => logs.error.push(a.join(' ')),
     }),
+    './Firewalla.js': { getFirewallaHome: () => '/home/pi/firewalla', '@noCallThru': true },
     'child-process-promise': { execFile: execFileImpl, '@noCallThru': true },
   });
   mod._logs = logs;
@@ -108,6 +121,14 @@ function loadKCM(fakeRedis, execFileImpl) {
 
 function modinfoStdout(version, srcversion) {
   return `filename:       /lib/modules/xt_udp_tls.ko\nversion:        ${version}\nsrcversion:     ${srcversion}\ndepends:        \n`;
+}
+
+// modinfo output on builds without MODULE_VERSION / CONFIG_MODULE_SRCVERSION_ALL
+// (e.g. the aarch64 6.6.104 kernel on orange): neither version: nor srcversion:
+function modinfoStdoutNoVersion() {
+  return 'filename:       /home/pi/firewalla/platform/orange/files/kernel_modules/6.6.104/xt_udp_tls.ko\n' +
+    'alias:          ipt_tls\nlicense:        GPL\ndepends:        x_tables\nname:           xt_udp_tls\n' +
+    'vermagic:       6.6.104 SMP mod_unload aarch64\nparm:           max_host_sets:int\n';
 }
 
 describe('KernelCrashMonitor', function () {
@@ -165,7 +186,9 @@ describe('KernelCrashMonitor', function () {
     });
 
     it('returns false once onUdpTlsModuleLoaded clears the cache', async function () {
-      fakeRedis.seed({ shouldDisableUdpTls: true });
+      // stored identity matches the modinfo output below, so the disable stays in effect
+      // through checkPstoreAndUpdateRedis and only onUdpTlsModuleLoaded clears it
+      fakeRedis.seed({ shouldDisableUdpTls: true, udpModuleVersion: { version: '1.0', srcversion: 'abc', koId: '' } });
       const { execFile } = makeExecFile({ dmesgFindOutput: '', modinfoOutput: modinfoStdout('1.0', 'abc') });
       const kcm = loadKCM(fakeRedis, execFile);
 
@@ -188,8 +211,49 @@ describe('KernelCrashMonitor', function () {
       await kcm.onUdpTlsModuleLoaded('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
 
       const info = await kcm.getCrashInfo();
-      expect(info.udpModuleVersion).to.deep.equal({ version: '1.0', srcversion: 'abc123' });
+      expect(info.udpModuleVersion).to.deep.equal({ version: '1.0', srcversion: 'abc123', koId: '' });
       expect(info.shouldDisableUdpTls).to.be.false;
+    });
+
+    it('records the ko id as identity when the .ko carries no version/srcversion', async function () {
+      const { execFile, execLog } = makeExecFile({
+        modinfoOutput: modinfoStdoutNoVersion(),
+        koDescribe: 'id=buildid:deadbeef',
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.onUdpTlsModuleLoaded('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      expect(execLog).to.include('/home/pi/firewalla/scripts/tls_module_id.sh describe /lib/modules/xt_udp_tls.ko');
+      const info = await kcm.getCrashInfo();
+      expect(info.udpModuleVersion).to.deep.equal({ version: '', srcversion: '', koId: 'buildid:deadbeef' });
+    });
+
+    it('does not record any version when neither the .ko nor modinfo yields one', async function () {
+      fakeRedis.seed({ udpModuleVersion: { version: '', srcversion: '', koId: 'buildid:oldhash' } });
+      const { execFile } = makeExecFile({ modinfoOutput: modinfoStdoutNoVersion() }); // koDescribe undefined => the .ko yields nothing
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.onUdpTlsModuleLoaded('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      const info = await kcm.getCrashInfo();
+      expect(info.udpModuleVersion).to.deep.equal({ version: '', srcversion: '', koId: 'buildid:oldhash' });
+      expect(info.shouldDisableUdpTls).to.be.false;
+    });
+
+    it('records version, srcversion and the build id together when the .ko carries all three', async function () {
+      // gse: modinfo refuses xt_udp_tls.ko.<checksum>/.ko.<compiler>, so all three fields come
+      // out of the module image instead
+      const { execFile } = makeExecFile({
+        koDescribe: 'version=0.0.9\nsrcversion=24D95927CCDD39D26C85F3B\nid=buildid:7125e6c7',
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.onUdpTlsModuleLoaded('xt_udp_tls', '/lib/modules/xt_udp_tls.ko.aarch64-none-linux-gnu-gcc');
+
+      expect((await kcm.getCrashInfo()).udpModuleVersion).to.deep.equal({
+        version: '0.0.9', srcversion: '24D95927CCDD39D26C85F3B', koId: 'buildid:7125e6c7',
+      });
     });
 
     it('defaults to the module name "xt_udp_tls" when no path is given', async function () {
@@ -201,20 +265,20 @@ describe('KernelCrashMonitor', function () {
       expect(execLog.some(c => c === 'modinfo xt_udp_tls')).to.be.true;
     });
 
-    it('falls back to `modinfo <modName>` when modinfo on the koPath fails', async function () {
+    it('falls back to `modinfo <modName>` when the .ko cannot be described', async function () {
+      // koPath does not exist yet (or yields nothing): ask modinfo about the loaded module
       const { execFile, execLog } = makeExecFile({
-        modinfoOutput: modinfoStdout('3.0', 'xyz789'),
-        failOn: (cmd) => cmd === 'modinfo /lib/modules/xt_udp_tls.ko',
+        modinfoOutput: modinfoStdout('3.0', 'xyz789'), // koDescribe undefined => script fails
       });
       const kcm = loadKCM(fakeRedis, execFile);
 
       await kcm.onUdpTlsModuleLoaded('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
 
-      // tried the koPath first, then fell back to the module name
-      expect(execLog).to.include('modinfo /lib/modules/xt_udp_tls.ko');
+      // tried the .ko first, then fell back to the module name
+      expect(execLog).to.include('/home/pi/firewalla/scripts/tls_module_id.sh describe /lib/modules/xt_udp_tls.ko');
       expect(execLog).to.include('modinfo xt_udp_tls');
       const info = await kcm.getCrashInfo();
-      expect(info.udpModuleVersion).to.deep.equal({ version: '3.0', srcversion: 'xyz789' });
+      expect(info.udpModuleVersion).to.deep.equal({ version: '3.0', srcversion: 'xyz789', koId: '' });
     });
 
     it('still clears shouldDisableUdpTls when modinfo fails, without clobbering stored version', async function () {
@@ -352,6 +416,50 @@ describe('KernelCrashMonitor', function () {
       expect(info.lastCrashTS).to.equal(700);
     });
 
+    it('does NOT disable when koPath is a symlink that was re-pointed after the crash', async function () {
+      // gse ships xt_udp_tls.ko.aarch64-none-linux-gnu-gcc -> xt_udp_tls.ko.<checksum>: the
+      // target keeps its old mtime while the symlink is refreshed, so only the newer of the
+      // two shows that the effective module changed after the crash.
+      const dmesgFindOutput = `700.0 ${PSTORE_PATH}/dmesg-a\n`;
+      const { execFile, execLog } = makeExecFile({
+        dmesgFindOutput,
+        modinfoOutput: modinfoStdout('2.0', 'new'),
+        koMtime: 300,      // target content is older than the crash
+        koLinkMtime: 900,  // but the symlink was re-pointed after it
+        fileContents: {
+          [`${PSTORE_PATH}/dmesg-a`]: 'Kernel panic - not syncing\nModules linked in: xt_udp_tls ext4',
+        },
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      expect(execLog).to.include('stat -L -c %Y /lib/modules/xt_udp_tls.ko');
+      const info = await kcm.getCrashInfo();
+      expect(info.shouldDisableUdpTls).to.not.equal(true);
+      expect(info.crashesCount).to.be.undefined;
+    });
+
+    it('DOES disable when both the symlink and its target predate the crash', async function () {
+      const dmesgFindOutput = `700.0 ${PSTORE_PATH}/dmesg-a\n`;
+      const { execFile } = makeExecFile({
+        dmesgFindOutput,
+        modinfoOutput: modinfoStdout('2.0', 'new'),
+        koMtime: 300,
+        koLinkMtime: 500,
+        fileContents: {
+          [`${PSTORE_PATH}/dmesg-a`]: 'Kernel panic - not syncing\nModules linked in: xt_udp_tls ext4',
+        },
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      const info = await kcm.getCrashInfo();
+      expect(info.shouldDisableUdpTls).to.be.true;
+      expect(info.lastCrashTS).to.equal(700);
+    });
+
     it('does not double-count a udp-tls crash that is not newer than the last recorded one', async function () {
       fakeRedis.seed({ lastCrashTS: 500, crashesCount: 1, shouldDisableUdpTls: true });
       const dmesgFindOutput = `500.0 ${PSTORE_PATH}/dmesg-a\n`;
@@ -441,6 +549,203 @@ describe('KernelCrashMonitor', function () {
 
       const info = await kcm.getCrashInfo();
       expect(info.shouldDisableUdpTls).to.be.true;
+    });
+
+    it('re-enables UDP TLS when the ko id changed on a build whose modinfo prints no version', async function () {
+      fakeRedis.seed({
+        shouldDisableUdpTls: true,
+        udpTlsDisabledOn: 111,
+        udpModuleVersion: { version: '', srcversion: '', koId: 'buildid:oldhash' },
+      });
+      const { execFile } = makeExecFile({
+        dmesgFindOutput: '',
+        modinfoOutput: modinfoStdoutNoVersion(),
+        koDescribe: 'id=buildid:newhash',
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      const info = await kcm.getCrashInfo();
+      expect(info.shouldDisableUdpTls).to.be.false;
+      expect(info.udpTlsDisabledOn).to.equal(0);
+    });
+
+    it('keeps UDP TLS disabled when the ko id is unchanged', async function () {
+      fakeRedis.seed({
+        shouldDisableUdpTls: true,
+        udpTlsDisabledOn: 111,
+        udpModuleVersion: { version: '', srcversion: '', koId: 'buildid:samehash' },
+      });
+      const { execFile } = makeExecFile({
+        dmesgFindOutput: '',
+        modinfoOutput: modinfoStdoutNoVersion(),
+        koDescribe: 'id=buildid:samehash',
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      expect((await kcm.getCrashInfo()).shouldDisableUdpTls).to.be.true;
+    });
+
+    it('re-enables UDP TLS when the stored record carries no identity at all (pre-koId record)', async function () {
+      // a box disabled before the ko-hash fallback existed: modinfo printed nothing, so the
+      // stored version is all-empty and could never be compared -> UDP TLS stayed disabled forever
+      fakeRedis.seed({
+        shouldDisableUdpTls: true,
+        udpTlsDisabledOn: 111,
+        udpModuleVersion: { version: '', srcversion: '' },
+      });
+      const { execFile } = makeExecFile({
+        dmesgFindOutput: '',
+        modinfoOutput: modinfoStdoutNoVersion(),
+        koDescribe: 'id=buildid:somehash',
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      const info = await kcm.getCrashInfo();
+      expect(info.shouldDisableUdpTls).to.be.false;
+      expect(info.udpTlsDisabledOn).to.equal(0);
+    });
+
+    it('re-enables UDP TLS when no version was ever recorded (disabled before any successful load)', async function () {
+      // observed on an orange box: {"monitorStartedAt":...,"shouldDisableUdpTls":true} and no
+      // udpModuleVersion at all. Nothing would ever record one, since recording happens on a
+      // successful load and loading is exactly what the flag disables.
+      fakeRedis.seed({ monitorStartedAt: 1783710366, shouldDisableUdpTls: true });
+      const { execFile } = makeExecFile({
+        dmesgFindOutput: '',
+        modinfoOutput: modinfoStdoutNoVersion(),
+        koDescribe: 'id=buildid:somehash',
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      expect((await kcm.getCrashInfo()).shouldDisableUdpTls).to.be.false;
+      expect(kcm.shouldDisableUdpTls()).to.be.false;
+    });
+
+    it('does not re-enable a crash disabled in this same run', async function () {
+      // the re-enable check runs against the state read from redis, so a brand new crash
+      // (which records no version) must not be undone by the missing-identity rule above
+      const dmesgFindOutput = `800.0 ${PSTORE_PATH}/dmesg-a\n`;
+      const { execFile } = makeExecFile({
+        dmesgFindOutput,
+        modinfoOutput: modinfoStdoutNoVersion(),
+        koDescribe: 'id=buildid:somehash',
+        koMtime: 500, // crash at 800 is newer than the module
+        fileContents: {
+          [`${PSTORE_PATH}/dmesg-a`]: 'Kernel panic - not syncing\nModules linked in: xt_udp_tls ext4',
+        },
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      expect((await kcm.getCrashInfo()).shouldDisableUdpTls).to.be.true;
+      expect(kcm.shouldDisableUdpTls()).to.be.true;
+    });
+
+    it('keeps UDP TLS disabled when a record predating koId still matches on srcversion', async function () {
+      // adding koId must not make every stored record read as "changed": with no koId on the
+      // stored side the comparison falls back to the strongest field both records carry
+      fakeRedis.seed({
+        shouldDisableUdpTls: true,
+        udpTlsDisabledOn: 111,
+        udpModuleVersion: { version: '0.0.9', srcversion: 'SAME' },
+      });
+      const { execFile } = makeExecFile({
+        dmesgFindOutput: '',
+        koDescribe: 'version=0.0.9\nsrcversion=SAME\nid=buildid:abc',
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      expect((await kcm.getCrashInfo()).shouldDisableUdpTls).to.be.true;
+    });
+
+    it('keeps UDP TLS disabled when the stored and current koId are of different types', async function () {
+      // a module without a build-id note falls back to srcversion (or sha256) for its koId, so
+      // records can hold ids of different types. "srcversion:SAME" vs "buildid:X" is not
+      // evidence of a change, and srcversion is what both records can actually be compared on.
+      fakeRedis.seed({
+        shouldDisableUdpTls: true,
+        udpTlsDisabledOn: 111,
+        udpModuleVersion: { version: '0.0.9', srcversion: 'SAME', koId: 'srcversion:SAME' },
+      });
+      const { execFile } = makeExecFile({
+        dmesgFindOutput: '',
+        koDescribe: 'version=0.0.9\nsrcversion=SAME\nid=buildid:X',
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      expect((await kcm.getCrashInfo()).shouldDisableUdpTls).to.be.true;
+    });
+
+    it('re-enables UDP TLS when ids of different types come with a changed srcversion', async function () {
+      fakeRedis.seed({
+        shouldDisableUdpTls: true,
+        udpTlsDisabledOn: 111,
+        udpModuleVersion: { version: '0.0.9', srcversion: 'OLD', koId: 'sha256:aaa' },
+      });
+      const { execFile } = makeExecFile({
+        dmesgFindOutput: '',
+        koDescribe: 'version=0.0.9\nsrcversion=NEW\nid=buildid:bbb',
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      expect((await kcm.getCrashInfo()).shouldDisableUdpTls).to.be.false;
+    });
+
+    it('re-enables UDP TLS when only the build id changed (same sources, rebuilt module)', async function () {
+      // srcversion hashes the sources, so a rebuild with another toolchain keeps it; the build
+      // id is what shows the module actually changed
+      fakeRedis.seed({
+        shouldDisableUdpTls: true,
+        udpTlsDisabledOn: 111,
+        udpModuleVersion: { version: '0.0.9', srcversion: 'SAME', koId: 'buildid:old' },
+      });
+      const { execFile } = makeExecFile({
+        dmesgFindOutput: '',
+        koDescribe: 'version=0.0.9\nsrcversion=SAME\nid=buildid:new',
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      const info = await kcm.getCrashInfo();
+      expect(info.shouldDisableUdpTls).to.be.false;
+      expect(info.udpTlsDisabledOn).to.equal(0);
+    });
+
+    it('keeps UDP TLS disabled when the .ko yields no identity at all (corrupt or truncated)', async function () {
+      // tls_module_id.sh hands out no id for a file that is not a readable module, so a corrupt
+      // .ko must not look like a new module version and clear the crash-safety disable
+      fakeRedis.seed({
+        shouldDisableUdpTls: true,
+        udpTlsDisabledOn: 111,
+        udpModuleVersion: { version: '0.0.9', srcversion: 'ABC', koId: 'buildid:X' },
+      });
+      const { execFile } = makeExecFile({
+        dmesgFindOutput: '',
+        modinfoOutput: null,   // not installed under /lib/modules either
+        // koDescribe undefined => the script exits non-zero with no id
+      });
+      const kcm = loadKCM(fakeRedis, execFile);
+
+      await kcm.checkPstoreAndUpdateRedis('xt_udp_tls', '/lib/modules/xt_udp_tls.ko');
+
+      expect((await kcm.getCrashInfo()).shouldDisableUdpTls).to.be.true;
+      expect(kcm.shouldDisableUdpTls()).to.be.true;
     });
 
     it('keeps UDP TLS disabled when the current version cannot be determined (module not yet installed)', async function () {
