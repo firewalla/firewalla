@@ -295,10 +295,8 @@ cat "$qos_file"
   echo 'COMMIT'
 } >> "$ip6tables_file"
 
-# Return 0 (need install/update) only when the module is supported on this platform AND
-# it is not loaded yet, or the loaded ko srcversion / installed .so checksum differs from
-# the bundled version. Return 1 otherwise so we can skip the disruptive rmmod/restore cycle.
-function tlsModuleNeedsUpdate() {
+
+function tlsModuleSupported() {
   local module_name=$1
   if [[ ${module_name} = "xt_tls" && ${XT_TLS_SUPPORTED} != "yes" ]]; then
     return 1
@@ -306,6 +304,17 @@ function tlsModuleNeedsUpdate() {
   if [[ ${module_name} = "xt_udp_tls" && ${XT_UDP_TLS_SUPPORTED} != "yes" ]]; then
     return 1
   fi
+  return 0
+}
+
+# Return 0 (needs a kernel module (re)load) only when the module is supported on this
+# platform AND it is not loaded yet, or the loaded ko differs from the bundled one.
+# Return 1 otherwise so we can skip the disruptive rmmod/restore cycle.
+# The userspace .so is checked separately by tlsSoNeedsUpdate: installing it does not
+# require reloading the module, so a .so-only change must not trigger the cycle.
+function tlsKoNeedsUpdate() {
+  local module_name=$1
+  tlsModuleSupported "${module_name}" || return 1
 
   # not loaded yet -> needs install
   if ! lsmod | grep -wq "${module_name}"; then
@@ -317,32 +326,39 @@ function tlsModuleNeedsUpdate() {
     return 0
   fi
 
-  # compare ko srcversion between the bundled ko and the currently loaded module
-  local ko_path ko_srcversion loaded_srcversion
+  # is the loaded module the one built from the bundled .ko? srcversion when the build has
+  # one, GNU build-id otherwise (see scripts/tls_module_id.sh). When neither side yields a
+  # comparable id we cannot tell, and leave the loaded module alone.
+  local ko_path
   ko_path=$(get_tls_ko_path "${module_name}")
   if [[ -f $ko_path ]]; then
-    ko_srcversion=$(modinfo "$ko_path" 2>/dev/null | awk '/^srcversion:/{print $2}')
-    loaded_srcversion=$(cat "/sys/module/${module_name}/srcversion" 2>/dev/null)
-    if [[ -n "$ko_srcversion" && "$ko_srcversion" != "$loaded_srcversion" ]]; then
-      return 0
-    fi
+    tls_module_matches_ko "${module_name}" "$ko_path"
+    case $? in
+      1)
+        echo "${module_name}: loaded module differs from the bundled ko, reload needed"
+        return 0
+        ;;
+      2)
+        echo "${module_name}: cannot determine whether the loaded module matches ${ko_path}, leaving it loaded"
+        ;;
+    esac
   fi
 
-  # compare the checksum between the bundled .so and the installed .so
-  local arch so_path so_path_alt src_so installed_so
-  arch=$(uname -m)
-  so_path=${FW_PLATFORM_CUR_DIR}/files/shared_objects/$(lsb_release -cs)/lib${module_name}.so
-  so_path_alt="/media/root-ro/usr/lib/${arch}-linux-gnu/xtables/lib${module_name}.so"
-  installed_so="/usr/lib/${arch}-linux-gnu/xtables/lib${module_name}.so"
-  if [[ -f $so_path ]]; then
-    src_so=$so_path
-  elif [[ -f $so_path_alt ]]; then
-    src_so=$so_path_alt
-  fi
-  if [[ -n "$src_so" ]]; then
-    if [[ ! -f $installed_so ]] || [[ $(sha256sum "$installed_so" | awk '{print $1}') != $(sha256sum "$src_so" | awk '{print $1}') ]]; then
-      return 0
-    fi
+  return 1
+}
+
+# Return 0 when the bundled userspace .so differs from the installed one (or is not
+# installed at all). Only the .so needs to be copied in that case.
+function tlsSoNeedsUpdate() {
+  local module_name=$1
+  tlsModuleSupported "${module_name}" || return 1
+
+  local src_so installed_so
+  src_so=$(get_tls_so_path "${module_name}")
+  installed_so=$(get_tls_so_installed_path "${module_name}")
+  [[ -n "$src_so" ]] || return 1
+  if [[ ! -f $installed_so ]] || [[ $(sha256sum "$installed_so" | awk '{print $1}') != $(sha256sum "$src_so" | awk '{print $1}') ]]; then
+    return 0
   fi
 
   return 1
@@ -351,24 +367,38 @@ function tlsModuleNeedsUpdate() {
 if [[ $XT_TLS_SUPPORTED == "yes" || $XT_UDP_TLS_SUPPORTED == "yes" ]]; then
   module_names=("tls" "udp_tls")
 
-  # only (re)install modules that are supported and whose ko version or .so checksum changed
-  modules_to_update=()
+  # ko and .so are checked separately: reloading the kernel module means rmmod plus a
+  # tls-rule-free iptables restore, while the .so is just a file copy. Modules whose ko
+  # changed are reloaded (installTLSModule installs their .so too), the rest only get
+  # their .so refreshed.
+  modules_to_reload=()
+  so_to_update=()
   for module_name in "${module_names[@]}"; do
-    if tlsModuleNeedsUpdate "xt_${module_name}"; then
-      modules_to_update+=("$module_name")
+    if tlsKoNeedsUpdate "xt_${module_name}"; then
+      modules_to_reload+=("$module_name")
+    elif tlsSoNeedsUpdate "xt_${module_name}"; then
+      so_to_update+=("$module_name")
     fi
   done
 
-  echo "Modules to update: ${modules_to_update[*]}"
+  echo "Modules to reload: ${modules_to_reload[*]}"
+  echo "Shared objects to update: ${so_to_update[*]}"
 
-  if [[ ${#modules_to_update[@]} -gt 0 ]]; then
+  # a .so-only change affects neither the loaded module nor existing rules, install it in
+  # place. Must happen before the iptables-restore at the end of this script, which may
+  # contain "-m tls" rules parsed by this .so.
+  for module_name in "${so_to_update[@]}"; do
+    installTLSSharedObject "xt_${module_name}"
+  done
+
+  if [[ ${#modules_to_reload[@]} -gt 0 ]]; then
     # existence of "-m tls" or "-m udp_tls" rules prevents kernel module from being updated, resotre with a tls-clean version first
     sudo iptables-save > "$iptables_file.orig"
     sudo ip6tables-save > "$ip6tables_file.orig"
 
     grep -vE "\-m tls|\-m udp_tls" "$iptables_file.orig" | sudo iptables-restore
     grep -vE "\-m tls|\-m udp_tls" "$ip6tables_file.orig" | sudo ip6tables-restore
-    for module_name in "${modules_to_update[@]}"; do
+    for module_name in "${modules_to_reload[@]}"; do
       if lsmod | grep -w "xt_${module_name}"; then
         sudo rmmod "xt_${module_name}"
         if [[ $? -eq 0 ]]; then
