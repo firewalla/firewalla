@@ -336,8 +336,10 @@ function tlsModuleNeedsUpdate() {
   local ko_path ko_srcversion loaded_srcversion
   ko_path=$(get_tls_ko_path "${module_name}")
   if [[ -f $ko_path ]]; then
-    ko_srcversion=$(ko_modinfo "$ko_path" | awk -F ': ' '/^srcversion:/ {print $2}')
+    ko_srcversion=$(ko_modinfo "$ko_path" | awk '/^srcversion:/{print $2}')
     loaded_srcversion=$(cat "/sys/module/${module_name}/srcversion" 2>/dev/null)
+    ko_srcversion=$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' <<< "$ko_srcversion")
+    loaded_srcversion=$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' <<< "$loaded_srcversion")
     if [[ -n "$ko_srcversion" && "$ko_srcversion" != "$loaded_srcversion" ]]; then
       return 0
     fi
