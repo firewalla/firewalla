@@ -38,6 +38,8 @@ const rp = require('request-promise');
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const LiveTransport = require('./LiveTransport.js');
 const pm2 = new PolicyManager2();
+const ExceptionManager = require('../alarm/ExceptionManager.js');
+const exceptionManager = new ExceptionManager();
 
 const FireRouter = require('../net2/FireRouter');
 const _ = require('lodash');
@@ -513,6 +515,17 @@ module.exports = class {
     return false
   }
 
+  // same staleness caveat as isMspRelatedRule above: mspData.targetlists may be stale if the
+  // box was offline when the msp-side target list/membership changed
+  async isMspRelatedException(exception, { mspData }) {
+    if (mspData && mspData.targetlists) {
+      if (_.find(mspData.targetlists, { id: exception['p.category.id'] })) { // if it references an msp target list
+        return true;
+      }
+    }
+    return false
+  }
+
   async reset() {
     log.warn("Reset guardian settings", this.name);
     const mspId = await this.getMspId();
@@ -527,6 +540,18 @@ module.exports = class {
           await pm2.disableAndDeletePolicy(p.pid);
         }
       }))
+
+      // remove all msp related exceptions, e.g. exceptions muting alarms on an msp target list;
+      // these are not tied to any rule's lifecycle and would otherwise keep the target list's
+      // category activated (and its hashset polled) forever
+      const exceptions = await exceptionManager.loadExceptionsAsync();
+      const mspRelatedEids = (await Promise.all(exceptions.map(async e =>
+        await this.isMspRelatedException(e, { mspData }) ? e.eid : null
+      ))).filter(eid => eid);
+      if (mspRelatedEids.length) {
+        log.info("Remove msp exceptions", mspRelatedEids);
+        await exceptionManager.deleteExceptions(mspRelatedEids);
+      }
 
       // reset no_auto_upgrade flags
       await upgradeManager.setAutoUpgradeState()
