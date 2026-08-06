@@ -295,6 +295,21 @@ cat "$qos_file"
   echo 'COMMIT'
 } >> "$ip6tables_file"
 
+
+function ko_modinfo {
+  local ko_path=$1
+  [[ -r $ko_path ]] || return 1
+  [[ $ko_path == *.ko ]] && { modinfo "$ko_path" 2>/dev/null; return; }
+  local dir link rc
+  dir=$(mktemp -d) || return 1
+  link="${dir}/$(basename "${ko_path%%.ko*}").ko"
+  ln -s "$(readlink -f "$ko_path")" "$link" || { rm -rf "$dir"; return 1; }
+  modinfo "$link" 2>/dev/null
+  rc=$?
+  rm -rf "$dir"
+  return $rc
+}
+
 # Return 0 (need install/update) only when the module is supported on this platform AND
 # it is not loaded yet, or the loaded ko srcversion / installed .so checksum differs from
 # the bundled version. Return 1 otherwise so we can skip the disruptive rmmod/restore cycle.
@@ -321,7 +336,7 @@ function tlsModuleNeedsUpdate() {
   local ko_path ko_srcversion loaded_srcversion
   ko_path=$(get_tls_ko_path "${module_name}")
   if [[ -f $ko_path ]]; then
-    ko_srcversion=$(modinfo "$ko_path" 2>/dev/null | awk '/^srcversion:/{print $2}')
+    ko_srcversion=$(ko_modinfo "$ko_path" | awk -F ': ' '/^srcversion:/ {print $2}')
     loaded_srcversion=$(cat "/sys/module/${module_name}/srcversion" 2>/dev/null)
     if [[ -n "$ko_srcversion" && "$ko_srcversion" != "$loaded_srcversion" ]]; then
       return 0
