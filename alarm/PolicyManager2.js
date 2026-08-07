@@ -1203,16 +1203,17 @@ class PolicyManager2 {
     log.forceInfo(">>>>>==== All policy rules are enforced ====<<<<<", otherRules.length);
     this.allRulesInitialized = true;
 
-    // Wait for category/country data loads (cloud fetch → recycleIPSet) to complete
-    // so the initial atomic ipset swap captures the full state.
+    // Wait for the initial category/country cloud fetch to be attempted so the initial atomic
+    // ipset swap captures as much state as possible. A category whose fetch fails is marked
+    // attempted too, so only a slow fetch delays this.
     // Hard cap so a failing remote source doesn't stall startup indefinitely.
     const initWait = fc.getConfig().timing['policy.category.init_wait'] || 120
     const initWaitDeadline = Date.now() + initWait * 1000;
     let pending;
     while (
       (pending = [
-        ...categoryUpdater.getUninitializedCategories(),
-        ...countryUpdater.getUninitializedCategories()
+        ...categoryUpdater.getUnattemptedCategories(),
+        ...countryUpdater.getUnattemptedCategories()
       ]).length > 0
     ) {
       const remaining = initWaitDeadline - Date.now();
