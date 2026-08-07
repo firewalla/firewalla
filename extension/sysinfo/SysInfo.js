@@ -41,6 +41,8 @@ const platform = platformLoader.getPlatform();
 
 const rateLimit = require('../../extension/ratelimit/RateLimit.js');
 
+const dockerEmmcUsageModule = require('../docker/dockerEmmcUsage.js');
+
 const Constants = require("../../net2/Constants.js");
 
 const ethInfoKey = "ethInfo";
@@ -92,6 +94,8 @@ let diskUsage = {};
 let releaseInfo = {};
 
 let emmcLife = null;
+
+let dockerEmmcUsage = null;
 
 const REDIS_DISKSTATS_DAILY_KEY = 'sys:diskstats:daily';
 
@@ -155,6 +159,7 @@ async function update() {
       .then(getCPUModel)
       .then(getDistributionCodename)
       .then(getEmmcLife)
+      .then(getDockerEmmcUsage)
   ]);
 
   if(updateFlag) {
@@ -255,6 +260,15 @@ async function getEmmcLife() {
     };
   } catch (err) {
     log.debug("Failed to read eMMC ext_csd:", err.message);
+  }
+}
+
+async function getDockerEmmcUsage() {
+  try {
+    dockerEmmcUsage = await dockerEmmcUsageModule.getEmmcUsage();
+  } catch (err) {
+    log.debug("Failed to get docker eMMC usage:", err.message);
+    dockerEmmcUsage = [];
   }
 }
 
@@ -519,6 +533,10 @@ async function getSysInfo() {
 
   if (platform.isDockerSupported()) {
     sysinfo.activeContainers = activeContainers;
+  }
+
+  if (dockerEmmcUsage && dockerEmmcUsage.length > 0) {
+    sysinfo.dockerEmmcUsage = dockerEmmcUsage;
   }
 
   return sysinfo;

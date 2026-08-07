@@ -270,3 +270,74 @@ describe('Test policy filter', function(){
     expect(content).to.be.not.empty;
   });
 });
+
+describe('Test deleteTagRelatedPolicies unenforce synchronization', function() {
+  this.timeout(5000);
+
+  before(async () => {
+    // enforceOnQueue() routes through this.queue, which is only wired up via setupPolicyQueue()
+    // during normal FireMain startup (net2/main.js) -- initialize it here so the queue actually exists
+    await new PolicyManager2().setupPolicyQueue();
+  });
+
+  it('should wait for the policy to actually unenforce before returning', async () => {
+    const pm2 = new PolicyManager2();
+    const uid = 'testTagUnenforce';
+    const rule = new Policy({ pid: 'testUnenforcePid', type: 'intranet', action: 'block', tag: [`tag:${uid}`] });
+
+    let unenforceCompleted = false;
+    const origLoad = pm2.loadActivePoliciesAsync;
+    const origUnenforce = pm2.unenforce;
+    const origRemoveBypass = pm2.removeBypassChainForPolicy;
+    pm2.loadActivePoliciesAsync = async () => [rule];
+    pm2.unenforce = async () => {
+      await new Promise(r => setTimeout(r, 50));
+      unenforceCompleted = true;
+    };
+    pm2.removeBypassChainForPolicy = async () => {};
+
+    try {
+      await pm2.deleteTagRelatedPolicies(uid);
+    } finally {
+      pm2.loadActivePoliciesAsync = origLoad;
+      pm2.unenforce = origUnenforce;
+      pm2.removeBypassChainForPolicy = origRemoveBypass;
+    }
+
+    expect(unenforceCompleted).to.be.true;
+  });
+
+  it('should restore the old policy when replacement enforcement fails after old policy was unenforced', async () => {
+    const pm2 = new PolicyManager2();
+    const uid = 'testTagReenforceRollback';
+    const rule = new Policy({ pid: 'testReenforcePid', type: 'intranet', action: 'block', tag: [`tag:${uid}`, 'otherTag'] });
+
+    const unenforceCalls = [];
+    const enforceCalls = [];
+    const origLoad = pm2.loadActivePoliciesAsync;
+    const origGetPolicy = pm2.getPolicy;
+    const origUnenforce = pm2.unenforce;
+    const origEnforce = pm2.enforce;
+    pm2.loadActivePoliciesAsync = async () => [rule];
+    pm2.getPolicy = async () => rule;
+    pm2.unenforce = async (p) => { unenforceCalls.push(p.pid); };
+    pm2.enforce = async (p) => {
+      enforceCalls.push(p.tag ? [...p.tag] : null);
+      if (enforceCalls.length === 1) throw new Error('simulated enforce failure');
+    };
+
+    try {
+      await pm2.deleteTagRelatedPolicies(uid);
+    } finally {
+      pm2.loadActivePoliciesAsync = origLoad;
+      pm2.getPolicy = origGetPolicy;
+      pm2.unenforce = origUnenforce;
+      pm2.enforce = origEnforce;
+    }
+
+    expect(unenforceCalls).to.deep.equal(['testReenforcePid']);
+    // first call = failed attempt with the reduced tag list, second = rollback restoring the old (full) tag list
+    expect(enforceCalls.length).to.equal(2);
+    expect(enforceCalls[1]).to.deep.equal([`tag:${uid}`, 'otherTag']);
+  });
+});
