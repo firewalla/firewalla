@@ -172,7 +172,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
                 // mark initialized after all processing (recycleIPSet sets this too for
                 // ipset-enabled categories, but dns-only categories like adblock_strict
                 // skip recycleIPSet and still need to be marked)
-                this.initializedCategories[event.category] = true;
+                this.attemptedCategories[event.category] = true;
               }
 
               // check if category filter exists to update
@@ -1875,7 +1875,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
     }
 
-    this.initializedCategories[category] = true;
+    this.attemptedCategories[category] = true;
     this.activeCategoryPolicyMap.get(category).lastRecyclemode = currentRecyclemode;
   }
 

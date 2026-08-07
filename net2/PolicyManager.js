@@ -23,8 +23,6 @@ const fc = require('../net2/config.js');
 const f = require('./Firewalla.js');
 const _ = require('lodash');
 
-const Block = require('../control/Block.js');
-
 const VpnManager = require('../vpn/VpnManager.js');
 
 const extensionManager = require('../sensor/ExtensionManager.js')
@@ -44,8 +42,6 @@ const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
-const CategoryUpdater = require('../control/CategoryUpdater.js')
-const categoryUpdater = new CategoryUpdater()
 const blockControl = require('../control/BlockControl.js');
 const iptc = require('../control/IptablesControl.js');
 

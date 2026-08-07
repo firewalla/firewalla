@@ -557,20 +557,25 @@ class CategoryUpdateSensor extends Sensor {
         } catch (err) {
           log.error("Failed to update conuntry set", event.country, err)
         }
+        countryUpdater.markAttempted(countryUpdater.getCategory(event.country))
       });
 
       sem.on('Policy:CategoryActivated', async (event) => {
         const category = event.category;
         const reloadFromCloud = event.reloadFromCloud;
         if (reloadFromCloud !== false && !categoryUpdater.isCustomizedCategory(category)) {
-          if (securityHashMapping.hasOwnProperty(category)) {
-            await this.updateSecurityCategory(category);
-          } else {
-            const categories = Object.keys(this.categoryHashsetMapping);
-            if (!categories.includes(category)) {
-              this.categoryHashsetMapping[category] = `app.${category}`;
+          try {
+            if (securityHashMapping.hasOwnProperty(category)) {
+              await this.updateSecurityCategory(category);
+            } else {
+              const categories = Object.keys(this.categoryHashsetMapping);
+              if (!categories.includes(category)) {
+                this.categoryHashsetMapping[category] = `app.${category}`;
+              }
+              await this.updateCategory(category);
             }
-            await this.updateCategory(category);
+          } catch (err) {
+            log.error("Failed to update category", category, err.message);
           }
         } else {
           // only send UPDATE_CATEGORY_DOMAIN event for customized category or reloadFromCloud is false, which will trigger ipset/tls set refresh in CategoryUpdater.js
@@ -581,6 +586,10 @@ class CategoryUpdateSensor extends Sensor {
           };
           sem.sendEventToAll(event);
         }
+        // the initial load attempt has settled, successfully or not. don't hold up the initial
+        // iptables/ipset restore any longer; on failure the category keeps whatever data redis
+        // already had, and the next periodic update retries the fetch
+        categoryUpdater.markAttempted(category);
       });
 
       sem.on('Categorty:ReloadFromBone', (event) => {
