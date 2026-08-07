@@ -73,12 +73,15 @@ class PolicyManager {
     })
 
     // ======= default iptables =======
+
     const secondarySubnet = sysManager.mySubnet2();
     if (platform.getDHCPCapacity() && secondarySubnet) {
       const overlayMasquerade = new Rule('nat').chn('FW_POSTROUTING').src(secondarySubnet).jmp('MASQUERADE');
       await iptc.addRule(overlayMasquerade);
     }
-    const icmpv6Redirect = new Rule().fam(6).chn('OUTPUT').icmp6('redirect').jmp('DROP');
+    // lives in FW_OUTPUT rather than OUTPUT itself so that iptables-restore --noflush
+    // never has to rewrite a builtin chain shared with firerouter
+    const icmpv6Redirect = new Rule().fam(6).chn('FW_OUTPUT').icmp6('redirect').jmp('DROP');
     await iptc.addRule(icmpv6Redirect);
 
     // setup global blocking redis match rule

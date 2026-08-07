@@ -24,6 +24,14 @@ const fsp = require('fs').promises;
 const ModuleControl = require('./ModuleControl.js')
 
 const TABLES = ['filter', 'nat', 'mangle', 'raw'];
+// tables the setup script writes, and which therefore must never come back empty
+const SCRIPT_TABLES = ['filter', 'nat', 'mangle'];
+
+// Chains prefixed with FW_ are owned by firewalla and are the only ones the restore
+// payload describes. Everything else — builtin chains, firerouter's FR_*, DOCKER-*,
+// UPNP_* — belongs to another writer, is never declared and so never flushed, so rules
+// landing there are applied directly by addRule() rather than through the payload.
+const FW_CHAIN_PREFIX = 'FW_';
 
 class IptablesControl extends ModuleControl {
   constructor() {
@@ -33,9 +41,21 @@ class IptablesControl extends ModuleControl {
     // Each table is split into chains vs rules.
     this.queuedRules = this._emptyState(true);
 
-    // Track current iptables state (from iptables-save / setup script output)
-    // Each table is split into chains vs rules.
+    // Desired state of the FW_ chains, built from the setup script skeleton plus
+    // every rule that has been queued since. This is the source of truth for what
+    // restoreIptables() writes; it is never rebuilt from the kernel.
     this.aggregatedRules = this._emptyState();
+
+    // FW_ chain names currently in the kernel, per family and table. Filled by
+    // dumpIptables() at initialization, read only to reap chains left over from a
+    // previous run.
+    this.liveChains = { 4: {}, 6: {} };
+    for (const family of [4, 6])
+      for (const table of TABLES) this.liveChains[family][table] = new Set();
+  }
+
+  isFWChain(chain) {
+    return Boolean(chain) && chain.startsWith(FW_CHAIN_PREFIX);
   }
 
   _getIptablesRestoreFile(family, script = false) {
@@ -60,6 +80,14 @@ class IptablesControl extends ModuleControl {
 
     if (!f.isMain()) {
       super.addRule(JSON.stringify(rule));
+      return;
+    }
+
+    // a chain we don't own is never declared and so never flushed by the restore, which
+    // leaves the payload no way to make re-adding idempotent. Apply the rule directly
+    // instead: Rule.toCmd() guards -A/-I and -D with a -C check.
+    if (!this.isFWChain(rule.chain)) {
+      await this._execOne(rule);
       return;
     }
 
@@ -101,10 +129,11 @@ class IptablesControl extends ModuleControl {
     const queued = this.queuedRules;
     this.queuedRules = this._emptyState(true);
 
-    // dump current iptables to aggregate with queued rules
+    // the setup script skeleton seeds the desired FW_ state, aggregatedRules is
+    // maintained incrementally after that and never re-derived from the kernel. The
+    // chain dump is only needed for the reap, which only runs at initialization.
     if (fromInitialization) {
       await this.readSetupScriptResult();
-    } else {
       await this.dumpIptables();
     }
 
@@ -123,18 +152,18 @@ class IptablesControl extends ModuleControl {
         continue;
       }
       log.verbose(`Restoring iptables v${family} queue=${this.getQueuedRuleCount(queued)}`);
-      await this.restoreIptables(family);
+      await this.restoreIptables(family, fromInitialization);
     } catch (err) {
       log.error(`Error restoring iptables v${family}: ${err.stderr}`);
       log.info(err.message);
       if (fromInitialization) {
-        log.info(`Initialization restore failed for v${family}, flushing and restoring from setup file...`);
+        log.info(`Initialization restore failed for v${family}, restoring from setup file...`);
         try {
-          const flushScript = path.join(f.getFirewallaHome(), 'scripts', 'flush_iptables.sh');
-          await exec(`sudo ${flushScript} ${family}`, { timeout: 60000 });
+          // the setup file only declares FW_ chains, so --noflush leaves everything
+          // owned by other processes alone. No flush_iptables.sh here on purpose.
           const restoreCmd = family === 4 ? 'iptables-restore' : 'ip6tables-restore';
           const restoreFile = this._getIptablesRestoreFile(family, true);
-          await exec(`sudo ${restoreCmd} < ${restoreFile}`, { timeout: 30000 });
+          await exec(`sudo ${restoreCmd} --noflush < ${restoreFile}`, { timeout: 30000 });
           log.info(`Setup file restored for v${family}`);
         } catch (setupErr) {
           log.error(`Error restoring setup file for v${family}: ${setupErr.message}`);
@@ -171,6 +200,16 @@ class IptablesControl extends ModuleControl {
       const ip6tablesContent = await fsp.readFile(ip6tablesFile, 'utf8');
       this.parseIptablesSaveOutput(ip6tablesContent, 6);
       
+      // A table with no chains means the generated file is malformed, most likely a
+      // missing *table header. Bail out: an empty desired state makes every live FW_
+      // chain look stale, and the reap would try to delete all of them.
+      for (const family of [4, 6]) {
+        for (const table of SCRIPT_TABLES) {
+          if (!Object.keys(this.aggregatedRules[family][table].chains).length)
+            throw new Error(`no ${table} chain declared for v${family}`);
+        }
+      }
+
       log.info('Iptables setup script result read successfully');
     } catch (err) {
       const error = new Error(`Error reading iptables setup script result: ${err.message}`);
@@ -180,26 +219,34 @@ class IptablesControl extends ModuleControl {
   }
 
   /**
-   * Backup current iptables using iptables-save
+   * Read the chain names that currently exist in the kernel. Only used to reap the FW_
+   * chains left over from a previous run — every rule lives in aggregatedRules.
    */
   async dumpIptables() {
-    log.debug('Dumping current iptables');
+    log.debug('Dumping current iptables chains');
     try {
-      // Backup both IPv4 and IPv6
       const [v4Result, v6Result] = await Promise.all([
         exec('sudo iptables-save', { timeout: 30000 }),
         exec('sudo ip6tables-save', { timeout: 30000 })
       ]);
-      
-      this.parseIptablesSaveOutput(v4Result.stdout, 4);
-      this.parseIptablesSaveOutput(v6Result.stdout, 6);
+
+      for (const [family, output] of [[4, v4Result.stdout], [6, v6Result.stdout]]) {
+        for (const table of TABLES) this.liveChains[family][table] = new Set();
+        let currentTable = null;
+        for (const line of output.split('\n')) {
+          if (line.startsWith('*'))
+            currentTable = line.substring(1).trim();
+          else if (line.startsWith(':') && currentTable && this.liveChains[family][currentTable])
+            // chains are like ":CHAIN_NAME - [pkts:bytes]"
+            this.liveChains[family][currentTable].add(line.substring(1).split(' ')[0]);
+        }
+      }
     } catch (err) {
       const error = new Error(`Error dumping current iptables: ${err.message}`);
       log.error(error.message);
       throw error;
     }
   }
-
 
   /**
    * Parse iptables-save output into table structure
@@ -282,22 +329,47 @@ class IptablesControl extends ModuleControl {
   }
 
   /**
-   * Restore iptables from aggregatedRules for a specific family
+   * Restore iptables from aggregatedRules for a specific family.
+   * Only FW_ chains are described, so the payload is applied with --noflush.
    * @param {number} family - IP family (4 for IPv4, 6 for IPv6)
    */
-  async restoreIptables(family) {
+  async restoreIptables(family, fromInitialization = false) {
     const lines = [];
     for (const table of TABLES) {
       const t = this.aggregatedRules[family][table]
       const tablelines = [];
+
+      // 1) declare every desired FW_ chain. Under --noflush a ':' line creates the
+      // chain when missing and flushes it when it already exists, which is exactly
+      // the create-or-reset primitive we want, and it never touches other chains.
       for (const name in t.chains) {
         tablelines.push(t.chains[name]);
       }
+
+      // 2) reap FW_ chains left over from a previous run: still in the kernel but named
+      // neither by the setup script nor by any queued rule. Only at initialization —
+      // afterwards chains are deleted inline by whoever owns them. Everything that
+      // referenced them lives in an FW_ chain that step 1 just flushed, so they are
+      // unreferenced by the time -X runs.
+      const stale = fromInitialization
+        ? Array.from(this.liveChains[family][table]).filter(name => this.isFWChain(name) && !t.chains[name])
+        : [];
+      // flush all of them first, so cross references between them are gone before
+      // any of them is deleted
+      for (const name of stale) {
+        tablelines.push(`-F ${name}`);
+      }
+      for (const name of stale) {
+        tablelines.push(`-X ${name}`);
+      }
+
+      // 3) contents of the FW_ chains, in order
       for (const essential of t.rules) {
         // Filter out null values (rules that were deleted via -D operation)
         if (essential)
           tablelines.push(`-A ${essential}`);
       }
+
       if (tablelines.length) {
         lines.push(`*${table}`);
         lines.push(...tablelines);
@@ -314,8 +386,10 @@ class IptablesControl extends ModuleControl {
     const restoreFile = this._getIptablesRestoreFile(family);
     await fsp.writeFile(restoreFile, content, 'utf8');
 
-    await exec(`sudo ${command} < "${restoreFile}"`, { timeout: 30000 });
-    log.verbose(`iptables v${family} restored ${lines.length} lines successfully`);
+    // --noflush is essential: the payload only describes FW_ chains, so flushing
+    // would wipe every rule installed by firerouter, docker, upnp, etc.
+    await exec(`sudo ${command} --noflush < "${restoreFile}"`, { timeout: 30000 });
+    log.verbose(`iptables v${family} restored successfully`);
   }
 
   /**
@@ -329,14 +403,6 @@ class IptablesControl extends ModuleControl {
       }
     }
     return count;
-  }
-
-  /**
-   * Clean up resources
-   */
-  flush() {
-    this.queuedRules = this._emptyState(true);
-    this.aggregatedRules = this._emptyState();
   }
 
   _emptyState(queue = false) {
@@ -360,6 +426,14 @@ class IptablesControl extends ModuleControl {
       const operation = rule.operation;
       const essential = rule.essential();
       log.debug(`Merging v${family} ${table}: ${operation} ${essential}`);
+
+      if (operation !== '-N') {
+        const undeclared = [rule.chain, rule.jump].find(c => this.isFWChain(c) && !agg.chains[c]);
+        if (undeclared) {
+          log.error(`v${family} ${table}: refers to undeclared chain ${undeclared}, skipped`, operation, essential);
+          continue;
+        }
+      }
 
       switch (operation) {
         case '-N':

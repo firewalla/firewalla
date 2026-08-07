@@ -191,20 +191,16 @@ filter_file=${FIREWALLA_HIDDEN}/run/iptables/filter
 create_filter_table() {
 cat << EOF > "$filter_file"
 -N FW_OUTPUT
--A OUTPUT -j FW_OUTPUT
 
 -N FW_FORWARD
--A FORWARD -j FW_FORWARD
 
 -N FW_FORWARD_LOG
 
 
 # INPUT chain protection
 -N FW_INPUT_ACCEPT
--A INPUT -j FW_INPUT_ACCEPT
 
 -N FW_INPUT_DROP
--A INPUT -j FW_INPUT_DROP
 
 -N FW_PLAIN_DROP
 -A FW_PLAIN_DROP -j CONNMARK --set-xmark 0x200/0x80000200
@@ -301,7 +297,6 @@ cat << EOF > "$filter_file"
 -A FW_ACCEPT_DEFAULT_RATE -m hashlimit --hashlimit-upto 8/second --hashlimit-burst 10 --hashlimit-mode srcip,dstip,dstport --hashlimit-name fw_conn_htable -j FW_ACCEPT_DEFAULT_LOG
 -A FW_ACCEPT_DEFAULT_LOG -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
 -A FW_ACCEPT_DEFAULT_LOG -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
--A FORWARD -j FW_ACCEPT_DEFAULT
 
 # Enforce local-only scope for ULA traffic; block WAN traversal to prevent spoofing and leakage.
 -N FW_ULA_LOCAL_ONLY
@@ -611,14 +606,8 @@ cat << EOF > "$filter_file"
 
 EOF
 
-if [[ -e /.dockerenv ]]; then
-  echo '-A OUTPUT -j FW_BLOCK' >> "$filter_file"
-fi
-
 {
-# save entries doesn't start with "FW_" first
-# flushing UPNP_<intf> chains as iptables is not able to recognize the port thus not restoring it correctly
-sudo iptables-save -t filter | grep -vE "^:FW_| FW_|^COMMIT|-A UPNP_"
+echo '*filter'
 cat "$filter_file"
 
 cat << EOF
@@ -636,7 +625,7 @@ sed -i '/^-A FW_FORWARD -s fc00::\/7 -m set ! --match-set monitored_net_set src,
 sed -i '/^-A FW_FORWARD -d fc00::\/7 -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j FW_ULA_LOCAL_ONLY/d' "$iptables_file"
 
 {
-sudo ip6tables-save -t filter | grep -vE "^:FW_| FW_|^COMMIT"
+echo '*filter'
 
 # replace v4 sets later
 cat "$filter_file"
@@ -730,7 +719,6 @@ cat << EOF
 -A FW_RT_FILTER -j FW_RT
 
 -N FW_POSTROUTING
--A POSTROUTING -j FW_POSTROUTING
 -A FW_POSTROUTING -j CONNMARK --restore-mark --mask 0x3FFF0000
 
 -N FW_POSTROUTING_DSCP_OVERRIDE
@@ -875,6 +863,67 @@ create_tc_rules() {
     sudo tc class add dev ifb1 parent 1:1 classid 1:0x1002 htb prio 4 rate 200kbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # htb class for default priority no rate limit rules
     sudo tc class add dev ifb1 parent 1:1 classid 1:0x1003 htb prio 6 rate 200kbit ceil 10240Mbit burst 15360kbit cburst 15360kbit quantum 60000 # htb class for low priority no rate limit rules
   fi
+}
+
+# Hook rules are the only firewalla entries that have to live on a builtin chain,
+# which is shared with other writers (firerouter's FR_*, docker, upnp). They are
+# installed with the same check-and-create pattern as wrapIptables() in
+# net2/Iptables.js instead of being written into the .script skeleton: that skeleton
+# is applied with `iptables-restore --noflush`, which does not flush builtin chains,
+# so a hook carried in the file would be appended again on every run.
+#
+# The FW_ chain is created first so the jump can be installed before the restore
+# that fills it in.
+fw_hook() {
+  local ipt=$1 table=$2 parent=$3 chain=$4 op=$5
+  # iptables has no equivalent of ipset's -!, so an existing chain just reports
+  # "Chain already exists" and we ignore it
+  sudo "$ipt" -w -t "$table" -N "$chain" &>/dev/null || true
+
+  if sudo "$ipt" -w -t "$table" -C "$parent" -j "$chain" &>/dev/null; then
+    # -A is position independent, an existing hook is already correct
+    [[ "$op" == "-I" ]] || return 0
+    # -I has to sit at the head of the chain, and since the restore no longer rebuilds
+    # the builtin chains nothing else re-asserts that. Drop every copy and insert once,
+    # which also collapses duplicates left by earlier runs.
+    while sudo "$ipt" -w -t "$table" -D "$parent" -j "$chain" &>/dev/null; do :; done
+  fi
+
+  sudo "$ipt" -w -t "$table" "$op" "$parent" -j "$chain"
+}
+
+install_fw_hooks() {
+  local ipt
+  for ipt in iptables ip6tables; do
+    fw_hook "$ipt" filter INPUT       FW_INPUT_ACCEPT    -A
+    fw_hook "$ipt" filter INPUT       FW_INPUT_DROP      -A
+    fw_hook "$ipt" filter OUTPUT      FW_OUTPUT          -A
+    fw_hook "$ipt" filter FORWARD     FW_FORWARD         -A
+    fw_hook "$ipt" filter FORWARD     FW_ACCEPT_DEFAULT  -A
+
+    # mangle hooks go to the front so packets are marked before firerouter reads the mark
+    fw_hook "$ipt" mangle PREROUTING  FW_PREROUTING      -I
+    fw_hook "$ipt" mangle OUTPUT      FW_OUTPUT          -I
+    fw_hook "$ipt" mangle FORWARD     FW_FORWARD         -I
+    fw_hook "$ipt" mangle POSTROUTING FW_POSTROUTING     -A
+
+    fw_hook "$ipt" nat    PREROUTING  FW_PREROUTING      -A
+    # inserted at the beginning of POSTROUTING, so that snat rules in firewalla take
+    # effect ahead of firerouter snat rules
+    fw_hook "$ipt" nat    POSTROUTING FW_POSTROUTING     -I
+
+    if [[ -e /.dockerenv ]]; then
+      fw_hook "$ipt" filter OUTPUT    FW_BLOCK           -A
+    fi
+  done
+}
+
+# `-N CHAIN` fails on an already existing chain and aborts the whole table, so the
+# generated files must declare chains the iptables-save way. `:CHAIN - [0:0]` creates
+# the chain when missing and flushes it when present, which is what we want in both
+# the standalone `iptables-restore --noflush` path and in IptablesControl.
+normalize_chain_declarations() {
+  sed -i -E 's/^-N (FW_[^ ]+)$/:\1 - [0:0]/' "$@"
 }
 
 ipset_destroy_file="${FIREWALLA_HIDDEN}/run/iptables/ipset_destroy"
