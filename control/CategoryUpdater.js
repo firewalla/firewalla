@@ -405,6 +405,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
   }
 
+  // whether any active policy rule still references this category
+  hasActivePolicies(category) {
+    const categoryPolicies = this.activeCategoryPolicyMap.get(category);
+    if (!categoryPolicies) return false;
+    return categoryPolicies.numDefaultPolicies > 0 || categoryPolicies.numDomainOnlyPolicies > 0;
+  }
+
   updateDevCategoryMapping(category, devOpts, isBlock=true, isAdd = true) {
     if (!category || !devOpts) return;
     const { tags, intfs, scope, guids } = devOpts;

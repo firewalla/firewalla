@@ -65,6 +65,8 @@ const domainBlock = require('../control/DomainBlock.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
+const ExceptionManager = require('./ExceptionManager.js')
+const exceptionManager = new ExceptionManager()
 const CountryUpdater = require('../control/CountryUpdater.js')
 const countryUpdater = new CountryUpdater()
 const fc = require('../net2/config.js')
@@ -2656,6 +2658,14 @@ class PolicyManager2 {
 
         for (const target of targets) {
           await categoryUpdater.updateCategoryState(target, devOpts, pid, policy.dnsmasq_only, isBlockOrdisturb, false);
+          // user target list categories are activated on demand and never deactivated by the
+          // built-in category refresh logic; once the last rule referencing one is removed,
+          // stop polling its hashset instead of leaving it active until the next reboot
+          if (categoryUpdater.isUserTargetList(target) &&
+            !categoryUpdater.hasActivePolicies(target) &&
+            !(await exceptionManager.hasException(target))) {
+            await categoryUpdater.deactivateCategory(target);
+          }
         }
 
         if (["allow", "block", "route"].includes(action)) {
