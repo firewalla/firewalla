@@ -865,55 +865,68 @@ create_tc_rules() {
   fi
 }
 
-# Hook rules are the only firewalla entries that have to live on a builtin chain,
-# which is shared with other writers (firerouter's FR_*, docker, upnp). They are
-# installed with the same check-and-create pattern as wrapIptables() in
-# net2/Iptables.js instead of being written into the .script skeleton: that skeleton
-# is applied with `iptables-restore --noflush`, which does not flush builtin chains,
-# so a hook carried in the file would be appended again on every run.
-#
-# The FW_ chain is created first so the jump can be installed before the restore
-# that fills it in.
-fw_hook() {
-  local ipt=$1 table=$2 parent=$3 chain=$4 op=$5
-  # iptables has no equivalent of ipset's -!, so an existing chain just reports
-  # "Chain already exists" and we ignore it
-  sudo "$ipt" -w -t "$table" -N "$chain" &>/dev/null || true
+# Jumps from a builtin chain into an FW_ chain. They can't be carried in the .script
+# skeleton: that is applied with --noflush, which never flushes a builtin chain, so a
+# hook in the file would be appended again on every run. Order within a group matters --
+# accept before drop, forward before the bare-ACCEPT default -- so a group is reconciled
+# as a whole, and the whole reconciliation goes out as one restore rather than as -D/-A
+# pairs that would leave the chain unhooked in between.
+FW_OUTPUT_HOOKS="FW_OUTPUT"
+[[ -e /.dockerenv ]] && FW_OUTPUT_HOOKS="FW_OUTPUT FW_BLOCK"
 
-  if sudo "$ipt" -w -t "$table" -C "$parent" -j "$chain" &>/dev/null; then
-    # -A is position independent, an existing hook is already correct
-    [[ "$op" == "-I" ]] || return 0
-    # -I has to sit at the head of the chain, and since the restore no longer rebuilds
-    # the builtin chains nothing else re-asserts that. Drop every copy and insert once,
-    # which also collapses duplicates left by earlier runs.
-    while sudo "$ipt" -w -t "$table" -D "$parent" -j "$chain" &>/dev/null; do :; done
+FW_HOOKS=(
+  "filter INPUT       -A FW_INPUT_ACCEPT FW_INPUT_DROP"
+  "filter FORWARD     -A FW_FORWARD FW_ACCEPT_DEFAULT"
+  "filter OUTPUT      -A $FW_OUTPUT_HOOKS"
+  "mangle PREROUTING  -I FW_PREROUTING"
+  "mangle OUTPUT      -I FW_OUTPUT"
+  "mangle FORWARD     -I FW_FORWARD"
+  "mangle POSTROUTING -A FW_POSTROUTING"
+  "nat    PREROUTING  -A FW_PREROUTING"
+  "nat    POSTROUTING -I FW_POSTROUTING"
+)
+
+# restore lines that make $parent hold exactly these hooks, empty if it already does
+fw_hook_lines() {
+  local ipt=$1 table=$2 parent=$3 op=$4; shift 4
+  local rules current chain
+
+  rules=$(sudo "$ipt" -w -t "$table" -S "$parent" | tail -n +2)
+  current=$(echo "$rules" | sed -n "s/^-A $parent -j \(FW_[A-Za-z0-9_]*\)$/\1/p" |
+    grep -xF -- "$(printf '%s\n' "$@")" | tr '\n' ' ')
+
+  # -A only needs the group in order, -I must also be the chain's first rule
+  if [[ $current == "$* " ]]; then
+    [[ $op == -A || $(echo "$rules" | head -1) == "-A $parent -j $1" ]] && return
   fi
 
-  sudo "$ipt" -w -t "$table" "$op" "$parent" -j "$chain"
+  for chain in $current; do echo "-D $parent -j $chain"; done
+  for chain in "$@";      do echo "$op $parent -j $chain"; done
 }
 
 install_fw_hooks() {
-  local ipt
+  local ipt spec table parent op chains chain body file
+
   for ipt in iptables ip6tables; do
-    fw_hook "$ipt" filter INPUT       FW_INPUT_ACCEPT    -A
-    fw_hook "$ipt" filter INPUT       FW_INPUT_DROP      -A
-    fw_hook "$ipt" filter OUTPUT      FW_OUTPUT          -A
-    fw_hook "$ipt" filter FORWARD     FW_FORWARD         -A
-    fw_hook "$ipt" filter FORWARD     FW_ACCEPT_DEFAULT  -A
+    # -N can't go in the payload: it fails on an existing chain, and ':CHAIN' would
+    # flush one. Creating a chain is additive, so there is no window here.
+    for spec in "${FW_HOOKS[@]}"; do
+      read -r table parent op chains <<< "$spec"
+      for chain in $chains; do
+        sudo "$ipt" -w -t "$table" -N "$chain" &>/dev/null || true
+      done
+    done
 
-    # mangle hooks go to the front so packets are marked before firerouter reads the mark
-    fw_hook "$ipt" mangle PREROUTING  FW_PREROUTING      -I
-    fw_hook "$ipt" mangle OUTPUT      FW_OUTPUT          -I
-    fw_hook "$ipt" mangle FORWARD     FW_FORWARD         -I
-    fw_hook "$ipt" mangle POSTROUTING FW_POSTROUTING     -A
+    file=${FIREWALLA_HIDDEN}/run/iptables/${ipt}_hooks
+    for table in filter mangle nat; do
+      body=$(for spec in "${FW_HOOKS[@]}"; do
+        [[ $spec == "$table "* ]] && fw_hook_lines "$ipt" $spec
+      done)
+      [[ -n $body ]] && printf '*%s\n%s\nCOMMIT\n' "$table" "$body"
+    done > "$file"
 
-    fw_hook "$ipt" nat    PREROUTING  FW_PREROUTING      -A
-    # inserted at the beginning of POSTROUTING, so that snat rules in firewalla take
-    # effect ahead of firerouter snat rules
-    fw_hook "$ipt" nat    POSTROUTING FW_POSTROUTING     -I
-
-    if [[ -e /.dockerenv ]]; then
-      fw_hook "$ipt" filter OUTPUT    FW_BLOCK           -A
+    if [[ -s $file ]]; then
+      sudo "$ipt"-restore --noflush "$file" || echo "failed to install $ipt hooks, see $file"
     fi
   done
 }
