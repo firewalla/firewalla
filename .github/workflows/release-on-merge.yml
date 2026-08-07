@@ -9,6 +9,7 @@ on:
       - release_11_0
       - release_12_0
       - release_13_0
+      - release_14_0
       - beta_8_0
       - beta_9_0
       - beta_12_0
@@ -21,6 +22,8 @@ on:
       - beta_19_0
       - beta_20_0
       - beta_21_0
+      - beta_22_0
+      - beta_23_0
 
 permissions:
   contents: write
@@ -65,6 +68,9 @@ jobs:
             release_13_0) LABEL="orange-production" ;;
             beta_20_0)    LABEL="orange-beta" ;;
             beta_21_0)    LABEL="orange-alpha" ;;
+            release_14_0) LABEL="goldplussfp-production" ;;
+            beta_22_0)    LABEL="goldplussfp-beta" ;;
+            beta_23_0)    LABEL="goldplussfp-alpha" ;;            
             *) echo "::error::no model/channel mapping for branch '$BRANCH'"; exit 1 ;;
           esac
 

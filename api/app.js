@@ -31,6 +31,20 @@ const fs = require('fs');
 const url = require('url');
 const Firewalla = require('../net2/Firewalla.js');
 
+// Mount a route module; on require() failure (missing file, syntax error) log and
+// serve 503 for that path instead of crashing. `pick` optionally selects an export.
+function safeMount(target, mountPath, modulePath, pick) {
+  try {
+    const mod = require(modulePath);
+    target.use(mountPath, pick ? pick(mod) : mod);
+  } catch (err) {
+    log.error(`Failed to mount route ${mountPath} from ${modulePath}, serving 503 for this path:`, err.message);
+    target.use(mountPath, (req, res) => {
+      res.status(503).send(`route ${mountPath} unavailable`);
+    });
+  }
+}
+
 /** Decode one URL path segment (+ as space). Invalid encoding or traversal token -> null */
 function decodeSpaPathSegment(segment) {
   try {
@@ -84,7 +98,7 @@ app.set('view engine', 'mustache');
 app.set('query parser', 'simple');
 
 app.use(logger('combined'));
-app.use(bodyParser.json({limit: '5mb'}));
+app.use(bodyParser.json({ limit: '5mb' }));
 
 function createSpaHandler(name) {
   const basePath = path.join(__dirname, 'public', name);
@@ -106,7 +120,7 @@ function createSpaHandler(name) {
     const hotResolved = path.resolve(hotPatchDir, rel);
     const hotBase = path.resolve(hotPatchDir);
     if (!path.relative(hotBase, hotResolved).startsWith('..') &&
-        fs.existsSync(hotResolved) && fs.statSync(hotResolved).isFile()) {
+      fs.existsSync(hotResolved) && fs.statSync(hotResolved).isFile()) {
       res.sendFile(hotResolved);
       return;
     }
@@ -127,6 +141,8 @@ app.get('/me/*', handleMe);
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use("/ss", require('./routes/ss.js'));
+safeMount(app, "/ss_myap", './routes/ss_myap.js');
+
 // const cors = require('cors');
 
 // app.use(cors({
@@ -137,13 +153,12 @@ app.use("/ss", require('./routes/ss.js'));
 
 var subpath_v1 = express();
 app.use("/v1", subpath_v1);
-subpath_v1.use(bodyParser.json({limit: '5mb'}));
+subpath_v1.use(bodyParser.json({ limit: '5mb' }));
 
 subpath_v1.use('/encipher', encipher);
 subpath_v1.use('/encipher_raw', require('./routes/raw_encipher.js'));
 subpath_v1.use('/time_limits', require('./routes/time_limits.js'));
 subpath_v1.use('/me', require('./routes/me.js'));
-
 
 
 
@@ -157,7 +172,7 @@ app.get('/favicon.ico', (req, res) => {
 });
 
 // catch 404 and forward to error handler
-app.use(function(req, res, next) {
+app.use(function (req, res, next) {
   // var err = new Error('Not Found');
   // err.status = 404;
   // next(err);
@@ -171,7 +186,7 @@ app.use(function(req, res, next) {
 // development error handler
 // will print stacktrace
 if (app.get('env') === 'development') {
-  app.use(function(err, req, res, next) {
+  app.use(function (err, req, res, next) {
     log.error("Got error when handling request: " + err, err.stack);
     res.status(err.status || 500);
     res.json({
@@ -183,7 +198,7 @@ if (app.get('env') === 'development') {
 
 // production error handler
 // no stacktraces leaked to user
-app.use(function(err, req, res, next) {
+app.use(function (err, req, res, next) {
   log.error("Got error when handling request: " + err, err.stack);
   res.status(err.status || 500);
   res.json({
