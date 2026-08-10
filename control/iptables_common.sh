@@ -317,16 +317,20 @@ cat << EOF > "$filter_file"
 # WAN outgoing INVALID state check
 -N FW_WAN_INVALID_DROP
 
+-N FW_FORWARD_FASTPATH
+
 # drop INVALID packets
 -A FW_FORWARD -m conntrack --ctstate INVALID -m set --match-set c_lan_set src,src -j FW_WAN_INVALID_DROP
-# drop packet that already marked as DROP
--A FW_FORWARD -m connmark --mark 0x200/0x200 -j FW_PLAIN_DROP
 
+# drop packet that already marked as DROP
+-A FW_FORWARD_FASTPATH -m connmark --mark 0x200/0x200 -j FW_PLAIN_DROP
 # accept non-HTTP/HTTPS tcp/udp packets that belongs to an accepted flow, skip the first 6 packets
--A FW_FORWARD -p udp -m udp ! --dport 443 -m connbytes --connbytes 7 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -j ACCEPT
--A FW_FORWARD -p tcp -m tcp ! --dport 443 -m tcp ! --dport 80 -m connbytes --connbytes 7 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -j ACCEPT
+-A FW_FORWARD_FASTPATH -p udp -m udp ! --dport 443 -m connbytes --connbytes 7 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -j ACCEPT
+-A FW_FORWARD_FASTPATH -p tcp -m tcp ! --dport 443 -m tcp ! --dport 80 -m connbytes --connbytes 7 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -j ACCEPT
 # for non-tcp/udp or tcp/udp HTTP/HTTPS packets, high percentage to bypass firewall rules if the packet belongs to an accepted flow
--A FW_FORWARD -m connbytes --connbytes 7 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
+-A FW_FORWARD_FASTPATH -m connbytes --connbytes 7 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
+-A FW_FORWARD -j FW_FORWARD_FASTPATH
+
 # set the highest bit in connmark by default, if the connection is blocked, the bit will be cleared before DROP
 # only set once for NEW connection, for packets that may not fall into FW_ACCEPT_DEFAULT, this rule will set the bit, e.g., rules in FW_UPNP_ACCEPT created by miniupnpd
 -A FW_FORWARD -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x80000000/0x80000000
@@ -626,6 +630,8 @@ cat << EOF
 -A FW_INPUT_ACCEPT -p udp --dport 68 --sport 67:68 -j ACCEPT
 -A FW_INPUT_ACCEPT -p tcp --dport 68 --sport 67:68 -j ACCEPT
 
+-I FW_FORWARD_FASTPATH 2 -p icmp -m connbytes --connbytes 2 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -j ACCEPT
+
 EOF
 } > "$iptables_file"
 
@@ -649,6 +655,8 @@ cat << EOF
 -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type neighbour-solicitation -j ACCEPT
 -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type neighbour-advertisement -j ACCEPT
 -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type router-advertisement -j ACCEPT
+
+-I FW_FORWARD_FASTPATH 2 -p icmpv6 -m connbytes --connbytes 2 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -j ACCEPT
 
 EOF
 } > "$ip6tables_file"
