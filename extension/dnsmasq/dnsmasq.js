@@ -177,7 +177,8 @@ module.exports = class DNSMASQ {
         reloadConfig: 0,
         writeHostsFile: {},
         restart: 0,
-        restartDHCP: 0
+        restartDHCP: 0,
+        reloadDHCP: 0
       }
       this.dnsTag = {
         adblock: "$adblock"
@@ -337,7 +338,7 @@ module.exports = class DNSMASQ {
   }
 
   scheduleRestartDNSService(ignoreFileCheck = false, forceServiceRestart = false) {
-    if (this.reloadDNSTask) {
+    if (this.reloadDNSTask && forceServiceRestart) {
       clearTimeout(this.reloadDNSTask);
       delete this.reloadDNSTask;
     }
@@ -375,14 +376,16 @@ module.exports = class DNSMASQ {
   }
 
   scheduleReloadDNSService() {
-    if (this.restartDNSTask)
+    if (this.restartDNSTask && this.forceServiceRestart)
       return
     if (this.reloadDNSTask)
       clearTimeout(this.reloadDNSTask);
     this.reloadDNSTask = setTimeout(async () => {
       const confChanged = await this.checkConfsChange("dnsmasq:hosts", [`${HOSTS_DIR}/*`]);
-      if (!confChanged)
+      if (!confChanged) {
+        delete this.reloadDNSTask;
         return;
+      }
       this.counter.reloadDnsmasq++;
       log.info(`Reloading ${SERVICE_NAME}`, this.counter.reloadDnsmasq);
       await execAsync(`sudo systemctl reload ${SERVICE_NAME}`).then(() => {
@@ -395,6 +398,10 @@ module.exports = class DNSMASQ {
   }
 
   scheduleRestartDHCPService(ignoreFileCheck = false) {
+    if (this.reloadDHCPTask) {
+      clearTimeout(this.reloadDHCPTask);
+      delete this.reloadDHCPTask;
+    }
     if (this.restartDHCPTask)
       clearTimeout(this.restartDHCPTask);
     this.restartDHCPIgnoreFileCheck = this.restartDHCPIgnoreFileCheck || ignoreFileCheck
@@ -402,6 +409,8 @@ module.exports = class DNSMASQ {
       // checkConfsChange will update md5sum in redis, call it before checking ignoreFileCheck to keep md5sum consistent with config files
       const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH]);
       if (!this.restartDHCPIgnoreFileCheck && !confChanged) {
+        delete this.restartDHCPIgnoreFileCheck;
+        delete this.restartDHCPTask;
         return;
       }
       delete this.restartDHCPIgnoreFileCheck
@@ -413,6 +422,29 @@ module.exports = class DNSMASQ {
       }).catch((err) => {
         log.error(`Failed to restart ${DHCP_SERVICE_NAME} service`, err.message);
       });
+      delete this.restartDHCPTask
+    }, 5000);
+  }
+
+  scheduleReloadDHCPService() {
+    if (this.restartDHCPTask)
+      return
+    if (this.reloadDHCPTask)
+      clearTimeout(this.reloadDHCPTask);
+    this.reloadDHCPTask = setTimeout(async () => {
+      const confChanged = await this.checkConfsChange('dnsmasq:dhcphosts', [HOSTFILE_PATH]);
+      if (!confChanged) {
+        delete this.reloadDHCPTask;
+        return;
+      }
+      this.counter.reloadDHCP++;
+      log.info(`Reloading ${DHCP_SERVICE_NAME}`, this.counter.reloadDHCP);
+      await execAsync(`sudo systemctl reload ${DHCP_SERVICE_NAME}`).then(() => {
+        log.verbose(`${DHCP_SERVICE_NAME} has been reloaded`, this.counter.reloadDHCP);
+      }).catch((err) => {
+        log.error(`Failed to reload ${DHCP_SERVICE_NAME} service`, err.message);
+      });
+      delete this.reloadDHCPTask
     }, 5000);
   }
 
@@ -2026,7 +2058,10 @@ module.exports = class DNSMASQ {
     log.verbose("Hosts file has been updated:", mac, ++this.counter.writeHostsFile[mac], 'times')
 
     // reload or not is check with config hash
-    this.scheduleRestartDHCPService()
+    if (platform.isFireRouterManaged())
+      this.scheduleReloadDHCPService()
+    else
+      this.scheduleRestartDHCPService()
   }
 
   async removeHostsFile(host) {
@@ -2046,7 +2081,10 @@ module.exports = class DNSMASQ {
       }
     }
 
-    this.scheduleRestartDHCPService(true)
+    if (platform.isFireRouterManaged())
+      this.scheduleReloadDHCPService()
+    else
+      this.scheduleRestartDHCPService(true)
   }
 
   async removeIPFromHost(host, ip) {

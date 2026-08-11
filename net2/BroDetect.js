@@ -88,6 +88,7 @@ const { getUniqueTs, extractIP } = require('./FlowUtil.js')
 
 const LRU = require('lru-cache');
 const Constants = require('./Constants.js');
+const FireRouter = require('./FireRouter.js');
 const DestIPFoundHook = require('../hook/DestIPFoundHook.js');
 const destIPFoundHook = new DestIPFoundHook();
 
@@ -160,6 +161,7 @@ class BroDetect {
     this.proxyConn = new LRU({max: PROXY_CONN_SIZE, maxAge: 60 * 1000});
     this.dnsCache = new LRU({max: DNS_CACHE_SIZE, maxAge: 3600 * 1000});
     this.bridgeLocalFlow = new LRU({max: 1000, maxAge: 10 * 1000});
+    this.sameNetworkFlowDedup = new LRU({max: 1000, maxAge: 180 * 1000});
     this.oIntfCache = new LRU({max: 1000, maxAge: 10 * 1000}); // for rate limited A=C log
     this.dnsCount = 0
     this.dnsHit = 0
@@ -731,14 +733,48 @@ class BroDetect {
   }
 
   // Decide whether a same-network local flow should be dropped.
-  // Different stpPort => router is the common ancestor: keep zeek's own flow (bridge=false),
-  // drop the AP/switch duplicate (bridge=true).
-  // Same or unknown stpPort => switch/AP is the common ancestor: keep only the bridge flow,
-  // drop zeek's copy (current behavior).
-  _dropLocalSameNetworkFlow(bridge, srcStpPort, dstStpPort) {
-    if (srcStpPort && dstStpPort && srcStpPort !== dstStpPort)
-      return bridge;   // different physical port — only drop the bridge copy
-    return !bridge;    // same/unknown port — only drop the zeek (non-bridge) copy
+  //
+  // Three possible traffic sources: normal zeek, RSPAN zeek (isRspan), AP/switch bridge (bridge).
+  //
+  // Different stpPorts: the router is the common ancestor.
+  //   - Zeek sees the routed flow: keep.
+  //   - RSPAN or bridge see a mirrored/bridged copy: drop.
+  //
+  // Same or unknown stpPorts: the switch/AP is the common ancestor.
+  //   - If either host is wireless: AP bridge is the authoritative source (full-duplex view);
+  //     RSPAN only catches one direction for wireless → drop RSPAN, keep bridge.
+  //   - If both hosts are wired: first source to register the 5-tuple wins (LRU dedup).
+  //   - Zeek (non-bridge, non-rspan) on same segment: invalid, drop.
+  //
+  // srcHost / dstHost and flowKey are optional (omitted at the early gate).
+  _dropLocalSameNetworkFlow(bridge, isRspan, srcStpPort, dstStpPort, srcHost = null, dstHost = null, flowKey = null) {
+    if (srcStpPort && dstStpPort && (srcStpPort !== dstStpPort || srcStpPort.startsWith("wlan"))) {
+      // different physical port or same native Wi-Fi AP interface — router is common ancestor; RSPAN/bridge copies are redundant
+      return isRspan || bridge;
+    }
+    // same or unknown stp port
+    if (!isRspan && !bridge) {
+      // plain zeek on same-network segment and same ethernet port — should not be seen by zeek directly
+      return true;
+    }
+    // RSPAN or bridge (AP/switch) traffic
+    if (srcHost || dstHost) {
+      const srcIsWireless = srcHost && srcHost.isWirelessDevice && srcHost.isWirelessDevice();
+      const dstIsWireless = dstHost && dstHost.isWirelessDevice && dstHost.isWirelessDevice();
+      if (srcIsWireless || dstIsWireless) {
+        // at least one wireless device: AP has full visibility; RSPAN only sees one direction
+        return isRspan;
+      }
+    }
+    // both wired (or unknown): first source to register the 5-tuple wins
+    if (flowKey) {
+      const source = isRspan ? 'rspan' : 'ap_switch';
+      if (this.sameNetworkFlowDedup.has(flowKey)) {
+        return this.sameNetworkFlowDedup.get(flowKey) !== source; // drop if different source, keep if the same source
+      }
+      this.sameNetworkFlowDedup.set(flowKey, source);
+    }
+    return false;
   }
 
   async validateConnData(obj) {
@@ -969,6 +1005,8 @@ class BroDetect {
       const localResp = obj["local_resp"];
       let localFlow = false
       let bridge = obj["bridge"] || false;
+      const isRspan = obj.node === Constants.WORKER_ID_RSPAN ||
+        (obj.vlan != null && FireRouter.getRspanVids().has(Number(obj.vlan)));
 
       log.silly("ProcessingConnection:", obj.uid, orig, resp, obj['id.resp_p'],
         long ? 'long' : '', reverseLocal ? 'reverseLocal' : '');
@@ -1036,18 +1074,20 @@ class BroDetect {
 
       let intfInfo = sysManager.getInterfaceViaIP(lhost, fam);
       let dstIntfInfo = localFlow && sysManager.getInterfaceViaIP(dhost, fam);
-      // do not process traffic between devices in the same network unless bridge flag is set (from fwap) or integrated AP is enabled (orange platform)
+      // Direction-aware 5-tuple key used by the same-network dedup LRU.
+      const sameNetworkFlowKey = `${obj.proto}:${orig}:${orig_p}:${resp}:${resp_p}`;
+      // do not process traffic between devices in the same network unless bridge flag is set (from fwap)
       // stpPort refinement: if both hosts have different stpPorts the router is the common ancestor —
-      // keep zeek's own flow and drop the AP bridge duplicate (see _dropLocalSameNetworkFlow).
+      // keep zeek's own flow and drop the AP/RSPAN duplicate (see _dropLocalSameNetworkFlow).
       // When stpPort is unknown for either host, defer to the authoritative gate below after host
       // objects are fully resolved.
-      if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid && !await platform.hasIntegratedAPAssets()) {
+      if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid) {
         const srcHost = hostManager.getHostFast(lhost, fam);
         const dstHost = hostManager.getHostFast(dhost, fam);
         const srcStpPort = srcHost && srcHost.getStpPort();
         const dstStpPort = dstHost && dstHost.getStpPort();
-        // Only early-drop when both stpPorts are known; otherwise defer to the authoritative gate.
-        if (srcStpPort && dstStpPort && this._dropLocalSameNetworkFlow(bridge, srcStpPort, dstStpPort))
+        // Only early-drop when both stpPorts are known; otherwise defer to the authoritative gate. Only ethernet devices have stpPort.
+        if (srcStpPort && dstStpPort && this._dropLocalSameNetworkFlow(bridge, isRspan, srcStpPort, dstStpPort))
           return;
       }
       // ignore multicast IP
@@ -1270,10 +1310,11 @@ class BroDetect {
             return;
           }
         }
-        if (intfInfo.uuid == dstIntfInfo.uuid && !await platform.hasIntegratedAPAssets() && !isIdentityIntf && !isDstIdentityIntf) {
+        if (intfInfo.uuid == dstIntfInfo.uuid && !isIdentityIntf && !isDstIdentityIntf) {
+          // only ethernet devices are considered here, VPN device is filtered by identity intf check
           const srcStpPort = monitorable && monitorable.getStpPort && monitorable.getStpPort();
           const dstStpPort = dstMonitorable && dstMonitorable.getStpPort && dstMonitorable.getStpPort();
-          if (this._dropLocalSameNetworkFlow(bridge, srcStpPort, dstStpPort))
+          if (this._dropLocalSameNetworkFlow(bridge, isRspan, srcStpPort, dstStpPort, monitorable, dstMonitorable, sameNetworkFlowKey))
             return;
         }
         if (obj.proto === "udp" && accounting.isBlockedDevice(dstMac)) {
