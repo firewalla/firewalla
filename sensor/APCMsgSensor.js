@@ -488,6 +488,10 @@ class APCMsgSensor extends Sensor {
     if (!host) {
       log.warn(`Unknown mac address ${mac}`);
     }
+
+    // Record in memory the last time this device was seen on a wireless network.
+    // BroDetect reads this to determine if a device is currently wireless.
+    if (host) host.setLastSeenOnWifi(Date.now());
     /* uncomment this if there is ssid based management in future releases
     const profile = this.ssidProfiles[uuid];
     if (!profile) {
