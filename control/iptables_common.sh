@@ -320,7 +320,7 @@ cat << EOF > "$filter_file"
 # drop INVALID packets
 -A FW_FORWARD -m conntrack --ctstate INVALID -m set --match-set c_lan_set src,src -j FW_WAN_INVALID_DROP
 # drop packet that already marked as DROP
--A FW_FORWARD -m connmark --mark 0x200/0x200 -j FW_DROP
+-A FW_FORWARD -m connmark --mark 0x200/0x200 -j FW_PLAIN_DROP
 
 # accept non-HTTP/HTTPS tcp/udp packets that belongs to an accepted flow, skip the first 6 packets
 -A FW_FORWARD -p udp -m udp ! --dport 443 -m connbytes --connbytes 7 --connbytes-mode packets --connbytes-dir original -m connmark --mark 0x80000000/0x80000000 -j ACCEPT
@@ -841,6 +841,15 @@ create_tc_rules() {
   # ifb module is for QoS
   if [[ $IFB_SUPPORTED == "yes" ]]; then
     sudo modprobe ifb &> /dev/null || true
+    # Kernel 6.6+ loads ifb but no longer auto-creates ifb0/ifb1; create them explicitly.
+    if ! ip link show dev ifb0 &>/dev/null; then
+      sudo ip link add ifb0 type ifb &>/dev/null || true
+    fi
+    if ! ip link show dev ifb1 &>/dev/null; then
+      sudo ip link add ifb1 type ifb &>/dev/null || true
+    fi
+    sudo ip link set ifb0 up &>/dev/null || true
+    sudo ip link set ifb1 up &>/dev/null || true
   else
     sudo rmmod ifb &> /dev/null || true
   fi
