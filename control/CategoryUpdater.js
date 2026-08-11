@@ -405,6 +405,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
   }
 
+  // whether any active policy rule still references this category
+  hasActivePolicies(category) {
+    const categoryPolicies = this.activeCategoryPolicyMap.get(category);
+    if (!categoryPolicies) return false;
+    return categoryPolicies.numDefaultPolicies > 0 || categoryPolicies.numDomainOnlyPolicies > 0;
+  }
+
   updateDevCategoryMapping(category, devOpts, isBlock=true, isAdd = true) {
     if (!category || !devOpts) return;
     const { tags, intfs, scope, guids } = devOpts;
@@ -1096,7 +1103,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     const sigCfg = this.getSignatureConfig(sigId);
     if (!sigCfg || !sigCfg.categories || !_.isArray(sigCfg.categories) || !sigCfg.categories.includes(category)) {
-      log.info(`Signature ID ${sigId} is not found or not matched with signature config, skip adding sig detected server ${sigEntry.id} to category ${category}`);
+      log.info(`Signature ID ${sigId} is not found or not matched with signature config, skip adding sig detected server ${remoteAddr}:${remotePorts} to category ${category}`);
       return;
     }
     let serverEntry  = this.composeSigDetectedServerEntry(remoteAddr, protocol, remotePorts, sigId);

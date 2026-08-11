@@ -15,6 +15,7 @@
 'use strict';
 
 const log = require('./logger.js')(__filename);
+const f = require('./Firewalla.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const { execFile } = require('child-process-promise');
 const uuid = require('uuid');
@@ -79,24 +80,118 @@ async function waitForLockReleaseAndRefreshCache() {
   cachedShouldDisableUdpTls = crashInfo.shouldDisableUdpTls === true;
 }
 
-// parse "version:" and "srcversion:" lines from modinfo output
-async function getModuleVersion(koPathOrName) {
-  const result = await execFile('modinfo', [koPathOrName]).catch((err) => {
-    log.error("Failed to run modinfo for", koPathOrName, err.message);
+// version, srcversion and a type-tagged id ("buildid:..."/"srcversion:..."/"sha256:...") of
+// the bundled .ko, read out of the module image by scripts/tls_module_id.sh - shared with
+// platform.sh so both write the same values into udpModuleVersion. Returns null when the file
+// yields nothing at all.
+// Not modinfo(8): the .ko may be compressed, and gse's is xt_udp_tls.ko.<kernel checksum>
+// (or a .ko.<compiler> symlink to it), a name modinfo refuses.
+async function describeKo(koPath) {
+  if (!koPath) return null;
+  const script = `${f.getFirewallaHome()}/scripts/tls_module_id.sh`;
+  const result = await execFile(script, ['describe', koPath]).catch((err) => {
+    log.debug("Failed to describe", koPath, err.message);
     return null;
   });
   if (!result) return null;
+  const described = { version: '', srcversion: '', koId: '' };
+  for (const line of result.stdout.split('\n')) {
+    const idx = line.indexOf('=');
+    if (idx <= 0) continue;
+    const key = line.substring(0, idx);
+    const value = line.substring(idx + 1).trim();
+    if (key === 'version') described.version = value;
+    else if (key === 'srcversion') described.srcversion = value;
+    else if (key === 'id') described.koId = value;
+  }
+  return described.koId ? described : null;
+}
 
+// What identifies the module we would load: taken from the bundled .ko when we have it, and
+// from modinfo about the loaded module when we do not (koPath may not exist yet, or the module
+// was loaded by name via modprobe).
+// Returns null when no identity at all could be determined (unknown, not "empty").
+async function getModuleVersion(modName, koPath) {
+  const described = await describeKo(koPath);
+  if (described) return described;
+
+  const result = modName && await execFile('modinfo', [modName]).catch((err) => {
+    log.debug("Failed to run modinfo for", modName, err.message);
+    return null;
+  });
   let version = '';
   let srcversion = '';
-  for (const line of result.stdout.split('\n')) {
+  for (const line of (result ? result.stdout : '').split('\n')) {
     if (line.startsWith('version:')) {
       version = line.split(':').slice(1).join(':').trim();
     } else if (line.startsWith('srcversion:')) {
       srcversion = line.split(':').slice(1).join(':').trim();
     }
   }
-  return { version, srcversion };
+  if (version || srcversion)
+    return { version, srcversion, koId: '' };
+
+  log.warn("Failed to get module version for", modName, koPath);
+  return null;
+}
+
+// version/srcversion/koId, with missing fields normalized to ''
+function identityFields(v) {
+  if (!v) return null;
+  return { version: v.version || '', srcversion: v.srcversion || '', koId: v.koId || '' };
+}
+
+function hasIdentity(v) {
+  const fields = identityFields(v);
+  return !!(fields && (fields.version || fields.srcversion || fields.koId));
+}
+
+// type of a tagged id ("buildid:abc" -> "buildid"), '' when it carries no tag
+function idType(id) {
+  const idx = id.indexOf(':');
+  return idx > 0 ? id.substring(0, idx) : '';
+}
+
+// Compare on the strongest field both records carry, koId first: it is normally a build id, so
+// it also catches a rebuild of unchanged sources, which srcversion (a hash of the sources)
+// cannot. Comparing only what both sides have is what keeps a record written before koId
+// existed comparable with one written now - demanding equality of all three fields would read
+// every stored record as "changed" the first time this runs.
+// koId is only compared against an id of the same type: it falls back to srcversion or sha256
+// when a module carries no build-id note, so two records can hold ids of different types, and
+// "srcversion:ABC" vs "buildid:XYZ" says nothing about whether the module changed (mirrors how
+// "same" picks a common id type in scripts/tls_module_id.sh).
+function isSameIdentity(a, b) {
+  const fa = identityFields(a);
+  const fb = identityFields(b);
+  if (!fa || !fb) return false;
+  if (fa.koId && fb.koId && idType(fa.koId) === idType(fb.koId))
+    return fa.koId === fb.koId;
+  for (const field of ['srcversion', 'version']) {
+    if (fa[field] && fb[field]) return fa[field] === fb[field];
+  }
+  return false; // nothing comparable in common, so no evidence that they are the same module
+}
+
+// mtime (in seconds) of the current xt_udp_tls module file. Used to tell whether a
+// pstore crash predates the currently-installed module: an upgrade replaces the .ko
+// with a fresh mtime, so a crash older than the .ko belongs to a previous (already
+// replaced) module version and must not disable the current one. Returns null when
+// the mtime cannot be determined (e.g. koPath does not exist).
+// The bundled .ko is often a symlink (e.g. gse's xt_udp_tls.ko.aarch64-none-linux-gnu-gcc
+// -> xt_udp_tls.ko.<checksum>), and `stat` reports the symlink's own mtime, not the
+// module's. Take the newer of the two: replacing the module content refreshes the target,
+// re-pointing the symlink at another build refreshes the link itself.
+async function getModuleFileMtimeSec(koPath) {
+  if (!koPath) return null;
+  const results = await Promise.all([
+    execFile('stat', ['-L', '-c', '%Y', koPath]).catch(() => null), // dereferenced (the real .ko)
+    execFile('stat', ['-c', '%Y', koPath]).catch(() => null),       // koPath itself, symlink or not
+  ]);
+  const secs = results
+    .map((r) => r && parseInt(r.stdout.trim(), 10))
+    .filter((sec) => Number.isFinite(sec));
+  return secs.length ? Math.max(...secs) : null;
 }
 
 async function readCrashInfo() {
@@ -147,8 +242,9 @@ async function archiveAndClearPstore(crashTS) {
   }
 }
 
-// Called at FireMain and FireApi startup. koPath is the path to xt_udp_tls.ko (may not exist yet).
-async function checkPstoreAndUpdateRedis(koPath) {
+// Called at FireMain and FireApi startup. modName is the module name (e.g. "xt_udp_tls")
+// and koPath is the path to xt_udp_tls.ko (may not exist yet).
+async function checkPstoreAndUpdateRedis(modName, koPath) {
   const crashInfo = await readCrashInfo().catch((err) => {
     log.error("Error in checkPstoreAndUpdateRedis reading crash info:", err.message);
     return {};
@@ -172,7 +268,7 @@ async function checkPstoreAndUpdateRedis(koPath) {
     const lines = findResult.stdout.trim().split('\n').filter(Boolean)
       .sort((a, b) => parseFloat(b) - parseFloat(a));
 
-    const currentVersion = await getModuleVersion(koPath).catch(() => null);
+    const currentVersion = await getModuleVersion(modName, koPath).catch(() => null);
     const storedVersion = crashInfo.udpModuleVersion;
     let updateCrashInfoNeed = false;
     let dumpPstoreNeeded = false;
@@ -180,9 +276,15 @@ async function checkPstoreAndUpdateRedis(koPath) {
     // only treat the version as "known different" when we could actually read the
     // current module's version; koPath may not exist yet (see comment above), and an
     // unknown version must not be confused with a confirmed version change.
-    const isVersionKnownDifferent = !!(currentVersion && storedVersion &&
-      (currentVersion.version !== storedVersion.version ||
-       currentVersion.srcversion !== storedVersion.srcversion));
+    // A missing stored record, or one with no usable identity (written before the ko-hash
+    // fallback existed, on a build whose modinfo prints no version), cannot be compared
+    // against. Treat that as changed once we can identify the current module, otherwise
+    // such a box stays disabled forever: nothing else ever records an identity for it,
+    // because recording only happens on a successful load and loading is what is disabled.
+    // If the module really is still broken it crashes again, and by then the identity is
+    // recorded and the disable sticks.
+    const isVersionKnownDifferent = !!(currentVersion &&
+      (!hasIdentity(storedVersion) || !isSameIdentity(currentVersion, storedVersion)));
 
     if (crashInfo.shouldDisableUdpTls) {
       if (isVersionKnownDifferent) {
@@ -214,12 +316,13 @@ async function checkPstoreAndUpdateRedis(koPath) {
       // matched "Kernel panic" below (still archived so pstore space is freed up)
       latestCrashTSSec = Math.round(Math.max(...tsByPath.values()));
 
-      const panicFiles = await execFile('sudo', ['grep', '-l', 'Kernel panic', ...paths])
+      // treat both a "Kernel panic" and an "Oops" in pstore as a kernel crash
+      const panicFiles = await execFile('sudo', ['grep', '-l', '-e', 'Kernel panic', '-e', 'Oops', ...paths])
         .then(r => r.stdout.trim().split('\n').filter(Boolean))
         .catch(() => []);
 
       if (panicFiles.length === 0) {
-        log.debug("No Kernel panic found in recent pstore files");
+        log.debug("No Kernel panic or Oops found in recent pstore files");
       } else {
         latestCrashTSSec = Math.round(Math.max(...panicFiles.map(p => tsByPath.get(p) || 0)));
 
@@ -230,14 +333,24 @@ async function checkPstoreAndUpdateRedis(koPath) {
 
         log.warn(`Kernel panic detected in pstore, ts=${latestCrashTSSec}, udpTlsRelated=${isUdpTlsCrash}`);
 
-        if (isUdpTlsCrash) {
+        // ignore crashes that predate the currently-installed module: on the first run
+        // after an upgrade, pstore may still hold a crash from a previous (already fixed)
+        // module version. The version-change guard above can't catch this because there is
+        // no stored udpModuleVersion to compare against yet, so fall back to the module
+        // file's build/install time.
+        const koMtimeSec = await getModuleFileMtimeSec(koPath).catch(() => null);
+        const crashPredatesCurrentModule = koMtimeSec !== null && latestCrashTSSec < koMtimeSec;
+
+        if (isUdpTlsCrash && crashPredatesCurrentModule) {
+          log.info(`UDP TLS crash (ts=${latestCrashTSSec}) predates current module build time (${koMtimeSec}); module has been upgraded since, not disabling UDP TLS.`);
+        } else if (isUdpTlsCrash) {
           if (!crashInfo.lastCrashTS || latestCrashTSSec > crashInfo.lastCrashTS) {
             crashInfo.lastCrashTS = latestCrashTSSec;
             crashInfo.crashesCount = (crashInfo.crashesCount || 0) + 1;
 
             crashInfo.shouldDisableUdpTls = true;
             crashInfo.udpTlsDisabledOn = Math.round(Date.now() / 1000);
-            const versionInfo = currentVersion ? ` (module version ${currentVersion.version}/${currentVersion.srcversion})` : '';
+            const versionInfo = currentVersion ? ` (module version ${currentVersion.version}/${currentVersion.srcversion}/${currentVersion.koId})` : '';
             log.warn(`UDP TLS crash detected${versionInfo}, disabling UDP TLS`);
             updateCrashInfoNeed = true;
           } else {
@@ -277,10 +390,11 @@ function shouldDisableUdpTls() {
 }
 
 // Called by Platform.installTLSModule after xt_udp_tls is successfully loaded.
-// koPath is the .ko file path if insmod was used, otherwise pass the module name.
-async function onUdpTlsModuleLoaded(koPathOrName) {
+// modName is the module name (e.g. "xt_udp_tls"); koPath is the .ko file path if
+// insmod was used (may be null when loaded by name).
+async function onUdpTlsModuleLoaded(modName, koPath) {
   try {
-    const version = await getModuleVersion(koPathOrName || 'xt_udp_tls');
+    const version = await getModuleVersion(modName || 'xt_udp_tls', koPath);
     const crashInfo = await readCrashInfo();
 
     if (version) {
