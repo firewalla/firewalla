@@ -17,7 +17,7 @@
 
 const log = require('./logger.js')(__filename);
 const ipsetControl = require('../control/IpsetControl.js');
-const { exec } = require('child-process-promise');
+const { exec, execFile } = require('child-process-promise');
 const { spawn } = require('child_process');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock({maxPending: 3000});
@@ -194,7 +194,7 @@ function create(name, type, v6 = false, options = {}) {
 function add(name, target, options = {}, allowDeferredExec = false) {
   const { timeout, comment, skbmark, skbprio, skbqueue } = options;
   let cmd = `add ${name} ${target}`;
-  if (timeout) cmd += ` timeout ${timeout}`;
+  if (timeout !== undefined && timeout !== null && Number.isInteger(Number(timeout))) cmd += ` timeout ${timeout}`;
   if (comment) cmd += ` comment ${comment}`;
   if (skbmark) cmd += ` skbmark ${skbmark}`;
   if (skbprio) cmd += ` skbprio ${skbprio}`;
@@ -216,7 +216,7 @@ function restore(ops, allowDeferredExec = false) {
 
 async function list(name) {
   try {
-    const result = await exec(`sudo ipset -S ${name}`);
+    const result = await execFile('sudo', ['ipset', '-S', name]);
     const lines = result.stdout.split('\n')
     lines.pop()
     return lines

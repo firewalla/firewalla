@@ -62,6 +62,13 @@ const securityHashMapping = {
 
 const CATEGORY_DATA_KEY = "intel_proxy.data";
 const Constants = require('../net2/Constants.js');
+
+// fallbacks in case a sensor config override omits one of these fields;
+// setInterval() clamps a NaN delay to 1ms instead of erroring out
+const DEFAULT_REGULAR_INTERVAL = 28800;
+const DEFAULT_SECURITY_INTERVAL = 14400;
+const DEFAULT_COUNTRY_INTERVAL = 86400;
+
 class CategoryUpdateSensor extends Sensor {
   constructor(config) {
     super(config)
@@ -633,11 +640,11 @@ class CategoryUpdateSensor extends Sensor {
       await this.securityJob()
       await this.renewCountryList()
 
-      setInterval(this.regularJob.bind(this), this.config.regularInterval * 1000)
+      setInterval(this.regularJob.bind(this), (this.config.regularInterval || DEFAULT_REGULAR_INTERVAL) * 1000)
 
-      setInterval(this.securityJob.bind(this), this.config.securityInterval * 1000)
+      setInterval(this.securityJob.bind(this), (this.config.securityInterval || DEFAULT_SECURITY_INTERVAL) * 1000)
 
-      setInterval(this.countryJob.bind(this), this.config.countryInterval * 1000)
+      setInterval(this.countryJob.bind(this), (this.config.countryInterval || DEFAULT_COUNTRY_INTERVAL) * 1000)
 
       sem.emitLocalEvent({
         type: "CategoryUpdateSensorReady",
