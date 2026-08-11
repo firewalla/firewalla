@@ -118,6 +118,7 @@ class PcapPlugin extends Sensor {
     if (platform.isFireRouterManaged()) {
       const intfNameMap = await FireRouter.getInterfaceAll();
       const pcapTapIntfs = platform.isIFBSupported() ? platform.getInterfacesRedirectedToPcapTap(intfNameMap) : {};
+      const rspanIntfNames = platform.isIFBSupported() ? FireRouter.getRspanIntfNames() : [];
       const monitoringInterfaces = FireRouter.getMonitoringIntfNames();
       const parentIntfOptions = {};
       const monitoringIntfOptions = {}
@@ -152,6 +153,23 @@ class PcapPlugin extends Sensor {
               maxPcapBufsize = pcapBufsize;
           }
           monitoringIntfOptions[intfName] = { pcapBufsize: maxPcapBufsize };
+        }
+      }
+      // RSPAN VLANs are not part of any monitored bridge, so they must be added explicitly to
+      // both option maps before the branch decision so the count comparison accounts for them.
+      // - monitoringIntfOptions gets ifb_pcap_rspan (all RSPAN traffic is redirected there via tc)
+      // - parentIntfOptions gets the physical parent of each RSPAN VLAN (e.g. eth1 for eth1.100)
+      if (!_.isEmpty(rspanIntfNames)) {
+        const rspanBufsize = Math.max(0, ...rspanIntfNames.map(n => this.getPcapBufsize(n.split('.')[0]) || 0)) || undefined;
+        monitoringIntfOptions[Constants.INTF_PCAP_RSPAN] = { pcapBufsize: rspanBufsize };
+        for (const rspanIntf of rspanIntfNames) {
+          const phyIntf = rspanIntf.split('.')[0];
+          const pcapBufsize = this.getPcapBufsize(phyIntf);
+          if (!parentIntfOptions[phyIntf]) {
+            parentIntfOptions[phyIntf] = { pcapBufsize };
+          } else {
+            parentIntfOptions[phyIntf].pcapBufsize = Math.max(parentIntfOptions[phyIntf].pcapBufsize, pcapBufsize);
+          }
         }
       }
       log.verbose("parentIntfOptions: ", parentIntfOptions);

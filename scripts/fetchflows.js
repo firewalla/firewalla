@@ -232,28 +232,6 @@ function getCategoryBackgroundDownload(category, internet_time_usage_config) {
   return {};
 }
 
-// Check if flow is background download
-function isBackgroundDownload(flow, backgroundDownload) {
-  if (_.isEmpty(backgroundDownload) || !backgroundDownload.minDuration || !backgroundDownload.minDownloadRate)
-    return false;
-
-  const count = flow.count || 1;
-  const duration = (flow.duration || flow.du || 0.1) / count;
-  // flow.rb is download, flow.ob is upload in original format
-  // flow.download and flow.upload in simplified format
-  const download = (flow.download || flow.rb || 0) / count;
-  const upload = (flow.upload || flow.ob || 0) / count;
-  const downloadRate = download / duration;
-  const uploadRate = upload / duration;
-  if (duration >= backgroundDownload.minDuration 
-    && downloadRate >= backgroundDownload.minDownloadRate
-    && uploadRate <= backgroundDownload.maxUploadRate) {
-    return true;
-  }
-  return false;
-}
-
-
 async function rebuildTrie() {
   const appTimeUsageConfig = await rclient.getAsync(Constants.REDIS_KEY_APP_TIME_USAGE_CLOUD_CONFIG).then(result => result && JSON.parse(result)).catch(err => null);
   const appConfs = Object.assign({}, _.get(appTimeUsageConfig, "appConfs", {}));

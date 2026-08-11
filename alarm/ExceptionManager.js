@@ -35,6 +35,8 @@ const exceptionPrefix = "exception:";
 const _ = require('lodash');
 const Alarm = require('../alarm/Alarm.js');
 const CategoryMatcher = require('./CategoryMatcher');
+const CategoryUpdater = require('../control/CategoryUpdater.js');
+const categoryUpdater = new CategoryUpdater();
 
 const sem = require('../sensor/SensorEventManager').getInstance();
 const firewalla = require('../net2/Firewalla');
@@ -109,6 +111,23 @@ module.exports = class {
       }
       this.categoryMap = newCategoryMap;
     }
+  }
+
+  // whether any persisted exception still references this category
+  async hasException(category) {
+    if (!category) return false;
+    const exceptions = await this.loadExceptionsAsync();
+    return exceptions.some(e => e.getCategory() === category);
+  }
+
+  // user target list categories are only kept alive by rules/exceptions referencing them;
+  // once the last exception referencing one is removed, stop polling its hashset if no rule
+  // is using it either, instead of leaving it active until the next reboot
+  async _maybeDeactivateCategory(category) {
+    if (!category || !categoryUpdater.isUserTargetList(category)) return;
+    if (categoryUpdater.hasActivePolicies(category)) return;
+    if (await this.hasException(category)) return;
+    await categoryUpdater.deactivateCategory(category);
   }
 
   getExceptionKey(exceptionID) {
@@ -358,14 +377,27 @@ module.exports = class {
 
     // unignore is set for backward compatibility, it's actually should be called "unallow"
     Bone.submitIntelFeedback('unignore', exception);
+
+    if (exception && exception['p.category.id']) {
+      await this._maybeDeactivateCategory(exception['p.category.id']);
+    }
   }
 
   async deleteExceptions(idList) {
     if (!idList) throw new Error("deleteException: null argument");
 
     if (idList.length) {
+      const multi = rclient.multi();
+      idList.forEach(id => multi.hgetall(exceptionPrefix + id));
+      const exceptions = await multi.execAsync();
+      const categories = _.uniq(exceptions.filter(Boolean).map(e => e['p.category.id']).filter(Boolean));
+
       await rclient.unlinkAsync(idList.map(id => exceptionPrefix + id));
       await rclient.sremAsync(exceptionQueue, idList);
+
+      for (const category of categories) {
+        await this._maybeDeactivateCategory(category);
+      }
     }
   }
 
