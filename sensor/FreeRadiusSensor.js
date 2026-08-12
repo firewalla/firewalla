@@ -380,6 +380,7 @@ class FreeRadiusSensor extends Sensor {
     log.debug("freeradius policy", freeradius.mask(JSON.stringify(this._policy)));
     log.debug("freeradius options", freeradius.mask(JSON.stringify(this._options)));
     await freeradius.prepare(this._options); // prepare in background
+    await freeradius.recoverImageMismatch(this._options); // restart if container branch not matching image tag
     // check if need to start server
     if (this.policyReady() && await freeradius.ready() && !await freeradius.isListening()) {
       await freeradius.startServer();

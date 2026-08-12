@@ -976,6 +976,31 @@ class FreeRadius {
     return result && result.includes("freeradius");
   }
 
+  // running image (repo:tag) of the freeradius container by compose service label, or null
+  async _getContainerImage(options = {}) {
+    const raw = await exec(`sudo docker ps --filter "label=com.docker.compose.service=freeradius" --format "{{.Image}}"`).then(r => r.stdout.trim()).catch((e) => {
+      log.warn("Failed to get freeradius container image,", e.message);
+      return "";
+    });
+    return raw.split("\n").map(i => i.trim()).find(Boolean) || null;
+  }
+
+  async recoverImageMismatch(options = {}) {
+    const expected = this.getImage(options);
+    const current = await this._getContainerImage(options);
+    log.info(`recoverImageMismatch, expected ${expected}, current ${current}`);
+    if (!current || current === expected) return false;
+    if (!await this._checkImage(options)) {
+      log.warn(`freeradius image ${expected} not ready, keep current container ${current} running to avoid outage.`);
+      return false;
+    }
+    log.warn(`freeradius container image ${current} != expected ${expected}, restarting docker-compose@freeradius to recover`);
+    await exec(`sudo systemctl restart docker-compose@freeradius`).catch((e) => {
+      log.warn("Failed to restart docker-compose@freeradius,", e.message);
+    });
+    return true;
+  }
+
   async _terminateServer(options = {}) {
     log.info("Fallback to terminate container freeradius-server...");
     await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml down`).catch((e) => {
