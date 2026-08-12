@@ -383,7 +383,7 @@ class FreeRadiusSensor extends Sensor {
     await freeradius.recoverImageMismatch(this._options); // restart if container branch not matching image tag
     // check if need to start server
     if (this.policyReady() && await freeradius.ready() && !await freeradius.isListening()) {
-      await freeradius.startServer();
+      await freeradius.startServer(this._options);
     }
   }
 
@@ -524,6 +524,11 @@ class FreeRadiusSensor extends Sensor {
 
       // 2. if radius-server fails, reset to previous policy
       if (!success || !await freeradius.isListening() && this._policy[target]) {
+        // if the image couldn't be pulled (disk issue / backoff), skip revert
+        if (!await freeradius.isImageReady(options)) {
+          log.warn("freeradius image not ready (pull failed or backed off), skip reconfigure without reverting policy.");
+          return;
+        }
         return { err: 'failed to reconfigure freeradius server.' };
       }
 
