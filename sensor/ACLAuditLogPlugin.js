@@ -458,6 +458,12 @@ class ACLAuditLogPlugin extends Sensor {
               break;
             record.dmac = IdentityManager.getGUID(identity);
             record.drl = IdentityManager.getEndpointByIP(record.dh);
+          } else {
+            // fallback to get mac by ip with cache
+            const dmac = await hostTool.getMacByIPWithCache(record.dh);
+            if (dmac && !sysManager.isMyMac(dmac)) {
+              record.dmac = dmac;
+            }
           }
         }
         break;
