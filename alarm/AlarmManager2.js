@@ -306,6 +306,10 @@ module.exports = class {
     return instance;
   }
 
+  async getAlarmState(aid) {
+    return rclient.hgetAsync(alarmPrefix + aid, 'state');
+  }
+
   async __updateCache(aid) {
     const r = await rclient.hmgetAsync(alarmPrefix + aid, 'type', 'aid', 'state', 'alarmTimestamp');
     const a = {type: r[0], aid: r[1], state: r[2] || '', ts: Number(r[3]) || 0};
