@@ -172,7 +172,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
                 // mark initialized after all processing (recycleIPSet sets this too for
                 // ipset-enabled categories, but dns-only categories like adblock_strict
                 // skip recycleIPSet and still need to be marked)
-                this.initializedCategories[event.category] = true;
+                this.attemptedCategories[event.category] = true;
               }
 
               // check if category filter exists to update
@@ -403,6 +403,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
       // add the ip of related domains to _dm ipset
       await this._getRecycleJob(category).exec();
     }
+  }
+
+  // whether any active policy rule still references this category
+  hasActivePolicies(category) {
+    const categoryPolicies = this.activeCategoryPolicyMap.get(category);
+    if (!categoryPolicies) return false;
+    return categoryPolicies.numDefaultPolicies > 0 || categoryPolicies.numDomainOnlyPolicies > 0;
   }
 
   updateDevCategoryMapping(category, devOpts, isBlock=true, isAdd = true) {
@@ -1868,7 +1875,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
     }
 
-    this.initializedCategories[category] = true;
+    this.attemptedCategories[category] = true;
     this.activeCategoryPolicyMap.get(category).lastRecyclemode = currentRecyclemode;
   }
 

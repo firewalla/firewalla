@@ -62,6 +62,13 @@ const securityHashMapping = {
 
 const CATEGORY_DATA_KEY = "intel_proxy.data";
 const Constants = require('../net2/Constants.js');
+
+// fallbacks in case a sensor config override omits one of these fields;
+// setInterval() clamps a NaN delay to 1ms instead of erroring out
+const DEFAULT_REGULAR_INTERVAL = 28800;
+const DEFAULT_SECURITY_INTERVAL = 14400;
+const DEFAULT_COUNTRY_INTERVAL = 86400;
+
 class CategoryUpdateSensor extends Sensor {
   constructor(config) {
     super(config)
@@ -550,20 +557,25 @@ class CategoryUpdateSensor extends Sensor {
         } catch (err) {
           log.error("Failed to update conuntry set", event.country, err)
         }
+        countryUpdater.markAttempted(countryUpdater.getCategory(event.country))
       });
 
       sem.on('Policy:CategoryActivated', async (event) => {
         const category = event.category;
         const reloadFromCloud = event.reloadFromCloud;
         if (reloadFromCloud !== false && !categoryUpdater.isCustomizedCategory(category)) {
-          if (securityHashMapping.hasOwnProperty(category)) {
-            await this.updateSecurityCategory(category);
-          } else {
-            const categories = Object.keys(this.categoryHashsetMapping);
-            if (!categories.includes(category)) {
-              this.categoryHashsetMapping[category] = `app.${category}`;
+          try {
+            if (securityHashMapping.hasOwnProperty(category)) {
+              await this.updateSecurityCategory(category);
+            } else {
+              const categories = Object.keys(this.categoryHashsetMapping);
+              if (!categories.includes(category)) {
+                this.categoryHashsetMapping[category] = `app.${category}`;
+              }
+              await this.updateCategory(category);
             }
-            await this.updateCategory(category);
+          } catch (err) {
+            log.error("Failed to update category", category, err.message);
           }
         } else {
           // only send UPDATE_CATEGORY_DOMAIN event for customized category or reloadFromCloud is false, which will trigger ipset/tls set refresh in CategoryUpdater.js
@@ -574,6 +586,10 @@ class CategoryUpdateSensor extends Sensor {
           };
           sem.sendEventToAll(event);
         }
+        // the initial load attempt has settled, successfully or not. don't hold up the initial
+        // iptables/ipset restore any longer; on failure the category keeps whatever data redis
+        // already had, and the next periodic update retries the fetch
+        categoryUpdater.markAttempted(category);
       });
 
       sem.on('Categorty:ReloadFromBone', (event) => {
@@ -633,11 +649,11 @@ class CategoryUpdateSensor extends Sensor {
       await this.securityJob()
       await this.renewCountryList()
 
-      setInterval(this.regularJob.bind(this), this.config.regularInterval * 1000)
+      setInterval(this.regularJob.bind(this), (this.config.regularInterval || DEFAULT_REGULAR_INTERVAL) * 1000)
 
-      setInterval(this.securityJob.bind(this), this.config.securityInterval * 1000)
+      setInterval(this.securityJob.bind(this), (this.config.securityInterval || DEFAULT_SECURITY_INTERVAL) * 1000)
 
-      setInterval(this.countryJob.bind(this), this.config.countryInterval * 1000)
+      setInterval(this.countryJob.bind(this), (this.config.countryInterval || DEFAULT_COUNTRY_INTERVAL) * 1000)
 
       sem.emitLocalEvent({
         type: "CategoryUpdateSensorReady",

@@ -20,6 +20,9 @@ const router = express.Router();
 const log = require('../../net2/logger.js')(__filename);
 const HostManager = require('../../net2/HostManager.js');
 const sysManager = require('../../net2/SysManager.js');
+const VPNProfile = require('../../net2/identity/VPNProfile.js');
+const WGPeer = require('../../net2/identity/WGPeer.js'); // AWGPeer extends WGPeer
+const IdentityManager = require('../../net2/IdentityManager.js');
 const fwapc = require('../../net2/fwapc.js');
 const firewalla = require('../../net2/Firewalla.js');
 const platform = require('../../platform/PlatformLoader').getPlatform();
@@ -41,6 +44,20 @@ function getClientIP(req) {
     ip = ip.substring(7);
   }
   return ip;
+}
+
+// "1.2.3.4:5678" -> "1.2.3.4", "[::1]:5678" -> "::1" (endpoint format used by both
+// `wg/awg show <intf> endpoints` and the OpenVPN management interface's "Real Address").
+// OpenVPN's "Real Address" may also be a bare IP with no port (e.g. multihome mode),
+// including a bare IPv6 address, so a plain IP literal must be accepted as-is.
+function endpointToIP(endpoint) {
+  if (!endpoint) return null;
+  if (net.isIP(endpoint)) return endpoint;
+  if (endpoint.startsWith('[') && endpoint.includes(']:'))
+    return endpoint.substring(1, endpoint.indexOf(']:'));
+  // "1.2.3.4:5678" (IPv4 with port); a bare IPv6 address would have already
+  // matched net.isIP above, so any remaining colon here is a port separator
+  return endpoint.split(':')[0];
 }
 
 // ping the given IP from the box running /v1/me and return the average RTT in ms (null on failure)
@@ -83,12 +100,39 @@ async function buildTopology(target) {
     if (!Array.isArray(tree)) {
       topologyError = 'Invalid network topology data';
     }
-    const path = findPathByMac(tree, mac);
+
+    let path = null;
+    let vpnRealMac = null; // mac of the real device a VPN client resolved to via realDevice, if any
+    let connIp = null; // IP the VPN client actually connected from, if any
+    if (monitorable instanceof VPNProfile || monitorable instanceof WGPeer) {
+      device.type = 'vpn';
+      // VPN clients (OpenVPN/WireGuard/AmneziaWG) have no real MAC in the physical
+      // topology tree. IdentityManager already tracks the address each VPN client actually
+      // connected from (wg/awg "endpoints", OpenVPN management interface "Real Address").
+      connIp = endpointToIP(IdentityManager.getEndpointByIP(target));
+      if (connIp && sysManager.isLocalIP(connIp)) {
+        // client connected in from inside the LAN (e.g. site-to-site peer, or testing
+        // locally); locate its real device in the physical tree by that IP instead
+        const realDevice = await hostManager.getHostAsync(connIp);
+        if (realDevice) {
+          vpnRealMac = realDevice.getUniqueId();
+          path = findPathByMac(tree, vpnRealMac);
+        }
+      }
+      if (!path && Array.isArray(tree) && tree.length) {
+        // remote VPN client (or its real LAN position is unknown): assume it reaches
+        // the box directly over WAN, i.e. box -> vpn client with no AP/switch hops
+        path = [tree[0], { type: 'vpn', mac, name: device.name, ip: connIp, connectionType: 'vpn' }];
+      }
+    } else {
+      path = findPathByMac(tree, mac);
+    }
+
     if (!path) {
       topologyError = 'Device not found in network topology';
     } else {
       // print path for debugging
-      log.info(`Found path for device ${mac}:`, path.map(node => ({
+      log.debug(`Found path for device ${mac}:`, path.map(node => ({
         type: node.type,
         name: node.name,
         mac: node.mac,
@@ -152,7 +196,13 @@ async function buildTopology(target) {
           }
           break;
         case 'device':
-          if (monitorable.detect && monitorable.detect.type) {
+          if (hop.connectionType === 'vpn') {
+            hop.type = 'vpn';
+            break; // synthetic hop, hmac is not a real MAC
+          }
+          if (vpnRealMac && hmac === vpnRealMac) {
+            hop.type = 'vpn';
+          } else if (monitorable.detect && monitorable.detect.type) {
             hop.type = monitorable.detect.type;
             hop.name = device.name;
             device.type = hop.type;
@@ -173,6 +223,8 @@ async function buildTopology(target) {
     log.error('Failed to fetch wired station tree', err.message);
     topologyError = 'Failed to fetch network topology';
   }
+
+  log.debug(`Topology for ${target} (${mac}): device=${JSON.stringify(device)}, hops=${JSON.stringify(hops)}, topologyError=${topologyError}`);
 
   return { device, hops, topologyError };
 }

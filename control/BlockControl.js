@@ -266,36 +266,6 @@ class BlockControl {
     };
   }
 
-  /**
-   * Force flush rules immediately (for testing or emergency)
-   */
-  async forceFlush() {
-    log.info('Force flushing rules');
-    if (this.queuingTimer) {
-      clearTimeout(this.queuingTimer);
-    }
-    await this.enterProcessingState();
-  }
-
-  /**
-   * Clean up resources
-   */
-  flush() {
-    if (this.queuingTimer) {
-      clearTimeout(this.queuingTimer);
-    }
-    
-    // Reset processing state
-    this.processingPromise = null;
-    
-    // Clean up all modules
-    this.modules.forEach(module => {
-      if (module.flush) {
-        module.flush();
-      }
-    });
-  }
-
   scheduleRefreshConnmark() {
     if (this.state === 'autonomous') {
       if (this.connmarkRefreshTimer) {
