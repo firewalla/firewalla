@@ -75,6 +75,11 @@ class CrystalPlatform extends Platform {
     return `${f.getFirewallaHome()}/bin/real.x86_64/bitbridge6`;
   }
 
+  // iftop 1.0pre4 comes with the Crystal image, no need to bundle our own
+  getIftopPath() {
+    return "/usr/sbin/iftop";
+  }
+
   getGCMemoryForMain() {
     return 350;
   }
