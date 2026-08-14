@@ -778,7 +778,10 @@ module.exports = class {
 
     // save pending
     if (this.isAlarmSyncMspEnabled() && alarm.state == Constants.ST_PENDING) {
-      await this.addToPendingQueue(alarm);
+      const queued = await this.addToPendingQueue(alarm);
+      if (queued == 1) {
+        pclient.publishAsync("alarm:pending", JSON.stringify({aid: alarm.aid}));
+      }
     }
     pclient.publishAsync("alarm:updateCache", JSON.stringify({aid:alarm.aid}));
     return alarm.aid;
@@ -1185,8 +1188,8 @@ module.exports = class {
     alarm = Object.assign({}, orig_alarm, alarm);
     const result  = await this._activateAlarm(alarm, unarchive);
     pclient.publishAsync("alarm:updateCache", JSON.stringify({aid:alarm.aid}));
-    // result[1] is the reply of `zadd alarm_active NX`, 1 only when the alarm actually entered the active queue
-    if (result && result[1] == 1) {
+    // result[1] is the reply of `zadd alarm_active NX`, 1 only when the alarm actually entered the active queue.
+    if (result && result[1] == 1 && _.get(options, 'origin.state') != Constants.ST_PENDING) {
       pclient.publishAsync("alarm:activated", JSON.stringify({aid: alarm.aid}));
     }
 
