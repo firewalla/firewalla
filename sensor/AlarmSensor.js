@@ -23,10 +23,16 @@ const Sensor = require('./Sensor.js').Sensor;
 const AlarmManager2 = require('../alarm/AlarmManager2.js')
 const pclient = require('../util/redis_manager.js').getPublishClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const rclient = require('../util/redis_manager.js').getRedisClient();
 const fc = require('../net2/config.js');
 const Constants = require('../net2/Constants.js');
 
 const am2 = new AlarmManager2();
+
+const MSP_ALARM_OP_ITEMS = ["alarms:pending", "alarms:new"];
+const MSP_ALARM_OP_INTERVAL = 5 * 60 * 1000; // batch queued alarm ids to msp every 5 minutes
+// aids queue in redis rather than in memory, so a restart or a reboot does not drop them
+const alarmOpQueueKey = (item) => `msp:alarm:op:${item}`;
 
 
 class AlarmSensor extends Sensor {
@@ -63,13 +69,13 @@ class AlarmSensor extends Sensor {
     sclient.on("message", (channel, message) => {
       switch (channel) {
         case "alarm:pending": {
-          this.notifyMspNewAlarm("alarms:pending", message)
-              .catch(err => log.error("Failed to notify msp on pending alarm", err));
+          this.queueAlarmForMsp("alarms:pending", message)
+              .catch(err => log.error("Failed to queue pending alarm for msp", err));
           break;
         }
         case "alarm:activated": {
-          this.notifyMspNewAlarm("alarms:new", message)
-              .catch(err => log.error("Failed to notify msp on new alarm", err));
+          this.queueAlarmForMsp("alarms:new", message)
+              .catch(err => log.error("Failed to queue new alarm for msp", err));
           break;
         }
         default:
@@ -77,9 +83,14 @@ class AlarmSensor extends Sensor {
       }
     })
 
+    setInterval(() => {
+      this.notifyMspQueuedAlarms()
+          .catch(err => log.error("Failed to notify msp of queued alarms", err));
+    }, MSP_ALARM_OP_INTERVAL);
+
   }
 
-  async notifyMspNewAlarm(item, message) {
+  async queueAlarmForMsp(item, message) {
     if (!fc.isFeatureOn(Constants.FEATURE_MSP_SYNC_OPS)) {
       return;
     }
@@ -87,20 +98,33 @@ class AlarmSensor extends Sensor {
     if (!aid) {
       return;
     }
+    await rclient.saddAsync(alarmOpQueueKey(item), aid);
+  }
+
+  async notifyMspQueuedAlarms() {
     const gs = require('./APISensorLoader.js').getSensor('GuardianSensor');
     if (!gs) {
       return;
     }
-    log.info("Notifying msp of new alarm", item, aid);
-    await gs.enqueueOpToMsp({
-      mtype: "cmd",
-      data: {
-        item: item,
-        value: {aids: [aid]}
-      },
-      type: "jsonmsg",
-      ts: Date.now() / 1000
-    })
+    for (const item of MSP_ALARM_OP_ITEMS) {
+      const key = alarmOpQueueKey(item);
+      const aids = await rclient.smembersAsync(key);
+      if (!aids.length) {
+        continue;
+      }
+      log.info("Notifying msp of alarms", item, aids);
+      await gs.enqueueOpToMsp({
+        mtype: "cmd",
+        data: {
+          item: item,
+          value: {aids: aids}
+        },
+        type: "jsonmsg",
+        ts: Date.now() / 1000
+      })
+      // drop only what was queued, so an alarm arriving meanwhile waits for the next round
+      await rclient.sremAsync(key, ...aids);
+    }
   }
 }
 
