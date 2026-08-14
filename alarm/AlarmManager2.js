@@ -1189,7 +1189,8 @@ module.exports = class {
     const result  = await this._activateAlarm(alarm, unarchive);
     pclient.publishAsync("alarm:updateCache", JSON.stringify({aid:alarm.aid}));
     // result[1] is the reply of `zadd alarm_active NX`, 1 only when the alarm actually entered the active queue.
-    if (result && result[1] == 1 && _.get(options, 'origin.state') != Constants.ST_PENDING) {
+    const mspDecided = _.get(options, 'origin.state') == Constants.ST_PENDING && options['p.msp.decision'] != 'timeout';
+    if (result && result[1] == 1 && !mspDecided) {
       pclient.publishAsync("alarm:activated", JSON.stringify({aid: alarm.aid}));
     }
 

@@ -58,8 +58,6 @@ class AlarmSensor extends Sensor {
       return {ok: true};
     });
 
-    // FireMain publishes one of these per alarm, never both: at pending when MSP still has
-    // to decide it, at activation otherwise. So one alarm never turns into two ops.
     sclient.subscribe("alarm:pending");
     sclient.subscribe("alarm:activated");
     sclient.on("message", (channel, message) => {
