@@ -30,7 +30,7 @@ const Constants = require('../net2/Constants.js');
 const am2 = new AlarmManager2();
 
 const MSP_ALARM_OP_KEY = 'msp:alarm:op:ts';
-const MSP_ALARM_OP_INTERVAL = 300; // notify msp at most once every 5*60 second
+const MSP_ALARM_OP_INTERVAL = 300; // notify msp at most once every 5 minutes
 
 
 class AlarmSensor extends Sensor {
@@ -62,11 +62,12 @@ class AlarmSensor extends Sensor {
       return {ok: true};
     });
 
-    sclient.subscribe("alarm:updateCache");
+    // FireMain publishes this once per real inactive-to-active transition
+    sclient.subscribe("alarm:activated");
     sclient.on("message", (channel, message) => {
       switch (channel) {
-        case "alarm:updateCache": {
-          this.notifyMspNewAlarm(JSON.parse(message))
+        case "alarm:activated": {
+          this.notifyMspNewAlarm(message)
               .catch(err => log.error("Failed to notify msp on new alarm", err));
           break;
         }
@@ -77,26 +78,12 @@ class AlarmSensor extends Sensor {
 
   }
 
-  async notifyMspNewAlarm(data) {
+  async notifyMspNewAlarm(message) {
     if (!fc.isFeatureOn(Constants.FEATURE_MSP_SYNC_OPS)) {
       return;
     }
-    const aids = data.aids || (data.aid ? [data.aid] : []);
-    let activated;
-    for (const aid of aids) {
-      if (await am2.getAlarmState(aid) === Constants.ST_ACTIVATED) {
-        activated = aid;
-        break;
-      }
-    }
-
-    if (!activated) {
-      return;
-    }
-
-    // 5 minutes only have 1 op
-    const fresh = await rclient.setAsync(MSP_ALARM_OP_KEY, Date.now(), 'NX', 'EX', MSP_ALARM_OP_INTERVAL);
-    if (!fresh) {
+    const aid = JSON.parse(message).aid;
+    if (!aid) {
       return;
     }
 
@@ -104,17 +91,28 @@ class AlarmSensor extends Sensor {
     if (!gs) {
       return;
     }
-    log.info("Notifying msp of new alarm", activated);
-    await gs.enqueueOpToMsp({
-      mtype: "cmd",
-      data: {
-        item: "alarm:new",
-        value: {aid: activated}
-      },
-      type: "jsonmsg",
-      ts: Date.now() / 1000
-    })
 
+    const fresh = await rclient.setAsync(MSP_ALARM_OP_KEY, Date.now(), 'NX', 'EX', MSP_ALARM_OP_INTERVAL);
+    if (!fresh) {
+      return;
+    }
+
+    log.info("Notifying msp of new alarm", aid);
+    try {
+      await gs.enqueueOpToMsp({
+        mtype: "cmd",
+        data: {
+          item: "alarm:new",
+          value: {aid: aid}
+        },
+        type: "jsonmsg",
+        ts: Date.now() / 1000
+      })
+    } catch (err) {
+      // nothing was queued, so release the throttle for the next alarm
+      await rclient.unlinkAsync(MSP_ALARM_OP_KEY).catch(() => undefined);
+      throw err;
+    }
   }
 }
 

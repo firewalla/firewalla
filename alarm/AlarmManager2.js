@@ -306,10 +306,6 @@ module.exports = class {
     return instance;
   }
 
-  async getAlarmState(aid) {
-    return rclient.hgetAsync(alarmPrefix + aid, 'state');
-  }
-
   async __updateCache(aid) {
     const r = await rclient.hmgetAsync(alarmPrefix + aid, 'type', 'aid', 'state', 'alarmTimestamp');
     const a = {type: r[0], aid: r[1], state: r[2] || '', ts: Number(r[3]) || 0};
@@ -1189,6 +1185,10 @@ module.exports = class {
     alarm = Object.assign({}, orig_alarm, alarm);
     const result  = await this._activateAlarm(alarm, unarchive);
     pclient.publishAsync("alarm:updateCache", JSON.stringify({aid:alarm.aid}));
+    // result[1] is the reply of `zadd alarm_active NX`, 1 only when the alarm actually entered the active queue
+    if (result && result[1] == 1) {
+      pclient.publishAsync("alarm:activated", JSON.stringify({aid: alarm.aid}));
+    }
 
     // check alarm state change results
     if (this.isAlarmSyncMspEnabled() && result.length >= 2) {
