@@ -19,6 +19,8 @@ NODE_VERSION=10.16.3
 MANAGED_BY_FIREBOOT=yes
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab.crystal
 REAL_PLATFORM='real.x86_64'
+# ubuntu26 image ships chrony only, ntpd is not installed
+NTP_SVC="chrony"
 FW_PROBABILITY="0.999"
 FW_QOS_PROBABILITY="0.999"
 ALOG_SUPPORTED=yes
