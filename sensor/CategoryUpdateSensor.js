@@ -46,6 +46,9 @@ const { execSync } = require('child_process');
 const cloudcache = require('../extension/cloudcache/cloudcache');
 const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
+const renameAsync = util.promisify(fs.rename);
+const unlinkAsync = util.promisify(fs.unlink);
+const crypto = require('crypto');
 
 const _ = require('lodash');
 const Message = require('../net2/Message.js');
@@ -326,7 +329,7 @@ class CategoryUpdateSensor extends Sensor {
         for (const part of removedParts) {
           const hashsetName = `bf:app.${part}`;
           await cloudcache.disableCache(hashsetName);
-          await this.removeData(category).catch((err) => { });
+          await this.removeData(part).catch((err) => { });
           updated = true;
         }
         await categoryUpdater.setCategoryBfParts(category, parts);
@@ -399,20 +402,6 @@ class CategoryUpdateSensor extends Sensor {
     }
 
     const filterFile = `${categoryUpdater.getCategoryFilterDir()}/${category}.data`;
-    let currentFileContent;
-    try {
-      currentFileContent = await readFileAsync(filterFile);
-    } catch (e) {
-      currentFileContent = null;
-    }
-
-    const buf = Buffer.from(obj.data, "base64");
-    if (currentFileContent && buf.equals(currentFileContent)) {
-      log.debug(`No filter update for ${category}, skip`);
-      return false;
-    }
-
-    await writeFileAsync(`${categoryUpdater.getCategoryFilterDir()}/${category}.data`, buf);
     const uid = `category:${category}`;
     const meta = {
       uid: uid,
@@ -421,6 +410,46 @@ class CategoryUpdateSensor extends Sensor {
       checksum: obj.info.checksum,
       path: `${category}.data`
     };
+
+    const buf = Buffer.from(obj.data, "base64");
+
+    // verify the checksum locally instead of trusting the cloud one. intelproxy md5s the data file
+    // against this checksum, so a mismatching pair here would silently disable the filter on its side
+    const actualChecksum = crypto.createHash('md5').update(buf).digest('hex');
+    if (meta.checksum && actualChecksum !== meta.checksum) {
+      log.error(`Checksum mismatch in bf data of ${category}, expect ${meta.checksum}, got ${actualChecksum}, skip`);
+      return false;
+    }
+
+    let currentFileContent;
+    try {
+      currentFileContent = await readFileAsync(filterFile);
+    } catch (e) {
+      currentFileContent = null;
+    }
+
+    if (currentFileContent && buf.equals(currentFileContent)) {
+      // the data file is already up to date, but the meta in redis may have fallen behind, e.g. a
+      // previous round wrote the file and then failed on hset. don't skip until both halves agree,
+      // otherwise the pair stays out of sync forever and intelproxy keeps failing the checksum
+      const currentMeta = await rclient.hgetAsync(CATEGORY_DATA_KEY, uid).then(r => r && JSON.parse(r)).catch(err => null);
+      if (_.isEqual(currentMeta, meta)) {
+        log.debug(`No filter update for ${category}, skip`);
+        return false;
+      }
+      log.warn(`Filter data of ${category} is up to date but its meta in redis is stale, repairing`, currentMeta);
+    } else {
+      // write to a temp file and rename, so intelproxy never reads a partially written data file
+      const tmpFile = `${filterFile}.tmp.${process.pid}`;
+      try {
+        await writeFileAsync(tmpFile, buf);
+        await renameAsync(tmpFile, filterFile);
+      } catch (err) {
+        await unlinkAsync(tmpFile).catch(() => undefined);
+        throw err;
+      }
+    }
+
     await rclient.hsetAsync(CATEGORY_DATA_KEY, uid, JSON.stringify(meta));
 
     const updateEvent = {
