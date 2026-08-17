@@ -3,8 +3,8 @@
 // Box activation bootstrap — onboard (unattended) mode only.
 //
 // Reads ~/.firewalla/onboard-config.json and runs in two phases:
-//   Phase 1 (unconditional on boot): install license -> ~/.firewalla/license + bootingComplete=1
-//                                    (usable as soon as it's installed)
+//   Phase 1 (unconditional on boot): apply timezone; install license -> ~/.firewalla/license +
+//                                    bootingComplete=1 (usable as soon as it's installed)
 //   Phase 2 (only if msp/app was selected AND the user clicked activate in the MSP web UI):
 //       register(bid) -> poll rendezvous until activate -> join MSP / join App
 //
@@ -27,6 +27,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const licenseUtil = require('../util/license.js');
 const bone = require('../lib/Bone.js');
 const networkTool = require('../net2/NetworkTool.js')();
+const sysManager = require('../net2/SysManager.js');
 
 const CONFIG_FILE = process.env.FW_CONFIG || '/encipher.config/netbot.config';
 const PROVISION_BASE = process.env.FW_PROVISION_BASE || 'https://msp.dd.firewalla.net';
@@ -182,6 +183,30 @@ async function markBootingComplete() {
   await rclient.setAsync('bootingComplete', '1');
 }
 
+async function applyTimezone(tz) {
+  if (!tz) {
+    log('no timezone in onboard-config - skipping');
+    return;
+  }
+  const existing = await rclient.hgetAsync('sys:config', 'timezone');
+  if (existing) {
+    log(`timezone already set (${existing}) - skipping`);
+    return;
+  }
+  if (!fs.existsSync(`/usr/share/zoneinfo/${tz}`)) {
+    log(`WARN: unknown timezone in onboard-config: ${tz} - skipping, is tzdata-legacy installed?`);
+    return;
+  }
+  const err = await sysManager.setTimezone(tz);
+  if (err) {
+    await rclient.hdelAsync('sys:config', 'timezone');
+    sysManager.timezone = null;
+    log(`WARN: failed to set timezone ${tz}: ${err.message}`);
+    return;
+  }
+  log(`timezone set to ${tz}`);
+}
+
 async function restartFireApi() {
   await execAsync('sudo systemctl restart fireapi');
 }
@@ -237,6 +262,9 @@ async function main(onboard) {
   if (!mac) throw new Error('failed to read identifier MAC');
   log(`gid=${gid} mac=${mac}`);
   await persistState({ stage: 'onboard_start', gid, mac });
+
+  await applyTimezone(_.get(onboard, 'timezone'))
+      .catch((e) => log(`WARN: applyTimezone failed: ${e.message}`));
 
   const needMsp = _.get(onboard, 'activation.msp.enabled') === true;
   const needApp = _.get(onboard, 'activation.app.enabled') === true;
