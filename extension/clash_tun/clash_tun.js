@@ -34,6 +34,8 @@ const CountryUpdater = require('../../control/CountryUpdater.js');
 const countryUpdater = new CountryUpdater();
 
 const sysManager = require('../../net2/SysManager');
+const ipset = require('../../net2/Ipset.js');
+
 
 const reservedInterfaceName = "clash0";
 
@@ -147,18 +149,18 @@ class ClashTun {
       const mark = `0x${rtIdHex}/${routing.MASK_ALL}`;
       log.info("clash routing mark is", mark);
 
-      await exec(`MARK=${mark} ${__dirname}/setup_iptables.sh`);
+      await this.setupIptables(mark);
 
       const servers = this.getServers();
 
       for(const server of servers) {
-        await exec(`sudo ipset add -! fw_clash_whitelist ${server}`);
+        await ipset.add(ipset.CONSTANTS.IPSET_CLASH_WHITELIST, server);
       }
 
       // add exclude lists
       if(_.isArray(this.config.excludes)) {
         for(const exclude of this.config.excludes) {
-          await exec(`sudo ipset add -! fw_clash_whitelist ${exclude}`);
+          await ipset.add(ipset.CONSTANTS.IPSET_CLASH_WHITELIST, exclude);
         }
       }
 
@@ -244,6 +246,34 @@ class ClashTun {
     } catch(err) {
       return false;
     }
+  }
+
+  async setupIptables(mark) {
+    await ipset.create(ipset.CONSTANTS.IPSET_CLASH_BLACKLIST, 'hash:ip', false, { hashsize: 16384 });
+    await ipset.create(ipset.CONSTANTS.IPSET_CLASH_WHITELIST, 'hash:ip', false, { hashsize: 16384 });
+    await ipset.create(ipset.CONSTANTS.IPSET_CLASH_WHITELIST_NET, 'hash:net', false, { hashsize: 4096 });
+    await ipset.create(ipset.CONSTANTS.IPSET_CLASH_WHITELIST_MAC, 'hash:mac');
+    for (const net of ipset.CONSTANTS.CLASH_EXCLUDED_NETS) {
+      await ipset.add(ipset.CONSTANTS.IPSET_CLASH_WHITELIST_NET, net);
+    }
+
+    await iptc.addRule(new Rule('mangle').chn('FW_CLASH_CHAIN').opr('-N'));
+    await iptc.addRule(new Rule('mangle').chn('FW_CLASH_CHAIN').opr('-F'));
+
+    // only support TCP yet
+    await iptc.addRule(new Rule('mangle').chn('FW_CLASH_CHAIN').pro('tcp', true).jmp('RETURN'));
+
+    // add blacklist first
+    await iptc.addRule(new Rule('mangle').chn('FW_CLASH_CHAIN').set(ipset.CONSTANTS.IPSET_CLASH_BLACKLIST, 'dst').jmp(`MARK --set-xmark ${mark}`));
+
+    // skip high port range for p2p or other traffic
+    await iptc.addRule(new Rule('mangle').chn('FW_CLASH_CHAIN').pro('tcp').dport('1024:65535').jmp('RETURN'));
+
+    await iptc.addRule(new Rule('mangle').chn('FW_CLASH_CHAIN').set(ipset.CONSTANTS.IPSET_CLASH_WHITELIST, 'dst').jmp('RETURN'));
+    await iptc.addRule(new Rule('mangle').chn('FW_CLASH_CHAIN').set(ipset.CONSTANTS.IPSET_CLASH_WHITELIST_NET, 'dst').jmp('RETURN'));
+    await iptc.addRule(new Rule('mangle').chn('FW_CLASH_CHAIN').set(ipset.CONSTANTS.IPSET_CLASH_WHITELIST_MAC, 'src').jmp('RETURN'));
+
+    await iptc.addRule(new Rule('mangle').chn('FW_CLASH_CHAIN').set(ipset.CONSTANTS.IPSET_MONITORED_NET, 'src,src').jmp(`MARK --set-xmark ${mark}`));
   }
 
   // prepare the chnroute files
