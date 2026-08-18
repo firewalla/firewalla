@@ -52,7 +52,7 @@ const IPSET_DEFAULT_MAXELEM = 65536
 class CategoryUpdaterBase {
 
   constructor() {
-    this.initializedCategories = {};
+    this.attemptedCategories = {};
   }
 
   getCategoryKey(category) {
@@ -333,9 +333,16 @@ class CategoryUpdaterBase {
 
   async recycleIPSet(category) { }
 
-  // Returns categories that are activated but not yet initialized (recycleIPSet not completed).
-  getUninitializedCategories() {
-    return this.getActiveCategories().filter(c => !this.initializedCategories[c]);
+  // Marks a category's initial data load as attempted, whether or not it succeeded. Called once the
+  // cloud fetch returns, so that a category whose fetch failed - no UPDATE_CATEGORY_DOMAIN emitted,
+  // recycleIPSet never runs - does not hold up startup waiting for a signal that is never coming.
+  markAttempted(category) {
+    this.attemptedCategories[category] = true;
+  }
+
+  // Returns categories that are activated but whose initial data load has not been attempted yet.
+  getUnattemptedCategories() {
+    return this.getActiveCategories().filter(c => !this.attemptedCategories[c]);
   }
 
   // rebuild hash ipset with max size

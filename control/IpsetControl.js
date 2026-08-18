@@ -365,10 +365,6 @@ class IpsetControl extends ModuleControl {
     return this.queuedRules.length;
   }
 
-  flush() {
-    this.queuedRules = [];
-  }
-
   /**
    * Parse error line number from ipset restore stderr output
    * @param {string} stderr - stderr output from ipset restore
