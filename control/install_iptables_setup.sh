@@ -27,15 +27,12 @@ create_filter_table
 
 # ============= NAT =============
 {
-sudo iptables-save -t nat | grep -vE "^:FW_| FW_|^COMMIT|-A UPNP_"
+echo '*nat'
 
 cat << EOF
 -N FW_PREROUTING
--A PREROUTING -j FW_PREROUTING
 
 -N FW_POSTROUTING
-# ensure it is inserted at the beginning of POSTROUTING, so that snat rules in firewalla will take effect ahead of firerouter snat rules
--I POSTROUTING -j FW_POSTROUTING
 
 
 # create POSTROUTING VPN chain
@@ -195,14 +192,12 @@ echo 'COMMIT'
 
 
 {
-sudo ip6tables-save -t nat | grep -vE "^:FW_| FW_|^COMMIT"
+echo '*nat'
 
 cat << EOF
 -N FW_PREROUTING
--A PREROUTING -j FW_PREROUTING
 
 -N FW_POSTROUTING
--A POSTROUTING -j FW_POSTROUTING
 -N FW_VC_SNAT
 -A FW_POSTROUTING -j FW_VC_SNAT
 
@@ -259,14 +254,12 @@ create_qos_chains
 {
 cat << EOF
 -N FW_OUTPUT
--I OUTPUT -j FW_OUTPUT
 
 # restore fwmark for reply packets of inbound connections
 -A FW_OUTPUT -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir REPLY -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
 
 # the sequence is important, higher priority rule is placed after lower priority rule
 -N FW_PREROUTING
--I PREROUTING -j FW_PREROUTING
 
 # do not change fwmark if it is an existing outbound connection, both for session sticky and reducing iptables overhead
 -A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir ORIGINAL -m set --match-set c_lan_set src,src -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
@@ -285,7 +278,6 @@ cat << EOF
 -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark ! --mark 0x0/0xffff -j CONNMARK --save-mark --nfmask 0xffff --ctmask 0xffff
 
 -N FW_FORWARD
--I FORWARD -j FW_FORWARD
 EOF
 
 cat "$qos_file"
@@ -293,13 +285,13 @@ cat "$qos_file"
 } > "$mangle_file"
 
 {
-  sudo iptables-save -t mangle | grep -vE "^:FW_| FW_|^COMMIT"
+  echo '*mangle'
   cat "$mangle_file"
   echo 'COMMIT'
 } >> "$iptables_file"
 
 {
-  sudo ip6tables-save -t mangle | grep -vE "^:FW_| FW_|^COMMIT"
+  echo '*mangle'
   cat "$mangle_file"
   echo 'COMMIT'
 } >> "$ip6tables_file"
@@ -425,9 +417,17 @@ fi
 # install out-of-tree sch_cake.ko if applicable
 installSchCakeModule
 
+normalize_chain_declarations "$iptables_file" "$ip6tables_file"
+
+# jump rules from the builtin chains into the FW_ chains, applied in both modes since
+# the skeleton no longer carries them
+install_fw_hooks
+
 if [[ "$DRY_RUN" == "false" ]]; then
-  sudo iptables-restore "$iptables_file"
-  sudo ip6tables-restore "$ip6tables_file"
+  # --noflush: the skeleton only declares FW_ chains now, a flush would drop every
+  # rule owned by firerouter, docker and upnp
+  sudo iptables-restore --noflush "$iptables_file"
+  sudo ip6tables-restore --noflush "$ip6tables_file"
 else
   echo "Skipping iptables-restore in dry-run mode"
   echo "Would restore IPv4 rules from: $iptables_file"
