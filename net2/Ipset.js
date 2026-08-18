@@ -351,7 +351,16 @@ const CONSTANTS = {
   IPSET_MATCH_DNS_PORT_SET: "match_dns_port_set",
   IPSET_DOCKER_WAN_ROUTABLE: 'docker_wan_routable_net_set',
   IPSET_DOCKER_LAN_ROUTABLE: 'docker_lan_routable_net_set',
-  IPSET_NETWORK_GATEWAY_SET: "c_network_gateway_set"
+  IPSET_NETWORK_GATEWAY_SET: "c_network_gateway_set",
+  IPSET_CLASH_BLACKLIST: "fw_clash_blacklist",
+  IPSET_CLASH_WHITELIST: "fw_clash_whitelist",
+  IPSET_CLASH_WHITELIST_NET: "fw_clash_whitelist_net",
+  IPSET_CLASH_WHITELIST_MAC: "fw_clash_whitelist_mac",
+  // never send traffic destined to these into clash
+  CLASH_EXCLUDED_NETS: [
+    "0.0.0.0/8", "10.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16",
+    "172.16.0.0/12", "192.168.0.0/16", "224.0.0.0/4", "240.0.0.0/4"
+  ]
 }
 
 module.exports = {

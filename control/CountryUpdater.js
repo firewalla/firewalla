@@ -215,7 +215,7 @@ class CountryUpdater extends CategoryUpdaterBase {
 
     await this.swapIpset(category, true);
 
-    this.initializedCategories[category] = true;
+    this.attemptedCategories[category] = true;
     log.info(`Successfully recycled ipset for category ${category}`)
   }
 
