@@ -245,13 +245,14 @@ class PolicyManager2 {
             // if policy is disabled, skip unenforce
             if (policy.isDisabled()) {
               this.invalidateExpireTimer(policy);
-              log.info("Policy is disabled, skip unenforce", policy.pid, action);
+              log.info("Policy is disabled, skip unenforce", policy.pid);
             } else {
               await this.unenforce(policy)
             }
             await this.removeBypassChainForPolicy(policy);
           } catch (err) {
             log.error("unenforce policy failed:", err, policy)
+            throw err;
           } finally {
             log.info("COMPLETE UNENFORCING POLICY", policy.pid, action);
           }
@@ -260,28 +261,33 @@ class PolicyManager2 {
 
         case "reenforce": {
           try {
-            if (!oldPolicy) {
-              // do nothing
-            } else {
-              log.info("START REENFORCING POLICY", policy.pid, action);
-
+            log.info("START REENFORCING POLICY", policy.pid, action);
+            if (oldPolicy) {
               // if oldPolicy is disabled, skip unenforce
+              let oldPolicyUnenforced = false;
               if (oldPolicy.isDisabled()) {
                 //still need to clear timer for policy(example idle policy)
                 this.invalidateExpireTimer(oldPolicy);
-                log.info("Old policy is disabled, skip unenforce", oldPolicy.pid, action);
+                log.info("Old policy is disabled, skip unenforce", oldPolicy.pid);
               } else {
-                await this.unenforce(oldPolicy).catch((err) => {
-                    log.error("Failed to unenforce policy before reenforce", err.message, policy);
-                });
+                await this.unenforce(oldPolicy);
+                oldPolicyUnenforced = true;
               }
-              
-              await this.enforce(policy).catch((err) => {
-                log.error("Failed to reenforce policy", err.message, policy);
+
+              await this.enforce(policy).catch(async (err) => {
+                if (oldPolicyUnenforced) {
+                  // replacement failed after the old policy was already torn down; restore it so
+                  // runtime enforcement doesn't diverge from the still-persisted old policy state
+                  await this.enforce(oldPolicy).catch(rollbackErr => {
+                    log.error("Failed to restore old policy after failed reenforcement", oldPolicy.pid, rollbackErr.message);
+                  });
+                }
+                throw err;
               });
             }
           } catch (err) {
-            log.error("reenforce policy failed:" + err, policy)
+            log.error("reenforce policy failed:", err, policy)
+            throw err;
           } finally {
             log.info("COMPLETE ENFORCING POLICY", policy.pid, action);
           }
@@ -345,6 +351,19 @@ class PolicyManager2 {
     return this.queue.ready();
   }
 
+  // routes through the same serialized bee-queue as tryPolicyEnforcement, but awaits
+  // completion and rejects on failure so callers can abort instead of racing/ignoring it
+  enforceOnQueue(event) {
+    return new Promise((resolve, reject) => {
+      const job = this.queue.createJob(event);
+      job.timeout(60 * 1000).save((err) => {
+        if (err) reject(err);
+      });
+      job.on('succeeded', resolve);
+      job.on('failed', reject);
+    });
+  }
+
   registerPolicyEnforcementListener() { // need to ensure it's serialized
     log.info("register policy enforcement listener")
     sem.on("PolicyEnforcement", (event) => {
@@ -380,15 +399,19 @@ class PolicyManager2 {
     })
   }
 
+  // invalidate ipset and active rules cache after policy update
+  invalidatePolicyCache() {
+    this.ipsetCache = null;
+    this.sortedActiveRulesCache = null;
+    this.sortedRoutesCache = null;
+  }
+
   tryPolicyEnforcement(policy, action, oldPolicy) {
     if (policy) {
       action = action || 'enforce'
       log.info("try policy enforcement:" + action + ":" + policy.pid)
 
-      // invalidate ipset and active rules cache after policy update
-      this.ipsetCache = null;
-      this.sortedActiveRulesCache = null;
-      this.sortedRoutesCache = null;
+      this.invalidatePolicyCache();
 
       sem.emitEvent({
         type: 'PolicyEnforcement',
@@ -888,25 +911,38 @@ class PolicyManager2 {
         const tagUid = Constants.TAG_TYPE_MAP[type].ruleTagPrefix + tag;
         if (_.isArray(rule.tag) && rule.tag.some(m => m == tagUid)) {
           if (rule.tag.length <= 1) {
-            policyIds.push(rule.pid);
-            policyKeys.push('policy:' + rule.pid);
-
-            this.tryPolicyEnforcement(rule, 'unenforce');
+            const unenforced = await this.enforceOnQueue({ action: 'unenforce', policy: rule }).then(() => true).catch(err => {
+              log.error(`Failed to unenforce policy ${rule.pid} while deleting tag ${tag}, leaving policy in place`, err.message);
+              return false;
+            });
+            if (unenforced) {
+              policyIds.push(rule.pid);
+              policyKeys.push('policy:' + rule.pid);
+            }
           } else {
-            let reducedTag = _.without(rule.tag, tagUid);
-            await rclient.hsetAsync('policy:' + rule.pid, 'tag', JSON.stringify(reducedTag));
-            const newRule = await this.getPolicy(rule.pid)
+            const reducedTag = _.without(rule.tag, tagUid);
+            const newRule = new Policy(Object.assign({}, rule, { tag: reducedTag }));
 
-            this.tryPolicyEnforcement(newRule, 'reenforce', rule);
-
-            log.info('remove tag from policy:' + rule.pid, tag);
+            const reenforced = await this.enforceOnQueue({ action: 'reenforce', policy: newRule, oldPolicy: rule }).then(() => true).catch(err => {
+              log.error(`Failed to reenforce policy ${rule.pid} while deleting tag ${tag}, leaving tag list unchanged`, err.message);
+              return false;
+            });
+            if (reenforced) {
+              await rclient.hsetAsync('policy:' + rule.pid, 'tag', JSON.stringify(reducedTag));
+              log.info('remove tag from policy:' + rule.pid, tag);
+            }
           }
         }
       }
       if (rule.type === "tag" && rule.target == tag) {
-        this.tryPolicyEnforcement(rule, 'unenforce');
-        policyIds.push(rule.pid);
-        policyKeys.push(`policy:${rule.pid}`);
+        const unenforced = await this.enforceOnQueue({ action: 'unenforce', policy: rule }).then(() => true).catch(err => {
+          log.error(`Failed to unenforce policy ${rule.pid} while deleting tag ${tag}, leaving policy in place`, err.message);
+          return false;
+        });
+        if (unenforced) {
+          policyIds.push(rule.pid);
+          policyKeys.push(`policy:${rule.pid}`);
+        }
       }
     }
 
@@ -915,6 +951,9 @@ class PolicyManager2 {
       await rclient.zremAsync(policyActiveKey, policyIds);
       await rclient.zremAsync(activeBypassPolicyKey, policyIds);
     }
+    // invalidate once at the end, after iptables/redis are fully settled, so a concurrent
+    // checkACL()/checkRoute() never rebuilds the cache from a half-updated state
+    this.invalidatePolicyCache();
     log.info('Deleted', tag, 'related policies:', policyKeys);
   }
 
@@ -1203,16 +1242,17 @@ class PolicyManager2 {
     log.forceInfo(">>>>>==== All policy rules are enforced ====<<<<<", otherRules.length);
     this.allRulesInitialized = true;
 
-    // Wait for category/country data loads (cloud fetch → recycleIPSet) to complete
-    // so the initial atomic ipset swap captures the full state.
+    // Wait for the initial category/country cloud fetch to be attempted so the initial atomic
+    // ipset swap captures as much state as possible. A category whose fetch fails is marked
+    // attempted too, so only a slow fetch delays this.
     // Hard cap so a failing remote source doesn't stall startup indefinitely.
     const initWait = fc.getConfig().timing['policy.category.init_wait'] || 120
     const initWaitDeadline = Date.now() + initWait * 1000;
     let pending;
     while (
       (pending = [
-        ...categoryUpdater.getUninitializedCategories(),
-        ...countryUpdater.getUninitializedCategories()
+        ...categoryUpdater.getUnattemptedCategories(),
+        ...countryUpdater.getUnattemptedCategories()
       ]).length > 0
     ) {
       const remaining = initWaitDeadline - Date.now();

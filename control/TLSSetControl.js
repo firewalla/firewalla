@@ -251,10 +251,6 @@ class TLSSetControl extends ModuleControl {
     return sum;
   }
 
-  flush() {
-    this.queuedRules = { 'xt_tls': {}, 'xt_udp_tls': {} };
-  }
-
   /**
    * Check if a TLS set name is active for TCP
    * @param {string} tlsHostSet - TLS set name (e.g. 'c_bd_games_tls_hostset')
