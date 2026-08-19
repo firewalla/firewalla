@@ -127,7 +127,7 @@ class OldDataCleanSensor extends Sensor {
     let batch = []
     await rclient.scanAll(null, async (keys) => {
       for (const key of keys) {
-        for (const {type, filterFunc, count, expireInterval, fullCleanOnly, customCleanerFunc} of this.filterFunctions) {
+        for (const {type, filterFunc, count, expireInterval, fullCleanOnly, customCleanerFunc, dropTTL} of this.filterFunctions) {
           if (fullCleanOnly && !fullClean)
             continue;
           if (filterFunc(key)) {
@@ -148,7 +148,8 @@ class OldDataCleanSensor extends Sensor {
               if (expireInterval) {
                 batch.push(['zremrangebyscore', key, "-inf", Date.now() / 1000 - expireInterval]);
                 // remove expire on those keys as they are now managed by OldDataCleanSensor
-                batch.push(['persist', key]);
+                if (dropTTL)
+                  batch.push(['persist', key]);
               }
               if (count) {
                 batch.push(['zremrangebyrank', key, 0, -count])
@@ -577,16 +578,17 @@ class OldDataCleanSensor extends Sensor {
 
   registerFilterFunctions() {
     // need to take into consideration the time complexity of the filter function, it will be applied on all keys
-    this._registerFilterFunction("conn", (key) => key.startsWith("flow:conn:"));
-    this._registerFilterFunction("flowDNS", (key) => key.startsWith("flow:dns:"));
-    this._registerFilterFunction("flowLocal", (key) => key.startsWith("flow:local:"));
-    this._registerFilterFunction("auditDrop", (key) => key.startsWith("audit:drop:"));
-    this._registerFilterFunction("auditAccept", (key) => key.startsWith("audit:accept:"));
-    this._registerFilterFunction("auditLocalDrop", (key) => key.startsWith("audit:local:drop"));
+    // these flow types no longer set TTL on write, their leftover TTL should be dropped here
+    this._registerFilterFunction("conn", (key) => key.startsWith("flow:conn:"), false, null, true);
+    this._registerFilterFunction("flowDNS", (key) => key.startsWith("flow:dns:"), false, null, true);
+    this._registerFilterFunction("flowLocal", (key) => key.startsWith("flow:local:"), false, null, true);
+    this._registerFilterFunction("auditDrop", (key) => key.startsWith("audit:drop:"), false, null, true);
+    this._registerFilterFunction("auditAccept", (key) => key.startsWith("audit:accept:"), false, null, true);
+    this._registerFilterFunction("auditLocalDrop", (key) => key.startsWith("audit:local:drop"), false, null, true);
     this._registerFilterFunction("http", (key) => key.startsWith("flow:http:"));
     this._registerFilterFunction("x509", key => key.startsWith("flow:x509:"), false, this.cleanFlowX509.bind(this));
     this._registerFilterFunction("flowgraph", key => key.startsWith("flowgraph:"), false, this.cleanFlowGraph);
-    this._registerFilterFunction("notice", (key) => key.startsWith("notice:"));
+    this._registerFilterFunction("notice", (key) => key.startsWith("notice:"), false, null, true);
     this._registerFilterFunction("monitor", (key) => key.startsWith("monitor:flow:"));
     this._registerFilterFunction("categoryflow", (key) => key.startsWith("categoryflow:"));
     this._registerFilterFunction("appflow", (key) => key.startsWith("appflow:"));
@@ -618,7 +620,8 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("flow_domain:", (key) => key.startsWith("flow_domain:"));
   }
 
-  _registerFilterFunction(type, filterFunc, fullCleanOnly = false, customCleanerFunc) {
+  // dropTTL is only for types whose write path no longer sets TTL, otherwise persist fights with it
+  _registerFilterFunction(type, filterFunc, fullCleanOnly = false, customCleanerFunc, dropTTL = false) {
     let platformRetentionCountMultiplier = 1;
     let platformRetentionTimeMultiplier = 1;
     switch (type) {
@@ -640,7 +643,7 @@ class OldDataCleanSensor extends Sensor {
       count = null;
     if (expireInterval < 0)
       expireInterval = null;
-    this.filterFunctions.push({type, filterFunc, count, expireInterval, fullCleanOnly, customCleanerFunc});
+    this.filterFunctions.push({type, filterFunc, count, expireInterval, fullCleanOnly, customCleanerFunc, dropTTL});
   }
 
   run() {
