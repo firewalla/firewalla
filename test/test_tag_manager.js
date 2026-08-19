@@ -105,3 +105,42 @@ describe('Test InternalScanSensor', function() {
   });
 
 });
+
+// destroyEnv() used to only flush tag ipsets, leaving empty orphaned ipsets behind forever
+describe('Test Tag destroyEnv ipset cleanup', function() {
+  this.timeout(5000);
+
+  it('should remove tag ipsets after the tag is deleted, not leave them behind empty', async () => {
+    const Ipset = require('../net2/Ipset.js');
+    const origDestroy = Ipset.destroy;
+    const origFlush = Ipset.flush;
+    const destroyed = [];
+    Ipset.destroy = (setName) => { destroyed.push(setName); return Promise.resolve(); };
+    Ipset.flush = (setName) => { throw new Error(`Ipset ${setName} was only flushed, not removed - it will linger as an empty orphaned ipset after the tag is deleted`); };
+
+    const uid = 'testTagDestroy';
+    const tag = new Tag({uid, name: 'testTagDestroy', createTs: Date.now() / 1000});
+    try {
+      await tag.destroyEnv();
+    } finally {
+      Ipset.destroy = origDestroy;
+      Ipset.flush = origFlush;
+    }
+
+    const expectedSets = [
+      Tag.getTagSetName(uid),
+      Tag.getTagDeviceSetName(uid),
+      Tag.getTagNetSetName(uid),
+      Tag.getTagDeviceMacSetName(uid),
+      Tag.getTagDeviceIPSetName(uid, 4),
+      Tag.getTagDeviceIPSetName(uid, 6),
+    ];
+    expect(destroyed).to.include.members(expectedSets);
+
+    // dev_mac_set is a member of tag_set and dev_set, so those containers must be
+    // destroyed first or Ipset.destroy()'s isReferenced() check would skip dev_mac_set
+    const macSetIdx = destroyed.indexOf(Tag.getTagDeviceMacSetName(uid));
+    expect(destroyed.indexOf(Tag.getTagSetName(uid))).to.be.below(macSetIdx);
+    expect(destroyed.indexOf(Tag.getTagDeviceSetName(uid))).to.be.below(macSetIdx);
+  });
+});
