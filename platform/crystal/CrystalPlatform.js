@@ -55,6 +55,10 @@ class CrystalPlatform extends Platform {
     return true;
   }
 
+  getNtpServiceName() {
+    return "chrony";
+  }
+
   getDNSServiceName() {
     return "firerouter_dns";
   }
