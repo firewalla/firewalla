@@ -186,12 +186,13 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     if (now - this.lastNtpOffSetUpdateTime < this.ntpOffSetUpdateInterval)
       return;
 
-    const ntpOffSetEntries = await rclient.zrangeAsync(Constant.REDIS_KEY_NTP_OFF_SET, 0, -1).catch((err) => {
-      log.error(`Failed to load NTP off set from redis`, err);
-      return [];
-    });
-    if (ntpOffSetEntries.length === 0)
+    let ntpOffSetEntries;
+    try {
+      ntpOffSetEntries = await rclient.zrangeAsync(Constant.REDIS_KEY_NTP_OFF_SET, 0, -1);
+    } catch (err) {
+      log.error(`Failed to load NTP off set from redis, skip this sync and keep existing state`, err);
       return;
+    }
 
     this.ntpOffSet.clear();
     for (const devId of ntpOffSetEntries) {
