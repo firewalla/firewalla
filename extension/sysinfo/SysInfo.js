@@ -589,22 +589,49 @@ function getHeapDump(file, callback) {
   // heapdump.writeSnapshot(file, callback);
 }
 
+// returns the non-zero error counters of a NIC from `ethtool -S`, keyed as <nic>_<counter>,
+// null if ethtool fails, e.g. the driver does not support statistics.
+// counter names vary by driver, e.g. mmc_rx_crc_error(stmmac), rx_crc_errors(igb), so simply take
+// the ones with error in the name, same as `ethtool -S ethX | grep error`
+async function getEthErrorStats(nic) {
+  const output = await exec(`ethtool -S ${nic}`).then((result) => result.stdout).catch((err) => null);
+  if (!output)
+    return null;
+  const stats = {};
+  let crc = null;
+  for (const line of output.split("\n")) {
+    // e.g. "     mmc_rx_crc_error: 0", ethtool indents counters by 5 spaces, \s* just in case.
+    // the "NIC statistics:" header does not match anyway, there is no number after the colon
+    const match = line.match(/^\s*(\S.*?):\s*(\d+)\s*$/);
+    if (!match || !/error/i.test(match[1]))
+      continue;
+    // keep the key clean, some drivers put spaces or brackets in the name, e.g. "Queue[0]_InErrors"
+    // of enetc becomes Queue_0_InErrors, "Tx LPI entry counter" of igb becomes Tx_LPI_entry_counter
+    const name = match[1].trim().replace(/[\W_]+/g, "_").replace(/^_|_$/g, "");
+    const value = Number(match[2]);
+    // fcs as well as crc, the frame check sequence is the CRC, some drivers name it rx_fcs_errors.
+    // max instead of sum, a driver may count CRC errors in multiple registers, e.g. stmmac on gse/pse
+    // reports both mmc_rx_crc_error and rx_crc_errors
+    if (/crc|fcs/i.test(name))
+      crc = Math.max(crc === null ? 0 : crc, value);
+    if (value) // only report non-zero counters, otherwise the payload gets bloated by dozens of idle counters per NIC
+      stats[`${nic}_${name}`] = value;
+  }
+  if (crc !== null) // <nic>_crc is kept for backward compatibility
+    stats[`${nic}_crc`] = crc;
+  return stats;
+}
+
 async function getEthernetInfo() {
   const localEthInfo = {};
-  switch (platform.getName()) {
-    case "purple": {
-      const eth0_crc = await exec("ethtool -S eth0 | fgrep mmc_rx_crc_error: | awk '{print $2}'").then((output) => output.stdout && output.stdout.trim()).catch((err) => -1); // return -1 when err
-      localEthInfo.eth0_crc = Number(eth0_crc);
-      break;
-    }
-    case "gse": {
-      const eth1_crc = await exec("ethtool -S eth1 | fgrep mmc_rx_crc_error: | awk '{print $2}'" ).then((output) => output.stdout && output.stdout.trim()).catch((err) => -1);
-      const eth2_crc = await exec("ethtool -S eth2 | fgrep mmc_rx_crc_error: | awk '{print $2}'" ).then((output) => output.stdout && output.stdout.trim()).catch((err) => -1);
-      localEthInfo.eth1_crc = Number(eth1_crc);
-      localEthInfo.eth2_crc = Number(eth2_crc);
-      break;
-    }
-    default:
+  for (const nic of platform.getAllNicNames().filter(nic => nic.startsWith("eth"))) {
+    if (!await fileExist(`/sys/class/net/${nic}/ifindex`)) // NIC not present on this box
+      continue;
+    const stats = await getEthErrorStats(nic);
+    if (stats)
+      Object.assign(localEthInfo, stats);
+    else
+      localEthInfo[`${nic}_crc`] = -1; // -1 indicates ethtool failure
   }
   const info = await rclient.hgetallAsync(Constants.REDIS_KEY_ETH_INFO);
   ethInfo = Object.assign(localEthInfo, info);
@@ -821,4 +848,5 @@ module.exports = {
   getHeapDump: getHeapDump,
   getAutoUpgrade,
   getDiskWriteStats,
+  getEthErrorStats,
 };
