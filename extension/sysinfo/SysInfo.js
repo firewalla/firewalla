@@ -627,6 +627,12 @@ async function getEthernetInfo() {
   for (const nic of platform.getAllNicNames().filter(nic => nic.startsWith("eth"))) {
     if (!await fileExist(`/sys/class/net/${nic}/ifindex`)) // NIC not present on this box
       continue;
+    // negotiated link speed in Mbps, -1 when the link is down. a NIC running below the speed it
+    // supports usually comes together with the error counters below going up
+    const speed = await fs.promises.readFile(`/sys/class/net/${nic}/speed`, {encoding: "utf8"})
+      .then((content) => Number(content.trim())).catch((err) => NaN);
+    if (!isNaN(speed))
+      localEthInfo[`${nic}_speed`] = speed;
     const stats = await getEthErrorStats(nic);
     if (stats)
       Object.assign(localEthInfo, stats);
