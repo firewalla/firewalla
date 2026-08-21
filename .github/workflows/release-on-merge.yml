@@ -43,6 +43,8 @@ jobs:
         env:
           BRANCH: ${{ github.event.pull_request.base.ref }}
           TARGET: ${{ github.event.pull_request.merge_commit_sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -91,7 +93,7 @@ jobs:
               n=$((10#$n)); [ "$n" -gt "$max" ] && max=$n
             done
             TAG="${PREFIX}.$(printf '%03d' $((max + 1)))"
-            if gh release create "$TAG" --target "$TARGET" --title "$TAG" --generate-notes; then
+            if gh release create "$TAG" --target "$TARGET" --title "$TAG" --notes "$PR_TITLE ($PR_URL, merged to $BRANCH at $TARGET)"; then
               echo "Created release $TAG"
               exit 0
             fi
