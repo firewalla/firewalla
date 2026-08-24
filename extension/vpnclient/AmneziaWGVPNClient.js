@@ -43,73 +43,74 @@ class AmneziaWGVPNClient extends WGVPNClient {
     let peer = null;
     let currentSection = null;
     for (const line of lines) {
-      if (line === "[Interface]" || line === "[Peer]") {
-        if (line === "[Peer]") {
+      const section = line.toLowerCase();
+      if (section === "[interface]" || section === "[peer]") {
+        if (section === "[peer]") {
           // use 20 seconds as default persistentKeepalive value
           peer = {persistentKeepalive: 20};
           peers.push(peer);
         }
-        currentSection = line;
+        currentSection = section;
         continue;
       }
       if (!line.includes('='))
         continue;
-      const key = line.substring(0, line.indexOf('=')).trim();
+      const key = line.substring(0, line.indexOf('=')).trim().toLowerCase();
       const value = line.substring(line.indexOf('=') + 1).trim();
       switch (currentSection) {
-        case "[Interface]": {
-          if (key === "Address")
+        case "[interface]": {
+          if (key === "address")
             addresses = addresses.concat(value.split(',').map(v => v.trim()));
-          if (key === "PrivateKey")
+          if (key === "privatekey")
             config.privateKey = value;
-          if (key === "DNS")
+          if (key === "dns")
             dns = dns.concat(value.split(',').map(v => v.trim()));
-          if (key === "MTU")
+          if (key === "mtu")
             config.mtu = value;
-          if (key === "Jc")
+          if (key === "jc")
             config.jc = value;
-          if (key === "Jmin")
+          if (key === "jmin")
             config.jmin = value;
-          if (key === "Jmax")
+          if (key === "jmax")
             config.jmax = value;
-          if (key === "S1")
+          if (key === "s1")
             config.s1 = value;
-          if (key === "S2")
+          if (key === "s2")
             config.s2 = value;
-          if (key === "S3")
+          if (key === "s3")
             config.s3 = value;
-          if (key === "S4")
+          if (key === "s4")
             config.s4 = value;
-          if (key === "H1")
+          if (key === "h1")
             config.h1 = value;
-          if (key === "H2")
+          if (key === "h2")
             config.h2 = value;
-          if (key === "H3")
+          if (key === "h3")
             config.h3 = value;
-          if (key === "H4")
+          if (key === "h4")
             config.h4 = value;
-          if (key === "I1")
+          if (key === "i1")
             config.i1 = value;
-          if (key === "I2")
+          if (key === "i2")
             config.i2 = value;
-          if (key === "I3")
+          if (key === "i3")
             config.i3 = value;
-          if (key === "I4")
+          if (key === "i4")
             config.i4 = value;
-          if (key === "I5")
+          if (key === "i5")
             config.i5 = value;
           break;
         }
-        case "[Peer]": {
-          if (key === "PublicKey")
+        case "[peer]": {
+          if (key === "publickey")
             peer.publicKey = value;
-          if (key === "Endpoint")
+          if (key === "endpoint")
             peer.endpoint = value;
-          if (key === "AllowedIPs")
+          if (key === "allowedips")
             peer.allowedIPs = value.split(',').map(v => v.trim());
-          if (key === "PresharedKey")
+          if (key === "presharedkey")
             peer.presharedKey = value;
-          if (key === "PersistentKeepalive")
+          if (key === "persistentkeepalive")
             peer.persistentKeepalive = value;
           break;
         }
