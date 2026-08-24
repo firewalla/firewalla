@@ -41,6 +41,7 @@ const IdentityManager = require('../../net2/IdentityManager.js');
 const VPN_CLIENT_WAN_PREFIX = "VC:";
 const VPNClient = require('../../extension/vpnclient/VPNClient.js');
 const NetworkProfile = require('../../net2/NetworkProfile.js');
+const Mode = require('../../net2/Mode.js');
 
 // Configurations
 const configKey = 'extension.portforward.config'
@@ -128,6 +129,15 @@ class PortForward {
             await this.applyRequestJob.exec();
         });
 
+
+        sem.on('Mode:Applied', async () => {
+          if (!this._started) return;
+          await lock.acquire(LOCK_SHARED, async () => {
+            await this._syncDMZRules();
+          }).catch((err) => {
+            log.error("Failed to sync DMZ rules on mode change", err);
+          });
+        });
 
         sem.once('IPTABLES_READY', () => {
           this.ready = true;
@@ -352,6 +362,11 @@ class PortForward {
         return;
       }
 
+      if (map._type === "dmz_host" && !(await Mode.isRouterModeOn())) {
+        log.info("Box is not in router mode, DMZ host rule will not be applied:", map);
+        return;
+      }
+
       log.debug(`Add port forward`, map);
       map.state = true;
       map.active = true;
@@ -431,6 +446,25 @@ class PortForward {
   async stop() {
     log.info("PortForwarder:Stopping PortForwarder ...")
     await this.saveConfig().catch(() => { })
+  }
+
+  async _syncDMZRules() {
+    const routerMode = await Mode.isRouterModeOn();
+    if (!this.config || !Array.isArray(this.config.maps)) return;
+    for (const map of this.config.maps) {
+      if (map._type !== "dmz_host") continue;
+      if (map.active === false || map.enabled === false) continue;
+      if (!map.toIP || !this._isLANInterfaceIP(map.toIP)) continue;
+      const dupMap = JSON.parse(JSON.stringify(map));
+      dupMap.state = false;
+      await this.enforceIptables(dupMap).catch((err) => {
+        log.warn("DMZ sync remove failed", err && err.message);
+      });
+      if (routerMode) {
+        dupMap.state = true;
+        await this.enforceIptables(dupMap);
+      }
+    }
   }
 
   _isLANInterfaceIP(ip) {
