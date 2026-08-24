@@ -130,10 +130,10 @@ class PortForward {
         });
 
 
-        sem.on('Mode:Applied', async () => {
+        sem.on('Mode:Applied', async (event) => {
           if (!this._started) return;
           await lock.acquire(LOCK_SHARED, async () => {
-            await this._syncDMZRules();
+            await this._syncDMZRules(event.mode === Mode.MODE_ROUTER);
           }).catch((err) => {
             log.error("Failed to sync DMZ rules on mode change", err);
           });
@@ -448,8 +448,7 @@ class PortForward {
     await this.saveConfig().catch(() => { })
   }
 
-  async _syncDMZRules() {
-    const routerMode = await Mode.isRouterModeOn();
+  async _syncDMZRules(routerMode) {
     if (!this.config || !Array.isArray(this.config.maps)) return;
     for (const map of this.config.maps) {
       if (map._type !== "dmz_host") continue;
@@ -457,9 +456,7 @@ class PortForward {
       if (!map.toIP || !this._isLANInterfaceIP(map.toIP)) continue;
       const dupMap = JSON.parse(JSON.stringify(map));
       dupMap.state = false;
-      await this.enforceIptables(dupMap).catch((err) => {
-        log.warn("DMZ sync remove failed", err && err.message);
-      });
+      await this.enforceIptables(dupMap);
       if (routerMode) {
         dupMap.state = true;
         await this.enforceIptables(dupMap);
