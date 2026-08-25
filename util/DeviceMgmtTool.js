@@ -107,9 +107,11 @@ class DeviceMgmtTool {
       return false;
     }
 
-    const env = (config && config.shutdown) ? "FIREWALLA_POST_RESET_OP=shutdown " : "";
+    const env = Object.assign({}, process.env);
+    if (config && config.shutdown)
+      env.FIREWALLA_POST_RESET_OP = "shutdown";
     try {
-      await cpp.exec(`${env}setsid nohup ${script} >/dev/null 2>&1 &`);
+      await cpp.exec(`setsid nohup ${script} >/dev/null 2>&1 &`, { env });
     } catch(err) {
       log.error(`Failed to launch reset script ${script}`, err.message);
       return false;
