@@ -853,8 +853,16 @@ class netBot extends ControllerBot {
         exec('sync & rm /home/pi/.firewalla/config/enablev6', (err, out, code) => {
         });
       } else if (msg.control && msg.control === "script") {
-        exec('sync & /home/pi/firewalla/scripts/' + msg.command, (err, out, code) => {
-        });
+        // command cannot leave scripts/, execFile keeps it away from a shell
+        const tokens = String(msg.command || '').trim().split(/\s+/);
+        const script = tokens.shift();
+        if (!Constants.REGEX_FILENAME.test(script)) {
+          log.error("FIREWALLA CLOUD SCRIPT rejected", msg.command);
+        } else {
+          log.error("FIREWALLA CLOUD SCRIPT", script, tokens);
+          execFile(`${f.getFirewallaHome()}/scripts/${script}`, tokens)
+            .catch((err) => log.error("FIREWALLA CLOUD SCRIPT failed", script, err.message));
+        }
       } else if (msg.control && msg.control === "raw") {
         log.error("FIREWALLA CLOUD RAW ");
         // RAW commands will never / ever be ran on production
@@ -3952,19 +3960,36 @@ class netBot extends ControllerBot {
         return result
       }
       case "apt-get": {
-        let cmd = `${f.getFirewallaHome()}/scripts/apt-get.sh`;
-        if (value.execPreUpgrade) cmd = `${cmd} -pre "${value.execPreUpgrade}"`;
-        if (value.execPostUpgrade) cmd = `${cmd} -pst "${value.execPostUpgrade}"`;
-        if (value.noUpdate) cmd = cmd + ' -nu';
-        if (value.noReboot) cmd = cmd + ' -nr';
-        if (value.forceReboot) cmd = cmd + ' -fr';
+        if (!value.action || !_.isString(value.action)) throw new Error('Missing parameter "action"')
 
-        if (!value.action) throw new Error('Missing parameter "action"')
+        const VALID_ACTIONS = ['install', 'remove', 'purge', 'autoremove', 'upgrade', 'dist-upgrade', 'full-upgrade'];
+        // apt-get.sh passes the action string to apt-get unquoted, so only an action plus package
+        // names is accepted here. option-looking tokens stay out on purpose: apt options such as
+        // -o DPkg::Pre-Invoke run arbitrary commands
+        const VALID_PKG_NAME = /^[a-zA-Z0-9][a-zA-Z0-9.+:~-]*$/;
+        const tokens = value.action.trim().split(/\s+/);
+        if (!VALID_ACTIONS.includes(tokens[0])) throw new Error(`Unsupported apt-get action: ${tokens[0]}`)
+        for (const token of tokens.slice(1))
+          if (!VALID_PKG_NAME.test(token)) throw new Error(`Invalid package name: ${token}`)
 
-        cmd = `${cmd} ${value.action}`;
+        // -pre/-pst are no longer accepted, they took a command to run as root
+        const args = [];
+        if (value.noUpdate) args.push('-nu');
+        if (value.noReboot) args.push('-nr');
+        if (value.forceReboot) args.push('-fr');
+        args.push(...tokens);
 
-        log.info('Running apt-get', cmd)
-        await execAsync(`(${cmd}) 2>&1 | sudo tee -a /var/log/fwapt.log `);
+        log.info('Running apt-get', args)
+        // maxBuffer is raised because the old pipeline streamed to tee instead of buffering
+        const result = await execFile(`${f.getFirewallaHome()}/scripts/apt-get.sh`, args, {maxBuffer: 20 * 1024 * 1024}).catch(err => err);
+        const output = `${result.stdout || ''}${result.stderr || ''}`;
+        if (output) {
+          // appends to the log the way the old `| sudo tee -a` pipeline did, without a shell
+          const tee = execFile('sudo', ['tee', '-a', '/var/log/fwapt.log']);
+          tee.childProcess.stdin.end(output);
+          await tee.catch(err => log.error('Failed to append /var/log/fwapt.log', err.message));
+        }
+        if (result instanceof Error) throw result
         return
       }
       case "ble:control":

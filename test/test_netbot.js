@@ -39,15 +39,25 @@ const sysManager = require('../net2/SysManager.js');
 log.info('sys manager initialized')
 const { delay } = require('../util/util.js')
 const Constants = require('../net2/Constants.js');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const f = require('../net2/Firewalla.js');
 
-async function getMacWithFlow(redisPrefix) {
+// ctx is the mocha context of the calling test. A box only records the kinds of flow its enabled
+// features produce, so a prefix with no data means there is nothing to exercise rather than a
+// failure - skip the test instead. ctx.skip() throws, so nothing after the call runs. Callers that
+// pass no ctx still get the error.
+async function getMacWithFlow(redisPrefix, ctx) {
   let results = await rclient.scanResults(redisPrefix + '*', 10000)
   results = results
     .filter(key => !key.includes(':if:') && !key.endsWith('system'))
     .map(key => key.substring(redisPrefix.length))
     .filter(mac => netbot.hostManager.getHostFastByMAC(mac));
-  if (!results.length)
+  if (!results.length) {
+    if (ctx) ctx.skip();
     throw new Error('No device with flow', redisPrefix);
+  }
   return results[0]
 }
 
@@ -105,7 +115,7 @@ before(async function() {
 describe('test get flows', function() {
   this.timeout(3000);
 
-  before(async() => {
+  before(async function() {
     networkProfileManager.networkProfiles["1f97bb38-7592-4be0-**"] = {ipv4:"192.168.203.134"};
     // loggerManager.setLogLevel('LogQuery', 'verbose');
     // loggerManager.setLogLevel('FlowTool', 'verbose');
@@ -135,8 +145,8 @@ describe('test get flows', function() {
     expect(resp.count).to.equal(0);
   });
 
-  it('should get common flows', async() => {
-    const target = await getMacWithFlow("flow:conn:in:");
+  it('should get common flows', async function() {
+    const target = await getMacWithFlow("flow:conn:in:", this);
 
     const msg = {data:{item:"flows", count: 2, apiVer: 2}, target};
     let resp = await get(msg)
@@ -157,8 +167,8 @@ describe('test get flows', function() {
     expect(resp.flows.some(f => f.ltype == 'flow' && f.type == 'ip' && !f.local)).to.be.true
   });
 
-  it('should get audit flows', async() => {
-    const target = await getMacWithFlow('audit:drop:');
+  it('should get audit flows', async function() {
+    const target = await getMacWithFlow('audit:drop:', this);
     const ts = await getTsFromFlowKey('audit:drop:' + target);
 
     const msg = {data:{item:"flows", audit:true, ts, count: 100, apiVer: 2}, target};
@@ -195,8 +205,8 @@ describe('test get flows', function() {
     expect(resp.logs.some(f => f.ltype == 'audit' && !f.local)).to.be.true
   });
 
-  it('should get DNS flows', async() => {
-    const target = await getMacWithFlow('flow:dns:');
+  it('should get DNS flows', async function() {
+    const target = await getMacWithFlow('flow:dns:', this);
     const ts = await getTsFromFlowKey('flow:dns:' + target);
 
     const msg = {data:{item:"flows", dnsFlow:true, ts, count: 100, apiVer: 2}, target};
@@ -219,8 +229,8 @@ describe('test get flows', function() {
     expect(resp.flows.some(f => f.ltype == 'flow' && f.type == 'dnsFlow')).to.be.true
   });
 
-  it('should get NTP flows', async() => {
-    const target = await getMacWithFlow('audit:accept:');
+  it('should get NTP flows', async function() {
+    const target = await getMacWithFlow('audit:accept:', this);
     const ts = await getTsFromFlowKey('audit:accept:' + target);
 
     const msg = {data:{item:"flows", ntpFlow:true, ts, count: 100, apiVer: 2}, target};
@@ -243,8 +253,8 @@ describe('test get flows', function() {
     expect(resp.flows.some(f => f.ltype == 'flow' && f.type == 'ntp')).to.be.true
   });
 
-  it('should get local flow according to apiVer', async() => {
-    const target = await getMacWithFlow('flow:local:');
+  it('should get local flow according to apiVer', async function() {
+    const target = await getMacWithFlow('flow:local:', this);
     const ts = await getTsFromFlowKey('flow:local:' + target);
 
     const msg = {data:{item:"flows", localFlow:true, local:true, ts, apiVer:2, count: 100}, target};
@@ -263,8 +273,8 @@ describe('test get flows', function() {
     expect(resp.flows.some(f => f.ltype == 'flow' && f.type == 'ip' && f.local)).to.be.true
   });
 
-  it('should get local block flow according to apiVer', async() => {
-    const target = await getMacWithFlow('audit:local:drop:');
+  it('should get local block flow according to apiVer', async function() {
+    const target = await getMacWithFlow('audit:local:drop:', this);
     const ts = await getTsFromFlowKey('audit:local:drop:' + target);
 
     const msg = {data:{item:"flows", audit:true, ts, apiVer: 2, count: 100}, target};
@@ -295,8 +305,8 @@ describe('test get flows', function() {
     expect(resp.logs.some(f => f.ltype == 'audit' && f.local)).to.be.true
   });
 
-  it('should exclude flows as expected', async() => {
-    const target = await getMacWithFlow('flow:conn:in:');
+  it('should exclude flows as expected', async function() {
+    const target = await getMacWithFlow('flow:conn:in:', this);
     const ts = await getTsFromFlowKey('flow:conn:in:' + target);
 
     const msg = {data:{item:"flows", audit:true, ts, apiVer: 2, count: 100, exclude: [{device: target}]}, target:'0.0.0.0'};
@@ -498,7 +508,7 @@ describe('test system flows', function() {
 describe('test get stats', function() {
   this.timeout(10000);
 
-  before(async() => {
+  before(async function() {
     // loggerManager.setLogLevel('HostManager', 'verbose');
     // loggerManager.setLogLevel('NetBotTool', 'verbose');
     this.tsKeys = ["newLast24", "last60", "last30", "last12Months"]
@@ -526,7 +536,12 @@ describe('test get stats', function() {
     loggerManager.setLogLevel('LogQuery', 'info');
   });
 
-  it('init stats', async() => {
+  it('init stats', async function() {
+    // one full init per entry in switchMetricMap, plus one for apiVer 2. each is a complete
+    // "load init data" in netbot and costs over a second on a gold box, ~10.5s in total, so this
+    // needs its own budget rather than the 10s the suite gives every other test. the cost grows
+    // with the amount of data on the box
+    this.timeout(30000)
     let v3TS = {}
     let resp
     for (const s in this.switchMetricMap) {
@@ -567,9 +582,9 @@ describe('test get stats', function() {
     }
   });
 
-  it('get host', async() => {
+  it('get host', async function() {
     // choose the host that has some local drop
-    const target = await getMacWithFlow("audit:local:drop:");
+    const target = await getMacWithFlow("audit:local:drop:", this);
 
     let resp, v3TS = {}
     for (const s in this.switchMetricMap) {
@@ -626,9 +641,9 @@ describe('test get stats', function() {
     }
   });
 
-  it('get intf', async() => {
+  it('get intf', async function() {
     // choose the host that has some local drop
-    const mac = await getMacWithFlow("audit:local:drop:");
+    const mac = await getMacWithFlow("audit:local:drop:", this);
     const host = await netbot.hostManager.getIdentityOrHost(mac)
     const target = host.o.intf
 
@@ -710,7 +725,7 @@ describe('test netbot', function(){
   it('should record msg data', async() => {
     await netbot._precedeRecord("FFFF056-5ECD-4F93-9201-AFFF7EC", {kkk: 111});
     const result = await rclient.getAsync("_hx:msg:FFFF056-5ECD-4F93-9201-AFFF7EC");
-    expect(result).to.be.equal('{"kkk":111}');
+    expect(result).to.be.equal('{"origin":{"kkk":111}}');
   });
 
   it('should get event message', async() => {
@@ -791,5 +806,196 @@ describe('test familyDnsTest', function() {
     const resp = await dnsTestRaw({ servers: Array(11).fill('8.8.8.8'), domains: ['www.google.com'] });
     expect(resp.code).to.equal(500);
     expect(resp.message).to.include('exceeds limit');
+  });
+});
+
+// Handlers that hand a caller supplied value to a program:
+//   cmdHandler     item "apt-get"     -> scripts/apt-get.sh
+//   boneMsgHandler control "script"   -> scripts/<name>
+//
+// No real script runs: getFirewallaHome() is pointed at a temp tree of recorders that write their
+// argv to a file and print nothing. Printing nothing keeps the apt-get handler's
+// `sudo tee -a /var/log/fwapt.log` branch from firing, so the test leaves no trace in the system log.
+describe('test netbot handlers that run a program', function() {
+  this.timeout(20000);
+
+  let home, record, realGetFirewallaHome;
+
+  before(async () => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'netbot-ctl-'));
+    record = path.join(home, 'argv');
+    fs.mkdirSync(path.join(home, 'scripts'));
+    for (const name of ['apt-get.sh', 'diag.sh']) {
+      const p = path.join(home, 'scripts', name);
+      // argv only, one entry per line, nothing on stdout
+      fs.writeFileSync(p, `#!/bin/bash\nprintf '[%s]\\n' "$@" > ${record}\n`);
+      fs.chmodSync(p, 0o755);
+    }
+    realGetFirewallaHome = f.getFirewallaHome;
+    f.getFirewallaHome = () => home;
+  });
+
+  after(async () => {
+    f.getFirewallaHome = realGetFirewallaHome;
+    fs.rmdirSync(home, {recursive: true});
+  });
+
+  beforeEach(async () => {
+    if (fs.existsSync(record)) fs.unlinkSync(record);
+  });
+
+  // what the recorder captured, or null when it never ran
+  const argv = () => fs.existsSync(record)
+    ? fs.readFileSync(record, 'utf8').trim().split('\n').map(l => l.replace(/^\[(.*)\]$/, '$1'))
+    : null;
+
+  const aptGet = (value) => netbot.cmdHandler(gid, {data: {item: 'apt-get', value}});
+
+  const cloudScript = async (command) => {
+    netbot.boneMsgHandler({type: 'CONTROL', control: 'script', command});
+    // the handler does not await execFile, so wait for the recorder or give up. a run that is
+    // expected to be refused waits out the whole budget, so keep it short - a run that does happen
+    // lands in about 60ms on a gold box, which leaves plenty of margin
+    for (let i = 0; i < 20 && !fs.existsSync(record); i++) await delay(50);
+  };
+
+  describe('cmdHandler item "apt-get"', function() {
+
+    it('passes the action and packages as separate arguments', async () => {
+      await aptGet({action: 'install curl'});
+      expect(argv()).to.deep.equal(['install', 'curl']);
+    });
+
+    it('puts the flags before the action', async () => {
+      await aptGet({action: 'install curl', noUpdate: true, noReboot: true, forceReboot: true});
+      expect(argv()).to.deep.equal(['-nu', '-nr', '-fr', 'install', 'curl']);
+    });
+
+    it('accepts a versioned and architecture qualified package name', async () => {
+      await aptGet({action: 'purge libssl1.1:amd64'});
+      expect(argv()).to.deep.equal(['purge', 'libssl1.1:amd64']);
+    });
+
+    // a newline is just whitespace to the tokeniser. it never reaches a shell, so the only
+    // question is whether the words around it are a valid action and package names
+    it('treats a newline as whitespace rather than a command separator', async () => {
+      await aptGet({action: 'install pkg\nid'});
+      expect(argv()).to.deep.equal(['install', 'pkg', 'id']);
+    });
+
+    // execPreUpgrade and execPostUpgrade used to become `-pre <command>` / `-pst <command>`, and
+    // apt-get.sh runs those unquoted as root. netbot no longer reads either field.
+    it('ignores execPreUpgrade and execPostUpgrade', async () => {
+      await aptGet({
+        action: 'upgrade',
+        execPreUpgrade: 'touch /tmp/fw-test-pre-should-not-exist',
+        execPostUpgrade: 'touch /tmp/fw-test-post-should-not-exist',
+      });
+      expect(argv()).to.deep.equal(['upgrade']);
+      expect(fs.existsSync('/tmp/fw-test-pre-should-not-exist')).to.be.false;
+      expect(fs.existsSync('/tmp/fw-test-post-should-not-exist')).to.be.false;
+    });
+
+    const badAction = {
+      'install pkg; id': /^Invalid package name/,
+      'install $(id)': /^Invalid package name/,
+      'install `id`': /^Invalid package name/,
+      'install pkg && id': /^Invalid package name/,
+      'install pkg|tee /tmp/x': /^Invalid package name/,
+      'install pkg\ntouch /tmp/x': /^Invalid package name/,
+      'install ../../etc/passwd': /^Invalid package name/,
+      // apt options are refused too: -o DPkg::Pre-Invoke runs a command through apt itself
+      'install -o DPkg::Pre-Invoke::=id': /^Invalid package name/,
+      'install --reinstall curl': /^Invalid package name/,
+      '; id': /^Unsupported apt-get action/,
+      'source curl': /^Unsupported apt-get action/,
+      'download pkg': /^Unsupported apt-get action/,
+    };
+
+    for (const [action, message] of Object.entries(badAction)) {
+      it(`rejects action ${JSON.stringify(action)}`, async () => {
+        let err = null;
+        try {
+          await aptGet({action});
+        } catch (e) {
+          err = e;
+        }
+        expect(err, 'should have thrown').to.be.an('error');
+        expect(err.message).to.match(message);
+        expect(argv(), 'the script must not have run').to.be.null;
+      });
+    }
+
+    for (const value of [{}, {action: ''}, {action: 42}, {action: ['install', 'curl']}]) {
+      it(`rejects value ${JSON.stringify(value)}`, async () => {
+        let err = null;
+        try {
+          await aptGet(value);
+        } catch (e) {
+          err = e;
+        }
+        expect(err, 'should have thrown').to.be.an('error');
+        expect(argv(), 'the script must not have run').to.be.null;
+      });
+    }
+  });
+
+  describe('boneMsgHandler control "script"', function() {
+
+    it('runs a script that lives under scripts/', async () => {
+      await cloudScript('diag.sh');
+      expect(argv()).to.deep.equal(['']);
+    });
+
+    it('passes the rest of the command as arguments', async () => {
+      await cloudScript('diag.sh --full -v');
+      expect(argv()).to.deep.equal(['--full', '-v']);
+    });
+
+    // The command used to be concatenated onto the scripts/ path and run through a shell. A
+    // metacharacter that is its own word no longer separates anything: execFile passes it to the
+    // script as an inert argument, so the marker below is never created.
+    const inert = {
+      'diag.sh ; touch MARKER': [';', 'touch', 'MARKER'],
+      'diag.sh && touch MARKER': ['&&', 'touch', 'MARKER'],
+      'diag.sh | tee MARKER': ['|', 'tee', 'MARKER'],
+      'diag.sh $(touch MARKER)': ['$(touch', 'MARKER)'],
+    };
+
+    for (const [template, expected] of Object.entries(inert)) {
+      it(`passes ${JSON.stringify(template)} through as arguments without a shell`, async () => {
+        const marker = path.join(home, 'shell_ran');
+        await cloudScript(template.replace(/MARKER/g, marker));
+        expect(argv()).to.deep.equal(expected.map(a => a.replace(/MARKER/g, marker)));
+        expect(fs.existsSync(marker), 'no shell should have interpreted the argument').to.be.false;
+      });
+    }
+
+    // here the metacharacter is attached to the script token, so the name itself is refused
+    const badCommand = [
+      'diag.sh; id',
+      'diag.sh&&id',
+      '$(id)',
+      '`id`',
+      '../../../bin/sh',
+      '/bin/sh',
+      'sub/dir.sh',
+      '.',
+      '..',
+      '-rf',
+      '',
+    ];
+
+    for (const command of badCommand) {
+      it(`refuses to run ${JSON.stringify(command)}`, async () => {
+        await cloudScript(command);
+        expect(argv(), 'nothing should have run').to.be.null;
+      });
+    }
+
+    it('does not run anything when command is missing', async () => {
+      await cloudScript(undefined);
+      expect(argv()).to.be.null;
+    });
   });
 });
