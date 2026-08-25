@@ -46,6 +46,19 @@ class PSEPlatform extends Platform {
     return ["eth0", "eth1", "wlan0", "wlan1"];
   }
 
+  async readPermanentMac(nic) {
+    const slot = {eth0: 0, eth1: 1}[nic];
+    if (slot === undefined)
+      return super.readPermanentMac(nic);
+
+    return exec(`seq 0 5 | xargs -I ZZZ -n 1 sudo i2cget -y 0 0x51 0x${slot}ZZZ | cut -d 'x' -f 2 | paste -sd ':'`)
+      .then(result => result.stdout.trim().toUpperCase())
+      .catch((err) => {
+        log.error(`Failed to read EEPROM MAC of ${nic}`, err.message);
+        return "";
+      });
+  }
+
   getDNSServiceName() {
     return "firerouter_dns";
   }
