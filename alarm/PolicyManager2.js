@@ -903,6 +903,7 @@ class PolicyManager2 {
     let rules = await this.loadActivePoliciesAsync({ includingDisabled: 1 })
     let policyIds = [];
     let policyKeys = [];
+    let unenforcedRules = [];
 
     for (let rule of rules) {
       if (_.isEmpty(rule.tag) && rule.type !== "tag") continue;
@@ -918,6 +919,7 @@ class PolicyManager2 {
             if (unenforced) {
               policyIds.push(rule.pid);
               policyKeys.push('policy:' + rule.pid);
+              unenforcedRules.push(rule);
             }
           } else {
             const reducedTag = _.without(rule.tag, tagUid);
@@ -942,6 +944,7 @@ class PolicyManager2 {
         if (unenforced) {
           policyIds.push(rule.pid);
           policyKeys.push(`policy:${rule.pid}`);
+          unenforcedRules.push(rule);
         }
       }
     }
@@ -950,6 +953,11 @@ class PolicyManager2 {
       await rclient.unlinkAsync(policyKeys);
       await rclient.zremAsync(policyActiveKey, policyIds);
       await rclient.zremAsync(activeBypassPolicyKey, policyIds);
+      for (const rule of unenforcedRules) {
+        await this.removeBypassChainForPolicy(rule).catch(err => {
+          log.error(`Failed to remove bypass chain for policy ${rule.pid} while deleting tag ${tag}`, err.message);
+        });
+      }
     }
     // invalidate once at the end, after iptables/redis are fully settled, so a concurrent
     // checkACL()/checkRoute() never rebuilds the cache from a half-updated state
