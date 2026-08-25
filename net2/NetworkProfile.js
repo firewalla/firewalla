@@ -275,24 +275,6 @@ class NetworkProfile extends Monitorable {
     }
   }
 
-  static async destroyBakChains() {
-    // Remove jump rules from INPUT chain
-    await iptc.addRule(new Rule().chn("INPUT").jmp("FW_INPUT_ACCEPT_BAK").opr('-D'));
-    await iptc.addRule(new Rule().fam(6).chn("INPUT").jmp("FW_INPUT_ACCEPT_BAK").opr('-D'));
-    await iptc.addRule(new Rule().chn("INPUT").jmp("FW_INPUT_DROP_BAK").opr('-D'));
-    await iptc.addRule(new Rule().fam(6).chn("INPUT").jmp("FW_INPUT_DROP_BAK").opr('-D'));
-    // Flush chains
-    await iptc.addRule(new Rule().chn("FW_INPUT_ACCEPT_BAK").opr('-F'));
-    await iptc.addRule(new Rule().fam(6).chn("FW_INPUT_ACCEPT_BAK").opr('-F'));
-    await iptc.addRule(new Rule().chn("FW_INPUT_DROP_BAK").opr('-F'));
-    await iptc.addRule(new Rule().fam(6).chn("FW_INPUT_DROP_BAK").opr('-F'));
-    // Delete chains
-    await iptc.addRule(new Rule().chn("FW_INPUT_ACCEPT_BAK").opr('-X'));
-    await iptc.addRule(new Rule().fam(6).chn("FW_INPUT_ACCEPT_BAK").opr('-X'));
-    await iptc.addRule(new Rule().chn("FW_INPUT_DROP_BAK").opr('-X'));
-    await iptc.addRule(new Rule().fam(6).chn("FW_INPUT_DROP_BAK").opr('-X'));
-  }
-
   static getSelfIpsetName(uuid, af = 4) {
     if (uuid) {
       return `c_ip_${uuid.substring(0, 13)}_set` + (af === 4 ? "" : "6");

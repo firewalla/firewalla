@@ -43,31 +43,36 @@ jobs:
         env:
           BRANCH: ${{ github.event.pull_request.base.ref }}
           TARGET: ${{ github.event.pull_request.merge_commit_sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
           # actual branch -> "<model>-<channel>" (reverse of the model:template mapping;
-          # release_6_0=production, beta_6_0=beta, beta_7_0=alpha)
+          # release_6_0=prod, beta_6_0=beta, beta_7_0=alpha, matching getReleaseType())
           case "$BRANCH" in
-            release_7_0)  LABEL="gold-production" ;;
+            release_7_0)  LABEL="gold-prod" ;;
             beta_8_0)     LABEL="gold-beta" ;;
             beta_9_0)     LABEL="gold-alpha" ;;
-            release_9_0)  LABEL="purple-production" ;;
+            release_9_0)  LABEL="purple-prod" ;;
             beta_12_0)    LABEL="purple-beta" ;;
             beta_13_0)    LABEL="purple-alpha" ;;
-            release_10_0) LABEL="pse-production" ;;
+            release_10_0) LABEL="pse-prod" ;;
             beta_14_0)    LABEL="pse-beta" ;;
             beta_15_0)    LABEL="pse-alpha" ;;
-            release_11_0) LABEL="gse-production" ;;
+            release_11_0) LABEL="gse-prod" ;;
             beta_16_0)    LABEL="gse-beta" ;;
             beta_17_0)    LABEL="gse-alpha" ;;
-            release_12_0) LABEL="goldpro-production" ;;
+            release_12_0) LABEL="goldpro-prod" ;;
             beta_18_0)    LABEL="goldpro-beta" ;;
             beta_19_0)    LABEL="goldpro-alpha" ;;
-            release_13_0) LABEL="orange-production" ;;
+            release_13_0) LABEL="orange-prod" ;;
             beta_20_0)    LABEL="orange-beta" ;;
             beta_21_0)    LABEL="orange-alpha" ;;
+            release_14_0) LABEL="goldplus2-prod" ;;
+            beta_22_0)    LABEL="goldplus2-beta" ;;
+            beta_23_0)    LABEL="goldplus2-alpha" ;;
             *) echo "::error::no model/channel mapping for branch '$BRANCH'"; exit 1 ;;
           esac
 
@@ -75,17 +80,20 @@ jobs:
           [ -n "$VER" ] && [ "$VER" != null ] || { echo "::error::no .version in net2/config.json"; exit 1; }
           PREFIX="${LABEL}-v${VER}"
 
-          # patch auto-increments per (label, version); retry guards against tag races
+          # patch auto-increments per (label, version); retry guards against tag races.
+          # patch is dot-separated so the whole tag ends in a dotted version number
+          # ("<label>-v1.984.001"), which is what scripts/upgrade_verify.sh parses out
+          # of the tag name for the minimal version check
           for attempt in 1 2 3 4 5; do
             git fetch --tags --force --quiet
             max=0
-            for t in $(git tag -l "${PREFIX}-*"); do
-              n=${t#${PREFIX}-}
+            for t in $(git tag -l "${PREFIX}.*"); do
+              n=${t#${PREFIX}.}
               case "$n" in ''|*[!0-9]*) continue ;; esac
               n=$((10#$n)); [ "$n" -gt "$max" ] && max=$n
             done
-            TAG="${PREFIX}-$(printf '%03d' $((max + 1)))"
-            if gh release create "$TAG" --target "$TARGET" --title "$TAG" --generate-notes; then
+            TAG="${PREFIX}.$(printf '%03d' $((max + 1)))"
+            if gh release create "$TAG" --target "$TARGET" --title "$TAG" --notes "$PR_TITLE ($PR_URL, merged to $BRANCH at $TARGET)"; then
               echo "Created release $TAG"
               exit 0
             fi

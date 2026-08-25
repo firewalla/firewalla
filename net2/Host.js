@@ -289,7 +289,7 @@ class Host extends Monitorable {
     }
   }
 
-  // 1. if not connected (no staStatus), reset autoGroup after a short grace to prevent flapping
+  // 1. if not connected (no staStatus), keep autoGroup until expire
   // 2. if a dot1x group, reset only when the station is no longer 802.1x authenticated
   // 3. otherwise (ppsk/default), reset if connected on a different ssid
   async getHostAutoGroup(staStatus) {
@@ -302,7 +302,7 @@ class Host extends Monitorable {
     }
 
     if (!staStatus) {
-      if (!autoGroup.ts || autoGroup.ts < Date.now() - 10000) { // 10s grace window
+      if (!autoGroup.ts || autoGroup.ts < Date.now() - 2592000 * 1000) { // 30 days
         await this.resetAutoGroupAsync();
         return null;
       }
@@ -1352,6 +1352,18 @@ class Host extends Monitorable {
 
   getStpPort() {
     return _.get(this.o, 'stpPort', null);
+  }
+
+  setLastSeenOnWifi(ts) {
+    this._lastSeenOnWifi = ts;
+  }
+
+  getLastSeenOnWifi() {
+    return this._lastSeenOnWifi || null;
+  }
+
+  isWirelessDevice(ttlMs = 2 * 60 * 1000) {
+    return !!this._lastSeenOnWifi && (Date.now() - this._lastSeenOnWifi) < ttlMs;
   }
 
   async _get24HoursInternetActivity() {
