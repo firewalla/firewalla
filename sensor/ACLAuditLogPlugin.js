@@ -458,6 +458,12 @@ class ACLAuditLogPlugin extends Sensor {
               break;
             record.dmac = IdentityManager.getGUID(identity);
             record.drl = IdentityManager.getEndpointByIP(record.dh);
+          } else {
+            // fallback to get mac by ip with cache
+            const dmac = await hostTool.getMacByIPWithCache(record.dh);
+            if (dmac && !sysManager.isMyMac(dmac)) {
+              record.dmac = dmac;
+            }
           }
         }
         break;
@@ -669,7 +675,14 @@ class ACLAuditLogPlugin extends Sensor {
     record.mac = mac;
     record.ct = record.ct || 1;
 
-    if (record.ac === 'block' && record.reason === 'adblock') {
+    // prevent both adblock and global block rule for adblock domain hit count addition.
+    if (record.ac === 'block' && !record.pid) {
+      const matchedPIDs = await this.ruleStatsPlugin.getMatchedPids(record);
+      if (matchedPIDs && matchedPIDs.length > 0)
+        record.pid = matchedPIDs[0];
+    }
+
+    if (record.ac === 'block' && !record.pid && record.reason === 'adblock') {
       this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
       this.adblockPlugin && this.adblockPlugin.recordAdblockHit(record);
     }
@@ -783,10 +796,21 @@ class ACLAuditLogPlugin extends Sensor {
           const block = record.ac == "block" || record.ac == "isolation";
           const disturb = record.ac == "disturb";
 
+          // adblock TLS block carries a reserved pid in the packet mark. Report it with a reason
+          // like a DNS adblock block does and drop the pid, it matches no rule the app knows about
+          const adblockTls = this.isAdblockTlsAuditRecord(record);
+          if (adblockTls) {
+            record.reason = 'adblock';
+            this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
+            this.adblockPlugin && this.adblockPlugin.recordAdblockHit(Object.assign({}, record, { mac }));
+            delete record.pid;
+          }
+
           // pid backtrace
           // ntp has nothing to do with rules
           // for local flow, only account for 'in' flows
-          if (type != 'ntp' && !(record.dmac && fd == 'out')) {
+          // adblock TLS matches no rule, skip backtrace so it is not attributed to an unrelated one
+          if (type != 'ntp' && !adblockTls && !(record.dmac && fd == 'out')) {
             if (record.pid && type == 'ip' && record.ac == 'allow' && record.af) {
               const policy = await pm2.getPolicy(record.pid, true);
               // domain allow that uses IP-based matching
@@ -812,12 +836,6 @@ class ACLAuditLogPlugin extends Sensor {
               const lastHitFlow = Object.assign({}, record, { mac }, dir === 'L' ? { local: true } : {});
               this.ruleStatsPlugin.recordLastHitFlow(record.pid, lastHitFlow, 'audit');
             }
-          }
-
-          if (this.isAdblockTlsAuditRecord(record)) {
-            record.reason = 'adblock';
-            this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
-            this.adblockPlugin && this.adblockPlugin.recordAdblockHit(Object.assign({}, record, { mac }));
           }
 
           if (type == 'ip' && record.ac != "block" && record.ac != 'redirect' && record.ac != "isolation" && record.ac != "disturb")

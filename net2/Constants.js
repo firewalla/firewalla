@@ -40,6 +40,8 @@ module.exports = {
 
   INTF_AP_CTRL: "wg_ap",
   INTF_PCAP_TAP: "ifb_pcap_tap",
+  INTF_PCAP_RSPAN: "ifb_pcap_rspan",
+  WORKER_ID_RSPAN: "worker-rspan",
 
   TRUST_IP_SET: "trust:ip",
   TRUST_DOMAIN_SET: "trust:domain",
