@@ -1290,9 +1290,11 @@ module.exports = class HostManager extends Monitorable {
       categoryUpdater.getCustomizedCategories(),
     ]);
     if (platform.isFireRouterManaged()) {
+      const stpStatus = await FireRouter.getBridgeStpStatus().catch(() => ({}));
       for (const intf in nicStates) {
         const channel = _.get(FireRouter.getInterfaceViaName(intf), 'state.channel')
         if (channel) nicStates[intf].channel = channel
+        if (stpStatus[intf]) nicStates[intf].stp = stpStatus[intf];
       }
     }
     json.nicSpeed = speed;
