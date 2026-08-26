@@ -141,27 +141,28 @@ TimeSeries.prototype.exec = function(callback = ()=>{}) {
 };
 
 
-// override getHits function
-TimeSeries.prototype.getHits = function(key, gran, count, callback) {
-  var properties = this.granularities[gran],
-      currentTime = getCurrentTime();
-
+// Pure planning step of getHits: figures out which redis keys/fields are needed
+// and how to turn their (later-fetched) values back into [ts, count] pairs.
+// Factored out so multiple granularities can be queued onto one shared MULTI
+// (see queueHits) instead of each opening its own multi/exec round trip.
+function planHits(instance, key, gran, count) {
+  const properties = instance.granularities[gran];
   if (typeof properties === "undefined") {
-    return callback(new Error("Unsupported granularity: "+gran));
+    throw new Error("Unsupported granularity: " + gran);
   }
-
   if (count > properties.ttl / properties.duration) {
-    return callback(new Error("Count: "+count+" exceeds the maximum stored slots for granularity: "+gran));
+    throw new Error("Count: " + count + " exceeds the maximum stored slots for granularity: " + gran);
   }
 
-  var from = getRoundedTime(properties.duration, currentTime - count*properties.duration),
-      to = getRoundedTime(properties.duration, currentTime);
+  const currentTime = getCurrentTime();
+  const from = getRoundedTime(properties.duration, currentTime - count * properties.duration),
+        to = getRoundedTime(properties.duration, currentTime);
 
   const hget = {}
   const orderedKeys = []
-  for(var ts=from; ts<=to; ts+=properties.duration) {
-    var keyTimestamp = getRoundedTime(properties.precision || properties.ttl, ts,true), // high prority: precision
-        tmpKey = [this.keyBase, key, gran, keyTimestamp].join(':');
+  for (var ts = from; ts <= to; ts += properties.duration) {
+    var keyTimestamp = getRoundedTime(properties.precision || properties.ttl, ts, true), // high prority: precision
+        tmpKey = [instance.keyBase, key, gran, keyTimestamp].join(':');
 
     if (!hget[tmpKey]) {
       hget[tmpKey] = [ts]
@@ -170,22 +171,55 @@ TimeSeries.prototype.getHits = function(key, gran, count, callback) {
       hget[tmpKey].push(ts)
   }
 
-  const multi=this.redis.multi()
-  for (const key of orderedKeys) {
-    multi.hmget(key, hget[key])
+  return { from, to, duration: properties.duration, hget, orderedKeys };
+}
+
+function parseHits(plan, flatResults, count) {
+  const data = []
+  for (var ts = plan.from, i = 0; ts <= plan.to; ts += plan.duration, i += 1) {
+    data.push([ts, flatResults[i] ? parseInt(flatResults[i], 10) : 0]);
+  }
+  return data.slice(Math.max(data.length - count, 0));
+}
+
+// override getHits function
+TimeSeries.prototype.getHits = function(key, gran, count, callback) {
+  let plan;
+  try {
+    plan = planHits(this, key, gran, count);
+  } catch (err) {
+    return callback(err);
+  }
+
+  const multi = this.redis.multi()
+  for (const k of plan.orderedKeys) {
+    multi.hmget(k, plan.hget[k])
   }
 
   multi.exec(function(err, results) {
     if (err) {
       return callback(err);
     }
-    const flatten = _.flatten(results)
-    for(var ts=from, i=0, data=[]; ts<=to; ts+=properties.duration, i+=1) {
-      data.push([ts, flatten[i] ? parseInt(flatten[i], 10) : 0]);
-    }
-
-    return callback(null, data.slice(Math.max(data.length - count, 0)));
+    return callback(null, parseHits(plan, _.flatten(results), count));
   });
+};
+
+// Queues getHits' hmget commands onto a caller-supplied multi so several
+// granularities (plus other commands) share one MULTI/EXEC round trip.
+// Returns the plan plus how many result slots belong to this call, for slicing
+// results back out after exec().
+TimeSeries.prototype.queueHits = function(multi, key, gran, count) {
+  const plan = planHits(this, key, gran, count);
+  for (const k of plan.orderedKeys) {
+    multi.hmget(k, plan.hget[k])
+  }
+  return { plan, resultSlots: plan.orderedKeys.length };
+};
+
+// Turns the slice of MULTI/EXEC results belonging to a queueHits() call back
+// into the same [ts, count] pairs getHits would have returned.
+TimeSeries.prototype.parseQueuedHits = function(queued, resultSlice, count) {
+  return parseHits(queued.plan, _.flatten(resultSlice), count);
 };
 
 const timeSeries = new TimeSeries(rclient, "timedTraffic")

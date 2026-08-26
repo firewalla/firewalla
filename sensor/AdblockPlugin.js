@@ -46,7 +46,6 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const util = require('util');
 const _ = require('lodash');
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries();
-const getHitsAsync = util.promisify(timeSeries.getHits).bind(timeSeries);
 const auditTool = require('../net2/AuditTool.js');
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
@@ -142,7 +141,6 @@ class AdblockStats {
   constructor() {
     this.lastHitFlow = null;
     this.lastHitTs = 0;
-    this.lastFlushTs = 0;
     this.resetTs = 0;
     this.pendingHits = 0;
     this.resetGeneration = 0;
@@ -172,11 +170,9 @@ class AdblockStats {
     if (this.persistPromise)
       await this.persistPromise;
 
-    const now = Date.now() / 1000;
-    if (!this.lastHitFlow || now - this.lastFlushTs < 60)
+    if (this.pendingHits <= 0)
       return;
 
-    this.lastFlushTs = now;
     const payload = {
       kind: 'audit',
       raw: _.cloneDeep(this.lastHitFlow)
@@ -184,11 +180,10 @@ class AdblockStats {
     const hitsToFlush = this.pendingHits;
     const flushGeneration = this.resetGeneration;
     this.pendingHits = 0;
-    const batch = rclient.batch();
+    const batch = mclient.multi();
     batch.hset('ext.adblock.stats', 'lastHitTs', String(this.lastHitTs));
     batch.hset('ext.adblock.stats', 'lastHitFlow', JSON.stringify(payload));
-    if (hitsToFlush > 0)
-      batch.hincrby('ext.adblock.stats', 'totalHits', hitsToFlush);
+    batch.hincrby('ext.adblock.stats', 'totalHits', hitsToFlush);
     const persistPromise = batch.execAsync().catch((err) => {
       log.error('Failed to persist adblock stats', err);
       if (flushGeneration === this.resetGeneration)
@@ -202,11 +197,9 @@ class AdblockStats {
   }
 
   async reset() {
-    this.resetTs = Math.floor(Date.now() / 1000);
-    this.lastHitFlow = null;
-    this.lastHitTs = 0;
-    this.lastFlushTs = 0;
-    this.pendingHits = 0;
+    // bump resetGeneration first so an in-flight flush() can't
+    // re-add hits after the wipe. A hit landing mid-wipe can still slip
+    // through -- rare, manual-trigger-only, not worth guarding further.
     this.resetGeneration++;
     if (this.persistPromise)
       await this.persistPromise;
@@ -216,21 +209,46 @@ class AdblockStats {
       await mclient.unlinkAsync(keys);
       mclient.forgetExpireAt(keys);
     }
-    const batch = rclient.batch();
+    const resetTs = Math.floor(Date.now() / 1000);
+    const batch = mclient.multi();
     batch.hdel('ext.adblock.stats', 'totalHits', 'lastHitTs', 'lastHitFlow');
-    batch.hset('ext.adblock.stats', 'lastResetTs', String(this.resetTs));
-    await batch.execAsync().catch(() => {});
+    batch.hset('ext.adblock.stats', 'lastResetTs', String(resetTs));
+    
+    const persistPromise = batch.execAsync().catch(() => {}).finally(() => {
+      if (this.persistPromise === persistPromise)
+        this.persistPromise = null;
+    });
+    this.persistPromise = persistPromise;
+    await persistPromise;
+    this.resetTs = resetTs;
+    this.lastHitFlow = null;
+    this.lastHitTs = 0;
+    this.pendingHits = 0;
   }
 
   async getStats() {
-    const [buckets24h, buckets7d, stored] = await Promise.all([
-      getHitsAsync('feature:adblock:block', '1hour', 24).catch(() => []),
-      getHitsAsync('feature:adblock:block', '1day', 7).catch(() => []),
-      rclient.hgetallAsync('ext.adblock.stats').catch(() => null)
-    ]);
-    const total24h = (buckets24h || []).reduce((sum, bucket) => sum + (bucket[1] || 0), 0);
-    const total7d = (buckets7d || []).reduce((sum, bucket) => sum + (bucket[1] || 0), 0);
-    const daily7d = buckets7d || [];
+    // One real MULTI/EXEC for all three reads.
+    const multi = mclient.multi();
+    let results = null, q24h = null, q7d = null;
+    try {
+      q24h = timeSeries.queueHits(multi, 'feature:adblock:block', '1hour', 24);
+      q7d = timeSeries.queueHits(multi, 'feature:adblock:block', '1day', 7);
+      multi.hgetall('ext.adblock.stats');
+      results = await multi.execAsync();
+    } catch (err) {
+      log.error('Failed to read adblock stats', err.message);
+    }
+
+    let buckets24h = [], buckets7d = [], stored = null;
+    if (results) {
+      let offset = 0;
+      buckets24h = timeSeries.parseQueuedHits(q24h, results.slice(offset, offset += q24h.resultSlots), 24);
+      buckets7d = timeSeries.parseQueuedHits(q7d, results.slice(offset, offset += q7d.resultSlots), 7);
+      stored = results[offset];
+    }
+    const total24h = buckets24h.reduce((sum, bucket) => sum + (bucket[1] || 0), 0);
+    let total7d = buckets7d.reduce((sum, bucket) => sum + (bucket[1] || 0), 0);
+    const daily7d = buckets7d;
     let totalHits = 0;
     let lastResetTs = null;
     let lastHitTs = null;
@@ -245,6 +263,18 @@ class AdblockStats {
       } catch (err) {
         log.warn('Failed to format adblock lastHitFlow', err.message);
       }
+    }
+
+    if (total24h > total7d) {
+      const delta = total24h - total7d;
+      log.warn(`adblock total24h (${total24h}) is ahead of total7d (${total7d})`);
+      total7d = total24h;
+      if (daily7d.length)
+        daily7d[daily7d.length - 1][1] += delta;
+    }
+    if (totalHits < total7d) {
+      log.warn(`adblock totalHits (${totalHits}) is behind total7d (${total7d})`);
+      totalHits = total7d;
     }
     return { total24h, total7d, daily7d, totalHits, lastResetTs, lastHitTs, lastHitFlow };
   }

@@ -675,7 +675,14 @@ class ACLAuditLogPlugin extends Sensor {
     record.mac = mac;
     record.ct = record.ct || 1;
 
-    if (record.ac === 'block' && record.reason === 'adblock') {
+    // prevent both adblock and global block rule for adblock domain hit count addition.
+    if (record.ac === 'block' && !record.pid) {
+      const matchedPIDs = await this.ruleStatsPlugin.getMatchedPids(record);
+      if (matchedPIDs && matchedPIDs.length > 0)
+        record.pid = matchedPIDs[0];
+    }
+
+    if (record.ac === 'block' && !record.pid && record.reason === 'adblock') {
       this.adblockPlugin = this.adblockPlugin || sl.getSensor("AdblockPlugin");
       this.adblockPlugin && this.adblockPlugin.recordAdblockHit(record);
     }

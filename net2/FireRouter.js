@@ -1029,6 +1029,20 @@ class FireRouter {
       return JSON.parse(JSON.stringify(intfNameMap[intf]));
   }
 
+  // Live STP role/state for the box's own bridged LAN ports, flattened across all bridges,
+  // e.g. { eth0: {role: "designated", state: "forwarding"}, eth1: {role: "backup", state: "discarding"} }.
+  // Empty for single-port bridges / VLAN sub-bridges / stp:false bridges (firerouter reports no stpPorts there).
+  async getBridgeStpStatus() {
+    const bridgeNames = Object.keys(_.get(await this.getConfig(), "interface.bridge", {}));
+    const result = {};
+    await Promise.all(bridgeNames.map(async (name) => {
+      const intf = await this.getSingleInterface(name, true).catch(() => null);
+      const stpPorts = _.get(intf, "state.stpPorts");
+      if (stpPorts) Object.assign(result, stpPorts);
+    }));
+    return result;
+  }
+
   getLogicIntfNames() {
     return JSON.parse(JSON.stringify(logicIntfNames));
   }

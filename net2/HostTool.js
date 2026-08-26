@@ -740,7 +740,7 @@ class HostTool {
     const key = `${Constants.REDIS_KEY_WIRELESS_AUTO_GROUP}${mac}`;
     let val = JSON.stringify({tag: tagUid, ssid: ssid, ts: Date.now(), ...options})
     await rclient.setAsync(key, val);
-    await rclient.expireAsync(key, 3600);
+    await rclient.expireAsync(key, 2592000); // expire in 30 days
   }
 
   async resetWirelessAutoGroup(mac) {
