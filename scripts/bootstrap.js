@@ -30,7 +30,8 @@ const networkTool = require('../net2/NetworkTool.js')();
 const sysManager = require('../net2/SysManager.js');
 
 const CONFIG_FILE = process.env.FW_CONFIG || '/encipher.config/netbot.config';
-const PROVISION_BASE = process.env.FW_PROVISION_BASE || 'https://msp.dd.firewalla.net';
+const DEFAULT_PROVISION_BASE = 'https://msp.dd.firewalla.net';
+let PROVISION_BASE = DEFAULT_PROVISION_BASE;
 const BOOTSTRAP_PATH = '/vmbox/bootstrap';
 // onboard-config.json: baked into the image at build time (see onboard-config.sample.json).
 const ONBOARD_CONFIG = process.env.FW_ONBOARD_CONFIG || '/home/pi/.firewalla/onboard-config.json';
@@ -350,6 +351,8 @@ if (!onboard) {
   console.error(`[onboard] no/invalid onboard-config at ${ONBOARD_CONFIG} — abort`);
   process.exit(1);
 }
+
+PROVISION_BASE = process.env.FW_PROVISION_BASE || onboard.provisionBase || DEFAULT_PROVISION_BASE;
 
 main(onboard).catch(async (err) => {
   log(`bootstrap failed: ${err.message}`);
