@@ -37,12 +37,22 @@ function cleanup_dangling_images() {
 BACKOFF_KEY="freeradius:image:pull:backoff"
 DISK_FAULT_RE='failed to extract layer|failed to convert whiteout|failed to register layer|operation not permitted|no space left on device|input/output error|read-only file system'
 
+# epoch milliseconds
+function now_ms() { echo $(( $(date +%s%N) / 1000000 )); }
+
 function in_pull_backoff() {
-    local state next_ts
+    local state next_ts now max
     state=$(redis-cli --raw get "$BACKOFF_KEY" 2>/dev/null)
     [ -z "$state" ] && return 1
     next_ts=$(echo "$state" | jq -r '.nextTs // 0' 2>/dev/null)
-    [ -n "$next_ts" ] && [ "$(date +%s%3N)" -lt "$next_ts" ]
+    now=$(now_ms)
+    max=$(( now + 7 * 24 * 3600 * 1000 ))  # cap is 24h; anything further is corrupt (e.g. nanosecond ts)
+    # delete malformed, nonnumeric, or implausibly-future timestamps and self-heal
+    if ! [[ "$next_ts" =~ ^[0-9]+$ ]] || [ "$next_ts" -gt "$max" ]; then
+        redis-cli del "$BACKOFF_KEY" >/dev/null 2>&1
+        return 1
+    fi
+    [ "$now" -lt "$next_ts" ]
 }
 
 function record_pull_failure() {
@@ -54,13 +64,23 @@ function record_pull_failure() {
     delay=$base
     for (( i=1; i<attempts; i++ )); do delay=$(( delay * 2 )); done
     [ "$delay" -gt "$cap" ] && delay=$cap
-    next_ts=$(( $(date +%s%3N) + delay ))
+    next_ts=$(( $(now_ms) + delay ))
     redis-cli set "$BACKOFF_KEY" "{\"attempts\":$attempts,\"diskFault\":$disk_fault,\"nextTs\":$next_ts}" >/dev/null 2>&1
     echo "pull failed (disk_fault=$disk_fault), backing off $(( delay / 60000 ))min"
 }
 
+# stop then disable to prevent image pull loop
+function disable_compose_service() {
+    sudo systemctl stop docker-compose@freeradius >/dev/null 2>&1
+    sudo systemctl disable docker-compose@freeradius >/dev/null 2>&1
+}
+
 function clear_pull_backoff() {
     redis-cli del "$BACKOFF_KEY" >/dev/null 2>&1
+    # re-enable only if the feature wants the service; don't force-enable when it's off
+    if [ "$(redis-cli hget sys:features freeradius_server)" == "1" ]; then
+        sudo systemctl enable docker-compose@freeradius >/dev/null 2>&1
+    fi
 }
 
 function wait_for_freeradius_start() {
@@ -135,6 +155,12 @@ fi
 
 if in_pull_backoff; then
   echo "in image-pull backoff window, skipping docker pull"
+  # during backoff, disable the unit to stop the pull/start loop unless a container is serving
+  if ! sudo docker ps -q -f "name=$EXPECTED_CONTAINER_NAME" | grep -q .; then
+    echo "no freeradius container running, disabling docker-compose@freeradius during backoff"
+    disable_compose_service
+    exit 0
+  fi
 else
   echo "pulling image ${image}"
   pull_out=$(sudo docker pull ${image} 2>&1)
@@ -152,6 +178,10 @@ fi
 new_image=$(sudo docker images --format "{{.ID}}" --filter "reference=${image}")
 if [ -z "$new_image" ]; then
   echo "image ${image} not found"
+  # stop then disable only if no freeradius container is running
+  if ! sudo docker ps -q -f "name=$EXPECTED_CONTAINER_NAME" | grep -q .; then
+    disable_compose_service
+  fi
   exit 1
 fi
 
