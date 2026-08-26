@@ -33,6 +33,12 @@ class Platform {
     return ["eth0"];
   }
 
+  // vendor:product of the devices that belong to the box itself instead of being an accessory,
+  // so that they are not reported as a plugged in USB device
+  getNativeUsbDeviceIds() {
+    return [];
+  }
+
   async getNicStates() {
     const nics = this.getAllNicNames();
     const result = {};

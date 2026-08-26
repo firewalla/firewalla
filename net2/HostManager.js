@@ -434,6 +434,8 @@ module.exports = class HostManager extends Monitorable {
     json.osUptime = sysInfo.osUptime;
     json.fanSpeed = await platform.getFanSpeed();
     json.kernelVersion = sysInfo.kernelVersion;
+    if (sysInfo.usbInfo) // absent if the USB bus cannot be listed, which is not the same as nothing plugged in
+      json.usbInfo = sysInfo.usbInfo;
     const cpuUsageRecords = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_CPU_USAGE, Date.now() / 1000 - 60, Date.now() / 1000).map(r => JSON.parse(r));
     json.sysMetrics = {
       memUsage: sysInfo.realMem,
