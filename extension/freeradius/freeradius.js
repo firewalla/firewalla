@@ -175,6 +175,10 @@ class FreeRadius {
       log.warn("Abort starting radius-server, server is already running.")
       return false;
     }
+    if (!await this._checkImage(options)) {
+      log.warn("Abort starting radius-server, image not present (pull failed or backed off).");
+      return false;
+    }
     log.info("Starting container freeradius-server...");
     try {
       await this.generateOptions(options);
@@ -705,6 +709,26 @@ class FreeRadius {
     return "cgroup1";
   }
 
+  async _disableComposeService() {
+    // stop then disable to prevent image pull loop
+    await exec(`sudo systemctl stop docker-compose@freeradius`).catch((e) => {
+      log.warn("Failed to stop docker-compose@freeradius,", e.message);
+    });
+    await exec(`sudo systemctl disable docker-compose@freeradius`).catch((e) => {
+      log.warn("Failed to disable docker-compose@freeradius,", e.message);
+    });
+  }
+
+  async _enableComposeService() {
+    await exec(`sudo systemctl enable docker-compose@freeradius`).catch((e) => {
+      log.warn("Failed to enable docker-compose@freeradius,", e.message);
+    });
+  }
+
+  async _isContainerRunning(options = {}) {
+    return !!await this._getContainerImage(options);
+  }
+
   // in-memory backoff state: {attempts: number, diskFault: boolean, nextTs: number}
   async _inPullBackoff() {
     const now = Date.now();
@@ -712,7 +736,14 @@ class FreeRadius {
     const raw = await rclient.getAsync(PULL_BACKOFF_KEY).catch(() => null);
     if (!raw) return false;
     try {
-      return now < (JSON.parse(raw).nextTs || 0);
+      const nextTs = JSON.parse(raw).nextTs || 0;
+      // protect, fix corrupted nextTs
+      if (nextTs > now + 7 * 24 * 3600 * 1000) {
+        log.warn("Ignoring corrupt freeradius pull backoff nextTs (not epoch-ms?):", nextTs);
+        await rclient.delAsync(PULL_BACKOFF_KEY).catch(() => { });
+        return false;
+      }
+      return now < nextTs;
     } catch (err) {
       return false;
     }
@@ -732,17 +763,29 @@ class FreeRadius {
       log.warn("Failed to persist image pull backoff state (redis/disk?),", e.message);
     });
     log.warn(`freeradius image pull failed (${diskFault ? "disk fault" : "transient"}), backing off ${Math.round(delay / 60000)}min`, stderr.slice(0, 200));
+
+    if (!await this._isContainerRunning()) {
+      await this._disableComposeService();
+    }
   }
 
   async _clearPullBackoff() {
     this.pullBackoff = null;
     await rclient.delAsync(PULL_BACKOFF_KEY).catch(() => { });
+    // re-enable only if the feature wants the service; don't force-enable when it's off
+    if (this.featureOn) {
+      await this._enableComposeService();
+    }
   }
 
   // wraps docker pull with a shared backoff so a failing disk stops re-downloading the image
   async _dockerPull(cmd) {
     if (await this._inPullBackoff()) {
       log.warn("Skip freeradius image pull, in backoff window.");
+      // keep unit disabled during backoff unless a container is running
+      if (!await this._isContainerRunning()) {
+        await this._disableComposeService();
+      }
       return { ok: false, skipped: true };
     }
     return await exec(cmd).then(async () => {
@@ -966,6 +1009,11 @@ class FreeRadius {
     return result && result.includes(image);
   }
 
+  // image present locally; false when pull failed or is in backoff window
+  async isImageReady(options = {}) {
+    return await this._checkImage(options);
+  }
+
   async _checkContainer(options = {}) {
     const image = this.getImage(options);
     const result = await exec(`sudo docker ps | grep ${image}`).then(r => r.stdout.trim()).catch((e) => {
@@ -974,6 +1022,33 @@ class FreeRadius {
     });
     log.info("Container freeradius-server status:", result);
     return result && result.includes("freeradius");
+  }
+
+  // running image (repo:tag) of the freeradius container by compose service label, or null
+  async _getContainerImage(options = {}) {
+    const raw = await exec(`sudo docker ps --filter "label=com.docker.compose.service=freeradius" --format "{{.Image}}"`).then(r => r.stdout.trim()).catch((e) => {
+      log.warn("Failed to get freeradius container image,", e.message);
+      return "";
+    });
+    return raw.split("\n").map(i => i.trim()).find(Boolean) || null;
+  }
+
+  async recoverImageMismatch(options = {}) {
+    const current = await this._getContainerImage(options);
+    if (!current) return false; // no container running, nothing to recover
+    const expected = this.getImage(options);
+    log.info(`recoverImageMismatch, expected ${expected}, current ${current}`);
+    if (current === expected) return false;
+    if (!await this._checkImage(options)) {
+      log.warn(`freeradius image ${expected} not ready, keep current container ${current} running to avoid outage.`);
+      return false;
+    }
+    log.warn(`freeradius container image ${current} != expected ${expected}, restarting docker-compose@freeradius to recover`);
+    const restarted = await exec(`sudo systemctl restart docker-compose@freeradius`).then(() => true).catch((e) => {
+      log.warn("Failed to restart docker-compose@freeradius,", e.message);
+      return false;
+    });
+    return restarted;
   }
 
   async _terminateServer(options = {}) {
