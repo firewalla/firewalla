@@ -1,19 +1,5 @@
 'use strict';
 
-// Box activation bootstrap — onboard (unattended) mode only.
-//
-// Reads ~/.firewalla/onboard-config.json and runs in two phases:
-//   Phase 1 (unconditional on boot): apply timezone; install license -> ~/.firewalla/license +
-//                                    bootingComplete=1 (usable as soon as it's installed)
-//   Phase 2 (only if msp/app was selected AND the user clicked activate in the MSP web UI):
-//       register(bid) -> poll rendezvous until activate -> join MSP / join App
-//
-// Fully silent: this script only console.log's structured logs, which fireonboard.sh redirects to
-// ~/.firewalla/fireonboard.log; nothing is shown on the user's console.
-//
-// Network + sshd are already applied by fireonboard.sh before this runs (FireRouter); not handled here.
-// The default password (firewalla) is set during install (flash.sh chroot), unrelated to this script.
-
 const { exec } = require('child_process');
 const util = require('util');
 const execAsync = util.promisify(exec);
@@ -30,26 +16,20 @@ const networkTool = require('../net2/NetworkTool.js')();
 const sysManager = require('../net2/SysManager.js');
 
 const CONFIG_FILE = process.env.FW_CONFIG || '/encipher.config/netbot.config';
-const PROVISION_BASE = process.env.FW_PROVISION_BASE || 'https://msp.dd.firewalla.net';
+const DEFAULT_PROVISION_BASE = 'https://msp.dd.firewalla.net';
+let PROVISION_BASE = DEFAULT_PROVISION_BASE;
 const BOOTSTRAP_PATH = '/vmbox/bootstrap';
-// onboard-config.json: baked into the image at build time (see onboard-config.sample.json).
 const ONBOARD_CONFIG = process.env.FW_ONBOARD_CONFIG || '/home/pi/.firewalla/onboard-config.json';
-// Box-local fireapi: add the phone App user as a peer of the box (join App management).
 const LOCAL_ENCIPHER_API = process.env.FW_LOCAL_ENCIPHER_API
   || 'http://localhost:8834/v1/encipher/simple?command=cmd&item=addPeers';
 
-// Poll interval: kept long to lower CPU further (CPU use is already tiny, ~8s/hour measured).
 const POLL_INTERVAL_SEC = 5;
-// No timeout: keep polling until the user clicks activate in the MSP web UI (see waitForInvitation).
 
 let eptcloud;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const log = msg => console.log(`[onboard ${new Date().toISOString()}] ${msg}`);
 
-// ── config ─────────────────────────────────────────────────────────────────────
-
-// Read onboard-config. Returns null on missing/parse failure (=> main aborts).
 function loadOnboardConfig() {
   try {
     const cfg = JSON.parse(fs.readFileSync(ONBOARD_CONFIG, 'utf8'));
@@ -59,31 +39,23 @@ function loadOnboardConfig() {
   }
 }
 
-// netbot.config: appId/appSecret used for the encipher login.
-function loadConfig() {
-  const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+async function connectCloud() {
+  const config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
   for (const k of ['appId', 'appSecret']) {
-    if (!cfg[k]) throw new Error(`${CONFIG_FILE} missing field: ${k}`);
+    if (!config[k]) throw new Error(`${CONFIG_FILE} missing field: ${k}`);
   }
-  return cfg;
-}
-
-// ── cloud / activation primitives ────────────────────────────────────────────────
-
-async function connectCloud(config) {
   eptcloud = new Cloud(config.endpoint_name || 'netbot', null);
   await eptcloud.loadKeys();
   await eptcloud.eptLogin(config.appId, config.appSecret, null, config.endpoint_name);
 }
 
-// gid is generated on the fly by firekick and written to sys:ept.gid; wait for it defensively.
 async function waitForGid(maxSec = 10) {
   for (let i = 0; i < maxSec; i++) {
     const gid = await rclient.hgetAsync('sys:ept', 'gid');
     if (gid) return gid;
     await sleep(1000);
   }
-  throw new Error('sys:ept.gid not found - firekick must run first');
+  throw new Error('sys:ept.gid not found');
 }
 
 async function registerBootstrap({ bootstrapId, rid, gid }) {
@@ -96,11 +68,7 @@ async function registerBootstrap({ bootstrapId, rid, gid }) {
   });
 }
 
-// Poll encipher rendezvous until the user clicks activate in the MSP web UI and the backend pushes
-// the payload. Returns { value: <web_eid>, evalue: JSON({ license, server, business }) }.
 async function waitForInvitation(rid) {
-  // No timeout: poll until the user clicks activate and the backend pushes the payload.
-  // Log a heartbeat every ~5 min so a long quiet fireonboard.log doesn't look stuck.
   let i = 0;
   const heartbeatEvery = Math.max(1, Math.round(300 / POLL_INTERVAL_SEC));
   for (;;) {
@@ -120,12 +88,12 @@ async function waitForInvitation(rid) {
 function parsePayload(evalue) {
   if (!evalue) throw new Error('evalue missing');
   const payload = typeof evalue === 'string' ? JSON.parse(evalue) : evalue;
+  if (!payload.license)  throw new Error('payload.license missing');
   if (!payload.server)   throw new Error('payload.server missing');
   if (!payload.business) throw new Error('payload.business missing');
   return payload;
 }
 
-// Fetch the full signed license from the cloud (bound to this box's MAC) and write ~/.firewalla/license.
 async function installLicense(licenseUuid, mac) {
   await bone.waitUntilCloudReadyAsync();
   const license = await bone.getLicenseAsync(licenseUuid, mac);
@@ -136,9 +104,8 @@ async function installLicense(licenseUuid, mac) {
   return license;
 }
 
-// Install license + mark bootingComplete + record state. source is for logging only (msp-payload / onboard-config).
-async function installLicenseAndMark(licenseUuid, mac, source) {
-  log(`installing license ${licenseUuid} (from ${source})`);
+async function installLicenseAndMark(licenseUuid, mac) {
+  log(`installing license ${licenseUuid}`);
   const license = await installLicense(licenseUuid, mac);
   await markBootingComplete();
   await persistState({
@@ -146,7 +113,6 @@ async function installLicenseAndMark(licenseUuid, mac, source) {
     license_uuid: license.DATA.UUID,
     license_type: license.DATA.LICENSE,
     bound_mac: license.DATA.MAC,
-    license_source: source,
     licensed_at: new Date().toISOString(),
   });
   log(`license installed uuid=${license.DATA.UUID} type=${license.DATA.LICENSE}`);
@@ -211,7 +177,6 @@ async function restartFireApi() {
   await execAsync('sudo systemctl restart fireapi');
 }
 
-// Add the phone App user's eid as a peer of this box (join App). Uses box-local fireapi, no cloud auth.
 async function addPeerToApp(eid) {
   await rp({
     uri: LOCAL_ENCIPHER_API,
@@ -223,7 +188,6 @@ async function addPeerToApp(eid) {
   });
 }
 
-// fireapi (8834) may not be up yet early in onboard / after a restart; retry until it answers.
 async function addPeerToAppWithRetry(eid, maxSec = 120) {
   const deadline = Date.now() + maxSec * 1000;
   let lastErr;
@@ -238,8 +202,6 @@ async function addPeerToAppWithRetry(eid, maxSec = 120) {
   throw lastErr || new Error('addPeers timeout');
 }
 
-// ── state file (for troubleshooting) ─────────────────────────────────────────────
-
 const STATE_FILE = '/home/pi/.firewalla/bootstrap.json';
 const state = { created_at: new Date().toISOString() };
 
@@ -248,15 +210,12 @@ async function persistState(patch) {
   try {
     await fs.promises.mkdir(require('path').dirname(STATE_FILE), { recursive: true });
     await fs.promises.writeFile(STATE_FILE, JSON.stringify(state, null, 2) + '\n', 'utf8');
-  } catch (e) { /* best-effort */ }
+  } catch (e) {}
 }
-
-// ── main ───────────────────────────────────────────────────────────────────────
 
 async function main(onboard) {
   log('onboard start');
-  const config = loadConfig();
-  await connectCloud(config);
+  await connectCloud();
   const gid = await waitForGid();
   const mac = await networkTool.getIdentifierMAC();
   if (!mac) throw new Error('failed to read identifier MAC');
@@ -266,55 +225,26 @@ async function main(onboard) {
   await applyTimezone(_.get(onboard, 'timezone'))
       .catch((e) => log(`WARN: applyTimezone failed: ${e.message}`));
 
-  const needMsp = _.get(onboard, 'activation.msp.enabled') === true;
   const needApp = _.get(onboard, 'activation.app.enabled') === true;
-  const cfgLicenseUuid = _.get(onboard, 'license.uuid');
 
-  // ── Phase 1 (unconditional on boot) ──────────────────────────────────────────
-  // No MSP: license comes from onboard-config, installed on boot (usable immediately).
-  // MSP selected: license comes mainly from the MSP push, deferred to Phase 2.
-  if (!needMsp) {
-    if (cfgLicenseUuid) {
-      await installLicenseAndMark(cfgLicenseUuid, mac, 'onboard-config');
-    } else {
-      log('no msp & no onboard license.uuid — skipping license');
-    }
-  }
-
-  // ── Phase 2: only after activate (msp / app) ──────────────────────────────────
-  if (!needMsp && !needApp) {
-    log('no msp/app selected — done after license');
-    await persistState({ stage: 'completed', activated_at: new Date().toISOString() });
-    return;
-  }
-
-  // bid is minted by the MSP backend at provision time, bound to the license, then baked into the
-  // image. Fall back to a random one only if it can't be read.
   const bid = _.get(onboard, 'activation.bid') || uuid.v4();
   const rid = eptcloud.eptGenerateInvite().r;
   log(`register bid=${bid} rid=${rid}`);
   await registerBootstrap({ bootstrapId: bid, rid, gid });
   await persistState({ stage: 'awaiting_activation', bootstrap_id: bid, rid });
 
-  // Wait until the user clicks activate in the MSP web UI.
   log('waiting for activate (polling rendezvous)...');
   const { value: webEid, evalue } = await waitForInvitation(rid);
   const payload = parsePayload(evalue);
   log(`activate confirmed: web_eid=${webEid} msp=${_.get(payload, 'business.name')}`);
   await persistState({ stage: 'activating', web_eid: webEid, payload_received_at: new Date().toISOString() });
 
-  if (needMsp) {
-    // License comes mainly from the MSP push, with onboard-config as fallback.
-    const licenseUuid = payload.license || cfgLicenseUuid;
-    if (!licenseUuid) throw new Error('no license from MSP payload nor onboard-config');
-    await installLicenseAndMark(licenseUuid, mac, payload.license ? 'msp-payload' : 'onboard-config(fallback)');
-    const memberCount = await joinWebEidToGroup(gid, webEid);
-    await writeUiConf(gid);
-    await configureGuardian(payload);
-    log(`msp joined: members=${memberCount} server=${payload.server}${payload.region ? ` region=${payload.region}` : ''}`);
-  }
+  await installLicenseAndMark(payload.license, mac);
+  const memberCount = await joinWebEidToGroup(gid, webEid);
+  await writeUiConf(gid);
+  await configureGuardian(payload);
+  log(`msp joined: members=${memberCount} server=${payload.server}${payload.region ? ` region=${payload.region}` : ''}`);
 
-  // addPeers uses the fireapi that came up on boot, so it must run before restartFireApi; non-fatal.
   if (needApp) {
     const appEid = _.get(onboard, 'activation.app.eid');
     if (appEid) {
@@ -329,11 +259,8 @@ async function main(onboard) {
     }
   }
 
-  // Guardian config needs a fireapi restart to take effect; do it last (avoid interrupting addPeers).
-  if (needMsp) {
-    await restartFireApi();
-    log('fireapi restarted');
-  }
+  await restartFireApi();
+  log('fireapi restarted');
 
   await persistState({
     stage: 'completed',
@@ -351,12 +278,14 @@ if (!onboard) {
   process.exit(1);
 }
 
+PROVISION_BASE = process.env.FW_PROVISION_BASE || onboard.provisionBase || DEFAULT_PROVISION_BASE;
+
 main(onboard).catch(async (err) => {
   log(`bootstrap failed: ${err.message}`);
   if (err.stack) console.log(err.stack);
   try { await persistState({ stage: 'failed', error: err.message, failed_at: new Date().toISOString() }); } catch (_) {}
   process.exitCode = 1;
 }).finally(async () => {
-  try { await rclient.quitAsync(); } catch (_) { /* ignore */ }
+  try { await rclient.quitAsync(); } catch (_) {}
   process.exit(process.exitCode || 0);
 });
