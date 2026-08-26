@@ -425,8 +425,6 @@ class LiveStatsPlugin extends Sensor {
       const ptx = p.txBytes != null ? Number(p.txBytes) : 0;
       const prx = p.rxBytes != null ? Number(p.rxBytes) : 0;
       lags[id] = Object.assign({}, p, { tx: ptx, rx: prx });
-      tx += ptx;
-      rx += prx;
     }
     let ts = sample.ts != null ? Number(sample.ts) : NaN;
     if (!Number.isFinite(ts) || ts <= 0) {

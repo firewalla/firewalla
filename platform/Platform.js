@@ -33,6 +33,12 @@ class Platform {
     return ["eth0"];
   }
 
+  // vendor:product of the devices that belong to the box itself instead of being an accessory,
+  // so that they are not reported as a plugged in USB device
+  getNativeUsbDeviceIds() {
+    return [];
+  }
+
   async getNicStates() {
     const nics = this.getAllNicNames();
     const result = {};
@@ -54,7 +60,7 @@ class Platform {
     return result;
   }
 
-  // Read the hardware permanent MAC of a NIC via ethtool. Returns "" if unavailable.
+  // Read the hardware permanent MAC of a NIC. Returns "" if unavailable.
   // Cached per-nic keyed on ifindex, not just name, since a USB wlan dongle can be swapped
   // while keeping the same nic name (udev pins name to port); ifindex changes when that happens.
   async getPermanentMac(nic) {
@@ -66,16 +72,20 @@ class Platform {
     if (cached !== undefined && ifindex !== null && cached.ifindex === ifindex)
       return cached.mac;
 
-    const mac = await execFile('ethtool', ['-P', nic]).then(result => {
-      const match = result.stdout.match(/Permanent address:\s*([0-9a-fA-F:]+)/);
-      return match ? match[1].trim().toUpperCase() : "";
-    }).catch(() => "");
-    if (!mac || mac === "00:00:00:00:00:00")
+    const mac = await this.readPermanentMac(nic);
+    if (!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(mac) || mac === "00:00:00:00:00:00" || mac === "FF:FF:FF:FF:FF:FF")
       return "";
 
     if (ifindex !== null)
       this._permanentMacCache[nic] = {mac, ifindex};
     return mac;
+  }
+
+  async readPermanentMac(nic) {
+    return execFile('ethtool', ['-P', nic]).then(result => {
+      const match = result.stdout.match(/Permanent address:\s*([0-9a-fA-F:]+)/);
+      return match ? match[1].trim().toUpperCase() : "";
+    }).catch(() => "");
   }
 
   // Cached per-iface keyed on ifindex, not just name, since a USB wlan dongle can be swapped
