@@ -1520,6 +1520,10 @@ class netBot extends ControllerBot {
         const rc = require("../diagnostic/rulecheck.js");
         return rc.checkIpOrDomain(ipOrDomain);
       }
+      case "portCheck": {
+        const pc = require("../diagnostic/portcheck.js");
+        return pc.checkPort(value.port);
+      }
       case "transferTrend": {
         const deviceMac = value.deviceMac;
         const destIP = value.destIP;
