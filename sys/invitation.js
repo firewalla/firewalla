@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -261,9 +261,7 @@ class FWInvitation {
         }
       }
 
-      // for backward compatibility, if license length is not greater than 8,
-      // it is old license mode, ignore license registration process
-      if(userInfo && userInfo.license && userInfo.license.length != 8) {
+      if (userInfo && userInfo.license) {
         // validate license first
         await bone.waitUntilCloudReadyAsync();
         const mac = await networkTool.getIdentifierMAC();

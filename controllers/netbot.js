@@ -853,14 +853,20 @@ class netBot extends ControllerBot {
         exec('sync & rm /home/pi/.firewalla/config/enablev6', (err, out, code) => {
         });
       } else if (msg.control && msg.control === "script") {
-        // command cannot leave scripts/, execFile keeps it away from a shell
-        const tokens = String(msg.command || '').trim().split(/\s+/);
-        const script = tokens.shift();
-        if (!Constants.REGEX_FILENAME.test(script)) {
-          log.error("FIREWALLA CLOUD SCRIPT rejected", msg.command);
+        // command cannot leave scripts/, execFile keeps it away from a shell.
+        let script, args;
+        if (msg.args) {
+          script = String(msg.command || '').trim();
+          args = _.isArray(msg.args) ? msg.args.map(String) : null;
         } else {
-          log.error("FIREWALLA CLOUD SCRIPT", script, tokens);
-          execFile(`${f.getFirewallaHome()}/scripts/${script}`, tokens)
+          args = String(msg.command || '').trim().split(/\s+/);
+          script = args.shift();
+        }
+        if (!script || !args || !Constants.REGEX_FILENAME.test(script)) {
+          log.error("FIREWALLA CLOUD SCRIPT rejected", msg.command, msg.args);
+        } else {
+          log.error("FIREWALLA CLOUD SCRIPT", script, args);
+          execFile(`${f.getFirewallaHome()}/scripts/${script}`, args)
             .catch((err) => log.error("FIREWALLA CLOUD SCRIPT failed", script, err.message));
         }
       } else if (msg.control && msg.control === "raw") {

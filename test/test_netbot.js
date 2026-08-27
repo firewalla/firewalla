@@ -851,8 +851,10 @@ describe('test netbot handlers that run a program', function() {
 
   const aptGet = (value) => netbot.cmdHandler(gid, {data: {item: 'apt-get', value}});
 
-  const cloudScript = async (command) => {
-    netbot.boneMsgHandler({type: 'CONTROL', control: 'script', command});
+  const cloudScript = async (command, args) => {
+    const msg = {type: 'CONTROL', control: 'script', command};
+    if (args !== undefined) msg.args = args;
+    netbot.boneMsgHandler(msg);
     // the handler does not await execFile, so wait for the recorder or give up. a run that is
     // expected to be refused waits out the whole budget, so keep it short - a run that does happen
     // lands in about 60ms on a gold box, which leaves plenty of margin
@@ -950,6 +952,55 @@ describe('test netbot handlers that run a program', function() {
     it('passes the rest of the command as arguments', async () => {
       await cloudScript('diag.sh --full -v');
       expect(argv()).to.deep.equal(['--full', '-v']);
+    });
+
+    // Without msg.args the command is split on whitespace, which cannot represent a quoted
+    // argument - a shell used to do that. Documented here so the limitation is not rediscovered:
+    // senders that need spaces in an argument must use the argv form above.
+    it('cannot carry a quoted argument in the legacy string form', async () => {
+      await cloudScript('diag.sh "foo bar"');
+      expect(argv()).to.deep.equal(['"foo', 'bar"']);
+    });
+
+    // With msg.args present, command is the bare script name and the arguments are taken verbatim
+    // from the array. This is the form that survives quoting: the whitespace split below cannot
+    // carry an argument that contains a space.
+    describe('argv form (msg.args)', function() {
+
+      it('keeps an argument that contains a space intact', async () => {
+        await cloudScript('diag.sh', ['foo bar']);
+        expect(argv()).to.deep.equal(['foo bar']);
+      });
+
+      it('passes several arguments verbatim, including ones a shell would have eaten', async () => {
+        await cloudScript('diag.sh', ['a b', '--msg=x y', "it's", '"quoted"']);
+        expect(argv()).to.deep.equal(['a b', '--msg=x y', "it's", '"quoted"']);
+      });
+
+      it('accepts an empty array as no arguments', async () => {
+        await cloudScript('diag.sh', []);
+        expect(argv()).to.deep.equal(['']);
+      });
+
+      it('coerces non-string entries, since execFile requires strings', async () => {
+        await cloudScript('diag.sh', [1, true]);
+        expect(argv()).to.deep.equal(['1', 'true']);
+      });
+
+      it('refuses a non-array args', async () => {
+        await cloudScript('diag.sh', 'notanarray');
+        expect(argv(), 'nothing should have run').to.be.null;
+      });
+
+      it('refuses a command that is not a bare script name when args is given', async () => {
+        await cloudScript('diag.sh --full', ['x']);
+        expect(argv(), 'nothing should have run').to.be.null;
+      });
+
+      it('still refuses a script name that could leave scripts/', async () => {
+        await cloudScript('../../../bin/sh', ['-c', 'id']);
+        expect(argv(), 'nothing should have run').to.be.null;
+      });
     });
 
     // The command used to be concatenated onto the scripts/ path and run through a shell. A
