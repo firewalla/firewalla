@@ -71,7 +71,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const pclient = require('../util/redis_manager.js').getPublishClient();
 
-const { exec: execAsync, execFile } = require('child-process-promise');
+const { exec: execAsync, execFile, spawn } = require('child-process-promise');
 const { exec, execSync } = require('child_process');
 
 const AM2 = require('../alarm/AlarmManager2.js');
@@ -3986,16 +3986,7 @@ class netBot extends ControllerBot {
         args.push(...tokens);
 
         log.info('Running apt-get', args)
-        // maxBuffer is raised because the old pipeline streamed to tee instead of buffering
-        const result = await execFile(`${f.getFirewallaHome()}/scripts/apt-get.sh`, args, {maxBuffer: 20 * 1024 * 1024}).catch(err => err);
-        const output = `${result.stdout || ''}${result.stderr || ''}`;
-        if (output) {
-          // appends to the log the way the old `| sudo tee -a` pipeline did, without a shell
-          const tee = execFile('sudo', ['tee', '-a', '/var/log/fwapt.log']);
-          tee.childProcess.stdin.end(output);
-          await tee.catch(err => log.error('Failed to append /var/log/fwapt.log', err.message));
-        }
-        if (result instanceof Error) throw result
+        await execFile(`${f.getFirewallaHome()}/scripts/apt-get.sh`, args)
         return
       }
       case "ble:control":
