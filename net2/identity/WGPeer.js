@@ -1,4 +1,4 @@
-/*    Copyright 2021-2024 Firewalla Inc.
+/*    Copyright 2021-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,6 +25,7 @@ const NetworkProfile = require('../NetworkProfile.js');
 const Message = require('../Message.js');
 const FireRouter = require('../FireRouter.js');
 const exec = require('child-process-promise').exec;
+const spawn = require('child-process-promise').spawn;
 
 const Identity = require('../Identity.js');
 const country = require('../../extension/country/country.js');
@@ -201,8 +202,14 @@ class WGPeer extends Identity {
         await Promise.all(peersExtra.map(async (peerExtra) => {
           const name = peerExtra.name;
           const privateKey = peerExtra.privateKey;
-          const pubKey = peerExtra.publicKey || this.privPubKeyMap[privateKey] || await exec(`echo ${privateKey} | ${this.wgCmd()} pubkey`).then(result => result.stdout.trim()).catch((err) => {
-            log.error(`Failed to calculate public key from private key ${privateKey}`, err.message);
+          // feed the private key on stdin instead of a command line, where it would be visible in
+          // /proc for the life of the call, and keep it out of the log on failure
+          const pubKey = peerExtra.publicKey || this.privPubKeyMap[privateKey] || await (async () => {
+            const p = spawn(this.wgCmd(), ['pubkey'], {capture: ['stdout']});
+            p.childProcess.stdin.end(privateKey);
+            return (await p).stdout.trim();
+          })().catch((err) => {
+            log.error(`Failed to calculate public key of peer ${name}`, err.message);
             return null;
           });
           if (pubKey) {
