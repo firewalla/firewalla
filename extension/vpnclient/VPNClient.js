@@ -16,7 +16,7 @@
 'use strict';
 
 const net = require('net')
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const log = require('../../net2/logger.js')(__filename);
 const fc = require('../../net2/config.js');
 const f = require('../../net2/Firewalla.js');
@@ -57,8 +57,8 @@ class VPNClient {
       instances[profileId] = this;
       this.profileId = profileId;
       if (f.isMain()) {
-        this.internetFailureCount = 0;
-        this.internetSuccessCount = 0;
+        this.internetFailureCount = INTERNET_ON_OFF_THRESHOLD - 1;
+        this.internetSuccessCount = INTERNET_ON_OFF_THRESHOLD - 1;
         this.hookLinkStateChange();
         this.hookSettingsChange();
 
@@ -199,6 +199,10 @@ class VPNClient {
     return `${f.getUserConfigFolder()}/dnsmasq/vc_${this.profileId}_${routeType}.conf`;
   }
 
+  _getDnsmasqPBRRouteConfigPath(routeType = "hard") {
+    return `${f.getUserConfigFolder()}/dnsmasq/vc_pbr_${this.profileId}_${routeType}.conf`;
+  }
+
   _scheduleRefreshRoutes() {
     if (this.refreshRoutesTask)
       clearTimeout(this.refreshRoutesTask);
@@ -321,6 +325,13 @@ class VPNClient {
     if (dnsServers.length > 0)
       dnsmasqEntries.push(`server=${dnsServers[0]}$${VPNClient.getDnsMarkTag(this.profileId)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`);
     await dnsmasq.writeConfig(this._getDnsmasqConfigPath(), dnsmasqEntries).catch((err) => { });
+    // PBR DNS route is independent of the "Force DNS over VPN" (routeDNS) toggle
+    if (rtId) {
+      await this._enablePBRDNSRoute("soft");
+      // PBR hard DNS route is owned by _prepareRoutes (enabled unconditionally, persists across disconnects)
+    } else {
+      await this._disablePBRDNSRoute("soft");
+    }
     // redirect dns to vpn channel
     if (settings.routeDNS) {
       if (rtId) {
@@ -360,15 +371,11 @@ class VPNClient {
       await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4)
       await Ipset.del(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6)
     }
-    // PBR ipset is always populated with match_all regardless of overrideDefaultRoute,
-    // so route rules pointing to this VPN client work in both VPN and Direct Internet modes.
+    // PBR soft ipset is populated here, after the link is up. Soft route rules fall back to the default WAN when the tunnel is down, so this set is flushed on disconnect.
+    // PBR hard ipset is the kill-switch bucket and is owned by _prepareRoutes (always populated, never flushed on disconnect, independent of strictVPN), so it is intentionally not touched here.
     if (rtId) {
       await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
       await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId, false), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
-      if (!settings.strictVPN) {
-        await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
-        await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` })
-      }
     }
 
     if (rtId) {
@@ -513,15 +520,17 @@ class VPNClient {
     sem.on('link_broken', async (event) => {
       if (this._started === true && this.profileId === event.profileId) {
         if (this._currentState !== false) {
-          // clear soft route ipset
+          // clear soft route ipsets (soft routes fall back to the default WAN when the tunnel is down)
           await VPNClient.ensureCreateEnforcementEnv(this.profileId);
           await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
           await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
           await this._disableDNSRoute("soft");
-          // clear hard route ipset if strictVPN (kill-switch) is not enabled
+          await this._disablePBRDNSRoute("soft");
+          // PBR hard ipset / DNS route are intentionally NOT cleared here: a hard route rule keeps its kill-switch
+          // on disconnect, independent of the VPN client's strictVPN setting. They are cleared only in stop().
+          // clear the device-level hard route ipset only if strictVPN (kill-switch) is not enabled
           if (!this.settings.strictVPN) {
-            await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
-            await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
+            await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
             await this._disableDNSRoute("hard");
             await this._resetRouteMarkInRedis();
           }
@@ -580,15 +589,17 @@ class VPNClient {
     sem.on('link_wan_switched', async (event) => {
       if (this._started === true && this.profileId === event.profileId) {
         if (this._currentState !== false) {
-          // clear soft route ipset
+          // clear soft route ipsets (soft routes fall back to the default WAN when the tunnel is down)
           await VPNClient.ensureCreateEnforcementEnv(this.profileId);
           await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
           await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
           await this._disableDNSRoute("soft");
-          // clear hard route ipset if strictVPN (kill-switch) is not enabled
+          await this._disablePBRDNSRoute("soft");
+          // PBR hard ipset / DNS route are intentionally NOT cleared here: a hard route rule keeps its kill-switch
+          // on disconnect, independent of the VPN client's strictVPN setting. They are cleared only in stop().
+          // clear the device-level hard route ipset only if strictVPN (kill-switch) is not enabled
           if (!this.settings.strictVPN) {
-            await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
-            await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
+            await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
             await this._disableDNSRoute("hard");
             await this._resetRouteMarkInRedis();
           }
@@ -907,6 +918,10 @@ class VPNClient {
     return `${f.getUserConfigFolder()}/dnsmasq/VC:${profileId}_${routeType}`;
   }
 
+  static getPBRDNSRouteConfDir(profileId, routeType = "hard") {
+    return `${f.getUserConfigFolder()}/dnsmasq/VC_PBR:${profileId}_${routeType}`;
+  }
+
   async _enableDNSRoute(routeType = "hard") {
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
@@ -918,6 +933,20 @@ class VPNClient {
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
     await fs.unlinkAsync(this._getDnsmasqRouteConfigPath(routeType)).catch((err) => { });
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async _enablePBRDNSRoute(routeType = "hard") {
+    const DNSMASQ = require('../dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
+    await dnsmasq.writeConfig(this._getDnsmasqPBRRouteConfigPath(routeType), `conf-dir=${VPNClient.getPBRDNSRouteConfDir(this.profileId, routeType)}`).catch((err) => { });
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async _disablePBRDNSRoute(routeType = "hard") {
+    const DNSMASQ = require('../dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
+    await fs.unlinkAsync(this._getDnsmasqPBRRouteConfigPath(routeType)).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
   }
 
@@ -961,7 +990,9 @@ class VPNClient {
     await Ipset.add(oifIpsetName4, `128.0.0.0/1,${this.getInterfaceName()}`);
     await Ipset.add(oifIpsetName6, `::/1,${this.getInterfaceName()}`);
     await Ipset.add(oifIpsetName6, `8000::/1,${this.getInterfaceName()}`);
-    // do not need to populate route ipset if strictVPN (kill-switch) is not enabled, it will be populated after link is established
+    // Device-level VPN assignment uses the regular route ipset (hard). Its kill-switch behavior is governed by
+    // the VPN client's strictVPN setting: under strictVPN the hard set is pre-populated here (before the link is
+    // up) and kept on disconnect; otherwise it is populated later in _refreshRoutes and flushed on disconnect.
     if (settings.strictVPN) {
       if (settings.overrideDefaultRoute && rtId) {
         await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
@@ -970,24 +1001,28 @@ class VPNClient {
         await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
         await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
       }
-      // PBR ipset is independent of overrideDefaultRoute. Pre-populate hard so kill-switch covers PBR-routed traffic too.
-      if (rtId) {
-        await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
-        await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
-      } else {
-        await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
-        await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
-      }
-      await vpnClientEnforcer.enforceStrictVPN(this.getInterfaceName());
       await this._setRouteMarkInRedis();
     } else {
       await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
       await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
-      await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
-      await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
-      await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
       await this._resetRouteMarkInRedis();
     }
+    // PBR hard ipset is the kill-switch bucket for route rules with routeType=hard. It is decoupled from the VPN
+    // client's strictVPN setting: always populated here (independent of overrideDefaultRoute), never flushed on
+    // disconnect, so a hard route rule keeps blocking when the tunnel is down
+    // regardless of strictVPN. It is cleared only in stop(). PBR soft ipset is (re)populated in _refreshRoutes
+    // once the link is up, so clear it here for a clean slate.
+    if (rtId) {
+      await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET4, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+      await Ipset.add(VPNClient.getPBRRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_ALL_SET6, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
+    } else {
+      await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
+    }
+    await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
+    // The unreachable default route in the VPN routing table drops any traffic that is still marked when the
+    // tunnel is down. It must exist whenever the client is enabled (not only under strictVPN) so that hard route
+    // rules actually drop instead of leaking to the default WAN. It is removed only in stop().
+    await vpnClientEnforcer.enforceStrictVPN(this.getInterfaceName());
     const dnsServers = await this._getDNSServers() || [];
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
@@ -998,6 +1033,12 @@ class VPNClient {
       dnsmasqEntries.push(`server=${dnsServers[0]}$${VPNClient.getDnsMarkTag(this.profileId)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`);
     }
     await dnsmasq.writeConfig(this._getDnsmasqConfigPath(), dnsmasqEntries).catch((err) => { });
+    // PBR DNS route is independent of routeDNS; enable hard PBR DNS route so kill-switch covers PBR-routed DNS too.
+    if (rtId) {
+      await this._enablePBRDNSRoute("hard");
+    } else {
+      await this._disablePBRDNSRoute("hard");
+    }
     if (settings.routeDNS && settings.strictVPN) {
       if (rtId) {
         await Ipset.add(VPNClient.getRouteIpsetName(this.profileId), Ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET, { skbmark: `0x${rtIdHex}/${routing.MASK_ALL}` });
@@ -1145,6 +1186,8 @@ class VPNClient {
     await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => { });
     await this._disableDNSRoute("hard");
     await this._disableDNSRoute("soft");
+    await this._disablePBRDNSRoute("hard");
+    await this._disablePBRDNSRoute("soft");
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
     dnsmasq.scheduleRestartDNSService();
@@ -1287,6 +1330,8 @@ class VPNClient {
 
       await fs.mkdirAsync(VPNClient.getDNSRouteConfDir(uid, "hard")).catch((err) => { });
       await fs.mkdirAsync(VPNClient.getDNSRouteConfDir(uid, "soft")).catch((err) => { });
+      await fs.mkdirAsync(VPNClient.getPBRDNSRouteConfDir(uid, "hard")).catch((err) => { });
+      await fs.mkdirAsync(VPNClient.getPBRDNSRouteConfDir(uid, "soft")).catch((err) => { });
       envCreatedMap[uid] = 1;
     }).catch((err) => {
       log.error(`Failed to create enforcement env for VPN client ${uid}`, err.message);
@@ -1425,18 +1470,31 @@ class VPNClient {
 
   async _runPingTest(target, count = 8) {
     const result = { target, totalCount: count };
-    const af = new Address4(target).isValid() ? 4 : 6;
-    const ping = af == 4 ? "ping" : "ping6";
-    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName()); // rt id will be used as mark of ping packets
-    const ips = af == 4 ? await this.getVpnIP4s() : await this.getVpnIP6s();
-    let optI = "";
-    if (_.isArray(ips) && ips.length > 0) {
-      const srcIp = af == 4 ? new Address4(ips[0]) : new Address6(ips[0]);
-      optI = `-I ${srcIp.addressMinusSuffix}`;
+    // Validate target: must be a real IPv4 or IPv6 address
+    const isV4 = new Address4(target).isValid();
+    const isV6 = !isV4 && new Address6(target).isValid();
+    if (!isV4 && !isV6) {
+      log.warn(`VPN ${this.profileId} ping test: invalid target address: ${target}`);
+      result.successCount = 0;
+      return result;
     }
-    const cmd = `sudo ${ping} -n -q -m ${rtId} -c ${count} ${optI} -W 1 -i 1 ${target} | grep "received" | awk '{print $4}'`;
-    await exec(cmd).then((output) => {
-      result.successCount = Number(output.stdout.trim());
+    // Validate count
+    if (!Number.isInteger(count) || count <= 0) {
+      count = 8;
+    }
+    const ping = isV4 ? "ping" : "ping6";
+    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName()); // rt id will be used as mark of ping packets
+    const ips = isV4 ? await this.getVpnIP4s() : await this.getVpnIP6s();
+    const args = [ping, '-n', '-q', '-m', String(rtId), '-c', String(count)];
+    if (_.isArray(ips) && ips.length > 0) {
+      const srcIp = isV4 ? new Address4(ips[0]) : new Address6(ips[0]);
+      args.push('-I', srcIp.addressMinusSuffix);
+    }
+    args.push('-W', '1', '-i', '1', target);
+    await execFile('sudo', args).then((output) => {
+      // parse "N received" or "N packets received" from ping statistics line
+      const match = output.stdout.match(/(\d+)\s+(?:packets\s+)?received/);
+      result.successCount = match ? Number(match[1]) : 0;
     }).catch((err) => {
       result.successCount = 0;
     });

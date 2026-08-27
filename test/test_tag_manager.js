@@ -105,3 +105,74 @@ describe('Test InternalScanSensor', function() {
   });
 
 });
+
+// destroyEnv() used to only flush tag ipsets, leaving empty orphaned ipsets behind forever
+describe('Test Tag destroyEnv ipset cleanup', function() {
+  this.timeout(5000);
+
+  it('should remove tag ipsets after the tag is deleted, not leave them behind empty', async () => {
+    const Ipset = require('../net2/Ipset.js');
+    const origDestroy = Ipset.destroy;
+    const origFlush = Ipset.flush;
+    const destroyed = [];
+    Ipset.destroy = (setName) => { destroyed.push(setName); return Promise.resolve(); };
+    Ipset.flush = (setName) => { throw new Error(`Ipset ${setName} was only flushed, not removed - it will linger as an empty orphaned ipset after the tag is deleted`); };
+
+    const uid = 'testTagDestroy';
+    const tag = new Tag({uid, name: 'testTagDestroy', createTs: Date.now() / 1000});
+    try {
+      await tag.destroyEnv();
+    } finally {
+      Ipset.destroy = origDestroy;
+      Ipset.flush = origFlush;
+    }
+
+    const expectedSets = [
+      Tag.getTagSetName(uid),
+      Tag.getTagDeviceSetName(uid),
+      Tag.getTagNetSetName(uid),
+      Tag.getTagDeviceMacSetName(uid),
+      Tag.getTagDeviceIPSetName(uid, 4),
+      Tag.getTagDeviceIPSetName(uid, 6),
+    ];
+    expect(destroyed).to.include.members(expectedSets);
+
+    // dev_mac_set is a member of tag_set and dev_set, so those containers must be
+    // destroyed first or Ipset.destroy()'s isReferenced() check would skip dev_mac_set
+    const macSetIdx = destroyed.indexOf(Tag.getTagDeviceMacSetName(uid));
+    expect(destroyed.indexOf(Tag.getTagSetName(uid))).to.be.below(macSetIdx);
+    expect(destroyed.indexOf(Tag.getTagDeviceSetName(uid))).to.be.below(macSetIdx);
+  });
+
+  // a user tag's containers hold its affiliated group tag's device sets as members
+  // (Tag.tags()); deleting the group tag without unlinking left them referenced forever
+  it('should unlink its device sets from an affiliated parent tag before destroying them', async () => {
+    const Ipset = require('../net2/Ipset.js');
+    const Constants = require('../net2/Constants.js');
+    const origDestroy = Ipset.destroy;
+    const origDel = Ipset.del;
+    const deleted = [];
+    Ipset.destroy = () => Promise.resolve();
+    Ipset.del = (setName, member) => { deleted.push([setName, member]); return Promise.resolve(); };
+
+    const uid = 'testAffiliatedChild';
+    const parentUid = 'testAffiliatedParent';
+    const tag = new Tag({ uid, name: uid, createTs: Date.now() / 1000 });
+    await tag.loadPolicyAsync();
+    tag.policy[Constants.TAG_TYPE_MAP.user.policyKey] = [parentUid];
+
+    try {
+      await tag.destroyEnv();
+    } finally {
+      Ipset.destroy = origDestroy;
+      Ipset.del = origDel;
+    }
+
+    const wasUnlinked = (setName, member) => deleted.some(([s, m]) => s === setName && m === member);
+    for (const parentSetName of [Tag.getTagDeviceSetName(parentUid), Tag.getTagSetName(parentUid)]) {
+      expect(wasUnlinked(parentSetName, Tag.getTagDeviceMacSetName(uid))).to.be.true;
+      expect(wasUnlinked(parentSetName, Tag.getTagDeviceIPSetName(uid, 4))).to.be.true;
+      expect(wasUnlinked(parentSetName, Tag.getTagDeviceIPSetName(uid, 6))).to.be.true;
+    }
+  });
+});

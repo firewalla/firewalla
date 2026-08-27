@@ -66,13 +66,15 @@ const Monitorable = require('./Monitorable');
 const Constants = require('./Constants.js');
 
 const AsyncLock = require('../vendor_lib/async-lock');
-const lock = new AsyncLock(); 
+const lock = new AsyncLock();
 
 const iptool = require('ip');
 
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
+
+const blockControl = require('../control/BlockControl.js');
 
 const envCreatedMap = {};
 
@@ -94,6 +96,7 @@ class Host extends Monitorable {
       // Host object should only be created after initial setup of iptables to avoid racing condition
       if (f.isMain() && !noEnvCreation) (async () => {
         this.spoofing = false;
+        await this.initAutoGroup();
 
         await Host.ensureCreateEnforcementEnv(this.o.mac)
 
@@ -249,6 +252,101 @@ class Host extends Monitorable {
     return super.setPolicyAsync(name, policy, syncToMsp)
   }
 
+  // options: { dvlanId: dvlanId, wpax: wpax }
+  async setAutoGroupAsync(tag, ssid, options = {}) {
+    log.debug(`Setting auto group for ${this.o.mac}`, tag, ssid, options);
+    await hostTool.setWirelessAutoGroup(this.o.mac, String(tag), ssid, options);
+    this.o.autoGroup = {
+      tag: tag,
+      ssid: ssid,
+      ts: Date.now(),
+      ...options,
+    };
+    return await this.save(["autoGroup"]);
+  }
+
+  async resetAutoGroupAsync() {
+    log.debug(`Resetting auto group for ${this.o.mac}`);
+    await hostTool.resetWirelessAutoGroup(this.o.mac);
+    this.o.autoGroup = null;
+    return await this.save(["autoGroup"]);
+  }
+
+  async initAutoGroup() {
+    if (this.o.autoGroup)
+      return;
+    const autoGroup = await hostTool.getWirelessAutoGroup(this.o.mac);
+    if (!autoGroup)
+      return;
+    try {
+      const parsed = JSON.parse(autoGroup);
+      if (!parsed || !parsed.tag || !parsed.ssid)
+        return;
+      this.o.autoGroup = parsed;
+      await this.save(["autoGroup"]);
+    } catch (err) {
+      log.warn(`Invalid wireless auto group cache for ${this.o.mac}`, err.message);
+    }
+  }
+
+  // 1. if not connected (no staStatus), keep autoGroup until expire
+  // 2. if a dot1x group, reset only when the station is no longer 802.1x authenticated
+  // 3. otherwise (ppsk/default), reset if connected on a different ssid
+  async getHostAutoGroup(staStatus) {
+    if (!this.o.autoGroup)
+      return null;
+    const autoGroup = this.o.autoGroup;
+    if (!_.isObject(autoGroup) || !autoGroup.tag || !autoGroup.ssid) {
+      await this.resetAutoGroupAsync();
+      return null;
+    }
+
+    if (!staStatus) {
+      if (!autoGroup.ts || autoGroup.ts < Date.now() - 2592000 * 1000) { // 30 days
+        await this.resetAutoGroupAsync();
+        return null;
+      }
+      return autoGroup;
+    }
+
+    // dot1x group is keyed on enterprise authentication, not the broadcast ssid
+    // string. The RADIUS auth event may report ssid as the Called-Station-Id
+    // (e.g. "AA-BB-CC-DD-EE-FF:MyWifi"), which won't match fwapc's plain ssid
+    // name, so validate by the station still being 802.1x authenticated instead.
+    if (autoGroup.auth === "dot1x") {
+      if (!staStatus.dot1xUserName) {
+        await this.resetAutoGroupAsync();
+        return null;
+      }
+      return autoGroup;
+    }
+
+    // connected but on a different ssid, reset autoGroup
+    if (autoGroup.ssid && staStatus.ssid && staStatus.ssid !== autoGroup.ssid) {
+      await this.resetAutoGroupAsync();
+      return null;
+    }
+
+    // // check if tag matches, "tags": ["14"] means tag 14
+    // if (this.o.tags && _.isArray(this.o.tags) && this.o.tags.length > 0 && !this.o.tags.includes(autoGroup.tag)) {
+    //   await this.resetAutoGroupAsync();
+    //   return null;
+    // } else if (!this.o.tags || !_.isArray(this.o.tags) || this.o.tags.length === 0) {
+    //   await this.resetAutoGroupAsync();
+    //   return null;
+    // }
+
+    return autoGroup;
+  }
+
+  async touchAutoGroup(autoGroup) {
+    if (!autoGroup)
+      return;
+    autoGroup.ts = Date.now();
+    this.o.autoGroup = autoGroup;
+    await this.save(["autoGroup"]);
+  }
+
   keepalive() {
     if (this.o.ipv4Addr) // this may trigger arp request to the device, the reply from the device will be captured in ARPSensor
       linux.ping4(this.o.ipv4Addr)
@@ -342,7 +440,7 @@ class Host extends Monitorable {
     return "host:mac:" + this.o.mac
   }
 
-  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect', 'openports', 'screenTime', 'wlanVendor' ]
+  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect', 'openports', 'screenTime', 'wlanVendor', 'autoGroup' ]
   static metaFieldsNumber = [ 'firstFoundTimestamp', 'lastActiveTimestamp', 'bnameCheckTime', 'spoofingTime', '_identifyExpiration' ]
   static metaFieldsActiveTS = ['lastActiveTimestamp', 'firstFoundTimestamp']
 
@@ -501,6 +599,8 @@ class Host extends Monitorable {
       await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, Host.getIpSetName(this.o.mac, 4));
       await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, Host.getIpSetName(this.o.mac, 6));
     }
+    // refresh connmark to ensure the acl takes effect immediately on established connections
+    blockControl.scheduleRefreshConnmark();
   }
 
   async spoof(state) {
@@ -674,29 +774,32 @@ class Host extends Monitorable {
           const typeTags = await this.getTags(type) || [];
           Array.prototype.push.apply(tags, typeTags);
         }
+        const ipv6Addr = this.o.ipv6Addr;
+        // flatten device IP addresses into tag's ipset
+        // in practice, this ipset will be added to another tag's list:set if the device group belongs to a user group
+        const ops = [];
         if (ipv4Addr) {
           const recentlyAdded = this.ipCache.peek(ipv4Addr);
           if (!recentlyAdded) {
-            await Ipset.add(Host.getIpSetName(this.o.mac, 4), ipv4Addr);
-            // flatten device IP addresses into tag's ipset
-            // in practice, this ipset will be added to another tag's list:set if the device group belongs to a user group
+            ops.push(`add ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`);
             for (const tag of tags)
-              await Ipset.add(Tag.getTagDeviceIPSetName(tag, 4), ipv4Addr);
+              ops.push(`add ${Tag.getTagDeviceIPSetName(tag, 4)} ${ipv4Addr}`);
             this.ipCache.set(ipv4Addr, 1);
           }
         }
-        const ipv6Addr = this.o.ipv6Addr
         if (Array.isArray(ipv6Addr)) {
           for (const addr of ipv6Addr) {
             const recentlyAdded = this.ipCache.peek(addr);
             if (!recentlyAdded) {
-              await Ipset.add(Host.getIpSetName(this.o.mac, 6), addr);
+              ops.push(`add ${Host.getIpSetName(this.o.mac, 6)} ${addr}`);
               for (const tag of tags)
-                await Ipset.add(Tag.getTagDeviceIPSetName(tag, 6), addr);
+                ops.push(`add ${Tag.getTagDeviceIPSetName(tag, 6)} ${addr}`);
               this.ipCache.set(addr, 1);
             }
           }
         }
+        if (ops.length)
+          await Ipset.restore(ops, true);
 
         await this.identifyDevice(false)
       } catch (err) {
@@ -1095,6 +1198,9 @@ class Host extends Monitorable {
       json[f] = this.o[f]
     }
 
+    if (this.o.autoGroup)
+      json.autoGroup = this.o.autoGroup;
+
     const preferredBName = getPreferredBName(this.o)
 
     if (preferredBName) {
@@ -1242,6 +1348,22 @@ class Host extends Monitorable {
 
   getNicUUID() {
     return this.o.intf
+  }
+
+  getStpPort() {
+    return _.get(this.o, 'stpPort', null);
+  }
+
+  setLastSeenOnWifi(ts) {
+    this._lastSeenOnWifi = ts;
+  }
+
+  getLastSeenOnWifi() {
+    return this._lastSeenOnWifi || null;
+  }
+
+  isWirelessDevice(ttlMs = 2 * 60 * 1000) {
+    return !!this._lastSeenOnWifi && (Date.now() - this._lastSeenOnWifi) < ttlMs;
   }
 
   async _get24HoursInternetActivity() {

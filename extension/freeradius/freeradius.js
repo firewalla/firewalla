@@ -15,9 +15,11 @@
 
 'use strict';
 
-const exec = require('child-process-promise').exec;
+const path = require('path');
+const { exec, execFile } = require('child-process-promise');
 const _ = require('lodash');
 const fs = require('fs');
+const crypto = require('crypto');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const yaml = require('../../api/dist/lib/js-yaml.min.js');
@@ -27,16 +29,23 @@ const platform = PlatformLoader.getPlatform()
 const f = require('../../net2/Firewalla.js');
 const fr = require('../../net2/FireRouter.js');
 const log = require('../../net2/logger.js')(__filename);
+const rclient = require('../../util/redis_manager.js').getRedisClient();
 const util = require('../../util/util.js');
 const { Rule } = require('../../net2/Iptables.js');
 const iptc = require('../../control/IptablesControl.js');
 const Ipset = require('../../net2/Ipset.js');
+const openssl = require('../../util/openssl.js');
 
 const dockerDir = `${f.getRuntimeInfoFolder()}/docker/freeradius`
 const configDir = `${f.getUserConfigFolder()}/freeradius`
 const logDir = `${f.getUserHome()}/.forever/freeradius`
 const certsDir = `${f.getHiddenFolder()}/certs/freeradius`
 const fwrcFile = `${f.getUserHome()}/.fwrc`
+
+// shared with scripts/update_freeradius.sh so cron and firemain honor the same backoff window
+const PULL_BACKOFF_KEY = "freeradius:image:pull:backoff";
+// local disk / overlayfs faults: back off
+const DISK_FAULT_RE = /(failed to extract layer|failed to convert whiteout|failed to register layer|operation not permitted|no space left on device|input\/output error|read-only file system)/i;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -51,6 +60,7 @@ class FreeRadius {
       this.watcher = null;
       this.pid = null;
       this.featureOn = false;
+      this.pullBackoff = null; // in-memory backoff, survives redis/disk failure within this process
     }
     return instance;
   }
@@ -70,6 +80,12 @@ class FreeRadius {
     } catch (err) {
       log.warn(`failed to prepare freeradius`, err.message);
     }
+  }
+
+  async getFreeRadiusDataForInit(options = {}) {
+    return {
+      certHash: await this.getCertsHash(false),
+    };
   }
 
   async _prepare(options = {}) {
@@ -159,6 +175,10 @@ class FreeRadius {
       log.warn("Abort starting radius-server, server is already running.")
       return false;
     }
+    if (!await this._checkImage(options)) {
+      log.warn("Abort starting radius-server, image not present (pull failed or backed off).");
+      return false;
+    }
     log.info("Starting container freeradius-server...");
     try {
       await this.generateOptions(options);
@@ -188,6 +208,243 @@ class FreeRadius {
       return false;
     });
     return true;
+  }
+
+  async _getCertsFile(filePath) {
+    try {
+      const stats = await fs.statAsync(filePath);
+      if (stats.isFile()) {
+        return await fs.readFileAsync(filePath, 'utf8');
+      }
+      return null;
+    } catch (e) {
+      log.warn(`Failed to get certs file ${filePath},`, e.message);
+      return null;
+    }
+  }
+
+  async getCertsHash(default_only = false) {
+
+    let checkSum = "";
+    const certs = await this._getCerts(certsDir, true);
+    if (!certs || !certs.hash) {
+      log.warn("Failed to get default certs hash");
+      return null;
+    }
+    checkSum += certs.hash;
+
+    if (!default_only) {
+      const customCerts = await this._getCerts(`${configDir}/certs`, true);
+      if (customCerts && customCerts.hash) {
+        checkSum += ":" + customCerts.hash;
+      }
+    }
+
+    return checkSum;
+  }
+
+  async _getCerts(path = null, hash_only = false) {
+    const targetPath = path || certsDir;
+    if (!await fs.accessAsync(targetPath, fs.constants.F_OK).then(() => true).catch(() => false)) {
+      return null;
+    }
+    // keypass
+    const keypass = await this._getCertsFile(`${targetPath}/.keypass`);
+    const ca = await this._getCertsFile(`${targetPath}/ca.pem`);
+    const serverCA = await this._getCertsFile(`${targetPath}/server.pem`);
+    const serverKey = await this._getCertsFile(`${targetPath}/server.key`);
+
+    const hash = crypto.createHash('sha256');
+    for (const content of [keypass, ca, serverCA, serverKey]) {
+      const value = content == null ? '' : content;
+      hash.update(`${Buffer.byteLength(value)}:`);
+      hash.update(value);
+    }
+    const digest = hash.digest('hex');
+
+    const certs = {
+      hash: digest,
+    };
+    if (!hash_only) {
+      certs.keypass = keypass;
+      certs.ca = ca;
+      certs.serverCA = serverCA;
+      certs.serverKey = serverKey;
+    }
+    return certs;
+  }
+
+  async getCerts() {
+    await this.checkCertsPermission();
+    // default certs are required
+    const certs = await this._getCerts(certsDir).catch((e) => { return null });
+    if (!certs) {
+      return {
+        ok: false,
+        error: "Failed to get certs",
+      };
+    }
+    // custom certs are optional: absent (null) must not fail the export
+    const customCerts = await this._getCerts(`${configDir}/certs`).catch((e) => { return null });
+    return {
+      ok: true,
+      certs: certs,
+      customCerts: customCerts || null,
+    };
+  }
+
+  async _getLegacyKepass() {
+    const eid = await exec(`redis-cli hget sys:ept eid`).then(r => r.stdout.trim()).catch((err) => {
+      log.warn(`legacy keypass: failed to get seed,`, err.message);
+      return;
+    });
+
+    if (!eid || eid === '') {
+      log.warn(`legacy keypass: no eid found`);
+      return;
+    }
+
+    // Convert EID to a 8-character alphanumeric hash
+    const hash = await exec(`echo -n "${eid}" | sha256sum | xxd -r -p | base64 | tr -cd 'a-zA-Z0-9' | cut -c1-8`).then(r => r.stdout.trim()).catch((err) => {
+      log.error(`legacy keypass: failed to hash seed,`, err.message);
+      return null;
+    });
+
+    return hash;
+  }
+
+  async _verifyCerts(path = null) {
+    const targetPath = path || certsDir;
+
+    const certPath = `${targetPath}/server.pem`;
+    const keyPath = `${targetPath}/server.key`;
+    const caPath = `${targetPath}/ca.pem`;
+    const keypassFile = await this._getCertsFile(`${targetPath}/.keypass`).catch((err) => { return null });
+    const keypass = (keypassFile && keypassFile.trim()) || await this._getLegacyKepass().catch((err) => { return null }) || null;
+
+    const keyType = await openssl.getKeyType(keyPath, keypass).catch((err) => {
+      log.warn("Failed to get key type,", err.message);
+      return null;
+    });
+
+    if (keyType !== 'rsa' && keyType !== 'ec') {
+      log.warn(`Unsupported or invalid key type for ${keyPath}`);
+      return false;
+    }
+
+    const signedByCA = await openssl.isSignedByRootCA(caPath, certPath).catch((err) => {
+      log.warn("Failed to verify cert is signed by ca,", err.message);
+      return false;
+    });
+    if (!signedByCA) {
+      return false;
+    }
+
+    const keyMatchesCert = await openssl.isKeyMatchCert(certPath, keyPath, keyType, keypass).catch((err) => {
+      log.warn("Failed to verify key matches cert,", err.message);
+      return false;
+    });
+    if (!keyMatchesCert) {
+      log.warn(`Private key ${keyPath} does not match certificate ${certPath}`);
+      return false;
+    }
+    return true;
+  }
+
+  // copy to /tmp and move to target path if verified
+  async _saveCerts(certs, path = null) {
+    if (!certs || !_.isObject(certs)) {
+      return false;
+    }
+
+    log.info(`Start to save certs to path ${path}...`);
+
+    let tmpPath;
+    try {
+      tmpPath = await fs.mkdtempAsync('/tmp/radius_certs_');
+      if (certs.keypass) { await this.saveFile(`${tmpPath}/.keypass`, certs.keypass, true, 0o600); }
+      if (certs.ca) { await this.saveFile(`${tmpPath}/ca.pem`, certs.ca, true, 0o644); }
+      if (certs.serverCA) { await this.saveFile(`${tmpPath}/server.pem`, certs.serverCA, true, 0o644); }
+      if (certs.serverKey) { await this.saveFile(`${tmpPath}/server.key`, certs.serverKey, true, 0o600); }
+
+      const verified = await this._verifyCerts(tmpPath);
+      if (!verified) {
+        log.warn("Failed to verify certs, stop migrating certificates");
+        return false;
+      }
+
+      const targetPath = path || certsDir;
+      log.info(`Moving certs to target path ${targetPath}...`);
+
+      // ensure old stale files are deleted
+      await exec(`sudo find ${targetPath} -mindepth 1 -delete`).catch((err) => {
+        log.warn(`Failed to delete stale certs in ${targetPath},`, err.message);
+      });
+
+      // ensure target dir exists, then move all files from tmpPath into it
+      await fs.mkdirAsync(targetPath, { recursive: true }).catch(() => { });
+      const moved = await exec(`find ${tmpPath} -mindepth 1 -maxdepth 1 -exec mv -f {} ${targetPath}/ \\;`).then(() => true).catch((e) => {
+        log.warn("Failed to move certs to target path,", e.message);
+        return false;
+      });
+      if (!moved) {
+        log.warn(`Failed to move certs to ${targetPath}`);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      log.warn("Failed to save certs,", err.message);
+      return false;
+    } finally {
+      if (tmpPath) {
+        log.info("Removing temp directory...", tmpPath);
+        await exec(`rm -rf ${tmpPath}`).catch(() => { });
+      }
+    }
+  }
+
+  async saveCerts(data) {
+    if (!data || !_.isObject(data)) {
+      return {
+        ok: false,
+        error: "Invalid certs data",
+      };
+    }
+    if (!data.certs && !data.customCerts) {
+      return {
+        ok: false,
+        error: "No certs to save",
+      };
+    }
+
+    const msgs = [];
+    if (data.certs && _.isObject(data.certs)) {
+      log.info("Saving default certs...");
+      const result = await this._saveCerts(data.certs, certsDir).then(r => r).catch((e) => {
+        log.warn("Failed to migrate default certs", e.message);
+        return false;
+      });
+      if (!result) { msgs.push("Failed to save default certs"); }
+    }
+
+    if (data.customCerts && _.isObject(data.customCerts)) {
+      log.info("Saving custom certs...");
+      const result = await this._saveCerts(data.customCerts, `${f.getUserConfigFolder()}/freeradius/certs`).then(r => r).catch((e) => {
+        log.warn("Failed to migrate custom certs", e.message);
+        return false;
+      });
+      if (!result) { msgs.push("Failed to save custom certs"); }
+    } else {
+      // delete custom certs files
+      await exec(`sudo find ${f.getUserConfigFolder()}/freeradius/certs -mindepth 1 -delete`).catch((err) => {
+        log.warn(`Failed to delete custom certs files,`, err.message);
+      });
+    }
+
+    return {
+      ok: msgs.length == 0,
+      error: msgs.join(";"),
+    };
   }
 
   // fallback for old iamge
@@ -329,13 +586,18 @@ class FreeRadius {
   // policy in format: { "0.0.0.0": { "options": {}, "radius": {} }, "tag":{"radius":{"users":[]}} }
   async processCommand(script, cmd, options) {
     log.info(`Processing ${script} with command ${cmd}`);
+    if (!script || !/^[A-Za-z0-9_.-]+$/.test(script)) {
+      log.warn("Invalid script name:", script);
+      return false;
+    }
     try {
       // check if container is running
       if (!await this._checkContainer(options)) {
         log.warn("container freeradius-server is not running, cannot process radius command");
         return false;
       }
-      return await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml exec -T freeradius bash -c "/usr/bin/node /root/freeradius/${script} ${cmd}"`).then((r) => {
+      const cmdArgs = cmd ? String(cmd).split(/\s+/).filter(Boolean) : [];
+      return await execFile('sudo', ['docker-compose', '-f', `${dockerDir}/docker-compose.yml`, 'exec', '-T', 'freeradius', '/usr/bin/node', `/root/freeradius/${script}`, ...cmdArgs]).then((r) => {
         return r.stdout.trim()
       }).catch((e) => { return e.message });
     } catch (err) {
@@ -343,41 +605,56 @@ class FreeRadius {
     }
   }
 
-  async saveFile(filepath, content) {
-    // Prevent directory traversal attacks
-    if (filepath.includes('../')) {
+  // skip configDir check if force is true
+  async saveFile(filepath, content, force = false, mode = 0o644) {
+    if (!filepath || typeof filepath !== 'string') {
+      return { ok: false, error: "Invalid filepath: must be a non-empty string" };
+    }
+    if (!force)
+      filepath = filepath.replace(/^\//, ''); // treat user input as relative to configDir
+
+    // Validate: only allow safe path characters
+    if (!filepath || !/^[A-Za-z0-9_./-]+$/.test(filepath)) {
+      return { ok: false, error: "Invalid filepath: contains disallowed characters" };
+    }
+
+    // Prevent directory traversal: resolved path must stay within configDir
+    const resolvedPath = force ? path.resolve(filepath) : path.resolve(configDir, filepath);
+    if (!force && !resolvedPath.startsWith(configDir + path.sep)) {
       return { ok: false, error: "Invalid filepath: directory traversal not allowed" };
     }
-    filepath = filepath.replace(/^\//, ''); // remove leading slash
-    const baseFolder = filepath.split('/').slice(0, -1).join('/'); // get base folder
 
-    // Ensure base configDir exists with proper permissions
-    await exec(`mkdir -p ${configDir}`).catch((e) => {
-      log.warn(`Failed to create config directory ${configDir}`, e.message);
-    });
-    await exec(`chmod 755 ${configDir}`).catch((e) => {
-      log.warn(`Failed to set permissions on ${configDir}`, e.message);
-    });
+    const baseFolder = path.dirname(resolvedPath);
 
-    // Create subdirectory if needed
-    if (baseFolder) {
-      await exec(`mkdir -p ${configDir}/${baseFolder}`).catch((e) => {
-        log.warn(`Failed to create config directory ${baseFolder}`, e.message);
+    if (!force) {
+      // Ensure base configDir exists with proper permissions
+      await fs.mkdirAsync(configDir, { recursive: true }).catch((e) => {
+        log.warn(`Failed to create config directory ${configDir}`, e.message);
       });
-      await exec(`chmod 755 ${configDir}/${baseFolder}`).catch((e) => {
-        log.warn(`Failed to set permissions on ${configDir}/${baseFolder}`, e.message);
+      await fs.chmodAsync(configDir, 0o755).catch((e) => {
+        log.warn(`Failed to set permissions on ${configDir}`, e.message);
       });
     }
 
-    log.info(`Saving file to ${configDir}/${filepath}...`);
-    return await fs.writeFileAsync(`${configDir}/${filepath}`, content, 'utf8').then(async (r) => {
-      await exec(`chmod 644 ${configDir}/${filepath}`).catch((e) => {
-        log.warn(`Failed to set permissions on ${configDir}/${filepath}`, e.message);
+    // Create subdirectory if needed
+    if (force || baseFolder !== configDir) {
+      await fs.mkdirAsync(baseFolder, { recursive: true }).catch((e) => {
+        log.warn(`Failed to create directory ${baseFolder}`, e.message);
       });
-      log.info(`File ${configDir}/${filepath} saved successfully.`);
+      await fs.chmodAsync(baseFolder, 0o755).catch((e) => {
+        log.warn(`Failed to set permissions on ${baseFolder}`, e.message);
+      });
+    }
+
+    log.info(`Saving file to ${resolvedPath}...`);
+    return await fs.writeFileAsync(resolvedPath, content, 'utf8').then(async () => {
+      await fs.chmodAsync(resolvedPath, mode).catch((e) => {
+        log.warn(`Failed to set permissions on ${resolvedPath}`, e.message);
+      });
+      log.info(`File ${resolvedPath} saved successfully.`);
       return { ok: true };
     }).catch((e) => {
-      log.warn(`Failed to save file to ${configDir}/${filepath},`, e.message);
+      log.warn(`Failed to save file to ${resolvedPath},`, e.message);
       return { ok: false, error: e.message };
     });
   }
@@ -432,6 +709,95 @@ class FreeRadius {
     return "cgroup1";
   }
 
+  async _disableComposeService() {
+    // stop then disable to prevent image pull loop
+    await exec(`sudo systemctl stop docker-compose@freeradius`).catch((e) => {
+      log.warn("Failed to stop docker-compose@freeradius,", e.message);
+    });
+    await exec(`sudo systemctl disable docker-compose@freeradius`).catch((e) => {
+      log.warn("Failed to disable docker-compose@freeradius,", e.message);
+    });
+  }
+
+  async _enableComposeService() {
+    await exec(`sudo systemctl enable docker-compose@freeradius`).catch((e) => {
+      log.warn("Failed to enable docker-compose@freeradius,", e.message);
+    });
+  }
+
+  async _isContainerRunning(options = {}) {
+    return !!await this._getContainerImage(options);
+  }
+
+  // in-memory backoff state: {attempts: number, diskFault: boolean, nextTs: number}
+  async _inPullBackoff() {
+    const now = Date.now();
+    if (this.pullBackoff && now < this.pullBackoff.nextTs) return true;
+    const raw = await rclient.getAsync(PULL_BACKOFF_KEY).catch(() => null);
+    if (!raw) return false;
+    try {
+      const nextTs = JSON.parse(raw).nextTs || 0;
+      // protect, fix corrupted nextTs
+      if (nextTs > now + 7 * 24 * 3600 * 1000) {
+        log.warn("Ignoring corrupt freeradius pull backoff nextTs (not epoch-ms?):", nextTs);
+        await rclient.delAsync(PULL_BACKOFF_KEY).catch(() => { });
+        return false;
+      }
+      return now < nextTs;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  // backoff state: {"attempts": number, "diskFault": boolean, "nextTs": number, "lastError": string}
+  async _recordPullFailure(stderr = "") {
+    const diskFault = DISK_FAULT_RE.test(stderr);
+    const attempts = ((this.pullBackoff && this.pullBackoff.attempts) || 0) + 1;
+    const base = diskFault ? 3600000 : 300000;   // 1h vs 5m
+    const cap = diskFault ? 86400000 : 3600000;  // 24h vs 1h
+    const delay = Math.min(base * (2 ** (attempts - 1)), cap);
+    const nextTs = Date.now() + delay;
+    this.pullBackoff = { attempts, diskFault, nextTs };
+    // best-effort persist for cron/cross-process; may itself fail when disk is the culprit
+    await rclient.setAsync(PULL_BACKOFF_KEY, JSON.stringify({ attempts, diskFault, nextTs, lastError: stderr.slice(0, 500) })).catch((e) => {
+      log.warn("Failed to persist image pull backoff state (redis/disk?),", e.message);
+    });
+    log.warn(`freeradius image pull failed (${diskFault ? "disk fault" : "transient"}), backing off ${Math.round(delay / 60000)}min`, stderr.slice(0, 200));
+
+    if (!await this._isContainerRunning()) {
+      await this._disableComposeService();
+    }
+  }
+
+  async _clearPullBackoff() {
+    this.pullBackoff = null;
+    await rclient.delAsync(PULL_BACKOFF_KEY).catch(() => { });
+    // re-enable only if the feature wants the service; don't force-enable when it's off
+    if (this.featureOn) {
+      await this._enableComposeService();
+    }
+  }
+
+  // wraps docker pull with a shared backoff so a failing disk stops re-downloading the image
+  async _dockerPull(cmd) {
+    if (await this._inPullBackoff()) {
+      log.warn("Skip freeradius image pull, in backoff window.");
+      // keep unit disabled during backoff unless a container is running
+      if (!await this._isContainerRunning()) {
+        await this._disableComposeService();
+      }
+      return { ok: false, skipped: true };
+    }
+    return await exec(cmd).then(async () => {
+      await this._clearPullBackoff();
+      return { ok: true };
+    }).catch(async (e) => {
+      const stderr = e.stderr || e.message || "";
+      await this._recordPullFailure(stderr);
+      return { ok: false, stderr };
+    });
+  }
+
   async prepareImage(options = {}) {
     try {
       if (await this._checkImage(options) && !await this.upgradeImage(options)) {
@@ -444,10 +810,11 @@ class FreeRadius {
         log.info("freeradius docker compose file not exist, skip pulling image freeradius-server");
         return;
       }
-      await exec(`sudo docker-compose -f ${dockerDir}/docker-compose.yml pull`).catch((e) => {
-        log.warn("Failed to pull image freeradius,", e.message)
-        return;
-      });
+      const pull = await this._dockerPull(`sudo docker-compose -f ${dockerDir}/docker-compose.yml pull`);
+      if (!pull.ok) {
+        log.warn("Failed to pull image freeradius.");
+        return false;
+      }
       if (await this._checkImage(options)) {
         log.info("Image freeradius-server is pulled.");
         return;
@@ -472,10 +839,11 @@ class FreeRadius {
       }
 
       // pull latest image
-      await exec(`sudo docker pull ${image}`).catch((e) => {
-        log.warn("Failed to pull image for comparison,", e.message);
+      const pull = await this._dockerPull(`sudo docker pull ${image}`);
+      if (!pull.ok) {
+        if (!pull.skipped) log.warn("Failed to pull image for comparison.");
         return false;
-      });
+      }
 
       await sleep(2000);
 
@@ -641,6 +1009,11 @@ class FreeRadius {
     return result && result.includes(image);
   }
 
+  // image present locally; false when pull failed or is in backoff window
+  async isImageReady(options = {}) {
+    return await this._checkImage(options);
+  }
+
   async _checkContainer(options = {}) {
     const image = this.getImage(options);
     const result = await exec(`sudo docker ps | grep ${image}`).then(r => r.stdout.trim()).catch((e) => {
@@ -649,6 +1022,33 @@ class FreeRadius {
     });
     log.info("Container freeradius-server status:", result);
     return result && result.includes("freeradius");
+  }
+
+  // running image (repo:tag) of the freeradius container by compose service label, or null
+  async _getContainerImage(options = {}) {
+    const raw = await exec(`sudo docker ps --filter "label=com.docker.compose.service=freeradius" --format "{{.Image}}"`).then(r => r.stdout.trim()).catch((e) => {
+      log.warn("Failed to get freeradius container image,", e.message);
+      return "";
+    });
+    return raw.split("\n").map(i => i.trim()).find(Boolean) || null;
+  }
+
+  async recoverImageMismatch(options = {}) {
+    const current = await this._getContainerImage(options);
+    if (!current) return false; // no container running, nothing to recover
+    const expected = this.getImage(options);
+    log.info(`recoverImageMismatch, expected ${expected}, current ${current}`);
+    if (current === expected) return false;
+    if (!await this._checkImage(options)) {
+      log.warn(`freeradius image ${expected} not ready, keep current container ${current} running to avoid outage.`);
+      return false;
+    }
+    log.warn(`freeradius container image ${current} != expected ${expected}, restarting docker-compose@freeradius to recover`);
+    const restarted = await exec(`sudo systemctl restart docker-compose@freeradius`).then(() => true).catch((e) => {
+      log.warn("Failed to restart docker-compose@freeradius,", e.message);
+      return false;
+    });
+    return restarted;
   }
 
   async _terminateServer(options = {}) {
@@ -803,21 +1203,20 @@ class FreeRadius {
   }
 
   async cleanupConfig(options = {}) {
-    // cleanup certificates
     log.info("Cleaning up freeradius certificates...");
-    await exec(`sudo rm -rf ${certsDir}/*`).catch((e) => {
+    await exec(`sudo find ${certsDir} -mindepth 1 -maxdepth 1 -exec rm -rf {} +`).catch((e) => {
       log.warn("Failed to cleanup certificates,", e.message);
     });
 
     // cleanup config
     log.info("Cleaning up freeradius config...");
-    await exec(`sudo rm -rf ${configDir}/*`).catch((e) => {
+    await exec(`sudo find ${configDir} -mindepth 1 -maxdepth 1 -exec rm -rf {} +`).catch((e) => {
       log.warn("Failed to cleanup freeradius config,", e.message);
     });
 
     // cleanup docker compose folder
     log.info("Cleaning up freeradius docker files...");
-    await exec(`sudo rm -rf ${dockerDir}/*`).catch((e) => {
+    await exec(`sudo find ${dockerDir} -mindepth 1 -maxdepth 1 -exec rm -rf {} +`).catch((e) => {
       log.warn("Failed to cleanup docker compose folder,", e.message);
     });
     log.info("Finished to cleanup freeradius server.");
@@ -837,6 +1236,12 @@ class FreeRadius {
       log.info("reloading freeradius server to apply new config...");
       return await this._reloadServer(options);
     } else {
+      // skip stop/restart when image fails (e.g. disk issue / backoff skip pull)
+      // avoids container churn and a compose-triggered re-pull
+      if (!await this._checkImage(options)) {
+        log.warn("freeradius image not pulled (disk issue / backoff skip pull), skip restart.");
+        return false;
+      }
       log.info("restarting freeradius container to apply new config...");
       await this._stopServer(options);
       await this.generateDockerCompose(options);
@@ -849,7 +1254,8 @@ class FreeRadius {
   // set proper permission for certificates
   async checkCertsPermission() {
     await exec(`sudo chown -R pi:pi ${certsDir}`).catch(() => { });
-    await exec(`sudo find ${certsDir} -maxdepth 2 -name "*.key" -exec chmod 640 {} +`).catch(() => { });
+    await exec(`sudo find ${certsDir} -maxdepth 2 -name "*.key" -exec chmod 600 {} +`).catch(() => { });
+    await exec(`sudo find ${certsDir} -maxdepth 2 -name ".keypass" -exec chmod 600 {} +`).catch(() => { });
     await exec(`sudo find ${certsDir} -maxdepth 2 -name "*.pem" -exec chmod 644 {} +`).catch(() => { });
   }
 

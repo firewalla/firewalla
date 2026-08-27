@@ -89,6 +89,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       this.origBfCategoryMap = {};
       this.loadCategoryBfParts();
       this.flowSignatureConfig = {};
+      this.recycleCategoryJobs = new Map();
       // key: category, value: map of sigId to map of hashkey string to sig detected server entry
       // {category: {sigId: {hashkey: sigEntry}, ...}, ...}
       this.effectiveCategorySigDtSrvs = new Map();
@@ -163,7 +164,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
                       this.categoryWithPattern.add(event.category);
                   }
                   if (strategy.ipset.enabled) {
-                    await this.recycleIPSet(event.category);
+                    await this._getRecycleJob(event.category).exec();
                   }
                 } catch (err) {
                   log.error(`Failed to update category domain ${event.category}`, err.message);
@@ -171,7 +172,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
                 // mark initialized after all processing (recycleIPSet sets this too for
                 // ipset-enabled categories, but dns-only categories like adblock_strict
                 // skip recycleIPSet and still need to be marked)
-                this.initializedCategories[event.category] = true;
+                this.attemptedCategories[event.category] = true;
               }
 
               // check if category filter exists to update
@@ -210,7 +211,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
                     await this.refreshCategoryRecord(event.category);
                     // no need to update dnsmasq because it directly takes effect on hit set update
                     if (strategy.ipset.enabled && strategy.ipset.useHitSet) {
-                      await this.recycleIPSet(event.category);
+                      await this._getRecycleJob(event.category).exec();
                     }
                   } catch (err) {
                     log.error(`Failed to update category domain ${event.category} on hit set update`, err.message);
@@ -400,20 +401,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     if (isRecycleRequired) {
       // add the ip of related domains to _dm ipset
-      let retryCount = 0;
-      while (retryCount < 10) {
-        if (!this.isRecycleTaskRunning(category)) {
-          break;
-        }
-        await scheduler.delay(3000);
-        retryCount++;
-      }
-      if (retryCount >= 10) {
-        log.error(`Failed to add the ip of related domains to _dm ipset for category ${category}`);
-        return;
-      }
-      await this.recycleIPSet(category);
+      await this._getRecycleJob(category).exec();
     }
+  }
+
+  // whether any active policy rule still references this category
+  hasActivePolicies(category) {
+    const categoryPolicies = this.activeCategoryPolicyMap.get(category);
+    if (!categoryPolicies) return false;
+    return categoryPolicies.numDefaultPolicies > 0 || categoryPolicies.numDomainOnlyPolicies > 0;
   }
 
   updateDevCategoryMapping(category, devOpts, isBlock=true, isAdd = true) {
@@ -483,10 +479,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   async getCustomizedCategories() {
     const result = {};
-    for (const c in this.customizedCategories) {
+    await Promise.all(Object.keys(this.customizedCategories).map(async c => {
       const elements = await this.getIncludedElements(c);
       result[c] = Object.assign({}, this.customizedCategories[c], { elements: elements });
-    }
+    }));
     return result;
   }
 
@@ -1107,7 +1103,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     const sigCfg = this.getSignatureConfig(sigId);
     if (!sigCfg || !sigCfg.categories || !_.isArray(sigCfg.categories) || !sigCfg.categories.includes(category)) {
-      log.info(`Signature ID ${sigId} is not found or not matched with signature config, skip adding sig detected server ${sigEntry.id} to category ${category}`);
+      log.info(`Signature ID ${sigId} is not found or not matched with signature config, skip adding sig detected server ${remoteAddr}:${remotePorts} to category ${category}`);
       return;
     }
     let serverEntry  = this.composeSigDetectedServerEntry(remoteAddr, protocol, remotePorts, sigId);
@@ -1310,6 +1306,29 @@ class CategoryUpdater extends CategoryUpdaterBase {
     ))
   }
 
+  _buildDomainPortIpsetOps(categoryIps, ipsetName, ipset6Name, portObj, portStr, commentSuffix) {
+    const ops = [];
+    const isIcmpFamily = portObj && (portObj.proto === 'icmp' || portObj.proto === 'icmpv6');
+    if (isIcmpFamily) {
+      const icmpPortStr = CategoryEntry.toPortStr({ ...portObj, proto: 'icmp' });
+      const icmpv6PortStr = CategoryEntry.toPortStr({ ...portObj, proto: 'icmpv6' });
+      ops.push(...categoryIps.filter(ip => !ip.includes(':'))
+        .map(ip => `add ${ipsetName} ${ip},${icmpPortStr}${commentSuffix}`)
+      );
+      ops.push(...categoryIps.filter(ip => ip.includes(':'))
+        .map(ip => `add ${ipset6Name} ${ip},${icmpv6PortStr}${commentSuffix}`)
+      );
+      return ops;
+    }
+    ops.push(...categoryIps.filter(ip => !ip.includes(':'))
+      .map(ip => `add ${ipsetName} ${ip},${portStr}${commentSuffix}`)
+    );
+    ops.push(...categoryIps.filter(ip => ip.includes(':'))
+      .map(ip => `add ${ipset6Name} ${ip},${portStr}${commentSuffix}`)
+    );
+    return ops;
+  }
+
   async updateIPSetByDomainPort(category, domainObj, options) {
     if (!this.inited) return;
     log.debug(`About to update category ${category} with domain object ${domainObj}`);
@@ -1333,18 +1352,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
     
     const portObj = domainObj.port;
     const portStr = CategoryEntry.toPortStr(portObj);
-    
     const commentSuffix = options.needComment ? ` comment ${domain}` : '';
-    const ops = [];
-    if (!portObj || portObj.proto !== 'icmpv6')
-      ops.push(...categoryIps.filter(ip => !ip.includes(':'))
-        .map(ip => `add ${ipsetName} ${ip},${portStr}${commentSuffix}`)
-      );
-    if (!portObj || portObj.proto !== 'icmp')
-      ops.push(...categoryIps.filter(ip => ip.includes(':'))
-        .map(ip => `add ${ipset6Name} ${ip},${portStr}${commentSuffix}`)
-      )
-    await Ipset.restore(ops);
+    await Ipset.restore(this._buildDomainPortIpsetOps(categoryIps, ipsetName, ipset6Name, portObj, portStr, commentSuffix));
   }
 
   async filterIPSetByDomain(category, options) {
@@ -1501,16 +1510,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       const portObj = domainObj.port;
       const portStr = CategoryEntry.toPortStr(portObj);
       const commentSuffix = options.needComment ? ` comment ${domain}` : '';
-      const ops = [];
-      if (!portObj || portObj.proto !== 'icmpv6')
-        ops.push(...categoryIps.filter(ip => !ip.includes(':'))
-          .map(ip => `add ${ipsetName} ${ip},${portStr}${commentSuffix}`)
-        );
-      if (!portObj || portObj.proto !== 'icmp')
-        ops.push(...categoryIps.filter(ip => ip.includes(':'))
-          .map(ip => `add ${ipset6Name} ${ip},${portStr}${commentSuffix}`)
-        );
-      await Ipset.restore(ops);
+      await Ipset.restore(this._buildDomainPortIpsetOps(categoryIps, ipsetName, ipset6Name, portObj, portStr, commentSuffix));
     }
   }
 
@@ -1525,6 +1525,21 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return this.recycleTasks[category];
   }
 
+  _getRecycleJob(category) {
+    if (!this.recycleCategoryJobs.has(category)) {
+      this.recycleCategoryJobs.set(category, new scheduler.UpdateJob(() => this.recycleIPSet(category), 1000));
+    }
+    return this.recycleCategoryJobs.get(category);
+  }
+
+  async clearRecycleTask(category) {
+    if (!this.recycleCategoryJobs.has(category)) {
+      return;
+    }
+    await this.recycleCategoryJobs.get(category).clearScheduleAndWaitDone();
+    this.recycleCategoryJobs.delete(category);
+  }
+
   // rebuild category ipset
   async recycleIPSet(category) {
     if (this.recycleTasks[category]) {
@@ -1532,7 +1547,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
       return;
     }
     this.recycleTasks[category] = true;
+    try {
+      await this._recycleIPSet(category);
+    } finally {
+      this.recycleTasks[category] = false;
+    }
+  }
 
+  async _recycleIPSet(category) {
     let ondemand = false;
 
     const ipsetNeedComment = this.needIpSetComment(category);
@@ -1685,6 +1707,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
       // flush the _dm ipset
       await Ipset.flush(this.getIPSetName(category, false, false));
       await Ipset.flush(this.getIPSetName(category, false, true));
+      // ipset was flushed directly; clear ipCache so DomainUpdater re-adds IPs on next DNS update
+      for (const domainObj of domainMap.values()) {
+        if (!domainObj.isStatic && !domainObj.port)
+          domainUpdater.clearIPCacheForDomain(domainObj.id, { blockSet: this.getIPSetName(category, false) });
+      }
     }
 
     await this.updateFlowSignatureList();
@@ -1730,14 +1757,16 @@ class CategoryUpdater extends CategoryUpdaterBase {
           log.verbose(`Found a new domain for ${category} with rdns: ${domainSuffix}`)
           await domainBlock.resolveDomain(domainSuffix)
         }
+        const blockSet = v.port ? this.getDomainPortIPSetName(category, v.isStatic) : this.getIPSetName(category, v.isStatic);
+        const port = v.port || null;
         // regenerate ipmapping set in redis
         await domainBlock.syncDomainIPMapping(domainSuffix,
           {
-            blockSet: v.port ? this.getDomainPortIPSetName(category, v.isStatic) : this.getIPSetName(category, v.isStatic),
+            blockSet: blockSet,
             exactMatch: (domain.startsWith("*.") ? false : true),
             overwrite: true,
             ondemand: true, // do not try to resolve domain in syncDomainIPMapping
-            port: v.port || null
+            port: port
           }
         );
         const options = { useTemp: true, isStatic: v.isStatic, needComment: ipsetNeedComment };
@@ -1749,6 +1778,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
         } else {
           await this.updateIPSetByDomainPort(category, v, options);
         }
+
+        // ipsets were fully rebuilt via swap; clear ipCache so DomainUpdater re-adds any
+        // IPs that are no longer present in the new ipset on the next DNS update
+        domainUpdater.clearIPCacheForDomain(v.id, { blockSet, port });
       }
       this.effectiveCategorySigDtSrvs.set(category, new Map());
       for (const se of newSigDtSrvMap.values()) {
@@ -1842,8 +1875,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
     }
 
-    this.recycleTasks[category] = false;
-    this.initializedCategories[category] = true;
+    this.attemptedCategories[category] = true;
     this.activeCategoryPolicyMap.get(category).lastRecyclemode = currentRecyclemode;
   }
 
@@ -1986,7 +2018,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
           }
         };
       case "adblock":
-      // only enable dnsmasq for adblock strict mode.
+      // enable dnsmasq + tls for adblock strict mode.
       return {
         needOptimization: true,
 
@@ -1995,7 +2027,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
         useHitSetDefault: true,
         tls: {
-          enabled: false,
+          enabled: true,
           useHitSet: true
         },
         dnsmasq: {

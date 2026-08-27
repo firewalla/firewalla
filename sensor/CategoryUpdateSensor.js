@@ -46,8 +46,12 @@ const { execSync } = require('child_process');
 const cloudcache = require('../extension/cloudcache/cloudcache');
 const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
+const renameAsync = util.promisify(fs.rename);
+const unlinkAsync = util.promisify(fs.unlink);
+const crypto = require('crypto');
 
 const _ = require('lodash');
+const Message = require('../net2/Message.js');
 const { CategoryEntry } = require('../control/CategoryEntry.js');
 
 const INTEL_PROXY_CHANNEL = "intel_proxy";
@@ -61,11 +65,30 @@ const securityHashMapping = {
 
 const CATEGORY_DATA_KEY = "intel_proxy.data";
 const Constants = require('../net2/Constants.js');
+
+// fallbacks in case a sensor config override omits one of these fields;
+// setInterval() clamps a NaN delay to 1ms instead of erroring out
+const DEFAULT_REGULAR_INTERVAL = 28800;
+const DEFAULT_SECURITY_INTERVAL = 14400;
+const DEFAULT_COUNTRY_INTERVAL = 86400;
+
 class CategoryUpdateSensor extends Sensor {
   constructor(config) {
     super(config)
 
     this.resetCategoryHashsetMapping()
+
+    sem.on(Message.MSG_DEBUG, event => {
+      if (event.name !== this.constructor.name) return;
+      switch (event.data) {
+        case 'regularJob':
+          this.regularJob().catch(err => log.error('Failed to run regularJob', err)); break;
+        case 'securityJob':
+          this.securityJob().catch(err => log.error('Failed to run securityJob', err)); break;
+        case 'countryJob':
+          this.countryJob().catch(err => log.error('Failed to run countryJob', err)); break;
+      }
+    })
   }
 
   async regularJob() {
@@ -207,7 +230,10 @@ class CategoryUpdateSensor extends Sensor {
         // no port support
         // Peel off regex entries first so they don't get misclassified as domains by the Address4/6/hash filters below.
         const regexEntries = [];
-        const nonRegexDomains = [];
+        const ip4List = [];
+        const ip6List = [];
+        const hashDomains = [];
+        const leftDomains = [];
         for (const d of domains) {
           if (typeof d === "string" && d.startsWith("regex:")) {
             try {
@@ -219,14 +245,21 @@ class CategoryUpdateSensor extends Sensor {
               log.error(err.message, d);
             }
           } else {
-            nonRegexDomains.push(d);
+            const address4 = new Address4(d);
+            if (address4.isValid()) {
+              ip4List.push(d);
+            } else {
+              const address6 = new Address6(d);
+              if (address6.isValid()) {
+                ip6List.push(d);
+              } else if (isHashDomain(d)) {
+                hashDomains.push(d);
+              } else {
+                leftDomains.push(d);
+              }
+            }
           }
         }
-
-        const ip4List = nonRegexDomains.filter(d => new Address4(d).isValid());
-        const ip6List = nonRegexDomains.filter(d => new Address6(d).isValid());
-        const hashDomains = nonRegexDomains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && isHashDomain(d));
-        const leftDomains = nonRegexDomains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && !isHashDomain(d));
 
         log.info(`category ${category} has ${ip4List.length} ipv4, ${ip6List.length} ipv6, ${leftDomains.length} domains, ${hashDomains.length} hashed domains, ${regexEntries.length} regex`);
 
@@ -296,7 +329,7 @@ class CategoryUpdateSensor extends Sensor {
         for (const part of removedParts) {
           const hashsetName = `bf:app.${part}`;
           await cloudcache.disableCache(hashsetName);
-          await this.removeData(category).catch((err) => { });
+          await this.removeData(part).catch((err) => { });
           updated = true;
         }
         await categoryUpdater.setCategoryBfParts(category, parts);
@@ -369,20 +402,6 @@ class CategoryUpdateSensor extends Sensor {
     }
 
     const filterFile = `${categoryUpdater.getCategoryFilterDir()}/${category}.data`;
-    let currentFileContent;
-    try {
-      currentFileContent = await readFileAsync(filterFile);
-    } catch (e) {
-      currentFileContent = null;
-    }
-
-    const buf = Buffer.from(obj.data, "base64");
-    if (currentFileContent && buf.equals(currentFileContent)) {
-      log.debug(`No filter update for ${category}, skip`);
-      return false;
-    }
-
-    await writeFileAsync(`${categoryUpdater.getCategoryFilterDir()}/${category}.data`, buf);
     const uid = `category:${category}`;
     const meta = {
       uid: uid,
@@ -391,6 +410,46 @@ class CategoryUpdateSensor extends Sensor {
       checksum: obj.info.checksum,
       path: `${category}.data`
     };
+
+    const buf = Buffer.from(obj.data, "base64");
+
+    // verify the checksum locally instead of trusting the cloud one. intelproxy md5s the data file
+    // against this checksum, so a mismatching pair here would silently disable the filter on its side
+    const actualChecksum = crypto.createHash('md5').update(buf).digest('hex');
+    if (meta.checksum && actualChecksum !== meta.checksum) {
+      log.error(`Checksum mismatch in bf data of ${category}, expect ${meta.checksum}, got ${actualChecksum}, skip`);
+      return false;
+    }
+
+    let currentFileContent;
+    try {
+      currentFileContent = await readFileAsync(filterFile);
+    } catch (e) {
+      currentFileContent = null;
+    }
+
+    if (currentFileContent && buf.equals(currentFileContent)) {
+      // the data file is already up to date, but the meta in redis may have fallen behind, e.g. a
+      // previous round wrote the file and then failed on hset. don't skip until both halves agree,
+      // otherwise the pair stays out of sync forever and intelproxy keeps failing the checksum
+      const currentMeta = await rclient.hgetAsync(CATEGORY_DATA_KEY, uid).then(r => r && JSON.parse(r)).catch(err => null);
+      if (_.isEqual(currentMeta, meta)) {
+        log.debug(`No filter update for ${category}, skip`);
+        return false;
+      }
+      log.warn(`Filter data of ${category} is up to date but its meta in redis is stale, repairing`, currentMeta);
+    } else {
+      // write to a temp file and rename, so intelproxy never reads a partially written data file
+      const tmpFile = `${filterFile}.tmp.${process.pid}`;
+      try {
+        await writeFileAsync(tmpFile, buf);
+        await renameAsync(tmpFile, filterFile);
+      } catch (err) {
+        await unlinkAsync(tmpFile).catch(() => undefined);
+        throw err;
+      }
+    }
+
     await rclient.hsetAsync(CATEGORY_DATA_KEY, uid, JSON.stringify(meta));
 
     const updateEvent = {
@@ -527,20 +586,25 @@ class CategoryUpdateSensor extends Sensor {
         } catch (err) {
           log.error("Failed to update conuntry set", event.country, err)
         }
+        countryUpdater.markAttempted(countryUpdater.getCategory(event.country))
       });
 
       sem.on('Policy:CategoryActivated', async (event) => {
         const category = event.category;
         const reloadFromCloud = event.reloadFromCloud;
         if (reloadFromCloud !== false && !categoryUpdater.isCustomizedCategory(category)) {
-          if (securityHashMapping.hasOwnProperty(category)) {
-            await this.updateSecurityCategory(category);
-          } else {
-            const categories = Object.keys(this.categoryHashsetMapping);
-            if (!categories.includes(category)) {
-              this.categoryHashsetMapping[category] = `app.${category}`;
+          try {
+            if (securityHashMapping.hasOwnProperty(category)) {
+              await this.updateSecurityCategory(category);
+            } else {
+              const categories = Object.keys(this.categoryHashsetMapping);
+              if (!categories.includes(category)) {
+                this.categoryHashsetMapping[category] = `app.${category}`;
+              }
+              await this.updateCategory(category);
             }
-            await this.updateCategory(category);
+          } catch (err) {
+            log.error("Failed to update category", category, err.message);
           }
         } else {
           // only send UPDATE_CATEGORY_DOMAIN event for customized category or reloadFromCloud is false, which will trigger ipset/tls set refresh in CategoryUpdater.js
@@ -551,6 +615,10 @@ class CategoryUpdateSensor extends Sensor {
           };
           sem.sendEventToAll(event);
         }
+        // the initial load attempt has settled, successfully or not. don't hold up the initial
+        // iptables/ipset restore any longer; on failure the category keeps whatever data redis
+        // already had, and the next periodic update retries the fetch
+        categoryUpdater.markAttempted(category);
       });
 
       sem.on('Categorty:ReloadFromBone', (event) => {
@@ -570,6 +638,7 @@ class CategoryUpdateSensor extends Sensor {
       sem.on('Category:Delete', async (event) => {
         log.info("Deactivate category", event.category);
         const category = event.category;
+        await categoryUpdater.clearRecycleTask(category);
         if (!categoryUpdater.isCustomizedCategory(category) &&
           categoryUpdater.activeCategories[category]) {
           delete categoryUpdater.activeCategories[category];
@@ -609,11 +678,11 @@ class CategoryUpdateSensor extends Sensor {
       await this.securityJob()
       await this.renewCountryList()
 
-      setInterval(this.regularJob.bind(this), this.config.regularInterval * 1000)
+      setInterval(this.regularJob.bind(this), (this.config.regularInterval || DEFAULT_REGULAR_INTERVAL) * 1000)
 
-      setInterval(this.securityJob.bind(this), this.config.securityInterval * 1000)
+      setInterval(this.securityJob.bind(this), (this.config.securityInterval || DEFAULT_SECURITY_INTERVAL) * 1000)
 
-      setInterval(this.countryJob.bind(this), this.config.countryInterval * 1000)
+      setInterval(this.countryJob.bind(this), (this.config.countryInterval || DEFAULT_COUNTRY_INTERVAL) * 1000)
 
       sem.emitLocalEvent({
         type: "CategoryUpdateSensorReady",

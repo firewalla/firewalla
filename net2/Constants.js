@@ -28,6 +28,8 @@ module.exports = {
   RULE_SEQ_HI: 1,
   RULE_SEQ_REG: 2,
   RULE_SEQ_LO: 3,
+  // policy ids reserved for synthetic (non-user) iptables rules.
+  RESERVED_PID_ADBLOCK_TLS: 65500,
   DEFAULT_VPN_PROFILE_CN: "fishboneVPN1",
 
   DNS_DEFAULT_WAN_TAG: "wan",
@@ -38,6 +40,8 @@ module.exports = {
 
   INTF_AP_CTRL: "wg_ap",
   INTF_PCAP_TAP: "ifb_pcap_tap",
+  INTF_PCAP_RSPAN: "ifb_pcap_rspan",
+  WORKER_ID_RSPAN: "worker-rspan",
 
   TRUST_IP_SET: "trust:ip",
   TRUST_DOMAIN_SET: "trust:domain",
@@ -45,6 +49,7 @@ module.exports = {
   PORT_DNS_TEST_SRC: 8855,
 
   REDIS_KEY_EID_REVOKE_SET: "sys:ept:members:revoked",
+  REDIS_KEY_EPT_MEMBER_EMAILS: "sys:ept:memberEmails",
   REDIS_KEY_GROUP_NAME: "groupName",
   REDIS_KEY_DDNS_UPDATE: "ddns:update",
   REDIS_KEY_CPU_USAGE: "cpu_usage_records",
@@ -73,6 +78,7 @@ module.exports = {
   REDIS_KEY_HOST_PINNED: 'host:pinned:mac',
   REDIS_KEY_HOST_DHCPCONF: 'host:dhcpconf:mac',
   REDIS_KEY_WIRELESS_TAG_CANDIDATE: "wireless_tag_candidate:", // wireless_tag_candidate:${mac}
+  REDIS_KEY_WIRELESS_AUTO_GROUP: "wireless_auto_group:", // wireless_auto_group:${mac}
   REDIS_KEY_POLICY_DISTURB_CLOUD_CONFIG: "policy_disturb_cloud_config",
   REDIS_KEY_POLICY_DISTURB_CONFIG: "policy_disturb_config",
   REDIS_KEY_NOISE_DOMAIN_CLOUD_CONFIG: "noise_domain_cloud_config",
@@ -204,4 +210,8 @@ module.exports = {
   POLICY_EXTRA_TIME_LIMIT_MODE_MANUAL: "manual",
 
   GLOBAL_ALLOW_DOMAIN_RULE_HIT: -2,
+
+  // a plain file name: no path separators, so a value matching this cannot leave the directory it
+  // is resolved against. use it wherever an untrusted value becomes a path component
+  REGEX_FILENAME: /^[A-Za-z0-9][A-Za-z0-9._-]*$/,
 };

@@ -41,6 +41,8 @@ const platform = platformLoader.getPlatform();
 
 const rateLimit = require('../../extension/ratelimit/RateLimit.js');
 
+const dockerEmmcUsageModule = require('../docker/dockerEmmcUsage.js');
+
 const Constants = require("../../net2/Constants.js");
 
 const ethInfoKey = "ethInfo";
@@ -91,6 +93,60 @@ let diskUsage = {};
 
 let releaseInfo = {};
 
+let emmcLife = null;
+
+let dockerEmmcUsage = null;
+
+const USB_SYSFS_DIR = "/sys/bus/usb/devices";
+// USB-IF class codes, see https://www.usb.org/defined-class-codes. bluetooth is the only
+// accessory of interest with a standard class, wifi dongles use vendor specific classes
+const USB_CLASS_HUB = "09";
+const USB_CLASS_WIRELESS = "e0";
+const USB_SUBCLASS_RF = "01";
+const USB_PROTOCOL_BLUETOOTH = "01";
+// dongles known to be used with the box, a fallback for the case that the dongle is plugged in
+// but its driver did not come up. see also platform/*/files/udev/55-start_ble.rules
+const BT_DONGLE_IDS = ["0a12:0001", "0bda:a729"];
+// RTL8821CU family, 1a2b is the CD-ROM mode it enumerates as before usb_modeswitch kicks in
+const WIFI_DONGLE_IDS = ["0bda:c811", "0bda:c820", "0bda:1a2b"];
+// lsusb result is cached this long, so that a dongle plugged in shows up on the next init
+// without waiting for a full SysInfo update cycle, and repeated getSysInfo() stay cheap
+const USB_INFO_TTL = 60 * 1000;
+// {bluetooth, wifi, other, devices}, null if the USB bus cannot be listed at all
+let usbInfo = null;
+let usbInfoTs = 0;
+let usbInfoPromise = null;
+let lsusbFailed = false;
+
+const REDIS_DISKSTATS_DAILY_KEY = 'sys:diskstats:daily';
+
+// sectors written from /proc/diskstats at process start (boot baseline), BigInt per device
+let diskStatsBootBaseline = null;
+// cumulative sectors written loaded from Redis (covers prior boots), BigInt per device
+let diskStatsSavedCumulative = {};
+// unix seconds when cumulative tracking first began
+let diskStatsStartTime = 0;
+// reported stats: { startTime, devices: {dev: Mbytes}, yearlyWriteGB }
+let diskWriteStats = {};
+
+function isDiskStatsDevice(name) {
+  // whole eMMC/SD device or numbered partition, exclude boot/rpmb partitions
+  return /^mmcblk\d+(p\d+)?$/.test(name) || /^sda\d*$/.test(name);
+}
+
+async function readRawDiskStats() {
+  const content = await fs.promises.readFile('/proc/diskstats', 'utf8');
+  const result = {};
+  for (const line of content.trim().split('\n')) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 10) continue;
+    const name = parts[2];
+    if (!isDiskStatsDevice(name)) continue;
+    result[name] = BigInt(parts[9]); // raw write sectors as 64-bit BigInt
+  }
+  return result;
+}
+
 
 getMultiProfileSupportFlag();
 
@@ -119,9 +175,12 @@ async function update() {
       .then(getWlanInfo)
       .then(getSlabInfo)
       .then(getDiskUsage)
+      .then(getDiskWriteStats)
       .then(getReleaseInfo)
       .then(getCPUModel)
       .then(getDistributionCodename)
+      .then(getEmmcLife)
+      .then(getDockerEmmcUsage)
   ]);
 
   if(updateFlag) {
@@ -131,7 +190,7 @@ async function update() {
 
 
 
-async function startUpdating() {
+async function startUpdating(options = {}) {
   updateFlag = 1;
   await update();
 }
@@ -210,6 +269,30 @@ async function getDiskInfo() {
   }
 }
 
+async function getEmmcLife() {
+  try {
+    const result = await exec("sudo bash -c 'cat /sys/kernel/debug/*mmc*/*mmc*:*/ext_csd 2>/dev/null | head -n 1'");
+    const hex = result.stdout.trim();
+    if (hex.length < 540) return;
+    emmcLife = {
+      preEolInfo: parseInt(hex.substr(267 * 2, 2), 16),
+      lifeTimeEstA: parseInt(hex.substr(268 * 2, 2), 16),
+      lifeTimeEstB: parseInt(hex.substr(269 * 2, 2), 16),
+    };
+  } catch (err) {
+    log.debug("Failed to read eMMC ext_csd:", err.message);
+  }
+}
+
+async function getDockerEmmcUsage() {
+  try {
+    dockerEmmcUsage = await dockerEmmcUsageModule.getEmmcUsage();
+  } catch (err) {
+    log.debug("Failed to get docker eMMC usage:", err.message);
+    dockerEmmcUsage = [];
+  }
+}
+
 async function getAutoUpgrade() {
   return fileExist('/home/pi/.firewalla/config/.no_auto_upgrade').catch(err => {
     log.error('Failed to get upgrade flag', err);
@@ -238,7 +321,8 @@ async function getMultiProfileSupportFlag() {
 }
 
 async function getIntelQueueSize() {
-  intelQueueSize = await rclient.zcountAsync("ip_set_to_be_processed", "-inf", "+inf");
+  // DestIPFoundHook now keeps the work queue in node memory and publishes its size here
+  intelQueueSize = Number(await rclient.getAsync("metric:intel:queue:size")) || 0;
 }
 
 async function getRealMemoryUsage() {
@@ -443,8 +527,10 @@ async function getSysInfo() {
     maxPid: maxPid,
     ethInfo,
     wlanInfo,
+    usbInfo: await getUsbInfo(),
     slabInfo,
     diskUsage: diskUsage,
+    diskWriteStats: diskWriteStats,
     processes : getTop10RSSProcesses(),
     releaseInfo: releaseInfo
   }
@@ -463,8 +549,16 @@ async function getSysInfo() {
     sysinfo.rateLimitInfo = rateLimitInfo;
   }
 
+  if (emmcLife) {
+    sysinfo.emmcLife = emmcLife;
+  }
+
   if (platform.isDockerSupported()) {
     sysinfo.activeContainers = activeContainers;
+  }
+
+  if (dockerEmmcUsage && dockerEmmcUsage.length > 0) {
+    sysinfo.dockerEmmcUsage = dockerEmmcUsage;
   }
 
   return sysinfo;
@@ -517,22 +611,55 @@ function getHeapDump(file, callback) {
   // heapdump.writeSnapshot(file, callback);
 }
 
+// returns the non-zero error counters of a NIC from `ethtool -S`, keyed as <nic>_<counter>,
+// null if ethtool fails, e.g. the driver does not support statistics.
+// counter names vary by driver, e.g. mmc_rx_crc_error(stmmac), rx_crc_errors(igb), so simply take
+// the ones with error in the name, same as `ethtool -S ethX | grep error`
+async function getEthErrorStats(nic) {
+  const output = await exec(`ethtool -S ${nic}`).then((result) => result.stdout).catch((err) => null);
+  if (!output)
+    return null;
+  const stats = {};
+  let crc = null;
+  for (const line of output.split("\n")) {
+    // e.g. "     mmc_rx_crc_error: 0", ethtool indents counters by 5 spaces, \s* just in case.
+    // the "NIC statistics:" header does not match anyway, there is no number after the colon
+    const match = line.match(/^\s*(\S.*?):\s*(\d+)\s*$/);
+    if (!match || !/error/i.test(match[1]))
+      continue;
+    // keep the key clean, some drivers put spaces or brackets in the name, e.g. "Queue[0]_InErrors"
+    // of enetc becomes Queue_0_InErrors, "Tx LPI entry counter" of igb becomes Tx_LPI_entry_counter
+    const name = match[1].trim().replace(/[\W_]+/g, "_").replace(/^_|_$/g, "");
+    const value = Number(match[2]);
+    // fcs as well as crc, the frame check sequence is the CRC, some drivers name it rx_fcs_errors.
+    // max instead of sum, a driver may count CRC errors in multiple registers, e.g. stmmac on gse/pse
+    // reports both mmc_rx_crc_error and rx_crc_errors
+    if (/crc|fcs/i.test(name))
+      crc = Math.max(crc === null ? 0 : crc, value);
+    if (value) // only report non-zero counters, otherwise the payload gets bloated by dozens of idle counters per NIC
+      stats[`${nic}_${name}`] = value;
+  }
+  if (crc !== null) // <nic>_crc is kept for backward compatibility
+    stats[`${nic}_crc`] = crc;
+  return stats;
+}
+
 async function getEthernetInfo() {
   const localEthInfo = {};
-  switch (platform.getName()) {
-    case "purple": {
-      const eth0_crc = await exec("ethtool -S eth0 | fgrep mmc_rx_crc_error: | awk '{print $2}'").then((output) => output.stdout && output.stdout.trim()).catch((err) => -1); // return -1 when err
-      localEthInfo.eth0_crc = Number(eth0_crc);
-      break;
-    }
-    case "gse": {
-      const eth1_crc = await exec("ethtool -S eth1 | fgrep mmc_rx_crc_error: | awk '{print $2}'" ).then((output) => output.stdout && output.stdout.trim()).catch((err) => -1);
-      const eth2_crc = await exec("ethtool -S eth2 | fgrep mmc_rx_crc_error: | awk '{print $2}'" ).then((output) => output.stdout && output.stdout.trim()).catch((err) => -1);
-      localEthInfo.eth1_crc = Number(eth1_crc);
-      localEthInfo.eth2_crc = Number(eth2_crc);
-      break;
-    }
-    default:
+  for (const nic of platform.getAllNicNames().filter(nic => nic.startsWith("eth"))) {
+    if (!await fileExist(`/sys/class/net/${nic}/ifindex`)) // NIC not present on this box
+      continue;
+    // negotiated link speed in Mbps, -1 when the link is down. a NIC running below the speed it
+    // supports usually comes together with the error counters below going up
+    const speed = await fs.promises.readFile(`/sys/class/net/${nic}/speed`, {encoding: "utf8"})
+      .then((content) => Number(content.trim())).catch((err) => NaN);
+    if (!isNaN(speed))
+      localEthInfo[`${nic}_speed`] = speed;
+    const stats = await getEthErrorStats(nic);
+    if (stats)
+      Object.assign(localEthInfo, stats);
+    else
+      localEthInfo[`${nic}_crc`] = -1; // -1 indicates ethtool failure
   }
   const info = await rclient.hgetallAsync(Constants.REDIS_KEY_ETH_INFO);
   ethInfo = Object.assign(localEthInfo, info);
@@ -577,6 +704,163 @@ async function getWlanInfo() {
   return wlanInfo
 }
 
+async function pathExists(path) {
+  return fs.promises.access(path, fs.constants.F_OK).then(() => true).catch(() => false);
+}
+
+async function readSysfsValue(path) {
+  return fs.promises.readFile(path, {encoding: "utf8"}).then((content) => content.trim()).catch((err) => null);
+}
+
+// a wireless netdev has either of these, a wired one has neither. used to tell a wifi dongle
+// apart from a NIC of the box that sits on the USB bus
+async function isWirelessNetdev(name) {
+  return await pathExists(`/sys/class/net/${name}/wireless`) || await pathExists(`/sys/class/net/${name}/phy80211`);
+}
+
+// reads what lsusb does not tell: the class of every USB device and the kernel devices its
+// driver brought up. keyed by "<busnum>-<devnum>" so it can be joined with the lsusb output
+async function readUsbSysfs() {
+  const devices = {};
+  const entries = await fs.promises.readdir(USB_SYSFS_DIR).catch((err) => {
+    log.info("Failed to read", USB_SYSFS_DIR, err.message);
+    return [];
+  });
+  for (const entry of entries) {
+    // interface directories are named <device>:<config>.<interface>, they are read below as
+    // part of their parent device
+    if (entry.includes(":"))
+      continue;
+    const dir = `${USB_SYSFS_DIR}/${entry}`;
+    const [busnum, devnum, deviceClass] = await Promise.all([
+      readSysfsValue(`${dir}/busnum`),
+      readSysfsValue(`${dir}/devnum`),
+      readSysfsValue(`${dir}/bDeviceClass`),
+    ]);
+    if (!busnum || !devnum)
+      continue;
+    const device = {class: deviceClass, interfaces: [], netdevs: [], hasBluetooth: false};
+    const children = await fs.promises.readdir(dir).catch((err) => []);
+    for (const child of children.filter(c => c.startsWith(`${entry}:`))) {
+      const ifDir = `${dir}/${child}`;
+      const [cls, subClass, protocol] = await Promise.all([
+        readSysfsValue(`${ifDir}/bInterfaceClass`),
+        readSysfsValue(`${ifDir}/bInterfaceSubClass`),
+        readSysfsValue(`${ifDir}/bInterfaceProtocol`),
+      ]);
+      device.interfaces.push({cls, subClass, protocol});
+      // the driver of the interface publishes its kernel device here, e.g. btusb creates
+      // bluetooth/hci0 and r8152 creates net/eth0
+      device.netdevs.push(...await fs.promises.readdir(`${ifDir}/net`).catch((err) => []));
+      if (await pathExists(`${ifDir}/bluetooth`))
+        device.hasBluetooth = true;
+    }
+    devices[`${Number(busnum)}-${Number(devnum)}`] = device;
+  }
+  return devices;
+}
+
+// hubs are skipped altogether, the hubs built into the box are indistinguishable from an
+// external one, and whatever is plugged into a hub is enumerated on its own anyway
+function isUsbHub(id, name, device) {
+  if (device.class === USB_CLASS_HUB || device.interfaces.some(i => i.cls === USB_CLASS_HUB))
+    return true;
+  // fallback in case sysfs is not readable, 1d6b is the vendor of the virtual root hubs
+  return id.startsWith("1d6b:") || /\bhub\b/i.test(name);
+}
+
+// devices that are part of the box are not accessories, e.g. eth0 of pse is a USB NIC
+async function isNativeUsbDevice(id, device, nativeIds, nicNames) {
+  if (nativeIds.includes(id))
+    return true;
+  for (const netdev of device.netdevs)
+    // wlan interfaces are reserved on the models taking a wifi dongle, so a netdev only counts
+    // as native when it is a wired one
+    if (nicNames.includes(netdev) && !await isWirelessNetdev(netdev))
+      return true;
+  return false;
+}
+
+function isUsbBluetooth(id, name, device) {
+  if (device.hasBluetooth)
+    return true;
+  if (device.interfaces.some(i => i.cls === USB_CLASS_WIRELESS && i.subClass === USB_SUBCLASS_RF && i.protocol === USB_PROTOCOL_BLUETOOTH))
+    return true;
+  // a dongle whose driver did not come up, or whose descriptors are not readable
+  return BT_DONGLE_IDS.includes(id) || /bluetooth/i.test(name);
+}
+
+async function isUsbWifi(id, name, device) {
+  for (const netdev of device.netdevs)
+    if (await isWirelessNetdev(netdev))
+      return true;
+  // wifi dongles use a vendor specific class, so there is nothing to check in the descriptors
+  // besides the id. the product string is the same thing firerouter greps for on install
+  return WIFI_DONGLE_IDS.includes(id) || /802\.11|wi-?fi|wlan|wireless (adapter|lan|nic)/i.test(name);
+}
+
+// which types of USB accessories are plugged into the box. bluetooth and wifi dongles are
+// reported with their id and product string, anything else is only counted as "other"
+async function readUsbInfo() {
+  const output = await exec("lsusb").then((result) => result.stdout).catch((err) => {
+    if (!lsusbFailed) { // this is retried on every refresh, only complain about it once
+      lsusbFailed = true;
+      log.error("Failed to list USB devices", err.message);
+    }
+    return null;
+  });
+  // report nothing at all instead of "nothing detected" if the USB bus cannot be listed
+  if (output === null)
+    return null;
+  lsusbFailed = false;
+
+  const sysfs = await readUsbSysfs();
+  const nativeIds = platform.getNativeUsbDeviceIds();
+  const nicNames = platform.getAllNicNames();
+  const info = {bluetooth: false, wifi: false, other: false, devices: []};
+  for (const line of output.trim().split("\n")) {
+    // e.g. "Bus 001 Device 004: ID 0bda:c820 Realtek Semiconductor Corp. 802.11ac NIC"
+    const match = line.match(/^Bus\s+(\d+)\s+Device\s+(\d+):\s+ID\s+([0-9a-f]{4}:[0-9a-f]{4})\s*(.*)$/i);
+    if (!match)
+      continue;
+    const [, bus, dev, rawId, rawName] = match;
+    const id = rawId.toLowerCase();
+    const name = rawName.trim();
+    const device = sysfs[`${Number(bus)}-${Number(dev)}`] || {interfaces: [], netdevs: []};
+    if (isUsbHub(id, name, device) || await isNativeUsbDevice(id, device, nativeIds, nicNames))
+      continue;
+    const types = [];
+    // a combo dongle provides both functions on a single USB device, it counts as both
+    if (isUsbBluetooth(id, name, device))
+      types.push("bluetooth");
+    if (await isUsbWifi(id, name, device))
+      types.push("wifi");
+    if (!types.length)
+      types.push("other");
+    for (const type of types)
+      info[type] = true;
+    info.devices.push({id, name, types});
+  }
+  log.verbose("[getUsbInfo] results", info);
+  return info;
+}
+
+async function getUsbInfo() {
+  if (usbInfoTs && Date.now() - usbInfoTs < USB_INFO_TTL)
+    return usbInfo;
+  if (!usbInfoPromise) // getSysInfo() can be called concurrently, refresh only once
+    usbInfoPromise = readUsbInfo().catch((err) => {
+      log.error("Failed to get USB info", err);
+      return null;
+    }).then((info) => {
+      usbInfo = info;
+      usbInfoTs = Date.now();
+      usbInfoPromise = null;
+      return info;
+    });
+  return usbInfoPromise;
+}
+
 async function getSlabInfo() {
   return exec('sudo cat /proc/slabinfo | tail +2 | grep "^#\\|^kmalloc\\|^task_struct"').then(result => result.stdout.trim().split("\n")).then(lines => {
     const head = lines[0];
@@ -613,6 +897,107 @@ async function getSlabInfo() {
   });
 }
 
+// parse a per-device value from a Redis daily entry to BigInt sectors.
+function _parseSectorsFromRedis(val) {
+  if (typeof val === 'string') return BigInt(val);
+}
+
+async function getDiskWriteStats() {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+
+    if (diskStatsBootBaseline === null) {
+      // load saved cumulative from the most recent Redis daily entry
+      const newestEntries = await rclient.zrangeAsync(REDIS_DISKSTATS_DAILY_KEY, -1, -1);
+      if (newestEntries && newestEntries.length > 0) {
+        const newest = JSON.parse(newestEntries[0]);
+        diskStatsSavedCumulative = {};
+        for (const [dev, val] of Object.entries(newest.devices || {})) {
+          diskStatsSavedCumulative[dev] = _parseSectorsFromRedis(val);
+        }
+        if (now - newest.t >= 2 * 86400) {
+          log.warn(`diskstats: latest Redis entry is ${Math.round((now - newest.t) / 86400)} day(s) old`);
+        }
+      }
+      // startTime = timestamp of the oldest recorded entry
+      const oldestEntries = await rclient.zrangeAsync(REDIS_DISKSTATS_DAILY_KEY, 0, 0);
+      diskStatsStartTime = oldestEntries && oldestEntries.length > 0 ? JSON.parse(oldestEntries[0]).t : now;
+      diskStatsBootBaseline = await readRawDiskStats();
+    }
+
+    const current = await readRawDiskStats();
+    const deviceSectors = {}; // BigInt sectors per device
+
+    for (const [dev, currentSectors] of Object.entries(current)) {
+      const bootSectors = diskStatsBootBaseline[dev] || 0n;
+      const savedSectors = diskStatsSavedCumulative[dev] || 0n;
+      const delta = currentSectors >= bootSectors ? currentSectors - bootSectors : 0n;
+      deviceSectors[dev] = savedSectors + delta;
+      log.debug(`diskstats: device ${dev}, current sectors ${currentSectors}, boot baseline ${bootSectors}, saved cumulative ${savedSectors}, delta ${delta}, total ${deviceSectors[dev]}`);
+    }
+
+    // write today's daily snapshot
+    const dayTs = Math.floor(now / 86400) * 86400;
+    if (f.isMain()) {
+      const todayExisting = await rclient.zrangebyscoreAsync(REDIS_DISKSTATS_DAILY_KEY, dayTs, dayTs);
+      // store sector counts as strings to preserve 64-bit precision
+      const devicesForRedis = {};
+      for (const [dev, sectors] of Object.entries(deviceSectors)) {
+        devicesForRedis[dev] = sectors.toString();
+      }
+      if (todayExisting && todayExisting.length > 0) {
+        await rclient.zremAsync(REDIS_DISKSTATS_DAILY_KEY, todayExisting[0]);
+      }
+      await rclient.zaddAsync(REDIS_DISKSTATS_DAILY_KEY, dayTs, JSON.stringify({ t: dayTs, devices: devicesForRedis }));
+      await rclient.zremrangebyrankAsync(REDIS_DISKSTATS_DAILY_KEY, 0, -(366 + 1)); // keep last 366 days
+    }
+
+    // yearly estimate: deviceSectors (today) minus the entry from exactly 365 days ago
+    let yearlyWriteGB = {};
+    const day365AgoTs = dayTs - 365 * 86400;
+    const day365Entries = await rclient.zrangebyscoreAsync(REDIS_DISKSTATS_DAILY_KEY, day365AgoTs, day365AgoTs);
+    if (day365Entries && day365Entries.length > 0) {
+      const day365ago = JSON.parse(day365Entries[0]);
+      for (const dev of Object.keys(deviceSectors)) {
+        if (day365ago.devices[dev] != null) {
+          const oldSectors = _parseSectorsFromRedis(day365ago.devices[dev]);
+          const deltaSectors = deviceSectors[dev] > oldSectors ? deviceSectors[dev] - oldSectors : 0n;
+          yearlyWriteGB[dev] = Number(deltaSectors / 2048n) / 1024; // sectors → MB → GB
+        }
+      }
+    } else {
+      log.debug(`diskstats: no entry from 365 days ago (ts ${day365AgoTs}), use (current - oldest)/days * 365 as estimate`);
+      const oldestEntries = await rclient.zrangeAsync(REDIS_DISKSTATS_DAILY_KEY, 0, 0);
+      if (oldestEntries && oldestEntries.length > 0) {
+        const oldest = JSON.parse(oldestEntries[0]);
+        if (oldest.t === dayTs) {
+          log.debug(`diskstats: oldest entry is from today, not enough history data to make yearly estimate`);
+        } else {
+          const days = (now - oldest.t) / 86400 + 1; // add 1 day to avoid under-estimate
+          for (const dev of Object.keys(deviceSectors)) {
+            if (oldest.devices[dev] != null) {
+              const oldSectors = _parseSectorsFromRedis(oldest.devices[dev]);
+              const deltaSectors = deviceSectors[dev] > oldSectors ? deviceSectors[dev] - oldSectors : 0n;
+              yearlyWriteGB[dev] = Number(deltaSectors / 2048n) / days * 365 / 1024; // sectors → MB → GB
+            }
+          }
+        }
+      }
+    }
+
+    // convert BigInt sectors to integer MB for the external API
+    const devices = {};
+    for (const [dev, sectors] of Object.entries(deviceSectors)) {
+      devices[dev] = Number(sectors / 2048n); // integer MB
+    }
+
+    diskWriteStats = { startTime: diskStatsStartTime, devices, yearlyWriteGB };
+    return diskWriteStats;
+  } catch (err) {
+    log.error("Failed to get disk write stats", err);
+  }
+}
+
 async function getDiskUsage(path) {
   try {
     const resultFW = await exec("du -sk /home/pi/firewalla|awk '{print $1}'", {encoding: 'utf8'});
@@ -646,5 +1031,8 @@ module.exports = {
   getRecentLogs: getRecentLogs,
   getPerfStats: getPerfStats,
   getHeapDump: getHeapDump,
-  getAutoUpgrade
+  getAutoUpgrade,
+  getDiskWriteStats,
+  getEthErrorStats,
+  getUsbInfo,
 };

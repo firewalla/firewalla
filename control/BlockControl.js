@@ -24,6 +24,7 @@ const SensorEventManager = require('../sensor/SensorEventManager.js').getInstanc
 const sysManager = require('../net2/SysManager.js');
 
 const { exec } = require('child-process-promise');
+const { spawnQuiet } = require('../util/util.js');
 
 // BlockControl class coordinates multiple modules (ipset, iptables, tlsset) to apply networking rules efficiently.
 // It maintains a state machine to align changes across modules
@@ -184,8 +185,7 @@ class BlockControl {
     try {
       const path = require('path');
       const setupScriptPath = path.join(f.getFirewallaHome(), 'control', 'install_iptables_setup.sh');
-      
-      await exec(`${setupScriptPath} --dry-run`, { timeout: 30000 });
+      await exec(`${setupScriptPath} --dry-run`, { timeout: 60000 });
     } catch (err) {
       log.error(`Error running iptables setup script: ${err.message}`);
       throw err;
@@ -266,36 +266,6 @@ class BlockControl {
     };
   }
 
-  /**
-   * Force flush rules immediately (for testing or emergency)
-   */
-  async forceFlush() {
-    log.info('Force flushing rules');
-    if (this.queuingTimer) {
-      clearTimeout(this.queuingTimer);
-    }
-    await this.enterProcessingState();
-  }
-
-  /**
-   * Clean up resources
-   */
-  flush() {
-    if (this.queuingTimer) {
-      clearTimeout(this.queuingTimer);
-    }
-    
-    // Reset processing state
-    this.processingPromise = null;
-    
-    // Clean up all modules
-    this.modules.forEach(module => {
-      if (module.flush) {
-        module.flush();
-      }
-    });
-  }
-
   scheduleRefreshConnmark() {
     if (this.state === 'autonomous') {
       if (this.connmarkRefreshTimer) {
@@ -314,10 +284,10 @@ class BlockControl {
 
   async refreshConnmark() {
     // use conntrack to clear the first bit of connmark on existing connections
-    await exec(`sudo conntrack -U -m 0x00000000/0x80000000 > /dev/null 2>&1`).catch((err) => {
+    await spawnQuiet('sudo', ['conntrack', '-U', '-m', '0x00000000/0x80000000']).catch((err) => {
       log.verbose(`Failed to clear first bit of connmark on existing IPv4 connections`, err.message);
     });
-    await exec(`sudo conntrack -U -f ipv6 -m 0x00000000/0x80000000 > /dev/null 2>&1`).catch((err) => {
+    await spawnQuiet('sudo', ['conntrack', '-U', '-f', 'ipv6', '-m', '0x00000000/0x80000000']).catch((err) => {
       log.verbose(`Failed to clear first bit of connmark on existing IPv6 connections`, err.message);
     });
   }

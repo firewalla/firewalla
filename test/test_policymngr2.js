@@ -20,6 +20,7 @@ let expect = chai.expect;
 
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const Policy = require('../alarm/Policy.js');
+const Alarm = require('../alarm/Alarm.js');
 
 const domainBlock = require('../control/DomainBlock.js');
 const cloudcache = require('../extension/cloudcache/cloudcache');
@@ -168,6 +169,88 @@ describe('Test policy filter', function(){
 
 });
 
+describe('Test remotePort policy protocol match', function(){
+  this.timeout(30000);
+
+  function pornAlarm(protocol) {
+    const alarm = new Alarm.PornAlarm(1648018597, 'OLIVER1', 'hentaijuggs.com', {
+      'p.device.mac': '98:59:7A:48:46:08',
+      'p.dest.name': 'hentaijuggs.com',
+      'p.dest.port': '443',
+    });
+    if (protocol) alarm['p.protocol'] = protocol;
+    return alarm;
+  }
+
+  it('should not match when protocol differs (udp rule vs tcp flow)', () => {
+    const policy = new Policy({ type: 'remotePort', target: '443', protocol: 'udp', action: 'block' });
+    expect(policy.match(pornAlarm('tcp'))).to.be.false;
+  });
+
+  it('should match when protocol is the same', () => {
+    const policy = new Policy({ type: 'remotePort', target: '443', protocol: 'tcp', action: 'block' });
+    expect(policy.match(pornAlarm('tcp'))).to.be.true;
+  });
+
+  it('should match regardless of protocol when rule omits protocol', () => {
+    const policy = new Policy({ type: 'remotePort', target: '443', action: 'block' });
+    expect(policy.match(pornAlarm('tcp'))).to.be.true;
+  });
+
+  it('should enforce protocol on remotePort used as an extra condition', () => {
+    const policy = new Policy({ type: 'domain', target: 'hentaijuggs.com', remotePort: '443', protocol: 'udp', action: 'block' });
+    expect(policy.match(pornAlarm('tcp'))).to.be.false;
+  });
+});
+
+describe('Test priorityCompare', function(){
+  // returns <0 if `this` outranks the arg, >0 if arg wins, 0 if equal
+
+  const intranetScopedToDevice = new Policy({
+    pid: '101', type: 'intranet', action: 'block', direction: 'bidirection',
+    scope: ['20:6D:31:01:2B:43'],
+  });
+  const deviceTargetAllScope = new Policy({
+    pid: '102', type: 'device', action: 'block', direction: 'bidirection',
+    target: '20:6D:31:01:2B:43',
+  });
+  const intranetAllScope = new Policy({
+    pid: '103', type: 'intranet', action: 'block', direction: 'bidirection',
+  });
+
+  it('treats device-scoped and device-target local rules as equal priority', () => {
+    expect(intranetScopedToDevice.priorityCompare(deviceTargetAllScope)).to.equal(0);
+    expect(deviceTargetAllScope.priorityCompare(intranetScopedToDevice)).to.equal(0);
+  });
+
+  it('ranks a device-specific local rule above an all-scope one', () => {
+    expect(deviceTargetAllScope.priorityCompare(intranetAllScope)).to.be.below(0);
+    expect(intranetAllScope.priorityCompare(deviceTargetAllScope)).to.be.above(0);
+  });
+
+  it('reads tag scope from the `tag` field (device group = level 2)', () => {
+    const tagGroupRule = new Policy({
+      pid: '104', type: 'intranet', action: 'block', tag: ['tag:8'],
+    });
+    expect(deviceTargetAllScope.priorityCompare(tagGroupRule)).to.be.below(0);
+    expect(tagGroupRule.priorityCompare(intranetAllScope)).to.be.below(0);
+  });
+
+  it('lets seq band override specificity', () => {
+    const highSeqAllScope = new Policy({
+      pid: '105', type: 'intranet', action: 'block', seq: 1,
+    });
+    expect(highSeqAllScope.priorityCompare(deviceTargetAllScope)).to.be.below(0);
+  });
+
+  it('prefers allow over block at the same specificity', () => {
+    const allowDevice = new Policy({ pid: '106', type: 'device', target: 'AA:BB:CC:DD:EE:FF', action: 'allow' });
+    const blockDevice = new Policy({ pid: '107', type: 'device', target: 'AA:BB:CC:DD:EE:FF', action: 'block' });
+    expect(allowDevice.priorityCompare(blockDevice)).to.equal(-1);
+    expect(blockDevice.priorityCompare(allowDevice)).to.equal(1);
+  });
+});
+
 describe('Test policy filter', function(){
   this.timeout(30000);
 
@@ -185,5 +268,103 @@ describe('Test policy filter', function(){
     log.debug('cloudcache content', cacheItem.localCachePath);
     const content = await cacheItem.getLocalCacheContent()
     expect(content).to.be.not.empty;
+  });
+});
+
+describe('Test deleteTagRelatedPolicies unenforce synchronization', function() {
+  this.timeout(5000);
+
+  before(async () => {
+    // enforceOnQueue() routes through this.queue, which is only wired up via setupPolicyQueue()
+    // during normal FireMain startup (net2/main.js) -- initialize it here so the queue actually exists
+    await new PolicyManager2().setupPolicyQueue();
+  });
+
+  it('should wait for the policy to actually unenforce before returning', async () => {
+    const pm2 = new PolicyManager2();
+    const uid = 'testTagUnenforce';
+    const rule = new Policy({ pid: 'testUnenforcePid', type: 'intranet', action: 'block', tag: [`tag:${uid}`] });
+
+    let unenforceCompleted = false;
+    const origLoad = pm2.loadActivePoliciesAsync;
+    const origUnenforce = pm2.unenforce;
+    const origRemoveBypass = pm2.removeBypassChainForPolicy;
+    pm2.loadActivePoliciesAsync = async () => [rule];
+    pm2.unenforce = async () => {
+      await new Promise(r => setTimeout(r, 50));
+      unenforceCompleted = true;
+    };
+    pm2.removeBypassChainForPolicy = async () => {};
+
+    try {
+      await pm2.deleteTagRelatedPolicies(uid);
+    } finally {
+      pm2.loadActivePoliciesAsync = origLoad;
+      pm2.unenforce = origUnenforce;
+      pm2.removeBypassChainForPolicy = origRemoveBypass;
+    }
+
+    expect(unenforceCompleted).to.be.true;
+  });
+
+  // deleteTagRelatedPolicies() unenforces via enforceOnQueue() directly, bypassing enforce()/
+  // setupPolicyQueue() -- the only two places that otherwise call removeBypassChainForPolicy() --
+  // so it must call it explicitly or the rule's empty FW_<pid>_BYPASS chain lingers forever
+  it('should remove the bypass chain for each rule it unenforces', async () => {
+    const pm2 = new PolicyManager2();
+    const uid = 'testTagBypassCleanup';
+    const rule = new Policy({ pid: 'testBypassCleanupPid', type: 'intranet', action: 'block', tag: [`tag:${uid}`] });
+
+    const removedBypassFor = [];
+    const origLoad = pm2.loadActivePoliciesAsync;
+    const origEnforceOnQueue = pm2.enforceOnQueue;
+    const origRemoveBypass = pm2.removeBypassChainForPolicy;
+    pm2.loadActivePoliciesAsync = async () => [rule];
+    pm2.enforceOnQueue = async () => {};
+    pm2.removeBypassChainForPolicy = async (policy) => { removedBypassFor.push(policy.pid); };
+
+    try {
+      await pm2.deleteTagRelatedPolicies(uid);
+    } finally {
+      pm2.loadActivePoliciesAsync = origLoad;
+      pm2.enforceOnQueue = origEnforceOnQueue;
+      pm2.removeBypassChainForPolicy = origRemoveBypass;
+    }
+
+    expect(removedBypassFor).to.deep.equal(['testBypassCleanupPid']);
+  });
+
+  it('should restore the old policy when replacement enforcement fails after old policy was unenforced', async () => {
+    const pm2 = new PolicyManager2();
+    const uid = 'testTagReenforceRollback';
+    const rule = new Policy({ pid: 'testReenforcePid', type: 'intranet', action: 'block', tag: [`tag:${uid}`, 'otherTag'] });
+
+    const unenforceCalls = [];
+    const enforceCalls = [];
+    const origLoad = pm2.loadActivePoliciesAsync;
+    const origGetPolicy = pm2.getPolicy;
+    const origUnenforce = pm2.unenforce;
+    const origEnforce = pm2.enforce;
+    pm2.loadActivePoliciesAsync = async () => [rule];
+    pm2.getPolicy = async () => rule;
+    pm2.unenforce = async (p) => { unenforceCalls.push(p.pid); };
+    pm2.enforce = async (p) => {
+      enforceCalls.push(p.tag ? [...p.tag] : null);
+      if (enforceCalls.length === 1) throw new Error('simulated enforce failure');
+    };
+
+    try {
+      await pm2.deleteTagRelatedPolicies(uid);
+    } finally {
+      pm2.loadActivePoliciesAsync = origLoad;
+      pm2.getPolicy = origGetPolicy;
+      pm2.unenforce = origUnenforce;
+      pm2.enforce = origEnforce;
+    }
+
+    expect(unenforceCalls).to.deep.equal(['testReenforcePid']);
+    // first call = failed attempt with the reduced tag list, second = rollback restoring the old (full) tag list
+    expect(enforceCalls.length).to.equal(2);
+    expect(enforceCalls[1]).to.deep.equal([`tag:${uid}`, 'otherTag']);
   });
 });

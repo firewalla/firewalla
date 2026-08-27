@@ -81,9 +81,7 @@ const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 
 const tokenManager = require('../util/FWTokenManager.js');
-
-const flowTool = require('./FlowTool.js');
-
+const country = require('../extension/country/country.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 
@@ -103,6 +101,7 @@ const dnsmasq = new Dnsmasq();
 
 const fs = require('fs');
 
+const freeradius = require("../extension/freeradius/freeradius.js");
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
@@ -124,7 +123,9 @@ const Monitorable = require('./Monitorable.js')
 const AsyncLock = require('../vendor_lib/async-lock');
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
 const NetworkProfile = require('./NetworkProfile.js');
+const KernelCrashMonitor = require('./KernelCrashMonitor.js');
 const lock = new AsyncLock();
+const blockControl = require('../control/BlockControl.js');
 
 module.exports = class HostManager extends Monitorable {
   constructor() {
@@ -433,6 +434,8 @@ module.exports = class HostManager extends Monitorable {
     json.osUptime = sysInfo.osUptime;
     json.fanSpeed = await platform.getFanSpeed();
     json.kernelVersion = sysInfo.kernelVersion;
+    if (sysInfo.usbInfo) // absent if the USB bus cannot be listed, which is not the same as nothing plugged in
+      json.usbInfo = sysInfo.usbInfo;
     const cpuUsageRecords = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_CPU_USAGE, Date.now() / 1000 - 60, Date.now() / 1000).map(r => JSON.parse(r));
     json.sysMetrics = {
       memUsage: sysInfo.realMem,
@@ -471,11 +474,24 @@ module.exports = class HostManager extends Monitorable {
       log.error(`Failed to get STA status from fwapc`, err.message);
       return null;
     });
+
+    // if staStatus is unavailable, no changes to avoid flapping on transient failures
     if (_.isObject(staStatus)) {
       for (const host of hosts) {
         const mac = host.mac;
         if (mac && staStatus[mac])
           host.staInfo = staStatus[mac];
+        if (host.autoGroup) {
+          const hostObj = this.getHostFastByMAC(mac);
+          const autoGroup = hostObj && await hostObj.getHostAutoGroup(staStatus[mac]);
+          if (autoGroup) {
+            host.autoGroup = autoGroup;
+            if (staStatus[mac]) // refresh autoGroup ts if still connected
+              await hostObj.touchAutoGroup(autoGroup);
+          } else {
+            delete host.autoGroup;
+          }
+        }
       }
     }
   }
@@ -587,7 +603,7 @@ module.exports = class HostManager extends Monitorable {
       if (target && target != '0.0.0.0') // remove irrelevant matrics from init
         metrics.push('upload:lo', 'download:lo', 'conn:lo:in', 'conn:lo:out')
     }
-    for (const metric of metrics) {
+    await Promise.all(metrics.map(async metric => {
       const s = await getHitsAsync(metric + subKey, granularities, hits)
       if (granularities == '1minute') {
         if (s[s.length - 1] && s[s.length - 1][1] == 0)
@@ -601,7 +617,7 @@ module.exports = class HostManager extends Monitorable {
         s.forEach((h, i) => s[i][1] = Math.floor(h[1]/2))
       }
       stats[metric] = s
-    }
+    }));
     return this.generateStats(stats);
   }
 
@@ -736,9 +752,19 @@ module.exports = class HostManager extends Monitorable {
     const initTs = await ruleStatsPlugin.getFeatureFirstEnabledTimestamp();
     extdata.ruleStats = { "initTs": initTs };
 
+    const adblockPlugin = await sensorLoader.initSingleSensor('AdblockPlugin');
+    if (adblockPlugin) {
+      extdata.adblockStats = await adblockPlugin.getAdblockStats();
+    }
+
     extdata.ntp = {
       localServerStatus: fc.isFeatureOn('ntp_redirect') ?
         Number(await rclient.getAsync(Constants.REDIS_KEY_NTP_SERVER_STATUS)) : null
+    }
+
+    const sysInfo = await SysInfo.getSysInfo();
+    if (sysInfo.dockerEmmcUsage && sysInfo.dockerEmmcUsage.length > 0) {
+      extdata.dockerEmmcUsage = sysInfo.dockerEmmcUsage;
     }
 
     json.extension = extdata;
@@ -875,6 +901,13 @@ module.exports = class HostManager extends Monitorable {
       }
     }
     json.nseScanResult = result;
+  }
+
+  async freeradiusForInit(json, options) {
+    const freeradiusData = await freeradius.getFreeRadiusDataForInit(options);
+    if (freeradiusData) {
+      json.freeradius = freeradiusData;
+    }
   }
 
   async hostsInfoForInit(json, options) {
@@ -1201,6 +1234,7 @@ module.exports = class HostManager extends Monitorable {
       this.pairingAssetsForInit(json),
       this.addMsp2CheckIn(json),
       this.basicDataForInit(json, {}),
+      this.kernelCrashInfoForInit(json),
     ]
 
     await Promise.all(requiredPromises);
@@ -1251,20 +1285,24 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async asyncBasicDataForInit(json) {
-    const speed = await platform.getNetworkSpeed();
-    const nicStates = await platform.getNicStates();
+    const [speed, nicStates, versionUpdate, customizedCategories] = await Promise.all([
+      platform.getNetworkSpeed(),
+      platform.getNicStates(),
+      sysManager.getVersionUpdate(),
+      categoryUpdater.getCustomizedCategories(),
+    ]);
     if (platform.isFireRouterManaged()) {
+      const stpStatus = await FireRouter.getBridgeStpStatus().catch(() => ({}));
       for (const intf in nicStates) {
         const channel = _.get(FireRouter.getInterfaceViaName(intf), 'state.channel')
         if (channel) nicStates[intf].channel = channel
+        if (stpStatus[intf]) nicStates[intf].stp = stpStatus[intf];
       }
     }
     json.nicSpeed = speed;
     json.nicStates = nicStates;
-    const versionUpdate = await sysManager.getVersionUpdate();
     if (versionUpdate)
       json.versionUpdate = versionUpdate;
-    const customizedCategories = await categoryUpdater.getCustomizedCategories();
     json.customizedCategories = customizedCategories;
   }
 
@@ -1330,7 +1368,7 @@ module.exports = class HostManager extends Monitorable {
     let aliases = await rclient.zrangeAsync("guardian:alias:list", 0, -1);
     aliases = _.uniq((aliases || []).concat("default"));
     await Promise.all(aliases.map(async alias => {
-      const guardian = new Guardian(alias);
+      const guardian = new Guardian(alias, {}, false);
       const guardianInfo = await guardian.getGuardianInfo();
       result.push(guardianInfo);
     }))
@@ -1362,8 +1400,16 @@ module.exports = class HostManager extends Monitorable {
 
       if(mm && mm.length > 0) {
         const names = await rclient.hgetallAsync("sys:ept:memberNames")
+        const emails = await rclient.hgetallAsync(Constants.REDIS_KEY_EPT_MEMBER_EMAILS)
         const lastVisits = await rclient.hgetallAsync("sys:ept:member:lastvisit")
         const history = await rclient.hgetallAsync("sys:ept:members:history")
+
+        if(emails) {
+          mm.forEach((m) => {
+            if (m.eid && emails[m.eid])
+              m.name = emails[m.eid]
+          })
+        }
 
         if(names) {
           mm.forEach((m) => {
@@ -1460,10 +1506,12 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async tagsForInit(json, timeUsageApps, includeAppTimeSlots, includeAppTimeIntervals) {
-    await TagManager.refreshTags();
+    const [, supportedApps] = await Promise.all([
+      TagManager.refreshTags(),
+      TimeUsageTool.getSupportedApps(),
+    ]);
     const tags = await TagManager.toJson();
     const timezone = sysManager.getTimezone();
-    const supportedApps = await TimeUsageTool.getSupportedApps();
     if (!timeUsageApps)
       timeUsageApps = supportedApps;
     else
@@ -1482,14 +1530,17 @@ module.exports = class HostManager extends Monitorable {
           // today's app time usage on this tag
           const begin = (timezone ? moment().tz(timezone) : moment()).startOf("day").unix();
           const end = begin + 86400;
-          const {appTimeUsage, appTimeUsageTotal, categoryTimeUsage} = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, null, timeUsageApps, begin, end, "hour", false, includeAppTimeSlots, includeAppTimeIntervals);
+          const statsPromises = [
+            TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, null, timeUsageApps, begin, end, "hour", false, includeAppTimeSlots, includeAppTimeIntervals),
+          ];
+          statsPromises.push(TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, null, ["internet"], begin, end, "hour", false, includeAppTimeSlots, includeAppTimeIntervals));
+
+          const [{appTimeUsage, appTimeUsageTotal, categoryTimeUsage}, internetStats] = await Promise.all(statsPromises);
 
           json[initDataKey][uid].appTimeUsageToday = appTimeUsage;
           json[initDataKey][uid].appTimeUsageTotalToday = appTimeUsageTotal;
           json[initDataKey][uid].categoryTimeUsageToday = categoryTimeUsage;
-
-          const stats = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, null, ["internet"], begin, end, "hour", false, includeAppTimeSlots, includeAppTimeIntervals);
-          json[initDataKey][uid].internetTimeUsageToday = _.get(stats, ["appTimeUsage", "internet"]);
+          json[initDataKey][uid].internetTimeUsageToday = _.get(internetStats, ["appTimeUsage", "internet"]);
         }
       }
     })
@@ -1591,10 +1642,17 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async toJson(options = {}) {
+    const json = await this.toJson2(options);
+    delete json._partialInit;
+    return json;
+  }
+
+  async toJson2(options = {}) {
     const json = {};
 
     let requiredPromises = [
       this.hostsInfoForInit(json, options),
+      this.freeradiusForInit(json, options),
       this.newLast24StatsForInit(json, null, options.tsMetrics, options),
       this.last60MinStatsForInit(json, null, options.tsMetrics, options),
       this.extensionDataForInit(json),
@@ -1662,7 +1720,12 @@ module.exports = class HostManager extends Monitorable {
         log.debug(`promise ${i} finished`, (Date.now() - ts)/1000)
       })()
     }
-    await Promise.all(requiredPromises.map(p => p.catch(log.error)))
+    const results = await Promise.allSettled(requiredPromises);
+    const failures = results.filter(r => r.status === 'rejected');
+    if (failures.length > 0) {
+      for (const f of failures) log.error("Required init section failed:", f.reason);
+      json._partialInit = true;
+    }
 
     json.policyRules = this.filterPolicyRules(json.policyRules, json.hosts);
     json.exceptionRules = this.filterExceptions(json.exceptionRules, json.hosts);
@@ -1727,6 +1790,10 @@ module.exports = class HostManager extends Monitorable {
     const noForward = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD);
     json.localDomainNoForward = noForward && JSON.parse(noForward) || false;
     json.cpuProfile = await this.getCpuProfile();
+  }
+
+  async kernelCrashInfoForInit(json) {
+    json.kernelCrashInfo = await KernelCrashMonitor.getCrashInfo();
   }
 
   getHostsFast() {
@@ -1942,6 +2009,21 @@ module.exports = class HostManager extends Monitorable {
       if (includePinnedHosts)
         for (const mac of await rclient.smembersAsync(Constants.REDIS_KEY_HOST_PINNED))
           visibleMACs.add(mac)
+
+      if (platform.isFireRouterManaged()) {
+        try {
+          const networkConfig = await FireRouter.getConfig();
+          const assets = _.get(networkConfig, ["apc", "assets"]);
+          if (_.isObject(assets)) {
+            for (const assetMac of Object.keys(assets)) {
+              if (hostTool.isMacAddress(assetMac))
+                visibleMACs.add(assetMac.toUpperCase());
+            }
+          }
+        } catch (err) {
+          log.error("Failed to get APC assets from FireRouter config", err.message);
+        }
+      }
 
       // TODO: replace getAllMACs with getMACsByTime(0) after a year of 1.981
       const MACs = includeInactiveHosts ? new Set(await hostTool.getAllMACs()) : visibleMACs
@@ -2296,6 +2378,8 @@ module.exports = class HostManager extends Monitorable {
       await ipset.del(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET4);
       await ipset.del(ipset.CONSTANTS.IPSET_ACL_OFF, ipset.CONSTANTS.IPSET_MATCH_ALL_SET6);
     }
+    // refresh connmark to ensure the acl takes effect immediately on established connections
+    blockControl.scheduleRefreshConnmark();
   }
 
   async app(policy) {
@@ -2333,9 +2417,11 @@ module.exports = class HostManager extends Monitorable {
             break;
           }
         } else if (wanType === Constants.WAN_TYPE_SINGLE) {
-          totalUpload = parseInt(wanConf.upload) || 0;
-          totalDownload = parseInt(wanConf.download) || 0;
-          break;
+          if (wanId === activeWanUUID) {
+            totalUpload = parseInt(wanConf.upload) || 0;
+            totalDownload = parseInt(wanConf.download) || 0;
+            break;
+          }
         } else if (wanType === Constants.WAN_TYPE_LB) {
           const intf = sysManager.getInterfaceViaUUID(wanId);
           if (!intf || intf.type !== "wan" || !intf.ready)
@@ -2817,7 +2903,11 @@ module.exports = class HostManager extends Monitorable {
 
       const traffic = await flowAggrTool.getTopSumFlowByKeyAndDestination(realSumKey, key, count);
 
-      const enriched = (await flowTool.enrichWithIntel(traffic, key != 'dnsB')).sort((a, b) => {
+      const enriched = (await asyncNative.mapLimit(traffic, 50, (flow) => {
+        if (key != 'dnsB')
+          flow.country = country.getCountry(flow.ip);
+        return flow
+      })).sort((a, b) => {
         return b.count - a.count;
       });
 

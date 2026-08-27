@@ -171,13 +171,25 @@ class Tag extends Monitorable {
 
     await flowAggrTool.removeAggrFlowsAllTag(this.o.uid);
 
-    // flush related ipsets
-    await Ipset.flush(Tag.getTagSetName(this.o.uid));
-    await Ipset.flush(Tag.getTagDeviceMacSetName(this.o.uid));
-    await Ipset.flush(Tag.getTagDeviceIPSetName(this.o.uid, 4));
-    await Ipset.flush(Tag.getTagDeviceIPSetName(this.o.uid, 6));
-    await Ipset.flush(Tag.getTagNetSetName(this.o.uid));
-    await Ipset.flush(Tag.getTagDeviceSetName(this.o.uid));
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const policyKey = Constants.TAG_TYPE_MAP[type].policyKey;
+      const parentUids = (this.policy && this.policy[policyKey]) || [];
+      for (const parentUid of parentUids) {
+        for (const setName of [Tag.getTagDeviceSetName(parentUid), Tag.getTagSetName(parentUid)]) {
+          await Ipset.del(setName, Tag.getTagDeviceMacSetName(this.o.uid));
+          await Ipset.del(setName, Tag.getTagDeviceIPSetName(this.o.uid, 4));
+          await Ipset.del(setName, Tag.getTagDeviceIPSetName(this.o.uid, 6));
+        }
+      }
+    }
+
+    // destroy containers (tag_set, dev_set) before dev_mac_set, or isReferenced() blocks its destroy
+    await Ipset.destroy(Tag.getTagSetName(this.o.uid));
+    await Ipset.destroy(Tag.getTagDeviceSetName(this.o.uid));
+    await Ipset.destroy(Tag.getTagNetSetName(this.o.uid));
+    await Ipset.destroy(Tag.getTagDeviceMacSetName(this.o.uid));
+    await Ipset.destroy(Tag.getTagDeviceIPSetName(this.o.uid, 4));
+    await Ipset.destroy(Tag.getTagDeviceIPSetName(this.o.uid, 6));
     // delete related dnsmasq config files
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in global effective directory
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/*/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in network-wise effective directories

@@ -66,6 +66,9 @@ const categoryUpdater = new CategoryUpdater()
 
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 
+const FlowAggrTool = require('./FlowAggrTool')
+const flowAggrTool = new FlowAggrTool()
+
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
 const config = fc.getConfig().bro
@@ -85,12 +88,12 @@ const { getUniqueTs, extractIP } = require('./FlowUtil.js')
 
 const LRU = require('lru-cache');
 const Constants = require('./Constants.js');
-
-const exec = require('util').promisify(require('child_process').exec);
+const FireRouter = require('./FireRouter.js');
+const DestIPFoundHook = require('../hook/DestIPFoundHook.js');
+const destIPFoundHook = new DestIPFoundHook();
 
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
-const CONNMARK_REFRESH_INTERVAL = 15 * 1000; // 15 seconds
 
 /*
  *
@@ -158,6 +161,7 @@ class BroDetect {
     this.proxyConn = new LRU({max: PROXY_CONN_SIZE, maxAge: 60 * 1000});
     this.dnsCache = new LRU({max: DNS_CACHE_SIZE, maxAge: 3600 * 1000});
     this.bridgeLocalFlow = new LRU({max: 1000, maxAge: 10 * 1000});
+    this.sameNetworkFlowDedup = new LRU({max: 1000, maxAge: 180 * 1000});
     this.oIntfCache = new LRU({max: 1000, maxAge: 10 * 1000}); // for rate limited A=C log
     this.dnsCount = 0
     this.dnsHit = 0
@@ -728,6 +732,51 @@ class BroDetect {
     return this.isMonitoring(intf, monitorable)
   }
 
+  // Decide whether a same-network local flow should be dropped.
+  //
+  // Three possible traffic sources: normal zeek, RSPAN zeek (isRspan), AP/switch bridge (bridge).
+  //
+  // Different stpPorts: the router is the common ancestor.
+  //   - Zeek sees the routed flow: keep.
+  //   - RSPAN or bridge see a mirrored/bridged copy: drop.
+  //
+  // Same or unknown stpPorts: the switch/AP is the common ancestor.
+  //   - If either host is wireless: AP bridge is the authoritative source (full-duplex view);
+  //     RSPAN only catches one direction for wireless → drop RSPAN, keep bridge.
+  //   - If both hosts are wired: first source to register the 5-tuple wins (LRU dedup).
+  //   - Zeek (non-bridge, non-rspan) on same segment: invalid, drop.
+  //
+  // srcHost / dstHost and flowKey are optional (omitted at the early gate).
+  _dropLocalSameNetworkFlow(bridge, isRspan, srcStpPort, dstStpPort, srcHost = null, dstHost = null, flowKey = null) {
+    if (srcStpPort && dstStpPort && (srcStpPort !== dstStpPort || srcStpPort.startsWith("wlan"))) {
+      // different physical port or same native Wi-Fi AP interface — router is common ancestor; RSPAN/bridge copies are redundant
+      return isRspan || bridge;
+    }
+    // same or unknown stp port
+    if (!isRspan && !bridge) {
+      // plain zeek on same-network segment and same ethernet port — should not be seen by zeek directly
+      return true;
+    }
+    // RSPAN or bridge (AP/switch) traffic
+    if (srcHost || dstHost) {
+      const srcIsWireless = srcHost && srcHost.isWirelessDevice && srcHost.isWirelessDevice();
+      const dstIsWireless = dstHost && dstHost.isWirelessDevice && dstHost.isWirelessDevice();
+      if (srcIsWireless || dstIsWireless) {
+        // at least one wireless device: AP has full visibility; RSPAN only sees one direction
+        return isRspan;
+      }
+    }
+    // both wired (or unknown): first source to register the 5-tuple wins
+    if (flowKey) {
+      const source = isRspan ? 'rspan' : 'ap_switch';
+      if (this.sameNetworkFlowDedup.has(flowKey)) {
+        return this.sameNetworkFlowDedup.get(flowKey) !== source; // drop if different source, keep if the same source
+      }
+      this.sameNetworkFlowDedup.set(flowKey, source);
+    }
+    return false;
+  }
+
   async validateConnData(obj) {
     const threshold = config.threshold;
     const iptcpRatio = threshold.IPTCPRatio || 10000;
@@ -956,6 +1005,8 @@ class BroDetect {
       const localResp = obj["local_resp"];
       let localFlow = false
       let bridge = obj["bridge"] || false;
+      const isRspan = obj.node === Constants.WORKER_ID_RSPAN ||
+        (obj.vlan != null && FireRouter.getRspanVids().has(Number(obj.vlan)));
 
       log.silly("ProcessingConnection:", obj.uid, orig, resp, obj['id.resp_p'],
         long ? 'long' : '', reverseLocal ? 'reverseLocal' : '');
@@ -983,6 +1034,9 @@ class BroDetect {
           localMac = origMac;
           dstMac = respMac;
         }
+        // Switch ACL accounting has no initiator/responder concept; use 'lo' so
+        // these flows do not contribute to directional (in/out) sumflow buckets.
+        if (obj.switch) flowdir = 'lo'
         localFlow = true
       } else if (localOrig == true && localResp == false) {
         flowdir = "in";
@@ -1020,9 +1074,22 @@ class BroDetect {
 
       let intfInfo = sysManager.getInterfaceViaIP(lhost, fam);
       let dstIntfInfo = localFlow && sysManager.getInterfaceViaIP(dhost, fam);
-      // do not process traffic between devices in the same network unless bridge flag is set (from fwap) or integrated AP is enabled (orange platform)
-      if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid && !bridge && !await platform.hasIntegratedAPAssets())
-        return;
+      // Direction-aware 5-tuple key used by the same-network dedup LRU.
+      const sameNetworkFlowKey = `${obj.proto}:${orig}:${orig_p}:${resp}:${resp_p}`;
+      // do not process traffic between devices in the same network unless bridge flag is set (from fwap)
+      // stpPort refinement: if both hosts have different stpPorts the router is the common ancestor —
+      // keep zeek's own flow and drop the AP/RSPAN duplicate (see _dropLocalSameNetworkFlow).
+      // When stpPort is unknown for either host, defer to the authoritative gate below after host
+      // objects are fully resolved.
+      if (intfInfo && dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid) {
+        const srcHost = hostManager.getHostFast(lhost, fam);
+        const dstHost = hostManager.getHostFast(dhost, fam);
+        const srcStpPort = srcHost && srcHost.getStpPort();
+        const dstStpPort = dstHost && dstHost.getStpPort();
+        // Only early-drop when both stpPorts are known; otherwise defer to the authoritative gate. Only ethernet devices have stpPort.
+        if (srcStpPort && dstStpPort && this._dropLocalSameNetworkFlow(bridge, isRspan, srcStpPort, dstStpPort))
+          return;
+      }
       // ignore multicast IP
       try {
         // zeek has problem recognizeing multicast addresses as local, so direction could be wrong
@@ -1150,6 +1217,11 @@ class BroDetect {
           }
         }
       }
+      // for local flows, fetch connEntry to get apid written by ACLAuditLogPlugin or APCMsgSensor
+      if (!connEntry && localFlow && orig && resp && orig_p && resp_p && obj['proto']) {
+        connEntry = await conntrack.getConnEntries(orig, orig_p, resp, resp_p, obj['proto'], 600);
+      }
+
       if (flowdir == "in" && !localFlow)
         conntrack.setConnRemote(obj['proto'], resp, resp_p);
 
@@ -1238,8 +1310,13 @@ class BroDetect {
             return;
           }
         }
-        if (!bridge && intfInfo.uuid == dstIntfInfo.uuid && !await platform.hasIntegratedAPAssets())
-          return
+        if (intfInfo.uuid == dstIntfInfo.uuid && !isIdentityIntf && !isDstIdentityIntf) {
+          // only ethernet devices are considered here, VPN device is filtered by identity intf check
+          const srcStpPort = monitorable && monitorable.getStpPort && monitorable.getStpPort();
+          const dstStpPort = dstMonitorable && dstMonitorable.getStpPort && dstMonitorable.getStpPort();
+          if (this._dropLocalSameNetworkFlow(bridge, isRspan, srcStpPort, dstStpPort, monitorable, dstMonitorable, sameNetworkFlowKey))
+            return;
+        }
         if (obj.proto === "udp" && accounting.isBlockedDevice(dstMac)) {
           return
         }
@@ -1307,7 +1384,16 @@ class BroDetect {
 
       if (localFlow) {
         tmpspec.dmac = dstMac
-        tmpspec.dIntf = dstIntfInfo.uuid.substring(0, 8)
+        if (dstIntfInfo) tmpspec.dIntf = dstIntfInfo.uuid.substring(0, 8)
+        if (obj.switch) {
+          tmpspec.switch = true
+          // Reverse pass: swap ob/rb so this entry represents mac2's own perspective
+          // (mac2.ob = what mac2 sent = resp_bytes; mac2.rb = what mac2 received = orig_bytes).
+          if (reverseLocal) {
+            tmpspec.ob = Number(obj.resp_bytes)
+            tmpspec.rb = Number(obj.orig_bytes)
+          }
+        }
         if (dstRealLocal)
           tmpspec.drl = extractIP(dstRealLocal)
       } else {
@@ -1374,7 +1460,7 @@ class BroDetect {
         // only use information in app map for outbound flow, af describes remote site
         if (afobj && afobj.host && (flowdir === "in" || localFlow)) {
           if (!tmpspec.af) tmpspec.af = {}
-          tmpspec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
+          tmpspec.af[afobj.host] = _.pick(afobj, ["proto"]);
           afhost = afobj.host
         }
       }
@@ -1418,12 +1504,10 @@ class BroDetect {
       this.indicateNewFlowSpec(tmpspec);
 
       const traffic = [tmpspec.ob, tmpspec.rb]
-      if (tmpspec.fd == 'in') traffic.reverse()
+      if (tmpspec.fd == 'in' || tmpspec.fd == 'lo') traffic.reverse()
 
       const tuple = { download: traffic[0], upload: traffic[1] }
       if (localFlow) {
-        const tupleConn = {conn: tmpspec.ct}
-
         this.recordLocalTraffic({
           mac: localMac, upload: tuple.upload, download: tuple.download,
           intf: intfInfo && intfInfo.uuid,
@@ -1431,21 +1515,27 @@ class BroDetect {
           tags, dstTags
         })
 
-        this.recordTraffic(tupleConn, 'lo:intra:global')
-        this.recordTraffic(tupleConn, `lo:${flowdir}:${localMac}`)
+        // Switch accounting records represent aggregated bytes over an interval, not
+        // individual connections — skip the connection-count timeseries.
+        if (!obj.switch) {
+          const tupleConn = {conn: tmpspec.ct}
 
-        if (dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid) {
-          this.recordTraffic(tupleConn, 'lo:intra:intf:' + intfInfo.uuid)
-        } else {
-          this.recordTraffic(tupleConn, `lo:${flowdir}:intf:${intfInfo.uuid}`)
-        }
+          this.recordTraffic(tupleConn, 'lo:intra:global')
+          this.recordTraffic(tupleConn, `lo:${flowdir}:${localMac}`)
 
-        for (const key in tags) {
-          for (const tag of tags[key]) {
-            if (dstTags[key] && dstTags[key].includes(tag)) {
-              this.recordTraffic(tupleConn, 'lo:intra:tag:' + tag)
-            } else {
-              this.recordTraffic(tupleConn, `lo:${flowdir}:tag:${tag}`)
+          if (dstIntfInfo && intfInfo.uuid == dstIntfInfo.uuid) {
+            this.recordTraffic(tupleConn, 'lo:intra:intf:' + intfInfo.uuid)
+          } else {
+            this.recordTraffic(tupleConn, `lo:${flowdir}:intf:${intfInfo.uuid}`)
+          }
+
+          for (const key in tags) {
+            for (const tag of tags[key]) {
+              if (dstTags[key] && dstTags[key].includes(tag)) {
+                this.recordTraffic(tupleConn, 'lo:intra:tag:' + tag)
+              } else {
+                this.recordTraffic(tupleConn, `lo:${flowdir}:tag:${tag}`)
+              }
             }
           }
         }
@@ -1461,8 +1551,48 @@ class BroDetect {
         }
       }
 
-      // Single flow is written to redis first to prevent data loss
-      // will be aggregated on flow stash expiration and removed in most cases
+      const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
+      let remoteHost = null;
+      if (afhost && _.isObject(afobj) && afobj.ip === remoteIPAddress) {
+        remoteHost = afhost;
+      }
+
+      // For non-local flows, resolve intel BEFORE persisting so a minimal snapshot is
+      // baked onto the record (single write; reflects what was known at process time).
+      // processIP also writes intel:ip and emits MSG_FLOW_ENRICHED, so this replaces the
+      // former async DestIPFound hop. Bounded by the hook's worker pool.
+      if (!localFlow) {
+        const enrichFlow = Object.assign({}, tmpspec, {
+          ip: remoteIPAddress,
+          host: remoteHost,
+          intf: intfInfo.uuid, // intf in tmpspec is truncated
+          from: "flow",
+          mac: localMac
+        });
+        try {
+          // resolves null (without blocking) when the enrich backlog is saturated
+          const intel = await destIPFoundHook.appendNewFlow(enrichFlow, true);
+          if (intel) {
+            // compact keys to save memory: c = category (coded)
+            if (intel.category)
+              tmpspec.c = await intelTool.categoryToNumber(intel.category);
+            // per-flow app is deprecated by app time usage, which accounts app activity
+            // by domain with its own dedicated config
+            // if (intel.app)
+            //   tmpspec.a = intel.app;
+            // zeek didn't capture a host for this flow (no af) but processIP resolved one
+            // (SSL cert / reverse DNS): persist it in af so the read path still gets
+            // f.host now that intel:ip is no longer read at query time
+            if (intel.host && _.isEmpty(tmpspec.af))
+              tmpspec.af = { [intel.host]: {} };
+          }
+        } catch (err) {
+          log.error("Failed to resolve inline intel for", remoteIPAddress, err);
+        }
+      }
+
+      // Single flow written to redis (carries the intel snapshot when resolved above);
+      // aggregated on flow stash expiration and removed in most cases
       const key = flowTool.getLogKey(localMac, {direction: tmpspec.fd, local: localFlow})
       let strdata = JSON.stringify(tmpspec);
 
@@ -1486,49 +1616,20 @@ class BroDetect {
         multi.zadd(systemKey, tmpspec._ts, JSON.stringify(tmpspec))
       }
       // no need to set ttl here, OldDataCleanSensor will take care of it
-      multi.zadd("deviceLastFlowTs", now, localMac);
+      if (flowAggrTool.shouldUpdateDeviceLastFlowTs(localMac, now))
+        multi.zadd("deviceLastFlowTs", now, localMac);
       await multi.execAsync().catch(
         err => log.error("Failed to save tmpspec: ", tmpspec, err)
       )
-
-      const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
-      let remoteHost = null;
-      if (afhost && _.isObject(afobj) && afobj.ip === remoteIPAddress) {
-        remoteHost = afhost;
-      }
 
       if (localFlow) {
         // no need to go through DestIPFoundHook
         sem.emitLocalEvent({
           type: Message.MSG_FLOW_ENRICHED,
           suppressEventLogging: true,
-          flow: Object.assign({}, tmpspec, {intf: intfInfo.uuid, dIntf: dstIntfInfo.uuid}),
+          flow: Object.assign({}, tmpspec, {intf: intfInfo.uuid, dIntf: dstIntfInfo && dstIntfInfo.uuid}),
         });
       }
-
-      setTimeout(() => {
-        // no need to go through DestIPFoundHook for localFlow
-        if (!localFlow) {
-          sem.emitEvent({
-            type: 'DestIPFound',
-            ip: remoteIPAddress,
-            host: remoteHost,
-            fd: tmpspec.fd,
-            flow: Object.assign({}, tmpspec, { ip: remoteIPAddress, host: remoteHost, intf: intfInfo.uuid }),
-            from: "flow",
-            suppressEventLogging: true,
-            mac: localMac
-          });
-          if (realLocal) {
-            sem.emitEvent({
-              type: 'DestIPFound',
-              from: "VPN_endpoint",
-              ip: tmpspec.rl,
-              suppressEventLogging: true
-            });
-          }
-        }
-      }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
     } catch (e) {
       log.error("Conn:Error Unable to save", e, data);
@@ -1560,7 +1661,7 @@ class BroDetect {
           const descriptor = (systemFlow ? f.mac+':' : '')
             + (type == 'dns'
               ? `${f.sh}:${f.dh}:${f.dn}`
-              : `${f.sh}:${f.dh}:${f.oIntf || ""}:${f.dp || ""}`)
+              : `${f.sh}:${f.dh}:${f.oIntf || ""}:${f.dp || ""}:${f.pr || ""}`)
 
           if (type == 'conn' && f.uids && f.uids.length && f.fd === "in" && !f.af) try {
             // try resolve host info for previous flows again here
@@ -1570,7 +1671,7 @@ class BroDetect {
             if (!flowstash.ignore[ipPairKey] || !flowstash.ignore[ipPairKey].has(uid)) {
               const afobj = this.withdrawAppMap(f.sh, f.sp[0] || 0, f.dh, f.dp, this.activeLongConns.has(uid)) || await conntrack.getConnEntries(f.sh, f.sp[0] || 0, f.dh, f.dp, f.pr, 600);;
               if (afobj && afobj.host) {
-                f.af = { [afobj.host]: _.pick(afobj, ["proto", "ip"]) };
+                f.af = { [afobj.host]: _.pick(afobj, ["proto"]) };
               }
             }
           } catch (e) {

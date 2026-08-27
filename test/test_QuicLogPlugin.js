@@ -151,4 +151,19 @@ describe('QuicLogPlugin._processQuicLog', function () {
     await plugin._processQuicLog(mkLine(2222));
     expect(plugin.connCache.length).to.equal(2);
   });
+
+  it('should recover the trailing entry from a line with two concatenated kernel messages (missing newline)', async () => {
+    // seen in production: a truncated message got glued to the next one without a newline in between
+    const line = 'Jul  9 12:32:25 localhost kernel: [6159943.347595] [FW_QUIC]:{"src_addr":"2409:871e:d00:40:4c00:88b1:30dd:ceca", "dst_addr":"240Jul  9 12:34:04 localhost kernel: [6160042.093775] [FW_QUIC]:{"src_addr":"192.168.201.111", "dst_addr":"52.222.244.51", "src_port":59282, "dst_port":443, "protocol":"UDP", "hostname":"www.figma.com"}';
+    await plugin._processQuicLog(line);
+
+    expect(plugin.connCache.length).to.equal(1);
+    const entry = plugin.connCache[0];
+    expect(entry.src).to.equal('192.168.201.111');
+    expect(entry.srcPort).to.equal(59282);
+    expect(entry.dst).to.equal('52.222.244.51');
+    expect(entry.dstPort).to.equal(443);
+    expect(entry.proto).to.equal('UDP');
+    expect(entry.data[Constants.REDIS_HKEY_CONN_HOST]).to.equal('www.figma.com');
+  });
 });

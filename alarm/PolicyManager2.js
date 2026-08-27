@@ -39,6 +39,8 @@ const LOCK_POLICY_ID = "LOCK_POLICY_ID";
 const { Address4, Address6 } = require('ip-address');
 const Host = require('../net2/Host.js');
 const Constants = require('../net2/Constants.js');
+// pids reserved for synthetic rules (e.g. adblock TLS); getNextID never hands these out
+const RESERVED_PIDS = new Set([Constants.RESERVED_PID_ADBLOCK_TLS]);
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -63,6 +65,8 @@ const domainBlock = require('../control/DomainBlock.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
+const ExceptionManager = require('./ExceptionManager.js')
+const exceptionManager = new ExceptionManager()
 const CountryUpdater = require('../control/CountryUpdater.js')
 const countryUpdater = new CountryUpdater()
 const fc = require('../net2/config.js')
@@ -175,6 +179,25 @@ class PolicyManager2 {
     return false;
   }
 
+  async removeBypassChainForPolicy(policy) {
+    // check if policy type/action can have a related bypass chain
+    // if yes, check if policy is removed from redis, then remove related bypass chain
+    if ((policy.action == "block" || policy.action == "app_block" || policy.action == "disturb")) {
+      if (!(await this.policyExists(policy.pid))) {
+        const chainName = `FW_${policy.pid}_BYPASS`;
+        const tables = ["filter", "mangle"];
+        for (const table of tables) {
+          if (!Bypass.isBypassChainExist(table, policy.pid)) {
+            continue;
+          }
+          await Bypass.removeBypassChain(table, policy.pid).catch((err) => {
+            log.error(`Failed to remove bypass chain for policy ${policy.pid} on table ${table}`, err.message);
+          });
+        }
+      }
+    }
+  }
+
   async setupPolicyQueue() {
     this.queue = new Queue('policy', {
       removeOnFailure: true,
@@ -222,29 +245,14 @@ class PolicyManager2 {
             // if policy is disabled, skip unenforce
             if (policy.isDisabled()) {
               this.invalidateExpireTimer(policy);
-              log.info("Policy is disabled, skip unenforce", policy.pid, action);
+              log.info("Policy is disabled, skip unenforce", policy.pid);
             } else {
               await this.unenforce(policy)
             }
-
-            // check if policy is disturb or block policy with bypass reference, 
-            // if yes, check if policy is removed from redis, then remove related bypass chain
-            if ((policy.type == "category" || policy.type == "mac" || policy.type == "internet") && (policy.action == "block" || policy.action == "app_block" || policy.action == "disturb")) {
-              if (!(await this.policyExists(policy.pid))) {
-                const chainName = `FW_${policy.pid}_BYPASS`;
-                const tables = ["filter", "mangle"];
-                for (const table of tables) {
-                  if (!Bypass.isBypassChainExist(table, policy.pid)) {
-                    continue;
-                  }
-                  await Bypass.removeBypassChain(table, policy.pid).catch((err) => {
-                    log.error(`Failed to remove bypass chain for policy ${policy.pid} on table ${table}`, err.message);
-                  });
-                }
-              }
-            }
+            await this.removeBypassChainForPolicy(policy);
           } catch (err) {
             log.error("unenforce policy failed:", err, policy)
+            throw err;
           } finally {
             log.info("COMPLETE UNENFORCING POLICY", policy.pid, action);
           }
@@ -253,26 +261,33 @@ class PolicyManager2 {
 
         case "reenforce": {
           try {
-            if (!oldPolicy) {
-              // do nothing
-            } else {
-              log.info("START REENFORCING POLICY", policy.pid, action);
-
+            log.info("START REENFORCING POLICY", policy.pid, action);
+            if (oldPolicy) {
               // if oldPolicy is disabled, skip unenforce
+              let oldPolicyUnenforced = false;
               if (oldPolicy.isDisabled()) {
-                log.info("Old policy is disabled, skip unenforce", oldPolicy.pid, action);
+                //still need to clear timer for policy(example idle policy)
+                this.invalidateExpireTimer(oldPolicy);
+                log.info("Old policy is disabled, skip unenforce", oldPolicy.pid);
               } else {
-                await this.unenforce(oldPolicy).catch((err) => {
-                    log.error("Failed to unenforce policy before reenforce", err.message, policy);
-                });
+                await this.unenforce(oldPolicy);
+                oldPolicyUnenforced = true;
               }
-              
-              await this.enforce(policy).catch((err) => {
-                log.error("Failed to reenforce policy", err.message, policy);
+
+              await this.enforce(policy).catch(async (err) => {
+                if (oldPolicyUnenforced) {
+                  // replacement failed after the old policy was already torn down; restore it so
+                  // runtime enforcement doesn't diverge from the still-persisted old policy state
+                  await this.enforce(oldPolicy).catch(rollbackErr => {
+                    log.error("Failed to restore old policy after failed reenforcement", oldPolicy.pid, rollbackErr.message);
+                  });
+                }
+                throw err;
               });
             }
           } catch (err) {
-            log.error("reenforce policy failed:" + err, policy)
+            log.error("reenforce policy failed:", err, policy)
+            throw err;
           } finally {
             log.info("COMPLETE ENFORCING POLICY", policy.pid, action);
           }
@@ -336,6 +351,19 @@ class PolicyManager2 {
     return this.queue.ready();
   }
 
+  // routes through the same serialized bee-queue as tryPolicyEnforcement, but awaits
+  // completion and rejects on failure so callers can abort instead of racing/ignoring it
+  enforceOnQueue(event) {
+    return new Promise((resolve, reject) => {
+      const job = this.queue.createJob(event);
+      job.timeout(60 * 1000).save((err) => {
+        if (err) reject(err);
+      });
+      job.on('succeeded', resolve);
+      job.on('failed', reject);
+    });
+  }
+
   registerPolicyEnforcementListener() { // need to ensure it's serialized
     log.info("register policy enforcement listener")
     sem.on("PolicyEnforcement", (event) => {
@@ -371,15 +399,19 @@ class PolicyManager2 {
     })
   }
 
+  // invalidate ipset and active rules cache after policy update
+  invalidatePolicyCache() {
+    this.ipsetCache = null;
+    this.sortedActiveRulesCache = null;
+    this.sortedRoutesCache = null;
+  }
+
   tryPolicyEnforcement(policy, action, oldPolicy) {
     if (policy) {
       action = action || 'enforce'
       log.info("try policy enforcement:" + action + ":" + policy.pid)
 
-      // invalidate ipset and active rules cache after policy update
-      this.ipsetCache = null;
-      this.sortedActiveRulesCache = null;
-      this.sortedRoutesCache = null;
+      this.invalidatePolicyCache();
 
       sem.emitEvent({
         type: 'PolicyEnforcement',
@@ -410,6 +442,8 @@ class PolicyManager2 {
           }
           if (next === prev)
             throw new Error(`No free pid is available`);
+          if (RESERVED_PIDS.has(next))
+            continue;
           if (await rclient.existsAsync(`policy:${next}`))
             continue;
           return next;
@@ -869,6 +903,7 @@ class PolicyManager2 {
     let rules = await this.loadActivePoliciesAsync({ includingDisabled: 1 })
     let policyIds = [];
     let policyKeys = [];
+    let unenforcedRules = [];
 
     for (let rule of rules) {
       if (_.isEmpty(rule.tag) && rule.type !== "tag") continue;
@@ -877,25 +912,40 @@ class PolicyManager2 {
         const tagUid = Constants.TAG_TYPE_MAP[type].ruleTagPrefix + tag;
         if (_.isArray(rule.tag) && rule.tag.some(m => m == tagUid)) {
           if (rule.tag.length <= 1) {
-            policyIds.push(rule.pid);
-            policyKeys.push('policy:' + rule.pid);
-
-            this.tryPolicyEnforcement(rule, 'unenforce');
+            const unenforced = await this.enforceOnQueue({ action: 'unenforce', policy: rule }).then(() => true).catch(err => {
+              log.error(`Failed to unenforce policy ${rule.pid} while deleting tag ${tag}, leaving policy in place`, err.message);
+              return false;
+            });
+            if (unenforced) {
+              policyIds.push(rule.pid);
+              policyKeys.push('policy:' + rule.pid);
+              unenforcedRules.push(rule);
+            }
           } else {
-            let reducedTag = _.without(rule.tag, tagUid);
-            await rclient.hsetAsync('policy:' + rule.pid, 'scope', JSON.stringify(reducedTag));
-            const newRule = await this.getPolicy(rule.pid)
+            const reducedTag = _.without(rule.tag, tagUid);
+            const newRule = new Policy(Object.assign({}, rule, { tag: reducedTag }));
 
-            this.tryPolicyEnforcement(newRule, 'reenforce', rule);
-
-            log.info('remove scope from policy:' + rule.pid, tag);
+            const reenforced = await this.enforceOnQueue({ action: 'reenforce', policy: newRule, oldPolicy: rule }).then(() => true).catch(err => {
+              log.error(`Failed to reenforce policy ${rule.pid} while deleting tag ${tag}, leaving tag list unchanged`, err.message);
+              return false;
+            });
+            if (reenforced) {
+              await rclient.hsetAsync('policy:' + rule.pid, 'tag', JSON.stringify(reducedTag));
+              log.info('remove tag from policy:' + rule.pid, tag);
+            }
           }
         }
       }
       if (rule.type === "tag" && rule.target == tag) {
-        this.tryPolicyEnforcement(rule, 'unenforce');
-        policyIds.push(rule.pid);
-        policyKeys.push(`policy:${rule.pid}`);
+        const unenforced = await this.enforceOnQueue({ action: 'unenforce', policy: rule }).then(() => true).catch(err => {
+          log.error(`Failed to unenforce policy ${rule.pid} while deleting tag ${tag}, leaving policy in place`, err.message);
+          return false;
+        });
+        if (unenforced) {
+          policyIds.push(rule.pid);
+          policyKeys.push(`policy:${rule.pid}`);
+          unenforcedRules.push(rule);
+        }
       }
     }
 
@@ -903,7 +953,15 @@ class PolicyManager2 {
       await rclient.unlinkAsync(policyKeys);
       await rclient.zremAsync(policyActiveKey, policyIds);
       await rclient.zremAsync(activeBypassPolicyKey, policyIds);
+      for (const rule of unenforcedRules) {
+        await this.removeBypassChainForPolicy(rule).catch(err => {
+          log.error(`Failed to remove bypass chain for policy ${rule.pid} while deleting tag ${tag}`, err.message);
+        });
+      }
     }
+    // invalidate once at the end, after iptables/redis are fully settled, so a concurrent
+    // checkACL()/checkRoute() never rebuilds the cache from a half-updated state
+    this.invalidatePolicyCache();
     log.info('Deleted', tag, 'related policies:', policyKeys);
   }
 
@@ -945,56 +1003,12 @@ class PolicyManager2 {
       return policy;
     }
 
-    const kind = lastHitFlow.kind;
-    const raw = _.isObject(lastHitFlow.raw) ? lastHitFlow.raw : null;
-    if (!raw || !kind) {
-      delete policy.lastHitFlow;
-      return policy;
-    }
+    const { kind } = lastHitFlow;
+    let formatted = null;
+    if (kind === 'audit') formatted = await auditTool.formatHitFlow(lastHitFlow, options);
+    else if (kind === 'flow') formatted = await flowTool.formatHitFlow(lastHitFlow, options);
 
-    let simpleLog = null;
-    if (kind === 'audit') {
-      simpleLog = auditTool.toSimpleFormat(raw, {
-        block: true,
-        local: !!(raw.local || raw.dmac || raw.dir === 'L')
-      });
-      if (simpleLog && raw.mac) {
-        simpleLog.device = raw.mac;
-      }
-      const formatted = await auditTool.enrichSimpleLog(simpleLog, options)
-        .catch((err) => {
-          log.warn('Failed to enrich policy lastHitFlow', _.get(policy, 'pid'), err.message);
-          return simpleLog;
-        });
-      if (formatted) {
-        policy.lastHitFlow = formatted;
-      } else {
-        delete policy.lastHitFlow;
-      }
-      return policy;
-    }
-
-    if (kind === 'flow') {
-      simpleLog = flowTool.toSimpleFormat(raw, {
-        local: !!(raw.local || raw.dmac || raw.drl || raw.dstTags || raw.fd === 'lo')
-      });
-      if (simpleLog && raw.mac) {
-        simpleLog.device = raw.mac;
-      }
-      const formatted = await flowTool.enrichSimpleLog(simpleLog, options)
-        .catch((err) => {
-          log.warn('Failed to enrich policy lastHitFlow', _.get(policy, 'pid'), err.message);
-          return simpleLog;
-        });
-      if (formatted) {
-        policy.lastHitFlow = formatted;
-      } else {
-        delete policy.lastHitFlow;
-      }
-      return policy;
-    }
-
-    delete policy.lastHitFlow;
+    formatted ? (policy.lastHitFlow = formatted) : delete policy.lastHitFlow;
     return policy;
   }
 
@@ -1236,16 +1250,17 @@ class PolicyManager2 {
     log.forceInfo(">>>>>==== All policy rules are enforced ====<<<<<", otherRules.length);
     this.allRulesInitialized = true;
 
-    // Wait for category/country data loads (cloud fetch → recycleIPSet) to complete
-    // so the initial atomic ipset swap captures the full state.
+    // Wait for the initial category/country cloud fetch to be attempted so the initial atomic
+    // ipset swap captures as much state as possible. A category whose fetch fails is marked
+    // attempted too, so only a slow fetch delays this.
     // Hard cap so a failing remote source doesn't stall startup indefinitely.
     const initWait = fc.getConfig().timing['policy.category.init_wait'] || 120
     const initWaitDeadline = Date.now() + initWait * 1000;
     let pending;
     while (
       (pending = [
-        ...categoryUpdater.getUninitializedCategories(),
-        ...countryUpdater.getUninitializedCategories()
+        ...categoryUpdater.getUnattemptedCategories(),
+        ...countryUpdater.getUnattemptedCategories()
       ]).length > 0
     ) {
       const remaining = initWaitDeadline - Date.now();
@@ -1357,8 +1372,10 @@ class PolicyManager2 {
             if (policy.willExpireSoon()) {
               if (timeout > 0)
                 await delay(timeout * 1000);
-              if (policy.autoDeleteWhenExpires)
+              if (policy.autoDeleteWhenExpires) {
                 await this.deletePolicy(policy.pid);
+                await this.removeBypassChainForPolicy(policy);
+              }
             } else {
               // only need to handle timeout of a manually disabled one-time only policy here
               // for a policy that is natually expired when enabled, it will be auto removed in another timeout created in enforce function
@@ -1366,6 +1383,7 @@ class PolicyManager2 {
                 log.info(`Will auto delete paused policy ${policy.pid} in ${Math.floor(timeout)} seconds`);
                 const deleteTimeout = setTimeout(async () => {
                   await this.deletePolicy(policy.pid);
+                  await this.removeBypassChainForPolicy(policy);
                 }, timeout * 1000);
                 this.invalidateExpireTimer(policy); // remove old one if exists
                 this.enabledTimers[policy.pid] = deleteTimeout;
@@ -1397,6 +1415,7 @@ class PolicyManager2 {
           }
           if (policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
             await this.deletePolicy(policy.pid);
+            await this.removeBypassChainForPolicy(policy);
           }
           log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
         } else {
@@ -1420,10 +1439,15 @@ class PolicyManager2 {
 
             log.info(`Revoke policy ${policy.pid}, since it's expired`)
             await this.unenforce(policy);
-            await this._disablePolicy(policy);
 
             if (policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
+              // unenforce() may have already deleted the policy (e.g. expired bypass rule),
+              // so do not _disablePolicy here as updatePolicyAsync would throw "Policy not exist".
+              // deletePolicy is idempotent, so calling it again is safe.
               await this.deletePolicy(pid);
+              await this.removeBypassChainForPolicy(policy);
+            } else {
+              await this._disablePolicy(policy);
             }
           }, policy.getExpireDiffFromNow() * 1000); // in milli seconds, will be set to 1 if it is a negative number
 
@@ -1460,7 +1484,7 @@ class PolicyManager2 {
   }
 
   async _applyBypass(bypassPolicy, action="enforce") {
-    let { pid, affectedPids, tag, type } = bypassPolicy;
+    let {affectedPids, tag, pid, type, target, targets, scope, guids} = bypassPolicy;
     log.info(`${action} bypass policy ${pid} for affected policies ${affectedPids}, tag ${tag}`);
     let { intfs, tags } = this.parseTags(tag)
     // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
@@ -1472,9 +1496,77 @@ class PolicyManager2 {
       return;
     }
 
-    let targets = bypassPolicy.targets ? bypassPolicy.targets : [bypassPolicy.target];
-    // {affectedPids, tags, intfs, action, pid} = options;
-    await Bypass.setupTagsRules({ pid, affectedPids, intfs, tags, action, targets, type });
+    if (_.isEmpty(targets)) {
+      targets = [target];
+    }
+
+    const commonOptions = { pid, affectedPids, targets, type, tags, intfs, scope, guids, action };
+
+    let needBypassDNS = false;
+    let needBypassIptables = false;
+
+    switch (type) {
+      case "ip":
+      case "net":
+      case "remotePort":
+      case "remoteIpPort":
+      case "remoteNetPort":
+        needBypassIptables = true;
+        break;
+      case "mac":
+      case "internet":
+        if (target && ht.isMacAddress(target)) {
+          commonOptions.scope = [target];
+        }
+        needBypassIptables = true;
+        break;
+      case "dns":
+      case "domain":
+        needBypassDNS = true;
+        needBypassIptables = true;
+        break;
+      case "domain_re":
+        needBypassDNS = true;
+        break;
+      case "devicePort":
+        let data = this.parseDevicePortRule(target);
+        if (data && data.mac) {
+          commonOptions.scope = [data.mac];
+        }
+        needBypassIptables = true;
+        break;
+      case "category":
+        const derivedAppTargets = [];
+        for (const catTarget of targets) {
+          const derived = await this._getDerivedAppTargetsForCategory(catTarget);
+          derivedAppTargets.push(...derived);
+        }
+        if (!_.isEmpty(derivedAppTargets)) {
+          commonOptions.targets.push(...derivedAppTargets);
+        }
+
+        needBypassIptables = true;
+        needBypassDNS = true;
+        break;
+
+      case "country":
+      case "intranet":
+      case "network":
+      case "tag":
+      case "device":
+        needBypassIptables = true;
+        break;
+      default:
+        throw new Error(`Unsupported bypass policy type ${type} for policy ${pid}`);
+    }
+
+    if (needBypassDNS) {
+      await Bypass.bypassDNSRules(commonOptions);
+    }
+    
+    if (needBypassIptables) {
+      await Bypass.bypassIptablesRules(commonOptions);
+    }
   }
 
 
@@ -2111,7 +2203,7 @@ class PolicyManager2 {
     }
 
     const commonOptions = {
-      pid, tags, intfs, scope, guids, parentRgId,
+      pid, type, tags, intfs, scope, guids, parentRgId,
       localPortSet, /*remoteSet4, remoteSet6,*/ remoteTupleCount, remoteNegate, remotePortSet, proto: protocol,
       action, direction, createOrDestroy: "create", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
@@ -2120,7 +2212,7 @@ class PolicyManager2 {
       qosSubKey: policy.qosSubKey
     }
 
-    if ((type === "category" || type == "mac" || type === "internet") && isBlockOrdisturb) {
+    if (isBlockOrdisturb) {
       const chainName = `FW_${policy.pid}_BYPASS`;
       commonOptions.byPassChain = chainName;
       let table = "filter";
@@ -2229,14 +2321,21 @@ class PolicyManager2 {
   }
 
   async _applyRules(options) {
-    const { tags, intfs, scope, guids, parentRgId } = options || {};
+    const { tags, intfs, scope, guids, parentRgId, type } = options || {};
     const ruleOptions = _.omit(options, 'tags', 'intfs', 'scope', 'guids', 'parentRgId')
+
+    const DEVICE = 1, GROUP = 2, NETWORK = 3;
+    const targetLevel = { device: DEVICE, tag: GROUP, network: NETWORK }[type];
+    const targetScope = { [DEVICE]: "DEV", [GROUP]: "DEV_G", [NETWORK]: "NET" }[targetLevel];
+
+    const targetScopeIfMoreSpecificThan = (applyToLevel) =>
+      targetLevel && targetLevel < applyToLevel ? targetScope : undefined;
 
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || !_.isEmpty(parentRgId)) {
       if (!_.isEmpty(tags))
-        await Block.setupTagsRules({ ...ruleOptions, uids: tags });
+        await Block.setupTagsRules({ ...ruleOptions, uids: tags, fwScope: targetScopeIfMoreSpecificThan(GROUP) });
       if (!_.isEmpty(intfs))
-        await Block.setupIntfsRules({ ...ruleOptions, uuids: intfs });
+        await Block.setupIntfsRules({ ...ruleOptions, uuids: intfs, fwScope: targetScopeIfMoreSpecificThan(NETWORK) });
       if (!_.isEmpty(scope))
         await Block.setupDevicesRules({ ...ruleOptions, macAddresses: scope });
       if (!_.isEmpty(guids))
@@ -2244,8 +2343,8 @@ class PolicyManager2 {
       if (!_.isEmpty(parentRgId))
         await Block.setupRuleGroupRules({ ...ruleOptions, ruleGroupUUID: parentRgId });
     } else {
-      // apply to global
-      await Block.setupGlobalRules(ruleOptions);
+      // apply to global; a local-network target raises the chain to that target's scope
+      await Block.setupGlobalRules({ ...ruleOptions, fwScope: targetScope });
     }
   }
 
@@ -2607,6 +2706,14 @@ class PolicyManager2 {
 
         for (const target of targets) {
           await categoryUpdater.updateCategoryState(target, devOpts, pid, policy.dnsmasq_only, isBlockOrdisturb, false);
+          // user target list categories are activated on demand and never deactivated by the
+          // built-in category refresh logic; once the last rule referencing one is removed,
+          // stop polling its hashset instead of leaving it active until the next reboot
+          if (categoryUpdater.isUserTargetList(target) &&
+            !categoryUpdater.hasActivePolicies(target) &&
+            !(await exceptionManager.hasException(target))) {
+            await categoryUpdater.deactivateCategory(target);
+          }
         }
 
         if (["allow", "block", "route"].includes(action)) {
@@ -2722,7 +2829,7 @@ class PolicyManager2 {
     }
 
     const commonOptions = {
-      pid, tags, intfs, scope, guids, parentRgId,
+      pid, type, tags, intfs, scope, guids, parentRgId,
       localPortSet, /*remoteSet4, remoteSet6,*/ remoteTupleCount, remoteNegate, remotePortSet, proto: protocol,
       action, direction, createOrDestroy: "destroy", ctstate,
       trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes,
@@ -2731,7 +2838,7 @@ class PolicyManager2 {
       qosSubKey: policy.qosSubKey
     }
 
-    if ((type === "category" || type == "mac" || type === "internet") && isBlockOrdisturb) {
+    if (isBlockOrdisturb) {
       const chainName = `FW_${pid}_BYPASS`;
       commonOptions.byPassChain = chainName;
     }
@@ -2872,7 +2979,7 @@ class PolicyManager2 {
       const p = matchedPolicies[0]
       // still match allow policy with ip/domain, in other words
       // allow policy on a very specific target is considered as an exception for alarm
-      if (p.action == 'allow' && !(p.type in ['ip', 'remoteIpPort', 'domain', 'dns'])) {
+      if (p.action == 'allow' && !['ip', 'remoteIpPort', 'domain', 'dns'].includes(p.type)) {
         log.info('ignore matched allow policy:', p.pid, p.action, p.type, p.target)
         return false
       } else {

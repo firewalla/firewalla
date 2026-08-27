@@ -36,6 +36,7 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_FWAPC_ISOLATION = "LOCK_FWAPC_ISOLATION";
+const blockControl = require('../control/BlockControl.js');
 
 class APFeaturesPlugin extends Sensor {
   async run() {
@@ -91,6 +92,8 @@ class APFeaturesPlugin extends Sensor {
     const monitoredNetRule6 = monitoredNetRule.clone().fam(6);
     await iptc.addRule(monitoredNetRule.opr(op));
     await iptc.addRule(monitoredNetRule6.opr(op));
+    // refresh connmark to ensure the acl takes effect immediately on established connections
+    blockControl.scheduleRefreshConnmark();
   }
 
   async _aclAssets(acloff=false) {

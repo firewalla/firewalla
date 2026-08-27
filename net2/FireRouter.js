@@ -342,6 +342,8 @@ async function generateNetworkInfo() {
 let routerInterface = null
 let routerConfig = null
 let monitoringIntfNames = [];
+let rspanIntfNames = [];
+let rspanVids = new Set();
 let logicIntfNames = [];
 let wanIntfNames = null
 let defaultWanIntfName = null
@@ -400,11 +402,32 @@ class FireRouter {
           this.pcapRestartNeeded = true;
           break;
         }
-        case Message.MSG_FR_CHANGE_APPLIED:
-        case Message.MSG_NETWORK_CHANGED: {
-          // these two message types should cover all proactive and reactive network changes
-          log.info("Network is changed, schedule reload from FireRouter ...");
+        // below two message types should cover all proactive and reactive network changes
+        case Message.MSG_FR_CHANGE_APPLIED: {
+          log.info("FireRouter config change is applied, schedule reload from FireRouter ...");
           reloadNeeded = true;
+          break;
+        }
+        case Message.MSG_NETWORK_CHANGED: {
+          let changedKeys = null;
+          try {
+            const obj = JSON.parse(message);
+            changedKeys = obj.changedKeys;
+          } catch (err) {}
+          if (changedKeys === null) {
+            log.info("Network config is changed, schedule reload from FireRouter ...");
+            reloadNeeded = true;
+          } else {
+            const essentialKeys = ["interface", "routing", "dns", "dhcp", "hostapd"];
+            const changedEssentialKeys = changedKeys.filter(key => essentialKeys.includes(key));
+            if (changedEssentialKeys.length > 0) {
+              log.info("Essential network config is changed, schedule reload from FireRouter ...");
+              reloadNeeded = true;
+            } else {
+              log.info("Non-essential network config is changed, will only load config from FireRouter ...");
+              routerConfig = await getConfig(true);
+            }
+          }
           break;
         }
         case Message.MSG_HAPD_EVENT: {
@@ -457,6 +480,7 @@ class FireRouter {
   async init(first = false) {
     await lock.acquire(LOCK_INIT, async () => {
       const lastMonitoringIntfNames = monitoringIntfNames;
+      const lastRspanIntfNames = rspanIntfNames;
       const routingWans = [];
       const tcFilterRefreshNeeded = this.tcFilterRefreshNeeded;
       this.tcFilterRefreshNeeded = false;
@@ -487,6 +511,14 @@ class FireRouter {
             await delay(2000);
           }
         }
+
+        // extract RSPAN VLAN interface names and VIDs from config
+        rspanIntfNames = Object.keys(_.get(routerConfig, "interface.vlan", {}))
+          .filter(name => _.get(routerConfig, ["interface", "vlan", name, "rspan"]) === true);
+        rspanVids = new Set(rspanIntfNames
+          .map(name => _.get(routerConfig, ["interface", "vlan", name, "vid"]))
+          .filter(vid => vid != null)
+          .map(Number));
 
         // extract WAN interface names
         wanIntfNames = Object.values(intfNameMap)
@@ -736,6 +768,8 @@ class FireRouter {
 
       monitoringIntfNames.sort();
       lastMonitoringIntfNames.sort();
+      rspanIntfNames.sort();
+      lastRspanIntfNames.sort();
 
       // this will ensure SysManger on each process will be updated with correct info
       sem.emitLocalEvent({ type: Message.MSG_FW_FR_RELOADED });
@@ -744,10 +778,10 @@ class FireRouter {
       this.ready = true
 
       if (f.isMain()) {
-        if (pcapRestartNeeded || !platform.isFireRouterManaged() && first || !_.isEqual(monitoringIntfNames, lastMonitoringIntfNames)) {
+        if (pcapRestartNeeded || !platform.isFireRouterManaged() && first || !_.isEqual(monitoringIntfNames, lastMonitoringIntfNames) || !_.isEqual(rspanIntfNames, lastRspanIntfNames)) {
           sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
         }
-        if (first || tcFilterRefreshNeeded) {
+        if (first || tcFilterRefreshNeeded || !_.isEqual(rspanIntfNames, lastRspanIntfNames)) {
 
           const model = platform.getName();
           let qosNetworkType = 'lan';
@@ -762,6 +796,7 @@ class FireRouter {
             this.tcFilterRefreshNeeded = true;
           }
           this.scheduleResetPcapTap();
+          this.scheduleResetPcapRspan();
         }
         if (platform.isFireRouterManaged()) {
           // overall_wan_state event
@@ -832,6 +867,43 @@ class FireRouter {
       });
       await exec(`sudo tc filter add dev ${intf} egress u32 match u32 0 0 action mirred egress redirect dev ${Constants.INTF_PCAP_TAP}`).catch((err) => {
         log.error(`Failed to add pcap tap tc egress redirect filter for ${intf}`, err.message);
+      });
+    }
+  }
+
+  scheduleResetPcapRspan() {
+    if (this.resetPcapRspanTask) {
+      clearTimeout(this.resetPcapRspanTask);
+    }
+    this.resetPcapRspanTask = setTimeout(() => {
+      this.resetPcapRspan().catch((err) => {
+        log.error(`Failed to reset pcap rspan`, err.message);
+      });
+    }, 3000);
+  }
+
+  async resetPcapRspan() {
+    if (!platform.isIFBSupported()) {
+      return;
+    }
+    // clear tc filters on interfaces that are no longer RSPAN
+    const prevRspanIntfNames = this._rspanIntfNames || [];
+    for (const intf of prevRspanIntfNames) {
+      if (!rspanIntfNames.includes(intf)) {
+        await exec(`sudo tc qdisc del dev ${intf} clsact`).catch(() => {});
+      }
+    }
+    this._rspanIntfNames = rspanIntfNames.slice();
+    if (_.isEmpty(rspanIntfNames)) {
+      return;
+    }
+    for (const intf of rspanIntfNames) {
+      // add tc filter to redirect ingress traffic to the rspan ifb (RSPAN is receive-only, no egress redirect)
+      await exec(`sudo tc qdisc replace dev ${intf} clsact`).catch((err) => {
+        log.error(`Failed to create clsact qdisc on ${intf}`, err.message);
+      });
+      await exec(`sudo tc filter add dev ${intf} ingress u32 match u32 0 0 action mirred egress redirect dev ${Constants.INTF_PCAP_RSPAN}`).catch((err) => {
+        log.error(`Failed to add rspan tc ingress redirect filter for ${intf}`, err.message);
       });
     }
   }
@@ -957,6 +1029,20 @@ class FireRouter {
       return JSON.parse(JSON.stringify(intfNameMap[intf]));
   }
 
+  // Live STP role/state for the box's own bridged LAN ports, flattened across all bridges,
+  // e.g. { eth0: {role: "designated", state: "forwarding"}, eth1: {role: "backup", state: "discarding"} }.
+  // Empty for single-port bridges / VLAN sub-bridges / stp:false bridges (firerouter reports no stpPorts there).
+  async getBridgeStpStatus() {
+    const bridgeNames = Object.keys(_.get(await this.getConfig(), "interface.bridge", {}));
+    const result = {};
+    await Promise.all(bridgeNames.map(async (name) => {
+      const intf = await this.getSingleInterface(name, true).catch(() => null);
+      const stpPorts = _.get(intf, "state.stpPorts");
+      if (stpPorts) Object.assign(result, stpPorts);
+    }));
+    return result;
+  }
+
   getLogicIntfNames() {
     return JSON.parse(JSON.stringify(logicIntfNames));
   }
@@ -964,6 +1050,14 @@ class FireRouter {
   // should always be an array
   getMonitoringIntfNames() {
     return JSON.parse(JSON.stringify(monitoringIntfNames))
+  }
+
+  getRspanIntfNames() {
+    return JSON.parse(JSON.stringify(rspanIntfNames));
+  }
+
+  getRspanVids() {
+    return new Set(rspanVids);
   }
 
   getWanIntfNames() {
@@ -1175,15 +1269,18 @@ class FireRouter {
       body: config
     };
     
-    // check if only apc config changes
-    const currentConfigWithoutAPC = _.omit(routerConfig, ['apc']);
-    const newConfigWithoutAPC = _.omit(config, ['apc']);
-    let isOnlyAPCConfigChanged = false;
-    if (_.isEqual(currentConfigWithoutAPC, newConfigWithoutAPC)) {
-      log.info("Only apc config changes, will not send MSG_NETWORK_CHANGED event");
-      isOnlyAPCConfigChanged = true;
-    }
+    const commonKeys = _.intersection(Object.keys(routerConfig), Object.keys(config));
+    const changedKeys = _.difference(
+      _.union(Object.keys(routerConfig), Object.keys(config)), 
+      commonKeys
+    );
 
+    for (const key of commonKeys) {
+      if (!_.isEqual(routerConfig[key], config[key])) {
+        changedKeys.push(key);
+      }
+    }
+    
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
       const errors = _.get(resp.body, "errors");
@@ -1208,9 +1305,7 @@ class FireRouter {
     // do not call this.init in setConfig, make this function pure
     // await this.init()
     // init of FireRouter should be triggered by published message
-    if (!isOnlyAPCConfigChanged) {
-      await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");
-    }
+    await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, JSON.stringify({changedKeys}));
     if (f.isApi()) {
       // reload config from lower layer to reflect change immediately in FireAPI
       routerConfig = await getConfig();

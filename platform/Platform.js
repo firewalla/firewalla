@@ -22,14 +22,21 @@ const fs = require('fs');
 const fsp = fs.promises
 const cp = require('child_process');
 
-const { exec } = require('child-process-promise');
+const { exec, execFile } = require('child-process-promise');
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
+let kernelCrashMonitor = null;
 
 class Platform {
   getAllNicNames() {
     // for red/blue, there is only one NIC
     return ["eth0"];
+  }
+
+  // vendor:product of the devices that belong to the box itself instead of being an accessory,
+  // so that they are not reported as a plugged in USB device
+  getNativeUsbDeviceIds() {
+    return [];
   }
 
   async getNicStates() {
@@ -40,6 +47,7 @@ class Platform {
       if (!dirExists)
         return
       const address = await fsp.readFile(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch(() => "");
+      const permAddress = await this.getPermanentMac(nic) || address;
       let speed = await fsp.readFile(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
       const carrier = await fsp.readFile(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
       let duplex = await fsp.readFile(`/sys/class/net/${nic}/duplex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
@@ -47,15 +55,55 @@ class Platform {
         duplex = "unknown";
         speed = "-1";
       }
-      result[nic] = {address, speed, carrier, duplex};
+      result[nic] = {address, permAddress, speed, carrier, duplex};
     }))
     return result;
   }
 
+  // Read the hardware permanent MAC of a NIC. Returns "" if unavailable.
+  // Cached per-nic keyed on ifindex, not just name, since a USB wlan dongle can be swapped
+  // while keeping the same nic name (udev pins name to port); ifindex changes when that happens.
+  async getPermanentMac(nic) {
+    if (!this._permanentMacCache)
+      this._permanentMacCache = {};
+
+    const ifindex = await fsp.readFile(`/sys/class/net/${nic}/ifindex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => null);
+    const cached = this._permanentMacCache[nic];
+    if (cached !== undefined && ifindex !== null && cached.ifindex === ifindex)
+      return cached.mac;
+
+    const mac = await this.readPermanentMac(nic);
+    if (!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(mac) || mac === "00:00:00:00:00:00" || mac === "FF:FF:FF:FF:FF:FF")
+      return "";
+
+    if (ifindex !== null)
+      this._permanentMacCache[nic] = {mac, ifindex};
+    return mac;
+  }
+
+  async readPermanentMac(nic) {
+    return execFile('ethtool', ['-P', nic]).then(result => {
+      const match = result.stdout.match(/Permanent address:\s*([0-9a-fA-F:]+)/);
+      return match ? match[1].trim().toUpperCase() : "";
+    }).catch(() => "");
+  }
+
+  // Cached per-iface keyed on ifindex, not just name, since a USB wlan dongle can be swapped
+  // while keeping the same iface name (udev pins name to port); ifindex changes when that happens.
   async getMaxLinkSpeed(iface) {
+    if (!this._maxLinkSpeedCache)
+      this._maxLinkSpeedCache = {};
+
+    const ifindex = await fsp.readFile(`/sys/class/net/${iface}/ifindex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => null);
+    const cached = this._maxLinkSpeedCache[iface];
+    if (cached !== undefined && ifindex !== null && cached.ifindex === ifindex)
+      return cached.max;
+
     let max = 0;
-    await exec(`ethtool ${iface} | tr -d '\\n' | sed -e 's/.*Supported link modes:\\(.*\\)Supported pause.*/\\1/' | xargs`).then((result) => {
-      const modes = result.stdout.split(' ');
+    await execFile('ethtool', [iface]).then((result) => {
+      const flat = result.stdout.replace(/\n/g, '');
+      const match = flat.match(/Supported link modes:\s*(.*?)\s*Supported pause.*/);
+      const modes = (match ? match[1] : '').split(/\s+/).filter(Boolean);
       for (const mode of modes) {
         const speed = Number(mode.split("base")[0]);
         if (speed > max)
@@ -64,6 +112,9 @@ class Platform {
     }).catch((err) => {
       log.info(`Failed to get supported link modes of ${iface}`, err.message);
     });
+
+    if (max > 0 && ifindex !== null)
+      this._maxLinkSpeedCache[iface] = {max, ifindex};
     return max;
   }
 
@@ -79,7 +130,7 @@ class Platform {
 
   async getNetworkSpeed() {
     try {
-      const output = await fsp.readFile(`/sys/class/net/${this.getAllNicNames[0]}/speed`, {encoding: 'utf8'});
+      const output = await fsp.readFile(`/sys/class/net/${this.getAllNicNames()[0]}/speed`, {encoding: 'utf8'});
       return output.trim();
     } catch(err) {
       log.debug('Error getting network speed', err)
@@ -261,6 +312,10 @@ class Platform {
       }
       await Promise.all(executes);
     }
+  }
+
+  getNtpServiceName() {
+    return "ntp";
   }
 
   getDNSServiceName() {
@@ -462,6 +517,12 @@ class Platform {
       return;
     }
     this.installedModules[module_name] = true;
+    if (module_name == "xt_udp_tls") {
+      if (!kernelCrashMonitor) {
+        kernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
+      }
+      await kernelCrashMonitor.onUdpTlsModuleLoaded('xt_udp_tls', koExists ? koPath : null);
+    }
   }
   async installTLSModules() {
     await this.installTLSModule("xt_tls");
@@ -495,10 +556,15 @@ class Platform {
   }
 
   isUdpTLSBlockSupport() {
-    if (this.isDevMode()) {
-      return true;
+    if (!kernelCrashMonitor) {
+      kernelCrashMonitor = require('../net2/KernelCrashMonitor.js');
     }
-    return false;
+    const disabled = kernelCrashMonitor.shouldDisableUdpTls();
+    if (disabled) {
+      log.warn("Skipping xt_udp_tls installation: disabled due to prior kernel crash with same module version");
+      return false;
+    }
+    return true;
   }
 
   async getKernelModulesPath() {
@@ -687,6 +753,21 @@ class Platform {
 
   getInterfacesRedirectedToPcapTap(intfNameMap) {
     return {};
+  }
+
+  getRedisSaveConfig(rdbSize) {
+    if (rdbSize > 251658240) {
+      // > 240MB: primary save every 80 minutes
+      return "14400 80 9600 8000 4800 800000";
+    } else if (rdbSize > 125829120) {
+      // 120-240MB: primary save every 40 minutes
+      return "7200 40 4800 4000 2400 400000";
+    } else if (rdbSize > 62914560) {
+      // 60-120MB: primary save every 20 minutes
+      return "3600 20 2400 2000 1200 200000";
+    }
+    // <= 60MB: primary save every 10 minutes
+    return "1800 10 1200 1000 600 100000";
   }
 }
 

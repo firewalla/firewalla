@@ -42,6 +42,7 @@ const { Address4, Address6 } = require('ip-address');
 const sysManager = require('./SysManager.js');
 
 const envCreatedMap = {};
+const blockControl = require('../control/BlockControl.js');
 
 class NetworkProfile extends Monitorable {
   static metaFieldsJson = ['dns', 'dns6', 'ipv4s', 'ipv4Subnets', 'ipv6', 'ipv6Subnets', 'monitoring', 'ready', 'active', 'pendingTest', 'rtid', 'origDns', 'origDns6', 'rt4Subnets', 'rt6Subnets', 'pds'];
@@ -170,6 +171,8 @@ class NetworkProfile extends Monitorable {
       await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, netIpsetName6);
       await Ipset.add(Ipset.CONSTANTS.IPSET_ACL_OFF, netLinklocalIpsetName6);
     }
+    // refresh connmark to ensure the acl takes effect immediately on established connections
+    blockControl.scheduleRefreshConnmark();
   }
 
   async spoof(state) {
@@ -270,24 +273,6 @@ class NetworkProfile extends Monitorable {
       await Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netIpsetName6);
       await Ipset.add(Ipset.CONSTANTS.IPSET_NO_DNS_BOOST, netLinklocalIpsetName6);
     }
-  }
-
-  static async destroyBakChains() {
-    // Remove jump rules from INPUT chain
-    await iptc.addRule(new Rule().chn("INPUT").jmp("FW_INPUT_ACCEPT_BAK").opr('-D'));
-    await iptc.addRule(new Rule().fam(6).chn("INPUT").jmp("FW_INPUT_ACCEPT_BAK").opr('-D'));
-    await iptc.addRule(new Rule().chn("INPUT").jmp("FW_INPUT_DROP_BAK").opr('-D'));
-    await iptc.addRule(new Rule().fam(6).chn("INPUT").jmp("FW_INPUT_DROP_BAK").opr('-D'));
-    // Flush chains
-    await iptc.addRule(new Rule().chn("FW_INPUT_ACCEPT_BAK").opr('-F'));
-    await iptc.addRule(new Rule().fam(6).chn("FW_INPUT_ACCEPT_BAK").opr('-F'));
-    await iptc.addRule(new Rule().chn("FW_INPUT_DROP_BAK").opr('-F'));
-    await iptc.addRule(new Rule().fam(6).chn("FW_INPUT_DROP_BAK").opr('-F'));
-    // Delete chains
-    await iptc.addRule(new Rule().chn("FW_INPUT_ACCEPT_BAK").opr('-X'));
-    await iptc.addRule(new Rule().fam(6).chn("FW_INPUT_ACCEPT_BAK").opr('-X'));
-    await iptc.addRule(new Rule().chn("FW_INPUT_DROP_BAK").opr('-X'));
-    await iptc.addRule(new Rule().fam(6).chn("FW_INPUT_DROP_BAK").opr('-X'));
   }
 
   static getSelfIpsetName(uuid, af = 4) {
@@ -581,9 +566,10 @@ class NetworkProfile extends Monitorable {
         if (this.o && this.o.gateway6 && typeof this.o.gateway6 === 'string') {
           await Ipset.add(GatewayIpsetName6, this.o.gateway6);
         }
-        //Add DNS6 to the gateway set since IPv6 gateways typically use Link-Local addresses.
+        // Add global unicast DNS6 to gateway set; skip link-local (not routable via FW_FORWARD).
         if(this.o && _.isArray(this.o.dns6)) {
           for (const dns6 of this.o.dns6) {
+            if (new Address6(dns6).isLinkLocal()) continue;
             await Ipset.add(GatewayIpsetName6, dns6);
           }
         }

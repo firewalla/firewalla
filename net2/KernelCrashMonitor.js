@@ -1,0 +1,420 @@
+/*    Copyright 2016-2026 Firewalla Inc.
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+'use strict';
+
+const log = require('./logger.js')(__filename);
+const f = require('./Firewalla.js');
+const rclient = require('../util/redis_manager.js').getRedisClient();
+const { execFile } = require('child-process-promise');
+const uuid = require('uuid');
+const { delay } = require('../util/util.js');
+
+const REDIS_KEY = "kernel_crash_info";
+const LOCK_KEY = "kernel_crash_info:lock";
+const LOCK_TTL_SEC = 60;
+// how long a lock-losing process waits for the lock holder to finish its pstore
+// scan before giving up and refreshing the cache with whatever Redis holds.
+const LOCK_WAIT_POLL_MS = 500;
+const LOCK_WAIT_TIMEOUT_MS = (LOCK_TTL_SEC + 5) * 1000;
+const PSTORE_PATH = "/sys/fs/pstore";
+const PSTORE_ARCHIVE_PATH = "/log/system/pstore";
+const PSTORE_ARCHIVE_MAX_DIRS = 3;
+
+// In-memory cache of the "disable UDP TLS" decision so hot-path rule builders
+// (Block/TLSSetControl/AdblockPlugin/QuicLogPlugin) can read it synchronously
+// without a Redis round-trip. Populated at startup by checkPstoreAndUpdateRedis
+// (awaited before module loading in net2/main.js) and refreshed whenever the
+// async accessors below run. default to false
+let cachedShouldDisableUdpTls = false;
+
+// FireMain and FireApi both call checkPstoreAndUpdateRedis on startup; guard the
+// pstore scan/archive/delete with a cross-process redis lock so they don't race.
+async function acquireLock(token) {
+  const result = await rclient.setAsync(LOCK_KEY, token, 'NX', 'EX', LOCK_TTL_SEC);
+  return result === 'OK';
+}
+
+async function releaseLock(token) {
+  const releaseLockLua = `
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+      return redis.call("del", KEYS[1])
+    else
+      return 0
+    end
+  `;
+  try {
+    await rclient.evalAsync(releaseLockLua, 1, LOCK_KEY, token);
+  } catch (err) {
+    log.warn("Failed to release kernel_crash_info lock:", err.message);
+  }
+}
+
+// When another process holds the lock, it is the one scanning pstore and may set
+// shouldDisableUdpTls after we read Redis. Wait for it to release the lock, then
+// re-read kernel_crash_info so our in-memory cache reflects the settled decision
+// before rule builders (which read shouldDisableUdpTls synchronously) run.
+async function waitForLockReleaseAndRefreshCache() {
+  const deadline = Date.now() + LOCK_WAIT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await delay(LOCK_WAIT_POLL_MS);
+    const holder = await rclient.getAsync(LOCK_KEY).catch(() => null);
+    if (!holder)
+      break; // lock released (or its TTL expired) — the decision is settled
+  }
+  const crashInfo = await readCrashInfo().catch((err) => {
+    log.error("Error refreshing crash info after waiting for lock:", err.message);
+    return {};
+  });
+  cachedShouldDisableUdpTls = crashInfo.shouldDisableUdpTls === true;
+}
+
+// version, srcversion and a type-tagged id ("buildid:..."/"srcversion:..."/"sha256:...") of
+// the bundled .ko, read out of the module image by scripts/tls_module_id.sh - shared with
+// platform.sh so both write the same values into udpModuleVersion. Returns null when the file
+// yields nothing at all.
+// Not modinfo(8): the .ko may be compressed, and gse's is xt_udp_tls.ko.<kernel checksum>
+// (or a .ko.<compiler> symlink to it), a name modinfo refuses.
+async function describeKo(koPath) {
+  if (!koPath) return null;
+  const script = `${f.getFirewallaHome()}/scripts/tls_module_id.sh`;
+  const result = await execFile(script, ['describe', koPath]).catch((err) => {
+    log.debug("Failed to describe", koPath, err.message);
+    return null;
+  });
+  if (!result) return null;
+  const described = { version: '', srcversion: '', koId: '' };
+  for (const line of result.stdout.split('\n')) {
+    const idx = line.indexOf('=');
+    if (idx <= 0) continue;
+    const key = line.substring(0, idx);
+    const value = line.substring(idx + 1).trim();
+    if (key === 'version') described.version = value;
+    else if (key === 'srcversion') described.srcversion = value;
+    else if (key === 'id') described.koId = value;
+  }
+  return described.koId ? described : null;
+}
+
+// What identifies the module we would load: taken from the bundled .ko when we have it, and
+// from modinfo about the loaded module when we do not (koPath may not exist yet, or the module
+// was loaded by name via modprobe).
+// Returns null when no identity at all could be determined (unknown, not "empty").
+async function getModuleVersion(modName, koPath) {
+  const described = await describeKo(koPath);
+  if (described) return described;
+
+  const result = modName && await execFile('modinfo', [modName]).catch((err) => {
+    log.debug("Failed to run modinfo for", modName, err.message);
+    return null;
+  });
+  let version = '';
+  let srcversion = '';
+  for (const line of (result ? result.stdout : '').split('\n')) {
+    if (line.startsWith('version:')) {
+      version = line.split(':').slice(1).join(':').trim();
+    } else if (line.startsWith('srcversion:')) {
+      srcversion = line.split(':').slice(1).join(':').trim();
+    }
+  }
+  if (version || srcversion)
+    return { version, srcversion, koId: '' };
+
+  log.warn("Failed to get module version for", modName, koPath);
+  return null;
+}
+
+// version/srcversion/koId, with missing fields normalized to ''
+function identityFields(v) {
+  if (!v) return null;
+  return { version: v.version || '', srcversion: v.srcversion || '', koId: v.koId || '' };
+}
+
+function hasIdentity(v) {
+  const fields = identityFields(v);
+  return !!(fields && (fields.version || fields.srcversion || fields.koId));
+}
+
+// type of a tagged id ("buildid:abc" -> "buildid"), '' when it carries no tag
+function idType(id) {
+  const idx = id.indexOf(':');
+  return idx > 0 ? id.substring(0, idx) : '';
+}
+
+// Compare on the strongest field both records carry, koId first: it is normally a build id, so
+// it also catches a rebuild of unchanged sources, which srcversion (a hash of the sources)
+// cannot. Comparing only what both sides have is what keeps a record written before koId
+// existed comparable with one written now - demanding equality of all three fields would read
+// every stored record as "changed" the first time this runs.
+// koId is only compared against an id of the same type: it falls back to srcversion or sha256
+// when a module carries no build-id note, so two records can hold ids of different types, and
+// "srcversion:ABC" vs "buildid:XYZ" says nothing about whether the module changed (mirrors how
+// "same" picks a common id type in scripts/tls_module_id.sh).
+function isSameIdentity(a, b) {
+  const fa = identityFields(a);
+  const fb = identityFields(b);
+  if (!fa || !fb) return false;
+  if (fa.koId && fb.koId && idType(fa.koId) === idType(fb.koId))
+    return fa.koId === fb.koId;
+  for (const field of ['srcversion', 'version']) {
+    if (fa[field] && fb[field]) return fa[field] === fb[field];
+  }
+  return false; // nothing comparable in common, so no evidence that they are the same module
+}
+
+// mtime (in seconds) of the current xt_udp_tls module file. Used to tell whether a
+// pstore crash predates the currently-installed module: an upgrade replaces the .ko
+// with a fresh mtime, so a crash older than the .ko belongs to a previous (already
+// replaced) module version and must not disable the current one. Returns null when
+// the mtime cannot be determined (e.g. koPath does not exist).
+// The bundled .ko is often a symlink (e.g. gse's xt_udp_tls.ko.aarch64-none-linux-gnu-gcc
+// -> xt_udp_tls.ko.<checksum>), and `stat` reports the symlink's own mtime, not the
+// module's. Take the newer of the two: replacing the module content refreshes the target,
+// re-pointing the symlink at another build refreshes the link itself.
+async function getModuleFileMtimeSec(koPath) {
+  if (!koPath) return null;
+  const results = await Promise.all([
+    execFile('stat', ['-L', '-c', '%Y', koPath]).catch(() => null), // dereferenced (the real .ko)
+    execFile('stat', ['-c', '%Y', koPath]).catch(() => null),       // koPath itself, symlink or not
+  ]);
+  const secs = results
+    .map((r) => r && parseInt(r.stdout.trim(), 10))
+    .filter((sec) => Number.isFinite(sec));
+  return secs.length ? Math.max(...secs) : null;
+}
+
+async function readCrashInfo() {
+  const raw = await rclient.getAsync(REDIS_KEY);
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    log.warn("Failed to parse kernel_crash_info, resetting:", e.message);
+    return {};
+  }
+}
+
+async function saveCrashInfo(info) {
+  await rclient.setAsync(REDIS_KEY, JSON.stringify(info));
+}
+
+// keep at most PSTORE_ARCHIVE_MAX_DIRS-1 previous archives so the new one always fits
+async function cleanupOldPstoreArchives() {
+  const result = await execFile('ls', ['-1', PSTORE_ARCHIVE_PATH]).catch(() => ({ stdout: '' }));
+  const dirs = result.stdout.trim().split('\n').filter(Boolean)
+    .sort((a, b) => Number(a) - Number(b));
+  const toRemove = dirs.slice(0, Math.max(0, dirs.length - (PSTORE_ARCHIVE_MAX_DIRS - 1)));
+  for (const dir of toRemove) {
+    await execFile('sudo', ['rm', '-rf', `${PSTORE_ARCHIVE_PATH}/${dir}`]).catch((err) => {
+      log.error(`Failed to remove old pstore archive ${dir}:`, err.message);
+    });
+  }
+}
+
+// copy pstore contents to PSTORE_ARCHIVE_PATH for later inspection, then clear pstore
+// (unlinking files in pstore frees the underlying persistent ram/flash backend) so
+// space is available for the next crash.
+async function archiveAndClearPstore(crashTS) {
+  try {
+    await execFile('sudo', ['mkdir', '-p', PSTORE_ARCHIVE_PATH]);
+    await cleanupOldPstoreArchives();
+
+    const archiveDir = `${PSTORE_ARCHIVE_PATH}/${crashTS}`;
+    await execFile('sudo', ['mkdir', '-p', archiveDir]);
+    await execFile('sudo', ['cp', '-a', `${PSTORE_PATH}/.`, `${archiveDir}/`]);
+    log.info(`Archived pstore files to ${archiveDir}`);
+
+    await execFile('sudo', ['find', PSTORE_PATH, '-mindepth', '1', '-delete']);
+    log.info("Cleared pstore directory after archiving");
+  } catch (err) {
+    log.error("Failed to archive/clear pstore:", err.message);
+  }
+}
+
+// Called at FireMain and FireApi startup. modName is the module name (e.g. "xt_udp_tls")
+// and koPath is the path to xt_udp_tls.ko (may not exist yet).
+async function checkPstoreAndUpdateRedis(modName, koPath) {
+  const crashInfo = await readCrashInfo().catch((err) => {
+    log.error("Error in checkPstoreAndUpdateRedis reading crash info:", err.message);
+    return {};
+  });
+  cachedShouldDisableUdpTls = crashInfo.shouldDisableUdpTls === true;
+  const token = uuid.v4();
+  if (!await acquireLock(token).catch((err) => {
+    log.error("Failed to acquire kernel_crash_info lock:", err.message);
+    return false;
+  })) {
+    log.info("Another process is already checking pstore, waiting for it to finish before refreshing cache");
+    await waitForLockReleaseAndRefreshCache();
+    return;
+  }
+  try {
+    // find dmesg-* pstore files, sorted newest first (mirrors `| sort -rn` on the printf'd mtime)
+    const findResult = await execFile('sudo',
+      ['find', PSTORE_PATH, '-name', 'dmesg-*', '-type', 'f', '-printf', '%T@ %p\n']
+    ).catch((err) => ({ stdout: (err && err.stdout) || '' }));
+
+    const lines = findResult.stdout.trim().split('\n').filter(Boolean)
+      .sort((a, b) => parseFloat(b) - parseFloat(a));
+
+    const currentVersion = await getModuleVersion(modName, koPath).catch(() => null);
+    const storedVersion = crashInfo.udpModuleVersion;
+    let updateCrashInfoNeed = false;
+    let dumpPstoreNeeded = false;
+    let latestCrashTSSec;
+    // only treat the version as "known different" when we could actually read the
+    // current module's version; koPath may not exist yet (see comment above), and an
+    // unknown version must not be confused with a confirmed version change.
+    // A missing stored record, or one with no usable identity (written before the ko-hash
+    // fallback existed, on a build whose modinfo prints no version), cannot be compared
+    // against. Treat that as changed once we can identify the current module, otherwise
+    // such a box stays disabled forever: nothing else ever records an identity for it,
+    // because recording only happens on a successful load and loading is what is disabled.
+    // If the module really is still broken it crashes again, and by then the identity is
+    // recorded and the disable sticks.
+    const isVersionKnownDifferent = !!(currentVersion &&
+      (!hasIdentity(storedVersion) || !isSameIdentity(currentVersion, storedVersion)));
+
+    if (crashInfo.shouldDisableUdpTls) {
+      if (isVersionKnownDifferent) {
+        log.info("UDP TLS was disabled due to a previous crash, but module version has changed. Re-enabling UDP TLS.");
+        crashInfo.shouldDisableUdpTls = false;
+        crashInfo.udpTlsDisabledOn = 0;
+        updateCrashInfoNeed = true;
+      } else {
+        log.warn("UDP TLS is currently disabled due to a previous crash. Not attempting to load xt_udp_tls.");
+      }
+    }
+
+
+    if (lines.length === 0) {
+      log.debug("No recent pstore crash files found");
+    } else {
+      dumpPstoreNeeded = true;
+      // pstore may split a single crash's dmesg across several files, so "Kernel panic"
+      // and "Modules linked in:...xt_udp_tls" are not guaranteed to land in the same file.
+      // Stream all recent files through grep instead of reading (and requiring sudo for)
+      // each file's content into memory individually.
+      const tsByPath = new Map();
+      for (const line of lines) {
+        const spaceIdx = line.indexOf(' ');
+        tsByPath.set(line.substring(spaceIdx + 1).trim(), parseFloat(line.substring(0, spaceIdx)));
+      }
+      const paths = [...tsByPath.keys()];
+      // default archive timestamp: newest dmesg file overall, used when none of them
+      // matched "Kernel panic" below (still archived so pstore space is freed up)
+      latestCrashTSSec = Math.round(Math.max(...tsByPath.values()));
+
+      // treat both a "Kernel panic" and an "Oops" in pstore as a kernel crash
+      const panicFiles = await execFile('sudo', ['grep', '-l', '-e', 'Kernel panic', '-e', 'Oops', ...paths])
+        .then(r => r.stdout.trim().split('\n').filter(Boolean))
+        .catch(() => []);
+
+      if (panicFiles.length === 0) {
+        log.debug("No Kernel panic or Oops found in recent pstore files");
+      } else {
+        latestCrashTSSec = Math.round(Math.max(...panicFiles.map(p => tsByPath.get(p) || 0)));
+
+        // pull the concatenated content and test in JS instead of piping through a second grep
+        const isUdpTlsCrash = await execFile('sudo', ['cat', ...paths])
+          .catch((err) => ({ stdout: (err && err.stdout) || '' }))
+          .then(r => /Modules linked in:.*xt_udp_tls/.test(r.stdout));
+
+        log.warn(`Kernel panic detected in pstore, ts=${latestCrashTSSec}, udpTlsRelated=${isUdpTlsCrash}`);
+
+        // ignore crashes that predate the currently-installed module: on the first run
+        // after an upgrade, pstore may still hold a crash from a previous (already fixed)
+        // module version. The version-change guard above can't catch this because there is
+        // no stored udpModuleVersion to compare against yet, so fall back to the module
+        // file's build/install time.
+        const koMtimeSec = await getModuleFileMtimeSec(koPath).catch(() => null);
+        const crashPredatesCurrentModule = koMtimeSec !== null && latestCrashTSSec < koMtimeSec;
+
+        if (isUdpTlsCrash && crashPredatesCurrentModule) {
+          log.info(`UDP TLS crash (ts=${latestCrashTSSec}) predates current module build time (${koMtimeSec}); module has been upgraded since, not disabling UDP TLS.`);
+        } else if (isUdpTlsCrash) {
+          if (!crashInfo.lastCrashTS || latestCrashTSSec > crashInfo.lastCrashTS) {
+            crashInfo.lastCrashTS = latestCrashTSSec;
+            crashInfo.crashesCount = (crashInfo.crashesCount || 0) + 1;
+
+            crashInfo.shouldDisableUdpTls = true;
+            crashInfo.udpTlsDisabledOn = Math.round(Date.now() / 1000);
+            const versionInfo = currentVersion ? ` (module version ${currentVersion.version}/${currentVersion.srcversion}/${currentVersion.koId})` : '';
+            log.warn(`UDP TLS crash detected${versionInfo}, disabling UDP TLS`);
+            updateCrashInfoNeed = true;
+          } else {
+            log.debug("Pstore crash is not newer than last recorded crash");
+          }
+        }
+
+      }
+    }
+        
+    if (!crashInfo.monitorStartedAt) {
+      crashInfo.monitorStartedAt = Math.round(Date.now() / 1000);
+      updateCrashInfoNeed = true;
+    }
+
+
+    cachedShouldDisableUdpTls = crashInfo.shouldDisableUdpTls === true;
+    log.debug("Updated kernel_crash_info in Redis:", JSON.stringify(crashInfo));
+    if (updateCrashInfoNeed) {
+      await saveCrashInfo(crashInfo);
+    }
+
+    // preserve the crash logs and free up pstore space for the next crash
+    if (dumpPstoreNeeded)
+      await archiveAndClearPstore(latestCrashTSSec);
+  } catch (err) {
+    log.error("Error in checkPstoreAndUpdateRedis:", err.message);
+  } finally {
+    await releaseLock(token);
+  }
+}
+
+// Returns true if UDP TLS should be disabled due to a previous crash, false otherwise.
+// checkPstoreAndUpdateRedis must be called first to populate the in-memory cache (awaited before module loading in net2/main.js).
+function shouldDisableUdpTls() {
+  return cachedShouldDisableUdpTls;
+}
+
+// Called by Platform.installTLSModule after xt_udp_tls is successfully loaded.
+// modName is the module name (e.g. "xt_udp_tls"); koPath is the .ko file path if
+// insmod was used (may be null when loaded by name).
+async function onUdpTlsModuleLoaded(modName, koPath) {
+  try {
+    const version = await getModuleVersion(modName || 'xt_udp_tls', koPath);
+    const crashInfo = await readCrashInfo();
+
+    if (version) {
+      crashInfo.udpModuleVersion = version;
+    }
+    // record when this load happened (udpTlsDisabledOn in struct corresponds to disabled state;
+    // reset shouldDisableUdpTls since the module just loaded successfully)
+    crashInfo.shouldDisableUdpTls = false;
+    cachedShouldDisableUdpTls = false;
+
+    await saveCrashInfo(crashInfo);
+    log.info("Updated udpModuleVersion after successful xt_udp_tls load:", JSON.stringify(version));
+  } catch (err) {
+    log.error("Failed to update udpModuleVersion after module load:", err.message);
+  }
+}
+
+module.exports = {
+  checkPstoreAndUpdateRedis,
+  shouldDisableUdpTls,
+  onUdpTlsModuleLoaded,
+  getCrashInfo: readCrashInfo,
+};

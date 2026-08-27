@@ -23,11 +23,18 @@ const util = require('util');
 
 const _ = require('lodash')
 
+const LRU = require('lru-cache')
+
 let instance = null;
 
 const MAX_FLOW_PER_SUM = 400
 
-const COMMON_SUMFLOW_KEYS = [ 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason', 'intra' ]
+// deviceLastFlowTs is read only at coarse granularity, so collapse sub-resolution updates to
+// cut the per-flow zadd. Seconds.
+const DEVICE_LAST_FLOW_TS_RESOLUTION = 60
+
+// c is the coded category snapshot carried over from flow records, see FlowAggregationSensor
+const COMMON_SUMFLOW_KEYS = [ 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason', 'intra', 'c' ]
 const FLOW_STR_KEYS = COMMON_SUMFLOW_KEYS.concat('destIP')
 const TOPFLOW_KEYS = COMMON_SUMFLOW_KEYS.concat('device')
 
@@ -37,8 +44,19 @@ class FlowAggrTool {
   constructor() {
     if(!instance) {
       instance = this;
+      this.deviceLastFlowTsCache = new LRU({max: 4096, maxAge: 3600 * 1000});
     }
     return instance;
+  }
+
+  // Throttle deviceLastFlowTs updates: a skip only delays a device's last-seen score by at most
+  // DEVICE_LAST_FLOW_TS_RESOLUTION seconds, and the key has no TTL, so it is harmless.
+  shouldUpdateDeviceLastFlowTs(mac, ts) {
+    const last = this.deviceLastFlowTsCache.get(mac);
+    if (last && ts - last < DEVICE_LAST_FLOW_TS_RESOLUTION)
+      return false;
+    this.deviceLastFlowTsCache.set(mac, ts);
+    return true;
   }
 
   toFloorInt(n) {
@@ -273,6 +291,12 @@ class FlowAggrTool {
               results[dest] = { count }
             }
 
+            // domain is baked into the sumflow member at write time, use it as the host of
+            // the destination IP so callers don't need a separate intel lookup
+            if(json.destIP && json.domain && !results[dest].host) {
+              results[dest].host = json.domain
+            }
+
             if(ports) {
               if(results[dest].ports) {
                 Array.prototype.push.apply(results[dest].ports, ports)
@@ -477,7 +501,8 @@ class FlowAggrTool {
   }
 
   async recordDeviceLastFlowTs(uid, ts) {
-    await rclient.zaddAsync("deviceLastFlowTs", ts, uid);
+    if (this.shouldUpdateDeviceLastFlowTs(uid, ts))
+      await rclient.zaddAsync("deviceLastFlowTs", ts, uid);
   }
 
   async getDevicesWithFlowTs(begin, end) {

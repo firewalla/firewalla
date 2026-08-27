@@ -44,11 +44,13 @@ const countryUpdater = new CountryUpdater()
 
 const _ = require('lodash')
 
-const IP_SET_TO_BE_PROCESSED = "ip_set_to_be_processed";
+const { LimitedQueue } = require('../util/asyncNative.js');
 
-const ITEMS_PER_FETCH = 100;
-const QUEUE_SIZE_PAUSE = 2000;
-const QUEUE_SIZE_RESUME = 1000;
+const IP_SET_TO_BE_PROCESSED = "ip_set_to_be_processed"; // legacy redis key, cleaned up on start
+const INTEL_QUEUE_SIZE_KEY = "metric:intel:queue:size"; // published for SysInfo (cross-process diagnostic)
+
+const MAX_CONCURRENCY = 100; // max concurrent processIP calls (was batch size of the redis-backed queue)
+const QUEUE_SIZE_PAUSE = 2000; // drop new flows once the enrich backlog reaches this
 
 const TRUST_THRESHOLD = 10 // to be updated
 
@@ -67,14 +69,22 @@ class DestIPFoundHook extends Hook {
   constructor() {
     super();
     this.pendingIPs = {};
+    // in-node work queue (replaces redis zset ip_set_to_be_processed): a barrier-free
+    // bounded-concurrency consumer; flows are enriched as soon as a slot frees up.
+    this.flowQueue = new LimitedQueue(flow => this.processIP(flow), MAX_CONCURRENCY);
     this.triggerCache = new LRU({
       max: 1000,
       maxAge: 1000 * 60 * 5
     });
   }
 
-  appendNewFlow(flow) {
-    return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, JSON.stringify(flow));
+  // returns a promise with enrichment result if wait is true
+  async appendNewFlow(flow, wait = false) {
+    if (!flow || !flow.ip || f.isReservedBlockingIP(flow.ip) || this.flowQueue.size >= QUEUE_SIZE_PAUSE)
+      return null
+    if (!flow.fd)
+      flow.fd = 'in';
+    return wait ? this.flowQueue.pushAndWait(flow) : this.flowQueue.push(flow);
   }
 
   isFirewalla(host) {
@@ -275,17 +285,21 @@ class DestIPFoundHook extends Hook {
 
   async processIP(flow, options) {
     let enrichedFlow = {};
-    let requeued = false;
     if (flow) {
-      let parsed = null;
-      try {
-        parsed = JSON.parse(flow);
-        enrichedFlow = Object.assign(enrichedFlow, parsed);
-        enrichedFlow.fd = parsed.fd || "in";
-      } catch (e) {
-        // base IP address as argument
-        enrichedFlow.ip = flow;
-        enrichedFlow.fd = "in";
+      if (_.isString(flow)) {
+        try {
+          const parsed = JSON.parse(flow);
+          enrichedFlow = Object.assign(enrichedFlow, parsed);
+          enrichedFlow.fd = parsed.fd || "in";
+        } catch (e) {
+          // base IP address as argument
+          enrichedFlow.ip = flow;
+          enrichedFlow.fd = "in";
+        }
+      } else if (_.isObject(flow)) {
+        // in-node queue passes the flow object directly (no JSON round-trip)
+        enrichedFlow = Object.assign(enrichedFlow, flow);
+        enrichedFlow.fd = flow.fd || "in";
       }
     }
     if (_.isEmpty(enrichedFlow))
@@ -423,7 +437,7 @@ class DestIPFoundHook extends Hook {
       log.error(`Failed to process${ip ? ` IP : ${ip}` : ""}${host ? ` host: ${host}` : ""}, error:`, err);
       return null;
     } finally {
-      if (enrichedFlow && enrichedFlow.from === "flow" && !requeued) {
+      if (enrichedFlow && enrichedFlow.from === "flow") {
         sem.emitLocalEvent({
           type: Message.MSG_FLOW_ENRICHED,
           suppressEventLogging: true,
@@ -452,60 +466,12 @@ class DestIPFoundHook extends Hook {
     });
   }
 
-  async job() {
-    log.silly("Checking if any IP Addresses pending for intel analysis...")
-
-    try {
-      let ips = await rclient.zrangeAsync(IP_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH);
-
-      if (ips.length > 0) {
-        let promises = ips.map((ip) => this.processIP(ip));
-
-        await Promise.all(promises)
-
-        let args = [IP_SET_TO_BE_PROCESSED];
-        args.push.apply(args, ips);
-
-        await rclient.zremAsync(args)
-
-        log.silly(ips.length + " IP Addresses are analyzed with intels");
-
-      } else {
-        // log.info("No IP Addresses are pending for intels");
-      }
-    } catch (err) {
-      log.error("Got error when handling new dest IP addresses, err:", err)
-    }
-
-    setTimeout(() => {
-      this.job(); // sleep for only 500 mill-seconds
-    }, 500);
-  }
-
   run() {
     sem.on('DestIPFound', (event) => {
-      let ip = event.ip;
-
-      // ignore reserved ip address
-      if (f.isReservedBlockingIP(ip)) {
-        return;
-      }
-
-      let fd = event.fd;
-      if (fd == null) {
-        fd = 'in'
-      }
-
-      if (!ip)
-        return;
-
-      if (this.paused)
-        return;
-
       const flow = event.flow || _.pick(event, ["mac", "ip", "host", "fd"]);
       if (event.from)
         flow.from = event.from;
-      this.appendNewFlow(flow);
+      this.appendNewFlow(flow); // shared filters (reserved/empty IP, backlog cap) applied here
     });
 
     sem.on('DestIP', (event) => {
@@ -514,7 +480,8 @@ class DestIPFoundHook extends Hook {
       this.processIP(event.ip, { skipReadLocalCache, noUpdateOnError });
     })
 
-    this.job();
+    // clean up the legacy redis-backed queue; work is now kept in node memory
+    rclient.delAsync(IP_SET_TO_BE_PROCESSED).catch(() => {});
 
     setInterval(() => {
       this.monitorQueue()
@@ -522,13 +489,8 @@ class DestIPFoundHook extends Hook {
   }
 
   async monitorQueue() {
-    let count = await rclient.zcountAsync(IP_SET_TO_BE_PROCESSED, "-inf", "+inf")
-    if (count > QUEUE_SIZE_PAUSE) {
-      this.paused = true;
-    }
-    if (count < QUEUE_SIZE_RESUME) {
-      this.paused = false;
-    }
+    // publish queue size so SysInfo (possibly another process) can report it
+    await rclient.setAsync(INTEL_QUEUE_SIZE_KEY, this.flowQueue.size).catch(() => {});
   }
 }
 

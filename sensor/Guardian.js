@@ -38,6 +38,8 @@ const rp = require('request-promise');
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const LiveTransport = require('./LiveTransport.js');
 const pm2 = new PolicyManager2();
+const ExceptionManager = require('../alarm/ExceptionManager.js');
+const exceptionManager = new ExceptionManager();
 
 const FireRouter = require('../net2/FireRouter');
 const _ = require('lodash');
@@ -49,31 +51,37 @@ const tokenManager = require('../util/FWTokenManager.js');
 const { REDIS_KEY_MSP_DATA, REDIS_KEY_MSP_SYNC_OPS, FEATURE_MSP_SYNC_OPS } = require('../net2/Constants.js');
 const execAsync = require('child-process-promise').exec;
 
+const RECONNECT_DELAY_MAX = 5 * 60 * 1000; // socket.io defaults to 5s, way too aggressive for a server that is gone for good
+const SESSION_TTL = 24 * 60 * 60 * 1000; // idle lifetime of a non-msp (my.firewalla) session
+
 module.exports = class {
-  constructor(name, config = {}) {
+  constructor(name, config = {}, daemon = true) {
     this.name = name;
     const suffix = this.getKeySuffix(name);
     this.configServerKey = `ext.guardian.socketio.server${suffix}`;
     this.configRegionKey = `ext.guardian.socketio.region${suffix}`;
     this.configBizModeKey = `ext.guardian.business${suffix}`; // this key save msp instance basic info, e.g. id/name/plan
     this.configAdminStatusKey = `ext.guardian.socketio.adminStatus${suffix}`;
+    this.configActiveTsKey = `ext.guardian.socketio.activeTs${suffix}`; // last time this session was known to be alive
     this.mspDataKey = `${REDIS_KEY_MSP_DATA}${suffix}`; // this key save msp user's info, e.g. targetlists
     this.liveTransportCache = {};
     this.socketConnected = false; // Track socket.io connectivity status
-    setInterval(() => {
-      this.cleanupLiveTransport()
-      this.truncateOpQueue().catch((err) => {
-        log.error(`Failed to truncate op queue`, err);
-      });
-    }, (config.cleanInterval || 30) * 1000);
+    if (daemon) {
+      setInterval(() => {
+        this.cleanupLiveTransport()
+        this.truncateOpQueue().catch((err) => {
+          log.error(`Failed to truncate op queue`, err);
+        });
+      }, (config.cleanInterval || 30) * 1000);
+    }
   }
 
   cleanupLiveTransport() {
-    for (const alias in this.liveTransportCache) {
-      const liveTransport = this.liveTransportCache[alias];
+    for (const key in this.liveTransportCache) {
+      const liveTransport = this.liveTransportCache[key];
       if (!liveTransport.isLivetimeValid()) {
-        log.info("Destory live transport for", alias);
-        delete this.liveTransportCache[alias];
+        log.info("Destory live transport for", key);
+        delete this.liveTransportCache[key];
       }
     }
   }
@@ -89,13 +97,16 @@ module.exports = class {
     }
   }
 
-  registerLiveTransport(options) {
-    const alias = options.alias;
-    if (!(alias in this.liveTransportCache)) {
-      this.liveTransportCache[alias] = new LiveTransport(options);
+  registerLiveTransport(key, options) {
+    let liveTransport = this.liveTransportCache[key];
+    if (!liveTransport) {
+      liveTransport = new LiveTransport(options);
+      this.liveTransportCache[key] = liveTransport;
+    } else {
+      // refresh stored request so a re-subscribe is not pinned to the first caller's message/replyid
+      liveTransport.updateSubscription(options);
     }
-
-    return this.liveTransportCache[alias];
+    return liveTransport;
   }
 
   getKeySuffix(name) {
@@ -121,6 +132,9 @@ module.exports = class {
   }
 
   async handlLegacy() {
+    // a my.firewalla session gets no membership check from the cloud, the only
+    // sign it ended is the close command, which is lost when the box is offline
+    if (await this.expireIdleSession()) return;
     // box might be removed from msp but it was offline before
     // remove legacy settings to avoid the box been locked forever
     const mspResult = await this.checkBoxWithMsp();
@@ -236,6 +250,7 @@ module.exports = class {
         await rclient.unlinkAsync(this.configRegionKey);
       }
       await rclient.setAsync(this.configServerKey, server);
+      await this.touchActiveTs();
       this._scheduleRedisBackgroundSave();
     } else {
       throw new Error("invalid server");
@@ -311,6 +326,38 @@ module.exports = class {
     return rclient.setAsync(this.configAdminStatusKey, '0');
   }
 
+  // a session that predates this key starts its ttl now, so an upgrade never
+  // expires a session that is still in use
+  async getActiveTs() {
+    const ts = Number(await rclient.getAsync(this.configActiveTsKey));
+    if (ts) return ts;
+    const now = Date.now();
+    await rclient.setAsync(this.configActiveTsKey, now);
+    return now;
+  }
+
+  async touchActiveTs() {
+    await rclient.setAsync(this.configActiveTsKey, Date.now());
+  }
+
+  // a session carrying an msp business id, msp or support, has its own lifecycle
+  // and its own membership check; a bare my.firewalla session only stays alive as
+  // long as messages keep coming, so silence past the ttl means it is over
+  async expireIdleSession() {
+    const mspId = await this.getMspId();
+    if (mspId) return false;
+    const isAdminStatusOn = await this.isAdminStatusOn();
+    if (!isAdminStatusOn) return false;
+    const activeTs = await this.getActiveTs();
+    if (Date.now() - activeTs < SESSION_TTL) return false;
+    log.forceInfo(`No message from ${this.name} since ${new Date(activeTs).toISOString()}, treat the session as ended and close the socket io connection`);
+    await this.stop();
+    await rclient.unlinkAsync(this.configServerKey);
+    await rclient.unlinkAsync(this.configRegionKey);
+    await rclient.unlinkAsync(this.configActiveTsKey);
+    return true;
+  }
+
   async getGuardianInfo() {
     const server = await this.getServer();
     const region = await this.getRegion();
@@ -356,14 +403,29 @@ module.exports = class {
     const socketPath = region ? `/${region}/socket.io` : '/socket.io'
     this.socket = io(server, {
       path: socketPath,
-      transports: ['websocket']
+      transports: ['websocket'],
+      reconnectionDelayMax: RECONNECT_DELAY_MAX
     });
     if (!this.socket) {
       throw new Error("failed to init socket io");
     }
 
+    // a failing handshake never reaches the connect/disconnect handlers, these
+    // are the only trace of a relay we keep dialing without ever getting in
+    let lastAttemptTs = Date.now();
+    this.socket.io.on('reconnect_attempt', (attempt) => {
+      const now = Date.now();
+      log.info(`Socket IO reconnecting to ${this.name} ${server}, attempt ${attempt}, ${Math.round((now - lastAttemptTs) / 1000)}s since last attempt`);
+      lastAttemptTs = now;
+    });
+
+    this.socket.on('connect_error', (err) => {
+      log.info(`Socket IO connection to ${this.name} ${server} failed:`, err && err.message || err);
+    });
+
     this.socket.on('connect', () => {
       this.socketConnected = true;
+      lastAttemptTs = Date.now();
       log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", " + region : ""} is connected.`);
       this.socket && this.socket.emit("box_registration", {
         gid: gid,
@@ -426,6 +488,10 @@ module.exports = class {
   }
 
   async stop() {
+    if (this.checkId) {
+      clearInterval(this.checkId);
+      this.checkId = null;
+    }
     if (this.syncOpsTask) {
       clearInterval(this.syncOpsTask);
       this.syncOpsTask = null;
@@ -449,6 +515,17 @@ module.exports = class {
     return false
   }
 
+  // same staleness caveat as isMspRelatedRule above: mspData.targetlists may be stale if the
+  // box was offline when the msp-side target list/membership changed
+  async isMspRelatedException(exception, { mspData }) {
+    if (mspData && mspData.targetlists) {
+      if (_.find(mspData.targetlists, { id: exception['p.category.id'] })) { // if it references an msp target list
+        return true;
+      }
+    }
+    return false
+  }
+
   async reset() {
     log.warn("Reset guardian settings", this.name);
     const mspId = await this.getMspId();
@@ -464,46 +541,55 @@ module.exports = class {
         }
       }))
 
+      // remove all msp related exceptions, e.g. exceptions muting alarms on an msp target list;
+      // these are not tied to any rule's lifecycle and would otherwise keep the target list's
+      // category activated (and its hashset polled) forever
+      const exceptions = await exceptionManager.loadExceptionsAsync();
+      const mspRelatedEids = (await Promise.all(exceptions.map(async e =>
+        await this.isMspRelatedException(e, { mspData }) ? e.eid : null
+      ))).filter(eid => eid);
+      if (mspRelatedEids.length) {
+        log.info("Remove msp exceptions", mspRelatedEids);
+        await exceptionManager.deleteExceptions(mspRelatedEids);
+      }
+
       // reset no_auto_upgrade flags
       await upgradeManager.setAutoUpgradeState()
 
       if (platform.isFireRouterManaged()) {
-        // delete related mesh settings
+        // delete related mesh settings (WireGuard and AmneziaWG)
         const networkConfig = await FireRouter.getConfig(true);
-
-        const wireguard = networkConfig.interface.wireguard || {};
         let updateNetworkConfig = false;
-        Object.keys(wireguard).map(intf => {
-          if (wireguard[intf] && wireguard[intf].mspId == mspId) {
-            networkConfig.interface.wireguard = _.omit(wireguard, intf);
+        for (const ncKey of ['wireguard', 'amneziawg']) {
+          const ifaces = networkConfig.interface[ncKey] || {};
+          for (const intf of Object.keys(ifaces)) {
+            if (ifaces[intf] && ifaces[intf].mspId == mspId) {
+              networkConfig.interface[ncKey] = _.omit(networkConfig.interface[ncKey], intf);
 
-            // delete dns config
-            const dns = networkConfig.dns || {};
-            networkConfig.dns = _.omit(dns, intf);
+              // delete dns config
+              networkConfig.dns = _.omit(networkConfig.dns || {}, intf);
 
-            // delete icmp config
-            const icmp = networkConfig.icmp || {};
-            networkConfig.icmp = _.omit(icmp, intf);
+              // delete icmp config
+              networkConfig.icmp = _.omit(networkConfig.icmp || {}, intf);
 
-            // delete mdns_reflector config
-            const mdns_reflector = networkConfig.mdns_reflector || {};
-            networkConfig.mdns_reflector = _.omit(mdns_reflector, intf);
+              // delete mdns_reflector config
+              networkConfig.mdns_reflector = _.omit(networkConfig.mdns_reflector || {}, intf);
 
-            // delete sshd config
-            const sshd = networkConfig.sshd || {};
-            networkConfig.sshd = _.omit(sshd, intf);
+              // delete sshd config
+              networkConfig.sshd = _.omit(networkConfig.sshd || {}, intf);
 
-            // delete nat config
-            const nat = networkConfig.nat || {};
-            for (const key in nat) {
-              if (key.startsWith(`${intf}-`)) {
-                delete nat[key];
+              // delete nat config
+              const nat = networkConfig.nat || {};
+              for (const key in nat) {
+                if (key.startsWith(`${intf}-`)) {
+                  delete nat[key];
+                }
               }
+              networkConfig.nat = nat;
+              updateNetworkConfig = true;
             }
-            networkConfig.nat = nat;
-            updateNetworkConfig = true;
           }
-        })
+        }
         if (updateNetworkConfig) {
           networkConfig.ts = Date.now();
           await FireRouter.setConfig(networkConfig);
@@ -525,6 +611,7 @@ module.exports = class {
     await rclient.unlinkAsync(this.configRegionKey);
     await rclient.unlinkAsync(this.configBizModeKey);
     await rclient.unlinkAsync(this.configAdminStatusKey);
+    await rclient.unlinkAsync(this.configActiveTsKey);
     await rclient.unlinkAsync(this.mspDataKey);
     this._stop();
 
@@ -659,22 +746,28 @@ module.exports = class {
 
   async onMessage(gid, message) {
     this.scheduleCheck(); // every time recived message, clean job and restart the check job
+    this.touchActiveTs().catch((err) => log.error("Failed to refresh session active timestamp", err, this.name));
     const controller = await cw.getNetBotController(gid);
     const mspId = await this.getMspId();
     if (controller && this.socket) {
       const encryptedMessage = message.message;
       const replyid = message.replyid; // replyid will not encrypted
       let response, decryptedMessage, code = 200, encryptedResponse;
+      // decryptRequest reports the request scheme (gcm/cbc-iv/legacy) so the
+      // reply mirrors it; the iv/tag travel inside the message envelope.
+      let replyScheme = 'legacy';
       try {
-        const receicveMessageAsync = util.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
-        const encryptMessageAsync = util.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
-        decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
+        const { decrypted, scheme } = await cw.getCloud().decryptRequest(gid, encryptedMessage);
+        decryptedMessage = decrypted;
+        replyScheme = scheme;
         decryptedMessage.mtype = decryptedMessage.message.mtype;
         const obj = decryptedMessage.message.obj;
         const item = obj.data.item;
         const value = JSON.parse(JSON.stringify(obj.data.value || {}))
         if (value.streaming) {
-          const liveTransport = this.registerLiveTransport({
+          // key by item + streaming.id so concurrent same-item queries get separate transports
+          const key = value.streaming.id ? `${item}:${value.streaming.id}` : item;
+          const liveTransport = this.registerLiveTransport(key, {
             alias: item,
             gid: gid,
             mspId: mspId,
@@ -701,7 +794,7 @@ module.exports = class {
           compressMode: 1,
           data: output.toString('base64')
         });
-        encryptedResponse = await encryptMessageAsync(gid, compressedResponse);
+        encryptedResponse = await cw.getCloud().encryptResponse(gid, compressedResponse, replyScheme);
       } catch (err) {
         log.warn(`Process web message error`, err);
         if (err && err.message == "decrypt_error") {
@@ -714,6 +807,8 @@ module.exports = class {
       try {
         if (this.socket) {
           this.socket.emit("send_from_box", {
+            // The reply IV (if any) is embedded in the message envelope, so no
+            // top-level iv field. On error frames encryptedResponse is undefined.
             message: encryptedResponse,
             gid: gid,
             mspId: mspId,
