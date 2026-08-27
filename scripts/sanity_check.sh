@@ -34,6 +34,14 @@ esac
 # while it's for something totally different in offical build now
 echo | column -n 2>/dev/null && COLUMN_OPT='column -n' || COLUMN_OPT='column'
 
+JQ_VERSION=$(jq --version 2>/dev/null | sed 's/^jq-//')
+# strflocaltime() is only available since jq 1.6
+if [[ -n "$JQ_VERSION" ]] && [[ $(printf '%s\n1.6\n' "$JQ_VERSION" | sort -V | head -n 1) == '1.6' ]]; then
+  JQ_HAS_LOCALTIME='yes'
+else
+  JQ_HAS_LOCALTIME='no'
+fi
+
 # reads redis hash with key $2 into associative array $1
 read_hash() {
   # make an alias of $1, https://unix.stackexchange.com/a/462089
@@ -1598,9 +1606,16 @@ check_eth_count() {
 }
 
 check_events() {
-  redis-cli zrange event:log 0 -1 | jq -c '.ts |= (. / 1000 | strftime("%Y-%m-%d %H:%M")) | del(.event_type, .ts0, .labels.wan_intf_uuid) | del(.labels|..|select(type=="object")|.wan_intf_uuid)'
+  local TIME_FUNC='strflocaltime'
+  # fall back to UTC if asked for explicitly or if jq is too old for strflocaltime()
+  if [[ "$1" == 'utc' || "$JQ_HAS_LOCALTIME" != 'yes' ]]; then
+    TIME_FUNC='strftime'
+  fi
+  redis-cli zrange event:log 0 -1 | jq -c ".ts |= (. / 1000 | $TIME_FUNC(\"%Y-%m-%d %H:%M\")) | del(.event_type, .ts0, .labels.wan_intf_uuid) | del(.labels|..|select(type==\"object\")|.wan_intf_uuid)"
   # hint on stderr so won't impact stuff being piped
-  >&2 echo "  >> Keep in mind the timestamps above are all UTC, local timezone is: $(date +'%:::z %Z') <<"
+  if [[ "$TIME_FUNC" == 'strftime' ]]; then
+    >&2 echo -e "\e[43m\e[30m  >> Keep in mind the timestamps above are all UTC, local timezone is: $(date +'%:::z %Z') <<\e[0m"
+  fi
 }
 
 check_connection() {
@@ -1640,7 +1655,7 @@ usage() {
     echo "  -p  | --port"
     echo "  -t  | --tag"
     echo "  -f  | --fast | --host"
-    echo "  -e  | --events"
+    echo "  -e  | --events [-u|--utc]"
     echo "  -c  | --connection"
     echo "        --iptables"
     echo "  -h  | --help"
@@ -1729,7 +1744,12 @@ while [ "$1" != "" ]; do
     -e | --events)
         shift
         FAST=true
-        check_events
+        if [[ "$1" == '-u' || "$1" == '--utc' ]]; then
+            shift
+            check_events utc
+        else
+            check_events
+        fi
         ;;
     -h | --help)
         usage
