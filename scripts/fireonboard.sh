@@ -38,7 +38,7 @@ banner(){
     printf '  ============================================================\n'
     printf '    %s\n' "$1"
     [ -n "${2:-}" ] && printf '    %s\n' "$2"
-    [ -n "$ip" ] && printf '    SSH:  ssh pi@%s   (password: firewalla)%s\n' "$ip" "${note:+   [$note]}"
+    [ -n "$ip" ] && printf '    IP:  %s%s\n' "$ip" "${note:+   [$note]}"
     printf '  ============================================================\n\n'
   } > /etc/issue 2>/dev/null
   systemctl restart getty@tty1 2>/dev/null || true   # force getty to redraw /etc/issue now
@@ -67,6 +67,7 @@ fi
 
 # Wait indefinitely: without internet there is nothing to do but keep trying.
 read t0 _ < /proc/uptime; t0=${t0%.*}; warned=0; NET_VIA=""
+banner "Firewalla Crystal is starting - verifying network" "Activation starts automatically once the network is ready."
 while :; do
   net=0; net_ready && net=1
   [ "$net" = 1 ] && ept_ready && break
