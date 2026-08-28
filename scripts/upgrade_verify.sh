@@ -107,11 +107,15 @@ uv_ensure_release_key() {
     timeout 60 $FIREWALLA_HOME/scripts/update_assets.sh \
       "$UV_RELEASE_KEYRING_ASSET" /all/release_pub.gpg 644 &>/dev/null || true
   fi
-  # assets-delivered keyring wins: it is the rotatable, authoritative copy.
-  # Fall back to the in-repo key only to bootstrap a box that has not synced
-  # assets yet (first boot, factory reset).
+  # precedence: assets-delivered keyring (authoritative, carries rotations and
+  # revocations) > keyring already installed > in-repo key. The middle rule
+  # matters: without it, a temporarily missing asset would let the in-repo key -
+  # only ever a bootstrap copy, and possibly predating a rotation - overwrite an
+  # already-rotated keyring and start rejecting valid releases.
   if [[ -s $UV_RELEASE_KEYRING_ASSET ]]; then
     src=$UV_RELEASE_KEYRING_ASSET
+  elif [[ -s $UV_RELEASE_KEYRING ]]; then
+    return 0
   elif [[ -s $UV_RELEASE_PUBKEY ]]; then
     src=$UV_RELEASE_PUBKEY
   else
