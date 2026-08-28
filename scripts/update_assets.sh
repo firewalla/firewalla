@@ -8,9 +8,19 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 
 : ${ASSETSD_PATH:=${FIREWALLA_HIDDEN}/config/assets.d/}
 
-logger "FIREWALLA:UPDATE_ASSETS:START,ASSETSD_PATH=$ASSETSD_PATH"
+# Single-asset mode: update_assets.sh <local_path> <s3_path> [perm]
+# The entry is given directly, so no assets.d list is needed - this works on a
+# factory-fresh or long-offline box before prepare_assets_list.sh has ever run.
+# Deliberately supports no exec_pre/exec_post, so nothing from the caller is
+# eval'd. With no arguments, every entry under ASSETSD_PATH is processed.
+SINGLE_ENTRY=""
+if [[ $# -ge 2 ]]; then
+  SINGLE_ENTRY="$1 $2 ${3:-644}"
+fi
 
-if [[ ! -d $ASSETSD_PATH ]]; then
+logger "FIREWALLA:UPDATE_ASSETS:START,ASSETSD_PATH=${SINGLE_ENTRY:-$ASSETSD_PATH}"
+
+if [[ -z "$SINGLE_ENTRY" && ! -d $ASSETSD_PATH ]]; then
   echo "assets.d folder doesn't exist, exit"
   exit 0
 fi
@@ -28,14 +38,18 @@ ASSETS_PUBLIC_KEY=/home/pi/firewalla/etc/keys/assets.key
 TEMP_DIR=$(mktemp -d)
 trap 'rm -fr "$TEMP_DIR"' EXIT
 
-cd $ASSETSD_PATH
 # unify lists under assets.d/, keeps one entry for each file only
 # list with lower prefix number got fetched earlier but list with bigger prefix number has higher priority
 #
 # use awk instead of cat to prevent bug when any file doesn't end with newline
 # if using cat, the file not ending with newline will be concatenated with the next file
 # so two lines becomes one line
-awk '{print $0}' * |
+{ if [[ -n "$SINGLE_ENTRY" ]]; then
+    printf '%s\n' "$SINGLE_ENTRY"
+  else
+    cd $ASSETSD_PATH && awk '{print $0}' *
+  fi
+} |
 while IFS= read -r line; do
   line=$(eval 'for param in '$line'; do echo $param; done')
   IFS=$'\n' read -rd '' -a params <<< "$line"
@@ -52,7 +66,7 @@ while IFS= read -r line; do
     echo "$file_path is locked, skip check update"
     continue
   fi
-  expected_hash=$(curl $hash_url -s)
+  expected_hash=$(curl -m 30 --connect-timeout 10 -s $hash_url)
   if [[ $? -ne 0 ]]; then
     echo "Failed to get hash of $file_path from $hash_url"
     continue
@@ -65,7 +79,7 @@ while IFS= read -r line; do
   # verify signature
   if [ "$VERIFY_SIGNATURE" = "true" ]; then
     signature_file="$TEMP_DIR"/$(cat /dev/urandom | tr -dc '[:alpha:]' |  head -c 20)
-    wget -qO "$signature_file" "$signature_url"
+    wget -T 30 --tries=2 -qO "$signature_file" "$signature_url"
     if [ "$?" != 0 ]; then
       echo "No signature file found: $signature_url"
       continue
@@ -88,7 +102,7 @@ while IFS= read -r line; do
 
     sudo mkdir -p $(dirname "${file_path}")
     temp_file="$file_path".download
-    sudo wget "$bin_url" -O "$temp_file"
+    sudo wget -T 60 --tries=2 "$bin_url" -O "$temp_file"
     verify_hash=$(sha256sum $temp_file | awk '{print $1}')
     if [[ "$verify_hash" != "$expected_hash" ]]; then
       echo "Incomplete file downloaded"
@@ -117,8 +131,8 @@ while IFS= read -r line; do
   fi
 done
 
-if [[ "$ASSETSD_PATH" = "${FIREWALLA_HIDDEN}/config/assets.d/" ]]; then
+if [[ -z "$SINGLE_ENTRY" && "$ASSETSD_PATH" = "${FIREWALLA_HIDDEN}/config/assets.d/" ]]; then
   $FIREWALLA_HOME/scripts/patch_system.sh 2>&1 | tee -a /home/pi/.forever/patch_system.log
 fi
 
-logger "FIREWALLA:UPDATE_ASSETS:DONE,ASSETSD_PATH=$ASSETSD_PATH"
+logger "FIREWALLA:UPDATE_ASSETS:DONE,ASSETSD_PATH=${SINGLE_ENTRY:-$ASSETSD_PATH}"

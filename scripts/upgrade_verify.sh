@@ -28,12 +28,25 @@
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
-# dedicated gpg keyrings (not ~/.gnupg), holding only the trusted key(s),
-# stored outside the git tree so fetch/reset cannot modify them
-: ${UV_RELEASE_GNUPGHOME:=/home/pi/.upgrade-gnupg}
-: ${UV_TEST_GNUPGHOME:=/home/pi/.upgrade-gnupg-test}
+# verification uses gpgv, not gpg: gpgv is verify-only and is guaranteed
+# present (apt depends on it), while the gnupg package is absent from newer
+# platform images. gpgv takes a plain binary keyring file and trusts every
+# key in it, so there is no keyring import, no GNUPGHOME and no trustdb.
+#
+# keyrings live outside the git tree so fetch/reset cannot modify them
+: ${UV_RELEASE_KEYRING:=/home/pi/.upgrade-keys/release.gpg}
+: ${UV_TEST_KEYRING:=/home/pi/.upgrade-keys/test.gpg}
 : ${UV_OFFICIAL_REPO:=firewalla}
-: ${UV_RELEASE_PUBKEY:=$FIREWALLA_HOME/etc/keys/release_pub.key}
+# binary (dearmored) public key shipped in the repo; gpgv cannot read the
+# ASCII-armored form and there is no gpg on the box to convert it. This is
+# the bootstrap copy, used only until the assets pipeline delivers one.
+: ${UV_RELEASE_PUBKEY:=$FIREWALLA_HOME/etc/keys/release_pub.gpg}
+# authoritative keyring from the assets pipeline, signature-verified by
+# update_assets.sh against etc/keys/assets.key. It arrives independently of
+# git, so a box that has been offline for a long time still picks up a
+# rotated key and can upgrade; it also allows revoking a key without a
+# release. Takes precedence over the in-repo bootstrap copy.
+: ${UV_RELEASE_KEYRING_ASSET:=/home/pi/.firewalla/run/assets/release_pub.gpg}
 : ${UV_FLOOR_FILE:=/home/pi/.firewalla/config/upgrade_min_version}
 : ${UV_FLOOR_ASSET:=/home/pi/.firewalla/run/assets/fw_min_version}
 : ${UV_OTA_CONFIG_URL:=https://ota.firewalla.com/fapp/fbox.json}
@@ -74,28 +87,67 @@ uv_version_ge() {
   return 0
 }
 
-# import the release public key from the currently installed (trusted) tree
-# into the keyring outside the repo; re-import when the file changes so a
-# signed release can rotate the key
+# copy the release keyring from the currently installed (trusted) tree to a
+# location outside the repo, so a later reset/checkout cannot remove it.
+# Re-copied when the file changes, so a signed release can rotate the key.
 uv_ensure_release_key() {
   # only maintain the release keyring when the box tracks the official repo;
   # a test box (non-official remote) uses the test keyring only, keeping the
   # two environments separate
   uv_is_official_remote "$(git remote get-url origin 2>/dev/null)" || return 0
-  [[ -s $UV_RELEASE_PUBKEY ]] || return 0
-  local sum marker
-  sum=$(sha256sum $UV_RELEASE_PUBKEY | cut -d' ' -f1)
-  marker=$UV_RELEASE_GNUPGHOME/.imported_sha256
-  [[ -e $marker ]] && [[ $(cat $marker) == "$sum" ]] && return 0
-  # gpg requires mode 700 on its home dir
-  uv_as_pi mkdir -p -m 700 $UV_RELEASE_GNUPGHOME
-  if uv_as_pi GNUPGHOME=$UV_RELEASE_GNUPGHOME gpg --batch --quiet --import $UV_RELEASE_PUBKEY 2>/dev/null; then
-    echo "$sum" | uv_as_pi tee $marker >/dev/null
-    uv_log "imported release key from $UV_RELEASE_PUBKEY"
+  local src
+  # pull just the keyring before verifying, so a factory-fresh or long-offline
+  # box gets the current key on its FIRST upgrade instead of failing once and
+  # waiting for the daily asset sync, and so a revoked key stops being trusted
+  # immediately. Single-asset mode needs no assets.d, so this also works before
+  # prepare_assets_list.sh has ever run. Best effort: bounded by timeout, output
+  # discarded, failure ignored - verification then proceeds with whatever
+  # keyring is already on the box.
+  if [[ -x $FIREWALLA_HOME/scripts/update_assets.sh ]]; then
+    timeout 60 $FIREWALLA_HOME/scripts/update_assets.sh \
+      "$UV_RELEASE_KEYRING_ASSET" /all/release_pub.gpg 644 &>/dev/null || true
+  fi
+  # assets-delivered keyring wins: it is the rotatable, authoritative copy.
+  # Fall back to the in-repo key only to bootstrap a box that has not synced
+  # assets yet (first boot, factory reset).
+  if [[ -s $UV_RELEASE_KEYRING_ASSET ]]; then
+    src=$UV_RELEASE_KEYRING_ASSET
+  elif [[ -s $UV_RELEASE_PUBKEY ]]; then
+    src=$UV_RELEASE_PUBKEY
   else
-    uv_log "failed to import release key from $UV_RELEASE_PUBKEY"
+    return 0
+  fi
+  # already current
+  cmp -s $src $UV_RELEASE_KEYRING 2>/dev/null && return 0
+  mkdir -p "$(dirname $UV_RELEASE_KEYRING)" 2>/dev/null
+  if cp -f $src $UV_RELEASE_KEYRING 2>/dev/null; then
+    uv_log "installed release keyring from $src"
+  else
+    uv_log "failed to install release keyring to $UV_RELEASE_KEYRING"
     return 1
   fi
+}
+
+# verify a git tag's signature with gpgv against <keyring>. git's verify-tag
+# shells out to gpg, which does not exist on newer images, so the tag object
+# is split by hand: everything before the PGP block is the signed payload,
+# the block itself is the detached signature. Return 0 only on a good
+# signature from a key in the keyring (gpgv trusts exactly those).
+uv_gpgv_verify_tag() {
+  local tag=$1 keyring=$2 tmp raw rc=1
+  tmp=$(mktemp -d) || return 1
+  raw=$tmp/tag
+  if git cat-file tag "$tag" > $raw 2>/dev/null; then
+    sed '/-----BEGIN PGP SIGNATURE-----/,$d' $raw > $tmp/payload
+    sed -n '/-----BEGIN PGP SIGNATURE-----/,$p' $raw > $tmp/sig
+    # a tag with no signature block yields an empty sig file
+    if [[ -s $tmp/sig ]]; then
+      gpgv --keyring "$keyring" --status-fd 1 $tmp/sig $tmp/payload 2>/dev/null |
+        grep -q '^\[GNUPG:\] VALIDSIG ' && rc=0
+    fi
+  fi
+  rm -rf $tmp
+  return $rc
 }
 
 uv_get_version_floor() {
@@ -197,7 +249,7 @@ uv_sync_node_modules() {
 # core check: does <commit-ish> carry a tag signed by a trusted key, with
 # version >= the minimal version. Return 0 = verified (or exempt), 1 = failed.
 uv_verify_release_commit() {
-  local commit keyring floor tag tags t ver sigout fprs
+  local commit keyring floor tag tags t ver
   # ^{commit} peels any ref (branch, annotated tag) to its commit hash
   commit=$(git rev-parse "${1:-FETCH_HEAD}^{commit}" 2>/dev/null) || {
     uv_log "cannot resolve commit $1"
@@ -206,29 +258,19 @@ uv_verify_release_commit() {
 
   local url=$(git remote get-url origin 2>/dev/null)
   if uv_is_official_remote "$url"; then
-    keyring=$UV_RELEASE_GNUPGHOME
-    # pubring.kbx: gpg >= 2.1 keyring format, pubring.gpg: legacy format.
-    # Official remote with no keyring fails closed (reject, never skip).
-    if [[ ! -s $keyring/pubring.kbx && ! -s $keyring/pubring.gpg ]]; then
-      uv_log "official remote but release keyring missing at $keyring"
+    # official remote with no keyring fails closed (reject, never skip)
+    if [[ ! -s $UV_RELEASE_KEYRING ]]; then
+      uv_log "official remote but release keyring missing at $UV_RELEASE_KEYRING"
       return 1
     fi
+    keyring=$UV_RELEASE_KEYRING
   else
-    if [[ -s $UV_TEST_GNUPGHOME/pubring.kbx || -s $UV_TEST_GNUPGHOME/pubring.gpg ]]; then
-      keyring=$UV_TEST_GNUPGHOME
+    if [[ -s $UV_TEST_KEYRING ]]; then
+      keyring=$UV_TEST_KEYRING
     else
       uv_log "non-official remote ($url) and no test key, skip verification"
       return 0
     fi
-  fi
-
-  # trusted fingerprints from the keyring; --with-colons is gpg's
-  # machine-readable output, "fpr" records carry the fingerprint in field 10
-  fprs=$(uv_as_pi GNUPGHOME=$keyring gpg --batch --quiet --list-keys --with-colons 2>/dev/null |
-    awk -F: '/^fpr:/ {print $10}')
-  if [[ -z "$fprs" ]]; then
-    uv_log "no trusted key in $keyring"
-    return 1
   fi
 
   # local tags on this exact commit
@@ -251,26 +293,22 @@ uv_verify_release_commit() {
   for tag in $tags; do
     # a pre-existing local tag with this name may point elsewhere
     [[ $(git rev-parse -q --verify "$tag^{commit}" 2>/dev/null) == "$commit" ]] || continue
-    # --raw prints gpg status lines; a valid signature yields
-    # "[GNUPG:] VALIDSIG <40-hex-fpr> ...". Matching the fingerprint pins
-    # the signer (exit status alone = "some key in the keyring"); the
-    # trailing space stops prefix matches.
-    sigout=$(uv_as_pi GNUPGHOME=$keyring git verify-tag --raw "$tag" 2>&1) || continue
-    for f in $fprs; do
-      if echo "$sigout" | grep -q "VALIDSIG $f "; then
-        if [[ -n "$floor" ]]; then
-          # version comes from the tag name, which the signature covers
-          ver=$(echo "$tag" | sed -n 's/.*v\([0-9][0-9.]*\)$/\1/p')
-          if [[ -z "$ver" ]] || ! uv_version_ge "$ver" "$floor"; then
-            uv_log "tag $tag verified but version '$ver' below minimal version $floor"
-            continue 2
-          fi
-        fi
-        uv_log "commit $commit verified by tag $tag"
-        return 0
+    # gpgv trusts exactly the keys in the keyring, so a good signature there
+    # already means "signed by us" - no separate fingerprint match needed
+    if ! uv_gpgv_verify_tag "$tag" "$keyring"; then
+      uv_log "tag $tag signature not from a trusted key"
+      continue
+    fi
+    if [[ -n "$floor" ]]; then
+      # version comes from the tag name, which the signature covers
+      ver=$(echo "$tag" | sed -n 's/.*v\([0-9][0-9.]*\)$/\1/p')
+      if [[ -z "$ver" ]] || ! uv_version_ge "$ver" "$floor"; then
+        uv_log "tag $tag verified but version '$ver' below minimal version $floor"
+        continue
       fi
-    done
-    uv_log "tag $tag signature not from a trusted key"
+    fi
+    uv_log "commit $commit verified by tag $tag"
+    return 0
   done
 
   uv_log "no trusted signed tag found for commit $commit"
