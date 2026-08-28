@@ -20,8 +20,6 @@ const DEFAULT_PROVISION_BASE = 'https://msp.dd.firewalla.net';
 let PROVISION_BASE = DEFAULT_PROVISION_BASE;
 const BOOTSTRAP_PATH = '/vmbox/bootstrap';
 const ONBOARD_CONFIG = process.env.FW_ONBOARD_CONFIG || '/home/pi/.firewalla/onboard-config.json';
-const LOCAL_ENCIPHER_API = process.env.FW_LOCAL_ENCIPHER_API
-  || 'http://localhost:8834/v1/encipher/simple?command=cmd&item=addPeers';
 
 const POLL_INTERVAL_SEC = 5;
 
@@ -107,7 +105,6 @@ async function installLicense(licenseUuid, mac) {
 async function installLicenseAndMark(licenseUuid, mac) {
   log(`installing license ${licenseUuid}`);
   const license = await installLicense(licenseUuid, mac);
-  await markBootingComplete();
   await persistState({
     stage: 'licensed',
     license_uuid: license.DATA.UUID,
@@ -145,9 +142,6 @@ async function configureGuardian({ server, region, business }) {
   await rclient.setAsync('ext.guardian.business', JSON.stringify(business));
 }
 
-async function markBootingComplete() {
-  await rclient.setAsync('bootingComplete', '1');
-}
 
 async function applyTimezone(tz) {
   if (!tz) {
@@ -177,31 +171,6 @@ async function restartFireApi() {
   await execAsync('sudo systemctl restart fireapi');
 }
 
-async function addPeerToApp(eid) {
-  await rp({
-    uri: LOCAL_ENCIPHER_API,
-    method: 'POST',
-    json: true,
-    headers: { 'Content-Type': 'application/json' },
-    body: { peers: [{ type: 'user', eid }] },
-    timeout: 15000
-  });
-}
-
-async function addPeerToAppWithRetry(eid, maxSec = 120) {
-  const deadline = Date.now() + maxSec * 1000;
-  let lastErr;
-  while (Date.now() < deadline) {
-    try { return await addPeerToApp(eid); }
-    catch (e) {
-      lastErr = e;
-      log(`addPeers retry (${e.message})`);
-      await sleep(3000);
-    }
-  }
-  throw lastErr || new Error('addPeers timeout');
-}
-
 const STATE_FILE = '/home/pi/.firewalla/bootstrap.json';
 const state = { created_at: new Date().toISOString() };
 
@@ -225,8 +194,6 @@ async function main(onboard) {
   await applyTimezone(_.get(onboard, 'timezone'))
       .catch((e) => log(`WARN: applyTimezone failed: ${e.message}`));
 
-  const needApp = _.get(onboard, 'activation.app.enabled') === true;
-
   const bid = _.get(onboard, 'activation.bid') || uuid.v4();
   const rid = eptcloud.eptGenerateInvite().r;
   log(`register bid=${bid} rid=${rid}`);
@@ -244,20 +211,6 @@ async function main(onboard) {
   await writeUiConf(gid);
   await configureGuardian(payload);
   log(`msp joined: members=${memberCount} server=${payload.server}${payload.region ? ` region=${payload.region}` : ''}`);
-
-  if (needApp) {
-    const appEid = _.get(onboard, 'activation.app.eid');
-    if (appEid) {
-      try {
-        await addPeerToAppWithRetry(appEid);
-        log(`app peer added: eid=${appEid}`);
-      } catch (e) {
-        log(`WARN: addPeers failed (non-fatal): ${e.message}`);
-      }
-    } else {
-      log('app.enabled but app.eid missing — skipping addPeers');
-    }
-  }
 
   await restartFireApi();
   log('fireapi restarted');
