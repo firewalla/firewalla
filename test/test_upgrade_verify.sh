@@ -147,11 +147,15 @@ GNUPGHOME=$GNUPGHOME_EVIL gpg --export $EFPR 2>/dev/null > $UV_RELEASE_KEYRING_A
 uv_ensure_release_key >/dev/null 2>&1
 cmp -s $UV_RELEASE_KEYRING_ASSET $UV_RELEASE_KEYRING; check "asset keyring overrides in-repo bootstrap key" 0 $?
 
-# rotation reaches a long-offline box: stale repo key, current key from assets
-uv_verify_release_commit HEAD >/dev/null 2>&1; RC_ASSET=$?
+# stale in-repo key must NOT clobber an already-rotated keyring when the asset
+# is temporarily missing (e.g. S3 unreachable)
 UV_RELEASE_KEYRING_ASSET=$T/nonexistent
+uv_ensure_release_key >/dev/null 2>&1
+cmp -s $T/asset_release.gpg $UV_RELEASE_KEYRING; check "asset missing: existing keyring kept, not downgraded to repo key" 0 $?
+
+# with no keyring at all, the in-repo key still bootstraps
 rm -f $UV_RELEASE_KEYRING; uv_ensure_release_key >/dev/null 2>&1
-cmp -s $UV_RELEASE_PUBKEY $UV_RELEASE_KEYRING; check "no asset present: falls back to in-repo key" 0 $?
+cmp -s $UV_RELEASE_PUBKEY $UV_RELEASE_KEYRING; check "no asset, no keyring: falls back to in-repo bootstrap key" 0 $?
 git remote set-url origin "$SAVED_URL"
 
 # --- e2e: strict node modules pin sync ---

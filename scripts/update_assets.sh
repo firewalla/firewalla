@@ -11,11 +11,15 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 # Single-asset mode: update_assets.sh <local_path> <s3_path> [perm]
 # The entry is given directly, so no assets.d list is needed - this works on a
 # factory-fresh or long-offline box before prepare_assets_list.sh has ever run.
-# Deliberately supports no exec_pre/exec_post, so nothing from the caller is
-# eval'd. With no arguments, every entry under ASSETSD_PATH is processed.
+# Arguments are kept as separate values and never fed to the eval below, so
+# paths may contain spaces and cannot inject shell. exec_pre/exec_post are not
+# supported in this mode. With no arguments, every entry under ASSETSD_PATH is
+# processed.
 SINGLE_ENTRY=""
+SA_FILE_PATH=""; SA_S3_PATH=""; SA_PERM=""
 if [[ $# -ge 2 ]]; then
-  SINGLE_ENTRY="$1 $2 ${3:-644}"
+  SINGLE_ENTRY="yes"
+  SA_FILE_PATH="$1"; SA_S3_PATH="$2"; SA_PERM="${3:-644}"
 fi
 
 logger "FIREWALLA:UPDATE_ASSETS:START,ASSETSD_PATH=${SINGLE_ENTRY:-$ASSETSD_PATH}"
@@ -45,22 +49,30 @@ trap 'rm -fr "$TEMP_DIR"' EXIT
 # if using cat, the file not ending with newline will be concatenated with the next file
 # so two lines becomes one line
 { if [[ -n "$SINGLE_ENTRY" ]]; then
-    printf '%s\n' "$SINGLE_ENTRY"
+    echo single
   else
     cd $ASSETSD_PATH && awk '{print $0}' *
   fi
 } |
 while IFS= read -r line; do
-  line=$(eval 'for param in '$line'; do echo $param; done')
-  IFS=$'\n' read -rd '' -a params <<< "$line"
-  file_path=${params[0]}
-  s3_path=${params[1]}
+  if [[ -n "$SINGLE_ENTRY" ]]; then
+    file_path="$SA_FILE_PATH"
+    s3_path="$SA_S3_PATH"
+    perm="$SA_PERM"
+    exec_pre=""
+    exec_post=""
+  else
+    line=$(eval 'for param in '$line'; do echo $param; done')
+    IFS=$'\n' read -rd '' -a params <<< "$line"
+    file_path=${params[0]}
+    s3_path=${params[1]}
+    perm=${params[2]}
+    exec_pre=${params[3]}
+    exec_post=${params[4]}
+  fi
   bin_url="${ASSETS_PREFIX}${s3_path}"
   hash_url="${bin_url}.sha256"
   signature_url="${bin_url}.sig"
-  perm=${params[2]}
-  exec_pre=${params[3]}
-  exec_post=${params[4]}
   lock_file="$(dirname $file_path)/.$(basename $file_path).lock"
   if [[ -f $lock_file ]]; then
     echo "$file_path is locked, skip check update"

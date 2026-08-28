@@ -124,9 +124,14 @@ uv_ensure_release_key() {
   # already current
   cmp -s $src $UV_RELEASE_KEYRING 2>/dev/null && return 0
   mkdir -p "$(dirname $UV_RELEASE_KEYRING)" 2>/dev/null
-  if cp -f $src $UV_RELEASE_KEYRING 2>/dev/null; then
+  # write to a temp file in the same directory, then rename: an interrupted
+  # copy must never leave a truncated keyring behind, which would fail every
+  # verification until the next successful run
+  local tmp=$UV_RELEASE_KEYRING.new
+  if cp -f $src $tmp 2>/dev/null && [[ -s $tmp ]] && mv -f $tmp $UV_RELEASE_KEYRING 2>/dev/null; then
     uv_log "installed release keyring from $src"
   else
+    rm -f $tmp 2>/dev/null
     uv_log "failed to install release keyring to $UV_RELEASE_KEYRING"
     return 1
   fi
