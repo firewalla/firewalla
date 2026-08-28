@@ -801,8 +801,10 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async newAlarmDataForInit(json) {
-    json.activeAlarmCount = await alarmManager2.getActiveAlarmCount();
-    json.newAlarms = await alarmManager2.loadActiveAlarmsAsync();
+    // alarms of the last 30 days, begin time is aligned to calendar date, same as MSP
+    const beginTs = alarmManager2.getAlarmWindowBeginTs();
+    json.activeAlarmCount = await alarmManager2.getActiveAlarmCount(beginTs);
+    json.newAlarms = await alarmManager2.loadActiveAlarmsAsync({ ts2: beginTs });
   }
 
   async pendingAlarmNumberForInit(json) {

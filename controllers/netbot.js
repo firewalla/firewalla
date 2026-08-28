@@ -1546,9 +1546,11 @@ class netBot extends ControllerBot {
       case "pendingAlarms": {
         const offset = value && value.offset;
         const limit = value && value.limit;
+        const beginTs = value && value.beginTs;
         const pendingAlarms = await am2.loadPendingAlarms({
           offset: offset,
-          limit: limit
+          limit: limit,
+          beginTs: beginTs
         })
         return {
           alarms: pendingAlarms,
@@ -1558,10 +1560,12 @@ class netBot extends ControllerBot {
       case "archivedAlarms": {
         const offset = value && value.offset;
         const limit = value && value.limit;
+        const beginTs = value && value.beginTs;
 
         const archivedAlarms = await am2.loadArchivedAlarms({
           offset: offset,
-          limit: limit
+          limit: limit,
+          beginTs: beginTs
         })
         return {
           alarms: archivedAlarms,
