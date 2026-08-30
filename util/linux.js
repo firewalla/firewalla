@@ -106,8 +106,31 @@ exports.gateway_ip6 = function(cb) {
   trim_exec(cmd, cb);
 };
 
-exports.gateway_ip6_sync = function() {
-  const cmd = "/sbin/ip -6 route | awk '/default/ { print $3 }' | head -n 1"
+exports.gateway_ip6_sync = function(nic_name = null) {
+  /*
+   * When an interface is specified, only return the IPv6 default gateway
+   * associated with that interface. This prevents a default route belonging
+   * to another interface from being incorrectly reported as this interface's
+   * gateway.
+   *
+   * Strip the ":0" suffix used by legacy alias interfaces so that an alias
+   * such as eth0:0 is resolved against the underlying Linux device eth0.
+   */
+  let interface_name = null;
+  if (nic_name) {
+    interface_name = nic_name.replace(/:.*$/, "");
+  }
+
+  let cmd;
+  if (interface_name) {
+    cmd = "/sbin/ip -6 route show default dev " + interface_name +
+      " | awk '/^default/ { print $3 }' | head -n 1";
+  } else {
+    // Preserve the existing behavior for callers that do not provide
+    // an interface name.
+    cmd = "/sbin/ip -6 route | awk '/default/ { print $3 }' | head -n 1";
+  }
+
   return trim_exec_sync(cmd);
 };
 
