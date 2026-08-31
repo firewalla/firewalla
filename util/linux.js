@@ -1,8 +1,9 @@
 "use strict";
 
-const log   = require("../net2/logger.js")(__filename),
+const log   = require("../net2/logger.js"),
       os    = require('os'),
       exec  = require('child_process').exec,
+      execFileSync = require('child_process').execFileSync,
       execAsync = require('child-process-promise').exec;
 
 function trim_exec(cmd, cb) {
@@ -121,17 +122,40 @@ exports.gateway_ip6_sync = function(nic_name = null) {
     interface_name = nic_name.replace(/:.*$/, "");
   }
 
-  let cmd;
-  if (interface_name) {
-    cmd = "/sbin/ip -6 route show default dev " + interface_name +
-      " | awk '/^default/ { print $3 }' | head -n 1";
-  } else {
-    // Preserve the existing behavior for callers that do not provide
-    // an interface name.
-    cmd = "/sbin/ip -6 route | awk '/default/ { print $3 }' | head -n 1";
+  let output;
+  try {
+    if (interface_name) {
+      output = execFileSync(
+        "/sbin/ip",
+        ["-6", "route", "show", "default", "dev", interface_name],
+        { encoding: "utf8" }
+      );
+    } else {
+      output = execFileSync(
+        "/sbin/ip",
+        ["-6", "route"],
+        { encoding: "utf8" }
+      );
+    }
+  } catch (err) {
+    log.error("Error when executing /sbin/ip -6 route", err);
+    return null;
   }
 
-  return trim_exec_sync(cmd);
+  if (!output) {
+    return null;
+  }
+
+  const routes = output.toString().trim().split('\n');
+
+  for (const route of routes) {
+    const match = route.match(/^default\s+via\s+(\S+)/);
+    if (match) {
+      return match[1];
+    }
+  }
+
+  return null;
 };
 
 /*
