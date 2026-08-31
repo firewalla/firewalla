@@ -379,18 +379,24 @@ describe('dnsmasq DHCP hosts-file reload vs restart', function() {
     expect(dnsmasq.counter.reloadDHCP).to.equal(1);
   });
 
-  it('logs an error and does not fall back to restart when the DHCP reload command fails', async function() {
-    const { dnsmasq, commands, timers, logs } = loadDNSMASQ({ fireRouterManaged: true, dhcpReloadFails: true });
+  it('falls back to a full DHCP restart when reload fails', async function() {
+    const { dnsmasq, commands, timers, logs } = loadDNSMASQ({
+      fireRouterManaged: true,
+      dhcpReloadFails: true
+    });
     this.test.ctx.dnsmasq = dnsmasq;
 
     dnsmasq.scheduleReloadDHCPService();
     await timers[0].fn();
 
     expect(commands.some(cmd => cmd.includes('systemctl reload firerouter_dhcp'))).to.equal(true);
-    expect(commands.some(cmd => cmd.includes('systemctl restart firerouter_dhcp'))).to.equal(false);
+    expect(commands.some(cmd => cmd.includes('systemctl stop firerouter_dhcp'))).to.equal(true);
+    expect(commands.some(cmd => cmd.includes('systemctl restart firerouter_dhcp'))).to.equal(true);
     expect(logs.error.some(args => String(args[0]).includes('Failed to reload'))).to.equal(true);
+    expect(logs.warn.some(args => String(args[0]).includes('falling back to service restart'))).to.equal(true);
+    expect(dnsmasq.counter.restartDHCP).to.equal(1);
   });
-
+  
   it('skips the scheduled reload when a full DHCP restart is already pending', async function() {
     const { dnsmasq, commands, timers } = loadDNSMASQ({ fireRouterManaged: true });
     this.test.ctx.dnsmasq = dnsmasq;
