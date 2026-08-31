@@ -133,6 +133,9 @@ class AuditTool extends LogQuery {
     if (entry.bTarget) {
       f.bTarget = entry.bTarget
     }
+    if (entry.purpose) {
+      f.purpose = entry.purpose
+    }
     if (entry.reason) {
       f.reason = entry.reason
     }
