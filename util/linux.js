@@ -1,6 +1,6 @@
 "use strict";
 
-const log   = require("../net2/logger.js"),
+const log   = require("../net2/logger.js")(__filename),
       os    = require('os'),
       exec  = require('child_process').exec,
       execFileSync = require('child_process').execFileSync,
