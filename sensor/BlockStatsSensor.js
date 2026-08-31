@@ -30,7 +30,7 @@ const { matchFilter } = require('./BlockStatsFilter.js');
 const DEFAULT_SLOT_SECS = 900; // 15 minutes, used when "slotSecs" isn't configured
 const BUCKET_TTL = 172800; // 48 hours
 const FLUSH_INTERVAL = 60 * 1000; // 1 minute
-const MAX_RECORDS_PER_BUCKET = 50; // cap on distinct records per key per bucket, to bound redis payload size
+const MAX_RECORDS_PER_BUCKET = 100; // cap on distinct records per key per bucket, to bound redis payload size
 
 class BlockStatsSensor extends Sensor {
   constructor(config) {
@@ -153,11 +153,13 @@ class BlockStatsSensor extends Sensor {
     const staleCutoff = nowBucket - this.slotSecs * 2; // keep current + previous bucket only
 
     const multi = rclient.multi();
-    let hasWrite = false;
     for (const bucketTs of Object.keys(this.buckets)) {
       const settingsAtBucket = this.buckets[bucketTs];
-      const hasDirty = Object.keys(settingsAtBucket).some(k => this.dirty.has(`${bucketTs}:${k}`));
-      if (!hasDirty) continue;
+      const dirtyKeys = Object.keys(settingsAtBucket).filter(k => this.dirty.has(`${bucketTs}:${k}`));
+      if (dirtyKeys.length === 0) continue;
+      // clear before serializing, not after the await below, so a concurrent increment that
+      // re-marks dirty during the redis write isn't lost
+      for (const k of dirtyKeys) this.dirty.delete(`${bucketTs}:${k}`);
       const payload = {
         ts: Number(bucketTs),
         du: this.slotSecs, // slot length in seconds, self-describing in case slotSecs changes later
@@ -171,14 +173,12 @@ class BlockStatsSensor extends Sensor {
       // index this bucket's timestamp so readers can enumerate actually-existing buckets
       // without having to guess boundaries from the (possibly since-changed) slotSecs config
       multi.zadd(Constants.REDIS_KEY_BLOCK_STATS_INDEX, Number(bucketTs), bucketTs);
-      hasWrite = true;
     }
     // drop index entries whose underlying blockStats::<ts> key has already expired (TTL is
     // BUCKET_TTL from wall-clock write time, so anything older than that is definitely gone)
     const indexCutoff = Math.floor(Date.now() / 1000) - BUCKET_TTL;
     multi.zremrangebyscore(Constants.REDIS_KEY_BLOCK_STATS_INDEX, '-inf', indexCutoff);
     await multi.execAsync();
-    this.dirty.clear();
 
     for (const bucketTs of Object.keys(this.buckets)) {
       if (Number(bucketTs) < staleCutoff) delete this.buckets[bucketTs];
