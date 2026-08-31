@@ -162,18 +162,19 @@ exports.gateway_ip6_sync = function(nic_name = null) {
       continue;
     }
 
-const viaIndex = tokens.indexOf('via');
-if (viaIndex >= 0 && tokens[viaIndex + 1]) {
-  // A multipath route contains one nexthop per line. Only use the
-  // nexthop that belongs to the requested interface.
-if (tokens[0] === 'nexthop' && interface_name) {
-  const devIndex = tokens.indexOf('dev');
-  if (devIndex < 0 || tokens[devIndex + 1] !== interface_name) {
-    continue;
-  }
-}
-  return tokens[viaIndex + 1];
-}
+    const viaIndex = tokens.indexOf('via');
+    if (viaIndex >= 0 && tokens[viaIndex + 1]) {
+      // A multipath route contains one nexthop per line. Only use the
+      // nexthop that belongs to the requested interface.
+      if (tokens[0] === 'nexthop' && interface_name) {
+        const devIndex = tokens.indexOf('dev');
+        if (devIndex < 0 || tokens[devIndex + 1] !== interface_name) {
+          continue;
+        }
+      }
+
+      return tokens[viaIndex + 1];
+    }
   }
 
   return null;
