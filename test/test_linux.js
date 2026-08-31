@@ -113,4 +113,113 @@ describe('gateway_ip6_sync', function () {
       { encoding: 'utf8' },
     ]);
   });
+
+  it('returns null for a directly connected default route without a gateway', () => {
+    execFileSync = () => (
+      'default dev eth0 proto kernel metric 256\n'
+    );
+
+    expect(linux.gateway_ip6_sync('eth0')).to.equal(null);
+  });
+});
+
+describe('NetworkTool.listInterfaces', function () {
+  let createNetworkTool;
+  let gatewayCalls;
+
+  beforeEach(() => {
+    gatewayCalls = [];
+
+    createNetworkTool = proxyquire('../net2/NetworkTool.js', {
+      '../util/linux.js': {
+        get_network_interfaces_list: async () => [
+          {
+            name: 'eth0',
+            ip_address: '192.0.2.10',
+            mac_address: '00:11:22:33:44:55',
+            conn_type: 'Wired',
+            gateway_ip: '192.0.2.1',
+          },
+          {
+            name: 'eth1',
+            ip_address: '198.51.100.10',
+            mac_address: '00:11:22:33:44:66',
+            conn_type: 'Wired',
+            gateway_ip: '198.51.100.1',
+          },
+        ],
+
+        gateway_ip6_sync: (interfaceName) => {
+          gatewayCalls.push(interfaceName);
+
+          const gateways = {
+            eth0: 'fe80::1',
+            eth1: 'fe80::2',
+          };
+
+          return gateways[interfaceName] || null;
+        },
+      },
+
+      './logger.js': () => ({
+        info: () => {},
+        error: () => {},
+      }),
+
+      './config.js': {
+        getConfig: () => ({}),
+      },
+
+      '../platform/PlatformLoader.js': {
+        getPlatform: () => ({
+          getSubnetCapacity: () => 64,
+        }),
+      },
+
+      'dns': {
+        getServers: () => [
+          '192.0.2.1',
+        ],
+      },
+
+      'os': {
+        networkInterfaces: () => ({
+          eth0: [
+            {
+              family: 'IPv4',
+              address: '192.0.2.10',
+              internal: false,
+              cidr: '192.0.2.0/24',
+            },
+          ],
+          eth1: [
+            {
+              family: 'IPv4',
+              address: '198.51.100.10',
+              internal: false,
+              cidr: '198.51.100.0/24',
+            },
+          ],
+        }),
+      },
+    });
+  });
+
+  it('passes each interface name to gateway_ip6_sync and assigns the result to that interface', async function () {
+    const networkTool = createNetworkTool();
+    const result = await networkTool.listInterfaces();
+
+    expect(gatewayCalls).to.deep.equal([
+      'eth0',
+      'eth1',
+    ]);
+
+    expect(result).to.have.lengthOf(2);
+
+    expect(result[0].name).to.equal('eth0');
+    expect(result[0].gateway6).to.equal('fe80::1');
+
+    expect(result[1].name).to.equal('eth1');
+    expect(result[1].gateway6).to.equal('fe80::2');
+  });
 });
