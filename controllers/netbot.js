@@ -151,6 +151,7 @@ const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimite
 const RateLimiterRes = require('../vendor_lib/rate-limiter-flexible/RateLimiterRes');
 const cpuProfile = require('../net2/CpuProfile.js');
 const ea = require('../event/EventApi.js');
+const era = require('../event/EventRequestApi.js');
 const { Rule } = require('../net2/Iptables.js');
 const iptc = require('../control/IptablesControl.js');
 const sl = require('../sensor/APISensorLoader.js');
@@ -1236,6 +1237,8 @@ class netBot extends ControllerBot {
             const date = Math.floor(Date.now() / 1000)
             result["msg"] = `${historyMsg}paired at ${date},`;
             await rclient.hsetAsync("sys:ept:members:history", appInfo.eid, JSON.stringify(result));
+            // record phone_paired action event in event log, deviceName is only known here
+            await era.addActionEvent("phone_paired", 1, { "eid": appInfo.eid, "deviceName": appInfo.deviceName });
              // notify phone_pair events
             sem.sendEventToFireApi({
               type: `Event:NewEvent`,
