@@ -97,7 +97,7 @@ set_rx_flow_hash() {
 set_smp_affinity() {
     while read intf smp_affinity
     do
-        for irq in $(cat /proc/interrupts | awk "\$1 == \"$intf\" || \$NF == \"$intf\" {print \$1}"|tr -d :)
+        for irq in $(cat /proc/interrupts | awk -v intf="$intf" '$1 == intf || $NF == intf {print $1}'|tr -d :)
         do
             if $PROFILE_CHECK; then
                 cat /proc/irq/$irq/smp_affinity
@@ -170,6 +170,10 @@ set_cpufreq() {
 set_cpufreqs() {
     while read cpuid min max governor
     do
+        if ! [[ "$cpuid" =~ ^[0-9]+$ ]]; then
+            logerror "set_cpufreqs: invalid cpuid '$cpuid'"
+            continue
+        fi
         if $PROFILE_CHECK; then
             cpufreq-info |grep -A3 policy
         else
@@ -500,13 +504,18 @@ process_profile() {
 
 get_active_profile() {
     ap_name=$(redis-cli get platform:profile:active)
-    if [[ -n "$ap_name" ]]; then
-        ap=$PROFILE_USER_DIR/$ap_name
-        test -e $ap || ap=$PROFILE_DEFAULT_DIR/$ap_name
-    else
-        ap=$PROFILE_DEFAULT_DIR/$PROFILE_DEFAULT_NAME
+    # any local process can write that key, and it is used as a path, so only a plain file name
+    if [[ -n "$ap_name" && ! "$ap_name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+        logerror "invalid profile name '$ap_name', use default"
+        ap_name=
     fi
-    echo $ap
+    if [[ -n "$ap_name" ]]; then
+        ap="$PROFILE_USER_DIR/$ap_name"
+        test -e "$ap" || ap="$PROFILE_DEFAULT_DIR/$ap_name"
+    else
+        ap="$PROFILE_DEFAULT_DIR/$PROFILE_DEFAULT_NAME"
+    fi
+    echo "$ap"
 }
 
 # ----------------------------------------------------------------------------
@@ -531,21 +540,21 @@ do
 done
 shift $((OPTIND-1))
 
-active_profile=${1:-$(get_active_profile)}
+active_profile="${1:-$(get_active_profile)}"
 loginfo "Process profile - $active_profile"
 prev_profile=$([[ -e $PREV_APPLY_PROFILE_NAME ]] && cat $PREV_APPLY_PROFILE_NAME)
 prev_ts=$([[ -e $PREV_APPLY_PROFILE_TS ]] && cat $PREV_APPLY_PROFILE_TS || echo 0)
 cur_ts=$(date +%s)
-if ! $PROFILE_CHECK && [[ $prev_profile == $active_profile ]] && ((cur_ts - prev_ts < 3600)) && ! $FORCE_APPLY; then
+if ! $PROFILE_CHECK && [[ "$prev_profile" == "$active_profile" ]] && ((cur_ts - prev_ts < 3600)) && ! $FORCE_APPLY; then
   echo "Profile $active_profile was applied less than 3600 seconds ago, skip apply this time"
   exit 0
 fi
 logger "FIREWALLA:APPLY_PROFILE:START"
 if ! $PROFILE_CHECK; then
-  echo -n $active_profile > $PREV_APPLY_PROFILE_NAME
+  echo -n "$active_profile" > $PREV_APPLY_PROFILE_NAME
   echo -n $cur_ts > $PREV_APPLY_PROFILE_TS
 fi
-cat $active_profile | process_profile || {
+cat "$active_profile" | process_profile || {
     logerror "failed to process profile"
     rc=1
 }
