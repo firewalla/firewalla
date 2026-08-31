@@ -936,6 +936,51 @@
         }
       }
     },
+    "BlockStatsSensor": {
+      "slotSecs": 900,
+      "blockStatsSettings": [
+        {
+          "key": "block::porn",
+          "filter": { "and": [ { "field": "bType", "value": "category" }, { "field": "bTarget", "value": "porn" } ] },
+          "recordKeys": ["device", "dest"]
+        },
+        {
+          "key": "block::gamble",
+          "filter": { "and": [ { "field": "bType", "value": "category" }, { "field": "bTarget", "value": "gamble" } ] },
+          "recordKeys": ["device", "dest"]
+        },
+        {
+          "key": "block::violence",
+          "filter": { "and": [ { "field": "bType", "value": "category" }, { "field": "bTarget", "value": "violence" } ] },
+          "recordKeys": ["device", "dest"]
+        },
+        {
+          "key": "block::drugs",
+          "filter": { "and": [ { "field": "bType", "value": "category" }, { "field": "bTarget", "value": "drugs" } ] },
+          "recordKeys": ["device", "dest"]
+        },
+        {
+          "key": "block::nrd",
+          "filter": { "and": [ { "field": "bType", "value": "category" }, { "field": "bTarget", "value": "nrd" } ] },
+          "recordKeys": ["device", "dest"]
+        },
+        {
+          "key": "block::lookalike_domain",
+          "filter": { "and": [ { "field": "bType", "value": "category" }, { "field": "bTarget", "value": "lookalike_domain" } ] },
+          "recordKeys": ["device", "dest"]
+        },
+        {
+          "key": "block::default_c",
+          "filter": { "and": [ { "field": "bType", "value": "category" }, { "field": "bTarget", "value": "default_c" } ] },
+          "recordKeys": ["device", "dest"]
+        },
+        {
+          "key": "block::country",
+          "filter": { "field": "bType", "value": "country" },
+          "recordKeys": ["device", "dest", "bTarget"]
+        }
+      ]
+    },
     "PurposeDeviceAutoSecurePlugin":{},
     "DapSensor": {},
     "SuricataRuleSetSensor": {},
