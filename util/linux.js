@@ -148,14 +148,17 @@ exports.gateway_ip6_sync = function(nic_name = null) {
 
   const routes = output.toString().trim().split('\n');
 
-    let isDefaultRoute = false;
+  let isDefaultRoute = false;
 
   for (const route of routes) {
     const tokens = route.trim().split(/\s+/);
 
     if (tokens[0] === 'default') {
       isDefaultRoute = true;
-    } else if (tokens[0] !== 'nexthop' || !isDefaultRoute) {
+    } else if (tokens[0] === 'nexthop' && isDefaultRoute) {
+      // Continue parsing a multipath default route.
+    } else {
+      isDefaultRoute = false;
       continue;
     }
 
