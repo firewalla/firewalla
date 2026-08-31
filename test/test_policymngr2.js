@@ -307,6 +307,33 @@ describe('Test deleteTagRelatedPolicies unenforce synchronization', function() {
     expect(unenforceCompleted).to.be.true;
   });
 
+  // deleteTagRelatedPolicies() unenforces via enforceOnQueue() directly, bypassing enforce()/
+  // setupPolicyQueue() -- the only two places that otherwise call removeBypassChainForPolicy() --
+  // so it must call it explicitly or the rule's empty FW_<pid>_BYPASS chain lingers forever
+  it('should remove the bypass chain for each rule it unenforces', async () => {
+    const pm2 = new PolicyManager2();
+    const uid = 'testTagBypassCleanup';
+    const rule = new Policy({ pid: 'testBypassCleanupPid', type: 'intranet', action: 'block', tag: [`tag:${uid}`] });
+
+    const removedBypassFor = [];
+    const origLoad = pm2.loadActivePoliciesAsync;
+    const origEnforceOnQueue = pm2.enforceOnQueue;
+    const origRemoveBypass = pm2.removeBypassChainForPolicy;
+    pm2.loadActivePoliciesAsync = async () => [rule];
+    pm2.enforceOnQueue = async () => {};
+    pm2.removeBypassChainForPolicy = async (policy) => { removedBypassFor.push(policy.pid); };
+
+    try {
+      await pm2.deleteTagRelatedPolicies(uid);
+    } finally {
+      pm2.loadActivePoliciesAsync = origLoad;
+      pm2.enforceOnQueue = origEnforceOnQueue;
+      pm2.removeBypassChainForPolicy = origRemoveBypass;
+    }
+
+    expect(removedBypassFor).to.deep.equal(['testBypassCleanupPid']);
+  });
+
   it('should restore the old policy when replacement enforcement fails after old policy was unenforced', async () => {
     const pm2 = new PolicyManager2();
     const uid = 'testTagReenforceRollback';

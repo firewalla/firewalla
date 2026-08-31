@@ -88,6 +88,21 @@ async function resolveRealDevice(path, depth = 0) {
   }
 }
 
+function getUpperDir(inspectObj) {
+  const driverName = inspectObj.GraphDriver && inspectObj.GraphDriver.Name;
+  if (driverName !== 'overlay2' && driverName !== 'overlay') return null;
+  return (inspectObj.GraphDriver.Data && inspectObj.GraphDriver.Data.UpperDir) || null;
+}
+
+// a container with zero host-visible mounts writes 100% of its data into its own
+// writable layer, so that layer landing on eMMC matters even though there's no mount to report
+async function isOwnStorageOnEmmc(inspectObj, emmcDevice) {
+  const upperDir = getUpperDir(inspectObj);
+  if (!upperDir) return false;
+  const device = await resolveRealDevice(upperDir);
+  return matchesEmmcDevice(device, emmcDevice);
+}
+
 async function getEmmcUsage() {
   if (!platform.isDockerSupported()) return [];
 
@@ -122,7 +137,9 @@ async function getEmmcUsage() {
       }
     }
 
-    if (emmcMounts.length > 0) {
+    const noMountOnEmmc = mounts.length === 0 && await isOwnStorageOnEmmc(inspectObj, emmcDevice);
+
+    if (emmcMounts.length > 0 || noMountOnEmmc) {
       result.push({
         name: (inspectObj.Name || '').replace(/^\//, ''),
         image: inspectObj.Config && inspectObj.Config.Image,
@@ -138,5 +155,6 @@ module.exports = {
   isVerifiedFirewallaProfile,
   getKnownFirewallaProfileIds,
   matchesEmmcDevice,
+  getUpperDir,
   getEmmcUsage,
 };
