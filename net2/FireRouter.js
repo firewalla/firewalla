@@ -242,21 +242,21 @@ async function generateNetworkInfo() {
     dns = intf.config.nameservers || intf.state.dns;
     dns6 = intf.config.dns6Servers || intf.state.dns6;
     switch (intf.config.meta.type) {
-case "wan": {
-  gateway = intf.config.gateway || intf.state.gateway;
-  gateway6 = intf.config.gateway6 || intf.state.gateway6;
+      case "wan": {
+        gateway = intf.config.gateway || intf.state.gateway;
+        gateway6 = intf.config.gateway6 || intf.state.gateway6;
 
-  if (Number.isInteger(intf.state.ra_router_lifetime) &&
-      intf.state.ra_router_lifetime >= 0 &&
-      intf.state.ra_router_lifetime <= 65535) {
-    raRouterLifetime = intf.state.ra_router_lifetime;
-  }
+        if (Number.isInteger(intf.state.ra_router_lifetime) &&
+            intf.state.ra_router_lifetime >= 0 &&
+            intf.state.ra_router_lifetime <= 65535) {
+          raRouterLifetime = intf.state.ra_router_lifetime;
+        }
 
-  if (!intfName.startsWith("pppoe")) {
-    gatewayMac = gateway && await layer2.getMACAsync(gateway) || gateway6 && await nmap.neighborSolicit(gateway6);
-  }
-  break;
-}
+        if (!intfName.startsWith("pppoe")) {
+          gatewayMac = gateway && await layer2.getMACAsync(gateway) || gateway6 && await nmap.neighborSolicit(gateway6);
+        }
+        break;
+      }
       case "lan": {
         // no gateway and dns for lan interface, gateway and dns in dhcp does not mean the same thing
         gateway = null;
