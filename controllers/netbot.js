@@ -71,7 +71,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const pclient = require('../util/redis_manager.js').getPublishClient();
 
-const { exec: execAsync, execFile } = require('child-process-promise');
+const { exec: execAsync, execFile, spawn } = require('child-process-promise');
 const { exec, execSync } = require('child_process');
 
 const AM2 = require('../alarm/AlarmManager2.js');
@@ -853,8 +853,22 @@ class netBot extends ControllerBot {
         exec('sync & rm /home/pi/.firewalla/config/enablev6', (err, out, code) => {
         });
       } else if (msg.control && msg.control === "script") {
-        exec('sync & /home/pi/firewalla/scripts/' + msg.command, (err, out, code) => {
-        });
+        // command cannot leave scripts/, execFile keeps it away from a shell.
+        let script, args;
+        if (msg.args) {
+          script = String(msg.command || '').trim();
+          args = _.isArray(msg.args) ? msg.args.map(String) : null;
+        } else {
+          args = String(msg.command || '').trim().split(/\s+/);
+          script = args.shift();
+        }
+        if (!script || !args || !Constants.REGEX_FILENAME.test(script)) {
+          log.error("FIREWALLA CLOUD SCRIPT rejected", msg.command, msg.args);
+        } else {
+          log.error("FIREWALLA CLOUD SCRIPT", script, args);
+          execFile(`${f.getFirewallaHome()}/scripts/${script}`, args)
+            .catch((err) => log.error("FIREWALLA CLOUD SCRIPT failed", script, err.message));
+        }
       } else if (msg.control && msg.control === "raw") {
         log.error("FIREWALLA CLOUD RAW ");
         // RAW commands will never / ever be ran on production
@@ -1520,6 +1534,10 @@ class netBot extends ControllerBot {
         const rc = require("../diagnostic/rulecheck.js");
         return rc.checkIpOrDomain(ipOrDomain);
       }
+      case "portCheck": {
+        const pc = require("../diagnostic/portcheck.js");
+        return pc.checkPort(value.port);
+      }
       case "transferTrend": {
         const deviceMac = value.deviceMac;
         const destIP = value.destIP;
@@ -1532,9 +1550,11 @@ class netBot extends ControllerBot {
       case "pendingAlarms": {
         const offset = value && value.offset;
         const limit = value && value.limit;
+        const beginTs = value && value.beginTs;
         const pendingAlarms = await am2.loadPendingAlarms({
           offset: offset,
-          limit: limit
+          limit: limit,
+          beginTs: beginTs
         })
         return {
           alarms: pendingAlarms,
@@ -1544,10 +1564,12 @@ class netBot extends ControllerBot {
       case "archivedAlarms": {
         const offset = value && value.offset;
         const limit = value && value.limit;
+        const beginTs = value && value.beginTs;
 
         const archivedAlarms = await am2.loadArchivedAlarms({
           offset: offset,
-          limit: limit
+          limit: limit,
+          beginTs: beginTs
         })
         return {
           alarms: archivedAlarms,
@@ -3952,19 +3974,27 @@ class netBot extends ControllerBot {
         return result
       }
       case "apt-get": {
-        let cmd = `${f.getFirewallaHome()}/scripts/apt-get.sh`;
-        if (value.execPreUpgrade) cmd = `${cmd} -pre "${value.execPreUpgrade}"`;
-        if (value.execPostUpgrade) cmd = `${cmd} -pst "${value.execPostUpgrade}"`;
-        if (value.noUpdate) cmd = cmd + ' -nu';
-        if (value.noReboot) cmd = cmd + ' -nr';
-        if (value.forceReboot) cmd = cmd + ' -fr';
+        if (!value.action || !_.isString(value.action)) throw new Error('Missing parameter "action"')
 
-        if (!value.action) throw new Error('Missing parameter "action"')
+        const VALID_ACTIONS = ['install', 'remove', 'purge', 'autoremove', 'upgrade', 'dist-upgrade', 'full-upgrade'];
+        // apt-get.sh passes the action string to apt-get unquoted, so only an action plus package
+        // names is accepted here. option-looking tokens stay out on purpose: apt options such as
+        // -o DPkg::Pre-Invoke run arbitrary commands
+        const VALID_PKG_NAME = /^[a-zA-Z0-9][a-zA-Z0-9.+:~-]*$/;
+        const tokens = value.action.trim().split(/\s+/);
+        if (!VALID_ACTIONS.includes(tokens[0])) throw new Error(`Unsupported apt-get action: ${tokens[0]}`)
+        for (const token of tokens.slice(1))
+          if (!VALID_PKG_NAME.test(token)) throw new Error(`Invalid package name: ${token}`)
 
-        cmd = `${cmd} ${value.action}`;
+        // -pre/-pst are no longer accepted, they took a command to run as root
+        const args = [];
+        if (value.noUpdate) args.push('-nu');
+        if (value.noReboot) args.push('-nr');
+        if (value.forceReboot) args.push('-fr');
+        args.push(...tokens);
 
-        log.info('Running apt-get', cmd)
-        await execAsync(`(${cmd}) 2>&1 | sudo tee -a /var/log/fwapt.log `);
+        log.info('Running apt-get', args)
+        await execFile(`${f.getFirewallaHome()}/scripts/apt-get.sh`, args)
         return
       }
       case "ble:control":

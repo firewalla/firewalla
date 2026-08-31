@@ -434,6 +434,8 @@ module.exports = class HostManager extends Monitorable {
     json.osUptime = sysInfo.osUptime;
     json.fanSpeed = await platform.getFanSpeed();
     json.kernelVersion = sysInfo.kernelVersion;
+    if (sysInfo.usbInfo) // absent if the USB bus cannot be listed, which is not the same as nothing plugged in
+      json.usbInfo = sysInfo.usbInfo;
     const cpuUsageRecords = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_CPU_USAGE, Date.now() / 1000 - 60, Date.now() / 1000).map(r => JSON.parse(r));
     json.sysMetrics = {
       memUsage: sysInfo.realMem,
@@ -799,8 +801,10 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async newAlarmDataForInit(json) {
-    json.activeAlarmCount = await alarmManager2.getActiveAlarmCount();
-    json.newAlarms = await alarmManager2.loadActiveAlarmsAsync();
+    // alarms of the last 30 days, begin time is aligned to calendar date, same as MSP
+    const beginTs = alarmManager2.getAlarmWindowBeginTs();
+    json.activeAlarmCount = await alarmManager2.getActiveAlarmCount(beginTs);
+    json.newAlarms = await alarmManager2.loadActiveAlarmsAsync({ ts2: beginTs });
   }
 
   async pendingAlarmNumberForInit(json) {
@@ -1056,7 +1060,7 @@ module.exports = class HostManager extends Monitorable {
     for (const rule of rules) {
       if (rule.action == 'screentime') {
         screentimeRules.push(rule)
-      } else if (rule.action != "bypass") {
+      } else {
         policyRules.push(rule)
       }
     }
@@ -1290,9 +1294,11 @@ module.exports = class HostManager extends Monitorable {
       categoryUpdater.getCustomizedCategories(),
     ]);
     if (platform.isFireRouterManaged()) {
+      const stpStatus = await FireRouter.getBridgeStpStatus().catch(() => ({}));
       for (const intf in nicStates) {
         const channel = _.get(FireRouter.getInterfaceViaName(intf), 'state.channel')
         if (channel) nicStates[intf].channel = channel
+        if (stpStatus[intf]) nicStates[intf].stp = stpStatus[intf];
       }
     }
     json.nicSpeed = speed;

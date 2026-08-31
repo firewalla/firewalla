@@ -19,7 +19,7 @@ const expect = chai.expect;
 const proxyquire = require('proxyquire');
 
 const dockerEmmcUsage = require('../extension/docker/dockerEmmcUsage.js');
-const { matchesEmmcDevice, isVerifiedFirewallaProfile } = dockerEmmcUsage;
+const { matchesEmmcDevice, isVerifiedFirewallaProfile, getUpperDir } = dockerEmmcUsage;
 const f = require('../net2/Firewalla.js');
 
 describe('dockerEmmcUsage.isVerifiedFirewallaProfile', () => {
@@ -106,5 +106,28 @@ describe('dockerEmmcUsage.matchesEmmcDevice', () => {
     expect(matchesEmmcDevice(null, '/dev/mmcblk0')).to.be.false;
     expect(matchesEmmcDevice('/dev/mmcblk0', null)).to.be.false;
     expect(matchesEmmcDevice('', '')).to.be.false;
+  });
+});
+
+describe('dockerEmmcUsage.getUpperDir', () => {
+  it('should return the writable layer path for an overlay2 container', () => {
+    const inspectObj = { GraphDriver: { Name: 'overlay2', Data: { UpperDir: '/var/lib/docker/overlay2/abc/diff' } } };
+    expect(getUpperDir(inspectObj)).to.equal('/var/lib/docker/overlay2/abc/diff');
+  });
+
+  it('should return the writable layer path for the legacy overlay driver', () => {
+    const inspectObj = { GraphDriver: { Name: 'overlay', Data: { UpperDir: '/var/lib/docker/overlay/abc/upper' } } };
+    expect(getUpperDir(inspectObj)).to.equal('/var/lib/docker/overlay/abc/upper');
+  });
+
+  it('should return null for an unsupported storage driver', () => {
+    const inspectObj = { GraphDriver: { Name: 'devicemapper', Data: { UpperDir: '/some/path' } } };
+    expect(getUpperDir(inspectObj)).to.be.null;
+  });
+
+  it('should return null when GraphDriver or UpperDir is missing', () => {
+    expect(getUpperDir({ GraphDriver: { Name: 'overlay2', Data: {} } })).to.be.null;
+    expect(getUpperDir({ GraphDriver: { Name: 'overlay2' } })).to.be.null;
+    expect(getUpperDir({})).to.be.null;
   });
 });
