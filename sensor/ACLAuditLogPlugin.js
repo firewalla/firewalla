@@ -835,6 +835,17 @@ class ACLAuditLogPlugin extends Sensor {
               this.ruleStatsPlugin.accountRule(record);
               const lastHitFlow = Object.assign({}, record, { mac }, dir === 'L' ? { local: true } : {});
               this.ruleStatsPlugin.recordLastHitFlow(record.pid, lastHitFlow, 'audit');
+
+              const matchedPolicy = await pm2.getPolicy(record.pid, true);
+              if (matchedPolicy) {
+                if (matchedPolicy.isAutoBlockPolicy()) {
+                  record.bType = 'category';
+                  record.bTarget = 'default_c';
+                } else if (matchedPolicy.type && matchedPolicy.target) {
+                  record.bType = matchedPolicy.type;
+                  record.bTarget = matchedPolicy.target;
+                }
+              }
             }
           }
 
@@ -953,6 +964,23 @@ class ACLAuditLogPlugin extends Sensor {
             suppressEventLogging: true,
             flow: Object.assign({}, record, {mac, _ts, intf, dir})
           });
+
+          // normalized block flow stats event, only for category/country block rules, consumed by BlockStatsSensor
+          if (block && dir != 'L' && record.bType && ['category', 'country'].includes(record.bType)) {
+            const afHost = record.af && Object.keys(record.af)[0];
+            const dest = type === 'dns' ? record.dn : (afHost || (fd == 'out' ? record.sh : record.dh));
+            if (dest) {
+              sem.emitLocalEvent({
+                type: Message.MSG_BLOCK_FLOW_STATS_UPDATE,
+                suppressEventLogging: true,
+                device: mac,
+                dest,
+                bType: record.bType,
+                bTarget: record.bTarget,
+                _ts
+              });
+            }
+          }
 
           // publish block flow to Redis channel (same JSON string as written to zset), this will be consumed by other components, e.g., DAP
           if (block) {
