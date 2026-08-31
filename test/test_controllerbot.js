@@ -108,3 +108,44 @@ describe('Test ControllerBot.ignoreRecordTracelog', function () {
     });
   });
 });
+
+// The bone message callback runs from a socket.io event handler, which does not wrap its
+// listeners. A synchronous throw out of boneMsgHandler would reach netbot's uncaughtException
+// handler, which exits the process and touches managed_reboot - so initEptCloud must contain it.
+describe('Test ControllerBot bone message callback', function () {
+
+
+  // reach the callback initEptCloud hands to pullMsgFromGroup, without a real eptcloud
+  function captureBoneCallback(boneMsgHandler) {
+    const bot = Object.create(ControllerBot.prototype);
+    let captured = null;
+    bot.gid = 'g1';
+    bot.groups = [{gid: 'g1', me: {displayName: 'box'}, name: 'grp', symmetricKeys: [1, 2]}];
+    bot.groupsdb = {};
+    bot.fullConfig = {listen: 'all'};
+    bot.eptcloud = {
+      pullMsgFromGroup: (gid, interval, cb, boneCb) => { captured = boneCb; }
+    };
+    bot.boneMsgHandler = boneMsgHandler;
+    bot.initEptCloud();
+    return captured;
+  }
+
+  it('passes the message through to boneMsgHandler', function () {
+    const seen = [];
+    const cb = captureBoneCallback((msg) => seen.push(msg));
+    expect(cb).to.be.a('function');
+    cb(null, {type: 'CONTROL', control: 'ping'});
+    expect(seen).to.deep.equal([{type: 'CONTROL', control: 'ping'}]);
+  });
+
+  it('does not throw when boneMsgHandler throws synchronously', function () {
+    const cb = captureBoneCallback(() => { throw new Error('boom'); });
+    expect(() => cb(null, {type: 'CONTROL', control: 'script'})).to.not.throw();
+  });
+
+  it('tolerates no boneMsgHandler at all', function () {
+    const cb = captureBoneCallback(undefined);
+    expect(() => cb(null, {type: 'CONTROL'})).to.not.throw();
+  });
+});

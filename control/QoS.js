@@ -59,9 +59,7 @@ async function isTCDeletionBuggy() {
   } else if (!versionCompare(release, "4.16.2")) {
     _tcDeletionBuggy = false; // >= 4.16.2: upstream fix
   } else {
-    // Ubuntu backport: 4.15.0-<abi>, abi >= 36 -> fixed
-    const m = release.match(/^(\d+)\.(\d+)\.(\d+)-(\d+)/);
-    _tcDeletionBuggy = !(m && Number(m[1]) === 4 && Number(m[2]) === 15 && Number(m[3]) === 0 && Number(m[4]) >= 36);
+    _tcDeletionBuggy = true; // 4.15.0 - 4.16.1: buggy, no reliable way to detect a working backport
   }
   log.info(`TC deletion buggy kernel = ${_tcDeletionBuggy} (release: ${release})`);
   return _tcDeletionBuggy;
