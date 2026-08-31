@@ -439,11 +439,28 @@ module.exports = class DNSMASQ {
       }
       this.counter.reloadDHCP++;
       log.info(`Reloading ${DHCP_SERVICE_NAME}`, this.counter.reloadDHCP);
-      await execAsync(`sudo systemctl reload ${DHCP_SERVICE_NAME}`).then(() => {
+
+      const reloaded = await execAsync(`sudo systemctl reload ${DHCP_SERVICE_NAME}`).then(() => {
         log.verbose(`${DHCP_SERVICE_NAME} has been reloaded`, this.counter.reloadDHCP);
+        return true;
       }).catch((err) => {
         log.error(`Failed to reload ${DHCP_SERVICE_NAME} service`, err.message);
+        return false;
       });
+
+      if (!reloaded) {
+        this.counter.restartDHCP++;
+        log.warn(`${DHCP_SERVICE_NAME} reload failed, falling back to service restart`, this.counter.restartDHCP);
+
+        await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch(() => {});
+
+        await execAsync(`sudo systemctl restart ${DHCP_SERVICE_NAME}`).then(() => {
+          log.verbose(`${DHCP_SERVICE_NAME} has been restarted`, this.counter.restartDHCP);
+        }).catch((err) => {
+          log.error(`Failed to restart ${DHCP_SERVICE_NAME} service`, err.message);
+        });
+      }
+
       delete this.reloadDHCPTask
     }, 5000);
   }
