@@ -347,7 +347,7 @@ class BroDetect {
         // adds uid to ignore list, related af will be removed later on saving conn log, or on flow stash rotation
         // won't be querying redis for written flows here as the cost is probably too much for this feature
         // it's possible that conn log goes to the next flowstash but we're just ingoring it for now
-        const key = `$(obj['id.orig_h']}:${ip}`
+        const key = `${obj['id.orig_h']}:${ip}`
         if (!this.flowstash.conn.ignore[key]) {
           this.flowstash.conn.ignore[key] = new Set()
         }
