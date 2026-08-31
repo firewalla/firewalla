@@ -148,19 +148,23 @@ exports.gateway_ip6_sync = function(nic_name = null) {
 
   const routes = output.toString().trim().split('\n');
 
-for (const route of routes) {
-  const tokens = route.trim().split(/\s+/);
+    let isDefaultRoute = false;
 
-  if (tokens[0] !== 'default') {
-    continue;
+  for (const route of routes) {
+    const tokens = route.trim().split(/\s+/);
+
+    if (tokens[0] === 'default') {
+      isDefaultRoute = true;
+    } else if (tokens[0] !== 'nexthop' || !isDefaultRoute) {
+      continue;
+    }
+
+    const viaIndex = tokens.indexOf('via');
+    if (viaIndex >= 0 && tokens[viaIndex + 1]) {
+      return tokens[viaIndex + 1];
+    }
   }
 
-  const viaIndex = tokens.indexOf('via');
-  if (viaIndex >= 0 && tokens[viaIndex + 1]) {
-    return tokens[viaIndex + 1];
-  }
-}
-      
   return null;
 };
 
