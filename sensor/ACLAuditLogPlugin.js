@@ -845,6 +845,8 @@ class ACLAuditLogPlugin extends Sensor {
                   record.bType = matchedPolicy.type;
                   record.bTarget = matchedPolicy.target;
                 }
+                if (matchedPolicy.purpose)
+                  record.purpose = matchedPolicy.purpose;
               }
             }
           }
