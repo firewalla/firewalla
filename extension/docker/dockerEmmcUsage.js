@@ -109,9 +109,10 @@ async function getEmmcUsage() {
   const active = await execFile('sudo', ['systemctl', '-q', 'is-active', 'docker']).then(() => true).catch(() => false);
   if (!active) return [];
 
-  const rootDevice = await resolveRealDevice('/');
-  if (!rootDevice || !/mmcblk/.test(rootDevice)) return []; // root storage isn't eMMC (e.g. SSD-based models), nothing to warn about
-  const emmcDevice = rootDevice;
+  const dockerRoot = await execFile('sudo', ['docker', 'info', '--format', '{{.DockerRootDir}}'])
+    .then(r => r.stdout.trim()).catch(() => null);
+  const emmcDevice = dockerRoot && await resolveRealDevice(dockerRoot);
+  if (!emmcDevice || !/mmcblk/.test(emmcDevice)) return []; // docker storage isn't eMMC (e.g. SSD-based models), nothing to warn about
 
   const containers = await docker.listContainers();
   if (!Array.isArray(containers) || containers.length === 0) return [];
@@ -137,9 +138,9 @@ async function getEmmcUsage() {
       }
     }
 
-    const noMountOnEmmc = mounts.length === 0 && await isOwnStorageOnEmmc(inspectObj, emmcDevice);
+    const ownLayerOnEmmc = await isOwnStorageOnEmmc(inspectObj, emmcDevice);
 
-    if (emmcMounts.length > 0 || noMountOnEmmc) {
+    if (emmcMounts.length > 0 || ownLayerOnEmmc) {
       result.push({
         name: (inspectObj.Name || '').replace(/^\//, ''),
         image: inspectObj.Config && inspectObj.Config.Image,
