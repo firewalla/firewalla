@@ -46,6 +46,14 @@ class PSEPlatform extends Platform {
     return ["eth0", "eth1", "wlan0", "wlan1"];
   }
 
+  // devices of the box itself that sit on the USB bus. eth0 is a RTL8153, it is also recognized
+  // by its interface name, listing it here covers the case that r8152 did not come up. the
+  // CSR8510 is the built-in bluetooth, the very same chip is an accessory on gold, which is why
+  // this is excluded per platform instead of globally
+  getNativeUsbDeviceIds() {
+    return ["0bda:8153", "0a12:0001"];
+  }
+
   async readPermanentMac(nic) {
     const slot = {eth0: 0, eth1: 1}[nic];
     if (slot === undefined)

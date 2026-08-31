@@ -210,4 +210,8 @@ module.exports = {
   POLICY_EXTRA_TIME_LIMIT_MODE_MANUAL: "manual",
 
   GLOBAL_ALLOW_DOMAIN_RULE_HIT: -2,
+
+  // a plain file name: no path separators, so a value matching this cannot leave the directory it
+  // is resolved against. use it wherever an untrusted value becomes a path component
+  REGEX_FILENAME: /^[A-Za-z0-9][A-Za-z0-9._-]*$/,
 };
