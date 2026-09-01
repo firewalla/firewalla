@@ -66,6 +66,38 @@ describe('Test firerouter config', function(){
         expect(networkInfos[0]).to.not.have.property('vid');
     });
 
+    it('should preserve zero ra_router_lifetime in generated network info', async () => {
+        const wan = {
+            config: {
+                meta: {
+                    name: 'Test WAN',
+                    uuid: 'test-wan',
+                    type: 'wan'
+                }
+            },
+            state: {
+                ra_router_lifetime: 0,
+                mac: '00:11:22:33:44:55',
+                ip4: null,
+                ip6: [],
+                routableSubnets: []
+            }
+        };
+
+        const networkInfos = await fireRouter.generateNetworkInfo({
+            testwan: wan
+        });
+
+        expect(networkInfos).to.have.lengthOf(1);
+        expect(networkInfos[0]).to.have.property('name', 'testwan');
+        expect(networkInfos[0]).to.have.property('ra_router_lifetime', 0);
+
+        const serialized = JSON.stringify(networkInfos[0]);
+        const parsed = JSON.parse(serialized);
+
+        expect(parsed).to.have.property('ra_router_lifetime', 0);
+    });
+
     it('should include ra_router_lifetime in generated network info', () => {
         expect(fireRouter.sysNetworkInfo.length).to.be.greaterThan(0);
         for (const intf of fireRouter.sysNetworkInfo) {
