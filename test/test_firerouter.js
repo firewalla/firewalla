@@ -114,5 +114,28 @@ describe('Test firerouter config', function(){
             expect(getRaRouterLifetime(makeInterface('lan', 0))).to.equal(null);
             expect(getRaRouterLifetime(makeInterface('lan', 1800))).to.equal(null);
         });
+        
+        it('serializes zero ra_router_lifetime for a controlled WAN interface', async () => {
+            const wan = makeInterface('wan', 0);
+
+            wan.config.meta.name = 'Test WAN';
+            wan.config.meta.uuid = 'test-wan';
+            wan.state.mac = '00:11:22:33:44:55';
+            wan.state.ip4 = null;
+            wan.state.ip6 = [];
+            wan.state.routableSubnets = [];
+
+            const networkInfo = await fireRouter.generateNetworkInfo({
+                testwan: wan
+            });
+
+            expect(networkInfo).to.have.lengthOf(1);
+            expect(networkInfo[0].name).to.equal('testwan');
+
+            const serialized = JSON.stringify(networkInfo[0]);
+            const parsed = JSON.parse(serialized);
+
+            expect(parsed).to.have.property('ra_router_lifetime', 0);
+        });
     });
   });
