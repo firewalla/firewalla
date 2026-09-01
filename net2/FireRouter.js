@@ -154,7 +154,7 @@ function safeCheckMonitoringInterfaces(monitoringInterfaces) {
   return monitoringInterfaces.filter(i => !i.startsWith("ppp"));
 }
 
-async function generateNetworkInfo() {
+async function generateNetworkInfo(interfaceMap = intfNameMap) {
   const networkInfos = [];
   const mode = await rclient.getAsync('mode');
   for (const intfName in intfNameMap) {
@@ -326,7 +326,7 @@ async function generateNetworkInfo() {
     if (intf.config.vid) {
       redisIntf.vid = intf.config.vid
     } else if (intfName.startsWith("br") && Array.isArray(intf.config.intf) && !_.isEmpty(intf.config.intf)) {
-      const vid = intfNameMap[intf.config.intf[0]].config.vid
+      const vid = interfaceMap[intf.config.intf[0]].config.vid
       if (vid) redisIntf.vid = vid
     }
 
