@@ -40,18 +40,66 @@ describe('Test firerouter config', function(){
         expect(fireRouter.sysNetworkInfo.length).to.be.not.equal(0);
     });
 
-    it('should expose a valid RA router lifetime in network info', async() => {
-        expect(fireRouter.sysNetworkInfo.length).to.be.greaterThan(0);
+    describe('RA router lifetime', function(){
+        const getRaRouterLifetime = fireRouter._getRaRouterLifetime;
 
-        for (const intf of fireRouter.sysNetworkInfo) {
-            expect(intf).to.have.property('ra_router_lifetime');
+        function makeInterface(type, value) {
+            const intf = {
+                config: {
+                    meta: {
+                        type: type
+                    }
+                },
+                state: {}
+            };
 
-            if (intf.ra_router_lifetime !== null) {
-                expect(intf.ra_router_lifetime).to.be.a('number');
-                expect(Number.isInteger(intf.ra_router_lifetime)).to.equal(true);
-                expect(intf.ra_router_lifetime).to.be.at.least(0);
-                expect(intf.ra_router_lifetime).to.be.at.most(65535);
-            }
+            if (value !== undefined)
+                intf.state.ra_router_lifetime = value;
+
+            return intf;
         }
+
+        it('preserves zero exactly for a WAN interface', () => {
+            expect(getRaRouterLifetime(makeInterface('wan', 0))).to.equal(0);
+        });
+
+        it('preserves the maximum 16-bit lifetime exactly for a WAN interface', () => {
+            expect(getRaRouterLifetime(makeInterface('wan', 65535))).to.equal(65535);
+        });
+
+        it('propagates a normal positive lifetime for a WAN interface', () => {
+            expect(getRaRouterLifetime(makeInterface('wan', 1800))).to.equal(1800);
+        });
+
+        it('maps invalid WAN lifetime values to null', () => {
+            const invalidValues = [
+                -1,
+                1.5,
+                65536,
+                '1800',
+                undefined
+            ];
+
+            for (const value of invalidValues) {
+                expect(getRaRouterLifetime(makeInterface('wan', value))).to.equal(null);
+            }
+        });
+
+        it('maps a missing state object to null', () => {
+            const intf = {
+                config: {
+                    meta: {
+                        type: 'wan'
+                    }
+                }
+            };
+
+            expect(getRaRouterLifetime(intf)).to.equal(null);
+        });
+
+        it('maps non-WAN interfaces to null', () => {
+            expect(getRaRouterLifetime(makeInterface('lan', 0))).to.equal(null);
+            expect(getRaRouterLifetime(makeInterface('lan', 1800))).to.equal(null);
+        });
     });
-});
+  });
