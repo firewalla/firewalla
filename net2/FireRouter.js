@@ -62,6 +62,7 @@ const exec = require('child-process-promise').exec;
 const era = require('../event/EventRequestApi.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const Constants = require("./Constants.js");
+const getRaRouterLifetime = require('./ra_router_lifetime.js');
 const lock = new AsyncLock();
 const LOCK_INIT = "LOCK_INIT";
 
@@ -151,17 +152,6 @@ function updateMaps() {
 function safeCheckMonitoringInterfaces(monitoringInterfaces) {
   // filter pppoe interfaces
   return monitoringInterfaces.filter(i => !i.startsWith("ppp"));
-}
-
-function getRaRouterLifetime(intf) {
-  if (!intf || !intf.config || !intf.config.meta || intf.config.meta.type !== "wan")
-    return null;
-
-  const value = intf.state && intf.state.ra_router_lifetime;
-  if (Number.isInteger(value) && value >= 0 && value <= 65535)
-    return value;
-
-  return null;
 }
 
 async function generateNetworkInfo() {
@@ -1622,7 +1612,4 @@ class FireRouter {
 }
 
 const instance = new FireRouter();
-Object.defineProperty(instance, "_getRaRouterLifetime", {
-  value: getRaRouterLifetime
-});
 module.exports = instance;
