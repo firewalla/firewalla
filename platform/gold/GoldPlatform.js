@@ -136,6 +136,14 @@ class GoldPlatform extends Platform {
     }
   }
 
+  async getWpaCliBinPath() {
+    if (this.isUbuntu22())
+      return 'wpa_cli';
+    if (this.isUbuntu20())
+      return `${f.getFireRouterHome()}/platform/gold/bin/u20/wpa_cli`;
+    return `${f.getFireRouterHome()}/platform/gold/bin/wpa_cli`;
+  }
+
   getDefaultWlanIntfName() {
     return 'wlan0'
   }
