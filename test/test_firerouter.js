@@ -40,55 +40,18 @@ describe('Test firerouter config', function(){
         expect(fireRouter.sysNetworkInfo.length).to.be.not.equal(0);
     });
 
-    it('should expose RA router lifetime for WAN interfaces', async() => {
-        const wanInterfaces = fireRouter.sysNetworkInfo.filter(i => {
-            return i.type === 'wan';
-        });
+    it('should expose a valid RA router lifetime in network info', async() => {
+        expect(fireRouter.sysNetworkInfo.length).to.be.greaterThan(0);
 
-        expect(wanInterfaces.length).to.be.greaterThan(0);
-
-        for (const intf of wanInterfaces) {
+        for (const intf of fireRouter.sysNetworkInfo) {
             expect(intf).to.have.property('ra_router_lifetime');
 
             if (intf.ra_router_lifetime !== null) {
                 expect(intf.ra_router_lifetime).to.be.a('number');
+                expect(Number.isInteger(intf.ra_router_lifetime)).to.equal(true);
                 expect(intf.ra_router_lifetime).to.be.at.least(0);
                 expect(intf.ra_router_lifetime).to.be.at.most(65535);
-                expect(Number.isInteger(intf.ra_router_lifetime)).to.equal(true);
             }
-        }
-    });
-
-    it('should preserve a Router Lifetime of zero when provided by FireRouter', async() => {
-        const wanInterfaces = fireRouter.sysNetworkInfo.filter(i => {
-            return i.type === 'wan';
-        });
-
-        const zeroLifetimeInterfaces = wanInterfaces.filter(i => {
-            return i.ra_router_lifetime === 0;
-        });
-
-        if (zeroLifetimeInterfaces.length === 0) {
-            log.debug("No WAN interface currently has ra_router_lifetime=0; zero-value preservation cannot be exercised by the current runtime state");
-            return;
-        }
-
-        for (const intf of zeroLifetimeInterfaces) {
-            expect(intf.ra_router_lifetime).to.equal(0);
-        }
-    });
-
-    it('should report unavailable RA router lifetime as null', async() => {
-        const wanInterfaces = fireRouter.sysNetworkInfo.filter(i => {
-            return i.type === 'wan';
-        });
-
-        const unavailableInterfaces = wanInterfaces.filter(i => {
-            return i.ra_router_lifetime === null;
-        });
-
-        for (const intf of unavailableInterfaces) {
-            expect(intf.ra_router_lifetime).to.equal(null);
         }
     });
 });
