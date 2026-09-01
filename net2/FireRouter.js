@@ -252,7 +252,7 @@ async function generateNetworkInfo() {
     }
     dns = intf.config.nameservers || intf.state.dns;
     dns6 = intf.config.dns6Servers || intf.state.dns6;
-        switch (intf.config.meta.type) {
+    switch (intf.config.meta.type) {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
         gateway6 = intf.config.gateway6 || intf.state.gateway6;
