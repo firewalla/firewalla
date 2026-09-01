@@ -266,6 +266,9 @@ class LiveStatsPlugin extends Sensor {
                   response.throughput.push({ name: intf.name, target: intf.uuid, devices })
               }
             }
+
+            response.ports = await this.getPortsThroughput()
+            response.bands = await this.getBandsThroughput()
             break;
           }
           case 'phyIntf': {
@@ -717,6 +720,66 @@ class LiveStatsPlugin extends Sensor {
     return {rx: Number(rx), tx: Number(tx)};
   }
 
+  async getPortsThroughput() {
+    const nicStates = await platform.getNicStates()
+    const wanNames = fireRouter.getWanIntfNames() || []
+    const ports = []
+    for (const name of platform.getAllNicNames()) {
+      if (name.startsWith('wlan'))
+        continue
+      const nic = nicStates[name]
+      if (!nic)
+        continue
+      // wanIntfNames comes from raw router config, sysinfo type is rewritten to lan in DHCP mode
+      const uplink = wanNames.includes(name)
+      const { tx, rx } = await this.getIntfThroughput(name)
+      ports.push({
+        name,
+        target: name,
+        type: 'phyIntf',
+        role: uplink ? 'wan' : 'lan',
+        uplink,
+        speed: Number(nic.speed) || -1,
+        carrier: Number(nic.carrier) || 0,
+        duplex: nic.duplex || 'unknown',
+        tx,
+        rx,
+      })
+    }
+    return ports
+  }
+
+  async getBandsThroughput() {
+    const intfs = await this.getWlanIntfs()
+    const bandMap = {}
+    for (const intf of intfs) {
+      const { ssid, band, rssi } = await this.getWlanIdentity(intf)
+      if (!band)
+        continue
+      const { tx, rx } = await this.getIntfThroughput(intf.name)
+      if (!bandMap[band]) {
+        bandMap[band] = {
+          band,
+          type: 'wlanBand',
+          tx: 0,
+          rx: 0,
+          uplink: { intfs: [], tx: 0, rx: 0 },
+          downlink: { intfs: [], tx: 0, rx: 0 },
+        }
+      }
+      const entry = bandMap[band]
+      entry.tx += tx
+      entry.rx += rx
+      const link = intf.role === 'wan' ? entry.uplink : entry.downlink
+      link.intfs.push({ name: intf.name, ssid, rssi, tx, rx })
+      link.tx += tx
+      link.rx += rx
+    }
+    const bands = Object.values(bandMap)
+    bands.sort((a, b) => (a.band || '').localeCompare(b.band || ''))
+    return bands
+  }
+
   async getWlanThroughput() {
     const intfs = await this.getWlanIntfs() // include wan and lan
     const result = []
@@ -728,6 +791,12 @@ class LiveStatsPlugin extends Sensor {
     return result
   }
 
+  // eg:
+  // [
+  //   { name: 'wlan24g_85db07', role: 'ap' },
+  //   { name: 'wlan5g_85db07', role: 'ap' },
+  //   { name: 'wlan0', role: 'wan' }
+  // ]
   async getWlanIntfs() {
     const apDir = `${f.getFireRouterRuntimeInfoFolder()}/hostapd`
     const wanNames = fireRouter.getWanIntfNames() || []
@@ -811,7 +880,9 @@ class LiveStatsPlugin extends Sensor {
     else if (freq >= 4900 && freq < 5925) band = '5g'
     else if (freq >= 5925 && freq <= 7125) band = '6g'
 
-    return { ssid, band }
+    const rssi = kv.signal_level != null ? Number(kv.signal_level) : null
+
+    return { ssid, band, rssi }
   }
 
   // guard against shell injection and confirm the nic exists on the box
