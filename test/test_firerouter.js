@@ -40,6 +40,22 @@ describe('Test firerouter config', function(){
         expect(fireRouter.sysNetworkInfo.length).to.be.not.equal(0);
     });
 
+    it('should include ra_router_lifetime in generated WAN network info', () => {
+        const wanInterfaces = fireRouter.sysNetworkInfo.filter(i => i.type === 'wan');
+
+        expect(wanInterfaces.length).to.be.greaterThan(0);
+
+        for (const intf of wanInterfaces) {
+            expect(intf).to.have.property('ra_router_lifetime');
+            expect(intf.ra_router_lifetime === null || Number.isInteger(intf.ra_router_lifetime)).to.equal(true);
+
+            if (intf.ra_router_lifetime !== null) {
+                expect(intf.ra_router_lifetime).to.be.at.least(0);
+                expect(intf.ra_router_lifetime).to.be.at.most(65535);
+            }
+        }
+    });
+
     describe('RA router lifetime', function(){
         const getRaRouterLifetime = fireRouter._getRaRouterLifetime;
 
