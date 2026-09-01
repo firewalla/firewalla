@@ -135,8 +135,8 @@ async function setPowerMode(powerMode) {
 function updateMaps() {
   if (!_.isObject(intfNameMap))
     return false;
-  for (const intfName in intfNameMap) {
-    const intf = intfNameMap[intfName]
+  for (const intfName in interfaceMap) {
+    const intf = interfaceMap[intfName]
     // this usually happens after consecutive network config update, internal data structure of interface in firerouter is incomplete
     if (!intf.config || !intf.config.meta) {
       log.error(`Interface ${intfName} does not have config or config.meta`)
@@ -157,8 +157,8 @@ function safeCheckMonitoringInterfaces(monitoringInterfaces) {
 async function generateNetworkInfo(interfaceMap = intfNameMap) {
   const networkInfos = [];
   const mode = await rclient.getAsync('mode');
-  for (const intfName in intfNameMap) {
-    const intf = intfNameMap[intfName]
+  for (const intfName in interfaceMap) {
+    const intf = interfaceMap[intfName]
     const ip4 = intf.state.ip4 ? new Address4(intf.state.ip4) : null;
     const searchDomains = (routerConfig && routerConfig.dhcp && routerConfig.dhcp[intfName] && routerConfig.dhcp[intfName].searchDomain) || [];
     const localDomains = intf.config && intf.config.extra && intf.config.extra.localDomains || [];
@@ -1000,6 +1000,10 @@ class FireRouter {
 
     await delay(1000)
     return this.waitTillReady()
+  }
+
+  async generateNetworkInfo(interfaceMap = intfNameMap) {
+    return generateNetworkInfo(interfaceMap);
   }
 
   getInterfaceViaName(name) {
