@@ -27,10 +27,10 @@ const bone = require('../lib/Bone.js');
 const SysManager = require('../net2/SysManager.js');
 const { matchFilter } = require('./BlockStatsFilter.js');
 
-const DEFAULT_SLOT_SECS = 900; // 15 minutes, used when "slotSecs" isn't configured
-const BUCKET_TTL = 172800; // 48 hours
+const DEFAULT_SLOT_SECS = 3600; // 1 hour, used when "slotSecs" isn't configured
+const BUCKET_TTL = 86400 * 7; // 7 days
 const FLUSH_INTERVAL = 60 * 1000; // 1 minute
-const MAX_RECORDS_PER_BUCKET = 100; // cap on distinct records per key per bucket, to bound redis payload size
+const MAX_RECORDS_PER_BUCKET = 200; // cap on distinct records per key per bucket, to bound redis payload size
 
 class BlockStatsSensor extends Sensor {
   constructor(config) {
