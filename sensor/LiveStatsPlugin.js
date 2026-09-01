@@ -757,7 +757,6 @@ class LiveStatsPlugin extends Sensor {
       if (!band)
         continue
       const { tx, rx } = await this.getIntfThroughput(intf.name)
-      const rssi = intf.role === 'wan' ? await this.getWlanRssi(intf) : null
       if (!bandMap[band]) {
         bandMap[band] = {
           band,
@@ -771,8 +770,12 @@ class LiveStatsPlugin extends Sensor {
       const entry = bandMap[band]
       entry.tx += tx
       entry.rx += rx
+      const wlanIntf = { name: intf.name, ssid, tx, rx }
+      if (intf.role === 'wan')
+        wlanIntf.rssi = await this.getWlanRssi(intf)
+
       const link = intf.role === 'wan' ? entry.uplink : entry.downlink
-      link.intfs.push({ name: intf.name, ssid, rssi, tx, rx })
+      link.intfs.push(wlanIntf)
       link.tx += tx
       link.rx += rx
     }
