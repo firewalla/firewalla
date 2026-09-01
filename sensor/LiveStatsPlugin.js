@@ -760,9 +760,13 @@ class LiveStatsPlugin extends Sensor {
     if (cached && now - cached.ts < 30000)
       return cached
 
+    const wpaCli = await platform.getWpaCliBinPath()
+    if (!wpaCli)
+      return { ssid: null, band: null }
+
     const runDir = f.getFireRouterRuntimeInfoFolder()
     const ctrlDir = intf.role == 'ap' ? `${runDir}/hostapd` : `${runDir}/wpa_supplicant/${intf.name}`
-    const identity = await exec(`sudo wpa_cli -p ${ctrlDir} -i ${intf.name} status`)
+    const identity = await exec(`sudo ${wpaCli} -p ${ctrlDir} -i ${intf.name} status`)
       .then(result => this.parseWpaStatus(result.stdout, intf.name))
       .catch(err => {
         log.error('Failed to get wpa status of', intf.name, err.message)
