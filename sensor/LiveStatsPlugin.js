@@ -842,6 +842,17 @@ class LiveStatsPlugin extends Sensor {
         return { ssid: null, band: null }
       })
 
+    // rssi is not in status output, and only a wifi wan has it
+    identity.rssi = null
+    if (intf.role == 'wan') {
+      identity.rssi = await exec(`sudo ${wpaCli} -p ${ctrlDir} -i ${intf.name} signal_poll`)
+        .then(result => this.parseWpaSignalPoll(result.stdout))
+        .catch(err => {
+          log.error('Failed to get wpa signal of', intf.name, err.message)
+          return null
+        })
+    }
+
     identity.ts = now
     this.wlanIdentityCache[intf.name] = identity
     return identity
@@ -880,9 +891,17 @@ class LiveStatsPlugin extends Sensor {
     else if (freq >= 4900 && freq < 5925) band = '5g'
     else if (freq >= 5925 && freq <= 7125) band = '6g'
 
-    const rssi = kv.signal_level != null ? Number(kv.signal_level) : null
+    return { ssid, band }
+  }
 
-    return { ssid, band, rssi }
+  parseWpaSignalPoll(output) {
+    for (const line of String(output).split('\n')) {
+      if (!line.startsWith('RSSI='))
+        continue
+      const rssi = Number(line.substring(5).trim())
+      return isNaN(rssi) ? null : rssi
+    }
+    return null
   }
 
   // guard against shell injection and confirm the nic exists on the box
