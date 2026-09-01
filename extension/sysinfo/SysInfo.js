@@ -64,6 +64,7 @@ let rateLimitInfo = null;
 let redisMemory = 0;
 
 let updateFlag = 0;
+let updateLoopStarted = false;
 
 let updateInterval = 600 * 1000; // every 10 minutes
 
@@ -151,40 +152,46 @@ async function readRawDiskStats() {
 getMultiProfileSupportFlag();
 
 async function update() {
-  await Promise.all([
-    // this takes 10s
-    os.cpuUsage().then((v) => cpuUsage = v),
+  try {
+    await Promise.all([
+      // this takes 10s
+      os.cpuUsage().then((v) => cpuUsage = v),
 
-    // Redis
-    getRedisMemoryUsage()
-      .then(getConns)
-      .then(getIntelQueueSize)
-      .then(getRateLimitInfo),
+      // Redis
+      getRedisMemoryUsage()
+        .then(getConns)
+        .then(getIntelQueueSize)
+        .then(getRateLimitInfo),
 
-    // bash
-    getRealMemoryUsage()
-      .then(getTemp)
-      .then(getThreadInfo)
-      .then(getDiskInfo)
-      .then(getMultiProfileSupportFlag)
-      .then(getAutoUpgrade)
-      .then(getUptimeInfo)
-      .then(getMaxPid)
-      .then(getActiveContainers)
-      .then(getEthernetInfo)
-      .then(getWlanInfo)
-      .then(getSlabInfo)
-      .then(getDiskUsage)
-      .then(getDiskWriteStats)
-      .then(getReleaseInfo)
-      .then(getCPUModel)
-      .then(getDistributionCodename)
-      .then(getEmmcLife)
-      .then(getDockerEmmcUsage)
-  ]);
-
-  if(updateFlag) {
-    setTimeout(() => { update(); }, updateInterval);
+      // bash
+      getRealMemoryUsage()
+        .then(getTemp)
+        .then(getThreadInfo)
+        .then(getDiskInfo)
+        .then(getMultiProfileSupportFlag)
+        .then(getAutoUpgrade)
+        .then(getUptimeInfo)
+        .then(getMaxPid)
+        .then(getActiveContainers)
+        .then(getEthernetInfo)
+        .then(getWlanInfo)
+        .then(getSlabInfo)
+        .then(getDiskUsage)
+        .then(getDiskWriteStats)
+        .then(getReleaseInfo)
+        .then(getCPUModel)
+        .then(getDistributionCodename)
+        .then(getEmmcLife)
+        .then(getDockerEmmcUsage)
+    ]);
+  } catch (err) {
+    log.error("Failed to update sysinfo", err);
+  } finally {
+    if(updateFlag) {
+      setTimeout(() => { update(); }, updateInterval);
+    } else {
+      updateLoopStarted = false;
+    }
   }
 }
 
@@ -192,6 +199,8 @@ async function update() {
 
 async function startUpdating(options = {}) {
   updateFlag = 1;
+  if (updateLoopStarted) return;
+  updateLoopStarted = true;
   await update();
 }
 
