@@ -22,6 +22,7 @@ let expect = chai.expect;
 const fireRouter = require('../net2/FireRouter.js')
 const log = require('../net2/logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const getRaRouterLifetime = require('../net2/ra_router_lifetime.js');
 
 
 describe('Test firerouter config', function(){
@@ -55,8 +56,6 @@ describe('Test firerouter config', function(){
     });
 
     describe('RA router lifetime', function(){
-        const getRaRouterLifetime = fireRouter._getRaRouterLifetime;
-
         function makeInterface(type, value) {
             const intf = {
                 config: {
