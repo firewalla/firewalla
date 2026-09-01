@@ -223,6 +223,7 @@ async function generateNetworkInfo() {
     let gatewayMac
     let dns = null;
     let dns6 = null;
+    let raRouterLifetime = null;
     let resolver = null;
     let resolverFromWan = false;
     const resolverConfig = (routerConfig && routerConfig.dns && routerConfig.dns[intfName]) || null;
@@ -255,10 +256,11 @@ async function generateNetworkInfo() {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
         gateway6 = intf.config.gateway6 || intf.state.gateway6;
+        raRouterLifetime = getRaRouterLifetime(intf);
         if (!intfName.startsWith("pppoe")) {
-          gatewayMac = gateway && await layer2.getMACAsync(gateway) || gateway6 && await nmap.neighborSolicit(gateway6);
-        }
-        break;
+        gatewayMac = gateway && await layer2.getMACAsync(gateway) || gateway6 && await nmap.neighborSolicit(gateway6);
+                  }
+  break;
       }
       case "lan": {
         // no gateway and dns for lan interface, gateway and dns in dhcp does not mean the same thing
@@ -288,6 +290,7 @@ async function generateNetworkInfo() {
       ip6_subnets:  ip6Subnets.length > 0 ? ip6Subnets : null,
       ip6_masks:    ip6Masks.length > 0 ? ip6Masks : null,
       gateway6:     gateway6,
+      ra_router_lifetime: raRouterLifetime,
       dns:          dns,
       dns6:         dns6,
       resolver:     resolver,
@@ -1619,4 +1622,7 @@ class FireRouter {
 }
 
 const instance = new FireRouter();
+Object.defineProperty(instance, "_getRaRouterLifetime", {
+  value: getRaRouterLifetime
+});
 module.exports = instance;
