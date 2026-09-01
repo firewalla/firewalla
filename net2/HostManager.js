@@ -436,6 +436,8 @@ module.exports = class HostManager extends Monitorable {
     json.kernelVersion = sysInfo.kernelVersion;
     if (sysInfo.usbInfo) // absent if the USB bus cannot be listed, which is not the same as nothing plugged in
       json.usbInfo = sysInfo.usbInfo;
+    if (sysInfo.dockerEmmcUsage && sysInfo.dockerEmmcUsage.length > 0)
+      json.dockerEmmcUsage = sysInfo.dockerEmmcUsage;
     const cpuUsageRecords = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_CPU_USAGE, Date.now() / 1000 - 60, Date.now() / 1000).map(r => JSON.parse(r));
     json.sysMetrics = {
       memUsage: sysInfo.realMem,
@@ -760,11 +762,6 @@ module.exports = class HostManager extends Monitorable {
     extdata.ntp = {
       localServerStatus: fc.isFeatureOn('ntp_redirect') ?
         Number(await rclient.getAsync(Constants.REDIS_KEY_NTP_SERVER_STATUS)) : null
-    }
-
-    const sysInfo = await SysInfo.getSysInfo();
-    if (sysInfo.dockerEmmcUsage && sysInfo.dockerEmmcUsage.length > 0) {
-      extdata.dockerEmmcUsage = sysInfo.dockerEmmcUsage;
     }
 
     json.extension = extdata;
