@@ -45,9 +45,6 @@ banner(){
   log "console banner: $1 (ip=${ip:-none}${note:+ $note})"
 }
 
-# FireKick's hmset: gid gates bootstrap's waitForGid(), token gates bone.cloudready(). Not FireMain.
-ept_ready(){ [ -n "$(redis-cli hget sys:ept token 2>/dev/null)" ]; }
-
 # Any one is enough: upstreams may drop ICMP or hijack DNS. No TLS — a stale clock breaks handshakes.
 net_ready(){
   timeout 3 bash -c "exec 3<>/dev/tcp/$PROVISION_HOST/443" 2>/dev/null && { NET_VIA="tcp:$PROVISION_HOST"; return 0; }
@@ -70,7 +67,7 @@ read t0 _ < /proc/uptime; t0=${t0%.*}; warned=0; NET_VIA=""
 banner "Firewalla Crystal is starting - verifying network" "Activation starts automatically once the network is ready."
 while :; do
   net=0; net_ready && net=1
-  [ "$net" = 1 ] && ept_ready && break
+  [ "$net" = 1 ] && break
   read now _ < /proc/uptime
   if [ "$warned" -eq 0 ] && [ "$net" = 0 ] && [ $(( ${now%.*} - t0 )) -gt "$WARN_AFTER" ]; then
     banner "Firewalla is starting - no internet yet" \
@@ -79,7 +76,7 @@ while :; do
   fi
   sleep 2
 done
-log "ready: sys:ept published, internet confirmed via $NET_VIA"
+log "ready: internet confirmed via $NET_VIA"
 
 banner "Firewalla is up and ready to activate" "Activate this box from the MSP web console."
 

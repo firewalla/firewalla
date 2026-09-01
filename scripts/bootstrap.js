@@ -11,19 +11,24 @@ const _ = require('lodash');
 const Cloud = require('../encipher');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const licenseUtil = require('../util/license.js');
+const eptGroup = require('../util/eptGroup.js');
 const bone = require('../lib/Bone.js');
 const networkTool = require('../net2/NetworkTool.js')();
 const sysManager = require('../net2/SysManager.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+const nodePersist = require('node-persist');
 
 const CONFIG_FILE = process.env.FW_CONFIG || '/encipher.config/netbot.config';
 const DEFAULT_PROVISION_BASE = 'https://msp.dd.firewalla.net';
 let PROVISION_BASE = DEFAULT_PROVISION_BASE;
 const BOOTSTRAP_PATH = '/vmbox/bootstrap';
 const ONBOARD_CONFIG = process.env.FW_ONBOARD_CONFIG || '/home/pi/.firewalla/onboard-config.json';
+const ENCIPHER_DB = `${process.env.HOME || '/home/pi'}/.encipher/db`;
 
 const POLL_INTERVAL_SEC = 5;
 
 let eptcloud;
+let cloudConfig;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const log = msg => console.log(`[onboard ${new Date().toISOString()}] ${msg}`);
@@ -38,22 +43,27 @@ function loadOnboardConfig() {
 }
 
 async function connectCloud() {
-  const config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-  for (const k of ['appId', 'appSecret']) {
-    if (!config[k]) throw new Error(`${CONFIG_FILE} missing field: ${k}`);
+  cloudConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+  for (const k of ['appId', 'appSecret', 'service']) {
+    if (!cloudConfig[k]) throw new Error(`${CONFIG_FILE} missing field: ${k}`);
   }
-  eptcloud = new Cloud(config.endpoint_name || 'netbot', null);
+  eptcloud = new Cloud(cloudConfig.endpoint_name || 'netbot', null);
   await eptcloud.loadKeys();
-  await eptcloud.eptLogin(config.appId, config.appSecret, null, config.endpoint_name);
+  await eptcloud.eptLogin(cloudConfig.appId, cloudConfig.appSecret, null, cloudConfig.endpoint_name);
 }
 
-async function waitForGid(maxSec = 10) {
-  for (let i = 0; i < maxSec; i++) {
-    const gid = await rclient.hgetAsync('sys:ept', 'gid');
-    if (gid) return gid;
-    await sleep(1000);
-  }
-  throw new Error('sys:ept.gid not found');
+async function ensureGid() {
+  fs.mkdirSync(ENCIPHER_DB, { recursive: true });
+  nodePersist.initSync({ dir: ENCIPHER_DB });
+
+  const gid = await eptGroup.ensureGroup({
+    eptcloud,
+    config: cloudConfig,
+    model: platform.getName(),
+    storage: nodePersist
+  });
+  await eptGroup.publishEpt(eptcloud, gid);
+  return gid;
 }
 
 async function registerBootstrap({ bootstrapId, rid, gid }) {
@@ -185,7 +195,7 @@ async function persistState(patch) {
 async function main(onboard) {
   log('onboard start');
   await connectCloud();
-  const gid = await waitForGid();
+  const gid = await ensureGid();
   const mac = await networkTool.getIdentifierMAC();
   if (!mac) throw new Error('failed to read identifier MAC');
   log(`gid=${gid} mac=${mac}`);
