@@ -1790,7 +1790,7 @@ module.exports = class HostManager extends Monitorable {
     // read the actually-existing bucket timestamps from the index rather than guessing them from
     // the current slotSecs config - slotSecs may have changed since older buckets were written,
     // so recomputing boundaries from today's config would miss or mis-key historical buckets
-    const retentionSecs = 172800; // 48h, matches BlockStatsSensor's redis TTL
+    const retentionSecs = 604800; // 7 days, matches BlockStatsSensor's redis TTL
     const cutoff = Math.floor(Date.now() / 1000) - retentionSecs;
     let bucketTimestamps;
     try {
