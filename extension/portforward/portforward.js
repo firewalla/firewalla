@@ -133,9 +133,7 @@ class PortForward {
         sem.on('Mode:Applied', async (event) => {
           if (!this._started) return;
           await lock.acquire(LOCK_SHARED, async () => {
-            const routerMode = event.mode === Mode.MODE_ROUTER;
-            await this._syncDMZRules(routerMode);
-            await this._syncDMZAllowRules(routerMode);
+            await this._syncDMZRules(event.mode === Mode.MODE_ROUTER);
           }).catch((err) => {
             log.error("Failed to sync DMZ rules on mode change", err);
           });
@@ -443,9 +441,6 @@ class PortForward {
       }, 60000); // refresh config once every minute
     }
     this._started = true;
-    await this._syncDMZAllowRules(await Mode.isRouterModeOn()).catch((err) => {
-      log.error("Failed initial DMZ allow rule sync", err);
-    });
   }
 
   async stop() {
@@ -466,21 +461,6 @@ class PortForward {
         dupMap.state = true;
         await this.enforceIptables(dupMap);
       }
-    }
-  }
-
-  async _syncDMZAllowRules(routerMode) {
-    const PolicyManager2 = require('../../alarm/PolicyManager2.js');
-    const Policy = require('../../alarm/Policy.js');
-    const pm2 = new PolicyManager2();
-    const rules = await pm2.getPurposeRelatedPolicies("dmz");
-    log.info(`Syncing ${rules.length} DMZ allow rule(s), routerMode=${routerMode}`);
-    for (const rule of rules) {
-      const rulePauseData = { idleTs: "", disabled: routerMode ? "0" : "1", updatedTime: Date.now() / 1000 };
-      const newRule = new Policy(Object.assign({}, rule, rulePauseData));
-      const oldRule = new Policy(rule);
-      await pm2.updatePolicyAsync(newRule);
-      pm2.tryPolicyEnforcement(newRule, "reenforce", oldRule);
     }
   }
 
