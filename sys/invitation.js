@@ -233,38 +233,51 @@ class FWInvitation {
   }
 
   /*
-   * App device name is not carried in the invitation payload. Try local redis first:
-   * - sys:ept:memberNames is written by netbot from appInfo of an already paired app
-   * - sys:ept:members is refreshed from cloud group info by EptCloudExtension.recordAllRegisteredClients
-   * Both only cover eids that were already in the group before this pairing, so fall back to
-   * reloading the group from cloud for a brand new eid.
-   * Returns null if it cannot be resolved, pairing should never fail because of this.
+   * Resolve the paired app info, same fields HostManager.encipherMembersForInit builds for the app:
+   * - name  : account of the paired app, from sys:ept:memberEmails, or sys:ept:members which is
+   *           refreshed from cloud group info by EptCloudExtension.recordAllRegisteredClients
+   * - dName : device name, from sys:ept:memberNames, written by netbot from appInfo
+   * Local redis only covers eids already in the group before this pairing, so fall back to reloading
+   * the group from cloud to at least resolve the account of a brand new eid.
+   * Fields that cannot be resolved are left out, pairing should never fail because of this.
    */
-  async getPairedDeviceName(eid) {
+  async getPairedMemberInfo(eid) {
+    let name = null;
+    let dName = null;
     try {
-      const name = await rclient.hgetAsync("sys:ept:memberNames", eid);
-      if (name)
-        return name;
+      name = await rclient.hgetAsync(Constants.REDIS_KEY_EPT_MEMBER_EMAILS, eid);
 
-      const members = await rclient.smembersAsync("sys:ept:members") || [];
-      for (const member of members) {
-        const m = JSON.parse(member);
-        if (m && m.eid === eid && m.name)
-          return m.name;
+      if (!name) {
+        const members = await rclient.smembersAsync("sys:ept:members") || [];
+        for (const member of members) {
+          const m = JSON.parse(member);
+          if (m && m.eid === eid && m.name) {
+            name = m.name;
+            break;
+          }
+        }
       }
+
+      dName = await rclient.hgetAsync("sys:ept:memberNames", eid);
     } catch (err) {
-      log.error(`Failed to get device name of ${eid} from redis:`, err.message);
+      log.error(`Failed to get member info of ${eid} from redis:`, err.message);
     }
 
-    try {
-      const group = await this.cloud.groupFind(this.gid);
-      const skeys = group && group.group && group.group.symmetricKeys;
-      const skey = Array.isArray(skeys) && skeys.find(k => k.eid === eid);
-      return skey && skey.displayName || null;
-    } catch (err) {
-      log.error(`Failed to get device name of ${eid} from cloud:`, err.message);
-      return null;
+    if (!name) {
+      try {
+        const group = await this.cloud.groupFind(this.gid);
+        const skeys = group && group.group && group.group.symmetricKeys;
+        const skey = Array.isArray(skeys) && skeys.find(k => k.eid === eid);
+        name = skey && skey.displayName;
+      } catch (err) {
+        log.error(`Failed to get member info of ${eid} from cloud:`, err.message);
+      }
     }
+
+    const info = {};
+    if (name) info.name = name;
+    if (dName) info.dName = dName;
+    return info;
   }
 
   async checkInvitation(rid) {
@@ -366,11 +379,10 @@ class FWInvitation {
       // remove from revoked eid set
       await rclient.sremAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
 
-      // fire an event on phone_paired with eid info
-      const labels = {"eid":eid};
-      const deviceName = await this.getPairedDeviceName(eid);
-      if (deviceName) labels.deviceName = deviceName;
-      await era.addActionEvent("phone_paired",1,labels);
+      // fire an event on phone_paired with the paired app info
+      const ts = Date.now();
+      const labels = Object.assign(await this.getPairedMemberInfo(eid), {"eid":eid, "ts":ts});
+      await era.addActionEvent("phone_paired",1,labels,ts);
 
       log.forceInfo(`Linked App ${eid} to this device successfully`);
 
