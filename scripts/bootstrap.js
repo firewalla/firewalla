@@ -11,22 +11,39 @@ const _ = require('lodash');
 const Cloud = require('../encipher');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const licenseUtil = require('../util/license.js');
+const eptGroup = require('../util/eptGroup.js');
 const bone = require('../lib/Bone.js');
 const networkTool = require('../net2/NetworkTool.js')();
 const sysManager = require('../net2/SysManager.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+const nodePersist = require('node-persist');
 
 const CONFIG_FILE = process.env.FW_CONFIG || '/encipher.config/netbot.config';
 const DEFAULT_PROVISION_BASE = 'https://msp.dd.firewalla.net';
 let PROVISION_BASE = DEFAULT_PROVISION_BASE;
 const BOOTSTRAP_PATH = '/vmbox/bootstrap';
 const ONBOARD_CONFIG = process.env.FW_ONBOARD_CONFIG || '/home/pi/.firewalla/onboard-config.json';
+const ENCIPHER_DB = `${process.env.HOME || '/home/pi'}/.encipher/db`;
 
 const POLL_INTERVAL_SEC = 5;
 
 let eptcloud;
+let cloudConfig;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const log = msg => console.log(`[onboard ${new Date().toISOString()}] ${msg}`);
+
+const uptime = () => {
+  try {
+    return Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]);
+  } catch (e) {
+    return null;
+  }
+};
+
+const timing = {};
+const mark = key => { timing[key] = uptime(); };
+
+const log = msg => console.log(`[onboard ${new Date().toISOString()} up=${uptime()}s] ${msg}`);
 
 function loadOnboardConfig() {
   try {
@@ -38,22 +55,27 @@ function loadOnboardConfig() {
 }
 
 async function connectCloud() {
-  const config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-  for (const k of ['appId', 'appSecret']) {
-    if (!config[k]) throw new Error(`${CONFIG_FILE} missing field: ${k}`);
+  cloudConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+  for (const k of ['appId', 'appSecret', 'service']) {
+    if (!cloudConfig[k]) throw new Error(`${CONFIG_FILE} missing field: ${k}`);
   }
-  eptcloud = new Cloud(config.endpoint_name || 'netbot', null);
+  eptcloud = new Cloud(cloudConfig.endpoint_name || 'netbot', null);
   await eptcloud.loadKeys();
-  await eptcloud.eptLogin(config.appId, config.appSecret, null, config.endpoint_name);
+  await eptcloud.eptLogin(cloudConfig.appId, cloudConfig.appSecret, null, cloudConfig.endpoint_name);
 }
 
-async function waitForGid(maxSec = 10) {
-  for (let i = 0; i < maxSec; i++) {
-    const gid = await rclient.hgetAsync('sys:ept', 'gid');
-    if (gid) return gid;
-    await sleep(1000);
-  }
-  throw new Error('sys:ept.gid not found');
+async function ensureGid() {
+  fs.mkdirSync(ENCIPHER_DB, { recursive: true });
+  nodePersist.initSync({ dir: ENCIPHER_DB });
+
+  const gid = await eptGroup.ensureGroup({
+    eptcloud,
+    config: cloudConfig,
+    model: platform.getName(),
+    storage: nodePersist
+  });
+  await eptGroup.publishEpt(eptcloud, gid);
+  return gid;
 }
 
 async function registerBootstrap({ bootstrapId, rid, gid }) {
@@ -185,11 +207,12 @@ async function persistState(patch) {
 async function main(onboard) {
   log('onboard start');
   await connectCloud();
-  const gid = await waitForGid();
+  const gid = await ensureGid();
+  mark('gid');
   const mac = await networkTool.getIdentifierMAC();
   if (!mac) throw new Error('failed to read identifier MAC');
   log(`gid=${gid} mac=${mac}`);
-  await persistState({ stage: 'onboard_start', gid, mac });
+  await persistState({ stage: 'onboard_start', gid, mac, timing });
 
   await applyTimezone(_.get(onboard, 'timezone'))
       .catch((e) => log(`WARN: applyTimezone failed: ${e.message}`));
@@ -198,11 +221,13 @@ async function main(onboard) {
   const rid = eptcloud.eptGenerateInvite().r;
   log(`register bid=${bid} rid=${rid}`);
   await registerBootstrap({ bootstrapId: bid, rid, gid });
+  mark('registered');
   await persistState({ stage: 'awaiting_activation', bootstrap_id: bid, rid });
 
   log('waiting for activate (polling rendezvous)...');
   const { value: webEid, evalue } = await waitForInvitation(rid);
   const payload = parsePayload(evalue);
+  mark('activated');
   log(`activate confirmed: web_eid=${webEid} msp=${_.get(payload, 'business.name')}`);
   await persistState({ stage: 'activating', web_eid: webEid, payload_received_at: new Date().toISOString() });
 
@@ -222,6 +247,8 @@ async function main(onboard) {
     region: payload.region,
     activated_at: new Date().toISOString(),
   });
+  mark('done');
+  log(`timing: gid=${timing.gid}s registered=${timing.registered}s activated=${timing.activated}s done=${timing.done}s`);
   log('onboard done');
 }
 
@@ -236,7 +263,8 @@ PROVISION_BASE = process.env.FW_PROVISION_BASE || onboard.provisionBase || DEFAU
 main(onboard).catch(async (err) => {
   log(`bootstrap failed: ${err.message}`);
   if (err.stack) console.log(err.stack);
-  try { await persistState({ stage: 'failed', error: err.message, failed_at: new Date().toISOString() }); } catch (_) {}
+  log(`timing: gid=${timing.gid}s registered=${timing.registered}s activated=${timing.activated}s`);
+  try { await persistState({ stage: 'failed', error: err.message, failed_at: new Date().toISOString(), timing }); } catch (_) {}
   process.exitCode = 1;
 }).finally(async () => {
   try { await rclient.quitAsync(); } catch (_) {}
