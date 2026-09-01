@@ -40,12 +40,10 @@ describe('Test firerouter config', function(){
         expect(fireRouter.sysNetworkInfo.length).to.be.not.equal(0);
     });
 
-    it('should include ra_router_lifetime in generated WAN network info', () => {
-        const wanInterfaces = fireRouter.sysNetworkInfo.filter(i => i.type === 'wan');
+    it('should include ra_router_lifetime in generated network info', () => {
+        expect(fireRouter.sysNetworkInfo.length).to.be.greaterThan(0);
 
-        expect(wanInterfaces.length).to.be.greaterThan(0);
-
-        for (const intf of wanInterfaces) {
+        for (const intf of fireRouter.sysNetworkInfo) {
             expect(intf).to.have.property('ra_router_lifetime');
             expect(intf.ra_router_lifetime === null || Number.isInteger(intf.ra_router_lifetime)).to.equal(true);
 
