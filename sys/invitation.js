@@ -232,6 +232,41 @@ class FWInvitation {
 
   }
 
+  /*
+   * App device name is not carried in the invitation payload. Try local redis first:
+   * - sys:ept:memberNames is written by netbot from appInfo of an already paired app
+   * - sys:ept:members is refreshed from cloud group info by EptCloudExtension.recordAllRegisteredClients
+   * Both only cover eids that were already in the group before this pairing, so fall back to
+   * reloading the group from cloud for a brand new eid.
+   * Returns null if it cannot be resolved, pairing should never fail because of this.
+   */
+  async getPairedDeviceName(eid) {
+    try {
+      const name = await rclient.hgetAsync("sys:ept:memberNames", eid);
+      if (name)
+        return name;
+
+      const members = await rclient.smembersAsync("sys:ept:members") || [];
+      for (const member of members) {
+        const m = JSON.parse(member);
+        if (m && m.eid === eid && m.name)
+          return m.name;
+      }
+    } catch (err) {
+      log.error(`Failed to get device name of ${eid} from redis:`, err.message);
+    }
+
+    try {
+      const group = await this.cloud.groupFind(this.gid);
+      const skeys = group && group.group && group.group.symmetricKeys;
+      const skey = Array.isArray(skeys) && skeys.find(k => k.eid === eid);
+      return skey && skey.displayName || null;
+    } catch (err) {
+      log.error(`Failed to get device name of ${eid} from cloud:`, err.message);
+      return null;
+    }
+  }
+
   async checkInvitation(rid) {
     log.forceInfo(`${this.leftCheckCount} Inviting ${rid} to group ${this.gid}`);
     try {
@@ -332,7 +367,10 @@ class FWInvitation {
       await rclient.sremAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
 
       // fire an event on phone_paired with eid info
-      await era.addActionEvent("phone_paired",1,{"eid":eid});
+      const labels = {"eid":eid};
+      const deviceName = await this.getPairedDeviceName(eid);
+      if (deviceName) labels.deviceName = deviceName;
+      await era.addActionEvent("phone_paired",1,labels);
 
       log.forceInfo(`Linked App ${eid} to this device successfully`);
 

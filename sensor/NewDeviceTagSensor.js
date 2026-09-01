@@ -88,7 +88,6 @@ class NewDeviceTagSensor extends Sensor {
       await hostManager.loadPolicyAsync()
       const systemPolicy = copyPolicy(hostManager.policy.newDeviceTag)
       systemPolicy.key = 'policy:system'
-      systemPolicy.lvl = 'system'
       log.debug(systemPolicy)
 
       const intf = sysManager.getInterfaceViaUUID(hostObj.o.intf)
@@ -106,10 +105,11 @@ class NewDeviceTagSensor extends Sensor {
         const networkProfile = networkProfileManager.getNetworkProfile(intf.uuid)
         networkPolicy = copyPolicy(networkProfile.policy.newDeviceTag)
         networkPolicy.key = networkProfile._getPolicyKey()
-        networkPolicy.lvl = 'intf'
       }
 
       let policy = networkPolicy.state && networkPolicy || systemPolicy.state && systemPolicy || null
+      // new device quarantine is on as long as either level is on, attribute it to system level first
+      const policyLvl = systemPolicy.state ? 'system' : 'intf'
 
       log.debug(networkPolicy)
 
@@ -155,7 +155,7 @@ class NewDeviceTagSensor extends Sensor {
                 "intf": host.intf || "",
                 "tag": String(policy.tag),
                 "tagName": tag && tag.getTagName() || "",
-                "policyLvl": policy.lvl
+                "policyLvl": policyLvl
               });
             }
           }
