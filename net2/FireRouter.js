@@ -135,8 +135,8 @@ async function setPowerMode(powerMode) {
 function updateMaps() {
   if (!_.isObject(intfNameMap))
     return false;
-  for (const intfName in interfaceMap) {
-    const intf = interfaceMap[intfName]
+  for (const intfName in intfNameMap) {
+    const intf = intfNameMap[intfName]
     // this usually happens after consecutive network config update, internal data structure of interface in firerouter is incomplete
     if (!intf.config || !intf.config.meta) {
       log.error(`Interface ${intfName} does not have config or config.meta`)
@@ -147,7 +147,6 @@ function updateMaps() {
   }
   return true;
 }
-
 
 function safeCheckMonitoringInterfaces(monitoringInterfaces) {
   // filter pppoe interfaces
