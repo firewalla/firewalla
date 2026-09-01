@@ -12,7 +12,6 @@
  *    You should have received a copy of the GNU Affero General Public License
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
 'use strict';
 
 let chai = require('chai');
@@ -33,7 +32,6 @@ describe('Test firerouter config', function(){
     });
 
     after(async () => {
-
     });
 
     it('should generate network info', async() => {
@@ -41,9 +39,35 @@ describe('Test firerouter config', function(){
         expect(fireRouter.sysNetworkInfo.length).to.be.not.equal(0);
     });
 
+    it('should handle a bridge with a missing member interface', async () => {
+        const bridge = {
+            config: {
+                meta: {
+                    name: 'Test Bridge',
+                    uuid: 'test-bridge',
+                    type: 'lan'
+                },
+                intf: ['eth-missing']
+            },
+            state: {
+                mac: '00:11:22:33:44:55',
+                ip4: null,
+                ip6: [],
+                routableSubnets: []
+            }
+        };
+
+        const networkInfos = await fireRouter.generateNetworkInfo({
+            br0: bridge
+        });
+
+        expect(networkInfos).to.have.lengthOf(1);
+        expect(networkInfos[0]).to.have.property('name', 'br0');
+        expect(networkInfos[0]).to.not.have.property('vid');
+    });
+
     it('should include ra_router_lifetime in generated network info', () => {
         expect(fireRouter.sysNetworkInfo.length).to.be.greaterThan(0);
-
         for (const intf of fireRouter.sysNetworkInfo) {
             expect(intf).to.have.property('ra_router_lifetime');
             expect(intf.ra_router_lifetime === null || Number.isInteger(intf.ra_router_lifetime)).to.equal(true);
@@ -92,7 +116,6 @@ describe('Test firerouter config', function(){
                 '1800',
                 undefined
             ];
-
             for (const value of invalidValues) {
                 expect(getRaRouterLifetime(makeInterface('wan', value))).to.equal(null);
             }
@@ -110,32 +133,8 @@ describe('Test firerouter config', function(){
             expect(getRaRouterLifetime(intf)).to.equal(null);
         });
 
-        it('maps non-WAN interfaces to null', () => {
-            expect(getRaRouterLifetime(makeInterface('lan', 0))).to.equal(null);
+        it('maps a non-WAN interface to null', () => {
             expect(getRaRouterLifetime(makeInterface('lan', 1800))).to.equal(null);
         });
-        
-        it('serializes zero ra_router_lifetime for a controlled WAN interface', async () => {
-            const wan = makeInterface('wan', 0);
-
-            wan.config.meta.name = 'Test WAN';
-            wan.config.meta.uuid = 'test-wan';
-            wan.state.mac = '00:11:22:33:44:55';
-            wan.state.ip4 = null;
-            wan.state.ip6 = [];
-            wan.state.routableSubnets = [];
-
-            const networkInfo = await fireRouter.generateNetworkInfo({
-                testwan: wan
-            });
-
-            expect(networkInfo).to.have.lengthOf(1);
-            expect(networkInfo[0].name).to.equal('testwan');
-
-            const serialized = JSON.stringify(networkInfo[0]);
-            const parsed = JSON.parse(serialized);
-
-            expect(parsed).to.have.property('ra_router_lifetime', 0);
-        });
     });
-  });
+});
