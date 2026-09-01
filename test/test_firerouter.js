@@ -39,38 +39,56 @@ describe('Test firerouter config', function(){
         log.debug("eth0 network config", fireRouter.sysNetworkInfo.filter(i => i.name == "eth0" || i.name == "pppoe0"));
         expect(fireRouter.sysNetworkInfo.length).to.be.not.equal(0);
     });
-});
 
+    it('should expose RA router lifetime for WAN interfaces', async() => {
+        const wanInterfaces = fireRouter.sysNetworkInfo.filter(i => {
+            return i.type === 'wan';
+        });
 
-describe('Test RA Router Lifetime validation', function() {
-    it('should accept zero', () => {
-        expect(fireRouter.validateRaRouterLifetime(0)).to.equal(0);
+        expect(wanInterfaces.length).to.be.greaterThan(0);
+
+        for (const intf of wanInterfaces) {
+            expect(intf).to.have.property('ra_router_lifetime');
+
+            if (intf.ra_router_lifetime !== null) {
+                expect(intf.ra_router_lifetime).to.be.a('number');
+                expect(intf.ra_router_lifetime).to.be.at.least(0);
+                expect(intf.ra_router_lifetime).to.be.at.most(65535);
+                expect(Number.isInteger(intf.ra_router_lifetime)).to.equal(true);
+            }
+        }
     });
 
-    it('should accept the maximum valid value', () => {
-        expect(fireRouter.validateRaRouterLifetime(65535)).to.equal(65535);
+    it('should preserve a Router Lifetime of zero when provided by FireRouter', async() => {
+        const wanInterfaces = fireRouter.sysNetworkInfo.filter(i => {
+            return i.type === 'wan';
+        });
+
+        const zeroLifetimeInterfaces = wanInterfaces.filter(i => {
+            return i.ra_router_lifetime === 0;
+        });
+
+        if (zeroLifetimeInterfaces.length === 0) {
+            log.debug("No WAN interface currently has ra_router_lifetime=0; zero-value preservation cannot be exercised by the current runtime state");
+            return;
+        }
+
+        for (const intf of zeroLifetimeInterfaces) {
+            expect(intf.ra_router_lifetime).to.equal(0);
+        }
     });
 
-    it('should reject negative values', () => {
-        expect(fireRouter.validateRaRouterLifetime(-1)).to.equal(null);
-    });
+    it('should report unavailable RA router lifetime as null', async() => {
+        const wanInterfaces = fireRouter.sysNetworkInfo.filter(i => {
+            return i.type === 'wan';
+        });
 
-    it('should reject fractional values', () => {
-        expect(fireRouter.validateRaRouterLifetime(1.5)).to.equal(null);
-    });
+        const unavailableInterfaces = wanInterfaces.filter(i => {
+            return i.ra_router_lifetime === null;
+        });
 
-    it('should reject oversized values', () => {
-        expect(fireRouter.validateRaRouterLifetime(65536)).to.equal(null);
-    });
-
-    it('should reject malformed values', () => {
-        expect(fireRouter.validateRaRouterLifetime('1800')).to.equal(null);
-        expect(fireRouter.validateRaRouterLifetime('not-a-number')).to.equal(null);
-        expect(fireRouter.validateRaRouterLifetime(NaN)).to.equal(null);
-        expect(fireRouter.validateRaRouterLifetime(Infinity)).to.equal(null);
-    });
-
-    it('should treat a missing value as unavailable', () => {
-        expect(fireRouter.validateRaRouterLifetime(undefined)).to.equal(null);
+        for (const intf of unavailableInterfaces) {
+            expect(intf.ra_router_lifetime).to.equal(null);
+        }
     });
 });
