@@ -753,10 +753,11 @@ class LiveStatsPlugin extends Sensor {
     const intfs = await this.getWlanIntfs()
     const bandMap = {}
     for (const intf of intfs) {
-      const { ssid, band, rssi } = await this.getWlanIdentity(intf)
+      const { ssid, band } = await this.getWlanIdentity(intf)
       if (!band)
         continue
       const { tx, rx } = await this.getIntfThroughput(intf.name)
+      const rssi = intf.role === 'wan' ? await this.getWlanRssi(intf) : null
       if (!bandMap[band]) {
         bandMap[band] = {
           band,
@@ -829,12 +830,11 @@ class LiveStatsPlugin extends Sensor {
     if (cached && now - cached.ts < 30000)
       return cached
 
-    const wpaCli = await platform.getWpaCliBinPath()
+    const wpaCli = await this.getWpaCli()
     if (!wpaCli)
       return { ssid: null, band: null }
 
-    const runDir = f.getFireRouterRuntimeInfoFolder()
-    const ctrlDir = intf.role == 'ap' ? `${runDir}/hostapd` : `${runDir}/wpa_supplicant/${intf.name}`
+    const ctrlDir = this.getWpaCtrlDir(intf)
     const identity = await exec(`sudo ${wpaCli} -p ${ctrlDir} -i ${intf.name} status`)
       .then(result => this.parseWpaStatus(result.stdout, intf.name))
       .catch(err => {
@@ -842,20 +842,36 @@ class LiveStatsPlugin extends Sensor {
         return { ssid: null, band: null }
       })
 
-    // rssi is not in status output, and only a wifi wan has it
-    identity.rssi = null
-    if (intf.role == 'wan') {
-      identity.rssi = await exec(`sudo ${wpaCli} -p ${ctrlDir} -i ${intf.name} signal_poll`)
-        .then(result => this.parseWpaSignalPoll(result.stdout))
-        .catch(err => {
-          log.error('Failed to get wpa signal of', intf.name, err.message)
-          return null
-        })
-    }
-
     identity.ts = now
     this.wlanIdentityCache[intf.name] = identity
     return identity
+  }
+
+  async getWpaCli() {
+    if (this.wpaCli === undefined)
+      this.wpaCli = await platform.getWpaCliBinPath()
+    return this.wpaCli
+  }
+
+  getWpaCtrlDir(intf) {
+    const runDir = f.getFireRouterRuntimeInfoFolder()
+    if (intf.role == 'ap')
+      return `${runDir}/hostapd`
+    return `${runDir}/wpa_supplicant/${intf.name}`
+  }
+
+  async getWlanRssi(intf) {
+    const wpaCli = await this.getWpaCli()
+    if (!wpaCli)
+      return null
+
+    const ctrlDir = this.getWpaCtrlDir(intf)
+    return exec(`sudo ${wpaCli} -p ${ctrlDir} -i ${intf.name} signal_poll`)
+      .then(result => this.parseWpaSignalPoll(result.stdout))
+      .catch(err => {
+        log.error('Failed to get wpa signal of', intf.name, err.message)
+        return null
+      })
   }
 
   parseWpaStatus(output, intf) {
