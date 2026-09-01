@@ -259,7 +259,7 @@ async function generateNetworkInfo() {
         raRouterLifetime = getRaRouterLifetime(intf);
         if (!intfName.startsWith("pppoe")) {
         gatewayMac = gateway && await layer2.getMACAsync(gateway) || gateway6 && await nmap.neighborSolicit(gateway6);
-                  }
+        }
   break;
       }
       case "lan": {
