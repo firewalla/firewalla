@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2026 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -846,23 +846,6 @@ let legoEptCloud = class {
     return JSON.stringify({ iv: ivBuf.toString('base64'), message: crypted });
   }
 
-  encryptBinary(data, key) {
-    if (data == null) {
-      log.error("Error data is null");
-      return;
-    }
-    log.debug('encryting data with size', data.length, data.constructor.name);
-    let iv = Buffer.alloc(16);
-    iv.fill(0);
-    let bkey = Buffer.from(key.substring(0, 32), "utf8");
-    let cipher = crypto.createCipheriv(this.cryptoalgorithem, bkey, iv);
-    let crypted = cipher.update(data);
-
-    crypted = Buffer.concat([crypted, cipher.final()]);
-    log.debug('encryted data with size', crypted.length, crypted.constructor.name);
-    return crypted;
-  }
-
   // Decrypt a parsed envelope { iv, ct }. Throws on bad IV/padding; callers that
   // want null-on-error (decrypt) wrap this in try/catch.
   // The box's own group id (loaded locally, not from the request). Used as the
@@ -1038,7 +1021,7 @@ let legoEptCloud = class {
         callback(err, null)
         return;
       }
-      log.debug('tag is', self.tag, 'key is', key);
+      log.debug('tag is', self.tag);
       let crypted = self.encrypt(msgstr, key);
 
       if (_beep && 'encrypted' in _beep) {
@@ -1162,7 +1145,7 @@ let legoEptCloud = class {
 
     this.getKey(gid, false, (err, key) => {
       if (err != null && key == null) {
-        log.error("Got error when fetching key:", key);
+        log.error("Got error when fetching key:", err);
         callback(err, null);
         return;
       }
@@ -1624,51 +1607,6 @@ let legoEptCloud = class {
     });
   }
 
-  sendFileToGroup(gid, _msg, path, thumb_path, _type, from, _beepmsg, height, width, sound, callback) {
-    let self = this;
-    this.uploadFile(gid, thumb_path, (e, thumb_url) => {
-      let mid = null;
-      if (e) {
-        callback(e);
-      } else {
-        if (thumb_url) {
-          mid = thumb_url.key;
-        }
-        self.uploadFile(gid, path, (e2, url) => {
-          if (e2 && url) {
-            callback(e2);
-          } else {
-            let type = _type;
-            if (!type) {
-              type = "image";
-            }
-            let msg = {
-              msg: _msg,
-              type: type,
-              from: from,
-              width: width,
-              height: height,
-            };
-            let beep = null;
-            if (_beepmsg != null) {
-              beep = {
-                cmd: 'apn',
-                msg: _beepmsg
-              };
-            }
-            if (sound != null && beep != null) {
-              beep['sound'] = sound;
-            }
-            self.sendMsgToGroup(gid, msg, beep, "file", url.key, mid, (e, r) => {
-              log.debug("sending messages", e, r);
-              callback(e, r);
-            });
-          }
-        });
-      }
-    });
-  }
-
   reKeyForEpt(skey, eid, ept, gid) {
     const publicKey = ept.publicKey;
 
@@ -1879,60 +1817,6 @@ let legoEptCloud = class {
           callback(new Error("Malformed JSON"), null);
         }
       }
-    });
-  }
-
-  _uploadFile(gid, url, filepath, callback) {
-    log.info("Uploading file ", filepath, " to ", url);
-    let self = this;
-    this.getKey(gid, true, function (err, key, cacheGroup) {
-      if (err != null && key == null) {
-        callback(err, null);
-        return;
-      }
-      log.info('tag is ', self.tag, 'key is ', key);
-      fs.readFile(filepath, (err, data) => {
-        let crypted = self.encryptBinary(data, key);
-        request({
-          method: 'PUT',
-          url: url,
-          body: crypted,
-          family: 4
-        },
-          function (error, response, body) {
-            if (response.statusCode === 200) {
-              log.info("Upload done ");
-              callback(null, null);
-            } else {
-              log.error("Upload fail ");
-              callback(response.statusCode, null);
-            }
-
-          }
-        );
-      });
-    });
-  }
-
-  uploadFile(gid, filepath, callback) {
-    let self = this;
-    if (filepath == null) {
-      callback(null, null);
-      return;
-    }
-    this.getStorage(gid, 1000000, 0, function (e, url) {
-      if (e) {
-        callback(e, null);
-        return;
-      }
-      self._uploadFile(gid, url.url, filepath, function (e, r) {
-        if (e != null) {
-          callback(e, null);
-          return;
-        } else {
-          callback(e, url);
-        }
-      });
     });
   }
 

@@ -158,7 +158,7 @@ class PolicyManager2 {
 
       this.tlsInstalled = false;
 
-      this.policyCache = new LRU({max: 1000});
+      this.policyCache = new LRU({max: 2000});
       sem.on('Policy:Updated', (event) => {
         const pid = event && event.pid;
         if (!isNaN(pid)) {

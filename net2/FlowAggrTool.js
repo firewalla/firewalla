@@ -291,6 +291,12 @@ class FlowAggrTool {
               results[dest] = { count }
             }
 
+            // domain is baked into the sumflow member at write time, use it as the host of
+            // the destination IP so callers don't need a separate intel lookup
+            if(json.destIP && json.domain && !results[dest].host) {
+              results[dest].host = json.domain
+            }
+
             if(ports) {
               if(results[dest].ports) {
                 Array.prototype.push.apply(results[dest].ports, ports)
