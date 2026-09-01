@@ -34,9 +34,43 @@ describe('Test firerouter config', function(){
     after(async () => {
 
     });
-  
+
     it('should generate network info', async() => {
         log.debug("eth0 network config", fireRouter.sysNetworkInfo.filter(i => i.name == "eth0" || i.name == "pppoe0"));
         expect(fireRouter.sysNetworkInfo.length).to.be.not.equal(0);
     });
-  });
+});
+
+
+describe('Test RA Router Lifetime validation', function() {
+    it('should accept zero', () => {
+        expect(fireRouter.validateRaRouterLifetime(0)).to.equal(0);
+    });
+
+    it('should accept the maximum valid value', () => {
+        expect(fireRouter.validateRaRouterLifetime(65535)).to.equal(65535);
+    });
+
+    it('should reject negative values', () => {
+        expect(fireRouter.validateRaRouterLifetime(-1)).to.equal(null);
+    });
+
+    it('should reject fractional values', () => {
+        expect(fireRouter.validateRaRouterLifetime(1.5)).to.equal(null);
+    });
+
+    it('should reject oversized values', () => {
+        expect(fireRouter.validateRaRouterLifetime(65536)).to.equal(null);
+    });
+
+    it('should reject malformed values', () => {
+        expect(fireRouter.validateRaRouterLifetime('1800')).to.equal(null);
+        expect(fireRouter.validateRaRouterLifetime('not-a-number')).to.equal(null);
+        expect(fireRouter.validateRaRouterLifetime(NaN)).to.equal(null);
+        expect(fireRouter.validateRaRouterLifetime(Infinity)).to.equal(null);
+    });
+
+    it('should treat a missing value as unavailable', () => {
+        expect(fireRouter.validateRaRouterLifetime(undefined)).to.equal(null);
+    });
+});
