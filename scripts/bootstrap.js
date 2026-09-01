@@ -31,7 +31,19 @@ let eptcloud;
 let cloudConfig;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const log = msg => console.log(`[onboard ${new Date().toISOString()}] ${msg}`);
+
+const uptime = () => {
+  try {
+    return Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]);
+  } catch (e) {
+    return null;
+  }
+};
+
+const timing = {};
+const mark = key => { timing[key] = uptime(); };
+
+const log = msg => console.log(`[onboard ${new Date().toISOString()} up=${uptime()}s] ${msg}`);
 
 function loadOnboardConfig() {
   try {
@@ -196,10 +208,11 @@ async function main(onboard) {
   log('onboard start');
   await connectCloud();
   const gid = await ensureGid();
+  mark('gid');
   const mac = await networkTool.getIdentifierMAC();
   if (!mac) throw new Error('failed to read identifier MAC');
   log(`gid=${gid} mac=${mac}`);
-  await persistState({ stage: 'onboard_start', gid, mac });
+  await persistState({ stage: 'onboard_start', gid, mac, timing });
 
   await applyTimezone(_.get(onboard, 'timezone'))
       .catch((e) => log(`WARN: applyTimezone failed: ${e.message}`));
@@ -208,11 +221,13 @@ async function main(onboard) {
   const rid = eptcloud.eptGenerateInvite().r;
   log(`register bid=${bid} rid=${rid}`);
   await registerBootstrap({ bootstrapId: bid, rid, gid });
+  mark('registered');
   await persistState({ stage: 'awaiting_activation', bootstrap_id: bid, rid });
 
   log('waiting for activate (polling rendezvous)...');
   const { value: webEid, evalue } = await waitForInvitation(rid);
   const payload = parsePayload(evalue);
+  mark('activated');
   log(`activate confirmed: web_eid=${webEid} msp=${_.get(payload, 'business.name')}`);
   await persistState({ stage: 'activating', web_eid: webEid, payload_received_at: new Date().toISOString() });
 
@@ -232,6 +247,8 @@ async function main(onboard) {
     region: payload.region,
     activated_at: new Date().toISOString(),
   });
+  mark('done');
+  log(`timing: gid=${timing.gid}s registered=${timing.registered}s activated=${timing.activated}s done=${timing.done}s`);
   log('onboard done');
 }
 
@@ -246,7 +263,8 @@ PROVISION_BASE = process.env.FW_PROVISION_BASE || onboard.provisionBase || DEFAU
 main(onboard).catch(async (err) => {
   log(`bootstrap failed: ${err.message}`);
   if (err.stack) console.log(err.stack);
-  try { await persistState({ stage: 'failed', error: err.message, failed_at: new Date().toISOString() }); } catch (_) {}
+  log(`timing: gid=${timing.gid}s registered=${timing.registered}s activated=${timing.activated}s`);
+  try { await persistState({ stage: 'failed', error: err.message, failed_at: new Date().toISOString(), timing }); } catch (_) {}
   process.exitCode = 1;
 }).finally(async () => {
   try { await rclient.quitAsync(); } catch (_) {}

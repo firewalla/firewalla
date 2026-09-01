@@ -16,7 +16,8 @@ WARN_AFTER="${FW_ONBOARD_WARN_AFTER:-80}"   # seconds offline before warning on 
 
 mkdir -p "$(dirname "$LOG")" 2>/dev/null
 exec >>"$LOG" 2>&1
-log(){ printf '[fireonboard %s] %s\n' "$(date -Is 2>/dev/null || date)" "$*"; }
+uptime_s(){ read -r _u _ < /proc/uptime; echo "${_u%.*}"; }
+log(){ printf '[fireonboard %s up=%ss] %s\n' "$(date -Is 2>/dev/null || date)" "$(uptime_s)" "$*"; }
 
 # Echoes "<ip> [note]": the default-route address, else any global one — reachable from the LAN side
 # only, so it gets labelled. Empty when the box has no address at all.
@@ -56,6 +57,7 @@ net_ready(){
 
 # ── main ───────────────────────────────────────────────────────────────────────
 
+T_START=$(uptime_s)
 log "=== fireonboard start ==="
 
 if [ ! -f "$ONBOARD_CONFIG" ]; then
@@ -76,16 +78,20 @@ while :; do
   fi
   sleep 2
 done
+T_NET=$(uptime_s)
 log "ready: internet confirmed via $NET_VIA"
 
 banner "Firewalla is up and ready to activate" "Activate this box from the MSP web console."
 
+T_BOOTSTRAP=$(uptime_s)
 log "launching bootstrap.js (onboard) ..."
 HOME=/home/pi FW_ONBOARD_CONFIG="$ONBOARD_CONFIG" runuser -u pi -- bash -c "
   cd '$SCRIPTS_DIR' && '$NODE' bootstrap.js
 "
 rc=$?
+T_END=$(uptime_s)
 log "bootstrap.js exit=$rc"
+log "timing: start=${T_START}s net_ready=${T_NET}s bootstrap_start=${T_BOOTSTRAP}s bootstrap_end=${T_END}s (uptime excludes ~15s firmware+loader+kernel)"
 if [ $rc -eq 0 ]; then
   touch "$DONE" 2>/dev/null
   log "marked $DONE"
