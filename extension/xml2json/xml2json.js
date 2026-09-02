@@ -70,12 +70,12 @@ async function parse(str, options = {}) {
     xml2json.kill()
     try {
       const result = JSON.parse(Buffer.concat(buffers).toString())
-      if (!(result instanceof Object)) {
+      if (!result instanceof Object) {
         deferred.reject(new Error('Invalid Result'))
         return
       }
 
-      if (options.root === false && Object.keys(result).length) {
+      if (options.root === false && Object.keys(result)) {
         deferred.resolve(result[Object.keys(result)[0]])
       } else {
         deferred.resolve(result)
