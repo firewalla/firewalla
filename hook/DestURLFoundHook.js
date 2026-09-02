@@ -42,7 +42,7 @@ const APPEND_URL_LUA = [
   'end',
   'redis.call("zadd", KEYS[1], ARGV[1], ARGV[3])',
   'return 1'
-].join("\\n");
+].join("\n");
 const MAX_URL_LENGTH = 2048;
 
 const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
