@@ -17,6 +17,8 @@ const nomatchSignals = [
   'returned 0 objects',
 ];
 
+const MAX_REFERRAL_DEPTH = 3;
+
 function _isValid(target) {
   return target && (isIP(target) || isFQDN(target));
 }
@@ -97,8 +99,24 @@ class Whois {
       return;
     }
 
-    async function _whois(_target, opts) {
-      let newOpts = Object.assign({}, opts, {raw: true});
+    const deadline = Date.now() + this.timeout;
+
+    async function _whois(_target, opts, depth, visited) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        throw new Error("WHOIS lookup timed out");
+      }
+
+      const host = (opts.host || "").toLowerCase();
+      if (host && visited.has(host)) {
+        log.warn("WHOIS referral cycle detected at", host);
+        return {};
+      }
+      if (host) {
+        visited.add(host);
+      }
+
+      let newOpts = Object.assign({}, opts, {raw: true, deadline});
       log.debug("target: ", target, ", opts:", opts, ", newOpts:", newOpts);
 
       let info = await whoisClient.lookup(_target, newOpts);
@@ -114,25 +132,36 @@ class Whois {
 
       let refer = _info.refer;
       if (refer && isFQDN(refer)) {
-        _info = await _whois(_target, Object.assign({}, opts, {host: refer}));
+        if (depth >= MAX_REFERRAL_DEPTH) {
+          log.warn("WHOIS referral depth limit reached for", target);
+          return _info;
+        }
+
+        const referralHost = refer.toLowerCase();
+        if (visited.has(referralHost)) {
+          log.warn("WHOIS referral cycle detected at", referralHost);
+          return _info;
+        }
+
+        _info = await _whois(
+          _target,
+          {host: refer, port: 43, raw: true, deadline},
+          depth + 1,
+          visited
+        );
       }
 
       return _info;
     }
 
-    let whois;
     try {
-      whois = await Promise.race([
-        new Promise(resolve => setTimeout(resolve, this.timeout)),
-        _whois(_target, {host: 'whois.iana.org', ip: "192.0.32.59", port: 43})
-      ]);
+      return await _whois(
+        _target,
+        {host: 'whois.iana.org', ip: "192.0.32.59", port: 43},
+        0,
+        new Set()
+      );
     } catch (err) {
       log.error(`Unable to lookup whois information for target: ${_target}, original target is: ${target}`, err);
       return;
     }
-
-    return whois;
-  }
-}
-
-module.exports = new Whois();
