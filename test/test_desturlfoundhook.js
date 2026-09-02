@@ -43,12 +43,12 @@ describe('DestURLFoundHook URL queue', function () {
     const result = await hook.appendURL({ mac: '00:11:22:33:44:55', url: 'https://example.com/a' });
 
     expect(result).to.equal(false);
-    expect(args).to.be.an('array').with.length(5);
+    expect(args).to.be.an('array').with.length(6);
     expect(args[1]).to.equal(1);
     expect(args[2]).to.equal('url_set_to_be_processed');
     expect(args[3]).to.equal(0);
     expect(args[4]).to.equal(2000);
-    expect(args[5]).to.be.undefined;
+    expect(args[5]).to.equal(JSON.stringify({ mac: '00:11:22:33:44:55', url: 'https://example.com/a' }));
   });
 
   it('reports a successful enqueue when Redis accepts the member', async () => {
