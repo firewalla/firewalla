@@ -53,6 +53,9 @@ class DNSTool {
       this.dnsExpireTs = new LRU({max: 50000, maxAge: 24 * 3600 * 1000});
       // keys whose TTL refresh was throttled; _drainDnsTTL flushes them within one period
       this.dnsExpirePending = new Map();
+      // Number of unique refreshes handled inline because the deferred queue was full.
+      // Logged and reset once per drain period to avoid one warning per incoming update.
+      this.dnsExpireOverflowCount = 0;
       this.dnsExpireTimer = setInterval(() => this._drainDnsTTL(), RDNS_TTL_REFRESH_PERIOD);
     }
     return instance;
@@ -69,9 +72,9 @@ class DNSTool {
       return true;
     }
     if (!this.dnsExpirePending.has(key) && this.dnsExpirePending.size >= MAX_DNS_EXPIRE_PENDING) {
-      const oldestKey = this.dnsExpirePending.keys().next().value;
-      this.dnsExpirePending.delete(oldestKey);
-      log.warn(`Deferred rdns TTL refresh limit reached: ${MAX_DNS_EXPIRE_PENDING}`);
+      this.dnsExpireOverflowCount++;
+      this.dnsExpireTs.set(key, now);
+      return true;
     }
     this.dnsExpirePending.set(key, expr);
     return false;
@@ -82,6 +85,10 @@ class DNSTool {
       return;
     const pending = this.dnsExpirePending;
     this.dnsExpirePending = new Map();
+    if (this.dnsExpireOverflowCount > 0) {
+      log.warn(`Deferred rdns TTL refresh limit reached: ${MAX_DNS_EXPIRE_PENDING}; refreshed inline: ${this.dnsExpireOverflowCount}`);
+      this.dnsExpireOverflowCount = 0;
+    }
     const now = Date.now();
     const multi = rclient.multi();
     for (const [key, expr] of pending) {
