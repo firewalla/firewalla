@@ -26,6 +26,7 @@ describe('WHOIS response size limit', function () {
 
   let server;
   let port;
+  let connectionClosed;
 
   afterEach((done) => {
     if (server) {
@@ -39,6 +40,7 @@ describe('WHOIS response size limit', function () {
   function listen(response) {
     return new Promise((resolve, reject) => {
       server = net.createServer(socket => {
+        connectionClosed = new Promise(resolve => socket.once('close', resolve));
         socket.on('data', () => {});
         socket.end(response);
       });
@@ -67,10 +69,12 @@ describe('WHOIS response size limit', function () {
 
     expect(error).to.be.an('error');
     expect(error.message).to.equal('WHOIS response exceeds maximum size of 1048576 bytes');
+    await connectionClosed;
   });
 
   it('still accepts responses at or below the limit', async () => {
-    await listen('ok');
+    const response = 'x'.repeat(1024 * 1024);
+    await listen(response);
 
     const result = await whoisClient.lookup('example.com', {
       host: '127.0.0.1',
@@ -78,6 +82,6 @@ describe('WHOIS response size limit', function () {
       raw: true,
     });
 
-    expect(result).to.equal('ok');
+    expect(result).to.equal(response);
   });
 });
