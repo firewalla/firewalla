@@ -136,6 +136,10 @@ class BluePlatform extends Platform {
     return `${__dirname}/files/libdnsproxy.so`
   }
 
+  async getWpaCliBinPath() {
+    return null;
+  }
+
   getSpeedtestCliBinPath() {
     return `${__dirname}/files/speedtest`
   }

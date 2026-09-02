@@ -276,6 +276,10 @@ class Policy {
     return this.getWhenExpired() - new Date() / 1000
   }
 
+  isAutoBlockPolicy() {
+    return this.method == 'auto' && this.category == 'intel';
+  }
+
   isSecurityBlockPolicy() {
     if (this.action !== 'block') {
       return false;
@@ -284,8 +288,7 @@ class Policy {
     const alarm_type = this.alarm_type;
 
     const isSecurityPolicy = alarm_type && (["ALARM_INTEL", "ALARM_BRO_NOTICE", "ALARM_LARGE_UPLOAD"].includes(alarm_type));
-    const isAutoBlockPolicy = this.method == 'auto' && this.category == 'intel';
-    return isSecurityPolicy || isAutoBlockPolicy;
+    return isSecurityPolicy || this.isAutoBlockPolicy();
   }
 
   // x is the rule being checked
