@@ -51,6 +51,33 @@ describe('DestURLFoundHook URL queue', function () {
     expect(args[5]).to.equal(JSON.stringify({ mac: '00:11:22:33:44:55', url: 'https://example.com/a' }));
   });
 
+
+  it('rate-limits full-queue warnings and aggregates dropped URLs', async () => {
+    rclient.evalAsync = async () => 0;
+
+    const hook = new DestURLFoundHook();
+    const warningCounts = [];
+    hook.warnQueueFull = (droppedCount) => {
+      warningCounts.push(droppedCount);
+    };
+
+    await hook.appendURL({ mac: '00:11:22:33:44:55', url: 'https://example.com/1' });
+    expect(warningCounts).to.deep.equal([1]);
+
+    hook.lastQueueDropWarningAt = Date.now();
+    await hook.appendURL({ mac: '00:11:22:33:44:55', url: 'https://example.com/2' });
+    await hook.appendURL({ mac: '00:11:22:33:44:55', url: 'https://example.com/3' });
+
+    expect(warningCounts).to.deep.equal([1]);
+    expect(hook.queueDropCount).to.equal(2);
+
+    hook.lastQueueDropWarningAt = Date.now() - 60 * 1000;
+    await hook.appendURL({ mac: '00:11:22:33:44:55', url: 'https://example.com/4' });
+
+    expect(warningCounts).to.deep.equal([1, 3]);
+    expect(hook.queueDropCount).to.equal(0);
+  });
+
   it('reports a successful enqueue when Redis accepts the member', async () => {
     let args;
 
