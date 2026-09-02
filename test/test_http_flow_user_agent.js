@@ -18,7 +18,10 @@ const chai = require('chai');
 const expect = chai.expect;
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const Getter = require('../net2/config.js').Getter;
 const httpFlow = require('../extension/flow/HttpFlow.js');
+
+const broConfig = new Getter('bro');
 
 describe('HttpFlow User-Agent history retention', function () {
   let originalEvalAsync;
@@ -96,5 +99,41 @@ describe('HttpFlow User-Agent history retention', function () {
     expect(calls[1][0]).to.contain('ZREMRANGEBYRANK');
     expect(calls[1][5]).to.equal(100);
     expect(calls[1][6]).to.be.a('string');
+  });
+
+  it('enforces the configured retention limit, keeps the newest entries, and refreshes the TTL in Redis', async function () {
+    this.timeout(30000);
+
+    const key = `host:user_agent2:test-retention:${process.pid}:${Date.now()}`;
+    const limit = httpFlow.getUserAgentHistoryCount();
+    const expireTime = broConfig.get('userAgent.expires');
+    const totalEntries = limit + 5;
+    const originalDateNow = Date.now;
+    const baseTimestamp = Math.floor(originalDateNow() / 1000);
+
+    try {
+      await rclient.delAsync(key);
+
+      for (let i = 0; i < totalEntries; i++) {
+        Date.now = () => (baseTimestamp + i) * 1000;
+        await httpFlow.saveUserAgentHistory(key, `user-agent-${i}`, expireTime);
+      }
+
+      const count = await rclient.zcardAsync(key);
+      expect(count).to.equal(limit);
+
+      const members = await rclient.zrangeAsync(key, 0, -1);
+      const expectedMembers = Array.from(
+        { length: limit },
+        (_, index) => `user-agent-${totalEntries - limit + index}`
+      );
+      expect(members).to.eql(expectedMembers);
+
+      const ttl = await rclient.ttlAsync(key);
+      expect(ttl).to.be.within(expireTime - 1, expireTime);
+    } finally {
+      Date.now = originalDateNow;
+      await rclient.delAsync(key);
+    }
   });
 });
