@@ -92,6 +92,14 @@ module.exports = class {
   }
 
   async discoverMac(mac) {
+    // DHCP-triggered discovery commonly runs after a lease has been assigned, so consult
+    // the kernel ARP table before starting an expensive subnet-wide Nmap scan.
+    const arpTable = await util.promisify(this.getAndSaveArpTable).bind(this)();
+    if (arpTable[mac]) {
+      log.info("discoverMac:found via ARP", arpTable[mac]);
+      return arpTable[mac];
+    }
+
     const list = sysManager.getMonitoringInterfaces();
     let found = null;
     for (const intf of list) {
@@ -129,14 +137,8 @@ module.exports = class {
     if (found) {
       return found;
     } else {
-      const arpTable = await util.promisify(this.getAndSaveArpTable).bind(this)();
       log.info("discoverMac:miss", mac);
-      if (arpTable[mac]) {
-        log.info("discoverMac:found via ARP", arpTable[mac]);
-        return arpTable[mac];
-      } else {
-        return null;
-      }
+      return null;
     }
   }
 
