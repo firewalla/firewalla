@@ -436,6 +436,8 @@ module.exports = class HostManager extends Monitorable {
     json.kernelVersion = sysInfo.kernelVersion;
     if (sysInfo.usbInfo) // absent if the USB bus cannot be listed, which is not the same as nothing plugged in
       json.usbInfo = sysInfo.usbInfo;
+    if (sysInfo.dockerEmmcUsage && sysInfo.dockerEmmcUsage.length > 0)
+      json.dockerEmmcUsage = sysInfo.dockerEmmcUsage;
     const cpuUsageRecords = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_CPU_USAGE, Date.now() / 1000 - 60, Date.now() / 1000).map(r => JSON.parse(r));
     json.sysMetrics = {
       memUsage: sysInfo.realMem,
@@ -760,11 +762,6 @@ module.exports = class HostManager extends Monitorable {
     extdata.ntp = {
       localServerStatus: fc.isFeatureOn('ntp_redirect') ?
         Number(await rclient.getAsync(Constants.REDIS_KEY_NTP_SERVER_STATUS)) : null
-    }
-
-    const sysInfo = await SysInfo.getSysInfo();
-    if (sysInfo.dockerEmmcUsage && sysInfo.dockerEmmcUsage.length > 0) {
-      extdata.dockerEmmcUsage = sysInfo.dockerEmmcUsage;
     }
 
     json.extension = extdata;
@@ -1294,12 +1291,11 @@ module.exports = class HostManager extends Monitorable {
       categoryUpdater.getCustomizedCategories(),
     ]);
     if (platform.isFireRouterManaged()) {
-      const stpStatus = await FireRouter.getBridgeStpStatus().catch(() => ({}));
       for (const intf in nicStates) {
         const channel = _.get(FireRouter.getInterfaceViaName(intf), 'state.channel')
         if (channel) nicStates[intf].channel = channel
-        if (stpStatus[intf]) nicStates[intf].stp = stpStatus[intf];
       }
+      json.stpStatus = await FireRouter.getBridgeStpStatus().catch(() => ({}));
     }
     json.nicSpeed = speed;
     json.nicStates = nicStates;
@@ -1790,7 +1786,7 @@ module.exports = class HostManager extends Monitorable {
     // read the actually-existing bucket timestamps from the index rather than guessing them from
     // the current slotSecs config - slotSecs may have changed since older buckets were written,
     // so recomputing boundaries from today's config would miss or mis-key historical buckets
-    const retentionSecs = 172800; // 48h, matches BlockStatsSensor's redis TTL
+    const retentionSecs = 604800; // 7 days, matches BlockStatsSensor's redis TTL
     const cutoff = Math.floor(Date.now() / 1000) - retentionSecs;
     let bucketTimestamps;
     try {

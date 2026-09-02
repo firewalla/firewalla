@@ -131,7 +131,7 @@ function hashFlow(_flow, clean) {
             delete flow.shname;
         }
         if (flow.dhname) {
-            delete flow.shname;
+            delete flow.dhname;
         }
         if (flow.iplist) {
             delete flow.iplist;

@@ -33,6 +33,7 @@ const TagManager = require('../net2/TagManager.js');
 const lock = new AsyncLock();
 const LOCK_RW = "lock_rw";
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const POLICY_STATE_ENFORCING = 1;
 const POLICY_STATE_DOMAIN_ONLY = 2;
 const DISTURB_INTERVAL = 30;
 
@@ -181,9 +182,11 @@ class AppTimeUsageManager {
     // a default mode policy will be applied first, and will be updated to domain only after a certain timeout
     // if the policy is in disturb mode, it will not be updated to domain only mode
     // always apply domain only mode, new machnism to handle existing connections
+    // mark before the slow enforcePolicy call so a later deregister still finds this uid and unenforces it even if updateDisturbTimeUsedInPolicy fails
+    this.enforcedPolicies[pid][uid] = POLICY_STATE_ENFORCING;
     await this.enforcePolicy(policy, uid);
-    if (needDisturb) {
-      this.registeredPolicies[pid].disturbTimeUsed = policy.disturbTimeUsed;
+    if (needDisturb && this.registeredPolicies[pid] === p) {
+      p.disturbTimeUsed = policy.disturbTimeUsed;
       log.info(`The policy has been in disturb mode for ${policy.disturbTimeUsed} seconds.`);
       await this.updateDisturbTimeUsedInPolicy(pid, policy.disturbTimeUsed);
       this.activeDisturbPolicies[pid] = {};
