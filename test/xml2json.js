@@ -183,5 +183,14 @@ describe('xml2json output bounds', () => {
     expect(error.message).to.equal('xml2json output exceeds maximum size of 1048576 bytes');
 
     expect(() => child.stdin.emit('error', new Error('write EPIPE'))).to.not.throw();
+
+    let secondError;
+    try {
+      await promise;
+    } catch (err) {
+      secondError = err;
+    }
+
+    expect(secondError).to.equal(error);
   });
 });
