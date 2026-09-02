@@ -389,9 +389,17 @@ describe('dnsmasq DHCP hosts-file reload vs restart', function() {
     dnsmasq.scheduleReloadDHCPService();
     await timers[0].fn();
 
-    expect(commands.some(cmd => cmd.includes('systemctl reload firerouter_dhcp'))).to.equal(true);
-    expect(commands.some(cmd => cmd.includes('systemctl stop firerouter_dhcp'))).to.equal(true);
-    expect(commands.some(cmd => cmd.includes('systemctl restart firerouter_dhcp'))).to.equal(true);
+    const dhcpCommands = commands.filter(cmd =>
+      cmd.includes('systemctl reload firerouter_dhcp') ||
+      cmd.includes('systemctl stop firerouter_dhcp') ||
+      cmd.includes('systemctl restart firerouter_dhcp')
+    );
+
+    expect(dhcpCommands.map(cmd => {
+      if (cmd.includes('systemctl reload firerouter_dhcp')) return 'reload';
+      if (cmd.includes('systemctl stop firerouter_dhcp')) return 'stop';
+      return 'restart';
+    })).to.deep.equal(['reload', 'stop', 'restart']);
     expect(logs.error.some(args => String(args[0]).includes('Failed to reload'))).to.equal(true);
     expect(logs.warn.some(args => String(args[0]).includes('falling back to service restart'))).to.equal(true);
     expect(dnsmasq.counter.restartDHCP).to.equal(1);
