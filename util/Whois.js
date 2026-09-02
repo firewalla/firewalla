@@ -165,3 +165,7 @@ class Whois {
       log.error(`Unable to lookup whois information for target: ${_target}, original target is: ${target}`, err);
       return;
     }
+  }
+}
+
+module.exports = new Whois();
