@@ -542,7 +542,7 @@ class Monitorable {
   async qosTimer(policy = {}) {
     if (this._qosTimer)
       clearTimeout(this._qosTimer);
-    if (policy.hasOwnProperty("state") && !isNaN(policy.state) && policy.time) {
+    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && policy.time) {
       const nextState = policy.state;
       if (Number(policy.time) > Date.now() / 1000) {
         this._qosTimer = setTimeout(() => {

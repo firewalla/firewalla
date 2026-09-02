@@ -117,6 +117,10 @@ class PSEPlatform extends Platform {
     }
   }
 
+  async getWpaCliBinPath() {
+    return 'wpa_cli';
+  }
+
   getDefaultWlanIntfName() {
     return 'wlan0';
   }
