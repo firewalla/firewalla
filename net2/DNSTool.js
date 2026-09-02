@@ -266,6 +266,7 @@ class DNSTool {
     // drop throttle state so a later re-add re-issues EXPIRE instead of deferring on a stale ts
     this.dnsExpireTs.del(key);
     this.dnsExpirePending.delete(key);
+    this.dnsExpireOverflowTs.del(key);
     await rclient.zremAsync(key, domain);
   }
 
@@ -273,6 +274,7 @@ class DNSTool {
     let key = this.getReverseDNSKey(domain);
     this.dnsExpireTs.del(key);
     this.dnsExpirePending.delete(key);
+    this.dnsExpireOverflowTs.del(key);
     await rclient.zremAsync(key, ip);
   }
 
