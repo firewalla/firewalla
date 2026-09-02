@@ -31,6 +31,7 @@ const LRU = require('lru-cache');
 // rdns TTL refresh throttle: one EXPIRE per key per period; throttled refreshes are deferred
 // (not dropped) and flushed by _drainDnsTTL, bounding any TTL-less window to one period.
 const RDNS_TTL_REFRESH_PERIOD = 1800 * 1000;
+const MAX_DNS_EXPIRE_PENDING = 50000;
 
 const firewalla = require('../net2/Firewalla.js');
 
@@ -52,7 +53,7 @@ class DNSTool {
       this.dnsExpireTs = new LRU({max: 50000, maxAge: 24 * 3600 * 1000});
       // keys whose TTL refresh was throttled; _drainDnsTTL flushes them within one period
       this.dnsExpirePending = new Map();
-      setInterval(() => this._drainDnsTTL(), RDNS_TTL_REFRESH_PERIOD);
+      this.dnsExpireTimer = setInterval(() => this._drainDnsTTL(), RDNS_TTL_REFRESH_PERIOD);
     }
     return instance;
   }
@@ -66,6 +67,11 @@ class DNSTool {
       this.dnsExpireTs.set(key, now);
       this.dnsExpirePending.delete(key);
       return true;
+    }
+    if (!this.dnsExpirePending.has(key) && this.dnsExpirePending.size >= MAX_DNS_EXPIRE_PENDING) {
+      const oldestKey = this.dnsExpirePending.keys().next().value;
+      this.dnsExpirePending.delete(oldestKey);
+      log.warn(`Deferred rdns TTL refresh limit reached: ${MAX_DNS_EXPIRE_PENDING}`);
     }
     this.dnsExpirePending.set(key, expr);
     return false;
