@@ -1564,6 +1564,27 @@ check_docker() {
   echo ""
 }
 
+check_customized_scripts() {
+  echo "---------------------- Customized Scripts ----------------------"
+  local POST_MAIN_DIR="$HOME/.firewalla/config/post_main.d"
+  local USER_CRONTAB="$HOME/.firewalla/config/user_crontab"
+  echo "post main scripts ($POST_MAIN_DIR):"
+  if [[ -d "$POST_MAIN_DIR" ]] && [[ -n "$(ls -A "$POST_MAIN_DIR" 2>/dev/null)" ]]; then
+    ls -l "$POST_MAIN_DIR" | tail -n +2
+  else
+    echo "  none"
+  fi
+  echo ""
+  echo "user crontab ($USER_CRONTAB):"
+  if [[ -s "$USER_CRONTAB" ]]; then
+    grep -v '^\s*\(#\|$\)' "$USER_CRONTAB"
+  else
+    echo "  none"
+  fi
+  echo ""
+  echo ""
+}
+
 run_ifconfig() {
   echo "---------------------- ifconfig ----------------------"
   ifconfig
@@ -1650,6 +1671,7 @@ usage() {
     echo "  -d  | --dhcp"
     echo "  -re | --redis"
     echo "        --docker"
+    echo "        --custom"
     echo "  -n  | --network"
     echo "  --ap"
     echo "  -p  | --port"
@@ -1731,6 +1753,11 @@ while [ "$1" != "" ]; do
         FAST=true
         check_docker
         ;;
+    --custom)
+        shift
+        FAST=true
+        check_customized_scripts
+        ;;
     -c | --connection)
         shift
         FAST=true
@@ -1784,6 +1811,7 @@ if [ "$FAST" == false ]; then
     check_tag
     check_hosts
     check_docker
+    check_customized_scripts
     run_lsusb
     check_eth_count
     check_iptables
