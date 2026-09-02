@@ -69,18 +69,31 @@ describe('/ss garbage route', function() {
     const handler = getGarbageHandler();
     const req = {query: {}};
     const writes = [];
+    let resolveResponse;
+    let rejectResponse;
+    const responseComplete = new Promise((resolve, reject) => {
+      resolveResponse = resolve;
+      rejectResponse = reject;
+    });
     const res = {
       status() {
         return this;
       },
       json() {},
       write(chunk) {
-        writes.push(chunk);
+        try {
+          writes.push(chunk);
+        } catch (error) {
+          rejectResponse(error);
+        }
       },
-      end() {},
+      end() {
+        resolveResponse();
+      },
     };
 
     await handler(req, res);
+    await responseComplete;
     assert.strictEqual(writes.length, 100);
   });
 });
