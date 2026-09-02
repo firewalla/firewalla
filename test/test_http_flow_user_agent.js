@@ -70,24 +70,31 @@ describe('HttpFlow User-Agent history retention', function () {
   });
 
   it('uses the same bounded write path for cached User-Agents', async () => {
-    let args;
+    const calls = [];
 
     rclient.evalAsync = async (...callArgs) => {
-      args = callArgs;
+      calls.push(callArgs);
       return 1;
     };
 
+    const userAgent = 'test-agent-cached-unique';
+    httpFlow.detector = {
+      detect: () => ({
+        os: { family: 'Linux', name: 'Linux' },
+        client: { name: 'test-client' },
+        device: {},
+      }),
+    };
+
+    await httpFlow.processUserAgent('00:11:22:33:44:55', { user_agent: userAgent });
+
     httpFlow.detector = null;
+    await httpFlow.processUserAgent('AA:BB:CC:DD:EE:FF', { user_agent: userAgent });
 
-    await httpFlow.processUserAgent('00:11:22:33:44:55', {
-      user_agent: 'test-agent-cached',
-    });
-
-    httpFlow.processUserAgent = httpFlow.processUserAgent;
-    httpFlow.__testNoop = true;
-
-    const cachedValue = httpFlow;
-    expect(args).to.equal(undefined);
-    expect(cachedValue).to.be.ok;
+    expect(calls.length).to.equal(2);
+    expect(calls[0][0]).to.contain('ZREMRANGEBYRANK');
+    expect(calls[1][0]).to.contain('ZREMRANGEBYRANK');
+    expect(calls[1][5]).to.equal(100);
+    expect(calls[1][6]).to.be.a('string');
   });
 });
