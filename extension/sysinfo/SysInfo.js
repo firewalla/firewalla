@@ -1105,6 +1105,7 @@ async function getReleaseInfo() {
 
 module.exports = {
   getSysInfo: getSysInfo,
+  getWlanInfo: getWlanInfo,
   startUpdating: startUpdating,
   stopUpdating: stopUpdating,
   getRealMemoryUsage:getRealMemoryUsage,
