@@ -40,7 +40,7 @@ describe('WHOIS response size limit', function () {
     return new Promise((resolve, reject) => {
       server = net.createServer(socket => {
         socket.on('data', () => {});
-        socket.write(response);
+        socket.end(response);
       });
 
       server.once('error', reject);
