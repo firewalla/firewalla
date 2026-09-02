@@ -207,6 +207,10 @@ class NavyPlatform extends Platform {
     return `${__dirname}/files/libdnsproxy.so`
   }
 
+  async getWpaCliBinPath() {
+    return null;
+  }
+
   getSpeedtestCliBinPath() {
     return `${f.getRuntimeInfoFolder()}/assets/speedtest`
   }

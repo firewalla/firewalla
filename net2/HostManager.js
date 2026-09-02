@@ -436,6 +436,8 @@ module.exports = class HostManager extends Monitorable {
     json.kernelVersion = sysInfo.kernelVersion;
     if (sysInfo.usbInfo) // absent if the USB bus cannot be listed, which is not the same as nothing plugged in
       json.usbInfo = sysInfo.usbInfo;
+    if (sysInfo.dockerEmmcUsage && sysInfo.dockerEmmcUsage.length > 0)
+      json.dockerEmmcUsage = sysInfo.dockerEmmcUsage;
     const cpuUsageRecords = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_CPU_USAGE, Date.now() / 1000 - 60, Date.now() / 1000).map(r => JSON.parse(r));
     json.sysMetrics = {
       memUsage: sysInfo.realMem,
@@ -760,11 +762,6 @@ module.exports = class HostManager extends Monitorable {
     extdata.ntp = {
       localServerStatus: fc.isFeatureOn('ntp_redirect') ?
         Number(await rclient.getAsync(Constants.REDIS_KEY_NTP_SERVER_STATUS)) : null
-    }
-
-    const sysInfo = await SysInfo.getSysInfo();
-    if (sysInfo.dockerEmmcUsage && sysInfo.dockerEmmcUsage.length > 0) {
-      extdata.dockerEmmcUsage = sysInfo.dockerEmmcUsage;
     }
 
     json.extension = extdata;
@@ -1709,6 +1706,7 @@ module.exports = class HostManager extends Monitorable {
       this.appConfsForInit(json),
       this.resourcesForInit(json),
       this.extraTimeRequestsForInit(json),
+      this.recentBlockStatsForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
 
@@ -1767,6 +1765,55 @@ module.exports = class HostManager extends Monitorable {
         log.error(`Failed to load extra time requests for init: ${err.message}`);
         json.extraTimeRequests = [];
       }
+    }
+  }
+
+  // drops records for devices that no longer exist, adds a `${field}Cnt` distinct-value count for
+  // each field present on the records (e.g. deviceCnt/destCnt) computed over the full (post-filter)
+  // record set, and caps the returned records to the top 5 by cnt
+  summarizeBlockStatsEntry(entry) {
+    const records = (entry.records || []).filter(r => !r.device || this.getHostFastByMAC(r.device));
+    const fields = records.length ? Object.keys(records[0]).filter(k => k !== 'cnt') : [];
+    const fieldCounts = {};
+    for (const field of fields) {
+      fieldCounts[`${field}Cnt`] = new Set(records.map(r => r[field]).filter(v => v != null)).size;
+    }
+    const topRecords = records.slice().sort((a, b) => b.cnt - a.cnt).slice(0, 5);
+    return Object.assign({}, entry, { records: topRecords }, fieldCounts);
+  }
+
+  async recentBlockStatsForInit(json) {
+    json.recentBlockStats = [];
+    // read the actually-existing bucket timestamps from the index rather than guessing them from
+    // the current slotSecs config - slotSecs may have changed since older buckets were written,
+    // so recomputing boundaries from today's config would miss or mis-key historical buckets
+    const retentionSecs = 604800; // 7 days, matches BlockStatsSensor's redis TTL
+    const cutoff = Math.floor(Date.now() / 1000) - retentionSecs;
+    let bucketTimestamps;
+    try {
+      // descending (newest bucket first), matching ZREVRANGEBYSCORE's max-then-min argument order
+      bucketTimestamps = await rclient.zrevrangebyscoreAsync(Constants.REDIS_KEY_BLOCK_STATS_INDEX, '+inf', cutoff);
+    } catch (err) {
+      log.error(`Failed to load recent block stats index: ${err.message}`);
+      return;
+    }
+    if (_.isEmpty(bucketTimestamps)) return;
+    const keys = bucketTimestamps.map(ts => `${Constants.REDIS_KEY_BLOCK_STATS_PREFIX}${ts}`);
+    try {
+      const values = await rclient.mgetAsync(keys);
+      values.forEach((v, i) => {
+        if (!v) return;
+        try {
+          const payload = JSON.parse(v);
+          if (Array.isArray(payload.blockStats))
+            payload.blockStats = payload.blockStats.map(entry => this.summarizeBlockStatsEntry(entry));
+          json.recentBlockStats.push(payload);
+        } catch (err) {
+          log.error(`Failed to parse block stats bucket ${bucketTimestamps[i]}`, err.message);
+        }
+      });
+    } catch (err) {
+      log.error(`Failed to load recent block stats for init: ${err.message}`);
     }
   }
 
