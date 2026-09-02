@@ -627,6 +627,10 @@ class Platform {
     
   }
 
+  async getWpaCliBinPath() {
+    return null;
+  }
+
   async getWlanVendor() {
     return '';
   }
