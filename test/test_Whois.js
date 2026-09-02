@@ -28,7 +28,7 @@ describe('Whois referral handling', () => {
     Whois.timeout = 5000;
     const result = await Whois.lookup('example.com');
 
-    expect(result.refer).to.equal('whois3.example');
+    expect(result.refer).to.equal('whois4.example');
     expect(requests).to.deep.equal([
       'whois.iana.org',
       'whois1.example',
