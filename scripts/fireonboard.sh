@@ -83,6 +83,16 @@ log "ready: internet confirmed via $NET_VIA"
 
 banner "Firewalla is up and ready to activate" "Activate this box from the MSP web console."
 
+NM_PATH=/home/pi/.node_modules/node_modules
+if [ -d "$NM_PATH" ]; then
+  if [ "$(readlink -f /home/pi/firewalla/node_modules 2>/dev/null)" != "$NM_PATH" ]; then
+    runuser -u pi -- ln -sfn "$NM_PATH" /home/pi/firewalla/node_modules &&
+      log "early linked firewalla/node_modules -> $NM_PATH "
+  fi
+else
+  log "WARN: $NM_PATH missing — bootstrap.js will fail to resolve its dependencies"
+fi
+
 T_BOOTSTRAP=$(uptime_s)
 log "launching bootstrap.js (onboard) ..."
 HOME=/home/pi FW_ONBOARD_CONFIG="$ONBOARD_CONFIG" runuser -u pi -- bash -c "
