@@ -53,7 +53,7 @@ const USER_AGENT_HISTORY_LUA = [
   '  redis.call("EXPIRE", KEYS[1], expire)',
   'end',
   'return 1'
-].join("\\n");
+].join("\n");
 
 const uaInfoCache = new LRU({max: 4096, maxAge: 86400 * 1000});
 
