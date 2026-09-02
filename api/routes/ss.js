@@ -19,6 +19,8 @@ const router = express.Router();
 const bodyParser = require('body-parser')
 
 let cache;
+const DEFAULT_GARBAGE_CHUNKS = 100;
+const MAX_GARBAGE_CHUNKS = 100;
 
 router.get('/empty', function (req, res) {
     res.sendStatus(200);
@@ -39,8 +41,13 @@ router.get('/garbage', function (req, res) {
 //    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
 //    res.set('Cache-Control', 'post-check=0, pre-check=0', false);
 //    res.set('Pragma', 'no-cache');
-    const requestedSize = (req.query.ckSize || 100);
-    
+    const rawSize = req.query.ckSize;
+    const requestedSize = rawSize === undefined || rawSize === '' ? DEFAULT_GARBAGE_CHUNKS : Number(rawSize);
+    if (!Number.isSafeInteger(requestedSize) || requestedSize < 0 || requestedSize > MAX_GARBAGE_CHUNKS) {
+        res.status(400).json({errors: ['Invalid ckSize. Expected an integer from 0 to 100.']});
+        return;
+    }
+
     const send = () => {
         for (let i = 0; i < requestedSize; i++)
             res.write(cache);
