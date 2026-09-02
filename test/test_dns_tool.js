@@ -57,8 +57,12 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     dnsTool.dnsExpirePending.clear();
     dnsTool.dnsExpireTs.reset();
 
-    for (let i = 0; i < 50000; i++)
-      dnsTool.dnsExpirePending.set('key:' + i, 86400);
+    const now = Date.now();
+    for (let i = 0; i < 50000; i++) {
+      const key = 'key:' + i;
+      dnsTool.dnsExpirePending.set(key, 86400);
+      dnsTool.dnsExpireTs.set(key, now);
+    }
 
     expect(dnsTool.tryRefreshDnsTTL('key:100', 3600)).to.equal(false);
     expect(dnsTool.dnsExpirePending.size).to.equal(50000);
