@@ -20,8 +20,7 @@ const proxyquire = require('proxyquire').noPreserveCache();
 
 const xml2json = require('../extension/xml2json/xml2json.js')
 
-const xmlString = String.raw`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<root>
+const xmlString = String.raw`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<root>
   <key>foo</key>
   <value>bar</value>
   <nested>
@@ -41,8 +40,7 @@ const soapString = String.raw`<?xml version="1.0"?>
   </s:Body>
 </s:Envelope>`
 
-const malXML = String.raw`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<root>
+const malXML = String.raw`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<root>
   <key>foo</key>
   <value>bar</value>
 </ro>`
@@ -83,15 +81,17 @@ describe('xml2json binary wrapper', () => {
 
 
 describe('xml2json output bounds', () => {
-  const EventEmitter = require('events');
+  const { EventEmitter } = require('events');
+  const { Writable } = require('stream');
 
   function createFakeChild() {
     const child = new EventEmitter();
     child.stdout = new EventEmitter();
-    child.stdin = {
-      write: () => {},
-      end: () => {}
-    };
+    child.stdin = new Writable({
+      write: (chunk, encoding, callback) => {
+        callback();
+      }
+    });
     child.killCalled = false;
     child.kill = () => {
       child.killCalled = true;
@@ -163,5 +163,25 @@ describe('xml2json output bounds', () => {
 
     expect(error).to.be.an('error');
     expect(error.message).to.equal('xml2json output exceeds maximum size of 1048576 bytes');
+  });
+
+  it('ignores stdin errors after the output limit has already rejected the parse', async () => {
+    const child = createFakeChild();
+    const parser = loadWithChild(child);
+
+    const promise = parser.parse('<root/>');
+    child.stdout.emit('data', Buffer.alloc(1024 * 1024 + 1));
+
+    let error;
+    try {
+      await promise;
+    } catch (err) {
+      error = err;
+    }
+
+    expect(error).to.be.an('error');
+    expect(error.message).to.equal('xml2json output exceeds maximum size of 1048576 bytes');
+
+    expect(() => child.stdin.emit('error', new Error('write EPIPE'))).to.not.throw();
   });
 });
