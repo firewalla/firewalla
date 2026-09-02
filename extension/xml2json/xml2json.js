@@ -48,6 +48,9 @@ async function parse(str, options = {}) {
   xml2json.on('error', err => {
     rejectAndKill(err)
   })
+  xml2json.stdin.on('error', err => {
+    rejectAndKill(err)
+  })
   xml2json.stdout.on('data', data => {
     if (settled) {
       return
