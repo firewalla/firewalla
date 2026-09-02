@@ -36,11 +36,11 @@ describe('WHOIS response size limit', function () {
     }
   });
 
-  function listen() {
+  function listen(response) {
     return new Promise((resolve, reject) => {
       server = net.createServer(socket => {
         socket.on('data', () => {});
-        socket.write('x'.repeat(1024 * 1024 + 1));
+        socket.write(response);
       });
 
       server.once('error', reject);
@@ -52,7 +52,7 @@ describe('WHOIS response size limit', function () {
   }
 
   it('rejects and closes the connection when the response exceeds 1 MiB', async () => {
-    await listen();
+    await listen('x'.repeat(1024 * 1024 + 1));
 
     let error;
     try {
@@ -70,21 +70,7 @@ describe('WHOIS response size limit', function () {
   });
 
   it('still accepts responses at or below the limit', async () => {
-    await listen();
-    
-    server.close();
-    await new Promise((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(0, '127.0.0.1', () => resolve());
-    });
-
-    const smallServer = server;
-    smallServer.removeAllListeners('connection');
-    smallServer.on('connection', socket => {
-      socket.write('ok');
-      socket.end();
-    });
-    port = smallServer.address().port;
+    await listen('ok');
 
     const result = await whoisClient.lookup('example.com', {
       host: '127.0.0.1',
