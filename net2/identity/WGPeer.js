@@ -121,7 +121,7 @@ class WGPeer extends Identity {
                 if (endpoint !== "(none)")
                   obj.endpoint = endpoint;
                 obj.rxBytes = !isNaN(rxBytes) && Number(rxBytes) || 0;
-                obj.txBytes = !isNaN(rxBytes) && Number(txBytes) || 0;
+                obj.txBytes = !isNaN(txBytes) && Number(txBytes) || 0;
                 if (autonomousPeerInfo && autonomousPeerInfo[pubKey])
                   obj.router = autonomousPeerInfo[pubKey].router;
               } else {

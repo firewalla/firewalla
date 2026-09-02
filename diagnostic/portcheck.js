@@ -17,6 +17,7 @@
 
 const util = require('util');
 const cp = require('child_process');
+const log = require('../net2/logger.js')(__filename, 'info');
 
 const execAsync = util.promisify(cp.exec);
 
@@ -25,7 +26,7 @@ const UDP = "udp";
 const PROTOCOLS = [TCP, UDP];
 const BOTH = PROTOCOLS;
 
-// iperf (10001-20000 random) and zeek (dynamic ZeekPort) are not listed here, covered by nc runtime check
+// iperf (10001-20000 random) and zeek (dynamic ZeekPort) are not listed here, covered by runtime check
 const RESERVED_PORTS = [
   { start: 0, end: 1023, protocols: BOTH, usage: "system" },
   { start: 1194, end: 1194, protocols: BOTH, usage: "openvpn server" },
@@ -53,8 +54,6 @@ const RESERVED_PORTS = [
   { start: 9964, end: 9964, protocols: [TCP], usage: "firewalla service" },
   { start: 9966, end: 9966, protocols: [TCP], usage: "firewalla service" }
 ];
-
-const TIMEOUT_SECONDS = 0.2;
 
 let instance = null;
 
@@ -86,15 +85,16 @@ class PortChecker {
     return result;
   }
 
+  // read the kernel socket table -> ipv6-only sockets and sockets allowing a second bind are not missed
   async _isPortInUse(port, protocol) {
-    const flag = protocol === UDP ? "-u " : "";
-    const cmd = "timeout " + TIMEOUT_SECONDS + " nc " + flag + "-l -p " + port;
+    const flag = protocol === UDP ? "-u" : "-t";
+    const cmd = "ss -H -n -l " + flag + " '( sport = :" + port + " )'";
     try {
-      await execAsync(cmd + " 2>&1");
-      return false; // usually unreachable, nc -l blocks until killed by timeout
+      const result = await execAsync(cmd);
+      return result.stdout.trim().length > 0;
     } catch (err) {
-      // exit 124 = killed by timeout = nc was listening = port available
-      return err.code !== 124;
+      log.error("Failed to check port " + port + "/" + protocol, err.message);
+      throw new Error("Unable to check port " + port + "/" + protocol);
     }
   }
 }
