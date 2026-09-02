@@ -46,6 +46,7 @@ const APPEND_URL_LUA = [
 const MAX_URL_LENGTH = 2048;
 
 const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
+const QUEUE_DROP_WARNING_INTERVAL = 60 * 1000; // 60 seconds;
 
 const CommonKeys = require('../net2/CommonKeys.js');
 
@@ -63,6 +64,12 @@ class DestURLFoundHook extends Hook {
       max: 1000,
       maxAge: 1000 * 60 * 5
     });
+    this.queueDropCount = 0;
+    this.lastQueueDropWarningAt = 0;
+  }
+
+  warnQueueFull(droppedCount) {
+    log.warn(`URL intel queue is full (${QUEUE_SIZE_PAUSE}), dropping ${droppedCount} URL${droppedCount === 1 ? '' : 's'} in the last ${QUEUE_DROP_WARNING_INTERVAL / 1000} seconds`);
   }
 
   async appendURL(info) {
@@ -76,7 +83,14 @@ class DestURLFoundHook extends Hook {
       member
     );
     if (added === 0) {
-      log.warn(`URL intel queue is full (${QUEUE_SIZE_PAUSE}), dropping new URL`);
+      this.queueDropCount++;
+      const now = Date.now();
+      if (now - this.lastQueueDropWarningAt >= QUEUE_DROP_WARNING_INTERVAL) {
+        const droppedCount = this.queueDropCount;
+        this.queueDropCount = 0;
+        this.lastQueueDropWarningAt = now;
+        this.warnQueueFull(droppedCount);
+      }
     }
     return added === 1;
   }
