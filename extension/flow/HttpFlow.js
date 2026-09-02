@@ -40,6 +40,21 @@ const validator = require('validator');
 const fs = require('fs')
 const LRU = require('lru-cache');
 
+const net2Config = require('../../net2/config.js');
+
+const USER_AGENT_HISTORY_LUA = [
+  'local keep = tonumber(ARGV[3])',
+  'redis.call("ZADD", KEYS[1], ARGV[1], ARGV[4])',
+  'if keep > 0 then',
+  '  redis.call("ZREMRANGEBYRANK", KEYS[1], 0, -keep - 1)',
+  'end',
+  'local expire = tonumber(ARGV[2])',
+  'if expire and expire > 0 then',
+  '  redis.call("EXPIRE", KEYS[1], expire)',
+  'end',
+  'return 1'
+].join("\\n");
+
 const uaInfoCache = new LRU({max: 4096, maxAge: 86400 * 1000});
 
 let instance = null;
@@ -87,6 +102,24 @@ class HttpFlow {
     }
   }
 
+  getUserAgentHistoryCount() {
+    const count = _.get(net2Config.getConfig(), ['sensors', 'OldDataCleanSensor', 'user_agent2', 'count']);
+    return Number.isInteger(count) && count > 0 ? count : 100;
+  }
+
+  async saveUserAgentHistory(key, value, expireTime) {
+    const count = this.getUserAgentHistoryCount();
+    return rclient.evalAsync(
+      USER_AGENT_HISTORY_LUA,
+      1,
+      key,
+      Date.now() / 1000,
+      expireTime,
+      count,
+      value
+    );
+  }
+
   async processUserAgent(mac, flowObject) {
     const userAgent = flowObject.user_agent
     const expireTime = config.get('userAgent.expires');
@@ -95,8 +128,7 @@ class HttpFlow {
     const cachedStr = uaInfoCache.get(userAgent);
     if (cachedStr) {
       log.debug('Found in LRU', mac, userAgent)
-      await rclient.zaddAsync(key2, Date.now() / 1000, cachedStr);
-      await rclient.expireAsync(key2, expireTime);
+      await this.saveUserAgentHistory(key2, cachedStr, expireTime);
       return
     }
 
@@ -148,8 +180,7 @@ class HttpFlow {
 
       const resultStr = JSON.stringify(result)
       try {
-        await rclient.zaddAsync(key2, Date.now() / 1000, resultStr);
-        await rclient.expireAsync(key2, expireTime);
+        await this.saveUserAgentHistory(key2, resultStr, expireTime);
       } catch (err) {
         log.error(`Failed to save user agent info for mac ${mac}, err: ${err}`);
       }
