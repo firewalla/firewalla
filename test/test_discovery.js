@@ -100,6 +100,27 @@ describe('Discovery.discoverMac', () => {
     expect(scanCalled).to.equal(false);
   });
 
+  it('falls back to Nmap when the ARP table cannot be read', async () => {
+    let scanCalled = false;
+    const nmapHost = {
+      ipv4Addr: '192.168.1.40',
+      mac: targetMac
+    };
+    const discovery = createDiscovery(async () => {
+      scanCalled = true;
+      return [nmapHost];
+    });
+
+    discovery.getAndSaveArpTable = (callback) => {
+      callback(new Error('ARP table unavailable'), {});
+    };
+
+    const result = await discovery.discoverMac(targetMac);
+
+    expect(result).to.deep.equal(nmapHost);
+    expect(scanCalled).to.equal(true);
+  });
+
   it('falls back to Nmap when the target MAC is absent from ARP', async () => {
     let scanCalled = false;
     const nmapHost = {
