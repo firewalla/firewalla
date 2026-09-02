@@ -47,6 +47,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
   beforeEach(() => {
     dnsTool.dnsExpirePending.clear();
     dnsTool.dnsExpireTs.reset();
+    dnsTool.dnsExpireOverflowTs.reset();
     dnsTool.dnsExpireOverflowCount = 0;
     warnings.length = 0;
   });
@@ -84,17 +85,12 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     expect(dnsTool.dnsExpireOverflowCount).to.equal(0);
   });
 
-  it('refreshes every accepted update across the overflow path', async () => {
-    const deferredExpires = [];
+  it('refreshes an overflow key inline only once within the throttle period', async () => {
     const inlineExpires = [];
     redisClient.expireAsync = (key, expr) => {
       inlineExpires.push([key, expr]);
       return Promise.resolve();
     };
-    redisClient.multi = () => ({
-      expire: (key, expr) => deferredExpires.push([key, expr]),
-      execAsync: () => Promise.resolve()
-    });
 
     const now = Date.now();
     for (let i = 0; i < 50000; i++) {
@@ -104,19 +100,14 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     }
 
     const overflowKey = 'rdns:ip:50000';
-    expect(dnsTool.tryRefreshDnsTTL(overflowKey, 3600)).to.equal(true);
-    await redisClient.expireAsync(overflowKey, 3600);
-
-    await dnsTool._drainDnsTTL();
+    for (let i = 0; i < 3; i++) {
+      if (dnsTool.tryRefreshDnsTTL(overflowKey, 3600))
+        await redisClient.expireAsync(overflowKey, 3600);
+    }
 
     expect(inlineExpires).to.deep.equal([[overflowKey, 3600]]);
-    expect(deferredExpires.length).to.equal(50000);
-    expect(deferredExpires[0]).to.deep.equal(['rdns:ip:0', 86400]);
-    expect(deferredExpires[49999]).to.deep.equal(['rdns:ip:49999', 86400]);
-    expect(dnsTool.dnsExpirePending.size).to.equal(0);
-    expect(warnings).to.deep.equal([
-      'Deferred rdns TTL refresh limit reached: 50000; refreshed inline: 1'
-    ]);
+    expect(dnsTool.dnsExpirePending.size).to.equal(50000);
+    expect(dnsTool.dnsExpireOverflowCount).to.equal(1);
   });
 
   it('aggregates overflow warnings until the pending queue drains', async () => {
