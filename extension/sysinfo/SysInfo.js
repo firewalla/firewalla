@@ -319,6 +319,40 @@ async function getKernelVersion() {
   return kernelVersion;
 }
 
+// Wraps an async producer with a TTL cache and in-flight de-dup, same pattern as the
+// usbInfoPromise guard on getUsbInfo() below: getSysInfo() can be called concurrently
+// (e.g. by both basicDataForInit() and extensionDataForInit() in the same init request),
+// so without de-dup a slow/expensive producer would otherwise run once per caller.
+// A falsy/null result is never cached, so a failed lookup is retried on the next call.
+// ttlMs === Infinity caches the first successful result forever.
+function cachedAsync(producer, ttlMs) {
+  let value, ts = 0, inflight = null;
+  return async function() {
+    if (ts && (ttlMs === Infinity || Date.now() - ts < ttlMs))
+      return value;
+    if (!inflight) {
+      inflight = producer().then((result) => {
+        if (result != null) {
+          value = result;
+          ts = Date.now();
+        }
+        inflight = null;
+        return result;
+      }).catch((err) => {
+        inflight = null;
+        throw err;
+      });
+    }
+    return inflight;
+  };
+}
+
+// /proc/version never changes without a reboot, so cache it forever like kernelVersion above.
+const getProcVersion = cachedAsync(
+  () => exec("cat /proc/version").then(result => result.stdout.trim()).catch(err => null),
+  Infinity
+);
+
 async function getMultiProfileSupportFlag() {
   const cmd = "sudo bash -c 'test -e /etc/openvpn/easy-rsa/keys2/ta.key'"
   try {
@@ -473,37 +507,72 @@ async function getActiveContainers() {
   }
 }
 
-function getTop10RSSProcesses() {
+async function computeTop10RSSProcesses() {
   try {
-    const psOutput = execSync(
-      'ps -eo pid,rss,comm,args:256 --no-headers --sort=-rss | head -n 10',
-      { encoding: 'utf-8' }
-    ).trim().split('\n');
+    const psOutput = await exec('ps -eo pid,rss,comm,args:256 --no-headers --sort=-rss | head -n 10')
+      .then(result => result.stdout.trim().split('\n').filter(l => l));
 
-    return psOutput.map(line => {
+    const procs = psOutput.map(line => {
       const [pid, rss, comm, ...args] = line.trim().split(/\s+/);
-      let exePath = '';
+      return { pid: parseInt(pid), rss, comm, args: args.filter(a => a).join(' '), exe: null };
+    }).filter(p => Number.isInteger(p.pid) && p.pid > 0);
+
+    // Reading /proc/<pid>/exe directly needs no subprocess at all, and works for any
+    // process this user can ptrace (own uid, or already root) - which is most of them.
+    // Only processes owned by another user hit the sudo fallback below.
+    const needSudo = [];
+    await Promise.all(procs.map(async (p) => {
       try {
-        exePath = execSync(`sudo readlink /proc/${pid}/exe`, { encoding: 'utf-8' }).trim();
-      } catch (e) {
-        // if can't get exe path, use comm name
-        exePath = comm || 'unknown';
+        p.exe = await fs.promises.readlink(`/proc/${p.pid}/exe`);
+      } catch (err) {
+        needSudo.push(p);
       }
-      return {
-        pid: parseInt(pid),
-        rss: rss,
-        exe: exePath,
-        command: comm,
-        args: args.filter(a => a).join(' ')
-      };
-    });
+    }));
+
+    // Batch whatever's left into a single sudo call instead of one sudo spawn per pid -
+    // pids are guaranteed numeric (parsed above), so safe to interpolate into the script.
+    if (needSudo.length) {
+      const script = needSudo.map(p => `echo "${p.pid} $(readlink /proc/${p.pid}/exe 2>/dev/null)"`).join('; ');
+      const exeByPid = await exec(`sudo bash -c '${script}'`).then(result => {
+        const map = {};
+        for (const line of result.stdout.trim().split('\n')) {
+          const idx = line.indexOf(' ');
+          if (idx > 0) map[line.slice(0, idx)] = line.slice(idx + 1).trim();
+        }
+        return map;
+      }).catch(() => ({}));
+      for (const p of needSudo)
+        p.exe = exeByPid[p.pid] || null;
+    }
+
+    return procs.map(p => ({
+      pid: p.pid,
+      rss: p.rss,
+      exe: p.exe || p.comm || 'unknown',
+      command: p.comm,
+      args: p.args
+    }));
   } catch (err) {
     log.error("Failed to get top 10 RSS processes:", err);
     return [];
   }
 }
 
+// Diagnostic snapshot, doesn't need per-request freshness; short TTL + in-flight de-dup
+// keeps repeated/concurrent getSysInfo() calls cheap. See cachedAsync() above.
+const getTop10RSSProcesses = cachedAsync(computeTop10RSSProcesses, 5 * 1000);
+
 async function getSysInfo() {
+  // independent lookups (some cached, some live), run in parallel rather than serially
+  const [kernelVersionVal, procVersion, noAutoUpgrade, autoupgrade, usbInfoVal, processes] = await Promise.all([
+    getKernelVersion(),
+    getProcVersion(),
+    getAutoUpgrade(),
+    upgradeManager.getAutoUpgradeFlags(),
+    getUsbInfo(),
+    getTop10RSSProcesses(),
+  ]);
+
   let sysinfo = {
     cpu: cpuUsage,
     cpuModel: cpuModel,
@@ -526,21 +595,21 @@ async function getSysInfo() {
     threadInfo: threadInfo,
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
-    kernelVersion: await getKernelVersion(),
-    procVersion: await exec("cat /proc/version").then(result => result.stdout.trim()).catch(err => null),
+    kernelVersion: kernelVersionVal,
+    procVersion,
     diskInfo: diskInfo || [],
     //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
-    no_auto_upgrade: await getAutoUpgrade(),
-    autoupgrade: await upgradeManager.getAutoUpgradeFlags(),
+    no_auto_upgrade: noAutoUpgrade,
+    autoupgrade,
     maxPid: maxPid,
     ethInfo,
     wlanInfo,
-    usbInfo: await getUsbInfo(),
+    usbInfo: usbInfoVal,
     slabInfo,
     diskUsage: diskUsage,
     diskWriteStats: diskWriteStats,
-    processes : getTop10RSSProcesses(),
+    processes,
     releaseInfo: releaseInfo
   }
 

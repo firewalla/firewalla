@@ -81,6 +81,12 @@ module.exports = {
   REDIS_KEY_WIRELESS_AUTO_GROUP: "wireless_auto_group:", // wireless_auto_group:${mac}
   REDIS_KEY_POLICY_DISTURB_CLOUD_CONFIG: "policy_disturb_cloud_config",
   REDIS_KEY_POLICY_DISTURB_CONFIG: "policy_disturb_config",
+  REDIS_KEY_BLOCK_STATS_CLOUD_CONFIG: "block_stats_cloud_config",
+  REDIS_KEY_BLOCK_STATS_CONFIG: "block_stats_config",
+  REDIS_KEY_BLOCK_STATS_PREFIX: "blockStats::",
+  // zset tracking which blockStats::<ts> bucket keys actually exist (score = member = ts), so
+  // readers don't have to guess bucket boundaries from the (possibly since-changed) slotSecs config
+  REDIS_KEY_BLOCK_STATS_INDEX: "blockStats:index",
   REDIS_KEY_NOISE_DOMAIN_CLOUD_CONFIG: "noise_domain_cloud_config",
   REDIS_KEY_NOISE_DOMAIN_CONFIG: "noise_domain",
   REDIS_KEY_FLOW_SIGNATURE_CLOUD_CONFIG: "flow_signature_cloud_config",
