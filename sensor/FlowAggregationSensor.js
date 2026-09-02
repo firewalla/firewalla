@@ -82,12 +82,9 @@ class FlowAggregationSensor extends Sensor {
   }
 
   _getCacheEntry(cacheName, cache, bucketKey, entryKey, createEntry) {
-    if (!cache[bucketKey])
-      cache[bucketKey] = {};
-
-    let entry = cache[bucketKey][entryKey];
-    if (entry)
-      return entry;
+    const bucket = cache[bucketKey];
+    if (bucket && bucket[entryKey])
+      return bucket[entryKey];
 
     if (this.cacheEntryCounts[cacheName] >= MAX_CACHE_ENTRIES) {
       this.cacheDropCounts[cacheName]++;
@@ -98,8 +95,9 @@ class FlowAggregationSensor extends Sensor {
       return null;
     }
 
-    entry = createEntry();
-    cache[bucketKey][entryKey] = entry;
+    const cacheBucket = bucket || (cache[bucketKey] = {});
+    const entry = createEntry();
+    cacheBucket[entryKey] = entry;
     this.cacheEntryCounts[cacheName]++;
     return entry;
   }
@@ -296,12 +294,12 @@ class FlowAggregationSensor extends Sensor {
         category,
         () => ({download: 0, upload: 0, duration: 0, ts: _ts})
       );
-      if (!cache)
-        return;
-      cache.upload += (fd === "out" ? rb : ob);
-      cache.download += (fd === "out" ? ob : rb);
-      cache.duration = Math.max(cache.ts + cache.duration, ts + du) - Math.min(cache.ts, ts);
-      cache.ts = Math.min(cache.ts, _ts);
+      if (cache) {
+        cache.upload += (fd === "out" ? rb : ob);
+        cache.download += (fd === "out" ? ob : rb);
+        cache.duration = Math.max(cache.ts + cache.duration, ts + du) - Math.min(cache.ts, ts);
+        cache.ts = Math.min(cache.ts, _ts);
+      }
     }
 
     const app = _.get(flow, ["intel", "app"]);
@@ -313,12 +311,12 @@ class FlowAggregationSensor extends Sensor {
         app,
         () => ({download: 0, upload: 0, duration: 0, ts: _ts})
       );
-      if (!cache)
-        return;
-      cache.upload += (fd === "out" ? rb : ob);
-      cache.download += (fd === "out" ? ob : rb);
-      cache.duration = Math.max(cache.ts + cache.duration, ts + du) - Math.min(cache.ts, ts);
-      cache.ts = Math.min(cache.ts, _ts);
+      if (cache) {
+        cache.upload += (fd === "out" ? rb : ob);
+        cache.download += (fd === "out" ? ob : rb);
+        cache.duration = Math.max(cache.ts + cache.duration, ts + du) - Math.min(cache.ts, ts);
+        cache.ts = Math.min(cache.ts, _ts);
+      }
     }
   }
 
