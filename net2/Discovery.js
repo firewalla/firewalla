@@ -94,7 +94,12 @@ module.exports = class {
   async discoverMac(mac) {
     // DHCP-triggered discovery commonly runs after a lease has been assigned, so consult
     // the kernel ARP table before starting an expensive subnet-wide Nmap scan.
-    const arpTable = await util.promisify(this.getAndSaveArpTable).bind(this)();
+    let arpTable = {};
+    try {
+      arpTable = await util.promisify(this.getAndSaveArpTable).bind(this)();
+    } catch (err) {
+      log.error("discoverMac: failed to read ARP table, falling back to Nmap: " + err);
+    }
     if (arpTable[mac]) {
       log.info("discoverMac:found via ARP", arpTable[mac]);
       return arpTable[mac];
