@@ -72,6 +72,38 @@ describe('WHOIS response size limit', function () {
     await connectionClosed;
   });
 
+
+  it('rejects on an expired deadline and closes the active connection', async () => {
+    await new Promise((resolve, reject) => {
+      server = net.createServer(socket => {
+        connectionClosed = new Promise(resolve => socket.once('close', resolve));
+        socket.on('data', () => {});
+      });
+
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => {
+        port = server.address().port;
+        resolve();
+      });
+    });
+
+    let error;
+    try {
+      await whoisClient.lookup('example.com', {
+        host: '127.0.0.1',
+        port,
+        raw: true,
+        deadline: Date.now() + 50,
+      });
+    } catch (err) {
+      error = err;
+    }
+
+    expect(error).to.be.an('error');
+    expect(error.message).to.equal('WHOIS lookup timed out');
+    await connectionClosed;
+  });
+
   it('still accepts responses at or below the limit', async () => {
     const response = 'x'.repeat(1024 * 1024);
     await listen(response);
