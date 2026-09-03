@@ -54,7 +54,7 @@ class DNSTool {
       // keys whose TTL refresh was throttled; _drainDnsTTL flushes them within one period
       this.dnsExpirePending = new Map();
       // Keys refreshed inline because the deferred queue was full; suppress repeat inline refreshes
-      // until the throttle period expires.
+      // until the queue has capacity again or the throttle period expires.
       this.dnsExpireOverflowTs = new LRU({max: MAX_DNS_EXPIRE_PENDING, maxAge: RDNS_TTL_REFRESH_PERIOD});
       // Number of unique refreshes handled inline because the deferred queue was full.
       // Logged and reset once per drain period to avoid one warning per incoming update.
@@ -68,8 +68,13 @@ class DNSTool {
   // refresh into dnsExpirePending so _drainDnsTTL still issues it within one period.
   tryRefreshDnsTTL(key, expr) {
     const now = Date.now();
-    if (this.dnsExpireOverflowTs.has(key))
+    if (this.dnsExpireOverflowTs.has(key)) {
+      if (this.dnsExpirePending.size < MAX_DNS_EXPIRE_PENDING) {
+        this.dnsExpireOverflowTs.delete(key);
+        this.dnsExpirePending.set(key, expr);
+      }
       return false;
+    }
     const last = this.dnsExpireTs.get(key);
     if (!last || now - last >= RDNS_TTL_REFRESH_PERIOD) {
       this.dnsExpireTs.set(key, now);
