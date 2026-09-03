@@ -3481,7 +3481,13 @@ class netBot extends ControllerBot {
         try {
           validateVPNProfileId(profileId);
         } catch (err) {
-          throw { code: 400, msg: `Automated deletion is refused for an invalid profile ID: ${profileId}` };
+          if (await c.profileExists(profileId)) {
+            throw {
+              code: 400,
+              msg: `Automated deletion is refused for legacy ${type} VPN client ${profileId}`
+            };
+          }
+          throw err;
         }
         const vpnClient = new c({profileId});
         const status = await vpnClient.status();
