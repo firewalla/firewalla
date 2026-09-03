@@ -375,9 +375,53 @@ class InternetSpeedtestPlugin extends Sensor {
     if (!_.isString(extraEnvs))
       throw new Error("Invalid speedtest environment");
 
-    for (const assignment of extraEnvs.trim().split(/\s+/)) {
-      if (!assignment)
+    const assignments = [];
+    let current = "";
+    let quote = null;
+    let escaped = false;
+
+    for (const char of extraEnvs.trim()) {
+      if (escaped) {
+        current += char;
+        escaped = false;
         continue;
+      }
+
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+
+      if (quote) {
+        if (char === quote) {
+          quote = null;
+        } else {
+          current += char;
+        }
+        continue;
+      }
+
+      if (char === "'" || char === '"') {
+        quote = char;
+        continue;
+      }
+
+      if (/\s/.test(char)) {
+        if (current)
+          assignments.push(current);
+        current = "";
+        continue;
+      }
+
+      current += char;
+    }
+
+    if (escaped || quote)
+      throw new Error("Invalid speedtest environment assignment");
+    if (current)
+      assignments.push(current);
+
+    for (const assignment of assignments) {
       const separator = assignment.indexOf("=");
       if (separator <= 0)
         throw new Error("Invalid speedtest environment assignment");
