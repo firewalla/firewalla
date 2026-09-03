@@ -3432,6 +3432,7 @@ class netBot extends ControllerBot {
         if (!profileId) {
           throw { code: 400, msg: "'profileId' is not specified." }
         }
+        validateVPNProfileId(profileId);
         const c = VPNClient.getClass(type);
         if (!c) {
           throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
