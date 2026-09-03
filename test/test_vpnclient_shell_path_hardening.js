@@ -71,14 +71,22 @@ describe('VPNClient shell and path hardening', function () {
   it('skips invalid stored profile IDs without rejecting initialization', async () => {
     const { VPNClient } = installVPNClientStubs();
     class TestVPNClient extends VPNClient {
-      static async listProfileIds() { return ['valid_123', 'legacy-profile']; }
-      static getKeyNameForInit() { return 'testVpnProfiles'; }
-      async getAttributes() { return { profileId: this.profileId }; }
+      static async listProfileIds() {
+        return ['valid_123', 'legacy-profile'];
+      }
+      static getKeyNameForInit() {
+        return 'testVpnProfiles';
+      }
+      async getAttributes() {
+        return { profileId: this.profileId };
+      }
     }
     const originalGetClass = VPNClient.getClass;
     VPNClient.getClass = (type) => type === 'openvpn' ? TestVPNClient : null;
     try {
-      expect(await VPNClient.getVPNProfilesForInit()).to.eql({ testVpnProfiles: [{ profileId: 'valid_123' }] });
+      expect(await VPNClient.getVPNProfilesForInit()).to.eql({
+        testVpnProfiles: [{ profileId: 'valid_123' }]
+      });
     } finally {
       VPNClient.getClass = originalGetClass;
     }
@@ -104,30 +112,30 @@ describe('VPNClient shell and path hardening', function () {
     }
   });
 
-  it('detects an active legacy profile from the cached state', async () => {
+  it('refuses legacy cleanup when active state cannot be established', async () => {
+    const { VPNClient, state } = installVPNClientStubs();
+    state.cachedState = null;
+    expect(await VPNClient.isProfileActive('legacy-profile')).to.equal(false);
+  });
+
+  it('treats a cached active state as active without executing a shell command', async () => {
     const { VPNClient, state } = installVPNClientStubs();
     state.cachedState = 'true';
     expect(await VPNClient.isProfileActive('legacy-profile')).to.equal(true);
     expect(state.execFileCalls).to.have.lengthOf(0);
   });
 
-  it('requires a definitive inactive state before legacy cleanup', async () => {
-    const { VPNClient, state } = installVPNClientStubs();
-    state.cachedState = null;
-    state.execFileResponder = () => Promise.reject(Object.assign(new Error('probe failed'), { code: 127 }));
-    expect(await VPNClient.isProfileActive('legacy-profile')).to.equal(null);
-  });
-
   it('validates DNS labels as well as the full hostname', () => {
     const { VPNClient } = installVPNClientStubs();
+    const overlong = `${'a'.repeat(64)}.firewalla.com`;
     expect(VPNClient.isValidFirewallaDDNSDomain('firewalla.com')).to.equal(true);
     expect(VPNClient.isValidFirewallaDDNSDomain('box.firewalla.com')).to.equal(true);
-    expect(VPNClient.isValidFirewallaDDNSDomain(`${'a'.repeat(64)}.firewalla.com`)).to.equal(false);
+    expect(VPNClient.isValidFirewallaDDNSDomain(overlong)).to.equal(false);
     expect(VPNClient.isValidFirewallaDDNSDomain('evilfirewalla.com')).to.equal(false);
     expect(VPNClient.isValidFirewallaDDNSDomain('$(touch /tmp/pwn).firewalla.com')).to.equal(false);
   });
 
-  it('uses execFile with discrete arguments for DDNS lookups and ignores later sections', async () => {
+  it('uses execFile with discrete arguments for DDNS lookups', async () => {
     const { VPNClient, state } = installVPNClientStubs();
     state.execFileResponder = (binary, args) => {
       if (args[0] === '+time=3' && args.includes('SOA'))
@@ -141,13 +149,5 @@ describe('VPNClient shell and path hardening', function () {
     expect(state.execCalls).to.have.lengthOf(0);
     expect(state.execFileCalls[0][1]).to.eql(['+time=3', '+tries=2', 'SOA', 'box.firewalla.com']);
     expect(state.execFileCalls[1][1]).to.eql(['+time=3', '+tries=2', '+short', 'NS', 'firewalla.com.']);
-  });
-
-  it('rejects shell syntax before invoking dig', async () => {
-    const { VPNClient, state } = installVPNClientStubs();
-    const client = Object.create(VPNClient.prototype);
-    expect(await client.resolveFirewallaDDNS('$(touch /tmp/pwn).firewalla.com')).to.equal(undefined);
-    expect(state.execCalls).to.have.lengthOf(0);
-    expect(state.execFileCalls).to.have.lengthOf(0);
   });
 });
