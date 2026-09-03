@@ -12,8 +12,28 @@ const expect = chai.expect;
 const proxyquire = require('proxyquire').noCallThru();
 
 describe('VPNClient shell and path hardening', function () {
+  let execCalls;
+  let execFileCalls;
+  let VPNClient;
+
+  beforeEach(() => {
+    execCalls = [];
+    execFileCalls = [];
+    VPNClient = proxyquire('../extension/vpnclient/VPNClient.js', {
+      'child-process-promise': {
+        exec: (...args) => {
+          execCalls.push(args);
+          return Promise.reject(new Error('shell execution was not expected'));
+        },
+        execFile: (...args) => {
+          execFileCalls.push(args);
+          return Promise.resolve({stdout: ''});
+        }
+      }
+    });
+  });
+
   it('enforces the profileId format at the VPNClient boundary', () => {
-    const VPNClient = require('../extension/vpnclient/VPNClient.js');
 
     expect(() => VPNClient.validateProfileId('valid_123')).to.not.throw();
     expect(() => VPNClient.validateProfileId('../escape')).to.throw();
@@ -24,8 +44,6 @@ describe('VPNClient shell and path hardening', function () {
   });
 
   it('accepts only actual firewalla.com and firewalla.org hostnames', () => {
-    const VPNClient = require('../extension/vpnclient/VPNClient.js');
-
     expect(VPNClient.isValidFirewallaDDNSDomain('firewalla.com')).to.equal(true);
     expect(VPNClient.isValidFirewallaDDNSDomain('box.firewalla.com')).to.equal(true);
     expect(VPNClient.isValidFirewallaDDNSDomain('box.example.firewalla.org')).to.equal(true);
@@ -37,16 +55,21 @@ describe('VPNClient shell and path hardening', function () {
   });
 
   it('uses execFile with discrete arguments for DDNS lookups', async () => {
-    const execCalls = [];
-    const execFileCalls = [];
-    const VPNClient = proxyquire('../extension/vpnclient/VPNClient.js', {
+    execCalls.length = 0;
+    execFileCalls.length = 0;
+    execFileCalls.push = Array.prototype.push;
+
+    const originalExecFile = execFileCalls;
+    execFileCalls.length = 0;
+
+    const proxiedVPNClient = proxyquire('../extension/vpnclient/VPNClient.js', {
       'child-process-promise': {
         exec: (...args) => {
           execCalls.push(args);
           return Promise.reject(new Error('shell execution was not expected'));
         },
         execFile: (...args) => {
-          execFileCalls.push(args);
+          originalExecFile.push(args);
           const command = args[1] || [];
           if (command[0] === '+time=3' && command.includes('SOA')) {
             return Promise.resolve({
@@ -63,16 +86,16 @@ describe('VPNClient shell and path hardening', function () {
       }
     });
 
-    const client = Object.create(VPNClient.prototype);
+    const client = Object.create(proxiedVPNClient.prototype);
     const result = await client.resolveFirewallaDDNS('box.firewalla.com');
 
     expect(result).to.equal('192.0.2.53');
     expect(execCalls).to.have.lengthOf(0);
-    expect(execFileCalls).to.have.lengthOf(3);
-    expect(execFileCalls[0][0]).to.equal('dig');
-    expect(execFileCalls[0][1]).to.eql(['+time=3', '+tries=2', 'SOA', 'box.firewalla.com']);
-    expect(execFileCalls[1][1]).to.eql(['+time=3', '+tries=2', '+short', 'NS', 'firewalla.com.']);
-    expect(execFileCalls[2][1]).to.eql(['+short', '+time=3', '+tries=1', '@ns1.firewalla.com.', 'A', 'box.firewalla.com']);
+    expect(originalExecFile).to.have.lengthOf(3);
+    expect(originalExecFile[0][0]).to.equal('dig');
+    expect(originalExecFile[0][1]).to.eql(['+time=3', '+tries=2', 'SOA', 'box.firewalla.com']);
+    expect(originalExecFile[1][1]).to.eql(['+time=3', '+tries=2', '+short', 'NS', 'firewalla.com.']);
+    expect(originalExecFile[2][1]).to.eql(['+short', '+time=3', '+tries=1', '@ns1.firewalla.com.', 'A', 'box.firewalla.com']);
   });
 
   it('rejects shell syntax before invoking dig', async () => {
