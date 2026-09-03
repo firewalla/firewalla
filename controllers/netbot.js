@@ -3492,8 +3492,8 @@ class netBot extends ControllerBot {
               };
             }
 
-            await pm2.deleteVpnClientRelatedPolicies(profileId);
             await c.destroyStoredProfile(profileId);
+            await pm2.deleteVpnClientRelatedPolicies(profileId);
             await this._portforward(null, {
               "applyToAll": "*",
               "protocol": "*",
