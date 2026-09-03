@@ -643,18 +643,11 @@ class CategoryUpdateSensor extends Sensor {
         await exceptionManager.maybeDeactivateCategory(event.category).catch((err) => {
           log.error("Failed to check category deactivation", event.category, err.message);
         });
-      });
+      })
 
       sem.on('Category:Delete', async (event) => {
         log.info("Deactivate category", event.category);
         const category = event.category;
-        // deactivation was decided before this event was delivered, re-check right before the
-        // flushes so a target list referenced again in the meantime doesn't get its data wiped
-        if (categoryUpdater.isUserTargetList(category) &&
-          await exceptionManager.isCategoryReferenced(category)) {
-          log.info("Category is referenced again, skip deactivation", category);
-          return;
-        }
         await categoryUpdater.clearRecycleTask(category);
         if (!categoryUpdater.isCustomizedCategory(category) &&
           categoryUpdater.activeCategories[category]) {
