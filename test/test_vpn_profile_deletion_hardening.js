@@ -50,6 +50,7 @@ describe('VPN profile deletion hardening', function () {
   let legacyProfileExists;
   let cleanupCalls;
   let isProfileActiveCalls;
+  let profileActivityState;
   let fakeVPNClient;
   let fakeClientClass;
 
@@ -61,6 +62,7 @@ describe('VPN profile deletion hardening', function () {
       portforward: 0
     };
     isProfileActiveCalls = 0;
+    profileActivityState = false;
 
     fakeClientClass = class FakeVPNClient {
       static async profileExists() {
@@ -88,7 +90,7 @@ describe('VPN profile deletion hardening', function () {
 
       async isProfileActive() {
         isProfileActiveCalls++;
-        return false;
+        return profileActivityState;
       }
     };
 
@@ -135,9 +137,16 @@ describe('VPN profile deletion hardening', function () {
     };
   });
 
-  it('refuses deletion of an existing invalid legacy profile without cleanup', async function () {
+  beforeEach(function () {
     legacyProfileExists = true;
+    profileActivityState = false;
+    isProfileActiveCalls = 0;
+    cleanupCalls.deletePolicies = 0;
+    cleanupCalls.destroyStoredProfile = 0;
+    cleanupCalls.portforward = 0;
+  });
 
+  async function deleteLegacyProfile() {
     let error;
     try {
       await bot.cmdHandler('test-gid', {
@@ -152,10 +161,42 @@ describe('VPN profile deletion hardening', function () {
     } catch (err) {
       error = err;
     }
+    return error;
+  }
+
+  it('successfully cleans up an existing inactive legacy profile', async function () {
+    profileActivityState = false;
+
+    const error = await deleteLegacyProfile();
+
+    expect(error).to.equal(undefined);
+    expect(isProfileActiveCalls).to.equal(1);
+    expect(cleanupCalls.deletePolicies).to.equal(1);
+    expect(cleanupCalls.destroyStoredProfile).to.equal(1);
+    expect(cleanupCalls.portforward).to.equal(1);
+  });
+
+  it('refuses deletion of an active legacy profile without cleanup', async function () {
+    profileActivityState = true;
+
+    const error = await deleteLegacyProfile();
 
     expect(error).to.deep.include({ code: 400 });
-    expect(error.msg).to.equal('Automated deletion is refused for legacy openvpn VPN client legacy-profile');
-    expect(isProfileActiveCalls).to.equal(0);
+    expect(error.msg).to.equal('Automated deletion is refused for active or indeterminate legacy openvpn VPN client legacy-profile');
+    expect(isProfileActiveCalls).to.equal(1);
+    expect(cleanupCalls.deletePolicies).to.equal(0);
+    expect(cleanupCalls.destroyStoredProfile).to.equal(0);
+    expect(cleanupCalls.portforward).to.equal(0);
+  });
+
+  it('refuses deletion of a legacy profile with an indeterminate activity state', async function () {
+    profileActivityState = null;
+
+    const error = await deleteLegacyProfile();
+
+    expect(error).to.deep.include({ code: 400 });
+    expect(error.msg).to.equal('Automated deletion is refused for active or indeterminate legacy openvpn VPN client legacy-profile');
+    expect(isProfileActiveCalls).to.equal(1);
     expect(cleanupCalls.deletePolicies).to.equal(0);
     expect(cleanupCalls.destroyStoredProfile).to.equal(0);
     expect(cleanupCalls.portforward).to.equal(0);
@@ -164,20 +205,7 @@ describe('VPN profile deletion hardening', function () {
   it('preserves the original validation error when no stored legacy profile exists', async function () {
     legacyProfileExists = false;
 
-    let error;
-    try {
-      await bot.cmdHandler('test-gid', {
-        data: {
-          item: 'deleteVpnProfile',
-          value: {
-            type: 'openvpn',
-            profileId: 'legacy-profile'
-          }
-        }
-      });
-    } catch (err) {
-      error = err;
-    }
+    const error = await deleteLegacyProfile();
 
     expect(error).to.deep.include({
       code: 400,
