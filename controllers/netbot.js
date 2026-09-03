@@ -143,6 +143,13 @@ const FireRouter = require('../net2/FireRouter.js');
 const fwapc = require('../net2/fwapc.js');
 
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
+const validateVPNProfileId = (profileId) => {
+  try {
+    return VPNClient.validateProfileId(profileId);
+  } catch (err) {
+    throw { code: 400, msg: err.message };
+  }
+};
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
 const { delay, difference, versionCompare, isValidCommonName } = require('../util/util.js');
@@ -1768,6 +1775,7 @@ class netBot extends ControllerBot {
         if (!profileId) {
           throw { code: 400, msg: "'profileId' should be specified." }
         }
+        validateVPNProfileId(profileId);
         const c = VPNClient.getClass(type);
         if (!c) {
           throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
@@ -1793,7 +1801,15 @@ class netBot extends ControllerBot {
         for (let type of types) try {
           const c = VPNClient.getClass(type);
           const profileIds = await c.listProfileIds();
-          Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({ profileId }).getAttributes())));
+          const profileResults = await Promise.all(profileIds.map(async (profileId) => {
+            try {
+              return await new c({ profileId }).getAttributes();
+            } catch (err) {
+              log.error(`Skipping invalid VPN client profile ${profileId}`, err.message);
+              return null;
+            }
+          }));
+          Array.prototype.push.apply(profiles, profileResults.filter(Boolean));
         } catch(err) {
           log.error(err);
           continue;
@@ -3388,6 +3404,7 @@ class netBot extends ControllerBot {
         if (!profileId) {
           throw { code: 400, msg: "'profileId' is not specified." }
         }
+        validateVPNProfileId(profileId);
         const c = VPNClient.getClass(type);
         if (!c) {
           throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
@@ -3436,10 +3453,7 @@ class netBot extends ControllerBot {
         if (!profileId) {
           throw { code: 400, msg: "'profileId' should be specified" }
         }
-        const matches = profileId.match(/^[a-zA-Z0-9_]+/g);
-        if (profileId.length > 10 || matches == null || matches.length != 1 || matches[0] !== profileId) {
-          throw { code: 400, msg: "'profileId' should only contain alphanumeric letters or underscore and no longer than 10 characters" }
-        }
+        validateVPNProfileId(profileId);
         const c = VPNClient.getClass(type);
         if (!c) {
           throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
@@ -3462,6 +3476,16 @@ class netBot extends ControllerBot {
         const c = VPNClient.getClass(type);
         if (!c) {
           throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
+        }
+        try {
+          validateVPNProfileId(profileId);
+        } catch (err) {
+          if (await c.profileExists(profileId)) {
+            log.warn(`Cleaning up invalid stored VPN client profile ${profileId}`);
+            await c.destroyStoredProfile(profileId);
+            return;
+          }
+          throw err;
         }
         const vpnClient = new c({profileId});
         const status = await vpnClient.status();
