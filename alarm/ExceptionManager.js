@@ -120,10 +120,22 @@ module.exports = class {
     return exceptions.some(e => e.getCategory() === category);
   }
 
+  // Whether any rule or exception still needs this category. Must be re-evaluated right before
+  // the destructive cleanup, not just when the deactivation is decided: the two are separated by
+  // an event hop, and a rule/exception can reference the target list again in between.
+  async isCategoryReferenced(category) {
+    if (!category) return false;
+    if (categoryUpdater.hasActivePolicies(category)) return true;
+    if (await this.hasException(category)) return true;
+    // lazy require, PolicyManager2 requires this module at load time
+    const PolicyManager2 = require('./PolicyManager2.js');
+    return new PolicyManager2().hasPersistedCategoryPolicy(category);
+  }
+
   // User target list categories are only kept alive by the rules/exceptions referencing them.
-  // Both checks below read FireMain-only in-memory state (activeCategoryPolicyMap, activeCategories),
-  // so other processes must hand the decision over instead of silently no-op'ing here.
-  // Rule delete and exception delete both funnel through this, so whichever lands last cleans up.
+  // isCategoryReferenced() and deactivateCategory() both read FireMain-only in-memory state, so
+  // other processes must hand the decision over instead of silently no-op'ing here. Rule delete
+  // and exception delete both funnel through this, so whichever lands last cleans up.
   async maybeDeactivateCategory(category) {
     if (!category || !categoryUpdater.isUserTargetList(category)) return;
     if (!firewalla.isMain()) {
@@ -135,8 +147,7 @@ module.exports = class {
       });
       return;
     }
-    if (categoryUpdater.hasActivePolicies(category)) return;
-    if (await this.hasException(category)) return;
+    if (await this.isCategoryReferenced(category)) return;
     await categoryUpdater.deactivateCategory(category);
   }
 

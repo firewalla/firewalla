@@ -625,6 +625,15 @@ class PolicyManager2 {
     return formattedPolicy;
   }
 
+  // Whether any enabled rule persisted in redis still targets this category. Rules are saved
+  // before they are enforced, and enforce() activates the category before updateCategoryState()
+  // records it, so activeCategoryPolicyMap alone has a window where a live rule is invisible.
+  async hasPersistedCategoryPolicy(target) {
+    const count = await this.countActivePolicyNumber();
+    const policies = await this.loadActivePoliciesAsync({ number: count });
+    return (policies || []).some(p => p.target === target);
+  }
+
   async getSamePolicies(policy) {
     const count = await this.countActivePolicyNumber()
     let policies = await this.loadActivePoliciesAsync({ includingDisabled: true, number: count });
