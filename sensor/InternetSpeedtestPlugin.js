@@ -436,17 +436,19 @@ class InternetSpeedtestPlugin extends Sensor {
   }
 
   async listAvailableServers(bindIP, dnsServers, vendor) {
-    const args = InternetSpeedtestPlugin._buildSpeedTestArgs(bindIP, dnsServers, undefined, false, false, vendor);
-    args.push("-l", "--json");
+    try {
+      const args = InternetSpeedtestPlugin._buildSpeedTestArgs(bindIP, dnsServers, undefined, false, false, vendor);
+      args.push("-l", "--json");
 
-    const servers = await execFile(cliBinaryPath, args).then(result => {
-      const r = JSON.parse(result.stdout.trim());
-      return (r && r.servers || []).map(server => this._convertServer(server));
-    }).catch((err) => {
+      const servers = await execFile(cliBinaryPath, args).then(result => {
+        const r = JSON.parse(result.stdout.trim());
+        return (r && r.servers || []).map(server => this._convertServer(server));
+      });
+      return servers;
+    } catch (err) {
       log.error(`Failed to list available servers`, err.message);
-      return []
-    });
-    return servers;
+      return [];
+    }
   }
   _convertServer(server) {
     if (!_.isObject(server))
