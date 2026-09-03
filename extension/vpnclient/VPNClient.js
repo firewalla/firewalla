@@ -16,6 +16,7 @@
 'use strict';
 
 const net = require('net')
+const path = require('path');
 const { exec, execFile } = require('child-process-promise');
 const log = require('../../net2/logger.js')(__filename);
 const fc = require('../../net2/config.js');
@@ -121,7 +122,15 @@ class VPNClient {
       if (c) {
         let profiles = [];
         const profileIds = await c.listProfileIds();
-        Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({ profileId: profileId }).getAttributes())));
+        const profileResults = await Promise.all(profileIds.map(async (profileId) => {
+          try {
+            return await new c({ profileId: profileId }).getAttributes();
+          } catch (err) {
+            log.error(`Skipping invalid VPN client profile ${profileId} during initialization`, err.message);
+            return null;
+          }
+        }));
+        Array.prototype.push.apply(profiles, profileResults.filter(Boolean));
         results[c.getKeyNameForInit()] = profiles;
       }
     }));
@@ -1350,6 +1359,24 @@ class VPNClient {
     }).catch((err) => {
       log.error(`Failed to create enforcement env for VPN client ${uid}`, err.message);
     });
+  }
+
+  static async destroyStoredProfile(profileId) {
+    const configDirectory = path.resolve(this.getConfigDirectory());
+    const files = [".settings", ".json", ".endpoint_routes"];
+
+    for (const suffix of files) {
+      const filePath = path.resolve(configDirectory, `${profileId}${suffix}`);
+      if (filePath !== configDirectory && !filePath.startsWith(`${configDirectory}${path.sep}`)) {
+        log.error(`Refusing to clean VPN client profile outside config directory: ${profileId}`);
+        continue;
+      }
+      await fs.unlinkAsync(filePath).catch(() => { });
+    }
+
+    await rclient.unlinkAsync(VPNClient.getRouteMarkKey(profileId)).catch(() => { });
+    await rclient.delAsync(VPNClient.getStateCacheKey(profileId)).catch(() => { });
+    delete instances[profileId];
   }
 
   static async profileExists(profileId) {
