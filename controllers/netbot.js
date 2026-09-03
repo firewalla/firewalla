@@ -3484,10 +3484,28 @@ class netBot extends ControllerBot {
           validateVPNProfileId(profileId);
         } catch (err) {
           if (await c.profileExists(profileId)) {
-            throw {
-              code: 400,
-              msg: `Automated deletion is refused for legacy ${type} VPN client ${profileId}`
-            };
+            const active = await VPNClient.isProfileActive(profileId);
+            if (active !== false) {
+              throw {
+                code: 400,
+                msg: `Automated deletion is refused for active or indeterminate legacy ${type} VPN client ${profileId}`
+              };
+            }
+
+            await pm2.deleteVpnClientRelatedPolicies(profileId);
+            await c.destroyStoredProfile(profileId);
+            await this._portforward(null, {
+              "applyToAll": "*",
+              "protocol": "*",
+              "wanUUID": `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`,
+              "extIP": "*",
+              "dport": "*",
+              "toMac": "*",
+              "toGuid": "*",
+              "toPort": "*",
+              "state": false
+            });
+            return;
           }
           throw err;
         }
