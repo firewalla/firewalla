@@ -72,6 +72,21 @@ describe('InternetSpeedtestPlugin command construction', function () {
     expect(options.env.TEST_ENV).to.equal('$(touch /tmp/unexpected)');
   });
 
+  it('preserves quoted and escaped whitespace in legacy environment strings', async () => {
+    const env = InternetSpeedtestPlugin._buildSpeedTestEnv(
+      'HTTP_PROXY="proxy with spaces" TOKEN=a\\ b'
+    );
+
+    expect(env.HTTP_PROXY).to.equal('proxy with spaces');
+    expect(env.TOKEN).to.equal('a b');
+  });
+
+  it('rejects unterminated legacy environment quoting', async () => {
+    expect(() => InternetSpeedtestPlugin._buildSpeedTestEnv(
+      'HTTP_PROXY="proxy with spaces'
+    )).to.throw(/Invalid speedtest environment assignment/);
+  });
+
   it('rejects malformed option names before executing', async () => {
     const plugin = new InternetSpeedtestPlugin({});
 
