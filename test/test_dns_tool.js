@@ -112,6 +112,29 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     expect(dnsTool.dnsExpireOverflowCount).to.equal(1);
   });
 
+  it('defers a later refresh for an overflow key after the queue drains', async () => {
+    const now = Date.now();
+
+    for (let i = 0; i < 50000; i++) {
+      const key = 'key:' + i;
+      dnsTool.dnsExpirePending.set(key, 86400);
+      dnsTool.dnsExpireTs.set(key, now);
+    }
+
+    const overflowKey = 'key:overflow';
+    dnsTool.dnsExpireTs.set(overflowKey, now);
+    expect(dnsTool.tryRefreshDnsTTL(overflowKey, 3600)).to.equal(true);
+    expect(dnsTool.dnsExpireOverflowTs.has(overflowKey)).to.equal(true);
+
+    await dnsTool._drainDnsTTL();
+
+    expect(dnsTool.dnsExpirePending.size).to.equal(0);
+    expect(dnsTool.dnsExpireOverflowTs.has(overflowKey)).to.equal(true);
+    expect(dnsTool.tryRefreshDnsTTL(overflowKey, 7200)).to.equal(false);
+    expect(dnsTool.dnsExpirePending.get(overflowKey)).to.equal(7200);
+    expect(dnsTool.dnsExpireOverflowTs.has(overflowKey)).to.equal(false);
+  });
+
   it('aggregates overflow warnings until the pending queue drains', async () => {
     redisClient.multi = () => ({
       expire: () => {},
