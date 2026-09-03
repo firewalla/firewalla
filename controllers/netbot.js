@@ -1803,11 +1803,13 @@ class netBot extends ControllerBot {
           const profileIds = await c.listProfileIds();
           const profileResults = await Promise.all(profileIds.map(async (profileId) => {
             try {
-              return await new c({ profileId }).getAttributes();
+              validateVPNProfileId(profileId);
             } catch (err) {
               log.error(`Skipping invalid VPN client profile ${profileId}`, err.message);
               return null;
             }
+
+            return await new c({ profileId }).getAttributes();
           }));
           Array.prototype.push.apply(profiles, profileResults.filter(Boolean));
         } catch(err) {
