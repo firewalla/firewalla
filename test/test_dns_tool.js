@@ -62,6 +62,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     }
 
     const overflowKey = 'rdns:ip:50000';
+    dnsTool.dnsExpireTs.set(overflowKey, now);
     expect(dnsTool.tryRefreshDnsTTL(overflowKey, 86400)).to.equal(true);
 
     expect(dnsTool.dnsExpirePending.size).to.equal(50000);
@@ -100,6 +101,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     }
 
     const overflowKey = 'rdns:ip:50000';
+    dnsTool.dnsExpireTs.set(overflowKey, now);
     for (let i = 0; i < 3; i++) {
       if (dnsTool.tryRefreshDnsTTL(overflowKey, 3600))
         await redisClient.expireAsync(overflowKey, 3600);
@@ -124,6 +126,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     }
 
     for (let i = 50000; i < 50003; i++) {
+      dnsTool.dnsExpireTs.set('key:' + i, now);
       expect(dnsTool.tryRefreshDnsTTL('key:' + i, 3600)).to.equal(true);
     }
 
