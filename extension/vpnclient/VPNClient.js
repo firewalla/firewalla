@@ -102,9 +102,14 @@ class VPNClient {
   }
 
   static isValidFirewallaDDNSDomain(domain) {
-    return _.isString(domain) &&
-      domain.length <= 253 &&
-      /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*(?:firewalla\.org|firewalla\.com)$/i.test(domain);
+    if (!_.isString(domain) || domain.length === 0 || domain.length > 253)
+      return false;
+
+    const labels = domain.split('.');
+    if (labels.some(label => label.length === 0 || label.length > 63))
+      return false;
+
+    return /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*(?:firewalla\.org|firewalla\.com)$/i.test(domain);
   }
 
   static getInstance(profileId) {
@@ -119,7 +124,23 @@ class VPNClient {
     if (instance && instance.isStarted())
       return true;
 
-    return (await rclient.getAsync(VPNClient.getStateCacheKey(profileId))) === "true";
+    const cachedState = await rclient.getAsync(VPNClient.getStateCacheKey(profileId)).catch(() => null);
+    if (cachedState === "true")
+      return true;
+
+    // A cached false state is not sufficient by itself after a restart. Verify that
+    // the derived VPN interface is actually absent before declaring a legacy profile inactive.
+    const interfaceName = `${Constants.VC_INTF_PREFIX}${profileId}`;
+    if (!/^[A-Za-z0-9_.-]{1,15}$/.test(interfaceName))
+      return null;
+
+    return execFile('ip', ['link', 'show', 'dev', interfaceName])
+      .then(() => true)
+      .catch((err) => {
+        if (err && (err.code === 1 || err.code === 2))
+          return false;
+        return null;
+      });
   }
 
   static async getVPNProfilesForInit() {
@@ -1375,6 +1396,11 @@ class VPNClient {
     if (!_.isString(profileId) || !Constants.REGEX_FILENAME.test(profileId)) {
       throw new Error(`Refusing to clean VPN client profile with unsafe filename: ${profileId}`);
     }
+    const active = await VPNClient.isProfileActive(profileId);
+    if (active !== false) {
+      throw new Error(`Refusing to clean VPN client profile while active state is not definitively false: ${profileId}`);
+    }
+
     await vpnClientEnforcer.destroyRtId(`${Constants.VC_INTF_PREFIX}${profileId}`);
 
     const configDirectory = path.resolve(this.getConfigDirectory());
@@ -1517,7 +1543,9 @@ class VPNClient {
     if (authorityIndex < 0)
       return;
 
-    const authorityLines = soaOutput.substring(authorityIndex + ";; AUTHORITY SECTION:".length)
+    const authoritySection = soaOutput.substring(authorityIndex + ";; AUTHORITY SECTION:".length);
+    const authorityBody = authoritySection.split(/^;; [A-Z ]+ SECTION:\s*$/m, 1)[0];
+    const authorityLines = authorityBody
       .split("\n")
       .map(line => line.trim())
       .filter(line => line && !line.startsWith(";;"));
