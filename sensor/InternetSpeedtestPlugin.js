@@ -375,12 +375,58 @@ class InternetSpeedtestPlugin extends Sensor {
     if (!_.isString(extraEnvs))
       throw new Error("Invalid speedtest environment");
 
+    /*
+     * Legacy shell-word compatibility without shell evaluation:
+     * - unquoted backslash escapes the next character;
+     * - single-quoted content is literal, including backslashes;
+     * - inside double quotes, backslash only escapes $, `, ", \\, or newline;
+     * - unquoted whitespace separates assignments;
+     * - shell expansion/substitution is never performed.
+     * Unsupported/malformed quoting or escaping is rejected.
+     */
     const assignments = [];
     let current = "";
     let quote = null;
     let escaped = false;
 
-    for (const char of extraEnvs.trim()) {
+    const input = extraEnvs.trim();
+    for (let i = 0; i < input.length; i++) {
+      const char = input[i];
+
+      if (quote === "'") {
+        if (char === "'")
+          quote = null;
+        else
+          current += char;
+        continue;
+      }
+
+      if (quote === '"') {
+        if (char === '"') {
+          quote = null;
+          continue;
+        }
+
+        if (char === "\\") {
+          const next = input[i + 1];
+          if (next === "$" || next === "`" || next === '"' || next === "\\") {
+            current += next;
+            i++;
+          } else if (next === "\n") {
+            // POSIX line continuation inside double quotes.
+            i++;
+          } else {
+            // A backslash before any other character is literal in
+            // double quotes and must not be silently discarded.
+            current += "\\";
+          }
+          continue;
+        }
+
+        current += char;
+        continue;
+      }
+
       if (escaped) {
         current += char;
         escaped = false;
@@ -389,15 +435,6 @@ class InternetSpeedtestPlugin extends Sensor {
 
       if (char === "\\") {
         escaped = true;
-        continue;
-      }
-
-      if (quote) {
-        if (char === quote) {
-          quote = null;
-        } else {
-          current += char;
-        }
         continue;
       }
 
