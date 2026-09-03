@@ -49,8 +49,6 @@ const LOCK_TASK_QUEUE = "LOCK_TASK_QUEUE";
 const LOCK_APPLY_INTERNAL_SCAN_POLICY = "LOCK_APPLY_INTERNAL_SCAN_POLICY";
 const MAX_CONCURRENT_TASKS = 3;
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-const moment = require('moment-timezone/moment-timezone.js');
-moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 
 const extensionManager = require('./ExtensionManager.js');
 const sysManager = require('../net2/SysManager.js');
@@ -377,8 +375,7 @@ class InternalScanSensor extends Sensor {
     for (const startedTask of startedTasks) {
       const {key, numOfHosts, ts} = startedTask;
       log.info(`Scan started on ${key} with ${numOfHosts} host(s)`);
-      await this.addScanStartEvent(key, numOfHosts);
-      this.sendStartNotification(key, numOfHosts, ts || Date.now() / 1000);
+      await this.addScanStartEvent(key, numOfHosts, ts || Date.now() / 1000);
     }
   }
 
@@ -438,7 +435,6 @@ class InternalScanSensor extends Sensor {
               log.info(`All hosts on ${key} have been scanned, scan complete on ${key}`);
               const ets = Date.now() / 1000;
               await this.addScanCompleteEvent(key, task, ets);
-              await this.sendNotification(key, ets, task.results);
               task.state = STATE_COMPLETE;
               task.ets = ets;
             }
@@ -459,64 +455,43 @@ class InternalScanSensor extends Sensor {
     return (results || []).map(r => !_.isEmpty(r.result) ? r.result.length : 0).reduce((total, item) => total + item, 0);
   }
 
-  _formatTime(ts) {
-    const timezone = sysManager.getTimezone();
-    return (timezone ? moment.unix(ts).tz(timezone) : moment.unix(ts)).format("hh:mm A");
+  /*
+   * Fire an action event of the scan task, notification is composed and sent by netbot in FireApi,
+   * see getNotifEvent() there. Labels carry raw values only, formatting belongs to the notification.
+   */
+  async _emitScanEvent(eventType, labels) {
+    log.info(`Fire ${eventType} event`, labels);
+    await era.addActionEvent(eventType, 1, labels);
+    sem.sendEventToFireApi({
+      type: "Event:NewEvent",
+      message: "A new event is generated",
+      event: {
+        "event_type": "action",
+        "action_type": eventType,
+        "action_value": 1,
+        "labels": labels
+      },
+    });
   }
 
-  async addScanStartEvent(key, numOfHosts) {
-    await era.addActionEvent("weak_password_scan_start", 1, {
+  async addScanStartEvent(key, numOfHosts, ts) {
+    await this._emitScanEvent("weak_password_scan_start", {
       key: key,
       trigger: this._getTaskTrigger(key),
-      numOfHosts: numOfHosts
+      numOfHosts: numOfHosts,
+      ts: ts
     });
   }
 
   async addScanCompleteEvent(key, task, ets) {
     const results = task && task.results || [];
-    await era.addActionEvent("weak_password_scan_complete", 1, {
+    await this._emitScanEvent("weak_password_scan_complete", {
       key: key,
       trigger: this._getTaskTrigger(key),
       numOfHosts: results.length,
       numOfWeakPasswords: this._countWeakPasswords(results),
-      duration: task && task.ts ? Math.round(ets - task.ts) : 0
-    });
-  }
-
-  sendStartNotification(key, numOfHosts, ts) {
-    const time = this._formatTime(ts);
-    log.info(`Send weak password scan start notification on ${key}, ${numOfHosts} device(s) at ${time}`);
-    sem.sendEventToFireApi({
-      type: 'FW_NOTIFICATION',
-      titleKey: 'NOTIF_WEAK_PASSWORD_SCAN_START_TITLE',
-      bodyKey: 'NOTIF_WEAK_PASSWORD_SCAN_START_BODY',
-      titleLocalKey: `WEAK_PASSWORD_SCAN_START`,
-      bodyLocalKey: `WEAK_PASSWORD_SCAN_START`,
-      bodyLocalArgs: [numOfHosts, time],
-      payload: {
-        deviceCount: numOfHosts,
-        time
-      },
-      category: Constants.NOTIF_CATEGORY_WEAK_PASSWORD_SCAN
-    });
-  }
-
-  async sendNotification(key, ets, results) {
-    const numOfWeakPasswords = this._countWeakPasswords(results);
-    const time = this._formatTime(ets);
-    log.info(`Send weak password scan complete notification on ${key}, ${numOfWeakPasswords} weak password(s) found at ${time}`);
-    sem.sendEventToFireApi({
-      type: 'FW_NOTIFICATION',
-      titleKey: 'NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_TITLE',
-      bodyKey: `NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_${numOfWeakPasswords === 0 ? "NOT_" : numOfWeakPasswords > 1 ? "MULTI_" : "SINGLE_"}FOUND_BODY`,
-      titleLocalKey: `WEAK_PASSWORD_SCAN_COMPLETE`,
-      bodyLocalKey: `WEAK_PASSSWORD_SCAN_COMPLETE_${numOfWeakPasswords === 0 ? "NOT_" : numOfWeakPasswords > 1 ? "MULTI_" : "SINGLE_"}FOUND`,
-      bodyLocalArgs: [numOfWeakPasswords, time],
-      payload: {
-        weakPasswordCount: numOfWeakPasswords,
-        time
-      },
-      category: Constants.NOTIF_CATEGORY_WEAK_PASSWORD_SCAN
+      duration: task && task.ts ? Math.round(ets - task.ts) : 0,
+      ets: ets
     });
   }
 
