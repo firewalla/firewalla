@@ -53,6 +53,7 @@ class VPNClient {
     this.isFirstLaunch = true; // should be only true when first created
     if (!profileId)
       return null;
+    VPNClient.validateProfileId(profileId);
     if (!instances[profileId]) {
       instances[profileId] = this;
       this.profileId = profileId;
@@ -90,6 +91,19 @@ class VPNClient {
       }
     }
     return instances[profileId];
+  }
+
+  static validateProfileId(profileId) {
+    if (!_.isString(profileId) || !/^[a-zA-Z0-9_]{1,10}$/.test(profileId)) {
+      throw new Error("'profileId' should only contain alphanumeric letters or underscore and no longer than 10 characters");
+    }
+    return profileId;
+  }
+
+  static isValidFirewallaDDNSDomain(domain) {
+    return _.isString(domain) &&
+      domain.length <= 253 &&
+      /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*(?:firewalla\.org|firewalla\.com)$/i.test(domain);
   }
 
   static getInstance(profileId) {
@@ -1408,32 +1422,59 @@ class VPNClient {
   }
 
   async resolveFirewallaDDNS(domain) {
-    if (!domain.endsWith("firewalla.org") && !domain.endsWith("firewalla.com"))
+    if (!VPNClient.isValidFirewallaDDNSDomain(domain))
       return;
-    // first, find DNS zone from AUTHORITY SECTION
-    const zone = await exec(`dig +time=3 +tries=2 SOA ${domain} | grep ";; AUTHORITY SECTION" -A 1 | tail -n 1 | awk '{print $1}'`).then(result => result.stdout.trim()).catch((err) => {
-      log.error(`Failed to find zone of ${domain}`, err.message);
-      return null;
-    });
-    if (!zone)
-      return;
-    // then, find authoritative DNS server on zone
-    const servers = await exec(`dig +time=3 +tries=2 +short NS ${zone}`).then(result => result.stdout.trim().split('\n').filter(line => !line.startsWith(";;"))).catch((err) => {
-      log.error(`Failed to get servers of zone ${zone}`, err.message);
-      return [];
-    });
-    // finally, send DNS query to authoritative DNS server
-    for (const server of servers) {
-      const ip = await exec(`dig +short +time=3 +tries=1 @${server} A ${domain}`).then(result => result.stdout.trim().split('\n').find(line => new Address4(line).isValid())).catch((err) => {
-        log.error(`Failed to resolve ${domain} using ${server}`, err.message);
+
+    const runDig = async (args, description) => {
+      return execFile("dig", args).then(result => result.stdout.trim()).catch((err) => {
+        log.error(description, err.message);
         return null;
       });
-      if (ip && ip !== "0.0.0.0") // 0.0.0.0 is a placeholder if IPv4 is disabled in DDNS
+    };
+
+    // first, find DNS zone from AUTHORITY SECTION
+    const soaOutput = await runDig(
+      ["+time=3", "+tries=2", "SOA", domain],
+      `Failed to find zone of ${domain}`
+    );
+    if (!soaOutput)
+      return;
+
+    const authorityIndex = soaOutput.indexOf(";; AUTHORITY SECTION:");
+    if (authorityIndex < 0)
+      return;
+
+    const authorityLines = soaOutput.substring(authorityIndex + ";; AUTHORITY SECTION:".length)
+      .split("\n")
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith(";;"));
+    const zone = authorityLines.length ? authorityLines[0].split(/\s+/)[0] : null;
+    if (!zone)
+      return;
+
+    // then, find authoritative DNS server on zone
+    const nsOutput = await runDig(
+      ["+time=3", "+tries=2", "+short", "NS", zone],
+      `Failed to get servers of zone ${zone}`
+    );
+    const servers = nsOutput
+      ? nsOutput.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith(";;"))
+      : [];
+
+    // finally, send DNS query to authoritative DNS server
+    for (const server of servers) {
+      const output = await runDig(
+        ["+short", "+time=3", "+tries=1", `@${server}`, "A", domain],
+        `Failed to resolve ${domain} using ${server}`
+      );
+      const ip = output
+        ? output.split("\n").map(line => line.trim()).find(line => new Address4(line).isValid())
+        : null;
+      if (ip && ip !== "0.0.0.0")
         return ip;
     }
     return null;
   }
-
   // do more evaluation other than ping tests in this function and return boolean
   async _checkInternetAvailability() {
     return true;
