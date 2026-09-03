@@ -18,6 +18,7 @@
 const log = require('../../net2/logger.js')(__filename);
 const fs = require('fs');
 const util = require('util');
+const path = require('path');
 const f = require('../../net2/Firewalla.js');
 const _ = require('lodash');
 
