@@ -120,13 +120,34 @@ module.exports = class {
     return exceptions.some(e => e.getCategory() === category);
   }
 
-  // user target list categories are only kept alive by rules/exceptions referencing them;
-  // once the last exception referencing one is removed, stop polling its hashset if no rule
-  // is using it either, instead of leaving it active until the next reboot
-  async _maybeDeactivateCategory(category) {
+  // Whether any rule or exception still needs this category. Must be re-evaluated right before
+  // the destructive cleanup, not just when the deactivation is decided: the two are separated by
+  // an event hop, and a rule/exception can reference the target list again in between.
+  async isCategoryReferenced(category) {
+    if (!category) return false;
+    if (categoryUpdater.hasActivePolicies(category)) return true;
+    if (await this.hasException(category)) return true;
+    // lazy require, PolicyManager2 requires this module at load time
+    const PolicyManager2 = require('./PolicyManager2.js');
+    return new PolicyManager2().hasPersistedCategoryPolicy(category);
+  }
+
+  // User target list categories are only kept alive by the rules/exceptions referencing them.
+  // isCategoryReferenced() and deactivateCategory() both read FireMain-only in-memory state, so
+  // other processes must hand the decision over instead of silently no-op'ing here. Rule delete
+  // and exception delete both funnel through this, so whichever lands last cleans up.
+  async maybeDeactivateCategory(category) {
     if (!category || !categoryUpdater.isUserTargetList(category)) return;
-    if (categoryUpdater.hasActivePolicies(category)) return;
-    if (await this.hasException(category)) return;
+    if (!firewalla.isMain()) {
+      sem.emitEvent({
+        type: "Category:MaybeDeactivate",
+        toProcess: "FireMain",
+        message: "Check whether category can be deactivated: " + category,
+        category: category
+      });
+      return;
+    }
+    if (await this.isCategoryReferenced(category)) return;
     await categoryUpdater.deactivateCategory(category);
   }
 
@@ -379,7 +400,7 @@ module.exports = class {
     Bone.submitIntelFeedback('unignore', exception);
 
     if (exception && exception['p.category.id']) {
-      await this._maybeDeactivateCategory(exception['p.category.id']);
+      await this.maybeDeactivateCategory(exception['p.category.id']);
     }
   }
 
@@ -396,7 +417,7 @@ module.exports = class {
       await rclient.sremAsync(exceptionQueue, idList);
 
       for (const category of categories) {
-        await this._maybeDeactivateCategory(category);
+        await this.maybeDeactivateCategory(category);
       }
     }
   }

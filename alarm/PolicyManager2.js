@@ -625,6 +625,15 @@ class PolicyManager2 {
     return formattedPolicy;
   }
 
+  // Whether any enabled rule persisted in redis still targets this category. Rules are saved
+  // before they are enforced, and enforce() activates the category before updateCategoryState()
+  // records it, so activeCategoryPolicyMap alone has a window where a live rule is invisible.
+  async hasPersistedCategoryPolicy(target) {
+    const count = await this.countActivePolicyNumber();
+    const policies = await this.loadActivePoliciesAsync({ number: count });
+    return (policies || []).some(p => p.target === target);
+  }
+
   async getSamePolicies(policy) {
     const count = await this.countActivePolicyNumber()
     let policies = await this.loadActivePoliciesAsync({ includingDisabled: true, number: count });
@@ -2709,11 +2718,7 @@ class PolicyManager2 {
           // user target list categories are activated on demand and never deactivated by the
           // built-in category refresh logic; once the last rule referencing one is removed,
           // stop polling its hashset instead of leaving it active until the next reboot
-          if (categoryUpdater.isUserTargetList(target) &&
-            !categoryUpdater.hasActivePolicies(target) &&
-            !(await exceptionManager.hasException(target))) {
-            await categoryUpdater.deactivateCategory(target);
-          }
+          await exceptionManager.maybeDeactivateCategory(target);
         }
 
         if (["allow", "block", "route"].includes(action)) {
