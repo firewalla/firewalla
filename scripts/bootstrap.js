@@ -25,7 +25,7 @@ const BOOTSTRAP_PATH = '/vmbox/bootstrap';
 const ONBOARD_CONFIG = process.env.FW_ONBOARD_CONFIG || '/home/pi/.firewalla/onboard-config.json';
 const ENCIPHER_DB = `${process.env.HOME || '/home/pi'}/.encipher/db`;
 
-const POLL_INTERVAL_SEC = 5;
+const POLL_INTERVAL_SEC = 1; // reduce activate time
 
 let eptcloud;
 let cloudConfig;
