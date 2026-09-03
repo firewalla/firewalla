@@ -1374,11 +1374,24 @@ class VPNClient {
       await fs.unlinkAsync(filePath).catch(() => { });
     }
 
+    const primaryProfilePath = this.getPrimaryProfilePath(profileId);
+    if (primaryProfilePath) {
+      const resolvedPath = path.resolve(primaryProfilePath);
+      if (resolvedPath !== configDirectory && !resolvedPath.startsWith(`${configDirectory}${path.sep}`)) {
+        log.error(`Refusing to clean VPN client primary profile outside config directory: ${profileId}`);
+      } else {
+        await fs.unlinkAsync(resolvedPath).catch(() => { });
+      }
+    }
+
     await rclient.unlinkAsync(VPNClient.getRouteMarkKey(profileId)).catch(() => { });
     await rclient.delAsync(VPNClient.getStateCacheKey(profileId)).catch(() => { });
     delete instances[profileId];
   }
 
+  static getPrimaryProfilePath(profileId) {
+    return null;
+  }
   static async profileExists(profileId) {
     const profileIds = await this.listProfileIds();
     return profileIds && profileIds.includes(profileId);
