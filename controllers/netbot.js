@@ -3482,6 +3482,9 @@ class netBot extends ControllerBot {
           validateVPNProfileId(profileId);
         } catch (err) {
           if (await c.profileExists(profileId)) {
+            if (await VPNClient.isProfileActive(profileId)) {
+              throw { code: 400, msg: `${type} VPN client ${profileId} is still running` };
+            }
             log.warn(`Cleaning up invalid stored VPN client profile ${profileId}`);
             await pm2.deleteVpnClientRelatedPolicies(profileId);
             await c.destroyStoredProfile(profileId);

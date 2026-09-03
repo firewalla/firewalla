@@ -114,6 +114,14 @@ class VPNClient {
       return null;
   }
 
+  static async isProfileActive(profileId) {
+    const instance = VPNClient.getInstance(profileId);
+    if (instance && instance.isStarted())
+      return true;
+
+    return (await rclient.getAsync(VPNClient.getStateCacheKey(profileId))) === "true";
+  }
+
   static async getVPNProfilesForInit() {
     const types = ["openvpn", "wireguard", "amneziawg", "ssl", "zerotier", "nebula", "trojan", "clash", "hysteria", "gost", "ipsec", "ts"];
     const results = {}
@@ -1362,30 +1370,52 @@ class VPNClient {
   }
 
   static async destroyStoredProfile(profileId) {
+    if (!_.isString(profileId) || !Constants.REGEX_FILENAME.test(profileId)) {
+      throw new Error(`Refusing to clean VPN client profile with unsafe filename: ${profileId}`);
+    }
+
     const configDirectory = path.resolve(this.getConfigDirectory());
-    const files = [".settings", ".json", ".endpoint_routes"];
+
+    const unlinkFile = async (filePath) => {
+      try {
+        await fs.unlinkAsync(filePath);
+      } catch (err) {
+        if (err && err.code === 'ENOENT')
+          return;
+        throw err;
+      }
+    };
+
+    // Remove dependent files first and the .settings file last.
+    // Keeping .settings on failure preserves discoverability for retry.
+    const files = [".json", ".endpoint_routes"];
 
     for (const suffix of files) {
       const filePath = path.resolve(configDirectory, `${profileId}${suffix}`);
       if (filePath !== configDirectory && !filePath.startsWith(`${configDirectory}${path.sep}`)) {
-        log.error(`Refusing to clean VPN client profile outside config directory: ${profileId}`);
-        continue;
+        throw new Error(`Refusing to clean VPN client profile outside config directory: ${profileId}`);
       }
-      await fs.unlinkAsync(filePath).catch(() => { });
+      await unlinkFile(filePath);
     }
 
     const primaryProfilePath = this.getPrimaryProfilePath(profileId);
     if (primaryProfilePath) {
       const resolvedPath = path.resolve(primaryProfilePath);
       if (resolvedPath !== configDirectory && !resolvedPath.startsWith(`${configDirectory}${path.sep}`)) {
-        log.error(`Refusing to clean VPN client primary profile outside config directory: ${profileId}`);
-      } else {
-        await fs.unlinkAsync(resolvedPath).catch(() => { });
+        throw new Error(`Refusing to clean VPN client primary profile outside config directory: ${profileId}`);
       }
+      await unlinkFile(resolvedPath);
     }
 
-    await rclient.unlinkAsync(VPNClient.getRouteMarkKey(profileId)).catch(() => { });
-    await rclient.delAsync(VPNClient.getStateCacheKey(profileId)).catch(() => { });
+    await rclient.unlinkAsync(VPNClient.getRouteMarkKey(profileId));
+    await rclient.delAsync(VPNClient.getStateCacheKey(profileId));
+
+    const settingsPath = path.resolve(configDirectory, `${profileId}.settings`);
+    if (settingsPath !== configDirectory && !settingsPath.startsWith(`${configDirectory}${path.sep}`)) {
+      throw new Error(`Refusing to clean VPN client settings outside config directory: ${profileId}`);
+    }
+    await unlinkFile(settingsPath);
+
     delete instances[profileId];
   }
 
