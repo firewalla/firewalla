@@ -26,6 +26,7 @@ const encipherTool = new EncipherTool()
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('../net2/Firewalla.js');
+const pairedAppEventTool = require('../net2/PairedAppEventTool.js');
 
 class EncipherPlugin extends Sensor {
 
@@ -92,6 +93,8 @@ class EncipherPlugin extends Sensor {
     await rclient.hdelAsync("sys:ept:member:lastvisit", eid);
     await rclient.hdelAsync(Constants.REDIS_KEY_EPT_MEMBER_EMAILS, eid);
     await rclient.saddAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
+    // in case the app is unpaired before its phone_paired event is fired
+    await pairedAppEventTool.removePending(eid);
 
     try {
       const historyStr = await rclient.hgetAsync("sys:ept:members:history", eid);
