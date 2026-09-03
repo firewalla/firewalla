@@ -29,6 +29,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const fc = require('../net2/config.js')
 const pairedMaxHistoryEntry = fc.getConfig().pairedDeviceMaxHistory || 100;
+// event types whose notification is on until the app explicitly turns it off, same as alarms
+const DEFAULT_ON_EVENT_TYPES = ["phone_paired"];
 const URL = require("url");
 const bone = require("../lib/Bone");
 
@@ -151,6 +153,7 @@ const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimite
 const RateLimiterRes = require('../vendor_lib/rate-limiter-flexible/RateLimiterRes');
 const cpuProfile = require('../net2/CpuProfile.js');
 const ea = require('../event/EventApi.js');
+const pairedAppEventTool = require('../net2/PairedAppEventTool.js');
 const { Rule } = require('../net2/Iptables.js');
 const iptc = require('../control/IptablesControl.js');
 const sl = require('../sensor/APISensorLoader.js');
@@ -304,7 +307,11 @@ class netBot extends ControllerBot {
     nm.loadConfig();
   }
 
-  // by default, all event-based notifications are disabled (alarms by default enabled)
+  /*
+   * By default, event-based notifications are disabled and have to be turned on per event type,
+   * except the types in DEFAULT_ON_EVENT_TYPES, which are on unless the app explicitly turns them
+   * off. The global switch always wins, an unset one is still taken as off.
+   */
   _checkEventNotifyPolicy(policy, event_type) {
     if (!policy || !policy["notify"]) {
       log.info("host notification policy not set, skip notification");
@@ -316,7 +323,16 @@ class netBot extends ControllerBot {
       return false;
     }
 
-    if (!policy["notify"][event_type]) {
+    const state = policy["notify"][event_type];
+    if (state === undefined || state === null) {
+      if (!DEFAULT_ON_EVENT_TYPES.includes(event_type)) {
+        log.info("host event notification not set for event type", event_type);
+        return false;
+      }
+      return true;
+    }
+
+    if (!state) {
       log.info("host event notification disable for event type", event_type);
       return false;
     }
@@ -353,7 +369,7 @@ class netBot extends ControllerBot {
     }
 
     let notifEvent = await this.getNotifEvent(event_type, event_value, event.labels);
-    if (notifEvent.msg == "") {
+    if (!notifEvent || !notifEvent.msg) {
       log.info(`event ${event_type} not supported for notification`);
       return;
     }
@@ -364,29 +380,33 @@ class netBot extends ControllerBot {
       bodyKey: 'NOTIF_EVENT_BODY',
       titleLocalKey: `NEW_EVENT_TITLE_${event_type}`,
       bodyLocalKey: `NEW_EVENT_BODY_${event_type}`,
-      bodyLocalArgs: [notifEvent.args.eid, notifEvent.args.deviceName || "", notifEvent.args.ts || 0 ],
+      bodyLocalArgs: !_.isEmpty(notifEvent.localArgs) ? notifEvent.localArgs
+        : [notifEvent.args.eid, notifEvent.args.deviceName || "", notifEvent.args.ts || 0 ],
       bodyLocalMsg: notifEvent.msg,
       payload: notifEvent.args,
     }
   }
 
   async getNotifEvent(event_type, event_value, event_labels) {
-    let payload = {msg: '', args: {}};
+    let payload = {msg: '', args: {}, localArgs: []};
+    if (!event_labels) return payload;
     switch (event_type) {
-      case "phone_paired":
+      case "phone_paired": {
         const eid = event_labels.eid;
-        const deviceName = event_labels.deviceName;
-        if (eid == "") return;
-        payload.msg = `A new phone ${deviceName ? "("+deviceName+") " : ""}is paired with your Firewalla box.`;
+        // dName comes from the appInfo of the paired app, deviceName is the label of legacy events
+        const dName = event_labels.dName || event_labels.deviceName || "";
+        const name = event_labels.name || ""; // account of the paired app
+        const ts = event_labels.ts || 0;
+        if (!eid) break;
+        payload.msg = `A new phone ${dName ? "("+dName+") " : ""}is paired with your Firewalla box.`;
         payload.args.eid = eid;
-        payload.args.deviceName = deviceName || "";
-        // find latest event ts
-        let results = await ea.getLatestEventsByType(event_type);
-        results = results.filter(i => i.labels && i.labels.eid == eid);
-        if (results.length > 0) {
-          payload.args.ts = results[0].ts
-        }
+        payload.args.dName = dName;
+        payload.args.deviceName = dName; // legacy key, kept for apps that do not read dName yet
+        payload.args.name = name;
+        payload.args.ts = ts;
+        payload.localArgs = [eid, dName, ts, name];
         break;
+      }
       default:
     }
     return payload
@@ -1236,23 +1256,18 @@ class netBot extends ControllerBot {
             const date = Math.floor(Date.now() / 1000)
             result["msg"] = `${historyMsg}paired at ${date},`;
             await rclient.hsetAsync("sys:ept:members:history", appInfo.eid, JSON.stringify(result));
-             // notify phone_pair events
-            sem.sendEventToFireApi({
-              type: `Event:NewEvent`,
-              message: "A new event is generated",
-              event: {
-                  "event_type": "action",
-                  "action_type": "phone_paired",
-                  "action_value": 1,
-                  "labels": {"eid": appInfo.eid, "deviceName": appInfo.deviceName}
-              },
-            });
           }
         }
       } catch (err) {
         log.info("error when record paired device history info", err)
       }
       await rclient.hsetAsync(keyName, appInfo.eid, appInfo.deviceName)
+
+      // fire the phone_paired event of a freshly paired app, this is the first time its device name
+      // is known. Nothing happens if there is no pending record, i.e. the app is not newly paired
+      await pairedAppEventTool.claimPending(appInfo.eid, appInfo.deviceName).catch((err) => {
+        log.error("Failed to fire phone_paired event of", appInfo.eid, err.message)
+      })
 
       const keyName2 = "sys:ept:member:lastvisit"
       await rclient.hsetAsync(keyName2, appInfo.eid, Math.floor(Date.now() / 1000))
