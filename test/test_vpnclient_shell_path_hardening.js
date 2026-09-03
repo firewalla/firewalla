@@ -23,6 +23,9 @@ describe('VPNClient shell and path hardening', function () {
     execFileResponder = () => Promise.resolve({stdout: ''});
 
     VPNClient = proxyquire('../extension/vpnclient/VPNClient.js', {
+      '../../net2/Firewalla.js': {
+        isMain: () => false
+      },
       'child-process-promise': {
         exec: (...args) => {
           execCalls.push(args);
@@ -43,6 +46,46 @@ describe('VPNClient shell and path hardening', function () {
     expect(() => VPNClient.validateProfileId('12345678901')).to.throw();
     expect(() => VPNClient.validateProfileId('$(touch /tmp/pwn)')).to.throw();
     expect(() => VPNClient.validateProfileId(123)).to.throw();
+  });
+
+  it('enforces profileId validation through a concrete client constructor', () => {
+    class TestVPNClient extends VPNClient {
+      static getProtocol() {
+        return 'test';
+      }
+    }
+
+    expect(() => new TestVPNClient({ profileId: 'valid_123' })).to.not.throw();
+    expect(() => new TestVPNClient({ profileId: 'bad-name' })).to.throw(/profileId/);
+    expect(() => new TestVPNClient({ profileId: '../escape' })).to.throw(/profileId/);
+  });
+
+  it('skips invalid stored profile IDs without rejecting initialization', async () => {
+    class TestVPNClient extends VPNClient {
+      static async listProfileIds() {
+        return ['valid_123', 'legacy-profile'];
+      }
+
+      static getKeyNameForInit() {
+        return 'testVpnProfiles';
+      }
+
+      async getAttributes() {
+        return { profileId: this.profileId };
+      }
+    }
+
+    const originalGetClass = VPNClient.getClass;
+    VPNClient.getClass = (type) => type === 'openvpn' ? TestVPNClient : null;
+
+    try {
+      const result = await VPNClient.getVPNProfilesForInit();
+      expect(result).to.eql({
+        testVpnProfiles: [{ profileId: 'valid_123' }]
+      });
+    } finally {
+      VPNClient.getClass = originalGetClass;
+    }
   });
 
   it('accepts only actual firewalla.com and firewalla.org hostnames', () => {
