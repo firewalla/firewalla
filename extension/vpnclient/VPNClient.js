@@ -1373,6 +1373,7 @@ class VPNClient {
     if (!_.isString(profileId) || !Constants.REGEX_FILENAME.test(profileId)) {
       throw new Error(`Refusing to clean VPN client profile with unsafe filename: ${profileId}`);
     }
+    await vpnClientEnforcer.destroyRtId(`${Constants.VC_INTF_PREFIX}${profileId}`);
 
     const configDirectory = path.resolve(this.getConfigDirectory());
 

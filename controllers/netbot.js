@@ -3481,27 +3481,7 @@ class netBot extends ControllerBot {
         try {
           validateVPNProfileId(profileId);
         } catch (err) {
-          if (await c.profileExists(profileId)) {
-            if (await VPNClient.isProfileActive(profileId)) {
-              throw { code: 400, msg: `${type} VPN client ${profileId} is still running` };
-            }
-            log.warn(`Cleaning up invalid stored VPN client profile ${profileId}`);
-            await pm2.deleteVpnClientRelatedPolicies(profileId);
-            await c.destroyStoredProfile(profileId);
-            this._portforward(null, {
-              "applyToAll": "*",
-              "protocol": "*",
-              "wanUUID": `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`,
-              "extIP": "*",
-              "dport": "*",
-              "toMac": "*",
-              "toGuid": "*",
-              "toPort": "*",
-              "state": false
-            });
-            return;
-          }
-          throw err;
+          throw { code: 400, msg: `Automated deletion is refused for an invalid profile ID: ${profileId}` };
         }
         const vpnClient = new c({profileId});
         const status = await vpnClient.status();

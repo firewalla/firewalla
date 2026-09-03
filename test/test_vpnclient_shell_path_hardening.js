@@ -17,12 +17,14 @@ const proxyquire = require('proxyquire').noCallThru();
 describe('VPNClient shell and path hardening', function () {
   let execCalls;
   let execFileCalls;
+  let destroyRtIdCalls;
   let execFileResponder;
   let VPNClient;
 
   beforeEach(() => {
     execCalls = [];
     execFileCalls = [];
+    destroyRtIdCalls = [];
     execFileResponder = () => Promise.resolve({stdout: ''});
 
     VPNClient = proxyquire('../extension/vpnclient/VPNClient.js', {
@@ -44,6 +46,12 @@ describe('VPNClient shell and path hardening', function () {
         execFile: (...args) => {
           execFileCalls.push(args);
           return execFileResponder(...args);
+        }
+      },
+      './VPNClientEnforcer.js': {
+        destroyRtId: (...args) => {
+          destroyRtIdCalls.push(args);
+          return Promise.resolve();
         }
       }
     });
@@ -89,6 +97,7 @@ describe('VPNClient shell and path hardening', function () {
       await Promise.all(suffixes.map((suffix) => fs.writeFile(path.join(configDirectory, `${profileId}${suffix}`), 'test')));
       await TestVPNClient.destroyStoredProfile(profileId);
 
+      expect(destroyRtIdCalls).to.eql([['vpn_' + profileId]]);
       for (const suffix of suffixes)
         expect(await fs.access(path.join(configDirectory, `${profileId}${suffix}`)).then(() => true).catch(() => false)).to.equal(false);
     } finally {
