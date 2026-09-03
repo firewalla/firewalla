@@ -3483,7 +3483,19 @@ class netBot extends ControllerBot {
         } catch (err) {
           if (await c.profileExists(profileId)) {
             log.warn(`Cleaning up invalid stored VPN client profile ${profileId}`);
+            await pm2.deleteVpnClientRelatedPolicies(profileId);
             await c.destroyStoredProfile(profileId);
+            this._portforward(null, {
+              "applyToAll": "*",
+              "protocol": "*",
+              "wanUUID": `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`,
+              "extIP": "*",
+              "dport": "*",
+              "toMac": "*",
+              "toGuid": "*",
+              "toPort": "*",
+              "state": false
+            });
             return;
           }
           throw err;
