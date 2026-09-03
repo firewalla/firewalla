@@ -20,7 +20,8 @@ const proxyquire = require('proxyquire').noPreserveCache();
 
 const xml2json = require('../extension/xml2json/xml2json.js')
 
-const xmlString = String.raw`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<root>
+const xmlString = String.raw`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<root>
   <key>foo</key>
   <value>bar</value>
   <nested>
@@ -40,7 +41,8 @@ const soapString = String.raw`<?xml version="1.0"?>
   </s:Body>
 </s:Envelope>`
 
-const malXML = String.raw`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<root>
+const malXML = String.raw`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<root>
   <key>foo</key>
   <value>bar</value>
 </ro>`
