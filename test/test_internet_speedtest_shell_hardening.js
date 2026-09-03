@@ -72,13 +72,16 @@ describe('InternetSpeedtestPlugin command construction', function () {
     expect(options.env.TEST_ENV).to.equal('$(touch /tmp/unexpected)');
   });
 
-  it('preserves quoted and escaped whitespace in legacy environment strings', async () => {
+  it('preserves quoted and escaped whitespace and backslashes in legacy environment strings', async () => {
     const env = InternetSpeedtestPlugin._buildSpeedTestEnv(
-      'HTTP_PROXY="proxy with spaces" TOKEN=a\\ b'
+      String.raw`HTTP_PROXY="proxy with spaces" TOKEN=a\ b SINGLE='a\b' DOUBLE="a\b" DOUBLE_NONSPECIAL="a\qb"`
     );
 
     expect(env.HTTP_PROXY).to.equal('proxy with spaces');
     expect(env.TOKEN).to.equal('a b');
+    expect(env.SINGLE).to.equal('a\\b');
+    expect(env.DOUBLE).to.equal('a\\b');
+    expect(env.DOUBLE_NONSPECIAL).to.equal('a\\qb');
   });
 
   it('rejects unterminated legacy environment quoting', async () => {
