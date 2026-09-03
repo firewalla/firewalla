@@ -88,6 +88,12 @@ describe('VPNClient shell and path hardening', function () {
     }
   });
 
+  it('identifies the OpenVPN .ovpn file as the primary stored profile', () => {
+    const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+    const primaryPath = OpenVPNClient.getPrimaryProfilePath('valid_123');
+    expect(primaryPath).to.match(/[/\\]valid_123\.ovpn$/);
+  });
+
   it('accepts only actual firewalla.com and firewalla.org hostnames', () => {
     expect(VPNClient.isValidFirewallaDDNSDomain('firewalla.com')).to.equal(true);
     expect(VPNClient.isValidFirewallaDDNSDomain('box.firewalla.com')).to.equal(true);
