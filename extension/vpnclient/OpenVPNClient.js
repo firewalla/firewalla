@@ -47,6 +47,10 @@ class OpenVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/ovpn_profile`;
   }
 
+  static getPrimaryProfilePath(profileId) {
+    return path.resolve(this.getConfigDirectory(), `${profileId}.ovpn`);
+  }
+
   async getVpnIP4s() {
     const ip4File = this._getIP4FilePath();
     const ips = await fs.readFileAsync(ip4File, "utf8").then((content) => content.trim().split('\n')).catch((err) => {
