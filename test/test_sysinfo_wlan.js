@@ -20,6 +20,7 @@ const proxyquire = require('proxyquire');
 
 function loadSysInfo() {
   let interfaces = ['wlan0'];
+  let redisAvailable = true;
 
   const sysInfo = proxyquire('../extension/sysinfo/SysInfo.js', {
     'child-process-promise': {
@@ -42,8 +43,11 @@ function loadSysInfo() {
     '../../util/redis_manager.js': {
       getRedisClient: () => ({
         getAsync: async (key) => {
-          if (key === 'sys:wlan:kernelReload')
+          if (key === 'sys:wlan:kernelReload') {
+            if (!redisAvailable)
+              throw new Error('Redis unavailable');
             return null;
+          }
           throw new Error(`Unexpected Redis key: ${key}`);
         },
       }),
@@ -54,6 +58,9 @@ function loadSysInfo() {
     sysInfo,
     setInterfaces: (nextInterfaces) => {
       interfaces = nextInterfaces;
+    },
+    setRedisAvailable: (available) => {
+      redisAvailable = available;
     },
   };
 }
@@ -77,5 +84,21 @@ describe('SysInfo.getWlanInfo', function () {
 
     expect(secondInfo).to.not.have.property('wlan0');
     expect(secondInfo).to.have.property('kernelReload');
+  });
+
+  it('should publish a fresh WLAN snapshot when Redis is unavailable', async function () {
+    const {sysInfo, setInterfaces, setRedisAvailable} = loadSysInfo();
+
+    const firstInfo = await sysInfo.getWlanInfo();
+
+    expect(firstInfo).to.have.property('wlan0');
+
+    setInterfaces([]);
+    setRedisAvailable(false);
+
+    const secondInfo = await sysInfo.getWlanInfo();
+
+    expect(secondInfo).to.not.have.property('wlan0');
+    expect(secondInfo).to.not.have.property('kernelReload');
   });
 });
