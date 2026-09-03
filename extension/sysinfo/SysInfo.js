@@ -777,7 +777,11 @@ async function getWlanInfo() {
     log.error('Failed to parse wlan info for', intf, err)
   }
 
-  localWlanInfo.kernelReload = await rclient.getAsync('sys:wlan:kernelReload')
+  try {
+    localWlanInfo.kernelReload = await rclient.getAsync('sys:wlan:kernelReload')
+  } catch (err) {
+    log.error('Failed to get WLAN kernel reload state', err)
+  }
   wlanInfo = localWlanInfo;
 
   log.verbose('[getWlanInfo] results', wlanInfo)
