@@ -9,6 +9,9 @@
 
 const chai = require('chai');
 const expect = chai.expect;
+const fs = require('fs').promises;
+const os = require('os');
+const path = require('path');
 const proxyquire = require('proxyquire').noCallThru();
 
 describe('VPNClient shell and path hardening', function () {
@@ -25,6 +28,13 @@ describe('VPNClient shell and path hardening', function () {
     VPNClient = proxyquire('../extension/vpnclient/VPNClient.js', {
       '../../net2/Firewalla.js': {
         isMain: () => false
+      },
+      '../../util/redis_manager.js': {
+        getSubscriptionClient: () => ({on: () => {}}),
+        rclient: {
+          unlinkAsync: () => Promise.resolve(),
+          delAsync: () => Promise.resolve()
+        }
       },
       'child-process-promise': {
         exec: (...args) => {
@@ -58,6 +68,32 @@ describe('VPNClient shell and path hardening', function () {
     expect(() => new TestVPNClient({ profileId: 'valid_123' })).to.not.throw();
     expect(() => new TestVPNClient({ profileId: 'bad-name' })).to.throw(/profileId/);
     expect(() => new TestVPNClient({ profileId: '../escape' })).to.throw(/profileId/);
+  });
+
+  it('deletes the protocol-specific primary stored profile artifact', async () => {
+    const configDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'vpnclient-'));
+    const profileId = 'legacy_profile';
+    const suffixes = ['.settings', '.json', '.endpoint_routes', '.ovpn'];
+
+    class TestVPNClient extends VPNClient {
+      static getConfigDirectory() {
+        return configDirectory;
+      }
+
+      static getPrimaryProfilePath(profileId) {
+        return path.join(configDirectory, `${profileId}.ovpn`);
+      }
+    }
+
+    try {
+      await Promise.all(suffixes.map((suffix) => fs.writeFile(path.join(configDirectory, `${profileId}${suffix}`), 'test')));
+      await TestVPNClient.destroyStoredProfile(profileId);
+
+      for (const suffix of suffixes)
+        expect(await fs.access(path.join(configDirectory, `${profileId}${suffix}`)).then(() => true).catch(() => false)).to.equal(false);
+    } finally {
+      await fs.rm(configDirectory, { recursive: true, force: true });
+    }
   });
 
   it('skips invalid stored profile IDs without rejecting initialization', async () => {
