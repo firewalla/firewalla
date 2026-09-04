@@ -1960,7 +1960,8 @@ module.exports = class DNSMASQ {
     }
 
     for (const mac of staleFiles) {
-      await fileRemove(HOSTFILE_PATH + mac).catch((err) => {});
+      const staleFile = pathModule.join(HOSTFILE_PATH, mac)
+      await fileRemove(staleFile).catch((err) => log.error('Error removing stale hosts file', staleFile, err.message));
     }
   }
 
