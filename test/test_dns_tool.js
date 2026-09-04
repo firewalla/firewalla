@@ -71,6 +71,21 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     expect(dnsTool.dnsExpireOverflowCount).to.equal(1);
   });
 
+  it('refreshes an unseen key inline while overflow suppression is active', () => {
+    const now = Date.now();
+
+    for (let i = 0; i < 50000; i++) {
+      const key = 'key:' + i;
+      dnsTool.dnsExpirePending.set(key, 86400);
+      dnsTool.dnsExpireTs.set(key, now);
+    }
+    dnsTool.dnsExpireOverflowTs = now;
+
+    expect(dnsTool.tryRefreshDnsTTL('key:unseen', 3600)).to.equal(true);
+    expect(dnsTool.dnsExpireTs.has('key:unseen')).to.equal(true);
+    expect(dnsTool.dnsExpireOverflowCount).to.equal(0);
+  });
+
   it('does not evict a pending refresh when updating an existing key at capacity', () => {
     const now = Date.now();
 
@@ -166,7 +181,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
 
     await dnsTool._drainDnsTTL();
     expect(warnings).to.deep.equal([
-      'Deferred rdns TTL refresh limit reached: 50000; refreshed inline: 3'
+      'Deferred rdns TTL refresh limit reached: 50000; refreshed inline: 1'
     ]);
   });
 });

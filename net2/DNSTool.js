@@ -68,18 +68,18 @@ class DNSTool {
   // refresh into dnsExpirePending so _drainDnsTTL still issues it within one period.
   tryRefreshDnsTTL(key, expr) {
     const now = Date.now();
+    const last = this.dnsExpireTs.get(key);
+    if (!last || now - last >= RDNS_TTL_REFRESH_PERIOD) {
+      this.dnsExpireTs.set(key, now);
+      this.dnsExpirePending.delete(key);
+      return true;
+    }
     if (this.dnsExpireOverflowTs && now - this.dnsExpireOverflowTs < RDNS_TTL_REFRESH_PERIOD) {
       if (this.dnsExpirePending.size < MAX_DNS_EXPIRE_PENDING) {
         this.dnsExpireOverflowTs = 0;
         this.dnsExpirePending.set(key, expr);
       }
       return false;
-    }
-    const last = this.dnsExpireTs.get(key);
-    if (!last || now - last >= RDNS_TTL_REFRESH_PERIOD) {
-      this.dnsExpireTs.set(key, now);
-      this.dnsExpirePending.delete(key);
-      return true;
     }
     if (!this.dnsExpirePending.has(key) && this.dnsExpirePending.size >= MAX_DNS_EXPIRE_PENDING) {
       this.dnsExpireOverflowCount++;
