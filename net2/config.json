@@ -942,7 +942,7 @@
       }
     },
     "BlockStatsSensor": {
-      "slotSecs": 3600,
+      "slotSecs": 10800,
       "blockStatsSettings": [
         {
           "key": "block::porn",

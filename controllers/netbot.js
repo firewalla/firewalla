@@ -1462,6 +1462,18 @@ class netBot extends ControllerBot {
         const flows = await this.hostManager.loadStats({}, msg.target, count);
         return { flows: flows };
       }
+      case "blockStats": {
+        //  value.begin/value.end: time range in seconds used to query block stats time slots,
+        //  begin included, end excluded, end defaults to now if not given
+        const value = msg.data.value || {};
+        const { begin } = value;
+        const end = value.end == null ? Math.floor(Date.now() / 1000) : value.end;
+        if (begin == null || isNaN(begin) || isNaN(end)) {
+          throw new Error('Invalid begin/end');
+        }
+        const blockStats = await this.hostManager.getBlockStatsInRange(Number(begin), Number(end));
+        return { blockStats };
+      }
       case "neighbors":
       case "neighborsLocal": {
         if (!msg.target) {
