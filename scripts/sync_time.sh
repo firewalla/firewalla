@@ -43,12 +43,14 @@ function sync_time() {
 
 logger "FIREONBOOT.UPGRADE.DATE.SYNC"
 
+rc=0
 while ! sync_time
 do
-    ${SYNC_ONCE:-false} && break
+    ${SYNC_ONCE:-false} && { rc=1; break; }
     logger "Sleeping for $RETRY_INTERVAL seconds before next try ..."
     sleep $RETRY_INTERVAL
 done
 
 logger "FIREONBOOT.UPGRADE.DATE.SYNC.DONE"
 sync
+exit $rc

@@ -13,6 +13,7 @@ NODE=/home/pi/firewalla/bin/node
 SCRIPTS_DIR=/home/pi/firewalla/scripts
 PROVISION_HOST="${FW_PROVISION_HOST:-msp.dd.firewalla.net}"
 WARN_AFTER="${FW_ONBOARD_WARN_AFTER:-80}"   # seconds offline before warning on the console
+CLOCK_WAIT="${FW_ONBOARD_CLOCK_WAIT:-120}"  # seconds to keep retrying the time sync
 
 mkdir -p "$(dirname "$LOG")" 2>/dev/null
 exec >>"$LOG" 2>&1
@@ -81,9 +82,17 @@ done
 T_NET=$(uptime_s)
 log "ready: internet confirmed via $NET_VIA"
 
-SYNC_ONCE=true "$SCRIPTS_DIR/sync_time.sh" >/dev/null 2>&1
+t0=$(uptime_s); synced=0
+while [ $(( $(uptime_s) - t0 )) -lt "$CLOCK_WAIT" ]; do
+  SYNC_ONCE=true "$SCRIPTS_DIR/sync_time.sh" >/dev/null 2>&1 && { synced=1; break; }
+  sleep 1
+done
 T_CLOCK=$(uptime_s)
-log "clock: $(date -Is)"
+if [ "$synced" = 1 ]; then
+  log "clock: $(date -Is)"
+else
+  log "WARN: no time sync after ${CLOCK_WAIT}s, clock is $(date -Is) - bootstrap may fail on TLS"
+fi
 
 banner "Firewalla is up and ready to activate" "Activate this box from the MSP web console."
 
