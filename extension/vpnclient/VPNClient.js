@@ -128,19 +128,36 @@ class VPNClient {
     if (cachedState === "true")
       return true;
 
-    // A cached false state is not sufficient by itself after a restart. Verify that
-    // the derived VPN interface is actually absent before declaring a legacy profile inactive.
+    // Derive the interface name exactly as production clients do when creating the interface.
     const interfaceName = `${Constants.VC_INTF_PREFIX}${profileId}`;
-    if (!/^[A-Za-z0-9_.-]{1,15}$/.test(interfaceName))
-      return null;
 
-    return execFile('ip', ['link', 'show', 'dev', interfaceName])
-      .then(() => true)
-      .catch((err) => {
-        if (err && (err.code === 1 || err.code === 2))
-          return false;
-        return null;
-      });
+    if (/^[A-Za-z0-9_.-]{1,15}$/.test(interfaceName)) {
+      return execFile('ip', ['link', 'show', 'dev', interfaceName])
+        .then(() => true)
+        .catch((err) => {
+          // `ip link show dev NAME` returns 1 when the requested device does not exist.
+          // Any other failure is indeterminate and must not permit deletion.
+          if (err && err.code === 1)
+            return false;
+          return null;
+        });
+    }
+
+    // Legacy profile IDs can predate the current ten-character validation. Their production-
+    // derived name may exceed Linux's 15-character interface-name limit, so query the kernel's
+    // interface inventory and compare the exact derived name rather than truncating it.
+    return execFile('ip', ['-o', 'link', 'show'])
+      .then(result => {
+        return result.stdout
+          .split('\n')
+          .map(line => line.trim())
+          .filter(Boolean)
+          .some(line => {
+            const match = line.match(/^\d+:\s+([^:]+):/);
+            return match && match[1].split('@', 1)[0] === interfaceName;
+          });
+      })
+      .catch(() => null);
   }
 
   static async getVPNProfilesForInit() {

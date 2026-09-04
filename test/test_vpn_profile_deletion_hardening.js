@@ -19,6 +19,7 @@ const chai = require('chai');
 const expect = chai.expect;
 const Module = require('module');
 const path = require('path');
+const proxyquire = require('proxyquire').noCallThru();
 
 function makeGenericStub() {
   const target = function () {
@@ -49,10 +50,11 @@ describe('VPN profile deletion hardening', function () {
   let bot;
   let legacyProfileExists;
   let cleanupCalls;
-  let isProfileActiveCalls;
-  let profileActivityState;
+  let activityMode;
   let fakeVPNClient;
   let fakeClientClass;
+  let realVPNClient;
+  let realVPNState;
 
   before(function () {
     legacyProfileExists = true;
@@ -61,8 +63,37 @@ describe('VPN profile deletion hardening', function () {
       destroyStoredProfile: 0,
       portforward: 0
     };
-    isProfileActiveCalls = 0;
-    profileActivityState = false;
+    activityMode = 'inactive';
+
+    const installRealVPNClient = () => {
+      const state = {
+        execFileCalls: [],
+        cachedState: null,
+        execFileResponder: () => Promise.resolve({ stdout: '' })
+      };
+      const client = proxyquire('../extension/vpnclient/VPNClient.js', {
+        '../../net2/Firewalla.js': { isMain: () => false },
+        '../../util/redis_manager.js': {
+          getSubscriptionClient: () => ({ on: () => {} }),
+          rclient: {
+            getAsync: () => Promise.resolve(state.cachedState)
+          }
+        },
+        'child-process-promise': {
+          exec: () => Promise.resolve(),
+          execFile: (...args) => {
+            state.execFileCalls.push(args);
+            return state.execFileResponder(...args);
+          }
+        },
+        './VPNClientEnforcer.js': {
+          destroyRtId: () => Promise.resolve()
+        }
+      });
+      return { client, state };
+    };
+
+    ({ client: realVPNClient, state: realVPNState } = installRealVPNClient());
 
     fakeClientClass = class FakeVPNClient {
       static async profileExists() {
@@ -88,9 +119,11 @@ describe('VPN profile deletion hardening', function () {
         return type === 'openvpn' ? fakeClientClass : null;
       },
 
-      async isProfileActive() {
-        isProfileActiveCalls++;
-        return profileActivityState;
+      async isProfileActive(profileId) {
+        // For legacy IDs the real implementation is responsible for deriving the interface name.
+        if (profileId === 'legacy-profile')
+          return realVPNClient.isProfileActive(profileId);
+        return activityMode === 'active' ? true : activityMode === 'indeterminate' ? null : false;
       }
     };
 
@@ -139,8 +172,10 @@ describe('VPN profile deletion hardening', function () {
 
   beforeEach(function () {
     legacyProfileExists = true;
-    profileActivityState = false;
-    isProfileActiveCalls = 0;
+    activityMode = 'inactive';
+    realVPNState.cachedState = null;
+    realVPNState.execFileCalls.length = 0;
+    realVPNState.execFileResponder = () => Promise.resolve({ stdout: '' });
     cleanupCalls.deletePolicies = 0;
     cleanupCalls.destroyStoredProfile = 0;
     cleanupCalls.portforward = 0;
@@ -164,39 +199,45 @@ describe('VPN profile deletion hardening', function () {
     return error;
   }
 
-  it('successfully cleans up an existing inactive legacy profile', async function () {
-    profileActivityState = false;
+  it('successfully cleans up an existing inactive legacy profile through the integrated safety path', async function () {
+    realVPNState.execFileResponder = (binary, args) => {
+      expect(binary).to.equal('ip');
+      expect(args).to.eql(['-o', 'link', 'show']);
+      return Promise.resolve({ stdout: '1: lo: <LOOPBACK>\n2: eth0: <BROADCAST>\n' });
+    };
 
     const error = await deleteLegacyProfile();
 
     expect(error).to.equal(undefined);
-    expect(isProfileActiveCalls).to.equal(1);
+    expect(realVPNState.execFileCalls).to.have.lengthOf(1);
     expect(cleanupCalls.deletePolicies).to.equal(1);
     expect(cleanupCalls.destroyStoredProfile).to.equal(1);
     expect(cleanupCalls.portforward).to.equal(1);
   });
 
   it('refuses deletion of an active legacy profile without cleanup', async function () {
-    profileActivityState = true;
+    realVPNState.execFileResponder = (binary, args) => {
+      expect(binary).to.equal('ip');
+      expect(args).to.eql(['-o', 'link', 'show']);
+      return Promise.resolve({ stdout: '1: lo: <LOOPBACK>\n2: vpn_legacy-profile: <POINTOPOINT>\n' });
+    };
 
     const error = await deleteLegacyProfile();
 
     expect(error).to.deep.include({ code: 400 });
     expect(error.msg).to.equal('Automated deletion is refused for active or indeterminate legacy openvpn VPN client legacy-profile');
-    expect(isProfileActiveCalls).to.equal(1);
     expect(cleanupCalls.deletePolicies).to.equal(0);
     expect(cleanupCalls.destroyStoredProfile).to.equal(0);
     expect(cleanupCalls.portforward).to.equal(0);
   });
 
   it('refuses deletion of a legacy profile with an indeterminate activity state', async function () {
-    profileActivityState = null;
+    realVPNState.execFileResponder = () => Promise.reject(Object.assign(new Error('permission denied'), { code: 2 }));
 
     const error = await deleteLegacyProfile();
 
     expect(error).to.deep.include({ code: 400 });
     expect(error.msg).to.equal('Automated deletion is refused for active or indeterminate legacy openvpn VPN client legacy-profile');
-    expect(isProfileActiveCalls).to.equal(1);
     expect(cleanupCalls.deletePolicies).to.equal(0);
     expect(cleanupCalls.destroyStoredProfile).to.equal(0);
     expect(cleanupCalls.portforward).to.equal(0);
@@ -211,7 +252,6 @@ describe('VPN profile deletion hardening', function () {
       code: 400,
       msg: 'Invalid VPN profile ID: legacy-profile'
     });
-    expect(isProfileActiveCalls).to.equal(0);
     expect(cleanupCalls.deletePolicies).to.equal(0);
     expect(cleanupCalls.destroyStoredProfile).to.equal(0);
     expect(cleanupCalls.portforward).to.equal(0);

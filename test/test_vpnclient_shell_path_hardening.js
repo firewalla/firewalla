@@ -1,8 +1,16 @@
 /*    Copyright 2026 Firewalla Inc.
  *
- *    This program is free software: you can redistribute it and/or modify
+ *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
  *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 'use strict';
@@ -112,10 +120,37 @@ describe('VPNClient shell and path hardening', function () {
     }
   });
 
-  it('refuses legacy cleanup when active state cannot be established', async () => {
+  it('detects an active legacy profile with the exact derived interface name', async () => {
     const { VPNClient, state } = installVPNClientStubs();
     state.cachedState = null;
+    state.execFileResponder = (binary, args) => {
+      if (args[0] === '-o' && args[1] === 'link' && args[2] === 'show')
+        return Promise.resolve({ stdout: '1: lo: <LOOPBACK>\n2: vpn_legacy-profile: <POINTOPOINT>\n' });
+      return Promise.reject(Object.assign(new Error('unexpected invocation'), { code: 1 }));
+    };
+
+    expect(await VPNClient.isProfileActive('legacy-profile')).to.equal(true);
+    expect(state.execFileCalls[0][1]).to.eql(['-o', 'link', 'show']);
+  });
+
+  it('detects an inactive legacy profile when the exact derived interface is absent', async () => {
+    const { VPNClient, state } = installVPNClientStubs();
+    state.cachedState = null;
+    state.execFileResponder = (binary, args) => {
+      if (args[0] === '-o' && args[1] === 'link' && args[2] === 'show')
+        return Promise.resolve({ stdout: '1: lo: <LOOPBACK>\n2: eth0: <BROADCAST>\n' });
+      return Promise.reject(Object.assign(new Error('unexpected invocation'), { code: 1 }));
+    };
+
     expect(await VPNClient.isProfileActive('legacy-profile')).to.equal(false);
+  });
+
+  it('returns null for non-absence errors from a directly queryable interface', async () => {
+    const { VPNClient, state } = installVPNClientStubs();
+    state.cachedState = null;
+    state.execFileResponder = () => Promise.reject(Object.assign(new Error('permission denied'), { code: 2 }));
+
+    expect(await VPNClient.isProfileActive('short_id')).to.equal(null);
   });
 
   it('treats a cached active state as active without executing a shell command', async () => {
