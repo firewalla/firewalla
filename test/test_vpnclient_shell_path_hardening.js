@@ -248,6 +248,28 @@ describe('VPNClient shell and path hardening', function () {
     expect(await VPNClient.isProfileActive('short_id')).to.equal(null);
   });
 
+  it('returns null for unrelated code-1 errors from a directly queryable interface', async () => {
+    const { VPNClient, state } = installVPNClientStubs();
+    state.cachedState = null;
+    state.execFileResponder = () => Promise.reject(Object.assign(new Error('netlink failure'), {
+      code: 1,
+      stderr: 'RTNETLINK answers: Operation not permitted\n'
+    }));
+
+    expect(await VPNClient.isProfileActive('short_id')).to.equal(null);
+  });
+
+  it('returns false when ip reports that a directly queryable interface is absent', async () => {
+    const { VPNClient, state } = installVPNClientStubs();
+    state.cachedState = null;
+    state.execFileResponder = () => Promise.reject(Object.assign(new Error('device absent'), {
+      code: 1,
+      stderr: 'Device "vpn_short_id" does not exist.\n'
+    }));
+
+    expect(await VPNClient.isProfileActive('short_id')).to.equal(false);
+  });
+
   it('treats a cached active state as active without executing a shell command', async () => {
     const { VPNClient, state } = installVPNClientStubs();
     state.cachedState = 'true';

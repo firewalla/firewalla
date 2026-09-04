@@ -143,9 +143,8 @@ class VPNClient {
       return execFile('ip', ['link', 'show', 'dev', interfaceName])
         .then(() => true)
         .catch((err) => {
-          // `ip link show dev NAME` returns 1 when the requested device does not exist.
-          // Any other failure is indeterminate and must not permit deletion.
-          if (err && err.code === 1)
+          const stderr = err && typeof err.stderr === 'string' ? err.stderr : '';
+          if (err && err.code === 1 && /(?:device .* does not exist|cannot find device)/i.test(stderr))
             return false;
           return null;
         });
