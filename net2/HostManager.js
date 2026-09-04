@@ -1771,7 +1771,7 @@ module.exports = class HostManager extends Monitorable {
   // each field present on the records (e.g. deviceCnt/destCnt) computed over the full (post-filter)
   // record set, and caps the returned records to the top 5 by cnt
   summarizeBlockStatsEntry(entry) {
-    const records = (entry.records || []).filter(r => !r.device || this.getHostFastByMAC(r.device));
+    const records = (entry.records || []).filter(r => !r.device || this.getHostFastByMAC(r.device) || IdentityManager.getIdentityByGUID(r.device));
     const fields = records.length ? Object.keys(records[0]).filter(k => k !== 'cnt') : [];
     const fieldCounts = {};
     for (const field of fields) {
