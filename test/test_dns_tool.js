@@ -46,6 +46,8 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
 
   beforeEach(() => {
     dnsTool.dnsExpirePending.clear();
+    dnsTool.dnsExpireRetry.clear();
+    dnsTool.dnsExpireDrainPromise = null;
     dnsTool.dnsExpireTs.reset();
     dnsTool.dnsExpireOverflowTs = 0;
     dnsTool.dnsExpireOverflowCount = 0;
@@ -209,5 +211,47 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     expect(warnings).to.deep.equal([
       'Deferred rdns TTL refresh limit reached: 50000; refreshed inline: 1'
     ]);
+  });
+
+  it('does not start overlapping drains while Redis is unresolved', async () => {
+    let execCount = 0;
+    let resolveExec;
+    redisClient.multi = () => ({
+      expire: () => {},
+      execAsync: () => {
+        execCount++;
+        return new Promise((resolve) => {
+          resolveExec = resolve;
+        });
+      }
+    });
+
+    for (let i = 0; i < 50000; i++)
+      dnsTool.dnsExpirePending.set('key:' + i, 86400);
+
+    const firstDrain = dnsTool._drainDnsTTL();
+    expect(execCount).to.equal(1);
+
+    for (let i = 50000; i < 100000; i++)
+      dnsTool.dnsExpirePending.set('key:' + i, 86400);
+    const secondDrain = dnsTool._drainDnsTTL();
+
+    expect(execCount).to.equal(1);
+    expect(dnsTool.dnsExpirePending.size).to.equal(50000);
+    expect(secondDrain).to.equal(firstDrain);
+    dnsTool.dnsExpireOverflowTs = Date.now();
+    dnsTool.dnsExpireTs.set('key:overflow', Date.now());
+    expect(dnsTool.tryRefreshDnsTTL('key:overflow', 86400)).to.equal(true);
+    expect(dnsTool.dnsExpirePending.size).to.equal(50000);
+
+    resolveExec();
+    await firstDrain;
+    redisClient.multi = () => ({
+      expire: () => {},
+      execAsync: () => Promise.resolve()
+    });
+    await dnsTool._drainDnsTTL();
+    expect(execCount).to.equal(1);
+    expect(dnsTool.dnsExpirePending.size).to.equal(0);
   });
 });
