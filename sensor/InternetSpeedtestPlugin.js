@@ -19,7 +19,7 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const extensionManager = require('./ExtensionManager.js');
 const sysManager = require('../net2/SysManager.js');
-const exec = require('child-process-promise').exec;
+const { execFile } = require('child-process-promise');
 const CronJob = require('cron').CronJob;
 const cronParser = require('cron-parser');
 const SPEEDTEST_RESULT_KEY = "internet_speedtest_results";
@@ -294,17 +294,199 @@ class InternetSpeedtestPlugin extends Sensor {
     });
   }
 
-  async listAvailableServers(bindIP, dnsServers, vendor) {
-    const servers = await exec(`${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} ${dnsServers ? `--nameserver ${dnsServers.join(",")}` : ""} ${vendor ? `--vendor ${vendor}` : ""} -l --json`).then((result) => {
-      const r = JSON.parse(result.stdout.trim());
-      return (r && r.servers || []).map(server => this._convertServer(server));
-    }).catch((err) => {
-      log.error(`Failed to list available servers`, err.message);
-      return []
-    });
-    return servers;
+  static _validateOptionKey(key) {
+    if (!_.isString(key) || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(key))
+      throw new Error(`Invalid speedtest option: ${key}`);
+    return key;
   }
 
+  static _validateOptionValue(value) {
+    if (value === undefined || value === null)
+      return "";
+    return String(value);
+  }
+
+  static _validateVendor(vendor) {
+    if (vendor === undefined || vendor === null || vendor === "")
+      return undefined;
+    if (!_.isString(vendor) || !/^[A-Za-z0-9_-]+$/.test(vendor))
+      throw new Error(`Invalid speedtest vendor: ${vendor}`);
+    return vendor;
+  }
+
+  static _validateServerId(serverId) {
+    if (serverId === undefined || serverId === null || serverId === "")
+      return undefined;
+    const value = String(serverId);
+    if (!/^\d+$/.test(value))
+      throw new Error(`Invalid speedtest server ID: ${serverId}`);
+    return value;
+  }
+
+  static _buildSpeedTestArgs(bindIP, dnsServers, serverId, noUpload = false, noDownload = false, vendor, extraOpts = {}) {
+    const args = [];
+
+    if (bindIP)
+      args.push("-b", String(bindIP));
+
+    if (dnsServers) {
+      if (!_.isArray(dnsServers))
+        throw new Error("Invalid speedtest DNS server list");
+      args.push("--nameserver", dnsServers.map(server => String(server)).join(","));
+    }
+
+    const normalizedServerId = this._validateServerId(serverId);
+    if (normalizedServerId)
+      args.push("-s", normalizedServerId);
+
+    if (noUpload)
+      args.push("--no-upload");
+    if (noDownload)
+      args.push("--no-download");
+
+    const normalizedVendor = this._validateVendor(vendor);
+    if (normalizedVendor)
+      args.push("--vendor", normalizedVendor);
+
+    if (extraOpts && (!_.isObject(extraOpts) || _.isArray(extraOpts)))
+      throw new Error("Invalid speedtest options");
+
+    for (const key of Object.keys(extraOpts || {}))
+      args.push(`--${this._validateOptionKey(key)}`, this._validateOptionValue(extraOpts[key]));
+
+    return args;
+  }
+
+  static _buildSpeedTestEnv(extraEnvs = "") {
+    const env = Object.assign({}, process.env);
+
+    if (!extraEnvs)
+      return env;
+
+    if (_.isObject(extraEnvs) && !_.isArray(extraEnvs)) {
+      for (const key of Object.keys(extraEnvs)) {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
+          throw new Error(`Invalid speedtest environment variable: ${key}`);
+        env[key] = String(extraEnvs[key]);
+      }
+      return env;
+    }
+
+    if (!_.isString(extraEnvs))
+      throw new Error("Invalid speedtest environment");
+
+    /*
+     * Legacy shell-word compatibility without shell evaluation:
+     * - unquoted backslash escapes the next character;
+     * - single-quoted content is literal, including backslashes;
+     * - inside double quotes, backslash only escapes $, `, ", \\, or newline;
+     * - unquoted whitespace separates assignments;
+     * - shell expansion/substitution is never performed.
+     * Unsupported/malformed quoting or escaping is rejected.
+     */
+    const assignments = [];
+    let current = "";
+    let quote = null;
+    let escaped = false;
+
+    const input = extraEnvs.trim();
+    for (let i = 0; i < input.length; i++) {
+      const char = input[i];
+
+      if (quote === "'") {
+        if (char === "'")
+          quote = null;
+        else
+          current += char;
+        continue;
+      }
+
+      if (quote === '"') {
+        if (char === '"') {
+          quote = null;
+          continue;
+        }
+
+        if (char === "\\") {
+          const next = input[i + 1];
+          if (next === "$" || next === "`" || next === '"' || next === "\\") {
+            current += next;
+            i++;
+          } else if (next === "\n") {
+            // POSIX line continuation inside double quotes.
+            i++;
+          } else {
+            // A backslash before any other character is literal in
+            // double quotes and must not be silently discarded.
+            current += "\\";
+          }
+          continue;
+        }
+
+        current += char;
+        continue;
+      }
+
+      if (escaped) {
+        current += char;
+        escaped = false;
+        continue;
+      }
+
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+
+      if (char === "'" || char === '"') {
+        quote = char;
+        continue;
+      }
+
+      if (/\s/.test(char)) {
+        if (current)
+          assignments.push(current);
+        current = "";
+        continue;
+      }
+
+      current += char;
+    }
+
+    if (escaped || quote)
+      throw new Error("Invalid speedtest environment assignment");
+    if (current)
+      assignments.push(current);
+
+    for (const assignment of assignments) {
+      const separator = assignment.indexOf("=");
+      if (separator <= 0)
+        throw new Error("Invalid speedtest environment assignment");
+      const key = assignment.substring(0, separator);
+      const value = assignment.substring(separator + 1);
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
+        throw new Error(`Invalid speedtest environment variable: ${key}`);
+      env[key] = value;
+    }
+
+    return env;
+  }
+
+  async listAvailableServers(bindIP, dnsServers, vendor) {
+    try {
+      const args = InternetSpeedtestPlugin._buildSpeedTestArgs(bindIP, dnsServers, undefined, false, false, vendor);
+      args.push("-l", "--json");
+
+      const servers = await execFile(cliBinaryPath, args).then(result => {
+        const r = JSON.parse(result.stdout.trim());
+        return (r && r.servers || []).map(server => this._convertServer(server));
+      });
+      return servers;
+    } catch (err) {
+      log.error(`Failed to list available servers`, err.message);
+      return [];
+    }
+  }
   _convertServer(server) {
     if (!_.isObject(server))
       return null;
@@ -428,7 +610,18 @@ class InternetSpeedtestPlugin extends Sensor {
   }
 
   async runSpeedTest(bindIP, dnsServers, serverId, noUpload = false, noDownload = false, vendor = "mlab", extraOpts = {}, extraEnvs = "") {
-    const result = await exec(`${extraEnvs} timeout 90 ${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} ${dnsServers ? `--nameserver ${dnsServers.join(",")}` : ""} ${serverId ? `-s ${serverId}` : ""} ${noUpload ? "--no-upload" : ""} ${noDownload ? "--no-download" : ""} ${vendor ? `--vendor ${vendor}` : ""} --json ${Object.keys(extraOpts).map(k => `--${k} ${extraOpts[k]}`).join(" ")}`)
+    let args;
+    let env;
+    try {
+      args = InternetSpeedtestPlugin._buildSpeedTestArgs(bindIP, dnsServers, serverId, noUpload, noDownload, vendor, extraOpts);
+      args.push("--json");
+      env = InternetSpeedtestPlugin._buildSpeedTestEnv(extraEnvs);
+    } catch (err) {
+      log.error(`Failed to build speed test command from ${bindIP}`, err.message);
+      return {success: false, err: err.message};
+    }
+
+    const result = await execFile(cliBinaryPath, args, { env, timeout: 90000 })
       .then(result => JSON.parse(result.stdout.trim()))
       .then((result) => {
         const r = this._convertTestResult(result);
@@ -442,7 +635,6 @@ class InternetSpeedtestPlugin extends Sensor {
       result.vendor = vendor;
     return result;
   }
-
   async saveResult(result) {
     result.timestamp = Date.now() / 1000;
     await rclient.zaddAsync(SPEEDTEST_RESULT_KEY, Date.now() / 1000, JSON.stringify(result));

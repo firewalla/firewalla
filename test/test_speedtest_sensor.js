@@ -77,6 +77,11 @@ describe('Test internet speedtest', function(){
         expect(waitFalse).to.be.true;
     });
 
+    it('should return no servers for an invalid vendor', async() => {
+      const result = await this.plugin.listAvailableServers(null, null, 'ookla;invalid');
+      expect(result).to.deep.equal([]);
+    });
+
     it('should get job result', async() => {
       this.plugin.runningCache.set(1713241367.088, {state: 0});
       expect(this.plugin.getJobState(1713241367.088)).to.equal(0);
