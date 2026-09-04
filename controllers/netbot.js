@@ -3499,8 +3499,7 @@ class netBot extends ControllerBot {
             if (active !== true && active !== false) {
               throw { code: 400, msg: `Unable to determine whether legacy ${type} VPN client ${profileId} is active` };
             }
-            const vpnClient = Object.create(c.prototype);
-            vpnClient.profileId = profileId;
+            const vpnClient = VPNClient.createLegacyClient(c, profileId);
             await vpnClient.setup().catch((setupErr) => {
               log.error(`Failed to setup ${type} vpn client for ${profileId}`, setupErr);
             });

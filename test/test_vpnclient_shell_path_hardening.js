@@ -76,6 +76,20 @@ describe('VPNClient shell and path hardening', function () {
     expect(() => VPNClient.validateProfileId(123)).to.throw();
   });
 
+  it('initializes legacy clients while bypassing only profileId validation', () => {
+    const { VPNClient } = installVPNClientStubs();
+    class TestVPNClient extends VPNClient {
+      constructor(options) {
+        super(options);
+        this.initialized = true;
+      }
+    }
+
+    const client = VPNClient.createLegacyClient(TestVPNClient, 'legacy-profile');
+    expect(client.profileId).to.equal('legacy-profile');
+    expect(client.initialized).to.equal(true);
+  });
+
   it('retains invalid stored profile IDs as sanitized initialization metadata', async () => {
     const { VPNClient } = installVPNClientStubs();
     class TestVPNClient extends VPNClient {
@@ -170,7 +184,7 @@ describe('VPNClient shell and path hardening', function () {
     state.cachedState = null;
     state.execFileResponder = (binary, args) => {
       if (args[0] === '-o' && args[1] === 'link' && args[2] === 'show')
-        return Promise.resolve({ stdout: '1: lo: <LOOPBACK>\\n2: vpn_legacy-profi: <POINTOPOINT>\\n' });
+        return Promise.resolve({ stdout: '1: lo: <LOOPBACK>\n2: vpn_legacy-profi: <POINTOPOINT>\n' });
       return Promise.reject(Object.assign(new Error('unexpected invocation'), { code: 1 }));
     };
 

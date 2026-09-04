@@ -45,6 +45,7 @@ const fireRouter = require('../../net2/FireRouter.js');
 const scheduler = require('../../util/scheduler.js');
 const envCreatedMap = {};
 const INTERNET_ON_OFF_THRESHOLD = 2;
+const legacyProfileIdOption = Symbol('legacyProfileIdOption');
 
 const instances = {};
 
@@ -54,7 +55,8 @@ class VPNClient {
     this.isFirstLaunch = true; // should be only true when first created
     if (!profileId)
       return null;
-    VPNClient.validateProfileId(profileId);
+    if (!options[legacyProfileIdOption])
+      VPNClient.validateProfileId(profileId);
     if (!instances[profileId]) {
       instances[profileId] = this;
       this.profileId = profileId;
@@ -92,6 +94,10 @@ class VPNClient {
       }
     }
     return instances[profileId];
+  }
+
+  static createLegacyClient(ClientClass, profileId) {
+    return new ClientClass({ profileId, [legacyProfileIdOption]: true });
   }
 
   static validateProfileId(profileId) {
