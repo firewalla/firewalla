@@ -40,6 +40,16 @@ class OCVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/oc_profile`;
   }
 
+  static getStoredProfileArtifacts(profileId) {
+    const root = this.getConfigDirectory();
+    const suffixes = [
+      ".dns", ".network", ".route", ".password", ".conf", ".server", ".seed"
+    ];
+    return super.getStoredProfileArtifacts(profileId).concat(
+      suffixes.map(suffix => ({ root, path: `${profileId}${suffix}` }))
+    );
+  }
+
   _getDNSFilePath() {
     return `${f.getHiddenFolder()}/run/oc_profile/${this.profileId}.dns`;
   }

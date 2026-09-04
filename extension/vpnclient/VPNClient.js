@@ -143,9 +143,10 @@ class VPNClient {
         });
     }
 
-    // Legacy profile IDs can predate the current ten-character validation. Their production-
-    // derived name may exceed Linux's 15-character interface-name limit, so query the kernel's
-    // interface inventory and compare the exact derived name rather than truncating it.
+    // Legacy TUN/TAP profiles may have been created through an API that copied an
+    // overlength ifr_name into Linux's 15-character interface-name field. Preserve the
+    // exact-name check, and also treat the historical 15-character form as active.
+    const legacyInterfaceName = interfaceName.slice(0, 15);
     return execFile('ip', ['-o', 'link', 'show'])
       .then(result => {
         return result.stdout
@@ -154,7 +155,10 @@ class VPNClient {
           .filter(Boolean)
           .some(line => {
             const match = line.match(/^\d+:\s+([^:]+):/);
-            return match && match[1].split('@', 1)[0] === interfaceName;
+            if (!match)
+              return false;
+            const actualName = match[1].split('@', 1)[0];
+            return actualName === interfaceName || actualName === legacyInterfaceName;
           });
       })
       .catch(() => null);
@@ -1132,7 +1136,8 @@ class VPNClient {
 
 
   async start() {
-    if (!this._started) {
+    return VPNClient.withProfileLifecycleLock(this.profileId, async () => {
+      if (!this._started) {
       this._started = true;
       sem.emitEvent({
         type: "VPNClient:Started",
@@ -1220,6 +1225,7 @@ class VPNClient {
           }
         }, 2000);
       }, 500);
+      });
     });
   }
 
@@ -1409,8 +1415,25 @@ class VPNClient {
     });
   }
 
-  static async destroyStoredProfile(profileId) {
-    if (!_.isString(profileId) || !Constants.REGEX_FILENAME.test(profileId)) {
+  static getProfileLifecycleLockKey(profileId) {
+    return `VC_LIFECYCLE_${profileId}`;
+  }
+
+  static async withProfileLifecycleLock(profileId, callback) {
+    return lock.acquire(VPNClient.getProfileLifecycleLockKey(profileId), callback);
+  }
+
+  static getStoredProfileArtifacts(profileId) {
+    const configDirectory = this.getConfigDirectory();
+    return [
+      { root: configDirectory, path: `${profileId}.json` },
+      { root: configDirectory, path: `${profileId}.endpoint_routes` }
+    ];
+  }
+
+  static async destroyStoredProfile(profileId, beforeDestroy = null) {
+    return VPNClient.withProfileLifecycleLock(profileId, async () => {
+      if (!_.isString(profileId) || !Constants.REGEX_FILENAME.test(profileId)) {
       throw new Error(`Refusing to clean VPN client profile with unsafe filename: ${profileId}`);
     }
     const active = await VPNClient.isProfileActive(profileId);
@@ -1418,51 +1441,52 @@ class VPNClient {
       throw new Error(`Refusing to clean VPN client profile while active state is not definitively false: ${profileId}`);
     }
 
-    await vpnClientEnforcer.destroyRtId(`${Constants.VC_INTF_PREFIX}${profileId}`);
+      if (beforeDestroy)
+        await beforeDestroy();
 
-    const configDirectory = path.resolve(this.getConfigDirectory());
+      await vpnClientEnforcer.destroyRtId(`${Constants.VC_INTF_PREFIX}${profileId}`);
 
-    const unlinkFile = async (filePath) => {
-      try {
-        await fs.unlinkAsync(filePath);
-      } catch (err) {
-        if (err && err.code === 'ENOENT')
-          return;
-        throw err;
-      }
-    };
+      const configDirectory = path.resolve(this.getConfigDirectory());
 
-    // Remove dependent files first and the .settings file last.
-    // Keeping .settings on failure preserves discoverability for retry.
-    const files = [".json", ".endpoint_routes"];
+      const removeArtifact = async ({ root, path: artifactPath, recursive = false }) => {
+        const resolvedRoot = path.resolve(root);
+        const resolvedPath = path.resolve(resolvedRoot, artifactPath);
+        if (resolvedPath !== resolvedRoot && !resolvedPath.startsWith(`${resolvedRoot}${path.sep}`)) {
+          throw new Error(`Refusing to clean VPN client artifact outside allowed root: ${profileId}`);
+        }
+        try {
+          if (recursive) {
+            await fs.rmAsync(resolvedPath, { recursive: true, force: true });
+          } else {
+            await fs.unlinkAsync(resolvedPath);
+          }
+        } catch (err) {
+          if (err && err.code === 'ENOENT')
+            return;
+          throw err;
+        }
+      };
 
-    for (const suffix of files) {
-      const filePath = path.resolve(configDirectory, `${profileId}${suffix}`);
-      if (filePath !== configDirectory && !filePath.startsWith(`${configDirectory}${path.sep}`)) {
-        throw new Error(`Refusing to clean VPN client profile outside config directory: ${profileId}`);
-      }
-      await unlinkFile(filePath);
-    }
+      // Remove dependent/protocol-specific files first and .settings last.
+      // Keeping .settings on failure preserves discoverability for retry.
+      const artifacts = this.getStoredProfileArtifacts(profileId);
+      for (const artifact of artifacts)
+        await removeArtifact(artifact);
 
-    const primaryProfilePath = this.getPrimaryProfilePath(profileId);
-    if (primaryProfilePath) {
-      const resolvedPath = path.resolve(primaryProfilePath);
-      if (resolvedPath !== configDirectory && !resolvedPath.startsWith(`${configDirectory}${path.sep}`)) {
-        throw new Error(`Refusing to clean VPN client primary profile outside config directory: ${profileId}`);
-      }
-      await unlinkFile(resolvedPath);
-    }
-
-    await rclient.unlinkAsync(VPNClient.getRouteMarkKey(profileId));
+      await rclient.unlinkAsync(VPNClient.getRouteMarkKey(profileId));
     await rclient.delAsync(VPNClient.getStateCacheKey(profileId));
 
-    const settingsPath = path.resolve(configDirectory, `${profileId}.settings`);
-    if (settingsPath !== configDirectory && !settingsPath.startsWith(`${configDirectory}${path.sep}`)) {
-      throw new Error(`Refusing to clean VPN client settings outside config directory: ${profileId}`);
-    }
-    await unlinkFile(settingsPath);
+      const settingsPath = path.resolve(configDirectory, `${profileId}.settings`);
+      if (settingsPath !== configDirectory && !settingsPath.startsWith(`${configDirectory}${path.sep}`)) {
+        throw new Error(`Refusing to clean VPN client settings outside config directory: ${profileId}`);
+      }
+      await removeArtifact({
+        root: configDirectory,
+        path: `${profileId}.settings`
+      });
 
-    delete instances[profileId];
+      delete instances[profileId];
+    });
   }
 
   static getPrimaryProfilePath(profileId) {

@@ -295,6 +295,13 @@ class WGVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/wg_profile`;
   }
 
+  static getStoredProfileArtifacts(profileId) {
+    return super.getStoredProfileArtifacts(profileId).concat({
+      root: this.getConfigDirectory(),
+      path: `${profileId}.conf`
+    });
+  }
+
   async getRemoteEndpoints() {
     const results = await exec(`sudo ${this.wgCmd} show ${this.getInterfaceName()} endpoints | awk '{print $2}' | grep -v none`).then(result => result.stdout.trim().split('\n')).catch((err) => []);
     const endpoints = [];

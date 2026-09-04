@@ -51,6 +51,18 @@ class OpenVPNClient extends VPNClient {
     return path.resolve(this.getConfigDirectory(), `${profileId}.ovpn`);
   }
 
+  static getStoredProfileArtifacts(profileId) {
+    const root = this.getConfigDirectory();
+    const suffixes = [
+      ".ovpn", ".conf", ".password", ".userpass", ".push_options",
+      ".gateway", ".gateway6", ".subnet", ".subnet6",
+      ".subnet_bypass", ".subnet6_bypass", ".ip4", ".ip6"
+    ];
+    return super.getStoredProfileArtifacts(profileId).concat(
+      suffixes.map(suffix => ({ root, path: `${profileId}${suffix}` }))
+    );
+  }
+
   async getVpnIP4s() {
     const ip4File = this._getIP4FilePath();
     const ips = await fs.readFileAsync(ip4File, "utf8").then((content) => content.trim().split('\n')).catch((err) => {

@@ -3534,29 +3534,29 @@ class netBot extends ControllerBot {
           validateVPNProfileId(profileId);
         } catch (err) {
           if (await c.profileExists(profileId)) {
-            const active = await VPNClient.isProfileActive(profileId);
-            if (active !== false) {
-              throw {
-                code: 400,
-                msg: `Automated deletion is refused for active or indeterminate legacy ${type} VPN client ${profileId}`
-              };
-            }
+            await VPNClient.destroyStoredProfile.call(c, profileId, async () => {
+              const active = await VPNClient.isProfileActive(profileId);
+              if (active !== false) {
+                throw {
+                  code: 400,
+                  msg: `Automated deletion is refused for active or indeterminate legacy ${type} VPN client ${profileId}`
+                };
+              }
 
-            // Remove related policies and port-forward rules first. Keep stored profile until cleanup succeeds so retries can complete.
-            await pm2.deleteVpnClientRelatedPolicies(profileId);
-            await this._portforward(null, {
-              "applyToAll": "*",
-              "protocol": "*",
-              "wanUUID": `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`,
-              "extIP": "*",
-              "dport": "*",
-              "toMac": "*",
-              "toGuid": "*",
-              "toPort": "*",
-              "state": false
+              // Remove related policies and port-forward rules while the profile lifecycle lock is held.
+              await pm2.deleteVpnClientRelatedPolicies(profileId);
+              await this._portforward(null, {
+                "applyToAll": "*",
+                "protocol": "*",
+                "wanUUID": `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`,
+                "extIP": "*",
+                "dport": "*",
+                "toMac": "*",
+                "toGuid": "*",
+                "toPort": "*",
+                "state": false
+              });
             });
-            // Only remove stored profile after external cleanups succeed
-            await c.destroyStoredProfile(profileId);
             return;
           }
           throw err;

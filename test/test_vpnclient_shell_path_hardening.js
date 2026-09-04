@@ -106,6 +106,12 @@ describe('VPNClient shell and path hardening', function () {
     const profileId = 'legacy_profile';
     class TestVPNClient extends VPNClient {
       static getConfigDirectory() { return configDirectory; }
+      static getStoredProfileArtifacts(id) {
+        return super.getStoredProfileArtifacts(id).concat({
+          root: configDirectory,
+          path: `${id}.ovpn`
+        });
+      }
       static getPrimaryProfilePath(id) { return path.join(configDirectory, `${id}.ovpn`); }
     }
     try {
@@ -120,7 +126,20 @@ describe('VPNClient shell and path hardening', function () {
     }
   });
 
-  it('detects an active legacy profile with the exact derived interface name', async () => {
+  it('detects an active legacy profile with the historical 15-character interface name', async () => {
+    const { VPNClient, state } = installVPNClientStubs();
+    state.cachedState = null;
+    state.execFileResponder = (binary, args) => {
+      if (args[0] === '-o' && args[1] === 'link' && args[2] === 'show')
+        return Promise.resolve({ stdout: '1: lo: <LOOPBACK>\n2: vpn_legacy-profi: <POINTOPOINT>\n' });
+      return Promise.reject(Object.assign(new Error('unexpected invocation'), { code: 1 }));
+    };
+
+    expect(await VPNClient.isProfileActive('legacy-profile')).to.equal(true);
+    expect(state.execFileCalls[0][1]).to.eql(['-o', 'link', 'show']);
+  });
+
+  it('detects an active legacy profile when the exact long derived interface name is present', async () => {
     const { VPNClient, state } = installVPNClientStubs();
     state.cachedState = null;
     state.execFileResponder = (binary, args) => {
@@ -130,10 +149,9 @@ describe('VPNClient shell and path hardening', function () {
     };
 
     expect(await VPNClient.isProfileActive('legacy-profile')).to.equal(true);
-    expect(state.execFileCalls[0][1]).to.eql(['-o', 'link', 'show']);
   });
 
-  it('detects an inactive legacy profile when the exact derived interface is absent', async () => {
+  it('detects an inactive legacy profile when neither long nor historical interface is present', async () => {
     const { VPNClient, state } = installVPNClientStubs();
     state.cachedState = null;
     state.execFileResponder = (binary, args) => {

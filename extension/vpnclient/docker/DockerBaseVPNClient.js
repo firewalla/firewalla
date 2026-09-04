@@ -35,6 +35,17 @@ const ipUtil = require('../../../util/IPUtil.js');
 
 class DockerBaseVPNClient extends VPNClient {
 
+  static getStoredProfileArtifacts(profileId) {
+    const hiddenFolder = f.getHiddenFolder();
+    const configRoot = `${hiddenFolder}/run/docker_vpn_client/${this.getProtocol()}`;
+    const workingRoot = `${hiddenFolder}/run/docker`;
+    return super.getStoredProfileArtifacts(profileId).concat([
+      { root: workingRoot, path: profileId, recursive: true },
+      { root: configRoot, path: profileId, recursive: true },
+      { root: "/var/log", path: `docker_vpn_${profileId}.log` }
+    ]);
+  }
+
   _getSubnetFilePath() {
     return `${f.getHiddenFolder()}/run/docker_vpn_client/${this.constructor.getProtocol()}/${this.profileId}.subnet`;
   }

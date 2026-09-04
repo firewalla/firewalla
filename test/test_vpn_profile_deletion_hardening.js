@@ -100,8 +100,10 @@ describe('VPN profile deletion hardening', function () {
         return legacyProfileExists;
       }
 
-      static async destroyStoredProfile() {
+      static async destroyStoredProfile(profileId, beforeDestroy) {
         cleanupCalls.destroyStoredProfile++;
+        if (beforeDestroy)
+          await beforeDestroy();
       }
 
       async status() {
