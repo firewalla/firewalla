@@ -1147,7 +1147,7 @@ class VPNClient {
 
 
   async start() {
-    return VPNClient.withProfileLifecycleLock(this.profileId, async () => {
+    await VPNClient.withProfileLifecycleLock(this.profileId, async () => {
       if (!this._started) {
       this._started = true;
       sem.emitEvent({
@@ -1164,18 +1164,47 @@ class VPNClient {
       log.error(`Failed to exec _start of VPN client ${this.profileId}`, err.message);
     });
     this.isFirstLaunch = false;
+    });
 
     return new Promise((resolve, reject) => {
-      let establishmentTask = null;
+      const establishment = {
+        task: null,
+        timeout: null,
+        settled: false,
+        resolve: (result) => {
+          if (establishment.settled) {
+            return;
+          }
+          establishment.settled = true;
+          if (establishment.task) {
+            clearInterval(establishment.task);
+          }
+          if (establishment.timeout) {
+            clearTimeout(establishment.timeout);
+          }
+          if (this._establishment === establishment) {
+            this._establishment = null;
+          }
+          resolve(result);
+        }
+      };
+      this._establishment = establishment;
+
       // function to handle successful tunnel establishment
       const handleSuccessfulEstablishment = async () => {
-        if (establishmentTask) {
-          clearInterval(establishmentTask);
-          establishmentTask = null;
+        if (establishment.settled || !this._started) {
+          establishment.resolve({ result: false, cancelled: true });
+          return;
         }
         await this._setCachedState(true);
+        if (establishment.settled || !this._started) {
+          return;
+        }
         this._scheduleRefreshRoutes();
         await this.addRemoteEndpointRoutes().catch((err) => { });
+        if (establishment.settled || !this._started) {
+          return;
+        }
         if (f.isMain()) {
           // check connectivity and emit link_established or link_broken later, before which routes are already added and ping test using fwmark will work properly
           setTimeout(() => {
@@ -1193,21 +1222,23 @@ class VPNClient {
         }
         const timeElapsed = (Date.now() - this._lastStartTime) / 1000;
         log.info(`Time elapsed to start ${this.constructor.getProtocol()} client ${this.profileId}: ${timeElapsed} seconds`);
-        resolve({ result: true });
+        establishment.resolve({ result: true });
       };
 
       // function to handle failed tunnel establishment
       const handleFailedEstablishment = async (reason) => {
-        if (establishmentTask) {
-          clearInterval(establishmentTask);
-          establishmentTask = null;
+        if (establishment.settled) {
+          return;
         }
         const errMsg = await this.getMessage();
         log.error(`Failed to establish tunnel for VPN client ${this.profileId}. Reason: ${reason || 'Unknown error'}`, errMsg ? `Details: ${errMsg}` : '');
-        resolve({ result: false, errMsg: errMsg });
+        establishment.resolve({ result: false, errMsg: errMsg });
       };
 
-      setTimeout(async () => {
+      establishment.timeout = setTimeout(async () => {
+        if (establishment.settled) {
+          return;
+        }
         try {
           const isUpInitial = await this._isLinkUp();
           if (isUpInitial) {
@@ -1220,7 +1251,10 @@ class VPNClient {
         }
 
         const startTime = Date.now();
-        establishmentTask = setInterval(async () => {
+        establishment.task = setInterval(async () => {
+          if (establishment.settled) {
+            return;
+          }
           try {
             const isUp = await this._isLinkUp();
             if (isUp) {
@@ -1237,10 +1271,16 @@ class VPNClient {
         }, 2000);
       }, 500);
       });
-    });
+  }
+
+  _cancelEstablishment() {
+    if (this._establishment) {
+      this._establishment.resolve({ result: false, cancelled: true });
+    }
   }
 
   async stop() {
+    this._cancelEstablishment();
     return VPNClient.withProfileLifecycleLock(this.profileId, () => this._stopWithoutLifecycleLock());
   }
 

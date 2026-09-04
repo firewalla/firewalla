@@ -179,6 +179,30 @@ describe('VPNClient shell and path hardening', function () {
     expect(destroyEntered).to.equal(true);
   });
 
+  it('allows stop to cancel a client that never establishes a tunnel', async () => {
+    const { VPNClient } = installVPNClientStubs();
+    const client = Object.create(VPNClient.prototype);
+    client.profileId = 'valid_123';
+    client._prepareRoutes = async () => {};
+    client.flushRemoteEndpointRoutes = async () => {};
+    client._start = async () => {};
+    client._isLinkUp = async () => false;
+    client.getMessage = async () => null;
+    client._stopWithoutLifecycleLock = async () => {
+      client._started = false;
+    };
+
+    const startPromise = client.start();
+    const stopPromise = client.stop();
+    const stopResult = await Promise.race([
+      stopPromise.then(() => 'stopped'),
+      new Promise((resolve) => setTimeout(() => resolve('timed out'), 100))
+    ]);
+
+    expect(stopResult).to.equal('stopped');
+    expect(await startPromise).to.include({ result: false, cancelled: true });
+  });
+
   it('detects an active legacy profile with the historical 15-character interface name', async () => {
     const { VPNClient, state } = installVPNClientStubs();
     state.cachedState = null;
