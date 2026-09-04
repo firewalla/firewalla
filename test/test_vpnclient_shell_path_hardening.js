@@ -88,6 +88,9 @@ describe('VPNClient shell and path hardening', function () {
     const client = VPNClient.createLegacyClient(TestVPNClient, 'legacy-profile');
     expect(client.profileId).to.equal('legacy-profile');
     expect(client.initialized).to.equal(true);
+
+    const cachedClient = VPNClient.createLegacyClient(TestVPNClient, 'legacy-profile');
+    expect(cachedClient).to.equal(client);
   });
 
   it('retains invalid stored profile IDs as sanitized initialization metadata', async () => {
