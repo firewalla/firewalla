@@ -18,7 +18,8 @@ const chai = require('chai');
 const expect = chai.expect;
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const Getter = require('../net2/config.js').Getter;
+const configModule = require('../net2/config.js');
+const Getter = configModule.Getter;
 const httpFlow = require('../extension/flow/HttpFlow.js');
 
 const broConfig = new Getter('bro');
@@ -73,7 +74,7 @@ describe('HttpFlow User-Agent history retention', function () {
   });
 
   it('preserves a negative user_agent2 count as unlimited', () => {
-    const config = broConfig.getConfig();
+    const config = configModule.getConfig();
     const originalCount = config.sensors.OldDataCleanSensor.user_agent2.count;
     config.sensors.OldDataCleanSensor.user_agent2.count = -1;
 
