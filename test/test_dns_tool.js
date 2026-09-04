@@ -48,6 +48,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     dnsTool.dnsExpirePending.clear();
     dnsTool.dnsExpireRetry.clear();
     dnsTool.dnsExpireActive = null;
+    dnsTool.dnsExpireActiveUpdates.clear();
     dnsTool.dnsExpireDrainPromise = null;
     dnsTool.dnsExpireTs.reset();
     dnsTool.dnsExpireOverflowTs = 0;
@@ -315,5 +316,34 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     expect(expires.some(([expireKey, expr]) => expireKey === key && expr === 3600)).to.equal(true);
     expect(expires.some(([expireKey, expr]) => expireKey === key && expr === 86400)).to.equal(false);
     expect(dnsTool.dnsExpireRetry.has(key)).to.equal(false);
+  });
+
+  it('serializes a newer refresh behind an in-flight active refresh', async () => {
+    const operations = [];
+    let resolveExec;
+    redisClient.multi = () => ({
+      expire: (key, expr) => operations.push([key, expr]),
+      execAsync: () => new Promise((resolve) => {
+        resolveExec = resolve;
+      })
+    });
+    redisClient.expireAsync = (key, expr) => {
+      operations.push([key, expr]);
+      return Promise.resolve();
+    };
+
+    const key = 'rdns:ip:in-flight';
+    dnsTool.dnsExpireTs.set(key, Date.now());
+    dnsTool.dnsExpirePending.set(key, 86400);
+
+    const drain = dnsTool._drainDnsTTL();
+    dnsTool.dnsExpireTs.del(key);
+    expect(dnsTool.tryRefreshDnsTTL(key, 3600)).to.equal(false);
+    expect(operations).to.deep.equal([[key, 86400]]);
+
+    resolveExec();
+    await drain;
+
+    expect(operations).to.deep.equal([[key, 86400], [key, 3600]]);
   });
 });

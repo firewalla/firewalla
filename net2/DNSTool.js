@@ -56,6 +56,7 @@ class DNSTool {
       // A failed drain is retried before newer pending refreshes. This is bounded to one batch.
       this.dnsExpireRetry = new Map();
       this.dnsExpireActive = null;
+      this.dnsExpireActiveUpdates = new Map();
       this.dnsExpireDrainPromise = null;
       // Suppress overflow inline refreshes globally until the queue has capacity again or the
       // throttle period expires. A per-key map could evict suppression markers under high cardinality.
@@ -77,8 +78,10 @@ class DNSTool {
       this.dnsExpireTs.set(key, now);
       this.dnsExpirePending.delete(key);
       this.dnsExpireRetry.delete(key);
-      if (this.dnsExpireActive)
-        this.dnsExpireActive.delete(key);
+      if (this.dnsExpireActive && this.dnsExpireActive.has(key)) {
+        this.dnsExpireActiveUpdates.set(key, expr);
+        return false;
+      }
       return true;
     }
     if (this.dnsExpireOverflowTs && now - this.dnsExpireOverflowTs < RDNS_TTL_REFRESH_PERIOD) {
@@ -151,17 +154,25 @@ class DNSTool {
       };
       try {
         await drainBatch(pending);
-        if (this.dnsExpirePending.size > 0) {
+        while (this.dnsExpireActiveUpdates.size > 0 || this.dnsExpirePending.size > 0) {
+          for (const [key, expr] of this.dnsExpireActiveUpdates)
+            this.dnsExpirePending.set(key, expr);
+          this.dnsExpireActiveUpdates.clear();
+          if (this.dnsExpirePending.size === 0)
+            break;
           const newerPending = this.dnsExpirePending;
           this.dnsExpirePending = new Map();
           await drainBatch(newerPending);
         }
       } catch (err) {
         // Retry the failed bounded batch before newer refreshes on the next drain.
-        if (this.dnsExpireActive === pending)
-          this.dnsExpireRetry = pending;
-        else
-          this.dnsExpireRetry = this.dnsExpireActive;
+        const failedBatch = this.dnsExpireActive === pending ? pending : this.dnsExpireActive;
+        this.dnsExpireRetry = new Map(failedBatch);
+        for (const key of this.dnsExpireActiveUpdates.keys())
+          this.dnsExpireRetry.delete(key);
+        for (const [key, expr] of this.dnsExpireActiveUpdates)
+          this.dnsExpirePending.set(key, expr);
+        this.dnsExpireActiveUpdates.clear();
         log.error("Failed to flush deferred rdns TTL refreshes", err.message);
       }
     })().finally(() => {
