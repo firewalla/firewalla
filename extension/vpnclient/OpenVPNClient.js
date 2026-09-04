@@ -39,6 +39,10 @@ class OpenVPNClient extends VPNClient {
     return "openvpn";
   }
 
+  static getRuntimeServiceName(profileId) {
+    return `${SERVICE_NAME}@${profileId}`;
+  }
+
   static getKeyNameForInit() {
     return "ovpnClientProfiles";
   }

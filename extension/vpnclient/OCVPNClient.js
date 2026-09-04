@@ -32,6 +32,10 @@ class OCVPNClient extends VPNClient {
     return "ssl";
   }
 
+  static getRuntimeServiceName(profileId) {
+    return `${SERVICE_NAME}@${profileId}`;
+  }
+
   static getKeyNameForInit() {
     return "sslvpnClientProfiles";
   }

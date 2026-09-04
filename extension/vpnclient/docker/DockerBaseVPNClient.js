@@ -35,6 +35,10 @@ const ipUtil = require('../../../util/IPUtil.js');
 
 class DockerBaseVPNClient extends VPNClient {
 
+  static getRuntimeServiceName(profileId) {
+    return `docker-compose@${profileId}`;
+  }
+
   static getStoredProfileArtifacts(profileId) {
     const hiddenFolder = f.getHiddenFolder();
     const configRoot = `${hiddenFolder}/run/docker_vpn_client/${this.getProtocol()}`;

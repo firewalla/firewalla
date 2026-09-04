@@ -130,14 +130,24 @@ class VPNClient {
       return null;
   }
 
-  static async isProfileActive(profileId) {
+  static async isProfileActive(profileId, ClientClass) {
     const instance = VPNClient.getInstance(profileId);
     if (instance && instance.isStarted())
       return true;
 
-    const cachedState = await rclient.getAsync(VPNClient.getStateCacheKey(profileId)).catch(() => null);
-    if (cachedState === "true")
-      return true;
+    if (ClientClass) {
+      if (typeof ClientClass.getRuntimeActive !== 'function')
+        return null;
+      const runtimeState = await ClientClass.getRuntimeActive(profileId);
+      if (runtimeState !== true && runtimeState !== false)
+        return null;
+      if (runtimeState)
+        return true;
+    } else {
+      const cachedState = await rclient.getAsync(VPNClient.getStateCacheKey(profileId)).catch(() => null);
+      if (cachedState === "true")
+        return true;
+    }
 
     // Derive the interface name exactly as production clients do when creating the interface.
     const interfaceName = `${Constants.VC_INTF_PREFIX}${profileId}`;
@@ -202,6 +212,27 @@ class VPNClient {
       }
     }));
     return results
+  }
+
+  static getRuntimeServiceName(profileId) {
+    return null;
+  }
+
+  static async getRuntimeActive(profileId) {
+    const serviceName = this.getRuntimeServiceName(profileId);
+    if (!serviceName)
+      return null;
+    const parseStatus = (result) => {
+      const status = result && typeof result.stdout === 'string' ? result.stdout.trim() : '';
+      if (status === 'active' || status === 'reloading' || status === 'activating' || status === 'deactivating')
+        return true;
+      if (status === 'inactive' || status === 'failed' || status === 'dead')
+        return false;
+      return null;
+    };
+    return execFile('sudo', ['systemctl', 'is-active', serviceName])
+      .then(parseStatus)
+      .catch(err => parseStatus(err));
   }
 
   static getClass(type) {

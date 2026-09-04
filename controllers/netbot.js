@@ -3497,7 +3497,7 @@ class netBot extends ControllerBot {
             throw err;
 
           return await VPNClient.withProfileLifecycleLock(profileId, async () => {
-            const active = await VPNClient.isProfileActive(profileId);
+            const active = await VPNClient.isProfileActive(profileId, c);
             if (active !== true && active !== false) {
               throw { code: 400, msg: `Unable to determine whether legacy ${type} VPN client ${profileId} is active` };
             }
@@ -3513,6 +3513,7 @@ class netBot extends ControllerBot {
               statisticsError = err;
             }
             try {
+              vpnClient._cancelEstablishment();
               await vpnClient._stopWithoutLifecycleLock();
             } catch (stopErr) {
               if (!statisticsError)
