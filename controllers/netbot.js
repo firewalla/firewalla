@@ -391,11 +391,10 @@ class netBot extends ControllerBot {
     }
   }
 
-  // time of the day in the timezone of the box, e.g. 03:00 AM
-  _localizedTimeOfDay(ts) {
+  // time of the day in the timezone of the box, e.g. 03:00 AM, defaults to now
+  _localizedTimeOfDay(ts = Date.now() / 1000) {
     const timezone = sysManager.getTimezone();
-    const ms = _.isNumber(ts) ? ts : Date.now() / 1000; // labels of a malformed event may miss it
-    return (timezone ? moment.unix(ms).tz(timezone) : moment.unix(ms)).format("hh:mm A");
+    return (timezone ? moment.unix(ts).tz(timezone) : moment.unix(ts)).format("hh:mm A");
   }
 
   // titleLocalKey/bodyLocalKey/category are optional, only set by event types keeping their own keys
@@ -421,7 +420,7 @@ class netBot extends ControllerBot {
       }
       case "weak_password_scan_start": {
         const numOfHosts = event_labels.numOfHosts || 0;
-        const time = this._localizedTimeOfDay(event_labels.ts);
+        const time = this._localizedTimeOfDay(); // notification is composed right as the event fires
         payload.msg = `System vulnerability scan started at ${time} on ${numOfHosts} device(s).`;
         payload.args.deviceCount = numOfHosts;
         payload.args.time = time;
@@ -433,7 +432,7 @@ class netBot extends ControllerBot {
       }
       case "weak_password_scan_complete": {
         const count = event_labels.numOfWeakPasswords || 0;
-        const time = this._localizedTimeOfDay(event_labels.ets);
+        const time = this._localizedTimeOfDay(); // notification is composed right as the event fires
         payload.msg = count === 0
           ? `System vulnerability scan completed at ${time}. No vulnerabilities were found.`
           : `Firewalla found ${count} vulnerabilities on your devices at ${time}.`;

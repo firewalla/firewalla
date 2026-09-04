@@ -358,7 +358,7 @@ class InternalScanSensor extends Sensor {
             if (task) {
               // a task is considered started on its first transition from queued to scanning
               if (task.state === STATE_QUEUED)
-                startedTasks.push({key: key, numOfHosts: Object.keys(task.pendingHosts || {}).length, ts: task.ts});
+                startedTasks.push({key: key, numOfHosts: Object.keys(task.pendingHosts || {}).length});
               task.state = STATE_SCANNING;
             }
           }
@@ -373,9 +373,9 @@ class InternalScanSensor extends Sensor {
       }
     });
     for (const startedTask of startedTasks) {
-      const {key, numOfHosts, ts} = startedTask;
+      const {key, numOfHosts} = startedTask;
       log.info(`Scan started on ${key} with ${numOfHosts} host(s)`);
-      await this.addScanStartEvent(key, numOfHosts, ts || Date.now() / 1000);
+      await this.addScanStartEvent(key, numOfHosts);
     }
   }
 
@@ -458,6 +458,7 @@ class InternalScanSensor extends Sensor {
   /*
    * Fire an action event of the scan task, notification is composed and sent by netbot in FireApi,
    * see getNotifEvent() there. Labels carry raw values only, formatting belongs to the notification.
+   * No timestamp in labels, the event itself is already stamped in milliseconds by addActionEvent.
    */
   async _emitScanEvent(eventType, labels) {
     log.info(`Fire ${eventType} event`, labels);
@@ -474,12 +475,11 @@ class InternalScanSensor extends Sensor {
     });
   }
 
-  async addScanStartEvent(key, numOfHosts, ts) {
+  async addScanStartEvent(key, numOfHosts) {
     await this._emitScanEvent("weak_password_scan_start", {
       key: key,
       trigger: this._getTaskTrigger(key),
-      numOfHosts: numOfHosts,
-      ts: ts
+      numOfHosts: numOfHosts
     });
   }
 
@@ -490,8 +490,7 @@ class InternalScanSensor extends Sensor {
       trigger: this._getTaskTrigger(key),
       numOfHosts: results.length,
       numOfWeakPasswords: this._countWeakPasswords(results),
-      duration: task && task.ts ? Math.round(ets - task.ts) : 0,
-      ets: ets
+      duration: task && task.ts ? Math.round(ets - task.ts) : 0
     });
   }
 
