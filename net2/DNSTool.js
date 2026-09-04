@@ -50,7 +50,7 @@ class DNSTool {
         this.debugMode = true;
       }
       // last EXPIRE time per rdns key, to rate-limit redundant TTL refreshes
-      this.dnsExpireTs = new LRU({max: 50000, maxAge: 24 * 3600 * 1000});
+      this.dnsExpireTs = new LRU({max: MAX_DNS_EXPIRE_PENDING, maxAge: 24 * 3600 * 1000});
       // keys whose TTL refresh was throttled; _drainDnsTTL flushes them within one period
       this.dnsExpirePending = new Map();
       // A failed drain is retried before newer pending refreshes. This is bounded to one batch.
@@ -117,10 +117,11 @@ class DNSTool {
     if (this.dnsExpireRetry.size === 0 && this.dnsExpirePending.size === 0)
       return Promise.resolve();
 
-    const pending = this.dnsExpireRetry.size > 0
+    const retryBatch = this.dnsExpireRetry.size > 0;
+    const pending = retryBatch
       ? this.dnsExpireRetry
       : this.dnsExpirePending;
-    if (pending === this.dnsExpireRetry)
+    if (retryBatch)
       this.dnsExpireRetry = new Map();
     else
       this.dnsExpirePending = new Map();
@@ -131,24 +132,36 @@ class DNSTool {
         log.warn(`Deferred rdns TTL refresh limit reached: ${MAX_DNS_EXPIRE_PENDING}; refreshed inline: ${this.dnsExpireOverflowCount}`);
         this.dnsExpireOverflowCount = 0;
       }
-      const now = Date.now();
-      for (const key of pending.keys()) {
-        this.dnsExpireTs.set(key, now);
-      }
-      try {
-        if (pending.size === 1) {
-          const [key, expr] = pending.entries().next().value;
+      const drainBatch = async (batch) => {
+        this.dnsExpireActive = batch;
+        const now = Date.now();
+        for (const key of batch.keys()) {
+          this.dnsExpireTs.set(key, now);
+        }
+        if (batch.size === 1) {
+          const [key, expr] = batch.entries().next().value;
           await rclient.expireAsync(key, expr);
         } else {
           const multi = rclient.multi();
-          for (const [key, expr] of pending) {
+          for (const [key, expr] of batch) {
             multi.expire(key, expr);
           }
           await multi.execAsync();
         }
+      };
+      try {
+        await drainBatch(pending);
+        if (this.dnsExpirePending.size > 0) {
+          const newerPending = this.dnsExpirePending;
+          this.dnsExpirePending = new Map();
+          await drainBatch(newerPending);
+        }
       } catch (err) {
-        // Retry this bounded batch before newer refreshes on the next drain.
-        this.dnsExpireRetry = pending;
+        // Retry the failed bounded batch before newer refreshes on the next drain.
+        if (this.dnsExpireActive === pending)
+          this.dnsExpireRetry = pending;
+        else
+          this.dnsExpireRetry = this.dnsExpireActive;
         log.error("Failed to flush deferred rdns TTL refreshes", err.message);
       }
     })().finally(() => {

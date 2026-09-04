@@ -256,6 +256,32 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     expect(dnsTool.dnsExpirePending.size).to.equal(0);
   });
 
+  it('drains retry and pending batches in one serialized cycle', async () => {
+    const operations = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    redisClient.expireAsync = async (key, expr) => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      operations.push([key, expr]);
+      await Promise.resolve();
+      inFlight--;
+    };
+
+    dnsTool.dnsExpireRetry.set('key:retry', 86400);
+    dnsTool.dnsExpirePending.set('key:pending', 3600);
+
+    await dnsTool._drainDnsTTL();
+
+    expect(operations).to.deep.equal([
+      ['key:retry', 86400],
+      ['key:pending', 3600]
+    ]);
+    expect(maxInFlight).to.equal(1);
+    expect(dnsTool.dnsExpireRetry.size).to.equal(0);
+    expect(dnsTool.dnsExpirePending.size).to.equal(0);
+  });
+
   it('does not retry a stale refresh after a newer inline refresh', async () => {
     const expires = [];
     const queued = [];
