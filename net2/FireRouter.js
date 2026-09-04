@@ -62,6 +62,7 @@ const exec = require('child-process-promise').exec;
 const era = require('../event/EventRequestApi.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const Constants = require("./Constants.js");
+const getRaRouterLifetime = require('./ra_router_lifetime.js');
 const lock = new AsyncLock();
 const LOCK_INIT = "LOCK_INIT";
 
@@ -147,17 +148,16 @@ function updateMaps() {
   return true;
 }
 
-
 function safeCheckMonitoringInterfaces(monitoringInterfaces) {
   // filter pppoe interfaces
   return monitoringInterfaces.filter(i => !i.startsWith("ppp"));
 }
 
-async function generateNetworkInfo() {
+async function generateNetworkInfo(interfaceMap = intfNameMap) {
   const networkInfos = [];
   const mode = await rclient.getAsync('mode');
-  for (const intfName in intfNameMap) {
-    const intf = intfNameMap[intfName]
+  for (const intfName in interfaceMap) {
+    const intf = interfaceMap[intfName]
     const ip4 = intf.state.ip4 ? new Address4(intf.state.ip4) : null;
     const searchDomains = (routerConfig && routerConfig.dhcp && routerConfig.dhcp[intfName] && routerConfig.dhcp[intfName].searchDomain) || [];
     const localDomains = intf.config && intf.config.extra && intf.config.extra.localDomains || [];
@@ -212,6 +212,7 @@ async function generateNetworkInfo() {
     let gatewayMac
     let dns = null;
     let dns6 = null;
+    let raRouterLifetime = null;
     let resolver = null;
     let resolverFromWan = false;
     const resolverConfig = (routerConfig && routerConfig.dns && routerConfig.dns[intfName]) || null;
@@ -244,6 +245,7 @@ async function generateNetworkInfo() {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
         gateway6 = intf.config.gateway6 || intf.state.gateway6;
+        raRouterLifetime = getRaRouterLifetime(intf);
         if (!intfName.startsWith("pppoe")) {
           gatewayMac = gateway && await layer2.getMACAsync(gateway) || gateway6 && await nmap.neighborSolicit(gateway6);
         }
@@ -277,6 +279,7 @@ async function generateNetworkInfo() {
       ip6_subnets:  ip6Subnets.length > 0 ? ip6Subnets : null,
       ip6_masks:    ip6Masks.length > 0 ? ip6Masks : null,
       gateway6:     gateway6,
+      ra_router_lifetime: raRouterLifetime,
       dns:          dns,
       dns6:         dns6,
       resolver:     resolver,
@@ -322,7 +325,7 @@ async function generateNetworkInfo() {
     if (intf.config.vid) {
       redisIntf.vid = intf.config.vid
     } else if (intfName.startsWith("br") && Array.isArray(intf.config.intf) && !_.isEmpty(intf.config.intf)) {
-      const vid = intfNameMap[intf.config.intf[0]].config.vid
+      const vid = _.get(interfaceMap, [intf.config.intf[0], 'config', 'vid']);
       if (vid) redisIntf.vid = vid
     }
 
@@ -996,6 +999,10 @@ class FireRouter {
 
     await delay(1000)
     return this.waitTillReady()
+  }
+
+  async generateNetworkInfo(interfaceMap = intfNameMap) {
+    return generateNetworkInfo(interfaceMap);
   }
 
   getInterfaceViaName(name) {
