@@ -3,6 +3,7 @@
 const log   = require("../net2/logger.js")(__filename),
       os    = require('os'),
       exec  = require('child_process').exec,
+      execFileSync = require('child_process').execFileSync,
       execAsync = require('child-process-promise').exec;
 
 function trim_exec(cmd, cb) {
@@ -106,9 +107,77 @@ exports.gateway_ip6 = function(cb) {
   trim_exec(cmd, cb);
 };
 
-exports.gateway_ip6_sync = function() {
-  const cmd = "/sbin/ip -6 route | awk '/default/ { print $3 }' | head -n 1"
-  return trim_exec_sync(cmd);
+exports.gateway_ip6_sync = function(nic_name = null) {
+  /*
+   * When an interface is specified, only return the IPv6 default gateway
+   * associated with that interface. This prevents a default route belonging
+   * to another interface from being incorrectly reported as this interface's
+   * gateway.
+   *
+   * Strip the ":0" suffix used by legacy alias interfaces so that an alias
+   * such as eth0:0 is resolved against the underlying Linux device eth0.
+   */
+  let interface_name = null;
+  if (nic_name) {
+    interface_name = nic_name.replace(/:.*$/, "");
+  }
+
+  let output;
+  try {
+    if (interface_name) {
+      output = execFileSync(
+        "/sbin/ip",
+        ["-6", "route", "show", "default", "dev", interface_name],
+        { encoding: "utf8" }
+      );
+    } else {
+      output = execFileSync(
+        "/sbin/ip",
+        ["-6", "route"],
+        { encoding: "utf8" }
+      );
+    }
+  } catch (err) {
+    log.error("Error when executing /sbin/ip -6 route", err);
+    return null;
+  }
+
+  if (!output) {
+    return null;
+  }
+
+  const routes = output.toString().trim().split('\n');
+
+  let isDefaultRoute = false;
+
+  for (const route of routes) {
+    const tokens = route.trim().split(/\s+/);
+
+    if (tokens[0] === 'default') {
+      isDefaultRoute = true;
+    } else if (tokens[0] === 'nexthop' && isDefaultRoute) {
+      // Continue parsing a multipath default route.
+    } else {
+      isDefaultRoute = false;
+      continue;
+    }
+
+    const viaIndex = tokens.indexOf('via');
+    if (viaIndex >= 0 && tokens[viaIndex + 1]) {
+      // A multipath route contains one nexthop per line. Only use the
+      // nexthop that belongs to the requested interface.
+      if (tokens[0] === 'nexthop' && interface_name) {
+        const devIndex = tokens.indexOf('dev');
+        if (devIndex < 0 || tokens[devIndex + 1] !== interface_name) {
+          continue;
+        }
+      }
+
+      return tokens[viaIndex + 1];
+    }
+  }
+
+  return null;
 };
 
 /*
