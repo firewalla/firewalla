@@ -70,7 +70,7 @@ class DNSTool {
     const now = Date.now();
     if (this.dnsExpireOverflowTs.has(key)) {
       if (this.dnsExpirePending.size < MAX_DNS_EXPIRE_PENDING) {
-        this.dnsExpireOverflowTs.delete(key);
+        this.dnsExpireOverflowTs.del(key);
         this.dnsExpirePending.set(key, expr);
       }
       return false;
