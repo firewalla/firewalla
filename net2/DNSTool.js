@@ -53,9 +53,9 @@ class DNSTool {
       this.dnsExpireTs = new LRU({max: 50000, maxAge: 24 * 3600 * 1000});
       // keys whose TTL refresh was throttled; _drainDnsTTL flushes them within one period
       this.dnsExpirePending = new Map();
-      // Keys refreshed inline because the deferred queue was full; suppress repeat inline refreshes
-      // until the queue has capacity again or the throttle period expires.
-      this.dnsExpireOverflowTs = new LRU({max: MAX_DNS_EXPIRE_PENDING, maxAge: RDNS_TTL_REFRESH_PERIOD});
+      // Suppress overflow inline refreshes globally until the queue has capacity again or the
+      // throttle period expires. A per-key map could evict suppression markers under high cardinality.
+      this.dnsExpireOverflowTs = 0;
       // Number of unique refreshes handled inline because the deferred queue was full.
       // Logged and reset once per drain period to avoid one warning per incoming update.
       this.dnsExpireOverflowCount = 0;
@@ -68,9 +68,9 @@ class DNSTool {
   // refresh into dnsExpirePending so _drainDnsTTL still issues it within one period.
   tryRefreshDnsTTL(key, expr) {
     const now = Date.now();
-    if (this.dnsExpireOverflowTs.has(key)) {
+    if (this.dnsExpireOverflowTs && now - this.dnsExpireOverflowTs < RDNS_TTL_REFRESH_PERIOD) {
       if (this.dnsExpirePending.size < MAX_DNS_EXPIRE_PENDING) {
-        this.dnsExpireOverflowTs.del(key);
+        this.dnsExpireOverflowTs = 0;
         this.dnsExpirePending.set(key, expr);
       }
       return false;
@@ -83,7 +83,7 @@ class DNSTool {
     }
     if (!this.dnsExpirePending.has(key) && this.dnsExpirePending.size >= MAX_DNS_EXPIRE_PENDING) {
       this.dnsExpireOverflowCount++;
-      this.dnsExpireOverflowTs.set(key, now);
+      this.dnsExpireOverflowTs = now;
       this.dnsExpireTs.set(key, now);
       return true;
     }
@@ -278,7 +278,6 @@ class DNSTool {
     // drop throttle state so a later re-add re-issues EXPIRE instead of deferring on a stale ts
     this.dnsExpireTs.del(key);
     this.dnsExpirePending.delete(key);
-    this.dnsExpireOverflowTs.del(key);
     await rclient.zremAsync(key, domain);
   }
 
@@ -286,7 +285,6 @@ class DNSTool {
     let key = this.getReverseDNSKey(domain);
     this.dnsExpireTs.del(key);
     this.dnsExpirePending.delete(key);
-    this.dnsExpireOverflowTs.del(key);
     await rclient.zremAsync(key, ip);
   }
 
