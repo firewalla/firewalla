@@ -27,10 +27,10 @@ const bone = require('../lib/Bone.js');
 const SysManager = require('../net2/SysManager.js');
 const { matchFilter } = require('./BlockStatsFilter.js');
 
-const DEFAULT_SLOT_SECS = 3600; // 1 hour, used when "slotSecs" isn't configured
+const DEFAULT_SLOT_SECS = 10800; // 3 hours, used when "slotSecs" isn't configured
 const BUCKET_TTL = 86400 * 7; // 7 days
 const FLUSH_INTERVAL = 60 * 1000; // 1 minute
-const MAX_RECORDS_PER_BUCKET = 200; // cap on distinct records per key per bucket, to bound redis payload size
+const MAX_RECORDS_PER_BUCKET = 400; // cap on distinct records per key per bucket, to bound redis payload size
 
 class BlockStatsSensor extends Sensor {
   constructor(config) {
@@ -121,7 +121,7 @@ class BlockStatsSensor extends Sensor {
   }
 
   _onBlockFlow(event) {
-    const { _ts } = event;
+    const { _ts, ct = 1 } = event;
     const bucketTs = Math.floor(_ts / this.slotSecs) * this.slotSecs;
     for (const setting of this.blockStatsConfs.blockStatsSettings) {
       if (!matchFilter(setting.filter, event)) continue;
@@ -135,9 +135,9 @@ class BlockStatsSensor extends Sensor {
 
       const rec = bucket.records.get(joinedKey);
       if (rec) {
-        rec.cnt++;
+        rec.cnt += ct;
       } else if (bucket.records.size < MAX_RECORDS_PER_BUCKET) {
-        bucket.records.set(joinedKey, { ...fields, cnt: 1 });
+        bucket.records.set(joinedKey, { ...fields, cnt: ct });
       } else {
         // records cap reached for this key/bucket - drop new distinct records rather than growing
         // unbounded; accepted accuracy tradeoff to bound the redis payload size
