@@ -982,7 +982,7 @@
         {
           "key": "block::country",
           "filter": { "field": "bType", "value": "country" },
-          "recordKeys": ["device", "dest", "bTarget"]
+          "recordKeys": ["device", "dest", "bTarget", "fd"]
         }
       ]
     },
