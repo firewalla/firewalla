@@ -105,7 +105,7 @@ class HttpFlow {
 
   getUserAgentHistoryCount() {
     const count = _.get(net2Config.getConfig(), ['sensors', 'OldDataCleanSensor', 'user_agent2', 'count']);
-    return Number.isInteger(count) && count > 0 ? count : 100;
+    return Number.isInteger(count) && count !== 0 ? count : 100;
   }
 
   async saveUserAgentHistory(key, value, expireTime) {

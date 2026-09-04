@@ -72,6 +72,18 @@ describe('HttpFlow User-Agent history retention', function () {
     expect(args[6]).to.be.a('string');
   });
 
+  it('preserves a negative user_agent2 count as unlimited', () => {
+    const config = broConfig.getConfig();
+    const originalCount = config.sensors.OldDataCleanSensor.user_agent2.count;
+    config.sensors.OldDataCleanSensor.user_agent2.count = -1;
+
+    try {
+      expect(httpFlow.getUserAgentHistoryCount()).to.equal(-1);
+    } finally {
+      config.sensors.OldDataCleanSensor.user_agent2.count = originalCount;
+    }
+  });
+
   it('uses the same bounded write path for cached User-Agents', async () => {
     const calls = [];
 
