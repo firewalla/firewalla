@@ -21,6 +21,7 @@ const proxyquire = require('proxyquire');
 function loadSysInfo() {
   let interfaces = ['wlan0'];
   let redisAvailable = true;
+  let kernelReload = 'enabled';
 
   const sysInfo = proxyquire('../extension/sysinfo/SysInfo.js', {
     'child-process-promise': {
@@ -46,7 +47,7 @@ function loadSysInfo() {
           if (key === 'sys:wlan:kernelReload') {
             if (!redisAvailable)
               throw new Error('Redis unavailable');
-            return null;
+            return kernelReload;
           }
           throw new Error(`Unexpected Redis key: ${key}`);
         },
@@ -99,6 +100,6 @@ describe('SysInfo.getWlanInfo', function () {
     const secondInfo = await sysInfo.getWlanInfo();
 
     expect(secondInfo).to.not.have.property('wlan0');
-    expect(secondInfo).to.not.have.property('kernelReload');
+    expect(secondInfo).to.have.property('kernelReload', firstInfo.kernelReload);
   });
 });

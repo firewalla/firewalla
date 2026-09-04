@@ -781,6 +781,8 @@ async function getWlanInfo() {
     localWlanInfo.kernelReload = await rclient.getAsync('sys:wlan:kernelReload')
   } catch (err) {
     log.error('Failed to get WLAN kernel reload state', err)
+    if (Object.prototype.hasOwnProperty.call(wlanInfo, 'kernelReload'))
+      localWlanInfo.kernelReload = wlanInfo.kernelReload
   }
   wlanInfo = localWlanInfo;
 
