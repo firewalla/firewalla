@@ -82,6 +82,9 @@ class DNSTool {
       if (this.dnsExpirePending.size < MAX_DNS_EXPIRE_PENDING) {
         this.dnsExpireOverflowTs = 0;
         this.dnsExpirePending.set(key, expr);
+      } else {
+        this._drainDnsTTL();
+        this.dnsExpirePending.set(key, expr);
       }
       return false;
     }
