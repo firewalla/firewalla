@@ -1448,15 +1448,26 @@ class VPNClient {
 
       const configDirectory = path.resolve(this.getConfigDirectory());
 
-      const removeArtifact = async ({ root, path: artifactPath, recursive = false }) => {
+      const removeArtifact = async ({
+        root,
+        path: artifactPath,
+        recursive = false,
+        privileged = false
+      }) => {
         const resolvedRoot = path.resolve(root);
         const resolvedPath = path.resolve(resolvedRoot, artifactPath);
         if (resolvedPath !== resolvedRoot && !resolvedPath.startsWith(`${resolvedRoot}${path.sep}`)) {
           throw new Error(`Refusing to clean VPN client artifact outside allowed root: ${profileId}`);
         }
+
         try {
           if (recursive) {
-            await fs.rmAsync(resolvedPath, { recursive: true, force: true });
+            if (privileged)
+              await execFile('sudo', ['rm', '-rf', resolvedPath]);
+            else
+              await execFile('rm', ['-rf', resolvedPath]);
+          } else if (privileged) {
+            await execFile('sudo', ['rm', '-f', resolvedPath]);
           } else {
             await fs.unlinkAsync(resolvedPath);
           }

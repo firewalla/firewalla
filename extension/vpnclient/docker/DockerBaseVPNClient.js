@@ -39,10 +39,37 @@ class DockerBaseVPNClient extends VPNClient {
     const hiddenFolder = f.getHiddenFolder();
     const configRoot = `${hiddenFolder}/run/docker_vpn_client/${this.getProtocol()}`;
     const workingRoot = `${hiddenFolder}/run/docker`;
+
     return super.getStoredProfileArtifacts(profileId).concat([
-      { root: workingRoot, path: profileId, recursive: true },
-      { root: configRoot, path: profileId, recursive: true },
-      { root: "/var/log", path: `docker_vpn_${profileId}.log` }
+      {
+        root: configRoot,
+        path: `${profileId}.subnet`
+      },
+      {
+        root: configRoot,
+        path: `${profileId}.subnet6`
+      },
+      {
+        root: workingRoot,
+        path: profileId,
+        recursive: true,
+        privileged: true
+      },
+      {
+        root: configRoot,
+        path: profileId,
+        recursive: true
+      },
+      {
+        root: "/var/log",
+        path: `docker_vpn_${profileId}.log`,
+        privileged: true
+      },
+      {
+        root: "/etc/rsyslog.d",
+        path: `40-docker_vpn_${profileId}.conf`,
+        privileged: true
+      }
     ]);
   }
 
