@@ -1949,13 +1949,18 @@ module.exports = class DNSMASQ {
     const hosts = (await hostManager.getHostsAsync())
       .filter(h => !sysManager.isMyMac(h.o.mac))
 
-    // remove previously configured hosts files
-    await execAsync(`rm -rf ${HOSTFILE_PATH}; mkdir -p ${HOSTFILE_PATH}`)
+    await execAsync(`mkdir -p ${HOSTFILE_PATH}`)
+    const staleFiles = new Set(await fsp.readdir(HOSTFILE_PATH).catch(err => { log.error('Error listing', HOSTFILE_PATH, err.message); return []; }))
 
     for (const h of hosts) try {
+      staleFiles.delete(h.o.mac)
       await this.writeHostsFile(h, true)
     } catch(err) {
       log.error('Error write hosts file for', h.o.mac, err)
+    }
+
+    for (const mac of staleFiles) {
+      await fileRemove(HOSTFILE_PATH + mac).catch((err) => {});
     }
   }
 
