@@ -55,6 +55,7 @@ describe('VPN profile deletion hardening', function () {
   let fakeClientClass;
   let realVPNClient;
   let realVPNState;
+  let statisticsError;
 
   before(function () {
     legacyProfileExists = true;
@@ -124,6 +125,8 @@ describe('VPN profile deletion hardening', function () {
       async setup() {}
 
       async getStatistics() {
+        if (statisticsError)
+          throw statisticsError;
         return { bytesIn: 1, bytesOut: 2 };
       }
 
@@ -200,6 +203,7 @@ describe('VPN profile deletion hardening', function () {
   beforeEach(function () {
     legacyProfileExists = true;
     activityMode = 'inactive';
+    statisticsError = null;
     realVPNState.cachedState = null;
     realVPNState.execFileCalls.length = 0;
     realVPNState.execFileResponder = () => Promise.resolve({ stdout: '' });
@@ -255,6 +259,15 @@ describe('VPN profile deletion hardening', function () {
     expect(error).to.equal(undefined);
     expect(result).to.eql({ stats: { bytesIn: 1, bytesOut: 2 } });
     expect(cleanupCalls.constructor).to.equal(0);
+    expect(cleanupCalls.stop).to.equal(1);
+  });
+
+  it('always cleans up a legacy profile when statistics collection fails', async function () {
+    statisticsError = new Error('statistics unavailable');
+
+    const { error } = await stopLegacyProfile();
+
+    expect(error).to.equal(statisticsError);
     expect(cleanupCalls.stop).to.equal(1);
   });
 

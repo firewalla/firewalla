@@ -176,3 +176,23 @@ describe('Test vpnClient startup cancellation race', function() {
     }
   });
 });
+
+describe('Test vpnClient startup persistence failure', function() {
+  it('settles startup when cached state persistence fails', async() => {
+    const client = Object.create(VPNClient.prototype);
+    client.profileId = `test_${Date.now()}`;
+    client._started = false;
+    client._prepareRoutes = async() => {};
+    client.flushRemoteEndpointRoutes = async() => {};
+    client._start = async() => {};
+    client._isLinkUp = async() => true;
+    client._setCachedState = async() => {
+      throw new Error('cache unavailable');
+    };
+
+    const result = await client.start();
+
+    expect(result).to.eql({ result: false, errMsg: 'cache unavailable' });
+    expect(client._establishment).to.equal(null);
+  });
+});

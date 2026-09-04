@@ -3505,8 +3505,22 @@ class netBot extends ControllerBot {
             await vpnClient.setup().catch((setupErr) => {
               log.error(`Failed to setup ${type} vpn client for ${profileId}`, setupErr);
             });
-            const stats = await vpnClient.getStatistics();
-            await vpnClient._stopWithoutLifecycleLock();
+            let stats;
+            let statisticsError;
+            try {
+              stats = await vpnClient.getStatistics();
+            } catch (err) {
+              statisticsError = err;
+            }
+            try {
+              await vpnClient._stopWithoutLifecycleLock();
+            } catch (stopErr) {
+              if (!statisticsError)
+                throw stopErr;
+              log.error(`Failed to stop legacy ${type} vpn client ${profileId} after statistics failure`, stopErr);
+            }
+            if (statisticsError)
+              throw statisticsError;
             return { stats: stats };
           });
         }
