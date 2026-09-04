@@ -78,24 +78,42 @@ class PortChecker {
         result[protocol] = { status: "reserved", usage: reserved.usage };
         return;
       }
-      const inUse = await this._isPortInUse(port, protocol);
-      result[protocol] = { status: inUse ? "in_use" : "available" };
+      try {
+        const listeningPorts = await this._getListeningPorts(protocol);
+        result[protocol] = { status: listeningPorts.has(port) ? "in_use" : "available" };
+      } catch (err) {
+        // a failed live probe on one protocol must not discard a known-good answer on the other
+        result[protocol] = { status: "unknown" };
+      }
     });
     await Promise.all(checks);
+    if (PROTOCOLS.every(protocol => result[protocol].status === "unknown"))
+      throw new Error("Unable to check port " + port);
     return result;
   }
 
-  // read the kernel socket table -> ipv6-only sockets and sockets allowing a second bind are not missed
-  async _isPortInUse(port, protocol) {
+  async _getListeningPorts(protocol) {
     const flag = protocol === UDP ? "-u" : "-t";
-    const cmd = "ss -H -n -l " + flag + " '( sport = :" + port + " )'";
+    const cmd = "ss -n -l " + flag;
+    let stdout = null;
     try {
-      const result = await execAsync(cmd);
-      return result.stdout.trim().length > 0;
+      stdout = (await execAsync(cmd)).stdout;
     } catch (err) {
-      log.error("Failed to check port " + port + "/" + protocol, err.message);
-      throw new Error("Unable to check port " + port + "/" + protocol);
+      log.error("Failed to list listening " + protocol + " sockets", err.message);
+      throw new Error("Unable to check " + protocol + " ports");
     }
+
+    const ports = new Set();
+    for (const line of stdout.split("\n")) {
+      for (const token of line.trim().split(/\s+/)) {
+        const matched = token.match(/:(\d+)$/);
+        if (!matched)
+          continue;
+        ports.add(Number(matched[1]));
+        break;
+      }
+    }
+    return ports;
   }
 }
 

@@ -194,15 +194,22 @@ class LiveStatsPlugin extends Sensor {
       if (queries && queries.throughput) {
         switch (type) {
           case 'host': {
-            const switchMap = await fwapc.getSwitchStatus();
             let result;
-            if (switchMap && switchMap[target] !== undefined) {
-              const st = switchMap[target];
-              if (this.isSwitchStatusOnline(st)) {
+            const assetType = await this.getAssetType(target);
+            if (assetType === 'switch') {
+              const switchMap = await fwapc.getSwitchStatus();
+              if (this.isSwitchStatusOnline(switchMap && switchMap[target])) {
                 result = await this.getSwitchThroughput(target, cache);
               } else {
                 delete cache.switchMetricsPrev;
                 result = { target, type: 'switch', tx: 0, rx: 0, ports: [], lagPorts: [] };
+              }
+            } else if (assetType === 'ap') {
+              const apMap = await fwapc.getAssetsStatus();
+              if (this.isAPStatusOnline(apMap && apMap[target])) {
+                result = await this.getAPThroughput(target);
+              } else {
+                result = { target, type: 'ap', tx: 0, rx: 0 };
               }
             } else {
               result = await this.getDeviceThroughput(target);
@@ -394,6 +401,63 @@ class LiveStatsPlugin extends Sensor {
       return false;
     const nowSec = Math.floor(Date.now() / 1000);
     return nowSec - Number(st.ts) < 60;
+  }
+
+  // heartbeat ts in 60s
+  isAPStatusOnline(ap) {
+    if (!ap || ap.ts == null)
+      return false;
+    const nowSec = Math.floor(Date.now() / 1000);
+    return nowSec - Number(ap.ts) < 60;
+  }
+
+  /**
+   * Classify a MAC from the local apc.assets config, so an ordinary client never pays for
+   * a fwapc status round trip. Returns 'switch', 'ap' or null.
+   */
+  async getAssetType(mac) {
+    if (!mac)
+      return null;
+    const assets = _.get(await fireRouter.getConfig(false, false), ['apc', 'assets']);
+    if (!_.isObject(assets))
+      return null;
+    const asset = assets[mac];
+    if (!asset)
+      return null;
+    const model = String(asset.model || '').toLowerCase();
+    return model === 'switch' || model.startsWith('fwsw-') ? 'switch' : 'ap';
+  }
+
+  async getAPThroughput(target) {
+    const info = await fwapc.getAssetLiveStats(target);
+    const { ports = [], bands = [] } = this.formatAPThroughput(info) || {};
+    const rate = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+    const aggTx = ports.reduce((s, p) => s + rate(p.txRate), 0) + bands.reduce((s, p) => s + rate(p.txRate), 0);
+    const aggRx = ports.reduce((s, p) => s + rate(p.rxRate), 0) + bands.reduce((s, p) => s + rate(p.rxRate), 0);
+    return { target, type: 'ap', tx: aggTx, rx: aggRx, ports, bands };
+  }
+
+  formatAPThroughput(info) {
+    const ports = [];
+    const bands = [];
+    const portMap = info && info.ports && typeof info.ports === 'object' ? info.ports : null;
+    if (!portMap)
+      return { ports, bands };
+
+    for (const p of Object.values(portMap)) {
+      if (!p || typeof p !== 'object')
+        continue;
+      if (p.type === 'wifi') {
+        // by default, uplink is on 6g bands, not override original 6g uplink
+        if (info.uplink && p.band === '6g' && !p.uplink) {
+          p.uplink = info.uplink;
+        }
+        bands.push(p);
+      } else if (p.type === 'ether') {
+        ports.push(p);
+      }
+    }
+    return { ports, bands };
   }
 
   /**
