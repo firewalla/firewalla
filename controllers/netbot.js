@@ -30,7 +30,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
 const pairedMaxHistoryEntry = fc.getConfig().pairedDeviceMaxHistory || 100;
 // event types whose notification is on until the app explicitly turns it off, same as alarms
-const DEFAULT_ON_EVENT_TYPES = ["phone_paired"];
+const DEFAULT_ON_EVENT_TYPES = ["phone_paired", "weak_password_scan_start", "weak_password_scan_complete"];
 const URL = require("url");
 const bone = require("../lib/Bone");
 
@@ -44,6 +44,8 @@ const categoryFlowTool = new TypeFlowTool('category')
 const HostManager = require('../net2/HostManager.js');
 const Host = require('../net2/Host.js')
 const sysManager = require('../net2/SysManager.js');
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const FlowManager = require('../net2/FlowManager.js');
 const flowManager = new FlowManager();
 const VpnManager = require("../vpn/VpnManager.js");
@@ -385,15 +387,24 @@ class netBot extends ControllerBot {
       message: notifEvent.msg,
       titleKey: 'NOTIF_EVENT_TITLE',
       bodyKey: 'NOTIF_EVENT_BODY',
-      titleLocalKey: `NEW_EVENT_TITLE_${event_type}`,
-      bodyLocalKey: `NEW_EVENT_BODY_${event_type}`,
+      // an event type may keep its own notification key namespace, fall back to the generic one
+      titleLocalKey: notifEvent.titleLocalKey || `NEW_EVENT_TITLE_${event_type}`,
+      bodyLocalKey: notifEvent.bodyLocalKey || `NEW_EVENT_BODY_${event_type}`,
       bodyLocalArgs: !_.isEmpty(notifEvent.localArgs) ? notifEvent.localArgs
         : [notifEvent.args.eid, notifEvent.args.deviceName || "", notifEvent.args.ts || 0 ],
       bodyLocalMsg: notifEvent.msg,
       payload: notifEvent.args,
+      category: notifEvent.category,
     }
   }
 
+  // time of the day in the timezone of the box, e.g. 03:00 AM, defaults to now
+  _localizedTimeOfDay(ts = Date.now() / 1000) {
+    const timezone = sysManager.getTimezone();
+    return (timezone ? moment.unix(ts).tz(timezone) : moment.unix(ts)).format("hh:mm A");
+  }
+
+  // titleLocalKey/bodyLocalKey/category are optional, only set by event types keeping their own keys
   async getNotifEvent(event_type, event_value, event_labels) {
     let payload = {msg: '', args: {}, localArgs: []};
     if (!event_labels) return payload;
@@ -412,6 +423,33 @@ class netBot extends ControllerBot {
         payload.args.name = name;
         payload.args.ts = ts;
         payload.localArgs = [eid, dName, ts, name];
+        break;
+      }
+      case "weak_password_scan_start": {
+        const numOfHosts = event_labels.numOfHosts || 0;
+        const time = this._localizedTimeOfDay(); // notification is composed right as the event fires
+        payload.msg = `System vulnerability scan started at ${time} on ${numOfHosts} device(s).`;
+        payload.args.deviceCount = numOfHosts;
+        payload.args.time = time;
+        payload.localArgs = [numOfHosts, time];
+        payload.titleLocalKey = 'WEAK_PASSWORD_SCAN_START';
+        payload.bodyLocalKey = 'WEAK_PASSWORD_SCAN_START';
+        payload.category = Constants.NOTIF_CATEGORY_WEAK_PASSWORD_SCAN;
+        break;
+      }
+      case "weak_password_scan_complete": {
+        const count = event_labels.numOfWeakPasswords || 0;
+        const time = this._localizedTimeOfDay(); // notification is composed right as the event fires
+        payload.msg = count === 0
+          ? `System vulnerability scan completed at ${time}. No vulnerabilities were found.`
+          : `Firewalla found ${count} vulnerabilities on your devices at ${time}.`;
+        payload.args.weakPasswordCount = count;
+        payload.args.time = time;
+        payload.localArgs = [count, time];
+        payload.titleLocalKey = 'WEAK_PASSWORD_SCAN_COMPLETE';
+        // NOTE: the triple-S typo below is the key already shipped in the app, do NOT "fix" it
+        payload.bodyLocalKey = `WEAK_PASSSWORD_SCAN_COMPLETE_${count === 0 ? "NOT_" : count > 1 ? "MULTI_" : "SINGLE_"}FOUND`;
+        payload.category = Constants.NOTIF_CATEGORY_WEAK_PASSWORD_SCAN;
         break;
       }
       default:
@@ -1430,6 +1468,18 @@ class netBot extends ControllerBot {
         const count = value && value.count || 50;
         const flows = await this.hostManager.loadStats({}, msg.target, count);
         return { flows: flows };
+      }
+      case "blockStats": {
+        //  value.begin/value.end: time range in seconds used to query block stats time slots,
+        //  begin included, end excluded, end defaults to now if not given
+        const value = msg.data.value || {};
+        const { begin } = value;
+        const end = value.end == null ? Math.floor(Date.now() / 1000) : value.end;
+        if (begin == null || isNaN(begin) || isNaN(end)) {
+          throw new Error('Invalid begin/end');
+        }
+        const blockStats = await this.hostManager.getBlockStatsInRange(Number(begin), Number(end));
+        return { blockStats };
       }
       case "neighbors":
       case "neighborsLocal": {
