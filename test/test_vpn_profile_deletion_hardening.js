@@ -61,7 +61,9 @@ describe('VPN profile deletion hardening', function () {
     cleanupCalls = {
       deletePolicies: 0,
       destroyStoredProfile: 0,
-      portforward: 0
+      portforward: 0,
+      constructor: 0,
+      stop: 0
     };
     activityMode = 'inactive';
 
@@ -96,6 +98,15 @@ describe('VPN profile deletion hardening', function () {
     ({ client: realVPNClient, state: realVPNState } = installRealVPNClient());
 
     fakeClientClass = class FakeVPNClient {
+      constructor() {
+        cleanupCalls.constructor++;
+        throw new Error('validated constructor must not be used for legacy stop');
+      }
+
+      static getProtocol() {
+        return 'openvpn';
+      }
+
       static async profileExists() {
         return legacyProfileExists;
       }
@@ -109,6 +120,16 @@ describe('VPN profile deletion hardening', function () {
       async status() {
         return false;
       }
+
+      async setup() {}
+
+      async getStatistics() {
+        return { bytesIn: 1, bytesOut: 2 };
+      }
+
+      async _stopWithoutLifecycleLock() {
+        cleanupCalls.stop++;
+      }
     };
 
     fakeVPNClient = {
@@ -119,6 +140,10 @@ describe('VPN profile deletion hardening', function () {
 
       getClass(type) {
         return type === 'openvpn' ? fakeClientClass : null;
+      },
+
+      async withProfileLifecycleLock(profileId, callback) {
+        return callback();
       },
 
       async isProfileActive(profileId) {
@@ -181,6 +206,8 @@ describe('VPN profile deletion hardening', function () {
     cleanupCalls.deletePolicies = 0;
     cleanupCalls.destroyStoredProfile = 0;
     cleanupCalls.portforward = 0;
+    cleanupCalls.constructor = 0;
+    cleanupCalls.stop = 0;
   });
 
   async function deleteLegacyProfile() {
@@ -200,6 +227,70 @@ describe('VPN profile deletion hardening', function () {
     }
     return error;
   }
+
+  async function stopLegacyProfile() {
+    let error;
+    let result;
+    try {
+      result = await bot.cmdHandler('test-gid', {
+        data: {
+          item: 'stopVpnClient',
+          value: {
+            type: 'openvpn',
+            profileId: 'legacy-profile'
+          }
+        }
+      });
+    } catch (err) {
+      error = err;
+    }
+    return { error, result };
+  }
+
+  it('stops an active legacy profile without invoking the validated constructor', async function () {
+    realVPNState.execFileResponder = () => Promise.resolve({ stdout: '2: vpn_legacy-profi: <POINTOPOINT>\n' });
+
+    const { error, result } = await stopLegacyProfile();
+
+    expect(error).to.equal(undefined);
+    expect(result).to.eql({ stats: { bytesIn: 1, bytesOut: 2 } });
+    expect(cleanupCalls.constructor).to.equal(0);
+    expect(cleanupCalls.stop).to.equal(1);
+  });
+
+  it('cleans up an inactive legacy profile without invoking the validated constructor', async function () {
+    realVPNState.execFileResponder = () => Promise.resolve({ stdout: '' });
+
+    const { error } = await stopLegacyProfile();
+
+    expect(error).to.equal(undefined);
+    expect(cleanupCalls.constructor).to.equal(0);
+    expect(cleanupCalls.stop).to.equal(1);
+  });
+
+  it('refuses to stop a legacy profile with indeterminate activity', async function () {
+    realVPNState.execFileResponder = () => Promise.reject(Object.assign(new Error('permission denied'), { code: 2 }));
+
+    const { error } = await stopLegacyProfile();
+
+    expect(error).to.deep.include({ code: 400 });
+    expect(error.msg).to.equal('Unable to determine whether legacy openvpn VPN client legacy-profile is active');
+    expect(cleanupCalls.constructor).to.equal(0);
+    expect(cleanupCalls.stop).to.equal(0);
+  });
+
+  it('returns controlled validation error when legacy profile does not exist', async function () {
+    legacyProfileExists = false;
+
+    const { error } = await stopLegacyProfile();
+
+    expect(error).to.deep.include({
+      code: 400,
+      msg: 'Invalid VPN profile ID: legacy-profile'
+    });
+    expect(cleanupCalls.constructor).to.equal(0);
+    expect(cleanupCalls.stop).to.equal(0);
+  });
 
   it('successfully cleans up an existing inactive legacy profile through the integrated safety path', async function () {
     realVPNState.execFileResponder = (binary, args) => {

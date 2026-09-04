@@ -76,9 +76,13 @@ describe('VPNClient shell and path hardening', function () {
     expect(() => VPNClient.validateProfileId(123)).to.throw();
   });
 
-  it('skips invalid stored profile IDs without rejecting initialization', async () => {
+  it('retains invalid stored profile IDs as sanitized initialization metadata', async () => {
     const { VPNClient } = installVPNClientStubs();
     class TestVPNClient extends VPNClient {
+      static getProtocol() {
+        return 'openvpn';
+      }
+
       static async listProfileIds() {
         return ['valid_123', 'legacy-profile'];
       }
@@ -93,7 +97,15 @@ describe('VPNClient shell and path hardening', function () {
     VPNClient.getClass = (type) => type === 'openvpn' ? TestVPNClient : null;
     try {
       expect(await VPNClient.getVPNProfilesForInit()).to.eql({
-        testVpnProfiles: [{ profileId: 'valid_123' }]
+        testVpnProfiles: [
+          { profileId: 'valid_123' },
+          {
+            profileId: 'legacy-profile',
+            type: 'openvpn',
+            invalidProfileId: true,
+            message: 'This VPN profile has an invalid ID and requires administrator remediation.'
+          }
+        ]
       });
     } finally {
       VPNClient.getClass = originalGetClass;
@@ -124,6 +136,33 @@ describe('VPNClient shell and path hardening', function () {
     } finally {
       await fs.rm(configDirectory, { recursive: true, force: true });
     }
+  });
+
+  it('serializes stop and stored-profile destruction on the same lifecycle lock', async () => {
+    const { VPNClient } = installVPNClientStubs();
+    const client = Object.create(VPNClient.prototype);
+    client.profileId = 'valid_123';
+
+    let releaseStop;
+    const stopEntered = new Promise((resolve) => {
+      client._stopWithoutLifecycleLock = async () => {
+        resolve();
+        await new Promise((release) => { releaseStop = release; });
+      };
+    });
+
+    const stopPromise = client.stop();
+    await stopEntered;
+    let destroyEntered = false;
+    const destroyPromise = VPNClient.destroyStoredProfile('valid_123', async () => {
+      destroyEntered = true;
+    });
+    await Promise.resolve();
+    expect(destroyEntered).to.equal(false);
+
+    releaseStop();
+    await Promise.all([stopPromise, destroyPromise]);
+    expect(destroyEntered).to.equal(true);
   });
 
   it('detects an active legacy profile with the historical 15-character interface name', async () => {

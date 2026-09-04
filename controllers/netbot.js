@@ -3484,10 +3484,30 @@ class netBot extends ControllerBot {
         if (!profileId) {
           throw { code: 400, msg: "'profileId' is not specified." }
         }
-        validateVPNProfileId(profileId);
         const c = VPNClient.getClass(type);
         if (!c) {
           throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
+        }
+        try {
+          validateVPNProfileId(profileId);
+        } catch (err) {
+          if (!await c.profileExists(profileId))
+            throw err;
+
+          return await VPNClient.withProfileLifecycleLock(profileId, async () => {
+            const active = await VPNClient.isProfileActive(profileId);
+            if (active !== true && active !== false) {
+              throw { code: 400, msg: `Unable to determine whether legacy ${type} VPN client ${profileId} is active` };
+            }
+            const vpnClient = Object.create(c.prototype);
+            vpnClient.profileId = profileId;
+            await vpnClient.setup().catch((setupErr) => {
+              log.error(`Failed to setup ${type} vpn client for ${profileId}`, setupErr);
+            });
+            const stats = await vpnClient.getStatistics();
+            await vpnClient._stopWithoutLifecycleLock();
+            return { stats: stats };
+          });
         }
         const vpnClient = new c({profileId});
         // error in setup should not interrupt stop vpn client
