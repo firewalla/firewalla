@@ -1198,7 +1198,12 @@ class VPNClient {
           establishment.resolve({ result: false, cancelled: true });
           return;
         }
-        await this._setCachedState(true);
+        await VPNClient.withProfileLifecycleLock(this.profileId, async () => {
+          if (establishment.settled || !this._started) {
+            return;
+          }
+          await this._setCachedState(true);
+        });
         if (establishment.settled || !this._started) {
           return;
         }
