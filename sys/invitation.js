@@ -43,7 +43,7 @@ const clientMgmt = require('../mgmt/ClientMgmt.js');
 const config = require('../net2/config.js').getConfig();
 
 const sysManager = require('../net2/SysManager.js');
-const era = require('../event/EventRequestApi.js');
+const pairedAppEventTool = require('../net2/PairedAppEventTool.js');
 const Constants = require('../net2/Constants.js');
 
 const FW_SERVICE = "Firewalla";
@@ -379,10 +379,12 @@ class FWInvitation {
       // remove from revoked eid set
       await rclient.sremAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
 
-      // fire an event on phone_paired with the paired app info
-      const ts = Date.now();
-      const labels = Object.assign(await this.getPairedMemberInfo(eid), {"eid":eid, "ts":ts});
-      await era.addActionEvent("phone_paired",1,labels,ts);
+      // dName of a brand new app is not available at this moment, it only comes with the appInfo of
+      // the first init request. Leave a pending record here and let FireApi fire the phone_paired
+      // event once dName is known, or once the pending record expires. FireMain may not even be
+      // running yet on the very first pairing, an event fired here would simply be lost.
+      const memberInfo = await this.getPairedMemberInfo(eid);
+      await pairedAppEventTool.addPending(eid, Object.assign(memberInfo, {"ts": Date.now()}));
 
       log.forceInfo(`Linked App ${eid} to this device successfully`);
 
