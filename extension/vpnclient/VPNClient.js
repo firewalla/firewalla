@@ -1184,6 +1184,10 @@ class VPNClient {
     this.isFirstLaunch = false;
     });
 
+    if (!this._started) {
+      return { result: false, cancelled: true };
+    }
+
     return new Promise((resolve, reject) => {
       const establishment = {
         task: null,
@@ -1259,6 +1263,7 @@ class VPNClient {
         if (establishment.settled || establishment.settling) {
           return;
         }
+        establishment.settling = true;
         const errMsg = await this.getMessage();
         log.error(`Failed to establish tunnel for VPN client ${this.profileId}. Reason: ${reason || 'Unknown error'}`, errMsg ? `Details: ${errMsg}` : '');
         establishment.resolve({ result: false, errMsg: errMsg });

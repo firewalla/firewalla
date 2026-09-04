@@ -132,3 +132,47 @@ describe('Test vpnClient connectivity state cache race', function() {
     expect(cachedStates).to.eql([false]);
   });
 });
+
+describe('Test vpnClient startup cancellation race', function() {
+  it('should cancel before scheduling establishment polling when stop wins after the lifecycle lock', async() => {
+    const client = Object.create(VPNClient.prototype);
+    client.profileId = `test_${Date.now()}`;
+    client._started = false;
+
+    let releaseStartLock;
+    const startLockReleased = new Promise((resolve) => {
+      releaseStartLock = resolve;
+    });
+    let lifecycleCalls = 0;
+    const originalWithProfileLifecycleLock = VPNClient.withProfileLifecycleLock;
+    VPNClient.withProfileLifecycleLock = async(profileId, callback) => {
+      lifecycleCalls += 1;
+      const result = await callback();
+      if (lifecycleCalls === 1) {
+        await startLockReleased;
+      }
+      return result;
+    };
+    client._prepareRoutes = async() => {};
+    client.flushRemoteEndpointRoutes = async() => {};
+    client._start = async() => {};
+    client._stopWithoutLifecycleLock = async() => {
+      client._started = false;
+    };
+    client._isLinkUp = async() => {
+      throw new Error('establishment polling should not start');
+    };
+
+    try {
+      const startPromise = client.start();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      await client.stop();
+      releaseStartLock();
+
+      expect(await startPromise).to.eql({ result: false, cancelled: true });
+    } finally {
+      VPNClient.withProfileLifecycleLock = originalWithProfileLifecycleLock;
+    }
+  });
+});
