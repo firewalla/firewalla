@@ -75,6 +75,10 @@ class DNSTool {
       return true;
     }
     if (this.dnsExpireOverflowTs && now - this.dnsExpireOverflowTs < RDNS_TTL_REFRESH_PERIOD) {
+      if (this.dnsExpirePending.has(key)) {
+        this.dnsExpirePending.set(key, expr);
+        return false;
+      }
       if (this.dnsExpirePending.size < MAX_DNS_EXPIRE_PENDING) {
         this.dnsExpireOverflowTs = 0;
         this.dnsExpirePending.set(key, expr);

@@ -86,6 +86,21 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     expect(dnsTool.dnsExpireOverflowCount).to.equal(0);
   });
 
+  it('updates an existing pending key while overflow suppression is active', () => {
+    const now = Date.now();
+
+    for (let i = 0; i < 50000; i++) {
+      const key = 'key:' + i;
+      dnsTool.dnsExpirePending.set(key, 86400);
+      dnsTool.dnsExpireTs.set(key, now);
+    }
+    dnsTool.dnsExpireOverflowTs = now;
+
+    expect(dnsTool.tryRefreshDnsTTL('key:100', 3600)).to.equal(false);
+    expect(dnsTool.dnsExpirePending.size).to.equal(50000);
+    expect(dnsTool.dnsExpirePending.get('key:100')).to.equal(3600);
+  });
+
   it('does not evict a pending refresh when updating an existing key at capacity', () => {
     const now = Date.now();
 
