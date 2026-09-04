@@ -254,10 +254,10 @@ class CountryUpdater extends CategoryUpdaterBase {
 
       // add ipset right away to enforce policies
       // as v6 spaces is already standardized to CIDR
-      CIDRs.forEach(entry => Ipset.add(ipset, entry))
+      CIDRs.forEach(entry => Ipset.add(ipset, entry, {}, true))
     } else {
       await rclient.zremAsync(key, CIDRs)
-      CIDRs.forEach(entry => Ipset.del(ipset, entry))
+      CIDRs.forEach(entry => Ipset.del(ipset, entry, true))
     }
   }
 }

@@ -106,6 +106,11 @@
     "AdditionalPairPlugin": {},
     "DockerPlugin": {},
     "EncipherPlugin": {},
+    "PairedAppSensor": {
+      "pendingTimeout": 120,
+      "checkInterval": 60,
+      "staleThreshold": 3600
+    },
     "GuardianSensor": {},
     "DNSCryptPlugin": {},
     "UnboundPlugin": {},
@@ -937,7 +942,7 @@
       }
     },
     "BlockStatsSensor": {
-      "slotSecs": 3600,
+      "slotSecs": 10800,
       "blockStatsSettings": [
         {
           "key": "block::porn",
@@ -977,7 +982,7 @@
         {
           "key": "block::country",
           "filter": { "field": "bType", "value": "country" },
-          "recordKeys": ["device", "dest", "bTarget"]
+          "recordKeys": ["device", "dest", "bTarget", "fd"]
         }
       ]
     },
