@@ -3492,7 +3492,7 @@ class netBot extends ControllerBot {
               };
             }
 
-            await c.destroyStoredProfile(profileId);
+            // Remove related policies and port-forward rules first. Keep stored profile until cleanup succeeds so retries can complete.
             await pm2.deleteVpnClientRelatedPolicies(profileId);
             await this._portforward(null, {
               "applyToAll": "*",
@@ -3505,6 +3505,8 @@ class netBot extends ControllerBot {
               "toPort": "*",
               "state": false
             });
+            // Only remove stored profile after external cleanups succeed
+            await c.destroyStoredProfile(profileId);
             return;
           }
           throw err;
