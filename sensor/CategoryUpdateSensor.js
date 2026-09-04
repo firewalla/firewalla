@@ -30,6 +30,8 @@ const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
 const CountryUpdater = require('../control/CountryUpdater.js');
 const countryUpdater = new CountryUpdater();
+const ExceptionManager = require('../alarm/ExceptionManager.js');
+const exceptionManager = new ExceptionManager();
 
 const { Address4, Address6 } = require('ip-address');
 
@@ -635,12 +637,25 @@ class CategoryUpdateSensor extends Sensor {
         }
       });
 
+      // deciding whether a user target list still has a rule/exception behind it needs state that
+      // only exists in this process, so FireApi/FireMon delegate the check here
+      sem.on('Category:MaybeDeactivate', async (event) => {
+        await exceptionManager.maybeDeactivateCategory(event.category).catch((err) => {
+          log.error("Failed to check category deactivation", event.category, err.message);
+        });
+      })
+
       sem.on('Category:Delete', async (event) => {
         log.info("Deactivate category", event.category);
         const category = event.category;
         await categoryUpdater.clearRecycleTask(category);
         if (!categoryUpdater.isCustomizedCategory(category) &&
           categoryUpdater.activeCategories[category]) {
+          // user target lists are loaded through cloudcache, whose own job keeps refreshing
+          // registered items regardless of whether the category is still active
+          const hashset = this.getCategoryHashset(category);
+          if (hashset && categoryUpdater.isUserTargetList(category))
+            await cloudcache.disableCache(hashset);
           delete categoryUpdater.activeCategories[category];
           delete this.categoryHashsetMapping[category];
           await categoryUpdater.flushDefaultDomains(category);
