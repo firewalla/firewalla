@@ -28,7 +28,7 @@ function sync_website() {
 function sync_time() {
     tsWebsite=$(sync_website status.github.com || sync_website google.com || sync_website live.com || sync_website facebook.com)
     if [[ -z $tsWebsite ]]; then
-      tsWebsite = 0
+      tsWebsite=0
     fi
     tsSystem=$(date +%s)
     tsDiff=$((tsWebsite - tsSystem))

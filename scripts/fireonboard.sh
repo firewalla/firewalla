@@ -81,6 +81,10 @@ done
 T_NET=$(uptime_s)
 log "ready: internet confirmed via $NET_VIA"
 
+SYNC_ONCE=true "$SCRIPTS_DIR/sync_time.sh" >/dev/null 2>&1
+T_CLOCK=$(uptime_s)
+log "clock: $(date -Is)"
+
 banner "Firewalla is up and ready to activate" "Activate this box from the MSP web console."
 
 NM_PATH=/home/pi/.node_modules/node_modules
@@ -101,7 +105,7 @@ HOME=/home/pi FW_ONBOARD_CONFIG="$ONBOARD_CONFIG" runuser -u pi -- bash -c "
 rc=$?
 T_END=$(uptime_s)
 log "bootstrap.js exit=$rc"
-log "timing: start=${T_START}s net_ready=${T_NET}s bootstrap_start=${T_BOOTSTRAP}s bootstrap_end=${T_END}s (uptime excludes ~15s firmware+loader+kernel)"
+log "timing: start=${T_START}s net_ready=${T_NET}s clock=${T_CLOCK}s bootstrap_start=${T_BOOTSTRAP}s bootstrap_end=${T_END}s (uptime excludes ~15s firmware+loader+kernel)"
 if [ $rc -eq 0 ]; then
   touch "$DONE" 2>/dev/null
   log "marked $DONE"
