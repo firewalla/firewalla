@@ -1150,7 +1150,21 @@ class VPNClient {
   }
 
 
-  async start() {
+  start() {
+    if (this._startPromise) {
+      return this._startPromise;
+    }
+    const startPromise = this._startInternal();
+    const trackedPromise = startPromise.finally(() => {
+      if (this._startPromise === trackedPromise) {
+        this._startPromise = null;
+      }
+    });
+    this._startPromise = trackedPromise;
+    return trackedPromise;
+  }
+
+  async _startInternal() {
     await VPNClient.withProfileLifecycleLock(this.profileId, async () => {
       if (!this._started) {
       this._started = true;
@@ -1175,6 +1189,7 @@ class VPNClient {
         task: null,
         timeout: null,
         settled: false,
+        settling: false,
         resolve: (result) => {
           if (establishment.settled) {
             return;
@@ -1196,9 +1211,14 @@ class VPNClient {
 
       // function to handle successful tunnel establishment
       const handleSuccessfulEstablishment = async () => {
-        if (establishment.settled || !this._started) {
+        if (establishment.settled || establishment.settling || !this._started) {
           establishment.resolve({ result: false, cancelled: true });
           return;
+        }
+        establishment.settling = true;
+        if (establishment.task) {
+          clearInterval(establishment.task);
+          establishment.task = null;
         }
         await VPNClient.withProfileLifecycleLock(this.profileId, async () => {
           if (establishment.settled || !this._started) {
@@ -1236,7 +1256,7 @@ class VPNClient {
 
       // function to handle failed tunnel establishment
       const handleFailedEstablishment = async (reason) => {
-        if (establishment.settled) {
+        if (establishment.settled || establishment.settling) {
           return;
         }
         const errMsg = await this.getMessage();
@@ -1245,7 +1265,7 @@ class VPNClient {
       };
 
       establishment.timeout = setTimeout(async () => {
-        if (establishment.settled) {
+        if (establishment.settled || establishment.settling) {
           return;
         }
         try {
@@ -1261,7 +1281,7 @@ class VPNClient {
 
         const startTime = Date.now();
         establishment.task = setInterval(async () => {
-          if (establishment.settled) {
+          if (establishment.settled || establishment.settling) {
             return;
           }
           try {
