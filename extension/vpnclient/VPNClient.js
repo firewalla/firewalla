@@ -97,6 +97,8 @@ class VPNClient {
   }
 
   static createLegacyClient(ClientClass, profileId) {
+    if (!_.isString(profileId) || !Constants.REGEX_FILENAME.test(profileId))
+      throw new Error(`Refusing to create VPN client with unsafe profile ID: ${profileId}`);
     return new ClientClass({ profileId, [legacyProfileIdOption]: true });
   }
 

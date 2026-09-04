@@ -3491,6 +3491,8 @@ class netBot extends ControllerBot {
         try {
           validateVPNProfileId(profileId);
         } catch (err) {
+          if (!_.isString(profileId) || !Constants.REGEX_FILENAME.test(profileId))
+            throw err;
           if (!await c.profileExists(profileId))
             throw err;
 

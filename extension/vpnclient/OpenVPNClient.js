@@ -26,7 +26,7 @@ const Message = require('../../net2/Message.js');
 const VPNClient = require('./VPNClient.js');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const iptool = require('ip');
 const crypto = require('crypto');
 const Address6 = require('ip-address').Address6;
@@ -324,12 +324,10 @@ class OpenVPNClient extends VPNClient {
   }
 
   async _stop() {
-    let cmd = util.format("sudo systemctl stop \"%s@%s\"", SERVICE_NAME, this.profileId);
-    await exec(cmd).catch((err) => {
+    await execFile('sudo', ['systemctl', 'stop', `${SERVICE_NAME}@${this.profileId}`]).catch((err) => {
       log.error(`Failed to stop openvpn client ${this.profileId}`, err.message);
     });
-    cmd = util.format("sudo systemctl disable \"%s@%s\"", SERVICE_NAME, this.profileId);
-    await exec(cmd).catch((err) => {});
+    await execFile('sudo', ['systemctl', 'disable', `${SERVICE_NAME}@${this.profileId}`]).catch((err) => {});
   }
 
   async loadJSONConfig() { return {} }
