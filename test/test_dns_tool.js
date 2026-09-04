@@ -20,7 +20,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     };
 
     const DNSTool = proxyquire('../net2/DNSTool.js', {
-      '../net2/logger.js': () => ({
+      './logger.js': () => ({
         debug: () => {},
         info: () => {},
         warn: (message) => warnings.push(message),
@@ -31,7 +31,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
         getRedisClient: () => redisClient
       },
       '../control/DomainUpdater.js': class {},
-      '../net2/Firewalla.js': {
+      './Firewalla.js': {
         isProduction: () => true
       }
     });
@@ -47,6 +47,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
   beforeEach(() => {
     dnsTool.dnsExpirePending.clear();
     dnsTool.dnsExpireRetry.clear();
+    dnsTool.dnsExpireActive = null;
     dnsTool.dnsExpireDrainPromise = null;
     dnsTool.dnsExpireTs.reset();
     dnsTool.dnsExpireOverflowTs = 0;
@@ -253,5 +254,40 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     await dnsTool._drainDnsTTL();
     expect(execCount).to.equal(1);
     expect(dnsTool.dnsExpirePending.size).to.equal(0);
+  });
+
+  it('does not retry a stale refresh after a newer inline refresh', async () => {
+    const expires = [];
+    const queued = [];
+    redisClient.multi = () => ({
+      expire: (key, expr) => queued.push([key, expr]),
+      execAsync: () => {
+        queued.length = 0;
+        return Promise.reject(new Error('redis unavailable'));
+      }
+    });
+    redisClient.expireAsync = (key, expr) => {
+      expires.push([key, expr]);
+      return Promise.resolve();
+    };
+
+    const key = 'rdns:ip:stale-retry';
+    const otherKey = 'rdns:ip:other-retry';
+    dnsTool.dnsExpireTs.set(key, Date.now());
+    dnsTool.dnsExpireTs.set(otherKey, Date.now());
+    dnsTool.dnsExpirePending.set(key, 86400);
+    dnsTool.dnsExpirePending.set(otherKey, 86400);
+
+    await dnsTool._drainDnsTTL();
+    expect(dnsTool.dnsExpireRetry.get(key)).to.equal(86400);
+
+    dnsTool.dnsExpireTs.del(key);
+    expect(dnsTool.tryRefreshDnsTTL(key, 3600)).to.equal(true);
+    await redisClient.expireAsync(key, 3600);
+
+    await dnsTool._drainDnsTTL();
+    expect(expires.some(([expireKey, expr]) => expireKey === key && expr === 3600)).to.equal(true);
+    expect(expires.some(([expireKey, expr]) => expireKey === key && expr === 86400)).to.equal(false);
+    expect(dnsTool.dnsExpireRetry.has(key)).to.equal(false);
   });
 });

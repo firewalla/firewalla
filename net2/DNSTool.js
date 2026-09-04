@@ -55,6 +55,7 @@ class DNSTool {
       this.dnsExpirePending = new Map();
       // A failed drain is retried before newer pending refreshes. This is bounded to one batch.
       this.dnsExpireRetry = new Map();
+      this.dnsExpireActive = null;
       this.dnsExpireDrainPromise = null;
       // Suppress overflow inline refreshes globally until the queue has capacity again or the
       // throttle period expires. A per-key map could evict suppression markers under high cardinality.
@@ -75,6 +76,9 @@ class DNSTool {
     if (!last || now - last >= RDNS_TTL_REFRESH_PERIOD) {
       this.dnsExpireTs.set(key, now);
       this.dnsExpirePending.delete(key);
+      this.dnsExpireRetry.delete(key);
+      if (this.dnsExpireActive)
+        this.dnsExpireActive.delete(key);
       return true;
     }
     if (this.dnsExpireOverflowTs && now - this.dnsExpireOverflowTs < RDNS_TTL_REFRESH_PERIOD) {
@@ -120,6 +124,7 @@ class DNSTool {
       this.dnsExpireRetry = new Map();
     else
       this.dnsExpirePending = new Map();
+    this.dnsExpireActive = pending;
 
     this.dnsExpireDrainPromise = (async () => {
       if (this.dnsExpireOverflowCount > 0) {
@@ -147,6 +152,7 @@ class DNSTool {
         log.error("Failed to flush deferred rdns TTL refreshes", err.message);
       }
     })().finally(() => {
+      this.dnsExpireActive = null;
       this.dnsExpireDrainPromise = null;
     });
     return this.dnsExpireDrainPromise;
