@@ -26,21 +26,34 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Checkout fnm
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           repository: firewalla/fnm.node8.x86_64
           path: fnm
 
-      - uses: actions/setup-node@v2
+      - uses: actions/setup-node@v4
         with:
           node-version: "16"
 
+      # There is no lockfile in this repo, so setup-node's built-in cache can't be
+      # used; cache npm's download directory directly instead. Keyed on
+      # package.json so the cache rolls over whenever dependencies change.
+      - name: Cache npm downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-node16-${{ hashFiles('package.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-node16-
+
       - run: npm install -g eslint@8.57.1
       - run: eslint --quiet ./ # todo, only eslint for diff files
-      - run: npm i -g yarn
+      # yarn ships with the ubuntu runner image; installing it again cost between
+      # one and seven minutes per run.
+      - run: yarn --version || npm i -g yarn
       - run: yarn global add webpack-cli@5.1.4
       - run: mkdir -p webpack; cd webpack; yarn add webpack webpack-cli || true
       - run: $(yarn global bin)/webpack-cli -c .webpack/config_main.js
