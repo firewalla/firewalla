@@ -32,12 +32,26 @@ class OCVPNClient extends VPNClient {
     return "ssl";
   }
 
+  static getRuntimeServiceName(profileId) {
+    return `${SERVICE_NAME}@${profileId}`;
+  }
+
   static getKeyNameForInit() {
     return "sslvpnClientProfiles";
   }
 
   static getConfigDirectory() {
     return `${f.getHiddenFolder()}/run/oc_profile`;
+  }
+
+  static getStoredProfileArtifacts(profileId) {
+    const root = this.getConfigDirectory();
+    const suffixes = [
+      ".dns", ".network", ".route", ".password", ".conf", ".server", ".seed"
+    ];
+    return super.getStoredProfileArtifacts(profileId).concat(
+      suffixes.map(suffix => ({ root, path: `${profileId}${suffix}` }))
+    );
   }
 
   _getDNSFilePath() {

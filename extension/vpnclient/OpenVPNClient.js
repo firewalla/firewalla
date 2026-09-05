@@ -18,6 +18,7 @@
 const log = require('../../net2/logger.js')(__filename);
 const fs = require('fs');
 const util = require('util');
+const path = require('path');
 const f = require('../../net2/Firewalla.js');
 const _ = require('lodash');
 
@@ -25,7 +26,7 @@ const Message = require('../../net2/Message.js');
 const VPNClient = require('./VPNClient.js');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const { exec, execFile } = require('child-process-promise');
 const iptool = require('ip');
 const crypto = require('crypto');
 const Address6 = require('ip-address').Address6;
@@ -38,12 +39,32 @@ class OpenVPNClient extends VPNClient {
     return "openvpn";
   }
 
+  static getRuntimeServiceName(profileId) {
+    return `${SERVICE_NAME}@${profileId}`;
+  }
+
   static getKeyNameForInit() {
     return "ovpnClientProfiles";
   }
 
   static getConfigDirectory() {
     return `${f.getHiddenFolder()}/run/ovpn_profile`;
+  }
+
+  static getPrimaryProfilePath(profileId) {
+    return path.resolve(this.getConfigDirectory(), `${profileId}.ovpn`);
+  }
+
+  static getStoredProfileArtifacts(profileId) {
+    const root = this.getConfigDirectory();
+    const suffixes = [
+      ".ovpn", ".conf", ".password", ".userpass", ".push_options",
+      ".gateway", ".gateway6", ".subnet", ".subnet6",
+      ".subnet_bypass", ".subnet6_bypass", ".ip4", ".ip6"
+    ];
+    return super.getStoredProfileArtifacts(profileId).concat(
+      suffixes.map(suffix => ({ root, path: `${profileId}${suffix}` }))
+    );
   }
 
   async getVpnIP4s() {
@@ -307,12 +328,10 @@ class OpenVPNClient extends VPNClient {
   }
 
   async _stop() {
-    let cmd = util.format("sudo systemctl stop \"%s@%s\"", SERVICE_NAME, this.profileId);
-    await exec(cmd).catch((err) => {
+    await execFile('sudo', ['systemctl', 'stop', `${SERVICE_NAME}@${this.profileId}`]).catch((err) => {
       log.error(`Failed to stop openvpn client ${this.profileId}`, err.message);
     });
-    cmd = util.format("sudo systemctl disable \"%s@%s\"", SERVICE_NAME, this.profileId);
-    await exec(cmd).catch((err) => {});
+    await execFile('sudo', ['systemctl', 'disable', `${SERVICE_NAME}@${this.profileId}`]).catch((err) => {});
   }
 
   async loadJSONConfig() { return {} }
