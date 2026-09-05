@@ -222,6 +222,8 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
       expire: () => {},
       execAsync: () => {
         execCount++;
+        if (execCount > 1)
+          return Promise.resolve();
         return new Promise((resolve) => {
           resolveExec = resolve;
         });
@@ -243,8 +245,14 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     expect(secondDrain).to.equal(firstDrain);
     dnsTool.dnsExpireOverflowTs = Date.now();
     dnsTool.dnsExpireTs.set('key:overflow', Date.now());
-    expect(dnsTool.tryRefreshDnsTTL('key:overflow', 86400)).to.equal(true);
+    expect(dnsTool.tryRefreshDnsTTL('key:overflow', 86400)).to.equal(false);
+    expect(dnsTool.dnsExpireActiveUpdates.get('key:overflow')).to.equal(86400);
     expect(dnsTool.dnsExpirePending.size).to.equal(50000);
+    for (let i = 0; i < 100; i++) {
+      dnsTool.dnsExpireTs.set('key:active-overflow:' + i, Date.now());
+      expect(dnsTool.tryRefreshDnsTTL('key:active-overflow:' + i, 3600)).to.equal(false);
+    }
+    expect(dnsTool.dnsExpireActiveUpdates.size).to.equal(101);
 
     resolveExec();
     await firstDrain;
@@ -253,7 +261,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
       execAsync: () => Promise.resolve()
     });
     await dnsTool._drainDnsTTL();
-    expect(execCount).to.equal(1);
+    expect(execCount).to.equal(2);
     expect(dnsTool.dnsExpirePending.size).to.equal(0);
   });
 
