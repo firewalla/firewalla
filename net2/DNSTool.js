@@ -93,6 +93,10 @@ class DNSTool {
         this.dnsExpireOverflowTs = 0;
         this.dnsExpirePending.set(key, expr);
       } else {
+        if (this.dnsExpireActive && this.dnsExpireActive.has(key)) {
+          this.dnsExpireActiveUpdates.set(key, expr);
+          return false;
+        }
         const drainActive = !!this.dnsExpireDrainPromise;
         this._drainDnsTTL();
         if (drainActive) {
@@ -105,6 +109,10 @@ class DNSTool {
       return false;
     }
     if (!this.dnsExpirePending.has(key) && this.dnsExpirePending.size >= MAX_DNS_EXPIRE_PENDING) {
+      if (this.dnsExpireActive && this.dnsExpireActive.has(key)) {
+        this.dnsExpireActiveUpdates.set(key, expr);
+        return false;
+      }
       this.dnsExpireOverflowCount++;
       this.dnsExpireOverflowTs = now;
       this.dnsExpireTs.set(key, now);
