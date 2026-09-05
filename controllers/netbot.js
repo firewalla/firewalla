@@ -3571,7 +3571,7 @@ class netBot extends ControllerBot {
         } catch (err) {
           if (await c.profileExists(profileId)) {
             await VPNClient.destroyStoredProfile.call(c, profileId, async () => {
-              const active = await VPNClient.isProfileActive(profileId);
+              const active = await VPNClient.isProfileActive(profileId, c);
               if (active !== false) {
                 throw {
                   code: 400,

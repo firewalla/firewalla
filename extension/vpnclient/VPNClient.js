@@ -1565,13 +1565,7 @@ class VPNClient {
       if (!_.isString(profileId) || !Constants.REGEX_FILENAME.test(profileId)) {
       throw new Error(`Refusing to clean VPN client profile with unsafe filename: ${profileId}`);
     }
-    let runtimeClass = null;
-    try {
-      VPNClient.validateProfileId(profileId);
-    } catch (err) {
-      runtimeClass = this === VPNClient ? null : this;
-    }
-    const active = await VPNClient.isProfileActive(profileId, runtimeClass);
+    const active = await VPNClient.isProfileActive(profileId, this);
     if (active !== false) {
       throw new Error(`Refusing to clean VPN client profile while active state is not definitively false: ${profileId}`);
     }

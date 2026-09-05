@@ -149,8 +149,12 @@ describe('VPN profile deletion hardening', function () {
         return callback();
       },
 
-      async isProfileActive(profileId) {
+      async isProfileActive(profileId, ClientClass) {
         // For legacy IDs the real implementation is responsible for deriving the interface name.
+        if (profileId === 'legacy-profile' && activityMode === 'runtime-active') {
+          expect(ClientClass).to.equal(fakeClientClass);
+          return true;
+        }
         if (profileId === 'legacy-profile')
           return realVPNClient.isProfileActive(profileId);
         return activityMode === 'active' ? true : activityMode === 'indeterminate' ? null : false;
@@ -327,6 +331,18 @@ describe('VPN profile deletion hardening', function () {
       expect(args).to.eql(['-o', 'link', 'show']);
       return Promise.resolve({ stdout: '1: lo: <LOOPBACK>\n2: vpn_legacy-profile: <POINTOPOINT>\n' });
     };
+
+    const error = await deleteLegacyProfile();
+
+    expect(error).to.deep.include({ code: 400 });
+    expect(error.msg).to.equal('Automated deletion is refused for active or indeterminate legacy openvpn VPN client legacy-profile');
+    expect(cleanupCalls.deletePolicies).to.equal(0);
+    expect(cleanupCalls.destroyStoredProfile).to.equal(0);
+    expect(cleanupCalls.portforward).to.equal(0);
+  });
+
+  it('refuses deletion when the legacy runtime is active without an interface', async function () {
+    activityMode = 'runtime-active';
 
     const error = await deleteLegacyProfile();
 
