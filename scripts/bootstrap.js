@@ -190,6 +190,13 @@ async function applyTimezone(tz) {
 }
 
 async function restartFireApi() {
+  const state = await execAsync('sudo systemctl is-active fireapi')
+    .then(r => r.stdout.trim())
+    .catch(e => (e.stdout || '').trim());
+  if (state !== 'active') {
+    log(`fireapi is ${state}, main-run will bring it up with this config`);
+    return;
+  }
   await execAsync('sudo systemctl restart fireapi');
 }
 
