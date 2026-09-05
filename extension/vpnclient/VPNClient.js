@@ -1304,9 +1304,16 @@ class VPNClient {
           return;
         }
         establishment.settling = true;
-        const errMsg = await this.getMessage();
-        log.error(`Failed to establish tunnel for VPN client ${this.profileId}. Reason: ${reason || 'Unknown error'}`, errMsg ? `Details: ${errMsg}` : '');
-        establishment.resolve({ result: false, errMsg: errMsg });
+        let errMsg = reason || 'Unknown error';
+        try {
+          errMsg = await this.getMessage() || errMsg;
+        } catch (err) {
+          log.error(`Failed to retrieve VPN client error message ${this.profileId}`, err);
+        } finally {
+          log.error(`Failed to establish tunnel for VPN client ${this.profileId}. Reason: ${reason || 'Unknown error'}`, errMsg ? `Details: ${errMsg}` : '');
+          establishment.resolve({ result: false, errMsg: errMsg });
+          establishment.settling = false;
+        }
       };
 
       establishment.timeout = setTimeout(async () => {

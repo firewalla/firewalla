@@ -196,3 +196,25 @@ describe('Test vpnClient startup persistence failure', function() {
     expect(client._establishment).to.equal(null);
   });
 });
+
+describe('Test vpnClient startup error message failure', function() {
+  it('settles startup when error-message retrieval fails', async() => {
+    const client = Object.create(VPNClient.prototype);
+    client.profileId = `test_${Date.now()}`;
+    client._started = false;
+    client._prepareRoutes = async() => {};
+    client.flushRemoteEndpointRoutes = async() => {};
+    client._start = async() => {};
+    client._isLinkUp = async() => {
+      throw new Error('link unavailable');
+    };
+    client.getMessage = async() => {
+      throw new Error('message unavailable');
+    };
+
+    const result = await client.start();
+
+    expect(result).to.eql({ result: false, errMsg: 'Initial link check failed: link unavailable' });
+    expect(client._establishment).to.equal(null);
+  });
+});
