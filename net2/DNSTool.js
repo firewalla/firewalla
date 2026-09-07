@@ -72,7 +72,8 @@ class DNSTool {
 
   // Returns true if the caller should EXPIRE inline (leading edge). When throttled, defers the
   // refresh into dnsExpirePending so _drainDnsTTL still issues it within one period. If a drain
-  // has filled all deferred capacity, callers wait rather than issuing unbounded inline EXPIREs.
+  // has filled all deferred capacity, callers wait when a bounded waiter slot is available and
+  // otherwise fall back to one inline EXPIRE.
   tryRefreshDnsTTL(key, expr) {
     const now = Date.now();
     const last = this.dnsExpireTs.get(key);
@@ -138,12 +139,18 @@ class DNSTool {
   _waitForDnsExpireCapacity(key, expr) {
     let waiter = this.dnsExpireCapacityWaiters.get(key);
     if (!waiter) {
-      waiter = { expr, resolvers: [] };
+      // Waiters are part of the same aggregate bound as deferred refreshes.
+      if (this._dnsExpireDeferredSize() >= MAX_DNS_EXPIRE_PENDING)
+        return true;
+      let resolve;
+      const promise = new Promise((resolvePromise) => {
+        resolve = resolvePromise;
+      });
+      waiter = { expr, promise, resolve };
       this.dnsExpireCapacityWaiters.set(key, waiter);
-    } else {
-      waiter.expr = expr;
     }
-    return new Promise((resolve) => waiter.resolvers.push(resolve));
+    waiter.expr = expr;
+    return waiter.promise;
   }
 
   _releaseDnsExpireCapacity() {
@@ -152,8 +159,7 @@ class DNSTool {
       const [key, waiter] = this.dnsExpireCapacityWaiters.entries().next().value;
       this.dnsExpireCapacityWaiters.delete(key);
       this.dnsExpirePending.set(key, waiter.expr);
-      for (const resolve of waiter.resolvers)
-        resolve(false);
+      waiter.resolve(false);
     }
     if (this.dnsExpireCapacityWaiters.size > 0 && !this.dnsExpireDrainPromise &&
       this.dnsExpireRetry.size === 0) {
@@ -165,7 +171,8 @@ class DNSTool {
     return this.dnsExpirePending.size +
       this.dnsExpireRetry.size +
       this.dnsExpireActiveUpdates.size +
-      (this.dnsExpireActive ? this.dnsExpireActive.size : 0);
+      (this.dnsExpireActive ? this.dnsExpireActive.size : 0) +
+      this.dnsExpireCapacityWaiters.size;
   }
 
   _drainDnsTTL() {

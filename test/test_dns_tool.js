@@ -247,7 +247,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     dnsTool.dnsExpireOverflowTs = Date.now();
     dnsTool.dnsExpireTs.set('key:overflow', Date.now());
     const overflowRefresh = dnsTool.tryRefreshDnsTTL('key:overflow', 86400);
-    expect(overflowRefresh).to.be.an.instanceof(Promise);
+    expect(overflowRefresh).to.equal(true);
     expect(dnsTool.dnsExpireActiveUpdates.has('key:overflow')).to.equal(false);
     expect(dnsTool.dnsExpirePending.size).to.equal(50000);
     const activeOverflowRefreshes = [];
@@ -256,7 +256,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
       activeOverflowRefreshes.push(dnsTool.tryRefreshDnsTTL('key:active-overflow:' + i, 3600));
     }
     expect(dnsTool.dnsExpireActiveUpdates.size).to.equal(0);
-    expect(dnsTool.dnsExpireCapacityWaiters.size).to.equal(101);
+    expect(dnsTool.dnsExpireCapacityWaiters.size).to.equal(0);
 
     resolveExec();
     await firstDrain;
@@ -266,8 +266,31 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     });
     await dnsTool._drainDnsTTL();
     await Promise.all([overflowRefresh, ...activeOverflowRefreshes]);
-    expect(execCount).to.equal(3);
+    expect(execCount).to.equal(2);
     expect(dnsTool.dnsExpirePending.size).to.equal(0);
+  });
+
+  it('bounds capacity waiters and coalesces updates per key', () => {
+    let resolveDrain;
+    dnsTool.dnsExpireDrainPromise = new Promise((resolve) => {
+      resolveDrain = resolve;
+    });
+    dnsTool.dnsExpireActive = new Map([['key:active', 86400]]);
+    for (let i = 0; i < 49998; i++)
+      dnsTool.dnsExpirePending.set('key:' + i, 86400);
+
+    const firstWait = dnsTool._waitForDnsExpireCapacity('key:waiter', 3600);
+    const secondWait = dnsTool._waitForDnsExpireCapacity('key:waiter', 7200);
+    const overflow = dnsTool._waitForDnsExpireCapacity('key:overflow', 3600);
+
+    expect(firstWait).to.be.an.instanceof(Promise);
+    expect(secondWait).to.equal(firstWait);
+    expect(overflow).to.equal(true);
+    expect(dnsTool.dnsExpireCapacityWaiters.size).to.equal(1);
+    expect(dnsTool._dnsExpireDeferredSize()).to.equal(50000);
+
+    resolveDrain();
+    dnsTool.dnsExpireDrainPromise = null;
   });
 
   it('returns inline handling when shared deferred capacity is exhausted', () => {
