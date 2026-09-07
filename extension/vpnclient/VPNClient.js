@@ -136,12 +136,10 @@ class VPNClient {
       return true;
 
     if (ClientClass) {
-      if (typeof ClientClass.getRuntimeActive !== 'function')
-        return null;
-      const runtimeState = await ClientClass.getRuntimeActive(profileId);
-      if (runtimeState !== true && runtimeState !== false)
-        return null;
-      if (runtimeState)
+      const runtimeState = typeof ClientClass.getRuntimeActive === 'function'
+        ? await ClientClass.getRuntimeActive(profileId)
+        : null;
+      if (runtimeState === true)
         return true;
     } else {
       const cachedState = await rclient.getAsync(VPNClient.getStateCacheKey(profileId)).catch(() => null);
@@ -1328,6 +1326,14 @@ class VPNClient {
           }
         } catch (err) {
           await handleFailedEstablishment(`Initial link check failed: ${err.message}`);
+          return;
+        }
+
+        if (establishment.settled || establishment.settling) {
+          return;
+        }
+        if (!this._started) {
+          establishment.resolve({ result: false, cancelled: true });
           return;
         }
 

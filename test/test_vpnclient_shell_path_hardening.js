@@ -206,6 +206,47 @@ describe('VPNClient shell and path hardening', function () {
     expect(await startPromise).to.include({ result: false, cancelled: true });
   });
 
+  it('does not schedule establishment polling after stop cancels a pending initial link check', async () => {
+    const { VPNClient } = installVPNClientStubs();
+    const client = Object.create(VPNClient.prototype);
+    client.profileId = 'valid_123';
+    client._prepareRoutes = async () => {};
+    client.flushRemoteEndpointRoutes = async () => {};
+    client._start = async () => {};
+    client._stopWithoutLifecycleLock = async () => {
+      client._started = false;
+    };
+
+    let releaseLinkCheck;
+    const linkCheckStarted = new Promise((resolve) => {
+      client._isLinkUp = async () => {
+        resolve();
+        await new Promise((release) => {
+          releaseLinkCheck = release;
+        });
+        return false;
+      };
+    });
+    const originalSetInterval = global.setInterval;
+    let intervalCreated = false;
+    global.setInterval = (...args) => {
+      intervalCreated = true;
+      return originalSetInterval(...args);
+    };
+
+    try {
+      const startPromise = client.start();
+      await linkCheckStarted;
+      await client.stop();
+      releaseLinkCheck();
+
+      expect(await startPromise).to.include({ result: false, cancelled: true });
+      expect(intervalCreated).to.equal(false);
+    } finally {
+      global.setInterval = originalSetInterval;
+    }
+  });
+
   it('detects an active legacy profile with the historical 15-character interface name', async () => {
     const { VPNClient, state } = installVPNClientStubs();
     state.cachedState = null;
@@ -241,6 +282,23 @@ describe('VPNClient shell and path hardening', function () {
     };
 
     expect(await VPNClient.isProfileActive('legacy-profile')).to.equal(false);
+  });
+
+  it('falls back to interface inspection when runtime activity is indeterminate', async () => {
+    const { VPNClient, state } = installVPNClientStubs();
+    state.execFileResponder = (binary, args) => {
+      if (args[0] === 'ip' && args[1] === 'link')
+        return Promise.resolve({ stdout: '2: vpn_legacy-profile: <POINTOPOINT>\n' });
+      return Promise.reject(Object.assign(new Error('unexpected invocation'), { code: 1 }));
+    };
+    class ClientWithoutRuntimeService extends VPNClient {
+      static async getRuntimeActive() {
+        return null;
+      }
+    }
+
+    expect(await VPNClient.isProfileActive('short_id', ClientWithoutRuntimeService)).to.equal(true);
+    expect(state.execFileCalls).to.have.lengthOf(1);
   });
 
   it('returns null for non-absence errors from a directly queryable interface', async () => {
