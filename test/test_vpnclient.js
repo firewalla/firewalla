@@ -175,6 +175,81 @@ describe('Test vpnClient startup cancellation race', function() {
       VPNClient.withProfileLifecycleLock = originalWithProfileLifecycleLock;
     }
   });
+
+  it('should not restore routes or a refresh timer after stop completes during route installation', async() => {
+    const client = Object.create(VPNClient.prototype);
+    client.profileId = `test_${Date.now()}`;
+    client._started = false;
+
+    let lockTail = Promise.resolve();
+    const originalWithProfileLifecycleLock = VPNClient.withProfileLifecycleLock;
+    VPNClient.withProfileLifecycleLock = async(profileId, callback) => {
+      const previous = lockTail;
+      let release;
+      lockTail = new Promise((resolve) => {
+        release = resolve;
+      });
+      await previous;
+      try {
+        return await callback();
+      } finally {
+        release();
+      }
+    };
+
+    let releaseRoutes;
+    let routesInstalling;
+    const routesInstallingPromise = new Promise((resolve) => {
+      routesInstalling = resolve;
+    });
+    const routes = [];
+    client._prepareRoutes = async() => {};
+    client.flushRemoteEndpointRoutes = async() => {};
+    client._start = async() => {};
+    client._setCachedState = async() => {};
+    client._isLinkUp = async() => true;
+    client._scheduleRefreshRoutes = () => {
+      client.refreshRoutesTask = setTimeout(() => {}, 60000);
+    };
+    client.addRemoteEndpointRoutes = async() => {
+      routes.push('remote endpoint');
+      routesInstalling();
+      await new Promise((resolve) => {
+        releaseRoutes = resolve;
+      });
+    };
+    client._stopWithoutLifecycleLock = async() => {
+      client._started = false;
+      routes.length = 0;
+    };
+
+    try {
+      const startPromise = client.start();
+      await routesInstallingPromise;
+
+      let stopFinished = false;
+      const stopPromise = client.stop().then(() => {
+        stopFinished = true;
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(stopFinished).to.equal(false);
+
+      releaseRoutes();
+      expect(await startPromise).to.eql({ result: false, cancelled: true });
+      await stopPromise;
+
+      expect(routes).to.eql([]);
+      expect(client.refreshRoutesTask).to.equal(null);
+    } finally {
+      if (releaseRoutes) {
+        releaseRoutes();
+      }
+      VPNClient.withProfileLifecycleLock = originalWithProfileLifecycleLock;
+      if (client.refreshRoutesTask) {
+        clearTimeout(client.refreshRoutesTask);
+      }
+    }
+  });
 });
 
 describe('Test vpnClient startup persistence failure', function() {

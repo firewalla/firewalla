@@ -1261,35 +1261,35 @@ class VPNClient {
               return;
             }
             await this._setCachedState(true);
-          });
-          if (establishment.settled || !this._started) {
-            establishment.resolve({ result: false, cancelled: true });
-            return;
-          }
-          this._scheduleRefreshRoutes();
-          await this.addRemoteEndpointRoutes().catch((err) => { });
-          if (establishment.settled || !this._started) {
-            establishment.resolve({ result: false, cancelled: true });
-            return;
-          }
-          if (f.isMain()) {
-            // check connectivity and emit link_established or link_broken later, before which routes are already added and ping test using fwmark will work properly
-            setTimeout(() => {
-              this._checkConnectivity(true).catch((err) => {
-                log.error(`Failed to check connectivity on VPN client ${this.profileId}`, err.message);
+            if (establishment.settled || !this._started) {
+              establishment.resolve({ result: false, cancelled: true });
+              return;
+            }
+            this._scheduleRefreshRoutes();
+            await this.addRemoteEndpointRoutes().catch((err) => { });
+            if (establishment.settled || !this._started) {
+              establishment.resolve({ result: false, cancelled: true });
+              return;
+            }
+            if (f.isMain()) {
+              // check connectivity and emit link_established or link_broken later, before which routes are already added and ping test using fwmark will work properly
+              setTimeout(() => {
+                this._checkConnectivity(true).catch((err) => {
+                  log.error(`Failed to check connectivity on VPN client ${this.profileId}`, err.message);
+                });
+              }, 20000);
+            }
+            if (!f.isMain()) {
+              sem.emitEvent({
+                type: "VPNClient:Started",
+                profileId: this.profileId,
+                toProcess: "FireMain"
               });
-            }, 20000);
-          }
-          if (!f.isMain()) {
-            sem.emitEvent({
-              type: "VPNClient:Started",
-              profileId: this.profileId,
-              toProcess: "FireMain"
-            });
-          }
-          const timeElapsed = (Date.now() - this._lastStartTime) / 1000;
-          log.info(`Time elapsed to start ${this.constructor.getProtocol()} client ${this.profileId}: ${timeElapsed} seconds`);
-          establishment.resolve({ result: true });
+            }
+            const timeElapsed = (Date.now() - this._lastStartTime) / 1000;
+            log.info(`Time elapsed to start ${this.constructor.getProtocol()} client ${this.profileId}: ${timeElapsed} seconds`);
+            establishment.resolve({ result: true });
+          });
         } catch (err) {
           log.error(`Failed to finalize VPN client startup ${this.profileId}`, err);
           establishment.resolve({ result: false, errMsg: err.message });
@@ -1362,6 +1362,10 @@ class VPNClient {
 
   async stop() {
     this._cancelEstablishment();
+    if (this.refreshRoutesTask) {
+      clearTimeout(this.refreshRoutesTask);
+      this.refreshRoutesTask = null;
+    }
     return VPNClient.withProfileLifecycleLock(this.profileId, () => this._stopWithoutLifecycleLock());
   }
 
