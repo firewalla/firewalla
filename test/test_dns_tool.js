@@ -293,16 +293,17 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     dnsTool.dnsExpireDrainPromise = null;
   });
 
-  it('returns inline handling when shared deferred capacity is exhausted', () => {
+  it('coalesces an active update when shared deferred capacity is exhausted', () => {
     const now = Date.now();
     dnsTool.dnsExpireActive = new Map([['key:active', 86400]]);
     for (let i = 0; i < 49999; i++)
       dnsTool.dnsExpirePending.set('key:' + i, 86400);
     dnsTool.dnsExpireTs.set('key:active', now);
 
-    expect(dnsTool.tryRefreshDnsTTL('key:active', 3600)).to.equal(true);
-    expect(dnsTool.dnsExpireActiveUpdates.size).to.equal(0);
+    expect(dnsTool.tryRefreshDnsTTL('key:active', 3600)).to.equal(false);
+    expect(dnsTool.dnsExpireActiveUpdates.get('key:active')).to.equal(3600);
     expect(dnsTool.dnsExpirePending.size).to.equal(49999);
+    expect(dnsTool._dnsExpireDeferredSize()).to.equal(50000);
   });
 
   it('drains retry and pending batches in one serialized cycle', async () => {

@@ -78,7 +78,8 @@ class DNSTool {
     const now = Date.now();
     const last = this.dnsExpireTs.get(key);
     const queueActiveUpdate = () => {
-      if (this.dnsExpireActiveUpdates.has(key) ||
+      if (this.dnsExpireActive.has(key) ||
+        this.dnsExpireActiveUpdates.has(key) ||
         this._dnsExpireDeferredSize() < MAX_DNS_EXPIRE_PENDING) {
         this.dnsExpireActiveUpdates.set(key, expr);
         return false;
@@ -116,8 +117,8 @@ class DNSTool {
           this.dnsExpireTs.set(key, now);
           return this._waitForDnsExpireCapacity(key, expr);
         }
-        this._drainDnsTTL();
-        return true;
+        this.dnsExpirePending.set(key, expr);
+        return false;
       }
       return false;
     }
@@ -168,9 +169,16 @@ class DNSTool {
   }
 
   _dnsExpireDeferredSize() {
+    let activeUpdateSize = this.dnsExpireActiveUpdates.size;
+    if (this.dnsExpireActive) {
+      for (const key of this.dnsExpireActiveUpdates.keys()) {
+        if (this.dnsExpireActive.has(key))
+          activeUpdateSize--;
+      }
+    }
     return this.dnsExpirePending.size +
       this.dnsExpireRetry.size +
-      this.dnsExpireActiveUpdates.size +
+      activeUpdateSize +
       (this.dnsExpireActive ? this.dnsExpireActive.size : 0) +
       this.dnsExpireCapacityWaiters.size;
   }
