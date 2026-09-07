@@ -414,16 +414,20 @@ module.exports = class DNSMASQ {
         return;
       }
       delete this.restartDHCPIgnoreFileCheck
-      await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => { });
-      this.counter.restartDHCP++;
-      log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.restartDHCP);
-      await execAsync(`sudo systemctl restart ${DHCP_SERVICE_NAME}`).then(() => {
-        log.verbose(`${DHCP_SERVICE_NAME} has been restarted`, this.counter.restartDHCP);
-      }).catch((err) => {
-        log.error(`Failed to restart ${DHCP_SERVICE_NAME} service`, err.message);
-      });
+      await this.restartDHCPService();
       delete this.restartDHCPTask
     }, 5000);
+  }
+
+  async restartDHCPService() {
+    await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => {
+      log.error(`Failed to stop ${DHCP_SERVICE_NAME} service`, err.message);
+    });
+    await execAsync(`sudo systemctl restart ${DHCP_SERVICE_NAME}`).then(() => {
+      log.verbose(`${DHCP_SERVICE_NAME} has been restarted`, this.counter.restartDHCP);
+    }).catch((err) => {
+      log.error(`Failed to restart ${DHCP_SERVICE_NAME} service`, err.message);
+    });
   }
 
   scheduleReloadDHCPService() {
@@ -449,16 +453,14 @@ module.exports = class DNSMASQ {
       });
 
       if (!reloaded) {
+        if (this.restartDHCPTask) {
+          clearTimeout(this.restartDHCPTask);
+          delete this.restartDHCPTask;
+        }
         this.counter.restartDHCP++;
         log.warn(`${DHCP_SERVICE_NAME} reload failed, falling back to service restart`, this.counter.restartDHCP);
-
-        await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch(() => {});
-
-        await execAsync(`sudo systemctl restart ${DHCP_SERVICE_NAME}`).then(() => {
-          log.verbose(`${DHCP_SERVICE_NAME} has been restarted`, this.counter.restartDHCP);
-        }).catch((err) => {
-          log.error(`Failed to restart ${DHCP_SERVICE_NAME} service`, err.message);
-        });
+        log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.restartDHCP);
+        await this.restartDHCPService();
       }
 
       delete this.reloadDHCPTask
