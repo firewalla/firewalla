@@ -74,53 +74,50 @@ class DNSTool {
   tryRefreshDnsTTL(key, expr) {
     const now = Date.now();
     const last = this.dnsExpireTs.get(key);
+    const queueActiveUpdate = () => {
+      if (this.dnsExpireActiveUpdates.has(key) ||
+        this._dnsExpireDeferredSize() < MAX_DNS_EXPIRE_PENDING) {
+        this.dnsExpireActiveUpdates.set(key, expr);
+        return false;
+      }
+      return true;
+    };
     if (!last || now - last >= RDNS_TTL_REFRESH_PERIOD) {
       this.dnsExpireTs.set(key, now);
       this.dnsExpirePending.delete(key);
       this.dnsExpireRetry.delete(key);
       if (this.dnsExpireActive && this.dnsExpireActive.has(key)) {
-        this.dnsExpireActiveUpdates.set(key, expr);
-        return false;
+        return queueActiveUpdate();
       }
       return true;
     }
+    if (this.dnsExpirePending.has(key)) {
+      this.dnsExpirePending.set(key, expr);
+      return false;
+    }
+    if (this.dnsExpireActive && this.dnsExpireActive.has(key))
+      return queueActiveUpdate();
     if (this.dnsExpireOverflowTs && now - this.dnsExpireOverflowTs < RDNS_TTL_REFRESH_PERIOD) {
-      if (this.dnsExpirePending.has(key)) {
-        this.dnsExpirePending.set(key, expr);
-        return false;
-      }
-      if (this.dnsExpirePending.size < MAX_DNS_EXPIRE_PENDING) {
+      if (this._dnsExpireDeferredSize() < MAX_DNS_EXPIRE_PENDING) {
         this.dnsExpireOverflowTs = 0;
         this.dnsExpirePending.set(key, expr);
       } else {
-        if (this.dnsExpireActive && this.dnsExpireActive.has(key)) {
-          this.dnsExpireActiveUpdates.set(key, expr);
-          return false;
-        }
         const drainActive = !!this.dnsExpireDrainPromise;
         this._drainDnsTTL();
         if (drainActive) {
           this.dnsExpireOverflowTs = now;
           this.dnsExpireTs.set(key, now);
-          if (this.dnsExpireActiveUpdates.size < MAX_DNS_EXPIRE_PENDING)
-            this.dnsExpireActiveUpdates.set(key, expr);
-          return false;
+          return queueActiveUpdate();
         }
-        this.dnsExpirePending.set(key, expr);
+        return true;
       }
       return false;
     }
-    if (!this.dnsExpirePending.has(key) && this.dnsExpirePending.size >= MAX_DNS_EXPIRE_PENDING) {
-      if (this.dnsExpireActive && this.dnsExpireActive.has(key)) {
-        this.dnsExpireActiveUpdates.set(key, expr);
-        return false;
-      }
+    if (this._dnsExpireDeferredSize() >= MAX_DNS_EXPIRE_PENDING) {
       if (this.dnsExpireDrainPromise) {
         this.dnsExpireOverflowTs = now;
         this.dnsExpireTs.set(key, now);
-        if (this.dnsExpireActiveUpdates.size < MAX_DNS_EXPIRE_PENDING)
-          this.dnsExpireActiveUpdates.set(key, expr);
-        return false;
+        return queueActiveUpdate();
       }
       this.dnsExpireOverflowCount++;
       this.dnsExpireOverflowTs = now;
@@ -129,6 +126,13 @@ class DNSTool {
     }
     this.dnsExpirePending.set(key, expr);
     return false;
+  }
+
+  _dnsExpireDeferredSize() {
+    return this.dnsExpirePending.size +
+      this.dnsExpireRetry.size +
+      this.dnsExpireActiveUpdates.size +
+      (this.dnsExpireActive ? this.dnsExpireActive.size : 0);
   }
 
   _drainDnsTTL() {
@@ -172,14 +176,16 @@ class DNSTool {
       try {
         await drainBatch(pending);
         while (this.dnsExpireActiveUpdates.size > 0 || this.dnsExpirePending.size > 0) {
-          for (const [key, expr] of this.dnsExpireActiveUpdates)
-            this.dnsExpirePending.set(key, expr);
-          this.dnsExpireActiveUpdates.clear();
-          if (this.dnsExpirePending.size === 0)
-            break;
-          const newerPending = this.dnsExpirePending;
-          this.dnsExpirePending = new Map();
-          await drainBatch(newerPending);
+          if (this.dnsExpireActiveUpdates.size > 0) {
+            const activeUpdates = this.dnsExpireActiveUpdates;
+            this.dnsExpireActiveUpdates = new Map();
+            await drainBatch(activeUpdates);
+          }
+          if (this.dnsExpirePending.size > 0) {
+            const newerPending = this.dnsExpirePending;
+            this.dnsExpirePending = new Map();
+            await drainBatch(newerPending);
+          }
         }
       } catch (err) {
         // Retry the failed bounded batch before newer refreshes on the next drain.

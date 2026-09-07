@@ -230,7 +230,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
       }
     });
 
-    for (let i = 0; i < 50000; i++)
+    for (let i = 0; i < 49997; i++)
       dnsTool.dnsExpirePending.set('key:' + i, 86400);
 
     const firstDrain = dnsTool._drainDnsTTL();
@@ -245,14 +245,14 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     expect(secondDrain).to.equal(firstDrain);
     dnsTool.dnsExpireOverflowTs = Date.now();
     dnsTool.dnsExpireTs.set('key:overflow', Date.now());
-    expect(dnsTool.tryRefreshDnsTTL('key:overflow', 86400)).to.equal(false);
-    expect(dnsTool.dnsExpireActiveUpdates.get('key:overflow')).to.equal(86400);
+    expect(dnsTool.tryRefreshDnsTTL('key:overflow', 86400)).to.equal(true);
+    expect(dnsTool.dnsExpireActiveUpdates.has('key:overflow')).to.equal(false);
     expect(dnsTool.dnsExpirePending.size).to.equal(50000);
     for (let i = 0; i < 100; i++) {
       dnsTool.dnsExpireTs.set('key:active-overflow:' + i, Date.now());
-      expect(dnsTool.tryRefreshDnsTTL('key:active-overflow:' + i, 3600)).to.equal(false);
+      expect(dnsTool.tryRefreshDnsTTL('key:active-overflow:' + i, 3600)).to.equal(true);
     }
-    expect(dnsTool.dnsExpireActiveUpdates.size).to.equal(101);
+    expect(dnsTool.dnsExpireActiveUpdates.size).to.equal(0);
 
     resolveExec();
     await firstDrain;
@@ -263,6 +263,18 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     await dnsTool._drainDnsTTL();
     expect(execCount).to.equal(2);
     expect(dnsTool.dnsExpirePending.size).to.equal(0);
+  });
+
+  it('returns inline handling when shared deferred capacity is exhausted', () => {
+    const now = Date.now();
+    dnsTool.dnsExpireActive = new Map([['key:active', 86400]]);
+    for (let i = 0; i < 49999; i++)
+      dnsTool.dnsExpirePending.set('key:' + i, 86400);
+    dnsTool.dnsExpireTs.set('key:active', now);
+
+    expect(dnsTool.tryRefreshDnsTTL('key:active', 3600)).to.equal(true);
+    expect(dnsTool.dnsExpireActiveUpdates.size).to.equal(0);
+    expect(dnsTool.dnsExpirePending.size).to.equal(49999);
   });
 
   it('drains retry and pending batches in one serialized cycle', async () => {
@@ -382,7 +394,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     dnsTool.dnsExpirePending.set('rdns:ip:active-overflow-other', 86400);
     const drain = dnsTool._drainDnsTTL();
 
-    for (let i = 0; i < 50000; i++)
+    for (let i = 0; i < 49997; i++)
       dnsTool.dnsExpirePending.set('key:' + i, 86400);
     dnsTool.dnsExpireOverflowTs = Date.now();
 
