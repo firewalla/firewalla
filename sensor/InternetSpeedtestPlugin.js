@@ -442,7 +442,8 @@ class InternetSpeedtestPlugin extends Sensor {
       }
 
       if (escaped) {
-        current += char;
+        if (char !== "\n")
+          current += char;
         escaped = false;
         continue;
       }

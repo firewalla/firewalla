@@ -53,7 +53,7 @@ describe('InternetSpeedtestPlugin command construction', function () {
 
     const [binary, args, options] = execFileCalls[0];
     expect(binary).to.be.a('string');
-    expect(args).to.include.members([
+    expect(args).to.eql([
       '-b',
       '192.0.2.10',
       '--nameserver',
@@ -79,6 +79,15 @@ describe('InternetSpeedtestPlugin command construction', function () {
 
     expect(env.HTTP_PROXY).to.equal('proxy with spaces');
     expect(env.HTTPS_PROXY).to.equal('a b');
+  });
+
+  it('removes unquoted backslash-newline continuations', async () => {
+    const env = InternetSpeedtestPlugin._buildSpeedTestEnv(
+      String.raw`HTTP_PROXY=http://proxy.example\
+:8080`
+    );
+
+    expect(env.HTTP_PROXY).to.equal('http://proxy.example:8080');
   });
 
   it('allows proxy environment variables and rejects executable-loading overrides', async () => {
