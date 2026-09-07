@@ -46,6 +46,12 @@ describe('gateway_ip6_sync', function () {
     expect(linux.gateway_ip6_sync('eth1')).to.equal('fe80::2');
   });
 
+  it('ignores an ordinary default route for another interface', () => {
+    execFileSync = () => 'default via fe80::1 dev eth0 proto ra metric 100\n';
+
+    expect(linux.gateway_ip6_sync('eth1')).to.equal(null);
+  });
+
   it('returns null when there is no matching default route', () => {
     execFileSync = () => '2001:db8:1::/64 dev eth0 proto kernel\n';
 

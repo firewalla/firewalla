@@ -129,3 +129,4 @@ api/db/token.json
 .claude/
 CLAUDE.md
 AGENTS.md
+package-lock.json
