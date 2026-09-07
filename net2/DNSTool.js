@@ -58,11 +58,8 @@ class DNSTool {
       this.dnsExpireActive = null;
       this.dnsExpireActiveUpdates = new Map();
       this.dnsExpireDrainPromise = null;
-      // Track overflow inline refreshes globally until the queue has capacity again or the
-      // throttle period expires. A per-key map could exceed the memory bound under high cardinality.
-      this.dnsExpireOverflowTs = 0;
-      // Number of unique refreshes handled inline because the deferred queue was full.
-      // Logged and reset once per drain period to avoid one warning per incoming update.
+      // Number of refreshes handled inline because the deferred queue was full.
+      // Logged and reset when the deferred queue drains to avoid one warning per update.
       this.dnsExpireOverflowCount = 0;
       this.dnsExpireTimer = setInterval(() => this._drainDnsTTL(), RDNS_TTL_REFRESH_PERIOD);
     }
@@ -71,8 +68,7 @@ class DNSTool {
 
   // Returns true if the caller should EXPIRE inline (leading edge). When throttled, defers the
   // refresh into dnsExpirePending so _drainDnsTTL still issues it within one period. If deferred
-  // capacity is exhausted, only the first refresh is performed inline; subsequent overflow
-  // refreshes are suppressed while capacity remains exhausted.
+  // capacity is exhausted, refreshes are performed inline to preserve the bounded queue.
   tryRefreshDnsTTL(key, expr) {
     const now = Date.now();
     const last = this.dnsExpireTs.get(key);
@@ -99,14 +95,10 @@ class DNSTool {
       return false;
     }
     if (this._dnsExpireDeferredSize() >= MAX_DNS_EXPIRE_PENDING) {
-      if (this.dnsExpireOverflowTs && now - this.dnsExpireOverflowTs < RDNS_TTL_REFRESH_PERIOD)
-        return false;
       this.dnsExpireOverflowCount++;
-      this.dnsExpireOverflowTs = now;
       this.dnsExpireTs.set(key, now);
       return true;
     }
-    this.dnsExpireOverflowTs = 0;
     this.dnsExpirePending.set(key, expr);
     return false;
   }
