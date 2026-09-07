@@ -1265,12 +1265,12 @@ class VPNClient {
               establishment.resolve({ result: false, cancelled: true });
               return;
             }
-            this._scheduleRefreshRoutes();
             await this.addRemoteEndpointRoutes().catch((err) => { });
             if (establishment.settled || !this._started) {
               establishment.resolve({ result: false, cancelled: true });
               return;
             }
+            this._scheduleRefreshRoutes();
             if (f.isMain()) {
               // check connectivity and emit link_established or link_broken later, before which routes are already added and ping test using fwmark will work properly
               setTimeout(() => {
@@ -1362,14 +1362,14 @@ class VPNClient {
 
   async stop() {
     this._cancelEstablishment();
-    if (this.refreshRoutesTask) {
-      clearTimeout(this.refreshRoutesTask);
-      this.refreshRoutesTask = null;
-    }
     return VPNClient.withProfileLifecycleLock(this.profileId, () => this._stopWithoutLifecycleLock());
   }
 
   async _stopWithoutLifecycleLock() {
+      if (this.refreshRoutesTask) {
+        clearTimeout(this.refreshRoutesTask);
+        this.refreshRoutesTask = null;
+      }
       // flush routes before stop vpn client to ensure smooth switch of traffic routing
       const intf = this.getInterfaceName();
       this._started = false;
