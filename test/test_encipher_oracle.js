@@ -134,14 +134,64 @@ describe('encipher decryptRequest uniform errors and GCM policy', function () {
     });
 
     it('a failed GCM request does not mark an unmigrated group', async () => {
+      // a genuinely separate instance and group, never migrated
       const gid2 = gid + '-unmigrated';
-      const ept2 = Object.create(ept);
+      const ept2 = new EptCloud('test-oracle-unit-2');
       ept2.gid = gid2;
-      ept2._gcmGids = {};
-      const o = JSON.parse(ept._encryptGcm(validMessage, key)); // AAD = gid, not gid2
+      ept2.getKey = (g, refresh, cb) => cb(null, key);
+      const o = JSON.parse(ept._encryptGcm(validMessage, key)); // AAD = gid, not gid2 -> auth fails
       const err = await rejectionOf(ept2.decryptRequest(gid2, JSON.stringify(o), { enforceGcmPolicy: true }));
       expect(err.message).to.equal('decrypt_error');
-      expect(ept2._gcmGids[gid2]).to.equal(undefined);
+      expect(ept2._gcmGids && ept2._gcmGids[gid2]).to.not.be.ok;
+      expect(await ept2.isGcmMigrated(gid2)).to.equal(false);
+    });
+  });
+
+  describe('envelope field bounds', () => {
+    it('rejects an object envelope with an oversized iv even when the ciphertext is small', async () => {
+      const env = JSON.parse(ept.encrypt(validMessage, key, crypto.randomBytes(16)));
+      env.iv = 'A'.repeat(100000);
+      const err = await rejectionOf(ept.decryptRequest(gid, env)); // already-parsed object input
+      expect(err.message).to.equal('decrypt_error');
+    });
+
+    it('rejects an oversized tag / alg field with the same decrypt_error', async () => {
+      const env = JSON.parse(ept._encryptGcm(validMessage, key));
+      const bigTag = { ...env, tag: 'A'.repeat(100000) };
+      expect((await rejectionOf(ept.decryptRequest(gid, bigTag))).message).to.equal('decrypt_error');
+      const bigAlg = { ...env, alg: 'g'.repeat(1000) };
+      expect((await rejectionOf(ept.decryptRequest(gid, bigAlg))).message).to.equal('decrypt_error');
+    });
+
+    it('rejects a non-string ciphertext field', async () => {
+      expect((await rejectionOf(ept.decryptRequest(gid, { message: 12345 }))).message).to.equal('decrypt_error');
+    });
+  });
+
+  describe('migration persistence failure handling', () => {
+    const failingEpt = () => {
+      const e = new EptCloud('test-oracle-unit-persist-' + crypto.randomBytes(3).toString('hex'));
+      e.gid = gid;
+      e.getKey = (g, refresh, cb) => cb(null, key);
+      e.markGcmMigrated = async () => { throw new Error('redis down'); };
+      return e;
+    };
+
+    it('monitor mode (default): a GCM request still succeeds when persistence fails', async () => {
+      const { scheme } = await failingEpt().decryptRequest(gid, ept._encryptGcm(validMessage, key), { enforceGcmPolicy: true });
+      expect(scheme).to.equal('gcm');
+    });
+
+    it('enforcement on: a GCM request fails closed when persistence fails', async () => {
+      const fwConfig = require('../net2/config.js');
+      const origIsFeatureOn = fwConfig.isFeatureOn;
+      fwConfig.isFeatureOn = (name, dflt) => name === 'gcm_downgrade_protection' ? true : origIsFeatureOn(name, dflt);
+      try {
+        const err = await rejectionOf(failingEpt().decryptRequest(gid, ept._encryptGcm(validMessage, key), { enforceGcmPolicy: true }));
+        expect(err.message).to.equal('decrypt_error');
+      } finally {
+        fwConfig.isFeatureOn = origIsFeatureOn;
+      }
     });
   });
 });

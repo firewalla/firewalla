@@ -922,13 +922,16 @@ let legoEptCloud = class {
     return false;
   }
 
-  markGcmMigrated(gid) {
+  // Persist-then-cache: the in-memory flag is only set after the redis write
+  // succeeds, so a persistence failure is visible to the caller (throws) and a
+  // later call retries the write instead of silently running memory-only,
+  // which would lose the migration state on restart.
+  async markGcmMigrated(gid) {
     this._gcmGids = this._gcmGids || {};
     if (this._gcmGids[gid]) return;
+    await rclient.hsetAsync(Constants.REDIS_KEY_EPT_GCM_GIDS, gid, Math.floor(Date.now() / 1000));
     this._gcmGids[gid] = true;
     log.info(`Group ${gid} migrated to GCM, unauthenticated CBC requests will be rejected for it`);
-    rclient.hsetAsync(Constants.REDIS_KEY_EPT_GCM_GIDS, gid, Math.floor(Date.now() / 1000))
-      .catch((err) => log.error("Failed to persist GCM migration flag", err.message));
   }
 
   // Request decryption for the netbot req/response path. Parses the envelope
@@ -969,6 +972,19 @@ let legoEptCloud = class {
             reject(new Error("decrypt_error"));
             return;
           }
+          // bound every accepted envelope field before any crypto work. The
+          // string-input length check above cannot see inside an already-parsed
+          // object envelope, whose individual fields could be oversized while
+          // the ciphertext alone stays under the cap. (iv is 24 chars base64
+          // for CBC, 16 for a GCM nonce; tag 24; alg is "gcm".)
+          if (typeof env.ct !== 'string' || env.ct.length > MAX_ENCRYPTED_MSG_LEN ||
+            (env.iv != null && !Buffer.isBuffer(env.iv) && (typeof env.iv !== 'string' || env.iv.length > 64)) ||
+            (env.tag != null && (typeof env.tag !== 'string' || env.tag.length > 64)) ||
+            (env.alg != null && (typeof env.alg !== 'string' || env.alg.length > 16))) {
+            log.error(`Rejecting envelope with out-of-bounds field for group ${gid}`);
+            reject(new Error("decrypt_error"));
+            return;
+          }
           const scheme = this._schemeOf(env);
           if (opts.enforceGcmPolicy && scheme !== 'gcm' && await this.isGcmMigrated(gid)) {
             // gcm_downgrade_protection gates enforcement: off (default) is
@@ -999,8 +1015,22 @@ let legoEptCloud = class {
             reject(new Error("decrypt_error"));
             return;
           }
-          if (opts.enforceGcmPolicy && scheme === 'gcm')
-            this.markGcmMigrated(gid);
+          if (opts.enforceGcmPolicy && scheme === 'gcm') {
+            try {
+              await this.markGcmMigrated(gid);
+            } catch (e) {
+              log.error("Failed to persist GCM migration flag for group", gid, e.message);
+              if (config.isFeatureOn("gcm_downgrade_protection")) {
+                // fail closed under enforcement: without durable migration
+                // state, accepting this request would let a restart re-enable
+                // the CBC downgrade window.
+                reject(new Error("decrypt_error"));
+                return;
+              }
+              // monitor mode: accept the request; the next GCM request retries
+              // the write since the in-memory flag was not set.
+            }
+          }
           resolve({ decrypted: msgJson, scheme });
         } catch (e) {
           log.error("Unexpected error decrypting request", e.message);
