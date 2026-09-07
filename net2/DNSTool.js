@@ -59,8 +59,8 @@ class DNSTool {
       this.dnsExpireActiveUpdates = new Map();
       this.dnsExpireDrainPromise = null;
       this.dnsExpireCapacityWaiters = new Map();
-      // Suppress overflow inline refreshes globally until the queue has capacity again or the
-      // throttle period expires. A per-key map could evict suppression markers under high cardinality.
+      // Track overflow inline refreshes globally until the queue has capacity again or the
+      // throttle period expires. A per-key map could exceed the memory bound under high cardinality.
       this.dnsExpireOverflowTs = 0;
       // Number of unique refreshes handled inline because the deferred queue was full.
       // Logged and reset once per drain period to avoid one warning per incoming update.
@@ -117,8 +117,10 @@ class DNSTool {
           this.dnsExpireTs.set(key, now);
           return this._waitForDnsExpireCapacity(key, expr);
         }
-        this.dnsExpirePending.set(key, expr);
-        return false;
+        this.dnsExpireOverflowCount++;
+        this.dnsExpireOverflowTs = now;
+        this.dnsExpireTs.set(key, now);
+        return true;
       }
       return false;
     }

@@ -121,7 +121,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     expect(dnsTool.dnsExpireOverflowCount).to.equal(0);
   });
 
-  it('rate-limits distinct overflow keys globally within the throttle period', async () => {
+  it('refreshes distinct overflow keys inline without growing the pending queue', async () => {
     const inlineExpires = [];
     const deferredExpires = [];
     redisClient.expireAsync = (key, expr) => {
@@ -150,17 +150,19 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     }
     await dnsTool._drainDnsTTL();
 
-    expect(inlineExpires).to.deep.equal([['rdns:ip:50000', 3600]]);
-    expect(deferredExpires).to.deep.equal([
-      ...Array.from({ length: 50000 }, (_, i) => ['rdns:ip:' + i, 86400]),
+    expect(inlineExpires).to.deep.equal([
+      ['rdns:ip:50000', 3600],
       ['rdns:ip:50001', 3600],
       ['rdns:ip:50002', 3600]
     ]);
+    expect(deferredExpires).to.have.length(50000);
+    expect(deferredExpires[0]).to.deep.equal(['rdns:ip:0', 86400]);
+    expect(deferredExpires[49999]).to.deep.equal(['rdns:ip:49999', 86400]);
     expect(dnsTool.dnsExpirePending.size).to.equal(0);
     expect(dnsTool.dnsExpireOverflowCount).to.equal(0);
   });
 
-  it('defers a later refresh for an overflow key after the queue drains', async () => {
+  it('keeps later overflow refreshes inline after the queue drains', async () => {
     const now = Date.now();
 
     for (let i = 0; i < 50000; i++) {
@@ -178,9 +180,9 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
 
     expect(dnsTool.dnsExpirePending.size).to.equal(0);
     expect(dnsTool.dnsExpireOverflowTs).to.be.a('number').that.is.greaterThan(0);
-    expect(dnsTool.tryRefreshDnsTTL(overflowKey, 7200)).to.equal(false);
-    expect(dnsTool.dnsExpirePending.get(overflowKey)).to.equal(7200);
-    expect(dnsTool.dnsExpireOverflowTs).to.equal(0);
+    expect(dnsTool.tryRefreshDnsTTL(overflowKey, 7200)).to.equal(true);
+    expect(dnsTool.dnsExpirePending.has(overflowKey)).to.equal(false);
+    expect(dnsTool.dnsExpireOverflowCount).to.equal(0);
   });
 
   it('aggregates overflow warnings until the pending queue drains', async () => {
@@ -198,7 +200,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
 
     for (let i = 50000; i < 50003; i++) {
       dnsTool.dnsExpireTs.set('key:' + i, now);
-      expect(dnsTool.tryRefreshDnsTTL('key:' + i, 3600)).to.equal(i === 50000);
+      expect(dnsTool.tryRefreshDnsTTL('key:' + i, 3600)).to.equal(true);
     }
 
     expect(warnings).to.deep.equal([]);
@@ -206,13 +208,13 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     await dnsTool._drainDnsTTL();
 
     expect(warnings).to.deep.equal([
-      'Deferred rdns TTL refresh limit reached: 50000; refreshed inline: 1'
+      'Deferred rdns TTL refresh limit reached: 50000; refreshed inline: 3'
     ]);
     expect(dnsTool.dnsExpireOverflowCount).to.equal(0);
 
     await dnsTool._drainDnsTTL();
     expect(warnings).to.deep.equal([
-      'Deferred rdns TTL refresh limit reached: 50000; refreshed inline: 1'
+      'Deferred rdns TTL refresh limit reached: 50000; refreshed inline: 3'
     ]);
   });
 
