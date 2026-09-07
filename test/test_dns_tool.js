@@ -5,6 +5,7 @@ const expect = chai.expect;
 const proxyquire = require('proxyquire').noPreserveCache();
 
 describe('DNSTool deferred DNS TTL refresh bounds', function () {
+  const MAX_PENDING = 50000;
   let dnsTool;
   let redisClient;
   let warnings;
@@ -59,7 +60,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
   it('keeps all deferred keys and refreshes a new key inline at capacity', () => {
     const now = Date.now();
 
-    for (let i = 0; i < 50000; i++) {
+    for (let i = 0; i < MAX_PENDING; i++) {
       const key = 'rdns:ip:' + i;
       dnsTool.dnsExpireTs.set(key, now);
       expect(dnsTool.tryRefreshDnsTTL(key, 86400)).to.equal(false);
@@ -69,7 +70,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     dnsTool.dnsExpireTs.set(overflowKey, now);
     expect(dnsTool.tryRefreshDnsTTL(overflowKey, 86400)).to.equal(true);
 
-    expect(dnsTool.dnsExpirePending.size).to.equal(50000);
+    expect(dnsTool.dnsExpirePending.size).to.equal(MAX_PENDING);
     expect(dnsTool.dnsExpirePending.has('rdns:ip:0')).to.equal(true);
     expect(dnsTool.dnsExpirePending.has(overflowKey)).to.equal(false);
     expect(dnsTool.dnsExpireOverflowCount).to.equal(1);
@@ -78,7 +79,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
   it('suppresses an unseen key while overflow suppression is active', () => {
     const now = Date.now();
 
-    for (let i = 0; i < 50000; i++) {
+    for (let i = 0; i < MAX_PENDING; i++) {
       const key = 'key:' + i;
       dnsTool.dnsExpirePending.set(key, 86400);
       dnsTool.dnsExpireTs.set(key, now);
@@ -87,14 +88,14 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     dnsTool.dnsExpireTs.set('key:unseen', now);
 
     expect(dnsTool.tryRefreshDnsTTL('key:unseen', 3600)).to.equal(false);
-    expect(dnsTool.dnsExpireTs.has('key:unseen')).to.equal(false);
+    expect(dnsTool.dnsExpireTs.has('key:unseen')).to.equal(true);
     expect(dnsTool.dnsExpireOverflowCount).to.equal(0);
   });
 
   it('updates an existing pending key while overflow suppression is active', () => {
     const now = Date.now();
 
-    for (let i = 0; i < 50000; i++) {
+    for (let i = 0; i < MAX_PENDING; i++) {
       const key = 'key:' + i;
       dnsTool.dnsExpirePending.set(key, 86400);
       dnsTool.dnsExpireTs.set(key, now);
@@ -102,21 +103,21 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     dnsTool.dnsExpireOverflowTs = now;
 
     expect(dnsTool.tryRefreshDnsTTL('key:100', 3600)).to.equal(false);
-    expect(dnsTool.dnsExpirePending.size).to.equal(50000);
+    expect(dnsTool.dnsExpirePending.size).to.equal(MAX_PENDING);
     expect(dnsTool.dnsExpirePending.get('key:100')).to.equal(3600);
   });
 
   it('does not evict a pending refresh when updating an existing key at capacity', () => {
     const now = Date.now();
 
-    for (let i = 0; i < 50000; i++) {
+    for (let i = 0; i < MAX_PENDING; i++) {
       const key = 'key:' + i;
       dnsTool.dnsExpirePending.set(key, 86400);
       dnsTool.dnsExpireTs.set(key, now);
     }
 
     expect(dnsTool.tryRefreshDnsTTL('key:100', 3600)).to.equal(false);
-    expect(dnsTool.dnsExpirePending.size).to.equal(50000);
+    expect(dnsTool.dnsExpirePending.size).to.equal(MAX_PENDING);
     expect(dnsTool.dnsExpirePending.get('key:100')).to.equal(3600);
     expect(dnsTool.dnsExpireOverflowCount).to.equal(0);
   });
@@ -134,7 +135,7 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     });
 
     const now = Date.now();
-    for (let i = 0; i < 50000; i++) {
+    for (let i = 0; i < MAX_PENDING; i++) {
       const key = 'rdns:ip:' + i;
       dnsTool.dnsExpirePending.set(key, 86400);
       dnsTool.dnsExpireTs.set(key, now);
@@ -153,17 +154,17 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     expect(inlineExpires).to.deep.equal([
       ['rdns:ip:50000', 3600]
     ]);
-    expect(deferredExpires).to.have.length(50000);
+    expect(deferredExpires).to.have.length(MAX_PENDING);
     expect(deferredExpires[0]).to.deep.equal(['rdns:ip:0', 86400]);
-    expect(deferredExpires[49999]).to.deep.equal(['rdns:ip:49999', 86400]);
+    expect(deferredExpires[MAX_PENDING - 1]).to.deep.equal(['rdns:ip:49999', 86400]);
     expect(dnsTool.dnsExpirePending.size).to.equal(0);
     expect(dnsTool.dnsExpireOverflowCount).to.equal(0);
   });
 
-  it('keeps later overflow refreshes suppressed after the queue drains', async () => {
+  it('defers later overflow refreshes after the queue drains', async () => {
     const now = Date.now();
 
-    for (let i = 0; i < 50000; i++) {
+    for (let i = 0; i < MAX_PENDING; i++) {
       const key = 'key:' + i;
       dnsTool.dnsExpirePending.set(key, 86400);
       dnsTool.dnsExpireTs.set(key, now);
@@ -178,9 +179,19 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
 
     expect(dnsTool.dnsExpirePending.size).to.equal(0);
     expect(dnsTool.dnsExpireOverflowTs).to.be.a('number').that.is.greaterThan(0);
-    expect(dnsTool.tryRefreshDnsTTL(overflowKey, 7200)).to.equal(false);
-    expect(dnsTool.dnsExpirePending.has(overflowKey)).to.equal(false);
-    expect(dnsTool.dnsExpireOverflowCount).to.equal(0);
+    const deferredKey = 'key:0';
+    expect(dnsTool.tryRefreshDnsTTL(deferredKey, 7200)).to.equal(false);
+    expect(dnsTool.dnsExpirePending.get(deferredKey)).to.equal(7200);
+
+    const expires = [];
+    redisClient.expireAsync = (key, expr) => {
+      expires.push([key, expr]);
+      return Promise.resolve();
+    };
+    await dnsTool._drainDnsTTL();
+    expect(expires).to.deep.equal([[deferredKey, 7200]]);
+    expect(dnsTool.dnsExpirePending.size).to.equal(0);
+    expect(dnsTool.dnsExpireOverflowTs).to.equal(0);
   });
 
   it('aggregates overflow warnings until the pending queue drains', async () => {
@@ -190,15 +201,15 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     });
 
     const now = Date.now();
-    for (let i = 0; i < 50000; i++) {
+    for (let i = 0; i < MAX_PENDING; i++) {
       const key = 'key:' + i;
       dnsTool.dnsExpirePending.set(key, 86400);
       dnsTool.dnsExpireTs.set(key, now);
     }
 
-    for (let i = 50000; i < 50003; i++) {
+    for (let i = MAX_PENDING; i < MAX_PENDING + 3; i++) {
       dnsTool.dnsExpireTs.set('key:' + i, now);
-      expect(dnsTool.tryRefreshDnsTTL('key:' + i, 3600)).to.equal(false);
+      expect(dnsTool.tryRefreshDnsTTL('key:' + i, 3600)).to.equal(i === MAX_PENDING);
     }
 
     expect(warnings).to.deep.equal([]);
@@ -231,31 +242,31 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
       }
     });
 
-    for (let i = 0; i < 49997; i++)
+    for (let i = 0; i < MAX_PENDING - 3; i++)
       dnsTool.dnsExpirePending.set('key:' + i, 86400);
 
     const firstDrain = dnsTool._drainDnsTTL();
     expect(execCount).to.equal(1);
 
-    for (let i = 50000; i < 100000; i++)
+    for (let i = MAX_PENDING; i < MAX_PENDING * 2; i++)
       dnsTool.dnsExpirePending.set('key:' + i, 86400);
     const secondDrain = dnsTool._drainDnsTTL();
 
     expect(execCount).to.equal(1);
-    expect(dnsTool.dnsExpirePending.size).to.equal(50000);
+    expect(dnsTool.dnsExpirePending.size).to.equal(MAX_PENDING);
     expect(secondDrain).to.equal(firstDrain);
     dnsTool.dnsExpireOverflowTs = Date.now();
     dnsTool.dnsExpireTs.set('key:overflow', Date.now());
     const overflowRefresh = dnsTool.tryRefreshDnsTTL('key:overflow', 86400);
-    expect(overflowRefresh).to.equal(true);
+    expect(overflowRefresh).to.equal(false);
     expect(dnsTool.dnsExpireActiveUpdates.has('key:overflow')).to.equal(false);
-    expect(dnsTool.dnsExpirePending.size).to.equal(50000);
+    expect(dnsTool.dnsExpirePending.size).to.equal(MAX_PENDING);
     const activeOverflowRefreshes = [];
     for (let i = 0; i < 100; i++) {
       dnsTool.dnsExpireTs.set('key:active-overflow:' + i, Date.now());
       activeOverflowRefreshes.push(dnsTool.tryRefreshDnsTTL('key:active-overflow:' + i, 3600));
     }
-    expect(dnsTool.dnsExpireActiveUpdates.size).to.equal(0);
+    expect(activeOverflowRefreshes.every((refresh) => refresh === false)).to.equal(true);
     expect(dnsTool.dnsExpireActiveUpdates.size).to.equal(0);
 
     resolveExec();
@@ -273,14 +284,33 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
   it('coalesces an active update when shared deferred capacity is exhausted', () => {
     const now = Date.now();
     dnsTool.dnsExpireActive = new Map([['key:active', 86400]]);
-    for (let i = 0; i < 49999; i++)
+    for (let i = 0; i < MAX_PENDING - 1; i++)
       dnsTool.dnsExpirePending.set('key:' + i, 86400);
     dnsTool.dnsExpireTs.set('key:active', now);
 
     expect(dnsTool.tryRefreshDnsTTL('key:active', 3600)).to.equal(false);
     expect(dnsTool.dnsExpireActiveUpdates.get('key:active')).to.equal(3600);
     expect(dnsTool.dnsExpirePending.size).to.equal(49999);
-    expect(dnsTool._dnsExpireDeferredSize()).to.equal(50000);
+    expect(dnsTool._dnsExpireDeferredSize()).to.equal(MAX_PENDING);
+  });
+
+  it('keeps aggregate deferred state within capacity during active overflow', () => {
+    const now = Date.now();
+    const activeKey = 'key:active-bound';
+    dnsTool.dnsExpireActive = new Map([[activeKey, 86400]]);
+    dnsTool.dnsExpireActiveUpdates.set(activeKey, 3600);
+    dnsTool.dnsExpireRetry.set('key:retry-bound', 86400);
+    for (let i = 0; i < MAX_PENDING - 2; i++)
+      dnsTool.dnsExpirePending.set('key:pending-bound:' + i, 86400);
+
+    expect(dnsTool._dnsExpireDeferredSize()).to.equal(MAX_PENDING);
+
+    for (let i = 0; i < 1000; i++) {
+      const key = 'key:overflow-bound:' + i;
+      dnsTool.dnsExpireTs.set(key, now);
+      expect(dnsTool.tryRefreshDnsTTL(key, 3600)).to.equal(i === 0);
+      expect(dnsTool._dnsExpireDeferredSize()).to.be.at.most(MAX_PENDING);
+    }
   });
 
   it('drains retry and pending batches in one serialized cycle', async () => {
@@ -347,6 +377,14 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
   it('coalesces a throttled refresh into a failed retry batch', async () => {
     const operations = [];
     let fail = true;
+    redisClient.expireAsync = (key, expr) => {
+      operations.push([key, expr]);
+      if (fail) {
+        fail = false;
+        return Promise.reject(new Error('redis unavailable'));
+      }
+      return Promise.resolve();
+    };
     redisClient.multi = () => ({
       expire: (key, expr) => operations.push([key, expr]),
       execAsync: () => {
