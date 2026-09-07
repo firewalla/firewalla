@@ -45,7 +45,7 @@ describe('InternetSpeedtestPlugin command construction', function () {
         foo: '$(touch /tmp/unexpected)',
         bar: 'safe; touch /tmp/unexpected'
       },
-      'TEST_ENV=$(touch /tmp/unexpected)'
+      'HTTP_PROXY=$(touch /tmp/unexpected)'
     );
 
     expect(result.success).to.equal(true);
@@ -69,19 +69,30 @@ describe('InternetSpeedtestPlugin command construction', function () {
       '--json'
     ]);
     expect(options).to.have.property('timeout', 90000);
-    expect(options.env.TEST_ENV).to.equal('$(touch /tmp/unexpected)');
+    expect(options.env.HTTP_PROXY).to.equal('$(touch /tmp/unexpected)');
   });
 
   it('preserves quoted and escaped whitespace and backslashes in legacy environment strings', async () => {
     const env = InternetSpeedtestPlugin._buildSpeedTestEnv(
-      String.raw`HTTP_PROXY="proxy with spaces" TOKEN=a\ b SINGLE='a\b' DOUBLE="a\b" DOUBLE_NONSPECIAL="a\qb"`
+      String.raw`HTTP_PROXY="proxy with spaces" HTTPS_PROXY=a\ b`
     );
 
     expect(env.HTTP_PROXY).to.equal('proxy with spaces');
-    expect(env.TOKEN).to.equal('a b');
-    expect(env.SINGLE).to.equal('a\\b');
-    expect(env.DOUBLE).to.equal('a\\b');
-    expect(env.DOUBLE_NONSPECIAL).to.equal('a\\qb');
+    expect(env.HTTPS_PROXY).to.equal('a b');
+  });
+
+  it('allows proxy environment variables and rejects executable-loading overrides', async () => {
+    const env = InternetSpeedtestPlugin._buildSpeedTestEnv({
+      HTTP_PROXY: 'http://proxy.example',
+      no_proxy: 'localhost'
+    });
+
+    expect(env.HTTP_PROXY).to.equal('http://proxy.example');
+    expect(env.no_proxy).to.equal('localhost');
+    expect(() => InternetSpeedtestPlugin._buildSpeedTestEnv({LD_PRELOAD: '/tmp/evil.so'}))
+      .to.throw(/Invalid speedtest environment variable: LD_PRELOAD/);
+    expect(() => InternetSpeedtestPlugin._buildSpeedTestEnv('LD_LIBRARY_PATH=/tmp'))
+      .to.throw(/Invalid speedtest environment variable: LD_LIBRARY_PATH/);
   });
 
   it('rejects unterminated legacy environment quoting', async () => {

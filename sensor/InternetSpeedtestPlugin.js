@@ -35,6 +35,16 @@ const Constants = require('../net2/Constants.js');
 const SPEEDTEST_RUNTIME_KEY = "internet_speedtest_runtime";
 const CACHED_VENDOR_HKEY_PREFIX = "cached_vendor";
 const LAST_EVAL_TIME_HKEY_PREFIX = "last_eval_time";
+const SPEEDTEST_ENV_KEYS = new Set([
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "all_proxy",
+  "no_proxy"
+]);
 
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
@@ -314,6 +324,12 @@ class InternetSpeedtestPlugin extends Sensor {
     return vendor;
   }
 
+  static _validateSpeedTestEnvKey(key) {
+    if (!SPEEDTEST_ENV_KEYS.has(key))
+      throw new Error(`Invalid speedtest environment variable: ${key}`);
+    return key;
+  }
+
   static _validateServerId(serverId) {
     if (serverId === undefined || serverId === null || serverId === "")
       return undefined;
@@ -365,9 +381,7 @@ class InternetSpeedtestPlugin extends Sensor {
 
     if (_.isObject(extraEnvs) && !_.isArray(extraEnvs)) {
       for (const key of Object.keys(extraEnvs)) {
-        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
-          throw new Error(`Invalid speedtest environment variable: ${key}`);
-        env[key] = String(extraEnvs[key]);
+        env[InternetSpeedtestPlugin._validateSpeedTestEnvKey(key)] = String(extraEnvs[key]);
       }
       return env;
     }
@@ -464,9 +478,7 @@ class InternetSpeedtestPlugin extends Sensor {
         throw new Error("Invalid speedtest environment assignment");
       const key = assignment.substring(0, separator);
       const value = assignment.substring(separator + 1);
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
-        throw new Error(`Invalid speedtest environment variable: ${key}`);
-      env[key] = value;
+      env[InternetSpeedtestPlugin._validateSpeedTestEnvKey(key)] = value;
     }
 
     return env;
