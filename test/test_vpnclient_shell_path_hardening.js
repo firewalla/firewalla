@@ -287,7 +287,7 @@ describe('VPNClient shell and path hardening', function () {
   it('falls back to interface inspection when runtime activity is indeterminate', async () => {
     const { VPNClient, state } = installVPNClientStubs();
     state.execFileResponder = (binary, args) => {
-      if (args[0] === 'ip' && args[1] === 'link')
+      if (args[0] === 'link' && args[1] === 'show')
         return Promise.resolve({ stdout: '2: vpn_legacy-profile: <POINTOPOINT>\n' });
       return Promise.reject(Object.assign(new Error('unexpected invocation'), { code: 1 }));
     };
