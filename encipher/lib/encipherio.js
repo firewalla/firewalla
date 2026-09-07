@@ -58,6 +58,10 @@ const notificationResendKey = "notification:resend";
 const notificationResendDuration = fConfig.timing['notification.resend.duration'] || 86400
 const notificationResendMaxCount = fConfig.timing['notification.resend.maxcount'] || 50
 
+// pre-decryption cap on unauthenticated encrypted-message input (chars of
+// base64); the API body parser allows 5mb, this bounds crypto/parse work.
+const MAX_ENCRYPTED_MSG_LEN = 5 * 1024 * 1024;
+
 function getUserHome() {
   return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
 }
@@ -902,34 +906,97 @@ let legoEptCloud = class {
     }
   }
 
+  // Whether this group has ever completed a successful GCM request on the
+  // unauthenticated API path. Once true, unauthenticated CBC envelopes for the
+  // group are rejected (trust-on-first-use anti-downgrade). Cached in memory,
+  // persisted in redis so it survives restarts. Clear with:
+  //   redis-cli hdel sys:ept:gcmGids <gid>
+  async isGcmMigrated(gid) {
+    if (this._gcmGids && this._gcmGids[gid]) return true;
+    const ts = await rclient.hgetAsync(Constants.REDIS_KEY_EPT_GCM_GIDS, gid).catch(() => null);
+    if (ts) {
+      this._gcmGids = this._gcmGids || {};
+      this._gcmGids[gid] = true;
+      return true;
+    }
+    return false;
+  }
+
+  markGcmMigrated(gid) {
+    this._gcmGids = this._gcmGids || {};
+    if (this._gcmGids[gid]) return;
+    this._gcmGids[gid] = true;
+    log.info(`Group ${gid} migrated to GCM, unauthenticated CBC requests will be rejected for it`);
+    rclient.hsetAsync(Constants.REDIS_KEY_EPT_GCM_GIDS, gid, Math.floor(Date.now() / 1000))
+      .catch((err) => log.error("Failed to persist GCM migration flag", err.message));
+  }
+
   // Request decryption for the netbot req/response path. Parses the envelope
-  // once and resolves { decrypted, usedIv } — usedIv tells the caller whether
-  // the request carried an IV so the reply can mirror it (avoids re-parsing).
-  decryptRequest(gid, msg) {
+  // once and resolves { decrypted, scheme } — scheme tells the caller how the
+  // request was encrypted so the reply can mirror it (avoids re-parsing).
+  //
+  // Every failure after key lookup rejects with the same opaque "decrypt_error":
+  // bad envelope, bad padding, GCM auth failure, oversized input and
+  // post-decrypt JSON parse failure are externally indistinguishable, so the
+  // endpoint cannot be used as a CBC padding oracle (invalid padding vs valid
+  // padding + garbage plaintext must not be observable). Details are logged
+  // locally only.
+  //
+  // opts.enforceGcmPolicy: set by the unauthenticated local API path. Applies
+  // the trust-on-first-use downgrade protection: after the first successful GCM
+  // request for a gid, CBC/legacy envelopes for that gid are rejected. Paths
+  // with an authenticated transport (e.g. Guardian over TLS to MSP) leave it
+  // off, since other legitimate clients of the same group may still be on CBC.
+  decryptRequest(gid, msg, opts = {}) {
     return new Promise((resolve, reject) => {
-      this.getKey(gid, false, (err, key) => {
-        if (key == null) {
-          reject(err || new Error("key not found, invalid group?"));
-          return;
-        }
-        const env = this._parseEnvelope(msg);
-        if (env.invalid) {
-          reject(new Error("decrypt_error"));
-          return;
-        }
-        let decrypted;
+      this.getKey(gid, false, async (err, key) => {
         try {
-          decrypted = this._decryptWithEnvelope(env, key);
+          if (key == null) {
+            reject(err || new Error("key not found, invalid group?"));
+            return;
+          }
+          // pre-decryption resource limit: bound work done on unauthenticated
+          // input before any crypto/parse. The API body parser allows 5mb.
+          const approxLen = typeof msg === 'string' ? msg.length :
+            (msg && typeof msg.message === 'string' ? msg.message.length : 0);
+          if (approxLen > MAX_ENCRYPTED_MSG_LEN) {
+            log.error(`Rejecting oversized encrypted message (${approxLen} chars) for group ${gid}`);
+            reject(new Error("decrypt_error"));
+            return;
+          }
+          const env = this._parseEnvelope(msg);
+          if (env.invalid) {
+            reject(new Error("decrypt_error"));
+            return;
+          }
+          const scheme = this._schemeOf(env);
+          if (opts.enforceGcmPolicy && scheme !== 'gcm' && await this.isGcmMigrated(gid)) {
+            log.error(`Rejecting ${scheme} request for GCM-migrated group ${gid}`);
+            reject(new Error("decrypt_error"));
+            return;
+          }
+          let decrypted;
+          try {
+            decrypted = this._decryptWithEnvelope(env, key);
+          } catch (e) {
+            log.error("Failed to decrypt message, err:", e.message);
+            reject(new Error("decrypt_error"));
+            return;
+          }
+          const msgJson = this._parseJsonSafe(decrypted);
+          if (msgJson == null) {
+            // decrypted but not JSON: externally identical to a decrypt failure
+            log.error("Decrypted message is not valid JSON");
+            reject(new Error("decrypt_error"));
+            return;
+          }
+          if (opts.enforceGcmPolicy && scheme === 'gcm')
+            this.markGcmMigrated(gid);
+          resolve({ decrypted: msgJson, scheme });
         } catch (e) {
-          log.error("Failed to decrypt message, err:", e);
+          log.error("Unexpected error decrypting request", e.message);
           reject(new Error("decrypt_error"));
-          return;
         }
-        const msgJson = this._parseJsonSafe(decrypted);
-        if (msgJson != null)
-          resolve({ decrypted: msgJson, scheme: this._schemeOf(env) });
-        else
-          reject(new Error("Malformed JSON"));
       });
     });
   }
