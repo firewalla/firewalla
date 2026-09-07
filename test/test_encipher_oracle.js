@@ -102,11 +102,24 @@ describe('encipher decryptRequest uniform errors and GCM policy', function () {
       expect(await ept.isGcmMigrated(gid)).to.equal(true);
     });
 
-    it('CBC and legacy requests are rejected for a migrated group on the enforcing path', async () => {
-      const cbc = ept.encrypt(validMessage, key, crypto.randomBytes(16));
-      expect((await rejectionOf(ept.decryptRequest(gid, cbc, { enforceGcmPolicy: true }))).message).to.equal('decrypt_error');
-      const legacy = ept.encrypt(validMessage, key); // zero-IV bare base64
-      expect((await rejectionOf(ept.decryptRequest(gid, legacy, { enforceGcmPolicy: true }))).message).to.equal('decrypt_error');
+    it('monitor-only by default: CBC for a migrated group is logged but still accepted', async () => {
+      // gcm_downgrade_protection defaults to off -> monitor mode
+      const { scheme } = await ept.decryptRequest(gid, ept.encrypt(validMessage, key, crypto.randomBytes(16)), { enforceGcmPolicy: true });
+      expect(scheme).to.equal('cbc-iv');
+    });
+
+    it('CBC and legacy requests are rejected for a migrated group when gcm_downgrade_protection is on', async () => {
+      const fwConfig = require('../net2/config.js');
+      const origIsFeatureOn = fwConfig.isFeatureOn;
+      fwConfig.isFeatureOn = (name, dflt) => name === 'gcm_downgrade_protection' ? true : origIsFeatureOn(name, dflt);
+      try {
+        const cbc = ept.encrypt(validMessage, key, crypto.randomBytes(16));
+        expect((await rejectionOf(ept.decryptRequest(gid, cbc, { enforceGcmPolicy: true }))).message).to.equal('decrypt_error');
+        const legacy = ept.encrypt(validMessage, key); // zero-IV bare base64
+        expect((await rejectionOf(ept.decryptRequest(gid, legacy, { enforceGcmPolicy: true }))).message).to.equal('decrypt_error');
+      } finally {
+        fwConfig.isFeatureOn = origIsFeatureOn;
+      }
     });
 
     it('GCM requests still work for a migrated group', async () => {

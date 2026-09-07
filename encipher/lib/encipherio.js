@@ -971,9 +971,18 @@ let legoEptCloud = class {
           }
           const scheme = this._schemeOf(env);
           if (opts.enforceGcmPolicy && scheme !== 'gcm' && await this.isGcmMigrated(gid)) {
-            log.error(`Rejecting ${scheme} request for GCM-migrated group ${gid}`);
-            reject(new Error("decrypt_error"));
-            return;
+            // gcm_downgrade_protection gates enforcement: off (default) is
+            // monitor-only — log the would-be rejection but accept the request,
+            // so mixed groups (an updated GCM app alongside an older CBC-only
+            // app) keep working while the fleet migrates. Turn the feature on
+            // to enforce and actually reject the downgrade.
+            if (config.isFeatureOn("gcm_downgrade_protection")) {
+              log.error(`Rejecting ${scheme} request for GCM-migrated group ${gid}`);
+              reject(new Error("decrypt_error"));
+              return;
+            } else {
+              log.warn(`Monitor: ${scheme} request for GCM-migrated group ${gid} would be rejected if gcm_downgrade_protection were enforced`);
+            }
           }
           let decrypted;
           try {
