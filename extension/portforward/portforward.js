@@ -133,7 +133,9 @@ class PortForward {
         sem.on('Mode:Applied', async (event) => {
           if (!this._started) return;
           await lock.acquire(LOCK_SHARED, async () => {
-            await this._syncDMZRules(event.mode === Mode.MODE_ROUTER);
+            const routerMode = event.mode === Mode.MODE_ROUTER;
+            await this._syncDMZRules(routerMode);
+            await this._syncDMZAllowRules(routerMode);
           }).catch((err) => {
             log.error("Failed to sync DMZ rules on mode change", err);
           });
@@ -427,6 +429,7 @@ class PortForward {
         await this.loadConfig()
         await this.restore()
         await this.refreshConfig()
+        await this._syncDMZAllowRules(await Mode.isRouterModeOn());
       }).catch((err) => {
         log.error(`Failed to initialize PortForwarder`, err);
       });
@@ -460,6 +463,31 @@ class PortForward {
       if (routerMode) {
         dupMap.state = true;
         await this.enforceIptables(dupMap);
+      }
+    }
+  }
+
+  async _syncDMZAllowRules(routerMode) {
+    const PolicyManager2 = require('../../alarm/PolicyManager2.js');
+    const Policy = require('../../alarm/Policy.js');
+    const pm2 = new PolicyManager2();
+    const rules = await pm2.getPurposeRelatedPolicies("dmz");
+    log.info(`Syncing ${rules.length} DMZ allow rule(s), routerMode=${routerMode}`);
+    for (const rule of rules) {
+      const suspendedByThis = rule.dmzModeSuspended === "1";
+      const currentlyDisabled = rule.disabled == "1";
+      if (routerMode) {
+        if (!suspendedByThis || !currentlyDisabled) continue;
+        const newRule = new Policy(Object.assign({}, rule, { disabled: "0", dmzModeSuspended: "", updatedTime: Date.now() / 1000 }));
+        const oldRule = new Policy(rule);
+        await pm2.updatePolicyAsync(newRule);
+        pm2.tryPolicyEnforcement(newRule, "reenforce", oldRule);
+      } else {
+        if (currentlyDisabled) continue;
+        const newRule = new Policy(Object.assign({}, rule, { disabled: "1", dmzModeSuspended: "1", updatedTime: Date.now() / 1000 }));
+        const oldRule = new Policy(rule);
+        await pm2.updatePolicyAsync(newRule);
+        pm2.tryPolicyEnforcement(newRule, "reenforce", oldRule);
       }
     }
   }
