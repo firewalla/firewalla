@@ -58,7 +58,6 @@ class DNSTool {
       this.dnsExpireActive = null;
       this.dnsExpireActiveUpdates = new Map();
       this.dnsExpireDrainPromise = null;
-      this.dnsExpireCapacityWaiters = new Map();
       // Track overflow inline refreshes globally until the queue has capacity again or the
       // throttle period expires. A per-key map could exceed the memory bound under high cardinality.
       this.dnsExpireOverflowTs = 0;
@@ -71,33 +70,18 @@ class DNSTool {
   }
 
   // Returns true if the caller should EXPIRE inline (leading edge). When throttled, defers the
-  // refresh into dnsExpirePending so _drainDnsTTL still issues it within one period. If a drain
-  // has filled all deferred capacity, callers wait when a bounded waiter slot is available and
-  // otherwise fall back to one inline EXPIRE.
+  // refresh into dnsExpirePending so _drainDnsTTL still issues it within one period. If deferred
+  // capacity is exhausted, the refresh is performed inline rather than evicting queued work.
   tryRefreshDnsTTL(key, expr) {
     const now = Date.now();
     const last = this.dnsExpireTs.get(key);
-    const queueActiveUpdate = () => {
-      if (this.dnsExpireActive.has(key) ||
-        this.dnsExpireActiveUpdates.has(key) ||
-        this._dnsExpireDeferredSize() < MAX_DNS_EXPIRE_PENDING) {
-        this.dnsExpireActiveUpdates.set(key, expr);
-        return false;
-      }
-      if (!this.dnsExpireDrainPromise)
-        return true;
-      return this._waitForDnsExpireCapacity(key, expr);
-    };
     if (!last || now - last >= RDNS_TTL_REFRESH_PERIOD) {
       this.dnsExpireTs.set(key, now);
       this.dnsExpirePending.delete(key);
       this.dnsExpireRetry.delete(key);
       if (this.dnsExpireActive && this.dnsExpireActive.has(key)) {
-        return queueActiveUpdate();
-      }
-      if (this.dnsExpireDrainPromise &&
-        this._dnsExpireDeferredSize() >= MAX_DNS_EXPIRE_PENDING) {
-        return this._waitForDnsExpireCapacity(key, expr);
+        this.dnsExpireActiveUpdates.set(key, expr);
+        return false;
       }
       return true;
     }
@@ -105,31 +89,17 @@ class DNSTool {
       this.dnsExpirePending.set(key, expr);
       return false;
     }
-    if (this.dnsExpireActive && this.dnsExpireActive.has(key))
-      return queueActiveUpdate();
-    if (this.dnsExpireOverflowTs && now - this.dnsExpireOverflowTs < RDNS_TTL_REFRESH_PERIOD) {
-      if (this._dnsExpireDeferredSize() < MAX_DNS_EXPIRE_PENDING) {
-        this.dnsExpireOverflowTs = 0;
-        this.dnsExpirePending.set(key, expr);
-      } else {
-        if (this.dnsExpireDrainPromise) {
-          this.dnsExpireOverflowTs = now;
-          this.dnsExpireTs.set(key, now);
-          return this._waitForDnsExpireCapacity(key, expr);
-        }
-        this.dnsExpireOverflowCount++;
-        this.dnsExpireOverflowTs = now;
-        this.dnsExpireTs.set(key, now);
-        return true;
-      }
+    if (this.dnsExpireActive && this.dnsExpireActive.has(key)) {
+      this.dnsExpireActiveUpdates.set(key, expr);
       return false;
     }
+    if (this.dnsExpireOverflowTs && now - this.dnsExpireOverflowTs < RDNS_TTL_REFRESH_PERIOD) {
+      this.dnsExpireOverflowCount++;
+      this.dnsExpireOverflowTs = now;
+      this.dnsExpireTs.set(key, now);
+      return true;
+    }
     if (this._dnsExpireDeferredSize() >= MAX_DNS_EXPIRE_PENDING) {
-      if (this.dnsExpireDrainPromise) {
-        this.dnsExpireOverflowTs = now;
-        this.dnsExpireTs.set(key, now);
-        return this._waitForDnsExpireCapacity(key, expr);
-      }
       this.dnsExpireOverflowCount++;
       this.dnsExpireOverflowTs = now;
       this.dnsExpireTs.set(key, now);
@@ -137,37 +107,6 @@ class DNSTool {
     }
     this.dnsExpirePending.set(key, expr);
     return false;
-  }
-
-  _waitForDnsExpireCapacity(key, expr) {
-    let waiter = this.dnsExpireCapacityWaiters.get(key);
-    if (!waiter) {
-      // Waiters are part of the same aggregate bound as deferred refreshes.
-      if (this._dnsExpireDeferredSize() >= MAX_DNS_EXPIRE_PENDING)
-        return true;
-      let resolve;
-      const promise = new Promise((resolvePromise) => {
-        resolve = resolvePromise;
-      });
-      waiter = { expr, promise, resolve };
-      this.dnsExpireCapacityWaiters.set(key, waiter);
-    }
-    waiter.expr = expr;
-    return waiter.promise;
-  }
-
-  _releaseDnsExpireCapacity() {
-    while (this.dnsExpireCapacityWaiters.size > 0 &&
-      this._dnsExpireDeferredSize() < MAX_DNS_EXPIRE_PENDING) {
-      const [key, waiter] = this.dnsExpireCapacityWaiters.entries().next().value;
-      this.dnsExpireCapacityWaiters.delete(key);
-      this.dnsExpirePending.set(key, waiter.expr);
-      waiter.resolve(false);
-    }
-    if (this.dnsExpireCapacityWaiters.size > 0 && !this.dnsExpireDrainPromise &&
-      this.dnsExpireRetry.size === 0) {
-      this._drainDnsTTL();
-    }
   }
 
   _dnsExpireDeferredSize() {
@@ -181,8 +120,7 @@ class DNSTool {
     return this.dnsExpirePending.size +
       this.dnsExpireRetry.size +
       activeUpdateSize +
-      (this.dnsExpireActive ? this.dnsExpireActive.size : 0) +
-      this.dnsExpireCapacityWaiters.size;
+      (this.dnsExpireActive ? this.dnsExpireActive.size : 0);
   }
 
   _drainDnsTTL() {
@@ -251,7 +189,6 @@ class DNSTool {
     })().finally(() => {
       this.dnsExpireActive = null;
       this.dnsExpireDrainPromise = null;
-      this._releaseDnsExpireCapacity();
     });
     return this.dnsExpireDrainPromise;
   }
