@@ -71,7 +71,8 @@ class DNSTool {
 
   // Returns true if the caller should EXPIRE inline (leading edge). When throttled, defers the
   // refresh into dnsExpirePending so _drainDnsTTL still issues it within one period. If deferred
-  // capacity is exhausted, the refresh is performed inline rather than evicting queued work.
+  // capacity is exhausted, only the first refresh is performed inline; subsequent overflow
+  // refreshes are suppressed until the fixed overflow window expires.
   tryRefreshDnsTTL(key, expr) {
     const now = Date.now();
     const last = this.dnsExpireTs.get(key);
@@ -93,11 +94,12 @@ class DNSTool {
       this.dnsExpireActiveUpdates.set(key, expr);
       return false;
     }
+    if (this.dnsExpireRetry.has(key)) {
+      this.dnsExpireRetry.set(key, expr);
+      return false;
+    }
     if (this.dnsExpireOverflowTs && now - this.dnsExpireOverflowTs < RDNS_TTL_REFRESH_PERIOD) {
-      this.dnsExpireOverflowCount++;
-      this.dnsExpireOverflowTs = now;
-      this.dnsExpireTs.set(key, now);
-      return true;
+      return false;
     }
     if (this._dnsExpireDeferredSize() >= MAX_DNS_EXPIRE_PENDING) {
       this.dnsExpireOverflowCount++;
