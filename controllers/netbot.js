@@ -1825,7 +1825,6 @@ class netBot extends ControllerBot {
         if (!profileId) {
           throw { code: 400, msg: "'profileId' should be specified." }
         }
-        validateVPNProfileId(profileId);
         const c = VPNClient.getClass(type);
         if (!c) {
           throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
@@ -3456,7 +3455,6 @@ class netBot extends ControllerBot {
         if (!profileId) {
           throw { code: 400, msg: "'profileId' is not specified." }
         }
-        validateVPNProfileId(profileId);
         const c = VPNClient.getClass(type);
         if (!c) {
           throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
@@ -3542,7 +3540,10 @@ class netBot extends ControllerBot {
         if (!profileId) {
           throw { code: 400, msg: "'profileId' should be specified" }
         }
-        validateVPNProfileId(profileId);
+        const matches = _.isString(profileId) ? profileId.match(/^[a-zA-Z0-9_]+/g) : null;
+        if (profileId.length > 11 || matches == null || matches.length != 1 || matches[0] !== profileId) {
+          throw { code: 400, msg: "'profileId' should only contain alphanumeric letters or underscore and no longer than 11 characters" }
+        }
         const c = VPNClient.getClass(type);
         if (!c) {
           throw { code: 400, msg: `Unsupported VPN client type: ${type}` }

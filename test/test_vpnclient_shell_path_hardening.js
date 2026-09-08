@@ -28,7 +28,13 @@ function installVPNClientStubs() {
     execFileCalls: [],
     destroyRtIdCalls: [],
     cachedState: null,
-    execFileResponder: () => Promise.reject(Object.assign(new Error('ip link not found'), { code: 1 }))
+    execFileResponder: (binary, args) => {
+      if (binary === 'ip' && args[0] === '-o')
+        return Promise.resolve({ stdout: '' });
+      return Promise.reject(Object.assign(new Error('ip link not found'), {
+        code: 1, stderr: 'Cannot find device'
+      }));
+    }
   };
 
   const VPNClient = proxyquire('../extension/vpnclient/VPNClient.js', {
@@ -71,7 +77,12 @@ describe('VPNClient shell and path hardening', function () {
     expect(() => new TestVPNClient({ profileId: 'valid_123' })).to.not.throw();
     expect(() => new TestVPNClient({ profileId: '../escape' })).to.throw(/profileId/);
     expect(() => new TestVPNClient({ profileId: 'bad-name' })).to.throw(/profileId/);
-    expect(() => VPNClient.validateProfileId('12345678901')).to.throw();
+    expect(() => VPNClient.validateProfileId('12345678901')).to.not.throw();
+    const longestClient = new TestVPNClient({ profileId: '12345678901' });
+    expect(longestClient.getInterfaceName()).to.equal('vpn_12345678901');
+    expect(longestClient.getInterfaceName().length).to.equal(15);
+    expect(() => new TestVPNClient({ profileId: '123456789012' })).to.throw(/11 characters/);
+    expect(() => VPNClient.validateProfileId('valid_123\n')).to.throw();
     expect(() => VPNClient.validateProfileId('$(touch /tmp/pwn)')).to.throw();
     expect(() => VPNClient.validateProfileId(123)).to.throw();
   });
@@ -171,9 +182,11 @@ describe('VPNClient shell and path hardening', function () {
     const stopPromise = client.stop();
     await stopEntered;
     let destroyEntered = false;
+    const stopAfterLock = new Error('lock acquisition observed; skip artifact cleanup');
     const destroyPromise = VPNClient.destroyStoredProfile('valid_123', async () => {
       destroyEntered = true;
-    });
+      throw stopAfterLock;
+    }).catch(err => { expect(err).to.equal(stopAfterLock); });
     await Promise.resolve();
     expect(destroyEntered).to.equal(false);
 
@@ -252,7 +265,7 @@ describe('VPNClient shell and path hardening', function () {
     state.cachedState = null;
     state.execFileResponder = (binary, args) => {
       if (args[0] === '-o' && args[1] === 'link' && args[2] === 'show')
-        return Promise.resolve({ stdout: '1: lo: <LOOPBACK>\n2: vpn_legacy-profi: <POINTOPOINT>\n' });
+        return Promise.resolve({ stdout: '1: lo: <LOOPBACK>\n2: vpn_legacy-prof: <POINTOPOINT>\n' });
       return Promise.reject(Object.assign(new Error('unexpected invocation'), { code: 1 }));
     };
 

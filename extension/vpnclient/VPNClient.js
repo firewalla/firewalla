@@ -106,8 +106,9 @@ class VPNClient {
   }
 
   static validateProfileId(profileId) {
-    if (!_.isString(profileId) || !/^[a-zA-Z0-9_]{1,10}$/.test(profileId)) {
-      throw new Error("'profileId' should only contain alphanumeric letters or underscore and no longer than 10 characters");
+    // vpn_ plus 11 profile-ID characters fits the 15-character interface-name limit.
+    if (!_.isString(profileId) || profileId.length === 0 || profileId.length > 11 || /[^a-zA-Z0-9_]/.test(profileId)) {
+      throw new Error("'profileId' should only contain alphanumeric letters or underscore and no longer than 11 characters");
     }
     return profileId;
   }

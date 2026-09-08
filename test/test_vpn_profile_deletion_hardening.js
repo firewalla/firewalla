@@ -113,9 +113,9 @@ describe('VPN profile deletion hardening', function () {
       }
 
       static async destroyStoredProfile(profileId, beforeDestroy) {
-        cleanupCalls.destroyStoredProfile++;
         if (beforeDestroy)
           await beforeDestroy();
+        cleanupCalls.destroyStoredProfile++;
       }
 
       async status() {
@@ -143,6 +143,16 @@ describe('VPN profile deletion hardening', function () {
 
       getClass(type) {
         return type === 'openvpn' ? fakeClientClass : null;
+      },
+
+      createLegacyClient(ClientClass) {
+        const client = Object.create(ClientClass.prototype);
+        client._cancelEstablishment = () => {};
+        return client;
+      },
+
+      async destroyStoredProfile(profileId, beforeDestroy) {
+        return fakeClientClass.destroyStoredProfile(profileId, beforeDestroy);
       },
 
       async withProfileLifecycleLock(profileId, callback) {
@@ -180,6 +190,8 @@ describe('VPN profile deletion hardening', function () {
     const netbotPath = path.resolve(__dirname, '../controllers/netbot.js');
 
     Module._load = function (request, parent, isMain) {
+      if (request === netbotPath || request === 'lodash')
+        return originalLoad.apply(this, arguments);
       if (request === '../extension/vpnclient/VPNClient.js')
         return fakeVPNClient;
       if (request === '../alarm/PolicyManager2.js')
@@ -255,8 +267,30 @@ describe('VPN profile deletion hardening', function () {
     return { error, result };
   }
 
+  for (const item of ['saveVpnProfile', 'saveOvpnProfile']) {
+    it(`${item} accepts 11-character IDs and rejects invalid IDs before constructing a client`, async function () {
+      const invoke = profileId => bot.cmdHandler('test-gid', {
+        data: { item, value: { type: 'openvpn', profileId } }
+      }).then(() => null, err => err);
+
+      // The constructor sentinel stops before any profile is written. Reaching it
+      // proves that the production save handler accepted the boundary-length ID.
+      const accepted = await invoke('12345678901');
+      expect(accepted).to.be.instanceOf(Error);
+      expect(accepted.message).to.equal('validated constructor must not be used for legacy stop');
+      expect(cleanupCalls.constructor).to.equal(1);
+
+      for (const profileId of ['123456789012', 'valid_123\n', '../escape', 'bad-name', 123]) {
+        const rejected = await invoke(profileId);
+        expect(rejected).to.deep.include({ code: 400 });
+        expect(rejected.msg).to.match(/11 characters/);
+      }
+      expect(cleanupCalls.constructor).to.equal(1);
+    });
+  }
+
   it('stops an active legacy profile without invoking the validated constructor', async function () {
-    realVPNState.execFileResponder = () => Promise.resolve({ stdout: '2: vpn_legacy-profi: <POINTOPOINT>\n' });
+    realVPNState.execFileResponder = () => Promise.resolve({ stdout: '2: vpn_legacy-prof: <POINTOPOINT>\n' });
 
     const { error, result } = await stopLegacyProfile();
 
