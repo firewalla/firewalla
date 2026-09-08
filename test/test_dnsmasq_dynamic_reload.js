@@ -623,7 +623,56 @@ describe('dnsmasq DHCP hosts-file reload vs restart', function() {
     });
   }
 
+  for (const startNewTimerEarly of [false, true]) {
+    it(`carries a consumed change into a non-forced reschedule (${startNewTimerEarly ? 'overlapping' : 'later'} timer)`, async function() {
+      let releaseCheck;
+      let checkStarted;
+      const blocked = new Promise(resolve => { releaseCheck = resolve; });
+      const started = new Promise(resolve => { checkStarted = resolve; });
+      const { dnsmasq, commands, timers } = loadDNSMASQ({ fireRouterManaged: true });
+      this.test.ctx.dnsmasq = dnsmasq;
+      let checks = 0;
+      dnsmasq.checkConfsChange = async () => {
+        if (++checks === 1) {
+          checkStarted();
+          await blocked;
+          return true; // This check consumed the stored checksum change.
+        }
+        return false;
+      };
+      dnsmasq.scheduleRestartDHCPService(false);
+      const oldExecution = timers[0].fn();
+      await started;
+      let newExecution;
+      try {
+        dnsmasq.scheduleRestartDHCPService(false);
+        const newTask = timers[1];
+        if (startNewTimerEarly)
+          newExecution = newTask.fn();
+        releaseCheck();
+        await oldExecution;
+        if (!newExecution)
+          newExecution = newTask.fn();
+        await newExecution;
+        expect(checks).to.equal(2);
+        expect(commands.filter(cmd => cmd.includes('systemctl stop firerouter_dhcp'))).to.have.length(1);
+        expect(commands.filter(cmd => cmd.includes('systemctl restart firerouter_dhcp'))).to.have.length(1);
+        expect(dnsmasq.counter.restartDHCP).to.equal(1);
+        expect(dnsmasq.restartDHCPTask).to.equal(undefined);
+
+        // A completed restart must not leave a sticky change for a later request.
+        dnsmasq.scheduleRestartDHCPService(false);
+        await timers[2].fn();
+        expect(dnsmasq.counter.restartDHCP).to.equal(1);
+      } finally {
+        releaseCheck();
+        await Promise.all([oldExecution, newExecution]);
+      }
+    });
+  }
+
   it('invalidates a restart preflight when reload fallback completes first', async function() {
+    let checkConsumed = false;
     let releaseReload;
     let releaseCheck;
     let reloadStarted;
@@ -643,10 +692,13 @@ describe('dnsmasq DHCP hosts-file reload vs restart', function() {
     });
     this.test.ctx.dnsmasq = dnsmasq;
     dnsmasq.checkConfsChange = async (key) => {
-      if (key === 'dnsmasq:dhcp') {
+      if (key === 'dnsmasq:dhcp' && !checkConsumed) {
+        checkConsumed = true;
         checkStarted();
         await checkPromise;
       }
+      else if (key === 'dnsmasq:dhcp')
+        return false;
       return true;
     };
 
@@ -663,11 +715,14 @@ describe('dnsmasq DHCP hosts-file reload vs restart', function() {
       expect(timers[1].cleared).to.equal(true);
       expect(dnsmasq.restartDHCPPromise).to.equal(undefined);
       expect(dnsmasq.counter.restartDHCP).to.equal(1);
+      // A new request after fallback must not inherit the old positive result.
+      dnsmasq.scheduleRestartDHCPService(false);
     } finally {
       releaseCheck();
       await restartExecution;
     }
 
+    await timers[2].fn();
     expect(commands.filter(cmd => cmd.includes('systemctl stop firerouter_dhcp'))).to.have.length(1);
     expect(commands.filter(cmd => cmd.includes('systemctl restart firerouter_dhcp'))).to.have.length(1);
     expect(dnsmasq.counter.restartDHCP).to.equal(1);

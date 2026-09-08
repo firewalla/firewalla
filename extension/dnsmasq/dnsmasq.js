@@ -412,16 +412,33 @@ module.exports = class DNSMASQ {
     if (this.restartDHCPTask)
       clearTimeout(this.restartDHCPTask);
     this.restartDHCPIgnoreFileCheck = this.restartDHCPIgnoreFileCheck || ignoreFileCheck
+    // Debounced timers share one pending request. Preflights update Redis, so
+    // serialize them and retain positive results even when their timer is stale.
+    // Generation selects the timer allowed to act; request state is retired
+    // when that timer finishes preflight or a reload fallback supersedes it.
+    const restartRequest = this.restartDHCPRequest || {
+      preflight: Promise.resolve(),
+      changed: false
+    };
+    this.restartDHCPRequest = restartRequest;
     this.restartDHCPGeneration = (this.restartDHCPGeneration || 0) + 1;
     const restartGeneration = this.restartDHCPGeneration;
     const restartTask = setTimeout(async () => {
       // checkConfsChange will update md5sum in redis, call it before checking ignoreFileCheck to keep md5sum consistent with config files
-      const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH]);
+      const preflight = restartRequest.preflight.then(async () => {
+        if (this.restartDHCPRequest !== restartRequest || restartGeneration !== this.restartDHCPGeneration)
+          return;
+        const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH]);
+        restartRequest.changed = restartRequest.changed || confChanged;
+      });
+      restartRequest.preflight = preflight;
+      await preflight;
       // Rescheduling or a reload fallback can invalidate this callback while preflight awaits.
       // Do not restart or consume state belonging to a later restart request.
-      if (restartGeneration !== (this.restartDHCPGeneration || 0))
+      if (this.restartDHCPRequest !== restartRequest || restartGeneration !== (this.restartDHCPGeneration || 0))
         return;
-      if (!this.restartDHCPIgnoreFileCheck && !confChanged) {
+      delete this.restartDHCPRequest;
+      if (!this.restartDHCPIgnoreFileCheck && !restartRequest.changed) {
         delete this.restartDHCPIgnoreFileCheck;
         if (this.restartDHCPTask === restartTask)
           delete this.restartDHCPTask;
@@ -495,6 +512,7 @@ module.exports = class DNSMASQ {
       if (!reloaded) {
         // clearTimeout cannot cancel callbacks already awaiting preflight.
         this.restartDHCPGeneration = (this.restartDHCPGeneration || 0) + 1;
+        delete this.restartDHCPRequest;
         if (this.restartDHCPTask) {
           clearTimeout(this.restartDHCPTask);
           delete this.restartDHCPTask;
