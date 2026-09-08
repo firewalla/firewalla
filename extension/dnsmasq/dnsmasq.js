@@ -397,6 +397,13 @@ module.exports = class DNSMASQ {
     }, 5000);
   }
 
+  _schedulePendingDHCPReload() {
+    if (!this.reloadDHCPAfterRestart || this.restartDHCPTask || this.restartDHCPPromise)
+      return;
+    delete this.reloadDHCPAfterRestart;
+    this.scheduleReloadDHCPService();
+  }
+
   scheduleRestartDHCPService(ignoreFileCheck = false) {
     if (this.reloadDHCPTask) {
       clearTimeout(this.reloadDHCPTask);
@@ -412,12 +419,14 @@ module.exports = class DNSMASQ {
         delete this.restartDHCPIgnoreFileCheck;
         if (this.restartDHCPTask === restartTask)
           delete this.restartDHCPTask;
+        this._schedulePendingDHCPReload();
         return;
       }
       delete this.restartDHCPIgnoreFileCheck
       await this.restartDHCPService();
       if (this.restartDHCPTask === restartTask)
         delete this.restartDHCPTask;
+      this._schedulePendingDHCPReload();
     }, 5000);
     this.restartDHCPTask = restartTask;
   }
@@ -440,16 +449,25 @@ module.exports = class DNSMASQ {
       });
     })();
     const trackedRestartPromise = restartPromise.finally(() => {
-      if (this.restartDHCPPromise === trackedRestartPromise)
+      if (this.restartDHCPPromise === trackedRestartPromise) {
         delete this.restartDHCPPromise;
+        this._schedulePendingDHCPReload();
+      }
     });
     this.restartDHCPPromise = trackedRestartPromise;
     return trackedRestartPromise;
   }
 
   scheduleReloadDHCPService() {
-    if (this.restartDHCPTask || this.restartDHCPPromise)
-      return
+    // A pending restart timer will read the latest files when it runs. Once the
+    // restart is active, however, it may already have loaded its configuration,
+    // so preserve one coalesced reload request until the restart fully settles.
+    if (this.restartDHCPPromise) {
+      this.reloadDHCPAfterRestart = true;
+      return;
+    }
+    if (this.restartDHCPTask)
+      return;
     if (this.reloadDHCPTask)
       clearTimeout(this.reloadDHCPTask);
     const reloadTask = setTimeout(async () => {
