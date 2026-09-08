@@ -223,6 +223,8 @@ class VPNClient {
       return null;
     const parseStatus = (result) => {
       const status = result && typeof result.stdout === 'string' ? result.stdout.trim() : '';
+      // Transitions do not prove inactivity: startup may create resources and
+      // shutdown may still be using them. Keep destructive cleanup blocked.
       if (status === 'active' || status === 'reloading' || status === 'activating' || status === 'deactivating')
         return true;
       if (status === 'inactive' || status === 'failed' || status === 'dead')

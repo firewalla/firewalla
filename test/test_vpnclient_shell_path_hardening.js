@@ -166,6 +166,61 @@ describe('VPNClient shell and path hardening', function () {
     }
   });
 
+  it('preserves profile discovery after partial artifact deletion and completes on retry', async () => {
+    const { VPNClient } = installVPNClientStubs();
+    const configDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'vpnclient-retry-'));
+    const profileId = 'legacy-profile';
+    class TestVPNClient extends VPNClient {
+      static getConfigDirectory() { return configDirectory; }
+      static getStoredProfileArtifacts(id) {
+        return super.getStoredProfileArtifacts(id).concat({ root: configDirectory, path: `${id}.ovpn` });
+      }
+    }
+    const artifact = suffix => path.join(configDirectory, `${profileId}${suffix}`);
+    try {
+      for (const suffix of ['.settings', '.json', '.ovpn'])
+        await fs.writeFile(artifact(suffix), 'test');
+      // unlink cannot remove a directory, so fail after .json was removed.
+      await fs.mkdir(artifact('.endpoint_routes'));
+      const error = await TestVPNClient.destroyStoredProfile(profileId).then(() => null, err => err);
+      expect(error).to.be.instanceOf(Error);
+      expect(['EISDIR', 'EPERM']).to.include(error.code);
+      expect(await fs.access(artifact('.json')).then(() => true, () => false)).to.equal(false);
+      expect(await fs.readFile(artifact('.ovpn'), 'utf8')).to.equal('test');
+      expect(await fs.readFile(artifact('.settings'), 'utf8')).to.equal('test');
+      expect(await TestVPNClient.listProfileIds()).to.eql([profileId]);
+      expect(await TestVPNClient.profileExists(profileId)).to.equal(true);
+
+      // Correct the failing artifact and retry with the first artifact absent.
+      await fs.rmdir(artifact('.endpoint_routes'));
+      await fs.writeFile(artifact('.endpoint_routes'), 'test');
+      await TestVPNClient.destroyStoredProfile(profileId);
+      expect(await fs.readdir(configDirectory)).to.eql([]);
+      expect(await TestVPNClient.profileExists(profileId)).to.equal(false);
+    } finally {
+      await fs.rm(configDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it('treats transitional systemd states as active and unknown states as indeterminate', async () => {
+    const { VPNClient, state } = installVPNClientStubs();
+    class TestVPNClient extends VPNClient {
+      static getRuntimeServiceName() { return 'test-vpn.service'; }
+    }
+    for (const [status, expected] of [
+      ['active', true], ['activating', true], ['reloading', true], ['deactivating', true],
+      ['inactive', false], ['failed', false], ['unknown', null], ['', null]
+    ]) {
+      // systemctl can report a state through stdout even with a nonzero exit.
+      for (const rejected of [false, true]) {
+        state.execFileResponder = () => rejected
+          ? Promise.reject(Object.assign(new Error('systemctl status'), { stdout: status, code: 3 }))
+          : Promise.resolve({ stdout: status });
+        expect(await TestVPNClient.getRuntimeActive('legacy-profile')).to.equal(expected);
+      }
+    }
+  });
+
   it('serializes stop and stored-profile destruction on the same lifecycle lock', async () => {
     const { VPNClient } = installVPNClientStubs();
     const client = Object.create(VPNClient.prototype);
