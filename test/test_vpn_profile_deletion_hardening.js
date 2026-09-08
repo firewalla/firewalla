@@ -188,6 +188,9 @@ describe('VPN profile deletion hardening', function () {
 
     const originalLoad = Module._load;
     const netbotPath = path.resolve(__dirname, '../controllers/netbot.js');
+    const cachedNetBot = require.cache[netbotPath];
+    const originalListeners = new Map(['unhandledRejection', 'uncaughtException']
+      .map(event => [event, new Set(process.listeners(event))]));
 
     Module._load = function (request, parent, isMain) {
       if (request === netbotPath || request === 'lodash')
@@ -208,6 +211,16 @@ describe('VPN profile deletion hardening', function () {
       NetBot = require(netbotPath);
     } finally {
       Module._load = originalLoad;
+      if (cachedNetBot)
+        require.cache[netbotPath] = cachedNetBot;
+      else
+        delete require.cache[netbotPath];
+      for (const [event, listeners] of originalListeners) {
+        for (const listener of process.listeners(event)) {
+          if (!listeners.has(listener))
+            process.removeListener(event, listener);
+        }
+      }
     }
 
     bot = Object.create(NetBot.prototype);
