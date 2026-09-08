@@ -327,9 +327,12 @@ class OpenVPNClient extends VPNClient {
     await exec(cmd);
   }
 
-  async _stop() {
+  async _stop({ strict = false } = {}) {
     await execFile('sudo', ['systemctl', 'stop', `${SERVICE_NAME}@${this.profileId}`]).catch((err) => {
       log.error(`Failed to stop openvpn client ${this.profileId}`, err.message);
+      // Let failed-startup cleanup retain its retry guard if the service did not stop.
+      if (strict)
+        throw err;
     });
     await execFile('sudo', ['systemctl', 'disable', `${SERVICE_NAME}@${this.profileId}`]).catch((err) => {});
   }

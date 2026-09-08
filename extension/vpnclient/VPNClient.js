@@ -1431,7 +1431,7 @@ class VPNClient {
       await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, VPNClient.getDNSRedirectChainName(this.profileId));
     }
     await this.flushRemoteEndpointRoutes().catch((err) => { });
-    await this._stop().catch((err) => {
+    await this._stop({ strict }).catch((err) => {
       log.error(`Failed to exec _stop of VPN client ${this.profileId}`, err.message);
       // Failed-startup cleanup must not report inactivity or release the
       // remaining enforcement state while the service may still be running.

@@ -21,6 +21,7 @@ const fs = require('fs').promises;
 const os = require('os');
 const path = require('path');
 const proxyquire = require('proxyquire').noCallThru();
+const applianceStubs = require('./helpers/vpnclient_appliance_stubs.js');
 
 function installVPNClientStubs() {
   const state = {
@@ -40,6 +41,7 @@ function installVPNClientStubs() {
   };
 
   const VPNClient = proxyquire('../extension/vpnclient/VPNClient.js', {
+    ...applianceStubs(),
     '../../net2/Firewalla.js': { isMain: () => false },
     '../../util/redis_manager.js': {
       getSubscriptionClient: () => ({ on: () => {} }),
@@ -496,8 +498,10 @@ describe('VPNClient shell and path hardening', function () {
     });
   }
 
-  for (const failedStartup of [true, false]) {
-    it(`${failedStartup ? 'blocks startup retries' : 'preserves ordinary stop behavior'} when the service stop rejects`, async function () {
+  for (const [implementation, failedStartup] of [
+    ['stub', true], ['stub', false], ['openvpn', true], ['openvpn', false]
+  ]) {
+    it(`${implementation}: ${failedStartup ? 'blocks startup retries' : 'preserves ordinary stop behavior'} when the service stop rejects`, async function () {
       this.timeout(5000);
       const { VPNClient, state } = installVPNClientStubs();
       const client = Object.create(VPNClient.prototype);
@@ -520,11 +524,32 @@ describe('VPNClient shell and path hardening', function () {
       client._getDnsmasqConfigPath = () => path.join(configDirectory, 'vpn.conf');
       client._disableDNSRoute = async () => {};
       client._disablePBRDNSRoute = async () => {};
-      client._stop = async () => {
+      const rejectStop = async () => {
         stops++;
         if (failStop)
           throw stopError;
       };
+      if (implementation === 'openvpn') {
+        const OpenVPNClient = proxyquire('../extension/vpnclient/OpenVPNClient.js', {
+          ...applianceStubs(),
+          '../../net2/Firewalla.js': {},
+          './VPNClient.js': VPNClient,
+          'child-process-promise': {
+            execFile: async (binary, args) => {
+              expect(binary).to.equal('sudo');
+              expect(args[0]).to.equal('systemctl');
+              expect(args[2]).to.equal('openvpn_client@stop_retry');
+              if (args[1] === 'stop')
+                return rejectStop();
+              expect(args[1]).to.equal('disable');
+            }
+          }
+        });
+        // Exercise the real protocol method beneath the real stop wrapper.
+        client._stop = OpenVPNClient.prototype._stop;
+      } else {
+        client._stop = rejectStop;
+      }
       try {
         if (!failedStartup) {
           await client.stop();
@@ -723,4 +748,41 @@ describe('VPNClient shell and path hardening', function () {
     expect(state.execFileCalls[0][1]).to.eql(['+time=3', '+tries=2', 'SOA', 'box.firewalla.com']);
     expect(state.execFileCalls[1][1]).to.eql(['+time=3', '+tries=2', '+short', 'NS', 'firewalla.com.']);
   });
+
+  for (const soaOutput of [
+    ';; ANSWER SECTION:\nfirewalla.com. 60 IN A 192.0.2.1\n',
+    ';; AUTHORITY SECTION:\n\n;; ANSWER SECTION:\nfirewalla.com. 60 IN A 192.0.2.1\n'
+  ]) {
+    it('does not query nameservers when the authority section is missing or empty', async () => {
+      const { VPNClient, state } = installVPNClientStubs();
+      state.execFileResponder = async () => ({ stdout: soaOutput });
+      const client = Object.create(VPNClient.prototype);
+      expect(await client.resolveFirewallaDDNS('box.firewalla.com')).to.equal(undefined);
+      expect(state.execFileCalls).to.have.lengthOf(1);
+    });
+  }
+
+  for (const firstAnswer of ['', 'not-an-address\n', '0.0.0.0\n', null]) {
+    it(`tries the next authoritative server after unusable answer ${JSON.stringify(firstAnswer)}`, async () => {
+      const { VPNClient, state } = installVPNClientStubs();
+      state.execFileResponder = async (binary, args) => {
+        expect(binary).to.equal('dig');
+        if (args.includes('SOA'))
+          return { stdout: ';; AUTHORITY SECTION:\nfirewalla.com. 300 IN SOA ns1.firewalla.com. hostmaster.firewalla.com. 1 2 3 4 5\n' };
+        if (args.includes('NS'))
+          return { stdout: 'ns1.firewalla.com.\nns2.firewalla.com.\n' };
+        if (args.includes('@ns1.firewalla.com.')) {
+          if (firstAnswer === null)
+            throw new Error('DNS query failed');
+          return { stdout: firstAnswer };
+        }
+        expect(args).to.eql(['+short', '+time=3', '+tries=1', '@ns2.firewalla.com.', 'A', 'box.firewalla.com']);
+        return { stdout: '192.0.2.53\n' };
+      };
+      const client = Object.create(VPNClient.prototype);
+      expect(await client.resolveFirewallaDDNS('box.firewalla.com')).to.equal('192.0.2.53');
+      expect(state.execFileCalls).to.have.lengthOf(4);
+      expect(state.execCalls).to.have.lengthOf(0);
+    });
+  }
 });

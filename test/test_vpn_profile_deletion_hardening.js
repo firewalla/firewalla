@@ -20,6 +20,7 @@ const expect = chai.expect;
 const Module = require('module');
 const path = require('path');
 const proxyquire = require('proxyquire').noCallThru();
+const applianceStubs = require('./helpers/vpnclient_appliance_stubs.js');
 
 function makeGenericStub() {
   const target = function () {
@@ -75,6 +76,7 @@ describe('VPN profile deletion hardening', function () {
         execFileResponder: () => Promise.resolve({ stdout: '' })
       };
       const client = proxyquire('../extension/vpnclient/VPNClient.js', {
+        ...applianceStubs(),
         '../../net2/Firewalla.js': { isMain: () => false },
         '../../util/redis_manager.js': {
           getSubscriptionClient: () => ({ on: () => {} }),
