@@ -41,12 +41,9 @@ router.get('/garbage', function (req, res) {
 //    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
 //    res.set('Cache-Control', 'post-check=0, pre-check=0', false);
 //    res.set('Pragma', 'no-cache');
-    const rawSize = req.query.ckSize;
-    const requestedSize = rawSize === undefined || rawSize === '' ? DEFAULT_GARBAGE_CHUNKS : Number(rawSize);
-    if (!Number.isSafeInteger(requestedSize) || requestedSize < 0 || requestedSize > MAX_GARBAGE_CHUNKS) {
-        res.status(400).json({errors: ['Invalid ckSize. Expected an integer from 0 to 100.']});
-        return;
-    }
+    // each chunk is 1MiB and this endpoint is unauthenticated, keep the response bounded
+    const ckSize = Number(req.query.ckSize);
+    const requestedSize = Number.isInteger(ckSize) && ckSize > 0 ? Math.min(ckSize, 1024) : 100;
 
     const send = () => {
         for (let i = 0; i < requestedSize; i++)
