@@ -27,6 +27,8 @@ function installVPNClientStubs() {
     execCalls: [],
     execFileCalls: [],
     destroyRtIdCalls: [],
+    strictVPNRemovals: 0,
+    cacheWrites: [],
     cachedState: null,
     execFileResponder: (binary, args) => {
       if (binary === 'ip' && args[0] === '-o')
@@ -46,6 +48,7 @@ function installVPNClientStubs() {
         setAsync: async (key, value) => {
           if (value === true && state.failCacheWrite)
             throw new Error('cache write failed');
+          state.cacheWrites.push(value);
           state.cachedState = String(value);
         },
         expireAsync: async () => {
@@ -69,7 +72,24 @@ function installVPNClientStubs() {
         return state.execFileResponder(...args);
       }
     },
+    '../../net2/Iptables.js': {
+      Rule: class {
+        chn() { return this; }
+        set() { return this; }
+        jmp() { return this; }
+        opr() { return this; }
+        fam() { return this; }
+        oif() { return this; }
+        iif() { return this; }
+      }
+    },
+    '../../control/IptablesControl.js': { addRule: async () => {} },
+    '../../net2/Ipset.js': { flush: async () => {} },
+    '../dnsmasq/dnsmasq.js': class { scheduleRestartDNSService() {} },
     './VPNClientEnforcer.js': {
+      flushVPNClientRoutes: async () => {},
+      removeVPNClientIPRules: async () => {},
+      unenforceStrictVPN: async () => { state.strictVPNRemovals++; },
       destroyRtId: (...args) => {
         state.destroyRtIdCalls.push(args);
         return Promise.resolve();
@@ -473,6 +493,80 @@ describe('VPNClient shell and path hardening', function () {
       expect(starts).to.equal(2);
       expect(client.isStarted()).to.equal(true);
       expect(state.cachedState).to.equal('true');
+    });
+  }
+
+  for (const failedStartup of [true, false]) {
+    it(`${failedStartup ? 'blocks startup retries' : 'preserves ordinary stop behavior'} when the service stop rejects`, async function () {
+      this.timeout(5000);
+      const { VPNClient, state } = installVPNClientStubs();
+      const client = Object.create(VPNClient.prototype);
+      client.profileId = 'stop_retry';
+      const configDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'vpn-stop-'));
+      const originalEnsureEnv = VPNClient.ensureCreateEnforcementEnv;
+      VPNClient.ensureCreateEnforcementEnv = async () => {};
+      let starts = 0;
+      let stops = 0;
+      let failStop = true;
+      const stopError = new Error('service stop failed');
+      client._prepareRoutes = async () => {};
+      client.flushRemoteEndpointRoutes = async () => {};
+      client._start = async () => { starts++; };
+      client._isLinkUp = async () => true;
+      client.addRemoteEndpointRoutes = async () => {};
+      client._scheduleRefreshRoutes = () => {};
+      client.loadSettings = async () => {};
+      client._getDNSServers = async () => [];
+      client._getDnsmasqConfigPath = () => path.join(configDirectory, 'vpn.conf');
+      client._disableDNSRoute = async () => {};
+      client._disablePBRDNSRoute = async () => {};
+      client._stop = async () => {
+        stops++;
+        if (failStop)
+          throw stopError;
+      };
+      try {
+        if (!failedStartup) {
+          await client.stop();
+          expect(stops).to.equal(1);
+          expect(state.strictVPNRemovals).to.equal(1);
+          expect(state.cachedState).to.equal('false');
+          return;
+        }
+        // Exercise the real stop wrapper after SET succeeds and EXPIRE fails.
+        state.failCacheExpiry = true;
+        expect(await client.start()).to.eql({ result: false, errMsg: 'cache expiry failed' });
+        expect(stops).to.equal(1);
+        expect(client._startupCleanupRequired).to.equal(true);
+        expect(state.cachedState).to.equal(null);
+        expect(state.cacheWrites).to.eql([true]);
+        expect(state.strictVPNRemovals).to.equal(0);
+
+        state.failCacheExpiry = false;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const error = await client.start().then(() => null, err => err);
+          expect(error).to.equal(stopError);
+          expect(starts).to.equal(1);
+          expect(client._startupCleanupRequired).to.equal(true);
+          expect(state.cachedState).to.equal(null);
+          expect(state.cacheWrites).to.eql([true]);
+          expect(state.strictVPNRemovals).to.equal(0);
+        }
+        expect(stops).to.equal(3);
+
+        failStop = false;
+        expect(await client.start()).to.eql({ result: true });
+        expect(stops).to.equal(4);
+        expect(starts).to.equal(2);
+        expect(client._startupCleanupRequired).to.equal(false);
+        expect(state.strictVPNRemovals).to.equal(1);
+        expect(state.cacheWrites).to.eql([true, false, true]);
+        expect(state.cachedState).to.equal('true');
+      } finally {
+        client._cancelEstablishment();
+        VPNClient.ensureCreateEnforcementEnv = originalEnsureEnv;
+        await fs.rm(configDirectory, { recursive: true, force: true });
+      }
     });
   }
 

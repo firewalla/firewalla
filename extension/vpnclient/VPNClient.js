@@ -1383,7 +1383,7 @@ class VPNClient {
   // cleanup failure; changing flags alone cannot establish that resources stopped.
   async _cleanupFailedStartup() {
     try {
-      await this._stopWithoutLifecycleLock();
+      await this._stopWithoutLifecycleLock({ strict: true });
       this._startupCleanupRequired = false;
     } catch (err) {
       // SET may have succeeded before EXPIRE or a later finalization step failed.
@@ -1406,58 +1406,62 @@ class VPNClient {
     return VPNClient.withProfileLifecycleLock(this.profileId, () => this._stopWithoutLifecycleLock());
   }
 
-  async _stopWithoutLifecycleLock() {
-      if (this.refreshRoutesTask) {
-        clearTimeout(this.refreshRoutesTask);
-        this.refreshRoutesTask = null;
-      }
-      // flush routes before stop vpn client to ensure smooth switch of traffic routing
-      const intf = this.getInterfaceName();
-      this._started = false;
-      await this._resetRouteMarkInRedis();
-      await VPNClient.ensureCreateEnforcementEnv(this.profileId);
-      await vpnClientEnforcer.flushVPNClientRoutes(intf);
-      await vpnClientEnforcer.removeVPNClientIPRules(intf);
+  async _stopWithoutLifecycleLock({ strict = false } = {}) {
+    if (this.refreshRoutesTask) {
+      clearTimeout(this.refreshRoutesTask);
+      this.refreshRoutesTask = null;
+    }
+    // flush routes before stop vpn client to ensure smooth switch of traffic routing
+    const intf = this.getInterfaceName();
+    this._started = false;
+    await this._resetRouteMarkInRedis();
+    await VPNClient.ensureCreateEnforcementEnv(this.profileId);
+    await vpnClientEnforcer.flushVPNClientRoutes(intf);
+    await vpnClientEnforcer.removeVPNClientIPRules(intf);
 
-      await iptc.addRule(new Rule('nat').chn('FW_VC_SNAT').set(VPNClient.getNetIpsetName(this.profileId, 4), 'dst').jmp('RETURN').opr('-D'));
-      await iptc.addRule(new Rule('nat').fam(6).chn('FW_VC_SNAT').set(VPNClient.getNetIpsetName(this.profileId, 6), 'dst').jmp('RETURN').opr('-D'));
+    await iptc.addRule(new Rule('nat').chn('FW_VC_SNAT').set(VPNClient.getNetIpsetName(this.profileId, 4), 'dst').jmp('RETURN').opr('-D'));
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_VC_SNAT').set(VPNClient.getNetIpsetName(this.profileId, 6), 'dst').jmp('RETURN').opr('-D'));
 
-      await iptc.addRule(new Rule('nat').chn('FW_VC_SNAT').oif(intf).jmp('MASQUERADE').opr('-D'));
-      await iptc.addRule(new Rule('nat').fam(6).chn('FW_VC_SNAT').oif(intf).jmp('MASQUERADE').opr('-D'));
-      await this.loadSettings();
-      const dnsServers = await this._getDNSServers() || [];
-      if (dnsServers.length > 0) {
-        // always attempt to remove dns redirect rule, no matter whether 'routeDNS' in set in settings
-        await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, VPNClient.getDNSRedirectChainName(this.profileId));
-      }
-      await this.flushRemoteEndpointRoutes().catch((err) => { });
-      await this._stop().catch((err) => {
-        log.error(`Failed to exec _stop of VPN client ${this.profileId}`, err.message);
+    await iptc.addRule(new Rule('nat').chn('FW_VC_SNAT').oif(intf).jmp('MASQUERADE').opr('-D'));
+    await iptc.addRule(new Rule('nat').fam(6).chn('FW_VC_SNAT').oif(intf).jmp('MASQUERADE').opr('-D'));
+    await this.loadSettings();
+    const dnsServers = await this._getDNSServers() || [];
+    if (dnsServers.length > 0) {
+      // always attempt to remove dns redirect rule, no matter whether 'routeDNS' in set in settings
+      await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, VPNClient.getDNSRedirectChainName(this.profileId));
+    }
+    await this.flushRemoteEndpointRoutes().catch((err) => { });
+    await this._stop().catch((err) => {
+      log.error(`Failed to exec _stop of VPN client ${this.profileId}`, err.message);
+      // Failed-startup cleanup must not report inactivity or release the
+      // remaining enforcement state while the service may still be running.
+      if (strict)
+        throw err;
+    });
+    await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
+    await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
+    await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
+    await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
+    await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
+    await Ipset.flush(VPNClient.getSelfIpsetName(this.profileId, 4));
+    await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_EXT_IP').set(VPNClient.getSelfIpsetName(this.profileId, 4), 'dst').iif(this.getInterfaceName()).jmp('FW_PRERT_PORT_FORWARD').opr('-D'));
+    await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => { });
+    await this._disableDNSRoute("hard");
+    await this._disableDNSRoute("soft");
+    await this._disablePBRDNSRoute("hard");
+    await this._disablePBRDNSRoute("soft");
+    const DNSMASQ = require('../dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
+    dnsmasq.scheduleRestartDNSService();
+    await this._setCachedState(false);
+
+    if (!f.isMain()) {
+      sem.emitEvent({
+        type: "VPNClient:Stopped",
+        profileId: this.profileId,
+        toProcess: "FireMain"
       });
-      await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
-      await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId));
-      await Ipset.flush(VPNClient.getRouteIpsetName(this.profileId, false));
-      await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId));
-      await Ipset.flush(VPNClient.getPBRRouteIpsetName(this.profileId, false));
-      await Ipset.flush(VPNClient.getSelfIpsetName(this.profileId, 4));
-      await iptc.addRule(new Rule('nat').chn('FW_PREROUTING_EXT_IP').set(VPNClient.getSelfIpsetName(this.profileId, 4), 'dst').iif(this.getInterfaceName()).jmp('FW_PRERT_PORT_FORWARD').opr('-D'));
-      await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => { });
-      await this._disableDNSRoute("hard");
-      await this._disableDNSRoute("soft");
-      await this._disablePBRDNSRoute("hard");
-      await this._disablePBRDNSRoute("soft");
-      const DNSMASQ = require('../dnsmasq/dnsmasq.js');
-      const dnsmasq = new DNSMASQ();
-      dnsmasq.scheduleRestartDNSService();
-      await this._setCachedState(false);
-
-      if (!f.isMain()) {
-        sem.emitEvent({
-          type: "VPNClient:Stopped",
-          profileId: this.profileId,
-          toProcess: "FireMain"
-        });
-      }
+    }
   }
 
   isStarted() {
@@ -1615,12 +1619,12 @@ class VPNClient {
   static async destroyStoredProfile(profileId, beforeDestroy = null) {
     return VPNClient.withProfileLifecycleLock(profileId, async () => {
       if (!_.isString(profileId) || !Constants.REGEX_FILENAME.test(profileId)) {
-      throw new Error(`Refusing to clean VPN client profile with unsafe filename: ${profileId}`);
-    }
-    const active = await VPNClient.isProfileActive(profileId, this);
-    if (active !== false) {
-      throw new Error(`Refusing to clean VPN client profile while active state is not definitively false: ${profileId}`);
-    }
+        throw new Error(`Refusing to clean VPN client profile with unsafe filename: ${profileId}`);
+      }
+      const active = await VPNClient.isProfileActive(profileId, this);
+      if (active !== false) {
+        throw new Error(`Refusing to clean VPN client profile while active state is not definitively false: ${profileId}`);
+      }
 
       if (beforeDestroy)
         await beforeDestroy();
@@ -1666,7 +1670,7 @@ class VPNClient {
         await removeArtifact(artifact);
 
       await rclient.unlinkAsync(VPNClient.getRouteMarkKey(profileId));
-    await rclient.delAsync(VPNClient.getStateCacheKey(profileId));
+      await rclient.delAsync(VPNClient.getStateCacheKey(profileId));
 
       const settingsPath = path.resolve(configDirectory, `${profileId}.settings`);
       if (settingsPath !== configDirectory && !settingsPath.startsWith(`${configDirectory}${path.sep}`)) {
