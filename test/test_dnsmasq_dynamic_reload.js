@@ -68,8 +68,12 @@ function loadDNSMASQ(options = {}) {
   };
   exec[util.promisify.custom] = async (cmd) => {
     commands.push(cmd);
+    if (options.onCommand)
+      options.onCommand(cmd);
     if (cmd.includes('systemctl reload firerouter_dhcp') && options.dhcpReloadPromise)
       await options.dhcpReloadPromise;
+    if ((cmd.includes('systemctl stop firerouter_dhcp') || cmd.includes('systemctl restart firerouter_dhcp')) && options.dhcpRestartPromise)
+      await options.dhcpRestartPromise;
     return execResult(cmd);
   };
 
@@ -424,6 +428,48 @@ describe('dnsmasq DHCP hosts-file reload vs restart', function() {
     dnsmasq.scheduleRestartDHCPService();
     releaseReload();
     await reloadExecution;
+
+    expect(timers[1].cleared).to.equal(true);
+    expect(commands.filter(cmd => cmd.includes('systemctl restart firerouter_dhcp'))).to.have.length(1);
+    expect(dnsmasq.counter.restartDHCP).to.equal(1);
+  });
+
+  it('shares an in-flight scheduled restart when reload fails', async function() {
+    let releaseReload;
+    let releaseRestart;
+    let restartStarted;
+    const restartStartPromise = new Promise(resolve => {
+      restartStarted = resolve;
+    });
+    const dhcpReloadPromise = new Promise(resolve => {
+      releaseReload = resolve;
+    });
+    const dhcpRestartPromise = new Promise(resolve => {
+      releaseRestart = resolve;
+    });
+    const { dnsmasq, commands, timers } = loadDNSMASQ({
+      fireRouterManaged: true,
+      dhcpReloadFails: true,
+      dhcpReloadPromise,
+      dhcpRestartPromise,
+      onCommand: cmd => {
+        if (cmd.includes('systemctl stop firerouter_dhcp'))
+          restartStarted();
+      },
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+
+    dnsmasq.scheduleReloadDHCPService();
+    const reloadExecution = timers[0].fn();
+    dnsmasq.scheduleRestartDHCPService();
+    const restartExecution = timers[1].fn();
+    await restartStartPromise;
+
+    expect(commands.filter(cmd => cmd.includes('systemctl stop firerouter_dhcp'))).to.have.length(1);
+
+    releaseReload();
+    releaseRestart();
+    await Promise.all([reloadExecution, restartExecution]);
 
     expect(timers[1].cleared).to.equal(true);
     expect(commands.filter(cmd => cmd.includes('systemctl restart firerouter_dhcp'))).to.have.length(1);

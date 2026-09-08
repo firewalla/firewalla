@@ -405,29 +405,43 @@ module.exports = class DNSMASQ {
     if (this.restartDHCPTask)
       clearTimeout(this.restartDHCPTask);
     this.restartDHCPIgnoreFileCheck = this.restartDHCPIgnoreFileCheck || ignoreFileCheck
-    this.restartDHCPTask = setTimeout(async () => {
+    const restartTask = setTimeout(async () => {
       // checkConfsChange will update md5sum in redis, call it before checking ignoreFileCheck to keep md5sum consistent with config files
       const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH]);
       if (!this.restartDHCPIgnoreFileCheck && !confChanged) {
         delete this.restartDHCPIgnoreFileCheck;
-        delete this.restartDHCPTask;
+        if (this.restartDHCPTask === restartTask)
+          delete this.restartDHCPTask;
         return;
       }
       delete this.restartDHCPIgnoreFileCheck
       await this.restartDHCPService();
-      delete this.restartDHCPTask
+      if (this.restartDHCPTask === restartTask)
+        delete this.restartDHCPTask;
     }, 5000);
+    this.restartDHCPTask = restartTask;
   }
 
   async restartDHCPService() {
-    await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => {
-      log.error(`Failed to stop ${DHCP_SERVICE_NAME} service`, err.message);
+    if (this.restartDHCPPromise)
+      return this.restartDHCPPromise;
+
+    const restartPromise = (async () => {
+      await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => {
+        log.error(`Failed to stop ${DHCP_SERVICE_NAME} service`, err.message);
+      });
+      await execAsync(`sudo systemctl restart ${DHCP_SERVICE_NAME}`).then(() => {
+        log.verbose(`${DHCP_SERVICE_NAME} has been restarted`, this.counter.restartDHCP);
+      }).catch((err) => {
+        log.error(`Failed to restart ${DHCP_SERVICE_NAME} service`, err.message);
+      });
+    })();
+    this.restartDHCPPromise = restartPromise;
+    restartPromise.then(() => {
+      if (this.restartDHCPPromise === restartPromise)
+        delete this.restartDHCPPromise;
     });
-    await execAsync(`sudo systemctl restart ${DHCP_SERVICE_NAME}`).then(() => {
-      log.verbose(`${DHCP_SERVICE_NAME} has been restarted`, this.counter.restartDHCP);
-    }).catch((err) => {
-      log.error(`Failed to restart ${DHCP_SERVICE_NAME} service`, err.message);
-    });
+    return restartPromise;
   }
 
   scheduleReloadDHCPService() {
