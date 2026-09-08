@@ -22,18 +22,19 @@ describe('Discovery.discoverMac', () => {
   const arpHost = {
     ipv4Addr: '192.168.1.20',
     mac: targetMac,
-    uid: '192.168.1.20'
+    uid: '192.168.1.20',
+    intf: 'eth0'
   };
 
-  function createDiscovery(nmapScanAsync) {
+  function createDiscovery(nmapScanAsync, monitoringInterfaces = [{
+    name: 'eth0',
+    subnet: '192.168.1.0/24'
+  }]) {
     const nmap = {
       scanAsync: nmapScanAsync
     };
     const sysManager = {
-      getMonitoringInterfaces: () => [{
-        name: 'eth0',
-        subnet: '192.168.1.0/24'
-      }],
+      getMonitoringInterfaces: () => monitoringInterfaces,
       release: () => {}
     };
     const redisClient = {
@@ -139,6 +140,79 @@ describe('Discovery.discoverMac', () => {
     const result = await discovery.discoverMac(targetMac);
 
     expect(result).to.deep.equal(nmapHost);
+    expect(scanCalled).to.equal(true);
+  });
+
+  it('ignores an ARP match from an unmonitored interface', async () => {
+    const scannedSubnets = [];
+    const discovery = createDiscovery(async (subnet) => {
+      scannedSubnets.push(subnet);
+      return [];
+    });
+
+    const unmonitoredArpHost = {
+      ipv4Addr: '10.0.0.20',
+      mac: targetMac,
+      uid: '10.0.0.20',
+      intf: 'eth1'
+    };
+    discovery.getAndSaveArpTable = (callback) => {
+      callback(null, {
+        [targetMac]: unmonitoredArpHost
+      });
+    };
+
+    const result = await discovery.discoverMac(targetMac);
+
+    expect(result).to.equal(null);
+    expect(scannedSubnets).to.deep.equal(['192.168.1.0/24']);
+  });
+
+  it('ignores an ARP match from an ineligible monitored VPN interface', async () => {
+    const scannedSubnets = [];
+    const discovery = createDiscovery(async (subnet) => {
+      scannedSubnets.push(subnet);
+      return [];
+    }, [{
+      name: 'eth0',
+      subnet: '192.168.1.0/24'
+    }, {
+      name: 'wg0',
+      subnet: '10.10.10.0/24'
+    }]);
+
+    const vpnArpHost = {
+      ipv4Addr: '10.10.10.20',
+      mac: targetMac,
+      uid: '10.10.10.20',
+      intf: 'wg0'
+    };
+    discovery.getAndSaveArpTable = (callback) => {
+      callback(null, {
+        [targetMac]: vpnArpHost
+      });
+    };
+
+    const result = await discovery.discoverMac(targetMac);
+
+    expect(result).to.equal(null);
+    expect(scannedSubnets).to.deep.equal(['192.168.1.0/24']);
+  });
+
+  it('returns null when both ARP and Nmap miss the target MAC', async () => {
+    let scanCalled = false;
+    const discovery = createDiscovery(async () => {
+      scanCalled = true;
+      return [];
+    });
+
+    discovery.getAndSaveArpTable = (callback) => {
+      callback(null, {});
+    };
+
+    const result = await discovery.discoverMac(targetMac);
+
+    expect(result).to.equal(null);
     expect(scanCalled).to.equal(true);
   });
 });
