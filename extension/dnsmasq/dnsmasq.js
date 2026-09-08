@@ -313,7 +313,7 @@ module.exports = class DNSMASQ {
     let reloaded = true;
     for (const pid of pids) {
       const ok = await execAsync(`sudo kill -RTMIN ${pid}`).then(() => true).catch((err) => {
-        // ESRCH means the process already exited â€” not a failure, the service will restart a fresh instance
+        // ESRCH means the process already exited - not a failure, the service will restart a fresh instance
         if (err.code === 1 && err.stderr && err.stderr.includes("No such process"))
           return true;
         log.error(`Failed to reload ${SERVICE_NAME} config on pid ${pid}`, err.message);
