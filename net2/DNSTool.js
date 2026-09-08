@@ -64,6 +64,8 @@ class DNSTool {
       this.dnsExpireActiveUpdates = new Map();
       this.dnsExpireDrainPromise = null;
       this.dnsExpireDroppedCount = 0;
+      this.dnsExpireCapacityPromise = null;
+      this.dnsExpireCapacityResolve = null;
       this.dnsExpireTimer = setInterval(() => this._drainDnsTTL(), RDNS_TTL_REFRESH_PERIOD);
     }
     return instance;
@@ -73,13 +75,16 @@ class DNSTool {
   // retained in bounded queues when possible. Once all capacity is exhausted, returns false and
   // records the intentional overload drop without blocking the caller or issuing Redis inline.
   async tryRefreshDnsTTL(key, expr) {
+  // Returns true if the caller should EXPIRE inline (leading edge). When throttled, defers the
+  // refresh into dnsExpirePending so _drainDnsTTL still issues it within one period. If deferred
+  // capacity is exhausted, apply backpressure until the drain releases bounded queue capacity.
+  tryRefreshDnsTTL(key, expr) {
     const now = Date.now();
     const last = this.dnsExpireTs.get(key);
     if (!last || now - last >= RDNS_TTL_REFRESH_PERIOD) {
       this.dnsExpireTs.set(key, now);
       this.dnsExpirePending.delete(key);
       this.dnsExpireRetry.delete(key);
-      this.dnsExpireOverflow.delete(key);
       if (this.dnsExpireActive && this.dnsExpireActive.has(key)) {
         this.dnsExpireActiveUpdates.set(key, expr);
         return false;
@@ -112,7 +117,53 @@ class DNSTool {
       return false;
     }
     this.dnsExpireDroppedCount++;
+      return false;
+    }
+    if (this._dnsExpireDeferredSize() >= MAX_DNS_EXPIRE_PENDING) {
+      return this._deferDnsTTLWhenCapacityAvailable(key, expr);
+    }
+    this.dnsExpirePending.set(key, expr);
     return false;
+  }
+
+  async _deferDnsTTLWhenCapacityAvailable(key, expr) {
+    while (this._dnsExpireDeferredSize() >= MAX_DNS_EXPIRE_PENDING) {
+      if (!this.dnsExpireCapacityPromise) {
+        this.dnsExpireCapacityPromise = new Promise((resolve) => {
+          this.dnsExpireCapacityResolve = resolve;
+        });
+      }
+      // Do not make a producer wait for the periodic timer when queued data can
+      // be flushed now. Each invocation still consumes only one bounded batch.
+      if (!this.dnsExpireDrainPromise)
+        this._drainDnsTTL();
+      await this.dnsExpireCapacityPromise;
+
+      // A refresh for this key may have been retained while this caller waited.
+      if (this.dnsExpirePending.has(key)) {
+        this.dnsExpirePending.set(key, expr);
+        return false;
+      }
+      if (this.dnsExpireActive && this.dnsExpireActive.has(key)) {
+        this.dnsExpireActiveUpdates.set(key, expr);
+        return false;
+      }
+      if (this.dnsExpireRetry.has(key)) {
+        this.dnsExpireRetry.set(key, expr);
+        return false;
+      }
+    }
+    this.dnsExpirePending.set(key, expr);
+    return false;
+  }
+
+  _releaseDnsExpireCapacity() {
+    if (!this.dnsExpireCapacityResolve)
+      return;
+    const resolve = this.dnsExpireCapacityResolve;
+    this.dnsExpireCapacityPromise = null;
+    this.dnsExpireCapacityResolve = null;
+    resolve();
   }
 
   _dnsExpireDeferredSize() {
@@ -126,8 +177,7 @@ class DNSTool {
     return this.dnsExpirePending.size +
       this.dnsExpireRetry.size +
       activeUpdateSize +
-      (this.dnsExpireActive ? this.dnsExpireActive.size : 0) +
-      this.dnsExpireOverflow.size;
+      (this.dnsExpireActive ? this.dnsExpireActive.size : 0);
   }
 
   _drainDnsTTL() {
@@ -135,6 +185,7 @@ class DNSTool {
       return this.dnsExpireDrainPromise;
     if (this.dnsExpireRetry.size === 0 && this.dnsExpireActiveUpdates.size === 0 &&
       this.dnsExpirePending.size === 0 && this.dnsExpireOverflow.size === 0)
+    if (this.dnsExpireRetry.size === 0 && this.dnsExpireActiveUpdates.size === 0 && this.dnsExpirePending.size === 0)
       return Promise.resolve();
 
     const retryBatch = this.dnsExpireRetry.size > 0;
@@ -192,6 +243,7 @@ class DNSTool {
     })().finally(() => {
       this.dnsExpireActive = null;
       this.dnsExpireDrainPromise = null;
+      this._releaseDnsExpireCapacity();
     });
     return this.dnsExpireDrainPromise;
   }
