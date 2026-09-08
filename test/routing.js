@@ -91,7 +91,10 @@ describe('Test isValidTableName', function() {
     });
   }
 
-  const accepted = ['main', 'x', 'wan_eth0', 'vpn_0a03_D957F', 'a.b-c_d', 'A1', 'a'.repeat(200)];
+  // ':' and '@' are the two characters an interface name may carry beyond a plain word, so a table
+  // name built from one has to pass
+  const accepted = ['main', 'x', 'wan_eth0', 'vpn_0a03_D957F', 'a.b-c_d', 'A1', 'a'.repeat(200),
+                    'eth0:1_local', 'eth0@if5_default'];
   for (const name of accepted) {
     it(`should accept ${JSON.stringify(name.length > 20 ? name.slice(0, 12) + '...' : name)}`, function() {
       expect(routing.isValidTableName(name)).to.be.true;

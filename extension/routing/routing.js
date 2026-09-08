@@ -41,7 +41,7 @@ const rtIdCache = {};
 // the table name is interpolated into a command line that is run by root, reject anything that is
 // not a plain name so it cannot end the quoting or start a command substitution
 function isValidTableName(tableName) {
-  return _.isString(tableName) && tableName.length > 0 && !/[^A-Za-z0-9_.-]/.test(tableName);
+  return _.isString(tableName) && tableName.length > 0 && !/[^A-Za-z0-9._:@-]/.test(tableName);
 }
 
 async function removeCustomizedRoutingTable(tableName) {
