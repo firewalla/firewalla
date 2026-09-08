@@ -18,7 +18,7 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const exec = require('child-process-promise').exec;
+const networkMonitorCommand = require('../util/NetworkMonitorCommand.js');
 const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js');
 const extensionManager = require('./ExtensionManager.js')
@@ -334,11 +334,10 @@ class NetworkMonitorSensor extends Sensor {
 
         rtid = intf.rtid;
       }
-      const result = await exec(`sudo ping -i ${cfg.sampleTick} ${rtid ? `-m ${rtid}` : ""} -c ${cfg.sampleCount} -W 1 -4 -n ${target}| awk '/time=/ && !/DUP!/ {print $7}' | cut -d= -f2`).catch((err) => {
+      const data = await networkMonitorCommand.ping(target, cfg.sampleTick, cfg.sampleCount, rtid).catch((err) => {
         log.error(`ping failed on ${target}:`,err.message);
-        return null;
+        return [];
       } );
-      const data = (result && result.stdout) ?  result.stdout.trim().split(/\n/).map(e => parseFloat(e)) : [];
       return { "status": "OK", "data": await this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg, opts)};
     } catch (err) {
       log.error("failed to sample PING:",err.message);
@@ -372,13 +371,11 @@ class NetworkMonitorSensor extends Sensor {
         }
       }
       for (let i=0;i<cfg.sampleCount;i++) {
-        const result = await exec(`dig @${target} ${bindIP ? `-b ${bindIP}` : ""} +tries=1 +timeout=${cfg.sampleTick} ${cfg.lookupName} | awk '/Query time:/ {print $4}'`).catch((err) => {
+        const queryTime = await networkMonitorCommand.dns(target, bindIP, cfg.sampleTick, cfg.lookupName).catch((err) => {
           log.error(`dig failed on ${target}:`,err.message);
           return null;
         } );
-        if (result && result.stdout) {
-          data.push(parseInt(result.stdout.trim()));
-        }
+        if (queryTime !== null) data.push(queryTime);
       }
       return { "status": "OK", "data": await this.recordSampleDataInRedis(MONITOR_DNS, target, timeSlot, data, cfg, opts)};
     } catch (err) {
@@ -454,13 +451,11 @@ class NetworkMonitorSensor extends Sensor {
       }
       for (let i=0;i<cfg.sampleCount;i++) {
         try {
-          const result = await exec(`curl -sk -m 10 ${bindIP ? `--interface ${bindIP}` : ""} -w '%{time_total}\n' '${target}' | tail -1`).catch((err) => {
+          const queryTime = await networkMonitorCommand.http(target, bindIP).catch((err) => {
             log.error(`curl failed on ${target}:`,err.message);
             return null;
           } );
-          if (result && result.stdout) {
-            data.push(parseFloat(result.stdout.trim()));
-          }
+          if (queryTime !== null && Number.isFinite(queryTime)) data.push(queryTime);
         } catch (err2) {
           log.error("curl command failed:",err2);
         }
