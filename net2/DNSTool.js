@@ -28,11 +28,13 @@ const util = require('util');
 
 const LRU = require('lru-cache');
 
-// rdns TTL refresh throttle: one EXPIRE per key per period; throttled refreshes are deferred
-// (not dropped) and flushed by _drainDnsTTL, bounding any TTL-less window to one period.
+// rdns TTL refresh throttle: one EXPIRE per key per period. Throttled refreshes are deferred
+// while bounded capacity remains. Under sustained overload, excess refreshes are dropped rather
+// than allowing either memory use or Redis traffic to grow without bound.
 const RDNS_TTL_REFRESH_PERIOD = 1800 * 1000;
 const MAX_DNS_EXPIRE_PENDING = 50000;
 const MAX_DNS_EXPIRE_OVERFLOW = 1000;
+const DNS_EXPIRE_PENDING_LIMIT = MAX_DNS_EXPIRE_PENDING - MAX_DNS_EXPIRE_OVERFLOW;
 
 const firewalla = require('../net2/Firewalla.js');
 
@@ -54,29 +56,23 @@ class DNSTool {
       this.dnsExpireTs = new LRU({max: MAX_DNS_EXPIRE_PENDING, maxAge: 24 * 3600 * 1000});
       // keys whose TTL refresh was throttled; _drainDnsTTL flushes them within one period
       this.dnsExpirePending = new Map();
-      // Overflow refreshes are retained separately while the main queue is full.
+      // Reserved bounded capacity for refreshes arriving after the main queue fills.
       this.dnsExpireOverflow = new Map();
       // A failed drain is retried before newer pending refreshes. This is bounded to one batch.
       this.dnsExpireRetry = new Map();
       this.dnsExpireActive = null;
       this.dnsExpireActiveUpdates = new Map();
       this.dnsExpireDrainPromise = null;
-      // Allow one inline refresh while deferred capacity is exhausted. Further
-      // overflow refreshes are suppressed until capacity becomes available.
-      this.dnsExpireOverflowTs = 0;
-      // Number of refreshes handled inline because the deferred queue was full.
-      // Logged and reset when the deferred queue drains to avoid one warning per update.
-      this.dnsExpireOverflowCount = 0;
+      this.dnsExpireDroppedCount = 0;
       this.dnsExpireTimer = setInterval(() => this._drainDnsTTL(), RDNS_TTL_REFRESH_PERIOD);
     }
     return instance;
   }
 
-  // Returns true if the caller should EXPIRE inline (leading edge). When throttled, defers the
-  // refresh into dnsExpirePending so _drainDnsTTL still issues it within one period. If deferred
-  // capacity is exhausted, retain overflow refreshes in a bounded queue and use inline refreshes
-  // only after that queue is full.
-  tryRefreshDnsTTL(key, expr) {
+  // Resolves true if the caller should EXPIRE inline (leading edge). Throttled refreshes are
+  // retained in bounded queues when possible. Once all capacity is exhausted, returns false and
+  // records the intentional overload drop without blocking the caller or issuing Redis inline.
+  async tryRefreshDnsTTL(key, expr) {
     const now = Date.now();
     const last = this.dnsExpireTs.get(key);
     if (!last || now - last >= RDNS_TTL_REFRESH_PERIOD) {
@@ -98,30 +94,24 @@ class DNSTool {
       this.dnsExpireActiveUpdates.set(key, expr);
       return false;
     }
-    if (this.dnsExpireOverflow.has(key)) {
-      this.dnsExpireOverflow.set(key, expr);
-      return false;
-    }
     if (this.dnsExpireRetry.has(key)) {
       this.dnsExpireRetry.set(key, expr);
       return false;
     }
-    if (this._dnsExpireDeferredSize() >= MAX_DNS_EXPIRE_PENDING) {
-      if (!this.dnsExpireOverflowTs || now - this.dnsExpireOverflowTs >= RDNS_TTL_REFRESH_PERIOD) {
-        this.dnsExpireOverflowCount++;
-        this.dnsExpireOverflowTs = now;
-        this.dnsExpireTs.set(key, now);
-        return true;
-      }
-      if (this.dnsExpireOverflow.size < MAX_DNS_EXPIRE_OVERFLOW) {
-        this.dnsExpireOverflow.set(key, expr);
-        return false;
-      }
-      this.dnsExpireTs.set(key, now);
-      return true;
+    if (this.dnsExpireOverflow.has(key)) {
+      this.dnsExpireOverflow.set(key, expr);
+      return false;
     }
-    this.dnsExpireOverflowTs = 0;
-    this.dnsExpirePending.set(key, expr);
+    const deferredSize = this._dnsExpireDeferredSize();
+    if (deferredSize < DNS_EXPIRE_PENDING_LIMIT) {
+      this.dnsExpirePending.set(key, expr);
+      return false;
+    }
+    if (deferredSize < MAX_DNS_EXPIRE_PENDING) {
+      this.dnsExpireOverflow.set(key, expr);
+      return false;
+    }
+    this.dnsExpireDroppedCount++;
     return false;
   }
 
@@ -143,7 +133,8 @@ class DNSTool {
   _drainDnsTTL() {
     if (this.dnsExpireDrainPromise)
       return this.dnsExpireDrainPromise;
-    if (this.dnsExpireRetry.size === 0 && this.dnsExpirePending.size === 0 && this.dnsExpireOverflow.size === 0)
+    if (this.dnsExpireRetry.size === 0 && this.dnsExpireActiveUpdates.size === 0 &&
+      this.dnsExpirePending.size === 0 && this.dnsExpireOverflow.size === 0)
       return Promise.resolve();
 
     const retryBatch = this.dnsExpireRetry.size > 0;
@@ -151,19 +142,22 @@ class DNSTool {
     if (retryBatch) {
       pending = this.dnsExpireRetry;
       this.dnsExpireRetry = new Map();
+    } else if (this.dnsExpireActiveUpdates.size > 0) {
+      pending = this.dnsExpireActiveUpdates;
+      this.dnsExpireActiveUpdates = new Map();
     } else if (this.dnsExpirePending.size > 0) {
       pending = this.dnsExpirePending;
       this.dnsExpirePending = new Map();
-    } else {
+    } else if (this.dnsExpireOverflow.size > 0) {
       pending = this.dnsExpireOverflow;
       this.dnsExpireOverflow = new Map();
     }
     this.dnsExpireActive = pending;
 
     this.dnsExpireDrainPromise = (async () => {
-      if (this.dnsExpireOverflowCount > 0) {
-        log.warn(`Deferred rdns TTL refresh limit reached: ${MAX_DNS_EXPIRE_PENDING}; refreshed inline: ${this.dnsExpireOverflowCount}`);
-        this.dnsExpireOverflowCount = 0;
+      if (this.dnsExpireDroppedCount > 0) {
+        log.warn(`Dropped ${this.dnsExpireDroppedCount} rdns TTL refreshes after deferred capacity reached ${MAX_DNS_EXPIRE_PENDING}`);
+        this.dnsExpireDroppedCount = 0;
       }
       const drainBatch = async (batch) => {
         this.dnsExpireActive = batch;
@@ -184,23 +178,6 @@ class DNSTool {
       };
       try {
         await drainBatch(pending);
-        while (this.dnsExpireActiveUpdates.size > 0 || this.dnsExpirePending.size > 0 || this.dnsExpireOverflow.size > 0) {
-          if (this.dnsExpireActiveUpdates.size > 0) {
-            const activeUpdates = this.dnsExpireActiveUpdates;
-            this.dnsExpireActiveUpdates = new Map();
-            await drainBatch(activeUpdates);
-          }
-          if (this.dnsExpirePending.size > 0) {
-            const newerPending = this.dnsExpirePending;
-            this.dnsExpirePending = new Map();
-            await drainBatch(newerPending);
-          }
-          if (this.dnsExpireOverflow.size > 0) {
-            const overflow = this.dnsExpireOverflow;
-            this.dnsExpireOverflow = new Map();
-            await drainBatch(overflow);
-          }
-        }
       } catch (err) {
         // Retry the failed bounded batch before newer refreshes on the next drain.
         const failedBatch = this.dnsExpireActive === pending ? pending : this.dnsExpireActive;
@@ -283,7 +260,7 @@ class DNSTool {
     let key = this.getDNSKey(ip);
     const now = Math.ceil(Date.now() / 1000);
     await rclient.zaddAsync(key, now, domain);
-    if (this.tryRefreshDnsTTL(key, expire))
+    if (await this.tryRefreshDnsTTL(key, expire))
       await rclient.expireAsync(key, expire);
   }
 
@@ -327,7 +304,7 @@ class DNSTool {
       await rclient.zaddAsync(key, new Date() / 1000, firewalla.getRedHoleIP()); // red hole is a placeholder ip for non-existing domain
     }
 
-    if (this.tryRefreshDnsTTL(key, expire))
+    if (await this.tryRefreshDnsTTL(key, expire))
       await rclient.expireAsync(key, expire)
   }
 
