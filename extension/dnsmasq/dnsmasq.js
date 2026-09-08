@@ -313,7 +313,7 @@ module.exports = class DNSMASQ {
     let reloaded = true;
     for (const pid of pids) {
       const ok = await execAsync(`sudo kill -RTMIN ${pid}`).then(() => true).catch((err) => {
-        // ESRCH means the process already exited — not a failure, the service will restart a fresh instance
+        // ESRCH means the process already exited â€” not a failure, the service will restart a fresh instance
         if (err.code === 1 && err.stderr && err.stderr.includes("No such process"))
           return true;
         log.error(`Failed to reload ${SERVICE_NAME} config on pid ${pid}`, err.message);
@@ -459,15 +459,13 @@ module.exports = class DNSMASQ {
   }
 
   scheduleReloadDHCPService() {
-    // A pending restart timer will read the latest files when it runs. Once the
-    // restart is active, however, it may already have loaded its configuration,
-    // so preserve one coalesced reload request until the restart fully settles.
-    if (this.restartDHCPPromise) {
+    // A scheduled or active restart can race with a hosts-file update. Preserve
+    // one coalesced reload request until all restart state has settled so a
+    // hosts-file change cannot be lost across the restart preflight or restart.
+    if (this.restartDHCPTask || this.restartDHCPPromise) {
       this.reloadDHCPAfterRestart = true;
       return;
     }
-    if (this.restartDHCPTask)
-      return;
     if (this.reloadDHCPTask)
       clearTimeout(this.reloadDHCPTask);
     const reloadTask = setTimeout(async () => {
