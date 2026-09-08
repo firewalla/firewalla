@@ -136,7 +136,8 @@ class DNSTool {
     return this.dnsExpirePending.size +
       this.dnsExpireRetry.size +
       activeUpdateSize +
-      (this.dnsExpireActive ? this.dnsExpireActive.size : 0);
+      (this.dnsExpireActive ? this.dnsExpireActive.size : 0) +
+      this.dnsExpireOverflow.size;
   }
 
   _drainDnsTTL() {

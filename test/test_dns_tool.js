@@ -532,4 +532,57 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
 
     expect(operations.some(([expireKey, expr]) => expireKey === key && expr === 3600)).to.equal(true);
   });
+
+  it('asserts total retained deferred state includes overflow', () => {
+    const now = Date.now();
+    for (let i = 0; i < MAX_PENDING; i++) {
+      dnsTool.dnsExpirePending.set('key:' + i, 86400);
+      dnsTool.dnsExpireTs.set('key:' + i, now);
+    }
+    for (let i = 0; i < 500; i++) {
+      const key = 'overflow:' + i;
+      dnsTool.dnsExpireTs.set(key, now);
+      dnsTool.tryRefreshDnsTTL(key, 3600);
+    }
+    const total = dnsTool.dnsExpirePending.size +
+      dnsTool.dnsExpireRetry.size +
+      dnsTool.dnsExpireActiveUpdates.size +
+      (dnsTool.dnsExpireActive ? dnsTool.dnsExpireActive.size : 0) +
+      dnsTool.dnsExpireOverflow.size;
+    expect(total).to.equal(MAX_PENDING + 500);
+    expect(dnsTool._dnsExpireDeferredSize()).to.equal(total);
+  });
+
+  it('bounds inline Redis calls during sustained overflow beyond overflow capacity', async () => {
+    let inlineExpireCount = 0;
+    redisClient.expireAsync = () => {
+      inlineExpireCount++;
+      return Promise.resolve();
+    };
+    redisClient.multi = () => ({
+      expire: () => {},
+      execAsync: () => Promise.resolve()
+    });
+
+    const now = Date.now();
+    for (let i = 0; i < MAX_PENDING; i++) {
+      dnsTool.dnsExpirePending.set('key:blocked:' + i, 86400);
+      dnsTool.dnsExpireTs.set('key:blocked:' + i, now);
+    }
+
+    const drain = dnsTool._drainDnsTTL();
+    const overflowCalls = 3000;
+    for (let i = 0; i < overflowCalls; i++) {
+      const key = 'key:sustained:' + i;
+      dnsTool.dnsExpireTs.set(key, now);
+      if (dnsTool.tryRefreshDnsTTL(key, 3600))
+        await redisClient.expireAsync(key, 3600);
+    }
+
+    expect(inlineExpireCount).to.be.at.most(2);
+    expect(dnsTool.dnsExpireOverflow.size).to.equal(1000);
+    expect(dnsTool._dnsExpireDeferredSize()).to.equal(MAX_PENDING + 1000);
+
+    await drain;
+  });
 });
