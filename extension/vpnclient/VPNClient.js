@@ -1245,7 +1245,11 @@ class VPNClient {
 
       // function to handle successful tunnel establishment
       const handleSuccessfulEstablishment = async () => {
-        if (establishment.settled || establishment.settling || !this._started) {
+        // Clearing the interval does not cancel link checks already in flight.
+        if (establishment.settled || establishment.settling) {
+          return;
+        }
+        if (!this._started) {
           establishment.resolve({ result: false, cancelled: true });
           return;
         }

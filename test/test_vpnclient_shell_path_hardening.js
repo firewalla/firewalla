@@ -260,6 +260,95 @@ describe('VPNClient shell and path hardening', function () {
     }
   });
 
+  for (const cancel of [false, true]) {
+    it(`handles overlapping successful link checks ${cancel ? 'while stop cancels finalization' : 'without cancelling startup'}`, async () => {
+      const { VPNClient } = installVPNClientStubs();
+      const client = Object.create(VPNClient.prototype);
+      client.profileId = 'valid_123';
+      client._prepareRoutes = async () => {};
+      client.flushRemoteEndpointRoutes = async () => {};
+      client._start = async () => {};
+      client._setCachedState = async () => {};
+      client._stopWithoutLifecycleLock = async () => { client._started = false; };
+      let refreshes = 0;
+      let routeCalls = 0;
+      client._scheduleRefreshRoutes = () => { refreshes++; };
+      let releaseRoutes;
+      const routesBlocked = new Promise(resolve => { releaseRoutes = resolve; });
+      let routesEntered;
+      const installingRoutes = new Promise(resolve => { routesEntered = resolve; });
+      client.addRemoteEndpointRoutes = async () => {
+        routeCalls++;
+        routesEntered();
+        await routesBlocked;
+      };
+      const linkChecks = [];
+      let initialCheck = true;
+      client._isLinkUp = () => {
+        if (initialCheck) {
+          initialCheck = false;
+          return Promise.resolve(false);
+        }
+        return new Promise(resolve => { linkChecks.push(resolve); });
+      };
+
+      const originalSetTimeout = global.setTimeout;
+      const originalSetInterval = global.setInterval;
+      let initialCallback;
+      let poll;
+      let timerScheduled;
+      const scheduled = new Promise(resolve => { timerScheduled = resolve; });
+      global.setTimeout = (callback, delay, ...args) => {
+        if (delay !== 500)
+          return originalSetTimeout(callback, delay, ...args);
+        initialCallback = callback;
+        timerScheduled();
+        return null;
+      };
+      global.setInterval = (callback, delay) => {
+        expect(delay).to.equal(2000);
+        poll = callback;
+        return null;
+      };
+
+      let startPromise;
+      let firstPoll;
+      let secondPoll;
+      try {
+        startPromise = client.start();
+        await scheduled;
+        await initialCallback();
+        // Simulate two interval ticks before either asynchronous check finishes.
+        firstPoll = poll();
+        secondPoll = poll();
+        expect(linkChecks.length).to.equal(2);
+        linkChecks[0](true);
+        await installingRoutes;
+        linkChecks[1](true);
+        await secondPoll;
+        if (cancel) {
+          const stopPromise = client.stop();
+          releaseRoutes();
+          await stopPromise;
+        } else {
+          releaseRoutes();
+        }
+        await firstPoll;
+        expect(await startPromise).to.eql(cancel ? { result: false, cancelled: true } : { result: true });
+        expect(routeCalls).to.equal(1);
+        expect(refreshes).to.equal(cancel ? 0 : 1);
+        expect(client._establishment).to.equal(null);
+      } finally {
+        client._cancelEstablishment();
+        linkChecks.forEach(resolve => resolve(true));
+        releaseRoutes();
+        await Promise.all([firstPoll, secondPoll, startPromise]);
+        global.setTimeout = originalSetTimeout;
+        global.setInterval = originalSetInterval;
+      }
+    });
+  }
+
   it('detects an active legacy profile with the historical 15-character interface name', async () => {
     const { VPNClient, state } = installVPNClientStubs();
     state.cachedState = null;

@@ -178,6 +178,9 @@ describe('VPN profile deletion hardening', function () {
     }
 
     const fakeExtensionManager = {
+      hasGet() {
+        return false;
+      },
       hasCmd() {
         return false;
       },
@@ -299,6 +302,43 @@ describe('VPN profile deletion hardening', function () {
         expect(rejected.msg).to.match(/11 characters/);
       }
       expect(cleanupCalls.constructor).to.equal(1);
+    });
+  }
+
+  for (const item of ['vpnProfiles', 'ovpnProfiles']) {
+    it(`${item} retains invalid stored profiles without constructing clients for them`, async function () {
+      const originalGetClass = fakeVPNClient.getClass;
+      const originalValidate = fakeVPNClient.validateProfileId;
+      const constructed = [];
+      const profileIds = ['valid_123', 'legacy-profile', '123456789012', '../escape'];
+      class ListedVPNClient {
+        constructor({ profileId }) {
+          constructed.push(profileId);
+          realVPNClient.validateProfileId(profileId);
+          this.profileId = profileId;
+        }
+        static getProtocol() { return 'openvpn'; }
+        static async listProfileIds() { return profileIds; }
+        async getAttributes() { return { profileId: this.profileId, active: false }; }
+      }
+      fakeVPNClient.getClass = () => ListedVPNClient;
+      fakeVPNClient.validateProfileId = profileId => realVPNClient.validateProfileId(profileId);
+      try {
+        const result = await bot.getHandler('test-gid', {
+          data: { item, value: { types: ['openvpn'] } }
+        });
+        expect(result).to.eql({ profiles: [
+          { profileId: 'valid_123', active: false },
+          ...profileIds.slice(1).map(profileId => ({
+            profileId, type: 'openvpn', invalidProfileId: true,
+            message: 'This VPN profile has an invalid ID and requires administrator remediation.'
+          }))
+        ] });
+        expect(constructed).to.eql(['valid_123']);
+      } finally {
+        fakeVPNClient.getClass = originalGetClass;
+        fakeVPNClient.validateProfileId = originalValidate;
+      }
     });
   }
 

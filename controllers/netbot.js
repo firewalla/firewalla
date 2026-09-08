@@ -1854,8 +1854,13 @@ class netBot extends ControllerBot {
             try {
               validateVPNProfileId(profileId);
             } catch (err) {
-              log.error(`Skipping invalid VPN client profile ${profileId}`, err.message);
-              return null;
+              log.error(`Retaining invalid VPN client profile ${profileId} during enumeration`, err.msg);
+              return {
+                profileId: profileId,
+                type: c.getProtocol(),
+                invalidProfileId: true,
+                message: "This VPN profile has an invalid ID and requires administrator remediation."
+              };
             }
 
             return await new c({ profileId }).getAttributes();
