@@ -141,6 +141,37 @@ describe('DNSTool deferred DNS TTL refresh bounds', function () {
     assertBound(MAX_PENDING);
   });
 
+  it('keeps retained deferred keys queued when LRU throttle metadata is evicted', () => {
+    fill();
+    const pendingKey = 'key:0';
+    const retryKey = 'key:1';
+    const overflowKey = 'key:49999';
+
+    // Move one retained key into retry state while preserving the combined bound.
+    dnsTool.dnsExpireRetry.set(retryKey, dnsTool.dnsExpirePending.get(retryKey));
+    dnsTool.dnsExpirePending.delete(retryKey);
+
+    // Churn the timestamp LRU past its capacity so these still-retained keys lose
+    // their throttle metadata without leaving the deferred queues.
+    for (let i = 0; i <= MAX_PENDING; i++)
+      dnsTool.dnsExpireTs.set('churn:' + i, Date.now());
+
+    expect(dnsTool.dnsExpireTs.get(pendingKey)).to.equal(undefined);
+    expect(dnsTool.dnsExpireTs.get(retryKey)).to.equal(undefined);
+    expect(dnsTool.dnsExpireTs.get(overflowKey)).to.equal(undefined);
+
+    expect(dnsTool.tryRefreshDnsTTL(pendingKey, 15)).to.equal(false);
+    expect(dnsTool.tryRefreshDnsTTL(retryKey, 30)).to.equal(false);
+    expect(dnsTool.tryRefreshDnsTTL(overflowKey, 45)).to.equal(false);
+
+    expect(dnsTool.dnsExpirePending.get(pendingKey)).to.equal(15);
+    expect(dnsTool.dnsExpireRetry.get(retryKey)).to.equal(30);
+    expect(dnsTool.dnsExpireOverflow.get(overflowKey)).to.equal(45);
+    expect(dnsTool.dnsExpireDroppedCount).to.equal(0);
+    expect(operations).to.deep.equal([]);
+    assertBound(MAX_PENDING);
+  });
+
   it('serializes stalled drains and bounds concurrent producers', async () => {
     fill();
     const held = holdBatch();

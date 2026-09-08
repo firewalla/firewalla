@@ -87,8 +87,30 @@ class DNSTool {
       return false;
     }
 
+    const inPending = this.dnsExpirePending.has(key);
+    const inRetry = this.dnsExpireRetry.has(key);
+    const inOverflow = this.dnsExpireOverflow.has(key);
     const now = Date.now();
     const last = this.dnsExpireTs.get(key);
+
+    // Retained deferred membership is authoritative when its throttle timestamp was
+    // evicted from the bounded LRU. Do not let LRU churn turn a queued refresh into
+    // a new inline EXPIRE. An explicitly stale timestamp still takes the normal
+    // leading-edge path below.
+    if (!last) {
+      if (inPending) {
+        this.dnsExpirePending.set(key, expr);
+        return false;
+      }
+      if (inRetry) {
+        this.dnsExpireRetry.set(key, expr);
+        return false;
+      }
+      if (inOverflow) {
+        this.dnsExpireOverflow.set(key, expr);
+        return false;
+      }
+    }
     if (!last || now - last >= RDNS_TTL_REFRESH_PERIOD) {
       this.dnsExpireTs.set(key, now);
       this.dnsExpirePending.delete(key);
@@ -96,15 +118,15 @@ class DNSTool {
       this.dnsExpireOverflow.delete(key);
       return true;
     }
-    if (this.dnsExpirePending.has(key)) {
+    if (inPending) {
       this.dnsExpirePending.set(key, expr);
       return false;
     }
-    if (this.dnsExpireRetry.has(key)) {
+    if (inRetry) {
       this.dnsExpireRetry.set(key, expr);
       return false;
     }
-    if (this.dnsExpireOverflow.has(key)) {
+    if (inOverflow) {
       this.dnsExpireOverflow.set(key, expr);
       return false;
     }
@@ -387,7 +409,7 @@ class DNSTool {
       return domains || [];
     } else {
       const domains = {}
-      let addresses = [];
+      let addresses = []
       if (!isDomainPattern) {
         domains[target] = 1;
         addresses = await this.getIPsByDomain(target);
