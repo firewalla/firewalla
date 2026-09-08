@@ -1198,6 +1198,8 @@ class VPNClient {
 
   async _startInternal() {
     await VPNClient.withProfileLifecycleLock(this.profileId, async () => {
+      if (this._startupCleanupRequired)
+        await this._cleanupFailedStartup();
       if (!this._started) {
       this._started = true;
       sem.emitEvent({
@@ -1297,6 +1299,16 @@ class VPNClient {
           });
         } catch (err) {
           log.error(`Failed to finalize VPN client startup ${this.profileId}`, err);
+          await VPNClient.withProfileLifecycleLock(this.profileId, async () => {
+            // A stop may have cancelled this establishment while we reacquired
+            // the lock. Never clean up a newer start on behalf of an old one.
+            if (establishment.settled || this._establishment !== establishment)
+              return;
+            this._startupCleanupRequired = true;
+            await this._cleanupFailedStartup();
+          }).catch(cleanupErr => {
+            log.error(`Failed to clean up VPN client startup ${this.profileId}`, cleanupErr);
+          });
           establishment.resolve({ result: false, errMsg: err.message });
         } finally {
           establishment.settling = false;
@@ -1365,6 +1377,22 @@ class VPNClient {
         }, 2000);
       }, 500);
       });
+  }
+
+  // Caller holds the profile lifecycle lock. Retain the retry guard on any
+  // cleanup failure; changing flags alone cannot establish that resources stopped.
+  async _cleanupFailedStartup() {
+    try {
+      await this._stopWithoutLifecycleLock();
+      this._startupCleanupRequired = false;
+    } catch (err) {
+      // SET may have succeeded before EXPIRE or a later finalization step failed.
+      // Unknown is safer than retaining a cached successful establishment.
+      await rclient.unlinkAsync(VPNClient.getStateCacheKey(this.profileId)).catch(cacheErr => {
+        log.error(`Failed to invalidate VPN client state ${this.profileId}`, cacheErr);
+      });
+      throw err;
+    }
   }
 
   _cancelEstablishment() {

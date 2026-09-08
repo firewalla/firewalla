@@ -43,7 +43,19 @@ function installVPNClientStubs() {
       getSubscriptionClient: () => ({ on: () => {} }),
       rclient: {
         getAsync: () => Promise.resolve(state.cachedState),
-        unlinkAsync: () => Promise.resolve(),
+        setAsync: async (key, value) => {
+          if (value === true && state.failCacheWrite)
+            throw new Error('cache write failed');
+          state.cachedState = String(value);
+        },
+        expireAsync: async () => {
+          if (state.cachedState === 'true' && state.failCacheExpiry)
+            throw new Error('cache expiry failed');
+        },
+        unlinkAsync: async (key) => {
+          if (key.endsWith(':connState'))
+            state.cachedState = null;
+        },
         delAsync: () => Promise.resolve()
       }
     },
@@ -403,6 +415,103 @@ describe('VPNClient shell and path hardening', function () {
       }
     });
   }
+
+  for (const failure of ['cache write', 'cache expiry', 'route scheduling', 'cleanup']) {
+    it(`cleans up failed startup finalization and retries after ${failure} failure`, async function () {
+      this.timeout(5000);
+      const { VPNClient, state } = installVPNClientStubs();
+      const client = Object.create(VPNClient.prototype);
+      client.profileId = 'retry_test';
+      let starts = 0;
+      let stops = 0;
+      let failScheduling = failure === 'route scheduling';
+      let failCleanup = failure === 'cleanup';
+      state.failCacheWrite = failure === 'cache write';
+      state.failCacheExpiry = failure === 'cache expiry' || failure === 'cleanup';
+      client._prepareRoutes = async () => {};
+      client.flushRemoteEndpointRoutes = async () => {};
+      client._start = async () => { starts++; };
+      client._isLinkUp = async () => true;
+      client.addRemoteEndpointRoutes = async () => {};
+      client._scheduleRefreshRoutes = () => {
+        if (failScheduling)
+          throw new Error('route scheduling failed');
+      };
+      client._stopWithoutLifecycleLock = async () => {
+        stops++;
+        if (failCleanup)
+          throw new Error('cleanup failed');
+        client._started = false;
+        await client._setCachedState(false);
+      };
+
+      const firstStart = client.start();
+      expect(client.start()).to.equal(firstStart);
+      const result = await firstStart;
+      expect(result.result).to.equal(false);
+      expect(result.errMsg).to.equal(failure === 'cleanup' ? 'cache expiry failed' : `${failure} failed`);
+      expect(stops).to.equal(1);
+      expect(client._startPromise).to.equal(null);
+      expect(client._establishment).to.equal(null);
+      if (failCleanup) {
+        // Do not claim inactivity if resource cleanup failed. Invalidate the
+        // success cache and prevent another launch until cleanup succeeds.
+        expect(state.cachedState).to.equal(null);
+        const error = await client.start().then(() => null, err => err);
+        expect(error.message).to.equal('cleanup failed');
+        expect(starts).to.equal(1);
+        failCleanup = false;
+      } else {
+        expect(client.isStarted()).to.equal(false);
+        expect(state.cachedState).to.equal('false');
+      }
+
+      state.failCacheWrite = false;
+      state.failCacheExpiry = false;
+      failScheduling = false;
+      expect(await client.start()).to.eql({ result: true });
+      expect(starts).to.equal(2);
+      expect(client.isStarted()).to.equal(true);
+      expect(state.cachedState).to.equal('true');
+    });
+  }
+
+  it('does not clean up a newer start after a cancelled finalization fails', async function () {
+    this.timeout(5000);
+    const { VPNClient } = installVPNClientStubs();
+    const client = Object.create(VPNClient.prototype);
+    client.profileId = 'retry_race';
+    let stops = 0;
+    let starts = 0;
+    let cacheEntered;
+    let rejectCache;
+    const entered = new Promise(resolve => { cacheEntered = resolve; });
+    const blocked = new Promise((resolve, reject) => { rejectCache = reject; });
+    client._prepareRoutes = async () => {};
+    client.flushRemoteEndpointRoutes = async () => {};
+    client._start = async () => { starts++; };
+    client._isLinkUp = async () => true;
+    client.addRemoteEndpointRoutes = async () => {};
+    client._scheduleRefreshRoutes = () => {};
+    client._setCachedState = async () => {
+      if (starts === 1) {
+        cacheEntered();
+        await blocked;
+      }
+    };
+    client._stopWithoutLifecycleLock = async () => { stops++; client._started = false; };
+    const first = client.start();
+    await entered;
+    const stop = client.stop();
+    expect(await first).to.eql({ result: false, cancelled: true });
+    const retry = client.start();
+    rejectCache(new Error('old finalization failed'));
+    await stop;
+    expect(await retry).to.eql({ result: true });
+    expect(starts).to.equal(2);
+    expect(stops).to.equal(1);
+    expect(client.isStarted()).to.equal(true);
+  });
 
   it('detects an active legacy profile with the historical 15-character interface name', async () => {
     const { VPNClient, state } = installVPNClientStubs();
