@@ -48,6 +48,7 @@ const LOCK_SCHEDULED_JOB = "LOCK_SCHEDULED_JOB";
 const { compactTime } = require('../util/util')
 
 const MAX_CACHE_ENTRIES = 10000;
+const createCache = () => Object.create(null);
 
 
 class FlowAggregationSensor extends Sensor {
@@ -81,9 +82,9 @@ class FlowAggregationSensor extends Sensor {
     }
   }
 
-  _getCacheEntry(cacheName, cache, bucketKey, entryKey, createEntry) {
-    const bucket = cache[bucketKey];
-    if (bucket && bucket[entryKey])
+  _getCacheEntry(cacheName, cache, bucketKey, entryKey, createEntry, createArg) {
+    const bucket = Object.hasOwn(cache, bucketKey) ? cache[bucketKey] : null;
+    if (bucket && Object.hasOwn(bucket, entryKey))
       return bucket[entryKey];
 
     if (this.cacheEntryCounts[cacheName] >= MAX_CACHE_ENTRIES) {
@@ -95,8 +96,8 @@ class FlowAggregationSensor extends Sensor {
       return null;
     }
 
-    const cacheBucket = bucket || (cache[bucketKey] = {});
-    const entry = createEntry();
+    const cacheBucket = bucket || (cache[bucketKey] = createCache());
+    const entry = createEntry(createArg);
     cacheBucket[entryKey] = entry;
     this.cacheEntryCounts[cacheName]++;
     return entry;
@@ -113,17 +114,17 @@ class FlowAggregationSensor extends Sensor {
     let appFlowCache = null;
     // retrieve global cache reference and set global cache to a new empty object
     trafficCache = this.trafficCache;
-    this.trafficCache = {};
+    this.trafficCache = createCache();
     categoryFlowCache = this.categoryFlowCache;
-    this.categoryFlowCache = {};
+    this.categoryFlowCache = createCache();
     appFlowCache = this.appFlowCache;
-    this.appFlowCache = {};
+    this.appFlowCache = createCache();
     ipBlockCache = this.ipBlockCache;
     dnsBlockCache = this.dnsBlockCache;
     ifBlockCache = this.ifBlockCache;
-    this.ipBlockCache = {};
-    this.dnsBlockCache = {};
-    this.ifBlockCache = {};
+    this.ipBlockCache = createCache();
+    this.dnsBlockCache = createCache();
+    this.ifBlockCache = createCache();
     this._resetCurrentCacheBounds();
 
 
@@ -181,12 +182,12 @@ class FlowAggregationSensor extends Sensor {
 
     });
 
-    this.trafficCache = {};
-    this.categoryFlowCache = {};
-    this.appFlowCache = {};
-    this.ipBlockCache = {};
-    this.dnsBlockCache = {};
-    this.ifBlockCache = {};
+    this.trafficCache = createCache();
+    this.categoryFlowCache = createCache();
+    this.appFlowCache = createCache();
+    this.ipBlockCache = createCache();
+    this.dnsBlockCache = createCache();
+    this.ifBlockCache = createCache();
 
     // BroDetect -> DestIPFoundHook -> here
     sem.on(Message.MSG_FLOW_ENRICHED, async event => {
@@ -241,8 +242,7 @@ class FlowAggregationSensor extends Sensor {
     const categoryCode = !local && flow.intel && flow.intel.category ?
       await intelTool.categoryToNumber(flow.intel.category) : undefined;
     const key = `${mac}:${local ? dmac : ip}:${fd}${dp ? `:${dp}` : ""}${domain ? `:${domain}` : ""}`;
-    for (const uidTickKey of uidTickKeys) {
-      const createTrafficEntry = () => {
+    const createTrafficEntry = (uidTickKey) => {
       const t = {device: mac, upload: 0, download: 0, count: 0, fd};
       if (local) {
         t.dstMac = dmac
@@ -271,7 +271,8 @@ class FlowAggregationSensor extends Sensor {
       return t;
     };
 
-      let t = this._getCacheEntry("traffic", this.trafficCache, uidTickKey, key, createTrafficEntry);
+    for (const uidTickKey of uidTickKeys) {
+      let t = this._getCacheEntry("traffic", this.trafficCache, uidTickKey, key, createTrafficEntry, uidTickKey);
       if (!t) {
         continue;
       }
