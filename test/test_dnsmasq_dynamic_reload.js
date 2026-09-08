@@ -564,6 +564,57 @@ describe('dnsmasq DHCP hosts-file reload vs restart', function() {
     expect(dnsmasq.counter.restartDHCP).to.equal(1);
   });
 
+  it('invalidates a restart preflight when reload fallback completes first', async function() {
+    let releaseReload;
+    let releaseCheck;
+    let reloadStarted;
+    let checkStarted;
+    const dhcpReloadPromise = new Promise(resolve => { releaseReload = resolve; });
+    const checkPromise = new Promise(resolve => { releaseCheck = resolve; });
+    const reloadStartPromise = new Promise(resolve => { reloadStarted = resolve; });
+    const checkStartPromise = new Promise(resolve => { checkStarted = resolve; });
+    const { dnsmasq, commands, timers } = loadDNSMASQ({
+      fireRouterManaged: true,
+      dhcpReloadFails: true,
+      dhcpReloadPromise,
+      onCommand: cmd => {
+        if (cmd.includes('systemctl reload firerouter_dhcp'))
+          reloadStarted();
+      },
+    });
+    this.test.ctx.dnsmasq = dnsmasq;
+    dnsmasq.checkConfsChange = async (key) => {
+      if (key === 'dnsmasq:dhcp') {
+        checkStarted();
+        await checkPromise;
+      }
+      return true;
+    };
+
+    dnsmasq.scheduleReloadDHCPService();
+    const reloadExecution = timers[0].fn();
+    await reloadStartPromise;
+    dnsmasq.scheduleRestartDHCPService();
+    const restartExecution = timers[1].fn();
+    await checkStartPromise;
+
+    try {
+      releaseReload();
+      await reloadExecution;
+      expect(timers[1].cleared).to.equal(true);
+      expect(dnsmasq.restartDHCPPromise).to.equal(undefined);
+      expect(dnsmasq.counter.restartDHCP).to.equal(1);
+    } finally {
+      releaseCheck();
+      await restartExecution;
+    }
+
+    expect(commands.filter(cmd => cmd.includes('systemctl stop firerouter_dhcp'))).to.have.length(1);
+    expect(commands.filter(cmd => cmd.includes('systemctl restart firerouter_dhcp'))).to.have.length(1);
+    expect(dnsmasq.counter.restartDHCP).to.equal(1);
+    expect(dnsmasq.restartDHCPTask).to.equal(undefined);
+  });
+
   it('shares an in-flight scheduled restart when reload fails', async function() {
     let releaseReload;
     let releaseRestart;
