@@ -474,9 +474,7 @@ module.exports = class DNSMASQ {
           clearTimeout(this.restartDHCPTask);
           delete this.restartDHCPTask;
         }
-        this.counter.restartDHCP++;
-        log.warn(`${DHCP_SERVICE_NAME} reload failed, falling back to service restart`, this.counter.restartDHCP);
-        log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.restartDHCP);
+        log.warn(`${DHCP_SERVICE_NAME} reload failed, falling back to service restart`);
         await this.restartDHCPService();
       }
 
