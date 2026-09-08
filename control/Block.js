@@ -1857,12 +1857,13 @@ async function manipulateFiveTupleRule(options) {
   }
   if (tlsHost) {
     // the rule string is passed to a bash shell, a host that is not a plain domain can end the
-    // argument and start a command of its own
-    if (!isDomainTargetValid(tlsHost))
-      // fails open: only the match is dropped, the rule is still emitted — so an invalid host
-      // widens the rule, or issues a delete without the match that made it specific
-      log.error("Ignore invalid tls host", tlsHost);
-    else if (proto === "tcp" && platform.isTLSBlockSupport())
+    // argument and start a command of its own. the whole rule has to go: dropping only the match
+    // would install a rule that is no longer host specific, or delete one that never existed
+    if (!isDomainTargetValid(tlsHost)) {
+      log.error("Ignore rule with invalid tls host", tlsHost);
+      return;
+    }
+    if (proto === "tcp" && platform.isTLSBlockSupport())
       rule.mdl("tls", `--tls-host ${tlsHost}`)
     else if (proto === "udp" && platform.isUdpTLSBlockSupport())
       rule.mdl("udp_tls", `--tls-host ${tlsHost}`)

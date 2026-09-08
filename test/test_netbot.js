@@ -1110,7 +1110,7 @@ describe('test netbot input validation', function() {
   const getItem = (item, value) => netbot.getHandler(gid, {data: {item, value}});
 
   // the handlers throw {code, msg}, not an Error
-  const rejects = async (call, code, message) => {
+  const shouldReject = async (call, code, message) => {
     let err = null;
     try {
       await call();
@@ -1124,7 +1124,7 @@ describe('test netbot input validation', function() {
 
   // the value passed the check in netbot and was refused further down, which is what proves a
   // legitimate value still gets through
-  const passesCheck = async (call, message) => {
+  const shouldPass = async (call, message) => {
     let err = null;
     try {
       await call();
@@ -1148,7 +1148,7 @@ describe('test netbot input validation', function() {
       'a/b',
       'a.b',
       'a-b',
-      'elevencharx', // 11 characters
+      'twelvecharsx', // one over the 11 that fit in an interface name after the vpn_ prefix
       42,
       {},
       ['vpn'],
@@ -1160,26 +1160,26 @@ describe('test netbot input validation', function() {
     for (const item of setters) {
       for (const profileId of badProfileId) {
         it(`${item} rejects ${JSON.stringify(profileId)}`, async () => {
-          await rejects(() => cmd(item, {type: 'openvpn', profileId}), 400, /^'profileId' should only contain/);
+          await shouldReject(() => cmd(item, {type: 'openvpn', profileId}), 400, /^invalid profileId$/);
         });
       }
 
       // an unknown type is refused only after profileId, so reaching that error proves a well
       // formed id got through the check without starting or deleting anything
       it(`${item} accepts a well formed profileId`, async () => {
-        await passesCheck(() => cmd(item, {type: 'no_such_type', profileId: 'vpn_1'}), /Unrecognized VPN client type/);
+        await shouldReject(() => cmd(item, {type: 'no_such_type', profileId: 'vpn_1'}), 400, /^Unsupported VPN client type/);
       });
     }
 
     for (const item of ['vpnProfile', 'ovpnProfile']) {
       for (const profileId of badProfileId) {
         it(`${item} rejects ${JSON.stringify(profileId)}`, async () => {
-          await rejects(() => getItem(item, {type: 'openvpn', profileId}), 400, /^'profileId' should only contain/);
+          await shouldReject(() => getItem(item, {type: 'openvpn', profileId}), 400, /^invalid profileId$/);
         });
       }
 
       it(`${item} accepts a well formed profileId`, async () => {
-        await passesCheck(() => getItem(item, {type: 'no_such_type', profileId: 'vpn_1'}), /Unrecognized VPN client type/);
+        await shouldReject(() => getItem(item, {type: 'no_such_type', profileId: 'vpn_1'}), 400, /^Unsupported VPN client type/);
       });
     }
   });
@@ -1208,7 +1208,7 @@ describe('test netbot input validation', function() {
     for (const item of items) {
       for (const domain of badDomain) {
         it(`${item} rejects ${JSON.stringify(domain)}`, async () => {
-          await rejects(() => cmd(item, {category: 'no_such_category', domain}), 400, /^Invalid domain/);
+          await shouldReject(() => cmd(item, {category: 'no_such_category', domain}), 400, /^Invalid domain/);
         });
       }
     }
@@ -1228,7 +1228,7 @@ describe('test netbot input validation', function() {
 
     for (const elements of badElements) {
       it(`updateIncludedElements rejects ${JSON.stringify(elements)}`, async () => {
-        await rejects(() => cmd('updateIncludedElements', {category: 'no_such_category', elements}), 400, /^Invalid elements/);
+        await shouldReject(() => cmd('updateIncludedElements', {category: 'no_such_category', elements}), 400, /^Invalid elements/);
       });
     }
 
@@ -1236,7 +1236,7 @@ describe('test netbot input validation', function() {
     // pass, so this proves the rich element syntax still gets through
     it('accepts domains, addresses, ports and a regex', async () => {
       const elements = ['example.com', '*.example.com', '1.2.3.0/24', '[::1]:443', 'example.com,tcp:80-90', 'regex:^ad[0-9]+\\.example\\.com$'];
-      await passesCheck(() => cmd('updateIncludedElements', {category: 'no_such_category', elements}), /is not found/);
+      await shouldPass(() => cmd('updateIncludedElements', {category: 'no_such_category', elements}), /is not found/);
     });
   });
 
@@ -1258,22 +1258,22 @@ describe('test netbot input validation', function() {
 
     for (const category of badCategory) {
       it(`createOrUpdateCustomizedCategory rejects ${JSON.stringify(category)}`, async () => {
-        await rejects(() => cmd('createOrUpdateCustomizedCategory', {category, obj: {name: 'test'}}), 400, /^Invalid category/);
+        await shouldReject(() => cmd('createOrUpdateCustomizedCategory', {category, obj: {name: 'test'}}), 400, /^Invalid category/);
       });
 
       it(`removeCustomizedCategory rejects ${JSON.stringify(category)}`, async () => {
-        await rejects(() => cmd('removeCustomizedCategory', {category}), 400, /^Invalid category/);
+        await shouldReject(() => cmd('removeCustomizedCategory', {category}), 400, /^Invalid category/);
       });
     }
 
     it('removeCustomizedCategory rejects a missing category', async () => {
-      await rejects(() => cmd('removeCustomizedCategory', {}), 400, /^Invalid category/);
+      await shouldReject(() => cmd('removeCustomizedCategory', {}), 400, /^Invalid category/);
     });
 
     // a uuid has to get through, that is what the app sends back for an existing category. the
     // updater refuses the payload after the category check, so nothing is written
     it('createOrUpdateCustomizedCategory accepts a uuid', async () => {
-      await passesCheck(() => cmd('createOrUpdateCustomizedCategory', {category: '3d0a201e-0b2f-4b0e-8e2f-0b2f4b0e8e2f', obj: {}}), /name is not specified/);
+      await shouldPass(() => cmd('createOrUpdateCustomizedCategory', {category: '3d0a201e-0b2f-4b0e-8e2f-0b2f4b0e8e2f', obj: {}}), /name is not specified/);
     });
   });
 });

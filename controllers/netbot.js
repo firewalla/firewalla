@@ -3480,8 +3480,9 @@ class netBot extends ControllerBot {
       }
       case "deleteVpnProfile":
       case "deleteOvpnProfile": {
+        const type = value.type || "openvpn";
         const profileId = value.profileId;
-        const vpnClient = await netBotTool.getVPNClient({ type: value.type || "openvpn", profileId });
+        const vpnClient = await netBotTool.getVPNClient({ type, profileId });
         const status = await vpnClient.status();
         if (status) {
           throw { code: 400, msg: `${type} VPN client ${profileId} is still running` }

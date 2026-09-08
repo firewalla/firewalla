@@ -62,65 +62,68 @@ async function createCustomizedRoutingTable(tableName, type = RT_TYPE_REG) {
   if (_.has(rtIdCache, tableName))
     return rtIdCache[tableName];
   return new Promise((resolve, reject) => {
-    // the outer promise settles only through done(), so a throw or a rejected await inside this body
-    // leaves it pending until the lock times out — route every failure through done(err)
+    // async-lock takes this as a callback-style task because of the done argument, so the promise it
+    // returns is discarded: a throw or a rejected await would never release the lock and would leave
+    // the outer promise pending for good, since this lock has no timeout. every path ends in done()
     lock.acquire(LOCK_RT_TABLES, async function(done) {
-      // separate bits in fwmark for vpn client and regular WAN
-      const bitOffset = type === RT_TYPE_VC ? 10 : 0;
-      const maxTableId = type === RT_TYPE_VC ? 64 : 512;
-      let content = "";
       try {
-        content = await fsp.readFile('/etc/iproute2/rt_tables', 'utf8');
-      } catch (err) {
-        log.error("Failed to read rt_tables.", err.message);
-      }
-      const usedTid = [];
-      for (const entry of content.split('\n')) {
-        // a comment can follow an entry, so drop the whole line if it holds a '#' at all, then
-        // take the id and the name from the first two fields
-        if (entry.includes('#')) continue;
-        const line = entry.trim().split(/\s+/);
-        const tid = line[0];
-        const name = line[1];
-        if (!tid) continue;
-        usedTid.push(tid);
-        if (name === tableName) {
-          if (Number(tid) >>> bitOffset === 0 || Number(tid) >>> bitOffset >= maxTableId) {
-            log.info(`Previous table id of ${tableName} is out of range ${tid}, removing old entry for ${tableName} ...`);
-            await removeCustomizedRoutingTable(tableName);
-          } else {
-            log.debug("Table with same name already exists: " + tid);
-            done(null, Number(tid));
-            return;
+        // separate bits in fwmark for vpn client and regular WAN
+        const bitOffset = type === RT_TYPE_VC ? 10 : 0;
+        const maxTableId = type === RT_TYPE_VC ? 64 : 512;
+        // an unreadable rt_tables has to fail the call: with no content every id looks free and the
+        // loop below would hand out one that is already in use
+        const content = await fsp.readFile('/etc/iproute2/rt_tables', 'utf8');
+        const usedTid = [];
+        for (const entry of content.split('\n')) {
+          // a comment can follow an entry, so drop the whole line if it holds a '#' at all, then
+          // take the id and the name from the first two fields
+          if (entry.includes('#')) continue;
+          const line = entry.trim().split(/\s+/);
+          const tid = line[0];
+          const name = line[1];
+          if (!tid) continue;
+          usedTid.push(tid);
+          if (name === tableName) {
+            if (Number(tid) >>> bitOffset === 0 || Number(tid) >>> bitOffset >= maxTableId) {
+              log.info(`Previous table id of ${tableName} is out of range ${tid}, removing old entry for ${tableName} ...`);
+              await removeCustomizedRoutingTable(tableName);
+            } else {
+              log.debug("Table with same name already exists: " + tid);
+              done(null, Number(tid));
+              return;
+            }
           }
         }
-      }
-      // find unoccupied table id between 1 - maxTableId
-      let id = 1;
-      while (id < maxTableId) {
-        if (!usedTid.includes((id << bitOffset) + "")) // convert number to string
-          break;
-        id++;
-      }
-      if (id == maxTableId) {
-        done(`Insufficient space to create routing table for ${tableName}, type ${type}`, null);
-        return;
-      }
-      // the redirections and the pipeline need a shell, so flock is given bash directly instead of
-      // being wrapped in one. bash is named rather than using flock's own -c, which picks $SHELL
-      // and falls back to /bin/sh, where the builtin echo has no -e and would emit a literal "-e"
-      const script = `echo -e "${id << bitOffset}\\t${tableName}" >> /etc/iproute2/rt_tables; \
+        // find unoccupied table id between 1 - maxTableId
+        let id = 1;
+        while (id < maxTableId) {
+          if (!usedTid.includes((id << bitOffset) + "")) // convert number to string
+            break;
+          id++;
+        }
+        if (id == maxTableId) {
+          done(`Insufficient space to create routing table for ${tableName}, type ${type}`, null);
+          return;
+        }
+        // the redirections and the pipeline need a shell, so flock is given bash directly instead of
+        // being wrapped in one. bash is named rather than using flock's own -c, which picks $SHELL
+        // and falls back to /bin/sh, where the builtin echo has no -e and would emit a literal "-e"
+        const script = `echo -e "${id << bitOffset}\\t${tableName}" >> /etc/iproute2/rt_tables; \
         cat /etc/iproute2/rt_tables | sort | uniq > /etc/iproute2/rt_tables.new; \
         cp /etc/iproute2/rt_tables.new /etc/iproute2/rt_tables; \
         rm /etc/iproute2/rt_tables.new`;
-      log.info("Append new routing table: ", script);
-      const result = await execFile('sudo', ['flock', LOCK_FILE, 'bash', '-c', script]);
-      if (result.stderr !== "") {
-        log.error("Failed to create customized routing table.", result.stderr);
-        done(result.stderr, null);
-        return;
+        log.info("Append new routing table: ", script);
+        const result = await execFile('sudo', ['flock', LOCK_FILE, 'bash', '-c', script]);
+        if (result.stderr !== "") {
+          log.error("Failed to create customized routing table.", result.stderr);
+          done(result.stderr, null);
+          return;
+        }
+        done(null, id << bitOffset);
+      } catch (err) {
+        log.error(`Failed to create routing table ${tableName}`, err.message);
+        done(err, null);
       }
-      done(null, id << bitOffset);
     }, function(err, ret) {
       if (err)
         reject(err);
